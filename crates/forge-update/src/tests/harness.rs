@@ -1,5 +1,3 @@
-#![allow(dead_code, clippy::unwrap_used)]
-
 use std::cell::Cell;
 use std::collections::VecDeque;
 use std::ffi::OsString;
@@ -7,11 +5,12 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
-use forge_update::{
-    ApplyMode, ApplyState, ChildExit, ChildProcess, Clock, DatabaseUnit, HandoffPlan,
-    HandoffRequest, HealthMarker, InstallLayout, ProcessHost, SchemaProbe, StagedArtifact,
-    SupervisorContext, SupervisorOutcome, SupervisorSettings, UpdatableInstall, UpdateError,
-    UpdateJournal, run_supervisor,
+use crate::apply_state::{ApplyPhase, ApplyState};
+use crate::journal::UpdateJournal;
+use crate::{
+    ApplyMode, ChildExit, ChildProcess, Clock, DatabaseUnit, HandoffPlan, HandoffRequest,
+    HealthMarker, InstallLayout, ProcessHost, SchemaProbe, StagedArtifact, SupervisorContext,
+    SupervisorOutcome, SupervisorSettings, UpdatableInstall, UpdateError, run_supervisor,
 };
 use tempfile::TempDir;
 
@@ -62,7 +61,7 @@ impl Spawn {
     pub fn reports_healthy_at(data_dir: PathBuf, poll: u32) -> Self {
         Self::child(move |current| {
             if current == poll {
-                forge_update::write_health_marker(&data_dir, TO).unwrap();
+                crate::write_health_marker(&data_dir, TO).unwrap();
             }
             None
         })
@@ -268,7 +267,8 @@ pub struct Fixture {
     pub target: PathBuf,
     pub staged: PathBuf,
     pub snapshot: PathBuf,
-    pub plan: HandoffPlan,
+    pub state: ApplyState,
+    pub journal: UpdateJournal,
 }
 
 impl Fixture {
@@ -346,6 +346,8 @@ impl Fixture {
         })
         .unwrap();
         plan.write(&data_dir).unwrap();
+        let state = ApplyState::read(&data_dir).unwrap().unwrap();
+        let journal = UpdateJournal::read_blocking(&data_dir).unwrap().unwrap();
         Self {
             root,
             data_dir,
@@ -353,16 +355,17 @@ impl Fixture {
             target,
             staged,
             snapshot,
-            plan,
+            state,
+            journal,
         }
     }
 
     pub fn launch_executable(&self) -> PathBuf {
-        self.plan.state.launch_executable.clone()
+        self.state.launch_executable.clone()
     }
 
     pub fn previous(&self) -> PathBuf {
-        self.plan.journal.previous_build.clone()
+        self.journal.previous_build.clone()
     }
 
     pub fn host(&self, spawns: impl IntoIterator<Item = Spawn>) -> FakeHost {
@@ -409,7 +412,7 @@ impl Fixture {
         .all(|path| !path.exists())
     }
 
-    pub fn phase(&self) -> Option<forge_update::ApplyPhase> {
+    pub fn phase(&self) -> Option<ApplyPhase> {
         ApplyState::read(&self.data_dir)
             .unwrap()
             .map(|state| state.phase)
@@ -421,5 +424,5 @@ pub fn bundle_binary(bundle: &Path) -> PathBuf {
 }
 
 pub fn candidate_args() -> Vec<OsString> {
-    vec![OsString::from(forge_update::CANDIDATE_FLAG)]
+    vec![OsString::from(crate::CANDIDATE_FLAG)]
 }

@@ -23,6 +23,8 @@ mod supervisor_lock;
 mod trust;
 mod version;
 
+#[cfg(test)]
+mod tests;
 
 pub use apply_state::{
     ApplyMode, HandoffPlan, HandoffRequest, PREVIOUS_BUILD_PREFIX, launch_executable,

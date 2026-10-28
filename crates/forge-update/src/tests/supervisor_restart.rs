@@ -1,15 +1,12 @@
-#![allow(clippy::unwrap_used, clippy::panic)]
-mod harness;
-
 use std::sync::{Arc, Mutex};
 
-use forge_update::{
-    ApplyMode, ChildExit, DatabaseRestore, InstallLayout, RollbackReason, StartAction,
-    SupervisorOutcome, UpdateError, UpdateReport, pending_start_action, take_update_report,
-};
-use harness::{
+use super::harness::{
     DB_MAIN, DB_SHM, DB_WAL, FROM, FakeClock, Fixture, LIVE_DB, NEW_BUILD, OLD_BUILD, SCHEMA,
     SNAPSHOT_DB, Spawn, TO, candidate_args, settings,
+};
+use crate::{
+    ApplyMode, ChildExit, DatabaseRestore, InstallLayout, RollbackReason, StartAction,
+    SupervisorOutcome, UpdateError, UpdateReport, pending_start_action, take_update_report,
 };
 
 type ReasonCheck = fn(&RollbackReason) -> bool;
@@ -64,7 +61,7 @@ fn healthy_signals_confirm_the_update() {
         ("crash right after the marker", |fixture| {
             let data_dir = fixture.data_dir.clone();
             Spawn::child(move |_| {
-                forge_update::write_health_marker(&data_dir, TO).unwrap();
+                crate::write_health_marker(&data_dir, TO).unwrap();
                 Some(ChildExit::Code(1))
             })
         }),
@@ -359,7 +356,7 @@ fn a_marker_for_another_version_does_not_count_as_healthy() {
     let fixture = restart_fixture();
     let data_dir = fixture.data_dir.clone();
     let mut host = fixture.host([Spawn::child(move |_| {
-        forge_update::write_health_marker(&data_dir, FROM).unwrap();
+        crate::write_health_marker(&data_dir, FROM).unwrap();
         None
     })]);
 
@@ -378,8 +375,8 @@ fn a_marker_for_another_version_does_not_count_as_healthy() {
 fn a_marker_left_over_from_before_the_launch_does_not_count_as_healthy() {
     let fixture = restart_fixture();
     std::fs::write(
-        forge_update::HealthMarker::path_in(&fixture.data_dir),
-        serde_json::to_vec(&forge_update::HealthMarker {
+        crate::HealthMarker::path_in(&fixture.data_dir),
+        serde_json::to_vec(&crate::HealthMarker {
             pid: 1,
             version: TO.to_owned(),
         })
@@ -424,15 +421,15 @@ fn a_second_supervisor_is_refused_while_one_runs() {
     let sink = Arc::clone(&seen);
     let data_dir = fixture.data_dir.clone();
     let mut host = fixture.host([Spawn::child(move |_| {
-        let mut nested_host = harness::FakeHost::new([]);
-        let unit = harness::database_unit();
-        let result = forge_update::run_supervisor(forge_update::SupervisorContext {
+        let mut nested_host = super::harness::FakeHost::new([]);
+        let unit = super::harness::database_unit();
+        let result = crate::run_supervisor(crate::SupervisorContext {
             data_dir: &data_dir,
             database: &unit,
             settings: settings(),
             host: &mut nested_host,
             clock: &FakeClock::new(),
-            schema: &harness::FixedSchema(None),
+            schema: &super::harness::FixedSchema(None),
         });
         *sink.lock().unwrap() = Some(matches!(result, Err(UpdateError::SupervisorBusy)));
         Some(ChildExit::Code(0))

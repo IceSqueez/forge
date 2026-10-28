@@ -1,16 +1,14 @@
-#![allow(clippy::unwrap_used, clippy::panic)]
-mod harness;
-
 use std::ffi::OsString;
 use std::path::Path;
 
-use forge_update::{
-    ApplyFailure, ApplyMode, ApplyPhase, ChildExit, InstallLayout, SupervisorOutcome, UpdateReport,
+#[cfg(unix)]
+use super::harness::bundle_binary;
+use super::harness::{FROM, Fixture, NEW_BUILD, OLD_BUILD, SCHEMA, Spawn, TO};
+use crate::apply_state::ApplyPhase;
+use crate::{
+    ApplyFailure, ApplyMode, ChildExit, InstallLayout, SupervisorOutcome, UpdateReport,
     take_update_report,
 };
-#[cfg(unix)]
-use harness::bundle_binary;
-use harness::{FROM, Fixture, NEW_BUILD, OLD_BUILD, SCHEMA, Spawn, TO};
 
 fn not_applied_reason(fixture: &Fixture) -> ApplyFailure {
     match take_update_report(&fixture.data_dir, FROM).unwrap() {

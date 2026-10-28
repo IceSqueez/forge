@@ -15,7 +15,6 @@ use forge_transfer::{
     apply_pending_restore, record_pending_restore, restore_pending, restore_staging_root,
     stage_full_restore,
 };
-use forge_update::{ApplyState, UpdateJournal};
 use serde_json::{Value, json};
 use tempfile::TempDir;
 
@@ -49,7 +48,8 @@ const UNTOUCHED: &[(&str, &[u8])] = &[
 
 type Tree = BTreeMap<String, Vec<u8>>;
 type CrashState = fn(&Data);
-type PathIn = fn(&Path) -> PathBuf;
+const UPDATE_APPLY_STATE_FILE: &str = "update-apply.json";
+const UPDATE_JOURNAL_FILE: &str = "update-journal.json";
 
 fn write_file(path: &Path, bytes: &[u8]) {
     std::fs::create_dir_all(path.parent().unwrap()).unwrap();
@@ -123,7 +123,7 @@ impl Data {
 
     fn with_update_state() -> Self {
         let data = Self::new();
-        write_file(&ApplyState::path_in(data.path()), b"{}");
+        write_file(&data.path().join(UPDATE_APPLY_STATE_FILE), b"{}");
         data
     }
 
@@ -567,10 +567,10 @@ fn blocked_placement_rolls_back_with_the_blocking_path_as_reason() {
 
 #[test]
 fn update_in_flight_defers_the_restore_and_keeps_everything_in_place() {
-    for update_file in [ApplyState::path_in as PathIn, UpdateJournal::path_in] {
+    for update_file in [UPDATE_APPLY_STATE_FILE, UPDATE_JOURNAL_FILE] {
         let data = Data::new();
         interrupted_restore(&data);
-        write_file(&update_file(data.path()), b"{}");
+        write_file(&data.path().join(update_file), b"{}");
         let before = data.tree();
 
         let outcome = data.apply();
@@ -692,16 +692,16 @@ async fn staged_in(data_dir: &Path) -> StagedRestore {
 
 #[tokio::test]
 async fn recording_a_restore_refuses_while_an_update_is_in_flight() {
-    let cases: [(UpdateActivity, Option<PathIn>); 3] = [
+    let cases: [(UpdateActivity, Option<&str>); 3] = [
         (UpdateActivity::Staged, None),
-        (UpdateActivity::Idle, Some(ApplyState::path_in)),
-        (UpdateActivity::Idle, Some(UpdateJournal::path_in)),
+        (UpdateActivity::Idle, Some(UPDATE_APPLY_STATE_FILE)),
+        (UpdateActivity::Idle, Some(UPDATE_JOURNAL_FILE)),
     ];
     for (activity, update_file) in cases {
         let data = Data::new();
         let staged = staged_in(data.path()).await;
         if let Some(update_file) = update_file {
-            write_file(&update_file(data.path()), b"{}");
+            write_file(&data.path().join(update_file), b"{}");
         }
 
         let recorded = record_pending_restore(data.path(), &staged, activity).await;

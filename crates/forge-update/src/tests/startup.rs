@@ -1,15 +1,14 @@
-#![allow(clippy::unwrap_used)]
-mod harness;
-
 use std::ffi::OsString;
 use std::path::PathBuf;
 
-use forge_update::{
-    ApplyFailure, ApplyMode, ApplyPhase, ApplyState, CANDIDATE_FLAG, ChildExit, HealthMarker,
-    InstallLayout, LaunchRole, SUPERVISOR_FLAG, StartAction, SupervisorOutcome, UpdateJournal,
-    UpdateReport, launch_role, pending_start_action, take_update_report, write_health_marker,
+use super::harness::{FROM, Fixture, NEW_BUILD, OLD_BUILD, SCHEMA, Spawn, TO, candidate_args};
+use crate::apply_state::{ApplyPhase, ApplyState};
+use crate::journal::UpdateJournal;
+use crate::{
+    ApplyFailure, ApplyMode, CANDIDATE_FLAG, ChildExit, HealthMarker, InstallLayout, LaunchRole,
+    SUPERVISOR_FLAG, StartAction, SupervisorOutcome, UpdateReport, launch_role,
+    pending_start_action, take_update_report, write_health_marker,
 };
-use harness::{FROM, Fixture, NEW_BUILD, OLD_BUILD, SCHEMA, Spawn, TO, candidate_args};
 
 fn on_quit_applied() -> Fixture {
     let fixture = Fixture::file_layout(InstallLayout::LinuxAppImage, ApplyMode::OnQuit);
@@ -25,7 +24,7 @@ fn stale_at(phase: ApplyPhase) -> Fixture {
 }
 
 fn set_phase(fixture: &Fixture, phase: ApplyPhase) {
-    let mut state = fixture.plan.state.clone();
+    let mut state = fixture.state.clone();
     state.phase = phase;
     state.write(&fixture.data_dir).unwrap();
 }
@@ -76,7 +75,7 @@ fn a_handed_off_supervisor_whose_starter_never_exits_launches_nothing() {
 
     assert!(matches!(
         result,
-        Err(forge_update::UpdateError::ParentStillRunning)
+        Err(crate::UpdateError::ParentStillRunning)
     ));
     assert!(host.launches().is_empty());
     assert_eq!(fixture.running_build(), NEW_BUILD);
@@ -221,7 +220,7 @@ fn a_written_health_marker_names_the_running_version_and_process() {
     write_health_marker(&fixture.data_dir, TO).unwrap();
 
     assert_eq!(
-        forge_update::read_health_marker(&fixture.data_dir).unwrap(),
+        crate::read_health_marker(&fixture.data_dir).unwrap(),
         Some(HealthMarker {
             pid: std::process::id(),
             version: TO.to_owned(),

@@ -30,8 +30,6 @@ mod tests {
     use std::ffi::OsString;
     use std::path::{Path, PathBuf};
 
-    use forge_update::{ApplyState, UpdateJournal};
-
     use super::protection_for;
     use crate::restore_journal::{RESTORE_JOURNAL_FILE, RestoreJournal};
     use crate::safety_copies::kind::SafetyCopyKind;
@@ -92,11 +90,9 @@ mod tests {
 
     #[test]
     fn an_update_in_flight_protects_every_pre_update_copy() {
-        type PathIn = fn(&Path) -> PathBuf;
-        for record in [ApplyState::path_in as PathIn, UpdateJournal::path_in] {
+        for record in ["update-apply.json", "update-journal.json"] {
             let data = tempfile::tempdir().unwrap();
-            let path = record(data.path());
-            std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+            let path = data.path().join(record);
             std::fs::write(&path, b"{}").unwrap();
 
             let protection = protection_for(data.path());
@@ -108,5 +104,17 @@ mod tests {
                 path.display()
             );
         }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn an_unreadable_update_state_protects_every_pre_update_copy() {
+        let root = tempfile::tempdir().unwrap();
+        let file = root.path().join("not-a-dir");
+        std::fs::write(&file, b"x").unwrap();
+
+        let protection = protection_for(&file.join("data"));
+
+        assert!(protection.kinds.contains(&SafetyCopyKind::PreUpdate));
     }
 }

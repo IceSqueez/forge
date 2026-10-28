@@ -9,7 +9,6 @@ use forge_transfer::{
     TransferExclusivity, backup_file_stem, backups_dir, change_safety_copy_settings,
     clean_up_safety_copies, prune_safety_copies, safety_copy_usage,
 };
-use forge_update::ApplyState;
 use tempfile::TempDir;
 use time::{Duration, OffsetDateTime};
 
@@ -328,9 +327,7 @@ async fn clean_up_removes_every_unprotected_copy_even_in_never_mode() {
 #[tokio::test]
 async fn clean_up_spares_every_pre_update_copy_while_an_update_is_in_flight() {
     let store = Store::open().await;
-    let apply_state = ApplyState::path_in(store.data_dir());
-    std::fs::create_dir_all(apply_state.parent().unwrap()).unwrap();
-    std::fs::write(&apply_state, b"{}").unwrap();
+    std::fs::write(store.data_dir().join("update-apply.json"), b"{}").unwrap();
     let update_new = store.pre_update(hours(1), "ddddd1");
     let update_old = store.pre_update(days(400), "ddddd2");
     store.pre_pack(hours(1), "aaaaa1");

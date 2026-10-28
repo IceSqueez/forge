@@ -1,7 +1,7 @@
-#![allow(clippy::unwrap_used)]
 use std::path::{Path, PathBuf};
 
-use forge_update::{JOURNAL_FORMAT, UpdateError, UpdateJournal};
+use crate::UpdateError;
+use crate::journal::{JOURNAL_FORMAT, UpdateJournal};
 
 fn journal() -> UpdateJournal {
     UpdateJournal {
@@ -24,69 +24,75 @@ fn entries(dir: &Path) -> Vec<String> {
     names
 }
 
-#[tokio::test]
-async fn a_written_journal_reads_back_unchanged() {
+#[test]
+fn a_written_journal_reads_back_unchanged() {
     let data = tempfile::tempdir().unwrap();
 
-    journal().write(data.path()).await.unwrap();
+    journal().write_blocking(data.path()).unwrap();
 
     assert_eq!(
-        UpdateJournal::read(data.path()).await.unwrap(),
+        UpdateJournal::read_blocking(data.path()).unwrap(),
         Some(journal())
     );
 }
 
-#[tokio::test]
-async fn writing_leaves_only_the_journal_file_behind() {
+#[test]
+fn writing_leaves_only_the_journal_file_behind() {
     let data = tempfile::tempdir().unwrap();
 
-    journal().write(data.path()).await.unwrap();
+    journal().write_blocking(data.path()).unwrap();
 
     assert_eq!(entries(data.path()), ["update-journal.json"]);
 }
 
-#[tokio::test]
-async fn a_second_write_replaces_the_first_journal() {
+#[test]
+fn a_second_write_replaces_the_first_journal() {
     let data = tempfile::tempdir().unwrap();
-    journal().write(data.path()).await.unwrap();
+    journal().write_blocking(data.path()).unwrap();
     let mut newer = journal();
     newer.to_version = "0.6.3".to_owned();
 
-    newer.write(data.path()).await.unwrap();
+    newer.write_blocking(data.path()).unwrap();
 
-    assert_eq!(UpdateJournal::read(data.path()).await.unwrap(), Some(newer));
+    assert_eq!(
+        UpdateJournal::read_blocking(data.path()).unwrap(),
+        Some(newer)
+    );
 }
 
-#[tokio::test]
-async fn writing_creates_a_missing_data_dir() {
+#[test]
+fn writing_creates_a_missing_data_dir() {
     let root = tempfile::tempdir().unwrap();
     let data = root.path().join("not").join("yet");
 
-    journal().write(&data).await.unwrap();
+    journal().write_blocking(&data).unwrap();
 
-    assert_eq!(UpdateJournal::read(&data).await.unwrap(), Some(journal()));
+    assert_eq!(
+        UpdateJournal::read_blocking(&data).unwrap(),
+        Some(journal())
+    );
 }
 
-#[tokio::test]
-async fn reading_without_a_journal_file_yields_none() {
+#[test]
+fn reading_without_a_journal_file_yields_none() {
     let data = tempfile::tempdir().unwrap();
 
-    assert_eq!(UpdateJournal::read(data.path()).await.unwrap(), None);
+    assert_eq!(UpdateJournal::read_blocking(data.path()).unwrap(), None);
 }
 
-#[tokio::test]
-async fn clearing_removes_the_journal_and_a_second_clear_is_harmless() {
+#[test]
+fn clearing_removes_the_journal_and_a_second_clear_is_harmless() {
     let data = tempfile::tempdir().unwrap();
-    journal().write(data.path()).await.unwrap();
+    journal().write_blocking(data.path()).unwrap();
 
-    UpdateJournal::clear(data.path()).await.unwrap();
-    UpdateJournal::clear(data.path()).await.unwrap();
+    UpdateJournal::clear_blocking(data.path()).unwrap();
+    UpdateJournal::clear_blocking(data.path()).unwrap();
 
-    assert_eq!(UpdateJournal::read(data.path()).await.unwrap(), None);
+    assert_eq!(UpdateJournal::read_blocking(data.path()).unwrap(), None);
 }
 
-#[tokio::test]
-async fn a_corrupt_or_foreign_journal_is_reported_as_malformed() {
+#[test]
+fn a_corrupt_or_foreign_journal_is_reported_as_malformed() {
     let mut future_format = serde_json::to_value(journal()).unwrap();
     future_format["format"] = serde_json::json!(JOURNAL_FORMAT + 1);
     let mut missing_field = serde_json::to_value(journal()).unwrap();
@@ -105,7 +111,7 @@ async fn a_corrupt_or_foreign_journal_is_reported_as_malformed() {
         let data = tempfile::tempdir().unwrap();
         std::fs::write(UpdateJournal::path_in(data.path()), bytes).unwrap();
 
-        let result = UpdateJournal::read(data.path()).await;
+        let result = UpdateJournal::read_blocking(data.path());
 
         assert!(
             matches!(result, Err(UpdateError::MalformedJournal(_))),

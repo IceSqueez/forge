@@ -100,6 +100,22 @@ impl TriggerKindDescriptor for SharedChatSessionUpdatedDescriptor {
                             shared_chat_fields::HOST_LOGIN,
                         ))
                     },
+                )
+                .legacy(
+                    DeclaredVariable {
+                        name: "host_id".to_owned(),
+                        kind: VariantKind::String,
+                        label: "Host channel ID".to_owned(),
+                        synthesis: None,
+                    },
+                    CanonicalVariable::actor(ActorRole::Principal, ActorSlot::Id),
+                    |event| {
+                        Variant::String(payload_read::nested_text(
+                            event,
+                            shared_chat_fields::HOST,
+                            shared_chat_fields::HOST_ID,
+                        ))
+                    },
                 ),
         )
     }

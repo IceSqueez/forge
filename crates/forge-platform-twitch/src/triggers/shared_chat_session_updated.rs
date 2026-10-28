@@ -163,7 +163,7 @@ mod tests {
     }
 
     #[test]
-    fn build_arg_stack_does_not_bind_host_id() {
+    fn build_arg_stack_binds_host_id_from_host_payload() {
         let event = Event::new(
             EventSource::Twitch,
             "channel.shared_chat.update",
@@ -173,6 +173,6 @@ mod tests {
             }),
         );
         let stack = SharedChatSessionUpdatedDescriptor.build_arg_stack(&event);
-        assert!(stack.get("host_id").is_none());
+        assert_eq!(str_var(&stack, "host_id"), "200");
     }
 }

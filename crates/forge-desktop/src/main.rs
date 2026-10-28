@@ -127,6 +127,7 @@ mod restore_problem;
 mod restore_relaunch;
 mod root;
 mod routed_sink;
+mod run_disclosure;
 mod run_history_modal;
 mod runtime_handles;
 mod runtime_status;

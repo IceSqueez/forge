@@ -14,7 +14,6 @@ mod platform;
 mod platform_scope;
 mod queue;
 pub mod redaction;
-pub mod run_disclosure;
 mod script;
 mod shared;
 mod sub_action;
@@ -58,10 +57,6 @@ pub use platform::{
 pub use platform_scope::PlatformScope;
 pub use queue::Queue;
 pub use redaction::{MARKER, Redacted, RedactedText, STAMP};
-pub use run_disclosure::{
-    DisclosedOutcome, DisclosedRun, DisclosedStep, DisclosedStepOutcome, DisclosedTrigger,
-    DisclosedValue,
-};
 pub use script::{ScriptContract, ScriptInput};
 pub use shared::Shared;
 pub use sub_action::{LogLevel, OutputDevice};

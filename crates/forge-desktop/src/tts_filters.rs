@@ -3202,6 +3202,141 @@ mod tests {
         }
     }
 
+    #[test]
+    fn emote_to_word_and_strip_twitch_setters_keep_the_pair_exclusive() {
+        for (word, strip, to_word) in [
+            (true, false, true),
+            (false, true, true),
+            (false, false, true),
+            (true, false, false),
+            (false, true, false),
+        ] {
+            let mut s = TtsPipelineSettings {
+                output_emote_to_word: word,
+                strip_twitch_emotes: strip,
+                ..TtsPipelineSettings::default()
+            };
+            set_emote_to_word(&mut s, to_word);
+            assert_eq!(s.output_emote_to_word, to_word);
+            assert!(!s.strip_twitch_emotes, "word={word} strip={strip}");
+        }
+        for (word, strip, enable) in [
+            (true, false, true),
+            (false, false, true),
+            (false, true, true),
+            (true, false, false),
+            (false, true, false),
+        ] {
+            let mut s = TtsPipelineSettings {
+                output_emote_to_word: word,
+                strip_twitch_emotes: strip,
+                ..TtsPipelineSettings::default()
+            };
+            set_strip_twitch_emotes(&mut s, enable);
+            assert_eq!(s.strip_twitch_emotes, enable);
+            if enable {
+                assert!(!s.output_emote_to_word, "word={word} strip={strip}");
+            } else {
+                assert_eq!(
+                    s.output_emote_to_word, word,
+                    "disabling must not touch the other"
+                );
+            }
+        }
+    }
+
+    #[gpui::test]
+    fn legacy_row_with_both_emote_flags_shows_strip_twitch_off_and_word_off_clears_both(
+        cx: &mut TestAppContext,
+    ) {
+        install_presentation(cx);
+        let rt = runtime();
+        let repo = RecordingFilters::storing(Vec::new());
+        let view = view_over(&repo, &rt, cx);
+        view.update(cx, |v, _| {
+            let settings = &mut v.filters.loaded_mut().unwrap().settings;
+            settings.output_emote_to_word = true;
+            settings.strip_twitch_emotes = true;
+        });
+        let shown = view.read_with(cx, |v, _| {
+            (
+                v.output_flag(OutputOpt::EmoteWord),
+                v.output_flag(OutputOpt::StripTwitchEmotes),
+            )
+        });
+        assert_eq!(shown, (true, false));
+
+        view.update(cx, |v, cx| v.toggle_output(OutputOpt::EmoteWord, cx));
+        pump(&rt);
+        cx.run_until_parked();
+        let after = view.read_with(cx, |v, _| {
+            (
+                v.output_flag(OutputOpt::EmoteWord),
+                v.output_flag(OutputOpt::StripTwitchEmotes),
+            )
+        });
+        let saved = repo
+            .saved
+            .lock()
+            .unwrap()
+            .last()
+            .map(|s| (s.output_emote_to_word, s.strip_twitch_emotes));
+        assert_eq!(after, (false, false));
+        assert_eq!(saved, Some((false, false)));
+    }
+
+    #[gpui::test]
+    fn toggling_one_emote_option_on_clears_the_other_in_the_saved_settings(
+        cx: &mut TestAppContext,
+    ) {
+        install_presentation(cx);
+        let rt = runtime();
+        for (turn_on, other_initially_on) in [
+            (OutputOpt::StripTwitchEmotes, OutputOpt::EmoteWord),
+            (OutputOpt::EmoteWord, OutputOpt::StripTwitchEmotes),
+        ] {
+            let repo = RecordingFilters::storing(Vec::new());
+            let view = view_over(&repo, &rt, cx);
+            view.update(cx, |v, cx| {
+                v.set_output(turn_on, false, cx);
+                v.set_output(other_initially_on, true, cx);
+                v.set_output(turn_on, true, cx);
+            });
+            pump(&rt);
+            cx.run_until_parked();
+            let flags = view.read_with(cx, |v, _| {
+                (v.output_flag(turn_on), v.output_flag(other_initially_on))
+            });
+            assert_eq!(flags, (true, false), "{}", turn_on.key());
+        }
+    }
+
+    #[gpui::test]
+    fn emote_output_preset_clears_strip_twitch_emotes(cx: &mut TestAppContext) {
+        install_presentation(cx);
+        let rt = runtime();
+        let repo = RecordingFilters::storing(Vec::new());
+        let view = view_over(&repo, &rt, cx);
+        view.update(cx, |v, _| {
+            let settings = &mut v.filters.loaded_mut().unwrap().settings;
+            settings.output_emote_to_word = false;
+            settings.strip_twitch_emotes = true;
+        });
+        let applied = view.update(cx, |v, cx| {
+            v.apply_output_preset(OutputPreset::Emote, "", cx)
+        });
+        pump(&rt);
+        cx.run_until_parked();
+        let flags = view.read_with(cx, |v, _| {
+            (
+                v.output_flag(OutputOpt::EmoteWord),
+                v.output_flag(OutputOpt::StripTwitchEmotes),
+            )
+        });
+        assert!(applied);
+        assert_eq!(flags, (true, false));
+    }
+
     #[gpui::test]
     fn strip_emoji_toggle_starts_off_persists_and_reaches_the_live_pipeline_config(
         cx: &mut TestAppContext,

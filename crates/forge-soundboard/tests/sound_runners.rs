@@ -4,7 +4,10 @@ use std::sync::{Arc, Mutex};
 
 use async_trait::async_trait;
 use forge_events::{Event, EventPublisher};
-use forge_registry::{FormField, RunContext, SubActionRegistry, SubActionRunner};
+use forge_registry::{
+    ConfigProblem, ConfigReason, FormField, RegistryError, RunContext, SubActionRegistry,
+    SubActionRunner,
+};
 use forge_soundboard::{
     PlaySoundRunner, SetMasterVolumeRunner, SoundboardControl, SoundboardError,
     StopAllSoundsRunner, StopSoundRunner, register_soundboard_sub_actions,
@@ -406,11 +409,15 @@ async fn master_volume_converts_decibels_to_linear_gain() {
             volume_config(Variant::Float(-60.0)),
             0.031_623,
         ),
-        ("missing field", SubActionConfig::new(), 1.0),
         (
-            "non-numeric",
-            volume_config(Variant::String("loud".to_owned())),
+            "largest integer",
+            volume_config(Variant::Int(i64::MAX)),
             1.0,
+        ),
+        (
+            "smallest integer",
+            volume_config(Variant::Int(i64::MIN)),
+            0.031_623,
         ),
     ];
 
@@ -463,4 +470,68 @@ async fn master_volume_clamps_exactly_at_the_bounds_its_form_offers() {
 
 async fn applied_gain_owned(cfg: SubActionConfig) -> f32 {
     applied_gain(&cfg).await
+}
+
+#[tokio::test]
+async fn master_volume_without_a_numeric_volume_fails_validation_and_execution_without_touching_the_player()
+ {
+    let cases = [
+        ("missing", SubActionConfig::new(), ConfigReason::Required),
+        (
+            "text",
+            volume_config(Variant::String("loud".to_owned())),
+            ConfigReason::NotANumber,
+        ),
+        (
+            "numeric text",
+            volume_config(Variant::String("-6".to_owned())),
+            ConfigReason::NotANumber,
+        ),
+        (
+            "bool",
+            volume_config(Variant::Bool(true)),
+            ConfigReason::NotANumber,
+        ),
+        (
+            "array",
+            volume_config(Variant::Array(vec![Variant::Int(-6)])),
+            ConfigReason::NotANumber,
+        ),
+    ];
+    let stack = ArgStack::new();
+
+    for (case, cfg, reason) in cases {
+        let control = RecordingControl::ok();
+        let runner = SetMasterVolumeRunner::new(control.clone());
+
+        let validated = runner.validate_config(&cfg);
+        let (telemetry, _) = runner.execute(&cfg, &make_ctx(&stack)).await;
+
+        assert!(
+            matches!(
+                &validated,
+                Err(RegistryError::InvalidConfig(ConfigProblem { field: Some(field), reason: got }))
+                    if field == "volume_db" && *got == reason
+            ),
+            "{case}: validation returned {validated:?}"
+        );
+        assert!(
+            matches!(&telemetry.outcome, SubActionOutcome::Failed(_)) && control.calls().is_empty(),
+            "{case}: execution reported {:?} and called {:?}",
+            telemetry.outcome,
+            control.calls()
+        );
+    }
+}
+
+#[test]
+fn master_volume_default_is_an_integer_its_own_validator_accepts() {
+    let runner = SetMasterVolumeRunner::new(RecordingControl::ok());
+    let defaults = runner.default_config();
+
+    assert!(
+        matches!(defaults.get("volume_db"), Some(Variant::Int(_))),
+        "the integer volume form needs an integer default: {defaults:?}"
+    );
+    assert!(runner.validate_config(&defaults).is_ok());
 }

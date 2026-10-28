@@ -95,6 +95,7 @@ mod tests {
         let cases = [
             (
                 AudioEvent::PlaybackStarted {
+                    play_id: 7,
                     clip_id: Some(clip_id),
                     clip_label: Some("Air Horn".to_owned()),
                     device: "default".to_owned(),
@@ -103,6 +104,7 @@ mod tests {
                 },
                 "playback.started",
                 json!({
+                    "play_id": 7,
                     "clip_id": clip_id.to_string(),
                     "clip_label": "Air Horn",
                     "device": "default",
@@ -112,20 +114,22 @@ mod tests {
             ),
             (
                 AudioEvent::PlaybackFinished {
+                    play_id: 8,
                     clip_id: Some(clip_id),
                     clip_label: None,
                 },
                 "playback.finished",
-                json!({ "clip_id": clip_id.to_string(), "clip_label": null }),
+                json!({ "play_id": 8, "clip_id": clip_id.to_string(), "clip_label": null }),
             ),
             (
                 AudioEvent::PlaybackFailed {
+                    play_id: 9,
                     clip_id: None,
                     clip_label: None,
                     error: "device not found".to_owned(),
                 },
                 "playback.failed",
-                json!({ "clip_id": null, "clip_label": null, "error": "device not found" }),
+                json!({ "play_id": 9, "clip_id": null, "clip_label": null, "error": "device not found" }),
             ),
         ];
 

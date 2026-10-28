@@ -1845,7 +1845,7 @@ mod tests {
         wait_for_event(&events, |event| {
             matches!(
                 event,
-                AudioEvent::PlaybackFailed { clip_id: Some(id), clip_label: Some(label), error }
+                AudioEvent::PlaybackFailed { clip_id: Some(id), clip_label: Some(label), error, .. }
                     if *id == clip_id && label == "test clip" && error.contains(UNPLUGGED)
             )
         })
@@ -1915,10 +1915,10 @@ mod tests {
                 matches!(played, Ok(PlayOutcome::StoppedBeforeStart)),
                 "a play stopped before it started must say so: {played:?}"
             );
-            assert_eq!(
-                (opened.load(Ordering::SeqCst), started_count(&events)),
-                (0, 0),
-                "stop_all={stop_all}: a clip stopped before it started still reached the device"
+            let recorded = events.lock().unwrap();
+            assert!(
+                opened.load(Ordering::SeqCst) == 0 && recorded.is_empty(),
+                "stop_all={stop_all}: a clip stopped before it started reached the device or reported {recorded:?}"
             );
         }
     }
@@ -2033,7 +2033,8 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn a_stop_that_lands_right_after_the_clip_started_still_reports_it_started() {
+    async fn a_stop_landing_between_the_start_event_and_the_started_mark_finishes_the_play_exactly_once()
+     {
         let clip_id = ClipId::new();
         let tmp = make_wav_tempfile(22_050, 1, SHORT_CLIP_FRAMES);
         let slot = Arc::new(std::sync::OnceLock::new());
@@ -2050,16 +2051,18 @@ mod tests {
         slot.set(Arc::downgrade(&player)).unwrap();
 
         let played = player.play(clip_id, None).await;
-        let finished = events
-            .lock()
-            .unwrap()
-            .iter()
-            .filter(|event| matches!(event, AudioEvent::PlaybackFinished { .. }))
-            .count();
 
+        let recorded = events.lock().unwrap();
         assert!(
-            matches!(played, Ok(PlayOutcome::Started)) && finished > 0,
-            "a clip stopped after it started was reported as {played:?} with {finished} finish events"
+            matches!(played, Ok(PlayOutcome::Started))
+                && matches!(
+                    recorded.as_slice(),
+                    [
+                        AudioEvent::PlaybackStarted { play_id: started, .. },
+                        AudioEvent::PlaybackFinished { play_id: finished, .. },
+                    ] if started == finished
+                ),
+            "a clip stopped between its start event and its started mark reported {played:?} with {recorded:?}"
         );
     }
 
@@ -2435,6 +2438,249 @@ mod tests {
         assert!(
             matches!(outcome, Err(SoundboardError::ClipNotFound(_))),
             "got {outcome:?}"
+        );
+    }
+
+    const LONG_CLIP_FRAMES: usize = 22_050 * 10;
+    const QUARTER_SECOND_OF_FRAMES: usize = 22_050 / 4;
+
+    struct ClipShelf(Vec<StoredClip>);
+
+    #[async_trait]
+    impl SoundboardClipsRepo for ClipShelf {
+        async fn list(&self) -> Result<Vec<StoredClip>, StorageError> {
+            Ok(self.0.clone())
+        }
+
+        async fn get(&self, id: ClipId) -> Result<Option<StoredClip>, StorageError> {
+            Ok(self.0.iter().find(|clip| clip.id == id).cloned())
+        }
+
+        async fn save(&self, _clip: &StoredClip) -> Result<(), StorageError> {
+            Ok(())
+        }
+
+        async fn delete(&self, _id: ClipId) -> Result<bool, StorageError> {
+            Ok(false)
+        }
+    }
+
+    struct ShelvedClip {
+        id: ClipId,
+        clip: StoredClip,
+        _source: tempfile::NamedTempFile,
+    }
+
+    fn shelved(frames: usize, looped: bool) -> ShelvedClip {
+        let id = ClipId::new();
+        let source = make_wav_tempfile(22_050, 1, frames);
+        let mut clip = make_stored_clip(id, source.path().to_path_buf());
+        clip.loop_playback = looped;
+        ShelvedClip {
+            id,
+            clip,
+            _source: source,
+        }
+    }
+
+    fn shelf_player(
+        factory: Arc<dyn AudioSinkFactory>,
+        clips: &[&ShelvedClip],
+    ) -> (SoundboardPlayer, SharedEvents) {
+        let (event_sink, events) = RecordingEventSink::new();
+        let library = Arc::new(ClipLibrary::new(
+            Arc::new(ClipShelf(clips.iter().map(|c| c.clip.clone()).collect())),
+            Arc::new(NoManagedMedia {
+                imports: Arc::new(std::sync::atomic::AtomicUsize::new(0)),
+            }),
+        ));
+        let player = SoundboardPlayer::with_settings(
+            factory,
+            Arc::new(event_sink),
+            library,
+            SoundboardSettingsHandle::default(),
+        );
+        (player, events)
+    }
+
+    fn counting_factory() -> Arc<dyn AudioSinkFactory> {
+        Arc::new(CountingFactory::new().0)
+    }
+
+    fn started_plays(events: &SharedEvents, clip_id: ClipId) -> Vec<u64> {
+        events
+            .lock()
+            .unwrap()
+            .iter()
+            .filter_map(|event| match event {
+                AudioEvent::PlaybackStarted {
+                    play_id,
+                    clip_id: Some(id),
+                    ..
+                } if *id == clip_id => Some(*play_id),
+                _ => None,
+            })
+            .collect()
+    }
+
+    fn finished_plays(events: &SharedEvents, clip_id: ClipId) -> Vec<u64> {
+        events
+            .lock()
+            .unwrap()
+            .iter()
+            .filter_map(|event| match event {
+                AudioEvent::PlaybackFinished {
+                    play_id,
+                    clip_id: Some(id),
+                    ..
+                } if *id == clip_id => Some(*play_id),
+                _ => None,
+            })
+            .collect()
+    }
+
+    fn sorted(mut plays: Vec<u64>) -> Vec<u64> {
+        plays.sort_unstable();
+        plays
+    }
+
+    async fn wait_until_finished(events: &SharedEvents, clip_id: ClipId, plays: usize) {
+        let deadline = tokio::time::Instant::now() + EVENT_DEADLINE;
+        while finished_plays(events, clip_id).len() < plays {
+            assert!(
+                tokio::time::Instant::now() < deadline,
+                "only {:?} of {plays} plays finished; saw {:?}",
+                finished_plays(events, clip_id),
+                events.lock().unwrap()
+            );
+            tokio::time::sleep(EVENT_POLL).await;
+        }
+    }
+
+    #[tokio::test]
+    async fn two_overlapping_plays_of_one_clip_each_finish_once_under_their_own_play_id() {
+        let horn = shelved(SHORT_CLIP_FRAMES, false);
+        let (player, events) = shelf_player(counting_factory(), &[&horn]);
+
+        player.play(horn.id, None).await.unwrap();
+        player.play(horn.id, None).await.unwrap();
+        wait_until_finished(&events, horn.id, 2).await;
+        player.stop_all();
+
+        let started = sorted(started_plays(&events, horn.id));
+        assert!(
+            started.len() == 2
+                && started[0] != started[1]
+                && sorted(finished_plays(&events, horn.id)) == started,
+            "overlapping plays reported {:?}",
+            events.lock().unwrap()
+        );
+    }
+
+    #[tokio::test]
+    async fn a_stopped_play_is_not_finished_again_when_its_natural_end_passes() {
+        let horn = shelved(SHORT_CLIP_FRAMES, false);
+        let sentinel = shelved(QUARTER_SECOND_OF_FRAMES, false);
+        let (player, events) = shelf_player(counting_factory(), &[&horn, &sentinel]);
+
+        player.play(horn.id, None).await.unwrap();
+        player.stop(horn.id);
+        player.play(sentinel.id, None).await.unwrap();
+        wait_until_finished(&events, sentinel.id, 1).await;
+
+        assert_eq!(
+            finished_plays(&events, horn.id),
+            started_plays(&events, horn.id),
+            "{:?}",
+            events.lock().unwrap()
+        );
+    }
+
+    #[tokio::test]
+    async fn a_stopped_loop_finishes_exactly_once_after_its_loop_task_winds_down() {
+        let drone = shelved(SHORT_CLIP_FRAMES, true);
+        let sentinel = shelved(SHORT_CLIP_FRAMES, false);
+        let (player, events) = shelf_player(counting_factory(), &[&drone, &sentinel]);
+
+        player.play(drone.id, None).await.unwrap();
+        player.stop(drone.id);
+        player.play(sentinel.id, None).await.unwrap();
+        wait_until_finished(&events, sentinel.id, 1).await;
+
+        assert_eq!(
+            finished_plays(&events, drone.id),
+            started_plays(&events, drone.id),
+            "{:?}",
+            events.lock().unwrap()
+        );
+    }
+
+    #[tokio::test]
+    async fn stop_all_finishes_every_running_play_of_every_clip_once() {
+        let horn = shelved(LONG_CLIP_FRAMES, false);
+        let drone = shelved(LONG_CLIP_FRAMES, true);
+        let (player, events) = shelf_player(counting_factory(), &[&horn, &drone]);
+        player.play(horn.id, None).await.unwrap();
+        player.play(horn.id, None).await.unwrap();
+        player.play(drone.id, None).await.unwrap();
+
+        player.stop_all();
+
+        for clip in [&horn, &drone] {
+            let started = sorted(started_plays(&events, clip.id));
+            assert_eq!(
+                sorted(finished_plays(&events, clip.id)),
+                started,
+                "{:?}",
+                events.lock().unwrap()
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn stopping_again_after_stop_all_reports_nothing_more() {
+        let horn = shelved(LONG_CLIP_FRAMES, false);
+        let (player, events) = shelf_player(counting_factory(), &[&horn]);
+        player.play(horn.id, None).await.unwrap();
+        player.stop_all();
+        let reported = events.lock().unwrap().len();
+
+        player.stop(horn.id);
+        player.stop_all();
+
+        assert_eq!(events.lock().unwrap().len(), reported);
+    }
+
+    #[tokio::test]
+    async fn a_failed_play_never_reports_a_finish_even_when_stopped_afterwards() {
+        let horn = shelved(LONG_CLIP_FRAMES, false);
+        let unplug = Arc::new(tokio::sync::Notify::new());
+        let device = UnpluggableDevice {
+            opened: Arc::new(std::sync::atomic::AtomicUsize::new(0)),
+            unplug: Arc::clone(&unplug),
+        };
+        let (player, events) =
+            shelf_player(Arc::new(SingleSinkFactory(Arc::new(device))), &[&horn]);
+        player.play(horn.id, None).await.unwrap();
+        unplug.notify_one();
+        wait_for_event(&events, |event| {
+            matches!(event, AudioEvent::PlaybackFailed { .. })
+        })
+        .await;
+
+        player.stop(horn.id);
+        player.stop_all();
+
+        let recorded = events.lock().unwrap();
+        assert!(
+            matches!(
+                recorded.as_slice(),
+                [
+                    AudioEvent::PlaybackStarted { play_id: started, .. },
+                    AudioEvent::PlaybackFailed { play_id: failed, .. },
+                ] if started == failed
+            ),
+            "{recorded:?}"
         );
     }
 }

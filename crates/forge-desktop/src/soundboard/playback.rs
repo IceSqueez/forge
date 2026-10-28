@@ -241,6 +241,7 @@ mod tests {
 
     fn progress(duration_secs: Option<f64>, looped: bool) -> PlaybackProgress {
         PlaybackProgress {
+            play_id: None,
             started_at: Instant::now(),
             duration_secs,
             looped,

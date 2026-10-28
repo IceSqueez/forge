@@ -1,4 +1,5 @@
-use forge_tts_core::{ENGINE_ID_SAPI, EngineId, TtsEngine, TtsEngineFactory, TtsError};
+use forge_speech_types::EngineId;
+use forge_tts_core::{ENGINE_ID_SAPI, TtsEngine, TtsEngineFactory, TtsError};
 
 pub struct SapiEngineFactory;
 

@@ -6,10 +6,10 @@ use forge_types::{OutputDevice, Shared};
 use crate::error::AudioError;
 use crate::events::AudioEventSink;
 use crate::handle::{ControlledPlayback, PlaybackHandle};
-use crate::pcm::PcmBuffer;
 use crate::route::DevicePreference;
 use crate::sink::AudioSink;
 use crate::sink_factory::{AudioSinkFactory, CpalSinkFactory};
+use forge_speech_types::PcmBuffer;
 
 pub fn stored_output_device(stored_id: Option<String>) -> OutputDevice {
     match DevicePreference::from(stored_id) {

@@ -11,6 +11,7 @@ rust-version.workspace = true
 workspace = true
 
 [dependencies]
+forge-speech-types = { path = "../forge-speech-types" }
 forge-types = { path = "../forge-types" }
 forge-events = { path = "../forge-events" }
 forge-audio = { path = "../forge-audio" }

@@ -11,10 +11,6 @@ rust-version.workspace = true
 workspace = true
 
 [dependencies]
-forge-tts-core = { path = "../forge-tts-core" }
-forge-tts-pipeline = { path = "../forge-tts-pipeline" }
-serde = { workspace = true }
-serde_json = { workspace = true }
-ulid = { workspace = true }
+forge-speech-types = { path = "../forge-speech-types" }
 sha2 = { workspace = true }
 rand = { workspace = true }

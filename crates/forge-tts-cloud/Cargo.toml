@@ -18,6 +18,7 @@ openai = ["dep:serde_json"]
 polly = ["dep:serde_json", "dep:hmac", "dep:sha2", "dep:time"]
 
 [dependencies]
+forge-speech-types = { path = "../forge-speech-types" }
 forge-tts-core = { path = "../forge-tts-core" }
 forge-audio = { path = "../forge-audio" }
 forge-net = { path = "../forge-net" }

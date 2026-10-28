@@ -1,7 +1,8 @@
 use std::collections::HashMap;
 
 use forge_net::{CallClass, GatewayFailure, GatewayRequest, Secret};
-use forge_tts_core::{ENGINE_ID_ELEVENLABS, EngineId, TtsVoice, VoiceGender, VoiceId};
+use forge_speech_types::{EngineId, TtsVoice, VoiceGender, VoiceId};
+use forge_tts_core::ENGINE_ID_ELEVENLABS;
 use serde::Deserialize;
 
 use crate::elevenlabs::SAMPLE_RATE_HZ;

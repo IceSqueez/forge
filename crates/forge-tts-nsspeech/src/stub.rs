@@ -1,4 +1,5 @@
-use forge_tts_core::{ENGINE_ID_NSSPEECH, EngineId, TtsEngine, TtsEngineFactory, TtsError};
+use forge_speech_types::EngineId;
+use forge_tts_core::{ENGINE_ID_NSSPEECH, TtsEngine, TtsEngineFactory, TtsError};
 
 pub struct NsSpeechEngineFactory;
 

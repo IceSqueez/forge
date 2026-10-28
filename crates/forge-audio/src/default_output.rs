@@ -4,8 +4,8 @@ use forge_types::OutputDevice;
 
 use crate::error::AudioError;
 use crate::events::AudioEventSink;
-use crate::pcm::PcmBuffer;
 use crate::route::{build_cpal_sink, resolve_output_device};
+use forge_speech_types::PcmBuffer;
 
 pub async fn play_on_default_output(
     buffer: PcmBuffer,

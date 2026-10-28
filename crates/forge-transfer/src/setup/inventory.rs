@@ -1,10 +1,8 @@
 use std::collections::BTreeMap;
 
+use forge_speech_types::{AssignmentStrategy, IgnoreProfile, VoiceAlias};
 use forge_storage::settings::portability::is_portable;
-use forge_storage::{
-    AssignmentStrategy, DataProvider, FilterRule, IgnoreProfile, SettingsRepo, TtsPipelineSettings,
-    VoiceAlias,
-};
+use forge_storage::{DataProvider, FilterRule, SettingsRepo, TtsPipelineSettings};
 
 use crate::error::TransferError;
 use crate::pack::inventory::{PackInventory, load_pack_inventory};

@@ -1,6 +1,6 @@
 use async_trait::async_trait;
 
-pub use forge_voice::{AliasId, AssignmentStrategy, IgnoreProfile, VoiceAlias};
+use forge_speech_types::{AliasId, AssignmentStrategy, IgnoreProfile, VoiceAlias};
 
 use crate::StorageError;
 

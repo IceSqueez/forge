@@ -12,7 +12,6 @@ mod error;
 mod events;
 mod fan_out;
 mod handle;
-mod pcm;
 mod remote;
 mod remote_sink;
 mod route;
@@ -37,7 +36,6 @@ pub use error::AudioError;
 pub use events::{AudioEvent, AudioEventSink, NullAudioEventSink};
 pub use fan_out::{FanOutSink, fan_out_stoppable};
 pub use handle::{ControlledPlayback, PlaybackHandle};
-pub use pcm::PcmBuffer;
 pub use remote::{
     ClipMediaType, PlaybackCorrelation, RemoteAudioDestination, RemoteClip, RemoteClipId,
     RemoteCommand, RemoteDelivery, RemoteDestinationId, RemoteVerdict,

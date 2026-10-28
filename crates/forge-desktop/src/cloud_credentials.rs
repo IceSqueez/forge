@@ -7,6 +7,7 @@ use forge_components::{
     spacing, tr,
 };
 use forge_speak_queue::{SpeakCommand, SpeakQueueHandle};
+use forge_speech_types::EngineId;
 use forge_storage::{CredentialId, CredentialsRepo};
 use forge_tts_cloud::CloudGateways;
 use forge_tts_cloud::azure::AzureEngineFactory;
@@ -17,7 +18,7 @@ use forge_tts_cloud::credentials::{
 use forge_tts_cloud::elevenlabs::ElevenLabsEngineFactory;
 use forge_tts_cloud::openai::OpenAiEngineFactory;
 use forge_tts_cloud::polly::PollyEngineFactory;
-use forge_tts_core::{EngineId, TtsEngineFactory, TtsRegistry};
+use forge_tts_core::{TtsEngineFactory, TtsRegistry};
 use gpui::{
     AnyElement, App, ClickEvent, Context, Entity, EventEmitter, Pixels, Rgba, SharedString,
     Subscription, Window, div, prelude::*, px,

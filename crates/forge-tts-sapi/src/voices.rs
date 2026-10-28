@@ -1,4 +1,4 @@
-use forge_tts_core::{EngineId, TtsVoice, VoiceGender, VoiceId};
+use forge_speech_types::{EngineId, TtsVoice, VoiceGender, VoiceId};
 
 use crate::synth::SAMPLE_RATE_HZ;
 

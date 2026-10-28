@@ -1,4 +1,4 @@
-use forge_tts_core::VoiceId;
+use forge_speech_types::VoiceId;
 use thiserror::Error;
 
 #[derive(Debug, Error)]

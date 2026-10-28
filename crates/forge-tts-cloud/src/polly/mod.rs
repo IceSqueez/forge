@@ -4,11 +4,9 @@ pub mod synth;
 pub mod voices;
 
 use async_trait::async_trait;
-use forge_audio::PcmBuffer;
-use forge_tts_core::{
-    ENGINE_ID_POLLY, EngineCapabilities, EngineId, SynthesisRequest, TtsEngine, TtsError, TtsVoice,
-    VoiceId,
-};
+use forge_speech_types::PcmBuffer;
+use forge_speech_types::{EngineId, TtsVoice, VoiceId};
+use forge_tts_core::{ENGINE_ID_POLLY, EngineCapabilities, SynthesisRequest, TtsEngine, TtsError};
 
 use crate::credentials::PollyCredentials;
 use crate::network::{CloudGateways, ProviderGateway, ProviderLink, is_dns_label};

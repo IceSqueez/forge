@@ -11,6 +11,7 @@ rust-version.workspace = true
 workspace = true
 
 [dependencies]
+forge-speech-types = { path = "../forge-speech-types" }
 forge-tts-core = { path = "../forge-tts-core" }
 forge-voice = { path = "../forge-voice" }
 forge-tts-pipeline = { path = "../forge-tts-pipeline" }

@@ -3,10 +3,10 @@ pub mod synth;
 pub mod voices;
 
 use async_trait::async_trait;
-use forge_audio::PcmBuffer;
+use forge_speech_types::PcmBuffer;
+use forge_speech_types::{EngineId, TtsVoice};
 use forge_tts_core::{
-    ENGINE_ID_ELEVENLABS, EngineCapabilities, EngineId, SynthesisRequest, TtsEngine, TtsError,
-    TtsVoice,
+    ENGINE_ID_ELEVENLABS, EngineCapabilities, SynthesisRequest, TtsEngine, TtsError,
 };
 
 use crate::credentials::ElevenLabsCredentials;

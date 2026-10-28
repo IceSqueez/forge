@@ -1,7 +1,8 @@
 use async_trait::async_trait;
+use forge_speech_types::{EngineId, PcmBuffer, TtsVoice};
 use forge_tts_core::{
-    ENGINE_ID_ESPEAK_NG, EngineCapabilities, EngineId, PcmBuffer, SynthesisRequest, TtsEngine,
-    TtsEngineFactory, TtsError, TtsVoice,
+    ENGINE_ID_ESPEAK_NG, EngineCapabilities, SynthesisRequest, TtsEngine, TtsEngineFactory,
+    TtsError,
 };
 
 use crate::{process, voices};

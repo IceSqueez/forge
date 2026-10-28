@@ -1,4 +1,5 @@
-use forge_tts_core::{ENGINE_ID_NSSPEECH, EngineId, TtsError};
+use forge_speech_types::EngineId;
+use forge_tts_core::{ENGINE_ID_NSSPEECH, TtsError};
 
 #[derive(Debug, thiserror::Error)]
 pub(crate) enum NsSpeechError {

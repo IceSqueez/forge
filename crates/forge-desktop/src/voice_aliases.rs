@@ -18,11 +18,10 @@ use forge_components::{
 use forge_speak_queue::{
     EmoteTokenSet, Priority, RequestId, SpeakCommand, SpeakQueueHandle, SpeakRequest,
 };
-use forge_storage::{
-    AliasId, AssignmentStrategy, StorageError, ViewerRepo, VoiceAlias, VoiceAliasRepo,
-};
+use forge_speech_types::AliasState;
+use forge_speech_types::{AliasId, AssignmentStrategy, VoiceAlias};
+use forge_storage::{StorageError, ViewerRepo, VoiceAliasRepo};
 use forge_tts_core::engine_display_name;
-use forge_voice::AliasState;
 use gpui::{
     AnyElement, ClickEvent, Context, Entity, FontWeight, Pixels, Rgba, SharedString, Subscription,
     UniformListScrollHandle, Window, div, prelude::*, px,

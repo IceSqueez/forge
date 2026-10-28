@@ -1,4 +1,4 @@
-use forge_tts_core::{EngineId, TtsVoice, VoiceGender, VoiceId};
+use forge_speech_types::{EngineId, TtsVoice, VoiceGender, VoiceId};
 
 pub fn parse_voices_output(raw: &str, engine_id: &EngineId) -> Vec<TtsVoice> {
     raw.lines()

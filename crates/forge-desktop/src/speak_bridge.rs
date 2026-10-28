@@ -12,8 +12,8 @@ use forge_script::{ScriptSpeakError, SpeakRequester};
 use forge_speak_queue::{
     PlaybackTarget, Priority, RequestId, SpeakCommand, SpeakEvent, SpeakQueueHandle, SpeakRequest,
 };
-use forge_tts_core::{EngineId, VoiceId};
-use forge_voice::{AliasId, AliasState, VoiceAlias};
+use forge_speech_types::{AliasId, AliasState, VoiceAlias};
+use forge_speech_types::{EngineId, VoiceId};
 use tokio::sync::broadcast;
 use tokio::sync::broadcast::error::RecvError;
 

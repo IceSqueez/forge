@@ -82,7 +82,7 @@ pub(crate) fn prepare_speak_text(
 pub(crate) fn capture_pcm(
     voice: &windows::Win32::Media::Speech::ISpVoice,
     speak_text: &SpeakText,
-) -> Result<forge_audio::PcmBuffer, crate::error::SapiError> {
+) -> Result<forge_speech_types::PcmBuffer, crate::error::SapiError> {
     use windows::Win32::Foundation::HGLOBAL;
     use windows::Win32::Media::Audio::{WAVE_FORMAT_PCM, WAVEFORMATEX};
     use windows::Win32::Media::Speech::{
@@ -174,7 +174,7 @@ pub(crate) fn capture_pcm(
         .map(|bytes| i16::from_le_bytes(*bytes))
         .collect();
 
-    Ok(forge_audio::PcmBuffer::new(
+    Ok(forge_speech_types::PcmBuffer::new(
         samples,
         SAMPLE_RATE_HZ,
         CHANNELS,

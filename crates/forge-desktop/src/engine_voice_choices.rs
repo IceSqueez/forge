@@ -1,12 +1,13 @@
 use forge_runtime::EngineVoiceRef;
-use forge_tts_core::TtsVoice;
+use forge_speech_types::TtsVoice;
+use forge_tts_core::engine_display_name;
 
 pub(crate) fn engine_voice_options(voices: &[TtsVoice]) -> Vec<(String, String)> {
     let mut options: Vec<(String, String)> = voices
         .iter()
         .map(|voice| {
             let encoded = EngineVoiceRef::new(voice.engine_id.0.clone(), voice.id.0.clone());
-            let engine = voice.engine_id.display_name();
+            let engine = engine_display_name(&voice.engine_id.0);
             let label = if voice.locale.is_empty() {
                 format!("{engine} - {}", voice.name)
             } else {

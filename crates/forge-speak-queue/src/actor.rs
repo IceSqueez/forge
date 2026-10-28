@@ -5,16 +5,18 @@ use std::time::Duration;
 
 const PLAYBACK_PROGRESS_TICK: Duration = Duration::from_secs(1);
 
-use forge_audio::{AudioError, AudioSink, PcmBuffer};
+use forge_audio::{AudioError, AudioSink};
 use forge_events::{Event, EventPublisher, EventSource};
-use forge_tts_core::{EngineId, SynthesisRequest, TtsError, TtsVoice, VoiceId};
-use forge_tts_pipeline::{DetectionOutcome, LanguageCode, LanguageDetector, PipelineResult};
+use forge_speech_types::LanguageCode;
+use forge_speech_types::PcmBuffer;
+use forge_speech_types::{EngineId, TtsVoice, VoiceId};
+use forge_tts_core::{SynthesisRequest, TtsError, engine_display_name};
+use forge_tts_pipeline::{DetectionOutcome, LanguageDetector, PipelineResult};
 use forge_types::Shared;
 
 use crate::catalog::{CATALOG_UPDATE_CAPACITY, CatalogUpdate, VoiceCatalogState};
-use forge_voice::{
-    AliasState, ResolveResult, VoiceAliasResolver, candidate_languages, voice_speaks_language,
-};
+use forge_speech_types::AliasState;
+use forge_voice::{ResolveResult, VoiceAliasResolver, candidate_languages, voice_speaks_language};
 
 use crate::{
     PipelineConfigHandle, Priority, QueueConfig, QueueDeps, QueuedOrderEntry, RequestId,
@@ -1096,7 +1098,7 @@ fn enqueue_preview(req: &SpeakRequest, deps: &QueueDeps, catalog: &[TtsVoice]) -
                 .find(|v| v.id == voice_id)
                 .map(|v| v.name.clone())
                 .unwrap_or_else(|| voice_id.0.clone());
-            format!("{} \u{b7} {}", engine_id.display_name(), name)
+            format!("{} \u{b7} {}", engine_display_name(&engine_id.0), name)
         }
         ResolveResult::Skip { .. } => String::new(),
     };

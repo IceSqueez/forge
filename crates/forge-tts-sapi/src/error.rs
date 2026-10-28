@@ -1,4 +1,5 @@
-use forge_tts_core::{ENGINE_ID_SAPI, EngineId, TtsError, VoiceId};
+use forge_speech_types::{EngineId, VoiceId};
+use forge_tts_core::{ENGINE_ID_SAPI, TtsError};
 
 #[derive(Debug, thiserror::Error)]
 pub(crate) enum SapiError {

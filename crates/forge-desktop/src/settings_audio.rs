@@ -1,8 +1,8 @@
 use std::sync::Arc;
 
 use forge_audio::{
-    AudioSink, DeviceId, DeviceInfo, DeviceSink, PcmBuffer, list_output_devices,
-    refresh_output_devices, stored_output_device,
+    AudioSink, DeviceId, DeviceInfo, DeviceSink, list_output_devices, refresh_output_devices,
+    stored_output_device,
 };
 use forge_components::{
     BORDER_THIN, Density, FONT_SM, FONT_XS, ForgePalette, Icon, Radius, Spacing, body_family,
@@ -10,6 +10,7 @@ use forge_components::{
     icon_button, radius, scaled, setting_block, setting_groups, setting_row, setting_rows, spacing,
     tr,
 };
+use forge_speech_types::PcmBuffer;
 use forge_storage::{DataProvider, SettingsRepo};
 use gpui::{AnyElement, ClickEvent, Context, Entity, FocusHandle, Window, div, prelude::*, px};
 

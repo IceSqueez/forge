@@ -2,14 +2,12 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use async_trait::async_trait;
+use forge_speech_types::{EngineId, PcmBuffer, TtsVoice, VoiceId};
 use serde::{Deserialize, Serialize};
 
 mod ssml;
 
-pub use forge_audio::PcmBuffer;
 pub use ssml::xml_escape;
-
-pub type Locale = String;
 
 pub const ENGINE_ID_PIPER: &str = "piper";
 pub const ENGINE_ID_ESPEAK_NG: &str = "espeak-ng";
@@ -19,15 +17,6 @@ pub const ENGINE_ID_AZURE: &str = "azure";
 pub const ENGINE_ID_ELEVENLABS: &str = "elevenlabs";
 pub const ENGINE_ID_OPENAI: &str = "openai";
 pub const ENGINE_ID_POLLY: &str = "polly";
-
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
-pub struct EngineId(pub String);
-
-impl EngineId {
-    pub fn display_name(&self) -> &str {
-        engine_display_name(&self.0)
-    }
-}
 
 pub fn engine_display_name(id: &str) -> &str {
     match id {
@@ -41,27 +30,6 @@ pub fn engine_display_name(id: &str) -> &str {
         ENGINE_ID_POLLY => "Amazon Polly",
         other => other,
     }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
-pub struct VoiceId(pub String);
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub enum VoiceGender {
-    Male,
-    Female,
-    Neutral,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct TtsVoice {
-    pub id: VoiceId,
-    pub name: String,
-    pub locale: Locale,
-    pub gender: VoiceGender,
-    pub engine_id: EngineId,
-    pub is_neural: bool,
-    pub sample_rate_hint: u32,
 }
 
 #[derive(Debug, Clone)]

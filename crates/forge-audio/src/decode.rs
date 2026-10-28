@@ -9,7 +9,7 @@ use symphonia::core::io::MediaSourceStream;
 use symphonia::core::meta::MetadataOptions;
 
 use crate::error::AudioError;
-use crate::pcm::PcmBuffer;
+use forge_speech_types::PcmBuffer;
 
 pub fn decode_file(path: &Path) -> Result<PcmBuffer, AudioError> {
     let file = std::fs::File::open(path)?;

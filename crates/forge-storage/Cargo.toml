@@ -13,7 +13,7 @@ workspace = true
 [dependencies]
 forge-types = { path = "../forge-types" }
 forge-events = { path = "../forge-events" }
-forge-voice = { path = "../forge-voice" }
+forge-speech-types = { path = "../forge-speech-types" }
 directories = { workspace = true }
 async-trait = { workspace = true }
 thiserror = { workspace = true }

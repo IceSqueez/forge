@@ -1,6 +1,6 @@
 use std::f64::consts::TAU;
 
-use crate::pcm::PcmBuffer;
+use forge_speech_types::PcmBuffer;
 
 const SAMPLE_RATE_HZ: u32 = 44_100;
 const CHANNELS: u16 = 2;

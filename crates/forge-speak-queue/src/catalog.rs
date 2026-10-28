@@ -2,7 +2,8 @@ use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use std::time::Duration;
 
-use forge_tts_core::{EngineId, EngineSlot, TtsRegistry, TtsVoice};
+use forge_speech_types::{EngineId, TtsVoice};
+use forge_tts_core::{EngineSlot, TtsRegistry};
 
 use crate::SpeakRequest;
 

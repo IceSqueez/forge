@@ -10,7 +10,9 @@ use std::sync::mpsc;
 const SYNTHESIS_WAIT_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(30);
 
 #[cfg(target_os = "macos")]
-use forge_tts_core::{PcmBuffer, SynthesisRequest};
+use forge_speech_types::PcmBuffer;
+#[cfg(target_os = "macos")]
+use forge_tts_core::SynthesisRequest;
 
 #[cfg(target_os = "macos")]
 use crate::error::NsSpeechError;

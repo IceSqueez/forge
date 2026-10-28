@@ -15,11 +15,13 @@ pub use filters::{
 };
 pub use forge_audio::PlaybackTarget;
 use forge_audio::TargetedSinkFactory;
+use forge_speech_types::{AliasId, AssignmentStrategy, SynthesisDefaults, VoiceAlias};
+use forge_speech_types::{EngineId, TtsVoice, VoiceId};
 pub use forge_tts_core::TtsError;
-use forge_tts_core::{EngineId, TtsRegistry, TtsVoice, VoiceId};
+use forge_tts_core::TtsRegistry;
 pub use forge_tts_pipeline::EmoteTokenSet;
 use forge_types::Shared;
-use forge_voice::{AliasId, AssignmentStrategy, SynthesisDefaults, VoiceAlias, VoiceAliasResolver};
+use forge_voice::VoiceAliasResolver;
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct RequestId(pub String);

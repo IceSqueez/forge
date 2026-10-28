@@ -1,5 +1,6 @@
 use std::sync::{Arc, RwLock};
 
+use forge_speech_types::EngineId;
 use forge_storage::{CredentialId, CredentialsRepo};
 use forge_tts_cloud::CloudGateways;
 use forge_tts_cloud::azure::AzureEngineFactory;
@@ -10,7 +11,7 @@ use forge_tts_cloud::credentials::{
 use forge_tts_cloud::elevenlabs::ElevenLabsEngineFactory;
 use forge_tts_cloud::openai::OpenAiEngineFactory;
 use forge_tts_cloud::polly::PollyEngineFactory;
-use forge_tts_core::{EngineId, TtsRegistry};
+use forge_tts_core::TtsRegistry;
 
 pub async fn register_cloud_engines(
     registry: &RwLock<TtsRegistry>,

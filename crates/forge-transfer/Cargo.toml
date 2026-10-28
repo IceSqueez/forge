@@ -11,6 +11,7 @@ rust-version.workspace = true
 workspace = true
 
 [dependencies]
+forge-speech-types = { path = "../forge-speech-types" }
 age = { workspace = true }
 base64 = { workspace = true }
 flate2 = { workspace = true }

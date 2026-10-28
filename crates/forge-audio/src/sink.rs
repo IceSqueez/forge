@@ -2,7 +2,7 @@ use async_trait::async_trait;
 
 use crate::error::AudioError;
 use crate::handle::{ControlledPlayback, PlaybackHandle};
-use crate::pcm::PcmBuffer;
+use forge_speech_types::PcmBuffer;
 
 #[async_trait]
 pub trait AudioSink: Send + Sync {

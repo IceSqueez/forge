@@ -1,6 +1,6 @@
 #![expect(unsafe_code, reason = "reads the AppKit voice catalog")]
 
-use forge_tts_core::{EngineId, TtsVoice, VoiceGender, VoiceId};
+use forge_speech_types::{EngineId, TtsVoice, VoiceGender, VoiceId};
 use objc2_avf_audio::{
     AVSpeechSynthesisVoice, AVSpeechSynthesisVoiceGender, AVSpeechSynthesisVoiceQuality,
 };

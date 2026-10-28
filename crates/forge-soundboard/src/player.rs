@@ -6,10 +6,11 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use forge_audio::{
-    AudioError, AudioEvent, AudioEventSink, AudioRoute, AudioSink, ControlledPlayback, PcmBuffer,
+    AudioError, AudioEvent, AudioEventSink, AudioRoute, AudioSink, ControlledPlayback,
     PlaybackHandle,
 };
 use forge_runtime::{SoundPlayer, SoundPlayerError};
+use forge_speech_types::PcmBuffer;
 use forge_storage::{SettingsRepo, StoredClip};
 use forge_types::{ClipId, OutputDevice, Shared};
 use tokio::sync::oneshot;
@@ -771,7 +772,8 @@ mod tests {
     use time::OffsetDateTime;
 
     use async_trait::async_trait;
-    use forge_audio::{AudioError, AudioEvent, AudioEventSink, AudioSink, PcmBuffer};
+    use forge_audio::{AudioError, AudioEvent, AudioEventSink, AudioSink};
+    use forge_speech_types::PcmBuffer;
     use forge_storage::{
         MediaBlob, MediaBlobId, MediaReferrer, MediaReferrerKind, MediaRepo, SoundboardClipsRepo,
         StorageError, StoredClip,

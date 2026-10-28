@@ -7,15 +7,17 @@ use forge_audio::{DeviceSink, NullAudioEventSink, OutputDeviceHandle, stored_out
 use forge_events::EventPublisher;
 use forge_runtime::EventBus;
 use forge_speak_queue::{PipelineConfigHandle, QueueConfig, QueueDeps, SpeakEventStream};
+use forge_speech_types::EngineId;
+use forge_speech_types::{AssignmentStrategy, IgnoreProfile, SynthesisDefaults};
 use forge_storage::paths;
 use forge_storage::{CredentialsRepo, DataProvider};
 use forge_tts_cloud::CloudGateways;
-use forge_tts_core::{EngineId, TtsEngineFactory, TtsRegistry, build_engine};
+use forge_tts_core::{TtsEngineFactory, TtsRegistry, build_engine};
 use forge_tts_espeak::EspeakEngineFactory;
 use forge_tts_nsspeech::NsSpeechEngineFactory;
 use forge_tts_piper::{PiperEngine, PiperEngineFactory};
 use forge_tts_sapi::SapiEngineFactory;
-use forge_voice::{AssignmentStrategy, IgnoreProfile, SynthesisDefaults, VoiceAliasResolver};
+use forge_voice::VoiceAliasResolver;
 
 use crate::cloud_tts_boot::register_cloud_engines;
 

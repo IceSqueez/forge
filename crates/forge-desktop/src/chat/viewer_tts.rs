@@ -1,7 +1,8 @@
 use std::sync::Arc;
 
 use forge_components::{ToastKind, tr};
-use forge_storage::{StorageError, VoiceAlias};
+use forge_speech_types::VoiceAlias;
+use forge_storage::StorageError;
 use gpui::{AppContext, Context, Entity, Subscription, Window};
 
 use super::ChatView;

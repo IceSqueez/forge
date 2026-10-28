@@ -3,8 +3,8 @@ use std::fmt;
 use std::str::FromStr;
 
 use async_trait::async_trait;
+use forge_speech_types::SynthesisDefaults;
 use forge_types::LogLevel;
-use forge_voice::SynthesisDefaults;
 use serde::{Deserialize, Serialize};
 
 use crate::StorageError;

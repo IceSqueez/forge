@@ -1,8 +1,7 @@
 use std::collections::BTreeMap;
 
-use forge_storage::{
-    AssignmentStrategy, FilterRule, IgnoreProfile, TtsPipelineSettings, VoiceAlias,
-};
+use forge_speech_types::{AssignmentStrategy, IgnoreProfile, VoiceAlias};
+use forge_storage::{FilterRule, TtsPipelineSettings};
 use forge_types::{ClipId, Variant};
 use serde::{Deserialize, Serialize};
 

@@ -3,8 +3,9 @@
 use std::marker::PhantomData;
 use std::sync::mpsc;
 
-use forge_audio::PcmBuffer;
-use forge_tts_core::{EngineId, SynthesisRequest, TtsVoice};
+use forge_speech_types::PcmBuffer;
+use forge_speech_types::{EngineId, TtsVoice};
+use forge_tts_core::SynthesisRequest;
 use windows::Win32::Media::Speech::{
     ISpDataKey, ISpObjectToken, ISpObjectTokenCategory, ISpVoice, SPCAT_VOICES,
     SpObjectTokenCategory, SpVoice,

@@ -3,8 +3,9 @@ use std::future::Future;
 use std::sync::Arc;
 use std::time::Duration;
 
-use forge_audio::PcmBuffer;
-use forge_tts_core::{EngineId, TtsError};
+use forge_speech_types::EngineId;
+use forge_speech_types::PcmBuffer;
+use forge_tts_core::TtsError;
 
 use crate::network::ceil_secs;
 use crate::policy::rate_limit::{EXHAUSTED_THRESHOLD, SynthesisRateLimiter};

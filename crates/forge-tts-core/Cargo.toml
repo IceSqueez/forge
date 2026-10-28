@@ -11,7 +11,7 @@ rust-version.workspace = true
 workspace = true
 
 [dependencies]
-forge-audio = { path = "../forge-audio" }
+forge-speech-types = { path = "../forge-speech-types" }
 async-trait = { workspace = true }
 thiserror = { workspace = true }
 tokio = { workspace = true }

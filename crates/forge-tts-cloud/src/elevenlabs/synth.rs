@@ -1,6 +1,7 @@
-use forge_audio::PcmBuffer;
 use forge_net::{CallClass, GatewayFailure, GatewayRequest, RequestBody, Secret};
-use forge_tts_core::{SynthesisRequest, VoiceId};
+use forge_speech_types::PcmBuffer;
+use forge_speech_types::VoiceId;
+use forge_tts_core::SynthesisRequest;
 use serde_json::json;
 
 use crate::elevenlabs::SAMPLE_RATE_HZ;

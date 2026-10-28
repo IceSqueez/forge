@@ -13,10 +13,11 @@ use forge_components::{
 use forge_speak_queue::{
     EmoteTokenSet, Priority, RequestId, SpeakCommand, SpeakQueueHandle, SpeakRequest,
 };
+use forge_speech_types::SynthesisDefaults;
+use forge_speech_types::{EngineId, TtsVoice, VoiceGender, VoiceId};
 use forge_storage::{CredentialId, CredentialsRepo, EngineParams, SettingsRepo, StorageError};
 use forge_tts_cloud::CloudGateways;
-use forge_tts_core::{EngineId, TtsRegistry, TtsVoice, VoiceGender, VoiceId};
-use forge_voice::SynthesisDefaults;
+use forge_tts_core::{TtsRegistry, engine_display_name};
 use gpui::{
     AnyElement, ClickEvent, Context, Entity, FontWeight, Pixels, Rgba, SharedString, Subscription,
     Window, div, prelude::*, px,
@@ -1269,7 +1270,7 @@ fn load_roster(registry: Option<&Arc<RwLock<TtsRegistry>>>) -> Vec<EngineEntry> 
     ids.into_iter()
         .map(|id| EngineEntry {
             kind: engine_kind(&id.0),
-            name: id.display_name().to_owned(),
+            name: engine_display_name(&id.0).to_owned(),
             id: id.0,
         })
         .collect()

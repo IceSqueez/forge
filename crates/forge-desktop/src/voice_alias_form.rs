@@ -3,9 +3,9 @@ use forge_components::{
     body_family, field_label, modal, mono_family, overlay, primary_button, secondary_button,
     segment, segmented, spacing, toggle, tr,
 };
-use forge_storage::{AliasId, VoiceAlias};
+use forge_speech_types::{AliasId, VoiceAlias};
+use forge_speech_types::{AliasState, EngineId, VoiceId};
 use forge_types::PlatformId;
-use forge_voice::{AliasState, EngineId, VoiceId};
 use gpui::{
     AnyElement, App, ClickEvent, Context, Entity, EventEmitter, Pixels, SharedString, Subscription,
     Window, div, prelude::*, px,

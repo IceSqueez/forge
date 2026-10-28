@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 mod language;
 mod trace;
 
-pub use language::{DetectionOutcome, LanguageCode, LanguageDetector};
+pub use language::{DetectionOutcome, LanguageDetector};
 pub use trace::{AppliedReplacement, ReplacementOrigin};
 
 use trace::{EditLog, Unlogged};

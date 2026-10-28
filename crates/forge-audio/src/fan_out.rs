@@ -4,8 +4,8 @@ use async_trait::async_trait;
 
 use crate::error::AudioError;
 use crate::handle::{ControlledPlayback, PlaybackHandle};
-use crate::pcm::PcmBuffer;
 use crate::sink::AudioSink;
+use forge_speech_types::PcmBuffer;
 
 const ROUTE_REASON_SEPARATOR: &str = "; ";
 

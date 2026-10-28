@@ -7,13 +7,13 @@ use tokio::time::Instant;
 
 use crate::error::AudioError;
 use crate::handle::{ControlledPlayback, PlaybackHandle};
-use crate::pcm::PcmBuffer;
 use crate::remote::{
     ClipMediaType, PlaybackCorrelation, RemoteAudioDestination, RemoteClip, RemoteClipId,
     RemoteCommand, RemoteDelivery, RemoteDestinationId, RemoteVerdict,
 };
 use crate::sink::AudioSink;
 use crate::wave::encode_wave;
+use forge_speech_types::PcmBuffer;
 
 const CONTROL_POLL_INTERVAL: Duration = Duration::from_millis(50);
 const WATCHDOG_SLACK: Duration = Duration::from_secs(45);

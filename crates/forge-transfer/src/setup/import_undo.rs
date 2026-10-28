@@ -1,6 +1,6 @@
+use forge_speech_types::{AliasId, AssignmentStrategy, IgnoreProfile, VoiceAlias};
 use forge_storage::{
-    AliasId, AssignmentStrategy, DataProvider, FilterRule, IgnoreProfile, OverlayId, SettingsRepo,
-    StorageError, TtsPipelineSettings, VoiceAlias,
+    DataProvider, FilterRule, OverlayId, SettingsRepo, StorageError, TtsPipelineSettings,
 };
 use forge_types::{ActionId, TriggerInstanceId};
 

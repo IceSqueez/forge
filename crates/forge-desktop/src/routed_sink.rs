@@ -1,7 +1,8 @@
 use std::sync::{Arc, PoisonError, RwLock};
 
 use async_trait::async_trait;
-use forge_audio::{AudioError, AudioSink, ControlledPlayback, PcmBuffer, PlaybackHandle};
+use forge_audio::{AudioError, AudioSink, ControlledPlayback, PlaybackHandle};
+use forge_speech_types::PcmBuffer;
 
 pub struct RoutedSink {
     current: RwLock<Arc<dyn AudioSink>>,

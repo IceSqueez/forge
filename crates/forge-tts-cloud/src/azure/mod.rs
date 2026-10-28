@@ -3,10 +3,9 @@ pub mod synth;
 pub mod voices;
 
 use async_trait::async_trait;
-use forge_audio::PcmBuffer;
-use forge_tts_core::{
-    ENGINE_ID_AZURE, EngineCapabilities, EngineId, SynthesisRequest, TtsEngine, TtsError, TtsVoice,
-};
+use forge_speech_types::PcmBuffer;
+use forge_speech_types::{EngineId, TtsVoice};
+use forge_tts_core::{ENGINE_ID_AZURE, EngineCapabilities, SynthesisRequest, TtsEngine, TtsError};
 
 use crate::credentials::AzureCredentials;
 use crate::network::{CloudGateways, ProviderGateway, ProviderLink, is_dns_label};

@@ -1,4 +1,4 @@
-use crate::pcm::PcmBuffer;
+use forge_speech_types::PcmBuffer;
 
 const RIFF_TAG: &[u8; 4] = b"RIFF";
 const WAVE_TAG: &[u8; 4] = b"WAVE";

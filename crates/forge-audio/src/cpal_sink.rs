@@ -12,8 +12,8 @@ use crate::device::{DeviceId, forget_output_devices};
 use crate::error::AudioError;
 use crate::events::{AudioEvent, AudioEventSink};
 use crate::handle::{ControlledPlayback, PlaybackHandle};
-use crate::pcm::PcmBuffer;
 use crate::sink::AudioSink;
+use forge_speech_types::PcmBuffer;
 
 type PlaybackTask = tokio::task::JoinHandle<Result<(), AudioError>>;
 

@@ -1,6 +1,7 @@
 use forge_speak_queue::{SpeakCommand, SpeakQueueHandle};
-use forge_storage::{AliasId, StorageError, VoiceAlias, VoiceAliasRepo};
-use forge_voice::{AliasState, EngineId, VoiceId};
+use forge_speech_types::{AliasId, VoiceAlias};
+use forge_speech_types::{AliasState, EngineId, VoiceId};
+use forge_storage::{StorageError, VoiceAliasRepo};
 
 pub(crate) async fn save_alias(
     repo: &dyn VoiceAliasRepo,

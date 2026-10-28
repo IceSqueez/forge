@@ -1,4 +1,5 @@
-use forge_tts_core::{ENGINE_ID_OPENAI, EngineId, TtsVoice, VoiceGender, VoiceId};
+use forge_speech_types::{EngineId, TtsVoice, VoiceGender, VoiceId};
+use forge_tts_core::ENGINE_ID_OPENAI;
 
 const ENGINE: fn() -> EngineId = || EngineId(ENGINE_ID_OPENAI.into());
 

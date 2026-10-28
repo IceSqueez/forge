@@ -1,9 +1,9 @@
 use std::sync::{Arc, mpsc};
 
 use async_trait::async_trait;
+use forge_speech_types::{EngineId, PcmBuffer, TtsVoice};
 use forge_tts_core::{
-    ENGINE_ID_SAPI, EngineCapabilities, EngineId, PcmBuffer, SynthesisRequest, TtsEngine,
-    TtsEngineFactory, TtsError, TtsVoice,
+    ENGINE_ID_SAPI, EngineCapabilities, SynthesisRequest, TtsEngine, TtsEngineFactory, TtsError,
 };
 
 use crate::com::{StaRequest, spawn_sta_worker};

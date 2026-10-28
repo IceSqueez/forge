@@ -3,9 +3,9 @@ use std::sync::Mutex;
 use std::time::Duration;
 
 use async_trait::async_trait;
+use forge_speech_types::{EngineId, PcmBuffer, TtsVoice, VoiceGender, VoiceId};
 use forge_tts_core::{
-    ENGINE_ID_PIPER, EngineCapabilities, EngineId, PcmBuffer, SynthesisRequest, TtsEngine,
-    TtsEngineFactory, TtsError, TtsVoice, VoiceGender, VoiceId,
+    ENGINE_ID_PIPER, EngineCapabilities, SynthesisRequest, TtsEngine, TtsEngineFactory, TtsError,
 };
 
 mod locate;

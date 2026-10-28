@@ -7,12 +7,13 @@ use forge_runtime::{MembershipOutcome, OverlayServiceError};
 use forge_speak_queue::{
     PipelineConfigHandle, SpeakCommand, SpeakQueueHandle, build_config_lenient,
 };
-use forge_storage::{AliasId, DataProvider, OverlayId, StorageError};
+use forge_speech_types::AliasId;
+use forge_speech_types::IgnoreProfile;
+use forge_storage::{DataProvider, OverlayId, StorageError};
 use forge_transfer::{
     PackItemKind, PackWrittenItem, SetupImportOutcome, SetupLivePart, SetupQueueChanges,
 };
 use forge_types::{Queue, Shared};
-use forge_voice::IgnoreProfile;
 
 use crate::pack_services::PackServices;
 use crate::runtime_handles::RuntimeHandles;

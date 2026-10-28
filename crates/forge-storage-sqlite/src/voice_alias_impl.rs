@@ -1,9 +1,9 @@
 use async_trait::async_trait;
-use forge_storage::settings::reserved_keys;
-use forge_storage::{
-    AliasId, AssignmentStrategy, IgnoreProfile, StorageError, VoiceAlias, VoiceAliasRepo,
+use forge_speech_types::{
+    AliasId, AliasState, AssignmentStrategy, EngineId, IgnoreProfile, VoiceAlias, VoiceId,
 };
-use forge_voice::{AliasState, EngineId, VoiceId};
+use forge_storage::settings::reserved_keys;
+use forge_storage::{StorageError, VoiceAliasRepo};
 
 use crate::error::SqliteStorageError;
 use crate::pool::SqlitePools;

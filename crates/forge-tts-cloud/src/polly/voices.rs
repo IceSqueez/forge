@@ -1,5 +1,6 @@
 use forge_net::{CallClass, GatewayFailure, Method};
-use forge_tts_core::{ENGINE_ID_POLLY, EngineId, TtsVoice, VoiceGender, VoiceId};
+use forge_speech_types::{EngineId, TtsVoice, VoiceGender, VoiceId};
+use forge_tts_core::ENGINE_ID_POLLY;
 use serde::Deserialize;
 use tokio::time::{Instant, timeout_at};
 

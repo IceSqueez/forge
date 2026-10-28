@@ -1,6 +1,7 @@
-use forge_audio::PcmBuffer;
 use forge_net::{CallClass, GatewayFailure, GatewayRequest, RequestBody, Secret};
-use forge_tts_core::{SynthesisRequest, VoiceId, xml_escape};
+use forge_speech_types::PcmBuffer;
+use forge_speech_types::VoiceId;
+use forge_tts_core::{SynthesisRequest, xml_escape};
 
 use crate::azure::SAMPLE_RATE_HZ;
 use crate::azure::error::AzureError;

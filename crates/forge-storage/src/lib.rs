@@ -114,7 +114,7 @@ pub use tts_filters::{
 };
 pub use user_globals::{UserGlobalEntry, UserGlobalsRepo};
 pub use viewer::{Viewer, ViewerMessage, ViewerRepo};
-pub use voice_aliases::{AliasId, AssignmentStrategy, IgnoreProfile, VoiceAlias, VoiceAliasRepo};
+pub use voice_aliases::VoiceAliasRepo;
 
 #[cfg(feature = "test-mocks")]
 pub use ban_ledger::MockBanLedgerRepo;

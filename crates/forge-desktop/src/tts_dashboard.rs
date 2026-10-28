@@ -19,8 +19,9 @@ use std::time::Duration;
 use forge_speak_queue::{
     EmoteTokenSet, Priority, RequestId, SpeakCommand, SpeakQueueHandle, SpeakRequest,
 };
+use forge_speech_types::TtsVoice;
 use forge_storage::SettingsRepo;
-use forge_tts_core::{TtsRegistry, TtsVoice, engine_display_name};
+use forge_tts_core::{TtsRegistry, engine_display_name};
 use gpui::{
     Animation, AnimationExt, AnyElement, ClickEvent, Context, CursorStyle, Entity, FontWeight,
     Pixels, Rgba, SharedString, Subscription, Window, bounce, div, ease_in_out, prelude::*, px,
@@ -1337,7 +1338,7 @@ fn load_engine_roster(registry: Option<&Arc<RwLock<TtsRegistry>>>) -> Vec<Engine
         .engine_ids();
     ids.into_iter()
         .map(|id| EngineStatus {
-            name: id.display_name().to_owned(),
+            name: engine_display_name(&id.0).to_owned(),
             meta: engine_kind(&id.0).to_owned(),
             warn: false,
             id: id.0,

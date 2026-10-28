@@ -16,7 +16,7 @@ use gpui::{
     Subscription, Window, div, prelude::*, px,
 };
 
-use crate::async_bridge::{self, ErrorSink};
+use crate::async_bridge::{self, ErrorSink, WriteOutcome};
 use crate::awake_state::AwakeState;
 use crate::backup_schedule::BackupScheduleView;
 use crate::presentation::{ActiveDisplayFormats, ActiveLanguage};
@@ -193,6 +193,7 @@ pub struct SettingsView {
     section: SettingsSection,
     handles: Arc<RuntimeHandles>,
     awake: Entity<AwakeState>,
+    stay_awake_pending: Option<bool>,
     update_flow: Entity<UpdateFlow>,
     update_check: UpdateCheckStatus,
     language: Language,
@@ -231,7 +232,13 @@ impl SettingsView {
         preselect: Option<SettingsSection>,
         cx: &mut Context<Self>,
     ) -> Self {
-        cx.observe(&awake, |_, _, cx| cx.notify()).detach();
+        cx.observe(&awake, |this: &mut Self, awake, cx| {
+            if this.stay_awake_pending == awake.read(cx).enabled() {
+                this.stay_awake_pending = None;
+            }
+            cx.notify();
+        })
+        .detach();
         let section = preselect.unwrap_or(NAV_GROUPS[0].1[0]);
         let audio =
             cx.new(|cx| SettingsAudioView::new(&handles, section == SettingsSection::Audio, cx));
@@ -326,6 +333,7 @@ impl SettingsView {
             section,
             handles,
             awake,
+            stay_awake_pending: None,
             update_flow,
             update_check: UpdateCheckStatus::Idle,
             language: cx.global::<ActiveLanguage>().0,
@@ -343,19 +351,36 @@ impl SettingsView {
     }
 
     fn stay_awake_enabled(&self, cx: &App) -> bool {
-        self.awake
-            .read(cx)
-            .enabled()
+        self.stay_awake_pending
+            .or_else(|| self.awake.read(cx).enabled())
             .unwrap_or(crate::stay_awake::ENABLED_BY_DEFAULT)
     }
 
     fn toggle_stay_awake(&mut self, cx: &mut Context<Self>) {
         let enabled = !self.stay_awake_enabled(cx);
+        self.stay_awake_pending = Some(enabled);
         let stay_awake = self.handles.stay_awake.clone();
-        self.handles.rt_handle.spawn(async move {
-            stay_awake.set_enabled(enabled).await;
-        });
+        stay_awake.set_enabled(
+            enabled,
+            |this: &mut Self, outcome, cx| this.stay_awake_settled(outcome, cx),
+            cx,
+        );
         cx.notify();
+    }
+
+    fn stay_awake_settled(&mut self, outcome: WriteOutcome, cx: &mut Context<Self>) {
+        match outcome {
+            WriteOutcome::Written => {
+                if self.stay_awake_pending == self.awake.read(cx).enabled() {
+                    self.stay_awake_pending = None;
+                }
+            }
+            WriteOutcome::Failed(_) => {
+                self.stay_awake_pending = None;
+                ErrorSink::Toast.report(tr!("settings_stay_awake_persist_failed"), cx);
+            }
+            WriteOutcome::Superseded => {}
+        }
     }
 
     fn select_section(&mut self, section: SettingsSection, cx: &mut Context<Self>) {

@@ -321,6 +321,7 @@ settings_nav_appearance = Зовнішній вигляд
 settings_nav_general = Загальні
 settings_stay_awake_label = Не засинати, поки forge працює
 settings_stay_awake_hint = Екран і система не переходять у сон, поки forge працює
+settings_stay_awake_persist_failed = Не вдалося застосувати налаштування «Не засинати»
 settings_nav_language_region = Мова та регіон
 settings_nav_shortcuts = Скорочення
 settings_nav_notifications = Сповіщення

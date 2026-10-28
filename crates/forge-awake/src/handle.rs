@@ -1,6 +1,3 @@
-use std::sync::Arc;
-
-use async_trait::async_trait;
 use tokio::sync::{mpsc, watch};
 
 use crate::backend::open_platform_backend;
@@ -12,20 +9,14 @@ pub struct StayAwakeConfig {
     pub reason: String,
 }
 
-#[async_trait]
-pub trait EnabledPreference: Send + Sync {
-    async fn store(&self, enabled: bool);
-}
-
 #[derive(Clone)]
 pub struct StayAwake {
     commands: mpsc::UnboundedSender<Command>,
     status: watch::Receiver<AwakeStatus>,
-    preference: Arc<dyn EnabledPreference>,
 }
 
 impl StayAwake {
-    pub fn spawn(config: StayAwakeConfig, preference: Arc<dyn EnabledPreference>) -> Self {
+    pub fn spawn(config: StayAwakeConfig) -> Self {
         let (status_tx, status_rx) = watch::channel(AwakeStatus::initial(config.enabled));
         let (command_tx, command_rx) = mpsc::unbounded_channel();
         let reason = config.reason;
@@ -46,18 +37,13 @@ impl StayAwake {
         Self {
             commands: command_tx,
             status: status_rx,
-            preference,
         }
     }
 
-    pub async fn set_enabled(&self, enabled: bool) {
-        self.preference.store(enabled).await;
-        if self.commands.send(Command::SetEnabled(enabled)).is_err() {
-            tracing::debug!(
-                enabled,
-                "stay-awake worker stopped; preference change dropped"
-            );
-        }
+    pub fn set_enabled(&self, enabled: bool) -> Result<(), AwakeError> {
+        self.commands
+            .send(Command::SetEnabled(enabled))
+            .map_err(|_| AwakeError::Stopped)
     }
 
     pub fn status(&self) -> AwakeStatus {

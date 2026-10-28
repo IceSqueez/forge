@@ -15,5 +15,5 @@ mod status;
 mod supervisor;
 
 pub use error::AwakeError;
-pub use handle::{EnabledPreference, StatusWatch, StayAwake, StayAwakeConfig};
+pub use handle::{StatusWatch, StayAwake, StayAwakeConfig};
 pub use status::{Aspect, AspectState, AwakeStatus};

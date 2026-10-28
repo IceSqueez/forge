@@ -70,6 +70,6 @@ pub struct RuntimeHandles {
     pub hotkey_reconciler: Option<Arc<forge_hotkey::HotkeyReconciler>>,
     pub soundboard_player: Arc<forge_soundboard::SoundboardPlayer>,
     pub voice_gate: Arc<VoiceGateOwner>,
-    pub stay_awake: forge_awake::StayAwake,
+    pub stay_awake: crate::stay_awake::StayAwakeSetting,
     pub first_run: crate::first_run::FirstRun,
 }

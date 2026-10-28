@@ -313,6 +313,7 @@ settings_nav_appearance = Appearance
 settings_nav_general = General
 settings_stay_awake_label = Stay awake while forge is running
 settings_stay_awake_hint = Keeps the display and the system from sleeping while forge runs
+settings_stay_awake_persist_failed = Could not apply the stay-awake setting
 settings_nav_language_region = Language & region
 settings_nav_shortcuts = Shortcuts
 settings_nav_notifications = Notifications

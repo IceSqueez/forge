@@ -41,3 +41,42 @@ impl MidiSignalKind {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const ALL: [(MidiSignalKind, &str); 5] = [
+        (MidiSignalKind::NoteOn, "note_on"),
+        (MidiSignalKind::NoteOff, "note_off"),
+        (MidiSignalKind::ControlChange, "control_change"),
+        (MidiSignalKind::PitchBend, "pitch_bend"),
+        (MidiSignalKind::ProgramChange, "program_change"),
+    ];
+
+    #[test]
+    fn serde_names_equal_the_previous_monitor_kind_strings() {
+        for (kind, name) in ALL {
+            assert_eq!(serde_json::to_value(kind).unwrap(), serde_json::json!(name));
+            let back: MidiSignalKind = serde_json::from_value(serde_json::json!(name)).unwrap();
+            assert_eq!(back, kind);
+        }
+    }
+
+    #[test]
+    fn serde_rejects_an_unknown_or_prefixed_kind_name() {
+        for bad in ["aftertouch", "NoteOn", "midi.input.note_on", ""] {
+            assert!(serde_json::from_value::<MidiSignalKind>(serde_json::json!(bad)).is_err());
+        }
+    }
+
+    #[test]
+    fn event_kind_is_the_input_prefix_plus_the_serde_name() {
+        for (kind, name) in ALL {
+            assert_eq!(
+                kind.event_kind(),
+                format!("{}{name}", event_kinds::INPUT_PREFIX)
+            );
+        }
+    }
+}

@@ -101,7 +101,7 @@ mod tests {
                     velocity: 100,
                     channel: 1,
                 },
-                "note_on",
+                MidiSignalKind::NoteOn,
                 Some(60u8),
                 Some(100u16),
             ),
@@ -111,7 +111,7 @@ mod tests {
                     velocity: 64,
                     channel: 2,
                 },
-                "note_off",
+                MidiSignalKind::NoteOff,
                 Some(48),
                 Some(64),
             ),
@@ -121,7 +121,7 @@ mod tests {
                     value: 127,
                     channel: 3,
                 },
-                "control_change",
+                MidiSignalKind::ControlChange,
                 Some(7),
                 Some(127),
             ),
@@ -130,7 +130,7 @@ mod tests {
                     value: 16383,
                     channel: 4,
                 },
-                "pitch_bend",
+                MidiSignalKind::PitchBend,
                 None,
                 Some(16383),
             ),
@@ -139,7 +139,7 @@ mod tests {
                     program: 42,
                     channel: 5,
                 },
-                "program_change",
+                MidiSignalKind::ProgramChange,
                 Some(42),
                 None,
             ),
@@ -165,5 +165,83 @@ mod tests {
             "Deck",
         );
         assert_eq!(monitor.channel, 9);
+    }
+
+    fn monitor(
+        kind: MidiSignalKind,
+        number: Option<u8>,
+        value: Option<u16>,
+        channel: u8,
+    ) -> MidiMonitorEvent {
+        MidiMonitorEvent {
+            kind,
+            port_name: "Deck".to_owned(),
+            channel,
+            number,
+            value,
+        }
+    }
+
+    #[test]
+    fn bus_payload_matches_the_wire_shape_for_every_signal_kind() {
+        use serde_json::json;
+        let cases = [
+            (
+                monitor(MidiSignalKind::NoteOn, Some(60), Some(100), 1),
+                json!({ "note": 60, "velocity": 100, "channel": 1, "port_name": "Deck" }),
+            ),
+            (
+                monitor(MidiSignalKind::NoteOff, Some(48), Some(64), 2),
+                json!({ "note": 48, "velocity": 64, "channel": 2, "port_name": "Deck" }),
+            ),
+            (
+                monitor(MidiSignalKind::ControlChange, Some(7), Some(127), 3),
+                json!({ "controller": 7, "value": 127, "channel": 3, "port_name": "Deck" }),
+            ),
+            (
+                monitor(MidiSignalKind::PitchBend, None, Some(16383), 4),
+                json!({ "value": 16383, "channel": 4, "port_name": "Deck" }),
+            ),
+            (
+                monitor(MidiSignalKind::ProgramChange, Some(42), None, 5),
+                json!({ "program": 42, "channel": 5, "port_name": "Deck" }),
+            ),
+        ];
+        for (signal, expected) in cases {
+            assert_eq!(bus_payload(&signal), expected, "{:?}", signal.kind);
+        }
+    }
+
+    #[test]
+    fn bus_payload_omits_number_and_value_a_kind_does_not_carry() {
+        let stray_number = bus_payload(&monitor(MidiSignalKind::PitchBend, Some(9), Some(1), 0));
+        assert!(stray_number.get("note").is_none() && stray_number.get("controller").is_none());
+        let stray_value = bus_payload(&monitor(MidiSignalKind::ProgramChange, Some(1), Some(9), 0));
+        assert!(stray_value.get("value").is_none() && stray_value.get("velocity").is_none());
+    }
+
+    #[test]
+    fn bus_payload_of_every_decoded_event_equals_the_hand_built_wire_payload() {
+        use serde_json::json;
+        let decoded = [
+            (
+                MidiEvent::NoteOn {
+                    note: 127,
+                    velocity: 0,
+                    channel: 15,
+                },
+                json!({ "note": 127, "velocity": 0, "channel": 15, "port_name": "Deck" }),
+            ),
+            (
+                MidiEvent::PitchBend {
+                    value: 0,
+                    channel: 0,
+                },
+                json!({ "value": 0, "channel": 0, "port_name": "Deck" }),
+            ),
+        ];
+        for (event, expected) in decoded {
+            assert_eq!(bus_payload(&to_monitor_event(&event, "Deck")), expected);
+        }
     }
 }

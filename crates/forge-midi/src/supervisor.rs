@@ -879,7 +879,7 @@ mod tests {
         backend.inject_all(0, vec![0xB2, 7, 100]).await;
 
         let event = monitor.next().await.unwrap();
-        assert_eq!(event.kind, "control_change");
+        assert_eq!(event.kind, crate::MidiSignalKind::ControlChange);
         assert_eq!(event.port_name, "Pad");
     }
 

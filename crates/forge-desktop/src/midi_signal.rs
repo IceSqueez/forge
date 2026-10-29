@@ -139,11 +139,17 @@ mod tests {
     use forge_registry::{FormField, TriggerRegistry};
 
     use super::*;
-    use forge_midi::event_kinds::SIGNAL_KINDS;
+    use forge_midi::MidiSignalKind;
+    use forge_midi::vocabulary::event_kinds::SIGNAL_KINDS;
 
-    fn monitor_event(kind: &str, number: Option<u8>, channel: u8, port: &str) -> MidiMonitorEvent {
+    fn monitor_event(
+        kind: MidiSignalKind,
+        number: Option<u8>,
+        channel: u8,
+        port: &str,
+    ) -> MidiMonitorEvent {
         MidiMonitorEvent {
-            kind: kind.to_owned(),
+            kind,
             port_name: port.to_owned(),
             channel,
             number,
@@ -233,45 +239,38 @@ mod tests {
     fn from_monitor_maps_each_supported_kind_and_its_fields() {
         for (monitor_kind, number, expected) in [
             (
-                "note_on",
+                MidiSignalKind::NoteOn,
                 Some(60),
                 signal(NOTE_ON, Some(60), Some(9), Some("Keys")),
             ),
             (
-                "note_off",
+                MidiSignalKind::NoteOff,
                 Some(48),
                 signal(NOTE_OFF, Some(48), Some(9), Some("Keys")),
             ),
             (
-                "control_change",
+                MidiSignalKind::ControlChange,
                 Some(7),
                 signal(CONTROL_CHANGE, Some(7), Some(9), Some("Keys")),
             ),
             (
-                "program_change",
+                MidiSignalKind::ProgramChange,
                 Some(10),
                 signal(PROGRAM_CHANGE, Some(10), Some(9), Some("Keys")),
             ),
             (
-                "pitch_bend",
+                MidiSignalKind::PitchBend,
                 None,
                 signal(PITCH_BEND, None, Some(9), Some("Keys")),
             ),
         ] {
             let event = monitor_event(monitor_kind, number, 9, "Keys");
-            let captured = MidiSignal::from_monitor(&event)
-                .unwrap_or_else(|| panic!("{monitor_kind} produced no signal"));
+            let captured = MidiSignal::from_monitor(&event);
             assert!(
                 captured == expected,
-                "{monitor_kind} captured the wrong signal"
+                "{monitor_kind:?} captured the wrong signal"
             );
         }
-    }
-
-    #[test]
-    fn from_monitor_rejects_a_kind_it_cannot_map_to_a_trigger() {
-        let event = monitor_event("aftertouch", Some(60), 0, "Keys");
-        assert!(MidiSignal::from_monitor(&event).is_none());
     }
 
     #[test]

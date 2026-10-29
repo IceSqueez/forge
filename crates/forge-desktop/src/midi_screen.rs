@@ -1633,7 +1633,7 @@ mod tests {
     use time::OffsetDateTime;
 
     use super::*;
-    use forge_midi::event_kinds::{CONTROL_CHANGE, NOTE_ON};
+    use forge_midi::vocabulary::event_kinds::{CONTROL_CHANGE, NOTE_ON};
 
     #[derive(Default)]
     struct TriggerStore {

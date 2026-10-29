@@ -1,30 +1,26 @@
 mod cc;
+mod config_read;
 mod device_connected;
 mod device_disconnected;
+mod input;
+mod note_fields;
 mod note_off;
 mod note_on;
 mod pitch_bend;
+mod port;
 mod program_change;
-
-pub use cc::MidiCcDescriptor;
-pub use device_connected::MidiDeviceConnectedDescriptor;
-pub use device_disconnected::MidiDeviceDisconnectedDescriptor;
-pub use note_off::MidiNoteOffDescriptor;
-pub use note_on::MidiNoteOnDescriptor;
-pub use pitch_bend::MidiPitchBendDescriptor;
-pub use program_change::MidiProgramChangeDescriptor;
 
 use forge_registry::{RegistryError, TriggerRegistry};
 
 pub fn register_midi_triggers(reg: &mut TriggerRegistry) -> Result<(), RegistryError> {
     let mut reg = reg.owned_by(crate::MIDI_INTEGRATION.id);
-    reg.register(Box::new(MidiNoteOnDescriptor))?;
-    reg.register(Box::new(MidiNoteOffDescriptor))?;
-    reg.register(Box::new(MidiCcDescriptor))?;
-    reg.register(Box::new(MidiPitchBendDescriptor))?;
-    reg.register(Box::new(MidiProgramChangeDescriptor))?;
-    reg.register(Box::new(MidiDeviceConnectedDescriptor))?;
-    reg.register(Box::new(MidiDeviceDisconnectedDescriptor))?;
+    reg.register(Box::new(note_on::NOTE_ON_TRIGGER))?;
+    reg.register(Box::new(note_off::NOTE_OFF_TRIGGER))?;
+    reg.register(Box::new(cc::CONTROL_CHANGE_TRIGGER))?;
+    reg.register(Box::new(pitch_bend::PITCH_BEND_TRIGGER))?;
+    reg.register(Box::new(program_change::PROGRAM_CHANGE_TRIGGER))?;
+    reg.register(Box::new(device_connected::DEVICE_CONNECTED_TRIGGER))?;
+    reg.register(Box::new(device_disconnected::DEVICE_DISCONNECTED_TRIGGER))?;
     Ok(())
 }
 

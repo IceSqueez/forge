@@ -1,10 +1,13 @@
 use std::pin::Pin;
 
+use serde_json::{Map, Value};
 use tokio::sync::broadcast;
 use tokio_stream::StreamExt;
 use tokio_stream::wrappers::BroadcastStream;
 
 use crate::events::{MidiEvent, MidiMonitorEvent};
+use crate::vocabulary::MidiSignalKind;
+use crate::vocabulary::fields::input as fields;
 
 pub type MidiMonitorStream =
     Pin<Box<dyn tokio_stream::Stream<Item = MidiMonitorEvent> + Send + 'static>>;
@@ -22,55 +25,67 @@ pub(crate) fn subscribe(tx: &MonitorTx) -> MidiMonitorStream {
 }
 
 pub(crate) fn to_monitor_event(event: &MidiEvent, port_name: &str) -> MidiMonitorEvent {
-    match *event {
+    let (kind, channel, number, value) = match *event {
         MidiEvent::NoteOn {
             note,
             velocity,
             channel,
-        } => MidiMonitorEvent {
-            kind: "note_on".to_owned(),
-            port_name: port_name.to_owned(),
+        } => (
+            MidiSignalKind::NoteOn,
             channel,
-            number: Some(note),
-            value: Some(u16::from(velocity)),
-        },
+            Some(note),
+            Some(u16::from(velocity)),
+        ),
         MidiEvent::NoteOff {
             note,
             velocity,
             channel,
-        } => MidiMonitorEvent {
-            kind: "note_off".to_owned(),
-            port_name: port_name.to_owned(),
+        } => (
+            MidiSignalKind::NoteOff,
             channel,
-            number: Some(note),
-            value: Some(u16::from(velocity)),
-        },
+            Some(note),
+            Some(u16::from(velocity)),
+        ),
         MidiEvent::ControlChange {
             controller,
             value,
             channel,
-        } => MidiMonitorEvent {
-            kind: "control_change".to_owned(),
-            port_name: port_name.to_owned(),
+        } => (
+            MidiSignalKind::ControlChange,
             channel,
-            number: Some(controller),
-            value: Some(u16::from(value)),
-        },
-        MidiEvent::PitchBend { value, channel } => MidiMonitorEvent {
-            kind: "pitch_bend".to_owned(),
-            port_name: port_name.to_owned(),
-            channel,
-            number: None,
-            value: Some(value),
-        },
-        MidiEvent::ProgramChange { program, channel } => MidiMonitorEvent {
-            kind: "program_change".to_owned(),
-            port_name: port_name.to_owned(),
-            channel,
-            number: Some(program),
-            value: None,
-        },
+            Some(controller),
+            Some(u16::from(value)),
+        ),
+        MidiEvent::PitchBend { value, channel } => {
+            (MidiSignalKind::PitchBend, channel, None, Some(value))
+        }
+        MidiEvent::ProgramChange { program, channel } => {
+            (MidiSignalKind::ProgramChange, channel, Some(program), None)
+        }
+    };
+    MidiMonitorEvent {
+        kind,
+        port_name: port_name.to_owned(),
+        channel,
+        number,
+        value,
     }
+}
+
+pub(crate) fn bus_payload(signal: &MidiMonitorEvent) -> Value {
+    let mut payload = Map::new();
+    if let (Some(key), Some(number)) = (signal.kind.number_field(), signal.number) {
+        payload.insert(key.to_owned(), Value::from(number));
+    }
+    if let (Some(key), Some(value)) = (signal.kind.value_field(), signal.value) {
+        payload.insert(key.to_owned(), Value::from(value));
+    }
+    payload.insert(fields::CHANNEL.to_owned(), Value::from(signal.channel));
+    payload.insert(
+        fields::PORT_NAME.to_owned(),
+        Value::from(signal.port_name.as_str()),
+    );
+    Value::Object(payload)
 }
 
 #[cfg(test)]

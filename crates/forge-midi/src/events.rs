@@ -1,5 +1,8 @@
 use serde::{Deserialize, Serialize};
 
+use crate::vocabulary::MidiSignalKind;
+use crate::vocabulary::fields::port::direction;
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum MidiEvent {
     NoteOn {
@@ -60,9 +63,18 @@ pub enum PortDirection {
     Output,
 }
 
+impl PortDirection {
+    pub(crate) const fn as_str(self) -> &'static str {
+        match self {
+            Self::Input => direction::INPUT,
+            Self::Output => direction::OUTPUT,
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct MidiMonitorEvent {
-    pub kind: String,
+    pub kind: MidiSignalKind,
     pub port_name: String,
     pub channel: u8,
     pub number: Option<u8>,

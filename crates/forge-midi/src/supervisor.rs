@@ -18,7 +18,9 @@ use crate::content::{record_midi_event, record_port_added, record_port_removed};
 use crate::decode::decode_midi_bytes;
 use crate::events::{MidiEvent, MidiPortInfo, PortDirection};
 use crate::health::{MidiHealthSnapshot, events_per_minute, input_port_health_value};
-use crate::payload_fields::{input as input_fields, port as port_fields};
+use crate::monitor::{bus_payload, to_monitor_event};
+use crate::vocabulary::event_kinds;
+use crate::vocabulary::fields::port as port_fields;
 
 pub(crate) type RawEvent = (u64, Vec<u8>, String);
 
@@ -120,9 +122,9 @@ fn handle_supervisor_command(
 
 fn emit_engine_state_change(client: &Arc<MidiClient>, enabled: bool) {
     let kind = if enabled {
-        crate::event_kinds::ENGINE_ENABLED
+        event_kinds::ENGINE_ENABLED
     } else {
-        crate::event_kinds::ENGINE_DISABLED
+        event_kinds::ENGINE_DISABLED
     };
     client
         .publisher
@@ -282,18 +284,14 @@ fn open_input_port(
 
 fn emit_port_event(client: &Arc<MidiClient>, name: &str, direction: PortDirection, added: bool) {
     let kind = if added {
-        crate::event_kinds::PORT_ADDED
+        event_kinds::PORT_ADDED
     } else {
-        crate::event_kinds::PORT_REMOVED
-    };
-    let dir_str = match direction {
-        PortDirection::Input => "input",
-        PortDirection::Output => "output",
+        event_kinds::PORT_REMOVED
     };
     let event = Event::new(
         EventSource::Midi,
         kind,
-        serde_json::json!({ (port_fields::PORT_NAME): name, (port_fields::DIRECTION): dir_str }),
+        serde_json::json!({ (port_fields::PORT_NAME): name, (port_fields::DIRECTION): direction.as_str() }),
     );
     client.publisher.publish(event);
 }
@@ -309,75 +307,18 @@ fn handle_raw_event(client: &Arc<MidiClient>, _ts: u64, data: &[u8], port_name: 
 }
 
 fn emit_midi_event(client: &Arc<MidiClient>, port_name: &str, event: MidiEvent) {
-    let (kind, payload) = match &event {
-        MidiEvent::NoteOn {
-            note,
-            velocity,
-            channel,
-        } => (
-            crate::event_kinds::NOTE_ON,
-            serde_json::json!({
-                (input_fields::NOTE): note,
-                (input_fields::VELOCITY): velocity,
-                (input_fields::CHANNEL): channel,
-                (input_fields::PORT_NAME): port_name,
-            }),
-        ),
-        MidiEvent::NoteOff {
-            note,
-            velocity,
-            channel,
-        } => (
-            crate::event_kinds::NOTE_OFF,
-            serde_json::json!({
-                (input_fields::NOTE): note,
-                (input_fields::VELOCITY): velocity,
-                (input_fields::CHANNEL): channel,
-                (input_fields::PORT_NAME): port_name,
-            }),
-        ),
-        MidiEvent::ControlChange {
-            controller,
-            value,
-            channel,
-        } => (
-            crate::event_kinds::CONTROL_CHANGE,
-            serde_json::json!({
-                (input_fields::CONTROLLER): controller,
-                (input_fields::VALUE): value,
-                (input_fields::CHANNEL): channel,
-                (input_fields::PORT_NAME): port_name,
-            }),
-        ),
-        MidiEvent::PitchBend { value, channel } => (
-            crate::event_kinds::PITCH_BEND,
-            serde_json::json!({
-                (input_fields::VALUE): value,
-                (input_fields::CHANNEL): channel,
-                (input_fields::PORT_NAME): port_name,
-            }),
-        ),
-        MidiEvent::ProgramChange { program, channel } => (
-            crate::event_kinds::PROGRAM_CHANGE,
-            serde_json::json!({
-                (input_fields::PROGRAM): program,
-                (input_fields::CHANNEL): channel,
-                (input_fields::PORT_NAME): port_name,
-            }),
-        ),
-    };
-
-    client
-        .publisher
-        .publish(Event::new(EventSource::Midi, kind, payload));
+    let signal = to_monitor_event(&event, port_name);
+    client.publisher.publish(Event::new(
+        EventSource::Midi,
+        signal.kind.event_kind(),
+        bus_payload(&signal),
+    ));
 
     #[expect(
         clippy::let_underscore_must_use,
         reason = "having no subscribers is a normal state"
     )]
-    let _ = client
-        .monitor_tx
-        .send(crate::monitor::to_monitor_event(&event, port_name));
+    let _ = client.monitor_tx.send(signal);
 
     let now = Instant::now();
     let is_note_on = matches!(event, MidiEvent::NoteOn { .. });

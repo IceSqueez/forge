@@ -14,6 +14,7 @@ use time::OffsetDateTime;
 use crate::error::MidiError;
 use crate::events::MidiOutMessage;
 use crate::sink::MidiSink;
+use crate::vocabulary::sub_action_ids;
 
 pub struct MidiSendRunner {
     sink: Arc<dyn MidiSink>,
@@ -28,7 +29,7 @@ impl MidiSendRunner {
 #[async_trait]
 impl SubActionRunner for MidiSendRunner {
     fn id(&self) -> &str {
-        "midi.send"
+        sub_action_ids::SEND
     }
 
     fn category(&self) -> SubActionCategory {
@@ -254,7 +255,7 @@ impl SubActionRunner for MidiSendRunner {
             SubActionTelemetry {
                 args_in: ::std::collections::BTreeMap::new(),
                 produced: ::std::collections::BTreeMap::new(),
-                kind: "midi.send".to_owned(),
+                kind: sub_action_ids::SEND.to_owned(),
                 started_at,
                 duration_ms: start.elapsed().as_millis() as u64,
                 outcome,
@@ -275,7 +276,7 @@ fn failed(
         SubActionTelemetry {
             args_in: ::std::collections::BTreeMap::new(),
             produced: ::std::collections::BTreeMap::new(),
-            kind: "midi.send".to_owned(),
+            kind: sub_action_ids::SEND.to_owned(),
             started_at,
             duration_ms: start.elapsed().as_millis() as u64,
             outcome: SubActionOutcome::Failed(reason.to_owned()),

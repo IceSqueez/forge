@@ -1,6 +1,8 @@
 use forge_components::{ForgePalette, tr};
 use forge_midi::MidiMonitorEvent;
-use forge_midi::event_kinds::{CONTROL_CHANGE, NOTE_OFF, NOTE_ON, PITCH_BEND, PROGRAM_CHANGE};
+use forge_midi::vocabulary::event_kinds::{
+    CONTROL_CHANGE, NOTE_OFF, NOTE_ON, PITCH_BEND, PROGRAM_CHANGE,
+};
 use forge_types::{TriggerConfig, Variant};
 use gpui::Rgba;
 
@@ -47,17 +49,6 @@ pub fn kind_color(kind_id: &str, palette: &ForgePalette) -> Rgba {
     }
 }
 
-fn kind_from_monitor(kind: &str) -> Option<&'static str> {
-    match kind {
-        "note_on" => Some(NOTE_ON),
-        "note_off" => Some(NOTE_OFF),
-        "control_change" => Some(CONTROL_CHANGE),
-        "pitch_bend" => Some(PITCH_BEND),
-        "program_change" => Some(PROGRAM_CHANGE),
-        _ => None,
-    }
-}
-
 fn config_int(config: &TriggerConfig, key: &str) -> Option<i64> {
     match config.get(key) {
         Some(Variant::Int(n)) => Some(*n),
@@ -81,14 +72,13 @@ pub struct MidiSignal {
 }
 
 impl MidiSignal {
-    pub fn from_monitor(event: &MidiMonitorEvent) -> Option<Self> {
-        let kind_id = kind_from_monitor(&event.kind)?;
-        Some(Self {
-            kind_id: kind_id.to_owned(),
+    pub fn from_monitor(event: &MidiMonitorEvent) -> Self {
+        Self {
+            kind_id: event.kind.event_kind().to_owned(),
             selector: event.number.map(i64::from),
             channel: Some(i64::from(event.channel)),
             device: Some(event.port_name.clone()),
-        })
+        }
     }
 
     pub fn from_instance(kind_id: &str, config: &TriggerConfig) -> Self {

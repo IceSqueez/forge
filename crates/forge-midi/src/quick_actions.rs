@@ -6,6 +6,7 @@ use forge_platform_core::{
 use forge_types::{SubActionStep, Variant};
 
 use crate::client::MidiClient;
+use crate::vocabulary::sub_action_ids;
 
 impl QuickActions for MidiClient {
     fn actions(&self) -> Vec<QuickAction> {
@@ -33,7 +34,7 @@ impl QuickActions for MidiClient {
                 destructive: false,
                 accent: QuickActionAccent::Brand,
                 subaction_template: SubActionStep {
-                    kind_id: "midi.send".to_owned(),
+                    kind_id: sub_action_ids::SEND.to_owned(),
                     config: BTreeMap::from([
                         ("port".to_owned(), Variant::String(first_port.clone())),
                         (
@@ -64,7 +65,7 @@ impl QuickActions for MidiClient {
                 destructive: false,
                 accent: QuickActionAccent::Brand,
                 subaction_template: SubActionStep {
-                    kind_id: "midi.send".to_owned(),
+                    kind_id: sub_action_ids::SEND.to_owned(),
                     config: BTreeMap::from([
                         ("port".to_owned(), Variant::String(first_port.clone())),
                         (
@@ -95,7 +96,7 @@ impl QuickActions for MidiClient {
                 destructive: false,
                 accent: QuickActionAccent::Brand,
                 subaction_template: SubActionStep {
-                    kind_id: "midi.send".to_owned(),
+                    kind_id: sub_action_ids::SEND.to_owned(),
                     config: BTreeMap::from([
                         ("port".to_owned(), Variant::String(first_port.clone())),
                         ("message_kind".to_owned(), Variant::String("cc".to_owned())),
@@ -123,7 +124,7 @@ impl QuickActions for MidiClient {
                 destructive: false,
                 accent: QuickActionAccent::Brand,
                 subaction_template: SubActionStep {
-                    kind_id: "midi.send".to_owned(),
+                    kind_id: sub_action_ids::SEND.to_owned(),
                     config: BTreeMap::from([
                         ("port".to_owned(), Variant::String(first_port)),
                         ("message_kind".to_owned(), Variant::String("raw".to_owned())),

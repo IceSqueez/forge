@@ -1,209 +1,25 @@
-use std::collections::BTreeMap;
+use super::input::{MidiInputTrigger, SignalNumber};
+use crate::vocabulary::variables::input as variables;
+use crate::vocabulary::{MidiSignalKind, config_keys, trigger_ids};
 
-use forge_events::{Event, EventSource};
-use forge_registry::{
-    EventFilter, FormField, KindPlatformContract, TriggerCategory, TriggerKindDescriptor,
+pub(crate) const PROGRAM_CHANGE_TRIGGER: MidiInputTrigger = MidiInputTrigger {
+    id: trigger_ids::PROGRAM_CHANGE,
+    kind: MidiSignalKind::ProgramChange,
+    label: "MIDI Program Change",
+    summary: "Fires when a MIDI Program Change message is received.",
+    search_text: "midi program change patch preset channel",
+    icon: "sliders",
+    number: Some(SignalNumber {
+        config_key: config_keys::PROGRAM,
+        optional_label: "Program (leave empty for any)",
+        label: "Program",
+        display_name: "program",
+        any_display: "any program",
+        variable: variables::PROGRAM,
+        variable_label: "Program number",
+    }),
+    value: None,
 };
-use forge_types::{
-    ArgStack, DeclaredVariable, SynthesisHint, TriggerConfig, VariableSchema, Variant, VariantKind,
-};
-
-use crate::payload_fields::input as fields;
-
-pub struct MidiProgramChangeDescriptor;
-
-impl TriggerKindDescriptor for MidiProgramChangeDescriptor {
-    fn id(&self) -> &str {
-        "midi.input.program_change"
-    }
-
-    fn category(&self) -> TriggerCategory {
-        TriggerCategory::Midi
-    }
-
-    fn label(&self) -> &str {
-        "MIDI Program Change"
-    }
-
-    fn summary(&self) -> &str {
-        "Fires when a MIDI Program Change message is received."
-    }
-
-    fn search_text(&self) -> &str {
-        "midi program change patch preset channel"
-    }
-
-    fn icon_name(&self) -> &str {
-        "sliders"
-    }
-
-    fn platform_contract(&self) -> KindPlatformContract {
-        KindPlatformContract::Universal
-    }
-
-    fn default_config(&self) -> TriggerConfig {
-        BTreeMap::new()
-    }
-
-    fn config_fields(&self) -> Vec<FormField> {
-        vec![
-            FormField::Optional {
-                key: "program",
-                label: "Program (leave empty for any)",
-                inner: Box::new(FormField::Integer {
-                    key: "program",
-                    label: "Program",
-                    min: 0,
-                    max: 127,
-                }),
-            },
-            FormField::Optional {
-                key: "channel",
-                label: "Channel (leave empty for any)",
-                inner: Box::new(FormField::Integer {
-                    key: "channel",
-                    label: "Channel",
-                    min: 0,
-                    max: 15,
-                }),
-            },
-            FormField::Optional {
-                key: "device",
-                label: "Device (leave empty for any)",
-                inner: Box::new(FormField::Text {
-                    key: "device",
-                    label: "Device",
-                    placeholder: "e.g. Launchkey Mini",
-                }),
-            },
-        ]
-    }
-
-    fn condition_display(&self, config: &TriggerConfig) -> String {
-        let program = config.get("program").and_then(|v| {
-            if let Variant::Int(n) = v {
-                Some(*n)
-            } else {
-                None
-            }
-        });
-        let channel = config.get("channel").and_then(|v| {
-            if let Variant::Int(c) = v {
-                Some(*c)
-            } else {
-                None
-            }
-        });
-        let device = config.get("device").and_then(|v| {
-            if let Variant::String(d) = v
-                && !d.is_empty()
-            {
-                Some(d.clone())
-            } else {
-                None
-            }
-        });
-        let mut display = match (program, channel) {
-            (Some(p), Some(ch)) => format!("program={p}, ch={ch}"),
-            (Some(p), None) => format!("program={p}"),
-            (None, Some(ch)) => format!("ch={ch}"),
-            (None, None) => "any program, any channel".to_owned(),
-        };
-        if let Some(d) = device {
-            display.push_str(&format!(", device={d}"));
-        }
-        display
-    }
-
-    fn event_filter(&self) -> EventFilter {
-        EventFilter {
-            source: Some(EventSource::Midi),
-            kind_prefix: Some(crate::event_kinds::INPUT_PREFIX.to_owned()),
-        }
-    }
-
-    fn matches_trigger(&self, config: &TriggerConfig, event: &Event) -> bool {
-        if event.kind != crate::event_kinds::PROGRAM_CHANGE {
-            return false;
-        }
-        if let Some(Variant::Int(p)) = config.get("program") {
-            let event_program = event
-                .payload
-                .get(fields::PROGRAM)
-                .and_then(|v| v.as_u64())
-                .unwrap_or(u64::MAX);
-            if *p as u64 != event_program {
-                return false;
-            }
-        }
-        if let Some(Variant::Int(c)) = config.get("channel") {
-            let event_ch = event
-                .payload
-                .get(fields::CHANNEL)
-                .and_then(|v| v.as_u64())
-                .unwrap_or(u64::MAX);
-            if *c as u64 != event_ch {
-                return false;
-            }
-        }
-        if let Some(Variant::String(d)) = config.get("device")
-            && !d.is_empty()
-        {
-            let event_port = event
-                .payload
-                .get(fields::PORT_NAME)
-                .and_then(|v| v.as_str())
-                .unwrap_or("");
-            if d != event_port {
-                return false;
-            }
-        }
-        true
-    }
-
-    fn build_arg_stack(&self, event: &Event) -> ArgStack {
-        let mut stack = ArgStack::new();
-        if let Some(p) = event.payload.get(fields::PROGRAM).and_then(|v| v.as_u64()) {
-            stack = stack.set("midi.program".to_owned(), Variant::Int(p as i64));
-        }
-        if let Some(c) = event.payload.get(fields::CHANNEL).and_then(|v| v.as_u64()) {
-            stack = stack.set("midi.channel".to_owned(), Variant::Int(c as i64));
-        }
-        if let Some(p) = event
-            .payload
-            .get(fields::PORT_NAME)
-            .and_then(|v| v.as_str())
-        {
-            stack = stack.set("midi.port".to_owned(), Variant::String(p.to_owned()));
-        }
-        stack
-    }
-
-    fn output_schema(&self) -> Option<VariableSchema> {
-        Some(VariableSchema {
-            variables: vec![
-                DeclaredVariable {
-                    name: "midi.program".to_owned(),
-                    kind: VariantKind::Int,
-                    label: "Program number".to_owned(),
-                    synthesis: Some(SynthesisHint::BoundedInt { min: 0, max: 127 }),
-                },
-                DeclaredVariable {
-                    name: "midi.channel".to_owned(),
-                    kind: VariantKind::Int,
-                    label: "Channel".to_owned(),
-                    synthesis: Some(SynthesisHint::BoundedInt { min: 0, max: 15 }),
-                },
-                DeclaredVariable {
-                    name: "midi.port".to_owned(),
-                    kind: VariantKind::String,
-                    label: "Port name".to_owned(),
-                    synthesis: None,
-                },
-            ],
-        })
-    }
-}
 
 #[cfg(test)]
 mod tests {

@@ -17,8 +17,8 @@ use forge_components::{
     header_status, icon, menu_button, menu_divider, menu_item, mono_family, pad_tile, page_frame,
     radius, scaled, status_dot, toggle, tr,
 };
-use forge_midi::event_kinds::{INPUT_PREFIX, PORT_PREFIX};
-use forge_midi::{MidiClient, MidiMonitorEvent, SwitchableMidiSink};
+use forge_midi::vocabulary::event_kinds::{INPUT_PREFIX, PORT_PREFIX};
+use forge_midi::{MidiClient, MidiMonitorEvent, MidiSignalKind, SwitchableMidiSink};
 use forge_runtime::EventBus;
 use forge_storage::{
     ActionRepo, SettingsRepo, StorageError, TriggerInstanceRepo, set_json_setting,
@@ -118,47 +118,44 @@ const LEARN_GLYPH: Pixels = px(14.0);
 
 const UNDO_TOAST_MS: u64 = 6000;
 
-fn monitor_color(kind: &str, palette: &ForgePalette) -> Rgba {
+fn monitor_color(kind: MidiSignalKind, palette: &ForgePalette) -> Rgba {
     match kind {
-        "note_on" => palette.success,
-        "note_off" => palette.text_faint,
-        "control_change" | "pitch_bend" => palette.info,
-        "program_change" => palette.theme_brand,
-        _ => palette.text_secondary,
+        MidiSignalKind::NoteOn => palette.success,
+        MidiSignalKind::NoteOff => palette.text_faint,
+        MidiSignalKind::ControlChange | MidiSignalKind::PitchBend => palette.info,
+        MidiSignalKind::ProgramChange => palette.theme_brand,
     }
 }
 
-fn monitor_kind_label(kind: &str) -> &str {
+fn monitor_kind_label(kind: MidiSignalKind) -> &'static str {
     match kind {
-        "note_on" => "Note On",
-        "note_off" => "Note Off",
-        "control_change" => "CC",
-        "pitch_bend" => "Pitch",
-        "program_change" => "PC",
-        other => other,
+        MidiSignalKind::NoteOn => "Note On",
+        MidiSignalKind::NoteOff => "Note Off",
+        MidiSignalKind::ControlChange => "CC",
+        MidiSignalKind::PitchBend => "Pitch",
+        MidiSignalKind::ProgramChange => "PC",
     }
 }
 
 fn monitor_value_label(event: &MidiMonitorEvent) -> String {
-    match event.kind.as_str() {
-        "note_on" => match (event.number, event.value) {
+    match event.kind {
+        MidiSignalKind::NoteOn => match (event.number, event.value) {
             (Some(note), Some(velocity)) => {
                 format!("{} vel {velocity}", note_name(i64::from(note)))
             }
             (Some(note), None) => note_name(i64::from(note)),
             _ => String::new(),
         },
-        "note_off" => event
+        MidiSignalKind::NoteOff => event
             .number
             .map(|note| note_name(i64::from(note)))
             .unwrap_or_default(),
-        "control_change" => match (event.number, event.value) {
+        MidiSignalKind::ControlChange => match (event.number, event.value) {
             (Some(controller), Some(value)) => format!("{controller} \u{2192} {value}"),
             _ => String::new(),
         },
-        "pitch_bend" => event.value.map(|v| v.to_string()).unwrap_or_default(),
-        "program_change" => event.number.map(|n| n.to_string()).unwrap_or_default(),
-        _ => String::new(),
+        MidiSignalKind::PitchBend => event.value.map(|v| v.to_string()).unwrap_or_default(),
+        MidiSignalKind::ProgramChange => event.number.map(|n| n.to_string()).unwrap_or_default(),
     }
 }
 
@@ -532,10 +529,8 @@ impl MidiScreenView {
     }
 
     fn push_monitor(&mut self, event: MidiMonitorEvent, cx: &mut Context<Self>) {
-        if self.capture != Capture::Off
-            && let Some(signal) = MidiSignal::from_monitor(&event)
-        {
-            self.on_capture(signal, cx);
+        if self.capture != Capture::Off {
+            self.on_capture(MidiSignal::from_monitor(&event), cx);
         }
         self.monitor.insert(0, event);
         self.monitor.truncate(MONITOR_ROWS);
@@ -1162,13 +1157,13 @@ impl MidiScreenView {
                             .w(MONITOR_KIND_W)
                             .flex_shrink_0()
                             .text_color(palette.text_faint)
-                            .child(monitor_kind_label(&event.kind).to_owned()),
+                            .child(monitor_kind_label(event.kind)),
                     )
                     .child(
                         div()
                             .flex_1()
                             .min_w_0()
-                            .text_color(monitor_color(&event.kind, palette))
+                            .text_color(monitor_color(event.kind, palette))
                             .child(monitor_value_label(event)),
                     ),
             );

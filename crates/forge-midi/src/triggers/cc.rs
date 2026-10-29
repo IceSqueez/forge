@@ -1,222 +1,30 @@
-use std::collections::BTreeMap;
+use super::input::{MidiInputTrigger, SignalNumber, SignalValue};
+use crate::vocabulary::limits::DATA_BYTE_MAX;
+use crate::vocabulary::variables::input as variables;
+use crate::vocabulary::{MidiSignalKind, config_keys, trigger_ids};
 
-use forge_events::{Event, EventSource};
-use forge_registry::{
-    EventFilter, FormField, KindPlatformContract, TriggerCategory, TriggerKindDescriptor,
+pub(crate) const CONTROL_CHANGE_TRIGGER: MidiInputTrigger = MidiInputTrigger {
+    id: trigger_ids::CONTROL_CHANGE,
+    kind: MidiSignalKind::ControlChange,
+    label: "MIDI Control Change",
+    summary: "Fires when a MIDI Control Change (CC) message is received.",
+    search_text: "midi cc control change controller knob fader channel",
+    icon: "sliders",
+    number: Some(SignalNumber {
+        config_key: config_keys::CONTROLLER,
+        optional_label: "Controller (leave empty for any)",
+        label: "Controller",
+        display_name: "cc",
+        any_display: "any controller",
+        variable: variables::CONTROLLER,
+        variable_label: "Controller number",
+    }),
+    value: Some(SignalValue {
+        variable: variables::VALUE,
+        label: "Controller value",
+        max: DATA_BYTE_MAX,
+    }),
 };
-use forge_types::{
-    ArgStack, DeclaredVariable, SynthesisHint, TriggerConfig, VariableSchema, Variant, VariantKind,
-};
-
-use crate::payload_fields::input as fields;
-
-pub struct MidiCcDescriptor;
-
-impl TriggerKindDescriptor for MidiCcDescriptor {
-    fn id(&self) -> &str {
-        "midi.input.control_change"
-    }
-
-    fn category(&self) -> TriggerCategory {
-        TriggerCategory::Midi
-    }
-
-    fn label(&self) -> &str {
-        "MIDI Control Change"
-    }
-
-    fn summary(&self) -> &str {
-        "Fires when a MIDI Control Change (CC) message is received."
-    }
-
-    fn search_text(&self) -> &str {
-        "midi cc control change controller knob fader channel"
-    }
-
-    fn icon_name(&self) -> &str {
-        "sliders"
-    }
-
-    fn platform_contract(&self) -> KindPlatformContract {
-        KindPlatformContract::Universal
-    }
-
-    fn default_config(&self) -> TriggerConfig {
-        BTreeMap::new()
-    }
-
-    fn config_fields(&self) -> Vec<FormField> {
-        vec![
-            FormField::Optional {
-                key: "controller",
-                label: "Controller (leave empty for any)",
-                inner: Box::new(FormField::Integer {
-                    key: "controller",
-                    label: "Controller",
-                    min: 0,
-                    max: 127,
-                }),
-            },
-            FormField::Optional {
-                key: "channel",
-                label: "Channel (leave empty for any)",
-                inner: Box::new(FormField::Integer {
-                    key: "channel",
-                    label: "Channel",
-                    min: 0,
-                    max: 15,
-                }),
-            },
-            FormField::Optional {
-                key: "device",
-                label: "Device (leave empty for any)",
-                inner: Box::new(FormField::Text {
-                    key: "device",
-                    label: "Device",
-                    placeholder: "e.g. Launchkey Mini",
-                }),
-            },
-        ]
-    }
-
-    fn condition_display(&self, config: &TriggerConfig) -> String {
-        let ctrl = config.get("controller").and_then(|v| {
-            if let Variant::Int(n) = v {
-                Some(*n)
-            } else {
-                None
-            }
-        });
-        let channel = config.get("channel").and_then(|v| {
-            if let Variant::Int(c) = v {
-                Some(*c)
-            } else {
-                None
-            }
-        });
-        let device = config.get("device").and_then(|v| {
-            if let Variant::String(d) = v
-                && !d.is_empty()
-            {
-                Some(d.clone())
-            } else {
-                None
-            }
-        });
-        let mut display = match (ctrl, channel) {
-            (Some(c), Some(ch)) => format!("cc={c}, ch={ch}"),
-            (Some(c), None) => format!("cc={c}"),
-            (None, Some(ch)) => format!("ch={ch}"),
-            (None, None) => "any controller, any channel".to_owned(),
-        };
-        if let Some(d) = device {
-            display.push_str(&format!(", device={d}"));
-        }
-        display
-    }
-
-    fn event_filter(&self) -> EventFilter {
-        EventFilter {
-            source: Some(EventSource::Midi),
-            kind_prefix: Some(crate::event_kinds::INPUT_PREFIX.to_owned()),
-        }
-    }
-
-    fn matches_trigger(&self, config: &TriggerConfig, event: &Event) -> bool {
-        if event.kind != crate::event_kinds::CONTROL_CHANGE {
-            return false;
-        }
-        if let Some(Variant::Int(c)) = config.get("controller") {
-            let event_ctrl = event
-                .payload
-                .get(fields::CONTROLLER)
-                .and_then(|v| v.as_u64())
-                .unwrap_or(u64::MAX);
-            if *c as u64 != event_ctrl {
-                return false;
-            }
-        }
-        if let Some(Variant::Int(c)) = config.get("channel") {
-            let event_ch = event
-                .payload
-                .get(fields::CHANNEL)
-                .and_then(|v| v.as_u64())
-                .unwrap_or(u64::MAX);
-            if *c as u64 != event_ch {
-                return false;
-            }
-        }
-        if let Some(Variant::String(d)) = config.get("device")
-            && !d.is_empty()
-        {
-            let event_port = event
-                .payload
-                .get(fields::PORT_NAME)
-                .and_then(|v| v.as_str())
-                .unwrap_or("");
-            if d != event_port {
-                return false;
-            }
-        }
-        true
-    }
-
-    fn build_arg_stack(&self, event: &Event) -> ArgStack {
-        let mut stack = ArgStack::new();
-        if let Some(c) = event
-            .payload
-            .get(fields::CONTROLLER)
-            .and_then(|v| v.as_u64())
-        {
-            stack = stack.set("midi.controller".to_owned(), Variant::Int(c as i64));
-        }
-        if let Some(v) = event.payload.get(fields::VALUE).and_then(|v| v.as_u64()) {
-            stack = stack.set("midi.value".to_owned(), Variant::Int(v as i64));
-        }
-        if let Some(c) = event.payload.get(fields::CHANNEL).and_then(|v| v.as_u64()) {
-            stack = stack.set("midi.channel".to_owned(), Variant::Int(c as i64));
-        }
-        if let Some(p) = event
-            .payload
-            .get(fields::PORT_NAME)
-            .and_then(|v| v.as_str())
-        {
-            stack = stack.set("midi.port".to_owned(), Variant::String(p.to_owned()));
-        }
-        stack
-    }
-
-    fn output_schema(&self) -> Option<VariableSchema> {
-        Some(VariableSchema {
-            variables: vec![
-                DeclaredVariable {
-                    name: "midi.controller".to_owned(),
-                    kind: VariantKind::Int,
-                    label: "Controller number".to_owned(),
-                    synthesis: Some(SynthesisHint::BoundedInt { min: 0, max: 127 }),
-                },
-                DeclaredVariable {
-                    name: "midi.value".to_owned(),
-                    kind: VariantKind::Int,
-                    label: "Controller value".to_owned(),
-                    synthesis: Some(SynthesisHint::BoundedInt { min: 0, max: 127 }),
-                },
-                DeclaredVariable {
-                    name: "midi.channel".to_owned(),
-                    kind: VariantKind::Int,
-                    label: "Channel".to_owned(),
-                    synthesis: Some(SynthesisHint::BoundedInt { min: 0, max: 15 }),
-                },
-                DeclaredVariable {
-                    name: "midi.port".to_owned(),
-                    kind: VariantKind::String,
-                    label: "Port name".to_owned(),
-                    synthesis: None,
-                },
-            ],
-        })
-    }
-}
 
 #[cfg(test)]
 mod tests {

@@ -209,6 +209,7 @@ mod tests {
     use super::*;
     use crate::test_support::{Sandboxed, sandboxed_backend};
     use crate::{EventBus, NullEventLogRepo, ScriptRegistry};
+    use forge_events::Event;
     use forge_events::EventPublisher;
     use forge_storage::{GlobalsRepo, SettingsRepo};
     use forge_storage_sqlite::SqliteBackend;

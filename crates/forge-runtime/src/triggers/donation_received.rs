@@ -207,8 +207,7 @@ mod tests {
         };
         DonationReceived::announce(&donation, PLACEHOLDER)
             .unwrap()
-            .into_event()
-            .unwrap()
+            .into_event(EventSource::Donation, None)
     }
 
     fn provider_config(provider: Option<&str>) -> TriggerConfig {

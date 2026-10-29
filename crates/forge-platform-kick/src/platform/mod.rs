@@ -219,6 +219,7 @@ pub(crate) mod tests {
     use std::sync::Mutex as StdMutex;
     use std::time::Duration as StdDuration;
 
+    use forge_events::{PlatformConnectionChanged, TypedEvent};
     use forge_storage::{CredentialId, CredentialsRepo, StorageError};
     use time::{Duration, OffsetDateTime};
 
@@ -673,7 +674,7 @@ pub(crate) mod tests {
     }
 
     fn link_announcement(event: &Event) -> Option<(String, Option<bool>)> {
-        (event.kind == forge_platform_core::CONNECTION_STATE_CHANGED_KIND).then(|| {
+        (event.kind == PlatformConnectionChanged::KIND).then(|| {
             (
                 event.payload["state"].as_str().unwrap().to_owned(),
                 event.payload["expected"].as_bool(),

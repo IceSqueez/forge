@@ -4,7 +4,7 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use async_trait::async_trait;
-use forge_events::{Event, EventSource, LatestChanged};
+use forge_events::{Event, EventSource, LatestChanged, TypedEvent};
 use forge_overlay::{OverlayKindRegistry, register_builtin_kinds};
 use forge_runtime::{
     Config, EventBus, NullEventLogRepo, OverlayConnectListener, OverlayFrameSink, OverlayReceivers,
@@ -412,8 +412,7 @@ async fn a_latest_changed_event_refreshes_the_overlays_bound_to_that_slot() {
             merged_changed: true,
             cleared: false,
         }
-        .into_event(None)
-        .unwrap(),
+        .into_event(EventSource::Core, None),
     );
     harness.wait_for_frames(1, WAIT_BOUND).await;
 

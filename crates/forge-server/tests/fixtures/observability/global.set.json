@@ -1,0 +1,22 @@
+[
+  {
+    "payload": {
+      "key": "counter",
+      "new_value": 99,
+      "persisted": false,
+      "prev_value": 41,
+      "via": "ws_api"
+    },
+    "source": "server"
+  },
+  {
+    "payload": {
+      "key": "counter",
+      "new_value": "ninety",
+      "persisted": true,
+      "prev_value": 41,
+      "via": "ws_api"
+    },
+    "source": "server"
+  }
+]

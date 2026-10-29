@@ -10,10 +10,10 @@ use forge_emulator::fakes::twitch::{
 };
 use forge_emulator::fixture::TwitchAccount;
 use forge_events::{Event, EventPublisher, EventSubscription};
+use forge_events::{PlatformConnectionChanged, TypedEvent};
 use forge_net::{Gateway, TokenBucketRateLimiter};
 use forge_platform_core::{
-    BuiltinControl, CONNECTION_STATE_CHANGED_KIND, ChatPlatform, ConnectionState, EndpointSurface,
-    PlatformEndpoints,
+    BuiltinControl, ChatPlatform, ConnectionState, EndpointSurface, PlatformEndpoints,
 };
 use forge_platform_twitch::credentials::{StoredCredential, store_credential};
 use forge_platform_twitch::{
@@ -521,7 +521,8 @@ async fn bundle_shutdown_publishes_a_final_disconnected_change_and_closes_the_ev
 
     loop {
         let event = next_platform_event(&mut events).await;
-        if event.kind == CONNECTION_STATE_CHANGED_KIND && event.payload["state"] == "disconnected" {
+        if event.kind == PlatformConnectionChanged::KIND && event.payload["state"] == "disconnected"
+        {
             break;
         }
     }

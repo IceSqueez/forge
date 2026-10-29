@@ -1,0 +1,32 @@
+[
+  {
+    "payload": {
+      "channel": "twitch",
+      "message": "golden plain",
+      "sent_as": {
+        "login": "forgebot",
+        "role": "bot"
+      }
+    },
+    "source": "twitch"
+  },
+  {
+    "payload": {
+      "channel": "twitch",
+      "message": "golden reply",
+      "reply_to_message_id": "msg-1",
+      "sent_as": {
+        "login": "forgebot",
+        "role": "bot"
+      }
+    },
+    "source": "twitch"
+  },
+  {
+    "payload": {
+      "channel": "kick",
+      "message": "golden kick"
+    },
+    "source": "kick"
+  }
+]

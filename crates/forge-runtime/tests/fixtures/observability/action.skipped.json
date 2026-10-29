@@ -1,0 +1,10 @@
+[
+  {
+    "payload": {
+      "action_id": "01JBZ8Q4T5N7W3K2M9X6V1R0AA",
+      "queue_id": "01JBZ8Q4T5N7W3K2M9X6V1R0QQ",
+      "reason": "queue_paused"
+    },
+    "source": "core"
+  }
+]

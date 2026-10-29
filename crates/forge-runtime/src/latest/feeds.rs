@@ -248,8 +248,7 @@ mod tests {
             occurred_at: occurred_at(),
             test: false,
         }
-        .into_event()
-        .unwrap()
+        .into_event(EventSource::Donation, None)
     }
 
     fn youtube_event(kind: &str, micros: u64, currency: &str) -> Event {

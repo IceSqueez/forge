@@ -2161,4 +2161,94 @@ pub(crate) mod tests {
             assert_eq!(event.payload["state"], state);
         }
     }
+
+    fn golden_keys_sorted(value: serde_json::Value) -> serde_json::Value {
+        match value {
+            serde_json::Value::Object(fields) => {
+                let sorted: std::collections::BTreeMap<String, serde_json::Value> = fields
+                    .into_iter()
+                    .map(|(key, value)| (key, golden_keys_sorted(value)))
+                    .collect();
+                serde_json::Value::Object(sorted.into_iter().collect())
+            }
+            serde_json::Value::Array(items) => {
+                serde_json::Value::Array(items.into_iter().map(golden_keys_sorted).collect())
+            }
+            other => other,
+        }
+    }
+
+    fn assert_matches_golden(events: &[Event], fixture: &str) {
+        let emitted: Vec<serde_json::Value> = events
+            .iter()
+            .map(|event| {
+                let mut payload = event.payload.clone();
+                if let Some(duration) = payload.get_mut("duration_ms") {
+                    assert!(
+                        duration.is_u64(),
+                        "duration_ms must stay an unsigned integer"
+                    );
+                    *duration = serde_json::json!(0);
+                }
+                serde_json::json!({ "source": event.source, "payload": payload })
+            })
+            .collect();
+        let actual = format!(
+            "{}\n",
+            serde_json::to_string_pretty(&golden_keys_sorted(serde_json::Value::Array(emitted)))
+                .unwrap()
+        );
+        let path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("tests/fixtures/observability")
+            .join(fixture);
+        let golden = std::fs::read_to_string(&path).unwrap_or_default();
+        assert!(
+            golden == actual,
+            "{fixture} drifted:\n--- golden\n{golden}--- emitted\n{actual}"
+        );
+    }
+
+    #[tokio::test]
+    async fn chat_sent_payloads_match_the_golden() {
+        let bus = test_bus();
+        let mut observer = bus.subscribe();
+        let (twitch, _twitch_rx) = SenderAwarePlatform::spawn(Some(bot_acting()));
+        spawn_chat_send_bridge(Arc::clone(&bus), twitch, "twitch", EventSource::Twitch);
+        tokio::task::yield_now().await;
+        let (kick, _kick_rx) = RecordingPlatform::spawn();
+        spawn_chat_send_bridge(Arc::clone(&bus), kick, "kick", EventSource::Kick);
+        tokio::task::yield_now().await;
+
+        let mut sent = Vec::new();
+        for payload in [
+            serde_json::json!({ "message": "golden plain", "target": "twitch" }),
+            serde_json::json!({ "message": "golden reply", "target": "twitch", REPLY_PARENT_FIELD: "msg-1" }),
+            serde_json::json!({ "message": "golden kick", "target": "kick" }),
+        ] {
+            bus.publish(request(EventSource::Rhai, payload));
+            sent.push(next_of_kind(&mut observer, "chat.send").await);
+        }
+
+        assert_matches_golden(&sent, "chat.send.json");
+    }
+
+    #[tokio::test]
+    async fn chat_send_failed_payloads_match_the_golden() {
+        let bus = test_bus();
+        let mut observer = bus.subscribe();
+        let (twitch, _twitch_rx) = RecordingPlatform::failing("msg_duplicate: identical message");
+        spawn_chat_send_bridge(Arc::clone(&bus), twitch, "twitch", EventSource::Twitch);
+        tokio::task::yield_now().await;
+
+        let mut failed = Vec::new();
+        for payload in [
+            serde_json::json!({ "message": "golden", SENDER_FIELD: "Bot" }),
+            serde_json::json!({ "message": "golden" }),
+        ] {
+            bus.publish(request(EventSource::Rhai, payload));
+            failed.push(next_of_kind(&mut observer, "chat.send.failed").await);
+        }
+
+        assert_matches_golden(&failed, "chat.send.failed.json");
+    }
 }

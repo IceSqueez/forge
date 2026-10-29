@@ -1,0 +1,16 @@
+[
+  {
+    "payload": {
+      "channel": "twitch",
+      "error": "unknown sender \"Bot\"; valid senders: default, streamer, bot"
+    },
+    "source": "twitch"
+  },
+  {
+    "payload": {
+      "channel": "twitch",
+      "error": "network failure: msg_duplicate: identical message"
+    },
+    "source": "twitch"
+  }
+]

@@ -255,7 +255,7 @@ mod tests {
     use std::sync::Mutex as StdMutex;
     use std::time::Duration;
 
-    use forge_events::EventSource;
+    use forge_events::{ChatSent, EventSource, TypedEvent};
     use forge_platform_core::ViewerReport;
     use forge_storage::action::MockActionRepo;
     use forge_storage::trigger_instance::MockTriggerInstanceRepo;
@@ -485,11 +485,15 @@ mod tests {
         }
 
         async fn forge_sent(&self, source: EventSource, message: &str) {
-            self.bus.publish(Event::new(
-                source,
-                CHAT_SENT_KIND,
-                json!({ "channel": "twitch", "message": message }),
-            ));
+            self.bus.publish(
+                ChatSent {
+                    channel: "twitch".to_owned(),
+                    message: message.to_owned(),
+                    reply_to_message_id: None,
+                    sent_as: None,
+                }
+                .into_event(source, None),
+            );
             settle().await;
         }
 

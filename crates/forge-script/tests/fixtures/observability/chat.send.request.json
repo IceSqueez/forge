@@ -1,0 +1,25 @@
+[
+  {
+    "payload": {
+      "message": "golden broadcast"
+    },
+    "source": "rhai"
+  },
+  {
+    "payload": {
+      "message": "golden reply",
+      "reply_to_message_id": "msg-1",
+      "target": "twitch"
+    },
+    "source": "rhai"
+  },
+  {
+    "payload": {
+      "message": "golden whisper",
+      "sender": "bot",
+      "target": "twitch",
+      "whisper_to_login": "viewer"
+    },
+    "source": "rhai"
+  }
+]

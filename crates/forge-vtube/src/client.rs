@@ -261,6 +261,7 @@ pub(crate) mod tests {
 
     use super::*;
     use forge_events::{Event, EventPublisher};
+    use forge_events::{PlatformConnectionChanged, TypedEvent};
     use forge_platform_core::{BannerLevel, BuiltinContent, BuiltinControl, DetailSection};
 
     pub(crate) struct MockPublisher {
@@ -1641,7 +1642,7 @@ pub(crate) mod tests {
             .lock()
             .unwrap()
             .iter()
-            .filter(|e| e.kind == forge_platform_core::CONNECTION_STATE_CHANGED_KIND)
+            .filter(|e| e.kind == PlatformConnectionChanged::KIND)
             .map(|e| {
                 e.payload["state"]
                     .as_str()
@@ -1810,7 +1811,7 @@ pub(crate) mod tests {
             .lock()
             .unwrap()
             .iter()
-            .filter(|e| e.kind == forge_platform_core::CONNECTION_STATE_CHANGED_KIND)
+            .filter(|e| e.kind == PlatformConnectionChanged::KIND)
             .map(|e| {
                 (
                     e.payload["state"]

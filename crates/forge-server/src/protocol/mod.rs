@@ -1087,9 +1087,8 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn set_global_with_auth_returns_ok_and_emits_event() {
+    async fn set_global_with_auth_returns_ok() {
         let ctx = make_ctx(true, false);
-        let mut bus_sub = ctx.bus.observe("ws_dispatch_test");
         let req = WsEnvelope {
             id: Some("10".to_owned()),
             inner: WsRequest::SetGlobal {
@@ -1100,16 +1099,45 @@ mod tests {
         };
         let resp = dispatch(req, &ctx).await;
         let json = serialize_response_frame(&resp);
-        assert_eq!(json["status"], "ok");
-        assert_eq!(json["ok"], true);
+        assert_eq!(
+            (&json["status"], &json["ok"]),
+            (&serde_json::json!("ok"), &serde_json::json!(true))
+        );
+    }
 
-        let event = bus_sub.recv().await.unwrap();
-        assert_eq!(event.source, EventSource::Server);
-        assert_eq!(event.kind, "global.set");
-        assert_eq!(event.payload["key"], "counter");
-        assert_eq!(event.payload["new_value"], 99);
-        assert_eq!(event.payload["persisted"], false);
-        assert_eq!(event.payload["via"], "ws_api");
+    #[tokio::test]
+    async fn set_global_event_payloads_match_the_golden() {
+        let mut tdp = TestDataProvider::new();
+        tdp.globals()
+            .expect_get()
+            .returning(|_| Ok(Some(forge_types::Variant::Int(41))));
+        tdp.globals().expect_set().returning(|_, _, _| Ok(()));
+        let dp: Arc<dyn DataProvider> = Arc::new(tdp);
+        let ctx = make_ctx_with_dp(true, dp);
+        let mut bus_sub = ctx.bus.observe("ws_dispatch_test");
+        for (value, persisted) in [
+            (serde_json::json!(99), false),
+            (serde_json::json!("ninety"), true),
+        ] {
+            let req = WsEnvelope {
+                id: Some("10".to_owned()),
+                inner: WsRequest::SetGlobal {
+                    name: "counter".to_owned(),
+                    value,
+                    persisted,
+                },
+            };
+            dispatch(req, &ctx).await;
+        }
+
+        let mut events = Vec::new();
+        while events.len() < 2 {
+            let event = bus_sub.recv().await.unwrap();
+            if event.kind == "global.set" {
+                events.push(event);
+            }
+        }
+        assert_matches_golden(&events, "global.set.json");
     }
 
     #[tokio::test]
@@ -1870,5 +1898,51 @@ mod tests {
         .await;
 
         assert_eq!(error_code(&resp), Some("UNAUTHENTICATED"));
+    }
+
+    fn golden_keys_sorted(value: serde_json::Value) -> serde_json::Value {
+        match value {
+            serde_json::Value::Object(fields) => {
+                let sorted: std::collections::BTreeMap<String, serde_json::Value> = fields
+                    .into_iter()
+                    .map(|(key, value)| (key, golden_keys_sorted(value)))
+                    .collect();
+                serde_json::Value::Object(sorted.into_iter().collect())
+            }
+            serde_json::Value::Array(items) => {
+                serde_json::Value::Array(items.into_iter().map(golden_keys_sorted).collect())
+            }
+            other => other,
+        }
+    }
+
+    fn assert_matches_golden(events: &[Event], fixture: &str) {
+        let emitted: Vec<serde_json::Value> = events
+            .iter()
+            .map(|event| {
+                let mut payload = event.payload.clone();
+                if let Some(duration) = payload.get_mut("duration_ms") {
+                    assert!(
+                        duration.is_u64(),
+                        "duration_ms must stay an unsigned integer"
+                    );
+                    *duration = serde_json::json!(0);
+                }
+                serde_json::json!({ "source": event.source, "payload": payload })
+            })
+            .collect();
+        let actual = format!(
+            "{}\n",
+            serde_json::to_string_pretty(&golden_keys_sorted(serde_json::Value::Array(emitted)))
+                .unwrap()
+        );
+        let path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("tests/fixtures/observability")
+            .join(fixture);
+        let golden = std::fs::read_to_string(&path).unwrap_or_default();
+        assert!(
+            golden == actual,
+            "{fixture} drifted:\n--- golden\n{golden}--- emitted\n{actual}"
+        );
     }
 }

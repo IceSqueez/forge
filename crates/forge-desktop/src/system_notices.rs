@@ -180,12 +180,11 @@ mod tests {
     use std::sync::Mutex;
 
     use forge_components::Toasts;
-    use forge_events::{Event, EventSource};
+    use forge_events::{ActionDone, Event, EventSource, RunOutcome, TypedEvent};
     use forge_runtime::{NotificationPreferences, spawn_notification_policy};
     use forge_storage::Language;
     use forge_types::ActionId;
     use gpui::TestAppContext;
-    use serde_json::json;
 
     use super::*;
     use crate::i18n::install_language;
@@ -233,16 +232,15 @@ mod tests {
 
     fn run_failed(name: &str) -> (Event, NotificationIntent) {
         let action_id = ActionId::new();
-        let event = Event::new(
-            EventSource::Core,
-            "action.done",
-            json!({
-                "action_id": action_id.to_string(),
-                "action_name": name,
-                "outcome": "failed",
-                "reason": "OBS is offline",
-            }),
-        );
+        let event = ActionDone {
+            action_id,
+            action_name: name.to_owned(),
+            outcome: RunOutcome::Failed,
+            total_ms: 0,
+            manual_test: false,
+            reason: Some("OBS is offline".to_owned()),
+        }
+        .into_event(EventSource::Core, None);
         let intent = NotificationIntent::ActionFailed(ActionFailureNotice {
             action_id,
             action_name: name.to_owned(),

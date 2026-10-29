@@ -131,6 +131,7 @@ impl SubActionRunner for CoreGlobalsArrayRemoveRunner {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use forge_events::Event;
     use forge_events::EventPublisher;
     use forge_storage::{GlobalEntry, StorageError};
     use forge_types::EventId;

@@ -1,0 +1,22 @@
+[
+  {
+    "payload": {
+      "duration_ms": 0,
+      "method": "get",
+      "status": 201,
+      "truncated": false,
+      "url_normalized": "http://127.0.0.1/golden"
+    },
+    "source": "rhai"
+  },
+  {
+    "payload": {
+      "duration_ms": 0,
+      "method": "post",
+      "status": 201,
+      "truncated": false,
+      "url_normalized": "http://127.0.0.1/golden"
+    },
+    "source": "rhai"
+  }
+]

@@ -867,9 +867,8 @@ mod tests {
     use serde_json::json;
 
     use forge_events::{Event, EventPublisher};
-    use forge_platform_core::{
-        AtomicConnectionState, CONNECTION_STATE_CHANGED_KIND, ConnectionState, ConnectionTransition,
-    };
+    use forge_events::{PlatformConnectionChanged, TypedEvent};
+    use forge_platform_core::{AtomicConnectionState, ConnectionState, ConnectionTransition};
 
     use super::{
         connection_state_transition, diff_and_emit_expressions, emit_connection_changed,
@@ -893,7 +892,7 @@ mod tests {
 
     impl EventPublisher for StateAtAnnouncement {
         fn publish(&self, event: Event) {
-            if event.kind == CONNECTION_STATE_CHANGED_KIND {
+            if event.kind == PlatformConnectionChanged::KIND {
                 self.observed.lock().unwrap().push(self.state.load());
             }
         }
@@ -917,7 +916,7 @@ mod tests {
                                 previous, next,
                                 "{previous:?} -> {next:?} re-announced a state that did not change"
                             );
-                            assert_eq!(event.kind, CONNECTION_STATE_CHANGED_KIND);
+                            assert_eq!(event.kind, PlatformConnectionChanged::KIND);
                             assert_eq!(
                                 event.payload["platform_id"].as_str(),
                                 Some(VTUBE_PLATFORM_ID),

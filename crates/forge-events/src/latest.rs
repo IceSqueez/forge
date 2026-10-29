@@ -51,43 +51,7 @@ mod tests {
     use serde_json::json;
 
     use super::*;
-
-    fn change() -> LatestChanged {
-        LatestChanged {
-            slot: "donation".to_owned(),
-            platform: Some("twitch".to_owned()),
-            merged_changed: true,
-            cleared: false,
-        }
-    }
-
-    #[test]
-    fn latest_changed_event_carries_its_cause_and_decodes_back() {
-        let cause = EventId::new();
-
-        let event = change().into_event(Some(cause)).unwrap();
-
-        assert_eq!(
-            (
-                event.source,
-                event.caused_by,
-                LatestChanged::from_event(&event)
-            ),
-            (EventSource::Core, Some(cause), Some(change()))
-        );
-    }
-
-    #[test]
-    fn decoders_ignore_events_of_another_kind() {
-        let foreign = Event::new(
-            EventSource::Core,
-            "global.set",
-            serde_json::to_value(change()).unwrap(),
-        );
-
-        assert_eq!(LatestChanged::from_event(&foreign), None);
-        assert_eq!(NowPlaying::from_event(&foreign), None);
-    }
+    use crate::{Event, EventSource};
 
     #[test]
     fn producer_now_playing_payload_decodes_with_optional_fields_absent() {

@@ -270,7 +270,7 @@ fn apply_transition(
 mod tests {
     use async_trait::async_trait;
     use forge_events::Event;
-    use forge_platform_core::CONNECTION_STATE_CHANGED_KIND;
+    use forge_events::{PlatformConnectionChanged, TypedEvent};
     use forge_storage::{CredentialId, CredentialsRepo, StorageError};
     use time::OffsetDateTime;
 
@@ -319,7 +319,7 @@ mod tests {
     }
 
     fn state_of(event: &Event) -> Option<String> {
-        if event.kind != CONNECTION_STATE_CHANGED_KIND {
+        if event.kind != PlatformConnectionChanged::KIND {
             return None;
         }
         Some(event.payload["state"].as_str().unwrap().to_owned())

@@ -17,7 +17,9 @@ pub fn spawn_latest_projector(bus: &Arc<EventBus>, values: LatestValues) {
 mod tests {
     use std::time::Duration;
 
-    use forge_events::{DonationReceived, Event, EventPublisher, LatestChanged};
+    use forge_events::{
+        DonationReceived, Event, EventPublisher, EventSource, LatestChanged, TypedEvent,
+    };
     use forge_storage::{LatestValueRepo, MockLatestValueRepo};
     use forge_types::{
         CurrencyCode, DonorVisibility, IntegrationId, LATEST_DONATION_SLOT, LatestScope, Shared,
@@ -52,8 +54,7 @@ mod tests {
             occurred_at: OffsetDateTime::from_unix_timestamp(1_790_000_000).unwrap(),
             test: false,
         }
-        .into_event()
-        .unwrap();
+        .into_event(EventSource::Donation, None);
         let donation_id = donation.id;
 
         bus.publish(donation);

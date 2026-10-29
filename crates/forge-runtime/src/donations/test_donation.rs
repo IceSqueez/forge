@@ -172,7 +172,7 @@ mod tests {
     use std::collections::BTreeSet;
     use std::sync::Mutex;
 
-    use forge_events::{DonationReceived, Event, EventPublisher};
+    use forge_events::{DonationReceived, Event, EventPublisher, TypedEvent};
     use forge_platform_core::{test_donation_quick_action, test_donation_step};
     use forge_storage::MockDonationRepo;
     use forge_types::{EventId, Shared};

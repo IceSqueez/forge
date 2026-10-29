@@ -466,8 +466,7 @@ mod tests {
             merged_changed: true,
             cleared: false,
         }
-        .into_event(None)
-        .unwrap()
+        .into_event(EventSource::Core, None)
     }
 
     fn content(entries: &[(&str, &str)]) -> OverlayConfig {

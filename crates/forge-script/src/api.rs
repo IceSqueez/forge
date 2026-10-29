@@ -1295,70 +1295,56 @@ mod tests {
 
     #[tokio::test]
     async fn sender_taking_chat_calls_publish_the_sender_beside_the_usual_payload() {
-        for (call, target, recipient, sender) in [
+        let hello = |target: Option<&str>, sender: Option<&str>| ChatSendRequest {
+            message: "hello".to_owned(),
+            target: target.map(str::to_owned),
+            sender: sender.map(str::to_owned),
+            ..ChatSendRequest::default()
+        };
+        let reply = |target, sender| ChatSendRequest {
+            reply_to_message_id: Some("msg-1".to_owned()),
+            ..hello(target, sender)
+        };
+        let whisper = |target, sender| ChatSendRequest {
+            whisper_to_login: Some("viewer".to_owned()),
+            ..hello(target, sender)
+        };
+        for (call, expected) in [
             (
                 r#"forge::chat::send_as("bot", "hello")"#,
-                None,
-                None,
-                Some("bot"),
+                hello(None, Some("bot")),
             ),
             (
                 r#"forge::chat::send_as("streamer", "twitch", "hello")"#,
-                Some("twitch"),
-                None,
-                Some("streamer"),
+                hello(Some("twitch"), Some("streamer")),
             ),
             (
                 r#"forge::chat::reply_as("bot", "msg-1", "hello")"#,
-                None,
-                Some((REPLY_PARENT_FIELD, "msg-1")),
-                Some("bot"),
+                reply(None, Some("bot")),
             ),
             (
                 r#"forge::chat::reply_as("streamer", "Twitch", "msg-1", "hello")"#,
-                Some("twitch"),
-                Some((REPLY_PARENT_FIELD, "msg-1")),
-                Some("streamer"),
+                reply(Some("twitch"), Some("streamer")),
             ),
             (
                 r#"forge::chat::whisper_as("bot", "viewer", "hello")"#,
-                None,
-                Some((WHISPER_RECIPIENT_FIELD, "viewer")),
-                Some("bot"),
+                whisper(None, Some("bot")),
             ),
             (
                 r#"forge::chat::whisper_as("bot", "twitch", "viewer", "hello")"#,
-                Some("twitch"),
-                Some((WHISPER_RECIPIENT_FIELD, "viewer")),
-                Some("bot"),
+                whisper(Some("twitch"), Some("bot")),
             ),
             (
                 r#"forge::chat::send_as("default", "twitch", "hello")"#,
-                Some("twitch"),
-                None,
-                None,
+                hello(Some("twitch"), None),
             ),
-            (r#"forge::chat::send("hello")"#, None, None, None),
+            (r#"forge::chat::send("hello")"#, hello(None, None)),
         ] {
             let (result, sent) = eval_gated(SwitchableAvailability::default(), call).await;
 
             assert!(result.is_ok(), "{call} failed: {result:?}");
-            assert_eq!(sent.len(), 1, "{call}");
-            let payload = &sent[0].payload;
-            assert_eq!(
-                payload.get(SENDER_FIELD).and_then(|v| v.as_str()),
-                sender,
-                "{call} published {payload}"
-            );
-            assert_eq!(
-                payload.get("target").and_then(|v| v.as_str()),
-                target,
-                "{call}"
-            );
-            assert_eq!(payload["message"], "hello", "{call}");
-            if let Some((key, value)) = recipient {
-                assert_eq!(payload[key], value, "{call}");
-            }
+            let published: Vec<_> = sent.iter().map(ChatSendRequest::from_event).collect();
+            assert_eq!(published, vec![Some(expected)], "{call}");
         }
     }
 
@@ -1637,7 +1623,11 @@ mod tests {
                 "{call} published {}",
                 sent[0].payload
             );
-            assert_eq!(sent[0].payload[WHISPER_RECIPIENT_FIELD], "viewer", "{call}");
+            assert_eq!(
+                ChatSendRequest::from_event(&sent[0]).and_then(|request| request.whisper_to_login),
+                Some("viewer".to_owned()),
+                "{call}"
+            );
         }
     }
 
@@ -1901,5 +1891,107 @@ mod tests {
 
             assert_runtime_error_mentions(script, result, expected);
         }
+    }
+
+    fn golden_keys_sorted(value: serde_json::Value) -> serde_json::Value {
+        match value {
+            serde_json::Value::Object(fields) => {
+                let sorted: std::collections::BTreeMap<String, serde_json::Value> = fields
+                    .into_iter()
+                    .map(|(key, value)| (key, golden_keys_sorted(value)))
+                    .collect();
+                serde_json::Value::Object(sorted.into_iter().collect())
+            }
+            serde_json::Value::Array(items) => {
+                serde_json::Value::Array(items.into_iter().map(golden_keys_sorted).collect())
+            }
+            other => other,
+        }
+    }
+
+    fn assert_matches_golden(events: &[Event], fixture: &str) {
+        let emitted: Vec<serde_json::Value> = events
+            .iter()
+            .map(|event| {
+                let mut payload = event.payload.clone();
+                if let Some(duration) = payload.get_mut("duration_ms") {
+                    assert!(
+                        duration.is_u64(),
+                        "duration_ms must stay an unsigned integer"
+                    );
+                    *duration = serde_json::json!(0);
+                }
+                serde_json::json!({ "source": event.source, "payload": payload })
+            })
+            .collect();
+        let actual = format!(
+            "{}\n",
+            serde_json::to_string_pretty(&golden_keys_sorted(serde_json::Value::Array(emitted)))
+                .unwrap()
+        );
+        let path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("tests/fixtures/observability")
+            .join(fixture);
+        let golden = std::fs::read_to_string(&path).unwrap_or_default();
+        assert!(
+            golden == actual,
+            "{fixture} drifted:\n--- golden\n{golden}--- emitted\n{actual}"
+        );
+    }
+
+    #[tokio::test]
+    async fn rhai_chat_request_payloads_match_the_golden() {
+        let (result, sent) = eval_gated(
+            SwitchableAvailability::default(),
+            r#"
+                forge::chat::send("golden broadcast");
+                forge::chat::reply("Twitch", "msg-1", "golden reply");
+                forge::chat::whisper_as("bot", "twitch", "viewer", "golden whisper");
+            "#,
+        )
+        .await;
+
+        assert!(result.is_ok(), "{result:?}");
+        assert_matches_golden(&sent, "chat.send.request.json");
+    }
+
+    #[tokio::test]
+    async fn http_call_payloads_match_the_golden() {
+        use wiremock::matchers::any;
+        use wiremock::{Mock, MockServer, ResponseTemplate};
+
+        let server = MockServer::start().await;
+        Mock::given(any())
+            .respond_with(ResponseTemplate::new(201).set_body_string("ok"))
+            .mount(&server)
+            .await;
+        let server_url = server.uri();
+        let dp = open_dp().await;
+        let captured: Arc<Mutex<Vec<Event>>> = Arc::new(Mutex::new(Vec::new()));
+        let config = Arc::new(ScriptHttpConfig {
+            allowed_domains: vec![server.address().ip().to_string()],
+            allow_local: true,
+            ..ScriptHttpConfig::default()
+        });
+        let script = format!(
+            r#"forge::http::get("{server_url}/golden?q=1"); forge::http::post("{server_url}/golden", "body");"#
+        );
+        let cap = Arc::clone(&captured);
+
+        tokio::task::spawn_blocking(move || {
+            let engine = build_engine_with_http_in_blocking(dp.clone(), cap, config);
+            drop(engine.eval_script(&script).unwrap());
+        })
+        .await
+        .unwrap();
+
+        let calls: Vec<Event> = captured
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|event| event.kind == "script.http_call")
+            .cloned()
+            .collect();
+        assert_matches_golden(&calls, "script.http_call.json");
     }
 }

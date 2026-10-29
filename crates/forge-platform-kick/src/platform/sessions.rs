@@ -221,7 +221,7 @@ mod tests {
     use std::sync::atomic::{AtomicBool, Ordering};
 
     use forge_events::{EventChannel, EventSource, EventSubscription};
-    use forge_platform_core::CONNECTION_STATE_CHANGED_KIND;
+    use forge_events::{PlatformConnectionChanged, TypedEvent};
     use futures::FutureExt;
 
     use super::*;
@@ -259,7 +259,7 @@ mod tests {
     fn link_announcements(stream: &mut EventSubscription) -> Vec<(String, Option<bool>)> {
         drain(stream)
             .into_iter()
-            .filter(|event| event.kind == CONNECTION_STATE_CHANGED_KIND)
+            .filter(|event| event.kind == PlatformConnectionChanged::KIND)
             .map(|event| {
                 (
                     event.payload["state"].as_str().unwrap().to_owned(),

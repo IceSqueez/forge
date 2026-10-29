@@ -160,6 +160,7 @@ mod tests {
 
     use super::*;
     use crate::integration_gate::{GatedLeafExecutor, IntegrationGate};
+    use forge_events::Event;
 
     #[derive(Default)]
     struct CapturingPublisher(Mutex<Vec<Event>>);

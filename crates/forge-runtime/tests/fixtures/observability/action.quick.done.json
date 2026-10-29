@@ -1,0 +1,20 @@
+[
+  {
+    "payload": {
+      "builtin_id": "twitch",
+      "kind": "twitch.chat.send_message",
+      "label": "Say hello as bot",
+      "outcome": "success"
+    },
+    "source": "core"
+  },
+  {
+    "payload": {
+      "builtin_id": "twitch",
+      "kind": "twitch.chat.send_message",
+      "label": "Say hello on kick",
+      "outcome": "success"
+    },
+    "source": "core"
+  }
+]

@@ -1,0 +1,20 @@
+[
+  {
+    "payload": {
+      "body_snippet": "{\"error\":{\"code\":403,\"errors\":[{\"reason\":\"quotaExceeded\"}]}}",
+      "endpoint": "/videos",
+      "retry_after_secs": null,
+      "status_code": 403
+    },
+    "source": "youtube"
+  },
+  {
+    "payload": {
+      "body_snippet": "",
+      "endpoint": "/videos",
+      "retry_after_secs": 45,
+      "status_code": 429
+    },
+    "source": "youtube"
+  }
+]

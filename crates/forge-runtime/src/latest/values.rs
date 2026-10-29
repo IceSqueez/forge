@@ -438,8 +438,7 @@ mod tests {
             occurred_at,
             test,
         }
-        .into_event()
-        .unwrap()
+        .into_event(EventSource::Donation, None)
     }
 
     fn cheer(login: &str, offset_secs: i64) -> Event {
@@ -467,8 +466,7 @@ mod tests {
             art: None,
             occurred_at: OffsetDateTime::now_utc(),
         }
-        .into_event(EventSource::Server)
-        .unwrap()
+        .into_event(EventSource::Server, None)
     }
 
     fn user_name(value: Option<LatestValue>) -> Option<String> {

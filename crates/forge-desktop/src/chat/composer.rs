@@ -322,15 +322,14 @@ mod tests {
     use super::super::platform_display_name;
     use super::super::send_plan::PlatformReach;
     use super::ChatComposer;
-    use crate::chat::send_plan::{
-        CHAT_SEND_REQUEST_KIND, CHAT_SENT_KIND, DeliveryResult, SendReport,
-    };
+    use crate::chat::send_plan::{DeliveryResult, SendReport};
     use crate::chat_input_bar::InputBarEvent;
     use crate::home_stats::{HomeStats, Integration};
     use crate::integration_lifecycle::IntegrationLifecycle;
     use crate::test_support::{install_presentation, pump, runtime};
     use crate::twitch_bot_presence::TwitchBotPresence;
     use forge_components::Toasts;
+    use forge_events::{ChatSendRequest, ChatSent, TypedEvent};
     use forge_platform_core::SENDER_FIELD;
     use forge_platform_twitch::{BotModerator, BotStatus};
     use forge_runtime::{LifecycleState, LifecycleStates};
@@ -517,10 +516,10 @@ mod tests {
             .try_recv()
             .unwrap()
             .expect("a send request on the bus");
-        assert_eq!(request.kind, CHAT_SEND_REQUEST_KIND);
+        assert_eq!(request.kind, ChatSendRequest::KIND);
         bus.publish(Event::caused_by(
             EventSource::Twitch,
-            CHAT_SENT_KIND,
+            ChatSent::KIND,
             serde_json::json!({ "channel": "twitch", "message": "hello" }),
             request.id,
         ));

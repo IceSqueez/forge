@@ -4244,7 +4244,7 @@ mod tests {
     use crate::sub_actions::test_support::MockCreds;
     use forge_events::EventChannel;
     use forge_events::{EventSource, EventSubscription};
-    use forge_platform_core::CONNECTION_STATE_CHANGED_KIND;
+    use forge_events::{PlatformConnectionChanged, TypedEvent};
     use forge_types::{ChatEventDetail, ChatPayload, ChatSegment};
     use tokio::sync::mpsc;
 
@@ -7319,7 +7319,7 @@ mod tests {
         let arrived = within_real_time(FAKE_WAIT, async {
             loop {
                 let event = events.recv().await.expect("the bus must stay open");
-                if event.kind != CONNECTION_STATE_CHANGED_KIND {
+                if event.kind != PlatformConnectionChanged::KIND {
                     continue;
                 }
                 let state: ConnectionState = serde_json::from_value(event.payload["state"].clone())
@@ -7629,7 +7629,7 @@ mod tests {
         assert!(
             !kinds
                 .iter()
-                .any(|kind| kind == CONNECTION_STATE_CHANGED_KIND),
+                .any(|kind| kind == PlatformConnectionChanged::KIND),
             "moving to the successor is invisible to a connected viewer, so it must publish no \
              connection-state event; saw {kinds:?}"
         );
@@ -7947,7 +7947,7 @@ mod tests {
                 .unwrap()
                 .iter()
                 .filter_map(|event| match event.kind.as_str() {
-                    CONNECTION_STATE_CHANGED_KIND if event.payload["state"] == connected => {
+                    PlatformConnectionChanged::KIND if event.payload["state"] == connected => {
                         Some("connected".to_owned())
                     }
                     CHAT_MESSAGE_KIND => event.payload["message"].as_str().map(str::to_owned),
@@ -8113,7 +8113,7 @@ mod tests {
                 continue;
             };
             let event = event.expect("the bus must stay open");
-            if event.kind == CONNECTION_STATE_CHANGED_KIND
+            if event.kind == PlatformConnectionChanged::KIND
                 && serde_json::from_value::<ConnectionState>(event.payload["state"].clone()).ok()
                     == Some(want)
             {
@@ -8288,7 +8288,7 @@ mod tests {
                 .unwrap()
                 .iter()
                 .filter(|event| {
-                    event.kind == CONNECTION_STATE_CHANGED_KIND
+                    event.kind == PlatformConnectionChanged::KIND
                         && event.payload["state"] == disconnected
                 })
                 .count()
@@ -8329,7 +8329,7 @@ mod tests {
             .unwrap()
             .iter()
             .filter(|event| {
-                event.kind == CONNECTION_STATE_CHANGED_KIND
+                event.kind == PlatformConnectionChanged::KIND
                     && event.payload["state"] == disconnected
             })
             .map(|event| event.payload["expected"].as_bool())
@@ -8347,7 +8347,7 @@ mod tests {
         within_real_time(FAKE_WAIT, async {
             loop {
                 let event = events.recv().await.expect("the bus must stay open");
-                if event.kind == CONNECTION_STATE_CHANGED_KIND {
+                if event.kind == PlatformConnectionChanged::KIND {
                     return (
                         serde_json::from_value(event.payload["state"].clone())
                             .expect("a connection-state event must carry a known state"),

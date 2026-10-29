@@ -153,6 +153,7 @@ mod tests {
     use crate::sub_action_runners::{
         CoreGlobalsDeleteRunner, CoreGlobalsIncrementRunner, CoreGlobalsSetRunner,
     };
+    use forge_events::Event;
 
     const UNREADABLE: &str = "unreadable";
 

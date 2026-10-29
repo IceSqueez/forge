@@ -76,6 +76,7 @@ mod tests {
     use forge_types::{DonationOrigin, Donor};
 
     use super::*;
+    use crate::{Event, EventSource};
 
     const PLACEHOLDER: &str = "Anonymous donor";
     const DONOR_NAME: &str = "SecretDonorName";
@@ -160,63 +161,30 @@ mod tests {
         let announced =
             DonationReceived::announce(&donation(Donor::Hidden, DonationOrigin::Test), PLACEHOLDER)
                 .unwrap();
-        let event = announced.clone().into_event().unwrap();
+        let event = announced.clone().into_event(EventSource::Donation, None);
 
-        assert_eq!(
-            (
-                event.source,
-                event.kind.as_str(),
-                DonationReceived::from_event(&event)
-            ),
-            (
-                EventSource::Donation,
-                DONATION_RECEIVED_KIND,
-                Some(announced)
-            )
-        );
+        assert_eq!(DonationReceived::from_event(&event), Some(announced));
     }
 
     #[test]
-    fn from_event_ignores_other_kinds_and_malformed_payloads() {
+    fn from_event_rejects_an_invalid_currency_or_a_negative_amount() {
         let valid_payload = DonationReceived::announce(
             &donation(Donor::Anonymous, DonationOrigin::Live),
             PLACEHOLDER,
         )
         .unwrap()
-        .into_event()
-        .unwrap()
+        .into_event(EventSource::Donation, None)
         .payload;
         let mut bad_currency = valid_payload.clone();
         bad_currency["currency"] = serde_json::json!("UAH1");
-        let mut negative_amount = valid_payload.clone();
+        let mut negative_amount = valid_payload;
         negative_amount["amount_micros"] = serde_json::json!(-1);
 
-        for (case, event) in [
-            (
-                "other kind",
-                Event::new(EventSource::Donation, "donation.refunded", valid_payload),
-            ),
-            (
-                "null payload",
-                Event::new(
-                    EventSource::Donation,
-                    DONATION_RECEIVED_KIND,
-                    serde_json::Value::Null,
-                ),
-            ),
-            (
-                "invalid currency",
-                Event::new(EventSource::Donation, DONATION_RECEIVED_KIND, bad_currency),
-            ),
-            (
-                "negative amount",
-                Event::new(
-                    EventSource::Donation,
-                    DONATION_RECEIVED_KIND,
-                    negative_amount,
-                ),
-            ),
+        for (case, payload) in [
+            ("invalid currency", bad_currency),
+            ("negative amount", negative_amount),
         ] {
+            let event = Event::new(EventSource::Donation, DONATION_RECEIVED_KIND, payload);
             assert_eq!(DonationReceived::from_event(&event), None, "case: {case}");
         }
     }

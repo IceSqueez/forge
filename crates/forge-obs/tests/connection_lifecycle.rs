@@ -5,10 +5,10 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use forge_events::{Event, EventPublisher};
+use forge_events::{PlatformConnectionChanged, TypedEvent};
 use forge_obs::{ObsClient, ObsError, ObsSink, ObsSource};
 use forge_platform_core::{
-    BannerLevel, BuiltinContent, BuiltinControl, CONNECTION_STATE_CHANGED_KIND, ConnectionState,
-    DetailSection,
+    BannerLevel, BuiltinContent, BuiltinControl, ConnectionState, DetailSection,
 };
 use futures_util::{SinkExt, StreamExt};
 use serde_json::{Value, json};
@@ -99,7 +99,7 @@ async fn serve_gated_close_frame(
 fn announced_states(rx: &mut mpsc::UnboundedReceiver<Event>) -> Vec<String> {
     let mut states = Vec::new();
     while let Ok(event) = rx.try_recv() {
-        if event.kind == CONNECTION_STATE_CHANGED_KIND {
+        if event.kind == PlatformConnectionChanged::KIND {
             states.push(
                 event.payload["state"]
                     .as_str()
@@ -402,7 +402,7 @@ impl Recorder {
             .lock()
             .unwrap()
             .iter()
-            .filter(|e| e.kind == CONNECTION_STATE_CHANGED_KIND)
+            .filter(|e| e.kind == PlatformConnectionChanged::KIND)
             .map(|e| {
                 (
                     e.payload["state"]
@@ -420,7 +420,7 @@ impl Recorder {
             .lock()
             .unwrap()
             .iter()
-            .filter(|e| e.kind == CONNECTION_STATE_CHANGED_KIND)
+            .filter(|e| e.kind == PlatformConnectionChanged::KIND)
             .map(|e| {
                 e.payload["state"]
                     .as_str()

@@ -1,0 +1,17 @@
+[
+  {
+    "payload": {
+      "message": "golden hello",
+      "sender": "bot",
+      "target": "twitch"
+    },
+    "source": "core"
+  },
+  {
+    "payload": {
+      "message": "golden kick",
+      "target": "kick"
+    },
+    "source": "core"
+  }
+]

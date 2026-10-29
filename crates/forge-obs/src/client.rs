@@ -1468,7 +1468,7 @@ pub(crate) fn map_obws_error(e: obws::error::Error) -> ObsError {
 mod tests {
     use super::*;
 
-    use forge_platform_core::CONNECTION_STATE_CHANGED_KIND;
+    use forge_events::{PlatformConnectionChanged, TypedEvent};
 
     const EVERY_CONNECTION_STATE: [ConnectionState; 4] = [
         ConnectionState::Disconnected,
@@ -1495,7 +1495,7 @@ mod tests {
                                 previous, next,
                                 "{previous:?} -> {next:?} re-announced a state that did not change"
                             );
-                            assert_eq!(event.kind, CONNECTION_STATE_CHANGED_KIND);
+                            assert_eq!(event.kind, PlatformConnectionChanged::KIND);
                             assert_eq!(
                                 event.payload["platform_id"].as_str(),
                                 Some(OBS_PLATFORM_ID),

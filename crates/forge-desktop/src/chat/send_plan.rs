@@ -270,11 +270,11 @@ mod tests {
     use forge_types::PlatformId;
 
     use super::{
-        CHAT_SEND_FAILED_KIND, CHAT_SEND_REQUEST_KIND, CHAT_SENT_KIND, DeliveryResult,
-        PlatformReach, SendPlan, SendRefusal, SendReport, SendRoute, attach_twitch_sender,
+        DeliveryResult, PlatformReach, SendPlan, SendRefusal, SendReport, SendRoute,
         collect_delivery, delivery_response, max_message_chars, plan_send,
     };
-    use forge_platform_core::{SENDER_FIELD, SenderPreference};
+    use forge_events::{ChatSendFailed, ChatSendRequest, ChatSent, TypedEvent};
+    use forge_platform_core::SenderPreference;
 
     const T: PlatformId = PlatformId::Twitch;
     const Y: PlatformId = PlatformId::YouTube;
@@ -446,11 +446,11 @@ mod tests {
             recipients: vec![T, K],
         };
 
-        let events = plan.request_events();
+        let events = plan.request_events(None);
 
         assert_eq!(events.len(), 1);
         assert_eq!(events[0].source, EventSource::Core);
-        assert_eq!(events[0].kind, CHAT_SEND_REQUEST_KIND);
+        assert_eq!(events[0].kind, ChatSendRequest::KIND);
         assert_eq!(
             events[0].payload,
             serde_json::json!({ "message": "hi all" })
@@ -465,7 +465,7 @@ mod tests {
             recipients: vec![Y, K],
         };
 
-        let events = plan.request_events();
+        let events = plan.request_events(None);
 
         let shapes: Vec<_> = events
             .iter()
@@ -476,12 +476,12 @@ mod tests {
             vec![
                 (
                     EventSource::Core,
-                    CHAT_SEND_REQUEST_KIND,
+                    ChatSendRequest::KIND,
                     serde_json::json!({ "target": "youtube", "message": "hi" })
                 ),
                 (
                     EventSource::Core,
-                    CHAT_SEND_REQUEST_KIND,
+                    ChatSendRequest::KIND,
                     serde_json::json!({ "target": "kick", "message": "hi" })
                 ),
             ]
@@ -498,30 +498,30 @@ mod tests {
             (
                 Event::new(
                     EventSource::Twitch,
-                    CHAT_SENT_KIND,
-                    serde_json::json!({ "channel": "twitch" }),
+                    ChatSent::KIND,
+                    serde_json::json!({ "channel": "twitch", "message": "hi" }),
                 ),
                 None,
             ),
             (
                 answer(
-                    CHAT_SENT_KIND,
-                    serde_json::json!({ "channel": "twitch" }),
+                    ChatSent::KIND,
+                    serde_json::json!({ "channel": "twitch", "message": "hi" }),
                     foreign,
                 ),
                 None,
             ),
             (
                 answer(
-                    CHAT_SENT_KIND,
-                    serde_json::json!({ "channel": "twitch" }),
+                    ChatSent::KIND,
+                    serde_json::json!({ "channel": "twitch", "message": "hi" }),
                     ours,
                 ),
                 Some((T, DeliveryResult::Delivered)),
             ),
             (
                 answer(
-                    CHAT_SEND_FAILED_KIND,
+                    ChatSendFailed::KIND,
                     serde_json::json!({ "channel": "kick", "error": "slow mode" }),
                     ours,
                 ),
@@ -529,33 +529,33 @@ mod tests {
             ),
             (
                 answer(
-                    CHAT_SEND_FAILED_KIND,
+                    ChatSendFailed::KIND,
                     serde_json::json!({ "channel": "youtube" }),
                     ours,
                 ),
-                Some((Y, DeliveryResult::Failed(String::new()))),
+                None,
             ),
             (
                 answer(
-                    CHAT_SENT_KIND,
-                    serde_json::json!({ "channel": "obs" }),
+                    ChatSent::KIND,
+                    serde_json::json!({ "channel": "obs", "message": "hi" }),
                     ours,
                 ),
                 None,
             ),
             (
                 answer(
-                    CHAT_SENT_KIND,
-                    serde_json::json!({ "channel": "myspace" }),
+                    ChatSent::KIND,
+                    serde_json::json!({ "channel": "myspace", "message": "hi" }),
                     ours,
                 ),
                 None,
             ),
-            (answer(CHAT_SENT_KIND, serde_json::json!({}), ours), None),
+            (answer(ChatSent::KIND, serde_json::json!({}), ours), None),
             (
                 answer(
                     "chat.whisper.sent",
-                    serde_json::json!({ "channel": "twitch" }),
+                    serde_json::json!({ "channel": "twitch", "message": "hi" }),
                     ours,
                 ),
                 None,
@@ -644,12 +644,12 @@ mod tests {
         let request = EventId::new();
         let subscription = bus.subscribe();
         bus.publish(answer(
-            CHAT_SENT_KIND,
-            serde_json::json!({ "channel": "twitch" }),
+            ChatSent::KIND,
+            serde_json::json!({ "channel": "twitch", "message": "hi" }),
             request,
         ));
         bus.publish(answer(
-            CHAT_SEND_FAILED_KIND,
+            ChatSendFailed::KIND,
             serde_json::json!({ "channel": "kick", "error": "x" }),
             request,
         ));
@@ -673,13 +673,13 @@ mod tests {
         let request = EventId::new();
         let subscription = bus.subscribe();
         bus.publish(answer(
-            CHAT_SENT_KIND,
-            serde_json::json!({ "channel": "twitch" }),
+            ChatSent::KIND,
+            serde_json::json!({ "channel": "twitch", "message": "hi" }),
             request,
         ));
         bus.publish(answer(
-            CHAT_SENT_KIND,
-            serde_json::json!({ "channel": "kick" }),
+            ChatSent::KIND,
+            serde_json::json!({ "channel": "kick", "message": "hi" }),
             EventId::new(),
         ));
 
@@ -715,33 +715,22 @@ mod tests {
     fn senders(requests: &[Event]) -> Vec<(Option<String>, Option<String>)> {
         requests
             .iter()
-            .map(|request| {
-                let read = |key: &str| {
-                    request
-                        .payload
-                        .get(key)
-                        .and_then(|value| value.as_str())
-                        .map(str::to_owned)
-                };
-                (read("target"), read(SENDER_FIELD))
-            })
+            .filter_map(ChatSendRequest::from_event)
+            .map(|request| (request.target, request.sender))
             .collect()
     }
 
     #[test]
     fn broadcast_request_carries_the_twitch_sender() {
-        let mut requests = plan(SendRoute::Broadcast).request_events();
-
-        attach_twitch_sender(&mut requests, SenderPreference::BotOnly);
+        let requests = plan(SendRoute::Broadcast).request_events(Some(SenderPreference::BotOnly));
 
         assert_eq!(senders(&requests), vec![(None, Some("bot".to_owned()))]);
     }
 
     #[test]
     fn targeted_requests_carry_the_sender_only_on_the_twitch_request() {
-        let mut requests = plan(SendRoute::Targeted(vec![Y, T, K])).request_events();
-
-        attach_twitch_sender(&mut requests, SenderPreference::Streamer);
+        let requests = plan(SendRoute::Targeted(vec![Y, T, K]))
+            .request_events(Some(SenderPreference::Streamer));
 
         assert_eq!(
             senders(&requests),
@@ -755,18 +744,15 @@ mod tests {
 
     #[test]
     fn requests_without_twitch_are_left_without_a_sender() {
-        let mut requests = plan(SendRoute::Targeted(vec![Y, K])).request_events();
-        let before: Vec<serde_json::Value> = requests
-            .iter()
-            .map(|request| request.payload.clone())
-            .collect();
+        let requests =
+            plan(SendRoute::Targeted(vec![Y, K])).request_events(Some(SenderPreference::BotOnly));
 
-        attach_twitch_sender(&mut requests, SenderPreference::BotOnly);
-
-        let after: Vec<serde_json::Value> = requests
-            .iter()
-            .map(|request| request.payload.clone())
-            .collect();
-        assert_eq!(after, before);
+        assert_eq!(
+            senders(&requests),
+            vec![
+                (Some("youtube".to_owned()), None),
+                (Some("kick".to_owned()), None),
+            ]
+        );
     }
 }

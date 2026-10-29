@@ -661,6 +661,7 @@ mod tests {
     use super::*;
     use crate::NullEventLogRepo;
     use crate::test_support::sandboxed_backend;
+    use forge_events::Event;
 
     struct RecordingRunner {
         last_config: Arc<Mutex<Option<forge_registry::SubActionConfig>>>,
@@ -1483,7 +1484,7 @@ mod tests {
             let mut next = None;
             while let Ok(Some(event)) = sub.try_recv() {
                 match event.kind.as_str() {
-                    ACTION_START_KIND => trace.starts += 1,
+                    ActionStarted::KIND => trace.starts += 1,
                     LOOP_EVENT_KIND => next = Some(event.id),
                     "action.skipped" => trace.skipped = Some(event),
                     _ => {}
@@ -1560,7 +1561,7 @@ mod tests {
     fn drain_lineage_ids(sub: &mut forge_events::EventSubscription) -> Vec<EventId> {
         let mut ids = Vec::new();
         while let Ok(Some(event)) = sub.try_recv() {
-            if event.kind == ACTION_START_KIND || event.kind == "subaction.run" {
+            if event.kind == ActionStarted::KIND || event.kind == "subaction.run" {
                 ids.push(event.id);
             }
         }
@@ -1713,7 +1714,7 @@ mod tests {
 
         let mut started = false;
         while let Ok(Some(event)) = sub.try_recv() {
-            started |= event.kind == ACTION_START_KIND;
+            started |= event.kind == ActionStarted::KIND;
         }
         assert!(
             started,
@@ -1770,7 +1771,7 @@ mod tests {
                     .await
                     .expect("the dispatched run never started")
                     .unwrap();
-                if event.kind == ACTION_START_KIND {
+                if event.kind == ActionStarted::KIND {
                     break event;
                 }
             };

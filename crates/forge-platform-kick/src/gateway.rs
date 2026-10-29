@@ -555,7 +555,7 @@ mod tests {
             send.delete("msg-77", TOKEN).await.unwrap_err();
 
             let published: Vec<(EventSource, serde_json::Value)> = bus
-                .events_of_kind(REQUEST_FAIL_KIND)
+                .events_of_kind(RequestFailed::KIND)
                 .into_iter()
                 .map(|event| (event.source, event.payload))
                 .collect();
@@ -577,7 +577,7 @@ mod tests {
             let calls = clients.every_call().await.len();
 
             assert_eq!(
-                bus.events_of_kind(REQUEST_FAIL_KIND).len(),
+                bus.events_of_kind(RequestFailed::KIND).len(),
                 calls,
                 "status {status}"
             );
@@ -611,7 +611,7 @@ mod tests {
         ];
 
         assert_eq!(outcomes, [true, true, true]);
-        assert!(bus.events_of_kind(REQUEST_FAIL_KIND).is_empty());
+        assert!(bus.events_of_kind(RequestFailed::KIND).is_empty());
     }
 
     #[tokio::test]
@@ -633,7 +633,7 @@ mod tests {
 
             send.send("hi", TOKEN, 42, false).await.unwrap_err();
 
-            let events = bus.events_of_kind(REQUEST_FAIL_KIND);
+            let events = bus.events_of_kind(RequestFailed::KIND);
             let snippet = events[0].payload["body_snippet"].as_str().unwrap();
             assert_eq!(
                 snippet.chars().count(),
@@ -663,7 +663,7 @@ mod tests {
                     "{label} on {status} leaked the token: {err:?}"
                 );
             }
-            for event in bus.events_of_kind(REQUEST_FAIL_KIND) {
+            for event in bus.events_of_kind(RequestFailed::KIND) {
                 assert!(
                     !event.payload.to_string().contains(TOKEN),
                     "request.fail on {status} leaked the token: {}",

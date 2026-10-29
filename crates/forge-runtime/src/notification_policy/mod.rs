@@ -233,22 +233,20 @@ mod tests {
         }
     }
 
-    fn action_done(action_id: ActionId, outcome: &str, manual_test: bool) -> Event {
-        Event::new(
-            EventSource::Core,
-            ACTION_DONE_KIND,
-            json!({
-                "action_id": action_id.to_string(),
-                "action_name": "Shoutout",
-                "outcome": outcome,
-                "manual_test": manual_test,
-                "reason": "step 2 failed",
-            }),
-        )
+    fn action_done(action_id: ActionId, outcome: RunOutcome, manual_test: bool) -> Event {
+        ActionDone {
+            action_id,
+            action_name: "Shoutout".to_owned(),
+            outcome,
+            total_ms: 0,
+            manual_test,
+            reason: Some("step 2 failed".to_owned()),
+        }
+        .into_event(EventSource::Core, None)
     }
 
     fn failed(action_id: ActionId) -> Event {
-        action_done(action_id, FAILED_OUTCOME, false)
+        action_done(action_id, RunOutcome::Failed, false)
     }
 
     fn link(state: ConnectionState, transition: ConnectionTransition) -> Event {
@@ -307,10 +305,19 @@ mod tests {
         replayed.replay = true;
         let mut bad_id = failed(action_id);
         bad_id.payload["action_id"] = json!("not-an-id");
+        let mut cancelled = failed(action_id);
+        cancelled.payload["outcome"] = json!("cancelled");
         for (label, event) in [
-            ("manual test", action_done(action_id, FAILED_OUTCOME, true)),
+            (
+                "manual test",
+                action_done(action_id, RunOutcome::Failed, true),
+            ),
             ("replayed", replayed),
-            ("cancelled", action_done(action_id, "cancelled", false)),
+            (
+                "skipped",
+                action_done(action_id, RunOutcome::Skipped, false),
+            ),
+            ("cancelled", cancelled),
             ("malformed action id", bad_id),
         ] {
             let mut rig = rig(ALL_ON).await;
@@ -323,7 +330,7 @@ mod tests {
         let mut rig = rig(ALL_ON).await;
         let action_id = ActionId::new();
         rig.publish(failed(action_id)).await;
-        rig.publish(action_done(action_id, SUCCESS_OUTCOME, false))
+        rig.publish(action_done(action_id, RunOutcome::Success, false))
             .await;
         assert_eq!(rig.publish(failed(action_id)).await.len(), 1);
     }

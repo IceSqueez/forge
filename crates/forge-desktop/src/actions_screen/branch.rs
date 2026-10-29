@@ -74,6 +74,7 @@ impl ScreenActionsView {
         let count = self
             .current_chain()
             .get(step_index)
+            .and_then(nav::ChainItem::step)
             .map(|s| nav::branch_step_count(s, &chain_key, case_index))
             .unwrap_or(0);
         if self.nav_path.len() >= nav::UI_MAX_NESTING_DEPTH && count == 0 {
@@ -96,24 +97,40 @@ impl ScreenActionsView {
         cx.notify();
     }
 
-    fn add_switch_case(&mut self, step_index: usize, cx: &mut Context<Self>) {
+    fn mutate_switch_step(
+        &mut self,
+        step_index: usize,
+        edit: impl FnOnce(&mut SubActionStep) + 'static,
+        cx: &mut Context<Self>,
+    ) {
         self.persist_chain_mutation(
             move |chain| {
-                if let Some(step) = chain.get_mut(step_index) {
-                    nav::append_empty_case(&mut step.config);
+                if let Some(step) = chain.get_mut(step_index).and_then(nav::ChainItem::step_mut) {
+                    edit(step);
                 }
             },
             cx,
         );
     }
 
-    fn remove_switch_case(&mut self, step_index: usize, case_index: usize, cx: &mut Context<Self>) {
-        self.persist_chain_mutation(
-            move |chain| {
-                if let Some(step) = chain.get_mut(step_index) {
-                    nav::remove_case(&mut step.config, case_index);
-                }
-            },
+    fn add_switch_case(&mut self, step_index: usize, cases_key: String, cx: &mut Context<Self>) {
+        self.mutate_switch_step(
+            step_index,
+            move |step| nav::append_empty_case(&mut step.config, &cases_key),
+            cx,
+        );
+    }
+
+    fn remove_switch_case(
+        &mut self,
+        step_index: usize,
+        cases_key: String,
+        case_index: usize,
+        cx: &mut Context<Self>,
+    ) {
+        self.mutate_switch_step(
+            step_index,
+            move |step| nav::remove_case(&mut step.config, &cases_key, case_index),
             cx,
         );
     }
@@ -121,16 +138,14 @@ impl ScreenActionsView {
     fn move_switch_case(
         &mut self,
         step_index: usize,
+        cases_key: String,
         case_index: usize,
         up: bool,
         cx: &mut Context<Self>,
     ) {
-        self.persist_chain_mutation(
-            move |chain| {
-                if let Some(step) = chain.get_mut(step_index) {
-                    nav::move_case(&mut step.config, case_index, up);
-                }
-            },
+        self.mutate_switch_step(
+            step_index,
+            move |step| nav::move_case(&mut step.config, &cases_key, case_index, up),
             cx,
         );
     }
@@ -138,38 +153,42 @@ impl ScreenActionsView {
     fn commit_case_match(
         &mut self,
         step_index: usize,
+        cases_key: String,
         case_index: usize,
         value: String,
         cx: &mut Context<Self>,
     ) {
-        self.persist_chain_mutation(
-            move |chain| {
-                if let Some(step) = chain.get_mut(step_index) {
-                    nav::set_case_match(&mut step.config, case_index, value.trim());
-                }
-            },
+        self.mutate_switch_step(
+            step_index,
+            move |step| nav::set_case_match(&mut step.config, &cases_key, case_index, value.trim()),
             cx,
         );
     }
 
     pub(super) fn sync_case_fields(&mut self, cx: &mut Context<Self>) {
         let chain = self.current_chain();
-        let mut specs: Vec<(usize, usize, String)> = Vec::new();
-        for (si, step) in chain.iter().enumerate() {
-            for ci in 0..nav::case_count(step) {
-                if !nav::case_match_is_multi(step, ci) {
-                    specs.push((
-                        si,
-                        ci,
-                        nav::case_match_display(step, ci).unwrap_or_default(),
-                    ));
+        let mut specs: Vec<(usize, &'static str, usize, String)> = Vec::new();
+        for (si, item) in chain.iter().enumerate() {
+            let Some(step) = item.step() else {
+                continue;
+            };
+            for cases_key in nav::case_list_keys(step, &self.sub_action_registry) {
+                for ci in 0..nav::case_count(step, cases_key) {
+                    if !nav::case_match_is_multi(step, cases_key, ci) {
+                        specs.push((
+                            si,
+                            cases_key,
+                            ci,
+                            nav::case_match_display(step, cases_key, ci).unwrap_or_default(),
+                        ));
+                    }
                 }
             }
         }
 
         let palette = cx.palette();
         let mut fields = BTreeMap::new();
-        for (si, ci, seed) in specs {
+        for (si, cases_key, ci, seed) in specs {
             let field = cx.new(|cx| {
                 let mut input = TextInput::new(tr!("action_editor_case_match_placeholder"), cx)
                     .with_palette(palette);
@@ -180,7 +199,7 @@ impl ScreenActionsView {
             });
             let sub = cx.subscribe(&field, move |this, _f, event: &InputEvent, cx| {
                 if let InputEvent::Submitted(text) | InputEvent::Blurred(text) = event {
-                    this.commit_case_match(si, ci, text.to_string(), cx);
+                    this.commit_case_match(si, cases_key.to_owned(), ci, text.to_string(), cx);
                 }
             });
             fields.insert((si, ci), CaseField { field, _sub: sub });
@@ -199,8 +218,8 @@ impl ScreenActionsView {
             vec![(tr!("action_editor_breadcrumb_steps"), Some(0))];
         for (depth, frame) in self.nav_path.iter().enumerate() {
             let prefix = nav::resolve_chain(&detail.action.sub_actions, &self.nav_path[..depth]);
-            let step_label = prefix
-                .get(frame.step_index)
+            let enclosing = prefix.get(frame.step_index).and_then(nav::ChainItem::step);
+            let step_label = enclosing
                 .and_then(|s| {
                     self.sub_action_registry
                         .get(&s.kind_id)
@@ -209,8 +228,7 @@ impl ScreenActionsView {
                 .unwrap_or_else(|| tr!("action_editor_kind_sub_action"));
             let branch_label = match frame.case_index {
                 Some(ci) => format!("{} {}", tr!("action_editor_branch_case"), ci + 1),
-                None => prefix
-                    .get(frame.step_index)
+                None => enclosing
                     .and_then(|s| {
                         let runner = self.sub_action_registry.get(&s.kind_id)?;
                         form_field_label(&s.kind_id, &runner.config_fields(), &frame.chain_key)
@@ -321,7 +339,7 @@ impl ScreenActionsView {
                 }
                 FormField::CaseList { key, .. } => {
                     let label = field_label(&step.kind_id, field);
-                    let case_total = nav::case_count(step);
+                    let case_total = nav::case_count(step, key);
                     rows.push(
                         div()
                             .font_family(body_family())
@@ -335,7 +353,7 @@ impl ScreenActionsView {
                             step, step_index, ci, key, case_total, at_cap, palette, cx,
                         ));
                     }
-                    rows.push(self.render_add_case(step_index, palette, cx));
+                    rows.push(self.render_add_case(step_index, key, palette, cx));
                     if at_cap {
                         capped_empty |= (0..case_total)
                             .any(|ci| nav::branch_step_count(step, key, Some(ci)) == 0);
@@ -390,7 +408,7 @@ impl ScreenActionsView {
         let count = nav::branch_step_count(step, key, Some(ci));
         let disabled = at_cap && count == 0;
 
-        let match_el: AnyElement = if nav::case_match_is_multi(step, ci) {
+        let match_el: AnyElement = if nav::case_match_is_multi(step, key, ci) {
             div()
                 .font_family(body_family())
                 .text_size(FONT_XS)
@@ -421,13 +439,16 @@ impl ScreenActionsView {
             }),
             density,
         );
+        let up_key = key.to_owned();
+        let down_key = key.to_owned();
+        let remove_key = key.to_owned();
         let move_up = step_icon_btn(
             SharedString::from(format!("actions-case-up-{step_index}-{ci}")),
             Icon::ArrowUp,
             ci == 0,
             palette,
             cx.listener(move |this, _: &ClickEvent, _, cx| {
-                this.move_switch_case(step_index, ci, true, cx)
+                this.move_switch_case(step_index, up_key.clone(), ci, true, cx)
             }),
         );
         let move_down = step_icon_btn(
@@ -436,7 +457,7 @@ impl ScreenActionsView {
             ci + 1 >= case_total,
             palette,
             cx.listener(move |this, _: &ClickEvent, _, cx| {
-                this.move_switch_case(step_index, ci, false, cx)
+                this.move_switch_case(step_index, down_key.clone(), ci, false, cx)
             }),
         );
         let remove = step_icon_btn(
@@ -445,7 +466,7 @@ impl ScreenActionsView {
             false,
             palette,
             cx.listener(move |this, _: &ClickEvent, _, cx| {
-                this.remove_switch_case(step_index, ci, cx)
+                this.remove_switch_case(step_index, remove_key.clone(), ci, cx)
             }),
         );
 
@@ -464,21 +485,21 @@ impl ScreenActionsView {
     fn render_add_case(
         &self,
         step_index: usize,
+        cases_key: &str,
         palette: &ForgePalette,
         cx: &mut Context<Self>,
     ) -> AnyElement {
         let density = cx.density();
+        let cases_key = cases_key.to_owned();
         div()
             .id(SharedString::from(format!("actions-add-case-{step_index}")))
             .flex()
             .items_center()
             .gap(spacing(Spacing::Xxs, density))
             .cursor_pointer()
-            .on_click(
-                cx.listener(move |this, _: &ClickEvent, _, cx| {
-                    this.add_switch_case(step_index, cx)
-                }),
-            )
+            .on_click(cx.listener(move |this, _: &ClickEvent, _, cx| {
+                this.add_switch_case(step_index, cases_key.clone(), cx)
+            }))
             .child(icon(Icon::Plus, BRANCH_GLYPH, palette.brand))
             .child(
                 div()

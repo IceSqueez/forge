@@ -19,7 +19,7 @@ pub(super) enum ActionWrite {
     Rename(String),
     SetChain {
         path: Vec<nav::NavFrame>,
-        chain: Vec<SubActionStep>,
+        chain: Vec<nav::ChainItem>,
     },
     Duplicate {
         new_id: ActionId,

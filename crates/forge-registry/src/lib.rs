@@ -69,10 +69,10 @@ pub use run_context::RunContext;
 pub use runner::{SubActionConfig, SubActionRunner};
 pub use scope::{ScopeLevel, ScopeOrigin, ScopedVariable, variables_in_scope};
 pub use step_tree::{
-    CASE_CHAIN_KEY, ChainEntry, DecodedChain, STEP_CONDITION_KEY, STEP_CONFIG_KEY,
+    CASE_CHAIN_KEY, CASE_MATCH_KEY, ChainEntry, DecodedChain, STEP_CONDITION_KEY, STEP_CONFIG_KEY,
     STEP_CONTINUE_ON_ERROR_KEY, STEP_ENABLED_KEY, STEP_KIND_KEY, STEP_LABEL_KEY, StepNode,
     StepReach, UndecodableReason, UndecodableStep, decode_chain, decode_step, decode_steps,
-    encode_chain, encode_step, nested_chains, rewrite_steps, walk_steps,
+    encode_chain, encode_step, encode_step_onto, nested_chains, rewrite_steps, walk_steps,
 };
 pub use synthesis::{SynthesisSample, synthesize_args};
 pub use telemetry::StepTimer;

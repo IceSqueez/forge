@@ -8,7 +8,7 @@ use forge_components::{
     BORDER_THIN, FONT_XS, FONT_XXS, ForgePalette, Icon, Radius, Spacing, body_family, health_tile,
     icon, mono_family, radius, row_card, scaled, spacing, tooltip_lines_builder, tr,
 };
-use forge_registry::{Finding, FormField, HealthSeverity, StepHealth};
+use forge_registry::{Finding, FormField, HealthSeverity, StepHealth, UndecodableStep};
 use forge_types::SubActionStep;
 use gpui::{AnyElement, ClickEvent, Context, FontWeight, Rgba, SharedString, div, px};
 
@@ -82,6 +82,34 @@ fn analyzer_finding_message(
     SharedString::from(text)
 }
 
+fn step_number_column(i: usize, is_last: bool, palette: &ForgePalette) -> gpui::Div {
+    let circle = div()
+        .flex()
+        .items_center()
+        .justify_center()
+        .size(STEP_CIRCLE)
+        .rounded(STEP_CIRCLE_RADIUS)
+        .bg(palette.brand)
+        .child(
+            div()
+                .font_family(mono_family())
+                .text_size(FONT_XS)
+                .text_color(palette.shell)
+                .child((i + 1).to_string()),
+        );
+    let connector = div()
+        .w(STEP_CONNECTOR_W)
+        .h(if is_last { px(0.0) } else { STEP_CONNECTOR_H })
+        .bg(palette.border_regular);
+    div()
+        .flex()
+        .flex_col()
+        .items_center()
+        .w(STEP_COL_W)
+        .child(circle)
+        .child(connector)
+}
+
 impl ScreenActionsView {
     pub(super) fn render_sub_actions_section(
         &self,
@@ -133,8 +161,15 @@ impl ScreenActionsView {
                 density,
             ));
         }
-        for (i, step) in current.iter().enumerate() {
-            steps_col = steps_col.child(self.render_step_block(step, i, total, depth, palette, cx));
+        for (i, item) in current.iter().enumerate() {
+            steps_col = steps_col.child(match item {
+                nav::ChainItem::Step { step, .. } => {
+                    self.render_step_block(step, i, total, depth, palette, cx)
+                }
+                nav::ChainItem::Unreadable(unreadable) => {
+                    self.render_unreadable_block(unreadable, i, total, palette, cx)
+                }
+            });
         }
         steps_col = steps_col.child(
             div()
@@ -211,6 +246,45 @@ impl ScreenActionsView {
             .into_any_element()
     }
 
+    fn render_unreadable_block(
+        &self,
+        unreadable: &UndecodableStep,
+        i: usize,
+        total: usize,
+        palette: &ForgePalette,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
+        let density = cx.density();
+        let is_last = i + 1 == total;
+        let title = div()
+            .flex_1()
+            .min_w_0()
+            .font_family(body_family())
+            .text_size(FONT_XS)
+            .text_color(palette.text_secondary)
+            .child(tr!(
+                "action_editor_health_undecodable_step",
+                position = (unreadable.position + 1).to_string()
+            ));
+        let card = row_card(title, palette)
+            .leading(icon(Icon::AlertTriangle, CARD_GLYPH, palette.danger))
+            .idle_background(palette.elevated)
+            .bordered(palette.border_regular, BORDER_THIN, radius(Radius::Md))
+            .padding_xy(STEP_CARD_PAD_V, scaled(STEP_CARD_PAD_H, density));
+        let step_row = div()
+            .flex()
+            .items_start()
+            .gap(spacing(Spacing::Xs, density))
+            .child(step_number_column(i, is_last, palette))
+            .child(div().flex_1().min_w(px(0.0)).child(card));
+        let row = div()
+            .w_full()
+            .pb(if is_last { px(0.0) } else { STEP_GAP })
+            .child(step_row);
+        self.wire_step_row_drop(row, i, total, palette, cx)
+            .into_any_element()
+    }
+
     fn render_step_block(
         &self,
         step: &SubActionStep,
@@ -238,31 +312,7 @@ impl ScreenActionsView {
             .or_else(|| runner.map(crate::kind_copy::step_summary))
             .unwrap_or_else(|| step.kind_id.clone());
 
-        let circle = div()
-            .flex()
-            .items_center()
-            .justify_center()
-            .size(STEP_CIRCLE)
-            .rounded(STEP_CIRCLE_RADIUS)
-            .bg(palette.brand)
-            .child(
-                div()
-                    .font_family(mono_family())
-                    .text_size(FONT_XS)
-                    .text_color(palette.shell)
-                    .child((i + 1).to_string()),
-            );
-        let connector = div()
-            .w(STEP_CONNECTOR_W)
-            .h(if is_last { px(0.0) } else { STEP_CONNECTOR_H })
-            .bg(palette.border_regular);
-        let left_col = div()
-            .flex()
-            .flex_col()
-            .items_center()
-            .w(STEP_COL_W)
-            .child(circle)
-            .child(connector);
+        let left_col = step_number_column(i, is_last, palette);
 
         let grip = self.render_step_grip(
             i,

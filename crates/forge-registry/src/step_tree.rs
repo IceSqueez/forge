@@ -4,6 +4,7 @@ use crate::form::FormField;
 use crate::registry::SubActionRegistry;
 
 pub const CASE_CHAIN_KEY: &str = "chain";
+pub const CASE_MATCH_KEY: &str = "match";
 pub const STEP_KIND_KEY: &str = "kind_id";
 pub const STEP_CONFIG_KEY: &str = "config";
 pub const STEP_ENABLED_KEY: &str = "enabled";
@@ -174,6 +175,20 @@ pub fn encode_step(step: &SubActionStep) -> Variant {
     if let Some(label) = &step.label {
         entry.insert(STEP_LABEL_KEY.to_owned(), Variant::String(label.clone()));
     }
+    Variant::Object(entry)
+}
+
+pub fn encode_step_onto(step: &SubActionStep, stored: &Variant) -> Variant {
+    if decode_step(stored).as_ref() == Ok(step) {
+        return stored.clone();
+    }
+    let (Variant::Object(mut entry), Variant::Object(fresh)) = (stored.clone(), encode_step(step))
+    else {
+        return encode_step(step);
+    };
+    entry.remove(STEP_CONDITION_KEY);
+    entry.remove(STEP_LABEL_KEY);
+    entry.extend(fresh);
     Variant::Object(entry)
 }
 

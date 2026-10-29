@@ -72,6 +72,7 @@ impl ScreenActionsView {
             SubFormTarget::Edit(index) => self
                 .current_chain()
                 .get(index)
+                .and_then(nav::ChainItem::step)
                 .map(|step| step.config.clone())
                 .unwrap_or_default(),
             SubFormTarget::Add => self
@@ -109,7 +110,8 @@ impl ScreenActionsView {
                 } = commit;
                 self.persist_chain_mutation(
                     move |chain| {
-                        if let Some(step) = chain.get_mut(index) {
+                        if let Some(step) = chain.get_mut(index).and_then(nav::ChainItem::step_mut)
+                        {
                             for (key, value) in overrides {
                                 step.config.insert(key, value);
                             }
@@ -135,14 +137,14 @@ impl ScreenActionsView {
                 } = commit;
                 self.persist_chain_mutation(
                     move |chain| {
-                        chain.push(SubActionStep {
+                        chain.push(nav::ChainItem::fresh(SubActionStep {
                             kind_id,
                             config,
                             enabled: true,
                             continue_on_error,
                             condition,
                             label,
-                        });
+                        }));
                     },
                     cx,
                 );
@@ -152,7 +154,7 @@ impl ScreenActionsView {
 
     pub(super) fn open_edit_sub_action(&mut self, i: usize, cx: &mut Context<Self>) {
         let chain = self.current_chain();
-        let Some(step) = chain.get(i) else {
+        let Some(step) = chain.get(i).and_then(nav::ChainItem::step) else {
             return;
         };
         let kind_id = step.kind_id.clone();

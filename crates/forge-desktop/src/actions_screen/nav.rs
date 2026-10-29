@@ -1,4 +1,7 @@
-use forge_registry::{CASE_CHAIN_KEY, decode_steps};
+use forge_registry::{
+    CASE_CHAIN_KEY, CASE_MATCH_KEY, ChainEntry, FormField, SubActionRegistry, UndecodableStep,
+    decode_chain, decode_step, encode_step, encode_step_onto,
+};
 use forge_types::{SubActionConfig, SubActionStep, Variant};
 
 pub(super) const UI_MAX_NESTING_DEPTH: usize = 8;
@@ -10,28 +13,76 @@ pub(super) struct NavFrame {
     pub case_index: Option<usize>,
 }
 
-pub(super) fn encode_chain(steps: &[SubActionStep]) -> Variant {
-    let items = steps
+#[derive(Clone, Debug, PartialEq)]
+pub(crate) enum ChainItem {
+    Step {
+        step: SubActionStep,
+        stored: Option<Variant>,
+    },
+    Unreadable(UndecodableStep),
+}
+
+impl ChainItem {
+    pub(super) fn fresh(step: SubActionStep) -> Self {
+        Self::Step { step, stored: None }
+    }
+
+    pub(super) fn step(&self) -> Option<&SubActionStep> {
+        match self {
+            Self::Step { step, .. } => Some(step),
+            Self::Unreadable(_) => None,
+        }
+    }
+
+    pub(super) fn step_mut(&mut self) -> Option<&mut SubActionStep> {
+        match self {
+            Self::Step { step, .. } => Some(step),
+            Self::Unreadable(_) => None,
+        }
+    }
+
+    fn encode(&self) -> Variant {
+        match self {
+            Self::Step {
+                step,
+                stored: Some(stored),
+            } => encode_step_onto(step, stored),
+            Self::Step { step, stored: None } => encode_step(step),
+            Self::Unreadable(unreadable) => unreadable.raw.clone(),
+        }
+    }
+}
+
+pub(super) fn chain_steps(items: &[ChainItem]) -> Vec<SubActionStep> {
+    items.iter().filter_map(ChainItem::step).cloned().collect()
+}
+
+pub(super) fn steps_before(items: &[ChainItem], index: usize) -> usize {
+    items
         .iter()
-        .map(|step| {
-            let mut obj = SubActionConfig::new();
-            obj.insert("kind_id".to_owned(), Variant::String(step.kind_id.clone()));
-            obj.insert("config".to_owned(), Variant::Object(step.config.clone()));
-            obj.insert("enabled".to_owned(), Variant::Bool(step.enabled));
-            obj.insert(
-                "continue_on_error".to_owned(),
-                Variant::Bool(step.continue_on_error),
-            );
-            if let Some(condition) = &step.condition {
-                obj.insert("condition".to_owned(), Variant::String(condition.clone()));
-            }
-            if let Some(label) = &step.label {
-                obj.insert("label".to_owned(), Variant::String(label.clone()));
-            }
-            Variant::Object(obj)
+        .take(index)
+        .filter(|item| item.step().is_some())
+        .count()
+}
+
+fn decode_items(value: Option<&Variant>) -> Vec<ChainItem> {
+    let stored = value.and_then(Variant::as_array).unwrap_or_default();
+    decode_chain(value)
+        .into_entries()
+        .into_iter()
+        .zip(stored)
+        .map(|(entry, raw)| match entry {
+            ChainEntry::Step(step) => ChainItem::Step {
+                step,
+                stored: Some(raw.clone()),
+            },
+            ChainEntry::Undecodable(unreadable) => ChainItem::Unreadable(unreadable),
         })
-        .collect();
-    Variant::Array(items)
+        .collect()
+}
+
+fn encode_items(items: &[ChainItem]) -> Variant {
+    Variant::Array(items.iter().map(ChainItem::encode).collect())
 }
 
 pub(super) fn chain_value_at<'a>(
@@ -50,65 +101,89 @@ pub(super) fn chain_value_at<'a>(
     }
 }
 
-fn write_chain_value(
-    config: &mut SubActionConfig,
+fn chain_slot_mut<'a>(
+    config: &'a mut SubActionConfig,
     chain_key: &str,
     case_index: Option<usize>,
-    steps: &[SubActionStep],
-) {
+) -> Option<&'a mut Variant> {
+    let empty = || Variant::Array(Vec::new());
     match case_index {
-        None => {
-            config.insert(chain_key.to_owned(), encode_chain(steps));
-        }
-        Some(ci) => {
-            let mut cases = match config.get(chain_key) {
-                Some(Variant::Array(items)) => items.clone(),
-                _ => Vec::new(),
-            };
-            if let Some(Variant::Object(case)) = cases.get_mut(ci) {
-                case.insert(CASE_CHAIN_KEY.to_owned(), encode_chain(steps));
-                config.insert(chain_key.to_owned(), Variant::Array(cases));
-            }
-        }
+        None => Some(config.entry(chain_key.to_owned()).or_insert_with(empty)),
+        Some(ci) => match config.get_mut(chain_key)? {
+            Variant::Array(cases) => match cases.get_mut(ci)? {
+                Variant::Object(case) => {
+                    Some(case.entry(CASE_CHAIN_KEY.to_owned()).or_insert_with(empty))
+                }
+                _ => None,
+            },
+            _ => None,
+        },
     }
 }
 
-pub(super) fn resolve_chain(root: &[SubActionStep], path: &[NavFrame]) -> Vec<SubActionStep> {
-    let mut current = root.to_vec();
-    for frame in path {
-        let Some(step) = current.get(frame.step_index) else {
-            return Vec::new();
-        };
-        current = decode_steps(chain_value_at(
-            &step.config,
-            &frame.chain_key,
-            frame.case_index,
-        ));
+pub(super) fn resolve_chain(root: &[SubActionStep], path: &[NavFrame]) -> Vec<ChainItem> {
+    let Some((first, rest)) = path.split_first() else {
+        return root.iter().cloned().map(ChainItem::fresh).collect();
+    };
+    let Some(step) = root.get(first.step_index) else {
+        return Vec::new();
+    };
+    let mut value = chain_value_at(&step.config, &first.chain_key, first.case_index).cloned();
+    for frame in rest {
+        value = value
+            .as_ref()
+            .and_then(Variant::as_array)
+            .and_then(|entries| entries.get(frame.step_index))
+            .and_then(|raw| decode_step(raw).ok())
+            .and_then(|step| {
+                chain_value_at(&step.config, &frame.chain_key, frame.case_index).cloned()
+            });
     }
-    current
+    decode_items(value.as_ref())
 }
 
 pub(super) fn set_chain(
     root: &mut Vec<SubActionStep>,
     path: &[NavFrame],
-    new_chain: &[SubActionStep],
+    new_chain: &[ChainItem],
 ) -> bool {
-    let Some((frame, rest)) = path.split_first() else {
-        *root = new_chain.to_vec();
+    let Some((first, rest)) = path.split_first() else {
+        if new_chain.iter().any(|item| item.step().is_none()) {
+            return false;
+        }
+        *root = chain_steps(new_chain);
         return true;
     };
-    let Some(step) = root.get_mut(frame.step_index) else {
+    let Some(step) = root.get_mut(first.step_index) else {
         return false;
     };
-    let mut sub = decode_steps(chain_value_at(
-        &step.config,
-        &frame.chain_key,
-        frame.case_index,
-    ));
-    if !set_chain(&mut sub, rest, new_chain) {
+    let Some(slot) = chain_slot_mut(&mut step.config, &first.chain_key, first.case_index) else {
+        return false;
+    };
+    write_nested(slot, rest, new_chain)
+}
+
+fn write_nested(slot: &mut Variant, path: &[NavFrame], new_chain: &[ChainItem]) -> bool {
+    let Some((frame, rest)) = path.split_first() else {
+        *slot = encode_items(new_chain);
+        return true;
+    };
+    let Variant::Array(entries) = slot else {
+        return false;
+    };
+    let Some(raw) = entries.get_mut(frame.step_index) else {
+        return false;
+    };
+    let Ok(mut step) = decode_step(raw) else {
+        return false;
+    };
+    let Some(child) = chain_slot_mut(&mut step.config, &frame.chain_key, frame.case_index) else {
+        return false;
+    };
+    if !write_nested(child, rest, new_chain) {
         return false;
     }
-    write_chain_value(&mut step.config, &frame.chain_key, frame.case_index, &sub);
+    *raw = encode_step_onto(&step, raw);
     true
 }
 
@@ -117,68 +192,102 @@ pub(super) fn branch_step_count(
     chain_key: &str,
     case_index: Option<usize>,
 ) -> usize {
-    chain_value_at(&step.config, chain_key, case_index)
-        .and_then(Variant::as_array)
-        .map(<[Variant]>::len)
-        .unwrap_or(0)
+    decode_chain(chain_value_at(&step.config, chain_key, case_index))
+        .entries()
+        .len()
 }
 
-pub(super) fn case_match_display(step: &SubActionStep, case_index: usize) -> Option<String> {
-    let case = step
-        .config
-        .get("cases")
+pub(super) fn case_list_keys(
+    step: &SubActionStep,
+    registry: &SubActionRegistry,
+) -> Vec<&'static str> {
+    fn push_case_list(field: &FormField, keys: &mut Vec<&'static str>) {
+        match field {
+            FormField::CaseList { key, .. } => keys.push(key),
+            FormField::Optional { inner, .. } => push_case_list(inner, keys),
+            _ => {}
+        }
+    }
+    let mut keys = Vec::new();
+    if let Some(runner) = registry.get(&step.kind_id) {
+        for field in runner.config_fields() {
+            push_case_list(&field, &mut keys);
+        }
+    }
+    keys
+}
+
+fn case_at<'a>(
+    step: &'a SubActionStep,
+    cases_key: &str,
+    case_index: usize,
+) -> Option<&'a SubActionConfig> {
+    step.config
+        .get(cases_key)
         .and_then(Variant::as_array)
         .and_then(|cases| cases.get(case_index))
-        .and_then(Variant::as_object)?;
-    match case.get("match") {
+        .and_then(Variant::as_object)
+}
+
+pub(super) fn case_match_display(
+    step: &SubActionStep,
+    cases_key: &str,
+    case_index: usize,
+) -> Option<String> {
+    match case_at(step, cases_key, case_index)?.get(CASE_MATCH_KEY) {
         Some(Variant::Array(_)) => None,
         Some(other) => Some(crate::config_text::editable_line(other)),
         None => Some(String::new()),
     }
 }
 
-pub(super) fn case_match_is_multi(step: &SubActionStep, case_index: usize) -> bool {
-    step.config
-        .get("cases")
-        .and_then(Variant::as_array)
-        .and_then(|cases| cases.get(case_index))
-        .and_then(Variant::as_object)
-        .and_then(|case| case.get("match"))
+pub(super) fn case_match_is_multi(
+    step: &SubActionStep,
+    cases_key: &str,
+    case_index: usize,
+) -> bool {
+    case_at(step, cases_key, case_index)
+        .and_then(|case| case.get(CASE_MATCH_KEY))
         .is_some_and(|m| matches!(m, Variant::Array(_)))
 }
 
-pub(super) fn case_count(step: &SubActionStep) -> usize {
+pub(super) fn case_count(step: &SubActionStep, cases_key: &str) -> usize {
     step.config
-        .get("cases")
+        .get(cases_key)
         .and_then(Variant::as_array)
         .map(<[Variant]>::len)
         .unwrap_or(0)
 }
 
-pub(super) fn append_empty_case(config: &mut SubActionConfig) {
-    let mut cases = match config.get("cases") {
+pub(super) fn append_empty_case(config: &mut SubActionConfig, cases_key: &str) {
+    let mut cases = match config.get(cases_key) {
         Some(Variant::Array(items)) => items.clone(),
         _ => Vec::new(),
     };
     let mut case = SubActionConfig::new();
-    case.insert("match".to_owned(), Variant::String(String::new()));
+    case.insert(CASE_MATCH_KEY.to_owned(), Variant::String(String::new()));
     case.insert(CASE_CHAIN_KEY.to_owned(), Variant::Array(Vec::new()));
     cases.push(Variant::Object(case));
-    config.insert("cases".to_owned(), Variant::Array(cases));
+    config.insert(cases_key.to_owned(), Variant::Array(cases));
 }
 
-pub(super) fn remove_case(config: &mut SubActionConfig, case_index: usize) {
-    if let Some(Variant::Array(items)) = config.get("cases") {
+pub(super) fn remove_case(config: &mut SubActionConfig, cases_key: &str, case_index: usize) {
+    if let Some(Variant::Array(items)) = config.get(cases_key) {
         let mut cases = items.clone();
         if case_index < cases.len() {
             cases.remove(case_index);
-            config.insert("cases".to_owned(), Variant::Array(cases));
+            config.insert(cases_key.to_owned(), Variant::Array(cases));
         }
     }
 }
 
-pub(super) fn move_case(config: &mut SubActionConfig, case_index: usize, up: bool) {
-    if let Some(Variant::Array(items)) = config.get("cases") {
+pub(super) fn move_case(
+    config: &mut SubActionConfig,
+    cases_key: &str,
+    case_index: usize,
+    up: bool,
+) {
+    if let Some(Variant::Array(items)) = config.get(cases_key) {
         let mut cases = items.clone();
         let target = if up {
             case_index.checked_sub(1)
@@ -189,17 +298,22 @@ pub(super) fn move_case(config: &mut SubActionConfig, case_index: usize, up: boo
             && case_index < cases.len()
         {
             cases.swap(case_index, t);
-            config.insert("cases".to_owned(), Variant::Array(cases));
+            config.insert(cases_key.to_owned(), Variant::Array(cases));
         }
     }
 }
 
-pub(super) fn set_case_match(config: &mut SubActionConfig, case_index: usize, value: &str) {
-    if let Some(Variant::Array(items)) = config.get("cases") {
+pub(super) fn set_case_match(
+    config: &mut SubActionConfig,
+    cases_key: &str,
+    case_index: usize,
+    value: &str,
+) {
+    if let Some(Variant::Array(items)) = config.get(cases_key) {
         let mut cases = items.clone();
         if let Some(Variant::Object(case)) = cases.get_mut(case_index) {
-            case.insert("match".to_owned(), Variant::String(value.to_owned()));
-            config.insert("cases".to_owned(), Variant::Array(cases));
+            case.insert(CASE_MATCH_KEY.to_owned(), Variant::String(value.to_owned()));
+            config.insert(cases_key.to_owned(), Variant::Array(cases));
         }
     }
 }

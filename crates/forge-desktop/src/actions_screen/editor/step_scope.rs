@@ -25,19 +25,25 @@ fn scope_at(
     trigger_registry: &TriggerRegistry,
 ) -> Vec<ScopedVariable> {
     let root = &detail.action.sub_actions;
-    let chains: Vec<Vec<SubActionStep>> = (0..=nav_path.len())
+    let items: Vec<Vec<nav::ChainItem>> = (0..=nav_path.len())
         .map(|depth| nav::resolve_chain(root, &nav_path[..depth]))
         .collect();
     let edited = match target {
         SubFormTarget::Edit(index) => index,
-        SubFormTarget::Add => chains.last().map_or(0, Vec::len),
+        SubFormTarget::Add => items.last().map_or(0, Vec::len),
     };
-    let levels: Vec<ScopeLevel<'_>> = chains
+    let chains: Vec<Vec<SubActionStep>> =
+        items.iter().map(|chain| nav::chain_steps(chain)).collect();
+    let levels: Vec<ScopeLevel<'_>> = items
         .iter()
+        .zip(&chains)
         .enumerate()
-        .map(|(depth, chain)| ScopeLevel {
+        .map(|(depth, (raw, chain))| ScopeLevel {
             chain,
-            step_index: nav_path.get(depth).map_or(edited, |frame| frame.step_index),
+            step_index: nav::steps_before(
+                raw,
+                nav_path.get(depth).map_or(edited, |frame| frame.step_index),
+            ),
         })
         .collect();
     variables_in_scope(

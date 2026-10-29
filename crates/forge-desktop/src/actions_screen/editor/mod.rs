@@ -29,7 +29,7 @@ pub(super) use export::PackExportHost;
 pub(super) use step_drag::StepDragSession;
 
 impl ScreenActionsView {
-    pub(super) fn current_chain(&self) -> Vec<SubActionStep> {
+    pub(super) fn current_chain(&self) -> Vec<nav::ChainItem> {
         match &self.detail {
             Some(detail) => nav::resolve_chain(&detail.action.sub_actions, &self.nav_path),
             None => Vec::new(),

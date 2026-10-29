@@ -108,7 +108,7 @@ impl ScreenActionsView {
         self.step_menu_open = None;
         self.persist_chain_mutation(
             move |chain| {
-                if let Some(step) = chain.get_mut(i) {
+                if let Some(step) = chain.get_mut(i).and_then(nav::ChainItem::step_mut) {
                     step.enabled = enabled;
                 }
             },

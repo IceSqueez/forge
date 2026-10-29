@@ -617,7 +617,7 @@ impl ScreenActionsView {
 
     pub(super) fn persist_chain_mutation(
         &mut self,
-        mutate: impl FnOnce(&mut Vec<SubActionStep>),
+        mutate: impl FnOnce(&mut Vec<nav::ChainItem>),
         cx: &mut Context<Self>,
     ) {
         let Some(detail) = self.detail.as_ref() else {

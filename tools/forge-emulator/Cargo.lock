@@ -1465,6 +1465,7 @@ dependencies = [
  "thiserror",
  "time",
  "tokio",
+ "tracing",
 ]
 
 [[package]]

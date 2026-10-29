@@ -89,9 +89,9 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn load_script_http_config_returns_defaults_when_keys_absent() {
+    async fn read_returns_defaults_when_keys_absent() {
         let backend = backend().await;
-        let cfg = load_script_http_config(&*backend).await;
+        let cfg = ScriptHttpConfig::read(&*backend).await;
         let defaults = ScriptHttpConfig::default();
         assert_eq!(cfg.allowed_domains, defaults.allowed_domains);
         assert_eq!(cfg.max_calls_per_script, defaults.max_calls_per_script);
@@ -142,7 +142,7 @@ mod tests {
             let backend = backend().await;
             if let Some(raw) = stored {
                 backend
-                    .set_string(reserved_keys::SCRIPT_HTTP_ALLOWED_DOMAINS, raw)
+                    .set_string(settings::HTTP_ALLOWED_DOMAINS.key.name(), raw)
                     .await
                     .unwrap();
             }
@@ -162,8 +162,50 @@ mod tests {
 
     #[tokio::test]
     async fn script_http_config_stays_deny_by_default_when_the_allowlist_cannot_be_read() {
-        let cfg = load_script_http_config(&UnreachableStore).await;
+        let cfg = ScriptHttpConfig::read(&UnreachableStore).await;
 
         assert!(cfg.allowed_domains.is_empty());
+    }
+
+    #[tokio::test]
+    async fn read_clamps_persisted_http_limits_into_the_sandbox_range() {
+        for (stored, max_calls, timeout_ms, max_response_bytes) in [
+            ("0", 1, 100, 1_024),
+            ("1", 1, 100, 1_024),
+            ("2", 2, 100, 1_024),
+            ("99", 99, 100, 1_024),
+            ("100", 100, 100, 1_024),
+            ("101", 100, 101, 1_024),
+            ("1023", 100, 1_023, 1_024),
+            ("1024", 100, 1_024, 1_024),
+            ("1025", 100, 1_025, 1_025),
+            ("29999", 100, 29_999, 29_999),
+            ("30000", 100, 30_000, 30_000),
+            ("30001", 100, 30_000, 30_001),
+            ("10485759", 100, 30_000, 10_485_759),
+            ("10485760", 100, 30_000, 10_485_760),
+            ("10485761", 100, 30_000, 10_485_760),
+        ] {
+            let backend = backend().await;
+            for setting in [
+                &settings::HTTP_MAX_CALLS,
+                &settings::HTTP_TIMEOUT_MS,
+                &settings::HTTP_MAX_RESPONSE_BYTES,
+            ] {
+                backend.set_string(setting.name(), stored).await.unwrap();
+            }
+
+            let cfg = ScriptHttpConfig::read(&*backend).await;
+
+            assert_eq!(
+                (
+                    cfg.max_calls_per_script,
+                    cfg.timeout_ms,
+                    cfg.max_response_bytes
+                ),
+                (max_calls, timeout_ms, max_response_bytes),
+                "stored {stored:?}"
+            );
+        }
     }
 }

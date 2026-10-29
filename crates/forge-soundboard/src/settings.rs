@@ -131,3 +131,53 @@ pub async fn load_soundboard_settings(repo: &dyn SettingsRepo) -> SoundboardSett
 pub async fn save_master_volume(repo: &dyn SettingsRepo, volume: f32) -> Result<(), StorageError> {
     write_setting(repo, &MASTER_VOLUME, &volume).await
 }
+
+#[cfg(test)]
+mod tests {
+    use std::collections::HashMap;
+
+    use async_trait::async_trait;
+    use forge_storage::SettingsCatalog;
+
+    use super::*;
+
+    struct UnreachableStore;
+
+    #[async_trait]
+    impl SettingsRepo for UnreachableStore {
+        async fn get_string(&self, _: &str) -> Result<Option<String>, StorageError> {
+            Err(StorageError::Connection {
+                reason: "settings store unreachable".to_owned(),
+            })
+        }
+        async fn set_string(&self, _: &str, _: &str) -> Result<(), StorageError> {
+            unreachable!("loading never writes")
+        }
+        async fn delete(&self, _: &str) -> Result<bool, StorageError> {
+            unreachable!("loading never deletes")
+        }
+        async fn load_all(&self) -> Result<HashMap<String, String>, StorageError> {
+            unreachable!("loading reads single keys")
+        }
+    }
+
+    #[test]
+    fn declared_settings_match_the_core_catalog_rows_they_duplicate() {
+        let core = SettingsCatalog::core();
+        for spec in SETTING_SPECS {
+            let core_row = core
+                .specs()
+                .iter()
+                .find(|row| row.key.name() == spec.key.name());
+
+            assert_eq!(core_row, Some(spec), "{}", spec.key.name());
+        }
+    }
+
+    #[tokio::test]
+    async fn an_unreadable_store_loads_the_default_settings() {
+        let loaded = load_soundboard_settings(&UnreachableStore).await;
+
+        assert_eq!(loaded, SoundboardSettings::default());
+    }
+}

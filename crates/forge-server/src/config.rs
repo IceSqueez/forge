@@ -319,29 +319,29 @@ mod tests {
         );
     }
 
-    struct UnreachableOrigins(MapRepo);
+    struct UnreachableKey(&'static str, MapRepo);
 
     #[async_trait]
-    impl SettingsRepo for UnreachableOrigins {
+    impl SettingsRepo for UnreachableKey {
         async fn get_string(&self, key: &str) -> Result<Option<String>, StorageError> {
-            if key == reserved_keys::SERVER_ADDITIONAL_ORIGINS {
+            if key == self.0 {
                 return Err(StorageError::Connection {
                     reason: "settings store unreachable".to_owned(),
                 });
             }
-            self.0.get_string(key).await
+            self.1.get_string(key).await
         }
 
         async fn set_string(&self, key: &str, value: &str) -> Result<(), StorageError> {
-            self.0.set_string(key, value).await
+            self.1.set_string(key, value).await
         }
 
         async fn delete(&self, key: &str) -> Result<bool, StorageError> {
-            self.0.delete(key).await
+            self.1.delete(key).await
         }
 
         async fn load_all(&self) -> Result<HashMap<String, String>, StorageError> {
-            self.0.load_all().await
+            self.1.load_all().await
         }
     }
 
@@ -364,7 +364,7 @@ mod tests {
             let repo = MapRepo::empty();
             ServerSettings::save_port(&repo, 9000).await.unwrap();
             if let Some(raw) = stored {
-                repo.set_string(reserved_keys::SERVER_ADDITIONAL_ORIGINS, raw)
+                repo.set_string(settings::ADDITIONAL_ORIGINS.key.name(), raw)
                     .await
                     .unwrap();
             }
@@ -388,12 +388,39 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn load_fails_when_the_origins_cannot_be_read_from_the_store() {
-        let repo = UnreachableOrigins(MapRepo::empty());
+    async fn load_fails_when_any_stored_setting_cannot_be_read_from_the_store() {
+        for key in [
+            settings::ENABLED.name(),
+            settings::BIND_ADDRESS.key.name(),
+            settings::PORT.key.name(),
+            settings::LAN_BIND_ENABLED.name(),
+            settings::AUTH_REQUIRED_FOR_READS.name(),
+            settings::HTTP_OVERLAY_REQUIRE_TOKEN.name(),
+            settings::OVERLAY_CORS_ANY_ORIGIN.name(),
+            settings::OVERLAY_ROOT.key.name(),
+            settings::ADDITIONAL_ORIGINS.key.name(),
+        ] {
+            let repo = UnreachableKey(key, MapRepo::empty());
 
-        let loaded = ServerSettings::load(&repo).await;
+            let loaded = ServerSettings::load(&repo).await;
 
-        assert!(matches!(loaded, Err(StorageError::Connection { .. })));
+            assert!(
+                matches!(loaded, Err(StorageError::Connection { .. })),
+                "{key}"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn load_keeps_a_flag_default_when_its_stored_text_is_not_a_flag() {
+        let repo = MapRepo::empty();
+        repo.set_string(settings::HTTP_OVERLAY_REQUIRE_TOKEN.name(), "sometimes")
+            .await
+            .unwrap();
+
+        let s = ServerSettings::load(&repo).await.unwrap();
+
+        assert!(s.http_overlay_require_token);
     }
 
     #[tokio::test]

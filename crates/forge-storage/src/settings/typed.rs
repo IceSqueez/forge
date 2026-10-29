@@ -426,6 +426,36 @@ mod tests {
         assert_eq!(read_setting(&repo, &LIMIT).await.unwrap(), 100);
     }
 
+    struct UnreachableRepo;
+
+    #[async_trait::async_trait]
+    impl SettingsRepo for UnreachableRepo {
+        async fn get_string(&self, _: &str) -> Result<Option<String>, StorageError> {
+            Err(StorageError::Connection {
+                reason: "settings store unreachable".to_owned(),
+            })
+        }
+        async fn set_string(&self, _: &str, _: &str) -> Result<(), StorageError> {
+            unreachable!("reading never writes")
+        }
+        async fn delete(&self, _: &str) -> Result<bool, StorageError> {
+            unreachable!("reading never deletes")
+        }
+        async fn load_all(
+            &self,
+        ) -> Result<std::collections::HashMap<String, String>, StorageError> {
+            unreachable!("reading loads a single key")
+        }
+    }
+
+    #[tokio::test]
+    async fn read_setting_or_default_serves_the_default_when_the_store_cannot_be_read() {
+        assert_eq!(
+            read_setting_or_default(&UnreachableRepo, &LIMIT).await,
+            BOUNDED.default
+        );
+    }
+
     #[tokio::test]
     async fn write_setting_refuses_a_non_finite_level_naming_the_key_and_stores_nothing() {
         for value in [f32::NAN, f32::INFINITY, f32::NEG_INFINITY] {

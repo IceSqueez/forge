@@ -41,3 +41,23 @@ pub async fn save_hold_ceiling(
     )
     .await
 }
+
+#[cfg(test)]
+mod tests {
+    use forge_storage::SettingsCatalog;
+
+    use super::SETTING_SPECS;
+
+    #[test]
+    fn declared_settings_match_the_core_catalog_rows_they_duplicate() {
+        let core = SettingsCatalog::core();
+        for spec in SETTING_SPECS {
+            let core_row = core
+                .specs()
+                .iter()
+                .find(|row| row.key.name() == spec.key.name());
+
+            assert_eq!(core_row, Some(spec), "{}", spec.key.name());
+        }
+    }
+}

@@ -362,38 +362,41 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn load_config_falls_back_to_defaults_when_settings_absent() {
+    async fn read_config_falls_back_to_defaults_when_settings_absent() {
         let dp = open_test_dp().await;
-        let cfg = load_script_engine_config(dp.as_ref()).await;
+        let cfg = EngineConfig::read(dp.as_ref()).await;
         assert_eq!(cfg, EngineConfig::default());
     }
 
     #[tokio::test]
-    async fn load_config_reads_persisted_op_limit_and_timeout() {
+    async fn read_config_reads_persisted_op_limit_and_timeout() {
         let dp = open_test_dp().await;
-        dp.set_string(reserved_keys::SCRIPT_OP_LIMIT, "777")
+        dp.set_string(settings::OP_LIMIT.name(), "7777")
             .await
             .unwrap();
-        dp.set_string(reserved_keys::SCRIPT_TIMEOUT_MS, "1234")
+        dp.set_string(settings::TIMEOUT_MS.name(), "1234")
             .await
             .unwrap();
-        let cfg = load_script_engine_config(dp.as_ref()).await;
-        assert_eq!(cfg.op_limit, 777);
-        assert_eq!(cfg.wall_time_ms, 1234);
+        let cfg = EngineConfig::read(dp.as_ref()).await;
+        assert_eq!(
+            cfg,
+            EngineConfig {
+                op_limit: 7777,
+                wall_time_ms: 1234,
+            }
+        );
     }
 
     #[tokio::test]
-    async fn load_config_falls_back_to_defaults_for_unparseable_values() {
+    async fn read_config_falls_back_to_defaults_for_unparseable_values() {
         let defaults = EngineConfig::default();
         for bad in ["", "abc", "-5", "3.5", "99999999999999999999999999"] {
             let dp = open_test_dp().await;
-            dp.set_string(reserved_keys::SCRIPT_OP_LIMIT, bad)
+            dp.set_string(settings::OP_LIMIT.name(), bad).await.unwrap();
+            dp.set_string(settings::TIMEOUT_MS.name(), bad)
                 .await
                 .unwrap();
-            dp.set_string(reserved_keys::SCRIPT_TIMEOUT_MS, bad)
-                .await
-                .unwrap();
-            let cfg = load_script_engine_config(dp.as_ref()).await;
+            let cfg = EngineConfig::read(dp.as_ref()).await;
             assert_eq!(
                 cfg, defaults,
                 "unparseable {bad:?} must fall back to defaults"
@@ -402,20 +405,53 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn persisted_low_op_limit_aborts_runaway_script_at_that_limit() {
+    async fn read_config_clamps_persisted_limits_into_the_sandbox_range() {
+        for (stored_ops, stored_ms, op_limit, wall_time_ms) in [
+            ("0", "0", 1_000, 50),
+            ("999", "49", 1_000, 50),
+            ("1000", "50", 1_000, 50),
+            ("1001", "51", 1_001, 51),
+            ("9999999", "9999", 9_999_999, 9_999),
+            ("10000000", "10000", 10_000_000, 10_000),
+            ("10000001", "10001", 10_000_000, 10_000),
+            ("4294967295", "4294967295", 10_000_000, 10_000),
+        ] {
+            let dp = open_test_dp().await;
+            dp.set_string(settings::OP_LIMIT.name(), stored_ops)
+                .await
+                .unwrap();
+            dp.set_string(settings::TIMEOUT_MS.name(), stored_ms)
+                .await
+                .unwrap();
+
+            let cfg = EngineConfig::read(dp.as_ref()).await;
+
+            assert_eq!(
+                cfg,
+                EngineConfig {
+                    op_limit,
+                    wall_time_ms,
+                },
+                "stored ops {stored_ops:?}, ms {stored_ms:?}"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn persisted_op_limit_below_the_minimum_aborts_runaway_script_at_the_minimum() {
         let dp = open_test_dp().await;
-        dp.set_string(reserved_keys::SCRIPT_OP_LIMIT, "500")
+        dp.set_string(settings::OP_LIMIT.name(), "500")
             .await
             .unwrap();
-        let cfg = load_script_engine_config(dp.as_ref()).await;
+        let cfg = EngineConfig::read(dp.as_ref()).await;
         let engine = Engine::with_config(cfg);
         let err = tokio::task::spawn_blocking(move || engine.eval_script("loop {}"))
             .await
             .unwrap()
             .unwrap_err();
         assert!(
-            matches!(err, ScriptError::OperationLimit { ops: 500, .. }),
-            "runaway script must abort at the persisted op-limit (500), got: {err:?}",
+            matches!(err, ScriptError::OperationLimit { ops: 1_000, .. }),
+            "runaway script must abort at the clamped op-limit (1000), got: {err:?}",
         );
     }
 

@@ -1,3 +1,4 @@
+mod byte_field;
 mod send;
 
 use std::sync::Arc;
@@ -5,6 +6,7 @@ use std::sync::Arc;
 use forge_registry::{RegistryError, SubActionRegistry};
 
 pub use send::MidiSendRunner;
+pub(crate) use send::{NOTE, VELOCITY};
 
 use crate::sink::MidiSink;
 

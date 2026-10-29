@@ -1,20 +1,40 @@
-use std::collections::BTreeMap;
 use std::sync::Arc;
-use std::time::Instant;
 
 use async_trait::async_trait;
 use forge_registry::runner::SubActionConfig;
 use forge_registry::{
-    ConfigReason, FormField, RegistryError, RunContext, SubActionCategory, SubActionConfigExt,
-    SubActionIo, SubActionRunner,
+    ConfigProblem, ConfigSpec, RunContext, StepTimer, SubActionCategory, SubActionIo,
+    SubActionRunner, TextEditor, TypedField,
 };
-use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, Variant};
-use time::OffsetDateTime;
+use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry};
 
-use super::mention_fields::{mention_default_entries, mention_form_fields, mention_policy};
+use super::fields::{FilledText, WEBHOOK, filled_text};
+use super::mention_fields::{ALLOW_EVERYONE_PINGS, ALLOW_ROLE_PINGS, read_mention_policy};
 use super::{message_id_scope_io, message_id_stack};
+use crate::mention::MentionPolicy;
 use crate::sink::DiscordSink;
-use crate::vocabulary::sub_action_ids;
+use crate::vocabulary::{config_keys, sub_action_ids};
+
+const KIND_ID: &str = sub_action_ids::WEBHOOK_SEND_MESSAGE;
+
+const CONTENT: FilledText = filled_text(config_keys::CONTENT, "Message", TextEditor::Area);
+
+const CONFIG: ConfigSpec =
+    ConfigSpec::new(&[&WEBHOOK, &CONTENT, &ALLOW_ROLE_PINGS, &ALLOW_EVERYONE_PINGS]);
+
+struct TextPost {
+    webhook: String,
+    content: String,
+    mentions: MentionPolicy,
+}
+
+fn read_config(config: &SubActionConfig, args: &ArgStack) -> Result<TextPost, ConfigProblem> {
+    Ok(TextPost {
+        webhook: WEBHOOK.read(config, args)?,
+        content: CONTENT.read(config, args)?,
+        mentions: read_mention_policy(config, args)?,
+    })
+}
 
 pub struct PostTextRunner {
     sink: Arc<dyn DiscordSink>,
@@ -29,7 +49,7 @@ impl PostTextRunner {
 #[async_trait]
 impl SubActionRunner for PostTextRunner {
     fn id(&self) -> &str {
-        sub_action_ids::WEBHOOK_SEND_MESSAGE
+        KIND_ID
     }
 
     fn category(&self) -> SubActionCategory {
@@ -52,45 +72,8 @@ impl SubActionRunner for PostTextRunner {
         "message"
     }
 
-    fn default_config(&self) -> SubActionConfig {
-        let mut config = BTreeMap::from([
-            ("webhook_name".to_owned(), Variant::String(String::new())),
-            ("content".to_owned(), Variant::String(String::new())),
-        ]);
-        config.extend(mention_default_entries());
-        config
-    }
-
-    fn config_fields(&self) -> Vec<FormField> {
-        let mut fields = vec![
-            FormField::Text {
-                key: "webhook_name",
-                label: "Webhook",
-                placeholder: "alerts",
-            },
-            FormField::TextArea {
-                key: "content",
-                label: "Message",
-            },
-        ];
-        fields.extend(mention_form_fields());
-        fields
-    }
-
-    fn validate_config(&self, config: &SubActionConfig) -> Result<(), RegistryError> {
-        if !matches!(config.get("webhook_name"), Some(Variant::String(_))) {
-            return Err(RegistryError::invalid_field(
-                "webhook_name",
-                ConfigReason::Required,
-            ));
-        }
-        if !matches!(config.get("content"), Some(Variant::String(_))) {
-            return Err(RegistryError::invalid_field(
-                "content",
-                ConfigReason::Required,
-            ));
-        }
-        Ok(())
+    fn config_spec(&self) -> Option<ConfigSpec> {
+        Some(CONFIG)
     }
 
     fn scope_io(&self) -> SubActionIo {
@@ -102,48 +85,19 @@ impl SubActionRunner for PostTextRunner {
         config: &SubActionConfig,
         ctx: &RunContext<'_>,
     ) -> (SubActionTelemetry, Option<ArgStack>) {
-        let started_at = OffsetDateTime::now_utc();
-        let start = Instant::now();
-
-        let webhook_name = ctx
-            .arg_stack
-            .interpolate(config.str("webhook_name").unwrap_or_default());
-        let content = ctx
-            .arg_stack
-            .interpolate(config.str("content").unwrap_or_default());
-
-        if content.trim().is_empty() {
-            return (
-                SubActionTelemetry {
-                    args_in: ::std::collections::BTreeMap::new(),
-                    produced: ::std::collections::BTreeMap::new(),
-                    kind: sub_action_ids::WEBHOOK_SEND_MESSAGE.to_owned(),
-                    started_at,
-                    duration_ms: start.elapsed().as_millis() as u64,
-                    outcome: SubActionOutcome::Failed("content is empty".to_owned()),
-                    index: ctx.index,
-                },
-                None,
-            );
-        }
-
+        let timer = StepTimer::start(ctx, KIND_ID);
+        let post = match read_config(config, ctx.arg_stack) {
+            Ok(post) => post,
+            Err(problem) => return (timer.invalid_config(&problem), None),
+        };
         let posted = self
             .sink
-            .post_text(&webhook_name, &content, mention_policy(config))
+            .post_text(&post.webhook, &post.content, post.mentions)
             .await;
-        let outcome = SubActionOutcome::from_result(&posted);
-
+        let produced = message_id_stack(ctx.arg_stack, &posted);
         (
-            SubActionTelemetry {
-                args_in: ::std::collections::BTreeMap::new(),
-                produced: ::std::collections::BTreeMap::new(),
-                kind: sub_action_ids::WEBHOOK_SEND_MESSAGE.to_owned(),
-                started_at,
-                duration_ms: start.elapsed().as_millis() as u64,
-                outcome,
-                index: ctx.index,
-            },
-            message_id_stack(ctx.arg_stack, &posted),
+            timer.finish(SubActionOutcome::from_result(&posted)),
+            produced,
         )
     }
 }

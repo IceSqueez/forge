@@ -1,20 +1,140 @@
-use std::collections::BTreeMap;
 use std::sync::Arc;
-use std::time::Instant;
 
 use async_trait::async_trait;
 use forge_registry::runner::SubActionConfig;
 use forge_registry::{
-    ConfigReason, FormField, RegistryError, RunContext, SubActionCategory, SubActionConfigExt,
-    SubActionRunner,
+    ChoiceField, ConfigProblem, ConfigReason, ConfigSpec, Interpolation, RunContext, StepTimer,
+    SubActionCategory, SubActionRunner, TextEditor, TextField, TypedField, ValueBounds,
 };
 use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, Variant};
-use time::OffsetDateTime;
 
-use crate::error::MidiError;
+use super::byte_field::ByteField;
 use crate::events::MidiOutMessage;
 use crate::sink::MidiSink;
+use crate::vocabulary::OutMessageKind;
+use crate::vocabulary::config_keys::send;
+use crate::vocabulary::limits::{CHANNEL_MAX, DATA_BYTE_MAX};
 use crate::vocabulary::sub_action_ids;
+
+const KIND_ID: &str = sub_action_ids::SEND;
+const MIDDLE_C: i64 = 60;
+const LOWEST: i64 = 0;
+const RAW_BYTES_SHAPE: &str = "expected a list of byte values";
+
+const PORT: TextField = TextField {
+    key: send::PORT,
+    label: "Output Port",
+    editor: TextEditor::Line {
+        placeholder: "Synth",
+    },
+    default: "",
+    required: true,
+};
+
+const MESSAGE_KIND: ChoiceField<OutMessageKind> = ChoiceField {
+    key: send::MESSAGE_KIND,
+    label: "Message Kind",
+    default: OutMessageKind::NoteOn,
+};
+
+pub(crate) const NOTE: ByteField = ByteField {
+    key: send::NOTE,
+    label: "Note (NoteOn/NoteOff)",
+    default: MIDDLE_C,
+    max: DATA_BYTE_MAX,
+    seeds_default: true,
+};
+
+pub(crate) const VELOCITY: ByteField = ByteField {
+    key: send::VELOCITY,
+    label: "Velocity (NoteOn/NoteOff)",
+    default: DATA_BYTE_MAX,
+    max: DATA_BYTE_MAX,
+    seeds_default: true,
+};
+
+const CONTROLLER: ByteField = ByteField {
+    key: send::CONTROLLER,
+    label: "Controller (CC)",
+    default: LOWEST,
+    max: DATA_BYTE_MAX,
+    seeds_default: false,
+};
+
+const VALUE: ByteField = ByteField {
+    key: send::VALUE,
+    label: "Value (CC)",
+    default: LOWEST,
+    max: DATA_BYTE_MAX,
+    seeds_default: false,
+};
+
+const CHANNEL: ByteField = ByteField {
+    key: send::CHANNEL,
+    label: "Channel (0-15)",
+    default: LOWEST,
+    max: CHANNEL_MAX,
+    seeds_default: true,
+};
+
+const CONFIG: ConfigSpec = ConfigSpec::new(&[
+    &PORT,
+    &MESSAGE_KIND,
+    &NOTE,
+    &VELOCITY,
+    &CONTROLLER,
+    &VALUE,
+    &CHANNEL,
+]);
+
+fn read_message(
+    config: &SubActionConfig,
+    args: &ArgStack,
+) -> Result<MidiOutMessage, ConfigProblem> {
+    Ok(match MESSAGE_KIND.read(config, args)? {
+        OutMessageKind::NoteOn => MidiOutMessage::NoteOn {
+            note: NOTE.read(config, args)?,
+            velocity: VELOCITY.read(config, args)?,
+            channel: CHANNEL.read(config, args)?,
+        },
+        OutMessageKind::NoteOff => MidiOutMessage::NoteOff {
+            note: NOTE.read(config, args)?,
+            velocity: VELOCITY.read(config, args)?,
+            channel: CHANNEL.read(config, args)?,
+        },
+        OutMessageKind::ControlChange => MidiOutMessage::ControlChange {
+            controller: CONTROLLER.read(config, args)?,
+            value: VALUE.read(config, args)?,
+            channel: CHANNEL.read(config, args)?,
+        },
+        OutMessageKind::Raw => MidiOutMessage::Raw(read_raw_bytes(config)?),
+    })
+}
+
+fn read_raw_bytes(config: &SubActionConfig) -> Result<Vec<u8>, ConfigProblem> {
+    let invalid = |reason| ConfigProblem::field(send::RAW_BYTES, reason);
+    let items = match config.get(send::RAW_BYTES) {
+        Some(Variant::Array(items)) if !items.is_empty() => items,
+        Some(Variant::Array(_)) | None => return Err(invalid(ConfigReason::Required)),
+        Some(_) => {
+            return Err(invalid(ConfigReason::InvalidFormat(
+                RAW_BYTES_SHAPE.to_owned(),
+            )));
+        }
+    };
+    items
+        .iter()
+        .map(|item| match item {
+            Variant::Int(number) => u8::try_from(*number).map_err(|_| {
+                invalid(ConfigReason::OutOfRange(ValueBounds::between(
+                    u8::MIN,
+                    u8::MAX,
+                )))
+            }),
+            _ => Err(invalid(ConfigReason::NotANumber)),
+        })
+        .collect()
+}
 
 pub struct MidiSendRunner {
     sink: Arc<dyn MidiSink>,
@@ -29,7 +149,7 @@ impl MidiSendRunner {
 #[async_trait]
 impl SubActionRunner for MidiSendRunner {
     fn id(&self) -> &str {
-        sub_action_ids::SEND
+        KIND_ID
     }
 
     fn category(&self) -> SubActionCategory {
@@ -52,82 +172,19 @@ impl SubActionRunner for MidiSendRunner {
         "music"
     }
 
-    fn default_config(&self) -> SubActionConfig {
-        BTreeMap::from([
-            ("port".to_owned(), Variant::String(String::new())),
-            (
-                "message_kind".to_owned(),
-                Variant::String("note_on".to_owned()),
-            ),
-            ("note".to_owned(), Variant::Int(60)),
-            ("velocity".to_owned(), Variant::Int(127)),
-            ("channel".to_owned(), Variant::Int(0)),
-        ])
+    fn config_spec(&self) -> Option<ConfigSpec> {
+        Some(CONFIG)
     }
 
-    fn config_fields(&self) -> Vec<FormField> {
-        vec![
-            FormField::Text {
-                key: "port",
-                label: "Output Port",
-                placeholder: "Synth",
-            },
-            FormField::Select {
-                key: "message_kind",
-                label: "Message Kind",
-                options: &["note_on", "note_off", "cc", "raw"],
-            },
-            FormField::Integer {
-                key: "note",
-                label: "Note (NoteOn/NoteOff)",
-                min: 0,
-                max: 127,
-            },
-            FormField::Integer {
-                key: "velocity",
-                label: "Velocity (NoteOn/NoteOff)",
-                min: 0,
-                max: 127,
-            },
-            FormField::Integer {
-                key: "controller",
-                label: "Controller (CC)",
-                min: 0,
-                max: 127,
-            },
-            FormField::Integer {
-                key: "value",
-                label: "Value (CC)",
-                min: 0,
-                max: 127,
-            },
-            FormField::Integer {
-                key: "channel",
-                label: "Channel (0-15)",
-                min: 0,
-                max: 15,
-            },
-        ]
-    }
-
-    fn validate_config(&self, config: &SubActionConfig) -> Result<(), RegistryError> {
-        match config.get("port") {
-            Some(Variant::String(_)) => {}
-            _ => {
-                return Err(RegistryError::invalid_field("port", ConfigReason::Required));
-            }
+    fn check_config(
+        &self,
+        config: &SubActionConfig,
+        interpolation: Interpolation<'_>,
+    ) -> Result<(), ConfigProblem> {
+        match MESSAGE_KIND.peek(config, interpolation)? {
+            Some(OutMessageKind::Raw) => read_raw_bytes(config).map(drop),
+            _ => Ok(()),
         }
-        match config.get("message_kind") {
-            Some(Variant::String(k))
-                if matches!(k.as_str(), "note_on" | "note_off" | "cc" | "raw") => {}
-            _ => {
-                return Err(RegistryError::invalid_field(
-                    "message_kind",
-                    ConfigReason::choices(["note_on", "note_off", "cc", "raw"]),
-                ));
-            }
-        }
-        Ok(())
     }
 
     async fn execute(
@@ -135,177 +192,16 @@ impl SubActionRunner for MidiSendRunner {
         config: &SubActionConfig,
         ctx: &RunContext<'_>,
     ) -> (SubActionTelemetry, Option<ArgStack>) {
-        let started_at = OffsetDateTime::now_utc();
-        let start = Instant::now();
-
-        let port = ctx
-            .arg_stack
-            .interpolate(config.str("port").unwrap_or_default());
-
-        let message_kind = config.str("message_kind").unwrap_or_default().to_owned();
-
-        let channel = extract_u8_clamped(config, "channel", 0, 15).unwrap_or(0);
-
-        let message = match message_kind.as_str() {
-            "note_on" => {
-                let note = match extract_u8_clamped(config, "note", 0, 127) {
-                    Some(n) => n,
-                    None => {
-                        return failed(
-                            ctx.index,
-                            started_at,
-                            start,
-                            "midi.send: 'note' must be 0-127",
-                        );
-                    }
-                };
-                let velocity = match extract_u8_clamped(config, "velocity", 0, 127) {
-                    Some(v) => v,
-                    None => {
-                        return failed(
-                            ctx.index,
-                            started_at,
-                            start,
-                            "midi.send: 'velocity' must be 0-127",
-                        );
-                    }
-                };
-                MidiOutMessage::NoteOn {
-                    note,
-                    velocity,
-                    channel,
-                }
-            }
-            "note_off" => {
-                let note = match extract_u8_clamped(config, "note", 0, 127) {
-                    Some(n) => n,
-                    None => {
-                        return failed(
-                            ctx.index,
-                            started_at,
-                            start,
-                            "midi.send: 'note' must be 0-127",
-                        );
-                    }
-                };
-                let velocity = extract_u8_clamped(config, "velocity", 0, 127).unwrap_or(0);
-                MidiOutMessage::NoteOff {
-                    note,
-                    velocity,
-                    channel,
-                }
-            }
-            "cc" => {
-                let controller = match extract_u8_clamped(config, "controller", 0, 127) {
-                    Some(c) => c,
-                    None => {
-                        return failed(
-                            ctx.index,
-                            started_at,
-                            start,
-                            "midi.send: 'controller' must be 0-127",
-                        );
-                    }
-                };
-                let value = match extract_u8_clamped(config, "value", 0, 127) {
-                    Some(v) => v,
-                    None => {
-                        return failed(
-                            ctx.index,
-                            started_at,
-                            start,
-                            "midi.send: 'value' must be 0-127",
-                        );
-                    }
-                };
-                MidiOutMessage::ControlChange {
-                    controller,
-                    value,
-                    channel,
-                }
-            }
-            "raw" => {
-                let bytes = match extract_raw_bytes(config) {
-                    Ok(b) => b,
-                    Err(e) => return failed(ctx.index, started_at, start, &e),
-                };
-                MidiOutMessage::Raw(bytes)
-            }
-            _ => {
-                return failed(
-                    ctx.index,
-                    started_at,
-                    start,
-                    "midi.send: unknown message_kind",
-                );
-            }
+        let timer = StepTimer::start(ctx, KIND_ID);
+        let read = PORT
+            .read(config, ctx.arg_stack)
+            .and_then(|port| Ok((port, read_message(config, ctx.arg_stack)?)));
+        let (port, message) = match read {
+            Ok(values) => values,
+            Err(problem) => return (timer.invalid_config(&problem), None),
         };
-
-        let outcome = match self.sink.send_output(&port, &message).await {
-            Ok(()) => SubActionOutcome::Success,
-            Err(e) => match e {
-                MidiError::InvalidStatusByte(_) => {
-                    SubActionOutcome::Failed("raw bytes have invalid status byte".to_owned())
-                }
-                other => SubActionOutcome::Failed(other.to_string()),
-            },
-        };
-
-        (
-            SubActionTelemetry {
-                args_in: ::std::collections::BTreeMap::new(),
-                produced: ::std::collections::BTreeMap::new(),
-                kind: sub_action_ids::SEND.to_owned(),
-                started_at,
-                duration_ms: start.elapsed().as_millis() as u64,
-                outcome,
-                index: ctx.index,
-            },
-            None,
-        )
-    }
-}
-
-fn failed(
-    index: usize,
-    started_at: OffsetDateTime,
-    start: Instant,
-    reason: &str,
-) -> (SubActionTelemetry, Option<ArgStack>) {
-    (
-        SubActionTelemetry {
-            args_in: ::std::collections::BTreeMap::new(),
-            produced: ::std::collections::BTreeMap::new(),
-            kind: sub_action_ids::SEND.to_owned(),
-            started_at,
-            duration_ms: start.elapsed().as_millis() as u64,
-            outcome: SubActionOutcome::Failed(reason.to_owned()),
-            index,
-        },
-        None,
-    )
-}
-
-fn extract_u8_clamped(config: &SubActionConfig, key: &str, min: i64, max: i64) -> Option<u8> {
-    match config.get(key) {
-        Some(Variant::Int(v)) if *v >= min && *v <= max => Some(*v as u8),
-        _ => None,
-    }
-}
-
-fn extract_raw_bytes(config: &SubActionConfig) -> Result<Vec<u8>, String> {
-    match config.get("raw_bytes") {
-        Some(Variant::Array(arr)) => {
-            let mut bytes = Vec::with_capacity(arr.len());
-            for v in arr {
-                match v {
-                    Variant::Int(n) if *n >= 0 && *n <= 255 => bytes.push(*n as u8),
-                    _ => return Err("midi.send: raw_bytes must be Array of Int 0-255".to_owned()),
-                }
-            }
-            Ok(bytes)
-        }
-        _ => Err("midi.send: 'raw_bytes' must be an Array".to_owned()),
+        let outcome = SubActionOutcome::from_result(&self.sink.send_output(&port, &message).await);
+        (timer.finish(outcome), None)
     }
 }
 

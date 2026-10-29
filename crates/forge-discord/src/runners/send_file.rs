@@ -1,21 +1,56 @@
-use std::collections::BTreeMap;
 use std::path::Path;
 use std::sync::Arc;
-use std::time::Instant;
 
 use async_trait::async_trait;
 use forge_registry::runner::SubActionConfig;
 use forge_registry::{
-    ConfigReason, FormField, RegistryError, RunContext, SubActionCategory, SubActionConfigExt,
-    SubActionIo, SubActionRunner,
+    ConfigProblem, ConfigSpec, RunContext, StepTimer, SubActionCategory, SubActionIo,
+    SubActionRunner, TextEditor, TextField, TypedField,
 };
-use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, Variant};
-use time::OffsetDateTime;
+use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry};
 
-use super::mention_fields::{mention_default_entries, mention_form_fields, mention_policy};
+use super::fields::{FilledText, WEBHOOK, filled_text, optional_text};
+use super::mention_fields::{ALLOW_EVERYONE_PINGS, ALLOW_ROLE_PINGS, read_mention_policy};
 use super::{message_id_scope_io, message_id_stack};
+use crate::mention::MentionPolicy;
 use crate::sink::DiscordSink;
-use crate::vocabulary::sub_action_ids;
+use crate::vocabulary::{config_keys, sub_action_ids};
+
+const KIND_ID: &str = sub_action_ids::WEBHOOK_SEND_FILE;
+
+const CAPTION: TextField = optional_text(config_keys::CONTENT, "Caption", TextEditor::Area);
+
+const FILE_PATH: FilledText = filled_text(
+    config_keys::FILE_PATH,
+    "File Path",
+    TextEditor::Line {
+        placeholder: "/home/user/clip.png",
+    },
+);
+
+const CONFIG: ConfigSpec = ConfigSpec::new(&[
+    &WEBHOOK,
+    &CAPTION,
+    &FILE_PATH,
+    &ALLOW_ROLE_PINGS,
+    &ALLOW_EVERYONE_PINGS,
+]);
+
+struct FileUpload {
+    webhook: String,
+    caption: Option<String>,
+    file_path: String,
+    mentions: MentionPolicy,
+}
+
+fn read_config(config: &SubActionConfig, args: &ArgStack) -> Result<FileUpload, ConfigProblem> {
+    Ok(FileUpload {
+        webhook: WEBHOOK.read(config, args)?,
+        caption: Some(CAPTION.read(config, args)?).filter(|text| !text.trim().is_empty()),
+        file_path: FILE_PATH.read(config, args)?,
+        mentions: read_mention_policy(config, args)?,
+    })
+}
 
 pub struct SendFileRunner {
     sink: Arc<dyn DiscordSink>,
@@ -27,15 +62,10 @@ impl SendFileRunner {
     }
 }
 
-fn interpolated_string(config: &SubActionConfig, ctx: &RunContext<'_>, key: &str) -> String {
-    ctx.arg_stack
-        .interpolate(config.str(key).unwrap_or_default())
-}
-
 #[async_trait]
 impl SubActionRunner for SendFileRunner {
     fn id(&self) -> &str {
-        sub_action_ids::WEBHOOK_SEND_FILE
+        KIND_ID
     }
 
     fn category(&self) -> SubActionCategory {
@@ -58,51 +88,8 @@ impl SubActionRunner for SendFileRunner {
         "paperclip"
     }
 
-    fn default_config(&self) -> SubActionConfig {
-        let mut config = BTreeMap::from([
-            ("webhook_name".to_owned(), Variant::String(String::new())),
-            ("content".to_owned(), Variant::String(String::new())),
-            ("file_path".to_owned(), Variant::String(String::new())),
-        ]);
-        config.extend(mention_default_entries());
-        config
-    }
-
-    fn config_fields(&self) -> Vec<FormField> {
-        let mut fields = vec![
-            FormField::Text {
-                key: "webhook_name",
-                label: "Webhook",
-                placeholder: "alerts",
-            },
-            FormField::TextArea {
-                key: "content",
-                label: "Caption",
-            },
-            FormField::Text {
-                key: "file_path",
-                label: "File Path",
-                placeholder: "/home/user/clip.png",
-            },
-        ];
-        fields.extend(mention_form_fields());
-        fields
-    }
-
-    fn validate_config(&self, config: &SubActionConfig) -> Result<(), RegistryError> {
-        if !matches!(config.get("webhook_name"), Some(Variant::String(_))) {
-            return Err(RegistryError::invalid_field(
-                "webhook_name",
-                ConfigReason::Required,
-            ));
-        }
-        if !matches!(config.get("file_path"), Some(Variant::String(_))) {
-            return Err(RegistryError::invalid_field(
-                "file_path",
-                ConfigReason::Required,
-            ));
-        }
-        Ok(())
+    fn config_spec(&self) -> Option<ConfigSpec> {
+        Some(CONFIG)
     }
 
     fn scope_io(&self) -> SubActionIo {
@@ -114,72 +101,42 @@ impl SubActionRunner for SendFileRunner {
         config: &SubActionConfig,
         ctx: &RunContext<'_>,
     ) -> (SubActionTelemetry, Option<ArgStack>) {
-        let started_at = OffsetDateTime::now_utc();
-        let start = Instant::now();
-
-        let webhook_name = interpolated_string(config, ctx, "webhook_name");
-        let file_path = interpolated_string(config, ctx, "file_path");
-        let caption = {
-            let raw = interpolated_string(config, ctx, "content");
-            if raw.trim().is_empty() {
-                None
-            } else {
-                Some(raw)
-            }
+        let timer = StepTimer::start(ctx, KIND_ID);
+        let upload = match read_config(config, ctx.arg_stack) {
+            Ok(upload) => upload,
+            Err(problem) => return (timer.invalid_config(&problem), None),
         };
 
-        let fail = |msg: String, start: Instant| {
-            (
-                SubActionTelemetry {
-                    args_in: ::std::collections::BTreeMap::new(),
-                    produced: ::std::collections::BTreeMap::new(),
-                    kind: sub_action_ids::WEBHOOK_SEND_FILE.to_owned(),
-                    started_at,
-                    duration_ms: start.elapsed().as_millis() as u64,
-                    outcome: SubActionOutcome::Failed(msg),
-                    index: ctx.index,
-                },
+        let Some(file_name) = Path::new(&upload.file_path)
+            .file_name()
+            .and_then(|name| name.to_str())
+            .map(str::to_owned)
+        else {
+            return (
+                timer.failed(format!("cannot derive file name from {}", upload.file_path)),
                 None,
-            )
+            );
         };
 
-        if file_path.trim().is_empty() {
-            return fail("file_path is empty".to_owned(), start);
-        }
-
-        let file_name = match Path::new(&file_path).file_name().and_then(|n| n.to_str()) {
-            Some(name) => name.to_owned(),
-            None => return fail(format!("cannot derive file name from {file_path}"), start),
-        };
-
-        let file_bytes = match tokio::fs::read(&file_path).await {
+        let file_bytes = match tokio::fs::read(&upload.file_path).await {
             Ok(bytes) => bytes,
-            Err(e) => return fail(format!("cannot read file: {e}"), start),
+            Err(e) => return (timer.failed(format!("cannot read file: {e}")), None),
         };
 
         let posted = self
             .sink
             .send_file(
-                &webhook_name,
-                caption.as_deref(),
+                &upload.webhook,
+                upload.caption.as_deref(),
                 &file_name,
                 &file_bytes,
-                mention_policy(config),
+                upload.mentions,
             )
             .await;
-        let outcome = SubActionOutcome::from_result(&posted);
-
+        let produced = message_id_stack(ctx.arg_stack, &posted);
         (
-            SubActionTelemetry {
-                args_in: ::std::collections::BTreeMap::new(),
-                produced: ::std::collections::BTreeMap::new(),
-                kind: sub_action_ids::WEBHOOK_SEND_FILE.to_owned(),
-                started_at,
-                duration_ms: start.elapsed().as_millis() as u64,
-                outcome,
-                index: ctx.index,
-            },
-            message_id_stack(ctx.arg_stack, &posted),
+            timer.finish(SubActionOutcome::from_result(&posted)),
+            produced,
         )
     }
 }

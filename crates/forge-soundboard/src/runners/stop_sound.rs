@@ -1,14 +1,20 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use forge_registry::{FormField, RegistryError, RunContext, SubActionCategory, SubActionRunner};
-use forge_types::{
-    ArgStack, ClipId, SubActionConfig, SubActionOutcome, SubActionTelemetry, Variant,
+use forge_registry::{
+    ConfigSpec, RunContext, StepTimer, SubActionCategory, SubActionRunner, TypedField,
 };
-use time::OffsetDateTime;
+use forge_types::{ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetry};
 
+use super::clip_field::ClipField;
 use crate::control::SoundboardControl;
-use crate::vocabulary::{picker_keys, sub_action_ids};
+use crate::vocabulary::sub_action_ids;
+
+const KIND_ID: &str = sub_action_ids::SOUND_STOP;
+
+const CLIP: ClipField = ClipField { required: false };
+
+const CONFIG: ConfigSpec = ConfigSpec::new(&[&CLIP]);
 
 pub struct StopSoundRunner {
     control: Arc<dyn SoundboardControl>,
@@ -23,7 +29,7 @@ impl StopSoundRunner {
 #[async_trait]
 impl SubActionRunner for StopSoundRunner {
     fn id(&self) -> &str {
-        sub_action_ids::SOUND_STOP
+        KIND_ID
     }
 
     fn category(&self) -> SubActionCategory {
@@ -46,22 +52,8 @@ impl SubActionRunner for StopSoundRunner {
         "stop-circle"
     }
 
-    fn default_config(&self) -> SubActionConfig {
-        let mut cfg = SubActionConfig::new();
-        cfg.insert("clip_id".to_owned(), Variant::String(String::new()));
-        cfg
-    }
-
-    fn config_fields(&self) -> Vec<FormField> {
-        vec![FormField::DynamicSelect {
-            key: "clip_id",
-            label: "Clip",
-            options_key: picker_keys::CLIP_IDS,
-        }]
-    }
-
-    fn validate_config(&self, _config: &SubActionConfig) -> Result<(), RegistryError> {
-        Ok(())
+    fn config_spec(&self) -> Option<ConfigSpec> {
+        Some(CONFIG)
     }
 
     async fn execute(
@@ -69,49 +61,12 @@ impl SubActionRunner for StopSoundRunner {
         config: &SubActionConfig,
         ctx: &RunContext<'_>,
     ) -> (SubActionTelemetry, Option<ArgStack>) {
-        let started_at = OffsetDateTime::now_utc();
-
-        let clip_id_str = config
-            .get("clip_id")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default();
-        let interpolated = ctx.arg_stack.interpolate(clip_id_str);
-
-        let outcome = if interpolated.is_empty() {
-            match self.control.stop_all().await {
-                Ok(()) => SubActionOutcome::Success,
-                Err(e) => SubActionOutcome::Failed(e.to_string()),
-            }
-        } else {
-            let parse_result: Result<ClipId, _> =
-                serde_json::from_str(&format!("\"{interpolated}\""));
-            match parse_result {
-                Err(_) => SubActionOutcome::Failed(format!(
-                    "{}: invalid clip_id",
-                    sub_action_ids::SOUND_STOP
-                )),
-                Ok(clip_id) => match self.control.stop(clip_id).await {
-                    Ok(()) => SubActionOutcome::Success,
-                    Err(e) => SubActionOutcome::Failed(e.to_string()),
-                },
-            }
+        let timer = StepTimer::start(ctx, KIND_ID);
+        let stopped = match CLIP.read(config, ctx.arg_stack) {
+            Ok(Some(clip_id)) => self.control.stop(clip_id).await,
+            Ok(None) => self.control.stop_all().await,
+            Err(problem) => return (timer.invalid_config(&problem), None),
         };
-
-        let duration_ms = (OffsetDateTime::now_utc() - started_at)
-            .whole_milliseconds()
-            .max(0) as u64;
-
-        (
-            SubActionTelemetry {
-                args_in: ::std::collections::BTreeMap::new(),
-                produced: ::std::collections::BTreeMap::new(),
-                index: ctx.index,
-                kind: sub_action_ids::SOUND_STOP.to_owned(),
-                started_at,
-                duration_ms,
-                outcome,
-            },
-            None,
-        )
+        (timer.finish(SubActionOutcome::from_result(&stopped)), None)
     }
 }

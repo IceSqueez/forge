@@ -2,40 +2,36 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use forge_registry::{
-    ConfigReason, FormField, RegistryError, RunContext, StepTimer, SubActionCategory,
-    SubActionRunner,
+    ConfigSpec, IntegerEditor, IntegerField, RunContext, StepTimer, SubActionCategory,
+    SubActionRunner, TypedField, ValueBounds,
 };
-use forge_types::{ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetry, Variant};
+use forge_types::{ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetry};
 
 use crate::control::SoundboardControl;
-use crate::vocabulary::sub_action_ids;
+use crate::vocabulary::{config_keys, sub_action_ids};
 
-const VOLUME_DB_KEY: &str = "volume_db";
-const MIN_VOLUME_DB: i32 = -30;
-const MAX_VOLUME_DB: i32 = 0;
-const UNITY_GAIN_DB: i32 = 0;
+const KIND_ID: &str = sub_action_ids::VOLUME_SET_MASTER;
+const MIN_VOLUME_DB: i64 = -30;
+const MAX_VOLUME_DB: i64 = 0;
+const UNITY_GAIN_DB: i64 = 0;
 const DECADE_BASE: f64 = 10.0;
 const AMPLITUDE_DB_PER_DECADE: f64 = 20.0;
 
-fn read_volume_db(config: &SubActionConfig) -> Result<f64, RegistryError> {
-    match config.get(VOLUME_DB_KEY) {
-        Some(Variant::Int(db)) => {
-            let saturated =
-                i32::try_from(*db).unwrap_or(if db.is_negative() { i32::MIN } else { i32::MAX });
-            Ok(f64::from(saturated.clamp(MIN_VOLUME_DB, MAX_VOLUME_DB)))
-        }
-        Some(Variant::Float(db)) => {
-            Ok(db.clamp(f64::from(MIN_VOLUME_DB), f64::from(MAX_VOLUME_DB)))
-        }
-        Some(_) => Err(RegistryError::invalid_field(
-            VOLUME_DB_KEY,
-            ConfigReason::NotANumber,
-        )),
-        None => Err(RegistryError::invalid_field(
-            VOLUME_DB_KEY,
-            ConfigReason::Required,
-        )),
-    }
+const VOLUME_DB: IntegerField = IntegerField {
+    key: config_keys::VOLUME_DB,
+    label: "Volume (dB)",
+    editor: IntegerEditor::Number,
+    default: UNITY_GAIN_DB,
+    bounds: ValueBounds {
+        min: Some(MIN_VOLUME_DB),
+        max: Some(MAX_VOLUME_DB),
+    },
+};
+
+const CONFIG: ConfigSpec = ConfigSpec::new(&[&VOLUME_DB]);
+
+fn linear_gain(volume_db: i64) -> f32 {
+    DECADE_BASE.powf(volume_db as f64 / AMPLITUDE_DB_PER_DECADE) as f32
 }
 
 pub struct SetMasterVolumeRunner {
@@ -51,7 +47,7 @@ impl SetMasterVolumeRunner {
 #[async_trait]
 impl SubActionRunner for SetMasterVolumeRunner {
     fn id(&self) -> &str {
-        sub_action_ids::VOLUME_SET_MASTER
+        KIND_ID
     }
 
     fn category(&self) -> SubActionCategory {
@@ -74,26 +70,8 @@ impl SubActionRunner for SetMasterVolumeRunner {
         "volume"
     }
 
-    fn default_config(&self) -> SubActionConfig {
-        let mut cfg = SubActionConfig::new();
-        cfg.insert(
-            VOLUME_DB_KEY.to_owned(),
-            Variant::Int(i64::from(UNITY_GAIN_DB)),
-        );
-        cfg
-    }
-
-    fn config_fields(&self) -> Vec<FormField> {
-        vec![FormField::Integer {
-            key: VOLUME_DB_KEY,
-            label: "Volume (dB)",
-            min: i64::from(MIN_VOLUME_DB),
-            max: i64::from(MAX_VOLUME_DB),
-        }]
-    }
-
-    fn validate_config(&self, config: &SubActionConfig) -> Result<(), RegistryError> {
-        read_volume_db(config).map(|_| ())
+    fn config_spec(&self) -> Option<ConfigSpec> {
+        Some(CONFIG)
     }
 
     async fn execute(
@@ -101,17 +79,14 @@ impl SubActionRunner for SetMasterVolumeRunner {
         config: &SubActionConfig,
         ctx: &RunContext<'_>,
     ) -> (SubActionTelemetry, Option<ArgStack>) {
-        let timer = StepTimer::start(ctx, sub_action_ids::VOLUME_SET_MASTER);
-        let volume_db = match read_volume_db(config) {
+        let timer = StepTimer::start(ctx, KIND_ID);
+        let volume_db = match VOLUME_DB.read(config, ctx.arg_stack) {
             Ok(volume_db) => volume_db,
-            Err(e) => return (timer.failed(e.to_string()), None),
+            Err(problem) => return (timer.invalid_config(&problem), None),
         };
-        let gain = DECADE_BASE.powf(volume_db / AMPLITUDE_DB_PER_DECADE) as f32;
-
-        let outcome = match self.control.set_master_volume(gain).await {
-            Ok(()) => SubActionOutcome::Success,
-            Err(e) => SubActionOutcome::Failed(e.to_string()),
-        };
+        let outcome = SubActionOutcome::from_result(
+            &self.control.set_master_volume(linear_gain(volume_db)).await,
+        );
         (timer.finish(outcome), None)
     }
 }

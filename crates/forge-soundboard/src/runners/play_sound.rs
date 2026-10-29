@@ -2,15 +2,25 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use forge_registry::{
-    ConfigReason, FormField, RegistryError, RunContext, StepTimer, SubActionCategory,
-    SubActionConfigExt, SubActionRunner,
+    ConfigProblem, ConfigReason, ConfigSpec, RunContext, StepTimer, SubActionCategory,
+    SubActionRunner, TypedField,
 };
-use forge_types::{
-    ArgStack, ClipId, SubActionConfig, SubActionOutcome, SubActionTelemetry, Variant,
-};
+use forge_types::{ArgStack, ClipId, SubActionConfig, SubActionOutcome, SubActionTelemetry};
 
+use super::clip_field::ClipField;
 use crate::control::SoundboardControl;
-use crate::vocabulary::{picker_keys, sub_action_ids};
+use crate::vocabulary::{config_keys, sub_action_ids};
+
+const KIND_ID: &str = sub_action_ids::SOUND_PLAY;
+
+const CLIP: ClipField = ClipField { required: true };
+
+const CONFIG: ConfigSpec = ConfigSpec::new(&[&CLIP]);
+
+fn read_clip(config: &SubActionConfig, args: &ArgStack) -> Result<ClipId, ConfigProblem> {
+    CLIP.read(config, args)?
+        .ok_or_else(|| ConfigProblem::field(config_keys::CLIP_ID, ConfigReason::Required))
+}
 
 pub struct PlaySoundRunner {
     control: Arc<dyn SoundboardControl>,
@@ -25,7 +35,7 @@ impl PlaySoundRunner {
 #[async_trait]
 impl SubActionRunner for PlaySoundRunner {
     fn id(&self) -> &str {
-        sub_action_ids::SOUND_PLAY
+        KIND_ID
     }
 
     fn category(&self) -> SubActionCategory {
@@ -48,28 +58,8 @@ impl SubActionRunner for PlaySoundRunner {
         "volume"
     }
 
-    fn default_config(&self) -> SubActionConfig {
-        let mut cfg = SubActionConfig::new();
-        cfg.insert("clip_id".to_owned(), Variant::String(String::new()));
-        cfg
-    }
-
-    fn config_fields(&self) -> Vec<FormField> {
-        vec![FormField::DynamicSelect {
-            key: "clip_id",
-            label: "Clip",
-            options_key: picker_keys::CLIP_IDS,
-        }]
-    }
-
-    fn validate_config(&self, config: &SubActionConfig) -> Result<(), RegistryError> {
-        match config.str_nonempty("clip_id") {
-            Some(_) => Ok(()),
-            None => Err(RegistryError::invalid_field(
-                "clip_id",
-                ConfigReason::Required,
-            )),
-        }
+    fn config_spec(&self) -> Option<ConfigSpec> {
+        Some(CONFIG)
     }
 
     async fn execute(
@@ -77,20 +67,12 @@ impl SubActionRunner for PlaySoundRunner {
         config: &SubActionConfig,
         ctx: &RunContext<'_>,
     ) -> (SubActionTelemetry, Option<ArgStack>) {
-        let timer = StepTimer::start(ctx, sub_action_ids::SOUND_PLAY);
-
-        let clip_id_str = config.str("clip_id").unwrap_or_default();
-        let interpolated = ctx.arg_stack.interpolate(clip_id_str);
-
-        let parse_result: Result<ClipId, _> = serde_json::from_str(&format!("\"{interpolated}\""));
-
-        let outcome = match parse_result {
-            Err(_) => {
-                SubActionOutcome::Failed(format!("{}: invalid clip_id", sub_action_ids::SOUND_PLAY))
-            }
-            Ok(clip_id) => SubActionOutcome::from_result(&self.control.play(clip_id, None).await),
+        let timer = StepTimer::start(ctx, KIND_ID);
+        let clip_id = match read_clip(config, ctx.arg_stack) {
+            Ok(clip_id) => clip_id,
+            Err(problem) => return (timer.invalid_config(&problem), None),
         };
-
+        let outcome = SubActionOutcome::from_result(&self.control.play(clip_id, None).await);
         (timer.finish(outcome), None)
     }
 }

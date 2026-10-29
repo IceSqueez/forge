@@ -1,18 +1,27 @@
-use std::collections::BTreeMap;
 use std::sync::Arc;
-use std::time::Instant;
 
 use async_trait::async_trait;
 use forge_registry::runner::SubActionConfig;
 use forge_registry::{
-    ConfigReason, FormField, RegistryError, RunContext, SubActionCategory, SubActionConfigExt,
-    SubActionRunner,
+    ConfigProblem, ConfigSpec, RunContext, StepTimer, SubActionCategory, SubActionRunner,
+    TypedField,
 };
-use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, Variant};
-use time::OffsetDateTime;
+use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry};
 
+use super::fields::{MESSAGE_ID, WEBHOOK};
 use crate::sink::DiscordSink;
 use crate::vocabulary::sub_action_ids;
+
+const KIND_ID: &str = sub_action_ids::WEBHOOK_DELETE_MESSAGE;
+
+const CONFIG: ConfigSpec = ConfigSpec::new(&[&WEBHOOK, &MESSAGE_ID]);
+
+fn read_config(
+    config: &SubActionConfig,
+    args: &ArgStack,
+) -> Result<(String, String), ConfigProblem> {
+    Ok((WEBHOOK.read(config, args)?, MESSAGE_ID.read(config, args)?))
+}
 
 pub struct DeleteMessageRunner {
     sink: Arc<dyn DiscordSink>,
@@ -27,7 +36,7 @@ impl DeleteMessageRunner {
 #[async_trait]
 impl SubActionRunner for DeleteMessageRunner {
     fn id(&self) -> &str {
-        sub_action_ids::WEBHOOK_DELETE_MESSAGE
+        KIND_ID
     }
 
     fn category(&self) -> SubActionCategory {
@@ -50,42 +59,8 @@ impl SubActionRunner for DeleteMessageRunner {
         "trash"
     }
 
-    fn default_config(&self) -> SubActionConfig {
-        BTreeMap::from([
-            ("webhook_name".to_owned(), Variant::String(String::new())),
-            ("message_id".to_owned(), Variant::String(String::new())),
-        ])
-    }
-
-    fn config_fields(&self) -> Vec<FormField> {
-        vec![
-            FormField::Text {
-                key: "webhook_name",
-                label: "Webhook",
-                placeholder: "alerts",
-            },
-            FormField::Text {
-                key: "message_id",
-                label: "Message ID",
-                placeholder: "%discord.message_id%",
-            },
-        ]
-    }
-
-    fn validate_config(&self, config: &SubActionConfig) -> Result<(), RegistryError> {
-        if !matches!(config.get("webhook_name"), Some(Variant::String(_))) {
-            return Err(RegistryError::invalid_field(
-                "webhook_name",
-                ConfigReason::Required,
-            ));
-        }
-        if !matches!(config.get("message_id"), Some(Variant::String(_))) {
-            return Err(RegistryError::invalid_field(
-                "message_id",
-                ConfigReason::Required,
-            ));
-        }
-        Ok(())
+    fn config_spec(&self) -> Option<ConfigSpec> {
+        Some(CONFIG)
     }
 
     async fn execute(
@@ -93,47 +68,14 @@ impl SubActionRunner for DeleteMessageRunner {
         config: &SubActionConfig,
         ctx: &RunContext<'_>,
     ) -> (SubActionTelemetry, Option<ArgStack>) {
-        let started_at = OffsetDateTime::now_utc();
-        let start = Instant::now();
-
-        let webhook_name = ctx
-            .arg_stack
-            .interpolate(config.str("webhook_name").unwrap_or_default());
-        let message_id = ctx
-            .arg_stack
-            .interpolate(config.str("message_id").unwrap_or_default());
-
-        if message_id.trim().is_empty() {
-            return (
-                SubActionTelemetry {
-                    args_in: ::std::collections::BTreeMap::new(),
-                    produced: ::std::collections::BTreeMap::new(),
-                    kind: sub_action_ids::WEBHOOK_DELETE_MESSAGE.to_owned(),
-                    started_at,
-                    duration_ms: start.elapsed().as_millis() as u64,
-                    outcome: SubActionOutcome::Failed("message_id is empty".to_owned()),
-                    index: ctx.index,
-                },
-                None,
-            );
-        }
-
-        let outcome = SubActionOutcome::from_result(
-            &self.sink.delete_message(&webhook_name, &message_id).await,
-        );
-
-        (
-            SubActionTelemetry {
-                args_in: ::std::collections::BTreeMap::new(),
-                produced: ::std::collections::BTreeMap::new(),
-                kind: sub_action_ids::WEBHOOK_DELETE_MESSAGE.to_owned(),
-                started_at,
-                duration_ms: start.elapsed().as_millis() as u64,
-                outcome,
-                index: ctx.index,
-            },
-            None,
-        )
+        let timer = StepTimer::start(ctx, KIND_ID);
+        let (webhook, message_id) = match read_config(config, ctx.arg_stack) {
+            Ok(values) => values,
+            Err(problem) => return (timer.invalid_config(&problem), None),
+        };
+        let outcome =
+            SubActionOutcome::from_result(&self.sink.delete_message(&webhook, &message_id).await);
+        (timer.finish(outcome), None)
     }
 }
 

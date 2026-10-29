@@ -1,20 +1,69 @@
-use std::collections::BTreeMap;
 use std::sync::Arc;
-use std::time::Instant;
 
 use async_trait::async_trait;
 use forge_registry::runner::SubActionConfig;
 use forge_registry::{
-    ConfigReason, FormField, RegistryError, RunContext, SubActionCategory, SubActionConfigExt,
-    SubActionRunner,
+    ConfigProblem, ConfigReason, ConfigSpec, Interpolation, OptionalField, RunContext, StepTimer,
+    SubActionCategory, SubActionRunner, TextEditor, TextField, TypedField,
 };
-use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, Variant};
-use time::OffsetDateTime;
+use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry};
 
-use super::mention_fields::{mention_default_entries, mention_form_fields, mention_policy};
+use super::fields::{MESSAGE_ID, WEBHOOK, optional_text, present, unlisted_text};
+use super::mention_fields::{ALLOW_EVERYONE_PINGS, ALLOW_ROLE_PINGS, read_mention_policy};
 use crate::embed::DiscordEmbed;
+use crate::mention::MentionPolicy;
 use crate::sink::DiscordSink;
-use crate::vocabulary::sub_action_ids;
+use crate::vocabulary::{config_keys, sub_action_ids};
+
+const KIND_ID: &str = sub_action_ids::WEBHOOK_UPDATE_MESSAGE;
+
+const CONTENT: TextField = optional_text(config_keys::CONTENT, "New Content", TextEditor::Area);
+
+const EMBED_TITLE: OptionalField<TextField> =
+    unlisted_text(config_keys::EMBED_TITLE, "Embed Title");
+
+const CONFIG: ConfigSpec = ConfigSpec::new(&[
+    &WEBHOOK,
+    &MESSAGE_ID,
+    &CONTENT,
+    &ALLOW_ROLE_PINGS,
+    &ALLOW_EVERYONE_PINGS,
+]);
+
+fn no_content() -> ConfigProblem {
+    ConfigProblem::whole(ConfigReason::any_of([
+        config_keys::CONTENT,
+        config_keys::EMBED_TITLE,
+    ]))
+}
+
+struct MessageEdit {
+    webhook: String,
+    message_id: String,
+    content: Option<String>,
+    embed: Option<DiscordEmbed>,
+    mentions: MentionPolicy,
+}
+
+fn read_config(config: &SubActionConfig, args: &ArgStack) -> Result<MessageEdit, ConfigProblem> {
+    let webhook = WEBHOOK.read(config, args)?;
+    let message_id = MESSAGE_ID.read(config, args)?;
+    let content = present(CONTENT.read(config, args)?);
+    let embed_title = EMBED_TITLE.read(config, args)?.and_then(present);
+    if content.is_none() && embed_title.is_none() {
+        return Err(no_content());
+    }
+    Ok(MessageEdit {
+        webhook,
+        message_id,
+        content,
+        embed: embed_title.map(|title| DiscordEmbed {
+            title: Some(title),
+            ..Default::default()
+        }),
+        mentions: read_mention_policy(config, args)?,
+    })
+}
 
 pub struct EditMessageRunner {
     sink: Arc<dyn DiscordSink>,
@@ -29,7 +78,7 @@ impl EditMessageRunner {
 #[async_trait]
 impl SubActionRunner for EditMessageRunner {
     fn id(&self) -> &str {
-        sub_action_ids::WEBHOOK_UPDATE_MESSAGE
+        KIND_ID
     }
 
     fn category(&self) -> SubActionCategory {
@@ -52,49 +101,19 @@ impl SubActionRunner for EditMessageRunner {
         "pencil"
     }
 
-    fn default_config(&self) -> SubActionConfig {
-        let mut config = BTreeMap::from([
-            ("webhook_name".to_owned(), Variant::String(String::new())),
-            ("message_id".to_owned(), Variant::String(String::new())),
-            ("content".to_owned(), Variant::String(String::new())),
-        ]);
-        config.extend(mention_default_entries());
-        config
+    fn config_spec(&self) -> Option<ConfigSpec> {
+        Some(CONFIG)
     }
 
-    fn config_fields(&self) -> Vec<FormField> {
-        let mut fields = vec![
-            FormField::Text {
-                key: "webhook_name",
-                label: "Webhook",
-                placeholder: "alerts",
-            },
-            FormField::Text {
-                key: "message_id",
-                label: "Message ID",
-                placeholder: "%discord.message_id%",
-            },
-            FormField::TextArea {
-                key: "content",
-                label: "New Content",
-            },
-        ];
-        fields.extend(mention_form_fields());
-        fields
-    }
-
-    fn validate_config(&self, config: &SubActionConfig) -> Result<(), RegistryError> {
-        if !matches!(config.get("webhook_name"), Some(Variant::String(_))) {
-            return Err(RegistryError::invalid_field(
-                "webhook_name",
-                ConfigReason::Required,
-            ));
-        }
-        if !matches!(config.get("message_id"), Some(Variant::String(_))) {
-            return Err(RegistryError::invalid_field(
-                "message_id",
-                ConfigReason::Required,
-            ));
+    fn check_config(
+        &self,
+        config: &SubActionConfig,
+        interpolation: Interpolation<'_>,
+    ) -> Result<(), ConfigProblem> {
+        let content = CONTENT.peek(config, interpolation)?;
+        let embed_title = EMBED_TITLE.peek(config, interpolation)?;
+        if content.is_some_and(|text| text.is_empty()) && matches!(embed_title, Some(None)) {
+            return Err(no_content());
         }
         Ok(())
     }
@@ -104,70 +123,21 @@ impl SubActionRunner for EditMessageRunner {
         config: &SubActionConfig,
         ctx: &RunContext<'_>,
     ) -> (SubActionTelemetry, Option<ArgStack>) {
-        let started_at = OffsetDateTime::now_utc();
-        let start = Instant::now();
-
-        let webhook_name = ctx
-            .arg_stack
-            .interpolate(config.str("webhook_name").unwrap_or_default());
-        let message_id = ctx
-            .arg_stack
-            .interpolate(config.str("message_id").unwrap_or_default());
-        let content = config
-            .str("content")
-            .map(|raw| ctx.arg_stack.interpolate(raw))
-            .filter(|s| !s.is_empty());
-
-        let embed_title = config
-            .str("embed_title")
-            .map(|raw| ctx.arg_stack.interpolate(raw))
-            .filter(|s| !s.is_empty());
-
-        let has_any = content.is_some() || embed_title.is_some();
-        if !has_any {
-            return (
-                SubActionTelemetry {
-                    args_in: ::std::collections::BTreeMap::new(),
-                    produced: ::std::collections::BTreeMap::new(),
-                    kind: sub_action_ids::WEBHOOK_UPDATE_MESSAGE.to_owned(),
-                    started_at,
-                    duration_ms: start.elapsed().as_millis() as u64,
-                    outcome: SubActionOutcome::Failed("edit has no content or embed".to_owned()),
-                    index: ctx.index,
-                },
-                None,
-            );
-        }
-
-        let embed = embed_title.map(|t| DiscordEmbed {
-            title: Some(t),
-            ..Default::default()
-        });
-
-        let outcome = SubActionOutcome::from_result(
-            &self
-                .sink
-                .edit_message(
-                    &webhook_name,
-                    &message_id,
-                    content.as_deref(),
-                    embed,
-                    mention_policy(config),
-                )
-                .await,
-        );
-
-        (
-            SubActionTelemetry {
-                args_in: ::std::collections::BTreeMap::new(),
-                produced: ::std::collections::BTreeMap::new(),
-                kind: sub_action_ids::WEBHOOK_UPDATE_MESSAGE.to_owned(),
-                started_at,
-                duration_ms: start.elapsed().as_millis() as u64,
-                outcome,
-                index: ctx.index,
-            },
-            None,
-        )
+        let timer = StepTimer::start(ctx, KIND_ID);
+        let edit = match read_config(config, ctx.arg_stack) {
+            Ok(edit) => edit,
+            Err(problem) => return (timer.invalid_config(&problem), None),
+        };
+        let edited = self
+            .sink
+            .edit_message(
+                &edit.webhook,
+                &edit.message_id,
+                edit.content.as_deref(),
+                edit.embed,
+                edit.mentions,
+            )
+            .await;
+        (timer.finish(SubActionOutcome::from_result(&edited)), None)
     }
 }

@@ -1,6 +1,8 @@
 use crate::error::MidiError;
 use crate::events::{MidiEvent, MidiOutMessage};
 
+pub(crate) const NOTE_ON_STATUS: u8 = 0x90;
+
 pub(crate) fn decode_midi_bytes(data: &[u8]) -> Result<Option<MidiEvent>, MidiError> {
     if data.is_empty() {
         return Ok(None);
@@ -22,7 +24,7 @@ pub(crate) fn decode_midi_bytes(data: &[u8]) -> Result<Option<MidiEvent>, MidiEr
                 channel,
             }))
         }
-        0x90 => {
+        NOTE_ON_STATUS => {
             if data.len() < 3 {
                 return Ok(None);
             }
@@ -76,7 +78,7 @@ pub(crate) fn message_to_bytes(message: &MidiOutMessage) -> Result<Vec<u8>, Midi
             note,
             velocity,
             channel,
-        } => Ok(vec![0x90 | channel, *note, *velocity]),
+        } => Ok(vec![NOTE_ON_STATUS | channel, *note, *velocity]),
         MidiOutMessage::NoteOff {
             note,
             velocity,

@@ -1,140 +1,95 @@
-use std::collections::BTreeMap;
-
 use forge_platform_core::{
     ConnectionState, QuickAction, QuickActionAccent, QuickActionLiveness, QuickActions, SectionIcon,
 };
+use forge_registry::SubActionConfig;
 use forge_types::{SubActionStep, Variant};
 
 use crate::client::DiscordClient;
-use crate::vocabulary::sub_action_ids;
+use crate::vocabulary::{config_keys, sub_action_ids};
+
+const TEST_POST_CONTENT: &str = "forge test post";
+
+fn webhook_action(
+    label: &str,
+    icon: &str,
+    enabled: bool,
+    kind_id: &str,
+    config: SubActionConfig,
+) -> QuickAction {
+    QuickAction {
+        label: label.to_owned(),
+        icon: SectionIcon::new(icon),
+        enabled,
+        locked_reason: None,
+        liveness: QuickActionLiveness::Unknown,
+        group: None,
+        group_icon: None,
+        group_accent: None,
+        destructive: false,
+        accent: QuickActionAccent::Brand,
+        subaction_template: SubActionStep {
+            kind_id: kind_id.to_owned(),
+            config,
+            enabled: true,
+            continue_on_error: false,
+            condition: None,
+            label: None,
+        },
+        fields: Vec::new(),
+        collection: None,
+    }
+}
 
 impl QuickActions for DiscordClient {
     fn actions(&self) -> Vec<QuickAction> {
         let snap = self.content_state.lock().unwrap_or_else(|p| p.into_inner());
-        let has_webhooks = !snap.webhook_names.is_empty();
-        let first_webhook = snap.webhook_names.first().cloned().unwrap_or_default();
+        let first_webhook = snap.webhook_names.first().cloned();
         drop(snap);
 
-        let enabled = has_webhooks && self.connection_state() != ConnectionState::Disconnected;
+        let enabled =
+            first_webhook.is_some() && self.connection_state() != ConnectionState::Disconnected;
+        let preset = |overrides: Vec<(&str, Variant)>| -> SubActionConfig {
+            first_webhook
+                .clone()
+                .map(|name| (config_keys::WEBHOOK_NAME, Variant::String(name)))
+                .into_iter()
+                .chain(overrides)
+                .map(|(key, value)| (key.to_owned(), value))
+                .collect()
+        };
 
         vec![
-            QuickAction {
-                label: "Post Text".to_owned(),
-                icon: SectionIcon::new("message"),
+            webhook_action(
+                "Post Text",
+                "message",
                 enabled,
-                locked_reason: None,
-                liveness: QuickActionLiveness::Unknown,
-                group: None,
-                group_icon: None,
-                group_accent: None,
-                destructive: false,
-                accent: QuickActionAccent::Brand,
-                subaction_template: SubActionStep {
-                    kind_id: sub_action_ids::WEBHOOK_SEND_MESSAGE.to_owned(),
-                    config: BTreeMap::from([
-                        (
-                            "webhook_name".to_owned(),
-                            Variant::String(first_webhook.clone()),
-                        ),
-                        ("content".to_owned(), Variant::String(String::new())),
-                    ]),
-                    enabled: true,
-                    continue_on_error: false,
-                    condition: None,
-                    label: None,
-                },
-                fields: Vec::new(),
-                collection: None,
-            },
-            QuickAction {
-                label: "Post Embed".to_owned(),
-                icon: SectionIcon::new("layout-cards"),
+                sub_action_ids::WEBHOOK_SEND_MESSAGE,
+                preset(Vec::new()),
+            ),
+            webhook_action(
+                "Post Embed",
+                "layout-cards",
                 enabled,
-                locked_reason: None,
-                liveness: QuickActionLiveness::Unknown,
-                group: None,
-                group_icon: None,
-                group_accent: None,
-                destructive: false,
-                accent: QuickActionAccent::Brand,
-                subaction_template: SubActionStep {
-                    kind_id: sub_action_ids::WEBHOOK_SEND_EMBED.to_owned(),
-                    config: BTreeMap::from([
-                        (
-                            "webhook_name".to_owned(),
-                            Variant::String(first_webhook.clone()),
-                        ),
-                        ("embed_title".to_owned(), Variant::String(String::new())),
-                        (
-                            "embed_description".to_owned(),
-                            Variant::String(String::new()),
-                        ),
-                    ]),
-                    enabled: true,
-                    continue_on_error: false,
-                    condition: None,
-                    label: None,
-                },
-                fields: Vec::new(),
-                collection: None,
-            },
-            QuickAction {
-                label: "Edit Message".to_owned(),
-                icon: SectionIcon::new("pencil"),
+                sub_action_ids::WEBHOOK_SEND_EMBED,
+                preset(Vec::new()),
+            ),
+            webhook_action(
+                "Edit Message",
+                "pencil",
                 enabled,
-                locked_reason: None,
-                liveness: QuickActionLiveness::Unknown,
-                group: None,
-                group_icon: None,
-                group_accent: None,
-                destructive: false,
-                accent: QuickActionAccent::Brand,
-                subaction_template: SubActionStep {
-                    kind_id: sub_action_ids::WEBHOOK_UPDATE_MESSAGE.to_owned(),
-                    config: BTreeMap::from([
-                        (
-                            "webhook_name".to_owned(),
-                            Variant::String(first_webhook.clone()),
-                        ),
-                        ("message_id".to_owned(), Variant::String(String::new())),
-                        ("content".to_owned(), Variant::String(String::new())),
-                    ]),
-                    enabled: true,
-                    continue_on_error: false,
-                    condition: None,
-                    label: None,
-                },
-                fields: Vec::new(),
-                collection: None,
-            },
-            QuickAction {
-                label: "Test Webhook".to_owned(),
-                icon: SectionIcon::new("send"),
+                sub_action_ids::WEBHOOK_UPDATE_MESSAGE,
+                preset(Vec::new()),
+            ),
+            webhook_action(
+                "Test Webhook",
+                "send",
                 enabled,
-                locked_reason: None,
-                liveness: QuickActionLiveness::Unknown,
-                group: None,
-                group_icon: None,
-                group_accent: None,
-                destructive: false,
-                accent: QuickActionAccent::Brand,
-                subaction_template: SubActionStep {
-                    kind_id: sub_action_ids::WEBHOOK_SEND_MESSAGE.to_owned(),
-                    config: BTreeMap::from([
-                        ("webhook_name".to_owned(), Variant::String(first_webhook)),
-                        (
-                            "content".to_owned(),
-                            Variant::String("forge test post".to_owned()),
-                        ),
-                    ]),
-                    enabled: true,
-                    continue_on_error: false,
-                    condition: None,
-                    label: None,
-                },
-                fields: Vec::new(),
-                collection: None,
-            },
+                sub_action_ids::WEBHOOK_SEND_MESSAGE,
+                preset(vec![(
+                    config_keys::CONTENT,
+                    Variant::String(TEST_POST_CONTENT.to_owned()),
+                )]),
+            ),
         ]
     }
 }

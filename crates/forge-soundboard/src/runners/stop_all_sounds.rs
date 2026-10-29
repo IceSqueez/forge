@@ -1,12 +1,13 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use forge_registry::{FormField, RegistryError, RunContext, SubActionCategory, SubActionRunner};
+use forge_registry::{RunContext, StepTimer, SubActionCategory, SubActionRunner};
 use forge_types::{ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetry};
-use time::OffsetDateTime;
 
 use crate::control::SoundboardControl;
 use crate::vocabulary::sub_action_ids;
+
+const KIND_ID: &str = sub_action_ids::SOUND_STOP_ALL;
 
 pub struct StopAllSoundsRunner {
     control: Arc<dyn SoundboardControl>,
@@ -21,7 +22,7 @@ impl StopAllSoundsRunner {
 #[async_trait]
 impl SubActionRunner for StopAllSoundsRunner {
     fn id(&self) -> &str {
-        sub_action_ids::SOUND_STOP_ALL
+        KIND_ID
     }
 
     fn category(&self) -> SubActionCategory {
@@ -44,45 +45,13 @@ impl SubActionRunner for StopAllSoundsRunner {
         "stop-circle"
     }
 
-    fn default_config(&self) -> SubActionConfig {
-        SubActionConfig::new()
-    }
-
-    fn config_fields(&self) -> Vec<FormField> {
-        vec![]
-    }
-
-    fn validate_config(&self, _config: &SubActionConfig) -> Result<(), RegistryError> {
-        Ok(())
-    }
-
     async fn execute(
         &self,
         _config: &SubActionConfig,
         ctx: &RunContext<'_>,
     ) -> (SubActionTelemetry, Option<ArgStack>) {
-        let started_at = OffsetDateTime::now_utc();
-
-        let outcome = match self.control.stop_all().await {
-            Ok(()) => SubActionOutcome::Success,
-            Err(e) => SubActionOutcome::Failed(e.to_string()),
-        };
-
-        let duration_ms = (OffsetDateTime::now_utc() - started_at)
-            .whole_milliseconds()
-            .max(0) as u64;
-
-        (
-            SubActionTelemetry {
-                args_in: ::std::collections::BTreeMap::new(),
-                produced: ::std::collections::BTreeMap::new(),
-                index: ctx.index,
-                kind: sub_action_ids::SOUND_STOP_ALL.to_owned(),
-                started_at,
-                duration_ms,
-                outcome,
-            },
-            None,
-        )
+        let timer = StepTimer::start(ctx, KIND_ID);
+        let outcome = SubActionOutcome::from_result(&self.control.stop_all().await);
+        (timer.finish(outcome), None)
     }
 }

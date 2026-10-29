@@ -1,154 +1,112 @@
-use std::collections::BTreeMap;
-
 use forge_platform_core::{
     QuickAction, QuickActionAccent, QuickActionLiveness, QuickActions, SectionIcon,
 };
+use forge_registry::{ConfigChoice, SubActionConfig};
 use forge_types::{SubActionStep, Variant};
 
 use crate::client::MidiClient;
+use crate::decode::NOTE_ON_STATUS;
+use crate::runners::{NOTE, VELOCITY};
+use crate::vocabulary::OutMessageKind;
+use crate::vocabulary::config_keys::send;
+use crate::vocabulary::limits::DATA_BYTE_MAX;
 use crate::vocabulary::sub_action_ids;
+
+const CHANNEL_VOLUME_CONTROLLER: i64 = 7;
+const RELEASE_VELOCITY: i64 = 0;
+
+fn raw_note_on() -> Variant {
+    Variant::Array(vec![
+        Variant::Int(i64::from(NOTE_ON_STATUS)),
+        Variant::Int(NOTE.default),
+        Variant::Int(VELOCITY.default),
+    ])
+}
+
+fn send_action(label: &str, icon: &str, enabled: bool, config: SubActionConfig) -> QuickAction {
+    QuickAction {
+        label: label.to_owned(),
+        icon: SectionIcon::new(icon),
+        enabled,
+        locked_reason: None,
+        liveness: QuickActionLiveness::Unknown,
+        group: None,
+        group_icon: None,
+        group_accent: None,
+        destructive: false,
+        accent: QuickActionAccent::Brand,
+        subaction_template: SubActionStep {
+            kind_id: sub_action_ids::SEND.to_owned(),
+            config,
+            enabled: true,
+            continue_on_error: false,
+            condition: None,
+            label: None,
+        },
+        fields: Vec::new(),
+        collection: None,
+    }
+}
 
 impl QuickActions for MidiClient {
     fn actions(&self) -> Vec<QuickAction> {
         let snap = self.content_state.lock().unwrap_or_else(|p| p.into_inner());
-        let has_output = !snap.output_ports.is_empty();
-        let first_port = snap
-            .output_ports
-            .first()
-            .map(|p| p.name.clone())
-            .unwrap_or_default();
+        let first_port = snap.output_ports.first().map(|p| p.name.clone());
         drop(snap);
 
-        let enabled = has_output;
+        let enabled = first_port.is_some();
+        let preset = |kind: OutMessageKind, overrides: Vec<(&str, Variant)>| -> SubActionConfig {
+            let port = first_port
+                .clone()
+                .map(|name| (send::PORT, Variant::String(name)));
+            let kind = (
+                send::MESSAGE_KIND,
+                Variant::String(kind.wire_name().to_owned()),
+            );
+            port.into_iter()
+                .chain([kind])
+                .chain(overrides)
+                .map(|(key, value)| (key.to_owned(), value))
+                .collect()
+        };
 
         vec![
-            QuickAction {
-                label: "Send Note On".to_owned(),
-                icon: SectionIcon::new("music"),
+            send_action(
+                "Send Note On",
+                "music",
                 enabled,
-                locked_reason: None,
-                liveness: QuickActionLiveness::Unknown,
-                group: None,
-                group_icon: None,
-                group_accent: None,
-                destructive: false,
-                accent: QuickActionAccent::Brand,
-                subaction_template: SubActionStep {
-                    kind_id: sub_action_ids::SEND.to_owned(),
-                    config: BTreeMap::from([
-                        ("port".to_owned(), Variant::String(first_port.clone())),
-                        (
-                            "message_kind".to_owned(),
-                            Variant::String("note_on".to_owned()),
-                        ),
-                        ("note".to_owned(), Variant::Int(60)),
-                        ("velocity".to_owned(), Variant::Int(127)),
-                        ("channel".to_owned(), Variant::Int(0)),
-                    ]),
-                    enabled: true,
-                    continue_on_error: false,
-                    condition: None,
-                    label: None,
-                },
-                fields: Vec::new(),
-                collection: None,
-            },
-            QuickAction {
-                label: "Send Note Off".to_owned(),
-                icon: SectionIcon::new("music-off"),
+                preset(OutMessageKind::NoteOn, Vec::new()),
+            ),
+            send_action(
+                "Send Note Off",
+                "music-off",
                 enabled,
-                locked_reason: None,
-                liveness: QuickActionLiveness::Unknown,
-                group: None,
-                group_icon: None,
-                group_accent: None,
-                destructive: false,
-                accent: QuickActionAccent::Brand,
-                subaction_template: SubActionStep {
-                    kind_id: sub_action_ids::SEND.to_owned(),
-                    config: BTreeMap::from([
-                        ("port".to_owned(), Variant::String(first_port.clone())),
-                        (
-                            "message_kind".to_owned(),
-                            Variant::String("note_off".to_owned()),
-                        ),
-                        ("note".to_owned(), Variant::Int(60)),
-                        ("velocity".to_owned(), Variant::Int(0)),
-                        ("channel".to_owned(), Variant::Int(0)),
-                    ]),
-                    enabled: true,
-                    continue_on_error: false,
-                    condition: None,
-                    label: None,
-                },
-                fields: Vec::new(),
-                collection: None,
-            },
-            QuickAction {
-                label: "Send CC".to_owned(),
-                icon: SectionIcon::new("sliders"),
+                preset(
+                    OutMessageKind::NoteOff,
+                    vec![(send::VELOCITY, Variant::Int(RELEASE_VELOCITY))],
+                ),
+            ),
+            send_action(
+                "Send CC",
+                "sliders",
                 enabled,
-                locked_reason: None,
-                liveness: QuickActionLiveness::Unknown,
-                group: None,
-                group_icon: None,
-                group_accent: None,
-                destructive: false,
-                accent: QuickActionAccent::Brand,
-                subaction_template: SubActionStep {
-                    kind_id: sub_action_ids::SEND.to_owned(),
-                    config: BTreeMap::from([
-                        ("port".to_owned(), Variant::String(first_port.clone())),
-                        ("message_kind".to_owned(), Variant::String("cc".to_owned())),
-                        ("controller".to_owned(), Variant::Int(7)),
-                        ("value".to_owned(), Variant::Int(127)),
-                        ("channel".to_owned(), Variant::Int(0)),
-                    ]),
-                    enabled: true,
-                    continue_on_error: false,
-                    condition: None,
-                    label: None,
-                },
-                fields: Vec::new(),
-                collection: None,
-            },
-            QuickAction {
-                label: "Send Raw".to_owned(),
-                icon: SectionIcon::new("code"),
+                preset(
+                    OutMessageKind::ControlChange,
+                    vec![
+                        (send::CONTROLLER, Variant::Int(CHANNEL_VOLUME_CONTROLLER)),
+                        (send::VALUE, Variant::Int(DATA_BYTE_MAX)),
+                    ],
+                ),
+            ),
+            send_action(
+                "Send Raw",
+                "code",
                 enabled,
-                locked_reason: None,
-                liveness: QuickActionLiveness::Unknown,
-                group: None,
-                group_icon: None,
-                group_accent: None,
-                destructive: false,
-                accent: QuickActionAccent::Brand,
-                subaction_template: SubActionStep {
-                    kind_id: sub_action_ids::SEND.to_owned(),
-                    config: BTreeMap::from([
-                        ("port".to_owned(), Variant::String(first_port)),
-                        ("message_kind".to_owned(), Variant::String("raw".to_owned())),
-                        (
-                            "raw_bytes".to_owned(),
-                            Variant::Array(vec![
-                                Variant::Int(0x90),
-                                Variant::Int(60),
-                                Variant::Int(127),
-                            ]),
-                        ),
-                    ]),
-                    enabled: true,
-                    continue_on_error: false,
-                    condition: None,
-                    label: None,
-                },
-                fields: Vec::new(),
-                collection: None,
-            },
+                preset(OutMessageKind::Raw, vec![(send::RAW_BYTES, raw_note_on())]),
+            ),
         ]
     }
 }
-
 #[cfg(test)]
 mod tests {
     use forge_platform_core::QuickActions;

@@ -12,14 +12,16 @@ pub struct MentionPolicy {
 
 impl Default for MentionPolicy {
     fn default() -> Self {
-        Self {
-            allow_roles: true,
-            allow_everyone: false,
-        }
+        Self::DEFAULT
     }
 }
 
 impl MentionPolicy {
+    pub const DEFAULT: Self = Self {
+        allow_roles: true,
+        allow_everyone: false,
+    };
+
     pub(crate) fn to_wire(self) -> Value {
         let mut parse = vec![PARSE_USERS];
         if self.allow_roles {

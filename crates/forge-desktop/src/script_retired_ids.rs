@@ -159,3 +159,176 @@ fn raise_notice(uses: &[RetiredIdUse], navigator: Navigator, cx: &mut App) {
         STICKY,
     );
 }
+
+#[cfg(test)]
+mod tests {
+    use forge_registry::IdSuccession;
+    use forge_storage::Language;
+    use forge_types::{ScriptContract, ScriptId};
+    use time::OffsetDateTime;
+
+    use super::*;
+    use crate::i18n::install_language;
+
+    const RECORD_START: &str = "obs.record.start";
+
+    fn replacement(retired: &str, current: &str) -> IdReplacement {
+        IdReplacement {
+            retired: retired.to_owned(),
+            current: current.to_owned(),
+        }
+    }
+
+    fn script(name: &str, body: &str) -> ScriptRecord {
+        let now = OffsetDateTime::UNIX_EPOCH;
+        ScriptRecord {
+            id: ScriptId::new(),
+            name: name.to_owned(),
+            body: body.to_owned(),
+            contract: ScriptContract::default(),
+            enabled: true,
+            created_at: now,
+            last_modified: now,
+        }
+    }
+
+    fn plain(text: String) -> String {
+        text.replace(['\u{2068}', '\u{2069}'], "")
+    }
+
+    #[test]
+    fn mentions_id_matches_only_the_whole_id() {
+        for (source, expected) in [
+            ("obs.record.start", true),
+            ("obs.record.start(); let x = 1;", true),
+            ("let x = 1; obs.record.start", true),
+            ("let kind = \"obs.record.start\";", true),
+            ("ends the sentence with obs.record.start.", true),
+            ("obs.record.started", false),
+            ("obs.record.start_now", false),
+            ("obs.record.start2", false),
+            ("obs.record.start.paused", false),
+            ("xobs.record.start", false),
+            ("_obs.record.start", false),
+            ("legacy.obs.record.start", false),
+            ("obs.record.started then obs.record.start", true),
+            ("", false),
+            ("obs.record", false),
+        ] {
+            assert_eq!(mentions_id(source, RECORD_START), expected, "{source:?}");
+        }
+    }
+
+    #[test]
+    fn retired_successions_merges_both_registries_sorted_and_without_duplicates() {
+        let mut triggers = TriggerRegistry::new();
+        triggers
+            .declare_retired(&IdSuccession {
+                current: "obs.record.started",
+                retired: &["obs_record_started", "obs.recording.started"],
+            })
+            .unwrap();
+        let mut sub_actions = SubActionRegistry::new();
+        sub_actions
+            .declare_retired(&IdSuccession {
+                current: "obs.record.start",
+                retired: &["obs_record_start"],
+            })
+            .unwrap();
+        sub_actions
+            .declare_retired(&IdSuccession {
+                current: "obs.record.started",
+                retired: &["obs.recording.started"],
+            })
+            .unwrap();
+
+        assert_eq!(
+            retired_successions(&triggers, &sub_actions),
+            vec![
+                replacement("obs.recording.started", "obs.record.started"),
+                replacement("obs_record_start", "obs.record.start"),
+                replacement("obs_record_started", "obs.record.started"),
+            ]
+        );
+    }
+
+    #[test]
+    fn retired_id_uses_lists_only_scripts_naming_a_retired_id_sorted_by_name() {
+        let retired = [
+            replacement("obs_record_start", "obs.record.start"),
+            replacement("obs_scene_set", "obs.scene.set"),
+        ];
+        let scripts = [
+            script("zeta", "forge.run(\"obs_scene_set\");"),
+            script("clean", "forge.run(\"obs.record.start\");"),
+            script("near_miss", "forge.run(\"obs_record_start_delayed\");"),
+            script(
+                "alpha",
+                "forge.run(\"obs_scene_set\"); forge.run(\"obs_record_start\");",
+            ),
+        ];
+
+        assert_eq!(
+            retired_id_uses(&scripts, &retired),
+            vec![
+                RetiredIdUse {
+                    script: "alpha".to_owned(),
+                    replacements: retired.to_vec(),
+                },
+                RetiredIdUse {
+                    script: "zeta".to_owned(),
+                    replacements: vec![replacement("obs_scene_set", "obs.scene.set")],
+                },
+            ]
+        );
+    }
+
+    #[test]
+    fn retired_id_uses_is_empty_when_no_script_names_a_retired_id() {
+        let retired = [replacement("obs_record_start", "obs.record.start")];
+        for scripts in [
+            vec![],
+            vec![script("current", "forge.run(\"obs.record.start\");")],
+            vec![script("longer", "forge.run(\"obs_record_start_now\");")],
+        ] {
+            assert!(
+                retired_id_uses(&scripts, &retired).is_empty(),
+                "{scripts:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn notice_message_lists_each_script_with_its_retired_to_current_pairs_per_language() {
+        let uses = [
+            RetiredIdUse {
+                script: "alpha".to_owned(),
+                replacements: vec![
+                    replacement("obs_record_start", "obs.record.start"),
+                    replacement("obs_scene_set", "obs.scene.set"),
+                ],
+            },
+            RetiredIdUse {
+                script: "zeta".to_owned(),
+                replacements: vec![replacement("obs_scene_set", "obs.scene.set")],
+            },
+        ];
+        let listed = "alpha (obs_record_start -> obs.record.start, obs_scene_set -> obs.scene.set); \
+                      zeta (obs_scene_set -> obs.scene.set)";
+        for (lang, expected) in [
+            (
+                Language::En,
+                format!("Scripts still use renamed ids - update them: {listed}"),
+            ),
+            (
+                Language::Uk,
+                format!(
+                    "Скрипти досі використовують перейменовані ідентифікатори - оновіть їх: {listed}"
+                ),
+            ),
+        ] {
+            install_language(lang);
+            assert_eq!(plain(notice_message(&uses)), expected, "{lang:?}");
+        }
+    }
+}

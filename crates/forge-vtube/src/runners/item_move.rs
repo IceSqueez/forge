@@ -1,46 +1,56 @@
-use std::collections::BTreeMap;
 use std::sync::Arc;
-use std::time::Instant;
 
 use async_trait::async_trait;
 use forge_registry::runner::SubActionConfig;
 use forge_registry::{
-    ConfigReason, FormField, RegistryError, RunContext, SubActionCategory, SubActionConfigExt,
-    SubActionRunner,
+    ChoiceField, ConfigChoice, ConfigProblem, ConfigSpec, IntegerField, OptionalField, RunContext,
+    StepTimer, SubActionCategory, SubActionRunner, TypedField, ValueBounds,
 };
-use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, Variant};
-use time::OffsetDateTime;
+use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry};
 
-use crate::runners::numeric::{optional_integer, optional_number};
+use crate::runners::choices::FadeMode;
+use crate::runners::fields::{
+    DURATION, IMMEDIATE_SECONDS, ITEM_INSTANCE_ID, ITEM_SIZE, ROTATION, X, Y,
+    optional_whole_number, read_non_empty,
+};
 use crate::sink::VTubeSink;
-use crate::vocabulary::sub_action_ids;
+use crate::vocabulary::{config_keys, sub_action_ids};
 
-pub struct ItemMoveRunner {
-    sink: Arc<dyn VTubeSink>,
-}
+const ORDER: OptionalField<IntegerField> = optional_whole_number(
+    config_keys::ORDER,
+    "Order",
+    ValueBounds {
+        min: Some(-1000),
+        max: Some(1000),
+    },
+);
 
-impl ItemMoveRunner {
-    pub fn new(sink: Arc<dyn VTubeSink>) -> Self {
-        Self { sink }
-    }
-}
+const FADE_MODE: ChoiceField<FadeMode> = ChoiceField {
+    key: config_keys::FADE_MODE,
+    label: "Fade Mode",
+    default: FadeMode::Linear,
+};
 
-const FADE_MODES: &[&str] = &[
-    "linear",
-    "easeIn",
-    "easeOut",
-    "easeBoth",
-    "overshoot",
-    "zip",
-];
+const CONFIG: ConfigSpec = ConfigSpec::new(&[
+    &ITEM_INSTANCE_ID,
+    &X,
+    &Y,
+    &ITEM_SIZE,
+    &ROTATION,
+    &ORDER,
+    &DURATION,
+    &FADE_MODE,
+]);
 
 struct MoveTarget {
+    item_instance_id: String,
     x: Option<f64>,
     y: Option<f64>,
     size: Option<f64>,
     rotation: Option<f64>,
     order: Option<i64>,
     duration: Option<f64>,
+    fade_mode: FadeMode,
 }
 
 impl MoveTarget {
@@ -53,15 +63,27 @@ impl MoveTarget {
     }
 }
 
-fn read_target(config: &SubActionConfig, ctx: &RunContext<'_>) -> Result<MoveTarget, String> {
+fn read_target(config: &SubActionConfig, args: &ArgStack) -> Result<MoveTarget, ConfigProblem> {
     Ok(MoveTarget {
-        x: optional_number(config, "x", ctx)?,
-        y: optional_number(config, "y", ctx)?,
-        size: optional_number(config, "size", ctx)?,
-        rotation: optional_number(config, "rotation", ctx)?,
-        order: optional_integer(config, "order", ctx)?,
-        duration: optional_number(config, "duration", ctx)?,
+        item_instance_id: read_non_empty(&ITEM_INSTANCE_ID, config, args)?,
+        x: X.read(config, args)?,
+        y: Y.read(config, args)?,
+        size: ITEM_SIZE.read(config, args)?,
+        rotation: ROTATION.read(config, args)?,
+        order: ORDER.read(config, args)?,
+        duration: DURATION.read(config, args)?,
+        fade_mode: FADE_MODE.read(config, args)?,
     })
+}
+
+pub struct ItemMoveRunner {
+    sink: Arc<dyn VTubeSink>,
+}
+
+impl ItemMoveRunner {
+    pub fn new(sink: Arc<dyn VTubeSink>) -> Self {
+        Self { sink }
+    }
 }
 
 #[async_trait]
@@ -90,94 +112,8 @@ impl SubActionRunner for ItemMoveRunner {
         "arrows-move"
     }
 
-    fn default_config(&self) -> SubActionConfig {
-        BTreeMap::from([
-            (
-                "item_instance_id".to_owned(),
-                Variant::String(String::new()),
-            ),
-            ("fade_mode".to_owned(), Variant::String("linear".to_owned())),
-        ])
-    }
-
-    fn config_fields(&self) -> Vec<FormField> {
-        vec![
-            FormField::Text {
-                key: "item_instance_id",
-                label: "Item Instance ID",
-                placeholder: "item instance id from VTS",
-            },
-            FormField::Optional {
-                key: "x",
-                label: "X Position",
-                inner: Box::new(FormField::Text {
-                    key: "x",
-                    label: "X Position",
-                    placeholder: "-1.0 to 1.0",
-                }),
-            },
-            FormField::Optional {
-                key: "y",
-                label: "Y Position",
-                inner: Box::new(FormField::Text {
-                    key: "y",
-                    label: "Y Position",
-                    placeholder: "-1.0 to 1.0",
-                }),
-            },
-            FormField::Optional {
-                key: "size",
-                label: "Size",
-                inner: Box::new(FormField::Text {
-                    key: "size",
-                    label: "Size",
-                    placeholder: "0.0 to 1.0",
-                }),
-            },
-            FormField::Optional {
-                key: "rotation",
-                label: "Rotation",
-                inner: Box::new(FormField::Text {
-                    key: "rotation",
-                    label: "Rotation",
-                    placeholder: "-360 to 360",
-                }),
-            },
-            FormField::Optional {
-                key: "order",
-                label: "Order",
-                inner: Box::new(FormField::Integer {
-                    key: "order",
-                    label: "Order",
-                    min: -1000,
-                    max: 1000,
-                }),
-            },
-            FormField::Optional {
-                key: "duration",
-                label: "Duration (s)",
-                inner: Box::new(FormField::Text {
-                    key: "duration",
-                    label: "Duration (s)",
-                    placeholder: "0.5",
-                }),
-            },
-            FormField::Select {
-                key: "fade_mode",
-                label: "Fade Mode",
-                options: FADE_MODES,
-            },
-        ]
-    }
-
-    fn validate_config(&self, config: &SubActionConfig) -> Result<(), RegistryError> {
-        match config.get("item_instance_id") {
-            Some(Variant::String(_)) => Ok(()),
-            _ => Err(RegistryError::invalid_field(
-                "item_instance_id",
-                ConfigReason::Required,
-            )),
-        }
+    fn config_spec(&self) -> Option<ConfigSpec> {
+        Some(CONFIG)
     }
 
     async fn execute(
@@ -185,53 +121,30 @@ impl SubActionRunner for ItemMoveRunner {
         config: &SubActionConfig,
         ctx: &RunContext<'_>,
     ) -> (SubActionTelemetry, Option<ArgStack>) {
-        let started_at = OffsetDateTime::now_utc();
-        let start = Instant::now();
-
-        let raw_id = config.str("item_instance_id").unwrap_or_default();
-        let item_instance_id = ctx.arg_stack.interpolate(raw_id);
-
-        let target = read_target(config, ctx);
-        let fade_mode = match config.get("fade_mode") {
-            Some(Variant::String(s)) if FADE_MODES.contains(&s.as_str()) => s.as_str(),
-            _ => "linear",
+        let timer = StepTimer::start(ctx, self.id());
+        let target = match read_target(config, ctx.arg_stack) {
+            Ok(target) => target,
+            Err(problem) => return (timer.invalid_config(&problem), None),
         };
-
-        let outcome = match target {
-            _ if item_instance_id.is_empty() => {
-                SubActionOutcome::Failed("vtube.item.move: item_instance_id is empty".to_owned())
-            }
-            Err(reason) => SubActionOutcome::Failed(format!("vtube.item.move: {reason}")),
-            Ok(target) if target.is_empty() => SubActionOutcome::Success,
-            Ok(target) => SubActionOutcome::from_result(
-                &self
-                    .sink
-                    .move_item(
-                        &item_instance_id,
-                        target.x,
-                        target.y,
-                        target.size,
-                        target.rotation,
-                        target.order,
-                        target.duration.unwrap_or(0.0),
-                        fade_mode,
-                    )
-                    .await,
-            ),
-        };
-
-        (
-            SubActionTelemetry {
-                args_in: ::std::collections::BTreeMap::new(),
-                produced: ::std::collections::BTreeMap::new(),
-                kind: sub_action_ids::ITEM_MOVE.to_owned(),
-                started_at,
-                duration_ms: start.elapsed().as_millis() as u64,
-                outcome,
-                index: ctx.index,
-            },
-            None,
-        )
+        if target.is_empty() {
+            return (timer.success(), None);
+        }
+        let outcome = SubActionOutcome::from_result(
+            &self
+                .sink
+                .move_item(
+                    &target.item_instance_id,
+                    target.x,
+                    target.y,
+                    target.size,
+                    target.rotation,
+                    target.order,
+                    target.duration.unwrap_or(IMMEDIATE_SECONDS),
+                    target.fade_mode.wire_name(),
+                )
+                .await,
+        );
+        (timer.finish(outcome), None)
     }
 }
 

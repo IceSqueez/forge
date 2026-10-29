@@ -13,7 +13,7 @@ use crate::vocabulary::option_lists::{
     INPUT_LIST, PROFILE_LIST, SCENE_COLLECTION_LIST, SCENE_LIST, SOURCE_LIST, TRANSITION_LIST,
 };
 
-pub(crate) const SCENE_FIELD: &str = "scene";
+pub(crate) const SCENE_FIELD: &str = crate::vocabulary::config_keys::SCENE;
 
 const HINT_LIVE: &str = "option_hint_live";
 const HINT_ACTIVE: &str = "option_hint_active";

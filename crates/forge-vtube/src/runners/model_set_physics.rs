@@ -1,18 +1,41 @@
-use std::collections::BTreeMap;
 use std::sync::Arc;
-use std::time::Instant;
 
 use async_trait::async_trait;
 use forge_registry::runner::SubActionConfig;
 use forge_registry::{
-    ConfigReason, FormField, RegistryError, RunContext, SubActionCategory, SubActionRunner,
+    ConfigProblem, ConfigSpec, NumberField, OptionalField, RunContext, StepTimer,
+    SubActionCategory, SubActionRunner, ToggleField, TypedField,
 };
-use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, Variant};
-use time::OffsetDateTime;
+use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry};
 
-use crate::runners::numeric::optional_number;
+use crate::runners::fields::optional_number;
 use crate::sink::VTubeSink;
-use crate::vocabulary::sub_action_ids;
+use crate::vocabulary::{config_keys, sub_action_ids};
+
+const DEFAULT_OVERRIDE_SECONDS: f64 = 2.0;
+const FULL_STRENGTH: f64 = 1.0;
+const NO_STRENGTH: f64 = 0.0;
+
+const ENABLED: ToggleField = ToggleField {
+    key: config_keys::ENABLED,
+    label: "Physics Enabled",
+    default: true,
+};
+
+const OVERRIDE_DURATION: OptionalField<NumberField> =
+    optional_number(config_keys::DURATION, "Duration (s)", "0.5 to 5");
+
+const CONFIG: ConfigSpec = ConfigSpec::new(&[&ENABLED, &OVERRIDE_DURATION]);
+
+fn read_config(
+    config: &SubActionConfig,
+    args: &ArgStack,
+) -> Result<(bool, Option<f64>), ConfigProblem> {
+    Ok((
+        ENABLED.read(config, args)?,
+        OVERRIDE_DURATION.read(config, args)?,
+    ))
+}
 
 pub struct ModelSetPhysicsRunner {
     sink: Arc<dyn VTubeSink>,
@@ -23,8 +46,6 @@ impl ModelSetPhysicsRunner {
         Self { sink }
     }
 }
-
-const DEFAULT_OVERRIDE_SECONDS: f64 = 2.0;
 
 #[async_trait]
 impl SubActionRunner for ModelSetPhysicsRunner {
@@ -52,36 +73,8 @@ impl SubActionRunner for ModelSetPhysicsRunner {
         "activity"
     }
 
-    fn default_config(&self) -> SubActionConfig {
-        BTreeMap::from([("enabled".to_owned(), Variant::Bool(true))])
-    }
-
-    fn config_fields(&self) -> Vec<FormField> {
-        vec![
-            FormField::Toggle {
-                key: "enabled",
-                label: "Physics Enabled",
-            },
-            FormField::Optional {
-                key: "duration",
-                label: "Duration (s)",
-                inner: Box::new(FormField::Text {
-                    key: "duration",
-                    label: "Duration (s)",
-                    placeholder: "0.5 to 5",
-                }),
-            },
-        ]
-    }
-
-    fn validate_config(&self, config: &SubActionConfig) -> Result<(), RegistryError> {
-        match config.get("enabled") {
-            Some(Variant::Bool(_)) | None => Ok(()),
-            _ => Err(RegistryError::invalid_field(
-                "enabled",
-                ConfigReason::Required,
-            )),
-        }
+    fn config_spec(&self) -> Option<ConfigSpec> {
+        Some(CONFIG)
     }
 
     async fn execute(
@@ -89,33 +82,19 @@ impl SubActionRunner for ModelSetPhysicsRunner {
         config: &SubActionConfig,
         ctx: &RunContext<'_>,
     ) -> (SubActionTelemetry, Option<ArgStack>) {
-        let started_at = OffsetDateTime::now_utc();
-        let start = Instant::now();
-
-        let enabled = !matches!(config.get("enabled"), Some(Variant::Bool(false)));
-        let strength = if enabled { 1.0 } else { 0.0 };
-        let outcome = match optional_number(config, "duration", ctx) {
-            Ok(duration) => SubActionOutcome::from_result(
-                &self
-                    .sink
-                    .set_physics_override(strength, duration.unwrap_or(DEFAULT_OVERRIDE_SECONDS))
-                    .await,
-            ),
-            Err(reason) => SubActionOutcome::Failed(format!("vtube.model.set_physics: {reason}")),
+        let timer = StepTimer::start(ctx, self.id());
+        let (enabled, duration) = match read_config(config, ctx.arg_stack) {
+            Ok(values) => values,
+            Err(problem) => return (timer.invalid_config(&problem), None),
         };
-
-        (
-            SubActionTelemetry {
-                args_in: ::std::collections::BTreeMap::new(),
-                produced: ::std::collections::BTreeMap::new(),
-                kind: sub_action_ids::MODEL_SET_PHYSICS.to_owned(),
-                started_at,
-                duration_ms: start.elapsed().as_millis() as u64,
-                outcome,
-                index: ctx.index,
-            },
-            None,
-        )
+        let strength = if enabled { FULL_STRENGTH } else { NO_STRENGTH };
+        let outcome = SubActionOutcome::from_result(
+            &self
+                .sink
+                .set_physics_override(strength, duration.unwrap_or(DEFAULT_OVERRIDE_SECONDS))
+                .await,
+        );
+        (timer.finish(outcome), None)
     }
 }
 

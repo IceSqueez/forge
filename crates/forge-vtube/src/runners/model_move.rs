@@ -1,26 +1,20 @@
-use std::collections::BTreeMap;
 use std::sync::Arc;
-use std::time::Instant;
 
 use async_trait::async_trait;
 use forge_registry::runner::SubActionConfig;
-use forge_registry::{FormField, RegistryError, RunContext, SubActionCategory, SubActionRunner};
+use forge_registry::{
+    ConfigProblem, ConfigSpec, NumberField, OptionalField, RunContext, StepTimer,
+    SubActionCategory, SubActionRunner, TypedField,
+};
 use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry};
-use time::OffsetDateTime;
 
-use crate::runners::numeric::optional_number;
+use crate::runners::fields::{DURATION, IMMEDIATE_SECONDS, ROTATION, X, Y, optional_number};
 use crate::sink::VTubeSink;
-use crate::vocabulary::sub_action_ids;
+use crate::vocabulary::{config_keys, sub_action_ids};
 
-pub struct ModelMoveRunner {
-    sink: Arc<dyn VTubeSink>,
-}
+const SIZE: OptionalField<NumberField> = optional_number(config_keys::SIZE, "Size", "-100 to 100");
 
-impl ModelMoveRunner {
-    pub fn new(sink: Arc<dyn VTubeSink>) -> Self {
-        Self { sink }
-    }
-}
+const CONFIG: ConfigSpec = ConfigSpec::new(&[&X, &Y, &ROTATION, &SIZE, &DURATION]);
 
 struct MoveTarget {
     x: Option<f64>,
@@ -30,14 +24,30 @@ struct MoveTarget {
     duration: Option<f64>,
 }
 
-fn read_target(config: &SubActionConfig, ctx: &RunContext<'_>) -> Result<MoveTarget, String> {
+impl MoveTarget {
+    fn is_empty(&self) -> bool {
+        self.x.is_none() && self.y.is_none() && self.rotation.is_none() && self.size.is_none()
+    }
+}
+
+fn read_target(config: &SubActionConfig, args: &ArgStack) -> Result<MoveTarget, ConfigProblem> {
     Ok(MoveTarget {
-        x: optional_number(config, "x", ctx)?,
-        y: optional_number(config, "y", ctx)?,
-        rotation: optional_number(config, "rotation", ctx)?,
-        size: optional_number(config, "size", ctx)?,
-        duration: optional_number(config, "duration", ctx)?,
+        x: X.read(config, args)?,
+        y: Y.read(config, args)?,
+        rotation: ROTATION.read(config, args)?,
+        size: SIZE.read(config, args)?,
+        duration: DURATION.read(config, args)?,
     })
+}
+
+pub struct ModelMoveRunner {
+    sink: Arc<dyn VTubeSink>,
+}
+
+impl ModelMoveRunner {
+    pub fn new(sink: Arc<dyn VTubeSink>) -> Self {
+        Self { sink }
+    }
 }
 
 #[async_trait]
@@ -66,62 +76,8 @@ impl SubActionRunner for ModelMoveRunner {
         "arrows-move"
     }
 
-    fn default_config(&self) -> SubActionConfig {
-        BTreeMap::new()
-    }
-
-    fn config_fields(&self) -> Vec<FormField> {
-        vec![
-            FormField::Optional {
-                key: "x",
-                label: "X Position",
-                inner: Box::new(FormField::Text {
-                    key: "x",
-                    label: "X Position",
-                    placeholder: "-1.0 to 1.0",
-                }),
-            },
-            FormField::Optional {
-                key: "y",
-                label: "Y Position",
-                inner: Box::new(FormField::Text {
-                    key: "y",
-                    label: "Y Position",
-                    placeholder: "-1.0 to 1.0",
-                }),
-            },
-            FormField::Optional {
-                key: "rotation",
-                label: "Rotation",
-                inner: Box::new(FormField::Text {
-                    key: "rotation",
-                    label: "Rotation",
-                    placeholder: "-360 to 360",
-                }),
-            },
-            FormField::Optional {
-                key: "size",
-                label: "Size",
-                inner: Box::new(FormField::Text {
-                    key: "size",
-                    label: "Size",
-                    placeholder: "-100 to 100",
-                }),
-            },
-            FormField::Optional {
-                key: "duration",
-                label: "Duration (s)",
-                inner: Box::new(FormField::Text {
-                    key: "duration",
-                    label: "Duration (s)",
-                    placeholder: "0.5",
-                }),
-            },
-        ]
-    }
-
-    fn validate_config(&self, _config: &SubActionConfig) -> Result<(), RegistryError> {
-        Ok(())
+    fn config_spec(&self) -> Option<ConfigSpec> {
+        Some(CONFIG)
     }
 
     async fn execute(
@@ -129,44 +85,27 @@ impl SubActionRunner for ModelMoveRunner {
         config: &SubActionConfig,
         ctx: &RunContext<'_>,
     ) -> (SubActionTelemetry, Option<ArgStack>) {
-        let started_at = OffsetDateTime::now_utc();
-        let start = Instant::now();
-
-        let outcome = match read_target(config, ctx) {
-            Err(reason) => SubActionOutcome::Failed(format!("vtube.model.move: {reason}")),
-            Ok(MoveTarget {
-                x: None,
-                y: None,
-                rotation: None,
-                size: None,
-                ..
-            }) => SubActionOutcome::Success,
-            Ok(target) => SubActionOutcome::from_result(
-                &self
-                    .sink
-                    .move_model(
-                        target.x,
-                        target.y,
-                        target.rotation,
-                        target.size,
-                        target.duration.unwrap_or(0.0),
-                    )
-                    .await,
-            ),
+        let timer = StepTimer::start(ctx, self.id());
+        let target = match read_target(config, ctx.arg_stack) {
+            Ok(target) => target,
+            Err(problem) => return (timer.invalid_config(&problem), None),
         };
-
-        (
-            SubActionTelemetry {
-                args_in: ::std::collections::BTreeMap::new(),
-                produced: ::std::collections::BTreeMap::new(),
-                kind: sub_action_ids::MODEL_MOVE.to_owned(),
-                started_at,
-                duration_ms: start.elapsed().as_millis() as u64,
-                outcome,
-                index: ctx.index,
-            },
-            None,
-        )
+        if target.is_empty() {
+            return (timer.success(), None);
+        }
+        let outcome = SubActionOutcome::from_result(
+            &self
+                .sink
+                .move_model(
+                    target.x,
+                    target.y,
+                    target.rotation,
+                    target.size,
+                    target.duration.unwrap_or(IMMEDIATE_SECONDS),
+                )
+                .await,
+        );
+        (timer.finish(outcome), None)
     }
 }
 

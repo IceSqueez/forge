@@ -1,23 +1,62 @@
-use std::collections::BTreeMap;
 use std::sync::Arc;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use async_trait::async_trait;
 use forge_registry::runner::SubActionConfig;
 use forge_registry::{
-    ConfigReason, FormField, RegistryError, RunContext, SubActionCategory, SubActionConfigExt,
-    SubActionRunner,
+    ConfigProblem, ConfigSpec, DecimalField, RunContext, StepTimer, StoredNumber,
+    SubActionCategory, SubActionRunner, TextEditor, TextField, TypedField, ValueBounds,
 };
-use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, Variant};
-use time::OffsetDateTime;
+use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry};
 
 use crate::runners::hold_registry::HoldRegistry;
-use crate::runners::numeric::{accepts_number, optional_number, required_number};
 use crate::sink::VTubeSink;
-use crate::vocabulary::sub_action_ids;
+use crate::vocabulary::{config_keys, sub_action_ids};
 
 const PARAM_HOLD_RESEND_INTERVAL: Duration = Duration::from_millis(400);
-const PARAM_HOLD_MAX_SECS: f64 = 600.0;
+const PARAM_HOLD_MAX_SECS: i64 = 600;
+
+const PARAM_ID: TextField = TextField {
+    key: config_keys::PARAM_ID,
+    label: "Parameter ID",
+    editor: TextEditor::Line {
+        placeholder: "MyCustomParam",
+    },
+    default: "",
+    required: true,
+};
+
+const VALUE: DecimalField = DecimalField {
+    key: config_keys::VALUE,
+    label: "Value",
+    placeholder: "0.0",
+    default: StoredNumber::Float(0.0),
+    bounds: ValueBounds::UNBOUNDED,
+};
+
+const HOLD_SECS: DecimalField = DecimalField {
+    key: config_keys::HOLD_SECS,
+    label: "Hold (seconds, 0 = one-shot)",
+    placeholder: "0",
+    default: StoredNumber::Float(0.0),
+    bounds: ValueBounds {
+        min: Some(0),
+        max: Some(PARAM_HOLD_MAX_SECS),
+    },
+};
+
+const CONFIG: ConfigSpec = ConfigSpec::new(&[&PARAM_ID, &VALUE, &HOLD_SECS]);
+
+fn read_config(
+    config: &SubActionConfig,
+    args: &ArgStack,
+) -> Result<(String, f64, f64), ConfigProblem> {
+    Ok((
+        PARAM_ID.read(config, args)?,
+        VALUE.read(config, args)?,
+        HOLD_SECS.read(config, args)?,
+    ))
+}
 
 pub struct ParamSetRunner {
     sink: Arc<dyn VTubeSink>,
@@ -71,62 +110,8 @@ impl SubActionRunner for ParamSetRunner {
         "sliders"
     }
 
-    fn default_config(&self) -> SubActionConfig {
-        BTreeMap::from([
-            ("param_id".to_owned(), Variant::String(String::new())),
-            ("value".to_owned(), Variant::Float(0.0)),
-            ("hold_secs".to_owned(), Variant::Float(0.0)),
-        ])
-    }
-
-    fn config_fields(&self) -> Vec<FormField> {
-        vec![
-            FormField::Text {
-                key: "param_id",
-                label: "Parameter ID",
-                placeholder: "MyCustomParam",
-            },
-            FormField::Text {
-                key: "value",
-                label: "Value",
-                placeholder: "0.0",
-            },
-            FormField::Text {
-                key: "hold_secs",
-                label: "Hold (seconds, 0 = one-shot)",
-                placeholder: "0",
-            },
-        ]
-    }
-
-    fn validate_config(&self, config: &SubActionConfig) -> Result<(), RegistryError> {
-        match config.get("param_id") {
-            Some(Variant::String(_)) => {}
-            _ => {
-                return Err(RegistryError::invalid_field(
-                    "param_id",
-                    ConfigReason::Required,
-                ));
-            }
-        }
-        if !accepts_number(config.get("value")) {
-            return Err(RegistryError::invalid_field(
-                "value",
-                ConfigReason::NotANumber,
-            ));
-        }
-        let hold_is_blank =
-            matches!(config.get("hold_secs"), Some(Variant::String(s)) if s.trim().is_empty());
-        if config.get("hold_secs").is_some()
-            && !hold_is_blank
-            && !accepts_number(config.get("hold_secs"))
-        {
-            return Err(RegistryError::invalid_field(
-                "hold_secs",
-                ConfigReason::NotANumber,
-            ));
-        }
-        Ok(())
+    fn config_spec(&self) -> Option<ConfigSpec> {
+        Some(CONFIG)
     }
 
     async fn execute(
@@ -134,40 +119,17 @@ impl SubActionRunner for ParamSetRunner {
         config: &SubActionConfig,
         ctx: &RunContext<'_>,
     ) -> (SubActionTelemetry, Option<ArgStack>) {
-        let started_at = OffsetDateTime::now_utc();
-        let start = Instant::now();
-
-        let raw_id = config.str("param_id").unwrap_or_default();
-        let param_id = ctx.arg_stack.interpolate(raw_id);
-
-        let outcome = match required_number(config, "value", ctx) {
-            Ok(value) => match optional_number(config, "hold_secs", ctx) {
-                Ok(hold_secs) => {
-                    self.holds.abort(&param_id);
-                    let result = self.sink.set_param(&param_id, value).await;
-                    let hold_secs = hold_secs.unwrap_or(0.0).clamp(0.0, PARAM_HOLD_MAX_SECS);
-                    if result.is_ok() && hold_secs > 0.0 {
-                        self.start_hold(param_id.clone(), value, hold_secs);
-                    }
-                    SubActionOutcome::from_result(&result)
-                }
-                Err(reason) => SubActionOutcome::Failed(format!("vtube.param.set: {reason}")),
-            },
-            Err(reason) => SubActionOutcome::Failed(format!("vtube.param.set: {reason}")),
+        let timer = StepTimer::start(ctx, self.id());
+        let (param_id, value, hold_secs) = match read_config(config, ctx.arg_stack) {
+            Ok(values) => values,
+            Err(problem) => return (timer.invalid_config(&problem), None),
         };
-
-        (
-            SubActionTelemetry {
-                args_in: ::std::collections::BTreeMap::new(),
-                produced: ::std::collections::BTreeMap::new(),
-                kind: sub_action_ids::PARAM_SET.to_owned(),
-                started_at,
-                duration_ms: start.elapsed().as_millis() as u64,
-                outcome,
-                index: ctx.index,
-            },
-            None,
-        )
+        self.holds.abort(&param_id);
+        let result = self.sink.set_param(&param_id, value).await;
+        if result.is_ok() && hold_secs > 0.0 {
+            self.start_hold(param_id, value, hold_secs);
+        }
+        (timer.finish(SubActionOutcome::from_result(&result)), None)
     }
 }
 

@@ -1,20 +1,29 @@
-use std::collections::BTreeMap;
 use std::sync::Arc;
-use std::time::Instant;
 
 use async_trait::async_trait;
 use forge_registry::runner::SubActionConfig;
 use forge_registry::{
-    ConfigReason, FormField, RegistryError, RunContext, SubActionCategory, SubActionConfigExt,
-    SubActionRunner,
+    ConfigSpec, RunContext, StepTimer, SubActionCategory, SubActionRunner, TextEditor, TextField,
+    TypedField,
 };
-use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, Variant};
-use time::OffsetDateTime;
+use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry};
 
 use crate::ObsSink;
-use crate::vocabulary::sub_action_ids;
+use crate::vocabulary::{config_keys, sub_action_ids};
 
 const KIND_ID: &str = sub_action_ids::STREAMING_SEND_CAPTION;
+
+const CAPTION_TEXT: TextField = TextField {
+    key: config_keys::CAPTION_TEXT,
+    label: "Caption Text",
+    editor: TextEditor::Line {
+        placeholder: "Caption text to send over stream",
+    },
+    default: "",
+    required: true,
+};
+
+const CONFIG: ConfigSpec = ConfigSpec::new(&[&CAPTION_TEXT]);
 
 pub struct StreamSendCaptionRunner {
     sink: Arc<dyn ObsSink>,
@@ -52,30 +61,8 @@ impl SubActionRunner for StreamSendCaptionRunner {
         "subtitles"
     }
 
-    fn default_config(&self) -> SubActionConfig {
-        BTreeMap::from([("caption_text".to_owned(), Variant::String(String::new()))])
-    }
-
-    fn config_fields(&self) -> Vec<FormField> {
-        vec![FormField::Text {
-            key: "caption_text",
-            label: "Caption Text",
-            placeholder: "Caption text to send over stream",
-        }]
-    }
-
-    fn validate_config(&self, config: &SubActionConfig) -> Result<(), RegistryError> {
-        match config.get("caption_text") {
-            Some(Variant::String(s)) if !s.trim().is_empty() => Ok(()),
-            Some(Variant::String(_)) => Err(RegistryError::invalid_field(
-                "caption_text",
-                ConfigReason::Required,
-            )),
-            _ => Err(RegistryError::invalid_field(
-                "caption_text",
-                ConfigReason::Required,
-            )),
-        }
+    fn config_spec(&self) -> Option<ConfigSpec> {
+        Some(CONFIG)
     }
 
     async fn execute(
@@ -83,26 +70,13 @@ impl SubActionRunner for StreamSendCaptionRunner {
         config: &SubActionConfig,
         ctx: &RunContext<'_>,
     ) -> (SubActionTelemetry, Option<ArgStack>) {
-        let started_at = OffsetDateTime::now_utc();
-        let start = Instant::now();
-
-        let raw = config.str("caption_text").unwrap_or_default();
-        let text = ctx.arg_stack.interpolate(raw);
-
+        let timer = StepTimer::start(ctx, KIND_ID);
+        let text = match CAPTION_TEXT.read(config, ctx.arg_stack) {
+            Ok(text) => text,
+            Err(problem) => return (timer.invalid_config(&problem), None),
+        };
         let outcome = SubActionOutcome::from_result(&self.sink.send_stream_caption(&text).await);
-
-        (
-            SubActionTelemetry {
-                args_in: ::std::collections::BTreeMap::new(),
-                produced: ::std::collections::BTreeMap::new(),
-                kind: KIND_ID.to_owned(),
-                started_at,
-                duration_ms: start.elapsed().as_millis() as u64,
-                outcome,
-                index: ctx.index,
-            },
-            None,
-        )
+        (timer.finish(outcome), None)
     }
 }
 

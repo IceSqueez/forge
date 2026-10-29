@@ -1,4 +1,6 @@
+mod choices;
 mod expression_set;
+mod fields;
 mod hold_registry;
 mod hotkey_trigger;
 mod item_load;
@@ -15,7 +17,6 @@ mod model_load;
 mod model_move;
 mod model_set_physics;
 mod model_tint;
-mod numeric;
 mod param_set;
 mod params_reset;
 #[cfg(test)]

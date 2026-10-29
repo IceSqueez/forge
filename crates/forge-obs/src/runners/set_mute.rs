@@ -1,20 +1,39 @@
-use std::collections::BTreeMap;
 use std::sync::Arc;
-use std::time::Instant;
 
 use async_trait::async_trait;
 use forge_registry::runner::SubActionConfig;
 use forge_registry::{
-    ConfigReason, FormField, RegistryError, RunContext, SubActionCategory, SubActionConfigExt,
-    SubActionRunner,
+    ConfigProblem, ConfigSpec, PickedTextField, RunContext, StepTimer, SubActionCategory,
+    SubActionRunner, TextPicker, ToggleField, TypedField,
 };
-use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, Variant};
-use time::OffsetDateTime;
+use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry};
 
 use crate::ObsSink;
-use crate::vocabulary::{picker_keys, sub_action_ids};
+use crate::vocabulary::{config_keys, picker_keys, sub_action_ids};
 
 const KIND_ID: &str = sub_action_ids::AUDIO_SET_MUTE;
+
+const SOURCE: PickedTextField = PickedTextField {
+    key: config_keys::SOURCE,
+    label: "Input",
+    picker: TextPicker::Options {
+        options_key: picker_keys::INPUT_NAMES,
+    },
+    default: "",
+    required: true,
+};
+
+const MUTED: ToggleField = ToggleField {
+    key: config_keys::MUTED,
+    label: "Muted",
+    default: true,
+};
+
+const CONFIG: ConfigSpec = ConfigSpec::new(&[&SOURCE, &MUTED]);
+
+fn read_config(config: &SubActionConfig, args: &ArgStack) -> Result<(String, bool), ConfigProblem> {
+    Ok((SOURCE.read(config, args)?, MUTED.read(config, args)?))
+}
 
 pub struct SetMuteRunner {
     sink: Arc<dyn ObsSink>,
@@ -52,39 +71,8 @@ impl SubActionRunner for SetMuteRunner {
         "volume"
     }
 
-    fn default_config(&self) -> SubActionConfig {
-        BTreeMap::from([
-            ("source".to_owned(), Variant::String(String::new())),
-            ("muted".to_owned(), Variant::Bool(true)),
-        ])
-    }
-
-    fn config_fields(&self) -> Vec<FormField> {
-        vec![
-            FormField::DynamicSelect {
-                key: "source",
-                label: "Input",
-                options_key: picker_keys::INPUT_NAMES,
-            },
-            FormField::Toggle {
-                key: "muted",
-                label: "Muted",
-            },
-        ]
-    }
-
-    fn validate_config(&self, config: &SubActionConfig) -> Result<(), RegistryError> {
-        match config.get("source") {
-            Some(Variant::String(s)) if !s.trim().is_empty() => Ok(()),
-            Some(Variant::String(_)) => Err(RegistryError::invalid_field(
-                "source",
-                ConfigReason::Required,
-            )),
-            _ => Err(RegistryError::invalid_field(
-                "source",
-                ConfigReason::Required,
-            )),
-        }
+    fn config_spec(&self) -> Option<ConfigSpec> {
+        Some(CONFIG)
     }
 
     async fn execute(
@@ -92,27 +80,13 @@ impl SubActionRunner for SetMuteRunner {
         config: &SubActionConfig,
         ctx: &RunContext<'_>,
     ) -> (SubActionTelemetry, Option<ArgStack>) {
-        let started_at = OffsetDateTime::now_utc();
-        let start = Instant::now();
-
-        let raw = config.str("source").unwrap_or_default();
-        let source = ctx.arg_stack.interpolate(raw);
-        let muted = matches!(config.get("muted"), Some(Variant::Bool(true)));
-
+        let timer = StepTimer::start(ctx, KIND_ID);
+        let (source, muted) = match read_config(config, ctx.arg_stack) {
+            Ok(values) => values,
+            Err(problem) => return (timer.invalid_config(&problem), None),
+        };
         let outcome =
             SubActionOutcome::from_result(&self.sink.set_input_mute(&source, muted).await);
-
-        (
-            SubActionTelemetry {
-                args_in: ::std::collections::BTreeMap::new(),
-                produced: ::std::collections::BTreeMap::new(),
-                kind: KIND_ID.to_owned(),
-                started_at,
-                duration_ms: start.elapsed().as_millis() as u64,
-                outcome,
-                index: ctx.index,
-            },
-            None,
-        )
+        (timer.finish(outcome), None)
     }
 }

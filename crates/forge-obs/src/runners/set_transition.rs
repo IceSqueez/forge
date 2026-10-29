@@ -1,20 +1,29 @@
-use std::collections::BTreeMap;
 use std::sync::Arc;
-use std::time::Instant;
 
 use async_trait::async_trait;
 use forge_registry::runner::SubActionConfig;
 use forge_registry::{
-    ConfigReason, FormField, RegistryError, RunContext, SubActionCategory, SubActionConfigExt,
-    SubActionRunner,
+    ConfigSpec, RunContext, StepTimer, SubActionCategory, SubActionRunner, TextEditor, TextField,
+    TypedField,
 };
-use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, Variant};
-use time::OffsetDateTime;
+use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry};
 
 use crate::ObsSink;
-use crate::vocabulary::sub_action_ids;
+use crate::vocabulary::{config_keys, sub_action_ids};
 
 const KIND_ID: &str = sub_action_ids::SCENE_SET_TRANSITION;
+
+const TRANSITION: TextField = TextField {
+    key: config_keys::TRANSITION,
+    label: "Transition Name",
+    editor: TextEditor::Line {
+        placeholder: "e.g. Fade",
+    },
+    default: "",
+    required: true,
+};
+
+const CONFIG: ConfigSpec = ConfigSpec::new(&[&TRANSITION]);
 
 pub struct SetTransitionRunner {
     sink: Arc<dyn ObsSink>,
@@ -52,30 +61,8 @@ impl SubActionRunner for SetTransitionRunner {
         "shuffle"
     }
 
-    fn default_config(&self) -> SubActionConfig {
-        BTreeMap::from([("transition".to_owned(), Variant::String(String::new()))])
-    }
-
-    fn config_fields(&self) -> Vec<FormField> {
-        vec![FormField::Text {
-            key: "transition",
-            label: "Transition Name",
-            placeholder: "e.g. Fade",
-        }]
-    }
-
-    fn validate_config(&self, config: &SubActionConfig) -> Result<(), RegistryError> {
-        match config.get("transition") {
-            Some(Variant::String(s)) if !s.trim().is_empty() => Ok(()),
-            Some(Variant::String(_)) => Err(RegistryError::invalid_field(
-                "transition",
-                ConfigReason::Required,
-            )),
-            _ => Err(RegistryError::invalid_field(
-                "transition",
-                ConfigReason::Required,
-            )),
-        }
+    fn config_spec(&self) -> Option<ConfigSpec> {
+        Some(CONFIG)
     }
 
     async fn execute(
@@ -83,29 +70,15 @@ impl SubActionRunner for SetTransitionRunner {
         config: &SubActionConfig,
         ctx: &RunContext<'_>,
     ) -> (SubActionTelemetry, Option<ArgStack>) {
-        let started_at = OffsetDateTime::now_utc();
-        let start = Instant::now();
-
-        let raw_transition = config.str("transition").unwrap_or_default();
-
-        let transition = ctx.arg_stack.interpolate(raw_transition);
-
+        let timer = StepTimer::start(ctx, KIND_ID);
+        let transition = match TRANSITION.read(config, ctx.arg_stack) {
+            Ok(transition) => transition,
+            Err(problem) => return (timer.invalid_config(&problem), None),
+        };
         let outcome = SubActionOutcome::from_result(
             &self.sink.set_current_scene_transition(&transition).await,
         );
-
-        (
-            SubActionTelemetry {
-                args_in: ::std::collections::BTreeMap::new(),
-                produced: ::std::collections::BTreeMap::new(),
-                kind: KIND_ID.to_owned(),
-                started_at,
-                duration_ms: start.elapsed().as_millis() as u64,
-                outcome,
-                index: ctx.index,
-            },
-            None,
-        )
+        (timer.finish(outcome), None)
     }
 }
 

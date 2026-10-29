@@ -1,21 +1,54 @@
-use std::collections::BTreeMap;
 use std::sync::Arc;
-use std::time::Instant;
 
 use async_trait::async_trait;
 use forge_registry::runner::SubActionConfig;
 use forge_registry::{
-    ConfigReason, FormField, RegistryError, RunContext, SubActionCategory, SubActionConfigExt,
-    SubActionRunner,
+    ConfigProblem, ConfigSpec, RunContext, StepTimer, SubActionCategory, SubActionRunner,
+    TextEditor, TextField, ToggleField, TypedField,
 };
-use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, Variant};
+use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry};
 use serde_json::{Map, Value};
-use time::OffsetDateTime;
 
 use crate::ObsSink;
-use crate::vocabulary::sub_action_ids;
+use crate::runners::json_object_field::JsonObjectField;
+use crate::vocabulary::{config_keys, sub_action_ids};
 
 const KIND_ID: &str = sub_action_ids::SOURCE_SET_INPUT_SETTINGS;
+
+const SOURCE: TextField = TextField {
+    key: config_keys::SOURCE,
+    label: "Input Source",
+    editor: TextEditor::Line {
+        placeholder: "e.g. Webcam",
+    },
+    default: "",
+    required: true,
+};
+
+const SETTINGS_JSON: JsonObjectField = JsonObjectField {
+    key: config_keys::SETTINGS_JSON,
+    label: "Settings (JSON)",
+    default: "{}",
+};
+
+const OVERLAY: ToggleField = ToggleField {
+    key: config_keys::OVERLAY,
+    label: "Overlay (merge with existing settings)",
+    default: true,
+};
+
+const CONFIG: ConfigSpec = ConfigSpec::new(&[&SOURCE, &SETTINGS_JSON, &OVERLAY]);
+
+fn read_config(
+    config: &SubActionConfig,
+    args: &ArgStack,
+) -> Result<(String, Map<String, Value>, bool), ConfigProblem> {
+    Ok((
+        SOURCE.read(config, args)?,
+        SETTINGS_JSON.read(config, args)?,
+        OVERLAY.read(config, args)?,
+    ))
+}
 
 pub struct SetInputSettingsRunner {
     sink: Arc<dyn ObsSink>,
@@ -53,50 +86,8 @@ impl SubActionRunner for SetInputSettingsRunner {
         "settings"
     }
 
-    fn default_config(&self) -> SubActionConfig {
-        BTreeMap::from([
-            ("source".to_owned(), Variant::String(String::new())),
-            ("settings_json".to_owned(), Variant::String("{}".to_owned())),
-            ("overlay".to_owned(), Variant::Bool(true)),
-        ])
-    }
-
-    fn config_fields(&self) -> Vec<FormField> {
-        vec![
-            FormField::Text {
-                key: "source",
-                label: "Input Source",
-                placeholder: "e.g. Webcam",
-            },
-            FormField::TextArea {
-                key: "settings_json",
-                label: "Settings (JSON)",
-            },
-            FormField::Toggle {
-                key: "overlay",
-                label: "Overlay (merge with existing settings)",
-            },
-        ]
-    }
-
-    fn validate_config(&self, config: &SubActionConfig) -> Result<(), RegistryError> {
-        let source_ok =
-            matches!(config.get("source"), Some(Variant::String(s)) if !s.trim().is_empty());
-        if !source_ok {
-            return Err(RegistryError::invalid_field(
-                "source",
-                ConfigReason::Required,
-            ));
-        }
-
-        if let Err(reason) = parse_settings(config) {
-            return Err(RegistryError::invalid_field(
-                "settings_json",
-                ConfigReason::InvalidFormat(reason),
-            ));
-        }
-
-        Ok(())
+    fn config_spec(&self) -> Option<ConfigSpec> {
+        Some(CONFIG)
     }
 
     async fn execute(
@@ -104,47 +95,18 @@ impl SubActionRunner for SetInputSettingsRunner {
         config: &SubActionConfig,
         ctx: &RunContext<'_>,
     ) -> (SubActionTelemetry, Option<ArgStack>) {
-        let started_at = OffsetDateTime::now_utc();
-        let start = Instant::now();
-
-        let raw_source = config.str("source").unwrap_or_default();
-
-        let source = ctx.arg_stack.interpolate(raw_source);
-        let overlay = matches!(config.get("overlay"), Some(Variant::Bool(true)));
-
-        let outcome = match parse_settings(config) {
-            Ok(settings) => SubActionOutcome::from_result(
-                &self
-                    .sink
-                    .set_input_settings(&source, &settings, overlay)
-                    .await,
-            ),
-            Err(reason) => SubActionOutcome::Failed(format!("settings_json: {reason}")),
+        let timer = StepTimer::start(ctx, KIND_ID);
+        let (source, settings, overlay) = match read_config(config, ctx.arg_stack) {
+            Ok(values) => values,
+            Err(problem) => return (timer.invalid_config(&problem), None),
         };
-
-        (
-            SubActionTelemetry {
-                args_in: ::std::collections::BTreeMap::new(),
-                produced: ::std::collections::BTreeMap::new(),
-                kind: KIND_ID.to_owned(),
-                started_at,
-                duration_ms: start.elapsed().as_millis() as u64,
-                outcome,
-                index: ctx.index,
-            },
-            None,
-        )
-    }
-}
-
-fn parse_settings(config: &SubActionConfig) -> Result<Map<String, Value>, String> {
-    let Some(Variant::String(text)) = config.get("settings_json") else {
-        return Err("expected JSON object text".to_owned());
-    };
-    match serde_json::from_str::<Value>(text) {
-        Ok(Value::Object(settings)) => Ok(settings),
-        Ok(_) => Err("expected a JSON object".to_owned()),
-        Err(e) => Err(format!("not valid JSON ({e})")),
+        let outcome = SubActionOutcome::from_result(
+            &self
+                .sink
+                .set_input_settings(&source, &settings, overlay)
+                .await,
+        );
+        (timer.finish(outcome), None)
     }
 }
 

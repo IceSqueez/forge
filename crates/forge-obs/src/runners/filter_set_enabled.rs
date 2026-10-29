@@ -1,20 +1,47 @@
-use std::collections::BTreeMap;
 use std::sync::Arc;
-use std::time::Instant;
 
 use async_trait::async_trait;
 use forge_registry::runner::SubActionConfig;
 use forge_registry::{
-    ConfigReason, FormField, RegistryError, RunContext, SubActionCategory, SubActionConfigExt,
-    SubActionRunner,
+    ConfigProblem, ConfigSpec, RunContext, StepTimer, SubActionCategory, SubActionRunner,
+    TextEditor, TextField, ToggleField, TypedField,
 };
-use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, Variant};
-use time::OffsetDateTime;
+use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry};
 
 use crate::ObsSink;
-use crate::vocabulary::{picker_keys, sub_action_ids};
+use crate::runners::fields::SOURCE;
+use crate::vocabulary::{config_keys, sub_action_ids};
 
 const KIND_ID: &str = sub_action_ids::FILTER_SET_ENABLED;
+
+const FILTER: TextField = TextField {
+    key: config_keys::FILTER,
+    label: "Filter Name",
+    editor: TextEditor::Line {
+        placeholder: "e.g. Color Correction",
+    },
+    default: "",
+    required: true,
+};
+
+const ENABLED: ToggleField = ToggleField {
+    key: config_keys::ENABLED,
+    label: "Enabled",
+    default: true,
+};
+
+const CONFIG: ConfigSpec = ConfigSpec::new(&[&SOURCE, &FILTER, &ENABLED]);
+
+fn read_config(
+    config: &SubActionConfig,
+    args: &ArgStack,
+) -> Result<(String, String, bool), ConfigProblem> {
+    Ok((
+        SOURCE.read(config, args)?,
+        FILTER.read(config, args)?,
+        ENABLED.read(config, args)?,
+    ))
+}
 
 pub struct FilterSetEnabledRunner {
     sink: Arc<dyn ObsSink>,
@@ -52,51 +79,8 @@ impl SubActionRunner for FilterSetEnabledRunner {
         "filter"
     }
 
-    fn default_config(&self) -> SubActionConfig {
-        BTreeMap::from([
-            ("source".to_owned(), Variant::String(String::new())),
-            ("filter".to_owned(), Variant::String(String::new())),
-            ("enabled".to_owned(), Variant::Bool(true)),
-        ])
-    }
-
-    fn config_fields(&self) -> Vec<FormField> {
-        vec![
-            FormField::DynamicSelect {
-                key: "source",
-                label: "Source",
-                options_key: picker_keys::SOURCE_NAMES,
-            },
-            FormField::Text {
-                key: "filter",
-                label: "Filter Name",
-                placeholder: "e.g. Color Correction",
-            },
-            FormField::Toggle {
-                key: "enabled",
-                label: "Enabled",
-            },
-        ]
-    }
-
-    fn validate_config(&self, config: &SubActionConfig) -> Result<(), RegistryError> {
-        let source_ok =
-            matches!(config.get("source"), Some(Variant::String(s)) if !s.trim().is_empty());
-        let filter_ok =
-            matches!(config.get("filter"), Some(Variant::String(s)) if !s.trim().is_empty());
-        if !source_ok {
-            return Err(RegistryError::invalid_field(
-                "source",
-                ConfigReason::Required,
-            ));
-        }
-        if !filter_ok {
-            return Err(RegistryError::invalid_field(
-                "filter",
-                ConfigReason::Required,
-            ));
-        }
-        Ok(())
+    fn config_spec(&self) -> Option<ConfigSpec> {
+        Some(CONFIG)
     }
 
     async fn execute(
@@ -104,34 +88,18 @@ impl SubActionRunner for FilterSetEnabledRunner {
         config: &SubActionConfig,
         ctx: &RunContext<'_>,
     ) -> (SubActionTelemetry, Option<ArgStack>) {
-        let started_at = OffsetDateTime::now_utc();
-        let start = Instant::now();
-
-        let raw_source = config.str("source").unwrap_or_default();
-        let raw_filter = config.str("filter").unwrap_or_default();
-        let source = ctx.arg_stack.interpolate(raw_source);
-        let filter = ctx.arg_stack.interpolate(raw_filter);
-        let enabled = matches!(config.get("enabled"), Some(Variant::Bool(true)));
-
+        let timer = StepTimer::start(ctx, KIND_ID);
+        let (source, filter, enabled) = match read_config(config, ctx.arg_stack) {
+            Ok(values) => values,
+            Err(problem) => return (timer.invalid_config(&problem), None),
+        };
         let outcome = SubActionOutcome::from_result(
             &self
                 .sink
                 .set_source_filter_enabled(&source, &filter, enabled)
                 .await,
         );
-
-        (
-            SubActionTelemetry {
-                args_in: ::std::collections::BTreeMap::new(),
-                produced: ::std::collections::BTreeMap::new(),
-                kind: KIND_ID.to_owned(),
-                started_at,
-                duration_ms: start.elapsed().as_millis() as u64,
-                outcome,
-                index: ctx.index,
-            },
-            None,
-        )
+        (timer.finish(outcome), None)
     }
 }
 

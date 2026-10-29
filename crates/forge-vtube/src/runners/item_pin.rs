@@ -1,19 +1,95 @@
-use std::collections::BTreeMap;
 use std::sync::Arc;
-use std::time::Instant;
 
 use async_trait::async_trait;
 use forge_registry::runner::SubActionConfig;
 use forge_registry::{
-    ConfigReason, FormField, RegistryError, RunContext, SubActionCategory, SubActionConfigExt,
-    SubActionRunner,
+    ChoiceField, ConfigChoice, ConfigProblem, ConfigSpec, NumberField, OptionalField, RunContext,
+    StepTimer, SubActionCategory, SubActionRunner, TextField, ToggleField, TypedField,
 };
-use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, Variant};
-use time::OffsetDateTime;
+use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry};
 
-use crate::runners::numeric::optional_number;
+use crate::runners::choices::{AngleRelativeTo, SizeRelativeTo, VertexPinType};
+use crate::runners::fields::{
+    ITEM_INSTANCE_ID, ITEM_SIZE, optional_number, optional_text, read_non_empty,
+};
 use crate::sink::VTubeSink;
-use crate::vocabulary::sub_action_ids;
+use crate::vocabulary::{config_keys, sub_action_ids};
+
+const DEFAULT_PIN_ANGLE: f64 = 0.0;
+const DEFAULT_PIN_SIZE: f64 = 0.33;
+
+const PIN: ToggleField = ToggleField {
+    key: config_keys::PIN,
+    label: "Pin (off to unpin)",
+    default: true,
+};
+
+const VERTEX_PIN_TYPE: ChoiceField<VertexPinType> = ChoiceField {
+    key: config_keys::VERTEX_PIN_TYPE,
+    label: "Pin Position",
+    default: VertexPinType::Center,
+};
+
+const ANGLE_RELATIVE_TO: ChoiceField<AngleRelativeTo> = ChoiceField {
+    key: config_keys::ANGLE_RELATIVE_TO,
+    label: "Angle Relative To",
+    default: AngleRelativeTo::Model,
+};
+
+const SIZE_RELATIVE_TO: ChoiceField<SizeRelativeTo> = ChoiceField {
+    key: config_keys::SIZE_RELATIVE_TO,
+    label: "Size Relative To",
+    default: SizeRelativeTo::World,
+};
+
+const MODEL_ID: OptionalField<TextField> =
+    optional_text(config_keys::MODEL_ID, "Model ID", "empty = current model");
+
+const ART_MESH_ID: OptionalField<TextField> = optional_text(
+    config_keys::ART_MESH_ID,
+    "Art Mesh ID",
+    "empty = random art mesh",
+);
+
+const ANGLE: OptionalField<NumberField> = optional_number(config_keys::ANGLE, "Angle", "0");
+
+const CONFIG: ConfigSpec = ConfigSpec::new(&[
+    &ITEM_INSTANCE_ID,
+    &PIN,
+    &VERTEX_PIN_TYPE,
+    &ANGLE_RELATIVE_TO,
+    &SIZE_RELATIVE_TO,
+    &MODEL_ID,
+    &ART_MESH_ID,
+    &ANGLE,
+    &ITEM_SIZE,
+]);
+
+struct PinRequest {
+    item_instance_id: String,
+    pin: bool,
+    vertex_pin_type: VertexPinType,
+    angle_relative_to: AngleRelativeTo,
+    size_relative_to: SizeRelativeTo,
+    model_id: Option<String>,
+    art_mesh_id: Option<String>,
+    angle: Option<f64>,
+    size: Option<f64>,
+}
+
+fn read_request(config: &SubActionConfig, args: &ArgStack) -> Result<PinRequest, ConfigProblem> {
+    Ok(PinRequest {
+        item_instance_id: read_non_empty(&ITEM_INSTANCE_ID, config, args)?,
+        pin: PIN.read(config, args)?,
+        vertex_pin_type: VERTEX_PIN_TYPE.read(config, args)?,
+        angle_relative_to: ANGLE_RELATIVE_TO.read(config, args)?,
+        size_relative_to: SIZE_RELATIVE_TO.read(config, args)?,
+        model_id: MODEL_ID.read(config, args)?,
+        art_mesh_id: ART_MESH_ID.read(config, args)?,
+        angle: ANGLE.read(config, args)?,
+        size: ITEM_SIZE.read(config, args)?,
+    })
+}
 
 pub struct ItemPinRunner {
     sink: Arc<dyn VTubeSink>,
@@ -22,42 +98,6 @@ pub struct ItemPinRunner {
 impl ItemPinRunner {
     pub fn new(sink: Arc<dyn VTubeSink>) -> Self {
         Self { sink }
-    }
-}
-
-const ANGLE_RELATIVE_TO_OPTIONS: &[&str] = &[
-    "RelativeToWorld",
-    "RelativeToCurrentItemRotation",
-    "RelativeToModel",
-    "RelativeToPinPosition",
-];
-
-const SIZE_RELATIVE_TO_OPTIONS: &[&str] = &["RelativeToWorld", "RelativeToCurrentItemSize"];
-
-const VERTEX_PIN_TYPE_OPTIONS: &[&str] = &["Center", "Random"];
-
-const DEFAULT_PIN_ANGLE: f64 = 0.0;
-const DEFAULT_PIN_SIZE: f64 = 0.33;
-
-fn read_angle_and_size(
-    config: &SubActionConfig,
-    ctx: &RunContext<'_>,
-) -> Result<(f64, f64), String> {
-    Ok((
-        optional_number(config, "angle", ctx)?.unwrap_or(DEFAULT_PIN_ANGLE),
-        optional_number(config, "size", ctx)?.unwrap_or(DEFAULT_PIN_SIZE),
-    ))
-}
-
-fn select_or_default<'a>(
-    config: &'a SubActionConfig,
-    key: &str,
-    options: &'a [&str],
-    default: &'a str,
-) -> &'a str {
-    match config.get(key) {
-        Some(Variant::String(s)) if options.contains(&s.as_str()) => s.as_str(),
-        _ => default,
     }
 }
 
@@ -87,101 +127,8 @@ impl SubActionRunner for ItemPinRunner {
         "pin"
     }
 
-    fn default_config(&self) -> SubActionConfig {
-        BTreeMap::from([
-            (
-                "item_instance_id".to_owned(),
-                Variant::String(String::new()),
-            ),
-            ("pin".to_owned(), Variant::Bool(true)),
-            (
-                "angle_relative_to".to_owned(),
-                Variant::String("RelativeToModel".to_owned()),
-            ),
-            (
-                "size_relative_to".to_owned(),
-                Variant::String("RelativeToWorld".to_owned()),
-            ),
-            (
-                "vertex_pin_type".to_owned(),
-                Variant::String("Center".to_owned()),
-            ),
-        ])
-    }
-
-    fn config_fields(&self) -> Vec<FormField> {
-        vec![
-            FormField::Text {
-                key: "item_instance_id",
-                label: "Item Instance ID",
-                placeholder: "item instance id from VTS",
-            },
-            FormField::Toggle {
-                key: "pin",
-                label: "Pin (off to unpin)",
-            },
-            FormField::Select {
-                key: "vertex_pin_type",
-                label: "Pin Position",
-                options: VERTEX_PIN_TYPE_OPTIONS,
-            },
-            FormField::Select {
-                key: "angle_relative_to",
-                label: "Angle Relative To",
-                options: ANGLE_RELATIVE_TO_OPTIONS,
-            },
-            FormField::Select {
-                key: "size_relative_to",
-                label: "Size Relative To",
-                options: SIZE_RELATIVE_TO_OPTIONS,
-            },
-            FormField::Optional {
-                key: "model_id",
-                label: "Model ID",
-                inner: Box::new(FormField::Text {
-                    key: "model_id",
-                    label: "Model ID",
-                    placeholder: "empty = current model",
-                }),
-            },
-            FormField::Optional {
-                key: "art_mesh_id",
-                label: "Art Mesh ID",
-                inner: Box::new(FormField::Text {
-                    key: "art_mesh_id",
-                    label: "Art Mesh ID",
-                    placeholder: "empty = random art mesh",
-                }),
-            },
-            FormField::Optional {
-                key: "angle",
-                label: "Angle",
-                inner: Box::new(FormField::Text {
-                    key: "angle",
-                    label: "Angle",
-                    placeholder: "0",
-                }),
-            },
-            FormField::Optional {
-                key: "size",
-                label: "Size",
-                inner: Box::new(FormField::Text {
-                    key: "size",
-                    label: "Size",
-                    placeholder: "0.0 to 1.0",
-                }),
-            },
-        ]
-    }
-
-    fn validate_config(&self, config: &SubActionConfig) -> Result<(), RegistryError> {
-        match config.get("item_instance_id") {
-            Some(Variant::String(_)) => Ok(()),
-            _ => Err(RegistryError::invalid_field(
-                "item_instance_id",
-                ConfigReason::Required,
-            )),
-        }
+    fn config_spec(&self) -> Option<ConfigSpec> {
+        Some(CONFIG)
     }
 
     async fn execute(
@@ -189,66 +136,28 @@ impl SubActionRunner for ItemPinRunner {
         config: &SubActionConfig,
         ctx: &RunContext<'_>,
     ) -> (SubActionTelemetry, Option<ArgStack>) {
-        let started_at = OffsetDateTime::now_utc();
-        let start = Instant::now();
-
-        let raw_id = config.str("item_instance_id").unwrap_or_default();
-        let item_instance_id = ctx.arg_stack.interpolate(raw_id);
-
-        let pin = !matches!(config.get("pin"), Some(Variant::Bool(false)));
-        let angle_relative_to = select_or_default(
-            config,
-            "angle_relative_to",
-            ANGLE_RELATIVE_TO_OPTIONS,
-            "RelativeToModel",
-        );
-        let size_relative_to = select_or_default(
-            config,
-            "size_relative_to",
-            SIZE_RELATIVE_TO_OPTIONS,
-            "RelativeToWorld",
-        );
-        let vertex_pin_type =
-            select_or_default(config, "vertex_pin_type", VERTEX_PIN_TYPE_OPTIONS, "Center");
-        let model_id = config.str("model_id").unwrap_or_default();
-        let art_mesh_id = config.str("art_mesh_id").unwrap_or_default();
-        let angle_and_size = read_angle_and_size(config, ctx);
-
-        let outcome = match angle_and_size {
-            _ if item_instance_id.is_empty() => {
-                SubActionOutcome::Failed("vtube.item.pin: item_instance_id is empty".to_owned())
-            }
-            Err(reason) => SubActionOutcome::Failed(format!("vtube.item.pin: {reason}")),
-            Ok((angle, size)) => SubActionOutcome::from_result(
-                &self
-                    .sink
-                    .pin_item(
-                        &item_instance_id,
-                        pin,
-                        angle_relative_to,
-                        size_relative_to,
-                        vertex_pin_type,
-                        model_id,
-                        art_mesh_id,
-                        angle,
-                        size,
-                    )
-                    .await,
-            ),
+        let timer = StepTimer::start(ctx, self.id());
+        let request = match read_request(config, ctx.arg_stack) {
+            Ok(request) => request,
+            Err(problem) => return (timer.invalid_config(&problem), None),
         };
-
-        (
-            SubActionTelemetry {
-                args_in: ::std::collections::BTreeMap::new(),
-                produced: ::std::collections::BTreeMap::new(),
-                kind: sub_action_ids::ITEM_PIN.to_owned(),
-                started_at,
-                duration_ms: start.elapsed().as_millis() as u64,
-                outcome,
-                index: ctx.index,
-            },
-            None,
-        )
+        let outcome = SubActionOutcome::from_result(
+            &self
+                .sink
+                .pin_item(
+                    &request.item_instance_id,
+                    request.pin,
+                    request.angle_relative_to.wire_name(),
+                    request.size_relative_to.wire_name(),
+                    request.vertex_pin_type.wire_name(),
+                    request.model_id.as_deref().unwrap_or_default(),
+                    request.art_mesh_id.as_deref().unwrap_or_default(),
+                    request.angle.unwrap_or(DEFAULT_PIN_ANGLE),
+                    request.size.unwrap_or(DEFAULT_PIN_SIZE),
+                )
+                .await,
+        );
+        (timer.finish(outcome), None)
     }
 }
 

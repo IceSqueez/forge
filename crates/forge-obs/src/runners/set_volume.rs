@@ -1,20 +1,41 @@
-use std::collections::BTreeMap;
 use std::sync::Arc;
-use std::time::Instant;
 
 use async_trait::async_trait;
 use forge_registry::runner::SubActionConfig;
 use forge_registry::{
-    ConfigReason, FormField, RegistryError, RunContext, SubActionCategory, SubActionConfigExt,
-    SubActionRunner,
+    ConfigProblem, ConfigSpec, DecimalField, PickedTextField, RunContext, StepTimer, StoredNumber,
+    SubActionCategory, SubActionRunner, TextPicker, TypedField, ValueBounds,
 };
-use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, Variant};
-use time::OffsetDateTime;
+use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry};
 
 use crate::ObsSink;
-use crate::vocabulary::{picker_keys, sub_action_ids};
+use crate::vocabulary::{config_keys, picker_keys, sub_action_ids};
 
 const KIND_ID: &str = sub_action_ids::AUDIO_SET_VOLUME;
+
+const SOURCE: PickedTextField = PickedTextField {
+    key: config_keys::SOURCE,
+    label: "Audio Input",
+    picker: TextPicker::Options {
+        options_key: picker_keys::AUDIO_INPUTS,
+    },
+    default: "",
+    required: true,
+};
+
+const VOLUME_DB: DecimalField = DecimalField {
+    key: config_keys::VOLUME_DB,
+    label: "Volume (dB)",
+    placeholder: "e.g. -6.0",
+    default: StoredNumber::Text("0.0"),
+    bounds: ValueBounds::UNBOUNDED,
+};
+
+const CONFIG: ConfigSpec = ConfigSpec::new(&[&SOURCE, &VOLUME_DB]);
+
+fn read_config(config: &SubActionConfig, args: &ArgStack) -> Result<(String, f64), ConfigProblem> {
+    Ok((SOURCE.read(config, args)?, VOLUME_DB.read(config, args)?))
+}
 
 pub struct SetVolumeRunner {
     sink: Arc<dyn ObsSink>,
@@ -52,49 +73,8 @@ impl SubActionRunner for SetVolumeRunner {
         "volume-2"
     }
 
-    fn default_config(&self) -> SubActionConfig {
-        BTreeMap::from([
-            ("source".to_owned(), Variant::String(String::new())),
-            ("volume_db".to_owned(), Variant::String("0.0".to_owned())),
-        ])
-    }
-
-    fn config_fields(&self) -> Vec<FormField> {
-        vec![
-            FormField::DynamicSelect {
-                key: "source",
-                label: "Audio Input",
-                options_key: picker_keys::AUDIO_INPUTS,
-            },
-            FormField::Text {
-                key: "volume_db",
-                label: "Volume (dB)",
-                placeholder: "e.g. -6.0",
-            },
-        ]
-    }
-
-    fn validate_config(&self, config: &SubActionConfig) -> Result<(), RegistryError> {
-        let source_ok =
-            matches!(config.get("source"), Some(Variant::String(s)) if !s.trim().is_empty());
-        if !source_ok {
-            return Err(RegistryError::invalid_field(
-                "source",
-                ConfigReason::Required,
-            ));
-        }
-        let db_ok = config.get("volume_db").is_some_and(|v| match v {
-            Variant::String(s) => s.parse::<f64>().is_ok(),
-            Variant::Float(_) | Variant::Int(_) => true,
-            _ => false,
-        });
-        if !db_ok {
-            return Err(RegistryError::invalid_field(
-                "volume_db",
-                ConfigReason::NotANumber,
-            ));
-        }
-        Ok(())
+    fn config_spec(&self) -> Option<ConfigSpec> {
+        Some(CONFIG)
     }
 
     async fn execute(
@@ -102,38 +82,14 @@ impl SubActionRunner for SetVolumeRunner {
         config: &SubActionConfig,
         ctx: &RunContext<'_>,
     ) -> (SubActionTelemetry, Option<ArgStack>) {
-        let started_at = OffsetDateTime::now_utc();
-        let start = Instant::now();
-
-        let raw_source = config.str("source").unwrap_or_default();
-
-        let source = ctx.arg_stack.interpolate(raw_source);
-
-        let db = config
-            .get("volume_db")
-            .and_then(|v| match v {
-                Variant::String(s) => s.parse::<f64>().ok(),
-                Variant::Float(f) => Some(*f),
-                Variant::Int(i) => Some(*i as f64),
-                _ => None,
-            })
-            .unwrap_or(0.0);
-
+        let timer = StepTimer::start(ctx, KIND_ID);
+        let (source, db) = match read_config(config, ctx.arg_stack) {
+            Ok(values) => values,
+            Err(problem) => return (timer.invalid_config(&problem), None),
+        };
         let outcome =
             SubActionOutcome::from_result(&self.sink.set_input_volume_db(&source, db).await);
-
-        (
-            SubActionTelemetry {
-                args_in: ::std::collections::BTreeMap::new(),
-                produced: ::std::collections::BTreeMap::new(),
-                kind: KIND_ID.to_owned(),
-                started_at,
-                duration_ms: start.elapsed().as_millis() as u64,
-                outcome,
-                index: ctx.index,
-            },
-            None,
-        )
+        (timer.finish(outcome), None)
     }
 }
 

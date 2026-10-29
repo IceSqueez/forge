@@ -1,28 +1,69 @@
-use std::collections::BTreeMap;
 use std::sync::Arc;
-use std::time::Instant;
 
 use async_trait::async_trait;
 use forge_registry::runner::SubActionConfig;
-use forge_registry::{FormField, RegistryError, RunContext, SubActionCategory, SubActionRunner};
-use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, Variant};
-use time::OffsetDateTime;
+use forge_registry::{
+    ConfigProblem, ConfigSpec, IntegerEditor, IntegerField, NumberField, OptionalField, RunContext,
+    StepTimer, SubActionCategory, SubActionRunner, TypedField, ValueBounds,
+};
+use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry};
 
-use crate::runners::numeric::{optional_integer, optional_number};
+use crate::runners::fields::optional_number;
 use crate::sink::VTubeSink;
-use crate::vocabulary::sub_action_ids;
-
-pub struct ModelTintRunner {
-    sink: Arc<dyn VTubeSink>,
-}
-
-impl ModelTintRunner {
-    pub fn new(sink: Arc<dyn VTubeSink>) -> Self {
-        Self { sink }
-    }
-}
+use crate::vocabulary::{config_keys, sub_action_ids};
 
 const CHANNEL_MAX: i64 = 255;
+
+const CHANNEL_BOUNDS: ValueBounds = ValueBounds {
+    min: Some(0),
+    max: Some(CHANNEL_MAX),
+};
+
+const COLOR_R: IntegerField = IntegerField {
+    key: config_keys::COLOR_R,
+    label: "Red",
+    editor: IntegerEditor::Number,
+    default: CHANNEL_MAX,
+    bounds: CHANNEL_BOUNDS,
+};
+
+const COLOR_G: IntegerField = IntegerField {
+    key: config_keys::COLOR_G,
+    label: "Green",
+    editor: IntegerEditor::Number,
+    default: CHANNEL_MAX,
+    bounds: CHANNEL_BOUNDS,
+};
+
+const COLOR_B: IntegerField = IntegerField {
+    key: config_keys::COLOR_B,
+    label: "Blue",
+    editor: IntegerEditor::Number,
+    default: CHANNEL_MAX,
+    bounds: CHANNEL_BOUNDS,
+};
+
+const COLOR_A: IntegerField = IntegerField {
+    key: config_keys::COLOR_A,
+    label: "Alpha",
+    editor: IntegerEditor::Number,
+    default: CHANNEL_MAX,
+    bounds: CHANNEL_BOUNDS,
+};
+
+const MIX_WITH_SCENE_LIGHTING: OptionalField<NumberField> = optional_number(
+    config_keys::MIX_WITH_SCENE_LIGHTING,
+    "Mix With Scene Lighting",
+    "0.0 to 1.0",
+);
+
+const CONFIG: ConfigSpec = ConfigSpec::new(&[
+    &COLOR_R,
+    &COLOR_G,
+    &COLOR_B,
+    &COLOR_A,
+    &MIX_WITH_SCENE_LIGHTING,
+]);
 
 struct Tint {
     r: i64,
@@ -32,22 +73,24 @@ struct Tint {
     mix_with_scene_lighting: Option<f64>,
 }
 
-fn read_color_channel(
-    config: &SubActionConfig,
-    key: &str,
-    ctx: &RunContext<'_>,
-) -> Result<i64, String> {
-    Ok(optional_integer(config, key, ctx)?.map_or(CHANNEL_MAX, |v| v.clamp(0, CHANNEL_MAX)))
+fn read_tint(config: &SubActionConfig, args: &ArgStack) -> Result<Tint, ConfigProblem> {
+    Ok(Tint {
+        r: COLOR_R.read(config, args)?,
+        g: COLOR_G.read(config, args)?,
+        b: COLOR_B.read(config, args)?,
+        a: COLOR_A.read(config, args)?,
+        mix_with_scene_lighting: MIX_WITH_SCENE_LIGHTING.read(config, args)?,
+    })
 }
 
-fn read_tint(config: &SubActionConfig, ctx: &RunContext<'_>) -> Result<Tint, String> {
-    Ok(Tint {
-        r: read_color_channel(config, "color_r", ctx)?,
-        g: read_color_channel(config, "color_g", ctx)?,
-        b: read_color_channel(config, "color_b", ctx)?,
-        a: read_color_channel(config, "color_a", ctx)?,
-        mix_with_scene_lighting: optional_number(config, "mix_with_scene_lighting", ctx)?,
-    })
+pub struct ModelTintRunner {
+    sink: Arc<dyn VTubeSink>,
+}
+
+impl ModelTintRunner {
+    pub fn new(sink: Arc<dyn VTubeSink>) -> Self {
+        Self { sink }
+    }
 }
 
 #[async_trait]
@@ -76,55 +119,8 @@ impl SubActionRunner for ModelTintRunner {
         "droplet"
     }
 
-    fn default_config(&self) -> SubActionConfig {
-        BTreeMap::from([
-            ("color_r".to_owned(), Variant::Int(255)),
-            ("color_g".to_owned(), Variant::Int(255)),
-            ("color_b".to_owned(), Variant::Int(255)),
-            ("color_a".to_owned(), Variant::Int(255)),
-        ])
-    }
-
-    fn config_fields(&self) -> Vec<FormField> {
-        vec![
-            FormField::Integer {
-                key: "color_r",
-                label: "Red",
-                min: 0,
-                max: 255,
-            },
-            FormField::Integer {
-                key: "color_g",
-                label: "Green",
-                min: 0,
-                max: 255,
-            },
-            FormField::Integer {
-                key: "color_b",
-                label: "Blue",
-                min: 0,
-                max: 255,
-            },
-            FormField::Integer {
-                key: "color_a",
-                label: "Alpha",
-                min: 0,
-                max: 255,
-            },
-            FormField::Optional {
-                key: "mix_with_scene_lighting",
-                label: "Mix With Scene Lighting",
-                inner: Box::new(FormField::Text {
-                    key: "mix_with_scene_lighting",
-                    label: "Mix With Scene Lighting",
-                    placeholder: "0.0 to 1.0",
-                }),
-            },
-        ]
-    }
-
-    fn validate_config(&self, _config: &SubActionConfig) -> Result<(), RegistryError> {
-        Ok(())
+    fn config_spec(&self) -> Option<ConfigSpec> {
+        Some(CONFIG)
     }
 
     async fn execute(
@@ -132,37 +128,18 @@ impl SubActionRunner for ModelTintRunner {
         config: &SubActionConfig,
         ctx: &RunContext<'_>,
     ) -> (SubActionTelemetry, Option<ArgStack>) {
-        let started_at = OffsetDateTime::now_utc();
-        let start = Instant::now();
-
-        let outcome = match read_tint(config, ctx) {
-            Ok(tint) => SubActionOutcome::from_result(
-                &self
-                    .sink
-                    .tint_all_art_meshes(
-                        tint.r,
-                        tint.g,
-                        tint.b,
-                        tint.a,
-                        tint.mix_with_scene_lighting,
-                    )
-                    .await,
-            ),
-            Err(reason) => SubActionOutcome::Failed(format!("vtube.model.tint: {reason}")),
+        let timer = StepTimer::start(ctx, self.id());
+        let tint = match read_tint(config, ctx.arg_stack) {
+            Ok(tint) => tint,
+            Err(problem) => return (timer.invalid_config(&problem), None),
         };
-
-        (
-            SubActionTelemetry {
-                args_in: ::std::collections::BTreeMap::new(),
-                produced: ::std::collections::BTreeMap::new(),
-                kind: sub_action_ids::MODEL_TINT.to_owned(),
-                started_at,
-                duration_ms: start.elapsed().as_millis() as u64,
-                outcome,
-                index: ctx.index,
-            },
-            None,
-        )
+        let outcome = SubActionOutcome::from_result(
+            &self
+                .sink
+                .tint_all_art_meshes(tint.r, tint.g, tint.b, tint.a, tint.mix_with_scene_lighting)
+                .await,
+        );
+        (timer.finish(outcome), None)
     }
 }
 

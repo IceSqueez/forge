@@ -10,17 +10,13 @@ use crate::client::VTubeClient;
 use crate::vocabulary::option_lists::{
     EXPRESSION_LIST, HOTKEY_LIST, ITEM_FILE_LIST, ITEM_INSTANCE_LIST, MODEL_LIST,
 };
-use crate::vocabulary::sub_action_ids;
+use crate::vocabulary::{config_keys, sub_action_ids};
 
-const EXPRESSION_FIELD: &str = "expression_file";
-const HOTKEY_FIELD: &str = "hotkey_id";
-const ITEM_FILE_FIELD: &str = "file_name";
-const ITEM_INSTANCE_FIELD: &str = "item_instance_id";
-const MODEL_FIELD: &str = "model_id";
-
-fn blank() -> Variant {
-    Variant::String(String::new())
-}
+const EXPRESSION_FIELD: &str = config_keys::EXPRESSION_FILE;
+const HOTKEY_FIELD: &str = config_keys::HOTKEY_ID;
+const ITEM_FILE_FIELD: &str = config_keys::FILE_NAME;
+const ITEM_INSTANCE_FIELD: &str = config_keys::ITEM_INSTANCE_ID;
+const MODEL_FIELD: &str = config_keys::MODEL_ID;
 
 fn config(pairs: impl IntoIterator<Item = (&'static str, Variant)>) -> BTreeMap<String, Variant> {
     pairs.into_iter().map(|(k, v)| (k.to_owned(), v)).collect()
@@ -118,7 +114,7 @@ impl QuickActions for VTubeClient {
                 "Expressions",
                 false,
                 sub_action_ids::EXPRESSION_SET,
-                config([(EXPRESSION_FIELD, blank()), ("active", Variant::Bool(true))]),
+                BTreeMap::new(),
                 vec![choice_field(
                     EXPRESSION_FIELD,
                     "Expression",
@@ -133,10 +129,7 @@ impl QuickActions for VTubeClient {
                 "Expressions",
                 false,
                 sub_action_ids::EXPRESSION_SET,
-                config([
-                    (EXPRESSION_FIELD, blank()),
-                    ("active", Variant::Bool(false)),
-                ]),
+                config([(config_keys::ACTIVE, Variant::Bool(false))]),
                 vec![choice_field(
                     EXPRESSION_FIELD,
                     "Expression",
@@ -162,7 +155,7 @@ impl QuickActions for VTubeClient {
                 "Hotkeys & animation",
                 false,
                 sub_action_ids::HOTKEY_TRIGGER,
-                config([(HOTKEY_FIELD, blank())]),
+                BTreeMap::new(),
                 vec![choice_field(HOTKEY_FIELD, "Hotkey", HOTKEY_LIST)],
             ),
             quick_action(
@@ -173,7 +166,7 @@ impl QuickActions for VTubeClient {
                 "Hotkeys & animation",
                 false,
                 sub_action_ids::HOTKEY_TRIGGER,
-                config([(HOTKEY_FIELD, blank())]),
+                BTreeMap::new(),
                 vec![choice_field(HOTKEY_FIELD, "Hotkey", HOTKEY_LIST)],
             ),
             quick_action(
@@ -184,7 +177,7 @@ impl QuickActions for VTubeClient {
                 "Items",
                 false,
                 sub_action_ids::ITEM_THROW,
-                config([(ITEM_FILE_FIELD, blank())]),
+                BTreeMap::new(),
                 vec![choice_field(ITEM_FILE_FIELD, "Item file", ITEM_FILE_LIST)],
             ),
             quick_action(
@@ -195,7 +188,7 @@ impl QuickActions for VTubeClient {
                 "Items",
                 false,
                 sub_action_ids::ITEM_PIN,
-                config([(ITEM_INSTANCE_FIELD, blank()), ("pin", Variant::Bool(true))]),
+                BTreeMap::new(),
                 vec![choice_field(
                     ITEM_INSTANCE_FIELD,
                     "Item",
@@ -210,10 +203,7 @@ impl QuickActions for VTubeClient {
                 "Items",
                 false,
                 sub_action_ids::ITEM_LOAD,
-                config([
-                    (ITEM_FILE_FIELD, blank()),
-                    ("unload_on_disconnect", Variant::Bool(true)),
-                ]),
+                BTreeMap::new(),
                 vec![choice_field(ITEM_FILE_FIELD, "Item file", ITEM_FILE_LIST)],
             ),
             quick_action(
@@ -235,7 +225,7 @@ impl QuickActions for VTubeClient {
                 "Model & scene",
                 false,
                 sub_action_ids::MODEL_LOAD,
-                config([(MODEL_FIELD, blank())]),
+                BTreeMap::new(),
                 vec![choice_field(MODEL_FIELD, "Model", MODEL_LIST)],
             ),
             quick_action(
@@ -247,11 +237,11 @@ impl QuickActions for VTubeClient {
                 false,
                 sub_action_ids::MODEL_MOVE,
                 config([
-                    ("x", Variant::Float(0.0)),
-                    ("y", Variant::Float(0.0)),
-                    ("rotation", Variant::Float(0.0)),
-                    ("size", Variant::Float(0.0)),
-                    ("duration", Variant::Float(0.3)),
+                    (config_keys::X, Variant::Float(0.0)),
+                    (config_keys::Y, Variant::Float(0.0)),
+                    (config_keys::ROTATION, Variant::Float(0.0)),
+                    (config_keys::SIZE, Variant::Float(0.0)),
+                    (config_keys::DURATION, Variant::Float(0.3)),
                 ]),
                 Vec::new(),
             ),
@@ -264,10 +254,9 @@ impl QuickActions for VTubeClient {
                 false,
                 sub_action_ids::MODEL_TINT,
                 config([
-                    ("color_r", Variant::Int(203)),
-                    ("color_g", Variant::Int(166)),
-                    ("color_b", Variant::Int(247)),
-                    ("color_a", Variant::Int(255)),
+                    (config_keys::COLOR_R, Variant::Int(203)),
+                    (config_keys::COLOR_G, Variant::Int(166)),
+                    (config_keys::COLOR_B, Variant::Int(247)),
                 ]),
                 Vec::new(),
             ),
@@ -279,8 +268,8 @@ impl QuickActions for VTubeClient {
                 "Model & scene",
                 false,
                 sub_action_ids::MODEL_SET_PHYSICS,
-                config([("enabled", Variant::Bool(true))]),
-                vec![toggle_field("enabled", "Enabled", true)],
+                BTreeMap::new(),
+                vec![toggle_field(config_keys::ENABLED, "Enabled", true)],
             ),
         ]
     }

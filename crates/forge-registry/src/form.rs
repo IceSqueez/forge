@@ -157,6 +157,28 @@ impl FormField {
             | Self::CaseList { key, .. } => key,
         }
     }
+
+    pub fn label(&self) -> &'static str {
+        match self {
+            Self::Text { label, .. }
+            | Self::TextArea { label, .. }
+            | Self::Code { label, .. }
+            | Self::Integer { label, .. }
+            | Self::Slider { label, .. }
+            | Self::Toggle { label, .. }
+            | Self::FilePicker { label, .. }
+            | Self::DateTime { label, .. }
+            | Self::Select { label, .. }
+            | Self::UnitAmount { label, .. }
+            | Self::Duration { label, .. }
+            | Self::DynamicSelect { label, .. }
+            | Self::DependentSelect { label, .. }
+            | Self::Swatch { label, .. }
+            | Self::Optional { label, .. }
+            | Self::SubChain { label, .. }
+            | Self::CaseList { label, .. } => label,
+        }
+    }
 }
 
 #[cfg(test)]

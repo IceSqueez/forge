@@ -1,18 +1,27 @@
-use std::collections::BTreeMap;
 use std::sync::Arc;
-use std::time::Instant;
 
 use async_trait::async_trait;
 use forge_registry::runner::SubActionConfig;
 use forge_registry::{
-    ConfigReason, FormField, RegistryError, RunContext, SubActionCategory, SubActionConfigExt,
-    SubActionRunner,
+    ConfigSpec, PickedTextField, RunContext, StepTimer, SubActionCategory, SubActionRunner,
+    TextPicker, TypedField,
 };
-use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, Variant};
-use time::OffsetDateTime;
+use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry};
 
 use crate::sink::VTubeSink;
-use crate::vocabulary::{picker_keys, sub_action_ids};
+use crate::vocabulary::{config_keys, picker_keys, sub_action_ids};
+
+const MODEL_ID: PickedTextField = PickedTextField {
+    key: config_keys::MODEL_ID,
+    label: "Model",
+    picker: TextPicker::Options {
+        options_key: picker_keys::MODEL_IDS,
+    },
+    default: "",
+    required: true,
+};
+
+const CONFIG: ConfigSpec = ConfigSpec::new(&[&MODEL_ID]);
 
 pub struct ModelLoadRunner {
     sink: Arc<dyn VTubeSink>,
@@ -50,26 +59,8 @@ impl SubActionRunner for ModelLoadRunner {
         "user"
     }
 
-    fn default_config(&self) -> SubActionConfig {
-        BTreeMap::from([("model_id".to_owned(), Variant::String(String::new()))])
-    }
-
-    fn config_fields(&self) -> Vec<FormField> {
-        vec![FormField::DynamicSelect {
-            key: "model_id",
-            label: "Model",
-            options_key: picker_keys::MODEL_IDS,
-        }]
-    }
-
-    fn validate_config(&self, config: &SubActionConfig) -> Result<(), RegistryError> {
-        match config.get("model_id") {
-            Some(Variant::String(_)) => Ok(()),
-            _ => Err(RegistryError::invalid_field(
-                "model_id",
-                ConfigReason::Required,
-            )),
-        }
+    fn config_spec(&self) -> Option<ConfigSpec> {
+        Some(CONFIG)
     }
 
     async fn execute(
@@ -77,26 +68,13 @@ impl SubActionRunner for ModelLoadRunner {
         config: &SubActionConfig,
         ctx: &RunContext<'_>,
     ) -> (SubActionTelemetry, Option<ArgStack>) {
-        let started_at = OffsetDateTime::now_utc();
-        let start = Instant::now();
-
-        let raw = config.str("model_id").unwrap_or_default();
-        let model_id = ctx.arg_stack.interpolate(raw);
-
+        let timer = StepTimer::start(ctx, self.id());
+        let model_id = match MODEL_ID.read(config, ctx.arg_stack) {
+            Ok(model_id) => model_id,
+            Err(problem) => return (timer.invalid_config(&problem), None),
+        };
         let outcome = SubActionOutcome::from_result(&self.sink.load_model(&model_id).await);
-
-        (
-            SubActionTelemetry {
-                args_in: ::std::collections::BTreeMap::new(),
-                produced: ::std::collections::BTreeMap::new(),
-                kind: sub_action_ids::MODEL_LOAD.to_owned(),
-                started_at,
-                duration_ms: start.elapsed().as_millis() as u64,
-                outcome,
-                index: ctx.index,
-            },
-            None,
-        )
+        (timer.finish(outcome), None)
     }
 }
 

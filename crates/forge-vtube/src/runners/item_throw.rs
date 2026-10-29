@@ -1,19 +1,66 @@
-use std::collections::BTreeMap;
 use std::sync::Arc;
-use std::time::Instant;
 
 use async_trait::async_trait;
 use forge_registry::runner::SubActionConfig;
 use forge_registry::{
-    ConfigReason, FormField, RegistryError, RunContext, SubActionCategory, SubActionConfigExt,
-    SubActionRunner,
+    ConfigProblem, ConfigSpec, NumberField, OptionalField, RunContext, StepTimer,
+    SubActionCategory, SubActionRunner, TypedField,
 };
 use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, Variant};
-use time::OffsetDateTime;
 
-use crate::runners::numeric::optional_number;
+use crate::runners::fields::{ITEM_FILE_NAME, ITEM_SIZE, optional_number, read_non_empty};
 use crate::sink::{VTubeSink, result_keys};
-use crate::vocabulary::{sub_action_ids, variables};
+use crate::vocabulary::{config_keys, sub_action_ids, variables};
+
+const DEFAULT_THROW_SECONDS: f64 = 0.4;
+const SPAWN_FADE_SECONDS: f64 = 0.0;
+const LINEAR_FADE: &str = "linear";
+const MISSING_INSTANCE_ID: &str = "VTS did not return an item instance id";
+
+const FROM_X: OptionalField<NumberField> =
+    optional_number(config_keys::FROM_X, "From X", "-1.0 to 1.0");
+
+const FROM_Y: OptionalField<NumberField> =
+    optional_number(config_keys::FROM_Y, "From Y", "-1.0 to 1.0");
+
+const TO_X: OptionalField<NumberField> = optional_number(config_keys::TO_X, "To X", "-1.0 to 1.0");
+
+const TO_Y: OptionalField<NumberField> = optional_number(config_keys::TO_Y, "To Y", "-1.0 to 1.0");
+
+const THROW_DURATION: OptionalField<NumberField> =
+    optional_number(config_keys::DURATION, "Throw Duration (s)", "0.4");
+
+const CONFIG: ConfigSpec = ConfigSpec::new(&[
+    &ITEM_FILE_NAME,
+    &FROM_X,
+    &FROM_Y,
+    &TO_X,
+    &TO_Y,
+    &ITEM_SIZE,
+    &THROW_DURATION,
+]);
+
+struct Trajectory {
+    file_name: String,
+    from_x: Option<f64>,
+    from_y: Option<f64>,
+    to_x: Option<f64>,
+    to_y: Option<f64>,
+    size: Option<f64>,
+    duration: Option<f64>,
+}
+
+fn read_trajectory(config: &SubActionConfig, args: &ArgStack) -> Result<Trajectory, ConfigProblem> {
+    Ok(Trajectory {
+        file_name: read_non_empty(&ITEM_FILE_NAME, config, args)?,
+        from_x: FROM_X.read(config, args)?,
+        from_y: FROM_Y.read(config, args)?,
+        to_x: TO_X.read(config, args)?,
+        to_y: TO_Y.read(config, args)?,
+        size: ITEM_SIZE.read(config, args)?,
+        duration: THROW_DURATION.read(config, args)?,
+    })
+}
 
 pub struct ItemThrowRunner {
     sink: Arc<dyn VTubeSink>,
@@ -23,28 +70,6 @@ impl ItemThrowRunner {
     pub fn new(sink: Arc<dyn VTubeSink>) -> Self {
         Self { sink }
     }
-}
-
-const DEFAULT_THROW_SECONDS: f64 = 0.4;
-
-struct Trajectory {
-    from_x: Option<f64>,
-    from_y: Option<f64>,
-    to_x: Option<f64>,
-    to_y: Option<f64>,
-    size: Option<f64>,
-    duration: f64,
-}
-
-fn read_trajectory(config: &SubActionConfig, ctx: &RunContext<'_>) -> Result<Trajectory, String> {
-    Ok(Trajectory {
-        from_x: optional_number(config, "from_x", ctx)?,
-        from_y: optional_number(config, "from_y", ctx)?,
-        to_x: optional_number(config, "to_x", ctx)?,
-        to_y: optional_number(config, "to_y", ctx)?,
-        size: optional_number(config, "size", ctx)?,
-        duration: optional_number(config, "duration", ctx)?.unwrap_or(DEFAULT_THROW_SECONDS),
-    })
 }
 
 #[async_trait]
@@ -73,82 +98,8 @@ impl SubActionRunner for ItemThrowRunner {
         "wind"
     }
 
-    fn default_config(&self) -> SubActionConfig {
-        BTreeMap::from([("file_name".to_owned(), Variant::String(String::new()))])
-    }
-
-    fn config_fields(&self) -> Vec<FormField> {
-        vec![
-            FormField::Text {
-                key: "file_name",
-                label: "Item File Name",
-                placeholder: "my_item.png",
-            },
-            FormField::Optional {
-                key: "from_x",
-                label: "From X",
-                inner: Box::new(FormField::Text {
-                    key: "from_x",
-                    label: "From X",
-                    placeholder: "-1.0 to 1.0",
-                }),
-            },
-            FormField::Optional {
-                key: "from_y",
-                label: "From Y",
-                inner: Box::new(FormField::Text {
-                    key: "from_y",
-                    label: "From Y",
-                    placeholder: "-1.0 to 1.0",
-                }),
-            },
-            FormField::Optional {
-                key: "to_x",
-                label: "To X",
-                inner: Box::new(FormField::Text {
-                    key: "to_x",
-                    label: "To X",
-                    placeholder: "-1.0 to 1.0",
-                }),
-            },
-            FormField::Optional {
-                key: "to_y",
-                label: "To Y",
-                inner: Box::new(FormField::Text {
-                    key: "to_y",
-                    label: "To Y",
-                    placeholder: "-1.0 to 1.0",
-                }),
-            },
-            FormField::Optional {
-                key: "size",
-                label: "Size",
-                inner: Box::new(FormField::Text {
-                    key: "size",
-                    label: "Size",
-                    placeholder: "0.0 to 1.0",
-                }),
-            },
-            FormField::Optional {
-                key: "duration",
-                label: "Throw Duration (s)",
-                inner: Box::new(FormField::Text {
-                    key: "duration",
-                    label: "Throw Duration (s)",
-                    placeholder: "0.4",
-                }),
-            },
-        ]
-    }
-
-    fn validate_config(&self, config: &SubActionConfig) -> Result<(), RegistryError> {
-        match config.get("file_name") {
-            Some(Variant::String(_)) => Ok(()),
-            _ => Err(RegistryError::invalid_field(
-                "file_name",
-                ConfigReason::Required,
-            )),
-        }
+    fn config_spec(&self) -> Option<ConfigSpec> {
+        Some(CONFIG)
     }
 
     async fn execute(
@@ -156,98 +107,36 @@ impl SubActionRunner for ItemThrowRunner {
         config: &SubActionConfig,
         ctx: &RunContext<'_>,
     ) -> (SubActionTelemetry, Option<ArgStack>) {
-        let started_at = OffsetDateTime::now_utc();
-        let start = Instant::now();
-
-        let raw_name = config.str("file_name").unwrap_or_default();
-        let file_name = ctx.arg_stack.interpolate(raw_name);
-
-        if file_name.is_empty() {
-            return (
-                telemetry(
-                    started_at,
-                    start,
-                    ctx.index,
-                    SubActionOutcome::Failed("vtube.item.throw: file_name is empty".to_owned()),
-                ),
-                None,
-            );
-        }
-
-        let trajectory = match read_trajectory(config, ctx) {
+        let timer = StepTimer::start(ctx, self.id());
+        let trajectory = match read_trajectory(config, ctx.arg_stack) {
             Ok(trajectory) => trajectory,
-            Err(reason) => {
-                return (
-                    telemetry(
-                        started_at,
-                        start,
-                        ctx.index,
-                        SubActionOutcome::Failed(format!("vtube.item.throw: {reason}")),
-                    ),
-                    None,
-                );
-            }
+            Err(problem) => return (timer.invalid_config(&problem), None),
         };
 
-        let load_result = self
+        let loaded = self
             .sink
             .load_item(
-                &file_name,
+                &trajectory.file_name,
                 trajectory.from_x,
                 trajectory.from_y,
                 trajectory.size,
                 None,
-                Some(0.0),
+                Some(SPAWN_FADE_SECONDS),
                 None,
                 true,
             )
             .await;
 
-        let instance_id = match load_result {
+        let instance_id = match loaded {
             Ok(Variant::Object(ref map)) => match map.get(result_keys::INSTANCE_ID) {
                 Some(Variant::String(id)) if !id.is_empty() => id.clone(),
-                _ => {
-                    return (
-                        telemetry(
-                            started_at,
-                            start,
-                            ctx.index,
-                            SubActionOutcome::Failed(
-                                "vtube.item.throw: VTS did not return an item instance id"
-                                    .to_owned(),
-                            ),
-                        ),
-                        None,
-                    );
-                }
+                _ => return (timer.failed(MISSING_INSTANCE_ID), None),
             },
-            Ok(_) => {
-                return (
-                    telemetry(
-                        started_at,
-                        start,
-                        ctx.index,
-                        SubActionOutcome::Failed(
-                            "vtube.item.throw: VTS did not return an item instance id".to_owned(),
-                        ),
-                    ),
-                    None,
-                );
-            }
-            Err(e) => {
-                return (
-                    telemetry(
-                        started_at,
-                        start,
-                        ctx.index,
-                        SubActionOutcome::Failed(e.to_string()),
-                    ),
-                    None,
-                );
-            }
+            Ok(_) => return (timer.failed(MISSING_INSTANCE_ID), None),
+            Err(e) => return (timer.failed(e.to_string()), None),
         };
 
-        let move_result = self
+        let moved = self
             .sink
             .move_item(
                 &instance_id,
@@ -256,43 +145,20 @@ impl SubActionRunner for ItemThrowRunner {
                 None,
                 None,
                 None,
-                trajectory.duration,
-                "linear",
+                trajectory.duration.unwrap_or(DEFAULT_THROW_SECONDS),
+                LINEAR_FADE,
             )
             .await;
 
-        let mut stack = ctx.arg_stack.clone();
-        stack = stack.set(
+        let stack = ctx.arg_stack.clone().set(
             variables::item::INSTANCE_ID.to_owned(),
             Variant::String(instance_id),
         );
 
         (
-            telemetry(
-                started_at,
-                start,
-                ctx.index,
-                SubActionOutcome::from_result(&move_result),
-            ),
+            timer.finish(SubActionOutcome::from_result(&moved)),
             Some(stack),
         )
-    }
-}
-
-fn telemetry(
-    started_at: OffsetDateTime,
-    start: Instant,
-    index: usize,
-    outcome: SubActionOutcome,
-) -> SubActionTelemetry {
-    SubActionTelemetry {
-        args_in: ::std::collections::BTreeMap::new(),
-        produced: ::std::collections::BTreeMap::new(),
-        kind: sub_action_ids::ITEM_THROW.to_owned(),
-        started_at,
-        duration_ms: start.elapsed().as_millis() as u64,
-        outcome,
-        index,
     }
 }
 

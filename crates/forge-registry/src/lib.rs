@@ -6,6 +6,7 @@ mod config_ext;
 mod config_problem;
 mod declared_config;
 mod declared_fields;
+mod declared_fields_extra;
 mod descriptor;
 mod duration_bounds;
 mod error;
@@ -45,6 +46,9 @@ pub use declared_config::{ConfigSpec, DeclaredField, FieldLiteral, Interpolation
 pub use declared_fields::{
     ChoiceField, IntegerEditor, IntegerField, NumberField, TextEditor, TextField, ToggleField,
     VariableField,
+};
+pub use declared_fields_extra::{
+    DecimalField, OptionalField, PickedTextField, StoredNumber, TextPicker,
 };
 pub use descriptor::{
     ChatTriggerFamily, IGNORE_BOT_MESSAGES_KEY, TriggerKindDescriptor, ignores_bot_messages,

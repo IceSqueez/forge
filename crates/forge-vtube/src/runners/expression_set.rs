@@ -1,18 +1,40 @@
-use std::collections::BTreeMap;
 use std::sync::Arc;
-use std::time::Instant;
 
 use async_trait::async_trait;
 use forge_registry::runner::SubActionConfig;
 use forge_registry::{
-    ConfigReason, FormField, RegistryError, RunContext, SubActionCategory, SubActionConfigExt,
-    SubActionRunner,
+    ConfigProblem, ConfigSpec, PickedTextField, RunContext, StepTimer, SubActionCategory,
+    SubActionRunner, TextPicker, ToggleField, TypedField,
 };
-use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, Variant};
-use time::OffsetDateTime;
+use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry};
 
 use crate::sink::VTubeSink;
-use crate::vocabulary::{picker_keys, sub_action_ids};
+use crate::vocabulary::{config_keys, picker_keys, sub_action_ids};
+
+const EXPRESSION_FILE: PickedTextField = PickedTextField {
+    key: config_keys::EXPRESSION_FILE,
+    label: "Expression",
+    picker: TextPicker::Options {
+        options_key: picker_keys::EXPRESSION_FILES,
+    },
+    default: "",
+    required: true,
+};
+
+const ACTIVE: ToggleField = ToggleField {
+    key: config_keys::ACTIVE,
+    label: "Active",
+    default: true,
+};
+
+const CONFIG: ConfigSpec = ConfigSpec::new(&[&EXPRESSION_FILE, &ACTIVE]);
+
+fn read_config(config: &SubActionConfig, args: &ArgStack) -> Result<(String, bool), ConfigProblem> {
+    Ok((
+        EXPRESSION_FILE.read(config, args)?,
+        ACTIVE.read(config, args)?,
+    ))
+}
 
 pub struct ExpressionSetRunner {
     sink: Arc<dyn VTubeSink>,
@@ -50,35 +72,8 @@ impl SubActionRunner for ExpressionSetRunner {
         "mood-smile"
     }
 
-    fn default_config(&self) -> SubActionConfig {
-        BTreeMap::from([
-            ("expression_file".to_owned(), Variant::String(String::new())),
-            ("active".to_owned(), Variant::Bool(true)),
-        ])
-    }
-
-    fn config_fields(&self) -> Vec<FormField> {
-        vec![
-            FormField::DynamicSelect {
-                key: "expression_file",
-                label: "Expression",
-                options_key: picker_keys::EXPRESSION_FILES,
-            },
-            FormField::Toggle {
-                key: "active",
-                label: "Active",
-            },
-        ]
-    }
-
-    fn validate_config(&self, config: &SubActionConfig) -> Result<(), RegistryError> {
-        match config.get("expression_file") {
-            Some(Variant::String(_)) => Ok(()),
-            _ => Err(RegistryError::invalid_field(
-                "expression_file",
-                ConfigReason::Required,
-            )),
-        }
+    fn config_spec(&self) -> Option<ConfigSpec> {
+        Some(CONFIG)
     }
 
     async fn execute(
@@ -86,29 +81,15 @@ impl SubActionRunner for ExpressionSetRunner {
         config: &SubActionConfig,
         ctx: &RunContext<'_>,
     ) -> (SubActionTelemetry, Option<ArgStack>) {
-        let started_at = OffsetDateTime::now_utc();
-        let start = Instant::now();
-
-        let raw = config.str("expression_file").unwrap_or_default();
-        let expression_file = ctx.arg_stack.interpolate(raw);
-        let active = matches!(config.get("active"), Some(Variant::Bool(true)));
-
+        let timer = StepTimer::start(ctx, self.id());
+        let (expression_file, active) = match read_config(config, ctx.arg_stack) {
+            Ok(values) => values,
+            Err(problem) => return (timer.invalid_config(&problem), None),
+        };
         let outcome = SubActionOutcome::from_result(
             &self.sink.set_expression(&expression_file, active).await,
         );
-
-        (
-            SubActionTelemetry {
-                args_in: ::std::collections::BTreeMap::new(),
-                produced: ::std::collections::BTreeMap::new(),
-                kind: sub_action_ids::EXPRESSION_SET.to_owned(),
-                started_at,
-                duration_ms: start.elapsed().as_millis() as u64,
-                outcome,
-                index: ctx.index,
-            },
-            None,
-        )
+        (timer.finish(outcome), None)
     }
 }
 

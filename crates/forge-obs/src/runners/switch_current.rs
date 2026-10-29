@@ -1,20 +1,19 @@
-use std::collections::BTreeMap;
 use std::sync::Arc;
-use std::time::Instant;
 
 use async_trait::async_trait;
 use forge_registry::runner::SubActionConfig;
 use forge_registry::{
-    ConfigReason, FormField, RegistryError, RunContext, SubActionCategory, SubActionConfigExt,
-    SubActionRunner,
+    ConfigSpec, RunContext, StepTimer, SubActionCategory, SubActionRunner, TypedField,
 };
-use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, Variant};
-use time::OffsetDateTime;
+use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry};
 
 use crate::ObsSink;
-use crate::vocabulary::{picker_keys, sub_action_ids};
+use crate::runners::fields::SCENE;
+use crate::vocabulary::sub_action_ids;
 
 const KIND_ID: &str = sub_action_ids::SCENE_SWITCH_CURRENT;
+
+const CONFIG: ConfigSpec = ConfigSpec::new(&[&SCENE]);
 
 pub struct SwitchCurrentSceneRunner {
     sink: Arc<dyn ObsSink>,
@@ -52,30 +51,8 @@ impl SubActionRunner for SwitchCurrentSceneRunner {
         "arrows-shuffle"
     }
 
-    fn default_config(&self) -> SubActionConfig {
-        BTreeMap::from([("scene".to_owned(), Variant::String(String::new()))])
-    }
-
-    fn config_fields(&self) -> Vec<FormField> {
-        vec![FormField::DynamicSelect {
-            key: "scene",
-            label: "Scene",
-            options_key: picker_keys::SCENE_NAMES,
-        }]
-    }
-
-    fn validate_config(&self, config: &SubActionConfig) -> Result<(), RegistryError> {
-        match config.get("scene") {
-            Some(Variant::String(s)) if !s.trim().is_empty() => Ok(()),
-            Some(Variant::String(_)) => Err(RegistryError::invalid_field(
-                "scene",
-                ConfigReason::Required,
-            )),
-            _ => Err(RegistryError::invalid_field(
-                "scene",
-                ConfigReason::Required,
-            )),
-        }
+    fn config_spec(&self) -> Option<ConfigSpec> {
+        Some(CONFIG)
     }
 
     async fn execute(
@@ -83,11 +60,11 @@ impl SubActionRunner for SwitchCurrentSceneRunner {
         config: &SubActionConfig,
         ctx: &RunContext<'_>,
     ) -> (SubActionTelemetry, Option<ArgStack>) {
-        let started_at = OffsetDateTime::now_utc();
-        let start = Instant::now();
-
-        let raw = config.str("scene").unwrap_or_default();
-        let scene = ctx.arg_stack.interpolate(raw);
+        let timer = StepTimer::start(ctx, KIND_ID);
+        let scene = match SCENE.read(config, ctx.arg_stack) {
+            Ok(scene) => scene,
+            Err(problem) => return (timer.invalid_config(&problem), None),
+        };
 
         let already_current = matches!(
             self.sink.get_current_scene().await,
@@ -98,19 +75,7 @@ impl SubActionRunner for SwitchCurrentSceneRunner {
         } else {
             SubActionOutcome::from_result(&self.sink.set_scene(&scene).await)
         };
-
-        (
-            SubActionTelemetry {
-                args_in: ::std::collections::BTreeMap::new(),
-                produced: ::std::collections::BTreeMap::new(),
-                kind: KIND_ID.to_owned(),
-                started_at,
-                duration_ms: start.elapsed().as_millis() as u64,
-                outcome,
-                index: ctx.index,
-            },
-            None,
-        )
+        (timer.finish(outcome), None)
     }
 }
 

@@ -1,0 +1,15 @@
+pub(crate) const SCENE: &str = "scene";
+pub(crate) const SOURCE: &str = "source";
+pub(crate) const VISIBLE: &str = "visible";
+pub(crate) const LOCKED: &str = "locked";
+pub(crate) const MUTED: &str = "muted";
+pub(crate) const VOLUME_DB: &str = "volume_db";
+pub(crate) const FILTER: &str = "filter";
+pub(crate) const ENABLED: &str = "enabled";
+pub(crate) const ON: &str = "on";
+pub(crate) const PATH: &str = "path";
+pub(crate) const NAME: &str = "name";
+pub(crate) const TRANSITION: &str = "transition";
+pub(crate) const CAPTION_TEXT: &str = "caption_text";
+pub(crate) const SETTINGS_JSON: &str = "settings_json";
+pub(crate) const OVERLAY: &str = "overlay";

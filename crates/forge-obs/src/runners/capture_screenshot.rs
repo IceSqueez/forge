@@ -1,21 +1,36 @@
-use std::collections::BTreeMap;
 use std::path::Path;
 use std::sync::Arc;
-use std::time::Instant;
 
 use async_trait::async_trait;
 use forge_registry::runner::SubActionConfig;
 use forge_registry::{
-    ConfigReason, FormField, RegistryError, RunContext, SubActionCategory, SubActionConfigExt,
-    SubActionRunner,
+    ConfigProblem, ConfigSpec, PickedTextField, RunContext, StepTimer, SubActionCategory,
+    SubActionRunner, TextPicker, TypedField,
 };
-use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, Variant};
-use time::OffsetDateTime;
+use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry};
 
 use crate::ObsSink;
-use crate::vocabulary::{picker_keys, sub_action_ids};
+use crate::runners::fields::SOURCE;
+use crate::vocabulary::{config_keys, sub_action_ids};
 
 const KIND_ID: &str = sub_action_ids::CAPTURE_SCREENSHOT;
+
+const PATH: PickedTextField = PickedTextField {
+    key: config_keys::PATH,
+    label: "Save To",
+    picker: TextPicker::File,
+    default: "",
+    required: true,
+};
+
+const CONFIG: ConfigSpec = ConfigSpec::new(&[&SOURCE, &PATH]);
+
+fn read_config(
+    config: &SubActionConfig,
+    args: &ArgStack,
+) -> Result<(String, String), ConfigProblem> {
+    Ok((SOURCE.read(config, args)?, PATH.read(config, args)?))
+}
 
 pub struct CaptureScreenshotRunner {
     sink: Arc<dyn ObsSink>,
@@ -53,42 +68,8 @@ impl SubActionRunner for CaptureScreenshotRunner {
         "camera"
     }
 
-    fn default_config(&self) -> SubActionConfig {
-        BTreeMap::from([
-            ("source".to_owned(), Variant::String(String::new())),
-            ("path".to_owned(), Variant::String(String::new())),
-        ])
-    }
-
-    fn config_fields(&self) -> Vec<FormField> {
-        vec![
-            FormField::DynamicSelect {
-                key: "source",
-                label: "Source",
-                options_key: picker_keys::SOURCE_NAMES,
-            },
-            FormField::FilePicker {
-                key: "path",
-                label: "Save To",
-            },
-        ]
-    }
-
-    fn validate_config(&self, config: &SubActionConfig) -> Result<(), RegistryError> {
-        let source_ok =
-            matches!(config.get("source"), Some(Variant::String(s)) if !s.trim().is_empty());
-        let path_ok =
-            matches!(config.get("path"), Some(Variant::String(s)) if !s.trim().is_empty());
-        if !source_ok {
-            return Err(RegistryError::invalid_field(
-                "source",
-                ConfigReason::Required,
-            ));
-        }
-        if !path_ok {
-            return Err(RegistryError::invalid_field("path", ConfigReason::Required));
-        }
-        Ok(())
+    fn config_spec(&self) -> Option<ConfigSpec> {
+        Some(CONFIG)
     }
 
     async fn execute(
@@ -96,38 +77,23 @@ impl SubActionRunner for CaptureScreenshotRunner {
         config: &SubActionConfig,
         ctx: &RunContext<'_>,
     ) -> (SubActionTelemetry, Option<ArgStack>) {
-        let started_at = OffsetDateTime::now_utc();
-        let start = Instant::now();
-
-        let raw_source = config.str("source").unwrap_or_default();
-        let raw_path = config.str("path").unwrap_or_default();
-        let source = ctx.arg_stack.interpolate(raw_source);
-        let path = ctx.arg_stack.interpolate(raw_path);
+        let timer = StepTimer::start(ctx, KIND_ID);
+        let (source, path) = match read_config(config, ctx.arg_stack) {
+            Ok(values) => values,
+            Err(problem) => return (timer.invalid_config(&problem), None),
+        };
         let format = Path::new(&path)
             .extension()
             .and_then(|ext| ext.to_str())
             .map(str::to_lowercase)
             .unwrap_or_else(|| "png".to_owned());
-
         let outcome = SubActionOutcome::from_result(
             &self
                 .sink
                 .save_source_screenshot(&source, &path, &format)
                 .await,
         );
-
-        (
-            SubActionTelemetry {
-                args_in: ::std::collections::BTreeMap::new(),
-                produced: ::std::collections::BTreeMap::new(),
-                kind: KIND_ID.to_owned(),
-                started_at,
-                duration_ms: start.elapsed().as_millis() as u64,
-                outcome,
-                index: ctx.index,
-            },
-            None,
-        )
+        (timer.finish(outcome), None)
     }
 }
 

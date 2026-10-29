@@ -1,6 +1,8 @@
 mod browser_refresh;
 mod capture_screenshot;
+mod fields;
 mod filter_set_enabled;
+mod json_object_field;
 mod media_restart;
 mod profile_switch;
 mod query_input_list;

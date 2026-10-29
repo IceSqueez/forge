@@ -10,7 +10,7 @@ use forge_types::{SubActionStep, Variant};
 
 use crate::client::ObsClient;
 use crate::source::SourceInfo;
-use crate::vocabulary::sub_action_ids;
+use crate::vocabulary::{config_keys, sub_action_ids};
 
 const PANEL_VISIBLE_ROWS: u16 = 8;
 const SCENE_ROW_PADDING_Y_PX: u8 = 8;
@@ -90,7 +90,7 @@ fn scene_to_item(
         on_click: (actionable && !is_current).then(|| {
             step(
                 sub_action_ids::SCENE_SWITCH_CURRENT,
-                [("scene", Variant::String(name.to_owned()))],
+                [(config_keys::SCENE, Variant::String(name.to_owned()))],
             )
         }),
     }
@@ -161,9 +161,9 @@ fn source_to_item(scene: &str, info: &SourceInfo, actionable: bool) -> ContentLi
             step(
                 sub_action_ids::SOURCE_SET_VISIBLE,
                 [
-                    ("scene", Variant::String(scene.to_owned())),
-                    ("source", Variant::String(info.name.clone())),
-                    ("visible", Variant::Bool(!info.visible)),
+                    (config_keys::SCENE, Variant::String(scene.to_owned())),
+                    (config_keys::SOURCE, Variant::String(info.name.clone())),
+                    (config_keys::VISIBLE, Variant::Bool(!info.visible)),
                 ],
             )
         },
@@ -180,9 +180,9 @@ fn source_to_item(scene: &str, info: &SourceInfo, actionable: bool) -> ContentLi
             step(
                 sub_action_ids::SOURCE_SET_LOCKED,
                 [
-                    ("scene", Variant::String(scene.to_owned())),
-                    ("source", Variant::String(info.name.clone())),
-                    ("locked", Variant::Bool(!info.locked)),
+                    (config_keys::SCENE, Variant::String(scene.to_owned())),
+                    (config_keys::SOURCE, Variant::String(info.name.clone())),
+                    (config_keys::LOCKED, Variant::Bool(!info.locked)),
                 ],
             )
         },

@@ -1,21 +1,30 @@
-use std::collections::BTreeMap;
 use std::sync::Arc;
-use std::time::Instant;
 
 use async_trait::async_trait;
 use forge_registry::runner::SubActionConfig;
 use forge_registry::{
-    ConfigReason, FormField, RegistryError, RunContext, SubActionCategory, SubActionConfigExt,
-    SubActionIo, SubActionRunner,
+    ConfigSpec, RunContext, StepTimer, SubActionCategory, SubActionIo, SubActionRunner, TextEditor,
+    TextField, TypedField,
 };
-use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, Variant};
-use time::OffsetDateTime;
+use forge_types::{ArgStack, SubActionTelemetry, Variant};
 
 use crate::ObsSink;
 use crate::vocabulary::fields::query;
-use crate::vocabulary::{sub_action_ids, variables};
+use crate::vocabulary::{config_keys, sub_action_ids, variables};
 
 const KIND_ID: &str = sub_action_ids::SOURCE_GET_INPUT_SETTINGS;
+
+const SOURCE: TextField = TextField {
+    key: config_keys::SOURCE,
+    label: "Input name",
+    editor: TextEditor::Line {
+        placeholder: "e.g. Webcam",
+    },
+    default: "",
+    required: true,
+};
+
+const CONFIG: ConfigSpec = ConfigSpec::new(&[&SOURCE]);
 
 pub struct QueryInputSettingsRunner {
     sink: Arc<dyn ObsSink>,
@@ -53,30 +62,8 @@ impl SubActionRunner for QueryInputSettingsRunner {
         "settings"
     }
 
-    fn default_config(&self) -> SubActionConfig {
-        BTreeMap::from([("source".to_owned(), Variant::String(String::new()))])
-    }
-
-    fn config_fields(&self) -> Vec<FormField> {
-        vec![FormField::Text {
-            key: "source",
-            label: "Input name",
-            placeholder: "e.g. Webcam",
-        }]
-    }
-
-    fn validate_config(&self, config: &SubActionConfig) -> Result<(), RegistryError> {
-        match config.get("source") {
-            Some(Variant::String(s)) if !s.trim().is_empty() => Ok(()),
-            Some(Variant::String(_)) => Err(RegistryError::invalid_field(
-                "source",
-                ConfigReason::Required,
-            )),
-            _ => Err(RegistryError::invalid_field(
-                "source",
-                ConfigReason::Required,
-            )),
-        }
+    fn config_spec(&self) -> Option<ConfigSpec> {
+        Some(CONFIG)
     }
 
     fn scope_io(&self) -> SubActionIo {
@@ -94,11 +81,11 @@ impl SubActionRunner for QueryInputSettingsRunner {
         config: &SubActionConfig,
         ctx: &RunContext<'_>,
     ) -> (SubActionTelemetry, Option<ArgStack>) {
-        let started_at = OffsetDateTime::now_utc();
-        let start = Instant::now();
-
-        let raw_source = config.str("source").unwrap_or_default();
-        let source = ctx.arg_stack.interpolate(raw_source);
+        let timer = StepTimer::start(ctx, KIND_ID);
+        let source = match SOURCE.read(config, ctx.arg_stack) {
+            Ok(source) => source,
+            Err(problem) => return (timer.invalid_config(&problem), None),
+        };
 
         match self.sink.get_input_settings(&source).await {
             Ok(variant) => {
@@ -111,31 +98,9 @@ impl SubActionRunner for QueryInputSettingsRunner {
                         stack = stack.set(variables::input_query::KIND.to_owned(), v.clone());
                     }
                 }
-                (
-                    SubActionTelemetry {
-                        args_in: ::std::collections::BTreeMap::new(),
-                        produced: ::std::collections::BTreeMap::new(),
-                        kind: KIND_ID.to_owned(),
-                        started_at,
-                        duration_ms: start.elapsed().as_millis() as u64,
-                        outcome: SubActionOutcome::Success,
-                        index: ctx.index,
-                    },
-                    Some(stack),
-                )
+                (timer.success(), Some(stack))
             }
-            Err(e) => (
-                SubActionTelemetry {
-                    args_in: ::std::collections::BTreeMap::new(),
-                    produced: ::std::collections::BTreeMap::new(),
-                    kind: KIND_ID.to_owned(),
-                    started_at,
-                    duration_ms: start.elapsed().as_millis() as u64,
-                    outcome: SubActionOutcome::Failed(e.to_string()),
-                    index: ctx.index,
-                },
-                None,
-            ),
+            Err(e) => (timer.failed(e.to_string()), None),
         }
     }
 }

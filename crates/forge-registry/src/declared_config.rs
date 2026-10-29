@@ -30,6 +30,9 @@ pub trait TypedField: Sync {
     fn key(&self) -> &'static str;
     fn form_field(&self) -> FormField;
     fn default_value(&self) -> Variant;
+    fn seeds_default(&self) -> bool {
+        true
+    }
     fn literal<'a>(
         &self,
         value: &'a Variant,
@@ -89,6 +92,7 @@ pub trait DeclaredField: Sync {
     fn key(&self) -> &'static str;
     fn form_field(&self) -> FormField;
     fn default_value(&self) -> Variant;
+    fn seeds_default(&self) -> bool;
     fn check(
         &self,
         config: &SubActionConfig,
@@ -107,6 +111,10 @@ impl<F: TypedField> DeclaredField for F {
 
     fn default_value(&self) -> Variant {
         TypedField::default_value(self)
+    }
+
+    fn seeds_default(&self) -> bool {
+        TypedField::seeds_default(self)
     }
 
     fn check(
@@ -134,6 +142,7 @@ impl ConfigSpec {
 
     pub fn default_config(&self) -> SubActionConfig {
         self.fields()
+            .filter(|field| field.seeds_default())
             .map(|field| (field.key().to_owned(), field.default_value()))
             .collect()
     }

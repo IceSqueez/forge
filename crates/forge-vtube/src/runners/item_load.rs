@@ -1,19 +1,72 @@
-use std::collections::BTreeMap;
 use std::sync::Arc;
-use std::time::Instant;
 
 use async_trait::async_trait;
 use forge_registry::runner::SubActionConfig;
 use forge_registry::{
-    ConfigReason, FormField, RegistryError, RunContext, SubActionCategory, SubActionConfigExt,
-    SubActionRunner,
+    ConfigProblem, ConfigSpec, IntegerField, NumberField, OptionalField, RunContext, StepTimer,
+    SubActionCategory, SubActionRunner, ToggleField, TypedField, ValueBounds,
 };
-use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, Variant};
-use time::OffsetDateTime;
+use forge_types::{ArgStack, SubActionTelemetry, Variant};
 
-use crate::runners::numeric::{optional_integer, optional_number};
+use crate::runners::fields::{
+    ITEM_FILE_NAME, ITEM_SIZE, ROTATION, X, Y, optional_number, optional_whole_number,
+    read_non_empty,
+};
 use crate::sink::{VTubeSink, result_keys};
-use crate::vocabulary::{sub_action_ids, variables};
+use crate::vocabulary::{config_keys, sub_action_ids, variables};
+
+const FADE_TIME: OptionalField<NumberField> =
+    optional_number(config_keys::FADE_TIME, "Fade Time (s)", "0.5");
+
+const ORDER: OptionalField<IntegerField> = optional_whole_number(
+    config_keys::ORDER,
+    "Order",
+    ValueBounds {
+        min: Some(0),
+        max: Some(1000),
+    },
+);
+
+const UNLOAD_ON_DISCONNECT: ToggleField = ToggleField {
+    key: config_keys::UNLOAD_ON_DISCONNECT,
+    label: "Unload When Plugin Disconnects",
+    default: true,
+};
+
+const CONFIG: ConfigSpec = ConfigSpec::new(&[
+    &ITEM_FILE_NAME,
+    &X,
+    &Y,
+    &ITEM_SIZE,
+    &ROTATION,
+    &FADE_TIME,
+    &ORDER,
+    &UNLOAD_ON_DISCONNECT,
+]);
+
+struct Placement {
+    file_name: String,
+    x: Option<f64>,
+    y: Option<f64>,
+    size: Option<f64>,
+    rotation: Option<f64>,
+    fade_time: Option<f64>,
+    order: Option<i64>,
+    unload_on_disconnect: bool,
+}
+
+fn read_placement(config: &SubActionConfig, args: &ArgStack) -> Result<Placement, ConfigProblem> {
+    Ok(Placement {
+        file_name: read_non_empty(&ITEM_FILE_NAME, config, args)?,
+        x: X.read(config, args)?,
+        y: Y.read(config, args)?,
+        size: ITEM_SIZE.read(config, args)?,
+        rotation: ROTATION.read(config, args)?,
+        fade_time: FADE_TIME.read(config, args)?,
+        order: ORDER.read(config, args)?,
+        unload_on_disconnect: UNLOAD_ON_DISCONNECT.read(config, args)?,
+    })
+}
 
 pub struct ItemLoadRunner {
     sink: Arc<dyn VTubeSink>,
@@ -23,26 +76,6 @@ impl ItemLoadRunner {
     pub fn new(sink: Arc<dyn VTubeSink>) -> Self {
         Self { sink }
     }
-}
-
-struct Placement {
-    x: Option<f64>,
-    y: Option<f64>,
-    size: Option<f64>,
-    rotation: Option<f64>,
-    fade_time: Option<f64>,
-    order: Option<i64>,
-}
-
-fn read_placement(config: &SubActionConfig, ctx: &RunContext<'_>) -> Result<Placement, String> {
-    Ok(Placement {
-        x: optional_number(config, "x", ctx)?,
-        y: optional_number(config, "y", ctx)?,
-        size: optional_number(config, "size", ctx)?,
-        rotation: optional_number(config, "rotation", ctx)?,
-        fade_time: optional_number(config, "fade_time", ctx)?,
-        order: optional_integer(config, "order", ctx)?,
-    })
 }
 
 #[async_trait]
@@ -71,90 +104,8 @@ impl SubActionRunner for ItemLoadRunner {
         "image"
     }
 
-    fn default_config(&self) -> SubActionConfig {
-        BTreeMap::from([
-            ("file_name".to_owned(), Variant::String(String::new())),
-            ("unload_on_disconnect".to_owned(), Variant::Bool(true)),
-        ])
-    }
-
-    fn config_fields(&self) -> Vec<FormField> {
-        vec![
-            FormField::Text {
-                key: "file_name",
-                label: "Item File Name",
-                placeholder: "my_item.png",
-            },
-            FormField::Optional {
-                key: "x",
-                label: "X Position",
-                inner: Box::new(FormField::Text {
-                    key: "x",
-                    label: "X Position",
-                    placeholder: "-1.0 to 1.0",
-                }),
-            },
-            FormField::Optional {
-                key: "y",
-                label: "Y Position",
-                inner: Box::new(FormField::Text {
-                    key: "y",
-                    label: "Y Position",
-                    placeholder: "-1.0 to 1.0",
-                }),
-            },
-            FormField::Optional {
-                key: "size",
-                label: "Size",
-                inner: Box::new(FormField::Text {
-                    key: "size",
-                    label: "Size",
-                    placeholder: "0.0 to 1.0",
-                }),
-            },
-            FormField::Optional {
-                key: "rotation",
-                label: "Rotation",
-                inner: Box::new(FormField::Text {
-                    key: "rotation",
-                    label: "Rotation",
-                    placeholder: "-360 to 360",
-                }),
-            },
-            FormField::Optional {
-                key: "fade_time",
-                label: "Fade Time (s)",
-                inner: Box::new(FormField::Text {
-                    key: "fade_time",
-                    label: "Fade Time (s)",
-                    placeholder: "0.5",
-                }),
-            },
-            FormField::Optional {
-                key: "order",
-                label: "Order",
-                inner: Box::new(FormField::Integer {
-                    key: "order",
-                    label: "Order",
-                    min: 0,
-                    max: 1000,
-                }),
-            },
-            FormField::Toggle {
-                key: "unload_on_disconnect",
-                label: "Unload When Plugin Disconnects",
-            },
-        ]
-    }
-
-    fn validate_config(&self, config: &SubActionConfig) -> Result<(), RegistryError> {
-        match config.get("file_name") {
-            Some(Variant::String(_)) => Ok(()),
-            _ => Err(RegistryError::invalid_field(
-                "file_name",
-                ConfigReason::Required,
-            )),
-        }
+    fn config_spec(&self) -> Option<ConfigSpec> {
+        Some(CONFIG)
     }
 
     async fn execute(
@@ -162,50 +113,23 @@ impl SubActionRunner for ItemLoadRunner {
         config: &SubActionConfig,
         ctx: &RunContext<'_>,
     ) -> (SubActionTelemetry, Option<ArgStack>) {
-        let started_at = OffsetDateTime::now_utc();
-        let start = Instant::now();
-
-        let raw_name = config.str("file_name").unwrap_or_default();
-        let file_name = ctx.arg_stack.interpolate(raw_name);
-
-        let placement = if file_name.is_empty() {
-            Err("file_name is empty".to_owned())
-        } else {
-            read_placement(config, ctx)
-        };
-        let placement = match placement {
+        let timer = StepTimer::start(ctx, self.id());
+        let placement = match read_placement(config, ctx.arg_stack) {
             Ok(placement) => placement,
-            Err(reason) => {
-                return (
-                    SubActionTelemetry {
-                        args_in: ::std::collections::BTreeMap::new(),
-                        produced: ::std::collections::BTreeMap::new(),
-                        kind: sub_action_ids::ITEM_LOAD.to_owned(),
-                        started_at,
-                        duration_ms: start.elapsed().as_millis() as u64,
-                        outcome: SubActionOutcome::Failed(format!("vtube.item.load: {reason}")),
-                        index: ctx.index,
-                    },
-                    None,
-                );
-            }
+            Err(problem) => return (timer.invalid_config(&problem), None),
         };
-        let unload_on_disconnect = !matches!(
-            config.get("unload_on_disconnect"),
-            Some(Variant::Bool(false))
-        );
 
         match self
             .sink
             .load_item(
-                &file_name,
+                &placement.file_name,
                 placement.x,
                 placement.y,
                 placement.size,
                 placement.rotation,
                 placement.fade_time,
                 placement.order,
-                unload_on_disconnect,
+                placement.unload_on_disconnect,
             )
             .await
         {
@@ -219,31 +143,9 @@ impl SubActionRunner for ItemLoadRunner {
                         stack = stack.set(variables::item::FILE_NAME.to_owned(), v.clone());
                     }
                 }
-                (
-                    SubActionTelemetry {
-                        args_in: ::std::collections::BTreeMap::new(),
-                        produced: ::std::collections::BTreeMap::new(),
-                        kind: sub_action_ids::ITEM_LOAD.to_owned(),
-                        started_at,
-                        duration_ms: start.elapsed().as_millis() as u64,
-                        outcome: SubActionOutcome::Success,
-                        index: ctx.index,
-                    },
-                    Some(stack),
-                )
+                (timer.success(), Some(stack))
             }
-            Err(e) => (
-                SubActionTelemetry {
-                    args_in: ::std::collections::BTreeMap::new(),
-                    produced: ::std::collections::BTreeMap::new(),
-                    kind: sub_action_ids::ITEM_LOAD.to_owned(),
-                    started_at,
-                    duration_ms: start.elapsed().as_millis() as u64,
-                    outcome: SubActionOutcome::Failed(e.to_string()),
-                    index: ctx.index,
-                },
-                None,
-            ),
+            Err(e) => (timer.failed(e.to_string()), None),
         }
     }
 }

@@ -65,7 +65,11 @@ impl TypedField for TextField {
     }
 
     fn parse_text(&self, text: &str) -> Result<String, ConfigReason> {
-        Ok(text.to_owned())
+        if self.required && text.trim().is_empty() {
+            Err(ConfigReason::Required)
+        } else {
+            Ok(text.to_owned())
+        }
     }
 }
 

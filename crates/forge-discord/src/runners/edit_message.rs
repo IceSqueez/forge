@@ -112,7 +112,8 @@ impl SubActionRunner for EditMessageRunner {
     ) -> Result<(), ConfigProblem> {
         let content = CONTENT.peek(config, interpolation)?;
         let embed_title = EMBED_TITLE.peek(config, interpolation)?;
-        if content.is_some_and(|text| text.is_empty()) && matches!(embed_title, Some(None)) {
+        if content.is_some_and(|text| present(text).is_none()) && matches!(embed_title, Some(None))
+        {
             return Err(no_content());
         }
         Ok(())

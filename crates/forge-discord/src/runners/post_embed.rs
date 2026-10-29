@@ -127,8 +127,8 @@ impl SubActionRunner for PostEmbedRunner {
             .try_for_each(|field| field.check(config, interpolation))?;
         let title = TITLE.peek(config, interpolation)?;
         let description = DESCRIPTION.peek(config, interpolation)?;
-        if title.is_some_and(|text| text.is_empty())
-            && description.is_some_and(|text| text.is_empty())
+        if title.is_some_and(|text| present(text).is_none())
+            && description.is_some_and(|text| present(text).is_none())
         {
             return Err(no_content());
         }

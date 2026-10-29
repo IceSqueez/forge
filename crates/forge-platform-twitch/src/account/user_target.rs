@@ -49,9 +49,8 @@ impl TargetFields {
         interpolation: Interpolation<'_>,
     ) -> Result<(), ConfigProblem> {
         self.id.peek(config, interpolation)?;
-        if config.str_nonempty(self.id.key).is_some()
-            || config.str_nonempty(self.login.key).is_some()
-        {
+        let stored = |key| config.str(key).unwrap_or_default();
+        if UserTarget::pick(stored(self.id.key), stored(self.login.key)).is_some() {
             return Ok(());
         }
         Err(ConfigProblem::field(self.login.key, ConfigReason::Required))

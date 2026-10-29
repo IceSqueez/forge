@@ -145,10 +145,14 @@ impl<F: TypedField> TypedField for OptionalField<F> {
         &self,
         value: &'a Variant,
     ) -> Result<FieldLiteral<'a, Self::Value>, ConfigReason> {
-        if let Variant::String(text) = value
-            && text.trim().is_empty()
-        {
-            return Ok(FieldLiteral::Value(None));
+        match value {
+            Variant::String(text) if text.trim().is_empty() => {
+                return Ok(FieldLiteral::Value(None));
+            }
+            Variant::Bool(_) if self.field.literal(value).is_err() => {
+                return Ok(FieldLiteral::Value(None));
+            }
+            _ => {}
         }
         Ok(match self.field.literal(value)? {
             FieldLiteral::Value(parsed) => FieldLiteral::Value(Some(parsed)),

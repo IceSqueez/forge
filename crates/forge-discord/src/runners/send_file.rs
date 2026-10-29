@@ -9,7 +9,7 @@ use forge_registry::{
 };
 use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry};
 
-use super::fields::{FilledText, WEBHOOK, filled_text, optional_text};
+use super::fields::{WEBHOOK, filled_text, optional_text};
 use super::mention_fields::{ALLOW_EVERYONE_PINGS, ALLOW_ROLE_PINGS, read_mention_policy};
 use super::{message_id_scope_io, message_id_stack};
 use crate::mention::MentionPolicy;
@@ -20,7 +20,7 @@ const KIND_ID: &str = sub_action_ids::WEBHOOK_SEND_FILE;
 
 const CAPTION: TextField = optional_text(config_keys::CONTENT, "Caption", TextEditor::Area);
 
-const FILE_PATH: FilledText = filled_text(
+const FILE_PATH: TextField = filled_text(
     config_keys::FILE_PATH,
     "File Path",
     TextEditor::Line {

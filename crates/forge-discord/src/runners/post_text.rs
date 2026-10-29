@@ -4,11 +4,11 @@ use async_trait::async_trait;
 use forge_registry::runner::SubActionConfig;
 use forge_registry::{
     ConfigProblem, ConfigSpec, RunContext, StepTimer, SubActionCategory, SubActionIo,
-    SubActionRunner, TextEditor, TypedField,
+    SubActionRunner, TextEditor, TextField, TypedField,
 };
 use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry};
 
-use super::fields::{FilledText, WEBHOOK, filled_text};
+use super::fields::{WEBHOOK, filled_text};
 use super::mention_fields::{ALLOW_EVERYONE_PINGS, ALLOW_ROLE_PINGS, read_mention_policy};
 use super::{message_id_scope_io, message_id_stack};
 use crate::mention::MentionPolicy;
@@ -17,7 +17,7 @@ use crate::vocabulary::{config_keys, sub_action_ids};
 
 const KIND_ID: &str = sub_action_ids::WEBHOOK_SEND_MESSAGE;
 
-const CONTENT: FilledText = filled_text(config_keys::CONTENT, "Message", TextEditor::Area);
+const CONTENT: TextField = filled_text(config_keys::CONTENT, "Message", TextEditor::Area);
 
 const CONFIG: ConfigSpec =
     ConfigSpec::new(&[&WEBHOOK, &CONTENT, &ALLOW_ROLE_PINGS, &ALLOW_EVERYONE_PINGS]);

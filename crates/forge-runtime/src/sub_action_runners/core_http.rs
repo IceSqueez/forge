@@ -4,9 +4,9 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use forge_registry::{
-    ChoiceField, ConfigChoice, ConfigProblem, ConfigSpec, DurationBounds, DurationField,
-    JsonObjectField, RunContext, StepTimer, SubActionCategory, SubActionIo, SubActionRunner,
-    TextEditor, TextField, ToggleField, TypedField,
+    ChoiceField, ConfigChoice, ConfigProblem, ConfigReason, ConfigSpec, DurationBounds,
+    DurationField, JsonObjectField, RunContext, StepTimer, SubActionCategory, SubActionIo,
+    SubActionRunner, TextEditor, TextField, ToggleField, TypedField,
 };
 use forge_storage::{SettingsRepo, read_setting_or_default};
 use forge_types::{ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetry, Variant};
@@ -173,8 +173,8 @@ fn read_call(
     };
     Ok(HttpCall {
         url: URL.read(config, args)?,
-        headers: interpolated_strings(HEADERS.read(config, args)?, args),
-        query_params: interpolated_strings(QUERY_PARAMS.read(config, args)?, args),
+        headers: interpolated_strings(&HEADERS, HEADERS.read(config, args)?, args)?,
+        query_params: interpolated_strings(&QUERY_PARAMS, QUERY_PARAMS.read(config, args)?, args)?,
         payload,
         timeout: TIMEOUT.read(config, args)?,
         follow_redirects: FOLLOW_REDIRECTS.read(config, args)?,
@@ -362,16 +362,23 @@ impl SubActionRunner for CoreHttpRunner {
 }
 
 fn interpolated_strings(
+    field: &JsonObjectField,
     map: serde_json::Map<String, serde_json::Value>,
     arg_stack: &ArgStack,
-) -> BTreeMap<String, String> {
+) -> Result<BTreeMap<String, String>, ConfigProblem> {
     map.into_iter()
         .map(|(key, value)| {
             let text = match value {
                 serde_json::Value::String(text) => text,
+                serde_json::Value::Null => {
+                    return Err(ConfigProblem::field(
+                        field.key,
+                        ConfigReason::InvalidFormat(format!("'{key}' has no value")),
+                    ));
+                }
                 other => other.to_string(),
             };
-            (key, arg_stack.interpolate(&text))
+            Ok((key, arg_stack.interpolate(&text)))
         })
         .collect()
 }

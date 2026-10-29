@@ -55,6 +55,7 @@ pub(crate) mod tests {
     use std::sync::Mutex;
 
     use super::*;
+    use crate::settings::reserved_keys;
 
     #[derive(Default)]
     pub(crate) struct MapRepo(Mutex<HashMap<String, String>>);

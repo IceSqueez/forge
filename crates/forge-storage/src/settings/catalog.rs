@@ -115,3 +115,211 @@ pub async fn report_undeclared_settings(
     }
     Ok(undeclared)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::super::reserved_keys as key;
+    use super::super::spec::SettingEncoding::{Flag, Json, Text};
+    use super::*;
+    use crate::event_log::tests::MapRepo;
+
+    const EXTENSION_FLAG: SettingSpec = SettingSpec::exact(
+        "extension.flag",
+        Flag,
+        SettingPortability::Portable,
+        SettingDisclosure::Verbatim,
+    );
+    const EXTENSION_TEXT: SettingSpec = SettingSpec::exact(
+        "extension.text",
+        Text,
+        SettingPortability::Portable,
+        SettingDisclosure::Presence,
+    );
+
+    fn duplicate_key(result: Result<(), StorageError>) -> Option<String> {
+        match result {
+            Err(StorageError::DuplicateSettingSpec { key }) => Some(key),
+            _ => None,
+        }
+    }
+
+    #[test]
+    fn register_rejects_a_name_the_core_catalog_already_declares() {
+        for spec in [
+            SettingSpec::exact(
+                key::THEME,
+                Text,
+                SettingPortability::MachineLocal,
+                SettingDisclosure::Withheld,
+            ),
+            SettingSpec::prefix(
+                key::THEME,
+                Text,
+                SettingPortability::Portable,
+                SettingDisclosure::Verbatim,
+            ),
+            SettingSpec::exact(
+                key::TTS_ENGINE_PARAMS_PREFIX,
+                Json,
+                SettingPortability::Portable,
+                SettingDisclosure::Verbatim,
+            ),
+        ] {
+            let mut catalog = SettingsCatalog::core();
+
+            let rejected = duplicate_key(catalog.register(&[spec]));
+
+            assert_eq!(rejected.as_deref(), Some(spec.key.name()), "{spec:?}");
+        }
+    }
+
+    #[test]
+    fn register_rejects_a_name_declared_by_an_earlier_registration() {
+        let mut catalog = SettingsCatalog::core();
+        catalog.register(&[EXTENSION_FLAG]).unwrap();
+
+        let rejected = duplicate_key(catalog.register(&[EXTENSION_FLAG]));
+
+        assert_eq!(rejected.as_deref(), Some("extension.flag"));
+    }
+
+    #[test]
+    fn register_rejects_a_name_repeated_within_one_slice_and_declares_nothing_from_it() {
+        let mut catalog = SettingsCatalog::core();
+
+        let rejected =
+            duplicate_key(catalog.register(&[EXTENSION_TEXT, EXTENSION_FLAG, EXTENSION_FLAG]));
+
+        assert_eq!(
+            (rejected.as_deref(), catalog),
+            (Some("extension.flag"), SettingsCatalog::core())
+        );
+    }
+
+    #[test]
+    fn an_unknown_key_is_machine_local_and_withheld_until_its_spec_is_registered() {
+        let mut catalog = SettingsCatalog::core();
+        let before = (
+            catalog.portability_of(EXTENSION_TEXT.key.name()),
+            catalog.disclosure_of(EXTENSION_TEXT.key.name()),
+            catalog.undeclared_keys([EXTENSION_TEXT.key.name()]),
+        );
+
+        catalog.register(&[EXTENSION_TEXT]).unwrap();
+        let after = (
+            catalog.portability_of(EXTENSION_TEXT.key.name()),
+            catalog.disclosure_of(EXTENSION_TEXT.key.name()),
+            catalog.undeclared_keys([EXTENSION_TEXT.key.name()]),
+        );
+
+        assert_eq!(
+            (before, after),
+            (
+                (
+                    SettingPortability::MachineLocal,
+                    SettingDisclosure::Withheld,
+                    vec!["extension.text"],
+                ),
+                (
+                    SettingPortability::Portable,
+                    SettingDisclosure::Presence,
+                    Vec::new(),
+                ),
+            )
+        );
+    }
+
+    #[test]
+    fn spec_of_prefers_an_exact_name_then_the_longest_matching_prefix() {
+        let mut catalog = SettingsCatalog::core();
+        catalog
+            .register(&[
+                SettingSpec::prefix(
+                    "ext.deep.",
+                    Json,
+                    SettingPortability::MachineLocal,
+                    SettingDisclosure::Kind,
+                ),
+                SettingSpec::prefix(
+                    "ext.",
+                    Text,
+                    SettingPortability::Portable,
+                    SettingDisclosure::Verbatim,
+                ),
+                SettingSpec::exact(
+                    "ext.deep.pinned",
+                    Flag,
+                    SettingPortability::Portable,
+                    SettingDisclosure::Withheld,
+                ),
+            ])
+            .unwrap();
+
+        for (stored_key, resolved) in [
+            (
+                "ext.deep.pinned",
+                Some(SettingKey::Exact("ext.deep.pinned")),
+            ),
+            ("ext.deep.other", Some(SettingKey::Prefix("ext.deep."))),
+            ("ext.deep.", Some(SettingKey::Prefix("ext.deep."))),
+            ("ext.deep", Some(SettingKey::Prefix("ext."))),
+            ("ext.other", Some(SettingKey::Prefix("ext."))),
+            ("ext", None),
+            ("EXT.other", None),
+        ] {
+            assert_eq!(
+                catalog.spec_of(stored_key).map(|spec| spec.key),
+                resolved,
+                "key {stored_key:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn undeclared_keys_lists_only_unmatched_keys_in_sorted_order() {
+        let catalog = SettingsCatalog::core();
+
+        let undeclared = catalog.undeclared_keys([
+            "zeta.unknown",
+            key::THEME,
+            "tts.engine_params.piper",
+            "alpha.unknown",
+            "tts.engine_params",
+        ]);
+
+        assert_eq!(
+            undeclared,
+            ["alpha.unknown", "tts.engine_params", "zeta.unknown"]
+        );
+    }
+
+    #[tokio::test]
+    async fn report_undeclared_settings_returns_the_undeclared_keys_and_leaves_the_store_untouched()
+    {
+        let repo = MapRepo::default();
+        for (stored_key, value) in [
+            (key::THEME, "catppuccin-mocha"),
+            ("legacy.retired_toggle", "true"),
+            ("integration.enabled.twitch", "false"),
+            ("another.stray", "{}"),
+        ] {
+            repo.set_string(stored_key, value).await.unwrap();
+        }
+        let stored_before = repo.load_all().await.unwrap();
+
+        let reported = report_undeclared_settings(&repo, &SettingsCatalog::core())
+            .await
+            .unwrap();
+
+        assert_eq!(
+            (reported, repo.load_all().await.unwrap()),
+            (
+                vec![
+                    "another.stray".to_owned(),
+                    "legacy.retired_toggle".to_owned()
+                ],
+                stored_before,
+            )
+        );
+    }
+}

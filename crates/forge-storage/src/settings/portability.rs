@@ -35,49 +35,9 @@ pub fn is_portable(stored_key: &str) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use std::collections::BTreeMap;
-
+    use super::super::reserved_keys as key;
+    use super::SettingPortability::MachineLocal;
     use super::*;
-
-    const SETTINGS_SOURCE: &str = include_str!("../settings.rs");
-
-    fn reserved_key_values() -> Vec<String> {
-        let block = SETTINGS_SOURCE
-            .split_once("pub mod reserved_keys {")
-            .and_then(|(_, rest)| rest.split_once("\n}"))
-            .map(|(block, _)| block)
-            .unwrap_or_default();
-        block
-            .lines()
-            .filter_map(|line| line.trim().strip_prefix("pub const "))
-            .filter_map(|declaration| declaration.split_once("= \""))
-            .filter_map(|(_, value)| value.split_once("\";"))
-            .map(|(value, _)| value.to_owned())
-            .collect()
-    }
-
-    fn classified() -> BTreeMap<&'static str, usize> {
-        let mut counts = BTreeMap::new();
-        for (key, _) in CLASSIFIED_KEYS.iter().chain(CLASSIFIED_PREFIXES) {
-            *counts.entry(*key).or_insert(0) += 1;
-        }
-        counts
-    }
-
-    #[test]
-    fn every_reserved_key_is_classified_exactly_once() {
-        let reserved = reserved_key_values();
-        let classified = classified();
-
-        let unclassified: Vec<_> = reserved
-            .iter()
-            .filter(|key| !classified.contains_key(key.as_str()))
-            .collect();
-        let doubled: Vec<_> = classified.iter().filter(|(_, n)| **n > 1).collect();
-
-        assert!(reserved.len() > 50, "parsed only {reserved:?}");
-        assert_eq!((unclassified, doubled), (Vec::new(), Vec::new()));
-    }
 
     #[test]
     fn a_key_outside_the_catalog_is_machine_local() {

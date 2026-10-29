@@ -3,8 +3,8 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use forge_registry::runner::SubActionConfig;
 use forge_registry::{
-    ConfigProblem, ConfigReason, ConfigSpec, DurationAmountField, DurationBounds, RunContext,
-    StepTimer, SubActionCategory, SubActionRunner, TypedField, ValueBounds,
+    ConfigProblem, ConfigReason, ConfigSpec, DurationBounds, DurationField, RunContext, StepTimer,
+    SubActionCategory, SubActionRunner, TypedField, ValueBounds,
 };
 use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry};
 
@@ -18,7 +18,7 @@ const MIN_TIMEOUT_SECONDS: i64 = 1;
 const MAX_TIMEOUT_SECONDS: i64 = 86_400;
 const DEFAULT_TIMEOUT_SECONDS: i64 = 300;
 
-const DURATION_SECONDS: DurationAmountField = DurationAmountField {
+const DURATION_SECONDS: DurationField = DurationField {
     key: config_keys::DURATION_SECONDS,
     label: "Duration",
     default: DEFAULT_TIMEOUT_SECONDS,
@@ -28,7 +28,7 @@ const DURATION_SECONDS: DurationAmountField = DurationAmountField {
 const CONFIG: ConfigSpec = ConfigSpec::new(&[&CHANNEL_ID, &DURATION_SECONDS]);
 
 fn read_config(config: &SubActionConfig, args: &ArgStack) -> Result<(String, u32), ConfigProblem> {
-    let seconds = u32::try_from(DURATION_SECONDS.read(config, args)?).map_err(|_| {
+    let seconds = u32::try_from(DURATION_SECONDS.read(config, args)?.as_secs()).map_err(|_| {
         ConfigProblem::field(
             config_keys::DURATION_SECONDS,
             ConfigReason::OutOfRange(ValueBounds::between(

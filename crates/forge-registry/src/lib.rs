@@ -6,7 +6,6 @@ mod config_ext;
 mod config_problem;
 mod declared_composite_fields;
 mod declared_config;
-mod declared_duration_amount;
 mod declared_fields;
 mod declared_fields_extra;
 mod descriptor;
@@ -46,7 +45,6 @@ pub use config_ext::SubActionConfigExt;
 pub use config_problem::{ConfigProblem, ConfigReason, ValueBounds};
 pub use declared_composite_fields::UnitAmountField;
 pub use declared_config::{ConfigSpec, DeclaredField, FieldLiteral, Interpolation, TypedField};
-pub use declared_duration_amount::DurationAmountField;
 pub use declared_fields::{
     BlankableSelectField, ChainLayout, ChoiceField, CodeField, DateTimeField, DependentSelectField,
     DurationField, DynamicSelectField, IntegerEditor, IntegerField, JsonObjectField, LinesField,

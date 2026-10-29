@@ -67,7 +67,11 @@ pub(super) const fn unlisted_text(
     key: &'static str,
     label: &'static str,
 ) -> OptionalField<TextField> {
-    OptionalField::shared(optional_text(key, label, TextEditor::Line { placeholder: "" }))
+    OptionalField::shared(optional_text(
+        key,
+        label,
+        TextEditor::Line { placeholder: "" },
+    ))
 }
 
 pub(super) fn present(text: String) -> Option<String> {

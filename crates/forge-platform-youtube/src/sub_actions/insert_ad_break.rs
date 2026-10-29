@@ -3,8 +3,8 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use forge_registry::runner::SubActionConfig;
 use forge_registry::{
-    ConfigProblem, ConfigReason, ConfigSpec, DurationAmountField, DurationBounds, RunContext,
-    StepTimer, SubActionCategory, SubActionRunner, TypedField, ValueBounds,
+    ConfigProblem, ConfigReason, ConfigSpec, DurationBounds, DurationField, RunContext, StepTimer,
+    SubActionCategory, SubActionRunner, TypedField, ValueBounds,
 };
 use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry};
 
@@ -16,7 +16,7 @@ const MIN_DURATION_SECS: i64 = 1;
 const MAX_DURATION_SECS: i64 = 3_600;
 const DEFAULT_DURATION_SECS: i64 = 30;
 
-const DURATION_SECS: DurationAmountField = DurationAmountField {
+const DURATION_SECS: DurationField = DurationField {
     key: config_keys::AD_DURATION_SECS,
     label: "Length",
     default: DEFAULT_DURATION_SECS,
@@ -26,7 +26,7 @@ const DURATION_SECS: DurationAmountField = DurationAmountField {
 const CONFIG: ConfigSpec = ConfigSpec::new(&[&DURATION_SECS]);
 
 fn read_config(config: &SubActionConfig, args: &ArgStack) -> Result<u32, ConfigProblem> {
-    u32::try_from(DURATION_SECS.read(config, args)?).map_err(|_| {
+    u32::try_from(DURATION_SECS.read(config, args)?.as_secs()).map_err(|_| {
         ConfigProblem::field(
             config_keys::AD_DURATION_SECS,
             ConfigReason::OutOfRange(ValueBounds::between(MIN_DURATION_SECS, MAX_DURATION_SECS)),

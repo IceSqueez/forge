@@ -4,8 +4,8 @@ use async_trait::async_trait;
 use forge_platform_core::PlatformError;
 use forge_registry::runner::SubActionConfig;
 use forge_registry::{
-    ConfigProblem, ConfigReason, ConfigSpec, DurationAmountField, DurationBounds, RunContext,
-    StepTimer, SubActionCategory, SubActionRunner, TypedField, ValueBounds,
+    ConfigProblem, ConfigReason, ConfigSpec, DurationBounds, DurationField, RunContext, StepTimer,
+    SubActionCategory, SubActionRunner, TypedField, ValueBounds,
 };
 use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry};
 use futures::future::BoxFuture;
@@ -20,8 +20,9 @@ const KIND_ID: &str = sub_action_ids::MODERATION_TIMEOUT;
 const MIN_TIMEOUT_MINUTES: i64 = 1;
 const MAX_TIMEOUT_MINUTES: i64 = 10080;
 const DEFAULT_TIMEOUT_MINUTES: i64 = 10;
+const SECONDS_PER_MINUTE: u64 = 60;
 
-const DURATION_MINUTES: DurationAmountField = DurationAmountField {
+const DURATION_MINUTES: DurationField = DurationField {
     key: config_keys::DURATION_MINUTES,
     label: "Duration",
     default: DEFAULT_TIMEOUT_MINUTES,
@@ -37,15 +38,17 @@ struct TimeoutRequest {
 }
 
 fn read_config(config: &SubActionConfig, args: &ArgStack) -> Result<TimeoutRequest, ConfigProblem> {
-    let minutes = u32::try_from(DURATION_MINUTES.read(config, args)?).map_err(|_| {
-        ConfigProblem::field(
-            config_keys::DURATION_MINUTES,
-            ConfigReason::OutOfRange(ValueBounds::between(
-                MIN_TIMEOUT_MINUTES,
-                MAX_TIMEOUT_MINUTES,
-            )),
-        )
-    })?;
+    let minutes =
+        u32::try_from(DURATION_MINUTES.read(config, args)?.as_secs() / SECONDS_PER_MINUTE)
+            .map_err(|_| {
+                ConfigProblem::field(
+                    config_keys::DURATION_MINUTES,
+                    ConfigReason::OutOfRange(ValueBounds::between(
+                        MIN_TIMEOUT_MINUTES,
+                        MAX_TIMEOUT_MINUTES,
+                    )),
+                )
+            })?;
     Ok(TimeoutRequest {
         target_id: USER_ID.read(config, args)?,
         minutes,

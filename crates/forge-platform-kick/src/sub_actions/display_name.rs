@@ -1,11 +1,11 @@
 use forge_registry::runner::SubActionConfig;
 use forge_registry::{RunContext, SubActionConfigExt};
 
-pub(super) const DISPLAY_NAME_KEY: &str = "display_name";
+use crate::vocabulary::config_keys;
 
 pub(super) fn resolve(config: &SubActionConfig, ctx: &RunContext<'_>) -> Option<String> {
     config
-        .str(DISPLAY_NAME_KEY)
+        .str(config_keys::DISPLAY_NAME)
         .map(|template| ctx.arg_stack.interpolate(template).trim().to_owned())
         .filter(|name| !name.is_empty())
 }

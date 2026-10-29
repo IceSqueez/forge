@@ -1,24 +1,33 @@
-use std::collections::BTreeMap;
 use std::sync::Arc;
-use std::time::Instant;
 
 use async_trait::async_trait;
 use forge_platform_core::PlatformError;
 use forge_registry::runner::SubActionConfig;
 use forge_registry::{
-    ConfigReason, FormField, RegistryError, RunContext, SubActionCategory, SubActionConfigExt,
-    SubActionRunner,
+    ConfigSpec, RunContext, StepTimer, SubActionCategory, SubActionRunner, TextEditor, TextField,
+    TypedField,
 };
-use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, Variant};
+use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry};
 use futures::future::BoxFuture;
-use time::OffsetDateTime;
 
 use crate::api::chat_messages::KickSendChat;
-use crate::vocabulary::sub_action_ids;
 use crate::vocabulary::variables::references;
+use crate::vocabulary::{config_keys, sub_action_ids};
 
 const KIND_ID: &str = sub_action_ids::CHAT_DELETE_MESSAGE;
 const UNRESOLVED_REFERENCE_MARKER: char = '%';
+
+const MESSAGE_ID: TextField = TextField {
+    key: config_keys::MESSAGE_ID,
+    label: "Message ID",
+    editor: TextEditor::Line {
+        placeholder: references::MESSAGE_ID,
+    },
+    default: references::MESSAGE_ID,
+    required: true,
+};
+
+const CONFIG: ConfigSpec = ConfigSpec::new(&[&MESSAGE_ID]);
 
 pub struct DeleteMessageRunner {
     client: Arc<KickSendChat>,
@@ -65,29 +74,8 @@ impl SubActionRunner for DeleteMessageRunner {
         "delete"
     }
 
-    fn default_config(&self) -> SubActionConfig {
-        BTreeMap::from([(
-            "message_id".to_owned(),
-            Variant::String(references::MESSAGE_ID.to_owned()),
-        )])
-    }
-
-    fn config_fields(&self) -> Vec<FormField> {
-        vec![FormField::Text {
-            key: "message_id",
-            label: "Message ID",
-            placeholder: references::MESSAGE_ID,
-        }]
-    }
-
-    fn validate_config(&self, config: &SubActionConfig) -> Result<(), RegistryError> {
-        match config.get("message_id") {
-            Some(Variant::String(s)) if !s.is_empty() => Ok(()),
-            _ => Err(RegistryError::invalid_field(
-                "message_id",
-                ConfigReason::Required,
-            )),
-        }
+    fn config_spec(&self) -> Option<ConfigSpec> {
+        Some(CONFIG)
     }
 
     async fn execute(
@@ -95,38 +83,31 @@ impl SubActionRunner for DeleteMessageRunner {
         config: &SubActionConfig,
         ctx: &RunContext<'_>,
     ) -> (SubActionTelemetry, Option<ArgStack>) {
-        let started_at = OffsetDateTime::now_utc();
-        let start = Instant::now();
+        let timer = StepTimer::start(ctx, KIND_ID);
+        let message_id = match MESSAGE_ID.read(config, ctx.arg_stack) {
+            Ok(message_id) => message_id,
+            Err(problem) => return (timer.invalid_config(&problem), None),
+        };
+        if message_id.is_empty() {
+            return (
+                timer.failed("message_id is empty after interpolation"),
+                None,
+            );
+        }
+        if message_id.contains(UNRESOLVED_REFERENCE_MARKER) {
+            return (
+                timer.failed("message_id has an unresolved variable reference"),
+                None,
+            );
+        }
 
-        let template = config.str("message_id").unwrap_or_default();
-        let message_id = ctx.arg_stack.interpolate(template);
-
-        let outcome = if message_id.is_empty() {
-            SubActionOutcome::Failed("message_id is empty after interpolation".to_owned())
-        } else if message_id.contains(UNRESOLVED_REFERENCE_MARKER) {
-            SubActionOutcome::Failed("message_id has an unresolved variable reference".to_owned())
-        } else {
-            match (self.token_source)().await {
-                Err(e) => SubActionOutcome::Failed(format!("token error: {e}")),
-                Ok(token) => match self.client.delete(&message_id, &token).await {
-                    Ok(()) => SubActionOutcome::Success,
-                    Err(e) => SubActionOutcome::Failed(e.to_string()),
-                },
+        let outcome = match (self.token_source)().await {
+            Err(e) => SubActionOutcome::Failed(format!("token error: {e}")),
+            Ok(token) => {
+                SubActionOutcome::from_result(&self.client.delete(&message_id, &token).await)
             }
         };
-
-        (
-            SubActionTelemetry {
-                args_in: ::std::collections::BTreeMap::new(),
-                produced: ::std::collections::BTreeMap::new(),
-                kind: KIND_ID.to_owned(),
-                started_at,
-                duration_ms: start.elapsed().as_millis() as u64,
-                outcome,
-                index: ctx.index,
-            },
-            None,
-        )
+        (timer.finish(outcome), None)
     }
 }
 

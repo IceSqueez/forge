@@ -1,20 +1,29 @@
-use std::collections::BTreeMap;
 use std::sync::Arc;
-use std::time::Instant;
 
 use async_trait::async_trait;
 use forge_registry::runner::SubActionConfig;
 use forge_registry::{
-    ConfigReason, FormField, RegistryError, RunContext, SubActionCategory, SubActionConfigExt,
-    SubActionRunner,
+    ConfigSpec, RunContext, StepTimer, SubActionCategory, SubActionRunner, TextEditor, TextField,
+    TypedField,
 };
-use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, Variant};
-use time::OffsetDateTime;
+use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry};
 
 use crate::stream_metadata::YoutubeStreamMetadata;
-use crate::vocabulary::sub_action_ids;
+use crate::vocabulary::{config_keys, sub_action_ids};
 
 const KIND_ID: &str = sub_action_ids::STREAM_UPDATE_CATEGORY;
+
+const CATEGORY_ID: TextField = TextField {
+    key: config_keys::CATEGORY_ID,
+    label: "Category ID",
+    editor: TextEditor::Line {
+        placeholder: "20 (Gaming), 24 (Entertainment)...",
+    },
+    default: "",
+    required: true,
+};
+
+const CONFIG: ConfigSpec = ConfigSpec::new(&[&CATEGORY_ID]);
 
 pub struct UpdateCategoryRunner {
     metadata: Arc<YoutubeStreamMetadata>,
@@ -52,26 +61,8 @@ impl SubActionRunner for UpdateCategoryRunner {
         "category"
     }
 
-    fn default_config(&self) -> SubActionConfig {
-        BTreeMap::from([("category_id".to_owned(), Variant::String(String::new()))])
-    }
-
-    fn config_fields(&self) -> Vec<FormField> {
-        vec![FormField::Text {
-            key: "category_id",
-            label: "Category ID",
-            placeholder: "20 (Gaming), 24 (Entertainment)...",
-        }]
-    }
-
-    fn validate_config(&self, config: &SubActionConfig) -> Result<(), RegistryError> {
-        match config.get("category_id") {
-            Some(Variant::String(s)) if !s.is_empty() => Ok(()),
-            _ => Err(RegistryError::invalid_field(
-                "category_id",
-                ConfigReason::Required,
-            )),
-        }
+    fn config_spec(&self) -> Option<ConfigSpec> {
+        Some(CONFIG)
     }
 
     async fn execute(
@@ -79,30 +70,21 @@ impl SubActionRunner for UpdateCategoryRunner {
         config: &SubActionConfig,
         ctx: &RunContext<'_>,
     ) -> (SubActionTelemetry, Option<ArgStack>) {
-        let started_at = OffsetDateTime::now_utc();
-        let start = Instant::now();
-
-        let template = config.str("category_id").unwrap_or_default();
-        let category_id = ctx.arg_stack.interpolate(template);
-
-        let outcome = if category_id.is_empty() {
-            SubActionOutcome::Failed("category_id is empty after interpolation".to_owned())
-        } else {
-            SubActionOutcome::from_result(&self.metadata.set_category(&category_id).await)
+        let timer = StepTimer::start(ctx, KIND_ID);
+        let category_id = match CATEGORY_ID.read(config, ctx.arg_stack) {
+            Ok(category_id) => category_id,
+            Err(problem) => return (timer.invalid_config(&problem), None),
         };
+        if category_id.is_empty() {
+            return (
+                timer.failed("category_id is empty after interpolation"),
+                None,
+            );
+        }
 
-        (
-            SubActionTelemetry {
-                args_in: ::std::collections::BTreeMap::new(),
-                produced: ::std::collections::BTreeMap::new(),
-                kind: KIND_ID.to_owned(),
-                started_at,
-                duration_ms: start.elapsed().as_millis() as u64,
-                outcome,
-                index: ctx.index,
-            },
-            None,
-        )
+        let outcome =
+            SubActionOutcome::from_result(&self.metadata.set_category(&category_id).await);
+        (timer.finish(outcome), None)
     }
 }
 

@@ -1,22 +1,38 @@
-use std::collections::BTreeMap;
 use std::sync::Arc;
-use std::time::Instant;
 
 use async_trait::async_trait;
 use forge_registry::runner::SubActionConfig;
 use forge_registry::{
-    ConfigReason, DurationBounds, FormField, RegistryError, RunContext, SubActionCategory,
-    SubActionRunner, ValueBounds,
+    ConfigProblem, ConfigReason, ConfigSpec, DurationAmountField, DurationBounds, RunContext,
+    StepTimer, SubActionCategory, SubActionRunner, TypedField, ValueBounds,
 };
-use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, Variant};
-use time::OffsetDateTime;
+use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry};
 
 use crate::ad_break::YoutubeAdBreak;
-use crate::vocabulary::sub_action_ids;
+use crate::vocabulary::{config_keys, sub_action_ids};
 
 const KIND_ID: &str = sub_action_ids::STREAM_INSERT_AD_BREAK;
 const MIN_DURATION_SECS: i64 = 1;
 const MAX_DURATION_SECS: i64 = 3_600;
+const DEFAULT_DURATION_SECS: i64 = 30;
+
+const DURATION_SECS: DurationAmountField = DurationAmountField {
+    key: config_keys::AD_DURATION_SECS,
+    label: "Length",
+    default: DEFAULT_DURATION_SECS,
+    bounds: DurationBounds::in_seconds(MIN_DURATION_SECS, MAX_DURATION_SECS),
+};
+
+const CONFIG: ConfigSpec = ConfigSpec::new(&[&DURATION_SECS]);
+
+fn read_config(config: &SubActionConfig, args: &ArgStack) -> Result<u32, ConfigProblem> {
+    u32::try_from(DURATION_SECS.read(config, args)?).map_err(|_| {
+        ConfigProblem::field(
+            config_keys::AD_DURATION_SECS,
+            ConfigReason::OutOfRange(ValueBounds::between(MIN_DURATION_SECS, MAX_DURATION_SECS)),
+        )
+    })
+}
 
 pub struct InsertAdBreakRunner {
     ad_break: Arc<YoutubeAdBreak>,
@@ -54,29 +70,8 @@ impl SubActionRunner for InsertAdBreakRunner {
         "player-skip-forward"
     }
 
-    fn default_config(&self) -> SubActionConfig {
-        BTreeMap::from([("duration_secs".to_owned(), Variant::Int(30))])
-    }
-
-    fn config_fields(&self) -> Vec<FormField> {
-        vec![FormField::Duration {
-            key: "duration_secs",
-            label: "Length",
-            bounds: DurationBounds::in_seconds(MIN_DURATION_SECS, MAX_DURATION_SECS),
-        }]
-    }
-
-    fn validate_config(&self, config: &SubActionConfig) -> Result<(), RegistryError> {
-        match config.get("duration_secs") {
-            Some(Variant::Int(n)) if (MIN_DURATION_SECS..=MAX_DURATION_SECS).contains(n) => Ok(()),
-            _ => Err(RegistryError::invalid_field(
-                "duration_secs",
-                ConfigReason::OutOfRange(ValueBounds::between(
-                    MIN_DURATION_SECS,
-                    MAX_DURATION_SECS,
-                )),
-            )),
-        }
+    fn config_spec(&self) -> Option<ConfigSpec> {
+        Some(CONFIG)
     }
 
     async fn execute(
@@ -84,32 +79,14 @@ impl SubActionRunner for InsertAdBreakRunner {
         config: &SubActionConfig,
         ctx: &RunContext<'_>,
     ) -> (SubActionTelemetry, Option<ArgStack>) {
-        let started_at = OffsetDateTime::now_utc();
-        let start = Instant::now();
-
-        let duration_secs = config
-            .get("duration_secs")
-            .and_then(|v| match v {
-                Variant::Int(n) => u32::try_from(*n).ok(),
-                _ => None,
-            })
-            .unwrap_or(30);
-
+        let timer = StepTimer::start(ctx, KIND_ID);
+        let duration_secs = match read_config(config, ctx.arg_stack) {
+            Ok(duration_secs) => duration_secs,
+            Err(problem) => return (timer.invalid_config(&problem), None),
+        };
         let outcome =
             SubActionOutcome::from_result(&self.ad_break.insert_cuepoint(duration_secs).await);
-
-        (
-            SubActionTelemetry {
-                args_in: ::std::collections::BTreeMap::new(),
-                produced: ::std::collections::BTreeMap::new(),
-                kind: KIND_ID.to_owned(),
-                started_at,
-                duration_ms: start.elapsed().as_millis() as u64,
-                outcome,
-                index: ctx.index,
-            },
-            None,
-        )
+        (timer.finish(outcome), None)
     }
 }
 

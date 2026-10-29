@@ -1,23 +1,94 @@
-use std::collections::BTreeMap;
 use std::sync::Arc;
-use std::time::Instant;
 
 use async_trait::async_trait;
 use forge_registry::runner::SubActionConfig;
 use forge_registry::{
-    ConfigReason, FormField, RegistryError, RunContext, SubActionCategory, SubActionConfigExt,
-    SubActionRunner,
+    ConfigChoice, ConfigReason, ConfigSpec, FieldLiteral, FormField, RunContext, StepTimer,
+    SubActionCategory, SubActionRunner, TypedField,
 };
 use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, Variant};
-use time::OffsetDateTime;
 
 use crate::stream_metadata::YoutubeStreamMetadata;
-use crate::vocabulary::sub_action_ids;
+use crate::vocabulary::{config_keys, sub_action_ids};
 
 const KIND_ID: &str = sub_action_ids::STREAM_UPDATE_PRIVACY;
 
-const PRIVACY_OPTIONS: &[&str] = &["public", "unlisted", "private"];
-const DEFAULT_PRIVACY: &str = "public";
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum PrivacyStatus {
+    Public,
+    Unlisted,
+    Private,
+}
+
+impl PrivacyStatus {
+    pub(crate) fn label(self) -> &'static str {
+        match self {
+            Self::Public => "Public",
+            Self::Unlisted => "Unlisted",
+            Self::Private => "Private",
+        }
+    }
+}
+
+impl ConfigChoice for PrivacyStatus {
+    const ALL: &'static [Self] = &[Self::Public, Self::Unlisted, Self::Private];
+    const WIRE_NAMES: &'static [&'static str] = &["public", "unlisted", "private"];
+
+    fn wire_name(self) -> &'static str {
+        match self {
+            Self::Public => "public",
+            Self::Unlisted => "unlisted",
+            Self::Private => "private",
+        }
+    }
+}
+
+struct PrivacyStatusField;
+
+const PRIVACY_STATUS: PrivacyStatusField = PrivacyStatusField;
+
+fn unknown_privacy() -> ConfigReason {
+    ConfigReason::choices(PrivacyStatus::WIRE_NAMES.iter().copied())
+}
+
+impl TypedField for PrivacyStatusField {
+    type Value = PrivacyStatus;
+
+    fn key(&self) -> &'static str {
+        config_keys::PRIVACY_STATUS
+    }
+
+    fn form_field(&self) -> FormField {
+        FormField::Select {
+            key: config_keys::PRIVACY_STATUS,
+            label: "Privacy",
+            options: PrivacyStatus::WIRE_NAMES,
+        }
+    }
+
+    fn default_value(&self) -> Variant {
+        Variant::String(PrivacyStatus::Public.wire_name().to_owned())
+    }
+
+    fn literal<'a>(
+        &self,
+        value: &'a Variant,
+    ) -> Result<FieldLiteral<'a, PrivacyStatus>, ConfigReason> {
+        let Variant::String(text) = value else {
+            return Err(unknown_privacy());
+        };
+        match FieldLiteral::of_text(text) {
+            Some(template) => Ok(template),
+            None => self.parse_text(text).map(FieldLiteral::Value),
+        }
+    }
+
+    fn parse_text(&self, text: &str) -> Result<PrivacyStatus, ConfigReason> {
+        PrivacyStatus::parse(text).ok_or_else(unknown_privacy)
+    }
+}
+
+const CONFIG: ConfigSpec = ConfigSpec::new(&[&PRIVACY_STATUS]);
 
 pub struct UpdatePrivacyRunner {
     metadata: Arc<YoutubeStreamMetadata>,
@@ -55,29 +126,8 @@ impl SubActionRunner for UpdatePrivacyRunner {
         "eye"
     }
 
-    fn default_config(&self) -> SubActionConfig {
-        BTreeMap::from([(
-            "privacy_status".to_owned(),
-            Variant::String(DEFAULT_PRIVACY.to_owned()),
-        )])
-    }
-
-    fn config_fields(&self) -> Vec<FormField> {
-        vec![FormField::Select {
-            key: "privacy_status",
-            label: "Privacy",
-            options: PRIVACY_OPTIONS,
-        }]
-    }
-
-    fn validate_config(&self, config: &SubActionConfig) -> Result<(), RegistryError> {
-        match config.get("privacy_status") {
-            Some(Variant::String(s)) if PRIVACY_OPTIONS.contains(&s.as_str()) => Ok(()),
-            _ => Err(RegistryError::invalid_field(
-                "privacy_status",
-                ConfigReason::choices(PRIVACY_OPTIONS.iter().copied()),
-            )),
-        }
+    fn config_spec(&self) -> Option<ConfigSpec> {
+        Some(CONFIG)
     }
 
     async fn execute(
@@ -85,30 +135,15 @@ impl SubActionRunner for UpdatePrivacyRunner {
         config: &SubActionConfig,
         ctx: &RunContext<'_>,
     ) -> (SubActionTelemetry, Option<ArgStack>) {
-        let started_at = OffsetDateTime::now_utc();
-        let start = Instant::now();
-
-        let template = config.str("privacy_status").unwrap_or_default();
-        let privacy_status = ctx.arg_stack.interpolate(template);
-
-        let outcome = if privacy_status.is_empty() {
-            SubActionOutcome::Failed("privacy_status is empty after interpolation".to_owned())
-        } else {
-            SubActionOutcome::from_result(&self.metadata.set_privacy(&privacy_status).await)
+        let timer = StepTimer::start(ctx, KIND_ID);
+        let privacy_status = match PRIVACY_STATUS.read(config, ctx.arg_stack) {
+            Ok(privacy_status) => privacy_status,
+            Err(problem) => return (timer.invalid_config(&problem), None),
         };
-
-        (
-            SubActionTelemetry {
-                args_in: ::std::collections::BTreeMap::new(),
-                produced: ::std::collections::BTreeMap::new(),
-                kind: KIND_ID.to_owned(),
-                started_at,
-                duration_ms: start.elapsed().as_millis() as u64,
-                outcome,
-                index: ctx.index,
-            },
-            None,
-        )
+        let outcome = SubActionOutcome::from_result(
+            &self.metadata.set_privacy(privacy_status.wire_name()).await,
+        );
+        (timer.finish(outcome), None)
     }
 }
 

@@ -1,20 +1,29 @@
-use std::collections::BTreeMap;
 use std::sync::Arc;
-use std::time::Instant;
 
 use async_trait::async_trait;
 use forge_registry::runner::SubActionConfig;
 use forge_registry::{
-    ConfigReason, FormField, RegistryError, RunContext, SubActionCategory, SubActionConfigExt,
-    SubActionRunner,
+    ConfigSpec, RunContext, StepTimer, SubActionCategory, SubActionRunner, TextEditor, TextField,
+    TypedField,
 };
-use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, Variant};
-use time::OffsetDateTime;
+use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry};
 
 use crate::thumbnail::YoutubeThumbnail;
-use crate::vocabulary::sub_action_ids;
+use crate::vocabulary::{config_keys, sub_action_ids};
 
 const KIND_ID: &str = sub_action_ids::STREAM_SET_THUMBNAIL;
+
+const IMAGE_PATH: TextField = TextField {
+    key: config_keys::IMAGE_PATH,
+    label: "Image Path",
+    editor: TextEditor::Line {
+        placeholder: "/full/path/to/thumbnail.png",
+    },
+    default: "",
+    required: true,
+};
+
+const CONFIG: ConfigSpec = ConfigSpec::new(&[&IMAGE_PATH]);
 
 pub struct SetThumbnailRunner {
     thumbnail: Arc<YoutubeThumbnail>,
@@ -52,26 +61,8 @@ impl SubActionRunner for SetThumbnailRunner {
         "photo"
     }
 
-    fn default_config(&self) -> SubActionConfig {
-        BTreeMap::from([("image_path".to_owned(), Variant::String(String::new()))])
-    }
-
-    fn config_fields(&self) -> Vec<FormField> {
-        vec![FormField::Text {
-            key: "image_path",
-            label: "Image Path",
-            placeholder: "~/thumb.png",
-        }]
-    }
-
-    fn validate_config(&self, config: &SubActionConfig) -> Result<(), RegistryError> {
-        match config.get("image_path") {
-            Some(Variant::String(s)) if !s.is_empty() => Ok(()),
-            _ => Err(RegistryError::invalid_field(
-                "image_path",
-                ConfigReason::Required,
-            )),
-        }
+    fn config_spec(&self) -> Option<ConfigSpec> {
+        Some(CONFIG)
     }
 
     async fn execute(
@@ -79,30 +70,20 @@ impl SubActionRunner for SetThumbnailRunner {
         config: &SubActionConfig,
         ctx: &RunContext<'_>,
     ) -> (SubActionTelemetry, Option<ArgStack>) {
-        let started_at = OffsetDateTime::now_utc();
-        let start = Instant::now();
-
-        let template = config.str("image_path").unwrap_or_default();
-        let image_path = ctx.arg_stack.interpolate(template);
-
-        let outcome = if image_path.is_empty() {
-            SubActionOutcome::Failed("image_path is empty after interpolation".to_owned())
-        } else {
-            SubActionOutcome::from_result(&self.thumbnail.set(&image_path).await)
+        let timer = StepTimer::start(ctx, KIND_ID);
+        let image_path = match IMAGE_PATH.read(config, ctx.arg_stack) {
+            Ok(image_path) => image_path,
+            Err(problem) => return (timer.invalid_config(&problem), None),
         };
+        if image_path.is_empty() {
+            return (
+                timer.failed("image_path is empty after interpolation"),
+                None,
+            );
+        }
 
-        (
-            SubActionTelemetry {
-                args_in: ::std::collections::BTreeMap::new(),
-                produced: ::std::collections::BTreeMap::new(),
-                kind: KIND_ID.to_owned(),
-                started_at,
-                duration_ms: start.elapsed().as_millis() as u64,
-                outcome,
-                index: ctx.index,
-            },
-            None,
-        )
+        let outcome = SubActionOutcome::from_result(&self.thumbnail.set(&image_path).await);
+        (timer.finish(outcome), None)
     }
 }
 

@@ -1,23 +1,33 @@
 use std::collections::BTreeMap;
 use std::sync::Arc;
-use std::time::Instant;
 
 use async_trait::async_trait;
 use forge_platform_core::PlatformError;
 use forge_registry::runner::SubActionConfig;
 use forge_registry::{
-    ConfigReason, FormField, RegistryError, RunContext, SubActionCategory, SubActionConfigExt,
-    SubActionRunner,
+    ConfigSpec, RunContext, StepTimer, SubActionCategory, SubActionRunner, TextEditor, TextField,
+    TypedField,
 };
-use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, Variant};
+use forge_types::{ArgStack, SubActionTelemetry, Variant};
 use futures::future::BoxFuture;
-use time::OffsetDateTime;
 
 use crate::api::categories::KickCategories;
-use crate::vocabulary::sub_action_ids;
 use crate::vocabulary::variables;
+use crate::vocabulary::{config_keys, sub_action_ids};
 
 const KIND_ID: &str = sub_action_ids::LOOKUP_CATEGORY;
+
+const QUERY: TextField = TextField {
+    key: config_keys::QUERY,
+    label: "Search Query",
+    editor: TextEditor::Line {
+        placeholder: "just chatting",
+    },
+    default: "",
+    required: true,
+};
+
+const CONFIG: ConfigSpec = ConfigSpec::new(&[&QUERY]);
 
 pub struct LookupCategoryRunner {
     client: Arc<KickCategories>,
@@ -64,26 +74,8 @@ impl SubActionRunner for LookupCategoryRunner {
         "search"
     }
 
-    fn default_config(&self) -> SubActionConfig {
-        BTreeMap::from([("query".to_owned(), Variant::String(String::new()))])
-    }
-
-    fn config_fields(&self) -> Vec<FormField> {
-        vec![FormField::Text {
-            key: "query",
-            label: "Search Query",
-            placeholder: "just chatting",
-        }]
-    }
-
-    fn validate_config(&self, config: &SubActionConfig) -> Result<(), RegistryError> {
-        match config.get("query") {
-            Some(Variant::String(s)) if !s.is_empty() => Ok(()),
-            _ => Err(RegistryError::invalid_field(
-                "query",
-                ConfigReason::Required,
-            )),
-        }
+    fn config_spec(&self) -> Option<ConfigSpec> {
+        Some(CONFIG)
     }
 
     async fn execute(
@@ -91,83 +83,43 @@ impl SubActionRunner for LookupCategoryRunner {
         config: &SubActionConfig,
         ctx: &RunContext<'_>,
     ) -> (SubActionTelemetry, Option<ArgStack>) {
-        let started_at = OffsetDateTime::now_utc();
-        let start = Instant::now();
-
-        let template = config.str("query").unwrap_or_default();
-        let query = ctx.arg_stack.interpolate(template);
-
+        let timer = StepTimer::start(ctx, KIND_ID);
+        let query = match QUERY.read(config, ctx.arg_stack) {
+            Ok(query) => query,
+            Err(problem) => return (timer.invalid_config(&problem), None),
+        };
         if query.is_empty() {
-            return (
-                SubActionTelemetry {
-                    args_in: BTreeMap::new(),
-                    produced: BTreeMap::new(),
-                    kind: KIND_ID.to_owned(),
-                    started_at,
-                    duration_ms: start.elapsed().as_millis() as u64,
-                    outcome: SubActionOutcome::Failed(
-                        "query is empty after interpolation".to_owned(),
-                    ),
-                    index: ctx.index,
-                },
-                None,
-            );
+            return (timer.failed("query is empty after interpolation"), None);
         }
 
-        let result = match (self.token_source)().await {
-            Err(e) => Err(format!("token error: {e}")),
-            Ok(token) => match self.client.search(&token, &query).await {
-                Ok(matches) => {
-                    let items: Vec<Variant> = matches
-                        .into_iter()
-                        .map(|m| {
-                            Variant::Object(BTreeMap::from([
-                                (
-                                    variables::category::MATCH_ID.to_owned(),
-                                    Variant::Int(m.id as i64),
-                                ),
-                                (
-                                    variables::category::MATCH_NAME.to_owned(),
-                                    Variant::String(m.name),
-                                ),
-                            ]))
-                        })
-                        .collect();
-                    let stack = ctx.arg_stack.clone().set(
-                        variables::category::MATCHES.to_owned(),
-                        Variant::Array(items),
-                    );
-                    Ok(stack)
-                }
-                Err(e) => Err(e.to_string()),
-            },
+        let token = match (self.token_source)().await {
+            Ok(token) => token,
+            Err(e) => return (timer.failed(format!("token error: {e}")), None),
         };
-
-        match result {
-            Ok(stack) => (
-                SubActionTelemetry {
-                    args_in: BTreeMap::new(),
-                    produced: BTreeMap::new(),
-                    kind: KIND_ID.to_owned(),
-                    started_at,
-                    duration_ms: start.elapsed().as_millis() as u64,
-                    outcome: SubActionOutcome::Success,
-                    index: ctx.index,
-                },
-                Some(stack),
-            ),
-            Err(msg) => (
-                SubActionTelemetry {
-                    args_in: BTreeMap::new(),
-                    produced: BTreeMap::new(),
-                    kind: KIND_ID.to_owned(),
-                    started_at,
-                    duration_ms: start.elapsed().as_millis() as u64,
-                    outcome: SubActionOutcome::Failed(msg),
-                    index: ctx.index,
-                },
-                None,
-            ),
+        match self.client.search(&token, &query).await {
+            Ok(matches) => {
+                let items: Vec<Variant> = matches
+                    .into_iter()
+                    .map(|m| {
+                        Variant::Object(BTreeMap::from([
+                            (
+                                variables::category::MATCH_ID.to_owned(),
+                                Variant::Int(m.id as i64),
+                            ),
+                            (
+                                variables::category::MATCH_NAME.to_owned(),
+                                Variant::String(m.name),
+                            ),
+                        ]))
+                    })
+                    .collect();
+                let stack = ctx.arg_stack.clone().set(
+                    variables::category::MATCHES.to_owned(),
+                    Variant::Array(items),
+                );
+                (timer.success(), Some(stack))
+            }
+            Err(e) => (timer.failed(e.to_string()), None),
         }
     }
 }

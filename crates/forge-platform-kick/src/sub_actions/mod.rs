@@ -5,6 +5,8 @@ mod create_reward;
 mod delete_message;
 mod delete_reward;
 mod display_name;
+mod field_kinds;
+mod fields;
 mod lookup_category;
 mod lookup_stream_stats;
 mod lookup_user;

@@ -24,6 +24,7 @@ mod log_capture;
 mod moderation;
 mod oauth_client;
 mod poll_health;
+mod quick_actions;
 mod quota_state;
 mod send_chat;
 mod stream_metadata;

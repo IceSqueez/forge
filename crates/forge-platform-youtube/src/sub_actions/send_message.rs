@@ -1,21 +1,28 @@
-use std::collections::BTreeMap;
 use std::sync::Arc;
-use std::time::Instant;
 
 use async_trait::async_trait;
 use forge_events::{ChatSent, EventSource, TypedEvent};
 use forge_registry::runner::SubActionConfig;
 use forge_registry::{
-    ConfigReason, FormField, RegistryError, RunContext, SubActionCategory, SubActionConfigExt,
-    SubActionRunner,
+    ConfigSpec, RunContext, StepTimer, SubActionCategory, SubActionRunner, TextEditor, TextField,
+    TypedField,
 };
-use forge_types::{ArgStack, PlatformId, SubActionOutcome, SubActionTelemetry, Variant};
-use time::OffsetDateTime;
+use forge_types::{ArgStack, PlatformId, SubActionOutcome, SubActionTelemetry};
 
 use crate::send_chat::YoutubeSendChat;
-use crate::vocabulary::sub_action_ids;
+use crate::vocabulary::{config_keys, sub_action_ids};
 
 const KIND_ID: &str = sub_action_ids::CHAT_SEND_MESSAGE;
+
+const MESSAGE: TextField = TextField {
+    key: config_keys::MESSAGE,
+    label: "Message",
+    editor: TextEditor::Area,
+    default: "",
+    required: true,
+};
+
+const CONFIG: ConfigSpec = ConfigSpec::new(&[&MESSAGE]);
 
 pub struct SendMessageRunner {
     sender: Arc<YoutubeSendChat>,
@@ -53,25 +60,8 @@ impl SubActionRunner for SendMessageRunner {
         "chat"
     }
 
-    fn default_config(&self) -> SubActionConfig {
-        BTreeMap::from([("message".to_owned(), Variant::String(String::new()))])
-    }
-
-    fn config_fields(&self) -> Vec<FormField> {
-        vec![FormField::TextArea {
-            key: "message",
-            label: "Message",
-        }]
-    }
-
-    fn validate_config(&self, config: &SubActionConfig) -> Result<(), RegistryError> {
-        match config.get("message") {
-            Some(Variant::String(s)) if !s.is_empty() => Ok(()),
-            _ => Err(RegistryError::invalid_field(
-                "message",
-                ConfigReason::Required,
-            )),
-        }
+    fn config_spec(&self) -> Option<ConfigSpec> {
+        Some(CONFIG)
     }
 
     async fn execute(
@@ -79,18 +69,16 @@ impl SubActionRunner for SendMessageRunner {
         config: &SubActionConfig,
         ctx: &RunContext<'_>,
     ) -> (SubActionTelemetry, Option<ArgStack>) {
-        let started_at = OffsetDateTime::now_utc();
-        let start = Instant::now();
-
-        let template = config.str("message").unwrap_or_default();
-        let message = ctx.arg_stack.interpolate(template);
-
-        let outcome = if message.is_empty() {
-            SubActionOutcome::Failed("message is empty after interpolation".to_owned())
-        } else {
-            SubActionOutcome::from_result(&self.sender.send(&message).await)
+        let timer = StepTimer::start(ctx, KIND_ID);
+        let message = match MESSAGE.read(config, ctx.arg_stack) {
+            Ok(message) => message,
+            Err(problem) => return (timer.invalid_config(&problem), None),
         };
+        if message.is_empty() {
+            return (timer.failed("message is empty after interpolation"), None);
+        }
 
+        let outcome = SubActionOutcome::from_result(&self.sender.send(&message).await);
         if matches!(outcome, SubActionOutcome::Success) {
             ChatSent {
                 channel: PlatformId::YouTube.as_str().to_owned(),
@@ -104,19 +92,7 @@ impl SubActionRunner for SendMessageRunner {
                 Some(ctx.parent_event_id),
             );
         }
-
-        (
-            SubActionTelemetry {
-                args_in: ::std::collections::BTreeMap::new(),
-                produced: ::std::collections::BTreeMap::new(),
-                kind: KIND_ID.to_owned(),
-                started_at,
-                duration_ms: start.elapsed().as_millis() as u64,
-                outcome,
-                index: ctx.index,
-            },
-            None,
-        )
+        (timer.finish(outcome), None)
     }
 }
 

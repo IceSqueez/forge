@@ -1,0 +1,16 @@
+pub(crate) const MESSAGE: &str = "message";
+pub(crate) const AS_BOT: &str = "as_bot";
+pub(crate) const MESSAGE_ID: &str = "message_id";
+pub(crate) const USER_ID: &str = "user_id";
+pub(crate) const REASON: &str = "reason";
+pub(crate) const DISPLAY_NAME: &str = "display_name";
+pub(crate) const DURATION_MINUTES: &str = "duration_minutes";
+pub(crate) const TITLE: &str = "title";
+pub(crate) const CATEGORY_ID: &str = "category_id";
+pub(crate) const TAGS: &str = "tags";
+pub(crate) const COST: &str = "cost";
+pub(crate) const DESCRIPTION: &str = "description";
+pub(crate) const REWARD_ID: &str = "reward_id";
+pub(crate) const REDEMPTION_IDS: &str = "redemption_ids";
+pub(crate) const SLUG: &str = "slug";
+pub(crate) const QUERY: &str = "query";

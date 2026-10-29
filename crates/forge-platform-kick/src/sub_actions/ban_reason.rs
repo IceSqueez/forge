@@ -1,51 +1,59 @@
-use forge_registry::runner::SubActionConfig;
-use forge_registry::{
-    ConfigReason, FormField, RegistryError, RunContext, SubActionConfigExt, ValueBounds,
-};
+use forge_registry::{ConfigReason, FieldLiteral, FormField, TypedField, ValueBounds};
 use forge_types::Variant;
 
-const REASON_KEY: &str = "reason";
+use crate::vocabulary::config_keys;
+
 const REASON_MAX_CHARS: usize = 100;
 
-pub(super) fn default_entry() -> (String, Variant) {
-    (REASON_KEY.to_owned(), Variant::String(String::new()))
+pub(super) struct BanReasonField;
+
+pub(super) const REASON: BanReasonField = BanReasonField;
+
+fn moderator_reason(text: &str) -> Option<String> {
+    let reason: String = text.trim().chars().take(REASON_MAX_CHARS).collect();
+    (!reason.is_empty()).then_some(reason)
 }
 
-pub(super) fn form_field() -> FormField {
-    FormField::Text {
-        key: REASON_KEY,
-        label: "Reason (optional, max 100 chars)",
-        placeholder: "",
+impl TypedField for BanReasonField {
+    type Value = Option<String>;
+
+    fn key(&self) -> &'static str {
+        config_keys::REASON
     }
-}
 
-pub(super) fn validate(config: &SubActionConfig) -> Result<(), RegistryError> {
-    match config.get(REASON_KEY) {
-        None => Ok(()),
-        Some(Variant::String(reason)) if reason.chars().count() <= REASON_MAX_CHARS => Ok(()),
-        Some(Variant::String(_)) => Err(RegistryError::invalid_field(
-            REASON_KEY,
-            ConfigReason::LengthOutOfRange(ValueBounds::at_most(REASON_MAX_CHARS)),
-        )),
-        Some(_) => Err(RegistryError::invalid_field(
-            REASON_KEY,
-            ConfigReason::NotText,
-        )),
+    fn form_field(&self) -> FormField {
+        FormField::Text {
+            key: config_keys::REASON,
+            label: "Reason (optional, max 100 chars)",
+            placeholder: "",
+        }
     }
-}
 
-pub(super) fn resolve(config: &SubActionConfig, ctx: &RunContext<'_>) -> Option<String> {
-    config
-        .str(REASON_KEY)
-        .map(|template| {
-            ctx.arg_stack
-                .interpolate(template)
-                .trim()
-                .chars()
-                .take(REASON_MAX_CHARS)
-                .collect::<String>()
-        })
-        .filter(|reason| !reason.is_empty())
+    fn default_value(&self) -> Variant {
+        Variant::String(String::new())
+    }
+
+    fn literal<'a>(
+        &self,
+        value: &'a Variant,
+    ) -> Result<FieldLiteral<'a, Option<String>>, ConfigReason> {
+        let Variant::String(text) = value else {
+            return Err(ConfigReason::NotText);
+        };
+        if let Some(template) = FieldLiteral::of_text(text) {
+            return Ok(template);
+        }
+        if text.chars().count() > REASON_MAX_CHARS {
+            return Err(ConfigReason::LengthOutOfRange(ValueBounds::at_most(
+                REASON_MAX_CHARS,
+            )));
+        }
+        Ok(FieldLiteral::Value(moderator_reason(text)))
+    }
+
+    fn parse_text(&self, text: &str) -> Result<Option<String>, ConfigReason> {
+        Ok(moderator_reason(text))
+    }
 }
 
 #[cfg(test)]

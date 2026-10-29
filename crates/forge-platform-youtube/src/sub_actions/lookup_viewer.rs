@@ -1,21 +1,30 @@
-use std::collections::BTreeMap;
 use std::sync::Arc;
-use std::time::Instant;
 
 use async_trait::async_trait;
 use forge_registry::runner::SubActionConfig;
 use forge_registry::{
-    ConfigReason, FormField, RegistryError, RunContext, SubActionCategory, SubActionConfigExt,
-    SubActionRunner,
+    ConfigSpec, RunContext, StepTimer, SubActionCategory, SubActionRunner, TextEditor, TextField,
+    TypedField,
 };
-use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, Variant};
-use time::OffsetDateTime;
+use forge_types::{ArgStack, SubActionTelemetry, Variant};
 
 use crate::channel_lookup::YoutubeChannelLookup;
-use crate::vocabulary::sub_action_ids;
 use crate::vocabulary::variables::viewer as variables;
+use crate::vocabulary::{config_keys, sub_action_ids};
 
 const KIND_ID: &str = sub_action_ids::LOOKUP_VIEWER;
+
+const IDENTIFIER: TextField = TextField {
+    key: config_keys::IDENTIFIER,
+    label: "Channel Handle or ID",
+    editor: TextEditor::Line {
+        placeholder: "@handle or UC...",
+    },
+    default: "",
+    required: true,
+};
+
+const CONFIG: ConfigSpec = ConfigSpec::new(&[&IDENTIFIER]);
 
 pub struct LookupViewerRunner {
     lookup: Arc<YoutubeChannelLookup>,
@@ -53,26 +62,8 @@ impl SubActionRunner for LookupViewerRunner {
         "user"
     }
 
-    fn default_config(&self) -> SubActionConfig {
-        BTreeMap::from([("identifier".to_owned(), Variant::String(String::new()))])
-    }
-
-    fn config_fields(&self) -> Vec<FormField> {
-        vec![FormField::Text {
-            key: "identifier",
-            label: "Channel Handle or ID",
-            placeholder: "@handle or UC...",
-        }]
-    }
-
-    fn validate_config(&self, config: &SubActionConfig) -> Result<(), RegistryError> {
-        match config.get("identifier") {
-            Some(Variant::String(s)) if !s.is_empty() => Ok(()),
-            _ => Err(RegistryError::invalid_field(
-                "identifier",
-                ConfigReason::Required,
-            )),
-        }
+    fn config_spec(&self) -> Option<ConfigSpec> {
+        Some(CONFIG)
     }
 
     async fn execute(
@@ -80,25 +71,14 @@ impl SubActionRunner for LookupViewerRunner {
         config: &SubActionConfig,
         ctx: &RunContext<'_>,
     ) -> (SubActionTelemetry, Option<ArgStack>) {
-        let started_at = OffsetDateTime::now_utc();
-        let start = Instant::now();
-
-        let template = config.str("identifier").unwrap_or_default();
-        let identifier = ctx.arg_stack.interpolate(template);
-
+        let timer = StepTimer::start(ctx, KIND_ID);
+        let identifier = match IDENTIFIER.read(config, ctx.arg_stack) {
+            Ok(identifier) => identifier,
+            Err(problem) => return (timer.invalid_config(&problem), None),
+        };
         if identifier.is_empty() {
             return (
-                SubActionTelemetry {
-                    args_in: ::std::collections::BTreeMap::new(),
-                    produced: ::std::collections::BTreeMap::new(),
-                    kind: KIND_ID.to_owned(),
-                    started_at,
-                    duration_ms: start.elapsed().as_millis() as u64,
-                    outcome: SubActionOutcome::Failed(
-                        "identifier is empty after interpolation".to_owned(),
-                    ),
-                    index: ctx.index,
-                },
+                timer.failed("identifier is empty after interpolation"),
                 None,
             );
         }
@@ -121,32 +101,13 @@ impl SubActionRunner for LookupViewerRunner {
                         variables::VIEW_COUNT.to_owned(),
                         Variant::Int(profile.view_count),
                     );
-                (
-                    SubActionTelemetry {
-                        args_in: ::std::collections::BTreeMap::new(),
-                        produced: ::std::collections::BTreeMap::new(),
-                        kind: KIND_ID.to_owned(),
-                        started_at,
-                        duration_ms: start.elapsed().as_millis() as u64,
-                        outcome: SubActionOutcome::Success,
-                        index: ctx.index,
-                    },
-                    Some(stack),
-                )
+                (timer.success(), Some(stack))
             }
             Err(e) => (
-                SubActionTelemetry {
-                    args_in: ::std::collections::BTreeMap::new(),
-                    produced: ::std::collections::BTreeMap::new(),
-                    kind: KIND_ID.to_owned(),
-                    started_at,
-                    duration_ms: start.elapsed().as_millis() as u64,
-                    outcome: SubActionOutcome::Failed(format!(
-                        "channel lookup failed: {}",
-                        crate::error_shape::redact_platform_error(&e)
-                    )),
-                    index: ctx.index,
-                },
+                timer.failed(format!(
+                    "channel lookup failed: {}",
+                    crate::error_shape::redact_platform_error(&e)
+                )),
                 None,
             ),
         }

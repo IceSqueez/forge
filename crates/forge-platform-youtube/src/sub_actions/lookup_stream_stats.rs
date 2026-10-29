@@ -1,12 +1,9 @@
-use std::collections::BTreeMap;
 use std::sync::Arc;
-use std::time::Instant;
 
 use async_trait::async_trait;
 use forge_registry::runner::SubActionConfig;
-use forge_registry::{FormField, RegistryError, RunContext, SubActionCategory, SubActionRunner};
-use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, Variant};
-use time::OffsetDateTime;
+use forge_registry::{RunContext, StepTimer, SubActionCategory, SubActionRunner};
+use forge_types::{ArgStack, SubActionTelemetry, Variant};
 
 use crate::stream_stats::YoutubeStreamStats;
 use crate::timestamp;
@@ -51,26 +48,12 @@ impl SubActionRunner for LookupStreamStatsRunner {
         "chart-line"
     }
 
-    fn default_config(&self) -> SubActionConfig {
-        BTreeMap::new()
-    }
-
-    fn config_fields(&self) -> Vec<FormField> {
-        vec![]
-    }
-
-    fn validate_config(&self, _config: &SubActionConfig) -> Result<(), RegistryError> {
-        Ok(())
-    }
-
     async fn execute(
         &self,
         _config: &SubActionConfig,
         ctx: &RunContext<'_>,
     ) -> (SubActionTelemetry, Option<ArgStack>) {
-        let started_at = OffsetDateTime::now_utc();
-        let start = Instant::now();
-
+        let timer = StepTimer::start(ctx, KIND_ID);
         match self.stats.fetch().await {
             Ok(details) => {
                 let mut stack = ctx.arg_stack.clone().set(
@@ -87,32 +70,13 @@ impl SubActionRunner for LookupStreamStatsRunner {
                     variables::LIVE_CHAT_ID.to_owned(),
                     Variant::String(details.live_chat_id),
                 );
-                (
-                    SubActionTelemetry {
-                        args_in: ::std::collections::BTreeMap::new(),
-                        produced: ::std::collections::BTreeMap::new(),
-                        kind: KIND_ID.to_owned(),
-                        started_at,
-                        duration_ms: start.elapsed().as_millis() as u64,
-                        outcome: SubActionOutcome::Success,
-                        index: ctx.index,
-                    },
-                    Some(stack),
-                )
+                (timer.success(), Some(stack))
             }
             Err(e) => (
-                SubActionTelemetry {
-                    args_in: ::std::collections::BTreeMap::new(),
-                    produced: ::std::collections::BTreeMap::new(),
-                    kind: KIND_ID.to_owned(),
-                    started_at,
-                    duration_ms: start.elapsed().as_millis() as u64,
-                    outcome: SubActionOutcome::Failed(format!(
-                        "stream stats lookup failed: {}",
-                        crate::error_shape::redact_platform_error(&e)
-                    )),
-                    index: ctx.index,
-                },
+                timer.failed(format!(
+                    "stream stats lookup failed: {}",
+                    crate::error_shape::redact_platform_error(&e)
+                )),
                 None,
             ),
         }

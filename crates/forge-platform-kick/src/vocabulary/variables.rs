@@ -39,6 +39,10 @@ pub(crate) mod reward {
     pub(crate) const REWARD_TITLE: &str = "reward_title";
 }
 
+pub(crate) mod created_reward {
+    pub(crate) const ID: &str = "kick.reward.id";
+}
+
 pub(crate) mod viewer {
     pub(crate) const ID: &str = "kick.viewer.id";
     pub(crate) const USERNAME: &str = "kick.viewer.username";

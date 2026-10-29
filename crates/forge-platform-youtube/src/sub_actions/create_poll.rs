@@ -1,22 +1,98 @@
-use std::collections::BTreeMap;
 use std::sync::Arc;
-use std::time::Instant;
 
 use async_trait::async_trait;
 use forge_registry::runner::SubActionConfig;
 use forge_registry::{
-    ConfigReason, FormField, RegistryError, RunContext, SubActionCategory, SubActionConfigExt,
-    SubActionRunner,
+    ConfigProblem, ConfigReason, ConfigSpec, FieldLiteral, FormField, RunContext, StepTimer,
+    SubActionCategory, SubActionRunner, TextEditor, TextField, TypedField, ValueBounds,
 };
 use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, Variant};
-use time::OffsetDateTime;
 
 use crate::send_chat::YoutubeSendChat;
-use crate::vocabulary::sub_action_ids;
+use crate::vocabulary::{config_keys, sub_action_ids};
 
 const KIND_ID: &str = sub_action_ids::CHAT_CREATE_POLL;
 const MIN_OPTIONS: usize = 2;
 const MAX_OPTIONS: usize = 4;
+const OPTION_SEPARATORS: [char; 2] = ['\n', ','];
+
+const QUESTION: TextField = TextField {
+    key: config_keys::QUESTION,
+    label: "Question",
+    editor: TextEditor::Line {
+        placeholder: "Poll question",
+    },
+    default: "",
+    required: true,
+};
+
+struct PollOptionsField;
+
+const OPTIONS: PollOptionsField = PollOptionsField;
+
+const CONFIG: ConfigSpec = ConfigSpec::new(&[&QUESTION, &OPTIONS]);
+
+fn parse_options(raw: &str) -> Result<Vec<String>, ConfigReason> {
+    let options: Vec<String> = raw
+        .split(OPTION_SEPARATORS)
+        .map(str::trim)
+        .filter(|option| !option.is_empty())
+        .map(str::to_owned)
+        .collect();
+    if options.is_empty() {
+        Err(ConfigReason::Required)
+    } else if (MIN_OPTIONS..=MAX_OPTIONS).contains(&options.len()) {
+        Ok(options)
+    } else {
+        Err(ConfigReason::CountOutOfRange(ValueBounds::between(
+            MIN_OPTIONS,
+            MAX_OPTIONS,
+        )))
+    }
+}
+
+impl TypedField for PollOptionsField {
+    type Value = Vec<String>;
+
+    fn key(&self) -> &'static str {
+        config_keys::OPTIONS
+    }
+
+    fn form_field(&self) -> FormField {
+        FormField::TextArea {
+            key: config_keys::OPTIONS,
+            label: "Options (one per line, 2-4)",
+        }
+    }
+
+    fn default_value(&self) -> Variant {
+        Variant::String(String::new())
+    }
+
+    fn literal<'a>(
+        &self,
+        value: &'a Variant,
+    ) -> Result<FieldLiteral<'a, Vec<String>>, ConfigReason> {
+        match value {
+            Variant::String(text) => match FieldLiteral::of_text(text) {
+                Some(template) => Ok(template),
+                None => parse_options(text).map(FieldLiteral::Value),
+            },
+            _ => Err(ConfigReason::NotText),
+        }
+    }
+
+    fn parse_text(&self, text: &str) -> Result<Vec<String>, ConfigReason> {
+        parse_options(text)
+    }
+}
+
+fn read_config(
+    config: &SubActionConfig,
+    args: &ArgStack,
+) -> Result<(String, Vec<String>), ConfigProblem> {
+    Ok((QUESTION.read(config, args)?, OPTIONS.read(config, args)?))
+}
 
 pub struct CreatePollRunner {
     sender: Arc<YoutubeSendChat>,
@@ -26,25 +102,6 @@ impl CreatePollRunner {
     pub fn new(sender: Arc<YoutubeSendChat>) -> Self {
         Self { sender }
     }
-}
-
-fn parse_options(raw: &str) -> Result<Vec<String>, String> {
-    let options: Vec<String> = raw
-        .split(['\n', ','])
-        .map(|s| s.trim().to_owned())
-        .filter(|s| !s.is_empty())
-        .collect();
-
-    if options.len() < MIN_OPTIONS {
-        return Err(format!("at least {MIN_OPTIONS} options required"));
-    }
-    if options.len() > MAX_OPTIONS {
-        return Err(format!(
-            "too many options: max {MAX_OPTIONS}, got {}",
-            options.len()
-        ));
-    }
-    Ok(options)
 }
 
 #[async_trait]
@@ -73,45 +130,8 @@ impl SubActionRunner for CreatePollRunner {
         "chart-bar"
     }
 
-    fn default_config(&self) -> SubActionConfig {
-        BTreeMap::from([
-            ("question".to_owned(), Variant::String(String::new())),
-            ("options".to_owned(), Variant::String(String::new())),
-        ])
-    }
-
-    fn config_fields(&self) -> Vec<FormField> {
-        vec![
-            FormField::Text {
-                key: "question",
-                label: "Question",
-                placeholder: "What next?",
-            },
-            FormField::TextArea {
-                key: "options",
-                label: "Options (one per line, 2-4)",
-            },
-        ]
-    }
-
-    fn validate_config(&self, config: &SubActionConfig) -> Result<(), RegistryError> {
-        match config.get("question") {
-            Some(Variant::String(s)) if !s.is_empty() => {}
-            _ => {
-                return Err(RegistryError::invalid_field(
-                    "question",
-                    ConfigReason::Required,
-                ));
-            }
-        }
-
-        let raw_options = match config.get("options") {
-            Some(Variant::String(s)) => s.as_str(),
-            _ => "",
-        };
-        parse_options(raw_options).map(|_| ()).map_err(|detail| {
-            RegistryError::invalid_field("options", ConfigReason::InvalidFormat(detail))
-        })
+    fn config_spec(&self) -> Option<ConfigSpec> {
+        Some(CONFIG)
     }
 
     async fn execute(
@@ -119,65 +139,18 @@ impl SubActionRunner for CreatePollRunner {
         config: &SubActionConfig,
         ctx: &RunContext<'_>,
     ) -> (SubActionTelemetry, Option<ArgStack>) {
-        let started_at = OffsetDateTime::now_utc();
-        let start = Instant::now();
-
-        let question_template = config.str("question").unwrap_or_default();
-        let question = ctx.arg_stack.interpolate(question_template);
-
-        if question.is_empty() {
-            return (
-                SubActionTelemetry {
-                    args_in: ::std::collections::BTreeMap::new(),
-                    produced: ::std::collections::BTreeMap::new(),
-                    kind: KIND_ID.to_owned(),
-                    started_at,
-                    duration_ms: start.elapsed().as_millis() as u64,
-                    outcome: SubActionOutcome::Failed(
-                        "question is empty after interpolation".to_owned(),
-                    ),
-                    index: ctx.index,
-                },
-                None,
-            );
-        }
-
-        let options_template = config.str("options").unwrap_or_default();
-        let raw_options = ctx.arg_stack.interpolate(options_template);
-
-        let options = match parse_options(&raw_options) {
-            Ok(v) => v,
-            Err(msg) => {
-                return (
-                    SubActionTelemetry {
-                        args_in: ::std::collections::BTreeMap::new(),
-                        produced: ::std::collections::BTreeMap::new(),
-                        kind: KIND_ID.to_owned(),
-                        started_at,
-                        duration_ms: start.elapsed().as_millis() as u64,
-                        outcome: SubActionOutcome::Failed(msg),
-                        index: ctx.index,
-                    },
-                    None,
-                );
-            }
+        let timer = StepTimer::start(ctx, KIND_ID);
+        let (question, options) = match read_config(config, ctx.arg_stack) {
+            Ok(values) => values,
+            Err(problem) => return (timer.invalid_config(&problem), None),
         };
+        if question.is_empty() {
+            return (timer.failed("question is empty after interpolation"), None);
+        }
 
         let outcome =
             SubActionOutcome::from_result(&self.sender.create_poll(&question, &options).await);
-
-        (
-            SubActionTelemetry {
-                args_in: ::std::collections::BTreeMap::new(),
-                produced: ::std::collections::BTreeMap::new(),
-                kind: KIND_ID.to_owned(),
-                started_at,
-                duration_ms: start.elapsed().as_millis() as u64,
-                outcome,
-                index: ctx.index,
-            },
-            None,
-        )
+        (timer.finish(outcome), None)
     }
 }
 

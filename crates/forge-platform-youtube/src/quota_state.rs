@@ -7,7 +7,7 @@ use time::{OffsetDateTime, UtcOffset};
 use tokio::sync::{Mutex, MutexGuard, TryLockError};
 
 const QUOTA_HIGH_WATER: u32 = 9_000;
-const QUOTA_DAILY_LIMIT: u32 = 10_000;
+pub(crate) const QUOTA_DAILY_LIMIT: u32 = 10_000;
 const QUOTA_RESET_ZONE: &str = "America/Los_Angeles";
 const PACIFIC_STANDARD_HOURS: i8 = -8;
 pub(crate) const BROADCAST_COST: u32 = 1;

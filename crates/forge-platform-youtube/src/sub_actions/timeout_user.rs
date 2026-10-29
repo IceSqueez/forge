@@ -1,21 +1,44 @@
-use std::collections::BTreeMap;
 use std::sync::Arc;
-use std::time::Instant;
 
 use async_trait::async_trait;
 use forge_registry::runner::SubActionConfig;
 use forge_registry::{
-    ConfigReason, DurationBounds, FormField, RegistryError, RunContext, SubActionCategory,
-    SubActionConfigExt, SubActionRunner, ValueBounds,
+    ConfigProblem, ConfigReason, ConfigSpec, DurationAmountField, DurationBounds, RunContext,
+    StepTimer, SubActionCategory, SubActionRunner, TypedField, ValueBounds,
 };
-use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, Variant};
-use time::OffsetDateTime;
+use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry};
 
 use super::display_name;
+use super::fields::CHANNEL_ID;
 use crate::moderation::YoutubeModeration;
-use crate::vocabulary::sub_action_ids;
+use crate::vocabulary::{config_keys, sub_action_ids};
 
 const KIND_ID: &str = sub_action_ids::MODERATION_TIMEOUT_USER;
+const MIN_TIMEOUT_SECONDS: i64 = 1;
+const MAX_TIMEOUT_SECONDS: i64 = 86_400;
+const DEFAULT_TIMEOUT_SECONDS: i64 = 300;
+
+const DURATION_SECONDS: DurationAmountField = DurationAmountField {
+    key: config_keys::DURATION_SECONDS,
+    label: "Duration",
+    default: DEFAULT_TIMEOUT_SECONDS,
+    bounds: DurationBounds::in_seconds(MIN_TIMEOUT_SECONDS, MAX_TIMEOUT_SECONDS),
+};
+
+const CONFIG: ConfigSpec = ConfigSpec::new(&[&CHANNEL_ID, &DURATION_SECONDS]);
+
+fn read_config(config: &SubActionConfig, args: &ArgStack) -> Result<(String, u32), ConfigProblem> {
+    let seconds = u32::try_from(DURATION_SECONDS.read(config, args)?).map_err(|_| {
+        ConfigProblem::field(
+            config_keys::DURATION_SECONDS,
+            ConfigReason::OutOfRange(ValueBounds::between(
+                MIN_TIMEOUT_SECONDS,
+                MAX_TIMEOUT_SECONDS,
+            )),
+        )
+    })?;
+    Ok((CHANNEL_ID.read(config, args)?, seconds))
+}
 
 pub struct TimeoutUserRunner {
     moderation: Arc<YoutubeModeration>,
@@ -53,45 +76,8 @@ impl SubActionRunner for TimeoutUserRunner {
         "clock"
     }
 
-    fn default_config(&self) -> SubActionConfig {
-        BTreeMap::from([
-            ("channel_id".to_owned(), Variant::String(String::new())),
-            ("duration_seconds".to_owned(), Variant::Int(300)),
-        ])
-    }
-
-    fn config_fields(&self) -> Vec<FormField> {
-        vec![
-            FormField::Text {
-                key: "channel_id",
-                label: "Channel ID",
-                placeholder: "UC... or %user_id%",
-            },
-            FormField::Duration {
-                key: "duration_seconds",
-                label: "Duration",
-                bounds: DurationBounds::in_seconds(1, 86_400),
-            },
-        ]
-    }
-
-    fn validate_config(&self, config: &SubActionConfig) -> Result<(), RegistryError> {
-        match config.get("channel_id") {
-            Some(Variant::String(s)) if !s.is_empty() => {}
-            _ => {
-                return Err(RegistryError::invalid_field(
-                    "channel_id",
-                    ConfigReason::Required,
-                ));
-            }
-        }
-        match config.get("duration_seconds") {
-            Some(Variant::Int(n)) if (1..=86_400).contains(n) => Ok(()),
-            _ => Err(RegistryError::invalid_field(
-                "duration_seconds",
-                ConfigReason::OutOfRange(ValueBounds::between(1, 86400)),
-            )),
-        }
+    fn config_spec(&self) -> Option<ConfigSpec> {
+        Some(CONFIG)
     }
 
     async fn execute(
@@ -99,43 +85,26 @@ impl SubActionRunner for TimeoutUserRunner {
         config: &SubActionConfig,
         ctx: &RunContext<'_>,
     ) -> (SubActionTelemetry, Option<ArgStack>) {
-        let started_at = OffsetDateTime::now_utc();
-        let start = Instant::now();
-
-        let template = config.str("channel_id").unwrap_or_default();
-        let channel_id = ctx.arg_stack.interpolate(template);
-        let display_name = display_name::resolve(config, ctx);
-        let duration = config
-            .get("duration_seconds")
-            .and_then(|v| match v {
-                Variant::Int(n) => u32::try_from(*n).ok(),
-                _ => None,
-            })
-            .unwrap_or(300);
-
-        let outcome = if channel_id.is_empty() {
-            SubActionOutcome::Failed("channel_id is empty after interpolation".to_owned())
-        } else {
-            SubActionOutcome::from_result(
-                &self
-                    .moderation
-                    .timeout(&channel_id, duration, display_name.as_deref())
-                    .await,
-            )
+        let timer = StepTimer::start(ctx, KIND_ID);
+        let (channel_id, seconds) = match read_config(config, ctx.arg_stack) {
+            Ok(values) => values,
+            Err(problem) => return (timer.invalid_config(&problem), None),
         };
+        if channel_id.is_empty() {
+            return (
+                timer.failed("channel_id is empty after interpolation"),
+                None,
+            );
+        }
 
-        (
-            SubActionTelemetry {
-                args_in: ::std::collections::BTreeMap::new(),
-                produced: ::std::collections::BTreeMap::new(),
-                kind: KIND_ID.to_owned(),
-                started_at,
-                duration_ms: start.elapsed().as_millis() as u64,
-                outcome,
-                index: ctx.index,
-            },
-            None,
-        )
+        let display_name = display_name::resolve(config, ctx);
+        let outcome = SubActionOutcome::from_result(
+            &self
+                .moderation
+                .timeout(&channel_id, seconds, display_name.as_deref())
+                .await,
+        );
+        (timer.finish(outcome), None)
     }
 }
 

@@ -1,23 +1,21 @@
-use std::collections::BTreeMap;
 use std::sync::Arc;
-use std::time::Instant;
 
 use async_trait::async_trait;
 use forge_platform_core::PlatformError;
 use forge_registry::runner::SubActionConfig;
 use forge_registry::{
-    ConfigReason, FormField, RegistryError, RunContext, SubActionCategory, SubActionConfigExt,
-    SubActionRunner,
+    ConfigSpec, RunContext, StepTimer, SubActionCategory, SubActionRunner, TypedField,
 };
-use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, Variant};
+use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry};
 use futures::future::BoxFuture;
-use time::OffsetDateTime;
 
+use super::fields::USER_ID;
 use crate::api::moderation::KickModeration;
 use crate::vocabulary::sub_action_ids;
-use crate::vocabulary::variables::references;
 
 const KIND_ID: &str = sub_action_ids::MODERATION_UNBAN;
+
+const CONFIG: ConfigSpec = ConfigSpec::new(&[&USER_ID]);
 
 pub struct UnbanUserRunner {
     client: Arc<KickModeration>,
@@ -70,26 +68,8 @@ impl SubActionRunner for UnbanUserRunner {
         "unban"
     }
 
-    fn default_config(&self) -> SubActionConfig {
-        BTreeMap::from([("user_id".to_owned(), Variant::String(String::new()))])
-    }
-
-    fn config_fields(&self) -> Vec<FormField> {
-        vec![FormField::Text {
-            key: "user_id",
-            label: "Target User ID",
-            placeholder: references::USER_ID,
-        }]
-    }
-
-    fn validate_config(&self, config: &SubActionConfig) -> Result<(), RegistryError> {
-        match config.get("user_id") {
-            Some(Variant::String(s)) if !s.is_empty() => Ok(()),
-            _ => Err(RegistryError::invalid_field(
-                "user_id",
-                ConfigReason::Required,
-            )),
-        }
+    fn config_spec(&self) -> Option<ConfigSpec> {
+        Some(CONFIG)
     }
 
     async fn execute(
@@ -97,44 +77,25 @@ impl SubActionRunner for UnbanUserRunner {
         config: &SubActionConfig,
         ctx: &RunContext<'_>,
     ) -> (SubActionTelemetry, Option<ArgStack>) {
-        let started_at = OffsetDateTime::now_utc();
-        let start = Instant::now();
-
-        let template = config.str("user_id").unwrap_or_default();
-        let resolved = ctx.arg_stack.interpolate(template);
-
-        let outcome = match resolved.parse::<u64>() {
-            Err(_) => {
-                SubActionOutcome::Failed(format!("user_id '{resolved}' is not a valid numeric id"))
-            }
-            Ok(target_id) => match (self.token_source)().await {
-                Err(e) => SubActionOutcome::Failed(format!("token error: {e}")),
-                Ok(token) => match (self.broadcaster_id_source)().await {
-                    Err(e) => SubActionOutcome::Failed(format!("broadcaster id error: {e}")),
-                    Ok(broadcaster_user_id) => match self
-                        .client
-                        .unban(target_id, broadcaster_user_id, &token)
-                        .await
-                    {
-                        Ok(()) => SubActionOutcome::Success,
-                        Err(e) => SubActionOutcome::Failed(e.to_string()),
-                    },
-                },
-            },
+        let timer = StepTimer::start(ctx, KIND_ID);
+        let target_id = match USER_ID.read(config, ctx.arg_stack) {
+            Ok(target_id) => target_id,
+            Err(problem) => return (timer.invalid_config(&problem), None),
         };
 
-        (
-            SubActionTelemetry {
-                args_in: ::std::collections::BTreeMap::new(),
-                produced: ::std::collections::BTreeMap::new(),
-                kind: KIND_ID.to_owned(),
-                started_at,
-                duration_ms: start.elapsed().as_millis() as u64,
-                outcome,
-                index: ctx.index,
+        let outcome = match (self.token_source)().await {
+            Err(e) => SubActionOutcome::Failed(format!("token error: {e}")),
+            Ok(token) => match (self.broadcaster_id_source)().await {
+                Err(e) => SubActionOutcome::Failed(format!("broadcaster id error: {e}")),
+                Ok(broadcaster_user_id) => SubActionOutcome::from_result(
+                    &self
+                        .client
+                        .unban(target_id, broadcaster_user_id, &token)
+                        .await,
+                ),
             },
-            None,
-        )
+        };
+        (timer.finish(outcome), None)
     }
 }
 

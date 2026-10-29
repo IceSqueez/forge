@@ -1,24 +1,31 @@
-use std::collections::BTreeMap;
 use std::sync::Arc;
-use std::time::Instant;
 
 use async_trait::async_trait;
 use forge_platform_core::PlatformError;
 use forge_registry::runner::SubActionConfig;
 use forge_registry::{
-    ConfigReason, FormField, RegistryError, RunContext, SubActionCategory, SubActionConfigExt,
-    SubActionRunner,
+    ConfigProblem, ConfigSpec, RunContext, StepTimer, SubActionCategory, SubActionRunner,
+    TypedField,
 };
-use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, Variant};
+use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry};
 use futures::future::BoxFuture;
-use time::OffsetDateTime;
 
-use super::{ban_reason, display_name};
+use super::ban_reason::REASON;
+use super::display_name;
+use super::fields::USER_ID;
 use crate::api::moderation::KickModeration;
 use crate::vocabulary::sub_action_ids;
-use crate::vocabulary::variables::references;
 
 const KIND_ID: &str = sub_action_ids::MODERATION_BAN;
+
+const CONFIG: ConfigSpec = ConfigSpec::new(&[&USER_ID, &REASON]);
+
+fn read_config(
+    config: &SubActionConfig,
+    args: &ArgStack,
+) -> Result<(u64, Option<String>), ConfigProblem> {
+    Ok((USER_ID.read(config, args)?, REASON.read(config, args)?))
+}
 
 pub struct BanUserRunner {
     client: Arc<KickModeration>,
@@ -71,35 +78,8 @@ impl SubActionRunner for BanUserRunner {
         "ban"
     }
 
-    fn default_config(&self) -> SubActionConfig {
-        BTreeMap::from([
-            ("user_id".to_owned(), Variant::String(String::new())),
-            ban_reason::default_entry(),
-        ])
-    }
-
-    fn config_fields(&self) -> Vec<FormField> {
-        vec![
-            FormField::Text {
-                key: "user_id",
-                label: "Target User ID",
-                placeholder: references::USER_ID,
-            },
-            ban_reason::form_field(),
-        ]
-    }
-
-    fn validate_config(&self, config: &SubActionConfig) -> Result<(), RegistryError> {
-        match config.get("user_id") {
-            Some(Variant::String(s)) if !s.is_empty() => {}
-            _ => {
-                return Err(RegistryError::invalid_field(
-                    "user_id",
-                    ConfigReason::Required,
-                ));
-            }
-        }
-        ban_reason::validate(config)
+    fn config_spec(&self) -> Option<ConfigSpec> {
+        Some(CONFIG)
     }
 
     async fn execute(
@@ -107,23 +87,19 @@ impl SubActionRunner for BanUserRunner {
         config: &SubActionConfig,
         ctx: &RunContext<'_>,
     ) -> (SubActionTelemetry, Option<ArgStack>) {
-        let started_at = OffsetDateTime::now_utc();
-        let start = Instant::now();
-
-        let template = config.str("user_id").unwrap_or_default();
-        let resolved = ctx.arg_stack.interpolate(template);
-        let reason = ban_reason::resolve(config, ctx);
+        let timer = StepTimer::start(ctx, KIND_ID);
+        let (target_id, reason) = match read_config(config, ctx.arg_stack) {
+            Ok(values) => values,
+            Err(problem) => return (timer.invalid_config(&problem), None),
+        };
         let display_name = display_name::resolve(config, ctx);
 
-        let outcome = match resolved.parse::<u64>() {
-            Err(_) => {
-                SubActionOutcome::Failed(format!("user_id '{resolved}' is not a valid numeric id"))
-            }
-            Ok(target_id) => match (self.token_source)().await {
-                Err(e) => SubActionOutcome::Failed(format!("token error: {e}")),
-                Ok(token) => match (self.broadcaster_id_source)().await {
-                    Err(e) => SubActionOutcome::Failed(format!("broadcaster id error: {e}")),
-                    Ok(broadcaster_user_id) => match self
+        let outcome = match (self.token_source)().await {
+            Err(e) => SubActionOutcome::Failed(format!("token error: {e}")),
+            Ok(token) => match (self.broadcaster_id_source)().await {
+                Err(e) => SubActionOutcome::Failed(format!("broadcaster id error: {e}")),
+                Ok(broadcaster_user_id) => SubActionOutcome::from_result(
+                    &self
                         .client
                         .ban(
                             target_id,
@@ -132,27 +108,11 @@ impl SubActionRunner for BanUserRunner {
                             reason.as_deref(),
                             &token,
                         )
-                        .await
-                    {
-                        Ok(()) => SubActionOutcome::Success,
-                        Err(e) => SubActionOutcome::Failed(e.to_string()),
-                    },
-                },
+                        .await,
+                ),
             },
         };
-
-        (
-            SubActionTelemetry {
-                args_in: ::std::collections::BTreeMap::new(),
-                produced: ::std::collections::BTreeMap::new(),
-                kind: KIND_ID.to_owned(),
-                started_at,
-                duration_ms: start.elapsed().as_millis() as u64,
-                outcome,
-                index: ctx.index,
-            },
-            None,
-        )
+        (timer.finish(outcome), None)
     }
 }
 

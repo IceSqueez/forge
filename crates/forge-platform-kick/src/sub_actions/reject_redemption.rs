@@ -1,24 +1,21 @@
-use std::collections::BTreeMap;
 use std::sync::Arc;
-use std::time::Instant;
 
 use async_trait::async_trait;
 use forge_platform_core::PlatformError;
 use forge_registry::runner::SubActionConfig;
 use forge_registry::{
-    ConfigReason, FormField, RegistryError, RunContext, SubActionCategory, SubActionConfigExt,
-    SubActionRunner, ValueBounds,
+    ConfigSpec, RunContext, StepTimer, SubActionCategory, SubActionRunner, TypedField,
 };
-use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, Variant};
+use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry};
 use futures::future::BoxFuture;
-use time::OffsetDateTime;
 
+use super::fields::REDEMPTION_IDS;
 use crate::api::rewards::KickRewards;
 use crate::vocabulary::sub_action_ids;
-use crate::vocabulary::variables::references;
 
 const KIND_ID: &str = sub_action_ids::REWARD_REDEMPTION_REJECT;
-const MAX_BATCH: usize = 25;
+
+const CONFIG: ConfigSpec = ConfigSpec::new(&[&REDEMPTION_IDS]);
 
 pub struct RejectRedemptionRunner {
     client: Arc<KickRewards>,
@@ -37,13 +34,6 @@ impl RejectRedemptionRunner {
             token_source,
         }
     }
-}
-
-fn parse_ids(raw: &str) -> Vec<String> {
-    raw.split(',')
-        .map(|s| s.trim().to_owned())
-        .filter(|s| !s.is_empty())
-        .collect()
 }
 
 #[async_trait]
@@ -72,37 +62,8 @@ impl SubActionRunner for RejectRedemptionRunner {
         "x-circle"
     }
 
-    fn default_config(&self) -> SubActionConfig {
-        BTreeMap::from([(
-            "redemption_ids".to_owned(),
-            Variant::String(references::REDEMPTION_ID.to_owned()),
-        )])
-    }
-
-    fn config_fields(&self) -> Vec<FormField> {
-        vec![FormField::Text {
-            key: "redemption_ids",
-            label: "Redemption ID(s)",
-            placeholder: references::REDEMPTION_IDS_HINT,
-        }]
-    }
-
-    fn validate_config(&self, config: &SubActionConfig) -> Result<(), RegistryError> {
-        let raw = config.str("redemption_ids").unwrap_or_default();
-        if raw.trim().is_empty() {
-            return Err(RegistryError::invalid_field(
-                "redemption_ids",
-                ConfigReason::Required,
-            ));
-        }
-        let ids = parse_ids(raw);
-        if ids.len() > MAX_BATCH {
-            return Err(RegistryError::invalid_field(
-                "redemption_ids",
-                ConfigReason::CountOutOfRange(ValueBounds::at_most(MAX_BATCH)),
-            ));
-        }
-        Ok(())
+    fn config_spec(&self) -> Option<ConfigSpec> {
+        Some(CONFIG)
     }
 
     async fn execute(
@@ -110,50 +71,19 @@ impl SubActionRunner for RejectRedemptionRunner {
         config: &SubActionConfig,
         ctx: &RunContext<'_>,
     ) -> (SubActionTelemetry, Option<ArgStack>) {
-        let started_at = OffsetDateTime::now_utc();
-        let start = Instant::now();
-
-        let raw = config.str("redemption_ids").unwrap_or_default();
-        let interpolated = ctx.arg_stack.interpolate(raw);
-        let ids = parse_ids(&interpolated);
-
-        if ids.is_empty() {
-            let outcome =
-                SubActionOutcome::Failed("redemption_ids is empty after interpolation".to_owned());
-            return (
-                SubActionTelemetry {
-                    args_in: ::std::collections::BTreeMap::new(),
-                    produced: ::std::collections::BTreeMap::new(),
-                    kind: KIND_ID.to_owned(),
-                    started_at,
-                    duration_ms: start.elapsed().as_millis() as u64,
-                    outcome,
-                    index: ctx.index,
-                },
-                None,
-            );
-        }
+        let timer = StepTimer::start(ctx, KIND_ID);
+        let ids = match REDEMPTION_IDS.read(config, ctx.arg_stack) {
+            Ok(ids) => ids,
+            Err(problem) => return (timer.invalid_config(&problem), None),
+        };
 
         let outcome = match (self.token_source)().await {
             Err(e) => SubActionOutcome::Failed(format!("token error: {e}")),
-            Ok(token) => match self.client.reject_redemptions(&ids, &token).await {
-                Ok(()) => SubActionOutcome::Success,
-                Err(e) => SubActionOutcome::Failed(e.to_string()),
-            },
+            Ok(token) => {
+                SubActionOutcome::from_result(&self.client.reject_redemptions(&ids, &token).await)
+            }
         };
-
-        (
-            SubActionTelemetry {
-                args_in: ::std::collections::BTreeMap::new(),
-                produced: ::std::collections::BTreeMap::new(),
-                kind: KIND_ID.to_owned(),
-                started_at,
-                duration_ms: start.elapsed().as_millis() as u64,
-                outcome,
-                index: ctx.index,
-            },
-            None,
-        )
+        (timer.finish(outcome), None)
     }
 }
 

@@ -1,14 +1,11 @@
-use std::collections::BTreeMap;
 use std::sync::Arc;
-use std::time::Instant;
 
 use async_trait::async_trait;
 use forge_platform_core::PlatformError;
 use forge_registry::runner::SubActionConfig;
-use forge_registry::{FormField, RegistryError, RunContext, SubActionCategory, SubActionRunner};
-use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, Variant};
+use forge_registry::{RunContext, StepTimer, SubActionCategory, SubActionRunner};
+use forge_types::{ArgStack, SubActionTelemetry, Variant};
 use futures::future::BoxFuture;
-use time::OffsetDateTime;
 
 use crate::api::channel::KickChannel;
 use crate::vocabulary::sub_action_ids;
@@ -61,85 +58,48 @@ impl SubActionRunner for LookupStreamStatsRunner {
         "chart-line"
     }
 
-    fn default_config(&self) -> SubActionConfig {
-        BTreeMap::new()
-    }
-
-    fn config_fields(&self) -> Vec<FormField> {
-        vec![]
-    }
-
-    fn validate_config(&self, _config: &SubActionConfig) -> Result<(), RegistryError> {
-        Ok(())
-    }
-
     async fn execute(
         &self,
         _config: &SubActionConfig,
         ctx: &RunContext<'_>,
     ) -> (SubActionTelemetry, Option<ArgStack>) {
-        let started_at = OffsetDateTime::now_utc();
-        let start = Instant::now();
-
-        let result = match (self.token_source)().await {
-            Err(e) => Err(format!("token error: {e}")),
-            Ok(token) => match self.client.get_channel(&token).await {
-                Ok(snapshot) => {
-                    let mut stack = ctx.arg_stack.clone();
-                    stack = stack.set(
+        let timer = StepTimer::start(ctx, KIND_ID);
+        let token = match (self.token_source)().await {
+            Ok(token) => token,
+            Err(e) => return (timer.failed(format!("token error: {e}")), None),
+        };
+        match self.client.get_channel(&token).await {
+            Ok(snapshot) => {
+                let mut stack = ctx
+                    .arg_stack
+                    .clone()
+                    .set(
                         variables::stream_stats::IS_LIVE.to_owned(),
                         Variant::Bool(snapshot.is_live),
-                    );
-                    stack = stack.set(
+                    )
+                    .set(
                         variables::stream_stats::VIEWER_COUNT.to_owned(),
                         Variant::Int(snapshot.viewer_count as i64),
                     );
-                    if let Some(started) = crate::timestamp::variant(snapshot.started_at) {
-                        stack = stack.set(variables::stream_stats::STARTED_AT.to_owned(), started);
-                    }
-                    stack = stack.set(
+                if let Some(started) = crate::timestamp::variant(snapshot.started_at) {
+                    stack = stack.set(variables::stream_stats::STARTED_AT.to_owned(), started);
+                }
+                let stack = stack
+                    .set(
                         variables::stream_stats::CATEGORY_ID.to_owned(),
                         Variant::Int(snapshot.category_id as i64),
-                    );
-                    stack = stack.set(
+                    )
+                    .set(
                         variables::stream_stats::CATEGORY_NAME.to_owned(),
                         Variant::String(snapshot.category_name),
-                    );
-                    stack = stack.set(
+                    )
+                    .set(
                         variables::stream_stats::STREAM_TITLE.to_owned(),
                         Variant::String(snapshot.stream_title),
                     );
-                    Ok(stack)
-                }
-                Err(e) => Err(e.to_string()),
-            },
-        };
-
-        match result {
-            Ok(stack) => (
-                SubActionTelemetry {
-                    args_in: BTreeMap::new(),
-                    produced: BTreeMap::new(),
-                    kind: KIND_ID.to_owned(),
-                    started_at,
-                    duration_ms: start.elapsed().as_millis() as u64,
-                    outcome: SubActionOutcome::Success,
-                    index: ctx.index,
-                },
-                Some(stack),
-            ),
-            Err(msg) => (
-                SubActionTelemetry {
-                    args_in: BTreeMap::new(),
-                    produced: BTreeMap::new(),
-                    kind: KIND_ID.to_owned(),
-                    started_at,
-                    duration_ms: start.elapsed().as_millis() as u64,
-                    outcome: SubActionOutcome::Failed(msg),
-                    index: ctx.index,
-                },
-                None,
-            ),
+                (timer.success(), Some(stack))
+            }
+            Err(e) => (timer.failed(e.to_string()), None),
         }
     }
 }

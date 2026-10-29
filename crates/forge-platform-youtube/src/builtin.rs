@@ -1,17 +1,13 @@
-use std::collections::BTreeMap;
 use std::sync::{Arc, OnceLock, RwLock};
 use std::time::{Duration, SystemTime};
 
 use forge_platform_core::{
     BuiltinContent, BuiltinHealth, BuiltinStatus, CapabilityFlags, ChatPlatform, ConnectionState,
     DetailSection, HeaderAction, HealthDelta, HealthMetric, HealthMetricId, HealthStream,
-    HealthValue, HeroBadge, HeroBadgeTone, LiveViewerSource, QuickAction, QuickActionAccent,
-    QuickActionChoiceOption, QuickActionChoiceSource, QuickActionField, QuickActionFieldKind,
-    QuickActionFieldValue, QuickActionLiveness, QuickActions, SectionIcon, ViewerReport,
+    HealthValue, HeroBadge, HeroBadgeTone, LiveViewerSource, ViewerReport,
 };
 use forge_registry::{RegistryError, TriggerRegistry};
 use forge_types::IntegrationId;
-use forge_types::{SubActionStep, Variant};
 use tokio::sync::{broadcast, watch};
 use tokio_stream::StreamExt;
 use tokio_stream::wrappers::BroadcastStream;
@@ -20,7 +16,7 @@ use tokio_util::sync::CancellationToken;
 use crate::chat_platform::YoutubePlatform;
 use crate::credentials_manager::YoutubeCredentialsManager;
 use crate::follow_lookup::YoutubeFollowLookup;
-use crate::quota_state::{SharedQuota, today_pacific};
+use crate::quota_state::{QUOTA_DAILY_LIMIT, SharedQuota, today_pacific};
 use crate::triggers::channel_member::SupportNewMemberDescriptor;
 use crate::triggers::channel_member_milestone::SupportMemberMilestoneDescriptor;
 use crate::triggers::channel_user_banned::ChannelUserBannedDescriptor;
@@ -35,10 +31,7 @@ use crate::triggers::stream_offline::ChannelBroadcastEndedDescriptor;
 use crate::triggers::stream_online::ChannelBroadcastStartedDescriptor;
 use crate::triggers::title_changed::ChannelBroadcastTitleChangedDescriptor;
 use crate::viewer_poll::{YoutubeViewerPoll, YoutubeViewerSource};
-use crate::vocabulary::sub_action_ids;
 
-const QUOTA_DAILY_BUDGET: u64 = 10_000;
-const GAMING_CATEGORY_ID: &str = "20";
 const LIVE_CHAT_METRIC: HealthMetricId = HealthMetricId::new("live_chat");
 const EVENTS_METRIC: HealthMetricId = HealthMetricId::new("events");
 const API_CALLS_METRIC: HealthMetricId = HealthMetricId::new("api_calls");
@@ -275,7 +268,7 @@ impl YoutubeIntegrationBundle {
         let value = match self.quota.try_lock() {
             Ok(guard) => HealthValue::Ratio {
                 used: u64::from(guard.used_on(today_pacific())),
-                total: QUOTA_DAILY_BUDGET,
+                total: u64::from(QUOTA_DAILY_LIMIT),
                 reset_hint: Some("resets daily (Pacific)".to_owned()),
             },
             Err(_) => HealthValue::Text {
@@ -415,290 +408,6 @@ impl BuiltinHealth for YoutubeIntegrationBundle {
 impl BuiltinContent for YoutubeIntegrationBundle {
     fn sections(&self) -> Vec<DetailSection> {
         Vec::new()
-    }
-}
-
-fn blank() -> Variant {
-    Variant::String(String::new())
-}
-
-fn config(pairs: impl IntoIterator<Item = (&'static str, Variant)>) -> BTreeMap<String, Variant> {
-    pairs.into_iter().map(|(k, v)| (k.to_owned(), v)).collect()
-}
-
-fn group_badge(group: &str) -> (SectionIcon, QuickActionAccent) {
-    match group {
-        "Broadcast" => (SectionIcon::new("broadcast"), QuickActionAccent::Danger),
-        "Polls" => (SectionIcon::new("chart-bar"), QuickActionAccent::Brand),
-        "Chat" => (SectionIcon::new("message-2"), QuickActionAccent::Brand),
-        "Content" => (SectionIcon::new("video"), QuickActionAccent::Bits),
-        _ => (SectionIcon::new("dot"), QuickActionAccent::Brand),
-    }
-}
-
-fn text_field(key: &str, label: &str, placeholder: &str) -> QuickActionField {
-    QuickActionField {
-        key: key.to_owned(),
-        label: label.to_owned(),
-        kind: QuickActionFieldKind::Text,
-        default: None,
-        placeholder: Some(placeholder.to_owned()),
-        hint: None,
-        required: false,
-    }
-}
-
-fn multiline_field(key: &str, label: &str, placeholder: &str) -> QuickActionField {
-    QuickActionField {
-        kind: QuickActionFieldKind::Multiline,
-        ..text_field(key, label, placeholder)
-    }
-}
-
-fn choice_field(
-    key: &str,
-    label: &str,
-    default: &str,
-    options: &[(&str, &str)],
-) -> QuickActionField {
-    let options = options
-        .iter()
-        .map(|(value, label)| QuickActionChoiceOption {
-            value: (*value).to_owned(),
-            label: (*label).to_owned(),
-        })
-        .collect();
-    QuickActionField {
-        kind: QuickActionFieldKind::Choice(QuickActionChoiceSource::Static(options)),
-        default: Some(QuickActionFieldValue::Text(default.to_owned())),
-        placeholder: None,
-        ..text_field(key, label, "")
-    }
-}
-
-#[expect(
-    clippy::too_many_arguments,
-    reason = "each argument is one field of the quick-action template"
-)]
-fn quick_action(
-    label: &str,
-    icon: &str,
-    accent: QuickActionAccent,
-    enabled: bool,
-    group: &str,
-    destructive: bool,
-    kind_id: &str,
-    config: BTreeMap<String, Variant>,
-    fields: Vec<QuickActionField>,
-) -> QuickAction {
-    let (group_icon, group_accent) = group_badge(group);
-    QuickAction {
-        label: label.to_owned(),
-        icon: SectionIcon::new(icon),
-        enabled,
-        locked_reason: None,
-        liveness: QuickActionLiveness::Unknown,
-        group: Some(group.to_owned()),
-        group_icon: Some(group_icon),
-        group_accent: Some(group_accent),
-        destructive,
-        accent,
-        subaction_template: SubActionStep {
-            kind_id: kind_id.to_owned(),
-            config,
-            enabled: true,
-            continue_on_error: false,
-            condition: None,
-            label: None,
-        },
-        fields,
-        collection: None,
-    }
-}
-
-impl QuickActions for YoutubeIntegrationBundle {
-    fn actions(&self) -> Vec<QuickAction> {
-        let connected = self.current_state().is_connected();
-
-        vec![
-            quick_action(
-                "Update title",
-                "edit",
-                QuickActionAccent::Info,
-                connected,
-                "Broadcast",
-                false,
-                sub_action_ids::STREAM_UPDATE_TITLE,
-                config([("title", blank())]),
-                vec![text_field("title", "Title", "Stream title").required()],
-            ),
-            quick_action(
-                "Update description",
-                "file-text",
-                QuickActionAccent::Brand,
-                connected,
-                "Broadcast",
-                false,
-                sub_action_ids::STREAM_UPDATE_DESCRIPTION,
-                config([("description", blank())]),
-                vec![
-                    multiline_field("description", "Description", "Stream description").required(),
-                ],
-            ),
-            quick_action(
-                "Set category",
-                "category",
-                QuickActionAccent::Success,
-                connected,
-                "Broadcast",
-                false,
-                sub_action_ids::STREAM_UPDATE_CATEGORY,
-                config([(
-                    "category_id",
-                    Variant::String(GAMING_CATEGORY_ID.to_owned()),
-                )]),
-                vec![
-                    QuickActionField {
-                        default: Some(QuickActionFieldValue::Text(GAMING_CATEGORY_ID.to_owned())),
-                        ..text_field(
-                            "category_id",
-                            "Category ID",
-                            "20 (Gaming), 24 (Entertainment)\u{2026}",
-                        )
-                    }
-                    .required(),
-                ],
-            ),
-            quick_action(
-                "Change privacy",
-                "eye",
-                QuickActionAccent::Warning,
-                connected,
-                "Broadcast",
-                false,
-                sub_action_ids::STREAM_UPDATE_PRIVACY,
-                config([("privacy_status", Variant::String("public".to_owned()))]),
-                vec![
-                    choice_field(
-                        "privacy_status",
-                        "Visibility",
-                        "public",
-                        &[
-                            ("public", "Public"),
-                            ("unlisted", "Unlisted"),
-                            ("private", "Private"),
-                        ],
-                    )
-                    .required(),
-                ],
-            ),
-            quick_action(
-                "Set thumbnail",
-                "photo",
-                QuickActionAccent::Bits,
-                connected,
-                "Broadcast",
-                false,
-                sub_action_ids::STREAM_SET_THUMBNAIL,
-                config([("image_path", blank())]),
-                vec![text_field("image_path", "Image path", "Path to an image file").required()],
-            ),
-            quick_action(
-                "Insert ad break (cuepoint)",
-                "player-skip-forward",
-                QuickActionAccent::Info,
-                connected,
-                "Broadcast",
-                false,
-                sub_action_ids::STREAM_INSERT_AD_BREAK,
-                config([("duration_secs", Variant::Int(30))]),
-                Vec::new(),
-            ),
-            quick_action(
-                "Create live poll",
-                "chart-bar",
-                QuickActionAccent::Brand,
-                connected,
-                "Polls",
-                false,
-                sub_action_ids::CHAT_CREATE_POLL,
-                config([("question", blank()), ("options", blank())]),
-                vec![
-                    text_field("question", "Question", "Poll question").required(),
-                    multiline_field("options", "Choices (one per line)", "One choice per line")
-                        .required(),
-                ],
-            ),
-            quick_action(
-                "Send message",
-                "send",
-                QuickActionAccent::Brand,
-                connected,
-                "Chat",
-                false,
-                sub_action_ids::CHAT_SEND_MESSAGE,
-                config([("message", blank())]),
-                vec![multiline_field("message", "Message", "Message").required()],
-            ),
-            quick_action(
-                "Delete message",
-                "trash",
-                QuickActionAccent::Danger,
-                connected,
-                "Chat",
-                true,
-                sub_action_ids::CHAT_DELETE_MESSAGE,
-                config([("message_id", blank())]),
-                vec![text_field("message_id", "Message ID", "message id").required()],
-            ),
-            quick_action(
-                "Timeout user",
-                "clock-pause",
-                QuickActionAccent::Warning,
-                connected,
-                "Chat",
-                false,
-                sub_action_ids::MODERATION_TIMEOUT_USER,
-                config([
-                    ("channel_id", blank()),
-                    ("duration_seconds", Variant::Int(300)),
-                ]),
-                vec![text_field("channel_id", "User", "Channel ID (UC...)").required()],
-            ),
-            quick_action(
-                "Ban user",
-                "ban",
-                QuickActionAccent::Danger,
-                connected,
-                "Chat",
-                true,
-                sub_action_ids::MODERATION_BAN_USER,
-                config([("channel_id", blank())]),
-                vec![text_field("channel_id", "User", "Channel ID (UC...)").required()],
-            ),
-            quick_action(
-                "Lookup viewer",
-                "user",
-                QuickActionAccent::Success,
-                connected,
-                "Content",
-                false,
-                sub_action_ids::LOOKUP_VIEWER,
-                config([("identifier", blank())]),
-                vec![text_field("identifier", "Username", "@handle or UC...").required()],
-            ),
-            quick_action(
-                "Stream stats",
-                "chart-line",
-                QuickActionAccent::Info,
-                connected,
-                "Content",
-                false,
-                sub_action_ids::LOOKUP_STREAM_STATS,
-                BTreeMap::new(),
-                Vec::new(),
-            ),
-        ]
     }
 }
 

@@ -1,23 +1,77 @@
-use std::collections::BTreeMap;
 use std::sync::Arc;
-use std::time::Instant;
 
 use async_trait::async_trait;
 use forge_platform_core::PlatformError;
 use forge_registry::runner::SubActionConfig;
 use forge_registry::{
-    ConfigReason, FormField, RegistryError, RunContext, SubActionCategory, SubActionConfigExt,
-    SubActionRunner,
+    ConfigProblem, ConfigReason, ConfigSpec, Interpolation, RunContext, StepTimer,
+    SubActionCategory, SubActionRunner, TextEditor, TextField, TypedField, ValueBounds,
 };
-use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, Variant};
+use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry};
 use futures::future::BoxFuture;
-use time::OffsetDateTime;
 
+use super::field_kinds::{Blankable, WholeNumberField, non_empty, stores_blank};
+use super::fields::REWARD_ID;
 use crate::api::rewards::{KickRewards, UpdateRewardParams};
-use crate::vocabulary::sub_action_ids;
-use crate::vocabulary::variables::references;
+use crate::vocabulary::{config_keys, sub_action_ids};
 
 const KIND_ID: &str = sub_action_ids::REWARD_UPDATE;
+const MIN_COST: i64 = 1;
+const KEEP_CURRENT_HINT: &str = "Leave empty to keep current";
+
+const TITLE: TextField = TextField {
+    key: config_keys::TITLE,
+    label: "New Title (optional)",
+    editor: TextEditor::Line {
+        placeholder: KEEP_CURRENT_HINT,
+    },
+    default: "",
+    required: false,
+};
+
+const COST: Blankable<WholeNumberField> = Blankable(WholeNumberField {
+    key: config_keys::COST,
+    label: "New Cost (optional)",
+    placeholder: KEEP_CURRENT_HINT,
+    bounds: ValueBounds {
+        min: Some(MIN_COST),
+        max: None,
+    },
+});
+
+const DESCRIPTION: TextField = TextField {
+    key: config_keys::DESCRIPTION,
+    label: "New Description (optional)",
+    editor: TextEditor::Line {
+        placeholder: KEEP_CURRENT_HINT,
+    },
+    default: "",
+    required: false,
+};
+
+const CONFIG: ConfigSpec = ConfigSpec::new(&[&REWARD_ID, &TITLE, &COST, &DESCRIPTION]);
+
+struct RewardUpdate {
+    reward_id: String,
+    title: Option<String>,
+    cost: Option<u64>,
+    description: Option<String>,
+}
+
+impl RewardUpdate {
+    fn changes_nothing(&self) -> bool {
+        self.title.is_none() && self.cost.is_none() && self.description.is_none()
+    }
+}
+
+fn read_config(config: &SubActionConfig, args: &ArgStack) -> Result<RewardUpdate, ConfigProblem> {
+    Ok(RewardUpdate {
+        reward_id: REWARD_ID.read(config, args)?,
+        title: non_empty(TITLE.read(config, args)?),
+        cost: COST.read(config, args)?,
+        description: non_empty(DESCRIPTION.read(config, args)?),
+    })
+}
 
 pub struct UpdateRewardRunner {
     client: Arc<KickRewards>,
@@ -64,62 +118,25 @@ impl SubActionRunner for UpdateRewardRunner {
         "edit"
     }
 
-    fn default_config(&self) -> SubActionConfig {
-        BTreeMap::from([
-            ("reward_id".to_owned(), Variant::String(String::new())),
-            ("title".to_owned(), Variant::String(String::new())),
-            ("cost".to_owned(), Variant::String(String::new())),
-            ("description".to_owned(), Variant::String(String::new())),
-        ])
+    fn config_spec(&self) -> Option<ConfigSpec> {
+        Some(CONFIG)
     }
 
-    fn config_fields(&self) -> Vec<FormField> {
-        vec![
-            FormField::Text {
-                key: "reward_id",
-                label: "Reward ID",
-                placeholder: references::REWARD_ID,
-            },
-            FormField::Text {
-                key: "title",
-                label: "New Title (optional)",
-                placeholder: "Leave empty to keep current",
-            },
-            FormField::Text {
-                key: "cost",
-                label: "New Cost (optional)",
-                placeholder: "Leave empty to keep current",
-            },
-            FormField::Text {
-                key: "description",
-                label: "New Description (optional)",
-                placeholder: "Leave empty to keep current",
-            },
-        ]
-    }
-
-    fn validate_config(&self, config: &SubActionConfig) -> Result<(), RegistryError> {
-        let reward_id = config.str("reward_id").unwrap_or_default();
-        if reward_id.is_empty() {
-            return Err(RegistryError::invalid_field(
-                "reward_id",
-                ConfigReason::Required,
-            ));
+    fn check_config(
+        &self,
+        config: &SubActionConfig,
+        _interpolation: Interpolation<'_>,
+    ) -> Result<(), ConfigProblem> {
+        let updatable = [
+            config_keys::TITLE,
+            config_keys::COST,
+            config_keys::DESCRIPTION,
+        ];
+        if updatable.iter().all(|key| stores_blank(config, key)) {
+            Err(ConfigProblem::whole(ConfigReason::any_of(updatable)))
+        } else {
+            Ok(())
         }
-
-        let title = config.str("title").unwrap_or_default();
-        let cost = config.str("cost").unwrap_or_default();
-        let description = config.str("description").unwrap_or_default();
-
-        if title.is_empty() && cost.is_empty() && description.is_empty() {
-            return Err(RegistryError::invalid_config(ConfigReason::any_of([
-                "title",
-                "cost",
-                "description",
-            ])));
-        }
-
-        Ok(())
     }
 
     async fn execute(
@@ -127,143 +144,46 @@ impl SubActionRunner for UpdateRewardRunner {
         config: &SubActionConfig,
         ctx: &RunContext<'_>,
     ) -> (SubActionTelemetry, Option<ArgStack>) {
-        let started_at = OffsetDateTime::now_utc();
-        let start = Instant::now();
-
-        let raw_reward_id = config.str("reward_id").unwrap_or_default();
-        let raw_title = config.str("title").unwrap_or_default();
-        let raw_cost = config.str("cost").unwrap_or_default();
-        let raw_description = config.str("description").unwrap_or_default();
-
-        let reward_id = ctx.arg_stack.interpolate(raw_reward_id);
-        let title_str = ctx.arg_stack.interpolate(raw_title);
-        let cost_str = ctx.arg_stack.interpolate(raw_cost);
-        let description_str = ctx.arg_stack.interpolate(raw_description);
-
-        if reward_id.is_empty() {
-            let outcome =
-                SubActionOutcome::Failed("reward_id is empty after interpolation".to_owned());
-            return (
-                SubActionTelemetry {
-                    args_in: ::std::collections::BTreeMap::new(),
-                    produced: ::std::collections::BTreeMap::new(),
-                    kind: KIND_ID.to_owned(),
-                    started_at,
-                    duration_ms: start.elapsed().as_millis() as u64,
-                    outcome,
-                    index: ctx.index,
-                },
-                None,
-            );
+        let timer = StepTimer::start(ctx, KIND_ID);
+        let update = match read_config(config, ctx.arg_stack) {
+            Ok(update) => update,
+            Err(problem) => return (timer.invalid_config(&problem), None),
+        };
+        if update.reward_id.is_empty() {
+            return (timer.failed("reward_id is empty after interpolation"), None);
         }
-
-        let title = if title_str.is_empty() {
-            None
-        } else {
-            Some(title_str)
-        };
-
-        let cost = if cost_str.is_empty() {
-            None
-        } else {
-            match cost_str.parse::<u64>() {
-                Ok(n) if n >= 1 => Some(n),
-                Ok(_) => {
-                    let outcome = SubActionOutcome::Failed("cost must be at least 1".to_owned());
-                    return (
-                        SubActionTelemetry {
-                            args_in: ::std::collections::BTreeMap::new(),
-                            produced: ::std::collections::BTreeMap::new(),
-                            kind: KIND_ID.to_owned(),
-                            started_at,
-                            duration_ms: start.elapsed().as_millis() as u64,
-                            outcome,
-                            index: ctx.index,
-                        },
-                        None,
-                    );
-                }
-                Err(_) => {
-                    let outcome = SubActionOutcome::Failed(format!(
-                        "cost '{cost_str}' is not a valid positive integer"
-                    ));
-                    return (
-                        SubActionTelemetry {
-                            args_in: ::std::collections::BTreeMap::new(),
-                            produced: ::std::collections::BTreeMap::new(),
-                            kind: KIND_ID.to_owned(),
-                            started_at,
-                            duration_ms: start.elapsed().as_millis() as u64,
-                            outcome,
-                            index: ctx.index,
-                        },
-                        None,
-                    );
-                }
-            }
-        };
-
-        let description = if description_str.is_empty() {
-            None
-        } else {
-            Some(description_str)
-        };
-
-        if title.is_none() && cost.is_none() && description.is_none() {
-            let outcome = SubActionOutcome::Failed(
-                "all updatable fields are empty after interpolation; nothing to update".to_owned(),
-            );
+        if update.changes_nothing() {
             return (
-                SubActionTelemetry {
-                    args_in: ::std::collections::BTreeMap::new(),
-                    produced: ::std::collections::BTreeMap::new(),
-                    kind: KIND_ID.to_owned(),
-                    started_at,
-                    duration_ms: start.elapsed().as_millis() as u64,
-                    outcome,
-                    index: ctx.index,
-                },
+                timer.failed(
+                    "all updatable fields are empty after interpolation; nothing to update",
+                ),
                 None,
             );
         }
 
         let outcome = match (self.token_source)().await {
             Err(e) => SubActionOutcome::Failed(format!("token error: {e}")),
-            Ok(token) => match self
-                .client
-                .update(
-                    &reward_id,
-                    UpdateRewardParams {
-                        title,
-                        cost,
-                        description,
-                        background_color: None,
-                        is_enabled: None,
-                        is_paused: None,
-                        is_user_input_required: None,
-                        should_redemptions_skip_request_queue: None,
-                    },
-                    &token,
-                )
-                .await
-            {
-                Ok(()) => SubActionOutcome::Success,
-                Err(e) => SubActionOutcome::Failed(e.to_string()),
-            },
+            Ok(token) => SubActionOutcome::from_result(
+                &self
+                    .client
+                    .update(
+                        &update.reward_id,
+                        UpdateRewardParams {
+                            title: update.title,
+                            cost: update.cost,
+                            description: update.description,
+                            background_color: None,
+                            is_enabled: None,
+                            is_paused: None,
+                            is_user_input_required: None,
+                            should_redemptions_skip_request_queue: None,
+                        },
+                        &token,
+                    )
+                    .await,
+            ),
         };
-
-        (
-            SubActionTelemetry {
-                args_in: ::std::collections::BTreeMap::new(),
-                produced: ::std::collections::BTreeMap::new(),
-                kind: KIND_ID.to_owned(),
-                started_at,
-                duration_ms: start.elapsed().as_millis() as u64,
-                outcome,
-                index: ctx.index,
-            },
-            None,
-        )
+        (timer.finish(outcome), None)
     }
 }
 

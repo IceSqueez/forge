@@ -1,0 +1,14 @@
+pub(crate) const MESSAGE: &str = "message";
+pub(crate) const MESSAGE_ID: &str = "message_id";
+pub(crate) const QUESTION: &str = "question";
+pub(crate) const OPTIONS: &str = "options";
+pub(crate) const CHANNEL_ID: &str = "channel_id";
+pub(crate) const DISPLAY_NAME: &str = "display_name";
+pub(crate) const DURATION_SECONDS: &str = "duration_seconds";
+pub(crate) const TITLE: &str = "title";
+pub(crate) const DESCRIPTION: &str = "description";
+pub(crate) const CATEGORY_ID: &str = "category_id";
+pub(crate) const PRIVACY_STATUS: &str = "privacy_status";
+pub(crate) const IMAGE_PATH: &str = "image_path";
+pub(crate) const AD_DURATION_SECS: &str = "duration_secs";
+pub(crate) const IDENTIFIER: &str = "identifier";

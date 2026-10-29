@@ -15,6 +15,7 @@ mod integration;
 mod log_capture;
 mod platform;
 mod pusher;
+mod quick_actions;
 mod sub_actions;
 mod timestamp;
 mod triggers;

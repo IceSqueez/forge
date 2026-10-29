@@ -1,23 +1,21 @@
-use std::collections::BTreeMap;
 use std::sync::Arc;
-use std::time::Instant;
 
 use async_trait::async_trait;
 use forge_platform_core::PlatformError;
 use forge_registry::runner::SubActionConfig;
 use forge_registry::{
-    ConfigReason, FormField, RegistryError, RunContext, SubActionCategory, SubActionConfigExt,
-    SubActionRunner,
+    ConfigSpec, RunContext, StepTimer, SubActionCategory, SubActionRunner, TypedField,
 };
-use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, Variant};
+use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry};
 use futures::future::BoxFuture;
-use time::OffsetDateTime;
 
+use super::fields::REWARD_ID;
 use crate::api::rewards::KickRewards;
 use crate::vocabulary::sub_action_ids;
-use crate::vocabulary::variables::references;
 
 const KIND_ID: &str = sub_action_ids::REWARD_DELETE;
+
+const CONFIG: ConfigSpec = ConfigSpec::new(&[&REWARD_ID]);
 
 pub struct DeleteRewardRunner {
     client: Arc<KickRewards>,
@@ -64,26 +62,8 @@ impl SubActionRunner for DeleteRewardRunner {
         "trash"
     }
 
-    fn default_config(&self) -> SubActionConfig {
-        BTreeMap::from([("reward_id".to_owned(), Variant::String(String::new()))])
-    }
-
-    fn config_fields(&self) -> Vec<FormField> {
-        vec![FormField::Text {
-            key: "reward_id",
-            label: "Reward ID",
-            placeholder: references::REWARD_ID,
-        }]
-    }
-
-    fn validate_config(&self, config: &SubActionConfig) -> Result<(), RegistryError> {
-        match config.get("reward_id") {
-            Some(Variant::String(s)) if !s.is_empty() => Ok(()),
-            _ => Err(RegistryError::invalid_field(
-                "reward_id",
-                ConfigReason::Required,
-            )),
-        }
+    fn config_spec(&self) -> Option<ConfigSpec> {
+        Some(CONFIG)
     }
 
     async fn execute(
@@ -91,49 +71,22 @@ impl SubActionRunner for DeleteRewardRunner {
         config: &SubActionConfig,
         ctx: &RunContext<'_>,
     ) -> (SubActionTelemetry, Option<ArgStack>) {
-        let started_at = OffsetDateTime::now_utc();
-        let start = Instant::now();
-
-        let raw_reward_id = config.str("reward_id").unwrap_or_default();
-        let reward_id = ctx.arg_stack.interpolate(raw_reward_id);
-
+        let timer = StepTimer::start(ctx, KIND_ID);
+        let reward_id = match REWARD_ID.read(config, ctx.arg_stack) {
+            Ok(reward_id) => reward_id,
+            Err(problem) => return (timer.invalid_config(&problem), None),
+        };
         if reward_id.is_empty() {
-            let outcome =
-                SubActionOutcome::Failed("reward_id is empty after interpolation".to_owned());
-            return (
-                SubActionTelemetry {
-                    args_in: ::std::collections::BTreeMap::new(),
-                    produced: ::std::collections::BTreeMap::new(),
-                    kind: KIND_ID.to_owned(),
-                    started_at,
-                    duration_ms: start.elapsed().as_millis() as u64,
-                    outcome,
-                    index: ctx.index,
-                },
-                None,
-            );
+            return (timer.failed("reward_id is empty after interpolation"), None);
         }
 
         let outcome = match (self.token_source)().await {
             Err(e) => SubActionOutcome::Failed(format!("token error: {e}")),
-            Ok(token) => match self.client.delete(&reward_id, &token).await {
-                Ok(()) => SubActionOutcome::Success,
-                Err(e) => SubActionOutcome::Failed(e.to_string()),
-            },
+            Ok(token) => {
+                SubActionOutcome::from_result(&self.client.delete(&reward_id, &token).await)
+            }
         };
-
-        (
-            SubActionTelemetry {
-                args_in: ::std::collections::BTreeMap::new(),
-                produced: ::std::collections::BTreeMap::new(),
-                kind: KIND_ID.to_owned(),
-                started_at,
-                duration_ms: start.elapsed().as_millis() as u64,
-                outcome,
-                index: ctx.index,
-            },
-            None,
-        )
+        (timer.finish(outcome), None)
     }
 }
 

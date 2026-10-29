@@ -1,22 +1,69 @@
-use std::collections::BTreeMap;
 use std::sync::Arc;
-use std::time::Instant;
 
 use async_trait::async_trait;
 use forge_platform_core::PlatformError;
 use forge_registry::runner::SubActionConfig;
 use forge_registry::{
-    ConfigReason, FormField, RegistryError, RunContext, SubActionCategory, SubActionConfigExt,
-    SubActionRunner,
+    ConfigProblem, ConfigSpec, RunContext, StepTimer, SubActionCategory, SubActionIo,
+    SubActionRunner, TextEditor, TextField, TypedField, ValueBounds,
 };
-use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, Variant};
+use forge_types::{ArgStack, SubActionTelemetry, Variant};
 use futures::future::BoxFuture;
-use time::OffsetDateTime;
 
+use super::field_kinds::{WholeNumberField, non_empty};
 use crate::api::rewards::{CreateRewardParams, KickRewards};
-use crate::vocabulary::sub_action_ids;
+use crate::vocabulary::variables::created_reward;
+use crate::vocabulary::{config_keys, sub_action_ids};
 
 const KIND_ID: &str = sub_action_ids::REWARD_CREATE;
+const MIN_COST: i64 = 1;
+
+const TITLE: TextField = TextField {
+    key: config_keys::TITLE,
+    label: "Reward Title",
+    editor: TextEditor::Line {
+        placeholder: "e.g. Hydrate",
+    },
+    default: "",
+    required: true,
+};
+
+const COST: WholeNumberField = WholeNumberField {
+    key: config_keys::COST,
+    label: "Cost (channel points)",
+    placeholder: "e.g. 500",
+    bounds: ValueBounds {
+        min: Some(MIN_COST),
+        max: None,
+    },
+};
+
+const DESCRIPTION: TextField = TextField {
+    key: config_keys::DESCRIPTION,
+    label: "Description (optional)",
+    editor: TextEditor::Line {
+        placeholder: "Leave empty to omit",
+    },
+    default: "",
+    required: false,
+};
+
+const CONFIG: ConfigSpec = ConfigSpec::new(&[&TITLE, &COST, &DESCRIPTION]);
+
+fn read_config(
+    config: &SubActionConfig,
+    args: &ArgStack,
+) -> Result<CreateRewardParams, ConfigProblem> {
+    Ok(CreateRewardParams {
+        title: TITLE.read(config, args)?,
+        cost: COST.read(config, args)?,
+        description: non_empty(DESCRIPTION.read(config, args)?),
+        background_color: None,
+        is_enabled: None,
+        is_user_input_required: None,
+        should_redemptions_skip_request_queue: None,
+    })
+}
 
 pub struct CreateRewardRunner {
     client: Arc<KickRewards>,
@@ -63,49 +110,15 @@ impl SubActionRunner for CreateRewardRunner {
         "gift"
     }
 
-    fn default_config(&self) -> SubActionConfig {
-        BTreeMap::from([
-            ("title".to_owned(), Variant::String(String::new())),
-            ("cost".to_owned(), Variant::String(String::new())),
-            ("description".to_owned(), Variant::String(String::new())),
-        ])
+    fn config_spec(&self) -> Option<ConfigSpec> {
+        Some(CONFIG)
     }
 
-    fn config_fields(&self) -> Vec<FormField> {
-        vec![
-            FormField::Text {
-                key: "title",
-                label: "Reward Title",
-                placeholder: "e.g. Hydrate",
-            },
-            FormField::Text {
-                key: "cost",
-                label: "Cost (channel points)",
-                placeholder: "e.g. 500",
-            },
-            FormField::Text {
-                key: "description",
-                label: "Description (optional)",
-                placeholder: "Leave empty to omit",
-            },
-        ]
-    }
-
-    fn validate_config(&self, config: &SubActionConfig) -> Result<(), RegistryError> {
-        let title = config.str("title").unwrap_or_default();
-        if title.is_empty() {
-            return Err(RegistryError::invalid_field(
-                "title",
-                ConfigReason::Required,
-            ));
+    fn scope_io(&self) -> SubActionIo {
+        SubActionIo {
+            fixed_outputs: vec![created_reward::ID.to_owned()],
+            ..SubActionIo::default()
         }
-
-        let cost_raw = config.str("cost").unwrap_or_default();
-        if cost_raw.is_empty() {
-            return Err(RegistryError::invalid_field("cost", ConfigReason::Required));
-        }
-
-        Ok(())
     }
 
     async fn execute(
@@ -113,110 +126,30 @@ impl SubActionRunner for CreateRewardRunner {
         config: &SubActionConfig,
         ctx: &RunContext<'_>,
     ) -> (SubActionTelemetry, Option<ArgStack>) {
-        let started_at = OffsetDateTime::now_utc();
-        let start = Instant::now();
-
-        let raw_title = config.str("title").unwrap_or_default();
-        let raw_cost = config.str("cost").unwrap_or_default();
-        let raw_description = config.str("description").unwrap_or_default();
-
-        let title = ctx.arg_stack.interpolate(raw_title);
-        let cost_str = ctx.arg_stack.interpolate(raw_cost);
-        let description_str = ctx.arg_stack.interpolate(raw_description);
-
-        if title.is_empty() {
-            let outcome = SubActionOutcome::Failed("title is empty after interpolation".to_owned());
-            return (
-                SubActionTelemetry {
-                    args_in: ::std::collections::BTreeMap::new(),
-                    produced: ::std::collections::BTreeMap::new(),
-                    kind: KIND_ID.to_owned(),
-                    started_at,
-                    duration_ms: start.elapsed().as_millis() as u64,
-                    outcome,
-                    index: ctx.index,
-                },
-                None,
-            );
+        let timer = StepTimer::start(ctx, KIND_ID);
+        let params = match read_config(config, ctx.arg_stack) {
+            Ok(params) => params,
+            Err(problem) => return (timer.invalid_config(&problem), None),
+        };
+        if params.title.is_empty() {
+            return (timer.failed("title is empty after interpolation"), None);
         }
 
-        let cost = match cost_str.parse::<u64>() {
-            Ok(n) if n >= 1 => n,
-            Ok(_) => {
-                let outcome = SubActionOutcome::Failed("cost must be at least 1".to_owned());
-                return (
-                    SubActionTelemetry {
-                        args_in: ::std::collections::BTreeMap::new(),
-                        produced: ::std::collections::BTreeMap::new(),
-                        kind: KIND_ID.to_owned(),
-                        started_at,
-                        duration_ms: start.elapsed().as_millis() as u64,
-                        outcome,
-                        index: ctx.index,
-                    },
-                    None,
-                );
+        let token = match (self.token_source)().await {
+            Ok(token) => token,
+            Err(e) => return (timer.failed(format!("token error: {e}")), None),
+        };
+        match self.client.create(params, &token).await {
+            Ok(Some(reward_id)) => {
+                let stack = ctx
+                    .arg_stack
+                    .clone()
+                    .set(created_reward::ID.to_owned(), Variant::String(reward_id));
+                (timer.success(), Some(stack))
             }
-            Err(_) => {
-                let outcome = SubActionOutcome::Failed(format!(
-                    "cost '{cost_str}' is not a valid positive integer"
-                ));
-                return (
-                    SubActionTelemetry {
-                        args_in: ::std::collections::BTreeMap::new(),
-                        produced: ::std::collections::BTreeMap::new(),
-                        kind: KIND_ID.to_owned(),
-                        started_at,
-                        duration_ms: start.elapsed().as_millis() as u64,
-                        outcome,
-                        index: ctx.index,
-                    },
-                    None,
-                );
-            }
-        };
-
-        let description = if description_str.is_empty() {
-            None
-        } else {
-            Some(description_str)
-        };
-
-        let outcome = match (self.token_source)().await {
-            Err(e) => SubActionOutcome::Failed(format!("token error: {e}")),
-            Ok(token) => match self
-                .client
-                .create(
-                    CreateRewardParams {
-                        title,
-                        cost,
-                        description,
-                        background_color: None,
-                        is_enabled: None,
-                        is_user_input_required: None,
-                        should_redemptions_skip_request_queue: None,
-                    },
-                    &token,
-                )
-                .await
-            {
-                Ok(_created_id) => SubActionOutcome::Success,
-                Err(e) => SubActionOutcome::Failed(e.to_string()),
-            },
-        };
-
-        (
-            SubActionTelemetry {
-                args_in: ::std::collections::BTreeMap::new(),
-                produced: ::std::collections::BTreeMap::new(),
-                kind: KIND_ID.to_owned(),
-                started_at,
-                duration_ms: start.elapsed().as_millis() as u64,
-                outcome,
-                index: ctx.index,
-            },
-            None,
-        )
+            Ok(None) => (timer.success(), None),
+            Err(e) => (timer.failed(e.to_string()), None),
+        }
     }
 }
 

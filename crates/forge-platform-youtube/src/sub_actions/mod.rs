@@ -3,6 +3,7 @@ mod ban_user;
 mod create_poll;
 mod delete_message;
 mod display_name;
+mod fields;
 mod insert_ad_break;
 mod lookup_stream_stats;
 mod lookup_viewer;
@@ -34,6 +35,7 @@ pub use timeout_user::TimeoutUserRunner;
 pub use unban_user::UnbanUserRunner;
 pub use update_category::UpdateCategoryRunner;
 pub use update_description::UpdateDescriptionRunner;
+pub(crate) use update_privacy::PrivacyStatus;
 pub use update_privacy::UpdatePrivacyRunner;
 pub use update_title::UpdateTitleRunner;
 

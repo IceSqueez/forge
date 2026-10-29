@@ -1,26 +1,57 @@
-use std::collections::BTreeMap;
 use std::sync::Arc;
-use std::time::Instant;
 
 use async_trait::async_trait;
 use forge_platform_core::PlatformError;
 use forge_registry::runner::SubActionConfig;
 use forge_registry::{
-    ConfigReason, DurationBounds, FormField, RegistryError, RunContext, SubActionCategory,
-    SubActionConfigExt, SubActionRunner, ValueBounds,
+    ConfigProblem, ConfigReason, ConfigSpec, DurationAmountField, DurationBounds, RunContext,
+    StepTimer, SubActionCategory, SubActionRunner, TypedField, ValueBounds,
 };
-use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, Variant};
+use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry};
 use futures::future::BoxFuture;
-use time::OffsetDateTime;
 
-use super::{ban_reason, display_name};
+use super::ban_reason::REASON;
+use super::display_name;
+use super::fields::USER_ID;
 use crate::api::moderation::KickModeration;
-use crate::vocabulary::sub_action_ids;
-use crate::vocabulary::variables::references;
+use crate::vocabulary::{config_keys, sub_action_ids};
 
 const KIND_ID: &str = sub_action_ids::MODERATION_TIMEOUT;
 const MIN_TIMEOUT_MINUTES: i64 = 1;
 const MAX_TIMEOUT_MINUTES: i64 = 10080;
+const DEFAULT_TIMEOUT_MINUTES: i64 = 10;
+
+const DURATION_MINUTES: DurationAmountField = DurationAmountField {
+    key: config_keys::DURATION_MINUTES,
+    label: "Duration",
+    default: DEFAULT_TIMEOUT_MINUTES,
+    bounds: DurationBounds::in_minutes(MIN_TIMEOUT_MINUTES, MAX_TIMEOUT_MINUTES),
+};
+
+const CONFIG: ConfigSpec = ConfigSpec::new(&[&USER_ID, &DURATION_MINUTES, &REASON]);
+
+struct TimeoutRequest {
+    target_id: u64,
+    minutes: u32,
+    reason: Option<String>,
+}
+
+fn read_config(config: &SubActionConfig, args: &ArgStack) -> Result<TimeoutRequest, ConfigProblem> {
+    let minutes = u32::try_from(DURATION_MINUTES.read(config, args)?).map_err(|_| {
+        ConfigProblem::field(
+            config_keys::DURATION_MINUTES,
+            ConfigReason::OutOfRange(ValueBounds::between(
+                MIN_TIMEOUT_MINUTES,
+                MAX_TIMEOUT_MINUTES,
+            )),
+        )
+    })?;
+    Ok(TimeoutRequest {
+        target_id: USER_ID.read(config, args)?,
+        minutes,
+        reason: REASON.read(config, args)?,
+    })
+}
 
 pub struct TimeoutUserRunner {
     client: Arc<KickModeration>,
@@ -73,54 +104,8 @@ impl SubActionRunner for TimeoutUserRunner {
         "timeout"
     }
 
-    fn default_config(&self) -> SubActionConfig {
-        BTreeMap::from([
-            ("user_id".to_owned(), Variant::String(String::new())),
-            ("duration_minutes".to_owned(), Variant::Int(10)),
-            ban_reason::default_entry(),
-        ])
-    }
-
-    fn config_fields(&self) -> Vec<FormField> {
-        vec![
-            FormField::Text {
-                key: "user_id",
-                label: "Target User ID",
-                placeholder: references::USER_ID,
-            },
-            FormField::Duration {
-                key: "duration_minutes",
-                label: "Duration",
-                bounds: DurationBounds::in_minutes(MIN_TIMEOUT_MINUTES, MAX_TIMEOUT_MINUTES),
-            },
-            ban_reason::form_field(),
-        ]
-    }
-
-    fn validate_config(&self, config: &SubActionConfig) -> Result<(), RegistryError> {
-        match config.get("user_id") {
-            Some(Variant::String(s)) if !s.is_empty() => {}
-            _ => {
-                return Err(RegistryError::invalid_field(
-                    "user_id",
-                    ConfigReason::Required,
-                ));
-            }
-        }
-
-        match config.get("duration_minutes") {
-            Some(Variant::Int(n)) if (MIN_TIMEOUT_MINUTES..=MAX_TIMEOUT_MINUTES).contains(n) => {}
-            _ => {
-                return Err(RegistryError::invalid_field(
-                    "duration_minutes",
-                    ConfigReason::OutOfRange(ValueBounds::between(
-                        MIN_TIMEOUT_MINUTES,
-                        MAX_TIMEOUT_MINUTES,
-                    )),
-                ));
-            }
-        }
-        ban_reason::validate(config)
+    fn config_spec(&self) -> Option<ConfigSpec> {
+        Some(CONFIG)
     }
 
     async fn execute(
@@ -128,68 +113,33 @@ impl SubActionRunner for TimeoutUserRunner {
         config: &SubActionConfig,
         ctx: &RunContext<'_>,
     ) -> (SubActionTelemetry, Option<ArgStack>) {
-        let started_at = OffsetDateTime::now_utc();
-        let start = Instant::now();
-
-        let user_template = config.str("user_id").unwrap_or_default();
-        let resolved_uid = ctx.arg_stack.interpolate(user_template);
-        let reason = ban_reason::resolve(config, ctx);
+        let timer = StepTimer::start(ctx, KIND_ID);
+        let request = match read_config(config, ctx.arg_stack) {
+            Ok(request) => request,
+            Err(problem) => return (timer.invalid_config(&problem), None),
+        };
         let display_name = display_name::resolve(config, ctx);
 
-        let duration_minutes = config
-            .get("duration_minutes")
-            .and_then(|v| {
-                if let Variant::Int(n) = v {
-                    Some(*n)
-                } else {
-                    None
-                }
-            })
-            .unwrap_or(10);
-
-        let outcome = match resolved_uid.parse::<u64>() {
-            Err(_) => SubActionOutcome::Failed(format!(
-                "user_id '{resolved_uid}' is not a valid numeric id"
-            )),
-            Ok(target_id) => {
-                let duration_u32 =
-                    duration_minutes.clamp(MIN_TIMEOUT_MINUTES, MAX_TIMEOUT_MINUTES) as u32;
-                match (self.token_source)().await {
-                    Err(e) => SubActionOutcome::Failed(format!("token error: {e}")),
-                    Ok(token) => match (self.broadcaster_id_source)().await {
-                        Err(e) => SubActionOutcome::Failed(format!("broadcaster id error: {e}")),
-                        Ok(broadcaster_user_id) => match self
-                            .client
-                            .timeout(
-                                target_id,
-                                broadcaster_user_id,
-                                duration_u32,
-                                display_name.as_deref(),
-                                reason.as_deref(),
-                                &token,
-                            )
-                            .await
-                        {
-                            Ok(()) => SubActionOutcome::Success,
-                            Err(e) => SubActionOutcome::Failed(e.to_string()),
-                        },
-                    },
-                }
-            }
-        };
-
-        (
-            SubActionTelemetry {
-                args_in: ::std::collections::BTreeMap::new(),
-                produced: ::std::collections::BTreeMap::new(),
-                kind: KIND_ID.to_owned(),
-                started_at,
-                duration_ms: start.elapsed().as_millis() as u64,
-                outcome,
-                index: ctx.index,
+        let outcome = match (self.token_source)().await {
+            Err(e) => SubActionOutcome::Failed(format!("token error: {e}")),
+            Ok(token) => match (self.broadcaster_id_source)().await {
+                Err(e) => SubActionOutcome::Failed(format!("broadcaster id error: {e}")),
+                Ok(broadcaster_user_id) => SubActionOutcome::from_result(
+                    &self
+                        .client
+                        .timeout(
+                            request.target_id,
+                            broadcaster_user_id,
+                            request.minutes,
+                            display_name.as_deref(),
+                            request.reason.as_deref(),
+                            &token,
+                        )
+                        .await,
+                ),
             },
-            None,
-        )
+        };
+        (timer.finish(outcome), None)
     }
 }
 

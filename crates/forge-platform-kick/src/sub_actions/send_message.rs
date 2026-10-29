@@ -1,23 +1,41 @@
-use std::collections::BTreeMap;
 use std::sync::Arc;
-use std::time::Instant;
 
 use async_trait::async_trait;
 use forge_events::{ChatSent, EventSource, TypedEvent};
 use forge_platform_core::PlatformError;
 use forge_registry::runner::SubActionConfig;
 use forge_registry::{
-    ConfigReason, FormField, RegistryError, RunContext, SubActionCategory, SubActionConfigExt,
-    SubActionRunner,
+    ConfigProblem, ConfigSpec, RunContext, StepTimer, SubActionCategory, SubActionRunner,
+    TextEditor, TextField, ToggleField, TypedField,
 };
-use forge_types::{ArgStack, PlatformId, SubActionOutcome, SubActionTelemetry, Variant};
+use forge_types::{ArgStack, PlatformId, SubActionOutcome, SubActionTelemetry};
 use futures::future::BoxFuture;
-use time::OffsetDateTime;
 
 use crate::api::chat_messages::KickSendChat;
-use crate::vocabulary::sub_action_ids;
+use crate::vocabulary::{config_keys, sub_action_ids};
 
 const KIND_ID: &str = sub_action_ids::CHAT_SEND_MESSAGE;
+const BROADCASTER_IGNORED_FOR_BOT: u64 = 0;
+
+const MESSAGE: TextField = TextField {
+    key: config_keys::MESSAGE,
+    label: "Message",
+    editor: TextEditor::Area,
+    default: "",
+    required: true,
+};
+
+const AS_BOT: ToggleField = ToggleField {
+    key: config_keys::AS_BOT,
+    label: "Send as bot",
+    default: false,
+};
+
+const CONFIG: ConfigSpec = ConfigSpec::new(&[&MESSAGE, &AS_BOT]);
+
+fn read_config(config: &SubActionConfig, args: &ArgStack) -> Result<(String, bool), ConfigProblem> {
+    Ok((MESSAGE.read(config, args)?, AS_BOT.read(config, args)?))
+}
 
 pub struct SendMessageRunner {
     client: Arc<KickSendChat>,
@@ -41,6 +59,27 @@ impl SendMessageRunner {
             token_source,
             broadcaster_id_source,
         }
+    }
+
+    async fn send(&self, message: &str, as_bot: bool) -> SubActionOutcome {
+        let token = match (self.token_source)().await {
+            Ok(token) => token,
+            Err(e) => return SubActionOutcome::Failed(format!("token error: {e}")),
+        };
+        let broadcaster_user_id = if as_bot {
+            BROADCASTER_IGNORED_FOR_BOT
+        } else {
+            match (self.broadcaster_id_source)().await {
+                Ok(id) => id,
+                Err(e) => return SubActionOutcome::Failed(format!("broadcaster id error: {e}")),
+            }
+        };
+        SubActionOutcome::from_result(
+            &self
+                .client
+                .send(message, &token, broadcaster_user_id, as_bot)
+                .await,
+        )
     }
 }
 
@@ -70,34 +109,8 @@ impl SubActionRunner for SendMessageRunner {
         "chat"
     }
 
-    fn default_config(&self) -> SubActionConfig {
-        BTreeMap::from([
-            ("message".to_owned(), Variant::String(String::new())),
-            ("as_bot".to_owned(), Variant::Bool(false)),
-        ])
-    }
-
-    fn config_fields(&self) -> Vec<FormField> {
-        vec![
-            FormField::TextArea {
-                key: "message",
-                label: "Message",
-            },
-            FormField::Toggle {
-                key: "as_bot",
-                label: "Send as bot",
-            },
-        ]
-    }
-
-    fn validate_config(&self, config: &SubActionConfig) -> Result<(), RegistryError> {
-        match config.get("message") {
-            Some(Variant::String(s)) if !s.is_empty() => Ok(()),
-            _ => Err(RegistryError::invalid_field(
-                "message",
-                ConfigReason::Required,
-            )),
-        }
+    fn config_spec(&self) -> Option<ConfigSpec> {
+        Some(CONFIG)
     }
 
     async fn execute(
@@ -105,36 +118,16 @@ impl SubActionRunner for SendMessageRunner {
         config: &SubActionConfig,
         ctx: &RunContext<'_>,
     ) -> (SubActionTelemetry, Option<ArgStack>) {
-        let started_at = OffsetDateTime::now_utc();
-        let start = Instant::now();
-
-        let template = config.str("message").unwrap_or_default();
-        let message = ctx.arg_stack.interpolate(template);
-        let as_bot = config.bool("as_bot").unwrap_or(false);
-
-        let outcome = if message.is_empty() {
-            SubActionOutcome::Failed("message is empty after interpolation".to_owned())
-        } else {
-            match (self.token_source)().await {
-                Err(e) => SubActionOutcome::Failed(format!("token error: {e}")),
-                Ok(token) if as_bot => match self.client.send(&message, &token, 0, true).await {
-                    Ok(()) => SubActionOutcome::Success,
-                    Err(e) => SubActionOutcome::Failed(e.to_string()),
-                },
-                Ok(token) => match (self.broadcaster_id_source)().await {
-                    Err(e) => SubActionOutcome::Failed(format!("broadcaster id error: {e}")),
-                    Ok(broadcaster_user_id) => match self
-                        .client
-                        .send(&message, &token, broadcaster_user_id, false)
-                        .await
-                    {
-                        Ok(()) => SubActionOutcome::Success,
-                        Err(e) => SubActionOutcome::Failed(e.to_string()),
-                    },
-                },
-            }
+        let timer = StepTimer::start(ctx, KIND_ID);
+        let (message, as_bot) = match read_config(config, ctx.arg_stack) {
+            Ok(values) => values,
+            Err(problem) => return (timer.invalid_config(&problem), None),
         };
+        if message.is_empty() {
+            return (timer.failed("message is empty after interpolation"), None);
+        }
 
+        let outcome = self.send(&message, as_bot).await;
         if matches!(outcome, SubActionOutcome::Success) {
             ChatSent {
                 channel: PlatformId::Kick.as_str().to_owned(),
@@ -144,19 +137,7 @@ impl SubActionRunner for SendMessageRunner {
             }
             .publish(ctx.publisher, EventSource::Kick, Some(ctx.parent_event_id));
         }
-
-        (
-            SubActionTelemetry {
-                args_in: ::std::collections::BTreeMap::new(),
-                produced: ::std::collections::BTreeMap::new(),
-                kind: KIND_ID.to_owned(),
-                started_at,
-                duration_ms: start.elapsed().as_millis() as u64,
-                outcome,
-                index: ctx.index,
-            },
-            None,
-        )
+        (timer.finish(outcome), None)
     }
 }
 

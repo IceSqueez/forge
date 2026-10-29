@@ -161,10 +161,13 @@ impl KickRewards {
         let request = authorized(GatewayRequest::post(REWARDS_PATH), token, REWARDS_PATH)
             .body(json_body(&body)?);
         let response = self.send(request).await?;
-        Ok(response
-            .json::<CreateResponse>()
-            .ok()
-            .and_then(|r| r.id.or_else(|| r.data.and_then(|d| d.id))))
+        match response.json::<CreateResponse>() {
+            Ok(created) => Ok(created.id.or_else(|| created.data.and_then(|d| d.id))),
+            Err(error) => {
+                tracing::debug!(%error, "kick reward create response carried no readable id");
+                Ok(None)
+            }
+        }
     }
 
     pub async fn update(

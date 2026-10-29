@@ -1,23 +1,71 @@
-use std::collections::BTreeMap;
 use std::sync::Arc;
-use std::time::Instant;
 
 use async_trait::async_trait;
 use forge_platform_core::PlatformError;
 use forge_registry::runner::SubActionConfig;
 use forge_registry::{
-    ConfigReason, FormField, RegistryError, RunContext, SubActionCategory, SubActionConfigExt,
-    SubActionRunner, ValueBounds,
+    ConfigProblem, ConfigReason, ConfigSpec, Interpolation, RunContext, StepTimer,
+    SubActionCategory, SubActionRunner, TextEditor, TextField, TypedField, ValueBounds,
 };
-use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, Variant};
+use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry};
 use futures::future::BoxFuture;
-use time::OffsetDateTime;
 
+use super::field_kinds::{Blankable, CommaListField, WholeNumberField, non_empty, stores_blank};
 use crate::api::channel::KickChannel;
-use crate::vocabulary::sub_action_ids;
+use crate::vocabulary::{config_keys, sub_action_ids};
 
 const KIND_ID: &str = sub_action_ids::CHANNEL_UPDATE_INFO;
 const MAX_TAGS: usize = 10;
+const KEEP_CURRENT_HINT: &str = "Leave empty to keep current";
+
+const TITLE: TextField = TextField {
+    key: config_keys::TITLE,
+    label: "Stream Title",
+    editor: TextEditor::Line {
+        placeholder: KEEP_CURRENT_HINT,
+    },
+    default: "",
+    required: false,
+};
+
+const CATEGORY_ID: Blankable<WholeNumberField> = Blankable(WholeNumberField {
+    key: config_keys::CATEGORY_ID,
+    label: "Category ID",
+    placeholder: KEEP_CURRENT_HINT,
+    bounds: ValueBounds::UNBOUNDED,
+});
+
+const TAGS: CommaListField = CommaListField {
+    key: config_keys::TAGS,
+    label: "Tags (comma-separated, max 10)",
+    placeholder: KEEP_CURRENT_HINT,
+    default: "",
+    max_items: MAX_TAGS,
+    required: false,
+};
+
+const CONFIG: ConfigSpec = ConfigSpec::new(&[&TITLE, &CATEGORY_ID, &TAGS]);
+
+struct ChannelUpdate {
+    title: Option<String>,
+    category_id: Option<u64>,
+    tags: Option<Vec<String>>,
+}
+
+impl ChannelUpdate {
+    fn is_empty(&self) -> bool {
+        self.title.is_none() && self.category_id.is_none() && self.tags.is_none()
+    }
+}
+
+fn read_config(config: &SubActionConfig, args: &ArgStack) -> Result<ChannelUpdate, ConfigProblem> {
+    let tags = TAGS.read(config, args)?;
+    Ok(ChannelUpdate {
+        title: non_empty(TITLE.read(config, args)?),
+        category_id: CATEGORY_ID.read(config, args)?,
+        tags: (!tags.is_empty()).then_some(tags),
+    })
+}
 
 pub struct UpdateInfoRunner {
     client: Arc<KickChannel>,
@@ -36,13 +84,6 @@ impl UpdateInfoRunner {
             token_source,
         }
     }
-}
-
-fn parse_tags(raw: &str) -> Vec<String> {
-    raw.split(',')
-        .map(|s| s.trim().to_owned())
-        .filter(|s| !s.is_empty())
-        .collect()
 }
 
 #[async_trait]
@@ -71,62 +112,25 @@ impl SubActionRunner for UpdateInfoRunner {
         "edit"
     }
 
-    fn default_config(&self) -> SubActionConfig {
-        BTreeMap::from([
-            ("title".to_owned(), Variant::String(String::new())),
-            ("category_id".to_owned(), Variant::String(String::new())),
-            ("tags".to_owned(), Variant::String(String::new())),
-        ])
+    fn config_spec(&self) -> Option<ConfigSpec> {
+        Some(CONFIG)
     }
 
-    fn config_fields(&self) -> Vec<FormField> {
-        vec![
-            FormField::Text {
-                key: "title",
-                label: "Stream Title",
-                placeholder: "Leave empty to keep current",
-            },
-            FormField::Text {
-                key: "category_id",
-                label: "Category ID",
-                placeholder: "Leave empty to keep current",
-            },
-            FormField::Text {
-                key: "tags",
-                label: "Tags (comma-separated, max 10)",
-                placeholder: "Leave empty to keep current",
-            },
-        ]
-    }
-
-    fn validate_config(&self, config: &SubActionConfig) -> Result<(), RegistryError> {
-        let title = config.str("title").unwrap_or_default();
-        let category_id = config.str("category_id").unwrap_or_default();
-        let tags_raw = config.str("tags").unwrap_or_default();
-
-        let has_title = !title.is_empty();
-        let has_category = !category_id.is_empty();
-        let has_tags = !tags_raw.is_empty();
-
-        if !has_title && !has_category && !has_tags {
-            return Err(RegistryError::invalid_config(ConfigReason::any_of([
-                "title",
-                "category_id",
-                "tags",
-            ])));
+    fn check_config(
+        &self,
+        config: &SubActionConfig,
+        _interpolation: Interpolation<'_>,
+    ) -> Result<(), ConfigProblem> {
+        let updatable = [
+            config_keys::TITLE,
+            config_keys::CATEGORY_ID,
+            config_keys::TAGS,
+        ];
+        if updatable.iter().all(|key| stores_blank(config, key)) {
+            Err(ConfigProblem::whole(ConfigReason::any_of(updatable)))
+        } else {
+            Ok(())
         }
-
-        if has_tags {
-            let count = parse_tags(tags_raw).len();
-            if count > MAX_TAGS {
-                return Err(RegistryError::invalid_field(
-                    "tags",
-                    ConfigReason::CountOutOfRange(ValueBounds::at_most(MAX_TAGS)),
-                ));
-            }
-        }
-
-        Ok(())
     }
 
     async fn execute(
@@ -134,115 +138,28 @@ impl SubActionRunner for UpdateInfoRunner {
         config: &SubActionConfig,
         ctx: &RunContext<'_>,
     ) -> (SubActionTelemetry, Option<ArgStack>) {
-        let started_at = OffsetDateTime::now_utc();
-        let start = Instant::now();
-
-        let raw_title = config.str("title").unwrap_or_default();
-        let raw_category = config.str("category_id").unwrap_or_default();
-        let raw_tags = config.str("tags").unwrap_or_default();
-
-        let title_resolved = ctx.arg_stack.interpolate(raw_title);
-        let category_resolved = ctx.arg_stack.interpolate(raw_category);
-        let tags_resolved = ctx.arg_stack.interpolate(raw_tags);
-
-        let title = if title_resolved.is_empty() {
-            None
-        } else {
-            Some(title_resolved)
+        let timer = StepTimer::start(ctx, KIND_ID);
+        let update = match read_config(config, ctx.arg_stack) {
+            Ok(update) => update,
+            Err(problem) => return (timer.invalid_config(&problem), None),
         };
-
-        let category_id = if category_resolved.is_empty() {
-            None
-        } else {
-            match category_resolved.parse::<u64>() {
-                Ok(id) => Some(id),
-                Err(_) => {
-                    let outcome = SubActionOutcome::Failed(format!(
-                        "category_id '{category_resolved}' is not a valid numeric id"
-                    ));
-                    return (
-                        SubActionTelemetry {
-                            args_in: ::std::collections::BTreeMap::new(),
-                            produced: ::std::collections::BTreeMap::new(),
-                            kind: KIND_ID.to_owned(),
-                            started_at,
-                            duration_ms: start.elapsed().as_millis() as u64,
-                            outcome,
-                            index: ctx.index,
-                        },
-                        None,
-                    );
-                }
-            }
-        };
-
-        let tags = if tags_resolved.is_empty() {
-            None
-        } else {
-            let parsed = parse_tags(&tags_resolved);
-            if parsed.len() > MAX_TAGS {
-                let outcome = SubActionOutcome::Failed(format!(
-                    "tags count {} exceeds the maximum of {MAX_TAGS}",
-                    parsed.len()
-                ));
-                return (
-                    SubActionTelemetry {
-                        args_in: ::std::collections::BTreeMap::new(),
-                        produced: ::std::collections::BTreeMap::new(),
-                        kind: KIND_ID.to_owned(),
-                        started_at,
-                        duration_ms: start.elapsed().as_millis() as u64,
-                        outcome,
-                        index: ctx.index,
-                    },
-                    None,
-                );
-            }
-            Some(parsed)
-        };
-
-        if title.is_none() && category_id.is_none() && tags.is_none() {
-            let outcome = SubActionOutcome::Failed(
-                "all fields are empty after interpolation; nothing to update".to_owned(),
-            );
+        if update.is_empty() {
             return (
-                SubActionTelemetry {
-                    args_in: ::std::collections::BTreeMap::new(),
-                    produced: ::std::collections::BTreeMap::new(),
-                    kind: KIND_ID.to_owned(),
-                    started_at,
-                    duration_ms: start.elapsed().as_millis() as u64,
-                    outcome,
-                    index: ctx.index,
-                },
+                timer.failed("all fields are empty after interpolation; nothing to update"),
                 None,
             );
         }
 
         let outcome = match (self.token_source)().await {
             Err(e) => SubActionOutcome::Failed(format!("token error: {e}")),
-            Ok(token) => match self
-                .client
-                .update_info(&token, title, category_id, tags)
-                .await
-            {
-                Ok(()) => SubActionOutcome::Success,
-                Err(e) => SubActionOutcome::Failed(e.to_string()),
-            },
+            Ok(token) => SubActionOutcome::from_result(
+                &self
+                    .client
+                    .update_info(&token, update.title, update.category_id, update.tags)
+                    .await,
+            ),
         };
-
-        (
-            SubActionTelemetry {
-                args_in: ::std::collections::BTreeMap::new(),
-                produced: ::std::collections::BTreeMap::new(),
-                kind: KIND_ID.to_owned(),
-                started_at,
-                duration_ms: start.elapsed().as_millis() as u64,
-                outcome,
-                index: ctx.index,
-            },
-            None,
-        )
+        (timer.finish(outcome), None)
     }
 }
 

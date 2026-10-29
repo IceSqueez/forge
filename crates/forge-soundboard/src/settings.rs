@@ -155,12 +155,60 @@ pub async fn save_output_device(
 
 #[cfg(test)]
 mod tests {
-    use std::collections::HashMap;
+    use std::collections::{BTreeMap, HashMap};
+    use std::sync::Mutex;
 
     use async_trait::async_trait;
-    use forge_storage::SettingsCatalog;
 
     use super::*;
+
+    #[derive(Default)]
+    struct MapStore(Mutex<HashMap<String, String>>);
+
+    impl MapStore {
+        fn rows(&self) -> BTreeMap<String, String> {
+            self.0
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner)
+                .clone()
+                .into_iter()
+                .collect()
+        }
+    }
+
+    #[async_trait]
+    impl SettingsRepo for MapStore {
+        async fn get_string(&self, key: &str) -> Result<Option<String>, StorageError> {
+            Ok(self
+                .0
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner)
+                .get(key)
+                .cloned())
+        }
+        async fn set_string(&self, key: &str, value: &str) -> Result<(), StorageError> {
+            self.0
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner)
+                .insert(key.to_owned(), value.to_owned());
+            Ok(())
+        }
+        async fn delete(&self, key: &str) -> Result<bool, StorageError> {
+            Ok(self
+                .0
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner)
+                .remove(key)
+                .is_some())
+        }
+        async fn load_all(&self) -> Result<HashMap<String, String>, StorageError> {
+            Ok(self
+                .0
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner)
+                .clone())
+        }
+    }
 
     struct UnreachableStore;
 
@@ -182,17 +230,56 @@ mod tests {
         }
     }
 
-    #[test]
-    fn declared_settings_match_the_core_catalog_rows_they_duplicate() {
-        let core = SettingsCatalog::core();
-        for spec in SETTING_SPECS {
-            let core_row = core
-                .specs()
-                .iter()
-                .find(|row| row.key.name() == spec.key.name());
+    #[tokio::test]
+    async fn saved_soundboard_settings_store_their_golden_strings_and_load_back() {
+        let store = MapStore::default();
+        save_enabled(&store, false).await.unwrap();
+        save_output_device(&store, Some("hw:2,0".to_owned()))
+            .await
+            .unwrap();
+        save_master_volume(&store, 0.75).await.unwrap();
+        save_also_headphones(&store, true).await.unwrap();
 
-            assert_eq!(core_row, Some(spec), "{}", spec.key.name());
-        }
+        let loaded = load_soundboard_settings(&store).await;
+
+        assert_eq!(
+            (store.rows(), loaded),
+            (
+                BTreeMap::from(
+                    [
+                        ("soundboard.also_headphones", "true"),
+                        ("soundboard.enabled", "false"),
+                        ("soundboard.master_volume", "0.75"),
+                        ("soundboard.output_device", "hw:2,0"),
+                    ]
+                    .map(|(k, v)| (k.to_owned(), v.to_owned()))
+                ),
+                SoundboardSettings {
+                    enabled: false,
+                    output_device_id: Some("hw:2,0".to_owned()),
+                    master_volume: 0.75,
+                    also_headphones: true,
+                },
+            )
+        );
+    }
+
+    #[tokio::test]
+    async fn clearing_the_output_device_deletes_its_row_and_loads_the_default_device() {
+        let store = MapStore::default();
+        save_output_device(&store, Some("hw:2,0".to_owned()))
+            .await
+            .unwrap();
+
+        save_output_device(&store, None).await.unwrap();
+
+        assert_eq!(
+            (
+                store.rows(),
+                load_soundboard_settings(&store).await.output_device()
+            ),
+            (BTreeMap::new(), OutputDevice::Default)
+        );
     }
 
     #[tokio::test]

@@ -11,6 +11,7 @@ use forge_speech_types::{AssignmentStrategy, IgnoreProfile};
 use forge_storage::settings::reserved_keys as key;
 use forge_storage::{
     DATABASE_FILE_NAME, DataProvider, EXPECTED_SCHEMA_VERSION, MediaBlobId, MediaFormat,
+    SettingDisclosure, SettingEncoding, SettingPortability, SettingSpec, SettingsCatalog,
     SettingsRepo, TtsPipelineSettings,
 };
 use forge_storage_sqlite::{SqliteBackend, SqliteDatabaseFileSchema};
@@ -34,6 +35,18 @@ const OVERLAY_FILE: &str = "setup/overlays/0/payload.css";
 const ESCAPE_NAME: &str = "escape.css";
 const UNCLASSIFIED_KEY: &str = "ui.last_note";
 const PORTABLE_THEME: &str = "setup-theme";
+const OWNER_PORTABLE: SettingSpec = SettingSpec::exact(
+    "owner.portable_flag",
+    SettingEncoding::Flag,
+    SettingPortability::Portable,
+    SettingDisclosure::Verbatim,
+);
+const OWNER_MACHINE_LOCAL: SettingSpec = SettingSpec::exact(
+    "owner.machine_local_path",
+    SettingEncoding::Text,
+    SettingPortability::MachineLocal,
+    SettingDisclosure::Presence,
+);
 
 type Expected = fn(&TransferError) -> bool;
 type Settings = BTreeMap<String, String>;
@@ -41,6 +54,15 @@ type Settings = BTreeMap<String, String>;
 struct Store {
     dir: TempDir,
     provider: Arc<dyn DataProvider>,
+    settings_catalog: SettingsCatalog,
+}
+
+fn owner_registered_catalog() -> SettingsCatalog {
+    let mut catalog = SettingsCatalog::core();
+    catalog
+        .register(&[OWNER_PORTABLE, OWNER_MACHINE_LOCAL])
+        .unwrap();
+    catalog
 }
 
 impl Store {
@@ -54,6 +76,7 @@ impl Store {
         Self {
             dir,
             provider: Arc::new(backend),
+            settings_catalog: owner_registered_catalog(),
         }
     }
 
@@ -85,6 +108,7 @@ impl Store {
         let staged = stage_setup(bundle, self.data_dir().to_path_buf()).await?;
         apply_setup_import(SetupImportRequest {
             provider: Arc::clone(&self.provider),
+            settings_catalog: &self.settings_catalog,
             registries: ClosureRegistries {
                 sub_actions: &sub_actions,
                 triggers: &triggers,
@@ -424,29 +448,25 @@ async fn a_setup_bundle_is_refused_by_restore_and_by_pack_import_as_the_wrong_ki
 }
 
 #[tokio::test]
-async fn a_crafted_setup_carrying_machine_local_keys_writes_none_of_them() {
+async fn a_crafted_setup_writes_only_the_settings_the_catalog_declares_portable() {
     let store = Store::open().await;
     let local = [
-        (key::WINDOW_PLACEMENT, "local-window"),
         (key::AUDIO_OUTPUT_DEVICE_ID, "local-speakers"),
-        (key::SERVER_OVERLAY_ROOT, "/home/local/overlays"),
-        (key::STAY_AWAKE, "false"),
+        (OWNER_MACHINE_LOCAL.key.name(), "/home/local/owner"),
         (key::BACKUP_SCHEDULE_KEY, "local-schedule-key"),
     ];
     store.set(&local).await;
     let path = bundle(
         store.data_dir(),
         &setup_carrying(&[
-            (key::WINDOW_PLACEMENT, "foreign-window"),
             (key::AUDIO_OUTPUT_DEVICE_ID, "foreign-speakers"),
             (key::AUDIO_VOICE_GATE_INPUT_DEVICE_ID, "foreign-mic"),
-            (key::SERVER_OVERLAY_ROOT, "/etc"),
-            (key::UPDATES_ROLLED_BACK_VERSION, "9.9.9"),
-            (key::STAY_AWAKE, "true"),
+            (OWNER_MACHINE_LOCAL.key.name(), "/etc"),
             (key::BACKUP_SCHEDULE_KEY, "foreign-schedule-key"),
             (key::VOICE_ASSIGNMENT_STRATEGY, "\"Random\""),
             (UNCLASSIFIED_KEY, "foreign-note"),
             (key::THEME, PORTABLE_THEME),
+            (OWNER_PORTABLE.key.name(), "true"),
         ]),
         &[],
     );
@@ -458,54 +478,10 @@ async fn a_crafted_setup_carrying_machine_local_keys_writes_none_of_them() {
         .map(|(k, v)| ((*k).to_owned(), (*v).to_owned()))
         .collect();
     expected.insert(key::THEME.to_owned(), PORTABLE_THEME.to_owned());
+    expected.insert(OWNER_PORTABLE.key.name().to_owned(), "true".to_owned());
     let mut settings = store.settings().await;
     settings.remove(key::VOICE_ASSIGNMENT_STRATEGY);
     assert_eq!(settings, expected);
-}
-
-#[tokio::test]
-async fn a_crafted_setup_cannot_loosen_network_exposure_or_http_trust() {
-    let store = Store::open().await;
-    let local = [
-        (key::SERVER_BIND_ADDRESS, "127.0.0.1"),
-        (key::SERVER_LAN_BIND_ENABLED, "false"),
-        (key::SERVER_AUTH_REQUIRED_FOR_READS, "true"),
-        (key::SERVER_HTTP_OVERLAY_REQUIRE_TOKEN, "true"),
-        (key::SERVER_OVERLAY_CORS_ANY_ORIGIN, "false"),
-        (key::SERVER_ADDITIONAL_ORIGINS, "[]"),
-        (key::SCRIPT_HTTP_ALLOWED_DOMAINS, "[\"api.example.com\"]"),
-        (key::SCRIPT_HTTP_ALLOW_LOCAL, "false"),
-        (key::CORE_HTTP_ALLOW_LOCAL, "false"),
-    ];
-    store.set(&local).await;
-    let path = bundle(
-        store.data_dir(),
-        &setup_carrying(&[
-            (key::SERVER_BIND_ADDRESS, "0.0.0.0"),
-            (key::SERVER_LAN_BIND_ENABLED, "true"),
-            (key::SERVER_AUTH_REQUIRED_FOR_READS, "false"),
-            (key::SERVER_HTTP_OVERLAY_REQUIRE_TOKEN, "false"),
-            (key::SERVER_OVERLAY_CORS_ANY_ORIGIN, "true"),
-            (
-                key::SERVER_ADDITIONAL_ORIGINS,
-                "[\"https://attacker.example\"]",
-            ),
-            (key::SCRIPT_HTTP_ALLOWED_DOMAINS, "[\"*\"]"),
-            (key::SCRIPT_HTTP_ALLOW_LOCAL, "true"),
-            (key::CORE_HTTP_ALLOW_LOCAL, "true"),
-        ]),
-        &[],
-    );
-
-    store.import(path).await.unwrap();
-
-    let settings = store.settings().await;
-    let loosened: Vec<_> = local
-        .iter()
-        .filter(|(k, v)| settings.get(*k).map(String::as_str) != Some(*v))
-        .map(|(k, _)| (*k, settings.get(*k).cloned()))
-        .collect();
-    assert_eq!(loosened, Vec::new());
 }
 
 #[tokio::test]

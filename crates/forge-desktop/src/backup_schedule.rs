@@ -1294,7 +1294,7 @@ pub(crate) mod tests {
     use std::time::{Duration, Instant};
 
     use forge_components::{DateShape, Toasts, fmt_display, fmt_display_relative, tr};
-    use forge_storage::settings::portability::{SettingPortability, portability_of};
+    use forge_storage::SettingPortability;
     use forge_storage::{DataProvider, Language, SettingsRepo, reserved_keys};
     use forge_transfer::{
         BackupCategory, FailureCategory, FailureStreak, Passphrase, ScheduleKey, ScheduleState,
@@ -1828,7 +1828,8 @@ pub(crate) mod tests {
                 rig.stored_key(),
                 rig.stored(reserved_keys::BACKUP_SCHEDULE_ENABLED),
                 enabled,
-                portability_of(reserved_keys::BACKUP_SCHEDULE_KEY),
+                crate::settings_catalog::registered_settings_catalog()
+                    .portability_of(reserved_keys::BACKUP_SCHEDULE_KEY),
             ),
             (
                 Some(key),

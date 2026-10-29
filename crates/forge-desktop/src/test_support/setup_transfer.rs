@@ -6,13 +6,13 @@ use std::sync::Arc;
 use forge_events::{Event, EventSource};
 use forge_speech_types::{AliasId, AssignmentStrategy, IgnoreProfile, VoiceAlias};
 use forge_speech_types::{AliasState, EngineId, VoiceId};
-use forge_storage::settings::portability::is_portable;
 use forge_storage::settings::reserved_keys as key;
 use forge_storage::{
     BanLedgerEntry, BanLedgerKey, BanOrigin, CredentialId, FilterRule, FilterRuleKind, GlobalsRepo,
     LatestRecord, MediaBlobId, OverlayId, ScriptRepo, SettingsRepo, StoredClip, StoredDonation,
     TtsPipelineSettings, Viewer, clip_source_referrer,
 };
+use forge_storage::{SettingPortability, SettingSpec, SettingsCatalog};
 use forge_storage_sqlite::SqliteDatabaseFileSchema;
 use forge_transfer::{
     SetupExportRequest, SetupImportOutcome, SetupImportRequest, SetupLivePart, SetupQueueChanges,
@@ -26,6 +26,8 @@ use forge_types::{
 };
 use time::OffsetDateTime;
 use ulid::Ulid;
+
+use crate::settings_catalog::registered_settings_catalog;
 
 use super::pack_transfer::{
     Fixture, GLOBAL_NAME, Registries, SECRET_TOKEN, Store, files_under, seed,
@@ -494,14 +496,19 @@ async fn config_of(store: &Store) -> ConfigView {
         portable_settings: settings_of(store)
             .await
             .into_iter()
-            .filter(|(k, _)| is_portable(k))
+            .filter(|(k, _)| registered_settings_catalog().is_portable(k))
             .collect(),
     }
 }
 
 async fn export_setup(store: &Store) -> PathBuf {
+    export_setup_with(store, registered_settings_catalog()).await
+}
+
+async fn export_setup_with(store: &Store, settings_catalog: SettingsCatalog) -> PathBuf {
     write_setup(SetupExportRequest {
         provider: Arc::clone(&store.provider),
+        settings_catalog: Arc::new(settings_catalog),
         overlay_root: store.overlay_root(),
         destination: store
             .data_dir()
@@ -526,6 +533,7 @@ async fn import_into(
     let staged = stage(store, bundle).await;
     apply_setup_import(SetupImportRequest {
         provider: Arc::clone(&store.provider),
+        settings_catalog: &registered_settings_catalog(),
         registries: registries.closure(),
         staged: &staged,
         data_dir: store.data_dir().to_path_buf(),
@@ -679,7 +687,9 @@ async fn importing_a_setup_leaves_the_targets_machine_local_settings_untouched()
     let machine_local = |settings: Settings| -> Settings {
         settings
             .into_iter()
-            .filter(|(k, _)| !is_portable(k) && k != key::VOICE_ASSIGNMENT_STRATEGY)
+            .filter(|(k, _)| {
+                !registered_settings_catalog().is_portable(k) && k != key::VOICE_ASSIGNMENT_STRATEGY
+            })
             .collect()
     };
     let before = machine_local(settings_of(&m.target).await);
@@ -714,6 +724,87 @@ async fn a_setup_file_carries_no_credentials_history_or_machine_local_settings()
     ] {
         assert!(!raw.contains(leaked), "setup bytes carry {leaked:?}");
     }
+}
+
+#[tokio::test]
+async fn a_setup_carries_owner_declared_portable_settings_and_withholds_owner_machine_local_ones() {
+    let (_registries, store, _f) = source_only().await;
+    let bundle = export_setup(&store).await;
+
+    let staged = stage(&store, &bundle).await;
+
+    let carried = &staged.documents().settings;
+    assert_eq!(
+        (
+            carried.get(key::HOTKEY_HOLD_CEILING_SECS).cloned(),
+            carried.contains_key(key::WINDOW_PLACEMENT),
+        ),
+        (Some("9".to_owned()), false)
+    );
+}
+
+fn every_owner_spec_made_portable() -> SettingsCatalog {
+    let mut catalog = SettingsCatalog::core();
+    for specs in [
+        forge_server::settings::SETTING_SPECS,
+        forge_script::settings::SETTING_SPECS,
+        forge_runtime::settings::SETTING_SPECS,
+    ] {
+        let portable: Vec<SettingSpec> = specs
+            .iter()
+            .map(|spec| SettingSpec {
+                portability: SettingPortability::Portable,
+                ..*spec
+            })
+            .collect();
+        catalog.register(&portable).unwrap();
+    }
+    catalog
+}
+
+#[tokio::test]
+async fn a_setup_exported_with_every_owner_key_portable_cannot_loosen_network_exposure_or_http_trust()
+ {
+    let (registries, store, _f) = source_only().await;
+    let guarded = [
+        (key::SERVER_BIND_ADDRESS, "127.0.0.1", "0.0.0.0"),
+        (key::SERVER_LAN_BIND_ENABLED, "false", "true"),
+        (key::SERVER_AUTH_REQUIRED_FOR_READS, "true", "false"),
+        (key::SERVER_HTTP_OVERLAY_REQUIRE_TOKEN, "true", "false"),
+        (key::SERVER_OVERLAY_CORS_ANY_ORIGIN, "false", "true"),
+        (
+            key::SERVER_ADDITIONAL_ORIGINS,
+            "[]",
+            "[\"https://attacker.example\"]",
+        ),
+        (key::SERVER_OVERLAY_ROOT, "/home/local/overlays", "/etc"),
+        (
+            key::SCRIPT_HTTP_ALLOWED_DOMAINS,
+            "[\"api.example.com\"]",
+            "[\"*\"]",
+        ),
+        (key::SCRIPT_HTTP_ALLOW_LOCAL, "false", "true"),
+        (key::CORE_HTTP_ALLOW_LOCAL, "false", "true"),
+    ];
+    let loosened: Vec<(&str, &str)> = guarded.iter().map(|(k, _, loose)| (*k, *loose)).collect();
+    let local: Vec<(&str, &str)> = guarded.iter().map(|(k, safe, _)| (*k, *safe)).collect();
+    set_settings(&store, &loosened).await;
+    let bundle = export_setup_with(&store, every_owner_spec_made_portable()).await;
+    set_settings(&store, &local).await;
+    let staged = stage(&store, &bundle).await;
+    let all_carried = guarded
+        .iter()
+        .all(|(k, _, _)| staged.documents().settings.contains_key(*k));
+
+    import(&store, &registries, &bundle).await.unwrap();
+
+    let settings = settings_of(&store).await;
+    let changed: Vec<&str> = local
+        .iter()
+        .filter(|(k, safe)| settings.get(*k).map(String::as_str) != Some(*safe))
+        .map(|(k, _)| *k)
+        .collect();
+    assert_eq!((all_carried, changed), (true, Vec::<&str>::new()));
 }
 
 #[tokio::test]

@@ -3,10 +3,6 @@ use std::collections::{BTreeMap, HashMap};
 use std::sync::Mutex;
 
 use async_trait::async_trait;
-use forge_storage::settings::disclosure::{self, SettingDisclosure};
-use forge_storage::settings::portability::{
-    CLASSIFIED_KEYS, CLASSIFIED_PREFIXES, SettingPortability,
-};
 use forge_storage::{
     CredentialsKeyLoss, EngineParams, Language, SettingsRepo, StorageError, VoiceGateSettings,
     chat_history_display_limit, chat_history_per_viewer_limit, diagnostic_log_level,
@@ -14,15 +10,11 @@ use forge_storage::{
     record_credentials_key_loss, reserved_keys as key, set_bool_setting,
     set_chat_history_display_limit, set_chat_history_per_viewer_limit, set_diagnostic_log_level,
     set_disabled_tts_engines, set_engine_params, set_json_setting, set_master_volume,
-    set_soundboard_also_headphones, set_soundboard_enabled, set_soundboard_master_volume,
-    set_soundboard_output_device, set_voice_gate_enabled, set_voice_gate_hold_ms,
-    set_voice_gate_input_device_id, set_voice_gate_threshold, soundboard_also_headphones,
-    soundboard_enabled, soundboard_master_volume, soundboard_output_device,
-    take_credentials_key_loss, voice_gate_settings,
+    set_voice_gate_enabled, set_voice_gate_hold_ms, set_voice_gate_input_device_id,
+    set_voice_gate_threshold, take_credentials_key_loss, voice_gate_settings,
 };
 use forge_types::LogLevel;
 
-const KEY_CATALOG_GOLDEN: &str = include_str!("fixtures/settings/key_catalog.tsv");
 const STORED_ENCODING_GOLDEN: &str = include_str!("fixtures/settings/stored_encoding.json");
 const PIPER: &str = "piper";
 
@@ -48,23 +40,6 @@ impl SettingsRepo for MapRepo {
     }
     async fn load_all(&self) -> Result<HashMap<String, String>, StorageError> {
         Ok(self.map.lock().unwrap().clone())
-    }
-}
-
-fn portability_label(portability: SettingPortability) -> &'static str {
-    match portability {
-        SettingPortability::Portable => "portable",
-        SettingPortability::MachineLocal => "machine_local",
-        SettingPortability::RepositoryOwned => "repository_owned",
-    }
-}
-
-fn disclosure_label(class: SettingDisclosure) -> &'static str {
-    match class {
-        SettingDisclosure::Verbatim => "verbatim",
-        SettingDisclosure::Kind => "kind",
-        SettingDisclosure::Presence => "presence",
-        SettingDisclosure::Withheld => "withheld",
     }
 }
 
@@ -115,12 +90,6 @@ async fn written_by_every_typed_writer() -> MapRepo {
         .unwrap();
     set_voice_gate_threshold(&repo, 0.3).await.unwrap();
     set_voice_gate_hold_ms(&repo, 1200).await.unwrap();
-    set_soundboard_enabled(&repo, false).await.unwrap();
-    set_soundboard_output_device(&repo, Some("hw:2,0".to_owned()))
-        .await
-        .unwrap();
-    set_soundboard_master_volume(&repo, 0.75).await.unwrap();
-    set_soundboard_also_headphones(&repo, true).await.unwrap();
     set_diagnostic_log_level(&repo, &LogLevel::Debug)
         .await
         .unwrap();
@@ -137,32 +106,6 @@ async fn seeded_from_golden() -> MapRepo {
         repo.set_string(stored_key, value).await.unwrap();
     }
     repo
-}
-
-#[test]
-fn every_declared_key_keeps_its_name_portability_and_disclosure_class() {
-    let mut lines: Vec<String> = CLASSIFIED_KEYS
-        .iter()
-        .map(|(name, portability)| {
-            format!(
-                "key\t{name}\t{}\t{}",
-                portability_label(*portability),
-                disclosure_label(disclosure::class_of(name))
-            )
-        })
-        .chain(CLASSIFIED_PREFIXES.iter().map(|(prefix, portability)| {
-            format!(
-                "prefix\t{prefix}\t{}\t{}",
-                portability_label(*portability),
-                disclosure_label(disclosure::class_of(&format!("{prefix}x")))
-            )
-        }))
-        .collect();
-    lines.sort();
-
-    let rendered = format!("{}\n", lines.join("\n"));
-
-    assert_eq!(rendered, KEY_CATALOG_GOLDEN);
 }
 
 #[tokio::test]
@@ -222,15 +165,6 @@ async fn typed_readers_decode_the_golden_encoding_into_the_written_values() {
             threshold: 0.3,
             hold_ms: 1200,
         }
-    );
-    assert_eq!(
-        (
-            soundboard_enabled(&repo).await.unwrap(),
-            soundboard_output_device(&repo).await.unwrap(),
-            soundboard_master_volume(&repo).await.unwrap(),
-            soundboard_also_headphones(&repo).await.unwrap(),
-        ),
-        (false, Some("hw:2,0".to_owned()), 0.75, true)
     );
     assert_eq!(diagnostic_log_level(&repo).await.unwrap(), LogLevel::Debug);
     assert_eq!(

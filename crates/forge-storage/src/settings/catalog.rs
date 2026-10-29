@@ -286,6 +286,31 @@ mod tests {
         );
     }
 
+    #[test]
+    fn disclose_all_drops_withheld_keys_and_renders_the_rest_by_their_class() {
+        let stored: HashMap<String, String> = [
+            (key::ACCENT, "blue"),
+            (key::AUDIO_OUTPUT_DEVICE_ID, "nova-speakers"),
+            (key::PICKER_FAVORITES_ICONS, r#"["nova","star"]"#),
+            (key::BACKUP_SCHEDULE_DESTINATION, "/home/nova/backups"),
+            ("twitch.account_login", "nova"),
+        ]
+        .into_iter()
+        .map(|(k, v)| (k.to_owned(), v.to_owned()))
+        .collect();
+
+        let shown = SettingsCatalog::core().disclose_all(&stored);
+
+        assert_eq!(
+            shown,
+            BTreeMap::from([
+                (key::ACCENT.to_owned(), "blue".to_owned()),
+                (key::AUDIO_OUTPUT_DEVICE_ID.to_owned(), "set".to_owned()),
+                (key::PICKER_FAVORITES_ICONS.to_owned(), "list(2)".to_owned()),
+            ])
+        );
+    }
+
     #[tokio::test]
     async fn report_undeclared_settings_returns_the_undeclared_keys_and_leaves_the_store_untouched()
     {

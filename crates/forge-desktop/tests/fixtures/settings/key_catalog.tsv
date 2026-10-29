@@ -40,6 +40,7 @@ key	font_body	portable	presence
 key	font_mono	portable	presence
 key	hotkey.enabled	machine_local	verbatim
 key	hotkey.hold_ceiling_secs	portable	withheld
+key	integrations.first_run_completed	machine_local	verbatim
 key	midi.enabled	machine_local	verbatim
 key	midi.known_devices	machine_local	withheld
 key	notifications.action_failure_os_notice	portable	withheld

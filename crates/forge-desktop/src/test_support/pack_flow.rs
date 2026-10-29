@@ -94,6 +94,7 @@ pub(crate) fn pack_world(rt: &tokio::runtime::Runtime) -> PackWorld {
         PackWorld {
             services: PackServices {
                 backend: provider,
+                settings_catalog: Arc::new(crate::settings_catalog::registered_settings_catalog()),
                 sub_actions: Arc::new(SubActionRegistry::new()),
                 triggers: Arc::new(TriggerRegistry::new()),
                 overlay_kinds: kinds,

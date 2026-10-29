@@ -478,6 +478,7 @@ mod tests {
                 .unwrap();
             write_setup(SetupExportRequest {
                 provider: Arc::clone(rig.world.provider()),
+                settings_catalog: Arc::new(crate::settings_catalog::registered_settings_catalog()),
                 overlay_root: rig.world.overlay_root(),
                 destination: rig
                     .world

@@ -6,8 +6,7 @@ use async_trait::async_trait;
 use forge_storage::settings::core_settings::{
     AUDIO_VOICE_GATE_ENABLED, AUDIO_VOICE_GATE_HOLD_MS, AUDIO_VOICE_GATE_THRESHOLD,
     CHAT_HISTORY_DISPLAY_LIMIT, CHAT_HISTORY_PER_VIEWER_LIMIT, DIAGNOSTICS_LOG_LEVEL,
-    EVENT_LOG_RETENTION_DAYS, SOUNDBOARD_ALSO_HEADPHONES, SOUNDBOARD_ENABLED,
-    SOUNDBOARD_MASTER_VOLUME, TTS_MASTER_VOLUME,
+    EVENT_LOG_RETENTION_DAYS, TTS_MASTER_VOLUME,
 };
 use forge_storage::{
     Count, Level, Setting, SettingCodec, SettingsRepo, StorageError, read_setting, write_setting,
@@ -83,18 +82,6 @@ async fn every_core_typed_setting_writes_its_golden_stored_string() {
             stored_after_write(&TTS_MASTER_VOLUME, &0.8).await,
         ),
         (
-            SOUNDBOARD_ENABLED.name(),
-            stored_after_write(&SOUNDBOARD_ENABLED, &false).await,
-        ),
-        (
-            SOUNDBOARD_MASTER_VOLUME.name(),
-            stored_after_write(&SOUNDBOARD_MASTER_VOLUME, &1.0).await,
-        ),
-        (
-            SOUNDBOARD_ALSO_HEADPHONES.name(),
-            stored_after_write(&SOUNDBOARD_ALSO_HEADPHONES, &true).await,
-        ),
-        (
             DIAGNOSTICS_LOG_LEVEL.name(),
             stored_after_write(&DIAGNOSTICS_LOG_LEVEL, &LogLevel::Warn).await,
         ),
@@ -108,9 +95,6 @@ async fn every_core_typed_setting_writes_its_golden_stored_string() {
         ("chat_history.per_viewer_limit", "0"),
         ("chat_history.display_limit", "500"),
         ("tts.master_volume", "0.8"),
-        ("soundboard.enabled", "false"),
-        ("soundboard.master_volume", "1"),
-        ("soundboard.also_headphones", "true"),
         ("diagnostics.log_level", "warn"),
     ]
     .into_iter()
@@ -167,11 +151,7 @@ async fn bounded_core_counts_clamp_stored_values_on_read() {
 
 #[tokio::test]
 async fn core_levels_clamp_to_silent_and_full_on_read_and_write() {
-    for setting in [
-        &TTS_MASTER_VOLUME,
-        &SOUNDBOARD_MASTER_VOLUME,
-        &AUDIO_VOICE_GATE_THRESHOLD,
-    ] {
+    for setting in [&TTS_MASTER_VOLUME, &AUDIO_VOICE_GATE_THRESHOLD] {
         assert_eq!(
             (
                 read_back(setting, "-0.5").await,
@@ -188,9 +168,8 @@ async fn core_levels_clamp_to_silent_and_full_on_read_and_write() {
 
 #[tokio::test]
 async fn core_levels_read_non_finite_stored_text_as_their_default() {
-    let cases: [(&Setting<Level>, f32); 3] = [
+    let cases: [(&Setting<Level>, f32); 2] = [
         (&TTS_MASTER_VOLUME, 1.0),
-        (&SOUNDBOARD_MASTER_VOLUME, 1.0),
         (&AUDIO_VOICE_GATE_THRESHOLD, 0.15),
     ];
     for (setting, default) in cases {

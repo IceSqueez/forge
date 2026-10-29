@@ -26,3 +26,51 @@ fn shape_of(value: &str) -> String {
         _ => format!("{STAMP} len={}>", value.chars().count()),
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::SettingDisclosure;
+
+    const SECRET: &str = "nova_the_broadcaster";
+
+    #[test]
+    fn a_kind_class_discloses_only_the_container_shape() {
+        for (value, expected) in [
+            (r#"["a.com","b.com"]"#, "list(2)"),
+            ("[]", "list(0)"),
+            (r#"{"a":1,"b":2}"#, "map(2)"),
+            ("{}", "map(0)"),
+            (SECRET, "<redacted len=20>"),
+            ("Привіт", "<redacted len=6>"),
+            ("", "<redacted len=0>"),
+        ] {
+            assert_eq!(
+                SettingDisclosure::Kind.render(value).as_deref(),
+                Some(expected),
+                "value {value:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn a_presence_class_discloses_only_whether_a_value_exists() {
+        for (value, expected) in [("", "unset"), (" ", "set"), (SECRET, "set")] {
+            assert_eq!(
+                SettingDisclosure::Presence.render(value).as_deref(),
+                Some(expected),
+                "value {value:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn verbatim_shows_the_value_and_withheld_shows_nothing() {
+        assert_eq!(
+            (
+                SettingDisclosure::Verbatim.render(SECRET),
+                SettingDisclosure::Withheld.render(SECRET),
+            ),
+            (Some(SECRET.to_owned()), None)
+        );
+    }
+}

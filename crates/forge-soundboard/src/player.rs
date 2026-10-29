@@ -2174,9 +2174,10 @@ mod tests {
             .await
             .unwrap();
 
-        let persisted = forge_storage::soundboard_master_volume(store.as_ref())
-            .await
-            .unwrap();
+        let persisted =
+            forge_storage::read_setting(store.as_ref(), &crate::settings::MASTER_VOLUME)
+                .await
+                .unwrap();
         assert!(
             (persisted - SUB_ACTION_VOLUME).abs() < f32::EPSILON,
             "the sub-action volume did not reach the store: {persisted}"
@@ -2193,9 +2194,10 @@ mod tests {
             .await
             .unwrap();
 
-        let persisted = forge_storage::soundboard_master_volume(store.as_ref())
-            .await
-            .unwrap();
+        let persisted =
+            forge_storage::read_setting(store.as_ref(), &crate::settings::MASTER_VOLUME)
+                .await
+                .unwrap();
         let live = player.settings_handle().load().master_volume;
         assert_eq!(
             (persisted, live),

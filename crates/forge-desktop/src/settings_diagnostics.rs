@@ -831,6 +831,7 @@ mod tests {
                 super::SettingsDiagnosticsView::new(
                     crate::log_tail::LogTail::new(),
                     backend as std::sync::Arc<dyn forge_storage::DataProvider>,
+                    std::sync::Arc::new(crate::settings_catalog::registered_settings_catalog()),
                     crate::integrations::BuiltinRegistry::default(),
                     rt.handle().clone(),
                     false,

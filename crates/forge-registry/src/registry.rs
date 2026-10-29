@@ -4,12 +4,14 @@ use forge_types::IntegrationId;
 
 use crate::descriptor::TriggerKindDescriptor;
 use crate::error::RegistryError;
+use crate::retired_ids::{IdSuccession, RetiredIds};
 use crate::runner::SubActionRunner;
 
 #[derive(Default)]
 pub struct TriggerRegistry {
     descriptors: HashMap<String, Box<dyn TriggerKindDescriptor>>,
     owners: HashMap<String, IntegrationId>,
+    retired: RetiredIds,
 }
 
 impl TriggerRegistry {
@@ -44,6 +46,18 @@ impl TriggerRegistry {
     pub fn owning_integration(&self, kind_id: &str) -> Option<&IntegrationId> {
         self.owners.get(kind_id)
     }
+
+    pub fn declare_retired(&mut self, succession: &IdSuccession) -> Result<(), RegistryError> {
+        self.retired.declare(succession)
+    }
+
+    pub fn current_id(&self, retired_id: &str) -> Option<&str> {
+        self.retired.current_id(retired_id)
+    }
+
+    pub fn retired_ids(&self) -> impl Iterator<Item = (&str, &str)> {
+        self.retired.successions()
+    }
 }
 
 pub struct OwnedTriggerRegistration<'a> {
@@ -58,12 +72,17 @@ impl OwnedTriggerRegistration<'_> {
         self.registry.owners.insert(id, self.owner.clone());
         Ok(())
     }
+
+    pub fn declare_retired(&mut self, succession: &IdSuccession) -> Result<(), RegistryError> {
+        self.registry.declare_retired(succession)
+    }
 }
 
 #[derive(Default)]
 pub struct SubActionRegistry {
     runners: HashMap<String, Box<dyn SubActionRunner>>,
     owners: HashMap<String, IntegrationId>,
+    retired: RetiredIds,
 }
 
 impl SubActionRegistry {
@@ -98,6 +117,18 @@ impl SubActionRegistry {
     pub fn owning_integration(&self, kind_id: &str) -> Option<&IntegrationId> {
         self.owners.get(kind_id)
     }
+
+    pub fn declare_retired(&mut self, succession: &IdSuccession) -> Result<(), RegistryError> {
+        self.retired.declare(succession)
+    }
+
+    pub fn current_id(&self, retired_id: &str) -> Option<&str> {
+        self.retired.current_id(retired_id)
+    }
+
+    pub fn retired_ids(&self) -> impl Iterator<Item = (&str, &str)> {
+        self.retired.successions()
+    }
 }
 
 pub struct OwnedSubActionRegistration<'a> {
@@ -111,6 +142,10 @@ impl OwnedSubActionRegistration<'_> {
         self.registry.register(r)?;
         self.registry.owners.insert(id, self.owner.clone());
         Ok(())
+    }
+
+    pub fn declare_retired(&mut self, succession: &IdSuccession) -> Result<(), RegistryError> {
+        self.registry.declare_retired(succession)
     }
 }
 

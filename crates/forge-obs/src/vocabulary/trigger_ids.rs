@@ -4,41 +4,41 @@ pub const CONNECTION_CONNECTED: &str = event_kinds::CONNECTION_CONNECTED;
 pub const CONNECTION_DISCONNECTED: &str = event_kinds::CONNECTION_DISCONNECTED;
 pub const CONNECTION_AUTH_FAILED: &str = event_kinds::CONNECTION_AUTH_FAILED;
 
-pub const SCENE_CHANGED: &str = "obs.scenes.current_changed";
-pub const SCENE_PREVIEW_CHANGED: &str = "obs.scenes.preview_changed";
-pub const SCENE_LIST_CHANGED: &str = "obs.scenes.list_changed";
-pub const SCENE_CREATED: &str = "obs.scenes.created";
-pub const SCENE_REMOVED: &str = "obs.scenes.removed";
-pub const SCENE_RENAMED: &str = "obs.scenes.renamed";
+pub const SCENE_CHANGED: &str = event_kinds::SCENE_CHANGED;
+pub const SCENE_PREVIEW_CHANGED: &str = event_kinds::SCENE_PREVIEW_CHANGED;
+pub const SCENE_LIST_CHANGED: &str = event_kinds::SCENE_LIST_CHANGED;
+pub const SCENE_CREATED: &str = event_kinds::SCENE_CREATED;
+pub const SCENE_REMOVED: &str = event_kinds::SCENE_REMOVED;
+pub const SCENE_RENAMED: &str = event_kinds::SCENE_RENAMED;
 
-pub const SOURCE_INPUT_CREATED: &str = "obs.sources.input_created";
-pub const SOURCE_INPUT_REMOVED: &str = "obs.sources.input_removed";
-pub const SOURCE_INPUT_RENAMED: &str = "obs.sources.input_renamed";
-pub const SOURCE_SCENE_ITEM_CREATED: &str = "obs.sources.scene_item_created";
-pub const SOURCE_SCENE_ITEM_REMOVED: &str = "obs.sources.scene_item_removed";
-pub const SOURCE_LOCK_CHANGED: &str = "obs.sources.scene_item_lock_changed";
-pub const SOURCE_VISIBILITY_CHANGED: &str = "obs.sources.scene_item_visibility_changed";
+pub const SOURCE_INPUT_CREATED: &str = event_kinds::SOURCE_INPUT_CREATED;
+pub const SOURCE_INPUT_REMOVED: &str = event_kinds::SOURCE_INPUT_REMOVED;
+pub const SOURCE_INPUT_RENAMED: &str = event_kinds::SOURCE_INPUT_RENAMED;
+pub const SOURCE_SCENE_ITEM_CREATED: &str = event_kinds::SOURCE_SCENE_ITEM_CREATED;
+pub const SOURCE_SCENE_ITEM_REMOVED: &str = event_kinds::SOURCE_SCENE_ITEM_REMOVED;
+pub const SOURCE_LOCK_CHANGED: &str = event_kinds::SOURCE_LOCK_CHANGED;
+pub const SOURCE_VISIBILITY_CHANGED: &str = event_kinds::SOURCE_VISIBILITY_CHANGED;
 
-pub const FILTER_CREATED: &str = "obs.filters.created";
-pub const FILTER_REMOVED: &str = "obs.filters.removed";
-pub const FILTER_ENABLED_CHANGED: &str = "obs.filters.enabled_changed";
+pub const FILTER_CREATED: &str = event_kinds::FILTER_CREATED;
+pub const FILTER_REMOVED: &str = event_kinds::FILTER_REMOVED;
+pub const FILTER_ENABLED_CHANGED: &str = event_kinds::FILTER_ENABLED_CHANGED;
 
-pub const RECORDING_STARTING: &str = "obs.record.starting";
-pub const RECORDING_STARTED: &str = "obs.record.started";
-pub const RECORDING_STOPPING: &str = "obs.record.stopping";
-pub const RECORDING_STOPPED: &str = "obs.record.stopped";
-pub const RECORDING_PAUSED: &str = "obs.record.paused";
-pub const RECORDING_RESUMED: &str = "obs.record.resumed";
-pub const RECORDING_FILE_CHANGED: &str = "obs.record.file_changed";
-pub const RECORDING_STATUS_CHANGED: &str = "obs.record.status_changed";
+pub const RECORDING_STARTING: &str = event_kinds::RECORDING_STARTING;
+pub const RECORDING_STARTED: &str = event_kinds::RECORDING_STARTED;
+pub const RECORDING_STOPPING: &str = event_kinds::RECORDING_STOPPING;
+pub const RECORDING_STOPPED: &str = event_kinds::RECORDING_STOPPED;
+pub const RECORDING_PAUSED: &str = event_kinds::RECORDING_PAUSED;
+pub const RECORDING_RESUMED: &str = event_kinds::RECORDING_RESUMED;
+pub const RECORDING_FILE_CHANGED: &str = event_kinds::RECORDING_FILE_CHANGED;
+pub const RECORDING_STATUS_CHANGED: &str = "obs.recording.status_changed";
 
-pub const STREAMING_STARTING: &str = "obs.stream.starting";
-pub const STREAMING_STARTED: &str = "obs.stream.started";
-pub const STREAMING_STOPPING: &str = "obs.stream.stopping";
-pub const STREAMING_STOPPED: &str = "obs.stream.stopped";
-pub const STREAMING_STATUS_CHANGED: &str = "obs.stream.status_changed";
+pub const STREAMING_STARTING: &str = event_kinds::STREAMING_STARTING;
+pub const STREAMING_STARTED: &str = event_kinds::STREAMING_STARTED;
+pub const STREAMING_STOPPING: &str = event_kinds::STREAMING_STOPPING;
+pub const STREAMING_STOPPED: &str = event_kinds::STREAMING_STOPPED;
+pub const STREAMING_STATUS_CHANGED: &str = "obs.streaming.status_changed";
 
-pub const COLLECTION_CHANGED: &str = "obs.collection.current_changed";
+pub const COLLECTION_CHANGED: &str = event_kinds::COLLECTION_CHANGED;
 pub const COLLECTION_CHANGING: &str = event_kinds::COLLECTION_CHANGING;
 pub const COLLECTION_LIST_CHANGED: &str = event_kinds::COLLECTION_LIST_CHANGED;
 

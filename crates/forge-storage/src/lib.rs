@@ -87,6 +87,7 @@ pub use script::{
     SCRIPT_NAME_KEY, SCRIPT_RUN_NAMED_KIND, ScriptRecord, ScriptReferences, ScriptReferrer,
     ScriptRepo, ScriptTelemetry,
 };
+pub use settings::favorites::rename_favorite_ids;
 pub use settings::{
     CredentialsKeyLoss, DEFAULT_CHAT_HISTORY_DISPLAY_LIMIT, DEFAULT_CHAT_HISTORY_PER_VIEWER_LIMIT,
     DEFAULT_DIAGNOSTIC_LOG_LEVEL, EngineParams, Language, MAX_CHAT_HISTORY_PER_VIEWER_LIMIT,

@@ -6,8 +6,8 @@ use forge_components::{
     ActivePresentation, OverlayPosition, PushToast, ToastAction, ToastKind, overlay, tr,
 };
 use forge_transfer::{
-    SetupImportOutcome, SetupImportRequest, StagedSetup, TransferError, apply_setup_import,
-    discard_staged_setup, stage_setup,
+    ClosureRegistries, SetupImportOutcome, SetupImportRequest, StagedSetup, TransferError,
+    apply_setup_import, discard_staged_setup, stage_setup,
 };
 use gpui::{App, ClickEvent, Context, EventEmitter, Window, div, prelude::*};
 
@@ -96,12 +96,19 @@ impl SetupImportFlow {
         }
         self.step = SetupImportStep::Staging;
         let data_dir = self.data_dir.clone();
+        let services = self.services.clone();
         async_bridge::run_async(
             &self.services.rt_handle,
             async move {
-                stage_setup(bundle, data_dir)
+                let mut staged = stage_setup(bundle, data_dir)
                     .await
-                    .map_err(|error| RestoreProblem::of(&error))
+                    .map_err(|error| RestoreProblem::of(&error))?;
+                staged.upgrade_retired_ids(ClosureRegistries {
+                    sub_actions: &services.sub_actions,
+                    triggers: &services.triggers,
+                    schema: None,
+                });
+                Ok::<_, RestoreProblem>(staged)
             },
             |this, result, cx| this.staged(result.map_err(|problem| problem.message()), cx),
             cx,

@@ -102,6 +102,7 @@ pub mod reserved_keys {
     pub const SAFETY_COPIES_DELETE_AFTER_DAYS: &str = "safety_copies.delete_after_days";
 }
 
+pub mod favorites;
 pub mod portability;
 
 pub const DEFAULT_NOTIFICATIONS_ACTION_FAILURE_OS_NOTICE: bool = true;

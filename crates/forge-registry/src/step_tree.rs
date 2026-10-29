@@ -379,3 +379,52 @@ fn rewrite_entry(
     }
     changed
 }
+
+pub fn rename_step_kinds(
+    kind_id: &mut String,
+    config: &mut SubActionConfig,
+    current_of: &dyn Fn(&str) -> Option<String>,
+) -> bool {
+    let mut changed = rename_kind(kind_id, current_of);
+    for value in config.values_mut() {
+        changed |= rename_nested_kinds(value, current_of);
+    }
+    changed
+}
+
+fn rename_kind(kind_id: &mut String, current_of: &dyn Fn(&str) -> Option<String>) -> bool {
+    match current_of(kind_id) {
+        Some(current) => {
+            *kind_id = current;
+            true
+        }
+        None => false,
+    }
+}
+
+fn rename_nested_kinds(value: &mut Variant, current_of: &dyn Fn(&str) -> Option<String>) -> bool {
+    let mut changed = false;
+    match value {
+        Variant::Array(items) => {
+            for item in items {
+                changed |= rename_nested_kinds(item, current_of);
+            }
+        }
+        Variant::Object(fields) => {
+            for (key, field) in fields.iter_mut() {
+                changed |= match field {
+                    Variant::String(kind_id) if key == STEP_KIND_KEY => {
+                        rename_kind(kind_id, current_of)
+                    }
+                    nested => rename_nested_kinds(nested, current_of),
+                };
+            }
+        }
+        Variant::Int(_)
+        | Variant::Float(_)
+        | Variant::Bool(_)
+        | Variant::String(_)
+        | Variant::Datetime(_) => {}
+    }
+    changed
+}

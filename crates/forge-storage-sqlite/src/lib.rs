@@ -11,6 +11,7 @@ mod error;
 mod event_log_impl;
 mod globals_impl;
 mod history_impl;
+pub mod kind_id_rename;
 mod latest_value_impl;
 pub mod legacy_chain;
 mod media_impl;

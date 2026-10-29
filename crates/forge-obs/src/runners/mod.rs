@@ -133,6 +133,9 @@ pub fn register_obs_sub_actions(
     reg.register(Box::new(RecordSetDirectoryRunner::new(Arc::clone(&sink))))?;
     reg.register(Box::new(ProfileSwitchRunner::new(Arc::clone(&sink))))?;
     reg.register(Box::new(SceneCollectionSwitchRunner::new(sink)))?;
+    for succession in crate::vocabulary::retired_ids::RETIRED_SUB_ACTION_IDS {
+        reg.declare_retired(succession)?;
+    }
     Ok(())
 }
 

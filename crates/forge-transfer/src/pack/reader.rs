@@ -9,7 +9,9 @@ use crate::bundle::naming::fresh_stem;
 use crate::documents::archive::{
     DocumentManifest, carried_file, check_bundled_files, documents_version, stage_document_bundle,
 };
+use crate::documents::closure::ClosureRegistries;
 use crate::documents::model::{PACK_DOCUMENTS_VERSION, PackDocuments};
+use crate::documents::retired_ids::upgrade_pack_documents;
 use crate::error::TransferError;
 use crate::pack::manifest::{PackManifest, parse_pack};
 
@@ -33,6 +35,10 @@ impl StagedPack {
 
     pub fn documents(&self) -> &PackDocuments {
         &self.documents
+    }
+
+    pub fn upgrade_retired_ids(&mut self, registries: ClosureRegistries<'_>) {
+        upgrade_pack_documents(&mut self.documents, registries);
     }
 
     pub fn file(&self, pack_path: &str) -> Option<PathBuf> {

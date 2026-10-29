@@ -9,7 +9,7 @@ use crate::{
     TriggerInstanceRepo, TtsFiltersRepo, UserGlobalsRepo, ViewerRepo, VoiceAliasRepo,
 };
 
-pub const EXPECTED_SCHEMA_VERSION: u32 = 57;
+pub const EXPECTED_SCHEMA_VERSION: u32 = 58;
 
 pub const DATABASE_FILE_NAME: &str = "forge.db";
 const WAL_SUFFIX: &str = "-wal";

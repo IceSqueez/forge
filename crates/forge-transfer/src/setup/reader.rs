@@ -8,7 +8,9 @@ use crate::bundle::naming::fresh_stem;
 use crate::documents::archive::{
     carried_file, check_bundled_files, documents_version, stage_document_bundle,
 };
+use crate::documents::closure::ClosureRegistries;
 use crate::documents::model::PACK_DOCUMENTS_VERSION;
+use crate::documents::retired_ids::{upgrade_favorite_settings, upgrade_pack_documents};
 use crate::error::TransferError;
 use crate::setup::documents::{SETUP_DOCUMENTS_VERSION, SetupDocuments};
 use crate::setup::manifest::{SetupManifest, parse_setup};
@@ -33,6 +35,11 @@ impl StagedSetup {
 
     pub fn documents(&self) -> &SetupDocuments {
         &self.documents
+    }
+
+    pub fn upgrade_retired_ids(&mut self, registries: ClosureRegistries<'_>) {
+        upgrade_pack_documents(&mut self.documents.configuration, registries);
+        upgrade_favorite_settings(&mut self.documents.settings, registries);
     }
 
     pub fn file(&self, setup_path: &str) -> Option<PathBuf> {

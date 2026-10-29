@@ -151,6 +151,9 @@ pub fn register_obs_triggers(reg: &mut TriggerRegistry) -> Result<(), RegistryEr
     reg.register(Box::new(VirtualcamStartedDescriptor))?;
     reg.register(Box::new(VirtualcamStoppedDescriptor))?;
     reg.register(Box::new(VirtualcamStatusChangedDescriptor))?;
+    for succession in crate::vocabulary::retired_ids::RETIRED_TRIGGER_IDS {
+        reg.declare_retired(succession)?;
+    }
     Ok(())
 }
 

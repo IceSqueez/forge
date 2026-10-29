@@ -3203,6 +3203,7 @@ dependencies = [
  "async-trait",
  "forge-events",
  "forge-paths",
+ "forge-registry",
  "forge-speech-types",
  "forge-storage",
  "forge-types",

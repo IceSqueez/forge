@@ -7,6 +7,7 @@ use sqlx::SqliteConnection;
 use time::OffsetDateTime;
 
 use crate::error::SqliteStorageError;
+use crate::kind_id_rename::KIND_ID_RENAME_VERSION;
 use crate::legacy_chain::LEGACY_CHAIN;
 
 pub static MIGRATIONS: sqlx::migrate::Migrator = sqlx::migrate!("./migrations");
@@ -36,12 +37,21 @@ pub async fn apply(pool: &sqlx::SqlitePool) -> Result<(), SqliteStorageError> {
     let mut migrator = sqlx::migrate!("./migrations");
     migrator.set_ignore_missing(true);
     migrator
-        .run(pool)
+        .run_to(KIND_ID_RENAME_VERSION - 1, pool)
         .await
-        .map_err(|e| SqliteStorageError::Migration {
-            migration: e.to_string(),
-            reason: e.to_string(),
-        })
+        .map_err(migration_failed)?;
+    if crate::kind_id_rename::is_pending(pool).await? {
+        crate::registry_migration::migrate_registry_format(pool).await?;
+        crate::kind_id_rename::apply(pool).await?;
+    }
+    migrator.run(pool).await.map_err(migration_failed)
+}
+
+fn migration_failed(e: sqlx::migrate::MigrateError) -> SqliteStorageError {
+    SqliteStorageError::Migration {
+        migration: e.to_string(),
+        reason: e.to_string(),
+    }
 }
 
 pub async fn applied_version(pool: &sqlx::SqlitePool) -> Result<u32, SqliteStorageError> {

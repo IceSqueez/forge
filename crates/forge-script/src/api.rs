@@ -2043,6 +2043,47 @@ mod tests {
         }
     }
 
+    #[tokio::test]
+    async fn every_dependency_bound_function_fails_with_its_unavailable_reason_without_the_dependency()
+     {
+        for (script, reason) in [
+            (r#"forge::tts::speak("hi")"#, SPEAK_UNAVAILABLE_REASON),
+            (
+                r#"forge::tts::speak_as("piper/amy", "hi")"#,
+                SPEAK_UNAVAILABLE_REASON,
+            ),
+            ("forge::tts::skip()", SPEAK_UNAVAILABLE_REASON),
+            ("forge::tts::clear()", SPEAK_UNAVAILABLE_REASON),
+            (
+                r#"forge::http::get("https://example.com/")"#,
+                HTTP_UNAVAILABLE_REASON,
+            ),
+            (
+                r#"forge::http::post("https://example.com/", "{}")"#,
+                HTTP_UNAVAILABLE_REASON,
+            ),
+            (
+                r#"forge::latest::get("donation")"#,
+                LATEST_UNAVAILABLE_REASON,
+            ),
+            (
+                r#"forge::latest::get("donation", "twitch")"#,
+                LATEST_UNAVAILABLE_REASON,
+            ),
+        ] {
+            let dp = open_dp().await;
+            let (api, _) =
+                make_api_with_publisher(Arc::clone(&dp), Arc::new(Mutex::new(Vec::new())));
+            let engine = Engine::with_api(unhurried(), api);
+
+            let result = tokio::task::spawn_blocking(move || engine.eval_script(script))
+                .await
+                .unwrap();
+
+            assert_runtime_error_mentions(script, result, reason);
+        }
+    }
+
     fn golden_keys_sorted(value: serde_json::Value) -> serde_json::Value {
         match value {
             serde_json::Value::Object(fields) => {

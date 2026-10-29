@@ -204,12 +204,13 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn an_editor_run_without_a_reader_has_no_latest_namespace() {
+    async fn an_editor_run_without_a_reader_fails_saying_latest_values_are_unavailable() {
         match run_latest_probe(None).await {
-            Err(ScriptError::Runtime { reason, .. }) => {
-                assert!(reason.contains("forge::latest::get"), "got: {reason}")
-            }
-            other => panic!("expected a missing-function error, got {other:?}"),
+            Err(ScriptError::Runtime { reason, .. }) => assert!(
+                reason.contains("latest values are not available where this script runs"),
+                "got: {reason}"
+            ),
+            other => panic!("expected the latest-unavailable runtime error, got {other:?}"),
         }
     }
 

@@ -60,18 +60,21 @@ mod tests {
     use super::*;
 
     #[test]
-    fn subscribe_frame_serializes_to_the_exact_pusher_bytes() {
+    fn subscribe_frame_names_the_pusher_subscribe_event_and_the_chatroom_channel() {
         assert_eq!(
-            subscribe_frame(4242).to_string(),
-            r#"{"data":{"channel":"chatrooms.4242.v2"},"event":"pusher:subscribe"}"#
+            subscribe_frame(4242),
+            serde_json::from_str::<Value>(
+                r#"{"data":{"channel":"chatrooms.4242.v2"},"event":"pusher:subscribe"}"#
+            )
+            .unwrap()
         );
     }
 
     #[test]
-    fn ping_frame_serializes_to_the_exact_pusher_bytes() {
+    fn ping_frame_names_the_pusher_ping_event_with_empty_data() {
         assert_eq!(
-            ping_frame().to_string(),
-            r#"{"data":{},"event":"pusher:ping"}"#
+            ping_frame(),
+            serde_json::from_str::<Value>(r#"{"data":{},"event":"pusher:ping"}"#).unwrap()
         );
     }
 

@@ -16,7 +16,7 @@ use forge_platform_kick::{
 use forge_storage::ban_ledger::MockBanLedgerRepo;
 use forge_storage::{BanLedgerRepo, CredentialId, CredentialsRepo, StorageError};
 use futures_util::StreamExt;
-use serde_json::json;
+use serde_json::{Value, json};
 use time::OffsetDateTime;
 use tokio::net::TcpListener;
 use tokio::sync::{mpsc, oneshot};
@@ -258,7 +258,7 @@ impl Callback for PathCapture<'_> {
     }
 }
 
-async fn spawn_pusher_peer() -> (String, oneshot::Receiver<(String, String)>) {
+async fn spawn_pusher_peer() -> (String, oneshot::Receiver<(String, Value)>) {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let socket_addr = listener.local_addr().unwrap();
     let (seen_tx, seen_rx) = oneshot::channel();
@@ -270,7 +270,8 @@ async fn spawn_pusher_peer() -> (String, oneshot::Receiver<(String, String)>) {
             .unwrap();
         while let Some(Ok(frame)) = ws.next().await {
             if let Message::Text(text) = frame {
-                seen_tx.send((request_path, text.to_string())).unwrap();
+                let frame: Value = serde_json::from_str(text.as_str()).unwrap();
+                seen_tx.send((request_path, frame)).unwrap();
                 break;
             }
         }
@@ -279,10 +280,10 @@ async fn spawn_pusher_peer() -> (String, oneshot::Receiver<(String, String)>) {
     (format!("ws://{socket_addr}/app"), seen_rx)
 }
 
-fn expected_handshake() -> (String, String) {
+fn expected_handshake() -> (String, Value) {
     (
         "/app/32cbd69e4b950bf97679".to_owned(),
-        r#"{"data":{"channel":"chatrooms.4242.v2"},"event":"pusher:subscribe"}"#.to_owned(),
+        json!({ "event": "pusher:subscribe", "data": { "channel": "chatrooms.4242.v2" } }),
     )
 }
 

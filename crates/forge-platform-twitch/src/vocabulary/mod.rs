@@ -1,6 +1,6 @@
 pub(crate) mod config_keys;
 pub mod event_kinds;
-mod events;
+pub mod events;
 mod eventsub_topics;
 pub(crate) mod fields;
 pub mod sub_action_ids;
@@ -14,7 +14,7 @@ pub use events::{
     BotStatusChanged, BotStatusTag, EventSubSubscriptionCreated, FallbackLevel,
     PlatformReauthRequired, SenderFallback,
 };
-pub(crate) use values::RaidDirection;
+pub use values::RaidDirection;
 
 pub const PLATFORM: PlatformId = PlatformId::Twitch;
 pub const PLATFORM_ID: &str = PLATFORM.as_str();

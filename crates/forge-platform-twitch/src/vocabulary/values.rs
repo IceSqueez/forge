@@ -1,11 +1,14 @@
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum RaidDirection {
+use serde::{Deserialize, Serialize};
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum RaidDirection {
     Received,
     Sent,
 }
 
 impl RaidDirection {
-    pub(crate) const fn as_str(self) -> &'static str {
+    pub const fn as_str(self) -> &'static str {
         match self {
             Self::Received => "received",
             Self::Sent => "sent",

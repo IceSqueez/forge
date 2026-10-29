@@ -4,9 +4,7 @@ pub(crate) mod chat {
     pub(crate) const USER_LOGIN: &str = "login";
     pub(crate) const USER_ID: &str = "id";
     pub(crate) const USER_DISPLAY_NAME: &str = "display_name";
-    pub(crate) const USER_ROLES: &str = "roles";
     pub(crate) const MESSAGE: &str = "message";
-    pub(crate) const BADGES: &str = "badges";
     pub(crate) const COLOR: &str = "color";
     pub(crate) const CHEER: &str = "cheer";
     pub(crate) const CHEER_BITS: &str = "bits";
@@ -92,7 +90,6 @@ pub(crate) mod support {
     pub(crate) const CUMULATIVE_MONTHS: &str = "cumulative_months";
     pub(crate) const STREAK_MONTHS: &str = "streak_months";
     pub(crate) const MESSAGE: &str = "message";
-    pub(crate) const SHARE_STREAK: &str = "share_streak";
     pub(crate) const GIFTER: &str = "gifter";
     pub(crate) const GIFTER_LOGIN: &str = "login";
     pub(crate) const GIFTER_ID: &str = "id";
@@ -169,7 +166,6 @@ pub(crate) mod guest_star {
     pub(crate) const SLOT_COUNT: &str = "slot_count";
     pub(crate) const GROUP_LAYOUT: &str = "group_layout";
     pub(crate) const IS_MODERATOR_SEND_LIVE_ENABLED: &str = "is_moderator_send_live_enabled";
-    pub(crate) const IS_BROWSER_SOURCE_AUDIO_ENABLED: &str = "is_browser_source_audio_enabled";
     pub(crate) const SESSION_ID_FIELD: &str = "session_id";
     pub(crate) const SLOT_ID_FIELD: &str = "slot_id";
     pub(crate) const STATE: &str = "state";
@@ -196,8 +192,6 @@ pub(crate) mod charity {
     pub(crate) const CHARITY: &str = "charity";
     pub(crate) const CHARITY_ID: &str = "id";
     pub(crate) const CHARITY_NAME: &str = "name";
-    pub(crate) const DESCRIPTION: &str = "description";
-    pub(crate) const WEBSITE: &str = "website";
     pub(crate) const AMOUNT_CENTS: &str = "amount_cents";
     pub(crate) const CURRENT_AMOUNT_CENTS: &str = "current_amount_cents";
     pub(crate) const TARGET_AMOUNT_CENTS: &str = "target_amount_cents";
@@ -217,7 +211,6 @@ pub(crate) mod automod {
     pub(crate) const STATUS: &str = "status";
     pub(crate) const OVERALL_LEVEL: &str = "overall_level";
     pub(crate) const ACTION: &str = "action";
-    pub(crate) const TERMS: &str = "terms";
     pub(crate) const REASON: &str = "reason";
     pub(crate) const BLOCKED_TERM: &str = "blocked_term";
     pub(crate) const TERMS_FOUND: &str = "terms_found";
@@ -335,7 +328,6 @@ pub(crate) mod suspicious {
 pub(crate) mod automatic_reward {
     pub(crate) const REDEMPTION: &str = "redemption";
     pub(crate) const REDEMPTION_ID: &str = "id";
-    pub(crate) const REDEEMED_AT: &str = "redeemed_at";
     pub(crate) const USER: &str = "user";
     pub(crate) const USER_ID: &str = "id";
     pub(crate) const USER_LOGIN: &str = "login";

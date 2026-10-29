@@ -1,9 +1,8 @@
-use forge_events::{Event, EventPublisher, EventSource};
+use forge_events::{Event, EventPublisher, EventSource, TypedEvent};
 use tracing::debug;
 
 use crate::helix::{HelixError, HelixMethod, HelixRequest, HelixTransport};
-use crate::vocabulary::event_kinds;
-use crate::vocabulary::fields::goal as goal_fields;
+use crate::vocabulary::events::engagement::{GoalProgress, GoalProgressed};
 
 const GOALS_PATH: &str = "/helix/goals";
 const BROADCASTER_ID_PARAM: &str = "broadcaster_id";
@@ -15,41 +14,36 @@ pub(crate) enum GoalProgressOrigin {
 }
 
 pub(crate) fn goal_progress_event(goal: &serde_json::Value, origin: GoalProgressOrigin) -> Event {
-    let goal_id = goal
-        .get("id")
-        .and_then(|v| v.as_str())
-        .unwrap_or_default()
-        .to_owned();
-    let goal_type = goal
-        .get("type")
-        .and_then(|v| v.as_str())
-        .unwrap_or_default()
-        .to_owned();
-    let current_amount = goal
-        .get("current_amount")
-        .and_then(|v| v.as_i64())
-        .unwrap_or(0);
-    let target_amount = goal
-        .get("target_amount")
-        .and_then(|v| v.as_i64())
-        .unwrap_or(0);
-    let is_synced = origin == GoalProgressOrigin::ConnectSync;
+    let progress = GoalProgress {
+        id: goal
+            .get("id")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_owned(),
+        goal_type: goal
+            .get("type")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_owned(),
+        current_amount: goal
+            .get("current_amount")
+            .and_then(|v| v.as_i64())
+            .unwrap_or(0),
+        target_amount: goal
+            .get("target_amount")
+            .and_then(|v| v.as_i64())
+            .unwrap_or(0),
+        is_synced: origin == GoalProgressOrigin::ConnectSync,
+    };
 
-    debug!(goal_id = %goal_id, current_amount, is_synced, "goal progress");
+    debug!(
+        goal_id = %progress.id,
+        current_amount = progress.current_amount,
+        is_synced = progress.is_synced,
+        "goal progress"
+    );
 
-    Event::new(
-        EventSource::Twitch,
-        event_kinds::CHANNEL_GOAL_PROGRESS,
-        serde_json::json!({
-            (goal_fields::GOAL): {
-                (goal_fields::GOAL_ID): goal_id,
-                (goal_fields::GOAL_TYPE): goal_type,
-                (goal_fields::CURRENT_AMOUNT): current_amount,
-                (goal_fields::TARGET_AMOUNT): target_amount,
-                (goal_fields::IS_SYNCED): is_synced,
-            },
-        }),
-    )
+    GoalProgressed { goal: progress }.into_event(EventSource::Twitch, None)
 }
 
 pub(crate) async fn publish_current_goals(

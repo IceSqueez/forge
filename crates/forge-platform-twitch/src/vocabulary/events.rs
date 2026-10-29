@@ -1,3 +1,12 @@
+pub mod automod;
+pub mod channel;
+pub mod chat;
+pub mod engagement;
+pub mod moderation;
+pub mod parties;
+pub mod rewards;
+pub mod support;
+
 use forge_events::TypedEvent;
 use forge_types::PlatformId;
 use serde::{Deserialize, Serialize};

@@ -8,7 +8,7 @@ use crate::credentials_manager::TwitchCredentialsManager;
 use crate::helix::{FixedTokenSource, HelixHttpTransport, HelixTransport};
 use crate::lifecycle::TwitchLifecycle;
 use crate::subscriptions::SubscriptionTracker;
-use crate::vocabulary::{self, PlatformReauthRequired, RaidDirection, event_kinds};
+use crate::vocabulary::{self, PlatformReauthRequired, RaidDirection};
 use forge_events::{Event, EventPublisher, EventSource, TypedEvent};
 use forge_net::{Backoff, Gateway};
 use forge_platform_core::{
@@ -33,35 +33,46 @@ use super::dedup::MessageIdWindow;
 use super::dispatch;
 use super::payload;
 use crate::creator_goals::{GoalProgressOrigin, goal_progress_event};
-use crate::vocabulary::fields::ad_break as ad_break_fields;
-use crate::vocabulary::fields::automatic_reward as automatic_reward_fields;
+use crate::vocabulary::events::automod::{
+    AutomodMessageHeld, AutomodMessageUpdated, AutomodSettingsUpdated, AutomodTermsUpdated,
+    BlockedTermMatch, HeldMessage, ReviewedMessage,
+};
+use crate::vocabulary::events::channel::{
+    AdBreak, AdBreakBegan, ChannelInfo, ChannelUpdated, GuestStarGuest, GuestStarGuestUpdated,
+    GuestStarHost, GuestStarSessionBegan, GuestStarSessionEnded, GuestStarSessionOpening,
+    GuestStarSessionSpan, GuestStarSettings, GuestStarSettingsUpdated, LiveStream,
+    ShoutoutReceived, ShoutoutSent, StreamWentOffline, StreamWentOnline, UpdatedUser, UserUpdated,
+};
+use crate::vocabulary::events::chat::{
+    ChatAuthor, ChatCheer, ChatCleared, ChatMessageDeleted, ChatMessageReceived, ChatOrigin,
+    ChatSettings, ChatSettingsUpdated, SharedChatBegan, SharedChatEnded, SharedChatSession,
+    SharedChatState, SharedChatUpdated, WhisperBody, WhisperReceived, WhisperSender,
+};
+use crate::vocabulary::events::engagement::{
+    GoalBegan, GoalClosing, GoalEnded, GoalOpening, PollBegan, PollChoice, PollClosing, PollEnded,
+    PollHeading, PollOpening, PollProgressed, PredictionBegan, PredictionEnded, PredictionHeading,
+    PredictionLock, PredictionLocked, PredictionOpening, PredictionOutcome, PredictionProgressed,
+    PredictionResolution,
+};
+use crate::vocabulary::events::moderation::{
+    ModeratorAdded, ModeratorRemoved, ShieldModeBegan, ShieldModeEnded, SuspiciousUserMessaged,
+    UnbanRequestCreated, UnbanRequestResolved, UserBanned, UserUnbanned, VipAdded, VipRemoved,
+    WarningAcknowledged, WarningSent,
+};
+use crate::vocabulary::events::parties::{TwitchBroadcaster, TwitchUser, UserRef};
+use crate::vocabulary::events::rewards::{
+    AutomaticRedemption, AutomaticReward, AutomaticRewardRedeemed, CustomReward, CustomRewardAdded,
+    CustomRewardRemoved, CustomRewardState, CustomRewardUpdated, RedeemedReward, Redemption,
+    RedemptionUpdated, RewardRedeemed, UpdatedRedemptionReward,
+};
+use crate::vocabulary::events::support::{
+    BitsCheered, ChannelFollowed, ChannelRaided, ChannelResubscribed, ChannelSubscribed,
+    CharityCampaignProgressed, CharityCampaignStarted, CharityCampaignState,
+    CharityCampaignStopped, CharityCampaignTotals, CharityDonated, CharityDonation, HypeTrainBegan,
+    HypeTrainClosing, HypeTrainEnded, HypeTrainOpening, HypeTrainProgress, HypeTrainProgressed,
+    SubscriptionsGifted,
+};
 use crate::vocabulary::fields::automod as automod_fields;
-use crate::vocabulary::fields::channel_points as channel_points_fields;
-use crate::vocabulary::fields::channel_update as channel_update_fields;
-use crate::vocabulary::fields::charity as charity_fields;
-use crate::vocabulary::fields::chat as chat_fields;
-use crate::vocabulary::fields::chat_mod as chat_mod_fields;
-use crate::vocabulary::fields::follow as follow_fields;
-use crate::vocabulary::fields::goal as goal_fields;
-use crate::vocabulary::fields::guest_star as guest_star_fields;
-use crate::vocabulary::fields::hype_train as hype_train_fields;
-use crate::vocabulary::fields::moderation as moderation_fields;
-use crate::vocabulary::fields::moderator as moderator_fields;
-use crate::vocabulary::fields::poll as poll_fields;
-use crate::vocabulary::fields::prediction as prediction_fields;
-use crate::vocabulary::fields::raid as raid_fields;
-use crate::vocabulary::fields::reward as reward_fields;
-use crate::vocabulary::fields::shared_chat as shared_chat_fields;
-use crate::vocabulary::fields::shield as shield_fields;
-use crate::vocabulary::fields::shoutout as shoutout_fields;
-use crate::vocabulary::fields::stream as stream_fields;
-use crate::vocabulary::fields::support as support_fields;
-use crate::vocabulary::fields::suspicious as suspicious_fields;
-use crate::vocabulary::fields::unban_request as unban_request_fields;
-use crate::vocabulary::fields::user as user_fields;
-use crate::vocabulary::fields::vip as vip_fields;
-use crate::vocabulary::fields::warning as warning_fields;
-use crate::vocabulary::fields::whisper as whisper_fields;
 
 const KEEPALIVE_TIMEOUT: Duration = Duration::from_secs(15);
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
@@ -579,43 +590,18 @@ impl ChatSession {
     }
 
     pub(super) fn publish_chat_message(&self, event_data: &serde_json::Value) {
-        let channel = event_data
-            .get("broadcaster_user_login")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default()
-            .to_owned();
-        let user_login = event_data
-            .get("chatter_user_login")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default()
-            .to_owned();
-        let user_id = event_data
-            .get("chatter_user_id")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default()
-            .to_owned();
+        let user_login = wire_text(event_data, "chatter_user_login");
+        let user_id = wire_text(event_data, "chatter_user_id");
         let user_display = event_data
             .get("chatter_user_name")
-            .and_then(|v| v.as_str())
+            .and_then(serde_json::Value::as_str)
             .filter(|s| !s.is_empty())
             .unwrap_or(user_login.as_str())
             .to_owned();
-        let message = event_data
-            .get("message")
-            .and_then(|m| m.get("text"))
-            .and_then(|v| v.as_str())
-            .unwrap_or_default()
-            .to_owned();
-        let color = event_data
-            .get("color")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default()
-            .to_owned();
         let roles = extract_roles_from_badges(event_data.get("badges"));
-        let badges = roles.clone();
         let broadcaster_id = event_data
             .get("broadcaster_user_id")
-            .and_then(|v| v.as_str())
+            .and_then(serde_json::Value::as_str)
             .unwrap_or_default();
 
         debug!(
@@ -625,84 +611,71 @@ impl ChatSession {
         );
 
         let chat_payload = payload::build_chat_message_chat_payload(event_data);
-        let mut forge_payload = serde_json::json!({
-            (chat_fields::CHANNEL): channel,
-            (chat_fields::USER): {
-                (chat_fields::USER_LOGIN): user_login,
-                (chat_fields::USER_ID): user_id,
-                (chat_fields::USER_DISPLAY_NAME): user_display,
-                (chat_fields::USER_ROLES): roles,
-            },
-            (chat_fields::MESSAGE): message,
-            (chat_fields::BADGES): badges,
-            (chat_fields::COLOR): color,
-        });
-
-        if let Some(bits) = event_data
+        let cheer = event_data
             .get("cheer")
             .and_then(|c| c.get("bits"))
-            .and_then(|v| v.as_i64())
-        {
-            forge_payload[chat_fields::CHEER] =
-                serde_json::json!({ (chat_fields::CHEER_BITS): bits });
-        }
-
+            .and_then(serde_json::Value::as_i64)
+            .map(|bits| ChatCheer { bits });
         let source_id = event_data
             .get("source_broadcaster_user_id")
-            .and_then(|v| v.as_str())
+            .and_then(serde_json::Value::as_str)
             .unwrap_or_default();
-        if !source_id.is_empty()
-            && source_id != broadcaster_id
-            && let (Some(login), Some(display_name)) = (
-                event_data
-                    .get("source_broadcaster_user_login")
-                    .and_then(|v| v.as_str())
-                    .filter(|s| !s.is_empty()),
-                event_data
-                    .get("source_broadcaster_user_name")
-                    .and_then(|v| v.as_str())
-                    .filter(|s| !s.is_empty()),
-            )
-        {
-            forge_payload[chat_fields::FROM_CHANNEL] = serde_json::json!({
-                (chat_fields::FROM_CHANNEL_LOGIN): login,
-                (chat_fields::FROM_CHANNEL_DISPLAY_NAME): display_name,
-            });
-        }
-
-        if self
+        let from_channel = if !source_id.is_empty() && source_id != broadcaster_id {
+            wire_non_empty(event_data, "source_broadcaster_user_login")
+                .zip(wire_non_empty(event_data, "source_broadcaster_user_name"))
+                .map(|(login, display_name)| ChatOrigin {
+                    login: login.to_owned(),
+                    display_name: display_name.to_owned(),
+                })
+        } else {
+            None
+        };
+        let is_connected_bot = self
             .config
             .bot
             .as_ref()
             .and_then(|bot| bot.connected_user_id())
-            .is_some_and(|bot_user_id| bot_user_id == user_id)
-        {
-            forge_payload[AUTHOR_IS_CONNECTED_BOT_FIELD] = serde_json::json!(true);
-        }
-
-        ChatViewer::new(user_id, user_login).attach(&mut forge_payload);
-        attach_chat_payload(&mut forge_payload, chat_payload);
-
-        if let Some(reply) = event_data.get("reply").filter(|v| !v.is_null())
-            && let (Some(parent_author), Some(parent_text)) = (
-                reply.get("parent_user_name").and_then(|v| v.as_str()),
-                reply.get("parent_message_body").and_then(|v| v.as_str()),
-            )
-        {
-            attach_chat_reply_payload(
-                &mut forge_payload,
-                ChatReply {
+            .is_some_and(|bot_user_id| bot_user_id == user_id);
+        let viewer = ChatViewer::new(user_id.clone(), user_login.clone());
+        let reply = event_data
+            .get("reply")
+            .filter(|v| !v.is_null())
+            .and_then(|reply| {
+                let parent_author = reply.get("parent_user_name")?.as_str()?;
+                let parent_text = reply.get("parent_message_body")?.as_str()?;
+                Some(ChatReply {
                     parent_author: parent_author.to_owned(),
                     parent_text: parent_text.to_owned(),
-                },
+                })
+            });
+
+        let message = ChatMessageReceived {
+            channel: wire_text(event_data, "broadcaster_user_login"),
+            user: ChatAuthor {
+                login: user_login,
+                id: user_id,
+                display_name: user_display,
+                roles: roles.clone(),
+            },
+            message: wire_text(wire_child(event_data, "message"), "text"),
+            badges: roles,
+            color: wire_text(event_data, "color"),
+            cheer,
+            from_channel,
+        };
+        let mut event = twitch_event(message);
+        if is_connected_bot && let Some(fields) = event.payload.as_object_mut() {
+            fields.insert(
+                AUTHOR_IS_CONNECTED_BOT_FIELD.to_owned(),
+                serde_json::Value::Bool(true),
             );
         }
-
-        self.config.bus.publish(Event::new(
-            EventSource::Twitch,
-            event_kinds::CHANNEL_CHAT_MESSAGE,
-            forge_payload,
-        ));
+        viewer.attach(&mut event.payload);
+        attach_chat_payload(&mut event.payload, chat_payload);
+        if let Some(reply) = reply {
+            attach_chat_reply_payload(&mut event.payload, reply);
+        }
+        self.config.bus.publish(event);
     }
 
     pub(super) fn publish_subscribe_event(
@@ -710,50 +683,19 @@ impl ChatSession {
         event_data: &serde_json::Value,
         frame_msg_id: &str,
     ) {
-        let user_login = event_data
-            .get("user_login")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default()
-            .to_owned();
-        let user_id = event_data
-            .get("user_id")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default()
-            .to_owned();
-        let user_display = event_data
-            .get("user_name")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default()
-            .to_owned();
-        let tier = event_data
-            .get("tier")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default()
-            .to_owned();
-        let is_gift = event_data
-            .get("is_gift")
-            .and_then(|v| v.as_bool())
-            .unwrap_or(false);
+        let user = wire_user(event_data, &USER_KEYS);
 
-        debug!(user_id = %user_id, "subscriber event received");
+        debug!(user_id = %user.id, "subscriber event received");
 
         let chat_payload = payload::build_subscribe_chat_payload(event_data, frame_msg_id);
-        let mut forge_payload = serde_json::json!({
-            (support_fields::USER): {
-                (support_fields::USER_ID): user_id,
-                (support_fields::USER_LOGIN): user_login,
-                (support_fields::USER_DISPLAY_NAME): user_display,
+        self.publish_with_chat(
+            ChannelSubscribed {
+                user,
+                tier: wire_text(event_data, "tier"),
+                is_gift: wire_flag(event_data, "is_gift"),
             },
-            (support_fields::TIER): tier,
-            (support_fields::IS_GIFT): is_gift,
-        });
-        attach_chat_payload(&mut forge_payload, chat_payload);
-
-        self.config.bus.publish(Event::new(
-            EventSource::Twitch,
-            event_kinds::CHANNEL_SUBSCRIBE,
-            forge_payload,
-        ));
+            chat_payload,
+        );
     }
 
     pub(super) fn publish_resubscribe_event(
@@ -761,67 +703,23 @@ impl ChatSession {
         event_data: &serde_json::Value,
         frame_msg_id: &str,
     ) {
-        let user_login = event_data
-            .get("user_login")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default()
-            .to_owned();
-        let user_id = event_data
-            .get("user_id")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default()
-            .to_owned();
-        let user_display = event_data
-            .get("user_name")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default()
-            .to_owned();
-        let tier = event_data
-            .get("tier")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default()
-            .to_owned();
-        let cumulative_months = event_data
-            .get("cumulative_months")
-            .and_then(|v| v.as_i64())
-            .unwrap_or(0);
-        let streak_months = event_data
-            .get("streak_months")
-            .and_then(|v| v.as_i64())
-            .unwrap_or(0);
-        let message_text = event_data
-            .get("message")
-            .and_then(|m| m.get("text"))
-            .and_then(|v| v.as_str())
-            .unwrap_or_default()
-            .to_owned();
-        let share_streak = event_data
-            .get("share_streak")
-            .and_then(|v| v.as_bool())
-            .unwrap_or(false);
+        let user = wire_user(event_data, &USER_KEYS);
+        let cumulative_months = wire_count(event_data, "cumulative_months");
 
-        debug!(user_id = %user_id, cumulative_months, "resub event received");
+        debug!(user_id = %user.id, cumulative_months, "resub event received");
 
         let chat_payload = payload::build_resubscribe_chat_payload(event_data, frame_msg_id);
-        let mut forge_payload = serde_json::json!({
-            (support_fields::USER): {
-                (support_fields::USER_ID): user_id,
-                (support_fields::USER_LOGIN): user_login,
-                (support_fields::USER_DISPLAY_NAME): user_display,
+        self.publish_with_chat(
+            ChannelResubscribed {
+                user,
+                tier: wire_text(event_data, "tier"),
+                cumulative_months,
+                streak_months: wire_count(event_data, "streak_months"),
+                message: wire_text(wire_child(event_data, "message"), "text"),
+                share_streak: wire_flag(event_data, "share_streak"),
             },
-            (support_fields::TIER): tier,
-            (support_fields::CUMULATIVE_MONTHS): cumulative_months,
-            (support_fields::STREAK_MONTHS): streak_months,
-            (support_fields::MESSAGE): message_text,
-            (support_fields::SHARE_STREAK): share_streak,
-        });
-        attach_chat_payload(&mut forge_payload, chat_payload);
-
-        self.config.bus.publish(Event::new(
-            EventSource::Twitch,
-            event_kinds::CHANNEL_SUBSCRIPTION_MESSAGE,
-            forge_payload,
-        ));
+            chat_payload,
+        );
     }
 
     pub(super) fn publish_gift_sub_event(
@@ -829,173 +727,67 @@ impl ChatSession {
         event_data: &serde_json::Value,
         frame_msg_id: &str,
     ) {
-        let gifter_login = event_data
-            .get("user_login")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default()
-            .to_owned();
-        let gifter_id = event_data
-            .get("user_id")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default()
-            .to_owned();
-        let gifter_display = event_data
-            .get("user_name")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default()
-            .to_owned();
-        let is_anonymous = event_data
-            .get("is_anonymous")
-            .and_then(|v| v.as_bool())
-            .unwrap_or(false);
-        let tier = event_data
-            .get("tier")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default()
-            .to_owned();
-        let gift_total = event_data
-            .get("total")
-            .and_then(|v| v.as_i64())
-            .unwrap_or_default();
+        let gifter = wire_user(event_data, &USER_KEYS);
 
-        debug!(gifter_id = %gifter_id, "gift sub event received");
+        debug!(gifter_id = %gifter.id, "gift sub event received");
 
         let chat_payload = payload::build_gift_sub_chat_payload(event_data, frame_msg_id);
-        let mut forge_payload = serde_json::json!({
-            (support_fields::TIER): tier,
-            (support_fields::IS_ANONYMOUS): is_anonymous,
-            (support_fields::GIFT_TOTAL): gift_total,
-            (support_fields::GIFTER): {
-                (support_fields::GIFTER_ID): gifter_id,
-                (support_fields::GIFTER_LOGIN): gifter_login,
-                (support_fields::GIFTER_DISPLAY_NAME): gifter_display,
+        self.publish_with_chat(
+            SubscriptionsGifted {
+                tier: wire_text(event_data, "tier"),
+                is_anonymous: wire_flag(event_data, "is_anonymous"),
+                gift_total: wire_count(event_data, "total"),
+                gifter,
             },
-        });
-        attach_chat_payload(&mut forge_payload, chat_payload);
-
-        self.config.bus.publish(Event::new(
-            EventSource::Twitch,
-            event_kinds::CHANNEL_SUBSCRIPTION_GIFT,
-            forge_payload,
-        ));
+            chat_payload,
+        );
     }
 
     pub(super) fn publish_cheer_event(&self, event_data: &serde_json::Value, frame_msg_id: &str) {
-        let user_login = event_data
-            .get("user_login")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default()
-            .to_owned();
-        let user_id = event_data
-            .get("user_id")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default()
-            .to_owned();
-        let user_display = event_data
-            .get("user_name")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default()
-            .to_owned();
-        let bits = event_data.get("bits").and_then(|v| v.as_i64()).unwrap_or(0);
-        let message = event_data
-            .get("message")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default()
-            .to_owned();
-        let is_anonymous = event_data
-            .get("is_anonymous")
-            .and_then(|v| v.as_bool())
-            .unwrap_or(false);
+        let user = wire_user(event_data, &USER_KEYS);
+        let bits = wire_count(event_data, "bits");
 
-        debug!(user_id = %user_id, bits, "cheer event received");
+        debug!(user_id = %user.id, bits, "cheer event received");
 
         let chat_payload = payload::build_cheer_chat_payload(event_data, frame_msg_id);
-        let mut forge_payload = serde_json::json!({
-            (support_fields::BITS): bits,
-            (support_fields::MESSAGE): message,
-            (support_fields::IS_ANONYMOUS): is_anonymous,
-            (support_fields::USER): {
-                (support_fields::USER_ID): user_id,
-                (support_fields::USER_LOGIN): user_login,
-                (support_fields::USER_DISPLAY_NAME): user_display,
+        self.publish_with_chat(
+            BitsCheered {
+                bits,
+                message: wire_text(event_data, "message"),
+                is_anonymous: wire_flag(event_data, "is_anonymous"),
+                user,
             },
-        });
-        attach_chat_payload(&mut forge_payload, chat_payload);
-
-        self.config.bus.publish(Event::new(
-            EventSource::Twitch,
-            event_kinds::CHANNEL_CHEER,
-            forge_payload,
-        ));
+            chat_payload,
+        );
     }
 
     pub(super) fn publish_raid_event(&self, event_data: &serde_json::Value, frame_msg_id: &str) {
-        let from_login = event_data
-            .get("from_broadcaster_user_login")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default()
-            .to_owned();
-        let from_id = event_data
-            .get("from_broadcaster_user_id")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default()
-            .to_owned();
-        let from_display = event_data
-            .get("from_broadcaster_user_name")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default()
-            .to_owned();
-        let to_login = event_data
-            .get("to_broadcaster_user_login")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default()
-            .to_owned();
-        let to_id = event_data
-            .get("to_broadcaster_user_id")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default()
-            .to_owned();
-        let to_display = event_data
-            .get("to_broadcaster_user_name")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default()
-            .to_owned();
-        let viewer_count = event_data
-            .get("viewers")
-            .and_then(|v| v.as_i64())
-            .unwrap_or(0);
-
-        let direction = if to_id == self.config.broadcaster_id {
+        let from_broadcaster = wire_user(event_data, &FROM_BROADCASTER_KEYS);
+        let to_broadcaster = wire_user(event_data, &TO_BROADCASTER_KEYS);
+        let viewer_count = wire_count(event_data, "viewers");
+        let direction = if to_broadcaster.id == self.config.broadcaster_id {
             RaidDirection::Received
         } else {
             RaidDirection::Sent
-        }
-        .as_str();
+        };
 
-        debug!(from_broadcaster_id = %from_id, viewer_count, direction, "raid event received");
+        debug!(
+            from_broadcaster_id = %from_broadcaster.id,
+            viewer_count,
+            direction = direction.as_str(),
+            "raid event received"
+        );
 
         let chat_payload = payload::build_raid_chat_payload(event_data, frame_msg_id);
-        let mut forge_payload = serde_json::json!({
-            (raid_fields::DIRECTION): direction,
-            (raid_fields::VIEWER_COUNT): viewer_count,
-            (raid_fields::FROM_BROADCASTER): {
-                (raid_fields::BROADCASTER_ID): from_id,
-                (raid_fields::BROADCASTER_LOGIN): from_login,
-                (raid_fields::BROADCASTER_DISPLAY_NAME): from_display,
+        self.publish_with_chat(
+            ChannelRaided {
+                direction,
+                viewer_count,
+                from_broadcaster,
+                to_broadcaster,
             },
-            (raid_fields::TO_BROADCASTER): {
-                (raid_fields::BROADCASTER_ID): to_id,
-                (raid_fields::BROADCASTER_LOGIN): to_login,
-                (raid_fields::BROADCASTER_DISPLAY_NAME): to_display,
-            },
-        });
-        attach_chat_payload(&mut forge_payload, chat_payload);
-
-        self.config.bus.publish(Event::new(
-            EventSource::Twitch,
-            event_kinds::CHANNEL_RAID,
-            forge_payload,
-        ));
+            chat_payload,
+        );
     }
 
     pub(super) fn publish_reward_redemption_event(
@@ -1003,92 +795,22 @@ impl ChatSession {
         event_data: &serde_json::Value,
         _frame_msg_id: &str,
     ) {
-        let redemption_id = event_data
-            .get("id")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default()
-            .to_owned();
-        let redemption_status = event_data
-            .get("status")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default()
-            .to_owned();
-        let user_input = event_data
-            .get("user_input")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default()
-            .to_owned();
-        let redeemed_at = event_data
-            .get("redeemed_at")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default()
-            .to_owned();
-        let user_id = event_data
-            .get("user_id")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default()
-            .to_owned();
-        let user_login = event_data
-            .get("user_login")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default()
-            .to_owned();
-        let user_name = event_data
-            .get("user_name")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default()
-            .to_owned();
-        let reward_id = event_data
-            .get("reward")
-            .and_then(|r| r.get("id"))
-            .and_then(|v| v.as_str())
-            .unwrap_or_default()
-            .to_owned();
-        let reward_title = event_data
-            .get("reward")
-            .and_then(|r| r.get("title"))
-            .and_then(|v| v.as_str())
-            .unwrap_or_default()
-            .to_owned();
-        let reward_cost = event_data
-            .get("reward")
-            .and_then(|r| r.get("cost"))
-            .and_then(|v| v.as_i64())
-            .unwrap_or(0);
-        let reward_prompt = event_data
-            .get("reward")
-            .and_then(|r| r.get("prompt"))
-            .and_then(|v| v.as_str())
-            .unwrap_or_default()
-            .to_owned();
+        let user = wire_user(event_data, &USER_KEYS);
+        let reward = wire_child(event_data, "reward");
+        let reward = RedeemedReward {
+            id: wire_text(reward, "id"),
+            title: wire_text(reward, "title"),
+            cost: wire_count(reward, "cost"),
+            prompt: wire_text(reward, "prompt"),
+        };
 
-        debug!(user_id = %user_id, reward_id = %reward_id, "channel point reward redemption received");
+        debug!(user_id = %user.id, reward_id = %reward.id, "channel point reward redemption received");
 
-        let forge_payload = serde_json::json!({
-            (channel_points_fields::REDEMPTION): {
-                (channel_points_fields::REDEMPTION_ID): redemption_id,
-                (channel_points_fields::REDEMPTION_STATUS): redemption_status,
-                (channel_points_fields::USER_INPUT): user_input,
-                (channel_points_fields::REDEEMED_AT): redeemed_at,
-            },
-            (channel_points_fields::USER): {
-                (channel_points_fields::USER_ID): user_id,
-                (channel_points_fields::USER_LOGIN): user_login,
-                (channel_points_fields::USER_DISPLAY_NAME): user_name,
-            },
-            (channel_points_fields::REWARD): {
-                (channel_points_fields::REWARD_ID): reward_id,
-                (channel_points_fields::REWARD_TITLE): reward_title,
-                (channel_points_fields::REWARD_COST): reward_cost,
-                (channel_points_fields::REWARD_PROMPT): reward_prompt,
-            },
+        self.publish_typed(RewardRedeemed {
+            redemption: wire_redemption(event_data),
+            user,
+            reward,
         });
-
-        self.config.bus.publish(Event::new(
-            EventSource::Twitch,
-            event_kinds::CHANNEL_CHANNEL_POINTS_CUSTOM_REWARD_REDEMPTION_ADD,
-            forge_payload,
-        ));
     }
 
     pub(super) fn publish_message_delete_event(
@@ -1096,47 +818,18 @@ impl ChatSession {
         event_data: &serde_json::Value,
         _frame_msg_id: &str,
     ) {
-        let message_id = event_data
-            .get("message_id")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default()
-            .to_owned();
-        let target_user_id = event_data
-            .get("target_user_id")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default()
-            .to_owned();
-        let target_user_login = event_data
-            .get("target_user_login")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default()
-            .to_owned();
-        let target_user_name = event_data
-            .get("target_user_name")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default()
-            .to_owned();
+        let message_id = wire_text(event_data, "message_id");
+        let target_user = wire_user(event_data, &TARGET_USER_KEYS);
 
-        debug!(target_user_id = %target_user_id, message_id = %message_id, "chat message deleted");
+        debug!(target_user_id = %target_user.id, message_id = %message_id, "chat message deleted");
 
-        let mut forge_payload = serde_json::json!({
-            (chat_mod_fields::MESSAGE_ID): message_id,
-            (chat_mod_fields::TARGET_USER): {
-                (chat_mod_fields::TARGET_USER_ID): target_user_id,
-                (chat_mod_fields::TARGET_USER_LOGIN): target_user_login,
-                (chat_mod_fields::TARGET_USER_DISPLAY_NAME): target_user_name,
+        self.publish_with_moderation(
+            ChatMessageDeleted {
+                message_id: message_id.clone(),
+                target_user,
             },
-        });
-        attach_moderation_payload(
-            &mut forge_payload,
             ChatModerationAction::DeleteMessage { message_id },
         );
-
-        self.config.bus.publish(Event::new(
-            EventSource::Twitch,
-            event_kinds::CHANNEL_CHAT_MESSAGE_DELETE,
-            forge_payload,
-        ));
     }
 
     pub(super) fn publish_chat_clear_event(
@@ -1144,72 +837,22 @@ impl ChatSession {
         event_data: &serde_json::Value,
         _frame_msg_id: &str,
     ) {
-        let broadcaster_id = event_data
-            .get("broadcaster_user_id")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default()
-            .to_owned();
-        let broadcaster_login = event_data
-            .get("broadcaster_user_login")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default()
-            .to_owned();
+        let broadcaster = wire_broadcaster(event_data);
 
-        debug!(broadcaster_id = %broadcaster_id, "chat cleared");
+        debug!(broadcaster_id = %broadcaster.id, "chat cleared");
 
-        let mut forge_payload = serde_json::json!({
-            (chat_mod_fields::BROADCASTER): {
-                (chat_mod_fields::BROADCASTER_ID): broadcaster_id,
-                (chat_mod_fields::BROADCASTER_LOGIN): broadcaster_login,
-            },
-        });
-        attach_moderation_payload(&mut forge_payload, ChatModerationAction::ClearChat);
-
-        self.config.bus.publish(Event::new(
-            EventSource::Twitch,
-            event_kinds::CHANNEL_CHAT_CLEAR,
-            forge_payload,
-        ));
+        self.publish_with_moderation(ChatCleared { broadcaster }, ChatModerationAction::ClearChat);
     }
 
     pub(super) fn publish_follow_event(&self, event_data: &serde_json::Value, _frame_msg_id: &str) {
-        let user_login = event_data
-            .get("user_login")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default()
-            .to_owned();
-        let user_id = event_data
-            .get("user_id")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default()
-            .to_owned();
-        let user_name = event_data
-            .get("user_name")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default()
-            .to_owned();
-        let followed_at = event_data
-            .get("followed_at")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default()
-            .to_owned();
+        let user = wire_user(event_data, &USER_KEYS);
 
-        debug!(user_id = %user_id, "follow event received");
+        debug!(user_id = %user.id, "follow event received");
 
-        let forge_payload = serde_json::json!({
-            (follow_fields::FOLLOWED_AT): followed_at,
-            (follow_fields::USER): {
-                (follow_fields::USER_ID): user_id,
-                (follow_fields::USER_LOGIN): user_login,
-                (follow_fields::USER_DISPLAY_NAME): user_name,
-            },
+        self.publish_typed(ChannelFollowed {
+            followed_at: wire_text(event_data, "followed_at"),
+            user,
         });
-
-        self.config.bus.publish(Event::new(
-            EventSource::Twitch,
-            event_kinds::CHANNEL_FOLLOW,
-            forge_payload,
-        ));
     }
 
     pub(super) fn publish_stream_online_event(
@@ -1217,51 +860,18 @@ impl ChatSession {
         event_data: &serde_json::Value,
         _frame_msg_id: &str,
     ) {
-        let stream_id = event_data
-            .get("id")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default()
-            .to_owned();
-        let stream_type = event_data
-            .get("type")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default()
-            .to_owned();
-        let started_at = event_data
-            .get("started_at")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default()
-            .to_owned();
-        let broadcaster_login = event_data
-            .get("broadcaster_user_login")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default()
-            .to_owned();
-        let broadcaster_id = event_data
-            .get("broadcaster_user_id")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default()
-            .to_owned();
+        let broadcaster = wire_broadcaster(event_data);
 
-        debug!(broadcaster_id = %broadcaster_id, "stream online event received");
+        debug!(broadcaster_id = %broadcaster.id, "stream online event received");
 
-        let forge_payload = serde_json::json!({
-            (stream_fields::STREAM): {
-                (stream_fields::STREAM_ID): stream_id,
-                (stream_fields::STREAM_TYPE): stream_type,
-                (stream_fields::STARTED_AT): started_at,
+        self.publish_typed(StreamWentOnline {
+            stream: LiveStream {
+                id: wire_text(event_data, "id"),
+                stream_type: wire_text(event_data, "type"),
+                started_at: wire_text(event_data, "started_at"),
             },
-            (stream_fields::BROADCASTER): {
-                (stream_fields::BROADCASTER_ID): broadcaster_id,
-                (stream_fields::BROADCASTER_LOGIN): broadcaster_login,
-            },
+            broadcaster,
         });
-
-        self.config.bus.publish(Event::new(
-            EventSource::Twitch,
-            event_kinds::STREAM_ONLINE,
-            forge_payload,
-        ));
     }
 
     pub(super) fn publish_stream_offline_event(
@@ -1269,31 +879,11 @@ impl ChatSession {
         event_data: &serde_json::Value,
         _frame_msg_id: &str,
     ) {
-        let broadcaster_login = event_data
-            .get("broadcaster_user_login")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default()
-            .to_owned();
-        let broadcaster_id = event_data
-            .get("broadcaster_user_id")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default()
-            .to_owned();
+        let broadcaster = wire_broadcaster(event_data);
 
-        debug!(broadcaster_id = %broadcaster_id, "stream offline event received");
+        debug!(broadcaster_id = %broadcaster.id, "stream offline event received");
 
-        let forge_payload = serde_json::json!({
-            (stream_fields::BROADCASTER): {
-                (stream_fields::BROADCASTER_ID): broadcaster_id,
-                (stream_fields::BROADCASTER_LOGIN): broadcaster_login,
-            },
-        });
-
-        self.config.bus.publish(Event::new(
-            EventSource::Twitch,
-            event_kinds::STREAM_OFFLINE,
-            forge_payload,
-        ));
+        self.publish_typed(StreamWentOffline { broadcaster });
     }
 
     pub(super) fn publish_hype_train_begin_event(
@@ -1301,54 +891,19 @@ impl ChatSession {
         event_data: &serde_json::Value,
         _frame_msg_id: &str,
     ) {
-        let id = event_data
-            .get("id")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default()
-            .to_owned();
-        let level = event_data
-            .get("level")
-            .and_then(|v| v.as_i64())
-            .unwrap_or(0);
-        let total = event_data
-            .get("total")
-            .and_then(|v| v.as_i64())
-            .unwrap_or(0);
-        let goal = event_data.get("goal").and_then(|v| v.as_i64()).unwrap_or(0);
-        let progress = event_data
-            .get("progress")
-            .and_then(|v| v.as_i64())
-            .unwrap_or(0);
-        let started_at = event_data
-            .get("started_at")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default()
-            .to_owned();
-        let expires_at = event_data
-            .get("expires_at")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default()
-            .to_owned();
+        let hype = HypeTrainOpening {
+            id: wire_text(event_data, "id"),
+            level: wire_count(event_data, "level"),
+            total: wire_count(event_data, "total"),
+            goal: wire_count(event_data, "goal"),
+            progress: wire_count(event_data, "progress"),
+            started_at: wire_text(event_data, "started_at"),
+            expires_at: wire_text(event_data, "expires_at"),
+        };
 
-        debug!(hype_id = %id, level, total, "hype train began");
+        debug!(hype_id = %hype.id, level = hype.level, total = hype.total, "hype train began");
 
-        let forge_payload = serde_json::json!({
-            (hype_train_fields::HYPE): {
-                (hype_train_fields::HYPE_ID): id,
-                (hype_train_fields::LEVEL): level,
-                (hype_train_fields::TOTAL): total,
-                (hype_train_fields::GOAL): goal,
-                (hype_train_fields::PROGRESS): progress,
-                (hype_train_fields::STARTED_AT): started_at,
-                (hype_train_fields::EXPIRES_AT): expires_at,
-            },
-        });
-
-        self.config.bus.publish(Event::new(
-            EventSource::Twitch,
-            event_kinds::CHANNEL_HYPE_TRAIN_BEGIN,
-            forge_payload,
-        ));
+        self.publish_typed(HypeTrainBegan { hype });
     }
 
     pub(super) fn publish_hype_train_progress_event(
@@ -1356,42 +911,17 @@ impl ChatSession {
         event_data: &serde_json::Value,
         _frame_msg_id: &str,
     ) {
-        let id = event_data
-            .get("id")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default()
-            .to_owned();
-        let level = event_data
-            .get("level")
-            .and_then(|v| v.as_i64())
-            .unwrap_or(0);
-        let total = event_data
-            .get("total")
-            .and_then(|v| v.as_i64())
-            .unwrap_or(0);
-        let goal = event_data.get("goal").and_then(|v| v.as_i64()).unwrap_or(0);
-        let progress = event_data
-            .get("progress")
-            .and_then(|v| v.as_i64())
-            .unwrap_or(0);
+        let hype = HypeTrainProgress {
+            id: wire_text(event_data, "id"),
+            level: wire_count(event_data, "level"),
+            total: wire_count(event_data, "total"),
+            goal: wire_count(event_data, "goal"),
+            progress: wire_count(event_data, "progress"),
+        };
 
-        debug!(hype_id = %id, level, progress, "hype train progressed");
+        debug!(hype_id = %hype.id, level = hype.level, progress = hype.progress, "hype train progressed");
 
-        let forge_payload = serde_json::json!({
-            (hype_train_fields::HYPE): {
-                (hype_train_fields::HYPE_ID): id,
-                (hype_train_fields::LEVEL): level,
-                (hype_train_fields::TOTAL): total,
-                (hype_train_fields::GOAL): goal,
-                (hype_train_fields::PROGRESS): progress,
-            },
-        });
-
-        self.config.bus.publish(Event::new(
-            EventSource::Twitch,
-            event_kinds::CHANNEL_HYPE_TRAIN_PROGRESS,
-            forge_payload,
-        ));
+        self.publish_typed(HypeTrainProgressed { hype });
     }
 
     pub(super) fn publish_hype_train_end_event(
@@ -1399,47 +929,17 @@ impl ChatSession {
         event_data: &serde_json::Value,
         _frame_msg_id: &str,
     ) {
-        let id = event_data
-            .get("id")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default()
-            .to_owned();
-        let level = event_data
-            .get("level")
-            .and_then(|v| v.as_i64())
-            .unwrap_or(0);
-        let total = event_data
-            .get("total")
-            .and_then(|v| v.as_i64())
-            .unwrap_or(0);
-        let ended_at = event_data
-            .get("ended_at")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default()
-            .to_owned();
-        let cooldown_ends_at = event_data
-            .get("cooldown_ends_at")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default()
-            .to_owned();
+        let hype = HypeTrainClosing {
+            id: wire_text(event_data, "id"),
+            level: wire_count(event_data, "level"),
+            total: wire_count(event_data, "total"),
+            ended_at: wire_text(event_data, "ended_at"),
+            cooldown_ends_at: wire_text(event_data, "cooldown_ends_at"),
+        };
 
-        debug!(hype_id = %id, level, total, "hype train ended");
+        debug!(hype_id = %hype.id, level = hype.level, total = hype.total, "hype train ended");
 
-        let forge_payload = serde_json::json!({
-            (hype_train_fields::HYPE): {
-                (hype_train_fields::HYPE_ID): id,
-                (hype_train_fields::LEVEL): level,
-                (hype_train_fields::TOTAL): total,
-                (hype_train_fields::ENDED_AT): ended_at,
-                (hype_train_fields::COOLDOWN_ENDS_AT): cooldown_ends_at,
-            },
-        });
-
-        self.config.bus.publish(Event::new(
-            EventSource::Twitch,
-            event_kinds::CHANNEL_HYPE_TRAIN_END,
-            forge_payload,
-        ));
+        self.publish_typed(HypeTrainEnded { hype });
     }
 
     pub(super) fn publish_charity_donation_event(
@@ -1447,75 +947,20 @@ impl ChatSession {
         event_data: &serde_json::Value,
         _frame_msg_id: &str,
     ) {
-        let campaign_id = event_data
-            .get("campaign_id")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default()
-            .to_owned();
-        let charity_name = event_data
-            .get("charity_name")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default()
-            .to_owned();
-        let charity_description = event_data
-            .get("charity_description")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default()
-            .to_owned();
-        let charity_website = event_data
-            .get("charity_website")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default()
-            .to_owned();
-        let amount_obj = event_data.get("amount");
-        let amount_cents = amount_obj
-            .and_then(|a| a.get("value"))
-            .and_then(|v| v.as_i64())
-            .unwrap_or(0);
-        let currency_code = amount_obj
-            .and_then(|a| a.get("currency"))
-            .and_then(|v| v.as_str())
-            .unwrap_or_default()
-            .to_owned();
-        let user_id = event_data
-            .get("user_id")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default()
-            .to_owned();
-        let user_login = event_data
-            .get("user_login")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default()
-            .to_owned();
-        let user_display_name = event_data
-            .get("user_name")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default()
-            .to_owned();
+        let amount = wire_child(event_data, "amount");
+        let charity = CharityDonation {
+            id: wire_text(event_data, "campaign_id"),
+            name: wire_text(event_data, "charity_name"),
+            description: wire_text(event_data, "charity_description"),
+            website: wire_text(event_data, "charity_website"),
+            amount_cents: wire_count(amount, "value"),
+            currency_code: wire_text(amount, "currency"),
+        };
+        let user = wire_user(event_data, &USER_KEYS);
 
-        debug!(user_id = %user_id, amount_cents, "charity donation received");
+        debug!(user_id = %user.id, amount_cents = charity.amount_cents, "charity donation received");
 
-        let forge_payload = serde_json::json!({
-            (charity_fields::CHARITY): {
-                (charity_fields::CHARITY_ID): campaign_id,
-                (charity_fields::CHARITY_NAME): charity_name,
-                (charity_fields::DESCRIPTION): charity_description,
-                (charity_fields::WEBSITE): charity_website,
-                (charity_fields::AMOUNT_CENTS): amount_cents,
-                (charity_fields::CURRENCY_CODE): currency_code,
-            },
-            (charity_fields::USER): {
-                (charity_fields::USER_ID): user_id,
-                (charity_fields::USER_LOGIN): user_login,
-                (charity_fields::USER_DISPLAY_NAME): user_display_name,
-            },
-        });
-
-        self.config.bus.publish(Event::new(
-            EventSource::Twitch,
-            event_kinds::CHANNEL_CHARITY_CAMPAIGN_DONATE,
-            forge_payload,
-        ));
+        self.publish_typed(CharityDonated { charity, user });
     }
 
     pub(super) fn publish_charity_start_event(
@@ -1523,12 +968,7 @@ impl ChatSession {
         event_data: &serde_json::Value,
         _frame_msg_id: &str,
     ) {
-        let forge_payload = build_charity_lifecycle_payload(event_data);
-        self.config.bus.publish(Event::new(
-            EventSource::Twitch,
-            event_kinds::CHANNEL_CHARITY_CAMPAIGN_START,
-            forge_payload,
-        ));
+        self.publish_typed(CharityCampaignStarted(wire_charity_campaign(event_data)));
     }
 
     pub(super) fn publish_charity_progress_event(
@@ -1536,12 +976,7 @@ impl ChatSession {
         event_data: &serde_json::Value,
         _frame_msg_id: &str,
     ) {
-        let forge_payload = build_charity_lifecycle_payload(event_data);
-        self.config.bus.publish(Event::new(
-            EventSource::Twitch,
-            event_kinds::CHANNEL_CHARITY_CAMPAIGN_PROGRESS,
-            forge_payload,
-        ));
+        self.publish_typed(CharityCampaignProgressed(wire_charity_campaign(event_data)));
     }
 
     pub(super) fn publish_charity_stop_event(
@@ -1549,159 +984,53 @@ impl ChatSession {
         event_data: &serde_json::Value,
         _frame_msg_id: &str,
     ) {
-        let forge_payload = build_charity_lifecycle_payload(event_data);
-        self.config.bus.publish(Event::new(
-            EventSource::Twitch,
-            event_kinds::CHANNEL_CHARITY_CAMPAIGN_STOP,
-            forge_payload,
-        ));
+        self.publish_typed(CharityCampaignStopped(wire_charity_campaign(event_data)));
     }
 
     pub(super) fn publish_ban_event(&self, event_data: &serde_json::Value, _frame_msg_id: &str) {
-        let user_id = event_data
-            .get("user_id")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default()
-            .to_owned();
-        let user_login = event_data
-            .get("user_login")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default()
-            .to_owned();
-        let user_display_name = event_data
-            .get("user_name")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default()
-            .to_owned();
-        let moderator_id = event_data
-            .get("moderator_user_id")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default()
-            .to_owned();
-        let moderator_login = event_data
-            .get("moderator_user_login")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default()
-            .to_owned();
-        let moderator_display_name = event_data
-            .get("moderator_user_name")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default()
-            .to_owned();
-        let reason = event_data
-            .get("reason")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default()
-            .to_owned();
-        let banned_at = event_data
-            .get("banned_at")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default()
-            .to_owned();
-        let ends_at = event_data
-            .get("ends_at")
-            .and_then(|v| v.as_str())
-            .map(|s| s.to_owned());
-        let is_permanent = event_data
-            .get("is_permanent")
-            .and_then(|v| v.as_bool())
-            .unwrap_or(false);
+        let user = wire_user(event_data, &USER_KEYS);
+        let is_permanent = wire_flag(event_data, "is_permanent");
 
         debug!(
-            user_id = %user_id,
+            user_id = %user.id,
             is_permanent,
             "ban event received"
         );
 
-        let removed_user_id = (!user_id.is_empty()).then(|| user_id.clone());
-        let mut forge_payload = serde_json::json!({
-            (moderation_fields::USER): {
-                (moderation_fields::USER_ID): user_id,
-                (moderation_fields::USER_LOGIN): user_login,
-                (moderation_fields::USER_DISPLAY_NAME): user_display_name,
+        let removal = ChatModerationAction::RemoveUser {
+            user_id: (!user.id.is_empty()).then(|| user.id.clone()),
+            user_name: user.display_name.clone(),
+            removal: if is_permanent {
+                UserRemoval::Ban
+            } else {
+                UserRemoval::Timeout
             },
-            (moderation_fields::MODERATOR): {
-                (moderation_fields::MODERATOR_ID): moderator_id,
-                (moderation_fields::MODERATOR_LOGIN): moderator_login,
-                (moderation_fields::MODERATOR_DISPLAY_NAME): moderator_display_name,
+        };
+        self.publish_with_moderation(
+            UserBanned {
+                user,
+                moderator: wire_user(event_data, &MODERATOR_KEYS),
+                reason: wire_text(event_data, "reason"),
+                banned_at: wire_text(event_data, "banned_at"),
+                ends_at: event_data
+                    .get("ends_at")
+                    .and_then(serde_json::Value::as_str)
+                    .map(str::to_owned),
+                is_permanent,
             },
-            (moderation_fields::REASON): reason,
-            (moderation_fields::BANNED_AT): banned_at,
-            (moderation_fields::ENDS_AT): ends_at,
-            (moderation_fields::IS_PERMANENT): is_permanent,
-        });
-        attach_moderation_payload(
-            &mut forge_payload,
-            ChatModerationAction::RemoveUser {
-                user_id: removed_user_id,
-                user_name: user_display_name,
-                removal: if is_permanent {
-                    UserRemoval::Ban
-                } else {
-                    UserRemoval::Timeout
-                },
-            },
+            removal,
         );
-
-        self.config.bus.publish(Event::new(
-            EventSource::Twitch,
-            event_kinds::CHANNEL_BAN,
-            forge_payload,
-        ));
     }
 
     pub(super) fn publish_unban_event(&self, event_data: &serde_json::Value, _frame_msg_id: &str) {
-        let user_id = event_data
-            .get("user_id")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default()
-            .to_owned();
-        let user_login = event_data
-            .get("user_login")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default()
-            .to_owned();
-        let user_display_name = event_data
-            .get("user_name")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default()
-            .to_owned();
-        let moderator_id = event_data
-            .get("moderator_user_id")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default()
-            .to_owned();
-        let moderator_login = event_data
-            .get("moderator_user_login")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default()
-            .to_owned();
-        let moderator_display_name = event_data
-            .get("moderator_user_name")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default()
-            .to_owned();
+        let user = wire_user(event_data, &USER_KEYS);
 
-        debug!(user_id = %user_id, "unban event received");
+        debug!(user_id = %user.id, "unban event received");
 
-        let forge_payload = serde_json::json!({
-            (moderation_fields::USER): {
-                (moderation_fields::USER_ID): user_id,
-                (moderation_fields::USER_LOGIN): user_login,
-                (moderation_fields::USER_DISPLAY_NAME): user_display_name,
-            },
-            (moderation_fields::MODERATOR): {
-                (moderation_fields::MODERATOR_ID): moderator_id,
-                (moderation_fields::MODERATOR_LOGIN): moderator_login,
-                (moderation_fields::MODERATOR_DISPLAY_NAME): moderator_display_name,
-            },
+        self.publish_typed(UserUnbanned {
+            user,
+            moderator: wire_user(event_data, &MODERATOR_KEYS),
         });
-
-        self.config.bus.publish(Event::new(
-            EventSource::Twitch,
-            event_kinds::CHANNEL_UNBAN,
-            forge_payload,
-        ));
     }
 
     pub(super) fn publish_moderator_add_event(
@@ -1709,35 +1038,11 @@ impl ChatSession {
         event_data: &serde_json::Value,
         _frame_msg_id: &str,
     ) {
-        let user_id = event_data
-            .get("user_id")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default()
-            .to_owned();
-        let user_login = event_data
-            .get("user_login")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default()
-            .to_owned();
-        let user_display_name = event_data
-            .get("user_name")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default()
-            .to_owned();
+        let user = wire_user(event_data, &USER_KEYS);
 
-        debug!(user_id = %user_id, "moderator added");
+        debug!(user_id = %user.id, "moderator added");
 
-        self.config.bus.publish(Event::new(
-            EventSource::Twitch,
-            event_kinds::CHANNEL_MODERATOR_ADD,
-            serde_json::json!({
-                (moderator_fields::USER): {
-                    (moderator_fields::USER_ID): user_id,
-                    (moderator_fields::USER_LOGIN): user_login,
-                    (moderator_fields::USER_DISPLAY_NAME): user_display_name,
-                },
-            }),
-        ));
+        self.publish_typed(ModeratorAdded(UserRef { user }));
     }
 
     pub(super) fn publish_moderator_remove_event(
@@ -1745,35 +1050,11 @@ impl ChatSession {
         event_data: &serde_json::Value,
         _frame_msg_id: &str,
     ) {
-        let user_id = event_data
-            .get("user_id")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default()
-            .to_owned();
-        let user_login = event_data
-            .get("user_login")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default()
-            .to_owned();
-        let user_display_name = event_data
-            .get("user_name")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default()
-            .to_owned();
+        let user = wire_user(event_data, &USER_KEYS);
 
-        debug!(user_id = %user_id, "moderator removed");
+        debug!(user_id = %user.id, "moderator removed");
 
-        self.config.bus.publish(Event::new(
-            EventSource::Twitch,
-            event_kinds::CHANNEL_MODERATOR_REMOVE,
-            serde_json::json!({
-                (moderator_fields::USER): {
-                    (moderator_fields::USER_ID): user_id,
-                    (moderator_fields::USER_LOGIN): user_login,
-                    (moderator_fields::USER_DISPLAY_NAME): user_display_name,
-                },
-            }),
-        ));
+        self.publish_typed(ModeratorRemoved(UserRef { user }));
     }
 
     pub(super) fn publish_vip_add_event(
@@ -1781,35 +1062,11 @@ impl ChatSession {
         event_data: &serde_json::Value,
         _frame_msg_id: &str,
     ) {
-        let user_id = event_data
-            .get("user_id")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default()
-            .to_owned();
-        let user_login = event_data
-            .get("user_login")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default()
-            .to_owned();
-        let user_display_name = event_data
-            .get("user_name")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default()
-            .to_owned();
+        let user = wire_user(event_data, &USER_KEYS);
 
-        debug!(user_id = %user_id, "vip added");
+        debug!(user_id = %user.id, "vip added");
 
-        self.config.bus.publish(Event::new(
-            EventSource::Twitch,
-            event_kinds::CHANNEL_VIP_ADD,
-            serde_json::json!({
-                (vip_fields::USER): {
-                    (vip_fields::USER_ID): user_id,
-                    (vip_fields::USER_LOGIN): user_login,
-                    (vip_fields::USER_DISPLAY_NAME): user_display_name,
-                },
-            }),
-        ));
+        self.publish_typed(VipAdded(UserRef { user }));
     }
 
     pub(super) fn publish_vip_remove_event(
@@ -1817,35 +1074,11 @@ impl ChatSession {
         event_data: &serde_json::Value,
         _frame_msg_id: &str,
     ) {
-        let user_id = event_data
-            .get("user_id")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default()
-            .to_owned();
-        let user_login = event_data
-            .get("user_login")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default()
-            .to_owned();
-        let user_display_name = event_data
-            .get("user_name")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default()
-            .to_owned();
+        let user = wire_user(event_data, &USER_KEYS);
 
-        debug!(user_id = %user_id, "vip removed");
+        debug!(user_id = %user.id, "vip removed");
 
-        self.config.bus.publish(Event::new(
-            EventSource::Twitch,
-            event_kinds::CHANNEL_VIP_REMOVE,
-            serde_json::json!({
-                (vip_fields::USER): {
-                    (vip_fields::USER_ID): user_id,
-                    (vip_fields::USER_LOGIN): user_login,
-                    (vip_fields::USER_DISPLAY_NAME): user_display_name,
-                },
-            }),
-        ));
+        self.publish_typed(VipRemoved(UserRef { user }));
     }
 
     pub(super) fn publish_unban_request_create_event(
@@ -1853,47 +1086,16 @@ impl ChatSession {
         event_data: &serde_json::Value,
         _frame_msg_id: &str,
     ) {
-        let request_id = event_data
-            .get("id")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default()
-            .to_owned();
-        let user_login = event_data
-            .get("user_login")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default()
-            .to_owned();
-        let user_id = event_data
-            .get("user_id")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default()
-            .to_owned();
-        let user_display_name = event_data
-            .get("user_name")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default()
-            .to_owned();
-        let reason_text = event_data
-            .get("text")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default()
-            .to_owned();
+        let id = wire_text(event_data, "id");
+        let user = wire_user(event_data, &USER_KEYS);
 
-        debug!(user_id = %user_id, request_id = %request_id, "unban request created");
+        debug!(user_id = %user.id, request_id = %id, "unban request created");
 
-        self.config.bus.publish(Event::new(
-            EventSource::Twitch,
-            event_kinds::CHANNEL_UNBAN_REQUEST_CREATE,
-            serde_json::json!({
-                (unban_request_fields::REQUEST_ID): request_id,
-                (unban_request_fields::USER): {
-                    (unban_request_fields::USER_ID): user_id,
-                    (unban_request_fields::USER_LOGIN): user_login,
-                    (unban_request_fields::USER_DISPLAY_NAME): user_display_name,
-                },
-                (unban_request_fields::REASON_TEXT): reason_text,
-            }),
-        ));
+        self.publish_typed(UnbanRequestCreated {
+            id,
+            user,
+            reason_text: wire_text(event_data, "text"),
+        });
     }
 
     pub(super) fn publish_unban_request_resolve_event(
@@ -1901,73 +1103,19 @@ impl ChatSession {
         event_data: &serde_json::Value,
         _frame_msg_id: &str,
     ) {
-        let request_id = event_data
-            .get("id")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default()
-            .to_owned();
-        let user_login = event_data
-            .get("user_login")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default()
-            .to_owned();
-        let user_id = event_data
-            .get("user_id")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default()
-            .to_owned();
-        let user_display_name = event_data
-            .get("user_name")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default()
-            .to_owned();
-        let status = event_data
-            .get("status")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default()
-            .to_owned();
-        let moderator_login = event_data
-            .get("moderator_user_login")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default()
-            .to_owned();
-        let moderator_id = event_data
-            .get("moderator_user_id")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default()
-            .to_owned();
-        let moderator_display_name = event_data
-            .get("moderator_user_name")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default()
-            .to_owned();
-        let resolution_text = event_data
-            .get("resolution_text")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default()
-            .to_owned();
+        let id = wire_text(event_data, "id");
+        let user = wire_user(event_data, &USER_KEYS);
+        let status = wire_text(event_data, "status");
 
-        debug!(user_id = %user_id, request_id = %request_id, status = %status, "unban request resolved");
+        debug!(user_id = %user.id, request_id = %id, status = %status, "unban request resolved");
 
-        self.config.bus.publish(Event::new(
-            EventSource::Twitch,
-            event_kinds::CHANNEL_UNBAN_REQUEST_RESOLVE,
-            serde_json::json!({
-                (unban_request_fields::REQUEST_ID): request_id,
-                (unban_request_fields::USER): {
-                    (unban_request_fields::USER_ID): user_id,
-                    (unban_request_fields::USER_LOGIN): user_login,
-                    (unban_request_fields::USER_DISPLAY_NAME): user_display_name,
-                },
-                (unban_request_fields::STATUS): status,
-                (unban_request_fields::MODERATOR): {
-                    (unban_request_fields::MODERATOR_ID): moderator_id,
-                    (unban_request_fields::MODERATOR_LOGIN): moderator_login,
-                    (unban_request_fields::MODERATOR_DISPLAY_NAME): moderator_display_name,
-                },
-                (unban_request_fields::RESOLUTION_TEXT): resolution_text,
-            }),
-        ));
+        self.publish_typed(UnbanRequestResolved {
+            id,
+            user,
+            status,
+            moderator: wire_user(event_data, &MODERATOR_KEYS),
+            resolution_text: wire_text(event_data, "resolution_text"),
+        });
     }
 
     pub(super) fn publish_shield_mode_begin_event(
@@ -1975,41 +1123,14 @@ impl ChatSession {
         event_data: &serde_json::Value,
         _frame_msg_id: &str,
     ) {
-        let moderator_id = event_data
-            .get("moderator_user_id")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default()
-            .to_owned();
-        let moderator_login = event_data
-            .get("moderator_user_login")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default()
-            .to_owned();
-        let moderator_display_name = event_data
-            .get("moderator_user_name")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default()
-            .to_owned();
-        let started_at = event_data
-            .get("started_at")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default()
-            .to_owned();
+        let moderator = wire_user(event_data, &MODERATOR_KEYS);
 
-        debug!(moderator_id = %moderator_id, "shield mode started");
+        debug!(moderator_id = %moderator.id, "shield mode started");
 
-        self.config.bus.publish(Event::new(
-            EventSource::Twitch,
-            event_kinds::CHANNEL_SHIELD_MODE_BEGIN,
-            serde_json::json!({
-                (shield_fields::MODERATOR): {
-                    (shield_fields::MODERATOR_ID): moderator_id,
-                    (shield_fields::MODERATOR_LOGIN): moderator_login,
-                    (shield_fields::MODERATOR_DISPLAY_NAME): moderator_display_name,
-                },
-                (shield_fields::STARTED_AT): started_at,
-            }),
-        ));
+        self.publish_typed(ShieldModeBegan {
+            moderator,
+            started_at: wire_text(event_data, "started_at"),
+        });
     }
 
     pub(super) fn publish_shield_mode_end_event(
@@ -2017,41 +1138,14 @@ impl ChatSession {
         event_data: &serde_json::Value,
         _frame_msg_id: &str,
     ) {
-        let moderator_id = event_data
-            .get("moderator_user_id")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default()
-            .to_owned();
-        let moderator_login = event_data
-            .get("moderator_user_login")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default()
-            .to_owned();
-        let moderator_display_name = event_data
-            .get("moderator_user_name")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default()
-            .to_owned();
-        let ended_at = event_data
-            .get("ended_at")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default()
-            .to_owned();
+        let moderator = wire_user(event_data, &MODERATOR_KEYS);
 
-        debug!(moderator_id = %moderator_id, "shield mode ended");
+        debug!(moderator_id = %moderator.id, "shield mode ended");
 
-        self.config.bus.publish(Event::new(
-            EventSource::Twitch,
-            event_kinds::CHANNEL_SHIELD_MODE_END,
-            serde_json::json!({
-                (shield_fields::MODERATOR): {
-                    (shield_fields::MODERATOR_ID): moderator_id,
-                    (shield_fields::MODERATOR_LOGIN): moderator_login,
-                    (shield_fields::MODERATOR_DISPLAY_NAME): moderator_display_name,
-                },
-                (shield_fields::ENDED_AT): ended_at,
-            }),
-        ));
+        self.publish_typed(ShieldModeEnded {
+            moderator,
+            ended_at: wire_text(event_data, "ended_at"),
+        });
     }
 
     pub(super) fn publish_shoutout_create_event(
@@ -2059,46 +1153,16 @@ impl ChatSession {
         event_data: &serde_json::Value,
         _frame_msg_id: &str,
     ) {
-        let to_id = event_data
-            .get("to_broadcaster_user_id")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default()
-            .to_owned();
-        let to_login = event_data
-            .get("to_broadcaster_user_login")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default()
-            .to_owned();
-        let to_display_name = event_data
-            .get("to_broadcaster_user_name")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default()
-            .to_owned();
-        let viewer_count = event_data
-            .get("viewer_count")
-            .and_then(|v| v.as_i64())
-            .unwrap_or(0);
-        let started_at = event_data
-            .get("started_at")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default()
-            .to_owned();
+        let to_broadcaster = wire_user(event_data, &TO_BROADCASTER_KEYS);
+        let viewer_count = wire_count(event_data, "viewer_count");
 
-        debug!(to_broadcaster_id = %to_id, viewer_count, "shoutout sent");
+        debug!(to_broadcaster_id = %to_broadcaster.id, viewer_count, "shoutout sent");
 
-        self.config.bus.publish(Event::new(
-            EventSource::Twitch,
-            event_kinds::CHANNEL_SHOUTOUT_CREATE,
-            serde_json::json!({
-                (shoutout_fields::TO_BROADCASTER): {
-                    (shoutout_fields::BROADCASTER_ID): to_id,
-                    (shoutout_fields::BROADCASTER_LOGIN): to_login,
-                    (shoutout_fields::BROADCASTER_DISPLAY_NAME): to_display_name,
-                },
-                (shoutout_fields::VIEWER_COUNT): viewer_count,
-                (shoutout_fields::STARTED_AT): started_at,
-            }),
-        ));
+        self.publish_typed(ShoutoutSent {
+            to_broadcaster,
+            viewer_count,
+            started_at: wire_text(event_data, "started_at"),
+        });
     }
 
     pub(super) fn publish_shoutout_receive_event(
@@ -2106,46 +1170,16 @@ impl ChatSession {
         event_data: &serde_json::Value,
         _frame_msg_id: &str,
     ) {
-        let from_id = event_data
-            .get("from_broadcaster_user_id")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default()
-            .to_owned();
-        let from_login = event_data
-            .get("from_broadcaster_user_login")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default()
-            .to_owned();
-        let from_display_name = event_data
-            .get("from_broadcaster_user_name")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default()
-            .to_owned();
-        let viewer_count = event_data
-            .get("viewer_count")
-            .and_then(|v| v.as_i64())
-            .unwrap_or(0);
-        let started_at = event_data
-            .get("started_at")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default()
-            .to_owned();
+        let from_broadcaster = wire_user(event_data, &FROM_BROADCASTER_KEYS);
+        let viewer_count = wire_count(event_data, "viewer_count");
 
-        debug!(from_broadcaster_id = %from_id, viewer_count, "shoutout received");
+        debug!(from_broadcaster_id = %from_broadcaster.id, viewer_count, "shoutout received");
 
-        self.config.bus.publish(Event::new(
-            EventSource::Twitch,
-            event_kinds::CHANNEL_SHOUTOUT_RECEIVE,
-            serde_json::json!({
-                (shoutout_fields::FROM_BROADCASTER): {
-                    (shoutout_fields::BROADCASTER_ID): from_id,
-                    (shoutout_fields::BROADCASTER_LOGIN): from_login,
-                    (shoutout_fields::BROADCASTER_DISPLAY_NAME): from_display_name,
-                },
-                (shoutout_fields::VIEWER_COUNT): viewer_count,
-                (shoutout_fields::STARTED_AT): started_at,
-            }),
-        ));
+        self.publish_typed(ShoutoutReceived {
+            from_broadcaster,
+            viewer_count,
+            started_at: wire_text(event_data, "started_at"),
+        });
     }
 
     pub(super) fn publish_suspicious_user_event(
@@ -2153,48 +1187,16 @@ impl ChatSession {
         event_data: &serde_json::Value,
         _frame_msg_id: &str,
     ) {
-        let user_id = event_data
-            .get("user_id")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default()
-            .to_owned();
-        let user_login = event_data
-            .get("user_login")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default()
-            .to_owned();
-        let user_display_name = event_data
-            .get("user_name")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default()
-            .to_owned();
-        let low_trust_status = event_data
-            .get("low_trust_status")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default()
-            .to_owned();
-        let message_text = event_data
-            .get("message")
-            .and_then(|m| m.get("text"))
-            .and_then(|v| v.as_str())
-            .unwrap_or_default()
-            .to_owned();
+        let user = wire_user(event_data, &USER_KEYS);
+        let low_trust_status = wire_text(event_data, "low_trust_status");
 
-        debug!(user_id = %user_id, low_trust_status = %low_trust_status, "suspicious user message");
+        debug!(user_id = %user.id, low_trust_status = %low_trust_status, "suspicious user message");
 
-        self.config.bus.publish(Event::new(
-            EventSource::Twitch,
-            event_kinds::CHANNEL_SUSPICIOUS_USER_MESSAGE,
-            serde_json::json!({
-                (suspicious_fields::USER): {
-                    (suspicious_fields::USER_ID): user_id,
-                    (suspicious_fields::USER_LOGIN): user_login,
-                    (suspicious_fields::USER_DISPLAY_NAME): user_display_name,
-                },
-                (suspicious_fields::LOW_TRUST_STATUS): low_trust_status,
-                (suspicious_fields::MESSAGE_TEXT): message_text,
-            }),
-        ));
+        self.publish_typed(SuspiciousUserMessaged {
+            user,
+            low_trust_status,
+            message_text: wire_text(wire_child(event_data, "message"), "text"),
+        });
     }
 
     pub(super) fn publish_warning_acknowledge_event(
@@ -2202,35 +1204,11 @@ impl ChatSession {
         event_data: &serde_json::Value,
         _frame_msg_id: &str,
     ) {
-        let user_id = event_data
-            .get("user_id")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default()
-            .to_owned();
-        let user_login = event_data
-            .get("user_login")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default()
-            .to_owned();
-        let user_display_name = event_data
-            .get("user_name")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default()
-            .to_owned();
+        let user = wire_user(event_data, &USER_KEYS);
 
-        debug!(user_id = %user_id, "warning acknowledged");
+        debug!(user_id = %user.id, "warning acknowledged");
 
-        self.config.bus.publish(Event::new(
-            EventSource::Twitch,
-            event_kinds::CHANNEL_WARNING_ACKNOWLEDGE,
-            serde_json::json!({
-                (warning_fields::USER): {
-                    (warning_fields::USER_ID): user_id,
-                    (warning_fields::USER_LOGIN): user_login,
-                    (warning_fields::USER_DISPLAY_NAME): user_display_name,
-                },
-            }),
-        ));
+        self.publish_typed(WarningAcknowledged(UserRef { user }));
     }
 
     pub(super) fn publish_warning_send_event(
@@ -2238,67 +1216,17 @@ impl ChatSession {
         event_data: &serde_json::Value,
         _frame_msg_id: &str,
     ) {
-        let user_id = event_data
-            .get("user_id")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default()
-            .to_owned();
-        let user_login = event_data
-            .get("user_login")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default()
-            .to_owned();
-        let user_display_name = event_data
-            .get("user_name")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default()
-            .to_owned();
-        let moderator_id = event_data
-            .get("moderator_user_id")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default()
-            .to_owned();
-        let moderator_login = event_data
-            .get("moderator_user_login")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default()
-            .to_owned();
-        let moderator_name = event_data
-            .get("moderator_user_name")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default()
-            .to_owned();
-        let reason = event_data
-            .get("reason")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default()
-            .to_owned();
-        let chat_rules_cited: Vec<serde_json::Value> = event_data
-            .get("chat_rules_cited")
-            .and_then(|v| v.as_array())
-            .cloned()
-            .unwrap_or_default();
+        let user = wire_user(event_data, &USER_KEYS);
+        let moderator = wire_user(event_data, &MODERATOR_KEYS);
 
-        debug!(user_id = %user_id, moderator_id = %moderator_id, "warning sent");
+        debug!(user_id = %user.id, moderator_id = %moderator.id, "warning sent");
 
-        self.config.bus.publish(Event::new(
-            EventSource::Twitch,
-            event_kinds::CHANNEL_WARNING_SEND,
-            serde_json::json!({
-                (warning_fields::USER): {
-                    (warning_fields::USER_ID): user_id,
-                    (warning_fields::USER_LOGIN): user_login,
-                    (warning_fields::USER_DISPLAY_NAME): user_display_name,
-                },
-                (warning_fields::MODERATOR): {
-                    (warning_fields::MODERATOR_ID): moderator_id,
-                    (warning_fields::MODERATOR_LOGIN): moderator_login,
-                    (warning_fields::MODERATOR_DISPLAY_NAME): moderator_name,
-                },
-                (warning_fields::REASON): reason,
-                (warning_fields::CHAT_RULES_CITED): chat_rules_cited,
-            }),
-        ));
+        self.publish_typed(WarningSent {
+            user,
+            moderator,
+            reason: wire_text(event_data, "reason"),
+            chat_rules_cited: wire_list(event_data, "chat_rules_cited"),
+        });
     }
 
     pub(super) fn publish_poll_begin_event(
@@ -2306,44 +1234,17 @@ impl ChatSession {
         event_data: &serde_json::Value,
         _frame_msg_id: &str,
     ) {
-        let poll_id = event_data
-            .get("id")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default()
-            .to_owned();
-        let title = event_data
-            .get("title")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default()
-            .to_owned();
-        let started_at = event_data
-            .get("started_at")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default()
-            .to_owned();
-        let ends_at = event_data
-            .get("ends_at")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default()
-            .to_owned();
-
+        let poll = PollOpening {
+            id: wire_text(event_data, "id"),
+            title: wire_text(event_data, "title"),
+            started_at: wire_text(event_data, "started_at"),
+            ends_at: wire_text(event_data, "ends_at"),
+        };
         let choices = extract_poll_choices(event_data);
 
-        debug!(poll_id = %poll_id, choices = choices.len(), "poll began");
+        debug!(poll_id = %poll.id, choices = choices.len(), "poll began");
 
-        self.config.bus.publish(Event::new(
-            EventSource::Twitch,
-            event_kinds::CHANNEL_POLL_BEGIN,
-            serde_json::json!({
-                (poll_fields::POLL): {
-                    (poll_fields::POLL_ID): poll_id,
-                    (poll_fields::POLL_TITLE): title,
-                    (poll_fields::STARTED_AT): started_at,
-                    (poll_fields::ENDS_AT): ends_at,
-                },
-                (poll_fields::CHOICES): choices,
-            }),
-        ));
+        self.publish_typed(PollBegan { poll, choices });
     }
 
     pub(super) fn publish_poll_progress_event(
@@ -2351,32 +1252,15 @@ impl ChatSession {
         event_data: &serde_json::Value,
         _frame_msg_id: &str,
     ) {
-        let poll_id = event_data
-            .get("id")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default()
-            .to_owned();
-        let title = event_data
-            .get("title")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default()
-            .to_owned();
-
+        let poll = PollHeading {
+            id: wire_text(event_data, "id"),
+            title: wire_text(event_data, "title"),
+        };
         let choices = extract_poll_choices(event_data);
 
-        debug!(poll_id = %poll_id, "poll progress");
+        debug!(poll_id = %poll.id, "poll progress");
 
-        self.config.bus.publish(Event::new(
-            EventSource::Twitch,
-            event_kinds::CHANNEL_POLL_PROGRESS,
-            serde_json::json!({
-                (poll_fields::POLL): {
-                    (poll_fields::POLL_ID): poll_id,
-                    (poll_fields::POLL_TITLE): title,
-                },
-                (poll_fields::CHOICES): choices,
-            }),
-        ));
+        self.publish_typed(PollProgressed { poll, choices });
     }
 
     pub(super) fn publish_poll_end_event(
@@ -2384,44 +1268,17 @@ impl ChatSession {
         event_data: &serde_json::Value,
         _frame_msg_id: &str,
     ) {
-        let poll_id = event_data
-            .get("id")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default()
-            .to_owned();
-        let title = event_data
-            .get("title")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default()
-            .to_owned();
-        let status = event_data
-            .get("status")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default()
-            .to_owned();
-        let ended_at = event_data
-            .get("ended_at")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default()
-            .to_owned();
-
+        let poll = PollClosing {
+            id: wire_text(event_data, "id"),
+            title: wire_text(event_data, "title"),
+            status: wire_text(event_data, "status"),
+            ended_at: wire_text(event_data, "ended_at"),
+        };
         let choices = extract_poll_choices(event_data);
 
-        debug!(poll_id = %poll_id, status = %status, "poll ended");
+        debug!(poll_id = %poll.id, status = %poll.status, "poll ended");
 
-        self.config.bus.publish(Event::new(
-            EventSource::Twitch,
-            event_kinds::CHANNEL_POLL_END,
-            serde_json::json!({
-                (poll_fields::POLL): {
-                    (poll_fields::POLL_ID): poll_id,
-                    (poll_fields::POLL_TITLE): title,
-                    (poll_fields::STATUS): status,
-                    (poll_fields::ENDED_AT): ended_at,
-                },
-                (poll_fields::CHOICES): choices,
-            }),
-        ));
+        self.publish_typed(PollEnded { poll, choices });
     }
 
     pub(super) fn publish_prediction_begin_event(
@@ -2429,44 +1286,20 @@ impl ChatSession {
         event_data: &serde_json::Value,
         _frame_msg_id: &str,
     ) {
-        let prediction_id = event_data
-            .get("id")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default()
-            .to_owned();
-        let title = event_data
-            .get("title")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default()
-            .to_owned();
-        let started_at = event_data
-            .get("started_at")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default()
-            .to_owned();
-        let locks_at = event_data
-            .get("locks_at")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default()
-            .to_owned();
-
+        let prediction = PredictionOpening {
+            id: wire_text(event_data, "id"),
+            title: wire_text(event_data, "title"),
+            started_at: wire_text(event_data, "started_at"),
+            locks_at: wire_text(event_data, "locks_at"),
+        };
         let outcomes = extract_prediction_outcomes(event_data);
 
-        debug!(prediction_id = %prediction_id, outcomes = outcomes.len(), "prediction began");
+        debug!(prediction_id = %prediction.id, outcomes = outcomes.len(), "prediction began");
 
-        self.config.bus.publish(Event::new(
-            EventSource::Twitch,
-            event_kinds::CHANNEL_PREDICTION_BEGIN,
-            serde_json::json!({
-                (prediction_fields::PREDICTION): {
-                    (prediction_fields::PREDICTION_ID): prediction_id,
-                    (prediction_fields::PREDICTION_TITLE): title,
-                    (prediction_fields::STARTED_AT): started_at,
-                    (prediction_fields::LOCKS_AT): locks_at,
-                },
-                (prediction_fields::OUTCOMES): outcomes,
-            }),
-        ));
+        self.publish_typed(PredictionBegan {
+            prediction,
+            outcomes,
+        });
     }
 
     pub(super) fn publish_prediction_progress_event(
@@ -2474,32 +1307,18 @@ impl ChatSession {
         event_data: &serde_json::Value,
         _frame_msg_id: &str,
     ) {
-        let prediction_id = event_data
-            .get("id")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default()
-            .to_owned();
-        let title = event_data
-            .get("title")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default()
-            .to_owned();
-
+        let prediction = PredictionHeading {
+            id: wire_text(event_data, "id"),
+            title: wire_text(event_data, "title"),
+        };
         let outcomes = extract_prediction_outcomes(event_data);
 
-        debug!(prediction_id = %prediction_id, "prediction progress");
+        debug!(prediction_id = %prediction.id, "prediction progress");
 
-        self.config.bus.publish(Event::new(
-            EventSource::Twitch,
-            event_kinds::CHANNEL_PREDICTION_PROGRESS,
-            serde_json::json!({
-                (prediction_fields::PREDICTION): {
-                    (prediction_fields::PREDICTION_ID): prediction_id,
-                    (prediction_fields::PREDICTION_TITLE): title,
-                },
-                (prediction_fields::OUTCOMES): outcomes,
-            }),
-        ));
+        self.publish_typed(PredictionProgressed {
+            prediction,
+            outcomes,
+        });
     }
 
     pub(super) fn publish_prediction_lock_event(
@@ -2507,35 +1326,15 @@ impl ChatSession {
         event_data: &serde_json::Value,
         _frame_msg_id: &str,
     ) {
-        let prediction_id = event_data
-            .get("id")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default()
-            .to_owned();
-        let title = event_data
-            .get("title")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default()
-            .to_owned();
-        let locked_at = event_data
-            .get("locked_at")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default()
-            .to_owned();
+        let prediction = PredictionLock {
+            id: wire_text(event_data, "id"),
+            title: wire_text(event_data, "title"),
+            locked_at: wire_text(event_data, "locked_at"),
+        };
 
-        debug!(prediction_id = %prediction_id, "prediction locked");
+        debug!(prediction_id = %prediction.id, "prediction locked");
 
-        self.config.bus.publish(Event::new(
-            EventSource::Twitch,
-            event_kinds::CHANNEL_PREDICTION_LOCK,
-            serde_json::json!({
-                (prediction_fields::PREDICTION): {
-                    (prediction_fields::PREDICTION_ID): prediction_id,
-                    (prediction_fields::PREDICTION_TITLE): title,
-                    (prediction_fields::LOCKED_AT): locked_at,
-                },
-            }),
-        ));
+        self.publish_typed(PredictionLocked { prediction });
     }
 
     pub(super) fn publish_prediction_end_event(
@@ -2543,47 +1342,17 @@ impl ChatSession {
         event_data: &serde_json::Value,
         _frame_msg_id: &str,
     ) {
-        let prediction_id = event_data
-            .get("id")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default()
-            .to_owned();
-        let title = event_data
-            .get("title")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default()
-            .to_owned();
-        let winning_outcome_id = event_data
-            .get("winning_outcome_id")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default()
-            .to_owned();
-        let status = event_data
-            .get("status")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default()
-            .to_owned();
-        let ended_at = event_data
-            .get("ended_at")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default()
-            .to_owned();
+        let prediction = PredictionResolution {
+            id: wire_text(event_data, "id"),
+            title: wire_text(event_data, "title"),
+            winning_outcome_id: wire_text(event_data, "winning_outcome_id"),
+            status: wire_text(event_data, "status"),
+            ended_at: wire_text(event_data, "ended_at"),
+        };
 
-        debug!(prediction_id = %prediction_id, status = %status, "prediction ended");
+        debug!(prediction_id = %prediction.id, status = %prediction.status, "prediction ended");
 
-        self.config.bus.publish(Event::new(
-            EventSource::Twitch,
-            event_kinds::CHANNEL_PREDICTION_END,
-            serde_json::json!({
-                (prediction_fields::PREDICTION): {
-                    (prediction_fields::PREDICTION_ID): prediction_id,
-                    (prediction_fields::PREDICTION_TITLE): title,
-                    (prediction_fields::WINNING_OUTCOME_ID): winning_outcome_id,
-                    (prediction_fields::STATUS): status,
-                    (prediction_fields::ENDED_AT): ended_at,
-                },
-            }),
-        ));
+        self.publish_typed(PredictionEnded { prediction });
     }
 
     pub(super) fn publish_goal_begin_event(
@@ -2591,51 +1360,18 @@ impl ChatSession {
         event_data: &serde_json::Value,
         _frame_msg_id: &str,
     ) {
-        let goal_id = event_data
-            .get("id")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default()
-            .to_owned();
-        let goal_type = event_data
-            .get("type")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default()
-            .to_owned();
-        let description = event_data
-            .get("description")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default()
-            .to_owned();
-        let current_amount = event_data
-            .get("current_amount")
-            .and_then(|v| v.as_i64())
-            .unwrap_or(0);
-        let target_amount = event_data
-            .get("target_amount")
-            .and_then(|v| v.as_i64())
-            .unwrap_or(0);
-        let started_at = event_data
-            .get("started_at")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default()
-            .to_owned();
+        let goal = GoalOpening {
+            id: wire_text(event_data, "id"),
+            goal_type: wire_text(event_data, "type"),
+            description: wire_text(event_data, "description"),
+            current_amount: wire_count(event_data, "current_amount"),
+            target_amount: wire_count(event_data, "target_amount"),
+            started_at: wire_text(event_data, "started_at"),
+        };
 
-        debug!(goal_id = %goal_id, goal_type = %goal_type, "goal begun");
+        debug!(goal_id = %goal.id, goal_type = %goal.goal_type, "goal begun");
 
-        self.config.bus.publish(Event::new(
-            EventSource::Twitch,
-            event_kinds::CHANNEL_GOAL_BEGIN,
-            serde_json::json!({
-                (goal_fields::GOAL): {
-                    (goal_fields::GOAL_ID): goal_id,
-                    (goal_fields::GOAL_TYPE): goal_type,
-                    (goal_fields::DESCRIPTION): description,
-                    (goal_fields::CURRENT_AMOUNT): current_amount,
-                    (goal_fields::TARGET_AMOUNT): target_amount,
-                    (goal_fields::STARTED_AT): started_at,
-                },
-            }),
-        ));
+        self.publish_typed(GoalBegan { goal });
     }
 
     pub(super) fn publish_goal_progress_event(
@@ -2653,50 +1389,18 @@ impl ChatSession {
         event_data: &serde_json::Value,
         _frame_msg_id: &str,
     ) {
-        let goal_id = event_data
-            .get("id")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default()
-            .to_owned();
-        let goal_type = event_data
-            .get("type")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default()
-            .to_owned();
-        let current_amount = event_data
-            .get("current_amount")
-            .and_then(|v| v.as_i64())
-            .unwrap_or(0);
-        let target_amount = event_data
-            .get("target_amount")
-            .and_then(|v| v.as_i64())
-            .unwrap_or(0);
-        let is_achieved = event_data
-            .get("is_achieved")
-            .and_then(|v| v.as_bool())
-            .unwrap_or(false);
-        let ended_at = event_data
-            .get("ended_at")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default()
-            .to_owned();
+        let goal = GoalClosing {
+            id: wire_text(event_data, "id"),
+            goal_type: wire_text(event_data, "type"),
+            current_amount: wire_count(event_data, "current_amount"),
+            target_amount: wire_count(event_data, "target_amount"),
+            is_achieved: wire_flag(event_data, "is_achieved"),
+            ended_at: wire_text(event_data, "ended_at"),
+        };
 
-        debug!(goal_id = %goal_id, is_achieved, "goal ended");
+        debug!(goal_id = %goal.id, is_achieved = goal.is_achieved, "goal ended");
 
-        self.config.bus.publish(Event::new(
-            EventSource::Twitch,
-            event_kinds::CHANNEL_GOAL_END,
-            serde_json::json!({
-                (goal_fields::GOAL): {
-                    (goal_fields::GOAL_ID): goal_id,
-                    (goal_fields::GOAL_TYPE): goal_type,
-                    (goal_fields::CURRENT_AMOUNT): current_amount,
-                    (goal_fields::TARGET_AMOUNT): target_amount,
-                    (goal_fields::IS_ACHIEVED): is_achieved,
-                    (goal_fields::ENDED_AT): ended_at,
-                },
-            }),
-        ));
+        self.publish_typed(GoalEnded { goal });
     }
 
     pub(super) fn publish_reward_add_event(
@@ -2704,42 +1408,11 @@ impl ChatSession {
         event_data: &serde_json::Value,
         _frame_msg_id: &str,
     ) {
-        let reward_id = event_data
-            .get("id")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default()
-            .to_owned();
-        let title = event_data
-            .get("title")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default()
-            .to_owned();
-        let cost = event_data.get("cost").and_then(|v| v.as_i64()).unwrap_or(0);
-        let prompt = event_data
-            .get("prompt")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default()
-            .to_owned();
-        let is_enabled = event_data
-            .get("is_enabled")
-            .and_then(|v| v.as_bool())
-            .unwrap_or(false);
+        let state = wire_custom_reward(event_data);
 
-        debug!(reward_id = %reward_id, "channel point reward added");
+        debug!(reward_id = %state.reward.id, "channel point reward added");
 
-        self.config.bus.publish(Event::new(
-            EventSource::Twitch,
-            event_kinds::CHANNEL_CHANNEL_POINTS_CUSTOM_REWARD_ADD,
-            serde_json::json!({
-                (reward_fields::REWARD): {
-                    (reward_fields::REWARD_ID): reward_id,
-                    (reward_fields::REWARD_TITLE): title,
-                    (reward_fields::REWARD_COST): cost,
-                    (reward_fields::REWARD_PROMPT): prompt,
-                    (reward_fields::REWARD_IS_ENABLED): is_enabled,
-                },
-            }),
-        ));
+        self.publish_typed(CustomRewardAdded(state));
     }
 
     pub(super) fn publish_reward_update_event(
@@ -2747,42 +1420,11 @@ impl ChatSession {
         event_data: &serde_json::Value,
         _frame_msg_id: &str,
     ) {
-        let reward_id = event_data
-            .get("id")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default()
-            .to_owned();
-        let title = event_data
-            .get("title")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default()
-            .to_owned();
-        let cost = event_data.get("cost").and_then(|v| v.as_i64()).unwrap_or(0);
-        let prompt = event_data
-            .get("prompt")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default()
-            .to_owned();
-        let is_enabled = event_data
-            .get("is_enabled")
-            .and_then(|v| v.as_bool())
-            .unwrap_or(false);
+        let state = wire_custom_reward(event_data);
 
-        debug!(reward_id = %reward_id, "channel point reward updated");
+        debug!(reward_id = %state.reward.id, "channel point reward updated");
 
-        self.config.bus.publish(Event::new(
-            EventSource::Twitch,
-            event_kinds::CHANNEL_CHANNEL_POINTS_CUSTOM_REWARD_UPDATE,
-            serde_json::json!({
-                (reward_fields::REWARD): {
-                    (reward_fields::REWARD_ID): reward_id,
-                    (reward_fields::REWARD_TITLE): title,
-                    (reward_fields::REWARD_COST): cost,
-                    (reward_fields::REWARD_PROMPT): prompt,
-                    (reward_fields::REWARD_IS_ENABLED): is_enabled,
-                },
-            }),
-        ));
+        self.publish_typed(CustomRewardUpdated(state));
     }
 
     pub(super) fn publish_reward_remove_event(
@@ -2790,42 +1432,11 @@ impl ChatSession {
         event_data: &serde_json::Value,
         _frame_msg_id: &str,
     ) {
-        let reward_id = event_data
-            .get("id")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default()
-            .to_owned();
-        let title = event_data
-            .get("title")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default()
-            .to_owned();
-        let cost = event_data.get("cost").and_then(|v| v.as_i64()).unwrap_or(0);
-        let prompt = event_data
-            .get("prompt")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default()
-            .to_owned();
-        let is_enabled = event_data
-            .get("is_enabled")
-            .and_then(|v| v.as_bool())
-            .unwrap_or(false);
+        let state = wire_custom_reward(event_data);
 
-        debug!(reward_id = %reward_id, "channel point reward removed");
+        debug!(reward_id = %state.reward.id, "channel point reward removed");
 
-        self.config.bus.publish(Event::new(
-            EventSource::Twitch,
-            event_kinds::CHANNEL_CHANNEL_POINTS_CUSTOM_REWARD_REMOVE,
-            serde_json::json!({
-                (reward_fields::REWARD): {
-                    (reward_fields::REWARD_ID): reward_id,
-                    (reward_fields::REWARD_TITLE): title,
-                    (reward_fields::REWARD_COST): cost,
-                    (reward_fields::REWARD_PROMPT): prompt,
-                    (reward_fields::REWARD_IS_ENABLED): is_enabled,
-                },
-            }),
-        ));
+        self.publish_typed(CustomRewardRemoved(state));
     }
 
     pub(super) fn publish_redemption_update_event(
@@ -2833,83 +1444,22 @@ impl ChatSession {
         event_data: &serde_json::Value,
         _frame_msg_id: &str,
     ) {
-        let redemption_id = event_data
-            .get("id")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default()
-            .to_owned();
-        let user_id = event_data
-            .get("user_id")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default()
-            .to_owned();
-        let user_login = event_data
-            .get("user_login")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default()
-            .to_owned();
-        let user_name = event_data
-            .get("user_name")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default()
-            .to_owned();
-        let user_input = event_data
-            .get("user_input")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default()
-            .to_owned();
-        let status = event_data
-            .get("status")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default()
-            .to_owned();
-        let redeemed_at = event_data
-            .get("redeemed_at")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default()
-            .to_owned();
-        let reward_id = event_data
-            .get("reward")
-            .and_then(|r| r.get("id"))
-            .and_then(|v| v.as_str())
-            .unwrap_or_default()
-            .to_owned();
-        let reward_title = event_data
-            .get("reward")
-            .and_then(|r| r.get("title"))
-            .and_then(|v| v.as_str())
-            .unwrap_or_default()
-            .to_owned();
-        let reward_cost = event_data
-            .get("reward")
-            .and_then(|r| r.get("cost"))
-            .and_then(|v| v.as_i64())
-            .unwrap_or(0);
+        let redemption = wire_redemption(event_data);
+        let user = wire_user(event_data, &USER_KEYS);
+        let reward = wire_child(event_data, "reward");
+        let reward = UpdatedRedemptionReward {
+            id: wire_text(reward, "id"),
+            title: wire_text(reward, "title"),
+            cost: wire_count(reward, "cost"),
+        };
 
-        debug!(user_id = %user_id, reward_id = %reward_id, status = %status, "channel point redemption updated");
+        debug!(user_id = %user.id, reward_id = %reward.id, status = %redemption.status, "channel point redemption updated");
 
-        self.config.bus.publish(Event::new(
-            EventSource::Twitch,
-            event_kinds::CHANNEL_CHANNEL_POINTS_CUSTOM_REWARD_REDEMPTION_UPDATE,
-            serde_json::json!({
-                (channel_points_fields::REDEMPTION): {
-                    (channel_points_fields::REDEMPTION_ID): redemption_id,
-                    (channel_points_fields::REDEMPTION_STATUS): status,
-                    (channel_points_fields::USER_INPUT): user_input,
-                    (channel_points_fields::REDEEMED_AT): redeemed_at,
-                },
-                (channel_points_fields::USER): {
-                    (channel_points_fields::USER_ID): user_id,
-                    (channel_points_fields::USER_LOGIN): user_login,
-                    (channel_points_fields::USER_DISPLAY_NAME): user_name,
-                },
-                (channel_points_fields::REWARD): {
-                    (channel_points_fields::REWARD_ID): reward_id,
-                    (channel_points_fields::REWARD_TITLE): reward_title,
-                    (channel_points_fields::REWARD_COST): reward_cost,
-                },
-            }),
-        ));
+        self.publish_typed(RedemptionUpdated {
+            redemption,
+            user,
+            reward,
+        });
     }
 
     pub(super) fn publish_automod_hold_event(
@@ -2917,81 +1467,30 @@ impl ChatSession {
         event_data: &serde_json::Value,
         _frame_msg_id: &str,
     ) {
-        let user_id = event_data
-            .get("user_id")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default()
-            .to_owned();
-        let user_login = event_data
-            .get("user_login")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default()
-            .to_owned();
-        let user_name = event_data
-            .get("user_name")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default()
-            .to_owned();
-        let message_id = event_data
-            .get("message_id")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default()
-            .to_owned();
-        let reason = event_data
-            .get(automod_fields::REASON)
-            .and_then(|v| v.as_str())
-            .unwrap_or_default()
-            .to_owned();
-        let is_blocked_term = reason == "blocked_term";
-        let automod = event_data.get("automod");
-        let category = automod
-            .and_then(|a| a.get("category"))
-            .and_then(|v| v.as_str())
-            .unwrap_or_default()
-            .to_owned();
-        let level = automod
-            .and_then(|a| a.get("level"))
-            .and_then(|v| v.as_i64())
-            .unwrap_or(0);
-        let held_at = event_data
-            .get("held_at")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default()
-            .to_owned();
-        let message_text = event_data
-            .get("message")
-            .and_then(|m| m.get("text"))
-            .and_then(|v| v.as_str())
-            .unwrap_or_default()
-            .to_owned();
-        let terms_found = blocked_terms_found(event_data);
+        let user = wire_user(event_data, &USER_KEYS);
+        let reason = wire_text(event_data, automod_fields::REASON);
+        let classification = wire_automod_classification(event_data, &reason);
 
-        debug!(user_id = %user_id, reason = %reason, category = %category, level, "automod hold received");
+        debug!(
+            user_id = %user.id,
+            reason = %reason,
+            category = %classification.category,
+            level = classification.level,
+            "automod hold received"
+        );
 
-        self.config.bus.publish(Event::new(
-            EventSource::Twitch,
-            event_kinds::AUTOMOD_MESSAGE_HOLD,
-            serde_json::json!({
-                (automod_fields::AUTOMOD): {
-                    (automod_fields::MESSAGE_ID): message_id,
-                    (automod_fields::CATEGORY): if is_blocked_term { serde_json::Value::Null } else { serde_json::Value::String(category) },
-                    (automod_fields::LEVEL): if is_blocked_term { serde_json::Value::Null } else { serde_json::Value::from(level) },
-                    (automod_fields::HELD_AT): held_at,
-                },
-                (automod_fields::REASON): reason,
-                (automod_fields::BLOCKED_TERM): if is_blocked_term {
-                    serde_json::json!({ (automod_fields::TERMS_FOUND): terms_found })
-                } else {
-                    serde_json::Value::Null
-                },
-                (automod_fields::USER): {
-                    (automod_fields::USER_ID): user_id,
-                    (automod_fields::USER_LOGIN): user_login,
-                    (automod_fields::USER_DISPLAY_NAME): user_name,
-                },
-                (automod_fields::MESSAGE_TEXT): message_text,
-            }),
-        ));
+        self.publish_typed(AutomodMessageHeld {
+            automod: HeldMessage {
+                message_id: wire_text(event_data, "message_id"),
+                category: classification.category_unless_blocked_term(),
+                level: classification.level_unless_blocked_term(),
+                held_at: wire_text(event_data, "held_at"),
+            },
+            reason,
+            blocked_term: classification.blocked_term_match(),
+            user,
+            message_text: wire_text(wire_child(event_data, "message"), "text"),
+        });
     }
 
     pub(super) fn publish_chat_settings_update_event(
@@ -2999,53 +1498,32 @@ impl ChatSession {
         event_data: &serde_json::Value,
         _frame_msg_id: &str,
     ) {
-        let emote_mode = event_data
-            .get("emote_mode")
-            .and_then(|v| v.as_bool())
-            .unwrap_or(false);
-        let follower_mode = event_data
-            .get("follower_mode")
-            .and_then(|v| v.as_bool())
-            .unwrap_or(false);
-        let follower_mode_duration_minutes = event_data
-            .get("follower_mode_duration_minutes")
-            .and_then(|v| v.as_i64());
-        let slow_mode = event_data
-            .get("slow_mode")
-            .and_then(|v| v.as_bool())
-            .unwrap_or(false);
-        let slow_mode_wait_time_seconds = event_data
-            .get("slow_mode_wait_time_seconds")
-            .and_then(|v| v.as_i64());
-        let subscriber_mode = event_data
-            .get("subscriber_mode")
-            .and_then(|v| v.as_bool())
-            .unwrap_or(false);
-        let unique_chat_mode = event_data
-            .get("unique_chat_mode")
-            .and_then(|v| v.as_bool())
-            .unwrap_or(false);
+        let settings = ChatSettings {
+            emote_mode: wire_flag(event_data, "emote_mode"),
+            follower_mode: wire_flag(event_data, "follower_mode"),
+            follower_mode_duration_minutes: wire_optional_count(
+                event_data,
+                "follower_mode_duration_minutes",
+            ),
+            slow_mode: wire_flag(event_data, "slow_mode"),
+            slow_mode_wait_time_seconds: wire_optional_count(
+                event_data,
+                "slow_mode_wait_time_seconds",
+            ),
+            subscriber_mode: wire_flag(event_data, "subscriber_mode"),
+            unique_chat_mode: wire_flag(event_data, "unique_chat_mode"),
+        };
 
         debug!(
-            emote_mode,
-            follower_mode, slow_mode, subscriber_mode, unique_chat_mode, "chat settings updated"
+            emote_mode = settings.emote_mode,
+            follower_mode = settings.follower_mode,
+            slow_mode = settings.slow_mode,
+            subscriber_mode = settings.subscriber_mode,
+            unique_chat_mode = settings.unique_chat_mode,
+            "chat settings updated"
         );
 
-        self.config.bus.publish(Event::new(
-            EventSource::Twitch,
-            event_kinds::CHANNEL_CHAT_SETTINGS_UPDATE,
-            serde_json::json!({
-                (chat_mod_fields::SETTINGS): {
-                    (chat_mod_fields::EMOTE_MODE): emote_mode,
-                    (chat_mod_fields::FOLLOWER_MODE): follower_mode,
-                    (chat_mod_fields::FOLLOWER_MODE_DURATION_MINUTES): follower_mode_duration_minutes,
-                    (chat_mod_fields::SLOW_MODE): slow_mode,
-                    (chat_mod_fields::SLOW_MODE_WAIT_TIME_SECONDS): slow_mode_wait_time_seconds,
-                    (chat_mod_fields::SUBSCRIBER_MODE): subscriber_mode,
-                    (chat_mod_fields::UNIQUE_CHAT_MODE): unique_chat_mode,
-                },
-            }),
-        ));
+        self.publish_typed(ChatSettingsUpdated { settings });
     }
 
     pub(super) fn publish_guest_star_session_begin_event(
@@ -3053,29 +1531,14 @@ impl ChatSession {
         event_data: &serde_json::Value,
         _frame_msg_id: &str,
     ) {
-        let session_id = event_data
-            .get("session_id")
-            .and_then(|v| v.as_str())
-            .unwrap_or("")
-            .to_owned();
-        let started_at = event_data
-            .get("started_at")
-            .and_then(|v| v.as_str())
-            .unwrap_or("")
-            .to_owned();
+        let session = GuestStarSessionOpening {
+            id: wire_text(event_data, "session_id"),
+            started_at: wire_text(event_data, "started_at"),
+        };
 
-        debug!(session_id = %session_id, "guest star session began");
+        debug!(session_id = %session.id, "guest star session began");
 
-        self.config.bus.publish(Event::new(
-            EventSource::Twitch,
-            event_kinds::CHANNEL_GUEST_STAR_SESSION_BEGIN,
-            serde_json::json!({
-                (guest_star_fields::SESSION): {
-                    (guest_star_fields::SESSION_ID): session_id,
-                    (guest_star_fields::SESSION_STARTED_AT): started_at,
-                },
-            }),
-        ));
+        self.publish_typed(GuestStarSessionBegan { session });
     }
 
     pub(super) fn publish_guest_star_session_end_event(
@@ -3083,35 +1546,15 @@ impl ChatSession {
         event_data: &serde_json::Value,
         _frame_msg_id: &str,
     ) {
-        let session_id = event_data
-            .get("session_id")
-            .and_then(|v| v.as_str())
-            .unwrap_or("")
-            .to_owned();
-        let started_at = event_data
-            .get("started_at")
-            .and_then(|v| v.as_str())
-            .unwrap_or("")
-            .to_owned();
-        let ended_at = event_data
-            .get("ended_at")
-            .and_then(|v| v.as_str())
-            .unwrap_or("")
-            .to_owned();
+        let session = GuestStarSessionSpan {
+            id: wire_text(event_data, "session_id"),
+            started_at: wire_text(event_data, "started_at"),
+            ended_at: wire_text(event_data, "ended_at"),
+        };
 
-        debug!(session_id = %session_id, "guest star session ended");
+        debug!(session_id = %session.id, "guest star session ended");
 
-        self.config.bus.publish(Event::new(
-            EventSource::Twitch,
-            event_kinds::CHANNEL_GUEST_STAR_SESSION_END,
-            serde_json::json!({
-                (guest_star_fields::SESSION): {
-                    (guest_star_fields::SESSION_ID): session_id,
-                    (guest_star_fields::SESSION_STARTED_AT): started_at,
-                    (guest_star_fields::SESSION_ENDED_AT): ended_at,
-                },
-            }),
-        ));
+        self.publish_typed(GuestStarSessionEnded { session });
     }
 
     pub(super) fn publish_guest_star_settings_event(
@@ -3119,38 +1562,19 @@ impl ChatSession {
         event_data: &serde_json::Value,
         _frame_msg_id: &str,
     ) {
-        let slot_count = event_data
-            .get("slot_count")
-            .and_then(|v| v.as_i64())
-            .unwrap_or(0);
-        let group_layout = event_data
-            .get("group_layout")
-            .and_then(|v| v.as_str())
-            .unwrap_or("")
-            .to_owned();
-        let is_moderator_send_live_enabled = event_data
-            .get("is_moderator_send_live_enabled")
-            .and_then(|v| v.as_bool())
-            .unwrap_or(false);
-        let is_browser_source_audio_enabled = event_data
-            .get("is_browser_source_audio_enabled")
-            .and_then(|v| v.as_bool())
-            .unwrap_or(false);
+        let settings = GuestStarSettings {
+            slot_count: wire_count(event_data, "slot_count"),
+            group_layout: wire_text(event_data, "group_layout"),
+            is_moderator_send_live_enabled: wire_flag(event_data, "is_moderator_send_live_enabled"),
+            is_browser_source_audio_enabled: wire_flag(
+                event_data,
+                "is_browser_source_audio_enabled",
+            ),
+        };
 
-        debug!(slot_count, group_layout = %group_layout, "guest star settings updated");
+        debug!(slot_count = settings.slot_count, group_layout = %settings.group_layout, "guest star settings updated");
 
-        self.config.bus.publish(Event::new(
-            EventSource::Twitch,
-            event_kinds::CHANNEL_GUEST_STAR_SETTINGS_UPDATE,
-            serde_json::json!({
-                (guest_star_fields::SETTINGS): {
-                    (guest_star_fields::SLOT_COUNT): slot_count,
-                    (guest_star_fields::GROUP_LAYOUT): group_layout,
-                    (guest_star_fields::IS_MODERATOR_SEND_LIVE_ENABLED): is_moderator_send_live_enabled,
-                    (guest_star_fields::IS_BROWSER_SOURCE_AUDIO_ENABLED): is_browser_source_audio_enabled,
-                },
-            }),
-        ));
+        self.publish_typed(GuestStarSettingsUpdated { settings });
     }
 
     pub(super) fn publish_guest_star_guest_update_event(
@@ -3158,79 +1582,32 @@ impl ChatSession {
         event_data: &serde_json::Value,
         _frame_msg_id: &str,
     ) {
-        let session_id = event_data
-            .get("session_id")
-            .and_then(|v| v.as_str())
-            .unwrap_or("")
-            .to_owned();
-        let slot_id = event_data
-            .get("slot_id")
-            .and_then(|v| v.as_str())
-            .unwrap_or("")
-            .to_owned();
-        let state = event_data
-            .get("state")
-            .and_then(|v| v.as_str())
-            .unwrap_or("")
-            .to_owned();
-        let guest_user_id = event_data
-            .get("guest_user_id")
-            .and_then(|v| v.as_str())
-            .unwrap_or("")
-            .to_owned();
-        let guest_user_login = event_data
-            .get("guest_user_login")
-            .and_then(|v| v.as_str())
-            .unwrap_or("")
-            .to_owned();
-        let guest_user_name = event_data
-            .get("guest_user_name")
-            .and_then(|v| v.as_str())
-            .unwrap_or("")
-            .to_owned();
-        let host_video_enabled = event_data
-            .get("host_video_enabled")
-            .and_then(|v| v.as_bool())
-            .unwrap_or(false);
-        let host_audio_enabled = event_data
-            .get("host_audio_enabled")
-            .and_then(|v| v.as_bool())
-            .unwrap_or(false);
-        let host_volume = event_data
-            .get("host_volume")
-            .and_then(|v| v.as_i64())
-            .unwrap_or(0);
+        let session_id = wire_text(event_data, "session_id");
+        let state = wire_text(event_data, "state");
+        let guest = GuestStarGuest {
+            id: wire_non_empty(event_data, "guest_user_id").map(str::to_owned),
+            login: wire_non_empty(event_data, "guest_user_login").map(str::to_owned),
+            display_name: wire_non_empty(event_data, "guest_user_name").map(str::to_owned),
+        };
 
         debug!(
             session_id = %session_id,
-            guest_user_id = %guest_user_id,
+            guest_user_id = %guest.id.as_deref().unwrap_or_default(),
             state = %state,
             "guest star guest update"
         );
 
-        let guest_user_id = (!guest_user_id.is_empty()).then_some(guest_user_id);
-        let guest_user_login = (!guest_user_login.is_empty()).then_some(guest_user_login);
-        let guest_user_name = (!guest_user_name.is_empty()).then_some(guest_user_name);
-
-        self.config.bus.publish(Event::new(
-            EventSource::Twitch,
-            event_kinds::CHANNEL_GUEST_STAR_GUEST_UPDATE,
-            serde_json::json!({
-                (guest_star_fields::SESSION_ID_FIELD): session_id,
-                (guest_star_fields::SLOT_ID_FIELD): slot_id,
-                (guest_star_fields::STATE): state,
-                (guest_star_fields::GUEST): {
-                    (guest_star_fields::GUEST_ID): guest_user_id,
-                    (guest_star_fields::GUEST_LOGIN): guest_user_login,
-                    (guest_star_fields::GUEST_DISPLAY_NAME): guest_user_name,
-                },
-                (guest_star_fields::HOST): {
-                    (guest_star_fields::HOST_VIDEO_ENABLED): host_video_enabled,
-                    (guest_star_fields::HOST_AUDIO_ENABLED): host_audio_enabled,
-                    (guest_star_fields::HOST_VOLUME): host_volume,
-                },
-            }),
-        ));
+        self.publish_typed(GuestStarGuestUpdated {
+            session_id,
+            slot_id: wire_text(event_data, "slot_id"),
+            state,
+            guest,
+            host: GuestStarHost {
+                video_enabled: wire_flag(event_data, "host_video_enabled"),
+                audio_enabled: wire_flag(event_data, "host_audio_enabled"),
+                volume: wire_count(event_data, "host_volume"),
+            },
+        });
     }
 
     pub(super) fn publish_automod_settings_update_event(
@@ -3238,37 +1615,14 @@ impl ChatSession {
         event_data: &serde_json::Value,
         _frame_msg_id: &str,
     ) {
-        let moderator_id = event_data
-            .get("moderator_user_id")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default()
-            .to_owned();
-        let moderator_login = event_data
-            .get("moderator_user_login")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default()
-            .to_owned();
-        let moderator_name = event_data
-            .get("moderator_user_name")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default()
-            .to_owned();
-        let overall_level = event_data.get("overall_level").and_then(|v| v.as_i64());
+        let moderator = wire_user(event_data, &MODERATOR_KEYS);
 
-        debug!(moderator_id = %moderator_id, "automod settings updated");
+        debug!(moderator_id = %moderator.id, "automod settings updated");
 
-        self.config.bus.publish(Event::new(
-            EventSource::Twitch,
-            event_kinds::AUTOMOD_SETTINGS_UPDATE,
-            serde_json::json!({
-                (automod_fields::MODERATOR): {
-                    (automod_fields::MODERATOR_ID): moderator_id,
-                    (automod_fields::MODERATOR_LOGIN): moderator_login,
-                    (automod_fields::MODERATOR_DISPLAY_NAME): moderator_name,
-                },
-                (automod_fields::OVERALL_LEVEL): overall_level,
-            }),
-        ));
+        self.publish_typed(AutomodSettingsUpdated {
+            moderator,
+            overall_level: wire_optional_count(event_data, "overall_level"),
+        });
     }
 
     pub(super) fn publish_automod_terms_update_event(
@@ -3276,47 +1630,16 @@ impl ChatSession {
         event_data: &serde_json::Value,
         _frame_msg_id: &str,
     ) {
-        let moderator_id = event_data
-            .get("moderator_user_id")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default()
-            .to_owned();
-        let moderator_login = event_data
-            .get("moderator_user_login")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default()
-            .to_owned();
-        let moderator_name = event_data
-            .get("moderator_user_name")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default()
-            .to_owned();
-        let action = event_data
-            .get("action")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default()
-            .to_owned();
-        let terms: Vec<serde_json::Value> = event_data
-            .get("terms")
-            .and_then(|v| v.as_array())
-            .cloned()
-            .unwrap_or_default();
+        let moderator = wire_user(event_data, &MODERATOR_KEYS);
+        let action = wire_text(event_data, "action");
 
-        debug!(moderator_id = %moderator_id, action = %action, "automod terms updated");
+        debug!(moderator_id = %moderator.id, action = %action, "automod terms updated");
 
-        self.config.bus.publish(Event::new(
-            EventSource::Twitch,
-            event_kinds::AUTOMOD_TERMS_UPDATE,
-            serde_json::json!({
-                (automod_fields::MODERATOR): {
-                    (automod_fields::MODERATOR_ID): moderator_id,
-                    (automod_fields::MODERATOR_LOGIN): moderator_login,
-                    (automod_fields::MODERATOR_DISPLAY_NAME): moderator_name,
-                },
-                (automod_fields::ACTION): action,
-                (automod_fields::TERMS): terms,
-            }),
-        ));
+        self.publish_typed(AutomodTermsUpdated {
+            moderator,
+            action,
+            terms: wire_list(event_data, "terms"),
+        });
     }
 
     pub(super) fn publish_automod_message_update_event(
@@ -3324,101 +1647,32 @@ impl ChatSession {
         event_data: &serde_json::Value,
         _frame_msg_id: &str,
     ) {
-        let user_id = event_data
-            .get("user_id")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default()
-            .to_owned();
-        let user_login = event_data
-            .get("user_login")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default()
-            .to_owned();
-        let user_name = event_data
-            .get("user_name")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default()
-            .to_owned();
-        let moderator_id = event_data
-            .get("moderator_user_id")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default()
-            .to_owned();
-        let moderator_login = event_data
-            .get("moderator_user_login")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default()
-            .to_owned();
-        let moderator_name = event_data
-            .get("moderator_user_name")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default()
-            .to_owned();
-        let message_id = event_data
-            .get("message_id")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default()
-            .to_owned();
-        let message_text = event_data
-            .get("message")
-            .and_then(|m| m.get("text"))
-            .and_then(|v| v.as_str())
-            .unwrap_or_default()
-            .to_owned();
-        let status = event_data
-            .get("status")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default()
-            .to_owned();
-        let reason = event_data
-            .get(automod_fields::REASON)
-            .and_then(|v| v.as_str())
-            .unwrap_or_default()
-            .to_owned();
-        let is_blocked_term = reason == "blocked_term";
-        let automod = event_data.get("automod");
-        let category = automod
-            .and_then(|a| a.get("category"))
-            .and_then(|v| v.as_str())
-            .unwrap_or_default()
-            .to_owned();
-        let level = automod
-            .and_then(|a| a.get("level"))
-            .and_then(|v| v.as_i64())
-            .unwrap_or(0);
-        let terms_found = blocked_terms_found(event_data);
+        let user = wire_user(event_data, &USER_KEYS);
+        let status = wire_text(event_data, "status");
+        let reason = wire_text(event_data, automod_fields::REASON);
+        let classification = wire_automod_classification(event_data, &reason);
 
-        debug!(user_id = %user_id, status = %status, reason = %reason, category = %category, "automod message updated");
+        debug!(
+            user_id = %user.id,
+            status = %status,
+            reason = %reason,
+            category = %classification.category,
+            "automod message updated"
+        );
 
-        self.config.bus.publish(Event::new(
-            EventSource::Twitch,
-            event_kinds::AUTOMOD_MESSAGE_UPDATE,
-            serde_json::json!({
-                (automod_fields::AUTOMOD): {
-                    (automod_fields::MESSAGE_ID): message_id,
-                    (automod_fields::STATUS): status,
-                    (automod_fields::CATEGORY): if is_blocked_term { serde_json::Value::Null } else { serde_json::Value::String(category) },
-                    (automod_fields::LEVEL): if is_blocked_term { serde_json::Value::Null } else { serde_json::Value::from(level) },
-                },
-                (automod_fields::REASON): reason,
-                (automod_fields::BLOCKED_TERM): if is_blocked_term {
-                    serde_json::json!({ (automod_fields::TERMS_FOUND): terms_found })
-                } else {
-                    serde_json::Value::Null
-                },
-                (automod_fields::USER): {
-                    (automod_fields::USER_ID): user_id,
-                    (automod_fields::USER_LOGIN): user_login,
-                    (automod_fields::USER_DISPLAY_NAME): user_name,
-                },
-                (automod_fields::MODERATOR): {
-                    (automod_fields::MODERATOR_ID): moderator_id,
-                    (automod_fields::MODERATOR_LOGIN): moderator_login,
-                    (automod_fields::MODERATOR_DISPLAY_NAME): moderator_name,
-                },
-                (automod_fields::MESSAGE_TEXT): message_text,
-            }),
-        ));
+        self.publish_typed(AutomodMessageUpdated {
+            automod: ReviewedMessage {
+                message_id: wire_text(event_data, "message_id"),
+                status,
+                category: classification.category_unless_blocked_term(),
+                level: classification.level_unless_blocked_term(),
+            },
+            reason,
+            blocked_term: classification.blocked_term_match(),
+            user,
+            moderator: wire_user(event_data, &MODERATOR_KEYS),
+            message_text: wire_text(wire_child(event_data, "message"), "text"),
+        });
     }
 
     pub(super) fn publish_shared_chat_begin_event(
@@ -3426,41 +1680,11 @@ impl ChatSession {
         event_data: &serde_json::Value,
         _frame_msg_id: &str,
     ) {
-        let session_id = event_data
-            .get("session_id")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default()
-            .to_owned();
-        let host_id = event_data
-            .get("host_broadcaster_user_id")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default()
-            .to_owned();
-        let host_login = event_data
-            .get("host_broadcaster_user_login")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default()
-            .to_owned();
-        let host_name = event_data
-            .get("host_broadcaster_user_name")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default()
-            .to_owned();
+        let state = wire_shared_chat(event_data);
 
-        debug!(session_id = %session_id, host_id = %host_id, "shared chat session began");
+        debug!(session_id = %state.shared_chat.session_id, host_id = %state.host.id, "shared chat session began");
 
-        self.config.bus.publish(Event::new(
-            EventSource::Twitch,
-            event_kinds::CHANNEL_SHARED_CHAT_BEGIN,
-            serde_json::json!({
-                (shared_chat_fields::SHARED_CHAT): { (shared_chat_fields::SESSION_ID): session_id },
-                (shared_chat_fields::HOST): {
-                    (shared_chat_fields::HOST_ID): host_id,
-                    (shared_chat_fields::HOST_LOGIN): host_login,
-                    (shared_chat_fields::HOST_DISPLAY_NAME): host_name,
-                },
-            }),
-        ));
+        self.publish_typed(SharedChatBegan(state));
     }
 
     pub(super) fn publish_shared_chat_update_event(
@@ -3468,41 +1692,11 @@ impl ChatSession {
         event_data: &serde_json::Value,
         _frame_msg_id: &str,
     ) {
-        let session_id = event_data
-            .get("session_id")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default()
-            .to_owned();
-        let host_id = event_data
-            .get("host_broadcaster_user_id")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default()
-            .to_owned();
-        let host_login = event_data
-            .get("host_broadcaster_user_login")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default()
-            .to_owned();
-        let host_name = event_data
-            .get("host_broadcaster_user_name")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default()
-            .to_owned();
+        let state = wire_shared_chat(event_data);
 
-        debug!(session_id = %session_id, host_id = %host_id, "shared chat session updated");
+        debug!(session_id = %state.shared_chat.session_id, host_id = %state.host.id, "shared chat session updated");
 
-        self.config.bus.publish(Event::new(
-            EventSource::Twitch,
-            event_kinds::CHANNEL_SHARED_CHAT_UPDATE,
-            serde_json::json!({
-                (shared_chat_fields::SHARED_CHAT): { (shared_chat_fields::SESSION_ID): session_id },
-                (shared_chat_fields::HOST): {
-                    (shared_chat_fields::HOST_ID): host_id,
-                    (shared_chat_fields::HOST_LOGIN): host_login,
-                    (shared_chat_fields::HOST_DISPLAY_NAME): host_name,
-                },
-            }),
-        ));
+        self.publish_typed(SharedChatUpdated(state));
     }
 
     pub(super) fn publish_shared_chat_end_event(
@@ -3510,41 +1704,11 @@ impl ChatSession {
         event_data: &serde_json::Value,
         _frame_msg_id: &str,
     ) {
-        let session_id = event_data
-            .get("session_id")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default()
-            .to_owned();
-        let host_id = event_data
-            .get("host_broadcaster_user_id")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default()
-            .to_owned();
-        let host_login = event_data
-            .get("host_broadcaster_user_login")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default()
-            .to_owned();
-        let host_name = event_data
-            .get("host_broadcaster_user_name")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default()
-            .to_owned();
+        let state = wire_shared_chat(event_data);
 
-        debug!(session_id = %session_id, host_id = %host_id, "shared chat session ended");
+        debug!(session_id = %state.shared_chat.session_id, host_id = %state.host.id, "shared chat session ended");
 
-        self.config.bus.publish(Event::new(
-            EventSource::Twitch,
-            event_kinds::CHANNEL_SHARED_CHAT_END,
-            serde_json::json!({
-                (shared_chat_fields::SHARED_CHAT): { (shared_chat_fields::SESSION_ID): session_id },
-                (shared_chat_fields::HOST): {
-                    (shared_chat_fields::HOST_ID): host_id,
-                    (shared_chat_fields::HOST_LOGIN): host_login,
-                    (shared_chat_fields::HOST_DISPLAY_NAME): host_name,
-                },
-            }),
-        ));
+        self.publish_typed(SharedChatEnded(state));
     }
 
     pub(super) fn publish_channel_update_event(
@@ -3552,41 +1716,16 @@ impl ChatSession {
         event_data: &serde_json::Value,
         _frame_msg_id: &str,
     ) {
-        let title = event_data
-            .get("title")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default()
-            .to_owned();
-        let language = event_data
-            .get("language")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default()
-            .to_owned();
-        let category_id = event_data
-            .get("category_id")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default()
-            .to_owned();
-        let category_name = event_data
-            .get("category_name")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default()
-            .to_owned();
+        let channel = ChannelInfo {
+            title: wire_text(event_data, "title"),
+            language: wire_text(event_data, "language"),
+            category_id: wire_text(event_data, "category_id"),
+            category_name: wire_text(event_data, "category_name"),
+        };
 
-        debug!(category_id = %category_id, "channel update event received");
+        debug!(category_id = %channel.category_id, "channel update event received");
 
-        self.config.bus.publish(Event::new(
-            EventSource::Twitch,
-            event_kinds::CHANNEL_UPDATE,
-            serde_json::json!({
-                (channel_update_fields::CHANNEL): {
-                    (channel_update_fields::TITLE): title,
-                    (channel_update_fields::LANGUAGE): language,
-                    (channel_update_fields::CATEGORY_ID): category_id,
-                    (channel_update_fields::CATEGORY_NAME): category_name,
-                },
-            }),
-        ));
+        self.publish_typed(ChannelUpdated { channel });
     }
 
     pub(super) fn publish_ad_break_begin_event(
@@ -3594,56 +1733,22 @@ impl ChatSession {
         event_data: &serde_json::Value,
         _frame_msg_id: &str,
     ) {
-        let duration_seconds = event_data
-            .get("duration_seconds")
-            .and_then(|v| v.as_i64())
-            .unwrap_or(0);
-        let started_at = event_data
-            .get("started_at")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default()
-            .to_owned();
-        let is_automatic = event_data
-            .get("is_automatic")
-            .and_then(|v| v.as_bool())
-            .unwrap_or(false);
-        let requester_login = event_data
-            .get("requester_user_login")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default()
-            .to_owned();
-        let requester_id = event_data
-            .get("requester_user_id")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default()
-            .to_owned();
-        let requester_name = event_data
-            .get("requester_user_name")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default()
-            .to_owned();
+        let ad_break = AdBreak {
+            duration_seconds: wire_count(event_data, "duration_seconds"),
+            is_automatic: wire_flag(event_data, "is_automatic"),
+            started_at: wire_text(event_data, "started_at"),
+        };
 
         debug!(
-            duration_seconds,
-            is_automatic, "ad break begin event received"
+            duration_seconds = ad_break.duration_seconds,
+            is_automatic = ad_break.is_automatic,
+            "ad break begin event received"
         );
 
-        self.config.bus.publish(Event::new(
-            EventSource::Twitch,
-            event_kinds::CHANNEL_AD_BREAK_BEGIN,
-            serde_json::json!({
-                (ad_break_fields::AD_BREAK): {
-                    (ad_break_fields::DURATION_SECONDS): duration_seconds,
-                    (ad_break_fields::IS_AUTOMATIC): is_automatic,
-                    (ad_break_fields::STARTED_AT): started_at,
-                },
-                (ad_break_fields::REQUESTER): {
-                    (ad_break_fields::REQUESTER_ID): requester_id,
-                    (ad_break_fields::REQUESTER_LOGIN): requester_login,
-                    (ad_break_fields::REQUESTER_DISPLAY_NAME): requester_name,
-                },
-            }),
-        ));
+        self.publish_typed(AdBreakBegan {
+            ad_break,
+            requester: wire_user(event_data, &REQUESTER_KEYS),
+        });
     }
 
     pub(super) fn publish_automatic_reward_event(
@@ -3651,64 +1756,23 @@ impl ChatSession {
         event_data: &serde_json::Value,
         _frame_msg_id: &str,
     ) {
-        let redemption_id = event_data
-            .get("id")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default()
-            .to_owned();
-        let redeemed_at = event_data
-            .get("redeemed_at")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default()
-            .to_owned();
-        let user_id = event_data
-            .get("user_id")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default()
-            .to_owned();
-        let user_login = event_data
-            .get("user_login")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default()
-            .to_owned();
-        let user_name = event_data
-            .get("user_name")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default()
-            .to_owned();
-        let reward_type = event_data
-            .get("reward")
-            .and_then(|r| r.get("type"))
-            .and_then(|v| v.as_str())
-            .unwrap_or_default()
-            .to_owned();
-        let reward_cost = event_data
-            .get("reward")
-            .and_then(|r| r.get("cost"))
-            .and_then(|v| v.as_i64())
-            .unwrap_or(0);
+        let user = wire_user(event_data, &USER_KEYS);
+        let reward = wire_child(event_data, "reward");
+        let reward = AutomaticReward {
+            reward_type: wire_text(reward, "type"),
+            cost: wire_count(reward, "cost"),
+        };
 
-        debug!(user_id = %user_id, reward_type = %reward_type, "automatic channel point reward redeemed");
+        debug!(user_id = %user.id, reward_type = %reward.reward_type, "automatic channel point reward redeemed");
 
-        self.config.bus.publish(Event::new(
-            EventSource::Twitch,
-            event_kinds::CHANNEL_CHANNEL_POINTS_AUTOMATIC_REWARD_REDEMPTION_ADD,
-            serde_json::json!({
-                (automatic_reward_fields::REDEMPTION): {
-                    (automatic_reward_fields::REDEMPTION_ID): redemption_id,
-                    (automatic_reward_fields::REDEEMED_AT): redeemed_at,
-                },
-                (automatic_reward_fields::USER): {
-                    (automatic_reward_fields::USER_ID): user_id,
-                    (automatic_reward_fields::USER_LOGIN): user_login,
-                    (automatic_reward_fields::USER_DISPLAY_NAME): user_name,
-                },
-                (automatic_reward_fields::REWARD): {
-                    (automatic_reward_fields::REWARD_TYPE): reward_type,
-                    (automatic_reward_fields::REWARD_COST): reward_cost,
-                },
-            }),
-        ));
+        self.publish_typed(AutomaticRewardRedeemed {
+            redemption: AutomaticRedemption {
+                id: wire_text(event_data, "id"),
+                redeemed_at: wire_text(event_data, "redeemed_at"),
+            },
+            user,
+            reward,
+        });
     }
 
     pub(super) fn publish_whisper_event(
@@ -3716,51 +1780,22 @@ impl ChatSession {
         event_data: &serde_json::Value,
         _frame_msg_id: &str,
     ) {
-        let from_user_id = event_data
-            .get("from_user_id")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default()
-            .to_owned();
-        let from_user_login = event_data
-            .get("from_user_login")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default()
-            .to_owned();
-        let from_user_name = event_data
-            .get("from_user_name")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default()
-            .to_owned();
-        let whisper_id = event_data
-            .get("whisper_id")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default()
-            .to_owned();
-        let whisper_text = event_data
-            .get("whisper")
-            .and_then(|w| w.get("text"))
-            .and_then(|v| v.as_str())
-            .unwrap_or_default()
-            .to_owned();
+        let sender = wire_user(event_data, &WHISPER_SENDER_KEYS);
 
-        debug!(from_user_id = %from_user_id, "whisper received");
+        debug!(from_user_id = %sender.id, "whisper received");
 
-        self.config.bus.publish(Event::new(
-            EventSource::Twitch,
-            event_kinds::USER_WHISPER_MESSAGE,
-            serde_json::json!({
-                (whisper_fields::USER): {
-                    (whisper_fields::USER_ID): from_user_id,
-                    (whisper_fields::USER_LOGIN): from_user_login,
-                    (whisper_fields::USER_DISPLAY_NAME): from_user_name,
-                    (whisper_fields::USER_COLOR): null,
-                },
-                (whisper_fields::WHISPER): {
-                    (whisper_fields::WHISPER_TEXT): whisper_text,
-                },
-                (whisper_fields::WHISPER_THREAD_ID): whisper_id,
-            }),
-        ));
+        self.publish_typed(WhisperReceived {
+            user: WhisperSender {
+                id: sender.id,
+                login: sender.login,
+                display_name: sender.display_name,
+                color: None,
+            },
+            whisper: WhisperBody {
+                text: wire_text(wire_child(event_data, "whisper"), "text"),
+            },
+            whisper_thread_id: wire_text(event_data, "whisper_id"),
+        });
     }
 
     pub(super) fn publish_user_update_event(
@@ -3768,41 +1803,34 @@ impl ChatSession {
         event_data: &serde_json::Value,
         _frame_msg_id: &str,
     ) {
-        let user_id = event_data
-            .get("user_id")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default()
-            .to_owned();
-        let user_login = event_data
-            .get("user_login")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default()
-            .to_owned();
-        let user_name = event_data
-            .get("user_name")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default()
-            .to_owned();
-        let description = event_data
-            .get("description")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default()
-            .to_owned();
+        let user = wire_user(event_data, &USER_KEYS);
 
-        debug!(user_id = %user_id, "user profile updated");
+        debug!(user_id = %user.id, "user profile updated");
 
-        self.config.bus.publish(Event::new(
-            EventSource::Twitch,
-            event_kinds::USER_UPDATE,
-            serde_json::json!({
-                (user_fields::USER): {
-                    (user_fields::USER_ID): user_id,
-                    (user_fields::USER_LOGIN): user_login,
-                    (user_fields::USER_DISPLAY_NAME): user_name,
-                    (user_fields::USER_DESCRIPTION): description,
-                },
-            }),
-        ));
+        self.publish_typed(UserUpdated {
+            user: UpdatedUser {
+                id: user.id,
+                login: user.login,
+                display_name: user.display_name,
+                description: wire_text(event_data, "description"),
+            },
+        });
+    }
+
+    fn publish_typed(&self, payload: impl TypedEvent) {
+        payload.publish(self.config.bus.as_ref(), EventSource::Twitch, None);
+    }
+
+    fn publish_with_chat(&self, payload: impl TypedEvent, chat: ChatPayload) {
+        let mut event = twitch_event(payload);
+        attach_chat_payload(&mut event.payload, chat);
+        self.config.bus.publish(event);
+    }
+
+    fn publish_with_moderation(&self, payload: impl TypedEvent, action: ChatModerationAction) {
+        let mut event = twitch_event(payload);
+        attach_moderation_payload(&mut event.payload, action);
+        self.config.bus.publish(event);
     }
 
     fn set_state(&self, state: ChatConnectionState) {
@@ -3826,78 +1854,230 @@ impl ChatSession {
     }
 }
 
-fn build_charity_lifecycle_payload(event_data: &serde_json::Value) -> serde_json::Value {
-    let campaign_id = event_data
-        .get("id")
-        .and_then(|v| v.as_str())
-        .unwrap_or_default()
-        .to_owned();
-    let charity_name = event_data
-        .get("charity_name")
-        .and_then(|v| v.as_str())
-        .unwrap_or_default()
-        .to_owned();
-    let current_obj = event_data.get("current_amount");
-    let current_amount_cents = current_obj
-        .and_then(|a| a.get("value"))
-        .and_then(|v| v.as_i64())
-        .unwrap_or(0);
-    let target_obj = event_data.get("target_amount");
-    let target_amount_cents = target_obj
-        .and_then(|a| a.get("value"))
-        .and_then(|v| v.as_i64())
-        .unwrap_or(0);
-    let currency_code = current_obj
-        .and_then(|a| a.get("currency"))
-        .and_then(|v| v.as_str())
-        .unwrap_or_default()
-        .to_owned();
-
-    serde_json::json!({
-        (charity_fields::CHARITY): {
-            (charity_fields::CHARITY_ID): campaign_id,
-            (charity_fields::CHARITY_NAME): charity_name,
-            (charity_fields::CURRENT_AMOUNT_CENTS): current_amount_cents,
-            (charity_fields::TARGET_AMOUNT_CENTS): target_amount_cents,
-            (charity_fields::CURRENCY_CODE): currency_code,
-        },
-    })
+fn twitch_event(payload: impl TypedEvent) -> Event {
+    payload.into_event(EventSource::Twitch, None)
 }
 
-fn extract_poll_choices(event_data: &serde_json::Value) -> Vec<serde_json::Value> {
+struct WireUserKeys {
+    id: &'static str,
+    login: &'static str,
+    name: &'static str,
+}
+
+const USER_KEYS: WireUserKeys = WireUserKeys {
+    id: "user_id",
+    login: "user_login",
+    name: "user_name",
+};
+
+const MODERATOR_KEYS: WireUserKeys = WireUserKeys {
+    id: "moderator_user_id",
+    login: "moderator_user_login",
+    name: "moderator_user_name",
+};
+
+const TARGET_USER_KEYS: WireUserKeys = WireUserKeys {
+    id: "target_user_id",
+    login: "target_user_login",
+    name: "target_user_name",
+};
+
+const FROM_BROADCASTER_KEYS: WireUserKeys = WireUserKeys {
+    id: "from_broadcaster_user_id",
+    login: "from_broadcaster_user_login",
+    name: "from_broadcaster_user_name",
+};
+
+const TO_BROADCASTER_KEYS: WireUserKeys = WireUserKeys {
+    id: "to_broadcaster_user_id",
+    login: "to_broadcaster_user_login",
+    name: "to_broadcaster_user_name",
+};
+
+const HOST_BROADCASTER_KEYS: WireUserKeys = WireUserKeys {
+    id: "host_broadcaster_user_id",
+    login: "host_broadcaster_user_login",
+    name: "host_broadcaster_user_name",
+};
+
+const REQUESTER_KEYS: WireUserKeys = WireUserKeys {
+    id: "requester_user_id",
+    login: "requester_user_login",
+    name: "requester_user_name",
+};
+
+const WHISPER_SENDER_KEYS: WireUserKeys = WireUserKeys {
+    id: "from_user_id",
+    login: "from_user_login",
+    name: "from_user_name",
+};
+
+const BLOCKED_TERM_REASON: &str = "blocked_term";
+
+static WIRE_ABSENT: serde_json::Value = serde_json::Value::Null;
+
+fn wire_child<'a>(data: &'a serde_json::Value, key: &str) -> &'a serde_json::Value {
+    data.get(key).unwrap_or(&WIRE_ABSENT)
+}
+
+fn wire_text(data: &serde_json::Value, key: &str) -> String {
+    data.get(key)
+        .and_then(serde_json::Value::as_str)
+        .unwrap_or_default()
+        .to_owned()
+}
+
+fn wire_non_empty<'a>(data: &'a serde_json::Value, key: &str) -> Option<&'a str> {
+    data.get(key)
+        .and_then(serde_json::Value::as_str)
+        .filter(|s| !s.is_empty())
+}
+
+fn wire_count(data: &serde_json::Value, key: &str) -> i64 {
+    wire_optional_count(data, key).unwrap_or_default()
+}
+
+fn wire_optional_count(data: &serde_json::Value, key: &str) -> Option<i64> {
+    data.get(key).and_then(serde_json::Value::as_i64)
+}
+
+fn wire_flag(data: &serde_json::Value, key: &str) -> bool {
+    data.get(key)
+        .and_then(serde_json::Value::as_bool)
+        .unwrap_or_default()
+}
+
+fn wire_list(data: &serde_json::Value, key: &str) -> Vec<serde_json::Value> {
+    data.get(key)
+        .and_then(serde_json::Value::as_array)
+        .cloned()
+        .unwrap_or_default()
+}
+
+fn wire_user(data: &serde_json::Value, keys: &WireUserKeys) -> TwitchUser {
+    TwitchUser {
+        id: wire_text(data, keys.id),
+        login: wire_text(data, keys.login),
+        display_name: wire_text(data, keys.name),
+    }
+}
+
+fn wire_broadcaster(data: &serde_json::Value) -> TwitchBroadcaster {
+    TwitchBroadcaster {
+        id: wire_text(data, "broadcaster_user_id"),
+        login: wire_text(data, "broadcaster_user_login"),
+    }
+}
+
+fn wire_redemption(event_data: &serde_json::Value) -> Redemption {
+    Redemption {
+        id: wire_text(event_data, "id"),
+        status: wire_text(event_data, "status"),
+        user_input: wire_text(event_data, "user_input"),
+        redeemed_at: wire_text(event_data, "redeemed_at"),
+    }
+}
+
+fn wire_custom_reward(event_data: &serde_json::Value) -> CustomRewardState {
+    CustomRewardState {
+        reward: CustomReward {
+            id: wire_text(event_data, "id"),
+            title: wire_text(event_data, "title"),
+            cost: wire_count(event_data, "cost"),
+            prompt: wire_text(event_data, "prompt"),
+            is_enabled: wire_flag(event_data, "is_enabled"),
+        },
+    }
+}
+
+fn wire_shared_chat(event_data: &serde_json::Value) -> SharedChatState {
+    SharedChatState {
+        shared_chat: SharedChatSession {
+            session_id: wire_text(event_data, "session_id"),
+        },
+        host: wire_user(event_data, &HOST_BROADCASTER_KEYS),
+    }
+}
+
+fn wire_charity_campaign(event_data: &serde_json::Value) -> CharityCampaignState {
+    let current = wire_child(event_data, "current_amount");
+    CharityCampaignState {
+        charity: CharityCampaignTotals {
+            id: wire_text(event_data, "id"),
+            name: wire_text(event_data, "charity_name"),
+            current_amount_cents: wire_count(current, "value"),
+            target_amount_cents: wire_count(wire_child(event_data, "target_amount"), "value"),
+            currency_code: wire_text(current, "currency"),
+        },
+    }
+}
+
+struct AutomodClassification {
+    category: String,
+    level: i64,
+    is_blocked_term: bool,
+    terms_found: Vec<String>,
+}
+
+impl AutomodClassification {
+    fn category_unless_blocked_term(&self) -> Option<String> {
+        (!self.is_blocked_term).then(|| self.category.clone())
+    }
+
+    fn level_unless_blocked_term(&self) -> Option<i64> {
+        (!self.is_blocked_term).then_some(self.level)
+    }
+
+    fn blocked_term_match(&self) -> Option<BlockedTermMatch> {
+        self.is_blocked_term.then(|| BlockedTermMatch {
+            terms_found: self.terms_found.clone(),
+        })
+    }
+}
+
+fn wire_automod_classification(
+    event_data: &serde_json::Value,
+    reason: &str,
+) -> AutomodClassification {
+    let automod = wire_child(event_data, "automod");
+    AutomodClassification {
+        category: wire_text(automod, "category"),
+        level: wire_count(automod, "level"),
+        is_blocked_term: reason == BLOCKED_TERM_REASON,
+        terms_found: blocked_terms_found(event_data),
+    }
+}
+
+fn extract_poll_choices(event_data: &serde_json::Value) -> Vec<PollChoice> {
     event_data
         .get("choices")
-        .and_then(|v| v.as_array())
+        .and_then(serde_json::Value::as_array)
         .map(|choices| {
             choices
                 .iter()
-                .map(|choice| {
-                    serde_json::json!({
-                        (poll_fields::CHOICE_ID): choice.get("id").and_then(|v| v.as_str()).unwrap_or_default(),
-                        (poll_fields::CHOICE_TITLE): choice.get("title").and_then(|v| v.as_str()).unwrap_or_default(),
-                        (poll_fields::CHOICE_VOTES): choice.get("votes").and_then(|v| v.as_i64()),
-                    })
+                .map(|choice| PollChoice {
+                    id: wire_text(choice, "id"),
+                    title: wire_text(choice, "title"),
+                    votes: wire_optional_count(choice, "votes"),
                 })
                 .collect()
         })
         .unwrap_or_default()
 }
 
-fn extract_prediction_outcomes(event_data: &serde_json::Value) -> Vec<serde_json::Value> {
+fn extract_prediction_outcomes(event_data: &serde_json::Value) -> Vec<PredictionOutcome> {
     event_data
         .get("outcomes")
-        .and_then(|v| v.as_array())
+        .and_then(serde_json::Value::as_array)
         .map(|outcomes| {
             outcomes
                 .iter()
-                .map(|outcome| {
-                    serde_json::json!({
-                        (prediction_fields::OUTCOME_ID): outcome.get("id").and_then(|v| v.as_str()).unwrap_or_default(),
-                        (prediction_fields::OUTCOME_TITLE): outcome.get("title").and_then(|v| v.as_str()).unwrap_or_default(),
-                        (prediction_fields::OUTCOME_COLOR): outcome.get("color").and_then(|v| v.as_str()).unwrap_or_default(),
-                        (prediction_fields::OUTCOME_USERS): outcome.get("users").and_then(|v| v.as_i64()),
-                        (prediction_fields::OUTCOME_CHANNEL_POINTS): outcome.get("channel_points").and_then(|v| v.as_i64()),
-                    })
+                .map(|outcome| PredictionOutcome {
+                    id: wire_text(outcome, "id"),
+                    title: wire_text(outcome, "title"),
+                    color: wire_text(outcome, "color"),
+                    users: wire_optional_count(outcome, "users"),
+                    channel_points: wire_optional_count(outcome, "channel_points"),
                 })
                 .collect()
         })

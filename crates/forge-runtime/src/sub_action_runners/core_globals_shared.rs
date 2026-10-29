@@ -4,10 +4,11 @@ use forge_registry::{
 };
 use forge_types::{ArgStack, SubActionConfig, strip_var_decoration};
 
-pub(super) const NAME_KEY: &str = "name";
+pub const NAME_KEY: &str = "name";
 const KEY_KEY: &str = "key";
 const VARIABLE_NAME_LABEL: &str = "Variable Name";
-const DEFAULT_AMOUNT: i64 = 1;
+pub const DEFAULT_AMOUNT: i64 = 1;
+pub const AMOUNT_KEY: &str = "amount";
 
 pub(super) const GLOBAL_BY_NAME: DynamicSelectField<String> =
     DynamicSelectField::new(NAME_KEY, VARIABLE_NAME_LABEL, GLOBAL_OPTIONS_KEY);
@@ -16,7 +17,7 @@ pub(super) const GLOBAL_BY_KEY: DynamicSelectField<String> =
     DynamicSelectField::new(KEY_KEY, VARIABLE_NAME_LABEL, GLOBAL_OPTIONS_KEY);
 
 pub(super) const AMOUNT: IntegerField = IntegerField {
-    key: "amount",
+    key: AMOUNT_KEY,
     label: "Amount",
     editor: IntegerEditor::Number,
     default: DEFAULT_AMOUNT,

@@ -1,4 +1,4 @@
-use super::field::SubFormField;
+use super::field::{InputFlavor, SubFormField};
 use super::variable_insert::InsertTarget;
 use super::*;
 use crate::async_bridge;
@@ -43,16 +43,12 @@ impl EditSubActionForm {
     ) -> AnyElement {
         let density = cx.density();
         let SubFormField::Input {
-            key,
-            browse,
-            datetime,
-            input,
-            ..
+            key, flavor, input, ..
         } = field
         else {
             return div().into_any_element();
         };
-        if *browse {
+        if *flavor == InputFlavor::File {
             let target_input = input.clone();
             div()
                 .flex()
@@ -69,7 +65,7 @@ impl EditSubActionForm {
                         ),
                 )
                 .into_any_element()
-        } else if *datetime {
+        } else if *flavor == InputFlavor::DateTime {
             let target_input = input.clone();
             let control = div()
                 .flex()

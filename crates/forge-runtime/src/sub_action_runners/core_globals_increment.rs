@@ -12,6 +12,8 @@ use forge_types::{ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetr
 use super::core_globals_shared::{AMOUNT, GLOBAL_BY_NAME, global_name};
 use crate::global_mutation::GlobalMutation;
 
+pub const GLOBAL_INCREMENT_KIND_ID: &str = "core.globals.increment";
+
 const CONFIG: ConfigSpec = ConfigSpec::new(&[&GLOBAL_BY_NAME, &AMOUNT]);
 
 fn read_config(config: &SubActionConfig, args: &ArgStack) -> Result<(String, i64), ConfigProblem> {
@@ -34,7 +36,7 @@ impl CoreGlobalsIncrementRunner {
 #[async_trait]
 impl SubActionRunner for CoreGlobalsIncrementRunner {
     fn id(&self) -> &str {
-        "core.globals.increment"
+        GLOBAL_INCREMENT_KIND_ID
     }
 
     fn category(&self) -> SubActionCategory {

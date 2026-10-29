@@ -5,13 +5,20 @@ use forge_registry::{CodeKind, CodeLanguage};
 use forge_types::{Variant, normalize_var_name};
 use std::ops::RangeInclusive;
 
+#[derive(Clone, PartialEq, Eq)]
+pub(super) enum InputFlavor {
+    Text,
+    Integer(RangeInclusive<i64>),
+    File,
+    DateTime,
+    VariableName,
+}
+
 pub(super) enum SubFormField {
     Input {
         key: String,
         label: String,
-        integer: Option<RangeInclusive<i64>>,
-        browse: bool,
-        datetime: bool,
+        flavor: InputFlavor,
         gate: Option<String>,
         input: Entity<TextInput>,
         _sub: Option<Subscription>,
@@ -70,13 +77,7 @@ pub(super) struct SelectEntries {
 impl SubFormField {
     pub(super) fn accepts_variables(&self) -> bool {
         match self {
-            Self::Input {
-                key,
-                integer,
-                browse,
-                datetime,
-                ..
-            } => integer.is_none() && !browse && !datetime && !is_var_key(key),
+            Self::Input { flavor, .. } => *flavor == InputFlavor::Text,
             Self::Area { .. }
             | Self::Code {
                 kind: CodeKind::Expression,
@@ -161,20 +162,21 @@ pub(super) fn field_values(field: &SubFormField, cx: &App) -> Vec<(String, Varia
 fn field_value(field: &SubFormField, cx: &App) -> Option<(String, Variant)> {
     match field {
         SubFormField::Input {
-            key,
-            integer,
-            input,
-            ..
+            key, flavor, input, ..
         } => {
             let text = input.read(cx).content().to_owned();
-            if integer.is_some() {
-                let parsed = text.trim().parse::<i64>().ok()?;
-                Some((key.clone(), Variant::Int(parsed)))
-            } else if is_var_key(key) {
-                let name = normalize_var_name(&text).unwrap_or_default();
-                Some((key.clone(), Variant::String(name)))
-            } else {
-                Some((key.clone(), Variant::String(text)))
+            match flavor {
+                InputFlavor::Integer(_) => {
+                    let parsed = text.trim().parse::<i64>().ok()?;
+                    Some((key.clone(), Variant::Int(parsed)))
+                }
+                InputFlavor::VariableName => {
+                    let name = normalize_var_name(&text).unwrap_or_default();
+                    Some((key.clone(), Variant::String(name)))
+                }
+                InputFlavor::Text | InputFlavor::File | InputFlavor::DateTime => {
+                    Some((key.clone(), Variant::String(text)))
+                }
             }
         }
         SubFormField::Area { key, area, .. } => Some((
@@ -195,8 +197,4 @@ fn field_value(field: &SubFormField, cx: &App) -> Option<(String, Variant)> {
         }
         SubFormField::UnitAmount { .. } | SubFormField::Hint { .. } => None,
     }
-}
-
-pub(super) fn is_var_key(key: &str) -> bool {
-    matches!(key, "target_var" | "into_var" | "into_arg")
 }

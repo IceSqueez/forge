@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use forge_obs::vocabulary::picker_keys;
 use forge_obs::{ObsClient, ObsSource};
 use forge_registry::FormField;
 use forge_runtime::EventBus;
@@ -24,10 +25,10 @@ pub(crate) enum ObsCatalogList {
 impl ObsCatalogList {
     pub(crate) fn parse(options_key: &str) -> Option<Self> {
         match options_key {
-            "obs.scene_names" => Some(Self::Scenes),
-            "obs.source_names" => Some(Self::SceneItems),
-            "obs.input_names" => Some(Self::Inputs),
-            "obs.audio_inputs" | "obs.audio_input_names" => Some(Self::AudioInputs),
+            picker_keys::SCENE_NAMES => Some(Self::Scenes),
+            picker_keys::SOURCE_NAMES => Some(Self::SceneItems),
+            picker_keys::INPUT_NAMES => Some(Self::Inputs),
+            picker_keys::AUDIO_INPUTS | picker_keys::AUDIO_INPUT_NAMES => Some(Self::AudioInputs),
             _ => None,
         }
     }

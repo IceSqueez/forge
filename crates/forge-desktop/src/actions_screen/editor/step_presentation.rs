@@ -4,6 +4,18 @@ use crate::globals::variant_kind_color;
 use crate::platform_visuals::platform_color;
 use forge_components::{FONT_XS, ForgePalette, Icon, mono_family, tr};
 use forge_registry::SubActionCategory;
+use forge_runtime::audio_runners::{SPEAK_KIND_ID, SPEECH_TEXT_KEY};
+use forge_runtime::sub_action_runners::{
+    CHAT_SEND_DEFAULT_TARGET, CHAT_SEND_KIND_ID, CHAT_SEND_MESSAGE_KEY, CHAT_SEND_TARGET_KEY,
+    FILE_READ_KIND_ID, FILE_READ_PATH_KEY, FILE_READ_TARGET_VAR_KEY, GLOBAL_AMOUNT_KEY,
+    GLOBAL_DEFAULT_AMOUNT, GLOBAL_INCREMENT_KIND_ID, GLOBAL_NAME_KEY, GLOBAL_SET_KIND_ID,
+    GLOBAL_VALUE_KEY, LOG_DEFAULT_LEVEL, LOG_LEVEL_KEY, LOG_MESSAGE_KEY, LOG_WRITE_KIND_ID,
+    RANDOM_INT_KIND_ID, RANDOM_INT_MAX_KEY, RANDOM_INT_MIN_KEY, RANDOM_INT_TARGET_VAR_KEY,
+    SCRIPT_TARGET_VAR_KEY, WAIT_KIND_ID, WAIT_MS_KEY,
+};
+use forge_soundboard::vocabulary::config_keys::CLIP_ID;
+use forge_soundboard::vocabulary::sub_action_ids::SOUND_PLAY;
+use forge_storage::{SCRIPT_NAME_KEY, SCRIPT_RUN_NAMED_KIND};
 use forge_types::{PlatformId, SubActionStep, Variant, VariantKind};
 use gpui::{AnyElement, HighlightStyle, Hsla, Rgba, SharedString, StyledText, div};
 use std::collections::HashMap;
@@ -45,27 +57,39 @@ pub(in crate::actions_screen) fn sub_action_summary(
         format!("%{}%", name.trim_matches('%'))
     }
     match step.kind_id.as_str() {
-        "twitch.chat.send_message" => {
-            let target = step.config.get("target").map(as_str).unwrap_or("twitch");
-            let message = step.config.get("message").map(as_str).unwrap_or("");
+        CHAT_SEND_KIND_ID => {
+            let target = step
+                .config
+                .get(CHAT_SEND_TARGET_KEY)
+                .map(as_str)
+                .unwrap_or(CHAT_SEND_DEFAULT_TARGET);
+            let message = step
+                .config
+                .get(CHAT_SEND_MESSAGE_KEY)
+                .map(as_str)
+                .unwrap_or("");
             (
                 "send",
                 tr!("action_editor_kind_send_chat"),
                 Some(format!("\u{2192} {target}: \"{message}\"")),
             )
         }
-        "core.globals.set" => {
-            let name = step.config.get("name").map(as_str).unwrap_or("");
-            let value = step.config.get("value").map(as_str).unwrap_or("");
+        GLOBAL_SET_KIND_ID => {
+            let name = step.config.get(GLOBAL_NAME_KEY).map(as_str).unwrap_or("");
+            let value = step.config.get(GLOBAL_VALUE_KEY).map(as_str).unwrap_or("");
             (
                 "variable",
                 tr!("action_editor_kind_set_global"),
                 Some(format!("{name} = \"{value}\"")),
             )
         }
-        "core.globals.increment" => {
-            let name = step.config.get("name").map(as_str).unwrap_or("");
-            let amount = step.config.get("amount").map(as_i64).unwrap_or(1);
+        GLOBAL_INCREMENT_KIND_ID => {
+            let name = step.config.get(GLOBAL_NAME_KEY).map(as_str).unwrap_or("");
+            let amount = step
+                .config
+                .get(GLOBAL_AMOUNT_KEY)
+                .map(as_i64)
+                .unwrap_or(GLOBAL_DEFAULT_AMOUNT);
             (
                 "variable",
                 tr!("action_editor_kind_incr_global"),
@@ -75,26 +99,34 @@ pub(in crate::actions_screen) fn sub_action_summary(
                 )),
             )
         }
-        "core.logic.wait" => {
-            let ms = step.config.get("ms").map(as_i64).unwrap_or(0);
+        WAIT_KIND_ID => {
+            let ms = step.config.get(WAIT_MS_KEY).map(as_i64).unwrap_or(0);
             (
                 "clock",
                 tr!("action_editor_kind_delay"),
                 Some(tr!("action_editor_step_wait_ms", ms = ms)),
             )
         }
-        "core.log.write" => {
-            let level = step.config.get("level").map(as_str).unwrap_or("info");
-            let message = step.config.get("message").map(as_str).unwrap_or("");
+        LOG_WRITE_KIND_ID => {
+            let level = step
+                .config
+                .get(LOG_LEVEL_KEY)
+                .map(as_str)
+                .unwrap_or(LOG_DEFAULT_LEVEL);
+            let message = step.config.get(LOG_MESSAGE_KEY).map(as_str).unwrap_or("");
             (
                 "info-circle",
                 tr!("action_editor_kind_log"),
                 Some(format!("[{level}] \"{message}\"")),
             )
         }
-        "script.run.named" => {
-            let script_name = step.config.get("script_name").map(as_str).unwrap_or("");
-            let target = step.config.get("target_var").map(as_str).unwrap_or("");
+        SCRIPT_RUN_NAMED_KIND => {
+            let script_name = step.config.get(SCRIPT_NAME_KEY).map(as_str).unwrap_or("");
+            let target = step
+                .config
+                .get(SCRIPT_TARGET_VAR_KEY)
+                .map(as_str)
+                .unwrap_or("");
             let detail = if target.is_empty() {
                 script_name.to_owned()
             } else {
@@ -102,35 +134,52 @@ pub(in crate::actions_screen) fn sub_action_summary(
             };
             ("script", tr!("action_editor_kind_run_script"), Some(detail))
         }
-        "soundboard.sound.play" => {
-            let clip_id = step.config.get("clip_id").map(as_str).unwrap_or("");
+        SOUND_PLAY => {
+            let clip_id = step.config.get(CLIP_ID).map(as_str).unwrap_or("");
             (
                 "music",
                 tr!("action_editor_kind_play_sound"),
                 Some(clip_step_detail(clip_id, select_options)),
             )
         }
-        "tts.speak.text" => {
-            let text = step.config.get("text").map(as_str).unwrap_or("");
+        SPEAK_KIND_ID => {
+            let text = step.config.get(SPEECH_TEXT_KEY).map(as_str).unwrap_or("");
             (
                 "volume",
                 tr!("action_editor_kind_speak"),
                 Some(text.to_owned()),
             )
         }
-        "core.file.read" => {
-            let path = step.config.get("path").map(as_str).unwrap_or("");
-            let var = step.config.get("target_var").map(as_str).unwrap_or("");
+        FILE_READ_KIND_ID => {
+            let path = step
+                .config
+                .get(FILE_READ_PATH_KEY)
+                .map(as_str)
+                .unwrap_or("");
+            let var = step
+                .config
+                .get(FILE_READ_TARGET_VAR_KEY)
+                .map(as_str)
+                .unwrap_or("");
             (
                 "file",
                 tr!("action_editor_kind_read_file"),
                 Some(format!("{path} \u{2192} {}", wrap_var(var))),
             )
         }
-        "core.random.int" => {
-            let min = step.config.get("min").map(as_i64).unwrap_or(0);
-            let max = step.config.get("max").map(as_i64).unwrap_or(0);
-            let var = step.config.get("target_var").map(as_str).unwrap_or("");
+        RANDOM_INT_KIND_ID => {
+            let bound = |key: &str| {
+                step.config
+                    .get(key)
+                    .map(crate::config_text::editable_line)
+                    .unwrap_or_default()
+            };
+            let (min, max) = (bound(RANDOM_INT_MIN_KEY), bound(RANDOM_INT_MAX_KEY));
+            let var = step
+                .config
+                .get(RANDOM_INT_TARGET_VAR_KEY)
+                .map(as_str)
+                .unwrap_or("");
             (
                 "dice",
                 tr!("action_editor_kind_random_int"),
@@ -232,11 +281,11 @@ pub(in crate::actions_screen) fn step_glyph(
     palette: &ForgePalette,
 ) -> (Icon, Rgba) {
     let (name, color) = match kind_id {
-        "core.file.read" => ("file-text", palette.info),
-        "core.random.int" => ("dice", palette.danger),
-        "script.run.named" => ("code", palette.success),
-        "core.globals.increment" | "core.globals.set" => ("variable", palette.warning),
-        "twitch.chat.send_message" => ("send", palette.theme_brand),
+        FILE_READ_KIND_ID => ("file-text", palette.info),
+        RANDOM_INT_KIND_ID => ("dice", palette.danger),
+        SCRIPT_RUN_NAMED_KIND => ("code", palette.success),
+        GLOBAL_INCREMENT_KIND_ID | GLOBAL_SET_KIND_ID => ("variable", palette.warning),
+        CHAT_SEND_KIND_ID => ("send", palette.theme_brand),
         _ => {
             return (
                 Icon::from_name(fallback_icon),

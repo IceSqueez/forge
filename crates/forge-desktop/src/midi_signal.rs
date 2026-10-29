@@ -1,4 +1,5 @@
 use forge_components::{ForgePalette, tr};
+use forge_midi::vocabulary::config_keys::{CHANNEL, CONTROLLER, DEVICE, NOTE, PROGRAM};
 use forge_midi::vocabulary::event_kinds::{
     CONTROL_CHANGE, NOTE_OFF, NOTE_ON, PITCH_BEND, PROGRAM_CHANGE,
 };
@@ -21,9 +22,9 @@ pub fn note_name(note: i64) -> String {
 
 pub fn selector_key(kind_id: &str) -> Option<&'static str> {
     match kind_id {
-        NOTE_ON | NOTE_OFF => Some("note"),
-        CONTROL_CHANGE => Some("controller"),
-        PROGRAM_CHANGE => Some("program"),
+        NOTE_ON | NOTE_OFF => Some(NOTE),
+        CONTROL_CHANGE => Some(CONTROLLER),
+        PROGRAM_CHANGE => Some(PROGRAM),
         _ => None,
     }
 }
@@ -95,8 +96,8 @@ impl MidiSignal {
         Self {
             kind_id: kind_id.to_owned(),
             selector: selector_key(kind_id).and_then(|key| config_int(config, key)),
-            channel: config_int(config, "channel"),
-            device: config_text(config, "device"),
+            channel: config_int(config, CHANNEL),
+            device: config_text(config, DEVICE),
         }
     }
 
@@ -110,10 +111,10 @@ impl MidiSignal {
             config.insert(key.to_owned(), Variant::Int(value));
         }
         if let Some(channel) = self.channel {
-            config.insert("channel".to_owned(), Variant::Int(channel));
+            config.insert(CHANNEL.to_owned(), Variant::Int(channel));
         }
         if let Some(device) = &self.device {
-            config.insert("device".to_owned(), Variant::String(device.clone()));
+            config.insert(DEVICE.to_owned(), Variant::String(device.clone()));
         }
         config
     }

@@ -1,7 +1,10 @@
 use std::collections::BTreeMap;
 
+use forge_platform_kick::vocabulary::config_keys as kick_keys;
 use forge_platform_kick::vocabulary::sub_action_ids as kick_steps;
+use forge_platform_twitch::vocabulary::config_keys as twitch_keys;
 use forge_platform_twitch::vocabulary::sub_action_ids as twitch_steps;
+use forge_platform_youtube::vocabulary::config_keys as youtube_keys;
 use forge_platform_youtube::vocabulary::sub_action_ids as youtube_steps;
 use forge_types::{PlatformId, SubActionStep, Variant};
 
@@ -21,11 +24,9 @@ const KICK_TIMEOUT_KIND: &str = kick_steps::MODERATION_TIMEOUT;
 const KICK_BAN_KIND: &str = kick_steps::MODERATION_BAN;
 const KICK_UNBAN_KIND: &str = kick_steps::MODERATION_UNBAN;
 
-const TWITCH_SHOUTOUT_TARGET_KEY: &str = "to_broadcaster_id";
-const TWITCH_WHISPER_TARGET_KEY: &str = "to_user_id";
-const TWITCH_MODERATION_TARGET_KEY: &str = "target_user_id";
-
-const DISPLAY_NAME_KEY: &str = "display_name";
+const TWITCH_SHOUTOUT_TARGET_KEY: &str = twitch_keys::TO_BROADCASTER_ID;
+const TWITCH_WHISPER_TARGET_KEY: &str = twitch_keys::TO_USER_ID;
+const TWITCH_MODERATION_TARGET_KEY: &str = twitch_keys::TARGET_USER_ID;
 
 const TWITCH_MAX_TIMEOUT_SECONDS: i64 = 1_209_600;
 const YOUTUBE_MAX_TIMEOUT_SECONDS: i64 = 86_400;
@@ -124,7 +125,10 @@ impl ViewerTarget {
                 TWITCH_WHISPER_KIND,
                 BTreeMap::from([
                     (TWITCH_WHISPER_TARGET_KEY.to_owned(), id),
-                    ("message".to_owned(), Variant::String(message.clone())),
+                    (
+                        twitch_keys::MESSAGE.to_owned(),
+                        Variant::String(message.clone()),
+                    ),
                 ]),
             )),
             ViewerAction::Timeout { seconds } => {
@@ -133,7 +137,10 @@ impl ViewerTarget {
                         TWITCH_TIMEOUT_KIND,
                         BTreeMap::from([
                             (TWITCH_MODERATION_TARGET_KEY.to_owned(), id),
-                            ("duration_seconds".to_owned(), Variant::Int(*seconds)),
+                            (
+                                twitch_keys::DURATION_SECONDS.to_owned(),
+                                Variant::Int(*seconds),
+                            ),
                         ]),
                     )
                 })
@@ -149,11 +156,8 @@ impl ViewerTarget {
         }
     }
 
-    fn display_name_entry(&self) -> (String, Variant) {
-        (
-            DISPLAY_NAME_KEY.to_owned(),
-            Variant::String(self.name.clone()),
-        )
+    fn display_name_entry(&self, key: &str) -> (String, Variant) {
+        (key.to_owned(), Variant::String(self.name.clone()))
     }
 
     fn youtube_step(
@@ -161,7 +165,10 @@ impl ViewerTarget {
         action: &ViewerAction,
     ) -> Option<(&'static str, BTreeMap<String, Variant>)> {
         let channel_id = self.viewer_id.clone().filter(|id| !id.is_empty())?;
-        let channel = ("channel_id".to_owned(), Variant::String(channel_id));
+        let channel = (
+            youtube_keys::CHANNEL_ID.to_owned(),
+            Variant::String(channel_id),
+        );
         match action {
             ViewerAction::Timeout { seconds } => (1..=YOUTUBE_MAX_TIMEOUT_SECONDS)
                 .contains(seconds)
@@ -170,14 +177,17 @@ impl ViewerTarget {
                         YOUTUBE_TIMEOUT_KIND,
                         BTreeMap::from([
                             channel,
-                            self.display_name_entry(),
-                            ("duration_seconds".to_owned(), Variant::Int(*seconds)),
+                            self.display_name_entry(youtube_keys::DISPLAY_NAME),
+                            (
+                                youtube_keys::DURATION_SECONDS.to_owned(),
+                                Variant::Int(*seconds),
+                            ),
                         ]),
                     )
                 }),
             ViewerAction::Ban => Some((
                 YOUTUBE_BAN_KIND,
-                BTreeMap::from([channel, self.display_name_entry()]),
+                BTreeMap::from([channel, self.display_name_entry(youtube_keys::DISPLAY_NAME)]),
             )),
             ViewerAction::Unban => Some((YOUTUBE_UNBAN_KIND, BTreeMap::from([channel]))),
             ViewerAction::Shoutout | ViewerAction::Whisper(_) => None,
@@ -192,7 +202,7 @@ impl ViewerTarget {
             .viewer_id
             .clone()
             .filter(|id| id.parse::<u64>().is_ok())?;
-        let user = ("user_id".to_owned(), Variant::String(user_id));
+        let user = (kick_keys::USER_ID.to_owned(), Variant::String(user_id));
         match action {
             ViewerAction::Timeout { seconds } => {
                 let minutes = u64::try_from(*seconds)
@@ -206,14 +216,17 @@ impl ViewerTarget {
                     KICK_TIMEOUT_KIND,
                     BTreeMap::from([
                         user,
-                        self.display_name_entry(),
-                        ("duration_minutes".to_owned(), Variant::Int(minutes)),
+                        self.display_name_entry(kick_keys::DISPLAY_NAME),
+                        (
+                            kick_keys::DURATION_MINUTES.to_owned(),
+                            Variant::Int(minutes),
+                        ),
                     ]),
                 ))
             }
             ViewerAction::Ban => Some((
                 KICK_BAN_KIND,
-                BTreeMap::from([user, self.display_name_entry()]),
+                BTreeMap::from([user, self.display_name_entry(kick_keys::DISPLAY_NAME)]),
             )),
             ViewerAction::Unban => Some((KICK_UNBAN_KIND, BTreeMap::from([user]))),
             ViewerAction::Shoutout | ViewerAction::Whisper(_) => None,

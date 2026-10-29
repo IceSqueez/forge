@@ -1,7 +1,8 @@
 use forge_components::tr;
 use forge_platform_core::{SENDER_FIELD, SenderPreference};
+use forge_runtime::sub_action_runners::CHAT_SEND_KIND_ID;
 
-const PLATFORM_NEUTRAL_SENDER_STEPS: [&str; 1] = ["twitch.chat.send_message"];
+const PLATFORM_NEUTRAL_SENDER_STEPS: [&str; 1] = [CHAT_SEND_KIND_ID];
 
 pub(crate) fn sender_option_label(key: &str, option: &str) -> Option<String> {
     if key != SENDER_FIELD {

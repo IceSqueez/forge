@@ -12,7 +12,9 @@ use forge_types::{
 use tokio::io::AsyncReadExt;
 
 const MAX_FILE_BYTES: u64 = 1_048_576;
-const TARGET_VAR_KEY: &str = "target_var";
+pub const FILE_READ_KIND_ID: &str = "core.file.read";
+pub const FILE_READ_PATH_KEY: &str = "path";
+pub const FILE_READ_TARGET_VAR_KEY: &str = "target_var";
 
 #[derive(Clone, Copy)]
 enum ReadAs {
@@ -35,7 +37,7 @@ impl ConfigChoice for ReadAs {
 }
 
 const PATH: TextField = TextField {
-    key: "path",
+    key: FILE_READ_PATH_KEY,
     label: "File Path (relative to the files folder)",
     editor: TextEditor::Line {
         placeholder: "quotes/cards.md",
@@ -51,7 +53,7 @@ const READ_AS: ChoiceField<ReadAs> = ChoiceField {
 };
 
 const TARGET_VAR: VariableField = VariableField {
-    key: TARGET_VAR_KEY,
+    key: FILE_READ_TARGET_VAR_KEY,
     label: "Output Variable",
     placeholder: "file_contents",
     default: "",
@@ -75,7 +77,7 @@ pub struct CoreFileReadRunner;
 #[async_trait]
 impl SubActionRunner for CoreFileReadRunner {
     fn id(&self) -> &str {
-        "core.file.read"
+        FILE_READ_KIND_ID
     }
 
     fn category(&self) -> SubActionCategory {
@@ -105,7 +107,7 @@ impl SubActionRunner for CoreFileReadRunner {
     fn scope_io(&self) -> SubActionIo {
         SubActionIo {
             produces: vec![ProducedVariable {
-                output_name_key: TARGET_VAR_KEY.to_owned(),
+                output_name_key: FILE_READ_TARGET_VAR_KEY.to_owned(),
                 kind: VariantKind::Array,
                 label: "File contents".to_owned(),
             }],

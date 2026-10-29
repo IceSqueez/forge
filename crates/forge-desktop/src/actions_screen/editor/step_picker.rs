@@ -149,13 +149,15 @@ impl ScreenActionsView {
                 (
                     runner.default_config(),
                     runner.config_fields(),
+                    super::sub_form::output_name_keys(runner),
                     runner.icon_name().to_owned(),
                     runner.category(),
                     runner.config_refinement(),
                 )
             });
         self.grid_picker = None;
-        let Some((config, specs, icon_name, category, refinement)) = prepared else {
+        let Some((config, specs, output_name_keys, icon_name, category, refinement)) = prepared
+        else {
             cx.notify();
             return;
         };
@@ -165,6 +167,7 @@ impl ScreenActionsView {
             kind_id,
             target: SubFormTarget::Add,
             specs,
+            output_name_keys,
             config,
             name_value: kind_label.clone(),
             condition_value: String::new(),

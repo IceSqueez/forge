@@ -75,17 +75,8 @@ impl ScreenActionsView {
             .count()
     }
 
-    fn category_visible(filter: ActionsFilter, category: ActionCategory) -> bool {
-        match filter {
-            ActionsFilter::All => true,
-            ActionsFilter::Chat => category == ActionCategory::Chat,
-            ActionsFilter::Timers => category == ActionCategory::Timers,
-            ActionsFilter::Points => category == ActionCategory::Points,
-        }
-    }
-
-    fn action_passes(&self, group: &ActionGroup, action: &ActionSummary) -> bool {
-        let in_filter = Self::category_visible(self.filter, group.category)
+    fn action_passes(&self, action: &ActionSummary) -> bool {
+        let in_filter = self.filter == ActionsFilter::All
             || self
                 .filter_action_ids
                 .get(&self.filter)
@@ -595,7 +586,7 @@ impl ScreenActionsView {
                 let surviving: Vec<&ActionSummary> = group
                     .actions
                     .iter()
-                    .filter(|a| self.action_passes(group, a))
+                    .filter(|a| self.action_passes(a))
                     .collect();
                 if surviving.is_empty() {
                     continue;

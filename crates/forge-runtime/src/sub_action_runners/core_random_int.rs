@@ -7,10 +7,13 @@ use forge_registry::{
 use forge_types::{ArgStack, SubActionConfig, SubActionTelemetry, Variant, VariantKind};
 use rand::RngExt;
 
-const TARGET_VAR_KEY: &str = "target_var";
+pub const RANDOM_INT_KIND_ID: &str = "core.random.int";
+pub const RANDOM_INT_MIN_KEY: &str = "min";
+pub const RANDOM_INT_MAX_KEY: &str = "max";
+pub const TARGET_VAR_KEY: &str = "target_var";
 
 const MIN: IntegerField = IntegerField {
-    key: "min",
+    key: RANDOM_INT_MIN_KEY,
     label: "Minimum",
     editor: IntegerEditor::Text { placeholder: "1" },
     default: 1,
@@ -18,7 +21,7 @@ const MIN: IntegerField = IntegerField {
 };
 
 const MAX: IntegerField = IntegerField {
-    key: "max",
+    key: RANDOM_INT_MAX_KEY,
     label: "Maximum",
     editor: IntegerEditor::Text { placeholder: "100" },
     default: 100,
@@ -60,7 +63,7 @@ pub struct CoreRandomIntRunner;
 #[async_trait]
 impl SubActionRunner for CoreRandomIntRunner {
     fn id(&self) -> &str {
-        "core.random.int"
+        RANDOM_INT_KIND_ID
     }
 
     fn category(&self) -> SubActionCategory {

@@ -5,6 +5,7 @@ use arc_swap::ArcSwapOption;
 use forge_events::{ActionSkipped, Event, EventSource, TypedEvent};
 use forge_registry::CancelSignal;
 use forge_types::{Action, ActionId, ArgStack, EventId, Queue, QueueId};
+use serde::{Deserialize, Serialize};
 use serde_json::json;
 use tokio::sync::futures::Notified;
 use tokio::sync::{Notify, mpsc, oneshot, watch};
@@ -95,37 +96,21 @@ pub enum MembershipOutcome {
     NotFound,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
 pub enum QueueProcessing {
     Running,
     Frozen,
 }
 
-impl QueueProcessing {
-    pub fn as_str(self) -> &'static str {
-        match self {
-            Self::Running => "running",
-            Self::Frozen => "frozen",
-        }
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
 pub enum QueueIntake {
     Accept,
     Skip,
 }
 
-impl QueueIntake {
-    pub fn as_str(self) -> &'static str {
-        match self {
-            Self::Accept => "accept",
-            Self::Skip => "skip",
-        }
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct QueueMode {
     pub processing: QueueProcessing,
     pub intake: QueueIntake,
@@ -148,6 +133,7 @@ impl QueueMode {
         processing: QueueProcessing::Frozen,
         intake: QueueIntake::Skip,
     };
+    pub const ALL: [Self; 4] = [Self::RUNNING, Self::DRAINING, Self::HOLDING, Self::PAUSED];
 
     pub fn event_kind(self) -> &'static str {
         match (self.processing, self.intake) {
@@ -166,6 +152,51 @@ impl QueueMode {
             QueueProcessing::Running => QUEUE_DRAINING_REASON,
             QueueProcessing::Frozen => QUEUE_PAUSED_REASON,
         })
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct QueueModeChanged {
+    pub queue_id: QueueId,
+    #[serde(default)]
+    pub queue_name: String,
+    #[serde(flatten)]
+    pub mode: QueueMode,
+}
+
+impl QueueModeChanged {
+    pub fn into_event(self) -> Event {
+        let kind = self.mode.event_kind();
+        let payload = serde_json::to_value(&self).unwrap_or_else(|error| {
+            tracing::error!(
+                kind,
+                category = ?error.classify(),
+                "event payload could not be encoded"
+            );
+            serde_json::Value::Null
+        });
+        Event::new(EventSource::Core, kind, payload)
+    }
+
+    pub fn from_event(event: &Event) -> Option<Self> {
+        if !QueueMode::ALL
+            .iter()
+            .any(|mode| mode.event_kind() == event.kind)
+        {
+            return None;
+        }
+        match serde_json::from_value(event.payload.clone()) {
+            Ok(changed) => Some(changed),
+            Err(error) => {
+                warn!(
+                    kind = %event.kind,
+                    event = %event.id,
+                    category = ?error.classify(),
+                    "event payload does not match its kind"
+                );
+                None
+            }
+        }
     }
 }
 
@@ -962,16 +993,14 @@ impl QueueScheduler {
         slot.depth.update(|depth| depth.overflowed = 0);
         slot.processing.send_replace(mode.processing);
 
-        bus.publish(Event::new(
-            EventSource::Core,
-            mode.event_kind(),
-            json!({
-                "queue_id": queue_id.to_string(),
-                "queue_name": slot.name,
-                "processing": mode.processing.as_str(),
-                "intake": mode.intake.as_str(),
-            }),
-        ));
+        bus.publish(
+            QueueModeChanged {
+                queue_id: *queue_id,
+                queue_name: slot.name.clone(),
+                mode,
+            }
+            .into_event(),
+        );
 
         Ok(())
     }

@@ -116,18 +116,11 @@ const CHIP_RADIUS: Pixels = radius(Radius::Sm);
 const BRANCH_GLYPH: Pixels = px(11.0);
 const CASE_MATCH_W: Pixels = px(160.0);
 
-const TRIGGER_FILTERS: [(ActionsFilter, TriggerCategory); 2] = [
+const TRIGGER_FILTERS: [(ActionsFilter, TriggerCategory); 3] = [
+    (ActionsFilter::Chat, TriggerCategory::Chat),
     (ActionsFilter::Timers, TriggerCategory::Timer),
     (ActionsFilter::Points, TriggerCategory::ChannelPoints),
 ];
-
-#[derive(Clone, Copy, PartialEq, Eq)]
-enum ActionCategory {
-    Chat,
-    Timers,
-    Points,
-    Other,
-}
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
 enum ActionsFilter {
@@ -148,7 +141,6 @@ struct ActionSummary {
 
 struct ActionGroup {
     name: SharedString,
-    category: ActionCategory,
     collapsed: bool,
     actions: Vec<ActionSummary>,
 }
@@ -730,10 +722,8 @@ fn group_actions(actions: Vec<Action>) -> Vec<ActionGroup> {
         .into_iter()
         .map(|(name, mut actions)| {
             actions.sort_by_key(|a| a.name.to_lowercase());
-            let category = category_from_group_name(&name);
             ActionGroup {
                 name: name.into(),
-                category,
                 collapsed: false,
                 actions,
             }
@@ -755,15 +745,6 @@ async fn actions_by_trigger_filter(
         }
     }
     Ok(members)
-}
-
-fn category_from_group_name(name: &str) -> ActionCategory {
-    match name {
-        "CHAT COMMANDS" => ActionCategory::Chat,
-        "TIMERS" => ActionCategory::Timers,
-        "CHANNEL POINTS" => ActionCategory::Points,
-        _ => ActionCategory::Other,
-    }
 }
 
 struct GridPickerForm {

@@ -35,6 +35,7 @@ pub(super) struct SubFormLaunch {
     pub kind_id: String,
     pub target: SubFormTarget,
     pub specs: Vec<FormField>,
+    pub output_name_keys: Vec<String>,
     pub config: SubActionConfig,
     pub name_value: String,
     pub condition_value: String,
@@ -72,6 +73,7 @@ pub(super) struct EditSubActionForm {
     target: SubFormTarget,
     chain_len: usize,
     fields: Vec<SubFormField>,
+    output_name_keys: Vec<String>,
     base_field_count: usize,
     launch_config: SubActionConfig,
     options: HashMap<String, Vec<(String, String)>>,
@@ -101,6 +103,7 @@ impl EditSubActionForm {
             kind_id,
             target,
             specs,
+            output_name_keys,
             config,
             name_value,
             condition_value,
@@ -117,6 +120,7 @@ impl EditSubActionForm {
         let palette = cx.palette();
         let copy = FieldBuildContext {
             kind_id: &kind_id,
+            output_name_keys: &output_name_keys,
             palette,
             options_map: &options_seed,
         };
@@ -133,6 +137,7 @@ impl EditSubActionForm {
             target,
             chain_len,
             fields,
+            output_name_keys,
             base_field_count,
             launch_config: config,
             options: options_seed,
@@ -168,8 +173,10 @@ impl EditSubActionForm {
         self.fields.truncate(self.base_field_count);
         let options = self.options.clone();
         let kind_id = self.kind_id.clone();
+        let output_name_keys = self.output_name_keys.clone();
         let copy = FieldBuildContext {
             kind_id: &kind_id,
+            output_name_keys: &output_name_keys,
             palette: cx.palette(),
             options_map: &options,
         };

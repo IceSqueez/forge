@@ -1,4 +1,4 @@
-use super::field::{SubFormField, field_keys, is_var_key};
+use super::field::{InputFlavor, SubFormField, field_keys};
 use super::field_controls::{bool_row, field_wrap, hint_block, multiline_field};
 use super::rejection::with_rejection_note;
 use super::variable_insert::InsertTarget;
@@ -223,13 +223,9 @@ fn field_grid_layout(
 fn sub_field_is_half(field: &SubFormField) -> bool {
     match field {
         SubFormField::Select { .. } => true,
-        SubFormField::Input {
-            key,
-            integer,
-            browse,
-            datetime,
-            ..
-        } => !*browse && !*datetime && (integer.is_some() || is_var_key(key)),
+        SubFormField::Input { flavor, .. } => {
+            matches!(flavor, InputFlavor::Integer(_) | InputFlavor::VariableName)
+        }
         _ => false,
     }
 }

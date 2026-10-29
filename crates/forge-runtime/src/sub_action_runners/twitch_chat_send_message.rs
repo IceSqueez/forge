@@ -10,8 +10,10 @@ use forge_types::{
     resolve_chat_target,
 };
 
-const CHAT_SEND_KIND_ID: &str = "twitch.chat.send_message";
-const DEFAULT_TARGET: &str = "twitch";
+pub const CHAT_SEND_KIND_ID: &str = "twitch.chat.send_message";
+pub const CHAT_SEND_DEFAULT_TARGET: &str = "twitch";
+pub const CHAT_SEND_MESSAGE_KEY: &str = "message";
+pub const CHAT_SEND_TARGET_KEY: &str = "target";
 
 #[derive(Clone, Copy)]
 struct SendAs(SenderPreference);
@@ -30,7 +32,7 @@ impl ConfigChoice for SendAs {
 }
 
 const MESSAGE: TextField = TextField {
-    key: "message",
+    key: CHAT_SEND_MESSAGE_KEY,
     label: "Message",
     editor: TextEditor::Area,
     default: "",
@@ -38,12 +40,12 @@ const MESSAGE: TextField = TextField {
 };
 
 const TARGET: TextField = TextField {
-    key: "target",
+    key: CHAT_SEND_TARGET_KEY,
     label: "Target Platform",
     editor: TextEditor::Line {
-        placeholder: DEFAULT_TARGET,
+        placeholder: CHAT_SEND_DEFAULT_TARGET,
     },
-    default: DEFAULT_TARGET,
+    default: CHAT_SEND_DEFAULT_TARGET,
     required: false,
 };
 

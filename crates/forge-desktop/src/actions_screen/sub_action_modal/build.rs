@@ -1,4 +1,4 @@
-use super::field::{SelectDependency, SubFormField, is_var_key};
+use super::field::{InputFlavor, SelectDependency, SubFormField};
 use super::unit_amount::build_unit_amount_field;
 use super::*;
 use crate::amount_scale::AmountScale;
@@ -13,7 +13,6 @@ use forge_components::int_entry_invalid;
 use forge_components::{FONT_SM, InputEvent};
 use forge_registry::{CodeKind, CodeLanguage, FormField};
 use forge_types::{SubActionConfig, Variant, normalize_var_name};
-use std::ops::RangeInclusive;
 
 const VAR_PLACEHOLDER: &str = "%result%";
 
@@ -33,6 +32,7 @@ impl EditSubActionForm {
 
 pub(super) struct FieldBuildContext<'a> {
     pub(super) kind_id: &'a str,
+    pub(super) output_name_keys: &'a [String],
     pub(super) palette: ForgePalette,
     pub(super) options_map: &'a HashMap<String, Vec<(String, String)>>,
 }
@@ -91,9 +91,7 @@ fn build_input_field(
     key: &str,
     label: &str,
     placeholder: String,
-    integer: Option<RangeInclusive<i64>>,
-    browse: bool,
-    datetime: bool,
+    flavor: InputFlavor,
     gate: Option<String>,
     config: &SubActionConfig,
     palette: ForgePalette,
@@ -103,7 +101,11 @@ fn build_input_field(
         .get(key)
         .map(crate::config_text::editable_line)
         .unwrap_or_default();
-    let is_var = is_var_key(key);
+    let is_var = flavor == InputFlavor::VariableName;
+    let integer = match &flavor {
+        InputFlavor::Integer(range) => Some(range.clone()),
+        _ => None,
+    };
     let invalid_seed = if is_var {
         !seed.trim().is_empty() && normalize_var_name(&seed).is_none()
     } else {
@@ -135,7 +137,7 @@ fn build_input_field(
     let sub = if is_var {
         Some(cx.subscribe(&input, EditSubActionForm::on_var_input_event))
     } else {
-        integer.clone().map(|range| {
+        integer.map(|range| {
             cx.subscribe(
                 &input,
                 move |_, field: Entity<TextInput>, event: &InputEvent, cx| {
@@ -150,9 +152,7 @@ fn build_input_field(
     SubFormField::Input {
         key: key.to_owned(),
         label: label.to_owned(),
-        integer,
-        browse,
-        datetime,
+        flavor,
         gate,
         input,
         _sub: sub,
@@ -210,6 +210,14 @@ fn build_code_field(
     }
 }
 
+fn text_flavor(key: &str, output_name_keys: &[String]) -> InputFlavor {
+    if output_name_keys.iter().any(|output| output == key) {
+        InputFlavor::VariableName
+    } else {
+        InputFlavor::Text
+    }
+}
+
 fn config_seed(config: &SubActionConfig, key: &str) -> String {
     config
         .get(key)
@@ -234,9 +242,7 @@ pub(super) fn push_form_field(
             key,
             &label,
             field_placeholder(copy.kind_id, key, placeholder),
-            None,
-            false,
-            false,
+            text_flavor(key, copy.output_name_keys),
             gate,
             config,
             palette,
@@ -258,9 +264,7 @@ pub(super) fn push_form_field(
                 key,
                 &label,
                 INTEGER_PLACEHOLDER.to_owned(),
-                Some(*min..=*max),
-                false,
-                false,
+                InputFlavor::Integer(*min..=*max),
                 gate,
                 config,
                 palette,
@@ -277,9 +281,7 @@ pub(super) fn push_form_field(
             key,
             &label,
             String::new(),
-            None,
-            true,
-            false,
+            InputFlavor::File,
             gate,
             config,
             palette,
@@ -289,9 +291,7 @@ pub(super) fn push_form_field(
             key,
             &label,
             String::new(),
-            None,
-            false,
-            true,
+            InputFlavor::DateTime,
             gate,
             config,
             palette,

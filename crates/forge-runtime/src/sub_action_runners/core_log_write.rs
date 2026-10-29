@@ -35,27 +35,33 @@ impl ConfigChoice for Level {
         Self::Warn,
         Self::Error,
     ];
-    const WIRE_NAMES: &'static [&'static str] = &["trace", "debug", "info", "warn", "error"];
+    const WIRE_NAMES: &'static [&'static str] =
+        &["trace", "debug", LOG_DEFAULT_LEVEL, "warn", "error"];
 
     fn wire_name(self) -> &'static str {
         match self {
             Self::Trace => "trace",
             Self::Debug => "debug",
-            Self::Info => "info",
+            Self::Info => LOG_DEFAULT_LEVEL,
             Self::Warn => "warn",
             Self::Error => "error",
         }
     }
 }
 
+pub const LOG_WRITE_KIND_ID: &str = "core.log.write";
+pub const LOG_LEVEL_KEY: &str = "level";
+pub const LOG_MESSAGE_KEY: &str = "message";
+pub const LOG_DEFAULT_LEVEL: &str = "info";
+
 const LEVEL: ChoiceField<Level> = ChoiceField {
-    key: "level",
+    key: LOG_LEVEL_KEY,
     label: "Level",
     default: Level::Info,
 };
 
 const MESSAGE: TextField = TextField {
-    key: "message",
+    key: LOG_MESSAGE_KEY,
     label: "Message",
     editor: TextEditor::Area,
     default: "",
@@ -79,7 +85,7 @@ pub struct CoreLogWriteRunner;
 #[async_trait]
 impl SubActionRunner for CoreLogWriteRunner {
     fn id(&self) -> &str {
-        "core.log.write"
+        LOG_WRITE_KIND_ID
     }
 
     fn category(&self) -> SubActionCategory {

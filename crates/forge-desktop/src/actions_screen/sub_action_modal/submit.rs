@@ -1,4 +1,4 @@
-use super::field::{SubFormField, field_gate, field_keys, field_values, is_var_key};
+use super::field::{InputFlavor, SubFormField, field_gate, field_keys, field_values};
 use super::*;
 use forge_components::int_entry_invalid;
 use forge_types::{Variant, normalize_var_name};
@@ -25,8 +25,7 @@ impl EditSubActionForm {
                 continue;
             }
             let SubFormField::Input {
-                key,
-                integer,
+                flavor,
                 gate,
                 input,
                 ..
@@ -35,13 +34,15 @@ impl EditSubActionForm {
                 continue;
             };
             let text = input.read(cx).content().to_owned();
-            let invalid = if is_var_key(key) {
-                !text.trim().is_empty() && normalize_var_name(&text).is_none()
-            } else if let Some(range) = integer {
-                gate_on(gate.as_ref())
-                    && int_entry_invalid(&text, *range.start(), *range.end(), false)
-            } else {
-                continue;
+            let invalid = match flavor {
+                InputFlavor::VariableName => {
+                    !text.trim().is_empty() && normalize_var_name(&text).is_none()
+                }
+                InputFlavor::Integer(range) => {
+                    gate_on(gate.as_ref())
+                        && int_entry_invalid(&text, *range.start(), *range.end(), false)
+                }
+                InputFlavor::Text | InputFlavor::File | InputFlavor::DateTime => continue,
             };
             input.update(cx, |input, cx| input.set_invalid(invalid, cx));
             has_invalid |= invalid;

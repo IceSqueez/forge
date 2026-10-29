@@ -102,18 +102,26 @@ pub use core_clipboard_copy::CoreClipboardCopyRunner;
 pub use core_clipboard_read::CoreClipboardReadRunner;
 pub use core_file_delete::CoreFileDeleteRunner;
 pub use core_file_list::CoreFileListRunner;
-pub use core_file_read::CoreFileReadRunner;
+pub use core_file_read::{
+    CoreFileReadRunner, FILE_READ_KIND_ID, FILE_READ_PATH_KEY, FILE_READ_TARGET_VAR_KEY,
+};
 pub use core_file_write::CoreFileWriteRunner;
 pub use core_globals_array_append::CoreGlobalsArrayAppendRunner;
 pub use core_globals_array_remove::CoreGlobalsArrayRemoveRunner;
 pub use core_globals_decrement::CoreGlobalsDecrementRunner;
 pub use core_globals_delete::CoreGlobalsDeleteRunner;
 pub use core_globals_get::CoreGlobalsGetRunner;
-pub use core_globals_increment::CoreGlobalsIncrementRunner;
-pub use core_globals_set::CoreGlobalsSetRunner;
+pub use core_globals_increment::{CoreGlobalsIncrementRunner, GLOBAL_INCREMENT_KIND_ID};
+pub use core_globals_set::{CoreGlobalsSetRunner, GLOBAL_SET_KIND_ID, GLOBAL_VALUE_KEY};
+pub use core_globals_shared::{
+    AMOUNT_KEY as GLOBAL_AMOUNT_KEY, DEFAULT_AMOUNT as GLOBAL_DEFAULT_AMOUNT,
+    NAME_KEY as GLOBAL_NAME_KEY,
+};
 pub use core_globals_toggle::CoreGlobalsToggleRunner;
 pub use core_http::CoreHttpRunner;
-pub use core_log_write::CoreLogWriteRunner;
+pub use core_log_write::{
+    CoreLogWriteRunner, LOG_DEFAULT_LEVEL, LOG_LEVEL_KEY, LOG_MESSAGE_KEY, LOG_WRITE_KIND_ID,
+};
 pub use core_logic_break_loop::CoreLogicBreakLoopRunner;
 pub use core_logic_continue_loop::CoreLogicContinueLoopRunner;
 pub use core_logic_if_then_else::CoreLogicIfThenElseRunner;
@@ -129,7 +137,10 @@ pub use core_queue_pause::CoreQueuePauseRunner;
 pub use core_queue_resume::CoreQueueResumeRunner;
 pub use core_random_bool::CoreRandomBoolRunner;
 pub use core_random_float::CoreRandomFloatRunner;
-pub use core_random_int::CoreRandomIntRunner;
+pub use core_random_int::{
+    CoreRandomIntRunner, RANDOM_INT_KIND_ID, RANDOM_INT_MAX_KEY, RANDOM_INT_MIN_KEY,
+    TARGET_VAR_KEY as RANDOM_INT_TARGET_VAR_KEY,
+};
 pub use core_random_pick::CoreRandomPickRunner;
 pub use core_string_concat::CoreStringConcatRunner;
 pub use core_string_format::CoreStringFormatRunner;
@@ -166,10 +177,13 @@ pub use overlay_targets::{
 };
 pub use script_emit_event::ScriptEmitEventRunner;
 pub use script_run_inline::ScriptRunInlineRunner;
-pub use script_run_named::ScriptRunNamedRunner;
+pub use script_run_named::{ScriptRunNamedRunner, TARGET_VAR_KEY as SCRIPT_TARGET_VAR_KEY};
 pub use server_broadcast::ServerBroadcastRunner;
 pub use time_pattern::translate_legacy_time_steps;
-pub use twitch_chat_send_message::TwitchChatSendMessageRunner;
+pub use twitch_chat_send_message::{
+    CHAT_SEND_DEFAULT_TARGET, CHAT_SEND_KIND_ID, CHAT_SEND_MESSAGE_KEY, CHAT_SEND_TARGET_KEY,
+    TwitchChatSendMessageRunner,
+};
 
 use std::sync::Arc;
 

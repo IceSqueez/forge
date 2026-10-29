@@ -14,7 +14,7 @@ pub use queue_clear::QueueClearRunner;
 pub use queue_pause::QueuePauseRunner;
 pub use queue_resume::QueueResumeRunner;
 pub use queue_skip::QueueSkipRunner;
-pub use speak::SpeakRunner;
+pub use speak::{SPEAK_KIND_ID, SpeakRunner};
 pub use speak_stop::SpeakStopRunner;
 pub use speak_with_engine::SpeakWithEngineRunner;
 
@@ -30,8 +30,9 @@ use crate::speak_dispatcher::SpeakDispatcher;
 use crate::twitch_emote_lexicon::TwitchEmoteLexicon;
 
 const ENGINE_ID_KEY: &str = "engine_id";
-const ENGINE_OPTIONS_KEY: &str = "tts.engine_ids";
-const VOICE_OPTIONS_PREFIX: &str = "tts.voices";
+pub const ENGINE_OPTIONS_KEY: &str = "tts.engine_ids";
+pub const VOICE_OPTIONS_PREFIX: &str = "tts.voices";
+pub const SPEECH_TEXT_KEY: &str = "text";
 
 const ALIAS_NAME: TextField = TextField {
     key: "alias_name",
@@ -56,7 +57,7 @@ const VOICE: DependentSelectField = DependentSelectField {
 const ALIAS_SPEC: ConfigSpec = ConfigSpec::new(&[&ALIAS_NAME, &ENGINE, &VOICE]);
 
 const SPEECH_TEXT: TextField = TextField {
-    key: "text",
+    key: SPEECH_TEXT_KEY,
     label: "Text",
     editor: TextEditor::Area,
     default: "",

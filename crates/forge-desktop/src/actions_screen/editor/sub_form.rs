@@ -6,7 +6,7 @@ use crate::actions_screen::sub_action_modal::{
 use crate::collection_options::collection_choice_fields;
 use crate::obs_catalog_options::obs_catalog_fields;
 use crate::vtube_catalog_options::vtube_catalog_fields;
-use forge_registry::{FormField, FormSchemaSource};
+use forge_registry::{FormField, FormSchemaSource, SubActionRunner};
 use forge_types::{SubActionConfig, SubActionStep};
 use gpui::{Context, Entity};
 
@@ -160,10 +160,11 @@ impl ScreenActionsView {
         let kind_id = step.kind_id.clone();
         let mut config = step.config.clone();
         let continue_on_error = step.continue_on_error;
-        let Some((specs, defaults, icon_name, category, refinement)) =
+        let Some((specs, output_name_keys, defaults, icon_name, category, refinement)) =
             self.sub_action_registry.get(&kind_id).map(|r| {
                 (
                     r.config_fields(),
+                    output_name_keys(r),
                     r.default_config(),
                     r.icon_name().to_owned(),
                     r.category(),
@@ -182,6 +183,7 @@ impl ScreenActionsView {
             kind_id,
             target: SubFormTarget::Edit(i),
             specs,
+            output_name_keys,
             config,
             name_value,
             condition_value,
@@ -197,6 +199,15 @@ impl ScreenActionsView {
         self.step_menu_open = None;
         self.open_sub_form(launch, cx);
     }
+}
+
+pub(super) fn output_name_keys(runner: &dyn SubActionRunner) -> Vec<String> {
+    runner
+        .scope_io()
+        .produces
+        .into_iter()
+        .map(|produced| produced.output_name_key)
+        .collect()
 }
 
 fn seed_absent_choices(

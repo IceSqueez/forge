@@ -1,4 +1,4 @@
-use super::field::SubFormField;
+use super::field::{InputFlavor, SubFormField};
 use super::*;
 use crate::globals::variant_kind_color;
 use forge_components::{
@@ -146,7 +146,10 @@ impl EditSubActionForm {
             _ => false,
         });
         match field {
-            Some(SubFormField::Input { datetime: true, .. }) => InsertMode::WholeValue,
+            Some(SubFormField::Input {
+                flavor: InputFlavor::DateTime,
+                ..
+            }) => InsertMode::WholeValue,
             Some(SubFormField::Code { .. }) => InsertMode::AtCaretUnformatted,
             _ => InsertMode::AtCaret,
         }

@@ -15,6 +15,7 @@ use forge_components::{
     empty_state, hash_accent, icon, install_resize, menu_button, menu_divider, menu_header,
     menu_item, mono_family, page_frame, radius, spacing, status_dot, tr,
 };
+use forge_platform_twitch::vocabulary::config_keys as twitch_config_keys;
 use forge_runtime::ActionEngineHandle;
 use forge_speak_queue::SpeakQueueHandle;
 use forge_storage::{ChatAuthorTally, ChatHistoryRepo, Viewer, ViewerRepo, VoiceAliasRepo};
@@ -89,9 +90,12 @@ const CTX_TIMEOUT_2W: i64 = 1_209_600;
 
 fn build_reply_step(username: &str, message: &str, parent_message_id: &str) -> SubActionStep {
     let mut config = BTreeMap::new();
-    config.insert("message".to_owned(), Variant::String(message.to_owned()));
     config.insert(
-        "parent_message_id".to_owned(),
+        twitch_config_keys::MESSAGE.to_owned(),
+        Variant::String(message.to_owned()),
+    );
+    config.insert(
+        twitch_config_keys::PARENT_MESSAGE_ID.to_owned(),
         Variant::String(parent_message_id.to_owned()),
     );
     SubActionStep {

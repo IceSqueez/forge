@@ -1,14 +1,19 @@
 use super::*;
 use crate::async_bridge;
+use crate::config_form::dependent_options_key;
 use crate::donation_services::donation_provider_options;
 use crate::engine_voice_choices::engine_voice_options;
 use forge_components::tr;
+pub(super) use forge_registry::references::SOUNDBOARD_CLIP_OPTIONS_KEY as CLIP_OPTIONS_KEY;
+use forge_registry::references::{
+    ACTION_OPTIONS_KEY, GLOBAL_OPTIONS_KEY, OVERLAY_OPTIONS_KEY, QUEUE_OPTIONS_KEY,
+    SCRIPT_OPTIONS_KEY, TRIGGER_INSTANCE_OPTIONS_KEY,
+};
 use forge_registry::{ENGINE_VOICE_OPTIONS_KEY, FormSchemaSource};
+use forge_runtime::audio_runners::{ENGINE_OPTIONS_KEY, VOICE_OPTIONS_PREFIX};
 use forge_runtime::triggers::DONATION_PROVIDER_OPTIONS_KEY;
 use gpui::Context;
 use std::collections::HashMap;
-
-pub(super) const CLIP_OPTIONS_KEY: &str = "soundboard.clip_ids";
 
 struct SelectOptionsFetch {
     options: HashMap<String, Vec<(String, String)>>,
@@ -53,7 +58,7 @@ impl ScreenActionsView {
                 let mut concurrent_queue_ids: HashSet<String> = HashSet::new();
                 if let Ok(actions) = action_repo.list().await {
                     map.insert(
-                        "action.ids".to_owned(),
+                        ACTION_OPTIONS_KEY.to_owned(),
                         actions
                             .into_iter()
                             .map(|a| (a.id.to_string(), a.name))
@@ -67,7 +72,7 @@ impl ScreenActionsView {
                         .map(|q| q.id.to_string())
                         .collect();
                     map.insert(
-                        "queue.ids".to_owned(),
+                        QUEUE_OPTIONS_KEY.to_owned(),
                         queues
                             .into_iter()
                             .map(|q| (q.id.to_string(), q.name))
@@ -76,7 +81,7 @@ impl ScreenActionsView {
                 }
                 if let Ok(instances) = ti_repo.list_all().await {
                     map.insert(
-                        "trigger_instance.ids".to_owned(),
+                        TRIGGER_INSTANCE_OPTIONS_KEY.to_owned(),
                         instances
                             .into_iter()
                             .map(|ti| (ti.id.to_string(), ti.name))
@@ -85,7 +90,7 @@ impl ScreenActionsView {
                 }
                 if let Ok(scripts) = script_repo.list().await {
                     map.insert(
-                        "script.names".to_owned(),
+                        SCRIPT_OPTIONS_KEY.to_owned(),
                         scripts
                             .into_iter()
                             .map(|s| (s.name.clone(), s.name))
@@ -111,7 +116,7 @@ impl ScreenActionsView {
                 }
                 if let Ok(globals) = globals_repo.list().await {
                     map.insert(
-                        "global.names".to_owned(),
+                        GLOBAL_OPTIONS_KEY.to_owned(),
                         globals
                             .into_iter()
                             .map(|g| (g.name.clone(), g.name))
@@ -120,7 +125,7 @@ impl ScreenActionsView {
                 }
                 if let Ok(overlays) = overlay_repo.list().await {
                     map.insert(
-                        "overlay.ids".to_owned(),
+                        OVERLAY_OPTIONS_KEY.to_owned(),
                         overlays
                             .iter()
                             .filter(|o| overlay_schema.takes_sends(&o.kind_id))
@@ -138,16 +143,19 @@ impl ScreenActionsView {
                         .unwrap_or_else(|e| e.into_inner())
                         .engine_ids();
                     map.insert(
-                        "tts.engine_ids".to_owned(),
+                        ENGINE_OPTIONS_KEY.to_owned(),
                         ids.into_iter().map(|id| (id.0.clone(), id.0)).collect(),
                     );
                 }
                 if let Some(speak) = speak {
                     let voices = speak.available_voices();
                     for voice in voices.iter() {
-                        map.entry(format!("tts.voices.{}", voice.engine_id.0))
-                            .or_default()
-                            .push((voice.id.0.clone(), voice.name.clone()));
+                        map.entry(dependent_options_key(
+                            VOICE_OPTIONS_PREFIX,
+                            &voice.engine_id.0,
+                        ))
+                        .or_default()
+                        .push((voice.id.0.clone(), voice.name.clone()));
                     }
                     map.insert(
                         ENGINE_VOICE_OPTIONS_KEY.to_owned(),

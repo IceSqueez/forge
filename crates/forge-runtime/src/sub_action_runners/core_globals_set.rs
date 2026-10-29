@@ -15,6 +15,9 @@ use forge_types::{
 use super::core_globals_shared::NAME_KEY;
 use crate::global_mutation::GlobalMutation;
 
+pub const GLOBAL_SET_KIND_ID: &str = "core.globals.set";
+pub const GLOBAL_VALUE_KEY: &str = "value";
+
 const NAME: TextField = TextField {
     key: NAME_KEY,
     label: "Variable Name",
@@ -26,7 +29,7 @@ const NAME: TextField = TextField {
 };
 
 const VALUE: TextField = TextField {
-    key: "value",
+    key: GLOBAL_VALUE_KEY,
     label: "Value",
     editor: TextEditor::Line { placeholder: "42" },
     default: "",
@@ -65,7 +68,7 @@ impl CoreGlobalsSetRunner {
 #[async_trait]
 impl SubActionRunner for CoreGlobalsSetRunner {
     fn id(&self) -> &str {
-        "core.globals.set"
+        GLOBAL_SET_KIND_ID
     }
 
     fn category(&self) -> SubActionCategory {

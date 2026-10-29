@@ -25,7 +25,7 @@ use crate::global_mutation::RuntimeScriptGlobals;
 use crate::scheduled_runs::SchedulingContext;
 use crate::script_registry::{SCRIPT_PANIC_ERROR_TYPE, ScriptRegistry};
 
-const TARGET_VAR_KEY: &str = "target_var";
+pub const TARGET_VAR_KEY: &str = "target_var";
 
 const SCRIPT: DynamicSelectField<String> =
     DynamicSelectField::new(SCRIPT_NAME_KEY, "Script", SCRIPT_OPTIONS_KEY);

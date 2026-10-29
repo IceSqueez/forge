@@ -652,9 +652,13 @@ pub(crate) fn dependent_options(
     if sibling_value.is_empty() {
         return Vec::new();
     }
-    map.get(&format!("{options_prefix}.{sibling_value}"))
+    map.get(&dependent_options_key(options_prefix, sibling_value))
         .cloned()
         .unwrap_or_default()
+}
+
+pub(crate) fn dependent_options_key(options_prefix: &str, sibling_value: &str) -> String {
+    format!("{options_prefix}.{sibling_value}")
 }
 
 pub(crate) fn resolve_dependent_choices(

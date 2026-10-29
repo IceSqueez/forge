@@ -12,7 +12,7 @@ use crate::engine_voice_ref::EngineVoiceRef;
 use crate::speak_dispatcher::{SpeakDispatcher, SpeechOrigin};
 use crate::twitch_emote_lexicon::TwitchEmoteLexicon;
 
-const SPEAK_KIND_ID: &str = "tts.speak.text";
+pub const SPEAK_KIND_ID: &str = "tts.speak.text";
 const VOICE_KEY: &str = "voice";
 const REWARD_ID_VARIABLE: &str = "reward.id";
 

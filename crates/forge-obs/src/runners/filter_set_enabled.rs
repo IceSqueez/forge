@@ -107,6 +107,8 @@ impl SubActionRunner for FilterSetEnabledRunner {
 mod tests {
     use super::*;
     use crate::runners::test_support::{RecordingSink, make_ctx};
+    use forge_types::Variant;
+    use std::collections::BTreeMap;
 
     #[tokio::test]
     async fn execute_forwards_the_interpolated_source_filter_and_enabled_flag() {

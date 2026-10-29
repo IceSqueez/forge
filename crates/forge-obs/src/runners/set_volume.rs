@@ -96,7 +96,9 @@ impl SubActionRunner for SetVolumeRunner {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::runners::test_support::{MockSink, make_ctx};
+    use crate::runners::test_support::{MockSink, RecordingSink, make_ctx};
+    use forge_types::Variant;
+    use std::collections::BTreeMap;
 
     fn runner() -> SetVolumeRunner {
         SetVolumeRunner::new(Arc::new(MockSink))
@@ -125,10 +127,10 @@ mod tests {
     }
 
     #[test]
-    fn validate_config_rejects_a_decibel_figure_that_is_missing_or_unparseable() {
+    fn validate_config_rejects_a_decibel_figure_that_is_blank_or_unparseable() {
         for db in [
-            None,
             Some(Variant::String("loud".to_owned())),
+            Some(Variant::String("NaN".to_owned())),
             Some(Variant::String(String::new())),
             Some(Variant::Bool(true)),
         ] {
@@ -137,6 +139,36 @@ mod tests {
                 "accepted volume_db = {db:?}",
             );
         }
+    }
+
+    #[tokio::test]
+    async fn execute_sets_zero_decibels_when_the_figure_is_absent() {
+        let sink = RecordingSink::new();
+        let runner = SetVolumeRunner::new(Arc::clone(&sink) as Arc<dyn ObsSink>);
+        let stack = ArgStack::new();
+
+        let (tel, _) = runner.execute(&with_db(None), &make_ctx(&stack)).await;
+
+        assert_eq!(tel.outcome, SubActionOutcome::Success);
+        assert_eq!(sink.calls(), vec!["set_input_volume_db(Mic,0)".to_owned()]);
+    }
+
+    #[tokio::test]
+    async fn execute_fails_an_unparseable_figure_without_a_sink_call() {
+        let sink = RecordingSink::new();
+        let runner = SetVolumeRunner::new(Arc::clone(&sink) as Arc<dyn ObsSink>);
+        let stack = ArgStack::new();
+        let config = with_db(Some(Variant::String("loud".to_owned())));
+
+        let (tel, _) = runner.execute(&config, &make_ctx(&stack)).await;
+
+        assert!(
+            matches!(&tel.outcome, SubActionOutcome::Failed(reason)
+                if reason.starts_with("invalid step config: 'volume_db' ")),
+            "{:?}",
+            tel.outcome,
+        );
+        assert!(sink.calls().is_empty());
     }
 
     #[tokio::test]

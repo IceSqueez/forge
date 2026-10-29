@@ -101,6 +101,8 @@ impl SubActionRunner for CaptureScreenshotRunner {
 mod tests {
     use super::*;
     use crate::runners::test_support::{RecordingSink, make_ctx};
+    use forge_types::Variant;
+    use std::collections::BTreeMap;
 
     async fn recorded_call(source: &str, path: &str) -> String {
         let sink = RecordingSink::new();

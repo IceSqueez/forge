@@ -89,3 +89,34 @@ impl ConfigChoice for VertexPinType {
         Self::WIRE_NAMES[self as usize]
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn round_trips<C: ConfigChoice>() -> Vec<(&'static str, Option<&'static str>)> {
+        assert_eq!(C::ALL.len(), C::WIRE_NAMES.len());
+        C::ALL
+            .iter()
+            .zip(C::WIRE_NAMES)
+            .map(|(choice, name)| {
+                assert_eq!(choice.wire_name(), *name);
+                (*name, C::parse(name).map(ConfigChoice::wire_name))
+            })
+            .collect()
+    }
+
+    #[test]
+    fn every_choice_parses_back_from_its_own_wire_name() {
+        for trips in [
+            round_trips::<FadeMode>(),
+            round_trips::<AngleRelativeTo>(),
+            round_trips::<SizeRelativeTo>(),
+            round_trips::<VertexPinType>(),
+        ] {
+            for (name, parsed) in trips {
+                assert_eq!(parsed, Some(name));
+            }
+        }
+    }
+}

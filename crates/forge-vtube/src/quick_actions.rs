@@ -300,7 +300,7 @@ mod tests {
     }
 
     #[test]
-    fn the_two_expression_rows_share_a_runner_but_preset_opposite_active_flags() {
+    fn only_the_toggle_expression_row_presets_the_active_flag_and_presets_it_off() {
         let set = row("Set expression");
         let toggle = row("Toggle expression");
 
@@ -308,14 +308,75 @@ mod tests {
             set.subaction_template.kind_id,
             toggle.subaction_template.kind_id
         );
-        assert_eq!(
-            set.subaction_template.config.get("active"),
-            Some(&Variant::Bool(true))
-        );
+        assert_eq!(set.subaction_template.config.get("active"), None);
         assert_eq!(
             toggle.subaction_template.config.get("active"),
             Some(&Variant::Bool(false))
         );
+    }
+
+    fn starts_blank(field: &QuickActionField) -> bool {
+        match &field.default {
+            None => true,
+            Some(QuickActionFieldValue::Text(text)) => text.is_empty(),
+            Some(_) => false,
+        }
+    }
+
+    fn supplied_values(action: &QuickAction) -> BTreeMap<String, QuickActionFieldValue> {
+        action
+            .fields
+            .iter()
+            .filter(|field| starts_blank(field))
+            .map(|field| {
+                (
+                    field.key.clone(),
+                    QuickActionFieldValue::Text("supplied".to_owned()),
+                )
+            })
+            .collect()
+    }
+
+    #[test]
+    fn every_quick_action_merges_a_config_its_runner_accepts_once_blank_fields_are_filled() {
+        let reg = registry();
+        for action in &roster() {
+            let runner = reg.get(&action.subaction_template.kind_id).unwrap();
+            let step = action.merge_config(&supplied_values(action));
+            let verdict = runner.validate_config(&step.config);
+            assert!(
+                verdict.is_ok(),
+                "{} merges a config its runner rejects: {verdict:?}",
+                action.label,
+            );
+        }
+    }
+
+    #[test]
+    fn every_required_field_left_blank_is_rejected_on_its_own_key() {
+        let reg = registry();
+        for action in &roster() {
+            let runner = reg.get(&action.subaction_template.kind_id).unwrap();
+            for field in action
+                .fields
+                .iter()
+                .filter(|f| f.required && starts_blank(f))
+            {
+                let mut values = supplied_values(action);
+                values.remove(&field.key);
+                let rejected = runner
+                    .validate_config(&action.merge_config(&values).config)
+                    .err()
+                    .and_then(|error| error.into_config_problem().field);
+                assert_eq!(
+                    rejected.as_deref(),
+                    Some(field.key.as_str()),
+                    "{}: blank {:?} was not rejected",
+                    action.label,
+                    field.key,
+                );
+            }
+        }
     }
 
     fn option_list_fields(action: &QuickAction) -> Vec<(String, String, bool)> {
@@ -389,22 +450,6 @@ mod tests {
                 assert!(
                     known.contains(key),
                     "{}: key {key:?} is not read by {kind_id}",
-                    action.label,
-                );
-            }
-        }
-    }
-
-    #[test]
-    fn every_blank_config_slot_has_a_field_that_fills_it() {
-        for action in &roster() {
-            for (key, value) in &action.subaction_template.config {
-                if !matches!(value, Variant::String(s) if s.is_empty()) {
-                    continue;
-                }
-                assert!(
-                    action.fields.iter().any(|f| &f.key == key),
-                    "{}: blank {key:?} has no field to fill it",
                     action.label,
                 );
             }

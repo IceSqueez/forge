@@ -48,3 +48,87 @@ impl TypedField for JsonObjectField {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use forge_registry::ConfigProblem;
+    use forge_types::{ArgStack, SubActionConfig};
+    use serde_json::json;
+
+    use super::*;
+
+    const SETTINGS: JsonObjectField = JsonObjectField {
+        key: "settings",
+        label: "Settings",
+        default: "{}",
+    };
+
+    fn read(value: Variant) -> Result<Map<String, Value>, ConfigProblem> {
+        let args = ArgStack::new().set("user".to_owned(), Variant::String("ann".to_owned()));
+        SETTINGS.read(
+            &SubActionConfig::from([("settings".to_owned(), value)]),
+            &args,
+        )
+    }
+
+    fn object(value: Value) -> Map<String, Value> {
+        let Value::Object(map) = value else {
+            unreachable!()
+        };
+        map
+    }
+
+    #[test]
+    fn reads_a_json_object_text_as_the_object_keeping_nulls_and_nesting() {
+        assert_eq!(
+            read(Variant::String(
+                r#" {"a":null,"b":{"c":[1,"x"]}} "#.to_owned()
+            )),
+            Ok(object(json!({"a": null, "b": {"c": [1, "x"]}}))),
+        );
+    }
+
+    #[test]
+    fn keeps_variable_references_inside_the_object_verbatim() {
+        assert_eq!(
+            read(Variant::String(r#"{"text":"%user%"}"#.to_owned())),
+            Ok(object(json!({"text": "%user%"}))),
+        );
+    }
+
+    #[test]
+    fn reads_an_absent_value_as_the_declared_default_object() {
+        assert_eq!(
+            SETTINGS.read(&SubActionConfig::new(), &ArgStack::new()),
+            Ok(Map::new()),
+        );
+    }
+
+    #[test]
+    fn refuses_text_that_is_not_a_json_object_as_an_invalid_format() {
+        for text in ["[1,2]", "5", r#""str""#, "null", "{not valid", "", "%user%"] {
+            let problem = read(Variant::String(text.to_owned())).unwrap_err();
+            assert_eq!(problem.field.as_deref(), Some("settings"), "{text:?}");
+            assert!(
+                matches!(problem.reason, ConfigReason::InvalidFormat(_)),
+                "{text:?} gave {:?}",
+                problem.reason,
+            );
+        }
+    }
+
+    #[test]
+    fn refuses_a_value_that_is_not_text() {
+        for value in [
+            Variant::Int(0),
+            Variant::Bool(true),
+            Variant::Object(Default::default()),
+        ] {
+            assert_eq!(
+                read(value.clone()),
+                Err(ConfigProblem::field("settings", ConfigReason::NotText)),
+                "{value:?}",
+            );
+        }
+    }
+}

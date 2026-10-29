@@ -109,6 +109,8 @@ impl SubActionRunner for QueryInputSettingsRunner {
 mod tests {
     use super::*;
     use crate::runners::test_support::{MockSink, make_ctx};
+    use forge_types::SubActionOutcome;
+    use std::collections::BTreeMap;
 
     fn runner() -> QueryInputSettingsRunner {
         QueryInputSettingsRunner::new(Arc::new(MockSink))

@@ -102,6 +102,8 @@ impl SubActionRunner for ModelSetPhysicsRunner {
 mod tests {
     use super::*;
     use crate::runners::test_support::{MockSink, make_ctx};
+    use forge_types::Variant;
+    use std::collections::BTreeMap;
 
     #[tokio::test]
     async fn execute_default_config_enables_physics() {

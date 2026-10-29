@@ -116,6 +116,7 @@ mod tests {
     use crate::error::VTubeError;
     use crate::runners::test_support::{MockSink, make_ctx};
     use forge_types::Variant;
+    use std::collections::BTreeMap;
 
     #[tokio::test]
     async fn execute_all_none_is_noop() {

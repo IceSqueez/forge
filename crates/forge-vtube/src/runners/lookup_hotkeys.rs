@@ -101,6 +101,7 @@ impl SubActionRunner for LookupHotkeysRunner {
 mod tests {
     use super::*;
     use crate::runners::test_support::{MockSink, make_ctx};
+    use std::collections::BTreeMap;
 
     #[tokio::test]
     async fn execute_extracts_hotkey_fields_into_arg_stack() {

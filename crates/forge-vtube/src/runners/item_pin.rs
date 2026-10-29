@@ -164,7 +164,9 @@ impl SubActionRunner for ItemPinRunner {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::runners::test_support::{MockSink, make_ctx};
+    use crate::runners::test_support::{MockSink, RecordingSink, make_ctx};
+    use forge_types::Variant;
+    use std::collections::BTreeMap;
 
     fn config_with_id(id: &str) -> SubActionConfig {
         BTreeMap::from([(
@@ -222,5 +224,35 @@ mod tests {
     fn validate_config_rejects_missing_id() {
         let runner = ItemPinRunner::new(Arc::new(MockSink::new()));
         assert!(runner.validate_config(&BTreeMap::new()).is_err());
+    }
+
+    #[tokio::test]
+    async fn model_and_art_mesh_ids_are_interpolated_and_blank_ones_reach_vts_empty() {
+        let stack = ArgStack::new()
+            .set("model".to_owned(), Variant::String("m-7".to_owned()))
+            .set("mesh".to_owned(), Variant::String("Hat".to_owned()))
+            .set("nothing".to_owned(), Variant::String(String::new()));
+        for (model_id, art_mesh_id, expected) in [
+            ("%model%", "%mesh% Brim", ("m-7", "Hat Brim")),
+            ("", "  ", ("", "")),
+            ("%nothing%", "%nothing%", ("", "")),
+        ] {
+            let sink = Arc::new(RecordingSink::default());
+            let runner = ItemPinRunner::new(Arc::clone(&sink) as Arc<dyn VTubeSink>);
+            let mut config = config_with_id("item-1");
+            config.insert("model_id".to_owned(), Variant::String(model_id.to_owned()));
+            config.insert(
+                "art_mesh_id".to_owned(),
+                Variant::String(art_mesh_id.to_owned()),
+            );
+
+            runner.execute(&config, &make_ctx(&stack)).await;
+
+            assert_eq!(
+                sink.pin_targets(),
+                vec![(expected.0.to_owned(), expected.1.to_owned())],
+                "{model_id:?} / {art_mesh_id:?}",
+            );
+        }
     }
 }

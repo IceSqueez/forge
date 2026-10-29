@@ -81,10 +81,10 @@ pub fn register_vtube_sub_actions(
 
 #[cfg(test)]
 mod tests {
-    use std::collections::BTreeSet;
+    use std::collections::{BTreeMap, BTreeSet};
 
     use forge_platform_core::QuickActions;
-    use forge_registry::FormField;
+    use forge_registry::{ConfigProblem, ConfigReason};
 
     use super::*;
     use crate::client::VTubeClient;
@@ -96,28 +96,6 @@ mod tests {
         let mut reg = SubActionRegistry::new();
         register_vtube_sub_actions(&mut reg, Arc::new(MockSink::new())).unwrap();
         reg
-    }
-
-    fn field_key(field: &FormField) -> &'static str {
-        match field {
-            FormField::Text { key, .. }
-            | FormField::TextArea { key, .. }
-            | FormField::Code { key, .. }
-            | FormField::Integer { key, .. }
-            | FormField::Toggle { key, .. }
-            | FormField::FilePicker { key, .. }
-            | FormField::DateTime { key, .. }
-            | FormField::Select { key, .. }
-            | FormField::UnitAmount { key, .. }
-            | FormField::Duration { key, .. }
-            | FormField::DynamicSelect { key, .. }
-            | FormField::DependentSelect { key, .. }
-            | FormField::Optional { key, .. }
-            | FormField::SubChain { key, .. }
-            | FormField::CaseList { key, .. }
-            | FormField::Slider { key, .. }
-            | FormField::Swatch { key, .. } => key,
-        }
     }
 
     #[test]
@@ -161,12 +139,7 @@ mod tests {
             });
 
             let mut read: BTreeSet<String> = runner.default_config().into_keys().collect();
-            read.extend(
-                runner
-                    .config_fields()
-                    .iter()
-                    .map(|f| field_key(f).to_owned()),
-            );
+            read.extend(runner.config_fields().iter().map(|f| f.key().to_owned()));
 
             let written = action
                 .subaction_template
@@ -298,7 +271,7 @@ mod tests {
             literal: ("128", 128.0),
             method: "tint_all_art_meshes",
             arg: 0,
-            when_empty: WhenEmpty::Sends(Some(255.0)),
+            when_empty: WhenEmpty::Fails,
         },
     ];
 
@@ -448,5 +421,106 @@ mod tests {
             .map(str::to_owned)
             .collect::<BTreeSet<String>>(),
         );
+    }
+
+    const STORED_DEFAULT_CONFIGS: &[(&str, &str)] = &[
+        (
+            "vtube.expression.set",
+            r#"{"active":{"type":"bool","value":true},"expression_file":{"type":"string","value":""}}"#,
+        ),
+        (
+            "vtube.hotkey.trigger",
+            r#"{"hotkey_id":{"type":"string","value":""}}"#,
+        ),
+        (
+            "vtube.item.load",
+            r#"{"file_name":{"type":"string","value":""},"unload_on_disconnect":{"type":"bool","value":true}}"#,
+        ),
+        (
+            "vtube.item.move",
+            r#"{"fade_mode":{"type":"string","value":"linear"},"item_instance_id":{"type":"string","value":""}}"#,
+        ),
+        (
+            "vtube.item.pin",
+            r#"{"angle_relative_to":{"type":"string","value":"RelativeToModel"},"item_instance_id":{"type":"string","value":""},"pin":{"type":"bool","value":true},"size_relative_to":{"type":"string","value":"RelativeToWorld"},"vertex_pin_type":{"type":"string","value":"Center"}}"#,
+        ),
+        (
+            "vtube.item.throw",
+            r#"{"file_name":{"type":"string","value":""}}"#,
+        ),
+        ("vtube.item.unload_all", r#"{}"#),
+        ("vtube.lookup.current_model", r#"{}"#),
+        ("vtube.lookup.expressions", r#"{}"#),
+        ("vtube.lookup.hotkeys", r#"{}"#),
+        ("vtube.lookup.items", r#"{}"#),
+        ("vtube.lookup.parameters", r#"{}"#),
+        (
+            "vtube.model.load",
+            r#"{"model_id":{"type":"string","value":""}}"#,
+        ),
+        ("vtube.model.move", r#"{}"#),
+        (
+            "vtube.model.set_physics",
+            r#"{"enabled":{"type":"bool","value":true}}"#,
+        ),
+        (
+            "vtube.model.tint",
+            r#"{"color_a":{"type":"int","value":255},"color_b":{"type":"int","value":255},"color_g":{"type":"int","value":255},"color_r":{"type":"int","value":255}}"#,
+        ),
+        (
+            "vtube.param.set",
+            r#"{"hold_secs":{"type":"float","value":0.0},"param_id":{"type":"string","value":""},"value":{"type":"float","value":0.0}}"#,
+        ),
+        ("vtube.params.reset", r#"{}"#),
+    ];
+
+    #[test]
+    fn every_runner_seeds_the_same_stored_default_config_as_before_declared_fields() {
+        let reg = registry();
+        for (id, stored) in STORED_DEFAULT_CONFIGS {
+            let runner = reg
+                .get(id)
+                .unwrap_or_else(|| panic!("missing runner: {id}"));
+            let expected: serde_json::Value = serde_json::from_str(stored).unwrap();
+            assert_eq!(
+                serde_json::to_value(runner.default_config()).unwrap(),
+                expected,
+                "{id} seeds a different default config",
+            );
+        }
+    }
+
+    #[test]
+    fn every_default_config_validates_unless_it_starts_with_a_blank_required_name() {
+        let reg = registry();
+        let incomplete: BTreeMap<String, String> = reg
+            .all()
+            .filter_map(|runner| {
+                let problem = runner.validate_config(&runner.default_config()).err()?;
+                Some((
+                    runner.id().to_owned(),
+                    problem.into_config_problem().to_string(),
+                ))
+            })
+            .collect();
+        let expected: BTreeMap<String, String> = [
+            ("vtube.expression.set", "expression_file"),
+            ("vtube.hotkey.trigger", "hotkey_id"),
+            ("vtube.item.load", "file_name"),
+            ("vtube.item.move", "item_instance_id"),
+            ("vtube.item.pin", "item_instance_id"),
+            ("vtube.item.throw", "file_name"),
+            ("vtube.model.load", "model_id"),
+            ("vtube.param.set", "param_id"),
+        ]
+        .into_iter()
+        .map(|(id, key)| {
+            (
+                id.to_owned(),
+                ConfigProblem::field(key, ConfigReason::Required).to_string(),
+            )
+        })
+        .collect();
+        assert_eq!(incomplete, expected);
     }
 }

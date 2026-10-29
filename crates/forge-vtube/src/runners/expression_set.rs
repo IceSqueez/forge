@@ -97,6 +97,8 @@ impl SubActionRunner for ExpressionSetRunner {
 mod tests {
     use super::*;
     use crate::runners::test_support::{MockSink, make_ctx};
+    use forge_types::Variant;
+    use std::collections::BTreeMap;
 
     #[test]
     fn validate_config_accepts_expression_string() {

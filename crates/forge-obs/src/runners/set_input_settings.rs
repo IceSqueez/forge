@@ -115,7 +115,9 @@ mod tests {
     use super::*;
     use crate::runners::test_support::{MockSink, RecordingSink, make_ctx};
     use forge_registry::RegistryError;
+    use forge_types::Variant;
     use serde_json::json;
+    use std::collections::BTreeMap;
 
     fn config_with(settings: Variant, overlay: bool) -> SubActionConfig {
         BTreeMap::from([
@@ -190,7 +192,7 @@ mod tests {
             let stack = ArgStack::new();
             let (tel, _) = runner.execute(&config, &make_ctx(&stack)).await;
             assert!(
-                matches!(&tel.outcome, SubActionOutcome::Failed(reason) if reason.starts_with("settings_json: ")),
+                matches!(&tel.outcome, SubActionOutcome::Failed(reason) if reason.starts_with("invalid step config: 'settings_json' ")),
                 "{label}: execute must fail with a settings_json reason, got {:?}",
                 tel.outcome,
             );

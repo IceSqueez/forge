@@ -140,6 +140,8 @@ mod tests {
     use super::*;
     use crate::error::VTubeError;
     use crate::runners::test_support::{MockSink, make_ctx};
+    use forge_types::Variant;
+    use std::collections::BTreeMap;
 
     const LONG_AFTER: Duration = Duration::from_secs(60);
 
@@ -331,14 +333,13 @@ mod tests {
     }
 
     #[test]
-    fn validate_config_accepts_a_numeric_blank_or_templated_hold() {
+    fn validate_config_accepts_a_numeric_or_templated_hold_from_zero_to_the_cap() {
         let runner = ParamSetRunner::new(Arc::new(MockSink::new()), Arc::new(HoldRegistry::new()));
         for hold in [
+            Variant::Float(0.0),
             Variant::Float(2.5),
-            Variant::Int(3),
-            Variant::String("2.5".to_owned()),
-            Variant::String(String::new()),
-            Variant::String("   ".to_owned()),
+            Variant::Int(600),
+            Variant::String(" 600 ".to_owned()),
             Variant::String("%hold%".to_owned()),
         ] {
             let result = runner.validate_config(&config("P", 1.0, Some(hold.clone())));
@@ -346,16 +347,43 @@ mod tests {
         }
     }
 
+    fn unusable_holds() -> [Variant; 7] {
+        [
+            Variant::String("soon".to_owned()),
+            Variant::Bool(true),
+            Variant::String(String::new()),
+            Variant::String("   ".to_owned()),
+            Variant::Float(-0.001),
+            Variant::Float(600.001),
+            Variant::Float(f64::NAN),
+        ]
+    }
+
     #[test]
-    fn validate_config_rejects_a_hold_that_is_not_a_number() {
+    fn validate_config_rejects_a_blank_non_numeric_or_out_of_range_hold_on_its_key() {
         let runner = ParamSetRunner::new(Arc::new(MockSink::new()), Arc::new(HoldRegistry::new()));
-        for hold in [Variant::String("soon".to_owned()), Variant::Bool(true)] {
+        for hold in unusable_holds() {
+            let field = runner
+                .validate_config(&config("P", 1.0, Some(hold.clone())))
+                .err()
+                .and_then(|error| error.into_config_problem().field);
+            assert_eq!(field.as_deref(), Some("hold_secs"), "{hold:?} was accepted");
+        }
+    }
+
+    #[tokio::test]
+    async fn execute_fails_an_unusable_hold_without_sending_the_value() {
+        for hold in unusable_holds() {
+            let (runner, log) = runner_with_log();
+
+            let outcome = run(&runner, &config("P", 0.5, Some(hold.clone()))).await;
+
             assert!(
-                runner
-                    .validate_config(&config("P", 1.0, Some(hold.clone())))
-                    .is_err(),
-                "{hold:?} was accepted"
+                matches!(&outcome, SubActionOutcome::Failed(reason)
+                    if reason.starts_with("invalid step config: 'hold_secs' ")),
+                "{hold:?} ran as {outcome:?}",
             );
+            assert!(log.sent().is_empty(), "{hold:?} sent a value");
         }
     }
 
@@ -387,14 +415,8 @@ mod tests {
     }
 
     #[tokio::test(start_paused = true)]
-    async fn a_zero_negative_or_blank_hold_sends_the_value_once() {
-        for hold in [
-            None,
-            Some(Variant::Float(0.0)),
-            Some(Variant::Float(-5.0)),
-            Some(Variant::Float(f64::NAN)),
-            Some(Variant::String(String::new())),
-        ] {
+    async fn an_absent_or_zero_hold_sends_the_value_once() {
+        for hold in [None, Some(Variant::Float(0.0)), Some(Variant::Int(0))] {
             let (runner, log) = runner_with_log();
             run(&runner, &config("P", 0.5, hold.clone())).await;
 
@@ -405,9 +427,9 @@ mod tests {
     }
 
     #[tokio::test(start_paused = true)]
-    async fn a_hold_longer_than_the_cap_stops_resending_at_the_cap() {
+    async fn a_hold_at_the_cap_resends_for_the_whole_cap() {
         let (runner, log) = runner_with_log();
-        run(&runner, &config("P", 0.5, Some(Variant::Float(601.0)))).await;
+        run(&runner, &config("P", 0.5, Some(Variant::Float(600.0)))).await;
 
         tokio::time::sleep(Duration::from_secs(700)).await;
 

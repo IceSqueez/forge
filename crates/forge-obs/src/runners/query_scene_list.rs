@@ -113,6 +113,7 @@ impl SubActionRunner for QuerySceneListRunner {
 mod tests {
     use super::*;
     use crate::runners::test_support::{MockSink, make_ctx};
+    use std::collections::BTreeMap;
 
     #[tokio::test]
     async fn execute_populates_scene_names_and_current_from_sink() {

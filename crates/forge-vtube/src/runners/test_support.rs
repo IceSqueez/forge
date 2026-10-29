@@ -248,9 +248,17 @@ type RecordedCall = (&'static str, Vec<Option<f64>>);
 #[derive(Default)]
 pub(crate) struct RecordingSink {
     calls: std::sync::Mutex<Vec<RecordedCall>>,
+    pin_targets: std::sync::Mutex<Vec<(String, String)>>,
 }
 
 impl RecordingSink {
+    pub(crate) fn pin_targets(&self) -> Vec<(String, String)> {
+        self.pin_targets
+            .lock()
+            .map(|targets| targets.clone())
+            .unwrap_or_default()
+    }
+
     pub(crate) fn numbers_sent_to(&self, method: &str) -> Option<Vec<Option<f64>>> {
         self.calls
             .lock()
@@ -362,11 +370,14 @@ impl VTubeSink for RecordingSink {
         _: &str,
         _: &str,
         _: &str,
-        _: &str,
-        _: &str,
+        model_id: &str,
+        art_mesh_id: &str,
         angle: f64,
         size: f64,
     ) -> Result<(), VTubeError> {
+        if let Ok(mut targets) = self.pin_targets.lock() {
+            targets.push((model_id.to_owned(), art_mesh_id.to_owned()));
+        }
         self.record("pin_item", vec![Some(angle), Some(size)]);
         Ok(())
     }

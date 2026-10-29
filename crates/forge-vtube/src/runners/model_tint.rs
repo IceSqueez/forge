@@ -147,6 +147,8 @@ impl SubActionRunner for ModelTintRunner {
 mod tests {
     use super::*;
     use crate::runners::test_support::{MockSink, RecordingSink, make_ctx};
+    use forge_types::Variant;
+    use std::collections::BTreeMap;
 
     #[tokio::test]
     async fn execute_default_config_succeeds() {
@@ -160,14 +162,14 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn out_of_range_channels_are_clamped_to_the_byte_range() {
+    async fn channels_at_the_byte_range_ends_reach_vts_unchanged() {
         let sink = Arc::new(RecordingSink::default());
         let runner = ModelTintRunner::new(Arc::clone(&sink) as Arc<dyn VTubeSink>);
         let config = BTreeMap::from([
-            ("color_r".to_owned(), Variant::Int(999)),
-            ("color_g".to_owned(), Variant::String("-5".to_owned())),
+            ("color_r".to_owned(), Variant::Int(0)),
+            ("color_g".to_owned(), Variant::String("255".to_owned())),
             ("color_b".to_owned(), Variant::Int(255)),
-            ("color_a".to_owned(), Variant::Int(0)),
+            ("color_a".to_owned(), Variant::String("0".to_owned())),
         ]);
         let stack = ArgStack::new();
 
@@ -176,7 +178,57 @@ mod tests {
         assert_eq!(
             sink.numbers_sent_to("tint_all_art_meshes")
                 .map(|args| args[..4].to_vec()),
-            Some(vec![Some(255.0), Some(0.0), Some(255.0), Some(0.0)])
+            Some(vec![Some(0.0), Some(255.0), Some(255.0), Some(0.0)])
+        );
+    }
+
+    #[tokio::test]
+    async fn a_channel_one_past_the_byte_range_fails_without_tinting() {
+        for (key, value) in [
+            ("color_r", Variant::Int(256)),
+            ("color_g", Variant::String("-1".to_owned())),
+            ("color_b", Variant::Int(-1)),
+            ("color_a", Variant::String("256".to_owned())),
+        ] {
+            let sink = Arc::new(RecordingSink::default());
+            let runner = ModelTintRunner::new(Arc::clone(&sink) as Arc<dyn VTubeSink>);
+            let config = BTreeMap::from([(key.to_owned(), value.clone())]);
+            let stack = ArgStack::new();
+
+            let (tel, _) = runner.execute(&config, &make_ctx(&stack)).await;
+
+            assert!(
+                matches!(&tel.outcome, SubActionOutcome::Failed(reason)
+                    if reason.starts_with(&format!("invalid step config: '{key}' "))),
+                "{key} = {value:?} ran as {:?}",
+                tel.outcome,
+            );
+            assert!(!sink.was_called(), "{key} = {value:?} reached VTS");
+        }
+    }
+
+    #[tokio::test]
+    async fn a_blank_scene_lighting_mix_is_left_out_and_a_flag_there_fails() {
+        let sink = Arc::new(RecordingSink::default());
+        let runner = ModelTintRunner::new(Arc::clone(&sink) as Arc<dyn VTubeSink>);
+        let stack = ArgStack::new();
+        let blank = BTreeMap::from([(
+            "mix_with_scene_lighting".to_owned(),
+            Variant::String(" ".to_owned()),
+        )]);
+        let flag = BTreeMap::from([("mix_with_scene_lighting".to_owned(), Variant::Bool(true))]);
+
+        let (blank_tel, _) = runner.execute(&blank, &make_ctx(&stack)).await;
+        let sent = sink.numbers_sent_to("tint_all_art_meshes");
+        let (flag_tel, _) = runner.execute(&flag, &make_ctx(&stack)).await;
+
+        assert_eq!(blank_tel.outcome, SubActionOutcome::Success);
+        assert_eq!(sent.map(|args| args[4]), Some(None));
+        assert!(
+            matches!(&flag_tel.outcome, SubActionOutcome::Failed(reason)
+                if reason.starts_with("invalid step config: 'mix_with_scene_lighting' ")),
+            "{:?}",
+            flag_tel.outcome,
         );
     }
 

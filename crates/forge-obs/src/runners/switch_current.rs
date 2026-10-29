@@ -83,6 +83,8 @@ impl SubActionRunner for SwitchCurrentSceneRunner {
 mod tests {
     use super::*;
     use crate::runners::test_support::{RecordingSink, make_ctx};
+    use forge_types::Variant;
+    use std::collections::BTreeMap;
 
     fn scene_config(scene: &str) -> SubActionConfig {
         BTreeMap::from([("scene".to_owned(), Variant::String(scene.to_owned()))])

@@ -381,33 +381,70 @@ mod tests {
         }
     }
 
-    fn filled(config: &BTreeMap<String, Variant>) -> BTreeMap<String, Variant> {
-        config
+    fn starts_blank(field: &QuickActionField) -> bool {
+        match &field.default {
+            None => true,
+            Some(QuickActionFieldValue::Text(text)) => text.is_empty(),
+            Some(_) => false,
+        }
+    }
+
+    fn supplied_values(action: &QuickAction) -> BTreeMap<String, QuickActionFieldValue> {
+        action
+            .fields
             .iter()
-            .map(|(k, v)| match v {
-                Variant::String(s) if s.is_empty() => {
-                    (k.clone(), Variant::String("supplied".to_owned()))
-                }
-                other => (k.clone(), other.clone()),
+            .filter(|field| starts_blank(field))
+            .map(|field| {
+                (
+                    field.key.clone(),
+                    QuickActionFieldValue::Text("supplied".to_owned()),
+                )
             })
             .collect()
     }
 
     #[test]
-    fn every_quick_action_targets_a_registered_runner_that_accepts_its_template() {
+    fn every_quick_action_merges_a_config_its_runner_accepts_once_blank_fields_are_filled() {
         let reg = registry();
         for action in &roster() {
             let kind_id = &action.subaction_template.kind_id;
             let runner = reg
                 .get(kind_id)
                 .unwrap_or_else(|| panic!("{} targets unregistered {kind_id}", action.label));
+            let step = action.merge_config(&supplied_values(action));
+            let verdict = runner.validate_config(&step.config);
             assert!(
-                runner
-                    .validate_config(&filled(&action.subaction_template.config))
-                    .is_ok(),
-                "{} ships a template config its runner rejects",
+                verdict.is_ok(),
+                "{} merges a config its runner rejects: {verdict:?}",
                 action.label,
             );
+        }
+    }
+
+    #[test]
+    fn every_required_field_left_blank_is_rejected_on_its_own_key() {
+        let reg = registry();
+        for action in &roster() {
+            let runner = reg.get(&action.subaction_template.kind_id).unwrap();
+            for field in action
+                .fields
+                .iter()
+                .filter(|f| f.required && starts_blank(f))
+            {
+                let mut values = supplied_values(action);
+                values.remove(&field.key);
+                let rejected = runner
+                    .validate_config(&action.merge_config(&values).config)
+                    .err()
+                    .and_then(|error| error.into_config_problem().field);
+                assert_eq!(
+                    rejected.as_deref(),
+                    Some(field.key.as_str()),
+                    "{}: unchosen {:?} was not rejected",
+                    action.label,
+                    field.key,
+                );
+            }
         }
     }
 
@@ -432,22 +469,6 @@ mod tests {
                     "{}: field key {:?} is not read by {kind_id}",
                     action.label,
                     field.key,
-                );
-            }
-        }
-    }
-
-    #[test]
-    fn every_blank_config_slot_has_a_field_that_fills_it() {
-        for action in &roster() {
-            for (key, value) in &action.subaction_template.config {
-                if !matches!(value, Variant::String(s) if s.is_empty()) {
-                    continue;
-                }
-                assert!(
-                    action.fields.iter().any(|f| &f.key == key),
-                    "{}: blank {key:?} has no field to fill it",
-                    action.label,
                 );
             }
         }
@@ -573,13 +594,20 @@ mod tests {
 
     #[test]
     fn a_dependent_list_gets_its_dependency_as_a_field_whenever_the_runner_reads_that_key() {
+        let registry = registry();
         let client = ObsClient::new_for_test("localhost:4455".to_owned());
         let lists = client.option_lists();
         for action in &client.actions() {
             for (key, list) in option_list_fields(action) {
                 let meta = lists.iter().find(|m| m.id.as_str() == list).unwrap();
                 for dependency in &meta.depends_on {
-                    if !action.subaction_template.config.contains_key(dependency) {
+                    let runner_reads_dependency = registry
+                        .get(&action.subaction_template.kind_id)
+                        .unwrap()
+                        .config_fields()
+                        .iter()
+                        .any(|field| field.key() == dependency.as_str());
+                    if !runner_reads_dependency {
                         continue;
                     }
                     assert!(

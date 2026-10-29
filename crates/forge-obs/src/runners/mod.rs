@@ -148,6 +148,8 @@ mod tests {
     use forge_types::{ArgStack, SubActionOutcome, Variant};
 
     use super::*;
+    use forge_registry::{ConfigProblem, ConfigReason};
+
     use crate::ObsError;
     use crate::runners::test_support::{MockSink, RecordingSink, make_ctx};
 
@@ -324,35 +326,6 @@ mod tests {
         }
     }
 
-    #[test]
-    fn on_flag_runners_reject_a_missing_or_non_bool_flag() {
-        let reg = registry_with(Arc::new(MockSink));
-        let bad_configs = [
-            BTreeMap::new(),
-            BTreeMap::from([("on".to_owned(), Variant::String("true".to_owned()))]),
-            BTreeMap::from([("on".to_owned(), Variant::Int(1))]),
-        ];
-        for (id, _, _) in
-            SET_ACTIVE_RUNNERS
-                .iter()
-                .chain(std::iter::once(&("obs.studio.set_enabled", "", "")))
-        {
-            let runner = reg.get(id).unwrap();
-            for config in &bad_configs {
-                assert!(
-                    runner.validate_config(config).is_err(),
-                    "{id} accepted {config:?}",
-                );
-            }
-            assert!(
-                runner
-                    .validate_config(&BTreeMap::from([("on".to_owned(), Variant::Bool(false))]))
-                    .is_ok(),
-                "{id} rejected a valid flag",
-            );
-        }
-    }
-
     #[tokio::test]
     async fn single_string_runners_forward_the_interpolated_value_to_their_sink_call() {
         for (id, key, sink_call) in SINGLE_STRING_RUNNERS {
@@ -514,24 +487,113 @@ mod tests {
         }
     }
 
+    fn flag_runner_cases() -> Vec<(
+        &'static str,
+        &'static str,
+        BTreeMap<String, Variant>,
+        &'static str,
+    )> {
+        let scene_item = || {
+            BTreeMap::from([
+                ("scene".to_owned(), Variant::String("Gameplay".to_owned())),
+                ("source".to_owned(), Variant::String("Face Cam".to_owned())),
+            ])
+        };
+        vec![
+            (
+                "obs.streaming.set_active",
+                "on",
+                BTreeMap::new(),
+                "start_stream",
+            ),
+            (
+                "obs.recording.set_active",
+                "on",
+                BTreeMap::new(),
+                "start_record",
+            ),
+            (
+                "obs.virtualcam.set_active",
+                "on",
+                BTreeMap::new(),
+                "start_virtual_cam",
+            ),
+            (
+                "obs.replay.set_active",
+                "on",
+                BTreeMap::new(),
+                "start_replay_buffer",
+            ),
+            (
+                "obs.studio.set_enabled",
+                "on",
+                BTreeMap::new(),
+                "set_studio_mode(true)",
+            ),
+            (
+                "obs.source.set_visible",
+                "visible",
+                scene_item(),
+                "set_source_visible(Gameplay,Face Cam,true)",
+            ),
+            (
+                "obs.source.set_locked",
+                "locked",
+                scene_item(),
+                "set_source_locked(Gameplay,Face Cam,true)",
+            ),
+            (
+                "obs.audio.set_mute",
+                "muted",
+                one_string("source", "Mic"),
+                "set_input_mute(Mic,true)",
+            ),
+            (
+                "obs.filter.set_enabled",
+                "enabled",
+                BTreeMap::from([
+                    ("source".to_owned(), Variant::String("Cam".to_owned())),
+                    ("filter".to_owned(), Variant::String("Blur".to_owned())),
+                ]),
+                "set_source_filter_enabled(Cam,Blur,true)",
+            ),
+        ]
+    }
+
     #[tokio::test]
-    async fn scene_item_flag_runners_treat_an_absent_or_non_bool_flag_as_off() {
-        for (id, flag_key, sink_call) in SCENE_ITEM_FLAG_RUNNERS {
-            for unusable in [
-                None,
-                Some(Variant::String("true".to_owned())),
-                Some(Variant::Int(1)),
+    async fn flag_runners_read_an_absent_flag_as_on() {
+        for (id, flag_key, config, on_call) in flag_runner_cases() {
+            let sink = RecordingSink::new();
+            let reg = registry_with(Arc::clone(&sink) as Arc<dyn ObsSink>);
+            let stack = ArgStack::new();
+
+            let (telemetry, _) = reg
+                .get(id)
+                .unwrap()
+                .execute(&config, &make_ctx(&stack))
+                .await;
+
+            assert_eq!(telemetry.outcome, SubActionOutcome::Success, "{id}");
+            assert_eq!(
+                sink.calls(),
+                vec![on_call.to_owned()],
+                "{id} without {flag_key}"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn flag_runners_read_wire_text_and_a_template_as_the_flag() {
+        for (id, flag_key, base, on_call) in flag_runner_cases() {
+            for value in [
+                Variant::String("true".to_owned()),
+                Variant::String("%flag%".to_owned()),
             ] {
                 let sink = RecordingSink::new();
                 let reg = registry_with(Arc::clone(&sink) as Arc<dyn ObsSink>);
-                let stack = ArgStack::new();
-                let mut config = BTreeMap::from([
-                    ("scene".to_owned(), Variant::String("Gameplay".to_owned())),
-                    ("source".to_owned(), Variant::String("Face Cam".to_owned())),
-                ]);
-                if let Some(value) = unusable.clone() {
-                    config.insert((*flag_key).to_owned(), value);
-                }
+                let stack = ArgStack::new().set("flag".to_owned(), Variant::Bool(true));
+                let mut config = base.clone();
+                config.insert(flag_key.to_owned(), value.clone());
 
                 reg.get(id)
                     .unwrap()
@@ -540,9 +602,51 @@ mod tests {
 
                 assert_eq!(
                     sink.calls(),
-                    vec![format!("{sink_call}(Gameplay,Face Cam,false)")],
-                    "{id} read {flag_key} = {unusable:?} as on",
+                    vec![on_call.to_owned()],
+                    "{id} with {flag_key} = {value:?}",
                 );
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn flag_runners_fail_a_value_that_is_not_a_flag_without_a_sink_call() {
+        let mut cases = flag_runner_cases();
+        cases.push((
+            "obs.source.set_input_settings",
+            "overlay",
+            BTreeMap::from([
+                ("source".to_owned(), Variant::String("Webcam".to_owned())),
+                ("settings_json".to_owned(), Variant::String("{}".to_owned())),
+            ]),
+            "",
+        ));
+        for (id, flag_key, base, _) in cases {
+            for value in [Variant::Int(1), Variant::String("yes".to_owned())] {
+                let sink = RecordingSink::new();
+                let reg = registry_with(Arc::clone(&sink) as Arc<dyn ObsSink>);
+                let runner = reg.get(id).unwrap();
+                let stack = ArgStack::new();
+                let mut config = base.clone();
+                config.insert(flag_key.to_owned(), value.clone());
+
+                let field = runner
+                    .validate_config(&config)
+                    .err()
+                    .and_then(|error| error.into_config_problem().field);
+                let (telemetry, _) = runner.execute(&config, &make_ctx(&stack)).await;
+
+                assert_eq!(field.as_deref(), Some(flag_key), "{id} validated {value:?}");
+                assert!(
+                    matches!(
+                        &telemetry.outcome,
+                        SubActionOutcome::Failed(reason)
+                            if reason.starts_with(&format!("invalid step config: '{flag_key}' "))
+                    ),
+                    "{id} with {flag_key} = {value:?} ran as {:?}",
+                    telemetry.outcome,
+                );
+                assert!(sink.calls().is_empty(), "{id} reached OBS with {value:?}");
             }
         }
     }
@@ -614,5 +718,172 @@ mod tests {
             .map(str::to_owned)
             .collect(),
         );
+    }
+
+    const STORED_DEFAULT_CONFIGS: &[(&str, &str)] = &[
+        (
+            "obs.audio.set_mute",
+            r#"{"muted":{"type":"bool","value":true},"source":{"type":"string","value":""}}"#,
+        ),
+        (
+            "obs.audio.set_volume",
+            r#"{"source":{"type":"string","value":""},"volume_db":{"type":"string","value":"0.0"}}"#,
+        ),
+        (
+            "obs.browser.refresh",
+            r#"{"source":{"type":"string","value":""}}"#,
+        ),
+        (
+            "obs.capture.screenshot",
+            r#"{"path":{"type":"string","value":""},"source":{"type":"string","value":""}}"#,
+        ),
+        (
+            "obs.collection.switch",
+            r#"{"name":{"type":"string","value":""}}"#,
+        ),
+        (
+            "obs.filter.set_enabled",
+            r#"{"enabled":{"type":"bool","value":true},"filter":{"type":"string","value":""},"source":{"type":"string","value":""}}"#,
+        ),
+        (
+            "obs.media.restart",
+            r#"{"source":{"type":"string","value":""}}"#,
+        ),
+        (
+            "obs.profile.switch",
+            r#"{"name":{"type":"string","value":""}}"#,
+        ),
+        ("obs.recording.get_status", r#"{}"#),
+        ("obs.recording.pause", r#"{}"#),
+        ("obs.recording.resume", r#"{}"#),
+        (
+            "obs.recording.set_active",
+            r#"{"on":{"type":"bool","value":true}}"#,
+        ),
+        (
+            "obs.recording.set_directory",
+            r#"{"path":{"type":"string","value":""}}"#,
+        ),
+        ("obs.recording.start", r#"{}"#),
+        ("obs.recording.stop", r#"{}"#),
+        ("obs.recording.toggle_pause", r#"{}"#),
+        ("obs.replay.save", r#"{}"#),
+        (
+            "obs.replay.set_active",
+            r#"{"on":{"type":"bool","value":true}}"#,
+        ),
+        ("obs.replay.start", r#"{}"#),
+        ("obs.replay.stop", r#"{}"#),
+        ("obs.scene.get_list", r#"{}"#),
+        (
+            "obs.scene.set_preview",
+            r#"{"scene":{"type":"string","value":""}}"#,
+        ),
+        (
+            "obs.scene.set_transition",
+            r#"{"transition":{"type":"string","value":""}}"#,
+        ),
+        (
+            "obs.scene.switch_current",
+            r#"{"scene":{"type":"string","value":""}}"#,
+        ),
+        (
+            "obs.source.get_input_settings",
+            r#"{"source":{"type":"string","value":""}}"#,
+        ),
+        ("obs.source.get_list", r#"{}"#),
+        (
+            "obs.source.set_input_settings",
+            r#"{"overlay":{"type":"bool","value":true},"settings_json":{"type":"string","value":"{}"},"source":{"type":"string","value":""}}"#,
+        ),
+        (
+            "obs.source.set_locked",
+            r#"{"locked":{"type":"bool","value":true},"scene":{"type":"string","value":""},"source":{"type":"string","value":""}}"#,
+        ),
+        (
+            "obs.source.set_visible",
+            r#"{"scene":{"type":"string","value":""},"source":{"type":"string","value":""},"visible":{"type":"bool","value":true}}"#,
+        ),
+        ("obs.streaming.get_status", r#"{}"#),
+        (
+            "obs.streaming.send_caption",
+            r#"{"caption_text":{"type":"string","value":""}}"#,
+        ),
+        (
+            "obs.streaming.set_active",
+            r#"{"on":{"type":"bool","value":true}}"#,
+        ),
+        ("obs.streaming.start", r#"{}"#),
+        ("obs.streaming.stop", r#"{}"#),
+        ("obs.studio.disable", r#"{}"#),
+        ("obs.studio.enable", r#"{}"#),
+        (
+            "obs.studio.set_enabled",
+            r#"{"on":{"type":"bool","value":true}}"#,
+        ),
+        ("obs.studio.trigger_transition", r#"{}"#),
+        (
+            "obs.virtualcam.set_active",
+            r#"{"on":{"type":"bool","value":true}}"#,
+        ),
+    ];
+
+    #[test]
+    fn every_runner_seeds_the_same_stored_default_config_as_before_declared_fields() {
+        let reg = registry_with(Arc::new(MockSink));
+        for (id, stored) in STORED_DEFAULT_CONFIGS {
+            let runner = reg
+                .get(id)
+                .unwrap_or_else(|| panic!("missing runner: {id}"));
+            let expected: serde_json::Value = serde_json::from_str(stored).unwrap();
+            assert_eq!(
+                serde_json::to_value(runner.default_config()).unwrap(),
+                expected,
+                "{id} seeds a different default config",
+            );
+        }
+    }
+
+    #[test]
+    fn every_default_config_validates_unless_it_starts_with_a_blank_required_name() {
+        let reg = registry_with(Arc::new(MockSink));
+        let incomplete: BTreeMap<String, String> = reg
+            .all()
+            .filter_map(|runner| {
+                let problem = runner.validate_config(&runner.default_config()).err()?;
+                Some((
+                    runner.id().to_owned(),
+                    problem.into_config_problem().to_string(),
+                ))
+            })
+            .collect();
+        let expected: BTreeMap<String, String> = [
+            ("obs.audio.set_mute", "source"),
+            ("obs.audio.set_volume", "source"),
+            ("obs.browser.refresh", "source"),
+            ("obs.capture.screenshot", "source"),
+            ("obs.collection.switch", "name"),
+            ("obs.filter.set_enabled", "source"),
+            ("obs.media.restart", "source"),
+            ("obs.profile.switch", "name"),
+            ("obs.recording.set_directory", "path"),
+            ("obs.scene.set_preview", "scene"),
+            ("obs.scene.set_transition", "transition"),
+            ("obs.scene.switch_current", "scene"),
+            ("obs.source.get_input_settings", "source"),
+            ("obs.source.set_input_settings", "source"),
+            ("obs.source.set_locked", "scene"),
+            ("obs.source.set_visible", "scene"),
+            ("obs.streaming.send_caption", "caption_text"),
+        ]
+        .into_iter()
+        .map(|(id, key)| {
+            (
+                id.to_owned(),
+                ConfigProblem::field(key, ConfigReason::Required).to_string(),
+            )
+        })
+        .collect();
+        assert_eq!(incomplete, expected);
     }
 }

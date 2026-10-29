@@ -84,6 +84,8 @@ impl SubActionRunner for StreamSendCaptionRunner {
 mod tests {
     use super::*;
     use crate::runners::test_support::{MockSink, make_ctx};
+    use forge_types::Variant;
+    use std::collections::BTreeMap;
 
     fn runner() -> StreamSendCaptionRunner {
         StreamSendCaptionRunner::new(Arc::new(MockSink))

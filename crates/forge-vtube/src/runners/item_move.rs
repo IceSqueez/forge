@@ -153,6 +153,8 @@ mod tests {
     use super::*;
     use crate::error::VTubeError;
     use crate::runners::test_support::{MockSink, make_ctx};
+    use forge_types::Variant;
+    use std::collections::BTreeMap;
 
     fn config_with_id(id: &str) -> SubActionConfig {
         BTreeMap::from([(
@@ -371,20 +373,23 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn execute_invalid_fade_mode_falls_back_to_linear() {
+    async fn execute_fails_an_unknown_fade_mode_without_moving_the_item() {
         let sink = Arc::new(CaptureSink::new());
         let runner = ItemMoveRunner::new(Arc::clone(&sink) as Arc<dyn VTubeSink>);
         let mut config = config_with_id("item-1");
         config.insert("rotation".to_owned(), Variant::Float(10.0));
         config.insert("fade_mode".to_owned(), Variant::String("wobble".to_owned()));
         let stack = ArgStack::new();
-        let ctx = make_ctx(&stack);
-        runner.execute(&config, &ctx).await;
-        assert_eq!(
-            sink.fade_mode().expect("sink must have been called"),
-            "linear",
-            "an unrecognised fade_mode must fall back to linear"
+
+        let (tel, _) = runner.execute(&config, &make_ctx(&stack)).await;
+
+        assert!(
+            matches!(&tel.outcome, SubActionOutcome::Failed(reason)
+                if reason.starts_with("invalid step config: 'fade_mode' ")),
+            "{:?}",
+            tel.outcome,
         );
+        assert_eq!(sink.fade_mode(), None);
     }
 
     #[tokio::test]

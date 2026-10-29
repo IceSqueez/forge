@@ -173,36 +173,14 @@ impl TriggerKindDescriptor for CharityDonationDescriptor {
                     },
                 )
                 .legacy(
-                    DeclaredVariable {
-                        name: "charity.user.login".to_owned(),
-                        kind: VariantKind::String,
-                        label: "Donor login".to_owned(),
-                        synthesis: Some(SynthesisHint::Username),
-                    },
+                    "charity.user.login",
+                    "Donor login",
                     CanonicalVariable::actor(ActorRole::Principal, ActorSlot::Login),
-                    |event| {
-                        Variant::String(payload_read::nested_text(
-                            event,
-                            charity_fields::USER,
-                            charity_fields::USER_LOGIN,
-                        ))
-                    },
                 )
                 .legacy(
-                    DeclaredVariable {
-                        name: "charity.user.display_name".to_owned(),
-                        kind: VariantKind::String,
-                        label: "Donor display name".to_owned(),
-                        synthesis: Some(SynthesisHint::DisplayName),
-                    },
+                    "charity.user.display_name",
+                    "Donor display name",
                     CanonicalVariable::actor(ActorRole::Principal, ActorSlot::Name),
-                    |event| {
-                        Variant::String(payload_read::nested_text(
-                            event,
-                            charity_fields::USER,
-                            charity_fields::USER_DISPLAY_NAME,
-                        ))
-                    },
                 ),
         )
     }

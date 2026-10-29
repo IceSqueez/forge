@@ -4,8 +4,7 @@ use forge_registry::{
     TriggerKindDescriptor, TriggerVariables,
 };
 use forge_types::{
-    ActorRole, ActorSlot, CanonicalCount, CanonicalVariable, DeclaredVariable, PlatformId,
-    SynthesisHint, TriggerConfig, Variant, VariantKind,
+    ActorRole, ActorSlot, CanonicalCount, CanonicalVariable, PlatformId, TriggerConfig,
 };
 
 use super::payload_read::{self, kick_actor};
@@ -76,35 +75,16 @@ impl TriggerKindDescriptor for SubGiftDescriptor {
                 })
                 .sub_tier(|event| payload_read::text(event, fields::TIER))
                 .legacy(
-                    DeclaredVariable {
-                        name: "gifter_username".to_owned(),
-                        kind: VariantKind::String,
-                        label: "Gifter username".to_owned(),
-                        synthesis: Some(SynthesisHint::Username),
-                    },
+                    "gifter_username",
+                    "Gifter username",
                     CanonicalVariable::actor(ActorRole::Gifter, ActorSlot::Login),
-                    |event| Variant::String(payload_read::login_of(gifter_identity(event))),
                 )
                 .legacy(
-                    DeclaredVariable {
-                        name: "count".to_owned(),
-                        kind: VariantKind::Int,
-                        label: "Gifted subscription count".to_owned(),
-                        synthesis: Some(SynthesisHint::BoundedInt { min: 0, max: 100 }),
-                    },
+                    "count",
+                    "Gifted subscription count",
                     CanonicalVariable::Count(CanonicalCount::GiftCount),
-                    |event| Variant::Int(payload_read::number(event, fields::COUNT)),
                 )
-                .legacy(
-                    DeclaredVariable {
-                        name: "tier".to_owned(),
-                        kind: VariantKind::String,
-                        label: "Subscription tier".to_owned(),
-                        synthesis: None,
-                    },
-                    CanonicalVariable::SubTier,
-                    |event| Variant::String(payload_read::text(event, fields::TIER)),
-                ),
+                .legacy("tier", "Subscription tier", CanonicalVariable::SubTier),
         )
     }
 

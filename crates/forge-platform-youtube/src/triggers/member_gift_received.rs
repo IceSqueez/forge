@@ -3,10 +3,7 @@ use forge_registry::{
     ActorDeclaration, ActorIdentity, EventFilter, FormField, KindPlatformContract, TriggerCategory,
     TriggerKindDescriptor, TriggerVariables,
 };
-use forge_types::{
-    ActorRole, ActorSlot, CanonicalVariable, DeclaredVariable, PlatformId, SynthesisHint,
-    TriggerConfig, Variant, VariantKind,
-};
+use forge_types::{ActorRole, ActorSlot, CanonicalVariable, PlatformId, TriggerConfig};
 
 use super::payload_read::{self, youtube_actor};
 use crate::payload_fields::gift as fields;
@@ -73,54 +70,29 @@ impl TriggerKindDescriptor for ChannelMemberGiftReceivedDescriptor {
                 .actor(youtube_actor(ActorRole::Gifter), gifter_identity)
                 .sub_tier(|event| payload_read::text(event, fields::LEVEL_NAME))
                 .legacy(
-                    DeclaredVariable {
-                        name: "gift.level_name".to_owned(),
-                        kind: VariantKind::String,
-                        label: "Membership level name".to_owned(),
-                        synthesis: None,
-                    },
+                    "gift.level_name",
+                    "Membership level name",
                     CanonicalVariable::SubTier,
-                    |event| Variant::String(payload_read::text(event, fields::LEVEL_NAME)),
                 )
                 .legacy(
-                    DeclaredVariable {
-                        name: "gifter.channel_id".to_owned(),
-                        kind: VariantKind::String,
-                        label: "Gifter channel ID".to_owned(),
-                        synthesis: None,
-                    },
+                    "gifter.channel_id",
+                    "Gifter channel ID",
                     CanonicalVariable::actor(ActorRole::Gifter, ActorSlot::Id),
-                    |event| Variant::String(gifter_identity(event).id),
                 )
                 .legacy(
-                    DeclaredVariable {
-                        name: "gifter.display_name".to_owned(),
-                        kind: VariantKind::String,
-                        label: "Gifter display name".to_owned(),
-                        synthesis: None,
-                    },
+                    "gifter.display_name",
+                    "Gifter display name",
                     CanonicalVariable::actor(ActorRole::Gifter, ActorSlot::Name),
-                    |event| Variant::String(gifter_identity(event).display_name),
                 )
                 .legacy(
-                    DeclaredVariable {
-                        name: "recipient.channel_id".to_owned(),
-                        kind: VariantKind::String,
-                        label: "Recipient channel ID".to_owned(),
-                        synthesis: None,
-                    },
+                    "recipient.channel_id",
+                    "Recipient channel ID",
                     CanonicalVariable::actor(ActorRole::Recipient, ActorSlot::Id),
-                    |event| Variant::String(recipient_identity(event).id),
                 )
                 .legacy(
-                    DeclaredVariable {
-                        name: "recipient.display_name".to_owned(),
-                        kind: VariantKind::String,
-                        label: "Recipient display name".to_owned(),
-                        synthesis: Some(SynthesisHint::DisplayName),
-                    },
+                    "recipient.display_name",
+                    "Recipient display name",
                     CanonicalVariable::actor(ActorRole::Recipient, ActorSlot::Name),
-                    |event| Variant::String(recipient_identity(event).display_name),
                 ),
         )
     }

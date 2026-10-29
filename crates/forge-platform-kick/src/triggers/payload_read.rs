@@ -59,10 +59,6 @@ pub(super) fn flag(event: &Event, key: &str) -> bool {
         .unwrap_or_default()
 }
 
-pub(super) fn login_of(identity: ActorIdentity) -> String {
-    identity.login.unwrap_or_default()
-}
-
 fn string_at(value: Option<&serde_json::Value>) -> String {
     value
         .and_then(serde_json::Value::as_str)

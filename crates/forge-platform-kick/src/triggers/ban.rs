@@ -92,24 +92,14 @@ impl TriggerKindDescriptor for BanDescriptor {
                     |event| Variant::String(payload_read::text(event, fields::REASON)),
                 )
                 .legacy(
-                    DeclaredVariable {
-                        name: "banned_user_id".to_owned(),
-                        kind: VariantKind::String,
-                        label: "Banned user ID".to_owned(),
-                        synthesis: None,
-                    },
+                    "banned_user_id",
+                    "Banned user ID",
                     CanonicalVariable::actor(ActorRole::Principal, ActorSlot::Id),
-                    |event| Variant::String(banned_identity(event).id),
                 )
                 .legacy(
-                    DeclaredVariable {
-                        name: "banned_username".to_owned(),
-                        kind: VariantKind::String,
-                        label: "Banned username".to_owned(),
-                        synthesis: Some(SynthesisHint::Username),
-                    },
+                    "banned_username",
+                    "Banned username",
                     CanonicalVariable::actor(ActorRole::Principal, ActorSlot::Login),
-                    |event| Variant::String(payload_read::login_of(banned_identity(event))),
                 ),
         )
     }

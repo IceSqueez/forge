@@ -101,9 +101,15 @@ struct VariableEntry {
     read: ValueReader,
 }
 
+struct LegacyEntry {
+    declared: DeclaredVariable,
+    superseded_by: CanonicalVariable,
+}
+
 #[derive(Default)]
 pub struct TriggerVariables {
     entries: Vec<VariableEntry>,
+    legacy: Vec<LegacyEntry>,
 }
 
 impl TriggerVariables {
@@ -237,33 +243,33 @@ impl TriggerVariables {
         self
     }
 
-    pub fn legacy<F>(
-        mut self,
-        declared: DeclaredVariable,
-        superseded_by: CanonicalVariable,
-        read: F,
-    ) -> Self
-    where
-        F: Fn(&Event) -> Variant + Send + Sync + 'static,
-    {
-        self.entries.push(VariableEntry {
-            declared,
-            standing: VariableStanding::Legacy(superseded_by),
-            read: Arc::new(move |event| Some(read(event))),
+    pub fn legacy(mut self, name: &str, label: &str, superseded_by: CanonicalVariable) -> Self {
+        self.legacy.push(LegacyEntry {
+            declared: DeclaredVariable {
+                name: name.to_owned(),
+                label: label.to_owned(),
+                ..canonical_declaration(superseded_by)
+            },
+            superseded_by,
         });
         self
     }
 
     pub fn declarations(&self) -> Vec<TriggerVariable> {
-        let mut ordered: Vec<&VariableEntry> = self.entries.iter().collect();
-        ordered.sort_by_key(|entry| listing_rank(entry.standing));
-        ordered
-            .into_iter()
+        let mut ordered: Vec<TriggerVariable> = self
+            .entries
+            .iter()
             .map(|entry| TriggerVariable {
                 declared: entry.declared.clone(),
                 standing: entry.standing,
             })
-            .collect()
+            .chain(self.legacy.iter().map(|entry| TriggerVariable {
+                declared: entry.declared.clone(),
+                standing: VariableStanding::Legacy(entry.superseded_by),
+            }))
+            .collect();
+        ordered.sort_by_key(|variable| listing_rank(variable.standing));
+        ordered
     }
 
     pub fn schema(&self) -> VariableSchema {
@@ -277,12 +283,29 @@ impl TriggerVariables {
     }
 
     pub fn arg_stack(&self, event: &Event) -> ArgStack {
-        self.entries
+        let read_directly = self
+            .entries
             .iter()
-            .fold(ArgStack::new(), |stack, entry| match (entry.read)(event) {
-                Some(value) => stack.set(entry.declared.name.clone(), value),
+            .map(|entry| (&entry.declared.name, (entry.read)(event)));
+        let legacy = self.legacy.iter().map(|entry| {
+            (
+                &entry.declared.name,
+                self.canonical_value(entry.superseded_by, event),
+            )
+        });
+        read_directly
+            .chain(legacy)
+            .fold(ArgStack::new(), |stack, (name, value)| match value {
+                Some(value) => stack.set(name.clone(), value),
                 None => stack,
             })
+    }
+
+    fn canonical_value(&self, canonical: CanonicalVariable, event: &Event) -> Option<Variant> {
+        self.entries
+            .iter()
+            .find(|entry| entry.standing == VariableStanding::Canonical(canonical))
+            .and_then(|entry| (entry.read)(event))
     }
 
     fn canonical<F>(mut self, canonical: CanonicalVariable, read: F) -> Self

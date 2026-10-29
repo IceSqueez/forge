@@ -3,10 +3,7 @@ use forge_registry::{
     ActorDeclaration, ActorIdentity, EventFilter, FormField, KindPlatformContract, TriggerCategory,
     TriggerKindDescriptor, TriggerVariables,
 };
-use forge_types::{
-    ActorRole, ActorSlot, CanonicalVariable, DeclaredVariable, PlatformId, SynthesisHint,
-    TriggerConfig, Variant, VariantKind,
-};
+use forge_types::{ActorRole, ActorSlot, CanonicalVariable, PlatformId, TriggerConfig};
 
 use super::payload_read::{self, youtube_actor};
 use crate::payload_fields::{chat as chat_fields, member as fields};
@@ -71,34 +68,19 @@ impl TriggerKindDescriptor for SupportNewMemberDescriptor {
                 .actor(youtube_actor(ActorRole::Principal), member_identity)
                 .sub_tier(|event| payload_read::text(event, fields::MEMBER_LEVEL_NAME))
                 .legacy(
-                    DeclaredVariable {
-                        name: "user_display_name".to_owned(),
-                        kind: VariantKind::String,
-                        label: "New member display name".to_owned(),
-                        synthesis: Some(SynthesisHint::DisplayName),
-                    },
+                    "user_display_name",
+                    "New member display name",
                     CanonicalVariable::actor(ActorRole::Principal, ActorSlot::Name),
-                    |event| Variant::String(member_identity(event).display_name),
                 )
                 .legacy(
-                    DeclaredVariable {
-                        name: "channel_id".to_owned(),
-                        kind: VariantKind::String,
-                        label: "New member channel ID".to_owned(),
-                        synthesis: None,
-                    },
+                    "channel_id",
+                    "New member channel ID",
                     CanonicalVariable::actor(ActorRole::Principal, ActorSlot::Id),
-                    |event| Variant::String(member_identity(event).id),
                 )
                 .legacy(
-                    DeclaredVariable {
-                        name: "member_level_name".to_owned(),
-                        kind: VariantKind::String,
-                        label: "Membership level name".to_owned(),
-                        synthesis: None,
-                    },
+                    "member_level_name",
+                    "Membership level name",
                     CanonicalVariable::SubTier,
-                    |event| Variant::String(payload_read::text(event, fields::MEMBER_LEVEL_NAME)),
                 ),
         )
     }

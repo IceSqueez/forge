@@ -5,8 +5,8 @@ use forge_registry::{
     TriggerKindDescriptor, TriggerVariables,
 };
 use forge_types::{
-    ActorRole, ActorSlot, CanonicalVariable, DeclaredVariable, PlatformId, SynthesisHint,
-    TriggerConfig, Variant, VariantKind,
+    ActorRole, ActorSlot, CanonicalVariable, DeclaredVariable, PlatformId, TriggerConfig, Variant,
+    VariantKind,
 };
 
 use super::payload_read::{self, twitch_actor};
@@ -86,52 +86,19 @@ impl TriggerKindDescriptor for UserUpdateDescriptor {
                     },
                 )
                 .legacy(
-                    DeclaredVariable {
-                        name: "user.id".to_owned(),
-                        kind: VariantKind::String,
-                        label: "User ID".to_owned(),
-                        synthesis: None,
-                    },
+                    "user.id",
+                    "User ID",
                     CanonicalVariable::actor(ActorRole::Principal, ActorSlot::Id),
-                    |event| {
-                        Variant::String(payload_read::nested_text(
-                            event,
-                            user_fields::USER,
-                            user_fields::USER_ID,
-                        ))
-                    },
                 )
                 .legacy(
-                    DeclaredVariable {
-                        name: "user.login".to_owned(),
-                        kind: VariantKind::String,
-                        label: "User login".to_owned(),
-                        synthesis: Some(SynthesisHint::Username),
-                    },
+                    "user.login",
+                    "User login",
                     CanonicalVariable::actor(ActorRole::Principal, ActorSlot::Login),
-                    |event| {
-                        Variant::String(payload_read::nested_text(
-                            event,
-                            user_fields::USER,
-                            user_fields::USER_LOGIN,
-                        ))
-                    },
                 )
                 .legacy(
-                    DeclaredVariable {
-                        name: "user.display_name".to_owned(),
-                        kind: VariantKind::String,
-                        label: "User display name".to_owned(),
-                        synthesis: Some(SynthesisHint::DisplayName),
-                    },
+                    "user.display_name",
+                    "User display name",
                     CanonicalVariable::actor(ActorRole::Principal, ActorSlot::Name),
-                    |event| {
-                        Variant::String(payload_read::nested_text(
-                            event,
-                            user_fields::USER,
-                            user_fields::USER_DISPLAY_NAME,
-                        ))
-                    },
                 ),
         )
     }

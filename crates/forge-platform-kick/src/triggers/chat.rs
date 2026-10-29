@@ -5,8 +5,8 @@ use forge_registry::{
     admits_chatter, chat_message_condition, first_chatters_only_field,
 };
 use forge_types::{
-    ActorRole, ActorSlot, CanonicalVariable, DeclaredVariable, PlatformId, SynthesisHint,
-    TriggerConfig, Variant, VariantKind,
+    ActorRole, ActorSlot, CanonicalVariable, DeclaredVariable, PlatformId, TriggerConfig, Variant,
+    VariantKind,
 };
 
 use super::payload_read::{self, kick_actor};
@@ -100,45 +100,21 @@ impl TriggerKindDescriptor for ChatDescriptor {
                     |event| Variant::String(payload_read::text(event, fields::REPLY_TO_MESSAGE_ID)),
                 )
                 .legacy(
-                    DeclaredVariable {
-                        name: "sender_id".to_owned(),
-                        kind: VariantKind::String,
-                        label: "Sender user ID".to_owned(),
-                        synthesis: None,
-                    },
+                    "sender_id",
+                    "Sender user ID",
                     CanonicalVariable::actor(ActorRole::Principal, ActorSlot::Id),
-                    |event| Variant::String(sender_identity(event).id),
                 )
                 .legacy(
-                    DeclaredVariable {
-                        name: "username".to_owned(),
-                        kind: VariantKind::String,
-                        label: "Sender username".to_owned(),
-                        synthesis: Some(SynthesisHint::Username),
-                    },
+                    "username",
+                    "Sender username",
                     CanonicalVariable::actor(ActorRole::Principal, ActorSlot::Login),
-                    |event| Variant::String(payload_read::login_of(sender_identity(event))),
                 )
                 .legacy(
-                    DeclaredVariable {
-                        name: "display_name".to_owned(),
-                        kind: VariantKind::String,
-                        label: "Sender display name".to_owned(),
-                        synthesis: Some(SynthesisHint::DisplayName),
-                    },
+                    "display_name",
+                    "Sender display name",
                     CanonicalVariable::actor(ActorRole::Principal, ActorSlot::Name),
-                    |event| Variant::String(sender_identity(event).display_name),
                 )
-                .legacy(
-                    DeclaredVariable {
-                        name: "content".to_owned(),
-                        kind: VariantKind::String,
-                        label: "Message content".to_owned(),
-                        synthesis: Some(SynthesisHint::Message),
-                    },
-                    CanonicalVariable::MessageText,
-                    |event| Variant::String(payload_read::text(event, fields::CONTENT)),
-                ),
+                .legacy("content", "Message content", CanonicalVariable::MessageText),
         )
     }
 

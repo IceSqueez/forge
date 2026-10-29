@@ -4,8 +4,7 @@ use forge_registry::{
     TriggerKindDescriptor, TriggerVariables,
 };
 use forge_types::{
-    ActorRole, ActorSlot, CanonicalCount, CanonicalVariable, DeclaredVariable, PlatformId,
-    SynthesisHint, TriggerConfig, Variant, VariantKind,
+    ActorRole, ActorSlot, CanonicalCount, CanonicalVariable, PlatformId, TriggerConfig,
 };
 
 use super::payload_read::{self, youtube_actor};
@@ -70,47 +69,29 @@ impl TriggerKindDescriptor for ChannelMemberGiftDescriptor {
             TriggerVariables::new()
                 .actor(youtube_actor(ActorRole::Principal), gifter_identity)
                 .actor(youtube_actor(ActorRole::Gifter), gifter_identity)
-                .count(CanonicalCount::GiftCount, gift_count)
+                .count(CanonicalCount::GiftCount, |event| {
+                    payload_read::number(event, fields::COUNT)
+                })
                 .sub_tier(|event| payload_read::text(event, fields::LEVEL_NAME))
                 .legacy(
-                    DeclaredVariable {
-                        name: "gift.count".to_owned(),
-                        kind: VariantKind::Int,
-                        label: "Memberships gifted count".to_owned(),
-                        synthesis: Some(SynthesisHint::BoundedInt { min: 1, max: 100 }),
-                    },
+                    "gift.count",
+                    "Memberships gifted count",
                     CanonicalVariable::Count(CanonicalCount::GiftCount),
-                    |event| Variant::Int(gift_count(event)),
                 )
                 .legacy(
-                    DeclaredVariable {
-                        name: "gift.level_name".to_owned(),
-                        kind: VariantKind::String,
-                        label: "Membership level name".to_owned(),
-                        synthesis: None,
-                    },
+                    "gift.level_name",
+                    "Membership level name",
                     CanonicalVariable::SubTier,
-                    |event| Variant::String(payload_read::text(event, fields::LEVEL_NAME)),
                 )
                 .legacy(
-                    DeclaredVariable {
-                        name: "gifter.channel_id".to_owned(),
-                        kind: VariantKind::String,
-                        label: "Gifter channel ID".to_owned(),
-                        synthesis: None,
-                    },
+                    "gifter.channel_id",
+                    "Gifter channel ID",
                     CanonicalVariable::actor(ActorRole::Gifter, ActorSlot::Id),
-                    |event| Variant::String(gifter_identity(event).id),
                 )
                 .legacy(
-                    DeclaredVariable {
-                        name: "gifter.display_name".to_owned(),
-                        kind: VariantKind::String,
-                        label: "Gifter display name".to_owned(),
-                        synthesis: Some(SynthesisHint::DisplayName),
-                    },
+                    "gifter.display_name",
+                    "Gifter display name",
                     CanonicalVariable::actor(ActorRole::Gifter, ActorSlot::Name),
-                    |event| Variant::String(gifter_identity(event).display_name),
                 ),
         )
     }
@@ -118,10 +99,6 @@ impl TriggerKindDescriptor for ChannelMemberGiftDescriptor {
     fn actors(&self) -> ActorDeclaration {
         ActorDeclaration::Actors(&[ActorRole::Gifter])
     }
-}
-
-fn gift_count(event: &Event) -> i64 {
-    payload_read::number(event, fields::COUNT).max(CanonicalCount::GiftCount.floor())
 }
 
 fn gifter_identity(event: &Event) -> ActorIdentity {

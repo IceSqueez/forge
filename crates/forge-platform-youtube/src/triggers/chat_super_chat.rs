@@ -92,24 +92,14 @@ impl TriggerKindDescriptor for SupportSuperChatDescriptor {
                     |event| Variant::String(payload_read::text(event, fields::CURRENCY)),
                 )
                 .legacy(
-                    DeclaredVariable {
-                        name: "user_display_name".to_owned(),
-                        kind: VariantKind::String,
-                        label: "Sender display name".to_owned(),
-                        synthesis: Some(SynthesisHint::DisplayName),
-                    },
+                    "user_display_name",
+                    "Sender display name",
                     CanonicalVariable::actor(ActorRole::Principal, ActorSlot::Name),
-                    |event| Variant::String(author_identity(event).display_name),
                 )
                 .legacy(
-                    DeclaredVariable {
-                        name: "channel_id".to_owned(),
-                        kind: VariantKind::String,
-                        label: "Sender channel ID".to_owned(),
-                        synthesis: None,
-                    },
+                    "channel_id",
+                    "Sender channel ID",
                     CanonicalVariable::actor(ActorRole::Principal, ActorSlot::Id),
-                    |event| Variant::String(author_identity(event).id),
                 ),
         )
     }

@@ -5,8 +5,8 @@ use forge_registry::{
     TriggerKindDescriptor, TriggerVariables,
 };
 use forge_types::{
-    ActorRole, ActorSlot, CanonicalVariable, DeclaredVariable, PlatformId, SynthesisHint,
-    TriggerConfig, Variant, VariantKind,
+    ActorRole, ActorSlot, CanonicalVariable, DeclaredVariable, PlatformId, TriggerConfig, Variant,
+    VariantKind,
 };
 
 use super::payload_read::{self, twitch_actor};
@@ -80,36 +80,14 @@ impl TriggerKindDescriptor for ChatMessageDeletedDescriptor {
                     |event| Variant::String(payload_read::text(event, chat_mod_fields::MESSAGE_ID)),
                 )
                 .legacy(
-                    DeclaredVariable {
-                        name: "chat.target_user.login".to_owned(),
-                        kind: VariantKind::String,
-                        label: "Message author login".to_owned(),
-                        synthesis: Some(SynthesisHint::Username),
-                    },
+                    "chat.target_user.login",
+                    "Message author login",
                     CanonicalVariable::actor(ActorRole::Principal, ActorSlot::Login),
-                    |event| {
-                        Variant::String(payload_read::nested_text(
-                            event,
-                            chat_mod_fields::TARGET_USER,
-                            chat_mod_fields::TARGET_USER_LOGIN,
-                        ))
-                    },
                 )
                 .legacy(
-                    DeclaredVariable {
-                        name: "chat.target_user.id".to_owned(),
-                        kind: VariantKind::String,
-                        label: "Message author ID".to_owned(),
-                        synthesis: None,
-                    },
+                    "chat.target_user.id",
+                    "Message author ID",
                     CanonicalVariable::actor(ActorRole::Principal, ActorSlot::Id),
-                    |event| {
-                        Variant::String(payload_read::nested_text(
-                            event,
-                            chat_mod_fields::TARGET_USER,
-                            chat_mod_fields::TARGET_USER_ID,
-                        ))
-                    },
                 ),
         )
     }

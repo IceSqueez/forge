@@ -5,8 +5,8 @@ use forge_registry::{
     TriggerKindDescriptor, TriggerVariables,
 };
 use forge_types::{
-    ActorRole, ActorSlot, CanonicalVariable, DeclaredVariable, PlatformId, SynthesisHint,
-    TriggerConfig, Variant, VariantKind,
+    ActorRole, ActorSlot, CanonicalVariable, DeclaredVariable, PlatformId, TriggerConfig, Variant,
+    VariantKind,
 };
 
 use super::payload_read::{self, twitch_actor};
@@ -83,35 +83,14 @@ impl TriggerKindDescriptor for UnbanRequestCreatedDescriptor {
                     },
                 )
                 .legacy(
-                    DeclaredVariable {
-                        name: "unban.target.login".to_owned(),
-                        kind: VariantKind::String,
-                        label: "Target user login".to_owned(),
-                        synthesis: Some(SynthesisHint::Username),
-                    },
+                    "unban.target.login",
+                    "Target user login",
                     CanonicalVariable::actor(ActorRole::Principal, ActorSlot::Login),
-                    |event| {
-                        Variant::String(payload_read::nested_text(
-                            event,
-                            unban_request_fields::USER,
-                            unban_request_fields::USER_LOGIN,
-                        ))
-                    },
                 )
                 .legacy(
-                    DeclaredVariable {
-                        name: "unban.reason_text".to_owned(),
-                        kind: VariantKind::String,
-                        label: "Requester reason".to_owned(),
-                        synthesis: Some(SynthesisHint::Message),
-                    },
+                    "unban.reason_text",
+                    "Requester reason",
                     CanonicalVariable::MessageText,
-                    |event| {
-                        Variant::String(payload_read::text(
-                            event,
-                            unban_request_fields::REASON_TEXT,
-                        ))
-                    },
                 ),
         )
     }

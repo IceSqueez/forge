@@ -4,8 +4,7 @@ use forge_registry::{
     TriggerKindDescriptor, TriggerVariables,
 };
 use forge_types::{
-    ActorRole, ActorSlot, CanonicalCount, CanonicalVariable, DeclaredVariable, PlatformId,
-    SynthesisHint, TriggerConfig, Variant, VariantKind,
+    ActorRole, ActorSlot, CanonicalCount, CanonicalVariable, PlatformId, TriggerConfig,
 };
 
 use super::payload_read::{self, youtube_actor};
@@ -74,34 +73,19 @@ impl TriggerKindDescriptor for SupportMemberMilestoneDescriptor {
                     payload_read::number(event, fields::MEMBER_MONTH)
                 })
                 .legacy(
-                    DeclaredVariable {
-                        name: "user_display_name".to_owned(),
-                        kind: VariantKind::String,
-                        label: "Member display name".to_owned(),
-                        synthesis: Some(SynthesisHint::DisplayName),
-                    },
+                    "user_display_name",
+                    "Member display name",
                     CanonicalVariable::actor(ActorRole::Principal, ActorSlot::Name),
-                    |event| Variant::String(member_identity(event).display_name),
                 )
                 .legacy(
-                    DeclaredVariable {
-                        name: "channel_id".to_owned(),
-                        kind: VariantKind::String,
-                        label: "Member channel ID".to_owned(),
-                        synthesis: None,
-                    },
+                    "channel_id",
+                    "Member channel ID",
                     CanonicalVariable::actor(ActorRole::Principal, ActorSlot::Id),
-                    |event| Variant::String(member_identity(event).id),
                 )
                 .legacy(
-                    DeclaredVariable {
-                        name: "member_month".to_owned(),
-                        kind: VariantKind::Int,
-                        label: "Membership length in months".to_owned(),
-                        synthesis: Some(SynthesisHint::BoundedInt { min: 1, max: 120 }),
-                    },
+                    "member_month",
+                    "Membership length in months",
                     CanonicalVariable::Count(CanonicalCount::SubCumulativeMonths),
-                    |event| Variant::Int(payload_read::number(event, fields::MEMBER_MONTH)),
                 ),
         )
     }

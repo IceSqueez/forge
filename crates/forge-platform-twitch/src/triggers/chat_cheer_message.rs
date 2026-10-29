@@ -4,10 +4,7 @@ use forge_registry::{
     ActorDeclaration, EventFilter, FormField, KindPlatformContract, TriggerCategory,
     TriggerKindDescriptor, TriggerVariables,
 };
-use forge_types::{
-    CanonicalCount, CanonicalVariable, DeclaredVariable, PlatformId, SynthesisHint, TriggerConfig,
-    Variant, VariantKind,
-};
+use forge_types::{CanonicalCount, CanonicalVariable, PlatformId, TriggerConfig, Variant};
 
 use super::chat_arg_stack::base_chat_variables;
 use crate::payload_fields::chat as fields;
@@ -150,14 +147,9 @@ impl TriggerKindDescriptor for ChatCheerMessageDescriptor {
             base_chat_variables()
                 .count(CanonicalCount::BitsAmount, cheered_bits)
                 .legacy(
-                    DeclaredVariable {
-                        name: "cheer.bits".to_owned(),
-                        kind: VariantKind::Int,
-                        label: "Bits cheered".to_owned(),
-                        synthesis: Some(SynthesisHint::BoundedInt { min: 1, max: 10000 }),
-                    },
+                    "cheer.bits",
+                    "Bits cheered",
                     CanonicalVariable::Count(CanonicalCount::BitsAmount),
-                    |event| Variant::Int(cheered_bits(event)),
                 ),
         )
     }

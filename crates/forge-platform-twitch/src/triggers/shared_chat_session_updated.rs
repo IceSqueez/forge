@@ -5,8 +5,8 @@ use forge_registry::{
     TriggerKindDescriptor, TriggerVariables,
 };
 use forge_types::{
-    ActorRole, ActorSlot, CanonicalVariable, DeclaredVariable, PlatformId, SynthesisHint,
-    TriggerConfig, Variant, VariantKind,
+    ActorRole, ActorSlot, CanonicalVariable, DeclaredVariable, PlatformId, TriggerConfig, Variant,
+    VariantKind,
 };
 
 use super::payload_read::{self, twitch_actor};
@@ -86,36 +86,14 @@ impl TriggerKindDescriptor for SharedChatSessionUpdatedDescriptor {
                     },
                 )
                 .legacy(
-                    DeclaredVariable {
-                        name: "host_login".to_owned(),
-                        kind: VariantKind::String,
-                        label: "Host channel login".to_owned(),
-                        synthesis: Some(SynthesisHint::Username),
-                    },
+                    "host_login",
+                    "Host channel login",
                     CanonicalVariable::actor(ActorRole::Principal, ActorSlot::Login),
-                    |event| {
-                        Variant::String(payload_read::nested_text(
-                            event,
-                            shared_chat_fields::HOST,
-                            shared_chat_fields::HOST_LOGIN,
-                        ))
-                    },
                 )
                 .legacy(
-                    DeclaredVariable {
-                        name: "host_id".to_owned(),
-                        kind: VariantKind::String,
-                        label: "Host channel ID".to_owned(),
-                        synthesis: None,
-                    },
+                    "host_id",
+                    "Host channel ID",
                     CanonicalVariable::actor(ActorRole::Principal, ActorSlot::Id),
-                    |event| {
-                        Variant::String(payload_read::nested_text(
-                            event,
-                            shared_chat_fields::HOST,
-                            shared_chat_fields::HOST_ID,
-                        ))
-                    },
                 ),
         )
     }

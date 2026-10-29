@@ -4,10 +4,7 @@ use forge_registry::{
     ActorDeclaration, ActorIdentity, EventFilter, FormField, KindPlatformContract, TriggerCategory,
     TriggerKindDescriptor, TriggerVariables,
 };
-use forge_types::{
-    ActorRole, CanonicalCount, CanonicalVariable, DeclaredVariable, PlatformId, SynthesisHint,
-    TriggerConfig, Variant, VariantKind,
-};
+use forge_types::{ActorRole, CanonicalCount, CanonicalVariable, PlatformId, TriggerConfig};
 
 use super::payload_read::{self, twitch_actor};
 use crate::payload_fields::support as fields;
@@ -79,14 +76,9 @@ impl TriggerKindDescriptor for SupportResubscriberDescriptor {
                 })
                 .sub_tier(|event| payload_read::text(event, fields::TIER))
                 .legacy(
-                    DeclaredVariable {
-                        name: "sub_message".to_owned(),
-                        kind: VariantKind::String,
-                        label: "Resub message".to_owned(),
-                        synthesis: Some(SynthesisHint::Message),
-                    },
+                    "sub_message",
+                    "Resub message",
                     CanonicalVariable::MessageText,
-                    |event| Variant::String(resub_message(event)),
                 ),
         )
     }

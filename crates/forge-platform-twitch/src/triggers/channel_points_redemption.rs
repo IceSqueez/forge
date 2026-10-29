@@ -264,16 +264,7 @@ impl TriggerKindDescriptor for ChannelPointsRedemptionDescriptor {
                         ))
                     },
                 )
-                .legacy(
-                    DeclaredVariable {
-                        name: "user_input".to_owned(),
-                        kind: VariantKind::String,
-                        label: "User input".to_owned(),
-                        synthesis: Some(SynthesisHint::Message),
-                    },
-                    CanonicalVariable::MessageText,
-                    |event| Variant::String(redemption_user_input(event)),
-                ),
+                .legacy("user_input", "User input", CanonicalVariable::MessageText),
         )
     }
 

@@ -4,8 +4,7 @@ use forge_registry::{
     TriggerKindDescriptor, TriggerVariables,
 };
 use forge_types::{
-    ActorRole, ActorSlot, CanonicalCount, CanonicalVariable, DeclaredVariable, PlatformId,
-    SynthesisHint, TriggerConfig, Variant, VariantKind,
+    ActorRole, ActorSlot, CanonicalCount, CanonicalVariable, PlatformId, TriggerConfig,
 };
 
 use super::payload_read::{self, kick_actor};
@@ -73,14 +72,9 @@ impl TriggerKindDescriptor for HostDescriptor {
                     payload_read::number(event, fields::VIEWER_COUNT)
                 })
                 .legacy(
-                    DeclaredVariable {
-                        name: "host_username".to_owned(),
-                        kind: VariantKind::String,
-                        label: "Hosting channel username".to_owned(),
-                        synthesis: Some(SynthesisHint::Username),
-                    },
+                    "host_username",
+                    "Hosting channel username",
                     CanonicalVariable::actor(ActorRole::Principal, ActorSlot::Login),
-                    |event| Variant::String(payload_read::login_of(host_identity(event))),
                 ),
         )
     }

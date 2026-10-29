@@ -135,44 +135,24 @@ impl TriggerKindDescriptor for ChannelUserBannedDescriptor {
                     |event| Variant::Int(payload_read::number(event, fields::DURATION_SECS)),
                 )
                 .legacy(
-                    DeclaredVariable {
-                        name: "ban.target.display_name".to_owned(),
-                        kind: VariantKind::String,
-                        label: "Banned user display name".to_owned(),
-                        synthesis: Some(SynthesisHint::DisplayName),
-                    },
+                    "ban.target.display_name",
+                    "Banned user display name",
                     CanonicalVariable::actor(ActorRole::Principal, ActorSlot::Name),
-                    |event| Variant::String(target_identity(event).display_name),
                 )
                 .legacy(
-                    DeclaredVariable {
-                        name: "ban.target.channel_id".to_owned(),
-                        kind: VariantKind::String,
-                        label: "Banned user channel ID".to_owned(),
-                        synthesis: None,
-                    },
+                    "ban.target.channel_id",
+                    "Banned user channel ID",
                     CanonicalVariable::actor(ActorRole::Principal, ActorSlot::Id),
-                    |event| Variant::String(target_identity(event).id),
                 )
                 .legacy(
-                    DeclaredVariable {
-                        name: "ban.moderator.channel_id".to_owned(),
-                        kind: VariantKind::String,
-                        label: "Moderator channel ID".to_owned(),
-                        synthesis: None,
-                    },
+                    "ban.moderator.channel_id",
+                    "Moderator channel ID",
                     CanonicalVariable::actor(ActorRole::Moderator, ActorSlot::Id),
-                    |event| Variant::String(moderator_identity(event).id),
                 )
                 .legacy(
-                    DeclaredVariable {
-                        name: "ban.moderator.display_name".to_owned(),
-                        kind: VariantKind::String,
-                        label: "Moderator display name".to_owned(),
-                        synthesis: None,
-                    },
+                    "ban.moderator.display_name",
+                    "Moderator display name",
                     CanonicalVariable::actor(ActorRole::Moderator, ActorSlot::Name),
-                    |event| Variant::String(moderator_identity(event).display_name),
                 ),
         )
     }

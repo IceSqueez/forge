@@ -79,14 +79,9 @@ impl TriggerKindDescriptor for MessageDeletedDescriptor {
                     |event| Variant::String(payload_read::text(event, fields::MESSAGE_ID)),
                 )
                 .legacy(
-                    DeclaredVariable {
-                        name: "deleted_by_id".to_owned(),
-                        kind: VariantKind::String,
-                        label: "Moderator user ID".to_owned(),
-                        synthesis: None,
-                    },
+                    "deleted_by_id",
+                    "Moderator user ID",
                     CanonicalVariable::actor(ActorRole::Principal, ActorSlot::Id),
-                    |event| Variant::String(deleted_by_identity(event).id),
                 ),
         )
     }

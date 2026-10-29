@@ -6,7 +6,7 @@ use forge_registry::{
 };
 use forge_types::{
     ActorRole, ActorSlot, CanonicalCount, CanonicalVariable, DeclaredVariable, PlatformId,
-    SynthesisHint, TriggerConfig, Variant, VariantKind,
+    TriggerConfig, VariantKind,
 };
 
 use super::payload_read::{self, twitch_actor};
@@ -86,36 +86,14 @@ impl TriggerKindDescriptor for ShoutoutSentDescriptor {
                     |event| payload_read::timestamp(event, shoutout_fields::STARTED_AT),
                 )
                 .legacy(
-                    DeclaredVariable {
-                        name: "to_broadcaster_login".to_owned(),
-                        kind: VariantKind::String,
-                        label: "Target channel login".to_owned(),
-                        synthesis: Some(SynthesisHint::Username),
-                    },
+                    "to_broadcaster_login",
+                    "Target channel login",
                     CanonicalVariable::actor(ActorRole::Principal, ActorSlot::Login),
-                    |event| {
-                        Variant::String(payload_read::nested_text(
-                            event,
-                            shoutout_fields::TO_BROADCASTER,
-                            shoutout_fields::BROADCASTER_LOGIN,
-                        ))
-                    },
                 )
                 .legacy(
-                    DeclaredVariable {
-                        name: "to_broadcaster_id".to_owned(),
-                        kind: VariantKind::String,
-                        label: "Target channel ID".to_owned(),
-                        synthesis: None,
-                    },
+                    "to_broadcaster_id",
+                    "Target channel ID",
                     CanonicalVariable::actor(ActorRole::Principal, ActorSlot::Id),
-                    |event| {
-                        Variant::String(payload_read::nested_text(
-                            event,
-                            shoutout_fields::TO_BROADCASTER,
-                            shoutout_fields::BROADCASTER_ID,
-                        ))
-                    },
                 ),
         )
     }

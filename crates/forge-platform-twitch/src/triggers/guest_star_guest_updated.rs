@@ -189,36 +189,14 @@ impl TriggerKindDescriptor for GuestStarGuestUpdatedDescriptor {
                     },
                 )
                 .legacy(
-                    DeclaredVariable {
-                        name: "guest.login".to_owned(),
-                        kind: VariantKind::String,
-                        label: "Guest login".to_owned(),
-                        synthesis: Some(SynthesisHint::Username),
-                    },
+                    "guest.login",
+                    "Guest login",
                     CanonicalVariable::actor(ActorRole::Principal, ActorSlot::Login),
-                    |event| {
-                        Variant::String(payload_read::nested_text(
-                            event,
-                            guest_star_fields::GUEST,
-                            guest_star_fields::GUEST_LOGIN,
-                        ))
-                    },
                 )
                 .legacy(
-                    DeclaredVariable {
-                        name: "guest.id".to_owned(),
-                        kind: VariantKind::String,
-                        label: "Guest ID".to_owned(),
-                        synthesis: None,
-                    },
+                    "guest.id",
+                    "Guest ID",
                     CanonicalVariable::actor(ActorRole::Principal, ActorSlot::Id),
-                    |event| {
-                        Variant::String(payload_read::nested_text(
-                            event,
-                            guest_star_fields::GUEST,
-                            guest_star_fields::GUEST_ID,
-                        ))
-                    },
                 ),
         )
     }

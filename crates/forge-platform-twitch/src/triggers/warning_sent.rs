@@ -5,8 +5,8 @@ use forge_registry::{
     TriggerKindDescriptor, TriggerVariables,
 };
 use forge_types::{
-    ActorRole, ActorSlot, CanonicalVariable, DeclaredVariable, PlatformId, SynthesisHint,
-    TriggerConfig, Variant, VariantKind,
+    ActorRole, ActorSlot, CanonicalVariable, DeclaredVariable, PlatformId, TriggerConfig, Variant,
+    VariantKind,
 };
 
 use super::payload_read::{self, twitch_actor};
@@ -93,84 +93,29 @@ impl TriggerKindDescriptor for WarningSentDescriptor {
                     |event| payload_read::text_list(event, warning_fields::CHAT_RULES_CITED),
                 )
                 .legacy(
-                    DeclaredVariable {
-                        name: "warning.target.login".to_owned(),
-                        kind: VariantKind::String,
-                        label: "Warned user login".to_owned(),
-                        synthesis: Some(SynthesisHint::Username),
-                    },
+                    "warning.target.login",
+                    "Warned user login",
                     CanonicalVariable::actor(ActorRole::Principal, ActorSlot::Login),
-                    |event| {
-                        Variant::String(payload_read::nested_text(
-                            event,
-                            warning_fields::USER,
-                            warning_fields::USER_LOGIN,
-                        ))
-                    },
                 )
                 .legacy(
-                    DeclaredVariable {
-                        name: "warning.target.id".to_owned(),
-                        kind: VariantKind::String,
-                        label: "Warned user ID".to_owned(),
-                        synthesis: None,
-                    },
+                    "warning.target.id",
+                    "Warned user ID",
                     CanonicalVariable::actor(ActorRole::Principal, ActorSlot::Id),
-                    |event| {
-                        Variant::String(payload_read::nested_text(
-                            event,
-                            warning_fields::USER,
-                            warning_fields::USER_ID,
-                        ))
-                    },
                 )
                 .legacy(
-                    DeclaredVariable {
-                        name: "warning.target.display_name".to_owned(),
-                        kind: VariantKind::String,
-                        label: "Warned user display name".to_owned(),
-                        synthesis: Some(SynthesisHint::DisplayName),
-                    },
+                    "warning.target.display_name",
+                    "Warned user display name",
                     CanonicalVariable::actor(ActorRole::Principal, ActorSlot::Name),
-                    |event| {
-                        Variant::String(payload_read::nested_text(
-                            event,
-                            warning_fields::USER,
-                            warning_fields::USER_DISPLAY_NAME,
-                        ))
-                    },
                 )
                 .legacy(
-                    DeclaredVariable {
-                        name: "warning.moderator.id".to_owned(),
-                        kind: VariantKind::String,
-                        label: "Moderator ID".to_owned(),
-                        synthesis: None,
-                    },
+                    "warning.moderator.id",
+                    "Moderator ID",
                     CanonicalVariable::actor(ActorRole::Moderator, ActorSlot::Id),
-                    |event| {
-                        Variant::String(payload_read::nested_text(
-                            event,
-                            warning_fields::MODERATOR,
-                            warning_fields::MODERATOR_ID,
-                        ))
-                    },
                 )
                 .legacy(
-                    DeclaredVariable {
-                        name: "warning.moderator.login".to_owned(),
-                        kind: VariantKind::String,
-                        label: "Moderator login".to_owned(),
-                        synthesis: Some(SynthesisHint::Username),
-                    },
+                    "warning.moderator.login",
+                    "Moderator login",
                     CanonicalVariable::actor(ActorRole::Moderator, ActorSlot::Login),
-                    |event| {
-                        Variant::String(payload_read::nested_text(
-                            event,
-                            warning_fields::MODERATOR,
-                            warning_fields::MODERATOR_LOGIN,
-                        ))
-                    },
                 ),
         )
     }

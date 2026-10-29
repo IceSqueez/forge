@@ -116,20 +116,9 @@ impl TriggerKindDescriptor for AdBreakStartedDescriptor {
                     },
                 )
                 .legacy(
-                    DeclaredVariable {
-                        name: "requester_login".to_owned(),
-                        kind: VariantKind::String,
-                        label: "Requester login".to_owned(),
-                        synthesis: Some(SynthesisHint::Username),
-                    },
+                    "requester_login",
+                    "Requester login",
                     CanonicalVariable::actor(ActorRole::Principal, ActorSlot::Login),
-                    |event| {
-                        Variant::String(payload_read::nested_text(
-                            event,
-                            ad_break_fields::REQUESTER,
-                            ad_break_fields::REQUESTER_LOGIN,
-                        ))
-                    },
                 ),
         )
     }

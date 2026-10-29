@@ -4,8 +4,7 @@ use forge_registry::{
     TriggerKindDescriptor, TriggerVariables,
 };
 use forge_types::{
-    ActorRole, ActorSlot, CanonicalCount, CanonicalVariable, DeclaredVariable, PlatformId,
-    SynthesisHint, TriggerConfig, Variant, VariantKind,
+    ActorRole, ActorSlot, CanonicalCount, CanonicalVariable, PlatformId, TriggerConfig,
 };
 
 use super::payload_read::{self, kick_actor};
@@ -74,35 +73,16 @@ impl TriggerKindDescriptor for SubDescriptor {
                 })
                 .sub_tier(|event| payload_read::text(event, fields::TIER))
                 .legacy(
-                    DeclaredVariable {
-                        name: "username".to_owned(),
-                        kind: VariantKind::String,
-                        label: "Subscriber username".to_owned(),
-                        synthesis: Some(SynthesisHint::Username),
-                    },
+                    "username",
+                    "Subscriber username",
                     CanonicalVariable::actor(ActorRole::Principal, ActorSlot::Login),
-                    |event| Variant::String(payload_read::login_of(subscriber_identity(event))),
                 )
                 .legacy(
-                    DeclaredVariable {
-                        name: "months".to_owned(),
-                        kind: VariantKind::Int,
-                        label: "Subscribed months".to_owned(),
-                        synthesis: Some(SynthesisHint::BoundedInt { min: 1, max: 24 }),
-                    },
+                    "months",
+                    "Subscribed months",
                     CanonicalVariable::Count(CanonicalCount::SubCumulativeMonths),
-                    |event| Variant::Int(payload_read::number(event, fields::MONTHS)),
                 )
-                .legacy(
-                    DeclaredVariable {
-                        name: "tier".to_owned(),
-                        kind: VariantKind::String,
-                        label: "Subscription tier".to_owned(),
-                        synthesis: None,
-                    },
-                    CanonicalVariable::SubTier,
-                    |event| Variant::String(payload_read::text(event, fields::TIER)),
-                ),
+                .legacy("tier", "Subscription tier", CanonicalVariable::SubTier),
         )
     }
 

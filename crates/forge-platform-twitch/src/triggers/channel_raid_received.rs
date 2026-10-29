@@ -5,8 +5,7 @@ use forge_registry::{
     TriggerKindDescriptor, TriggerVariables,
 };
 use forge_types::{
-    ActorRole, ActorSlot, CanonicalCount, CanonicalVariable, DeclaredVariable, PlatformId,
-    SynthesisHint, TriggerConfig, Variant, VariantKind,
+    ActorRole, ActorSlot, CanonicalCount, CanonicalVariable, PlatformId, TriggerConfig,
 };
 
 use super::payload_read::{self, twitch_actor};
@@ -76,44 +75,24 @@ impl TriggerKindDescriptor for ChannelRaidReceivedDescriptor {
                 .actor(twitch_actor(ActorRole::Principal), raider_identity)
                 .count(CanonicalCount::ViewerCount, raid_viewer_count)
                 .legacy(
-                    DeclaredVariable {
-                        name: "raid_viewer_count".to_owned(),
-                        kind: VariantKind::Int,
-                        label: "Raid viewer count".to_owned(),
-                        synthesis: Some(SynthesisHint::BoundedInt { min: 0, max: 500 }),
-                    },
+                    "raid_viewer_count",
+                    "Raid viewer count",
                     CanonicalVariable::Count(CanonicalCount::ViewerCount),
-                    |event| Variant::Int(raid_viewer_count(event)),
                 )
                 .legacy(
-                    DeclaredVariable {
-                        name: "raider_login".to_owned(),
-                        kind: VariantKind::String,
-                        label: "Raider login".to_owned(),
-                        synthesis: Some(SynthesisHint::Username),
-                    },
+                    "raider_login",
+                    "Raider login",
                     CanonicalVariable::actor(ActorRole::Principal, ActorSlot::Login),
-                    |event| Variant::String(raider_field(event, fields::BROADCASTER_LOGIN)),
                 )
                 .legacy(
-                    DeclaredVariable {
-                        name: "raider_id".to_owned(),
-                        kind: VariantKind::String,
-                        label: "Raider ID".to_owned(),
-                        synthesis: None,
-                    },
+                    "raider_id",
+                    "Raider ID",
                     CanonicalVariable::actor(ActorRole::Principal, ActorSlot::Id),
-                    |event| Variant::String(raider_field(event, fields::BROADCASTER_ID)),
                 )
                 .legacy(
-                    DeclaredVariable {
-                        name: "raider_display_name".to_owned(),
-                        kind: VariantKind::String,
-                        label: "Raider display name".to_owned(),
-                        synthesis: Some(SynthesisHint::DisplayName),
-                    },
+                    "raider_display_name",
+                    "Raider display name",
                     CanonicalVariable::actor(ActorRole::Principal, ActorSlot::Name),
-                    |event| Variant::String(raider_field(event, fields::BROADCASTER_DISPLAY_NAME)),
                 ),
         )
     }
@@ -130,10 +109,6 @@ fn raider_identity(event: &Event) -> ActorIdentity {
         fields::BROADCASTER_LOGIN,
         fields::BROADCASTER_DISPLAY_NAME,
     )
-}
-
-fn raider_field(event: &Event, key: &str) -> String {
-    payload_read::nested_text(event, fields::FROM_BROADCASTER, key)
 }
 
 fn raid_viewer_count(event: &Event) -> i64 {

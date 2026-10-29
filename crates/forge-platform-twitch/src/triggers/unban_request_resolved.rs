@@ -97,36 +97,14 @@ impl TriggerKindDescriptor for UnbanRequestResolvedDescriptor {
                     },
                 )
                 .legacy(
-                    DeclaredVariable {
-                        name: "unban.target.login".to_owned(),
-                        kind: VariantKind::String,
-                        label: "Target user login".to_owned(),
-                        synthesis: Some(SynthesisHint::Username),
-                    },
+                    "unban.target.login",
+                    "Target user login",
                     CanonicalVariable::actor(ActorRole::Principal, ActorSlot::Login),
-                    |event| {
-                        Variant::String(payload_read::nested_text(
-                            event,
-                            unban_request_fields::USER,
-                            unban_request_fields::USER_LOGIN,
-                        ))
-                    },
                 )
                 .legacy(
-                    DeclaredVariable {
-                        name: "unban.moderator.login".to_owned(),
-                        kind: VariantKind::String,
-                        label: "Resolving moderator login".to_owned(),
-                        synthesis: Some(SynthesisHint::Username),
-                    },
+                    "unban.moderator.login",
+                    "Resolving moderator login",
                     CanonicalVariable::actor(ActorRole::Moderator, ActorSlot::Login),
-                    |event| {
-                        Variant::String(payload_read::nested_text(
-                            event,
-                            unban_request_fields::MODERATOR,
-                            unban_request_fields::MODERATOR_LOGIN,
-                        ))
-                    },
                 )
                 .event_specific(
                     DeclaredVariable {

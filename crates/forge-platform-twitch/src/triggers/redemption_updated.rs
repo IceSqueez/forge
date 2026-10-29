@@ -5,8 +5,7 @@ use forge_registry::{
     TriggerKindDescriptor, TriggerVariables,
 };
 use forge_types::{
-    ActorRole, CanonicalVariable, DeclaredVariable, PlatformId, SynthesisHint, TriggerConfig,
-    Variant, VariantKind,
+    ActorRole, CanonicalVariable, DeclaredVariable, PlatformId, TriggerConfig, Variant, VariantKind,
 };
 
 use super::payload_read::{self, twitch_actor};
@@ -178,16 +177,7 @@ impl TriggerKindDescriptor for RedemptionUpdatedDescriptor {
                         ))
                     },
                 )
-                .legacy(
-                    DeclaredVariable {
-                        name: "user_input".to_owned(),
-                        kind: VariantKind::String,
-                        label: "User input".to_owned(),
-                        synthesis: Some(SynthesisHint::Message),
-                    },
-                    CanonicalVariable::MessageText,
-                    |event| Variant::String(redemption_user_input(event)),
-                ),
+                .legacy("user_input", "User input", CanonicalVariable::MessageText),
         )
     }
 

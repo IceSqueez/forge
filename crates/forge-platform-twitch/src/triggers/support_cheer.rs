@@ -5,8 +5,8 @@ use forge_registry::{
     TriggerKindDescriptor, TriggerVariables,
 };
 use forge_types::{
-    ActorRole, CanonicalCount, CanonicalVariable, DeclaredVariable, PlatformId, SynthesisHint,
-    TriggerConfig, Variant, VariantKind,
+    ActorRole, CanonicalCount, CanonicalVariable, DeclaredVariable, PlatformId, TriggerConfig,
+    Variant, VariantKind,
 };
 
 use super::payload_read::{self, twitch_actor};
@@ -118,14 +118,9 @@ impl TriggerKindDescriptor for SupportCheerDescriptor {
                     |event| Variant::Bool(payload_read::flag(event, fields::IS_ANONYMOUS)),
                 )
                 .legacy(
-                    DeclaredVariable {
-                        name: "cheer_message".to_owned(),
-                        kind: VariantKind::String,
-                        label: "Cheer message".to_owned(),
-                        synthesis: Some(SynthesisHint::Message),
-                    },
+                    "cheer_message",
+                    "Cheer message",
                     CanonicalVariable::MessageText,
-                    |event| Variant::String(cheer_message(event)),
                 ),
         )
     }

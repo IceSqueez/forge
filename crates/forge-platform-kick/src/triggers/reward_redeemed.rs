@@ -4,8 +4,8 @@ use forge_registry::{
     TriggerKindDescriptor, TriggerVariables,
 };
 use forge_types::{
-    ActorRole, ActorSlot, CanonicalVariable, DeclaredVariable, PlatformId, SynthesisHint,
-    TriggerConfig, Variant, VariantKind,
+    ActorRole, ActorSlot, CanonicalVariable, DeclaredVariable, PlatformId, TriggerConfig, Variant,
+    VariantKind,
 };
 
 use super::payload_read::{self, kick_actor};
@@ -108,24 +108,14 @@ impl TriggerKindDescriptor for RewardRedeemedDescriptor {
                     },
                 )
                 .legacy(
-                    DeclaredVariable {
-                        name: "username".to_owned(),
-                        kind: VariantKind::String,
-                        label: "Redeeming username".to_owned(),
-                        synthesis: Some(SynthesisHint::Username),
-                    },
+                    "username",
+                    "Redeeming username",
                     CanonicalVariable::actor(ActorRole::Principal, ActorSlot::Login),
-                    |event| Variant::String(payload_read::login_of(redeemer_identity(event))),
                 )
                 .legacy(
-                    DeclaredVariable {
-                        name: "user_input".to_owned(),
-                        kind: VariantKind::String,
-                        label: "User input text".to_owned(),
-                        synthesis: Some(SynthesisHint::Message),
-                    },
+                    "user_input",
+                    "User input text",
                     CanonicalVariable::MessageText,
-                    |event| Variant::String(payload_read::text(event, fields::USER_INPUT)),
                 ),
         )
     }

@@ -5,8 +5,7 @@ use forge_registry::{
     TriggerKindDescriptor, TriggerVariables,
 };
 use forge_types::{
-    ActorRole, ActorSlot, CanonicalCount, CanonicalVariable, DeclaredVariable, PlatformId,
-    SynthesisHint, TriggerConfig, Variant, VariantKind,
+    ActorRole, ActorSlot, CanonicalCount, CanonicalVariable, PlatformId, TriggerConfig,
 };
 
 use super::payload_read::{self, twitch_actor};
@@ -78,36 +77,14 @@ impl TriggerKindDescriptor for RaidSentDescriptor {
                     payload_read::number(event, fields::VIEWER_COUNT)
                 })
                 .legacy(
-                    DeclaredVariable {
-                        name: "to_broadcaster_login".to_owned(),
-                        kind: VariantKind::String,
-                        label: "Target channel login".to_owned(),
-                        synthesis: Some(SynthesisHint::Username),
-                    },
+                    "to_broadcaster_login",
+                    "Target channel login",
                     CanonicalVariable::actor(ActorRole::Principal, ActorSlot::Login),
-                    |event| {
-                        Variant::String(payload_read::nested_text(
-                            event,
-                            fields::TO_BROADCASTER,
-                            fields::BROADCASTER_LOGIN,
-                        ))
-                    },
                 )
                 .legacy(
-                    DeclaredVariable {
-                        name: "to_broadcaster_id".to_owned(),
-                        kind: VariantKind::String,
-                        label: "Target channel ID".to_owned(),
-                        synthesis: None,
-                    },
+                    "to_broadcaster_id",
+                    "Target channel ID",
                     CanonicalVariable::actor(ActorRole::Principal, ActorSlot::Id),
-                    |event| {
-                        Variant::String(payload_read::nested_text(
-                            event,
-                            fields::TO_BROADCASTER,
-                            fields::BROADCASTER_ID,
-                        ))
-                    },
                 ),
         )
     }

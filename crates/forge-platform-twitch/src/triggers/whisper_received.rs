@@ -5,8 +5,8 @@ use forge_registry::{
     TriggerKindDescriptor, TriggerVariables,
 };
 use forge_types::{
-    ActorRole, ActorSlot, CanonicalVariable, DeclaredVariable, PlatformId, SynthesisHint,
-    TriggerConfig, Variant, VariantKind,
+    ActorRole, ActorSlot, CanonicalVariable, DeclaredVariable, PlatformId, TriggerConfig, Variant,
+    VariantKind,
 };
 use regex::Regex;
 
@@ -181,62 +181,24 @@ impl TriggerKindDescriptor for WhisperReceivedDescriptor {
                     },
                 )
                 .legacy(
-                    DeclaredVariable {
-                        name: "whisper.text".to_owned(),
-                        kind: VariantKind::String,
-                        label: "Whisper text".to_owned(),
-                        synthesis: Some(SynthesisHint::Message),
-                    },
+                    "whisper.text",
+                    "Whisper text",
                     CanonicalVariable::MessageText,
-                    |event| Variant::String(whisper_text(event)),
                 )
                 .legacy(
-                    DeclaredVariable {
-                        name: "user.id".to_owned(),
-                        kind: VariantKind::String,
-                        label: "Sender ID".to_owned(),
-                        synthesis: None,
-                    },
+                    "user.id",
+                    "Sender ID",
                     CanonicalVariable::actor(ActorRole::Principal, ActorSlot::Id),
-                    |event| {
-                        Variant::String(payload_read::nested_text(
-                            event,
-                            whisper_fields::USER,
-                            whisper_fields::USER_ID,
-                        ))
-                    },
                 )
                 .legacy(
-                    DeclaredVariable {
-                        name: "user.login".to_owned(),
-                        kind: VariantKind::String,
-                        label: "Sender login".to_owned(),
-                        synthesis: Some(SynthesisHint::Username),
-                    },
+                    "user.login",
+                    "Sender login",
                     CanonicalVariable::actor(ActorRole::Principal, ActorSlot::Login),
-                    |event| {
-                        Variant::String(payload_read::nested_text(
-                            event,
-                            whisper_fields::USER,
-                            whisper_fields::USER_LOGIN,
-                        ))
-                    },
                 )
                 .legacy(
-                    DeclaredVariable {
-                        name: "user.display_name".to_owned(),
-                        kind: VariantKind::String,
-                        label: "Sender display name".to_owned(),
-                        synthesis: Some(SynthesisHint::DisplayName),
-                    },
+                    "user.display_name",
+                    "Sender display name",
                     CanonicalVariable::actor(ActorRole::Principal, ActorSlot::Name),
-                    |event| {
-                        Variant::String(payload_read::nested_text(
-                            event,
-                            whisper_fields::USER,
-                            whisper_fields::USER_DISPLAY_NAME,
-                        ))
-                    },
                 ),
         )
     }

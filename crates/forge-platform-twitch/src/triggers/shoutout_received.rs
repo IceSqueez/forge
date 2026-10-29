@@ -6,7 +6,7 @@ use forge_registry::{
 };
 use forge_types::{
     ActorRole, ActorSlot, CanonicalCount, CanonicalVariable, DeclaredVariable, PlatformId,
-    SynthesisHint, TriggerConfig, Variant, VariantKind,
+    TriggerConfig, VariantKind,
 };
 
 use super::payload_read::{self, twitch_actor};
@@ -86,36 +86,14 @@ impl TriggerKindDescriptor for ShoutoutReceivedDescriptor {
                     |event| payload_read::timestamp(event, shoutout_fields::STARTED_AT),
                 )
                 .legacy(
-                    DeclaredVariable {
-                        name: "from_broadcaster_login".to_owned(),
-                        kind: VariantKind::String,
-                        label: "Shouting-out channel login".to_owned(),
-                        synthesis: Some(SynthesisHint::Username),
-                    },
+                    "from_broadcaster_login",
+                    "Shouting-out channel login",
                     CanonicalVariable::actor(ActorRole::Principal, ActorSlot::Login),
-                    |event| {
-                        Variant::String(payload_read::nested_text(
-                            event,
-                            shoutout_fields::FROM_BROADCASTER,
-                            shoutout_fields::BROADCASTER_LOGIN,
-                        ))
-                    },
                 )
                 .legacy(
-                    DeclaredVariable {
-                        name: "from_broadcaster_id".to_owned(),
-                        kind: VariantKind::String,
-                        label: "Shouting-out channel ID".to_owned(),
-                        synthesis: None,
-                    },
+                    "from_broadcaster_id",
+                    "Shouting-out channel ID",
                     CanonicalVariable::actor(ActorRole::Principal, ActorSlot::Id),
-                    |event| {
-                        Variant::String(payload_read::nested_text(
-                            event,
-                            shoutout_fields::FROM_BROADCASTER,
-                            shoutout_fields::BROADCASTER_ID,
-                        ))
-                    },
                 ),
         )
     }

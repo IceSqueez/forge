@@ -4,11 +4,11 @@ mod support;
 use std::sync::Arc;
 
 use forge_hotkey::testing::{RecordedCall, RecordingBackend};
+use forge_hotkey::vocabulary::event_kinds;
 use forge_hotkey::{
     HotkeyClient, HotkeyCombo, HotkeyEdge, HotkeyId, HotkeyReconciler,
-    cleanup_stale_combo_instances, delete_binding, delete_binding_half, do_bind, event_kinds,
-    load_bindings, persisted_hotkey_combos, rebind_combo, relink_action, set_binding_edge,
-    set_binding_enabled,
+    cleanup_stale_combo_instances, delete_binding, delete_binding_half, do_bind, load_bindings,
+    persisted_hotkey_combos, rebind_combo, relink_action, set_binding_edge, set_binding_enabled,
 };
 use forge_storage::DataProvider;
 use forge_types::TriggerInstanceId;

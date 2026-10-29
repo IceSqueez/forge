@@ -106,14 +106,6 @@ fn keysym_name(key: Key) -> &'static str {
 mod tests {
     use super::*;
 
-    fn trigger(combo: &str) -> Option<String> {
-        preferred_trigger(&HotkeyCombo::parse(combo).unwrap())
-    }
-
-    fn unchecked_combo(raw: &str) -> HotkeyCombo {
-        serde_json::from_value(serde_json::Value::String(raw.to_owned())).unwrap()
-    }
-
     #[test]
     fn each_key_class_converts_to_its_shortcuts_spec_keysym() {
         for (combo, expected) in [
@@ -133,59 +125,21 @@ mod tests {
             ("Ctrl+Shift+Alt+Meta+Tab", "CTRL+SHIFT+ALT+LOGO+Tab"),
         ] {
             assert_eq!(
-                trigger(combo).as_deref(),
-                Some(expected),
+                preferred_trigger(&HotkeyCombo::parse(combo).unwrap()),
+                expected,
                 "wrong trigger for {combo}"
             );
         }
     }
 
     #[test]
-    fn every_key_the_combo_parser_accepts_has_a_preferred_trigger() {
-        let keys = ('A'..='Z')
-            .chain('0'..='9')
-            .map(String::from)
-            .chain((1..=12).map(|n| format!("F{n}")))
-            .chain((0..=9).map(|n| format!("Num{n}")))
-            .chain(
-                [
-                    "Delete",
-                    "Insert",
-                    "Home",
-                    "End",
-                    "PageUp",
-                    "PageDown",
-                    "Backspace",
-                    "Tab",
-                    "Enter",
-                    "Escape",
-                    "Space",
-                    "ArrowUp",
-                    "ArrowDown",
-                    "ArrowLeft",
-                    "ArrowRight",
-                ]
-                .map(String::from),
-            );
-        for key in keys {
-            assert!(trigger(&key).is_some(), "no preferred trigger for {key}");
-        }
-    }
-
-    #[test]
-    fn a_stored_combo_with_an_unknown_key_or_modifier_gets_no_trigger() {
-        for raw in [
-            "Ctrl+PrintScreen",
-            "Hyper+A",
-            "Ctrl+F13",
-            "Ctrl+\u{e9}",
-            "Ctrl+",
-            "",
-        ] {
-            assert_eq!(
-                preferred_trigger(&unchecked_combo(raw)),
-                None,
-                "expected no trigger for {raw:?}"
+    fn every_key_maps_to_a_distinct_keysym() {
+        let mut seen = std::collections::HashSet::new();
+        for key in Key::ALL {
+            assert!(
+                seen.insert(keysym_name(key)),
+                "{key:?} shares keysym {}",
+                keysym_name(key)
             );
         }
     }

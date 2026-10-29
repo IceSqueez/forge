@@ -862,7 +862,7 @@ mod tests {
 
     use serde_json::json;
 
-    use forge_events::{Event, EventPublisher};
+    use forge_events::{Event, EventPublisher, EventSource};
     use forge_events::{PlatformConnectionChanged, TypedEvent};
     use forge_platform_core::{AtomicConnectionState, ConnectionState, ConnectionTransition};
 
@@ -1119,24 +1119,10 @@ mod tests {
     }
 
     #[test]
-    fn connection_changed_uses_is_connected_key_not_legacy_connected() {
-        let publisher = MockPublisher::new();
-        emit_connection_changed(&*publisher.publisher(), "ws://x:1", true, None, None);
-
-        let events = publisher.events.lock().unwrap();
-        let ev = events.first().unwrap();
-        assert_eq!(ev.payload["is_connected"], true);
-        assert!(
-            ev.payload.get("connected").is_none(),
-            "legacy 'connected' key must be gone after the is_ rename"
-        );
-    }
-
-    #[test]
-    fn connection_changed_detail_is_null_when_absent_and_string_when_present() {
+    fn connection_changed_publishes_the_full_payload_with_null_for_absent_fields() {
         let publisher = MockPublisher::new();
         let p = publisher.publisher();
-        emit_connection_changed(&*p, "ws://x:1", false, Some("auth_required"), None);
+        emit_connection_changed(&*p, "ws://x:1", true, None, None);
         emit_connection_changed(
             &*p,
             "ws://x:1",
@@ -1146,12 +1132,30 @@ mod tests {
         );
 
         let events = publisher.events.lock().unwrap();
-        assert!(
-            events[0].payload["detail"].is_null(),
-            "absent detail must serialize as JSON null, not an empty string"
+        let published: Vec<_> = events
+            .iter()
+            .map(|e| (e.source, e.kind.as_str(), e.payload.clone()))
+            .collect();
+        assert_eq!(
+            published,
+            vec![
+                (
+                    EventSource::VTube,
+                    "vtube.connection.changed",
+                    json!({ "is_connected": true, "endpoint": "ws://x:1", "reason": null, "detail": null }),
+                ),
+                (
+                    EventSource::VTube,
+                    "vtube.connection.changed",
+                    json!({
+                        "is_connected": false,
+                        "endpoint": "ws://x:1",
+                        "reason": "connect_failed",
+                        "detail": "dns failure",
+                    }),
+                ),
+            ]
         );
-        assert_eq!(events[0].payload["reason"], "auth_required");
-        assert_eq!(events[1].payload["detail"], "dns failure");
     }
 
     mod session {

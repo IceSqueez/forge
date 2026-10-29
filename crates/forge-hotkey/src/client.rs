@@ -547,7 +547,7 @@ pub(crate) mod tests {
     }
 
     #[tokio::test]
-    async fn triggered_event_emitted_on_fired_rx() {
+    async fn a_fired_press_publishes_the_pressed_payload() {
         let publisher = RecordingPublisher::new();
         let (backend, inject_tx) = MockPortalBackend::new();
         let client = start_supervised(backend, Arc::clone(&publisher) as Arc<dyn EventPublisher>);
@@ -566,7 +566,10 @@ pub(crate) mod tests {
         drain_fired(&inject_tx).await;
 
         let ev = publisher.find_kind("hotkey.global.pressed").unwrap();
-        assert_eq!(ev.payload["combo"], "Ctrl+F1");
+        assert_eq!(
+            ev.payload,
+            serde_json::json!({ "combo": "Ctrl+F1", "id": id.0, "timestamp_us": 0 })
+        );
     }
 
     #[cfg(target_os = "linux")]
@@ -804,7 +807,7 @@ pub(crate) mod tests {
         client.enable().await.unwrap();
 
         let ev = publisher.find_kind("hotkey.engine.enable_failed").unwrap();
-        assert_eq!(ev.payload["combos"], serde_json::json!(["Alt+X"]));
+        assert_eq!(ev.payload, serde_json::json!({ "combos": ["Alt+X"] }));
     }
 
     #[tokio::test]

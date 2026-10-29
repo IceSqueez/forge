@@ -205,4 +205,230 @@ mod tests {
             );
         }
     }
+    const STORED_KEY_TOKENS: &[(&str, &str)] = &[
+        ("a", "A"),
+        ("b", "B"),
+        ("c", "C"),
+        ("d", "D"),
+        ("e", "E"),
+        ("f", "F"),
+        ("g", "G"),
+        ("h", "H"),
+        ("i", "I"),
+        ("j", "J"),
+        ("k", "K"),
+        ("l", "L"),
+        ("m", "M"),
+        ("n", "N"),
+        ("o", "O"),
+        ("p", "P"),
+        ("q", "Q"),
+        ("r", "R"),
+        ("s", "S"),
+        ("t", "T"),
+        ("u", "U"),
+        ("v", "V"),
+        ("w", "W"),
+        ("x", "X"),
+        ("y", "Y"),
+        ("z", "Z"),
+        ("0", "0"),
+        ("1", "1"),
+        ("2", "2"),
+        ("3", "3"),
+        ("4", "4"),
+        ("5", "5"),
+        ("6", "6"),
+        ("7", "7"),
+        ("8", "8"),
+        ("9", "9"),
+        ("f1", "F1"),
+        ("f2", "F2"),
+        ("f3", "F3"),
+        ("f4", "F4"),
+        ("f5", "F5"),
+        ("f6", "F6"),
+        ("f7", "F7"),
+        ("f8", "F8"),
+        ("f9", "F9"),
+        ("f10", "F10"),
+        ("f11", "F11"),
+        ("f12", "F12"),
+        ("delete", "Delete"),
+        ("del", "Delete"),
+        ("insert", "Insert"),
+        ("ins", "Insert"),
+        ("home", "Home"),
+        ("end", "End"),
+        ("pageup", "PageUp"),
+        ("pgup", "PageUp"),
+        ("pagedown", "PageDown"),
+        ("pgdn", "PageDown"),
+        ("pgdown", "PageDown"),
+        ("backspace", "Backspace"),
+        ("tab", "Tab"),
+        ("enter", "Enter"),
+        ("return", "Enter"),
+        ("escape", "Escape"),
+        ("esc", "Escape"),
+        ("space", "Space"),
+        ("arrowup", "ArrowUp"),
+        ("up", "ArrowUp"),
+        ("arrowdown", "ArrowDown"),
+        ("down", "ArrowDown"),
+        ("arrowleft", "ArrowLeft"),
+        ("left", "ArrowLeft"),
+        ("arrowright", "ArrowRight"),
+        ("right", "ArrowRight"),
+        ("num0", "Num0"),
+        ("numpad0", "Num0"),
+        ("num1", "Num1"),
+        ("numpad1", "Num1"),
+        ("num2", "Num2"),
+        ("numpad2", "Num2"),
+        ("num3", "Num3"),
+        ("numpad3", "Num3"),
+        ("num4", "Num4"),
+        ("numpad4", "Num4"),
+        ("num5", "Num5"),
+        ("numpad5", "Num5"),
+        ("num6", "Num6"),
+        ("numpad6", "Num6"),
+        ("num7", "Num7"),
+        ("numpad7", "Num7"),
+        ("num8", "Num8"),
+        ("numpad8", "Num8"),
+        ("num9", "Num9"),
+        ("numpad9", "Num9"),
+    ];
+
+    fn primary_modifier() -> &'static str {
+        if cfg!(target_os = "macos") {
+            "Meta"
+        } else {
+            "Ctrl"
+        }
+    }
+
+    #[test]
+    fn every_key_token_stored_combos_may_hold_keeps_its_canonical_form() {
+        for &(token, canonical) in STORED_KEY_TOKENS {
+            for spelling in [token.to_owned(), token.to_ascii_uppercase()] {
+                for (input, expected) in [
+                    (spelling.clone(), canonical.to_owned()),
+                    (
+                        format!("shift+ctrl+{spelling}"),
+                        format!("Ctrl+Shift+{canonical}"),
+                    ),
+                ] {
+                    let parsed = HotkeyCombo::parse(&input)
+                        .unwrap_or_else(|e| panic!("{input:?} no longer parses: {e}"));
+                    assert_eq!(parsed.as_str(), expected, "for {input:?}");
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn stored_key_tokens_cover_every_key() {
+        for key in Key::ALL {
+            assert!(
+                STORED_KEY_TOKENS
+                    .iter()
+                    .any(|&(_, canonical)| canonical == key.name()),
+                "{key:?} is accepted but missing from the stored-token table"
+            );
+        }
+    }
+
+    #[test]
+    fn every_modifier_token_stored_combos_may_hold_keeps_its_canonical_form() {
+        for (token, canonical) in [
+            ("ctrl", "Ctrl"),
+            ("control", "Ctrl"),
+            ("shift", "Shift"),
+            ("alt", "Alt"),
+            ("option", "Alt"),
+            ("meta", "Meta"),
+            ("cmd", "Meta"),
+            ("super", "Meta"),
+            ("win", "Meta"),
+            ("cmdorctrl", primary_modifier()),
+            ("commandorcontrol", primary_modifier()),
+        ] {
+            for spelling in [token.to_owned(), token.to_ascii_uppercase()] {
+                let input = format!("{spelling}+F5");
+                assert_eq!(
+                    HotkeyCombo::parse(&input).unwrap().as_str(),
+                    format!("{canonical}+F5"),
+                    "for {input:?}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn every_key_name_resolves_back_to_its_key() {
+        for key in Key::ALL {
+            assert_eq!(Key::from_alias(key.name()), Some(key), "{key:?}");
+            assert_eq!(
+                Key::from_alias(&key.name().to_ascii_lowercase()),
+                Some(key),
+                "{key:?} lower-case"
+            );
+        }
+    }
+
+    #[test]
+    fn every_canonical_combo_parses_back_to_itself() {
+        let modifier_sets = (0..1u8 << Modifier::ALL.len()).map(|mask| {
+            Modifier::ALL
+                .into_iter()
+                .enumerate()
+                .filter(|(bit, _)| mask & (1 << bit) != 0)
+                .map(|(_, modifier)| modifier)
+                .collect::<Modifiers>()
+        });
+        for modifiers in modifier_sets {
+            for key in Key::ALL {
+                let combo = HotkeyCombo::new(modifiers, key);
+                assert_eq!(
+                    HotkeyCombo::parse(combo.as_str()).ok(),
+                    Some(combo.clone()),
+                    "{}",
+                    combo.as_str()
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn deserialize_canonicalises_a_valid_string_and_serializes_it_back() {
+        let combo: HotkeyCombo =
+            serde_json::from_value(serde_json::json!("shift+ctrl+pgup")).unwrap();
+
+        assert_eq!(
+            serde_json::to_value(&combo).unwrap(),
+            serde_json::json!("Ctrl+Shift+PageUp")
+        );
+    }
+
+    #[test]
+    fn deserialize_rejects_an_invalid_combo_or_a_non_string() {
+        for bad in [
+            serde_json::json!(""),
+            serde_json::json!("Ctrl+"),
+            serde_json::json!("Ctrl+PrintScreen"),
+            serde_json::json!("Hyper+A"),
+            serde_json::json!("A+B"),
+            serde_json::json!(5),
+            serde_json::json!(null),
+            serde_json::json!(["Ctrl", "A"]),
+        ] {
+            assert!(
+                serde_json::from_value::<HotkeyCombo>(bad.clone()).is_err(),
+                "accepted {bad}"
+            );
+        }
+    }
 }

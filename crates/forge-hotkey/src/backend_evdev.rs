@@ -649,6 +649,19 @@ mod tests {
         assert_eq!(edges(&fired), vec![(bare, "F1", HotkeyEdge::Press)]);
     }
 
+    #[test]
+    fn every_key_has_a_scancode_no_other_key_or_modifier_claims() {
+        for key in Key::ALL {
+            let code = scancode(key);
+            assert_eq!(key_at(code), Some(key), "{key:?} scancode {code} is shared");
+            assert_eq!(
+                modifier_at(code),
+                None,
+                "{key:?} scancode {code} is a modifier"
+            );
+        }
+    }
+
     struct FakeDevice {
         _dir: tempfile::TempDir,
         path: PathBuf,

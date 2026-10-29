@@ -153,7 +153,7 @@ mod tests {
     use forge_types::{PermissionRung, PlatformScope};
 
     use super::*;
-    use crate::event_kinds;
+    use crate::vocabulary::event_kinds;
 
     const OTHER_KIND: &str = "midi.note_on";
 

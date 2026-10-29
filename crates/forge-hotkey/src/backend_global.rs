@@ -290,7 +290,7 @@ mod tests {
     #[test]
     fn a_combo_another_app_already_holds_is_reported_as_a_conflict() {
         let combo = ctrl_f5();
-        let hotkey = combo_to_hotkey(&combo).unwrap();
+        let hotkey = combo_to_hotkey(&combo);
 
         let error = map_manager_error(global_hotkey::Error::AlreadyRegistered(hotkey), &combo);
 

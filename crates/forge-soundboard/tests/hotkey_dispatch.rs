@@ -7,8 +7,9 @@ use forge_audio::{AudioError, AudioSink};
 use forge_events::{
     Event, EventChannel, EventObserver, EventPublisher, EventSource, EventSubscription,
 };
-use forge_hotkey::payload_fields::COMBO;
-use forge_hotkey::{ClipBindings, event_kinds};
+use forge_hotkey::ClipBindings;
+use forge_hotkey::vocabulary::event_kinds;
+use forge_hotkey::vocabulary::fields::COMBO;
 use forge_soundboard::NullAudioEventSink;
 use forge_soundboard::{
     AudioSinkFactory, ClipLibrary, SoundboardPlayer, SoundboardSettingsHandle, pressed_combo,

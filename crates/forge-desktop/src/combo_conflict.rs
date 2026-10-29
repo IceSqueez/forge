@@ -177,7 +177,7 @@ mod tests {
 
     use super::*;
     use crate::test_support::{Sandboxed, sandboxed_backend};
-    use forge_hotkey::event_kinds;
+    use forge_hotkey::vocabulary::event_kinds;
     use forge_hotkey::{BindingHalf, COMBO_FIELD};
 
     const TEST_KEY: [u8; 32] = [0x11; 32];

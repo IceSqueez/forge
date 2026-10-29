@@ -779,10 +779,6 @@ mod tests {
         decoded
     }
 
-    fn unchecked_combo(raw: &str) -> HotkeyCombo {
-        serde_json::from_value(serde_json::Value::String(raw.to_owned())).unwrap()
-    }
-
     #[test]
     fn bound_triggers_reads_each_returned_shortcut_with_its_trigger_description() {
         let results = bind_response(vec![
@@ -818,16 +814,6 @@ mod tests {
         for results in [empty_subset, missing_key] {
             assert!(bound_triggers(&results).is_empty());
         }
-    }
-
-    #[test]
-    fn shortcut_properties_omit_the_trigger_for_a_combo_the_spec_cannot_express() {
-        let combo = unchecked_combo("Ctrl+PrintScreen");
-
-        let props = shortcut_properties(&combo);
-
-        assert!(props.contains_key(SHORTCUT_DESCRIPTION));
-        assert!(!props.contains_key(SHORTCUT_PREFERRED_TRIGGER));
     }
 
     #[test]

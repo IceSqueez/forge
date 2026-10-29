@@ -7,9 +7,10 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use forge_hotkey::testing::{RecordedCall, RecordingBackend};
+use forge_hotkey::vocabulary::event_kinds;
 use forge_hotkey::{
     CLIP_COMBO_FIELD, HotkeyClient, HotkeyCombo, HotkeyReconciler, HotkeySyncedClipsRepo,
-    HotkeySyncedTriggerRepo, event_kinds,
+    HotkeySyncedTriggerRepo,
 };
 use forge_storage::soundboard::MockSoundboardClipsRepo;
 use forge_storage::{

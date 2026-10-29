@@ -65,7 +65,9 @@ impl AudioEventSink for BusAudioEventSink {
 mod tests {
     use std::sync::Mutex;
 
+    use forge_events::Event;
     use forge_types::ClipId;
+    use serde_json::json;
 
     use super::*;
 

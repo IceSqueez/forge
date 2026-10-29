@@ -317,7 +317,7 @@ pub async fn relink_action(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::event_kinds;
+    use crate::vocabulary::event_kinds;
 
     async fn backend() -> (Arc<dyn DataProvider>, tempfile::TempDir) {
         let media_root = tempfile::tempdir().expect("a temporary media root");

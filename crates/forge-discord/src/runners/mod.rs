@@ -275,7 +275,7 @@ mod tests {
                 "{name} dropped a variable"
             );
             assert_eq!(
-                stack.get(MESSAGE_ID_VAR),
+                stack.get(variables::MESSAGE_ID),
                 Some(&text("987654321")),
                 "{name} did not publish the id"
             );
@@ -297,7 +297,11 @@ mod tests {
     #[tokio::test]
     async fn posting_runners_declare_the_message_id_as_a_fixed_output() {
         for (name, _, io) in run_posting_runners(true, "").await {
-            assert_eq!(io.fixed_outputs, vec![MESSAGE_ID_VAR.to_owned()], "{name}");
+            assert_eq!(
+                io.fixed_outputs,
+                vec![variables::MESSAGE_ID.to_owned()],
+                "{name}"
+            );
         }
     }
 }

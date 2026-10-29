@@ -65,6 +65,8 @@ mod tests {
 
     use super::*;
     use crate::assets::PageAssets;
+    use crate::config::{MARGIN_MAX_PERCENT, MARGIN_MIN_PERCENT, MARGIN_TOP, POSITION};
+    use crate::kinds::chat;
     use crate::preview::{PreviewComposition, PreviewShape, compose};
 
     const STUB_KEY: &str = "stub.key";
@@ -165,5 +167,110 @@ mod tests {
             matches!(&err, OverlayError::UnknownKind(id) if id == "vendor.unshipped"),
             "unexpected error: {err:?}"
         );
+    }
+
+    fn builtin() -> OverlayKindRegistry {
+        let mut registry = OverlayKindRegistry::new();
+        crate::kinds::register_builtin_kinds(&mut registry).expect("builtin kinds register");
+        registry
+    }
+
+    fn chat_config(entries: &[(&str, Variant)]) -> OverlayConfig {
+        entries
+            .iter()
+            .map(|(key, value)| ((*key).to_owned(), value.clone()))
+            .collect()
+    }
+
+    fn text(value: &str) -> Variant {
+        Variant::String(value.to_owned())
+    }
+
+    #[test]
+    fn validate_stored_refuses_a_look_this_build_lacks() {
+        let err = builtin()
+            .validate_stored("overlay.vendor_unshipped", 1, &OverlayConfig::new())
+            .expect_err("an unregistered look cannot be validated");
+
+        assert!(
+            matches!(&err, OverlayError::UnknownKind(id) if id == "overlay.vendor_unshipped"),
+            "unexpected error: {err:?}"
+        );
+    }
+
+    #[test]
+    fn validate_stored_judges_the_config_after_upgrading_it_from_the_recorded_schema() {
+        let registry = builtin();
+        let current = chat::MOTION_SCHEMA_VERSION;
+        let older = chat::BOX_CONTRACT_SCHEMA_VERSION - 1;
+        let max = MARGIN_MAX_PERCENT;
+        let cases: [(&str, u32, OverlayConfig, Result<(), &str>); 9] = [
+            (
+                "sparse config takes defaults",
+                current,
+                OverlayConfig::new(),
+                Ok(()),
+            ),
+            (
+                "margin at the upper bound",
+                current,
+                chat_config(&[(MARGIN_TOP, Variant::Int(max))]),
+                Ok(()),
+            ),
+            (
+                "margin at the lower bound",
+                current,
+                chat_config(&[(MARGIN_TOP, Variant::Int(MARGIN_MIN_PERCENT))]),
+                Ok(()),
+            ),
+            (
+                "older unknown position folded by the upgrade",
+                older,
+                chat_config(&[(POSITION, text("middle"))]),
+                Ok(()),
+            ),
+            (
+                "unknown position at the current schema",
+                current,
+                chat_config(&[(POSITION, text("middle"))]),
+                Err("unknown choice"),
+            ),
+            (
+                "margin one over the upper bound",
+                current,
+                chat_config(&[(MARGIN_TOP, Variant::Int(max + 1))]),
+                Err("out of range"),
+            ),
+            (
+                "margin one under the lower bound",
+                current,
+                chat_config(&[(MARGIN_TOP, Variant::Int(MARGIN_MIN_PERCENT - 1))]),
+                Err("out of range"),
+            ),
+            (
+                "older out-of-range margin the upgrade keeps",
+                older,
+                chat_config(&[(MARGIN_TOP, Variant::Int(max + 1))]),
+                Err("out of range"),
+            ),
+            (
+                "margin of the wrong type",
+                current,
+                chat_config(&[(MARGIN_TOP, text("wide"))]),
+                Err("wrong type"),
+            ),
+        ];
+
+        for (label, version, stored, expected) in cases {
+            let verdict = registry
+                .validate_stored(chat::KIND_ID, version, &stored)
+                .map_err(|err| match err {
+                    OverlayError::UnknownChoice { key, .. } if key == POSITION => "unknown choice",
+                    OverlayError::OutOfRange { key, .. } if key == MARGIN_TOP => "out of range",
+                    OverlayError::WrongType { key, .. } if key == MARGIN_TOP => "wrong type",
+                    _ => "unexpected error",
+                });
+            assert_eq!(verdict, expected, "{label}");
+        }
     }
 }

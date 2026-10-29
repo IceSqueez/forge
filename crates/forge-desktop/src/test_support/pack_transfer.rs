@@ -3,6 +3,7 @@ use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
+use forge_overlay::{OverlayKindRegistry, register_builtin_kinds};
 use forge_paths::{CREDENTIALS_KEY_FILE_NAME, MEDIA_DIR_NAME, OVERLAYS_DIR_NAME};
 use forge_registry::{
     InternalNamespace, ReferenceCatalog, ReferenceNamespace, SubActionRegistry, TriggerRegistry,
@@ -54,14 +55,18 @@ type Config = BTreeMap<String, Variant>;
 pub(super) struct Registries {
     triggers: TriggerRegistry,
     sub_actions: SubActionRegistry,
+    overlays: OverlayKindRegistry,
 }
 
 impl Registries {
     pub(super) async fn real() -> Self {
         let (triggers, sub_actions) = every_registry_entry().await;
+        let mut overlays = OverlayKindRegistry::new();
+        register_builtin_kinds(&mut overlays).unwrap();
         Self {
             triggers,
             sub_actions,
+            overlays,
         }
     }
 
@@ -69,6 +74,7 @@ impl Registries {
         ClosureRegistries {
             sub_actions: &self.sub_actions,
             triggers: &self.triggers,
+            overlays: &self.overlays,
             schema: None,
         }
     }
@@ -566,7 +572,7 @@ async fn preview(
         .await
         .unwrap();
     let inventory = load_pack_inventory(store.provider.as_ref()).await.unwrap();
-    let plan = plan_pack_import(&staged, &inventory, registries.closure());
+    let plan = plan_pack_import(&staged, &inventory, registries.closure()).unwrap();
     (staged, plan)
 }
 

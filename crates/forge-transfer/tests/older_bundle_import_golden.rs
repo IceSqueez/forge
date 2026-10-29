@@ -5,6 +5,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use age::secrecy::SecretString;
+use forge_overlay::OverlayKindRegistry;
 use forge_paths::{MEDIA_DIR_NAME, OVERLAYS_DIR_NAME};
 use forge_registry::{SubActionRegistry, TriggerRegistry};
 use forge_storage::{
@@ -211,15 +212,17 @@ async fn a_pack_written_by_an_older_build_imports_into_the_golden_state() {
     .unwrap();
     let sub_actions = SubActionRegistry::new();
     let triggers = TriggerRegistry::new();
+    let overlays = OverlayKindRegistry::new();
     let registries = ClosureRegistries {
         sub_actions: &sub_actions,
         triggers: &triggers,
+        overlays: &overlays,
         schema: None,
     };
 
     let staged = stage_pack(bundle, data_dir.clone()).await.unwrap();
     let inventory = load_pack_inventory(provider.as_ref()).await.unwrap();
-    let plan = plan_pack_import(&staged, &inventory, registries);
+    let plan = plan_pack_import(&staged, &inventory, registries).unwrap();
     apply_pack_import(PackImportRequest {
         provider: Arc::clone(&provider),
         registries,

@@ -8,7 +8,10 @@ use forge_runtime::{
     ActionCancelRegistry, EventBus, OverlayServiceHandle, QueueScheduler, ScriptRegistry,
     spawn_action_engine,
 };
-use forge_storage::{DATABASE_FILE_NAME, DataProvider, SettingsRepo, reserved_keys};
+use forge_storage::{
+    DATABASE_FILE_NAME, DataProvider, OverlayConfig, OverlayDefinition, OverlayId, SettingsRepo,
+    reserved_keys,
+};
 use forge_storage_sqlite::SqliteBackend;
 use forge_transfer::{
     PackExportRequest, PackImportPlan, PackMetadata, StagedPack, plan_pack_import,
@@ -22,6 +25,7 @@ use super::{STORAGE_KEY, StubActions, StubEventLog, StubHistory, stub_catalog};
 use crate::pack_services::PackServices;
 
 pub(crate) const PACK_NAME: &str = "Alerts pack";
+pub(crate) const PACKED_OVERLAY_NAME: &str = "Packed chat";
 
 pub(crate) struct PackWorld {
     pub(crate) services: PackServices,
@@ -134,11 +138,45 @@ pub(crate) fn export_pack(
     world: &PackWorld,
     roots: &[ActionId],
 ) -> PathBuf {
+    export_pack_carrying(rt, world, roots, &[])
+}
+
+pub(crate) fn seed_overlay(
+    rt: &tokio::runtime::Runtime,
+    world: &PackWorld,
+    kind_id: &str,
+    config: OverlayConfig,
+) -> OverlayDefinition {
+    let schema = world
+        .services
+        .overlay_kinds
+        .get(kind_id)
+        .unwrap()
+        .config_schema_version();
+    rt.block_on(async {
+        let repo = world.provider().overlay_repo();
+        let mut overlay = repo
+            .create(PACKED_OVERLAY_NAME, kind_id, schema)
+            .await
+            .unwrap();
+        overlay.config = config;
+        repo.save(&overlay).await.unwrap();
+        overlay
+    })
+}
+
+pub(crate) fn export_pack_carrying(
+    rt: &tokio::runtime::Runtime,
+    world: &PackWorld,
+    roots: &[ActionId],
+    overlays: &[OverlayId],
+) -> PathBuf {
     rt.block_on(async {
         let source = world.services.load_source().await.unwrap();
-        let selection =
+        let mut selection =
             resolve_pack_closure(&source.inventory, world.services.registries(&source), roots)
                 .unwrap();
+        selection.overlays.extend(overlays.iter().cloned());
         write_pack(PackExportRequest {
             provider: Arc::clone(world.provider()),
             inventory: source.inventory.as_ref().clone(),
@@ -172,7 +210,8 @@ pub(crate) fn stage_into(
             &staged,
             &source.inventory,
             world.services.registries(&source),
-        );
+        )
+        .unwrap();
         (staged, plan)
     })
 }

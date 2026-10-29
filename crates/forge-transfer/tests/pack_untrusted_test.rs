@@ -3,21 +3,24 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
+use forge_overlay::{OverlayError, OverlayKindRegistry, register_builtin_kinds};
 use forge_paths::{MEDIA_DIR_NAME, OVERLAYS_DIR_NAME};
 use forge_registry::{SubActionRegistry, TriggerRegistry};
 use forge_storage::{
     DATABASE_FILE_NAME, DataProvider, EXPECTED_SCHEMA_VERSION, MediaBlobId, MediaFormat,
     clip_source_referrer,
 };
+use forge_storage::{OverlayDefinition, OverlayId};
 use forge_storage_sqlite::SqliteBackend;
 use forge_transfer::{
     BUNDLE_FORMAT_VERSION, BundleKind, ClipDocument, ClipSourceDocument, ClosureRegistries,
     ContentEntry, MANIFEST_ENTRY_NAME, MediaDocument, OverlayDocument, OverlayFileDocument,
-    PACK_DOCUMENTS_VERSION, PackDocuments, PackImportOutcome, PackImportRequest, PackManifest,
-    TransferError, apply_pack_import, load_pack_inventory, pack_staging_root, plan_pack_import,
+    PACK_DOCUMENTS_VERSION, PackDocuments, PackImportOutcome, PackImportPlan, PackImportRequest,
+    PackItemKey, PackItemKind, PackManifest, PackResolution, StagedPack, TransferError,
+    apply_pack_import, backups_dir, load_pack_inventory, pack_staging_root, plan_pack_import,
     stage_pack,
 };
-use forge_types::ClipId;
+use forge_types::{ClipId, Variant};
 use sha2::{Digest, Sha256};
 use tempfile::TempDir;
 use time::OffsetDateTime;
@@ -29,6 +32,13 @@ const OVERLAY_FILE: &str = "pack/overlays/0/payload.css";
 const ESCAPE_NAME: &str = "escape.css";
 const LOCAL_OGG: &[u8] = b"OggS\x00\x02\x00\x00local sound";
 const PACK_OGG: &[u8] = b"OggS\x00\x02\x00\x00pack sound";
+const CHAT_KIND: &str = "overlay.chat";
+const UNSHIPPED_KIND: &str = "overlay.vendor_unshipped";
+const POSITION_KEY: &str = "position";
+const KNOWN_POSITION: &str = "top";
+const UNKNOWN_POSITION: &str = "middle";
+const OLDEST_SCHEMA: u32 = 1;
+const PACKED_OVERLAY_NAME: &str = "Packed chat";
 
 type Expected = fn(&TransferError) -> bool;
 
@@ -55,27 +65,85 @@ impl Store {
         self.dir.path()
     }
 
-    async fn import(&self, bundle: PathBuf) -> Result<PackImportOutcome, TransferError> {
-        let sub_actions = SubActionRegistry::new();
-        let triggers = TriggerRegistry::new();
-        let registries = ClosureRegistries {
-            sub_actions: &sub_actions,
-            triggers: &triggers,
-            schema: None,
-        };
-        let staged = stage_pack(bundle, self.data_dir().to_path_buf()).await?;
+    async fn stage(&self, bundle: PathBuf) -> StagedPack {
+        stage_pack(bundle, self.data_dir().to_path_buf())
+            .await
+            .unwrap()
+    }
+
+    async fn plan(&self, staged: &StagedPack) -> Result<PackImportPlan, TransferError> {
+        let registries = Registries::builtin();
         let inventory = load_pack_inventory(self.provider.as_ref()).await?;
-        let plan = plan_pack_import(&staged, &inventory, registries);
+        plan_pack_import(staged, &inventory, registries.closure())
+    }
+
+    async fn apply(
+        &self,
+        staged: &StagedPack,
+        plan: PackImportPlan,
+    ) -> Result<PackImportOutcome, TransferError> {
+        let registries = Registries::builtin();
         apply_pack_import(PackImportRequest {
             provider: Arc::clone(&self.provider),
-            registries,
-            staged: &staged,
+            registries: registries.closure(),
+            staged,
             plan,
             data_dir: self.data_dir().to_path_buf(),
             overlay_root: self.data_dir().join(OVERLAYS_DIR_NAME),
         })
         .await
     }
+
+    async fn import(&self, bundle: PathBuf) -> Result<PackImportOutcome, TransferError> {
+        let staged = stage_pack(bundle, self.data_dir().to_path_buf()).await?;
+        let plan = self.plan(&staged).await?;
+        self.apply(&staged, plan).await
+    }
+
+    async fn overlay(&self, id: &OverlayId) -> Option<OverlayDefinition> {
+        self.provider.overlay_repo().get(id).await.unwrap()
+    }
+
+    fn safety_snapshots(&self) -> usize {
+        std::fs::read_dir(backups_dir(self.data_dir()))
+            .map(|entries| entries.count())
+            .unwrap_or(0)
+    }
+}
+
+struct Registries {
+    sub_actions: SubActionRegistry,
+    triggers: TriggerRegistry,
+    overlays: OverlayKindRegistry,
+}
+
+impl Registries {
+    fn builtin() -> Self {
+        let mut overlays = OverlayKindRegistry::new();
+        register_builtin_kinds(&mut overlays).unwrap();
+        Self {
+            sub_actions: SubActionRegistry::new(),
+            triggers: TriggerRegistry::new(),
+            overlays,
+        }
+    }
+
+    fn closure(&self) -> ClosureRegistries<'_> {
+        ClosureRegistries {
+            sub_actions: &self.sub_actions,
+            triggers: &self.triggers,
+            overlays: &self.overlays,
+            schema: None,
+        }
+    }
+}
+
+fn current_schema(kind_id: &str) -> u32 {
+    Registries::builtin()
+        .overlays
+        .get(kind_id)
+        .unwrap()
+        .config_schema_version()
 }
 
 fn sha256_hex(bytes: &[u8]) -> String {
@@ -393,4 +461,135 @@ async fn staging_refuses_documents_that_do_not_hold_together() {
             "{label}: {refused:?}"
         );
     }
+}
+
+fn chat_overlay(id: &str, position: &str, schema: u32) -> OverlayDocument {
+    OverlayDocument {
+        id: id.to_owned(),
+        display_name: PACKED_OVERLAY_NAME.to_owned(),
+        kind_id: CHAT_KIND.to_owned(),
+        enabled: true,
+        position: 0,
+        config: [(
+            POSITION_KEY.to_owned(),
+            Variant::String(position.to_owned()),
+        )]
+        .into(),
+        config_schema_version: schema,
+        source_overrides: Vec::new(),
+        files: Vec::new(),
+    }
+}
+
+fn carrying_overlay(overlay: OverlayDocument) -> PackDocuments {
+    PackDocuments {
+        overlays: vec![overlay],
+        ..empty_documents()
+    }
+}
+
+#[tokio::test]
+async fn planning_judges_each_overlay_against_the_look_and_schema_the_pack_recorded() {
+    type Verdict = fn(&Result<PackImportPlan, TransferError>) -> bool;
+    let current = current_schema(CHAT_KIND);
+    let cases: [(&str, OverlayDocument, Verdict); 4] = [
+        (
+            "valid settings",
+            chat_overlay("valid", KNOWN_POSITION, current),
+            |r| r.is_ok(),
+        ),
+        (
+            "older schema the upgrade repairs",
+            chat_overlay("older", UNKNOWN_POSITION, OLDEST_SCHEMA),
+            |r| r.is_ok(),
+        ),
+        (
+            "current schema with an unknown choice",
+            chat_overlay("current", UNKNOWN_POSITION, current),
+            |r| {
+                matches!(
+                    r,
+                    Err(TransferError::InvalidOverlayConfig {
+                        overlay,
+                        source: OverlayError::UnknownChoice { key, value },
+                    }) if overlay == PACKED_OVERLAY_NAME && key == POSITION_KEY && value == UNKNOWN_POSITION
+                )
+            },
+        ),
+        (
+            "look this forge lacks",
+            OverlayDocument {
+                kind_id: UNSHIPPED_KIND.to_owned(),
+                ..chat_overlay("unshipped", KNOWN_POSITION, current)
+            },
+            |r| {
+                matches!(
+                    r,
+                    Err(TransferError::InvalidOverlayConfig {
+                        source: OverlayError::UnknownKind(kind),
+                        ..
+                    }) if kind == UNSHIPPED_KIND
+                )
+            },
+        ),
+    ];
+
+    for (label, overlay, verdict) in cases {
+        let store = Store::open().await;
+        let staged = store
+            .stage(bundle(store.data_dir(), &carrying_overlay(overlay), &[]))
+            .await;
+
+        let planned = store.plan(&staged).await;
+
+        assert!(verdict(&planned), "{label}: {planned:?}");
+    }
+}
+
+#[tokio::test]
+async fn applying_an_invalid_overlay_against_a_replacing_plan_writes_nothing_and_takes_no_snapshot()
+{
+    let store = Store::open().await;
+    let current = current_schema(CHAT_KIND);
+    let local = store
+        .provider
+        .overlay_repo()
+        .create("Local chat", CHAT_KIND, current)
+        .await
+        .unwrap();
+    let id = local.id.as_str();
+    let valid = store
+        .stage(bundle(
+            store.data_dir(),
+            &carrying_overlay(chat_overlay(id, KNOWN_POSITION, current)),
+            &[],
+        ))
+        .await;
+    let mut plan = store.plan(&valid).await.unwrap();
+    plan.set_resolution(
+        &PackItemKey {
+            kind: PackItemKind::Overlay,
+            id: id.to_owned(),
+        },
+        PackResolution::Replace,
+    )
+    .unwrap();
+    let invalid = store
+        .stage(bundle(
+            store.data_dir(),
+            &carrying_overlay(chat_overlay(id, UNKNOWN_POSITION, current)),
+            &[],
+        ))
+        .await;
+
+    let refused = store.apply(&invalid, plan).await;
+
+    assert!(
+        matches!(refused, Err(TransferError::InvalidOverlayConfig { .. })),
+        "{refused:?}"
+    );
+    assert_eq!(
+        (store.overlay(&local.id).await, store.safety_snapshots()),
+        (Some(local), 0)
+    );
 }

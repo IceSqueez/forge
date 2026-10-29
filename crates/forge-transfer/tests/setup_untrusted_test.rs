@@ -4,6 +4,7 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
+use forge_overlay::{OverlayKindRegistry, register_builtin_kinds};
 use forge_paths::{MEDIA_DIR_NAME, OVERLAYS_DIR_NAME};
 use forge_registry::{SubActionRegistry, TriggerRegistry};
 use forge_speech_types::{AssignmentStrategy, IgnoreProfile};
@@ -18,10 +19,10 @@ use forge_transfer::{
     ContentEntry, MANIFEST_ENTRY_NAME, MediaDocument, OverlayDocument, OverlayFileDocument,
     PACK_DOCUMENTS_VERSION, PackDocuments, SETUP_DOCUMENTS_VERSION, SetupDocuments,
     SetupImportOutcome, SetupImportRequest, SetupManifest, StageRequest, TransferError,
-    TtsDocument, VoicesDocument, apply_setup_import, setup_staging_root, stage_full_restore,
-    stage_pack, stage_setup,
+    TtsDocument, VoicesDocument, apply_setup_import, backups_dir, setup_staging_root,
+    stage_full_restore, stage_pack, stage_setup,
 };
-use forge_types::ClipId;
+use forge_types::{ClipId, Variant};
 use sha2::{Digest, Sha256};
 use tempfile::TempDir;
 use time::OffsetDateTime;
@@ -79,12 +80,15 @@ impl Store {
     async fn import(&self, bundle: PathBuf) -> Result<SetupImportOutcome, TransferError> {
         let sub_actions = SubActionRegistry::new();
         let triggers = TriggerRegistry::new();
+        let mut overlays = OverlayKindRegistry::new();
+        register_builtin_kinds(&mut overlays).unwrap();
         let staged = stage_setup(bundle, self.data_dir().to_path_buf()).await?;
         apply_setup_import(SetupImportRequest {
             provider: Arc::clone(&self.provider),
             registries: ClosureRegistries {
                 sub_actions: &sub_actions,
                 triggers: &triggers,
+                overlays: &overlays,
                 schema: None,
             },
             staged: &staged,
@@ -556,4 +560,34 @@ async fn a_setup_carrying_no_queues_removes_the_local_ones_but_keeps_the_default
         .map(|queue| queue.id)
         .collect();
     assert_eq!(left, vec![forge_types::DEFAULT_QUEUE_ID]);
+}
+
+#[tokio::test]
+async fn a_setup_carrying_an_overlay_with_invalid_settings_writes_nothing_and_takes_no_snapshot() {
+    let store = Store::open().await;
+    store.set(&[(key::THEME, "local-theme")]).await;
+    let before = store.settings().await;
+    let mut documents = setup_carrying(&[(key::THEME, PORTABLE_THEME)]);
+    documents.configuration.overlays = vec![OverlayDocument {
+        config: [("margin_top".to_owned(), Variant::String("wide".to_owned()))].into(),
+        files: Vec::new(),
+        source_overrides: Vec::new(),
+        ..overlay_carrying("unused.css")
+    }];
+    let path = bundle(store.data_dir(), &documents, &[]);
+
+    let refused = store.import(path).await;
+
+    assert!(
+        matches!(refused, Err(TransferError::InvalidOverlayConfig { .. })),
+        "{refused:?}"
+    );
+    let snapshots = std::fs::read_dir(backups_dir(store.data_dir()))
+        .map(|entries| entries.count())
+        .unwrap_or(0);
+    let overlays = store.provider.overlay_repo().list().await.unwrap();
+    assert_eq!(
+        (store.settings().await, overlays.len(), snapshots),
+        (before, 0, 0)
+    );
 }

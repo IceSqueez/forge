@@ -999,10 +999,12 @@ pub(crate) mod tests {
         let rt = runtime();
         let repo = RecordingOverlays::new();
         let (backend, _writes) = test_backend();
+        let mut kinds = OverlayKindRegistry::new();
+        forge_overlay::register_builtin_kinds(&mut kinds).expect("builtin kinds register");
         let service = OverlayServiceHandle::new(
             Arc::clone(&repo) as Arc<dyn OverlayRepo>,
             backend as Arc<dyn forge_storage::SettingsRepo>,
-            Arc::new(OverlayKindRegistry::new()),
+            Arc::new(kinds),
             EventBus::new(Arc::new(StubEventLog)),
             None,
         );

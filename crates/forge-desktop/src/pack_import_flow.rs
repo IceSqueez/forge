@@ -446,10 +446,14 @@ mod tests {
     use std::time::Duration;
 
     use forge_components::{ToastKind, Toasts};
+    use forge_overlay::OverlayError;
     use forge_storage::Language;
+    use forge_storage::OverlayConfig;
     use forge_transfer::{
         PackImportOutcome, PackImportPlan, PackItemKey, PackItemKind, PackResolution, StagedPack,
+        TransferError, pack_staging_root,
     };
+    use forge_types::Variant;
     use gpui::{AppContext, Entity, TestAppContext};
 
     use super::{
@@ -460,7 +464,8 @@ mod tests {
     use crate::pack_import_live::LiveRefresh;
     use crate::restore_problem::RestoreProblem;
     use crate::test_support::pack_flow::{
-        PackWorld, export_pack, pack_world, queue_named, seed_queued_action, stage_into,
+        PACKED_OVERLAY_NAME, PackWorld, export_pack, export_pack_carrying, pack_world, queue_named,
+        seed_overlay, seed_queued_action, stage_into,
     };
     use crate::test_support::{
         alive_tasks, install_presentation, runtime, wait_until_worker_drains_to, worker_runtime,
@@ -875,6 +880,47 @@ mod tests {
                     "home_import_failed",
                     error = RestoreProblem::NotABundle.message()
                 )]
+            )
+        );
+    }
+
+    #[gpui::test]
+    fn a_pack_carrying_overlay_settings_its_look_rejects_is_refused_at_the_plan_step(
+        cx: &mut TestAppContext,
+    ) {
+        let rig = rig(cx);
+        let queue = queue_named("Alerts");
+        let action = seed_queued_action(&rig.rt, &rig.world, "Greeter", &queue);
+        let overlay = seed_overlay(
+            &rig.rt,
+            &rig.world,
+            "overlay.chat",
+            OverlayConfig::from([("position".to_owned(), Variant::String("middle".to_owned()))]),
+        );
+        let bundle = export_pack_carrying(&rig.rt, &rig.world, &[action], &[overlay.id]);
+
+        rig.flow.update(cx, |flow, cx| flow.open(bundle, cx));
+        settle_until(cx, &rig, |cx| step(cx, &rig) == "idle");
+
+        let refusal = TransferError::InvalidOverlayConfig {
+            overlay: PACKED_OVERLAY_NAME.to_owned(),
+            source: OverlayError::UnknownChoice {
+                key: "position".to_owned(),
+                value: "middle".to_owned(),
+            },
+        };
+        let messages: Vec<String> = toasts(cx).into_iter().map(|toast| toast.1).collect();
+        let staged_left = std::fs::read_dir(pack_staging_root(&rig.world.data_dir()))
+            .map(|entries| entries.count())
+            .unwrap_or(0);
+        assert_eq!(
+            (messages, staged_left),
+            (
+                vec![tr!(
+                    "home_import_failed",
+                    error = RestoreProblem::of(&refusal).message()
+                )],
+                0
             )
         );
     }

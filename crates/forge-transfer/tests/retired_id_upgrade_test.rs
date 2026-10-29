@@ -3,6 +3,7 @@ use std::collections::BTreeMap;
 use std::io::Write;
 use std::path::{Path, PathBuf};
 
+use forge_overlay::OverlayKindRegistry;
 use forge_registry::{IdSuccession, SubActionRegistry, TriggerRegistry};
 use forge_speech_types::{AssignmentStrategy, IgnoreProfile};
 use forge_storage::settings::reserved_keys as key;
@@ -40,6 +41,7 @@ const STEP_SUCCESSION: IdSuccession = IdSuccession {
 struct Registries {
     sub_actions: SubActionRegistry,
     triggers: TriggerRegistry,
+    overlays: OverlayKindRegistry,
 }
 
 impl Registries {
@@ -51,6 +53,7 @@ impl Registries {
         Self {
             sub_actions,
             triggers,
+            overlays: OverlayKindRegistry::new(),
         }
     }
 
@@ -58,6 +61,7 @@ impl Registries {
         ClosureRegistries {
             sub_actions: &self.sub_actions,
             triggers: &self.triggers,
+            overlays: &self.overlays,
             schema: None,
         }
     }

@@ -1310,3 +1310,45 @@ async fn a_kept_config_that_cannot_be_refreshed_counts_as_failed_and_the_pass_ca
     );
     assert_eq!(fs::read_to_string(&outside).unwrap(), "{}");
 }
+
+#[tokio::test]
+async fn saving_an_overlay_refuses_settings_its_look_rejects_and_writes_nothing() {
+    let h = harness(Vec::new(), false);
+    let mut unknown_choice = definition_of_kind("chat", CHAT_KIND);
+    unknown_choice.config_schema_version = current_schema(CHAT_KIND);
+    unknown_choice.config = text_config(&[(POSITION_KEY, "middle")]);
+    let unshipped = definition_of_kind("vendor", UNSHIPPED_KIND);
+
+    let refusals = [
+        h.service.save(&unknown_choice).await,
+        h.service.save(&unshipped).await,
+    ];
+
+    assert!(
+        matches!(
+            &refusals,
+            [
+                Err(OverlayServiceError::Overlay(
+                    forge_overlay::OverlayError::UnknownChoice { .. }
+                )),
+                Err(OverlayServiceError::Overlay(
+                    forge_overlay::OverlayError::UnknownKind(_)
+                )),
+            ]
+        ),
+        "{refusals:?}"
+    );
+    assert!(h.saved().is_empty());
+}
+
+#[tokio::test]
+async fn saving_an_overlay_with_settings_its_look_accepts_writes_the_definition_unchanged() {
+    let h = harness(Vec::new(), false);
+    let mut valid = definition_of_kind("chat", CHAT_KIND);
+    valid.config_schema_version = current_schema(CHAT_KIND);
+    valid.config = text_config(&[(POSITION_KEY, "top")]);
+
+    h.service.save(&valid).await.unwrap();
+
+    assert_eq!(h.saved(), vec![valid]);
+}

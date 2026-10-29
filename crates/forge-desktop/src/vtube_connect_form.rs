@@ -4,7 +4,7 @@ use std::sync::Arc;
 use forge_components::{
     ActivePresentation, Density, ForgePalette, Icon, TextInput, body_family, pulse_dot, scaled, tr,
 };
-use forge_events::{Event, EventPublisher, EventSource};
+use forge_events::{Event, EventPublisher};
 use forge_runtime::EventBus;
 use forge_storage::{CredentialsRepo, SettingsRepo};
 use forge_vtube::{PLUGIN_NAME, VTubeClient, VTubeConfig, VTubeProbeResult};
@@ -21,6 +21,7 @@ use crate::connect_scaffold::{
     strip_frame, strip_icon,
 };
 use crate::integrations::VTubeInstallSeed;
+use crate::runtime_event::{self, RuntimeEvent, VTubeConnection, VTubeDisconnect};
 
 pub const VTUBE_AUTO_RECONNECT_KEY: &str =
     forge_storage::settings::reserved_keys::VTUBE_AUTO_RECONNECT;
@@ -29,9 +30,6 @@ pub const VTUBE_CONNECT_ON_LAUNCH_KEY: &str =
 
 pub(crate) const DEFAULT_HOST: &str = "localhost";
 pub(crate) const DEFAULT_PORT: u16 = 8001;
-
-const CONNECTION_CHANGED: &str = "vtube.connection.changed";
-const REASON_AWAITING_APPROVAL: &str = "awaiting_approval";
 
 const IDLE_TEXT_SIZE: Pixels = FONT_META;
 const ACTIVE_DOT: Pixels = px(8.0);
@@ -81,7 +79,7 @@ enum Status {
 enum ConnectOutcome {
     AwaitingApproval,
     Connected,
-    Failed(String),
+    Failed(VTubeDisconnect),
 }
 
 pub struct VTubeConnectForm {
@@ -236,10 +234,13 @@ impl VTubeConnectForm {
                     auth = authorization_label(report.already_authenticated)
                 ),
             },
-            Err(error) => AttemptStatus::Failure {
-                title: tr!("vtube_connect_test_failed"),
-                detail: friendly_vtube_error(&error),
-            },
+            Err(error) => {
+                tracing::warn!(error = %error, "vtube probe failed");
+                AttemptStatus::Failure {
+                    title: tr!("vtube_connect_test_failed"),
+                    detail: failure_detail(VTubeDisconnect::from(&error)),
+                }
+            }
         });
         cx.notify();
     }
@@ -331,7 +332,7 @@ impl VTubeConnectForm {
                 self.connecting = false;
                 self.status = Status::Attempt(AttemptStatus::Failure {
                     title: tr!("vtube_connect_failed"),
-                    detail: failure_detail(&reason),
+                    detail: failure_detail(reason),
                 });
                 true
             }
@@ -456,46 +457,31 @@ fn authorization_label(already_authenticated: bool) -> String {
 }
 
 fn connect_outcome(event: &Event) -> Option<ConnectOutcome> {
-    if event.source != EventSource::VTube || event.kind != CONNECTION_CHANGED {
+    let Some(RuntimeEvent::VTubeConnection(changed)) = runtime_event::decode(event) else {
         return None;
-    }
-    if event
-        .payload
-        .get("is_connected")
-        .and_then(|v| v.as_bool())
-        .unwrap_or(false)
-    {
-        return Some(ConnectOutcome::Connected);
-    }
-    match event.payload.get("reason").and_then(|v| v.as_str()) {
-        Some(REASON_AWAITING_APPROVAL) => Some(ConnectOutcome::AwaitingApproval),
-        Some(reason) => Some(ConnectOutcome::Failed(reason.to_owned())),
-        None => None,
+    };
+    match VTubeConnection::of(&changed)? {
+        VTubeConnection::Connected => Some(ConnectOutcome::Connected),
+        VTubeConnection::Disconnected(VTubeDisconnect::AwaitingApproval) => {
+            Some(ConnectOutcome::AwaitingApproval)
+        }
+        VTubeConnection::Disconnected(reason) => Some(ConnectOutcome::Failed(reason)),
     }
 }
 
-fn friendly_vtube_error(error: &forge_vtube::VTubeError) -> String {
-    tracing::warn!(error = %error, "vtube probe failed");
-    match error {
-        forge_vtube::VTubeError::Connect(_) => failure_detail("connect_failed"),
-        forge_vtube::VTubeError::TokenRejected => failure_detail("auth_required"),
-        forge_vtube::VTubeError::TokenDenied => failure_detail("auth_denied"),
-        forge_vtube::VTubeError::TokenTimeout => failure_detail("auth_timeout"),
-        _ => failure_detail(""),
-    }
-}
-
-fn failure_detail(reason: &str) -> String {
+fn failure_detail(reason: VTubeDisconnect) -> String {
     match reason {
-        "connect_failed" => tr!("vtube_connect_error_unreachable"),
-        "auth_required" => tr!("vtube_connect_error_token_rejected"),
-        "auth_denied" => tr!("vtube_connect_error_denied"),
-        "auth_timeout" => tr!("vtube_connect_error_timeout"),
-        "auth_failed" => tr!("vtube_connect_error_auth"),
-        "subscribe_failed" => tr!("vtube_connect_error_subscribe"),
-        "socket_closed" => tr!("vtube_connect_error_socket_closed"),
-        "unresponsive" => tr!("vtube_connect_error_unresponsive"),
-        _ => tr!("vtube_connect_error_unknown"),
+        VTubeDisconnect::Unreachable => tr!("vtube_connect_error_unreachable"),
+        VTubeDisconnect::TokenRejected => tr!("vtube_connect_error_token_rejected"),
+        VTubeDisconnect::Denied => tr!("vtube_connect_error_denied"),
+        VTubeDisconnect::TimedOut => tr!("vtube_connect_error_timeout"),
+        VTubeDisconnect::AuthFailed => tr!("vtube_connect_error_auth"),
+        VTubeDisconnect::SubscribeFailed => tr!("vtube_connect_error_subscribe"),
+        VTubeDisconnect::SocketClosed => tr!("vtube_connect_error_socket_closed"),
+        VTubeDisconnect::Unresponsive => tr!("vtube_connect_error_unresponsive"),
+        VTubeDisconnect::AwaitingApproval | VTubeDisconnect::Unknown => {
+            tr!("vtube_connect_error_unknown")
+        }
     }
 }
 

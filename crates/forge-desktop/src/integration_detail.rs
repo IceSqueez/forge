@@ -5,7 +5,7 @@ use forge_components::{
     body_family, confirm_modal, icon, mono_family, overlay, page_frame, platform_hero, radius,
     scaled, spacing, status_dot, tr, with_alpha,
 };
-use forge_events::{Event, EventPublisher, EventSource};
+use forge_events::EventPublisher;
 use forge_obs::ObsClient;
 use forge_platform_core::{
     BuiltinCollections, BuiltinContent, BuiltinControl, BuiltinHealth, BuiltinOptionSource,
@@ -51,6 +51,7 @@ use crate::obs_settings_modal::{ObsSettingsModal, ObsSettingsModalEvent};
 use crate::platform_credentials::PlatformCredentialManagers;
 use crate::platforms::PlatformConnectivity;
 use crate::run_history_modal::{RunHistoryDismissed, RunHistoryModal, RunHistoryOpenIntegration};
+use crate::runtime_event::{self, RuntimeEvent};
 use crate::twitch_bot_presence::TwitchBotPresence;
 use crate::twitch_bot_section::{StreamerSignInRequested, TwitchBotSection};
 use crate::window_presence::PresenceGate;
@@ -480,7 +481,7 @@ impl IntegrationDetail {
             while let async_bridge::EventBatch::Ready(batch) =
                 async_bridge::recv_event_batch(&mut sub).await
             {
-                if !batch.iter().any(refreshes_obs_content) {
+                if !batch.iter().any(runtime_event::changes_obs_content) {
                     continue;
                 }
                 if this
@@ -500,11 +501,14 @@ impl IntegrationDetail {
                 async_bridge::recv_event_batch(&mut sub).await
             {
                 let reauth = batch.iter().any(|e| {
-                    e.kind == "platform.reauth_required" && e.source == EventSource::Twitch
+                    matches!(
+                        runtime_event::decode(e),
+                        Some(RuntimeEvent::ReauthRequired(_))
+                    )
                 });
                 let tails: Vec<String> = batch
                     .iter()
-                    .filter_map(|e| e.kind.strip_prefix("twitch.").map(str::to_owned))
+                    .filter_map(|e| runtime_event::twitch_topic(e).map(str::to_owned))
                     .collect();
                 if tails.is_empty() && !reauth {
                     continue;
@@ -530,7 +534,7 @@ impl IntegrationDetail {
             while let async_bridge::EventBatch::Ready(batch) =
                 async_bridge::recv_event_batch(&mut sub).await
             {
-                if !batch.iter().any(rebuilds_descriptors) {
+                if !batch.iter().any(runtime_event::rebuilds_descriptors) {
                     continue;
                 }
                 if this.update(cx, |this, cx| this.reload(cx)).is_err() {
@@ -1669,24 +1673,6 @@ impl Render for IntegrationDetail {
             .children(self.collection_manager.clone())
             .children(self.obs_settings_modal.clone())
             .children(self.history_modal.clone())
-    }
-}
-
-fn refreshes_obs_content(event: &Event) -> bool {
-    matches!(event.source, EventSource::Obs)
-        && forge_obs::vocabulary::event_kinds::CATALOG_CHANGING_KINDS.contains(&event.kind.as_str())
-}
-
-pub(crate) fn rebuilds_descriptors(event: &Event) -> bool {
-    match event.source {
-        EventSource::Obs => event
-            .kind
-            .starts_with(forge_obs::vocabulary::event_kinds::CONNECTION_PREFIX),
-        EventSource::Twitch => {
-            forge_platform_twitch::vocabulary::event_kinds::DESCRIPTOR_REBUILDING_KINDS
-                .contains(&event.kind.as_str())
-        }
-        _ => false,
     }
 }
 

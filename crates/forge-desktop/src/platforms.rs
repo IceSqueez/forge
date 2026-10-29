@@ -1,9 +1,9 @@
-use forge_events::{Event, EventSource};
 use forge_platform_core::ConnectionState;
 use forge_types::IntegrationId;
 
 use crate::home_stats::Integration;
 use crate::integrations::BuiltinRegistry;
+use crate::runtime_event::{ObsConnection, RuntimeEvent};
 
 const ROSTER: [Integration; 5] = [
     Integration::Twitch,
@@ -38,16 +38,16 @@ impl PlatformConnectivity {
         self.obs_password_rejected
     }
 
-    pub fn apply_obs_event(&mut self, event: &Event) -> bool {
-        if event.source != EventSource::Obs {
-            return false;
+    pub fn apply_runtime_event(&mut self, event: &RuntimeEvent) -> bool {
+        match event {
+            RuntimeEvent::ObsConnection(connection) => {
+                let rejected = *connection == ObsConnection::PasswordRejected;
+                std::mem::replace(&mut self.obs_password_rejected, rejected) != rejected
+            }
+            RuntimeEvent::PlatformConnection(change) => Integration::from_id(&change.platform_id)
+                .is_some_and(|integ| self.set_connected(integ, change.state.is_connected())),
+            _ => false,
         }
-        let rejected = match event.kind.as_str() {
-            "obs.connection.auth_failed" => true,
-            "obs.connection.connected" => false,
-            _ => return false,
-        };
-        std::mem::replace(&mut self.obs_password_rejected, rejected) != rejected
     }
 
     pub fn connections(&self) -> &[(Integration, bool)] {

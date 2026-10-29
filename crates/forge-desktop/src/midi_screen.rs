@@ -17,7 +17,7 @@ use forge_components::{
     header_status, icon, menu_button, menu_divider, menu_item, mono_family, pad_tile, page_frame,
     radius, scaled, status_dot, toggle, tr,
 };
-use forge_midi::vocabulary::event_kinds::{INPUT_PREFIX, PORT_PREFIX};
+use forge_midi::vocabulary::event_kinds::INPUT_PREFIX;
 use forge_midi::{MidiClient, MidiMonitorEvent, MidiSignalKind, SwitchableMidiSink};
 use forge_runtime::EventBus;
 use forge_storage::{
@@ -27,8 +27,8 @@ use forge_storage::{
 use forge_types::{ActionId, PermissionRung, PlatformScope, TriggerInstance, TriggerInstanceId};
 use futures_util::StreamExt;
 use gpui::{
-    AnyElement, App, ClickEvent, Context, Entity, EventEmitter, Pixels, Point, Rgba, Subscription,
-    Task, Window, div, prelude::*, px,
+    AnyElement, App, ClickEvent, Context, Entity, EventEmitter, Pixels, Point, Subscription, Task,
+    Window, div, prelude::*, px,
 };
 
 use crate::async_bridge::{
@@ -39,8 +39,9 @@ use crate::integrations::BuiltinObject;
 use crate::midi_mapping_modal::{
     MappingDraft, MappingModalLaunch, MidiMappingModal, MidiMappingModalEvent,
 };
-use crate::midi_signal::{MidiSignal, kind_color, note_name};
+use crate::midi_signal::{MidiSignal, kind_color, note_name, short_kind_label};
 use crate::navigation::NavRequested;
+use crate::runtime_event;
 use forge_components::ActivePresentation;
 use forge_components::PushToast;
 use forge_components::grow_cell;
@@ -117,25 +118,6 @@ const LEARN_GAP: Pixels = px(8.0);
 const LEARN_GLYPH: Pixels = px(14.0);
 
 const UNDO_TOAST_MS: u64 = 6000;
-
-fn monitor_color(kind: MidiSignalKind, palette: &ForgePalette) -> Rgba {
-    match kind {
-        MidiSignalKind::NoteOn => palette.success,
-        MidiSignalKind::NoteOff => palette.text_faint,
-        MidiSignalKind::ControlChange | MidiSignalKind::PitchBend => palette.info,
-        MidiSignalKind::ProgramChange => palette.theme_brand,
-    }
-}
-
-fn monitor_kind_label(kind: MidiSignalKind) -> &'static str {
-    match kind {
-        MidiSignalKind::NoteOn => "Note On",
-        MidiSignalKind::NoteOff => "Note Off",
-        MidiSignalKind::ControlChange => "CC",
-        MidiSignalKind::PitchBend => "Pitch",
-        MidiSignalKind::ProgramChange => "PC",
-    }
-}
 
 fn monitor_value_label(event: &MidiMonitorEvent) -> String {
     match event.kind {
@@ -451,9 +433,7 @@ impl MidiScreenView {
     fn spawn_port_bridge(bus: Arc<EventBus>, cx: &mut Context<Self>) -> Task<()> {
         cx.spawn(async move |this, cx| {
             drain_events(&bus, cx, move |batch, cx| {
-                let touched = batch
-                    .iter()
-                    .any(|event| event.kind.starts_with(PORT_PREFIX));
+                let touched = batch.iter().any(runtime_event::is_midi_port_event);
                 if !touched {
                     return BridgeFlow::Continue;
                 }
@@ -1157,13 +1137,13 @@ impl MidiScreenView {
                             .w(MONITOR_KIND_W)
                             .flex_shrink_0()
                             .text_color(palette.text_faint)
-                            .child(monitor_kind_label(event.kind)),
+                            .child(short_kind_label(event.kind)),
                     )
                     .child(
                         div()
                             .flex_1()
                             .min_w_0()
-                            .text_color(monitor_color(event.kind, palette))
+                            .text_color(kind_color(event.kind.event_kind(), palette))
                             .child(monitor_value_label(event)),
                     ),
             );

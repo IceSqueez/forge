@@ -1,6 +1,6 @@
 use crate::platform_visuals::platform_color;
 use forge_components::{ForgePalette, fmt_number};
-use forge_events::{ActionStarted, Event, EventSource, TypedEvent};
+use forge_events::{Event, EventSource};
 use forge_runtime::{LiveViewerCount, dashboard::DashboardStats};
 use forge_types::{IntegrationId, PlatformId};
 use gpui::{Rgba, SharedString};
@@ -8,6 +8,7 @@ use time::OffsetDateTime;
 
 use crate::event_log::EventLog;
 use crate::navigation::Screen;
+use crate::runtime_event::RuntimeEvent;
 
 const NO_DATA: &str = "-";
 
@@ -112,8 +113,8 @@ pub struct HomeEvent {
 }
 
 impl HomeEvent {
-    fn from_event(event: &Event) -> Option<Self> {
-        if !is_home_notable(&event.kind) {
+    fn from_event(event: &Event, typed: Option<&RuntimeEvent>) -> Option<Self> {
+        if typed.is_some_and(RuntimeEvent::is_run_bookkeeping) {
             return None;
         }
         Some(Self {
@@ -121,7 +122,7 @@ impl HomeEvent {
             at: event.timestamp,
             source: source_label(event.source).into(),
             name: event.kind.clone().into(),
-            desc: EventLog::summarize(event).into(),
+            desc: EventLog::summarize(event, typed).into(),
             hue: SourceHue::from_source(event.source),
         })
     }
@@ -184,8 +185,8 @@ impl HomeStats {
         }
     }
 
-    pub fn record_event(&mut self, event: &Event) -> bool {
-        let Some(home_event) = HomeEvent::from_event(event) else {
+    pub fn record_event(&mut self, event: &Event, typed: Option<&RuntimeEvent>) -> bool {
+        let Some(home_event) = HomeEvent::from_event(event, typed) else {
             return false;
         };
         if self.recent_events.len() >= RECENT_CAP {
@@ -298,13 +299,6 @@ impl HomeStats {
             .cloned()
             .collect()
     }
-}
-
-fn is_home_notable(kind: &str) -> bool {
-    !(kind.starts_with("subaction.")
-        || kind == ActionStarted::KIND
-        || kind.starts_with("global.")
-        || kind.starts_with("script."))
 }
 
 fn source_label(source: EventSource) -> &'static str {

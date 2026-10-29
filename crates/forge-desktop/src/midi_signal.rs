@@ -1,8 +1,8 @@
 use forge_components::{ForgePalette, tr};
-use forge_midi::MidiMonitorEvent;
 use forge_midi::vocabulary::event_kinds::{
     CONTROL_CHANGE, NOTE_OFF, NOTE_ON, PITCH_BEND, PROGRAM_CHANGE,
 };
+use forge_midi::{MidiMonitorEvent, MidiSignalKind};
 use forge_types::{TriggerConfig, Variant};
 use gpui::Rgba;
 
@@ -36,6 +36,16 @@ pub fn kind_label(kind_id: &str) -> &str {
         PROGRAM_CHANGE => "Program change",
         PITCH_BEND => "Pitch bend",
         other => other,
+    }
+}
+
+pub fn short_kind_label(kind: MidiSignalKind) -> &'static str {
+    match kind {
+        MidiSignalKind::NoteOn => "Note On",
+        MidiSignalKind::NoteOff => "Note Off",
+        MidiSignalKind::ControlChange => "CC",
+        MidiSignalKind::PitchBend => "Pitch",
+        MidiSignalKind::ProgramChange => "PC",
     }
 }
 

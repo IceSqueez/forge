@@ -1,14 +1,12 @@
 use std::time::Duration;
 
-use forge_events::{
-    ChatSendFailed, ChatSendRequest, ChatSent, Delivery, Event, EventSource, EventSubscription,
-    TypedEvent,
-};
+use forge_events::{ChatSendRequest, Delivery, Event, EventSource, EventSubscription, TypedEvent};
 use forge_platform_core::SenderPreference;
 use forge_types::{EventId, PlatformId};
 
 use super::platform_gate::platform_integration;
 use crate::home_stats::Integration;
+use crate::runtime_event::{self, RuntimeEvent};
 
 pub(crate) const CHAT_SEND_RESPONSE_TIMEOUT: Duration = Duration::from_secs(10);
 
@@ -173,17 +171,17 @@ pub(crate) fn delivery_response(
     if !requests.contains(&caused_by) {
         return None;
     }
-    if let Some(sent) = ChatSent::from_event(event) {
-        return Some((
+    match runtime_event::decode(event)? {
+        RuntimeEvent::ChatSent(sent) => Some((
             platform_of_channel(&sent.channel)?,
             DeliveryResult::Delivered,
-        ));
+        )),
+        RuntimeEvent::ChatSendFailed(failed) => Some((
+            platform_of_channel(&failed.channel)?,
+            DeliveryResult::Failed(failed.error),
+        )),
+        _ => None,
     }
-    let failed = ChatSendFailed::from_event(event)?;
-    Some((
-        platform_of_channel(&failed.channel)?,
-        DeliveryResult::Failed(failed.error),
-    ))
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

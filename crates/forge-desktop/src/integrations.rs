@@ -31,7 +31,7 @@ use forge_hotkey::HotkeyReconciler;
 use forge_runtime::{IntegrationFactory, IntegrationObjects, TaskGroup};
 
 const CHAT_SEND_QUEUE_CAPACITY: usize = 64;
-const WHISPER_SENT_KIND: &str = "chat.whisper.sent";
+pub(crate) const WHISPER_SENT_KIND: &str = "chat.whisper.sent";
 
 #[derive(Clone)]
 pub struct BuiltinObject {

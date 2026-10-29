@@ -6,7 +6,6 @@ use forge_components::{
 };
 use forge_events::Event;
 use forge_hotkey::HotkeyClient;
-use forge_hotkey::vocabulary::event_kinds;
 use forge_runtime::EventBus;
 use forge_storage::{DataProvider, SettingsRepo, StorageError};
 use forge_types::TriggerInstanceId;
@@ -20,6 +19,7 @@ use crate::combo_conflict::{ClipKey, clip_keys, combo_holder};
 use crate::hub_crumb::hub_crumb;
 use crate::integrations::BuiltinObject;
 use crate::navigation::NavRequested;
+use crate::runtime_event::{self, RuntimeEvent};
 use crate::shortcut_overrides::{ShortcutOverrides, load_overrides, save_overrides};
 use forge_components::ActivePresentation;
 use forge_components::PushToast;
@@ -47,10 +47,6 @@ use capture::Capture;
 use conflict::ConflictPrompt;
 use delete::DeletePrompt;
 use list::RowKey;
-
-const ENABLE_FAILED_KIND: &str = "hotkey.engine.enable_failed";
-const COMBO_FIELD: &str = "combo";
-const COMBOS_FIELD: &str = "combos";
 
 const SCROLL_PAD_X: Pixels = px(22.0);
 const SCROLL_PAD_Y: Pixels = px(18.0);
@@ -136,10 +132,7 @@ impl HotkeysScreenView {
     fn spawn_bus_bridge(bus: Arc<EventBus>, cx: &mut Context<Self>) -> Task<()> {
         cx.spawn(async move |this, cx| {
             drain_events(&bus, cx, move |batch, cx| {
-                if !batch
-                    .iter()
-                    .any(|event| event.kind.starts_with(event_kinds::PREFIX))
-                {
+                if !batch.iter().any(runtime_event::is_hotkey_event) {
                     return BridgeFlow::Continue;
                 }
                 match this.update(cx, |this, cx| this.on_hotkey_events(batch, cx)) {
@@ -153,28 +146,21 @@ impl HotkeysScreenView {
 
     fn on_hotkey_events(&mut self, batch: &[Event], cx: &mut Context<Self>) {
         for event in batch {
-            match event.kind.as_str() {
-                event_kinds::GLOBAL_PRESSED => {
-                    if let Some(combo) = event.payload.get(COMBO_FIELD).and_then(|v| v.as_str()) {
-                        self.last_fired = Some(LastFired {
-                            combo: combo.to_owned(),
-                            at: event.timestamp,
-                        });
-                    }
+            match runtime_event::decode(event) {
+                Some(RuntimeEvent::HotkeyPressed(pressed)) => {
+                    self.last_fired = Some(LastFired {
+                        combo: pressed.combo,
+                        at: event.timestamp,
+                    });
                 }
-                ENABLE_FAILED_KIND => {
-                    let failed = event
-                        .payload
-                        .get(COMBOS_FIELD)
-                        .and_then(|v| v.as_array())
-                        .map(|combos| combos.len())
-                        .unwrap_or(0);
-                    if failed > 0 {
-                        cx.push_toast(
-                            ToastKind::Warn,
-                            tr!("hotkeys_toast_enable_partial", count = failed as i64),
-                        );
-                    }
+                Some(RuntimeEvent::HotkeyEnableFailed(failed)) if !failed.combos.is_empty() => {
+                    cx.push_toast(
+                        ToastKind::Warn,
+                        tr!(
+                            "hotkeys_toast_enable_partial",
+                            count = failed.combos.len() as i64
+                        ),
+                    );
                 }
                 _ => {}
             }

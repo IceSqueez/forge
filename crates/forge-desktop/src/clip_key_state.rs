@@ -1,9 +1,7 @@
 use std::collections::HashSet;
 use std::sync::Arc;
 
-use forge_events::{Event, EventSource};
 use forge_hotkey::HotkeyCombo;
-use forge_hotkey::vocabulary::event_kinds;
 use forge_storage::{DataProvider, StoredClip};
 use forge_types::ClipId;
 
@@ -48,14 +46,6 @@ pub fn canonical_combo(raw: &str) -> String {
     HotkeyCombo::parse(raw)
         .map(|parsed| parsed.as_str().to_owned())
         .unwrap_or_else(|_| raw.to_owned())
-}
-
-pub fn changes_registrations(event: &Event) -> bool {
-    event.source == EventSource::Hotkey
-        && matches!(
-            event.kind.as_str(),
-            event_kinds::REGISTERED | event_kinds::UNREGISTERED
-        )
 }
 
 pub struct ClipKeyState {

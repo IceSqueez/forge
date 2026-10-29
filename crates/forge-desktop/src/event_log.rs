@@ -1,10 +1,15 @@
 use std::collections::VecDeque;
 
-use forge_events::{ActionDone, ActionStarted, Event, EventSource, TimerTick, TypedEvent};
+use forge_components::tr;
+use forge_events::{Event, EventSource};
+use forge_registry::TriggerCategory;
 use forge_types::{ChatPayload, ChatSegment};
 use gpui::SharedString;
 use serde::Serialize;
 use time::OffsetDateTime;
+
+use crate::event_categories::EventCategories;
+use crate::runtime_event::{self, RuntimeEvent};
 
 const RING_CAP: usize = 500;
 
@@ -18,16 +23,6 @@ pub enum EventFilter {
     Timers,
     Obs,
     Errors,
-}
-
-pub(crate) fn is_chat_message_kind(kind: &str) -> bool {
-    matches!(
-        kind,
-        "twitch.channel.chat.message"
-            | "youtube.chat.message"
-            | "kick.chat.message.sent"
-            | "kick.chat.command"
-    )
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -46,30 +41,61 @@ pub struct EventItem {
     pub user_login: SharedString,
     pub user_platform: SharedString,
     pub payload: serde_json::Value,
+    #[serde(skip)]
+    pub typed: Option<RuntimeEvent>,
+    #[serde(skip)]
+    pub categories: Vec<TriggerCategory>,
 }
 
 impl EventItem {
     pub fn matches(&self, filter: EventFilter) -> bool {
-        let k = self.kind.as_ref();
         match filter {
             EventFilter::All => true,
-            EventFilter::Chat => k.contains("chat") || k.contains("command"),
-            EventFilter::Subs => {
-                k.contains("sub") || k.contains("subscription") || k.contains("follow")
+            EventFilter::Chat => self.is_chat_activity(),
+            EventFilter::Subs => self.has_category(TriggerCategory::Subscriptions),
+            EventFilter::Bits => {
+                self.has_category(TriggerCategory::Bits)
+                    || self.has_category(TriggerCategory::Raids)
             }
-            EventFilter::Bits => k.contains("cheer") || k.contains("bits") || k.contains("raid"),
-            EventFilter::Timers => self.source == EventSource::Timer || k.contains("timer"),
+            EventFilter::Timers => {
+                self.source == EventSource::Timer
+                    || matches!(self.typed, Some(RuntimeEvent::TimerTick(_)))
+            }
             EventFilter::Obs => {
-                self.source == EventSource::Obs || k.contains("scene") || k.contains("obs")
+                self.source == EventSource::Obs || self.has_category(TriggerCategory::Obs)
             }
-            EventFilter::Errors => k.contains("error") || k.contains("fail"),
+            EventFilter::Errors => self.is_error,
         }
+    }
+
+    pub fn has_category(&self, category: TriggerCategory) -> bool {
+        self.categories.contains(&category)
+    }
+
+    pub fn is_warning(&self) -> bool {
+        !self.is_error && self.typed.as_ref().is_some_and(RuntimeEvent::is_warning)
+    }
+
+    fn is_chat_activity(&self) -> bool {
+        self.has_category(TriggerCategory::Chat)
+            || matches!(
+                self.typed,
+                Some(
+                    RuntimeEvent::ChatMessage
+                        | RuntimeEvent::ChatSent(_)
+                        | RuntimeEvent::ChatSendFailed(_)
+                        | RuntimeEvent::WhisperSent { .. }
+                        | RuntimeEvent::CommandMatched { .. }
+                        | RuntimeEvent::SenderFallback(_)
+                )
+            )
     }
 }
 
 pub struct EventLog {
     items: VecDeque<EventItem>,
     paused: bool,
+    categories: EventCategories,
 }
 
 impl EventLog {
@@ -77,7 +103,20 @@ impl EventLog {
         Self {
             items: VecDeque::new(),
             paused: false,
+            categories: EventCategories::default(),
         }
+    }
+
+    pub fn set_categories(&mut self, categories: EventCategories) {
+        self.categories = categories;
+    }
+
+    pub fn record(&mut self, event: &Event, typed: Option<RuntimeEvent>) {
+        if self.paused {
+            return;
+        }
+        let categories = self.categories.of(event);
+        self.push(Self::item_from_event(event, typed, categories));
     }
 
     pub fn items(&self) -> &VecDeque<EventItem> {
@@ -107,74 +146,78 @@ impl EventLog {
         self.items.push_back(item);
     }
 
-    pub fn item_from_event(event: &Event) -> Option<EventItem> {
-        let kind = event.kind.clone();
-        let is_error = kind.contains("error") || kind.contains("fail");
-        let summary = Self::summarize(event);
-        let caused_by = event.caused_by.map(|id| SharedString::from(id.to_string()));
-        let p = &event.payload;
-        let sub_action_count = p
-            .get("sub_action_count")
-            .and_then(serde_json::Value::as_u64)
-            .map(|n| n as u32);
-        let total_ms = p.get("total_ms").and_then(serde_json::Value::as_f64);
-        let (user_login, user_platform) = Self::acting_user(event);
-        Some(EventItem {
+    pub fn item_from_event(
+        event: &Event,
+        typed: Option<RuntimeEvent>,
+        mut categories: Vec<TriggerCategory>,
+    ) -> EventItem {
+        if runtime_event::is_twitch_follow(event)
+            && !categories.contains(&TriggerCategory::Subscriptions)
+        {
+            categories.push(TriggerCategory::Subscriptions);
+        }
+        let summary = Self::summarize(event, typed.as_ref());
+        let (user_login, user_platform) = Self::acting_user(event, typed.as_ref());
+        let (sub_action_count, total_ms) = match &typed {
+            Some(RuntimeEvent::ActionStarted(started)) => {
+                (u32::try_from(started.sub_action_count).ok(), None)
+            }
+            Some(RuntimeEvent::ActionDone(done)) => (None, Some(done.total_ms as f64)),
+            _ => (None, None),
+        };
+        EventItem {
             id: event.id.to_string().into(),
             timestamp: event.timestamp,
             source: event.source,
-            kind: kind.into(),
+            kind: event.kind.clone().into(),
             summary: summary.into(),
-            caused_by,
+            caused_by: event.caused_by.map(|id| SharedString::from(id.to_string())),
             sub_action_count,
             total_ms,
-            is_error,
+            is_error: typed.as_ref().is_some_and(RuntimeEvent::is_failure),
             replay: event.replay,
             user_login: user_login.into(),
             user_platform: user_platform.into(),
             payload: event.payload.clone(),
-        })
-    }
-
-    pub(crate) fn summarize(event: &Event) -> String {
-        let p = &event.payload;
-        match event.kind.as_str() {
-            k if is_chat_message_kind(k) => match Self::chat_envelope(event) {
-                Some(chat) => format!("{}: {}", chat.author, Self::chat_text(&chat.segments)),
-                None => String::new(),
-            },
-            TimerTick::KIND => p
-                .get("name")
-                .and_then(|v| v.as_str())
-                .unwrap_or("tick")
-                .to_owned(),
-            ActionStarted::KIND => p
-                .get("action_name")
-                .and_then(|v| v.as_str())
-                .unwrap_or("?")
-                .to_owned(),
-            ActionDone::KIND => p
-                .get("outcome")
-                .and_then(|v| v.as_str())
-                .unwrap_or("done")
-                .to_owned(),
-            _ => {
-                for key in [
-                    "message", "name", "detail", "reason", "status", "state", "scene", "value",
-                ] {
-                    if let Some(s) = p.get(key).and_then(|v| v.as_str())
-                        && !s.is_empty()
-                    {
-                        return s.to_owned();
-                    }
-                }
-                String::new()
-            }
+            typed,
+            categories,
         }
     }
 
-    fn acting_user(event: &Event) -> (String, String) {
-        if !is_chat_message_kind(&event.kind) {
+    pub(crate) fn summarize(event: &Event, typed: Option<&RuntimeEvent>) -> String {
+        match typed {
+            Some(RuntimeEvent::ChatMessage) => match Self::chat_envelope(event) {
+                Some(chat) => format!("{}: {}", chat.author, Self::chat_text(&chat.segments)),
+                None => String::new(),
+            },
+            Some(RuntimeEvent::TimerTick(tick)) => tr!(
+                "triggers_timer_every",
+                minutes = i64::from(tick.interval_minutes)
+            ),
+            Some(RuntimeEvent::ActionStarted(started)) => started.action_name.clone(),
+            Some(RuntimeEvent::ActionDone(done)) => serde_json::to_value(done.outcome)
+                .ok()
+                .and_then(|outcome| outcome.as_str().map(str::to_owned))
+                .unwrap_or_default(),
+            _ => Self::first_text_field(&event.payload),
+        }
+    }
+
+    fn first_text_field(payload: &serde_json::Value) -> String {
+        for key in [
+            "message", "name", "detail", "reason", "status", "state", "scene", "value",
+        ] {
+            if let Some(s) = payload.get(key).and_then(|v| v.as_str())
+                && !s.is_empty()
+            {
+                return s.to_owned();
+            }
+        }
+        String::new()
+    }
+
+    fn acting_user(event: &Event, typed: Option<&RuntimeEvent>) -> (String, String) {
+        if !matches!(typed, Some(RuntimeEvent::ChatMessage)) {
             return (String::new(), String::new());
         }
         let login = Self::chat_envelope(event)

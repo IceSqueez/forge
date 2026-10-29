@@ -4,6 +4,7 @@ use std::sync::Arc;
 use forge_components::{
     Density, ForgePalette, Icon, Spacing, icon, mono_family, scaled, secondary_button, spacing, tr,
 };
+use forge_soundboard::vocabulary::SettledVerdict;
 use forge_soundboard::{AdoptionVerdict, ClipAvailability, ClipRefusal, SoundboardError};
 use forge_storage::StoredClip;
 use forge_types::ClipId;
@@ -250,13 +251,14 @@ pub(super) enum SettledAdoption {
     Refused,
 }
 
-pub(super) fn settled_adoption(payload: &serde_json::Value) -> Option<SettledAdoption> {
-    match payload.get("verdict").and_then(|v| v.as_str())? {
-        "adopted" => Some(SettledAdoption::Copied),
-        "already_managed" => Some(SettledAdoption::AlreadyManaged),
-        "source_missing" => Some(SettledAdoption::SourceMissing),
-        "refused" => Some(SettledAdoption::Refused),
-        _ => None,
+impl From<&SettledVerdict> for SettledAdoption {
+    fn from(verdict: &SettledVerdict) -> Self {
+        match verdict {
+            SettledVerdict::Adopted => Self::Copied,
+            SettledVerdict::AlreadyManaged => Self::AlreadyManaged,
+            SettledVerdict::SourceMissing => Self::SourceMissing,
+            SettledVerdict::Refused { .. } => Self::Refused,
+        }
     }
 }
 

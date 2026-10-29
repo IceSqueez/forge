@@ -6,7 +6,7 @@ use forge_components::{
     Density, FONT_LG, FONT_SM, ForgePalette, Icon, Radius, Spacing, ToastKind, Toasts, body_family,
     card, icon, mono_family, primary_button, radius, secondary_button, spacing, toast_layer, tr,
 };
-use forge_events::{ActionDone, EventSubscription, PlatformConnectionChanged, TypedEvent};
+use forge_events::EventSubscription;
 use forge_platform_core::PlatformEndpoints;
 use forge_runtime::{LiveViewerAggregatorHandle, LossWatch, QueueDepthWatch};
 use forge_storage::CredentialsKeyLoss;
@@ -20,16 +20,18 @@ use crate::awake_state::AwakeState;
 use crate::boot::{BootFailure, build_runtime};
 use crate::chat_feed::{ChatFeed, ChatMessage, DEFAULT_DISPLAY_LIMIT};
 use crate::chat_feed_bridge::ChatFeedBridge;
+use crate::event_categories::EventCategories;
 use crate::event_log::EventLog;
 use crate::event_loss::{EventLoss, UI_EVENTS};
 use crate::globals::Globals;
-use crate::home_stats::{HomeStats, Integration};
+use crate::home_stats::HomeStats;
 use crate::integration_lifecycle::IntegrationLifecycle;
 use crate::log_tail::LogTail;
 use crate::navigation::Screen;
 use crate::platforms::PlatformConnectivity;
 use crate::problem_report::ProblemReport;
 use crate::queue_health::QueueHealth;
+use crate::runtime_event::{self, RuntimeEvent};
 use crate::runtime_handles::RuntimeHandles;
 use crate::runtime_status::RuntimeStatus;
 use crate::shell::AppShell;
@@ -186,6 +188,7 @@ pub fn run_boot(
                 let event_log_for_bridge = event_log.clone();
                 let platforms_for_bridge = platforms.clone();
                 let twitch_bot_for_bridge = twitch_bot.clone();
+                let event_categories = EventCategories::from_registry(&handles.trigger_registry);
                 let twitch_bot_for_seed = twitch_bot.clone();
                 let twitch_bot_handle = handles.twitch_bot.clone();
                 let rt_handle_for_bot_seed = handles.rt_handle.clone();
@@ -345,6 +348,7 @@ pub fn run_boot(
                     start_loss_bridge(cx, event_loss_for_bridge, loss_watch);
                     start_queue_depth_bridge(cx, queue_health_for_depths, depth_watch);
                     chat_feed_bridge.start(cx, chat_feed_for_history, event_loss_for_chat);
+                    event_log_for_bridge.update(cx, |log, _| log.set_categories(event_categories));
                     start_bridge(
                         cx,
                         home_stats_for_bridge,
@@ -517,15 +521,13 @@ fn start_bridge(
 ) {
     cx.spawn(async move |cx| {
         drain_subscription(sub, cx, move |batch, cx| {
+            let decoded: Vec<Option<RuntimeEvent>> =
+                batch.iter().map(runtime_event::decode).collect();
+
             platforms.update(cx, |connectivity, cx| {
                 let mut changed = false;
-                for event in batch {
-                    changed |= connectivity.apply_obs_event(event);
-                    if let Some(change) = PlatformConnectionChanged::from_event(event)
-                        && let Some(integ) = Integration::from_id(&change.platform_id)
-                    {
-                        changed |= connectivity.set_connected(integ, change.state.is_connected());
-                    }
+                for typed in decoded.iter().flatten() {
+                    changed |= connectivity.apply_runtime_event(typed);
                 }
                 if changed {
                     cx.notify();
@@ -533,23 +535,19 @@ fn start_bridge(
             });
 
             event_log.update(cx, |log, cx| {
-                let mut pushed = false;
-                for event in batch {
-                    if let Some(item) = EventLog::item_from_event(event) {
-                        log.push(item);
-                        pushed = true;
-                    }
+                for (event, typed) in batch.iter().zip(&decoded) {
+                    log.record(event, typed.clone());
                 }
-                if pushed {
+                if !batch.is_empty() {
                     cx.notify();
                 }
             });
 
             home_stats.update(cx, |stats, cx| {
                 let mut changed = false;
-                for event in batch {
-                    changed |= stats.record_event(event);
-                    if event.kind == ActionDone::KIND {
+                for (event, typed) in batch.iter().zip(&decoded) {
+                    changed |= stats.record_event(event, typed.as_ref());
+                    if matches!(typed, Some(RuntimeEvent::ActionDone(_))) {
                         stats.record_action_done();
                         changed = true;
                     }
@@ -571,8 +569,10 @@ fn start_bridge(
 
             twitch_bot.update(cx, |presence, cx| {
                 let mut changed = false;
-                for event in batch {
-                    changed |= presence.apply_event(event);
+                for typed in decoded.iter().flatten() {
+                    if let RuntimeEvent::TwitchBotStatus(status) = typed {
+                        changed |= presence.apply_status_changed(status);
+                    }
                 }
                 if changed {
                     cx.notify();
@@ -580,9 +580,16 @@ fn start_bridge(
             });
 
             cx.update(|cx| {
-                for event in batch {
-                    crate::clip_playback::report_clip_playback(event, cx);
-                    crate::overlay_speech_failure::report_overlay_speech_failure(event, cx);
+                for (event, typed) in batch.iter().zip(&decoded) {
+                    match typed {
+                        Some(RuntimeEvent::ClipPlayback(playback)) => {
+                            crate::clip_playback::report_clip_playback(playback, cx);
+                        }
+                        Some(RuntimeEvent::OverlaySpeechFailed) => {
+                            crate::overlay_speech_failure::report_overlay_speech_failure(event, cx);
+                        }
+                        _ => {}
+                    }
                 }
             });
 

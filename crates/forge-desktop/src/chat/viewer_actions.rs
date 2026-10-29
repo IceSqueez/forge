@@ -1,22 +1,25 @@
 use std::collections::BTreeMap;
 
+use forge_platform_kick::vocabulary::sub_action_ids as kick_steps;
+use forge_platform_twitch::vocabulary::sub_action_ids as twitch_steps;
+use forge_platform_youtube::vocabulary::sub_action_ids as youtube_steps;
 use forge_types::{PlatformId, SubActionStep, Variant};
 
 use super::platform_gate::platform_integration;
 use crate::chat_author::{AuthorHandle, AuthorKey};
 use forge_speak_queue::AliasKey;
 
-const TWITCH_SHOUTOUT_KIND: &str = "twitch.channel.send_shoutout";
-const TWITCH_WHISPER_KIND: &str = "twitch.chat.send_whisper";
-const TWITCH_TIMEOUT_KIND: &str = "twitch.moderation.timeout_user";
-const TWITCH_BAN_KIND: &str = "twitch.moderation.ban_user";
-const TWITCH_UNBAN_KIND: &str = "twitch.moderation.unban_user";
-const YOUTUBE_TIMEOUT_KIND: &str = "youtube.moderation.timeout_user";
-const YOUTUBE_BAN_KIND: &str = "youtube.moderation.ban_user";
-const YOUTUBE_UNBAN_KIND: &str = "youtube.moderation.unban_user";
-const KICK_TIMEOUT_KIND: &str = "kick.moderation.timeout";
-const KICK_BAN_KIND: &str = "kick.moderation.ban";
-const KICK_UNBAN_KIND: &str = "kick.moderation.unban";
+const TWITCH_SHOUTOUT_KIND: &str = twitch_steps::CHANNEL_SEND_SHOUTOUT;
+const TWITCH_WHISPER_KIND: &str = twitch_steps::CHAT_SEND_WHISPER;
+const TWITCH_TIMEOUT_KIND: &str = twitch_steps::MODERATION_TIMEOUT_USER;
+const TWITCH_BAN_KIND: &str = twitch_steps::MODERATION_BAN_USER;
+const TWITCH_UNBAN_KIND: &str = twitch_steps::MODERATION_UNBAN_USER;
+const YOUTUBE_TIMEOUT_KIND: &str = youtube_steps::MODERATION_TIMEOUT_USER;
+const YOUTUBE_BAN_KIND: &str = youtube_steps::MODERATION_BAN_USER;
+const YOUTUBE_UNBAN_KIND: &str = youtube_steps::MODERATION_UNBAN_USER;
+const KICK_TIMEOUT_KIND: &str = kick_steps::MODERATION_TIMEOUT;
+const KICK_BAN_KIND: &str = kick_steps::MODERATION_BAN;
+const KICK_UNBAN_KIND: &str = kick_steps::MODERATION_UNBAN;
 
 const TWITCH_SHOUTOUT_TARGET_KEY: &str = "to_broadcaster_id";
 const TWITCH_WHISPER_TARGET_KEY: &str = "to_user_id";

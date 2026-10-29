@@ -27,12 +27,11 @@ use crate::async_bridge::{self, BridgeFlow, drain_events};
 use crate::discord_webhook_modal::{
     DiscordWebhookModal, DiscordWebhookModalEvent, WebhookDraft, WebhookModalLaunch,
 };
-use crate::discord_webhooks::{
-    DISCORD_EVENT_PREFIX, WebhookRow, distinct_linked_actions, load_webhooks, name_is_taken,
-};
+use crate::discord_webhooks::{WebhookRow, distinct_linked_actions, load_webhooks, name_is_taken};
 use crate::hub_crumb::hub_crumb;
 use crate::integrations::BuiltinObject;
 use crate::navigation::NavRequested;
+use crate::runtime_event;
 use forge_components::ActivePresentation;
 use forge_components::PushToast;
 use forge_components::{grow_cell, stat_card};
@@ -150,10 +149,7 @@ impl DiscordScreenView {
     fn spawn_bus_bridge(bus: Arc<EventBus>, cx: &mut Context<Self>) -> Task<()> {
         cx.spawn(async move |this, cx| {
             drain_events(&bus, cx, move |batch, cx| {
-                if !batch
-                    .iter()
-                    .any(|event| event.kind.starts_with(DISCORD_EVENT_PREFIX))
-                {
+                if !batch.iter().any(runtime_event::is_discord_event) {
                     return BridgeFlow::Continue;
                 }
                 match this.update(cx, |this, cx| this.refresh_from_client(cx)) {

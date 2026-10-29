@@ -12,7 +12,7 @@ use forge_components::{
     BORDER_THIN, BreadcrumbCrumb, Confirm, FONT_XS, Icon, Radius, SearchState, Spacing,
     body_family, empty_state, icon, page_frame, radius, scaled, spacing, tr, with_alpha,
 };
-use forge_events::{Event, EventSource};
+use forge_events::Event;
 use forge_runtime::EventBus;
 use forge_soundboard::builtin_library::BuiltinSoundEntry;
 use forge_soundboard::{ClipAvailability, ClipLibrary, SoundboardPlayer, SoundboardSettings};
@@ -25,11 +25,11 @@ use gpui::{
 
 use crate::async_bridge::{self, BridgeFlow, drain_events};
 use crate::clip_editor::ClipEditor;
-use crate::clip_key_state::{ClipKeyState, changes_registrations};
-use crate::clip_playback::{clip_id_of, play_id_of};
+use crate::clip_key_state::ClipKeyState;
 use crate::hub_crumb::{core_category, hub_crumb};
 use crate::navigation::NavRequested;
 use crate::navigation::Screen;
+use crate::runtime_event::{self, ClipPlayback, RuntimeEvent};
 use forge_components::ActivePresentation;
 
 mod adoption;
@@ -48,7 +48,7 @@ mod pad;
 mod playback;
 mod routing;
 
-use adoption::settled_adoption;
+use adoption::SettledAdoption;
 
 pub(crate) use categories::{CATEGORY_ORDER, category_color, category_label};
 pub(crate) use editor::audio_dialog_extensions;
@@ -183,46 +183,40 @@ impl SoundboardView {
     }
 
     fn on_bus_event(&mut self, event: &Event, cx: &mut Context<Self>) {
-        if changes_registrations(event) {
-            self.keys.refresh_live();
-            cx.notify();
-            return;
-        }
-        if event.source != EventSource::Audio {
-            return;
-        }
-        let Some(clip_id) = clip_id_of(&event.payload) else {
-            return;
-        };
-        match event.kind.as_str() {
-            "playback.started" => {
-                let duration_secs = event.payload.get("duration_secs").and_then(|v| v.as_f64());
-                let looped = event
-                    .payload
-                    .get("looped")
-                    .and_then(|v| v.as_bool())
-                    .unwrap_or(false);
+        match runtime_event::decode(event) {
+            Some(RuntimeEvent::HotkeyRegistrationsChanged) => {
+                self.keys.refresh_live();
+                cx.notify();
+            }
+            Some(RuntimeEvent::ClipPlayback(ClipPlayback::Started(started))) => {
+                let Some(clip_id) = started.clip_id else {
+                    return;
+                };
                 self.playing.insert(
                     clip_id,
                     PlaybackProgress {
-                        play_id: play_id_of(&event.payload),
+                        play_id: Some(started.play_id),
                         started_at: Instant::now(),
-                        duration_secs,
-                        looped,
+                        duration_secs: started.duration_secs,
+                        looped: started.looped,
                     },
                 );
                 self.ensure_ticker(cx);
                 cx.notify();
             }
-            "playback.finished" | "playback.failed" => {
-                if let Some(play_id) = play_id_of(&event.payload) {
-                    self.clear_ended_play(clip_id, Some(play_id), cx);
+            Some(RuntimeEvent::ClipPlayback(
+                ended @ (ClipPlayback::Finished(_) | ClipPlayback::Failed(_)),
+            )) => {
+                if let Some(clip_id) = ended.clip_id() {
+                    self.clear_ended_play(clip_id, Some(ended.play_id()), cx);
                 }
             }
-            "soundboard.clip.adopted" => {
-                if let Some(settled) = settled_adoption(&event.payload) {
-                    self.apply_settled_adoption(clip_id, settled, cx);
-                }
+            Some(RuntimeEvent::ClipAdoptionSettled(settled)) => {
+                self.apply_settled_adoption(
+                    settled.clip_id,
+                    SettledAdoption::from(&settled.verdict),
+                    cx,
+                );
             }
             _ => {}
         }

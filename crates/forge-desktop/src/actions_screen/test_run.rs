@@ -1,14 +1,13 @@
 use super::*;
 use crate::async_bridge::{BridgeFlow, drain_subscription};
+use crate::runtime_event::{self, RuntimeEvent};
 use forge_components::ROW_OFF_OPACITY;
 use forge_components::{
     BORDER_THIN, Density, FONT_SM, FONT_XS, FONT_XXS, MenuItem, Radius, Spacing, body_family,
     context_menu, ghost_button_with_icon, menu_header, menu_item, modal, mono_family,
     primary_button, radius, scaled, spacing,
 };
-use forge_events::{
-    ActionDone, ActionSkipped, ActionStarted, Event, SubActionDone, SubActionRun, TypedEvent,
-};
+use forge_events::{Event, RunOutcome, SubActionDone};
 use forge_registry::{SynthesisSample, synthesize_args};
 use forge_runtime::QueueAdmission;
 use forge_types::{ArgStack, EventId};
@@ -301,14 +300,9 @@ impl TestRunModal {
     }
 
     fn on_test_event(&mut self, event: &Event, cx: &mut Context<Self>) -> bool {
-        match event.kind.as_str() {
-            ActionStarted::KIND => {
-                if self.root.is_some() {
-                    return false;
-                }
-                let ours = event.payload.get("action_id").and_then(|v| v.as_str())
-                    == Some(self.action_id.to_string().as_str());
-                if !ours {
+        match runtime_event::decode(event) {
+            Some(RuntimeEvent::ActionStarted(started)) => {
+                if self.root.is_some() || started.action_id != self.action_id {
                     return false;
                 }
                 self.root = Some(event.id);
@@ -318,24 +312,24 @@ impl TestRunModal {
                 cx.notify();
                 false
             }
-            ActionSkipped::KIND => {
-                let ours = event.payload.get("action_id").and_then(|v| v.as_str())
-                    == Some(self.action_id.to_string().as_str());
-                if ours && matches!(self.phase, TestRunPhase::Awaiting) {
+            Some(RuntimeEvent::ActionSkipped(skipped)) => {
+                if skipped.action_id == self.action_id
+                    && matches!(self.phase, TestRunPhase::Awaiting)
+                {
                     self.phase = TestRunPhase::NotStarted;
                     cx.notify();
                     return true;
                 }
                 false
             }
-            SubActionRun::KIND => {
+            Some(RuntimeEvent::SubActionRun(run)) => {
                 let Some(root) = self.root else {
                     return false;
                 };
                 if event.caused_by != Some(root) {
                     return false;
                 }
-                if let Some(index) = done_step_index(event) {
+                if let Some(index) = step_row_index(run.step_index) {
                     self.top_run_ids.insert(event.id, index);
                     if let Some(row) = self.rows.get_mut(index) {
                         row.status = RowStatus::Running;
@@ -344,7 +338,7 @@ impl TestRunModal {
                 }
                 false
             }
-            SubActionDone::KIND => {
+            Some(RuntimeEvent::SubActionDone(done)) => {
                 let Some(root) = self.root else {
                     return false;
                 };
@@ -355,21 +349,19 @@ impl TestRunModal {
                 if !is_disabled_top && !is_executed_top {
                     return false;
                 }
-                if let Some(index) = done_step_index(event)
+                if let Some(index) = step_row_index(done.step_index)
                     && let Some(row) = self.rows.get_mut(index)
                 {
-                    row.status = row_status_from_done(event);
+                    row.status = row_status_from_done(&done);
                     cx.notify();
                 }
                 false
             }
-            ActionDone::KIND => {
+            Some(RuntimeEvent::ActionDone(done)) => {
                 if event.caused_by != self.root {
                     return false;
                 }
-                let failed =
-                    event.payload.get("outcome").and_then(|v| v.as_str()) == Some("failed");
-                if failed {
+                if done.outcome == RunOutcome::Failed {
                     let step = self
                         .rows
                         .iter()
@@ -868,31 +860,23 @@ impl Render for TestRunModal {
     }
 }
 
-fn done_step_index(event: &Event) -> Option<usize> {
-    let raw = event.payload.get("step_index")?.as_u64()?;
-    if raw == usize::MAX as u64 {
-        return None;
-    }
-    Some(raw as usize)
+fn step_row_index(step_index: usize) -> Option<usize> {
+    (step_index != usize::MAX).then_some(step_index)
 }
 
-fn row_status_from_done(event: &Event) -> RowStatus {
-    let ms = event
-        .payload
-        .get("duration_ms")
-        .and_then(serde_json::Value::as_u64)
-        .unwrap_or(0);
-    let message = event
-        .payload
-        .get("message")
-        .and_then(|v| v.as_str())
-        .map(SharedString::from);
-    match event.payload.get("outcome").and_then(|v| v.as_str()) {
-        Some("failed") => RowStatus::Failed {
-            message: message.unwrap_or_else(|| tr!("action_editor_test_run_default_error").into()),
+fn row_status_from_done(done: &SubActionDone) -> RowStatus {
+    match done.outcome {
+        RunOutcome::Failed => RowStatus::Failed {
+            message: done
+                .message
+                .clone()
+                .map(SharedString::from)
+                .unwrap_or_else(|| tr!("action_editor_test_run_default_error").into()),
         },
-        Some("skipped") => RowStatus::Skipped,
-        _ => RowStatus::Ok { ms },
+        RunOutcome::Skipped => RowStatus::Skipped,
+        RunOutcome::Success => RowStatus::Ok {
+            ms: done.duration_ms,
+        },
     }
 }
 

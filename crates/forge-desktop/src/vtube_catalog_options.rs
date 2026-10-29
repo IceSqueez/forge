@@ -1,18 +1,16 @@
 use std::sync::Arc;
 
-use forge_events::{Event, EventSource};
 use forge_registry::FormField;
 use forge_runtime::EventBus;
 use forge_types::IntegrationId;
+use forge_vtube::vocabulary::{INTEGRATION_ID, picker_keys};
 use forge_vtube::{VTubeCatalog, VTubeChoice, VTubeClient};
 use gpui::{Context, Task};
 
 use crate::async_bridge;
 use crate::collection_options::ChoiceOptions;
 use crate::integrations::BuiltinRegistry;
-
-const VTUBE_BUILTIN_ID: &str = "vtube";
-const VTUBE_CONNECTION_KIND: &str = "vtube.connection.changed";
+use crate::runtime_event;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum VTubeCatalogList {
@@ -24,9 +22,9 @@ pub(crate) enum VTubeCatalogList {
 impl VTubeCatalogList {
     pub(crate) fn parse(options_key: &str) -> Option<Self> {
         match options_key {
-            "vtube.model_ids" => Some(Self::Models),
-            "vtube.hotkey_ids" => Some(Self::Hotkeys),
-            "vtube.expression_files" => Some(Self::Expressions),
+            picker_keys::MODEL_IDS => Some(Self::Models),
+            picker_keys::HOTKEY_IDS => Some(Self::Hotkeys),
+            picker_keys::EXPRESSION_FILES => Some(Self::Expressions),
             _ => None,
         }
     }
@@ -103,7 +101,7 @@ pub(crate) fn vtube_catalog_choices(
 
 pub(crate) fn live_vtube_client(builtins: &BuiltinRegistry) -> Option<Arc<VTubeClient>> {
     builtins
-        .get(&IntegrationId::new(VTUBE_BUILTIN_ID))
+        .get(&IntegrationId::new(INTEGRATION_ID))
         .and_then(|object| object.vtube_client)
 }
 
@@ -116,10 +114,6 @@ pub(crate) fn current_vtube_catalog_options(
         _ => VTubeCatalog::default(),
     };
     vtube_catalog_choices(&catalog, fields)
-}
-
-pub(crate) fn changes_vtube_connection(event: &Event) -> bool {
-    event.source == EventSource::VTube && event.kind == VTUBE_CONNECTION_KIND
 }
 
 pub(crate) fn watch_vtube_catalog<V: 'static>(
@@ -135,7 +129,7 @@ pub(crate) fn watch_vtube_catalog<V: 'static>(
         while let async_bridge::EventBatch::Ready(batch) =
             async_bridge::recv_event_batch(&mut sub).await
         {
-            if !batch.iter().any(changes_vtube_connection) {
+            if !batch.iter().any(runtime_event::changes_vtube_connection) {
                 continue;
             }
             let applied = this.update(cx, |view, cx| {

@@ -2,8 +2,7 @@ use crate::platform_visuals::BadgeKind;
 use std::collections::{BTreeMap, HashMap, VecDeque};
 
 use forge_components::tr;
-use forge_events::{ActionStarted, Event, TypedEvent};
-use forge_runtime::COMMAND_MATCHED_KIND;
+use forge_events::Event;
 use forge_types::{
     ChatEventDetail, ChatModerationAction, ChatModerationPayload, ChatPayload, ChatReply,
     ChatViewer, EventId, PlatformId, UnifiedChatRow, UserBadge,
@@ -13,6 +12,7 @@ use time::OffsetDateTime;
 
 use crate::chat_author::AuthorKey;
 use crate::chat_row::ChatBody;
+use crate::runtime_event::{self, RuntimeEvent};
 
 pub use forge_storage::DEFAULT_CHAT_HISTORY_DISPLAY_LIMIT as DEFAULT_DISPLAY_LIMIT;
 
@@ -314,17 +314,13 @@ impl ChatFeed {
         let Some(caused_by) = event.caused_by else {
             return false;
         };
-        match event.kind.as_str() {
-            COMMAND_MATCHED_KIND => event
-                .payload
-                .get("command")
-                .and_then(|v| v.as_str())
-                .is_some_and(|command| self.mark_command(caused_by, command)),
-            ActionStarted::KIND => event
-                .payload
-                .get("action_name")
-                .and_then(|v| v.as_str())
-                .is_some_and(|action_name| self.set_triggered(caused_by, action_name)),
+        match runtime_event::decode(event) {
+            Some(RuntimeEvent::CommandMatched {
+                command: Some(command),
+            }) => self.mark_command(caused_by, &command),
+            Some(RuntimeEvent::ActionStarted(started)) => {
+                self.set_triggered(caused_by, &started.action_name)
+            }
             _ => false,
         }
     }
@@ -332,11 +328,7 @@ impl ChatFeed {
     pub fn annotates_rows(event: &Event) -> bool {
         let moderation = event.source.to_platform_id().is_some()
             && event.payload.get(ChatModerationPayload::KEY).is_some();
-        let run_mark = event.caused_by.is_some()
-            && matches!(
-                event.kind.as_str(),
-                COMMAND_MATCHED_KIND | ActionStarted::KIND
-            );
+        let run_mark = event.caused_by.is_some() && runtime_event::marks_chat_run(event);
         moderation || run_mark
     }
 
@@ -538,6 +530,7 @@ fn format_amount(micros: u64) -> String {
 mod tests {
     use crate::chat_row::ChatBody;
     use crate::platform_visuals::BadgeKind;
+    use crate::runtime_event::{self, RuntimeEvent};
     use forge_events::{Event, EventSource};
     use forge_types::{
         ChatEventDetail, ChatModerationAction, ChatModerationPayload, ChatPayload, ChatReply,

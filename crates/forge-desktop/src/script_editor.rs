@@ -16,7 +16,7 @@ use forge_components::{
     primary_button, radius, scaled, spacing, status_dot, tr, with_alpha,
 };
 use forge_components::{DateShape, fmt_display};
-use forge_events::{Event, EventPublisher, ScriptLogged, TypedEvent};
+use forge_events::{EventPublisher, ScriptLogLevel, ScriptLogged};
 use forge_runtime::{EventBus, RuntimeScriptGlobals, SchedulingContext, ScriptRegistry};
 use forge_script::{
     EngineConfig, MethodDescriptor, RunResult, ScriptError, ScriptHost, format_script,
@@ -41,6 +41,7 @@ use crate::async_bridge::{self, BridgeFlow, drain_events};
 use crate::globals::variant_kind_color;
 use crate::navigation::NavRequested;
 use crate::navigation::Screen;
+use crate::runtime_event::{self, RuntimeEvent};
 use crate::screen_shortcuts::ScreenShortcuts;
 use crate::script_lifecycle::{
     ScriptLifecycle, ScriptRenamed, counted_names, delete_hint, has_referrers, referrer_count,
@@ -732,8 +733,10 @@ impl ScriptEditorView {
             drain_events(&bus, cx, move |batch, cx| {
                 match this.update(cx, |this, cx| {
                     for event in batch {
-                        if event.kind == ScriptLogged::KIND {
-                            this.on_script_log(event, cx);
+                        if let Some(RuntimeEvent::ScriptLogged(logged)) =
+                            runtime_event::decode(event)
+                        {
+                            this.on_script_log(logged, cx);
                         }
                     }
                 }) {
@@ -746,32 +749,19 @@ impl ScriptEditorView {
         .detach();
     }
 
-    fn on_script_log(&mut self, event: &Event, cx: &mut Context<Self>) {
+    fn on_script_log(&mut self, logged: ScriptLogged, cx: &mut Context<Self>) {
         let Some(open_id) = self.open.as_ref().map(|o| o.id) else {
             return;
         };
-        let Some(sid) = event.payload.get("script_id").and_then(|v| v.as_str()) else {
-            return;
-        };
-        if sid != open_id.to_string().as_str() {
+        if logged.script_id != Some(open_id) {
             return;
         }
-        let level = event
-            .payload
-            .get("level")
-            .and_then(|v| v.as_str())
-            .unwrap_or("info");
-        let message = event
-            .payload
-            .get("message")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default();
-        let tag = match level {
-            "error" => LogTag::Err,
-            "warn" => LogTag::Warn,
-            _ => LogTag::Log,
+        let tag = match logged.level {
+            ScriptLogLevel::Error => LogTag::Err,
+            ScriptLogLevel::Warn => LogTag::Warn,
+            ScriptLogLevel::Info => LogTag::Log,
         };
-        self.push_console(tag, message.to_owned());
+        self.push_console(tag, logged.message);
         cx.notify();
     }
 

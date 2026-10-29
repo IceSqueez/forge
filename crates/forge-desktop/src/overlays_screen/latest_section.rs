@@ -7,7 +7,7 @@ use forge_components::{
     BORDER_THIN, ConfirmTone, Density, FONT_XS, FONT_XXS, ForgePalette, Icon, OverlayPosition,
     body_family, confirm_modal, ghost_button_with_icon, overlay, scaled, section_label, tr,
 };
-use forge_events::{Event, LatestChanged, TypedEvent};
+use forge_events::Event;
 use forge_overlay::config::{HEADLINE, PLACEHOLDER, PLATFORM, SUBLINE};
 use forge_overlay::{
     LatestBinding, OverlayConfig, OverlayKindRegistry, latest_binding, latest_content,
@@ -24,6 +24,7 @@ use super::property_panel::{
 use crate::async_bridge::{self, BridgeFlow};
 use crate::config_form::ConfigField;
 use crate::latest_labels::slot_label;
+use crate::runtime_event::{self, RuntimeEvent};
 
 const VALUE_GAP: Pixels = px(2.0);
 const NOTHING_SHOWN: &str = "-";
@@ -99,8 +100,10 @@ impl LatestState {
 pub(super) fn changed_slots(events: &[Event]) -> Vec<String> {
     events
         .iter()
-        .filter_map(LatestChanged::from_event)
-        .map(|changed| changed.slot)
+        .filter_map(|event| match runtime_event::decode(event) {
+            Some(RuntimeEvent::LatestChanged(changed)) => Some(changed.slot),
+            _ => None,
+        })
         .collect()
 }
 

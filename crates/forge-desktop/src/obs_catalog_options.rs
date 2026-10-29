@@ -1,6 +1,5 @@
 use std::sync::Arc;
 
-use forge_events::{Event, EventSource};
 use forge_obs::{ObsClient, ObsSource};
 use forge_registry::FormField;
 use forge_runtime::EventBus;
@@ -10,6 +9,7 @@ use gpui::{Context, Task};
 use crate::async_bridge;
 use crate::collection_options::ChoiceOptions;
 use crate::integrations::BuiltinRegistry;
+use crate::runtime_event;
 
 const OBS_BUILTIN_ID: &str = "obs";
 
@@ -162,15 +162,6 @@ async fn read_snapshot(source: &dyn ObsSource) -> ObsCatalogSnapshot {
     }
 }
 
-pub(crate) fn changes_obs_catalog(event: &Event) -> bool {
-    event.source == EventSource::Obs
-        && (event
-            .kind
-            .starts_with(forge_obs::vocabulary::event_kinds::CONNECTION_PREFIX)
-            || forge_obs::vocabulary::event_kinds::NAME_LIST_CHANGING_KINDS
-                .contains(&event.kind.as_str()))
-}
-
 pub(crate) fn watch_obs_catalog<V: 'static>(
     bus: &Arc<EventBus>,
     on_change: fn(&mut V, &mut Context<V>),
@@ -181,7 +172,7 @@ pub(crate) fn watch_obs_catalog<V: 'static>(
         while let async_bridge::EventBatch::Ready(batch) =
             async_bridge::recv_event_batch(&mut sub).await
         {
-            if !batch.iter().any(changes_obs_catalog) {
+            if !batch.iter().any(runtime_event::changes_obs_catalog) {
                 continue;
             }
             if this.update(cx, on_change).is_err() {

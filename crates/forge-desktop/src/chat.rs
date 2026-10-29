@@ -95,7 +95,7 @@ fn build_reply_step(username: &str, message: &str, parent_message_id: &str) -> S
         Variant::String(parent_message_id.to_owned()),
     );
     SubActionStep {
-        kind_id: "twitch.chat.reply".to_owned(),
+        kind_id: forge_platform_twitch::vocabulary::sub_action_ids::CHAT_REPLY.to_owned(),
         config,
         enabled: true,
         continue_on_error: false,

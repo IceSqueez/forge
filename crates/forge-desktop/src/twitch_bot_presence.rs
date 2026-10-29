@@ -1,7 +1,6 @@
 use std::sync::Arc;
 
-use forge_events::{Event, EventSource};
-use forge_platform_twitch::vocabulary::event_kinds;
+use forge_platform_twitch::vocabulary::BotStatusChanged;
 use forge_platform_twitch::{BotModerator, BotStatus, TwitchBotAccount};
 use gpui::{AsyncApp, Entity};
 
@@ -70,52 +69,16 @@ impl TwitchBotPresence {
         true
     }
 
-    pub fn apply_event(&mut self, event: &Event) -> bool {
-        if event.source != EventSource::Twitch || event.kind != event_kinds::BOT_STATUS_CHANGED {
-            return false;
-        }
-        let payload = &event.payload;
-        let login = payload.get("login").and_then(|value| value.as_str());
-        let Some(status) = payload
-            .get("status")
-            .and_then(|value| value.as_str())
-            .and_then(|wire| status_from_wire(wire, login))
-        else {
+    pub fn apply_status_changed(&mut self, changed: &BotStatusChanged) -> bool {
+        let Some(status) = changed.bot_status() else {
             return false;
         };
-        let moderator = payload
-            .get("moderator")
-            .and_then(|value| value.as_str())
-            .and_then(moderator_from_wire)
-            .unwrap_or(BotModerator::Unknown);
         self.heard_live_status = true;
-        self.apply(status, moderator)
+        self.apply(status, changed.moderator)
     }
 
     pub fn apply_seed(&mut self, status: BotStatus, moderator: BotModerator) -> bool {
         !self.heard_live_status && self.apply(status, moderator)
-    }
-}
-
-fn status_from_wire(wire: &str, login: Option<&str>) -> Option<BotStatus> {
-    match (wire, login) {
-        ("not_connected", _) => Some(BotStatus::NotConnected),
-        ("connected", Some(login)) => Some(BotStatus::Connected {
-            login: login.to_owned(),
-        }),
-        ("reauth_required", Some(login)) => Some(BotStatus::ReauthRequired {
-            login: login.to_owned(),
-        }),
-        _ => None,
-    }
-}
-
-fn moderator_from_wire(wire: &str) -> Option<BotModerator> {
-    match wire {
-        "unknown" => Some(BotModerator::Unknown),
-        "moderator" => Some(BotModerator::Moderator),
-        "not_moderator" => Some(BotModerator::NotModerator),
-        _ => None,
     }
 }
 

@@ -5,7 +5,6 @@ use forge_discord::DiscordClient;
 use forge_storage::ActionRepo;
 use forge_types::Action;
 
-pub const DISCORD_EVENT_PREFIX: &str = "discord.";
 const DISCORD_SUB_ACTION_PREFIX: &str = "discord.";
 const WEBHOOK_NAME_FIELD: &str = "webhook_name";
 

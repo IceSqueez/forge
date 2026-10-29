@@ -1,4 +1,3 @@
-use crate::event_log::is_chat_message_kind;
 use crate::platform_visuals::platform_color;
 use forge_components::FONT_BADGE;
 use forge_components::FONT_META;
@@ -15,12 +14,9 @@ use forge_components::{
 };
 use std::sync::Arc;
 
-use forge_events::{
-    ActionDone, ActionStarted, ChatSent, EventSource, ScriptStarted, SubActionRun, TimerTick,
-    TypedEvent,
-};
-use forge_platform_core::SENT_AS_FIELD;
-use forge_runtime::{BusError, COMMAND_MATCHED_KIND, EventBus};
+use forge_events::{ActingSender, EventSource};
+use forge_registry::TriggerCategory;
+use forge_runtime::{BusError, EventBus};
 use forge_types::{EventId, PlatformId};
 use gpui::{
     AnyElement, ClickEvent, Context, Div, Entity, FocusHandle, Pixels, Rgba, ScrollEvent,
@@ -31,6 +27,7 @@ use gpui::{
 use crate::actions::{LIST_CONTEXT, ListActivate, ListSelectNext, ListSelectPrev};
 use crate::async_bridge;
 use crate::event_log::{EventFilter, EventItem, EventLog};
+use crate::runtime_event::RuntimeEvent;
 use forge_components::ActivePresentation;
 use forge_components::PushToast;
 use forge_components::{ClockStyle, DateShape, active_display_formats, fmt_display};
@@ -55,8 +52,6 @@ const ACTION_ICON: Pixels = px(14.0);
 const RUN_ACTION_ICON: Pixels = px(12.0);
 const ACTION_PAD: Pixels = px(5.0);
 const ERROR_ROW_ALPHA: f32 = 0.06;
-const EVENT_LEVEL_FIELD: &str = "level";
-const WARNING_LEVEL: &str = "warning";
 
 const FILTER_TABS: [(&str, EventFilter); 7] = [
     ("event-tab-all", EventFilter::All),
@@ -144,13 +139,13 @@ fn compute_projection(
     let mut downstream: HashMap<gpui::SharedString, u32> = HashMap::new();
     let mut matched: HashSet<gpui::SharedString> = HashSet::new();
     for item in log.items() {
-        match item.kind.as_ref() {
-            ActionStarted::KIND => {
+        match item.typed {
+            Some(RuntimeEvent::ActionStarted(_)) => {
                 if let Some(cb) = &item.caused_by {
                     *downstream.entry(cb.clone()).or_default() += 1;
                 }
             }
-            COMMAND_MATCHED_KIND => {
+            Some(RuntimeEvent::CommandMatched { .. }) => {
                 if let Some(cb) = &item.caused_by {
                     matched.insert(cb.clone());
                 }
@@ -531,16 +526,19 @@ impl EventFeedView {
         let acted = downstream.get(&item.id).copied().unwrap_or(0);
         let actions_tag =
             |n: u32| -> gpui::SharedString { tr!("event_feed_outcome_actions", count = n).into() };
-        match item.kind.as_ref() {
-            ChatSent::KIND | "chat.whisper.sent" => Some(sent_tag(&item.payload)),
-            COMMAND_MATCHED_KIND => Some(tr!("event_feed_outcome_trigger").into()),
-            ActionStarted::KIND => item
+        match &item.typed {
+            Some(RuntimeEvent::ChatSent(sent)) => Some(sent_tag(sent.sent_as.as_ref())),
+            Some(RuntimeEvent::WhisperSent { sent_as }) => Some(sent_tag(sent_as.as_ref())),
+            Some(RuntimeEvent::CommandMatched { .. }) => {
+                Some(tr!("event_feed_outcome_trigger").into())
+            }
+            Some(RuntimeEvent::ActionStarted(_)) => item
                 .sub_action_count
                 .map(|n| tr!("event_feed_step_count", count = n).into()),
-            ActionDone::KIND => item
+            Some(RuntimeEvent::ActionDone(_)) => item
                 .total_ms
                 .map(|ms| tr!("event_feed_duration_ms", ms = format!("{ms:.2}")).into()),
-            k if is_chat_message_kind(k) => {
+            Some(RuntimeEvent::ChatMessage) => {
                 if acted > 0 {
                     Some(actions_tag(acted))
                 } else if matched.contains(&item.id) {
@@ -562,7 +560,7 @@ impl EventFeedView {
         cx: &mut Context<Self>,
     ) -> impl IntoElement + use<> {
         let density = cx.density();
-        let warning = !item.is_error && is_warning_level(&item.payload);
+        let warning = item.is_warning();
         let row_bg = if selected {
             Some(palette.elevated)
         } else if item.is_error {
@@ -575,12 +573,12 @@ impl EventFeedView {
         let kind_color = if warning {
             palette.warning
         } else {
-            type_color(&item.kind, item.is_error, palette)
+            type_color(item, palette)
         };
         let tag_color = if warning {
             palette.warning
         } else {
-            result_color(&item.kind, item.is_error, palette)
+            result_color(item, palette)
         };
         let rail = if selected {
             palette.brand
@@ -1276,51 +1274,46 @@ fn source_color(source: EventSource, palette: &ForgePalette) -> Rgba {
     }
 }
 
-fn type_color(kind: &str, is_error: bool, palette: &ForgePalette) -> Rgba {
-    if is_error {
+fn type_color(item: &EventItem, palette: &ForgePalette) -> Rgba {
+    if item.is_error {
         return palette.danger;
     }
-    match kind {
-        k if is_chat_message_kind(k) => palette.info,
-        COMMAND_MATCHED_KIND => palette.theme_brand,
-        ActionDone::KIND | "obs.scene.changed" => palette.success,
-        ChatSent::KIND => palette.info,
-        ActionStarted::KIND | ScriptStarted::KIND | TimerTick::KIND | SubActionRun::KIND => {
-            palette.warning
-        }
-        k if k.starts_with("global.") => palette.warning,
-        k if k.contains("cheer") || k.contains("bits") => palette.warning,
-        k if k.contains("raid") => palette.danger,
-        k if k.contains("sub") || k.contains("follow") => palette.theme_brand,
+    match &item.typed {
+        Some(RuntimeEvent::ChatMessage | RuntimeEvent::ChatSent(_)) => palette.info,
+        Some(RuntimeEvent::CommandMatched { .. }) => palette.theme_brand,
+        Some(RuntimeEvent::ActionDone(_) | RuntimeEvent::ObsSceneChanged) => palette.success,
+        Some(
+            RuntimeEvent::ActionStarted(_)
+            | RuntimeEvent::ScriptStarted(_)
+            | RuntimeEvent::TimerTick(_)
+            | RuntimeEvent::SubActionRun(_)
+            | RuntimeEvent::GlobalChanged,
+        ) => palette.warning,
+        _ if item.has_category(TriggerCategory::Bits) => palette.warning,
+        _ if item.has_category(TriggerCategory::Raids) => palette.danger,
+        _ if item.has_category(TriggerCategory::Subscriptions) => palette.theme_brand,
         _ => palette.text_secondary,
     }
 }
 
-fn result_color(kind: &str, is_error: bool, palette: &ForgePalette) -> Rgba {
-    if is_error {
+fn result_color(item: &EventItem, palette: &ForgePalette) -> Rgba {
+    if item.is_error {
         return palette.warning;
     }
-    match kind {
-        ActionDone::KIND | COMMAND_MATCHED_KIND | ChatSent::KIND => palette.success,
-        k if is_chat_message_kind(k) => palette.success,
+    match &item.typed {
+        Some(
+            RuntimeEvent::ActionDone(_)
+            | RuntimeEvent::CommandMatched { .. }
+            | RuntimeEvent::ChatSent(_)
+            | RuntimeEvent::ChatMessage,
+        ) => palette.success,
         _ => palette.text_muted,
     }
 }
 
-fn is_warning_level(payload: &serde_json::Value) -> bool {
-    payload
-        .get(EVENT_LEVEL_FIELD)
-        .and_then(|level| level.as_str())
-        == Some(WARNING_LEVEL)
-}
-
-fn sent_tag(payload: &serde_json::Value) -> gpui::SharedString {
-    match payload
-        .get(SENT_AS_FIELD)
-        .and_then(|sent_as| sent_as.get("login"))
-        .and_then(|login| login.as_str())
-    {
-        Some(login) => tr!("event_feed_sent_as", login = login.to_owned()).into(),
+fn sent_tag(sent_as: Option<&ActingSender>) -> gpui::SharedString {
+    match sent_as {
+        Some(acting) => tr!("event_feed_sent_as", login = acting.login.clone()).into(),
         None => tr!("event_feed_outcome_sent").into(),
     }
 }

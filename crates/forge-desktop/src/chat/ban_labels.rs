@@ -5,27 +5,11 @@ use forge_types::PlatformId;
 use time::OffsetDateTime;
 
 use crate::chat_drawer::DASH;
-
-const BAN_CHANGE_KINDS: [(&str, PlatformId); 4] = [
-    ("twitch.channel.ban", PlatformId::Twitch),
-    ("twitch.channel.unban", PlatformId::Twitch),
-    ("youtube.channel.user_banned", PlatformId::YouTube),
-    ("kick.moderation.banned", PlatformId::Kick),
-];
-
-pub(crate) fn ban_change_platform(kind: &str) -> Option<PlatformId> {
-    BAN_CHANGE_KINDS
-        .iter()
-        .find(|(change, _)| *change == kind)
-        .map(|(_, platform)| *platform)
-}
+use crate::runtime_event;
 
 pub(crate) fn changed_platforms(events: &[Event]) -> Vec<PlatformId> {
     let mut platforms = Vec::new();
-    for platform in events
-        .iter()
-        .filter_map(|event| ban_change_platform(&event.kind))
-    {
+    for platform in events.iter().filter_map(runtime_event::viewer_ban_platform) {
         if !platforms.contains(&platform) {
             platforms.push(platform);
         }
@@ -88,6 +72,7 @@ mod tests {
     };
     use crate::chat_drawer::DASH;
     use crate::i18n::install_language;
+    use crate::runtime_event;
 
     const MAR_15_2026_2330_UTC: i64 = 1_773_617_400;
 

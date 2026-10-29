@@ -1,8 +1,9 @@
+use std::num::NonZeroUsize;
 use std::sync::{Arc, LazyLock};
 
 use forge_storage::{FilterRule, FilterRuleKind, TtsPipelineSettings, UrlMode as StorageUrlMode};
 use forge_tts_pipeline::{
-    BlocklistMode, EmoteSources, EmoteTokenSet, OutputConfig, PipelineConfig, ReplacementRule,
+    BlocklistMode, EmoteTokenSet, EmoteTreatment, OutputConfig, PipelineConfig, ReplacementRule,
     SkipRulesConfig,
 };
 use forge_types::Shared;
@@ -34,8 +35,116 @@ pub enum ReplacementSource {
     UrlMode,
 }
 
-fn migrate_url_mode(
+#[derive(Debug, Clone)]
+pub struct SpokenWords {
+    pub link: String,
+    pub says: String,
+}
+
+const BANG_COMMAND_PREFIX: &str = "!";
+
+pub struct BuiltConfig {
+    config: PipelineConfig,
+    replacement_sources: Vec<ReplacementSource>,
+    rejected: Vec<FilterMappingError>,
+}
+
+impl BuiltConfig {
+    pub fn require_valid(self) -> Result<PipelineConfig, FilterMappingError> {
+        match self.rejected.into_iter().next() {
+            Some(error) => Err(error),
+            None => Ok(self.config),
+        }
+    }
+
+    pub fn dropping_invalid(self) -> (PipelineConfig, Vec<ReplacementSource>) {
+        for error in &self.rejected {
+            tracing::warn!(
+                rule_index = error.index(),
+                rule_name = %error.name_for_log(),
+                pattern = %error.pattern_for_log(),
+                "invalid regex in TTS filter settings; skipping"
+            );
+        }
+        (self.config, self.replacement_sources)
+    }
+}
+
+pub fn build_config(
+    rules: &[FilterRule],
+    settings: &TtsPipelineSettings,
+    words: &SpokenWords,
+) -> BuiltConfig {
+    let (mut mapped, mut rejected) = map_rules(rules, settings);
+    let (custom_regexes, skip_regex_errors) = compile_skip_regexes(&settings.skip_custom_regexes);
+    rejected.extend(skip_regex_errors);
+    let mut skip_rules = SkipRulesConfig {
+        contains_url: settings.skip_contains_url,
+        skip_prefix: effective_skip_prefix(settings),
+        from_bot_accounts: settings.skip_from_bot_accounts,
+        bot_accounts: settings.bot_accounts.clone(),
+        max_chars: max_chars(settings),
+        repeat_of_recent: settings.skip_repeat_of_recent,
+        emote_only: settings.skip_emote_only,
+        mostly_non_latin: settings.skip_mostly_non_latin,
+        custom_regexes,
+    };
+    apply_url_mode(settings.url_mode, &words.link, &mut mapped, &mut skip_rules);
+    let config = PipelineConfig {
+        emote_tokens: EmoteTokenSet::default(),
+        skip_rules,
+        replacement_rules: mapped.replacement_rules,
+        word_blocklist: mapped.word_blocklist,
+        blocklist_mode: mapped.blocklist_mode,
+        output: output_from_settings(settings, &words.says),
+        strip_reward_emotes: settings.strip_reward_emotes,
+    };
+    BuiltConfig {
+        config,
+        replacement_sources: mapped.replacement_sources,
+        rejected,
+    }
+}
+
+pub fn emote_treatment(settings: &TtsPipelineSettings) -> EmoteTreatment {
+    if settings.output_emote_to_word {
+        EmoteTreatment::ToWord
+    } else if settings.strip_twitch_emotes {
+        EmoteTreatment::StripTwitch
+    } else {
+        EmoteTreatment::Keep
+    }
+}
+
+pub fn store_emote_treatment(settings: &mut TtsPipelineSettings, treatment: EmoteTreatment) {
+    settings.output_emote_to_word = treatment == EmoteTreatment::ToWord;
+    settings.strip_twitch_emotes = treatment == EmoteTreatment::StripTwitch;
+}
+
+pub fn effective_skip_prefix(settings: &TtsPipelineSettings) -> Option<String> {
+    match &settings.skip_prefix {
+        Some(prefix) if !prefix.is_empty() => Some(prefix.clone()),
+        _ if settings.skip_starts_with_bang => Some(BANG_COMMAND_PREFIX.to_owned()),
+        _ => None,
+    }
+}
+
+pub fn repeat_window(settings: &TtsPipelineSettings) -> NonZeroUsize {
+    NonZeroUsize::new(settings.repeat_of_recent_window as usize).unwrap_or(NonZeroUsize::MIN)
+}
+
+fn max_chars(settings: &TtsPipelineSettings) -> Option<usize> {
+    settings
+        .max_length
+        .or(settings
+            .skip_longer_than
+            .then_some(settings.longer_than_max_chars))
+        .map(|chars| chars as usize)
+}
+
+fn apply_url_mode(
     mode: StorageUrlMode,
+    link_word: &str,
     mapped: &mut MappedRules,
     skip_rules: &mut SkipRulesConfig,
 ) {
@@ -46,7 +155,7 @@ fn migrate_url_mode(
                 0,
                 ReplacementRule::Regex {
                     compiled: MIGRATED_URL_REGEX.clone(),
-                    replacement: "link".to_owned(),
+                    replacement: link_word.to_owned(),
                 },
             );
             mapped
@@ -59,90 +168,28 @@ fn migrate_url_mode(
     }
 }
 
-fn migrate_max_length(max_length: Option<u32>, skip_rules: &mut SkipRulesConfig) {
-    if let Some(n) = max_length {
-        skip_rules.longer_than = true;
-        skip_rules.max_chars = n as usize;
-    }
-}
-
-fn effective_skip_prefix(settings: &TtsPipelineSettings) -> Option<String> {
-    match &settings.skip_prefix {
-        Some(prefix) if !prefix.is_empty() => Some(prefix.clone()),
-        _ if settings.skip_starts_with_bang => Some("!".to_owned()),
-        _ => None,
-    }
-}
-
-fn skip_rules_base(settings: &TtsPipelineSettings) -> SkipRulesConfig {
-    SkipRulesConfig {
-        contains_url: settings.skip_contains_url,
-        skip_prefix: effective_skip_prefix(settings),
-        from_bot_accounts: settings.skip_from_bot_accounts,
-        bot_accounts: settings.bot_accounts.clone(),
-        longer_than: settings.skip_longer_than,
-        max_chars: settings.longer_than_max_chars as usize,
-        repeat_of_recent: settings.skip_repeat_of_recent,
-        window: settings.repeat_of_recent_window as usize,
-        emote_only: settings.skip_emote_only,
-        mostly_non_latin: settings.skip_mostly_non_latin,
-        custom_regexes: Vec::new(),
-    }
-}
-
-fn compile_skip_regexes_lenient(patterns: &[String]) -> Vec<regex::Regex> {
-    patterns
-        .iter()
-        .enumerate()
-        .filter_map(|(index, pattern)| match regex::Regex::new(pattern) {
-            Ok(compiled) => Some(compiled),
-            Err(source) => {
-                tracing::warn!(
-                    regex_index = index,
-                    pattern = %pattern,
-                    error = %source,
-                    "invalid skip custom regex; dropping"
-                );
-                None
-            }
-        })
-        .collect()
-}
-
-fn compile_skip_regexes_strict(
-    patterns: &[String],
-) -> Result<Vec<regex::Regex>, FilterMappingError> {
-    patterns
-        .iter()
-        .enumerate()
-        .map(|(index, pattern)| {
-            regex::Regex::new(pattern).map_err(|source| FilterMappingError::InvalidSkipRegex {
+fn compile_skip_regexes(patterns: &[String]) -> (Vec<regex::Regex>, Vec<FilterMappingError>) {
+    let mut compiled = Vec::with_capacity(patterns.len());
+    let mut rejected = Vec::new();
+    for (index, pattern) in patterns.iter().enumerate() {
+        match regex::Regex::new(pattern) {
+            Ok(regex) => compiled.push(regex),
+            Err(source) => rejected.push(FilterMappingError::InvalidSkipRegex {
                 index,
                 pattern: pattern.clone(),
                 source,
-            })
-        })
-        .collect()
+            }),
+        }
+    }
+    (compiled, rejected)
 }
 
-fn skip_rules_from_settings_lenient(settings: &TtsPipelineSettings) -> SkipRulesConfig {
-    let mut skip_rules = skip_rules_base(settings);
-    skip_rules.custom_regexes = compile_skip_regexes_lenient(&settings.skip_custom_regexes);
-    skip_rules
-}
-
-fn skip_rules_from_settings_strict(
-    settings: &TtsPipelineSettings,
-) -> Result<SkipRulesConfig, FilterMappingError> {
-    let mut skip_rules = skip_rules_base(settings);
-    skip_rules.custom_regexes = compile_skip_regexes_strict(&settings.skip_custom_regexes)?;
-    Ok(skip_rules)
-}
-
-fn output_from_settings(settings: &TtsPipelineSettings) -> OutputConfig {
+fn output_from_settings(settings: &TtsPipelineSettings, says: &str) -> OutputConfig {
     OutputConfig {
         read_display_name_first: settings.output_read_display_name_first,
-        emote_to_word: settings.output_emote_to_word,
+        says: says.to_owned(),
+        emote_treatment: emote_treatment(settings),
+        strip_emoji: settings.strip_emoji,
         sanitize_punctuation: settings.output_sanitize_punctuation,
         max_duration_secs: settings.output_max_duration_secs,
         language_aware_voice: settings.output_language_aware_voice.unwrap_or(false),
@@ -156,13 +203,10 @@ fn storage_blocklist_mode_to_pipeline(mode: forge_storage::BlocklistMode) -> Blo
     }
 }
 
-fn map_rule_strict(
+fn map_replacement_rule(
     rule: &FilterRule,
     index: usize,
 ) -> Result<Option<ReplacementRule>, FilterMappingError> {
-    if !rule.enabled {
-        return Ok(None);
-    }
     match &rule.kind {
         FilterRuleKind::Literal {
             pattern,
@@ -232,7 +276,7 @@ fn map_rules(
                 word_blocklist.extend(words.iter().cloned());
                 blocklist_mode = storage_blocklist_mode_to_pipeline(*mode);
             }
-            _ => match map_rule_strict(rule, index) {
+            _ => match map_replacement_rule(rule, index) {
                 Ok(Some(r)) => {
                     replacement_rules.push(r);
                     replacement_sources.push(ReplacementSource::FilterRule(index));
@@ -250,71 +294,6 @@ fn map_rules(
         blocklist_mode,
     };
     (mapped, invalid)
-}
-
-fn emote_sources_from_settings(settings: &TtsPipelineSettings) -> EmoteSources {
-    EmoteSources {
-        twitch: settings.strip_twitch_emotes,
-        emoji: settings.strip_emoji,
-    }
-}
-
-fn pipeline_config(
-    settings: &TtsPipelineSettings,
-    mapped: MappedRules,
-    skip_rules: SkipRulesConfig,
-) -> PipelineConfig {
-    PipelineConfig {
-        emote_sources: emote_sources_from_settings(settings),
-        emote_tokens: EmoteTokenSet::default(),
-        skip_rules,
-        replacement_rules: mapped.replacement_rules,
-        word_blocklist: mapped.word_blocklist,
-        blocklist_mode: mapped.blocklist_mode,
-        output: output_from_settings(settings),
-        strip_reward_emotes: settings.strip_reward_emotes,
-    }
-}
-
-pub fn build_config_strict(
-    rules: &[FilterRule],
-    settings: &TtsPipelineSettings,
-) -> Result<PipelineConfig, FilterMappingError> {
-    let (mut mapped, invalid) = map_rules(rules, settings);
-    if let Some(error) = invalid.into_iter().next() {
-        return Err(error);
-    }
-    let mut skip_rules = skip_rules_from_settings_strict(settings)?;
-    migrate_url_mode(settings.url_mode, &mut mapped, &mut skip_rules);
-    migrate_max_length(settings.max_length, &mut skip_rules);
-    Ok(pipeline_config(settings, mapped, skip_rules))
-}
-
-pub fn build_config_lenient(
-    rules: &[FilterRule],
-    settings: &TtsPipelineSettings,
-) -> PipelineConfig {
-    build_config_lenient_with_sources(rules, settings).0
-}
-
-pub fn build_config_lenient_with_sources(
-    rules: &[FilterRule],
-    settings: &TtsPipelineSettings,
-) -> (PipelineConfig, Vec<ReplacementSource>) {
-    let (mut mapped, invalid) = map_rules(rules, settings);
-    for error in &invalid {
-        tracing::warn!(
-            rule_index = error.index(),
-            rule_name = %error.name_for_log(),
-            pattern = %error.pattern_for_log(),
-            "invalid regex in filter rule; skipping"
-        );
-    }
-    let mut skip_rules = skip_rules_from_settings_lenient(settings);
-    migrate_url_mode(settings.url_mode, &mut mapped, &mut skip_rules);
-    migrate_max_length(settings.max_length, &mut skip_rules);
-    let sources = std::mem::take(&mut mapped.replacement_sources);
-    (pipeline_config(settings, mapped, skip_rules), sources)
 }
 
 #[derive(Clone)]

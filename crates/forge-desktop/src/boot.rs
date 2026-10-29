@@ -277,6 +277,7 @@ pub async fn build_runtime(
         &backend,
         Arc::clone(&speech_sink) as Arc<dyn AudioSink>,
         &cloud_tts_gateways,
+        &crate::spoken_words::spoken_words_in(startup_language),
     )
     .await;
     let voice_gate = build_voice_gate(settings_repo.as_ref(), speak.clone()).await;

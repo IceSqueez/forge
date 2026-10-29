@@ -9,8 +9,9 @@ use forge_components::{
     radio_row_label, radius, scaled, spacing, toggle, tr, with_alpha,
 };
 use forge_speak_queue::{
-    EmoteTokenSet, PipelineConfigHandle, Priority, ReplacementSource, RequestId, SpeakCommand,
-    SpeakQueueHandle, SpeakRequest, build_config_lenient_with_sources, build_config_strict,
+    EmoteTokenSet, EmoteTreatment, PipelineConfigHandle, Priority, ReplacementSource, RequestId,
+    SpeakCommand, SpeakQueueHandle, SpeakRequest, build_config, effective_skip_prefix,
+    emote_treatment, repeat_window, store_emote_treatment,
 };
 use forge_storage::{
     BlocklistMode, FilterRule, FilterRuleKind, TtsFiltersRepo, TtsPipelineSettings,
@@ -26,6 +27,7 @@ use gpui::{
 };
 
 use crate::async_bridge::{self, Loadable, SnapshotWriter, WriteOutcome};
+use crate::spoken_words::active_spoken_words;
 use forge_components::{ActivePresentation, DISABLED_OPACITY, error_row_with_retry};
 
 const STAGE_CIRCLE: Pixels = px(22.0);
@@ -236,15 +238,21 @@ impl OutputPreset {
 }
 
 fn set_emote_to_word(settings: &mut TtsPipelineSettings, value: bool) {
-    settings.output_emote_to_word = value;
-    settings.strip_twitch_emotes = false;
+    let treatment = if value {
+        EmoteTreatment::ToWord
+    } else {
+        EmoteTreatment::Keep
+    };
+    store_emote_treatment(settings, treatment);
 }
 
 fn set_strip_twitch_emotes(settings: &mut TtsPipelineSettings, value: bool) {
-    settings.strip_twitch_emotes = value;
-    if value {
-        settings.output_emote_to_word = false;
-    }
+    let treatment = match (value, emote_treatment(settings)) {
+        (true, _) => EmoteTreatment::StripTwitch,
+        (false, EmoteTreatment::StripTwitch) => EmoteTreatment::Keep,
+        (false, unchanged) => unchanged,
+    };
+    store_emote_treatment(settings, treatment);
 }
 
 fn parse_max_duration(raw: &str) -> Option<u32> {
@@ -600,7 +608,7 @@ impl TtsFiltersView {
         }
         let shown = self.shown();
         let (config, replacement_sources) =
-            build_config_lenient_with_sources(&shown.rules, &shown.settings);
+            build_config(&shown.rules, &shown.settings, &active_spoken_words()).dropping_invalid();
         let speaker_name = tr!("tts_filters_preview_speaker_name");
         let context = forge_tts_pipeline::PipelineContext {
             viewer_name: &speaker_name,
@@ -702,7 +710,9 @@ impl TtsFiltersView {
         let Some(filters) = self.filters.loaded() else {
             return;
         };
-        let config = match build_config_strict(&filters.rules, &filters.settings) {
+        let config = match build_config(&filters.rules, &filters.settings, &active_spoken_words())
+            .require_valid()
+        {
             Ok(config) => config,
             Err(e) => {
                 self.save_error = Some(e.to_string());
@@ -715,6 +725,8 @@ impl TtsFiltersView {
         let repo = Arc::clone(&self.repo);
         let pipeline_config = self.pipeline_config.clone();
         let bot_accounts = self.bot_accounts.clone();
+        let speak = self.speak.clone();
+        let window = repeat_window(&settings);
         self.writer.write(
             async move {
                 repo.replace_rules(&rules)
@@ -726,6 +738,11 @@ impl TtsFiltersView {
                 bot_accounts.store(settings.bot_accounts);
                 if let Some(handle) = pipeline_config {
                     handle.swap(config);
+                }
+                if let Some(speak) = speak
+                    && let Err(e) = speak.send(SpeakCommand::SetRepeatWindow(window)).await
+                {
+                    tracing::warn!(error = %e, "speak queue did not take the new repeat window");
                 }
                 Ok::<(), String>(())
             },
@@ -748,7 +765,13 @@ impl TtsFiltersView {
         let mut candidate = filters.clone();
         mutate(&mut candidate);
         renumber(&mut candidate.rules);
-        match build_config_strict(&candidate.rules, &candidate.settings) {
+        match build_config(
+            &candidate.rules,
+            &candidate.settings,
+            &active_spoken_words(),
+        )
+        .require_valid()
+        {
             Ok(_) => {
                 *filters = candidate;
                 self.after_change(cx);
@@ -819,10 +842,10 @@ impl TtsFiltersView {
         let settings = &self.shown().settings;
         match opt {
             OutputOpt::ReadName => settings.output_read_display_name_first,
-            OutputOpt::EmoteWord => settings.output_emote_to_word,
+            OutputOpt::EmoteWord => emote_treatment(settings) == EmoteTreatment::ToWord,
             OutputOpt::Sanitize => settings.output_sanitize_punctuation,
             OutputOpt::StripTwitchEmotes => {
-                settings.strip_twitch_emotes && !settings.output_emote_to_word
+                emote_treatment(settings) == EmoteTreatment::StripTwitch
             }
             OutputOpt::StripRewardEmotes => settings.strip_reward_emotes,
             OutputOpt::StripEmoji => settings.strip_emoji,
@@ -1401,11 +1424,7 @@ impl TtsFiltersView {
             ),
         ];
 
-        let prefix_display = settings
-            .skip_prefix
-            .clone()
-            .filter(|p| !p.is_empty())
-            .or_else(|| settings.skip_starts_with_bang.then(|| "!".to_owned()));
+        let prefix_display = effective_skip_prefix(settings);
         let regex_count = settings.skip_custom_regexes.len();
         let total = fixed.len() + usize::from(prefix_display.is_some()) + regex_count;
 

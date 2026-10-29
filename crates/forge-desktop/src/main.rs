@@ -175,6 +175,7 @@ mod soundboard;
 mod speak_boot;
 mod speak_bridge;
 mod speak_state;
+mod spoken_words;
 mod stay_awake;
 mod step_option_labels;
 mod system_info;

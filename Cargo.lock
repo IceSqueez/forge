@@ -3320,7 +3320,6 @@ dependencies = [
  "forge-types",
  "lingua",
  "regex",
- "serde",
 ]
 
 [[package]]

@@ -7,11 +7,12 @@ use forge_audio::{DeviceSink, OutputDeviceHandle, stored_output_device};
 use forge_events::EventPublisher;
 use forge_runtime::EventBus;
 use forge_speak_queue::{
-    PipelineConfigHandle, QueueConfig, QueueDeps, SpeakEventStream, VoiceAliasResolver,
+    PipelineConfigHandle, QueueConfig, QueueDeps, SpeakEventStream, SpokenWords,
+    VoiceAliasResolver, build_config, repeat_window,
 };
 use forge_speech_types::EngineId;
 use forge_speech_types::{AssignmentStrategy, IgnoreProfile, SynthesisDefaults};
-use forge_storage::{CredentialsRepo, DataProvider};
+use forge_storage::{CredentialsRepo, DataProvider, FilterRule, TtsPipelineSettings};
 use forge_tts_cloud::CloudGateways;
 use forge_tts_core::{TtsEngineFactory, TtsRegistry, build_engine};
 use forge_tts_espeak::EspeakEngineFactory;
@@ -161,7 +162,7 @@ async fn load_disabled_engines(
     }
 }
 
-async fn load_pipeline(backend: &Arc<dyn DataProvider>) -> forge_tts_pipeline::PipelineConfig {
+async fn load_filters(backend: &Arc<dyn DataProvider>) -> (Vec<FilterRule>, TtsPipelineSettings) {
     let filters_repo = backend.tts_filters_repo();
     let loaded = async {
         let rules = filters_repo.list_rules().await?;
@@ -169,13 +170,10 @@ async fn load_pipeline(backend: &Arc<dyn DataProvider>) -> forge_tts_pipeline::P
         Ok::<_, forge_storage::StorageError>((rules, settings))
     }
     .await;
-    match loaded {
-        Ok((rules, settings)) => forge_speak_queue::build_config_lenient(&rules, &settings),
-        Err(e) => {
-            tracing::warn!(error = %e, "failed to load TTS filters on boot; using defaults");
-            forge_tts_pipeline::PipelineConfig::default()
-        }
-    }
+    loaded.unwrap_or_else(|e| {
+        tracing::warn!(error = %e, "failed to load TTS filters on boot; using defaults");
+        (Vec::new(), TtsPipelineSettings::default())
+    })
 }
 
 pub async fn build_speech_output(backend: &Arc<dyn DataProvider>) -> Arc<DeviceSink> {
@@ -196,6 +194,7 @@ pub async fn build_speak_queue(
     backend: &Arc<dyn DataProvider>,
     audio_sink: Arc<dyn forge_audio::AudioSink>,
     cloud_gateways: &CloudGateways,
+    spoken_words: &SpokenWords,
 ) -> (
     Option<forge_speak_queue::SpeakQueueHandle>,
     Option<SpeakEventStream>,
@@ -219,7 +218,10 @@ pub async fn build_speak_queue(
     let mut resolver = load_resolver(backend).await;
     resolver.set_engine_defaults(engine_defaults);
     let resolver = Arc::new(std::sync::RwLock::new(resolver));
-    let pipeline = PipelineConfigHandle::new(load_pipeline(backend).await);
+    let (filter_rules, filter_settings) = load_filters(backend).await;
+    let (pipeline_config, _) =
+        build_config(&filter_rules, &filter_settings, spoken_words).dropping_invalid();
+    let pipeline = PipelineConfigHandle::new(pipeline_config);
     let disabled_engines = load_disabled_engines(backend).await;
 
     let deps = QueueDeps {
@@ -233,6 +235,7 @@ pub async fn build_speak_queue(
     };
     let queue_config = QueueConfig {
         master_volume: load_master_volume(backend).await,
+        repeat_window: repeat_window(&filter_settings),
         ..QueueConfig::default()
     };
     let (handle, stream) = forge_speak_queue::spawn(queue_config, deps);

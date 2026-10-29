@@ -416,8 +416,7 @@ pub(crate) async fn run_actor(
                 detector: task_deps.detector.clone(),
             };
             let recent_snapshot: Vec<String> = recent_messages.iter().cloned().collect();
-            let window = deps.pipeline.load().skip_rules.window.max(1);
-            while recent_messages.len() >= window {
+            while recent_messages.len() >= config.repeat_window.get() {
                 recent_messages.pop_front();
             }
             recent_messages.push_back(req.text.clone());
@@ -1066,6 +1065,9 @@ fn handle_command(
         }
         SpeakCommand::SetVolume(volume) => {
             config.master_volume = volume.clamp(0.0, 1.0);
+        }
+        SpeakCommand::SetRepeatWindow(window) => {
+            config.repeat_window = window;
         }
         SpeakCommand::RemoveAlias(id) => {
             deps.resolver

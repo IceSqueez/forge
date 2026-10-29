@@ -3,7 +3,6 @@ use std::ops::Range;
 use std::sync::LazyLock;
 
 use forge_types::is_bot_account;
-use serde::{Deserialize, Serialize};
 
 mod language;
 mod trace;
@@ -52,12 +51,6 @@ pub enum StageAction {
     Skipped { reason: SkipReason },
 }
 
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
-pub struct EmoteSources {
-    pub twitch: bool,
-    pub emoji: bool,
-}
-
 #[derive(Debug, Clone, Default)]
 pub struct EmoteTokenSet {
     pub tokens: HashSet<String>,
@@ -99,50 +92,38 @@ pub enum ReplacementRule {
     },
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum BlocklistMode {
-    #[default]
     Censor,
     SkipMessage,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct SkipRulesConfig {
     pub contains_url: bool,
     pub skip_prefix: Option<String>,
     pub from_bot_accounts: bool,
     pub bot_accounts: Vec<String>,
-    pub longer_than: bool,
-    pub max_chars: usize,
+    pub max_chars: Option<usize>,
     pub repeat_of_recent: bool,
-    pub window: usize,
     pub emote_only: bool,
     pub mostly_non_latin: bool,
     pub custom_regexes: Vec<regex::Regex>,
 }
 
-impl Default for SkipRulesConfig {
-    fn default() -> Self {
-        Self {
-            contains_url: false,
-            skip_prefix: None,
-            from_bot_accounts: false,
-            bot_accounts: Vec::new(),
-            longer_than: false,
-            max_chars: 200,
-            repeat_of_recent: false,
-            window: 3,
-            emote_only: false,
-            mostly_non_latin: false,
-            custom_regexes: Vec::new(),
-        }
-    }
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum EmoteTreatment {
+    Keep,
+    StripTwitch,
+    ToWord,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct OutputConfig {
     pub read_display_name_first: bool,
-    pub emote_to_word: bool,
+    pub says: String,
+    pub emote_treatment: EmoteTreatment,
+    pub strip_emoji: bool,
     pub sanitize_punctuation: bool,
     pub max_duration_secs: Option<u32>,
     pub language_aware_voice: bool,
@@ -154,9 +135,8 @@ pub struct PipelineContext<'a> {
     pub recent_messages: &'a [String],
 }
 
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 pub struct PipelineConfig {
-    pub emote_sources: EmoteSources,
     pub emote_tokens: EmoteTokenSet,
     pub skip_rules: SkipRulesConfig,
     pub replacement_rules: Vec<ReplacementRule>,
@@ -325,7 +305,9 @@ fn stage_skip_rules(
     {
         return Some(SkipReason::MatchedSkipRule("message is from a bot account"));
     }
-    if skip_rules.longer_than && text.chars().count() > skip_rules.max_chars {
+    if let Some(max_chars) = skip_rules.max_chars
+        && text.chars().count() > max_chars
+    {
         return Some(SkipReason::MatchedSkipRule("message exceeds max length"));
     }
     if skip_rules.repeat_of_recent && is_repeat_of_recent(text, context.recent_messages) {
@@ -560,12 +542,10 @@ fn equals_ignoring_case(text: &str, pattern: &str) -> bool {
 }
 
 fn transform_emotes_logged(text: &str, config: &PipelineConfig, log: &mut impl EditLog) -> String {
-    if config.output.emote_to_word {
-        colon_tokens_to_words_logged(text, log)
-    } else if config.emote_sources.twitch {
-        strip_emote_tokens_logged(text, &config.emote_tokens, log)
-    } else {
-        text.to_owned()
+    match config.output.emote_treatment {
+        EmoteTreatment::ToWord => colon_tokens_to_words_logged(text, log),
+        EmoteTreatment::StripTwitch => strip_emote_tokens_logged(text, &config.emote_tokens, log),
+        EmoteTreatment::Keep => text.to_owned(),
     }
 }
 
@@ -595,8 +575,8 @@ fn sanitize_punctuation_logged(text: &str, log: &mut impl EditLog) -> String {
     result
 }
 
-fn spoken_name_prefix(viewer_name: &str) -> String {
-    format!("{viewer_name} says: ")
+fn spoken_name_prefix(viewer_name: &str, says: &str) -> String {
+    format!("{viewer_name} {says}: ")
 }
 
 fn stage_output(
@@ -617,14 +597,14 @@ fn stage_output_logged(
 ) -> String {
     let emote_pass = transform_emotes_logged(text, config, log);
     log.end_pass();
-    let emoji_pass = if config.emote_sources.emoji {
+    let emoji_pass = if config.output.strip_emoji {
         strip_emoji_logged(&emote_pass, log)
     } else {
         emote_pass
     };
     log.end_pass();
     let named = if prepend_display_name {
-        let mut named = spoken_name_prefix(context.viewer_name);
+        let mut named = spoken_name_prefix(context.viewer_name, &config.output.says);
         log.record(0..named.len(), "", &named);
         named.push_str(&emoji_pass);
         named

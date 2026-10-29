@@ -13,6 +13,5 @@ workspace = true
 [dependencies]
 forge-types = { path = "../forge-types" }
 forge-speech-types = { path = "../forge-speech-types" }
-serde = { workspace = true }
 regex = { workspace = true }
 lingua = { workspace = true }

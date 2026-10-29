@@ -6,6 +6,7 @@ pub mod vocabulary;
 mod voice;
 
 use std::collections::{HashMap, HashSet};
+use std::num::NonZeroUsize;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU32, AtomicUsize, Ordering};
 use std::time::Duration;
@@ -13,8 +14,8 @@ use std::time::Duration;
 use serde::{Deserialize, Serialize};
 
 pub use filters::{
-    FilterMappingError, PipelineConfigHandle, ReplacementSource, build_config_lenient,
-    build_config_lenient_with_sources, build_config_strict,
+    BuiltConfig, FilterMappingError, PipelineConfigHandle, ReplacementSource, SpokenWords,
+    build_config, effective_skip_prefix, emote_treatment, repeat_window, store_emote_treatment,
 };
 pub use forge_audio::PlaybackTarget;
 use forge_audio::TargetedSinkFactory;
@@ -22,7 +23,7 @@ use forge_speech_types::{AliasId, AssignmentStrategy, SynthesisDefaults, VoiceAl
 use forge_speech_types::{EngineId, TtsVoice, VoiceId};
 pub use forge_tts_core::TtsError;
 use forge_tts_core::TtsRegistry;
-pub use forge_tts_pipeline::EmoteTokenSet;
+pub use forge_tts_pipeline::{EmoteTokenSet, EmoteTreatment};
 use forge_types::Shared;
 pub use voice::{AliasKey, ResolveResult, VoiceAliasResolver, VoiceSkip};
 
@@ -86,6 +87,7 @@ pub enum SpeakCommand {
     },
     SetStrategy(AssignmentStrategy),
     SetVolume(f32),
+    SetRepeatWindow(NonZeroUsize),
     SetEngineParams(EngineId, SynthesisDefaults, f32),
     RemoveAlias(AliasId),
     RefreshVoiceCatalog,
@@ -168,6 +170,7 @@ pub struct QueueConfig {
     pub per_user_limit: usize,
     pub master_volume: f32,
     pub timeout_per_item: Duration,
+    pub repeat_window: NonZeroUsize,
 }
 
 const DEFAULT_MAX_QUEUE_LEN: usize = 100;
@@ -182,6 +185,7 @@ impl Default for QueueConfig {
             per_user_limit: DEFAULT_PER_USER_LIMIT,
             master_volume: DEFAULT_MASTER_VOLUME,
             timeout_per_item: DEFAULT_SYNTHESIS_TIMEOUT,
+            repeat_window: repeat_window(&forge_storage::TtsPipelineSettings::default()),
         }
     }
 }

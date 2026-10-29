@@ -151,6 +151,7 @@ mod tests {
             ("user_name", "Viewer One"),
             ("message_text", "hello world"),
             ("message_id", "LCC.msg-1"),
+            ("chat.message_id", "LCC.msg-1"),
         ] {
             assert_eq!(
                 stack.get(name),

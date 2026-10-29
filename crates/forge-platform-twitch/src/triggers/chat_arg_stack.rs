@@ -130,6 +130,8 @@ mod tests {
             ("user_login", "loyalfan"),
             ("user_platform", "twitch"),
             ("message_text", "!quote hello there"),
+            ("message_id", "m-1"),
+            ("chat.message_id", "m-1"),
             ("channel", "streamer"),
             ("user_color", "#FF0000"),
         ];
@@ -165,10 +167,12 @@ mod tests {
                 "user_login",
                 "user_platform",
                 "message_text",
+                "message_id",
                 "channel",
                 "user_color",
                 "first_message",
                 "message_emotes",
+                "chat.message_id",
             ]
         );
     }
@@ -198,6 +202,8 @@ mod tests {
             "user_name",
             "user_login",
             "message_text",
+            "message_id",
+            "chat.message_id",
             "channel",
             "user_color",
         ] {

@@ -88,6 +88,7 @@ fn deleted_by_identity(event: &Event) -> ActorIdentity {
 mod tests {
     use super::*;
 
+    use forge_types::Variant;
     use serde_json::json;
 
     fn a_deletion_by_a_named_moderator() -> Event {
@@ -109,6 +110,7 @@ mod tests {
             ("user_login", "the_mod"),
             ("user_name", "the_mod"),
             ("message_id", "msg-uuid-999"),
+            ("chat.message_id", "msg-uuid-999"),
         ] {
             assert_eq!(
                 stack.get(name),
@@ -128,6 +130,7 @@ mod tests {
         assert_eq!(
             published,
             vec![
+                "chat.message_id".to_owned(),
                 "deleted_by_id".to_owned(),
                 "message_id".to_owned(),
                 "user_id".to_owned(),

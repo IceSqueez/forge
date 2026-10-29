@@ -232,10 +232,13 @@ mod tests {
                 Some(&Variant::String(expected_reply.to_owned())),
                 "reply wire {reply_wire}"
             );
-            assert_eq!(
-                stack.get("message_id"),
-                Some(&Variant::String("msg-1".to_owned()))
-            );
+            for name in ["message_id", "chat.message_id"] {
+                assert_eq!(
+                    stack.get(name),
+                    Some(&Variant::String("msg-1".to_owned())),
+                    "'{name}'"
+                );
+            }
             assert_eq!(
                 stack.get("color"),
                 Some(&Variant::String("#00FF00".to_owned()))

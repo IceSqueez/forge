@@ -78,6 +78,7 @@ impl TriggerKindDescriptor for ChatMessageDeletedDescriptor {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use forge_types::Variant;
     use serde_json::json;
 
     fn deleted_event(payload: serde_json::Value) -> Event {
@@ -94,10 +95,13 @@ mod tests {
 
         let stack = ChatMessageDeletedDescriptor.build_arg_stack(&event);
 
-        assert_eq!(
-            stack.get("chat.message_id"),
-            Some(&Variant::String("msg-removed-1".to_owned()))
-        );
+        for name in ["message_id", "chat.message_id"] {
+            assert_eq!(
+                stack.get(name),
+                Some(&Variant::String("msg-removed-1".to_owned())),
+                "'{name}'"
+            );
+        }
     }
 
     #[test]

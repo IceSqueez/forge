@@ -162,8 +162,20 @@ mod tests {
         )])
     }
 
+    fn chat_trigger_args(message_id: &str) -> ArgStack {
+        let event = Event::new(
+            forge_events::EventSource::Kick,
+            "kick.chat.message.sent",
+            serde_json::json!({ "message_id": message_id, "content": "hello" }),
+        );
+        forge_registry::TriggerKindDescriptor::build_arg_stack(
+            &crate::triggers::chat::ChatDescriptor,
+            &event,
+        )
+    }
+
     #[tokio::test]
-    async fn execute_deletes_interpolated_id_and_reports_success() {
+    async fn default_config_deletes_the_message_that_fired_the_chat_trigger() {
         let server = MockServer::start().await;
         Mock::given(method("DELETE"))
             .and(path("/chat/abc-123"))
@@ -171,42 +183,41 @@ mod tests {
             .expect(1)
             .mount(&server)
             .await;
-
         let runner = runner_on(&server);
-        let stack = ArgStack::new().set("mid".to_owned(), Variant::String("abc-123".to_owned()));
+        let stack = chat_trigger_args("abc-123");
 
-        let (telemetry, _) = runner.execute(&config("%mid%"), &make_ctx(&stack)).await;
+        let (telemetry, _) = runner
+            .execute(&runner.default_config(), &make_ctx(&stack))
+            .await;
 
         assert_eq!(telemetry.outcome, SubActionOutcome::Success);
     }
 
     #[tokio::test]
-    async fn empty_message_id_after_interpolation_fails_without_request() {
-        let server = MockServer::start().await;
-        let runner = runner_on(&server);
-        let stack = ArgStack::new().set("mid".to_owned(), Variant::String(String::new()));
+    async fn a_message_id_that_does_not_resolve_to_an_id_fails_without_request() {
+        for (case, template, stack) in [
+            ("empty id", "%message_id%", chat_trigger_args("")),
+            ("no chat trigger in scope", "%message_id%", ArgStack::new()),
+            (
+                "unresolved reference beside a resolved one",
+                "%message_id%-%typo_id%",
+                chat_trigger_args("abc-123"),
+            ),
+        ] {
+            let server = MockServer::start().await;
+            let runner = runner_on(&server);
 
-        let (telemetry, _) = runner.execute(&config("%mid%"), &make_ctx(&stack)).await;
+            let (telemetry, _) = runner.execute(&config(template), &make_ctx(&stack)).await;
 
-        assert!(matches!(telemetry.outcome, SubActionOutcome::Failed(_)));
-        assert!(
-            server.received_requests().await.unwrap().is_empty(),
-            "empty message_id must not reach the delete transport"
-        );
-    }
-
-    #[test]
-    fn default_config_message_id_matches_chat_trigger_arg_stack_key() {
-        let runner = DeleteMessageRunner::new(
-            Arc::new(KickSendChat::new(
-                crate::endpoints_test_support::unreachable_api(),
-            )),
-            token_source(),
-        );
-        assert_eq!(
-            runner.default_config().get("message_id"),
-            Some(&Variant::String("%message_id%".to_owned()))
-        );
+            assert!(
+                matches!(telemetry.outcome, SubActionOutcome::Failed(_)),
+                "{case}"
+            );
+            assert!(
+                server.received_requests().await.unwrap().is_empty(),
+                "{case}"
+            );
+        }
     }
 
     #[test]

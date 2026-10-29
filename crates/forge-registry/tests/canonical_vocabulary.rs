@@ -25,6 +25,7 @@ const CANONICAL_ROSTER: &[(&str, VariantKind)] = &[
     ("recipient_login", VariantKind::String),
     ("recipient_platform", VariantKind::String),
     ("message_text", VariantKind::String),
+    ("message_id", VariantKind::String),
     ("viewer_count", VariantKind::Int),
     ("bits_amount", VariantKind::Int),
     ("gift_count", VariantKind::Int),
@@ -109,6 +110,18 @@ fn the_canonical_vocabulary_is_this_roster_of_names_and_kinds_in_this_order() {
         .map(|canonical| (canonical.name(), canonical.kind()))
         .collect();
     assert_eq!(actual, CANONICAL_ROSTER);
+}
+
+#[test]
+fn every_canonical_variable_holds_a_distinct_place_in_the_declaration_order() {
+    let orders: Vec<u16> = CanonicalVariable::all()
+        .into_iter()
+        .map(CanonicalVariable::order)
+        .collect();
+    assert!(
+        orders.windows(2).all(|pair| pair[0] < pair[1]),
+        "{orders:?}"
+    );
 }
 
 #[test]
@@ -345,5 +358,36 @@ fn an_amount_beyond_the_int_range_saturates_the_micros_slot_instead_of_wrapping(
     assert_eq!(
         money_value(MoneySlot::AmountMicros, Some(&huge)),
         Variant::Int(i64::MAX)
+    );
+}
+
+#[test]
+fn a_chat_message_id_publishes_the_canonical_name_and_a_legacy_alias_deferring_to_it() {
+    let variables = TriggerVariables::new().chat_message_id(|_| "msg-7".to_owned());
+    let stack = variables.arg_stack(&no_payload());
+    for name in ["message_id", "chat.message_id"] {
+        assert_eq!(
+            stack.get(name),
+            Some(&Variant::String("msg-7".to_owned())),
+            "'{name}'"
+        );
+    }
+    let standings: Vec<(String, VariableStanding)> = variables
+        .declarations()
+        .into_iter()
+        .map(|variable| (variable.declared.name.clone(), variable.standing))
+        .collect();
+    assert_eq!(
+        standings,
+        [
+            (
+                "message_id".to_owned(),
+                VariableStanding::Canonical(CanonicalVariable::MessageId)
+            ),
+            (
+                "chat.message_id".to_owned(),
+                VariableStanding::Legacy(CanonicalVariable::MessageId)
+            ),
+        ]
     );
 }

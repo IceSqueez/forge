@@ -465,6 +465,30 @@ pub(crate) mod test_support {
         fn publish(&self, _: Event) {}
     }
 
+    pub(crate) fn chat_trigger_args(message_id: &str) -> ArgStack {
+        let event = Event::new(
+            forge_events::EventSource::Twitch,
+            crate::vocabulary::event_kinds::CHANNEL_CHAT_MESSAGE,
+            serde_json::json!({
+                (forge_types::ChatPayload::KEY): {
+                    "platform_msg_id": message_id,
+                    "author": "loyalfan",
+                    "author_color": null,
+                    "segments": [],
+                    "badges": [],
+                    "is_event": false,
+                    "event_detail": null,
+                },
+            }),
+        );
+        let mut registry = forge_registry::TriggerRegistry::new();
+        crate::triggers::register_twitch_triggers(&mut registry).unwrap();
+        registry
+            .get(crate::vocabulary::trigger_ids::CHAT_MESSAGE)
+            .unwrap()
+            .build_arg_stack(&event)
+    }
+
     pub(crate) fn make_ctx(stack: &ArgStack) -> RunContext<'_> {
         RunContext::leaf(stack, 0, EventId::new(), &NoopPublisher)
     }

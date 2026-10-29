@@ -198,7 +198,7 @@ mod tests {
     use super::*;
     use crate::helix::{HelixError, HelixMethod};
     use crate::sub_actions::test_support::{
-        MockCreds, MockTransport, SELF_USER_ID, TOKEN_SENTINEL, make_ctx,
+        MockCreds, MockTransport, SELF_USER_ID, TOKEN_SENTINEL, chat_trigger_args, make_ctx,
     };
 
     fn runner_with(
@@ -227,18 +227,19 @@ mod tests {
         ])
     }
 
+    fn default_config_saying(runner: &ReplyChatRunner, message: &str) -> SubActionConfig {
+        let mut config = runner.default_config();
+        config.insert("message".to_owned(), Variant::String(message.to_owned()));
+        config
+    }
+
     #[tokio::test]
-    async fn execute_posts_reply_with_broadcaster_and_sender_both_as_self() {
+    async fn default_config_replies_to_the_message_that_fired_the_chat_trigger_as_self() {
         let (transport, runner) = runner_with(sent(), MockCreds::with_identity());
-        let stack = ArgStack::new()
-            .set("msg".to_owned(), Variant::String("hello!".to_owned()))
-            .set(
-                "parent_id".to_owned(),
-                Variant::String("msg-abc-123".to_owned()),
-            );
+        let stack = chat_trigger_args("msg-abc-123");
 
         let (telemetry, _) = runner
-            .execute(&config("%msg%", "%parent_id%"), &make_ctx(&stack))
+            .execute(&default_config_saying(&runner, "hello!"), &make_ctx(&stack))
             .await;
 
         assert_eq!(telemetry.outcome, SubActionOutcome::Success);
@@ -253,42 +254,43 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn empty_interpolated_message_or_parent_id_fails_before_transport_call() {
-        let cases: &[(&str, &str, &str, &str)] = &[
+    async fn a_reply_without_text_or_a_resolved_parent_fails_before_transport_call() {
+        let unresolved = ArgStack::new();
+        let empty_id = chat_trigger_args("");
+        let with_parent = chat_trigger_args("msg-abc-123");
+        let cases: [(&str, &str, &str, &ArgStack); 4] = [
+            ("empty message", "%m%", "%message_id%", &with_parent),
+            ("empty parent id", "hello", "%message_id%", &empty_id),
             (
-                "%m%",
-                "fixed-parent",
-                "",
-                "empty message after interpolation",
+                "no chat trigger in scope",
+                "hello",
+                "%message_id%",
+                &unresolved,
             ),
             (
-                "fixed text",
-                "%p%",
-                "",
-                "empty parent_message_id after interpolation",
+                "unresolved reference beside a resolved one",
+                "hello",
+                "%message_id%-%typo_id%",
+                &with_parent,
             ),
         ];
 
-        for (msg_tpl, parent_tpl, var_val, label) in cases {
+        for (case, message, parent, stack) in cases {
             let (transport, runner) =
                 runner_with(Ok(serde_json::Value::Null), MockCreds::with_identity());
-            let stack = ArgStack::new()
-                .set("m".to_owned(), Variant::String((*var_val).to_owned()))
-                .set("p".to_owned(), Variant::String((*var_val).to_owned()));
+            let stack = stack
+                .clone()
+                .set("m".to_owned(), Variant::String(String::new()));
 
             let (telemetry, _) = runner
-                .execute(&config(msg_tpl, parent_tpl), &make_ctx(&stack))
+                .execute(&config(message, parent), &make_ctx(&stack))
                 .await;
 
             assert!(
                 matches!(telemetry.outcome, SubActionOutcome::Failed(_)),
-                "expected Failed for case: {label}"
+                "{case}"
             );
-            assert_eq!(
-                transport.call_count(),
-                0,
-                "transport must not be called for case: {label}"
-            );
+            assert_eq!(transport.call_count(), 0, "{case}");
         }
     }
 

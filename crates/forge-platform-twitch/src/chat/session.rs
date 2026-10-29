@@ -4676,6 +4676,43 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn every_chat_line_trigger_publishes_the_eventsub_message_id_of_the_ingested_line() {
+        let bus = Arc::new(EventChannel::new(EVENT_CHANNEL_CAPACITY));
+        let session = make_session(&bus);
+        let sub = bus.subscribe();
+        session.publish_chat_message(&serde_json::json!({
+            "broadcaster_user_id": "bcast",
+            "broadcaster_user_login": "streamer",
+            "chatter_user_id": "222",
+            "chatter_user_login": "loyalfan",
+            "chatter_user_name": "LoyalFan",
+            "message_id": "cc106a89-1814-919d-454c-f4f2f970aae7",
+            "message": { "text": "!quote cheer100 hello" },
+            "cheer": { "bits": 100 },
+            "source_broadcaster_user_id": "other",
+            "source_broadcaster_user_login": "other_chan",
+            "source_broadcaster_user_name": "OtherChan",
+        }));
+        let event = published(sub).await;
+
+        let mut registry = forge_registry::TriggerRegistry::new();
+        crate::triggers::register_twitch_triggers(&mut registry).unwrap();
+        let expected =
+            forge_types::Variant::String("cc106a89-1814-919d-454c-f4f2f970aae7".to_owned());
+        for trigger in [
+            crate::vocabulary::trigger_ids::CHAT_MESSAGE,
+            crate::vocabulary::trigger_ids::CHAT_COMMAND,
+            crate::vocabulary::trigger_ids::CHAT_CHEER_MESSAGE,
+            crate::vocabulary::trigger_ids::SHARED_CHAT_MESSAGE_RECEIVED,
+        ] {
+            let stack = registry.get(trigger).unwrap().build_arg_stack(&event);
+            for name in ["message_id", "chat.message_id"] {
+                assert_eq!(stack.get(name), Some(&expected), "'{trigger}' '{name}'");
+            }
+        }
+    }
+
+    #[tokio::test]
     async fn a_chat_message_without_a_display_name_carries_the_login_in_its_place() {
         for absent in [serde_json::json!(""), serde_json::json!(null)] {
             let bus = Arc::new(EventChannel::new(EVENT_CHANNEL_CAPACITY));

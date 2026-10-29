@@ -99,6 +99,7 @@ fn deleted_author_identity(event: &Event) -> ActorIdentity {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use forge_types::Variant;
 
     fn message_delete_event() -> Event {
         Event::new(
@@ -116,30 +117,20 @@ mod tests {
     }
 
     #[test]
-    fn event_filter_gates_on_message_delete_kind_prefix() {
-        let filter = ChatMessageDeletedDescriptor.event_filter();
-        assert_eq!(
-            filter.kind_prefix.as_deref(),
-            Some("twitch.channel.chat.message_delete")
-        );
-        assert_eq!(filter.source, Some(EventSource::Twitch));
-    }
-
-    #[test]
     fn build_arg_stack_maps_message_id_and_target_user_from_nested_payload() {
         let stack = ChatMessageDeletedDescriptor.build_arg_stack(&message_delete_event());
-        assert_eq!(
-            stack.get("chat.message_id"),
-            Some(&Variant::String("msg-abc-123".to_owned()))
-        );
-        assert_eq!(
-            stack.get("chat.target_user.login"),
-            Some(&Variant::String("spammer_user".to_owned()))
-        );
-        assert_eq!(
-            stack.get("chat.target_user.id"),
-            Some(&Variant::String("9001".to_owned()))
-        );
+        for (name, value) in [
+            ("message_id", "msg-abc-123"),
+            ("chat.message_id", "msg-abc-123"),
+            ("chat.target_user.login", "spammer_user"),
+            ("chat.target_user.id", "9001"),
+        ] {
+            assert_eq!(
+                stack.get(name),
+                Some(&Variant::String(value.to_owned())),
+                "'{name}'"
+            );
+        }
     }
 
     #[test]
@@ -150,17 +141,17 @@ mod tests {
             serde_json::json!({}),
         );
         let stack = ChatMessageDeletedDescriptor.build_arg_stack(&event);
-        assert_eq!(
-            stack.get("chat.message_id"),
-            Some(&Variant::String(String::new()))
-        );
-        assert_eq!(
-            stack.get("chat.target_user.login"),
-            Some(&Variant::String(String::new()))
-        );
-        assert_eq!(
-            stack.get("chat.target_user.id"),
-            Some(&Variant::String(String::new()))
-        );
+        for name in [
+            "message_id",
+            "chat.message_id",
+            "chat.target_user.login",
+            "chat.target_user.id",
+        ] {
+            assert_eq!(
+                stack.get(name),
+                Some(&Variant::String(String::new())),
+                "'{name}'"
+            );
+        }
     }
 }

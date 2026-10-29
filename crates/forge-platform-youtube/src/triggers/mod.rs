@@ -100,6 +100,8 @@ mod tests {
             actor(ActorSlot::Name)
         } else if ends(&["login", "username"]) {
             actor(ActorSlot::Login)
+        } else if ends(&["message_id"]) {
+            Some(CanonicalVariable::MessageId)
         } else if ends(&["id"]) {
             actor(ActorSlot::Id)
         } else if ends(&["bits"]) {

@@ -307,6 +307,7 @@ mod tests {
             ("user_name", "Viewer"),
             ("message_text", "!roll 1d6"),
             ("message_id", "LCC.cmd-1"),
+            ("chat.message_id", "LCC.cmd-1"),
         ] {
             assert_eq!(
                 stack.get(name),

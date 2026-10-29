@@ -140,7 +140,7 @@ mod tests {
     use super::*;
     use crate::helix::HelixError;
     use crate::sub_actions::test_support::{
-        MockCreds, MockTransport, SELF_USER_ID, TOKEN_SENTINEL, make_ctx,
+        MockCreds, MockTransport, SELF_USER_ID, TOKEN_SENTINEL, chat_trigger_args, make_ctx,
     };
 
     fn runner_with(
@@ -163,57 +163,64 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn execute_deletes_interpolated_message_id_as_self_moderator() {
+    async fn default_config_deletes_the_message_that_fired_the_chat_trigger_as_self_moderator() {
         let (transport, runner) =
             runner_with(Ok(serde_json::Value::Null), MockCreds::with_identity());
-        let stack = ArgStack::new().set(
-            "chat.message_id".to_owned(),
-            Variant::String("abc-123".to_owned()),
-        );
+        let stack = chat_trigger_args("abc-123");
 
         let (telemetry, _) = runner
-            .execute(&config("%chat.message_id%"), &make_ctx(&stack))
+            .execute(&runner.default_config(), &make_ctx(&stack))
             .await;
 
         assert_eq!(telemetry.outcome, SubActionOutcome::Success);
         let request = transport.last_request();
         assert_eq!(request.method, HelixMethod::Delete);
         assert_eq!(request.path, "/helix/moderation/chat");
-        assert!(
-            request
-                .query
-                .contains(&("broadcaster_id".to_owned(), SELF_USER_ID.to_owned()))
-        );
-        assert!(
-            request
-                .query
-                .contains(&("moderator_id".to_owned(), SELF_USER_ID.to_owned()))
-        );
-        assert!(
-            request
-                .query
-                .contains(&("message_id".to_owned(), "abc-123".to_owned())),
-            "message_id query must carry the interpolated value"
-        );
+        for (key, value) in [
+            ("broadcaster_id", SELF_USER_ID),
+            ("moderator_id", SELF_USER_ID),
+            ("message_id", "abc-123"),
+        ] {
+            assert!(
+                request.query.contains(&(key.to_owned(), value.to_owned())),
+                "query '{key}'"
+            );
+        }
     }
 
     #[tokio::test]
-    async fn empty_message_id_after_interpolation_fails_without_transport_call() {
+    async fn a_message_id_that_does_not_resolve_to_an_id_fails_without_a_helix_call() {
+        for (case, stack) in [
+            ("empty id", chat_trigger_args("")),
+            ("no chat trigger in scope", ArgStack::new()),
+        ] {
+            let (transport, runner) =
+                runner_with(Ok(serde_json::Value::Null), MockCreds::with_identity());
+
+            let (telemetry, _) = runner
+                .execute(&runner.default_config(), &make_ctx(&stack))
+                .await;
+
+            assert!(
+                matches!(telemetry.outcome, SubActionOutcome::Failed(_)),
+                "{case}"
+            );
+            assert_eq!(transport.call_count(), 0, "{case}");
+        }
+    }
+
+    #[tokio::test]
+    async fn a_partially_resolved_message_id_fails_without_a_helix_call() {
         let (transport, runner) =
             runner_with(Ok(serde_json::Value::Null), MockCreds::with_identity());
-        let stack =
-            ArgStack::new().set("chat.message_id".to_owned(), Variant::String(String::new()));
+        let stack = chat_trigger_args("abc-123");
 
         let (telemetry, _) = runner
-            .execute(&config("%chat.message_id%"), &make_ctx(&stack))
+            .execute(&config("%message_id%-%typo_id%"), &make_ctx(&stack))
             .await;
 
         assert!(matches!(telemetry.outcome, SubActionOutcome::Failed(_)));
-        assert_eq!(
-            transport.call_count(),
-            0,
-            "empty message_id must not reach Helix"
-        );
+        assert_eq!(transport.call_count(), 0);
     }
 
     #[tokio::test]

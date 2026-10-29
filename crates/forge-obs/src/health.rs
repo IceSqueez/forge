@@ -262,13 +262,15 @@ mod tests {
     }
 
     #[test]
-    fn metrics_expose_the_four_cards_the_health_delta_indices_address() {
+    fn metrics_declare_unique_ids() {
         let client = ObsClient::new_for_test("localhost:4455".to_owned());
-        let metrics = client.metrics();
-        let labels: Vec<&str> = metrics.iter().map(|m| m.label.as_str()).collect();
-        assert_eq!(
-            labels,
-            vec!["Stream", "Recording", "CPU \u{00b7} FPS", "Dropped"]
-        );
+
+        let ids: std::collections::HashSet<_> = client
+            .metrics()
+            .into_iter()
+            .map(|metric| metric.id)
+            .collect();
+
+        assert_eq!(ids.len(), 4);
     }
 }

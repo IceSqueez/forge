@@ -457,7 +457,8 @@ mod tests {
 
     use forge_platform_core::{
         BuiltinContent, BuiltinHealth, BuiltinStatus, CapabilityFlags, ConnectionState,
-        DetailSection, HeaderAction, HealthMetric, HealthStream, QuickAction, QuickActions,
+        DetailSection, HeaderAction, HealthMetric, HealthMetricId, HealthStream, QuickAction,
+        QuickActions,
     };
     use forge_types::IntegrationId;
 
@@ -647,10 +648,18 @@ mod tests {
         }
     }
 
+    const STUB_METRIC_IDS: [HealthMetricId; 4] = [
+        HealthMetricId::new("metric0"),
+        HealthMetricId::new("metric1"),
+        HealthMetricId::new("metric2"),
+        HealthMetricId::new("metric3"),
+    ];
+
     impl BuiltinHealth for ProbeBuiltin {
         fn metrics(&self) -> [HealthMetric; 4] {
             std::array::from_fn(|i| HealthMetric {
-                label: format!("metric{i}"),
+                id: STUB_METRIC_IDS[i].clone(),
+                label: format!("Shown label {i}"),
                 value: HealthValue::Text {
                     primary: SECRET.to_owned(),
                     secondary: None,
@@ -692,6 +701,21 @@ mod tests {
                 "health metric {label}={shape} leaked the probe value",
             );
         }
+    }
+
+    #[test]
+    fn integration_facts_key_health_by_the_stable_metric_id_not_the_shown_label() {
+        let registry = BuiltinRegistry::default();
+        registry.install(ProbeBuiltin::object("probe"));
+
+        let keys: Vec<String> = integration_facts(&registry)
+            .remove(0)
+            .health
+            .into_iter()
+            .map(|(key, _)| key)
+            .collect();
+
+        assert_eq!(keys, ["metric0", "metric1", "metric2", "metric3"]);
     }
 
     #[test]

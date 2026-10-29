@@ -993,7 +993,7 @@ pub(crate) mod tests {
         match client
             .metrics()
             .into_iter()
-            .nth(usize::from(crate::health::BACKEND_METRIC_INDEX))?
+            .find(|metric| metric.id == crate::health::BACKEND_METRIC)?
             .value
         {
             HealthValue::Status { active, detail, .. } => Some((active, detail)),
@@ -1083,7 +1083,7 @@ pub(crate) mod tests {
             .unwrap();
         let delta = stream.next().await.unwrap();
 
-        assert_eq!(delta.index, crate::health::BACKEND_METRIC_INDEX);
+        assert_eq!(delta.metric, crate::health::BACKEND_METRIC);
         assert!(matches!(
             delta.new_value,
             HealthValue::Status { active: false, detail: Some(ref d), .. } if d == "bind failed"

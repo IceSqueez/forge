@@ -170,8 +170,8 @@ mod tests {
     use forge_components::{DateShape, FORGE_DEFAULT, fmt_display, tr};
     use forge_platform_core::{
         BuiltinContent, BuiltinHealth, BuiltinStatus, CapabilityFlags, ConnectionState,
-        DetailSection, FollowLookup, FollowStatus, HeaderAction, HealthMetric, HealthStream,
-        HealthValue, QuickAction, QuickActions, SectionIcon,
+        DetailSection, FollowLookup, FollowStatus, HeaderAction, HealthMetric, HealthMetricId,
+        HealthStream, HealthValue, QuickAction, QuickActions, SectionIcon,
     };
     use forge_storage::chat_history::MockChatHistoryRepo;
     use forge_storage::voice_aliases::MockVoiceAliasRepo;
@@ -225,9 +225,17 @@ mod tests {
         }
     }
 
+    const STUB_METRIC_IDS: [HealthMetricId; 4] = [
+        HealthMetricId::new("metric0"),
+        HealthMetricId::new("metric1"),
+        HealthMetricId::new("metric2"),
+        HealthMetricId::new("metric3"),
+    ];
+
     impl BuiltinHealth for StubBuiltin {
         fn metrics(&self) -> [HealthMetric; 4] {
             std::array::from_fn(|i| HealthMetric {
+                id: STUB_METRIC_IDS[i].clone(),
                 label: format!("metric{i}"),
                 value: HealthValue::Text {
                     primary: String::new(),

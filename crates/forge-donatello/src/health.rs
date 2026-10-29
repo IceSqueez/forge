@@ -89,3 +89,23 @@ impl BuiltinHealth for DonatelloProvider {
         Box::pin(BroadcastStream::new(self.status.subscribe_health()).filter_map(Result::ok))
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use std::collections::HashSet;
+    use std::time::Duration;
+
+    use super::*;
+
+    #[test]
+    fn metrics_declare_unique_ids() {
+        let status = crate::status::StatusBoard::new(Duration::from_secs(30)).snapshot();
+
+        let ids: HashSet<_> = metrics(&status)
+            .into_iter()
+            .map(|metric| metric.id)
+            .collect();
+
+        assert_eq!(ids.len(), 4);
+    }
+}

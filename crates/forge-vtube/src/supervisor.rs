@@ -1163,7 +1163,7 @@ mod tests {
         use std::sync::atomic::Ordering;
         use std::time::Duration;
 
-        use forge_platform_core::{BuiltinControl, BuiltinHealth, HealthValue};
+        use forge_platform_core::{BuiltinControl, BuiltinHealth, HealthMetricId, HealthValue};
         use serde_json::json;
 
         use super::super::{
@@ -1217,11 +1217,11 @@ mod tests {
                 .any(|e| e.kind == "vtube.hotkey.triggered" && e.payload["hotkey_id"] == hotkey_id)
         }
 
-        fn metric(client: &VTubeClient, label: &str) -> HealthValue {
+        fn metric(client: &VTubeClient, id: &HealthMetricId) -> HealthValue {
             client
                 .metrics()
                 .into_iter()
-                .find(|m| m.label == label)
+                .find(|m| &m.id == id)
                 .unwrap()
                 .value
         }
@@ -1455,19 +1455,14 @@ mod tests {
 
             assert!(
                 wait_until(SETTLE, || matches!(
-                    metric(&client, "TRACKING"),
+                    metric(&client, &crate::health::TRACKING_METRIC),
                     HealthValue::Status { active: true, .. }
                 ))
                 .await,
                 "the face seed never reached the TRACKING tile"
             );
-            let model_index = client
-                .metrics()
-                .iter()
-                .position(|m| m.label == "MODEL")
-                .unwrap();
             let model_delta = std::iter::from_fn(|| deltas.try_recv().ok())
-                .find(|d| usize::from(d.index) == model_index)
+                .find(|d| d.metric == crate::health::MODEL_METRIC)
                 .map(|d| d.new_value);
             assert_eq!(
                 model_delta,
@@ -1486,7 +1481,7 @@ mod tests {
             answer_seeds(&mut conn).await;
             assert!(
                 wait_until(SETTLE, || matches!(
-                    metric(&client, "TRACKING"),
+                    metric(&client, &crate::health::TRACKING_METRIC),
                     HealthValue::Status { active: true, .. }
                 ))
                 .await,
@@ -1502,7 +1497,10 @@ mod tests {
                 "precondition: the session must end"
             );
             assert_eq!(
-                (metric(&client, "MODEL"), metric(&client, "TRACKING")),
+                (
+                    metric(&client, &crate::health::MODEL_METRIC),
+                    metric(&client, &crate::health::TRACKING_METRIC)
+                ),
                 (
                     HealthValue::Text {
                         primary: "\u{2014}".to_owned(),

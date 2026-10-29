@@ -2145,9 +2145,17 @@ mod tests {
             }
         }
 
+        const STUB_METRIC_IDS: [HealthMetricId; 4] = [
+            HealthMetricId::new("metric0"),
+            HealthMetricId::new("metric1"),
+            HealthMetricId::new("metric2"),
+            HealthMetricId::new("metric3"),
+        ];
+
         impl BuiltinHealth for ShiftingActions {
             fn metrics(&self) -> [HealthMetric; 4] {
                 std::array::from_fn(|i| HealthMetric {
+                    id: STUB_METRIC_IDS[i].clone(),
                     label: format!("metric{i}"),
                     value: HealthValue::Text {
                         primary: String::new(),
@@ -2264,6 +2272,98 @@ mod tests {
             cx.run_until_parked();
 
             assert_eq!(shown_labels(cx, &view), vec!["End Shield mode".to_owned()]);
+        }
+
+        fn shown_metric_values(
+            cx: &mut TestAppContext,
+            view: &Entity<IntegrationDetail>,
+        ) -> Vec<HealthValue> {
+            view.read_with(cx, |detail, _| {
+                detail
+                    .health_metrics
+                    .iter()
+                    .map(|metric| metric.value.clone())
+                    .collect()
+            })
+        }
+
+        fn live_value() -> HealthValue {
+            HealthValue::Text {
+                primary: "42".to_owned(),
+                secondary: None,
+            }
+        }
+
+        #[gpui::test]
+        fn a_health_delta_replaces_only_the_metric_it_names(cx: &mut TestAppContext) {
+            let rt = runtime();
+            let _enter = rt.enter();
+            let view = open_detail(cx, &rt, ShiftingActions::labelled("idle").object());
+            let mut expected = shown_metric_values(cx, &view);
+            expected[2] = live_value();
+
+            view.update(cx, |detail, cx| {
+                detail.apply_health_delta(
+                    HealthDelta {
+                        metric: STUB_METRIC_IDS[2].clone(),
+                        new_value: live_value(),
+                    },
+                    cx,
+                );
+            });
+
+            assert_eq!(shown_metric_values(cx, &view), expected);
+        }
+
+        #[gpui::test]
+        fn a_health_delta_for_an_undeclared_metric_leaves_every_metric_unchanged(
+            cx: &mut TestAppContext,
+        ) {
+            let rt = runtime();
+            let _enter = rt.enter();
+            let view = open_detail(cx, &rt, ShiftingActions::labelled("idle").object());
+            let before = shown_metric_values(cx, &view);
+
+            view.update(cx, |detail, cx| {
+                detail.apply_health_delta(
+                    HealthDelta {
+                        metric: HealthMetricId::new("not_declared"),
+                        new_value: live_value(),
+                    },
+                    cx,
+                );
+            });
+
+            assert_eq!(shown_metric_values(cx, &view), before);
+        }
+
+        #[gpui::test]
+        fn the_viewer_trend_lands_on_the_metric_declared_as_viewers_whatever_its_label(
+            cx: &mut TestAppContext,
+        ) {
+            let rt = runtime();
+            let _enter = rt.enter();
+            let view = open_detail(cx, &rt, ShiftingActions::labelled("idle").object());
+
+            let augmented = view.update(cx, |detail, _| {
+                detail.health_metrics[1].id = HealthMetricId::VIEWERS;
+                detail.health_metrics[1].label = "Zuschauer".to_owned();
+                detail.augmented_health()
+            });
+
+            let trends: Vec<bool> = augmented
+                .iter()
+                .map(|metric| {
+                    matches!(
+                        &metric.value,
+                        HealthValue::Text {
+                            secondary: Some(_),
+                            ..
+                        }
+                    )
+                })
+                .collect();
+            assert_eq!(trends, [false, true, false, false]);
         }
 
         #[gpui::test]

@@ -595,6 +595,7 @@ mod tests {
     #[test]
     fn health_metric_serde_roundtrip() {
         let metric = HealthMetric {
+            id: HealthMetricId::new("chat"),
             label: "Chat".to_owned(),
             value: HealthValue::Status {
                 label: "Connected".to_owned(),
@@ -645,18 +646,19 @@ mod tests {
     }
 
     #[test]
-    fn health_delta_serde_roundtrip() {
+    fn health_delta_metric_id_travels_as_bare_string_and_matches_declared_const() {
         let delta = HealthDelta {
-            index: 2,
+            metric: HealthMetricId::VIEWERS,
             new_value: HealthValue::Ratio {
                 used: 450,
                 total: 800,
                 reset_hint: None,
             },
         };
-        let json = serde_json::to_string(&delta).unwrap();
-        let back: HealthDelta = serde_json::from_str(&json).unwrap();
-        assert_eq!(back.index, delta.index);
+        let json = serde_json::to_value(&delta).unwrap();
+        assert_eq!(json["metric"], serde_json::json!("viewers"));
+        let back: HealthDelta = serde_json::from_value(json).unwrap();
+        assert_eq!(back.metric, HealthMetricId::VIEWERS);
         assert_eq!(back.new_value, delta.new_value);
     }
 

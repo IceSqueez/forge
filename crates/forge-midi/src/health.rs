@@ -134,12 +134,14 @@ mod tests {
     use super::*;
     use crate::client::MidiClient;
 
-    #[tokio::test]
-    async fn stream_is_subscribable() {
+    #[test]
+    fn metrics_declare_unique_ids() {
         let c = MidiClient::new_for_test();
-        let h: &dyn BuiltinHealth = &*c;
-        let items: Vec<_> = h.stream().take(0).collect().await;
-        assert!(items.is_empty());
+
+        let ids: std::collections::HashSet<_> =
+            c.metrics().into_iter().map(|metric| metric.id).collect();
+
+        assert_eq!(ids.len(), 4);
     }
 
     #[test]
@@ -171,7 +173,11 @@ mod tests {
         c.enabled.store(false, Ordering::Relaxed);
 
         let h: &dyn BuiltinHealth = &*c;
-        let input_metric = &h.metrics()[0];
+        let metrics = h.metrics();
+        let input_metric = metrics
+            .iter()
+            .find(|metric| metric.id == INPUT_PORTS_METRIC)
+            .unwrap();
         assert!(
             matches!(
                 &input_metric.value,

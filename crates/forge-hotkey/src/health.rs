@@ -220,19 +220,66 @@ mod tests {
     use crate::client::tests::{noop_publisher, start_supervised};
     use crate::combo::HotkeyCombo;
 
-    fn text_metric(client: &HotkeyClient, index: usize) -> Option<(String, Option<String>)> {
-        match client.metrics().into_iter().nth(index)?.value {
+    fn text_metric(client: &HotkeyClient, id: &HealthMetricId) -> Option<(String, Option<String>)> {
+        match client
+            .metrics()
+            .into_iter()
+            .find(|metric| &metric.id == id)?
+            .value
+        {
             HealthValue::Text { primary, secondary } => Some((primary, secondary)),
             _ => None,
         }
     }
 
     fn registered_metric(client: &HotkeyClient) -> Option<(String, Option<String>)> {
-        text_metric(client, 0)
+        text_metric(client, &REGISTERED_METRIC)
     }
 
     fn conflicts_metric(client: &HotkeyClient) -> Option<(String, Option<String>)> {
-        text_metric(client, 2)
+        text_metric(client, &CONFLICTS_METRIC)
+    }
+
+    #[tokio::test]
+    async fn metrics_declare_unique_ids() {
+        let (backend, _tx) = MockPortalBackend::new();
+        let client = start_supervised(backend, noop_publisher());
+
+        let ids: std::collections::HashSet<_> = client
+            .metrics()
+            .into_iter()
+            .map(|metric| metric.id)
+            .collect();
+
+        assert_eq!(ids.len(), 4);
+    }
+
+    #[tokio::test]
+    async fn every_streamed_health_delta_targets_a_declared_metric() {
+        use tokio_stream::StreamExt;
+
+        let (backend, _tx) = MockPortalBackend::new();
+        let client = start_supervised(backend, noop_publisher());
+        let declared: Vec<_> = client
+            .metrics()
+            .into_iter()
+            .map(|metric| metric.id)
+            .collect();
+        let mut stream = client.stream();
+        let combo = HotkeyCombo::parse("Ctrl+F2").unwrap();
+        let id = client.register(combo).await.unwrap();
+        client.unregister(id).await.unwrap();
+        client.disable().await.unwrap();
+
+        let mut seen = Vec::new();
+        for _ in 0..3 {
+            seen.push(stream.next().await.unwrap().metric);
+        }
+        seen.push(build_trigger_delta(&HotkeyHealthSnapshot::default()).metric);
+
+        for id in &seen {
+            assert!(declared.contains(id), "undeclared {id}");
+        }
     }
 
     #[tokio::test]
@@ -302,7 +349,7 @@ mod tests {
         let mut snap = HotkeyHealthSnapshot::default();
         snap.record_trigger("Ctrl+A".to_owned());
         let delta = build_trigger_delta(&snap);
-        assert_eq!(delta.index, 1);
+        assert_eq!(delta.metric, LAST_TRIGGERED_METRIC);
         assert!(matches!(
             delta.new_value,
             HealthValue::Text { ref primary, .. } if primary.contains("Ctrl+A")

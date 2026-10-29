@@ -1150,16 +1150,15 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn metrics_are_ordered_livechat_events_viewers_apicalls() {
+    async fn metrics_declare_unique_ids() {
         let (bundle, _platform) = make_bundle(Arc::new(EmptyRepo));
-        let metrics = BuiltinHealth::metrics(bundle.as_ref());
 
-        let labels: Vec<&str> = metrics.iter().map(|m| m.label.as_str()).collect();
-        assert_eq!(labels, ["Live Chat", "Events", "Viewers", "API Calls"]);
-        assert!(matches!(metrics[0].value, HealthValue::Status { .. }));
-        assert!(matches!(metrics[1].value, HealthValue::Status { .. }));
-        assert!(matches!(metrics[2].value, HealthValue::Text { .. }));
-        assert!(matches!(metrics[3].value, HealthValue::Ratio { .. }));
+        let ids: std::collections::HashSet<_> = BuiltinHealth::metrics(bundle.as_ref())
+            .into_iter()
+            .map(|metric| metric.id)
+            .collect();
+
+        assert_eq!(ids.len(), 4);
     }
 
     #[tokio::test]
@@ -1238,7 +1237,7 @@ mod tests {
         let delta = tokio::time::timeout(Duration::from_secs(2), async {
             loop {
                 let delta = health.next().await.unwrap();
-                if delta.index == 0 {
+                if delta.metric == LIVE_CHAT_METRIC {
                     return delta;
                 }
             }
@@ -1261,7 +1260,7 @@ mod tests {
         let delta = tokio::time::timeout(Duration::from_secs(2), async {
             loop {
                 let delta = health.next().await.unwrap();
-                if delta.index == 1 {
+                if delta.metric == EVENTS_METRIC {
                     return delta;
                 }
             }

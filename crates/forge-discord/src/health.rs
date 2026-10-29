@@ -285,11 +285,57 @@ mod tests {
 
         let deltas = update_on_send(&mut snap.lock().unwrap(), 50, true, 4, 5, None);
 
-        assert!(deltas.iter().any(|d| d.index == 0), "missing latency delta");
         assert!(
-            deltas.iter().any(|d| d.index == 2),
+            deltas.iter().any(|d| d.metric == LATENCY_METRIC),
+            "missing latency delta"
+        );
+        assert!(
+            deltas.iter().any(|d| d.metric == LAST_SEND_METRIC),
             "missing last-send delta"
         );
+    }
+
+    #[test]
+    fn metrics_declare_unique_ids() {
+        let client = DiscordClient::new_for_test_with_creds(MockCreds::new().creds());
+
+        let ids: std::collections::HashSet<_> = client
+            .metrics()
+            .into_iter()
+            .map(|metric| metric.id)
+            .collect();
+
+        assert_eq!(ids.len(), 4);
+    }
+
+    #[test]
+    fn every_emitted_delta_targets_a_declared_metric() {
+        let client = DiscordClient::new_for_test_with_creds(MockCreds::new().creds());
+        let declared: Vec<_> = client
+            .metrics()
+            .into_iter()
+            .map(|metric| metric.id)
+            .collect();
+        let mut snap = DiscordHealthSnapshot::default();
+
+        let mut deltas = update_on_send(&mut snap, 10, true, 4, 5, None);
+        deltas.extend(update_on_send(
+            &mut snap,
+            20,
+            false,
+            3,
+            5,
+            Some("9".to_owned()),
+        ));
+        deltas.extend(record_missing_webhook(&mut DiscordHealthSnapshot::default()));
+
+        for delta in &deltas {
+            assert!(
+                declared.contains(&delta.metric),
+                "undeclared {}",
+                delta.metric
+            );
+        }
     }
 
     #[test]

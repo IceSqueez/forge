@@ -94,3 +94,22 @@ impl BuiltinHealth for MonobankProvider {
         Box::pin(BroadcastStream::new(self.status.subscribe_health()).filter_map(Result::ok))
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use std::collections::HashSet;
+
+    use super::*;
+
+    #[test]
+    fn metrics_declare_unique_ids() {
+        let status = crate::status::StatusBoard::new().snapshot();
+
+        let ids: HashSet<_> = metrics(&status)
+            .into_iter()
+            .map(|metric| metric.id)
+            .collect();
+
+        assert_eq!(ids.len(), 4);
+    }
+}

@@ -842,7 +842,7 @@ mod tests {
         client.disable_input().await.unwrap();
 
         let delta = stream.next().await.unwrap();
-        assert_eq!(delta.index, 0);
+        assert_eq!(delta.metric, crate::health::INPUT_PORTS_METRIC);
         assert!(
             matches!(
                 &delta.new_value,
@@ -851,6 +851,34 @@ mod tests {
             "delta carried {:?}",
             delta.new_value
         );
+    }
+
+    #[test]
+    fn every_health_delta_producer_targets_a_declared_metric() {
+        use forge_platform_core::BuiltinHealth;
+
+        let client = MidiClient::new_for_test();
+        let declared: Vec<_> = client
+            .metrics()
+            .into_iter()
+            .map(|metric| metric.id)
+            .collect();
+        let mut snap = crate::health::MidiHealthSnapshot {
+            last_note_on_at: Some(time::OffsetDateTime::UNIX_EPOCH),
+            ..Default::default()
+        };
+
+        let mut deltas = super::build_port_count_deltas(&client, &mut snap, 2, 1);
+        deltas.extend(super::build_event_deltas(&mut snap, true));
+
+        assert_eq!(deltas.len(), 4);
+        for delta in &deltas {
+            assert!(
+                declared.contains(&delta.metric),
+                "undeclared {}",
+                delta.metric
+            );
+        }
     }
 
     #[tokio::test]

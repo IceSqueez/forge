@@ -812,6 +812,26 @@ mod tests {
         assert!(actions.contains(&HeaderAction::Disconnect));
     }
 
+    fn metric_value<'a>(metrics: &'a [HealthMetric], id: &HealthMetricId) -> &'a HealthValue {
+        &metrics
+            .iter()
+            .find(|metric| &metric.id == id)
+            .unwrap_or_else(|| panic!("no metric {id}"))
+            .value
+    }
+
+    #[test]
+    fn metrics_declare_unique_ids() {
+        let b = make_bundle(ChatConnectionState::Connected);
+
+        let ids: std::collections::HashSet<_> = BuiltinHealth::metrics(b.as_ref())
+            .into_iter()
+            .map(|metric| metric.id)
+            .collect();
+
+        assert_eq!(ids.len(), 4);
+    }
+
     #[test]
     fn chat_irc_metric_active_when_connected() {
         let b = make_bundle(ChatConnectionState::Connected);
@@ -821,7 +841,7 @@ mod tests {
             active,
             label,
             detail,
-        } = &metrics[0].value
+        } = metric_value(&metrics, &CHAT_METRIC)
         else {
             panic!("expected Status variant");
         };
@@ -835,7 +855,7 @@ mod tests {
         let b = make_bundle(ChatConnectionState::Disconnected);
         let health: &dyn BuiltinHealth = b.as_ref();
         let metrics = health.metrics();
-        let HealthValue::Status { active, label, .. } = &metrics[0].value else {
+        let HealthValue::Status { active, label, .. } = metric_value(&metrics, &CHAT_METRIC) else {
             panic!("expected Status variant");
         };
         assert!(!*active);
@@ -867,7 +887,7 @@ mod tests {
             label,
             active,
             detail,
-        } = &metrics[1].value
+        } = metric_value(&metrics, &EVENTSUB_METRIC)
         else {
             panic!("expected Status variant for EventSub metric");
         };
@@ -891,7 +911,8 @@ mod tests {
         let b = make_bundle_with_tracker(ChatConnectionState::Connected, tracker);
         let health: &dyn BuiltinHealth = b.as_ref();
         let metrics = health.metrics();
-        let HealthValue::Status { label, active, .. } = &metrics[1].value else {
+        let HealthValue::Status { label, active, .. } = metric_value(&metrics, &EVENTSUB_METRIC)
+        else {
             panic!("expected Status variant for EventSub metric");
         };
         assert_eq!(label, "0 subs");
@@ -906,7 +927,8 @@ mod tests {
         let b = make_bundle(ChatConnectionState::Connected);
         let health: &dyn BuiltinHealth = b.as_ref();
         let metrics = health.metrics();
-        let HealthValue::Ratio { used, total, .. } = &metrics[3].value else {
+        let HealthValue::Ratio { used, total, .. } = metric_value(&metrics, &API_CALLS_METRIC)
+        else {
             panic!("expected Ratio variant for the API Calls metric");
         };
         assert_eq!(*used, 0, "a fresh Helix budget has zero consumed calls");
@@ -1613,8 +1635,8 @@ mod tests {
 
             let delta = next_delta(&mut fx.health).await;
             assert_eq!(
-                delta.map(|delta| delta.index),
-                Some(API_CALLS_METRIC_INDEX),
+                delta.map(|delta| delta.metric),
+                Some(API_CALLS_METRIC),
                 "a refresh must emit an API calls delta"
             );
             assert!(

@@ -717,7 +717,12 @@ mod tests {
                 .await
                 .expect("the first catalog sweep must run at startup, not one interval later")
                 .expect("the health channel must stay open");
-            let label = c.metrics()[usize::from(delta.index)].label.clone();
+            let label = c
+                .metrics()
+                .into_iter()
+                .find(|metric| metric.id == delta.metric)
+                .expect("the delta must target a declared metric")
+                .label;
             let HealthValue::Text { primary, .. } = delta.new_value else {
                 panic!("{label} must be published as a text metric");
             };
@@ -758,7 +763,7 @@ mod tests {
         let delta = health_rx
             .try_recv()
             .expect("a freshly landed parameter count must be published");
-        assert_eq!(c.metrics()[usize::from(delta.index)].label, "MODEL");
+        assert_eq!(delta.metric, MODEL_METRIC);
         assert!(matches!(
             delta.new_value,
             HealthValue::Text { ref primary, ref secondary }
@@ -875,7 +880,12 @@ mod tests {
             .await
             .expect("the catalog sweep must publish a health delta")
             .expect("the health channel must stay open");
-        let label = c.metrics()[usize::from(delta.index)].label.clone();
+        let label = c
+            .metrics()
+            .into_iter()
+            .find(|metric| metric.id == delta.metric)
+            .expect("the delta must target a declared metric")
+            .label;
         let HealthValue::Text { primary, secondary } = delta.new_value else {
             panic!("{label} must be published as a text metric");
         };

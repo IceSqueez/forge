@@ -227,7 +227,7 @@ mod tests {
     }
 
     #[test]
-    fn the_model_loaded_delta_addresses_the_metric_labelled_model() {
+    fn the_model_loaded_delta_addresses_the_model_metric() {
         let c = VTubeClient::new_for_test("ws://127.0.0.1:8001/");
         let mut rx = c.health_tx.subscribe();
 
@@ -235,7 +235,7 @@ mod tests {
         update_from_event(&event, &c.health_state, &c.health_tx);
 
         let delta = rx.try_recv().unwrap();
-        assert_eq!(c.metrics()[usize::from(delta.index)].label, "MODEL");
+        assert_eq!(delta.metric, MODEL_METRIC);
         assert!(matches!(
             delta.new_value,
             HealthValue::Text { ref primary, .. } if primary == "MyAvatar"
@@ -243,7 +243,7 @@ mod tests {
     }
 
     #[test]
-    fn the_tracking_delta_addresses_the_metric_labelled_tracking() {
+    fn the_tracking_delta_addresses_the_tracking_metric() {
         let c = VTubeClient::new_for_test("ws://127.0.0.1:8001/");
         let mut rx = c.health_tx.subscribe();
 
@@ -251,11 +251,21 @@ mod tests {
         update_from_event(&event, &c.health_state, &c.health_tx);
 
         let delta = rx.try_recv().unwrap();
-        assert_eq!(c.metrics()[usize::from(delta.index)].label, "TRACKING");
+        assert_eq!(delta.metric, TRACKING_METRIC);
         assert!(matches!(
             delta.new_value,
             HealthValue::Status { active: true, .. }
         ));
+    }
+
+    #[test]
+    fn metrics_declare_unique_ids() {
+        let c = VTubeClient::new_for_test("ws://127.0.0.1:8001/");
+
+        let ids: std::collections::HashSet<_> =
+            c.metrics().into_iter().map(|metric| metric.id).collect();
+
+        assert_eq!(ids.len(), 4);
     }
 
     #[test]
@@ -287,14 +297,14 @@ mod tests {
         );
     }
 
-    fn text_metric(metrics: &[HealthMetric], label: &str) -> (String, Option<String>) {
+    fn text_metric(metrics: &[HealthMetric], id: &HealthMetricId) -> (String, Option<String>) {
         let metric = metrics
             .iter()
-            .find(|m| m.label == label)
-            .unwrap_or_else(|| panic!("no metric labelled {label}"));
+            .find(|m| &m.id == id)
+            .unwrap_or_else(|| panic!("no metric {id}"));
         match &metric.value {
             HealthValue::Text { primary, secondary } => (primary.clone(), secondary.clone()),
-            _ => panic!("metric {label} is not a text value"),
+            _ => panic!("metric {id} is not a text value"),
         }
     }
 
@@ -307,8 +317,8 @@ mod tests {
         }
 
         let metrics = c.metrics();
-        assert_eq!(text_metric(&metrics, "EXPRESSIONS").0, "3");
-        assert_eq!(text_metric(&metrics, "ITEMS").0, "7");
+        assert_eq!(text_metric(&metrics, &EXPRESSIONS_METRIC).0, "3");
+        assert_eq!(text_metric(&metrics, &ITEMS_METRIC).0, "7");
     }
 
     #[test]
@@ -323,7 +333,7 @@ mod tests {
         }
 
         assert_eq!(
-            text_metric(&c.metrics(), "MODEL"),
+            text_metric(&c.metrics(), &MODEL_METRIC),
             ("MyAvatar".to_owned(), Some("42 parameters".to_owned()))
         );
     }
@@ -334,10 +344,10 @@ mod tests {
         let metrics = c.metrics();
 
         assert_eq!(
-            text_metric(&metrics, "MODEL"),
+            text_metric(&metrics, &MODEL_METRIC),
             ("\u{2014}".to_owned(), Some("not loaded".to_owned()))
         );
-        assert_eq!(text_metric(&metrics, "ITEMS").0, "0");
+        assert_eq!(text_metric(&metrics, &ITEMS_METRIC).0, "0");
     }
 
     #[tokio::test]

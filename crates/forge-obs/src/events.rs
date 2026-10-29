@@ -656,7 +656,7 @@ pub(crate) fn apply_record_status_update(
 mod tests {
     use std::time::Duration;
 
-    use forge_platform_core::HealthValue;
+    use forge_platform_core::{BuiltinHealth, HealthMetricId, HealthValue};
     use obws::responses::general::Stats;
     use obws::responses::recording::RecordStatus;
     use obws::responses::streaming::StreamStatus;
@@ -865,8 +865,8 @@ mod tests {
             apply_stream_status_update(&stream_status(true, 3_720, 5, 1_000), &mut snapshot);
 
         assert_eq!(
-            deltas.iter().map(|d| d.index).collect::<Vec<_>>(),
-            vec![0, 3],
+            deltas.iter().map(|d| d.metric.clone()).collect::<Vec<_>>(),
+            vec![STREAM_METRIC, DROPPED_METRIC],
         );
         assert!(snapshot.stream_active);
         assert_eq!(snapshot.stream_duration, Some(Duration::from_secs(3_720)));
@@ -890,7 +890,10 @@ mod tests {
 
         let deltas = apply_stream_status_update(&stream_status(true, 120, 2, 300), &mut snapshot);
 
-        assert_eq!(deltas.iter().map(|d| d.index).collect::<Vec<_>>(), vec![0]);
+        assert_eq!(
+            deltas.iter().map(|d| d.metric.clone()).collect::<Vec<_>>(),
+            vec![STREAM_METRIC]
+        );
     }
 
     #[test]
@@ -909,7 +912,10 @@ mod tests {
         let mut snapshot = HealthSnapshot::default();
 
         let started = apply_record_status_update(&record_status(true, false, 30), &mut snapshot);
-        assert_eq!(started.iter().map(|d| d.index).collect::<Vec<_>>(), vec![1]);
+        assert_eq!(
+            started.iter().map(|d| d.metric.clone()).collect::<Vec<_>>(),
+            vec![RECORDING_METRIC]
+        );
 
         let paused = apply_record_status_update(&record_status(true, true, 30), &mut snapshot);
         assert_eq!(paused.len(), 1);
@@ -937,7 +943,6 @@ mod tests {
     type FrameCounters = (u32, u32);
 
     const IDLE_FRAMES: FrameCounters = (0, 0);
-    const CPU_FPS_DELTA_INDEX: u8 = 2;
     const SMOOTH: bool = false;
     const LAGGING: bool = true;
 
@@ -989,12 +994,12 @@ mod tests {
                 "still lagging on unchanged cpu and fps",
             ),
         ] {
-            let indexes: Vec<u8> = apply_stats_update(&reading, &mut snapshot)
+            let indexes: Vec<HealthMetricId> = apply_stats_update(&reading, &mut snapshot)
                 .iter()
-                .map(|d| d.index)
+                .map(|d| d.metric.clone())
                 .collect();
             let expected = if expected {
-                vec![CPU_FPS_DELTA_INDEX]
+                vec![CPU_FPS_METRIC]
             } else {
                 vec![]
             };
@@ -1107,9 +1112,51 @@ mod tests {
             &mut snapshot,
         );
 
-        assert_eq!(deltas.iter().map(|d| d.index).collect::<Vec<_>>(), vec![0]);
+        assert_eq!(
+            deltas.iter().map(|d| d.metric.clone()).collect::<Vec<_>>(),
+            vec![STREAM_METRIC]
+        );
         assert!(!snapshot.stream_active);
         assert_eq!(snapshot.stream_duration, Some(Duration::from_secs(600)));
+    }
+
+    #[test]
+    fn every_health_delta_producer_targets_a_declared_metric() {
+        let declared: Vec<HealthMetricId> =
+            crate::client::ObsClient::new_for_test("localhost:4455".to_owned())
+                .metrics()
+                .into_iter()
+                .map(|metric| metric.id)
+                .collect();
+        let mut snapshot = HealthSnapshot::default();
+
+        let mut deltas =
+            apply_stream_status_update(&stream_status(true, 60, 3, 600), &mut snapshot);
+        deltas.extend(apply_record_status_update(
+            &record_status(true, false, 10),
+            &mut snapshot,
+        ));
+        deltas.extend(apply_stats_update(
+            &stats(10.0, 60.0, IDLE_FRAMES, IDLE_FRAMES),
+            &mut snapshot,
+        ));
+        deltas.extend(apply_health_update(
+            &obws::events::Event::RecordStateChanged {
+                active: false,
+                state: obws::events::OutputState::Stopped,
+                path: None,
+            },
+            &mut snapshot,
+        ));
+
+        assert!(!deltas.is_empty());
+        for delta in &deltas {
+            assert!(
+                declared.contains(&delta.metric),
+                "undeclared {}",
+                delta.metric
+            );
+        }
     }
 
     #[test]

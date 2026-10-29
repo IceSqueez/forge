@@ -879,8 +879,8 @@ mod tests {
         #[test]
         fn live_chat_health_metric_reports_disconnected_with_slug_topic_while_offline() {
             let bundle = disconnected_bundle();
-            let ws = &bundle.metrics()[0];
-            assert_eq!(ws.label, "Live Chat");
+            let metrics = bundle.metrics();
+            let ws = metrics.iter().find(|m| m.id == LIVE_CHAT_METRIC).unwrap();
             assert_eq!(
                 ws.value,
                 HealthValue::Status {
@@ -889,6 +889,17 @@ mod tests {
                     detail: Some("chatrooms.test_channel.v2".to_owned()),
                 }
             );
+        }
+
+        #[test]
+        fn metrics_declare_unique_ids() {
+            let ids: std::collections::HashSet<_> = disconnected_bundle()
+                .metrics()
+                .into_iter()
+                .map(|metric| metric.id)
+                .collect();
+
+            assert_eq!(ids.len(), 4);
         }
 
         fn labels_with_enabled(bundle: &KickIntegrationBundle, enabled: bool) -> Vec<String> {
@@ -976,7 +987,7 @@ mod tests {
         }
 
         #[tokio::test]
-        async fn a_viewer_report_updates_the_metric_slot_labelled_viewers() {
+        async fn a_viewer_report_updates_the_shared_viewers_metric() {
             let (bundle, viewer_tx, _auth_tx) = bundle_with_feeds();
             let mut health = bundle.stream();
 
@@ -987,11 +998,7 @@ mod tests {
                 .expect("the viewer bridge must publish a health delta")
                 .expect("the health stream must stay open");
 
-            assert_eq!(
-                bundle.metrics()[usize::from(delta.index)].label,
-                "Viewers",
-                "the viewer bridge index must address the Viewers metric",
-            );
+            assert_eq!(delta.metric, HealthMetricId::VIEWERS);
             assert_eq!(
                 delta.new_value,
                 HealthValue::Text {
@@ -1017,8 +1024,9 @@ mod tests {
                     .expect("the events bridge must publish a health delta")
                     .expect("the health stream must stay open");
 
-                let slot = &bundle.metrics()[usize::from(delta.index)];
-                assert_eq!(slot.label, "Events", "{auth:?}");
+                assert_eq!(delta.metric, EVENTS_METRIC, "{auth:?}");
+                let metrics = bundle.metrics();
+                let slot = metrics.iter().find(|m| m.id == EVENTS_METRIC).unwrap();
                 assert_eq!(delta.new_value, slot.value, "{auth:?}");
                 assert!(
                     matches!(

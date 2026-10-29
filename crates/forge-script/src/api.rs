@@ -15,19 +15,23 @@ use forge_types::{
 use rhai::{EvalAltResult, ImmutableString, Module, Position};
 use tokio::runtime::Handle;
 
+use crate::catalog::MethodDescriptor;
 use crate::convert::{dynamic_to_variant, variant_to_dynamic};
 use crate::globals_port::{GlobalDeletion, ScriptGlobals};
 use crate::http_client::{HttpError, HttpResponse, ScriptHttpClient};
+use crate::registration::{ApiModule, ScriptFn};
 use crate::schedule::ActionScheduler;
 use crate::schedule_api::build_schedule_module;
 
-pub const ENGINE_BOUND_NAMES: [&str; 11] = [
-    "log", "warn", "error", "sleep", "chat", "globals", "http", "tts", "time", "latest", "schedule",
-];
+const SENDER_DOC: &str =
+    "sender is \"default\", \"streamer\" or \"bot\"; any other value is a script error.";
+const TARGET_DOC: &str =
+    "target is a platform name; an empty target sends to every enabled platform.";
+const SENDER_TARGET_DOC: &str = "sender is \"default\", \"streamer\" or \"bot\"; target is a platform name or empty for every enabled platform.";
 
-pub fn is_engine_bound_name(name: &str) -> bool {
-    ENGINE_BOUND_NAMES.contains(&name)
-}
+const SPEAK_UNAVAILABLE_REASON: &str = "text-to-speech is not available where this script runs";
+const HTTP_UNAVAILABLE_REASON: &str = "HTTP requests are not available where this script runs";
+const LATEST_UNAVAILABLE_REASON: &str = "latest values are not available where this script runs";
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum ScriptSpeakError {
@@ -118,14 +122,26 @@ impl ForgeApi {
     }
 
     pub fn into_module(self) -> Arc<Module> {
-        let mut root = Module::new();
+        self.build().into_module()
+    }
+
+    pub(crate) fn describe(self) -> Vec<MethodDescriptor> {
+        self.build().into_methods()
+    }
+
+    fn build(self) -> ApiModule {
+        let mut root = ApiModule::default();
 
         let caused_by = self.caused_by;
         let script_id = self.script_id;
 
         let log_pub = Arc::clone(&self.publisher);
-        root.set_native_fn(
-            "log",
+        root.register(
+            ScriptFn {
+                name: "log",
+                params: ["msg"],
+                doc: None,
+            },
             move |msg: ImmutableString| -> Result<(), Box<EvalAltResult>> {
                 tracing::info!(target: SCRIPT_LOG_TARGET, caused_by = %caused_by, message = %msg);
                 publish_script_log(
@@ -139,8 +155,12 @@ impl ForgeApi {
             },
         );
         let warn_pub = Arc::clone(&self.publisher);
-        root.set_native_fn(
-            "warn",
+        root.register(
+            ScriptFn {
+                name: "warn",
+                params: ["msg"],
+                doc: None,
+            },
             move |msg: ImmutableString| -> Result<(), Box<EvalAltResult>> {
                 tracing::warn!(target: SCRIPT_LOG_TARGET, caused_by = %caused_by, message = %msg);
                 publish_script_log(
@@ -155,8 +175,12 @@ impl ForgeApi {
         );
         let error_pub = Arc::clone(&self.publisher);
         let error_counter = Arc::clone(&self.error_count);
-        root.set_native_fn(
-            "error",
+        root.register(
+            ScriptFn {
+                name: "error",
+                params: ["msg"],
+                doc: None,
+            },
             move |msg: ImmutableString| -> Result<(), Box<EvalAltResult>> {
                 tracing::error!(target: SCRIPT_LOG_TARGET, caused_by = %caused_by, message = %msg);
                 error_counter.fetch_add(1, Ordering::Relaxed);
@@ -172,47 +196,46 @@ impl ForgeApi {
         );
 
         let deadline = self.deadline;
-        root.set_native_fn("sleep", move |ms: i64| -> Result<(), Box<EvalAltResult>> {
-            let now = Instant::now();
-            if now >= deadline {
-                return Err("script execution deadline exceeded".into());
-            }
-            let remaining_ms = (deadline - now).as_millis() as u64;
-            let clamped = (ms.max(0) as u64).min(5_000).min(remaining_ms);
-            std::thread::sleep(Duration::from_millis(clamped));
-            Ok(())
-        });
-
-        let chat = build_chat_module(
-            Arc::clone(&self.publisher),
-            self.caused_by,
-            self.integrations,
+        root.register(
+            ScriptFn {
+                name: "sleep",
+                params: ["ms"],
+                doc: Some("Clamped to the script's remaining wall-time budget."),
+            },
+            move |ms: i64| -> Result<(), Box<EvalAltResult>> {
+                let now = Instant::now();
+                if now >= deadline {
+                    return Err("script execution deadline exceeded".into());
+                }
+                let remaining_ms = (deadline - now).as_millis() as u64;
+                let clamped = (ms.max(0) as u64).min(5_000).min(remaining_ms);
+                std::thread::sleep(Duration::from_millis(clamped));
+                Ok(())
+            },
         );
-        root.set_sub_module("chat", chat);
 
-        let http = match self.http {
-            Some(client) => build_http_module(client, Arc::clone(&self.publisher), self.caused_by),
-            None => Module::new(),
-        };
+        root.mount(
+            "chat",
+            build_chat_module(
+                Arc::clone(&self.publisher),
+                self.caused_by,
+                self.integrations,
+            ),
+        );
+        root.mount(
+            "globals",
+            build_globals_module(self.caused_by, self.globals),
+        );
+        root.mount("tts", build_tts_module(self.speak));
+        root.mount("time", build_time_module());
+        root.mount(
+            "http",
+            build_http_module(self.http, Arc::clone(&self.publisher), self.caused_by),
+        );
+        root.mount("latest", build_latest_module(self.latest));
+        root.mount("schedule", build_schedule_module(self.scheduler));
 
-        let globals = build_globals_module(self.caused_by, self.globals);
-        root.set_sub_module("globals", globals);
-
-        let tts = match self.speak {
-            Some(requester) => build_tts_module(requester),
-            None => Module::new(),
-        };
-        root.set_sub_module("tts", tts);
-        root.set_sub_module("time", build_time_module());
-        root.set_sub_module("http", http);
-        let latest = match self.latest {
-            Some(reader) => build_latest_module(reader),
-            None => Module::new(),
-        };
-        root.set_sub_module("latest", latest);
-        root.set_sub_module("schedule", build_schedule_module(self.scheduler));
-
-        Arc::new(root)
+        root
     }
 }
 
@@ -247,21 +270,33 @@ fn publish_http_call(
     .publish(publisher, EventSource::Rhai, Some(caused_by));
 }
 
+fn available<'a, T: ?Sized>(
+    dependency: &'a Option<Arc<T>>,
+    unavailable_reason: &'static str,
+) -> Result<&'a Arc<T>, Box<EvalAltResult>> {
+    dependency.as_ref().ok_or_else(|| unavailable_reason.into())
+}
+
 fn build_http_module(
-    client: Arc<ScriptHttpClient>,
+    client: Option<Arc<ScriptHttpClient>>,
     publisher: Arc<dyn EventPublisher>,
     caused_by: EventId,
-) -> Module {
-    let mut m = Module::new();
+) -> ApiModule {
+    let mut m = ApiModule::default();
     let counter = Arc::new(AtomicU32::new(0));
 
     {
-        let client = Arc::clone(&client);
+        let client = client.clone();
         let counter = Arc::clone(&counter);
         let publisher = Arc::clone(&publisher);
-        m.set_native_fn(
-            "get",
+        m.register(
+            ScriptFn {
+                name: "get",
+                params: ["url"],
+                doc: None,
+            },
             move |url: ImmutableString| -> Result<rhai::Map, Box<EvalAltResult>> {
+                let client = available(&client, HTTP_UNAVAILABLE_REASON)?;
                 let result = client.get(url.as_str(), &counter);
                 if let Ok(ref resp) = result {
                     publish_http_call(publisher.as_ref(), ScriptHttpMethod::Get, resp, caused_by);
@@ -275,11 +310,16 @@ fn build_http_module(
 
     {
         let publisher = Arc::clone(&publisher);
-        m.set_native_fn(
-            "post",
+        m.register(
+            ScriptFn {
+                name: "post",
+                params: ["url", "body"],
+                doc: None,
+            },
             move |url: ImmutableString,
                   body: ImmutableString|
                   -> Result<rhai::Map, Box<EvalAltResult>> {
+                let client = available(&client, HTTP_UNAVAILABLE_REASON)?;
                 let result = client.post(url.as_str(), body.as_str(), &counter);
                 if let Ok(ref resp) = result {
                     publish_http_call(publisher.as_ref(), ScriptHttpMethod::Post, resp, caused_by);
@@ -318,27 +358,46 @@ fn http_error_to_rhai_error(e: HttpError) -> Box<EvalAltResult> {
     ))
 }
 
-fn build_time_module() -> Module {
-    let mut m = Module::new();
+fn build_time_module() -> ApiModule {
+    let mut m = ApiModule::default();
 
-    m.set_native_fn("now", || -> Result<ImmutableString, Box<EvalAltResult>> {
-        Ok(forge_types::datetime_to_text(&time::OffsetDateTime::now_utc()).into())
-    });
+    m.register(
+        ScriptFn {
+            name: "now",
+            params: [],
+            doc: Some("Current UTC time as RFC 3339 text."),
+        },
+        || -> Result<ImmutableString, Box<EvalAltResult>> {
+            Ok(forge_types::datetime_to_text(&time::OffsetDateTime::now_utc()).into())
+        },
+    );
 
-    m.set_native_fn("unix", || -> Result<i64, Box<EvalAltResult>> {
-        Ok(time::OffsetDateTime::now_utc().unix_timestamp())
-    });
+    m.register(
+        ScriptFn {
+            name: "unix",
+            params: [],
+            doc: Some("Current unix time in seconds."),
+        },
+        || -> Result<i64, Box<EvalAltResult>> {
+            Ok(time::OffsetDateTime::now_utc().unix_timestamp())
+        },
+    );
 
     m
 }
 
-fn build_latest_module(reader: Arc<dyn LatestValueReader>) -> Module {
-    let mut m = Module::new();
+fn build_latest_module(reader: Option<Arc<dyn LatestValueReader>>) -> ApiModule {
+    let mut m = ApiModule::default();
 
-    let merged = Arc::clone(&reader);
-    m.set_native_fn(
-        "get",
+    let merged = reader.clone();
+    m.register(
+        ScriptFn {
+            name: "get",
+            params: ["slot"],
+            doc: Some("Most recent value across platforms; () when the slot is empty."),
+        },
         move |slot: ImmutableString| -> Result<rhai::Dynamic, Box<EvalAltResult>> {
+            let merged = available(&merged, LATEST_UNAVAILABLE_REASON)?;
             Ok(latest_dynamic(
                 merged.as_ref(),
                 slot.as_str(),
@@ -347,11 +406,16 @@ fn build_latest_module(reader: Arc<dyn LatestValueReader>) -> Module {
         },
     );
 
-    m.set_native_fn(
-        "get",
+    m.register(
+        ScriptFn {
+            name: "get",
+            params: ["slot", "platform"],
+            doc: Some("Value from one platform or service; () when it has none."),
+        },
         move |slot: ImmutableString,
               platform: ImmutableString|
               -> Result<rhai::Dynamic, Box<EvalAltResult>> {
+            let reader = available(&reader, LATEST_UNAVAILABLE_REASON)?;
             Ok(latest_dynamic(
                 reader.as_ref(),
                 slot.as_str(),
@@ -374,14 +438,18 @@ fn latest_dynamic(
         .unwrap_or(rhai::Dynamic::UNIT)
 }
 
-fn build_tts_module(requester: Arc<dyn SpeakRequester>) -> Module {
-    let mut m = Module::new();
+fn build_tts_module(requester: Option<Arc<dyn SpeakRequester>>) -> ApiModule {
+    let mut m = ApiModule::default();
 
-    let r_speak = Arc::clone(&requester);
-    m.set_native_fn(
-        "speak",
+    let r_speak = requester.clone();
+    m.register(
+        ScriptFn {
+            name: "speak",
+            params: ["text"],
+            doc: None,
+        },
         move |text: ImmutableString| -> Result<(), Box<EvalAltResult>> {
-            let r = Arc::clone(&r_speak);
+            let r = Arc::clone(available(&r_speak, SPEAK_UNAVAILABLE_REASON)?);
             let text_owned = text.to_string();
             Handle::current()
                 .block_on(async move { r.speak(text_owned, None).await })
@@ -389,11 +457,15 @@ fn build_tts_module(requester: Arc<dyn SpeakRequester>) -> Module {
         },
     );
 
-    let r_speak_as = Arc::clone(&requester);
-    m.set_native_fn(
-        "speak_as",
+    let r_speak_as = requester.clone();
+    m.register(
+        ScriptFn {
+            name: "speak_as",
+            params: ["voice_id", "text"],
+            doc: None,
+        },
         move |voice: ImmutableString, text: ImmutableString| -> Result<(), Box<EvalAltResult>> {
-            let r = Arc::clone(&r_speak_as);
+            let r = Arc::clone(available(&r_speak_as, SPEAK_UNAVAILABLE_REASON)?);
             let voice_owned = voice.to_string();
             let text_owned = text.to_string();
             Handle::current()
@@ -402,19 +474,33 @@ fn build_tts_module(requester: Arc<dyn SpeakRequester>) -> Module {
         },
     );
 
-    let r_skip = Arc::clone(&requester);
-    m.set_native_fn("skip", move || -> Result<(), Box<EvalAltResult>> {
-        let r = Arc::clone(&r_skip);
-        Handle::current().block_on(async move { r.skip().await });
-        Ok(())
-    });
+    let r_skip = requester.clone();
+    m.register(
+        ScriptFn {
+            name: "skip",
+            params: [],
+            doc: None,
+        },
+        move || -> Result<(), Box<EvalAltResult>> {
+            let r = Arc::clone(available(&r_skip, SPEAK_UNAVAILABLE_REASON)?);
+            Handle::current().block_on(async move { r.skip().await });
+            Ok(())
+        },
+    );
 
     let r_clear = requester;
-    m.set_native_fn("clear", move || -> Result<(), Box<EvalAltResult>> {
-        let r = Arc::clone(&r_clear);
-        Handle::current().block_on(async move { r.clear().await });
-        Ok(())
-    });
+    m.register(
+        ScriptFn {
+            name: "clear",
+            params: [],
+            doc: None,
+        },
+        move || -> Result<(), Box<EvalAltResult>> {
+            let r = Arc::clone(available(&r_clear, SPEAK_UNAVAILABLE_REASON)?);
+            Handle::current().block_on(async move { r.clear().await });
+            Ok(())
+        },
+    );
 
     m
 }
@@ -536,8 +622,8 @@ fn build_chat_module(
     publisher: Arc<dyn EventPublisher>,
     caused_by: EventId,
     integrations: Option<Arc<dyn IntegrationAvailability>>,
-) -> Module {
-    let mut m = Module::new();
+) -> ApiModule {
+    let mut m = ApiModule::default();
     let chat = ChatRequester {
         publisher,
         caused_by,
@@ -545,8 +631,12 @@ fn build_chat_module(
     };
 
     let send = chat.clone();
-    m.set_native_fn(
-        "send",
+    m.register(
+        ScriptFn {
+            name: "send",
+            params: ["text"],
+            doc: None,
+        },
         move |text: ImmutableString| -> Result<(), Box<EvalAltResult>> {
             admit_broadcast(send.integrations())?;
             send.request(chat_text(&text))
@@ -554,8 +644,12 @@ fn build_chat_module(
     );
 
     let send = chat.clone();
-    m.set_native_fn(
-        "send",
+    m.register(
+        ScriptFn {
+            name: "send",
+            params: ["target", "text"],
+            doc: Some(TARGET_DOC),
+        },
         move |target: ImmutableString, text: ImmutableString| -> Result<(), Box<EvalAltResult>> {
             let target = admit_chat_target(send.integrations(), &target)?;
             send.request(aimed(target, chat_text(&text)))
@@ -563,8 +657,12 @@ fn build_chat_module(
     );
 
     let reply = chat.clone();
-    m.set_native_fn(
-        "reply",
+    m.register(
+        ScriptFn {
+            name: "reply",
+            params: ["to", "text"],
+            doc: None,
+        },
         move |to: ImmutableString, text: ImmutableString| -> Result<(), Box<EvalAltResult>> {
             admit_broadcast(reply.integrations())?;
             reply.request(chat_reply(&to, &text))
@@ -572,8 +670,12 @@ fn build_chat_module(
     );
 
     let reply = chat.clone();
-    m.set_native_fn(
-        "reply",
+    m.register(
+        ScriptFn {
+            name: "reply",
+            params: ["target", "to", "text"],
+            doc: Some(TARGET_DOC),
+        },
         move |target: ImmutableString,
               to: ImmutableString,
               text: ImmutableString|
@@ -584,8 +686,12 @@ fn build_chat_module(
     );
 
     let whisper = chat.clone();
-    m.set_native_fn(
-        "whisper",
+    m.register(
+        ScriptFn {
+            name: "whisper",
+            params: ["user", "text"],
+            doc: None,
+        },
         move |user: ImmutableString, text: ImmutableString| -> Result<(), Box<EvalAltResult>> {
             admit_whisper_broadcast(whisper.integrations())?;
             whisper.request(chat_whisper(&user, &text))
@@ -593,8 +699,12 @@ fn build_chat_module(
     );
 
     let whisper = chat.clone();
-    m.set_native_fn(
-        "whisper",
+    m.register(
+        ScriptFn {
+            name: "whisper",
+            params: ["target", "user", "text"],
+            doc: Some(TARGET_DOC),
+        },
         move |target: ImmutableString,
               user: ImmutableString,
               text: ImmutableString|
@@ -609,10 +719,14 @@ fn build_chat_module(
     m
 }
 
-fn register_sender_chat_fns(m: &mut Module, chat: ChatRequester) {
+fn register_sender_chat_fns(m: &mut ApiModule, chat: ChatRequester) {
     let send = chat.clone();
-    m.set_native_fn(
-        "send_as",
+    m.register(
+        ScriptFn {
+            name: "send_as",
+            params: ["sender", "text"],
+            doc: Some(SENDER_DOC),
+        },
         move |sender: ImmutableString, text: ImmutableString| -> Result<(), Box<EvalAltResult>> {
             let sender = script_sender(&sender)?;
             admit_broadcast(send.integrations())?;
@@ -621,8 +735,12 @@ fn register_sender_chat_fns(m: &mut Module, chat: ChatRequester) {
     );
 
     let send = chat.clone();
-    m.set_native_fn(
-        "send_as",
+    m.register(
+        ScriptFn {
+            name: "send_as",
+            params: ["sender", "target", "text"],
+            doc: Some(SENDER_TARGET_DOC),
+        },
         move |sender: ImmutableString,
               target: ImmutableString,
               text: ImmutableString|
@@ -634,8 +752,12 @@ fn register_sender_chat_fns(m: &mut Module, chat: ChatRequester) {
     );
 
     let reply = chat.clone();
-    m.set_native_fn(
-        "reply_as",
+    m.register(
+        ScriptFn {
+            name: "reply_as",
+            params: ["sender", "to", "text"],
+            doc: Some(SENDER_DOC),
+        },
         move |sender: ImmutableString,
               to: ImmutableString,
               text: ImmutableString|
@@ -647,8 +769,12 @@ fn register_sender_chat_fns(m: &mut Module, chat: ChatRequester) {
     );
 
     let reply = chat.clone();
-    m.set_native_fn(
-        "reply_as",
+    m.register(
+        ScriptFn {
+            name: "reply_as",
+            params: ["sender", "target", "to", "text"],
+            doc: Some(SENDER_TARGET_DOC),
+        },
         move |sender: ImmutableString,
               target: ImmutableString,
               to: ImmutableString,
@@ -661,8 +787,12 @@ fn register_sender_chat_fns(m: &mut Module, chat: ChatRequester) {
     );
 
     let whisper = chat.clone();
-    m.set_native_fn(
-        "whisper_as",
+    m.register(
+        ScriptFn {
+            name: "whisper_as",
+            params: ["sender", "user", "text"],
+            doc: Some(SENDER_DOC),
+        },
         move |sender: ImmutableString,
               user: ImmutableString,
               text: ImmutableString|
@@ -674,8 +804,12 @@ fn register_sender_chat_fns(m: &mut Module, chat: ChatRequester) {
     );
 
     let whisper = chat;
-    m.set_native_fn(
-        "whisper_as",
+    m.register(
+        ScriptFn {
+            name: "whisper_as",
+            params: ["sender", "target", "user", "text"],
+            doc: Some(SENDER_TARGET_DOC),
+        },
         move |sender: ImmutableString,
               target: ImmutableString,
               user: ImmutableString,
@@ -688,12 +822,16 @@ fn register_sender_chat_fns(m: &mut Module, chat: ChatRequester) {
     );
 }
 
-fn build_globals_module(caused_by: EventId, globals: Arc<dyn ScriptGlobals>) -> Module {
-    let mut m = Module::new();
+fn build_globals_module(caused_by: EventId, globals: Arc<dyn ScriptGlobals>) -> ApiModule {
+    let mut m = ApiModule::default();
 
     let globals_get = Arc::clone(&globals);
-    m.set_native_fn(
-        "get",
+    m.register(
+        ScriptFn {
+            name: "get",
+            params: ["key"],
+            doc: Some("Returns () when the key is absent."),
+        },
         move |key: ImmutableString| -> Result<rhai::Dynamic, Box<EvalAltResult>> {
             match Handle::current().block_on(globals_get.get(key.as_str())) {
                 Ok(Some(v)) => Ok(variant_to_dynamic(v)),
@@ -710,8 +848,12 @@ fn build_globals_module(caused_by: EventId, globals: Arc<dyn ScriptGlobals>) -> 
     );
 
     let globals_set = Arc::clone(&globals);
-    m.set_native_fn(
-        "set",
+    m.register(
+        ScriptFn {
+            name: "set",
+            params: ["key", "value", "persisted"],
+            doc: None,
+        },
         move |key: ImmutableString,
               val: rhai::Dynamic,
               persisted: bool|
@@ -726,8 +868,12 @@ fn build_globals_module(caused_by: EventId, globals: Arc<dyn ScriptGlobals>) -> 
     );
 
     let globals_incr = Arc::clone(&globals);
-    m.set_native_fn(
-        "incr",
+    m.register(
+        ScriptFn {
+            name: "incr",
+            params: ["key", "amount"],
+            doc: Some("Returns the new value."),
+        },
         move |key: ImmutableString, amount: i64| -> Result<rhai::Dynamic, Box<EvalAltResult>> {
             let increment = Handle::current()
                 .block_on(globals_incr.increment(key.as_str(), amount, caused_by))
@@ -737,8 +883,12 @@ fn build_globals_module(caused_by: EventId, globals: Arc<dyn ScriptGlobals>) -> 
     );
 
     let globals_del = globals;
-    m.set_native_fn(
-        "del",
+    m.register(
+        ScriptFn {
+            name: "del",
+            params: ["key"],
+            doc: Some("Returns true if the key existed."),
+        },
         move |key: ImmutableString| -> Result<bool, Box<EvalAltResult>> {
             let deletion = Handle::current()
                 .block_on(globals_del.delete(key.as_str(), caused_by))

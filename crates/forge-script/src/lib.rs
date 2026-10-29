@@ -13,17 +13,16 @@ mod globals_port;
 mod http_client;
 mod http_config;
 mod math_evaluator;
+mod registration;
 mod runner;
 mod schedule;
 mod schedule_api;
 #[cfg(test)]
 mod test_support;
 
-pub use api::{
-    ENGINE_BOUND_NAMES, ForgeApi, ScriptSpeakError, SpeakRequester, is_engine_bound_name,
-};
+pub use api::{ForgeApi, ScriptSpeakError, SpeakRequester};
 pub use arg_binding::BoundExpression;
-pub use catalog::{MethodDescriptor, ParamDescriptor, catalog};
+pub use catalog::{MethodDescriptor, ParamDescriptor, catalog, is_engine_bound_name};
 pub use condition::ConditionEvaluator;
 pub use contract::{InputMismatchError, build_scope_for_contract, inert_annotation_lines};
 pub use engine::{Engine, EngineConfig, load_script_engine_config, validate_syntax};

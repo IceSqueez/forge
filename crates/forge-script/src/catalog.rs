@@ -1,454 +1,91 @@
+use std::sync::{Arc, LazyLock};
+use std::time::Instant;
+
+use forge_events::{Event, EventPublisher};
+use forge_types::{EventId, Variant};
+
+use crate::api::ForgeApi;
+use crate::globals_port::{GlobalDeletion, GlobalIncrement, ScriptGlobals, ScriptGlobalsError};
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ParamDescriptor {
     pub name: &'static str,
     pub ty: &'static str,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MethodDescriptor {
     pub namespace: Option<&'static str>,
     pub name: &'static str,
-    pub params: &'static [ParamDescriptor],
+    pub params: Vec<ParamDescriptor>,
     pub return_type: &'static str,
     pub doc: Option<&'static str>,
 }
 
-const SENDER_DOC: &str =
-    "sender is \"default\", \"streamer\" or \"bot\"; any other value is a script error.";
+const DESCRIBE_ONLY_REASON: &str = "the script catalog never runs script functions";
 
-static CATALOG: &[MethodDescriptor] = &[
-    MethodDescriptor {
-        namespace: None,
-        name: "log",
-        params: &[ParamDescriptor {
-            name: "msg",
-            ty: "string",
-        }],
-        return_type: "()",
-        doc: None,
-    },
-    MethodDescriptor {
-        namespace: None,
-        name: "warn",
-        params: &[ParamDescriptor {
-            name: "msg",
-            ty: "string",
-        }],
-        return_type: "()",
-        doc: None,
-    },
-    MethodDescriptor {
-        namespace: None,
-        name: "error",
-        params: &[ParamDescriptor {
-            name: "msg",
-            ty: "string",
-        }],
-        return_type: "()",
-        doc: None,
-    },
-    MethodDescriptor {
-        namespace: None,
-        name: "sleep",
-        params: &[ParamDescriptor {
-            name: "ms",
-            ty: "int",
-        }],
-        return_type: "()",
-        doc: Some("Clamped to the script's remaining wall-time budget."),
-    },
-    MethodDescriptor {
-        namespace: Some("chat"),
-        name: "send",
-        params: &[ParamDescriptor {
-            name: "text",
-            ty: "string",
-        }],
-        return_type: "()",
-        doc: None,
-    },
-    MethodDescriptor {
-        namespace: Some("chat"),
-        name: "reply",
-        params: &[
-            ParamDescriptor {
-                name: "to",
-                ty: "string",
-            },
-            ParamDescriptor {
-                name: "text",
-                ty: "string",
-            },
-        ],
-        return_type: "()",
-        doc: None,
-    },
-    MethodDescriptor {
-        namespace: Some("chat"),
-        name: "whisper",
-        params: &[
-            ParamDescriptor {
-                name: "user",
-                ty: "string",
-            },
-            ParamDescriptor {
-                name: "text",
-                ty: "string",
-            },
-        ],
-        return_type: "()",
-        doc: None,
-    },
-    MethodDescriptor {
-        namespace: Some("chat"),
-        name: "send_as",
-        params: &[
-            ParamDescriptor {
-                name: "sender",
-                ty: "string",
-            },
-            ParamDescriptor {
-                name: "text",
-                ty: "string",
-            },
-        ],
-        return_type: "()",
-        doc: Some(SENDER_DOC),
-    },
-    MethodDescriptor {
-        namespace: Some("chat"),
-        name: "reply_as",
-        params: &[
-            ParamDescriptor {
-                name: "sender",
-                ty: "string",
-            },
-            ParamDescriptor {
-                name: "to",
-                ty: "string",
-            },
-            ParamDescriptor {
-                name: "text",
-                ty: "string",
-            },
-        ],
-        return_type: "()",
-        doc: Some(SENDER_DOC),
-    },
-    MethodDescriptor {
-        namespace: Some("chat"),
-        name: "whisper_as",
-        params: &[
-            ParamDescriptor {
-                name: "sender",
-                ty: "string",
-            },
-            ParamDescriptor {
-                name: "user",
-                ty: "string",
-            },
-            ParamDescriptor {
-                name: "text",
-                ty: "string",
-            },
-        ],
-        return_type: "()",
-        doc: Some(SENDER_DOC),
-    },
-    MethodDescriptor {
-        namespace: Some("globals"),
-        name: "get",
-        params: &[ParamDescriptor {
-            name: "key",
-            ty: "string",
-        }],
-        return_type: "Variant",
-        doc: Some("Returns () when the key is absent."),
-    },
-    MethodDescriptor {
-        namespace: Some("globals"),
-        name: "set",
-        params: &[
-            ParamDescriptor {
-                name: "key",
-                ty: "string",
-            },
-            ParamDescriptor {
-                name: "value",
-                ty: "Variant",
-            },
-            ParamDescriptor {
-                name: "persisted",
-                ty: "bool",
-            },
-        ],
-        return_type: "()",
-        doc: None,
-    },
-    MethodDescriptor {
-        namespace: Some("globals"),
-        name: "incr",
-        params: &[
-            ParamDescriptor {
-                name: "key",
-                ty: "string",
-            },
-            ParamDescriptor {
-                name: "amount",
-                ty: "int",
-            },
-        ],
-        return_type: "Int",
-        doc: None,
-    },
-    MethodDescriptor {
-        namespace: Some("globals"),
-        name: "del",
-        params: &[ParamDescriptor {
-            name: "key",
-            ty: "string",
-        }],
-        return_type: "Bool",
-        doc: Some("Returns true if the key existed."),
-    },
-    MethodDescriptor {
-        namespace: Some("latest"),
-        name: "get",
-        params: &[ParamDescriptor {
-            name: "slot",
-            ty: "string",
-        }],
-        return_type: "Map",
-        doc: Some("Most recent value across platforms; () when the slot is empty."),
-    },
-    MethodDescriptor {
-        namespace: Some("latest"),
-        name: "get",
-        params: &[
-            ParamDescriptor {
-                name: "slot",
-                ty: "string",
-            },
-            ParamDescriptor {
-                name: "platform",
-                ty: "string",
-            },
-        ],
-        return_type: "Map",
-        doc: Some("Value from one platform or service; () when it has none."),
-    },
-    MethodDescriptor {
-        namespace: Some("schedule"),
-        name: "after",
-        params: &[
-            ParamDescriptor {
-                name: "action",
-                ty: "string",
-            },
-            ParamDescriptor {
-                name: "seconds",
-                ty: "int",
-            },
-        ],
-        return_type: "Map",
-        doc: Some("Runs the action by id or name later; returns #{id, due_at}."),
-    },
-    MethodDescriptor {
-        namespace: Some("schedule"),
-        name: "after",
-        params: &[
-            ParamDescriptor {
-                name: "action",
-                ty: "string",
-            },
-            ParamDescriptor {
-                name: "seconds",
-                ty: "int",
-            },
-            ParamDescriptor {
-                name: "options",
-                ty: "Map",
-            },
-        ],
-        return_type: "Map",
-        doc: Some("Options: key, inherit_args, skip_if_late_minutes."),
-    },
-    MethodDescriptor {
-        namespace: Some("schedule"),
-        name: "at",
-        params: &[
-            ParamDescriptor {
-                name: "action",
-                ty: "string",
-            },
-            ParamDescriptor {
-                name: "when",
-                ty: "string",
-            },
-        ],
-        return_type: "Map",
-        doc: Some("Runs the action at an RFC 3339 time; returns #{id, due_at}."),
-    },
-    MethodDescriptor {
-        namespace: Some("schedule"),
-        name: "at",
-        params: &[
-            ParamDescriptor {
-                name: "action",
-                ty: "string",
-            },
-            ParamDescriptor {
-                name: "when",
-                ty: "string",
-            },
-            ParamDescriptor {
-                name: "options",
-                ty: "Map",
-            },
-        ],
-        return_type: "Map",
-        doc: Some("Options: key, inherit_args, skip_if_late_minutes."),
-    },
-    MethodDescriptor {
-        namespace: Some("schedule"),
-        name: "at",
-        params: &[
-            ParamDescriptor {
-                name: "action",
-                ty: "string",
-            },
-            ParamDescriptor {
-                name: "when",
-                ty: "datetime",
-            },
-        ],
-        return_type: "Map",
-        doc: Some("Runs the action at a datetime value; returns #{id, due_at}."),
-    },
-    MethodDescriptor {
-        namespace: Some("schedule"),
-        name: "at",
-        params: &[
-            ParamDescriptor {
-                name: "action",
-                ty: "string",
-            },
-            ParamDescriptor {
-                name: "when",
-                ty: "datetime",
-            },
-            ParamDescriptor {
-                name: "options",
-                ty: "Map",
-            },
-        ],
-        return_type: "Map",
-        doc: Some("Options: key, inherit_args, skip_if_late_minutes."),
-    },
-    MethodDescriptor {
-        namespace: Some("schedule"),
-        name: "at",
-        params: &[
-            ParamDescriptor {
-                name: "action",
-                ty: "string",
-            },
-            ParamDescriptor {
-                name: "unix_seconds",
-                ty: "int",
-            },
-        ],
-        return_type: "Map",
-        doc: Some("Runs the action at a unix time; returns #{id, due_at}."),
-    },
-    MethodDescriptor {
-        namespace: Some("schedule"),
-        name: "at",
-        params: &[
-            ParamDescriptor {
-                name: "action",
-                ty: "string",
-            },
-            ParamDescriptor {
-                name: "unix_seconds",
-                ty: "int",
-            },
-            ParamDescriptor {
-                name: "options",
-                ty: "Map",
-            },
-        ],
-        return_type: "Map",
-        doc: Some("Options: key, inherit_args, skip_if_late_minutes."),
-    },
-    MethodDescriptor {
-        namespace: Some("schedule"),
-        name: "cancel",
-        params: &[ParamDescriptor {
-            name: "key",
-            ty: "string",
-        }],
-        return_type: "Bool",
-        doc: Some("Cancels the pending run with this exact key; true if one was pending."),
-    },
-    MethodDescriptor {
-        namespace: Some("tts"),
-        name: "speak",
-        params: &[ParamDescriptor {
-            name: "text",
-            ty: "string",
-        }],
-        return_type: "()",
-        doc: None,
-    },
-    MethodDescriptor {
-        namespace: Some("tts"),
-        name: "speak_as",
-        params: &[
-            ParamDescriptor {
-                name: "voice_id",
-                ty: "string",
-            },
-            ParamDescriptor {
-                name: "text",
-                ty: "string",
-            },
-        ],
-        return_type: "()",
-        doc: None,
-    },
-    MethodDescriptor {
-        namespace: Some("tts"),
-        name: "skip",
-        params: &[],
-        return_type: "()",
-        doc: None,
-    },
-    MethodDescriptor {
-        namespace: Some("tts"),
-        name: "clear",
-        params: &[],
-        return_type: "()",
-        doc: None,
-    },
-    MethodDescriptor {
-        namespace: Some("time"),
-        name: "now",
-        params: &[],
-        return_type: "String",
-        doc: None,
-    },
-    MethodDescriptor {
-        namespace: Some("time"),
-        name: "unix",
-        params: &[],
-        return_type: "Int",
-        doc: None,
-    },
-];
+struct DescribeOnly;
+
+impl EventPublisher for DescribeOnly {
+    fn publish(&self, _event: Event) {}
+}
+
+#[async_trait::async_trait]
+impl ScriptGlobals for DescribeOnly {
+    async fn get(&self, _key: &str) -> Result<Option<Variant>, ScriptGlobalsError> {
+        Err(describe_only())
+    }
+
+    async fn set(
+        &self,
+        _key: &str,
+        _value: Variant,
+        _persisted: bool,
+        _caused_by: EventId,
+    ) -> Result<Option<Variant>, ScriptGlobalsError> {
+        Err(describe_only())
+    }
+
+    async fn increment(
+        &self,
+        _key: &str,
+        _delta: i64,
+        _caused_by: EventId,
+    ) -> Result<GlobalIncrement, ScriptGlobalsError> {
+        Err(describe_only())
+    }
+
+    async fn delete(
+        &self,
+        _key: &str,
+        _caused_by: EventId,
+    ) -> Result<GlobalDeletion, ScriptGlobalsError> {
+        Err(describe_only())
+    }
+}
+
+fn describe_only() -> ScriptGlobalsError {
+    ScriptGlobalsError(DESCRIBE_ONLY_REASON.to_owned())
+}
+
+static CATALOG: LazyLock<Vec<MethodDescriptor>> = LazyLock::new(|| {
+    ForgeApi::new(
+        Arc::new(DescribeOnly),
+        Arc::new(DescribeOnly),
+        EventId::new(),
+        Instant::now(),
+    )
+    .describe()
+});
 
 pub fn catalog() -> &'static [MethodDescriptor] {
-    CATALOG
+    &CATALOG
+}
+
+pub fn is_engine_bound_name(name: &str) -> bool {
+    catalog()
+        .iter()
+        .any(|method| method.namespace.unwrap_or(method.name) == name)
 }
 
 #[cfg(test)]

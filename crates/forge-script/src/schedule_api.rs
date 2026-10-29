@@ -1,11 +1,12 @@
 use std::sync::Arc;
 
 use forge_types::Variant;
-use rhai::{Dynamic, EvalAltResult, INT, ImmutableString, Map, Module};
+use rhai::{Dynamic, EvalAltResult, INT, ImmutableString, Map};
 use time::OffsetDateTime;
 use tokio::runtime::Handle;
 
 use crate::convert::variant_to_dynamic;
+use crate::registration::{ApiModule, ScriptFn};
 use crate::schedule::{
     ActionScheduler, ScriptScheduleDue, ScriptSchedulePlacement, ScriptScheduleRequest,
 };
@@ -20,15 +21,21 @@ pub const PLACEMENT_DUE_AT_FIELD: &str = "due_at";
 pub const SCHEDULING_UNAVAILABLE_REASON: &str =
     "scheduled runs are not available where this script runs";
 
+const OPTIONS_DOC: &str = "Options: key, inherit_args, skip_if_late_minutes.";
+
 type Scheduler = Option<Arc<dyn ActionScheduler>>;
 type Scripted<T> = Result<T, Box<EvalAltResult>>;
 
-pub(crate) fn build_schedule_module(scheduler: Scheduler) -> Module {
-    let mut m = Module::new();
+pub(crate) fn build_schedule_module(scheduler: Scheduler) -> ApiModule {
+    let mut m = ApiModule::default();
 
     let after = scheduler.clone();
-    m.set_native_fn(
-        "after",
+    m.register(
+        ScriptFn {
+            name: "after",
+            params: ["action", "seconds"],
+            doc: Some("Runs the action by id or name later; returns #{id, due_at}."),
+        },
         move |action: ImmutableString, seconds: INT| -> Scripted<Map> {
             schedule(
                 &after,
@@ -40,8 +47,12 @@ pub(crate) fn build_schedule_module(scheduler: Scheduler) -> Module {
     );
 
     let after_with_options = scheduler.clone();
-    m.set_native_fn(
-        "after",
+    m.register(
+        ScriptFn {
+            name: "after",
+            params: ["action", "seconds", "options"],
+            doc: Some(OPTIONS_DOC),
+        },
         move |action: ImmutableString, seconds: INT, options: Map| -> Scripted<Map> {
             schedule(
                 &after_with_options,
@@ -53,32 +64,48 @@ pub(crate) fn build_schedule_module(scheduler: Scheduler) -> Module {
     );
 
     let at_text = scheduler.clone();
-    m.set_native_fn(
-        "at",
+    m.register(
+        ScriptFn {
+            name: "at",
+            params: ["action", "when"],
+            doc: Some("Runs the action at an RFC 3339 time; returns #{id, due_at}."),
+        },
         move |action: ImmutableString, when: ImmutableString| -> Scripted<Map> {
             schedule(&at_text, &action, due_at_text(&when), Map::new())
         },
     );
 
     let at_text_with_options = scheduler.clone();
-    m.set_native_fn(
-        "at",
+    m.register(
+        ScriptFn {
+            name: "at",
+            params: ["action", "when", "options"],
+            doc: Some(OPTIONS_DOC),
+        },
         move |action: ImmutableString, when: ImmutableString, options: Map| -> Scripted<Map> {
             schedule(&at_text_with_options, &action, due_at_text(&when), options)
         },
     );
 
     let at_datetime = scheduler.clone();
-    m.set_native_fn(
-        "at",
+    m.register(
+        ScriptFn {
+            name: "at",
+            params: ["action", "when"],
+            doc: Some("Runs the action at a datetime value; returns #{id, due_at}."),
+        },
         move |action: ImmutableString, when: OffsetDateTime| -> Scripted<Map> {
             schedule(&at_datetime, &action, due_at_datetime(when), Map::new())
         },
     );
 
     let at_datetime_with_options = scheduler.clone();
-    m.set_native_fn(
-        "at",
+    m.register(
+        ScriptFn {
+            name: "at",
+            params: ["action", "when", "options"],
+            doc: Some(OPTIONS_DOC),
+        },
         move |action: ImmutableString, when: OffsetDateTime, options: Map| -> Scripted<Map> {
             schedule(
                 &at_datetime_with_options,
@@ -90,16 +117,24 @@ pub(crate) fn build_schedule_module(scheduler: Scheduler) -> Module {
     );
 
     let at_unix = scheduler.clone();
-    m.set_native_fn(
-        "at",
+    m.register(
+        ScriptFn {
+            name: "at",
+            params: ["action", "unix_seconds"],
+            doc: Some("Runs the action at a unix time; returns #{id, due_at}."),
+        },
         move |action: ImmutableString, unix_seconds: INT| -> Scripted<Map> {
             schedule(&at_unix, &action, due_at_unix(unix_seconds), Map::new())
         },
     );
 
     let at_unix_with_options = scheduler.clone();
-    m.set_native_fn(
-        "at",
+    m.register(
+        ScriptFn {
+            name: "at",
+            params: ["action", "unix_seconds", "options"],
+            doc: Some(OPTIONS_DOC),
+        },
         move |action: ImmutableString, unix_seconds: INT, options: Map| -> Scripted<Map> {
             schedule(
                 &at_unix_with_options,
@@ -110,12 +145,19 @@ pub(crate) fn build_schedule_module(scheduler: Scheduler) -> Module {
         },
     );
 
-    m.set_native_fn("cancel", move |key: ImmutableString| -> Scripted<bool> {
-        let scheduler = available(&scheduler)?;
-        Handle::current()
-            .block_on(scheduler.cancel_by_key(key.as_str()))
-            .map_err(|e| e.to_string().into())
-    });
+    m.register(
+        ScriptFn {
+            name: "cancel",
+            params: ["key"],
+            doc: Some("Cancels the pending run with this exact key; true if one was pending."),
+        },
+        move |key: ImmutableString| -> Scripted<bool> {
+            let scheduler = available(&scheduler)?;
+            Handle::current()
+                .block_on(scheduler.cancel_by_key(key.as_str()))
+                .map_err(|e| e.to_string().into())
+        },
+    );
 
     m
 }

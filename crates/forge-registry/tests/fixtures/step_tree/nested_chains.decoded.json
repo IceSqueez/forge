@@ -1,0 +1,77 @@
+[
+  [
+    {
+      "kind_id": "core.log.write",
+      "config": {
+        "message": {
+          "type": "string",
+          "value": "full flags"
+        }
+      },
+      "enabled": false,
+      "continue_on_error": true,
+      "condition": "%armed% == true",
+      "label": "мітка"
+    },
+    {
+      "kind_id": "core.log.write",
+      "config": {
+        "message": {
+          "type": "string",
+          "value": "bare"
+        }
+      },
+      "enabled": true,
+      "continue_on_error": false,
+      "condition": null,
+      "label": null
+    }
+  ],
+  [
+    {
+      "kind_id": "core.logic.stop",
+      "config": {},
+      "enabled": true,
+      "continue_on_error": false,
+      "condition": null,
+      "label": null
+    },
+    {
+      "kind_id": "core.logic.if_then_else",
+      "config": {
+        "condition": {
+          "type": "string",
+          "value": "true"
+        },
+        "then_chain": {
+          "type": "array",
+          "value": [
+            {
+              "type": "object",
+              "value": {
+                "config": {
+                  "type": "object",
+                  "value": {
+                    "message": {
+                      "type": "string",
+                      "value": "bare"
+                    }
+                  }
+                },
+                "kind_id": {
+                  "type": "string",
+                  "value": "core.log.write"
+                }
+              }
+            }
+          ]
+        }
+      },
+      "enabled": true,
+      "continue_on_error": false,
+      "condition": null,
+      "label": null
+    }
+  ],
+  []
+]

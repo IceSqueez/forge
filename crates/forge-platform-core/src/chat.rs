@@ -173,22 +173,6 @@ mod tests {
         }
     }
 
-    #[test]
-    fn connection_event_reports_whether_the_transition_was_expected() {
-        for (transition, expected) in [
-            (ConnectionTransition::Expected, true),
-            (ConnectionTransition::Unexpected, false),
-        ] {
-            let event =
-                connection_state_changed_event("twitch", ConnectionState::Disconnected, transition);
-            assert_eq!(
-                event.payload["expected"],
-                serde_json::json!(expected),
-                "{transition:?}"
-            );
-        }
-    }
-
     struct PlainOnlyPlatform {
         sent: std::sync::Mutex<Vec<(String, String)>>,
     }

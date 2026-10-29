@@ -1,0 +1,10 @@
+[
+  {
+    "payload": {
+      "key": "golden_set",
+      "new_value": 42,
+      "prev_value": null
+    },
+    "source": "core"
+  }
+]

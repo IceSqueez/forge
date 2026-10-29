@@ -1,0 +1,12 @@
+[
+  {
+    "payload": {
+      "error_type": "runtime",
+      "is_inline": true,
+      "message": "inline script failed: runtime error: Runtime error: golden boom (line 1, position 1)",
+      "script_id": null,
+      "script_name": null
+    },
+    "source": "rhai"
+  }
+]

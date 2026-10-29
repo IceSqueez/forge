@@ -1,0 +1,47 @@
+[
+  {
+    "kind": "platform.connection.changed",
+    "payload": {
+      "expected": true,
+      "platform_id": "twitch",
+      "state": "connecting"
+    },
+    "source": "core"
+  },
+  {
+    "kind": "platform.connection.changed",
+    "payload": {
+      "expected": true,
+      "platform_id": "youtube",
+      "state": "connected"
+    },
+    "source": "core"
+  },
+  {
+    "kind": "platform.connection.changed",
+    "payload": {
+      "expected": false,
+      "platform_id": "kick",
+      "state": "reconnecting"
+    },
+    "source": "core"
+  },
+  {
+    "kind": "platform.connection.changed",
+    "payload": {
+      "expected": false,
+      "platform_id": "obs",
+      "state": "disconnected"
+    },
+    "source": "core"
+  },
+  {
+    "kind": "platform.connection.changed",
+    "payload": {
+      "expected": true,
+      "platform_id": "vtube",
+      "state": "disconnected"
+    },
+    "source": "core"
+  }
+]

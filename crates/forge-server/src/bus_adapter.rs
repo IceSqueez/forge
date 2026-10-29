@@ -869,32 +869,52 @@ mod tests {
         );
     }
 
-    #[test]
-    fn push_envelope_always_carries_replay_and_reports_re_emitted_events_as_replays() {
-        let payload = serde_json::json!({ "text": "hi" });
-        let live = Event::new(EventSource::Twitch, "chat.message", payload.clone());
-        let replayed = Event {
-            replay: true,
-            ..live.clone()
-        };
+    const PUSH_GOLDEN_CASES: [(&str, &str, &str); 3] = [
+        (
+            "live_chat_message",
+            include_str!("../tests/fixtures/ws_push/live_chat_message.event.json"),
+            include_str!("../tests/fixtures/ws_push/live_chat_message.frame.json"),
+        ),
+        (
+            "caused_action_done",
+            include_str!("../tests/fixtures/ws_push/caused_action_done.event.json"),
+            include_str!("../tests/fixtures/ws_push/caused_action_done.frame.json"),
+        ),
+        (
+            "replayed_scene_change",
+            include_str!("../tests/fixtures/ws_push/replayed_scene_change.event.json"),
+            include_str!("../tests/fixtures/ws_push/replayed_scene_change.frame.json"),
+        ),
+    ];
 
-        for (event, expected_replay) in [(&live, false), (&replayed, true)] {
-            let json = serialize_push(event).expect("a JSON payload serializes");
-            let frame: serde_json::Value =
-                serde_json::from_str(&json).expect("the push frame is valid JSON");
+    #[tokio::test]
+    async fn fanned_out_push_frame_bytes_match_the_golden_for_each_representative_event() {
+        let mut drifted = Vec::new();
+        for (case, event_json, golden) in PUSH_GOLDEN_CASES {
+            let observer = Arc::new(ChannelObserver(EventChannel::new(16)));
+            let adapter = BusAdapter::new(observer.clone());
+            adapter.spawn();
+            let (_, mut rx) = adapter.register_client(wildcard_filter()).await;
+            let event: Event = serde_json::from_str(event_json).expect("a bus event");
 
-            assert_eq!(
-                frame["event"],
-                serde_json::json!({
-                    "source": "twitch",
-                    "type": "chat.message",
-                    "id": event.id.to_string(),
-                    "replay": expected_replay,
-                }),
-                "push envelope drifted from the shape subscribed clients parse"
-            );
-            assert_eq!(frame["data"], payload);
+            observer.0.send(Arc::new(event));
+            let frame = tokio::time::timeout(std::time::Duration::from_secs(30), rx.recv())
+                .await
+                .expect("timeout waiting for the push frame")
+                .expect("receiver error");
+
+            let WsFrame::Text(text) = frame else {
+                panic!("{case}: expected a text frame");
+            };
+            if text != golden.trim_end_matches('\n') {
+                drifted.push(format!("{case}:\n  golden: {golden}  pushed: {text}"));
+            }
         }
+        assert!(
+            drifted.is_empty(),
+            "push frames drifted:\n{}",
+            drifted.join("\n")
+        );
     }
 
     #[tokio::test]

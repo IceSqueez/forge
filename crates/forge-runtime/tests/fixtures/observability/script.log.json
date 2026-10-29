@@ -1,0 +1,10 @@
+[
+  {
+    "payload": {
+      "level": "info",
+      "message": "golden line",
+      "script_id": null
+    },
+    "source": "rhai"
+  }
+]

@@ -1,0 +1,13 @@
+[
+  {
+    "payload": {
+      "action_id": "01JBZ8Q4T5N7W3K2M9X6V1R0AA",
+      "action_name": "Golden run",
+      "manual_test": false,
+      "outcome": "failed",
+      "reason": "inline script failed: runtime error: Runtime error: golden boom (line 1, position 1)",
+      "total_ms": 0
+    },
+    "source": "core"
+  }
+]

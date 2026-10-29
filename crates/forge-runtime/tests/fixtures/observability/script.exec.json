@@ -1,0 +1,18 @@
+[
+  {
+    "payload": {
+      "is_inline": true,
+      "script_id": null,
+      "script_name": null
+    },
+    "source": "rhai"
+  },
+  {
+    "payload": {
+      "is_inline": true,
+      "script_id": null,
+      "script_name": null
+    },
+    "source": "rhai"
+  }
+]

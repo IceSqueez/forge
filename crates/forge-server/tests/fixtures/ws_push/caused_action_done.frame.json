@@ -1,0 +1,1 @@
+{"timeStamp":"2026-10-29T12:34:57Z","event":{"source":"core","type":"action.done","id":"01JBZ8Q4T5N7W3K2M9X6V1R0AC","causedBy":"01JBZ8Q4T5N7W3K2M9X6V1R0AB","replay":false},"data":{"action_id":"01JBZ8Q4T5N7W3K2M9X6V1R0AD","action_name":"Greet","manual_test":false,"outcome":"success","total_ms":12}}

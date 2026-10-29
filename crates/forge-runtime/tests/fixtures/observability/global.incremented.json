@@ -1,0 +1,10 @@
+[
+  {
+    "payload": {
+      "delta": 3,
+      "key": "golden_set",
+      "new_value": 45
+    },
+    "source": "core"
+  }
+]

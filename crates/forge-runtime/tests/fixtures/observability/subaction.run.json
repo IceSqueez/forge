@@ -1,0 +1,30 @@
+[
+  {
+    "payload": {
+      "kind": "core.globals.set",
+      "step_index": 0
+    },
+    "source": "core"
+  },
+  {
+    "payload": {
+      "kind": "core.globals.increment",
+      "step_index": 1
+    },
+    "source": "core"
+  },
+  {
+    "payload": {
+      "kind": "script.run.inline",
+      "step_index": 2
+    },
+    "source": "core"
+  },
+  {
+    "payload": {
+      "kind": "script.run.inline",
+      "step_index": 3
+    },
+    "source": "core"
+  }
+]

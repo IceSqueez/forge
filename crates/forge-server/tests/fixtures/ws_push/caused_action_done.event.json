@@ -1,0 +1,1 @@
+{"id":"01JBZ8Q4T5N7W3K2M9X6V1R0AC","source":"core","kind":"action.done","timestamp":"2026-10-29T12:34:57Z","payload":{"action_id":"01JBZ8Q4T5N7W3K2M9X6V1R0AD","action_name":"Greet","manual_test":false,"outcome":"success","total_ms":12},"caused_by":"01JBZ8Q4T5N7W3K2M9X6V1R0AB","replay":false,"causation_depth":1}

@@ -1,0 +1,11 @@
+[
+  {
+    "payload": {
+      "intake": "skip",
+      "processing": "running",
+      "queue_id": "01JBZ8Q4T5N7W3K2M9X6V1R0QQ",
+      "queue_name": "golden"
+    },
+    "source": "core"
+  }
+]

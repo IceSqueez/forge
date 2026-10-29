@@ -1,0 +1,9 @@
+[
+  {
+    "payload": {
+      "command": "!golden",
+      "kind_id": "golden.chat.command"
+    },
+    "source": "core"
+  }
+]

@@ -1,0 +1,122 @@
+{
+  "actions": [
+    {
+      "bypass_pause": false,
+      "concurrent": false,
+      "description": "written by 0.6.3",
+      "enabled": true,
+      "execution_mode": "sequential",
+      "group": "Legacy",
+      "id": "01JBZ8Q4T5N7W3K2M9X6V1R0A1",
+      "name": "Older greeting",
+      "queue_id": "01JBZ8Q4T5N7W3K2M9X6V1R0Q1",
+      "sub_actions": [
+        {
+          "condition": null,
+          "config": {
+            "condition": {
+              "type": "string",
+              "value": "%user% != \"\""
+            },
+            "else_chain": {
+              "type": "array",
+              "value": []
+            },
+            "then_chain": {
+              "type": "array",
+              "value": [
+                {
+                  "type": "object",
+                  "value": {
+                    "config": {
+                      "type": "object",
+                      "value": {
+                        "message": {
+                          "type": "string",
+                          "value": "привіт %user%"
+                        }
+                      }
+                    },
+                    "kind_id": {
+                      "type": "string",
+                      "value": "core.log.write"
+                    }
+                  }
+                }
+              ]
+            }
+          },
+          "continue_on_error": false,
+          "enabled": true,
+          "kind_id": "core.logic.if_then_else",
+          "label": "greet"
+        },
+        {
+          "condition": null,
+          "config": {
+            "amount": {
+              "type": "int",
+              "value": 1
+            },
+            "name": {
+              "type": "string",
+              "value": "legacy_counter"
+            }
+          },
+          "continue_on_error": true,
+          "enabled": true,
+          "kind_id": "core.globals.increment",
+          "label": null
+        }
+      ]
+    }
+  ],
+  "globals": [
+    {
+      "name": "legacy_counter",
+      "persisted": true,
+      "value": {
+        "type": "int",
+        "value": 0
+      }
+    }
+  ],
+  "queues": [
+    {
+      "concurrency": 8,
+      "description": "Catch-all queue for actions without explicit queue assignment",
+      "id": "00000000000000000000000000",
+      "name": "Default"
+    },
+    {
+      "concurrency": 2,
+      "description": "from an older build",
+      "id": "01JBZ8Q4T5N7W3K2M9X6V1R0Q1",
+      "name": "Legacy queue"
+    }
+  ],
+  "trigger_links": {
+    "Older greeting": [
+      "Every 15 min"
+    ]
+  },
+  "triggers": [
+    {
+      "cooldown_global": true,
+      "cooldown_secs": 30,
+      "enabled": true,
+      "id": "01JBZ8Q4T5N7W3K2M9X6V1R0T1",
+      "kind_id": "timer.tick",
+      "name": "Every 15 min",
+      "overrides": {
+        "interval_minutes": {
+          "type": "int",
+          "value": 15
+        }
+      },
+      "permission_rung": "everyone",
+      "platform_scope": "any",
+      "user_defined": true
+    }
+  ]
+}

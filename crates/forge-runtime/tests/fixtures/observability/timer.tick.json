@@ -1,0 +1,10 @@
+[
+  {
+    "payload": {
+      "instance_id": "01JBZ8Q4T5N7W3K2M9X6V1R0TT",
+      "interval_minutes": 15,
+      "message_count": 7
+    },
+    "source": "timer"
+  }
+]

@@ -1,0 +1,64 @@
+{
+  "queue": {
+    "id": "01JBZ8Q4T5N7W3K2M9X6V1R0Q2",
+    "name": "Backed up queue",
+    "description": "from an older build",
+    "concurrency": 3
+  },
+  "action": {
+    "id": "01JBZ8Q4T5N7W3K2M9X6V1R0A2",
+    "name": "Backed up action",
+    "group": null,
+    "queue_id": "01JBZ8Q4T5N7W3K2M9X6V1R0Q2",
+    "enabled": true,
+    "concurrent": false,
+    "bypass_pause": true,
+    "execution_mode": "random_pick",
+    "description": null,
+    "sub_actions": [
+      {
+        "kind_id": "core.logic.switch_case",
+        "config": {
+          "cases": {"type": "array", "value": [
+            {"type": "object", "value": {
+              "chain": {"type": "array", "value": [
+                {"type": "object", "value": {
+                  "config": {"type": "object", "value": {"message": {"type": "string", "value": "перший"}}},
+                  "kind_id": {"type": "string", "value": "core.log.write"}
+                }}
+              ]},
+              "match": {"type": "string", "value": "1"}
+            }},
+            {"type": "string", "value": "not a case"}
+          ]},
+          "default_chain": {"type": "array", "value": []},
+          "expression": {"type": "string", "value": "%rand%"}
+        },
+        "enabled": true,
+        "continue_on_error": false,
+        "condition": null,
+        "label": "pick"
+      },
+      {
+        "kind_id": "core.logic.wait",
+        "config": {"ms": {"type": "int", "value": 500}},
+        "enabled": false,
+        "continue_on_error": true,
+        "condition": "%armed%",
+        "label": null
+      }
+    ]
+  },
+  "settings": {
+    "app.language": "uk",
+    "obs.auto_reconnect": "1",
+    "picker.favorites.sub_actions": "[\"core.logic.wait\",\"obs.scenes.switch_current\"]",
+    "tts.engine_params.piper": "{\"pitch_semitones\":2.5,\"rate_multiplier\":1.25,\"gain\":0.5}",
+    "tts.master_volume": "0.8",
+    "ui.undeclared_key": "kept verbatim"
+  },
+  "globals": {
+    "backed_up_count": {"type": "int", "value": 41},
+    "backed_up_list": {"type": "array", "value": [{"type": "string", "value": "a"}, {"type": "float", "value": 1.5}]}
+  }
+}

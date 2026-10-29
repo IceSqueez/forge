@@ -1,0 +1,39 @@
+[
+  {
+    "payload": {
+      "duration_ms": 0,
+      "kind": "core.globals.set",
+      "outcome": "success",
+      "step_index": 0
+    },
+    "source": "core"
+  },
+  {
+    "payload": {
+      "duration_ms": 0,
+      "kind": "core.globals.increment",
+      "outcome": "success",
+      "step_index": 1
+    },
+    "source": "core"
+  },
+  {
+    "payload": {
+      "duration_ms": 0,
+      "kind": "script.run.inline",
+      "outcome": "success",
+      "step_index": 2
+    },
+    "source": "core"
+  },
+  {
+    "payload": {
+      "duration_ms": 0,
+      "kind": "script.run.inline",
+      "message": "inline script failed: runtime error: Runtime error: golden boom (line 1, position 1)",
+      "outcome": "failed",
+      "step_index": 3
+    },
+    "source": "core"
+  }
+]

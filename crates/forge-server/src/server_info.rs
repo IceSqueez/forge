@@ -1,7 +1,8 @@
-use std::collections::HashMap;
+use std::collections::{BTreeSet, HashMap};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 
+use forge_types::PlatformId;
 use time::OffsetDateTime;
 use tokio::sync::RwLock;
 
@@ -12,6 +13,7 @@ use crate::ws_client::WsClient;
 pub struct ServerInfo {
     pub version: &'static str,
     pub started_at: OffsetDateTime,
+    pub available_platforms: BTreeSet<PlatformId>,
     pub connected_clients: Arc<RwLock<HashMap<ClientId, Arc<WsClient>>>>,
     pub bandwidth: Arc<BandwidthTracker>,
     pub http_requests_total: AtomicU64,
@@ -21,9 +23,14 @@ pub struct ServerInfo {
 
 impl ServerInfo {
     pub fn new() -> Arc<Self> {
+        Self::serving(BTreeSet::new())
+    }
+
+    pub fn serving(available_platforms: BTreeSet<PlatformId>) -> Arc<Self> {
         Arc::new(Self {
             version: env!("CARGO_PKG_VERSION"),
             started_at: OffsetDateTime::now_utc(),
+            available_platforms,
             connected_clients: Arc::new(RwLock::new(HashMap::new())),
             bandwidth: Arc::new(BandwidthTracker::new()),
             http_requests_total: AtomicU64::new(0),

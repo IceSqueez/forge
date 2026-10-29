@@ -1,6 +1,6 @@
-use std::collections::HashMap;
+use std::collections::{BTreeSet, HashMap};
 
-use forge_types::IntegrationId;
+use forge_types::{IntegrationId, PlatformId};
 
 use crate::descriptor::TriggerKindDescriptor;
 use crate::error::RegistryError;
@@ -45,6 +45,12 @@ impl TriggerRegistry {
 
     pub fn owning_integration(&self, kind_id: &str) -> Option<&IntegrationId> {
         self.owners.get(kind_id)
+    }
+
+    pub fn platforms(&self) -> BTreeSet<PlatformId> {
+        self.all()
+            .filter_map(|descriptor| descriptor.platform_contract().platform())
+            .collect()
     }
 
     pub fn declare_retired(&mut self, succession: &IdSuccession) -> Result<(), RegistryError> {

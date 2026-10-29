@@ -103,7 +103,7 @@ async fn build_state(config: ServerConfig, bind_addr: SocketAddr) -> Result<AppS
         overlays: config.overlays,
         credentials: config.credentials,
         settings: config.settings,
-        server_info: ServerInfo::new(),
+        server_info: ServerInfo::serving(config.available_platforms),
         action_engine: config.action_engine,
         audio_clips: AudioClipStore::new(),
         overlay_root: Arc::new(config.overlay_root),

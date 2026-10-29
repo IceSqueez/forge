@@ -1,3 +1,4 @@
+use std::collections::BTreeSet;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -8,6 +9,7 @@ use forge_storage::{
     SERVER_HTTP_OVERLAY_REQUIRE_TOKEN_DEFAULT, SettingsRepo, StorageError, UserGlobalsRepo,
     get_bool_setting, reserved_keys, set_bool_setting, set_json_setting, stored_json_setting,
 };
+use forge_types::PlatformId;
 
 const VALID_BIND_ADDRESSES: &[&str] = &["127.0.0.1", "0.0.0.0", "::1", "::"];
 
@@ -18,6 +20,7 @@ pub struct ServerConfig {
     pub overlay_cors_any_origin: bool,
     pub lan_bind_enabled: bool,
     pub additional_origins: Vec<String>,
+    pub available_platforms: BTreeSet<PlatformId>,
     pub settings: Arc<dyn SettingsRepo>,
     pub credentials: Arc<dyn CredentialsRepo>,
     pub event_bus: Arc<dyn EventHistory>,
@@ -50,6 +53,7 @@ impl ServerConfig {
             overlay_cors_any_origin: true,
             lan_bind_enabled: false,
             additional_origins: Vec::new(),
+            available_platforms: BTreeSet::new(),
             settings,
             credentials,
             event_bus,

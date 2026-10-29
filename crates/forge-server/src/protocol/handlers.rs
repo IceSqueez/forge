@@ -1,7 +1,7 @@
 use forge_events::{Event, EventSource, GlobalSet, TypedEvent};
 use forge_runtime::{BusError, ExecutionRequest};
 use forge_storage::{GlobalsRepo, MediaFormat, UserGlobalsRepo};
-use forge_types::{ActionId, EventId};
+use forge_types::{ActionId, EventId, PlatformId};
 
 use super::context::DispatchContext;
 use super::envelope::WsResponse;
@@ -34,7 +34,7 @@ pub(crate) async fn handle_get_info(ctx: &DispatchContext) -> WsResponse {
         "version": ctx.server_info.version,
         "uptime_seconds": ctx.server_info.uptime_seconds(),
         "connected_accounts": connected_accounts,
-        "available_platforms": ["twitch"],
+        "available_platforms": ctx.server_info.available_platforms,
         "connected_clients": connected_clients,
         "bandwidth": {
             "outbound_bytes_per_second": bw.current_bps(),
@@ -318,23 +318,14 @@ pub(crate) async fn handle_get_active_viewers(ctx: &DispatchContext) -> WsRespon
     let cutoff =
         time::OffsetDateTime::now_utc() - time::Duration::seconds(ACTIVE_VIEWER_WINDOW_SECS);
 
-    let mut viewers: BTreeMap<(&'static str, String), serde_json::Value> = BTreeMap::new();
+    let mut viewers: BTreeMap<(PlatformId, String), serde_json::Value> = BTreeMap::new();
 
     for ev in events.iter() {
-        if !matches!(
-            ev.kind.as_str(),
-            "twitch.channel.chat.message" | "youtube.chat.message" | "kick.chat.message.sent"
-        ) {
-            continue;
-        }
         if ev.timestamp < cutoff {
             continue;
         }
-        let platform = match ev.source {
-            EventSource::Twitch => "twitch",
-            EventSource::YouTube => "youtube",
-            EventSource::Kick => "kick",
-            _ => continue,
+        let Some(platform) = ev.source.to_platform_id() else {
+            continue;
         };
         let Some(viewer) = forge_types::ChatViewer::read(&ev.payload) else {
             continue;
@@ -359,7 +350,7 @@ pub(crate) async fn handle_get_active_viewers(ctx: &DispatchContext) -> WsRespon
             .entry((platform, viewer.id.clone()))
             .or_insert_with(|| {
                 serde_json::json!({
-                    "platform": platform,
+                    "platform": platform.as_str(),
                     "login": login,
                     "id": viewer.id,
                     "roles": roles,

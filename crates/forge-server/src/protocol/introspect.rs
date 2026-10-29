@@ -1,11 +1,12 @@
 use std::sync::atomic::Ordering;
 
 use forge_storage::CredentialsRepo;
+use forge_types::PlatformId;
 
 use crate::bus_adapter::BusAdapter;
 use crate::server_info::ServerInfo;
 
-const PLATFORM_PREFIXES: &[&str] = &["twitch:", "youtube:", "kick:"];
+const CREDENTIAL_ID_SEPARATOR: char = ':';
 
 pub(crate) async fn build_connected_accounts(
     creds: &dyn CredentialsRepo,
@@ -16,17 +17,12 @@ pub(crate) async fn build_connected_accounts(
     };
     ids.into_iter()
         .filter_map(|id| {
-            let s = id.as_str();
-            for prefix in PLATFORM_PREFIXES {
-                if let Some(login) = s.strip_prefix(prefix) {
-                    let platform = &prefix[..prefix.len() - 1];
-                    return Some(serde_json::json!({
-                        "platform": platform,
-                        "login": login,
-                    }));
-                }
-            }
-            None
+            let (platform, login) = id.as_str().split_once(CREDENTIAL_ID_SEPARATOR)?;
+            let platform = PlatformId::parse(platform)?;
+            Some(serde_json::json!({
+                "platform": platform.as_str(),
+                "login": login,
+            }))
         })
         .collect()
 }

@@ -54,7 +54,7 @@ impl SynthesisSample {
     pub fn random(contract: KindPlatformContract) -> Self {
         let mut rng = rand::rng();
         SynthesisSample {
-            platform: platform_of(contract),
+            platform: contract.platform(),
             name_index: rng.random_range(0..DISPLAY_NAME_POOL.len()),
             message_index: rng.random_range(0..MESSAGE_POOL.len()),
             tier_index: rng.random_range(0..SUB_TIER_POOL.len()),
@@ -66,7 +66,7 @@ impl SynthesisSample {
 
     pub fn stable(contract: KindPlatformContract) -> Self {
         SynthesisSample {
-            platform: platform_of(contract),
+            platform: contract.platform(),
             name_index: FIRST_IN_POOL,
             message_index: FIRST_IN_POOL,
             tier_index: FIRST_IN_POOL,
@@ -133,13 +133,6 @@ pub fn synthesize_args(variables: &[TriggerVariable], sample: &SynthesisSample) 
         stack = stack.set(variable.declared.name.clone(), value);
     }
     stack
-}
-
-fn platform_of(contract: KindPlatformContract) -> Option<PlatformId> {
-    match contract {
-        KindPlatformContract::PlatformSpecific(platform) => Some(platform),
-        KindPlatformContract::Universal => None,
-    }
 }
 
 fn canonical_slot(standing: VariableStanding) -> Option<CanonicalVariable> {

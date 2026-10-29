@@ -32,7 +32,7 @@ use forge_storage::{
     UserGlobalsRepo, get_json_setting, reserved_keys,
 };
 use forge_storage_sqlite::SqliteBackend;
-use forge_types::{LatestValueReader, Shared};
+use forge_types::{LatestValueReader, PlatformId, Shared};
 
 use crate::audio_router::{AudioRouter, AudioRouterParts};
 use crate::integrations::build_integrations;
@@ -508,7 +508,7 @@ pub async fn build_runtime(
     let ServerBoot {
         handle: server,
         unavailable_reason: server_unavailable,
-    } = build_server(&backend, &bus, &action_engine).await;
+    } = build_server(&backend, &bus, &action_engine, trigger_registry.platforms()).await;
 
     let mut overlay_kinds_mut = OverlayKindRegistry::new();
     if let Err(e) = register_builtin_kinds(&mut overlay_kinds_mut) {
@@ -696,6 +696,7 @@ async fn build_server(
     backend: &Arc<dyn DataProvider>,
     bus: &Arc<EventBus>,
     action_engine: &ActionEngineHandle,
+    available_platforms: std::collections::BTreeSet<PlatformId>,
 ) -> ServerBoot {
     let settings = match forge_server::ServerSettings::load(backend.as_ref()).await {
         Ok(settings) => settings,
@@ -740,6 +741,7 @@ async fn build_server(
         config.lan_bind_enabled = settings.lan_bind_enabled;
         config.overlay_cors_any_origin = settings.overlay_cors_any_origin;
         config.additional_origins = settings.additional_origins.clone();
+        config.available_platforms = available_platforms.clone();
         if let Some(root) = settings
             .overlay_root
             .as_ref()

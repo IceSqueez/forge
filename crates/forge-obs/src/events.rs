@@ -717,7 +717,7 @@ mod tests {
     #[test]
     fn make_connection_disconnected_lost_uses_stable_reason_token_and_null_detail() {
         let ev = make_connection_disconnected(
-            crate::payload_fields::connection::reason::CONNECTION_LOST,
+            crate::vocabulary::fields::connection::reason::CONNECTION_LOST,
             None,
         );
         assert_eq!(ev.payload["reason"], "connection_lost");

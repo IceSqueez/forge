@@ -561,4 +561,50 @@ mod tests {
             .map(|(k, v)| ((*k).to_owned(), Variant::String((*v).to_owned())))
             .collect()
     }
+
+    fn seeded_stack() -> ArgStack {
+        ArgStack::new().set("earlier".to_owned(), Variant::String("kept".to_owned()))
+    }
+
+    #[tokio::test]
+    async fn runners_returning_a_stack_keep_earlier_variables_and_declare_every_output() {
+        let reg = registry_with(Arc::new(MockSink));
+        let seed = seeded_stack();
+        let mut returned_stack = std::collections::BTreeSet::new();
+        for runner in reg.all() {
+            let mut config = runner.default_config();
+            config.insert("source".to_owned(), Variant::String("Mic".to_owned()));
+            let (_, stack) = runner.execute(&config, &make_ctx(&seed)).await;
+            let Some(stack) = stack else { continue };
+            let id = runner.id().to_owned();
+
+            assert_eq!(
+                stack.get("earlier"),
+                Some(&Variant::String("kept".to_owned())),
+                "{id} dropped an earlier variable",
+            );
+            let produced: std::collections::BTreeSet<String> = stack
+                .snapshot()
+                .into_keys()
+                .filter(|key| key != "earlier")
+                .collect();
+            let declared: std::collections::BTreeSet<String> =
+                runner.scope_io().fixed_outputs.into_iter().collect();
+            assert_eq!(produced, declared, "{id} outputs differ from scope_io");
+            returned_stack.insert(id);
+        }
+        assert_eq!(
+            returned_stack,
+            [
+                "obs.scenes.get_list",
+                "obs.sources.get_list",
+                "obs.sources.get_input_settings",
+                "obs.record.get_status",
+                "obs.stream.get_status",
+            ]
+            .into_iter()
+            .map(str::to_owned)
+            .collect(),
+        );
+    }
 }

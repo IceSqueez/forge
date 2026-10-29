@@ -2298,7 +2298,7 @@ mod tests {
             }
         }
         client.state.store(ConnectionState::Connected);
-        let sources = OptionListId::new(crate::option_source::SOURCE_LIST);
+        let sources = OptionListId::new(crate::vocabulary::option_lists::SOURCE_LIST);
         let scene = |value: &str| {
             std::collections::BTreeMap::from([(
                 crate::option_source::SCENE_FIELD.to_owned(),

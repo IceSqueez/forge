@@ -307,3 +307,348 @@ pub(crate) fn resolver_skip(reason: &str) -> SkipReason {
 }
 
 pub(crate) const VOICE_OVERRIDE_NOT_FOUND: &str = "voice override not found in catalog";
+
+#[cfg(test)]
+mod tests {
+    use std::sync::{Arc, Mutex};
+
+    use forge_events::{Event, EventPublisher, EventSource};
+    use forge_speech_types::{EngineId, LanguageCode, VoiceId};
+    use forge_types::EventId;
+    use serde_json::{Value, json};
+    use tokio::sync::broadcast;
+
+    use super::*;
+    use crate::{Priority, RequestId, SpeakEvent, SpeakRequest};
+
+    #[derive(Default)]
+    struct RecordingBus {
+        events: Mutex<Vec<Event>>,
+    }
+
+    impl EventPublisher for RecordingBus {
+        fn publish(&self, event: Event) {
+            self.events.lock().unwrap().push(event);
+        }
+    }
+
+    fn request(source: Option<EventId>) -> SpeakRequest {
+        SpeakRequest {
+            request_id: RequestId("req-1".into()),
+            viewer_id: "v-1".into(),
+            viewer_name: "nova".into(),
+            text: "hi chat".into(),
+            priority: Priority::Normal,
+            engine_override: None,
+            voice_override: None,
+            source_event_id: source,
+            is_reward: false,
+            target: None,
+            message_emotes: Default::default(),
+        }
+    }
+
+    fn emitted(emit: impl FnOnce(&SpeakEmitter<'_>)) -> (Event, Vec<SpeakEvent>) {
+        let bus = Arc::new(RecordingBus::default());
+        let (tx, mut rx) = broadcast::channel(8);
+        emit(&SpeakEmitter::new(&tx, bus.as_ref()));
+        let mut events = bus.events.lock().unwrap();
+        assert_eq!(events.len(), 1, "exactly one bus event per emission");
+        let feed = std::iter::from_fn(|| rx.try_recv().ok()).collect();
+        (events.remove(0), feed)
+    }
+
+    #[test]
+    fn every_bus_kind_keeps_its_wire_kind_payload_and_cause() {
+        let src = EventId::new();
+        let req = request(Some(src));
+        let voice = VoiceId("en-amy".into());
+        let engine = EngineId("piper".into());
+        let language = DetectedLanguage {
+            code: LanguageCode::from_locale("uk-UA").unwrap(),
+            confidence: 0.75,
+        };
+        type Emission<'a> = Box<dyn FnOnce(&SpeakEmitter<'_>) + 'a>;
+        let rows: Vec<(&str, Emission<'_>, Value, Option<EventId>)> = vec![
+            (
+                "speak.enqueued",
+                Box::new(|e| {
+                    e.enqueued(
+                        &req,
+                        3,
+                        EnqueuePreview {
+                            voice_preview: "Amy".into(),
+                            estimated_secs: 4,
+                        },
+                    )
+                }),
+                json!({ "request_id": "req-1", "queue_len": 3, "viewer_name": "nova", "text": "hi chat" }),
+                Some(src),
+            ),
+            (
+                "speak.started",
+                Box::new(|e| {
+                    e.started(
+                        &req,
+                        Some(ResolvedPlayback {
+                            voice_id: &voice,
+                            engine_id: &engine,
+                            duration_secs: 2,
+                            language: Some(&language),
+                        }),
+                        1,
+                    )
+                }),
+                json!({
+                    "request_id": "req-1",
+                    "voice_id": "en-amy",
+                    "engine_id": "piper",
+                    "queue_len": 1,
+                    "viewer_name": "nova",
+                    "text": "hi chat",
+                    "detected_language": "uk",
+                    "language_confidence": 0.75,
+                }),
+                Some(src),
+            ),
+            (
+                "speak.started",
+                Box::new(|e| e.started(&req, None, 0)),
+                json!({
+                    "request_id": "req-1",
+                    "voice_id": null,
+                    "engine_id": null,
+                    "queue_len": 0,
+                    "viewer_name": "nova",
+                    "text": "hi chat",
+                    "detected_language": null,
+                    "language_confidence": null,
+                }),
+                Some(src),
+            ),
+            (
+                "speak.finished",
+                Box::new(|e| e.outcome(&req, Outcome::Finished)),
+                json!({ "request_id": "req-1", "viewer_name": "nova", "text": "hi chat" }),
+                Some(src),
+            ),
+            (
+                "speak.skipped",
+                Box::new(|e| {
+                    e.outcome(
+                        &req,
+                        Outcome::Skipped {
+                            reason: SkipReason::SkipRuleMatched,
+                            detail: Some("no urls".into()),
+                        },
+                    )
+                }),
+                json!({
+                    "request_id": "req-1",
+                    "reason": "skip_rule_matched",
+                    "detail": "no urls",
+                    "viewer_name": "nova",
+                    "text": "hi chat",
+                }),
+                Some(src),
+            ),
+            (
+                "speak.skipped",
+                Box::new(|e| e.skipped_in_flight(RequestId("req-1".into()), SkipReason::Cancelled)),
+                json!({
+                    "request_id": "req-1",
+                    "reason": "cancelled",
+                    "detail": null,
+                    "viewer_name": null,
+                    "text": null,
+                }),
+                None,
+            ),
+            (
+                "speak.failed",
+                Box::new(|e| {
+                    e.outcome(
+                        &req,
+                        Outcome::Failed {
+                            reason: FailureReason::DeviceError,
+                            error: "device unplugged".into(),
+                        },
+                    )
+                }),
+                json!({
+                    "request_id": "req-1",
+                    "reason": "device_error",
+                    "error": "device unplugged",
+                    "viewer_name": "nova",
+                    "text": "hi chat",
+                }),
+                Some(src),
+            ),
+            (
+                "speak.rejected",
+                Box::new(|e| {
+                    e.outcome(
+                        &req,
+                        Outcome::Rejected {
+                            reason: RejectReason::QueueFull,
+                            limit: 5,
+                            queue_len: 5,
+                        },
+                    )
+                }),
+                json!({
+                    "request_id": "req-1",
+                    "reason": "queue_full",
+                    "limit": 5,
+                    "queue_len": 5,
+                    "viewer_name": "nova",
+                    "text": "hi chat",
+                }),
+                Some(src),
+            ),
+            (
+                "speak.removed",
+                Box::new(|e| e.outcome(&req, Outcome::Removed)),
+                json!({ "request_id": "req-1", "viewer_name": "nova", "text": "hi chat" }),
+                Some(src),
+            ),
+            (
+                "speak.reordered",
+                Box::new(|e| e.reordered(&req, Some(RequestId("req-0".into())))),
+                json!({ "request_id": "req-1", "before": "req-0", "viewer_name": "nova", "text": "hi chat" }),
+                Some(src),
+            ),
+            (
+                "speak.reordered",
+                Box::new(|e| e.reordered(&req, None)),
+                json!({ "request_id": "req-1", "before": null, "viewer_name": "nova", "text": "hi chat" }),
+                Some(src),
+            ),
+            (
+                "speak.cleared",
+                Box::new(|e| e.cleared(true)),
+                json!({ "keep_current": true }),
+                None,
+            ),
+            (
+                "speak.paused",
+                Box::new(|e| e.paused(HoldReason::VoiceGate)),
+                json!({ "reason": "voicegate" }),
+                None,
+            ),
+            (
+                "speak.resumed",
+                Box::new(|e| e.resumed(HoldReason::User)),
+                json!({ "reason": "user" }),
+                None,
+            ),
+        ];
+
+        for (kind, emit, payload, caused_by) in rows {
+            let (event, _) = emitted(emit);
+            assert_eq!(event.kind, kind);
+            assert_eq!(event.source, EventSource::Audio, "{kind}");
+            assert_eq!(event.payload, payload, "{kind}");
+            assert_eq!(event.caused_by, caused_by, "{kind}");
+        }
+    }
+
+    #[test]
+    fn every_reason_serializes_to_its_wire_token_and_parses_back() {
+        fn round_trips<T>(cases: &[(T, &str)])
+        where
+            T: serde::Serialize + serde::de::DeserializeOwned + PartialEq + std::fmt::Debug,
+        {
+            for (reason, token) in cases {
+                assert_eq!(serde_json::to_value(reason).unwrap(), json!(token));
+                assert_eq!(&serde_json::from_value::<T>(json!(token)).unwrap(), reason);
+            }
+        }
+        round_trips(&[
+            (SkipReason::SkipRuleMatched, "skip_rule_matched"),
+            (SkipReason::BlockedByWordFilter, "blocked_by_word_filter"),
+            (SkipReason::EmptyAfterProcessing, "empty_after_processing"),
+            (SkipReason::BlockedByAlias, "blocked_by_alias"),
+            (SkipReason::NoVoicesAvailable, "no_voices_available"),
+            (
+                SkipReason::VoiceOverrideNotFound,
+                "voice_override_not_found",
+            ),
+            (SkipReason::VoiceResolutionFailed, "voice_resolution_failed"),
+            (SkipReason::UserSkip, "user_skip"),
+            (SkipReason::Promoted, "promoted"),
+            (SkipReason::Cancelled, "cancelled"),
+            (SkipReason::Cleared, "cleared"),
+        ]);
+        round_trips(&[
+            (FailureReason::EngineError, "engine_error"),
+            (FailureReason::DeviceError, "device_error"),
+            (FailureReason::EngineTimeout, "engine_timeout"),
+        ]);
+        round_trips(&[
+            (RejectReason::QueueFull, "queue_full"),
+            (RejectReason::PerUserLimit, "per_user_limit"),
+        ]);
+        round_trips(&[
+            (HoldReason::User, "user"),
+            (HoldReason::VoiceGate, "voicegate"),
+        ]);
+    }
+
+    #[test]
+    fn feed_skip_text_appends_the_detail_only_when_present() {
+        for (reason, detail, expected) in [
+            (
+                SkipReason::SkipRuleMatched,
+                Some("no urls"),
+                "matched a skip rule: no urls",
+            ),
+            (SkipReason::UserSkip, None, "skipped by user"),
+        ] {
+            let req = request(None);
+            let (_, feed) = emitted(|e| {
+                e.outcome(
+                    &req,
+                    Outcome::Skipped {
+                        reason,
+                        detail: detail.map(str::to_owned),
+                    },
+                )
+            });
+            assert!(
+                matches!(
+                    feed.as_slice(),
+                    [SpeakEvent::Skipped { reason, .. }] if reason == expected
+                ),
+                "{expected}"
+            );
+        }
+    }
+
+    #[test]
+    fn feed_reject_text_names_the_limit_that_was_hit() {
+        for (reason, expected) in [
+            (RejectReason::QueueFull, "queue full (max 7)"),
+            (RejectReason::PerUserLimit, "per-user limit (max 7)"),
+        ] {
+            let req = request(None);
+            let (_, feed) = emitted(|e| {
+                e.outcome(
+                    &req,
+                    Outcome::Rejected {
+                        reason,
+                        limit: 7,
+                        queue_len: 2,
+                    },
+                )
+            });
+            assert!(
+                matches!(
+                    feed.as_slice(),
+                    [SpeakEvent::Rejected { reason, .. }] if reason == expected
+                ),
+                "{expected}"
+            );
+        }
+    }
+}

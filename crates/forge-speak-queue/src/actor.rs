@@ -1312,6 +1312,7 @@ fn next_request<'a>(
 mod tests {
     use async_trait::async_trait;
     use forge_audio::{AudioError, AudioSink};
+    use forge_events::{Event, EventPublisher};
     use forge_speech_types::{AssignmentStrategy, IgnoreProfile, SynthesisDefaults};
 
     use super::*;
@@ -1815,7 +1816,7 @@ mod tests {
             deps.pipeline.swap(cfg);
             let req = request("nova", text, Priority::Normal);
 
-            let (_, estimated_secs) = enqueue_preview(&req, &deps, &[]);
+            let estimated_secs = enqueue_preview(&req, &deps, &[]).estimated_secs;
 
             assert_eq!(estimated_secs, expected, "len {} cap {cap:?}", text.len());
         }
@@ -2012,20 +2013,6 @@ mod tests {
     }
 
     #[test]
-    fn cleared_bus_event_always_carries_keep_current_flag() {
-        for (cmd, keep_current) in [
-            (SpeakCommand::Clear, false),
-            (SpeakCommand::ClearPending, true),
-        ] {
-            let mut h = Harness::new();
-            h.run(cmd);
-            let ev = h.bus("speak.cleared");
-            assert_eq!(ev.payload["keep_current"].as_bool(), Some(keep_current));
-            assert!(ev.caused_by.is_none());
-        }
-    }
-
-    #[test]
     fn enqueued_bus_event_links_caused_by_only_when_request_carries_source() {
         let src = forge_types::EventId::new();
         for (source, expected) in [(Some(src), Some(src)), (None, None)] {
@@ -2055,38 +2042,199 @@ mod tests {
     }
 
     #[test]
-    fn resolve_skip_token_maps_each_human_phrase_to_its_stable_bus_token() {
-        for (phrase, token) in [
-            ("blocked by alias", "blocked_by_alias"),
-            ("no voices available", "no_voices_available"),
+    fn resolver_skip_maps_each_resolver_phrase_to_its_skip_reason() {
+        for (phrase, reason) in [
+            ("blocked by alias", SkipReason::BlockedByAlias),
+            ("no voices available", SkipReason::NoVoicesAvailable),
             (
                 "voice override not found in catalog",
-                "voice_override_not_found",
+                SkipReason::VoiceOverrideNotFound,
             ),
             (
                 "something the resolver has never emitted",
-                "voice_resolution_failed",
+                SkipReason::VoiceResolutionFailed,
             ),
         ] {
-            assert_eq!(resolve_skip_token(phrase), token);
+            assert_eq!(resolver_skip(phrase), reason, "{phrase}");
         }
     }
 
     #[test]
-    fn pipeline_skip_token_carries_rule_name_only_for_matched_rule() {
-        use forge_tts_pipeline::SkipReason;
+    fn pipeline_skip_carries_rule_name_only_for_matched_rule() {
+        use forge_tts_pipeline::SkipReason as PipelineSkip;
+        for (pipeline, expected) in [
+            (
+                PipelineSkip::MatchedSkipRule("no urls"),
+                (SkipReason::SkipRuleMatched, Some("no urls".to_owned())),
+            ),
+            (
+                PipelineSkip::BlockedByWordFilter,
+                (SkipReason::BlockedByWordFilter, None),
+            ),
+            (
+                PipelineSkip::EmptyAfterProcessing,
+                (SkipReason::EmptyAfterProcessing, None),
+            ),
+        ] {
+            assert_eq!(pipeline_skip(&pipeline), expected);
+        }
+    }
+
+    fn bus_trail(
+        h: &Harness,
+    ) -> Vec<(
+        String,
+        Option<serde_json::Value>,
+        Option<forge_types::EventId>,
+    )> {
+        h.events
+            .lock()
+            .unwrap()
+            .iter()
+            .map(|e| (e.kind.clone(), e.payload.get("text").cloned(), e.caused_by))
+            .collect()
+    }
+
+    fn source_of(h: &Harness, text: &str) -> Option<forge_types::EventId> {
+        h.high
+            .iter()
+            .chain(h.normal.iter())
+            .find(|r| r.text == text)
+            .and_then(|r| r.source_event_id)
+    }
+
+    fn stage_mixed_pending(h: &mut Harness) -> [Option<forge_types::EventId>; 3] {
+        stage(
+            h,
+            &[
+                ("a", Priority::Normal),
+                ("b", Priority::High),
+                ("c", Priority::Normal),
+            ],
+        );
+        let sources = [source_of(h, "b"), source_of(h, "a"), source_of(h, "c")];
+        h.events.lock().unwrap().clear();
+        sources
+    }
+
+    fn removed(
+        text: &str,
+        source: Option<forge_types::EventId>,
+    ) -> (
+        String,
+        Option<serde_json::Value>,
+        Option<forge_types::EventId>,
+    ) {
+        (
+            "speak.removed".to_owned(),
+            Some(serde_json::json!(text)),
+            source,
+        )
+    }
+
+    #[test]
+    fn clear_pending_reports_each_pending_message_removed_in_play_order_then_cleared() {
+        let mut h = Harness::new();
+        let [b, a, c] = stage_mixed_pending(&mut h);
+
+        h.run(SpeakCommand::ClearPending);
+
         assert_eq!(
-            pipeline_skip_token(&SkipReason::MatchedSkipRule("no urls")),
-            ("skip_rule_matched".to_owned(), Some("no urls".to_owned())),
+            bus_trail(&h),
+            vec![
+                removed("b", b),
+                removed("a", a),
+                removed("c", c),
+                ("speak.cleared".to_owned(), None, None),
+            ]
         );
         assert_eq!(
-            pipeline_skip_token(&SkipReason::BlockedByWordFilter),
-            ("blocked_by_word_filter".to_owned(), None),
+            h.bus("speak.cleared").payload,
+            serde_json::json!({ "keep_current": true })
+        );
+    }
+
+    #[test]
+    fn clear_pending_keeps_the_in_flight_message() {
+        let mut h = Harness::new();
+        let current = RequestId::new();
+        h.active = Some(current.clone());
+        stage_mixed_pending(&mut h);
+
+        h.run(SpeakCommand::ClearPending);
+
+        assert_eq!(h.active, Some(current));
+        assert!(!h.published("speak.skipped"));
+    }
+
+    #[test]
+    fn clear_stops_the_in_flight_message_then_reports_each_pending_removed_then_cleared() {
+        let mut h = Harness::new();
+        h.active = Some(RequestId::new());
+        let [b, a, c] = stage_mixed_pending(&mut h);
+
+        h.run(SpeakCommand::Clear);
+
+        assert_eq!(
+            bus_trail(&h),
+            vec![
+                (
+                    "speak.skipped".to_owned(),
+                    Some(serde_json::Value::Null),
+                    None
+                ),
+                removed("b", b),
+                removed("a", a),
+                removed("c", c),
+                ("speak.cleared".to_owned(), None, None),
+            ]
         );
         assert_eq!(
-            pipeline_skip_token(&SkipReason::EmptyAfterProcessing),
-            ("empty_after_processing".to_owned(), None),
+            h.bus("speak.cleared").payload,
+            serde_json::json!({ "keep_current": false })
         );
+        assert!(h.active.is_none());
+    }
+
+    #[test]
+    fn clear_with_nothing_queued_publishes_only_cleared() {
+        for (cmd, keep_current) in [
+            (SpeakCommand::Clear, false),
+            (SpeakCommand::ClearPending, true),
+        ] {
+            let mut h = Harness::new();
+            h.run(cmd);
+            assert_eq!(
+                bus_trail(&h),
+                vec![("speak.cleared".to_owned(), None, None)]
+            );
+            assert_eq!(
+                h.bus("speak.cleared").payload,
+                serde_json::json!({ "keep_current": keep_current })
+            );
+        }
+    }
+
+    #[test]
+    fn stopping_a_message_still_synthesizing_publishes_skipped_without_viewer_or_text() {
+        let mut h = Harness::new();
+        let in_flight = RequestId::new();
+        h.active = Some(in_flight.clone());
+
+        h.run(SpeakCommand::Skip);
+
+        let ev = h.bus("speak.skipped");
+        assert_eq!(
+            ev.payload,
+            serde_json::json!({
+                "request_id": in_flight.0,
+                "reason": "user_skip",
+                "detail": null,
+                "viewer_name": null,
+                "text": null,
+            })
+        );
+        assert!(ev.caused_by.is_none());
     }
 
     fn localized_voice(id: &str, engine: &str, locale: &str) -> TtsVoice {

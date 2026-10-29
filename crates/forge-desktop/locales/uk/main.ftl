@@ -445,6 +445,10 @@ system_notice_actions_folded_body = { $count ->
 }
 update_leftover_install = Інша копія forge встановлена для всіх користувачів. Видаліть її, щоб ваші дані використовувала лише одна копія.
 update_leftover_open_action = Відкрити встановлені програми
+script_retired_ids_notice = Скрипти досі використовують перейменовані ідентифікатори - оновіть їх: { $uses }
+script_retired_ids_entry = { $script } ({ $ids })
+script_retired_ids_pair = { $retired } -> { $current }
+script_retired_ids_open = Відкрити скрипти
 update_report_updated = forge оновлено до { $version }
 update_report_rolled_back = forge { $failed } { $reason }. Повернуто { $restored }.
 update_report_rolled_back_data_restored = forge { $failed } { $reason }. Повернуто { $restored } і дані.

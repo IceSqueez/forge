@@ -435,6 +435,10 @@ system_notice_actions_folded_body = { $count ->
 }
 update_leftover_install = Another forge is installed for all users. Uninstall it so only one copy uses your data.
 update_leftover_open_action = Open installed apps
+script_retired_ids_notice = Scripts still use renamed ids - update them: { $uses }
+script_retired_ids_entry = { $script } ({ $ids })
+script_retired_ids_pair = { $retired } -> { $current }
+script_retired_ids_open = Open scripts
 update_report_updated = forge updated to { $version }
 update_report_rolled_back = forge { $failed } { $reason }. Back on { $restored }.
 update_report_rolled_back_data_restored = forge { $failed } { $reason }. Back on { $restored }, data restored.

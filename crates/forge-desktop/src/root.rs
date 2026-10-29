@@ -194,6 +194,12 @@ pub fn run_boot(
                 let speak_for_bridge = speak.clone();
                 let live_viewers_handle = handles.live_viewers.clone();
                 let notification_policy = handles.notification_policy.clone();
+                let scripts_for_retired_ids =
+                    Arc::clone(&handles.backend) as Arc<dyn forge_storage::ScriptRepo>;
+                let retired_ids = crate::script_retired_ids::retired_successions(
+                    &handles.trigger_registry,
+                    &handles.sub_action_registry,
+                );
                 let rt_handle_for_notices = handles.rt_handle.clone();
                 let scheduled_backups_for_notices = handles.scheduled_backups.clone();
                 let settings_for_backup_notices =
@@ -370,7 +376,14 @@ pub fn run_boot(
                         &scheduled_backups_for_notices,
                         settings_for_backup_notices,
                         Arc::new(forge_runtime::sub_action_runners::SystemNotifyPort),
-                        rt_handle_for_notices,
+                        rt_handle_for_notices.clone(),
+                        navigator.clone(),
+                    );
+                    crate::script_retired_ids::start_script_retired_id_notice(
+                        cx,
+                        scripts_for_retired_ids,
+                        retired_ids,
+                        &rt_handle_for_notices,
                         navigator,
                     );
                     apply_persisted_shortcuts(cx, backend_for_shortcuts, rt_handle_for_shortcuts);

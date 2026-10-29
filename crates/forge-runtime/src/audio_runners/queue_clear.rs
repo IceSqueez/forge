@@ -1,11 +1,22 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use forge_registry::{FormField, RegistryError, RunContext, SubActionCategory, SubActionRunner};
-use forge_types::{ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetry, Variant};
-use time::OffsetDateTime;
+use forge_registry::{
+    ConfigSpec, RunContext, StepTimer, SubActionCategory, SubActionRunner, ToggleField, TypedField,
+};
+use forge_types::{ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetry};
 
-use crate::speak_dispatcher::SpeakDispatcher;
+use crate::speak_dispatcher::{SpeakDispatchError, SpeakDispatcher};
+
+const QUEUE_CLEAR_KIND_ID: &str = "tts.queue.clear";
+
+const KEEP_CURRENT: ToggleField = ToggleField {
+    key: "keep_current",
+    label: "Let current item finish",
+    default: true,
+};
+
+const CONFIG: ConfigSpec = ConfigSpec::new(&[&KEEP_CURRENT]);
 
 pub struct QueueClearRunner {
     speak: Arc<dyn SpeakDispatcher>,
@@ -15,12 +26,19 @@ impl QueueClearRunner {
     pub fn new(speak: Arc<dyn SpeakDispatcher>) -> Self {
         Self { speak }
     }
+
+    async fn clear(&self, keep_current: bool) -> Result<(), SpeakDispatchError> {
+        if !keep_current {
+            self.speak.stop_current().await?;
+        }
+        self.speak.clear_keep_current().await
+    }
 }
 
 #[async_trait]
 impl SubActionRunner for QueueClearRunner {
     fn id(&self) -> &str {
-        "tts.queue.clear"
+        QUEUE_CLEAR_KIND_ID
     }
 
     fn category(&self) -> SubActionCategory {
@@ -43,21 +61,8 @@ impl SubActionRunner for QueueClearRunner {
         "trash-2"
     }
 
-    fn default_config(&self) -> SubActionConfig {
-        let mut cfg = SubActionConfig::new();
-        cfg.insert("keep_current".to_owned(), Variant::Bool(true));
-        cfg
-    }
-
-    fn config_fields(&self) -> Vec<FormField> {
-        vec![FormField::Toggle {
-            key: "keep_current",
-            label: "Let current item finish",
-        }]
-    }
-
-    fn validate_config(&self, _config: &SubActionConfig) -> Result<(), RegistryError> {
-        Ok(())
+    fn config_spec(&self) -> Option<ConfigSpec> {
+        Some(CONFIG)
     }
 
     async fn execute(
@@ -65,43 +70,12 @@ impl SubActionRunner for QueueClearRunner {
         config: &SubActionConfig,
         ctx: &RunContext<'_>,
     ) -> (SubActionTelemetry, Option<ArgStack>) {
-        let started_at = OffsetDateTime::now_utc();
-
-        let keep_current = config
-            .get("keep_current")
-            .and_then(|v| v.as_bool())
-            .unwrap_or(true);
-
-        let outcome = if keep_current {
-            match self.speak.clear_keep_current().await {
-                Ok(()) => SubActionOutcome::Success,
-                Err(e) => SubActionOutcome::Failed(e.to_string()),
-            }
-        } else {
-            match self.speak.stop_current().await {
-                Ok(()) => match self.speak.clear_keep_current().await {
-                    Ok(()) => SubActionOutcome::Success,
-                    Err(e) => SubActionOutcome::Failed(e.to_string()),
-                },
-                Err(e) => SubActionOutcome::Failed(e.to_string()),
-            }
+        let timer = StepTimer::start(ctx, QUEUE_CLEAR_KIND_ID);
+        let keep_current = match KEEP_CURRENT.read(config, ctx.arg_stack) {
+            Ok(keep_current) => keep_current,
+            Err(problem) => return (timer.invalid_config(&problem), None),
         };
-
-        let duration_ms = (OffsetDateTime::now_utc() - started_at)
-            .whole_milliseconds()
-            .max(0) as u64;
-
-        (
-            SubActionTelemetry {
-                args_in: ::std::collections::BTreeMap::new(),
-                produced: ::std::collections::BTreeMap::new(),
-                index: ctx.index,
-                kind: "tts.queue.clear".to_owned(),
-                started_at,
-                duration_ms,
-                outcome,
-            },
-            None,
-        )
+        let outcome = SubActionOutcome::from_result(&self.clear(keep_current).await);
+        (timer.finish(outcome), None)
     }
 }

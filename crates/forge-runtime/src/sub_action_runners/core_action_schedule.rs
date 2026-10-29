@@ -2,19 +2,18 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use forge_registry::{
-    AmountUnit, DurationBounds, FormField, ProducedVariable, RegistryError, RunContext, StepTimer,
-    SubActionCategory, SubActionConfigExt, SubActionIo, SubActionRunner, UnitAmountBounds,
+    AmountUnit, ConfigProblem, ConfigSpec, DateTimeField, DurationBounds, DurationField,
+    OptionalField, OptionalSwitch, ProducedVariable, RunContext, StepTimer, SubActionCategory,
+    SubActionIo, SubActionRunner, TextEditor, TextField, ToggleField, TypedField, UnitAmountBounds,
+    UnitAmountField, VariableField,
 };
 use forge_storage::MissedRunPolicy;
-use forge_types::{
-    ActionId, ArgStack, SubActionConfig, SubActionTelemetry, Variant, VariantKind,
-    strip_var_decoration,
-};
+use forge_types::{ArgStack, SubActionConfig, SubActionTelemetry, Variant, VariantKind};
 
-use super::datetime_input::resolve_datetime;
+use super::core_action_shared::ACTION;
 use crate::scheduled_runs::{
     MAX_LATE_TOLERANCE, MAX_SCHEDULE_DELAY, MIN_LATE_TOLERANCE, ScheduleDue, ScheduleError,
-    ScheduleIntent, ScheduleRequest, ScheduledRunsCell, SchedulingContext, skip_if_late_by_minutes,
+    ScheduleIntent, ScheduleRequest, ScheduledRunsCell, SchedulingContext,
 };
 
 pub const SCHEDULE_ACTION_KIND_ID: &str = "core.action.schedule";
@@ -26,15 +25,6 @@ pub const UNIT_DAYS: &str = "days";
 pub const DEFAULT_DUE_AT_VARIABLE: &str = "schedule.due_at";
 pub const DEFAULT_SCHEDULED_ID_VARIABLE: &str = "schedule.id";
 
-const ACTION_KEY: &str = "action_id";
-const DELAY_AMOUNT_KEY: &str = "delay_amount";
-const DELAY_UNIT_KEY: &str = "delay_unit";
-const USE_DUE_AT_KEY: &str = "use_due_at";
-const DUE_AT_KEY: &str = "due_at";
-const SCHEDULE_KEY_KEY: &str = "key";
-const INHERIT_ARGS_KEY: &str = "inherit_args";
-const SKIP_IF_LATE_KEY: &str = "skip_if_late";
-const LATE_TOLERANCE_MINUTES_KEY: &str = "late_tolerance_minutes";
 const DUE_AT_INTO_KEY: &str = "due_at_into_var";
 const ID_INTO_KEY: &str = "id_into_var";
 
@@ -43,6 +33,7 @@ const SECONDS_PER_HOUR: u64 = 60 * SECONDS_PER_MINUTE;
 const SECONDS_PER_DAY: u64 = 24 * SECONDS_PER_HOUR;
 const DEFAULT_DELAY_MINUTES: i64 = 10;
 const MIN_DELAY_AMOUNT: i64 = 1;
+const DEFAULT_LATE_TOLERANCE_MINUTES: i64 = 10;
 
 const DELAY_BOUNDS: UnitAmountBounds = UnitAmountBounds {
     min: MIN_DELAY_AMOUNT,
@@ -62,7 +53,128 @@ const DELAY_BOUNDS: UnitAmountBounds = UnitAmountBounds {
         },
     ],
 };
-const DEFAULT_LATE_TOLERANCE_MINUTES: i64 = 10;
+
+const DELAY: UnitAmountField = UnitAmountField {
+    key: "delay_amount",
+    unit_key: "delay_unit",
+    label: "Run after",
+    bounds: DELAY_BOUNDS,
+    default_amount: DEFAULT_DELAY_MINUTES,
+    default_unit: UNIT_MINUTES,
+};
+
+const DUE_AT: OptionalField<DateTimeField> = OptionalField {
+    switch: OptionalSwitch::Toggle {
+        key: "use_due_at",
+        label: "Run at a date-time instead",
+        default_on: false,
+    },
+    field: DateTimeField {
+        key: "due_at",
+        label: "Date-time (or %var%)",
+        default: "",
+    },
+};
+
+const SCHEDULE_KEY: TextField = TextField {
+    key: "key",
+    label: "Key (optional, replaces a pending run with the same key)",
+    editor: TextEditor::Line {
+        placeholder: "vip-removal:%user_id%",
+    },
+    default: "",
+    required: false,
+};
+
+const INHERIT_ARGS: ToggleField = ToggleField {
+    key: "inherit_args",
+    label: "Pass current variables",
+    default: true,
+};
+
+const SKIP_IF_LATE: OptionalField<DurationField> = OptionalField {
+    switch: OptionalSwitch::Toggle {
+        key: "skip_if_late",
+        label: "Skip instead of running late if forge was closed",
+        default_on: false,
+    },
+    field: DurationField {
+        key: "late_tolerance_minutes",
+        label: "Skip when late by more than",
+        default: DEFAULT_LATE_TOLERANCE_MINUTES,
+        bounds: DurationBounds::in_minutes(
+            whole_minutes(MIN_LATE_TOLERANCE),
+            whole_minutes(MAX_LATE_TOLERANCE),
+        ),
+    },
+};
+
+const DUE_AT_INTO: VariableField = VariableField {
+    key: DUE_AT_INTO_KEY,
+    label: "Due time variable",
+    placeholder: DEFAULT_DUE_AT_VARIABLE,
+    default: DEFAULT_DUE_AT_VARIABLE,
+};
+
+const ID_INTO: VariableField = VariableField {
+    key: ID_INTO_KEY,
+    label: "Scheduled run id variable",
+    placeholder: DEFAULT_SCHEDULED_ID_VARIABLE,
+    default: DEFAULT_SCHEDULED_ID_VARIABLE,
+};
+
+const CONFIG: ConfigSpec = ConfigSpec::new(&[
+    &ACTION,
+    &DELAY,
+    &DUE_AT,
+    &SCHEDULE_KEY,
+    &INHERIT_ARGS,
+    &SKIP_IF_LATE,
+    &DUE_AT_INTO,
+    &ID_INTO,
+]);
+
+const fn whole_minutes(duration: Duration) -> i64 {
+    let minutes = duration.as_secs() / SECONDS_PER_MINUTE;
+    if minutes > i64::MAX.unsigned_abs() {
+        i64::MAX
+    } else {
+        minutes.cast_signed()
+    }
+}
+
+struct ScheduleConfig {
+    request: ScheduleRequest,
+    due_at_var: String,
+    id_var: String,
+}
+
+fn read_config(
+    config: &SubActionConfig,
+    ctx: &RunContext<'_>,
+) -> Result<ScheduleConfig, ConfigProblem> {
+    let args = ctx.arg_stack;
+    let target_action_id = ACTION.read(config, args)?;
+    let due = match DUE_AT.read(config, args)? {
+        Some(instant) => ScheduleDue::At(instant),
+        None => ScheduleDue::After(Duration::from_secs(DELAY.read(config, args)?)),
+    };
+    let missed_run_policy = SKIP_IF_LATE
+        .read(config, args)?
+        .map_or(MissedRunPolicy::RunLateOnce, MissedRunPolicy::SkipIfLateBy);
+    let request = SchedulingContext::of_run(ctx).request(ScheduleIntent {
+        target_action_id,
+        due,
+        key: Some(SCHEDULE_KEY.read(config, args)?),
+        missed_run_policy,
+        inherit_args: INHERIT_ARGS.read(config, args)?,
+    });
+    Ok(ScheduleConfig {
+        request,
+        due_at_var: DUE_AT_INTO.read(config, args)?,
+        id_var: ID_INTO.read(config, args)?,
+    })
+}
 
 pub struct CoreActionScheduleRunner {
     scheduled_runs: ScheduledRunsCell,
@@ -72,61 +184,6 @@ impl CoreActionScheduleRunner {
     pub fn new(scheduled_runs: ScheduledRunsCell) -> Self {
         Self { scheduled_runs }
     }
-
-    fn request(
-        &self,
-        config: &SubActionConfig,
-        ctx: &RunContext<'_>,
-    ) -> Result<ScheduleRequest, String> {
-        let raw_action = ctx
-            .arg_stack
-            .interpolate(config.str(ACTION_KEY).unwrap_or(""));
-        let target_action_id = raw_action
-            .trim()
-            .parse::<ActionId>()
-            .map_err(|_| "no valid action is selected".to_owned())?;
-        let key = ctx
-            .arg_stack
-            .interpolate(config.str(SCHEDULE_KEY_KEY).unwrap_or(""));
-        Ok(SchedulingContext::of_run(ctx).request(ScheduleIntent {
-            target_action_id,
-            due: due(config, ctx)?,
-            key: Some(key),
-            missed_run_policy: missed_run_policy(config),
-            inherit_args: config.bool(INHERIT_ARGS_KEY).unwrap_or(true),
-        }))
-    }
-}
-
-fn due(config: &SubActionConfig, ctx: &RunContext<'_>) -> Result<ScheduleDue, String> {
-    if config.bool(USE_DUE_AT_KEY).unwrap_or(false) {
-        let raw = config
-            .get(DUE_AT_KEY)
-            .cloned()
-            .unwrap_or_else(|| Variant::String(String::new()));
-        let interpolated = ctx.arg_stack.interpolate(raw.as_str().unwrap_or(""));
-        let instant =
-            resolve_datetime(&raw, &interpolated).map_err(|e| format!("due date-time: {e}"))?;
-        return Ok(ScheduleDue::At(instant));
-    }
-    let amount = u64::try_from(config.int(DELAY_AMOUNT_KEY).unwrap_or(0)).unwrap_or(0);
-    let unit_seconds = DELAY_BOUNDS
-        .unit_or_first(config.str(DELAY_UNIT_KEY).unwrap_or(UNIT_MINUTES))
-        .map_or(SECONDS_PER_MINUTE, |unit| unit.base_units);
-    Ok(ScheduleDue::After(Duration::from_secs(
-        amount.saturating_mul(unit_seconds),
-    )))
-}
-
-fn missed_run_policy(config: &SubActionConfig) -> MissedRunPolicy {
-    if !config.bool(SKIP_IF_LATE_KEY).unwrap_or(false) {
-        return MissedRunPolicy::RunLateOnce;
-    }
-    skip_if_late_by_minutes(config.int(LATE_TOLERANCE_MINUTES_KEY).unwrap_or(0))
-}
-
-fn whole_minutes(duration: Duration) -> i64 {
-    i64::try_from(duration.as_secs() / SECONDS_PER_MINUTE).unwrap_or(i64::MAX)
 }
 
 #[async_trait]
@@ -155,94 +212,8 @@ impl SubActionRunner for CoreActionScheduleRunner {
         "calendar"
     }
 
-    fn default_config(&self) -> SubActionConfig {
-        let mut cfg = SubActionConfig::new();
-        cfg.insert(ACTION_KEY.to_owned(), Variant::String(String::new()));
-        cfg.insert(
-            DELAY_AMOUNT_KEY.to_owned(),
-            Variant::Int(DEFAULT_DELAY_MINUTES),
-        );
-        cfg.insert(
-            DELAY_UNIT_KEY.to_owned(),
-            Variant::String(UNIT_MINUTES.to_owned()),
-        );
-        cfg.insert(USE_DUE_AT_KEY.to_owned(), Variant::Bool(false));
-        cfg.insert(DUE_AT_KEY.to_owned(), Variant::String(String::new()));
-        cfg.insert(SCHEDULE_KEY_KEY.to_owned(), Variant::String(String::new()));
-        cfg.insert(INHERIT_ARGS_KEY.to_owned(), Variant::Bool(true));
-        cfg.insert(SKIP_IF_LATE_KEY.to_owned(), Variant::Bool(false));
-        cfg.insert(
-            LATE_TOLERANCE_MINUTES_KEY.to_owned(),
-            Variant::Int(DEFAULT_LATE_TOLERANCE_MINUTES),
-        );
-        cfg.insert(
-            DUE_AT_INTO_KEY.to_owned(),
-            Variant::String(DEFAULT_DUE_AT_VARIABLE.to_owned()),
-        );
-        cfg.insert(
-            ID_INTO_KEY.to_owned(),
-            Variant::String(DEFAULT_SCHEDULED_ID_VARIABLE.to_owned()),
-        );
-        cfg
-    }
-
-    fn config_fields(&self) -> Vec<FormField> {
-        vec![
-            FormField::DynamicSelect {
-                key: ACTION_KEY,
-                label: "Action",
-                options_key: "action.ids",
-            },
-            FormField::UnitAmount {
-                key: DELAY_AMOUNT_KEY,
-                label: "Run after",
-                unit_key: DELAY_UNIT_KEY,
-                bounds: DELAY_BOUNDS,
-            },
-            FormField::Optional {
-                key: USE_DUE_AT_KEY,
-                label: "Run at a date-time instead",
-                inner: Box::new(FormField::DateTime {
-                    key: DUE_AT_KEY,
-                    label: "Date-time (or %var%)",
-                }),
-            },
-            FormField::Text {
-                key: SCHEDULE_KEY_KEY,
-                label: "Key (optional, replaces a pending run with the same key)",
-                placeholder: "vip-removal:%user_id%",
-            },
-            FormField::Toggle {
-                key: INHERIT_ARGS_KEY,
-                label: "Pass current variables",
-            },
-            FormField::Optional {
-                key: SKIP_IF_LATE_KEY,
-                label: "Skip instead of running late if forge was closed",
-                inner: Box::new(FormField::Duration {
-                    key: LATE_TOLERANCE_MINUTES_KEY,
-                    label: "Skip when late by more than",
-                    bounds: DurationBounds::in_minutes(
-                        whole_minutes(MIN_LATE_TOLERANCE),
-                        whole_minutes(MAX_LATE_TOLERANCE),
-                    ),
-                }),
-            },
-            FormField::Text {
-                key: DUE_AT_INTO_KEY,
-                label: "Due time variable",
-                placeholder: DEFAULT_DUE_AT_VARIABLE,
-            },
-            FormField::Text {
-                key: ID_INTO_KEY,
-                label: "Scheduled run id variable",
-                placeholder: DEFAULT_SCHEDULED_ID_VARIABLE,
-            },
-        ]
-    }
-
-    fn validate_config(&self, config: &SubActionConfig) -> Result<(), RegistryError> {
-        config.require_str(ACTION_KEY).map(|_| ())
+    fn config_spec(&self) -> Option<ConfigSpec> {
+        Some(CONFIG)
     }
 
     fn scope_io(&self) -> SubActionIo {
@@ -269,9 +240,13 @@ impl SubActionRunner for CoreActionScheduleRunner {
         ctx: &RunContext<'_>,
     ) -> (SubActionTelemetry, Option<ArgStack>) {
         let timer = StepTimer::start(ctx, SCHEDULE_ACTION_KIND_ID);
-        let request = match self.request(config, ctx) {
-            Ok(request) => request,
-            Err(reason) => return (timer.failed(reason), None),
+        let ScheduleConfig {
+            request,
+            due_at_var,
+            id_var,
+        } = match read_config(config, ctx) {
+            Ok(read) => read,
+            Err(problem) => return (timer.invalid_config(&problem), None),
         };
         let Some(scheduled_runs) = self.scheduled_runs.get() else {
             return (
@@ -283,16 +258,6 @@ impl SubActionRunner for CoreActionScheduleRunner {
             Ok(placement) => placement,
             Err(e) => return (timer.failed(e.to_string()), None),
         };
-        let due_at_var = strip_var_decoration(
-            config
-                .str_nonempty(DUE_AT_INTO_KEY)
-                .unwrap_or(DEFAULT_DUE_AT_VARIABLE),
-        );
-        let id_var = strip_var_decoration(
-            config
-                .str_nonempty(ID_INTO_KEY)
-                .unwrap_or(DEFAULT_SCHEDULED_ID_VARIABLE),
-        );
         let stack = ctx
             .arg_stack
             .clone()

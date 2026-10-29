@@ -1,11 +1,40 @@
 use async_trait::async_trait;
 use forge_registry::{
-    CASE_CHAIN_KEY, FormField, RegistryError, RunContext, StepTimer, SubActionCategory,
-    SubActionConfigExt, SubActionRunner,
+    CASE_CHAIN_KEY, CASE_MATCH_KEY, ChainLayout, ConfigSpec, RunContext, StepChainField, StepTimer,
+    SubActionCategory, SubActionRunner, TextEditor, TextField, TypedField,
 };
 use forge_types::{ArgStack, SubActionConfig, SubActionStep, SubActionTelemetry, Variant};
 
 use super::core_logic_shared::{chain_at, propagate, retag, runnable_steps};
+
+const MATCHED_CASE_INDEX_VAR: &str = "switch.matched_case_index";
+const NO_CASE_MATCHED: i64 = -1;
+
+const EXPRESSION: TextField = TextField {
+    key: "expression",
+    label: "Value",
+    editor: TextEditor::Line {
+        placeholder: "%user_level%",
+    },
+    default: "",
+    required: true,
+};
+
+const CASES: StepChainField = StepChainField {
+    key: "cases",
+    label: "Cases",
+    layout: ChainLayout::Cases,
+    seeds_empty_list: true,
+};
+
+const DEFAULT_CHAIN: StepChainField = StepChainField {
+    key: "default_chain",
+    label: "Default",
+    layout: ChainLayout::Steps,
+    seeds_empty_list: false,
+};
+
+const CONFIG: ConfigSpec = ConfigSpec::new(&[&EXPRESSION, &CASES, &DEFAULT_CHAIN]);
 
 pub struct CoreLogicSwitchCaseRunner;
 
@@ -35,33 +64,8 @@ impl SubActionRunner for CoreLogicSwitchCaseRunner {
         "list-checks"
     }
 
-    fn default_config(&self) -> SubActionConfig {
-        let mut cfg = SubActionConfig::new();
-        cfg.insert("expression".to_owned(), Variant::String(String::new()));
-        cfg.insert("cases".to_owned(), Variant::Array(Vec::new()));
-        cfg
-    }
-
-    fn config_fields(&self) -> Vec<FormField> {
-        vec![
-            FormField::Text {
-                key: "expression",
-                label: "Value",
-                placeholder: "%user_level%",
-            },
-            FormField::CaseList {
-                key: "cases",
-                label: "Cases",
-            },
-            FormField::SubChain {
-                key: "default_chain",
-                label: "Default",
-            },
-        ]
-    }
-
-    fn validate_config(&self, config: &SubActionConfig) -> Result<(), RegistryError> {
-        config.require_str("expression").map(|_| ())
+    fn config_spec(&self) -> Option<ConfigSpec> {
+        Some(CONFIG)
     }
 
     async fn execute(
@@ -70,19 +74,20 @@ impl SubActionRunner for CoreLogicSwitchCaseRunner {
         ctx: &RunContext<'_>,
     ) -> (SubActionTelemetry, Option<ArgStack>) {
         let timer = StepTimer::start(ctx, self.id());
-
-        let template = config.str("expression").unwrap_or_default();
-        let value = ctx.arg_stack.interpolate(template);
+        let value = match EXPRESSION.read(config, ctx.arg_stack) {
+            Ok(value) => value,
+            Err(problem) => return (timer.invalid_config(&problem), None),
+        };
 
         let (matched_index, steps) = select_case(config, &value, ctx);
-        let arm = if matched_index >= 0 {
-            format!("case{matched_index}")
-        } else {
+        let arm = if matched_index == NO_CASE_MATCHED {
             "default".to_owned()
+        } else {
+            format!("case{matched_index}")
         };
 
         let base = ctx.arg_stack.clone().set(
-            "switch.matched_case_index".to_owned(),
+            MATCHED_CASE_INDEX_VAR.to_owned(),
             Variant::Int(matched_index),
         );
 
@@ -96,7 +101,7 @@ impl SubActionRunner for CoreLogicSwitchCaseRunner {
                     .extend(retag(child.telemetry, ctx.index, &arm));
                 let outcome = propagate(child.signal, ctx);
                 let stack = child.arg_stack.set(
-                    "switch.matched_case_index".to_owned(),
+                    MATCHED_CASE_INDEX_VAR.to_owned(),
                     Variant::Int(matched_index),
                 );
                 (timer.finish(outcome), Some(stack))
@@ -111,21 +116,21 @@ fn select_case(
     value: &str,
     ctx: &RunContext<'_>,
 ) -> (i64, Vec<SubActionStep>) {
-    let cases = config.get("cases").and_then(Variant::as_array);
+    let cases = config.get(CASES.key).and_then(Variant::as_array);
     if let Some(cases) = cases {
         for (index, case) in cases.iter().enumerate() {
             let Some(case) = case.as_object() else {
                 continue;
             };
-            if case_matches(case.get("match"), value) {
+            if case_matches(case.get(CASE_MATCH_KEY), value) {
                 return (
-                    index as i64,
+                    i64::try_from(index).unwrap_or(i64::MAX),
                     runnable_steps(case.get(CASE_CHAIN_KEY), CASE_CHAIN_KEY, ctx),
                 );
             }
         }
     }
-    (-1, chain_at(config, "default_chain", ctx))
+    (NO_CASE_MATCHED, chain_at(config, DEFAULT_CHAIN.key, ctx))
 }
 
 fn case_matches(candidate: Option<&Variant>, value: &str) -> bool {

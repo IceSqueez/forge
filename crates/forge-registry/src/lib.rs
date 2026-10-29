@@ -4,6 +4,7 @@ mod chain;
 mod config_choice;
 mod config_ext;
 mod config_problem;
+mod declared_composite_fields;
 mod declared_config;
 mod declared_fields;
 mod declared_fields_extra;
@@ -42,14 +43,15 @@ pub use chain::{
 pub use config_choice::ConfigChoice;
 pub use config_ext::SubActionConfigExt;
 pub use config_problem::{ConfigProblem, ConfigReason, ValueBounds};
+pub use declared_composite_fields::UnitAmountField;
 pub use declared_config::{ConfigSpec, DeclaredField, FieldLiteral, Interpolation, TypedField};
 pub use declared_fields::{
-    ChoiceField, IntegerEditor, IntegerField, NumberField, TextEditor, TextField, ToggleField,
-    VariableField,
+    BlankableSelectField, ChainLayout, ChoiceField, CodeField, DateTimeField, DependentSelectField,
+    DurationField, DynamicSelectField, IntegerEditor, IntegerField, JsonObjectField, LinesField,
+    ListedChoiceField, NumberField, StepChainField, StoredNumber, TemplateField, TextEditor,
+    TextField, ToggleField, ValueField, VariableField,
 };
-pub use declared_fields_extra::{
-    DecimalField, OptionalField, PickedTextField, StoredNumber, TextPicker,
-};
+pub use declared_fields_extra::{OptionalField, OptionalSwitch, PickedTextField, TextPicker};
 pub use descriptor::{
     ChatTriggerFamily, IGNORE_BOT_MESSAGES_KEY, TriggerKindDescriptor, ignores_bot_messages,
 };

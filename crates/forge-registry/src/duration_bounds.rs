@@ -1,4 +1,5 @@
 use std::ops::RangeInclusive;
+use std::time::Duration;
 
 use crate::form::AmountUnit;
 
@@ -98,6 +99,10 @@ impl DurationBounds {
             let (start, end) = self.whole_amounts(unit);
             start <= end && (unit.base_units == base || end >= 1)
         })
+    }
+
+    pub fn duration_of(&self, stored: u64) -> Duration {
+        Duration::from_millis(stored.saturating_mul(self.base.millis()))
     }
 
     pub fn unit_or_first(&self, value: &str) -> Option<&'static AmountUnit> {

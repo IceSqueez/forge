@@ -1,13 +1,13 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use forge_registry::{
-    ConfigReason, FormField, RegistryError, RunContext, StepTimer, SubActionCategory,
-    SubActionConfigExt, SubActionRunner,
-};
-use forge_types::{ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetry, Variant};
+use forge_registry::{ConfigSpec, RunContext, StepTimer, SubActionCategory, SubActionRunner};
+use forge_types::{ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetry};
 
+use super::{ALIAS_SPEC, AliasTarget, read_alias};
 use crate::speak_dispatcher::{SpeakDispatcher, platform_scoped_alias_key};
+
+const ALIAS_SET_KIND_ID: &str = "tts.alias.set";
 
 pub struct AliasSetRunner {
     speak: Arc<dyn SpeakDispatcher>,
@@ -22,7 +22,7 @@ impl AliasSetRunner {
 #[async_trait]
 impl SubActionRunner for AliasSetRunner {
     fn id(&self) -> &str {
-        "tts.alias.set"
+        ALIAS_SET_KIND_ID
     }
 
     fn category(&self) -> SubActionCategory {
@@ -45,42 +45,8 @@ impl SubActionRunner for AliasSetRunner {
         "user-check"
     }
 
-    fn default_config(&self) -> SubActionConfig {
-        let mut cfg = SubActionConfig::new();
-        cfg.insert("alias_name".to_owned(), Variant::String(String::new()));
-        cfg.insert("engine_id".to_owned(), Variant::String(String::new()));
-        cfg.insert("voice_id".to_owned(), Variant::String(String::new()));
-        cfg
-    }
-
-    fn config_fields(&self) -> Vec<FormField> {
-        vec![
-            FormField::Text {
-                key: "alias_name",
-                label: "Alias name",
-                placeholder: "e.g. %user% or viewer id",
-            },
-            FormField::DynamicSelect {
-                key: "engine_id",
-                label: "Engine ID",
-                options_key: "tts.engine_ids",
-            },
-            FormField::DependentSelect {
-                key: "voice_id",
-                label: "Voice ID",
-                options_prefix: "tts.voices",
-                depends_on: "engine_id",
-            },
-        ]
-    }
-
-    fn validate_config(&self, config: &SubActionConfig) -> Result<(), RegistryError> {
-        for key in ["alias_name", "engine_id", "voice_id"] {
-            if config.str_nonempty(key).is_none() {
-                return Err(RegistryError::invalid_field(key, ConfigReason::Required));
-            }
-        }
-        Ok(())
+    fn config_spec(&self) -> Option<ConfigSpec> {
+        Some(ALIAS_SPEC)
     }
 
     async fn execute(
@@ -88,17 +54,15 @@ impl SubActionRunner for AliasSetRunner {
         config: &SubActionConfig,
         ctx: &RunContext<'_>,
     ) -> (SubActionTelemetry, Option<ArgStack>) {
-        let timer = StepTimer::start(ctx, "tts.alias.set");
-
-        let alias_name = ctx
-            .arg_stack
-            .interpolate(config.str("alias_name").unwrap_or_default());
-        let engine_id = ctx
-            .arg_stack
-            .interpolate(config.str("engine_id").unwrap_or_default());
-        let voice_id = ctx
-            .arg_stack
-            .interpolate(config.str("voice_id").unwrap_or_default());
+        let timer = StepTimer::start(ctx, ALIAS_SET_KIND_ID);
+        let AliasTarget {
+            alias_name,
+            engine_id,
+            voice_id,
+        } = match read_alias(config, ctx.arg_stack) {
+            Ok(target) => target,
+            Err(problem) => return (timer.invalid_config(&problem), None),
+        };
 
         let alias_key = platform_scoped_alias_key(ctx.arg_stack, &alias_name);
         let result = self

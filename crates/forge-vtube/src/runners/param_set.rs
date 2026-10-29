@@ -4,8 +4,8 @@ use std::time::Duration;
 use async_trait::async_trait;
 use forge_registry::runner::SubActionConfig;
 use forge_registry::{
-    ConfigProblem, ConfigSpec, DecimalField, RunContext, StepTimer, StoredNumber,
-    SubActionCategory, SubActionRunner, TextEditor, TextField, TypedField, ValueBounds,
+    ConfigProblem, ConfigSpec, NumberField, RunContext, StepTimer, StoredNumber, SubActionCategory,
+    SubActionRunner, TextEditor, TextField, TypedField, ValueBounds,
 };
 use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry};
 
@@ -26,7 +26,7 @@ const PARAM_ID: TextField = TextField {
     required: true,
 };
 
-const VALUE: DecimalField = DecimalField {
+const VALUE: NumberField = NumberField {
     key: config_keys::VALUE,
     label: "Value",
     placeholder: "0.0",
@@ -34,7 +34,7 @@ const VALUE: DecimalField = DecimalField {
     bounds: ValueBounds::UNBOUNDED,
 };
 
-const HOLD_SECS: DecimalField = DecimalField {
+const HOLD_SECS: NumberField = NumberField {
     key: config_keys::HOLD_SECS,
     label: "Hold (seconds, 0 = one-shot)",
     placeholder: "0",

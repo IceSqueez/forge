@@ -2,12 +2,35 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use forge_registry::{
-    ConfigReason, FormField, RegistryError, RunContext, StepTimer, SubActionCategory,
-    SubActionConfigExt, SubActionRunner,
+    ConfigProblem, ConfigSpec, DynamicSelectField, RunContext, StepTimer, SubActionCategory,
+    SubActionRunner, TypedField,
 };
-use forge_types::{ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetry, Variant};
+use forge_types::{ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetry};
 
+use super::{ENGINE, SPEECH_TEXT, WAIT_FOR_COMPLETION};
 use crate::speak_dispatcher::{SpeakDispatcher, SpeechOrigin};
+
+const SPEAK_WITH_ENGINE_KIND_ID: &str = "tts.speak.text_with_engine";
+const DEFAULT_ENGINE_ID: &str = "piper";
+
+const ENGINE_WITH_DEFAULT: DynamicSelectField<String> = ENGINE.with_default(DEFAULT_ENGINE_ID);
+
+const CONFIG: ConfigSpec =
+    ConfigSpec::new(&[&SPEECH_TEXT, &ENGINE_WITH_DEFAULT, &WAIT_FOR_COMPLETION]);
+
+struct EngineSpeech {
+    text: String,
+    engine_id: String,
+    wait_for_completion: bool,
+}
+
+fn read_config(config: &SubActionConfig, args: &ArgStack) -> Result<EngineSpeech, ConfigProblem> {
+    Ok(EngineSpeech {
+        text: SPEECH_TEXT.read(config, args)?,
+        engine_id: ENGINE_WITH_DEFAULT.read(config, args)?,
+        wait_for_completion: WAIT_FOR_COMPLETION.read(config, args)?,
+    })
+}
 
 pub struct SpeakWithEngineRunner {
     speak: Arc<dyn SpeakDispatcher>,
@@ -22,7 +45,7 @@ impl SpeakWithEngineRunner {
 #[async_trait]
 impl SubActionRunner for SpeakWithEngineRunner {
     fn id(&self) -> &str {
-        "tts.speak.text_with_engine"
+        SPEAK_WITH_ENGINE_KIND_ID
     }
 
     fn category(&self) -> SubActionCategory {
@@ -45,43 +68,8 @@ impl SubActionRunner for SpeakWithEngineRunner {
         "cpu"
     }
 
-    fn default_config(&self) -> SubActionConfig {
-        let mut cfg = SubActionConfig::new();
-        cfg.insert("text".to_owned(), Variant::String(String::new()));
-        cfg.insert("engine_id".to_owned(), Variant::String("piper".to_owned()));
-        cfg.insert("wait_for_completion".to_owned(), Variant::Bool(true));
-        cfg
-    }
-
-    fn config_fields(&self) -> Vec<FormField> {
-        vec![
-            FormField::TextArea {
-                key: "text",
-                label: "Text",
-            },
-            FormField::DynamicSelect {
-                key: "engine_id",
-                label: "Engine ID",
-                options_key: "tts.engine_ids",
-            },
-            FormField::Toggle {
-                key: "wait_for_completion",
-                label: "Wait for completion",
-            },
-        ]
-    }
-
-    fn validate_config(&self, config: &SubActionConfig) -> Result<(), RegistryError> {
-        if config.str_nonempty("text").is_none() {
-            return Err(RegistryError::invalid_field("text", ConfigReason::Required));
-        }
-        match config.str_nonempty("engine_id") {
-            Some(_) => Ok(()),
-            None => Err(RegistryError::invalid_field(
-                "engine_id",
-                ConfigReason::Required,
-            )),
-        }
+    fn config_spec(&self) -> Option<ConfigSpec> {
+        Some(CONFIG)
     }
 
     async fn execute(
@@ -89,17 +77,17 @@ impl SubActionRunner for SpeakWithEngineRunner {
         config: &SubActionConfig,
         ctx: &RunContext<'_>,
     ) -> (SubActionTelemetry, Option<ArgStack>) {
-        let timer = StepTimer::start(ctx, "tts.speak.text_with_engine");
-
-        let text = ctx
-            .arg_stack
-            .interpolate(config.str("text").unwrap_or_default());
-        let engine_id = ctx
-            .arg_stack
-            .interpolate(config.str("engine_id").unwrap_or_default());
+        let timer = StepTimer::start(ctx, SPEAK_WITH_ENGINE_KIND_ID);
+        let EngineSpeech {
+            text,
+            engine_id,
+            wait_for_completion,
+        } = match read_config(config, ctx.arg_stack) {
+            Ok(speech) => speech,
+            Err(problem) => return (timer.invalid_config(&problem), None),
+        };
 
         let origin = SpeechOrigin::from_args(ctx.arg_stack, Some(ctx.parent_event_id));
-        let wait_for_completion = config.bool("wait_for_completion").unwrap_or(true);
         let dispatch_result = if wait_for_completion {
             self.speak
                 .speak_with_engine_and_wait(text, engine_id, origin, ctx.cancel.clone())

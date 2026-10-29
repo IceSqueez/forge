@@ -2,33 +2,71 @@ use async_trait::async_trait;
 use forge_events::{ChatSendRequest, EventSource, TypedEvent};
 use forge_platform_core::{SENDER_FIELD, SenderPreference};
 use forge_registry::{
-    ConfigReason, FormField, RegistryError, RunContext, StepTimer, SubActionCategory,
-    SubActionConfigExt, SubActionRunner,
+    ChoiceField, ConfigChoice, ConfigProblem, ConfigSpec, RunContext, StepTimer, SubActionCategory,
+    SubActionRunner, TextEditor, TextField, TypedField,
 };
 use forge_types::{
     ArgStack, IntegrationId, NO_CHAT_PLATFORM_ENABLED_REASON, SubActionConfig, SubActionTelemetry,
-    Variant, resolve_chat_target,
+    resolve_chat_target,
 };
 
+const CHAT_SEND_KIND_ID: &str = "twitch.chat.send_message";
 const DEFAULT_TARGET: &str = "twitch";
 
-fn resolved_target(config: &SubActionConfig, arg_stack: &ArgStack) -> String {
-    arg_stack.interpolate(config.str("target").unwrap_or(DEFAULT_TARGET))
+#[derive(Clone, Copy)]
+struct SendAs(SenderPreference);
+
+impl ConfigChoice for SendAs {
+    const ALL: &'static [Self] = &[
+        Self(SenderPreference::Default),
+        Self(SenderPreference::Streamer),
+        Self(SenderPreference::BotOnly),
+    ];
+    const WIRE_NAMES: &'static [&'static str] = SenderPreference::WIRE_NAMES;
+
+    fn wire_name(self) -> &'static str {
+        self.0.as_str()
+    }
 }
 
-fn configured_sender(config: &SubActionConfig) -> Result<SenderPreference, RegistryError> {
-    match config.get(SENDER_FIELD) {
-        None => Ok(SenderPreference::Default),
-        Some(value) => value
-            .as_str()
-            .and_then(SenderPreference::parse)
-            .ok_or_else(|| {
-                RegistryError::invalid_field(
-                    SENDER_FIELD,
-                    ConfigReason::choices(SenderPreference::WIRE_NAMES.iter().copied()),
-                )
-            }),
-    }
+const MESSAGE: TextField = TextField {
+    key: "message",
+    label: "Message",
+    editor: TextEditor::Area,
+    default: "",
+    required: true,
+};
+
+const TARGET: TextField = TextField {
+    key: "target",
+    label: "Target Platform",
+    editor: TextEditor::Line {
+        placeholder: DEFAULT_TARGET,
+    },
+    default: DEFAULT_TARGET,
+    required: false,
+};
+
+const SENDER: ChoiceField<SendAs> = ChoiceField {
+    key: SENDER_FIELD,
+    label: "Send As",
+    default: SendAs(SenderPreference::Default),
+};
+
+const CONFIG: ConfigSpec = ConfigSpec::new(&[&MESSAGE, &TARGET, &SENDER]);
+
+struct ChatSendConfig {
+    message: String,
+    target: String,
+    sender: SenderPreference,
+}
+
+fn read_config(config: &SubActionConfig, args: &ArgStack) -> Result<ChatSendConfig, ConfigProblem> {
+    Ok(ChatSendConfig {
+        message: MESSAGE.read(config, args)?,
+        target: TARGET.read(config, args)?,
+        sender: SENDER.read(config, args)?.0,
+    })
 }
 
 pub struct TwitchChatSendMessageRunner;
@@ -36,7 +74,7 @@ pub struct TwitchChatSendMessageRunner;
 #[async_trait]
 impl SubActionRunner for TwitchChatSendMessageRunner {
     fn id(&self) -> &str {
-        "twitch.chat.send_message"
+        CHAT_SEND_KIND_ID
     }
 
     fn category(&self) -> SubActionCategory {
@@ -59,42 +97,8 @@ impl SubActionRunner for TwitchChatSendMessageRunner {
         "message-circle"
     }
 
-    fn default_config(&self) -> SubActionConfig {
-        let mut cfg = SubActionConfig::new();
-        cfg.insert("message".to_owned(), Variant::String(String::new()));
-        cfg.insert(
-            "target".to_owned(),
-            Variant::String(DEFAULT_TARGET.to_owned()),
-        );
-        cfg.insert(
-            SENDER_FIELD.to_owned(),
-            Variant::String(SenderPreference::Default.as_str().to_owned()),
-        );
-        cfg
-    }
-
-    fn config_fields(&self) -> Vec<FormField> {
-        vec![
-            FormField::TextArea {
-                key: "message",
-                label: "Message",
-            },
-            FormField::Text {
-                key: "target",
-                label: "Target Platform",
-                placeholder: DEFAULT_TARGET,
-            },
-            FormField::Select {
-                key: SENDER_FIELD,
-                label: "Send As",
-                options: SenderPreference::WIRE_NAMES,
-            },
-        ]
-    }
-
-    fn validate_config(&self, config: &SubActionConfig) -> Result<(), RegistryError> {
-        config.require_str("message")?;
-        configured_sender(config).map(|_| ())
+    fn config_spec(&self) -> Option<ConfigSpec> {
+        Some(CONFIG)
     }
 
     fn targeted_integration(
@@ -102,7 +106,8 @@ impl SubActionRunner for TwitchChatSendMessageRunner {
         config: &SubActionConfig,
         arg_stack: &ArgStack,
     ) -> Option<IntegrationId> {
-        resolve_chat_target(&resolved_target(config, arg_stack))
+        let target = TARGET.read(config, arg_stack).ok()?;
+        resolve_chat_target(&target)
             .ok()
             .flatten()
             .map(|platform| IntegrationId::from_static(platform.as_str()))
@@ -113,17 +118,16 @@ impl SubActionRunner for TwitchChatSendMessageRunner {
         config: &SubActionConfig,
         ctx: &RunContext<'_>,
     ) -> (SubActionTelemetry, Option<ArgStack>) {
-        let timer = StepTimer::start(ctx, "twitch.chat.send_message");
-
-        let message = ctx
-            .arg_stack
-            .interpolate(config.str("message").unwrap_or_default());
-        let sender = match configured_sender(config) {
-            Ok(sender) => sender,
-            Err(e) => return (timer.failed(e.to_string()), None),
+        let timer = StepTimer::start(ctx, CHAT_SEND_KIND_ID);
+        let ChatSendConfig {
+            message,
+            target,
+            sender,
+        } = match read_config(config, ctx.arg_stack) {
+            Ok(read) => read,
+            Err(problem) => return (timer.invalid_config(&problem), None),
         };
-        let resolved = resolved_target(config, ctx.arg_stack);
-        let target = match resolve_chat_target(&resolved) {
+        let target = match resolve_chat_target(&target) {
             Err(reason) => return (timer.failed(reason), None),
             Ok(Some(platform)) => Some(platform.as_str().to_owned()),
             Ok(None) => {

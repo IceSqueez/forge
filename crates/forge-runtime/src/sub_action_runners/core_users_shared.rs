@@ -1,7 +1,27 @@
+use forge_registry::{TemplateField, TextEditor, TextField};
 use forge_storage::GlobalsRepo;
 use forge_types::{ArgStack, variable_references};
 
 const SINGLE_BROADCASTER_NAMESPACE: &str = "local";
+const USER_LOGIN_TEMPLATE: &str = "%user_login%";
+
+pub(super) const USER_LOGIN: TemplateField = TemplateField {
+    key: "user_login",
+    label: "User Login",
+    placeholder: USER_LOGIN_TEMPLATE,
+    default: USER_LOGIN_TEMPLATE,
+    required: true,
+};
+
+pub(super) const VAR_NAME: TextField = TextField {
+    key: "var_name",
+    label: "Variable Name",
+    editor: TextEditor::Line {
+        placeholder: "points",
+    },
+    default: "",
+    required: true,
+};
 
 pub(super) async fn resolve_broadcaster_id(
     arg_stack: &ArgStack,

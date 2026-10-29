@@ -1,9 +1,17 @@
-use forge_types::{Variant, strip_var_decoration};
+use std::marker::PhantomData;
+use std::str::FromStr;
+use std::time::Duration;
+
+use serde_json::{Map as JsonMap, Value as JsonValue};
+
+use forge_types::{SubActionConfig, Variant, datetime_from_text, strip_var_decoration};
+use time::OffsetDateTime;
 
 use crate::config_choice::ConfigChoice;
-use crate::config_problem::{ConfigReason, ValueBounds};
-use crate::declared_config::{FieldLiteral, TypedField};
-use crate::form::FormField;
+use crate::config_problem::{ConfigProblem, ConfigReason, ValueBounds};
+use crate::declared_config::{FieldLiteral, Interpolation, TypedField};
+use crate::duration_bounds::DurationBounds;
+use crate::form::{CodeKind, CodeLanguage, FormField};
 
 const TOGGLE_WIRE_NAMES: [&str; 2] = ["true", "false"];
 
@@ -58,6 +66,90 @@ impl TypedField for TextField {
 
     fn parse_text(&self, text: &str) -> Result<String, ConfigReason> {
         Ok(text.to_owned())
+    }
+}
+
+pub struct TemplateField {
+    pub key: &'static str,
+    pub label: &'static str,
+    pub placeholder: &'static str,
+    pub default: &'static str,
+    pub required: bool,
+}
+
+impl TypedField for TemplateField {
+    type Value = String;
+
+    fn key(&self) -> &'static str {
+        self.key
+    }
+
+    fn form_field(&self) -> FormField {
+        FormField::Text {
+            key: self.key,
+            label: self.label,
+            placeholder: self.placeholder,
+        }
+    }
+
+    fn default_value(&self) -> Variant {
+        Variant::String(self.default.to_owned())
+    }
+
+    fn literal<'a>(&self, value: &'a Variant) -> Result<FieldLiteral<'a, String>, ConfigReason> {
+        match value {
+            Variant::String(text) => self.parse_text(text).map(FieldLiteral::Value),
+            _ => Err(ConfigReason::NotText),
+        }
+    }
+
+    fn parse_text(&self, text: &str) -> Result<String, ConfigReason> {
+        if self.required && text.trim().is_empty() {
+            Err(ConfigReason::Required)
+        } else {
+            Ok(text.to_owned())
+        }
+    }
+}
+
+pub struct ValueField {
+    pub key: &'static str,
+    pub label: &'static str,
+    pub placeholder: &'static str,
+    pub default: &'static str,
+}
+
+impl TypedField for ValueField {
+    type Value = Variant;
+
+    fn key(&self) -> &'static str {
+        self.key
+    }
+
+    fn form_field(&self) -> FormField {
+        FormField::Text {
+            key: self.key,
+            label: self.label,
+            placeholder: self.placeholder,
+        }
+    }
+
+    fn default_value(&self) -> Variant {
+        Variant::String(self.default.to_owned())
+    }
+
+    fn literal<'a>(&self, value: &'a Variant) -> Result<FieldLiteral<'a, Variant>, ConfigReason> {
+        match value {
+            Variant::String(text) => {
+                Ok(FieldLiteral::of_text(text)
+                    .unwrap_or_else(|| FieldLiteral::Value(value.clone())))
+            }
+            other => Ok(FieldLiteral::Value(other.clone())),
+        }
+    }
+
+    fn parse_text(&self, text: &str) -> Result<Variant, ConfigReason> {
+        Ok(Variant::String(text.to_owned()))
     }
 }
 
@@ -189,11 +281,17 @@ impl TypedField for IntegerField {
     }
 }
 
+#[derive(Clone, Copy)]
+pub enum StoredNumber {
+    Float(f64),
+    Text(&'static str),
+}
+
 pub struct NumberField {
     pub key: &'static str,
     pub label: &'static str,
     pub placeholder: &'static str,
-    pub default: f64,
+    pub default: StoredNumber,
     pub bounds: ValueBounds,
 }
 
@@ -225,7 +323,10 @@ impl TypedField for NumberField {
     }
 
     fn default_value(&self) -> Variant {
-        Variant::String(self.default.to_string())
+        match self.default {
+            StoredNumber::Float(number) => Variant::Float(number),
+            StoredNumber::Text(text) => Variant::String(text.to_owned()),
+        }
     }
 
     fn literal<'a>(&self, value: &'a Variant) -> Result<FieldLiteral<'a, f64>, ConfigReason> {
@@ -326,6 +427,530 @@ impl<T: ConfigChoice> TypedField for ChoiceField<T> {
 
     fn parse_text(&self, text: &str) -> Result<T, ConfigReason> {
         T::parse(text).ok_or_else(|| ConfigReason::choices(T::WIRE_NAMES.iter().copied()))
+    }
+}
+
+pub struct ListedChoiceField {
+    pub key: &'static str,
+    pub label: &'static str,
+    pub default: &'static str,
+    pub options: fn() -> &'static [&'static str],
+}
+
+impl ListedChoiceField {
+    fn invalid_choice(&self) -> ConfigReason {
+        ConfigReason::choices((self.options)().iter().copied())
+    }
+}
+
+impl TypedField for ListedChoiceField {
+    type Value = &'static str;
+
+    fn key(&self) -> &'static str {
+        self.key
+    }
+
+    fn form_field(&self) -> FormField {
+        FormField::Select {
+            key: self.key,
+            label: self.label,
+            options: (self.options)(),
+        }
+    }
+
+    fn default_value(&self) -> Variant {
+        Variant::String(self.default.to_owned())
+    }
+
+    fn literal<'a>(
+        &self,
+        value: &'a Variant,
+    ) -> Result<FieldLiteral<'a, &'static str>, ConfigReason> {
+        match value {
+            Variant::String(text) => self.parse_text(text).map(FieldLiteral::Value),
+            _ => Err(self.invalid_choice()),
+        }
+    }
+
+    fn parse_text(&self, text: &str) -> Result<&'static str, ConfigReason> {
+        (self.options)()
+            .iter()
+            .copied()
+            .find(|option| *option == text)
+            .ok_or_else(|| self.invalid_choice())
+    }
+}
+pub struct CodeField {
+    pub key: &'static str,
+    pub label: &'static str,
+    pub language: CodeLanguage,
+    pub kind: CodeKind,
+    pub default: &'static str,
+    pub required: bool,
+}
+
+impl TypedField for CodeField {
+    type Value = String;
+
+    fn key(&self) -> &'static str {
+        self.key
+    }
+
+    fn form_field(&self) -> FormField {
+        FormField::Code {
+            key: self.key,
+            label: self.label,
+            language: self.language,
+            kind: self.kind,
+        }
+    }
+
+    fn default_value(&self) -> Variant {
+        Variant::String(self.default.to_owned())
+    }
+
+    fn literal<'a>(&self, value: &'a Variant) -> Result<FieldLiteral<'a, String>, ConfigReason> {
+        match value {
+            Variant::String(text) => self.parse_text(text).map(FieldLiteral::Value),
+            _ => Err(ConfigReason::NotText),
+        }
+    }
+
+    fn parse_text(&self, text: &str) -> Result<String, ConfigReason> {
+        if self.required && text.trim().is_empty() {
+            Err(ConfigReason::Required)
+        } else {
+            Ok(text.to_owned())
+        }
+    }
+}
+
+pub struct DynamicSelectField<T> {
+    pub key: &'static str,
+    pub label: &'static str,
+    pub options_key: &'static str,
+    pub default: &'static str,
+    value: PhantomData<fn() -> T>,
+}
+
+impl<T> DynamicSelectField<T> {
+    pub const fn new(key: &'static str, label: &'static str, options_key: &'static str) -> Self {
+        Self {
+            key,
+            label,
+            options_key,
+            default: "",
+            value: PhantomData,
+        }
+    }
+
+    pub const fn with_default(self, default: &'static str) -> Self {
+        Self { default, ..self }
+    }
+}
+
+impl<T: FromStr> TypedField for DynamicSelectField<T> {
+    type Value = T;
+
+    fn key(&self) -> &'static str {
+        self.key
+    }
+
+    fn form_field(&self) -> FormField {
+        FormField::DynamicSelect {
+            key: self.key,
+            label: self.label,
+            options_key: self.options_key,
+        }
+    }
+
+    fn default_value(&self) -> Variant {
+        Variant::String(self.default.to_owned())
+    }
+
+    fn literal<'a>(&self, value: &'a Variant) -> Result<FieldLiteral<'a, T>, ConfigReason> {
+        selected_text(value, |text| self.parse_text(text))
+    }
+
+    fn parse_text(&self, text: &str) -> Result<T, ConfigReason> {
+        parse_selected(text)
+    }
+}
+
+pub struct BlankableSelectField<T> {
+    pub key: &'static str,
+    pub label: &'static str,
+    pub options_key: &'static str,
+    value: PhantomData<fn() -> T>,
+}
+
+impl<T> BlankableSelectField<T> {
+    pub const fn new(key: &'static str, label: &'static str, options_key: &'static str) -> Self {
+        Self {
+            key,
+            label,
+            options_key,
+            value: PhantomData,
+        }
+    }
+}
+
+impl<T: FromStr> TypedField for BlankableSelectField<T> {
+    type Value = Option<T>;
+
+    fn key(&self) -> &'static str {
+        self.key
+    }
+
+    fn form_field(&self) -> FormField {
+        FormField::DynamicSelect {
+            key: self.key,
+            label: self.label,
+            options_key: self.options_key,
+        }
+    }
+
+    fn default_value(&self) -> Variant {
+        Variant::String(String::new())
+    }
+
+    fn literal<'a>(&self, value: &'a Variant) -> Result<FieldLiteral<'a, Option<T>>, ConfigReason> {
+        selected_text(value, |text| self.parse_text(text))
+    }
+
+    fn parse_text(&self, text: &str) -> Result<Option<T>, ConfigReason> {
+        if text.trim().is_empty() {
+            Ok(None)
+        } else {
+            parse_selected(text).map(Some)
+        }
+    }
+}
+
+pub struct DependentSelectField {
+    pub key: &'static str,
+    pub label: &'static str,
+    pub options_prefix: &'static str,
+    pub depends_on: &'static str,
+}
+
+impl TypedField for DependentSelectField {
+    type Value = String;
+
+    fn key(&self) -> &'static str {
+        self.key
+    }
+
+    fn form_field(&self) -> FormField {
+        FormField::DependentSelect {
+            key: self.key,
+            label: self.label,
+            options_prefix: self.options_prefix,
+            depends_on: self.depends_on,
+        }
+    }
+
+    fn default_value(&self) -> Variant {
+        Variant::String(String::new())
+    }
+
+    fn literal<'a>(&self, value: &'a Variant) -> Result<FieldLiteral<'a, String>, ConfigReason> {
+        selected_text(value, |text| self.parse_text(text))
+    }
+
+    fn parse_text(&self, text: &str) -> Result<String, ConfigReason> {
+        parse_selected(text)
+    }
+}
+
+fn selected_text<'a, T>(
+    value: &'a Variant,
+    parse: impl FnOnce(&str) -> Result<T, ConfigReason>,
+) -> Result<FieldLiteral<'a, T>, ConfigReason> {
+    let Variant::String(text) = value else {
+        return Err(ConfigReason::NotText);
+    };
+    match FieldLiteral::of_text(text) {
+        Some(template) => Ok(template),
+        None => parse(text).map(FieldLiteral::Value),
+    }
+}
+
+fn parse_selected<T: FromStr>(text: &str) -> Result<T, ConfigReason> {
+    let selected = text.trim();
+    if selected.is_empty() {
+        return Err(ConfigReason::Required);
+    }
+    selected
+        .parse::<T>()
+        .map_err(|_| ConfigReason::InvalidFormat("not a known entry".to_owned()))
+}
+
+pub struct DurationField {
+    pub key: &'static str,
+    pub label: &'static str,
+    pub default: i64,
+    pub bounds: DurationBounds,
+}
+
+impl DurationField {
+    fn bounded(&self, stored: i64) -> Result<Duration, ConfigReason> {
+        let allowed = ValueBounds::between(self.bounds.min, self.bounds.max);
+        match u64::try_from(stored) {
+            Ok(amount) if allowed.admits_whole(stored) => Ok(self.bounds.duration_of(amount)),
+            _ => Err(ConfigReason::OutOfRange(allowed)),
+        }
+    }
+}
+
+impl TypedField for DurationField {
+    type Value = Duration;
+
+    fn key(&self) -> &'static str {
+        self.key
+    }
+
+    fn form_field(&self) -> FormField {
+        FormField::Duration {
+            key: self.key,
+            label: self.label,
+            bounds: self.bounds,
+        }
+    }
+
+    fn default_value(&self) -> Variant {
+        Variant::Int(self.default)
+    }
+
+    fn literal<'a>(&self, value: &'a Variant) -> Result<FieldLiteral<'a, Duration>, ConfigReason> {
+        match value {
+            Variant::Int(stored) => self.bounded(*stored).map(FieldLiteral::Value),
+            Variant::String(text) => match FieldLiteral::of_text(text) {
+                Some(template) => Ok(template),
+                None => self.parse_text(text).map(FieldLiteral::Value),
+            },
+            _ => Err(ConfigReason::NotANumber),
+        }
+    }
+
+    fn parse_text(&self, text: &str) -> Result<Duration, ConfigReason> {
+        let typed = text.trim();
+        if typed.is_empty() {
+            return Err(ConfigReason::Required);
+        }
+        let stored = typed.parse::<i64>().map_err(|_| ConfigReason::NotANumber)?;
+        self.bounded(stored)
+    }
+}
+
+pub struct DateTimeField {
+    pub key: &'static str,
+    pub label: &'static str,
+    pub default: &'static str,
+}
+
+impl TypedField for DateTimeField {
+    type Value = OffsetDateTime;
+
+    fn key(&self) -> &'static str {
+        self.key
+    }
+
+    fn form_field(&self) -> FormField {
+        FormField::DateTime {
+            key: self.key,
+            label: self.label,
+        }
+    }
+
+    fn default_value(&self) -> Variant {
+        Variant::String(self.default.to_owned())
+    }
+
+    fn literal<'a>(
+        &self,
+        value: &'a Variant,
+    ) -> Result<FieldLiteral<'a, OffsetDateTime>, ConfigReason> {
+        match value {
+            Variant::Datetime(instant) => Ok(FieldLiteral::Value(*instant)),
+            Variant::Int(seconds) => unix_instant(*seconds).map(FieldLiteral::Value),
+            Variant::String(text) => match FieldLiteral::of_text(text) {
+                Some(template) => Ok(template),
+                None => self.parse_text(text).map(FieldLiteral::Value),
+            },
+            _ => Err(ConfigReason::NotText),
+        }
+    }
+
+    fn parse_text(&self, text: &str) -> Result<OffsetDateTime, ConfigReason> {
+        let typed = text.trim();
+        if typed.is_empty() {
+            return Err(ConfigReason::Required);
+        }
+        if let Some(instant) = datetime_from_text(typed) {
+            return Ok(instant);
+        }
+        match typed.parse::<i64>() {
+            Ok(seconds) => unix_instant(seconds),
+            Err(_) => Err(ConfigReason::InvalidFormat(
+                "not a date-time or unix timestamp".to_owned(),
+            )),
+        }
+    }
+}
+
+fn unix_instant(seconds: i64) -> Result<OffsetDateTime, ConfigReason> {
+    OffsetDateTime::from_unix_timestamp(seconds).map_err(|error| {
+        ConfigReason::InvalidFormat(format!("unix timestamp out of range: {error}"))
+    })
+}
+
+#[derive(Clone, Copy)]
+pub enum ChainLayout {
+    Steps,
+    Cases,
+}
+
+pub struct StepChainField {
+    pub key: &'static str,
+    pub label: &'static str,
+    pub layout: ChainLayout,
+    pub seeds_empty_list: bool,
+}
+
+impl crate::declared_config::DeclaredField for StepChainField {
+    fn key(&self) -> &'static str {
+        self.key
+    }
+
+    fn form_field(&self) -> FormField {
+        match self.layout {
+            ChainLayout::Steps => FormField::SubChain {
+                key: self.key,
+                label: self.label,
+            },
+            ChainLayout::Cases => FormField::CaseList {
+                key: self.key,
+                label: self.label,
+            },
+        }
+    }
+
+    fn write_default(&self, config: &mut SubActionConfig) {
+        if self.seeds_empty_list {
+            config.insert(self.key.to_owned(), Variant::Array(Vec::new()));
+        }
+    }
+
+    fn check(
+        &self,
+        config: &SubActionConfig,
+        _interpolation: Interpolation<'_>,
+    ) -> Result<(), ConfigProblem> {
+        match config.get(self.key) {
+            None | Some(Variant::Array(_)) => Ok(()),
+            Some(_) => Err(ConfigProblem::field(
+                self.key,
+                ConfigReason::InvalidFormat("not a list of steps".to_owned()),
+            )),
+        }
+    }
+}
+
+pub struct JsonObjectField {
+    pub key: &'static str,
+    pub label: &'static str,
+    pub default: &'static str,
+}
+
+impl TypedField for JsonObjectField {
+    type Value = JsonMap<String, JsonValue>;
+
+    fn key(&self) -> &'static str {
+        self.key
+    }
+
+    fn form_field(&self) -> FormField {
+        FormField::TextArea {
+            key: self.key,
+            label: self.label,
+        }
+    }
+
+    fn default_value(&self) -> Variant {
+        Variant::String(self.default.to_owned())
+    }
+
+    fn literal<'a>(
+        &self,
+        value: &'a Variant,
+    ) -> Result<FieldLiteral<'a, Self::Value>, ConfigReason> {
+        match value {
+            Variant::Object(_) => match value.to_plain_json() {
+                JsonValue::Object(map) => Ok(FieldLiteral::Value(map)),
+                _ => Err(not_an_object()),
+            },
+            Variant::String(text) => self.parse_text(text).map(FieldLiteral::Value),
+            _ => Err(ConfigReason::NotText),
+        }
+    }
+
+    fn parse_text(&self, text: &str) -> Result<Self::Value, ConfigReason> {
+        if text.trim().is_empty() {
+            return Ok(JsonMap::new());
+        }
+        match serde_json::from_str::<JsonValue>(text) {
+            Ok(JsonValue::Object(map)) => Ok(map),
+            Ok(_) => Err(not_an_object()),
+            Err(error) => Err(ConfigReason::InvalidFormat(format!(
+                "not valid JSON ({error})"
+            ))),
+        }
+    }
+}
+
+fn not_an_object() -> ConfigReason {
+    ConfigReason::InvalidFormat("not a JSON object".to_owned())
+}
+pub struct LinesField {
+    pub key: &'static str,
+    pub label: &'static str,
+}
+
+impl TypedField for LinesField {
+    type Value = Vec<Variant>;
+
+    fn key(&self) -> &'static str {
+        self.key
+    }
+
+    fn form_field(&self) -> FormField {
+        FormField::TextArea {
+            key: self.key,
+            label: self.label,
+        }
+    }
+
+    fn default_value(&self) -> Variant {
+        Variant::String(String::new())
+    }
+
+    fn literal<'a>(
+        &self,
+        value: &'a Variant,
+    ) -> Result<FieldLiteral<'a, Vec<Variant>>, ConfigReason> {
+        match value {
+            Variant::Array(entries) => Ok(FieldLiteral::Value(entries.clone())),
+            Variant::String(text) => self.parse_text(text).map(FieldLiteral::Value),
+            _ => Err(ConfigReason::NotText),
+        }
+    }
+
+    fn parse_text(&self, text: &str) -> Result<Vec<Variant>, ConfigReason> {
+        Ok(text
+            .lines()
+            .map(|line| Variant::String(line.to_owned()))
+            .collect())
     }
 }
 

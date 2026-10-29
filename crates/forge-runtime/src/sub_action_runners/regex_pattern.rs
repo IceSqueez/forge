@@ -1,9 +1,12 @@
-use forge_registry::{ConfigReason, RegistryError};
+use forge_registry::{ConfigProblem, ConfigReason};
+use regex::Regex;
 
 const SYNTAX_DETAIL_PREFIX: &str = "error: ";
 
-pub(super) fn invalid_pattern(key: &str, error: &regex::Error) -> RegistryError {
-    RegistryError::invalid_field(key, ConfigReason::InvalidFormat(one_line_summary(error)))
+pub(super) fn compiled_pattern(key: &str, pattern: &str) -> Result<Regex, ConfigProblem> {
+    Regex::new(pattern).map_err(|error| {
+        ConfigProblem::field(key, ConfigReason::InvalidFormat(one_line_summary(&error)))
+    })
 }
 
 fn one_line_summary(error: &regex::Error) -> String {

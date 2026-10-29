@@ -3,16 +3,37 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use forge_events::{Event, EventPublisher, EventSource};
 use forge_registry::{
-    FormField, RegistryError, RunContext, StepTimer, SubActionCategory, SubActionConfigExt,
-    SubActionRunner,
+    ConfigProblem, ConfigSpec, RunContext, StepTimer, SubActionCategory, SubActionRunner,
+    TextEditor, TextField, TypedField,
 };
-use forge_types::{ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetry, Variant};
+use forge_types::{ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetry};
 
-use super::json_object_input::{
-    EMPTY_JSON_OBJECT, plain_json_object, read_json_object, validate_json_object,
+use super::event_payload::{EVENT_NAME_KEY, PAYLOAD};
+
+const EMIT_EVENT_KIND_ID: &str = "script.emit_event";
+const CUSTOM_EVENT_PREFIX: &str = "custom.";
+
+const EVENT_NAME: TextField = TextField {
+    key: EVENT_NAME_KEY,
+    label: "Event Name",
+    editor: TextEditor::Line {
+        placeholder: "my_event",
+    },
+    default: "",
+    required: true,
 };
 
-const PAYLOAD_KEY: &str = "payload";
+const CONFIG: ConfigSpec = ConfigSpec::new(&[&EVENT_NAME, &PAYLOAD]);
+
+fn read_config(
+    config: &SubActionConfig,
+    args: &ArgStack,
+) -> Result<(String, serde_json::Value), ConfigProblem> {
+    Ok((
+        EVENT_NAME.read(config, args)?,
+        serde_json::Value::Object(PAYLOAD.read(config, args)?),
+    ))
+}
 
 pub struct ScriptEmitEventRunner {
     publisher: Arc<dyn EventPublisher>,
@@ -27,7 +48,7 @@ impl ScriptEmitEventRunner {
 #[async_trait]
 impl SubActionRunner for ScriptEmitEventRunner {
     fn id(&self) -> &str {
-        "script.emit_event"
+        EMIT_EVENT_KIND_ID
     }
 
     fn category(&self) -> SubActionCategory {
@@ -50,33 +71,8 @@ impl SubActionRunner for ScriptEmitEventRunner {
         "bolt"
     }
 
-    fn default_config(&self) -> SubActionConfig {
-        let mut cfg = SubActionConfig::new();
-        cfg.insert("event_name".to_owned(), Variant::String(String::new()));
-        cfg.insert(
-            PAYLOAD_KEY.to_owned(),
-            Variant::String(EMPTY_JSON_OBJECT.to_owned()),
-        );
-        cfg
-    }
-
-    fn config_fields(&self) -> Vec<FormField> {
-        vec![
-            FormField::Text {
-                key: "event_name",
-                label: "Event Name",
-                placeholder: "my_event",
-            },
-            FormField::TextArea {
-                key: PAYLOAD_KEY,
-                label: "Payload (JSON object)",
-            },
-        ]
-    }
-
-    fn validate_config(&self, config: &SubActionConfig) -> Result<(), RegistryError> {
-        config.require_str("event_name")?;
-        validate_json_object(config, PAYLOAD_KEY)
+    fn config_spec(&self) -> Option<ConfigSpec> {
+        Some(CONFIG)
     }
 
     async fn execute(
@@ -84,34 +80,27 @@ impl SubActionRunner for ScriptEmitEventRunner {
         config: &SubActionConfig,
         ctx: &RunContext<'_>,
     ) -> (SubActionTelemetry, Option<ArgStack>) {
-        let timer = StepTimer::start(ctx, "script.emit_event");
-
-        let name_template = config.str("event_name").unwrap_or_default();
-        let event_name = ctx.arg_stack.interpolate(name_template);
-
-        let outcome = if event_name.is_empty() {
-            SubActionOutcome::Failed("event_name is required".to_owned())
-        } else {
-            match config_payload(config) {
-                Ok(payload) => {
-                    self.publisher.publish(Event::caused_by(
-                        EventSource::Server,
-                        format!("custom.{event_name}"),
-                        payload,
-                        ctx.parent_event_id,
-                    ));
-                    SubActionOutcome::Success
-                }
-                Err(reason) => SubActionOutcome::Failed(reason),
-            }
+        let timer = StepTimer::start(ctx, EMIT_EVENT_KIND_ID);
+        let (event_name, payload) = match read_config(config, ctx.arg_stack) {
+            Ok(values) => values,
+            Err(problem) => return (timer.invalid_config(&problem), None),
         };
-
-        (timer.finish(outcome), None)
+        if event_name.is_empty() {
+            return (
+                timer.finish(SubActionOutcome::Failed(format!(
+                    "{EVENT_NAME_KEY} is required"
+                ))),
+                None,
+            );
+        }
+        self.publisher.publish(Event::caused_by(
+            EventSource::Server,
+            format!("{CUSTOM_EVENT_PREFIX}{event_name}"),
+            payload,
+            ctx.parent_event_id,
+        ));
+        (timer.success(), None)
     }
-}
-
-fn config_payload(config: &SubActionConfig) -> Result<serde_json::Value, String> {
-    read_json_object(config, PAYLOAD_KEY).map(|map| plain_json_object(&map))
 }
 
 #[cfg(test)]

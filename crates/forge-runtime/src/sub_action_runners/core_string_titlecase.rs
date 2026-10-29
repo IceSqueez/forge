@@ -1,9 +1,15 @@
 use async_trait::async_trait;
 use forge_registry::{
-    FormField, ProducedVariable, RegistryError, RunContext, StepTimer, SubActionCategory,
-    SubActionConfigExt, SubActionIo, SubActionRunner,
+    ConfigSpec, ProducedVariable, RunContext, StepTimer, SubActionCategory, SubActionIo,
+    SubActionRunner, TextField,
 };
 use forge_types::{ArgStack, SubActionConfig, SubActionTelemetry, Variant, VariantKind};
+
+use super::core_string_shared::{INTO_RESULT, INTO_VAR_KEY, read_source_into, source_field};
+
+const SOURCE: TextField = source_field("hello world");
+
+const CONFIG: ConfigSpec = ConfigSpec::new(&[&SOURCE, &INTO_RESULT]);
 
 pub struct CoreStringTitlecaseRunner;
 
@@ -33,39 +39,14 @@ impl SubActionRunner for CoreStringTitlecaseRunner {
         "letter-case"
     }
 
-    fn default_config(&self) -> SubActionConfig {
-        let mut cfg = SubActionConfig::new();
-        cfg.insert("source".to_owned(), Variant::String(String::new()));
-        cfg.insert(
-            "into_var".to_owned(),
-            Variant::String("string.result".to_owned()),
-        );
-        cfg
-    }
-
-    fn config_fields(&self) -> Vec<FormField> {
-        vec![
-            FormField::Text {
-                key: "source",
-                label: "Source",
-                placeholder: "hello world",
-            },
-            FormField::Text {
-                key: "into_var",
-                label: "Output Variable",
-                placeholder: "string.result",
-            },
-        ]
-    }
-
-    fn validate_config(&self, _config: &SubActionConfig) -> Result<(), RegistryError> {
-        Ok(())
+    fn config_spec(&self) -> Option<ConfigSpec> {
+        Some(CONFIG)
     }
 
     fn scope_io(&self) -> SubActionIo {
         SubActionIo {
             produces: vec![ProducedVariable {
-                output_name_key: "into_var".to_owned(),
+                output_name_key: INTO_VAR_KEY.to_owned(),
                 kind: VariantKind::String,
                 label: "Title-cased string".to_owned(),
             }],
@@ -78,14 +59,11 @@ impl SubActionRunner for CoreStringTitlecaseRunner {
         config: &SubActionConfig,
         ctx: &RunContext<'_>,
     ) -> (SubActionTelemetry, Option<ArgStack>) {
-        let timer = StepTimer::start(ctx, "core.string.titlecase");
-
-        let source = ctx
-            .arg_stack
-            .interpolate(config.str("source").unwrap_or(""));
-        let into_var = forge_types::strip_var_decoration(
-            config.str_nonempty("into_var").unwrap_or("string.result"),
-        );
+        let timer = StepTimer::start(ctx, self.id());
+        let (source, into_var) = match read_source_into(&SOURCE, config, ctx.arg_stack) {
+            Ok(values) => values,
+            Err(problem) => return (timer.invalid_config(&problem), None),
+        };
 
         let result = to_titlecase(&source);
         let new_stack = ctx.arg_stack.clone().set(into_var, Variant::String(result));
@@ -93,7 +71,6 @@ impl SubActionRunner for CoreStringTitlecaseRunner {
         (timer.success(), Some(new_stack))
     }
 }
-
 fn to_titlecase(s: &str) -> String {
     let mut result = String::with_capacity(s.len());
     let mut capitalize_next = true;

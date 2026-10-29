@@ -1,8 +1,8 @@
-use forge_types::Variant;
+use forge_types::{ArgStack, SubActionConfig, Variant};
 
-use crate::config_problem::{ConfigReason, ValueBounds};
-use crate::declared_config::{FieldLiteral, TypedField};
-use crate::declared_fields::{TextEditor, TextField};
+use crate::config_problem::{ConfigProblem, ConfigReason};
+use crate::declared_config::{FieldLiteral, Interpolation, TypedField, peek_stored, read_stored};
+use crate::declared_fields::{TextEditor, TextField, ToggleField};
 use crate::form::FormField;
 
 #[derive(Clone, Copy)]
@@ -66,101 +66,79 @@ impl TypedField for PickedTextField {
 }
 
 #[derive(Clone, Copy)]
-pub enum StoredNumber {
-    Float(f64),
-    Text(&'static str),
-}
-
-pub struct DecimalField {
-    pub key: &'static str,
-    pub label: &'static str,
-    pub placeholder: &'static str,
-    pub default: StoredNumber,
-    pub bounds: ValueBounds,
-}
-
-impl DecimalField {
-    fn bounded(&self, value: f64) -> Result<f64, ConfigReason> {
-        if !value.is_finite() {
-            Err(ConfigReason::NotANumber)
-        } else if self.bounds.admits(value) {
-            Ok(value)
-        } else {
-            Err(ConfigReason::OutOfRange(self.bounds))
-        }
-    }
-}
-
-impl TypedField for DecimalField {
-    type Value = f64;
-
-    fn key(&self) -> &'static str {
-        self.key
-    }
-
-    fn form_field(&self) -> FormField {
-        FormField::Text {
-            key: self.key,
-            label: self.label,
-            placeholder: self.placeholder,
-        }
-    }
-
-    fn default_value(&self) -> Variant {
-        match self.default {
-            StoredNumber::Float(number) => Variant::Float(number),
-            StoredNumber::Text(text) => Variant::String(text.to_owned()),
-        }
-    }
-
-    fn literal<'a>(&self, value: &'a Variant) -> Result<FieldLiteral<'a, f64>, ConfigReason> {
-        match value {
-            Variant::Float(number) => self.bounded(*number).map(FieldLiteral::Value),
-            Variant::Int(number) => self.bounded(*number as f64).map(FieldLiteral::Value),
-            Variant::String(text) => match FieldLiteral::of_text(text) {
-                Some(template) => Ok(template),
-                None => self.parse_text(text).map(FieldLiteral::Value),
-            },
-            _ => Err(ConfigReason::NotANumber),
-        }
-    }
-
-    fn parse_text(&self, text: &str) -> Result<f64, ConfigReason> {
-        let typed = text.trim();
-        if typed.is_empty() {
-            return Err(ConfigReason::Required);
-        }
-        let number = typed.parse::<f64>().map_err(|_| ConfigReason::NotANumber)?;
-        self.bounded(number)
-    }
+pub enum OptionalSwitch {
+    SharedKey {
+        label: Option<&'static str>,
+    },
+    Toggle {
+        key: &'static str,
+        label: &'static str,
+        default_on: bool,
+    },
 }
 
 pub struct OptionalField<F> {
     pub field: F,
+    pub switch: OptionalSwitch,
+}
+
+impl<F> OptionalField<F> {
+    pub const fn shared(field: F) -> Self {
+        Self {
+            field,
+            switch: OptionalSwitch::SharedKey { label: None },
+        }
+    }
+}
+
+impl<F: TypedField> OptionalField<F> {
+    fn toggle(key: &'static str, label: &'static str, default_on: bool) -> ToggleField {
+        ToggleField {
+            key,
+            label,
+            default: default_on,
+        }
+    }
 }
 
 impl<F: TypedField> TypedField for OptionalField<F> {
     type Value = Option<F::Value>;
 
     fn key(&self) -> &'static str {
-        self.field.key()
+        match self.switch {
+            OptionalSwitch::SharedKey { .. } => self.field.key(),
+            OptionalSwitch::Toggle { key, .. } => key,
+        }
     }
 
     fn form_field(&self) -> FormField {
         let inner = self.field.form_field();
+        let label = match self.switch {
+            OptionalSwitch::SharedKey { label } => label.unwrap_or_else(|| inner.label()),
+            OptionalSwitch::Toggle { label, .. } => label,
+        };
         FormField::Optional {
-            key: self.field.key(),
-            label: inner.label(),
+            key: self.key(),
+            label,
             inner: Box::new(inner),
         }
     }
 
     fn default_value(&self) -> Variant {
-        Variant::String(String::new())
+        match self.switch {
+            OptionalSwitch::SharedKey { .. } => Variant::String(String::new()),
+            OptionalSwitch::Toggle { default_on, .. } => Variant::Bool(default_on),
+        }
     }
 
-    fn seeds_default(&self) -> bool {
-        false
+    fn write_default(&self, config: &mut SubActionConfig) {
+        if let OptionalSwitch::Toggle {
+            key, default_on, ..
+        } = self.switch
+        {
+            config.insert(key.to_owned(), Variant::Bool(default_on));
+            self.field.write_default(config);
+        }
     }
 
     fn literal<'a>(
@@ -183,6 +161,43 @@ impl<F: TypedField> TypedField for OptionalField<F> {
             Ok(None)
         } else {
             self.field.parse_text(text).map(Some)
+        }
+    }
+
+    fn read(
+        &self,
+        config: &SubActionConfig,
+        args: &ArgStack,
+    ) -> Result<Self::Value, ConfigProblem> {
+        match self.switch {
+            OptionalSwitch::SharedKey { .. } => read_stored(self, config, args),
+            OptionalSwitch::Toggle {
+                key,
+                label,
+                default_on,
+            } => match Self::toggle(key, label, default_on).read(config, args)? {
+                true => self.field.read(config, args).map(Some),
+                false => Ok(None),
+            },
+        }
+    }
+
+    fn peek(
+        &self,
+        config: &SubActionConfig,
+        interpolation: Interpolation<'_>,
+    ) -> Result<Option<Self::Value>, ConfigProblem> {
+        match self.switch {
+            OptionalSwitch::SharedKey { .. } => peek_stored(self, config, interpolation),
+            OptionalSwitch::Toggle {
+                key,
+                label,
+                default_on,
+            } => match Self::toggle(key, label, default_on).peek(config, interpolation)? {
+                Some(true) => Ok(self.field.peek(config, interpolation)?.map(Some)),
+                Some(false) => Ok(Some(None)),
+                None => Ok(None),
+            },
         }
     }
 }

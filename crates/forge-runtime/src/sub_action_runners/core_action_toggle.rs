@@ -2,13 +2,12 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use forge_registry::{
-    FormField, RegistryError, RunContext, StepTimer, SubActionCategory, SubActionConfigExt,
-    SubActionRunner,
+    ConfigSpec, RunContext, StepTimer, SubActionCategory, SubActionRunner, TypedField,
 };
 use forge_storage::ActionRepo;
-use forge_types::{
-    ActionId, ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetry, Variant,
-};
+use forge_types::{ActionId, ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetry};
+
+use super::core_action_shared::{ACTION, ACTION_SPEC};
 
 pub struct CoreActionToggleRunner {
     actions: Arc<dyn ActionRepo>,
@@ -19,12 +18,7 @@ impl CoreActionToggleRunner {
         Self { actions }
     }
 
-    async fn run(&self, config: &SubActionConfig, ctx: &RunContext<'_>) -> SubActionOutcome {
-        let raw = config.str("action_id").unwrap_or_default();
-        let resolved = ctx.arg_stack.interpolate(raw);
-        let Ok(action_id) = resolved.parse::<ActionId>() else {
-            return SubActionOutcome::Failed("core.action.toggle: invalid action_id".to_owned());
-        };
+    async fn run(&self, action_id: ActionId) -> SubActionOutcome {
         match self.actions.toggle_enabled(action_id).await {
             Ok(Some(_)) => SubActionOutcome::Success,
             Ok(None) => SubActionOutcome::Failed(format!(
@@ -61,22 +55,8 @@ impl SubActionRunner for CoreActionToggleRunner {
         "switch"
     }
 
-    fn default_config(&self) -> SubActionConfig {
-        let mut cfg = SubActionConfig::new();
-        cfg.insert("action_id".to_owned(), Variant::String(String::new()));
-        cfg
-    }
-
-    fn config_fields(&self) -> Vec<FormField> {
-        vec![FormField::DynamicSelect {
-            key: "action_id",
-            label: "Action",
-            options_key: "action.ids",
-        }]
-    }
-
-    fn validate_config(&self, config: &SubActionConfig) -> Result<(), RegistryError> {
-        config.require_str("action_id").map(|_| ())
+    fn config_spec(&self) -> Option<ConfigSpec> {
+        Some(ACTION_SPEC)
     }
 
     async fn execute(
@@ -84,8 +64,12 @@ impl SubActionRunner for CoreActionToggleRunner {
         config: &SubActionConfig,
         ctx: &RunContext<'_>,
     ) -> (SubActionTelemetry, Option<ArgStack>) {
-        let timer = StepTimer::start(ctx, "core.action.toggle");
-        let outcome = self.run(config, ctx).await;
+        let timer = StepTimer::start(ctx, self.id());
+        let action_id = match ACTION.read(config, ctx.arg_stack) {
+            Ok(action_id) => action_id,
+            Err(problem) => return (timer.invalid_config(&problem), None),
+        };
+        let outcome = self.run(action_id).await;
         (timer.finish(outcome), None)
     }
 }

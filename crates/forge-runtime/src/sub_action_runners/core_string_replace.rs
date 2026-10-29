@@ -1,12 +1,85 @@
-use super::regex_pattern::invalid_pattern;
 use async_trait::async_trait;
 use forge_registry::{
-    FormField, ProducedVariable, RegistryError, RunContext, StepTimer, SubActionCategory,
-    SubActionConfigExt, SubActionIo, SubActionRunner,
+    ConfigProblem, ConfigSpec, Interpolation, ProducedVariable, RunContext, StepTimer,
+    SubActionCategory, SubActionIo, SubActionRunner, TemplateField, TextField, ToggleField,
+    TypedField,
 };
 use forge_types::{
     ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetry, Variant, VariantKind,
 };
+
+use super::core_string_shared::{INTO_RESULT, INTO_VAR_KEY, source_field};
+use super::regex_pattern::compiled_pattern;
+
+const SOURCE: TextField = source_field("Hello World");
+
+const SEARCH: TemplateField = TemplateField {
+    key: "search",
+    label: "Search",
+    placeholder: "World",
+    default: "",
+    required: false,
+};
+
+const REPLACE_WITH: TemplateField = TemplateField {
+    key: "replace_with",
+    label: "Replace With",
+    placeholder: "Forge",
+    default: "",
+    required: false,
+};
+
+const CASE_SENSITIVE: ToggleField = ToggleField {
+    key: "case_sensitive",
+    label: "Case Sensitive",
+    default: true,
+};
+
+const IS_REGEX: ToggleField = ToggleField {
+    key: "is_regex",
+    label: "Use Regex",
+    default: false,
+};
+
+const CONFIG: ConfigSpec = ConfigSpec::new(&[
+    &SOURCE,
+    &SEARCH,
+    &REPLACE_WITH,
+    &CASE_SENSITIVE,
+    &IS_REGEX,
+    &INTO_RESULT,
+]);
+
+struct ReplaceConfig {
+    source: String,
+    search: String,
+    replace_with: String,
+    case_sensitive: bool,
+    is_regex: bool,
+    into_var: String,
+}
+
+fn read_config(config: &SubActionConfig, args: &ArgStack) -> Result<ReplaceConfig, ConfigProblem> {
+    let is_regex = IS_REGEX.read(config, args)?;
+    let search = SEARCH.read(config, args)?;
+    let replace_with = REPLACE_WITH.read(config, args)?;
+    let (search, replace_with) = if is_regex {
+        if !search.is_empty() {
+            compiled_pattern(SEARCH.key, &search)?;
+        }
+        (search, replace_with)
+    } else {
+        (args.interpolate(&search), args.interpolate(&replace_with))
+    };
+    Ok(ReplaceConfig {
+        source: SOURCE.read(config, args)?,
+        search,
+        replace_with,
+        case_sensitive: CASE_SENSITIVE.read(config, args)?,
+        is_regex,
+        into_var: INTO_RESULT.read(config, args)?,
+    })
+}
 
 pub struct CoreStringReplaceRunner;
 
@@ -36,66 +109,30 @@ impl SubActionRunner for CoreStringReplaceRunner {
         "replace"
     }
 
-    fn default_config(&self) -> SubActionConfig {
-        let mut cfg = SubActionConfig::new();
-        cfg.insert("source".to_owned(), Variant::String(String::new()));
-        cfg.insert("search".to_owned(), Variant::String(String::new()));
-        cfg.insert("replace_with".to_owned(), Variant::String(String::new()));
-        cfg.insert("case_sensitive".to_owned(), Variant::Bool(true));
-        cfg.insert("is_regex".to_owned(), Variant::Bool(false));
-        cfg.insert(
-            "into_var".to_owned(),
-            Variant::String("string.result".to_owned()),
-        );
-        cfg
+    fn config_spec(&self) -> Option<ConfigSpec> {
+        Some(CONFIG)
     }
 
-    fn config_fields(&self) -> Vec<FormField> {
-        vec![
-            FormField::Text {
-                key: "source",
-                label: "Source",
-                placeholder: "Hello World",
-            },
-            FormField::Text {
-                key: "search",
-                label: "Search",
-                placeholder: "World",
-            },
-            FormField::Text {
-                key: "replace_with",
-                label: "Replace With",
-                placeholder: "Forge",
-            },
-            FormField::Toggle {
-                key: "case_sensitive",
-                label: "Case Sensitive",
-            },
-            FormField::Toggle {
-                key: "is_regex",
-                label: "Use Regex",
-            },
-            FormField::Text {
-                key: "into_var",
-                label: "Output Variable",
-                placeholder: "string.result",
-            },
-        ]
-    }
-
-    fn validate_config(&self, config: &SubActionConfig) -> Result<(), RegistryError> {
-        let search = config.str("search").unwrap_or("");
-        let is_regex = config.bool("is_regex").unwrap_or(false);
-        if is_regex && !search.is_empty() {
-            regex::Regex::new(search).map_err(|e| invalid_pattern("search", &e))?;
+    fn check_config(
+        &self,
+        config: &SubActionConfig,
+        interpolation: Interpolation<'_>,
+    ) -> Result<(), ConfigProblem> {
+        match (
+            IS_REGEX.peek(config, interpolation)?,
+            SEARCH.peek(config, interpolation)?,
+        ) {
+            (Some(true), Some(search)) if !search.is_empty() => {
+                compiled_pattern(SEARCH.key, &search).map(|_| ())
+            }
+            _ => Ok(()),
         }
-        Ok(())
     }
 
     fn scope_io(&self) -> SubActionIo {
         SubActionIo {
             produces: vec![ProducedVariable {
-                output_name_key: "into_var".to_owned(),
+                output_name_key: INTO_VAR_KEY.to_owned(),
                 kind: VariantKind::String,
                 label: "Replaced string".to_owned(),
             }],
@@ -108,32 +145,21 @@ impl SubActionRunner for CoreStringReplaceRunner {
         config: &SubActionConfig,
         ctx: &RunContext<'_>,
     ) -> (SubActionTelemetry, Option<ArgStack>) {
-        let timer = StepTimer::start(ctx, "core.string.replace");
-
-        let source = ctx
-            .arg_stack
-            .interpolate(config.str("source").unwrap_or(""));
-        let case_sensitive = config.bool("case_sensitive").unwrap_or(true);
-        let is_regex = config.bool("is_regex").unwrap_or(false);
-        let search_template = config.str("search").unwrap_or("");
-        let replace_template = config.str("replace_with").unwrap_or("");
-        let (search, replace_with) = if is_regex {
-            (search_template.to_owned(), replace_template.to_owned())
-        } else {
-            (
-                ctx.arg_stack.interpolate(search_template),
-                ctx.arg_stack.interpolate(replace_template),
-            )
+        let timer = StepTimer::start(ctx, self.id());
+        let ReplaceConfig {
+            source,
+            search,
+            replace_with,
+            case_sensitive,
+            is_regex,
+            into_var,
+        } = match read_config(config, ctx.arg_stack) {
+            Ok(read) => read,
+            Err(problem) => return (timer.invalid_config(&problem), None),
         };
-        let into_var = forge_types::strip_var_decoration(
-            config.str_nonempty("into_var").unwrap_or("string.result"),
-        );
 
         if search.is_empty() {
-            let new_stack = ctx
-                .arg_stack
-                .clone()
-                .set(into_var, Variant::String(source.to_owned()));
+            let new_stack = ctx.arg_stack.clone().set(into_var, Variant::String(source));
             return (timer.success(), Some(new_stack));
         }
 
@@ -173,13 +199,11 @@ fn apply_replace(
     };
 
     let re = regex::Regex::new(&pattern).map_err(|e| format!("invalid pattern: {e}"))?;
-
     let replacement = if is_regex {
         replace_with.to_owned()
     } else {
         replace_with.replace('$', "$$")
     };
-
     Ok(re.replace_all(source, replacement.as_str()).into_owned())
 }
 

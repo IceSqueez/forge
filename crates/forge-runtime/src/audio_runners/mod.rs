@@ -20,10 +20,68 @@ pub use speak_with_engine::SpeakWithEngineRunner;
 
 use std::sync::Arc;
 
-use forge_registry::{RegistryError, SubActionRegistry};
+use forge_registry::{
+    ConfigProblem, ConfigSpec, DependentSelectField, DynamicSelectField, RegistryError,
+    SubActionRegistry, TextEditor, TextField, ToggleField, TypedField,
+};
+use forge_types::{ArgStack, SubActionConfig};
 
 use crate::speak_dispatcher::SpeakDispatcher;
 use crate::twitch_emote_lexicon::TwitchEmoteLexicon;
+
+const ENGINE_ID_KEY: &str = "engine_id";
+const ENGINE_OPTIONS_KEY: &str = "tts.engine_ids";
+const VOICE_OPTIONS_PREFIX: &str = "tts.voices";
+
+const ALIAS_NAME: TextField = TextField {
+    key: "alias_name",
+    label: "Alias name",
+    editor: TextEditor::Line {
+        placeholder: "e.g. %user% or viewer id",
+    },
+    default: "",
+    required: true,
+};
+
+const ENGINE: DynamicSelectField<String> =
+    DynamicSelectField::new(ENGINE_ID_KEY, "Engine ID", ENGINE_OPTIONS_KEY);
+
+const VOICE: DependentSelectField = DependentSelectField {
+    key: "voice_id",
+    label: "Voice ID",
+    options_prefix: VOICE_OPTIONS_PREFIX,
+    depends_on: ENGINE_ID_KEY,
+};
+
+const ALIAS_SPEC: ConfigSpec = ConfigSpec::new(&[&ALIAS_NAME, &ENGINE, &VOICE]);
+
+const SPEECH_TEXT: TextField = TextField {
+    key: "text",
+    label: "Text",
+    editor: TextEditor::Area,
+    default: "",
+    required: true,
+};
+
+const WAIT_FOR_COMPLETION: ToggleField = ToggleField {
+    key: "wait_for_completion",
+    label: "Wait for completion",
+    default: true,
+};
+
+struct AliasTarget {
+    alias_name: String,
+    engine_id: String,
+    voice_id: String,
+}
+
+fn read_alias(config: &SubActionConfig, args: &ArgStack) -> Result<AliasTarget, ConfigProblem> {
+    Ok(AliasTarget {
+        alias_name: ALIAS_NAME.read(config, args)?,
+        engine_id: ENGINE.read(config, args)?,
+        voice_id: VOICE.read(config, args)?,
+    })
+}
 
 pub fn register_speech_sub_actions(
     reg: &mut SubActionRegistry,

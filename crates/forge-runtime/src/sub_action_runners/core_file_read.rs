@@ -2,8 +2,9 @@ use std::path::Path;
 
 use async_trait::async_trait;
 use forge_registry::{
-    FormField, ProducedVariable, RegistryError, RunContext, StepTimer, SubActionCategory,
-    SubActionConfigExt, SubActionIo, SubActionRunner,
+    ChoiceField, ConfigChoice, ConfigProblem, ConfigSpec, ProducedVariable, RunContext, StepTimer,
+    SubActionCategory, SubActionIo, SubActionRunner, TextEditor, TextField, TypedField,
+    VariableField,
 };
 use forge_types::{
     ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetry, Variant, VariantKind,
@@ -11,6 +12,63 @@ use forge_types::{
 use tokio::io::AsyncReadExt;
 
 const MAX_FILE_BYTES: u64 = 1_048_576;
+const TARGET_VAR_KEY: &str = "target_var";
+
+#[derive(Clone, Copy)]
+enum ReadAs {
+    Lines,
+    WholeFile,
+    Json,
+}
+
+impl ConfigChoice for ReadAs {
+    const ALL: &'static [Self] = &[Self::Lines, Self::WholeFile, Self::Json];
+    const WIRE_NAMES: &'static [&'static str] = &["Lines array", "Whole file", "JSON"];
+
+    fn wire_name(self) -> &'static str {
+        match self {
+            Self::Lines => "Lines array",
+            Self::WholeFile => "Whole file",
+            Self::Json => "JSON",
+        }
+    }
+}
+
+const PATH: TextField = TextField {
+    key: "path",
+    label: "File Path (relative to the files folder)",
+    editor: TextEditor::Line {
+        placeholder: "quotes/cards.md",
+    },
+    default: "",
+    required: true,
+};
+
+const READ_AS: ChoiceField<ReadAs> = ChoiceField {
+    key: "read_as",
+    label: "Read As",
+    default: ReadAs::Lines,
+};
+
+const TARGET_VAR: VariableField = VariableField {
+    key: TARGET_VAR_KEY,
+    label: "Output Variable",
+    placeholder: "file_contents",
+    default: "",
+};
+
+const CONFIG: ConfigSpec = ConfigSpec::new(&[&PATH, &READ_AS, &TARGET_VAR]);
+
+fn read_config(
+    config: &SubActionConfig,
+    args: &ArgStack,
+) -> Result<(String, ReadAs, String), ConfigProblem> {
+    Ok((
+        PATH.read(config, args)?,
+        READ_AS.read(config, args)?,
+        TARGET_VAR.read(config, args)?,
+    ))
+}
 
 pub struct CoreFileReadRunner;
 
@@ -40,48 +98,14 @@ impl SubActionRunner for CoreFileReadRunner {
         "file-text"
     }
 
-    fn default_config(&self) -> SubActionConfig {
-        let mut cfg = SubActionConfig::new();
-        cfg.insert("path".to_owned(), Variant::String(String::new()));
-        cfg.insert("target_var".to_owned(), Variant::String(String::new()));
-        cfg.insert(
-            "read_as".to_owned(),
-            Variant::String("Lines array".to_owned()),
-        );
-        cfg
-    }
-
-    fn config_fields(&self) -> Vec<FormField> {
-        vec![
-            FormField::Text {
-                key: "path",
-                label: "File Path (relative to the files folder)",
-                placeholder: "quotes/cards.md",
-            },
-            FormField::Select {
-                key: "read_as",
-                label: "Read As",
-                options: &["Lines array", "Whole file", "JSON"],
-            },
-            FormField::Text {
-                key: "target_var",
-                label: "Output Variable",
-                placeholder: "file_contents",
-            },
-        ]
-    }
-
-    fn validate_config(&self, config: &SubActionConfig) -> Result<(), RegistryError> {
-        config
-            .require_str("path")
-            .and(config.require_str("target_var"))
-            .map(|_| ())
+    fn config_spec(&self) -> Option<ConfigSpec> {
+        Some(CONFIG)
     }
 
     fn scope_io(&self) -> SubActionIo {
         SubActionIo {
             produces: vec![ProducedVariable {
-                output_name_key: "target_var".to_owned(),
+                output_name_key: TARGET_VAR_KEY.to_owned(),
                 kind: VariantKind::Array,
                 label: "File contents".to_owned(),
             }],
@@ -94,31 +118,44 @@ impl SubActionRunner for CoreFileReadRunner {
         config: &SubActionConfig,
         ctx: &RunContext<'_>,
     ) -> (SubActionTelemetry, Option<ArgStack>) {
-        let timer = StepTimer::start(ctx, "core.file.read");
+        let timer = StepTimer::start(ctx, self.id());
+        let (path, read_as, target_var) = match read_config(config, ctx.arg_stack) {
+            Ok(values) => values,
+            Err(problem) => return (timer.invalid_config(&problem), None),
+        };
 
-        let path_template = config.str("path").unwrap_or_default();
-        let target_var =
-            forge_types::strip_var_decoration(config.str("target_var").unwrap_or_default());
-        let read_as = config.str("read_as").unwrap_or("Lines array").to_owned();
-
-        let interpolated_path = ctx.arg_stack.interpolate(path_template);
-
-        let (outcome, produced) =
-            match super::file_sandbox::resolve_sandboxed(&interpolated_path).await {
-                Err(reason) => (
-                    SubActionOutcome::Failed(format!("sandbox rejected path: {reason}")),
-                    None,
-                ),
-                Ok(abs_path) => read_into(&abs_path, &read_as, target_var, ctx).await,
-            };
+        let (outcome, produced) = match super::file_sandbox::resolve_sandboxed(&path).await {
+            Err(reason) => (
+                SubActionOutcome::Failed(format!("sandbox rejected path: {reason}")),
+                None,
+            ),
+            Ok(abs_path) => read_into(&abs_path, read_as, target_var, ctx).await,
+        };
 
         (timer.finish(outcome), produced)
     }
 }
 
+fn decode(contents: String, read_as: ReadAs) -> Result<Variant, String> {
+    match read_as {
+        ReadAs::WholeFile => Ok(Variant::String(contents)),
+        ReadAs::Json => serde_json::from_str::<serde_json::Value>(&contents)
+            .map_err(|e| format!("invalid JSON: {e}"))
+            .and_then(|json| {
+                Variant::from_json(json).map_err(|e| format!("unsupported JSON value: {e}"))
+            }),
+        ReadAs::Lines => Ok(Variant::Array(
+            contents
+                .lines()
+                .map(|line| Variant::String(line.to_owned()))
+                .collect(),
+        )),
+    }
+}
+
 async fn read_into(
     abs_path: &Path,
-    read_as: &str,
+    read_as: ReadAs,
     target_var: String,
     ctx: &RunContext<'_>,
 ) -> (SubActionOutcome, Option<ArgStack>) {
@@ -134,30 +171,13 @@ async fn read_into(
             SubActionOutcome::Failed("path is not a file".to_owned()),
             None,
         ),
-        Ok(_) => match read_capped(abs_path).await {
-            Ok(contents) => {
-                let value = match read_as {
-                    "Whole file" => Ok(Variant::String(contents)),
-                    "JSON" => serde_json::from_str::<serde_json::Value>(&contents)
-                        .map_err(|e| format!("invalid JSON: {e}"))
-                        .and_then(|json| {
-                            Variant::from_json(json)
-                                .map_err(|e| format!("unsupported JSON value: {e}"))
-                        }),
-                    _ => Ok(Variant::Array(
-                        contents
-                            .lines()
-                            .map(|line| Variant::String(line.to_owned()))
-                            .collect(),
-                    )),
-                };
-                match value {
-                    Ok(value) => {
-                        let stack = ctx.arg_stack.clone().set(target_var, value);
-                        (SubActionOutcome::Success, Some(stack))
-                    }
-                    Err(e) => (SubActionOutcome::Failed(e), None),
-                }
+        Ok(_) => match read_capped(abs_path)
+            .await
+            .and_then(|contents| decode(contents, read_as))
+        {
+            Ok(value) => {
+                let stack = ctx.arg_stack.clone().set(target_var, value);
+                (SubActionOutcome::Success, Some(stack))
             }
             Err(e) => (SubActionOutcome::Failed(e), None),
         },
@@ -178,7 +198,7 @@ async fn read_capped(path: &Path) -> Result<String, String> {
         .read_to_end(&mut bytes)
         .await
         .map_err(|e| format!("read failed: {e}"))?;
-    if bytes.len() as u64 > MAX_FILE_BYTES {
+    if u64::try_from(bytes.len()).unwrap_or(u64::MAX) > MAX_FILE_BYTES {
         return Err(format!("file exceeds {MAX_FILE_BYTES} byte cap"));
     }
     String::from_utf8(bytes).map_err(|e| format!("read failed: {e}"))

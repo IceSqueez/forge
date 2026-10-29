@@ -1,10 +1,10 @@
 use async_trait::async_trait;
 use forge_registry::{
-    FormField, RegistryError, RunContext, StepTimer, SubActionCategory, SubActionRunner,
+    ConfigSpec, RunContext, StepTimer, SubActionCategory, SubActionRunner, TypedField,
 };
-use forge_types::{ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetry, Variant};
+use forge_types::{ArgStack, QueueId, SubActionConfig, SubActionOutcome, SubActionTelemetry};
 
-use super::core_queue_shared::{resolve_queue_id, validate_queue_id};
+use super::core_queue_shared::{QUEUE, QUEUE_SPEC};
 use crate::{QueueMode, SchedulerCell};
 
 pub struct CoreQueuePauseRunner {
@@ -16,10 +16,7 @@ impl CoreQueuePauseRunner {
         Self { scheduler }
     }
 
-    async fn run(&self, config: &SubActionConfig, ctx: &RunContext<'_>) -> SubActionOutcome {
-        let Some(queue_id) = resolve_queue_id(config, ctx) else {
-            return SubActionOutcome::Failed("core.queue.pause: invalid queue_id".to_owned());
-        };
+    async fn run(&self, queue_id: QueueId) -> SubActionOutcome {
         let Some(scheduler) = self.scheduler.get() else {
             return SubActionOutcome::Failed("queue scheduler not ready".to_owned());
         };
@@ -56,22 +53,8 @@ impl SubActionRunner for CoreQueuePauseRunner {
         "pause"
     }
 
-    fn default_config(&self) -> SubActionConfig {
-        let mut cfg = SubActionConfig::new();
-        cfg.insert("queue_id".to_owned(), Variant::String(String::new()));
-        cfg
-    }
-
-    fn config_fields(&self) -> Vec<FormField> {
-        vec![FormField::DynamicSelect {
-            key: "queue_id",
-            label: "Queue",
-            options_key: "queue.ids",
-        }]
-    }
-
-    fn validate_config(&self, config: &SubActionConfig) -> Result<(), RegistryError> {
-        validate_queue_id(config)
+    fn config_spec(&self) -> Option<ConfigSpec> {
+        Some(QUEUE_SPEC)
     }
 
     async fn execute(
@@ -79,8 +62,12 @@ impl SubActionRunner for CoreQueuePauseRunner {
         config: &SubActionConfig,
         ctx: &RunContext<'_>,
     ) -> (SubActionTelemetry, Option<ArgStack>) {
-        let timer = StepTimer::start(ctx, "core.queue.pause");
-        let outcome = self.run(config, ctx).await;
+        let timer = StepTimer::start(ctx, self.id());
+        let queue_id = match QUEUE.read(config, ctx.arg_stack) {
+            Ok(queue_id) => queue_id,
+            Err(problem) => return (timer.invalid_config(&problem), None),
+        };
+        let outcome = self.run(queue_id).await;
         (timer.finish(outcome), None)
     }
 }

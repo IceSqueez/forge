@@ -2,17 +2,54 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use forge_registry::{
-    FormField, ProducedVariable, RegistryError, RunContext, StepTimer, SubActionCategory,
-    SubActionConfigExt, SubActionIo, SubActionRunner,
+    ConfigProblem, ConfigSpec, ProducedVariable, RunContext, StepTimer, SubActionCategory,
+    SubActionIo, SubActionRunner, TextEditor, TextField, TypedField,
 };
 use forge_storage::{GlobalsRepo, UserGlobalsRepo};
 use forge_types::{
-    ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetry, Variant, VariantKind,
+    ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetry, VariantKind,
+    strip_var_decoration,
 };
 
-use super::core_users_shared::{resolve_broadcaster_id, resolve_user_login};
+use super::core_users_shared::{USER_LOGIN, VAR_NAME, resolve_broadcaster_id, resolve_user_login};
 
 const INTO_VAR_KEY: &str = "into_var";
+
+const INTO_VAR: TextField = TextField {
+    key: INTO_VAR_KEY,
+    label: "Output Variable",
+    editor: TextEditor::Line {
+        placeholder: "result",
+    },
+    default: "",
+    required: true,
+};
+
+const DEFAULT_VALUE: TextField = TextField {
+    key: "default_value",
+    label: "Default Value",
+    editor: TextEditor::Line { placeholder: "0" },
+    default: "",
+    required: false,
+};
+
+const CONFIG: ConfigSpec = ConfigSpec::new(&[&USER_LOGIN, &VAR_NAME, &INTO_VAR, &DEFAULT_VALUE]);
+
+struct GetVarConfig {
+    user_login_template: String,
+    var_name: String,
+    into_var: String,
+    default_raw: String,
+}
+
+fn read_config(config: &SubActionConfig, args: &ArgStack) -> Result<GetVarConfig, ConfigProblem> {
+    Ok(GetVarConfig {
+        user_login_template: USER_LOGIN.read(config, args)?,
+        var_name: VAR_NAME.read(config, args)?,
+        into_var: strip_var_decoration(&INTO_VAR.read(config, args)?),
+        default_raw: DEFAULT_VALUE.read(config, args)?,
+    })
+}
 
 pub struct CoreUsersGetVarRunner {
     globals: Arc<dyn GlobalsRepo>,
@@ -54,49 +91,8 @@ impl SubActionRunner for CoreUsersGetVarRunner {
         "user-search"
     }
 
-    fn default_config(&self) -> SubActionConfig {
-        let mut cfg = SubActionConfig::new();
-        cfg.insert(
-            "user_login".to_owned(),
-            Variant::String("%user_login%".to_owned()),
-        );
-        cfg.insert("var_name".to_owned(), Variant::String(String::new()));
-        cfg.insert(INTO_VAR_KEY.to_owned(), Variant::String(String::new()));
-        cfg.insert("default_value".to_owned(), Variant::String(String::new()));
-        cfg
-    }
-
-    fn config_fields(&self) -> Vec<FormField> {
-        vec![
-            FormField::Text {
-                key: "user_login",
-                label: "User Login",
-                placeholder: "%user_login%",
-            },
-            FormField::Text {
-                key: "var_name",
-                label: "Variable Name",
-                placeholder: "points",
-            },
-            FormField::Text {
-                key: INTO_VAR_KEY,
-                label: "Output Variable",
-                placeholder: "result",
-            },
-            FormField::Text {
-                key: "default_value",
-                label: "Default Value",
-                placeholder: "0",
-            },
-        ]
-    }
-
-    fn validate_config(&self, config: &SubActionConfig) -> Result<(), RegistryError> {
-        config
-            .require_str("user_login")
-            .and(config.require_str("var_name"))
-            .and(config.require_str(INTO_VAR_KEY))
-            .map(|_| ())
+    fn config_spec(&self) -> Option<ConfigSpec> {
+        Some(CONFIG)
     }
 
     fn scope_io(&self) -> SubActionIo {
@@ -115,20 +111,21 @@ impl SubActionRunner for CoreUsersGetVarRunner {
         config: &SubActionConfig,
         ctx: &RunContext<'_>,
     ) -> (SubActionTelemetry, Option<ArgStack>) {
-        let timer = StepTimer::start(ctx, "core.users.get_var");
+        let timer = StepTimer::start(ctx, self.id());
+        let GetVarConfig {
+            user_login_template,
+            var_name,
+            into_var,
+            default_raw,
+        } = match read_config(config, ctx.arg_stack) {
+            Ok(read) => read,
+            Err(problem) => return (timer.invalid_config(&problem), None),
+        };
+        let user_login = match resolve_user_login(&user_login_template, ctx.arg_stack) {
+            Ok(login) => login,
+            Err(reason) => return (timer.failed(reason), None),
+        };
 
-        let resolve = |template: &str| ctx.arg_stack.interpolate(template);
-
-        let user_login =
-            match resolve_user_login(config.str("user_login").unwrap_or_default(), ctx.arg_stack) {
-                Ok(login) => login,
-                Err(reason) => return (timer.failed(reason), None),
-            };
-        let var_name = resolve(config.str("var_name").unwrap_or_default());
-        let into_var = forge_types::strip_var_decoration(&resolve(
-            config.str(INTO_VAR_KEY).unwrap_or_default(),
-        ));
-        let default_raw = resolve(config.str("default_value").unwrap_or_default());
         let broadcaster_id = resolve_broadcaster_id(ctx.arg_stack, self.globals.as_ref()).await;
 
         let (outcome, updated_stack) = match self
@@ -141,7 +138,7 @@ impl SubActionRunner for CoreUsersGetVarRunner {
                 (SubActionOutcome::Success, Some(new_stack))
             }
             Ok(None) => {
-                let fallback = super::interpolate::parse_variant(&default_raw);
+                let fallback = super::variant_text::parse_variant(&default_raw);
                 let new_stack = ctx.arg_stack.clone().set(into_var, fallback);
                 (SubActionOutcome::Success, Some(new_stack))
             }

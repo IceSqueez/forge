@@ -2,14 +2,14 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use forge_events::EventSource;
-use forge_registry::{
-    FormField, RegistryError, RunContext, StepTimer, SubActionCategory, SubActionConfigExt,
-    SubActionRunner,
-};
+use forge_registry::{ConfigSpec, RunContext, StepTimer, SubActionCategory, SubActionRunner};
 use forge_storage::GlobalsRepo;
-use forge_types::{ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetry, Variant};
+use forge_types::{ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetry};
 
+use super::core_globals_shared::{GLOBAL_BY_NAME, global_name};
 use crate::global_mutation::GlobalMutation;
+
+const CONFIG: ConfigSpec = ConfigSpec::new(&[&GLOBAL_BY_NAME]);
 
 pub struct CoreGlobalsDeleteRunner {
     globals: Arc<dyn GlobalsRepo>,
@@ -47,22 +47,8 @@ impl SubActionRunner for CoreGlobalsDeleteRunner {
         "database-minus"
     }
 
-    fn default_config(&self) -> SubActionConfig {
-        let mut cfg = SubActionConfig::new();
-        cfg.insert("name".to_owned(), Variant::String(String::new()));
-        cfg
-    }
-
-    fn config_fields(&self) -> Vec<FormField> {
-        vec![FormField::DynamicSelect {
-            key: "name",
-            label: "Variable Name",
-            options_key: "global.names",
-        }]
-    }
-
-    fn validate_config(&self, config: &SubActionConfig) -> Result<(), RegistryError> {
-        config.require_str("name").map(|_| ())
+    fn config_spec(&self) -> Option<ConfigSpec> {
+        Some(CONFIG)
     }
 
     async fn execute(
@@ -70,12 +56,11 @@ impl SubActionRunner for CoreGlobalsDeleteRunner {
         config: &SubActionConfig,
         ctx: &RunContext<'_>,
     ) -> (SubActionTelemetry, Option<ArgStack>) {
-        let timer = StepTimer::start(ctx, "core.globals.delete");
-
-        let name_template = config.str("name").unwrap_or_default();
-
-        let resolved_name =
-            forge_types::strip_var_decoration(&ctx.arg_stack.interpolate(name_template));
+        let timer = StepTimer::start(ctx, self.id());
+        let name = match global_name(&GLOBAL_BY_NAME, config, ctx.arg_stack) {
+            Ok(name) => name,
+            Err(problem) => return (timer.invalid_config(&problem), None),
+        };
 
         let mutation = GlobalMutation {
             globals: self.globals.as_ref(),
@@ -83,7 +68,7 @@ impl SubActionRunner for CoreGlobalsDeleteRunner {
             source: EventSource::Core,
             caused_by: ctx.parent_event_id,
         };
-        let outcome = match mutation.delete(&resolved_name).await {
+        let outcome = match mutation.delete(&name).await {
             Ok(_deletion) => SubActionOutcome::Success,
             Err(e) => SubActionOutcome::Failed(e.to_string()),
         };

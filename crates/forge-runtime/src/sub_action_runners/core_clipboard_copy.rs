@@ -2,12 +2,22 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use forge_registry::{
-    FormField, RegistryError, RunContext, StepTimer, SubActionCategory, SubActionConfigExt,
-    SubActionRunner,
+    ConfigSpec, RunContext, StepTimer, SubActionCategory, SubActionRunner, TextEditor, TextField,
+    TypedField,
 };
-use forge_types::{ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetry, Variant};
+use forge_types::{ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetry};
 
 use super::os_ports::ClipboardPort;
+
+const TEXT: TextField = TextField {
+    key: "text",
+    label: "Text",
+    editor: TextEditor::Area,
+    default: "",
+    required: false,
+};
+
+const CONFIG: ConfigSpec = ConfigSpec::new(&[&TEXT]);
 
 pub struct CoreClipboardCopyRunner {
     clipboard: Arc<dyn ClipboardPort>,
@@ -45,21 +55,8 @@ impl SubActionRunner for CoreClipboardCopyRunner {
         "clipboard"
     }
 
-    fn default_config(&self) -> SubActionConfig {
-        let mut cfg = SubActionConfig::new();
-        cfg.insert("text".to_owned(), Variant::String(String::new()));
-        cfg
-    }
-
-    fn config_fields(&self) -> Vec<FormField> {
-        vec![FormField::TextArea {
-            key: "text",
-            label: "Text",
-        }]
-    }
-
-    fn validate_config(&self, _config: &SubActionConfig) -> Result<(), RegistryError> {
-        Ok(())
+    fn config_spec(&self) -> Option<ConfigSpec> {
+        Some(CONFIG)
     }
 
     async fn execute(
@@ -67,9 +64,11 @@ impl SubActionRunner for CoreClipboardCopyRunner {
         config: &SubActionConfig,
         ctx: &RunContext<'_>,
     ) -> (SubActionTelemetry, Option<ArgStack>) {
-        let timer = StepTimer::start(ctx, "core.clipboard.copy");
-
-        let text = ctx.arg_stack.interpolate(config.str("text").unwrap_or(""));
+        let timer = StepTimer::start(ctx, self.id());
+        let text = match TEXT.read(config, ctx.arg_stack) {
+            Ok(text) => text,
+            Err(problem) => return (timer.invalid_config(&problem), None),
+        };
 
         let clipboard = Arc::clone(&self.clipboard);
         let outcome = match tokio::task::spawn_blocking(move || clipboard.copy(text)).await {

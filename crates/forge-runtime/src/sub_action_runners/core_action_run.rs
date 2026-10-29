@@ -2,15 +2,25 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use forge_registry::{
-    ChainSignal, FormField, RegistryError, RunContext, StepTimer, SubActionCategory,
-    SubActionConfigExt, SubActionRunner,
+    ChainSignal, ConfigSpec, RegistryError, RunContext, StepTimer, SubActionCategory,
+    SubActionRunner, ToggleField, TypedField,
 };
 use forge_storage::ActionRepo;
 use forge_types::{
     Action, ActionId, ArgStack, ExecutionMode, SubActionConfig, SubActionOutcome, SubActionStep,
-    SubActionTelemetry, Variant,
+    SubActionTelemetry,
 };
 use rand::RngExt;
+
+use super::core_action_shared::ACTION;
+
+const INHERIT_ARGS: ToggleField = ToggleField {
+    key: "inherit_args",
+    label: "Pass current arguments",
+    default: true,
+};
+
+const CONFIG: ConfigSpec = ConfigSpec::new(&[&ACTION, &INHERIT_ARGS]);
 
 pub struct CoreActionRunRunner {
     actions: Arc<dyn ActionRepo>,
@@ -21,13 +31,12 @@ impl CoreActionRunRunner {
         Self { actions }
     }
 
-    async fn run(&self, config: &SubActionConfig, ctx: &RunContext<'_>) -> SubActionOutcome {
-        let raw = config.str("action_id").unwrap_or_default();
-        let resolved = ctx.arg_stack.interpolate(raw);
-        let Ok(action_id) = resolved.parse::<ActionId>() else {
-            return SubActionOutcome::Failed("core.action.run: invalid action_id".to_owned());
-        };
-
+    async fn run(
+        &self,
+        action_id: ActionId,
+        inherit_args: bool,
+        ctx: &RunContext<'_>,
+    ) -> SubActionOutcome {
         let target = match self.actions.get(action_id).await {
             Ok(Some(a)) => a,
             Ok(None) => {
@@ -38,7 +47,6 @@ impl CoreActionRunRunner {
             Err(e) => return SubActionOutcome::Failed(format!("core.action.run: {e}")),
         };
 
-        let inherit_args = config.bool("inherit_args").unwrap_or(true);
         let child_stack = if inherit_args {
             ctx.arg_stack.clone()
         } else {
@@ -104,29 +112,8 @@ impl SubActionRunner for CoreActionRunRunner {
         "play"
     }
 
-    fn default_config(&self) -> SubActionConfig {
-        let mut cfg = SubActionConfig::new();
-        cfg.insert("action_id".to_owned(), Variant::String(String::new()));
-        cfg.insert("inherit_args".to_owned(), Variant::Bool(true));
-        cfg
-    }
-
-    fn config_fields(&self) -> Vec<FormField> {
-        vec![
-            FormField::DynamicSelect {
-                key: "action_id",
-                label: "Action",
-                options_key: "action.ids",
-            },
-            FormField::Toggle {
-                key: "inherit_args",
-                label: "Pass current arguments",
-            },
-        ]
-    }
-
-    fn validate_config(&self, config: &SubActionConfig) -> Result<(), RegistryError> {
-        config.require_str("action_id").map(|_| ())
+    fn config_spec(&self) -> Option<ConfigSpec> {
+        Some(CONFIG)
     }
 
     async fn execute(
@@ -134,8 +121,15 @@ impl SubActionRunner for CoreActionRunRunner {
         config: &SubActionConfig,
         ctx: &RunContext<'_>,
     ) -> (SubActionTelemetry, Option<ArgStack>) {
-        let timer = StepTimer::start(ctx, "core.action.run");
-        let outcome = self.run(config, ctx).await;
+        let timer = StepTimer::start(ctx, self.id());
+        let (action_id, inherit_args) = match ACTION
+            .read(config, ctx.arg_stack)
+            .and_then(|action_id| Ok((action_id, INHERIT_ARGS.read(config, ctx.arg_stack)?)))
+        {
+            Ok(values) => values,
+            Err(problem) => return (timer.invalid_config(&problem), None),
+        };
+        let outcome = self.run(action_id, inherit_args, ctx).await;
         (timer.finish(outcome), None)
     }
 }

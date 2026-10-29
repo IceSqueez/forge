@@ -2,26 +2,130 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use forge_registry::{
-    ChainExecutor, ChainSignal, CodeKind, CodeLanguage, ControlSignal, FormField, LOOP_KIND_ID,
-    RegistryError, RunContext, StepTimer, StopMark, SubActionCategory, SubActionConfigExt,
-    SubActionIo, SubActionRunner,
+    ChainExecutor, ChainLayout, ChainSignal, ChoiceField, CodeField, CodeKind, CodeLanguage,
+    ConfigChoice, ConfigProblem, ConfigSpec, ControlSignal, IntegerEditor, IntegerField,
+    LOOP_KIND_ID, RunContext, StepChainField, StepTimer, StopMark, SubActionCategory, SubActionIo,
+    SubActionRunner, TextEditor, TextField, TypedField, ValueBounds,
 };
 use forge_types::{
     ArgStack, EventId, SubActionConfig, SubActionOutcome, SubActionStep, SubActionTelemetry,
-    Variant,
+    Variant, strip_var_decoration,
 };
 
 use super::core_logic_shared::{chain_at, retag};
 use crate::ConditionGate;
 
 const MAX_COUNT: i64 = 1000;
+const DEFAULT_COUNT: i64 = 1;
 const MAX_WHILE_ITERATIONS: i64 = 1_000_000;
+const DEFAULT_MAX_ITERATIONS: i64 = 1000;
 const MAX_FOREACH_ITERATIONS: i64 = 10_000;
 const MAX_RECORDED_ITERATIONS: i64 = 100;
 const LOOP_INDEX_VAR: &str = "loop.index";
 const LOOP_ITEM_VAR: &str = "loop.item";
 const LOOP_ITERATIONS_COMPLETED_VAR: &str = "loop.iterations_completed";
 const LOOP_EXIT_REASON_VAR: &str = "loop.exit_reason";
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum LoopMode {
+    Count,
+    ForeachArray,
+    While,
+}
+
+impl ConfigChoice for LoopMode {
+    const ALL: &'static [Self] = &[Self::Count, Self::ForeachArray, Self::While];
+    const WIRE_NAMES: &'static [&'static str] = &["count", "foreach_array", "while"];
+
+    fn wire_name(self) -> &'static str {
+        match self {
+            Self::Count => "count",
+            Self::ForeachArray => "foreach_array",
+            Self::While => "while",
+        }
+    }
+}
+
+const MODE: ChoiceField<LoopMode> = ChoiceField {
+    key: "mode",
+    label: "Mode",
+    default: LoopMode::Count,
+};
+
+const COUNT: IntegerField = IntegerField {
+    key: "count",
+    label: "Count",
+    editor: IntegerEditor::Number,
+    default: DEFAULT_COUNT,
+    bounds: ValueBounds {
+        min: Some(1),
+        max: Some(MAX_COUNT),
+    },
+};
+
+const ARRAY_SOURCE: TextField = TextField {
+    key: "array_source",
+    label: "Array Variable",
+    editor: TextEditor::Line {
+        placeholder: "my_list",
+    },
+    default: "",
+    required: false,
+};
+
+const WHILE_CONDITION: CodeField = CodeField {
+    key: "while_condition",
+    label: "While Condition",
+    language: CodeLanguage::Rhai,
+    kind: CodeKind::Expression,
+    default: "",
+    required: false,
+};
+
+const MAX_ITERATIONS: IntegerField = IntegerField {
+    key: "max_iterations",
+    label: "Max Iterations",
+    editor: IntegerEditor::Number,
+    default: DEFAULT_MAX_ITERATIONS,
+    bounds: ValueBounds {
+        min: Some(0),
+        max: Some(MAX_WHILE_ITERATIONS),
+    },
+};
+
+const BODY: StepChainField = StepChainField {
+    key: "body",
+    label: "Body",
+    layout: ChainLayout::Steps,
+    seeds_empty_list: false,
+};
+
+const CONFIG: ConfigSpec = ConfigSpec::new(&[
+    &MODE,
+    &COUNT,
+    &ARRAY_SOURCE,
+    &WHILE_CONDITION,
+    &MAX_ITERATIONS,
+    &BODY,
+]);
+
+struct LoopConfig {
+    mode: LoopMode,
+    count: i64,
+    array_source: String,
+    while_condition: String,
+    max_iterations: i64,
+}
+
+fn read_config(config: &SubActionConfig, args: &ArgStack) -> Result<LoopConfig, ConfigProblem> {
+    Ok(LoopConfig {
+        mode: MODE.read(config, args)?,
+        count: COUNT.read(config, args)?,
+        array_source: strip_var_decoration(&ARRAY_SOURCE.read(config, args)?),
+        while_condition: WHILE_CONDITION.read(config, args)?,
+        max_iterations: MAX_ITERATIONS.read(config, args)?,
+    })
+}
 
 pub struct CoreLogicLoopRunner {
     gate: Arc<ConditionGate>,
@@ -96,55 +200,8 @@ impl SubActionRunner for CoreLogicLoopRunner {
         "repeat"
     }
 
-    fn default_config(&self) -> SubActionConfig {
-        let mut cfg = SubActionConfig::new();
-        cfg.insert("mode".to_owned(), Variant::String("count".to_owned()));
-        cfg.insert("count".to_owned(), Variant::Int(1));
-        cfg.insert("array_source".to_owned(), Variant::String(String::new()));
-        cfg.insert("while_condition".to_owned(), Variant::String(String::new()));
-        cfg.insert("max_iterations".to_owned(), Variant::Int(1000));
-        cfg
-    }
-
-    fn config_fields(&self) -> Vec<FormField> {
-        vec![
-            FormField::Select {
-                key: "mode",
-                label: "Mode",
-                options: &["count", "foreach_array", "while"],
-            },
-            FormField::Integer {
-                key: "count",
-                label: "Count",
-                min: 1,
-                max: MAX_COUNT,
-            },
-            FormField::Text {
-                key: "array_source",
-                label: "Array Variable",
-                placeholder: "my_list",
-            },
-            FormField::Code {
-                key: "while_condition",
-                label: "While Condition",
-                language: CodeLanguage::Rhai,
-                kind: CodeKind::Expression,
-            },
-            FormField::Integer {
-                key: "max_iterations",
-                label: "Max Iterations",
-                min: 0,
-                max: MAX_WHILE_ITERATIONS,
-            },
-            FormField::SubChain {
-                key: "body",
-                label: "Body",
-            },
-        ]
-    }
-
-    fn validate_config(&self, _config: &SubActionConfig) -> Result<(), RegistryError> {
-        Ok(())
+    fn config_spec(&self) -> Option<ConfigSpec> {
+        Some(CONFIG)
     }
 
     fn scope_io(&self) -> SubActionIo {
@@ -164,26 +221,23 @@ impl SubActionRunner for CoreLogicLoopRunner {
         ctx: &RunContext<'_>,
     ) -> (SubActionTelemetry, Option<ArgStack>) {
         let timer = StepTimer::start(ctx, self.id());
-
-        let mode = config.str("mode").unwrap_or("count");
-        let body = chain_at(config, "body", ctx);
-
-        let count = config.int("count").unwrap_or(1).clamp(0, MAX_COUNT);
-        let max_iterations = config
-            .int("max_iterations")
-            .unwrap_or(1000)
-            .clamp(0, MAX_WHILE_ITERATIONS);
-        let while_condition = config.str("while_condition").unwrap_or_default().to_owned();
-        let items: Vec<Variant> = {
-            let source_template = config.str("array_source").unwrap_or_default();
-            let source =
-                forge_types::strip_var_decoration(&ctx.arg_stack.interpolate(source_template));
-            ctx.arg_stack
-                .get(&source)
-                .and_then(Variant::as_array)
-                .map(<[Variant]>::to_vec)
-                .unwrap_or_default()
+        let LoopConfig {
+            mode,
+            count,
+            array_source,
+            while_condition,
+            max_iterations,
+        } = match read_config(config, ctx.arg_stack) {
+            Ok(read) => read,
+            Err(problem) => return (timer.invalid_config(&problem), None),
         };
+        let body = chain_at(config, BODY.key, ctx);
+        let items: Vec<Variant> = ctx
+            .arg_stack
+            .get(&array_source)
+            .and_then(Variant::as_array)
+            .map(<[Variant]>::to_vec)
+            .unwrap_or_default();
 
         let mut current = ctx.arg_stack.clone();
         let mut iterations: i64 = 0;
@@ -197,8 +251,11 @@ impl SubActionRunner for CoreLogicLoopRunner {
             }
 
             let iter_stack = match mode {
-                "foreach_array" => {
-                    let Some(item) = items.get(iterations as usize) else {
+                LoopMode::ForeachArray => {
+                    let Some(item) = usize::try_from(iterations)
+                        .ok()
+                        .and_then(|position| items.get(position))
+                    else {
                         break;
                     };
                     if iterations >= MAX_FOREACH_ITERATIONS {
@@ -214,7 +271,7 @@ impl SubActionRunner for CoreLogicLoopRunner {
                         .set(LOOP_INDEX_VAR.to_owned(), Variant::Int(iterations))
                         .set(LOOP_ITEM_VAR.to_owned(), item.clone())
                 }
-                "while" => {
+                LoopMode::While => {
                     if iterations >= max_iterations {
                         exit_reason = "max_iterations";
                         break;
@@ -235,7 +292,7 @@ impl SubActionRunner for CoreLogicLoopRunner {
                         .clone()
                         .set(LOOP_INDEX_VAR.to_owned(), Variant::Int(iterations))
                 }
-                _ => {
+                LoopMode::Count => {
                     if iterations >= count {
                         break;
                     }

@@ -2,13 +2,34 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use forge_registry::{
-    FormField, RegistryError, RunContext, StepTimer, SubActionCategory, SubActionConfigExt,
-    SubActionRunner,
+    ConfigProblem, ConfigSpec, RunContext, StepTimer, SubActionCategory, SubActionRunner,
+    TextEditor, TextField, TypedField,
 };
 use forge_storage::{GlobalsRepo, UserGlobalsRepo};
-use forge_types::{ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetry, Variant};
+use forge_types::{ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetry};
 
-use super::core_users_shared::{resolve_broadcaster_id, resolve_user_login};
+use super::core_users_shared::{USER_LOGIN, VAR_NAME, resolve_broadcaster_id, resolve_user_login};
+
+const VALUE: TextField = TextField {
+    key: "value",
+    label: "Value",
+    editor: TextEditor::Line { placeholder: "42" },
+    default: "",
+    required: false,
+};
+
+const CONFIG: ConfigSpec = ConfigSpec::new(&[&USER_LOGIN, &VAR_NAME, &VALUE]);
+
+fn read_config(
+    config: &SubActionConfig,
+    args: &ArgStack,
+) -> Result<(String, String, String), ConfigProblem> {
+    Ok((
+        USER_LOGIN.read(config, args)?,
+        VAR_NAME.read(config, args)?,
+        VALUE.read(config, args)?,
+    ))
+}
 
 pub struct CoreUsersSetVarRunner {
     globals: Arc<dyn GlobalsRepo>,
@@ -50,42 +71,8 @@ impl SubActionRunner for CoreUsersSetVarRunner {
         "user-cog"
     }
 
-    fn default_config(&self) -> SubActionConfig {
-        let mut cfg = SubActionConfig::new();
-        cfg.insert(
-            "user_login".to_owned(),
-            Variant::String("%user_login%".to_owned()),
-        );
-        cfg.insert("var_name".to_owned(), Variant::String(String::new()));
-        cfg.insert("value".to_owned(), Variant::String(String::new()));
-        cfg
-    }
-
-    fn config_fields(&self) -> Vec<FormField> {
-        vec![
-            FormField::Text {
-                key: "user_login",
-                label: "User Login",
-                placeholder: "%user_login%",
-            },
-            FormField::Text {
-                key: "var_name",
-                label: "Variable Name",
-                placeholder: "points",
-            },
-            FormField::Text {
-                key: "value",
-                label: "Value",
-                placeholder: "42",
-            },
-        ]
-    }
-
-    fn validate_config(&self, config: &SubActionConfig) -> Result<(), RegistryError> {
-        config
-            .require_str("user_login")
-            .and(config.require_str("var_name"))
-            .map(|_| ())
+    fn config_spec(&self) -> Option<ConfigSpec> {
+        Some(CONFIG)
     }
 
     async fn execute(
@@ -93,18 +80,17 @@ impl SubActionRunner for CoreUsersSetVarRunner {
         config: &SubActionConfig,
         ctx: &RunContext<'_>,
     ) -> (SubActionTelemetry, Option<ArgStack>) {
-        let timer = StepTimer::start(ctx, "core.users.set_var");
+        let timer = StepTimer::start(ctx, self.id());
+        let (user_login_template, var_name, raw_value) = match read_config(config, ctx.arg_stack) {
+            Ok(values) => values,
+            Err(problem) => return (timer.invalid_config(&problem), None),
+        };
+        let user_login = match resolve_user_login(&user_login_template, ctx.arg_stack) {
+            Ok(login) => login,
+            Err(reason) => return (timer.failed(reason), None),
+        };
+        let value = super::variant_text::parse_variant(&raw_value);
 
-        let resolve = |template: &str| ctx.arg_stack.interpolate(template);
-
-        let user_login =
-            match resolve_user_login(config.str("user_login").unwrap_or_default(), ctx.arg_stack) {
-                Ok(login) => login,
-                Err(reason) => return (timer.failed(reason), None),
-            };
-        let var_name = resolve(config.str("var_name").unwrap_or_default());
-        let raw_value = resolve(config.str("value").unwrap_or_default());
-        let value = super::interpolate::parse_variant(&raw_value);
         let broadcaster_id = resolve_broadcaster_id(ctx.arg_stack, self.globals.as_ref()).await;
 
         let outcome = match self

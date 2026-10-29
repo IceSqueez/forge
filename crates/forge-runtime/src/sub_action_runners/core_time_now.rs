@@ -1,21 +1,24 @@
 use async_trait::async_trait;
 use forge_registry::{
-    ConfigReason, FormField, ProducedVariable, RegistryError, RunContext, StepTimer,
-    SubActionCategory, SubActionConfigExt, SubActionIo, SubActionRunner,
+    ChoiceField, ConfigChoice, ConfigProblem, ConfigSpec, Interpolation, ProducedVariable,
+    RunContext, StepTimer, SubActionCategory, SubActionIo, SubActionRunner, TemplateField,
+    ToggleField, TypedField, VariableField,
 };
 use forge_types::{
     ArgStack, SubActionConfig, SubActionTelemetry, Variant, VariantKind, datetime_to_text,
 };
 use time::OffsetDateTime;
 
-use super::config_choice::{ConfigChoice, read_choice};
 use super::time_pattern::{
-    CUSTOM_NOW_PATTERN_KEY, TIME_NOW_KIND_ID, UTC_KEY, resolve_time_pattern,
+    CUSTOM_NOW_PATTERN_KEY, DEFAULT_TIME_PATTERN, ResolvedTimePattern, TIME_NOW_KIND_ID, UTC_KEY,
+    checked_time_pattern, stored_utc,
 };
 
 const TIME_FORMATTED_VAR: &str = "time.formatted";
 const TIME_UNIX_SECONDS_VAR: &str = "time.unix_seconds";
-const FORMAT_KEY: &str = "format";
+const INTO_VAR_KEY: &str = "into_var";
+const NOW_VARIABLE: &str = "now";
+const MILLIS_PER_SECOND: i64 = 1000;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum NowFormat {
@@ -55,6 +58,75 @@ impl ConfigChoice for NowFormat {
     }
 }
 
+const FORMAT: ChoiceField<NowFormat> = ChoiceField {
+    key: "format",
+    label: "Format",
+    default: NowFormat::Iso8601,
+};
+
+const CUSTOM_PATTERN: TemplateField = TemplateField {
+    key: CUSTOM_NOW_PATTERN_KEY,
+    label: "Custom date pattern (e.g. HH:mm dd.MM.yyyy, d MMMM yyyy, EEEE)",
+    placeholder: DEFAULT_TIME_PATTERN,
+    default: "",
+    required: false,
+};
+
+const UTC: ToggleField = ToggleField {
+    key: UTC_KEY,
+    label: "Use UTC instead of local time",
+    default: false,
+};
+
+const INTO_VAR: VariableField = VariableField {
+    key: INTO_VAR_KEY,
+    label: "Output Variable",
+    placeholder: NOW_VARIABLE,
+    default: NOW_VARIABLE,
+};
+
+const CONFIG: ConfigSpec = ConfigSpec::new(&[&FORMAT, &CUSTOM_PATTERN, &UTC, &INTO_VAR]);
+
+enum NowText {
+    Iso8601,
+    UnixSeconds,
+    UnixMillis,
+    Custom(ResolvedTimePattern),
+}
+
+fn read_config(
+    config: &SubActionConfig,
+    args: &ArgStack,
+) -> Result<(NowText, String), ConfigProblem> {
+    let text = match FORMAT.read(config, args)? {
+        NowFormat::Iso8601 => NowText::Iso8601,
+        NowFormat::UnixSeconds => NowText::UnixSeconds,
+        NowFormat::UnixMillis => NowText::UnixMillis,
+        NowFormat::Custom => NowText::Custom(checked_time_pattern(
+            CUSTOM_PATTERN.key,
+            &CUSTOM_PATTERN.read(config, args)?,
+            stored_utc(&UTC, config, args)?,
+        )?),
+    };
+    Ok((text, INTO_VAR.read(config, args)?))
+}
+
+fn formatted(now: OffsetDateTime, text: &NowText) -> Result<String, String> {
+    Ok(match text {
+        NowText::UnixSeconds => now.unix_timestamp().to_string(),
+        NowText::UnixMillis => {
+            let ms = now.unix_timestamp() * MILLIS_PER_SECOND + i64::from(now.millisecond());
+            ms.to_string()
+        }
+        NowText::Custom(resolved) => {
+            resolved
+                .pattern()?
+                .format(now, resolved.zone, resolved.language)
+        }
+        NowText::Iso8601 => datetime_to_text(&now),
+    })
+}
+
 pub struct CoreTimeNowRunner;
 
 #[async_trait]
@@ -83,67 +155,33 @@ impl SubActionRunner for CoreTimeNowRunner {
         "clock"
     }
 
-    fn default_config(&self) -> SubActionConfig {
-        let mut cfg = SubActionConfig::new();
-        cfg.insert("into_var".to_owned(), Variant::String("now".to_owned()));
-        cfg.insert(
-            FORMAT_KEY.to_owned(),
-            Variant::String(NowFormat::Iso8601.as_str().to_owned()),
-        );
-        cfg.insert(
-            CUSTOM_NOW_PATTERN_KEY.to_owned(),
-            Variant::String(String::new()),
-        );
-        cfg.insert(UTC_KEY.to_owned(), Variant::Bool(false));
-        cfg
+    fn config_spec(&self) -> Option<ConfigSpec> {
+        Some(CONFIG)
     }
 
-    fn config_fields(&self) -> Vec<FormField> {
-        vec![
-            FormField::Select {
-                key: FORMAT_KEY,
-                label: "Format",
-                options: NowFormat::WIRE_NAMES,
-            },
-            FormField::Text {
-                key: CUSTOM_NOW_PATTERN_KEY,
-                label: "Custom date pattern (e.g. HH:mm dd.MM.yyyy, d MMMM yyyy, EEEE)",
-                placeholder: "yyyy-MM-dd HH:mm:ss",
-            },
-            FormField::Toggle {
-                key: UTC_KEY,
-                label: "Use UTC instead of local time",
-            },
-            FormField::Text {
-                key: "into_var",
-                label: "Output Variable",
-                placeholder: "now",
-            },
-        ]
-    }
-
-    fn checks_config_while_editing(&self) -> bool {
-        true
-    }
-
-    fn validate_config(&self, config: &SubActionConfig) -> Result<(), RegistryError> {
-        if read_choice(config, FORMAT_KEY, NowFormat::Iso8601)? != NowFormat::Custom {
+    fn check_config(
+        &self,
+        config: &SubActionConfig,
+        interpolation: Interpolation<'_>,
+    ) -> Result<(), ConfigProblem> {
+        if FORMAT.peek(config, interpolation)? != Some(NowFormat::Custom) {
             return Ok(());
         }
-        resolve_time_pattern(config, CUSTOM_NOW_PATTERN_KEY)
-            .and_then(|resolved| resolved.pattern().map(|_| ()))
-            .map_err(|detail| {
-                RegistryError::invalid_field(
-                    CUSTOM_NOW_PATTERN_KEY,
-                    ConfigReason::InvalidFormat(detail),
-                )
-            })
+        match (
+            CUSTOM_PATTERN.peek(config, interpolation)?,
+            UTC.peek(config, interpolation)?.map(Some),
+        ) {
+            (Some(pattern), Some(utc)) => {
+                checked_time_pattern(CUSTOM_PATTERN.key, &pattern, utc).map(|_| ())
+            }
+            _ => Ok(()),
+        }
     }
 
     fn scope_io(&self) -> SubActionIo {
         SubActionIo {
             produces: vec![ProducedVariable {
-                output_name_key: "into_var".to_owned(),
+                output_name_key: INTO_VAR_KEY.to_owned(),
                 kind: VariantKind::Datetime,
                 label: "Current time".to_owned(),
             }],
@@ -160,33 +198,15 @@ impl SubActionRunner for CoreTimeNowRunner {
         config: &SubActionConfig,
         ctx: &RunContext<'_>,
     ) -> (SubActionTelemetry, Option<ArgStack>) {
-        let timer = StepTimer::start(ctx, TIME_NOW_KIND_ID);
+        let timer = StepTimer::start(ctx, self.id());
         let now: OffsetDateTime = timer.started_at();
-
-        let format = match read_choice(config, FORMAT_KEY, NowFormat::Iso8601) {
-            Ok(format) => format,
-            Err(e) => return (timer.failed(e.to_string()), None),
+        let (text, into_var) = match read_config(config, ctx.arg_stack) {
+            Ok(values) => values,
+            Err(problem) => return (timer.invalid_config(&problem), None),
         };
-        let into_var =
-            forge_types::strip_var_decoration(config.str_nonempty("into_var").unwrap_or("now"));
-
-        let formatted = match format {
-            NowFormat::UnixSeconds => now.unix_timestamp().to_string(),
-            NowFormat::UnixMillis => {
-                let ms = now.unix_timestamp() * 1000 + i64::from(now.millisecond());
-                ms.to_string()
-            }
-            NowFormat::Custom => {
-                let resolved = match resolve_time_pattern(config, CUSTOM_NOW_PATTERN_KEY) {
-                    Ok(resolved) => resolved,
-                    Err(e) => return (timer.failed(e), None),
-                };
-                match resolved.pattern() {
-                    Ok(pattern) => pattern.format(now, resolved.zone, resolved.language),
-                    Err(e) => return (timer.failed(e), None),
-                }
-            }
-            NowFormat::Iso8601 => datetime_to_text(&now),
+        let formatted = match formatted(now, &text) {
+            Ok(formatted) => formatted,
+            Err(e) => return (timer.failed(e), None),
         };
 
         let new_stack = ctx

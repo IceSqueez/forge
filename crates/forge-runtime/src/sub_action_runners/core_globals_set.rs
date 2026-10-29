@@ -4,13 +4,53 @@ use async_trait::async_trait;
 use forge_events::EventSource;
 use forge_registry::references::GLOBAL_OPTIONS_KEY;
 use forge_registry::{
-    FormField, ReferenceField, RegistryError, RunContext, StepTimer, SubActionCategory,
-    SubActionConfigExt, SubActionRunner,
+    ConfigProblem, ConfigSpec, ReferenceField, RunContext, StepTimer, SubActionCategory,
+    SubActionRunner, TextEditor, TextField, ToggleField, TypedField,
 };
 use forge_storage::GlobalsRepo;
-use forge_types::{ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetry, Variant};
+use forge_types::{
+    ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetry, strip_var_decoration,
+};
 
+use super::core_globals_shared::NAME_KEY;
 use crate::global_mutation::GlobalMutation;
+
+const NAME: TextField = TextField {
+    key: NAME_KEY,
+    label: "Variable Name",
+    editor: TextEditor::Line {
+        placeholder: "my_counter",
+    },
+    default: "",
+    required: true,
+};
+
+const VALUE: TextField = TextField {
+    key: "value",
+    label: "Value",
+    editor: TextEditor::Line { placeholder: "42" },
+    default: "",
+    required: false,
+};
+
+const PERSISTED: ToggleField = ToggleField {
+    key: "persisted",
+    label: "Persist across restarts",
+    default: false,
+};
+
+const CONFIG: ConfigSpec = ConfigSpec::new(&[&NAME, &VALUE, &PERSISTED]);
+
+fn read_config(
+    config: &SubActionConfig,
+    args: &ArgStack,
+) -> Result<(String, String, bool), ConfigProblem> {
+    Ok((
+        strip_var_decoration(&NAME.read(config, args)?),
+        VALUE.read(config, args)?,
+        PERSISTED.read(config, args)?,
+    ))
+}
 
 pub struct CoreGlobalsSetRunner {
     globals: Arc<dyn GlobalsRepo>,
@@ -48,42 +88,15 @@ impl SubActionRunner for CoreGlobalsSetRunner {
         "database"
     }
 
-    fn default_config(&self) -> SubActionConfig {
-        let mut cfg = SubActionConfig::new();
-        cfg.insert("name".to_owned(), Variant::String(String::new()));
-        cfg.insert("value".to_owned(), Variant::String(String::new()));
-        cfg.insert("persisted".to_owned(), Variant::Bool(false));
-        cfg
-    }
-
-    fn config_fields(&self) -> Vec<FormField> {
-        vec![
-            FormField::Text {
-                key: "name",
-                label: "Variable Name",
-                placeholder: "my_counter",
-            },
-            FormField::Text {
-                key: "value",
-                label: "Value",
-                placeholder: "42",
-            },
-            FormField::Toggle {
-                key: "persisted",
-                label: "Persist across restarts",
-            },
-        ]
+    fn config_spec(&self) -> Option<ConfigSpec> {
+        Some(CONFIG)
     }
 
     fn declared_references(&self) -> Vec<ReferenceField> {
         vec![ReferenceField {
-            key: "name",
+            key: NAME_KEY,
             options_key: GLOBAL_OPTIONS_KEY,
         }]
-    }
-
-    fn validate_config(&self, config: &SubActionConfig) -> Result<(), RegistryError> {
-        config.require_str("name").map(|_| ())
     }
 
     async fn execute(
@@ -91,15 +104,12 @@ impl SubActionRunner for CoreGlobalsSetRunner {
         config: &SubActionConfig,
         ctx: &RunContext<'_>,
     ) -> (SubActionTelemetry, Option<ArgStack>) {
-        let timer = StepTimer::start(ctx, "core.globals.set");
-
-        let name_template = config.str("name").unwrap_or_default();
-        let value_template = config.str("value").unwrap_or_default();
-
-        let name = forge_types::strip_var_decoration(&ctx.arg_stack.interpolate(name_template));
-        let raw = ctx.arg_stack.interpolate(value_template);
-        let variant = super::interpolate::parse_variant(&raw);
-        let persisted = config.bool("persisted").unwrap_or(false);
+        let timer = StepTimer::start(ctx, self.id());
+        let (name, raw, persisted) = match read_config(config, ctx.arg_stack) {
+            Ok(values) => values,
+            Err(problem) => return (timer.invalid_config(&problem), None),
+        };
+        let variant = super::variant_text::parse_variant(&raw);
 
         let mutation = GlobalMutation {
             globals: self.globals.as_ref(),

@@ -1,18 +1,16 @@
 use async_trait::async_trait;
 use forge_registry::{
-    FormField, ProducedVariable, RegistryError, RunContext, StepTimer, SubActionCategory,
-    SubActionConfigExt, SubActionIo, SubActionRunner,
+    ChoiceField, ConfigChoice, ConfigProblem, ConfigSpec, DateTimeField, IntegerEditor,
+    IntegerField, ProducedVariable, RunContext, StepTimer, SubActionCategory, SubActionIo,
+    SubActionRunner, TypedField, ValueBounds, VariableField,
 };
 use forge_types::{ArgStack, SubActionConfig, SubActionTelemetry, Variant, VariantKind};
 use time::{Date, Duration, Month, OffsetDateTime};
 
-use super::config_choice::{ConfigChoice, read_choice};
-use super::datetime_input::resolve_datetime;
-
-pub struct CoreTimeAddRunner;
+const INTO_VAR_KEY: &str = "into_var";
+const RESULT_VARIABLE: &str = "time.result";
 
 const MONTHS_PER_YEAR: i64 = 12;
-const UNIT_KEY: &str = "unit";
 
 #[derive(Clone, Copy)]
 enum TimeUnit {
@@ -90,6 +88,53 @@ fn add_fixed(dt: OffsetDateTime, amount: i64, unit: Duration) -> Option<OffsetDa
     dt.checked_add(Duration::seconds(seconds))
 }
 
+const BASE: DateTimeField = DateTimeField {
+    key: "base",
+    label: "Base Datetime (or %var%)",
+    default: "",
+};
+
+const ADD_AMOUNT: IntegerField = IntegerField {
+    key: "add_amount",
+    label: "Amount (negative to subtract)",
+    editor: IntegerEditor::Number,
+    default: 0,
+    bounds: ValueBounds::UNBOUNDED,
+};
+
+const UNIT: ChoiceField<TimeUnit> = ChoiceField {
+    key: "unit",
+    label: "Unit",
+    default: TimeUnit::Seconds,
+};
+
+const INTO_VAR: VariableField = VariableField {
+    key: INTO_VAR_KEY,
+    label: "Output Variable",
+    placeholder: RESULT_VARIABLE,
+    default: RESULT_VARIABLE,
+};
+
+const CONFIG: ConfigSpec = ConfigSpec::new(&[&BASE, &ADD_AMOUNT, &UNIT, &INTO_VAR]);
+
+struct AddConfig {
+    base: OffsetDateTime,
+    add_amount: i64,
+    unit: TimeUnit,
+    into_var: String,
+}
+
+fn read_config(config: &SubActionConfig, args: &ArgStack) -> Result<AddConfig, ConfigProblem> {
+    Ok(AddConfig {
+        base: BASE.read(config, args)?,
+        add_amount: ADD_AMOUNT.read(config, args)?,
+        unit: UNIT.read(config, args)?,
+        into_var: INTO_VAR.read(config, args)?,
+    })
+}
+
+pub struct CoreTimeAddRunner;
+
 #[async_trait]
 impl SubActionRunner for CoreTimeAddRunner {
     fn id(&self) -> &str {
@@ -116,54 +161,14 @@ impl SubActionRunner for CoreTimeAddRunner {
         "clock-plus"
     }
 
-    fn default_config(&self) -> SubActionConfig {
-        let mut cfg = SubActionConfig::new();
-        cfg.insert("base".to_owned(), Variant::String(String::new()));
-        cfg.insert("add_amount".to_owned(), Variant::Int(0));
-        cfg.insert(
-            UNIT_KEY.to_owned(),
-            Variant::String(TimeUnit::Seconds.as_str().to_owned()),
-        );
-        cfg.insert(
-            "into_var".to_owned(),
-            Variant::String("time.result".to_owned()),
-        );
-        cfg
-    }
-
-    fn config_fields(&self) -> Vec<FormField> {
-        vec![
-            FormField::DateTime {
-                key: "base",
-                label: "Base Datetime (or %var%)",
-            },
-            FormField::Integer {
-                key: "add_amount",
-                label: "Amount (negative to subtract)",
-                min: i64::MIN,
-                max: i64::MAX,
-            },
-            FormField::Select {
-                key: UNIT_KEY,
-                label: "Unit",
-                options: TimeUnit::WIRE_NAMES,
-            },
-            FormField::Text {
-                key: "into_var",
-                label: "Output Variable",
-                placeholder: "time.result",
-            },
-        ]
-    }
-
-    fn validate_config(&self, config: &SubActionConfig) -> Result<(), RegistryError> {
-        read_choice(config, UNIT_KEY, TimeUnit::Seconds).map(|_| ())
+    fn config_spec(&self) -> Option<ConfigSpec> {
+        Some(CONFIG)
     }
 
     fn scope_io(&self) -> SubActionIo {
         SubActionIo {
             produces: vec![ProducedVariable {
-                output_name_key: "into_var".to_owned(),
+                output_name_key: INTO_VAR_KEY.to_owned(),
                 kind: VariantKind::Datetime,
                 label: "Shifted datetime".to_owned(),
             }],
@@ -176,32 +181,21 @@ impl SubActionRunner for CoreTimeAddRunner {
         config: &SubActionConfig,
         ctx: &RunContext<'_>,
     ) -> (SubActionTelemetry, Option<ArgStack>) {
-        let timer = StepTimer::start(ctx, "core.time.add");
-
-        let base_v = config
-            .get("base")
-            .cloned()
-            .unwrap_or_else(|| Variant::String(String::new()));
-        let base_str = ctx.arg_stack.interpolate(base_v.as_str().unwrap_or(""));
-        let base_dt = match resolve_datetime(&base_v, &base_str) {
-            Ok(dt) => dt,
-            Err(e) => return (timer.failed(format!("'base': {e}")), None),
+        let timer = StepTimer::start(ctx, self.id());
+        let AddConfig {
+            base,
+            add_amount,
+            unit,
+            into_var,
+        } = match read_config(config, ctx.arg_stack) {
+            Ok(read) => read,
+            Err(problem) => return (timer.invalid_config(&problem), None),
         };
 
-        let add_amount = config.int("add_amount").unwrap_or(0);
-        let unit = match read_choice(config, UNIT_KEY, TimeUnit::Seconds) {
-            Ok(unit) => unit,
-            Err(e) => return (timer.failed(e.to_string()), None),
-        };
-        let into_var = forge_types::strip_var_decoration(
-            config.str_nonempty("into_var").unwrap_or("time.result"),
-        );
-
-        let result = unit.shift(base_dt, add_amount);
-        let Some(result) = result else {
+        let Some(result) = unit.shift(base, add_amount) else {
             return (
                 timer.failed(format!(
-                    "adding {add_amount} {} to {base_dt} leaves the supported date range",
+                    "adding {add_amount} {} to {base} leaves the supported date range",
                     unit.as_str()
                 )),
                 None,

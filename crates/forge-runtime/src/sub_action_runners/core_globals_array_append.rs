@@ -3,13 +3,49 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use forge_events::{EventSource, GlobalArrayAppended, TypedEvent};
 use forge_registry::{
-    FormField, RegistryError, RunContext, StepTimer, SubActionCategory, SubActionConfigExt,
-    SubActionRunner,
+    ConfigProblem, ConfigSpec, IntegerEditor, IntegerField, RunContext, StepTimer,
+    SubActionCategory, SubActionRunner, TextEditor, TextField, TypedField, ValueBounds,
 };
 use forge_storage::{GlobalsRepo, StorageError};
-use forge_types::{
-    ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetry, Variant, VariantKind,
+use forge_types::{ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetry, VariantKind};
+
+use super::core_globals_shared::{GLOBAL_BY_KEY, global_name};
+
+const UNBOUNDED_LENGTH: i64 = 0;
+
+const VALUE: TextField = TextField {
+    key: "value",
+    label: "Value to Append",
+    editor: TextEditor::Line {
+        placeholder: "item",
+    },
+    default: "",
+    required: false,
 };
+
+const MAX_LENGTH: IntegerField = IntegerField {
+    key: "max_length",
+    label: "Max Length (0 = unbounded)",
+    editor: IntegerEditor::Number,
+    default: UNBOUNDED_LENGTH,
+    bounds: ValueBounds {
+        min: Some(UNBOUNDED_LENGTH),
+        max: None,
+    },
+};
+
+const CONFIG: ConfigSpec = ConfigSpec::new(&[&GLOBAL_BY_KEY, &VALUE, &MAX_LENGTH]);
+
+fn read_config(
+    config: &SubActionConfig,
+    args: &ArgStack,
+) -> Result<(String, String, i64), ConfigProblem> {
+    Ok((
+        global_name(&GLOBAL_BY_KEY, config, args)?,
+        VALUE.read(config, args)?,
+        MAX_LENGTH.read(config, args)?,
+    ))
+}
 
 pub struct CoreGlobalsArrayAppendRunner {
     globals: Arc<dyn GlobalsRepo>,
@@ -47,37 +83,8 @@ impl SubActionRunner for CoreGlobalsArrayAppendRunner {
         "list-plus"
     }
 
-    fn default_config(&self) -> SubActionConfig {
-        let mut cfg = SubActionConfig::new();
-        cfg.insert("key".to_owned(), Variant::String(String::new()));
-        cfg.insert("value".to_owned(), Variant::String(String::new()));
-        cfg.insert("max_length".to_owned(), Variant::Int(0));
-        cfg
-    }
-
-    fn config_fields(&self) -> Vec<FormField> {
-        vec![
-            FormField::DynamicSelect {
-                key: "key",
-                label: "Variable Name",
-                options_key: "global.names",
-            },
-            FormField::Text {
-                key: "value",
-                label: "Value to Append",
-                placeholder: "item",
-            },
-            FormField::Integer {
-                key: "max_length",
-                label: "Max Length (0 = unbounded)",
-                min: 0,
-                max: i64::MAX,
-            },
-        ]
-    }
-
-    fn validate_config(&self, config: &SubActionConfig) -> Result<(), RegistryError> {
-        config.require_str("key").map(|_| ())
+    fn config_spec(&self) -> Option<ConfigSpec> {
+        Some(CONFIG)
     }
 
     async fn execute(
@@ -85,19 +92,15 @@ impl SubActionRunner for CoreGlobalsArrayAppendRunner {
         config: &SubActionConfig,
         ctx: &RunContext<'_>,
     ) -> (SubActionTelemetry, Option<ArgStack>) {
-        let timer = StepTimer::start(ctx, "core.globals.array_append");
-
-        let key_template = config.str("key").unwrap_or_default();
-        let value_template = config.str("value").unwrap_or_default();
-        let max_len = config.int("max_length").unwrap_or(0);
-
-        let resolved_key =
-            forge_types::strip_var_decoration(&ctx.arg_stack.interpolate(key_template));
-        let raw_value = ctx.arg_stack.interpolate(value_template);
-        let item = super::interpolate::parse_variant(&raw_value);
-
+        let timer = StepTimer::start(ctx, self.id());
+        let (resolved_key, raw_value, max_len) = match read_config(config, ctx.arg_stack) {
+            Ok(values) => values,
+            Err(problem) => return (timer.invalid_config(&problem), None),
+        };
+        let item = super::variant_text::parse_variant(&raw_value);
         let element_json = item.to_plain_json();
-        let bound = (max_len > 0).then(|| usize::try_from(max_len).unwrap_or(usize::MAX));
+        let bound =
+            (max_len > UNBOUNDED_LENGTH).then(|| usize::try_from(max_len).unwrap_or(usize::MAX));
 
         let outcome = match self.globals.array_append(&resolved_key, item, bound).await {
             Ok(new_len) => {

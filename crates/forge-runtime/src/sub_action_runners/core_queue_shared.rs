@@ -1,22 +1,8 @@
-use forge_registry::{ConfigReason, RegistryError, RunContext, SubActionConfigExt};
-use forge_types::{QueueId, SubActionConfig};
+use forge_registry::references::QUEUE_OPTIONS_KEY;
+use forge_registry::{ConfigSpec, DynamicSelectField};
+use forge_types::QueueId;
 
-pub(super) fn resolve_queue_id(config: &SubActionConfig, ctx: &RunContext<'_>) -> Option<QueueId> {
-    let raw = config.str("queue_id")?;
-    ctx.arg_stack
-        .interpolate(raw)
-        .trim()
-        .parse::<QueueId>()
-        .ok()
-}
+pub(super) const QUEUE: DynamicSelectField<QueueId> =
+    DynamicSelectField::new("queue_id", "Queue", QUEUE_OPTIONS_KEY);
 
-pub(super) fn validate_queue_id(config: &SubActionConfig) -> Result<(), RegistryError> {
-    if config.str_nonempty("queue_id").is_some() {
-        Ok(())
-    } else {
-        Err(RegistryError::invalid_field(
-            "queue_id",
-            ConfigReason::Required,
-        ))
-    }
-}
+pub(super) const QUEUE_SPEC: ConfigSpec = ConfigSpec::new(&[&QUEUE]);

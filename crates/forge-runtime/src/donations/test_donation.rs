@@ -8,16 +8,91 @@ use forge_platform_core::{
     TEST_DONATION_SUB_ACTION,
 };
 use forge_registry::{
-    FormField, RegistryError, RunContext, StepTimer, SubActionCategory, SubActionConfigExt,
-    SubActionRegistry, SubActionRunner,
+    ConfigProblem, ConfigReason, ConfigSpec, DynamicSelectField, Interpolation, RegistryError,
+    RunContext, StepTimer, SubActionCategory, SubActionRegistry, SubActionRunner, TextEditor,
+    TextField, TypedField,
 };
 use forge_types::{
     ArgStack, CurrencyCode, Donation, DonationOrigin, Donor, IntegrationId, MoneyAmount,
-    SubActionConfig, SubActionOutcome, SubActionTelemetry, Variant,
+    SubActionConfig, SubActionOutcome, SubActionTelemetry,
 };
 use time::OffsetDateTime;
 
 use crate::donations::DonationIngest;
+use crate::triggers::DONATION_PROVIDER_OPTIONS_KEY;
+
+const TEST_DONATION_ID_PREFIX: &str = "test-";
+
+const PROVIDER: DynamicSelectField<String> = DynamicSelectField::new(
+    TEST_DONATION_PROVIDER_KEY,
+    "Donation service",
+    DONATION_PROVIDER_OPTIONS_KEY,
+);
+
+const DONOR: TextField = TextField {
+    key: TEST_DONATION_DONOR_KEY,
+    label: "Donor name",
+    editor: TextEditor::Line { placeholder: "" },
+    default: TEST_DONATION_DONOR,
+    required: false,
+};
+
+const AMOUNT: TextField = TextField {
+    key: TEST_DONATION_AMOUNT_KEY,
+    label: "Amount",
+    editor: TextEditor::Line { placeholder: "" },
+    default: TEST_DONATION_AMOUNT,
+    required: true,
+};
+
+const CURRENCY: TextField = TextField {
+    key: TEST_DONATION_CURRENCY_KEY,
+    label: "Currency",
+    editor: TextEditor::Line { placeholder: "" },
+    default: TEST_DONATION_CURRENCY,
+    required: true,
+};
+
+const MESSAGE: TextField = TextField {
+    key: TEST_DONATION_MESSAGE_KEY,
+    label: "Message",
+    editor: TextEditor::Area,
+    default: TEST_DONATION_MESSAGE,
+    required: false,
+};
+
+const CONFIG: ConfigSpec = ConfigSpec::new(&[&PROVIDER, &DONOR, &AMOUNT, &CURRENCY, &MESSAGE]);
+
+fn money(amount: &str, currency: &str) -> Result<MoneyAmount, ConfigProblem> {
+    let currency = CurrencyCode::parse(currency).map_err(|error| {
+        ConfigProblem::field(
+            TEST_DONATION_CURRENCY_KEY,
+            ConfigReason::InvalidFormat(error.to_string()),
+        )
+    })?;
+    MoneyAmount::parse_decimal(amount.trim(), currency).map_err(|error| {
+        ConfigProblem::field(
+            TEST_DONATION_AMOUNT_KEY,
+            ConfigReason::InvalidFormat(error.to_string()),
+        )
+    })
+}
+
+struct TestDonation {
+    provider: String,
+    donor: String,
+    amount: MoneyAmount,
+    message: String,
+}
+
+fn read_config(config: &SubActionConfig, args: &ArgStack) -> Result<TestDonation, ConfigProblem> {
+    Ok(TestDonation {
+        provider: PROVIDER.read(config, args)?,
+        donor: DONOR.read(config, args)?,
+        amount: money(&AMOUNT.read(config, args)?, &CURRENCY.read(config, args)?)?,
+        message: MESSAGE.read(config, args)?,
+    })
+}
 
 pub struct TestDonationRunner {
     ingest: Arc<DonationIngest>,
@@ -28,31 +103,14 @@ impl TestDonationRunner {
         Self { ingest }
     }
 
-    fn run(&self, config: &SubActionConfig, ctx: &RunContext<'_>) -> SubActionOutcome {
-        let text = |key: &str| {
-            ctx.arg_stack
-                .interpolate(config.str(key).unwrap_or_default())
-        };
-        let provider = text(TEST_DONATION_PROVIDER_KEY);
-        if provider.trim().is_empty() {
-            return SubActionOutcome::Failed("test donation needs a donation service".to_owned());
-        }
-        let currency = match CurrencyCode::parse(&text(TEST_DONATION_CURRENCY_KEY)) {
-            Ok(currency) => currency,
-            Err(error) => return SubActionOutcome::Failed(format!("test donation: {error}")),
-        };
-        let amount =
-            match MoneyAmount::parse_decimal(text(TEST_DONATION_AMOUNT_KEY).trim(), currency) {
-                Ok(amount) => amount,
-                Err(error) => return SubActionOutcome::Failed(format!("test donation: {error}")),
-            };
-        let message = text(TEST_DONATION_MESSAGE_KEY);
+    fn announce(&self, read: TestDonation, ctx: &RunContext<'_>) -> SubActionOutcome {
+        let message = read.message.trim();
         let donation = Donation {
-            provider: IntegrationId::new(provider.trim()),
-            donation_id: format!("test-{}", ctx.parent_event_id),
-            donor: Donor::named(&text(TEST_DONATION_DONOR_KEY)),
-            message: (!message.trim().is_empty()).then(|| message.trim().to_owned()),
-            amount,
+            provider: IntegrationId::new(&read.provider),
+            donation_id: format!("{TEST_DONATION_ID_PREFIX}{}", ctx.parent_event_id),
+            donor: Donor::named(&read.donor),
+            message: (!message.is_empty()).then(|| message.to_owned()),
+            amount: read.amount,
             occurred_at: OffsetDateTime::now_utc(),
             origin: DonationOrigin::Test,
         };
@@ -93,60 +151,22 @@ impl SubActionRunner for TestDonationRunner {
         "coin"
     }
 
-    fn default_config(&self) -> SubActionConfig {
-        let text = |value: &str| Variant::String(value.to_owned());
-        SubActionConfig::from([
-            (TEST_DONATION_PROVIDER_KEY.to_owned(), text("")),
-            (
-                TEST_DONATION_DONOR_KEY.to_owned(),
-                text(TEST_DONATION_DONOR),
-            ),
-            (
-                TEST_DONATION_AMOUNT_KEY.to_owned(),
-                text(TEST_DONATION_AMOUNT),
-            ),
-            (
-                TEST_DONATION_CURRENCY_KEY.to_owned(),
-                text(TEST_DONATION_CURRENCY),
-            ),
-            (
-                TEST_DONATION_MESSAGE_KEY.to_owned(),
-                text(TEST_DONATION_MESSAGE),
-            ),
-        ])
+    fn config_spec(&self) -> Option<ConfigSpec> {
+        Some(CONFIG)
     }
 
-    fn config_fields(&self) -> Vec<FormField> {
-        vec![
-            FormField::DynamicSelect {
-                key: TEST_DONATION_PROVIDER_KEY,
-                label: "Donation service",
-                options_key: crate::triggers::DONATION_PROVIDER_OPTIONS_KEY,
-            },
-            FormField::Text {
-                key: TEST_DONATION_DONOR_KEY,
-                label: "Donor name",
-                placeholder: "",
-            },
-            FormField::Text {
-                key: TEST_DONATION_AMOUNT_KEY,
-                label: "Amount",
-                placeholder: "",
-            },
-            FormField::Text {
-                key: TEST_DONATION_CURRENCY_KEY,
-                label: "Currency",
-                placeholder: "",
-            },
-            FormField::TextArea {
-                key: TEST_DONATION_MESSAGE_KEY,
-                label: "Message",
-            },
-        ]
-    }
-
-    fn validate_config(&self, config: &SubActionConfig) -> Result<(), RegistryError> {
-        config.require_str(TEST_DONATION_PROVIDER_KEY).map(|_| ())
+    fn check_config(
+        &self,
+        config: &SubActionConfig,
+        interpolation: Interpolation<'_>,
+    ) -> Result<(), ConfigProblem> {
+        match (
+            AMOUNT.peek(config, interpolation)?,
+            CURRENCY.peek(config, interpolation)?,
+        ) {
+            (Some(amount), Some(currency)) => money(&amount, &currency).map(|_| ()),
+            _ => Ok(()),
+        }
     }
 
     async fn execute(
@@ -155,7 +175,10 @@ impl SubActionRunner for TestDonationRunner {
         ctx: &RunContext<'_>,
     ) -> (SubActionTelemetry, Option<ArgStack>) {
         let timer = StepTimer::start(ctx, TEST_DONATION_SUB_ACTION);
-        let outcome = self.run(config, ctx);
+        let outcome = match read_config(config, ctx.arg_stack) {
+            Ok(read) => self.announce(read, ctx),
+            Err(problem) => return (timer.invalid_config(&problem), None),
+        };
         (timer.finish(outcome), None)
     }
 }

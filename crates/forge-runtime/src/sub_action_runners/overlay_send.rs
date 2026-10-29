@@ -1,11 +1,13 @@
 use async_trait::async_trait;
 use forge_overlay::config::{DURATION_MAX_SECS, DURATION_MIN_SECS};
+use forge_registry::references::OVERLAY_OPTIONS_KEY;
 use forge_registry::{
-    FormField, FormRefinement, RegistryError, RunContext, StepTimer, SubActionCategory,
-    SubActionConfigExt, SubActionRunner,
+    ConfigProblem, ConfigSpec, DynamicSelectField, FormRefinement, IntegerEditor, IntegerField,
+    OptionalField, RunContext, StepTimer, SubActionCategory, SubActionRunner, ToggleField,
+    TypedField, ValueBounds,
 };
 use forge_storage::{OverlayConfig, OverlayId};
-use forge_types::{ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetry, Variant};
+use forge_types::{ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetry};
 
 use super::overlay_targets::{OVERLAY_SEND_KIND_ID, OVERLAY_TARGET_KEY};
 use crate::overlay_service::{OverlayDelivery, OverlayDispatch, OverlayServiceCell};
@@ -13,8 +15,49 @@ use crate::overlay_shows::ShowEnd;
 
 const DURATION_KEY: &str = "duration_secs";
 const WAIT_KEY: &str = "wait_for_show";
+const MILLIS_PER_SECOND: u64 = 1_000;
 
 pub const CONTENT_SCHEMA_KEY: &str = "overlay.content_fields";
+
+const TARGET: DynamicSelectField<String> =
+    DynamicSelectField::new(OVERLAY_TARGET_KEY, "Overlay", OVERLAY_OPTIONS_KEY);
+
+const DURATION: OptionalField<IntegerField> = OptionalField::shared(IntegerField {
+    key: DURATION_KEY,
+    label: "Override duration",
+    editor: IntegerEditor::Slider { unit: "s" },
+    default: DURATION_MIN_SECS,
+    bounds: ValueBounds {
+        min: Some(DURATION_MIN_SECS),
+        max: Some(DURATION_MAX_SECS),
+    },
+});
+
+const WAIT: ToggleField = ToggleField {
+    key: WAIT_KEY,
+    label: "Wait until the show ends",
+    default: false,
+};
+
+const CONFIG: ConfigSpec = ConfigSpec::new(&[&TARGET, &DURATION, &WAIT]);
+
+struct SendConfig {
+    target: String,
+    duration_ms: Option<u64>,
+    wait_for_show: bool,
+}
+
+fn read_config(config: &SubActionConfig, args: &ArgStack) -> Result<SendConfig, ConfigProblem> {
+    Ok(SendConfig {
+        target: TARGET.read(config, args)?,
+        duration_ms: DURATION.read(config, args)?.and_then(|seconds| {
+            u64::try_from(seconds)
+                .ok()
+                .map(|seconds| seconds.saturating_mul(MILLIS_PER_SECOND))
+        }),
+        wait_for_show: WAIT.read(config, args)?,
+    })
+}
 
 pub struct OverlaySendRunner {
     overlays: OverlayServiceCell,
@@ -25,15 +68,13 @@ impl OverlaySendRunner {
         Self { overlays }
     }
 
-    async fn send(&self, config: &SubActionConfig, ctx: &RunContext<'_>) -> SubActionOutcome {
-        let target = ctx
-            .arg_stack
-            .interpolate(config.str(OVERLAY_TARGET_KEY).unwrap_or_default());
-        let identity = target.trim();
-        if identity.is_empty() {
-            return SubActionOutcome::Failed("overlay.send: no overlay is selected".to_owned());
-        }
-
+    async fn send(
+        &self,
+        config: &SubActionConfig,
+        send: SendConfig,
+        ctx: &RunContext<'_>,
+    ) -> SubActionOutcome {
+        let identity = send.target.as_str();
         let Some(overlays) = self.overlays.get() else {
             return SubActionOutcome::Failed(
                 "overlay.send: the overlay service is not running".to_owned(),
@@ -45,13 +86,13 @@ impl OverlaySendRunner {
                 &OverlayId::new(identity),
                 &supplied_content(config),
                 ctx.arg_stack,
-                duration_override(config),
+                send.duration_ms,
                 Some(ctx.parent_event_id),
             )
             .await
         {
             Ok(OverlayDispatch::Applied(delivery)) => delivered(identity, delivery),
-            Ok(OverlayDispatch::Queued(ticket)) if waits_for_show(config) => {
+            Ok(OverlayDispatch::Queued(ticket)) if send.wait_for_show => {
                 show_outcome(identity, ticket.finished().await)
             }
             Ok(OverlayDispatch::Queued(_)) => SubActionOutcome::Success,
@@ -77,10 +118,6 @@ fn show_outcome(identity: &str, end: ShowEnd) -> SubActionOutcome {
             "overlay.send: the overlay was disabled or deleted before the show ran".to_owned(),
         ),
     }
-}
-
-fn waits_for_show(config: &SubActionConfig) -> bool {
-    matches!(config.get(WAIT_KEY), Some(Variant::Bool(true)))
 }
 
 #[async_trait]
@@ -109,39 +146,8 @@ impl SubActionRunner for OverlaySendRunner {
         "layout"
     }
 
-    fn default_config(&self) -> SubActionConfig {
-        let mut cfg = SubActionConfig::new();
-        cfg.insert(
-            OVERLAY_TARGET_KEY.to_owned(),
-            Variant::String(String::new()),
-        );
-        cfg.insert(WAIT_KEY.to_owned(), Variant::Bool(false));
-        cfg
-    }
-
-    fn config_fields(&self) -> Vec<FormField> {
-        vec![
-            FormField::DynamicSelect {
-                key: OVERLAY_TARGET_KEY,
-                label: "Overlay",
-                options_key: "overlay.ids",
-            },
-            FormField::Optional {
-                key: DURATION_KEY,
-                label: "Override duration",
-                inner: Box::new(FormField::Slider {
-                    key: DURATION_KEY,
-                    label: "Override duration",
-                    min: DURATION_MIN_SECS,
-                    max: DURATION_MAX_SECS,
-                    unit: "s",
-                }),
-            },
-            FormField::Toggle {
-                key: WAIT_KEY,
-                label: "Wait until the show ends",
-            },
-        ]
+    fn config_spec(&self) -> Option<ConfigSpec> {
+        Some(CONFIG)
     }
 
     fn config_refinement(&self) -> Option<FormRefinement> {
@@ -151,17 +157,17 @@ impl SubActionRunner for OverlaySendRunner {
         })
     }
 
-    fn validate_config(&self, config: &SubActionConfig) -> Result<(), RegistryError> {
-        config.require_str(OVERLAY_TARGET_KEY).map(|_| ())
-    }
-
     async fn execute(
         &self,
         config: &SubActionConfig,
         ctx: &RunContext<'_>,
     ) -> (SubActionTelemetry, Option<ArgStack>) {
         let timer = StepTimer::start(ctx, OVERLAY_SEND_KIND_ID);
-        let outcome = self.send(config, ctx).await;
+        let send = match read_config(config, ctx.arg_stack) {
+            Ok(send) => send,
+            Err(problem) => return (timer.invalid_config(&problem), None),
+        };
+        let outcome = self.send(config, send, ctx).await;
         (timer.finish(outcome), None)
     }
 }
@@ -172,16 +178,6 @@ fn supplied_content(config: &SubActionConfig) -> OverlayConfig {
         .filter(|(key, _)| ![OVERLAY_TARGET_KEY, DURATION_KEY, WAIT_KEY].contains(&key.as_str()))
         .map(|(key, value)| (key.clone(), value.clone()))
         .collect()
-}
-
-fn duration_override(config: &SubActionConfig) -> Option<u64> {
-    let Some(Variant::Int(seconds)) = config.get(DURATION_KEY) else {
-        return None;
-    };
-    u64::try_from(*seconds)
-        .ok()
-        .filter(|seconds| *seconds > 0)
-        .map(|seconds| seconds.saturating_mul(1000))
 }
 
 #[cfg(test)]

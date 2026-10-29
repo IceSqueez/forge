@@ -1,7 +1,7 @@
 use forge_registry::{
     ConfigReason, FieldLiteral, FormField, IntegerEditor, IntegerField, TypedField, ValueBounds,
 };
-use forge_types::Variant;
+use forge_types::{SubActionConfig, Variant};
 
 pub(crate) struct ByteField {
     pub(crate) key: &'static str,
@@ -45,8 +45,10 @@ impl TypedField for ByteField {
         self.as_integer().default_value()
     }
 
-    fn seeds_default(&self) -> bool {
-        self.seeds_default
+    fn write_default(&self, config: &mut SubActionConfig) {
+        if self.seeds_default {
+            config.insert(self.key().to_owned(), self.default_value());
+        }
     }
 
     fn literal<'a>(&self, value: &'a Variant) -> Result<FieldLiteral<'a, u8>, ConfigReason> {

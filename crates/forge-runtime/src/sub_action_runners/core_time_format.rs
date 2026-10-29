@@ -1,14 +1,66 @@
 use async_trait::async_trait;
 use forge_registry::{
-    ConfigReason, FormField, ProducedVariable, RegistryError, RunContext, StepTimer,
-    SubActionCategory, SubActionConfigExt, SubActionIo, SubActionRunner,
+    ConfigProblem, ConfigSpec, DateTimeField, Interpolation, ProducedVariable, RunContext,
+    StepTimer, SubActionCategory, SubActionIo, SubActionRunner, TemplateField, ToggleField,
+    TypedField, VariableField,
 };
 use forge_types::{ArgStack, SubActionConfig, SubActionTelemetry, Variant, VariantKind};
+use time::OffsetDateTime;
 
-use super::datetime_input::resolve_datetime;
 use super::time_pattern::{
-    DEFAULT_TIME_PATTERN, FORMAT_PATTERN_KEY, TIME_FORMAT_KIND_ID, UTC_KEY, resolve_time_pattern,
+    DEFAULT_TIME_PATTERN, FORMAT_PATTERN_KEY, ResolvedTimePattern, TIME_FORMAT_KIND_ID, UTC_KEY,
+    checked_time_pattern, stored_utc,
 };
+
+const INTO_VAR_KEY: &str = "into_var";
+const FORMATTED_VARIABLE: &str = "time.formatted";
+
+const SOURCE: DateTimeField = DateTimeField {
+    key: "source",
+    label: "Source (datetime or %var%)",
+    default: "",
+};
+
+const PATTERN: TemplateField = TemplateField {
+    key: FORMAT_PATTERN_KEY,
+    label: "Date pattern (e.g. HH:mm dd.MM.yyyy, d MMMM yyyy, EEEE)",
+    placeholder: DEFAULT_TIME_PATTERN,
+    default: DEFAULT_TIME_PATTERN,
+    required: false,
+};
+
+const UTC: ToggleField = ToggleField {
+    key: UTC_KEY,
+    label: "Use UTC instead of local time",
+    default: false,
+};
+
+const INTO_VAR: VariableField = VariableField {
+    key: INTO_VAR_KEY,
+    label: "Output Variable",
+    placeholder: FORMATTED_VARIABLE,
+    default: FORMATTED_VARIABLE,
+};
+
+const CONFIG: ConfigSpec = ConfigSpec::new(&[&SOURCE, &PATTERN, &UTC, &INTO_VAR]);
+
+struct FormatConfig {
+    source: OffsetDateTime,
+    pattern: ResolvedTimePattern,
+    into_var: String,
+}
+
+fn read_config(config: &SubActionConfig, args: &ArgStack) -> Result<FormatConfig, ConfigProblem> {
+    Ok(FormatConfig {
+        source: SOURCE.read(config, args)?,
+        pattern: checked_time_pattern(
+            PATTERN.key,
+            &PATTERN.read(config, args)?,
+            stored_utc(&UTC, config, args)?,
+        )?,
+        into_var: INTO_VAR.read(config, args)?,
+    })
+}
 
 pub struct CoreTimeFormatRunner;
 
@@ -38,63 +90,30 @@ impl SubActionRunner for CoreTimeFormatRunner {
         "clock-check"
     }
 
-    fn default_config(&self) -> SubActionConfig {
-        let mut cfg = SubActionConfig::new();
-        cfg.insert("source".to_owned(), Variant::String(String::new()));
-        cfg.insert(
-            FORMAT_PATTERN_KEY.to_owned(),
-            Variant::String(DEFAULT_TIME_PATTERN.to_owned()),
-        );
-        cfg.insert(UTC_KEY.to_owned(), Variant::Bool(false));
-        cfg.insert(
-            "into_var".to_owned(),
-            Variant::String("time.formatted".to_owned()),
-        );
-        cfg
+    fn config_spec(&self) -> Option<ConfigSpec> {
+        Some(CONFIG)
     }
 
-    fn config_fields(&self) -> Vec<FormField> {
-        vec![
-            FormField::DateTime {
-                key: "source",
-                label: "Source (datetime or %var%)",
-            },
-            FormField::Text {
-                key: FORMAT_PATTERN_KEY,
-                label: "Date pattern (e.g. HH:mm dd.MM.yyyy, d MMMM yyyy, EEEE)",
-                placeholder: DEFAULT_TIME_PATTERN,
-            },
-            FormField::Toggle {
-                key: UTC_KEY,
-                label: "Use UTC instead of local time",
-            },
-            FormField::Text {
-                key: "into_var",
-                label: "Output Variable",
-                placeholder: "time.formatted",
-            },
-        ]
-    }
-
-    fn checks_config_while_editing(&self) -> bool {
-        true
-    }
-
-    fn validate_config(&self, config: &SubActionConfig) -> Result<(), RegistryError> {
-        resolve_time_pattern(config, FORMAT_PATTERN_KEY)
-            .and_then(|resolved| resolved.pattern().map(|_| ()))
-            .map_err(|detail| {
-                RegistryError::invalid_field(
-                    FORMAT_PATTERN_KEY,
-                    ConfigReason::InvalidFormat(detail),
-                )
-            })
+    fn check_config(
+        &self,
+        config: &SubActionConfig,
+        interpolation: Interpolation<'_>,
+    ) -> Result<(), ConfigProblem> {
+        match (
+            PATTERN.peek(config, interpolation)?,
+            UTC.peek(config, interpolation)?.map(Some),
+        ) {
+            (Some(pattern), Some(utc)) => {
+                checked_time_pattern(PATTERN.key, &pattern, utc).map(|_| ())
+            }
+            _ => Ok(()),
+        }
     }
 
     fn scope_io(&self) -> SubActionIo {
         SubActionIo {
             produces: vec![ProducedVariable {
-                output_name_key: "into_var".to_owned(),
+                output_name_key: INTO_VAR_KEY.to_owned(),
                 kind: VariantKind::String,
                 label: "Formatted datetime".to_owned(),
             }],
@@ -107,29 +126,18 @@ impl SubActionRunner for CoreTimeFormatRunner {
         config: &SubActionConfig,
         ctx: &RunContext<'_>,
     ) -> (SubActionTelemetry, Option<ArgStack>) {
-        let timer = StepTimer::start(ctx, TIME_FORMAT_KIND_ID);
-
-        let source_v = config
-            .get("source")
-            .cloned()
-            .unwrap_or_else(|| Variant::String(String::new()));
-        let source_str = ctx.arg_stack.interpolate(source_v.as_str().unwrap_or(""));
-
-        let dt = match resolve_datetime(&source_v, &source_str) {
-            Ok(dt) => dt,
-            Err(e) => return (timer.failed(e), None),
+        let timer = StepTimer::start(ctx, self.id());
+        let FormatConfig {
+            source,
+            pattern: resolved,
+            into_var,
+        } = match read_config(config, ctx.arg_stack) {
+            Ok(read) => read,
+            Err(problem) => return (timer.invalid_config(&problem), None),
         };
 
-        let into_var = forge_types::strip_var_decoration(
-            config.str_nonempty("into_var").unwrap_or("time.formatted"),
-        );
-
-        let resolved = match resolve_time_pattern(config, FORMAT_PATTERN_KEY) {
-            Ok(resolved) => resolved,
-            Err(e) => return (timer.failed(e), None),
-        };
         let formatted = match resolved.pattern() {
-            Ok(pattern) => pattern.format(dt, resolved.zone, resolved.language),
+            Ok(pattern) => pattern.format(source, resolved.zone, resolved.language),
             Err(e) => return (timer.failed(e), None),
         };
 

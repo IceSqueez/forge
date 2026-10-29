@@ -1,11 +1,44 @@
 use async_trait::async_trait;
 use forge_registry::{
-    FormField, ProducedVariable, RegistryError, RunContext, StepTimer, SubActionCategory,
-    SubActionConfigExt, SubActionIo, SubActionRunner,
+    ConfigProblem, ConfigSpec, ProducedVariable, RunContext, StepTimer, SubActionCategory,
+    SubActionIo, SubActionRunner, TextEditor, TextField, TypedField, ValueField,
 };
-use forge_types::{ArgStack, SubActionConfig, SubActionTelemetry, Variant, VariantKind};
+use forge_types::{
+    ArgStack, SubActionConfig, SubActionTelemetry, Variant, VariantKind, strip_var_decoration,
+};
 
 const NAME_KEY: &str = "name";
+
+const NAME: TextField = TextField {
+    key: NAME_KEY,
+    label: "Variable Name",
+    editor: TextEditor::Line {
+        placeholder: "my_var",
+    },
+    default: "",
+    required: true,
+};
+
+const VALUE: ValueField = ValueField {
+    key: "value",
+    label: "Value",
+    placeholder: "hello",
+    default: "",
+};
+
+const CONFIG: ConfigSpec = ConfigSpec::new(&[&NAME, &VALUE]);
+
+fn read_config(
+    config: &SubActionConfig,
+    args: &ArgStack,
+) -> Result<(String, Variant), ConfigProblem> {
+    let name = strip_var_decoration(&NAME.read(config, args)?);
+    let value = match VALUE.read(config, args)? {
+        Variant::String(text) => super::variant_text::parse_variant(&text),
+        other => other,
+    };
+    Ok((name, value))
+}
 
 pub struct CoreArgsSetRunner;
 
@@ -35,30 +68,8 @@ impl SubActionRunner for CoreArgsSetRunner {
         "variable"
     }
 
-    fn default_config(&self) -> SubActionConfig {
-        let mut cfg = SubActionConfig::new();
-        cfg.insert(NAME_KEY.to_owned(), Variant::String(String::new()));
-        cfg.insert("value".to_owned(), Variant::String(String::new()));
-        cfg
-    }
-
-    fn config_fields(&self) -> Vec<FormField> {
-        vec![
-            FormField::Text {
-                key: NAME_KEY,
-                label: "Variable Name",
-                placeholder: "my_var",
-            },
-            FormField::Text {
-                key: "value",
-                label: "Value",
-                placeholder: "hello",
-            },
-        ]
-    }
-
-    fn validate_config(&self, config: &SubActionConfig) -> Result<(), RegistryError> {
-        config.require_str(NAME_KEY).map(|_| ())
+    fn config_spec(&self) -> Option<ConfigSpec> {
+        Some(CONFIG)
     }
 
     fn scope_io(&self) -> SubActionIo {
@@ -77,22 +88,12 @@ impl SubActionRunner for CoreArgsSetRunner {
         config: &SubActionConfig,
         ctx: &RunContext<'_>,
     ) -> (SubActionTelemetry, Option<ArgStack>) {
-        let timer = StepTimer::start(ctx, "core.args.set");
-
-        let name_template = config.str(NAME_KEY).unwrap_or_default();
-        let name = forge_types::strip_var_decoration(&ctx.arg_stack.interpolate(name_template));
-
-        let value = match config.get("value") {
-            Some(Variant::String(s)) => {
-                let interpolated = ctx.arg_stack.interpolate(s);
-                super::interpolate::parse_variant(&interpolated)
-            }
-            Some(v) => v.clone(),
-            None => Variant::String(String::new()),
+        let timer = StepTimer::start(ctx, self.id());
+        let (name, value) = match read_config(config, ctx.arg_stack) {
+            Ok(values) => values,
+            Err(problem) => return (timer.invalid_config(&problem), None),
         };
-
         let new_stack = ctx.arg_stack.clone().set(name, value);
-
         (timer.success(), Some(new_stack))
     }
 }

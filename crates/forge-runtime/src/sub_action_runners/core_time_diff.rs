@@ -1,15 +1,14 @@
 use async_trait::async_trait;
 use forge_registry::{
-    FormField, ProducedVariable, RegistryError, RunContext, StepTimer, SubActionCategory,
-    SubActionConfigExt, SubActionIo, SubActionRunner,
+    ChoiceField, ConfigChoice, ConfigProblem, ConfigSpec, DateTimeField, ProducedVariable,
+    RunContext, StepTimer, SubActionCategory, SubActionIo, SubActionRunner, TypedField,
+    VariableField,
 };
 use forge_types::{ArgStack, SubActionConfig, SubActionTelemetry, Variant, VariantKind};
-use time::Duration;
+use time::{Duration, OffsetDateTime};
 
-use super::config_choice::{ConfigChoice, read_choice};
-use super::datetime_input::resolve_datetime;
-
-const UNIT_KEY: &str = "unit";
+const INTO_VAR_KEY: &str = "into_var";
+const DIFF_VARIABLE: &str = "time.diff_value";
 
 #[derive(Clone, Copy)]
 enum DiffUnit {
@@ -53,6 +52,49 @@ impl ConfigChoice for DiffUnit {
     }
 }
 
+const FROM: DateTimeField = DateTimeField {
+    key: "from",
+    label: "From (datetime or %var%)",
+    default: "",
+};
+
+const TO: DateTimeField = DateTimeField {
+    key: "to",
+    label: "To (datetime or %var%)",
+    default: "",
+};
+
+const UNIT: ChoiceField<DiffUnit> = ChoiceField {
+    key: "unit",
+    label: "Unit",
+    default: DiffUnit::Seconds,
+};
+
+const INTO_VAR: VariableField = VariableField {
+    key: INTO_VAR_KEY,
+    label: "Output Variable",
+    placeholder: DIFF_VARIABLE,
+    default: DIFF_VARIABLE,
+};
+
+const CONFIG: ConfigSpec = ConfigSpec::new(&[&FROM, &TO, &UNIT, &INTO_VAR]);
+
+struct DiffConfig {
+    from: OffsetDateTime,
+    to: OffsetDateTime,
+    unit: DiffUnit,
+    into_var: String,
+}
+
+fn read_config(config: &SubActionConfig, args: &ArgStack) -> Result<DiffConfig, ConfigProblem> {
+    Ok(DiffConfig {
+        from: FROM.read(config, args)?,
+        to: TO.read(config, args)?,
+        unit: UNIT.read(config, args)?,
+        into_var: INTO_VAR.read(config, args)?,
+    })
+}
+
 pub struct CoreTimeDiffRunner;
 
 #[async_trait]
@@ -81,52 +123,14 @@ impl SubActionRunner for CoreTimeDiffRunner {
         "clock-minus"
     }
 
-    fn default_config(&self) -> SubActionConfig {
-        let mut cfg = SubActionConfig::new();
-        cfg.insert("from".to_owned(), Variant::String(String::new()));
-        cfg.insert("to".to_owned(), Variant::String(String::new()));
-        cfg.insert(
-            UNIT_KEY.to_owned(),
-            Variant::String(DiffUnit::Seconds.as_str().to_owned()),
-        );
-        cfg.insert(
-            "into_var".to_owned(),
-            Variant::String("time.diff_value".to_owned()),
-        );
-        cfg
-    }
-
-    fn config_fields(&self) -> Vec<FormField> {
-        vec![
-            FormField::DateTime {
-                key: "from",
-                label: "From (datetime or %var%)",
-            },
-            FormField::DateTime {
-                key: "to",
-                label: "To (datetime or %var%)",
-            },
-            FormField::Select {
-                key: UNIT_KEY,
-                label: "Unit",
-                options: DiffUnit::WIRE_NAMES,
-            },
-            FormField::Text {
-                key: "into_var",
-                label: "Output Variable",
-                placeholder: "time.diff_value",
-            },
-        ]
-    }
-
-    fn validate_config(&self, config: &SubActionConfig) -> Result<(), RegistryError> {
-        read_choice(config, UNIT_KEY, DiffUnit::Seconds).map(|_| ())
+    fn config_spec(&self) -> Option<ConfigSpec> {
+        Some(CONFIG)
     }
 
     fn scope_io(&self) -> SubActionIo {
         SubActionIo {
             produces: vec![ProducedVariable {
-                output_name_key: "into_var".to_owned(),
+                output_name_key: INTO_VAR_KEY.to_owned(),
                 kind: VariantKind::Float,
                 label: "Time difference".to_owned(),
             }],
@@ -139,37 +143,18 @@ impl SubActionRunner for CoreTimeDiffRunner {
         config: &SubActionConfig,
         ctx: &RunContext<'_>,
     ) -> (SubActionTelemetry, Option<ArgStack>) {
-        let timer = StepTimer::start(ctx, "core.time.diff");
-
-        let from_v = config
-            .get("from")
-            .cloned()
-            .unwrap_or_else(|| Variant::String(String::new()));
-        let from_str = ctx.arg_stack.interpolate(from_v.as_str().unwrap_or(""));
-        let from_dt = match resolve_datetime(&from_v, &from_str) {
-            Ok(dt) => dt,
-            Err(e) => return (timer.failed(format!("'from': {e}")), None),
+        let timer = StepTimer::start(ctx, self.id());
+        let DiffConfig {
+            from,
+            to,
+            unit,
+            into_var,
+        } = match read_config(config, ctx.arg_stack) {
+            Ok(read) => read,
+            Err(problem) => return (timer.invalid_config(&problem), None),
         };
 
-        let to_v = config
-            .get("to")
-            .cloned()
-            .unwrap_or_else(|| Variant::String(String::new()));
-        let to_str = ctx.arg_stack.interpolate(to_v.as_str().unwrap_or(""));
-        let to_dt = match resolve_datetime(&to_v, &to_str) {
-            Ok(dt) => dt,
-            Err(e) => return (timer.failed(format!("'to': {e}")), None),
-        };
-
-        let unit = match read_choice(config, UNIT_KEY, DiffUnit::Seconds) {
-            Ok(unit) => unit,
-            Err(e) => return (timer.failed(e.to_string()), None),
-        };
-        let into_var = forge_types::strip_var_decoration(
-            config.str_nonempty("into_var").unwrap_or("time.diff_value"),
-        );
-
-        let diff_ns = (to_dt - from_dt).whole_nanoseconds() as f64;
+        let diff_ns = (to - from).whole_nanoseconds() as f64;
         let diff_value = diff_ns / unit.span().whole_nanoseconds() as f64;
 
         let new_stack = ctx

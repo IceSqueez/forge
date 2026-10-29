@@ -1,7 +1,8 @@
 use async_trait::async_trait;
 use forge_registry::{
-    CodeKind, CodeLanguage, FormField, ProducedVariable, RegistryError, RunContext, StepTimer,
-    SubActionCategory, SubActionConfigExt, SubActionIo, SubActionRunner,
+    ChoiceField, CodeField, CodeKind, CodeLanguage, ConfigChoice, ConfigProblem, ConfigSpec,
+    ProducedVariable, RunContext, StepTimer, SubActionCategory, SubActionIo, SubActionRunner,
+    TypedField, VariableField,
 };
 use forge_script::{BoundExpression, EngineConfig, MathEvaluator};
 use forge_types::{
@@ -9,6 +10,82 @@ use forge_types::{
 };
 
 const INTO_VAR_KEY: &str = "into_var";
+const RESULT_VARIABLE: &str = "result";
+const EXPRESSION_OP_LIMIT: u64 = 50_000;
+const EXPRESSION_WALL_TIME_MS: u64 = 100;
+
+#[derive(Clone, Copy)]
+enum ResultType {
+    Auto,
+    Int,
+    Float,
+}
+
+impl ResultType {
+    const fn as_str(self) -> &'static str {
+        match self {
+            Self::Auto => "auto",
+            Self::Int => "int",
+            Self::Float => "float",
+        }
+    }
+
+    fn coerce(self, value: Variant) -> Variant {
+        match (self, value) {
+            (Self::Int, Variant::Float(f)) => Variant::Int(f as i64),
+            (Self::Float, Variant::Int(n)) => Variant::Float(n as f64),
+            (_, other) => other,
+        }
+    }
+}
+
+impl ConfigChoice for ResultType {
+    const ALL: &'static [Self] = &[Self::Auto, Self::Int, Self::Float];
+    const WIRE_NAMES: &'static [&'static str] = &[
+        Self::Auto.as_str(),
+        Self::Int.as_str(),
+        Self::Float.as_str(),
+    ];
+
+    fn wire_name(self) -> &'static str {
+        self.as_str()
+    }
+}
+
+const EXPRESSION: CodeField = CodeField {
+    key: "expression",
+    label: "Expression",
+    language: CodeLanguage::Rhai,
+    kind: CodeKind::Expression,
+    default: "",
+    required: true,
+};
+
+const INTO_VAR: VariableField = VariableField {
+    key: INTO_VAR_KEY,
+    label: "Output Variable",
+    placeholder: RESULT_VARIABLE,
+    default: RESULT_VARIABLE,
+};
+
+const RESULT_TYPE: ChoiceField<ResultType> = ChoiceField {
+    key: "result_type",
+    label: "Result Type",
+    default: ResultType::Auto,
+};
+
+const CONFIG: ConfigSpec = ConfigSpec::new(&[&EXPRESSION, &INTO_VAR, &RESULT_TYPE]);
+
+fn read_config(
+    config: &SubActionConfig,
+    args: &ArgStack,
+) -> Result<(String, String, ResultType), ConfigProblem> {
+    Ok((
+        EXPRESSION.read(config, args)?,
+        INTO_VAR.read(config, args)?,
+        RESULT_TYPE.read(config, args)?,
+    ))
+}
 
 pub struct CoreMathEvaluateRunner {
     evaluator: MathEvaluator,
@@ -24,8 +101,8 @@ impl CoreMathEvaluateRunner {
     pub fn new() -> Self {
         Self {
             evaluator: MathEvaluator::with_config(EngineConfig {
-                op_limit: 50_000,
-                wall_time_ms: 100,
+                op_limit: EXPRESSION_OP_LIMIT,
+                wall_time_ms: EXPRESSION_WALL_TIME_MS,
             }),
         }
     }
@@ -57,40 +134,8 @@ impl SubActionRunner for CoreMathEvaluateRunner {
         "calculator"
     }
 
-    fn default_config(&self) -> SubActionConfig {
-        let mut cfg = SubActionConfig::new();
-        cfg.insert("expression".to_owned(), Variant::String(String::new()));
-        cfg.insert(
-            INTO_VAR_KEY.to_owned(),
-            Variant::String("result".to_owned()),
-        );
-        cfg.insert("result_type".to_owned(), Variant::String("auto".to_owned()));
-        cfg
-    }
-
-    fn config_fields(&self) -> Vec<FormField> {
-        vec![
-            FormField::Code {
-                key: "expression",
-                label: "Expression",
-                language: CodeLanguage::Rhai,
-                kind: CodeKind::Expression,
-            },
-            FormField::Text {
-                key: INTO_VAR_KEY,
-                label: "Output Variable",
-                placeholder: "result",
-            },
-            FormField::Select {
-                key: "result_type",
-                label: "Result Type",
-                options: &["auto", "int", "float"],
-            },
-        ]
-    }
-
-    fn validate_config(&self, config: &SubActionConfig) -> Result<(), RegistryError> {
-        config.require_str("expression").map(|_| ())
+    fn config_spec(&self) -> Option<ConfigSpec> {
+        Some(CONFIG)
     }
 
     fn scope_io(&self) -> SubActionIo {
@@ -109,17 +154,13 @@ impl SubActionRunner for CoreMathEvaluateRunner {
         config: &SubActionConfig,
         ctx: &RunContext<'_>,
     ) -> (SubActionTelemetry, Option<ArgStack>) {
-        let timer = StepTimer::start(ctx, "core.math.evaluate");
+        let timer = StepTimer::start(ctx, self.id());
+        let (expression, into_var, result_type) = match read_config(config, ctx.arg_stack) {
+            Ok(values) => values,
+            Err(problem) => return (timer.invalid_config(&problem), None),
+        };
 
-        let expression = config.str("expression").unwrap_or_default();
-
-        let into_var = forge_types::strip_var_decoration(
-            config.str_nonempty(INTO_VAR_KEY).unwrap_or("result"),
-        );
-
-        let result_type = config.str("result_type").unwrap_or("auto");
-
-        let bound = BoundExpression::bind(expression, ctx.arg_stack);
+        let bound = BoundExpression::bind(&expression, ctx.arg_stack);
         let evaluator = self.evaluator.clone();
         let evaluated = tokio::task::spawn_blocking(move || {
             let result = evaluator.eval_bound(&bound);
@@ -136,18 +177,10 @@ impl SubActionRunner for CoreMathEvaluateRunner {
 
         let (outcome, updated_stack) = match evaluated {
             Ok(variant) => {
-                let coerced = match result_type {
-                    "int" => match variant {
-                        Variant::Float(f) => Variant::Int(f as i64),
-                        other => other,
-                    },
-                    "float" => match variant {
-                        Variant::Int(n) => Variant::Float(n as f64),
-                        other => other,
-                    },
-                    _ => variant,
-                };
-                let new_stack = ctx.arg_stack.clone().set(into_var, coerced);
+                let new_stack = ctx
+                    .arg_stack
+                    .clone()
+                    .set(into_var, result_type.coerce(variant));
                 (SubActionOutcome::Success, Some(new_stack))
             }
             Err(reason) => (SubActionOutcome::Failed(reason), None),

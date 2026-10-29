@@ -3,11 +3,22 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use forge_events::{EventSource, GlobalDecremented, TypedEvent};
 use forge_registry::{
-    FormField, RegistryError, RunContext, StepTimer, SubActionCategory, SubActionConfigExt,
-    SubActionRunner,
+    ConfigProblem, ConfigSpec, RunContext, StepTimer, SubActionCategory, SubActionRunner,
+    TypedField,
 };
 use forge_storage::GlobalsRepo;
 use forge_types::{ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetry, Variant};
+
+use super::core_globals_shared::{AMOUNT, GLOBAL_BY_KEY, global_name};
+
+const CONFIG: ConfigSpec = ConfigSpec::new(&[&GLOBAL_BY_KEY, &AMOUNT]);
+
+fn read_config(config: &SubActionConfig, args: &ArgStack) -> Result<(String, i64), ConfigProblem> {
+    Ok((
+        global_name(&GLOBAL_BY_KEY, config, args)?,
+        AMOUNT.read(config, args)?,
+    ))
+}
 
 pub struct CoreGlobalsDecrementRunner {
     globals: Arc<dyn GlobalsRepo>,
@@ -45,31 +56,8 @@ impl SubActionRunner for CoreGlobalsDecrementRunner {
         "minus"
     }
 
-    fn default_config(&self) -> SubActionConfig {
-        let mut cfg = SubActionConfig::new();
-        cfg.insert("key".to_owned(), Variant::String(String::new()));
-        cfg.insert("amount".to_owned(), Variant::Int(1));
-        cfg
-    }
-
-    fn config_fields(&self) -> Vec<FormField> {
-        vec![
-            FormField::DynamicSelect {
-                key: "key",
-                label: "Variable Name",
-                options_key: "global.names",
-            },
-            FormField::Integer {
-                key: "amount",
-                label: "Amount",
-                min: 0,
-                max: i64::MAX,
-            },
-        ]
-    }
-
-    fn validate_config(&self, config: &SubActionConfig) -> Result<(), RegistryError> {
-        config.require_str("key").map(|_| ())
+    fn config_spec(&self) -> Option<ConfigSpec> {
+        Some(CONFIG)
     }
 
     async fn execute(
@@ -77,13 +65,11 @@ impl SubActionRunner for CoreGlobalsDecrementRunner {
         config: &SubActionConfig,
         ctx: &RunContext<'_>,
     ) -> (SubActionTelemetry, Option<ArgStack>) {
-        let timer = StepTimer::start(ctx, "core.globals.decrement");
-
-        let key_template = config.str("key").unwrap_or_default();
-        let amount = config.int("amount").unwrap_or(1);
-
-        let resolved_key =
-            forge_types::strip_var_decoration(&ctx.arg_stack.interpolate(key_template));
+        let timer = StepTimer::start(ctx, self.id());
+        let (resolved_key, amount) = match read_config(config, ctx.arg_stack) {
+            Ok(values) => values,
+            Err(problem) => return (timer.invalid_config(&problem), None),
+        };
 
         let Some(delta) = amount.checked_neg() else {
             return (

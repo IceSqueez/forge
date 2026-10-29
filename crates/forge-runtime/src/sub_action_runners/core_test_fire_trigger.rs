@@ -1,18 +1,60 @@
 use std::sync::Arc;
 
-use super::json_object_input::{EMPTY_JSON_OBJECT, read_json_object, validate_json_object};
-use crate::{QueueAdmission, SchedulerCell, SchedulerRequest};
 use async_trait::async_trait;
+use forge_registry::references::TRIGGER_INSTANCE_OPTIONS_KEY;
 use forge_registry::{
-    FormField, RegistryError, RunContext, StepTimer, SubActionCategory, SubActionConfigExt,
-    SubActionRunner,
+    ConfigProblem, ConfigReason, ConfigSpec, DynamicSelectField, JsonObjectField, RunContext,
+    StepTimer, SubActionCategory, SubActionRunner, TypedField,
 };
 use forge_storage::{ActionRepo, TriggerInstanceRepo};
 use forge_types::{
     ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetry, TriggerInstanceId, Variant,
 };
 
-const OUTPUTS_KEY: &str = "override_outputs";
+use super::core_trigger_shared::TRIGGER_INSTANCE_ID_KEY;
+use super::event_payload::EMPTY_JSON_OBJECT;
+use crate::{QueueAdmission, SchedulerCell, SchedulerRequest};
+
+const TRIGGER_INSTANCE: DynamicSelectField<TriggerInstanceId> = DynamicSelectField::new(
+    TRIGGER_INSTANCE_ID_KEY,
+    "Trigger Instance",
+    TRIGGER_INSTANCE_OPTIONS_KEY,
+);
+
+const OUTPUTS: JsonObjectField = JsonObjectField {
+    key: "override_outputs",
+    label: "Synthetic Outputs (JSON object)",
+    default: EMPTY_JSON_OBJECT,
+};
+
+const CONFIG: ConfigSpec = ConfigSpec::new(&[&TRIGGER_INSTANCE, &OUTPUTS]);
+
+fn read_config(
+    config: &SubActionConfig,
+    args: &ArgStack,
+) -> Result<(TriggerInstanceId, ArgStack), ConfigProblem> {
+    Ok((
+        TRIGGER_INSTANCE.read(config, args)?,
+        synthetic_outputs(OUTPUTS.read(config, args)?)?,
+    ))
+}
+
+fn synthetic_outputs(
+    outputs: serde_json::Map<String, serde_json::Value>,
+) -> Result<ArgStack, ConfigProblem> {
+    outputs
+        .into_iter()
+        .try_fold(ArgStack::new(), |stack, (key, value)| {
+            Variant::from_plain_json(value)
+                .map(|variant| stack.set(key, variant))
+                .map_err(|error| {
+                    ConfigProblem::field(
+                        OUTPUTS.key,
+                        ConfigReason::InvalidFormat(format!("not convertible ({error})")),
+                    )
+                })
+        })
+}
 
 pub struct CoreTestFireTriggerRunner {
     trigger_instances: Arc<dyn TriggerInstanceRepo>,
@@ -33,15 +75,12 @@ impl CoreTestFireTriggerRunner {
         }
     }
 
-    async fn run(&self, config: &SubActionConfig, ctx: &RunContext<'_>) -> SubActionOutcome {
-        let raw_id = config.str("trigger_instance_id").unwrap_or_default();
-        let resolved = ctx.arg_stack.interpolate(raw_id);
-        let Ok(instance_id) = resolved.parse::<TriggerInstanceId>() else {
-            return SubActionOutcome::Failed(
-                "core.test.fire_trigger: invalid trigger_instance_id".to_owned(),
-            );
-        };
-
+    async fn run(
+        &self,
+        instance_id: TriggerInstanceId,
+        synthetic_args: ArgStack,
+        ctx: &RunContext<'_>,
+    ) -> SubActionOutcome {
         let trigger_kind = match self.trigger_instances.get(instance_id).await {
             Ok(Some(instance)) => instance.kind_id,
             Ok(None) => {
@@ -66,13 +105,6 @@ impl CoreTestFireTriggerRunner {
                 return SubActionOutcome::Failed(format!(
                     "core.test.fire_trigger: bound-action lookup failed: {e}"
                 ));
-            }
-        };
-
-        let synthetic_args = match synthetic_outputs(config) {
-            Ok(args) => args,
-            Err(reason) => {
-                return SubActionOutcome::Failed(format!("core.test.fire_trigger: {reason}"));
             }
         };
 
@@ -132,36 +164,8 @@ impl SubActionRunner for CoreTestFireTriggerRunner {
         "bolt"
     }
 
-    fn default_config(&self) -> SubActionConfig {
-        let mut cfg = SubActionConfig::new();
-        cfg.insert(
-            "trigger_instance_id".to_owned(),
-            Variant::String(String::new()),
-        );
-        cfg.insert(
-            OUTPUTS_KEY.to_owned(),
-            Variant::String(EMPTY_JSON_OBJECT.to_owned()),
-        );
-        cfg
-    }
-
-    fn config_fields(&self) -> Vec<FormField> {
-        vec![
-            FormField::DynamicSelect {
-                key: "trigger_instance_id",
-                label: "Trigger Instance",
-                options_key: "trigger_instance.ids",
-            },
-            FormField::TextArea {
-                key: OUTPUTS_KEY,
-                label: "Synthetic Outputs (JSON object)",
-            },
-        ]
-    }
-
-    fn validate_config(&self, config: &SubActionConfig) -> Result<(), RegistryError> {
-        config.require_str("trigger_instance_id")?;
-        validate_json_object(config, OUTPUTS_KEY)
+    fn config_spec(&self) -> Option<ConfigSpec> {
+        Some(CONFIG)
     }
 
     async fn execute(
@@ -169,14 +173,12 @@ impl SubActionRunner for CoreTestFireTriggerRunner {
         config: &SubActionConfig,
         ctx: &RunContext<'_>,
     ) -> (SubActionTelemetry, Option<ArgStack>) {
-        let timer = StepTimer::start(ctx, "core.test.fire_trigger");
-        let outcome = self.run(config, ctx).await;
+        let timer = StepTimer::start(ctx, self.id());
+        let (instance_id, synthetic_args) = match read_config(config, ctx.arg_stack) {
+            Ok(values) => values,
+            Err(problem) => return (timer.invalid_config(&problem), None),
+        };
+        let outcome = self.run(instance_id, synthetic_args, ctx).await;
         (timer.finish(outcome), None)
     }
-}
-
-fn synthetic_outputs(config: &SubActionConfig) -> Result<ArgStack, String> {
-    Ok(read_json_object(config, OUTPUTS_KEY)?
-        .into_iter()
-        .fold(ArgStack::new(), |stack, (key, value)| stack.set(key, value)))
 }

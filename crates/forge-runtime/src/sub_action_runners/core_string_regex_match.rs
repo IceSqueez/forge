@@ -1,12 +1,60 @@
-use super::regex_pattern::invalid_pattern;
 use async_trait::async_trait;
 use forge_registry::{
-    FormField, ProducedVariable, RegistryError, RunContext, StepTimer, SubActionCategory,
-    SubActionConfigExt, SubActionIo, SubActionRunner,
+    ConfigProblem, ConfigSpec, Interpolation, ProducedVariable, RunContext, StepTimer,
+    SubActionCategory, SubActionIo, SubActionRunner, TemplateField, TextField, TypedField,
+    VariableField,
 };
-use forge_types::{
-    ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetry, Variant, VariantKind,
+use forge_types::{ArgStack, SubActionConfig, SubActionTelemetry, Variant, VariantKind};
+use regex::Regex;
+
+use super::core_string_shared::{INTO_VAR_KEY, source_field};
+use super::regex_pattern::compiled_pattern;
+
+const CAPTURES_INTO_VAR_KEY: &str = "captures_into_var";
+const MATCHED_VARIABLE: &str = "regex.matched";
+const CAPTURES_VARIABLE: &str = "regex.captures";
+
+const SOURCE: TextField = source_field("Hello World");
+
+const PATTERN: TemplateField = TemplateField {
+    key: "pattern",
+    label: "Pattern",
+    placeholder: r"(\w+)",
+    default: "",
+    required: true,
 };
+
+const INTO_VAR: VariableField = VariableField {
+    key: INTO_VAR_KEY,
+    label: "Output Variable (bool)",
+    placeholder: MATCHED_VARIABLE,
+    default: MATCHED_VARIABLE,
+};
+
+const CAPTURES_INTO_VAR: VariableField = VariableField {
+    key: CAPTURES_INTO_VAR_KEY,
+    label: "Captures Variable (array)",
+    placeholder: CAPTURES_VARIABLE,
+    default: CAPTURES_VARIABLE,
+};
+
+const CONFIG: ConfigSpec = ConfigSpec::new(&[&SOURCE, &PATTERN, &INTO_VAR, &CAPTURES_INTO_VAR]);
+
+struct MatchConfig {
+    source: String,
+    pattern: Regex,
+    into_var: String,
+    captures_into_var: String,
+}
+
+fn read_config(config: &SubActionConfig, args: &ArgStack) -> Result<MatchConfig, ConfigProblem> {
+    Ok(MatchConfig {
+        source: SOURCE.read(config, args)?,
+        pattern: compiled_pattern(PATTERN.key, &PATTERN.read(config, args)?)?,
+        into_var: INTO_VAR.read(config, args)?,
+        captures_into_var: CAPTURES_INTO_VAR.read(config, args)?,
+    })
+}
 
 pub struct CoreStringRegexMatchRunner;
 
@@ -36,62 +84,31 @@ impl SubActionRunner for CoreStringRegexMatchRunner {
         "regex"
     }
 
-    fn default_config(&self) -> SubActionConfig {
-        let mut cfg = SubActionConfig::new();
-        cfg.insert("source".to_owned(), Variant::String(String::new()));
-        cfg.insert("pattern".to_owned(), Variant::String(String::new()));
-        cfg.insert(
-            "into_var".to_owned(),
-            Variant::String("regex.matched".to_owned()),
-        );
-        cfg.insert(
-            "captures_into_var".to_owned(),
-            Variant::String("regex.captures".to_owned()),
-        );
-        cfg
+    fn config_spec(&self) -> Option<ConfigSpec> {
+        Some(CONFIG)
     }
 
-    fn config_fields(&self) -> Vec<FormField> {
-        vec![
-            FormField::Text {
-                key: "source",
-                label: "Source",
-                placeholder: "Hello World",
-            },
-            FormField::Text {
-                key: "pattern",
-                label: "Pattern",
-                placeholder: r"(\w+)",
-            },
-            FormField::Text {
-                key: "into_var",
-                label: "Output Variable (bool)",
-                placeholder: "regex.matched",
-            },
-            FormField::Text {
-                key: "captures_into_var",
-                label: "Captures Variable (array)",
-                placeholder: "regex.captures",
-            },
-        ]
-    }
-
-    fn validate_config(&self, config: &SubActionConfig) -> Result<(), RegistryError> {
-        let pattern = config.require_str("pattern")?;
-        regex::Regex::new(pattern).map_err(|e| invalid_pattern("pattern", &e))?;
-        Ok(())
+    fn check_config(
+        &self,
+        config: &SubActionConfig,
+        interpolation: Interpolation<'_>,
+    ) -> Result<(), ConfigProblem> {
+        match PATTERN.peek(config, interpolation)? {
+            Some(pattern) => compiled_pattern(PATTERN.key, &pattern).map(|_| ()),
+            None => Ok(()),
+        }
     }
 
     fn scope_io(&self) -> SubActionIo {
         SubActionIo {
             produces: vec![
                 ProducedVariable {
-                    output_name_key: "into_var".to_owned(),
+                    output_name_key: INTO_VAR_KEY.to_owned(),
                     kind: VariantKind::Bool,
                     label: "Match found".to_owned(),
                 },
                 ProducedVariable {
-                    output_name_key: "captures_into_var".to_owned(),
+                    output_name_key: CAPTURES_INTO_VAR_KEY.to_owned(),
                     kind: VariantKind::Array,
                     label: "Capture groups".to_owned(),
                 },
@@ -105,58 +122,35 @@ impl SubActionRunner for CoreStringRegexMatchRunner {
         config: &SubActionConfig,
         ctx: &RunContext<'_>,
     ) -> (SubActionTelemetry, Option<ArgStack>) {
-        let timer = StepTimer::start(ctx, "core.string.regex_match");
+        let timer = StepTimer::start(ctx, self.id());
+        let MatchConfig {
+            source,
+            pattern,
+            into_var,
+            captures_into_var,
+        } = match read_config(config, ctx.arg_stack) {
+            Ok(read) => read,
+            Err(problem) => return (timer.invalid_config(&problem), None),
+        };
 
-        let source = ctx
-            .arg_stack
-            .interpolate(config.str("source").unwrap_or(""));
-        let pattern = config.str("pattern").unwrap_or("");
-        let into_var = forge_types::strip_var_decoration(
-            config.str_nonempty("into_var").unwrap_or("regex.matched"),
-        );
-        let captures_into_var = forge_types::strip_var_decoration(
-            config
-                .str_nonempty("captures_into_var")
-                .unwrap_or("regex.captures"),
-        );
-
-        if pattern.is_empty() {
-            let new_stack = ctx
-                .arg_stack
-                .clone()
-                .set(into_var, Variant::Bool(false))
-                .set(captures_into_var, Variant::Array(vec![]));
-            return (timer.success(), Some(new_stack));
-        }
-
-        let (outcome, new_stack_opt) = match regex::Regex::new(pattern) {
-            Err(e) => (
-                SubActionOutcome::Failed(format!("invalid regex: {e}")),
-                None,
-            ),
-            Ok(re) => {
-                let (matched, captures) = match re.captures(&source) {
-                    None => (false, vec![]),
-                    Some(caps) => {
-                        let groups: Vec<Variant> = caps
-                            .iter()
-                            .map(|m| {
-                                Variant::String(m.map(|m| m.as_str()).unwrap_or("").to_owned())
-                            })
-                            .collect();
-                        (true, groups)
-                    }
-                };
-                let new_stack = ctx
-                    .arg_stack
-                    .clone()
-                    .set(into_var, Variant::Bool(matched))
-                    .set(captures_into_var, Variant::Array(captures));
-                (SubActionOutcome::Success, Some(new_stack))
+        let (matched, captures) = match pattern.captures(&source) {
+            None => (false, Vec::new()),
+            Some(caps) => {
+                let groups = caps
+                    .iter()
+                    .map(|m| Variant::String(m.map(|m| m.as_str()).unwrap_or("").to_owned()))
+                    .collect();
+                (true, groups)
             }
         };
 
-        (timer.finish(outcome), new_stack_opt)
+        let new_stack = ctx
+            .arg_stack
+            .clone()
+            .set(into_var, Variant::Bool(matched))
+            .set(captures_into_var, Variant::Array(captures));
+
+        (timer.success(), Some(new_stack))
     }
 }
 

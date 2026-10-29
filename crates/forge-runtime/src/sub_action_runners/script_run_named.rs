@@ -3,9 +3,10 @@ use std::time::{Duration, Instant};
 
 use async_trait::async_trait;
 use forge_events::{EventPublisher, EventSource, ScriptFailed, ScriptStarted, TypedEvent};
+use forge_registry::references::SCRIPT_OPTIONS_KEY;
 use forge_registry::{
-    FormField, ProducedVariable, RegistryError, RunContext, SubActionCategory, SubActionConfigExt,
-    SubActionIo, SubActionRunner,
+    ConfigProblem, ConfigSpec, DynamicSelectField, ProducedVariable, RunContext, StepTimer,
+    SubActionCategory, SubActionIo, SubActionRunner, TextEditor, TextField, TypedField,
 };
 use forge_script::{
     Engine, EngineConfig, ForgeApi, ScriptError, ScriptGlobals, ScriptHttpClient, ScriptHttpConfig,
@@ -15,7 +16,8 @@ use forge_storage::{
     ExecutionStatus, GlobalsRepo, SCRIPT_NAME_KEY, SCRIPT_RUN_NAMED_KIND, ScriptRepo, SettingsRepo,
 };
 use forge_types::{
-    ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetry, Variant, VariantKind,
+    ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetry, VariantKind,
+    strip_var_decoration,
 };
 use time::OffsetDateTime;
 
@@ -24,6 +26,31 @@ use crate::scheduled_runs::SchedulingContext;
 use crate::script_registry::{SCRIPT_PANIC_ERROR_TYPE, ScriptRegistry};
 
 const TARGET_VAR_KEY: &str = "target_var";
+
+const SCRIPT: DynamicSelectField<String> =
+    DynamicSelectField::new(SCRIPT_NAME_KEY, "Script", SCRIPT_OPTIONS_KEY);
+
+const TARGET_VAR: TextField = TextField {
+    key: TARGET_VAR_KEY,
+    label: "Output Variable",
+    editor: TextEditor::Line {
+        placeholder: "script_result",
+    },
+    default: "",
+    required: false,
+};
+
+const CONFIG: ConfigSpec = ConfigSpec::new(&[&SCRIPT, &TARGET_VAR]);
+
+fn read_config(
+    config: &SubActionConfig,
+    args: &ArgStack,
+) -> Result<(String, String), ConfigProblem> {
+    Ok((
+        SCRIPT.read(config, args)?,
+        strip_var_decoration(&TARGET_VAR.read(config, args)?),
+    ))
+}
 
 pub struct ScriptRunNamedRunner {
     registry: Arc<ScriptRegistry>,
@@ -77,30 +104,8 @@ impl SubActionRunner for ScriptRunNamedRunner {
         "script"
     }
 
-    fn default_config(&self) -> SubActionConfig {
-        let mut cfg = SubActionConfig::new();
-        cfg.insert(SCRIPT_NAME_KEY.to_owned(), Variant::String(String::new()));
-        cfg.insert(TARGET_VAR_KEY.to_owned(), Variant::String(String::new()));
-        cfg
-    }
-
-    fn config_fields(&self) -> Vec<FormField> {
-        vec![
-            FormField::DynamicSelect {
-                key: SCRIPT_NAME_KEY,
-                label: "Script",
-                options_key: "script.names",
-            },
-            FormField::Text {
-                key: TARGET_VAR_KEY,
-                label: "Output Variable",
-                placeholder: "script_result",
-            },
-        ]
-    }
-
-    fn validate_config(&self, config: &SubActionConfig) -> Result<(), RegistryError> {
-        config.require_str(SCRIPT_NAME_KEY).map(|_| ())
+    fn config_spec(&self) -> Option<ConfigSpec> {
+        Some(CONFIG)
     }
 
     fn scope_io(&self) -> SubActionIo {
@@ -119,15 +124,17 @@ impl SubActionRunner for ScriptRunNamedRunner {
         config: &SubActionConfig,
         ctx: &RunContext<'_>,
     ) -> (SubActionTelemetry, Option<ArgStack>) {
+        let (name, target_var) = match read_config(config, ctx.arg_stack) {
+            Ok(values) => values,
+            Err(problem) => {
+                return (
+                    StepTimer::start(ctx, self.id()).invalid_config(&problem),
+                    None,
+                );
+            }
+        };
         let started_at = OffsetDateTime::now_utc();
         let wall_start = Instant::now();
-
-        let name_template = config.str(SCRIPT_NAME_KEY).unwrap_or_default();
-        let name = ctx.arg_stack.interpolate(name_template);
-
-        let target_var_template = config.str(TARGET_VAR_KEY).unwrap_or_default();
-        let target_var =
-            forge_types::strip_var_decoration(&ctx.arg_stack.interpolate(target_var_template));
 
         let Some(compiled) = self.registry.get_by_name(&name).await else {
             let duration_ms = wall_start.elapsed().as_millis() as u64;

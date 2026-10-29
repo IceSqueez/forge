@@ -1,11 +1,9 @@
 use async_trait::async_trait;
 use forge_registry::{
-    FormField, ProducedVariable, RegistryError, RunContext, StepTimer, SubActionCategory,
-    SubActionConfigExt, SubActionIo, SubActionRunner,
+    ConfigProblem, ConfigSpec, ProducedVariable, RunContext, StepTimer, SubActionCategory,
+    SubActionIo, SubActionRunner, TextEditor, TextField, TypedField, VariableField,
 };
-use forge_types::{
-    ArgStack, SubActionConfig, SubActionTelemetry, Variant, VariantKind, strip_var_decoration,
-};
+use forge_types::{ArgStack, SubActionConfig, SubActionTelemetry, Variant, VariantKind};
 
 use crate::scheduled_runs::{ScheduleError, ScheduledRunsCell};
 
@@ -13,8 +11,36 @@ pub const CANCEL_SCHEDULED_KIND_ID: &str = "core.action.cancel_scheduled";
 
 pub const DEFAULT_CANCELLED_VARIABLE: &str = "schedule.cancelled";
 
-const SCHEDULE_KEY_KEY: &str = "key";
 const CANCELLED_INTO_KEY: &str = "into_var";
+
+const SCHEDULE_KEY: TextField = TextField {
+    key: "key",
+    label: "Key (exact match)",
+    editor: TextEditor::Line {
+        placeholder: "vip-removal:%user_id%",
+    },
+    default: "",
+    required: true,
+};
+
+const CANCELLED_INTO: VariableField = VariableField {
+    key: CANCELLED_INTO_KEY,
+    label: "Output Variable (bool)",
+    placeholder: DEFAULT_CANCELLED_VARIABLE,
+    default: DEFAULT_CANCELLED_VARIABLE,
+};
+
+const CONFIG: ConfigSpec = ConfigSpec::new(&[&SCHEDULE_KEY, &CANCELLED_INTO]);
+
+fn read_config(
+    config: &SubActionConfig,
+    args: &ArgStack,
+) -> Result<(String, String), ConfigProblem> {
+    Ok((
+        SCHEDULE_KEY.read(config, args)?,
+        CANCELLED_INTO.read(config, args)?,
+    ))
+}
 
 pub struct CoreActionCancelScheduledRunner {
     scheduled_runs: ScheduledRunsCell,
@@ -52,33 +78,8 @@ impl SubActionRunner for CoreActionCancelScheduledRunner {
         "circle-x"
     }
 
-    fn default_config(&self) -> SubActionConfig {
-        let mut cfg = SubActionConfig::new();
-        cfg.insert(SCHEDULE_KEY_KEY.to_owned(), Variant::String(String::new()));
-        cfg.insert(
-            CANCELLED_INTO_KEY.to_owned(),
-            Variant::String(DEFAULT_CANCELLED_VARIABLE.to_owned()),
-        );
-        cfg
-    }
-
-    fn config_fields(&self) -> Vec<FormField> {
-        vec![
-            FormField::Text {
-                key: SCHEDULE_KEY_KEY,
-                label: "Key (exact match)",
-                placeholder: "vip-removal:%user_id%",
-            },
-            FormField::Text {
-                key: CANCELLED_INTO_KEY,
-                label: "Output Variable (bool)",
-                placeholder: DEFAULT_CANCELLED_VARIABLE,
-            },
-        ]
-    }
-
-    fn validate_config(&self, config: &SubActionConfig) -> Result<(), RegistryError> {
-        config.require_str(SCHEDULE_KEY_KEY).map(|_| ())
+    fn config_spec(&self) -> Option<ConfigSpec> {
+        Some(CONFIG)
     }
 
     fn scope_io(&self) -> SubActionIo {
@@ -98,24 +99,20 @@ impl SubActionRunner for CoreActionCancelScheduledRunner {
         ctx: &RunContext<'_>,
     ) -> (SubActionTelemetry, Option<ArgStack>) {
         let timer = StepTimer::start(ctx, CANCEL_SCHEDULED_KIND_ID);
+        let (key, into_var) = match read_config(config, ctx.arg_stack) {
+            Ok(values) => values,
+            Err(problem) => return (timer.invalid_config(&problem), None),
+        };
         let Some(scheduled_runs) = self.scheduled_runs.get() else {
             return (
                 timer.failed(ScheduleError::SchedulerStopped.to_string()),
                 None,
             );
         };
-        let key = ctx
-            .arg_stack
-            .interpolate(config.str(SCHEDULE_KEY_KEY).unwrap_or(""));
         let cancelled = match scheduled_runs.cancel_by_key(&key).await {
             Ok(cancelled) => cancelled,
             Err(e) => return (timer.failed(e.to_string()), None),
         };
-        let into_var = strip_var_decoration(
-            config
-                .str_nonempty(CANCELLED_INTO_KEY)
-                .unwrap_or(DEFAULT_CANCELLED_VARIABLE),
-        );
         let stack = ctx
             .arg_stack
             .clone()

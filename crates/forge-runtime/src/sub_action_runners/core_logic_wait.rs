@@ -2,16 +2,26 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use forge_registry::{
-    CancelSignal, DurationBounds, FormField, RegistryError, RunContext, StepTimer,
-    SubActionCategory, SubActionConfigExt, SubActionRunner,
+    CancelSignal, ConfigSpec, DurationBounds, DurationField, RunContext, StepTimer,
+    SubActionCategory, SubActionRunner, TypedField,
 };
-use forge_types::{ArgStack, SubActionConfig, SubActionTelemetry, Variant};
+use forge_types::{ArgStack, SubActionConfig, SubActionTelemetry};
 
-const MAX_DELAY_MS: u64 = 60_000;
+const MAX_DELAY_MS: i64 = 60_000;
+const DEFAULT_DELAY_MS: i64 = 1_000;
 const CANCEL_POLL_MS: u64 = 50;
 
 pub const WAIT_KIND_ID: &str = "core.logic.wait";
 pub const WAIT_MS_KEY: &str = "ms";
+
+const DELAY: DurationField = DurationField {
+    key: WAIT_MS_KEY,
+    label: "Duration",
+    default: DEFAULT_DELAY_MS,
+    bounds: DurationBounds::in_millis(0, MAX_DELAY_MS),
+};
+
+const CONFIG: ConfigSpec = ConfigSpec::new(&[&DELAY]);
 
 pub struct CoreLogicWaitRunner;
 
@@ -41,22 +51,8 @@ impl SubActionRunner for CoreLogicWaitRunner {
         "clock-pause"
     }
 
-    fn default_config(&self) -> SubActionConfig {
-        let mut cfg = SubActionConfig::new();
-        cfg.insert(WAIT_MS_KEY.to_owned(), Variant::Int(1000));
-        cfg
-    }
-
-    fn config_fields(&self) -> Vec<FormField> {
-        vec![FormField::Duration {
-            key: WAIT_MS_KEY,
-            label: "Duration",
-            bounds: DurationBounds::in_millis(0, MAX_DELAY_MS as i64),
-        }]
-    }
-
-    fn validate_config(&self, _config: &SubActionConfig) -> Result<(), RegistryError> {
-        Ok(())
+    fn config_spec(&self) -> Option<ConfigSpec> {
+        Some(CONFIG)
     }
 
     async fn execute(
@@ -65,9 +61,10 @@ impl SubActionRunner for CoreLogicWaitRunner {
         ctx: &RunContext<'_>,
     ) -> (SubActionTelemetry, Option<ArgStack>) {
         let timer = StepTimer::start(ctx, WAIT_KIND_ID);
-
-        let ms = config.int(WAIT_MS_KEY).unwrap_or(0).max(0) as u64;
-        let delay = Duration::from_millis(ms.min(MAX_DELAY_MS));
+        let delay = match DELAY.read(config, ctx.arg_stack) {
+            Ok(delay) => delay,
+            Err(problem) => return (timer.invalid_config(&problem), None),
+        };
 
         tokio::select! {
             _ = tokio::time::sleep(delay) => {}

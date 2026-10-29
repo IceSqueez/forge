@@ -4,25 +4,183 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use forge_registry::{
-    ConfigReason, DurationBounds, FormField, RegistryError, RunContext, StepTimer,
-    SubActionCategory, SubActionConfigExt, SubActionIo, SubActionRunner,
+    ChoiceField, ConfigChoice, ConfigProblem, ConfigSpec, DurationBounds, DurationField,
+    JsonObjectField, RunContext, StepTimer, SubActionCategory, SubActionIo, SubActionRunner,
+    TextEditor, TextField, ToggleField, TypedField,
 };
 use forge_storage::{SettingsRepo, read_setting_or_default};
 use forge_types::{ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetry, Variant};
 
-use super::json_object_input::{EMPTY_JSON_OBJECT, read_json_object, validate_json_object};
 use crate::egress::{EgressClient, EgressRequest, EgressResponse, HttpMethod};
 use crate::settings;
 
 const TIMEOUT_MIN_MS: i64 = 100;
 const TIMEOUT_MAX_MS: i64 = 60_000;
-
-const HEADERS_KEY: &str = "headers";
-const QUERY_PARAMS_KEY: &str = "query_params";
+const DEFAULT_TIMEOUT_MS: i64 = 10_000;
+const EMPTY_JSON_OBJECT: &str = "{}";
+const CONTENT_TYPE_HEADER: &str = "content-type";
 
 const HTTP_STATUS_CODE_VAR: &str = "http.status_code";
 const HTTP_HEADERS_VAR: &str = "http.headers";
 const HTTP_BODY_VAR: &str = "http.body";
+
+#[derive(Clone, Copy)]
+enum ContentType {
+    Json,
+    FormUrlEncoded,
+    PlainText,
+    Multipart,
+}
+
+impl ConfigChoice for ContentType {
+    const ALL: &'static [Self] = &[
+        Self::Json,
+        Self::FormUrlEncoded,
+        Self::PlainText,
+        Self::Multipart,
+    ];
+    const WIRE_NAMES: &'static [&'static str] = &[
+        "application/json",
+        "application/x-www-form-urlencoded",
+        "text/plain",
+        "multipart/form-data",
+    ];
+
+    fn wire_name(self) -> &'static str {
+        match self {
+            Self::Json => "application/json",
+            Self::FormUrlEncoded => "application/x-www-form-urlencoded",
+            Self::PlainText => "text/plain",
+            Self::Multipart => "multipart/form-data",
+        }
+    }
+}
+
+#[derive(Clone, Copy)]
+enum ParseResponseAs {
+    Text,
+    Json,
+    Ignore,
+}
+
+impl ConfigChoice for ParseResponseAs {
+    const ALL: &'static [Self] = &[Self::Text, Self::Json, Self::Ignore];
+    const WIRE_NAMES: &'static [&'static str] = &["text", "json", "ignore"];
+
+    fn wire_name(self) -> &'static str {
+        match self {
+            Self::Text => "text",
+            Self::Json => "json",
+            Self::Ignore => "ignore",
+        }
+    }
+}
+
+const URL: TextField = TextField {
+    key: "url",
+    label: "URL",
+    editor: TextEditor::Line {
+        placeholder: "https://api.example.com/endpoint",
+    },
+    default: "",
+    required: true,
+};
+
+const BODY: TextField = TextField {
+    key: "body",
+    label: "Body",
+    editor: TextEditor::Area,
+    default: "",
+    required: false,
+};
+
+const CONTENT_TYPE: ChoiceField<ContentType> = ChoiceField {
+    key: "content_type",
+    label: "Content Type",
+    default: ContentType::Json,
+};
+
+const HEADERS: JsonObjectField = JsonObjectField {
+    key: "headers",
+    label: "Headers (JSON object)",
+    default: EMPTY_JSON_OBJECT,
+};
+
+const QUERY_PARAMS: JsonObjectField = JsonObjectField {
+    key: "query_params",
+    label: "Query Parameters (JSON object)",
+    default: EMPTY_JSON_OBJECT,
+};
+
+const TIMEOUT: DurationField = DurationField {
+    key: "timeout_ms",
+    label: "Timeout",
+    default: DEFAULT_TIMEOUT_MS,
+    bounds: DurationBounds::in_millis(TIMEOUT_MIN_MS, TIMEOUT_MAX_MS),
+};
+
+const FOLLOW_REDIRECTS: ToggleField = ToggleField {
+    key: "follow_redirects",
+    label: "Follow Redirects",
+    default: true,
+};
+
+const PARSE_RESPONSE_AS: ChoiceField<ParseResponseAs> = ChoiceField {
+    key: "parse_response_as",
+    label: "Parse Response As",
+    default: ParseResponseAs::Json,
+};
+
+const WITHOUT_BODY: ConfigSpec = ConfigSpec::new(&[
+    &URL,
+    &HEADERS,
+    &QUERY_PARAMS,
+    &TIMEOUT,
+    &FOLLOW_REDIRECTS,
+    &PARSE_RESPONSE_AS,
+]);
+
+const WITH_BODY: ConfigSpec = ConfigSpec::new(&[
+    &URL,
+    &BODY,
+    &CONTENT_TYPE,
+    &HEADERS,
+    &QUERY_PARAMS,
+    &TIMEOUT,
+    &FOLLOW_REDIRECTS,
+    &PARSE_RESPONSE_AS,
+]);
+
+struct HttpCall {
+    url: String,
+    headers: BTreeMap<String, String>,
+    query_params: BTreeMap<String, String>,
+    payload: Option<(String, ContentType)>,
+    timeout: Duration,
+    follow_redirects: bool,
+    parse_as: ParseResponseAs,
+}
+
+fn read_call(
+    config: &SubActionConfig,
+    args: &ArgStack,
+    has_body: bool,
+) -> Result<HttpCall, ConfigProblem> {
+    let payload = if has_body {
+        Some((BODY.read(config, args)?, CONTENT_TYPE.read(config, args)?))
+    } else {
+        None
+    };
+    Ok(HttpCall {
+        url: URL.read(config, args)?,
+        headers: interpolated_strings(HEADERS.read(config, args)?, args),
+        query_params: interpolated_strings(QUERY_PARAMS.read(config, args)?, args),
+        payload,
+        timeout: TIMEOUT.read(config, args)?,
+        follow_redirects: FOLLOW_REDIRECTS.read(config, args)?,
+        parse_as: PARSE_RESPONSE_AS.read(config, args)?,
+    })
+}
 
 pub struct CoreHttpRunner {
     method: HttpMethod,
@@ -86,6 +244,42 @@ impl CoreHttpRunner {
     async fn allow_local(&self) -> bool {
         read_setting_or_default(self.settings.as_ref(), &settings::CORE_HTTP_ALLOW_LOCAL).await
     }
+
+    async fn request(&self, call: HttpCall) -> EgressRequest {
+        let HttpCall {
+            url,
+            mut headers,
+            query_params,
+            payload,
+            timeout,
+            follow_redirects,
+            ..
+        } = call;
+        let has_explicit_content_type = headers
+            .keys()
+            .any(|key| key.eq_ignore_ascii_case(CONTENT_TYPE_HEADER));
+        let (body, content_type) = match payload {
+            Some((body, content_type)) => (
+                Some(body),
+                (!has_explicit_content_type).then(|| content_type.wire_name().to_owned()),
+            ),
+            None => (None, None),
+        };
+        if content_type.is_some() {
+            headers.retain(|key, _| !key.eq_ignore_ascii_case(CONTENT_TYPE_HEADER));
+        }
+        EgressRequest {
+            method: self.method,
+            url,
+            headers,
+            query_params,
+            body,
+            content_type,
+            timeout,
+            follow_redirects,
+            allow_local: self.allow_local().await,
+        }
+    }
 }
 
 struct HttpDescriptor {
@@ -122,87 +316,12 @@ impl SubActionRunner for CoreHttpRunner {
         "globe"
     }
 
-    fn default_config(&self) -> SubActionConfig {
-        let mut cfg = SubActionConfig::new();
-        cfg.insert("url".to_owned(), Variant::String(String::new()));
-        cfg.insert(
-            HEADERS_KEY.to_owned(),
-            Variant::String(EMPTY_JSON_OBJECT.to_owned()),
-        );
-        cfg.insert(
-            QUERY_PARAMS_KEY.to_owned(),
-            Variant::String(EMPTY_JSON_OBJECT.to_owned()),
-        );
-        cfg.insert("timeout_ms".to_owned(), Variant::Int(10_000));
-        cfg.insert("follow_redirects".to_owned(), Variant::Bool(true));
-        cfg.insert(
-            "parse_response_as".to_owned(),
-            Variant::String("json".to_owned()),
-        );
+    fn config_spec(&self) -> Option<ConfigSpec> {
         if self.descriptor().has_body {
-            cfg.insert("body".to_owned(), Variant::String(String::new()));
-            cfg.insert(
-                "content_type".to_owned(),
-                Variant::String("application/json".to_owned()),
-            );
+            Some(WITH_BODY)
+        } else {
+            Some(WITHOUT_BODY)
         }
-        cfg
-    }
-
-    fn config_fields(&self) -> Vec<FormField> {
-        let mut fields = vec![FormField::Text {
-            key: "url",
-            label: "URL",
-            placeholder: "https://api.example.com/endpoint",
-        }];
-        if self.descriptor().has_body {
-            fields.push(FormField::TextArea {
-                key: "body",
-                label: "Body",
-            });
-            fields.push(FormField::Select {
-                key: "content_type",
-                label: "Content Type",
-                options: &[
-                    "application/json",
-                    "application/x-www-form-urlencoded",
-                    "text/plain",
-                    "multipart/form-data",
-                ],
-            });
-        }
-        fields.push(FormField::TextArea {
-            key: HEADERS_KEY,
-            label: "Headers (JSON object)",
-        });
-        fields.push(FormField::TextArea {
-            key: QUERY_PARAMS_KEY,
-            label: "Query Parameters (JSON object)",
-        });
-        fields.push(FormField::Duration {
-            key: "timeout_ms",
-            label: "Timeout",
-            bounds: DurationBounds::in_millis(TIMEOUT_MIN_MS, TIMEOUT_MAX_MS),
-        });
-        fields.push(FormField::Toggle {
-            key: "follow_redirects",
-            label: "Follow Redirects",
-        });
-        fields.push(FormField::Select {
-            key: "parse_response_as",
-            label: "Parse Response As",
-            options: &["text", "json", "ignore"],
-        });
-        fields
-    }
-
-    fn validate_config(&self, config: &SubActionConfig) -> Result<(), RegistryError> {
-        let url_ok = config.str("url").is_some_and(|s| !s.trim().is_empty());
-        if !url_ok {
-            return Err(RegistryError::invalid_field("url", ConfigReason::Required));
-        }
-        validate_json_object(config, HEADERS_KEY)?;
-        validate_json_object(config, QUERY_PARAMS_KEY)
     }
 
     fn scope_io(&self) -> SubActionIo {
@@ -223,62 +342,16 @@ impl SubActionRunner for CoreHttpRunner {
     ) -> (SubActionTelemetry, Option<ArgStack>) {
         let descriptor = self.descriptor();
         let timer = StepTimer::start(ctx, descriptor.id);
-
-        let url_template = config.str("url").unwrap_or_default();
-        let url = ctx.arg_stack.interpolate(url_template);
-
-        let (mut headers, query_params) = match (
-            config_string_map(config, HEADERS_KEY),
-            config_string_map(config, QUERY_PARAMS_KEY),
-        ) {
-            (Ok(headers), Ok(query_params)) => (
-                interpolate_map(headers, ctx.arg_stack),
-                interpolate_map(query_params, ctx.arg_stack),
-            ),
-            (Err(reason), _) | (_, Err(reason)) => return (timer.failed(reason), None),
+        let call = match read_call(config, ctx.arg_stack, descriptor.has_body) {
+            Ok(call) => call,
+            Err(problem) => return (timer.invalid_config(&problem), None),
         };
-
-        let timeout_ms = config
-            .int("timeout_ms")
-            .unwrap_or(10_000)
-            .clamp(TIMEOUT_MIN_MS, TIMEOUT_MAX_MS) as u64;
-        let follow_redirects = config.bool("follow_redirects").unwrap_or(true);
-        let parse_as = config.str("parse_response_as").unwrap_or("json").to_owned();
-
-        let (body, content_type) = if descriptor.has_body {
-            let body_template = config.str("body").unwrap_or_default();
-            let body = ctx.arg_stack.interpolate(body_template);
-            let has_explicit_content_type = headers
-                .keys()
-                .any(|k| k.eq_ignore_ascii_case("content-type"));
-            let content_type = config
-                .str("content_type")
-                .filter(|s| !s.is_empty() && !has_explicit_content_type)
-                .map(|s| s.to_owned());
-            (Some(body), content_type)
-        } else {
-            (None, None)
-        };
-
-        if content_type.is_some() {
-            headers.retain(|k, _| !k.eq_ignore_ascii_case("content-type"));
-        }
-
-        let request = EgressRequest {
-            method: self.method,
-            url,
-            headers,
-            query_params,
-            body,
-            content_type,
-            timeout: Duration::from_millis(timeout_ms),
-            follow_redirects,
-            allow_local: self.allow_local().await,
-        };
+        let parse_as = call.parse_as;
+        let request = self.request(call).await;
 
         let (outcome, updated_stack) = match self.client.send(request).await {
             Ok(response) => {
-                let stack = apply_response(ctx.arg_stack, response, &parse_as);
+                let stack = apply_response(ctx.arg_stack, response, parse_as);
                 (SubActionOutcome::Success, Some(stack))
             }
             Err(e) => (SubActionOutcome::Failed(e.to_string()), None),
@@ -288,34 +361,26 @@ impl SubActionRunner for CoreHttpRunner {
     }
 }
 
-fn interpolate_map(
-    raw: BTreeMap<String, String>,
+fn interpolated_strings(
+    map: serde_json::Map<String, serde_json::Value>,
     arg_stack: &ArgStack,
 ) -> BTreeMap<String, String> {
-    raw.into_iter()
-        .map(|(key, value)| (key, arg_stack.interpolate(&value)))
+    map.into_iter()
+        .map(|(key, value)| {
+            let text = match value {
+                serde_json::Value::String(text) => text,
+                other => other.to_string(),
+            };
+            (key, arg_stack.interpolate(&text))
+        })
         .collect()
 }
 
-fn config_string_map(
-    config: &SubActionConfig,
-    key: &str,
-) -> Result<BTreeMap<String, String>, String> {
-    read_json_object(config, key).map(|map| {
-        map.iter()
-            .map(|(k, v)| (k.clone(), variant_plain_string(v)))
-            .collect()
-    })
-}
-
-fn variant_plain_string(value: &Variant) -> String {
-    value
-        .as_str()
-        .map(ToOwned::to_owned)
-        .unwrap_or_else(|| value.to_string())
-}
-
-fn apply_response(arg_stack: &ArgStack, response: EgressResponse, parse_as: &str) -> ArgStack {
+fn apply_response(
+    arg_stack: &ArgStack,
+    response: EgressResponse,
+    parse_as: ParseResponseAs,
+) -> ArgStack {
     let header_map = response
         .headers
         .into_iter()
@@ -326,20 +391,22 @@ fn apply_response(arg_stack: &ArgStack, response: EgressResponse, parse_as: &str
         .clone()
         .set(
             HTTP_STATUS_CODE_VAR.to_owned(),
-            Variant::Int(response.status as i64),
+            Variant::Int(i64::from(response.status)),
         )
         .set(HTTP_HEADERS_VAR.to_owned(), Variant::Object(header_map));
 
     match parse_as {
-        "ignore" => stack,
-        "json" => {
+        ParseResponseAs::Ignore => stack,
+        ParseResponseAs::Json => {
             let parsed = serde_json::from_str::<serde_json::Value>(&response.body)
                 .ok()
                 .and_then(|v| Variant::from_json(v).ok());
             let body = parsed.unwrap_or(Variant::String(response.body));
             stack.set(HTTP_BODY_VAR.to_owned(), body)
         }
-        _ => stack.set(HTTP_BODY_VAR.to_owned(), Variant::String(response.body)),
+        ParseResponseAs::Text => {
+            stack.set(HTTP_BODY_VAR.to_owned(), Variant::String(response.body))
+        }
     }
 }
 

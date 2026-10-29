@@ -1,6 +1,6 @@
 use forge_registry::{
     ConfigProblem, ConfigReason, IntegerEditor, IntegerField, NumberField, OptionalField,
-    SubActionConfig, TextEditor, TextField, TypedField, ValueBounds,
+    StoredNumber, SubActionConfig, TextEditor, TextField, TypedField, ValueBounds,
 };
 use forge_types::ArgStack;
 
@@ -13,15 +13,13 @@ pub(crate) const fn optional_number(
     label: &'static str,
     placeholder: &'static str,
 ) -> OptionalField<NumberField> {
-    OptionalField {
-        field: NumberField {
-            key,
-            label,
-            placeholder,
-            default: 0.0,
-            bounds: ValueBounds::UNBOUNDED,
-        },
-    }
+    OptionalField::shared(NumberField {
+        key,
+        label,
+        placeholder,
+        default: StoredNumber::Text("0"),
+        bounds: ValueBounds::UNBOUNDED,
+    })
 }
 
 pub(crate) const fn optional_whole_number(
@@ -29,15 +27,13 @@ pub(crate) const fn optional_whole_number(
     label: &'static str,
     bounds: ValueBounds,
 ) -> OptionalField<IntegerField> {
-    OptionalField {
-        field: IntegerField {
-            key,
-            label,
-            editor: IntegerEditor::Number,
-            default: 0,
-            bounds,
-        },
-    }
+    OptionalField::shared(IntegerField {
+        key,
+        label,
+        editor: IntegerEditor::Number,
+        default: 0,
+        bounds,
+    })
 }
 
 pub(crate) const fn optional_text(
@@ -45,15 +41,13 @@ pub(crate) const fn optional_text(
     label: &'static str,
     placeholder: &'static str,
 ) -> OptionalField<TextField> {
-    OptionalField {
-        field: TextField {
-            key,
-            label,
-            editor: TextEditor::Line { placeholder },
-            default: "",
-            required: false,
-        },
-    }
+    OptionalField::shared(TextField {
+        key,
+        label,
+        editor: TextEditor::Line { placeholder },
+        default: "",
+        required: false,
+    })
 }
 
 pub(crate) const X: OptionalField<NumberField> =

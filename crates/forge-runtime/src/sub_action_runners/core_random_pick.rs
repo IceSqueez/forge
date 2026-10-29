@@ -1,14 +1,112 @@
 use async_trait::async_trait;
 use forge_registry::{
-    FormField, ProducedVariable, RegistryError, RunContext, StepTimer, SubActionCategory,
-    SubActionConfigExt, SubActionIo, SubActionRunner,
+    ConfigProblem, ConfigReason, ConfigSpec, Interpolation, LinesField, ProducedVariable,
+    RunContext, StepTimer, SubActionCategory, SubActionIo, SubActionRunner, TypedField,
+    VariableField,
 };
-use forge_types::{
-    ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetry, Variant, VariantKind,
-};
+use forge_types::{ArgStack, SubActionConfig, SubActionTelemetry, Variant, VariantKind};
 use rand::RngExt;
 use rand::distr::Distribution;
 use rand::distr::weighted::WeightedIndex;
+
+const INTO_VAR_KEY: &str = "into_var";
+const PICKED_VARIABLE: &str = "picked";
+
+const ITEMS: LinesField = LinesField {
+    key: "items",
+    label: "Items (one per line)",
+};
+
+const WEIGHTS: LinesField = LinesField {
+    key: "weights",
+    label: "Weights (one per line, empty = uniform)",
+};
+
+const INTO_VAR: VariableField = VariableField {
+    key: INTO_VAR_KEY,
+    label: "Output Variable",
+    placeholder: PICKED_VARIABLE,
+    default: PICKED_VARIABLE,
+};
+
+const CONFIG: ConfigSpec = ConfigSpec::new(&[&ITEMS, &WEIGHTS, &INTO_VAR]);
+
+fn written_entries(entries: Vec<Variant>) -> Vec<Variant> {
+    entries
+        .into_iter()
+        .filter(|entry| match entry {
+            Variant::String(text) => !text.trim().is_empty(),
+            _ => true,
+        })
+        .collect()
+}
+
+fn weight_values(entries: &[Variant]) -> Result<Vec<f64>, ConfigProblem> {
+    entries
+        .iter()
+        .enumerate()
+        .map(|(index, entry)| {
+            match entry {
+                Variant::Float(weight) => Some(*weight),
+                Variant::Int(weight) => Some(*weight as f64),
+                Variant::String(text) => text.trim().parse::<f64>().ok(),
+                _ => None,
+            }
+            .ok_or_else(|| {
+                ConfigProblem::field(
+                    WEIGHTS.key,
+                    ConfigReason::InvalidFormat(format!("weight {} is not a number", index + 1)),
+                )
+            })
+        })
+        .collect()
+}
+
+fn weighted_choice(
+    item_count: usize,
+    weights: &[f64],
+) -> Result<Option<WeightedIndex<f64>>, ConfigProblem> {
+    if item_count == 0 {
+        return Err(ConfigProblem::field(ITEMS.key, ConfigReason::Required));
+    }
+    if weights.is_empty() {
+        return Ok(None);
+    }
+    if weights.len() != item_count {
+        return Err(ConfigProblem::field(
+            WEIGHTS.key,
+            ConfigReason::Custom(format!(
+                "lists {} weights for {item_count} items",
+                weights.len()
+            )),
+        ));
+    }
+    WeightedIndex::new(weights).map(Some).map_err(|error| {
+        ConfigProblem::field(WEIGHTS.key, ConfigReason::InvalidFormat(error.to_string()))
+    })
+}
+
+struct PickConfig {
+    items: Vec<Variant>,
+    weights: Option<WeightedIndex<f64>>,
+    into_var: String,
+}
+
+fn read_config(config: &SubActionConfig, args: &ArgStack) -> Result<PickConfig, ConfigProblem> {
+    let items: Vec<Variant> = written_entries(ITEMS.read(config, args)?)
+        .into_iter()
+        .map(|item| match item {
+            Variant::String(line) => Variant::String(args.interpolate(line.trim())),
+            other => other,
+        })
+        .collect();
+    let weights = weight_values(&written_entries(WEIGHTS.read(config, args)?))?;
+    Ok(PickConfig {
+        weights: weighted_choice(items.len(), &weights)?,
+        items,
+        into_var: INTO_VAR.read(config, args)?,
+    })
+}
 
 pub struct CoreRandomPickRunner;
 
@@ -38,40 +136,29 @@ impl SubActionRunner for CoreRandomPickRunner {
         "dice"
     }
 
-    fn default_config(&self) -> SubActionConfig {
-        let mut cfg = SubActionConfig::new();
-        cfg.insert("items".to_owned(), Variant::String(String::new()));
-        cfg.insert("weights".to_owned(), Variant::String(String::new()));
-        cfg.insert("into_var".to_owned(), Variant::String("picked".to_owned()));
-        cfg
+    fn config_spec(&self) -> Option<ConfigSpec> {
+        Some(CONFIG)
     }
 
-    fn config_fields(&self) -> Vec<FormField> {
-        vec![
-            FormField::TextArea {
-                key: "items",
-                label: "Items (one per line)",
-            },
-            FormField::TextArea {
-                key: "weights",
-                label: "Weights (one per line, empty = uniform)",
-            },
-            FormField::Text {
-                key: "into_var",
-                label: "Output Variable",
-                placeholder: "picked",
-            },
-        ]
-    }
-
-    fn validate_config(&self, _config: &SubActionConfig) -> Result<(), RegistryError> {
-        Ok(())
+    fn check_config(
+        &self,
+        config: &SubActionConfig,
+        interpolation: Interpolation<'_>,
+    ) -> Result<(), ConfigProblem> {
+        let (Some(items), Some(weights)) = (
+            ITEMS.peek(config, interpolation)?,
+            WEIGHTS.peek(config, interpolation)?,
+        ) else {
+            return Ok(());
+        };
+        let weights = weight_values(&written_entries(weights))?;
+        weighted_choice(written_entries(items).len(), &weights).map(|_| ())
     }
 
     fn scope_io(&self) -> SubActionIo {
         SubActionIo {
             produces: vec![ProducedVariable {
-                output_name_key: "into_var".to_owned(),
+                output_name_key: INTO_VAR_KEY.to_owned(),
                 kind: VariantKind::String,
                 label: "Picked item".to_owned(),
             }],
@@ -84,82 +171,24 @@ impl SubActionRunner for CoreRandomPickRunner {
         config: &SubActionConfig,
         ctx: &RunContext<'_>,
     ) -> (SubActionTelemetry, Option<ArgStack>) {
-        let timer = StepTimer::start(ctx, "core.random.pick");
-
-        let items = read_items(config, ctx.arg_stack);
-
-        let into_var =
-            forge_types::strip_var_decoration(config.str_nonempty("into_var").unwrap_or("picked"));
-
-        if items.is_empty() {
-            return (timer.failed("items list must not be empty"), None);
-        }
-
-        let weights = match read_weights(config) {
-            Ok(weights) => weights,
-            Err(reason) => return (timer.failed(reason), None),
+        let timer = StepTimer::start(ctx, self.id());
+        let PickConfig {
+            mut items,
+            weights,
+            into_var,
+        } = match read_config(config, ctx.arg_stack) {
+            Ok(read) => read,
+            Err(problem) => return (timer.invalid_config(&problem), None),
         };
 
-        let idx = if weights.is_empty() {
-            Ok(rand::rng().random_range(0..items.len()))
-        } else if weights.len() != items.len() {
-            Err(format!(
-                "weights length ({}) must match items length ({})",
-                weights.len(),
-                items.len()
-            ))
-        } else {
-            WeightedIndex::new(&weights)
-                .map(|dist| dist.sample(&mut rand::rng()))
-                .map_err(|e| format!("invalid weights: {e}"))
+        let index = match weights {
+            Some(distribution) => distribution.sample(&mut rand::rng()),
+            None => rand::rng().random_range(0..items.len()),
         };
+        let picked = items.swap_remove(index);
+        let stack = ctx.arg_stack.clone().set(into_var, picked);
 
-        let (outcome, produced) = match idx {
-            Err(msg) => (SubActionOutcome::Failed(msg), None),
-            Ok(i) => {
-                let picked = items[i].clone();
-                let stack = ctx.arg_stack.clone().set(into_var, picked);
-                (SubActionOutcome::Success, Some(stack))
-            }
-        };
-
-        (timer.finish(outcome), produced)
-    }
-}
-
-fn non_blank_lines(text: &str) -> impl Iterator<Item = &str> {
-    text.lines().map(str::trim).filter(|line| !line.is_empty())
-}
-
-fn read_items(config: &SubActionConfig, arg_stack: &ArgStack) -> Vec<Variant> {
-    match config.get("items") {
-        Some(Variant::Array(arr)) => arr.clone(),
-        Some(v) => non_blank_lines(v.as_str().unwrap_or_default())
-            .map(|line| Variant::String(arg_stack.interpolate(line)))
-            .collect(),
-        None => Vec::new(),
-    }
-}
-
-fn read_weights(config: &SubActionConfig) -> Result<Vec<f64>, String> {
-    match config.get("weights") {
-        Some(Variant::Array(arr)) => arr
-            .iter()
-            .enumerate()
-            .map(|(index, value)| match value {
-                Variant::Float(weight) => Ok(*weight),
-                Variant::Int(weight) => Ok(*weight as f64),
-                other => Err(format!("weight {} is not a number: {other}", index + 1)),
-            })
-            .collect(),
-        Some(v) => non_blank_lines(v.as_str().unwrap_or_default())
-            .enumerate()
-            .map(|(index, line)| {
-                line.parse::<f64>()
-                    .map_err(|_| format!("weight {} is not a number: {line}", index + 1))
-            })
-            .collect(),
-        None => Ok(Vec::new()),
+        (timer.success(), Some(stack))
     }
 }
 

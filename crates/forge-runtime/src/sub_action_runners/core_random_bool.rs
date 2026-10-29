@@ -1,6 +1,6 @@
 use async_trait::async_trait;
 use forge_registry::{
-    ConfigProblem, ConfigSpec, NumberField, ProducedVariable, RunContext, StepTimer,
+    ConfigProblem, ConfigSpec, NumberField, ProducedVariable, RunContext, StepTimer, StoredNumber,
     SubActionCategory, SubActionIo, SubActionRunner, TypedField, ValueBounds, VariableField,
 };
 use forge_types::{ArgStack, SubActionConfig, SubActionTelemetry, Variant, VariantKind};
@@ -12,7 +12,7 @@ const PROBABILITY: NumberField = NumberField {
     key: PROBABILITY_KEY,
     label: "Probability of True (0..1)",
     placeholder: "0.5",
-    default: 0.5,
+    default: StoredNumber::Text("0.5"),
     bounds: ValueBounds {
         min: Some(0),
         max: Some(1),

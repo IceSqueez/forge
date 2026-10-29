@@ -3,13 +3,42 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use forge_events::{EventSource, GlobalArrayRemoved, TypedEvent};
 use forge_registry::{
-    FormField, RegistryError, RunContext, StepTimer, SubActionCategory, SubActionConfigExt,
-    SubActionRunner,
+    ConfigProblem, ConfigSpec, RunContext, StepTimer, SubActionCategory, SubActionRunner,
+    TextEditor, TextField, ToggleField, TypedField,
 };
 use forge_storage::{GlobalsRepo, StorageError};
-use forge_types::{
-    ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetry, Variant, VariantKind,
+use forge_types::{ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetry, VariantKind};
+
+use super::core_globals_shared::{GLOBAL_BY_KEY, global_name};
+
+const VALUE: TextField = TextField {
+    key: "value",
+    label: "Value to Remove",
+    editor: TextEditor::Line {
+        placeholder: "item",
+    },
+    default: "",
+    required: false,
 };
+
+const REMOVE_ALL: ToggleField = ToggleField {
+    key: "remove_all",
+    label: "Remove All Matches",
+    default: false,
+};
+
+const CONFIG: ConfigSpec = ConfigSpec::new(&[&GLOBAL_BY_KEY, &VALUE, &REMOVE_ALL]);
+
+fn read_config(
+    config: &SubActionConfig,
+    args: &ArgStack,
+) -> Result<(String, String, bool), ConfigProblem> {
+    Ok((
+        global_name(&GLOBAL_BY_KEY, config, args)?,
+        VALUE.read(config, args)?,
+        REMOVE_ALL.read(config, args)?,
+    ))
+}
 
 pub struct CoreGlobalsArrayRemoveRunner {
     globals: Arc<dyn GlobalsRepo>,
@@ -47,35 +76,8 @@ impl SubActionRunner for CoreGlobalsArrayRemoveRunner {
         "list-minus"
     }
 
-    fn default_config(&self) -> SubActionConfig {
-        let mut cfg = SubActionConfig::new();
-        cfg.insert("key".to_owned(), Variant::String(String::new()));
-        cfg.insert("value".to_owned(), Variant::String(String::new()));
-        cfg.insert("remove_all".to_owned(), Variant::Bool(false));
-        cfg
-    }
-
-    fn config_fields(&self) -> Vec<FormField> {
-        vec![
-            FormField::DynamicSelect {
-                key: "key",
-                label: "Variable Name",
-                options_key: "global.names",
-            },
-            FormField::Text {
-                key: "value",
-                label: "Value to Remove",
-                placeholder: "item",
-            },
-            FormField::Toggle {
-                key: "remove_all",
-                label: "Remove All Matches",
-            },
-        ]
-    }
-
-    fn validate_config(&self, config: &SubActionConfig) -> Result<(), RegistryError> {
-        config.require_str("key").map(|_| ())
+    fn config_spec(&self) -> Option<ConfigSpec> {
+        Some(CONFIG)
     }
 
     async fn execute(
@@ -83,16 +85,12 @@ impl SubActionRunner for CoreGlobalsArrayRemoveRunner {
         config: &SubActionConfig,
         ctx: &RunContext<'_>,
     ) -> (SubActionTelemetry, Option<ArgStack>) {
-        let timer = StepTimer::start(ctx, "core.globals.array_remove");
-
-        let key_template = config.str("key").unwrap_or_default();
-        let value_template = config.str("value").unwrap_or_default();
-        let remove_all = config.bool("remove_all").unwrap_or(false);
-
-        let resolved_key =
-            forge_types::strip_var_decoration(&ctx.arg_stack.interpolate(key_template));
-        let raw_value = ctx.arg_stack.interpolate(value_template);
-        let target = super::interpolate::parse_variant(&raw_value);
+        let timer = StepTimer::start(ctx, self.id());
+        let (resolved_key, raw_value, remove_all) = match read_config(config, ctx.arg_stack) {
+            Ok(values) => values,
+            Err(problem) => return (timer.invalid_config(&problem), None),
+        };
+        let target = super::variant_text::parse_variant(&raw_value);
 
         let outcome = match self
             .globals

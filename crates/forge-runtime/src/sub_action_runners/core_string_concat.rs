@@ -1,9 +1,45 @@
 use async_trait::async_trait;
 use forge_registry::{
-    FormField, ProducedVariable, RegistryError, RunContext, StepTimer, SubActionCategory,
-    SubActionConfigExt, SubActionIo, SubActionRunner,
+    ConfigProblem, ConfigSpec, LinesField, ProducedVariable, RunContext, StepTimer,
+    SubActionCategory, SubActionIo, SubActionRunner, TextEditor, TextField, TypedField,
 };
 use forge_types::{ArgStack, SubActionConfig, SubActionTelemetry, Variant, VariantKind};
+
+use super::core_string_shared::{INTO_RESULT, INTO_VAR_KEY};
+
+const PARTS: LinesField = LinesField {
+    key: "parts",
+    label: "Parts (one per line)",
+};
+
+const SEPARATOR: TextField = TextField {
+    key: "separator",
+    label: "Separator",
+    editor: TextEditor::Line { placeholder: "" },
+    default: "",
+    required: false,
+};
+
+const CONFIG: ConfigSpec = ConfigSpec::new(&[&PARTS, &SEPARATOR, &INTO_RESULT]);
+
+struct ConcatConfig {
+    parts: Vec<String>,
+    separator: String,
+    into_var: String,
+}
+
+fn read_config(config: &SubActionConfig, args: &ArgStack) -> Result<ConcatConfig, ConfigProblem> {
+    let parts = PARTS
+        .read(config, args)?
+        .iter()
+        .map(|part| args.interpolate(part.as_str().unwrap_or_default()))
+        .collect();
+    Ok(ConcatConfig {
+        parts,
+        separator: SEPARATOR.read(config, args)?,
+        into_var: INTO_RESULT.read(config, args)?,
+    })
+}
 
 pub struct CoreStringConcatRunner;
 
@@ -33,44 +69,14 @@ impl SubActionRunner for CoreStringConcatRunner {
         "text-plus"
     }
 
-    fn default_config(&self) -> SubActionConfig {
-        let mut cfg = SubActionConfig::new();
-        cfg.insert("parts".to_owned(), Variant::String(String::new()));
-        cfg.insert("separator".to_owned(), Variant::String(String::new()));
-        cfg.insert(
-            "into_var".to_owned(),
-            Variant::String("string.result".to_owned()),
-        );
-        cfg
-    }
-
-    fn config_fields(&self) -> Vec<FormField> {
-        vec![
-            FormField::TextArea {
-                key: "parts",
-                label: "Parts (one per line)",
-            },
-            FormField::Text {
-                key: "separator",
-                label: "Separator",
-                placeholder: "",
-            },
-            FormField::Text {
-                key: "into_var",
-                label: "Output Variable",
-                placeholder: "string.result",
-            },
-        ]
-    }
-
-    fn validate_config(&self, _config: &SubActionConfig) -> Result<(), RegistryError> {
-        Ok(())
+    fn config_spec(&self) -> Option<ConfigSpec> {
+        Some(CONFIG)
     }
 
     fn scope_io(&self) -> SubActionIo {
         SubActionIo {
             produces: vec![ProducedVariable {
-                output_name_key: "into_var".to_owned(),
+                output_name_key: INTO_VAR_KEY.to_owned(),
                 kind: VariantKind::String,
                 label: "Concatenated string".to_owned(),
             }],
@@ -83,29 +89,15 @@ impl SubActionRunner for CoreStringConcatRunner {
         config: &SubActionConfig,
         ctx: &RunContext<'_>,
     ) -> (SubActionTelemetry, Option<ArgStack>) {
-        let timer = StepTimer::start(ctx, "core.string.concat");
-
-        let parts: Vec<String> = match config.get("parts") {
-            Some(Variant::Array(arr)) => arr
-                .iter()
-                .map(|v| ctx.arg_stack.interpolate(v.as_str().unwrap_or("")))
-                .collect(),
-            Some(v) => v
-                .as_str()
-                .unwrap_or("")
-                .lines()
-                .map(|line| ctx.arg_stack.interpolate(line))
-                .collect(),
-            None => vec![],
+        let timer = StepTimer::start(ctx, self.id());
+        let ConcatConfig {
+            parts,
+            separator,
+            into_var,
+        } = match read_config(config, ctx.arg_stack) {
+            Ok(read) => read,
+            Err(problem) => return (timer.invalid_config(&problem), None),
         };
-
-        let separator = ctx
-            .arg_stack
-            .interpolate(config.str("separator").unwrap_or(""));
-
-        let into_var = forge_types::strip_var_decoration(
-            config.str_nonempty("into_var").unwrap_or("string.result"),
-        );
 
         let result = parts.join(&separator);
         let new_stack = ctx.arg_stack.clone().set(into_var, Variant::String(result));

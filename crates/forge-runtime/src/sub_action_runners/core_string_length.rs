@@ -1,13 +1,11 @@
 use async_trait::async_trait;
 use forge_registry::{
-    FormField, ProducedVariable, RegistryError, RunContext, StepTimer, SubActionCategory,
-    SubActionConfigExt, SubActionIo, SubActionRunner,
+    ChoiceField, ConfigChoice, ConfigProblem, ConfigSpec, ProducedVariable, RunContext, StepTimer,
+    SubActionCategory, SubActionIo, SubActionRunner, TextField, TypedField,
 };
 use forge_types::{ArgStack, SubActionConfig, SubActionTelemetry, Variant, VariantKind};
 
-use super::config_choice::{ConfigChoice, read_choice};
-
-const MODE_KEY: &str = "mode";
+use super::core_string_shared::{INTO_RESULT, INTO_VAR_KEY, source_field};
 
 #[derive(Clone, Copy)]
 enum LengthMode {
@@ -40,6 +38,27 @@ impl ConfigChoice for LengthMode {
     }
 }
 
+const SOURCE: TextField = source_field("Hello");
+
+const MODE: ChoiceField<LengthMode> = ChoiceField {
+    key: "mode",
+    label: "Mode",
+    default: LengthMode::Chars,
+};
+
+const CONFIG: ConfigSpec = ConfigSpec::new(&[&SOURCE, &MODE, &INTO_RESULT]);
+
+fn read_config(
+    config: &SubActionConfig,
+    args: &ArgStack,
+) -> Result<(String, LengthMode, String), ConfigProblem> {
+    Ok((
+        SOURCE.read(config, args)?,
+        MODE.read(config, args)?,
+        INTO_RESULT.read(config, args)?,
+    ))
+}
+
 pub struct CoreStringLengthRunner;
 
 #[async_trait]
@@ -68,48 +87,14 @@ impl SubActionRunner for CoreStringLengthRunner {
         "ruler"
     }
 
-    fn default_config(&self) -> SubActionConfig {
-        let mut cfg = SubActionConfig::new();
-        cfg.insert("source".to_owned(), Variant::String(String::new()));
-        cfg.insert(
-            MODE_KEY.to_owned(),
-            Variant::String(LengthMode::Chars.as_str().to_owned()),
-        );
-        cfg.insert(
-            "into_var".to_owned(),
-            Variant::String("string.result".to_owned()),
-        );
-        cfg
-    }
-
-    fn config_fields(&self) -> Vec<FormField> {
-        vec![
-            FormField::Text {
-                key: "source",
-                label: "Source",
-                placeholder: "Hello",
-            },
-            FormField::Select {
-                key: MODE_KEY,
-                label: "Mode",
-                options: LengthMode::WIRE_NAMES,
-            },
-            FormField::Text {
-                key: "into_var",
-                label: "Output Variable",
-                placeholder: "string.result",
-            },
-        ]
-    }
-
-    fn validate_config(&self, config: &SubActionConfig) -> Result<(), RegistryError> {
-        read_choice(config, MODE_KEY, LengthMode::Chars).map(|_| ())
+    fn config_spec(&self) -> Option<ConfigSpec> {
+        Some(CONFIG)
     }
 
     fn scope_io(&self) -> SubActionIo {
         SubActionIo {
             produces: vec![ProducedVariable {
-                output_name_key: "into_var".to_owned(),
+                output_name_key: INTO_VAR_KEY.to_owned(),
                 kind: VariantKind::Int,
                 label: "String length".to_owned(),
             }],
@@ -122,21 +107,13 @@ impl SubActionRunner for CoreStringLengthRunner {
         config: &SubActionConfig,
         ctx: &RunContext<'_>,
     ) -> (SubActionTelemetry, Option<ArgStack>) {
-        let timer = StepTimer::start(ctx, "core.string.length");
-
-        let source = ctx
-            .arg_stack
-            .interpolate(config.str("source").unwrap_or(""));
-        let mode = match read_choice(config, MODE_KEY, LengthMode::Chars) {
-            Ok(mode) => mode,
-            Err(e) => return (timer.failed(e.to_string()), None),
+        let timer = StepTimer::start(ctx, self.id());
+        let (source, mode, into_var) = match read_config(config, ctx.arg_stack) {
+            Ok(values) => values,
+            Err(problem) => return (timer.invalid_config(&problem), None),
         };
-        let into_var = forge_types::strip_var_decoration(
-            config.str_nonempty("into_var").unwrap_or("string.result"),
-        );
 
         let length = i64::try_from(mode.measure(&source)).unwrap_or(i64::MAX);
-
         let new_stack = ctx.arg_stack.clone().set(into_var, Variant::Int(length));
 
         (timer.success(), Some(new_stack))

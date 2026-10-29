@@ -3,7 +3,7 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use forge_registry::runner::SubActionConfig;
 use forge_registry::{
-    ConfigProblem, ConfigSpec, DecimalField, PickedTextField, RunContext, StepTimer, StoredNumber,
+    ConfigProblem, ConfigSpec, NumberField, PickedTextField, RunContext, StepTimer, StoredNumber,
     SubActionCategory, SubActionRunner, TextPicker, TypedField, ValueBounds,
 };
 use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry};
@@ -23,7 +23,7 @@ const SOURCE: PickedTextField = PickedTextField {
     required: true,
 };
 
-const VOLUME_DB: DecimalField = DecimalField {
+const VOLUME_DB: NumberField = NumberField {
     key: config_keys::VOLUME_DB,
     label: "Volume (dB)",
     placeholder: "e.g. -6.0",

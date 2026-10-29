@@ -1,9 +1,37 @@
 use async_trait::async_trait;
 use forge_registry::{
-    FormField, ProducedVariable, RegistryError, RunContext, StepTimer, SubActionCategory,
-    SubActionConfigExt, SubActionIo, SubActionRunner,
+    ConfigProblem, ConfigSpec, ProducedVariable, RunContext, StepTimer, SubActionCategory,
+    SubActionIo, SubActionRunner, TextEditor, TextField, TypedField, VariableField,
 };
 use forge_types::{ArgStack, SubActionConfig, SubActionTelemetry, Variant, VariantKind};
+
+use super::core_string_shared::INTO_VAR_KEY;
+
+const FORMATTED_VARIABLE: &str = "string.formatted";
+
+const TEMPLATE: TextField = TextField {
+    key: "template",
+    label: "Template",
+    editor: TextEditor::Area,
+    default: "",
+    required: false,
+};
+
+const INTO_VAR: VariableField = VariableField {
+    key: INTO_VAR_KEY,
+    label: "Output Variable",
+    placeholder: FORMATTED_VARIABLE,
+    default: FORMATTED_VARIABLE,
+};
+
+const CONFIG: ConfigSpec = ConfigSpec::new(&[&TEMPLATE, &INTO_VAR]);
+
+fn read_config(
+    config: &SubActionConfig,
+    args: &ArgStack,
+) -> Result<(String, String), ConfigProblem> {
+    Ok((TEMPLATE.read(config, args)?, INTO_VAR.read(config, args)?))
+}
 
 pub struct CoreStringFormatRunner;
 
@@ -33,38 +61,14 @@ impl SubActionRunner for CoreStringFormatRunner {
         "template"
     }
 
-    fn default_config(&self) -> SubActionConfig {
-        let mut cfg = SubActionConfig::new();
-        cfg.insert("template".to_owned(), Variant::String(String::new()));
-        cfg.insert(
-            "into_var".to_owned(),
-            Variant::String("string.formatted".to_owned()),
-        );
-        cfg
-    }
-
-    fn config_fields(&self) -> Vec<FormField> {
-        vec![
-            FormField::TextArea {
-                key: "template",
-                label: "Template",
-            },
-            FormField::Text {
-                key: "into_var",
-                label: "Output Variable",
-                placeholder: "string.formatted",
-            },
-        ]
-    }
-
-    fn validate_config(&self, _config: &SubActionConfig) -> Result<(), RegistryError> {
-        Ok(())
+    fn config_spec(&self) -> Option<ConfigSpec> {
+        Some(CONFIG)
     }
 
     fn scope_io(&self) -> SubActionIo {
         SubActionIo {
             produces: vec![ProducedVariable {
-                output_name_key: "into_var".to_owned(),
+                output_name_key: INTO_VAR_KEY.to_owned(),
                 kind: VariantKind::String,
                 label: "Formatted string".to_owned(),
             }],
@@ -77,21 +81,16 @@ impl SubActionRunner for CoreStringFormatRunner {
         config: &SubActionConfig,
         ctx: &RunContext<'_>,
     ) -> (SubActionTelemetry, Option<ArgStack>) {
-        let timer = StepTimer::start(ctx, "core.string.format");
-
-        let template = ctx
-            .arg_stack
-            .interpolate(config.str("template").unwrap_or(""));
-        let into_var = forge_types::strip_var_decoration(
-            config
-                .str_nonempty("into_var")
-                .unwrap_or("string.formatted"),
-        );
+        let timer = StepTimer::start(ctx, self.id());
+        let (formatted, into_var) = match read_config(config, ctx.arg_stack) {
+            Ok(values) => values,
+            Err(problem) => return (timer.invalid_config(&problem), None),
+        };
 
         let new_stack = ctx
             .arg_stack
             .clone()
-            .set(into_var, Variant::String(template));
+            .set(into_var, Variant::String(formatted));
 
         (timer.success(), Some(new_stack))
     }

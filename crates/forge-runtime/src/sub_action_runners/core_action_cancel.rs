@@ -1,15 +1,20 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
+use forge_registry::references::ACTION_OPTIONS_KEY;
 use forge_registry::{
-    FormField, RegistryError, RunContext, StepTimer, SubActionCategory, SubActionConfigExt,
-    SubActionRunner,
+    BlankableSelectField, ConfigSpec, RunContext, StepTimer, SubActionCategory, SubActionRunner,
+    TypedField,
 };
-use forge_types::{
-    ActionId, ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetry, Variant,
-};
+use forge_types::{ActionId, ArgStack, SubActionConfig, SubActionTelemetry};
 
+use super::core_action_shared::ACTION_ID_KEY;
 use crate::action_cancel::ActionCancelRegistry;
+
+const ACTION: BlankableSelectField<ActionId> =
+    BlankableSelectField::new(ACTION_ID_KEY, "Action", ACTION_OPTIONS_KEY);
+
+const CONFIG: ConfigSpec = ConfigSpec::new(&[&ACTION]);
 
 pub struct CoreActionCancelRunner {
     cancel_registry: Arc<ActionCancelRegistry>,
@@ -20,21 +25,15 @@ impl CoreActionCancelRunner {
         Self { cancel_registry }
     }
 
-    fn run(&self, config: &SubActionConfig, ctx: &RunContext<'_>) -> SubActionOutcome {
-        let raw = config.str("action_id").unwrap_or_default();
-        let resolved = ctx.arg_stack.interpolate(raw);
-        let resolved = resolved.trim();
-
-        if resolved.is_empty() {
-            self.cancel_registry.cancel_all();
-            return SubActionOutcome::Success;
+    fn cancel(&self, action_id: Option<ActionId>) {
+        match action_id {
+            Some(action_id) => {
+                self.cancel_registry.cancel(action_id);
+            }
+            None => {
+                self.cancel_registry.cancel_all();
+            }
         }
-
-        let Ok(action_id) = resolved.parse::<ActionId>() else {
-            return SubActionOutcome::Failed("core.action.cancel: invalid action_id".to_owned());
-        };
-        self.cancel_registry.cancel(action_id);
-        SubActionOutcome::Success
     }
 }
 
@@ -64,22 +63,8 @@ impl SubActionRunner for CoreActionCancelRunner {
         "octagon-x"
     }
 
-    fn default_config(&self) -> SubActionConfig {
-        let mut cfg = SubActionConfig::new();
-        cfg.insert("action_id".to_owned(), Variant::String(String::new()));
-        cfg
-    }
-
-    fn config_fields(&self) -> Vec<FormField> {
-        vec![FormField::DynamicSelect {
-            key: "action_id",
-            label: "Action",
-            options_key: "action.ids",
-        }]
-    }
-
-    fn validate_config(&self, _config: &SubActionConfig) -> Result<(), RegistryError> {
-        Ok(())
+    fn config_spec(&self) -> Option<ConfigSpec> {
+        Some(CONFIG)
     }
 
     async fn execute(
@@ -87,9 +72,14 @@ impl SubActionRunner for CoreActionCancelRunner {
         config: &SubActionConfig,
         ctx: &RunContext<'_>,
     ) -> (SubActionTelemetry, Option<ArgStack>) {
-        let timer = StepTimer::start(ctx, "core.action.cancel");
-        let outcome = self.run(config, ctx);
-        (timer.finish(outcome), None)
+        let timer = StepTimer::start(ctx, self.id());
+        match ACTION.read(config, ctx.arg_stack) {
+            Ok(action_id) => {
+                self.cancel(action_id);
+                (timer.success(), None)
+            }
+            Err(problem) => (timer.invalid_config(&problem), None),
+        }
     }
 }
 

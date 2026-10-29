@@ -1,13 +1,60 @@
 use async_trait::async_trait;
 use forge_registry::{
-    ConfigReason, FormField, ProducedVariable, RegistryError, RunContext, StepTimer,
-    SubActionCategory, SubActionConfigExt, SubActionIo, SubActionRunner, ValueBounds,
+    ConfigProblem, ConfigSpec, IntegerEditor, IntegerField, ProducedVariable, RunContext,
+    StepTimer, SubActionCategory, SubActionIo, SubActionRunner, TextField, TypedField, ValueBounds,
 };
 use forge_types::{
     ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetry, Variant, VariantKind,
 };
 
+use super::core_string_shared::{INTO_RESULT, INTO_VAR_KEY, source_field};
+
 const TO_END_INDEX: i64 = -1;
+
+const SOURCE: TextField = source_field("Hello World");
+
+const START_INDEX: IntegerField = IntegerField {
+    key: "start_index",
+    label: "Start Index (0-based, chars)",
+    editor: IntegerEditor::Number,
+    default: 0,
+    bounds: ValueBounds {
+        min: Some(0),
+        max: None,
+    },
+};
+
+const END_INDEX: IntegerField = IntegerField {
+    key: "end_index",
+    label: "End Index (-1 = to end, exclusive)",
+    editor: IntegerEditor::Number,
+    default: TO_END_INDEX,
+    bounds: ValueBounds {
+        min: Some(TO_END_INDEX),
+        max: None,
+    },
+};
+
+const CONFIG: ConfigSpec = ConfigSpec::new(&[&SOURCE, &START_INDEX, &END_INDEX, &INTO_RESULT]);
+
+struct SubstringConfig {
+    source: String,
+    start: usize,
+    end: Option<usize>,
+    into_var: String,
+}
+
+fn read_config(
+    config: &SubActionConfig,
+    args: &ArgStack,
+) -> Result<SubstringConfig, ConfigProblem> {
+    Ok(SubstringConfig {
+        source: SOURCE.read(config, args)?,
+        start: usize::try_from(START_INDEX.read(config, args)?).unwrap_or(usize::MAX),
+        end: usize::try_from(END_INDEX.read(config, args)?).ok(),
+        into_var: INTO_RESULT.read(config, args)?,
+    })
+}
 
 pub struct CoreStringSubstringRunner;
 
@@ -37,67 +84,14 @@ impl SubActionRunner for CoreStringSubstringRunner {
         "text-recognition"
     }
 
-    fn default_config(&self) -> SubActionConfig {
-        let mut cfg = SubActionConfig::new();
-        cfg.insert("source".to_owned(), Variant::String(String::new()));
-        cfg.insert("start_index".to_owned(), Variant::Int(0));
-        cfg.insert("end_index".to_owned(), Variant::Int(TO_END_INDEX));
-        cfg.insert(
-            "into_var".to_owned(),
-            Variant::String("string.result".to_owned()),
-        );
-        cfg
-    }
-
-    fn config_fields(&self) -> Vec<FormField> {
-        vec![
-            FormField::Text {
-                key: "source",
-                label: "Source",
-                placeholder: "Hello World",
-            },
-            FormField::Integer {
-                key: "start_index",
-                label: "Start Index (0-based, chars)",
-                min: 0,
-                max: i64::MAX,
-            },
-            FormField::Integer {
-                key: "end_index",
-                label: "End Index (-1 = to end, exclusive)",
-                min: TO_END_INDEX,
-                max: i64::MAX,
-            },
-            FormField::Text {
-                key: "into_var",
-                label: "Output Variable",
-                placeholder: "string.result",
-            },
-        ]
-    }
-
-    fn validate_config(&self, config: &SubActionConfig) -> Result<(), RegistryError> {
-        let start = config.int("start_index").unwrap_or(0);
-        if start < 0 {
-            return Err(RegistryError::invalid_field(
-                "start_index",
-                ConfigReason::OutOfRange(ValueBounds::at_least(0)),
-            ));
-        }
-        let end = config.int("end_index").unwrap_or(TO_END_INDEX);
-        if end < TO_END_INDEX {
-            return Err(RegistryError::invalid_field(
-                "end_index",
-                ConfigReason::OutOfRange(ValueBounds::at_least(TO_END_INDEX)),
-            ));
-        }
-        Ok(())
+    fn config_spec(&self) -> Option<ConfigSpec> {
+        Some(CONFIG)
     }
 
     fn scope_io(&self) -> SubActionIo {
         SubActionIo {
             produces: vec![ProducedVariable {
-                output_name_key: "into_var".to_owned(),
+                output_name_key: INTO_VAR_KEY.to_owned(),
                 kind: VariantKind::String,
                 label: "Substring".to_owned(),
             }],
@@ -110,40 +104,20 @@ impl SubActionRunner for CoreStringSubstringRunner {
         config: &SubActionConfig,
         ctx: &RunContext<'_>,
     ) -> (SubActionTelemetry, Option<ArgStack>) {
-        let timer = StepTimer::start(ctx, "core.string.substring");
-
-        let source = ctx
-            .arg_stack
-            .interpolate(config.str("source").unwrap_or(""));
-
-        let start_raw = config.int("start_index").unwrap_or(0);
-        let Ok(start) = usize::try_from(start_raw) else {
-            return (
-                timer.failed(format!("start_index {start_raw} must not be negative")),
-                None,
-            );
+        let timer = StepTimer::start(ctx, self.id());
+        let SubstringConfig {
+            source,
+            start,
+            end,
+            into_var,
+        } = match read_config(config, ctx.arg_stack) {
+            Ok(read) => read,
+            Err(problem) => return (timer.invalid_config(&problem), None),
         };
-
-        let end_raw = config.int("end_index").unwrap_or(TO_END_INDEX);
 
         let chars: Vec<char> = source.chars().collect();
         let char_count = chars.len();
-
-        let end = if end_raw == TO_END_INDEX {
-            char_count
-        } else {
-            match usize::try_from(end_raw) {
-                Ok(end) => end,
-                Err(_) => {
-                    return (
-                        timer.failed(format!(
-                            "end_index {end_raw} must be {TO_END_INDEX} (to the end) or at least 0"
-                        )),
-                        None,
-                    );
-                }
-            }
-        };
+        let end = end.unwrap_or(char_count);
 
         let outcome = if start > char_count {
             SubActionOutcome::Failed(format!(
@@ -159,9 +133,6 @@ impl SubActionRunner for CoreStringSubstringRunner {
             ))
         } else {
             let slice: String = chars[start..end].iter().collect();
-            let into_var = forge_types::strip_var_decoration(
-                config.str_nonempty("into_var").unwrap_or("string.result"),
-            );
             let new_stack = ctx.arg_stack.clone().set(into_var, Variant::String(slice));
             return (timer.success(), Some(new_stack));
         };

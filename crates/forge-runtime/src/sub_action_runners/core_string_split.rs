@@ -1,9 +1,72 @@
 use async_trait::async_trait;
 use forge_registry::{
-    FormField, ProducedVariable, RegistryError, RunContext, StepTimer, SubActionCategory,
-    SubActionConfigExt, SubActionIo, SubActionRunner,
+    ConfigProblem, ConfigSpec, IntegerEditor, IntegerField, ProducedVariable, RunContext,
+    StepTimer, SubActionCategory, SubActionIo, SubActionRunner, TextEditor, TextField, ToggleField,
+    TypedField, ValueBounds, VariableField,
 };
 use forge_types::{ArgStack, SubActionConfig, SubActionTelemetry, Variant, VariantKind};
+
+use super::core_string_shared::{INTO_VAR_KEY, source_field};
+
+const PARTS_VARIABLE: &str = "string.parts";
+const DEFAULT_SEPARATOR: &str = ",";
+
+const SOURCE: TextField = source_field("a, b, c");
+
+const SEPARATOR: TextField = TextField {
+    key: "separator",
+    label: "Separator",
+    editor: TextEditor::Line {
+        placeholder: DEFAULT_SEPARATOR,
+    },
+    default: DEFAULT_SEPARATOR,
+    required: false,
+};
+
+const TRIM_EACH: ToggleField = ToggleField {
+    key: "trim_each",
+    label: "Trim Each Part",
+    default: false,
+};
+
+const MAX_PARTS: IntegerField = IntegerField {
+    key: "max_parts",
+    label: "Max Parts (0 = unlimited)",
+    editor: IntegerEditor::Number,
+    default: 0,
+    bounds: ValueBounds {
+        min: Some(0),
+        max: None,
+    },
+};
+
+const INTO_VAR: VariableField = VariableField {
+    key: INTO_VAR_KEY,
+    label: "Output Variable",
+    placeholder: PARTS_VARIABLE,
+    default: PARTS_VARIABLE,
+};
+
+const CONFIG: ConfigSpec =
+    ConfigSpec::new(&[&SOURCE, &SEPARATOR, &TRIM_EACH, &MAX_PARTS, &INTO_VAR]);
+
+struct SplitConfig {
+    source: String,
+    separator: String,
+    trim_each: bool,
+    max_parts: usize,
+    into_var: String,
+}
+
+fn read_config(config: &SubActionConfig, args: &ArgStack) -> Result<SplitConfig, ConfigProblem> {
+    Ok(SplitConfig {
+        source: SOURCE.read(config, args)?,
+        separator: SEPARATOR.read(config, args)?,
+        trim_each: TRIM_EACH.read(config, args)?,
+        max_parts: usize::try_from(MAX_PARTS.read(config, args)?).unwrap_or(usize::MAX),
+        into_var: INTO_VAR.read(config, args)?,
+    })
+}
 
 pub struct CoreStringSplitRunner;
 
@@ -33,57 +96,14 @@ impl SubActionRunner for CoreStringSplitRunner {
         "scissors"
     }
 
-    fn default_config(&self) -> SubActionConfig {
-        let mut cfg = SubActionConfig::new();
-        cfg.insert("source".to_owned(), Variant::String(String::new()));
-        cfg.insert("separator".to_owned(), Variant::String(",".to_owned()));
-        cfg.insert("trim_each".to_owned(), Variant::Bool(false));
-        cfg.insert("max_parts".to_owned(), Variant::Int(0));
-        cfg.insert(
-            "into_var".to_owned(),
-            Variant::String("string.parts".to_owned()),
-        );
-        cfg
-    }
-
-    fn config_fields(&self) -> Vec<FormField> {
-        vec![
-            FormField::Text {
-                key: "source",
-                label: "Source",
-                placeholder: "a, b, c",
-            },
-            FormField::Text {
-                key: "separator",
-                label: "Separator",
-                placeholder: ",",
-            },
-            FormField::Toggle {
-                key: "trim_each",
-                label: "Trim Each Part",
-            },
-            FormField::Integer {
-                key: "max_parts",
-                label: "Max Parts (0 = unlimited)",
-                min: 0,
-                max: i64::MAX,
-            },
-            FormField::Text {
-                key: "into_var",
-                label: "Output Variable",
-                placeholder: "string.parts",
-            },
-        ]
-    }
-
-    fn validate_config(&self, _config: &SubActionConfig) -> Result<(), RegistryError> {
-        Ok(())
+    fn config_spec(&self) -> Option<ConfigSpec> {
+        Some(CONFIG)
     }
 
     fn scope_io(&self) -> SubActionIo {
         SubActionIo {
             produces: vec![ProducedVariable {
-                output_name_key: "into_var".to_owned(),
+                output_name_key: INTO_VAR_KEY.to_owned(),
                 kind: VariantKind::Array,
                 label: "Split parts".to_owned(),
             }],
@@ -96,19 +116,17 @@ impl SubActionRunner for CoreStringSplitRunner {
         config: &SubActionConfig,
         ctx: &RunContext<'_>,
     ) -> (SubActionTelemetry, Option<ArgStack>) {
-        let timer = StepTimer::start(ctx, "core.string.split");
-
-        let source = ctx
-            .arg_stack
-            .interpolate(config.str("source").unwrap_or(""));
-        let separator = ctx
-            .arg_stack
-            .interpolate(config.str("separator").unwrap_or(","));
-        let trim_each = config.bool("trim_each").unwrap_or(false);
-        let max_parts = usize::try_from(config.int("max_parts").unwrap_or(0)).unwrap_or(0);
-        let into_var = forge_types::strip_var_decoration(
-            config.str_nonempty("into_var").unwrap_or("string.parts"),
-        );
+        let timer = StepTimer::start(ctx, self.id());
+        let SplitConfig {
+            source,
+            separator,
+            trim_each,
+            max_parts,
+            into_var,
+        } = match read_config(config, ctx.arg_stack) {
+            Ok(read) => read,
+            Err(problem) => return (timer.invalid_config(&problem), None),
+        };
 
         let raw_parts: Vec<&str> = if separator.is_empty() {
             split_chars(&source, max_parts)
@@ -127,7 +145,6 @@ impl SubActionRunner for CoreStringSplitRunner {
             .collect();
 
         let new_stack = ctx.arg_stack.clone().set(into_var, Variant::Array(parts));
-
         (timer.success(), Some(new_stack))
     }
 }

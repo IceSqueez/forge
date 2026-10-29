@@ -3,13 +3,23 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use forge_events::EventSource;
 use forge_registry::{
-    FormField, RegistryError, RunContext, StepTimer, SubActionCategory, SubActionConfigExt,
-    SubActionRunner,
+    ConfigProblem, ConfigSpec, RunContext, StepTimer, SubActionCategory, SubActionRunner,
+    TypedField,
 };
 use forge_storage::GlobalsRepo;
-use forge_types::{ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetry, Variant};
+use forge_types::{ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetry};
 
+use super::core_globals_shared::{AMOUNT, GLOBAL_BY_NAME, global_name};
 use crate::global_mutation::GlobalMutation;
+
+const CONFIG: ConfigSpec = ConfigSpec::new(&[&GLOBAL_BY_NAME, &AMOUNT]);
+
+fn read_config(config: &SubActionConfig, args: &ArgStack) -> Result<(String, i64), ConfigProblem> {
+    Ok((
+        global_name(&GLOBAL_BY_NAME, config, args)?,
+        AMOUNT.read(config, args)?,
+    ))
+}
 
 pub struct CoreGlobalsIncrementRunner {
     globals: Arc<dyn GlobalsRepo>,
@@ -47,31 +57,8 @@ impl SubActionRunner for CoreGlobalsIncrementRunner {
         "plus"
     }
 
-    fn default_config(&self) -> SubActionConfig {
-        let mut cfg = SubActionConfig::new();
-        cfg.insert("name".to_owned(), Variant::String(String::new()));
-        cfg.insert("amount".to_owned(), Variant::Int(1));
-        cfg
-    }
-
-    fn config_fields(&self) -> Vec<FormField> {
-        vec![
-            FormField::DynamicSelect {
-                key: "name",
-                label: "Variable Name",
-                options_key: "global.names",
-            },
-            FormField::Integer {
-                key: "amount",
-                label: "Amount",
-                min: i64::MIN,
-                max: i64::MAX,
-            },
-        ]
-    }
-
-    fn validate_config(&self, config: &SubActionConfig) -> Result<(), RegistryError> {
-        config.require_str("name").map(|_| ())
+    fn config_spec(&self) -> Option<ConfigSpec> {
+        Some(CONFIG)
     }
 
     async fn execute(
@@ -79,13 +66,11 @@ impl SubActionRunner for CoreGlobalsIncrementRunner {
         config: &SubActionConfig,
         ctx: &RunContext<'_>,
     ) -> (SubActionTelemetry, Option<ArgStack>) {
-        let timer = StepTimer::start(ctx, "core.globals.increment");
-
-        let name_template = config.str("name").unwrap_or_default();
-        let amount = config.int("amount").unwrap_or(1);
-
-        let resolved_name =
-            forge_types::strip_var_decoration(&ctx.arg_stack.interpolate(name_template));
+        let timer = StepTimer::start(ctx, self.id());
+        let (name, amount) = match read_config(config, ctx.arg_stack) {
+            Ok(values) => values,
+            Err(problem) => return (timer.invalid_config(&problem), None),
+        };
 
         let mutation = GlobalMutation {
             globals: self.globals.as_ref(),
@@ -93,7 +78,7 @@ impl SubActionRunner for CoreGlobalsIncrementRunner {
             source: EventSource::Core,
             caused_by: ctx.parent_event_id,
         };
-        let outcome = match mutation.increment(&resolved_name, amount).await {
+        let outcome = match mutation.increment(&name, amount).await {
             Ok(_increment) => SubActionOutcome::Success,
             Err(e) => SubActionOutcome::Failed(e.to_string()),
         };

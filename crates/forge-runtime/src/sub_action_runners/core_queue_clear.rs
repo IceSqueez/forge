@@ -1,12 +1,27 @@
 use async_trait::async_trait;
 use forge_registry::{
-    FormField, RegistryError, RunContext, StepTimer, SubActionCategory, SubActionConfigExt,
-    SubActionRunner,
+    ConfigProblem, ConfigSpec, RunContext, StepTimer, SubActionCategory, SubActionRunner,
+    ToggleField, TypedField,
 };
-use forge_types::{ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetry, Variant};
+use forge_types::{ArgStack, QueueId, SubActionConfig, SubActionOutcome, SubActionTelemetry};
 
-use super::core_queue_shared::{resolve_queue_id, validate_queue_id};
+use super::core_queue_shared::QUEUE;
 use crate::SchedulerCell;
+
+const KEEP_CURRENT: ToggleField = ToggleField {
+    key: "keep_current",
+    label: "Keep running action",
+    default: true,
+};
+
+const CONFIG: ConfigSpec = ConfigSpec::new(&[&QUEUE, &KEEP_CURRENT]);
+
+fn read_config(
+    config: &SubActionConfig,
+    args: &ArgStack,
+) -> Result<(QueueId, bool), ConfigProblem> {
+    Ok((QUEUE.read(config, args)?, KEEP_CURRENT.read(config, args)?))
+}
 
 pub struct CoreQueueClearRunner {
     scheduler: SchedulerCell,
@@ -17,11 +32,7 @@ impl CoreQueueClearRunner {
         Self { scheduler }
     }
 
-    async fn run(&self, config: &SubActionConfig, ctx: &RunContext<'_>) -> SubActionOutcome {
-        let Some(queue_id) = resolve_queue_id(config, ctx) else {
-            return SubActionOutcome::Failed("core.queue.clear: invalid queue_id".to_owned());
-        };
-        let keep_current = config.bool("keep_current").unwrap_or(true);
+    async fn run(&self, queue_id: QueueId, keep_current: bool) -> SubActionOutcome {
         let Some(scheduler) = self.scheduler.get() else {
             return SubActionOutcome::Failed("queue scheduler not ready".to_owned());
         };
@@ -58,29 +69,8 @@ impl SubActionRunner for CoreQueueClearRunner {
         "trash"
     }
 
-    fn default_config(&self) -> SubActionConfig {
-        let mut cfg = SubActionConfig::new();
-        cfg.insert("queue_id".to_owned(), Variant::String(String::new()));
-        cfg.insert("keep_current".to_owned(), Variant::Bool(true));
-        cfg
-    }
-
-    fn config_fields(&self) -> Vec<FormField> {
-        vec![
-            FormField::DynamicSelect {
-                key: "queue_id",
-                label: "Queue",
-                options_key: "queue.ids",
-            },
-            FormField::Toggle {
-                key: "keep_current",
-                label: "Keep running action",
-            },
-        ]
-    }
-
-    fn validate_config(&self, config: &SubActionConfig) -> Result<(), RegistryError> {
-        validate_queue_id(config)
+    fn config_spec(&self) -> Option<ConfigSpec> {
+        Some(CONFIG)
     }
 
     async fn execute(
@@ -88,8 +78,12 @@ impl SubActionRunner for CoreQueueClearRunner {
         config: &SubActionConfig,
         ctx: &RunContext<'_>,
     ) -> (SubActionTelemetry, Option<ArgStack>) {
-        let timer = StepTimer::start(ctx, "core.queue.clear");
-        let outcome = self.run(config, ctx).await;
+        let timer = StepTimer::start(ctx, self.id());
+        let (queue_id, keep_current) = match read_config(config, ctx.arg_stack) {
+            Ok(values) => values,
+            Err(problem) => return (timer.invalid_config(&problem), None),
+        };
+        let outcome = self.run(queue_id, keep_current).await;
         (timer.finish(outcome), None)
     }
 }

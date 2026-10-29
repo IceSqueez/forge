@@ -3,8 +3,9 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use forge_registry::{
-    CancelSignal, CodeKind, CodeLanguage, DurationBounds, FormField, RegistryError, RunContext,
-    StepTimer, SubActionCategory, SubActionConfigExt, SubActionIo, SubActionRunner,
+    CancelSignal, CodeField, CodeKind, CodeLanguage, ConfigProblem, ConfigSpec, DurationBounds,
+    DurationField, RunContext, StepTimer, SubActionCategory, SubActionIo, SubActionRunner,
+    TypedField,
 };
 use forge_types::{ArgStack, SubActionConfig, SubActionTelemetry, Variant};
 use tokio::time::Instant;
@@ -13,12 +14,50 @@ use crate::ConditionGate;
 
 const POLL_MIN_MS: i64 = 100;
 const POLL_MAX_MS: i64 = 30_000;
+const DEFAULT_POLL_MS: i64 = 500;
 const TIMEOUT_MIN_MS: i64 = 100;
 const TIMEOUT_MAX_MS: i64 = 600_000;
+const DEFAULT_TIMEOUT_MS: i64 = 30_000;
 const CANCEL_POLL_MS: u64 = 50;
 
 const WAIT_ELAPSED_MS_VAR: &str = "wait.elapsed_ms";
 const WAIT_TIMED_OUT_VAR: &str = "wait.timed_out";
+
+const CONDITION: CodeField = CodeField {
+    key: "condition",
+    label: "Condition",
+    language: CodeLanguage::Rhai,
+    kind: CodeKind::Expression,
+    default: "",
+    required: true,
+};
+
+const POLL_INTERVAL: DurationField = DurationField {
+    key: "poll_interval_ms",
+    label: "Poll Interval",
+    default: DEFAULT_POLL_MS,
+    bounds: DurationBounds::in_millis(POLL_MIN_MS, POLL_MAX_MS),
+};
+
+const TIMEOUT: DurationField = DurationField {
+    key: "timeout_ms",
+    label: "Timeout",
+    default: DEFAULT_TIMEOUT_MS,
+    bounds: DurationBounds::in_millis(TIMEOUT_MIN_MS, TIMEOUT_MAX_MS),
+};
+
+const CONFIG: ConfigSpec = ConfigSpec::new(&[&CONDITION, &POLL_INTERVAL, &TIMEOUT]);
+
+fn read_config(
+    config: &SubActionConfig,
+    args: &ArgStack,
+) -> Result<(String, Duration, Duration), ConfigProblem> {
+    Ok((
+        CONDITION.read(config, args)?,
+        POLL_INTERVAL.read(config, args)?,
+        TIMEOUT.read(config, args)?,
+    ))
+}
 
 pub struct CoreLogicWaitUntilRunner {
     gate: Arc<ConditionGate>,
@@ -56,37 +95,8 @@ impl SubActionRunner for CoreLogicWaitUntilRunner {
         "hourglass"
     }
 
-    fn default_config(&self) -> SubActionConfig {
-        let mut cfg = SubActionConfig::new();
-        cfg.insert("condition".to_owned(), Variant::String(String::new()));
-        cfg.insert("poll_interval_ms".to_owned(), Variant::Int(500));
-        cfg.insert("timeout_ms".to_owned(), Variant::Int(30_000));
-        cfg
-    }
-
-    fn config_fields(&self) -> Vec<FormField> {
-        vec![
-            FormField::Code {
-                key: "condition",
-                label: "Condition",
-                language: CodeLanguage::Rhai,
-                kind: CodeKind::Expression,
-            },
-            FormField::Duration {
-                key: "poll_interval_ms",
-                label: "Poll Interval",
-                bounds: DurationBounds::in_millis(POLL_MIN_MS, POLL_MAX_MS),
-            },
-            FormField::Duration {
-                key: "timeout_ms",
-                label: "Timeout",
-                bounds: DurationBounds::in_millis(TIMEOUT_MIN_MS, TIMEOUT_MAX_MS),
-            },
-        ]
-    }
-
-    fn validate_config(&self, config: &SubActionConfig) -> Result<(), RegistryError> {
-        config.require_str("condition").map(|_| ())
+    fn config_spec(&self) -> Option<ConfigSpec> {
+        Some(CONFIG)
     }
 
     fn scope_io(&self) -> SubActionIo {
@@ -105,21 +115,11 @@ impl SubActionRunner for CoreLogicWaitUntilRunner {
         ctx: &RunContext<'_>,
     ) -> (SubActionTelemetry, Option<ArgStack>) {
         let timer = StepTimer::start(ctx, self.id());
+        let (condition, poll_interval, timeout) = match read_config(config, ctx.arg_stack) {
+            Ok(values) => values,
+            Err(problem) => return (timer.invalid_config(&problem), None),
+        };
         let begin = Instant::now();
-
-        let template = config.str("condition").unwrap_or_default().to_owned();
-        let poll_interval = Duration::from_millis(
-            config
-                .int("poll_interval_ms")
-                .unwrap_or(500)
-                .clamp(POLL_MIN_MS, POLL_MAX_MS) as u64,
-        );
-        let timeout = Duration::from_millis(
-            config
-                .int("timeout_ms")
-                .unwrap_or(30_000)
-                .clamp(TIMEOUT_MIN_MS, TIMEOUT_MAX_MS) as u64,
-        );
         let deadline = begin + timeout;
 
         let mut timed_out = false;
@@ -128,7 +128,11 @@ impl SubActionRunner for CoreLogicWaitUntilRunner {
                 break;
             }
 
-            if let Ok(true) = self.gate.evaluate_with_args(&template, ctx.arg_stack).await {
+            if let Ok(true) = self
+                .gate
+                .evaluate_with_args(&condition, ctx.arg_stack)
+                .await
+            {
                 break;
             }
 
@@ -143,7 +147,7 @@ impl SubActionRunner for CoreLogicWaitUntilRunner {
             }
         }
 
-        let elapsed_ms = begin.elapsed().as_millis().min(i64::MAX as u128) as i64;
+        let elapsed_ms = i64::try_from(begin.elapsed().as_millis()).unwrap_or(i64::MAX);
         let stack = ctx
             .arg_stack
             .clone()

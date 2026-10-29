@@ -2,12 +2,24 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use forge_registry::{
-    FormField, RegistryError, RunContext, StepTimer, SubActionCategory, SubActionConfigExt,
-    SubActionRunner,
+    ConfigSpec, RunContext, StepTimer, SubActionCategory, SubActionRunner, TextEditor, TextField,
+    TypedField,
 };
-use forge_types::{ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetry, Variant};
+use forge_types::{ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetry};
 
 use super::os_ports::UrlOpenPort;
+
+const URL: TextField = TextField {
+    key: "url",
+    label: "URL",
+    editor: TextEditor::Line {
+        placeholder: "https://example.com",
+    },
+    default: "",
+    required: false,
+};
+
+const CONFIG: ConfigSpec = ConfigSpec::new(&[&URL]);
 
 pub struct CoreUrlOpenRunner {
     opener: Arc<dyn UrlOpenPort>,
@@ -45,22 +57,8 @@ impl SubActionRunner for CoreUrlOpenRunner {
         "external-link"
     }
 
-    fn default_config(&self) -> SubActionConfig {
-        let mut cfg = SubActionConfig::new();
-        cfg.insert("url".to_owned(), Variant::String(String::new()));
-        cfg
-    }
-
-    fn config_fields(&self) -> Vec<FormField> {
-        vec![FormField::Text {
-            key: "url",
-            label: "URL",
-            placeholder: "https://example.com",
-        }]
-    }
-
-    fn validate_config(&self, _config: &SubActionConfig) -> Result<(), RegistryError> {
-        Ok(())
+    fn config_spec(&self) -> Option<ConfigSpec> {
+        Some(CONFIG)
     }
 
     async fn execute(
@@ -68,9 +66,11 @@ impl SubActionRunner for CoreUrlOpenRunner {
         config: &SubActionConfig,
         ctx: &RunContext<'_>,
     ) -> (SubActionTelemetry, Option<ArgStack>) {
-        let timer = StepTimer::start(ctx, "core.url.open");
-
-        let url = ctx.arg_stack.interpolate(config.str("url").unwrap_or(""));
+        let timer = StepTimer::start(ctx, self.id());
+        let url = match URL.read(config, ctx.arg_stack) {
+            Ok(url) => url,
+            Err(problem) => return (timer.invalid_config(&problem), None),
+        };
 
         let outcome = if is_browser_scheme(&url) {
             let opener = Arc::clone(&self.opener);

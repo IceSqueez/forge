@@ -1,9 +1,31 @@
 use async_trait::async_trait;
 use forge_registry::{
-    FormField, RegistryError, RunContext, StepTimer, SubActionCategory, SubActionConfigExt,
-    SubActionRunner,
+    ConfigProblem, ConfigSpec, RunContext, StepTimer, SubActionCategory, SubActionRunner,
+    TextEditor, TextField, ToggleField, TypedField,
 };
-use forge_types::{ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetry, Variant};
+use forge_types::{ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetry};
+
+const PATH: TextField = TextField {
+    key: "path",
+    label: "File Path (relative to the files folder)",
+    editor: TextEditor::Line {
+        placeholder: "output/data.txt",
+    },
+    default: "",
+    required: true,
+};
+
+const IGNORE_MISSING: ToggleField = ToggleField {
+    key: "ignore_missing",
+    label: "Ignore Missing File",
+    default: false,
+};
+
+const CONFIG: ConfigSpec = ConfigSpec::new(&[&PATH, &IGNORE_MISSING]);
+
+fn read_config(config: &SubActionConfig, args: &ArgStack) -> Result<(String, bool), ConfigProblem> {
+    Ok((PATH.read(config, args)?, IGNORE_MISSING.read(config, args)?))
+}
 
 pub struct CoreFileDeleteRunner;
 
@@ -33,29 +55,8 @@ impl SubActionRunner for CoreFileDeleteRunner {
         "file-minus"
     }
 
-    fn default_config(&self) -> SubActionConfig {
-        let mut cfg = SubActionConfig::new();
-        cfg.insert("path".to_owned(), Variant::String(String::new()));
-        cfg.insert("ignore_missing".to_owned(), Variant::Bool(false));
-        cfg
-    }
-
-    fn config_fields(&self) -> Vec<FormField> {
-        vec![
-            FormField::Text {
-                key: "path",
-                label: "File Path (relative to the files folder)",
-                placeholder: "output/data.txt",
-            },
-            FormField::Toggle {
-                key: "ignore_missing",
-                label: "Ignore Missing File",
-            },
-        ]
-    }
-
-    fn validate_config(&self, config: &SubActionConfig) -> Result<(), RegistryError> {
-        config.require_str("path").map(|_| ())
+    fn config_spec(&self) -> Option<ConfigSpec> {
+        Some(CONFIG)
     }
 
     async fn execute(
@@ -63,14 +64,13 @@ impl SubActionRunner for CoreFileDeleteRunner {
         config: &SubActionConfig,
         ctx: &RunContext<'_>,
     ) -> (SubActionTelemetry, Option<ArgStack>) {
-        let timer = StepTimer::start(ctx, "core.file.delete");
+        let timer = StepTimer::start(ctx, self.id());
+        let (path, ignore_missing) = match read_config(config, ctx.arg_stack) {
+            Ok(values) => values,
+            Err(problem) => return (timer.invalid_config(&problem), None),
+        };
 
-        let path_template = config.str("path").unwrap_or_default();
-        let ignore_missing = config.bool("ignore_missing").unwrap_or(false);
-
-        let interpolated_path = ctx.arg_stack.interpolate(path_template);
-
-        let outcome = match super::file_sandbox::resolve_sandboxed(&interpolated_path).await {
+        let outcome = match super::file_sandbox::resolve_sandboxed(&path).await {
             Err(reason) => SubActionOutcome::Failed(format!("sandbox rejected path: {reason}")),
             Ok(abs_path) => match tokio::fs::remove_file(&abs_path).await {
                 Ok(()) => SubActionOutcome::Success,

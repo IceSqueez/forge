@@ -1,14 +1,65 @@
 use async_trait::async_trait;
 use forge_registry::{
-    FormField, ProducedVariable, RegistryError, RunContext, StepTimer, SubActionCategory,
-    SubActionConfigExt, SubActionIo, SubActionRunner,
+    ConfigProblem, ConfigReason, ConfigSpec, Interpolation, NumberField, ProducedVariable,
+    RunContext, StepTimer, StoredNumber, SubActionCategory, SubActionIo, SubActionRunner,
+    TypedField, ValueBounds, VariableField,
 };
-use forge_types::{
-    ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetry, Variant, VariantKind,
-};
+use forge_types::{ArgStack, SubActionConfig, SubActionTelemetry, Variant, VariantKind};
 use rand::RngExt;
 
-use super::float_input::resolve_float;
+const INTO_VAR_KEY: &str = "into_var";
+
+const MIN: NumberField = NumberField {
+    key: "min",
+    label: "Minimum",
+    placeholder: "0.0",
+    default: StoredNumber::Text("0.0"),
+    bounds: ValueBounds::UNBOUNDED,
+};
+
+const MAX: NumberField = NumberField {
+    key: "max",
+    label: "Maximum",
+    placeholder: "1.0",
+    default: StoredNumber::Text("1.0"),
+    bounds: ValueBounds::UNBOUNDED,
+};
+
+const INTO_VAR: VariableField = VariableField {
+    key: INTO_VAR_KEY,
+    label: "Output Variable",
+    placeholder: "random_result",
+    default: "",
+};
+
+const CONFIG: ConfigSpec = ConfigSpec::new(&[&MIN, &MAX, &INTO_VAR]);
+
+fn sampleable(min: f64, max: f64) -> Result<(), ConfigProblem> {
+    if min > max {
+        return Err(ConfigProblem::field(
+            MAX.key,
+            ConfigReason::Custom("must not be below the minimum".to_owned()),
+        ));
+    }
+    if (max - min).is_finite() {
+        Ok(())
+    } else {
+        Err(ConfigProblem::field(
+            MAX.key,
+            ConfigReason::Custom("range is too wide to sample".to_owned()),
+        ))
+    }
+}
+
+fn read_config(
+    config: &SubActionConfig,
+    args: &ArgStack,
+) -> Result<(f64, f64, String), ConfigProblem> {
+    let min = MIN.read(config, args)?;
+    let max = MAX.read(config, args)?;
+    sampleable(min, max)?;
+    Ok((min, max, INTO_VAR.read(config, args)?))
+}
 
 pub struct CoreRandomFloatRunner;
 
@@ -38,42 +89,28 @@ impl SubActionRunner for CoreRandomFloatRunner {
         "dice"
     }
 
-    fn default_config(&self) -> SubActionConfig {
-        let mut cfg = SubActionConfig::new();
-        cfg.insert("min".to_owned(), Variant::String("0.0".to_owned()));
-        cfg.insert("max".to_owned(), Variant::String("1.0".to_owned()));
-        cfg.insert("into_var".to_owned(), Variant::String(String::new()));
-        cfg
+    fn config_spec(&self) -> Option<ConfigSpec> {
+        Some(CONFIG)
     }
 
-    fn config_fields(&self) -> Vec<FormField> {
-        vec![
-            FormField::Text {
-                key: "min",
-                label: "Minimum",
-                placeholder: "0.0",
-            },
-            FormField::Text {
-                key: "max",
-                label: "Maximum",
-                placeholder: "1.0",
-            },
-            FormField::Text {
-                key: "into_var",
-                label: "Output Variable",
-                placeholder: "random_result",
-            },
-        ]
-    }
-
-    fn validate_config(&self, config: &SubActionConfig) -> Result<(), RegistryError> {
-        config.require_str("into_var").map(|_| ())
+    fn check_config(
+        &self,
+        config: &SubActionConfig,
+        interpolation: Interpolation<'_>,
+    ) -> Result<(), ConfigProblem> {
+        match (
+            MIN.peek(config, interpolation)?,
+            MAX.peek(config, interpolation)?,
+        ) {
+            (Some(min), Some(max)) => sampleable(min, max),
+            _ => Ok(()),
+        }
     }
 
     fn scope_io(&self) -> SubActionIo {
         SubActionIo {
             produces: vec![ProducedVariable {
-                output_name_key: "into_var".to_owned(),
+                output_name_key: INTO_VAR_KEY.to_owned(),
                 kind: VariantKind::Float,
                 label: "Random float".to_owned(),
             }],
@@ -86,33 +123,16 @@ impl SubActionRunner for CoreRandomFloatRunner {
         config: &SubActionConfig,
         ctx: &RunContext<'_>,
     ) -> (SubActionTelemetry, Option<ArgStack>) {
-        let timer = StepTimer::start(ctx, "core.random.float");
-
-        let min = resolve_float(config, ctx, "min", 0.0);
-        let max = resolve_float(config, ctx, "max", 1.0);
-        let into_var =
-            forge_types::strip_var_decoration(config.str("into_var").unwrap_or_default());
-
-        let (outcome, produced) = match (min, max) {
-            (Err(e), _) | (Ok(_), Err(e)) => (SubActionOutcome::Failed(e), None),
-            (Ok(min), Ok(max)) if min > max => (
-                SubActionOutcome::Failed(format!("min ({min}) must be <= max ({max})")),
-                None,
-            ),
-            (Ok(min), Ok(max)) if !(max - min).is_finite() => (
-                SubActionOutcome::Failed(format!(
-                    "range from {min} to {max} is too wide to sample"
-                )),
-                None,
-            ),
-            (Ok(min), Ok(max)) => {
-                let value = rand::rng().random_range(min..=max);
-                let stack = ctx.arg_stack.clone().set(into_var, Variant::Float(value));
-                (SubActionOutcome::Success, Some(stack))
-            }
+        let timer = StepTimer::start(ctx, self.id());
+        let (min, max, into_var) = match read_config(config, ctx.arg_stack) {
+            Ok(values) => values,
+            Err(problem) => return (timer.invalid_config(&problem), None),
         };
 
-        (timer.finish(outcome), produced)
+        let value = rand::rng().random_range(min..=max);
+        let stack = ctx.arg_stack.clone().set(into_var, Variant::Float(value));
+
+        (timer.success(), Some(stack))
     }
 }
 

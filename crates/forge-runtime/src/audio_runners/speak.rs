@@ -2,18 +2,42 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use forge_registry::{
-    ConfigReason, ENGINE_VOICE_OPTIONS_KEY, FormField, RegistryError, RunContext, StepTimer,
-    SubActionCategory, SubActionConfigExt, SubActionRunner,
+    BlankableSelectField, ConfigProblem, ConfigSpec, ENGINE_VOICE_OPTIONS_KEY, OptionalField,
+    OptionalSwitch, RunContext, StepTimer, SubActionCategory, SubActionRunner, TypedField,
 };
-use forge_types::{
-    ArgStack, PlatformId, SubActionConfig, SubActionOutcome, SubActionTelemetry, Variant,
-};
+use forge_types::{ArgStack, PlatformId, SubActionConfig, SubActionOutcome, SubActionTelemetry};
 
+use super::{SPEECH_TEXT, WAIT_FOR_COMPLETION};
 use crate::engine_voice_ref::EngineVoiceRef;
 use crate::speak_dispatcher::{SpeakDispatcher, SpeechOrigin};
 use crate::twitch_emote_lexicon::TwitchEmoteLexicon;
 
+const SPEAK_KIND_ID: &str = "tts.speak.text";
 const VOICE_KEY: &str = "voice";
+const REWARD_ID_VARIABLE: &str = "reward.id";
+
+const VOICE: OptionalField<BlankableSelectField<String>> = OptionalField {
+    field: BlankableSelectField::new(VOICE_KEY, "Voice", ENGINE_VOICE_OPTIONS_KEY),
+    switch: OptionalSwitch::SharedKey {
+        label: Some("Voice (leave empty for the default voice)"),
+    },
+};
+
+const CONFIG: ConfigSpec = ConfigSpec::new(&[&SPEECH_TEXT, &VOICE, &WAIT_FOR_COMPLETION]);
+
+struct Speech {
+    text: String,
+    voice: Option<String>,
+    wait_for_completion: bool,
+}
+
+fn read_config(config: &SubActionConfig, args: &ArgStack) -> Result<Speech, ConfigProblem> {
+    Ok(Speech {
+        text: SPEECH_TEXT.read(config, args)?,
+        voice: VOICE.read(config, args)?.flatten(),
+        wait_for_completion: WAIT_FOR_COMPLETION.read(config, args)?,
+    })
+}
 
 pub struct SpeakRunner {
     speak: Arc<dyn SpeakDispatcher>,
@@ -33,13 +57,13 @@ impl SpeakRunner {
         self
     }
 
-    async fn installed_voice(&self, config: &SubActionConfig) -> Result<Option<String>, String> {
-        let Some(stored) = config.str_nonempty(VOICE_KEY) else {
+    async fn installed_voice(&self, stored: Option<String>) -> Result<Option<String>, String> {
+        let Some(stored) = stored else {
             return Ok(None);
         };
-        EngineVoiceRef::installed(stored, &self.speak.get_available_voices().await)
+        EngineVoiceRef::installed(&stored, &self.speak.get_available_voices().await)
             .map(|voice| Some(voice.to_string()))
-            .map_err(|reason| format!("tts.speak.text: {reason} - pick a voice again"))
+            .map_err(|reason| format!("{SPEAK_KIND_ID}: {reason} - pick a voice again"))
     }
 
     fn add_learned_reward_emotes(&self, origin: &mut SpeechOrigin, text: &str) {
@@ -58,7 +82,7 @@ impl SpeakRunner {
 #[async_trait]
 impl SubActionRunner for SpeakRunner {
     fn id(&self) -> &str {
-        "tts.speak.text"
+        SPEAK_KIND_ID
     }
 
     fn category(&self) -> SubActionCategory {
@@ -81,40 +105,8 @@ impl SubActionRunner for SpeakRunner {
         "message-circle"
     }
 
-    fn default_config(&self) -> SubActionConfig {
-        let mut cfg = SubActionConfig::new();
-        cfg.insert("text".to_owned(), Variant::String(String::new()));
-        cfg.insert("wait_for_completion".to_owned(), Variant::Bool(true));
-        cfg
-    }
-
-    fn config_fields(&self) -> Vec<FormField> {
-        vec![
-            FormField::TextArea {
-                key: "text",
-                label: "Text",
-            },
-            FormField::Optional {
-                key: VOICE_KEY,
-                label: "Voice (leave empty for the default voice)",
-                inner: Box::new(FormField::DynamicSelect {
-                    key: VOICE_KEY,
-                    label: "Voice",
-                    options_key: ENGINE_VOICE_OPTIONS_KEY,
-                }),
-            },
-            FormField::Toggle {
-                key: "wait_for_completion",
-                label: "Wait for completion",
-            },
-        ]
-    }
-
-    fn validate_config(&self, config: &SubActionConfig) -> Result<(), RegistryError> {
-        match config.str_nonempty("text") {
-            Some(_) => Ok(()),
-            None => Err(RegistryError::invalid_field("text", ConfigReason::Required)),
-        }
+    fn config_spec(&self) -> Option<ConfigSpec> {
+        Some(CONFIG)
     }
 
     async fn execute(
@@ -122,22 +114,26 @@ impl SubActionRunner for SpeakRunner {
         config: &SubActionConfig,
         ctx: &RunContext<'_>,
     ) -> (SubActionTelemetry, Option<ArgStack>) {
-        let timer = StepTimer::start(ctx, "tts.speak.text");
+        let timer = StepTimer::start(ctx, SPEAK_KIND_ID);
+        let Speech {
+            text,
+            voice,
+            wait_for_completion,
+        } = match read_config(config, ctx.arg_stack) {
+            Ok(speech) => speech,
+            Err(problem) => return (timer.invalid_config(&problem), None),
+        };
 
-        let raw_text = config.str("text").unwrap_or_default();
-        let text = ctx.arg_stack.interpolate(raw_text);
-
-        let voice = match self.installed_voice(config).await {
+        let voice = match self.installed_voice(voice).await {
             Ok(voice) => voice,
             Err(reason) => return (timer.finish(SubActionOutcome::Failed(reason)), None),
         };
 
-        let is_reward = ctx.arg_stack.get("reward.id").is_some();
+        let is_reward = ctx.arg_stack.get(REWARD_ID_VARIABLE).is_some();
         let mut origin = SpeechOrigin::from_args(ctx.arg_stack, Some(ctx.parent_event_id));
         if is_reward {
             self.add_learned_reward_emotes(&mut origin, &text);
         }
-        let wait_for_completion = config.bool("wait_for_completion").unwrap_or(true);
         let dispatch_result = if wait_for_completion {
             self.speak
                 .speak_and_wait(text, voice, is_reward, origin, ctx.cancel.clone())

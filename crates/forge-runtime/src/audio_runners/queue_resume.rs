@@ -1,11 +1,12 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use forge_registry::{FormField, RegistryError, RunContext, SubActionCategory, SubActionRunner};
+use forge_registry::{ConfigSpec, RunContext, StepTimer, SubActionCategory, SubActionRunner};
 use forge_types::{ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetry};
-use time::OffsetDateTime;
 
 use crate::speak_dispatcher::SpeakDispatcher;
+
+const QUEUE_RESUME_KIND_ID: &str = "tts.queue.resume";
 
 pub struct QueueResumeRunner {
     speak: Arc<dyn SpeakDispatcher>,
@@ -20,7 +21,7 @@ impl QueueResumeRunner {
 #[async_trait]
 impl SubActionRunner for QueueResumeRunner {
     fn id(&self) -> &str {
-        "tts.queue.resume"
+        QUEUE_RESUME_KIND_ID
     }
 
     fn category(&self) -> SubActionCategory {
@@ -43,16 +44,8 @@ impl SubActionRunner for QueueResumeRunner {
         "play-circle"
     }
 
-    fn default_config(&self) -> SubActionConfig {
-        SubActionConfig::new()
-    }
-
-    fn config_fields(&self) -> Vec<FormField> {
-        vec![]
-    }
-
-    fn validate_config(&self, _config: &SubActionConfig) -> Result<(), RegistryError> {
-        Ok(())
+    fn config_spec(&self) -> Option<ConfigSpec> {
+        Some(ConfigSpec::new(&[]))
     }
 
     async fn execute(
@@ -60,28 +53,8 @@ impl SubActionRunner for QueueResumeRunner {
         _config: &SubActionConfig,
         ctx: &RunContext<'_>,
     ) -> (SubActionTelemetry, Option<ArgStack>) {
-        let started_at = OffsetDateTime::now_utc();
-
-        let outcome = match self.speak.resume().await {
-            Ok(()) => SubActionOutcome::Success,
-            Err(e) => SubActionOutcome::Failed(e.to_string()),
-        };
-
-        let duration_ms = (OffsetDateTime::now_utc() - started_at)
-            .whole_milliseconds()
-            .max(0) as u64;
-
-        (
-            SubActionTelemetry {
-                args_in: ::std::collections::BTreeMap::new(),
-                produced: ::std::collections::BTreeMap::new(),
-                index: ctx.index,
-                kind: "tts.queue.resume".to_owned(),
-                started_at,
-                duration_ms,
-                outcome,
-            },
-            None,
-        )
+        let timer = StepTimer::start(ctx, QUEUE_RESUME_KIND_ID);
+        let outcome = SubActionOutcome::from_result(&self.speak.resume().await);
+        (timer.finish(outcome), None)
     }
 }

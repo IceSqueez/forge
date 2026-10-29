@@ -1,13 +1,110 @@
 use async_trait::async_trait;
 use base64::Engine as _;
 use forge_registry::{
-    FormField, RegistryError, RunContext, StepTimer, SubActionCategory, SubActionConfigExt,
-    SubActionIo, SubActionRunner,
+    ChoiceField, ConfigChoice, ConfigProblem, ConfigSpec, RunContext, StepTimer, SubActionCategory,
+    SubActionIo, SubActionRunner, TextEditor, TextField, ToggleField, TypedField,
 };
 use forge_types::{ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetry, Variant};
 use tokio::io::AsyncWriteExt as _;
 
 const FILE_BYTES_WRITTEN_VAR: &str = "file.bytes_written";
+
+#[derive(Clone, Copy)]
+enum Encoding {
+    Utf8,
+    Latin1,
+    RawBase64,
+}
+
+impl ConfigChoice for Encoding {
+    const ALL: &'static [Self] = &[Self::Utf8, Self::Latin1, Self::RawBase64];
+    const WIRE_NAMES: &'static [&'static str] = &["utf8", "latin1", "raw_base64"];
+
+    fn wire_name(self) -> &'static str {
+        match self {
+            Self::Utf8 => "utf8",
+            Self::Latin1 => "latin1",
+            Self::RawBase64 => "raw_base64",
+        }
+    }
+}
+
+#[derive(Clone, Copy)]
+enum WriteMode {
+    Overwrite,
+    Append,
+    CreateNew,
+}
+
+impl ConfigChoice for WriteMode {
+    const ALL: &'static [Self] = &[Self::Overwrite, Self::Append, Self::CreateNew];
+    const WIRE_NAMES: &'static [&'static str] = &["overwrite", "append", "create_new"];
+
+    fn wire_name(self) -> &'static str {
+        match self {
+            Self::Overwrite => "overwrite",
+            Self::Append => "append",
+            Self::CreateNew => "create_new",
+        }
+    }
+}
+
+const PATH: TextField = TextField {
+    key: "path",
+    label: "File Path (relative to the files folder)",
+    editor: TextEditor::Line {
+        placeholder: "output/data.txt",
+    },
+    default: "",
+    required: true,
+};
+
+const CONTENT: TextField = TextField {
+    key: "content",
+    label: "Content",
+    editor: TextEditor::Area,
+    default: "",
+    required: false,
+};
+
+const ENCODING: ChoiceField<Encoding> = ChoiceField {
+    key: "encoding",
+    label: "Encoding",
+    default: Encoding::Utf8,
+};
+
+const MODE: ChoiceField<WriteMode> = ChoiceField {
+    key: "mode",
+    label: "Write Mode",
+    default: WriteMode::Overwrite,
+};
+
+const CREATE_PARENT_DIRS: ToggleField = ToggleField {
+    key: "create_parent_dirs",
+    label: "Create Parent Directories",
+    default: false,
+};
+
+const CONFIG: ConfigSpec =
+    ConfigSpec::new(&[&PATH, &CONTENT, &ENCODING, &MODE, &CREATE_PARENT_DIRS]);
+
+struct WriteRequest {
+    path: String,
+    content: String,
+    encoding: Encoding,
+    mode: WriteMode,
+    create_parent_dirs: bool,
+}
+
+fn read_config(config: &SubActionConfig, args: &ArgStack) -> Result<WriteRequest, ConfigProblem> {
+    Ok(WriteRequest {
+        path: PATH.read(config, args)?,
+        content: CONTENT.read(config, args)?,
+        encoding: ENCODING.read(config, args)?,
+        mode: MODE.read(config, args)?,
+        create_parent_dirs: CREATE_PARENT_DIRS.read(config, args)?,
+    })
+}
 
 pub struct CoreFileWriteRunner;
 
@@ -37,46 +134,8 @@ impl SubActionRunner for CoreFileWriteRunner {
         "file-edit"
     }
 
-    fn default_config(&self) -> SubActionConfig {
-        let mut cfg = SubActionConfig::new();
-        cfg.insert("path".to_owned(), Variant::String(String::new()));
-        cfg.insert("content".to_owned(), Variant::String(String::new()));
-        cfg.insert("encoding".to_owned(), Variant::String("utf8".to_owned()));
-        cfg.insert("mode".to_owned(), Variant::String("overwrite".to_owned()));
-        cfg.insert("create_parent_dirs".to_owned(), Variant::Bool(false));
-        cfg
-    }
-
-    fn config_fields(&self) -> Vec<FormField> {
-        vec![
-            FormField::Text {
-                key: "path",
-                label: "File Path (relative to the files folder)",
-                placeholder: "output/data.txt",
-            },
-            FormField::TextArea {
-                key: "content",
-                label: "Content",
-            },
-            FormField::Select {
-                key: "encoding",
-                label: "Encoding",
-                options: &["utf8", "latin1", "raw_base64"],
-            },
-            FormField::Select {
-                key: "mode",
-                label: "Write Mode",
-                options: &["overwrite", "append", "create_new"],
-            },
-            FormField::Toggle {
-                key: "create_parent_dirs",
-                label: "Create Parent Directories",
-            },
-        ]
-    }
-
-    fn validate_config(&self, config: &SubActionConfig) -> Result<(), RegistryError> {
-        config.require_str("path").map(|_| ())
+    fn config_spec(&self) -> Option<ConfigSpec> {
+        Some(CONFIG)
     }
 
     fn scope_io(&self) -> SubActionIo {
@@ -91,90 +150,72 @@ impl SubActionRunner for CoreFileWriteRunner {
         config: &SubActionConfig,
         ctx: &RunContext<'_>,
     ) -> (SubActionTelemetry, Option<ArgStack>) {
-        let timer = StepTimer::start(ctx, "core.file.write");
+        let timer = StepTimer::start(ctx, self.id());
+        let request = match read_config(config, ctx.arg_stack) {
+            Ok(request) => request,
+            Err(problem) => return (timer.invalid_config(&problem), None),
+        };
 
-        let path_template = config.str("path").unwrap_or_default();
-        let content_template = config.str("content").unwrap_or_default();
-        let encoding = config.str("encoding").unwrap_or("utf8").to_owned();
-        let mode = config.str("mode").unwrap_or("overwrite").to_owned();
-        let create_parent_dirs = config.bool("create_parent_dirs").unwrap_or(false);
-
-        let interpolated_path = ctx.arg_stack.interpolate(path_template);
-        let content = ctx.arg_stack.interpolate(content_template);
-
-        let (outcome, updated) = match super::file_sandbox::resolve_sandboxed(&interpolated_path)
-            .await
-        {
+        let (outcome, updated) = match super::file_sandbox::resolve_sandboxed(&request.path).await {
             Err(reason) => (
                 SubActionOutcome::Failed(format!("sandbox rejected path: {reason}")),
                 None,
             ),
-            Ok(abs_path) => {
-                match do_write(&abs_path, &content, &encoding, &mode, create_parent_dirs).await {
-                    Err(reason) => (SubActionOutcome::Failed(reason), None),
-                    Ok(bytes_written) => {
-                        let stack = ctx.arg_stack.clone().set(
-                            FILE_BYTES_WRITTEN_VAR.to_owned(),
-                            Variant::Int(bytes_written as i64),
-                        );
-                        (SubActionOutcome::Success, Some(stack))
-                    }
+            Ok(abs_path) => match do_write(&abs_path, &request).await {
+                Err(reason) => (SubActionOutcome::Failed(reason), None),
+                Ok(bytes_written) => {
+                    let stack = ctx.arg_stack.clone().set(
+                        FILE_BYTES_WRITTEN_VAR.to_owned(),
+                        Variant::Int(i64::try_from(bytes_written).unwrap_or(i64::MAX)),
+                    );
+                    (SubActionOutcome::Success, Some(stack))
                 }
-            }
+            },
         };
 
         (timer.finish(outcome), updated)
     }
 }
 
-fn encode_content(content: &str, encoding: &str) -> Result<Vec<u8>, String> {
+fn encode_content(content: &str, encoding: Encoding) -> Result<Vec<u8>, String> {
     match encoding {
-        "" | "utf8" => Ok(content.as_bytes().to_vec()),
-        "latin1" => content
+        Encoding::Utf8 => Ok(content.as_bytes().to_vec()),
+        Encoding::Latin1 => content
             .chars()
             .map(|c| {
-                let code = c as u32;
-                if code <= 0xFF {
-                    Ok(code as u8)
-                } else {
-                    Err(format!("'{c}' (U+{code:04X}) has no Latin-1 encoding"))
-                }
+                let code = u32::from(c);
+                u8::try_from(code)
+                    .map_err(|_| format!("'{c}' (U+{code:04X}) has no Latin-1 encoding"))
             })
             .collect(),
-        "raw_base64" => base64::engine::general_purpose::STANDARD
+        Encoding::RawBase64 => base64::engine::general_purpose::STANDARD
             .decode(content.trim())
             .map_err(|e| format!("base64 decode failed: {e}")),
-        other => Err(format!("unknown encoding: '{other}'")),
     }
 }
 
-async fn do_write(
-    abs_path: &std::path::Path,
-    content: &str,
-    encoding: &str,
-    mode: &str,
-    create_parent_dirs: bool,
-) -> Result<u64, String> {
-    if create_parent_dirs && let Some(parent) = abs_path.parent() {
+async fn do_write(abs_path: &std::path::Path, request: &WriteRequest) -> Result<usize, String> {
+    if request.create_parent_dirs
+        && let Some(parent) = abs_path.parent()
+    {
         tokio::fs::create_dir_all(parent)
             .await
             .map_err(|e| format!("create_dir_all failed: {e}"))?;
     }
 
-    let bytes = encode_content(content, encoding)?;
+    let bytes = encode_content(&request.content, request.encoding)?;
 
     let mut opts = tokio::fs::OpenOptions::new();
-    match mode {
-        "" | "overwrite" => {
+    match request.mode {
+        WriteMode::Overwrite => {
             opts.write(true).create(true).truncate(true);
         }
-        "append" => {
+        WriteMode::Append => {
             opts.append(true).create(true);
         }
-        "create_new" => {
+        WriteMode::CreateNew => {
             opts.write(true).create_new(true);
         }
-        other => return Err(format!("unknown write mode: '{other}'")),
     }
 
     let mut file = opts
@@ -189,7 +230,7 @@ async fn do_write(
         .await
         .map_err(|e| format!("write failed: {e}"))?;
 
-    Ok(bytes.len() as u64)
+    Ok(bytes.len())
 }
 
 #[cfg(test)]

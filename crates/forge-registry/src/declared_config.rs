@@ -30,8 +30,8 @@ pub trait TypedField: Sync {
     fn key(&self) -> &'static str;
     fn form_field(&self) -> FormField;
     fn default_value(&self) -> Variant;
-    fn seeds_default(&self) -> bool {
-        true
+    fn write_default(&self, config: &mut SubActionConfig) {
+        config.insert(self.key().to_owned(), self.default_value());
     }
     fn literal<'a>(
         &self,
@@ -44,16 +44,7 @@ pub trait TypedField: Sync {
         config: &SubActionConfig,
         args: &ArgStack,
     ) -> Result<Self::Value, ConfigProblem> {
-        let value = stored_or_default(self, config);
-        match self
-            .literal(&value)
-            .map_err(|reason| problem(self, reason))?
-        {
-            FieldLiteral::Value(parsed) => Ok(parsed),
-            FieldLiteral::Template(text) => self
-                .parse_text(&args.interpolate(text))
-                .map_err(|reason| problem(self, reason)),
-        }
+        read_stored(self, config, args)
     }
 
     fn peek(
@@ -61,18 +52,43 @@ pub trait TypedField: Sync {
         config: &SubActionConfig,
         interpolation: Interpolation<'_>,
     ) -> Result<Option<Self::Value>, ConfigProblem> {
-        let Interpolation::Against(args) = interpolation else {
-            let value = stored_or_default(self, config);
-            return match self
-                .literal(&value)
-                .map_err(|reason| problem(self, reason))?
-            {
-                FieldLiteral::Value(parsed) => Ok(Some(parsed)),
-                FieldLiteral::Template(_) => Ok(None),
-            };
-        };
-        self.read(config, args).map(Some)
+        peek_stored(self, config, interpolation)
     }
+}
+
+pub(crate) fn read_stored<F: TypedField + ?Sized>(
+    field: &F,
+    config: &SubActionConfig,
+    args: &ArgStack,
+) -> Result<F::Value, ConfigProblem> {
+    let value = stored_or_default(field, config);
+    match field
+        .literal(&value)
+        .map_err(|reason| problem(field, reason))?
+    {
+        FieldLiteral::Value(parsed) => Ok(parsed),
+        FieldLiteral::Template(text) => field
+            .parse_text(&args.interpolate(text))
+            .map_err(|reason| problem(field, reason)),
+    }
+}
+
+pub(crate) fn peek_stored<F: TypedField + ?Sized>(
+    field: &F,
+    config: &SubActionConfig,
+    interpolation: Interpolation<'_>,
+) -> Result<Option<F::Value>, ConfigProblem> {
+    let Interpolation::Against(args) = interpolation else {
+        let value = stored_or_default(field, config);
+        return match field
+            .literal(&value)
+            .map_err(|reason| problem(field, reason))?
+        {
+            FieldLiteral::Value(parsed) => Ok(Some(parsed)),
+            FieldLiteral::Template(_) => Ok(None),
+        };
+    };
+    read_stored(field, config, args).map(Some)
 }
 
 fn stored_or_default<'c, F: TypedField + ?Sized>(
@@ -91,8 +107,7 @@ fn problem<F: TypedField + ?Sized>(field: &F, reason: ConfigReason) -> ConfigPro
 pub trait DeclaredField: Sync {
     fn key(&self) -> &'static str;
     fn form_field(&self) -> FormField;
-    fn default_value(&self) -> Variant;
-    fn seeds_default(&self) -> bool;
+    fn write_default(&self, config: &mut SubActionConfig);
     fn check(
         &self,
         config: &SubActionConfig,
@@ -109,12 +124,8 @@ impl<F: TypedField> DeclaredField for F {
         TypedField::form_field(self)
     }
 
-    fn default_value(&self) -> Variant {
-        TypedField::default_value(self)
-    }
-
-    fn seeds_default(&self) -> bool {
-        TypedField::seeds_default(self)
+    fn write_default(&self, config: &mut SubActionConfig) {
+        TypedField::write_default(self, config);
     }
 
     fn check(
@@ -141,10 +152,11 @@ impl ConfigSpec {
     }
 
     pub fn default_config(&self) -> SubActionConfig {
-        self.fields()
-            .filter(|field| field.seeds_default())
-            .map(|field| (field.key().to_owned(), field.default_value()))
-            .collect()
+        let mut config = SubActionConfig::new();
+        for field in self.fields() {
+            field.write_default(&mut config);
+        }
+        config
     }
 
     pub fn form_fields(&self) -> Vec<FormField> {

@@ -2,13 +2,54 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use forge_registry::{
-    CodeKind, CodeLanguage, FormField, RegistryError, RunContext, StepTimer, SubActionCategory,
-    SubActionConfigExt, SubActionRunner,
+    ChainLayout, CodeField, CodeKind, CodeLanguage, ConfigProblem, ConfigSpec, RunContext,
+    StepChainField, StepTimer, SubActionCategory, SubActionRunner, ToggleField, TypedField,
 };
 use forge_types::{ArgStack, SubActionConfig, SubActionTelemetry, Variant};
 
 use super::core_logic_shared::{chain_at, propagate, retag};
 use crate::{ConditionError, ConditionGate};
+
+const BRANCH_TAKEN_VAR: &str = "branch.taken";
+
+const CONDITION: CodeField = CodeField {
+    key: "condition",
+    label: "Condition",
+    language: CodeLanguage::Rhai,
+    kind: CodeKind::Expression,
+    default: "",
+    required: true,
+};
+
+const UNDEFINED_IS_FALSE: ToggleField = ToggleField {
+    key: "treat_undefined_as_false",
+    label: "Treat undefined as false",
+    default: true,
+};
+
+const THEN_CHAIN: StepChainField = StepChainField {
+    key: "then_chain",
+    label: "Then",
+    layout: ChainLayout::Steps,
+    seeds_empty_list: false,
+};
+
+const ELSE_CHAIN: StepChainField = StepChainField {
+    key: "else_chain",
+    label: "Else",
+    layout: ChainLayout::Steps,
+    seeds_empty_list: false,
+};
+
+const CONFIG: ConfigSpec =
+    ConfigSpec::new(&[&CONDITION, &UNDEFINED_IS_FALSE, &THEN_CHAIN, &ELSE_CHAIN]);
+
+fn read_config(config: &SubActionConfig, args: &ArgStack) -> Result<(String, bool), ConfigProblem> {
+    Ok((
+        CONDITION.read(config, args)?,
+        UNDEFINED_IS_FALSE.read(config, args)?,
+    ))
+}
 
 pub struct CoreLogicIfThenElseRunner {
     gate: Arc<ConditionGate>,
@@ -46,38 +87,8 @@ impl SubActionRunner for CoreLogicIfThenElseRunner {
         "git-branch"
     }
 
-    fn default_config(&self) -> SubActionConfig {
-        let mut cfg = SubActionConfig::new();
-        cfg.insert("condition".to_owned(), Variant::String(String::new()));
-        cfg.insert("treat_undefined_as_false".to_owned(), Variant::Bool(true));
-        cfg
-    }
-
-    fn config_fields(&self) -> Vec<FormField> {
-        vec![
-            FormField::Code {
-                key: "condition",
-                label: "Condition",
-                language: CodeLanguage::Rhai,
-                kind: CodeKind::Expression,
-            },
-            FormField::Toggle {
-                key: "treat_undefined_as_false",
-                label: "Treat undefined as false",
-            },
-            FormField::SubChain {
-                key: "then_chain",
-                label: "Then",
-            },
-            FormField::SubChain {
-                key: "else_chain",
-                label: "Else",
-            },
-        ]
-    }
-
-    fn validate_config(&self, config: &SubActionConfig) -> Result<(), RegistryError> {
-        config.require_str("condition").map(|_| ())
+    fn config_spec(&self) -> Option<ConfigSpec> {
+        Some(CONFIG)
     }
 
     async fn execute(
@@ -86,11 +97,16 @@ impl SubActionRunner for CoreLogicIfThenElseRunner {
         ctx: &RunContext<'_>,
     ) -> (SubActionTelemetry, Option<ArgStack>) {
         let timer = StepTimer::start(ctx, self.id());
+        let (condition, undefined_is_false) = match read_config(config, ctx.arg_stack) {
+            Ok(values) => values,
+            Err(problem) => return (timer.invalid_config(&problem), None),
+        };
 
-        let template = config.str("condition").unwrap_or_default();
-        let undefined_is_false = config.bool("treat_undefined_as_false").unwrap_or(true);
-
-        let verdict = match self.gate.evaluate_with_args(template, ctx.arg_stack).await {
+        let verdict = match self
+            .gate
+            .evaluate_with_args(&condition, ctx.arg_stack)
+            .await
+        {
             Ok(value) => value,
             Err(ConditionError::Undefined { .. }) if undefined_is_false => false,
             Err(e) => {
@@ -98,14 +114,14 @@ impl SubActionRunner for CoreLogicIfThenElseRunner {
             }
         };
 
-        let branch = if verdict { "then" } else { "else" };
-        let steps = chain_at(
-            config,
-            if verdict { "then_chain" } else { "else_chain" },
-            ctx,
-        );
+        let (branch, chain) = if verdict {
+            ("then", THEN_CHAIN.key)
+        } else {
+            ("else", ELSE_CHAIN.key)
+        };
+        let steps = chain_at(config, chain, ctx);
         let base = ctx.arg_stack.clone().set(
-            "branch.taken".to_owned(),
+            BRANCH_TAKEN_VAR.to_owned(),
             Variant::String(branch.to_owned()),
         );
 
@@ -119,7 +135,7 @@ impl SubActionRunner for CoreLogicIfThenElseRunner {
                     .extend(retag(child.telemetry, ctx.index, branch));
                 let outcome = propagate(child.signal, ctx);
                 let stack = child.arg_stack.set(
-                    "branch.taken".to_owned(),
+                    BRANCH_TAKEN_VAR.to_owned(),
                     Variant::String(branch.to_owned()),
                 );
                 (timer.finish(outcome), Some(stack))

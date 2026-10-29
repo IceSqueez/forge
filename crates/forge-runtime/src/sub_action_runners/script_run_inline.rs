@@ -4,20 +4,33 @@ use std::time::{Duration, Instant};
 use async_trait::async_trait;
 use forge_events::{EventPublisher, EventSource, ScriptFailed, ScriptStarted, TypedEvent};
 use forge_registry::{
-    CodeKind, CodeLanguage, FormField, RegistryError, RunContext, SubActionCategory,
-    SubActionConfigExt, SubActionRunner,
+    CodeField, CodeKind, CodeLanguage, ConfigSpec, RunContext, StepTimer, SubActionCategory,
+    SubActionRunner, TypedField,
 };
 use forge_script::{
     Engine, EngineConfig, ForgeApi, ScriptError, ScriptGlobals, ScriptHttpClient, ScriptHttpConfig,
     build_scope_for_contract,
 };
 use forge_storage::{GlobalsRepo, SettingsRepo};
-use forge_types::{ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetry, Variant};
+use forge_types::{ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetry};
 use time::OffsetDateTime;
 
 use crate::global_mutation::RuntimeScriptGlobals;
 use crate::scheduled_runs::SchedulingContext;
 use crate::script_registry::{SCRIPT_PANIC_ERROR_TYPE, ScriptRegistry};
+
+const INLINE_SCRIPT_KIND_ID: &str = "script.run.inline";
+
+const BODY: CodeField = CodeField {
+    key: "body",
+    label: "Script Body",
+    language: CodeLanguage::Rhai,
+    kind: CodeKind::Script,
+    default: "",
+    required: true,
+};
+
+const CONFIG: ConfigSpec = ConfigSpec::new(&[&BODY]);
 
 pub struct ScriptRunInlineRunner {
     registry: Arc<ScriptRegistry>,
@@ -45,7 +58,7 @@ impl ScriptRunInlineRunner {
 #[async_trait]
 impl SubActionRunner for ScriptRunInlineRunner {
     fn id(&self) -> &str {
-        "script.run.inline"
+        INLINE_SCRIPT_KIND_ID
     }
 
     fn category(&self) -> SubActionCategory {
@@ -68,23 +81,8 @@ impl SubActionRunner for ScriptRunInlineRunner {
         "code"
     }
 
-    fn default_config(&self) -> SubActionConfig {
-        let mut cfg = SubActionConfig::new();
-        cfg.insert("body".to_owned(), Variant::String(String::new()));
-        cfg
-    }
-
-    fn config_fields(&self) -> Vec<FormField> {
-        vec![FormField::Code {
-            key: "body",
-            label: "Script Body",
-            language: CodeLanguage::Rhai,
-            kind: CodeKind::Script,
-        }]
-    }
-
-    fn validate_config(&self, config: &SubActionConfig) -> Result<(), RegistryError> {
-        config.require_str("body").map(|_| ())
+    fn config_spec(&self) -> Option<ConfigSpec> {
+        Some(CONFIG)
     }
 
     async fn execute(
@@ -92,10 +90,17 @@ impl SubActionRunner for ScriptRunInlineRunner {
         config: &SubActionConfig,
         ctx: &RunContext<'_>,
     ) -> (SubActionTelemetry, Option<ArgStack>) {
+        let body = match BODY.read(config, ctx.arg_stack) {
+            Ok(body) => body,
+            Err(problem) => {
+                return (
+                    StepTimer::start(ctx, self.id()).invalid_config(&problem),
+                    None,
+                );
+            }
+        };
         let started_at = OffsetDateTime::now_utc();
         let wall_start = Instant::now();
-
-        let body = config.str("body").unwrap_or_default().to_owned();
 
         let publisher_arc = Arc::clone(&self.publisher);
         let globals_arc = Arc::clone(&self.globals);
@@ -193,7 +198,7 @@ impl SubActionRunner for ScriptRunInlineRunner {
             SubActionTelemetry {
                 args_in: ::std::collections::BTreeMap::new(),
                 produced: ::std::collections::BTreeMap::new(),
-                kind: "script.run.inline".to_owned(),
+                kind: INLINE_SCRIPT_KIND_ID.to_owned(),
                 started_at,
                 duration_ms,
                 outcome,

@@ -1,13 +1,69 @@
 use async_trait::async_trait;
 use forge_registry::{
-    ConfigReason, FormField, ProducedVariable, RegistryError, RunContext, StepTimer,
-    SubActionCategory, SubActionConfigExt, SubActionIo, SubActionRunner,
+    ConfigProblem, ConfigSpec, Interpolation, ProducedVariable, RunContext, StepTimer,
+    SubActionCategory, SubActionIo, SubActionRunner, TemplateField, TextEditor, TextField,
+    ToggleField, TypedField, VariableField,
 };
 use forge_types::{ArgStack, SubActionConfig, SubActionTelemetry, Variant, VariantKind};
 
 use super::time_pattern::{
-    DEFAULT_TIME_PATTERN, PARSE_PATTERN_KEY, TIME_PARSE_KIND_ID, UTC_KEY, resolve_time_pattern,
+    DEFAULT_TIME_PATTERN, PARSE_PATTERN_KEY, ResolvedTimePattern, TIME_PARSE_KIND_ID, UTC_KEY,
+    checked_time_pattern, stored_utc,
 };
+
+const INTO_VAR_KEY: &str = "into_var";
+const PARSED_VARIABLE: &str = "time.parsed";
+
+const SOURCE: TextField = TextField {
+    key: "source",
+    label: "Source String",
+    editor: TextEditor::Line {
+        placeholder: "2024-01-15 12:00:00",
+    },
+    default: "",
+    required: false,
+};
+
+const PATTERN: TemplateField = TemplateField {
+    key: PARSE_PATTERN_KEY,
+    label: "Date pattern (e.g. dd.MM.yyyy HH:mm, yyyy-MM-dd'T'HH:mm:ssxxx)",
+    placeholder: DEFAULT_TIME_PATTERN,
+    default: DEFAULT_TIME_PATTERN,
+    required: false,
+};
+
+const UTC: ToggleField = ToggleField {
+    key: UTC_KEY,
+    label: "Read text without an offset as UTC instead of local time",
+    default: false,
+};
+
+const INTO_VAR: VariableField = VariableField {
+    key: INTO_VAR_KEY,
+    label: "Output Variable",
+    placeholder: PARSED_VARIABLE,
+    default: PARSED_VARIABLE,
+};
+
+const CONFIG: ConfigSpec = ConfigSpec::new(&[&SOURCE, &PATTERN, &UTC, &INTO_VAR]);
+
+struct ParseConfig {
+    source: String,
+    pattern: ResolvedTimePattern,
+    into_var: String,
+}
+
+fn read_config(config: &SubActionConfig, args: &ArgStack) -> Result<ParseConfig, ConfigProblem> {
+    Ok(ParseConfig {
+        source: SOURCE.read(config, args)?,
+        pattern: checked_time_pattern(
+            PATTERN.key,
+            &PATTERN.read(config, args)?,
+            stored_utc(&UTC, config, args)?,
+        )?,
+        into_var: INTO_VAR.read(config, args)?,
+    })
+}
 
 pub struct CoreTimeParseRunner;
 
@@ -37,61 +93,30 @@ impl SubActionRunner for CoreTimeParseRunner {
         "clock-edit"
     }
 
-    fn default_config(&self) -> SubActionConfig {
-        let mut cfg = SubActionConfig::new();
-        cfg.insert("source".to_owned(), Variant::String(String::new()));
-        cfg.insert(
-            PARSE_PATTERN_KEY.to_owned(),
-            Variant::String(DEFAULT_TIME_PATTERN.to_owned()),
-        );
-        cfg.insert(UTC_KEY.to_owned(), Variant::Bool(false));
-        cfg.insert(
-            "into_var".to_owned(),
-            Variant::String("time.parsed".to_owned()),
-        );
-        cfg
+    fn config_spec(&self) -> Option<ConfigSpec> {
+        Some(CONFIG)
     }
 
-    fn config_fields(&self) -> Vec<FormField> {
-        vec![
-            FormField::Text {
-                key: "source",
-                label: "Source String",
-                placeholder: "2024-01-15 12:00:00",
-            },
-            FormField::Text {
-                key: PARSE_PATTERN_KEY,
-                label: "Date pattern (e.g. dd.MM.yyyy HH:mm, yyyy-MM-dd'T'HH:mm:ssxxx)",
-                placeholder: DEFAULT_TIME_PATTERN,
-            },
-            FormField::Toggle {
-                key: UTC_KEY,
-                label: "Read text without an offset as UTC instead of local time",
-            },
-            FormField::Text {
-                key: "into_var",
-                label: "Output Variable",
-                placeholder: "time.parsed",
-            },
-        ]
-    }
-
-    fn checks_config_while_editing(&self) -> bool {
-        true
-    }
-
-    fn validate_config(&self, config: &SubActionConfig) -> Result<(), RegistryError> {
-        resolve_time_pattern(config, PARSE_PATTERN_KEY)
-            .and_then(|resolved| resolved.pattern().map(|_| ()))
-            .map_err(|detail| {
-                RegistryError::invalid_field(PARSE_PATTERN_KEY, ConfigReason::InvalidFormat(detail))
-            })
+    fn check_config(
+        &self,
+        config: &SubActionConfig,
+        interpolation: Interpolation<'_>,
+    ) -> Result<(), ConfigProblem> {
+        match (
+            PATTERN.peek(config, interpolation)?,
+            UTC.peek(config, interpolation)?.map(Some),
+        ) {
+            (Some(pattern), Some(utc)) => {
+                checked_time_pattern(PATTERN.key, &pattern, utc).map(|_| ())
+            }
+            _ => Ok(()),
+        }
     }
 
     fn scope_io(&self) -> SubActionIo {
         SubActionIo {
             produces: vec![ProducedVariable {
-                output_name_key: "into_var".to_owned(),
+                output_name_key: INTO_VAR_KEY.to_owned(),
                 kind: VariantKind::Datetime,
                 label: "Parsed datetime".to_owned(),
             }],
@@ -104,19 +129,16 @@ impl SubActionRunner for CoreTimeParseRunner {
         config: &SubActionConfig,
         ctx: &RunContext<'_>,
     ) -> (SubActionTelemetry, Option<ArgStack>) {
-        let timer = StepTimer::start(ctx, TIME_PARSE_KIND_ID);
-
-        let source_template = config.str("source").unwrap_or("").to_owned();
-        let source = ctx.arg_stack.interpolate(&source_template);
-
-        let into_var = forge_types::strip_var_decoration(
-            config.str_nonempty("into_var").unwrap_or("time.parsed"),
-        );
-
-        let resolved = match resolve_time_pattern(config, PARSE_PATTERN_KEY) {
-            Ok(resolved) => resolved,
-            Err(e) => return (timer.failed(e), None),
+        let timer = StepTimer::start(ctx, self.id());
+        let ParseConfig {
+            source,
+            pattern: resolved,
+            into_var,
+        } = match read_config(config, ctx.arg_stack) {
+            Ok(read) => read,
+            Err(problem) => return (timer.invalid_config(&problem), None),
         };
+
         let pattern = match resolved.pattern() {
             Ok(pattern) => pattern,
             Err(e) => return (timer.failed(e), None),
@@ -136,7 +158,6 @@ impl SubActionRunner for CoreTimeParseRunner {
         };
 
         let new_stack = ctx.arg_stack.clone().set(into_var, Variant::Datetime(dt));
-
         (timer.success(), Some(new_stack))
     }
 }

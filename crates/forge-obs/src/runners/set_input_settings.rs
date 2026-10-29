@@ -3,14 +3,13 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use forge_registry::runner::SubActionConfig;
 use forge_registry::{
-    ConfigProblem, ConfigSpec, RunContext, StepTimer, SubActionCategory, SubActionRunner,
-    TextEditor, TextField, ToggleField, TypedField,
+    ConfigProblem, ConfigSpec, JsonObjectField, RunContext, StepTimer, SubActionCategory,
+    SubActionRunner, TextEditor, TextField, ToggleField, TypedField,
 };
 use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry};
 use serde_json::{Map, Value};
 
 use crate::ObsSink;
-use crate::runners::json_object_field::JsonObjectField;
 use crate::vocabulary::{config_keys, sub_action_ids};
 
 const KIND_ID: &str = sub_action_ids::SOURCE_SET_INPUT_SETTINGS;

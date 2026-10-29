@@ -2,12 +2,73 @@ use std::path::Path;
 
 use async_trait::async_trait;
 use forge_registry::{
-    FormField, ProducedVariable, RegistryError, RunContext, StepTimer, SubActionCategory,
-    SubActionConfigExt, SubActionIo, SubActionRunner,
+    ConfigProblem, ConfigSpec, ProducedVariable, RunContext, StepTimer, SubActionCategory,
+    SubActionIo, SubActionRunner, TextEditor, TextField, ToggleField, TypedField, VariableField,
 };
 use forge_types::{
     ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetry, Variant, VariantKind,
 };
+
+const INTO_VAR_KEY: &str = "into_var";
+const DEFAULT_INTO_VAR: &str = "file.entries";
+
+const PATH: TextField = TextField {
+    key: "path",
+    label: "Directory Path (relative to the files folder)",
+    editor: TextEditor::Line {
+        placeholder: "logs/",
+    },
+    default: "",
+    required: true,
+};
+
+const PATTERN: TextField = TextField {
+    key: "pattern",
+    label: "Glob Pattern",
+    editor: TextEditor::Line { placeholder: "*" },
+    default: "*",
+    required: true,
+};
+
+const RECURSIVE: ToggleField = ToggleField {
+    key: "recursive",
+    label: "Recursive",
+    default: false,
+};
+
+const INCLUDE_DIRS: ToggleField = ToggleField {
+    key: "include_dirs",
+    label: "Include Directories",
+    default: false,
+};
+
+const INTO_VAR: VariableField = VariableField {
+    key: INTO_VAR_KEY,
+    label: "Output Variable",
+    placeholder: DEFAULT_INTO_VAR,
+    default: DEFAULT_INTO_VAR,
+};
+
+const CONFIG: ConfigSpec =
+    ConfigSpec::new(&[&PATH, &PATTERN, &RECURSIVE, &INCLUDE_DIRS, &INTO_VAR]);
+
+struct ListRequest {
+    path: String,
+    pattern: String,
+    recursive: bool,
+    include_dirs: bool,
+    into_var: String,
+}
+
+fn read_config(config: &SubActionConfig, args: &ArgStack) -> Result<ListRequest, ConfigProblem> {
+    Ok(ListRequest {
+        path: PATH.read(config, args)?,
+        pattern: PATTERN.read(config, args)?,
+        recursive: RECURSIVE.read(config, args)?,
+        include_dirs: INCLUDE_DIRS.read(config, args)?,
+        into_var: INTO_VAR.read(config, args)?,
+    })
+}
 
 pub struct CoreFileListRunner;
 
@@ -37,58 +98,14 @@ impl SubActionRunner for CoreFileListRunner {
         "folder"
     }
 
-    fn default_config(&self) -> SubActionConfig {
-        let mut cfg = SubActionConfig::new();
-        cfg.insert("path".to_owned(), Variant::String(String::new()));
-        cfg.insert("pattern".to_owned(), Variant::String("*".to_owned()));
-        cfg.insert("recursive".to_owned(), Variant::Bool(false));
-        cfg.insert("include_dirs".to_owned(), Variant::Bool(false));
-        cfg.insert(
-            "into_var".to_owned(),
-            Variant::String("file.entries".to_owned()),
-        );
-        cfg
-    }
-
-    fn config_fields(&self) -> Vec<FormField> {
-        vec![
-            FormField::Text {
-                key: "path",
-                label: "Directory Path (relative to the files folder)",
-                placeholder: "logs/",
-            },
-            FormField::Text {
-                key: "pattern",
-                label: "Glob Pattern",
-                placeholder: "*",
-            },
-            FormField::Toggle {
-                key: "recursive",
-                label: "Recursive",
-            },
-            FormField::Toggle {
-                key: "include_dirs",
-                label: "Include Directories",
-            },
-            FormField::Text {
-                key: "into_var",
-                label: "Output Variable",
-                placeholder: "file.entries",
-            },
-        ]
-    }
-
-    fn validate_config(&self, config: &SubActionConfig) -> Result<(), RegistryError> {
-        config
-            .require_str("path")
-            .and(config.require_str("into_var"))
-            .map(|_| ())
+    fn config_spec(&self) -> Option<ConfigSpec> {
+        Some(CONFIG)
     }
 
     fn scope_io(&self) -> SubActionIo {
         SubActionIo {
             produces: vec![ProducedVariable {
-                output_name_key: "into_var".to_owned(),
+                output_name_key: INTO_VAR_KEY.to_owned(),
                 kind: VariantKind::Array,
                 label: "Directory entries".to_owned(),
             }],
@@ -101,20 +118,13 @@ impl SubActionRunner for CoreFileListRunner {
         config: &SubActionConfig,
         ctx: &RunContext<'_>,
     ) -> (SubActionTelemetry, Option<ArgStack>) {
-        let timer = StepTimer::start(ctx, "core.file.list");
+        let timer = StepTimer::start(ctx, self.id());
+        let request = match read_config(config, ctx.arg_stack) {
+            Ok(request) => request,
+            Err(problem) => return (timer.invalid_config(&problem), None),
+        };
 
-        let path_template = config.str("path").unwrap_or_default();
-        let pattern = config.str_nonempty("pattern").unwrap_or("*").to_owned();
-        let recursive = config.bool("recursive").unwrap_or(false);
-        let include_dirs = config.bool("include_dirs").unwrap_or(false);
-        let into_var = forge_types::strip_var_decoration(
-            config.str_nonempty("into_var").unwrap_or("file.entries"),
-        );
-
-        let interpolated_path = ctx.arg_stack.interpolate(path_template);
-
-        let (outcome, produced) = match super::file_sandbox::resolve_sandboxed(&interpolated_path)
-            .await
+        let (outcome, produced) = match super::file_sandbox::resolve_sandboxed(&request.path).await
         {
             Err(reason) => (
                 SubActionOutcome::Failed(format!("sandbox rejected path: {reason}")),
@@ -129,17 +139,15 @@ impl SubActionRunner for CoreFileListRunner {
                     SubActionOutcome::Failed("core.file.list: path is not a directory".to_owned()),
                     None,
                 ),
-                Ok(_) => {
-                    match collect_entries(&abs_path, &pattern, recursive, include_dirs).await {
-                        Err(reason) => (SubActionOutcome::Failed(reason), None),
-                        Ok(entries) => {
-                            let array =
-                                Variant::Array(entries.into_iter().map(Variant::String).collect());
-                            let stack = ctx.arg_stack.clone().set(into_var, array);
-                            (SubActionOutcome::Success, Some(stack))
-                        }
+                Ok(_) => match collect_entries(&abs_path, &request).await {
+                    Err(reason) => (SubActionOutcome::Failed(reason), None),
+                    Ok(entries) => {
+                        let array =
+                            Variant::Array(entries.into_iter().map(Variant::String).collect());
+                        let stack = ctx.arg_stack.clone().set(request.into_var, array);
+                        (SubActionOutcome::Success, Some(stack))
                     }
-                }
+                },
             },
         };
 
@@ -147,12 +155,7 @@ impl SubActionRunner for CoreFileListRunner {
     }
 }
 
-async fn collect_entries(
-    root: &Path,
-    pattern: &str,
-    recursive: bool,
-    include_dirs: bool,
-) -> Result<Vec<String>, String> {
+async fn collect_entries(root: &Path, request: &ListRequest) -> Result<Vec<String>, String> {
     let mut result = Vec::new();
     let mut stack = vec![root.to_path_buf()];
 
@@ -179,13 +182,15 @@ async fn collect_entries(
                 .unwrap_or_else(|_| name.clone());
 
             if file_type.is_dir() {
-                if recursive {
+                if request.recursive {
                     stack.push(entry.path());
                 }
-                if include_dirs && super::file_sandbox::glob_matches(pattern, &name) {
+                if request.include_dirs
+                    && super::file_sandbox::glob_matches(&request.pattern, &name)
+                {
                     result.push(rel);
                 }
-            } else if super::file_sandbox::glob_matches(pattern, &name) {
+            } else if super::file_sandbox::glob_matches(&request.pattern, &name) {
                 result.push(rel);
             }
         }

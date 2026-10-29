@@ -1,12 +1,78 @@
 use async_trait::async_trait;
 use forge_registry::{
-    FormField, RegistryError, RunContext, StepTimer, SubActionCategory, SubActionConfigExt,
-    SubActionRunner,
+    ChoiceField, ConfigChoice, ConfigProblem, ConfigSpec, RunContext, StepTimer, SubActionCategory,
+    SubActionRunner, TextEditor, TextField, TypedField,
 };
-use forge_types::{
-    ArgStack, LogLevel, SCRIPT_LOG_TARGET, SubActionConfig, SubActionTelemetry, Variant,
-};
+use forge_types::{ArgStack, LogLevel, SCRIPT_LOG_TARGET, SubActionConfig, SubActionTelemetry};
 use tracing::{debug, error, info, trace, warn};
+
+#[derive(Clone, Copy)]
+enum Level {
+    Trace,
+    Debug,
+    Info,
+    Warn,
+    Error,
+}
+
+impl Level {
+    fn log_level(self) -> LogLevel {
+        match self {
+            Self::Trace => LogLevel::Trace,
+            Self::Debug => LogLevel::Debug,
+            Self::Info => LogLevel::Info,
+            Self::Warn => LogLevel::Warn,
+            Self::Error => LogLevel::Error,
+        }
+    }
+}
+
+impl ConfigChoice for Level {
+    const ALL: &'static [Self] = &[
+        Self::Trace,
+        Self::Debug,
+        Self::Info,
+        Self::Warn,
+        Self::Error,
+    ];
+    const WIRE_NAMES: &'static [&'static str] = &["trace", "debug", "info", "warn", "error"];
+
+    fn wire_name(self) -> &'static str {
+        match self {
+            Self::Trace => "trace",
+            Self::Debug => "debug",
+            Self::Info => "info",
+            Self::Warn => "warn",
+            Self::Error => "error",
+        }
+    }
+}
+
+const LEVEL: ChoiceField<Level> = ChoiceField {
+    key: "level",
+    label: "Level",
+    default: Level::Info,
+};
+
+const MESSAGE: TextField = TextField {
+    key: "message",
+    label: "Message",
+    editor: TextEditor::Area,
+    default: "",
+    required: false,
+};
+
+const CONFIG: ConfigSpec = ConfigSpec::new(&[&LEVEL, &MESSAGE]);
+
+fn read_config(
+    config: &SubActionConfig,
+    args: &ArgStack,
+) -> Result<(LogLevel, String), ConfigProblem> {
+    Ok((
+        LEVEL.read(config, args)?.log_level(),
+        MESSAGE.read(config, args)?,
+    ))
+}
 
 pub struct CoreLogWriteRunner;
 
@@ -36,29 +102,8 @@ impl SubActionRunner for CoreLogWriteRunner {
         "terminal"
     }
 
-    fn default_config(&self) -> SubActionConfig {
-        let mut cfg = SubActionConfig::new();
-        cfg.insert("level".to_owned(), Variant::String("info".to_owned()));
-        cfg.insert("message".to_owned(), Variant::String(String::new()));
-        cfg
-    }
-
-    fn config_fields(&self) -> Vec<FormField> {
-        vec![
-            FormField::Select {
-                key: "level",
-                label: "Level",
-                options: &["trace", "debug", "info", "warn", "error"],
-            },
-            FormField::TextArea {
-                key: "message",
-                label: "Message",
-            },
-        ]
-    }
-
-    fn validate_config(&self, _config: &SubActionConfig) -> Result<(), RegistryError> {
-        Ok(())
+    fn config_spec(&self) -> Option<ConfigSpec> {
+        Some(CONFIG)
     }
 
     async fn execute(
@@ -66,13 +111,11 @@ impl SubActionRunner for CoreLogWriteRunner {
         config: &SubActionConfig,
         ctx: &RunContext<'_>,
     ) -> (SubActionTelemetry, Option<ArgStack>) {
-        let timer = StepTimer::start(ctx, "core.log.write");
-
-        let level_str = config.str("level").unwrap_or("info");
-        let message_template = config.str("message").unwrap_or_default();
-
-        let level = parse_level(level_str);
-        let message = ctx.arg_stack.interpolate(message_template);
+        let timer = StepTimer::start(ctx, self.id());
+        let (level, message) = match read_config(config, ctx.arg_stack) {
+            Ok(values) => values,
+            Err(problem) => return (timer.invalid_config(&problem), None),
+        };
 
         match level {
             LogLevel::Trace => trace!(target: SCRIPT_LOG_TARGET, message = message.as_str()),
@@ -83,16 +126,6 @@ impl SubActionRunner for CoreLogWriteRunner {
         }
 
         (timer.success(), None)
-    }
-}
-
-fn parse_level(s: &str) -> LogLevel {
-    match s {
-        "trace" => LogLevel::Trace,
-        "debug" => LogLevel::Debug,
-        "warn" => LogLevel::Warn,
-        "error" => LogLevel::Error,
-        _ => LogLevel::Info,
     }
 }
 

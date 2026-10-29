@@ -1,7 +1,7 @@
 use async_trait::async_trait;
 use forge_registry::{
-    CONTINUE_LOOP_KIND_ID, ControlSignal, FormField, RegistryError, RunContext, StepTimer,
-    SubActionCategory, SubActionRunner,
+    CONTINUE_LOOP_KIND_ID, ConfigSpec, ControlSignal, RunContext, StepTimer, SubActionCategory,
+    SubActionRunner,
 };
 use forge_types::{ArgStack, SubActionConfig, SubActionTelemetry};
 
@@ -33,16 +33,8 @@ impl SubActionRunner for CoreLogicContinueLoopRunner {
         "arrow-redo"
     }
 
-    fn default_config(&self) -> SubActionConfig {
-        SubActionConfig::new()
-    }
-
-    fn config_fields(&self) -> Vec<FormField> {
-        Vec::new()
-    }
-
-    fn validate_config(&self, _config: &SubActionConfig) -> Result<(), RegistryError> {
-        Ok(())
+    fn config_spec(&self) -> Option<ConfigSpec> {
+        Some(ConfigSpec::new(&[]))
     }
 
     async fn execute(

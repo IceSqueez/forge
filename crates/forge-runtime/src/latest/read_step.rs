@@ -3,22 +3,59 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use forge_registry::{
-    ConfigReason, FormField, ProducedVariable, RegistryError, RunContext, StepTimer,
-    SubActionCategory, SubActionConfigExt, SubActionIo, SubActionRegistry, SubActionRunner,
+    ConfigProblem, ConfigSpec, ListedChoiceField, ProducedVariable, RegistryError, RunContext,
+    StepTimer, SubActionCategory, SubActionIo, SubActionRegistry, SubActionRunner, TextEditor,
+    TextField, TypedField, VariableField,
 };
 use forge_types::{
     ArgStack, LATEST_DONATION_SLOT, LatestScope, LatestValueReader, SubActionConfig,
-    SubActionTelemetry, Variant, VariantKind, strip_var_decoration,
+    SubActionTelemetry, Variant, VariantKind,
 };
 
-use crate::latest::slots::{latest_slot_ids, slot_declaration};
+use crate::latest::slots::latest_slot_ids;
 
 pub const LATEST_GET_SUB_ACTION: &str = "core.latest.get";
 
-const SLOT_KEY: &str = "slot";
-const PLATFORM_KEY: &str = "platform";
 const INTO_VAR_KEY: &str = "into_var";
 const DEFAULT_INTO_VAR: &str = "latest";
+
+const SLOT: ListedChoiceField = ListedChoiceField {
+    key: "slot",
+    label: "Slot",
+    default: LATEST_DONATION_SLOT,
+    options: latest_slot_ids,
+};
+
+const PLATFORM: TextField = TextField {
+    key: "platform",
+    label: "Platform or service (empty = most recent of all)",
+    editor: TextEditor::Line { placeholder: "" },
+    default: "",
+    required: false,
+};
+
+const INTO_VAR: VariableField = VariableField {
+    key: INTO_VAR_KEY,
+    label: "Output Variable",
+    placeholder: DEFAULT_INTO_VAR,
+    default: DEFAULT_INTO_VAR,
+};
+
+const CONFIG: ConfigSpec = ConfigSpec::new(&[&SLOT, &PLATFORM, &INTO_VAR]);
+
+struct LatestRead {
+    slot: &'static str,
+    platform: String,
+    into_var: String,
+}
+
+fn read_config(config: &SubActionConfig, args: &ArgStack) -> Result<LatestRead, ConfigProblem> {
+    Ok(LatestRead {
+        slot: SLOT.read(config, args)?,
+        platform: PLATFORM.read(config, args)?,
+        into_var: INTO_VAR.read(config, args)?,
+    })
+}
 
 pub struct LatestGetRunner {
     values: Arc<dyn LatestValueReader>,
@@ -56,49 +93,8 @@ impl SubActionRunner for LatestGetRunner {
         "database-import"
     }
 
-    fn default_config(&self) -> SubActionConfig {
-        SubActionConfig::from([
-            (
-                SLOT_KEY.to_owned(),
-                Variant::String(LATEST_DONATION_SLOT.to_owned()),
-            ),
-            (PLATFORM_KEY.to_owned(), Variant::String(String::new())),
-            (
-                INTO_VAR_KEY.to_owned(),
-                Variant::String(DEFAULT_INTO_VAR.to_owned()),
-            ),
-        ])
-    }
-
-    fn config_fields(&self) -> Vec<FormField> {
-        vec![
-            FormField::Select {
-                key: SLOT_KEY,
-                label: "Slot",
-                options: latest_slot_ids(),
-            },
-            FormField::Text {
-                key: PLATFORM_KEY,
-                label: "Platform or service (empty = most recent of all)",
-                placeholder: "",
-            },
-            FormField::Text {
-                key: INTO_VAR_KEY,
-                label: "Output Variable",
-                placeholder: DEFAULT_INTO_VAR,
-            },
-        ]
-    }
-
-    fn validate_config(&self, config: &SubActionConfig) -> Result<(), RegistryError> {
-        let slot = config.require_str(SLOT_KEY)?;
-        if slot_declaration(slot).is_none() {
-            return Err(RegistryError::invalid_field(
-                SLOT_KEY,
-                ConfigReason::choices(latest_slot_ids().iter().copied()),
-            ));
-        }
-        Ok(())
+    fn config_spec(&self) -> Option<ConfigSpec> {
+        Some(CONFIG)
     }
 
     fn scope_io(&self) -> SubActionIo {
@@ -118,18 +114,14 @@ impl SubActionRunner for LatestGetRunner {
         ctx: &RunContext<'_>,
     ) -> (SubActionTelemetry, Option<ArgStack>) {
         let timer = StepTimer::start(ctx, LATEST_GET_SUB_ACTION);
-        let slot = config.str(SLOT_KEY).unwrap_or_default();
-        if slot_declaration(slot).is_none() {
-            return (timer.failed(format!("unknown latest slot '{slot}'")), None);
-        }
-        let platform = ctx
-            .arg_stack
-            .interpolate(config.str(PLATFORM_KEY).unwrap_or_default());
-        let into_var = strip_var_decoration(
-            config
-                .str_nonempty(INTO_VAR_KEY)
-                .unwrap_or(DEFAULT_INTO_VAR),
-        );
+        let LatestRead {
+            slot,
+            platform,
+            into_var,
+        } = match read_config(config, ctx.arg_stack) {
+            Ok(read) => read,
+            Err(problem) => return (timer.invalid_config(&problem), None),
+        };
         let value = self
             .values
             .latest(slot, LatestScope::from_platform_filter(&platform))

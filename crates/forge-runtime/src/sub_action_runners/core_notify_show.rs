@@ -2,8 +2,9 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use forge_registry::{
-    ConfigReason, DurationBounds, FormField, RegistryError, RunContext, StepTimer,
-    SubActionCategory, SubActionConfigExt, SubActionRunner, ValueBounds,
+    ChoiceField, ConfigChoice, ConfigProblem, ConfigReason, ConfigSpec, DurationBounds,
+    DurationField, Interpolation, RunContext, StepTimer, SubActionCategory, SubActionRunner,
+    TextEditor, TextField, TypedField, ValueBounds,
 };
 use forge_types::{ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetry, Variant};
 
@@ -11,8 +12,91 @@ use super::os_ports::{DesktopNotice, NotifyPort, NotifyUrgency};
 
 const TIMEOUT_MIN_MS: i64 = 1000;
 const TIMEOUT_MAX_MS: i64 = 60000;
+const DEFAULT_TIMEOUT_MS: i64 = 5000;
 const MIN_TITLE_CHARS: usize = 1;
 const MAX_TITLE_CHARS: usize = 100;
+
+impl ConfigChoice for NotifyUrgency {
+    const ALL: &'static [Self] = &[Self::Low, Self::Normal, Self::Critical];
+    const WIRE_NAMES: &'static [&'static str] = &["low", "normal", "critical"];
+
+    fn wire_name(self) -> &'static str {
+        match self {
+            Self::Low => "low",
+            Self::Normal => "normal",
+            Self::Critical => "critical",
+        }
+    }
+}
+
+const TITLE: TextField = TextField {
+    key: "title",
+    label: "Title",
+    editor: TextEditor::Line {
+        placeholder: "Stream starting",
+    },
+    default: "",
+    required: false,
+};
+
+const BODY: TextField = TextField {
+    key: "body",
+    label: "Body",
+    editor: TextEditor::Area,
+    default: "",
+    required: false,
+};
+
+const URGENCY: ChoiceField<NotifyUrgency> = ChoiceField {
+    key: "urgency",
+    label: "Urgency (Linux only)",
+    default: NotifyUrgency::Normal,
+};
+
+const ICON_PATH: TextField = TextField {
+    key: "icon_path",
+    label: "Icon Path",
+    editor: TextEditor::Line {
+        placeholder: "/path/to/icon.png",
+    },
+    default: "",
+    required: false,
+};
+
+const TIMEOUT: DurationField = DurationField {
+    key: "timeout_ms",
+    label: "Timeout",
+    default: DEFAULT_TIMEOUT_MS,
+    bounds: DurationBounds::in_millis(TIMEOUT_MIN_MS, TIMEOUT_MAX_MS),
+};
+
+const CONFIG: ConfigSpec = ConfigSpec::new(&[&TITLE, &BODY, &URGENCY, &ICON_PATH, &TIMEOUT]);
+
+fn title_length(config: &SubActionConfig) -> Result<(), ConfigProblem> {
+    let title_chars = config
+        .get(TITLE.key)
+        .and_then(Variant::as_str)
+        .map_or(0, |title| title.chars().count());
+    if (MIN_TITLE_CHARS..=MAX_TITLE_CHARS).contains(&title_chars) {
+        Ok(())
+    } else {
+        Err(ConfigProblem::field(
+            TITLE.key,
+            ConfigReason::LengthOutOfRange(ValueBounds::between(MIN_TITLE_CHARS, MAX_TITLE_CHARS)),
+        ))
+    }
+}
+
+fn read_notice(config: &SubActionConfig, args: &ArgStack) -> Result<DesktopNotice, ConfigProblem> {
+    let timeout = TIMEOUT.read(config, args)?;
+    Ok(DesktopNotice {
+        title: TITLE.read(config, args)?,
+        body: BODY.read(config, args)?,
+        urgency: URGENCY.read(config, args)?,
+        icon_path: Some(ICON_PATH.read(config, args)?).filter(|path| !path.is_empty()),
+        timeout_ms: u32::try_from(timeout.as_millis()).unwrap_or(u32::MAX),
+    })
+}
 
 pub struct CoreNotifyShowRunner {
     notify: Arc<dyn NotifyPort>,
@@ -50,57 +134,16 @@ impl SubActionRunner for CoreNotifyShowRunner {
         "bell"
     }
 
-    fn default_config(&self) -> SubActionConfig {
-        let mut cfg = SubActionConfig::new();
-        cfg.insert("title".to_owned(), Variant::String(String::new()));
-        cfg.insert("body".to_owned(), Variant::String(String::new()));
-        cfg.insert("urgency".to_owned(), Variant::String("normal".to_owned()));
-        cfg.insert("icon_path".to_owned(), Variant::String(String::new()));
-        cfg.insert("timeout_ms".to_owned(), Variant::Int(5000));
-        cfg
+    fn config_spec(&self) -> Option<ConfigSpec> {
+        Some(CONFIG)
     }
 
-    fn config_fields(&self) -> Vec<FormField> {
-        vec![
-            FormField::Text {
-                key: "title",
-                label: "Title",
-                placeholder: "Stream starting",
-            },
-            FormField::TextArea {
-                key: "body",
-                label: "Body",
-            },
-            FormField::Select {
-                key: "urgency",
-                label: "Urgency (Linux only)",
-                options: &["low", "normal", "critical"],
-            },
-            FormField::Text {
-                key: "icon_path",
-                label: "Icon Path",
-                placeholder: "/path/to/icon.png",
-            },
-            FormField::Duration {
-                key: "timeout_ms",
-                label: "Timeout",
-                bounds: DurationBounds::in_millis(TIMEOUT_MIN_MS, TIMEOUT_MAX_MS),
-            },
-        ]
-    }
-
-    fn validate_config(&self, config: &SubActionConfig) -> Result<(), RegistryError> {
-        let title_len = config.str("title").map(|s| s.chars().count()).unwrap_or(0);
-        if !(MIN_TITLE_CHARS..=MAX_TITLE_CHARS).contains(&title_len) {
-            return Err(RegistryError::invalid_field(
-                "title",
-                ConfigReason::LengthOutOfRange(ValueBounds::between(
-                    MIN_TITLE_CHARS,
-                    MAX_TITLE_CHARS,
-                )),
-            ));
-        }
-        Ok(())
+    fn check_config(
+        &self,
+        config: &SubActionConfig,
+        _interpolation: Interpolation<'_>,
+    ) -> Result<(), ConfigProblem> {
+        title_length(config)
     }
 
     async fn execute(
@@ -108,26 +151,10 @@ impl SubActionRunner for CoreNotifyShowRunner {
         config: &SubActionConfig,
         ctx: &RunContext<'_>,
     ) -> (SubActionTelemetry, Option<ArgStack>) {
-        let timer = StepTimer::start(ctx, "core.notify.show");
-
-        let title = ctx.arg_stack.interpolate(config.str("title").unwrap_or(""));
-        let body = ctx.arg_stack.interpolate(config.str("body").unwrap_or(""));
-        let urgency = parse_urgency(config.str("urgency").unwrap_or(""));
-        let icon_path = config
-            .str("icon_path")
-            .map(|s| ctx.arg_stack.interpolate(s))
-            .filter(|s| !s.is_empty());
-        let timeout_ms = config
-            .int("timeout_ms")
-            .unwrap_or(5000)
-            .clamp(TIMEOUT_MIN_MS, TIMEOUT_MAX_MS) as u32;
-
-        let notice = DesktopNotice {
-            title,
-            body,
-            urgency,
-            icon_path,
-            timeout_ms,
+        let timer = StepTimer::start(ctx, self.id());
+        let notice = match read_notice(config, ctx.arg_stack) {
+            Ok(notice) => notice,
+            Err(problem) => return (timer.invalid_config(&problem), None),
         };
 
         let notify = Arc::clone(&self.notify);
@@ -138,14 +165,6 @@ impl SubActionRunner for CoreNotifyShowRunner {
         };
 
         (timer.finish(outcome), None)
-    }
-}
-
-fn parse_urgency(s: &str) -> NotifyUrgency {
-    match s {
-        "low" => NotifyUrgency::Low,
-        "critical" => NotifyUrgency::Critical,
-        _ => NotifyUrgency::Normal,
     }
 }
 

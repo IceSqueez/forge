@@ -2,8 +2,8 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use forge_registry::{
-    FormField, ProducedVariable, RegistryError, RunContext, StepTimer, SubActionCategory,
-    SubActionConfigExt, SubActionIo, SubActionRunner,
+    ConfigSpec, ProducedVariable, RunContext, StepTimer, SubActionCategory, SubActionIo,
+    SubActionRunner, TypedField, VariableField,
 };
 use forge_types::{
     ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetry, Variant, VariantKind,
@@ -12,6 +12,16 @@ use forge_types::{
 use super::os_ports::ClipboardPort;
 
 const DEFAULT_INTO_VAR: &str = "clipboard.text";
+const INTO_VAR_KEY: &str = "into_var";
+
+const INTO_VAR: VariableField = VariableField {
+    key: INTO_VAR_KEY,
+    label: "Output Variable",
+    placeholder: DEFAULT_INTO_VAR,
+    default: DEFAULT_INTO_VAR,
+};
+
+const CONFIG: ConfigSpec = ConfigSpec::new(&[&INTO_VAR]);
 
 pub struct CoreClipboardReadRunner {
     clipboard: Arc<dyn ClipboardPort>,
@@ -49,31 +59,14 @@ impl SubActionRunner for CoreClipboardReadRunner {
         "clipboard-text"
     }
 
-    fn default_config(&self) -> SubActionConfig {
-        let mut cfg = SubActionConfig::new();
-        cfg.insert(
-            "into_var".to_owned(),
-            Variant::String(DEFAULT_INTO_VAR.to_owned()),
-        );
-        cfg
-    }
-
-    fn config_fields(&self) -> Vec<FormField> {
-        vec![FormField::Text {
-            key: "into_var",
-            label: "Output Variable",
-            placeholder: DEFAULT_INTO_VAR,
-        }]
-    }
-
-    fn validate_config(&self, _config: &SubActionConfig) -> Result<(), RegistryError> {
-        Ok(())
+    fn config_spec(&self) -> Option<ConfigSpec> {
+        Some(CONFIG)
     }
 
     fn scope_io(&self) -> SubActionIo {
         SubActionIo {
             produces: vec![ProducedVariable {
-                output_name_key: "into_var".to_owned(),
+                output_name_key: INTO_VAR_KEY.to_owned(),
                 kind: VariantKind::String,
                 label: "Clipboard text".to_owned(),
             }],
@@ -86,11 +79,11 @@ impl SubActionRunner for CoreClipboardReadRunner {
         config: &SubActionConfig,
         ctx: &RunContext<'_>,
     ) -> (SubActionTelemetry, Option<ArgStack>) {
-        let timer = StepTimer::start(ctx, "core.clipboard.read");
-
-        let into_var = forge_types::strip_var_decoration(
-            config.str_nonempty("into_var").unwrap_or(DEFAULT_INTO_VAR),
-        );
+        let timer = StepTimer::start(ctx, self.id());
+        let into_var = match INTO_VAR.read(config, ctx.arg_stack) {
+            Ok(into_var) => into_var,
+            Err(problem) => return (timer.invalid_config(&problem), None),
+        };
 
         let clipboard = Arc::clone(&self.clipboard);
         let (outcome, updated_stack) =

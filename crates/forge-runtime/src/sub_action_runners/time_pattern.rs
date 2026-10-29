@@ -1,7 +1,11 @@
-use forge_registry::{STEP_CONFIG_KEY, STEP_KIND_KEY, SubActionConfigExt};
+use forge_registry::{
+    ConfigProblem, ConfigReason, STEP_CONFIG_KEY, STEP_KIND_KEY, SubActionConfigExt, ToggleField,
+    TypedField,
+};
 use forge_types::{
-    DatePattern, LegacyTranslation, NamesLanguage, ParsedPattern, PatternZone, SubActionConfig,
-    SubActionStep, Variant, current_names_language, shared_date_pattern, translate_legacy_pattern,
+    ArgStack, DatePattern, LegacyTranslation, NamesLanguage, ParsedPattern, PatternZone,
+    SubActionConfig, SubActionStep, Variant, current_names_language, shared_date_pattern,
+    translate_legacy_pattern,
 };
 
 pub(crate) const TIME_FORMAT_KIND_ID: &str = "core.time.format";
@@ -33,11 +37,7 @@ impl ResolvedTimePattern {
     }
 }
 
-pub(crate) fn resolve_time_pattern(
-    config: &SubActionConfig,
-    pattern_key: &str,
-) -> Result<ResolvedTimePattern, String> {
-    let stored = config.str(pattern_key).unwrap_or(DEFAULT_TIME_PATTERN);
+fn resolve_time_pattern(stored: &str, utc: Option<bool>) -> Result<ResolvedTimePattern, String> {
     let (text, utc_when_unset, language) = match translate_legacy_pattern(stored) {
         LegacyTranslation::NotLegacy => (stored.to_owned(), false, current_names_language()),
         LegacyTranslation::Translated(pattern) => (pattern, true, NamesLanguage::En),
@@ -48,7 +48,7 @@ pub(crate) fn resolve_time_pattern(
             ));
         }
     };
-    let zone = if config.bool(UTC_KEY).unwrap_or(utc_when_unset) {
+    let zone = if utc.unwrap_or(utc_when_unset) {
         PatternZone::Utc
     } else {
         PatternZone::Local
@@ -60,6 +60,29 @@ pub(crate) fn resolve_time_pattern(
         zone,
         language,
     })
+}
+
+pub(crate) fn checked_time_pattern(
+    key: &str,
+    stored: &str,
+    utc: Option<bool>,
+) -> Result<ResolvedTimePattern, ConfigProblem> {
+    let invalid = |detail| ConfigProblem::field(key, ConfigReason::InvalidFormat(detail));
+    let resolved = resolve_time_pattern(stored, utc).map_err(invalid)?;
+    resolved.pattern().map_err(invalid)?;
+    Ok(resolved)
+}
+
+pub(crate) fn stored_utc(
+    field: &ToggleField,
+    config: &SubActionConfig,
+    args: &ArgStack,
+) -> Result<Option<bool>, ConfigProblem> {
+    if config.contains_key(field.key) {
+        field.read(config, args).map(Some)
+    } else {
+        Ok(None)
+    }
 }
 
 pub fn translate_legacy_time_steps(steps: &mut [SubActionStep]) -> bool {

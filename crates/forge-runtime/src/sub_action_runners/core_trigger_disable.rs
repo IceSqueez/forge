@@ -2,13 +2,14 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use forge_registry::{
-    FormField, RegistryError, RunContext, StepTimer, SubActionCategory, SubActionConfigExt,
-    SubActionRunner,
+    ConfigSpec, RunContext, StepTimer, SubActionCategory, SubActionRunner, TypedField,
 };
 use forge_storage::TriggerInstanceRepo;
 use forge_types::{
-    ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetry, TriggerInstanceId, Variant,
+    ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetry, TriggerInstanceId,
 };
+
+use super::core_trigger_shared::{TRIGGER, TRIGGER_SPEC};
 
 pub struct CoreTriggerDisableRunner {
     trigger_instances: Arc<dyn TriggerInstanceRepo>,
@@ -19,14 +20,7 @@ impl CoreTriggerDisableRunner {
         Self { trigger_instances }
     }
 
-    async fn run(&self, config: &SubActionConfig, ctx: &RunContext<'_>) -> SubActionOutcome {
-        let raw = config.str("trigger_instance_id").unwrap_or_default();
-        let resolved = ctx.arg_stack.interpolate(raw);
-        let Ok(instance_id) = resolved.parse::<TriggerInstanceId>() else {
-            return SubActionOutcome::Failed(
-                "core.trigger.disable: invalid trigger_instance_id".to_owned(),
-            );
-        };
+    async fn run(&self, instance_id: TriggerInstanceId) -> SubActionOutcome {
         match self.trigger_instances.set_enabled(instance_id, false).await {
             Ok(()) => SubActionOutcome::Success,
             Err(e) => SubActionOutcome::Failed(format!("core.trigger.disable: {e}")),
@@ -60,25 +54,8 @@ impl SubActionRunner for CoreTriggerDisableRunner {
         "toggle-off"
     }
 
-    fn default_config(&self) -> SubActionConfig {
-        let mut cfg = SubActionConfig::new();
-        cfg.insert(
-            "trigger_instance_id".to_owned(),
-            Variant::String(String::new()),
-        );
-        cfg
-    }
-
-    fn config_fields(&self) -> Vec<FormField> {
-        vec![FormField::DynamicSelect {
-            key: "trigger_instance_id",
-            label: "Trigger",
-            options_key: "trigger_instance.ids",
-        }]
-    }
-
-    fn validate_config(&self, config: &SubActionConfig) -> Result<(), RegistryError> {
-        config.require_str("trigger_instance_id").map(|_| ())
+    fn config_spec(&self) -> Option<ConfigSpec> {
+        Some(TRIGGER_SPEC)
     }
 
     async fn execute(
@@ -86,8 +63,12 @@ impl SubActionRunner for CoreTriggerDisableRunner {
         config: &SubActionConfig,
         ctx: &RunContext<'_>,
     ) -> (SubActionTelemetry, Option<ArgStack>) {
-        let timer = StepTimer::start(ctx, "core.trigger.disable");
-        let outcome = self.run(config, ctx).await;
+        let timer = StepTimer::start(ctx, self.id());
+        let instance_id = match TRIGGER.read(config, ctx.arg_stack) {
+            Ok(instance_id) => instance_id,
+            Err(problem) => return (timer.invalid_config(&problem), None),
+        };
+        let outcome = self.run(instance_id).await;
         (timer.finish(outcome), None)
     }
 }

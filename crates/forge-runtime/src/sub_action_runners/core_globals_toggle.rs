@@ -2,14 +2,13 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use forge_events::{EventSource, GlobalToggled, TypedEvent};
-use forge_registry::{
-    FormField, RegistryError, RunContext, StepTimer, SubActionCategory, SubActionConfigExt,
-    SubActionRunner,
-};
+use forge_registry::{ConfigSpec, RunContext, StepTimer, SubActionCategory, SubActionRunner};
 use forge_storage::{GlobalsRepo, StorageError};
-use forge_types::{
-    ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetry, Variant, VariantKind,
-};
+use forge_types::{ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetry, VariantKind};
+
+use super::core_globals_shared::{GLOBAL_BY_KEY, global_name};
+
+const CONFIG: ConfigSpec = ConfigSpec::new(&[&GLOBAL_BY_KEY]);
 
 pub struct CoreGlobalsToggleRunner {
     globals: Arc<dyn GlobalsRepo>,
@@ -47,22 +46,8 @@ impl SubActionRunner for CoreGlobalsToggleRunner {
         "toggle"
     }
 
-    fn default_config(&self) -> SubActionConfig {
-        let mut cfg = SubActionConfig::new();
-        cfg.insert("key".to_owned(), Variant::String(String::new()));
-        cfg
-    }
-
-    fn config_fields(&self) -> Vec<FormField> {
-        vec![FormField::DynamicSelect {
-            key: "key",
-            label: "Variable Name",
-            options_key: "global.names",
-        }]
-    }
-
-    fn validate_config(&self, config: &SubActionConfig) -> Result<(), RegistryError> {
-        config.require_str("key").map(|_| ())
+    fn config_spec(&self) -> Option<ConfigSpec> {
+        Some(CONFIG)
     }
 
     async fn execute(
@@ -70,12 +55,11 @@ impl SubActionRunner for CoreGlobalsToggleRunner {
         config: &SubActionConfig,
         ctx: &RunContext<'_>,
     ) -> (SubActionTelemetry, Option<ArgStack>) {
-        let timer = StepTimer::start(ctx, "core.globals.toggle");
-
-        let key_template = config.str("key").unwrap_or_default();
-
-        let resolved_key =
-            forge_types::strip_var_decoration(&ctx.arg_stack.interpolate(key_template));
+        let timer = StepTimer::start(ctx, self.id());
+        let resolved_key = match global_name(&GLOBAL_BY_KEY, config, ctx.arg_stack) {
+            Ok(key) => key,
+            Err(problem) => return (timer.invalid_config(&problem), None),
+        };
 
         let outcome = match self.globals.toggle(&resolved_key).await {
             Ok(flipped) => {

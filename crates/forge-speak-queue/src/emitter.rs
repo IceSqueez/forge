@@ -596,6 +596,21 @@ mod tests {
     }
 
     #[test]
+    fn every_resolver_skip_maps_to_its_own_published_skip_reason() {
+        for (skip, token) in [
+            (VoiceSkip::BlockedByAlias, "blocked_by_alias"),
+            (VoiceSkip::NoVoicesAvailable, "no_voices_available"),
+            (VoiceSkip::VoiceOverrideNotFound, "voice_override_not_found"),
+        ] {
+            assert_eq!(
+                serde_json::to_value(SkipReason::from(skip)).unwrap(),
+                json!(token),
+                "{skip:?}"
+            );
+        }
+    }
+
+    #[test]
     fn feed_skip_text_appends_the_detail_only_when_present() {
         for (reason, detail, expected) in [
             (

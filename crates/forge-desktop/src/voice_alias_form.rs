@@ -756,20 +756,30 @@ mod tests {
     }
 
     #[test]
-    fn alias_key_round_trips_through_split_for_every_platform_scope() {
+    fn a_key_built_for_a_scope_reads_back_as_that_scope_and_name() {
         for scope in AliasScope::ALL {
             for name in ["Alice", "Зірка", "user_42"] {
-                let key = alias_key(scope, name);
+                let key = AliasKey::parse(&AliasKey::new(scope.kind(), name).to_stored());
 
-                assert_eq!(split_alias_key(&key), (scope, name), "{key:?}");
+                assert_eq!(
+                    (alias_key_scope(&key), key.handle.as_str()),
+                    (scope, name),
+                    "{scope:?} {name:?}"
+                );
             }
         }
     }
 
     #[test]
-    fn split_alias_key_keeps_an_unknown_prefix_as_part_of_a_bare_name() {
-        for key in ["discord:Alice", ":Alice", "Twitch:Alice"] {
-            assert_eq!(split_alias_key(key), (AliasScope::Any, key), "{key:?}");
+    fn a_key_with_an_unknown_prefix_reads_back_as_a_bare_name_on_any_platform() {
+        for stored in ["discord:Alice", ":Alice", "Twitch:Alice", "Mr: X"] {
+            let key = AliasKey::parse(stored);
+
+            assert_eq!(
+                (alias_key_scope(&key), key.handle.as_str()),
+                (AliasScope::Any, stored),
+                "{stored:?}"
+            );
         }
     }
 }

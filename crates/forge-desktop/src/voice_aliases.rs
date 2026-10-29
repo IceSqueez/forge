@@ -1402,6 +1402,18 @@ mod tests {
                 AliasScope::YouTube,
                 "kick:Alice",
             ),
+            (
+                "discord:Alice",
+                "discord:Alice",
+                AliasScope::Any,
+                "discord:Alice",
+            ),
+            (
+                "Twitch:Alice",
+                "Twitch:Alice",
+                AliasScope::Any,
+                "Twitch:Alice",
+            ),
         ] {
             let row = row_from_alias(stored_alias(viewer_id, viewer_name));
 

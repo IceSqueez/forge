@@ -1,4 +1,7 @@
 #![allow(clippy::unwrap_used)]
+use forge_overlay::kinds::alert;
+use forge_platform_twitch::vocabulary::trigger_ids::SUPPORT_SUBSCRIBER;
+use forge_runtime::OVERLAY_SEND_KIND_ID;
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
@@ -21,7 +24,8 @@ use forge_types::{SubActionStep, Variant};
 use tempfile::TempDir;
 use tokio::io::AsyncWriteExt;
 
-const EMULATOR: &str = env!("CARGO_BIN_EXE_forge-emulator");
+mod support;
+use support::{EMULATOR, QuietPublisher, endpoints_from};
 
 async fn seed_fresh(fixture: &Fixture) -> (TempDir, SeedReport) {
     let dir = tempfile::tempdir().unwrap();
@@ -51,7 +55,10 @@ async fn reopen(dir: &Path) -> SqliteBackend {
     for (byte, pair) in key.iter_mut().zip(hex.as_bytes().chunks(2)) {
         *byte = u8::from_str_radix(std::str::from_utf8(pair).unwrap(), 16).unwrap();
     }
-    let url = format!("sqlite://{}?mode=rw", dir.join("forge.db").display());
+    let url = format!(
+        "sqlite://{}?mode=rw",
+        dir.join(forge_storage::DATABASE_FILE_NAME).display()
+    );
     SqliteBackend::open_for_test(&url, key, dir.join("media"), None)
         .await
         .unwrap()
@@ -404,7 +411,7 @@ async fn seeder_process_refuses_to_write_outside_a_fresh_fixture_environment() {
 
 fn overlay_send_step(target: &str, headline: &str) -> SubActionStep {
     SubActionStep {
-        kind_id: "overlay.send".to_owned(),
+        kind_id: OVERLAY_SEND_KIND_ID.to_owned(),
         config: BTreeMap::from([
             ("overlay_id".to_owned(), Variant::String(target.to_owned())),
             ("headline".to_owned(), Variant::String(headline.to_owned())),
@@ -420,7 +427,7 @@ fn alert_fixture() -> Fixture {
     Fixture {
         overlays: vec![forge_emulator::fixture::OverlayFixture {
             display_name: "Alert Box".to_owned(),
-            kind_id: "overlay.alert".to_owned(),
+            kind_id: alert::KIND_ID.to_owned(),
             config: BTreeMap::from([(
                 "headline".to_owned(),
                 Variant::String("stored headline".to_owned()),
@@ -454,7 +461,7 @@ async fn a_seeded_overlay_is_enabled_and_stored_with_the_fixture_config_under_it
     backend.shutdown().await;
 
     assert_eq!(seeded.display_name, "Alert Box");
-    assert_eq!(stored.kind_id, "overlay.alert");
+    assert_eq!(stored.kind_id, alert::KIND_ID);
     assert!(
         stored.enabled,
         "a disabled overlay refuses its own page credential, so nothing could connect"
@@ -532,7 +539,7 @@ async fn an_overlay_type_this_build_does_not_carry_is_refused_rather_than_stored
 
 fn subscriber_trigger(steps: Vec<SubActionStep>) -> EventTrigger {
     EventTrigger {
-        trigger_kind: "twitch.support.subscriber".to_owned(),
+        trigger_kind: SUPPORT_SUBSCRIBER.to_owned(),
         action_name: "Announce Subscriber".to_owned(),
         config: BTreeMap::from([("tier".to_owned(), Variant::String("1000".to_owned()))]),
         steps,
@@ -581,7 +588,7 @@ async fn an_event_triggers_overlay_send_step_reaches_storage_addressed_by_the_mi
     let fixture = Fixture {
         overlays: vec![forge_emulator::fixture::OverlayFixture {
             display_name: "Alert Box".to_owned(),
-            kind_id: "overlay.alert".to_owned(),
+            kind_id: alert::KIND_ID.to_owned(),
             config: BTreeMap::new(),
         }],
         event_triggers: vec![subscriber_trigger(vec![overlay_send_step(
@@ -609,12 +616,6 @@ async fn an_event_triggers_overlay_send_step_reaches_storage_addressed_by_the_mi
     assert_ne!(minted, "Alert Box");
 }
 
-struct SilentPublisher;
-
-impl forge_events::EventPublisher for SilentPublisher {
-    fn publish(&self, _: Event) {}
-}
-
 fn go_live_webhook(url: &str) -> Fixture {
     Fixture {
         discord_webhooks: vec![forge_emulator::fixture::DiscordWebhook {
@@ -633,7 +634,7 @@ async fn a_seeded_discord_webhook_is_the_one_forge_discord_lists_and_loads() {
     let client = forge_discord::DiscordClient::new(
         forge_platform_core::PlatformEndpoints::default()
             .base_url(forge_platform_core::EndpointSurface::DiscordApi),
-        Arc::new(SilentPublisher),
+        Arc::new(QuietPublisher),
         Arc::clone(&backend) as Arc<dyn CredentialsRepo>,
     )
     .unwrap();
@@ -765,13 +766,7 @@ async fn a_seeded_kick_account_is_served_by_forges_manager_refreshing_only_when_
         .await
         .unwrap();
         let overrides = fake.endpoint_overrides();
-        let endpoints = forge_platform_core::PlatformEndpoints::resolve(|variable| {
-            overrides
-                .iter()
-                .find(|(name, _)| *name == variable)
-                .map(|(_, url)| std::ffi::OsString::from(url))
-        })
-        .unwrap();
+        let endpoints = endpoints_from(&overrides);
         let (dir, _) = seed_fresh(&Fixture {
             kick: Some(account.clone()),
             ..Fixture::default()
@@ -803,7 +798,7 @@ async fn a_seeded_kick_account_is_served_by_forges_manager_refreshing_only_when_
                 forge_platform_kick::KICK_API_BUDGET_CAPACITY,
                 forge_platform_kick::KICK_API_BUDGET_WINDOW,
             )),
-            Arc::new(SilentPublisher),
+            Arc::new(QuietPublisher),
         )
         .unwrap();
         let manager = forge_platform_kick::KickCredentialsManager::new(
@@ -844,13 +839,7 @@ async fn a_seeded_youtube_account_is_served_by_forges_manager_refreshing_only_wh
         .await
         .unwrap();
         let overrides = fake.endpoint_overrides();
-        let endpoints = forge_platform_core::PlatformEndpoints::resolve(|variable| {
-            overrides
-                .iter()
-                .find(|(name, _)| *name == variable)
-                .map(|(_, url)| std::ffi::OsString::from(url))
-        })
-        .unwrap();
+        let endpoints = endpoints_from(&overrides);
         let (dir, _) = seed_fresh(&Fixture {
             youtube: Some(account.clone()),
             ..Fixture::default()
@@ -878,7 +867,7 @@ async fn a_seeded_youtube_account_is_served_by_forges_manager_refreshing_only_wh
         let api = forge_platform_youtube::YoutubeDataApi::new(
             &endpoints,
             forge_platform_youtube::SharedQuota::default(),
-            Arc::new(SilentPublisher),
+            Arc::new(QuietPublisher),
         )
         .unwrap();
         let manager = forge_platform_youtube::YoutubeCredentialsManager::new(

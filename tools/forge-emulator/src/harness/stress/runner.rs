@@ -3,7 +3,11 @@ use std::path::PathBuf;
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::time::Duration;
 
-use forge_events::EventSource;
+use forge_events::{
+    ActionDone, ActionSkipped, ActionStarted, ChatSendFailed, EventSource, TypedEvent,
+};
+use forge_runtime::COMMAND_MATCHED_KIND;
+use forge_storage::DATABASE_FILE_NAME;
 use serde::Serialize;
 use tokio::task::JoinHandle;
 use tokio::time::Instant;
@@ -30,11 +34,11 @@ const FRAME_POLL: Duration = Duration::from_millis(20);
 const MAX_INJECTS_PER_TICK: u64 = 2_000;
 const SETTLE_MARGIN_MS: u64 = 200;
 const OBSERVED_KINDS: [&str; 5] = [
-    "action.start",
-    "action.done",
-    "action.skipped",
-    "command.matched",
-    "chat.send.failed",
+    ActionStarted::KIND,
+    ActionDone::KIND,
+    ActionSkipped::KIND,
+    COMMAND_MATCHED_KIND,
+    ChatSendFailed::KIND,
 ];
 
 pub struct StressOptions {
@@ -596,7 +600,7 @@ fn millis_since(origin: Instant, at: Instant) -> u64 {
 }
 
 async fn table_rows(data_dir: &std::path::Path) -> BTreeMap<String, u64> {
-    let database = data_dir.join("forge.db");
+    let database = data_dir.join(DATABASE_FILE_NAME);
     let run = |sql: String| {
         let database = database.clone();
         async move {

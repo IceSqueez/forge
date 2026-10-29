@@ -1,4 +1,5 @@
 #![allow(clippy::unwrap_used)]
+use forge_platform_twitch::vocabulary::topics;
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
@@ -24,7 +25,9 @@ use forge_types::EventId;
 use serde_json::{Value, json};
 use time::macros::datetime;
 
-const EMULATOR: &str = env!("CARGO_BIN_EXE_forge-emulator");
+mod support;
+use support::EMULATOR;
+
 const CHAT_ID: &str = "01J8ZQ0000000000000000CHAT";
 const COMMAND_ID: &str = "01J8ZQ00000000000000000CMD";
 const START_ID: &str = "01J8ZQ0000000000000000STRT";
@@ -625,7 +628,7 @@ fn fake_twitch_ledger_failures_summarise_sessions_requests_and_statuses() {
                 subscriptions: vec![RecordedSubscription {
                     id: "sub-1".to_owned(),
                     session_id: "session-1".to_owned(),
-                    subscription_type: "channel.follow".to_owned(),
+                    subscription_type: topics::CHANNEL_FOLLOW.to_owned(),
                     version: "2".to_owned(),
                     condition: json!({}),
                     created_at: "2026-09-13T10:00:00Z".to_owned(),

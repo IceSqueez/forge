@@ -1,4 +1,5 @@
 #![allow(clippy::unwrap_used)]
+use forge_platform_twitch::vocabulary::topics;
 use std::collections::{BTreeMap, HashMap};
 use std::ffi::OsString;
 use std::sync::{Arc, Mutex};
@@ -28,7 +29,7 @@ use tokio::time::timeout;
 
 const DEADLINE: Duration = Duration::from_secs(10);
 const REWARDS_PATH: &str = "/helix/channel_points/custom_rewards";
-const REWARD_ADD: &str = "channel.channel_points_custom_reward.add";
+const REWARD_ADD: &str = topics::CHANNEL_CHANNEL_POINTS_CUSTOM_REWARD_ADD;
 const DASHBOARD_TITLE: &str = "Dashboard hydrate";
 const TIER_POLL: Duration = Duration::from_millis(10);
 

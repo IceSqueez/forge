@@ -7,10 +7,12 @@ use forge_discord::{DiscordClient, MentionPolicy};
 use forge_emulator::EmulatorError;
 use forge_emulator::fakes::discord::{FakeDiscord, UNKNOWN_WEBHOOK_CODE};
 use forge_emulator::fixture::{DiscordWebhook, Fixture};
-use forge_events::{Event, EventPublisher};
 use forge_storage::{CredentialId, CredentialsRepo, StorageError};
 use serde_json::{Value, json};
 use time::OffsetDateTime;
+
+mod support;
+use support::QuietPublisher;
 
 const ALERTS: &str = "alerts";
 
@@ -259,12 +261,6 @@ impl CredentialsRepo for MemoryCreds {
     }
 }
 
-struct SilentPublisher;
-
-impl EventPublisher for SilentPublisher {
-    fn publish(&self, _: Event) {}
-}
-
 fn forge_client(fake: &FakeDiscord, saved: &str) -> Arc<DiscordClient> {
     let creds = MemoryCreds {
         store: Mutex::new(HashMap::from([(
@@ -279,7 +275,7 @@ fn forge_client(fake: &FakeDiscord, saved: &str) -> Arc<DiscordClient> {
     .unwrap();
     DiscordClient::new(
         endpoints.base_url(forge_platform_core::EndpointSurface::DiscordApi),
-        Arc::new(SilentPublisher),
+        Arc::new(QuietPublisher),
         Arc::new(creds),
     )
     .unwrap()

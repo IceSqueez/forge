@@ -1151,6 +1151,7 @@ dependencies = [
  "forge-platform-twitch",
  "forge-platform-youtube",
  "forge-registry",
+ "forge-runtime",
  "forge-server",
  "forge-storage",
  "forge-storage-sqlite",

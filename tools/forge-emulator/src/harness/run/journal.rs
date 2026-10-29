@@ -148,7 +148,7 @@ impl Journal {
 
 #[cfg(test)]
 mod tests {
-    use forge_events::EventSource;
+    use forge_events::{DONATION_RECEIVED_KIND, EventSource};
     use serde_json::json;
     use time::macros::datetime;
 
@@ -158,7 +158,7 @@ mod tests {
         Event {
             id: EventId::new(),
             source: EventSource::Core,
-            kind: "donation.received".to_owned(),
+            kind: DONATION_RECEIVED_KIND.to_owned(),
             timestamp: datetime!(2026-10-03 12:00:00 UTC),
             payload: json!({}),
             caused_by: None,

@@ -60,6 +60,7 @@ mod tests {
     use serde_json::json;
 
     use super::*;
+    use forge_platform_twitch::vocabulary::trigger_ids::CHAT_COMMAND;
 
     const FILE: &str = "forge.log.2026-09-13";
     const WITHIN: Duration = Duration::from_millis(500);
@@ -76,7 +77,7 @@ mod tests {
     fn declined(reason: &str) -> LogLine {
         serde_json::from_value(json!({
             "target": "forge::trigger",
-            "fields": { "reason": reason, "kind": "twitch.chat.command" },
+            "fields": { "reason": reason, "kind": CHAT_COMMAND },
             "within_ms": WITHIN.as_millis(),
         }))
         .unwrap()

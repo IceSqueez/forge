@@ -5,15 +5,15 @@ use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use forge_emulator::EmulatorError;
-use forge_emulator::harness::launch::{
-    DEFAULT_LOG_DIRECTIVES, ForgeCommand, GameGuard, HyprlandProbe, LivePaths,
-};
+use forge_emulator::harness::launch::DEFAULT_LOG_DIRECTIVES;
 use forge_emulator::harness::run::{RunOptions, ScenarioVerdict, StepStatus, run_scenario};
 use forge_emulator::harness::scenario::{Scenario, parse_scenario};
 use tempfile::TempDir;
 use tokio::time::timeout;
 
-const EMULATOR: &str = env!("CARGO_BIN_EXE_forge-emulator");
+mod support;
+use support::{EMULATOR, clear_desktop, elsewhere, stub_forge, wait_until_gone};
+
 const DEADLINE: Duration = Duration::from_secs(60);
 
 fn chat_scenario() -> Scenario {
@@ -38,31 +38,13 @@ fn options(root: &TempDir, stub_body: &str) -> RunOptions {
     std::fs::write(&script, stub_body).unwrap();
     RunOptions {
         emulator: PathBuf::from(EMULATOR),
-        forge: ForgeCommand {
-            program: PathBuf::from("/bin/sh"),
-            args: vec![script.into_os_string()],
-        },
+        forge: stub_forge(&script),
         run_root: root.path().join("run"),
         log_directives: DEFAULT_LOG_DIRECTIVES.to_owned(),
-        guard: GameGuard::probing(HyprlandProbe::command(
-            "/bin/sh",
-            vec!["-c".into(), "printf '[]'".into(), "sh".into()],
-        )),
-        live: LivePaths {
-            data_dir: PathBuf::from("/nonexistent-live-user/.local/share/forge"),
-            home: PathBuf::from("/nonexistent-live-user"),
-        },
+        guard: clear_desktop(),
+        live: elsewhere(),
         max_attempts: 1,
         shutdown_grace: Duration::from_secs(5),
-    }
-}
-
-fn process_is_gone(pid: u32) -> bool {
-    match std::fs::read_to_string(format!("/proc/{pid}/stat")) {
-        Err(_) => true,
-        Ok(stat) => stat
-            .rsplit_once(") ")
-            .is_some_and(|(_, rest)| rest.starts_with('Z')),
     }
 }
 
@@ -100,14 +82,8 @@ async fn stop_while_forge_boots_interrupts_the_run_and_leaves_no_forge_running()
     let statuses: Vec<StepStatus> = outcome.steps.iter().map(|step| step.status).collect();
     assert_eq!(statuses, [StepStatus::Interrupted, StepStatus::NotRun]);
     let pid = read_pid(&pid_file).await;
-    let gone = timeout(DEADLINE, async {
-        while !process_is_gone(pid) {
-            tokio::time::sleep(Duration::from_millis(10)).await;
-        }
-    })
-    .await;
     assert!(
-        gone.is_ok(),
+        wait_until_gone(pid, DEADLINE).await,
         "forge stub {pid} survived the interrupted run"
     );
 }

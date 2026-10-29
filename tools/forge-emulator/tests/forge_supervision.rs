@@ -20,9 +20,11 @@ use tokio::sync::mpsc;
 use tokio::time::timeout;
 use tokio_tungstenite::tungstenite::Message;
 
+mod support;
+use support::{BIND_FAILURE_LINE, clear_desktop, elsewhere, process_is_gone};
+
 const DEADLINE: Duration = Duration::from_secs(30);
 const TOKEN: &str = "fixture-bearer-token";
-const BIND_FAILURE_LINE: &str = "2026-10-28T10:00:00.000000Z ERROR server failed to start, leaving it off signal=server_bind outcome=failed cause=address_unavailable addr=127.0.0.1:40000 port=40000 error=could not bind to 127.0.0.1:40000: Address already in use (os error 98)";
 const OVERRIDE_REFUSAL_LINE: &str = "2026-10-28T10:00:00.000000Z ERROR platform endpoint override refused; exiting signal=startup_refused outcome=endpoint_override_refused variable=FORGE_TWITCH_EVENTSUB_WS_URL error=endpoint override FORGE_TWITCH_EVENTSUB_WS_URL refused: host is not 127.0.0.0/8, ::1 or localhost";
 const BOOT_FAILED_LINE: &str = "2026-10-28T10:00:00.000000Z ERROR boot failed signal=readiness outcome=failed failure=upgrade_required";
 
@@ -76,23 +78,12 @@ impl Stage {
     }
 }
 
-fn clear_desktop() -> GameGuard {
-    guard_script("printf '[]'")
-}
-
 fn guard_script(body: &str) -> GameGuard {
     GameGuard::probing(probe_script(body))
 }
 
 fn probe_script(body: &str) -> HyprlandProbe {
     HyprlandProbe::command("/bin/sh", vec!["-c".into(), body.into(), "sh".into()])
-}
-
-fn elsewhere() -> LivePaths {
-    LivePaths {
-        data_dir: PathBuf::from("/nonexistent-live-user/.local/share/forge"),
-        home: PathBuf::from("/nonexistent-live-user"),
-    }
 }
 
 fn reserved_port() -> (TcpSocket, u16) {
@@ -102,23 +93,11 @@ fn reserved_port() -> (TcpSocket, u16) {
     (socket, port)
 }
 
-fn process_is_gone(pid: u32) -> bool {
-    match std::fs::read_to_string(format!("/proc/{pid}/stat")) {
-        Err(_) => true,
-        Ok(stat) => stat
-            .rsplit_once(") ")
-            .is_some_and(|(_, rest)| rest.starts_with('Z')),
-    }
-}
-
 async fn wait_until_gone(pid: u32) {
-    let polled = timeout(DEADLINE, async {
-        while !process_is_gone(pid) {
-            tokio::time::sleep(Duration::from_millis(10)).await;
-        }
-    })
-    .await;
-    assert!(polled.is_ok(), "process {pid} is still running");
+    assert!(
+        support::wait_until_gone(pid, DEADLINE).await,
+        "process {pid} is still running"
+    );
 }
 
 async fn wait_for_line(process: &ForgeProcess, text: &str) {

@@ -202,7 +202,7 @@ mod tests {
     #[test]
     fn missing_log_directory_yields_no_lines_rather_than_an_error() {
         let dir = tempfile::tempdir().unwrap();
-        let mut tail = LogTail::from_now(&dir.path().join("logs"));
+        let mut tail = LogTail::from_now(&dir.path().join(forge_paths::LOGS_DIR_NAME));
         assert!(tail.poll().unwrap().is_empty());
     }
 

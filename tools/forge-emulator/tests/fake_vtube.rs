@@ -1,4 +1,5 @@
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+use forge_vtube::vocabulary::event_kinds as vtube_kinds;
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
@@ -253,7 +254,7 @@ async fn forge_with_token(fake: &FakeVTube, token: &str) -> Forge {
 }
 
 fn is_connected(event: &Event) -> bool {
-    event.kind == "vtube.connection.changed" && event.payload["is_connected"] == true
+    event.kind == vtube_kinds::CONNECTION_CHANGED && event.payload["is_connected"] == true
 }
 
 async fn connected_forge(fake: &FakeVTube) -> Forge {
@@ -310,7 +311,8 @@ async fn forge_with_a_revoked_token_reports_auth_required_and_forgets_the_token(
     let reported = forge
         .events
         .wait_for(|event| {
-            event.kind == "vtube.connection.changed" && event.payload["reason"] == "auth_required"
+            event.kind == vtube_kinds::CONNECTION_CHANGED
+                && event.payload["reason"] == "auth_required"
         })
         .await;
 
@@ -471,9 +473,9 @@ async fn a_hotkey_forge_triggers_comes_back_as_a_triggered_event() {
 
     let event = forge
         .events
-        .wait_for(|event| event.kind == "vtube.hotkey.triggered")
+        .wait_for(|event| event.kind == vtube_kinds::HOTKEY_TRIGGERED)
         .await
-        .expect("vtube.hotkey.triggered");
+        .expect(vtube_kinds::HOTKEY_TRIGGERED);
     assert_eq!(event.payload["hotkey_name"], WAVE);
     assert_eq!(event.payload["hotkey_id"], hotkey_id(0, 0));
     forge.client.shutdown().await;
@@ -485,24 +487,27 @@ async fn studio_changes_reach_forge_as_its_vtube_events() {
     let forge = connected_forge(&fake).await;
     let cases: [(&str, StudioChange); 7] = [
         (
-            "vtube.hotkey.triggered",
+            vtube_kinds::HOTKEY_TRIGGERED,
             Box::new(|f| f.trigger_hotkey(WAVE)),
         ),
         (
-            "vtube.tracking.face_lost",
+            vtube_kinds::TRACKING_FACE_LOST,
             Box::new(|f| f.set_face_found(false)),
         ),
         (
-            "vtube.tracking.face_found",
+            vtube_kinds::TRACKING_FACE_FOUND,
             Box::new(|f| f.set_face_found(true)),
         ),
-        ("vtube.item.added", Box::new(|f| f.add_item(STAR))),
-        ("vtube.item.removed", Box::new(|f| f.remove_item(STAR))),
+        (vtube_kinds::ITEM_ADDED, Box::new(|f| f.add_item(STAR))),
+        (vtube_kinds::ITEM_REMOVED, Box::new(|f| f.remove_item(STAR))),
         (
-            "vtube.model.config_changed",
+            vtube_kinds::MODEL_CONFIG_CHANGED,
             Box::new(FakeVTube::change_model_config),
         ),
-        ("vtube.model.unloaded", Box::new(FakeVTube::unload_model)),
+        (
+            vtube_kinds::MODEL_UNLOADED,
+            Box::new(FakeVTube::unload_model),
+        ),
     ];
 
     for (kind, change) in cases {
@@ -520,9 +525,8 @@ async fn studio_changes_reach_forge_as_its_vtube_events() {
     assert!(
         forge
             .events
-            .wait_for(
-                |event| event.kind == "vtube.model.loaded" && event.payload["model_name"] == AVATAR
-            )
+            .wait_for(|event| event.kind == vtube_kinds::MODEL_LOADED
+                && event.payload["model_name"] == AVATAR)
             .await
             .is_some()
     );
@@ -549,9 +553,9 @@ async fn an_expression_turned_on_in_the_studio_reaches_forge_through_its_state_p
 
     let event = forge
         .events
-        .wait_for(|event| event.kind == "vtube.expression.state_changed")
+        .wait_for(|event| event.kind == vtube_kinds::EXPRESSION_STATE_CHANGED)
         .await
-        .expect("vtube.expression.state_changed");
+        .expect(vtube_kinds::EXPRESSION_STATE_CHANGED);
     assert_eq!(event.payload["expression_file"], BLUSH);
     assert_eq!(event.payload["is_active"], true);
     forge.client.shutdown().await;

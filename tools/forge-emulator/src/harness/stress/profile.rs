@@ -1,3 +1,4 @@
+use forge_platform_twitch::vocabulary::topics;
 use std::collections::BTreeSet;
 use std::path::Path;
 
@@ -72,11 +73,11 @@ impl StimulusKind {
 
     pub fn subscription_type(self) -> &'static str {
         match self {
-            Self::Chat | Self::Command => "channel.chat.message",
-            Self::Follow => "channel.follow",
-            Self::Subscribe => "channel.subscribe",
-            Self::Cheer => "channel.cheer",
-            Self::Reward => "channel.channel_points_custom_reward_redemption.add",
+            Self::Chat | Self::Command => topics::CHANNEL_CHAT_MESSAGE,
+            Self::Follow => topics::CHANNEL_FOLLOW,
+            Self::Subscribe => topics::CHANNEL_SUBSCRIBE,
+            Self::Cheer => topics::CHANNEL_CHEER,
+            Self::Reward => topics::CHANNEL_CHANNEL_POINTS_CUSTOM_REWARD_REDEMPTION_ADD,
         }
     }
 }

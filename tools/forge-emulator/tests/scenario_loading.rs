@@ -5,20 +5,15 @@ use std::process::Command;
 use forge_emulator::EmulatorError;
 use forge_emulator::harness::scenario::{Scenario, load_scenario, parse_scenario};
 
-const EMULATOR: &str = env!("CARGO_BIN_EXE_forge-emulator");
+mod support;
+use support::{EMULATOR, shipped_json};
 
 fn scenarios_dir() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("scenarios")
 }
 
 fn example_files() -> Vec<PathBuf> {
-    let mut files: Vec<PathBuf> = std::fs::read_dir(scenarios_dir())
-        .unwrap()
-        .map(|entry| entry.unwrap().path())
-        .filter(|path| path.extension().is_some_and(|ext| ext == "json"))
-        .collect();
-    files.sort();
-    files
+    shipped_json("scenarios")
 }
 
 const VALID: &str = r#"{

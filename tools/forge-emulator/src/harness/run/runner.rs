@@ -450,6 +450,8 @@ mod tests {
 
     use super::*;
     use crate::harness::scenario::parse_scenario;
+    use forge_events::{ActionStarted, TypedEvent};
+    use forge_runtime::TRIGGER_BLOCKED_KIND;
 
     fn step(status: StepStatus) -> StepOutcome {
         StepOutcome {
@@ -519,8 +521,8 @@ mod tests {
         assert_eq!(
             kinds,
             [
-                (None, Some("action.start".to_owned())),
-                (None, Some("trigger.blocked".to_owned())),
+                (None, Some(ActionStarted::KIND.to_owned())),
+                (None, Some(TRIGGER_BLOCKED_KIND.to_owned())),
             ]
         );
     }

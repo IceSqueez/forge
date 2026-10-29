@@ -76,7 +76,7 @@ mod tests {
 
     #[test]
     fn fresh_refuses_a_directory_holding_any_entry() {
-        for entry in ["forge.db", ".hidden"] {
+        for entry in [forge_storage::DATABASE_FILE_NAME, ".hidden"] {
             let dir = tempfile::tempdir().unwrap();
             std::fs::write(dir.path().join(entry), b"").unwrap();
             let refusal = ForgeDataDir::fresh(dir.path());

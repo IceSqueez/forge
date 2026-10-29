@@ -1,5 +1,6 @@
 use std::path::{Path, PathBuf};
 
+use forge_storage::DATABASE_FILE_NAME;
 use serde::Serialize;
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Serialize)]
@@ -83,11 +84,14 @@ pub fn cpu_percent(before: Option<u64>, after: Option<u64>, elapsed_ms: u64) -> 
 }
 
 pub fn database_bytes(data_dir: &Path) -> Option<u64> {
-    let base = data_dir.join("forge.db");
-    let main = std::fs::metadata(&base).ok()?.len();
-    let side = ["forge.db-wal", "forge.db-shm"]
+    let main = std::fs::metadata(data_dir.join(DATABASE_FILE_NAME))
+        .ok()?
+        .len();
+    let side = ["-wal", "-shm"]
         .iter()
-        .filter_map(|name| std::fs::metadata(data_dir.join(name)).ok())
+        .filter_map(|suffix| {
+            std::fs::metadata(data_dir.join(format!("{DATABASE_FILE_NAME}{suffix}"))).ok()
+        })
         .map(|meta| meta.len())
         .sum::<u64>();
     Some(main + side)

@@ -1,4 +1,5 @@
 #![allow(clippy::unwrap_used, clippy::expect_used)]
+use forge_obs::vocabulary::event_kinds as obs_kinds;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
@@ -180,7 +181,7 @@ async fn forge_client_primes_its_catalog_and_publishes_connected() {
     timeout(WAIT, async {
         while !captured
             .kinds()
-            .contains(&"obs.connection.connected".to_owned())
+            .contains(&obs_kinds::CONNECTION_CONNECTED.to_owned())
         {
             tokio::time::sleep(Duration::from_millis(20)).await;
         }
@@ -217,7 +218,10 @@ async fn forge_scene_switch_is_recorded_and_echoed_as_a_scene_changed_event() {
 
     assert_eq!(fake.current_scene().as_deref(), Some("BRB"));
     timeout(WAIT, async {
-        while !captured.kinds().contains(&"obs.scene.changed".to_owned()) {
+        while !captured
+            .kinds()
+            .contains(&obs_kinds::SCENE_CHANGED.to_owned())
+        {
             tokio::time::sleep(Duration::from_millis(20)).await;
         }
     })

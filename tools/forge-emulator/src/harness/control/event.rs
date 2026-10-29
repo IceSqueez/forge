@@ -52,6 +52,8 @@ mod tests {
     use time::macros::datetime;
 
     use super::*;
+    use forge_events::{ActionDone, TypedEvent};
+    use forge_platform_twitch::vocabulary::event_kinds::CHANNEL_CHAT_MESSAGE;
 
     type Mutation = fn(&mut Value);
 
@@ -76,7 +78,7 @@ mod tests {
         let root = Event {
             id: EventId::new(),
             source: EventSource::Twitch,
-            kind: "twitch.channel.chat.message".to_owned(),
+            kind: CHANNEL_CHAT_MESSAGE.to_owned(),
             timestamp: datetime!(2026-09-13 12:00:00 UTC),
             payload: json!({ "user": { "login": "лісоруб" }, "text": "привіт 👋" }),
             caused_by: None,
@@ -86,7 +88,7 @@ mod tests {
         let replayed_effect = Event {
             id: EventId::new(),
             source: EventSource::YouTube,
-            kind: "action.done".to_owned(),
+            kind: ActionDone::KIND.to_owned(),
             timestamp: datetime!(2026-09-13 12:00:00.123456789 UTC),
             payload: Value::Null,
             caused_by: Some(root.id),

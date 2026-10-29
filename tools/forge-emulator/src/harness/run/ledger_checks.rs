@@ -130,6 +130,7 @@ mod tests {
 
     use super::*;
     use crate::fakes::twitch::{CredentialCheck, RecordedSession, RecordedSubscription};
+    use forge_platform_twitch::vocabulary::topics;
 
     fn request(method: &str, path: &str, modeled: bool) -> RecordedRequest {
         RecordedRequest {
@@ -220,17 +221,17 @@ mod tests {
         let ledger = Ledger {
             sessions: vec![session("closed", false), session("live", true)],
             subscriptions: vec![
-                subscription("closed", "channel.follow"),
-                subscription("live", "channel.chat.message"),
+                subscription("closed", topics::CHANNEL_FOLLOW),
+                subscription("live", topics::CHANNEL_CHAT_MESSAGE),
             ],
             ..Ledger::default()
         };
         for (subscription_type, version, held) in [
-            ("channel.chat.message", None, true),
-            ("channel.chat.message", Some("1"), true),
-            ("channel.chat.message", Some("2"), false),
-            ("channel.follow", None, false),
-            ("channel.raid", None, false),
+            (topics::CHANNEL_CHAT_MESSAGE, None, true),
+            (topics::CHANNEL_CHAT_MESSAGE, Some("1"), true),
+            (topics::CHANNEL_CHAT_MESSAGE, Some("2"), false),
+            (topics::CHANNEL_FOLLOW, None, false),
+            (topics::CHANNEL_RAID, None, false),
         ] {
             assert_eq!(
                 holds_live_subscription(&ledger, subscription_type, version),
@@ -245,10 +246,10 @@ mod tests {
         let ledger = Ledger {
             requests: Vec::new(),
             subscriptions: vec![
-                subscription("gone", "channel.raid"),
-                subscription("live", "channel.chat.message"),
-                subscription("live", "channel.subscribe"),
-                subscription("successor", "channel.chat.message"),
+                subscription("gone", topics::CHANNEL_RAID),
+                subscription("live", topics::CHANNEL_CHAT_MESSAGE),
+                subscription("live", topics::CHANNEL_SUBSCRIBE),
+                subscription("successor", topics::CHANNEL_CHAT_MESSAGE),
             ],
             sessions: vec![
                 session("gone", false),
@@ -259,7 +260,7 @@ mod tests {
 
         assert_eq!(
             live_subscription_types(&ledger),
-            ["channel.chat.message", "channel.subscribe"]
+            [topics::CHANNEL_CHAT_MESSAGE, topics::CHANNEL_SUBSCRIBE]
         );
     }
 }

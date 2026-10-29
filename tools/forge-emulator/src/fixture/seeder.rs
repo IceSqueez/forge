@@ -2,9 +2,12 @@ use std::time::{Duration, SystemTime};
 
 use forge_overlay::{OverlayKindRegistry, register_builtin_kinds};
 use forge_platform_twitch::credentials::{StoredCredential, store_credential};
+use forge_platform_twitch::vocabulary::trigger_ids::CHAT_COMMAND;
+use forge_runtime::{OVERLAY_SEND_KIND_ID, OVERLAY_TARGET_KEY};
 use forge_server::ServerSettings;
 use forge_storage::{
-    CredentialId, DataProvider, SERVER_BEARER_CREDENTIAL_ID, SettingsRepo, StorageError,
+    CredentialId, DATABASE_FILE_NAME, DataProvider, SERVER_BEARER_CREDENTIAL_ID, SettingsRepo,
+    StorageError,
 };
 use forge_storage_sqlite::SqliteBackend;
 use forge_types::{
@@ -19,8 +22,7 @@ use super::report::{
 };
 use super::spec::{
     ChatCommand, DEFAULT_QUEUE_NAME, DiscordWebhook, EventTrigger, Fixture, KickAccount,
-    OVERLAY_SEND_KIND, OVERLAY_TARGET_KEY, ObsConnection, OverlayFixture, QueueFixture,
-    TwitchAccount, VTubeConnection, YouTubeAccount,
+    ObsConnection, OverlayFixture, QueueFixture, TwitchAccount, VTubeConnection, YouTubeAccount,
 };
 use crate::EmulatorError;
 use crate::vocabulary::FAKE_DONATELLO_TOKEN;
@@ -28,13 +30,11 @@ use crate::vocabulary::FAKE_MONOBANK_TOKEN;
 use forge_donatello::DONATELLO_CREDENTIAL_ID;
 use forge_monobank::MONOBANK_CREDENTIAL_ID;
 
-const DATABASE_FILE: &str = "forge.db";
 const SERVER_BIND_ADDRESS: &str = "127.0.0.1";
 const DISCORD_CREDENTIAL_PREFIX: &str = "discord:";
 const OBS_HOST: &str = "127.0.0.1";
 const VTUBE_HOST: &str = "127.0.0.1";
 const VTUBE_API_VERSION: &str = "1.0";
-const CHAT_COMMAND_TRIGGER_KIND: &str = "twitch.chat.command";
 const TWITCH_TOKEN_LIFETIME: Duration = Duration::from_secs(10 * 365 * 24 * 60 * 60);
 const KICK_TOKEN_LIFETIME: time::Duration = time::Duration::days(3650);
 const KICK_TOKEN_EXPIRED_AGO: time::Duration = time::Duration::hours(1);
@@ -51,7 +51,7 @@ pub async fn seed_forge_environment(fixture: &Fixture) -> Result<SeedReport, Emu
     let port = free_loopback_port()?;
     let bearer_token = forge_server::generate_token();
 
-    let database = forge_paths::data_dir().join(DATABASE_FILE);
+    let database = forge_paths::data_dir().join(DATABASE_FILE_NAME);
     let url = format!("sqlite://{}?mode=rwc", database.display());
     let backend = SqliteBackend::open(&url)
         .await
@@ -345,7 +345,7 @@ fn addressed_steps(steps: &[SubActionStep], overlays: &[SeededOverlay]) -> Vec<S
         .iter()
         .cloned()
         .map(|mut step| {
-            if step.kind_id != OVERLAY_SEND_KIND {
+            if step.kind_id != OVERLAY_SEND_KIND_ID {
                 return step;
             }
             let identity = step
@@ -401,7 +401,7 @@ async fn seed_chat_command(
         TriggeredAction {
             action_name: &command.action_name,
             steps: &command.steps,
-            kind_id: CHAT_COMMAND_TRIGGER_KIND,
+            kind_id: CHAT_COMMAND,
             instance_name: &command.phrase,
             overrides,
             queue: command.queue.as_deref(),

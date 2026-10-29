@@ -168,6 +168,7 @@ fn unquote(text: &str) -> Option<(String, usize)> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use forge_platform_twitch::vocabulary::trigger_ids::CHAT_COMMAND;
 
     fn parsed(line: &str) -> Option<LogRecord> {
         LogRecord::parse(PathBuf::from("forge.log.2026-09-13"), line)
@@ -190,7 +191,7 @@ mod tests {
                 fields(&[
                     ("event", "01K4Z"),
                     ("instance", "01K50"),
-                    ("kind", "twitch.chat.command"),
+                    ("kind", CHAT_COMMAND),
                     ("reason", "phrase_mismatch"),
                 ]),
             ),

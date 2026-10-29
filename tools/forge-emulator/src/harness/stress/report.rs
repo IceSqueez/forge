@@ -1,3 +1,4 @@
+use forge_events::{ActionDone, ActionStarted, TypedEvent};
 use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
 
@@ -118,8 +119,8 @@ fn render(profile: &StressProfile, outcome: &StressOutcome, forge_binary: &Path)
         };
         row(Leg::Ingest, "twitch event".to_owned(), None);
         for action in 0..outcome.actions.len() {
-            row(Leg::Start, "action.start".to_owned(), Some(action));
-            row(Leg::Done, "action.done".to_owned(), Some(action));
+            row(Leg::Start, ActionStarted::KIND.to_owned(), Some(action));
+            row(Leg::Done, ActionDone::KIND.to_owned(), Some(action));
         }
         for (page, name) in outcome.pages.iter().enumerate() {
             row(Leg::Frame(page), format!("frame on `{name}`"), None);

@@ -1,3 +1,6 @@
+use forge_events::{ActionStarted, TypedEvent};
+use forge_platform_twitch::vocabulary::topics;
+use forge_runtime::COMMAND_MATCHED_KIND;
 use std::collections::{HashMap, HashSet};
 use std::fmt;
 
@@ -23,10 +26,10 @@ pub const MAX_CHATTER_PER_VIEWER: u32 = 20;
 pub const MAX_CROWD_MESSAGES: u64 = 1_000_000;
 pub const MAX_CROWD_SPACING_MS: u64 = 1_000;
 
-const CHAT_SUBSCRIPTION: &str = "channel.chat.message";
-const COMMAND_MATCHED: &str = "command.matched";
+const CHAT_SUBSCRIPTION: &str = topics::CHANNEL_CHAT_MESSAGE;
+const COMMAND_MATCHED: &str = COMMAND_MATCHED_KIND;
 const COMMAND_POINTER: &str = "/command";
-const ACTION_START: &str = "action.start";
+const ACTION_START: &str = ActionStarted::KIND;
 const ACTION_NAME_POINTER: &str = "/action_name";
 const PROSE_FIELD: &str = "message";
 const MENTION_KINDS: [&str; 3] = ["users", "roles", "everyone"];

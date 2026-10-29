@@ -1,4 +1,5 @@
 use axum::http::StatusCode;
+use forge_platform_twitch::vocabulary::topics;
 use serde_json::{Map, Value, json};
 
 use super::config::FakeTwitchConfig;
@@ -13,9 +14,9 @@ const HEX_COLOR_PREFIX: char = '#';
 const DEFAULT_BACKGROUND: &str = "#9147FF";
 const DASHBOARD_CLIENT_ID: &str = "twitch-dashboard";
 
-pub(crate) const REWARD_ADD: &str = "channel.channel_points_custom_reward.add";
-pub(crate) const REWARD_UPDATE: &str = "channel.channel_points_custom_reward.update";
-pub(crate) const REWARD_REMOVE: &str = "channel.channel_points_custom_reward.remove";
+pub(crate) const REWARD_ADD: &str = topics::CHANNEL_CHANNEL_POINTS_CUSTOM_REWARD_ADD;
+pub(crate) const REWARD_UPDATE: &str = topics::CHANNEL_CHANNEL_POINTS_CUSTOM_REWARD_UPDATE;
+pub(crate) const REWARD_REMOVE: &str = topics::CHANNEL_CHANNEL_POINTS_CUSTOM_REWARD_REMOVE;
 
 const DUPLICATE_ON_CREATE: &str = "CREATE_CUSTOM_REWARD_DUPLICATE_REWARD";
 const DUPLICATE_ON_UPDATE: &str = "UPDATE_CUSTOM_REWARD_DUPLICATE_REWARD";

@@ -1,15 +1,15 @@
 use std::collections::{BTreeMap, HashMap};
 
-use forge_events::{Event, EventSource};
+use forge_events::{ActionDone, ActionSkipped, ActionStarted, Event, EventSource, TypedEvent};
 use forge_types::EventId;
 use serde_json::Value;
 use tokio::time::Instant;
 
 use super::marker::find_marker;
 
-const ACTION_START: &str = "action.start";
-const ACTION_DONE: &str = "action.done";
-const ACTION_SKIPPED: &str = "action.skipped";
+const ACTION_START: &str = ActionStarted::KIND;
+const ACTION_DONE: &str = ActionDone::KIND;
+const ACTION_SKIPPED: &str = ActionSkipped::KIND;
 const ACTION_NAME_POINTER: &str = "/action_name";
 const OUTCOME_POINTER: &str = "/outcome";
 const REASON_POINTER: &str = "/reason";
@@ -312,6 +312,9 @@ mod tests {
     use serde_json::json;
 
     use super::*;
+    use forge_events::TimerTick;
+    use forge_platform_twitch::vocabulary::event_kinds::CHANNEL_CHAT_MESSAGE;
+    use forge_runtime::COMMAND_MATCHED_KIND;
 
     const CHAT_ACTION: usize = 0;
     const COMMAND_ACTION: usize = 1;
@@ -327,7 +330,7 @@ mod tests {
     fn twitch_event(text: &str) -> Event {
         Event::new(
             EventSource::Twitch,
-            "twitch.channel.chat.message",
+            CHANNEL_CHAT_MESSAGE,
             json!({ "message": { "text": text } }),
         )
     }
@@ -379,7 +382,7 @@ mod tests {
         tracker.injected(0, 1, 0, t0);
         let chat = twitch_event("!hype ~q0~");
         tracker.on_event(&chat, t0);
-        let matched = core("command.matched", json!({}), chat.id);
+        let matched = core(COMMAND_MATCHED_KIND, json!({}), chat.id);
         tracker.on_event(&matched, t0);
         tracker.on_event(
             &start("Hype Command", matched.id),
@@ -449,7 +452,7 @@ mod tests {
         let mut tracker = tracker();
         let t0 = Instant::now();
         tracker.injected(0, 0, 0, t0);
-        let foreign = Event::new(EventSource::Core, "timer.tick", json!({}));
+        let foreign = Event::new(EventSource::Core, TimerTick::KIND, json!({}));
         tracker.on_event(&start("Chat Message", foreign.id), t0);
         tracker.on_event(&done(EventId::new(), "success"), t0);
         tracker.on_event(

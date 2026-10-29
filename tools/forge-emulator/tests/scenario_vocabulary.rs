@@ -4,6 +4,7 @@ use forge_emulator::harness::scenario::{
     ChatViewer, Crowd, CrowdLine, EventPattern, ObservedEvent, PayloadMatchers,
 };
 use forge_events::{Event, EventSource};
+use forge_events::{TimerTick, TypedEvent};
 use serde_json::json;
 
 fn chat_event() -> Event {
@@ -127,7 +128,7 @@ fn empty_pointer_compares_the_whole_payload() {
     let payload: PayloadMatchers = serde_json::from_value(json!({ "": { "equals": 3 } })).unwrap();
     let pattern = EventPattern {
         source: None,
-        kind: "timer.tick",
+        kind: TimerTick::KIND,
         payload: &payload,
     };
     assert!(pattern.matches(&event));

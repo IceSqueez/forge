@@ -1,11 +1,12 @@
 use axum::http::StatusCode;
+use forge_platform_twitch::vocabulary::topics;
 use serde_json::{Value, json};
 
 use super::config::FakeTwitchConfig;
 use super::rewards::RewardAnswer;
 
-pub(crate) const BAN: &str = "channel.ban";
-pub(crate) const UNBAN: &str = "channel.unban";
+pub(crate) const BAN: &str = topics::CHANNEL_BAN;
+pub(crate) const UNBAN: &str = topics::CHANNEL_UNBAN;
 
 const DEFAULT_PAGE: usize = 20;
 const MAX_PAGE: usize = 100;

@@ -1,6 +1,6 @@
 #![allow(clippy::unwrap_used, clippy::panic)]
+use forge_platform_youtube::vocabulary::event_kinds as youtube_kinds;
 use std::collections::{BTreeSet, HashMap};
-use std::ffi::OsString;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
@@ -23,18 +23,18 @@ use forge_platform_youtube::{
 };
 use forge_storage::{CredentialId, CredentialsRepo, StorageError};
 use forge_types::OAuthToken;
-use futures_util::future::BoxFuture;
 use serde_json::{Map, Value, json};
 use time::OffsetDateTime;
 use tokio::sync::{mpsc, watch};
 use tokio::task::JoinHandle;
 use tokio::time::timeout;
 
+mod support;
+use support::{QuietPublisher, endpoints_from, static_token_source};
+
 const WAIT: Duration = Duration::from_secs(10);
 const CLIENT_ID: &str = "emulator-youtube-client";
 const CLIENT_SECRET: &str = "emulator-youtube-client-secret";
-
-type TokenSource = Arc<dyn Fn() -> BoxFuture<'static, Result<String, PlatformError>> + Send + Sync>;
 
 struct CancelOnDrop(JoinHandle<()>);
 
@@ -96,14 +96,7 @@ async fn start_live() -> FakeYouTube {
 }
 
 fn endpoints(fake: &FakeYouTube) -> PlatformEndpoints {
-    let overrides = fake.endpoint_overrides();
-    PlatformEndpoints::resolve(|variable| {
-        overrides
-            .iter()
-            .find(|(name, _)| *name == variable)
-            .map(|(_, url)| OsString::from(url))
-    })
-    .unwrap()
+    endpoints_from(&fake.endpoint_overrides())
 }
 
 fn data_api(fake: &FakeYouTube, route: &str) -> String {
@@ -113,21 +106,8 @@ fn data_api(fake: &FakeYouTube, route: &str) -> String {
     )
 }
 
-fn token_source(token: String) -> TokenSource {
-    Arc::new(move || {
-        let token = token.clone();
-        Box::pin(async move { Ok(token) })
-    })
-}
-
-struct SilentBus;
-
-impl forge_events::EventPublisher for SilentBus {
-    fn publish(&self, _: Event) {}
-}
-
 fn youtube_data_api(endpoints: &PlatformEndpoints) -> YoutubeDataApi {
-    YoutubeDataApi::new(endpoints, SharedQuota::default(), Arc::new(SilentBus)).unwrap()
+    YoutubeDataApi::new(endpoints, SharedQuota::default(), Arc::new(QuietPublisher)).unwrap()
 }
 
 fn google_oauth(endpoints: &PlatformEndpoints) -> GoogleOAuthClient {
@@ -206,7 +186,7 @@ impl ForgePoller {
         let (tx, events) = mpsc::unbounded_channel();
         let poller = YoutubeChatPoller::new(
             youtube_data_api(&endpoints(fake)),
-            token_source(fake.access_token()),
+            static_token_source(fake.access_token()),
             tx,
             fake.config().channel_id.clone(),
             LiveChatIdHandle::new(),
@@ -329,12 +309,12 @@ async fn blank_broadcast_or_chat_ids_are_refused_at_start() {
 async fn forge_poller_announces_the_live_broadcast_and_reads_an_injected_message() {
     let fake = start_live().await;
     let mut forge = ForgePoller::start(&fake);
-    let online = forge.next_of("youtube.stream.online").await;
+    let online = forge.next_of(youtube_kinds::STREAM_ONLINE).await;
     chat_polled(&fake).await;
 
     fake.inject_chat_message(&alice(), "hello from the fake")
         .unwrap();
-    let message = forge.next_of("youtube.chat.message").await;
+    let message = forge.next_of(youtube_kinds::CHAT_MESSAGE).await;
 
     assert_eq!(
         (
@@ -354,11 +334,11 @@ async fn forge_poller_announces_the_live_broadcast_and_reads_an_injected_message
 async fn forge_poller_learns_the_end_from_the_chat_before_its_next_broadcast_poll() {
     let fake = start_live().await;
     let mut forge = ForgePoller::start(&fake);
-    forge.next_of("youtube.stream.online").await;
+    forge.next_of(youtube_kinds::STREAM_ONLINE).await;
     chat_polled(&fake).await;
 
     fake.set_live(false);
-    forge.next_of("youtube.stream.offline").await;
+    forge.next_of(youtube_kinds::STREAM_OFFLINE).await;
 
     let broadcast_polls = fake
         .ledger()
@@ -490,7 +470,7 @@ async fn forge_send_inserts_a_text_message_that_comes_back_as_the_owner() {
     live_chat.set(Some(fake.config().live_chat_id.clone()));
     let sender = YoutubeSendChat::new(
         youtube_data_api(&endpoints(&fake)),
-        token_source(fake.access_token()),
+        static_token_source(fake.access_token()),
         live_chat,
     );
 
@@ -514,7 +494,7 @@ async fn forge_send_into_an_ended_chat_is_refused_as_live_chat_ended() {
     live_chat.set(Some(fake.config().live_chat_id.clone()));
     let sender = YoutubeSendChat::new(
         youtube_data_api(&endpoints(&fake)),
-        token_source(fake.access_token()),
+        static_token_source(fake.access_token()),
         live_chat,
     );
 
@@ -632,7 +612,7 @@ async fn forge_viewer_poll_reports_the_live_concurrent_viewers() {
     let (reports_tx, mut reports) = watch::channel(ViewerReport::Absent);
     let poll = YoutubeViewerPoll::new(
         youtube_data_api(&endpoints(&fake)),
-        token_source(fake.access_token()),
+        static_token_source(fake.access_token()),
         broadcast,
         reports_tx,
     );

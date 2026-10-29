@@ -38,6 +38,7 @@ forge-platform-core = { path = "../../crates/forge-platform-core" }
 forge-platform-kick = { path = "../../crates/forge-platform-kick" }
 forge-platform-twitch = { path = "../../crates/forge-platform-twitch" }
 forge-platform-youtube = { path = "../../crates/forge-platform-youtube" }
+forge-runtime = { path = "../../crates/forge-runtime" }
 forge-server = { path = "../../crates/forge-server" }
 forge-storage = { path = "../../crates/forge-storage" }
 forge-paths = { path = "../../crates/forge-paths" }

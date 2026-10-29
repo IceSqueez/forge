@@ -1,4 +1,8 @@
 #![allow(clippy::unwrap_used, clippy::expect_used)]
+use forge_events::{ActionStarted, TypedEvent};
+use forge_platform_twitch::vocabulary::event_kinds as twitch_kinds;
+use forge_platform_twitch::vocabulary::topics;
+use forge_platform_youtube::vocabulary::event_kinds as youtube_kinds;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
@@ -36,11 +40,14 @@ use tokio::time::{Instant, timeout};
 use tokio_tungstenite::tungstenite::Message;
 use tokio_tungstenite::{MaybeTlsStream, WebSocketStream};
 
+mod support;
+use support::{QuietPublisher, TokenSource, endpoints_from, static_token_source};
+
 type Socket = WebSocketStream<MaybeTlsStream<TcpStream>>;
 
 const DEADLINE: Duration = Duration::from_secs(20);
-const CHAT: &str = "channel.chat.message";
-const SUBSCRIBE: &str = "channel.subscribe";
+const CHAT: &str = topics::CHANNEL_CHAT_MESSAGE;
+const SUBSCRIBE: &str = topics::CHANNEL_SUBSCRIBE;
 
 #[derive(Debug, Clone, Copy)]
 struct Behaviour {
@@ -195,7 +202,7 @@ fn answer(
             let execution = EventId::new();
             let started = Event::caused_by(
                 EventSource::Core,
-                "action.start",
+                ActionStarted::KIND,
                 json!({ "action_id": request["actionId"], "action_name": "Ping" }),
                 execution,
             );
@@ -229,7 +236,7 @@ fn chat_effects(notification: &Value, behaviour: Behaviour) -> Vec<Event> {
     if behaviour.runs_commands && text.starts_with("!ping") {
         effects.push(Event::caused_by(
             EventSource::Core,
-            "action.start",
+            ActionStarted::KIND,
             json!({ "action_name": "Ping" }),
             chat.id,
         ));
@@ -240,7 +247,7 @@ fn chat_effects(notification: &Value, behaviour: Behaviour) -> Vec<Event> {
 fn subscriber_effect(notification: &Value) -> Event {
     Event::new(
         EventSource::Twitch,
-        "twitch.channel.subscribe",
+        twitch_kinds::CHANNEL_SUBSCRIBE,
         json!({
             "user": {
                 "login": notification["user_login"],
@@ -945,12 +952,6 @@ async fn discord_post_without_a_fake_discord_fails_as_unrunnable() {
 
 const OBS_PASSWORD: &str = "obs-runner-secret";
 
-struct QuietPublisher;
-
-impl forge_events::EventPublisher for QuietPublisher {
-    fn publish(&self, _: Event) {}
-}
-
 fn obs_scenario(online_at_boot: bool, steps: Value) -> Scenario {
     scenario(
         json!({ "obs": { "password": OBS_PASSWORD } }),
@@ -1539,14 +1540,7 @@ async fn harness_with_kick() -> Harness {
 }
 
 fn kick_endpoints(fake: &FakeKick) -> forge_platform_core::PlatformEndpoints {
-    let overrides = fake.endpoint_overrides();
-    forge_platform_core::PlatformEndpoints::resolve(|variable| {
-        overrides
-            .iter()
-            .find(|(name, _)| *name == variable)
-            .map(|(_, url)| std::ffi::OsString::from(url))
-    })
-    .unwrap()
+    endpoints_from(&fake.endpoint_overrides())
 }
 
 struct KickGrant;
@@ -1778,30 +1772,11 @@ async fn harness_with_youtube(live: bool) -> Harness {
 }
 
 fn youtube_endpoints(fake: &FakeYouTube) -> forge_platform_core::PlatformEndpoints {
-    let overrides = fake.endpoint_overrides();
-    forge_platform_core::PlatformEndpoints::resolve(|variable| {
-        overrides
-            .iter()
-            .find(|(name, _)| *name == variable)
-            .map(|(_, url)| std::ffi::OsString::from(url))
-    })
-    .unwrap()
+    endpoints_from(&fake.endpoint_overrides())
 }
 
-fn youtube_token(
-    fake: &FakeYouTube,
-) -> Arc<
-    dyn Fn() -> futures_util::future::BoxFuture<
-            'static,
-            Result<String, forge_platform_core::PlatformError>,
-        > + Send
-        + Sync,
-> {
-    let token = fake.access_token();
-    Arc::new(move || {
-        let token = token.clone();
-        Box::pin(async move { Ok(token) })
-    })
+fn youtube_token(fake: &FakeYouTube) -> TokenSource {
+    static_token_source(fake.access_token())
 }
 
 fn youtube_data_api(
@@ -1834,7 +1809,7 @@ fn forge_youtube_echo(fake: &FakeYouTube) -> tokio::task::JoinHandle<()> {
         let polling = tokio::spawn(poller.run(tokio_util::sync::CancellationToken::new()));
         while let Some(event) = event_rx.recv().await {
             let text = event.payload["message_text"].as_str().unwrap_or_default();
-            if event.kind == "youtube.chat.message" && text.starts_with('!') {
+            if event.kind == youtube_kinds::CHAT_MESSAGE && text.starts_with('!') {
                 sender.send(&format!("echo {text}")).await.ok();
             }
         }

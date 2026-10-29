@@ -1,4 +1,6 @@
 #![allow(clippy::unwrap_used, clippy::expect_used)]
+use forge_platform_twitch::vocabulary::event_kinds as twitch_kinds;
+use forge_platform_youtube::vocabulary::event_kinds as youtube_kinds;
 use std::time::Duration;
 
 use forge_emulator::EmulatorError;
@@ -116,7 +118,7 @@ fn error_response(id: Value, code: &str, message: &str) -> Value {
 fn chat_event(text: &str) -> Event {
     Event::new(
         EventSource::Twitch,
-        "twitch.channel.chat.message",
+        twitch_kinds::CHANNEL_CHAT_MESSAGE,
         json!({ "text": text }),
     )
 }
@@ -216,7 +218,7 @@ async fn subscribe_sends_filters_in_the_server_wire_shape() {
     let filters = [
         EventFilter {
             source: Some(EventSource::YouTube),
-            kind: Some("youtube.chat.message".to_owned()),
+            kind: Some(youtube_kinds::CHAT_MESSAGE.to_owned()),
         },
         EventFilter::default(),
     ];

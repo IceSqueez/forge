@@ -76,6 +76,7 @@ pub struct SeededEventTrigger {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use forge_overlay::kinds::alert;
 
     #[test]
     fn debug_output_never_carries_the_bearer_token() {
@@ -92,7 +93,7 @@ mod tests {
         let overlay = SeededOverlay {
             id: "alert-box".to_owned(),
             display_name: "Alert Box".to_owned(),
-            kind_id: "overlay.alert".to_owned(),
+            kind_id: alert::KIND_ID.to_owned(),
             credential: "secret-overlay-credential".to_owned(),
         };
         let rendered = format!("{overlay:?}");

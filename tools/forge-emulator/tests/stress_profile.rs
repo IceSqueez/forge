@@ -1,9 +1,11 @@
 #![allow(clippy::unwrap_used)]
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 use forge_emulator::EmulatorError;
 use forge_emulator::harness::stress::{StressProfile, load_profile};
 use serde_json::{Value, json};
+
+mod support;
 
 fn base() -> Value {
     json!({
@@ -171,14 +173,7 @@ fn an_unknown_field_is_rejected_rather_than_ignored() {
 }
 
 fn shipped_profiles() -> Vec<PathBuf> {
-    let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("stress");
-    let mut files: Vec<PathBuf> = std::fs::read_dir(&dir)
-        .unwrap()
-        .map(|entry| entry.unwrap().path())
-        .filter(|path| path.extension().is_some_and(|ext| ext == "json"))
-        .collect();
-    files.sort();
-    files
+    support::shipped_json("stress")
 }
 
 #[test]

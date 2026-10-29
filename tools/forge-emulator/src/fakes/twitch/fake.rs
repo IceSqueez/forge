@@ -1,3 +1,4 @@
+use forge_platform_twitch::vocabulary::topics;
 use std::net::{Ipv4Addr, SocketAddr};
 use std::sync::Arc;
 use std::time::Duration;
@@ -19,8 +20,8 @@ use super::socket;
 use super::state::{Outbox, Shared};
 use crate::EmulatorError;
 
-const CHAT_MESSAGE_SUBSCRIPTION: &str = "channel.chat.message";
-const FOLLOW_SUBSCRIPTION: &str = "channel.follow";
+const CHAT_MESSAGE_SUBSCRIPTION: &str = topics::CHANNEL_CHAT_MESSAGE;
+const FOLLOW_SUBSCRIPTION: &str = topics::CHANNEL_FOLLOW;
 const SOCKET_PATH: &str = "/ws";
 const SHUTDOWN_GRACE: Duration = Duration::from_secs(2);
 

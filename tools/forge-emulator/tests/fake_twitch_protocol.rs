@@ -1,4 +1,5 @@
 #![allow(clippy::unwrap_used, clippy::expect_used)]
+use forge_platform_twitch::vocabulary::topics;
 use std::time::Duration;
 
 use forge_emulator::EmulatorError;
@@ -16,7 +17,7 @@ use tokio_tungstenite::{MaybeTlsStream, WebSocketStream};
 type Socket = WebSocketStream<MaybeTlsStream<TcpStream>>;
 
 const DEADLINE: Duration = Duration::from_secs(30);
-const CHAT: &str = "channel.chat.message";
+const CHAT: &str = topics::CHANNEL_CHAT_MESSAGE;
 
 fn config() -> FakeTwitchConfig {
     FakeTwitchConfig::for_account(&TwitchAccount::default())
@@ -659,7 +660,7 @@ async fn session_holding_two_subscriptions_of_one_type_gets_one_notification() {
         json!({ "to_broadcaster_user_id": "100000001" }),
         json!({ "from_broadcaster_user_id": "100000001" }),
     ] {
-        let mut body = subscription_body("channel.raid", &session_id);
+        let mut body = subscription_body(topics::CHANNEL_RAID, &session_id);
         body["condition"] = condition;
         post_json(&fake, "/helix/eventsub/subscriptions", &body).await;
     }
@@ -764,7 +765,7 @@ async fn whisper_requests_twitch_would_refuse_are_refused() {
 async fn channel_followers_answers_from_the_injected_follows() {
     let fake = start().await;
     let (_socket, session_id) = connect_to(fake.eventsub_ws_url()).await;
-    subscribe(&fake, "channel.follow", &session_id).await;
+    subscribe(&fake, topics::CHANNEL_FOLLOW, &session_id).await;
     let follow = |user_id: &str, login: &str, followed_at: &str| {
         json!({
             "user_id": user_id,
@@ -781,7 +782,7 @@ async fn channel_followers_answers_from_the_injected_follows() {
         follow("200000043", "bob", "2024-02-03T04:05:06Z"),
         follow("200000042", "alice", "2025-06-07T08:09:10Z"),
     ] {
-        fake.inject_notification("channel.follow", event)
+        fake.inject_notification(topics::CHANNEL_FOLLOW, event)
             .await
             .unwrap();
     }
@@ -873,8 +874,8 @@ fn ban_event(user_id: &str, login: &str, ends_at: Option<&str>) -> Value {
 async fn fake_with_bans(events: &[(&str, Value)]) -> (FakeTwitch, Socket) {
     let fake = start().await;
     let (socket, session_id) = connect_to(fake.eventsub_ws_url()).await;
-    subscribe(&fake, "channel.ban", &session_id).await;
-    subscribe(&fake, "channel.unban", &session_id).await;
+    subscribe(&fake, topics::CHANNEL_BAN, &session_id).await;
+    subscribe(&fake, topics::CHANNEL_UNBAN, &session_id).await;
     for (subscription_type, event) in events {
         fake.inject_notification(subscription_type, event.clone())
             .await
@@ -925,7 +926,7 @@ async fn banned_users_maps_an_injected_ban_to_a_helix_row() {
 
     for (label, ends_at, expected_expiry) in cases {
         let (fake, _socket) =
-            fake_with_bans(&[("channel.ban", ban_event(VIEWER, "alice", ends_at))]).await;
+            fake_with_bans(&[(topics::CHANNEL_BAN, ban_event(VIEWER, "alice", ends_at))]).await;
         let owner = TwitchAccount::default().user_id;
 
         let (status, body) = get_banned(&fake, &format!("?broadcaster_id={owner}")).await;
@@ -953,7 +954,7 @@ async fn banned_users_maps_an_injected_ban_to_a_helix_row() {
 async fn banned_users_pages_newest_first_through_the_cursor() {
     let events: Vec<(&str, Value)> = ["200000001", "200000002", "200000003"]
         .into_iter()
-        .map(|id| ("channel.ban", ban_event(id, "viewer", None)))
+        .map(|id| (topics::CHANNEL_BAN, ban_event(id, "viewer", None)))
         .collect();
     let (fake, _socket) = fake_with_bans(&events).await;
     let owner = TwitchAccount::default().user_id;
@@ -981,7 +982,7 @@ async fn banned_users_page_size_is_capped_at_one_hundred_and_defaults_to_twenty(
     let events: Vec<(&str, Value)> = (0..101)
         .map(|n| {
             (
-                "channel.ban",
+                topics::CHANNEL_BAN,
                 ban_event(&format!("2000{n:05}"), "viewer", None),
             )
         })
@@ -1011,7 +1012,7 @@ async fn banned_users_page_size_is_capped_at_one_hundred_and_defaults_to_twenty(
 #[tokio::test]
 async fn banned_users_refuses_requests_twitch_would_refuse() {
     let (fake, _socket) =
-        fake_with_bans(&[("channel.ban", ban_event(VIEWER, "alice", None))]).await;
+        fake_with_bans(&[(topics::CHANNEL_BAN, ban_event(VIEWER, "alice", None))]).await;
     let owner = TwitchAccount::default().user_id;
     let cases = [
         ("".to_owned(), reqwest::StatusCode::BAD_REQUEST),
@@ -1043,11 +1044,11 @@ async fn banned_users_refuses_requests_twitch_would_refuse() {
 #[tokio::test]
 async fn injected_unban_and_reban_keep_one_current_row_per_user() {
     let (fake, _socket) = fake_with_bans(&[
-        ("channel.ban", ban_event(VIEWER, "alice", None)),
-        ("channel.ban", ban_event("200000043", "bob", None)),
-        ("channel.unban", ban_event("200000043", "bob", None)),
+        (topics::CHANNEL_BAN, ban_event(VIEWER, "alice", None)),
+        (topics::CHANNEL_BAN, ban_event("200000043", "bob", None)),
+        (topics::CHANNEL_UNBAN, ban_event("200000043", "bob", None)),
         (
-            "channel.ban",
+            topics::CHANNEL_BAN,
             ban_event(VIEWER, "alice", Some("2026-10-06T11:00:00Z")),
         ),
     ])
@@ -1065,7 +1066,7 @@ async fn injected_unban_and_reban_keep_one_current_row_per_user() {
 #[tokio::test]
 async fn unbanning_a_banned_user_answers_no_content_and_lifts_the_ban() {
     let (fake, _socket) =
-        fake_with_bans(&[("channel.ban", ban_event(VIEWER, "alice", None))]).await;
+        fake_with_bans(&[(topics::CHANNEL_BAN, ban_event(VIEWER, "alice", None))]).await;
     let owner = TwitchAccount::default().user_id;
 
     let (status, _) = delete_ban(
@@ -1084,7 +1085,7 @@ async fn unbanning_a_banned_user_answers_no_content_and_lifts_the_ban() {
 #[tokio::test]
 async fn unbanning_a_banned_user_notifies_channel_unban() {
     let (fake, mut socket) =
-        fake_with_bans(&[("channel.ban", ban_event(VIEWER, "alice", None))]).await;
+        fake_with_bans(&[(topics::CHANNEL_BAN, ban_event(VIEWER, "alice", None))]).await;
     let _ban_notification = next_frame(&mut socket).await;
     let owner = TwitchAccount::default().user_id;
 
@@ -1107,7 +1108,7 @@ async fn unbanning_a_banned_user_notifies_channel_unban() {
 #[tokio::test]
 async fn unbanning_a_user_who_is_not_banned_answers_400_saying_so() {
     let (fake, _socket) =
-        fake_with_bans(&[("channel.ban", ban_event(VIEWER, "alice", None))]).await;
+        fake_with_bans(&[(topics::CHANNEL_BAN, ban_event(VIEWER, "alice", None))]).await;
     let owner = TwitchAccount::default().user_id;
     let query = format!("?broadcaster_id={owner}&moderator_id={owner}&user_id=200000099");
 
@@ -1120,7 +1121,7 @@ async fn unbanning_a_user_who_is_not_banned_answers_400_saying_so() {
 #[tokio::test]
 async fn unban_requests_twitch_would_refuse_never_claim_the_user_is_not_banned() {
     let (fake, _socket) =
-        fake_with_bans(&[("channel.ban", ban_event(VIEWER, "alice", None))]).await;
+        fake_with_bans(&[(topics::CHANNEL_BAN, ban_event(VIEWER, "alice", None))]).await;
     let owner = TwitchAccount::default().user_id;
     let cases = [
         (

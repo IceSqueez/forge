@@ -99,6 +99,7 @@ impl OverlayPages {
 mod tests {
     use super::*;
     use crate::fixture::{SeedReport, SeededOverlay, SeededServer};
+    use forge_overlay::kinds::alert;
 
     fn seed(overlays: Vec<SeededOverlay>) -> SeedReport {
         SeedReport {
@@ -118,7 +119,7 @@ mod tests {
         SeededOverlay {
             id: id.to_owned(),
             display_name: display_name.to_owned(),
-            kind_id: "overlay.alert".to_owned(),
+            kind_id: alert::KIND_ID.to_owned(),
             credential: "credential".to_owned(),
         }
     }

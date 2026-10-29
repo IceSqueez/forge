@@ -1,6 +1,6 @@
 #![allow(clippy::unwrap_used)]
+use forge_platform_kick::vocabulary::event_kinds as kick_kinds;
 use std::collections::HashMap;
-use std::ffi::OsString;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
@@ -30,6 +30,9 @@ use tokio::sync::mpsc;
 use tokio::time::timeout;
 use tokio_tungstenite::tungstenite::Message;
 use tokio_tungstenite::{MaybeTlsStream, WebSocketStream};
+
+mod support;
+use support::endpoints_from;
 
 type Socket = WebSocketStream<MaybeTlsStream<TcpStream>>;
 
@@ -88,14 +91,7 @@ async fn start(setup: FakeKickSetup) -> FakeKick {
 }
 
 fn endpoints(fake: &FakeKick) -> PlatformEndpoints {
-    let overrides = fake.endpoint_overrides();
-    PlatformEndpoints::resolve(|variable| {
-        overrides
-            .iter()
-            .find(|(name, _)| *name == variable)
-            .map(|(_, url)| OsString::from(url))
-    })
-    .unwrap()
+    endpoints_from(&fake.endpoint_overrides())
 }
 
 fn limiter() -> Arc<dyn RateLimiter> {
@@ -258,7 +254,7 @@ async fn injected_chat_message_reaches_forge_as_a_kick_chat_message() {
             &event.payload["sender"]["username"],
         ),
         (
-            "kick.chat.message.sent",
+            kick_kinds::CHAT_MESSAGE_SENT,
             &json!(message_id),
             &json!("!hello there"),
             &json!(200_000_042),

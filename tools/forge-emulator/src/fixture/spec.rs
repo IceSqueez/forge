@@ -1,5 +1,6 @@
 use std::fmt;
 
+use forge_runtime::{OVERLAY_SEND_KIND_ID, OVERLAY_TARGET_KEY};
 use forge_storage::OverlayConfig;
 use forge_types::{SubActionStep, TriggerConfig};
 use serde::{Deserialize, Serialize};
@@ -7,8 +8,6 @@ use serde::{Deserialize, Serialize};
 use crate::EmulatorError;
 use crate::vocabulary::REDACTED;
 
-pub const OVERLAY_SEND_KIND: &str = "overlay.send";
-pub const OVERLAY_TARGET_KEY: &str = "overlay_id";
 pub const DEFAULT_QUEUE_NAME: &str = "Default";
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
@@ -422,7 +421,7 @@ impl Fixture {
 pub fn overlay_targets(steps: &[SubActionStep]) -> impl Iterator<Item = &str> {
     steps
         .iter()
-        .filter(|step| step.kind_id == OVERLAY_SEND_KIND)
+        .filter(|step| step.kind_id == OVERLAY_SEND_KIND_ID)
         .filter_map(|step| step.config.get(OVERLAY_TARGET_KEY))
         .filter_map(forge_types::Variant::as_str)
         .filter(|target| !target.trim().is_empty())
@@ -431,6 +430,8 @@ pub fn overlay_targets(steps: &[SubActionStep]) -> impl Iterator<Item = &str> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use forge_overlay::kinds::alert;
+    use forge_platform_twitch::vocabulary::trigger_ids::SUPPORT_SUBSCRIBER;
 
     #[test]
     fn empty_command_phrase_is_refused_naming_its_action() {
@@ -463,14 +464,14 @@ mod tests {
     fn overlay(display_name: &str) -> OverlayFixture {
         OverlayFixture {
             display_name: display_name.to_owned(),
-            kind_id: "overlay.alert".to_owned(),
+            kind_id: alert::KIND_ID.to_owned(),
             config: OverlayConfig::new(),
         }
     }
 
     fn event_trigger_sending_to(target: &str) -> EventTrigger {
         EventTrigger {
-            trigger_kind: "twitch.support.subscriber".to_owned(),
+            trigger_kind: SUPPORT_SUBSCRIBER.to_owned(),
             action_name: "Announce".to_owned(),
             config: TriggerConfig::new(),
             steps: sends_to(target).steps,
@@ -483,7 +484,7 @@ mod tests {
             phrase: "!alert".to_owned(),
             action_name: "Raise".to_owned(),
             steps: vec![SubActionStep {
-                kind_id: OVERLAY_SEND_KIND.to_owned(),
+                kind_id: OVERLAY_SEND_KIND_ID.to_owned(),
                 config: [(
                     OVERLAY_TARGET_KEY.to_owned(),
                     forge_types::Variant::String(target.to_owned()),

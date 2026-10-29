@@ -1,4 +1,6 @@
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+use forge_platform_twitch::vocabulary::event_kinds as twitch_kinds;
+use forge_platform_twitch::vocabulary::topics;
 use std::collections::HashMap;
 use std::ffi::OsString;
 use std::sync::{Arc, Mutex};
@@ -30,10 +32,10 @@ use tokio::sync::mpsc;
 use tokio::time::timeout;
 
 const DEADLINE: Duration = Duration::from_secs(10);
-const CHAT_MESSAGE_KIND: &str = "twitch.channel.chat.message";
-const CHAT_SUBSCRIPTION: &str = "channel.chat.message";
-const FOLLOW_SUBSCRIPTION: &str = "channel.follow";
-const FOLLOW_KIND: &str = "twitch.channel.follow";
+const CHAT_MESSAGE_KIND: &str = twitch_kinds::CHANNEL_CHAT_MESSAGE;
+const CHAT_SUBSCRIPTION: &str = topics::CHANNEL_CHAT_MESSAGE;
+const FOLLOW_SUBSCRIPTION: &str = topics::CHANNEL_FOLLOW;
+const FOLLOW_KIND: &str = twitch_kinds::CHANNEL_FOLLOW;
 const STATE_POLL: Duration = Duration::from_millis(10);
 
 struct FixedTokenSource(OAuthToken);

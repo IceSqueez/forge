@@ -76,7 +76,6 @@ mod tests {
     use forge_types::{ArgStack, SubActionOutcome, Variant};
 
     use super::*;
-    use crate::sub_actions::lock_prediction::prediction_default_config;
     use crate::sub_actions::test_support::{MockCreds, MockTransport, make_ctx};
 
     #[tokio::test]
@@ -92,7 +91,7 @@ mod tests {
         );
 
         let (telemetry, _) = runner
-            .execute(&prediction_default_config(), &make_ctx(&stack))
+            .execute(&PREDICTION_CONFIG.default_config(), &make_ctx(&stack))
             .await;
 
         assert_eq!(telemetry.outcome, SubActionOutcome::Success);

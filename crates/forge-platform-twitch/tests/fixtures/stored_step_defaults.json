@@ -1,0 +1,506 @@
+{
+  "twitch.automod.add_blocked_term": {
+    "text": {
+      "type": "string",
+      "value": ""
+    }
+  },
+  "twitch.automod.approve_message": {
+    "message_id": {
+      "type": "string",
+      "value": "%automod.message_id%"
+    }
+  },
+  "twitch.automod.deny_message": {
+    "message_id": {
+      "type": "string",
+      "value": "%automod.message_id%"
+    }
+  },
+  "twitch.automod.remove_blocked_term": {
+    "term_id": {
+      "type": "string",
+      "value": "%blocked_term.id%"
+    }
+  },
+  "twitch.automod.update_settings": {
+    "aggression": {
+      "type": "string",
+      "value": "unchanged"
+    },
+    "bullying": {
+      "type": "string",
+      "value": "unchanged"
+    },
+    "disability": {
+      "type": "string",
+      "value": "unchanged"
+    },
+    "misogyny": {
+      "type": "string",
+      "value": "unchanged"
+    },
+    "overall_level": {
+      "type": "string",
+      "value": "unchanged"
+    },
+    "race_ethnicity_or_religion": {
+      "type": "string",
+      "value": "unchanged"
+    },
+    "sex_based_terms": {
+      "type": "string",
+      "value": "unchanged"
+    },
+    "sexuality_sex_or_gender": {
+      "type": "string",
+      "value": "unchanged"
+    },
+    "swearing": {
+      "type": "string",
+      "value": "unchanged"
+    }
+  },
+  "twitch.channel.cancel_raid": {},
+  "twitch.channel.create_marker": {
+    "description": {
+      "type": "string",
+      "value": ""
+    }
+  },
+  "twitch.channel.run_ad": {
+    "duration_seconds": {
+      "type": "string",
+      "value": "60"
+    }
+  },
+  "twitch.channel.send_shoutout": {
+    "sender": {
+      "type": "string",
+      "value": "default"
+    },
+    "to_broadcaster_login": {
+      "type": "string",
+      "value": ""
+    }
+  },
+  "twitch.channel.snooze_ad": {},
+  "twitch.channel.start_raid": {
+    "to_broadcaster_login": {
+      "type": "string",
+      "value": ""
+    }
+  },
+  "twitch.channel.update_category": {
+    "category_id": {
+      "type": "string",
+      "value": ""
+    },
+    "category_name": {
+      "type": "string",
+      "value": ""
+    }
+  },
+  "twitch.channel.update_tags": {
+    "tags": {
+      "type": "string",
+      "value": ""
+    }
+  },
+  "twitch.channel.update_title": {
+    "title": {
+      "type": "string",
+      "value": ""
+    }
+  },
+  "twitch.channel_points.cancel_redemption": {
+    "redemption_id": {
+      "type": "string",
+      "value": "%redemption.id%"
+    },
+    "reward_id": {
+      "type": "string",
+      "value": "%reward.id%"
+    }
+  },
+  "twitch.channel_points.create_reward": {
+    "background_color_hex": {
+      "type": "string",
+      "value": ""
+    },
+    "cost": {
+      "type": "int",
+      "value": 1
+    },
+    "global_cooldown_seconds": {
+      "type": "int",
+      "value": 0
+    },
+    "is_enabled": {
+      "type": "bool",
+      "value": true
+    },
+    "max_per_stream": {
+      "type": "int",
+      "value": 0
+    },
+    "max_per_user_per_stream": {
+      "type": "int",
+      "value": 0
+    },
+    "prompt": {
+      "type": "string",
+      "value": ""
+    },
+    "requires_user_input": {
+      "type": "bool",
+      "value": false
+    },
+    "should_redemptions_skip_request_queue": {
+      "type": "bool",
+      "value": false
+    },
+    "title": {
+      "type": "string",
+      "value": ""
+    }
+  },
+  "twitch.channel_points.delete_reward": {
+    "reward_id": {
+      "type": "string",
+      "value": "%reward.id%"
+    }
+  },
+  "twitch.channel_points.disable_reward": {
+    "reward_id": {
+      "type": "string",
+      "value": "%reward.id%"
+    }
+  },
+  "twitch.channel_points.enable_reward": {
+    "reward_id": {
+      "type": "string",
+      "value": "%reward.id%"
+    }
+  },
+  "twitch.channel_points.fulfill_redemption": {
+    "redemption_id": {
+      "type": "string",
+      "value": "%redemption.id%"
+    },
+    "reward_id": {
+      "type": "string",
+      "value": "%reward.id%"
+    }
+  },
+  "twitch.channel_points.pause_reward": {
+    "reward_id": {
+      "type": "string",
+      "value": "%reward.id%"
+    }
+  },
+  "twitch.channel_points.resume_reward": {
+    "reward_id": {
+      "type": "string",
+      "value": "%reward.id%"
+    }
+  },
+  "twitch.channel_points.update_reward": {
+    "is_enabled": {
+      "type": "string",
+      "value": "unchanged"
+    },
+    "is_paused": {
+      "type": "string",
+      "value": "unchanged"
+    },
+    "requires_user_input": {
+      "type": "string",
+      "value": "unchanged"
+    },
+    "reward_id": {
+      "type": "string",
+      "value": "%reward.id%"
+    },
+    "should_redemptions_skip_request_queue": {
+      "type": "string",
+      "value": "unchanged"
+    }
+  },
+  "twitch.chat.clear": {},
+  "twitch.chat.delete_message": {
+    "message_id": {
+      "type": "string",
+      "value": "%message_id%"
+    }
+  },
+  "twitch.chat.reply": {
+    "message": {
+      "type": "string",
+      "value": ""
+    },
+    "parent_message_id": {
+      "type": "string",
+      "value": "%message_id%"
+    },
+    "sender": {
+      "type": "string",
+      "value": "default"
+    }
+  },
+  "twitch.chat.send_announcement": {
+    "color": {
+      "type": "string",
+      "value": "primary"
+    },
+    "message": {
+      "type": "string",
+      "value": ""
+    },
+    "sender": {
+      "type": "string",
+      "value": "default"
+    }
+  },
+  "twitch.chat.send_whisper": {
+    "message": {
+      "type": "string",
+      "value": ""
+    },
+    "sender": {
+      "type": "string",
+      "value": "default"
+    },
+    "to_user_login": {
+      "type": "string",
+      "value": ""
+    }
+  },
+  "twitch.chat.set_mode": {
+    "emote_only": {
+      "type": "string",
+      "value": "unchanged"
+    },
+    "follower_mode": {
+      "type": "string",
+      "value": "unchanged"
+    },
+    "follower_mode_min_minutes": {
+      "type": "int",
+      "value": 0
+    },
+    "slow_mode": {
+      "type": "string",
+      "value": "unchanged"
+    },
+    "slow_mode_wait_seconds": {
+      "type": "int",
+      "value": 3
+    },
+    "subscriber_mode": {
+      "type": "string",
+      "value": "unchanged"
+    },
+    "unique_chat_mode": {
+      "type": "string",
+      "value": "unchanged"
+    }
+  },
+  "twitch.goal.get_current": {},
+  "twitch.guest_star.assign_slot": {
+    "session_id": {
+      "type": "string",
+      "value": "%guest_star.session_id%"
+    },
+    "slot_id": {
+      "type": "string",
+      "value": ""
+    },
+    "target_user_login": {
+      "type": "string",
+      "value": ""
+    }
+  },
+  "twitch.guest_star.end_session": {
+    "session_id": {
+      "type": "string",
+      "value": "%guest_star.session_id%"
+    }
+  },
+  "twitch.guest_star.invite": {
+    "session_id": {
+      "type": "string",
+      "value": "%guest_star.session_id%"
+    },
+    "target_user_login": {
+      "type": "string",
+      "value": ""
+    }
+  },
+  "twitch.guest_star.remove_guest": {
+    "session_id": {
+      "type": "string",
+      "value": "%guest_star.session_id%"
+    },
+    "slot_id": {
+      "type": "string",
+      "value": ""
+    },
+    "target_user_login": {
+      "type": "string",
+      "value": ""
+    }
+  },
+  "twitch.guest_star.update_slot": {
+    "audio_enabled": {
+      "type": "string",
+      "value": "unchanged"
+    },
+    "session_id": {
+      "type": "string",
+      "value": "%guest_star.session_id%"
+    },
+    "slot_id": {
+      "type": "string",
+      "value": ""
+    },
+    "video_enabled": {
+      "type": "string",
+      "value": "unchanged"
+    }
+  },
+  "twitch.moderation.add_moderator": {
+    "target_user_login": {
+      "type": "string",
+      "value": ""
+    }
+  },
+  "twitch.moderation.add_vip": {
+    "target_user_login": {
+      "type": "string",
+      "value": ""
+    }
+  },
+  "twitch.moderation.ban_user": {
+    "reason": {
+      "type": "string",
+      "value": ""
+    },
+    "target_user_login": {
+      "type": "string",
+      "value": ""
+    }
+  },
+  "twitch.moderation.remove_moderator": {
+    "target_user_login": {
+      "type": "string",
+      "value": ""
+    }
+  },
+  "twitch.moderation.remove_vip": {
+    "target_user_login": {
+      "type": "string",
+      "value": ""
+    }
+  },
+  "twitch.moderation.shield_mode_off": {},
+  "twitch.moderation.shield_mode_on": {},
+  "twitch.moderation.timeout_user": {
+    "duration_seconds": {
+      "type": "int",
+      "value": 600
+    },
+    "reason": {
+      "type": "string",
+      "value": ""
+    },
+    "target_user_login": {
+      "type": "string",
+      "value": ""
+    }
+  },
+  "twitch.moderation.unban_user": {
+    "target_user_login": {
+      "type": "string",
+      "value": ""
+    }
+  },
+  "twitch.moderation.warn_user": {
+    "reason": {
+      "type": "string",
+      "value": ""
+    },
+    "target_user_login": {
+      "type": "string",
+      "value": ""
+    }
+  },
+  "twitch.poll.end": {
+    "poll_id": {
+      "type": "string",
+      "value": "%poll.id%"
+    },
+    "status": {
+      "type": "string",
+      "value": "terminated"
+    }
+  },
+  "twitch.poll.start": {
+    "channel_points_per_vote": {
+      "type": "int",
+      "value": 0
+    },
+    "channel_points_voting_enabled": {
+      "type": "bool",
+      "value": false
+    },
+    "choices": {
+      "type": "string",
+      "value": ""
+    },
+    "duration_seconds": {
+      "type": "int",
+      "value": 60
+    },
+    "title": {
+      "type": "string",
+      "value": ""
+    }
+  },
+  "twitch.prediction.cancel": {
+    "prediction_id": {
+      "type": "string",
+      "value": "%prediction.id%"
+    }
+  },
+  "twitch.prediction.lock": {
+    "prediction_id": {
+      "type": "string",
+      "value": "%prediction.id%"
+    }
+  },
+  "twitch.prediction.resolve": {
+    "prediction_id": {
+      "type": "string",
+      "value": "%prediction.id%"
+    },
+    "winning_outcome_id": {
+      "type": "string",
+      "value": ""
+    }
+  },
+  "twitch.prediction.start": {
+    "outcomes": {
+      "type": "string",
+      "value": ""
+    },
+    "prediction_window_seconds": {
+      "type": "int",
+      "value": 120
+    },
+    "title": {
+      "type": "string",
+      "value": ""
+    }
+  }
+}

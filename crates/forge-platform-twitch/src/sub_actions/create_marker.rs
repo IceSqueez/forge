@@ -156,6 +156,7 @@ mod tests {
         MockCreds, MockTransport, SELF_USER_ID, TOKEN_SENTINEL, make_ctx,
     };
     use crate::timestamp::tests::instant;
+    use std::collections::BTreeMap;
 
     fn marker_payload() -> serde_json::Value {
         serde_json::json!({

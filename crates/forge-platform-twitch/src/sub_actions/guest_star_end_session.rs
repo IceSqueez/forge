@@ -99,6 +99,7 @@ mod tests {
         MockCreds, MockTransport, SELF_USER_ID, TOKEN_SENTINEL, make_ctx,
     };
     use forge_types::Variant;
+    use std::collections::BTreeMap;
 
     fn runner_with(
         response: Result<serde_json::Value, HelixError>,

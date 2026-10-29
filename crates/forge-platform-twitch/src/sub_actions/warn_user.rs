@@ -128,6 +128,8 @@ mod tests {
     use super::*;
     use crate::helix::HelixError;
     use crate::sub_actions::test_support::{MockCreds, MockTransport, make_ctx, users_fixture};
+    use forge_types::Variant;
+    use std::collections::BTreeMap;
 
     fn runner_with(
         responses: Vec<Result<serde_json::Value, HelixError>>,

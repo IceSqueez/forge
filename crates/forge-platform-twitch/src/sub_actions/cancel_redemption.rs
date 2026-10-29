@@ -78,7 +78,6 @@ mod tests {
     use forge_types::{ArgStack, SubActionOutcome, Variant};
 
     use super::*;
-    use crate::sub_actions::fulfill_redemption::redemption_default_config;
     use crate::sub_actions::test_support::{MockCreds, MockTransport, make_ctx};
 
     #[tokio::test]
@@ -96,7 +95,7 @@ mod tests {
             .set("reward.id".to_owned(), Variant::String("rw7".to_owned()));
 
         let (telemetry, _) = runner
-            .execute(&redemption_default_config(), &make_ctx(&stack))
+            .execute(&REDEMPTION_CONFIG.default_config(), &make_ctx(&stack))
             .await;
 
         assert_eq!(telemetry.outcome, SubActionOutcome::Success);

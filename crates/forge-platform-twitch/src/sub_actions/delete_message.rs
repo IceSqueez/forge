@@ -99,6 +99,8 @@ mod tests {
     use crate::sub_actions::test_support::{
         MockCreds, MockTransport, SELF_USER_ID, TOKEN_SENTINEL, chat_trigger_args, make_ctx,
     };
+    use forge_types::Variant;
+    use std::collections::BTreeMap;
 
     fn runner_with(
         response: Result<serde_json::Value, HelixError>,

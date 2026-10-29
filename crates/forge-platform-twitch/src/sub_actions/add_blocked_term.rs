@@ -136,6 +136,7 @@ mod tests {
     use crate::sub_actions::test_support::{
         MockCreds, MockTransport, SELF_USER_ID, TOKEN_SENTINEL, make_ctx,
     };
+    use std::collections::BTreeMap;
 
     fn term_payload(id: &str) -> serde_json::Value {
         serde_json::json!({ "data": [{ "id": id, "text": "ignored" }] })

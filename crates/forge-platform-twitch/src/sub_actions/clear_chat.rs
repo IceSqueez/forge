@@ -96,6 +96,7 @@ mod tests {
     use crate::sub_actions::test_support::{
         MockCreds, MockTransport, SELF_USER_ID, TOKEN_SENTINEL, make_ctx,
     };
+    use std::collections::BTreeMap;
 
     fn runner_with(
         response: Result<serde_json::Value, HelixError>,

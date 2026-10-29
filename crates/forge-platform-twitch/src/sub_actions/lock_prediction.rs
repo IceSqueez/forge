@@ -175,6 +175,8 @@ mod tests {
     use crate::sub_actions::test_support::{
         MockCreds, MockTransport, SELF_USER_ID, TOKEN_SENTINEL, make_ctx,
     };
+    use forge_types::Variant;
+    use std::collections::BTreeMap;
 
     fn lock_runner_with(
         response: Result<serde_json::Value, HelixError>,
@@ -199,7 +201,10 @@ mod tests {
         let (transport, runner) = lock_runner_with(Ok(serde_json::Value::Null));
 
         let (telemetry, out) = runner
-            .execute(&prediction_default_config(), &make_ctx(&prediction_stack()))
+            .execute(
+                &PREDICTION_CONFIG.default_config(),
+                &make_ctx(&prediction_stack()),
+            )
             .await;
 
         assert_eq!(telemetry.outcome, SubActionOutcome::Success);
@@ -230,7 +235,7 @@ mod tests {
         );
 
         let _ = runner
-            .execute(&prediction_default_config(), &make_ctx(&stack))
+            .execute(&PREDICTION_CONFIG.default_config(), &make_ctx(&stack))
             .await;
 
         let body = transport.request(0).body.unwrap();
@@ -257,17 +262,26 @@ mod tests {
     }
 
     #[test]
-    fn validate_config_rejects_empty_or_missing_prediction_id() {
+    fn validate_config_requires_a_non_blank_prediction_id_and_defaults_a_missing_one() {
         let (_transport, runner) = lock_runner_with(Ok(serde_json::Value::Null));
 
         let cases: Vec<(&str, SubActionConfig, bool)> = vec![
-            ("present", prediction_default_config(), true),
+            ("present", PREDICTION_CONFIG.default_config(), true),
             (
                 "empty prediction_id",
                 BTreeMap::from([("prediction_id".to_owned(), Variant::String(String::new()))]),
                 false,
             ),
-            ("missing prediction_id", BTreeMap::new(), false),
+            (
+                "missing key reads the declared template",
+                BTreeMap::new(),
+                true,
+            ),
+            (
+                "whitespace only",
+                BTreeMap::from([("prediction_id".to_owned(), Variant::String("  ".to_owned()))]),
+                false,
+            ),
         ];
 
         for (label, config, expect_ok) in cases {
@@ -287,7 +301,10 @@ mod tests {
         }));
 
         let (telemetry, _) = runner
-            .execute(&prediction_default_config(), &make_ctx(&prediction_stack()))
+            .execute(
+                &PREDICTION_CONFIG.default_config(),
+                &make_ctx(&prediction_stack()),
+            )
             .await;
 
         assert!(matches!(

@@ -207,3 +207,163 @@ impl TypedField for HexColorField {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use forge_registry::{ConfigProblem, Interpolation};
+    use forge_types::{ArgStack, SubActionConfig};
+
+    use super::*;
+
+    const PARENT: ResolvedIdField = ResolvedIdField {
+        key: "parent",
+        label: "Parent",
+        default: "%message_id%",
+    };
+
+    const SWATCH: HexColorField = HexColorField {
+        key: "swatch",
+        label: "Swatch",
+        placeholder: "",
+    };
+
+    fn stored(key: &str, value: Variant) -> SubActionConfig {
+        SubActionConfig::from([(key.to_owned(), value)])
+    }
+
+    fn text(value: &str) -> Variant {
+        Variant::String(value.to_owned())
+    }
+
+    fn reason<T: std::fmt::Debug>(result: Result<T, ConfigProblem>) -> ConfigReason {
+        result.unwrap_err().reason
+    }
+
+    #[test]
+    fn resolved_id_reads_a_literal_id_verbatim() {
+        assert_eq!(
+            PARENT
+                .read(&stored("parent", text("abc-123")), &ArgStack::new())
+                .unwrap(),
+            "abc-123"
+        );
+    }
+
+    #[test]
+    fn resolved_id_reads_the_interpolated_id_of_a_template() {
+        let args = ArgStack::new().set("message_id".to_owned(), text("abc-123"));
+
+        assert_eq!(
+            PARENT.read(&SubActionConfig::new(), &args).unwrap(),
+            "abc-123"
+        );
+    }
+
+    #[test]
+    fn resolved_id_refuses_a_blank_id_literal_or_interpolated() {
+        let blank_args = ArgStack::new().set("message_id".to_owned(), text("  "));
+        for (config, args) in [
+            (stored("parent", text("")), ArgStack::new()),
+            (stored("parent", text("   ")), ArgStack::new()),
+            (SubActionConfig::new(), blank_args),
+        ] {
+            assert_eq!(reason(PARENT.read(&config, &args)), ConfigReason::Required);
+        }
+    }
+
+    #[test]
+    fn resolved_id_refuses_an_id_with_an_unresolved_reference() {
+        let partial_args = ArgStack::new().set("message_id".to_owned(), text("abc"));
+        for (config, args) in [
+            (SubActionConfig::new(), ArgStack::new()),
+            (stored("parent", text("%message_id%-%typo%")), partial_args),
+            (stored("parent", text("abc%")), ArgStack::new()),
+        ] {
+            assert!(matches!(
+                reason(PARENT.read(&config, &args)),
+                ConfigReason::InvalidFormat(_)
+            ));
+        }
+    }
+
+    #[test]
+    fn resolved_id_refuses_a_non_text_value() {
+        assert_eq!(
+            reason(PARENT.read(&stored("parent", Variant::Int(7)), &ArgStack::new())),
+            ConfigReason::NotText
+        );
+    }
+
+    #[test]
+    fn resolved_id_defers_a_template_until_run_time() {
+        assert_eq!(
+            PARENT.peek(&SubActionConfig::new(), Interpolation::Deferred),
+            Ok(None)
+        );
+    }
+
+    #[test]
+    fn hex_color_admits_an_empty_value_or_a_six_digit_hex_color() {
+        for literal in ["", "#9147FF", "#00aa00"] {
+            assert_eq!(
+                SWATCH
+                    .read(&stored("swatch", text(literal)), &ArgStack::new())
+                    .unwrap(),
+                literal
+            );
+        }
+    }
+
+    #[test]
+    fn hex_color_refuses_malformed_colors_and_templates() {
+        for literal in ["#9147F", "9147FF0", "#9147FZ", "#9147FF0", "%color%"] {
+            assert!(
+                matches!(
+                    reason(SWATCH.read(&stored("swatch", text(literal)), &ArgStack::new())),
+                    ConfigReason::InvalidFormat(_)
+                ),
+                "{literal:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn hex_color_refuses_a_non_text_value() {
+        assert_eq!(
+            reason(SWATCH.read(&stored("swatch", Variant::Int(1)), &ArgStack::new())),
+            ConfigReason::NotText
+        );
+    }
+
+    #[test]
+    fn sender_reads_absent_as_default_and_maps_each_wire_name() {
+        for (raw, expected) in [
+            (None, SenderPreference::Default),
+            (Some("default"), SenderPreference::Default),
+            (Some("streamer"), SenderPreference::Streamer),
+            (Some("bot"), SenderPreference::BotOnly),
+        ] {
+            let config = raw
+                .map(|raw| stored(SENDER_FIELD, text(raw)))
+                .unwrap_or_default();
+            assert_eq!(
+                SENDER.read(&config, &ArgStack::new()).unwrap(),
+                SendAs(expected),
+                "{raw:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn sender_refuses_unknown_or_non_text_values() {
+        for rejected in [text("Bot"), text("bot_only"), text(""), Variant::Int(1)] {
+            assert!(
+                matches!(
+                    reason(SENDER.read(&stored(SENDER_FIELD, rejected.clone()), &ArgStack::new())),
+                    ConfigReason::InvalidChoice(_)
+                ),
+                "{rejected:?}"
+            );
+        }
+    }
+}

@@ -147,7 +147,11 @@ impl SubActionRunner for TimeoutUserRunner {
 mod tests {
     use super::*;
     use crate::helix::HelixError;
+    use crate::sub_actions::fields::MAX_REASON_CHARS;
     use crate::sub_actions::test_support::{MockCreds, MockTransport, make_ctx, users_fixture};
+    use forge_registry::{ConfigReason, RegistryError, ValueBounds};
+    use forge_types::Variant;
+    use std::collections::BTreeMap;
 
     fn runner_with(
         responses: Vec<Result<serde_json::Value, HelixError>>,
@@ -195,7 +199,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn execute_replaces_out_of_range_duration_with_default() {
+    async fn execute_fails_an_out_of_range_duration_without_calling_helix() {
         let (transport, runner) =
             runner_with(vec![users_fixture("555"), Ok(serde_json::Value::Null)]);
         let stack = ArgStack::new();
@@ -207,12 +211,31 @@ mod tests {
             )
             .await;
 
+        assert!(
+            matches!(telemetry.outcome, SubActionOutcome::Failed(_)),
+            "{:?}",
+            telemetry.outcome
+        );
+        assert_eq!(transport.call_count(), 0);
+    }
+
+    #[tokio::test]
+    async fn execute_reads_a_templated_duration_after_interpolation() {
+        let (transport, runner) =
+            runner_with(vec![users_fixture("555"), Ok(serde_json::Value::Null)]);
+        let stack = ArgStack::new().set("secs".to_owned(), Variant::Int(90));
+        let mut templated = config("target", "", 0);
+        templated.insert(
+            "duration_seconds".to_owned(),
+            Variant::String("%secs%".to_owned()),
+        );
+
+        let (telemetry, _) = runner.execute(&templated, &make_ctx(&stack)).await;
+
         assert_eq!(telemetry.outcome, SubActionOutcome::Success);
-        let body = transport.last_request().body.unwrap();
         assert_eq!(
-            body["data"]["duration"],
-            serde_json::json!(DEFAULT_DURATION_SECONDS),
-            "out-of-range duration must never reach Helix verbatim"
+            transport.last_request().body.unwrap()["data"]["duration"],
+            serde_json::json!(90)
         );
     }
 
@@ -248,7 +271,7 @@ mod tests {
                 reason_problem,
             ),
         ] {
-            let reason = "ї".repeat(reason_chars);
+            let reason = "ї".repeat(usize::try_from(reason_chars).unwrap());
             let problem = runner
                 .validate_config(&config("target", &reason, duration))
                 .err()

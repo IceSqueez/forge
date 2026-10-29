@@ -263,6 +263,7 @@ mod tests {
     use crate::sub_actions::test_support::{
         MockCreds, MockTransport, SELF_USER_ID, TOKEN_SENTINEL, make_ctx,
     };
+    use std::collections::BTreeMap;
 
     fn reward_payload() -> serde_json::Value {
         serde_json::json!({
@@ -480,6 +481,42 @@ mod tests {
         ));
     }
 
+    #[tokio::test]
+    async fn templated_cost_is_read_as_a_number_after_interpolation() {
+        let (transport, runner) = runner_with(Ok(reward_payload()));
+        let stack = ArgStack::new().set("pts".to_owned(), Variant::String("750".to_owned()));
+        let mut cfg = full_cfg();
+        cfg.insert("cost".to_owned(), Variant::String("%pts%".to_owned()));
+
+        let (telemetry, _) = runner.execute(&cfg, &make_ctx(&stack)).await;
+
+        assert_eq!(telemetry.outcome, SubActionOutcome::Success);
+        assert_eq!(
+            transport.request(0).body.unwrap()["cost"],
+            serde_json::json!(750)
+        );
+    }
+
+    #[tokio::test]
+    async fn title_over_the_limit_after_interpolation_fails_without_helix_call() {
+        let (transport, runner) = runner_with(Ok(reward_payload()));
+        let stack = ArgStack::new().set("name".to_owned(), Variant::String("n".repeat(40)));
+        let mut cfg = full_cfg();
+        cfg.insert(
+            "title".to_owned(),
+            Variant::String("Prize %name%".to_owned()),
+        );
+
+        let (telemetry, _) = runner.execute(&cfg, &make_ctx(&stack)).await;
+
+        assert!(
+            matches!(&telemetry.outcome, SubActionOutcome::Failed(msg) if msg.contains("title")),
+            "{:?}",
+            telemetry.outcome
+        );
+        assert_eq!(transport.call_count(), 0);
+    }
+
     #[test]
     fn validate_config_enforces_field_constraints() {
         let (_transport, runner) = runner_with(Ok(serde_json::Value::Null));
@@ -511,8 +548,44 @@ mod tests {
             ),
             ("cost zero", with(&[("cost", Variant::Int(0))]), false),
             (
-                "cost non-int",
+                "whitespace-only title",
+                with(&[("title", Variant::String("   ".to_owned()))]),
+                false,
+            ),
+            ("cost at minimum", with(&[("cost", Variant::Int(1))]), true),
+            (
+                "cost as numeric text",
                 with(&[("cost", Variant::String("5".to_owned()))]),
+                true,
+            ),
+            (
+                "cost as non-numeric text",
+                with(&[("cost", Variant::String("five".to_owned()))]),
+                false,
+            ),
+            (
+                "cost as a template",
+                with(&[("cost", Variant::String("%pts%".to_owned()))]),
+                true,
+            ),
+            (
+                "max per stream zero means unlimited",
+                with(&[("max_per_stream", Variant::Int(0))]),
+                true,
+            ),
+            (
+                "negative max per stream",
+                with(&[("max_per_stream", Variant::Int(-1))]),
+                false,
+            ),
+            (
+                "negative max per user per stream",
+                with(&[("max_per_user_per_stream", Variant::Int(-1))]),
+                false,
+            ),
+            (
+                "negative global cooldown",
+                with(&[("global_cooldown_seconds", Variant::Int(-1))]),
                 false,
             ),
             (

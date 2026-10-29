@@ -271,6 +271,8 @@ mod tests {
     use crate::sub_actions::test_support::{
         MockCreds, MockTransport, SELF_USER_ID, TOKEN_SENTINEL, make_ctx,
     };
+    use forge_types::Variant;
+    use std::collections::BTreeMap;
 
     fn runner_with(
         response: Result<serde_json::Value, HelixError>,
@@ -343,15 +345,17 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn optional_value_field_gate_bool_is_omitted_typed_value_is_sent() {
-        let omitted = body_for(cfg_with(&[("cost", Variant::Bool(true))])).await;
-        assert!(
-            omitted.get("cost").is_none(),
-            "gate-Bool cost must be omitted: {omitted}"
-        );
+    async fn blank_optional_fields_leave_the_reward_unchanged() {
+        let body = body_for(cfg_with(&[
+            ("title", Variant::String(String::new())),
+            ("prompt", Variant::String("  ".to_owned())),
+            ("background_color_hex", Variant::String(String::new())),
+            ("max_per_stream", Variant::String(String::new())),
+            ("cost", Variant::Int(200)),
+        ]))
+        .await;
 
-        let sent = body_for(cfg_with(&[("cost", Variant::Int(200))])).await;
-        assert_eq!(sent.get("cost"), Some(&serde_json::json!(200)));
+        assert_eq!(body, serde_json::json!({ "cost": 200 }));
     }
 
     #[tokio::test]
@@ -443,7 +447,6 @@ mod tests {
                 "is_paused".to_owned(),
                 Variant::String("unchanged".to_owned()),
             ),
-            ("cost".to_owned(), Variant::Bool(true)),
         ]);
 
         let (telemetry, out) = runner.execute(&cfg, &make_ctx(&stack)).await;
@@ -491,11 +494,9 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn background_color_included_only_when_valid_hex() {
+    async fn background_color_is_sent_when_valid_and_left_unchanged_when_blank() {
         for (label, hex, expected) in [
             ("valid", "#9147FF", Some(serde_json::json!("#9147FF"))),
-            ("too short", "#9147F", None),
-            ("missing hash", "9147FF0", None),
             ("empty", "", None),
         ] {
             let body = body_for(cfg_with(&[(
@@ -515,6 +516,24 @@ mod tests {
         }
     }
 
+    #[tokio::test]
+    async fn malformed_background_color_fails_without_helix_call() {
+        for hex in ["#9147F", "9147FF0", "#9147FZ"] {
+            let (transport, runner) = runner_with(Ok(serde_json::Value::Null));
+            let stack = ArgStack::new();
+            let cfg = cfg_with(&[("background_color_hex", Variant::String(hex.to_owned()))]);
+
+            let (telemetry, _) = runner.execute(&cfg, &make_ctx(&stack)).await;
+
+            assert!(
+                matches!(&telemetry.outcome, SubActionOutcome::Failed(msg) if msg.contains("background_color_hex")),
+                "{hex}: {:?}",
+                telemetry.outcome
+            );
+            assert_eq!(transport.call_count(), 0, "{hex}");
+        }
+    }
+
     #[test]
     fn validate_config_enforces_field_constraints() {
         let (_transport, runner) = runner_with(Ok(serde_json::Value::Null));
@@ -527,13 +546,38 @@ mod tests {
                 false,
             ),
             (
-                "reward_id missing",
+                "reward_id missing reads the declared template",
                 BTreeMap::from([("title".to_owned(), Variant::String("Hi".to_owned()))]),
+                true,
+            ),
+            (
+                "empty title leaves it unchanged",
+                cfg_with(&[("title", Variant::String(String::new()))]),
+                true,
+            ),
+            (
+                "title at one char",
+                cfg_with(&[("title", Variant::String("t".to_owned()))]),
+                true,
+            ),
+            (
+                "cost as numeric text",
+                cfg_with(&[("cost", Variant::String("5".to_owned()))]),
+                true,
+            ),
+            (
+                "cost as a template",
+                cfg_with(&[("cost", Variant::String("%pts%".to_owned()))]),
+                true,
+            ),
+            (
+                "negative max per stream",
+                cfg_with(&[("max_per_stream", Variant::Int(-1))]),
                 false,
             ),
             (
-                "opted title 0 chars",
-                cfg_with(&[("title", Variant::String(String::new()))]),
+                "wrong-type reward_id",
+                cfg_with(&[("reward_id", Variant::Int(7))]),
                 false,
             ),
             (

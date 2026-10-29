@@ -379,8 +379,6 @@ pub(crate) fn failed_step(reason: &str) -> StepResult {
 
 #[cfg(test)]
 mod tests {
-    use forge_registry::runner::SubActionConfig;
-    use forge_types::Variant;
     use serde_json::{Value, json};
     use wiremock::ResponseTemplate;
 
@@ -842,37 +840,6 @@ mod tests {
             rig.harness.bot.status(),
             BotStatus::ReauthRequired { .. }
         ));
-    }
-
-    #[test]
-    fn configured_sender_reads_absent_as_default_and_rejects_unknown_values() {
-        let with = |value: Option<Variant>| -> SubActionConfig {
-            value
-                .map(|value| BTreeMap::from([(SENDER_FIELD.to_owned(), value)]))
-                .unwrap_or_default()
-        };
-        let accepted = [
-            (None, SenderPreference::Default),
-            (Some("default"), SenderPreference::Default),
-            (Some("streamer"), SenderPreference::Streamer),
-            (Some("bot"), SenderPreference::BotOnly),
-        ];
-        for (raw, expected) in accepted {
-            let config = with(raw.map(|raw| Variant::String(raw.to_owned())));
-            assert_eq!(configured_sender(&config).unwrap(), expected, "{raw:?}");
-        }
-        for rejected in [
-            Variant::String("Bot".to_owned()),
-            Variant::String("bot_only".to_owned()),
-            Variant::String(String::new()),
-            Variant::Int(1),
-        ] {
-            let err = configured_sender(&with(Some(rejected.clone()))).unwrap_err();
-            assert!(
-                matches!(err, RegistryError::InvalidConfig(_)),
-                "{rejected:?} -> {err:?}"
-            );
-        }
     }
 
     const ANNOUNCE_PATH: &str = "/helix/chat/announcements";

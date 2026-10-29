@@ -194,7 +194,10 @@ mod tests {
     use crate::sub_actions::test_support::{
         MockCreds, MockTransport, SELF_USER_ID, TOKEN_SENTINEL, make_ctx,
     };
+    use forge_platform_core::SENDER_FIELD;
     use forge_types::SubActionOutcome;
+    use forge_types::Variant;
+    use std::collections::BTreeMap;
 
     fn runner_with(
         response: Result<serde_json::Value, HelixError>,
@@ -362,7 +365,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn execute_falls_back_to_primary_color_for_unrecognized_stored_color() {
+    async fn execute_fails_an_unrecognized_stored_color_without_calling_helix() {
         let (transport, runner) =
             runner_with(Ok(serde_json::Value::Null), MockCreds::with_identity());
         let stack = ArgStack::new();
@@ -371,8 +374,12 @@ mod tests {
             .execute(&config("big news", Some("magenta")), &make_ctx(&stack))
             .await;
 
-        assert_eq!(telemetry.outcome, SubActionOutcome::Success);
-        assert_eq!(transport.last_request().body.unwrap()["color"], "primary");
+        assert!(
+            matches!(&telemetry.outcome, SubActionOutcome::Failed(msg) if msg.contains("color")),
+            "{:?}",
+            telemetry.outcome
+        );
+        assert_eq!(transport.call_count(), 0);
     }
 
     #[test]

@@ -1446,6 +1446,54 @@ mod tests {
     }
 
     #[test]
+    fn every_quick_action_template_filled_in_by_its_fields_passes_its_runner_validation() {
+        use crate::sub_actions::register_twitch_sub_actions;
+        use crate::sub_actions::test_support::{MockCreds, MockTransport};
+        use forge_registry::SubActionRegistry;
+
+        let mut reg = SubActionRegistry::new();
+        register_twitch_sub_actions(
+            &mut reg,
+            Arc::new(MockTransport::returning(Ok(serde_json::Value::Null))),
+            Arc::new(MockCreds::empty()),
+            TwitchLifecycle::new(),
+            None,
+        )
+        .unwrap();
+        let bundle =
+            make_bundle_with_tier(ChatConnectionState::Connected, BroadcasterTier::Affiliate);
+
+        let problems: BTreeMap<String, String> = bundle
+            .actions()
+            .into_iter()
+            .filter(|action| !action.fields.is_empty())
+            .filter_map(|action| {
+                let typed: BTreeMap<String, QuickActionFieldValue> = action
+                    .fields
+                    .iter()
+                    .filter_map(|field| match field.kind {
+                        QuickActionFieldKind::Text => Some((
+                            field.key.clone(),
+                            QuickActionFieldValue::Text("Nova".to_owned()),
+                        )),
+                        QuickActionFieldKind::Multiline => Some((
+                            field.key.clone(),
+                            QuickActionFieldValue::Text("Yes\nNo".to_owned()),
+                        )),
+                        _ => None,
+                    })
+                    .collect();
+                let step = action.merge_config(&typed);
+                let runner = reg.get(&step.kind_id)?;
+                let error = runner.validate_config(&step.config).err()?;
+                Some((action.label, error.to_string()))
+            })
+            .collect();
+
+        assert!(problems.is_empty(), "{problems:?}");
+    }
+
+    #[test]
     fn free_text_quick_action_fields_open_blank() {
         for action in
             make_bundle_with_tier(ChatConnectionState::Connected, BroadcasterTier::Affiliate)

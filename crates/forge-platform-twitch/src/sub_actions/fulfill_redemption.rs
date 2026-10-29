@@ -175,6 +175,8 @@ mod tests {
     use crate::sub_actions::test_support::{
         MockCreds, MockTransport, SELF_USER_ID, TOKEN_SENTINEL, make_ctx,
     };
+    use forge_types::Variant;
+    use std::collections::BTreeMap;
 
     fn fulfill_runner_with(
         response: Result<serde_json::Value, HelixError>,
@@ -201,7 +203,10 @@ mod tests {
         let (transport, runner) = fulfill_runner_with(Ok(serde_json::Value::Null));
 
         let (telemetry, out) = runner
-            .execute(&redemption_default_config(), &make_ctx(&redemption_stack()))
+            .execute(
+                &REDEMPTION_CONFIG.default_config(),
+                &make_ctx(&redemption_stack()),
+            )
             .await;
 
         assert_eq!(telemetry.outcome, SubActionOutcome::Success);
@@ -249,7 +254,7 @@ mod tests {
             .set("reward.id".to_owned(), Variant::String("rewB".to_owned()));
 
         let _ = runner
-            .execute(&redemption_default_config(), &make_ctx(&stack))
+            .execute(&REDEMPTION_CONFIG.default_config(), &make_ctx(&stack))
             .await;
 
         let query = transport.request(0).query;
@@ -307,7 +312,7 @@ mod tests {
         let (_transport, runner) = fulfill_runner_with(Ok(serde_json::Value::Null));
 
         let cases: Vec<(&str, SubActionConfig, bool)> = vec![
-            ("both present", redemption_default_config(), true),
+            ("both present", REDEMPTION_CONFIG.default_config(), true),
             (
                 "empty redemption_id",
                 BTreeMap::from([
@@ -328,17 +333,17 @@ mod tests {
                 false,
             ),
             (
-                "missing redemption_id",
+                "missing redemption_id reads the declared template",
                 BTreeMap::from([("reward_id".to_owned(), Variant::String("rw7".to_owned()))]),
-                false,
+                true,
             ),
             (
-                "missing reward_id",
+                "missing reward_id reads the declared template",
                 BTreeMap::from([(
                     "redemption_id".to_owned(),
                     Variant::String("rd5".to_owned()),
                 )]),
-                false,
+                true,
             ),
         ];
 
@@ -359,7 +364,10 @@ mod tests {
         }));
 
         let (telemetry, _) = runner
-            .execute(&redemption_default_config(), &make_ctx(&redemption_stack()))
+            .execute(
+                &REDEMPTION_CONFIG.default_config(),
+                &make_ctx(&redemption_stack()),
+            )
             .await;
 
         assert!(matches!(

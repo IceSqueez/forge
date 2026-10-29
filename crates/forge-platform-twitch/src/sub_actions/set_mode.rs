@@ -186,10 +186,17 @@ impl SubActionRunner for SetModeRunner {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    const ON: &str = "on";
+    const OFF: &str = "off";
+    const UNCHANGED: &str = "unchanged";
+
     use crate::helix::HelixError;
     use crate::sub_actions::test_support::{
         MockCreds, MockTransport, SELF_USER_ID, TOKEN_SENTINEL, make_ctx,
     };
+    use forge_types::Variant;
+    use std::collections::BTreeMap;
 
     fn runner_with(
         response: Result<serde_json::Value, HelixError>,

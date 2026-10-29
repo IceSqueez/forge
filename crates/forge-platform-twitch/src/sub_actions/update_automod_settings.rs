@@ -239,6 +239,19 @@ mod tests {
     use crate::sub_actions::test_support::{
         MockCreds, MockTransport, SELF_USER_ID, TOKEN_SENTINEL, make_ctx,
     };
+    use forge_types::Variant;
+
+    const OVERALL_KEY: &str = "overall_level";
+    const CATEGORY_KEYS: &[&str] = &[
+        "aggression",
+        "bullying",
+        "disability",
+        "misogyny",
+        "race_ethnicity_or_religion",
+        "sex_based_terms",
+        "sexuality_sex_or_gender",
+        "swearing",
+    ];
 
     fn runner(transport: Arc<MockTransport>) -> UpdateAutomodSettingsRunner {
         UpdateAutomodSettingsRunner::new(

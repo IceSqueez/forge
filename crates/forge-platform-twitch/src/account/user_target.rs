@@ -330,6 +330,33 @@ mod tests {
         }
     }
 
+    #[tokio::test]
+    async fn a_non_text_id_or_login_fails_validation_and_execution_without_any_helix_call() {
+        for case in cases() {
+            for (non_text_key, other) in [
+                (case.id_key, (None, Some("target"))),
+                (case.login_key, (Some(""), None)),
+            ] {
+                let mut config = case.config(other.0, other.1);
+                config.insert(non_text_key.to_owned(), Variant::Int(1001));
+                let (_, runner) = case.runner_with(Vec::new());
+
+                assert!(
+                    runner.validate_config(&config).is_err(),
+                    "{} {non_text_key}",
+                    case.kind
+                );
+                let (transport, outcome) = case.run(&config, &ArgStack::new()).await;
+                assert!(
+                    matches!(outcome, SubActionOutcome::Failed(_)),
+                    "{} {non_text_key}: {outcome:?}",
+                    case.kind
+                );
+                assert_eq!(transport.call_count(), 0, "{} {non_text_key}", case.kind);
+            }
+        }
+    }
+
     #[test]
     fn validate_config_requires_a_non_empty_id_or_login() {
         for case in cases() {

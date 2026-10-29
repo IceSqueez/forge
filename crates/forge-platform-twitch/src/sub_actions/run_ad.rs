@@ -154,6 +154,8 @@ mod tests {
     use crate::sub_actions::test_support::{
         MockCreds, MockTransport, SELF_USER_ID, TOKEN_SENTINEL, make_ctx,
     };
+    use forge_types::Variant;
+    use std::collections::BTreeMap;
 
     fn runner_with(
         response: Result<serde_json::Value, HelixError>,
@@ -195,28 +197,36 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn execute_falls_back_to_length_60_when_config_is_invalid() {
+    async fn execute_fails_an_unlisted_length_without_calling_helix() {
         for (label, bad) in [
             ("variant int", cfg(Variant::Int(90))),
             ("unlisted duration", cfg(Variant::String("45".to_owned()))),
-            ("missing key", BTreeMap::new()),
         ] {
             let (transport, runner) = runner_with(Ok(serde_json::Value::Null));
             let stack = ArgStack::new();
 
             let (telemetry, _) = runner.execute(&bad, &make_ctx(&stack)).await;
 
-            assert_eq!(
-                telemetry.outcome,
-                SubActionOutcome::Success,
+            assert!(
+                matches!(telemetry.outcome, SubActionOutcome::Failed(_)),
                 "case: {label}"
             );
-            assert_eq!(
-                transport.request(0).body.unwrap(),
-                serde_json::json!({ "broadcaster_id": SELF_USER_ID, "length": 60 }),
-                "case: {label}"
-            );
+            assert_eq!(transport.call_count(), 0, "case: {label}");
         }
+    }
+
+    #[tokio::test]
+    async fn execute_reads_a_missing_length_as_the_declared_default() {
+        let (transport, runner) = runner_with(Ok(serde_json::Value::Null));
+        let stack = ArgStack::new();
+
+        let (telemetry, _) = runner.execute(&BTreeMap::new(), &make_ctx(&stack)).await;
+
+        assert_eq!(telemetry.outcome, SubActionOutcome::Success);
+        assert_eq!(
+            transport.request(0).body.unwrap(),
+            serde_json::json!({ "broadcaster_id": SELF_USER_ID, "length": 60 })
+        );
     }
 
     #[test]
@@ -236,7 +246,11 @@ mod tests {
             ),
             ("variant int", cfg(Variant::Int(90)), false),
             ("empty string", cfg(Variant::String(String::new())), false),
-            ("missing key", BTreeMap::new(), false),
+            (
+                "missing key reads the declared default",
+                BTreeMap::new(),
+                true,
+            ),
         ];
 
         for (label, config, expect_ok) in cases {

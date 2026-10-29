@@ -191,6 +191,7 @@ mod tests {
     use crate::sub_actions::test_support::{
         MockCreds, MockTransport, SELF_USER_ID, TOKEN_SENTINEL, make_ctx,
     };
+    use std::collections::BTreeMap;
 
     fn goal_payload(current: i64, target: i64) -> serde_json::Value {
         serde_json::json!({

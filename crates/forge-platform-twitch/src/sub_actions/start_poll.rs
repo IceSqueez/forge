@@ -220,6 +220,7 @@ mod tests {
     use crate::sub_actions::test_support::{
         MockCreds, MockTransport, SELF_USER_ID, TOKEN_SENTINEL, make_ctx,
     };
+    use std::collections::BTreeMap;
 
     fn poll_payload() -> serde_json::Value {
         serde_json::json!({ "data": [{ "id": "poll-xyz", "title": "ignored" }] })
@@ -477,6 +478,31 @@ mod tests {
             (
                 "duration above maximum",
                 cfg_with("duration_seconds", Variant::Int(1801)),
+                false,
+            ),
+            (
+                "points per vote zero",
+                cfg_with("channel_points_per_vote", Variant::Int(0)),
+                true,
+            ),
+            (
+                "points per vote negative",
+                cfg_with("channel_points_per_vote", Variant::Int(-1)),
+                false,
+            ),
+            (
+                "points per vote at maximum",
+                cfg_with("channel_points_per_vote", Variant::Int(1_000_000)),
+                true,
+            ),
+            (
+                "points per vote above maximum",
+                cfg_with("channel_points_per_vote", Variant::Int(1_000_001)),
+                false,
+            ),
+            (
+                "whitespace-only title",
+                cfg_with("title", Variant::String("   ".to_owned())),
                 false,
             ),
         ];

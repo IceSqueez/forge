@@ -91,7 +91,9 @@ mod tests {
         );
         let stack = ArgStack::new().set("reward.id".to_owned(), Variant::String("rw3".to_owned()));
 
-        let (telemetry, _) = runner.execute(&default_config(), &make_ctx(&stack)).await;
+        let (telemetry, _) = runner
+            .execute(&REWARD_CONFIG.default_config(), &make_ctx(&stack))
+            .await;
 
         assert_eq!(telemetry.outcome, SubActionOutcome::Success);
         let request = transport.request(0);

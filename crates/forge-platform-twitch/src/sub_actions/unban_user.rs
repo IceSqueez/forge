@@ -126,6 +126,8 @@ mod tests {
         MockCreds, MockTransport, REQUEST_FAIL_KIND, SELF_USER_ID, make_ctx, observed_helix_at,
         users_fixture,
     };
+    use forge_types::Variant;
+    use std::collections::BTreeMap;
     use wiremock::matchers::{method, path};
     use wiremock::{Mock, MockServer, ResponseTemplate};
 

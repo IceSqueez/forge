@@ -116,6 +116,8 @@ mod tests {
     use crate::sub_actions::test_support::{
         MockCreds, MockTransport, SELF_USER_ID, TOKEN_SENTINEL, make_ctx,
     };
+    use forge_types::Variant;
+    use std::collections::BTreeMap;
 
     fn runner_with(
         response: Result<serde_json::Value, HelixError>,
@@ -141,7 +143,7 @@ mod tests {
         );
 
         let (telemetry, out) = runner
-            .execute(&remove_blocked_term_default_config(), &make_ctx(&stack))
+            .execute(&CONFIG.default_config(), &make_ctx(&stack))
             .await;
 
         assert_eq!(telemetry.outcome, SubActionOutcome::Success);
@@ -182,7 +184,7 @@ mod tests {
         let stack =
             ArgStack::new().set("blocked_term.id".to_owned(), Variant::String(String::new()));
         let (telemetry, _) = runner
-            .execute(&remove_blocked_term_default_config(), &make_ctx(&stack))
+            .execute(&CONFIG.default_config(), &make_ctx(&stack))
             .await;
 
         assert!(matches!(telemetry.outcome, SubActionOutcome::Failed(_)));
@@ -205,7 +207,7 @@ mod tests {
         );
 
         let (telemetry, _) = runner
-            .execute(&remove_blocked_term_default_config(), &make_ctx(&stack))
+            .execute(&CONFIG.default_config(), &make_ctx(&stack))
             .await;
 
         assert!(matches!(
@@ -215,16 +217,17 @@ mod tests {
     }
 
     #[test]
-    fn validate_config_requires_non_empty_term_id() {
+    fn validate_config_requires_a_non_blank_term_id_and_defaults_a_missing_one() {
         let (_transport, runner) = runner_with(Ok(serde_json::Value::Null));
         let cases: Vec<(&str, SubActionConfig, bool)> = vec![
+            ("default %blocked_term.id%", CONFIG.default_config(), true),
+            ("empty string", cfg(""), false),
             (
-                "default %blocked_term.id%",
-                remove_blocked_term_default_config(),
+                "missing key reads the declared template",
+                BTreeMap::new(),
                 true,
             ),
-            ("empty string", cfg(""), false),
-            ("missing key", BTreeMap::new(), false),
+            ("whitespace only", cfg("  "), false),
         ];
         for (label, config, expect_ok) in cases {
             assert_eq!(

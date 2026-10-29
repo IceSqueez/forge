@@ -77,7 +77,6 @@ impl SubActionRunner for DenyAutomodMessageRunner {
 mod tests {
     use super::*;
     use crate::helix::{HelixMethod, HelixTransport};
-    use crate::sub_actions::approve_automod_message::automod_default_config;
     use crate::sub_actions::test_support::{MockCreds, MockTransport, SELF_USER_ID, make_ctx};
     use forge_types::{SubActionOutcome, Variant};
 
@@ -94,7 +93,7 @@ mod tests {
         );
 
         let (telemetry, _) = runner
-            .execute(&automod_default_config(), &make_ctx(&stack))
+            .execute(&AUTOMOD_CONFIG.default_config(), &make_ctx(&stack))
             .await;
 
         assert_eq!(telemetry.outcome, SubActionOutcome::Success);

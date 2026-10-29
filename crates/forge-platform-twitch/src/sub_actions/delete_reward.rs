@@ -113,7 +113,9 @@ mod tests {
         let (transport, runner) = delete_runner_with(Ok(serde_json::Value::Null));
         let stack = ArgStack::new().set("reward.id".to_owned(), Variant::String("rw7".to_owned()));
 
-        let (telemetry, out) = runner.execute(&default_config(), &make_ctx(&stack)).await;
+        let (telemetry, out) = runner
+            .execute(&REWARD_CONFIG.default_config(), &make_ctx(&stack))
+            .await;
 
         assert_eq!(telemetry.outcome, SubActionOutcome::Success);
         assert!(out.is_none(), "delete_reward never pushes an ArgStack");
@@ -151,17 +153,26 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn validate_config_requires_non_empty_reward_id() {
+    async fn validate_config_requires_a_non_blank_reward_id_and_defaults_a_missing_one() {
         let (_transport, runner) = delete_runner_with(Ok(serde_json::Value::Null));
 
         let cases: Vec<(&str, SubActionConfig, bool)> = vec![
-            ("present non-empty", default_config(), true),
+            ("present non-empty", REWARD_CONFIG.default_config(), true),
             (
                 "empty string",
                 BTreeMap::from([("reward_id".to_owned(), Variant::String(String::new()))]),
                 false,
             ),
-            ("missing key", BTreeMap::new(), false),
+            (
+                "missing key reads the declared template",
+                BTreeMap::new(),
+                true,
+            ),
+            (
+                "whitespace only",
+                BTreeMap::from([("reward_id".to_owned(), Variant::String("  ".to_owned()))]),
+                false,
+            ),
         ];
 
         for (label, config, expect_ok) in cases {
@@ -181,7 +192,9 @@ mod tests {
         }));
         let stack = ArgStack::new().set("reward.id".to_owned(), Variant::String("rw7".to_owned()));
 
-        let (telemetry, _) = runner.execute(&default_config(), &make_ctx(&stack)).await;
+        let (telemetry, _) = runner
+            .execute(&REWARD_CONFIG.default_config(), &make_ctx(&stack))
+            .await;
 
         assert!(matches!(
             telemetry.outcome,

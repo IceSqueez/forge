@@ -131,6 +131,8 @@ mod tests {
     use crate::sub_actions::test_support::{
         MockCreds, MockTransport, SELF_USER_ID, TOKEN_SENTINEL, make_ctx,
     };
+    use forge_types::Variant;
+    use std::collections::BTreeMap;
 
     fn enable_runner_with(
         response: Result<serde_json::Value, HelixError>,
@@ -147,7 +149,7 @@ mod tests {
     async fn enable_patches_is_enabled_true_with_both_query_params() {
         let (transport, runner) = enable_runner_with(Ok(serde_json::Value::Null));
         let stack = ArgStack::new().set("reward.id".to_owned(), Variant::String("rw9".to_owned()));
-        let cfg = default_config();
+        let cfg = REWARD_CONFIG.default_config();
 
         let (telemetry, out) = runner.execute(&cfg, &make_ctx(&stack)).await;
 
@@ -183,7 +185,9 @@ mod tests {
             Variant::String("resolved42".to_owned()),
         );
 
-        let _ = runner.execute(&default_config(), &make_ctx(&stack)).await;
+        let _ = runner
+            .execute(&REWARD_CONFIG.default_config(), &make_ctx(&stack))
+            .await;
 
         assert!(
             transport
@@ -212,17 +216,26 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn validate_config_requires_non_empty_reward_id() {
+    async fn validate_config_requires_a_non_blank_reward_id_and_defaults_a_missing_one() {
         let (_transport, runner) = enable_runner_with(Ok(serde_json::Value::Null));
 
         let cases: Vec<(&str, SubActionConfig, bool)> = vec![
-            ("present non-empty", default_config(), true),
+            ("present non-empty", REWARD_CONFIG.default_config(), true),
             (
                 "empty string",
                 BTreeMap::from([("reward_id".to_owned(), Variant::String(String::new()))]),
                 false,
             ),
-            ("missing key", BTreeMap::new(), false),
+            (
+                "missing key reads the declared template",
+                BTreeMap::new(),
+                true,
+            ),
+            (
+                "whitespace only",
+                BTreeMap::from([("reward_id".to_owned(), Variant::String("  ".to_owned()))]),
+                false,
+            ),
             (
                 "wrong type",
                 BTreeMap::from([("reward_id".to_owned(), Variant::Int(7))]),
@@ -247,7 +260,9 @@ mod tests {
         }));
         let stack = ArgStack::new().set("reward.id".to_owned(), Variant::String("rw9".to_owned()));
 
-        let (telemetry, _) = runner.execute(&default_config(), &make_ctx(&stack)).await;
+        let (telemetry, _) = runner
+            .execute(&REWARD_CONFIG.default_config(), &make_ctx(&stack))
+            .await;
 
         assert!(matches!(
             telemetry.outcome,

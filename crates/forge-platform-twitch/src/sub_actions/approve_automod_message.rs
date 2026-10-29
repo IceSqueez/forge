@@ -139,6 +139,8 @@ mod tests {
     use crate::sub_actions::test_support::{
         MockCreds, MockTransport, SELF_USER_ID, TOKEN_SENTINEL, make_ctx,
     };
+    use forge_types::Variant;
+    use std::collections::BTreeMap;
 
     fn approve_runner_with(
         response: Result<serde_json::Value, HelixError>,
@@ -164,7 +166,7 @@ mod tests {
         );
 
         let (telemetry, out) = runner
-            .execute(&automod_default_config(), &make_ctx(&stack))
+            .execute(&AUTOMOD_CONFIG.default_config(), &make_ctx(&stack))
             .await;
 
         assert_eq!(telemetry.outcome, SubActionOutcome::Success);
@@ -196,7 +198,7 @@ mod tests {
         );
 
         let _ = runner
-            .execute(&automod_default_config(), &make_ctx(&stack))
+            .execute(&AUTOMOD_CONFIG.default_config(), &make_ctx(&stack))
             .await;
 
         assert_eq!(
@@ -223,13 +225,18 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn validate_config_requires_non_empty_message_id() {
+    async fn validate_config_requires_a_non_blank_message_id_and_defaults_a_missing_one() {
         let (_transport, runner) = approve_runner_with(Ok(serde_json::Value::Null));
 
         let cases: Vec<(&str, SubActionConfig, bool)> = vec![
             ("present non-empty", config_with_message_id("m1"), true),
             ("empty string", config_with_message_id(""), false),
-            ("missing key", BTreeMap::new(), false),
+            (
+                "missing key reads the declared template",
+                BTreeMap::new(),
+                true,
+            ),
+            ("whitespace only", config_with_message_id("  "), false),
             (
                 "wrong type",
                 BTreeMap::from([("message_id".to_owned(), Variant::Int(7))]),
@@ -258,7 +265,7 @@ mod tests {
         );
 
         let (telemetry, _) = runner
-            .execute(&automod_default_config(), &make_ctx(&stack))
+            .execute(&AUTOMOD_CONFIG.default_config(), &make_ctx(&stack))
             .await;
 
         assert!(matches!(

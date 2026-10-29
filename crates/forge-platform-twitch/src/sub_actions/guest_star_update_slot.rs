@@ -163,10 +163,17 @@ impl SubActionRunner for GuestStarUpdateSlotRunner {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    const ON: &str = "on";
+    const OFF: &str = "off";
+    const UNCHANGED: &str = "unchanged";
+
     use crate::helix::HelixError;
     use crate::sub_actions::test_support::{
         MockCreds, MockTransport, SELF_USER_ID, TOKEN_SENTINEL, make_ctx,
     };
+    use forge_types::Variant;
+    use std::collections::BTreeMap;
 
     fn runner_with(
         response: Result<serde_json::Value, HelixError>,
@@ -265,7 +272,7 @@ mod tests {
             &[
                 ("audio_enabled", select(ON)),
                 ("video_enabled", select(UNCHANGED)),
-                ("volume", Variant::Bool(true)),
+                ("volume", Variant::String(String::new())),
             ],
         );
 
@@ -302,20 +309,28 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn volume_gate_bool_is_omitted_only_int_is_sent() {
+    async fn blank_volume_is_omitted_and_a_set_volume_is_sent() {
         let (transport, runner) = runner_with(Ok(serde_json::Value::Null));
         let stack = ArgStack::new();
-        let gated = cfg("SESSION-7", "2", &[("volume", Variant::Bool(true))]);
-        let (telemetry, _) = runner.execute(&gated, &make_ctx(&stack)).await;
+        let blank = cfg(
+            "SESSION-7",
+            "2",
+            &[("volume", Variant::String(String::new()))],
+        );
+        let (telemetry, _) = runner.execute(&blank, &make_ctx(&stack)).await;
         assert_eq!(telemetry.outcome, SubActionOutcome::Success);
         assert_eq!(
             transport.call_count(),
             0,
-            "gate-Bool volume contributes no key, so the PATCH is skipped"
+            "a blank volume contributes no key, so the PATCH is skipped"
         );
 
         let (transport, runner) = runner_with(Ok(serde_json::Value::Null));
-        let typed = cfg("SESSION-7", "2", &[("volume", Variant::Int(33))]);
+        let typed = cfg(
+            "SESSION-7",
+            "2",
+            &[("volume", Variant::String("33".to_owned()))],
+        );
         let (telemetry, _) = runner.execute(&typed, &make_ctx(&stack)).await;
         assert_eq!(telemetry.outcome, SubActionOutcome::Success);
         assert_eq!(

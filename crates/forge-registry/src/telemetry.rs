@@ -3,6 +3,7 @@ use std::collections::BTreeMap;
 use forge_types::{SubActionOutcome, SubActionTelemetry};
 use time::OffsetDateTime;
 
+use crate::config_problem::ConfigProblem;
 use crate::run_context::RunContext;
 
 pub struct StepTimer {
@@ -49,6 +50,10 @@ impl StepTimer {
 
     pub fn skipped(self, message: impl Into<String>) -> SubActionTelemetry {
         self.finish(SubActionOutcome::Skipped(message.into()))
+    }
+
+    pub fn invalid_config(self, problem: &ConfigProblem) -> SubActionTelemetry {
+        self.failed(format!("invalid step config: {problem}"))
     }
 }
 

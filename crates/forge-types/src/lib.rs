@@ -71,5 +71,5 @@ pub use unified_chat::{
 };
 pub use variant::{
     MAX_COLLECTION_LEN as VARIANT_MAX_COLLECTION_LEN, MAX_DEPTH as VARIANT_MAX_DEPTH, Variant,
-    VariantError, VariantKind, VariantType, display_scalar,
+    VariantError, VariantKind, display_scalar,
 };

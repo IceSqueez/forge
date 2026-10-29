@@ -1,8 +1,11 @@
 mod analyzer;
 mod category;
 mod chain;
+mod config_choice;
 mod config_ext;
 mod config_problem;
+mod declared_config;
+mod declared_fields;
 mod descriptor;
 mod duration_bounds;
 mod error;
@@ -35,8 +38,14 @@ pub use chain::{
     CancelSignal, ChainExecutor, ChainSignal, ChildChainOutcome, ControlCell, ControlSignal,
     RunningAction, StopMark, TelemetrySink,
 };
+pub use config_choice::ConfigChoice;
 pub use config_ext::SubActionConfigExt;
 pub use config_problem::{ConfigProblem, ConfigReason, ValueBounds};
+pub use declared_config::{ConfigSpec, DeclaredField, FieldLiteral, Interpolation, TypedField};
+pub use declared_fields::{
+    ChoiceField, IntegerEditor, IntegerField, NumberField, TextEditor, TextField, ToggleField,
+    VariableField,
+};
 pub use descriptor::{
     ChatTriggerFamily, IGNORE_BOT_MESSAGES_KEY, TriggerKindDescriptor, ignores_bot_messages,
 };
@@ -70,7 +79,7 @@ pub use registry::{
 };
 pub use retired_ids::IdSuccession;
 pub use run_context::RunContext;
-pub use runner::{SubActionConfig, SubActionRunner};
+pub use runner::{SubActionConfig, SubActionRunner, validate_declared_config};
 pub use scope::{ScopeLevel, ScopeOrigin, ScopedVariable, variables_in_scope};
 pub use step_tree::{
     CASE_CHAIN_KEY, CASE_MATCH_KEY, ChainEntry, DecodedChain, STEP_CONDITION_KEY, STEP_CONFIG_KEY,

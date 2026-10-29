@@ -7,6 +7,20 @@ pub struct ValueBounds {
 }
 
 impl ValueBounds {
+    pub const UNBOUNDED: Self = Self {
+        min: None,
+        max: None,
+    };
+
+    pub fn admits_whole(&self, value: i64) -> bool {
+        self.min.is_none_or(|min| value >= min) && self.max.is_none_or(|max| value <= max)
+    }
+
+    pub fn admits(&self, value: f64) -> bool {
+        self.min.is_none_or(|min| value >= min as f64)
+            && self.max.is_none_or(|max| value <= max as f64)
+    }
+
     pub fn between(min: impl TryInto<i64>, max: impl TryInto<i64>) -> Self {
         Self {
             min: Some(saturating_bound(min)),

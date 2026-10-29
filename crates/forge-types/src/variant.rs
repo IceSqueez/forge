@@ -10,49 +10,6 @@ pub const MAX_DEPTH: u8 = 32;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
-pub enum VariantType {
-    Int,
-    Float,
-    Bool,
-    String,
-    Datetime,
-    Array,
-    Object,
-}
-
-impl fmt::Display for VariantType {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(match self {
-            Self::Int => "int",
-            Self::Float => "float",
-            Self::Bool => "bool",
-            Self::String => "string",
-            Self::Datetime => "datetime",
-            Self::Array => "array",
-            Self::Object => "object",
-        })
-    }
-}
-
-impl std::str::FromStr for VariantType {
-    type Err = VariantError;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        match s {
-            "int" => Ok(Self::Int),
-            "float" => Ok(Self::Float),
-            "bool" => Ok(Self::Bool),
-            "string" => Ok(Self::String),
-            "datetime" => Ok(Self::Datetime),
-            "array" => Ok(Self::Array),
-            "object" => Ok(Self::Object),
-            _ => Err(VariantError::UnknownTypeTag(s.to_owned())),
-        }
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
-#[serde(rename_all = "lowercase")]
 pub enum VariantKind {
     Int,
     Float,
@@ -114,12 +71,26 @@ impl VariantKind {
     }
 }
 
+impl fmt::Display for VariantKind {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self.contract_name())
+    }
+}
+
+impl std::str::FromStr for VariantKind {
+    type Err = VariantError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        Self::from_contract_name(s).ok_or_else(|| VariantError::UnknownTypeTag(s.to_owned()))
+    }
+}
+
 #[derive(Debug, thiserror::Error)]
 pub enum VariantError {
     #[error("type mismatch: expected {expected}, got {actual}")]
     TypeMismatch {
-        expected: VariantType,
-        actual: VariantType,
+        expected: VariantKind,
+        actual: VariantKind,
     },
 
     #[error("invalid float: {reason}")]
@@ -207,16 +178,8 @@ impl Variant {
         Ok(Self::Float(f))
     }
 
-    pub fn type_tag(&self) -> VariantType {
-        match self {
-            Self::Int(_) => VariantType::Int,
-            Self::Float(_) => VariantType::Float,
-            Self::Bool(_) => VariantType::Bool,
-            Self::String(_) => VariantType::String,
-            Self::Datetime(_) => VariantType::Datetime,
-            Self::Array(_) => VariantType::Array,
-            Self::Object(_) => VariantType::Object,
-        }
+    pub fn type_tag(&self) -> VariantKind {
+        VariantKind::from_variant(self)
     }
 
     pub fn is_string(&self) -> bool {

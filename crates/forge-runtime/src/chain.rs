@@ -6,7 +6,8 @@ use forge_events::{
 };
 use forge_registry::{
     CancelSignal, ChainExecutor, ChainSignal, ChildChainOutcome, ControlCell, ControlSignal,
-    RegistryError, RunContext, RunningAction, SubActionRegistry, TelemetrySink, effective_config,
+    Interpolation, RegistryError, RunContext, RunningAction, StepTimer, SubActionRegistry,
+    SubActionRunner, TelemetrySink, effective_config, validate_declared_config,
 };
 use forge_types::{
     ArgStack, EventId, IntegrationAvailability, SubActionOutcome, SubActionStep,
@@ -96,6 +97,33 @@ pub(crate) fn publish_subaction_done(
         integration,
     }
     .publish(publisher, EventSource::Core, Some(caused_by));
+}
+
+pub(crate) async fn execute_step(
+    registry: &SubActionRegistry,
+    integrations: &IntegrationGate,
+    runner: &dyn SubActionRunner,
+    step: &SubActionStep,
+    ctx: &RunContext<'_>,
+) -> (SubActionTelemetry, Option<ArgStack>) {
+    let resolved = effective_config(&runner.default_config(), &step.config);
+    if let Err(problem) =
+        validate_declared_config(runner, &resolved, Interpolation::Against(ctx.arg_stack))
+    {
+        return (
+            StepTimer::start(ctx, &step.kind_id).invalid_config(&problem),
+            None,
+        );
+    }
+    let owner = step_owner(registry, runner, &step.kind_id, &resolved, ctx.arg_stack);
+    run_gated_step(
+        integrations,
+        owner.as_ref(),
+        ctx,
+        &step.kind_id,
+        runner.execute(&resolved, ctx),
+    )
+    .await
 }
 
 pub struct ChainEngine {
@@ -289,22 +317,7 @@ impl ChainEngine {
 
             let (mut tel, updated) = match self.registry.get(&step.kind_id) {
                 Some(runner) => {
-                    let resolved = effective_config(&runner.default_config(), &step.config);
-                    run_gated_step(
-                        &self.integrations,
-                        step_owner(
-                            self.registry.as_ref(),
-                            runner,
-                            &step.kind_id,
-                            &resolved,
-                            run_ctx.arg_stack,
-                        )
-                        .as_ref(),
-                        &run_ctx,
-                        &step.kind_id,
-                        runner.execute(&resolved, &run_ctx),
-                    )
-                    .await
+                    execute_step(&self.registry, &self.integrations, runner, step, &run_ctx).await
                 }
                 None => {
                     warn!(

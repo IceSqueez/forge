@@ -1,35 +1,61 @@
 use async_trait::async_trait;
 use forge_registry::{
-    FormField, ProducedVariable, RegistryError, RunContext, StepTimer, SubActionCategory,
-    SubActionConfigExt, SubActionIo, SubActionRunner,
+    ConfigProblem, ConfigReason, ConfigSpec, IntegerEditor, IntegerField, Interpolation,
+    ProducedVariable, RunContext, StepTimer, SubActionCategory, SubActionIo, SubActionRunner,
+    TypedField, ValueBounds, VariableField,
 };
-use forge_types::{
-    ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetry, Variant, VariantKind,
-};
+use forge_types::{ArgStack, SubActionConfig, SubActionTelemetry, Variant, VariantKind};
 use rand::RngExt;
 
-pub struct CoreRandomIntRunner;
+const TARGET_VAR_KEY: &str = "target_var";
 
-fn resolve_bound(
-    config: &SubActionConfig,
-    ctx: &RunContext<'_>,
-    key: &str,
-    default: i64,
-) -> Result<i64, String> {
-    let raw = match config.get(key) {
-        Some(Variant::Int(n)) => return Ok(*n),
-        Some(Variant::String(s)) => s.clone(),
-        _ => return Ok(default),
-    };
-    if raw.trim().is_empty() {
-        return Ok(default);
+const MIN: IntegerField = IntegerField {
+    key: "min",
+    label: "Minimum",
+    editor: IntegerEditor::Text { placeholder: "1" },
+    default: 1,
+    bounds: ValueBounds::UNBOUNDED,
+};
+
+const MAX: IntegerField = IntegerField {
+    key: "max",
+    label: "Maximum",
+    editor: IntegerEditor::Text { placeholder: "100" },
+    default: 100,
+    bounds: ValueBounds::UNBOUNDED,
+};
+
+const TARGET_VAR: VariableField = VariableField {
+    key: TARGET_VAR_KEY,
+    label: "Output Variable",
+    placeholder: "random_result",
+    default: "",
+};
+
+const CONFIG: ConfigSpec = ConfigSpec::new(&[&MIN, &MAX, &TARGET_VAR]);
+
+fn ordered(min: i64, max: i64) -> Result<(), ConfigProblem> {
+    if min <= max {
+        Ok(())
+    } else {
+        Err(ConfigProblem::field(
+            MAX.key,
+            ConfigReason::OutOfRange(ValueBounds::at_least(min)),
+        ))
     }
-    let resolved = ctx.arg_stack.interpolate(&raw);
-    resolved
-        .trim()
-        .parse::<i64>()
-        .map_err(|_| format!("{key} is not a valid integer: {resolved:?}"))
 }
+
+fn read_config(
+    config: &SubActionConfig,
+    args: &ArgStack,
+) -> Result<(i64, i64, String), ConfigProblem> {
+    let min = MIN.read(config, args)?;
+    let max = MAX.read(config, args)?;
+    ordered(min, max)?;
+    Ok((min, max, TARGET_VAR.read(config, args)?))
+}
+
+pub struct CoreRandomIntRunner;
 
 #[async_trait]
 impl SubActionRunner for CoreRandomIntRunner {
@@ -57,42 +83,28 @@ impl SubActionRunner for CoreRandomIntRunner {
         "dice"
     }
 
-    fn default_config(&self) -> SubActionConfig {
-        let mut cfg = SubActionConfig::new();
-        cfg.insert("min".to_owned(), Variant::String("1".to_owned()));
-        cfg.insert("max".to_owned(), Variant::String("100".to_owned()));
-        cfg.insert("target_var".to_owned(), Variant::String(String::new()));
-        cfg
+    fn config_spec(&self) -> Option<ConfigSpec> {
+        Some(CONFIG)
     }
 
-    fn config_fields(&self) -> Vec<FormField> {
-        vec![
-            FormField::Text {
-                key: "min",
-                label: "Minimum",
-                placeholder: "1",
-            },
-            FormField::Text {
-                key: "max",
-                label: "Maximum",
-                placeholder: "100",
-            },
-            FormField::Text {
-                key: "target_var",
-                label: "Output Variable",
-                placeholder: "random_result",
-            },
-        ]
-    }
-
-    fn validate_config(&self, config: &SubActionConfig) -> Result<(), RegistryError> {
-        config.require_str("target_var").map(|_| ())
+    fn check_config(
+        &self,
+        config: &SubActionConfig,
+        interpolation: Interpolation<'_>,
+    ) -> Result<(), ConfigProblem> {
+        match (
+            MIN.peek(config, interpolation)?,
+            MAX.peek(config, interpolation)?,
+        ) {
+            (Some(min), Some(max)) => ordered(min, max),
+            _ => Ok(()),
+        }
     }
 
     fn scope_io(&self) -> SubActionIo {
         SubActionIo {
             produces: vec![ProducedVariable {
-                output_name_key: "target_var".to_owned(),
+                output_name_key: TARGET_VAR_KEY.to_owned(),
                 kind: VariantKind::Int,
                 label: "Random integer".to_owned(),
             }],
@@ -105,26 +117,15 @@ impl SubActionRunner for CoreRandomIntRunner {
         config: &SubActionConfig,
         ctx: &RunContext<'_>,
     ) -> (SubActionTelemetry, Option<ArgStack>) {
-        let timer = StepTimer::start(ctx, "core.random.int");
-
-        let min = resolve_bound(config, ctx, "min", 1);
-        let max = resolve_bound(config, ctx, "max", 100);
-        let target_var =
-            forge_types::strip_var_decoration(config.str("target_var").unwrap_or_default());
-
-        let (outcome, produced) = match (min, max) {
-            (Err(e), _) | (Ok(_), Err(e)) => (SubActionOutcome::Failed(e), None),
-            (Ok(min), Ok(max)) if min > max => (
-                SubActionOutcome::Failed(format!("min ({min}) must be <= max ({max})")),
-                None,
-            ),
-            (Ok(min), Ok(max)) => {
-                let value = rand::rng().random_range(min..=max);
-                let stack = ctx.arg_stack.clone().set(target_var, Variant::Int(value));
-                (SubActionOutcome::Success, Some(stack))
-            }
+        let timer = StepTimer::start(ctx, self.id());
+        let (min, max, target_var) = match read_config(config, ctx.arg_stack) {
+            Ok(values) => values,
+            Err(problem) => return (timer.invalid_config(&problem), None),
         };
 
-        (timer.finish(outcome), produced)
+        let value = rand::rng().random_range(min..=max);
+        let stack = ctx.arg_stack.clone().set(target_var, Variant::Int(value));
+
+        (timer.success(), Some(stack))
     }
 }

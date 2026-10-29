@@ -4,6 +4,8 @@ use forge_types::{ArgStack, IntegrationId, SubActionTelemetry};
 pub use forge_types::SubActionConfig;
 
 use crate::category::SubActionCategory;
+use crate::config_problem::ConfigProblem;
+use crate::declared_config::{ConfigSpec, Interpolation};
 use crate::error::RegistryError;
 use crate::form::FormField;
 use crate::io::SubActionIo;
@@ -19,17 +21,38 @@ pub trait SubActionRunner: Send + Sync {
     fn summary(&self) -> &str;
     fn search_text(&self) -> &str;
     fn icon_name(&self) -> &str;
-    fn default_config(&self) -> SubActionConfig;
-    fn config_fields(&self) -> Vec<FormField>;
+    fn config_spec(&self) -> Option<ConfigSpec> {
+        None
+    }
+    fn check_config(
+        &self,
+        _config: &SubActionConfig,
+        _interpolation: Interpolation<'_>,
+    ) -> Result<(), ConfigProblem> {
+        Ok(())
+    }
+    fn default_config(&self) -> SubActionConfig {
+        self.config_spec()
+            .map(|spec| spec.default_config())
+            .unwrap_or_default()
+    }
+    fn config_fields(&self) -> Vec<FormField> {
+        self.config_spec()
+            .map(|spec| spec.form_fields())
+            .unwrap_or_default()
+    }
     fn config_refinement(&self) -> Option<FormRefinement> {
         None
     }
     fn declared_references(&self) -> Vec<ReferenceField> {
         Vec::new()
     }
-    fn validate_config(&self, config: &SubActionConfig) -> Result<(), RegistryError>;
+    fn validate_config(&self, config: &SubActionConfig) -> Result<(), RegistryError> {
+        validate_declared_config(self, config, Interpolation::Deferred)
+            .map_err(RegistryError::InvalidConfig)
+    }
     fn checks_config_while_editing(&self) -> bool {
-        false
+        self.config_spec().is_some()
     }
     async fn execute(
         &self,
@@ -46,4 +69,16 @@ pub trait SubActionRunner: Send + Sync {
     ) -> Option<IntegrationId> {
         None
     }
+}
+
+pub fn validate_declared_config<R: SubActionRunner + ?Sized>(
+    runner: &R,
+    config: &SubActionConfig,
+    interpolation: Interpolation<'_>,
+) -> Result<(), ConfigProblem> {
+    let Some(spec) = runner.config_spec() else {
+        return Ok(());
+    };
+    spec.validate(config, interpolation)?;
+    runner.check_config(config, interpolation)
 }

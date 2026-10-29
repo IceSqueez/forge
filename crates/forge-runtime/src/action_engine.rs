@@ -4,9 +4,7 @@ use forge_events::{
     ActionDone, ActionSkipped, ActionStarted, EventPublisher, EventSource, QuickActionDone,
     RunOutcome, SubActionRun, TypedEvent,
 };
-use forge_registry::{
-    CancelSignal, ChainSignal, RunContext, RunningAction, SubActionRegistry, effective_config,
-};
+use forge_registry::{CancelSignal, ChainSignal, RunContext, RunningAction, SubActionRegistry};
 use forge_storage::{ActionExecution, ActionRepo, ExecutionStatus, HistoryRepo};
 use forge_types::{
     Action, ActionId, ArgStack, EventId, ExecutionContext, ExecutionMetadata, ExecutionOutcome,
@@ -19,7 +17,7 @@ use tracing::{info, warn};
 use crate::action_cancel::ActionCancelRegistry;
 use crate::catalog::Catalog;
 use crate::chain::ChainEngine;
-use crate::integration_gate::{GatedLeafExecutor, IntegrationGate, run_gated_step, step_owner};
+use crate::integration_gate::{GatedLeafExecutor, IntegrationGate};
 use crate::run_history::RunHistoryWriter;
 use crate::scheduled_runs::ScheduledOrigin;
 use crate::{Config, EventBus};
@@ -507,20 +505,12 @@ async fn run_quick_action(
     let started_at = OffsetDateTime::now_utc();
     let (mut telemetry, produced_stack) = match sub_action_registry.get(&req.step.kind_id) {
         Some(runner) => {
-            let resolved = effective_config(&runner.default_config(), &req.step.config);
-            run_gated_step(
+            crate::chain::execute_step(
+                &sub_action_registry,
                 &integrations,
-                step_owner(
-                    sub_action_registry.as_ref(),
-                    runner,
-                    &req.step.kind_id,
-                    &resolved,
-                    run_ctx.arg_stack,
-                )
-                .as_ref(),
+                runner,
+                &req.step,
                 &run_ctx,
-                &req.step.kind_id,
-                runner.execute(&resolved, &run_ctx),
             )
             .await
         }

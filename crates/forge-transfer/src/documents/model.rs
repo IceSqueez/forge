@@ -6,7 +6,7 @@ use forge_storage::{
 use forge_types::{
     Action, ActionId, ClipId, ExecutionMode, PermissionRung, PlatformScope, Queue, QueueId,
     ScriptContract, ScriptId, SubActionStep, TriggerInstance, TriggerInstanceId, Variant,
-    VariantType,
+    VariantKind,
 };
 use serde::{Deserialize, Serialize};
 use time::OffsetDateTime;
@@ -173,7 +173,7 @@ impl ScriptDocument {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct GlobalDocument {
     pub name: String,
-    pub value_type: VariantType,
+    pub value_type: VariantKind,
     pub default_value: Variant,
     pub persisted: bool,
 }
@@ -190,15 +190,15 @@ impl GlobalDocument {
     }
 }
 
-fn default_of(value_type: VariantType) -> Variant {
+fn default_of(value_type: VariantKind) -> Variant {
     match value_type {
-        VariantType::Int => Variant::Int(0),
-        VariantType::Float => Variant::Float(0.0),
-        VariantType::Bool => Variant::Bool(false),
-        VariantType::String => Variant::String(String::new()),
-        VariantType::Datetime => Variant::Datetime(OffsetDateTime::UNIX_EPOCH),
-        VariantType::Array => Variant::Array(Vec::new()),
-        VariantType::Object => Variant::Object(BTreeMap::new()),
+        VariantKind::Int => Variant::Int(0),
+        VariantKind::Float => Variant::Float(0.0),
+        VariantKind::Bool => Variant::Bool(false),
+        VariantKind::String => Variant::String(String::new()),
+        VariantKind::Datetime => Variant::Datetime(OffsetDateTime::UNIX_EPOCH),
+        VariantKind::Array => Variant::Array(Vec::new()),
+        VariantKind::Object => Variant::Object(BTreeMap::new()),
     }
 }
 

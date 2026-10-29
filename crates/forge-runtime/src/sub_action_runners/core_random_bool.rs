@@ -1,43 +1,41 @@
-use std::ops::RangeInclusive;
-
 use async_trait::async_trait;
 use forge_registry::{
-    ConfigReason, FormField, ProducedVariable, RegistryError, RunContext, StepTimer,
-    SubActionCategory, SubActionConfigExt, SubActionIo, SubActionRunner, ValueBounds,
+    ConfigProblem, ConfigSpec, NumberField, ProducedVariable, RunContext, StepTimer,
+    SubActionCategory, SubActionIo, SubActionRunner, TypedField, ValueBounds, VariableField,
 };
 use forge_types::{ArgStack, SubActionConfig, SubActionTelemetry, Variant, VariantKind};
 
-use super::float_input::resolve_float;
-
 const PROBABILITY_KEY: &str = "probability_true";
-const DEFAULT_PROBABILITY: f64 = 0.5;
-const PROBABILITY_RANGE: RangeInclusive<f64> = 0.0..=1.0;
+const INTO_VAR_KEY: &str = "into_var";
+
+const PROBABILITY: NumberField = NumberField {
+    key: PROBABILITY_KEY,
+    label: "Probability of True (0..1)",
+    placeholder: "0.5",
+    default: 0.5,
+    bounds: ValueBounds {
+        min: Some(0),
+        max: Some(1),
+    },
+};
+
+const INTO_VAR: VariableField = VariableField {
+    key: INTO_VAR_KEY,
+    label: "Output Variable",
+    placeholder: "random_result",
+    default: "",
+};
+
+const CONFIG: ConfigSpec = ConfigSpec::new(&[&PROBABILITY, &INTO_VAR]);
+
+fn read_config(config: &SubActionConfig, args: &ArgStack) -> Result<(f64, String), ConfigProblem> {
+    Ok((
+        PROBABILITY.read(config, args)?,
+        INTO_VAR.read(config, args)?,
+    ))
+}
 
 pub struct CoreRandomBoolRunner;
-
-fn out_of_range() -> RegistryError {
-    RegistryError::invalid_field(
-        PROBABILITY_KEY,
-        ConfigReason::OutOfRange(ValueBounds::between(
-            *PROBABILITY_RANGE.start() as i64,
-            *PROBABILITY_RANGE.end() as i64,
-        )),
-    )
-}
-
-fn literal_probability(config: &SubActionConfig) -> Result<Option<f64>, RegistryError> {
-    match config.get(PROBABILITY_KEY) {
-        Some(Variant::Float(n)) => Ok(Some(*n)),
-        Some(Variant::Int(n)) => Ok(Some(*n as f64)),
-        Some(Variant::String(s)) if s.contains('%') || s.trim().is_empty() => Ok(None),
-        Some(Variant::String(s)) => {
-            s.trim().parse::<f64>().map(Some).map_err(|_| {
-                RegistryError::invalid_field(PROBABILITY_KEY, ConfigReason::NotANumber)
-            })
-        }
-        _ => Ok(None),
-    }
-}
 
 #[async_trait]
 impl SubActionRunner for CoreRandomBoolRunner {
@@ -65,43 +63,14 @@ impl SubActionRunner for CoreRandomBoolRunner {
         "dice"
     }
 
-    fn default_config(&self) -> SubActionConfig {
-        let mut cfg = SubActionConfig::new();
-        cfg.insert(
-            PROBABILITY_KEY.to_owned(),
-            Variant::String(DEFAULT_PROBABILITY.to_string()),
-        );
-        cfg.insert("into_var".to_owned(), Variant::String(String::new()));
-        cfg
-    }
-
-    fn config_fields(&self) -> Vec<FormField> {
-        vec![
-            FormField::Text {
-                key: PROBABILITY_KEY,
-                label: "Probability of True (0..1)",
-                placeholder: "0.5",
-            },
-            FormField::Text {
-                key: "into_var",
-                label: "Output Variable",
-                placeholder: "random_result",
-            },
-        ]
-    }
-
-    fn validate_config(&self, config: &SubActionConfig) -> Result<(), RegistryError> {
-        config.require_str("into_var")?;
-        match literal_probability(config)? {
-            Some(p) if !PROBABILITY_RANGE.contains(&p) => Err(out_of_range()),
-            _ => Ok(()),
-        }
+    fn config_spec(&self) -> Option<ConfigSpec> {
+        Some(CONFIG)
     }
 
     fn scope_io(&self) -> SubActionIo {
         SubActionIo {
             produces: vec![ProducedVariable {
-                output_name_key: "into_var".to_owned(),
+                output_name_key: INTO_VAR_KEY.to_owned(),
                 kind: VariantKind::Bool,
                 label: "Random boolean".to_owned(),
             }],
@@ -114,25 +83,11 @@ impl SubActionRunner for CoreRandomBoolRunner {
         config: &SubActionConfig,
         ctx: &RunContext<'_>,
     ) -> (SubActionTelemetry, Option<ArgStack>) {
-        let timer = StepTimer::start(ctx, "core.random.bool");
-
-        let probability = match resolve_float(config, ctx, PROBABILITY_KEY, DEFAULT_PROBABILITY) {
-            Ok(p) if PROBABILITY_RANGE.contains(&p) => p,
-            Ok(p) => {
-                return (
-                    timer.failed(format!(
-                        "{PROBABILITY_KEY} must be between {} and {}, got {p}",
-                        PROBABILITY_RANGE.start(),
-                        PROBABILITY_RANGE.end()
-                    )),
-                    None,
-                );
-            }
-            Err(e) => return (timer.failed(e), None),
+        let timer = StepTimer::start(ctx, self.id());
+        let (probability, into_var) = match read_config(config, ctx.arg_stack) {
+            Ok(values) => values,
+            Err(problem) => return (timer.invalid_config(&problem), None),
         };
-
-        let into_var =
-            forge_types::strip_var_decoration(config.str("into_var").unwrap_or_default());
 
         let value = rand::random_bool(probability);
         let new_stack = ctx.arg_stack.clone().set(into_var, Variant::Bool(value));
@@ -140,7 +95,6 @@ impl SubActionRunner for CoreRandomBoolRunner {
         (timer.success(), Some(new_stack))
     }
 }
-
 #[cfg(test)]
 mod tests {
     use super::*;

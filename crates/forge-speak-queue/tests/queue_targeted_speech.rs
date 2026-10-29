@@ -248,6 +248,10 @@ struct GatedFactory {
 }
 
 impl TtsEngineFactory for GatedFactory {
+    fn class(&self) -> forge_tts_core::EngineClass {
+        forge_tts_core::EngineClass::Local
+    }
+
     fn create(&self) -> Result<Box<dyn TtsEngine>, TtsError> {
         Ok(Box::new(GatedEngine {
             gate: self.gate.clone(),

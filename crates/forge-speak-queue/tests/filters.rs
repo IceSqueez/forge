@@ -1,13 +1,15 @@
 mod filters {
     use forge_speak_queue::{
-        PipelineConfigHandle, ReplacementSource, build_config_lenient,
-        build_config_lenient_with_sources, build_config_strict,
+        EmoteTokenSet, EmoteTreatment, PipelineConfigHandle, ReplacementSource, SpokenWords,
+        build_config, effective_skip_prefix, emote_treatment, repeat_window, store_emote_treatment,
     };
     use forge_storage::{
         BlocklistMode as StorageBlocklistMode, FilterRule, FilterRuleKind, TtsPipelineSettings,
         UrlMode as StorageUrlMode,
     };
-    use forge_tts_pipeline::{PipelineContext, PipelineResult, SkipReason, process};
+    use forge_tts_pipeline::{
+        PipelineConfig, PipelineContext, PipelineResult, SkipReason, process,
+    };
 
     fn ctx() -> PipelineContext<'static> {
         PipelineContext {
@@ -18,6 +20,29 @@ mod filters {
 
     fn default_settings() -> TtsPipelineSettings {
         TtsPipelineSettings::default()
+    }
+
+    fn english_words() -> SpokenWords {
+        SpokenWords {
+            link: "link".into(),
+            says: "says".into(),
+        }
+    }
+
+    fn build_config_strict(
+        rules: &[FilterRule],
+        settings: &TtsPipelineSettings,
+    ) -> Result<PipelineConfig, forge_speak_queue::FilterMappingError> {
+        build_config(rules, settings, &english_words()).require_valid()
+    }
+
+    fn build_config_lenient(
+        rules: &[FilterRule],
+        settings: &TtsPipelineSettings,
+    ) -> PipelineConfig {
+        build_config(rules, settings, &english_words())
+            .dropping_invalid()
+            .0
     }
 
     fn literal_rule(name: &str, pattern: &str, replacement: &str, enabled: bool) -> FilterRule {
@@ -300,12 +325,18 @@ mod filters {
     }
 
     #[test]
-    fn url_mode_replace_substitutes_label_in_output() {
+    fn url_mode_replace_substitutes_the_spoken_link_word_in_output() {
         let mut settings = default_settings();
         settings.url_mode = StorageUrlMode::Replace;
-        let config = build_config_strict(&[], &settings).unwrap();
+        let words = SpokenWords {
+            link: "посилання".into(),
+            says: "каже".into(),
+        };
+        let config = build_config(&[], &settings, &words)
+            .require_valid()
+            .unwrap();
         let result = process("check https://example.com now", &config, &ctx());
-        assert_eq!(result, PipelineResult::Speak("check link now".into()));
+        assert_eq!(result, PipelineResult::Speak("check посилання now".into()));
     }
 
     #[test]
@@ -368,24 +399,6 @@ mod filters {
         let config = build_config_strict(&[], &settings).unwrap();
         let result = process("hello", &config, &ctx());
         assert_eq!(result, PipelineResult::Speak("hello".into()));
-    }
-
-    #[test]
-    fn strip_emoji_setting_maps_to_the_emoji_source_in_both_builders() {
-        for strip_emoji in [false, true] {
-            let settings = TtsPipelineSettings {
-                strip_emoji,
-                ..default_settings()
-            };
-
-            let strict = build_config_strict(&[], &settings).unwrap();
-            let lenient = build_config_lenient(&[], &settings);
-
-            assert_eq!(
-                (strict.emote_sources.emoji, lenient.emote_sources.emoji),
-                (strip_emoji, strip_emoji)
-            );
-        }
     }
 
     #[test]
@@ -518,13 +531,610 @@ mod filters {
         ] {
             let mut settings = default_settings();
             settings.url_mode = url_mode;
-            let (config, sources) = build_config_lenient_with_sources(&rules, &settings);
+            let (config, sources) =
+                build_config(&rules, &settings, &english_words()).dropping_invalid();
             assert_eq!(sources, expected, "{url_mode:?}");
             assert_eq!(
                 config.replacement_rules.len(),
                 sources.len(),
                 "{url_mode:?}: one source per replacement rule"
             );
+        }
+    }
+
+    fn skip_regex_settings(patterns: &[&str]) -> TtsPipelineSettings {
+        TtsPipelineSettings {
+            skip_custom_regexes: patterns.iter().map(|p| (*p).to_owned()).collect(),
+            ..default_settings()
+        }
+    }
+
+    fn rules_with_bad_regexes_at_one_and_three() -> [FilterRule; 4] {
+        [
+            literal_rule("first", "hello", "hi", true),
+            regex_rule("broken-one", "((one", "x"),
+            literal_rule("third", "world", "earth", true),
+            regex_rule("broken-three", "[three", "x"),
+        ]
+    }
+
+    #[test]
+    fn strict_build_returns_the_first_invalid_filter_rule_in_rule_order() {
+        let rules = rules_with_bad_regexes_at_one_and_three();
+        let settings = skip_regex_settings(&["(skip"]);
+
+        let err = build_config_strict(&rules, &settings).unwrap_err();
+
+        assert!(
+            matches!(
+                &err,
+                forge_speak_queue::FilterMappingError::InvalidRegex { index: 1, name, .. }
+                    if name == "broken-one"
+            ),
+            "{err:?}"
+        );
+    }
+
+    #[test]
+    fn strict_build_returns_the_first_invalid_skip_regex_when_every_rule_is_valid() {
+        let settings = skip_regex_settings(&["^ok$", "(bad", "[worse"]);
+
+        let err = build_config_strict(&[], &settings).unwrap_err();
+
+        assert!(
+            matches!(
+                &err,
+                forge_speak_queue::FilterMappingError::InvalidSkipRegex { index: 1, pattern, .. }
+                    if pattern == "(bad"
+            ),
+            "{err:?}"
+        );
+    }
+
+    #[test]
+    fn lenient_build_drops_every_invalid_regex_and_keeps_the_valid_ones() {
+        let rules = rules_with_bad_regexes_at_one_and_three();
+        let settings = skip_regex_settings(&["(bad", "^skip me$"]);
+
+        let config = build_config_lenient(&rules, &settings);
+
+        assert_eq!(
+            (
+                process("hello world", &config, &ctx()),
+                process("skip me", &config, &ctx()),
+            ),
+            (
+                PipelineResult::Speak("hi earth".into()),
+                PipelineResult::Skip {
+                    reason: SkipReason::MatchedSkipRule("message matches a custom skip regex"),
+                },
+            )
+        );
+    }
+
+    #[test]
+    fn lenient_build_reports_each_dropped_regex_once() {
+        let rules = rules_with_bad_regexes_at_one_and_three();
+        let settings = skip_regex_settings(&["(bad", "^fine$", "[worse"]);
+        let reported = warning_patterns_while(|| {
+            build_config(&rules, &settings, &english_words()).dropping_invalid();
+        });
+
+        assert_eq!(reported, vec!["((one", "[three", "(bad", "[worse"]);
+    }
+
+    fn warning_patterns_while(run: impl FnOnce()) -> Vec<String> {
+        static INTEREST_FLOOR: std::sync::OnceLock<()> = std::sync::OnceLock::new();
+        INTEREST_FLOOR.get_or_init(|| {
+            drop(tracing::subscriber::set_global_default(
+                PatternCollector::default(),
+            ));
+        });
+        let collector = PatternCollector::default();
+        let patterns = std::sync::Arc::clone(&collector.patterns);
+        tracing::subscriber::with_default(collector, || {
+            tracing::callsite::rebuild_interest_cache();
+            run();
+        });
+        patterns.lock().unwrap_or_else(|e| e.into_inner()).clone()
+    }
+
+    #[derive(Default)]
+    struct PatternCollector {
+        patterns: std::sync::Arc<std::sync::Mutex<Vec<String>>>,
+    }
+
+    struct PatternField<'a>(&'a mut Option<String>);
+
+    impl tracing::field::Visit for PatternField<'_> {
+        fn record_debug(&mut self, field: &tracing::field::Field, value: &dyn std::fmt::Debug) {
+            if field.name() == "pattern" {
+                *self.0 = Some(format!("{value:?}"));
+            }
+        }
+    }
+
+    impl tracing::Subscriber for PatternCollector {
+        fn register_callsite(
+            &self,
+            _: &'static tracing::Metadata<'static>,
+        ) -> tracing::subscriber::Interest {
+            tracing::subscriber::Interest::sometimes()
+        }
+        fn max_level_hint(&self) -> Option<tracing::level_filters::LevelFilter> {
+            Some(tracing::level_filters::LevelFilter::WARN)
+        }
+        fn enabled(&self, metadata: &tracing::Metadata<'_>) -> bool {
+            *metadata.level() == tracing::Level::WARN
+        }
+        fn new_span(&self, _: &tracing::span::Attributes<'_>) -> tracing::span::Id {
+            tracing::span::Id::from_u64(1)
+        }
+        fn record(&self, _: &tracing::span::Id, _: &tracing::span::Record<'_>) {}
+        fn record_follows_from(&self, _: &tracing::span::Id, _: &tracing::span::Id) {}
+        fn event(&self, event: &tracing::Event<'_>) {
+            let mut pattern = None;
+            event.record(&mut PatternField(&mut pattern));
+            if let Some(pattern) = pattern {
+                self.patterns
+                    .lock()
+                    .unwrap_or_else(|e| e.into_inner())
+                    .push(pattern);
+            }
+        }
+        fn enter(&self, _: &tracing::span::Id) {}
+        fn exit(&self, _: &tracing::span::Id) {}
+    }
+
+    #[test]
+    fn emote_treatment_reads_to_word_over_strip_over_keep() {
+        for (to_word, strip, expected) in [
+            (false, false, EmoteTreatment::Keep),
+            (false, true, EmoteTreatment::StripTwitch),
+            (true, false, EmoteTreatment::ToWord),
+            (true, true, EmoteTreatment::ToWord),
+        ] {
+            let settings = TtsPipelineSettings {
+                output_emote_to_word: to_word,
+                strip_twitch_emotes: strip,
+                ..default_settings()
+            };
+            assert_eq!(
+                emote_treatment(&settings),
+                expected,
+                "to_word = {to_word}, strip = {strip}"
+            );
+        }
+    }
+
+    #[test]
+    fn stored_emote_treatment_reads_back_from_any_prior_flag_state() {
+        for prior in [(false, false), (false, true), (true, false), (true, true)] {
+            for treatment in [
+                EmoteTreatment::Keep,
+                EmoteTreatment::StripTwitch,
+                EmoteTreatment::ToWord,
+            ] {
+                let mut settings = TtsPipelineSettings {
+                    output_emote_to_word: prior.0,
+                    strip_twitch_emotes: prior.1,
+                    ..default_settings()
+                };
+                store_emote_treatment(&mut settings, treatment);
+                assert_eq!(
+                    emote_treatment(&settings),
+                    treatment,
+                    "prior flags {prior:?}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn effective_skip_prefix_prefers_a_non_empty_custom_prefix_then_the_bang_toggle() {
+        for (prefix, bang, expected) in [
+            (None, false, None),
+            (None, true, Some("!")),
+            (Some(""), false, None),
+            (Some(""), true, Some("!")),
+            (Some("?"), false, Some("?")),
+            (Some("?"), true, Some("?")),
+        ] {
+            let settings = TtsPipelineSettings {
+                skip_prefix: prefix.map(str::to_owned),
+                skip_starts_with_bang: bang,
+                ..default_settings()
+            };
+            assert_eq!(
+                effective_skip_prefix(&settings).as_deref(),
+                expected,
+                "prefix = {prefix:?}, bang = {bang}"
+            );
+        }
+    }
+
+    #[test]
+    fn repeat_window_raises_zero_to_one_and_keeps_positive_values() {
+        for (stored, expected) in [(0, 1), (1, 1), (2, 2), (100, 100)] {
+            let settings = TtsPipelineSettings {
+                repeat_of_recent_window: stored,
+                ..default_settings()
+            };
+            assert_eq!(
+                repeat_window(&settings).get(),
+                expected,
+                "stored = {stored}"
+            );
+        }
+    }
+
+    #[test]
+    fn spoken_text_for_sampled_settings_and_messages_matches_the_pinned_table() {
+        const MESSAGES: [&str; 10] = [
+            "hello chat",
+            "check https://example.com now",
+            "Kappa nice :pog: play",
+            "party \u{1F389} time",
+            "!command arg",
+            "?ask thing",
+            "repeat me",
+            "this message is definitely long",
+            "Kappa",
+            "wow!!! ok??",
+        ];
+        type Case = (
+            &'static str,
+            fn(&mut TtsPipelineSettings),
+            [Option<&'static str>; 10],
+        );
+        let cases: [Case; 19] = [
+            (
+                "defaults",
+                |_| {},
+                [
+                    Some("hello chat"),
+                    Some("check https://example.com now"),
+                    Some("nice :pog: play"),
+                    Some("party \u{1F389} time"),
+                    Some("!command arg"),
+                    Some("?ask thing"),
+                    Some("repeat me"),
+                    Some("this message is definitely long"),
+                    None,
+                    Some("wow!!! ok??"),
+                ],
+            ),
+            (
+                "url replaced by the link word",
+                |s| s.url_mode = StorageUrlMode::Replace,
+                [
+                    Some("hello chat"),
+                    Some("check link now"),
+                    Some("nice :pog: play"),
+                    Some("party \u{1F389} time"),
+                    Some("!command arg"),
+                    Some("?ask thing"),
+                    Some("repeat me"),
+                    Some("this message is definitely long"),
+                    None,
+                    Some("wow!!! ok??"),
+                ],
+            ),
+            (
+                "url suppressed",
+                |s| s.url_mode = StorageUrlMode::Suppress,
+                [
+                    Some("hello chat"),
+                    None,
+                    Some("nice :pog: play"),
+                    Some("party \u{1F389} time"),
+                    Some("!command arg"),
+                    Some("?ask thing"),
+                    Some("repeat me"),
+                    Some("this message is definitely long"),
+                    None,
+                    Some("wow!!! ok??"),
+                ],
+            ),
+            (
+                "twitch emotes kept",
+                |s| s.strip_twitch_emotes = false,
+                [
+                    Some("hello chat"),
+                    Some("check https://example.com now"),
+                    Some("Kappa nice :pog: play"),
+                    Some("party \u{1F389} time"),
+                    Some("!command arg"),
+                    Some("?ask thing"),
+                    Some("repeat me"),
+                    Some("this message is definitely long"),
+                    Some("Kappa"),
+                    Some("wow!!! ok??"),
+                ],
+            ),
+            (
+                "emote to word wins over strip",
+                |s| s.output_emote_to_word = true,
+                [
+                    Some("hello chat"),
+                    Some("check https://example.com now"),
+                    Some("Kappa nice pog play"),
+                    Some("party \u{1F389} time"),
+                    Some("!command arg"),
+                    Some("?ask thing"),
+                    Some("repeat me"),
+                    Some("this message is definitely long"),
+                    Some("Kappa"),
+                    Some("wow!!! ok??"),
+                ],
+            ),
+            (
+                "emote to word alone",
+                |s| {
+                    s.output_emote_to_word = true;
+                    s.strip_twitch_emotes = false;
+                },
+                [
+                    Some("hello chat"),
+                    Some("check https://example.com now"),
+                    Some("Kappa nice pog play"),
+                    Some("party \u{1F389} time"),
+                    Some("!command arg"),
+                    Some("?ask thing"),
+                    Some("repeat me"),
+                    Some("this message is definitely long"),
+                    Some("Kappa"),
+                    Some("wow!!! ok??"),
+                ],
+            ),
+            (
+                "emoji stripped",
+                |s| s.strip_emoji = true,
+                [
+                    Some("hello chat"),
+                    Some("check https://example.com now"),
+                    Some("nice :pog: play"),
+                    Some("party  time"),
+                    Some("!command arg"),
+                    Some("?ask thing"),
+                    Some("repeat me"),
+                    Some("this message is definitely long"),
+                    None,
+                    Some("wow!!! ok??"),
+                ],
+            ),
+            (
+                "max length",
+                |s| s.max_length = Some(12),
+                [
+                    Some("hello chat"),
+                    None,
+                    None,
+                    Some("party \u{1F389} time"),
+                    Some("!command arg"),
+                    Some("?ask thing"),
+                    Some("repeat me"),
+                    None,
+                    None,
+                    Some("wow!!! ok??"),
+                ],
+            ),
+            (
+                "legacy longer-than toggle",
+                |s| {
+                    s.skip_longer_than = true;
+                    s.longer_than_max_chars = 12;
+                },
+                [
+                    Some("hello chat"),
+                    None,
+                    None,
+                    Some("party \u{1F389} time"),
+                    Some("!command arg"),
+                    Some("?ask thing"),
+                    Some("repeat me"),
+                    None,
+                    None,
+                    Some("wow!!! ok??"),
+                ],
+            ),
+            (
+                "max length wins over the legacy toggle",
+                |s| {
+                    s.max_length = Some(40);
+                    s.skip_longer_than = true;
+                    s.longer_than_max_chars = 12;
+                },
+                [
+                    Some("hello chat"),
+                    Some("check https://example.com now"),
+                    Some("nice :pog: play"),
+                    Some("party \u{1F389} time"),
+                    Some("!command arg"),
+                    Some("?ask thing"),
+                    Some("repeat me"),
+                    Some("this message is definitely long"),
+                    None,
+                    Some("wow!!! ok??"),
+                ],
+            ),
+            (
+                "bang commands skipped",
+                |s| s.skip_starts_with_bang = true,
+                [
+                    Some("hello chat"),
+                    Some("check https://example.com now"),
+                    Some("nice :pog: play"),
+                    Some("party \u{1F389} time"),
+                    None,
+                    Some("?ask thing"),
+                    Some("repeat me"),
+                    Some("this message is definitely long"),
+                    None,
+                    Some("wow!!! ok??"),
+                ],
+            ),
+            (
+                "custom prefix wins over bang",
+                |s| {
+                    s.skip_prefix = Some("?".into());
+                    s.skip_starts_with_bang = true;
+                },
+                [
+                    Some("hello chat"),
+                    Some("check https://example.com now"),
+                    Some("nice :pog: play"),
+                    Some("party \u{1F389} time"),
+                    Some("!command arg"),
+                    None,
+                    Some("repeat me"),
+                    Some("this message is definitely long"),
+                    None,
+                    Some("wow!!! ok??"),
+                ],
+            ),
+            (
+                "empty prefix falls back to bang",
+                |s| {
+                    s.skip_prefix = Some(String::new());
+                    s.skip_starts_with_bang = true;
+                },
+                [
+                    Some("hello chat"),
+                    Some("check https://example.com now"),
+                    Some("nice :pog: play"),
+                    Some("party \u{1F389} time"),
+                    None,
+                    Some("?ask thing"),
+                    Some("repeat me"),
+                    Some("this message is definitely long"),
+                    None,
+                    Some("wow!!! ok??"),
+                ],
+            ),
+            (
+                "custom prefix without bang",
+                |s| s.skip_prefix = Some("?".into()),
+                [
+                    Some("hello chat"),
+                    Some("check https://example.com now"),
+                    Some("nice :pog: play"),
+                    Some("party \u{1F389} time"),
+                    Some("!command arg"),
+                    None,
+                    Some("repeat me"),
+                    Some("this message is definitely long"),
+                    None,
+                    Some("wow!!! ok??"),
+                ],
+            ),
+            (
+                "repeat of recent skipped",
+                |s| s.skip_repeat_of_recent = true,
+                [
+                    Some("hello chat"),
+                    Some("check https://example.com now"),
+                    Some("nice :pog: play"),
+                    Some("party \u{1F389} time"),
+                    Some("!command arg"),
+                    Some("?ask thing"),
+                    None,
+                    Some("this message is definitely long"),
+                    None,
+                    Some("wow!!! ok??"),
+                ],
+            ),
+            (
+                "emote-only skipped",
+                |s| s.skip_emote_only = true,
+                [
+                    Some("hello chat"),
+                    Some("check https://example.com now"),
+                    Some("nice :pog: play"),
+                    Some("party \u{1F389} time"),
+                    Some("!command arg"),
+                    Some("?ask thing"),
+                    Some("repeat me"),
+                    Some("this message is definitely long"),
+                    None,
+                    Some("wow!!! ok??"),
+                ],
+            ),
+            (
+                "punctuation sanitized",
+                |s| s.output_sanitize_punctuation = true,
+                [
+                    Some("hello chat"),
+                    Some("check https:/example.com now"),
+                    Some("nice :pog: play"),
+                    Some("party \u{1F389} time"),
+                    Some("!command arg"),
+                    Some("?ask thing"),
+                    Some("repeat me"),
+                    Some("this message is definitely long"),
+                    None,
+                    Some("wow! ok?"),
+                ],
+            ),
+            (
+                "url skip with replace mode",
+                |s| {
+                    s.skip_contains_url = true;
+                    s.url_mode = StorageUrlMode::Replace;
+                },
+                [
+                    Some("hello chat"),
+                    None,
+                    Some("nice :pog: play"),
+                    Some("party \u{1F389} time"),
+                    Some("!command arg"),
+                    Some("?ask thing"),
+                    Some("repeat me"),
+                    Some("this message is definitely long"),
+                    None,
+                    Some("wow!!! ok??"),
+                ],
+            ),
+            (
+                "name first with link and emoji",
+                |s| {
+                    s.output_read_display_name_first = true;
+                    s.url_mode = StorageUrlMode::Replace;
+                    s.strip_emoji = true;
+                },
+                [
+                    Some("koval_dev says: hello chat"),
+                    Some("koval_dev says: check link now"),
+                    Some("koval_dev says: nice :pog: play"),
+                    Some("koval_dev says: party  time"),
+                    Some("koval_dev says: !command arg"),
+                    Some("koval_dev says: ?ask thing"),
+                    Some("koval_dev says: repeat me"),
+                    Some("koval_dev says: this message is definitely long"),
+                    Some("koval_dev says: "),
+                    Some("koval_dev says: wow!!! ok??"),
+                ],
+            ),
+        ];
+        let recent = vec!["repeat me".to_owned()];
+        let context = PipelineContext {
+            viewer_name: "koval_dev",
+            recent_messages: &recent,
+        };
+        let emotes: EmoteTokenSet = ["Kappa".to_owned()].into_iter().collect();
+        for (case, mutate, expected) in cases {
+            let mut settings = default_settings();
+            mutate(&mut settings);
+            let config = build_config_strict(&[], &settings)
+                .unwrap()
+                .with_message_emotes(&emotes);
+            for (message, spoken) in MESSAGES.into_iter().zip(expected) {
+                let actual = match process(message, &config, &context) {
+                    PipelineResult::Speak(text) => Some(text),
+                    PipelineResult::Skip { .. } => None,
+                };
+                assert_eq!(actual.as_deref(), spoken, "{case}: {message:?}");
+            }
         }
     }
 }

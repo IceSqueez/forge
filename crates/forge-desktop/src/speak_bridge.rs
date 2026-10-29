@@ -547,7 +547,7 @@ mod tests {
             Self {
                 per_user_limit: forge_speak_queue::QueueConfig::default().per_user_limit,
                 aliases: Vec::new(),
-                pipeline: forge_tts_pipeline::PipelineConfig::default(),
+                pipeline: crate::test_support::neutral_pipeline_config(),
                 bus: Arc::new(NullPublisher),
                 engines: forge_tts_core::TtsRegistry::new(),
             }
@@ -761,6 +761,10 @@ mod tests {
     struct CapturingFactory(Arc<std::sync::Mutex<Vec<String>>>);
 
     impl forge_tts_core::TtsEngineFactory for CapturingFactory {
+        fn class(&self) -> forge_tts_core::EngineClass {
+            forge_tts_core::EngineClass::Local
+        }
+
         fn create(&self) -> Result<Box<dyn forge_tts_core::TtsEngine>, forge_tts_core::TtsError> {
             Ok(Box::new(CapturingEngine {
                 id: EngineId("cap".to_owned()),
@@ -816,7 +820,7 @@ mod tests {
         let (handle, mut stream) = Harness {
             pipeline: forge_tts_pipeline::PipelineConfig {
                 strip_reward_emotes: true,
-                ..Default::default()
+                ..crate::test_support::neutral_pipeline_config()
             },
             engines,
             ..Harness::default()
@@ -893,7 +897,7 @@ mod tests {
 
     #[tokio::test]
     async fn a_bot_viewers_speech_is_dropped_by_the_bot_filter() {
-        let mut pipeline = forge_tts_pipeline::PipelineConfig::default();
+        let mut pipeline = crate::test_support::neutral_pipeline_config();
         pipeline.skip_rules.from_bot_accounts = true;
         pipeline.skip_rules.bot_accounts = vec!["relaybot".to_owned()];
         let (handle, mut stream) = Harness {
@@ -1188,6 +1192,10 @@ mod tests {
     struct ListedVoicesFactory;
 
     impl forge_tts_core::TtsEngineFactory for ListedVoicesFactory {
+        fn class(&self) -> forge_tts_core::EngineClass {
+            forge_tts_core::EngineClass::Local
+        }
+
         fn create(&self) -> Result<Box<dyn forge_tts_core::TtsEngine>, forge_tts_core::TtsError> {
             Ok(Box::new(ListedVoicesEngine {
                 id: EngineId("cap".to_owned()),

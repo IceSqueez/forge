@@ -2770,10 +2770,15 @@ mod tests {
     }
 
     fn initial_config() -> PipelineConfigHandle {
-        PipelineConfigHandle::new(forge_speak_queue::build_config_lenient(
-            &[],
-            &TtsPipelineSettings::default(),
-        ))
+        PipelineConfigHandle::new(
+            forge_speak_queue::build_config(
+                &[],
+                &TtsPipelineSettings::default(),
+                &crate::test_support::english_spoken_words(),
+            )
+            .dropping_invalid()
+            .0,
+        )
     }
 
     fn filters_view(cx: &mut TestAppContext) -> Entity<TtsFiltersView> {
@@ -3107,6 +3112,7 @@ mod tests {
 
     #[gpui::test]
     fn spoken_marks_land_on_the_replacements_inside_the_quoted_output(cx: &mut TestAppContext) {
+        crate::i18n::install_language(forge_storage::Language::En);
         let view = filters_view(cx);
         view.update(cx, |v, cx| {
             let filters = v.filters.loaded_mut().unwrap();
@@ -3169,7 +3175,7 @@ mod tests {
             (
                 OutputOpt::StripTwitchEmotes,
                 |s| s.strip_twitch_emotes,
-                |c| c.emote_sources.twitch,
+                |c| c.output.emote_treatment == EmoteTreatment::StripTwitch,
             ),
             (
                 OutputOpt::StripRewardEmotes,
@@ -3380,7 +3386,7 @@ mod tests {
         cx.run_until_parked();
         let initial = (
             view.read_with(cx, |v, _| v.output_flag(OutputOpt::StripEmoji)),
-            handle.load().emote_sources.emoji,
+            handle.load().output.strip_emoji,
         );
 
         view.update(cx, |v, cx| v.toggle_output(OutputOpt::StripEmoji, cx));
@@ -3389,14 +3395,14 @@ mod tests {
         let after_on = (
             view.read_with(cx, |v, _| v.output_flag(OutputOpt::StripEmoji)),
             repo.saved.lock().unwrap().last().map(|s| s.strip_emoji),
-            handle.load().emote_sources.emoji,
+            handle.load().output.strip_emoji,
         );
         view.update(cx, |v, cx| v.toggle_output(OutputOpt::StripEmoji, cx));
         pump(&rt);
         cx.run_until_parked();
         let after_off = (
             repo.saved.lock().unwrap().last().map(|s| s.strip_emoji),
-            handle.load().emote_sources.emoji,
+            handle.load().output.strip_emoji,
         );
 
         assert_eq!(initial, (false, false));

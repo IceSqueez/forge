@@ -1234,6 +1234,33 @@ mod tests {
 
     use super::*;
 
+    fn neutral_pipeline() -> forge_tts_pipeline::PipelineConfig {
+        forge_tts_pipeline::PipelineConfig {
+            emote_tokens: forge_tts_pipeline::EmoteTokenSet::default(),
+            skip_rules: forge_tts_pipeline::SkipRulesConfig::default(),
+            replacement_rules: Vec::new(),
+            word_blocklist: Vec::new(),
+            blocklist_mode: forge_tts_pipeline::BlocklistMode::Censor,
+            output: forge_tts_pipeline::OutputConfig {
+                read_display_name_first: false,
+                says: "says".into(),
+                emote_treatment: forge_tts_pipeline::EmoteTreatment::Keep,
+                strip_emoji: false,
+                sanitize_punctuation: false,
+                max_duration_secs: None,
+                language_aware_voice: false,
+            },
+            strip_reward_emotes: false,
+        }
+    }
+
+    fn english_words() -> crate::SpokenWords {
+        crate::SpokenWords {
+            link: "link".into(),
+            says: "says".into(),
+        }
+    }
+
     struct SilentSink;
     #[async_trait]
     impl AudioSink for SilentSink {
@@ -1257,9 +1284,7 @@ mod tests {
         QueueDeps {
             registry: Arc::new(std::sync::RwLock::new(forge_tts_core::TtsRegistry::new())),
             resolver: Arc::new(std::sync::RwLock::new(resolver)),
-            pipeline: crate::PipelineConfigHandle::new(
-                forge_tts_pipeline::PipelineConfig::default(),
-            ),
+            pipeline: crate::PipelineConfigHandle::new(neutral_pipeline()),
             audio_sink: Arc::new(SilentSink),
             event_bus: Arc::new(NullPublisher),
             disabled_engines: HashSet::new(),
@@ -1635,6 +1660,10 @@ mod tests {
     }
 
     impl forge_tts_core::TtsEngineFactory for CapturingFactory {
+        fn class(&self) -> forge_tts_core::EngineClass {
+            forge_tts_core::EngineClass::Local
+        }
+
         fn create(&self) -> Result<Box<dyn forge_tts_core::TtsEngine>, forge_tts_core::TtsError> {
             Ok(Box::new(CapturingEngine {
                 id: self.id.clone(),
@@ -1709,7 +1738,7 @@ mod tests {
         emote_tokens.tokens.insert("LUL".into());
         forge_tts_pipeline::PipelineConfig {
             emote_tokens,
-            ..Default::default()
+            ..neutral_pipeline()
         }
     }
 
@@ -1728,7 +1757,7 @@ mod tests {
             ("hi", None, 1),
         ] {
             let deps = minimal_deps();
-            let mut cfg = forge_tts_pipeline::PipelineConfig::default();
+            let mut cfg = neutral_pipeline();
             cfg.output.max_duration_secs = cap;
             deps.pipeline.swap(cfg);
             let req = request("nova", text, Priority::Normal);
@@ -1774,7 +1803,8 @@ mod tests {
                 strip_emoji,
                 ..Default::default()
             };
-            let mut cfg = crate::build_config_lenient(&[], &settings);
+            let (mut cfg, _) =
+                crate::build_config(&[], &settings, &english_words()).dropping_invalid();
             cfg.emote_tokens.tokens.insert("LUL".into());
 
             let spoken = spoken_by_capturing_engine(cfg, text, is_reward, &[]).await;
@@ -1790,18 +1820,18 @@ mod tests {
     #[tokio::test]
     async fn a_requests_own_emote_codes_are_stripped_like_configured_ones() {
         let strip_twitch = || {
-            let mut cfg = forge_tts_pipeline::PipelineConfig::default();
-            cfg.emote_sources.twitch = true;
+            let mut cfg = neutral_pipeline();
+            cfg.output.emote_treatment = forge_tts_pipeline::EmoteTreatment::StripTwitch;
             cfg
         };
         let skip_emote_only = || {
-            let mut cfg = forge_tts_pipeline::PipelineConfig::default();
+            let mut cfg = neutral_pipeline();
             cfg.skip_rules.emote_only = true;
             cfg
         };
         let strip_reward = || forge_tts_pipeline::PipelineConfig {
             strip_reward_emotes: true,
-            ..Default::default()
+            ..neutral_pipeline()
         };
         for (label, cfg, text, is_reward, codes, expected) in [
             (
@@ -1830,7 +1860,7 @@ mod tests {
             ),
             (
                 "strip off",
-                forge_tts_pipeline::PipelineConfig::default(),
+                neutral_pipeline(),
                 "LUL that was funny",
                 false,
                 &["LUL"][..],

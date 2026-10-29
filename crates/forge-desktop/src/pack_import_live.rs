@@ -565,7 +565,13 @@ mod tests {
         outcome: &SetupImportOutcome,
         baseline: Option<&VoiceBaseline>,
     ) -> LiveRefresh {
-        rt.block_on(refresh_setup_live(&world.services, live, outcome, baseline))
+        rt.block_on(refresh_setup_live(
+            &world.services,
+            live,
+            outcome,
+            baseline,
+            &crate::test_support::english_spoken_words(),
+        ))
     }
 
     fn voice_alias(viewer_id: &str) -> VoiceAlias {
@@ -863,7 +869,7 @@ mod tests {
             .block_on(voice_baseline(world.provider().as_ref()))
             .unwrap();
         let bot_accounts = Shared::new(Vec::<String>::new());
-        let pipeline = PipelineConfigHandle::new(forge_tts_pipeline::PipelineConfig::default());
+        let pipeline = PipelineConfigHandle::new(crate::test_support::neutral_pipeline_config());
         let live = SetupLiveHandles {
             pipeline_config: Some(pipeline.clone()),
             bot_accounts: Some(bot_accounts.clone()),

@@ -767,6 +767,30 @@ pub fn preview(
 mod tests {
     use super::*;
 
+    fn neutral_output() -> OutputConfig {
+        OutputConfig {
+            read_display_name_first: false,
+            says: "says".into(),
+            emote_treatment: EmoteTreatment::Keep,
+            strip_emoji: false,
+            sanitize_punctuation: false,
+            max_duration_secs: None,
+            language_aware_voice: false,
+        }
+    }
+
+    fn neutral_config() -> PipelineConfig {
+        PipelineConfig {
+            emote_tokens: EmoteTokenSet::default(),
+            skip_rules: SkipRulesConfig::default(),
+            replacement_rules: Vec::new(),
+            word_blocklist: Vec::new(),
+            blocklist_mode: BlocklistMode::Censor,
+            output: neutral_output(),
+            strip_reward_emotes: false,
+        }
+    }
+
     fn ctx() -> PipelineContext<'static> {
         PipelineContext {
             viewer_name: "viewer",
@@ -776,7 +800,7 @@ mod tests {
 
     #[test]
     fn process_passthrough_no_config() {
-        let config = PipelineConfig::default();
+        let config = neutral_config();
         let result = process("hello world", &config, &ctx());
         assert_eq!(result, PipelineResult::Speak("hello world".into()));
     }
@@ -788,7 +812,7 @@ mod tests {
                 contains_url: true,
                 ..SkipRulesConfig::default()
             },
-            ..PipelineConfig::default()
+            ..neutral_config()
         };
         let result = process("visit https://spam.com", &config, &ctx());
         assert_eq!(
@@ -806,7 +830,7 @@ mod tests {
                 skip_prefix: Some("!".into()),
                 ..SkipRulesConfig::default()
             },
-            ..PipelineConfig::default()
+            ..neutral_config()
         };
         let result = process("!command arg", &config, &ctx());
         assert!(matches!(result, PipelineResult::Skip { .. }));
@@ -822,7 +846,7 @@ mod tests {
                 bot_accounts: vec!["custombot".into()],
                 ..SkipRulesConfig::default()
             },
-            ..PipelineConfig::default()
+            ..neutral_config()
         };
         let builtin_ctx = PipelineContext {
             viewer_name: "NightBot",
@@ -854,11 +878,10 @@ mod tests {
     fn skip_rules_longer_than_skips_instead_of_truncating() {
         let config = PipelineConfig {
             skip_rules: SkipRulesConfig {
-                longer_than: true,
-                max_chars: 5,
+                max_chars: Some(5),
                 ..SkipRulesConfig::default()
             },
-            ..PipelineConfig::default()
+            ..neutral_config()
         };
         let result = process("hello world", &config, &ctx());
         assert_eq!(
@@ -872,13 +895,31 @@ mod tests {
     }
 
     #[test]
+    fn max_chars_counts_characters_not_bytes_at_the_boundary() {
+        let config = PipelineConfig {
+            skip_rules: SkipRulesConfig {
+                max_chars: Some(5),
+                ..SkipRulesConfig::default()
+            },
+            ..neutral_config()
+        };
+        for (text, skipped) in [("приві", false), ("привіт", true), ("", false)] {
+            assert_eq!(
+                matches!(process(text, &config, &ctx()), PipelineResult::Skip { reason } if reason == SkipReason::MatchedSkipRule("message exceeds max length")),
+                skipped,
+                "{text:?}"
+            );
+        }
+    }
+
+    #[test]
     fn skip_rules_repeat_of_recent_is_trimmed_case_sensitive() {
         let config = PipelineConfig {
             skip_rules: SkipRulesConfig {
                 repeat_of_recent: true,
                 ..SkipRulesConfig::default()
             },
-            ..PipelineConfig::default()
+            ..neutral_config()
         };
         let recent = vec!["hello chat".to_owned()];
         let repeat_ctx = PipelineContext {
@@ -898,8 +939,8 @@ mod tests {
 
     #[test]
     fn emote_stripper_removes_known_tokens_in_output_stage() {
-        let mut config = PipelineConfig::default();
-        config.emote_sources.twitch = true;
+        let mut config = neutral_config();
+        config.output.emote_treatment = EmoteTreatment::StripTwitch;
         config.emote_tokens.tokens.insert("LUL".into());
         config.emote_tokens.tokens.insert("Pog".into());
         let result = process("hello LUL world Pog nice", &config, &ctx());
@@ -913,7 +954,7 @@ mod tests {
         let base = PipelineConfig {
             emote_tokens: set(&["Kappa"]),
             strip_reward_emotes: true,
-            ..PipelineConfig::default()
+            ..neutral_config()
         };
 
         let merged = base.with_message_emotes(&set(&["LUL", "Kappa"]));
@@ -925,8 +966,8 @@ mod tests {
 
     #[test]
     fn emote_stripper_strips_emoji() {
-        let mut config = PipelineConfig::default();
-        config.emote_sources.emoji = true;
+        let mut config = neutral_config();
+        config.output.strip_emoji = true;
         let result = process("hello 🎉 world", &config, &ctx());
         assert_eq!(result, PipelineResult::Speak("hello  world".into()));
     }
@@ -935,12 +976,11 @@ mod tests {
     fn output_emote_to_word_converts_colon_tokens_and_keeps_known_tokens() {
         let mut config = PipelineConfig {
             output: OutputConfig {
-                emote_to_word: true,
-                ..OutputConfig::default()
+                emote_treatment: EmoteTreatment::ToWord,
+                ..neutral_output()
             },
-            ..PipelineConfig::default()
+            ..neutral_config()
         };
-        config.emote_sources.twitch = true;
         config.emote_tokens.tokens.insert("LUL".into());
         let result = process("hello :pog: LUL world", &config, &ctx());
         assert_eq!(
@@ -951,13 +991,14 @@ mod tests {
     }
 
     #[test]
-    fn output_read_display_name_first_prefixes_viewer_name() {
+    fn output_read_display_name_first_prefixes_viewer_name_with_the_configured_says_word() {
         let config = PipelineConfig {
             output: OutputConfig {
                 read_display_name_first: true,
-                ..OutputConfig::default()
+                says: "каже".into(),
+                ..neutral_output()
             },
-            ..PipelineConfig::default()
+            ..neutral_config()
         };
         let context = PipelineContext {
             viewer_name: "koval_dev",
@@ -966,7 +1007,7 @@ mod tests {
         let result = process("hi chat", &config, &context);
         assert_eq!(
             result,
-            PipelineResult::Speak("koval_dev says: hi chat".into())
+            PipelineResult::Speak("koval_dev каже: hi chat".into())
         );
     }
 
@@ -977,7 +1018,7 @@ mod tests {
                 pattern: "lol".into(),
                 replacement: "(laugh)".into(),
             }],
-            ..PipelineConfig::default()
+            ..neutral_config()
         };
         let result = process("LOL that was funny LoL", &config, &ctx());
         assert_eq!(
@@ -1116,7 +1157,7 @@ mod tests {
         ] {
             let config = PipelineConfig {
                 replacement_rules: vec![rule],
-                ..PipelineConfig::default()
+                ..neutral_config()
             };
             assert_eq!(
                 process("POGGERS GG!", &config, &ctx()),
@@ -1133,7 +1174,7 @@ mod tests {
                 compiled: regex::Regex::new(r"\d+").unwrap(),
                 replacement: "#".into(),
             }],
-            ..PipelineConfig::default()
+            ..neutral_config()
         };
         let result = process("I have 42 cats and 7 dogs", &config, &ctx());
         assert_eq!(
@@ -1146,7 +1187,7 @@ mod tests {
         PipelineConfig {
             word_blocklist: words.iter().map(|w| (*w).to_owned()).collect(),
             blocklist_mode: mode,
-            ..PipelineConfig::default()
+            ..neutral_config()
         }
     }
 
@@ -1217,7 +1258,7 @@ mod tests {
                 contains_url: true,
                 ..SkipRulesConfig::default()
             },
-            ..PipelineConfig::default()
+            ..neutral_config()
         };
         let (result, outcomes) = preview("visit https://example.com", &config, &ctx());
         assert_eq!(outcomes.len(), 4);
@@ -1236,7 +1277,7 @@ mod tests {
                 pattern: "world".into(),
                 replacement: "forge".into(),
             }],
-            ..PipelineConfig::default()
+            ..neutral_config()
         };
         let (result, outcomes) = preview("hello world", &config, &ctx());
         assert_eq!(result, PipelineResult::Speak("hello forge".into()));
@@ -1275,9 +1316,9 @@ mod tests {
         let config = PipelineConfig {
             output: OutputConfig {
                 read_display_name_first: true,
-                ..OutputConfig::default()
+                ..neutral_output()
             },
-            ..PipelineConfig::default()
+            ..neutral_config()
         };
         let context = PipelineContext {
             viewer_name: "koval_dev",
@@ -1300,7 +1341,7 @@ mod tests {
                 contains_url: true,
                 ..SkipRulesConfig::default()
             },
-            ..PipelineConfig::default()
+            ..neutral_config()
         };
         assert!(process_for_language("see https://example.com", &config, &ctx()).is_none());
     }

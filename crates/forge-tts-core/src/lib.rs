@@ -262,6 +262,7 @@ mod tests {
 
     struct CountingFactory {
         id: EngineId,
+        class: EngineClass,
         creates: AtomicUsize,
         failing_first: usize,
         gate: Option<std::sync::Mutex<std::sync::mpsc::Receiver<()>>>,
@@ -276,6 +277,7 @@ mod tests {
         fn plain(id: &str) -> Self {
             Self {
                 id: EngineId(id.into()),
+                class: EngineClass::Local,
                 creates: AtomicUsize::new(0),
                 failing_first: 0,
                 gate: None,
@@ -289,6 +291,10 @@ mod tests {
     }
 
     impl TtsEngineFactory for CountingFactory {
+        fn class(&self) -> EngineClass {
+            self.class
+        }
+
         fn create(&self) -> Result<Box<dyn TtsEngine>, TtsError> {
             let attempt = self.creates.fetch_add(1, Ordering::SeqCst);
             if let Some(entered) = &self.entered {
@@ -313,6 +319,10 @@ mod tests {
     struct PanickingFactory;
 
     impl TtsEngineFactory for PanickingFactory {
+        fn class(&self) -> EngineClass {
+            EngineClass::Local
+        }
+
         fn create(&self) -> Result<Box<dyn TtsEngine>, TtsError> {
             panic!("engine constructor crashed")
         }
@@ -357,6 +367,42 @@ mod tests {
         reg.register_built(id("mmm"), CountingFactory::new("mmm"), null_engine("mmm"));
 
         assert_eq!(reg.engine_ids(), vec![id("aaa"), id("mmm"), id("zzz")]);
+    }
+
+    #[test]
+    fn roster_lists_every_registered_engine_with_its_declared_class_sorted_by_id() {
+        let factory_of = |name: &str, class: EngineClass| {
+            Arc::new(CountingFactory {
+                class,
+                ..CountingFactory::plain(name)
+            })
+        };
+        let mut reg = TtsRegistry::new();
+        reg.register(id("zzz"), factory_of("zzz", EngineClass::Cloud));
+        reg.register(id("aaa"), factory_of("aaa", EngineClass::System));
+        reg.register_built(
+            id("mmm"),
+            factory_of("mmm", EngineClass::Local),
+            null_engine("mmm"),
+        );
+
+        assert_eq!(
+            reg.roster(),
+            vec![
+                RegisteredEngine {
+                    id: id("aaa"),
+                    class: EngineClass::System,
+                },
+                RegisteredEngine {
+                    id: id("mmm"),
+                    class: EngineClass::Local,
+                },
+                RegisteredEngine {
+                    id: id("zzz"),
+                    class: EngineClass::Cloud,
+                },
+            ]
+        );
     }
 
     #[tokio::test]

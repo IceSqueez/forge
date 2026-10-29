@@ -57,6 +57,10 @@ struct FixedLengthFactory {
 }
 
 impl TtsEngineFactory for FixedLengthFactory {
+    fn class(&self) -> forge_tts_core::EngineClass {
+        forge_tts_core::EngineClass::Local
+    }
+
     fn create(&self) -> Result<Box<dyn TtsEngine>, TtsError> {
         Ok(Box::new(FixedLengthEngine {
             id: self.id.clone(),
@@ -89,9 +93,9 @@ fn spawn_with_cap(
     deps.pipeline = forge_speak_queue::PipelineConfigHandle::new(PipelineConfig {
         output: OutputConfig {
             max_duration_secs,
-            ..OutputConfig::default()
+            ..common::neutral_output()
         },
-        ..PipelineConfig::default()
+        ..common::neutral_pipeline()
     });
 
     forge_speak_queue::spawn(QueueConfig::default(), deps)

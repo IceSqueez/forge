@@ -1,4 +1,5 @@
 #![allow(clippy::unwrap_used, clippy::panic)]
+mod common;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
@@ -78,6 +79,10 @@ struct GatedFactory {
 }
 
 impl TtsEngineFactory for GatedFactory {
+    fn class(&self) -> forge_tts_core::EngineClass {
+        forge_tts_core::EngineClass::Local
+    }
+
     fn create(&self) -> Result<Box<dyn TtsEngine>, TtsError> {
         Ok(Box::new(GatedEngine {
             id: EngineId(ENGINE.into()),
@@ -143,9 +148,7 @@ fn make_deps(
     QueueDeps {
         registry: Arc::new(std::sync::RwLock::new(registry)),
         resolver: Arc::new(std::sync::RwLock::new(resolver)),
-        pipeline: forge_speak_queue::PipelineConfigHandle::new(
-            forge_tts_pipeline::PipelineConfig::default(),
-        ),
+        pipeline: forge_speak_queue::PipelineConfigHandle::new(common::neutral_pipeline()),
         audio_sink: sink,
         event_bus: bus,
         disabled_engines: std::collections::HashSet::new(),

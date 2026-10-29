@@ -1,4 +1,5 @@
 #![allow(clippy::expect_used, clippy::panic)]
+mod common;
 use std::sync::Arc;
 
 use async_trait::async_trait;
@@ -60,6 +61,10 @@ impl TtsEngine for FakeEngine {
 
 struct FakeFactory;
 impl TtsEngineFactory for FakeFactory {
+    fn class(&self) -> forge_tts_core::EngineClass {
+        forge_tts_core::EngineClass::Local
+    }
+
     fn create(&self) -> Result<Box<dyn TtsEngine>, TtsError> {
         Ok(Box::new(FakeEngine::new()))
     }
@@ -90,9 +95,7 @@ fn make_deps() -> QueueDeps {
     QueueDeps {
         registry: Arc::new(std::sync::RwLock::new(registry)),
         resolver: Arc::new(std::sync::RwLock::new(resolver)),
-        pipeline: forge_speak_queue::PipelineConfigHandle::new(
-            forge_tts_pipeline::PipelineConfig::default(),
-        ),
+        pipeline: forge_speak_queue::PipelineConfigHandle::new(common::neutral_pipeline()),
         audio_sink: Arc::new(NullSink),
         event_bus: Arc::new(NullPublisher),
         disabled_engines: std::collections::HashSet::new(),

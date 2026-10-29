@@ -66,6 +66,10 @@ pub struct FakeFactory {
 }
 
 impl TtsEngineFactory for FakeFactory {
+    fn class(&self) -> forge_tts_core::EngineClass {
+        forge_tts_core::EngineClass::Local
+    }
+
     fn create(&self) -> Result<Box<dyn TtsEngine>, TtsError> {
         Ok(Box::new(FakeEngine {
             id: EngineId(self.id.clone()),
@@ -135,9 +139,7 @@ pub fn make_deps(
     QueueDeps {
         registry: Arc::new(std::sync::RwLock::new(registry)),
         resolver: Arc::new(std::sync::RwLock::new(resolver)),
-        pipeline: forge_speak_queue::PipelineConfigHandle::new(
-            forge_tts_pipeline::PipelineConfig::default(),
-        ),
+        pipeline: forge_speak_queue::PipelineConfigHandle::new(neutral_pipeline()),
         audio_sink: sink,
         event_bus: Arc::new(NullPublisher),
         disabled_engines: std::collections::HashSet::new(),
@@ -246,5 +248,29 @@ where
             Ok(Err(_)) => return,
             Err(_) => return,
         }
+    }
+}
+
+pub fn neutral_output() -> forge_tts_pipeline::OutputConfig {
+    forge_tts_pipeline::OutputConfig {
+        read_display_name_first: false,
+        says: "says".into(),
+        emote_treatment: forge_tts_pipeline::EmoteTreatment::Keep,
+        strip_emoji: false,
+        sanitize_punctuation: false,
+        max_duration_secs: None,
+        language_aware_voice: false,
+    }
+}
+
+pub fn neutral_pipeline() -> forge_tts_pipeline::PipelineConfig {
+    forge_tts_pipeline::PipelineConfig {
+        emote_tokens: forge_tts_pipeline::EmoteTokenSet::default(),
+        skip_rules: forge_tts_pipeline::SkipRulesConfig::default(),
+        replacement_rules: Vec::new(),
+        word_blocklist: Vec::new(),
+        blocklist_mode: forge_tts_pipeline::BlocklistMode::Censor,
+        output: neutral_output(),
+        strip_reward_emotes: false,
     }
 }

@@ -1716,9 +1716,7 @@ pub(crate) fn spawn_speak_queue(
     let deps = forge_speak_queue::QueueDeps {
         registry: Arc::new(std::sync::RwLock::new(forge_tts_core::TtsRegistry::new())),
         resolver: Arc::clone(&resolver),
-        pipeline: forge_speak_queue::PipelineConfigHandle::new(
-            forge_tts_pipeline::PipelineConfig::default(),
-        ),
+        pipeline: forge_speak_queue::PipelineConfigHandle::new(neutral_pipeline_config()),
         audio_sink: Arc::new(forge_audio::NullSink),
         event_bus: Arc::new(SilentPublisher),
         disabled_engines: std::collections::HashSet::new(),
@@ -1793,6 +1791,33 @@ impl tracing::Subscriber for TracingInterestFloor {
     fn enter(&self, _: &tracing::span::Id) {}
 
     fn exit(&self, _: &tracing::span::Id) {}
+}
+
+pub(crate) fn neutral_pipeline_config() -> forge_tts_pipeline::PipelineConfig {
+    forge_tts_pipeline::PipelineConfig {
+        emote_tokens: forge_tts_pipeline::EmoteTokenSet::default(),
+        skip_rules: forge_tts_pipeline::SkipRulesConfig::default(),
+        replacement_rules: Vec::new(),
+        word_blocklist: Vec::new(),
+        blocklist_mode: forge_tts_pipeline::BlocklistMode::Censor,
+        output: forge_tts_pipeline::OutputConfig {
+            read_display_name_first: false,
+            says: "says".to_owned(),
+            emote_treatment: forge_tts_pipeline::EmoteTreatment::Keep,
+            strip_emoji: false,
+            sanitize_punctuation: false,
+            max_duration_secs: None,
+            language_aware_voice: false,
+        },
+        strip_reward_emotes: false,
+    }
+}
+
+pub(crate) fn english_spoken_words() -> forge_speak_queue::SpokenWords {
+    forge_speak_queue::SpokenWords {
+        link: "link".to_owned(),
+        says: "says".to_owned(),
+    }
 }
 
 pub(crate) fn install_tracing_interest_floor() {

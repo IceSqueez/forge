@@ -46,9 +46,9 @@ fn config_with(language_aware_voice: bool) -> PipelineConfig {
     PipelineConfig {
         output: OutputConfig {
             language_aware_voice,
-            ..OutputConfig::default()
+            ..common::neutral_output()
         },
-        ..PipelineConfig::default()
+        ..common::neutral_pipeline()
     }
 }
 

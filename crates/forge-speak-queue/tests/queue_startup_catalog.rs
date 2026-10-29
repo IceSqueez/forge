@@ -96,6 +96,10 @@ struct ScriptedFactory {
 }
 
 impl TtsEngineFactory for ScriptedFactory {
+    fn class(&self) -> forge_tts_core::EngineClass {
+        forge_tts_core::EngineClass::Local
+    }
+
     fn create(&self) -> Result<Box<dyn TtsEngine>, TtsError> {
         if matches!(self.listing, Listing::CreateFails) {
             return Err(TtsError::EngineUnavailable {

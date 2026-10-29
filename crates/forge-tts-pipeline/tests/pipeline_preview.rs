@@ -1,6 +1,9 @@
 #![allow(clippy::unwrap_used)]
+mod common;
+
+use common::{neutral_config, neutral_output};
 use forge_tts_pipeline::{
-    AppliedReplacement, BlocklistMode, EmoteTokenSet, OutputConfig, PipelineConfig,
+    AppliedReplacement, BlocklistMode, EmoteTokenSet, EmoteTreatment, OutputConfig, PipelineConfig,
     PipelineContext, PipelineResult, ReplacementOrigin, ReplacementRule, SkipReason,
     SkipRulesConfig, StageAction, StageName, StageOutcome, preview, process,
 };
@@ -15,26 +18,25 @@ fn ctx() -> PipelineContext<'static> {
 #[test]
 fn preview_always_returns_four_stages() {
     let configs = vec![
-        PipelineConfig::default(),
+        neutral_config(),
         PipelineConfig {
             skip_rules: SkipRulesConfig {
                 contains_url: true,
                 ..SkipRulesConfig::default()
             },
-            ..PipelineConfig::default()
+            ..neutral_config()
         },
         PipelineConfig {
             word_blocklist: vec!["bad".into()],
             blocklist_mode: BlocklistMode::SkipMessage,
-            ..PipelineConfig::default()
+            ..neutral_config()
         },
         PipelineConfig {
             skip_rules: SkipRulesConfig {
-                longer_than: true,
-                max_chars: 2,
+                max_chars: Some(2),
                 ..SkipRulesConfig::default()
             },
-            ..PipelineConfig::default()
+            ..neutral_config()
         },
     ];
 
@@ -57,7 +59,7 @@ fn preview_stage_output_feeds_next_stage_input() {
             pattern: "world".into(),
             replacement: "forge".into(),
         }],
-        ..PipelineConfig::default()
+        ..neutral_config()
     };
 
     let (_result, outcomes) = preview("hello bad world", &config, &ctx());
@@ -83,9 +85,9 @@ fn preview_output_stage_shows_transform_when_token_stripped() {
         emote_tokens: forge_tts_pipeline::EmoteTokenSet {
             tokens: ["Pog".to_string()].into_iter().collect(),
         },
-        ..PipelineConfig::default()
+        ..neutral_config()
     };
-    config.emote_sources.twitch = true;
+    config.output.emote_treatment = EmoteTreatment::StripTwitch;
 
     let (_result, outcomes) = preview("hello Pog world", &config, &ctx());
     assert_eq!(outcomes[3].stage, StageName::Output);
@@ -101,7 +103,7 @@ fn preview_skip_rules_skip_marks_remaining_stages_as_skipped() {
             contains_url: true,
             ..SkipRulesConfig::default()
         },
-        ..PipelineConfig::default()
+        ..neutral_config()
     };
 
     let (result, outcomes) = preview("visit https://evil.com now", &config, &ctx());
@@ -127,7 +129,7 @@ fn preview_skip_rules_skip_marks_remaining_stages_as_skipped() {
 
 #[test]
 fn preview_passthrough_stage_shows_passed_through() {
-    let config = PipelineConfig::default();
+    let config = neutral_config();
     let (result, outcomes) = preview("clean message", &config, &ctx());
 
     assert!(matches!(result, PipelineResult::Speak(_)));
@@ -146,7 +148,7 @@ fn preview_word_blocklist_censor_still_speaks() {
     let config = PipelineConfig {
         word_blocklist: vec!["bad".into()],
         blocklist_mode: BlocklistMode::Censor,
-        ..PipelineConfig::default()
+        ..neutral_config()
     };
 
     let (result, outcomes) = preview("this is bad content", &config, &ctx());
@@ -173,9 +175,9 @@ fn preview_output_stage_records_display_name_prefix_as_transformed() {
     let config = PipelineConfig {
         output: OutputConfig {
             read_display_name_first: true,
-            ..OutputConfig::default()
+            ..neutral_output()
         },
-        ..PipelineConfig::default()
+        ..neutral_config()
     };
 
     let (result, outcomes) = preview("hello world", &config, &ctx());
@@ -199,7 +201,7 @@ fn preview_skip_produces_final_result_skip_not_speak() {
     let config = PipelineConfig {
         word_blocklist: vec!["forbidden".into()],
         blocklist_mode: BlocklistMode::SkipMessage,
-        ..PipelineConfig::default()
+        ..neutral_config()
     };
 
     let (result, _) = preview("contains forbidden word", &config, &ctx());
@@ -248,22 +250,22 @@ fn filter_config() -> PipelineConfig {
         word_blocklist: vec!["ass".into(), "gtfo".into()],
         blocklist_mode: BlocklistMode::Censor,
         replacement_rules: vec![url_rule(), text_rule("thanks", "дякую")],
-        ..PipelineConfig::default()
+        ..neutral_config()
     }
 }
 
 #[test]
 fn preview_reaches_the_same_verdict_as_process() {
     let mut stripping = filter_config();
-    stripping.emote_sources.twitch = true;
-    stripping.emote_sources.emoji = true;
+    stripping.output.emote_treatment = EmoteTreatment::StripTwitch;
+    stripping.output.strip_emoji = true;
     stripping.emote_tokens = EmoteTokenSet {
         tokens: ["Kappa".to_owned()].into_iter().collect(),
     };
     stripping.output = OutputConfig {
         read_display_name_first: true,
         sanitize_punctuation: true,
-        ..OutputConfig::default()
+        ..neutral_output()
     };
     let skipping = PipelineConfig {
         blocklist_mode: BlocklistMode::SkipMessage,
@@ -286,7 +288,7 @@ fn preview_reaches_the_same_verdict_as_process() {
             "whole-word rules",
             PipelineConfig {
                 replacement_rules: vec![url_rule(), whole_word_rule("gg", "дякую")],
-                ..PipelineConfig::default()
+                ..neutral_config()
             },
         ),
     ] {
@@ -380,7 +382,7 @@ fn a_blocklist_mark_names_the_entry_and_the_text_as_written() {
         let config = PipelineConfig {
             word_blocklist: words.into_iter().map(str::to_owned).collect(),
             blocklist_mode: BlocklistMode::Censor,
-            ..PipelineConfig::default()
+            ..neutral_config()
         };
         let (_, outcomes) = preview(input, &config, &ctx());
         assert_eq!(
@@ -395,7 +397,7 @@ fn a_blocklist_mark_names_the_entry_and_the_text_as_written() {
 fn a_later_rule_rewriting_part_of_an_earlier_mark_drops_that_mark() {
     let config = PipelineConfig {
         replacement_rules: vec![text_rule("a", "bcd"), text_rule("c", "X")],
-        ..PipelineConfig::default()
+        ..neutral_config()
     };
     let (_, outcomes) = preview("a", &config, &ctx());
     assert_eq!(
@@ -408,7 +410,7 @@ fn a_later_rule_rewriting_part_of_an_earlier_mark_drops_that_mark() {
 fn a_later_rule_rewriting_text_before_an_earlier_mark_shifts_that_mark() {
     let config = PipelineConfig {
         replacement_rules: vec![text_rule("aa", "b"), text_rule("x", "yyy")],
-        ..PipelineConfig::default()
+        ..neutral_config()
     };
     let (_, outcomes) = preview("x aa", &config, &ctx());
     assert_eq!(
@@ -427,7 +429,7 @@ fn output_stage_marks_follow_the_text_through_prefix_strip_and_sanitize() {
             "display name prefix",
             OutputConfig {
                 read_display_name_first: true,
-                ..OutputConfig::default()
+                ..neutral_output()
             },
             false,
             vec![],
@@ -436,7 +438,7 @@ fn output_stage_marks_follow_the_text_through_prefix_strip_and_sanitize() {
         ),
         (
             "emoji before the mark",
-            OutputConfig::default(),
+            neutral_output(),
             true,
             vec![],
             "😀😀 thanks",
@@ -444,7 +446,7 @@ fn output_stage_marks_follow_the_text_through_prefix_strip_and_sanitize() {
         ),
         (
             "emote token before the mark",
-            OutputConfig::default(),
+            neutral_output(),
             false,
             vec!["Kappa"],
             "hi Kappa thanks",
@@ -455,7 +457,7 @@ fn output_stage_marks_follow_the_text_through_prefix_strip_and_sanitize() {
             OutputConfig {
                 read_display_name_first: true,
                 sanitize_punctuation: true,
-                ..OutputConfig::default()
+                ..neutral_output()
             },
             false,
             vec![],
@@ -465,8 +467,12 @@ fn output_stage_marks_follow_the_text_through_prefix_strip_and_sanitize() {
     ] {
         let mut config = filter_config();
         config.output = output;
-        config.emote_sources.emoji = emoji;
-        config.emote_sources.twitch = !tokens.is_empty();
+        config.output.strip_emoji = emoji;
+        config.output.emote_treatment = if tokens.is_empty() {
+            EmoteTreatment::Keep
+        } else {
+            EmoteTreatment::StripTwitch
+        };
         config.emote_tokens = EmoteTokenSet {
             tokens: tokens.into_iter().map(str::to_owned).collect(),
         };
@@ -483,9 +489,9 @@ fn output_stage_marks_follow_the_text_through_prefix_strip_and_sanitize() {
 fn a_mark_whose_text_the_output_stage_removes_entirely_is_dropped() {
     let mut config = PipelineConfig {
         replacement_rules: vec![text_rule("smile", "😀")],
-        ..PipelineConfig::default()
+        ..neutral_config()
     };
-    config.emote_sources.emoji = true;
+    config.output.strip_emoji = true;
     let (_, outcomes) = preview("smile please", &config, &ctx());
     assert!(
         stage(&outcomes, StageName::Output).replacements.is_empty(),
@@ -497,7 +503,7 @@ fn a_mark_whose_text_the_output_stage_removes_entirely_is_dropped() {
 #[test]
 fn an_output_mark_keeps_its_first_letter_when_a_stripped_emote_starts_with_it() {
     let mut config = filter_config();
-    config.emote_sources.twitch = true;
+    config.output.emote_treatment = EmoteTreatment::StripTwitch;
     config.emote_tokens = EmoteTokenSet {
         tokens: ["lol".to_owned()].into_iter().collect(),
     };
@@ -526,13 +532,13 @@ fn every_output_transform_config() -> PipelineConfig {
         ],
         output: OutputConfig {
             read_display_name_first: true,
-            emote_to_word: true,
+            emote_treatment: EmoteTreatment::ToWord,
             sanitize_punctuation: true,
-            ..OutputConfig::default()
+            ..neutral_output()
         },
-        ..PipelineConfig::default()
+        ..neutral_config()
     };
-    config.emote_sources.emoji = true;
+    config.output.strip_emoji = true;
     config
 }
 
@@ -564,7 +570,7 @@ fn output_marks_shrink_to_surviving_text_and_vanish_when_every_transform_runs_to
 fn whole_word_marks_land_on_standalone_hits_and_skip_words_containing_the_pattern() {
     let config = PipelineConfig {
         replacement_rules: vec![url_rule(), whole_word_rule("gg", "дякую")],
-        ..PipelineConfig::default()
+        ..neutral_config()
     };
     let (_, outcomes) = preview("hey POGGERS GG gg! lol https://x.y/z", &config, &ctx());
     let output = stage(&outcomes, StageName::Output);

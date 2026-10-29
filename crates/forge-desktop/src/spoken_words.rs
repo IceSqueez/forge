@@ -20,3 +20,23 @@ pub fn active_spoken_words() -> SpokenWords {
         says: tr!(SAYS_KEY),
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn every_language_resolves_both_spoken_words_from_its_catalog() {
+        for language in [Language::En, Language::Uk] {
+            let words = spoken_words_in(language);
+            assert_eq!(
+                (
+                    words.link.is_empty() || words.link == LINK_KEY,
+                    words.says.is_empty() || words.says == SAYS_KEY,
+                ),
+                (false, false),
+                "{language:?}: {words:?}"
+            );
+        }
+    }
+}

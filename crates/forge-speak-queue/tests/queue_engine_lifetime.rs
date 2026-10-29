@@ -70,6 +70,10 @@ struct CountingFactory {
 }
 
 impl TtsEngineFactory for CountingFactory {
+    fn class(&self) -> forge_tts_core::EngineClass {
+        forge_tts_core::EngineClass::Local
+    }
+
     fn create(&self) -> Result<Box<dyn TtsEngine>, TtsError> {
         let generation = self.creates.fetch_add(1, Ordering::SeqCst) + 1;
         #[expect(

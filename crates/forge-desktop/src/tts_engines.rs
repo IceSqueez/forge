@@ -1281,6 +1281,10 @@ mod tests {
     struct NeverCreated;
 
     impl TtsEngineFactory for NeverCreated {
+        fn class(&self) -> forge_tts_core::EngineClass {
+            forge_tts_core::EngineClass::Local
+        }
+
         fn create(&self) -> Result<Box<dyn TtsEngine>, TtsError> {
             Err(TtsError::AuthFailed {
                 reason: "the engines pane never builds an engine".to_owned(),
@@ -1467,6 +1471,99 @@ mod tests {
                 None
             }
         }
+    }
+
+    #[test]
+    fn the_roster_shows_each_shipped_engine_under_the_class_its_factory_declares() {
+        let gateways = forge_tts_cloud::CloudGateways::new();
+        let factories: [(&str, Arc<dyn TtsEngineFactory>); 8] = [
+            (
+                ENGINE_ID_PIPER,
+                Arc::new(forge_tts_piper::PiperEngineFactory {
+                    piper_binary: "piper".into(),
+                    voices_dir: "voices".into(),
+                    timeout: std::time::Duration::from_secs(1),
+                }),
+            ),
+            (
+                ENGINE_ID_ESPEAK_NG,
+                Arc::new(forge_tts_espeak::EspeakEngineFactory),
+            ),
+            (
+                forge_tts_core::ENGINE_ID_SAPI,
+                Arc::new(forge_tts_sapi::SapiEngineFactory),
+            ),
+            (
+                forge_tts_core::ENGINE_ID_NSSPEECH,
+                Arc::new(forge_tts_nsspeech::NsSpeechEngineFactory),
+            ),
+            (
+                forge_tts_core::ENGINE_ID_AZURE,
+                Arc::new(forge_tts_cloud::azure::AzureEngineFactory::new(
+                    forge_tts_cloud::credentials::AzureCredentials {
+                        api_key: "key".into(),
+                        region: "westeurope".into(),
+                        base_url: None,
+                    },
+                    &gateways,
+                )),
+            ),
+            (
+                forge_tts_core::ENGINE_ID_ELEVENLABS,
+                Arc::new(forge_tts_cloud::elevenlabs::ElevenLabsEngineFactory::new(
+                    forge_tts_cloud::credentials::ElevenLabsCredentials {
+                        api_key: "key".into(),
+                        base_url: None,
+                    },
+                    &gateways,
+                )),
+            ),
+            (
+                forge_tts_core::ENGINE_ID_OPENAI,
+                Arc::new(forge_tts_cloud::openai::OpenAiEngineFactory::new(
+                    forge_tts_cloud::credentials::OpenAiCredentials {
+                        api_key: "key".into(),
+                        base_url: None,
+                    },
+                    &gateways,
+                )),
+            ),
+            (
+                forge_tts_core::ENGINE_ID_POLLY,
+                Arc::new(forge_tts_cloud::polly::PollyEngineFactory::new(
+                    forge_tts_cloud::credentials::PollyCredentials {
+                        access_key_id: "id".into(),
+                        secret_access_key: "secret".into(),
+                        region: "eu-west-1".into(),
+                        base_url: None,
+                    },
+                    &gateways,
+                )),
+            ),
+        ];
+        let mut registry = TtsRegistry::new();
+        for (id, factory) in factories {
+            registry.register(EngineId(id.to_owned()), factory);
+        }
+
+        let roster: Vec<(String, String, EngineClass)> =
+            load_engine_roster(Some(&Arc::new(std::sync::RwLock::new(registry))))
+                .into_iter()
+                .map(|engine| (engine.id, engine.name, engine.class))
+                .collect();
+
+        let expected = [
+            ("azure", "Azure Speech", EngineClass::Cloud),
+            ("elevenlabs", "ElevenLabs", EngineClass::Cloud),
+            ("espeak-ng", "eSpeak-NG", EngineClass::Local),
+            ("nsspeech", "Apple AVSpeech", EngineClass::System),
+            ("openai", "OpenAI TTS", EngineClass::Cloud),
+            ("piper", "Piper", EngineClass::Local),
+            ("polly", "Amazon Polly", EngineClass::Cloud),
+            ("sapi", "Microsoft SAPI 5", EngineClass::System),
+        ]
+        .map(|(id, name, class)| (id.to_owned(), name.to_owned(), class));
+        assert_eq!(roster, expected);
     }
 
     #[gpui::test]

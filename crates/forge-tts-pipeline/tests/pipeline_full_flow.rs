@@ -1,6 +1,9 @@
+mod common;
+
+use common::neutral_config;
 use forge_tts_pipeline::{
-    BlocklistMode, EmoteTokenSet, PipelineConfig, PipelineContext, PipelineResult, ReplacementRule,
-    SkipReason, SkipRulesConfig, process,
+    BlocklistMode, EmoteTokenSet, EmoteTreatment, PipelineConfig, PipelineContext, PipelineResult,
+    ReplacementRule, SkipReason, SkipRulesConfig, process,
 };
 
 fn ctx() -> PipelineContext<'static> {
@@ -23,7 +26,7 @@ fn replacement_rule_order_hides_original_text_from_later_rules() {
                 replacement: "SHOULD_NOT_APPEAR".into(),
             },
         ],
-        ..PipelineConfig::default()
+        ..neutral_config()
     };
 
     match process("visit https://example.com today", &config, &ctx()) {
@@ -47,7 +50,7 @@ fn replacement_output_is_not_caught_by_blocklist() {
         }],
         word_blocklist: vec!["badword".into()],
         blocklist_mode: BlocklistMode::Censor,
-        ..PipelineConfig::default()
+        ..neutral_config()
     };
 
     match process("that was sneaky right", &config, &ctx()) {
@@ -68,9 +71,9 @@ fn skip_rules_evaluate_original_message_unaffected_by_output_settings() {
             contains_url: true,
             ..SkipRulesConfig::default()
         },
-        ..PipelineConfig::default()
+        ..neutral_config()
     };
-    config.emote_sources.twitch = true;
+    config.output.emote_treatment = EmoteTreatment::StripTwitch;
     config.emote_tokens.tokens.insert("LUL".into());
 
     match process("check LUL https://example.com out", &config, &ctx()) {
@@ -88,15 +91,14 @@ fn skip_rules_evaluate_original_message_unaffected_by_output_settings() {
 fn skip_rules_longer_than_checks_original_length_not_post_replacement_length() {
     let config = PipelineConfig {
         skip_rules: SkipRulesConfig {
-            longer_than: true,
-            max_chars: 10,
+            max_chars: Some(10),
             ..SkipRulesConfig::default()
         },
         replacement_rules: vec![ReplacementRule::Text {
             pattern: "short".into(),
             replacement: "averylongword".into(),
         }],
-        ..PipelineConfig::default()
+        ..neutral_config()
     };
 
     match process("short text", &config, &ctx()) {
@@ -121,7 +123,7 @@ fn url_skip_rule_prevents_downstream_processing() {
         },
         word_blocklist: vec!["safe".into()],
         blocklist_mode: BlocklistMode::Censor,
-        ..PipelineConfig::default()
+        ..neutral_config()
     };
 
     match process("visit https://example.com safe word", &config, &ctx()) {
@@ -141,7 +143,7 @@ fn blocklist_skip_mode_short_circuits_downstream_stages() {
     let config = PipelineConfig {
         word_blocklist: vec!["forbidden".into()],
         blocklist_mode: BlocklistMode::SkipMessage,
-        ..PipelineConfig::default()
+        ..neutral_config()
     };
 
     match process("forbidden", &config, &ctx()) {
@@ -158,9 +160,9 @@ fn empty_text_after_emote_strip_skips_after_output_stage() {
         emote_tokens: EmoteTokenSet {
             tokens: ["LUL".to_string(), "Pog".to_string()].into_iter().collect(),
         },
-        ..PipelineConfig::default()
+        ..neutral_config()
     };
-    config.emote_sources.twitch = true;
+    config.output.emote_treatment = EmoteTreatment::StripTwitch;
 
     match process("LUL Pog LUL", &config, &ctx()) {
         PipelineResult::Skip { reason } => {

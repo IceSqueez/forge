@@ -46,6 +46,7 @@ impl PackServices {
         ClosureRegistries {
             sub_actions: &self.sub_actions,
             triggers: &self.triggers,
+            overlays: &self.overlay_kinds,
             schema: Some(source.schema.as_ref() as &(dyn FormSchemaSource + Sync)),
         }
     }

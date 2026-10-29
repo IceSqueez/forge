@@ -433,6 +433,15 @@ impl OverlayServiceHandle {
         Ok(removed)
     }
 
+    pub async fn save(&self, definition: &OverlayDefinition) -> Result<(), OverlayServiceError> {
+        self.inner.kinds.validate_stored(
+            &definition.kind_id,
+            definition.config_schema_version,
+            &definition.config,
+        )?;
+        Ok(self.inner.repo.save(definition).await?)
+    }
+
     pub async fn set_enabled(
         &self,
         id: &OverlayId,

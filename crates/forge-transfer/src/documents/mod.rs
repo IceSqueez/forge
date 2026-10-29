@@ -3,6 +3,7 @@ pub(crate) mod closure;
 pub(crate) mod convert;
 pub(crate) mod inventory;
 pub(crate) mod model;
+pub(crate) mod overlay_configs;
 pub(crate) mod overlay_files;
 pub(crate) mod reference;
 pub(crate) mod retired_ids;

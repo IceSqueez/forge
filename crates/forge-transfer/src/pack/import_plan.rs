@@ -4,6 +4,7 @@ use forge_types::IntegrationId;
 
 use crate::documents::closure::ClosureRegistries;
 use crate::documents::inventory::PackInventory;
+use crate::documents::overlay_configs::check_overlay_configs;
 use crate::documents::reference::PackReference;
 use crate::error::TransferError;
 use crate::pack::import_conflicts::detect_conflicts;
@@ -161,7 +162,8 @@ pub fn plan_pack_import(
     staged: &StagedPack,
     inventory: &PackInventory,
     registries: ClosureRegistries<'_>,
-) -> PackImportPlan {
+) -> Result<PackImportPlan, TransferError> {
+    check_overlay_configs(&staged.documents().overlays, registries.overlays)?;
     let items = detect_conflicts(staged.documents(), inventory)
         .into_iter()
         .map(|detected| PackPlanItem {
@@ -173,10 +175,10 @@ pub fn plan_pack_import(
         })
         .collect();
     let review = review_pack(staged, registries);
-    PackImportPlan {
+    Ok(PackImportPlan {
         items,
         warnings: review.warnings,
         executable: review.executable,
         limits: vec![PackImportLimit::NamesInScriptsAndTextNotFollowed],
-    }
+    })
 }

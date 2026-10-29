@@ -98,7 +98,7 @@ impl OverlaysView {
                 definition.kind_id = kind_id;
                 definition.config = carried;
                 definition.config_schema_version = schema_version;
-                repo.save(&definition).await.map_err(|e| e.to_string())?;
+                service.save(&definition).await.map_err(|e| e.to_string())?;
                 Ok((true, regenerate(&service, &id).await))
             },
             move |this, result: Result<(bool, Regenerated), String>, cx| match result {

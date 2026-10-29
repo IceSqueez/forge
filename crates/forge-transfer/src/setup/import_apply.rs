@@ -9,6 +9,7 @@ use forge_types::{Queue, QueueId};
 
 use crate::bundle::naming::fresh_pre_setup_stem;
 use crate::documents::closure::ClosureRegistries;
+use crate::documents::overlay_configs::check_overlay_configs;
 use crate::error::TransferError;
 use crate::safety_copies::safety_snapshot::write_safety_snapshot;
 use crate::setup::import_undo::SetupJournal;
@@ -58,6 +59,10 @@ pub async fn apply_setup_import(
         data_dir,
         overlay_root,
     } = request;
+    check_overlay_configs(
+        &staged.documents().configuration.overlays,
+        registries.overlays,
+    )?;
     let inventory = load_setup_inventory(provider.as_ref()).await?;
     let safety_snapshot =
         write_safety_snapshot(&provider, &data_dir, fresh_pre_setup_stem()).await?;

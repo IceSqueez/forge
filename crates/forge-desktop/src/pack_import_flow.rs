@@ -336,8 +336,13 @@ async fn stage_and_plan(
         Ok(source) => {
             let registries = services.registries(&source);
             staged.upgrade_retired_ids(registries);
-            let plan = plan_pack_import(&staged, &source.inventory, registries);
-            Ok(Planned { staged, plan })
+            match plan_pack_import(&staged, &source.inventory, registries) {
+                Ok(plan) => Ok(Planned { staged, plan }),
+                Err(error) => {
+                    discard_quietly(staged).await;
+                    Err(PlanFailure::Refused(RestoreProblem::of(&error)))
+                }
+            }
         }
         Err(message) => {
             discard_quietly(staged).await;
@@ -391,10 +396,16 @@ async fn apply_staged(
 async fn replan(services: &PackServices, staged: StagedPack, previous: &PackImportPlan) -> Applied {
     match services.load_source().await {
         Ok(source) => {
-            let mut plan =
-                plan_pack_import(&staged, &source.inventory, services.registries(&source));
-            carry_choices(previous, &mut plan);
-            Applied::Stale { staged, plan }
+            match plan_pack_import(&staged, &source.inventory, services.registries(&source)) {
+                Ok(mut plan) => {
+                    carry_choices(previous, &mut plan);
+                    Applied::Stale { staged, plan }
+                }
+                Err(error) => Applied::Failed {
+                    staged,
+                    message: error.to_string(),
+                },
+            }
         }
         Err(message) => Applied::Failed { staged, message },
     }

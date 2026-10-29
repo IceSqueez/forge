@@ -1,5 +1,6 @@
 use std::path::{Path, PathBuf};
 
+use forge_overlay::OverlayError;
 use forge_storage::StorageError;
 
 use crate::bundle::manifest::BundleKind;
@@ -35,6 +36,12 @@ pub enum TransferError {
 
     #[error("forge data changed since the pack preview was built; review the preview again")]
     PackPlanStale,
+
+    #[error("overlay '{overlay}' has settings this forge does not accept: {source}")]
+    InvalidOverlayConfig {
+        overlay: String,
+        source: OverlayError,
+    },
 
     #[error("action '{action}' needs a queue that neither the pack nor this forge has")]
     PackActionWithoutQueue { action: String },

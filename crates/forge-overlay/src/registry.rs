@@ -1,8 +1,10 @@
+use std::borrow::Cow;
 use std::collections::HashMap;
 
-use crate::config::effective_overlay_config;
+use crate::config::{effective_overlay_config, validate_overlay_config};
 use crate::descriptor::{OverlayConfig, OverlayKindDescriptor};
 use crate::error::OverlayError;
+use crate::upgrade::upgrade_config;
 
 #[derive(Default)]
 pub struct OverlayKindRegistry {
@@ -39,6 +41,20 @@ impl OverlayKindRegistry {
         self.get(kind_id)
             .map(|d| effective_overlay_config(d, stored))
             .ok_or_else(|| OverlayError::UnknownKind(kind_id.to_owned()))
+    }
+
+    pub fn validate_stored(
+        &self,
+        kind_id: &str,
+        config_schema_version: u32,
+        stored: &OverlayConfig,
+    ) -> Result<(), OverlayError> {
+        let descriptor = self
+            .get(kind_id)
+            .ok_or_else(|| OverlayError::UnknownKind(kind_id.to_owned()))?;
+        let current = upgrade_config(descriptor, config_schema_version, stored)
+            .map_or(Cow::Borrowed(stored), Cow::Owned);
+        validate_overlay_config(descriptor, &effective_overlay_config(descriptor, &current))
     }
 }
 

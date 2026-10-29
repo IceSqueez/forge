@@ -17,6 +17,7 @@ use crate::documents::closure::ClosureRegistries;
 use crate::documents::convert::{action_of, queue_of, trigger_of};
 use crate::documents::inventory::{PackInventory, load_pack_inventory};
 use crate::documents::model::{ActionDocument, ClipSourceDocument, OverlayFileDocument};
+use crate::documents::overlay_configs::check_overlay_configs;
 use crate::documents::overlay_files::{place_overlay_files, rewrite_overlay_media};
 use crate::documents::undo::{Undo, UndoJournal};
 use crate::error::TransferError;
@@ -62,6 +63,7 @@ pub async fn apply_pack_import(
         data_dir,
         overlay_root,
     } = request;
+    check_overlay_configs(&staged.documents().overlays, registries.overlays)?;
     let inventory = load_pack_inventory(provider.as_ref()).await?;
     let detected = detect_conflicts(staged.documents(), &inventory);
     let unchanged = detected.len() == plan.items().len()

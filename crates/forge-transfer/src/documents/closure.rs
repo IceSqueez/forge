@@ -1,7 +1,8 @@
 use std::collections::{BTreeSet, VecDeque};
 
 use forge_overlay::{
-    MediaSlot, MediaValue, clip_references, image_references, media_slot, read_media_value,
+    MediaSlot, MediaValue, OverlayKindRegistry, clip_references, image_references, media_slot,
+    read_media_value,
 };
 use forge_registry::references::LOCAL_FILE_NAMESPACE;
 use forge_registry::{
@@ -21,6 +22,7 @@ use crate::error::TransferError;
 pub struct ClosureRegistries<'a> {
     pub sub_actions: &'a SubActionRegistry,
     pub triggers: &'a TriggerRegistry,
+    pub overlays: &'a OverlayKindRegistry,
     pub schema: Option<&'a (dyn FormSchemaSource + Sync)>,
 }
 

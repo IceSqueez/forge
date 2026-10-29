@@ -19,6 +19,7 @@ pub(super) struct Regenerated {
 
 pub(super) async fn store_config(
     repo: &dyn OverlayRepo,
+    service: &OverlayServiceHandle,
     id: &OverlayId,
     config: OverlayConfig,
 ) -> Result<bool, String> {
@@ -26,7 +27,7 @@ pub(super) async fn store_config(
         return Ok(false);
     };
     definition.config = config;
-    repo.save(&definition).await.map_err(|e| e.to_string())?;
+    service.save(&definition).await.map_err(|e| e.to_string())?;
     Ok(true)
 }
 
@@ -72,7 +73,7 @@ impl OverlaysView {
         async_bridge::run_async(
             &self.handles.rt_handle,
             async move {
-                if !store_config(repo.as_ref(), &id, config).await? {
+                if !store_config(repo.as_ref(), &service, &id, config).await? {
                     return Ok((false, Regenerated::default()));
                 }
                 Ok((true, regenerate(&service, &id).await))

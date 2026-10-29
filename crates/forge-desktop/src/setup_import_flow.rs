@@ -106,6 +106,7 @@ impl SetupImportFlow {
                 staged.upgrade_retired_ids(ClosureRegistries {
                     sub_actions: &services.sub_actions,
                     triggers: &services.triggers,
+                    overlays: &services.overlay_kinds,
                     schema: None,
                 });
                 Ok::<_, RestoreProblem>(staged)

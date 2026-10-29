@@ -343,7 +343,7 @@ impl OverlayPropertyPanel {
         let service = self.service.clone();
         let id = self.overlay_id.clone();
         async_bridge::detached(&self.rt_handle, RELEASE_PERSIST_CONTEXT, async move {
-            if store_config(repo.as_ref(), &id, sparse).await? {
+            if store_config(repo.as_ref(), &service, &id, sparse).await? {
                 service.materialize(&id).await.map_err(|e| e.to_string())?;
             }
             Ok::<(), String>(())

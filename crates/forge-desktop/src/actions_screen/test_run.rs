@@ -6,7 +6,9 @@ use forge_components::{
     context_menu, ghost_button_with_icon, menu_header, menu_item, modal, mono_family,
     primary_button, radius, scaled, spacing,
 };
-use forge_events::Event;
+use forge_events::{
+    ActionDone, ActionSkipped, ActionStarted, Event, SubActionDone, SubActionRun, TypedEvent,
+};
 use forge_registry::{SynthesisSample, declared_variables, synthesize_args};
 use forge_runtime::QueueAdmission;
 use forge_types::{ArgStack, EventId};
@@ -300,7 +302,7 @@ impl TestRunModal {
 
     fn on_test_event(&mut self, event: &Event, cx: &mut Context<Self>) -> bool {
         match event.kind.as_str() {
-            "action.start" => {
+            ActionStarted::KIND => {
                 if self.root.is_some() {
                     return false;
                 }
@@ -316,7 +318,7 @@ impl TestRunModal {
                 cx.notify();
                 false
             }
-            "action.skipped" => {
+            ActionSkipped::KIND => {
                 let ours = event.payload.get("action_id").and_then(|v| v.as_str())
                     == Some(self.action_id.to_string().as_str());
                 if ours && matches!(self.phase, TestRunPhase::Awaiting) {
@@ -326,7 +328,7 @@ impl TestRunModal {
                 }
                 false
             }
-            "subaction.run" => {
+            SubActionRun::KIND => {
                 let Some(root) = self.root else {
                     return false;
                 };
@@ -342,7 +344,7 @@ impl TestRunModal {
                 }
                 false
             }
-            "subaction.done" => {
+            SubActionDone::KIND => {
                 let Some(root) = self.root else {
                     return false;
                 };
@@ -361,7 +363,7 @@ impl TestRunModal {
                 }
                 false
             }
-            "action.done" => {
+            ActionDone::KIND => {
                 if event.caused_by != self.root {
                     return false;
                 }

@@ -1,51 +1,27 @@
 use std::sync::atomic::{AtomicU8, Ordering};
 
 use async_trait::async_trait;
-use forge_events::{Event, EventSource, EventSubscription};
-use serde::{Deserialize, Serialize};
+pub use forge_events::ConnectionState;
+use forge_events::{Event, EventSource, EventSubscription, PlatformConnectionChanged, TypedEvent};
 
 use crate::PlatformError;
 use crate::sender::{ActingSender, SenderPreference};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum ConnectionState {
-    Disconnected,
-    Connecting,
-    Connected,
-    Reconnecting,
+fn encode_state(state: ConnectionState) -> u8 {
+    match state {
+        ConnectionState::Disconnected => 0,
+        ConnectionState::Connecting => 1,
+        ConnectionState::Connected => 2,
+        ConnectionState::Reconnecting => 3,
+    }
 }
 
-impl ConnectionState {
-    pub fn label(&self) -> &'static str {
-        match self {
-            Self::Disconnected => "Disconnected",
-            Self::Connecting => "Connecting",
-            Self::Connected => "Connected",
-            Self::Reconnecting => "Reconnecting",
-        }
-    }
-
-    pub fn is_connected(&self) -> bool {
-        matches!(self, Self::Connected)
-    }
-
-    fn encode(self) -> u8 {
-        match self {
-            Self::Disconnected => 0,
-            Self::Connecting => 1,
-            Self::Connected => 2,
-            Self::Reconnecting => 3,
-        }
-    }
-
-    fn decode(value: u8) -> Self {
-        match value {
-            1 => Self::Connecting,
-            2 => Self::Connected,
-            3 => Self::Reconnecting,
-            _ => Self::Disconnected,
-        }
+fn decode_state(value: u8) -> ConnectionState {
+    match value {
+        1 => ConnectionState::Connecting,
+        2 => ConnectionState::Connected,
+        3 => ConnectionState::Reconnecting,
+        _ => ConnectionState::Disconnected,
     }
 }
 
@@ -53,15 +29,15 @@ pub struct AtomicConnectionState(AtomicU8);
 
 impl AtomicConnectionState {
     pub fn new(initial: ConnectionState) -> Self {
-        Self(AtomicU8::new(initial.encode()))
+        Self(AtomicU8::new(encode_state(initial)))
     }
 
     pub fn load(&self) -> ConnectionState {
-        ConnectionState::decode(self.0.load(Ordering::Relaxed))
+        decode_state(self.0.load(Ordering::Relaxed))
     }
 
     pub fn store(&self, state: ConnectionState) {
-        self.0.store(state.encode(), Ordering::Relaxed);
+        self.0.store(encode_state(state), Ordering::Relaxed);
     }
 }
 
@@ -124,8 +100,6 @@ pub trait ChatPlatform: Send + Sync {
 
 const WHISPER_FEATURE: &str = "chat.whisper";
 
-pub const CONNECTION_STATE_CHANGED_KIND: &str = "platform.connection.changed";
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum ConnectionTransition {
     Expected,
@@ -143,15 +117,12 @@ pub fn connection_state_changed_event(
     state: ConnectionState,
     transition: ConnectionTransition,
 ) -> Event {
-    Event::new(
-        EventSource::Core,
-        CONNECTION_STATE_CHANGED_KIND,
-        serde_json::json!({
-            "platform_id": platform_id,
-            "state": state,
-            "expected": transition.is_expected(),
-        }),
-    )
+    PlatformConnectionChanged {
+        platform_id: platform_id.to_owned(),
+        state,
+        expected: transition.is_expected(),
+    }
+    .into_event(EventSource::Core, None)
 }
 
 #[cfg(test)]

@@ -1,7 +1,9 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use forge_events::{Event, EventPublisher, EventSource};
+use forge_events::{
+    Event, EventPublisher, EventSource, RunOutcome, SubActionDone, SubActionRun, TypedEvent,
+};
 use forge_registry::{
     CancelSignal, ChainExecutor, ChainSignal, ChildChainOutcome, ControlCell, ControlSignal,
     RegistryError, RunContext, RunningAction, SubActionRegistry, TelemetrySink, effective_config,
@@ -10,7 +12,6 @@ use forge_types::{
     ArgStack, EventId, IntegrationAvailability, SubActionOutcome, SubActionStep,
     SubActionTelemetry, Variant, variant_preview,
 };
-use serde_json::json;
 use std::collections::BTreeMap;
 use tracing::warn;
 
@@ -75,31 +76,26 @@ pub(crate) fn publish_subaction_done(
     caused_by: EventId,
     telemetry: &SubActionTelemetry,
 ) {
-    let (outcome, message) = match &telemetry.outcome {
-        SubActionOutcome::Success => ("success", None),
-        SubActionOutcome::Skipped(m) => ("skipped", Some(m.clone())),
+    let message = match &telemetry.outcome {
+        SubActionOutcome::Success => None,
+        SubActionOutcome::Skipped(m) => Some(m.clone()),
         SubActionOutcome::Failed(_) | SubActionOutcome::IntegrationDisabled(_) => {
-            ("failed", telemetry.outcome.failure_reason())
+            telemetry.outcome.failure_reason()
         }
     };
-    let mut payload = json!({
-        "step_index": telemetry.index,
-        "kind": telemetry.kind,
-        "outcome": outcome,
-        "duration_ms": telemetry.duration_ms,
-    });
-    if let Some(msg) = message {
-        payload["message"] = json!(msg);
+    let integration = match &telemetry.outcome {
+        SubActionOutcome::IntegrationDisabled(integration) => Some(integration.as_str().to_owned()),
+        _ => None,
+    };
+    SubActionDone {
+        step_index: telemetry.index,
+        kind: telemetry.kind.clone(),
+        outcome: RunOutcome::from(&telemetry.outcome),
+        duration_ms: telemetry.duration_ms,
+        message,
+        integration,
     }
-    if let SubActionOutcome::IntegrationDisabled(integration) = &telemetry.outcome {
-        payload["integration"] = json!(integration.as_str());
-    }
-    publisher.publish(Event::caused_by(
-        EventSource::Core,
-        "subaction.done",
-        payload,
-        caused_by,
-    ));
+    .publish(publisher, EventSource::Core, Some(caused_by));
 }
 
 pub struct ChainEngine {
@@ -272,12 +268,11 @@ impl ChainEngine {
 
             let args_in = capture_args_in(&self.registry, step, &current);
 
-            let run_event = Event::caused_by(
-                EventSource::Core,
-                "subaction.run",
-                json!({ "step_index": index, "kind": step.kind_id }),
-                parent_event_id,
-            );
+            let run_event = SubActionRun {
+                step_index: index,
+                kind: step.kind_id.clone(),
+            }
+            .into_event(EventSource::Core, Some(parent_event_id));
             let run_event_id = run_event.id;
             let _step_lineage = self.publish_step_run(run_event);
 

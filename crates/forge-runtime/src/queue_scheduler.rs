@@ -2,7 +2,7 @@ use std::collections::{HashMap, VecDeque};
 use std::sync::{Arc, Mutex};
 
 use arc_swap::ArcSwapOption;
-use forge_events::{Event, EventSource};
+use forge_events::{ActionSkipped, Event, EventSource, TypedEvent};
 use forge_registry::CancelSignal;
 use forge_types::{Action, ActionId, ArgStack, EventId, Queue, QueueId};
 use serde_json::json;
@@ -18,6 +18,7 @@ pub const MAX_PENDING_PER_QUEUE: usize = 500;
 
 pub const QUEUE_NOT_FOUND_REASON: &str = "queue_not_found";
 pub const QUEUE_OVERFLOW_REASON: &str = "queue_pending_overflow";
+const QUEUE_CLEARED_KIND: &str = "queue.cleared";
 pub const QUEUE_PAUSED_REASON: &str = "queue_paused";
 pub const QUEUE_DRAINING_REASON: &str = "queue_draining";
 
@@ -915,16 +916,14 @@ impl QueueScheduler {
         trigger_event_id: EventId,
         reason: &str,
     ) {
-        bus.publish(Event::caused_by(
-            EventSource::Core,
-            "action.skipped",
-            json!({
-                "action_id": action_id.to_string(),
-                "reason": reason,
-                "queue_id": queue_id.to_string(),
-            }),
-            trigger_event_id,
-        ));
+        bus.publish(
+            ActionSkipped {
+                action_id,
+                reason: reason.to_owned(),
+                queue_id,
+            }
+            .into_event(EventSource::Core, Some(trigger_event_id)),
+        );
     }
 
     fn queue_states(slots: &HashMap<QueueId, QueueSlot>) -> HashMap<QueueId, QueueRuntimeState> {
@@ -1013,7 +1012,7 @@ impl QueueScheduler {
 
         bus.publish(Event::new(
             EventSource::Core,
-            "queue.cleared",
+            QUEUE_CLEARED_KIND,
             json!({
                 "queue_id": queue_id.to_string(),
                 "queue_name": slot.name,

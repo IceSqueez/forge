@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
 
-use forge_events::{DonationReceived, Event, NowPlaying, PlaybackState};
+use forge_events::{DonationReceived, Event, NowPlaying, PlaybackState, TypedEvent};
 use forge_types::{
     CurrencyCode, LatestValue, MICROS_PER_MAJOR_UNIT, MoneyAmount, PlatformId, Variant,
     latest_fields,

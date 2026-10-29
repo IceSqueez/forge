@@ -2,7 +2,8 @@ use crate::platform_visuals::BadgeKind;
 use std::collections::{BTreeMap, HashMap, VecDeque};
 
 use forge_components::tr;
-use forge_events::Event;
+use forge_events::{ActionStarted, Event, TypedEvent};
+use forge_runtime::COMMAND_MATCHED_KIND;
 use forge_types::{
     ChatEventDetail, ChatModerationAction, ChatModerationPayload, ChatPayload, ChatReply,
     ChatViewer, EventId, PlatformId, UnifiedChatRow, UserBadge,
@@ -14,9 +15,6 @@ use crate::chat_author::AuthorKey;
 use crate::chat_row::ChatBody;
 
 pub use forge_storage::DEFAULT_CHAT_HISTORY_DISPLAY_LIMIT as DEFAULT_DISPLAY_LIMIT;
-
-const COMMAND_MATCHED_KIND: &str = "command.matched";
-const ACTION_START_KIND: &str = "action.start";
 
 #[derive(Clone, Debug)]
 pub struct ChatMessage {
@@ -322,7 +320,7 @@ impl ChatFeed {
                 .get("command")
                 .and_then(|v| v.as_str())
                 .is_some_and(|command| self.mark_command(caused_by, command)),
-            ACTION_START_KIND => event
+            ActionStarted::KIND => event
                 .payload
                 .get("action_name")
                 .and_then(|v| v.as_str())
@@ -337,7 +335,7 @@ impl ChatFeed {
         let run_mark = event.caused_by.is_some()
             && matches!(
                 event.kind.as_str(),
-                COMMAND_MATCHED_KIND | ACTION_START_KIND
+                COMMAND_MATCHED_KIND | ActionStarted::KIND
             );
         moderation || run_mark
     }

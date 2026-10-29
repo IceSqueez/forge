@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use forge_events::LatestChanged;
+use forge_events::{LatestChanged, TypedEvent};
 
 use crate::bus::EventBus;
 use crate::delivery::LATEST_OVERLAYS;

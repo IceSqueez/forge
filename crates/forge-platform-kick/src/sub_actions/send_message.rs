@@ -3,14 +3,14 @@ use std::sync::Arc;
 use std::time::Instant;
 
 use async_trait::async_trait;
-use forge_events::{Event, EventSource};
+use forge_events::{ChatSent, EventSource, TypedEvent};
 use forge_platform_core::PlatformError;
 use forge_registry::runner::SubActionConfig;
 use forge_registry::{
     ConfigReason, FormField, RegistryError, RunContext, SubActionCategory, SubActionConfigExt,
     SubActionRunner,
 };
-use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, Variant};
+use forge_types::{ArgStack, PlatformId, SubActionOutcome, SubActionTelemetry, Variant};
 use futures::future::BoxFuture;
 use time::OffsetDateTime;
 
@@ -135,12 +135,13 @@ impl SubActionRunner for SendMessageRunner {
         };
 
         if matches!(outcome, SubActionOutcome::Success) {
-            ctx.publisher.publish(Event::caused_by(
-                EventSource::Kick,
-                "chat.send",
-                serde_json::json!({ "channel": "kick", "message": message }),
-                ctx.parent_event_id,
-            ));
+            ChatSent {
+                channel: PlatformId::Kick.as_str().to_owned(),
+                message,
+                reply_to_message_id: None,
+                sent_as: None,
+            }
+            .publish(ctx.publisher, EventSource::Kick, Some(ctx.parent_event_id));
         }
 
         (

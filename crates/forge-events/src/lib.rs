@@ -1,18 +1,45 @@
 mod bus;
 mod channel;
+mod chat_send;
+mod connection;
 mod donation;
+mod globals;
 mod lane;
 mod latest;
 mod publisher;
+mod request;
+mod run;
+mod script;
 mod source;
+mod timer;
+mod typed;
 
 pub use bus::EventsError;
 pub use channel::{Delivery, EventChannel, EventObserver, EventSubscription, LagRecorder};
+pub use chat_send::{
+    ActingSender, ChatSendFailed, ChatSendRequest, ChatSent, SENT_AS_FIELD, SenderRole,
+};
+pub use connection::{ConnectionState, PlatformConnectionChanged};
 pub use donation::{DONATION_RECEIVED_KIND, DonationReceived};
+pub use globals::{
+    GlobalArrayAppended, GlobalArrayRemoved, GlobalDecremented, GlobalDeleted, GlobalIncremented,
+    GlobalSet, GlobalToggled,
+};
 pub use lane::DeliveryLane;
 pub use latest::{LATEST_CHANGED_KIND, LatestChanged, NOW_PLAYING_KIND, NowPlaying, PlaybackState};
 pub use publisher::EventPublisher;
+pub use request::RequestFailed;
+pub use run::{
+    ActionDone, ActionSkipped, ActionStarted, QuickActionDone, RunOutcome, SubActionDone,
+    SubActionRun,
+};
+pub use script::{
+    ScriptFailed, ScriptHttpCall, ScriptHttpMethod, ScriptLogLevel, ScriptLogged, ScriptReloaded,
+    ScriptStarted,
+};
 pub use source::EventSource;
+pub use timer::TimerTick;
+pub use typed::TypedEvent;
 
 use forge_types::EventId;
 use serde::{Deserialize, Serialize};

@@ -1,4 +1,4 @@
-use forge_events::{DONATION_RECEIVED_KIND, DonationReceived, Event, EventSource};
+use forge_events::{DONATION_RECEIVED_KIND, DonationReceived, Event, EventSource, TypedEvent};
 use forge_registry::{
     ActorDeclaration, ActorIdentity, EventFilter, FormField, KindPlatformContract, LoginSlot,
     SourcedActor, TriggerCategory, TriggerKindDescriptor, TriggerVariables,

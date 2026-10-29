@@ -1,8 +1,8 @@
-use forge_types::{EventId, IntegrationId};
+use forge_types::IntegrationId;
 use serde::{Deserialize, Serialize};
 use time::OffsetDateTime;
 
-use crate::{Event, EventSource};
+use crate::TypedEvent;
 
 pub const LATEST_CHANGED_KIND: &str = "latest.changed";
 pub const NOW_PLAYING_KIND: &str = "music.now_playing";
@@ -15,21 +15,8 @@ pub struct LatestChanged {
     pub cleared: bool,
 }
 
-impl LatestChanged {
-    pub fn into_event(self, caused_by: Option<EventId>) -> Result<Event, serde_json::Error> {
-        let payload = serde_json::to_value(self)?;
-        Ok(match caused_by {
-            Some(cause) => Event::caused_by(EventSource::Core, LATEST_CHANGED_KIND, payload, cause),
-            None => Event::new(EventSource::Core, LATEST_CHANGED_KIND, payload),
-        })
-    }
-
-    pub fn from_event(event: &Event) -> Option<Self> {
-        if event.kind != LATEST_CHANGED_KIND {
-            return None;
-        }
-        serde_json::from_value(event.payload.clone()).ok()
-    }
+impl TypedEvent for LatestChanged {
+    const KIND: &'static str = LATEST_CHANGED_KIND;
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -55,21 +42,8 @@ pub struct NowPlaying {
     pub occurred_at: OffsetDateTime,
 }
 
-impl NowPlaying {
-    pub fn into_event(self, source: EventSource) -> Result<Event, serde_json::Error> {
-        Ok(Event::new(
-            source,
-            NOW_PLAYING_KIND,
-            serde_json::to_value(self)?,
-        ))
-    }
-
-    pub fn from_event(event: &Event) -> Option<Self> {
-        if event.kind != NOW_PLAYING_KIND {
-            return None;
-        }
-        serde_json::from_value(event.payload.clone()).ok()
-    }
+impl TypedEvent for NowPlaying {
+    const KIND: &'static str = NOW_PLAYING_KIND;
 }
 
 #[cfg(test)]

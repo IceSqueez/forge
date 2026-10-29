@@ -1,15 +1,15 @@
 use std::time::Duration;
 
-use forge_events::{Delivery, Event, EventSource, EventSubscription};
-use forge_platform_core::{SENDER_FIELD, SenderPreference};
+use forge_events::{
+    ChatSendFailed, ChatSendRequest, ChatSent, Delivery, Event, EventSource, EventSubscription,
+    TypedEvent,
+};
+use forge_platform_core::SenderPreference;
 use forge_types::{EventId, PlatformId};
 
 use super::platform_gate::platform_integration;
 use crate::home_stats::Integration;
 
-pub(crate) const CHAT_SEND_REQUEST_KIND: &str = "chat.send.request";
-pub(crate) const CHAT_SENT_KIND: &str = "chat.send";
-pub(crate) const CHAT_SEND_FAILED_KIND: &str = "chat.send.failed";
 pub(crate) const CHAT_SEND_RESPONSE_TIMEOUT: Duration = Duration::from_secs(10);
 
 const TWITCH_MAX_MESSAGE_CHARS: usize = 500;
@@ -131,40 +131,30 @@ pub(crate) fn plan_send(
 }
 
 impl SendPlan {
-    pub(crate) fn request_events(&self) -> Vec<Event> {
-        match &self.route {
-            SendRoute::Broadcast => vec![Event::new(
-                EventSource::Core,
-                CHAT_SEND_REQUEST_KIND,
-                serde_json::json!({ "message": self.message }),
-            )],
+    pub(crate) fn request_events(&self, twitch_sender: Option<SenderPreference>) -> Vec<Event> {
+        let targets: Vec<Option<&'static str>> = match &self.route {
+            SendRoute::Broadcast => vec![None],
             SendRoute::Targeted(platforms) => platforms
                 .iter()
-                .map(|platform| {
-                    Event::new(
-                        EventSource::Core,
-                        CHAT_SEND_REQUEST_KIND,
-                        serde_json::json!({
-                            "target": platform_integration(*platform).id_str(),
-                            "message": self.message,
-                        }),
-                    )
-                })
+                .map(|platform| Some(platform_integration(*platform).id_str()))
                 .collect(),
-        }
-    }
-}
-
-pub(crate) fn attach_twitch_sender(requests: &mut [Event], sender: SenderPreference) {
-    let twitch = platform_integration(PlatformId::Twitch).id_str();
-    for request in requests {
-        let reaches_twitch = match request.payload.get("target").and_then(|t| t.as_str()) {
-            None => true,
-            Some(target) => target == twitch,
         };
-        if reaches_twitch && let Some(fields) = request.payload.as_object_mut() {
-            fields.insert(SENDER_FIELD.to_owned(), sender.as_str().into());
-        }
+        let twitch = platform_integration(PlatformId::Twitch).id_str();
+        targets
+            .into_iter()
+            .map(|target| {
+                let reaches_twitch = target.is_none_or(|target| target == twitch);
+                ChatSendRequest {
+                    message: self.message.clone(),
+                    target: target.map(str::to_owned),
+                    sender: twitch_sender
+                        .filter(|_| reaches_twitch)
+                        .map(|sender| sender.as_str().to_owned()),
+                    ..ChatSendRequest::default()
+                }
+                .into_event(EventSource::Core, None)
+            })
+            .collect()
     }
 }
 
@@ -183,24 +173,17 @@ pub(crate) fn delivery_response(
     if !requests.contains(&caused_by) {
         return None;
     }
-    let platform = event
-        .payload
-        .get("channel")
-        .and_then(|v| v.as_str())
-        .and_then(platform_of_channel)?;
-    match event.kind.as_str() {
-        CHAT_SENT_KIND => Some((platform, DeliveryResult::Delivered)),
-        CHAT_SEND_FAILED_KIND => {
-            let error = event
-                .payload
-                .get("error")
-                .and_then(|v| v.as_str())
-                .unwrap_or_default()
-                .to_owned();
-            Some((platform, DeliveryResult::Failed(error)))
-        }
-        _ => None,
+    if let Some(sent) = ChatSent::from_event(event) {
+        return Some((
+            platform_of_channel(&sent.channel)?,
+            DeliveryResult::Delivered,
+        ));
     }
+    let failed = ChatSendFailed::from_event(event)?;
+    Some((
+        platform_of_channel(&failed.channel)?,
+        DeliveryResult::Failed(failed.error),
+    ))
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

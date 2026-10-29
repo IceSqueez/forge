@@ -1,6 +1,6 @@
 use std::collections::VecDeque;
 
-use forge_events::{Event, EventSource};
+use forge_events::{ActionDone, ActionStarted, Event, EventSource, TimerTick, TypedEvent};
 use forge_types::{ChatPayload, ChatSegment};
 use gpui::SharedString;
 use serde::Serialize;
@@ -143,17 +143,17 @@ impl EventLog {
                 Some(chat) => format!("{}: {}", chat.author, Self::chat_text(&chat.segments)),
                 None => String::new(),
             },
-            "timer.tick" => p
+            TimerTick::KIND => p
                 .get("name")
                 .and_then(|v| v.as_str())
                 .unwrap_or("tick")
                 .to_owned(),
-            "action.start" => p
+            ActionStarted::KIND => p
                 .get("action_name")
                 .and_then(|v| v.as_str())
                 .unwrap_or("?")
                 .to_owned(),
-            "action.done" => p
+            ActionDone::KIND => p
                 .get("outcome")
                 .and_then(|v| v.as_str())
                 .unwrap_or("done")

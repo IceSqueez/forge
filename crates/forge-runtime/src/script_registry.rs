@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use forge_events::{Event, EventSource};
+use forge_events::{EventSource, ScriptReloaded, TypedEvent};
 use forge_script::{ActionScheduler, SpeakRequester};
 use forge_storage::{ScriptRecord, ScriptRepo};
 use forge_types::{LatestValueReader, ScriptId};
@@ -10,6 +10,8 @@ use tracing::warn;
 
 use crate::EventBus;
 use crate::scheduled_runs::{SchedulingContext, ScriptScheduling};
+
+pub(crate) const SCRIPT_PANIC_ERROR_TYPE: &str = "panic";
 
 pub struct CompiledScript {
     pub record: ScriptRecord,
@@ -107,11 +109,13 @@ impl ScriptRegistry {
             guard.insert(script_id, Arc::new(CompiledScript { record }));
         }
 
-        bus.publish(Event::new(
-            EventSource::Core,
-            "script.reloaded",
-            serde_json::json!({"script_id": script_id.to_string(), "script_name": script_name}),
-        ));
+        bus.publish(
+            ScriptReloaded {
+                script_id,
+                script_name,
+            }
+            .into_event(EventSource::Core, None),
+        );
 
         Ok(())
     }

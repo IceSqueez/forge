@@ -4,8 +4,6 @@ use std::time::Duration;
 use forge_types::{ChatSegment, PlatformId, UnifiedChatRow};
 use tokio::time::Instant;
 
-pub(crate) const CHAT_SENT_KIND: &str = "chat.send";
-
 const ECHO_WINDOW: Duration = Duration::from_secs(60);
 const TRACKED_MESSAGES_PER_SOURCE: usize = 64;
 

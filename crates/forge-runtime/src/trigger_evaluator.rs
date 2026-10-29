@@ -25,6 +25,8 @@ use crate::{Config, EventBus, QueueAdmission, QueueSchedulerHandle, SchedulerReq
 const DECISION_TARGET: &str = "forge::trigger";
 
 pub const COMMAND_LINE_TARGET: &str = "forge::command";
+pub const COMMAND_MATCHED_KIND: &str = "command.matched";
+pub const TRIGGER_BLOCKED_KIND: &str = "trigger.blocked";
 
 const MAX_RESOLVED_EVENT_SHAPES: usize = 4096;
 
@@ -232,7 +234,7 @@ impl TriggerEvaluator {
         if is_command {
             self.bus.publish(Event::caused_by(
                 EventSource::Core,
-                "command.matched",
+                COMMAND_MATCHED_KIND,
                 json!({
                     "command": command_phrase(&effective),
                     "kind_id": instance.kind_id,
@@ -270,7 +272,7 @@ impl TriggerEvaluator {
     fn publish_blocked(&self, instance: &TriggerInstance, cause: EventId, reason: BlockReason) {
         self.bus.publish(Event::caused_by(
             EventSource::Core,
-            "trigger.blocked",
+            TRIGGER_BLOCKED_KIND,
             reason.into_payload(instance),
             cause,
         ));

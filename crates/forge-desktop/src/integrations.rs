@@ -1,9 +1,12 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use forge_events::{Event, EventPublisher, EventSource, EventSubscription, EventsError};
+use forge_events::{
+    ActingSender, ChatSendFailed, ChatSendRequest, ChatSent, Event, EventPublisher, EventSource,
+    EventSubscription, EventsError, TypedEvent,
+};
 use forge_platform_core::{
-    ActingSender, BanListSource, BuiltinCollections, BuiltinContent, BuiltinControl, BuiltinHealth,
+    BanListSource, BuiltinCollections, BuiltinContent, BuiltinControl, BuiltinHealth,
     BuiltinOptionSource, BuiltinStatus, ChatPlatform, FollowLookup, PlatformEndpoints,
     QuickActions, SectionIcon, SenderPreference,
 };
@@ -28,6 +31,7 @@ use forge_hotkey::HotkeyReconciler;
 use forge_runtime::{IntegrationFactory, IntegrationObjects, TaskGroup};
 
 const CHAT_SEND_QUEUE_CAPACITY: usize = 64;
+const WHISPER_SENT_KIND: &str = "chat.whisper.sent";
 
 #[derive(Clone)]
 pub struct BuiltinObject {
@@ -454,33 +458,36 @@ impl ChatSendIntent {
     }
 }
 
-struct ChatSendRequest {
+struct QueuedChatSend {
     message: String,
     intent: ChatSendIntent,
     sender: SenderPreference,
     caused_by: EventId,
 }
 
-fn delivered_event(
+fn whisper_sent(
     source: EventSource,
-    kind: &str,
-    mut payload: serde_json::Value,
+    target: &str,
+    recipient_login: String,
     acting: Option<ActingSender>,
     caused_by: EventId,
 ) -> Event {
+    let mut payload = serde_json::json!({
+        "channel": target,
+        (WHISPER_RECIPIENT_FIELD): recipient_login,
+    });
     if let Some(acting) = acting {
         acting.insert_into(&mut payload);
     }
-    Event::caused_by(source, kind, payload, caused_by)
+    Event::caused_by(source, WHISPER_SENT_KIND, payload, caused_by)
 }
 
 fn chat_send_failed(source: EventSource, target: &str, error: String, caused_by: EventId) -> Event {
-    Event::caused_by(
-        source,
-        "chat.send.failed",
-        serde_json::json!({ "channel": target, "error": error }),
-        caused_by,
-    )
+    ChatSendFailed {
+        channel: target.to_owned(),
+        error,
+    }
+    .into_event(source, Some(caused_by))
 }
 
 fn spawn_chat_send_worker(
@@ -488,11 +495,11 @@ fn spawn_chat_send_worker(
     platform: Arc<dyn ChatPlatform>,
     target: &'static str,
     source: EventSource,
-    mut requests: mpsc::Receiver<ChatSendRequest>,
+    mut requests: mpsc::Receiver<QueuedChatSend>,
 ) -> JoinHandle<()> {
     tokio::spawn(async move {
         while let Some(request) = requests.recv().await {
-            let ChatSendRequest {
+            let QueuedChatSend {
                 message,
                 intent,
                 sender,
@@ -502,46 +509,31 @@ fn spawn_chat_send_worker(
                 ChatSendIntent::Plain => platform
                     .send_message_as(target, &message, sender)
                     .await
-                    .map(|acting| {
-                        delivered_event(
-                            source,
-                            "chat.send",
-                            serde_json::json!({ "channel": target, "message": message }),
-                            acting,
-                            caused_by,
-                        )
+                    .map(|sent_as| {
+                        ChatSent {
+                            channel: target.to_owned(),
+                            message,
+                            reply_to_message_id: None,
+                            sent_as,
+                        }
+                        .into_event(source, Some(caused_by))
                     }),
                 ChatSendIntent::Reply { parent_message_id } => platform
                     .send_reply_as(target, &parent_message_id, &message, sender)
                     .await
-                    .map(|acting| {
-                        delivered_event(
-                            source,
-                            "chat.send",
-                            serde_json::json!({
-                                "channel": target,
-                                "message": message,
-                                (REPLY_PARENT_FIELD): parent_message_id,
-                            }),
-                            acting,
-                            caused_by,
-                        )
+                    .map(|sent_as| {
+                        ChatSent {
+                            channel: target.to_owned(),
+                            message,
+                            reply_to_message_id: Some(parent_message_id),
+                            sent_as,
+                        }
+                        .into_event(source, Some(caused_by))
                     }),
                 ChatSendIntent::Whisper { recipient_login } => platform
                     .send_whisper_as(&recipient_login, &message, sender)
                     .await
-                    .map(|acting| {
-                        delivered_event(
-                            source,
-                            "chat.whisper.sent",
-                            serde_json::json!({
-                                "channel": target,
-                                (WHISPER_RECIPIENT_FIELD): recipient_login,
-                            }),
-                            acting,
-                            caused_by,
-                        )
-                    }),
+                    .map(|acting| whisper_sent(source, target, recipient_login, acting, caused_by)),
             };
             match delivered {
                 Ok(event) => bus.publish(event),
@@ -589,21 +581,21 @@ pub(crate) fn spawn_chat_send_bridge(
                         lag_count,
                         "chat send bridge lagging"
                     );
-                    bus.publish(Event::new(
-                        source,
-                        "chat.send.failed",
-                        serde_json::json!({
-                            "channel": target,
-                            "error": format!(
-                                "event bus receiver lagging ({lag_count} lag event(s) observed); chat.send.request events may have been dropped"
+                    bus.publish(
+                        ChatSendFailed {
+                            channel: target.to_owned(),
+                            error: format!(
+                                "event bus receiver lagging ({lag_count} lag event(s) observed); {} events may have been dropped",
+                                ChatSendRequest::KIND
                             ),
-                        }),
-                    ));
+                        }
+                        .into_event(source, None),
+                    );
                     continue;
                 }
                 Err(_) => continue,
             };
-            if event.kind != "chat.send.request" {
+            if event.kind != ChatSendRequest::KIND {
                 continue;
             }
             if !matches!(event.source, EventSource::Core | EventSource::Rhai) {
@@ -647,7 +639,7 @@ pub(crate) fn spawn_chat_send_bridge(
                 }
                 continue;
             }
-            let request = ChatSendRequest {
+            let request = QueuedChatSend {
                 message,
                 intent,
                 sender,

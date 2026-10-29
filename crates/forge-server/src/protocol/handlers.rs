@@ -1,4 +1,4 @@
-use forge_events::{Event, EventSource};
+use forge_events::{Event, EventSource, GlobalSet, TypedEvent};
 use forge_runtime::{BusError, ExecutionRequest};
 use forge_storage::{GlobalsRepo, MediaFormat, UserGlobalsRepo};
 use forge_types::{ActionId, EventId};
@@ -7,6 +7,8 @@ use super::context::DispatchContext;
 use super::envelope::WsResponse;
 use super::helpers::{build_arg_stack, valid_code_event_name, variant_to_wire_value};
 use super::introspect::{build_connected_accounts, build_connected_clients};
+
+const WS_API_WRITER: &str = "ws_api";
 
 pub(crate) fn mime_for_extension(ext: &str) -> Option<&'static str> {
     let lowered = ext.to_ascii_lowercase();
@@ -110,20 +112,20 @@ pub(crate) async fn handle_set_global(
     };
     let globals_repo: &dyn GlobalsRepo = ctx.globals.as_ref();
     let prev_value = globals_repo.get(&name).await.ok().flatten();
-    let event_payload = serde_json::json!({
-        "key": name,
-        "new_value": variant_to_wire_value(&variant),
-        "prev_value": prev_value
+    let changed = GlobalSet {
+        key: name.clone(),
+        new_value: variant_to_wire_value(&variant),
+        prev_value: prev_value
             .as_ref()
             .map(variant_to_wire_value)
             .unwrap_or(serde_json::Value::Null),
-        "persisted": persisted,
-        "via": "ws_api",
-    });
+        persisted: Some(persisted),
+        via: Some(WS_API_WRITER.to_owned()),
+    };
     match globals_repo.set(&name, variant, persisted).await {
         Ok(()) => {
             ctx.bus
-                .publish(Event::new(EventSource::Server, "global.set", event_payload));
+                .publish(changed.into_event(EventSource::Server, None));
             WsResponse::Ok(serde_json::json!({ "ok": true }))
         }
         Err(e) => WsResponse::Error {

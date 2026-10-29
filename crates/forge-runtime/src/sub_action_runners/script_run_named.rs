@@ -2,7 +2,7 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use async_trait::async_trait;
-use forge_events::{Event, EventPublisher, EventSource};
+use forge_events::{EventPublisher, EventSource, ScriptFailed, ScriptStarted, TypedEvent};
 use forge_registry::{
     FormField, ProducedVariable, RegistryError, RunContext, SubActionCategory, SubActionConfigExt,
     SubActionIo, SubActionRunner,
@@ -17,12 +17,11 @@ use forge_storage::{
 use forge_types::{
     ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetry, Variant, VariantKind,
 };
-use serde_json::json;
 use time::OffsetDateTime;
 
 use crate::global_mutation::RuntimeScriptGlobals;
 use crate::scheduled_runs::SchedulingContext;
-use crate::script_registry::ScriptRegistry;
+use crate::script_registry::{SCRIPT_PANIC_ERROR_TYPE, ScriptRegistry};
 
 const TARGET_VAR_KEY: &str = "target_var";
 
@@ -164,16 +163,12 @@ impl SubActionRunner for ScriptRunNamedRunner {
         let http_cfg = Arc::new(load_script_http_config(self.settings.as_ref()).await);
         let engine_cfg = load_script_engine_config(self.settings.as_ref()).await;
 
-        let exec_event = Event::caused_by(
-            EventSource::Rhai,
-            "script.exec",
-            json!({
-                "script_id": script_id.to_string(),
-                "script_name": name.as_str(),
-                "is_inline": false,
-            }),
-            parent_event_id,
-        );
+        let exec_event = ScriptStarted {
+            script_id: Some(script_id),
+            script_name: Some(name.as_str().to_owned()),
+            is_inline: false,
+        }
+        .into_event(EventSource::Rhai, Some(parent_event_id));
         let script_event_id = exec_event.id;
         self.publisher.publish(exec_event);
 
@@ -221,33 +216,33 @@ impl SubActionRunner for ScriptRunNamedRunner {
             },
             Ok(Err(script_err)) => {
                 let message = format!("script '{name}' failed: {script_err}");
-                self.publisher.publish(Event::caused_by(
+                ScriptFailed {
+                    script_id: Some(script_id),
+                    script_name: Some(name.as_str().to_owned()),
+                    is_inline: false,
+                    error_type: script_err.error_type().to_owned(),
+                    message: message.clone(),
+                }
+                .publish(
+                    self.publisher.as_ref(),
                     EventSource::Rhai,
-                    "script.error",
-                    json!({
-                        "script_id": script_id.to_string(),
-                        "script_name": name.as_str(),
-                        "is_inline": false,
-                        "error_type": script_err.error_type(),
-                        "message": message.as_str(),
-                    }),
-                    script_event_id,
-                ));
+                    Some(script_event_id),
+                );
                 (SubActionOutcome::Failed(message), None)
             }
             Err(join_err) => {
-                self.publisher.publish(Event::caused_by(
+                ScriptFailed {
+                    script_id: Some(script_id),
+                    script_name: Some(name.as_str().to_owned()),
+                    is_inline: false,
+                    error_type: SCRIPT_PANIC_ERROR_TYPE.to_owned(),
+                    message: format!("script task panicked: {join_err}"),
+                }
+                .publish(
+                    self.publisher.as_ref(),
                     EventSource::Rhai,
-                    "script.error",
-                    json!({
-                        "script_id": script_id.to_string(),
-                        "script_name": name.as_str(),
-                        "is_inline": false,
-                        "error_type": "panic",
-                        "message": format!("script task panicked: {join_err}"),
-                    }),
-                    script_event_id,
-                ));
+                    Some(script_event_id),
+                );
                 (
                     SubActionOutcome::Failed(format!("script task panicked: {join_err}")),
                     None,

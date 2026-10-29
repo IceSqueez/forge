@@ -15,9 +15,12 @@ use forge_components::{
 };
 use std::sync::Arc;
 
-use forge_events::EventSource;
+use forge_events::{
+    ActionDone, ActionStarted, ChatSent, EventSource, ScriptStarted, SubActionRun, TimerTick,
+    TypedEvent,
+};
 use forge_platform_core::SENT_AS_FIELD;
-use forge_runtime::{BusError, EventBus};
+use forge_runtime::{BusError, COMMAND_MATCHED_KIND, EventBus};
 use forge_types::{EventId, PlatformId};
 use gpui::{
     AnyElement, ClickEvent, Context, Div, Entity, FocusHandle, Pixels, Rgba, ScrollEvent,
@@ -142,12 +145,12 @@ fn compute_projection(
     let mut matched: HashSet<gpui::SharedString> = HashSet::new();
     for item in log.items() {
         match item.kind.as_ref() {
-            "action.start" => {
+            ActionStarted::KIND => {
                 if let Some(cb) = &item.caused_by {
                     *downstream.entry(cb.clone()).or_default() += 1;
                 }
             }
-            "command.matched" => {
+            COMMAND_MATCHED_KIND => {
                 if let Some(cb) = &item.caused_by {
                     matched.insert(cb.clone());
                 }
@@ -529,12 +532,12 @@ impl EventFeedView {
         let actions_tag =
             |n: u32| -> gpui::SharedString { tr!("event_feed_outcome_actions", count = n).into() };
         match item.kind.as_ref() {
-            "chat.send" | "chat.whisper.sent" => Some(sent_tag(&item.payload)),
-            "command.matched" => Some(tr!("event_feed_outcome_trigger").into()),
-            "action.start" => item
+            ChatSent::KIND | "chat.whisper.sent" => Some(sent_tag(&item.payload)),
+            COMMAND_MATCHED_KIND => Some(tr!("event_feed_outcome_trigger").into()),
+            ActionStarted::KIND => item
                 .sub_action_count
                 .map(|n| tr!("event_feed_step_count", count = n).into()),
-            "action.done" => item
+            ActionDone::KIND => item
                 .total_ms
                 .map(|ms| tr!("event_feed_duration_ms", ms = format!("{ms:.2}")).into()),
             k if is_chat_message_kind(k) => {
@@ -1279,10 +1282,12 @@ fn type_color(kind: &str, is_error: bool, palette: &ForgePalette) -> Rgba {
     }
     match kind {
         k if is_chat_message_kind(k) => palette.info,
-        "command.matched" => palette.theme_brand,
-        "action.done" | "obs.scene.changed" => palette.success,
-        "chat.send" => palette.info,
-        "action.start" | "script.exec" | "timer.tick" | "subaction.run" => palette.warning,
+        COMMAND_MATCHED_KIND => palette.theme_brand,
+        ActionDone::KIND | "obs.scene.changed" => palette.success,
+        ChatSent::KIND => palette.info,
+        ActionStarted::KIND | ScriptStarted::KIND | TimerTick::KIND | SubActionRun::KIND => {
+            palette.warning
+        }
         k if k.starts_with("global.") => palette.warning,
         k if k.contains("cheer") || k.contains("bits") => palette.warning,
         k if k.contains("raid") => palette.danger,
@@ -1296,7 +1301,7 @@ fn result_color(kind: &str, is_error: bool, palette: &ForgePalette) -> Rgba {
         return palette.warning;
     }
     match kind {
-        "action.done" | "command.matched" | "chat.send" => palette.success,
+        ActionDone::KIND | COMMAND_MATCHED_KIND | ChatSent::KIND => palette.success,
         k if is_chat_message_kind(k) => palette.success,
         _ => palette.text_muted,
     }

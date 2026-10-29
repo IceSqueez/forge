@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use forge_events::{Event, EventSource};
+use forge_events::{EventSource, GlobalArrayRemoved, TypedEvent};
 use forge_registry::{
     FormField, RegistryError, RunContext, StepTimer, SubActionCategory, SubActionConfigExt,
     SubActionRunner,
@@ -100,16 +100,16 @@ impl SubActionRunner for CoreGlobalsArrayRemoveRunner {
             .await
         {
             Ok(new_len) => {
-                ctx.publisher.publish(Event::caused_by(
+                GlobalArrayRemoved {
+                    key: resolved_key.clone(),
+                    new_length: new_len,
+                    element: target.to_plain_json(),
+                }
+                .publish(
+                    ctx.publisher,
                     EventSource::Core,
-                    "global.array_removed",
-                    serde_json::json!({
-                        "key": resolved_key,
-                        "new_length": new_len,
-                        "element": target.to_plain_json(),
-                    }),
-                    ctx.parent_event_id,
-                ));
+                    Some(ctx.parent_event_id),
+                );
                 SubActionOutcome::Success
             }
             Err(StorageError::NotFound { .. }) => SubActionOutcome::Failed(format!(

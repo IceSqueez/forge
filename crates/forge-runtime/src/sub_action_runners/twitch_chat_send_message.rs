@@ -1,5 +1,5 @@
 use async_trait::async_trait;
-use forge_events::{Event, EventSource};
+use forge_events::{ChatSendRequest, EventSource, TypedEvent};
 use forge_platform_core::{SENDER_FIELD, SenderPreference};
 use forge_registry::{
     ConfigReason, FormField, RegistryError, RunContext, StepTimer, SubActionCategory,
@@ -123,12 +123,9 @@ impl SubActionRunner for TwitchChatSendMessageRunner {
             Err(e) => return (timer.failed(e.to_string()), None),
         };
         let resolved = resolved_target(config, ctx.arg_stack);
-        let mut payload = match resolve_chat_target(&resolved) {
+        let target = match resolve_chat_target(&resolved) {
             Err(reason) => return (timer.failed(reason), None),
-            Ok(Some(platform)) => serde_json::json!({
-                "target": platform.as_str(),
-                "message": message,
-            }),
+            Ok(Some(platform)) => Some(platform.as_str().to_owned()),
             Ok(None) => {
                 let none_enabled = ctx
                     .executor
@@ -137,22 +134,17 @@ impl SubActionRunner for TwitchChatSendMessageRunner {
                 if none_enabled {
                     return (timer.failed(NO_CHAT_PLATFORM_ENABLED_REASON), None);
                 }
-                serde_json::json!({ "message": message })
+                None
             }
         };
 
-        if sender != SenderPreference::Default
-            && let Some(fields) = payload.as_object_mut()
-        {
-            fields.insert(SENDER_FIELD.to_owned(), sender.as_str().into());
+        ChatSendRequest {
+            message,
+            target,
+            sender: (sender != SenderPreference::Default).then(|| sender.as_str().to_owned()),
+            ..ChatSendRequest::default()
         }
-
-        ctx.publisher.publish(Event::caused_by(
-            EventSource::Core,
-            "chat.send.request",
-            payload,
-            ctx.parent_event_id,
-        ));
+        .publish(ctx.publisher, EventSource::Core, Some(ctx.parent_event_id));
 
         (timer.success(), None)
     }

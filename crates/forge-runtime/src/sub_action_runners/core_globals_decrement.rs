@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use forge_events::{Event, EventSource};
+use forge_events::{EventSource, GlobalDecremented, TypedEvent};
 use forge_registry::{
     FormField, RegistryError, RunContext, StepTimer, SubActionCategory, SubActionConfigExt,
     SubActionRunner,
@@ -100,16 +100,16 @@ impl SubActionRunner for CoreGlobalsDecrementRunner {
                     Variant::Int(i) => serde_json::Value::from(*i),
                     _ => serde_json::Value::String(new_val.to_string()),
                 };
-                ctx.publisher.publish(Event::caused_by(
+                GlobalDecremented {
+                    key: resolved_key.clone(),
+                    delta: amount,
+                    new_value: new_val_json,
+                }
+                .publish(
+                    ctx.publisher,
                     EventSource::Core,
-                    "global.decremented",
-                    serde_json::json!({
-                        "key": resolved_key,
-                        "delta": amount,
-                        "new_value": new_val_json,
-                    }),
-                    ctx.parent_event_id,
-                ));
+                    Some(ctx.parent_event_id),
+                );
                 SubActionOutcome::Success
             }
             Err(e) => SubActionOutcome::Failed(e.to_string()),

@@ -3,18 +3,16 @@ mod connection_loss;
 mod intent;
 mod preferences;
 
-use std::str::FromStr;
 use std::sync::{Arc, Mutex, PoisonError};
 
-use forge_events::Event;
-use forge_platform_core::{CONNECTION_STATE_CHANGED_KIND, ConnectionState};
+use forge_events::{
+    ActionDone, ConnectionState, Event, PlatformConnectionChanged, RunOutcome, TypedEvent,
+};
 use forge_types::ActionId;
-use serde_json::Value;
 use tokio::sync::{mpsc, watch};
 use tokio::time::Instant;
 use tracing::debug;
 
-use crate::action_engine::ACTION_DONE_KIND;
 use crate::bus::EventBus;
 use crate::delivery::NOTIFICATION_POLICY;
 use forge_events::{Delivery, EventSubscription};
@@ -26,8 +24,6 @@ use action_failures::ActionFailureGate;
 use connection_loss::ConnectionLossGate;
 
 const NOTIFICATION_INTENT_CAPACITY: usize = 32;
-const FAILED_OUTCOME: &str = "failed";
-const SUCCESS_OUTCOME: &str = "success";
 
 #[derive(Clone)]
 pub struct NotificationPolicyHandle {
@@ -149,52 +145,37 @@ fn classify(event: &Event) -> Option<PolicySignal> {
     if event.replay {
         return None;
     }
-    let payload = &event.payload;
-    match event.kind.as_str() {
-        ACTION_DONE_KIND => classify_action_done(payload),
-        CONNECTION_STATE_CHANGED_KIND => classify_connection_change(payload),
-        _ => None,
+    if let Some(done) = ActionDone::from_event(event) {
+        return classify_action_done(done);
     }
+    PlatformConnectionChanged::from_event(event).map(classify_connection_change)
 }
 
-fn classify_action_done(payload: &Value) -> Option<PolicySignal> {
-    let action_id = ActionId::from_str(payload.get("action_id")?.as_str()?).ok()?;
-    match payload.get("outcome")?.as_str()? {
-        SUCCESS_OUTCOME => Some(PolicySignal::ActionSucceeded(action_id)),
-        FAILED_OUTCOME if !flag(payload, "manual_test") => {
+fn classify_action_done(done: ActionDone) -> Option<PolicySignal> {
+    match done.outcome {
+        RunOutcome::Success => Some(PolicySignal::ActionSucceeded(done.action_id)),
+        RunOutcome::Failed if !done.manual_test => {
             Some(PolicySignal::ActionFailed(ActionFailureNotice {
-                action_id,
-                action_name: payload
-                    .get("action_name")
-                    .and_then(Value::as_str)
-                    .unwrap_or_default()
-                    .to_owned(),
-                reason: payload
-                    .get("reason")
-                    .and_then(Value::as_str)
-                    .map(str::to_owned),
+                action_id: done.action_id,
+                action_name: done.action_name,
+                reason: done.reason,
             }))
         }
-        _ => None,
+        RunOutcome::Failed | RunOutcome::Skipped => None,
     }
 }
 
-fn classify_connection_change(payload: &Value) -> Option<PolicySignal> {
-    let platform_id = payload.get("platform_id")?.as_str()?.to_owned();
-    let state: ConnectionState = serde_json::from_value(payload.get("state")?.clone()).ok()?;
-    Some(match state {
+fn classify_connection_change(change: PlatformConnectionChanged) -> PolicySignal {
+    let platform_id = change.platform_id;
+    match change.state {
         ConnectionState::Connected => PolicySignal::LinkUp(platform_id),
         ConnectionState::Disconnected
         | ConnectionState::Connecting
         | ConnectionState::Reconnecting => PolicySignal::LinkDown {
             platform_id,
-            expected: flag(payload, "expected"),
+            expected: change.expected,
         },
-    })
-}
-
-fn flag(payload: &Value, key: &str) -> bool {
-    payload.get(key).and_then(Value::as_bool).unwrap_or(false)
+    }
 }
 
 async fn sleep_until_due(deadline: Option<Instant>) {

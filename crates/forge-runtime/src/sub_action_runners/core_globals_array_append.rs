@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use forge_events::{Event, EventSource};
+use forge_events::{EventSource, GlobalArrayAppended, TypedEvent};
 use forge_registry::{
     FormField, RegistryError, RunContext, StepTimer, SubActionCategory, SubActionConfigExt,
     SubActionRunner,
@@ -101,16 +101,16 @@ impl SubActionRunner for CoreGlobalsArrayAppendRunner {
 
         let outcome = match self.globals.array_append(&resolved_key, item, bound).await {
             Ok(new_len) => {
-                ctx.publisher.publish(Event::caused_by(
+                GlobalArrayAppended {
+                    key: resolved_key.clone(),
+                    new_length: new_len,
+                    element: element_json,
+                }
+                .publish(
+                    ctx.publisher,
                     EventSource::Core,
-                    "global.array_appended",
-                    serde_json::json!({
-                        "key": resolved_key,
-                        "new_length": new_len,
-                        "element": element_json,
-                    }),
-                    ctx.parent_event_id,
-                ));
+                    Some(ctx.parent_event_id),
+                );
                 SubActionOutcome::Success
             }
             Err(StorageError::TypeMismatch { actual, .. }) => SubActionOutcome::Failed(format!(

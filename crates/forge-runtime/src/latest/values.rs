@@ -2,7 +2,7 @@ use std::collections::{BTreeMap, HashMap};
 use std::sync::{Arc, PoisonError, RwLock};
 use std::time::Duration;
 
-use forge_events::{Event, EventPublisher, LatestChanged};
+use forge_events::{Event, EventPublisher, EventSource, LatestChanged, TypedEvent};
 use forge_storage::{LatestRecord, LatestValueRepo, StorageError};
 use forge_types::{EventId, LatestScope, LatestValue, LatestValueReader, Shared, Variant};
 use time::OffsetDateTime;
@@ -224,10 +224,7 @@ impl LatestValues {
     }
 
     fn announce(&self, change: LatestChanged, cause: Option<EventId>) {
-        match change.into_event(cause) {
-            Ok(event) => self.publisher.publish(event),
-            Err(error) => tracing::warn!(error = %error, "latest change event not encodable"),
-        }
+        change.publish(self.publisher.as_ref(), EventSource::Core, cause);
     }
 }
 

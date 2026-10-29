@@ -1,8 +1,7 @@
+pub use forge_events::{ActingSender, SENT_AS_FIELD, SenderRole};
 use serde::{Deserialize, Serialize};
 
 pub const SENDER_FIELD: &str = "sender";
-
-pub const SENT_AS_FIELD: &str = "sent_as";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -45,27 +44,6 @@ impl SenderPreference {
 pub fn unknown_sender_reason(raw: &str) -> String {
     let valid = SenderPreference::WIRE_NAMES.join(", ");
     format!("unknown sender \"{raw}\"; valid senders: {valid}")
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum SenderRole {
-    Streamer,
-    Bot,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct ActingSender {
-    pub role: SenderRole,
-    pub login: String,
-}
-
-impl ActingSender {
-    pub fn insert_into(&self, payload: &mut serde_json::Value) {
-        if let (Some(fields), Ok(sent_as)) = (payload.as_object_mut(), serde_json::to_value(self)) {
-            fields.insert(SENT_AS_FIELD.to_owned(), sent_as);
-        }
-    }
 }
 
 #[cfg(test)]

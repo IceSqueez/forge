@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use forge_events::{DonationReceived, EventPublisher};
+use forge_events::{DonationReceived, EventPublisher, EventSource, TypedEvent};
 use forge_platform_core::DonationStream;
 use forge_storage::DonationRepo;
 use forge_types::{Donation, DonationOrigin, EventId, IntegrationId, Shared};
@@ -171,17 +171,8 @@ impl DonationIngest {
         let Some(payload) = DonationReceived::announce(donation, anonymous.as_str()) else {
             return false;
         };
-        match payload.into_event() {
-            Ok(mut event) => {
-                event.caused_by = caused_by;
-                self.publisher.publish(event);
-                true
-            }
-            Err(error) => {
-                warn!(provider = %donation.provider, error = %error, "donation event could not be built");
-                false
-            }
-        }
+        payload.publish(self.publisher.as_ref(), EventSource::Donation, caused_by);
+        true
     }
 }
 

@@ -1,7 +1,9 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use forge_events::{Event, EventPublisher, EventSource};
+use forge_events::{
+    EventPublisher, EventSource, GlobalDeleted, GlobalIncremented, GlobalSet, TypedEvent,
+};
 use forge_script::{GlobalDeletion, GlobalIncrement, ScriptGlobals, ScriptGlobalsError};
 use forge_storage::{GlobalsRepo, StorageError};
 use forge_types::{EventId, Variant};
@@ -27,14 +29,13 @@ impl GlobalMutation<'_> {
             .map(Variant::to_plain_json)
             .unwrap_or(serde_json::Value::Null);
         self.globals.set(key, value, persisted).await?;
-        self.publish(
-            "global.set",
-            serde_json::json!({
-                "key": key,
-                "new_value": new_value_json,
-                "prev_value": prev_value_json,
-            }),
-        );
+        self.publish(GlobalSet {
+            key: key.to_owned(),
+            new_value: new_value_json,
+            prev_value: prev_value_json,
+            persisted: None,
+            via: None,
+        });
         Ok(previous)
     }
 
@@ -45,14 +46,11 @@ impl GlobalMutation<'_> {
             Variant::Int(i) => serde_json::Value::from(*i),
             _ => serde_json::Value::String(current.to_string()),
         };
-        self.publish(
-            "global.incremented",
-            serde_json::json!({
-                "key": key,
-                "delta": delta,
-                "new_value": new_value_json,
-            }),
-        );
+        self.publish(GlobalIncremented {
+            key: key.to_owned(),
+            delta,
+            new_value: new_value_json,
+        });
         Ok(GlobalIncrement { previous, current })
     }
 
@@ -61,13 +59,14 @@ impl GlobalMutation<'_> {
         if !self.globals.delete(key).await? {
             return Ok(GlobalDeletion::Missing);
         }
-        self.publish("global.deleted", serde_json::json!({ "key": key }));
+        self.publish(GlobalDeleted {
+            key: key.to_owned(),
+        });
         Ok(GlobalDeletion::Deleted { previous })
     }
 
-    fn publish(&self, kind: &str, payload: serde_json::Value) {
-        self.publisher
-            .publish(Event::caused_by(self.source, kind, payload, self.caused_by));
+    fn publish(&self, payload: impl TypedEvent) {
+        payload.publish(self.publisher, self.source, Some(self.caused_by));
     }
 }
 

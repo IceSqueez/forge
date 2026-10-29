@@ -1,7 +1,7 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use forge_events::{Event, EventPublisher, EventSource};
+use forge_events::{EventPublisher, EventSource, RequestFailed, TypedEvent};
 use forge_net::{
     CallClass, DEFAULT_RETRY_AFTER_SECS, FailureContext, FailureObserver, Gateway,
     GatewayBuildError, GatewayFailure, GatewayProfile, GatewayRequest, GatewayResponse,
@@ -15,7 +15,6 @@ const YOUTUBE_CALL_BUDGET_CAPACITY: u32 = 10;
 const YOUTUBE_CALL_BUDGET_WINDOW: Duration = Duration::from_secs(10);
 
 const NO_RETRY_AFTER_WAIT: Duration = Duration::from_secs(DEFAULT_RETRY_AFTER_SECS as u64);
-const REQUEST_FAIL_KIND: &str = "request.fail";
 const BODY_SNIPPET_MAX_CHARS: usize = 200;
 const JSON_CONTENT_TYPE: &str = "application/json";
 const QUOTA_EXCEEDED_REASON: &str = "quotaExceeded";
@@ -135,16 +134,15 @@ impl FailureObserver for RequestFailPublisher {
                     .collect()
             })
             .unwrap_or_default();
-        self.bus.publish(Event::new(
-            EventSource::YouTube,
-            REQUEST_FAIL_KIND,
-            serde_json::json!({
-                "endpoint": context.label.unwrap_or_default(),
-                "status_code": status,
-                "body_snippet": body_snippet,
-                "retry_after_secs": retry_after_secs,
-            }),
-        ));
+        self.bus.publish(
+            RequestFailed {
+                endpoint: context.label.unwrap_or_default().to_owned(),
+                status_code: status,
+                body_snippet,
+                retry_after_secs,
+            }
+            .into_event(EventSource::YouTube, None),
+        );
     }
 }
 

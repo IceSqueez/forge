@@ -1,6 +1,6 @@
 use crate::platform_visuals::platform_color;
 use forge_components::{ForgePalette, fmt_number};
-use forge_events::{Event, EventSource};
+use forge_events::{ActionStarted, Event, EventSource, TypedEvent};
 use forge_runtime::{LiveViewerCount, dashboard::DashboardStats};
 use forge_types::{IntegrationId, PlatformId};
 use gpui::{Rgba, SharedString};
@@ -302,7 +302,7 @@ impl HomeStats {
 
 fn is_home_notable(kind: &str) -> bool {
     !(kind.starts_with("subaction.")
-        || kind == "action.start"
+        || kind == ActionStarted::KIND
         || kind.starts_with("global.")
         || kind.starts_with("script."))
 }

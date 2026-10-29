@@ -6,8 +6,8 @@ use forge_components::{
     Density, FONT_LG, FONT_SM, ForgePalette, Icon, Radius, Spacing, ToastKind, Toasts, body_family,
     card, icon, mono_family, primary_button, radius, secondary_button, spacing, toast_layer, tr,
 };
-use forge_events::EventSubscription;
-use forge_platform_core::{CONNECTION_STATE_CHANGED_KIND, PlatformEndpoints};
+use forge_events::{ActionDone, EventSubscription, PlatformConnectionChanged, TypedEvent};
+use forge_platform_core::PlatformEndpoints;
 use forge_runtime::{LiveViewerAggregatorHandle, LossWatch, QueueDepthWatch};
 use forge_storage::CredentialsKeyLoss;
 use futures_util::StreamExt as _;
@@ -508,16 +508,10 @@ fn start_bridge(
                 let mut changed = false;
                 for event in batch {
                     changed |= connectivity.apply_obs_event(event);
-                    if event.kind == CONNECTION_STATE_CHANGED_KIND
-                        && let Some(integ) = event
-                            .payload
-                            .get("platform_id")
-                            .and_then(|v| v.as_str())
-                            .and_then(Integration::from_id)
+                    if let Some(change) = PlatformConnectionChanged::from_event(event)
+                        && let Some(integ) = Integration::from_id(&change.platform_id)
                     {
-                        let connected = event.payload.get("state").and_then(|v| v.as_str())
-                            == Some("connected");
-                        changed |= connectivity.set_connected(integ, connected);
+                        changed |= connectivity.set_connected(integ, change.state.is_connected());
                     }
                 }
                 if changed {
@@ -542,7 +536,7 @@ fn start_bridge(
                 let mut changed = false;
                 for event in batch {
                     changed |= stats.record_event(event);
-                    if event.kind == "action.done" {
+                    if event.kind == ActionDone::KIND {
                         stats.record_action_done();
                         changed = true;
                     }

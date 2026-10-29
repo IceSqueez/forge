@@ -6,7 +6,7 @@ use forge_types::{
 use serde::{Deserialize, Serialize};
 use time::OffsetDateTime;
 
-use crate::{Event, EventSource};
+use crate::TypedEvent;
 
 pub const DONATION_RECEIVED_KIND: &str = "donation.received";
 
@@ -46,24 +46,13 @@ impl DonationReceived {
         })
     }
 
-    pub fn from_event(event: &Event) -> Option<Self> {
-        if event.kind != DONATION_RECEIVED_KIND {
-            return None;
-        }
-        serde_json::from_value(event.payload.clone()).ok()
-    }
-
-    pub fn into_event(self) -> Result<Event, serde_json::Error> {
-        Ok(Event::new(
-            EventSource::Donation,
-            DONATION_RECEIVED_KIND,
-            serde_json::to_value(self)?,
-        ))
-    }
-
     pub fn amount(&self) -> MoneyAmount {
         MoneyAmount::from_micros(self.amount_micros, self.currency.clone())
     }
+}
+
+impl TypedEvent for DonationReceived {
+    const KIND: &'static str = DONATION_RECEIVED_KIND;
 }
 
 impl fmt::Debug for DonationReceived {

@@ -7,7 +7,7 @@ use forge_components::{
     BORDER_THIN, ConfirmTone, Density, FONT_XS, FONT_XXS, ForgePalette, Icon, OverlayPosition,
     body_family, confirm_modal, ghost_button_with_icon, overlay, scaled, section_label, tr,
 };
-use forge_events::{Event, LatestChanged};
+use forge_events::{Event, LatestChanged, TypedEvent};
 use forge_overlay::config::{HEADLINE, PLACEHOLDER, PLATFORM, SUBLINE};
 use forge_overlay::{
     LatestBinding, OverlayConfig, OverlayKindRegistry, latest_binding, latest_content,

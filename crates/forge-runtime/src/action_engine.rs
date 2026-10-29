@@ -1,6 +1,9 @@
 use std::sync::Arc;
 
-use forge_events::{Event, EventPublisher, EventSource};
+use forge_events::{
+    ActionDone, ActionSkipped, ActionStarted, EventPublisher, EventSource, QuickActionDone,
+    RunOutcome, SubActionRun, TypedEvent,
+};
 use forge_registry::{
     CancelSignal, ChainSignal, RunContext, RunningAction, SubActionRegistry, effective_config,
 };
@@ -9,7 +12,6 @@ use forge_types::{
     Action, ActionId, ArgStack, EventId, ExecutionContext, ExecutionMetadata, ExecutionOutcome,
     SubActionOutcome, SubActionStep, SubActionTelemetry,
 };
-use serde_json::json;
 use time::OffsetDateTime;
 use tokio::sync::{mpsc, oneshot, watch};
 use tracing::{info, warn};
@@ -24,8 +26,6 @@ use crate::{Config, EventBus};
 
 const EXECUTION_INTAKE_CAPACITY: usize = 256;
 const QUICK_ACTION_INTAKE_CAPACITY: usize = 64;
-const ACTION_START_KIND: &str = "action.start";
-pub(crate) const ACTION_DONE_KIND: &str = "action.done";
 pub const MANUAL_TEST_RUN_KIND: &str = "test.run";
 const MAX_CAUSATION_DEPTH: usize = 16;
 const CAUSATION_DEPTH_SKIP_REASON: &str = "causation_depth_exceeded";
@@ -276,16 +276,14 @@ impl ActionEngine {
             max_depth = MAX_CAUSATION_DEPTH,
             "action not started: its triggering event descends from too many action runs, likely an event loop between actions"
         );
-        self.bus.publish(Event::caused_by(
-            EventSource::Core,
-            "action.skipped",
-            json!({
-                "action_id": action.id.to_string(),
-                "reason": CAUSATION_DEPTH_SKIP_REASON,
-                "queue_id": action.queue_id.to_string(),
-            }),
-            trigger_event_id,
-        ));
+        self.bus.publish(
+            ActionSkipped {
+                action_id: action.id,
+                reason: CAUSATION_DEPTH_SKIP_REASON.to_owned(),
+                queue_id: action.queue_id,
+            }
+            .into_event(EventSource::Core, Some(trigger_event_id)),
+        );
         let ctx = ExecutionContext {
             action_id: action.id,
             metadata,
@@ -350,16 +348,12 @@ impl ActionEngine {
             outcome: ExecutionOutcome::Success,
         };
 
-        let mut start_event = Event::caused_by(
-            EventSource::Core,
-            ACTION_START_KIND,
-            json!({
-                "action_id": action.id.to_string(),
-                "action_name": action.name,
-                "sub_action_count": action.sub_actions.len(),
-            }),
-            req.trigger_event_id,
-        );
+        let mut start_event = ActionStarted {
+            action_id: action.id,
+            action_name: action.name.clone(),
+            sub_action_count: action.sub_actions.len(),
+        }
+        .into_event(EventSource::Core, Some(req.trigger_event_id));
         start_event.causation_depth = trigger_depth.saturating_add(1);
         let start_event_id = start_event.id;
         let _lineage = self.bus.hold_lineage(&start_event);
@@ -412,11 +406,6 @@ impl ActionEngine {
             .filter(|t| !t.is_nested())
             .map(|t| t.duration_ms)
             .sum();
-        let outcome_label = match &ctx.outcome {
-            ExecutionOutcome::Success => "success",
-            ExecutionOutcome::Failed(_) => "failed",
-            ExecutionOutcome::Cancelled => "cancelled",
-        };
 
         let execution = match &ctx.outcome {
             ExecutionOutcome::Success => Some(ExecutionStatus::Success),
@@ -429,26 +418,24 @@ impl ActionEngine {
             duration_ms: total_ms,
             status,
         });
-        let cancelled = matches!(ctx.outcome, ExecutionOutcome::Cancelled);
-        let mut done_payload = json!({
-            "action_id": action.id.to_string(),
-            "action_name": action.name,
-            "outcome": outcome_label,
-            "total_ms": total_ms,
-            "manual_test": manual_test,
-        });
-        if let ExecutionOutcome::Failed(reason) = &ctx.outcome {
-            done_payload["reason"] = json!(reason);
+        let done = match &ctx.outcome {
+            ExecutionOutcome::Success => Some((RunOutcome::Success, None)),
+            ExecutionOutcome::Failed(reason) => Some((RunOutcome::Failed, Some(reason.clone()))),
+            ExecutionOutcome::Cancelled => None,
         }
+        .map(|(outcome, reason)| ActionDone {
+            action_id: action.id,
+            action_name: action.name.clone(),
+            outcome,
+            total_ms,
+            manual_test,
+            reason,
+        });
         self.history.record(ctx, execution);
 
-        if !cancelled {
-            self.bus.publish(Event::caused_by(
-                EventSource::Core,
-                ACTION_DONE_KIND,
-                done_payload,
-                start_event_id,
-            ));
+        if let Some(done) = done {
+            self.bus
+                .publish(done.into_event(EventSource::Core, Some(start_event_id)));
         }
     }
 }
@@ -501,11 +488,11 @@ async fn run_quick_action(
     integrations: IntegrationGate,
 ) {
     let publisher: Arc<dyn EventPublisher> = Arc::clone(&bus) as Arc<dyn EventPublisher>;
-    let run_payload = json!({ "step_index": 0, "kind": req.step.kind_id });
-    let run_event = match req.caused_by {
-        Some(parent) => Event::caused_by(EventSource::Core, "subaction.run", run_payload, parent),
-        None => Event::new(EventSource::Core, "subaction.run", run_payload),
-    };
+    let run_event = SubActionRun {
+        step_index: 0,
+        kind: req.step.kind_id.clone(),
+    }
+    .into_event(EventSource::Core, req.caused_by);
     let run_event_id = run_event.id;
     let _step_lineage = bus.publish_held(run_event);
 
@@ -555,23 +542,15 @@ async fn run_quick_action(
 
     crate::chain::publish_subaction_done(publisher.as_ref(), run_event_id, &telemetry);
 
-    let outcome = match &telemetry.outcome {
-        SubActionOutcome::Success => "success",
-        SubActionOutcome::Failed(_) | SubActionOutcome::IntegrationDisabled(_) => "failed",
-        SubActionOutcome::Skipped(_) => "skipped",
-    };
-
-    bus.publish(Event::caused_by(
-        EventSource::Core,
-        "action.quick.done",
-        json!({
-            "kind": telemetry.kind,
-            "outcome": outcome,
-            "label": req.label,
-            "builtin_id": req.builtin_id,
-        }),
-        run_event_id,
-    ));
+    bus.publish(
+        QuickActionDone {
+            kind: telemetry.kind.clone(),
+            outcome: RunOutcome::from(&telemetry.outcome),
+            label: req.label.clone(),
+            builtin_id: req.builtin_id.clone(),
+        }
+        .into_event(EventSource::Core, Some(run_event_id)),
+    );
 
     let run_outcome = match telemetry.outcome.failure_reason() {
         Some(reason) => ExecutionOutcome::Failed(reason),

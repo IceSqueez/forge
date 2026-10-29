@@ -16,7 +16,7 @@ use forge_components::{
     primary_button, radius, scaled, spacing, status_dot, tr, with_alpha,
 };
 use forge_components::{DateShape, fmt_display};
-use forge_events::{Event, EventPublisher};
+use forge_events::{Event, EventPublisher, ScriptLogged, TypedEvent};
 use forge_runtime::{EventBus, RuntimeScriptGlobals, SchedulingContext, ScriptRegistry};
 use forge_script::{
     MethodDescriptor, RunResult, ScriptError, ScriptHost, format_script, inert_annotation_lines,
@@ -736,7 +736,7 @@ impl ScriptEditorView {
             drain_events(&bus, cx, move |batch, cx| {
                 match this.update(cx, |this, cx| {
                     for event in batch {
-                        if event.kind == "script.log" {
+                        if event.kind == ScriptLogged::KIND {
                             this.on_script_log(event, cx);
                         }
                     }

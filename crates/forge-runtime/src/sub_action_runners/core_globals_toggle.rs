@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use forge_events::{Event, EventSource};
+use forge_events::{EventSource, GlobalToggled, TypedEvent};
 use forge_registry::{
     FormField, RegistryError, RunContext, StepTimer, SubActionCategory, SubActionConfigExt,
     SubActionRunner,
@@ -79,16 +79,16 @@ impl SubActionRunner for CoreGlobalsToggleRunner {
 
         let outcome = match self.globals.toggle(&resolved_key).await {
             Ok(flipped) => {
-                ctx.publisher.publish(Event::caused_by(
+                GlobalToggled {
+                    key: resolved_key.clone(),
+                    new_value: flipped,
+                    prev_value: !flipped,
+                }
+                .publish(
+                    ctx.publisher,
                     EventSource::Core,
-                    "global.toggled",
-                    serde_json::json!({
-                        "key": resolved_key,
-                        "new_value": flipped,
-                        "prev_value": !flipped,
-                    }),
-                    ctx.parent_event_id,
-                ));
+                    Some(ctx.parent_event_id),
+                );
                 SubActionOutcome::Success
             }
             Err(StorageError::NotFound { .. }) => SubActionOutcome::Failed(format!(

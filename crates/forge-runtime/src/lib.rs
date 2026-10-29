@@ -127,7 +127,10 @@ pub use sub_action_runners::{
 };
 pub use task_stop::TaskStop;
 pub use timer_scheduler::{TimerSchedulerHandle, spawn_timer_scheduler};
-pub use trigger_evaluator::{COMMAND_LINE_TARGET, TriggerEvaluatorHandle, spawn_trigger_evaluator};
+pub use trigger_evaluator::{
+    COMMAND_LINE_TARGET, COMMAND_MATCHED_KIND, TRIGGER_BLOCKED_KIND, TriggerEvaluatorHandle,
+    spawn_trigger_evaluator,
+};
 pub use triggers::register_core_triggers;
 pub use twitch_emote_lexicon::{TwitchEmoteLexicon, spawn_twitch_emote_learning};
 pub use viewer_tracker::spawn_viewer_tracker;

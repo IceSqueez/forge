@@ -11,7 +11,7 @@ use super::platform_display_name;
 use super::platform_gate::platform_integration;
 use super::send_plan::{
     CHAT_SEND_RESPONSE_TIMEOUT, DeliveryResult, PlatformReach, SendPlan, SendRefusal, SendReport,
-    attach_twitch_sender, collect_delivery, plan_send,
+    collect_delivery, plan_send,
 };
 use crate::chat_input_bar::{InputBar, InputBarEvent, InputBarSwitch};
 use crate::home_stats::HomeStats;
@@ -233,10 +233,7 @@ impl ChatComposer {
             cx.push_toast(ToastKind::Error, tr!("chat_send_unavailable"));
             return;
         };
-        let mut requests = plan.request_events();
-        if let Some(sender) = self.twitch_sender(cx) {
-            attach_twitch_sender(&mut requests, sender);
-        }
+        let requests = plan.request_events(self.twitch_sender(cx));
         let request_ids: Vec<EventId> = requests.iter().map(|event| event.id).collect();
         let pending = SendReport::unanswered(plan.message.clone(), &plan.recipients);
         let fallback = pending.clone();

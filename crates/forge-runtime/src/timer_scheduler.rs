@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use forge_events::Event;
+use forge_events::{ChatSent, Event, TypedEvent};
 use forge_registry::{TriggerKindDescriptor, effective_config};
 use forge_storage::CatalogChanges;
 use forge_types::{PlatformScope, Shared, TriggerInstanceId, UserBadge};
@@ -12,7 +12,7 @@ use crate::bus::EventBus;
 use crate::catalog::{Catalog, CatalogSnapshot};
 use crate::chat_stream::{ChatRecord, ChatRecordMapper};
 use crate::delivery::TIMER_SCHEDULER;
-use crate::own_chat_echoes::{CHAT_SENT_KIND, OwnChatEchoes};
+use crate::own_chat_echoes::OwnChatEchoes;
 use crate::stream_live::StreamLiveHandle;
 use crate::task_stop::{StopListener, TaskStop, task_stop};
 use crate::triggers::{TIMER_TICK_KIND, TimerSchedule, TimerTickDescriptor};
@@ -161,7 +161,7 @@ impl TimerScheduler {
             return;
         }
         let now = Instant::now();
-        if event.kind == CHAT_SENT_KIND {
+        if event.kind == ChatSent::KIND {
             self.retract_own_message(event, now);
             return;
         }
@@ -191,10 +191,10 @@ impl TimerScheduler {
         let Some(source) = event.source.to_platform_id() else {
             return;
         };
-        let Some(message) = event.payload.get("message").and_then(|v| v.as_str()) else {
+        let Some(sent) = ChatSent::from_event(event) else {
             return;
         };
-        let Some(counted_at) = self.own_echoes.record_sent(source, message, now) else {
+        let Some(counted_at) = self.own_echoes.record_sent(source, &sent.message, now) else {
             return;
         };
         let platform = event.source.to_platform_id();

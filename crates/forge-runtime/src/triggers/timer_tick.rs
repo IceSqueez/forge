@@ -1,6 +1,6 @@
 use std::time::Duration;
 
-use forge_events::{Event, EventSource};
+use forge_events::{Event, EventSource, TimerTick, TypedEvent};
 use forge_registry::{
     ActorDeclaration, DurationBounds, EventFilter, FormField, KindPlatformContract,
     SubActionConfigExt, TriggerCategory, TriggerKindDescriptor, TriggerVariables,
@@ -8,9 +8,8 @@ use forge_registry::{
 use forge_types::{
     DeclaredVariable, SynthesisHint, TriggerConfig, TriggerInstanceId, Variant, VariantKind,
 };
-use serde_json::json;
 
-pub const TIMER_TICK_KIND: &str = "timer.tick";
+pub const TIMER_TICK_KIND: &str = TimerTick::KIND;
 
 const INSTANCE_ID_FIELD: &str = "instance_id";
 const INTERVAL_MINUTES_FIELD: &str = "interval_minutes";
@@ -56,15 +55,12 @@ impl TimerSchedule {
     }
 
     pub fn tick_event(&self, instance: TriggerInstanceId, message_count: u32) -> Event {
-        Event::new(
-            EventSource::Timer,
-            TIMER_TICK_KIND,
-            json!({
-                INSTANCE_ID_FIELD: instance,
-                INTERVAL_MINUTES_FIELD: self.interval_minutes,
-                MESSAGE_COUNT_FIELD: message_count,
-            }),
-        )
+        TimerTick {
+            instance_id: instance,
+            interval_minutes: self.interval_minutes,
+            message_count,
+        }
+        .into_event(EventSource::Timer, None)
     }
 }
 

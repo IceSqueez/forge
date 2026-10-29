@@ -156,7 +156,9 @@ fn canonical_value(canonical: CanonicalVariable, sample: &SynthesisSample) -> Va
         CanonicalVariable::Actor { role, slot } => Variant::String(actor_value(role, slot, sample)),
         CanonicalVariable::SubTier => Variant::String(sample.sub_tier().to_owned()),
         CanonicalVariable::Money(slot) => money_value(slot, sample.money().as_ref()),
-        CanonicalVariable::MessageText | CanonicalVariable::Count(_) => hinted_value(
+        CanonicalVariable::MessageText
+        | CanonicalVariable::MessageId
+        | CanonicalVariable::Count(_) => hinted_value(
             canonical.synthesis().as_ref(),
             canonical.kind(),
             canonical.name(),

@@ -5,10 +5,7 @@ use forge_registry::{
     ActorDeclaration, ActorIdentity, EventFilter, FormField, KindPlatformContract, TriggerCategory,
     TriggerKindDescriptor, TriggerVariables,
 };
-use forge_types::{
-    ActorRole, ActorSlot, CanonicalVariable, DeclaredVariable, PlatformId, TriggerConfig, Variant,
-    VariantKind,
-};
+use forge_types::{ActorRole, ActorSlot, CanonicalVariable, PlatformId, TriggerConfig};
 
 use super::payload_read::{self, twitch_actor};
 use crate::vocabulary::fields::chat_mod as chat_mod_fields;
@@ -71,15 +68,7 @@ impl TriggerKindDescriptor for ChatMessageDeletedDescriptor {
         Some(
             TriggerVariables::new()
                 .actor(twitch_actor(ActorRole::Principal), deleted_author_identity)
-                .event_specific(
-                    DeclaredVariable {
-                        name: "chat.message_id".to_owned(),
-                        kind: VariantKind::String,
-                        label: "Deleted message ID".to_owned(),
-                        synthesis: None,
-                    },
-                    |event| Variant::String(payload_read::text(event, chat_mod_fields::MESSAGE_ID)),
-                )
+                .chat_message_id(|event| payload_read::text(event, chat_mod_fields::MESSAGE_ID))
                 .legacy(
                     "chat.target_user.login",
                     "Message author login",

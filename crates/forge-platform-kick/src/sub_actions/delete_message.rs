@@ -16,6 +16,7 @@ use time::OffsetDateTime;
 use crate::api::chat_messages::KickSendChat;
 
 const KIND_ID: &str = "kick.chat.delete_message";
+const UNRESOLVED_REFERENCE_MARKER: char = '%';
 
 pub struct DeleteMessageRunner {
     client: Arc<KickSendChat>,
@@ -100,6 +101,8 @@ impl SubActionRunner for DeleteMessageRunner {
 
         let outcome = if message_id.is_empty() {
             SubActionOutcome::Failed("message_id is empty after interpolation".to_owned())
+        } else if message_id.contains(UNRESOLVED_REFERENCE_MARKER) {
+            SubActionOutcome::Failed("message_id has an unresolved variable reference".to_owned())
         } else {
             match (self.token_source)().await {
                 Err(e) => SubActionOutcome::Failed(format!("token error: {e}")),

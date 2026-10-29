@@ -23,7 +23,8 @@ use crate::helix::HelixTransport;
 
 const KIND_ID: &str = sub_action_ids::CHAT_REPLY;
 const MAX_MESSAGE_CHARS: usize = 500;
-const DEFAULT_PARENT_TEMPLATE: &str = "%chat.message_id%";
+const DEFAULT_PARENT_TEMPLATE: &str = "%message_id%";
+const UNRESOLVED_REFERENCE_MARKER: char = '%';
 
 pub struct ReplyChatRunner {
     senders: ChatSenders,
@@ -56,6 +57,9 @@ impl ReplyChatRunner {
         }
         if parent_message_id.is_empty() {
             return failed_step("parent_message_id is empty after interpolation");
+        }
+        if parent_message_id.contains(UNRESOLVED_REFERENCE_MARKER) {
+            return failed_step("parent_message_id has an unresolved variable reference");
         }
         let delivery = ChatDelivery::Reply {
             text: message,
@@ -114,7 +118,7 @@ impl SubActionRunner for ReplyChatRunner {
             FormField::Text {
                 key: "parent_message_id",
                 label: "Parent Message ID",
-                placeholder: "%chat.message_id%",
+                placeholder: DEFAULT_PARENT_TEMPLATE,
             },
             FormField::Select {
                 key: SENDER_FIELD,

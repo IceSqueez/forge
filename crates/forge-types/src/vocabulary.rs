@@ -18,6 +18,7 @@ const RECIPIENT_NAME: &str = "recipient_name";
 const RECIPIENT_LOGIN: &str = "recipient_login";
 const RECIPIENT_PLATFORM: &str = "recipient_platform";
 const MESSAGE_TEXT: &str = "message_text";
+const MESSAGE_ID: &str = "message_id";
 const VIEWER_COUNT: &str = "viewer_count";
 const BITS_AMOUNT: &str = "bits_amount";
 const GIFT_COUNT: &str = "gift_count";
@@ -58,6 +59,7 @@ pub enum CanonicalCount {
 pub enum CanonicalVariable {
     Actor { role: ActorRole, slot: ActorSlot },
     MessageText,
+    MessageId,
     Count(CanonicalCount),
     SubTier,
     Money(MoneySlot),
@@ -87,7 +89,9 @@ pub enum VariableStanding {
 const ACTOR_SLOT_COUNT: u16 = ActorSlot::ALL.len() as u16;
 const ACTOR_SPAN: u16 = ActorRole::ALL.len() as u16 * ACTOR_SLOT_COUNT;
 const COUNT_SPAN: u16 = CanonicalCount::ALL.len() as u16;
-const SUB_TIER_ORDER: u16 = ACTOR_SPAN + 1 + COUNT_SPAN;
+const MESSAGE_ID_ORDER: u16 = ACTOR_SPAN + 1;
+const COUNT_ORDER_START: u16 = MESSAGE_ID_ORDER + 1;
+const SUB_TIER_ORDER: u16 = COUNT_ORDER_START + COUNT_SPAN;
 const MONEY_ORDER_START: u16 = SUB_TIER_ORDER + 1;
 
 impl ActorRole {
@@ -213,7 +217,7 @@ impl CanonicalVariable {
                     .into_iter()
                     .map(move |slot| CanonicalVariable::actor(role, slot))
             })
-            .chain(std::iter::once(CanonicalVariable::MessageText))
+            .chain([CanonicalVariable::MessageText, CanonicalVariable::MessageId])
             .chain(
                 CanonicalCount::ALL
                     .into_iter()
@@ -247,6 +251,7 @@ impl CanonicalVariable {
                 (ActorRole::Recipient, ActorSlot::Platform) => RECIPIENT_PLATFORM,
             },
             CanonicalVariable::MessageText => MESSAGE_TEXT,
+            CanonicalVariable::MessageId => MESSAGE_ID,
             CanonicalVariable::Count(count) => match count {
                 CanonicalCount::ViewerCount => VIEWER_COUNT,
                 CanonicalCount::BitsAmount => BITS_AMOUNT,
@@ -268,6 +273,7 @@ impl CanonicalVariable {
         match self {
             CanonicalVariable::Actor { .. }
             | CanonicalVariable::MessageText
+            | CanonicalVariable::MessageId
             | CanonicalVariable::SubTier
             | CanonicalVariable::Money(MoneySlot::Currency | MoneySlot::AmountFormatted) => {
                 VariantKind::String
@@ -288,7 +294,9 @@ impl CanonicalVariable {
             },
             CanonicalVariable::MessageText => Some(SynthesisHint::Message),
             CanonicalVariable::Count(count) => Some(count.synthesis()),
-            CanonicalVariable::SubTier | CanonicalVariable::Money(_) => None,
+            CanonicalVariable::MessageId
+            | CanonicalVariable::SubTier
+            | CanonicalVariable::Money(_) => None,
         }
     }
 
@@ -298,6 +306,7 @@ impl CanonicalVariable {
                 format!("{} {}", role.label(), slot.label())
             }
             CanonicalVariable::MessageText => "Message text".to_owned(),
+            CanonicalVariable::MessageId => "Message ID".to_owned(),
             CanonicalVariable::Count(count) => count.label().to_owned(),
             CanonicalVariable::SubTier => "Subscription tier".to_owned(),
             CanonicalVariable::Money(slot) => slot.label().to_owned(),
@@ -308,7 +317,8 @@ impl CanonicalVariable {
         match self {
             CanonicalVariable::Actor { role, slot } => role as u16 * ACTOR_SLOT_COUNT + slot as u16,
             CanonicalVariable::MessageText => ACTOR_SPAN,
-            CanonicalVariable::Count(count) => ACTOR_SPAN + 1 + count as u16,
+            CanonicalVariable::MessageId => MESSAGE_ID_ORDER,
+            CanonicalVariable::Count(count) => COUNT_ORDER_START + count as u16,
             CanonicalVariable::SubTier => SUB_TIER_ORDER,
             CanonicalVariable::Money(slot) => MONEY_ORDER_START + slot as u16,
         }

@@ -1,6 +1,4 @@
 pub(crate) mod chat {
-    pub(crate) const MESSAGE_ID: &str = "message_id";
-    pub(crate) const DELETED_MESSAGE_ID: &str = "chat.message_id";
     pub(crate) const COMMAND_NAME: &str = "command_name";
     pub(crate) const COMMAND_ARGS: &str = "args";
 }

@@ -1,6 +1,6 @@
 use forge_events::Event;
 use forge_registry::{ActorBlock, ActorIdentity, LoginSlot, TriggerVariables};
-use forge_types::{ActorRole, DeclaredVariable, PlatformId, Variant, VariantKind};
+use forge_types::{ActorRole, ChatPayload, DeclaredVariable, PlatformId, Variant, VariantKind};
 
 use crate::vocabulary::fields::chat as fields;
 
@@ -14,6 +14,7 @@ pub(super) fn base_chat_variables() -> TriggerVariables {
     TriggerVariables::new()
         .actor(CHATTER, chatter_identity)
         .message_text(chat_message_text)
+        .chat_message_id(chat_message_id)
         .event_specific(
             DeclaredVariable {
                 name: "channel".to_owned(),
@@ -46,6 +47,15 @@ fn chatter_identity(event: &Event) -> ActorIdentity {
 
 fn chat_message_text(event: &Event) -> String {
     text_field(event, fields::MESSAGE)
+}
+
+fn chat_message_id(event: &Event) -> String {
+    event
+        .payload
+        .get(ChatPayload::KEY)
+        .and_then(|chat| serde_json::from_value::<ChatPayload>(chat.clone()).ok())
+        .map(|chat| chat.platform_msg_id)
+        .unwrap_or_default()
 }
 
 fn text_field(event: &Event, key: &str) -> String {

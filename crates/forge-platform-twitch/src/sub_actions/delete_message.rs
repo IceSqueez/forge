@@ -16,7 +16,8 @@ use crate::account::identity::SelfIdentity;
 use crate::helix::{HelixMethod, HelixRequest, HelixTransport};
 
 const KIND_ID: &str = sub_action_ids::CHAT_DELETE_MESSAGE;
-const DEFAULT_MESSAGE_ID_TEMPLATE: &str = "%chat.message_id%";
+const DEFAULT_MESSAGE_ID_TEMPLATE: &str = "%message_id%";
+const UNRESOLVED_REFERENCE_MARKER: char = '%';
 
 pub struct DeleteMessageRunner {
     transport: Arc<dyn HelixTransport>,
@@ -34,6 +35,11 @@ impl DeleteMessageRunner {
     async fn delete(&self, message_id: &str) -> SubActionOutcome {
         if message_id.is_empty() {
             return SubActionOutcome::Failed("message_id is empty after interpolation".to_owned());
+        }
+        if message_id.contains(UNRESOLVED_REFERENCE_MARKER) {
+            return SubActionOutcome::Failed(
+                "message_id has an unresolved variable reference".to_owned(),
+            );
         }
         let user_id = match self.identity.user_id().await {
             Ok(id) => id,
@@ -84,7 +90,7 @@ impl SubActionRunner for DeleteMessageRunner {
         vec![FormField::Text {
             key: "message_id",
             label: "Message ID",
-            placeholder: "%chat.message_id%",
+            placeholder: DEFAULT_MESSAGE_ID_TEMPLATE,
         }]
     }
 

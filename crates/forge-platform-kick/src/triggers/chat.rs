@@ -72,15 +72,7 @@ impl TriggerKindDescriptor for ChatDescriptor {
                 .actor(kick_actor(ActorRole::Principal), sender_identity)
                 .message_text(|event| payload_read::text(event, fields::CONTENT))
                 .first_chat_message()
-                .event_specific(
-                    DeclaredVariable {
-                        name: "message_id".to_owned(),
-                        kind: VariantKind::String,
-                        label: "Message ID".to_owned(),
-                        synthesis: None,
-                    },
-                    |event| Variant::String(payload_read::text(event, fields::MESSAGE_ID)),
-                )
+                .chat_message_id(|event| payload_read::text(event, fields::MESSAGE_ID))
                 .event_specific(
                     DeclaredVariable {
                         name: "color".to_owned(),

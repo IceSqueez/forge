@@ -4,10 +4,7 @@ use forge_registry::{
     FormField, KindPlatformContract, TriggerCategory, TriggerKindDescriptor, TriggerVariables,
     admits_chatter, chat_message_condition, first_chatters_only_field,
 };
-use forge_types::{
-    ActorRole, ActorSlot, CanonicalVariable, DeclaredVariable, PlatformId, TriggerConfig, Variant,
-    VariantKind,
-};
+use forge_types::{ActorRole, ActorSlot, CanonicalVariable, PlatformId, TriggerConfig, Variant};
 
 use super::payload_read::{self, youtube_actor};
 use crate::vocabulary::fields::chat as fields;
@@ -73,15 +70,7 @@ impl TriggerKindDescriptor for ChatMessageDescriptor {
                 .actor(youtube_actor(ActorRole::Principal), author_identity)
                 .message_text(|event| payload_read::text(event, fields::MESSAGE_TEXT))
                 .first_chat_message()
-                .event_specific(
-                    DeclaredVariable {
-                        name: variables::chat::MESSAGE_ID.to_owned(),
-                        kind: VariantKind::String,
-                        label: "Message ID".to_owned(),
-                        synthesis: None,
-                    },
-                    |event| Variant::String(payload_read::text(event, fields::MESSAGE_ID)),
-                )
+                .chat_message_id(|event| payload_read::text(event, fields::MESSAGE_ID))
                 .legacy(
                     variables::sender::DISPLAY_NAME,
                     "Sender display name",

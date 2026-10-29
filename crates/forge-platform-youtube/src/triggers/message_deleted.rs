@@ -3,11 +3,11 @@ use forge_registry::{
     ActorDeclaration, EventFilter, FormField, KindPlatformContract, TriggerCategory,
     TriggerKindDescriptor, TriggerVariables,
 };
-use forge_types::{DeclaredVariable, PlatformId, TriggerConfig, Variant, VariantKind};
+use forge_types::{PlatformId, TriggerConfig};
 
 use super::payload_read;
 use crate::vocabulary::fields::chat_mod as fields;
-use crate::vocabulary::{event_kinds, trigger_ids, variables};
+use crate::vocabulary::{event_kinds, trigger_ids};
 
 pub(crate) struct ChatMessageDeletedDescriptor;
 
@@ -64,15 +64,10 @@ impl TriggerKindDescriptor for ChatMessageDeletedDescriptor {
     }
 
     fn variables(&self) -> Option<TriggerVariables> {
-        Some(TriggerVariables::new().event_specific(
-            DeclaredVariable {
-                name: variables::chat::DELETED_MESSAGE_ID.to_owned(),
-                kind: VariantKind::String,
-                label: "Deleted message ID".to_owned(),
-                synthesis: None,
-            },
-            |event| Variant::String(payload_read::text(event, fields::MESSAGE_ID)),
-        ))
+        Some(
+            TriggerVariables::new()
+                .chat_message_id(|event| payload_read::text(event, fields::MESSAGE_ID)),
+        )
     }
 
     fn actors(&self) -> ActorDeclaration {

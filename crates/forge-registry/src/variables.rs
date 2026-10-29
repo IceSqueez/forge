@@ -14,6 +14,9 @@ const CANONICAL_CLASS: u8 = 0;
 const EVENT_SPECIFIC_CLASS: u8 = 1;
 const LEGACY_CLASS: u8 = 2;
 
+const LEGACY_CHAT_MESSAGE_ID: &str = "chat.message_id";
+const LEGACY_CHAT_MESSAGE_ID_LABEL: &str = "Message ID";
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum LoginSlot {
     Declared,
@@ -187,6 +190,20 @@ impl TriggerVariables {
         self.canonical(CanonicalVariable::MessageText, move |event| {
             Variant::String(read(event))
         })
+    }
+
+    pub fn chat_message_id<F>(self, read: F) -> Self
+    where
+        F: Fn(&Event) -> String + Send + Sync + 'static,
+    {
+        self.canonical(CanonicalVariable::MessageId, move |event| {
+            Variant::String(read(event))
+        })
+        .legacy(
+            LEGACY_CHAT_MESSAGE_ID,
+            LEGACY_CHAT_MESSAGE_ID_LABEL,
+            CanonicalVariable::MessageId,
+        )
     }
 
     pub fn first_chat_message(self) -> Self {

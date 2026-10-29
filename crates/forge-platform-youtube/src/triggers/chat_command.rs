@@ -132,15 +132,7 @@ impl TriggerKindDescriptor for ChatCommandDescriptor {
                 .actor(youtube_actor(ActorRole::Principal), author_identity)
                 .message_text(|event| payload_read::text(event, fields::MESSAGE_TEXT))
                 .first_chat_message()
-                .event_specific(
-                    DeclaredVariable {
-                        name: variables::chat::MESSAGE_ID.to_owned(),
-                        kind: VariantKind::String,
-                        label: "Message ID".to_owned(),
-                        synthesis: None,
-                    },
-                    |event| Variant::String(payload_read::text(event, fields::MESSAGE_ID)),
-                )
+                .chat_message_id(|event| payload_read::text(event, fields::MESSAGE_ID))
                 .event_specific(
                     DeclaredVariable {
                         name: variables::chat::COMMAND_NAME.to_owned(),

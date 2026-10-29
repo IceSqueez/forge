@@ -7,9 +7,7 @@ use forge_components::{
     body_family, dropdown, dropdown_list, dropdown_row, icon, radius, scaled, slider, spacing,
     toggle, tr,
 };
-use forge_storage::{
-    set_soundboard_also_headphones, set_soundboard_master_volume, set_soundboard_output_device,
-};
+use forge_soundboard::settings::{save_also_headphones, save_master_volume, save_output_device};
 use gpui::{AnyElement, ClickEvent, Context, Pixels, SharedString, div, prelude::*, px};
 
 use super::labels::{field_lite_label, section_label};
@@ -45,7 +43,7 @@ impl SoundboardView {
         let value = self.settings.also_headphones;
         async_bridge::report_failure(
             &self.rt_handle,
-            async move { set_soundboard_also_headphones(repo.as_ref(), value).await },
+            async move { save_also_headphones(repo.as_ref(), value).await },
             ErrorSink::Toast,
             tr!("soundboard_persist_failed"),
             cx,
@@ -62,7 +60,7 @@ impl SoundboardView {
         self.master_volume_debounce.schedule_reporting(
             &self.rt_handle,
             tr!("soundboard_persist_failed"),
-            async move { set_soundboard_master_volume(repo.as_ref(), value).await },
+            async move { save_master_volume(repo.as_ref(), value).await },
             ErrorSink::Toast,
             cx,
         );
@@ -78,7 +76,7 @@ impl SoundboardView {
         let repo = Arc::clone(&self.settings_repo);
         async_bridge::report_failure(
             &self.rt_handle,
-            async move { set_soundboard_output_device(repo.as_ref(), device_id).await },
+            async move { save_output_device(repo.as_ref(), device_id).await },
             ErrorSink::Toast,
             tr!("soundboard_persist_failed"),
             cx,

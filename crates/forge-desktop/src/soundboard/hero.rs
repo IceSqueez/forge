@@ -5,7 +5,7 @@ use forge_components::{
     BORDER_THIN, Density, FONT_XS, ForgePalette, Icon, Radius, Spacing, body_family, icon, radius,
     scaled, spacing, toggle, tr,
 };
-use forge_storage::set_soundboard_enabled;
+use forge_soundboard::settings::save_enabled;
 use gpui::{AnyElement, ClickEvent, Context, Pixels, div, prelude::*, px};
 
 use super::routing::ROUTING_PAD;
@@ -28,7 +28,7 @@ impl SoundboardView {
         let value = self.settings.enabled;
         async_bridge::report_failure(
             &self.rt_handle,
-            async move { set_soundboard_enabled(repo.as_ref(), value).await },
+            async move { save_enabled(repo.as_ref(), value).await },
             ErrorSink::Toast,
             tr!("soundboard_persist_failed"),
             cx,

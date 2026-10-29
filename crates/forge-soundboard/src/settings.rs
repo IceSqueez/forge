@@ -132,6 +132,27 @@ pub async fn save_master_volume(repo: &dyn SettingsRepo, volume: f32) -> Result<
     write_setting(repo, &MASTER_VOLUME, &volume).await
 }
 
+pub async fn save_enabled(repo: &dyn SettingsRepo, enabled: bool) -> Result<(), StorageError> {
+    write_setting(repo, &ENABLED, &enabled).await
+}
+
+pub async fn save_also_headphones(
+    repo: &dyn SettingsRepo,
+    enabled: bool,
+) -> Result<(), StorageError> {
+    write_setting(repo, &ALSO_HEADPHONES, &enabled).await
+}
+
+pub async fn save_output_device(
+    repo: &dyn SettingsRepo,
+    device_id: Option<String>,
+) -> Result<(), StorageError> {
+    match device_id {
+        Some(id) => repo.set_string(OUTPUT_DEVICE.key.name(), &id).await,
+        None => repo.delete(OUTPUT_DEVICE.key.name()).await.map(|_| ()),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::collections::HashMap;

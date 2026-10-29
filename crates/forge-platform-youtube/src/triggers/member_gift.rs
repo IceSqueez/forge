@@ -8,13 +8,14 @@ use forge_types::{
 };
 
 use super::payload_read::{self, youtube_actor};
-use crate::payload_fields::gift as fields;
+use crate::vocabulary::fields::gift as fields;
+use crate::vocabulary::{event_kinds, trigger_ids, variables};
 
 pub(crate) struct ChannelMemberGiftDescriptor;
 
 impl TriggerKindDescriptor for ChannelMemberGiftDescriptor {
     fn id(&self) -> &str {
-        "youtube.channel.member_gift"
+        trigger_ids::CHANNEL_MEMBER_GIFT
     }
 
     fn category(&self) -> TriggerCategory {
@@ -56,7 +57,7 @@ impl TriggerKindDescriptor for ChannelMemberGiftDescriptor {
     fn event_filter(&self) -> EventFilter {
         EventFilter {
             source: Some(EventSource::YouTube),
-            kind_prefix: Some("youtube.channel.member_gift".to_owned()),
+            kind_prefix: Some(event_kinds::CHANNEL_MEMBER_GIFT.to_owned()),
         }
     }
 
@@ -74,22 +75,22 @@ impl TriggerKindDescriptor for ChannelMemberGiftDescriptor {
                 })
                 .sub_tier(|event| payload_read::text(event, fields::LEVEL_NAME))
                 .legacy(
-                    "gift.count",
+                    variables::gift::COUNT,
                     "Memberships gifted count",
                     CanonicalVariable::Count(CanonicalCount::GiftCount),
                 )
                 .legacy(
-                    "gift.level_name",
+                    variables::gift::LEVEL_NAME,
                     "Membership level name",
                     CanonicalVariable::SubTier,
                 )
                 .legacy(
-                    "gifter.channel_id",
+                    variables::gift::GIFTER_CHANNEL_ID,
                     "Gifter channel ID",
                     CanonicalVariable::actor(ActorRole::Gifter, ActorSlot::Id),
                 )
                 .legacy(
-                    "gifter.display_name",
+                    variables::gift::GIFTER_DISPLAY_NAME,
                     "Gifter display name",
                     CanonicalVariable::actor(ActorRole::Gifter, ActorSlot::Name),
                 ),

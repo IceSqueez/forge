@@ -6,13 +6,14 @@ use forge_registry::{
 use forge_types::{ActorRole, ActorSlot, CanonicalVariable, PlatformId, TriggerConfig};
 
 use super::payload_read::{self, youtube_actor};
-use crate::payload_fields::gift as fields;
+use crate::vocabulary::fields::gift as fields;
+use crate::vocabulary::{event_kinds, trigger_ids, variables};
 
 pub(crate) struct ChannelMemberGiftReceivedDescriptor;
 
 impl TriggerKindDescriptor for ChannelMemberGiftReceivedDescriptor {
     fn id(&self) -> &str {
-        "youtube.channel.member_gift_received"
+        trigger_ids::CHANNEL_MEMBER_GIFT_RECEIVED
     }
 
     fn category(&self) -> TriggerCategory {
@@ -54,7 +55,7 @@ impl TriggerKindDescriptor for ChannelMemberGiftReceivedDescriptor {
     fn event_filter(&self) -> EventFilter {
         EventFilter {
             source: Some(EventSource::YouTube),
-            kind_prefix: Some("youtube.channel.member_gift_received".to_owned()),
+            kind_prefix: Some(event_kinds::CHANNEL_MEMBER_GIFT_RECEIVED.to_owned()),
         }
     }
 
@@ -70,27 +71,27 @@ impl TriggerKindDescriptor for ChannelMemberGiftReceivedDescriptor {
                 .actor(youtube_actor(ActorRole::Gifter), gifter_identity)
                 .sub_tier(|event| payload_read::text(event, fields::LEVEL_NAME))
                 .legacy(
-                    "gift.level_name",
+                    variables::gift::LEVEL_NAME,
                     "Membership level name",
                     CanonicalVariable::SubTier,
                 )
                 .legacy(
-                    "gifter.channel_id",
+                    variables::gift::GIFTER_CHANNEL_ID,
                     "Gifter channel ID",
                     CanonicalVariable::actor(ActorRole::Gifter, ActorSlot::Id),
                 )
                 .legacy(
-                    "gifter.display_name",
+                    variables::gift::GIFTER_DISPLAY_NAME,
                     "Gifter display name",
                     CanonicalVariable::actor(ActorRole::Gifter, ActorSlot::Name),
                 )
                 .legacy(
-                    "recipient.channel_id",
+                    variables::gift::RECIPIENT_CHANNEL_ID,
                     "Recipient channel ID",
                     CanonicalVariable::actor(ActorRole::Recipient, ActorSlot::Id),
                 )
                 .legacy(
-                    "recipient.display_name",
+                    variables::gift::RECIPIENT_DISPLAY_NAME,
                     "Recipient display name",
                     CanonicalVariable::actor(ActorRole::Recipient, ActorSlot::Name),
                 ),

@@ -9,7 +9,8 @@ use forge_types::{
 };
 
 use super::payload_read::{self, youtube_actor};
-use crate::payload_fields::ban as fields;
+use crate::vocabulary::fields::ban as fields;
+use crate::vocabulary::{event_kinds, trigger_ids, variables};
 
 const ANY_BAN: &str = "any";
 const PERMANENT_BAN: &str = "permanent";
@@ -19,7 +20,7 @@ pub(crate) struct ChannelUserBannedDescriptor;
 
 impl TriggerKindDescriptor for ChannelUserBannedDescriptor {
     fn id(&self) -> &str {
-        "youtube.channel.user_banned"
+        trigger_ids::CHANNEL_USER_BANNED
     }
 
     fn category(&self) -> TriggerCategory {
@@ -85,7 +86,7 @@ impl TriggerKindDescriptor for ChannelUserBannedDescriptor {
     fn event_filter(&self) -> EventFilter {
         EventFilter {
             source: Some(EventSource::YouTube),
-            kind_prefix: Some("youtube.channel.user_banned".to_owned()),
+            kind_prefix: Some(event_kinds::CHANNEL_USER_BANNED.to_owned()),
         }
     }
 
@@ -115,7 +116,7 @@ impl TriggerKindDescriptor for ChannelUserBannedDescriptor {
                 .actor(youtube_actor(ActorRole::Moderator), moderator_identity)
                 .event_specific(
                     DeclaredVariable {
-                        name: "ban.type".to_owned(),
+                        name: variables::ban::TYPE.to_owned(),
                         kind: VariantKind::String,
                         label: "Ban type".to_owned(),
                         synthesis: None,
@@ -124,7 +125,7 @@ impl TriggerKindDescriptor for ChannelUserBannedDescriptor {
                 )
                 .event_specific(
                     DeclaredVariable {
-                        name: "ban.duration_seconds".to_owned(),
+                        name: variables::ban::DURATION_SECONDS.to_owned(),
                         kind: VariantKind::Int,
                         label: "Ban duration in seconds".to_owned(),
                         synthesis: Some(SynthesisHint::BoundedInt {
@@ -135,22 +136,22 @@ impl TriggerKindDescriptor for ChannelUserBannedDescriptor {
                     |event| Variant::Int(payload_read::number(event, fields::DURATION_SECS)),
                 )
                 .legacy(
-                    "ban.target.display_name",
+                    variables::ban::TARGET_DISPLAY_NAME,
                     "Banned user display name",
                     CanonicalVariable::actor(ActorRole::Principal, ActorSlot::Name),
                 )
                 .legacy(
-                    "ban.target.channel_id",
+                    variables::ban::TARGET_CHANNEL_ID,
                     "Banned user channel ID",
                     CanonicalVariable::actor(ActorRole::Principal, ActorSlot::Id),
                 )
                 .legacy(
-                    "ban.moderator.channel_id",
+                    variables::ban::MODERATOR_CHANNEL_ID,
                     "Moderator channel ID",
                     CanonicalVariable::actor(ActorRole::Moderator, ActorSlot::Id),
                 )
                 .legacy(
-                    "ban.moderator.display_name",
+                    variables::ban::MODERATOR_DISPLAY_NAME,
                     "Moderator display name",
                     CanonicalVariable::actor(ActorRole::Moderator, ActorSlot::Name),
                 ),

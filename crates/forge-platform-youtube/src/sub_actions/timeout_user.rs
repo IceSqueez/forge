@@ -13,8 +13,9 @@ use time::OffsetDateTime;
 
 use super::display_name;
 use crate::moderation::YoutubeModeration;
+use crate::vocabulary::sub_action_ids;
 
-const KIND_ID: &str = "youtube.moderation.timeout_user";
+const KIND_ID: &str = sub_action_ids::MODERATION_TIMEOUT_USER;
 
 pub struct TimeoutUserRunner {
     moderation: Arc<YoutubeModeration>,

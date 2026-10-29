@@ -9,13 +9,14 @@ use forge_types::{
 };
 
 use super::payload_read::{self, youtube_actor};
-use crate::payload_fields::{chat as fields, kinds};
+use crate::vocabulary::fields::chat as fields;
+use crate::vocabulary::{event_kinds, trigger_ids, variables};
 
 pub(crate) struct ChatCommandDescriptor;
 
 impl TriggerKindDescriptor for ChatCommandDescriptor {
     fn id(&self) -> &str {
-        kinds::CHAT_COMMAND
+        trigger_ids::CHAT_COMMAND
     }
 
     fn category(&self) -> TriggerCategory {
@@ -81,7 +82,7 @@ impl TriggerKindDescriptor for ChatCommandDescriptor {
     fn event_filter(&self) -> EventFilter {
         EventFilter {
             source: Some(EventSource::YouTube),
-            kind_prefix: Some(kinds::CHAT_MESSAGE.to_owned()),
+            kind_prefix: Some(event_kinds::CHAT_MESSAGE.to_owned()),
         }
     }
 
@@ -133,7 +134,7 @@ impl TriggerKindDescriptor for ChatCommandDescriptor {
                 .first_chat_message()
                 .event_specific(
                     DeclaredVariable {
-                        name: "message_id".to_owned(),
+                        name: variables::chat::MESSAGE_ID.to_owned(),
                         kind: VariantKind::String,
                         label: "Message ID".to_owned(),
                         synthesis: None,
@@ -142,7 +143,7 @@ impl TriggerKindDescriptor for ChatCommandDescriptor {
                 )
                 .event_specific(
                     DeclaredVariable {
-                        name: "command_name".to_owned(),
+                        name: variables::chat::COMMAND_NAME.to_owned(),
                         kind: VariantKind::String,
                         label: "Command name".to_owned(),
                         synthesis: None,
@@ -151,7 +152,7 @@ impl TriggerKindDescriptor for ChatCommandDescriptor {
                 )
                 .event_specific(
                     DeclaredVariable {
-                        name: "args".to_owned(),
+                        name: variables::chat::COMMAND_ARGS.to_owned(),
                         kind: VariantKind::Array,
                         label: "Command arguments".to_owned(),
                         synthesis: None,
@@ -159,12 +160,12 @@ impl TriggerKindDescriptor for ChatCommandDescriptor {
                     |event| Variant::Array(command_args(event).map(Variant::String).collect()),
                 )
                 .legacy(
-                    "user_display_name",
+                    variables::sender::DISPLAY_NAME,
                     "Sender display name",
                     CanonicalVariable::actor(ActorRole::Principal, ActorSlot::Name),
                 )
                 .legacy(
-                    "channel_id",
+                    variables::sender::CHANNEL_ID,
                     "Sender channel ID",
                     CanonicalVariable::actor(ActorRole::Principal, ActorSlot::Id),
                 ),

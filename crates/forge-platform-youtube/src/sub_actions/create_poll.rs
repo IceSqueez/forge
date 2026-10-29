@@ -12,8 +12,9 @@ use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, Variant};
 use time::OffsetDateTime;
 
 use crate::send_chat::YoutubeSendChat;
+use crate::vocabulary::sub_action_ids;
 
-const KIND_ID: &str = "youtube.chat.create_poll";
+const KIND_ID: &str = sub_action_ids::CHAT_CREATE_POLL;
 const MIN_OPTIONS: usize = 2;
 const MAX_OPTIONS: usize = 4;
 

@@ -1,10 +1,9 @@
-use std::collections::BTreeMap;
 use std::sync::Arc;
 
 use forge_net::{GatewayRequest, Secret};
 use forge_platform_core::PlatformError;
-use forge_types::Variant;
 use futures::future::BoxFuture;
+use time::OffsetDateTime;
 
 use crate::active_broadcast_id::ActiveBroadcastIdHandle;
 use crate::data_api::{YoutubeDataApi, malformed};
@@ -15,6 +14,14 @@ const VIDEOS_PATH: &str = "/videos";
 const MISSING_SCOPE: &str = "stream stats scope missing";
 
 type TokenSource = Arc<dyn Fn() -> BoxFuture<'static, Result<String, PlatformError>> + Send + Sync>;
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct YoutubeStreamDetails {
+    pub concurrent_viewers: i64,
+    pub live_chat_id: String,
+    pub actual_start: Option<OffsetDateTime>,
+    pub scheduled_start: Option<OffsetDateTime>,
+}
 
 pub struct YoutubeStreamStats {
     api: YoutubeDataApi,
@@ -35,7 +42,7 @@ impl YoutubeStreamStats {
         }
     }
 
-    pub async fn fetch(&self) -> Result<Variant, PlatformError> {
+    pub async fn fetch(&self) -> Result<YoutubeStreamDetails, PlatformError> {
         let broadcast_id =
             self.active_broadcast_id
                 .get()
@@ -84,23 +91,12 @@ impl YoutubeStreamStats {
             .and_then(|v| v.as_str())
             .unwrap_or_default();
 
-        let mut fields = BTreeMap::from([
-            (
-                "concurrent_viewers".to_owned(),
-                Variant::Int(concurrent_viewers),
-            ),
-            (
-                "live_chat_id".to_owned(),
-                Variant::String(active_live_chat_id.to_owned()),
-            ),
-        ]);
-        if let Some(value) = timestamp::variant(actual_start_time) {
-            fields.insert("actual_start_time".to_owned(), value);
-        }
-        if let Some(value) = timestamp::variant(scheduled_start_time) {
-            fields.insert("scheduled_start_time".to_owned(), value);
-        }
-        Ok(Variant::Object(fields))
+        Ok(YoutubeStreamDetails {
+            concurrent_viewers,
+            live_chat_id: active_live_chat_id.to_owned(),
+            actual_start: actual_start_time,
+            scheduled_start: scheduled_start_time,
+        })
     }
 }
 

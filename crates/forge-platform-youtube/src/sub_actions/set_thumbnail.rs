@@ -12,8 +12,9 @@ use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, Variant};
 use time::OffsetDateTime;
 
 use crate::thumbnail::YoutubeThumbnail;
+use crate::vocabulary::sub_action_ids;
 
-const KIND_ID: &str = "youtube.stream.set_thumbnail";
+const KIND_ID: &str = sub_action_ids::STREAM_SET_THUMBNAIL;
 
 pub struct SetThumbnailRunner {
     thumbnail: Arc<YoutubeThumbnail>,

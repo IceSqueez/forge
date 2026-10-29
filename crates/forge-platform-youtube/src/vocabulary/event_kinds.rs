@@ -1,0 +1,12 @@
+pub const CHAT_MESSAGE: &str = "youtube.chat.message";
+pub const CHAT_MESSAGE_DELETED: &str = "youtube.chat.message_deleted";
+pub const CHAT_SUPER_CHAT: &str = "youtube.chat.super_chat";
+pub const CHAT_SUPER_STICKER: &str = "youtube.chat.super_sticker";
+pub const CHANNEL_MEMBER: &str = "youtube.channel.member";
+pub const CHANNEL_MEMBER_MILESTONE: &str = "youtube.channel.member_milestone";
+pub const CHANNEL_MEMBER_GIFT: &str = "youtube.channel.member_gift";
+pub const CHANNEL_MEMBER_GIFT_RECEIVED: &str = "youtube.channel.member_gift_received";
+pub const CHANNEL_USER_BANNED: &str = "youtube.channel.user_banned";
+pub const STREAM_ONLINE: &str = "youtube.stream.online";
+pub const STREAM_OFFLINE: &str = "youtube.stream.offline";
+pub const STREAM_TITLE_CHANGED: &str = "youtube.stream.title_changed";

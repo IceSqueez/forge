@@ -12,8 +12,9 @@ use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, Variant};
 use time::OffsetDateTime;
 
 use crate::stream_metadata::YoutubeStreamMetadata;
+use crate::vocabulary::sub_action_ids;
 
-const KIND_ID: &str = "youtube.stream.update_description";
+const KIND_ID: &str = sub_action_ids::STREAM_UPDATE_DESCRIPTION;
 
 pub struct UpdateDescriptionRunner {
     metadata: Arc<YoutubeStreamMetadata>,

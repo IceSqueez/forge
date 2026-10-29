@@ -1,9 +1,7 @@
-use std::collections::BTreeMap;
 use std::sync::Arc;
 
 use forge_net::{GatewayRequest, Secret};
 use forge_platform_core::PlatformError;
-use forge_types::Variant;
 use futures::future::BoxFuture;
 
 use crate::data_api::{YoutubeDataApi, malformed};
@@ -14,6 +12,14 @@ const CHANNELS_PATH: &str = "/channels";
 const MISSING_SCOPE: &str = "channel lookup scope missing";
 
 type TokenSource = Arc<dyn Fn() -> BoxFuture<'static, Result<String, PlatformError>> + Send + Sync>;
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct YoutubeChannelProfile {
+    pub channel_id: String,
+    pub title: String,
+    pub subscriber_count: i64,
+    pub view_count: i64,
+}
 
 pub struct YoutubeChannelLookup {
     api: YoutubeDataApi,
@@ -28,7 +34,7 @@ impl YoutubeChannelLookup {
         }
     }
 
-    pub async fn lookup(&self, identifier: &str) -> Result<Variant, PlatformError> {
+    pub async fn lookup(&self, identifier: &str) -> Result<YoutubeChannelProfile, PlatformError> {
         let is_channel_id = identifier.starts_with("UC") && identifier.len() == CHANNEL_ID_LEN;
         let filter_key = if is_channel_id { "id" } else { "forHandle" };
 
@@ -71,18 +77,12 @@ impl YoutubeChannelLookup {
             .and_then(|s| s.parse::<i64>().ok())
             .unwrap_or(0);
 
-        Ok(Variant::Object(BTreeMap::from([
-            (
-                "channel_id".to_owned(),
-                Variant::String(channel_id.to_owned()),
-            ),
-            ("title".to_owned(), Variant::String(title.to_owned())),
-            (
-                "subscriber_count".to_owned(),
-                Variant::Int(subscriber_count),
-            ),
-            ("view_count".to_owned(), Variant::Int(view_count)),
-        ])))
+        Ok(YoutubeChannelProfile {
+            channel_id: channel_id.to_owned(),
+            title: title.to_owned(),
+            subscriber_count,
+            view_count,
+        })
     }
 }
 

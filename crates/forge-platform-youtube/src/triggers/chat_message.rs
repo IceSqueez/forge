@@ -10,13 +10,14 @@ use forge_types::{
 };
 
 use super::payload_read::{self, youtube_actor};
-use crate::payload_fields::{chat as fields, kinds};
+use crate::vocabulary::fields::chat as fields;
+use crate::vocabulary::{event_kinds, trigger_ids, variables};
 
 pub(crate) struct ChatMessageDescriptor;
 
 impl TriggerKindDescriptor for ChatMessageDescriptor {
     fn id(&self) -> &str {
-        kinds::CHAT_MESSAGE
+        trigger_ids::CHAT_MESSAGE
     }
 
     fn category(&self) -> TriggerCategory {
@@ -58,7 +59,7 @@ impl TriggerKindDescriptor for ChatMessageDescriptor {
     fn event_filter(&self) -> EventFilter {
         EventFilter {
             source: Some(EventSource::YouTube),
-            kind_prefix: Some(kinds::CHAT_MESSAGE.to_owned()),
+            kind_prefix: Some(event_kinds::CHAT_MESSAGE.to_owned()),
         }
     }
 
@@ -74,7 +75,7 @@ impl TriggerKindDescriptor for ChatMessageDescriptor {
                 .first_chat_message()
                 .event_specific(
                     DeclaredVariable {
-                        name: "message_id".to_owned(),
+                        name: variables::chat::MESSAGE_ID.to_owned(),
                         kind: VariantKind::String,
                         label: "Message ID".to_owned(),
                         synthesis: None,
@@ -82,12 +83,12 @@ impl TriggerKindDescriptor for ChatMessageDescriptor {
                     |event| Variant::String(payload_read::text(event, fields::MESSAGE_ID)),
                 )
                 .legacy(
-                    "user_display_name",
+                    variables::sender::DISPLAY_NAME,
                     "Sender display name",
                     CanonicalVariable::actor(ActorRole::Principal, ActorSlot::Name),
                 )
                 .legacy(
-                    "channel_id",
+                    variables::sender::CHANNEL_ID,
                     "Sender channel ID",
                     CanonicalVariable::actor(ActorRole::Principal, ActorSlot::Id),
                 ),

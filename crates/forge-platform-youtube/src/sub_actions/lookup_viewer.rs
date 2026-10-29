@@ -12,8 +12,10 @@ use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, Variant};
 use time::OffsetDateTime;
 
 use crate::channel_lookup::YoutubeChannelLookup;
+use crate::vocabulary::sub_action_ids;
+use crate::vocabulary::variables::viewer as variables;
 
-const KIND_ID: &str = "youtube.lookup.viewer";
+const KIND_ID: &str = sub_action_ids::LOOKUP_VIEWER;
 
 pub struct LookupViewerRunner {
     lookup: Arc<YoutubeChannelLookup>,
@@ -102,18 +104,23 @@ impl SubActionRunner for LookupViewerRunner {
         }
 
         match self.lookup.lookup(&identifier).await {
-            Ok(Variant::Object(map)) => {
-                let mut stack = ctx.arg_stack.clone();
-                for (field, key) in [
-                    ("channel_id", "youtube.viewer.channel_id"),
-                    ("title", "youtube.viewer.title"),
-                    ("subscriber_count", "youtube.viewer.subscriber_count"),
-                    ("view_count", "youtube.viewer.view_count"),
-                ] {
-                    if let Some(v) = map.get(field) {
-                        stack = stack.set(key.to_owned(), v.clone());
-                    }
-                }
+            Ok(profile) => {
+                let stack = ctx
+                    .arg_stack
+                    .clone()
+                    .set(
+                        variables::CHANNEL_ID.to_owned(),
+                        Variant::String(profile.channel_id),
+                    )
+                    .set(variables::TITLE.to_owned(), Variant::String(profile.title))
+                    .set(
+                        variables::SUBSCRIBER_COUNT.to_owned(),
+                        Variant::Int(profile.subscriber_count),
+                    )
+                    .set(
+                        variables::VIEW_COUNT.to_owned(),
+                        Variant::Int(profile.view_count),
+                    );
                 (
                     SubActionTelemetry {
                         args_in: ::std::collections::BTreeMap::new(),
@@ -127,20 +134,6 @@ impl SubActionRunner for LookupViewerRunner {
                     Some(stack),
                 )
             }
-            Ok(_) => (
-                SubActionTelemetry {
-                    args_in: ::std::collections::BTreeMap::new(),
-                    produced: ::std::collections::BTreeMap::new(),
-                    kind: KIND_ID.to_owned(),
-                    started_at,
-                    duration_ms: start.elapsed().as_millis() as u64,
-                    outcome: SubActionOutcome::Failed(
-                        "channel lookup returned an unexpected shape".to_owned(),
-                    ),
-                    index: ctx.index,
-                },
-                None,
-            ),
             Err(e) => (
                 SubActionTelemetry {
                     args_in: ::std::collections::BTreeMap::new(),

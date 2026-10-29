@@ -12,8 +12,9 @@ use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, Variant};
 use time::OffsetDateTime;
 
 use crate::moderation::YoutubeModeration;
+use crate::vocabulary::sub_action_ids;
 
-const KIND_ID: &str = "youtube.moderation.unban_user";
+const KIND_ID: &str = sub_action_ids::MODERATION_UNBAN_USER;
 
 pub struct UnbanUserRunner {
     moderation: Arc<YoutubeModeration>,

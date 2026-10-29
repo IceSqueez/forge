@@ -6,13 +6,14 @@ use forge_registry::{
 use forge_types::{ActorRole, ActorSlot, CanonicalVariable, PlatformId, TriggerConfig};
 
 use super::payload_read::{self, youtube_actor};
-use crate::payload_fields::{chat as chat_fields, member as fields};
+use crate::vocabulary::fields::{chat as chat_fields, member as fields};
+use crate::vocabulary::{event_kinds, trigger_ids, variables};
 
 pub(crate) struct SupportNewMemberDescriptor;
 
 impl TriggerKindDescriptor for SupportNewMemberDescriptor {
     fn id(&self) -> &str {
-        "youtube.channel.member"
+        trigger_ids::CHANNEL_MEMBER
     }
 
     fn category(&self) -> TriggerCategory {
@@ -54,7 +55,7 @@ impl TriggerKindDescriptor for SupportNewMemberDescriptor {
     fn event_filter(&self) -> EventFilter {
         EventFilter {
             source: Some(EventSource::YouTube),
-            kind_prefix: Some("youtube.channel.member".to_owned()),
+            kind_prefix: Some(event_kinds::CHANNEL_MEMBER.to_owned()),
         }
     }
 
@@ -68,17 +69,17 @@ impl TriggerKindDescriptor for SupportNewMemberDescriptor {
                 .actor(youtube_actor(ActorRole::Principal), member_identity)
                 .sub_tier(|event| payload_read::text(event, fields::MEMBER_LEVEL_NAME))
                 .legacy(
-                    "user_display_name",
+                    variables::sender::DISPLAY_NAME,
                     "New member display name",
                     CanonicalVariable::actor(ActorRole::Principal, ActorSlot::Name),
                 )
                 .legacy(
-                    "channel_id",
+                    variables::sender::CHANNEL_ID,
                     "New member channel ID",
                     CanonicalVariable::actor(ActorRole::Principal, ActorSlot::Id),
                 )
                 .legacy(
-                    "member_level_name",
+                    variables::member::LEVEL_NAME,
                     "Membership level name",
                     CanonicalVariable::SubTier,
                 ),

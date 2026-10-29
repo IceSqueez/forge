@@ -1,0 +1,16 @@
+pub const CHAT_CREATE_POLL: &str = "youtube.chat.create_poll";
+pub const CHAT_DELETE_MESSAGE: &str = "youtube.chat.delete_message";
+pub const CHAT_SEND_MESSAGE: &str = "youtube.chat.send_message";
+pub const LOOKUP_STREAM_STATS: &str = "youtube.lookup.stream_stats";
+pub const LOOKUP_VIEWER: &str = "youtube.lookup.viewer";
+pub const MODERATION_ADD_MODERATOR: &str = "youtube.moderation.add_moderator";
+pub const MODERATION_BAN_USER: &str = "youtube.moderation.ban_user";
+pub const MODERATION_REMOVE_MODERATOR: &str = "youtube.moderation.remove_moderator";
+pub const MODERATION_TIMEOUT_USER: &str = "youtube.moderation.timeout_user";
+pub const MODERATION_UNBAN_USER: &str = "youtube.moderation.unban_user";
+pub const STREAM_INSERT_AD_BREAK: &str = "youtube.stream.insert_ad_break";
+pub const STREAM_SET_THUMBNAIL: &str = "youtube.stream.set_thumbnail";
+pub const STREAM_UPDATE_CATEGORY: &str = "youtube.stream.update_category";
+pub const STREAM_UPDATE_DESCRIPTION: &str = "youtube.stream.update_description";
+pub const STREAM_UPDATE_PRIVACY: &str = "youtube.stream.update_privacy";
+pub const STREAM_UPDATE_TITLE: &str = "youtube.stream.update_title";

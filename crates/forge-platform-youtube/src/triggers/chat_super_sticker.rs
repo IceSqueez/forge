@@ -9,13 +9,14 @@ use forge_types::{
 };
 
 use super::payload_read::{self, youtube_actor};
-use crate::payload_fields::{chat as chat_fields, support as fields};
+use crate::vocabulary::fields::{chat as chat_fields, support as fields};
+use crate::vocabulary::{event_kinds, trigger_ids, variables};
 
 pub(crate) struct SupportSuperStickerDescriptor;
 
 impl TriggerKindDescriptor for SupportSuperStickerDescriptor {
     fn id(&self) -> &str {
-        "youtube.chat.super_sticker"
+        trigger_ids::CHAT_SUPER_STICKER
     }
 
     fn category(&self) -> TriggerCategory {
@@ -57,7 +58,7 @@ impl TriggerKindDescriptor for SupportSuperStickerDescriptor {
     fn event_filter(&self) -> EventFilter {
         EventFilter {
             source: Some(EventSource::YouTube),
-            kind_prefix: Some("youtube.chat.super_sticker".to_owned()),
+            kind_prefix: Some(event_kinds::CHAT_SUPER_STICKER.to_owned()),
         }
     }
 
@@ -71,7 +72,7 @@ impl TriggerKindDescriptor for SupportSuperStickerDescriptor {
                 .actor(youtube_actor(ActorRole::Principal), author_identity)
                 .event_specific(
                     DeclaredVariable {
-                        name: "sticker_id".to_owned(),
+                        name: variables::support::STICKER_ID.to_owned(),
                         kind: VariantKind::String,
                         label: "Sticker ID".to_owned(),
                         synthesis: None,
@@ -80,7 +81,7 @@ impl TriggerKindDescriptor for SupportSuperStickerDescriptor {
                 )
                 .event_specific(
                     DeclaredVariable {
-                        name: "amount_micros".to_owned(),
+                        name: variables::support::AMOUNT_MICROS.to_owned(),
                         kind: VariantKind::Int,
                         label: "Amount in micros".to_owned(),
                         synthesis: Some(SynthesisHint::BoundedInt {
@@ -92,7 +93,7 @@ impl TriggerKindDescriptor for SupportSuperStickerDescriptor {
                 )
                 .event_specific(
                     DeclaredVariable {
-                        name: "currency".to_owned(),
+                        name: variables::support::CURRENCY.to_owned(),
                         kind: VariantKind::String,
                         label: "Currency code".to_owned(),
                         synthesis: None,
@@ -100,12 +101,12 @@ impl TriggerKindDescriptor for SupportSuperStickerDescriptor {
                     |event| Variant::String(payload_read::text(event, fields::CURRENCY)),
                 )
                 .legacy(
-                    "user_display_name",
+                    variables::sender::DISPLAY_NAME,
                     "Sender display name",
                     CanonicalVariable::actor(ActorRole::Principal, ActorSlot::Name),
                 )
                 .legacy(
-                    "channel_id",
+                    variables::sender::CHANNEL_ID,
                     "Sender channel ID",
                     CanonicalVariable::actor(ActorRole::Principal, ActorSlot::Id),
                 ),

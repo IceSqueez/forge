@@ -35,6 +35,7 @@ use crate::triggers::stream_offline::ChannelBroadcastEndedDescriptor;
 use crate::triggers::stream_online::ChannelBroadcastStartedDescriptor;
 use crate::triggers::title_changed::ChannelBroadcastTitleChangedDescriptor;
 use crate::viewer_poll::{YoutubeViewerPoll, YoutubeViewerSource};
+use crate::vocabulary::sub_action_ids;
 
 const QUOTA_DAILY_BUDGET: u64 = 10_000;
 const GAMING_CATEGORY_ID: &str = "20";
@@ -520,7 +521,7 @@ impl QuickActions for YoutubeIntegrationBundle {
                 connected,
                 "Broadcast",
                 false,
-                "youtube.stream.update_title",
+                sub_action_ids::STREAM_UPDATE_TITLE,
                 config([("title", blank())]),
                 vec![text_field("title", "Title", "Stream title").required()],
             ),
@@ -531,7 +532,7 @@ impl QuickActions for YoutubeIntegrationBundle {
                 connected,
                 "Broadcast",
                 false,
-                "youtube.stream.update_description",
+                sub_action_ids::STREAM_UPDATE_DESCRIPTION,
                 config([("description", blank())]),
                 vec![
                     multiline_field("description", "Description", "Stream description").required(),
@@ -544,7 +545,7 @@ impl QuickActions for YoutubeIntegrationBundle {
                 connected,
                 "Broadcast",
                 false,
-                "youtube.stream.update_category",
+                sub_action_ids::STREAM_UPDATE_CATEGORY,
                 config([(
                     "category_id",
                     Variant::String(GAMING_CATEGORY_ID.to_owned()),
@@ -568,7 +569,7 @@ impl QuickActions for YoutubeIntegrationBundle {
                 connected,
                 "Broadcast",
                 false,
-                "youtube.stream.update_privacy",
+                sub_action_ids::STREAM_UPDATE_PRIVACY,
                 config([("privacy_status", Variant::String("public".to_owned()))]),
                 vec![
                     choice_field(
@@ -591,7 +592,7 @@ impl QuickActions for YoutubeIntegrationBundle {
                 connected,
                 "Broadcast",
                 false,
-                "youtube.stream.set_thumbnail",
+                sub_action_ids::STREAM_SET_THUMBNAIL,
                 config([("image_path", blank())]),
                 vec![text_field("image_path", "Image path", "Path to an image file").required()],
             ),
@@ -602,7 +603,7 @@ impl QuickActions for YoutubeIntegrationBundle {
                 connected,
                 "Broadcast",
                 false,
-                "youtube.stream.insert_ad_break",
+                sub_action_ids::STREAM_INSERT_AD_BREAK,
                 config([("duration_secs", Variant::Int(30))]),
                 Vec::new(),
             ),
@@ -613,7 +614,7 @@ impl QuickActions for YoutubeIntegrationBundle {
                 connected,
                 "Polls",
                 false,
-                "youtube.chat.create_poll",
+                sub_action_ids::CHAT_CREATE_POLL,
                 config([("question", blank()), ("options", blank())]),
                 vec![
                     text_field("question", "Question", "Poll question").required(),
@@ -628,7 +629,7 @@ impl QuickActions for YoutubeIntegrationBundle {
                 connected,
                 "Chat",
                 false,
-                "youtube.chat.send_message",
+                sub_action_ids::CHAT_SEND_MESSAGE,
                 config([("message", blank())]),
                 vec![multiline_field("message", "Message", "Message").required()],
             ),
@@ -639,7 +640,7 @@ impl QuickActions for YoutubeIntegrationBundle {
                 connected,
                 "Chat",
                 true,
-                "youtube.chat.delete_message",
+                sub_action_ids::CHAT_DELETE_MESSAGE,
                 config([("message_id", blank())]),
                 vec![text_field("message_id", "Message ID", "message id").required()],
             ),
@@ -650,7 +651,7 @@ impl QuickActions for YoutubeIntegrationBundle {
                 connected,
                 "Chat",
                 false,
-                "youtube.moderation.timeout_user",
+                sub_action_ids::MODERATION_TIMEOUT_USER,
                 config([
                     ("channel_id", blank()),
                     ("duration_seconds", Variant::Int(300)),
@@ -664,7 +665,7 @@ impl QuickActions for YoutubeIntegrationBundle {
                 connected,
                 "Chat",
                 true,
-                "youtube.moderation.ban_user",
+                sub_action_ids::MODERATION_BAN_USER,
                 config([("channel_id", blank())]),
                 vec![text_field("channel_id", "User", "Channel ID (UC...)").required()],
             ),
@@ -675,7 +676,7 @@ impl QuickActions for YoutubeIntegrationBundle {
                 connected,
                 "Content",
                 false,
-                "youtube.lookup.viewer",
+                sub_action_ids::LOOKUP_VIEWER,
                 config([("identifier", blank())]),
                 vec![text_field("identifier", "Username", "@handle or UC...").required()],
             ),
@@ -686,7 +687,7 @@ impl QuickActions for YoutubeIntegrationBundle {
                 connected,
                 "Content",
                 false,
-                "youtube.lookup.stream_stats",
+                sub_action_ids::LOOKUP_STREAM_STATS,
                 BTreeMap::new(),
                 Vec::new(),
             ),

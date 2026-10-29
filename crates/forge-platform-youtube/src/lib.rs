@@ -23,7 +23,6 @@ mod live_chat_id;
 mod log_capture;
 mod moderation;
 mod oauth_client;
-mod payload_fields;
 mod poll_health;
 mod quota_state;
 mod send_chat;
@@ -34,6 +33,7 @@ mod thumbnail;
 mod timestamp;
 mod triggers;
 mod viewer_poll;
+pub mod vocabulary;
 
 pub use active_broadcast_id::ActiveBroadcastIdHandle;
 pub use ad_break::YoutubeAdBreak;
@@ -42,7 +42,7 @@ pub use auth::{
     YoutubeAuthBundle, YoutubeSignIn, client_credentials,
 };
 pub use builtin::{YoutubeIntegrationBundle, register_youtube_triggers};
-pub use channel_lookup::YoutubeChannelLookup;
+pub use channel_lookup::{YoutubeChannelLookup, YoutubeChannelProfile};
 pub use chat_platform::YoutubePlatform;
 pub use chat_poller::{ChatPollTimings, YoutubeChatPoller};
 pub use credentials::{CREDENTIAL_KEY, YoutubeBroadcaster, YoutubeCredentials};
@@ -58,7 +58,7 @@ pub use oauth_client::{
 pub use quota_state::SharedQuota;
 pub use send_chat::YoutubeSendChat;
 pub use stream_metadata::YoutubeStreamMetadata;
-pub use stream_stats::YoutubeStreamStats;
+pub use stream_stats::{YoutubeStreamDetails, YoutubeStreamStats};
 pub use sub_actions::{
     BanUserRunner, CreatePollRunner, InsertAdBreakRunner, LookupStreamStatsRunner,
     LookupViewerRunner, SendMessageRunner, SetThumbnailRunner, TimeoutUserRunner, UnbanUserRunner,

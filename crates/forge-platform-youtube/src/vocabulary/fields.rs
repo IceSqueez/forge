@@ -46,8 +46,3 @@ pub(crate) mod stream {
     pub(crate) const BROADCAST_ID: &str = "broadcast_id";
     pub(crate) const BROADCAST_TITLE: &str = "broadcast_title";
 }
-
-pub(crate) mod kinds {
-    pub(crate) const CHAT_MESSAGE: &str = "youtube.chat.message";
-    pub(crate) const CHAT_COMMAND: &str = "youtube.chat.command";
-}

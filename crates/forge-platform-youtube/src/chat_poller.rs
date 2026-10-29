@@ -17,13 +17,14 @@ use crate::active_broadcast_id::ActiveBroadcastIdHandle;
 use crate::ban_ledger::{USER_BANNED_EVENT_TYPE, observed_ban};
 use crate::data_api::{DataApiError, YoutubeDataApi, malformed};
 use crate::live_chat_id::LiveChatIdHandle;
-use crate::payload_fields::{
-    ban as ban_fields, chat as chat_fields, chat_mod as chat_mod_fields, entity,
-    gift as gift_fields, kinds, member as member_fields, stream as stream_fields,
-    support as support_fields,
-};
 use crate::poll_health::{PollHealthReporter, PollHealthTracker};
 use crate::quota_state::{BROADCAST_COST, CHAT_POLL_COST, today_pacific};
+use crate::vocabulary::event_kinds;
+use crate::vocabulary::fields::{
+    ban as ban_fields, chat as chat_fields, chat_mod as chat_mod_fields, entity,
+    gift as gift_fields, member as member_fields, stream as stream_fields,
+    support as support_fields,
+};
 
 const POLL_FLOOR_MS: u64 = 3_000;
 const LONG_INTERVAL_MS: u64 = 60_000;
@@ -182,7 +183,7 @@ impl YoutubeChatPoller {
                         is_live = false;
                         let event = Event::new(
                             EventSource::YouTube,
-                            "youtube.stream.offline",
+                            event_kinds::STREAM_OFFLINE,
                             serde_json::json!({
                                 (stream_fields::BROADCAST_ID): last_broadcast_id.clone().unwrap_or_default(),
                             }),
@@ -227,7 +228,7 @@ impl YoutubeChatPoller {
                 is_live = true;
                 let event = Event::new(
                     EventSource::YouTube,
-                    "youtube.stream.online",
+                    event_kinds::STREAM_ONLINE,
                     serde_json::json!({
                         (stream_fields::BROADCAST_TITLE): current_title,
                         (stream_fields::BROADCAST_ID): broadcast_id,
@@ -245,7 +246,7 @@ impl YoutubeChatPoller {
                     .bus_sender
                     .send(Event::new(
                         EventSource::YouTube,
-                        "youtube.stream.title_changed",
+                        event_kinds::STREAM_TITLE_CHANGED,
                         serde_json::json!({
                             (stream_fields::TITLE): {
                                 (stream_fields::OLD): prev,
@@ -406,7 +407,7 @@ impl YoutubeChatPoller {
         }
         Some(Event::new(
             EventSource::YouTube,
-            "youtube.stream.offline",
+            event_kinds::STREAM_OFFLINE,
             serde_json::json!({ (stream_fields::BROADCAST_ID): broadcast_id }),
         ))
     }
@@ -582,7 +583,7 @@ impl YoutubeChatPoller {
                 }
                 Some(Event::new(
                     EventSource::YouTube,
-                    kinds::CHAT_MESSAGE,
+                    event_kinds::CHAT_MESSAGE,
                     payload,
                 ))
             }
@@ -641,7 +642,7 @@ impl YoutubeChatPoller {
                 payload[ChatPayload::KEY] = serde_json::to_value(&chat_payload).ok()?;
                 Some(Event::new(
                     EventSource::YouTube,
-                    "youtube.chat.super_chat",
+                    event_kinds::CHAT_SUPER_CHAT,
                     payload,
                 ))
             }
@@ -695,7 +696,7 @@ impl YoutubeChatPoller {
                 payload[ChatPayload::KEY] = serde_json::to_value(&chat_payload).ok()?;
                 Some(Event::new(
                     EventSource::YouTube,
-                    "youtube.chat.super_sticker",
+                    event_kinds::CHAT_SUPER_STICKER,
                     payload,
                 ))
             }
@@ -732,7 +733,7 @@ impl YoutubeChatPoller {
                 payload[ChatPayload::KEY] = serde_json::to_value(&chat_payload).ok()?;
                 Some(Event::new(
                     EventSource::YouTube,
-                    "youtube.channel.member",
+                    event_kinds::CHANNEL_MEMBER,
                     payload,
                 ))
             }
@@ -784,7 +785,7 @@ impl YoutubeChatPoller {
                 payload[ChatPayload::KEY] = serde_json::to_value(&chat_payload).ok()?;
                 Some(Event::new(
                     EventSource::YouTube,
-                    "youtube.channel.member_milestone",
+                    event_kinds::CHANNEL_MEMBER_MILESTONE,
                     payload,
                 ))
             }
@@ -847,7 +848,7 @@ impl YoutubeChatPoller {
                 payload[ChatPayload::KEY] = serde_json::to_value(&chat_payload).ok()?;
                 Some(Event::new(
                     EventSource::YouTube,
-                    "youtube.channel.user_banned",
+                    event_kinds::CHANNEL_USER_BANNED,
                     payload,
                 ))
             }
@@ -874,7 +875,7 @@ impl YoutubeChatPoller {
                 payload[ChatPayload::KEY] = serde_json::to_value(&chat_payload).ok()?;
                 Some(Event::new(
                     EventSource::YouTube,
-                    "youtube.chat.message_deleted",
+                    event_kinds::CHAT_MESSAGE_DELETED,
                     payload,
                 ))
             }
@@ -915,7 +916,7 @@ impl YoutubeChatPoller {
                 payload[ChatPayload::KEY] = serde_json::to_value(&chat_payload).ok()?;
                 Some(Event::new(
                     EventSource::YouTube,
-                    "youtube.channel.member_gift",
+                    event_kinds::CHANNEL_MEMBER_GIFT,
                     payload,
                 ))
             }
@@ -954,7 +955,7 @@ impl YoutubeChatPoller {
                 payload[ChatPayload::KEY] = serde_json::to_value(&chat_payload).ok()?;
                 Some(Event::new(
                     EventSource::YouTube,
-                    "youtube.channel.member_gift_received",
+                    event_kinds::CHANNEL_MEMBER_GIFT_RECEIVED,
                     payload,
                 ))
             }

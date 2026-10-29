@@ -12,8 +12,9 @@ use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, Variant};
 use time::OffsetDateTime;
 
 use crate::send_chat::YoutubeSendChat;
+use crate::vocabulary::sub_action_ids;
 
-const KIND_ID: &str = "youtube.chat.delete_message";
+const KIND_ID: &str = sub_action_ids::CHAT_DELETE_MESSAGE;
 const MESSAGE_ID_VARIABLE: &str = "%message_id%";
 const UNRESOLVED_REFERENCE_MARKER: char = '%';
 

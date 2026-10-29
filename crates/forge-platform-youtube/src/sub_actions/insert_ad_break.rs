@@ -12,8 +12,9 @@ use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, Variant};
 use time::OffsetDateTime;
 
 use crate::ad_break::YoutubeAdBreak;
+use crate::vocabulary::sub_action_ids;
 
-const KIND_ID: &str = "youtube.stream.insert_ad_break";
+const KIND_ID: &str = sub_action_ids::STREAM_INSERT_AD_BREAK;
 const MIN_DURATION_SECS: i64 = 1;
 const MAX_DURATION_SECS: i64 = 3_600;
 

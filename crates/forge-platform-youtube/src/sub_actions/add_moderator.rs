@@ -12,8 +12,9 @@ use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, Variant};
 use time::OffsetDateTime;
 
 use crate::moderation::YoutubeModeration;
+use crate::vocabulary::sub_action_ids;
 
-const KIND_ID: &str = "youtube.moderation.add_moderator";
+const KIND_ID: &str = sub_action_ids::MODERATION_ADD_MODERATOR;
 
 pub struct AddModeratorRunner {
     moderation: Arc<YoutubeModeration>,

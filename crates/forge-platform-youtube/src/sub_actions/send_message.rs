@@ -13,8 +13,9 @@ use forge_types::{ArgStack, PlatformId, SubActionOutcome, SubActionTelemetry, Va
 use time::OffsetDateTime;
 
 use crate::send_chat::YoutubeSendChat;
+use crate::vocabulary::sub_action_ids;
 
-const KIND_ID: &str = "youtube.chat.send_message";
+const KIND_ID: &str = sub_action_ids::CHAT_SEND_MESSAGE;
 
 pub struct SendMessageRunner {
     sender: Arc<YoutubeSendChat>,

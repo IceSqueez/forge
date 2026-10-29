@@ -9,8 +9,11 @@ use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, Variant};
 use time::OffsetDateTime;
 
 use crate::stream_stats::YoutubeStreamStats;
+use crate::timestamp;
+use crate::vocabulary::sub_action_ids;
+use crate::vocabulary::variables::stream_stats as variables;
 
-const KIND_ID: &str = "youtube.lookup.stream_stats";
+const KIND_ID: &str = sub_action_ids::LOOKUP_STREAM_STATS;
 
 pub struct LookupStreamStatsRunner {
     stats: Arc<YoutubeStreamStats>,
@@ -69,21 +72,21 @@ impl SubActionRunner for LookupStreamStatsRunner {
         let start = Instant::now();
 
         match self.stats.fetch().await {
-            Ok(Variant::Object(map)) => {
-                let mut stack = ctx.arg_stack.clone();
-                for (field, key) in [
-                    ("concurrent_viewers", "youtube.stream.concurrent_viewers"),
-                    ("actual_start_time", "youtube.stream.actual_start_time"),
-                    (
-                        "scheduled_start_time",
-                        "youtube.stream.scheduled_start_time",
-                    ),
-                    ("live_chat_id", "youtube.stream.live_chat_id"),
-                ] {
-                    if let Some(v) = map.get(field) {
-                        stack = stack.set(key.to_owned(), v.clone());
-                    }
+            Ok(details) => {
+                let mut stack = ctx.arg_stack.clone().set(
+                    variables::CONCURRENT_VIEWERS.to_owned(),
+                    Variant::Int(details.concurrent_viewers),
+                );
+                if let Some(started) = timestamp::variant(details.actual_start) {
+                    stack = stack.set(variables::ACTUAL_START_TIME.to_owned(), started);
                 }
+                if let Some(scheduled) = timestamp::variant(details.scheduled_start) {
+                    stack = stack.set(variables::SCHEDULED_START_TIME.to_owned(), scheduled);
+                }
+                let stack = stack.set(
+                    variables::LIVE_CHAT_ID.to_owned(),
+                    Variant::String(details.live_chat_id),
+                );
                 (
                     SubActionTelemetry {
                         args_in: ::std::collections::BTreeMap::new(),
@@ -97,20 +100,6 @@ impl SubActionRunner for LookupStreamStatsRunner {
                     Some(stack),
                 )
             }
-            Ok(_) => (
-                SubActionTelemetry {
-                    args_in: ::std::collections::BTreeMap::new(),
-                    produced: ::std::collections::BTreeMap::new(),
-                    kind: KIND_ID.to_owned(),
-                    started_at,
-                    duration_ms: start.elapsed().as_millis() as u64,
-                    outcome: SubActionOutcome::Failed(
-                        "stream stats returned an unexpected shape".to_owned(),
-                    ),
-                    index: ctx.index,
-                },
-                None,
-            ),
             Err(e) => (
                 SubActionTelemetry {
                     args_in: ::std::collections::BTreeMap::new(),

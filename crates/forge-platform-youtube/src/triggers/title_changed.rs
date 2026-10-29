@@ -6,13 +6,14 @@ use forge_registry::{
 use forge_types::{DeclaredVariable, PlatformId, TriggerConfig, Variant, VariantKind};
 
 use super::payload_read;
-use crate::payload_fields::stream as fields;
+use crate::vocabulary::fields::stream as fields;
+use crate::vocabulary::{event_kinds, trigger_ids, variables};
 
 pub(crate) struct ChannelBroadcastTitleChangedDescriptor;
 
 impl TriggerKindDescriptor for ChannelBroadcastTitleChangedDescriptor {
     fn id(&self) -> &str {
-        "youtube.stream.title_changed"
+        trigger_ids::STREAM_TITLE_CHANGED
     }
 
     fn category(&self) -> TriggerCategory {
@@ -54,7 +55,7 @@ impl TriggerKindDescriptor for ChannelBroadcastTitleChangedDescriptor {
     fn event_filter(&self) -> EventFilter {
         EventFilter {
             source: Some(EventSource::YouTube),
-            kind_prefix: Some("youtube.stream.title_changed".to_owned()),
+            kind_prefix: Some(event_kinds::STREAM_TITLE_CHANGED.to_owned()),
         }
     }
 
@@ -67,7 +68,7 @@ impl TriggerKindDescriptor for ChannelBroadcastTitleChangedDescriptor {
             TriggerVariables::new()
                 .event_specific(
                     DeclaredVariable {
-                        name: "stream.title_old".to_owned(),
+                        name: variables::stream::TITLE_OLD.to_owned(),
                         kind: VariantKind::String,
                         label: "Previous broadcast title".to_owned(),
                         synthesis: None,
@@ -82,7 +83,7 @@ impl TriggerKindDescriptor for ChannelBroadcastTitleChangedDescriptor {
                 )
                 .event_specific(
                     DeclaredVariable {
-                        name: "stream.title_new".to_owned(),
+                        name: variables::stream::TITLE_NEW.to_owned(),
                         kind: VariantKind::String,
                         label: "New broadcast title".to_owned(),
                         synthesis: None,

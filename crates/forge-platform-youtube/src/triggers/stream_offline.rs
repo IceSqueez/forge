@@ -6,13 +6,14 @@ use forge_registry::{
 use forge_types::{DeclaredVariable, PlatformId, TriggerConfig, Variant, VariantKind};
 
 use super::payload_read;
-use crate::payload_fields::stream as fields;
+use crate::vocabulary::fields::stream as fields;
+use crate::vocabulary::{event_kinds, trigger_ids, variables};
 
 pub(crate) struct ChannelBroadcastEndedDescriptor;
 
 impl TriggerKindDescriptor for ChannelBroadcastEndedDescriptor {
     fn id(&self) -> &str {
-        "youtube.stream.offline"
+        trigger_ids::STREAM_OFFLINE
     }
 
     fn category(&self) -> TriggerCategory {
@@ -54,7 +55,7 @@ impl TriggerKindDescriptor for ChannelBroadcastEndedDescriptor {
     fn event_filter(&self) -> EventFilter {
         EventFilter {
             source: Some(EventSource::YouTube),
-            kind_prefix: Some("youtube.stream.offline".to_owned()),
+            kind_prefix: Some(event_kinds::STREAM_OFFLINE.to_owned()),
         }
     }
 
@@ -65,7 +66,7 @@ impl TriggerKindDescriptor for ChannelBroadcastEndedDescriptor {
     fn variables(&self) -> Option<TriggerVariables> {
         Some(TriggerVariables::new().event_specific(
             DeclaredVariable {
-                name: "broadcast_id".to_owned(),
+                name: variables::stream::BROADCAST_ID.to_owned(),
                 kind: VariantKind::String,
                 label: "Broadcast ID".to_owned(),
                 synthesis: None,

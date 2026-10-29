@@ -6,13 +6,14 @@ use forge_registry::{
 use forge_types::{DeclaredVariable, PlatformId, TriggerConfig, Variant, VariantKind};
 
 use super::payload_read;
-use crate::payload_fields::chat_mod as fields;
+use crate::vocabulary::fields::chat_mod as fields;
+use crate::vocabulary::{event_kinds, trigger_ids, variables};
 
 pub(crate) struct ChatMessageDeletedDescriptor;
 
 impl TriggerKindDescriptor for ChatMessageDeletedDescriptor {
     fn id(&self) -> &str {
-        "youtube.chat.message_deleted"
+        trigger_ids::CHAT_MESSAGE_DELETED
     }
 
     fn category(&self) -> TriggerCategory {
@@ -54,7 +55,7 @@ impl TriggerKindDescriptor for ChatMessageDeletedDescriptor {
     fn event_filter(&self) -> EventFilter {
         EventFilter {
             source: Some(EventSource::YouTube),
-            kind_prefix: Some("youtube.chat.message_deleted".to_owned()),
+            kind_prefix: Some(event_kinds::CHAT_MESSAGE_DELETED.to_owned()),
         }
     }
 
@@ -65,7 +66,7 @@ impl TriggerKindDescriptor for ChatMessageDeletedDescriptor {
     fn variables(&self) -> Option<TriggerVariables> {
         Some(TriggerVariables::new().event_specific(
             DeclaredVariable {
-                name: "chat.message_id".to_owned(),
+                name: variables::chat::DELETED_MESSAGE_ID.to_owned(),
                 kind: VariantKind::String,
                 label: "Deleted message ID".to_owned(),
                 synthesis: None,

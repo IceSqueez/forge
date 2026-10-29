@@ -8,13 +8,14 @@ use forge_types::{
 };
 
 use super::payload_read::{self, youtube_actor};
-use crate::payload_fields::{chat as chat_fields, member as fields};
+use crate::vocabulary::fields::{chat as chat_fields, member as fields};
+use crate::vocabulary::{event_kinds, trigger_ids, variables};
 
 pub(crate) struct SupportMemberMilestoneDescriptor;
 
 impl TriggerKindDescriptor for SupportMemberMilestoneDescriptor {
     fn id(&self) -> &str {
-        "youtube.channel.member_milestone"
+        trigger_ids::CHANNEL_MEMBER_MILESTONE
     }
 
     fn category(&self) -> TriggerCategory {
@@ -56,7 +57,7 @@ impl TriggerKindDescriptor for SupportMemberMilestoneDescriptor {
     fn event_filter(&self) -> EventFilter {
         EventFilter {
             source: Some(EventSource::YouTube),
-            kind_prefix: Some("youtube.channel.member_milestone".to_owned()),
+            kind_prefix: Some(event_kinds::CHANNEL_MEMBER_MILESTONE.to_owned()),
         }
     }
 
@@ -73,17 +74,17 @@ impl TriggerKindDescriptor for SupportMemberMilestoneDescriptor {
                     payload_read::number(event, fields::MEMBER_MONTH)
                 })
                 .legacy(
-                    "user_display_name",
+                    variables::sender::DISPLAY_NAME,
                     "Member display name",
                     CanonicalVariable::actor(ActorRole::Principal, ActorSlot::Name),
                 )
                 .legacy(
-                    "channel_id",
+                    variables::sender::CHANNEL_ID,
                     "Member channel ID",
                     CanonicalVariable::actor(ActorRole::Principal, ActorSlot::Id),
                 )
                 .legacy(
-                    "member_month",
+                    variables::member::MONTH,
                     "Membership length in months",
                     CanonicalVariable::Count(CanonicalCount::SubCumulativeMonths),
                 ),

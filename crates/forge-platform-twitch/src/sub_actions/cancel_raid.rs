@@ -1,3 +1,4 @@
+use crate::vocabulary::sub_action_ids;
 use std::collections::BTreeMap;
 use std::sync::Arc;
 use std::time::Instant;
@@ -12,7 +13,7 @@ use crate::account::identity::SelfIdentity;
 use crate::helix::{HelixMethod, HelixRequest, HelixTransport};
 use crate::lifecycle::TwitchLifecycle;
 
-const KIND_ID: &str = "twitch.channel.cancel_raid";
+const KIND_ID: &str = sub_action_ids::CHANNEL_CANCEL_RAID;
 
 pub struct CancelRaidRunner {
     transport: Arc<dyn HelixTransport>,

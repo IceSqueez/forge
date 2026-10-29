@@ -1,3 +1,4 @@
+use crate::vocabulary::sub_action_ids;
 use std::collections::BTreeMap;
 use std::sync::Arc;
 use std::time::Instant;
@@ -17,7 +18,7 @@ const TARGET_KEYS: TargetKeys = TargetKeys {
     id: "target_user_id",
     login: "target_user_login",
 };
-const KIND_ID: &str = "twitch.moderation.unban_user";
+const KIND_ID: &str = sub_action_ids::MODERATION_UNBAN_USER;
 const NOT_BANNED_MARKER: &str = "not banned";
 
 fn already_unbanned(error: &HelixError) -> bool {

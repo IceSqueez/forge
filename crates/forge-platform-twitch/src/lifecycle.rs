@@ -4,6 +4,7 @@ use std::time::{Duration, Instant};
 use forge_platform_core::{CollectionRevisionSignal, CollectionRevisions, QuickActionLiveness};
 
 use crate::helix::{HelixError, HelixMethod, HelixRequest, HelixTransport};
+use crate::vocabulary::topics;
 use forge_net::status::FORBIDDEN;
 
 const RAID_COUNTDOWN: Duration = Duration::from_secs(90);
@@ -13,13 +14,10 @@ const PREDICTIONS_PATH: &str = "/helix/predictions";
 const STATUS_ACTIVE: &str = "ACTIVE";
 const STATUS_LOCKED: &str = "LOCKED";
 const SHIELD_MODE_PATH: &str = "/helix/moderation/shield_mode";
-const SHIELD_BEGIN_TOPIC: &str = "channel.shield_mode.begin";
-const SHIELD_END_TOPIC: &str = "channel.shield_mode.end";
-
 const REWARD_COLLECTION_TOPICS: &[&str] = &[
-    "channel.channel_points_custom_reward.add",
-    "channel.channel_points_custom_reward.update",
-    "channel.channel_points_custom_reward.remove",
+    topics::CHANNEL_CHANNEL_POINTS_CUSTOM_REWARD_ADD,
+    topics::CHANNEL_CHANNEL_POINTS_CUSTOM_REWARD_UPDATE,
+    topics::CHANNEL_CHANNEL_POINTS_CUSTOM_REWARD_REMOVE,
 ];
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -90,23 +88,25 @@ impl TwitchLifecycle {
             return;
         }
         match subscription_type {
-            SHIELD_BEGIN_TOPIC => return self.set_shield(ShieldPhase::Active),
-            SHIELD_END_TOPIC => return self.set_shield(ShieldPhase::Inactive),
+            topics::CHANNEL_SHIELD_MODE_BEGIN => return self.set_shield(ShieldPhase::Active),
+            topics::CHANNEL_SHIELD_MODE_END => return self.set_shield(ShieldPhase::Inactive),
             _ => {}
         }
         let mut entities = self.entities.write().unwrap_or_else(|p| p.into_inner());
         match subscription_type {
-            "channel.poll.begin" | "channel.poll.progress" => entities.poll = PollPhase::Active,
-            "channel.poll.end" => entities.poll = PollPhase::Absent,
-            "channel.prediction.begin" => entities.prediction = PredictionPhase::Active,
-            "channel.prediction.progress" => {
+            topics::CHANNEL_POLL_BEGIN | topics::CHANNEL_POLL_PROGRESS => {
+                entities.poll = PollPhase::Active
+            }
+            topics::CHANNEL_POLL_END => entities.poll = PollPhase::Absent,
+            topics::CHANNEL_PREDICTION_BEGIN => entities.prediction = PredictionPhase::Active,
+            topics::CHANNEL_PREDICTION_PROGRESS => {
                 if entities.prediction != PredictionPhase::Locked {
                     entities.prediction = PredictionPhase::Active;
                 }
             }
-            "channel.prediction.lock" => entities.prediction = PredictionPhase::Locked,
-            "channel.prediction.end" => entities.prediction = PredictionPhase::Absent,
-            "channel.raid"
+            topics::CHANNEL_PREDICTION_LOCK => entities.prediction = PredictionPhase::Locked,
+            topics::CHANNEL_PREDICTION_END => entities.prediction = PredictionPhase::Absent,
+            topics::CHANNEL_RAID
                 if !self_broadcaster_id.is_empty()
                     && raid_is_outgoing(event, self_broadcaster_id) =>
             {

@@ -1,4 +1,6 @@
-use crate::event_kinds;
+use crate::vocabulary::RaidDirection;
+use crate::vocabulary::event_kinds;
+use crate::vocabulary::trigger_ids;
 use forge_events::{Event, EventSource};
 use forge_registry::{
     ActorDeclaration, ActorIdentity, EventFilter, FormField, KindPlatformContract, TriggerCategory,
@@ -9,13 +11,13 @@ use forge_types::{
 };
 
 use super::payload_read::{self, twitch_actor};
-use crate::payload_fields::raid as fields;
+use crate::vocabulary::fields::raid as fields;
 
 pub(crate) struct RaidSentDescriptor;
 
 impl TriggerKindDescriptor for RaidSentDescriptor {
     fn id(&self) -> &str {
-        "twitch.channel.raid_sent"
+        trigger_ids::CHANNEL_RAID_SENT
     }
 
     fn category(&self) -> TriggerCategory {
@@ -66,7 +68,7 @@ impl TriggerKindDescriptor for RaidSentDescriptor {
             .payload
             .get(fields::DIRECTION)
             .and_then(|v| v.as_str())
-            .is_some_and(|d| d == "sent")
+            .is_some_and(|d| d == RaidDirection::Sent.as_str())
     }
 
     fn variables(&self) -> Option<TriggerVariables> {

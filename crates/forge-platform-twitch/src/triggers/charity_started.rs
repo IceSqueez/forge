@@ -1,4 +1,5 @@
-use crate::event_kinds;
+use crate::vocabulary::event_kinds;
+use crate::vocabulary::trigger_ids;
 use forge_events::{Event, EventSource};
 use forge_registry::{
     ActorDeclaration, EventFilter, FormField, KindPlatformContract, TriggerCategory,
@@ -9,13 +10,13 @@ use forge_types::{
     VariantKind,
 };
 
-use crate::payload_fields::charity as charity_fields;
+use crate::vocabulary::fields::charity as charity_fields;
 
 pub(crate) struct CharityStartedDescriptor;
 
 impl TriggerKindDescriptor for CharityStartedDescriptor {
     fn id(&self) -> &str {
-        "twitch.support.charity_started"
+        trigger_ids::SUPPORT_CHARITY_STARTED
     }
 
     fn category(&self) -> TriggerCategory {

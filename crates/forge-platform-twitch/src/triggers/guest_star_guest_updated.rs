@@ -1,4 +1,5 @@
-use crate::event_kinds;
+use crate::vocabulary::event_kinds;
+use crate::vocabulary::trigger_ids;
 use forge_events::{Event, EventSource};
 use forge_registry::{
     ActorDeclaration, ActorIdentity, EventFilter, FormField, KindPlatformContract, TriggerCategory,
@@ -10,13 +11,13 @@ use forge_types::{
 };
 
 use super::payload_read::{self, twitch_actor};
-use crate::payload_fields::guest_star as guest_star_fields;
+use crate::vocabulary::fields::guest_star as guest_star_fields;
 
 pub(crate) struct GuestStarGuestUpdatedDescriptor;
 
 impl TriggerKindDescriptor for GuestStarGuestUpdatedDescriptor {
     fn id(&self) -> &str {
-        "twitch.guest_star.guest_updated"
+        trigger_ids::GUEST_STAR_GUEST_UPDATED
     }
 
     fn category(&self) -> TriggerCategory {

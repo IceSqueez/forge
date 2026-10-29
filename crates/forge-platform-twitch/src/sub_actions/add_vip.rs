@@ -1,3 +1,4 @@
+use crate::vocabulary::sub_action_ids;
 use std::collections::BTreeMap;
 use std::sync::Arc;
 use std::time::Instant;
@@ -14,7 +15,7 @@ use time::OffsetDateTime;
 use crate::account::identity::{SelfIdentity, resolve_user_id};
 use crate::helix::{HelixMethod, HelixRequest, HelixTransport};
 
-const KIND_ID: &str = "twitch.moderation.add_vip";
+const KIND_ID: &str = sub_action_ids::MODERATION_ADD_VIP;
 
 pub struct AddVipRunner {
     transport: Arc<dyn HelixTransport>,

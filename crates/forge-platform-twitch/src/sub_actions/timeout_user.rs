@@ -1,3 +1,4 @@
+use crate::vocabulary::sub_action_ids;
 use std::collections::BTreeMap;
 use std::sync::Arc;
 use std::time::Instant;
@@ -19,7 +20,7 @@ const TARGET_KEYS: TargetKeys = TargetKeys {
     id: "target_user_id",
     login: "target_user_login",
 };
-const KIND_ID: &str = "twitch.moderation.timeout_user";
+const KIND_ID: &str = sub_action_ids::MODERATION_TIMEOUT_USER;
 const DEFAULT_DURATION_SECONDS: i64 = 600;
 const MIN_DURATION_SECONDS: i64 = 1;
 const MAX_DURATION_SECONDS: i64 = 1_209_600;

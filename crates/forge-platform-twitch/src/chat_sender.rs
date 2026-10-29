@@ -1,7 +1,7 @@
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
-use forge_events::{Event, EventPublisher, EventSource};
+use forge_events::{EventPublisher, EventSource, TypedEvent};
 use forge_platform_core::{
     ActingSender, SENDER_FIELD, SENT_AS_FIELD, SenderPreference, SenderRole,
 };
@@ -20,11 +20,10 @@ use crate::chat::{
     ChatSendError, WhisperError, send_chat, send_chat_reply, send_whisper, send_whisper_to,
 };
 use crate::helix::{HelixError, HelixMethod, HelixRequest, HelixTransport};
+use crate::vocabulary::{FallbackLevel, SenderFallback};
 
 const ANNOUNCEMENTS_PATH: &str = "/helix/chat/announcements";
 const SHOUTOUTS_PATH: &str = "/helix/chat/shoutouts";
-
-pub const SENDER_FALLBACK_KIND: &str = "chat.sender.fallback";
 
 #[derive(Debug, Error)]
 pub(crate) enum SendFailure {
@@ -353,15 +352,12 @@ fn announce_fallback(
         operation = delivery.operation(),
         "bot account unavailable; sending as the streamer"
     );
-    events.publish(Event::new(
-        EventSource::Twitch,
-        SENDER_FALLBACK_KIND,
-        serde_json::json!({
-            "level": "warning",
-            "operation": delivery.operation(),
-            "reason": reason.to_string(),
-        }),
-    ));
+    SenderFallback {
+        level: FallbackLevel::Warning,
+        operation: delivery.operation().to_owned(),
+        reason: reason.to_string(),
+    }
+    .publish(events, EventSource::Twitch, None);
 }
 
 pub(crate) fn configured_sender(

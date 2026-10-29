@@ -4,6 +4,7 @@ pub(crate) mod payload;
 mod send;
 mod session;
 mod subscriber;
+mod topic_catalog;
 mod whisper;
 
 pub(crate) use send::refusal_text;

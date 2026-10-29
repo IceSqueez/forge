@@ -1,3 +1,4 @@
+use crate::vocabulary::sub_action_ids;
 use std::sync::Arc;
 
 use async_trait::async_trait;
@@ -12,7 +13,7 @@ use super::fulfill_redemption::{
 use crate::account::identity::SelfIdentity;
 use crate::helix::HelixTransport;
 
-const KIND_ID: &str = "twitch.channel_points.cancel_redemption";
+const KIND_ID: &str = sub_action_ids::CHANNEL_POINTS_CANCEL_REDEMPTION;
 
 pub struct CancelRedemptionRunner {
     transport: Arc<dyn HelixTransport>,

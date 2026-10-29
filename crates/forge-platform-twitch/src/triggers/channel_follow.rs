@@ -1,4 +1,5 @@
-use crate::event_kinds;
+use crate::vocabulary::event_kinds;
+use crate::vocabulary::trigger_ids;
 use forge_events::{Event, EventSource};
 use forge_registry::{
     ActorDeclaration, ActorIdentity, EventFilter, FormField, KindPlatformContract, TriggerCategory,
@@ -7,13 +8,13 @@ use forge_registry::{
 use forge_types::{ActorRole, DeclaredVariable, PlatformId, TriggerConfig, VariantKind};
 
 use super::payload_read::{self, twitch_actor};
-use crate::payload_fields::follow as fields;
+use crate::vocabulary::fields::follow as fields;
 
 pub(crate) struct ChannelFollowDescriptor;
 
 impl TriggerKindDescriptor for ChannelFollowDescriptor {
     fn id(&self) -> &str {
-        "twitch.channel.follow"
+        trigger_ids::CHANNEL_FOLLOW
     }
 
     fn category(&self) -> TriggerCategory {

@@ -1,3 +1,4 @@
+use crate::vocabulary::sub_action_ids;
 use std::collections::BTreeMap;
 use std::sync::Arc;
 use std::time::Instant;
@@ -14,7 +15,7 @@ use time::OffsetDateTime;
 use crate::account::identity::SelfIdentity;
 use crate::helix::{HelixMethod, HelixRequest, HelixTransport};
 
-const KIND_ID: &str = "twitch.channel.update_title";
+const KIND_ID: &str = sub_action_ids::CHANNEL_UPDATE_TITLE;
 const MAX_TITLE_CHARS: usize = 140;
 
 pub struct UpdateTitleRunner {

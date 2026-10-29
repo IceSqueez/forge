@@ -12,9 +12,9 @@ use serde::de::DeserializeOwned;
 use tokio_util::sync::CancellationToken;
 
 use crate::auth::{DEVICE_CANCELLED_REASON, DEVICE_CODE_USED_REASON, DEVICE_DENIED_REASON};
+use crate::vocabulary::PLATFORM_ID;
 use forge_net::status::BAD_REQUEST;
 
-const PLATFORM: &str = "twitch";
 const DEVICE_PATH: &str = "/device";
 const TOKEN_PATH: &str = "/token";
 const VALIDATE_PATH: &str = "/validate";
@@ -171,9 +171,9 @@ impl TwitchOAuthClient {
             .body(form);
         match self.gateway.send(request).await {
             Ok(response) => decode(&response),
-            Err(GatewayFailure::Unauthorized { .. }) => Err(reauth_required(PLATFORM)),
+            Err(GatewayFailure::Unauthorized { .. }) => Err(reauth_required(PLATFORM_ID)),
             Err(GatewayFailure::ClientRejected { status, .. }) if status == BAD_REQUEST => {
-                Err(reauth_required(PLATFORM))
+                Err(reauth_required(PLATFORM_ID))
             }
             Err(failure) => Err(oauth_error(failure)),
         }

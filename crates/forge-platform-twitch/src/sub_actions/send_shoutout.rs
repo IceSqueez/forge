@@ -1,3 +1,4 @@
+use crate::vocabulary::sub_action_ids;
 use std::collections::BTreeMap;
 use std::sync::Arc;
 use std::time::Instant;
@@ -19,7 +20,7 @@ use crate::chat_sender::{
 };
 use crate::helix::HelixTransport;
 
-const KIND_ID: &str = "twitch.channel.send_shoutout";
+const KIND_ID: &str = sub_action_ids::CHANNEL_SEND_SHOUTOUT;
 const TARGET_KEYS: TargetKeys = TargetKeys {
     id: "to_broadcaster_id",
     login: "to_broadcaster_login",

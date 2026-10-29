@@ -1,3 +1,4 @@
+use crate::vocabulary::sub_action_ids;
 use std::collections::BTreeMap;
 use std::sync::Arc;
 use std::time::Instant;
@@ -19,7 +20,7 @@ use crate::bot_account::TwitchBotAccount;
 use crate::chat_sender::{ChatDelivery, ChatSenders, StepResult, configured_sender, step_result};
 use crate::helix::HelixTransport;
 
-const KIND_ID: &str = "twitch.chat.send_whisper";
+const KIND_ID: &str = sub_action_ids::CHAT_SEND_WHISPER;
 const RECIPIENT_KEYS: TargetKeys = TargetKeys {
     id: "to_user_id",
     login: "to_user_login",

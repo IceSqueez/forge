@@ -1,3 +1,4 @@
+use crate::vocabulary::sub_action_ids;
 use std::collections::BTreeMap;
 use std::sync::Arc;
 use std::time::Instant;
@@ -16,7 +17,7 @@ use crate::collection_keys::MANAGEABLE_REWARD_OPTIONS_KEY;
 use crate::custom_rewards::{RewardBody, update_request};
 use crate::helix::HelixTransport;
 
-const KIND_ID: &str = "twitch.channel_points.enable_reward";
+const KIND_ID: &str = sub_action_ids::CHANNEL_POINTS_ENABLE_REWARD;
 
 pub struct EnableRewardRunner {
     transport: Arc<dyn HelixTransport>,

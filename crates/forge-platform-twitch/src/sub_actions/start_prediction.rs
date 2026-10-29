@@ -1,3 +1,4 @@
+use crate::vocabulary::sub_action_ids;
 use std::collections::BTreeMap;
 use std::sync::Arc;
 use std::time::Instant;
@@ -14,7 +15,7 @@ use time::OffsetDateTime;
 use crate::account::identity::SelfIdentity;
 use crate::helix::{HelixMethod, HelixRequest, HelixTransport};
 
-const KIND_ID: &str = "twitch.prediction.start";
+const KIND_ID: &str = sub_action_ids::PREDICTION_START;
 const MAX_TITLE_CHARS: usize = 45;
 const MIN_OUTCOMES: usize = 2;
 const MAX_OUTCOMES: usize = 10;

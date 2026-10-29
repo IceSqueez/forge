@@ -1,3 +1,4 @@
+use crate::vocabulary::sub_action_ids;
 use std::sync::Arc;
 
 use async_trait::async_trait;
@@ -14,7 +15,7 @@ use super::lock_prediction::{
 use crate::account::identity::SelfIdentity;
 use crate::helix::HelixTransport;
 
-const KIND_ID: &str = "twitch.prediction.resolve";
+const KIND_ID: &str = sub_action_ids::PREDICTION_RESOLVE;
 
 pub struct ResolvePredictionRunner {
     transport: Arc<dyn HelixTransport>,

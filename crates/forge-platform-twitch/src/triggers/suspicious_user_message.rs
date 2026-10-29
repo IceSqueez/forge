@@ -1,4 +1,5 @@
-use crate::event_kinds;
+use crate::vocabulary::event_kinds;
+use crate::vocabulary::trigger_ids;
 use forge_events::{Event, EventSource};
 use forge_registry::{
     ActorDeclaration, ActorIdentity, EventFilter, FormField, KindPlatformContract, TriggerCategory,
@@ -7,13 +8,13 @@ use forge_registry::{
 use forge_types::{ActorRole, DeclaredVariable, PlatformId, TriggerConfig, Variant, VariantKind};
 
 use super::payload_read::{self, twitch_actor};
-use crate::payload_fields::suspicious as suspicious_fields;
+use crate::vocabulary::fields::suspicious as suspicious_fields;
 
 pub(crate) struct SuspiciousUserMessageDescriptor;
 
 impl TriggerKindDescriptor for SuspiciousUserMessageDescriptor {
     fn id(&self) -> &str {
-        "twitch.channel.suspicious_user_message"
+        trigger_ids::CHANNEL_SUSPICIOUS_USER_MESSAGE
     }
 
     fn category(&self) -> TriggerCategory {

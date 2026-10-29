@@ -2,7 +2,7 @@ use forge_events::Event;
 use forge_registry::{ActorBlock, ActorIdentity, LoginSlot, TriggerVariables};
 use forge_types::{ActorRole, DeclaredVariable, PlatformId, Variant, VariantKind};
 
-use crate::payload_fields::chat as fields;
+use crate::vocabulary::fields::chat as fields;
 
 const CHATTER: ActorBlock = ActorBlock {
     role: ActorRole::Principal,

@@ -1,3 +1,4 @@
+use crate::vocabulary::sub_action_ids;
 use std::collections::BTreeMap;
 use std::sync::Arc;
 use std::time::Instant;
@@ -13,7 +14,7 @@ use time::OffsetDateTime;
 use crate::account::identity::SelfIdentity;
 use crate::helix::{HelixError, HelixMethod, HelixRequest, HelixTransport};
 
-const KIND_ID: &str = "twitch.automod.update_settings";
+const KIND_ID: &str = sub_action_ids::AUTOMOD_UPDATE_SETTINGS;
 const PATH: &str = "/helix/moderation/automod/settings";
 
 const UNCHANGED: &str = "unchanged";

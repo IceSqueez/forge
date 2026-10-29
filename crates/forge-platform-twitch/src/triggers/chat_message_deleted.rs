@@ -1,4 +1,5 @@
-use crate::event_kinds;
+use crate::vocabulary::event_kinds;
+use crate::vocabulary::trigger_ids;
 use forge_events::{Event, EventSource};
 use forge_registry::{
     ActorDeclaration, ActorIdentity, EventFilter, FormField, KindPlatformContract, TriggerCategory,
@@ -10,13 +11,13 @@ use forge_types::{
 };
 
 use super::payload_read::{self, twitch_actor};
-use crate::payload_fields::chat_mod as chat_mod_fields;
+use crate::vocabulary::fields::chat_mod as chat_mod_fields;
 
 pub(crate) struct ChatMessageDeletedDescriptor;
 
 impl TriggerKindDescriptor for ChatMessageDeletedDescriptor {
     fn id(&self) -> &str {
-        "twitch.chat.message_deleted"
+        trigger_ids::CHAT_MESSAGE_DELETED
     }
 
     fn category(&self) -> TriggerCategory {

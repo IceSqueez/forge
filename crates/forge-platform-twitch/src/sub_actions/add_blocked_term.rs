@@ -1,3 +1,4 @@
+use crate::vocabulary::sub_action_ids;
 use std::collections::BTreeMap;
 use std::sync::Arc;
 use std::time::Instant;
@@ -14,7 +15,7 @@ use time::OffsetDateTime;
 use crate::account::identity::SelfIdentity;
 use crate::helix::{HelixMethod, HelixRequest, HelixTransport};
 
-const KIND_ID: &str = "twitch.automod.add_blocked_term";
+const KIND_ID: &str = sub_action_ids::AUTOMOD_ADD_BLOCKED_TERM;
 
 const MIN_TERM_CHARS: usize = 2;
 const MAX_TERM_CHARS: usize = 500;

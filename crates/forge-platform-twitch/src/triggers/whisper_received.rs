@@ -1,4 +1,5 @@
-use crate::event_kinds;
+use crate::vocabulary::event_kinds;
+use crate::vocabulary::trigger_ids;
 use forge_events::{Event, EventSource};
 use forge_registry::{
     ActorDeclaration, ActorIdentity, EventFilter, FormField, KindPlatformContract, TriggerCategory,
@@ -11,13 +12,13 @@ use forge_types::{
 use regex::Regex;
 
 use super::payload_read::{self, twitch_actor};
-use crate::payload_fields::whisper as whisper_fields;
+use crate::vocabulary::fields::whisper as whisper_fields;
 
 pub(crate) struct WhisperReceivedDescriptor;
 
 impl TriggerKindDescriptor for WhisperReceivedDescriptor {
     fn id(&self) -> &str {
-        "twitch.chat.whisper"
+        trigger_ids::CHAT_WHISPER
     }
 
     fn category(&self) -> TriggerCategory {

@@ -1,3 +1,4 @@
+use serde::{Deserialize, Serialize};
 use thiserror::Error;
 use tracing::debug;
 
@@ -10,21 +11,12 @@ use forge_net::status::BAD_REQUEST;
 const MODERATORS_PATH: &str = "/helix/moderation/moderators";
 const ALREADY_MODERATOR_MARKER: &str = "already";
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum BotModerator {
     Unknown,
     Moderator,
     NotModerator,
-}
-
-impl BotModerator {
-    pub(super) fn wire_name(self) -> &'static str {
-        match self {
-            Self::Unknown => "unknown",
-            Self::Moderator => "moderator",
-            Self::NotModerator => "not_moderator",
-        }
-    }
 }
 
 #[derive(Debug, Error)]

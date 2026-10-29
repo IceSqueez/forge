@@ -1,4 +1,5 @@
-use crate::event_kinds;
+use crate::vocabulary::event_kinds;
+use crate::vocabulary::trigger_ids;
 use forge_events::{DeliveryLane, Event, EventSource};
 use forge_registry::{
     ActorDeclaration, ChatTriggerFamily, EventFilter, FIRST_CHATTERS_ONLY, FormField,
@@ -13,7 +14,7 @@ pub(crate) struct ChatMessageDescriptor;
 
 impl TriggerKindDescriptor for ChatMessageDescriptor {
     fn id(&self) -> &str {
-        "twitch.chat.message"
+        trigger_ids::CHAT_MESSAGE
     }
 
     fn category(&self) -> TriggerCategory {

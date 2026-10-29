@@ -1,3 +1,4 @@
+use crate::vocabulary::sub_action_ids;
 use std::collections::BTreeMap;
 use std::sync::Arc;
 use std::time::Instant;
@@ -17,7 +18,7 @@ use super::guest_star::{
 use crate::account::identity::SelfIdentity;
 use crate::helix::{HelixMethod, HelixRequest, HelixTransport};
 
-const KIND_ID: &str = "twitch.guest_star.remove_guest";
+const KIND_ID: &str = sub_action_ids::GUEST_STAR_REMOVE_GUEST;
 
 pub struct GuestStarRemoveGuestRunner {
     transport: Arc<dyn HelixTransport>,

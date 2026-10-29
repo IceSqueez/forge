@@ -1,4 +1,5 @@
-use crate::event_kinds;
+use crate::vocabulary::event_kinds;
+use crate::vocabulary::trigger_ids;
 use forge_events::{Event, EventSource};
 use forge_registry::{
     ActorDeclaration, ActorIdentity, EventFilter, FormField, KindPlatformContract, TriggerCategory,
@@ -10,13 +11,13 @@ use forge_types::{
 };
 
 use super::payload_read::{self, twitch_actor};
-use crate::payload_fields::ad_break as ad_break_fields;
+use crate::vocabulary::fields::ad_break as ad_break_fields;
 
 pub(crate) struct AdBreakStartedDescriptor;
 
 impl TriggerKindDescriptor for AdBreakStartedDescriptor {
     fn id(&self) -> &str {
-        "twitch.stream.ad_break_started"
+        trigger_ids::STREAM_AD_BREAK_STARTED
     }
 
     fn category(&self) -> TriggerCategory {

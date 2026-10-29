@@ -1,4 +1,5 @@
-use crate::event_kinds;
+use crate::vocabulary::event_kinds;
+use crate::vocabulary::trigger_ids;
 use forge_events::{Event, EventSource};
 use forge_registry::{
     ActorDeclaration, ActorIdentity, EventFilter, FormField, KindPlatformContract, TriggerCategory,
@@ -10,13 +11,13 @@ use forge_types::{
 };
 
 use super::payload_read::{self, twitch_actor};
-use crate::payload_fields::unban_request as unban_request_fields;
+use crate::vocabulary::fields::unban_request as unban_request_fields;
 
 pub(crate) struct UnbanRequestCreatedDescriptor;
 
 impl TriggerKindDescriptor for UnbanRequestCreatedDescriptor {
     fn id(&self) -> &str {
-        "twitch.channel.unban_request_created"
+        trigger_ids::CHANNEL_UNBAN_REQUEST_CREATED
     }
 
     fn category(&self) -> TriggerCategory {

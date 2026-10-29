@@ -1,4 +1,5 @@
-use crate::event_kinds;
+use crate::vocabulary::event_kinds;
+use crate::vocabulary::trigger_ids;
 use forge_events::{Event, EventSource};
 use forge_registry::{
     ActorDeclaration, ActorIdentity, EventFilter, FormField, KindPlatformContract, TriggerCategory,
@@ -9,13 +10,13 @@ use forge_types::{
 };
 
 use super::payload_read::{self, twitch_actor};
-use crate::payload_fields::automatic_reward as automatic_reward_fields;
+use crate::vocabulary::fields::automatic_reward as automatic_reward_fields;
 
 pub(crate) struct AutomaticRewardRedeemedDescriptor;
 
 impl TriggerKindDescriptor for AutomaticRewardRedeemedDescriptor {
     fn id(&self) -> &str {
-        "twitch.channel_points.automatic_reward_redeemed"
+        trigger_ids::CHANNEL_POINTS_AUTOMATIC_REWARD_REDEEMED
     }
 
     fn category(&self) -> TriggerCategory {

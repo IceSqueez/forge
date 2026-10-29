@@ -1,4 +1,5 @@
-use crate::event_kinds;
+use crate::vocabulary::event_kinds;
+use crate::vocabulary::trigger_ids;
 use forge_events::{Event, EventSource};
 use forge_registry::{
     ActorDeclaration, EventFilter, FormField, KindPlatformContract, TriggerCategory,
@@ -8,14 +9,14 @@ use forge_types::{
     ArgStack, DeclaredVariable, PlatformId, TriggerConfig, VariableSchema, Variant, VariantKind,
 };
 
-use crate::payload_fields::prediction as fields;
 use crate::triggers::prediction_started::build_outcomes_variant;
+use crate::vocabulary::fields::prediction as fields;
 
 pub(crate) struct PredictionProgressDescriptor;
 
 impl TriggerKindDescriptor for PredictionProgressDescriptor {
     fn id(&self) -> &str {
-        "twitch.prediction.progress"
+        trigger_ids::PREDICTION_PROGRESS
     }
 
     fn category(&self) -> TriggerCategory {

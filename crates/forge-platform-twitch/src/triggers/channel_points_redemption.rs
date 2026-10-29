@@ -1,4 +1,5 @@
-use crate::event_kinds;
+use crate::vocabulary::event_kinds;
+use crate::vocabulary::trigger_ids;
 use forge_events::{Event, EventSource};
 use forge_registry::{
     ActorDeclaration, ActorIdentity, EventFilter, FormField, KindPlatformContract, TriggerCategory,
@@ -11,13 +12,13 @@ use forge_types::{
 
 use super::payload_read::{self, twitch_actor};
 use crate::collection_keys::REWARD_OPTIONS_KEY;
-use crate::payload_fields::channel_points as fields;
+use crate::vocabulary::fields::channel_points as fields;
 
 pub(crate) struct ChannelPointsRedemptionDescriptor;
 
 impl TriggerKindDescriptor for ChannelPointsRedemptionDescriptor {
     fn id(&self) -> &str {
-        "twitch.channel_points.redemption"
+        trigger_ids::CHANNEL_POINTS_REDEMPTION
     }
 
     fn category(&self) -> TriggerCategory {

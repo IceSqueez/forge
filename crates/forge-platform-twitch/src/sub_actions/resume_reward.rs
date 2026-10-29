@@ -1,3 +1,4 @@
+use crate::vocabulary::sub_action_ids;
 use std::sync::Arc;
 
 use async_trait::async_trait;
@@ -12,7 +13,7 @@ use crate::account::identity::SelfIdentity;
 use crate::custom_rewards::RewardBody;
 use crate::helix::HelixTransport;
 
-const KIND_ID: &str = "twitch.channel_points.resume_reward";
+const KIND_ID: &str = sub_action_ids::CHANNEL_POINTS_RESUME_REWARD;
 
 pub struct ResumeRewardRunner {
     transport: Arc<dyn HelixTransport>,

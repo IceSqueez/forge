@@ -1,3 +1,4 @@
+use crate::vocabulary::sub_action_ids;
 use std::collections::BTreeMap;
 use std::sync::Arc;
 use std::time::Instant;
@@ -20,7 +21,7 @@ use crate::chat_sender::{
 };
 use crate::helix::HelixTransport;
 
-const KIND_ID: &str = "twitch.chat.reply";
+const KIND_ID: &str = sub_action_ids::CHAT_REPLY;
 const MAX_MESSAGE_CHARS: usize = 500;
 const DEFAULT_PARENT_TEMPLATE: &str = "%chat.message_id%";
 

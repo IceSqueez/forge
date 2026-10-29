@@ -1,4 +1,5 @@
-use crate::event_kinds;
+use crate::vocabulary::event_kinds;
+use crate::vocabulary::trigger_ids;
 use forge_events::{Event, EventSource};
 use forge_registry::{
     ActorDeclaration, EventFilter, FormField, KindPlatformContract, TriggerCategory,
@@ -8,14 +9,14 @@ use forge_types::{
     ArgStack, DeclaredVariable, PlatformId, TriggerConfig, VariableSchema, Variant, VariantKind,
 };
 
-use crate::payload_fields::poll as fields;
 use crate::triggers::poll_started::build_choices_variant;
+use crate::vocabulary::fields::poll as fields;
 
 pub(crate) struct PollEndedDescriptor;
 
 impl TriggerKindDescriptor for PollEndedDescriptor {
     fn id(&self) -> &str {
-        "twitch.poll.ended"
+        trigger_ids::POLL_ENDED
     }
 
     fn category(&self) -> TriggerCategory {

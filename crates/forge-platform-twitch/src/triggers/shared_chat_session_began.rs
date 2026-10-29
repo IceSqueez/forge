@@ -1,4 +1,5 @@
-use crate::event_kinds;
+use crate::vocabulary::event_kinds;
+use crate::vocabulary::trigger_ids;
 use forge_events::{Event, EventSource};
 use forge_registry::{
     ActorDeclaration, ActorIdentity, EventFilter, FormField, KindPlatformContract, TriggerCategory,
@@ -10,13 +11,13 @@ use forge_types::{
 };
 
 use super::payload_read::{self, twitch_actor};
-use crate::payload_fields::shared_chat as shared_chat_fields;
+use crate::vocabulary::fields::shared_chat as shared_chat_fields;
 
 pub(crate) struct SharedChatSessionBeganDescriptor;
 
 impl TriggerKindDescriptor for SharedChatSessionBeganDescriptor {
     fn id(&self) -> &str {
-        "twitch.shared_chat.session_began"
+        trigger_ids::SHARED_CHAT_SESSION_BEGAN
     }
 
     fn category(&self) -> TriggerCategory {

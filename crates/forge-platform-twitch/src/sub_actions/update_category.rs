@@ -1,3 +1,4 @@
+use crate::vocabulary::sub_action_ids;
 use std::collections::BTreeMap;
 use std::sync::Arc;
 use std::time::Instant;
@@ -14,7 +15,7 @@ use time::OffsetDateTime;
 use crate::account::identity::SelfIdentity;
 use crate::helix::{HelixError, HelixMethod, HelixRequest, HelixTransport};
 
-const KIND_ID: &str = "twitch.channel.update_category";
+const KIND_ID: &str = sub_action_ids::CHANNEL_UPDATE_CATEGORY;
 const CATEGORY_ID_KEY: &str = "category_id";
 const CATEGORY_NAME_KEY: &str = "category_name";
 

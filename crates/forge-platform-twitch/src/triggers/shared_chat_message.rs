@@ -1,4 +1,5 @@
-use crate::event_kinds;
+use crate::vocabulary::event_kinds;
+use crate::vocabulary::trigger_ids;
 use forge_events::{Event, EventSource};
 use forge_registry::{
     ActorDeclaration, EventFilter, FormField, KindPlatformContract, TriggerCategory,
@@ -9,13 +10,13 @@ use forge_types::{
 };
 
 use super::chat_arg_stack::base_chat_variables;
-use crate::payload_fields::chat as chat_fields;
+use crate::vocabulary::fields::chat as chat_fields;
 
 pub(crate) struct SharedChatMessageDescriptor;
 
 impl TriggerKindDescriptor for SharedChatMessageDescriptor {
     fn id(&self) -> &str {
-        "twitch.shared_chat.message_received"
+        trigger_ids::SHARED_CHAT_MESSAGE_RECEIVED
     }
 
     fn category(&self) -> TriggerCategory {

@@ -1,4 +1,5 @@
-use crate::event_kinds;
+use crate::vocabulary::event_kinds;
+use crate::vocabulary::trigger_ids;
 use forge_events::{Event, EventSource};
 use forge_registry::{
     ActorDeclaration, ChatTriggerFamily, EventFilter, FormField, KindPlatformContract,
@@ -7,13 +8,13 @@ use forge_registry::{
 use forge_types::{PlatformId, TriggerConfig, Variant};
 
 use super::chat_arg_stack::base_chat_variables;
-use crate::payload_fields::chat as fields;
+use crate::vocabulary::fields::chat as fields;
 
 pub(crate) struct ChatCommandDescriptor;
 
 impl TriggerKindDescriptor for ChatCommandDescriptor {
     fn id(&self) -> &str {
-        "twitch.chat.command"
+        trigger_ids::CHAT_COMMAND
     }
 
     fn category(&self) -> TriggerCategory {

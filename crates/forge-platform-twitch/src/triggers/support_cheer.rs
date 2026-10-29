@@ -1,4 +1,5 @@
-use crate::event_kinds;
+use crate::vocabulary::event_kinds;
+use crate::vocabulary::trigger_ids;
 use forge_events::{Event, EventSource};
 use forge_registry::{
     ActorDeclaration, ActorIdentity, EventFilter, FormField, KindPlatformContract, TriggerCategory,
@@ -10,13 +11,13 @@ use forge_types::{
 };
 
 use super::payload_read::{self, twitch_actor};
-use crate::payload_fields::support as fields;
+use crate::vocabulary::fields::support as fields;
 
 pub(crate) struct SupportCheerDescriptor;
 
 impl TriggerKindDescriptor for SupportCheerDescriptor {
     fn id(&self) -> &str {
-        "twitch.support.cheer"
+        trigger_ids::SUPPORT_CHEER
     }
 
     fn category(&self) -> TriggerCategory {

@@ -1,3 +1,4 @@
+use crate::vocabulary::sub_action_ids;
 use std::collections::BTreeMap;
 use std::sync::Arc;
 use std::time::Instant;
@@ -27,7 +28,7 @@ async fn set_shield(
     SubActionOutcome::from_result(&transport.execute(request).await)
 }
 
-const ON_KIND_ID: &str = "twitch.moderation.shield_mode_on";
+const ON_KIND_ID: &str = sub_action_ids::MODERATION_SHIELD_MODE_ON;
 
 pub struct ShieldModeOnRunner {
     transport: Arc<dyn HelixTransport>,
@@ -106,7 +107,7 @@ impl SubActionRunner for ShieldModeOnRunner {
     }
 }
 
-const OFF_KIND_ID: &str = "twitch.moderation.shield_mode_off";
+const OFF_KIND_ID: &str = sub_action_ids::MODERATION_SHIELD_MODE_OFF;
 
 pub struct ShieldModeOffRunner {
     transport: Arc<dyn HelixTransport>,

@@ -1,9 +1,9 @@
 use forge_events::{Event, EventPublisher, EventSource};
 use tracing::debug;
 
-use crate::event_kinds;
 use crate::helix::{HelixError, HelixMethod, HelixRequest, HelixTransport};
-use crate::payload_fields::goal as goal_fields;
+use crate::vocabulary::event_kinds;
+use crate::vocabulary::fields::goal as goal_fields;
 
 const GOALS_PATH: &str = "/helix/goals";
 const BROADCASTER_ID_PARAM: &str = "broadcaster_id";

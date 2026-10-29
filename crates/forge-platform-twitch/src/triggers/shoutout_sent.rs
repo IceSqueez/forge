@@ -1,4 +1,5 @@
-use crate::event_kinds;
+use crate::vocabulary::event_kinds;
+use crate::vocabulary::trigger_ids;
 use forge_events::{Event, EventSource};
 use forge_registry::{
     ActorDeclaration, ActorIdentity, EventFilter, FormField, KindPlatformContract, TriggerCategory,
@@ -10,13 +11,13 @@ use forge_types::{
 };
 
 use super::payload_read::{self, twitch_actor};
-use crate::payload_fields::shoutout as shoutout_fields;
+use crate::vocabulary::fields::shoutout as shoutout_fields;
 
 pub(crate) struct ShoutoutSentDescriptor;
 
 impl TriggerKindDescriptor for ShoutoutSentDescriptor {
     fn id(&self) -> &str {
-        "twitch.channel.shoutout_sent"
+        trigger_ids::CHANNEL_SHOUTOUT_SENT
     }
 
     fn category(&self) -> TriggerCategory {

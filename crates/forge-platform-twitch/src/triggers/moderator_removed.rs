@@ -1,4 +1,5 @@
-use crate::event_kinds;
+use crate::vocabulary::event_kinds;
+use crate::vocabulary::trigger_ids;
 use forge_events::{Event, EventSource};
 use forge_registry::{
     ActorDeclaration, ActorIdentity, EventFilter, FormField, KindPlatformContract, TriggerCategory,
@@ -7,13 +8,13 @@ use forge_registry::{
 use forge_types::{ActorRole, PlatformId, TriggerConfig};
 
 use super::payload_read::{self, twitch_actor};
-use crate::payload_fields::moderator as moderator_fields;
+use crate::vocabulary::fields::moderator as moderator_fields;
 
 pub(crate) struct ModeratorRemovedDescriptor;
 
 impl TriggerKindDescriptor for ModeratorRemovedDescriptor {
     fn id(&self) -> &str {
-        "twitch.channel.moderator_removed"
+        trigger_ids::CHANNEL_MODERATOR_REMOVED
     }
 
     fn category(&self) -> TriggerCategory {

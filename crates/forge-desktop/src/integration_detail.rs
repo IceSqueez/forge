@@ -1677,8 +1677,10 @@ pub(crate) fn rebuilds_descriptors(event: &Event) -> bool {
         EventSource::Obs => event
             .kind
             .starts_with(forge_obs::event_kinds::CONNECTION_PREFIX),
-        EventSource::Twitch => forge_platform_twitch::event_kinds::DESCRIPTOR_REBUILDING_KINDS
-            .contains(&event.kind.as_str()),
+        EventSource::Twitch => {
+            forge_platform_twitch::vocabulary::event_kinds::DESCRIPTOR_REBUILDING_KINDS
+                .contains(&event.kind.as_str())
+        }
         _ => false,
     }
 }

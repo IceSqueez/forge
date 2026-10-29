@@ -1,4 +1,5 @@
-use crate::event_kinds;
+use crate::vocabulary::event_kinds;
+use crate::vocabulary::trigger_ids;
 use forge_events::{Event, EventSource};
 use forge_registry::{
     ActorDeclaration, EventFilter, FormField, KindPlatformContract, TriggerCategory,
@@ -9,13 +10,13 @@ use forge_types::{
     VariantKind,
 };
 
-use crate::payload_fields::reward as fields;
+use crate::vocabulary::fields::reward as fields;
 
 pub(crate) struct RewardUpdatedDescriptor;
 
 impl TriggerKindDescriptor for RewardUpdatedDescriptor {
     fn id(&self) -> &str {
-        "twitch.channel_points.reward_updated"
+        trigger_ids::CHANNEL_POINTS_REWARD_UPDATED
     }
 
     fn category(&self) -> TriggerCategory {

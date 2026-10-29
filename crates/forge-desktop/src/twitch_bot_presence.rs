@@ -1,7 +1,8 @@
 use std::sync::Arc;
 
 use forge_events::{Event, EventSource};
-use forge_platform_twitch::{BOT_STATUS_CHANGED_KIND, BotModerator, BotStatus, TwitchBotAccount};
+use forge_platform_twitch::vocabulary::event_kinds;
+use forge_platform_twitch::{BotModerator, BotStatus, TwitchBotAccount};
 use gpui::{AsyncApp, Entity};
 
 pub struct TwitchBotPresence {
@@ -70,7 +71,7 @@ impl TwitchBotPresence {
     }
 
     pub fn apply_event(&mut self, event: &Event) -> bool {
-        if event.source != EventSource::Twitch || event.kind != BOT_STATUS_CHANGED_KIND {
+        if event.source != EventSource::Twitch || event.kind != event_kinds::BOT_STATUS_CHANGED {
             return false;
         }
         let payload = &event.payload;

@@ -1,3 +1,4 @@
+use crate::vocabulary::sub_action_ids;
 use std::collections::BTreeMap;
 use std::sync::Arc;
 use std::time::Instant;
@@ -21,7 +22,7 @@ use crate::chat_sender::{
 };
 use crate::helix::HelixTransport;
 
-const KIND_ID: &str = "twitch.chat.send_announcement";
+const KIND_ID: &str = sub_action_ids::CHAT_SEND_ANNOUNCEMENT;
 const MAX_MESSAGE_CHARS: usize = 500;
 const COLORS: &[&str] = &["primary", "blue", "green", "orange", "purple"];
 const DEFAULT_COLOR: &str = "primary";

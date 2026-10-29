@@ -1,3 +1,4 @@
+use crate::vocabulary::sub_action_ids;
 use std::collections::BTreeMap;
 use std::sync::Arc;
 use std::time::Instant;
@@ -15,7 +16,7 @@ use super::guest_star::{interpolate, session_id_field, validate_session_id, with
 use crate::account::identity::SelfIdentity;
 use crate::helix::{HelixMethod, HelixRequest, HelixTransport};
 
-const KIND_ID: &str = "twitch.guest_star.update_slot";
+const KIND_ID: &str = sub_action_ids::GUEST_STAR_UPDATE_SLOT;
 
 const UNCHANGED: &str = "unchanged";
 const ON: &str = "on";

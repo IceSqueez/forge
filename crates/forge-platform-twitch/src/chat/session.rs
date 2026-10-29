@@ -5,11 +5,11 @@ use crate::chat::subscriber::{
 };
 use crate::config::ChatSessionConfig;
 use crate::credentials_manager::TwitchCredentialsManager;
-use crate::event_kinds;
 use crate::helix::{FixedTokenSource, HelixHttpTransport, HelixTransport};
 use crate::lifecycle::TwitchLifecycle;
 use crate::subscriptions::SubscriptionTracker;
-use forge_events::{Event, EventPublisher, EventSource};
+use crate::vocabulary::{self, PlatformReauthRequired, RaidDirection, event_kinds};
+use forge_events::{Event, EventPublisher, EventSource, TypedEvent};
 use forge_net::{Backoff, Gateway};
 use forge_platform_core::{
     ConnectionState, ConnectionTransition, EndpointSurface, PlatformEndpoints, PlatformError,
@@ -33,35 +33,35 @@ use super::dedup::MessageIdWindow;
 use super::dispatch;
 use super::payload;
 use crate::creator_goals::{GoalProgressOrigin, goal_progress_event};
-use crate::payload_fields::ad_break as ad_break_fields;
-use crate::payload_fields::automatic_reward as automatic_reward_fields;
-use crate::payload_fields::automod as automod_fields;
-use crate::payload_fields::channel_points as channel_points_fields;
-use crate::payload_fields::channel_update as channel_update_fields;
-use crate::payload_fields::charity as charity_fields;
-use crate::payload_fields::chat as chat_fields;
-use crate::payload_fields::chat_mod as chat_mod_fields;
-use crate::payload_fields::follow as follow_fields;
-use crate::payload_fields::goal as goal_fields;
-use crate::payload_fields::guest_star as guest_star_fields;
-use crate::payload_fields::hype_train as hype_train_fields;
-use crate::payload_fields::moderation as moderation_fields;
-use crate::payload_fields::moderator as moderator_fields;
-use crate::payload_fields::poll as poll_fields;
-use crate::payload_fields::prediction as prediction_fields;
-use crate::payload_fields::raid as raid_fields;
-use crate::payload_fields::reward as reward_fields;
-use crate::payload_fields::shared_chat as shared_chat_fields;
-use crate::payload_fields::shield as shield_fields;
-use crate::payload_fields::shoutout as shoutout_fields;
-use crate::payload_fields::stream as stream_fields;
-use crate::payload_fields::support as support_fields;
-use crate::payload_fields::suspicious as suspicious_fields;
-use crate::payload_fields::unban_request as unban_request_fields;
-use crate::payload_fields::user as user_fields;
-use crate::payload_fields::vip as vip_fields;
-use crate::payload_fields::warning as warning_fields;
-use crate::payload_fields::whisper as whisper_fields;
+use crate::vocabulary::fields::ad_break as ad_break_fields;
+use crate::vocabulary::fields::automatic_reward as automatic_reward_fields;
+use crate::vocabulary::fields::automod as automod_fields;
+use crate::vocabulary::fields::channel_points as channel_points_fields;
+use crate::vocabulary::fields::channel_update as channel_update_fields;
+use crate::vocabulary::fields::charity as charity_fields;
+use crate::vocabulary::fields::chat as chat_fields;
+use crate::vocabulary::fields::chat_mod as chat_mod_fields;
+use crate::vocabulary::fields::follow as follow_fields;
+use crate::vocabulary::fields::goal as goal_fields;
+use crate::vocabulary::fields::guest_star as guest_star_fields;
+use crate::vocabulary::fields::hype_train as hype_train_fields;
+use crate::vocabulary::fields::moderation as moderation_fields;
+use crate::vocabulary::fields::moderator as moderator_fields;
+use crate::vocabulary::fields::poll as poll_fields;
+use crate::vocabulary::fields::prediction as prediction_fields;
+use crate::vocabulary::fields::raid as raid_fields;
+use crate::vocabulary::fields::reward as reward_fields;
+use crate::vocabulary::fields::shared_chat as shared_chat_fields;
+use crate::vocabulary::fields::shield as shield_fields;
+use crate::vocabulary::fields::shoutout as shoutout_fields;
+use crate::vocabulary::fields::stream as stream_fields;
+use crate::vocabulary::fields::support as support_fields;
+use crate::vocabulary::fields::suspicious as suspicious_fields;
+use crate::vocabulary::fields::unban_request as unban_request_fields;
+use crate::vocabulary::fields::user as user_fields;
+use crate::vocabulary::fields::vip as vip_fields;
+use crate::vocabulary::fields::warning as warning_fields;
+use crate::vocabulary::fields::whisper as whisper_fields;
 
 const KEEPALIVE_TIMEOUT: Duration = Duration::from_secs(15);
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
@@ -966,10 +966,11 @@ impl ChatSession {
             .unwrap_or(0);
 
         let direction = if to_id == self.config.broadcaster_id {
-            "received"
+            RaidDirection::Received
         } else {
-            "sent"
-        };
+            RaidDirection::Sent
+        }
+        .as_str();
 
         debug!(from_broadcaster_id = %from_id, viewer_count, direction, "raid event received");
 
@@ -3811,18 +3812,17 @@ impl ChatSession {
     fn publish_connection_event(&self) {
         let state = self.state_tx.borrow().to_connection_state();
         self.config.bus.publish(connection_state_changed_event(
-            "twitch",
+            vocabulary::PLATFORM_ID,
             state,
             ConnectionTransition::Unexpected,
         ));
     }
 
     fn publish_reauth_required(&self) {
-        self.config.bus.publish(Event::new(
-            EventSource::Twitch,
-            "platform.reauth_required",
-            serde_json::json!({ "platform_id": "twitch" }),
-        ));
+        PlatformReauthRequired {
+            platform_id: vocabulary::PLATFORM,
+        }
+        .publish(self.config.bus.as_ref(), EventSource::Twitch, None);
     }
 }
 
@@ -4190,7 +4190,7 @@ impl Drop for ChatSession {
         self.state_tx
             .send_replace(ChatConnectionState::Disconnected);
         self.config.bus.publish(connection_state_changed_event(
-            "twitch",
+            vocabulary::PLATFORM_ID,
             ConnectionState::Disconnected,
             transition,
         ));

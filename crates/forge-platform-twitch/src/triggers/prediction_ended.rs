@@ -1,4 +1,5 @@
-use crate::event_kinds;
+use crate::vocabulary::event_kinds;
+use crate::vocabulary::trigger_ids;
 use forge_events::{Event, EventSource};
 use forge_registry::{
     ActorDeclaration, EventFilter, FormField, KindPlatformContract, TriggerCategory,
@@ -8,13 +9,13 @@ use forge_types::{
     ArgStack, DeclaredVariable, PlatformId, TriggerConfig, VariableSchema, Variant, VariantKind,
 };
 
-use crate::payload_fields::prediction as fields;
+use crate::vocabulary::fields::prediction as fields;
 
 pub(crate) struct PredictionEndedDescriptor;
 
 impl TriggerKindDescriptor for PredictionEndedDescriptor {
     fn id(&self) -> &str {
-        "twitch.prediction.ended"
+        trigger_ids::PREDICTION_ENDED
     }
 
     fn category(&self) -> TriggerCategory {

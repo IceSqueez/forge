@@ -1,3 +1,4 @@
+use crate::vocabulary::sub_action_ids;
 use std::collections::BTreeMap;
 use std::sync::Arc;
 use std::time::Instant;
@@ -15,7 +16,7 @@ use crate::account::identity::SelfIdentity;
 use crate::collection_keys::REWARD_OPTIONS_KEY;
 use crate::helix::{HelixMethod, HelixRequest, HelixTransport};
 
-const KIND_ID: &str = "twitch.channel_points.fulfill_redemption";
+const KIND_ID: &str = sub_action_ids::CHANNEL_POINTS_FULFILL_REDEMPTION;
 
 pub struct FulfillRedemptionRunner {
     transport: Arc<dyn HelixTransport>,

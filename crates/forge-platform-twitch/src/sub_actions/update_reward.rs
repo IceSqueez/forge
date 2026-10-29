@@ -1,3 +1,4 @@
+use crate::vocabulary::sub_action_ids;
 use std::collections::BTreeMap;
 use std::sync::Arc;
 use std::time::Instant;
@@ -18,7 +19,7 @@ use crate::custom_rewards::{
 };
 use crate::helix::HelixTransport;
 
-const KIND_ID: &str = "twitch.channel_points.update_reward";
+const KIND_ID: &str = sub_action_ids::CHANNEL_POINTS_UPDATE_REWARD;
 
 const UNCHANGED: &str = "unchanged";
 const ON: &str = "on";

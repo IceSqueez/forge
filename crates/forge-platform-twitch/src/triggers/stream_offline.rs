@@ -1,4 +1,5 @@
-use crate::event_kinds;
+use crate::vocabulary::event_kinds;
+use crate::vocabulary::trigger_ids;
 use forge_events::{Event, EventSource};
 use forge_registry::{
     ActorDeclaration, EventFilter, FormField, KindPlatformContract, TriggerCategory,
@@ -9,13 +10,13 @@ use forge_types::{
     VariantKind,
 };
 
-use crate::payload_fields::stream as stream_fields;
+use crate::vocabulary::fields::stream as stream_fields;
 
 pub(crate) struct StreamOfflineDescriptor;
 
 impl TriggerKindDescriptor for StreamOfflineDescriptor {
     fn id(&self) -> &str {
-        "twitch.stream.offline"
+        trigger_ids::STREAM_OFFLINE
     }
 
     fn category(&self) -> TriggerCategory {

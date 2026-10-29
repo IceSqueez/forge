@@ -1,4 +1,5 @@
-use crate::event_kinds;
+use crate::vocabulary::event_kinds;
+use crate::vocabulary::trigger_ids;
 use forge_events::{Event, EventSource};
 use forge_registry::{
     ActorDeclaration, ActorIdentity, EventFilter, FormField, KindPlatformContract, TriggerCategory,
@@ -7,13 +8,13 @@ use forge_registry::{
 use forge_types::{ActorRole, PlatformId, TriggerConfig};
 
 use super::payload_read::{self, twitch_actor};
-use crate::payload_fields::vip as vip_fields;
+use crate::vocabulary::fields::vip as vip_fields;
 
 pub(crate) struct VipAddedDescriptor;
 
 impl TriggerKindDescriptor for VipAddedDescriptor {
     fn id(&self) -> &str {
-        "twitch.channel.vip_added"
+        trigger_ids::CHANNEL_VIP_ADDED
     }
 
     fn category(&self) -> TriggerCategory {

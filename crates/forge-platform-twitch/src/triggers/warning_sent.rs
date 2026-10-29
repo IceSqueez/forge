@@ -1,4 +1,5 @@
-use crate::event_kinds;
+use crate::vocabulary::event_kinds;
+use crate::vocabulary::trigger_ids;
 use forge_events::{Event, EventSource};
 use forge_registry::{
     ActorDeclaration, ActorIdentity, EventFilter, FormField, KindPlatformContract, TriggerCategory,
@@ -10,13 +11,13 @@ use forge_types::{
 };
 
 use super::payload_read::{self, twitch_actor};
-use crate::payload_fields::warning as warning_fields;
+use crate::vocabulary::fields::warning as warning_fields;
 
 pub(crate) struct WarningSentDescriptor;
 
 impl TriggerKindDescriptor for WarningSentDescriptor {
     fn id(&self) -> &str {
-        "twitch.channel.warning_sent"
+        trigger_ids::CHANNEL_WARNING_SENT
     }
 
     fn category(&self) -> TriggerCategory {

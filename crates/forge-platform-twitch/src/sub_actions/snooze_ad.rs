@@ -1,3 +1,4 @@
+use crate::vocabulary::sub_action_ids;
 use std::collections::BTreeMap;
 use std::sync::Arc;
 use std::time::Instant;
@@ -11,7 +12,7 @@ use time::OffsetDateTime;
 use crate::account::identity::SelfIdentity;
 use crate::helix::{HelixMethod, HelixRequest, HelixTransport};
 
-const KIND_ID: &str = "twitch.channel.snooze_ad";
+const KIND_ID: &str = sub_action_ids::CHANNEL_SNOOZE_AD;
 
 pub struct SnoozeAdRunner {
     transport: Arc<dyn HelixTransport>,

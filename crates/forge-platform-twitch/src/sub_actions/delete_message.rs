@@ -1,3 +1,4 @@
+use crate::vocabulary::sub_action_ids;
 use std::collections::BTreeMap;
 use std::sync::Arc;
 use std::time::Instant;
@@ -14,7 +15,7 @@ use time::OffsetDateTime;
 use crate::account::identity::SelfIdentity;
 use crate::helix::{HelixMethod, HelixRequest, HelixTransport};
 
-const KIND_ID: &str = "twitch.chat.delete_message";
+const KIND_ID: &str = sub_action_ids::CHAT_DELETE_MESSAGE;
 const DEFAULT_MESSAGE_ID_TEMPLATE: &str = "%chat.message_id%";
 
 pub struct DeleteMessageRunner {

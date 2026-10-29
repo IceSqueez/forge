@@ -1,3 +1,4 @@
+use crate::vocabulary::sub_action_ids;
 use std::collections::BTreeMap;
 use std::sync::Arc;
 use std::time::Instant;
@@ -11,7 +12,7 @@ use time::OffsetDateTime;
 use crate::account::identity::SelfIdentity;
 use crate::helix::{HelixMethod, HelixRequest, HelixTransport};
 
-const KIND_ID: &str = "twitch.chat.clear";
+const KIND_ID: &str = sub_action_ids::CHAT_CLEAR;
 
 pub struct ClearChatRunner {
     transport: Arc<dyn HelixTransport>,

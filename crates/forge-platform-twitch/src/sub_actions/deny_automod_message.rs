@@ -1,3 +1,4 @@
+use crate::vocabulary::sub_action_ids;
 use std::sync::Arc;
 
 use async_trait::async_trait;
@@ -11,7 +12,7 @@ use super::approve_automod_message::{
 use crate::account::identity::SelfIdentity;
 use crate::helix::HelixTransport;
 
-const KIND_ID: &str = "twitch.automod.deny_message";
+const KIND_ID: &str = sub_action_ids::AUTOMOD_DENY_MESSAGE;
 
 pub struct DenyAutomodMessageRunner {
     transport: Arc<dyn HelixTransport>,

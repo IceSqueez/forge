@@ -1,4 +1,5 @@
-use crate::event_kinds;
+use crate::vocabulary::event_kinds;
+use crate::vocabulary::trigger_ids;
 use forge_events::{Event, EventSource};
 use forge_registry::{
     ActorDeclaration, EventFilter, FormField, KindPlatformContract, TriggerCategory,
@@ -9,13 +10,13 @@ use forge_types::{
     VariantKind,
 };
 
-use crate::payload_fields::goal as fields;
+use crate::vocabulary::fields::goal as fields;
 
 pub(crate) struct GoalStartedDescriptor;
 
 impl TriggerKindDescriptor for GoalStartedDescriptor {
     fn id(&self) -> &str {
-        "twitch.goal.started"
+        trigger_ids::GOAL_STARTED
     }
 
     fn category(&self) -> TriggerCategory {

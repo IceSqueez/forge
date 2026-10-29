@@ -1,4 +1,5 @@
-use crate::event_kinds;
+use crate::vocabulary::event_kinds;
+use crate::vocabulary::trigger_ids;
 use forge_events::{Event, EventSource};
 use forge_registry::{
     ActorDeclaration, EventFilter, FormField, KindPlatformContract, TriggerCategory,
@@ -9,13 +10,13 @@ use forge_types::{
     VariantKind,
 };
 
-use crate::payload_fields::hype_train as fields;
+use crate::vocabulary::fields::hype_train as fields;
 
 pub(crate) struct HypeTrainEndedDescriptor;
 
 impl TriggerKindDescriptor for HypeTrainEndedDescriptor {
     fn id(&self) -> &str {
-        "twitch.support.hype_train_ended"
+        trigger_ids::SUPPORT_HYPE_TRAIN_ENDED
     }
 
     fn category(&self) -> TriggerCategory {

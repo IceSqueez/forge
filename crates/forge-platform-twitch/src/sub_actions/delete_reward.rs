@@ -1,3 +1,4 @@
+use crate::vocabulary::sub_action_ids;
 use std::sync::Arc;
 use std::time::Instant;
 
@@ -14,7 +15,7 @@ use crate::account::identity::SelfIdentity;
 use crate::custom_rewards::delete_request;
 use crate::helix::HelixTransport;
 
-const KIND_ID: &str = "twitch.channel_points.delete_reward";
+const KIND_ID: &str = sub_action_ids::CHANNEL_POINTS_DELETE_REWARD;
 
 pub struct DeleteRewardRunner {
     transport: Arc<dyn HelixTransport>,

@@ -4,7 +4,7 @@ mod validate;
 
 use std::sync::{Arc, OnceLock, RwLock};
 
-use forge_events::{Event, EventPublisher, EventSource};
+use forge_events::{EventPublisher, EventSource, TypedEvent};
 use forge_net::Gateway;
 use forge_storage::CredentialsRepo;
 use tokio_util::sync::CancellationToken;
@@ -15,12 +15,11 @@ use crate::credentials::{TWITCH_BOT_CREDENTIAL_ID, load_at};
 use crate::credentials_manager::TwitchCredentialsManager;
 use crate::helix::{HelixHttpTransport, HelixTokenRefresher, HelixTokenSource, HelixTransport};
 use crate::oauth_client::TwitchOAuthClient;
+use crate::vocabulary::BotStatusChanged;
 use validate::{TokenValidator, TokenVerdict};
 
 pub use login::BotLoginError;
 pub use moderator::{BotModerator, BotModeratorError};
-
-pub const BOT_STATUS_CHANGED_KIND: &str = "twitch.bot.status";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum BotStatus {
@@ -34,14 +33,6 @@ impl BotStatus {
         match self {
             Self::NotConnected => None,
             Self::Connected { login } | Self::ReauthRequired { login } => Some(login),
-        }
-    }
-
-    fn wire_name(&self) -> &'static str {
-        match self {
-            Self::NotConnected => "not_connected",
-            Self::Connected { .. } => "connected",
-            Self::ReauthRequired { .. } => "reauth_required",
         }
     }
 }
@@ -276,20 +267,13 @@ impl TwitchBotAccount {
             let guard = self.state.read().unwrap_or_else(|p| p.into_inner());
             (guard.status.clone(), guard.moderator)
         };
+        let changed = BotStatusChanged::new(&status, moderator);
         info!(
-            status = status.wire_name(),
-            moderator = moderator.wire_name(),
+            status = ?changed.status,
+            moderator = ?changed.moderator,
             "twitch bot account status changed"
         );
-        self.bus.publish(Event::new(
-            EventSource::Twitch,
-            BOT_STATUS_CHANGED_KIND,
-            serde_json::json!({
-                "status": status.wire_name(),
-                "login": status.login(),
-                "moderator": moderator.wire_name(),
-            }),
-        ));
+        changed.publish(self.bus.as_ref(), EventSource::Twitch, None);
     }
 }
 

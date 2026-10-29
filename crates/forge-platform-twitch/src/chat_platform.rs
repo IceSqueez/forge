@@ -20,8 +20,8 @@ use crate::credentials_manager::TwitchCredentialsManager;
 use crate::helix::{HelixHttpTransport, HelixTokenRefresher, HelixTokenSource, HelixTransport};
 use crate::lifecycle::TwitchLifecycle;
 use crate::subscriptions::SubscriptionTracker;
+use crate::vocabulary::PLATFORM_ID;
 
-const PLATFORM_ID: &str = "twitch";
 pub(crate) const EVENT_CHANNEL_CAPACITY: usize = 4096;
 
 pub struct TwitchPlatform {

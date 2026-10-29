@@ -1,4 +1,5 @@
-use crate::event_kinds;
+use crate::vocabulary::event_kinds;
+use crate::vocabulary::trigger_ids;
 use forge_events::{Event, EventSource};
 use forge_registry::{
     ActorDeclaration, ActorIdentity, EventFilter, FormField, KindPlatformContract, TriggerCategory,
@@ -10,13 +11,13 @@ use forge_types::{
 };
 
 use super::payload_read::{self, twitch_actor};
-use crate::payload_fields::user as user_fields;
+use crate::vocabulary::fields::user as user_fields;
 
 pub(crate) struct UserUpdateDescriptor;
 
 impl TriggerKindDescriptor for UserUpdateDescriptor {
     fn id(&self) -> &str {
-        "twitch.user.update"
+        trigger_ids::USER_UPDATE
     }
 
     fn category(&self) -> TriggerCategory {

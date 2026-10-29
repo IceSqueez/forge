@@ -13,6 +13,7 @@ use crate::lifecycle::{LifecycleSnapshot, ShieldPhase};
 use crate::quick_action_fields::{
     choice_field, choice_field_hint, int_field, multiline_field, text_field, toggle_field,
 };
+use crate::vocabulary::{self, sub_action_ids};
 
 const TIER_LOCKED_REASON: &str = "Requires Twitch Affiliate or Partner";
 const SHIELD_SCOPE_MISSING_REASON: &str = "Sign in to Twitch again to grant Shield mode access";
@@ -119,13 +120,13 @@ fn shield_mode_toggle(connected: bool, phase: ShieldPhase) -> QuickAction {
         ShieldPhase::Active => (
             "End Shield mode",
             "shield-off",
-            "twitch.moderation.shield_mode_off",
+            sub_action_ids::MODERATION_SHIELD_MODE_OFF,
             QuickActionLiveness::Live,
         ),
         ShieldPhase::Inactive | ShieldPhase::Unknown | ShieldPhase::Unauthorized => (
             "Start Shield mode",
             "shield",
-            "twitch.moderation.shield_mode_on",
+            sub_action_ids::MODERATION_SHIELD_MODE_ON,
             QuickActionLiveness::Unknown,
         ),
     };
@@ -168,7 +169,7 @@ impl QuickActions for TwitchIntegrationBundle {
                 None,
                 "Stream info",
                 false,
-                "twitch.channel.update_title",
+                sub_action_ids::CHANNEL_UPDATE_TITLE,
                 config([("title", blank())]),
                 vec![text_field("title", "Stream title", "Stream title").required()],
             ),
@@ -180,7 +181,7 @@ impl QuickActions for TwitchIntegrationBundle {
                 None,
                 "Stream info",
                 false,
-                "twitch.channel.update_category",
+                sub_action_ids::CHANNEL_UPDATE_CATEGORY,
                 config([("category_name", blank())]),
                 vec![text_field("category_name", "Category", "e.g. Just Chatting").required()],
             ),
@@ -192,7 +193,7 @@ impl QuickActions for TwitchIntegrationBundle {
                 None,
                 "Stream info",
                 false,
-                "twitch.channel.update_tags",
+                sub_action_ids::CHANNEL_UPDATE_TAGS,
                 config([("tags", blank())]),
                 vec![text_field(
                     "tags",
@@ -208,7 +209,7 @@ impl QuickActions for TwitchIntegrationBundle {
                 None,
                 "Stream info",
                 false,
-                "twitch.channel.create_marker",
+                sub_action_ids::CHANNEL_CREATE_MARKER,
                 config([("description", blank())]),
                 vec![text_field("description", "Marker note", "optional")],
             ),
@@ -221,7 +222,7 @@ impl QuickActions for TwitchIntegrationBundle {
                     locked_reason.clone(),
                     "Polls",
                     false,
-                    "twitch.poll.start",
+                    sub_action_ids::POLL_START,
                     config([
                         ("title", blank()),
                         ("choices", blank()),
@@ -250,7 +251,7 @@ impl QuickActions for TwitchIntegrationBundle {
                     locked_reason.clone(),
                     "Polls",
                     false,
-                    "twitch.poll.end",
+                    sub_action_ids::POLL_END,
                     config([
                         ("poll_id", blank()),
                         ("status", Variant::String("terminated".to_owned())),
@@ -268,7 +269,7 @@ impl QuickActions for TwitchIntegrationBundle {
                     locked_reason.clone(),
                     "Polls",
                     true,
-                    "twitch.poll.end",
+                    sub_action_ids::POLL_END,
                     config([
                         ("poll_id", blank()),
                         ("status", Variant::String("archived".to_owned())),
@@ -286,7 +287,7 @@ impl QuickActions for TwitchIntegrationBundle {
                     locked_reason.clone(),
                     "Predictions",
                     false,
-                    "twitch.prediction.start",
+                    sub_action_ids::PREDICTION_START,
                     config([
                         ("title", blank()),
                         ("outcomes", blank()),
@@ -320,7 +321,7 @@ impl QuickActions for TwitchIntegrationBundle {
                     locked_reason.clone(),
                     "Predictions",
                     false,
-                    "twitch.prediction.lock",
+                    sub_action_ids::PREDICTION_LOCK,
                     config([("prediction_id", blank())]),
                     Vec::new(),
                 ),
@@ -335,7 +336,7 @@ impl QuickActions for TwitchIntegrationBundle {
                     locked_reason.clone(),
                     "Predictions",
                     false,
-                    "twitch.prediction.resolve",
+                    sub_action_ids::PREDICTION_RESOLVE,
                     config([("prediction_id", blank()), ("winning_outcome_id", blank())]),
                     Vec::new(),
                 ),
@@ -350,7 +351,7 @@ impl QuickActions for TwitchIntegrationBundle {
                     locked_reason.clone(),
                     "Predictions",
                     true,
-                    "twitch.prediction.cancel",
+                    sub_action_ids::PREDICTION_CANCEL,
                     config([("prediction_id", blank())]),
                     Vec::new(),
                 ),
@@ -367,7 +368,10 @@ impl QuickActions for TwitchIntegrationBundle {
                 "twitch.chat.send_message",
                 config([
                     ("message", blank()),
-                    ("target", Variant::String("twitch".to_owned())),
+                    (
+                        "target",
+                        Variant::String(vocabulary::PLATFORM_ID.to_owned()),
+                    ),
                 ]),
                 vec![multiline_field("message", "Message", "Message").required()],
             ),
@@ -379,7 +383,7 @@ impl QuickActions for TwitchIntegrationBundle {
                 None,
                 "Chat",
                 false,
-                "twitch.chat.send_announcement",
+                sub_action_ids::CHAT_SEND_ANNOUNCEMENT,
                 config([
                     ("message", blank()),
                     ("color", Variant::String("primary".to_owned())),
@@ -408,7 +412,7 @@ impl QuickActions for TwitchIntegrationBundle {
                 None,
                 "Chat",
                 true,
-                "twitch.chat.clear",
+                sub_action_ids::CHAT_CLEAR,
                 BTreeMap::new(),
                 Vec::new(),
             ),
@@ -420,7 +424,7 @@ impl QuickActions for TwitchIntegrationBundle {
                 None,
                 "Chat",
                 false,
-                "twitch.chat.set_mode",
+                sub_action_ids::CHAT_SET_MODE,
                 config([
                     ("slow_mode", Variant::String("on".to_owned())),
                     ("slow_mode_wait_seconds", Variant::Int(10)),
@@ -441,7 +445,7 @@ impl QuickActions for TwitchIntegrationBundle {
                 None,
                 "Chat",
                 false,
-                "twitch.chat.set_mode",
+                sub_action_ids::CHAT_SET_MODE,
                 config([
                     ("follower_mode", Variant::String("on".to_owned())),
                     ("follower_mode_min_minutes", Variant::Int(10)),
@@ -462,7 +466,7 @@ impl QuickActions for TwitchIntegrationBundle {
                 None,
                 "Chat",
                 false,
-                "twitch.chat.set_mode",
+                sub_action_ids::CHAT_SET_MODE,
                 config([("emote_only", Variant::String("on".to_owned()))]),
                 vec![choice_field(
                     "emote_only",
@@ -479,7 +483,7 @@ impl QuickActions for TwitchIntegrationBundle {
                 None,
                 "Moderation",
                 false,
-                "twitch.moderation.timeout_user",
+                sub_action_ids::MODERATION_TIMEOUT_USER,
                 config([
                     ("target_user_login", blank()),
                     ("duration_seconds", Variant::Int(600)),
@@ -499,7 +503,7 @@ impl QuickActions for TwitchIntegrationBundle {
                 None,
                 "Moderation",
                 true,
-                "twitch.moderation.ban_user",
+                sub_action_ids::MODERATION_BAN_USER,
                 config([("target_user_login", blank()), ("reason", blank())]),
                 vec![
                     text_field("target_user_login", "Username", "username").required(),
@@ -514,7 +518,7 @@ impl QuickActions for TwitchIntegrationBundle {
                 None,
                 "Moderation",
                 false,
-                "twitch.moderation.unban_user",
+                sub_action_ids::MODERATION_UNBAN_USER,
                 config([("target_user_login", blank())]),
                 vec![text_field("target_user_login", "Username", "username").required()],
             ),
@@ -527,7 +531,7 @@ impl QuickActions for TwitchIntegrationBundle {
                 None,
                 "Moderation",
                 false,
-                "twitch.moderation.add_vip",
+                sub_action_ids::MODERATION_ADD_VIP,
                 config([("target_user_login", blank())]),
                 vec![text_field("target_user_login", "Username", "username").required()],
             ),
@@ -539,7 +543,7 @@ impl QuickActions for TwitchIntegrationBundle {
                 None,
                 "Moderation",
                 false,
-                "twitch.moderation.add_moderator",
+                sub_action_ids::MODERATION_ADD_MODERATOR,
                 config([("target_user_login", blank())]),
                 vec![text_field("target_user_login", "Username", "username").required()],
             ),
@@ -552,7 +556,7 @@ impl QuickActions for TwitchIntegrationBundle {
                     None,
                     "Raids & ads",
                     false,
-                    "twitch.channel.start_raid",
+                    sub_action_ids::CHANNEL_START_RAID,
                     config([("to_broadcaster_login", blank())]),
                     vec![
                         text_field("to_broadcaster_login", "Raid target", "channel name")
@@ -570,7 +574,7 @@ impl QuickActions for TwitchIntegrationBundle {
                     None,
                     "Raids & ads",
                     true,
-                    "twitch.channel.cancel_raid",
+                    sub_action_ids::CHANNEL_CANCEL_RAID,
                     BTreeMap::new(),
                     Vec::new(),
                 ),
@@ -584,7 +588,7 @@ impl QuickActions for TwitchIntegrationBundle {
                 None,
                 "Raids & ads",
                 false,
-                "twitch.channel.send_shoutout",
+                sub_action_ids::CHANNEL_SEND_SHOUTOUT,
                 config([("to_broadcaster_login", blank())]),
                 vec![text_field("to_broadcaster_login", "Channel", "channel name").required()],
             ),
@@ -596,7 +600,7 @@ impl QuickActions for TwitchIntegrationBundle {
                 locked_reason.clone(),
                 "Raids & ads",
                 false,
-                "twitch.channel.run_ad",
+                sub_action_ids::CHANNEL_RUN_AD,
                 config([("duration_seconds", Variant::String("90".to_owned()))]),
                 vec![
                     choice_field_hint(
@@ -624,7 +628,7 @@ impl QuickActions for TwitchIntegrationBundle {
                 None,
                 "Raids & ads",
                 false,
-                "twitch.channel.snooze_ad",
+                sub_action_ids::CHANNEL_SNOOZE_AD,
                 BTreeMap::new(),
                 Vec::new(),
             ),
@@ -644,7 +648,7 @@ impl QuickActions for TwitchIntegrationBundle {
                 None,
                 "Channel Points",
                 false,
-                "twitch.channel_points.fulfill_redemption",
+                sub_action_ids::CHANNEL_POINTS_FULFILL_REDEMPTION,
                 config([("redemption_id", blank()), ("reward_id", blank())]),
                 Vec::new(),
             ),
@@ -656,7 +660,7 @@ impl QuickActions for TwitchIntegrationBundle {
                 None,
                 "Channel Points",
                 true,
-                "twitch.channel_points.cancel_redemption",
+                sub_action_ids::CHANNEL_POINTS_CANCEL_REDEMPTION,
                 config([("redemption_id", blank()), ("reward_id", blank())]),
                 Vec::new(),
             ),

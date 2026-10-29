@@ -1,4 +1,5 @@
-use crate::event_kinds;
+use crate::vocabulary::event_kinds;
+use crate::vocabulary::trigger_ids;
 use forge_events::{Event, EventSource};
 use forge_registry::{
     ActorDeclaration, EventFilter, FormField, KindPlatformContract, TriggerCategory,
@@ -9,13 +10,13 @@ use forge_types::{
     VariantKind,
 };
 
-use crate::payload_fields::chat_mod as chat_mod_fields;
+use crate::vocabulary::fields::chat_mod as chat_mod_fields;
 
 pub(crate) struct ChatSettingsUpdatedDescriptor;
 
 impl TriggerKindDescriptor for ChatSettingsUpdatedDescriptor {
     fn id(&self) -> &str {
-        "twitch.channel.chat_settings_updated"
+        trigger_ids::CHANNEL_CHAT_SETTINGS_UPDATED
     }
 
     fn category(&self) -> TriggerCategory {

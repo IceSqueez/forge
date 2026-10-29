@@ -12,8 +12,8 @@ use crate::credentials::{
     StoredCredential, TWITCH_BOT_CREDENTIAL_ID, TWITCH_CREDENTIAL_ID, load_at, store_credential_at,
 };
 use crate::oauth_client::TwitchOAuthClient;
+use crate::vocabulary::PLATFORM_ID;
 
-const PLATFORM: &str = "twitch";
 const REFRESH_BUFFER: Duration = Duration::from_secs(REFRESH_BUFFER_SECS);
 
 pub struct TwitchCredentialsManager {
@@ -54,14 +54,14 @@ impl TwitchCredentialsManager {
     pub async fn load(&self) -> Result<Option<StoredCredential>, PlatformError> {
         load_at(self.repo.as_ref(), self.credential_id)
             .await
-            .map_err(|e| credential_storage_error(PLATFORM, e.stored_secret_unrecoverable(), e))
+            .map_err(|e| credential_storage_error(PLATFORM_ID, e.stored_secret_unrecoverable(), e))
     }
 
     pub async fn get_valid_access_token(&self) -> Result<OAuthToken, PlatformError> {
         let cred = self
             .load()
             .await?
-            .ok_or_else(|| reauth_required(PLATFORM))?;
+            .ok_or_else(|| reauth_required(PLATFORM_ID))?;
         if !near_expiry(&cred) {
             return Ok(cred.access_token);
         }
@@ -73,7 +73,7 @@ impl TwitchCredentialsManager {
         let cred = self
             .load()
             .await?
-            .ok_or_else(|| reauth_required(PLATFORM))?;
+            .ok_or_else(|| reauth_required(PLATFORM_ID))?;
         if !near_expiry(&cred) {
             debug!("twitch token already renewed by a concurrent refresh");
             return Ok(cred.access_token);
@@ -81,7 +81,7 @@ impl TwitchCredentialsManager {
         let refresh_token = cred
             .refresh_token
             .clone()
-            .ok_or_else(|| reauth_required(PLATFORM))?;
+            .ok_or_else(|| reauth_required(PLATFORM_ID))?;
         let renewed = self.perform_refresh(&refresh_token, cred).await?;
         Ok(renewed.access_token)
     }
@@ -94,7 +94,7 @@ impl TwitchCredentialsManager {
         let existing = self
             .load()
             .await?
-            .ok_or_else(|| reauth_required(PLATFORM))?;
+            .ok_or_else(|| reauth_required(PLATFORM_ID))?;
         if existing.access_token.expose() != failed_access_token.expose() {
             debug!("twitch token already rotated by a concurrent refresh; reusing it");
             return Ok(existing);
@@ -102,7 +102,7 @@ impl TwitchCredentialsManager {
         let refresh_token = existing
             .refresh_token
             .clone()
-            .ok_or_else(|| reauth_required(PLATFORM))?;
+            .ok_or_else(|| reauth_required(PLATFORM_ID))?;
         self.perform_refresh(&refresh_token, existing).await
     }
 
@@ -111,7 +111,9 @@ impl TwitchCredentialsManager {
         self.repo
             .delete(&CredentialId::new(self.credential_id))
             .await
-            .map_err(|e| credential_storage_error(PLATFORM, e.stored_secret_unrecoverable(), e))?;
+            .map_err(|e| {
+                credential_storage_error(PLATFORM_ID, e.stored_secret_unrecoverable(), e)
+            })?;
         self.expiry_tx.send_replace(None);
         Ok(())
     }
@@ -128,7 +130,9 @@ impl TwitchCredentialsManager {
         self.repo
             .delete(&CredentialId::new(self.credential_id))
             .await
-            .map_err(|e| credential_storage_error(PLATFORM, e.stored_secret_unrecoverable(), e))?;
+            .map_err(|e| {
+                credential_storage_error(PLATFORM_ID, e.stored_secret_unrecoverable(), e)
+            })?;
         self.expiry_tx.send_replace(None);
         Ok(())
     }
@@ -179,7 +183,9 @@ impl TwitchCredentialsManager {
         };
         store_credential_at(self.repo.as_ref(), self.credential_id, &renewed)
             .await
-            .map_err(|e| credential_storage_error(PLATFORM, e.stored_secret_unrecoverable(), e))?;
+            .map_err(|e| {
+                credential_storage_error(PLATFORM_ID, e.stored_secret_unrecoverable(), e)
+            })?;
         self.expiry_tx.send_replace(renewed.expires_at);
         Ok(renewed)
     }

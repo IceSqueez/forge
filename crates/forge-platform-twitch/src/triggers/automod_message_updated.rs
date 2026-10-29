@@ -1,4 +1,5 @@
-use crate::event_kinds;
+use crate::vocabulary::event_kinds;
+use crate::vocabulary::trigger_ids;
 use forge_events::{Event, EventSource};
 use forge_registry::{
     ActorDeclaration, ActorIdentity, EventFilter, FormField, KindPlatformContract, TriggerCategory,
@@ -7,13 +8,13 @@ use forge_registry::{
 use forge_types::{ActorRole, DeclaredVariable, PlatformId, TriggerConfig, Variant, VariantKind};
 
 use super::payload_read::{self, twitch_actor};
-use crate::payload_fields::automod as automod_fields;
+use crate::vocabulary::fields::automod as automod_fields;
 
 pub(crate) struct AutomodMessageUpdatedDescriptor;
 
 impl TriggerKindDescriptor for AutomodMessageUpdatedDescriptor {
     fn id(&self) -> &str {
-        "twitch.automod.message_updated"
+        trigger_ids::AUTOMOD_MESSAGE_UPDATED
     }
 
     fn category(&self) -> TriggerCategory {

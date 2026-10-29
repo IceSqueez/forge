@@ -1,3 +1,4 @@
+use crate::vocabulary::sub_action_ids;
 use std::collections::BTreeMap;
 use std::sync::Arc;
 use std::time::Instant;
@@ -14,7 +15,7 @@ use time::OffsetDateTime;
 use crate::account::identity::SelfIdentity;
 use crate::helix::{HelixMethod, HelixRequest, HelixTransport};
 
-const KIND_ID: &str = "twitch.chat.set_mode";
+const KIND_ID: &str = sub_action_ids::CHAT_SET_MODE;
 
 const UNCHANGED: &str = "unchanged";
 const ON: &str = "on";

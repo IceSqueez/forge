@@ -148,7 +148,8 @@ pub fn start_twitch_bot_seed(
 #[cfg(test)]
 mod tests {
     use forge_events::{Event, EventSource};
-    use forge_platform_twitch::{BOT_STATUS_CHANGED_KIND, BotModerator, BotStatus};
+    use forge_platform_twitch::vocabulary::event_kinds::BOT_STATUS_CHANGED as BOT_STATUS_CHANGED_KIND;
+    use forge_platform_twitch::{BotModerator, BotStatus};
     use serde_json::json;
 
     use super::TwitchBotPresence;

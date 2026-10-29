@@ -461,7 +461,7 @@ mod tests {
         fn fallbacks(&self) -> Vec<Value> {
             self.harness
                 .bus
-                .of_kind(SENDER_FALLBACK_KIND)
+                .of_kind(crate::vocabulary::event_kinds::SENDER_FALLBACK)
                 .into_iter()
                 .map(|event| event.payload)
                 .collect()

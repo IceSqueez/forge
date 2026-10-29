@@ -134,12 +134,12 @@ mod tests {
     use wiremock::ResponseTemplate;
 
     use super::*;
-    use crate::bot_account::BOT_STATUS_CHANGED_KIND;
     use crate::bot_account::test_support::{
         BOT_ACCESS, BOT_LOGIN, BOT_REFRESH, BOT_USER_ID, BotHarness,
     };
     use crate::credentials::TWITCH_CREDENTIAL_ID;
     use crate::sub_actions::test_support::{SELF_USER_ID, TOKEN_SENTINEL};
+    use crate::vocabulary::event_kinds::BOT_STATUS_CHANGED as BOT_STATUS_CHANGED_KIND;
 
     const ROTATED_BOT_ACCESS: &str = "ROTATED_BOT_ACCESS_q4x";
     const ROTATED_BOT_REFRESH: &str = "ROTATED_BOT_REFRESH_q4x";

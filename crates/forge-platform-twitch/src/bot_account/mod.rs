@@ -669,7 +669,12 @@ mod tests {
 
         assert_eq!(harness.bot.status(), BotStatus::NotConnected);
         assert!(harness.bot.connected_user_id().is_none());
-        assert!(harness.bus.of_kind(BOT_STATUS_CHANGED_KIND).is_empty());
+        assert!(
+            harness
+                .bus
+                .of_kind(crate::vocabulary::event_kinds::BOT_STATUS_CHANGED)
+                .is_empty()
+        );
     }
 
     #[tokio::test]
@@ -684,7 +689,7 @@ mod tests {
 
         let payloads: Vec<serde_json::Value> = harness
             .bus
-            .of_kind(BOT_STATUS_CHANGED_KIND)
+            .of_kind(crate::vocabulary::event_kinds::BOT_STATUS_CHANGED)
             .into_iter()
             .map(|event| event.payload)
             .collect();

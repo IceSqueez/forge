@@ -118,11 +118,12 @@ mod tests {
     use wiremock::ResponseTemplate;
 
     use super::*;
+    use crate::bot_account::BotStatus;
     use crate::bot_account::test_support::{BOT_LOGIN, BOT_USER_ID, BotHarness};
-    use crate::bot_account::{BOT_STATUS_CHANGED_KIND, BotStatus};
     use crate::sub_actions::test_support::{
         MockTransport, REQUEST_FAIL_KIND, SELF_USER_ID, observed_helix_at,
     };
+    use crate::vocabulary::event_kinds::BOT_STATUS_CHANGED as BOT_STATUS_CHANGED_KIND;
 
     fn listed() -> Result<serde_json::Value, HelixError> {
         Ok(serde_json::json!({"data": [{"user_id": BOT_USER_ID, "user_login": BOT_LOGIN}]}))

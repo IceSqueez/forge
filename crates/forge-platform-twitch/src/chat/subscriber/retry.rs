@@ -211,9 +211,9 @@ mod tests {
     use super::super::{TOPICS, mark_revoked, subscribe_all};
     use super::TopicRetryRun;
     use crate::bot_account::test_support::RecordingBus;
-    use crate::event_kinds::EVENTSUB_SUBSCRIPTION_CREATED;
     use crate::helix::{HelixError, HelixRequest, HelixTransport};
     use crate::subscriptions::{SubStatus, SubscriptionTracker};
+    use crate::vocabulary::event_kinds::EVENTSUB_SUBSCRIPTION_CREATED;
     use async_trait::async_trait;
     use forge_events::EventPublisher;
     use reqwest::StatusCode;

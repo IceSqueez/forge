@@ -1,0 +1,486 @@
+[
+  {
+    "condition": {
+      "broadcaster_user_id": "BROADCASTER",
+      "user_id": "SELF"
+    },
+    "type": "channel.chat.message",
+    "version": "1"
+  },
+  {
+    "condition": {
+      "broadcaster_user_id": "BROADCASTER"
+    },
+    "type": "channel.subscribe",
+    "version": "1"
+  },
+  {
+    "condition": {
+      "broadcaster_user_id": "BROADCASTER"
+    },
+    "type": "channel.subscription.gift",
+    "version": "1"
+  },
+  {
+    "condition": {
+      "broadcaster_user_id": "BROADCASTER"
+    },
+    "type": "channel.subscription.message",
+    "version": "1"
+  },
+  {
+    "condition": {
+      "broadcaster_user_id": "BROADCASTER"
+    },
+    "type": "channel.cheer",
+    "version": "1"
+  },
+  {
+    "condition": {
+      "broadcaster_user_id": "BROADCASTER",
+      "moderator_user_id": "SELF"
+    },
+    "type": "channel.follow",
+    "version": "2"
+  },
+  {
+    "condition": {
+      "to_broadcaster_user_id": "BROADCASTER"
+    },
+    "type": "channel.raid",
+    "version": "1"
+  },
+  {
+    "condition": {
+      "from_broadcaster_user_id": "BROADCASTER"
+    },
+    "type": "channel.raid",
+    "version": "1"
+  },
+  {
+    "condition": {
+      "broadcaster_user_id": "BROADCASTER"
+    },
+    "type": "stream.online",
+    "version": "1"
+  },
+  {
+    "condition": {
+      "broadcaster_user_id": "BROADCASTER"
+    },
+    "type": "stream.offline",
+    "version": "1"
+  },
+  {
+    "condition": {
+      "broadcaster_user_id": "BROADCASTER"
+    },
+    "type": "channel.channel_points_custom_reward_redemption.add",
+    "version": "1"
+  },
+  {
+    "condition": {
+      "broadcaster_user_id": "BROADCASTER",
+      "user_id": "SELF"
+    },
+    "type": "channel.chat.message_delete",
+    "version": "1"
+  },
+  {
+    "condition": {
+      "broadcaster_user_id": "BROADCASTER",
+      "user_id": "SELF"
+    },
+    "type": "channel.chat.clear",
+    "version": "1"
+  },
+  {
+    "condition": {
+      "broadcaster_user_id": "BROADCASTER"
+    },
+    "type": "channel.hype_train.begin",
+    "version": "2"
+  },
+  {
+    "condition": {
+      "broadcaster_user_id": "BROADCASTER"
+    },
+    "type": "channel.hype_train.progress",
+    "version": "2"
+  },
+  {
+    "condition": {
+      "broadcaster_user_id": "BROADCASTER"
+    },
+    "type": "channel.hype_train.end",
+    "version": "2"
+  },
+  {
+    "condition": {
+      "broadcaster_user_id": "BROADCASTER"
+    },
+    "type": "channel.charity_campaign.donate",
+    "version": "1"
+  },
+  {
+    "condition": {
+      "broadcaster_user_id": "BROADCASTER"
+    },
+    "type": "channel.charity_campaign.start",
+    "version": "1"
+  },
+  {
+    "condition": {
+      "broadcaster_user_id": "BROADCASTER"
+    },
+    "type": "channel.charity_campaign.progress",
+    "version": "1"
+  },
+  {
+    "condition": {
+      "broadcaster_user_id": "BROADCASTER"
+    },
+    "type": "channel.charity_campaign.stop",
+    "version": "1"
+  },
+  {
+    "condition": {
+      "broadcaster_user_id": "BROADCASTER"
+    },
+    "type": "channel.ban",
+    "version": "1"
+  },
+  {
+    "condition": {
+      "broadcaster_user_id": "BROADCASTER"
+    },
+    "type": "channel.unban",
+    "version": "1"
+  },
+  {
+    "condition": {
+      "broadcaster_user_id": "BROADCASTER"
+    },
+    "type": "channel.moderator.add",
+    "version": "1"
+  },
+  {
+    "condition": {
+      "broadcaster_user_id": "BROADCASTER"
+    },
+    "type": "channel.moderator.remove",
+    "version": "1"
+  },
+  {
+    "condition": {
+      "broadcaster_user_id": "BROADCASTER"
+    },
+    "type": "channel.vip.add",
+    "version": "1"
+  },
+  {
+    "condition": {
+      "broadcaster_user_id": "BROADCASTER"
+    },
+    "type": "channel.vip.remove",
+    "version": "1"
+  },
+  {
+    "condition": {
+      "broadcaster_user_id": "BROADCASTER",
+      "moderator_user_id": "SELF"
+    },
+    "type": "channel.unban_request.create",
+    "version": "1"
+  },
+  {
+    "condition": {
+      "broadcaster_user_id": "BROADCASTER",
+      "moderator_user_id": "SELF"
+    },
+    "type": "channel.unban_request.resolve",
+    "version": "1"
+  },
+  {
+    "condition": {
+      "broadcaster_user_id": "BROADCASTER",
+      "moderator_user_id": "SELF"
+    },
+    "type": "channel.shield_mode.begin",
+    "version": "1"
+  },
+  {
+    "condition": {
+      "broadcaster_user_id": "BROADCASTER",
+      "moderator_user_id": "SELF"
+    },
+    "type": "channel.shield_mode.end",
+    "version": "1"
+  },
+  {
+    "condition": {
+      "broadcaster_user_id": "BROADCASTER",
+      "moderator_user_id": "SELF"
+    },
+    "type": "channel.shoutout.create",
+    "version": "1"
+  },
+  {
+    "condition": {
+      "broadcaster_user_id": "BROADCASTER",
+      "moderator_user_id": "SELF"
+    },
+    "type": "channel.shoutout.receive",
+    "version": "1"
+  },
+  {
+    "condition": {
+      "broadcaster_user_id": "BROADCASTER",
+      "moderator_user_id": "SELF"
+    },
+    "type": "channel.suspicious_user.message",
+    "version": "1"
+  },
+  {
+    "condition": {
+      "broadcaster_user_id": "BROADCASTER",
+      "moderator_user_id": "SELF"
+    },
+    "type": "channel.warning.acknowledge",
+    "version": "1"
+  },
+  {
+    "condition": {
+      "broadcaster_user_id": "BROADCASTER",
+      "moderator_user_id": "SELF"
+    },
+    "type": "channel.warning.send",
+    "version": "1"
+  },
+  {
+    "condition": {
+      "broadcaster_user_id": "BROADCASTER"
+    },
+    "type": "channel.poll.begin",
+    "version": "1"
+  },
+  {
+    "condition": {
+      "broadcaster_user_id": "BROADCASTER"
+    },
+    "type": "channel.poll.progress",
+    "version": "1"
+  },
+  {
+    "condition": {
+      "broadcaster_user_id": "BROADCASTER"
+    },
+    "type": "channel.poll.end",
+    "version": "1"
+  },
+  {
+    "condition": {
+      "broadcaster_user_id": "BROADCASTER"
+    },
+    "type": "channel.prediction.begin",
+    "version": "1"
+  },
+  {
+    "condition": {
+      "broadcaster_user_id": "BROADCASTER"
+    },
+    "type": "channel.prediction.progress",
+    "version": "1"
+  },
+  {
+    "condition": {
+      "broadcaster_user_id": "BROADCASTER"
+    },
+    "type": "channel.prediction.lock",
+    "version": "1"
+  },
+  {
+    "condition": {
+      "broadcaster_user_id": "BROADCASTER"
+    },
+    "type": "channel.prediction.end",
+    "version": "1"
+  },
+  {
+    "condition": {
+      "broadcaster_user_id": "BROADCASTER"
+    },
+    "type": "channel.goal.begin",
+    "version": "1"
+  },
+  {
+    "condition": {
+      "broadcaster_user_id": "BROADCASTER"
+    },
+    "type": "channel.goal.progress",
+    "version": "1"
+  },
+  {
+    "condition": {
+      "broadcaster_user_id": "BROADCASTER"
+    },
+    "type": "channel.goal.end",
+    "version": "1"
+  },
+  {
+    "condition": {
+      "broadcaster_user_id": "BROADCASTER"
+    },
+    "type": "channel.channel_points_custom_reward.add",
+    "version": "1"
+  },
+  {
+    "condition": {
+      "broadcaster_user_id": "BROADCASTER"
+    },
+    "type": "channel.channel_points_custom_reward.update",
+    "version": "1"
+  },
+  {
+    "condition": {
+      "broadcaster_user_id": "BROADCASTER"
+    },
+    "type": "channel.channel_points_custom_reward.remove",
+    "version": "1"
+  },
+  {
+    "condition": {
+      "broadcaster_user_id": "BROADCASTER"
+    },
+    "type": "channel.channel_points_custom_reward_redemption.update",
+    "version": "1"
+  },
+  {
+    "condition": {
+      "broadcaster_user_id": "BROADCASTER",
+      "moderator_user_id": "SELF"
+    },
+    "type": "automod.message.hold",
+    "version": "2"
+  },
+  {
+    "condition": {
+      "broadcaster_user_id": "BROADCASTER",
+      "user_id": "SELF"
+    },
+    "type": "channel.chat_settings.update",
+    "version": "1"
+  },
+  {
+    "condition": {
+      "broadcaster_user_id": "BROADCASTER",
+      "moderator_user_id": "SELF"
+    },
+    "type": "channel.guest_star_session.begin",
+    "version": "beta"
+  },
+  {
+    "condition": {
+      "broadcaster_user_id": "BROADCASTER",
+      "moderator_user_id": "SELF"
+    },
+    "type": "channel.guest_star_session.end",
+    "version": "beta"
+  },
+  {
+    "condition": {
+      "broadcaster_user_id": "BROADCASTER",
+      "moderator_user_id": "SELF"
+    },
+    "type": "channel.guest_star_settings.update",
+    "version": "beta"
+  },
+  {
+    "condition": {
+      "broadcaster_user_id": "BROADCASTER",
+      "moderator_user_id": "SELF"
+    },
+    "type": "channel.guest_star_guest.update",
+    "version": "beta"
+  },
+  {
+    "condition": {
+      "broadcaster_user_id": "BROADCASTER",
+      "moderator_user_id": "SELF"
+    },
+    "type": "automod.settings.update",
+    "version": "1"
+  },
+  {
+    "condition": {
+      "broadcaster_user_id": "BROADCASTER",
+      "moderator_user_id": "SELF"
+    },
+    "type": "automod.terms.update",
+    "version": "1"
+  },
+  {
+    "condition": {
+      "broadcaster_user_id": "BROADCASTER",
+      "moderator_user_id": "SELF"
+    },
+    "type": "automod.message.update",
+    "version": "2"
+  },
+  {
+    "condition": {
+      "broadcaster_user_id": "BROADCASTER"
+    },
+    "type": "channel.shared_chat.begin",
+    "version": "1"
+  },
+  {
+    "condition": {
+      "broadcaster_user_id": "BROADCASTER"
+    },
+    "type": "channel.shared_chat.update",
+    "version": "1"
+  },
+  {
+    "condition": {
+      "broadcaster_user_id": "BROADCASTER"
+    },
+    "type": "channel.shared_chat.end",
+    "version": "1"
+  },
+  {
+    "condition": {
+      "broadcaster_user_id": "BROADCASTER"
+    },
+    "type": "channel.update",
+    "version": "2"
+  },
+  {
+    "condition": {
+      "broadcaster_user_id": "BROADCASTER"
+    },
+    "type": "channel.ad_break.begin",
+    "version": "1"
+  },
+  {
+    "condition": {
+      "broadcaster_user_id": "BROADCASTER"
+    },
+    "type": "channel.channel_points_automatic_reward_redemption.add",
+    "version": "1"
+  },
+  {
+    "condition": {
+      "user_id": "SELF"
+    },
+    "type": "user.whisper.message",
+    "version": "1"
+  },
+  {
+    "condition": {
+      "user_id": "SELF"
+    },
+    "type": "user.update",
+    "version": "1"
+  }
+]

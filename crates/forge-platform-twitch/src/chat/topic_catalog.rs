@@ -442,3 +442,28 @@ pub(super) const TOPICS: &[TopicSpec] = &[
         route: ChatSession::publish_user_update_event,
     },
 ];
+
+#[cfg(test)]
+mod tests {
+    use super::TOPICS;
+
+    #[test]
+    fn subscribed_topics_match_the_pinned_wire_catalog_in_order() {
+        let actual: Vec<serde_json::Value> = TOPICS
+            .iter()
+            .map(|topic| {
+                serde_json::json!({
+                    "type": topic.kind,
+                    "version": topic.version,
+                    "condition": (topic.condition_fn)("BROADCASTER", "SELF"),
+                })
+            })
+            .collect();
+        let pinned: Vec<serde_json::Value> = serde_json::from_str(include_str!(
+            "../../tests/fixtures/eventsub_subscriptions.json"
+        ))
+        .unwrap();
+
+        assert_eq!(actual, pinned);
+    }
+}

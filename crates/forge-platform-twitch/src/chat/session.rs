@@ -9175,7 +9175,7 @@ mod tests {
         let found = within_real_time(FAKE_WAIT, async {
             loop {
                 let event = events.recv().await.expect("the bus must stay open");
-                if event.kind == crate::event_kinds::EVENTSUB_SUBSCRIPTION_CREATED
+                if event.kind == crate::vocabulary::event_kinds::EVENTSUB_SUBSCRIPTION_CREATED
                     && event.payload["type"] == kind
                 {
                     return event;

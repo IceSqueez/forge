@@ -15,74 +15,13 @@ mod tests {
     use super::route_for;
 
     #[test]
-    fn route_for_resolves_every_supported_topic_and_rejects_unknown() {
-        for topic in [
-            "channel.chat.message",
-            "channel.subscribe",
-            "channel.subscription.message",
-            "channel.subscription.gift",
-            "channel.cheer",
-            "channel.raid",
-            "channel.follow",
-            "stream.online",
-            "stream.offline",
-            "channel.channel_points_custom_reward_redemption.add",
-            "channel.chat.message_delete",
-            "channel.chat.clear",
-            "channel.hype_train.begin",
-            "channel.hype_train.progress",
-            "channel.hype_train.end",
-            "channel.charity_campaign.donate",
-            "channel.charity_campaign.start",
-            "channel.charity_campaign.progress",
-            "channel.charity_campaign.stop",
-            "channel.ban",
-            "channel.unban",
-            "channel.moderator.add",
-            "channel.moderator.remove",
-            "channel.unban_request.create",
-            "channel.unban_request.resolve",
-            "channel.vip.add",
-            "channel.vip.remove",
-            "channel.shield_mode.begin",
-            "channel.shield_mode.end",
-            "channel.shoutout.create",
-            "channel.shoutout.receive",
-            "channel.suspicious_user.message",
-            "channel.warning.acknowledge",
-            "channel.warning.send",
-            "channel.poll.begin",
-            "channel.poll.progress",
-            "channel.poll.end",
-            "channel.prediction.begin",
-            "channel.prediction.progress",
-            "channel.prediction.lock",
-            "channel.prediction.end",
-            "channel.goal.begin",
-            "channel.goal.progress",
-            "channel.goal.end",
-            "channel.channel_points_custom_reward.add",
-            "channel.channel_points_custom_reward.update",
-            "channel.channel_points_custom_reward.remove",
-            "channel.channel_points_custom_reward_redemption.update",
-            "automod.message.hold",
-            "channel.chat_settings.update",
-            "channel.guest_star_session.begin",
-            "channel.guest_star_session.end",
-            "channel.guest_star_settings.update",
-            "channel.guest_star_guest.update",
-            "automod.settings.update",
-            "automod.terms.update",
-            "automod.message.update",
-            "channel.shared_chat.begin",
-            "channel.shared_chat.update",
-            "channel.shared_chat.end",
-            "channel.update",
-            "channel.ad_break.begin",
-            "channel.channel_points_automatic_reward_redemption.add",
-            "user.whisper.message",
-            "user.update",
-        ] {
+    fn route_for_resolves_every_pinned_subscription_type_and_rejects_unknown() {
+        let pinned: Vec<serde_json::Value> = serde_json::from_str(include_str!(
+            "../../tests/fixtures/eventsub_subscriptions.json"
+        ))
+        .unwrap();
+        for row in &pinned {
+            let topic = row["type"].as_str().unwrap();
             assert!(route_for(topic).is_some(), "missing route for {topic}");
         }
         for unknown in ["channel.guest", "stream", ""] {

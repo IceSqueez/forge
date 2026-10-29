@@ -415,6 +415,9 @@ pub(crate) async fn run_actor(
                 voice_catalog: task_deps.voice_catalog.clone(),
                 detector: task_deps.detector.clone(),
             };
+            while recent_messages.len() > config.repeat_window.get() {
+                recent_messages.pop_front();
+            }
             let recent_snapshot: Vec<String> = recent_messages.iter().cloned().collect();
             while recent_messages.len() >= config.repeat_window.get() {
                 recent_messages.pop_front();

@@ -3,6 +3,7 @@ mod play_sound;
 mod set_master_volume;
 mod stop_all_sounds;
 mod stop_sound;
+mod volume_field;
 
 pub use play_sound::PlaySoundRunner;
 pub use set_master_volume::SetMasterVolumeRunner;

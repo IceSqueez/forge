@@ -7,6 +7,7 @@ use forge_registry::{
 };
 use forge_types::{ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetry};
 
+use super::volume_field::VolumeField;
 use crate::control::SoundboardControl;
 use crate::vocabulary::{config_keys, sub_action_ids};
 
@@ -17,14 +18,16 @@ const UNITY_GAIN_DB: i64 = 0;
 const DECADE_BASE: f64 = 10.0;
 const AMPLITUDE_DB_PER_DECADE: f64 = 20.0;
 
-const VOLUME_DB: IntegerField = IntegerField {
-    key: config_keys::VOLUME_DB,
-    label: "Volume (dB)",
-    editor: IntegerEditor::Number,
-    default: UNITY_GAIN_DB,
-    bounds: ValueBounds {
-        min: Some(MIN_VOLUME_DB),
-        max: Some(MAX_VOLUME_DB),
+const VOLUME_DB: VolumeField = VolumeField {
+    integer: IntegerField {
+        key: config_keys::VOLUME_DB,
+        label: "Volume (dB)",
+        editor: IntegerEditor::Number,
+        default: UNITY_GAIN_DB,
+        bounds: ValueBounds {
+            min: Some(MIN_VOLUME_DB),
+            max: Some(MAX_VOLUME_DB),
+        },
     },
 };
 

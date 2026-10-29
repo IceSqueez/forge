@@ -121,7 +121,7 @@ mod tests {
     async fn the_server_console_counts_the_browser_source_and_leaves_out_the_preview_tab() {
         let bus = EventBus::new(Arc::new(NullEventLogRepo));
         let adapter = BusAdapter::new(bus);
-        let info = ServerInfo::new();
+        let info = ServerInfo::serving(std::collections::BTreeSet::new());
         let identity = forge_storage::OverlayId::new("goal-box");
         let addr: std::net::SocketAddr = "203.0.113.7:5555".parse().unwrap();
 

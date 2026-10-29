@@ -167,7 +167,7 @@ async fn route(req: WsRequest, ctx: &DispatchContext) -> WsResponse {
 
 #[cfg(test)]
 mod tests {
-    use std::collections::HashSet;
+    use std::collections::{BTreeSet, HashSet};
     use std::sync::Arc;
     use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 
@@ -251,7 +251,7 @@ mod tests {
             auth_state,
             client,
             credentials,
-            server_info: ServerInfo::new(),
+            server_info: ServerInfo::serving(BTreeSet::new()),
             action_engine,
             overlay_root: Arc::new(std::path::PathBuf::from("/tmp/forge-test-overlays")),
             overlay_channel_swap: tokio::sync::Mutex::new(None),
@@ -285,7 +285,7 @@ mod tests {
             auth_state,
             client,
             credentials: test_creds(),
-            server_info: ServerInfo::new(),
+            server_info: ServerInfo::serving(BTreeSet::new()),
             action_engine,
             overlay_root: Arc::new(std::path::PathBuf::from("/tmp/forge-test-overlays")),
             overlay_channel_swap: tokio::sync::Mutex::new(None),
@@ -331,7 +331,7 @@ mod tests {
             auth_state,
             client,
             credentials,
-            server_info: ServerInfo::new(),
+            server_info: ServerInfo::serving(BTreeSet::new()),
             action_engine,
             overlay_root: Arc::new(std::path::PathBuf::from("/tmp/forge-test-overlays")),
             overlay_channel_swap: tokio::sync::Mutex::new(None),
@@ -1504,6 +1504,93 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn get_active_viewers_counts_only_events_from_chat_platform_sources() {
+        let ctx = make_ctx(false, false);
+        ctx.bus.publish(chat_event(
+            EventSource::Server,
+            "server.chat.relay",
+            Some(("1", "relayed")),
+            None,
+        ));
+        ctx.bus.publish(chat_event(
+            EventSource::Core,
+            "core.chat.echo",
+            Some(("2", "echoed")),
+            None,
+        ));
+        ctx.bus.publish(chat_event(
+            EventSource::Kick,
+            "kick.chat.message.sent",
+            Some(("3", "kicker")),
+            None,
+        ));
+
+        let viewers = active_viewers(&ctx).await;
+
+        assert_eq!(viewers.len(), 1);
+        viewer_of(&viewers, "kick", "3");
+    }
+
+    #[tokio::test]
+    async fn get_active_viewers_drops_chatters_older_than_the_window() {
+        let ctx = make_ctx(false, false);
+        let mut stale = chat_event(
+            EventSource::Twitch,
+            "twitch.channel.chat.message",
+            Some(("1", "stale")),
+            None,
+        );
+        stale.timestamp = OffsetDateTime::now_utc() - time::Duration::seconds(301);
+        let mut fresh = chat_event(
+            EventSource::Twitch,
+            "twitch.channel.chat.message",
+            Some(("2", "fresh")),
+            None,
+        );
+        fresh.timestamp = OffsetDateTime::now_utc() - time::Duration::seconds(290);
+        ctx.bus.publish(stale);
+        ctx.bus.publish(fresh);
+
+        let viewers = active_viewers(&ctx).await;
+
+        assert_eq!(viewers.len(), 1);
+        viewer_of(&viewers, "twitch", "2");
+    }
+
+    #[tokio::test]
+    async fn get_info_reports_the_platforms_the_server_was_configured_with() {
+        let mut ctx = make_ctx(false, false);
+        ctx.server_info = ServerInfo::serving(BTreeSet::from([
+            forge_types::PlatformId::Kick,
+            forge_types::PlatformId::Twitch,
+        ]));
+        let req = WsEnvelope {
+            id: Some("ap".to_owned()),
+            inner: WsRequest::GetInfo,
+        };
+
+        let json = serialize_response_frame(&dispatch(req, &ctx).await);
+
+        assert_eq!(
+            json["available_platforms"],
+            serde_json::json!(["twitch", "kick"])
+        );
+    }
+
+    #[tokio::test]
+    async fn get_info_reports_no_platforms_when_none_are_configured() {
+        let ctx = make_ctx(false, false);
+        let req = WsEnvelope {
+            id: Some("ap0".to_owned()),
+            inner: WsRequest::GetInfo,
+        };
+
+        let json = serialize_response_frame(&dispatch(req, &ctx).await);
+
+        assert_eq!(json["available_platforms"], serde_json::json!([]));
+    }
+
+    #[tokio::test]
     async fn get_active_viewers_ignores_non_chat_events() {
         let ctx = make_ctx(false, false);
         ctx.bus.publish(Event::new(
@@ -1577,7 +1664,7 @@ mod tests {
             auth_state: AuthState::for_test(true, "test-token"),
             client,
             credentials: test_creds(),
-            server_info: ServerInfo::new(),
+            server_info: ServerInfo::serving(BTreeSet::new()),
             action_engine,
             overlay_root: Arc::new(std::path::PathBuf::from("/tmp/forge-test-overlays")),
             overlay_channel_swap: tokio::sync::Mutex::new(None),

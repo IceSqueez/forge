@@ -101,16 +101,67 @@ mod tests {
     use forge_events::EventSource;
     use forge_runtime::{EventBus, NullEventLogRepo};
 
-    use super::build_connected_clients;
+    use super::{build_connected_accounts, build_connected_clients};
     use crate::bus_adapter::{BusAdapter, ClientFilterSet, EventFilter, OverlayClientClass};
     use crate::server_info::ServerInfo;
+    use crate::test_helpers::TestDataProvider;
     use crate::ws_client::WsClient;
+
+    async fn accounts_for(ids: &[&'static str]) -> Vec<serde_json::Value> {
+        let ids: Vec<forge_storage::CredentialId> = ids
+            .iter()
+            .map(|id| forge_storage::CredentialId::new(*id))
+            .collect();
+        let mut provider = TestDataProvider::new();
+        provider
+            .credentials()
+            .expect_list_ids()
+            .returning(move || Ok(ids.clone()));
+        build_connected_accounts(&provider).await
+    }
+
+    #[tokio::test]
+    async fn connected_accounts_split_credential_ids_at_the_first_colon_into_platform_and_login() {
+        let accounts = accounts_for(&[
+            "twitch:bot",
+            "youtube:channel",
+            "kick:a:b",
+            "discord:webhook",
+            "unknown:x",
+            "twitchbot",
+            "Twitch:caps",
+            ":empty",
+            "",
+        ])
+        .await;
+
+        assert_eq!(
+            serde_json::Value::Array(accounts),
+            serde_json::json!([
+                { "platform": "twitch", "login": "bot" },
+                { "platform": "youtube", "login": "channel" },
+                { "platform": "kick", "login": "a:b" },
+            ])
+        );
+    }
+
+    #[tokio::test]
+    async fn connected_accounts_are_empty_when_the_credential_store_fails() {
+        let mut provider = TestDataProvider::new();
+        provider.credentials().expect_list_ids().returning(|| {
+            Err(forge_storage::StorageError::Connection {
+                reason: "down".to_owned(),
+            })
+        });
+
+        assert!(build_connected_accounts(&provider).await.is_empty());
+    }
 
     #[tokio::test]
     async fn the_wire_client_list_answers_with_the_browser_source_and_drops_the_preview_tab() {
         let bus = EventBus::new(Arc::new(NullEventLogRepo));
         let adapter = BusAdapter::new(bus);
-        let info = ServerInfo::new();
+        let info = ServerInfo::serving(std::collections::BTreeSet::new());
         let identity = forge_storage::OverlayId::new("goal-box");
         let addr: std::net::SocketAddr = "203.0.113.7:5555".parse().unwrap();
 
@@ -162,7 +213,7 @@ mod tests {
             .identification
             .store(Arc::new("dashboard-1".to_owned()));
 
-        let info = ServerInfo::new();
+        let info = ServerInfo::serving(std::collections::BTreeSet::new());
         info.register(handle.id, client).await;
 
         let rows = build_connected_clients(&info, &adapter).await;
@@ -189,7 +240,7 @@ mod tests {
 
         let addr: std::net::SocketAddr = "203.0.113.9:6000".parse().unwrap();
         let client = Arc::new(WsClient::new(handle.id, addr, Arc::new(AtomicU64::new(0))));
-        let info = ServerInfo::new();
+        let info = ServerInfo::serving(std::collections::BTreeSet::new());
         info.register(handle.id, client).await;
 
         let rows = build_connected_clients(&info, &adapter).await;

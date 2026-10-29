@@ -296,7 +296,7 @@ mod tests {
             overlays: dp.overlay_repo(),
             credentials: test_creds(),
             settings: settings as Arc<dyn SettingsRepo>,
-            server_info: ServerInfo::new(),
+            server_info: ServerInfo::serving(std::collections::BTreeSet::new()),
             action_engine,
             audio_clips: crate::audio_clips::AudioClipStore::new(),
             overlay_root: Arc::new(overlay_root),

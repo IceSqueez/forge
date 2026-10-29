@@ -14,3 +14,19 @@ impl KindPlatformContract {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn only_a_platform_specific_contract_names_a_platform() {
+        assert_eq!(KindPlatformContract::Universal.platform(), None);
+        for platform in PlatformId::ALL {
+            assert_eq!(
+                KindPlatformContract::PlatformSpecific(platform).platform(),
+                Some(platform)
+            );
+        }
+    }
+}

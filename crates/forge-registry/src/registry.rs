@@ -218,6 +218,56 @@ mod tests {
         }
     }
 
+    struct ContractStub {
+        kind_id: &'static str,
+        contract: KindPlatformContract,
+    }
+
+    impl TriggerKindDescriptor for ContractStub {
+        fn id(&self) -> &str {
+            self.kind_id
+        }
+        fn category(&self) -> TriggerCategory {
+            TriggerCategory::Core
+        }
+        fn label(&self) -> &str {
+            "Stub"
+        }
+        fn summary(&self) -> &str {
+            "stub"
+        }
+        fn search_text(&self) -> &str {
+            ""
+        }
+        fn icon_name(&self) -> &str {
+            "bolt"
+        }
+        fn platform_contract(&self) -> KindPlatformContract {
+            self.contract
+        }
+        fn default_config(&self) -> TriggerConfig {
+            TriggerConfig::new()
+        }
+        fn config_fields(&self) -> Vec<FormField> {
+            vec![]
+        }
+        fn condition_display(&self, _config: &TriggerConfig) -> String {
+            String::new()
+        }
+        fn event_filter(&self) -> EventFilter {
+            EventFilter {
+                source: None,
+                kind_prefix: None,
+            }
+        }
+        fn matches_trigger(&self, _config: &TriggerConfig, _event: &Event) -> bool {
+            false
+        }
+        fn build_arg_stack(&self, _event: &Event) -> ArgStack {
+            ArgStack::new()
+        }
+    }
+
     struct StubRunner {
         kind_id: &'static str,
     }
@@ -303,6 +353,64 @@ mod tests {
         reg.register(Box::new(StubDescriptor { kind_id: "b" }))
             .unwrap();
         assert_eq!(reg.all().count(), 2);
+    }
+
+    fn registry_of(contracts: &[(&'static str, KindPlatformContract)]) -> TriggerRegistry {
+        let mut reg = TriggerRegistry::new();
+        for (kind_id, contract) in contracts {
+            reg.register(Box::new(ContractStub {
+                kind_id,
+                contract: *contract,
+            }))
+            .unwrap();
+        }
+        reg
+    }
+
+    #[test]
+    fn platforms_collects_platform_specific_contracts_deduplicated_and_ordered() {
+        use PlatformId::{Kick, Twitch, YouTube};
+        let reg = registry_of(&[
+            ("kick.chat", KindPlatformContract::PlatformSpecific(Kick)),
+            (
+                "twitch.chat",
+                KindPlatformContract::PlatformSpecific(Twitch),
+            ),
+            (
+                "twitch.raid",
+                KindPlatformContract::PlatformSpecific(Twitch),
+            ),
+            (
+                "youtube.chat",
+                KindPlatformContract::PlatformSpecific(YouTube),
+            ),
+        ]);
+
+        let platforms: Vec<PlatformId> = reg.platforms().into_iter().collect();
+
+        assert_eq!(platforms, vec![Twitch, YouTube, Kick]);
+    }
+
+    #[test]
+    fn platforms_ignores_universal_contracts() {
+        let reg = registry_of(&[
+            ("core.a", KindPlatformContract::Universal),
+            (
+                "twitch.chat",
+                KindPlatformContract::PlatformSpecific(PlatformId::Twitch),
+            ),
+        ]);
+
+        assert_eq!(
+            reg.platforms().into_iter().collect::<Vec<_>>(),
+            vec![PlatformId::Twitch]
+        );
+        assert!(
+            registry_of(&[("core.a", KindPlatformContract::Universal)])
+                .platforms()
+                .is_empty()
+        );
+        assert!(TriggerRegistry::new().platforms().is_empty());
     }
 
     #[test]

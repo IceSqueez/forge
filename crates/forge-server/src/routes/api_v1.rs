@@ -337,7 +337,7 @@ mod tests {
             overlays,
             credentials: creds_dyn,
             settings: Arc::clone(&dp) as Arc<dyn forge_storage::SettingsRepo>,
-            server_info: ServerInfo::new(),
+            server_info: ServerInfo::serving(std::collections::BTreeSet::new()),
             action_engine,
             audio_clips: crate::audio_clips::AudioClipStore::new(),
             overlay_root: Arc::new(std::path::PathBuf::from("/tmp/forge-test-overlays")),

@@ -454,7 +454,7 @@ pub(crate) mod tests {
             overlays,
             credentials: creds,
             settings,
-            server_info: ServerInfo::new(),
+            server_info: ServerInfo::serving(std::collections::BTreeSet::new()),
             action_engine,
             audio_clips: crate::audio_clips::AudioClipStore::new(),
             overlay_root: Arc::new(std::path::PathBuf::from("/tmp/forge-test-overlays")),

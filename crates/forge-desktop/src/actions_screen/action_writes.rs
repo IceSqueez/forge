@@ -434,7 +434,12 @@ mod tests {
             (
                 ActionWrite::SetChain {
                     path: Vec::new(),
-                    chain: reordered.sub_actions.clone(),
+                    chain: reordered
+                        .sub_actions
+                        .iter()
+                        .cloned()
+                        .map(nav::ChainItem::fresh)
+                        .collect(),
                 },
                 reordered,
                 "chain",
@@ -881,7 +886,10 @@ mod tests {
         });
 
         screen.view.update(cx, |view, cx| {
-            view.persist_chain_mutation(|chain| chain.push(step(FIRST, true)), cx)
+            view.persist_chain_mutation(
+                |chain| chain.push(nav::ChainItem::fresh(step(FIRST, true))),
+                cx,
+            )
         });
         screen.settle(cx);
 

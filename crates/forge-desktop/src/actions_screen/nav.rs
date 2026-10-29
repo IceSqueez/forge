@@ -322,7 +322,22 @@ pub(super) fn set_case_match(
 mod tests {
     use forge_types::{SubActionConfig, SubActionStep, Variant};
 
-    use super::{NavFrame, append_empty_case, resolve_chain, set_chain};
+    use forge_registry::{
+        FormField, RegistryError, RunContext, SubActionCategory, SubActionRegistry,
+        SubActionRunner, UndecodableReason, UndecodableStep,
+    };
+    use forge_types::{ArgStack, SubActionTelemetry};
+
+    use super::{
+        ChainItem, NavFrame, append_empty_case, branch_step_count, case_list_keys, chain_steps,
+        resolve_chain, set_chain,
+    };
+
+    const LOG: &str = "core.log";
+    const BRANCH: &str = "core.if";
+    const THEN: &str = "then";
+    const SWITCH: &str = "fake.switch";
+    const OPTIONAL_CASES_KEY: &str = "branches";
 
     fn step(kind_id: &str) -> SubActionStep {
         SubActionStep {
@@ -337,8 +352,8 @@ mod tests {
 
     fn switch_with_two_cases() -> SubActionStep {
         let mut switch = step("core.switch");
-        append_empty_case(&mut switch.config);
-        append_empty_case(&mut switch.config);
+        append_empty_case(&mut switch.config, "cases");
+        append_empty_case(&mut switch.config, "cases");
         switch
     }
 
@@ -348,6 +363,10 @@ mod tests {
             chain_key: chain_key.to_owned(),
             case_index,
         }
+    }
+
+    fn edited_items() -> Vec<ChainItem> {
+        edited_chain().into_iter().map(ChainItem::fresh).collect()
     }
 
     fn edited_chain() -> Vec<SubActionStep> {
@@ -377,13 +396,13 @@ mod tests {
         assert!(set_chain(
             &mut root,
             &[frame(1, "cases", Some(1))],
-            &[nested_if]
+            &[ChainItem::fresh(nested_if)]
         ));
         let path = [frame(1, "cases", Some(1)), frame(0, "then", None)];
 
-        assert!(set_chain(&mut root, &path, &edited_chain()));
+        assert!(set_chain(&mut root, &path, &edited_items()));
 
-        assert_eq!(resolve_chain(&root, &path), edited_chain());
+        assert_eq!(chain_steps(&resolve_chain(&root, &path)), edited_chain());
     }
 
     #[test]
@@ -393,11 +412,11 @@ mod tests {
         assert!(set_chain(
             &mut root,
             &[frame(0, "cases", Some(1))],
-            &edited_chain()
+            &edited_items()
         ));
 
         assert_eq!(
-            resolve_chain(&root, &[frame(0, "cases", Some(0))]),
+            chain_steps(&resolve_chain(&root, &[frame(0, "cases", Some(0))])),
             Vec::new()
         );
     }
@@ -406,8 +425,304 @@ mod tests {
     fn a_path_through_a_step_that_does_not_exist_is_refused_without_touching_the_chain() {
         let mut root = vec![step("core.log")];
 
-        let written = set_chain(&mut root, &[frame(3, "then", None)], &edited_chain());
+        let written = set_chain(&mut root, &[frame(3, "then", None)], &edited_items());
 
         assert_eq!((written, root), (false, vec![step("core.log")]));
+    }
+
+    fn s(value: &str) -> Variant {
+        Variant::String(value.to_owned())
+    }
+
+    fn obj<const N: usize>(fields: [(&str, Variant); N]) -> Variant {
+        Variant::Object(
+            fields
+                .into_iter()
+                .map(|(key, value)| (key.to_owned(), value))
+                .collect(),
+        )
+    }
+
+    fn with(entry: Variant, key: &str, value: Variant) -> Variant {
+        match entry {
+            Variant::Object(mut fields) => {
+                fields.insert(key.to_owned(), value);
+                Variant::Object(fields)
+            }
+            other => other,
+        }
+    }
+
+    fn readable(text: &str) -> Variant {
+        obj([
+            ("kind_id", s(LOG)),
+            ("config", obj([("text", s(text))])),
+            ("enabled", Variant::Bool(true)),
+            ("continue_on_error", Variant::Bool(false)),
+            ("x_extra", s("kept")),
+        ])
+    }
+
+    fn not_an_object() -> Variant {
+        s("not a step")
+    }
+
+    fn kindless() -> Variant {
+        obj([("config", obj([])), ("x_extra", s("kept"))])
+    }
+
+    fn stored_branch(body: Vec<Variant>) -> Variant {
+        obj([
+            ("kind_id", s(BRANCH)),
+            ("config", obj([(THEN, Variant::Array(body))])),
+            ("enabled", Variant::Bool(true)),
+            ("continue_on_error", Variant::Bool(false)),
+            ("x_extra", s("kept")),
+        ])
+    }
+
+    fn branch_holding(body: Vec<Variant>) -> SubActionStep {
+        SubActionStep {
+            config: SubActionConfig::from([(THEN.to_owned(), Variant::Array(body))]),
+            ..step(BRANCH)
+        }
+    }
+
+    fn mixed_chain() -> Vec<Variant> {
+        vec![not_an_object(), readable("a"), kindless(), readable("b")]
+    }
+
+    type Edit = fn(&mut Vec<ChainItem>);
+
+    fn edits_of_a_mixed_chain() -> Vec<(&'static str, Edit, Vec<Variant>)> {
+        vec![
+            (
+                "toggle",
+                |items| {
+                    if let Some(step) = items[1].step_mut() {
+                        step.enabled = false;
+                    }
+                },
+                vec![
+                    not_an_object(),
+                    with(readable("a"), "enabled", Variant::Bool(false)),
+                    kindless(),
+                    readable("b"),
+                ],
+            ),
+            (
+                "edit",
+                |items| {
+                    if let Some(step) = items[3].step_mut() {
+                        step.config.insert("text".to_owned(), s("edited"));
+                        step.label = Some("renamed".to_owned());
+                    }
+                },
+                vec![
+                    not_an_object(),
+                    readable("a"),
+                    kindless(),
+                    with(readable("edited"), "label", s("renamed")),
+                ],
+            ),
+            (
+                "move up past an unreadable entry",
+                |items| {
+                    let moved = items.remove(3);
+                    items.insert(2, moved);
+                },
+                vec![not_an_object(), readable("a"), readable("b"), kindless()],
+            ),
+            (
+                "remove",
+                |items| {
+                    items.remove(1);
+                },
+                vec![not_an_object(), kindless(), readable("b")],
+            ),
+        ]
+    }
+
+    fn apply(root: &mut Vec<SubActionStep>, path: &[NavFrame], edit: Edit) -> bool {
+        let mut items = resolve_chain(root, path);
+        edit(&mut items);
+        set_chain(root, path, &items)
+    }
+
+    #[test]
+    fn editing_a_chain_one_level_deep_keeps_unreadable_entries_and_unknown_keys_verbatim() {
+        for (case, edit, expected) in edits_of_a_mixed_chain() {
+            let mut root = vec![branch_holding(mixed_chain())];
+
+            let written = apply(&mut root, &[frame(0, THEN, None)], edit);
+
+            assert_eq!(
+                (written, root[0].config.get(THEN)),
+                (true, Some(&Variant::Array(expected))),
+                "{case}"
+            );
+        }
+    }
+
+    #[test]
+    fn editing_a_chain_two_levels_deep_keeps_unreadable_entries_and_unknown_keys_at_both_levels() {
+        let outer = |inner: Vec<Variant>| vec![not_an_object(), stored_branch(inner), kindless()];
+        for (case, edit, expected) in edits_of_a_mixed_chain() {
+            let mut root = vec![branch_holding(outer(mixed_chain()))];
+            let path = [frame(0, THEN, None), frame(1, THEN, None)];
+
+            let written = apply(&mut root, &path, edit);
+
+            assert_eq!(
+                (written, root[0].config.get(THEN)),
+                (true, Some(&Variant::Array(outer(expected)))),
+                "{case}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_nested_chain_saved_without_edits_keeps_every_stored_entry_verbatim() {
+        let stored = vec![
+            not_an_object(),
+            stored_branch(mixed_chain()),
+            obj([("kind_id", s(LOG)), ("x_extra", s("kept"))]),
+        ];
+        let mut root = vec![branch_holding(stored.clone())];
+
+        let written = apply(&mut root, &[frame(0, THEN, None)], |_| {});
+
+        assert_eq!(
+            (written, root[0].config.get(THEN)),
+            (true, Some(&Variant::Array(stored)))
+        );
+    }
+
+    #[test]
+    fn a_path_through_an_unreadable_entry_resolves_empty_and_refuses_writes() {
+        let original = vec![branch_holding(vec![not_an_object(), readable("a")])];
+        let mut root = original.clone();
+        let path = [frame(0, THEN, None), frame(0, THEN, None)];
+
+        let resolved = resolve_chain(&root, &path);
+        let written = set_chain(&mut root, &path, &edited_items());
+
+        assert_eq!((resolved, written, root), (Vec::new(), false, original));
+    }
+
+    #[test]
+    fn the_root_chain_refuses_an_unreadable_entry() {
+        let mut root = vec![step(LOG)];
+        let unreadable = ChainItem::Unreadable(UndecodableStep {
+            position: 0,
+            reason: UndecodableReason::NotAnObject,
+            raw: not_an_object(),
+        });
+
+        let written = set_chain(
+            &mut root,
+            &[],
+            &[ChainItem::fresh(step(BRANCH)), unreadable],
+        );
+
+        assert_eq!((written, root), (false, vec![step(LOG)]));
+    }
+
+    #[test]
+    fn branch_step_count_counts_unreadable_entries_like_the_resolved_chain() {
+        let mut switch = switch_with_two_cases();
+        switch.config.insert(
+            "cases".to_owned(),
+            Variant::Array(vec![obj([
+                ("match", s("x")),
+                ("chain", Variant::Array(mixed_chain())),
+            ])]),
+        );
+        let root = vec![branch_holding(mixed_chain()), switch];
+
+        for (step_index, key, case_index) in [(0, THEN, None), (1, "cases", Some(0))] {
+            let resolved = resolve_chain(&root, &[frame(step_index, key, case_index)]).len();
+
+            assert_eq!(
+                (
+                    branch_step_count(&root[step_index], key, case_index),
+                    resolved
+                ),
+                (4, 4),
+                "{key}"
+            );
+        }
+    }
+
+    struct CaseListRunner;
+
+    #[async_trait::async_trait]
+    impl SubActionRunner for CaseListRunner {
+        fn id(&self) -> &str {
+            SWITCH
+        }
+
+        fn category(&self) -> SubActionCategory {
+            SubActionCategory::Logic
+        }
+
+        fn label(&self) -> &str {
+            SWITCH
+        }
+
+        fn summary(&self) -> &str {
+            SWITCH
+        }
+
+        fn search_text(&self) -> &str {
+            SWITCH
+        }
+
+        fn icon_name(&self) -> &str {
+            "bolt"
+        }
+
+        fn default_config(&self) -> SubActionConfig {
+            SubActionConfig::new()
+        }
+
+        fn config_fields(&self) -> Vec<FormField> {
+            vec![
+                FormField::SubChain {
+                    key: THEN,
+                    label: THEN,
+                },
+                FormField::Optional {
+                    key: "use_branches",
+                    label: "use_branches",
+                    inner: Box::new(FormField::CaseList {
+                        key: OPTIONAL_CASES_KEY,
+                        label: OPTIONAL_CASES_KEY,
+                    }),
+                },
+            ]
+        }
+
+        fn validate_config(&self, _: &SubActionConfig) -> Result<(), RegistryError> {
+            Ok(())
+        }
+
+        async fn execute(
+            &self,
+            _: &SubActionConfig,
+            _: &RunContext<'_>,
+        ) -> (SubActionTelemetry, Option<ArgStack>) {
+            unreachable!("case lookup never runs a step")
+        }
+    }
+
+    #[test]
+    fn case_list_keys_come_from_the_registered_form_including_behind_an_optional_field() {
+        let mut registry = SubActionRegistry::new();
+        assert!(registry.register(Box::new(CaseListRunner)).is_ok());
+
+        let keys = [step(SWITCH), step(LOG)].map(|step| case_list_keys(&step, &registry));
+
+        assert_eq!(keys, [vec![OPTIONAL_CASES_KEY], Vec::new()]);
     }
 }

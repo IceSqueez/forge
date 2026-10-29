@@ -21,7 +21,6 @@ mod tests {
     use forge_types::{SubActionConfig, Variant};
 
     use super::*;
-    use crate::actions_screen::nav;
 
     const BRANCH_KIND: &str = "core.logic.if_then_else";
     const THEN_CHAIN_KEY: &str = "then_chain";
@@ -61,7 +60,10 @@ mod tests {
     fn branch(body: Vec<SubActionStep>) -> SubActionStep {
         step(
             BRANCH_KIND,
-            SubActionConfig::from([(THEN_CHAIN_KEY.to_owned(), nav::encode_chain(&body))]),
+            SubActionConfig::from([(
+                THEN_CHAIN_KEY.to_owned(),
+                Variant::Array(body.iter().map(forge_registry::encode_step).collect()),
+            )]),
             true,
         )
     }

@@ -6,8 +6,8 @@ use std::path::PathBuf;
 
 use forge_registry::{
     CASE_CHAIN_KEY, ChainEntry, FormField, StepNode, StepReach, SubActionRegistry,
-    UndecodableReason, UndecodableStep, decode_chain, decode_step, encode_chain, nested_chains,
-    rewrite_steps, walk_steps,
+    UndecodableReason, UndecodableStep, decode_chain, decode_step, encode_chain, encode_step_onto,
+    nested_chains, rewrite_steps, walk_steps,
 };
 use forge_types::{SubActionConfig, SubActionStep, Variant};
 
@@ -449,4 +449,61 @@ fn rewrite_with_an_edit_that_changes_nothing_reports_no_change_and_keeps_the_tre
 
     assert!(!changed);
     assert_eq!(steps, original);
+}
+
+#[test]
+fn encode_onto_stored_keeps_unchanged_entries_verbatim_and_unknown_keys_on_edit() {
+    let bare = obj([("kind_id", s(OLD_LEAF)), ("x_extra", Variant::Int(1))]);
+    let annotated = obj([
+        ("kind_id", s(OLD_LEAF)),
+        ("config", obj([])),
+        ("enabled", Variant::Bool(true)),
+        ("continue_on_error", Variant::Bool(false)),
+        ("condition", s("%user% == \"bob\"")),
+        ("label", s("greet")),
+        ("x_extra", Variant::Int(1)),
+    ]);
+    let edited = |enabled: bool| {
+        obj([
+            ("kind_id", s(OLD_LEAF)),
+            ("config", obj([])),
+            ("enabled", Variant::Bool(enabled)),
+            ("continue_on_error", Variant::Bool(false)),
+            ("x_extra", Variant::Int(1)),
+        ])
+    };
+    let fresh = obj([
+        ("kind_id", s(OLD_LEAF)),
+        ("config", obj([])),
+        ("enabled", Variant::Bool(true)),
+        ("continue_on_error", Variant::Bool(false)),
+    ]);
+    for (case, edit, stored, expected) in [
+        (
+            "unchanged bare entry",
+            step(OLD_LEAF, cfg([]), true),
+            bare.clone(),
+            bare.clone(),
+        ),
+        (
+            "edited entry",
+            step(OLD_LEAF, cfg([]), false),
+            bare,
+            edited(false),
+        ),
+        (
+            "condition and label cleared",
+            step(OLD_LEAF, cfg([]), true),
+            annotated,
+            edited(true),
+        ),
+        (
+            "stored value is not an entry",
+            step(OLD_LEAF, cfg([]), true),
+            s("not a step"),
+            fresh,
+        ),
+    ] {
+        assert_eq!(encode_step_onto(&edit, &stored), expected, "{case}");
+    }
 }

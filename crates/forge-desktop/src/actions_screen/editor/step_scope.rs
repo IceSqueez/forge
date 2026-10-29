@@ -187,7 +187,10 @@ mod tests {
     fn case(body: &[SubActionStep]) -> Variant {
         Variant::Object(SubActionConfig::from([
             ("match".to_owned(), Variant::String("x".to_owned())),
-            (CASE_CHAIN_KEY.to_owned(), nav::encode_chain(body)),
+            (
+                CASE_CHAIN_KEY.to_owned(),
+                Variant::Array(body.iter().map(forge_registry::encode_step).collect()),
+            ),
         ]))
     }
 
@@ -231,7 +234,12 @@ mod tests {
             holding(
                 BRANCH,
                 THEN_KEY,
-                nav::encode_chain(&[text("inner_a"), text("inner_b"), text("inner_c")]),
+                Variant::Array(
+                    [text("inner_a"), text("inner_b"), text("inner_c")]
+                        .iter()
+                        .map(forge_registry::encode_step)
+                        .collect(),
+                ),
             ),
         ]
     }
@@ -291,5 +299,56 @@ mod tests {
         let names = names_at(root, &[frame(1, CASES_KEY, Some(1))], SubFormTarget::Add);
 
         assert_eq!(names, vec!["before", "this_a", "this_b"]);
+    }
+
+    fn unreadable() -> Variant {
+        Variant::String("not a step".to_owned())
+    }
+
+    #[test]
+    fn stored_positions_skip_unreadable_entries_when_choosing_the_earlier_steps() {
+        let nested = holding(
+            BRANCH,
+            THEN_KEY,
+            Variant::Array(vec![forge_registry::encode_step(&text("deepest"))]),
+        );
+        let root = vec![
+            text("before"),
+            holding(
+                BRANCH,
+                THEN_KEY,
+                Variant::Array(vec![
+                    forge_registry::encode_step(&text("inner_a")),
+                    unreadable(),
+                    unreadable(),
+                    forge_registry::encode_step(&nested),
+                    forge_registry::encode_step(&text("inner_after")),
+                ]),
+            ),
+        ];
+        let inside_branch = [frame(1, THEN_KEY, None)];
+        let inside_nested = [frame(1, THEN_KEY, None), frame(3, THEN_KEY, None)];
+        for (nav_path, target, expected, case) in [
+            (
+                &inside_branch[..],
+                SubFormTarget::Edit(4),
+                vec!["before", "inner_a", "deepest"],
+                "edit after unreadable entries",
+            ),
+            (
+                &inside_nested[..],
+                SubFormTarget::Edit(0),
+                vec!["before", "inner_a"],
+                "enclosing step after unreadable entries",
+            ),
+            (
+                &inside_branch[..],
+                SubFormTarget::Add,
+                vec!["before", "inner_a", "deepest", "inner_after"],
+                "add at the end of a chain with unreadable entries",
+            ),
+        ] {
+            assert_eq!(names_at(root.clone(), nav_path, target), expected, "{case}");
+        }
     }
 }

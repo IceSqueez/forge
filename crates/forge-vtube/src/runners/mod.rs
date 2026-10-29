@@ -405,4 +405,47 @@ mod tests {
             "the hold kept injecting after the reset"
         );
     }
+
+    #[tokio::test]
+    async fn runners_returning_a_stack_keep_earlier_variables_and_add_outputs() {
+        let reg = registry();
+        let seed = ArgStack::new().set("earlier".to_owned(), Variant::String("kept".to_owned()));
+        let mut returned_stack = BTreeSet::new();
+        for runner in reg.all() {
+            let mut config = runner.default_config();
+            config.insert(
+                "file_name".to_owned(),
+                Variant::String("prop.png".to_owned()),
+            );
+            let (_, stack) = runner.execute(&config, &make_ctx(&seed)).await;
+            let Some(stack) = stack else { continue };
+            let id = runner.id().to_owned();
+
+            assert_eq!(
+                stack.get("earlier"),
+                Some(&Variant::String("kept".to_owned())),
+                "{id} dropped an earlier variable",
+            );
+            assert!(
+                stack.snapshot().len() > 1,
+                "{id} returned a stack with no outputs",
+            );
+            returned_stack.insert(id);
+        }
+        assert_eq!(
+            returned_stack,
+            [
+                "vtube.lookup.parameters",
+                "vtube.lookup.items",
+                "vtube.item.throw",
+                "vtube.item.load",
+                "vtube.lookup.current_model",
+                "vtube.lookup.expressions",
+                "vtube.lookup.hotkeys",
+            ]
+            .into_iter()
+            .map(str::to_owned)
+            .collect::<BTreeSet<String>>(),
+        );
+    }
 }

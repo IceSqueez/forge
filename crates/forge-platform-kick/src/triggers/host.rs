@@ -91,6 +91,7 @@ fn host_identity(event: &Event) -> ActorIdentity {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use forge_types::Variant;
 
     use serde_json::json;
 
@@ -111,16 +112,6 @@ mod tests {
         assert_eq!(stack.get("user_id"), Some(&Variant::String(String::new())));
         assert_eq!(
             stack.get("user_login"),
-            Some(&Variant::String("hosting_channel".to_owned()))
-        );
-    }
-
-    #[test]
-    fn the_legacy_host_username_still_carries_what_user_login_carries() {
-        let stack = HostDescriptor.build_arg_stack(&a_host_bringing_a_crowd());
-        assert_eq!(stack.get("host_username"), stack.get("user_login"));
-        assert_eq!(
-            stack.get("host_username"),
             Some(&Variant::String("hosting_channel".to_owned()))
         );
     }

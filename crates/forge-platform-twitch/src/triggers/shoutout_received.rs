@@ -116,6 +116,7 @@ fn shoutout_channel_identity(event: &Event) -> ActorIdentity {
 mod tests {
     use super::*;
     use crate::timestamp::tests::instant;
+    use forge_types::Variant;
 
     fn shoutout_received_event() -> Event {
         let payload = serde_json::json!({

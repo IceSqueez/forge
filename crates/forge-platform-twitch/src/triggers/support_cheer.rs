@@ -214,13 +214,4 @@ mod tests {
         assert_eq!(stack.get("bits_amount"), Some(&Variant::Int(200)));
         assert_eq!(stack.get("cheer_is_anonymous"), Some(&Variant::Bool(false)));
     }
-
-    #[test]
-    fn the_legacy_cheer_message_still_carries_the_line_message_text_now_carries() {
-        let stack = SupportCheerDescriptor.build_arg_stack(&cheer_event(200));
-        assert_eq!(
-            stack.get("cheer_message"),
-            Some(&Variant::String("PogChamp PogChamp PogChamp".to_owned()))
-        );
-    }
 }

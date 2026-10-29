@@ -226,25 +226,6 @@ mod tests {
     }
 
     #[test]
-    fn the_legacy_ban_names_still_carry_what_their_canonical_twins_carry() {
-        let stack = ChannelUserBannedDescriptor.build_arg_stack(&a_five_minute_timeout());
-        assert_eq!(stack.get("ban.target.channel_id"), stack.get("user_id"));
-        assert_eq!(stack.get("ban.target.display_name"), stack.get("user_name"));
-        assert_eq!(
-            stack.get("ban.moderator.channel_id"),
-            stack.get("moderator_id")
-        );
-        assert_eq!(
-            stack.get("ban.moderator.display_name"),
-            stack.get("moderator_name")
-        );
-        assert_eq!(
-            stack.get("ban.target.channel_id"),
-            Some(&Variant::String("UCtarget".to_owned()))
-        );
-    }
-
-    #[test]
     fn a_ban_the_wire_attributes_to_nobody_reads_as_permanent_by_an_empty_moderator() {
         let stack = ChannelUserBannedDescriptor.build_arg_stack(&ban_event(json!({})));
         assert_eq!(

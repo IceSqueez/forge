@@ -385,12 +385,19 @@ mod tests {
     }
 
     #[test]
-    fn event_filter_targets_twitch_whisper_topic() {
-        let filter = WhisperReceivedDescriptor.event_filter();
-        assert_eq!(filter.source, Some(EventSource::Twitch));
+    fn a_sender_without_a_display_name_is_shown_under_the_login_in_the_legacy_display_name() {
+        let event = Event::new(
+            EventSource::Twitch,
+            "user.whisper.message",
+            serde_json::json!({
+                "user": { "id": "42", "login": "bobx", "display_name": "" },
+                "whisper": { "text": "psst" }
+            }),
+        );
+        let stack = WhisperReceivedDescriptor.build_arg_stack(&event);
         assert_eq!(
-            filter.kind_prefix.as_deref(),
-            Some("twitch.user.whisper.message")
+            stack.get("user.display_name"),
+            Some(&Variant::String("bobx".to_owned()))
         );
     }
 }

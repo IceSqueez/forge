@@ -113,6 +113,7 @@ fn recipient_identity(event: &Event) -> ActorIdentity {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use forge_types::Variant;
     use serde_json::json;
 
     fn received_event(payload: serde_json::Value) -> Event {
@@ -159,23 +160,6 @@ mod tests {
         assert_eq!(
             stack.get("gifter_name"),
             Some(&Variant::String(String::new()))
-        );
-    }
-
-    #[test]
-    fn the_legacy_gift_received_names_still_carry_what_their_canonical_twins_carry() {
-        let stack = ChannelMemberGiftReceivedDescriptor.build_arg_stack(&as_the_poller_sends_it());
-        assert_eq!(stack.get("gift.level_name"), stack.get("sub_tier"));
-        assert_eq!(stack.get("gifter.channel_id"), stack.get("gifter_id"));
-        assert_eq!(stack.get("gifter.display_name"), stack.get("gifter_name"));
-        assert_eq!(stack.get("recipient.channel_id"), stack.get("recipient_id"));
-        assert_eq!(
-            stack.get("recipient.display_name"),
-            stack.get("recipient_name")
-        );
-        assert_eq!(
-            stack.get("recipient.channel_id"),
-            Some(&Variant::String("UCrecipient".to_owned()))
         );
     }
 

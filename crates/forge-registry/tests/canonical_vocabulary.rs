@@ -3,8 +3,8 @@ use std::collections::BTreeSet;
 use forge_events::{Event, EventSource};
 use forge_registry::{ActorBlock, ActorIdentity, LoginSlot, TriggerVariables, money_value};
 use forge_types::{
-    ActorRole, CanonicalCount, CanonicalVariable, CurrencyCode, DeclaredVariable, MoneyAmount,
-    MoneySlot, PlatformId, SynthesisHint, Variant, VariantKind,
+    ActorRole, ActorSlot, CanonicalCount, CanonicalVariable, CurrencyCode, DeclaredVariable,
+    MoneyAmount, MoneySlot, PlatformId, VariableStanding, Variant, VariantKind,
 };
 
 const CANONICAL_ROSTER: &[(&str, VariantKind)] = &[
@@ -75,21 +75,12 @@ fn flag(value: &'static str) -> DeclaredVariable {
     }
 }
 
-fn message(name: &'static str) -> DeclaredVariable {
-    DeclaredVariable {
-        name: name.to_owned(),
-        kind: VariantKind::String,
-        label: name.to_owned(),
-        synthesis: Some(SynthesisHint::Message),
-    }
-}
-
 fn one_of_every_entry_kind() -> TriggerVariables {
     TriggerVariables::new()
         .legacy(
-            message("sub_message"),
+            "sub_message",
+            "Resub message",
             CanonicalVariable::MessageText,
-            |_| Variant::String("thanks for the stream".to_owned()),
         )
         .event_specific(flag("share_streak"), |_| Variant::Bool(true))
         .sub_tier(|_| "1000".to_owned())
@@ -259,6 +250,92 @@ fn a_legacy_entry_carries_its_canonical_twins_value_and_names_the_twin_it_defers
             .filter(|(name, _)| name != "sub_message")
             .all(|(_, superseded_by)| superseded_by.is_none()),
         "only a legacy entry names a canonical replacement: {standings:?}"
+    );
+}
+
+fn legacy_aliases_of_a_twitch_chatter() -> TriggerVariables {
+    TriggerVariables::new()
+        .legacy(
+            "display_name",
+            "Sender display name",
+            CanonicalVariable::actor(ActorRole::Principal, ActorSlot::Name),
+        )
+        .legacy(
+            "count",
+            "Gifted subscription count",
+            CanonicalVariable::Count(CanonicalCount::GiftCount),
+        )
+        .actor(twitch_block(ActorRole::Principal), |_| {
+            identity("222", "", Some("loyalfan"))
+        })
+        .count(CanonicalCount::GiftCount, |_| 0)
+}
+
+#[test]
+fn a_legacy_entry_declares_its_twins_kind_and_synthesis_hint_under_its_own_name_and_label() {
+    let declarations = legacy_aliases_of_a_twitch_chatter().declarations();
+    let twin_of = |canonical: CanonicalVariable| {
+        declarations
+            .iter()
+            .find(|variable| variable.standing == VariableStanding::Canonical(canonical))
+            .map(|variable| variable.declared.clone())
+            .expect("twin declared")
+    };
+
+    let legacy: Vec<DeclaredVariable> = declarations
+        .iter()
+        .filter(|variable| variable.standing.superseded_by().is_some())
+        .map(|variable| variable.declared.clone())
+        .collect();
+    let expected: Vec<DeclaredVariable> = [
+        (
+            "display_name",
+            "Sender display name",
+            CanonicalVariable::actor(ActorRole::Principal, ActorSlot::Name),
+        ),
+        (
+            "count",
+            "Gifted subscription count",
+            CanonicalVariable::Count(CanonicalCount::GiftCount),
+        ),
+    ]
+    .into_iter()
+    .map(|(name, label, canonical)| DeclaredVariable {
+        name: name.to_owned(),
+        label: label.to_owned(),
+        ..twin_of(canonical)
+    })
+    .collect();
+    assert_eq!(legacy, expected);
+}
+
+#[test]
+fn a_legacy_entry_takes_the_value_its_twin_publishes_after_the_twins_own_fallbacks() {
+    let stack = legacy_aliases_of_a_twitch_chatter().arg_stack(&no_payload());
+    assert_eq!(
+        (stack.get("display_name"), stack.get("count")),
+        (
+            Some(&Variant::String("loyalfan".to_owned())),
+            Some(&Variant::Int(CanonicalCount::GiftCount.floor())),
+        )
+    );
+}
+
+#[test]
+fn a_legacy_entry_without_a_canonical_twin_is_declared_but_left_out_of_the_arg_stack() {
+    let variables = TriggerVariables::new()
+        .legacy(
+            "months",
+            "Subscribed months",
+            CanonicalVariable::Count(CanonicalCount::SubCumulativeMonths),
+        )
+        .message_text(|_| "hi".to_owned());
+
+    let declared = declared_names(&variables);
+    let stack = variables.arg_stack(&no_payload());
+    assert_eq!(
+        (declared.contains(&"months".to_owned()), stack.get("months")),
+        (true, None)
     );
 }
 

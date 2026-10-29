@@ -90,14 +90,9 @@ fn canonical_actor_only() -> TriggerVariables {
 
 fn canonical_actor_plus_legacy_username() -> TriggerVariables {
     canonical_actor_only().legacy(
-        DeclaredVariable {
-            name: LEGACY_NAME.to_owned(),
-            kind: VariantKind::String,
-            label: "Username".to_owned(),
-            synthesis: None,
-        },
+        LEGACY_NAME,
+        "Username",
         CanonicalVariable::actor(ActorRole::Principal, ActorSlot::Login),
-        |_| Variant::String("streamfan42".to_owned()),
     )
 }
 

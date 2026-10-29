@@ -123,9 +123,9 @@ fn listed(descriptor: &dyn TriggerKindDescriptor) -> Vec<(String, VariableStandi
 fn one_of_each_standing() -> TriggerVariables {
     TriggerVariables::new()
         .legacy(
-            declared("months", VariantKind::Int),
+            "months",
+            "months",
             CanonicalVariable::Count(CanonicalCount::SubCumulativeMonths),
-            |_| Variant::Int(0),
         )
         .event_specific(declared("share_streak", VariantKind::Bool), |_| {
             Variant::Bool(true)

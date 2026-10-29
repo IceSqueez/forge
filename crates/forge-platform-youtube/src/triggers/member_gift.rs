@@ -108,6 +108,7 @@ fn gifter_identity(event: &Event) -> ActorIdentity {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use forge_types::Variant;
     use serde_json::json;
 
     fn gift_event(payload: serde_json::Value) -> Event {
@@ -141,7 +142,7 @@ mod tests {
     }
 
     #[test]
-    fn the_gift_count_and_its_legacy_twin_come_from_the_batch_size_floored_at_one() {
+    fn the_gift_count_comes_from_the_batch_size_floored_at_one() {
         for (wire_count, expected) in [
             (json!(5_i64), 5),
             (json!(1_i64), 1),
@@ -155,24 +156,12 @@ mod tests {
                 "level_name": "Diamond",
             }));
             let stack = ChannelMemberGiftDescriptor.build_arg_stack(&event);
-            for name in ["gift_count", "gift.count"] {
-                assert_eq!(
-                    stack.get(name),
-                    Some(&Variant::Int(expected)),
-                    "'{name}' for wire count {wire_count}"
-                );
-            }
+            assert_eq!(
+                stack.get("gift_count"),
+                Some(&Variant::Int(expected)),
+                "wire count {wire_count}"
+            );
         }
-    }
-
-    #[test]
-    fn the_legacy_gift_names_still_carry_what_their_canonical_twins_carry() {
-        let stack = ChannelMemberGiftDescriptor.build_arg_stack(&a_batch_of_five());
-        assert_eq!(stack.get("gift.count"), stack.get("gift_count"));
-        assert_eq!(stack.get("gift.level_name"), stack.get("sub_tier"));
-        assert_eq!(stack.get("gifter.channel_id"), stack.get("gifter_id"));
-        assert_eq!(stack.get("gifter.display_name"), stack.get("gifter_name"));
-        assert_eq!(stack.get("gift.count"), Some(&Variant::Int(5)));
     }
 
     #[test]

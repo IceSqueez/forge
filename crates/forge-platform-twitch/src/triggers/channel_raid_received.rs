@@ -119,6 +119,7 @@ fn raid_viewer_count(event: &Event) -> i64 {
 mod tests {
     use super::*;
     use crate::triggers::raid_sent::RaidSentDescriptor;
+    use forge_types::Variant;
 
     fn raid_event(direction: &str, viewers: i64) -> Event {
         Event::new(
@@ -194,22 +195,5 @@ mod tests {
             );
         }
         assert_eq!(stack.get("viewer_count"), Some(&Variant::Int(250)));
-    }
-
-    #[test]
-    fn every_legacy_raid_name_still_carries_the_value_its_canonical_twin_carries() {
-        let stack = ChannelRaidReceivedDescriptor.build_arg_stack(&raid_event("received", 250));
-        for (legacy, value) in [
-            ("raider_id", "666"),
-            ("raider_login", "big_streamer"),
-            ("raider_display_name", "BigStreamer"),
-        ] {
-            assert_eq!(
-                stack.get(legacy),
-                Some(&Variant::String(value.to_owned())),
-                "'{legacy}'"
-            );
-        }
-        assert_eq!(stack.get("raid_viewer_count"), Some(&Variant::Int(250)));
     }
 }

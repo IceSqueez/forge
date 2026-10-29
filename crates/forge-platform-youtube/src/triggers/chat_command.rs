@@ -207,7 +207,7 @@ fn author_identity(event: &Event) -> ActorIdentity {
 #[cfg(test)]
 mod tests {
     use forge_registry::kind_matches_prefix;
-    use forge_types::ChatViewer;
+    use forge_types::{ChatViewer, SynthesisHint};
 
     use super::*;
 
@@ -340,17 +340,6 @@ mod tests {
                 Some(&Variant::Bool(first_message))
             );
         }
-    }
-
-    #[test]
-    fn the_legacy_sender_names_still_carry_what_their_canonical_twins_carry() {
-        let stack = ChatCommandDescriptor.build_arg_stack(&chat_line("!roll 1d6"));
-        assert_eq!(stack.get("user_display_name"), stack.get("user_name"));
-        assert_eq!(stack.get("channel_id"), stack.get("user_id"));
-        assert_eq!(
-            stack.get("channel_id"),
-            Some(&Variant::String("UCabc".to_owned()))
-        );
     }
 
     #[test]

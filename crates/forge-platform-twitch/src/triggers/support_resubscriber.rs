@@ -104,6 +104,7 @@ fn resub_message(event: &Event) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use forge_types::Variant;
 
     fn resub_event() -> Event {
         Event::new(
@@ -146,14 +147,5 @@ mod tests {
         }
         assert_eq!(stack.get("sub_cumulative_months"), Some(&Variant::Int(12)));
         assert_eq!(stack.get("sub_streak_months"), Some(&Variant::Int(6)));
-    }
-
-    #[test]
-    fn the_legacy_resub_message_still_carries_the_line_message_text_now_carries() {
-        let stack = SupportResubscriberDescriptor.build_arg_stack(&resub_event());
-        assert_eq!(
-            stack.get("sub_message"),
-            Some(&Variant::String("Love this channel!".to_owned()))
-        );
     }
 }

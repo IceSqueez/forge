@@ -102,6 +102,7 @@ fn member_identity(event: &Event) -> ActorIdentity {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use forge_types::Variant;
 
     fn milestone_event() -> Event {
         Event::new(
@@ -130,17 +131,5 @@ mod tests {
             );
         }
         assert_eq!(stack.get("sub_cumulative_months"), Some(&Variant::Int(12)));
-    }
-
-    #[test]
-    fn the_legacy_milestone_names_still_carry_what_their_canonical_twins_carry() {
-        let stack = SupportMemberMilestoneDescriptor.build_arg_stack(&milestone_event());
-        assert_eq!(stack.get("user_display_name"), stack.get("user_name"));
-        assert_eq!(stack.get("channel_id"), stack.get("user_id"));
-        assert_eq!(
-            stack.get("member_month"),
-            stack.get("sub_cumulative_months")
-        );
-        assert_eq!(stack.get("member_month"), Some(&Variant::Int(12)));
     }
 }

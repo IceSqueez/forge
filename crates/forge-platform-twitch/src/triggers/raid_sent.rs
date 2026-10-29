@@ -106,6 +106,7 @@ fn raid_target_identity(event: &Event) -> ActorIdentity {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use forge_types::Variant;
 
     #[test]
     fn event_filter_targets_channel_raid_topic_from_twitch() {

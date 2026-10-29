@@ -98,6 +98,7 @@ fn subscriber_identity(event: &Event) -> ActorIdentity {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use forge_types::Variant;
 
     use serde_json::json;
 
@@ -132,18 +133,5 @@ mod tests {
             Some(&Variant::Int(3)),
             "sub_cumulative_months"
         );
-    }
-
-    #[test]
-    fn the_legacy_sub_names_still_carry_what_their_canonical_twins_carry() {
-        let stack = SubDescriptor.build_arg_stack(&a_third_month_subscription());
-        assert_eq!(stack.get("username"), stack.get("user_login"));
-        assert_eq!(stack.get("months"), stack.get("sub_cumulative_months"));
-        assert_eq!(stack.get("tier"), stack.get("sub_tier"));
-        assert_eq!(
-            stack.get("username"),
-            Some(&Variant::String("new_subscriber".to_owned()))
-        );
-        assert_eq!(stack.get("months"), Some(&Variant::Int(3)));
     }
 }

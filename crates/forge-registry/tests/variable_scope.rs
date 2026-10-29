@@ -94,9 +94,9 @@ fn ordered_variables() -> TriggerVariables {
     TriggerVariables::new()
         .event_specific(declared("zeta", VariantKind::String), |_| Variant::Int(0))
         .legacy(
-            declared("user", VariantKind::String),
+            "user",
+            "user",
             CanonicalVariable::actor(ActorRole::Principal, ActorSlot::Login),
-            |_| Variant::Int(0),
         )
         .event_specific(declared("alpha", VariantKind::Int), |_| Variant::Int(0))
 }

@@ -110,6 +110,7 @@ fn first_giftee_identity(event: &Event) -> ActorIdentity {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use forge_types::Variant;
 
     use serde_json::json;
 
@@ -188,25 +189,16 @@ mod tests {
     }
 
     #[test]
-    fn the_legacy_gift_names_still_carry_what_their_canonical_twins_carry() {
-        let stack = SubGiftDescriptor.build_arg_stack(&a_batch_of_three());
-        assert_eq!(stack.get("gifter_username"), stack.get("gifter_login"));
-        assert_eq!(stack.get("count"), stack.get("gift_count"));
-        assert_eq!(stack.get("tier"), stack.get("sub_tier"));
-        assert_eq!(
-            stack.get("gifter_username"),
-            Some(&Variant::String("generous_viewer".to_owned()))
-        );
-        assert_eq!(stack.get("count"), Some(&Variant::Int(3)));
-    }
-
-    #[test]
-    fn a_batch_the_wire_gives_no_count_still_counts_one_gift() {
+    fn a_batch_the_wire_gives_no_count_counts_one_gift_under_the_canonical_and_the_legacy_name() {
+        let one = Some(Variant::Int(1));
         for payload in [json!({ "count": null }), json!({})] {
             let stack = SubGiftDescriptor.build_arg_stack(&gift_event(payload.clone()));
             assert_eq!(
-                stack.get("gift_count"),
-                Some(&Variant::Int(1)),
+                (
+                    stack.get("gift_count").cloned(),
+                    stack.get("count").cloned()
+                ),
+                (one.clone(), one.clone()),
                 "payload {payload}"
             );
         }

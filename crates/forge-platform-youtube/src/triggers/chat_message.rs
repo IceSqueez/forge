@@ -171,17 +171,6 @@ mod tests {
     }
 
     #[test]
-    fn the_legacy_author_names_still_carry_what_their_canonical_twins_carry() {
-        let stack = ChatMessageDescriptor.build_arg_stack(&chat_event());
-        assert_eq!(stack.get("user_display_name"), stack.get("user_name"));
-        assert_eq!(stack.get("channel_id"), stack.get("user_id"));
-        assert_eq!(
-            stack.get("user_display_name"),
-            Some(&Variant::String("Viewer One".to_owned()))
-        );
-    }
-
-    #[test]
     fn the_first_time_chatter_filter_admits_only_a_viewers_first_message() {
         let filtered = TriggerConfig::from([(FIRST_CHATTERS_ONLY.to_owned(), Variant::Bool(true))]);
         for (config, first_message, admitted) in [

@@ -181,8 +181,6 @@ mod tests {
             stack.get("message_text"),
             Some(&Variant::String("drink up".to_owned()))
         );
-        assert_eq!(stack.get("user_input"), stack.get("message_text"));
-        assert_eq!(stack.get("username"), stack.get("user_login"));
     }
 
     #[test]

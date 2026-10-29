@@ -208,36 +208,18 @@ mod tests {
     }
 
     #[test]
-    fn a_sender_the_wire_gives_no_display_name_is_shown_under_the_login() {
+    fn a_sender_the_wire_gives_no_display_name_is_shown_under_the_login_in_every_name_slot() {
         let stack = ChatDescriptor.build_arg_stack(&chat_event(json!({
             "content": "hi",
-            "sender": { "id": 42, "username": "viewer_slug" }
+            "sender": { "id": 42, "username": "viewer_slug", "display_name": "" }
         })));
-        assert_eq!(
-            stack.get("user_name"),
-            Some(&Variant::String("viewer_slug".to_owned()))
-        );
-        assert_eq!(
-            stack.get("user_login"),
-            Some(&Variant::String("viewer_slug".to_owned()))
-        );
-    }
-
-    #[test]
-    fn the_legacy_chat_names_still_carry_what_their_canonical_twins_carry() {
-        let stack = ChatDescriptor.build_arg_stack(&a_message_from_a_named_viewer());
-        assert_eq!(stack.get("sender_id"), stack.get("user_id"));
-        assert_eq!(stack.get("username"), stack.get("user_login"));
-        assert_eq!(stack.get("display_name"), stack.get("user_name"));
-        assert_eq!(stack.get("content"), stack.get("message_text"));
-        assert_eq!(
-            stack.get("username"),
-            Some(&Variant::String("viewer_slug".to_owned()))
-        );
-        assert_eq!(
-            stack.get("display_name"),
-            Some(&Variant::String("Viewer Display".to_owned()))
-        );
+        for name in ["user_name", "user_login", "display_name"] {
+            assert_eq!(
+                stack.get(name),
+                Some(&Variant::String("viewer_slug".to_owned())),
+                "'{name}'"
+            );
+        }
     }
 
     #[test]

@@ -169,17 +169,6 @@ mod tests {
     }
 
     #[test]
-    fn the_legacy_ban_names_still_carry_what_their_canonical_twins_carry() {
-        let stack = BanDescriptor.build_arg_stack(&a_five_minute_timeout());
-        assert_eq!(stack.get("banned_user_id"), stack.get("user_id"));
-        assert_eq!(stack.get("banned_username"), stack.get("user_login"));
-        assert_eq!(
-            stack.get("banned_user_id"),
-            Some(&Variant::String("77".to_owned()))
-        );
-    }
-
-    #[test]
     fn the_ban_terms_come_from_the_payload_with_a_permanent_ban_reading_as_zero_seconds() {
         for (duration, reason, expected_secs, expected_reason) in [
             (json!(300), json!("spam"), 300, "spam"),

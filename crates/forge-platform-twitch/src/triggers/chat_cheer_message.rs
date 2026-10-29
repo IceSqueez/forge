@@ -215,9 +215,8 @@ mod tests {
     }
 
     #[test]
-    fn a_cheer_message_publishes_the_canonical_bits_amount_beside_its_legacy_name() {
+    fn a_cheer_message_publishes_its_bits_as_the_canonical_bits_amount() {
         let stack = ChatCheerMessageDescriptor.build_arg_stack(&chat_event(Some(250)));
         assert_eq!(stack.get("bits_amount"), Some(&Variant::Int(250)));
-        assert_eq!(stack.get("cheer.bits"), Some(&Variant::Int(250)));
     }
 }

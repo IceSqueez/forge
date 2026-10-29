@@ -388,13 +388,4 @@ mod tests {
         );
         assert_eq!(stack.get("reward.cost"), Some(&Variant::Int(500)));
     }
-
-    #[test]
-    fn the_legacy_user_input_still_carries_the_line_message_text_now_carries() {
-        let stack = ChannelPointsRedemptionDescriptor.build_arg_stack(&redemption_event());
-        assert_eq!(
-            stack.get("user_input"),
-            Some(&Variant::String("play my song".to_owned()))
-        );
-    }
 }

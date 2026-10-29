@@ -97,6 +97,7 @@ fn member_identity(event: &Event) -> ActorIdentity {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use forge_types::Variant;
 
     fn new_member_event() -> Event {
         Event::new(
@@ -123,17 +124,5 @@ mod tests {
                 "'{name}'"
             );
         }
-    }
-
-    #[test]
-    fn the_legacy_member_names_still_carry_what_their_canonical_twins_carry() {
-        let stack = SupportNewMemberDescriptor.build_arg_stack(&new_member_event());
-        assert_eq!(stack.get("user_display_name"), stack.get("user_name"));
-        assert_eq!(stack.get("channel_id"), stack.get("user_id"));
-        assert_eq!(stack.get("member_level_name"), stack.get("sub_tier"));
-        assert_eq!(
-            stack.get("member_level_name"),
-            Some(&Variant::String("Bronze".to_owned()))
-        );
     }
 }

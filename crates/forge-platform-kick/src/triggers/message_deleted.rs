@@ -127,7 +127,6 @@ mod tests {
                 "'{name}'"
             );
         }
-        assert_eq!(stack.get("deleted_by_id"), stack.get("user_id"));
     }
 
     #[test]

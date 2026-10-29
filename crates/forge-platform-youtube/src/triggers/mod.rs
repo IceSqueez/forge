@@ -17,7 +17,7 @@ pub(crate) mod title_changed;
 mod tests {
     use forge_events::{Event, EventSource};
     use forge_registry::{TriggerKindDescriptor, TriggerRegistry};
-    use forge_types::{ActorRole, ActorSlot, CanonicalVariable, Variant};
+    use forge_types::{ActorRole, ActorSlot, CanonicalCount, CanonicalVariable, Variant};
 
     use crate::register_youtube_triggers;
 
@@ -48,6 +48,90 @@ mod tests {
 
     fn empty_event(descriptor: &dyn TriggerKindDescriptor) -> Event {
         Event::new(EventSource::YouTube, descriptor.id(), serde_json::json!({}))
+    }
+
+    fn legacy_twins(
+        descriptor: &dyn TriggerKindDescriptor,
+    ) -> Vec<(forge_registry::TriggerVariable, CanonicalVariable)> {
+        forge_registry::declared_variables(descriptor)
+            .unwrap_or_default()
+            .into_iter()
+            .filter_map(|variable| {
+                let canonical = variable.standing.superseded_by()?;
+                Some((variable, canonical))
+            })
+            .collect()
+    }
+
+    #[test]
+    fn every_legacy_name_is_declared_with_the_kind_and_hint_of_a_canonical_twin_on_its_trigger() {
+        for descriptor in youtube_registry().all() {
+            let declarations = forge_registry::declared_variables(descriptor).unwrap_or_default();
+            for (legacy, canonical) in legacy_twins(descriptor) {
+                let twin = declarations.iter().find(|variable| {
+                    variable.standing == forge_types::VariableStanding::Canonical(canonical)
+                });
+                assert_eq!(
+                    twin.map(|twin| (twin.declared.kind, twin.declared.synthesis.clone())),
+                    Some((legacy.declared.kind, legacy.declared.synthesis.clone())),
+                    "'{}' legacy '{}' defers to '{}'",
+                    descriptor.id(),
+                    legacy.declared.name,
+                    canonical.name()
+                );
+            }
+        }
+    }
+
+    fn twin_its_name_describes(legacy: &str) -> Option<CanonicalVariable> {
+        let role = [
+            ("moderator", ActorRole::Moderator),
+            ("gifter", ActorRole::Gifter),
+            ("recipient", ActorRole::Recipient),
+        ]
+        .into_iter()
+        .find(|(word, _)| legacy.contains(word))
+        .map_or(ActorRole::Principal, |(_, role)| role);
+        let actor = |slot| Some(CanonicalVariable::actor(role, slot));
+        let ends = |suffixes: &[&str]| suffixes.iter().any(|suffix| legacy.ends_with(suffix));
+        if ends(&["tier", "level_name"]) {
+            Some(CanonicalVariable::SubTier)
+        } else if ends(&["display_name"]) {
+            actor(ActorSlot::Name)
+        } else if ends(&["login", "username"]) {
+            actor(ActorSlot::Login)
+        } else if ends(&["id"]) {
+            actor(ActorSlot::Id)
+        } else if ends(&["bits"]) {
+            Some(CanonicalVariable::Count(CanonicalCount::BitsAmount))
+        } else if ends(&["viewer_count"]) {
+            Some(CanonicalVariable::Count(CanonicalCount::ViewerCount))
+        } else if ends(&["count"]) {
+            Some(CanonicalVariable::Count(CanonicalCount::GiftCount))
+        } else if ends(&["month", "months"]) {
+            Some(CanonicalVariable::Count(
+                CanonicalCount::SubCumulativeMonths,
+            ))
+        } else if ends(&["content", "input", "text", "message"]) {
+            Some(CanonicalVariable::MessageText)
+        } else {
+            None
+        }
+    }
+
+    #[test]
+    fn every_legacy_name_defers_to_the_canonical_its_name_describes() {
+        for descriptor in youtube_registry().all() {
+            for (legacy, canonical) in legacy_twins(descriptor) {
+                assert_eq!(
+                    twin_its_name_describes(&legacy.declared.name),
+                    Some(canonical),
+                    "'{}' legacy '{}'",
+                    descriptor.id(),
+                    legacy.declared.name
+                );
+            }
+        }
     }
 
     #[test]

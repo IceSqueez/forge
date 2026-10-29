@@ -155,15 +155,4 @@ mod tests {
         }
         assert_eq!(stack.get("amount_micros"), Some(&Variant::Int(2_000_000)));
     }
-
-    #[test]
-    fn the_legacy_sender_names_still_carry_what_their_canonical_twins_carry() {
-        let stack = SupportSuperStickerDescriptor.build_arg_stack(&super_sticker_event());
-        assert_eq!(stack.get("user_display_name"), stack.get("user_name"));
-        assert_eq!(stack.get("channel_id"), stack.get("user_id"));
-        assert_eq!(
-            stack.get("channel_id"),
-            Some(&Variant::String("UCsticker".to_owned()))
-        );
-    }
 }

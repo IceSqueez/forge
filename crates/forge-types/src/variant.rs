@@ -631,38 +631,32 @@ mod tests {
     }
 
     #[test]
-    fn variant_type_from_str_roundtrip() {
-        for tag in &[
-            "int", "float", "bool", "string", "datetime", "array", "object",
-        ] {
-            let vt: VariantType = tag.parse().unwrap();
-            assert_eq!(vt.to_string(), *tag);
-        }
-    }
-
-    #[test]
-    fn variant_type_from_str_unknown_errors() {
-        let result: Result<VariantType, _> = "binary".parse();
-        assert!(matches!(result, Err(VariantError::UnknownTypeTag(_))));
-    }
-
-    #[test]
-    fn variant_kind_round_trips_through_its_contract_name() {
+    fn variant_kind_display_and_from_str_round_trip_through_its_serde_name() {
         for kind in ALL_KINDS {
+            let serde_name = serde_json::to_value(kind).unwrap();
+
             assert_eq!(
-                VariantKind::from_contract_name(kind.contract_name()),
-                Some(kind),
+                (
+                    serde_name.as_str(),
+                    kind.to_string().parse::<VariantKind>().ok()
+                ),
+                (Some(kind.to_string().as_str()), Some(kind)),
                 "kind {kind:?}"
             );
         }
     }
 
     #[test]
-    fn variant_kind_from_contract_name_rejects_non_canonical_names() {
+    fn variant_kind_from_str_rejects_non_canonical_names_echoing_the_input() {
         for name in [
             "INT", "Float", "BOOL", "binary", "number", "", " int", "int ",
         ] {
-            assert_eq!(VariantKind::from_contract_name(name), None, "name {name:?}");
+            let parsed = name.parse::<VariantKind>();
+
+            assert!(
+                matches!(&parsed, Err(VariantError::UnknownTypeTag(tag)) if tag == name),
+                "name {name:?}: {parsed:?}"
+            );
         }
     }
 

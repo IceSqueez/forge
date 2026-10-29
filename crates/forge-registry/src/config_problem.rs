@@ -224,6 +224,46 @@ mod tests {
     }
 
     #[test]
+    fn admits_whole_includes_each_bound_and_excludes_one_past_it() {
+        let bounded = ValueBounds::between(1, 10);
+        for (bounds, value, admitted) in [
+            (bounded, 0, false),
+            (bounded, 1, true),
+            (bounded, 10, true),
+            (bounded, 11, false),
+            (ValueBounds::at_least(1), i64::MAX, true),
+            (ValueBounds::at_least(1), 0, false),
+            (ValueBounds::at_most(10), i64::MIN, true),
+            (ValueBounds::at_most(10), 11, false),
+            (ValueBounds::UNBOUNDED, i64::MIN, true),
+            (ValueBounds::UNBOUNDED, i64::MAX, true),
+        ] {
+            assert_eq!(
+                bounds.admits_whole(value),
+                admitted,
+                "{bounds:?} with {value}"
+            );
+        }
+    }
+
+    #[test]
+    fn admits_includes_each_bound_and_excludes_fractions_past_it() {
+        let bounded = ValueBounds::between(1, 10);
+        for (bounds, value, admitted) in [
+            (bounded, 0.999, false),
+            (bounded, 1.0, true),
+            (bounded, 5.5, true),
+            (bounded, 10.0, true),
+            (bounded, 10.001, false),
+            (bounded, f64::NAN, false),
+            (ValueBounds::at_least(1), f64::MAX, true),
+            (ValueBounds::at_most(10), f64::MIN, true),
+        ] {
+            assert_eq!(bounds.admits(value), admitted, "{bounds:?} with {value}");
+        }
+    }
+
+    #[test]
     fn into_config_problem_keeps_an_invalid_config_problem_intact() {
         let problem = ConfigProblem::field("volume", ConfigReason::NotANumber);
 

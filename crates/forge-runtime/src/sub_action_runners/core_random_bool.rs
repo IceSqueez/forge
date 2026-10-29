@@ -175,9 +175,9 @@ mod tests {
             (text("0"), true),
             (text("1"), true),
             (text("0.25"), true),
-            (text(""), true),
             (text("%p%"), true),
             (Variant::Float(0.5), true),
+            (text(""), false),
             (text("1.5"), false),
             (text("-0.1"), false),
             (text("abc"), false),
@@ -185,6 +185,22 @@ mod tests {
         ] {
             let result = CoreRandomBoolRunner.validate_config(&cfg(probability.clone(), "flag"));
             assert_eq!(result.is_ok(), accepted, "{probability:?}: {result:?}");
+        }
+    }
+
+    #[test]
+    fn validate_config_requires_an_output_variable_name() {
+        for into in ["", "%%", "  "] {
+            let result = CoreRandomBoolRunner.validate_config(&cfg(text("0.5"), into));
+
+            assert!(
+                matches!(
+                    &result,
+                    Err(forge_registry::RegistryError::InvalidConfig(problem))
+                        if problem.field.as_deref() == Some(INTO_VAR_KEY)
+                ),
+                "{into:?}: {result:?}"
+            );
         }
     }
 }

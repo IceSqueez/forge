@@ -434,7 +434,10 @@ mod tests {
     use std::sync::Mutex;
     use std::sync::atomic::{AtomicUsize, Ordering};
 
-    use forge_registry::{FormField, SubActionCategory, SubActionConfig, SubActionRunner};
+    use forge_registry::{
+        ConfigSpec, IntegerEditor, IntegerField, SubActionCategory, SubActionConfig,
+        SubActionRunner, ValueBounds,
+    };
     use forge_types::{IntegrationId, Variant, integration_disabled_reason};
     use time::OffsetDateTime;
 
@@ -453,6 +456,7 @@ mod tests {
         observed: Arc<Mutex<Vec<BTreeMap<String, Variant>>>>,
         cancel_on_run: Option<CancelSignal>,
         runs: Arc<AtomicUsize>,
+        spec: Option<ConfigSpec>,
     }
 
     fn scripted(id: &str, outcome: SubActionOutcome) -> ScriptedRunner {
@@ -463,6 +467,7 @@ mod tests {
             observed: Arc::new(Mutex::new(Vec::new())),
             cancel_on_run: None,
             runs: Arc::new(AtomicUsize::new(0)),
+            spec: None,
         }
     }
 
@@ -486,14 +491,8 @@ mod tests {
         fn icon_name(&self) -> &str {
             ""
         }
-        fn default_config(&self) -> SubActionConfig {
-            BTreeMap::new()
-        }
-        fn config_fields(&self) -> Vec<FormField> {
-            Vec::new()
-        }
-        fn validate_config(&self, _: &SubActionConfig) -> Result<(), RegistryError> {
-            Ok(())
+        fn config_spec(&self) -> Option<ConfigSpec> {
+            self.spec
         }
         async fn execute(
             &self,
@@ -844,6 +843,150 @@ mod tests {
             1,
             "step after a flagged failure must still execute",
         );
+    }
+
+    const LIMIT: IntegerField = IntegerField {
+        key: "limit",
+        label: "Limit",
+        editor: IntegerEditor::Number,
+        default: 1,
+        bounds: ValueBounds {
+            min: Some(1),
+            max: Some(5),
+        },
+    };
+    const INVALID_LIMIT_FAILURE: &str = "invalid step config: 'limit' must be between 1 and 5";
+
+    fn limited(id: &str) -> ScriptedRunner {
+        ScriptedRunner {
+            spec: Some(ConfigSpec::new(&[&LIMIT])),
+            ..scripted(id, SubActionOutcome::Success)
+        }
+    }
+
+    fn with_limit(step: SubActionStep, limit: Variant) -> SubActionStep {
+        SubActionStep {
+            config: BTreeMap::from([("limit".to_owned(), limit)]),
+            ..step
+        }
+    }
+
+    #[tokio::test]
+    async fn an_invalid_step_config_fails_the_step_without_running_it_and_halts_the_chain() {
+        let limited_runner = limited("cfg.limited");
+        let limited_runs = Arc::clone(&limited_runner.runs);
+        let after = scripted("cfg.after", SubActionOutcome::Success);
+        let after_runs = Arc::clone(&after.runs);
+        let eng = engine(registry(vec![Box::new(limited_runner), Box::new(after)]), 8);
+
+        let run = eng
+            .run_sequential(
+                &[
+                    with_limit(step("cfg.limited"), Variant::Int(9)),
+                    step("cfg.after"),
+                ],
+                &ArgStack::new(),
+                EventId::new(),
+                &CancelSignal::new(),
+            )
+            .await;
+
+        assert_eq!(
+            (
+                run.signal,
+                run.telemetry
+                    .iter()
+                    .map(|row| row.outcome.clone())
+                    .collect::<Vec<_>>(),
+                limited_runs.load(Ordering::Relaxed),
+                after_runs.load(Ordering::Relaxed),
+            ),
+            (
+                ChainSignal::Error(INVALID_LIMIT_FAILURE.to_owned()),
+                vec![SubActionOutcome::Failed(INVALID_LIMIT_FAILURE.to_owned())],
+                0,
+                0,
+            )
+        );
+    }
+
+    #[tokio::test]
+    async fn continue_on_error_carries_the_chain_past_an_invalid_step_config() {
+        let limited_runner = limited("cfg.limited");
+        let limited_runs = Arc::clone(&limited_runner.runs);
+        let after = scripted("cfg.after", SubActionOutcome::Success);
+        let after_runs = Arc::clone(&after.runs);
+        let eng = engine(registry(vec![Box::new(limited_runner), Box::new(after)]), 8);
+
+        let run = eng
+            .run_sequential(
+                &[
+                    with_limit(flagged_step("cfg.limited"), Variant::Int(0)),
+                    step("cfg.after"),
+                ],
+                &ArgStack::new(),
+                EventId::new(),
+                &CancelSignal::new(),
+            )
+            .await;
+
+        assert_eq!(
+            (
+                run.signal,
+                run.telemetry
+                    .iter()
+                    .map(|row| row.outcome.clone())
+                    .collect::<Vec<_>>(),
+                limited_runs.load(Ordering::Relaxed),
+                after_runs.load(Ordering::Relaxed),
+            ),
+            (
+                ChainSignal::Completed,
+                vec![
+                    SubActionOutcome::Failed(INVALID_LIMIT_FAILURE.to_owned()),
+                    SubActionOutcome::Success,
+                ],
+                0,
+                1,
+            )
+        );
+    }
+
+    #[tokio::test]
+    async fn a_templated_step_config_is_checked_against_the_run_arguments() {
+        for (size, outcome, runs) in [
+            (3, SubActionOutcome::Success, 1),
+            (
+                6,
+                SubActionOutcome::Failed(INVALID_LIMIT_FAILURE.to_owned()),
+                0,
+            ),
+        ] {
+            let limited_runner = limited("cfg.limited");
+            let limited_runs = Arc::clone(&limited_runner.runs);
+            let eng = engine(registry(vec![Box::new(limited_runner)]), 8);
+
+            let run = eng
+                .run_sequential(
+                    &[with_limit(
+                        flagged_step("cfg.limited"),
+                        Variant::String("%size%".to_owned()),
+                    )],
+                    &ArgStack::new().set("size".to_owned(), Variant::Int(size)),
+                    EventId::new(),
+                    &CancelSignal::new(),
+                )
+                .await;
+
+            assert_eq!(
+                (
+                    run.telemetry[0].outcome.clone(),
+                    limited_runs.load(Ordering::Relaxed)
+                ),
+                (outcome, runs),
+                "size {size}"
+            );
+        }
     }
 
     #[tokio::test]

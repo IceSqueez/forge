@@ -4,8 +4,8 @@ use async_trait::async_trait;
 use forge_registry::runner::SubActionConfig;
 use forge_registry::{
     BoundedTextField, ChoiceField, ConfigProblem, ConfigSpec, DurationBounds, DurationField,
-    IntegerEditor, IntegerField, OptionalField, RunContext, StepTimer, SubActionCategory,
-    SubActionRunner, TextEditor, TypedField, ValueBounds,
+    IntegerEditor, IntegerField, OptionalField, OptionalSwitch, RunContext, StepTimer,
+    SubActionCategory, SubActionRunner, TextEditor, TypedField, ValueBounds,
 };
 use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry};
 
@@ -61,11 +61,16 @@ const PROMPT: OptionalField<BoundedTextField> = OptionalField::shared(BoundedTex
     },
 });
 
-const BACKGROUND_COLOR: OptionalField<HexColorField> = OptionalField::shared(HexColorField {
-    key: config_keys::BACKGROUND_COLOR_HEX,
-    label: "Background Color (#RRGGBB)",
-    placeholder: "#9147FF",
-});
+const BACKGROUND_COLOR: OptionalField<HexColorField> = OptionalField {
+    field: HexColorField {
+        key: config_keys::BACKGROUND_COLOR_HEX,
+        label: "Background Color (#RRGGBB)",
+        placeholder: "#9147FF",
+    },
+    switch: OptionalSwitch::SharedKey {
+        label: Some("Background Color"),
+    },
+};
 
 const UNLIMITED_COUNT: IntegerField = IntegerField {
     key: config_keys::MAX_PER_STREAM,
@@ -78,20 +83,35 @@ const UNLIMITED_COUNT: IntegerField = IntegerField {
     },
 };
 
-const MAX_PER_STREAM: OptionalField<IntegerField> = OptionalField::shared(UNLIMITED_COUNT);
+const MAX_PER_STREAM: OptionalField<IntegerField> = OptionalField {
+    field: UNLIMITED_COUNT,
+    switch: OptionalSwitch::SharedKey {
+        label: Some("Max Per Stream"),
+    },
+};
 
-const MAX_PER_USER_PER_STREAM: OptionalField<IntegerField> = OptionalField::shared(IntegerField {
-    key: config_keys::MAX_PER_USER_PER_STREAM,
-    label: "Max Per User Per Stream (0 = unlimited)",
-    ..UNLIMITED_COUNT
-});
+const MAX_PER_USER_PER_STREAM: OptionalField<IntegerField> = OptionalField {
+    field: IntegerField {
+        key: config_keys::MAX_PER_USER_PER_STREAM,
+        label: "Max Per User Per Stream (0 = unlimited)",
+        ..UNLIMITED_COUNT
+    },
+    switch: OptionalSwitch::SharedKey {
+        label: Some("Max Per User Per Stream"),
+    },
+};
 
-const GLOBAL_COOLDOWN: OptionalField<DurationField> = OptionalField::shared(DurationField {
-    key: config_keys::GLOBAL_COOLDOWN_SECONDS,
-    label: "Global Cooldown (0 = disabled)",
-    default: UNLIMITED,
-    bounds: DurationBounds::in_seconds(UNLIMITED, i64::MAX),
-});
+const GLOBAL_COOLDOWN: OptionalField<DurationField> = OptionalField {
+    field: DurationField {
+        key: config_keys::GLOBAL_COOLDOWN_SECONDS,
+        label: "Global Cooldown (0 = disabled)",
+        default: UNLIMITED,
+        bounds: DurationBounds::in_seconds(UNLIMITED, i64::MAX),
+    },
+    switch: OptionalSwitch::SharedKey {
+        label: Some("Global Cooldown Seconds"),
+    },
+};
 
 const IS_ENABLED: ChoiceField<ModeToggle> = mode_toggle(config_keys::IS_ENABLED, "Enabled");
 const REQUIRES_USER_INPUT: ChoiceField<ModeToggle> =

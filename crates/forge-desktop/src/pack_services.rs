@@ -3,7 +3,7 @@ use std::sync::Arc;
 use forge_overlay::OverlayKindRegistry;
 use forge_registry::{FormSchemaSource, SubActionRegistry, TriggerRegistry};
 use forge_runtime::{OverlayServiceHandle, QueueSchedulerHandle, ScriptRegistry};
-use forge_storage::DataProvider;
+use forge_storage::{DataProvider, SettingsCatalog};
 use forge_transfer::{ClosureRegistries, PackInventory, load_pack_inventory};
 use tokio::runtime::Handle;
 
@@ -13,6 +13,7 @@ use crate::runtime_handles::RuntimeHandles;
 #[derive(Clone)]
 pub struct PackServices {
     pub backend: Arc<dyn DataProvider>,
+    pub settings_catalog: Arc<SettingsCatalog>,
     pub sub_actions: Arc<SubActionRegistry>,
     pub triggers: Arc<TriggerRegistry>,
     pub overlay_kinds: Arc<OverlayKindRegistry>,
@@ -32,6 +33,7 @@ impl PackServices {
     pub fn of(handles: &RuntimeHandles) -> Self {
         Self {
             backend: Arc::clone(&handles.backend),
+            settings_catalog: Arc::clone(&handles.settings_catalog),
             sub_actions: Arc::clone(&handles.sub_action_registry),
             triggers: Arc::clone(&handles.trigger_registry),
             overlay_kinds: Arc::clone(&handles.overlay_kinds),

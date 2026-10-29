@@ -195,11 +195,9 @@ pub async fn build_runtime(
             }
         };
     apply_persisted_log_level(settings_repo.as_ref()).await;
-    if let Err(e) = forge_storage::report_undeclared_settings(
-        settings_repo.as_ref(),
-        &forge_storage::SettingsCatalog::core(),
-    )
-    .await
+    let settings_catalog = Arc::new(crate::settings_catalog::registered_settings_catalog());
+    if let Err(e) =
+        forge_storage::report_undeclared_settings(settings_repo.as_ref(), &settings_catalog).await
     {
         tracing::warn!(error = %e, "could not check stored settings against their specs");
     }
@@ -598,6 +596,7 @@ pub async fn build_runtime(
         rt_handle: tokio::runtime::Handle::current(),
         log_tail,
         backend,
+        settings_catalog,
         startup_language,
         startup_display_formats,
         anonymous_donor,

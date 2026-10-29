@@ -4,7 +4,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use forge_registry::ReferenceRemap;
-use forge_storage::{DataProvider, MediaBlobId, OverlayId, StorageError};
+use forge_storage::{DataProvider, MediaBlobId, OverlayId, SettingsCatalog, StorageError};
 use forge_types::{Queue, QueueId};
 
 use crate::bundle::naming::fresh_pre_setup_stem;
@@ -18,6 +18,7 @@ use crate::setup::reader::StagedSetup;
 
 pub struct SetupImportRequest<'a> {
     pub provider: Arc<dyn DataProvider>,
+    pub settings_catalog: &'a SettingsCatalog,
     pub registries: ClosureRegistries<'a>,
     pub staged: &'a StagedSetup,
     pub data_dir: PathBuf,
@@ -54,6 +55,7 @@ pub async fn apply_setup_import(
 ) -> Result<SetupImportOutcome, TransferError> {
     let SetupImportRequest {
         provider,
+        settings_catalog,
         registries,
         staged,
         data_dir,
@@ -63,12 +65,13 @@ pub async fn apply_setup_import(
         &staged.documents().configuration.overlays,
         registries.overlays,
     )?;
-    let inventory = load_setup_inventory(provider.as_ref()).await?;
+    let inventory = load_setup_inventory(provider.as_ref(), settings_catalog).await?;
     let safety_snapshot =
         write_safety_snapshot(&provider, &data_dir, fresh_pre_setup_stem()).await?;
 
     let mut import = SetupImport {
         provider: provider.as_ref(),
+        settings_catalog,
         registries,
         staged,
         known_media: inventory.configuration.media.keys().cloned().collect(),
@@ -109,6 +112,7 @@ pub async fn apply_setup_import(
 
 pub(super) struct SetupImport<'p, 'a> {
     pub(super) provider: &'p dyn DataProvider,
+    pub(super) settings_catalog: &'a SettingsCatalog,
     pub(super) registries: ClosureRegistries<'a>,
     pub(super) staged: &'a StagedSetup,
     pub(super) inventory: SetupInventory,

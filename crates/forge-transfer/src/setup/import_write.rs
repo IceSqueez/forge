@@ -2,7 +2,6 @@ use std::collections::BTreeMap;
 
 use forge_overlay::image_references;
 use forge_registry::InternalNamespace;
-use forge_storage::settings::portability::is_portable;
 use forge_storage::settings::reserved_keys;
 use forge_storage::{
     GlobalsRepo, MediaBlobId, MediaReferrer, MediaReferrerKind, OverlayId, ScriptRecord,
@@ -425,7 +424,7 @@ impl SetupImport<'_, '_> {
             .documents()
             .settings
             .iter()
-            .filter(|(key, _)| is_portable(key))
+            .filter(|(key, _)| self.settings_catalog.is_portable(key))
             .map(|(key, value)| {
                 let value = match key.as_str() {
                     reserved_keys::AUDIO_OVERLAY_ID => self

@@ -480,7 +480,7 @@ impl Render for SettingsStorageView {
         let palette = cx.palette();
         let density = cx.density();
 
-        let db_path = forge_paths::data_dir().join("forge.db");
+        let db_path = forge_paths::data_dir().join(forge_storage::DATABASE_FILE_NAME);
         let (backup_flow, restore_flow, flow_views, transfer_busy) = match &self.transfers {
             Some(transfers) => {
                 let flows = transfers.read(cx);

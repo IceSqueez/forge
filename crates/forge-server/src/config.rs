@@ -12,7 +12,11 @@ use forge_types::PlatformId;
 
 use crate::settings;
 
-const VALID_BIND_ADDRESSES: &[&str] = &["127.0.0.1", "0.0.0.0", "::1", "::"];
+pub const LOCALHOST_BIND_ADDRESS: &str = "127.0.0.1";
+pub const LAN_BIND_ADDRESS: &str = "0.0.0.0";
+pub const DEFAULT_PORT: u16 = 8081;
+
+const VALID_BIND_ADDRESSES: &[&str] = &[LOCALHOST_BIND_ADDRESS, LAN_BIND_ADDRESS, "::1", "::"];
 
 pub struct ServerConfig {
     pub bind_addr: SocketAddr,
@@ -85,8 +89,8 @@ impl Default for ServerSettings {
     fn default() -> Self {
         Self {
             enabled: settings::ENABLED.codec().default,
-            bind_address: "127.0.0.1".to_owned(),
-            port: 8081,
+            bind_address: LOCALHOST_BIND_ADDRESS.to_owned(),
+            port: DEFAULT_PORT,
             lan_bind_enabled: settings::LAN_BIND_ENABLED.codec().default,
             auth_required_for_reads: settings::AUTH_REQUIRED_FOR_READS.codec().default,
             http_overlay_require_token: settings::HTTP_OVERLAY_REQUIRE_TOKEN.codec().default,
@@ -120,13 +124,13 @@ impl ServerSettings {
         let bind_address = repo
             .get_string(settings::BIND_ADDRESS.key.name())
             .await?
-            .unwrap_or_else(|| "127.0.0.1".to_owned());
+            .unwrap_or_else(|| LOCALHOST_BIND_ADDRESS.to_owned());
         let port = repo
             .get_string(settings::PORT.key.name())
             .await?
             .as_deref()
             .and_then(|s| s.parse().ok())
-            .unwrap_or(8081u16);
+            .unwrap_or(DEFAULT_PORT);
         let lan_bind_enabled = read_setting(repo, &settings::LAN_BIND_ENABLED).await?;
         let auth_required_for_reads =
             read_setting(repo, &settings::AUTH_REQUIRED_FOR_READS).await?;

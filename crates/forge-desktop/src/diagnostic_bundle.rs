@@ -9,7 +9,7 @@ use crate::run_disclosure::{
 };
 use forge_platform_core::HealthValue;
 use forge_runtime::COMMAND_LINE_TARGET;
-use forge_storage::{DataProvider, SettingsRepo, disclosure};
+use forge_storage::{DataProvider, SettingsCatalog, SettingsRepo};
 use forge_types::redaction::STAMP;
 use forge_types::{LogLevel, SCRIPT_LOG_TARGET, integration_disabled_reason};
 use time::OffsetDateTime;
@@ -104,6 +104,7 @@ pub fn log_dir() -> PathBuf {
 
 pub async fn gather_input(
     backend: Arc<dyn DataProvider>,
+    settings_catalog: &SettingsCatalog,
     integrations: Vec<IntegrationFacts>,
     level: LogLevel,
     env_overridden: bool,
@@ -120,7 +121,7 @@ pub async fn gather_input(
         level,
         env_overridden,
         integrations,
-        config: disclosure::render_all(&stored),
+        config: settings_catalog.disclose_all(&stored),
         runs: runs.iter().map(DisclosedRun::from).collect(),
     })
 }

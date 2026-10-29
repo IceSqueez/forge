@@ -11,7 +11,10 @@ use forge_components::{
     setting_sections, spacing, toggle, tr, type_to_confirm,
 };
 use forge_runtime::OverlayServiceHandle;
-use forge_server::{SecretToken, ServerHandle, ServerSettings};
+use forge_server::{
+    DEFAULT_PORT, LAN_BIND_ADDRESS, LOCALHOST_BIND_ADDRESS, SecretToken, ServerHandle,
+    ServerSettings,
+};
 use forge_storage::{CredentialsRepo, DataProvider, SettingsRepo};
 use gpui::{
     AnyElement, App, ClickEvent, Context, Entity, Focusable, FontWeight, Pixels, SharedString,
@@ -28,10 +31,7 @@ use crate::settings_pane_header::SettingsPaneHeader;
 use forge_components::ActivePresentation;
 
 const LAN_PHRASE: &str = "expose to LAN";
-const LOCALHOST_ADDR: &str = "127.0.0.1";
-const LAN_ADDR: &str = "0.0.0.0";
 const MIN_PORT: u16 = 1024;
-const DEFAULT_PORT: u16 = 8081;
 const DEFAULT_OVERLAY_HINT: &str = "~/.local/share/forge/overlays";
 const ORIGINS_PERSIST_CONTEXT: &str = "websocket additional origins";
 const ORIGINS_AREA_HEIGHT: Pixels = px(72.0);
@@ -114,7 +114,7 @@ impl SettingsWebSocketView {
     ) -> Self {
         let palette = cx.palette();
         let port_input = cx.new(|cx| {
-            TextInput::new("8081", cx)
+            TextInput::new(DEFAULT_PORT.to_string(), cx)
                 .with_palette(palette)
                 .with_font_size(FONT_SM)
         });
@@ -492,7 +492,7 @@ impl SettingsWebSocketView {
         let repo = Arc::clone(&self.backend) as Arc<dyn SettingsRepo>;
         self.persist_and_reload(
             async move {
-                ServerSettings::save_bind_address(repo.as_ref(), LOCALHOST_ADDR)
+                ServerSettings::save_bind_address(repo.as_ref(), LOCALHOST_BIND_ADDRESS)
                     .await
                     .map_err(|e| e.to_string())?;
                 ServerSettings::save_lan_bind_enabled(repo.as_ref(), false)
@@ -547,7 +547,7 @@ impl SettingsWebSocketView {
         let repo = Arc::clone(&self.backend) as Arc<dyn SettingsRepo>;
         self.persist_and_reload(
             async move {
-                ServerSettings::save_bind_address(repo.as_ref(), LAN_ADDR)
+                ServerSettings::save_bind_address(repo.as_ref(), LAN_BIND_ADDRESS)
                     .await
                     .map_err(|e| e.to_string())?;
                 ServerSettings::save_lan_bind_enabled(repo.as_ref(), true)
@@ -971,7 +971,7 @@ impl SettingsWebSocketView {
         let (title, tech, body, accent, badge_glyph, badge_label, badge_color) = match choice {
             BindChoice::Localhost => (
                 tr!("settings_ws_bind_localhost_title"),
-                LOCALHOST_ADDR.to_owned(),
+                LOCALHOST_BIND_ADDRESS.to_owned(),
                 tr!("settings_ws_bind_localhost_description"),
                 palette.brand,
                 Icon::Lock,
@@ -980,7 +980,7 @@ impl SettingsWebSocketView {
             ),
             BindChoice::Lan => (
                 tr!("settings_ws_bind_lan_title"),
-                LAN_ADDR.to_owned(),
+                LAN_BIND_ADDRESS.to_owned(),
                 tr!("settings_ws_bind_lan_description"),
                 palette.warning,
                 Icon::AlertTriangle,

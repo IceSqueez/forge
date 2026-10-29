@@ -1,36 +1,8 @@
-use std::sync::LazyLock;
-
-use super::catalog::core_catalog;
-use super::core_settings::CORE_SETTINGS;
-use super::spec::SettingKey;
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum SettingPortability {
     Portable,
     MachineLocal,
     RepositoryOwned,
-}
-
-pub static CLASSIFIED_KEYS: LazyLock<Vec<(&'static str, SettingPortability)>> =
-    LazyLock::new(|| core_classes(|key| matches!(key, SettingKey::Exact(_))));
-
-pub static CLASSIFIED_PREFIXES: LazyLock<Vec<(&'static str, SettingPortability)>> =
-    LazyLock::new(|| core_classes(|key| matches!(key, SettingKey::Prefix(_))));
-
-fn core_classes(selected: fn(SettingKey) -> bool) -> Vec<(&'static str, SettingPortability)> {
-    CORE_SETTINGS
-        .iter()
-        .filter(|spec| selected(spec.key))
-        .map(|spec| (spec.key.name(), spec.portability))
-        .collect()
-}
-
-pub fn portability_of(stored_key: &str) -> SettingPortability {
-    core_catalog().portability_of(stored_key)
-}
-
-pub fn is_portable(stored_key: &str) -> bool {
-    core_catalog().is_portable(stored_key)
 }
 
 #[cfg(test)]

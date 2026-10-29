@@ -1,8 +1,7 @@
 use std::collections::BTreeMap;
 
 use forge_speech_types::{AssignmentStrategy, IgnoreProfile, VoiceAlias};
-use forge_storage::settings::portability::is_portable;
-use forge_storage::{DataProvider, FilterRule, SettingsRepo, TtsPipelineSettings};
+use forge_storage::{DataProvider, FilterRule, SettingsCatalog, SettingsRepo, TtsPipelineSettings};
 
 use crate::documents::inventory::{PackInventory, load_pack_inventory};
 use crate::error::TransferError;
@@ -20,6 +19,7 @@ pub(crate) struct SetupInventory {
 
 pub(crate) async fn load_setup_inventory(
     provider: &dyn DataProvider,
+    settings_catalog: &SettingsCatalog,
 ) -> Result<SetupInventory, TransferError> {
     let configuration = load_pack_inventory(provider).await?;
     let tts = provider.tts_filters_repo();
@@ -27,7 +27,7 @@ pub(crate) async fn load_setup_inventory(
     let portable_settings = SettingsRepo::load_all(provider)
         .await?
         .into_iter()
-        .filter(|(key, _)| is_portable(key))
+        .filter(|(key, _)| settings_catalog.is_portable(key))
         .collect();
     Ok(SetupInventory {
         configuration,

@@ -257,6 +257,7 @@ pub fn run_boot(
                     let problem_report = cx.new(|_| {
                         ProblemReport::new(
                             Arc::clone(&handles.backend),
+                            Arc::clone(&handles.settings_catalog),
                             handles.builtins.clone(),
                             handles.rt_handle.clone(),
                         )

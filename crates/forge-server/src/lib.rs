@@ -32,7 +32,9 @@ pub use audio_clips::{
 pub use auth::{generate_token, masked_token};
 pub use bandwidth::BandwidthTracker;
 pub use bus_adapter::{BusAdapter, ClientId, EventFilter};
-pub use config::{ServerConfig, ServerSettings};
+pub use config::{
+    DEFAULT_PORT, LAN_BIND_ADDRESS, LOCALHOST_BIND_ADDRESS, ServerConfig, ServerSettings,
+};
 pub use error::{SecretToken, ServerError};
 pub use handle::ServerHandle;
 pub use overlay_token::{OverlayTokenState, masked_overlay_token};

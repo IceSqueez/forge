@@ -1,5 +1,4 @@
 use std::collections::{BTreeMap, HashMap};
-use std::sync::LazyLock;
 
 use super::core_settings::CORE_SETTINGS;
 use super::disclosure::SettingDisclosure;
@@ -10,12 +9,6 @@ use crate::{SettingsRepo, StorageError};
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SettingsCatalog {
     specs: Vec<SettingSpec>,
-}
-
-static CORE_CATALOG: LazyLock<SettingsCatalog> = LazyLock::new(SettingsCatalog::core);
-
-pub(crate) fn core_catalog() -> &'static SettingsCatalog {
-    &CORE_CATALOG
 }
 
 impl SettingsCatalog {

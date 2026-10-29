@@ -8,7 +8,7 @@ use forge_runtime::{
     QueueSchedulerHandle, ScheduledRunsHandle, ScriptRegistry, TimerSchedulerHandle,
     TriggerEvaluatorHandle,
 };
-use forge_storage::{CredentialsKeyLoss, DataProvider, Language};
+use forge_storage::{CredentialsKeyLoss, DataProvider, Language, SettingsCatalog};
 
 use crate::audio_router::AudioRouter;
 use crate::integrations::{BuiltinObject, BuiltinRegistry, ObsInstallSeed, VTubeInstallSeed};
@@ -21,6 +21,7 @@ pub struct RuntimeHandles {
     pub rt_handle: tokio::runtime::Handle,
     pub log_tail: LogTail,
     pub backend: Arc<dyn DataProvider>,
+    pub settings_catalog: Arc<SettingsCatalog>,
     pub startup_language: Language,
     pub startup_display_formats: forge_components::DisplayFormatChoices,
     pub anonymous_donor: forge_types::Shared<String>,

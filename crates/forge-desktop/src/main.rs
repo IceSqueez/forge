@@ -156,6 +156,7 @@ mod settings;
 mod settings_about;
 mod settings_audio;
 mod settings_audio_routing;
+mod settings_catalog;
 mod settings_diagnostics;
 mod settings_notifications;
 mod settings_pane_header;

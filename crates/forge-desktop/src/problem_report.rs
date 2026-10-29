@@ -11,7 +11,7 @@ use forge_components::{
     mono_family, overlay, primary_button, spacing, tr,
 };
 use forge_storage::{
-    DEFAULT_DIAGNOSTIC_LOG_LEVEL, DataProvider, SettingsRepo, diagnostic_log_level,
+    DEFAULT_DIAGNOSTIC_LOG_LEVEL, DataProvider, SettingsCatalog, SettingsRepo, diagnostic_log_level,
 };
 use forge_types::LogLevel;
 use gpui::{
@@ -90,6 +90,7 @@ enum ReportStage {
 
 pub struct ProblemReport {
     backend: Arc<dyn DataProvider>,
+    settings_catalog: Arc<SettingsCatalog>,
     builtins: BuiltinRegistry,
     rt_handle: Handle,
     stage: ReportStage,
@@ -98,11 +99,13 @@ pub struct ProblemReport {
 impl ProblemReport {
     pub fn new(
         backend: Arc<dyn DataProvider>,
+        settings_catalog: Arc<SettingsCatalog>,
         builtins: BuiltinRegistry,
         rt_handle: Handle,
     ) -> Self {
         Self {
             backend,
+            settings_catalog,
             builtins,
             rt_handle,
             stage: ReportStage::Idle,
@@ -120,11 +123,12 @@ impl ProblemReport {
         self.stage = ReportStage::Preparing;
         let window_facts = WindowFacts::read(window, cx);
         let backend = Arc::clone(&self.backend);
+        let settings_catalog = Arc::clone(&self.settings_catalog);
         let integrations = diagnostic_bundle::integration_facts(&self.builtins);
         let env_overridden = crate::log_level::env_overridden();
         async_bridge::run_async(
             &self.rt_handle,
-            gather(backend, integrations, env_overridden),
+            gather(backend, settings_catalog, integrations, env_overridden),
             move |this, gathered, cx| this.finish_preparing(subject, window_facts, gathered, cx),
             cx,
         );
@@ -388,6 +392,7 @@ struct Gathered {
 
 async fn gather(
     backend: Arc<dyn DataProvider>,
+    settings_catalog: Arc<SettingsCatalog>,
     integrations: Vec<diagnostic_bundle::IntegrationFacts>,
     env_overridden: bool,
 ) -> Result<Gathered, String> {
@@ -400,9 +405,14 @@ async fn gather(
         .await
         .ok()
         .map(stored_output_device);
-    let input =
-        diagnostic_bundle::gather_input(backend, integrations, level.clone(), env_overridden)
-            .await?;
+    let input = diagnostic_bundle::gather_input(
+        backend,
+        &settings_catalog,
+        integrations,
+        level.clone(),
+        env_overridden,
+    )
+    .await?;
     let data_dir = forge_paths::data_dir();
     tokio::task::spawn_blocking(move || {
         let host = HostFacts::collect(&data_dir, speech_preference);

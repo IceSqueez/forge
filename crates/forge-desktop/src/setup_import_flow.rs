@@ -312,6 +312,7 @@ async fn apply_staged(
     let overlay_root = services.overlays.root().await;
     let applied = apply_setup_import(SetupImportRequest {
         provider: Arc::clone(&services.backend),
+        settings_catalog: &services.settings_catalog,
         registries: services.registries(&source),
         staged: &staged,
         data_dir,

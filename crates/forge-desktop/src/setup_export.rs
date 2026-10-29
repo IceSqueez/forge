@@ -96,6 +96,7 @@ impl SetupExportFlow {
     fn write(&mut self, destination: PathBuf, cx: &mut Context<Self>) {
         self.step = SetupExportStep::Writing;
         let provider = Arc::clone(&self.services.backend);
+        let settings_catalog = Arc::clone(&self.services.settings_catalog);
         let overlays = self.services.overlays.clone();
         async_bridge::run_async(
             &self.services.rt_handle,
@@ -103,6 +104,7 @@ impl SetupExportFlow {
                 let overlay_root = overlays.root().await;
                 write_setup(SetupExportRequest {
                     provider,
+                    settings_catalog,
                     overlay_root,
                     destination,
                 })

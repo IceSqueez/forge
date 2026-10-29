@@ -1,8 +1,4 @@
-use std::collections::{BTreeMap, HashMap};
-
 use forge_types::redaction::STAMP;
-
-use super::catalog::core_catalog;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum SettingDisclosure {
@@ -21,18 +17,6 @@ impl SettingDisclosure {
             Self::Withheld => None,
         }
     }
-}
-
-pub fn class_of(key: &str) -> SettingDisclosure {
-    core_catalog().disclosure_of(key)
-}
-
-pub fn render(key: &str, value: &str) -> Option<String> {
-    class_of(key).render(value)
-}
-
-pub fn render_all(stored: &HashMap<String, String>) -> BTreeMap<String, String> {
-    core_catalog().disclose_all(stored)
 }
 
 fn shape_of(value: &str) -> String {

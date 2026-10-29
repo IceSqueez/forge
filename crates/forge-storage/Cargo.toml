@@ -20,6 +20,7 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 time = { workspace = true }
 tokio = { workspace = true }
+tracing = { workspace = true }
 mockall = { workspace = true, optional = true }
 
 [features]

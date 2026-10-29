@@ -80,6 +80,12 @@ pub enum StorageError {
     #[error("stored setting '{key}' cannot be decoded")]
     UndecodableSetting { key: String },
 
+    #[error("setting '{key}' is declared more than once")]
+    DuplicateSettingSpec { key: String },
+
+    #[error("setting '{key}' cannot store this value")]
+    UnstorableSetting { key: String },
+
     #[error("io error: {0}")]
     Io(#[from] std::io::Error),
 

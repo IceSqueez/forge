@@ -4,7 +4,8 @@ use async_trait::async_trait;
 use forge_events::Event;
 use forge_types::EventId;
 
-use crate::settings::reserved_keys;
+use crate::settings::core_settings;
+use crate::settings::typed::{read_setting, write_setting};
 use crate::{SettingsRepo, StorageError};
 
 #[cfg_attr(feature = "test-mocks", mockall::automock)]
@@ -34,28 +35,18 @@ pub const MIN_EVENT_LOG_RETENTION_DAYS: u32 = 1;
 pub const MAX_EVENT_LOG_RETENTION_DAYS: u32 = 365;
 
 pub async fn event_log_retention_days(repo: &dyn SettingsRepo) -> Result<u32, StorageError> {
-    let raw = repo
-        .get_string(reserved_keys::EVENT_LOG_RETENTION_DAYS)
-        .await?;
-    Ok(raw.as_deref().and_then(|s| s.trim().parse().ok()).map_or(
-        DEFAULT_EVENT_LOG_RETENTION_DAYS,
-        clamp_event_log_retention_days,
-    ))
+    read_setting(repo, &core_settings::EVENT_LOG_RETENTION_DAYS).await
 }
 
 pub async fn set_event_log_retention_days(
     repo: &dyn SettingsRepo,
     days: u32,
 ) -> Result<(), StorageError> {
-    repo.set_string(
-        reserved_keys::EVENT_LOG_RETENTION_DAYS,
-        &clamp_event_log_retention_days(days).to_string(),
-    )
-    .await
+    write_setting(repo, &core_settings::EVENT_LOG_RETENTION_DAYS, &days).await
 }
 
 pub fn clamp_event_log_retention_days(days: u32) -> u32 {
-    days.clamp(MIN_EVENT_LOG_RETENTION_DAYS, MAX_EVENT_LOG_RETENTION_DAYS)
+    core_settings::EVENT_LOG_RETENTION_DAYS.codec().clamp(days)
 }
 
 #[cfg(test)]

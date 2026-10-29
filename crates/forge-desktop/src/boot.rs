@@ -195,6 +195,14 @@ pub async fn build_runtime(
             }
         };
     apply_persisted_log_level(settings_repo.as_ref()).await;
+    if let Err(e) = forge_storage::report_undeclared_settings(
+        settings_repo.as_ref(),
+        &forge_storage::SettingsCatalog::core(),
+    )
+    .await
+    {
+        tracing::warn!(error = %e, "could not check stored settings against their specs");
+    }
     let stay_awake = crate::stay_awake::start_stay_awake(Arc::clone(&settings_repo)).await;
 
     let (startup_language, persist) =

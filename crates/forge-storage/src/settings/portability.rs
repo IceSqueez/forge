@@ -1,4 +1,8 @@
-use super::reserved_keys as key;
+use std::sync::LazyLock;
+
+use super::catalog::core_catalog;
+use super::core_settings::CORE_SETTINGS;
+use super::spec::SettingKey;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum SettingPortability {
@@ -7,117 +11,26 @@ pub enum SettingPortability {
     RepositoryOwned,
 }
 
-use SettingPortability::{MachineLocal, Portable, RepositoryOwned};
+pub static CLASSIFIED_KEYS: LazyLock<Vec<(&'static str, SettingPortability)>> =
+    LazyLock::new(|| core_classes(|key| matches!(key, SettingKey::Exact(_))));
 
-pub const CLASSIFIED_KEYS: &[(&str, SettingPortability)] = &[
-    (key::THEME, Portable),
-    (key::ACCENT, Portable),
-    (key::DENSITY, Portable),
-    (key::FONT_BODY, Portable),
-    (key::FONT_MONO, Portable),
-    (key::EVENT_LOG_RETENTION_DAYS, Portable),
-    (key::ACTION_HISTORY_RETENTION_DAYS, Portable),
-    (key::SERVER_ENABLED, Portable),
-    (key::SERVER_BIND_ADDRESS, MachineLocal),
-    (key::SERVER_PORT, Portable),
-    (key::SERVER_LAN_BIND_ENABLED, MachineLocal),
-    (key::SERVER_AUTH_REQUIRED_FOR_READS, MachineLocal),
-    (key::SERVER_HTTP_OVERLAY_REQUIRE_TOKEN, MachineLocal),
-    (key::SERVER_OVERLAY_CORS_ANY_ORIGIN, MachineLocal),
-    (key::SERVER_OVERLAY_ROOT, MachineLocal),
-    (key::SERVER_ADDITIONAL_ORIGINS, MachineLocal),
-    (key::SCRIPT_HTTP_ALLOWED_DOMAINS, MachineLocal),
-    (key::SCRIPT_HTTP_MAX_CALLS, Portable),
-    (key::SCRIPT_HTTP_TIMEOUT_MS, Portable),
-    (key::SCRIPT_HTTP_ALLOW_LOCAL, MachineLocal),
-    (key::SCRIPT_HTTP_MAX_RESPONSE_BYTES, Portable),
-    (key::CORE_HTTP_ALLOW_LOCAL, MachineLocal),
-    (key::SCRIPT_OP_LIMIT, Portable),
-    (key::SCRIPT_TIMEOUT_MS, Portable),
-    (key::LANGUAGE, Portable),
-    (key::REGION, Portable),
-    (key::DATE_FORMAT, Portable),
-    (key::TIME_FORMAT, Portable),
-    (key::FIRST_DAY_OF_WEEK, Portable),
-    (key::KEYBOARD_SHORTCUTS, Portable),
-    (key::AUDIO_OUTPUT_DEVICE_ID, MachineLocal),
-    (key::AUDIO_VOICE_GATE_ENABLED, Portable),
-    (key::AUDIO_VOICE_GATE_INPUT_DEVICE_ID, MachineLocal),
-    (key::AUDIO_VOICE_GATE_THRESHOLD, Portable),
-    (key::AUDIO_VOICE_GATE_HOLD_MS, Portable),
-    (key::AUDIO_SPEECH_ROUTE, Portable),
-    (key::AUDIO_CLIPS_ROUTE, Portable),
-    (key::AUDIO_OVERLAY_ID, Portable),
-    (key::CHAT_HISTORY_PER_VIEWER_LIMIT, Portable),
-    (key::CHAT_HISTORY_DISPLAY_LIMIT, Portable),
-    (key::PICKER_FAVORITES_SUB_ACTIONS, Portable),
-    (key::PICKER_FAVORITES_TRIGGERS, Portable),
-    (key::PICKER_FAVORITES_ICONS, Portable),
-    (key::TTS_DISABLED_ENGINES, Portable),
-    (key::TTS_SYNTHESIS_DEFAULTS, Portable),
-    (key::TTS_MASTER_VOLUME, Portable),
-    (key::SOUNDBOARD_ENABLED, Portable),
-    (key::SOUNDBOARD_OUTPUT_DEVICE, MachineLocal),
-    (key::SOUNDBOARD_MASTER_VOLUME, Portable),
-    (key::SOUNDBOARD_ALSO_HEADPHONES, Portable),
-    (key::DIAGNOSTICS_LOG_LEVEL, Portable),
-    (key::STAY_AWAKE, MachineLocal),
-    (key::WINDOW_PLACEMENT, MachineLocal),
-    (key::UPDATES_ROLLED_BACK_VERSION, MachineLocal),
-    (key::UPDATES_LEFTOVER_INSTALL_NOTICED, MachineLocal),
-    (key::CREDENTIALS_KEY_LOSS, MachineLocal),
-    (key::RETIRED_MIDI_ENABLED, MachineLocal),
-    (key::RETIRED_HOTKEY_ENABLED, MachineLocal),
-    (key::OBS_AUTO_RECONNECT, Portable),
-    (key::OBS_CONNECT_ON_LAUNCH, Portable),
-    (key::VTUBE_AUTO_RECONNECT, Portable),
-    (key::VTUBE_CONNECT_ON_LAUNCH, Portable),
-    (key::MIDI_KNOWN_DEVICES, MachineLocal),
-    (key::HOTKEY_HOLD_CEILING_SECS, Portable),
-    (key::DONATELLO_POLL_INTERVAL_SECS, Portable),
-    (key::VOICE_ASSIGNMENT_STRATEGY, RepositoryOwned),
-    (key::NOTIFICATIONS_ACTION_FAILURE_OS_NOTICE, Portable),
-    (key::NOTIFICATIONS_CONNECTION_LOSS_SOUND, Portable),
-    (
-        key::NOTIFICATIONS_SCHEDULED_BACKUP_FAILURE_OS_NOTICE,
-        Portable,
-    ),
-    (key::BACKUP_SCHEDULE_ENABLED, MachineLocal),
-    (key::BACKUP_SCHEDULE_INTERVAL_MINUTES, Portable),
-    (key::BACKUP_SCHEDULE_KEEP_NEWEST, Portable),
-    (key::BACKUP_SCHEDULE_KEEP_DAILY_DAYS, Portable),
-    (key::BACKUP_SCHEDULE_INCLUDE_MEDIA, Portable),
-    (key::BACKUP_SCHEDULE_INCLUDE_VOICES, Portable),
-    (key::BACKUP_SCHEDULE_INCLUDE_OVERLAYS, Portable),
-    (key::BACKUP_SCHEDULE_INCLUDE_ASSETS, Portable),
-    (key::BACKUP_SCHEDULE_DESTINATION, MachineLocal),
-    (key::BACKUP_SCHEDULE_KEY, MachineLocal),
-    (key::BACKUP_SCHEDULE_LAST_SUCCESS_AT, MachineLocal),
-    (key::BACKUP_SCHEDULE_CONTENT_FINGERPRINT, MachineLocal),
-    (key::SAFETY_COPIES_MODE, MachineLocal),
-    (key::SAFETY_COPIES_KEEP_NEWEST, MachineLocal),
-    (key::SAFETY_COPIES_DELETE_AFTER_DAYS, MachineLocal),
-];
+pub static CLASSIFIED_PREFIXES: LazyLock<Vec<(&'static str, SettingPortability)>> =
+    LazyLock::new(|| core_classes(|key| matches!(key, SettingKey::Prefix(_))));
 
-pub const CLASSIFIED_PREFIXES: &[(&str, SettingPortability)] = &[
-    (key::TTS_ENGINE_PARAMS_PREFIX, Portable),
-    (key::INTEGRATION_ENABLED_PREFIX, Portable),
-];
+fn core_classes(selected: fn(SettingKey) -> bool) -> Vec<(&'static str, SettingPortability)> {
+    CORE_SETTINGS
+        .iter()
+        .filter(|spec| selected(spec.key))
+        .map(|spec| (spec.key.name(), spec.portability))
+        .collect()
+}
 
 pub fn portability_of(stored_key: &str) -> SettingPortability {
-    CLASSIFIED_KEYS
-        .iter()
-        .find(|(classified, _)| *classified == stored_key)
-        .or_else(|| {
-            CLASSIFIED_PREFIXES
-                .iter()
-                .find(|(prefix, _)| stored_key.starts_with(prefix))
-        })
-        .map_or(MachineLocal, |(_, portability)| *portability)
+    core_catalog().portability_of(stored_key)
 }
 
 pub fn is_portable(stored_key: &str) -> bool {
-    portability_of(stored_key) == Portable
+    core_catalog().is_portable(stored_key)
 }
 
 #[cfg(test)]

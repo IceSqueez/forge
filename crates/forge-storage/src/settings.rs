@@ -8,6 +8,8 @@ use forge_types::LogLevel;
 use serde::{Deserialize, Serialize};
 
 use crate::StorageError;
+pub use typed::log_level_as_str;
+use typed::{read_setting, write_setting};
 
 pub const SERVER_HTTP_OVERLAY_REQUIRE_TOKEN_DEFAULT: bool = true;
 
@@ -102,8 +104,13 @@ pub mod reserved_keys {
     pub const SAFETY_COPIES_DELETE_AFTER_DAYS: &str = "safety_copies.delete_after_days";
 }
 
+pub mod catalog;
+pub mod core_settings;
+pub mod disclosure;
 pub mod favorites;
 pub mod portability;
+pub mod spec;
+pub mod typed;
 
 pub const DEFAULT_NOTIFICATIONS_ACTION_FAILURE_OS_NOTICE: bool = true;
 pub const DEFAULT_NOTIFICATIONS_CONNECTION_LOSS_SOUND: bool = false;
@@ -130,123 +137,12 @@ pub const DEFAULT_CHAT_HISTORY_PER_VIEWER_LIMIT: u32 = 50;
 pub const UNLIMITED_CHAT_HISTORY_PER_VIEWER_LIMIT: u32 = 0;
 pub const MIN_CHAT_HISTORY_PER_VIEWER_LIMIT: u32 = 1;
 pub const MAX_CHAT_HISTORY_PER_VIEWER_LIMIT: u32 = 10_000;
-
-pub mod disclosure {
-    use std::collections::{BTreeMap, HashMap};
-
-    use forge_types::redaction::STAMP;
-
-    use super::reserved_keys;
-
-    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-    pub enum SettingDisclosure {
-        Verbatim,
-        Kind,
-        Presence,
-        Withheld,
-    }
-
-    pub fn class_of(key: &str) -> SettingDisclosure {
-        use SettingDisclosure::{Kind, Presence, Verbatim, Withheld};
-
-        if key.starts_with(reserved_keys::TTS_ENGINE_PARAMS_PREFIX)
-            || key.starts_with(reserved_keys::INTEGRATION_ENABLED_PREFIX)
-        {
-            return Verbatim;
-        }
-
-        match key {
-            reserved_keys::THEME
-            | reserved_keys::ACCENT
-            | reserved_keys::DENSITY
-            | reserved_keys::LANGUAGE
-            | reserved_keys::REGION
-            | reserved_keys::DATE_FORMAT
-            | reserved_keys::TIME_FORMAT
-            | reserved_keys::FIRST_DAY_OF_WEEK
-            | reserved_keys::DIAGNOSTICS_LOG_LEVEL
-            | reserved_keys::EVENT_LOG_RETENTION_DAYS
-            | reserved_keys::ACTION_HISTORY_RETENTION_DAYS
-            | reserved_keys::SERVER_ENABLED
-            | reserved_keys::SERVER_PORT
-            | reserved_keys::SERVER_LAN_BIND_ENABLED
-            | reserved_keys::SERVER_AUTH_REQUIRED_FOR_READS
-            | reserved_keys::SERVER_HTTP_OVERLAY_REQUIRE_TOKEN
-            | reserved_keys::SERVER_OVERLAY_CORS_ANY_ORIGIN
-            | reserved_keys::SCRIPT_HTTP_MAX_CALLS
-            | reserved_keys::SCRIPT_HTTP_TIMEOUT_MS
-            | reserved_keys::SCRIPT_HTTP_ALLOW_LOCAL
-            | reserved_keys::SCRIPT_HTTP_MAX_RESPONSE_BYTES
-            | reserved_keys::SCRIPT_OP_LIMIT
-            | reserved_keys::SCRIPT_TIMEOUT_MS
-            | reserved_keys::CORE_HTTP_ALLOW_LOCAL
-            | reserved_keys::AUDIO_VOICE_GATE_ENABLED
-            | reserved_keys::AUDIO_VOICE_GATE_THRESHOLD
-            | reserved_keys::AUDIO_VOICE_GATE_HOLD_MS
-            | reserved_keys::AUDIO_SPEECH_ROUTE
-            | reserved_keys::AUDIO_CLIPS_ROUTE
-            | reserved_keys::CHAT_HISTORY_PER_VIEWER_LIMIT
-            | reserved_keys::CHAT_HISTORY_DISPLAY_LIMIT
-            | reserved_keys::TTS_DISABLED_ENGINES
-            | reserved_keys::TTS_SYNTHESIS_DEFAULTS
-            | reserved_keys::TTS_MASTER_VOLUME
-            | reserved_keys::SOUNDBOARD_ENABLED
-            | reserved_keys::SOUNDBOARD_MASTER_VOLUME
-            | reserved_keys::SOUNDBOARD_ALSO_HEADPHONES
-            | reserved_keys::STAY_AWAKE
-            | reserved_keys::UPDATES_ROLLED_BACK_VERSION
-            | reserved_keys::UPDATES_LEFTOVER_INSTALL_NOTICED
-            | reserved_keys::CREDENTIALS_KEY_LOSS
-            | reserved_keys::RETIRED_MIDI_ENABLED
-            | reserved_keys::RETIRED_HOTKEY_ENABLED => Verbatim,
-
-            reserved_keys::SCRIPT_HTTP_ALLOWED_DOMAINS
-            | reserved_keys::SERVER_ADDITIONAL_ORIGINS
-            | reserved_keys::KEYBOARD_SHORTCUTS
-            | reserved_keys::PICKER_FAVORITES_SUB_ACTIONS
-            | reserved_keys::PICKER_FAVORITES_TRIGGERS
-            | reserved_keys::PICKER_FAVORITES_ICONS
-            | reserved_keys::WINDOW_PLACEMENT => Kind,
-
-            reserved_keys::SERVER_BIND_ADDRESS
-            | reserved_keys::SERVER_OVERLAY_ROOT
-            | reserved_keys::FONT_BODY
-            | reserved_keys::FONT_MONO
-            | reserved_keys::AUDIO_OUTPUT_DEVICE_ID
-            | reserved_keys::AUDIO_VOICE_GATE_INPUT_DEVICE_ID
-            | reserved_keys::AUDIO_OVERLAY_ID
-            | reserved_keys::SOUNDBOARD_OUTPUT_DEVICE => Presence,
-
-            _ => Withheld,
-        }
-    }
-
-    pub fn render(key: &str, value: &str) -> Option<String> {
-        match class_of(key) {
-            SettingDisclosure::Verbatim => Some(value.to_owned()),
-            SettingDisclosure::Kind => Some(shape_of(value)),
-            SettingDisclosure::Presence => {
-                Some(if value.is_empty() { "unset" } else { "set" }.to_owned())
-            }
-            SettingDisclosure::Withheld => None,
-        }
-    }
-
-    pub fn render_all(stored: &HashMap<String, String>) -> BTreeMap<String, String> {
-        stored
-            .iter()
-            .filter_map(|(key, value)| render(key, value).map(|shown| (key.clone(), shown)))
-            .collect()
-    }
-
-    fn shape_of(value: &str) -> String {
-        match serde_json::from_str::<serde_json::Value>(value) {
-            Ok(serde_json::Value::Array(items)) => format!("list({})", items.len()),
-            Ok(serde_json::Value::Object(fields)) => format!("map({})", fields.len()),
-            _ => format!("{STAMP} len={}>", value.chars().count()),
-        }
-    }
-}
+pub const MIN_CHAT_HISTORY_DISPLAY_LIMIT: u32 = 1;
+pub const MAX_CHAT_HISTORY_DISPLAY_LIMIT: u32 = 10_000;
+pub const MIN_VOICE_GATE_HOLD_MS: u32 = 0;
+pub const MAX_VOICE_GATE_HOLD_MS: u32 = 10_000;
+pub const SILENT_LEVEL: f32 = 0.0;
+pub const FULL_LEVEL: f32 = 1.0;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "lowercase")]
@@ -463,34 +359,20 @@ pub async fn set_json_setting<T: Serialize>(
 }
 
 pub fn clamp_chat_history_per_viewer_limit(limit: u32) -> u32 {
-    if limit == UNLIMITED_CHAT_HISTORY_PER_VIEWER_LIMIT {
-        return limit;
-    }
-    limit.clamp(
-        MIN_CHAT_HISTORY_PER_VIEWER_LIMIT,
-        MAX_CHAT_HISTORY_PER_VIEWER_LIMIT,
-    )
+    core_settings::CHAT_HISTORY_PER_VIEWER_LIMIT
+        .codec()
+        .clamp(limit)
 }
 
 pub async fn chat_history_per_viewer_limit(repo: &dyn SettingsRepo) -> Result<u32, StorageError> {
-    let raw = repo
-        .get_string(reserved_keys::CHAT_HISTORY_PER_VIEWER_LIMIT)
-        .await?;
-    Ok(raw.as_deref().and_then(|s| s.parse().ok()).map_or(
-        DEFAULT_CHAT_HISTORY_PER_VIEWER_LIMIT,
-        clamp_chat_history_per_viewer_limit,
-    ))
+    read_setting(repo, &core_settings::CHAT_HISTORY_PER_VIEWER_LIMIT).await
 }
 
 pub async fn set_chat_history_per_viewer_limit(
     repo: &dyn SettingsRepo,
     limit: u32,
 ) -> Result<(), StorageError> {
-    repo.set_string(
-        reserved_keys::CHAT_HISTORY_PER_VIEWER_LIMIT,
-        &clamp_chat_history_per_viewer_limit(limit).to_string(),
-    )
-    .await
+    write_setting(repo, &core_settings::CHAT_HISTORY_PER_VIEWER_LIMIT, &limit).await
 }
 
 pub async fn disabled_tts_engines(repo: &dyn SettingsRepo) -> Result<Vec<String>, StorageError> {
@@ -558,16 +440,11 @@ pub async fn set_engine_params(
 }
 
 pub async fn master_volume(repo: &dyn SettingsRepo) -> Result<f32, StorageError> {
-    let raw = repo.get_string(reserved_keys::TTS_MASTER_VOLUME).await?;
-    Ok(raw.as_deref().and_then(|s| s.parse().ok()).unwrap_or(1.0))
+    read_setting(repo, &core_settings::TTS_MASTER_VOLUME).await
 }
 
 pub async fn set_master_volume(repo: &dyn SettingsRepo, volume: f32) -> Result<(), StorageError> {
-    repo.set_string(
-        reserved_keys::TTS_MASTER_VOLUME,
-        &volume.clamp(0.0, 1.0).to_string(),
-    )
-    .await
+    write_setting(repo, &core_settings::TTS_MASTER_VOLUME, &volume).await
 }
 
 pub const VOICE_GATE_DEFAULT_THRESHOLD: f32 = 0.15;
@@ -595,30 +472,12 @@ impl Default for VoiceGateSettings {
 pub async fn voice_gate_settings(
     repo: &dyn SettingsRepo,
 ) -> Result<VoiceGateSettings, StorageError> {
-    let defaults = VoiceGateSettings::default();
-    let enabled = get_bool_setting(
-        repo,
-        reserved_keys::AUDIO_VOICE_GATE_ENABLED,
-        defaults.enabled,
-    )
-    .await;
+    let enabled = read_setting(repo, &core_settings::AUDIO_VOICE_GATE_ENABLED).await?;
     let input_device_id = repo
         .get_string(reserved_keys::AUDIO_VOICE_GATE_INPUT_DEVICE_ID)
         .await?;
-    let threshold = repo
-        .get_string(reserved_keys::AUDIO_VOICE_GATE_THRESHOLD)
-        .await?
-        .as_deref()
-        .and_then(|s| s.parse::<f32>().ok())
-        .filter(|v| v.is_finite())
-        .map(|v| v.clamp(0.0, 1.0))
-        .unwrap_or(defaults.threshold);
-    let hold_ms = repo
-        .get_string(reserved_keys::AUDIO_VOICE_GATE_HOLD_MS)
-        .await?
-        .as_deref()
-        .and_then(|s| s.parse::<u32>().ok())
-        .unwrap_or(defaults.hold_ms);
+    let threshold = read_setting(repo, &core_settings::AUDIO_VOICE_GATE_THRESHOLD).await?;
+    let hold_ms = read_setting(repo, &core_settings::AUDIO_VOICE_GATE_HOLD_MS).await?;
     Ok(VoiceGateSettings {
         enabled,
         input_device_id,
@@ -631,7 +490,7 @@ pub async fn set_voice_gate_enabled(
     repo: &dyn SettingsRepo,
     enabled: bool,
 ) -> Result<(), StorageError> {
-    set_bool_setting(repo, reserved_keys::AUDIO_VOICE_GATE_ENABLED, enabled).await
+    write_setting(repo, &core_settings::AUDIO_VOICE_GATE_ENABLED, &enabled).await
 }
 
 pub async fn set_voice_gate_input_device_id(
@@ -655,54 +514,36 @@ pub async fn set_voice_gate_threshold(
     repo: &dyn SettingsRepo,
     threshold: f32,
 ) -> Result<(), StorageError> {
-    repo.set_string(
-        reserved_keys::AUDIO_VOICE_GATE_THRESHOLD,
-        &threshold.clamp(0.0, 1.0).to_string(),
-    )
-    .await
+    write_setting(repo, &core_settings::AUDIO_VOICE_GATE_THRESHOLD, &threshold).await
 }
 
 pub async fn set_voice_gate_hold_ms(
     repo: &dyn SettingsRepo,
     hold_ms: u32,
 ) -> Result<(), StorageError> {
-    repo.set_string(
-        reserved_keys::AUDIO_VOICE_GATE_HOLD_MS,
-        &hold_ms.to_string(),
-    )
-    .await
+    write_setting(repo, &core_settings::AUDIO_VOICE_GATE_HOLD_MS, &hold_ms).await
 }
 
 pub async fn chat_history_display_limit(repo: &dyn SettingsRepo) -> Result<u32, StorageError> {
-    let raw = repo
-        .get_string(reserved_keys::CHAT_HISTORY_DISPLAY_LIMIT)
-        .await?;
-    Ok(raw
-        .as_deref()
-        .and_then(|s| s.parse().ok())
-        .unwrap_or(DEFAULT_CHAT_HISTORY_DISPLAY_LIMIT))
+    read_setting(repo, &core_settings::CHAT_HISTORY_DISPLAY_LIMIT).await
 }
 
 pub async fn set_chat_history_display_limit(
     repo: &dyn SettingsRepo,
     limit: u32,
 ) -> Result<(), StorageError> {
-    repo.set_string(
-        reserved_keys::CHAT_HISTORY_DISPLAY_LIMIT,
-        &limit.to_string(),
-    )
-    .await
+    write_setting(repo, &core_settings::CHAT_HISTORY_DISPLAY_LIMIT, &limit).await
 }
 
 pub async fn soundboard_enabled(repo: &dyn SettingsRepo) -> Result<bool, StorageError> {
-    Ok(get_bool_setting(repo, reserved_keys::SOUNDBOARD_ENABLED, true).await)
+    read_setting(repo, &core_settings::SOUNDBOARD_ENABLED).await
 }
 
 pub async fn set_soundboard_enabled(
     repo: &dyn SettingsRepo,
     enabled: bool,
 ) -> Result<(), StorageError> {
-    set_bool_setting(repo, reserved_keys::SOUNDBOARD_ENABLED, enabled).await
+    write_setting(repo, &core_settings::SOUNDBOARD_ENABLED, &enabled).await
 }
 
 pub async fn soundboard_output_device(
@@ -729,80 +570,38 @@ pub async fn set_soundboard_output_device(
 }
 
 pub async fn soundboard_master_volume(repo: &dyn SettingsRepo) -> Result<f32, StorageError> {
-    let raw = repo
-        .get_string(reserved_keys::SOUNDBOARD_MASTER_VOLUME)
-        .await?;
-    Ok(raw.as_deref().and_then(|s| s.parse().ok()).unwrap_or(1.0))
+    read_setting(repo, &core_settings::SOUNDBOARD_MASTER_VOLUME).await
 }
 
 pub async fn set_soundboard_master_volume(
     repo: &dyn SettingsRepo,
     volume: f32,
 ) -> Result<(), StorageError> {
-    repo.set_string(
-        reserved_keys::SOUNDBOARD_MASTER_VOLUME,
-        &volume.clamp(0.0, 1.0).to_string(),
-    )
-    .await
+    write_setting(repo, &core_settings::SOUNDBOARD_MASTER_VOLUME, &volume).await
 }
 
 pub async fn soundboard_also_headphones(repo: &dyn SettingsRepo) -> Result<bool, StorageError> {
-    Ok(get_bool_setting(repo, reserved_keys::SOUNDBOARD_ALSO_HEADPHONES, false).await)
+    read_setting(repo, &core_settings::SOUNDBOARD_ALSO_HEADPHONES).await
 }
 
 pub async fn set_soundboard_also_headphones(
     repo: &dyn SettingsRepo,
     enabled: bool,
 ) -> Result<(), StorageError> {
-    set_bool_setting(repo, reserved_keys::SOUNDBOARD_ALSO_HEADPHONES, enabled).await
+    write_setting(repo, &core_settings::SOUNDBOARD_ALSO_HEADPHONES, &enabled).await
 }
 
 pub const DEFAULT_DIAGNOSTIC_LOG_LEVEL: LogLevel = LogLevel::Info;
 
-const DIAGNOSTIC_LOG_LEVELS: [LogLevel; 5] = [
-    LogLevel::Trace,
-    LogLevel::Debug,
-    LogLevel::Info,
-    LogLevel::Warn,
-    LogLevel::Error,
-];
-
-pub fn log_level_as_str(level: &LogLevel) -> &'static str {
-    match level {
-        LogLevel::Trace => "trace",
-        LogLevel::Debug => "debug",
-        LogLevel::Info => "info",
-        LogLevel::Warn => "warn",
-        LogLevel::Error => "error",
-    }
-}
-
-fn decode_log_level(raw: &str) -> Option<LogLevel> {
-    let raw = raw.trim();
-    DIAGNOSTIC_LOG_LEVELS
-        .into_iter()
-        .find(|level| raw.eq_ignore_ascii_case(log_level_as_str(level)))
-}
-
 pub async fn diagnostic_log_level(repo: &dyn SettingsRepo) -> Result<LogLevel, StorageError> {
-    let raw = repo
-        .get_string(reserved_keys::DIAGNOSTICS_LOG_LEVEL)
-        .await?;
-    Ok(raw
-        .as_deref()
-        .and_then(decode_log_level)
-        .unwrap_or(DEFAULT_DIAGNOSTIC_LOG_LEVEL))
+    read_setting(repo, &core_settings::DIAGNOSTICS_LOG_LEVEL).await
 }
 
 pub async fn set_diagnostic_log_level(
     repo: &dyn SettingsRepo,
     level: &LogLevel,
 ) -> Result<(), StorageError> {
-    repo.set_string(
-        reserved_keys::DIAGNOSTICS_LOG_LEVEL,
-        log_level_as_str(level),
-    )
-    .await
+    write_setting(repo, &core_settings::DIAGNOSTICS_LOG_LEVEL, level).await
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

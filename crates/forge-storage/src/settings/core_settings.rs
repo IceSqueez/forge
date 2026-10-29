@@ -95,27 +95,6 @@ pub const TTS_MASTER_VOLUME: Setting<Level> = Setting::new(
     Verbatim,
 );
 
-pub const SOUNDBOARD_ENABLED: Setting<Flag> = Setting::new(
-    key::SOUNDBOARD_ENABLED,
-    Flag { default: true },
-    Portable,
-    Verbatim,
-);
-
-pub const SOUNDBOARD_MASTER_VOLUME: Setting<Level> = Setting::new(
-    key::SOUNDBOARD_MASTER_VOLUME,
-    FULL_SCALE_VOLUME,
-    Portable,
-    Verbatim,
-);
-
-pub const SOUNDBOARD_ALSO_HEADPHONES: Setting<Flag> = Setting::new(
-    key::SOUNDBOARD_ALSO_HEADPHONES,
-    Flag { default: false },
-    Portable,
-    Verbatim,
-);
-
 pub const DIAGNOSTICS_LOG_LEVEL: Setting<Verbosity> = Setting::new(
     key::DIAGNOSTICS_LOG_LEVEL,
     Verbosity {

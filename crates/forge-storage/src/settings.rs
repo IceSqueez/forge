@@ -61,10 +61,6 @@ pub mod reserved_keys {
     pub const TTS_SYNTHESIS_DEFAULTS: &str = "tts.synthesis_defaults";
     pub const TTS_MASTER_VOLUME: &str = "tts.master_volume";
     pub const TTS_ENGINE_PARAMS_PREFIX: &str = "tts.engine_params.";
-    pub const SOUNDBOARD_ENABLED: &str = "soundboard.enabled";
-    pub const SOUNDBOARD_OUTPUT_DEVICE: &str = "soundboard.output_device";
-    pub const SOUNDBOARD_MASTER_VOLUME: &str = "soundboard.master_volume";
-    pub const SOUNDBOARD_ALSO_HEADPHONES: &str = "soundboard.also_headphones";
     pub const DIAGNOSTICS_LOG_LEVEL: &str = "diagnostics.log_level";
     pub const STAY_AWAKE: &str = "app.stay_awake";
     pub const WINDOW_PLACEMENT: &str = "app.window_placement";
@@ -533,62 +529,6 @@ pub async fn set_chat_history_display_limit(
     limit: u32,
 ) -> Result<(), StorageError> {
     write_setting(repo, &core_settings::CHAT_HISTORY_DISPLAY_LIMIT, &limit).await
-}
-
-pub async fn soundboard_enabled(repo: &dyn SettingsRepo) -> Result<bool, StorageError> {
-    read_setting(repo, &core_settings::SOUNDBOARD_ENABLED).await
-}
-
-pub async fn set_soundboard_enabled(
-    repo: &dyn SettingsRepo,
-    enabled: bool,
-) -> Result<(), StorageError> {
-    write_setting(repo, &core_settings::SOUNDBOARD_ENABLED, &enabled).await
-}
-
-pub async fn soundboard_output_device(
-    repo: &dyn SettingsRepo,
-) -> Result<Option<String>, StorageError> {
-    repo.get_string(reserved_keys::SOUNDBOARD_OUTPUT_DEVICE)
-        .await
-}
-
-pub async fn set_soundboard_output_device(
-    repo: &dyn SettingsRepo,
-    device_id: Option<String>,
-) -> Result<(), StorageError> {
-    match device_id {
-        Some(id) => {
-            repo.set_string(reserved_keys::SOUNDBOARD_OUTPUT_DEVICE, &id)
-                .await
-        }
-        None => {
-            repo.delete(reserved_keys::SOUNDBOARD_OUTPUT_DEVICE).await?;
-            Ok(())
-        }
-    }
-}
-
-pub async fn soundboard_master_volume(repo: &dyn SettingsRepo) -> Result<f32, StorageError> {
-    read_setting(repo, &core_settings::SOUNDBOARD_MASTER_VOLUME).await
-}
-
-pub async fn set_soundboard_master_volume(
-    repo: &dyn SettingsRepo,
-    volume: f32,
-) -> Result<(), StorageError> {
-    write_setting(repo, &core_settings::SOUNDBOARD_MASTER_VOLUME, &volume).await
-}
-
-pub async fn soundboard_also_headphones(repo: &dyn SettingsRepo) -> Result<bool, StorageError> {
-    read_setting(repo, &core_settings::SOUNDBOARD_ALSO_HEADPHONES).await
-}
-
-pub async fn set_soundboard_also_headphones(
-    repo: &dyn SettingsRepo,
-    enabled: bool,
-) -> Result<(), StorageError> {
-    write_setting(repo, &core_settings::SOUNDBOARD_ALSO_HEADPHONES, &enabled).await
 }
 
 pub const DEFAULT_DIAGNOSTIC_LOG_LEVEL: LogLevel = LogLevel::Info;

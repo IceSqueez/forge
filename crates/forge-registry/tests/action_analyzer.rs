@@ -206,6 +206,66 @@ fn a_legacy_name_only_one_of_two_triggers_declares_is_reported_as_some_triggers_
     );
 }
 
+const SILENT_TRIGGER: &str = "stub.silent";
+
+fn triggers_with_a_silent_one() -> TriggerRegistry {
+    let mut reg = triggers(&[(LEGACY_TRIGGER, canonical_actor_plus_legacy_username)]);
+    reg.register(Box::new(FakeTrigger {
+        id: SILENT_TRIGGER,
+        variables: None,
+    }))
+    .expect("the silent trigger registers under its own id");
+    reg
+}
+
+#[test]
+fn beside_an_undeclared_trigger_a_declared_name_is_some_triggers_only_and_any_other_is_unverifiable()
+ {
+    let health = analyze(
+        &action_consuming(&["%username%", "%not_declared_anywhere%"]),
+        &[trigger_of(LEGACY_TRIGGER), trigger_of(SILENT_TRIGGER)],
+        &[None, None],
+        &flow_registry(),
+        &triggers_with_a_silent_one(),
+    );
+
+    assert_eq!(
+        health,
+        vec![
+            StepHealth {
+                findings: vec![Finding::SomeTriggersOnly(LEGACY_NAME.to_owned())],
+            },
+            StepHealth {
+                findings: vec![Finding::UnverifiableVariable(
+                    "not_declared_anywhere".to_owned()
+                )],
+            },
+        ],
+    );
+}
+
+#[test]
+fn with_only_undeclared_triggers_every_variable_is_unverifiable_and_only_warns() {
+    let health = analyze(
+        &action_consuming(&["%username%"]),
+        &[
+            trigger_of(SILENT_TRIGGER),
+            trigger_of("stub.never_registered"),
+        ],
+        &[None],
+        &flow_registry(),
+        &triggers_with_a_silent_one(),
+    );
+
+    assert_eq!(
+        health,
+        vec![StepHealth {
+            findings: vec![Finding::UnverifiableVariable(LEGACY_NAME.to_owned())],
+        }],
+    );
+    assert_eq!(health[0].severity(), HealthSeverity::Yellow);
+}
+
 #[test]
 fn a_failed_last_run_marks_only_its_step_broken() {
     let health = analyze(

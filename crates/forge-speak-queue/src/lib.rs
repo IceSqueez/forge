@@ -1,6 +1,8 @@
 mod actor;
 mod catalog;
+mod emitter;
 mod filters;
+pub mod vocabulary;
 
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;

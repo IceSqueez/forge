@@ -152,6 +152,8 @@ mod tests {
     use crate::ban_ledger_test_support::MemoryBanLedger;
     use forge_events::{Event, EventPublisher};
     use forge_types::EventId;
+    use forge_types::Variant;
+    use std::collections::BTreeMap;
     use wiremock::matchers::{method, path};
     use wiremock::{Mock, MockServer, ResponseTemplate};
 
@@ -282,6 +284,78 @@ mod tests {
                 expect_ok,
                 "case: {label}"
             );
+        }
+    }
+
+    fn with_duration(mut config: SubActionConfig, duration: Variant) -> SubActionConfig {
+        config.insert("duration_minutes".to_owned(), duration);
+        config
+    }
+
+    #[tokio::test]
+    async fn a_duration_resolving_outside_one_to_10080_minutes_fails_without_request() {
+        let stack = ArgStack::new()
+            .set("zero".to_owned(), Variant::String("0".to_owned()))
+            .set("week_plus".to_owned(), Variant::String("10081".to_owned()));
+        let out_of_range = forge_registry::ConfigProblem::field(
+            "duration_minutes",
+            forge_registry::ConfigReason::OutOfRange(forge_registry::ValueBounds::between(
+                1, 10080,
+            )),
+        );
+        for template in ["%zero%", "%week_plus%"] {
+            let server = MockServer::start().await;
+            let step_config = with_duration(config("777", 5), Variant::String(template.to_owned()));
+
+            let (telemetry, _) = runner_on(&server)
+                .execute(&step_config, &make_ctx(&stack))
+                .await;
+
+            assert_eq!(
+                telemetry.outcome,
+                SubActionOutcome::Failed(format!("invalid step config: {out_of_range}")),
+                "{template}"
+            );
+            assert!(
+                server.received_requests().await.unwrap().is_empty(),
+                "{template}"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn execute_sends_the_declared_default_or_the_resolved_text_duration() {
+        let stack = ArgStack::new().set("mins".to_owned(), Variant::String(" 10080 ".to_owned()));
+        let mut without_duration = config("777", 5);
+        without_duration.remove("duration_minutes");
+        for (case, step_config, expected) in [
+            ("missing key", without_duration, 10),
+            (
+                "numeric text",
+                with_duration(config("777", 5), Variant::String("15".to_owned())),
+                15,
+            ),
+            (
+                "template at the upper bound",
+                with_duration(config("777", 5), Variant::String("%mins%".to_owned())),
+                10080,
+            ),
+        ] {
+            let server = MockServer::start().await;
+            Mock::given(method("POST"))
+                .and(path("/moderation/bans"))
+                .respond_with(ResponseTemplate::new(200))
+                .mount(&server)
+                .await;
+
+            let (telemetry, _) = runner_on(&server)
+                .execute(&step_config, &make_ctx(&stack))
+                .await;
+
+            assert_eq!(telemetry.outcome, SubActionOutcome::Success, "{case}");
+            let reqs = server.received_requests().await.unwrap();
+            let body: serde_json::Value = serde_json::from_slice(&reqs[0].body).unwrap();
+            assert_eq!(body["duration"], expected, "{case}");
         }
     }
 

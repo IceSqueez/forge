@@ -97,6 +97,8 @@ mod tests {
     use super::*;
     use crate::active_broadcast_id::ActiveBroadcastIdHandle;
     use crate::timestamp::tests::instant;
+    use forge_types::SubActionOutcome;
+    use std::collections::BTreeMap;
 
     const TOKEN_SENTINEL: &str = "yt-stats-runner-token";
     const BODY_SENTINEL: &str = "yt-stats-response-body-sentinel";

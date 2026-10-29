@@ -98,6 +98,8 @@ mod tests {
         MemoryBanLedger, TEST_BROADCASTER_CHANNEL_ID, broadcaster_source,
     };
     use crate::live_chat_id::LiveChatIdHandle;
+    use forge_types::Variant;
+    use std::collections::BTreeMap;
 
     struct NoopPublisher;
     impl EventPublisher for NoopPublisher {

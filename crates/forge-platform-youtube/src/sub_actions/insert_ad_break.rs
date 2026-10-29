@@ -103,6 +103,8 @@ mod tests {
 
     use super::*;
     use crate::active_broadcast_id::ActiveBroadcastIdHandle;
+    use forge_types::Variant;
+    use std::collections::BTreeMap;
 
     struct NoopPublisher;
     impl EventPublisher for NoopPublisher {
@@ -137,7 +139,7 @@ mod tests {
     }
 
     #[test]
-    fn validate_config_enforces_duration_bounds() {
+    fn validate_config_enforces_duration_bounds_and_accepts_numeric_text() {
         let handle = ActiveBroadcastIdHandle::new();
         let ad_break = YoutubeAdBreak::new(
             crate::endpoints_test_support::data_api_at("http://127.0.0.1:0"),
@@ -151,10 +153,35 @@ mod tests {
             ("max boundary", config(MAX_DURATION_SECS), true),
             ("below min", config(MIN_DURATION_SECS - 1), false),
             ("above max", config(MAX_DURATION_SECS + 1), false),
-            ("missing key", BTreeMap::new(), false),
             (
-                "non-int",
+                "missing key falls back to thirty seconds",
+                BTreeMap::new(),
+                true,
+            ),
+            (
+                "numeric text",
                 BTreeMap::from([("duration_secs".to_owned(), Variant::String("30".to_owned()))]),
+                true,
+            ),
+            (
+                "template",
+                BTreeMap::from([(
+                    "duration_secs".to_owned(),
+                    Variant::String("%len%".to_owned()),
+                )]),
+                true,
+            ),
+            (
+                "non-numeric text",
+                BTreeMap::from([(
+                    "duration_secs".to_owned(),
+                    Variant::String("long".to_owned()),
+                )]),
+                false,
+            ),
+            (
+                "bool",
+                BTreeMap::from([("duration_secs".to_owned(), Variant::Bool(true))]),
                 false,
             ),
         ];
@@ -181,6 +208,43 @@ mod tests {
         let req = &server.received_requests().await.unwrap()[0];
         let body: serde_json::Value = serde_json::from_slice(&req.body).unwrap();
         assert_eq!(body["durationSecs"], 90);
+    }
+
+    #[tokio::test]
+    async fn execute_sends_the_declared_default_or_the_resolved_text_duration() {
+        let stack = ArgStack::new().set("len".to_owned(), Variant::String(" 45 ".to_owned()));
+        for (case, step_config, expected) in [
+            ("missing key", BTreeMap::new(), 30),
+            (
+                "numeric text",
+                BTreeMap::from([("duration_secs".to_owned(), Variant::String("60".to_owned()))]),
+                60,
+            ),
+            (
+                "template",
+                BTreeMap::from([(
+                    "duration_secs".to_owned(),
+                    Variant::String("%len%".to_owned()),
+                )]),
+                45,
+            ),
+        ] {
+            let server = MockServer::start().await;
+            Mock::given(method("POST"))
+                .and(path("/liveBroadcasts/cuepoint"))
+                .respond_with(ResponseTemplate::new(200).set_body_json(json!({"kind": "x"})))
+                .mount(&server)
+                .await;
+
+            let (telemetry, _) = runner_on(&server)
+                .execute(&step_config, &make_ctx(&stack))
+                .await;
+
+            assert_eq!(telemetry.outcome, SubActionOutcome::Success, "{case}");
+            let req = &server.received_requests().await.unwrap()[0];
+            let body: serde_json::Value = serde_json::from_slice(&req.body).unwrap();
+            assert_eq!(body["durationSecs"], expected, "{case}");
+        }
     }
 
     #[tokio::test]

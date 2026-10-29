@@ -167,6 +167,8 @@ mod tests {
 
     use super::*;
     use crate::live_chat_id::LiveChatIdHandle;
+    use forge_registry::RegistryError;
+    use std::collections::BTreeMap;
 
     struct NoopPublisher;
     impl EventPublisher for NoopPublisher {
@@ -205,43 +207,126 @@ mod tests {
         ])
     }
 
-    #[test]
-    fn parse_options_splits_trims_filters_and_enforces_count() {
-        assert_eq!(parse_options("Red,Blue").unwrap(), vec!["Red", "Blue"]);
-        assert_eq!(
-            parse_options("A\nB\nC\nD").unwrap(),
-            vec!["A", "B", "C", "D"]
+    fn offline_runner() -> CreatePollRunner {
+        let sender = YoutubeSendChat::new(
+            crate::endpoints_test_support::data_api_at("http://127.0.0.1:0"),
+            token_source(),
+            LiveChatIdHandle::new(),
         );
-        assert_eq!(parse_options("  a , b ").unwrap(), vec!["a", "b"]);
-        assert_eq!(parse_options("a\n\n,b").unwrap(), vec!["a", "b"]);
-        assert_eq!(parse_options("a,b\nc").unwrap(), vec!["a", "b", "c"]);
+        CreatePollRunner::new(Arc::new(sender))
+    }
 
-        assert!(parse_options("only-one").is_err(), "1 option below min");
-        assert!(parse_options("").is_err(), "empty is below min");
-        assert!(parse_options("a,b,c,d,e").is_err(), "5 options above max");
+    fn option_count_out_of_range() -> ConfigReason {
+        ConfigReason::CountOutOfRange(ValueBounds::between(2, 4))
+    }
+
+    #[test]
+    fn parse_options_splits_on_commas_and_newlines_trimming_and_dropping_blanks() {
+        for (raw, expected) in [
+            ("Red,Blue", vec!["Red", "Blue"]),
+            ("A\nB\nC\nD", vec!["A", "B", "C", "D"]),
+            ("  a , b ", vec!["a", "b"]),
+            ("a\n\n,b", vec!["a", "b"]),
+            ("a,b\nc", vec!["a", "b", "c"]),
+            ("Так,Ні", vec!["Так", "Ні"]),
+        ] {
+            assert_eq!(
+                parse_options(raw),
+                Ok(expected.iter().map(|o| (*o).to_owned()).collect()),
+                "{raw:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn parse_options_rejects_no_options_as_required_and_counts_outside_two_to_four() {
+        for (raw, reason) in [
+            ("", ConfigReason::Required),
+            (" , \n ", ConfigReason::Required),
+            ("only-one", option_count_out_of_range()),
+            ("a,b,c,d,e", option_count_out_of_range()),
+        ] {
+            assert_eq!(parse_options(raw), Err(reason), "{raw:?}");
+        }
     }
 
     #[test]
     fn validate_config_requires_question_and_valid_option_count() {
-        let runner = {
-            let handle = LiveChatIdHandle::new();
-            let sender = YoutubeSendChat::new(
-                crate::endpoints_test_support::data_api_at("http://127.0.0.1:0"),
-                token_source(),
-                handle,
-            );
-            CreatePollRunner::new(Arc::new(sender))
-        };
+        let runner = offline_runner();
+        let question_required = Some(ConfigProblem::field("question", ConfigReason::Required));
+        let options_problem = |reason| Some(ConfigProblem::field("options", reason));
 
-        let cases: Vec<(&str, SubActionConfig, bool)> = vec![
-            ("valid", config("Q?", "A,B"), true),
-            ("empty question", config("", "A,B"), false),
-            ("one option", config("Q?", "A"), false),
-            ("five options", config("Q?", "A,B,C,D,E"), false),
-            ("missing question", BTreeMap::new(), false),
-        ];
-        for (label, cfg, ok) in cases {
-            assert_eq!(runner.validate_config(&cfg).is_ok(), ok, "case: {label}");
+        for (label, cfg, expected) in [
+            ("valid", config("Q?", "A,B"), None),
+            ("templated options", config("Q?", "%choices%"), None),
+            (
+                "empty question",
+                config("", "A,B"),
+                question_required.clone(),
+            ),
+            (
+                "whitespace-only question",
+                config(" \t ", "A,B"),
+                question_required.clone(),
+            ),
+            ("missing question", BTreeMap::new(), question_required),
+            (
+                "one option",
+                config("Q?", "A"),
+                options_problem(option_count_out_of_range()),
+            ),
+            (
+                "five options",
+                config("Q?", "A,B,C,D,E"),
+                options_problem(option_count_out_of_range()),
+            ),
+            (
+                "blank options",
+                config("Q?", " "),
+                options_problem(ConfigReason::Required),
+            ),
+        ] {
+            assert_eq!(
+                runner
+                    .validate_config(&cfg)
+                    .err()
+                    .map(RegistryError::into_config_problem),
+                expected,
+                "case: {label}"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn options_template_resolving_to_a_bad_count_fails_without_send() {
+        let stack = ArgStack::new()
+            .set("none".to_owned(), Variant::String(" , ".to_owned()))
+            .set("one".to_owned(), Variant::String("Pizza".to_owned()))
+            .set("five".to_owned(), Variant::String("a,b,c,d,e".to_owned()));
+        for (template, reason) in [
+            ("%none%", ConfigReason::Required),
+            ("%one%", option_count_out_of_range()),
+            ("%five%", option_count_out_of_range()),
+        ] {
+            let server = MockServer::start().await;
+            let runner = runner_on(&server, true);
+
+            let (telemetry, _) = runner
+                .execute(&config("Q?", template), &make_ctx(&stack))
+                .await;
+
+            assert_eq!(
+                telemetry.outcome,
+                SubActionOutcome::Failed(format!(
+                    "invalid step config: {}",
+                    ConfigProblem::field("options", reason)
+                )),
+                "{template}"
+            );
+            assert!(
+                server.received_requests().await.unwrap().is_empty(),
+                "{template}"
+            );
         }
     }
 

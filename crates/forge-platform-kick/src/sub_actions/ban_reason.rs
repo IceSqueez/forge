@@ -60,26 +60,25 @@ impl TypedField for BanReasonField {
 mod tests {
     use std::collections::BTreeMap;
 
-    use forge_events::{Event, EventPublisher};
-    use forge_types::{ArgStack, EventId};
+    use forge_registry::{ConfigProblem, Interpolation};
+    use forge_types::{ArgStack, SubActionConfig};
 
     use super::*;
 
-    struct NoopPublisher;
-    impl EventPublisher for NoopPublisher {
-        fn publish(&self, _: Event) {}
-    }
-
     fn reason_config(reason: Variant) -> SubActionConfig {
-        BTreeMap::from([(REASON_KEY.to_owned(), reason)])
+        BTreeMap::from([(config_keys::REASON.to_owned(), reason)])
     }
 
     fn text(reason: &str) -> SubActionConfig {
         reason_config(Variant::String(reason.to_owned()))
     }
 
+    fn edit_time_check(config: &SubActionConfig) -> Result<(), ConfigProblem> {
+        REASON.peek(config, Interpolation::Deferred).map(|_| ())
+    }
+
     #[test]
-    fn validate_accepts_reasons_up_to_one_hundred_characters() {
+    fn stored_reasons_up_to_one_hundred_characters_pass_the_edit_time_check() {
         for (label, config) in [
             ("absent", BTreeMap::new()),
             ("blank", text("")),
@@ -87,12 +86,12 @@ mod tests {
             ("multibyte at limit", text(&"ї".repeat(100))),
             ("template", text("%reason%")),
         ] {
-            assert!(validate(&config).is_ok(), "case: {label}");
+            assert_eq!(edit_time_check(&config), Ok(()), "case: {label}");
         }
     }
 
     #[test]
-    fn validate_keys_an_over_long_or_non_text_reason_to_the_reason_field() {
+    fn an_over_long_or_non_text_stored_reason_is_rejected_on_the_reason_key() {
         let too_long = ConfigReason::LengthOutOfRange(ValueBounds::at_most(REASON_MAX_CHARS));
         for (label, config, reason) in [
             ("one over limit", text(&"a".repeat(101)), too_long.clone()),
@@ -109,22 +108,21 @@ mod tests {
             ),
         ] {
             assert_eq!(
-                validate(&config).unwrap_err().into_config_problem(),
-                forge_registry::ConfigProblem::field(REASON_KEY, reason),
+                edit_time_check(&config),
+                Err(ConfigProblem::field(config_keys::REASON, reason)),
                 "case: {label}"
             );
         }
     }
 
     #[test]
-    fn resolve_interpolates_trims_and_drops_blank_reasons() {
+    fn read_interpolates_trims_and_drops_blank_reasons() {
         let stack = ArgStack::new()
             .set(
                 "why".to_owned(),
                 Variant::String("  spam links ".to_owned()),
             )
             .set("nothing".to_owned(), Variant::String("   ".to_owned()));
-        let ctx = RunContext::leaf(&stack, 0, EventId::new(), &NoopPublisher);
 
         for (config, expected) in [
             (text("%why%"), Some("spam links")),
@@ -136,10 +134,19 @@ mod tests {
             (BTreeMap::new(), None),
         ] {
             assert_eq!(
-                resolve(&config, &ctx).as_deref(),
+                REASON.read(&config, &stack).unwrap().as_deref(),
                 expected,
                 "config {config:?}"
             );
         }
+    }
+
+    #[test]
+    fn a_template_that_resolves_past_the_limit_is_cut_to_one_hundred_characters() {
+        let stack = ArgStack::new().set("why".to_owned(), Variant::String("ї".repeat(150)));
+
+        let reason = REASON.read(&text("%why%"), &stack).unwrap();
+
+        assert_eq!(reason, Some("ї".repeat(100)));
     }
 }

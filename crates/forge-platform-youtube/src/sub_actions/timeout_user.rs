@@ -122,6 +122,8 @@ mod tests {
         MemoryBanLedger, TEST_BROADCASTER_CHANNEL_ID, broadcaster_source,
     };
     use crate::live_chat_id::LiveChatIdHandle;
+    use forge_types::Variant;
+    use std::collections::BTreeMap;
 
     struct NoopPublisher;
     impl EventPublisher for NoopPublisher {
@@ -181,8 +183,14 @@ mod tests {
             ("max (86400)", Variant::Int(86_400), true),
             ("above max (86401)", Variant::Int(86_401), false),
             ("negative", Variant::Int(-1), false),
-            ("non-integer", Variant::String("300".to_owned()), false),
-            ("missing", Variant::Bool(false), false),
+            ("numeric text", Variant::String("300".to_owned()), true),
+            ("template", Variant::String("%secs%".to_owned()), true),
+            (
+                "non-numeric text",
+                Variant::String("five".to_owned()),
+                false,
+            ),
+            ("bool", Variant::Bool(false), false),
         ];
         for (label, duration, expect_ok) in cases {
             assert_eq!(
@@ -258,5 +266,56 @@ mod tests {
             ledger.stored(&key).map(|entry| entry.viewer_name),
             Some("Alice".to_owned())
         );
+    }
+
+    #[tokio::test]
+    async fn execute_sends_the_declared_default_or_the_numeric_text_duration() {
+        for (case, duration, expected) in [
+            ("missing key", None, "300"),
+            (
+                "numeric text",
+                Some(Variant::String("120".to_owned())),
+                "120",
+            ),
+        ] {
+            let server = MockServer::start().await;
+            Mock::given(method("POST"))
+                .and(path("/liveChat/bans"))
+                .respond_with(
+                    ResponseTemplate::new(200).set_body_json(serde_json::json!({"id": "ban-1"})),
+                )
+                .mount(&server)
+                .await;
+            let live_chat = LiveChatIdHandle::new();
+            live_chat.set(Some("lc-test".to_owned()));
+            let token: Arc<
+                dyn Fn() -> BoxFuture<'static, Result<String, forge_platform_core::PlatformError>>
+                    + Send
+                    + Sync,
+            > = Arc::new(|| Box::pin(async { Ok("tok".to_owned()) }));
+            let moderation = YoutubeModeration::new(
+                crate::endpoints_test_support::data_api_at(&server.uri()),
+                token,
+                broadcaster_source(),
+                live_chat,
+                MemoryBanLedger::shared(),
+            );
+            let mut step_config =
+                BTreeMap::from([("channel_id".to_owned(), Variant::String("UC1".to_owned()))]);
+            if let Some(duration) = duration {
+                step_config.insert("duration_seconds".to_owned(), duration);
+            }
+            let stack = ArgStack::new();
+            let ctx = RunContext::leaf(&stack, 0, EventId::new(), &NoopPublisher);
+
+            let (telemetry, _) = TimeoutUserRunner::new(Arc::new(moderation))
+                .execute(&step_config, &ctx)
+                .await;
+
+            assert_eq!(telemetry.outcome, SubActionOutcome::Success, "{case}");
+            let req = &server.received_requests().await.unwrap()[0];
+            let body: serde_json::Value = serde_json::from_slice(&req.body).unwrap();
+            assert_eq!(body["snippet"]["banDurationSeconds"], expected, "{case}");
+        }
     }
 }

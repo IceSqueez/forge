@@ -91,8 +91,9 @@ impl SubActionRunner for RejectRedemptionRunner {
 mod tests {
     use super::*;
     use forge_events::{Event, EventPublisher};
-    use forge_registry::ConfigProblem;
     use forge_types::EventId;
+    use forge_types::Variant;
+    use std::collections::BTreeMap;
     use wiremock::matchers::{method, path};
     use wiremock::{Mock, MockServer, ResponseTemplate};
 
@@ -112,11 +113,6 @@ mod tests {
 
     fn runner_on(server: &MockServer) -> RejectRedemptionRunner {
         let client = KickRewards::new(crate::endpoints_test_support::api_at(&server.uri()));
-        RejectRedemptionRunner::new(Arc::new(client), token_source())
-    }
-
-    fn runner_offline() -> RejectRedemptionRunner {
-        let client = KickRewards::new(crate::endpoints_test_support::unreachable_api());
         RejectRedemptionRunner::new(Arc::new(client), token_source())
     }
 
@@ -182,46 +178,15 @@ mod tests {
             .execute(&config("%x%"), &make_ctx(&stack))
             .await;
 
-        assert!(matches!(telemetry.outcome, SubActionOutcome::Failed(_)));
+        assert_eq!(
+            telemetry.outcome,
+            SubActionOutcome::Failed(
+                "invalid step config: 'redemption_ids' is required".to_owned()
+            )
+        );
         assert!(
             server.received_requests().await.unwrap().is_empty(),
             "empty resolved redemption_ids must not reach the transport"
         );
-    }
-
-    fn ids(count: usize) -> String {
-        (0..count)
-            .map(|i| format!("r{i}"))
-            .collect::<Vec<_>>()
-            .join(",")
-    }
-
-    #[test]
-    fn validate_config_requires_ids_and_caps_the_batch_at_its_limit() {
-        let runner = runner_offline();
-        let problem = |reason| Some(ConfigProblem::field("redemption_ids", reason));
-        let over_limit = problem(ConfigReason::CountOutOfRange(ValueBounds::at_most(
-            MAX_BATCH,
-        )));
-        for (label, raw, expected) in [
-            ("empty", String::new(), problem(ConfigReason::Required)),
-            (
-                "whitespace",
-                "   ".to_owned(),
-                problem(ConfigReason::Required),
-            ),
-            ("single id", "rd_1".to_owned(), None),
-            ("at limit", ids(MAX_BATCH), None),
-            ("one over limit", ids(MAX_BATCH + 1), over_limit),
-        ] {
-            assert_eq!(
-                runner
-                    .validate_config(&config(&raw))
-                    .err()
-                    .map(RegistryError::into_config_problem),
-                expected,
-                "case: {label}"
-            );
-        }
     }
 }

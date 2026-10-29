@@ -90,6 +90,13 @@ impl SubActionRunner for AcceptRedemptionRunner {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use forge_registry::ConfigReason;
+    use forge_registry::RegistryError;
+    use forge_registry::ValueBounds;
+    use forge_types::Variant;
+    use std::collections::BTreeMap;
+
+    const MAX_BATCH: usize = 25;
     use forge_events::{Event, EventPublisher};
     use forge_registry::ConfigProblem;
     use forge_types::EventId;
@@ -182,7 +189,12 @@ mod tests {
             .execute(&config("%x%"), &make_ctx(&stack))
             .await;
 
-        assert!(matches!(telemetry.outcome, SubActionOutcome::Failed(_)));
+        assert_eq!(
+            telemetry.outcome,
+            SubActionOutcome::Failed(
+                "invalid step config: 'redemption_ids' is required".to_owned()
+            )
+        );
         assert!(
             server.received_requests().await.unwrap().is_empty(),
             "empty resolved redemption_ids must not reach the transport"

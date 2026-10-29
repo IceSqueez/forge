@@ -83,6 +83,8 @@ mod tests {
 
     use super::*;
     use crate::live_chat_id::LiveChatIdHandle;
+    use forge_types::Variant;
+    use std::collections::BTreeMap;
 
     fn runner() -> UnbanUserRunner {
         let source: Arc<

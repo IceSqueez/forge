@@ -160,6 +160,8 @@ mod tests {
 
     use super::*;
     use crate::active_broadcast_id::ActiveBroadcastIdHandle;
+    use forge_registry::RegistryError;
+    use std::collections::BTreeMap;
 
     struct NoopPublisher;
     impl EventPublisher for NoopPublisher {
@@ -225,6 +227,33 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn execute_without_a_stored_privacy_status_sets_the_video_public() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/videos"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+                "items": [{ "id": "vid-1", "snippet": {}, "status": {} }]
+            })))
+            .mount(&server)
+            .await;
+        Mock::given(method("PUT"))
+            .and(path("/videos"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({"kind": "x"})))
+            .mount(&server)
+            .await;
+
+        let (telemetry, _) = runner_on(&server)
+            .execute(&BTreeMap::new(), &make_ctx(&ArgStack::new()))
+            .await;
+
+        assert_eq!(telemetry.outcome, SubActionOutcome::Success);
+        let reqs = server.received_requests().await.unwrap();
+        let put = reqs.iter().find(|r| r.method.as_str() == "PUT").unwrap();
+        let body: serde_json::Value = serde_json::from_slice(&put.body).unwrap();
+        assert_eq!(body["status"]["privacyStatus"], "public");
+    }
+
+    #[tokio::test]
     async fn empty_privacy_after_interpolation_fails_without_http() {
         let server = MockServer::start().await;
         let runner = runner_on(&server);
@@ -257,7 +286,7 @@ mod tests {
             ("private", config("private"), true),
             ("off-enum value", config("hidden"), false),
             ("empty", config(""), false),
-            ("missing", BTreeMap::new(), false),
+            ("missing key falls back to public", BTreeMap::new(), true),
             (
                 "non-string",
                 BTreeMap::from([("privacy_status".to_owned(), Variant::Int(1))]),
@@ -266,7 +295,7 @@ mod tests {
         ];
         let offered_choices = Some(forge_registry::ConfigProblem::field(
             "privacy_status",
-            ConfigReason::choices(PRIVACY_OPTIONS.iter().copied()),
+            ConfigReason::choices(["public", "unlisted", "private"]),
         ));
         for (label, cfg, ok) in cases {
             let problem = runner

@@ -430,7 +430,10 @@ mod tests {
     use crate::send_chat::YoutubeSendChat;
     use crate::stream_metadata::YoutubeStreamMetadata;
     use crate::sub_actions::register_youtube_sub_actions;
-    use forge_platform_core::PlatformError;
+    use forge_platform_core::{
+        PlatformError, QuickActionChoiceSource, QuickActionFieldKind, QuickActionFieldValue,
+        QuickActions,
+    };
 
     struct EmptyRepo;
     #[async_trait]
@@ -723,6 +726,47 @@ mod tests {
         }
     }
 
+    fn filled_values(
+        action: &forge_platform_core::QuickAction,
+    ) -> BTreeMap<String, QuickActionFieldValue> {
+        action
+            .fields
+            .iter()
+            .filter(|field| field.default.is_none())
+            .map(|field| {
+                let sample = match field.key.as_str() {
+                    "options" => "Pizza\nSushi",
+                    "channel_id" => "UC1",
+                    _ => "supplied",
+                };
+                (
+                    field.key.clone(),
+                    QuickActionFieldValue::Text(sample.to_owned()),
+                )
+            })
+            .collect()
+    }
+
+    #[tokio::test]
+    async fn every_partial_quick_action_template_merged_with_its_field_values_validates() {
+        let reg = sub_action_registry();
+        let (bundle, _platform) = make_bundle(Arc::new(EmptyRepo));
+
+        for action in QuickActions::actions(bundle.as_ref()) {
+            let step = action.merge_config(&filled_values(&action));
+            let verdict = reg
+                .get(&step.kind_id)
+                .unwrap()
+                .validate_config(&step.config);
+
+            assert!(
+                verdict.is_ok(),
+                "quick action {:?} merges a config its runner rejects: {verdict:?}",
+                action.label
+            );
+        }
+    }
+
     #[tokio::test]
     async fn free_text_quick_action_fields_open_blank() {
         for action in QuickActions::actions(make_bundle(Arc::new(EmptyRepo)).0.as_ref()) {
@@ -1002,5 +1046,125 @@ mod tests {
             Arc::strong_count(&bundle) - 1
         );
         assert!(!platform.connection_state().is_connected());
+    }
+
+    const STORED_DEFAULT_CONFIGS: [(&str, &str); 16] = [
+        (
+            "youtube.chat.create_poll",
+            r#"{"options":{"type":"string","value":""},"question":{"type":"string","value":""}}"#,
+        ),
+        (
+            "youtube.chat.delete_message",
+            r#"{"message_id":{"type":"string","value":"%message_id%"}}"#,
+        ),
+        (
+            "youtube.chat.send_message",
+            r#"{"message":{"type":"string","value":""}}"#,
+        ),
+        ("youtube.lookup.stream_stats", r#"{}"#),
+        (
+            "youtube.lookup.viewer",
+            r#"{"identifier":{"type":"string","value":""}}"#,
+        ),
+        (
+            "youtube.moderation.add_moderator",
+            r#"{"channel_id":{"type":"string","value":""}}"#,
+        ),
+        (
+            "youtube.moderation.ban_user",
+            r#"{"channel_id":{"type":"string","value":""}}"#,
+        ),
+        (
+            "youtube.moderation.remove_moderator",
+            r#"{"channel_id":{"type":"string","value":""}}"#,
+        ),
+        (
+            "youtube.moderation.timeout_user",
+            r#"{"channel_id":{"type":"string","value":""},"duration_seconds":{"type":"int","value":300}}"#,
+        ),
+        (
+            "youtube.moderation.unban_user",
+            r#"{"channel_id":{"type":"string","value":""}}"#,
+        ),
+        (
+            "youtube.stream.insert_ad_break",
+            r#"{"duration_secs":{"type":"int","value":30}}"#,
+        ),
+        (
+            "youtube.stream.set_thumbnail",
+            r#"{"image_path":{"type":"string","value":""}}"#,
+        ),
+        (
+            "youtube.stream.update_category",
+            r#"{"category_id":{"type":"string","value":""}}"#,
+        ),
+        (
+            "youtube.stream.update_description",
+            r#"{"description":{"type":"string","value":""}}"#,
+        ),
+        (
+            "youtube.stream.update_privacy",
+            r#"{"privacy_status":{"type":"string","value":"public"}}"#,
+        ),
+        (
+            "youtube.stream.update_title",
+            r#"{"title":{"type":"string","value":""}}"#,
+        ),
+    ];
+
+    #[test]
+    fn every_runner_seeds_the_same_stored_default_config_as_before_declared_fields() {
+        let reg = sub_action_registry();
+        let registered: BTreeSet<&str> = reg.all().map(|runner| runner.id()).collect();
+        let pinned: BTreeSet<&str> = STORED_DEFAULT_CONFIGS.iter().map(|(id, _)| *id).collect();
+        assert_eq!(registered, pinned);
+
+        for (id, stored) in STORED_DEFAULT_CONFIGS {
+            let expected: serde_json::Value = serde_json::from_str(stored).unwrap();
+
+            assert_eq!(
+                serde_json::to_value(reg.get(id).unwrap().default_config()).unwrap(),
+                expected,
+                "{id} seeds a different default config"
+            );
+        }
+    }
+
+    #[test]
+    fn whitespace_only_required_text_is_rejected_as_required_at_edit_time() {
+        let cases = [
+            ("youtube.chat.send_message", "message"),
+            ("youtube.moderation.ban_user", "channel_id"),
+            ("youtube.moderation.add_moderator", "channel_id"),
+            ("youtube.stream.update_title", "title"),
+            ("youtube.stream.update_description", "description"),
+            ("youtube.stream.update_category", "category_id"),
+            ("youtube.stream.set_thumbnail", "image_path"),
+            ("youtube.lookup.viewer", "identifier"),
+        ];
+        let reg = sub_action_registry();
+
+        for (id, key) in cases {
+            let config = BTreeMap::from([(
+                key.to_owned(),
+                forge_types::Variant::String(" \t ".to_owned()),
+            )]);
+
+            let problem = reg
+                .get(id)
+                .unwrap()
+                .validate_config(&config)
+                .err()
+                .map(forge_registry::RegistryError::into_config_problem);
+
+            assert_eq!(
+                problem,
+                Some(forge_registry::ConfigProblem::field(
+                    key,
+                    forge_registry::ConfigReason::Required
+                )),
+                "{id}"
+            );
+        }
     }
 }

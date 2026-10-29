@@ -449,7 +449,7 @@ mod tests {
 
         use async_trait::async_trait;
         use forge_net::{RateLimitError, RateLimitOutcome, RateLimiter};
-        use forge_platform_core::{BuiltinControl, ControlFailure};
+        use forge_platform_core::{BuiltinControl, ControlFailure, QuickActions};
         use forge_storage::{CredentialId, CredentialsRepo, StorageError};
         use time::OffsetDateTime;
 
@@ -728,9 +728,11 @@ mod tests {
     }
 
     mod roster {
-        use std::collections::BTreeSet;
+        use std::collections::{BTreeMap, BTreeSet};
 
-        use forge_platform_core::PlatformError;
+        use forge_platform_core::{
+            PlatformError, QuickAction, QuickActionFieldKind, QuickActionFieldValue, QuickActions,
+        };
         use forge_registry::SubActionRegistry;
         use futures::future::BoxFuture;
 
@@ -852,6 +854,50 @@ mod tests {
                         action.subaction_template.config.get(&field.key)
                     );
                 }
+            }
+        }
+
+        fn sample_value(key: &str) -> &'static str {
+            match key {
+                "user_id" => "777",
+                "cost" => "500",
+                "category_id" => "15",
+                "tags" => "chill, speedrun",
+                "redemption_ids" => "rd-1, rd-2",
+                _ => "supplied",
+            }
+        }
+
+        fn filled_values(action: &QuickAction) -> BTreeMap<String, QuickActionFieldValue> {
+            action
+                .fields
+                .iter()
+                .filter(|field| field.default.is_none())
+                .map(|field| {
+                    (
+                        field.key.clone(),
+                        QuickActionFieldValue::Text(sample_value(&field.key).to_owned()),
+                    )
+                })
+                .collect()
+        }
+
+        #[test]
+        fn every_partial_quick_action_template_merged_with_its_field_values_validates() {
+            let registry = runner_registry();
+
+            for action in disconnected_bundle().actions() {
+                let step = action.merge_config(&filled_values(&action));
+                let verdict = registry
+                    .get(&step.kind_id)
+                    .unwrap()
+                    .validate_config(&step.config);
+
+                assert!(
+                    verdict.is_ok(),
+                    "quick action '{}' merges a config its runner rejects: {verdict:?}",
+                    action.label
+                );
             }
         }
 

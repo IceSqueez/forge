@@ -100,6 +100,8 @@ mod tests {
 
     use super::*;
     use crate::active_broadcast_id::ActiveBroadcastIdHandle;
+    use forge_types::Variant;
+    use std::collections::BTreeMap;
 
     const TOKEN_SENTINEL: &str = "yt-thumb-runner-token";
 

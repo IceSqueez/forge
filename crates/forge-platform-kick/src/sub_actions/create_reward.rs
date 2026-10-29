@@ -158,6 +158,8 @@ mod tests {
     use super::*;
     use forge_events::{Event, EventPublisher};
     use forge_types::EventId;
+    use forge_types::SubActionOutcome;
+    use std::collections::BTreeMap;
     use wiremock::matchers::{method, path};
     use wiremock::{Mock, MockServer, ResponseTemplate};
 
@@ -216,6 +218,57 @@ mod tests {
         assert_eq!(telemetry.outcome, SubActionOutcome::Success);
         let body = server.received_requests().await.unwrap();
         assert_eq!(body.len(), 1);
+    }
+
+    async fn created_with_response(body: ResponseTemplate) -> Option<ArgStack> {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/channels/rewards"))
+            .respond_with(body)
+            .mount(&server)
+            .await;
+        let stack = ArgStack::new().set("user".to_owned(), Variant::String("alice".to_owned()));
+
+        let (telemetry, produced) = runner_on(&server)
+            .execute(&config("Hydrate", "500", ""), &make_ctx(&stack))
+            .await;
+
+        assert_eq!(telemetry.outcome, SubActionOutcome::Success);
+        produced
+    }
+
+    #[tokio::test]
+    async fn a_created_reward_publishes_its_id_on_top_of_the_incoming_variables() {
+        for body in [
+            serde_json::json!({"id": "rw-9"}),
+            serde_json::json!({"data": {"id": "rw-9"}}),
+        ] {
+            let produced = created_with_response(ResponseTemplate::new(200).set_body_json(&body))
+                .await
+                .unwrap_or_else(|| panic!("no arg stack for {body}"));
+
+            assert_eq!(
+                produced.get("kick.reward.id"),
+                Some(&Variant::String("rw-9".to_owned())),
+                "{body}"
+            );
+            assert_eq!(
+                produced.get("user"),
+                Some(&Variant::String("alice".to_owned())),
+                "{body}"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn a_created_reward_without_a_readable_id_succeeds_without_an_arg_stack() {
+        for body in [
+            ResponseTemplate::new(200).set_body_json(serde_json::json!({"data": {}})),
+            ResponseTemplate::new(200).set_body_string("not json"),
+            ResponseTemplate::new(204),
+        ] {
+            assert!(created_with_response(body).await.is_none());
+        }
     }
 
     #[tokio::test]

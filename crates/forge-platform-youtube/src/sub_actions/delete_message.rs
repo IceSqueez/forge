@@ -107,6 +107,8 @@ mod tests {
 
     use super::*;
     use crate::live_chat_id::LiveChatIdHandle;
+    use forge_types::Variant;
+    use std::collections::BTreeMap;
 
     struct NoopPublisher;
     impl EventPublisher for NoopPublisher {
@@ -219,7 +221,7 @@ mod tests {
     }
 
     #[test]
-    fn validate_config_rejects_empty_or_non_string_id_and_accepts_valid() {
+    fn validate_config_accepts_an_id_or_a_missing_key_and_rejects_blank_or_non_string_ids() {
         let runner = DeleteMessageRunner::new(Arc::new(YoutubeSendChat::new(
             crate::endpoints_test_support::unreachable_data_api(),
             token_source(),
@@ -229,7 +231,12 @@ mod tests {
         let cases: Vec<(&str, SubActionConfig, bool)> = vec![
             ("non-empty id", config("msg-1"), true),
             ("empty id", config(""), false),
-            ("missing id", BTreeMap::new(), false),
+            ("whitespace-only id", config(" \t "), false),
+            (
+                "missing id falls back to the trigger message id",
+                BTreeMap::new(),
+                true,
+            ),
             (
                 "non-string id",
                 BTreeMap::from([("message_id".to_owned(), Variant::Int(7))]),

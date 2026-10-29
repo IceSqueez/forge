@@ -126,6 +126,8 @@ mod tests {
     use wiremock::{Mock, MockServer, ResponseTemplate};
 
     use super::*;
+    use forge_types::SubActionOutcome;
+    use std::collections::BTreeMap;
 
     const TOKEN_SENTINEL: &str = "yt-viewer-runner-token";
     const BODY_SENTINEL: &str = "yt-viewer-response-body-sentinel";

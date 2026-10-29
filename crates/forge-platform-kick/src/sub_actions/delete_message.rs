@@ -116,6 +116,8 @@ mod tests {
     use super::*;
     use forge_events::{Event, EventPublisher};
     use forge_types::EventId;
+    use forge_types::Variant;
+    use std::collections::BTreeMap;
     use wiremock::matchers::{method, path};
     use wiremock::{Mock, MockServer, ResponseTemplate};
 
@@ -178,19 +180,28 @@ mod tests {
 
     #[tokio::test]
     async fn a_message_id_that_does_not_resolve_to_an_id_fails_without_request() {
-        for (case, template, stack) in [
-            ("empty id", "%message_id%", chat_trigger_args("")),
-            ("no chat trigger in scope", "%message_id%", ArgStack::new()),
+        for (case, step_config, stack) in [
+            ("empty id", config("%message_id%"), chat_trigger_args("")),
+            (
+                "no chat trigger in scope",
+                config("%message_id%"),
+                ArgStack::new(),
+            ),
+            (
+                "missing key and no chat trigger in scope",
+                BTreeMap::new(),
+                ArgStack::new(),
+            ),
             (
                 "unresolved reference beside a resolved one",
-                "%message_id%-%typo_id%",
+                config("%message_id%-%typo_id%"),
                 chat_trigger_args("abc-123"),
             ),
         ] {
             let server = MockServer::start().await;
             let runner = runner_on(&server);
 
-            let (telemetry, _) = runner.execute(&config(template), &make_ctx(&stack)).await;
+            let (telemetry, _) = runner.execute(&step_config, &make_ctx(&stack)).await;
 
             assert!(
                 matches!(telemetry.outcome, SubActionOutcome::Failed(_)),
@@ -204,7 +215,7 @@ mod tests {
     }
 
     #[test]
-    fn validate_config_accepts_non_empty_and_rejects_empty_missing_non_string() {
+    fn validate_config_accepts_an_id_or_a_missing_key_and_rejects_blank_or_non_string_ids() {
         let runner = DeleteMessageRunner::new(
             Arc::new(KickSendChat::new(
                 crate::endpoints_test_support::unreachable_api(),
@@ -215,7 +226,12 @@ mod tests {
         let cases: Vec<(&str, SubActionConfig, bool)> = vec![
             ("non-empty", config("msg-1"), true),
             ("empty", config(""), false),
-            ("missing", BTreeMap::new(), false),
+            ("whitespace only", config(" \t "), false),
+            (
+                "missing key falls back to the trigger message id",
+                BTreeMap::new(),
+                true,
+            ),
             (
                 "non-string",
                 BTreeMap::from([("message_id".to_owned(), Variant::Int(7))]),

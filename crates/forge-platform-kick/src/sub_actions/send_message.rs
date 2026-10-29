@@ -146,6 +146,8 @@ mod tests {
     use super::*;
     use forge_events::{Event, EventPublisher};
     use forge_types::EventId;
+    use forge_types::Variant;
+    use std::collections::BTreeMap;
     use wiremock::matchers::{method, path};
     use wiremock::{Mock, MockServer, ResponseTemplate};
 

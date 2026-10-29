@@ -135,6 +135,8 @@ impl SubActionRunner for LookupUserRunner {
 mod tests {
     use super::*;
     use crate::sub_actions::test_support::{make_ctx, token_source};
+    use forge_types::SubActionOutcome;
+    use std::collections::BTreeMap;
     use wiremock::matchers::{method, path};
     use wiremock::{Mock, MockServer, ResponseTemplate};
 

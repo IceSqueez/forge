@@ -25,7 +25,7 @@ mod tests {
     }
 
     fn name_config(name: Variant) -> SubActionConfig {
-        BTreeMap::from([(DISPLAY_NAME_KEY.to_owned(), name)])
+        BTreeMap::from([(config_keys::DISPLAY_NAME.to_owned(), name)])
     }
 
     fn text(name: &str) -> SubActionConfig {

@@ -2,7 +2,6 @@ use std::collections::BTreeMap;
 
 use forge_types::{Action, TriggerInstance, Variant, variable_references};
 
-use crate::chain_steps::{CASE_CHAIN_KEY, STEP_CONFIG_KEY, STEP_KIND_KEY};
 use crate::form::FormField;
 use crate::references::codec::{UNTAGGED, decode};
 use crate::references::listing::{ConfigReference, ReferenceField, ReferenceListing, UnknownKind};
@@ -10,6 +9,7 @@ use crate::references::location::ReferenceLocation;
 use crate::references::namespace::{InternalNamespace, LOCAL_FILE_NAMESPACE, ReferenceNamespace};
 use crate::refinement::{FormRefinement, FormSchemaSource, refined_fields};
 use crate::registry::{SubActionRegistry, TriggerRegistry};
+use crate::step_tree::{CASE_CHAIN_KEY, STEP_CONFIG_KEY, STEP_KIND_KEY};
 
 pub const ACTION_QUEUE_KEY: &str = "queue_id";
 pub const ACTION_STEPS_KEY: &str = "sub_actions";

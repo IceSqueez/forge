@@ -1,6 +1,6 @@
 use std::collections::BTreeSet;
 
-use forge_registry::{SubActionCategory, SubActionRegistry, nested_chains};
+use forge_registry::{StepNode, StepReach, SubActionCategory, SubActionRegistry, walk_steps};
 use forge_types::{IntegrationId, SubActionStep};
 
 use crate::documents::closure::ClosureRegistries;
@@ -116,7 +116,10 @@ fn collect_executable(
     registry: &SubActionRegistry,
     out: &mut BTreeSet<ExecutableContent>,
 ) {
-    for step in steps {
+    walk_steps(steps, registry, StepReach::All, &mut |node| {
+        let StepNode::Step(step) = node else {
+            return;
+        };
         let category = registry.get(&step.kind_id).map(|runner| runner.category());
         let kind_id = step.kind_id.clone();
         match category {
@@ -134,8 +137,5 @@ fn collect_executable(
             }
             _ => {}
         }
-        for chain in nested_chains(step, registry) {
-            collect_executable(action, &chain, registry, out);
-        }
-    }
+    });
 }

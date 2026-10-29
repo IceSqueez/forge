@@ -9,13 +9,19 @@ pub type SubActionConfig = BTreeMap<String, Variant>;
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct SubActionStep {
     pub kind_id: String,
+    #[serde(default)]
     pub config: SubActionConfig,
+    #[serde(default = "enabled_when_absent")]
     pub enabled: bool,
     #[serde(default)]
     pub continue_on_error: bool,
     #[serde(default)]
     pub condition: Option<String>,
     pub label: Option<String>,
+}
+
+fn enabled_when_absent() -> bool {
+    true
 }
 
 #[cfg(test)]

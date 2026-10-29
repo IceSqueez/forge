@@ -1,7 +1,6 @@
 mod analyzer;
 mod category;
 mod chain;
-mod chain_steps;
 mod config_ext;
 mod config_problem;
 mod descriptor;
@@ -22,6 +21,7 @@ mod registry;
 mod run_context;
 pub mod runner;
 mod scope;
+mod step_tree;
 mod synthesis;
 mod telemetry;
 mod variables;
@@ -31,9 +31,6 @@ pub use category::{SubActionCategory, TriggerCategory};
 pub use chain::{
     CancelSignal, ChainExecutor, ChainSignal, ChildChainOutcome, ControlCell, ControlSignal,
     RunningAction, StopMark, TelemetrySink,
-};
-pub use chain_steps::{
-    CASE_CHAIN_KEY, STEP_CONFIG_KEY, STEP_KIND_KEY, decode_steps, nested_chains,
 };
 pub use config_ext::SubActionConfigExt;
 pub use config_problem::{ConfigProblem, ConfigReason, ValueBounds};
@@ -71,6 +68,12 @@ pub use registry::{
 pub use run_context::RunContext;
 pub use runner::{SubActionConfig, SubActionRunner};
 pub use scope::{ScopeLevel, ScopeOrigin, ScopedVariable, variables_in_scope};
+pub use step_tree::{
+    CASE_CHAIN_KEY, ChainEntry, DecodedChain, STEP_CONDITION_KEY, STEP_CONFIG_KEY,
+    STEP_CONTINUE_ON_ERROR_KEY, STEP_ENABLED_KEY, STEP_KIND_KEY, STEP_LABEL_KEY, StepNode,
+    StepReach, UndecodableReason, UndecodableStep, decode_chain, decode_step, decode_steps,
+    encode_chain, encode_step, nested_chains, rewrite_steps, walk_steps,
+};
 pub use synthesis::{SynthesisSample, synthesize_args};
 pub use telemetry::StepTimer;
 pub use variables::{

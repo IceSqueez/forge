@@ -72,6 +72,12 @@ fn analyzer_finding_message(
                 message = config_problem_text(problem, kind_id, fields)
             )
         }
+        Finding::UndecodableStep { position, .. } => {
+            tr!(
+                "action_editor_health_undecodable_step",
+                position = (position + 1).to_string()
+            )
+        }
     };
     SharedString::from(text)
 }

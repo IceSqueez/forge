@@ -6,7 +6,7 @@ use forge_overlay::{
 use forge_registry::references::LOCAL_FILE_NAMESPACE;
 use forge_registry::{
     FormSchemaSource, InternalNamespace, ReferenceCatalog, ReferenceListing, ReferenceNamespace,
-    SubActionRegistry, TriggerRegistry, nested_chains,
+    StepNode, StepReach, SubActionRegistry, TriggerRegistry, walk_steps,
 };
 use forge_storage::{MediaBlobId, OverlayId};
 use forge_types::{
@@ -251,13 +251,13 @@ impl ClosureWalk<'_, '_> {
 
     fn collect_owners(&mut self, steps: &[SubActionStep]) {
         let registry = self.registries.sub_actions;
-        for step in steps {
-            if let Some(owner) = registry.owning_integration(&step.kind_id) {
-                self.selection.required_integrations.insert(owner.clone());
+        let required = &mut self.selection.required_integrations;
+        walk_steps(steps, registry, StepReach::All, &mut |node| {
+            if let StepNode::Step(step) = node
+                && let Some(owner) = registry.owning_integration(&step.kind_id)
+            {
+                required.insert(owner.clone());
             }
-            for chain in nested_chains(step, registry) {
-                self.collect_owners(&chain);
-            }
-        }
+        });
     }
 }

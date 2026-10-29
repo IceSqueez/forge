@@ -1,8 +1,31 @@
-use forge_registry::{ChainSignal, ControlSignal, RunContext, decode_steps};
-use forge_types::{SubActionConfig, SubActionOutcome, SubActionStep, SubActionTelemetry};
+use forge_registry::{ChainSignal, ControlSignal, RunContext, decode_chain};
+use forge_types::{SubActionConfig, SubActionOutcome, SubActionStep, SubActionTelemetry, Variant};
 
-pub(super) fn decode_chain(config: &SubActionConfig, key: &str) -> Vec<SubActionStep> {
-    decode_steps(config.get(key))
+pub(super) fn chain_at(
+    config: &SubActionConfig,
+    key: &str,
+    ctx: &RunContext<'_>,
+) -> Vec<SubActionStep> {
+    runnable_steps(config.get(key), key, ctx)
+}
+
+pub(super) fn runnable_steps(
+    chain: Option<&Variant>,
+    arm: &str,
+    ctx: &RunContext<'_>,
+) -> Vec<SubActionStep> {
+    let decoded = decode_chain(chain);
+    for undecodable in decoded.undecodable() {
+        tracing::warn!(
+            event_id = %ctx.parent_event_id,
+            step_index = ctx.index,
+            arm,
+            position = undecodable.position,
+            reason = ?undecodable.reason,
+            "nested step cannot be read; it is skipped and kept as stored"
+        );
+    }
+    decoded.into_steps()
 }
 
 pub(super) fn propagate(signal: ChainSignal, ctx: &RunContext<'_>) -> SubActionOutcome {

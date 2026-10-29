@@ -1,11 +1,11 @@
 use async_trait::async_trait;
 use forge_registry::{
     CASE_CHAIN_KEY, FormField, RegistryError, RunContext, StepTimer, SubActionCategory,
-    SubActionConfigExt, SubActionRunner, decode_steps,
+    SubActionConfigExt, SubActionRunner,
 };
 use forge_types::{ArgStack, SubActionConfig, SubActionStep, SubActionTelemetry, Variant};
 
-use super::core_logic_shared::{decode_chain, propagate, retag};
+use super::core_logic_shared::{chain_at, propagate, retag, runnable_steps};
 
 pub struct CoreLogicSwitchCaseRunner;
 
@@ -74,7 +74,7 @@ impl SubActionRunner for CoreLogicSwitchCaseRunner {
         let template = config.str("expression").unwrap_or_default();
         let value = ctx.arg_stack.interpolate(template);
 
-        let (matched_index, steps) = select_case(config, &value);
+        let (matched_index, steps) = select_case(config, &value, ctx);
         let arm = if matched_index >= 0 {
             format!("case{matched_index}")
         } else {
@@ -106,7 +106,11 @@ impl SubActionRunner for CoreLogicSwitchCaseRunner {
     }
 }
 
-fn select_case(config: &SubActionConfig, value: &str) -> (i64, Vec<SubActionStep>) {
+fn select_case(
+    config: &SubActionConfig,
+    value: &str,
+    ctx: &RunContext<'_>,
+) -> (i64, Vec<SubActionStep>) {
     let cases = config.get("cases").and_then(Variant::as_array);
     if let Some(cases) = cases {
         for (index, case) in cases.iter().enumerate() {
@@ -114,11 +118,14 @@ fn select_case(config: &SubActionConfig, value: &str) -> (i64, Vec<SubActionStep
                 continue;
             };
             if case_matches(case.get("match"), value) {
-                return (index as i64, decode_steps(case.get(CASE_CHAIN_KEY)));
+                return (
+                    index as i64,
+                    runnable_steps(case.get(CASE_CHAIN_KEY), CASE_CHAIN_KEY, ctx),
+                );
             }
         }
     }
-    (-1, decode_chain(config, "default_chain"))
+    (-1, chain_at(config, "default_chain", ctx))
 }
 
 fn case_matches(candidate: Option<&Variant>, value: &str) -> bool {

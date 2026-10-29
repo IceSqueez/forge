@@ -872,6 +872,7 @@ action_editor_health_integration_failed = { $name } failed to start
 action_editor_health_date_format_not_datetime = The step formats %{ $name }% as a date, but this variable is not a date and time, so the pattern is ignored and the value shows as is
 action_editor_health_invalid_date_pattern = The date pattern in %{ $name }:{ $pattern }% is invalid: { $reason }
 action_editor_health_invalid_step_config = Step settings are invalid: { $message }
+action_editor_health_undecodable_step = Nested step { $position } cannot be read; it is kept as stored and skipped when the action runs
 step_config_required = Required
 step_config_not_a_number = Must be a number
 step_config_between = Must be between { $min } and { $max }

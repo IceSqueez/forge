@@ -5,8 +5,8 @@ use forge_types::{
 };
 
 use crate::analyzer::{body_locals, names_on_some_triggers_only, step_outputs};
-use crate::chain_steps::nested_chains;
 use crate::registry::{SubActionRegistry, TriggerRegistry};
+use crate::step_tree::{StepNode, StepReach, walk_steps};
 use crate::variables::declared_variables;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -58,17 +58,18 @@ impl ScopeList {
     }
 
     fn add_step_outputs(&mut self, step: &SubActionStep, registry: &SubActionRegistry) {
-        if !step.enabled {
-            return;
-        }
-        for (name, kind) in step_outputs(step, registry) {
-            self.add(name, kind, ScopeOrigin::EarlierStep);
-        }
-        for chain in nested_chains(step, registry) {
-            for nested in &chain {
-                self.add_step_outputs(nested, registry);
-            }
-        }
+        walk_steps(
+            std::slice::from_ref(step),
+            registry,
+            StepReach::Enabled,
+            &mut |node| {
+                if let StepNode::Step(step) = node {
+                    for (name, kind) in step_outputs(step, registry) {
+                        self.add(name, kind, ScopeOrigin::EarlierStep);
+                    }
+                }
+            },
+        );
     }
 }
 

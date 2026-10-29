@@ -5,10 +5,10 @@ use forge_types::{
     TemplatePieces, TriggerInstance, Variant, VariantKind, normalize_var_name, shared_date_pattern,
 };
 
-use crate::chain_steps::nested_chains;
 use crate::config_problem::ConfigProblem;
 use crate::form::FormField;
 use crate::registry::{SubActionRegistry, TriggerRegistry};
+use crate::step_tree::{StepNode, StepReach, UndecodableReason, nested_chains, walk_steps};
 use crate::variables::{TriggerVariable, declared_variables};
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug)]
@@ -34,6 +34,10 @@ pub enum Finding {
         reason: String,
     },
     InvalidStepConfig(ConfigProblem),
+    UndecodableStep {
+        position: usize,
+        reason: UndecodableReason,
+    },
 }
 
 impl Finding {
@@ -42,7 +46,8 @@ impl Finding {
             Finding::UnknownVariable(_)
             | Finding::LastRunFailed(_)
             | Finding::InvalidDatePattern { .. }
-            | Finding::InvalidStepConfig(_) => HealthSeverity::Red,
+            | Finding::InvalidStepConfig(_)
+            | Finding::UndecodableStep { .. } => HealthSeverity::Red,
             Finding::DateFormatOnNonDatetime(_)
             | Finding::ProducedLater(_)
             | Finding::IsolatedSibling(_)
@@ -125,19 +130,22 @@ fn gated_owner(
     registry: &SubActionRegistry,
     gated: &HashSet<IntegrationId>,
 ) -> Option<IntegrationId> {
-    if !step.enabled {
-        return None;
-    }
-    if let Some(owner) = registry.owning_integration(&step.kind_id)
-        && gated.contains(owner)
-    {
-        return Some(owner.clone());
-    }
-    nested_chains(step, registry).iter().find_map(|chain| {
-        chain
-            .iter()
-            .find_map(|nested| gated_owner(nested, registry, gated))
-    })
+    let mut first = None;
+    walk_steps(
+        std::slice::from_ref(step),
+        registry,
+        StepReach::Enabled,
+        &mut |node| {
+            if first.is_none()
+                && let StepNode::Step(step) = node
+                && let Some(owner) = registry.owning_integration(&step.kind_id)
+                && gated.contains(owner)
+            {
+                first = Some(owner.clone());
+            }
+        },
+    );
+    first
 }
 
 struct TriggerSeed {
@@ -347,7 +355,7 @@ fn analyze_step(
         let mut body_produced_before = produced_before.clone();
         body_produced_before.extend(body_locals.iter().cloned());
         let (body_findings, body_produced) =
-            walk_chain_seq(ctx, &chain, body_scope, body_produced_before);
+            walk_chain_seq(ctx, chain.steps(), body_scope, body_produced_before);
         findings.extend(body_findings);
         produced_by_step.extend(body_produced);
     }
@@ -355,9 +363,9 @@ fn analyze_step(
     (findings, produced_by_step)
 }
 
-fn walk_chain_seq(
+fn walk_chain_seq<'s>(
     ctx: &AnalyzeCtx,
-    steps: &[SubActionStep],
+    steps: impl Iterator<Item = &'s SubActionStep>,
     mut scope: HashSet<String>,
     mut produced_before: HashSet<String>,
 ) -> (Vec<Finding>, HashSet<String>) {
@@ -379,15 +387,11 @@ fn collect_produced(
     registry: &SubActionRegistry,
     out: &mut HashSet<String>,
 ) {
-    for step in steps {
-        if !step.enabled {
-            continue;
+    walk_steps(steps, registry, StepReach::Enabled, &mut |node| {
+        if let StepNode::Step(step) = node {
+            out.extend(step_output_names(step, registry));
         }
-        out.extend(step_output_names(step, registry));
-        for chain in nested_chains(step, registry) {
-            collect_produced(&chain, registry, out);
-        }
-    }
+    });
 }
 
 fn collect_produced_kinds(
@@ -395,20 +399,16 @@ fn collect_produced_kinds(
     registry: &SubActionRegistry,
     out: &mut DatetimeReach,
 ) {
-    for step in steps {
-        if !step.enabled {
-            continue;
+    walk_steps(steps, registry, StepReach::Enabled, &mut |node| {
+        if let StepNode::Step(step) = node {
+            for (name, kind) in step_outputs(step, registry) {
+                out.note(name, kind.is_none_or(|kind| kind == VariantKind::Datetime));
+            }
+            for name in body_locals(step, registry) {
+                out.note(name, true);
+            }
         }
-        for (name, kind) in step_outputs(step, registry) {
-            out.note(name, kind.is_none_or(|kind| kind == VariantKind::Datetime));
-        }
-        for name in body_locals(step, registry) {
-            out.note(name, true);
-        }
-        for chain in nested_chains(step, registry) {
-            collect_produced_kinds(&chain, registry, out);
-        }
-    }
+    });
 }
 
 fn collect_pattern_findings(
@@ -416,9 +416,25 @@ fn collect_pattern_findings(
     registry: &SubActionRegistry,
     out: &mut Vec<Finding>,
 ) {
-    if !step.enabled {
-        return;
-    }
+    walk_steps(
+        std::slice::from_ref(step),
+        registry,
+        StepReach::Enabled,
+        &mut |node| match node {
+            StepNode::Step(step) => step_pattern_findings(step, registry, out),
+            StepNode::Undecodable(undecodable) => out.push(Finding::UndecodableStep {
+                position: undecodable.position,
+                reason: undecodable.reason,
+            }),
+        },
+    );
+}
+
+fn step_pattern_findings(
+    step: &SubActionStep,
+    registry: &SubActionRegistry,
+    out: &mut Vec<Finding>,
+) {
     for (name, pattern) in consumed_references(step, registry).formatted {
         if let Err(error) = shared_date_pattern(&pattern).as_ref() {
             out.push(Finding::InvalidDatePattern {
@@ -433,11 +449,6 @@ fn collect_pattern_findings(
         && let Err(error) = runner.validate_config(&step.config)
     {
         out.push(Finding::InvalidStepConfig(error.into_config_problem()));
-    }
-    for chain in nested_chains(step, registry) {
-        for nested in &chain {
-            collect_pattern_findings(nested, registry, out);
-        }
     }
 }
 

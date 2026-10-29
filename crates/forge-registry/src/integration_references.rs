@@ -2,8 +2,8 @@ use std::collections::HashMap;
 
 use forge_types::{Action, ActionId, IntegrationId, SubActionStep, TriggerInstance, Variant};
 
-use crate::chain_steps::nested_chains;
 use crate::registry::{SubActionRegistry, TriggerRegistry};
+use crate::step_tree::{StepNode, StepReach, walk_steps};
 
 const SERVICE_FILTER_KEY: &str = "provider";
 
@@ -78,17 +78,12 @@ fn collect_owners(
     registry: &SubActionRegistry,
     owners: &mut Vec<IntegrationId>,
 ) {
-    for step in steps {
-        if !step.enabled {
-            continue;
-        }
-        if let Some(owner) = registry.owning_integration(&step.kind_id)
+    walk_steps(steps, registry, StepReach::Enabled, &mut |node| {
+        if let StepNode::Step(step) = node
+            && let Some(owner) = registry.owning_integration(&step.kind_id)
             && !owners.contains(owner)
         {
             owners.push(owner.clone());
         }
-        for chain in nested_chains(step, registry) {
-            collect_owners(&chain, registry, owners);
-        }
-    }
+    });
 }

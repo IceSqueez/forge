@@ -7,7 +7,7 @@ use forge_registry::{
 };
 use forge_types::{ArgStack, SubActionConfig, SubActionTelemetry, Variant};
 
-use super::core_logic_shared::{decode_chain, propagate, retag};
+use super::core_logic_shared::{chain_at, propagate, retag};
 use crate::{ConditionError, ConditionGate};
 
 pub struct CoreLogicIfThenElseRunner {
@@ -99,7 +99,11 @@ impl SubActionRunner for CoreLogicIfThenElseRunner {
         };
 
         let branch = if verdict { "then" } else { "else" };
-        let steps = decode_chain(config, if verdict { "then_chain" } else { "else_chain" });
+        let steps = chain_at(
+            config,
+            if verdict { "then_chain" } else { "else_chain" },
+            ctx,
+        );
         let base = ctx.arg_stack.clone().set(
             "branch.taken".to_owned(),
             Variant::String(branch.to_owned()),

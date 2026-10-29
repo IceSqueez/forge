@@ -893,6 +893,7 @@ action_editor_health_integration_failed = { $name } не вдалося запу
 action_editor_health_date_format_not_datetime = Крок форматує %{ $name }% як дату, але ця змінна не є датою й часом, тому шаблон ігнорується і значення показується як є
 action_editor_health_invalid_date_pattern = Шаблон дати в %{ $name }:{ $pattern }% недійсний: { $reason }
 action_editor_health_invalid_step_config = Налаштування кроку недійсні: { $message }
+action_editor_health_undecodable_step = Вкладений крок { $position } неможливо прочитати; він зберігається без змін і пропускається під час запуску дії
 step_config_required = Обов'язкове поле
 step_config_not_a_number = Має бути числом
 step_config_between = Має бути від { $min } до { $max }

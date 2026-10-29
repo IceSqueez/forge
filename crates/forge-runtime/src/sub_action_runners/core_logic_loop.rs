@@ -11,7 +11,7 @@ use forge_types::{
     Variant,
 };
 
-use super::core_logic_shared::{decode_chain, retag};
+use super::core_logic_shared::{chain_at, retag};
 use crate::ConditionGate;
 
 const MAX_COUNT: i64 = 1000;
@@ -166,7 +166,7 @@ impl SubActionRunner for CoreLogicLoopRunner {
         let timer = StepTimer::start(ctx, self.id());
 
         let mode = config.str("mode").unwrap_or("count");
-        let body = decode_chain(config, "body");
+        let body = chain_at(config, "body", ctx);
 
         let count = config.int("count").unwrap_or(1).clamp(0, MAX_COUNT);
         let max_iterations = config

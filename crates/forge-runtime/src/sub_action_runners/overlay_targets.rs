@@ -1,4 +1,4 @@
-use forge_registry::{SubActionRegistry, nested_chains};
+use forge_registry::{StepNode, StepReach, SubActionRegistry, walk_steps};
 use forge_types::{SubActionConfig, SubActionStep, Variant, variable_references};
 
 pub const OVERLAY_SEND_KIND_ID: &str = "overlay.send";
@@ -40,14 +40,13 @@ fn collect_targets(
     registry: &SubActionRegistry,
     out: &mut Vec<OverlaySendTarget>,
 ) {
-    for step in steps.iter().filter(|step| step.enabled) {
-        if step.kind_id == OVERLAY_SEND_KIND_ID {
+    walk_steps(steps, registry, StepReach::Enabled, &mut |node| {
+        if let StepNode::Step(step) = node
+            && step.kind_id == OVERLAY_SEND_KIND_ID
+        {
             out.extend(target_of(&step.config));
         }
-        for chain in nested_chains(step, registry) {
-            collect_targets(&chain, registry, out);
-        }
-    }
+    });
 }
 
 fn target_of(config: &SubActionConfig) -> Option<OverlaySendTarget> {

@@ -42,6 +42,7 @@ fn kind_copy(prefix: &str, kind_id: &str, english: &str) -> String {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::BTreeSet;
     use std::rc::Rc;
 
     use fluent::{FluentBundle, FluentResource};
@@ -54,6 +55,8 @@ mod tests {
     use crate::integrations::tests::every_registry_entry;
     use crate::test_support::{Declares, StubTrigger};
 
+    const EN_FTL: &str = include_str!("../locales/en/main.ftl");
+    const UK_FTL: &str = include_str!("../locales/uk/main.ftl");
     const STUB_KIND: &str = "demo.chat.message";
     const STUB_LABEL: &str = "Chat Message";
     const STUB_FTL: &str = "\
@@ -236,6 +239,31 @@ kind_summary_demo_chat_message = Хтось написав у чат
             untranslated.is_empty(),
             "{} uk names equal to English: {untranslated:#?}",
             untranslated.len()
+        );
+    }
+
+    #[tokio::test]
+    async fn every_kind_copy_entry_names_a_registered_kind() {
+        let (triggers, sub_actions) = every_registry_entry().await;
+        let registered: BTreeSet<String> = triggers
+            .all()
+            .map(|descriptor| descriptor.id().to_owned())
+            .chain(sub_actions.all().map(|runner| runner.id().to_owned()))
+            .flat_map(|kind_id| {
+                [NAME_PREFIX, SUMMARY_PREFIX].map(|prefix| catalog_key(prefix, &kind_id))
+            })
+            .collect();
+        let orphans: Vec<&str> = [EN_FTL, UK_FTL]
+            .into_iter()
+            .flat_map(str::lines)
+            .filter(|line| line.starts_with(NAME_PREFIX) || line.starts_with(SUMMARY_PREFIX))
+            .filter_map(|line| line.split_once(" = ").map(|(key, _)| key.trim_end()))
+            .filter(|key| !registered.contains(*key))
+            .collect();
+        assert!(
+            orphans.is_empty(),
+            "{} kind copy entries name no registered kind: {orphans:#?}",
+            orphans.len()
         );
     }
 }

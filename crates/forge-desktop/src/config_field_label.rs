@@ -505,6 +505,37 @@ field_label_k3 = Global
     }
 
     #[tokio::test]
+    async fn every_kind_scoped_field_copy_entry_names_a_registered_kind_or_namespace() {
+        let (triggers, sub_actions) = every_registry_entry().await;
+        let scopes: BTreeSet<String> = triggers
+            .all()
+            .map(|descriptor| descriptor.id().to_owned())
+            .chain(sub_actions.all().map(|runner| runner.id().to_owned()))
+            .flat_map(|kind_id| {
+                let namespace = kind_id.split('.').next().unwrap_or_default().to_owned();
+                [kind_id.replace('.', "_"), namespace]
+            })
+            .collect();
+        let orphans: Vec<&str> = [EN_FTL, UK_FTL]
+            .into_iter()
+            .flat_map(field_entries)
+            .map(|(key, _)| key)
+            .filter(|key| {
+                [LABEL_PREFIX, OPTIONAL_PREFIX, PLACEHOLDER_PREFIX]
+                    .iter()
+                    .find_map(|prefix| key.strip_prefix(prefix))
+                    .and_then(|scoped| scoped.split_once("__"))
+                    .is_some_and(|(scope, _)| !scopes.contains(scope))
+            })
+            .collect();
+        assert!(
+            orphans.is_empty(),
+            "{} field copy entries name no registered kind: {orphans:#?}",
+            orphans.len()
+        );
+    }
+
+    #[tokio::test]
     async fn every_registered_step_and_trigger_field_has_uk_copy() {
         let fields = every_registry_field().await;
         install_language(Language::Uk);

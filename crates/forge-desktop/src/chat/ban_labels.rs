@@ -67,35 +67,14 @@ mod tests {
     use forge_types::PlatformId;
     use time::OffsetDateTime;
 
-    use super::{
-        ban_change_platform, changed_platforms, expiry_label, optional_label, unavailable_label,
-    };
+    use super::{changed_platforms, expiry_label, optional_label, unavailable_label};
     use crate::chat_drawer::DASH;
     use crate::i18n::install_language;
-    use crate::runtime_event;
 
     const MAR_15_2026_2330_UTC: i64 = 1_773_617_400;
 
     fn event(kind: &str) -> Event {
         Event::new(EventSource::Twitch, kind, serde_json::Value::Null)
-    }
-
-    #[test]
-    fn ban_change_platform_recognises_only_the_ban_and_unban_kinds_of_each_platform() {
-        for (kind, expected) in [
-            ("twitch.channel.ban", Some(PlatformId::Twitch)),
-            ("twitch.channel.unban", Some(PlatformId::Twitch)),
-            ("youtube.channel.user_banned", Some(PlatformId::YouTube)),
-            ("kick.moderation.banned", Some(PlatformId::Kick)),
-            ("twitch.channel.ban.extra", None),
-            ("twitch.channel", None),
-            ("TWITCH.CHANNEL.BAN", None),
-            ("twitch.chat.message", None),
-            ("kick.moderation.unbanned", None),
-            ("", None),
-        ] {
-            assert_eq!(ban_change_platform(kind), expected, "{kind:?}");
-        }
     }
 
     #[test]

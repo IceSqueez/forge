@@ -454,7 +454,7 @@ impl OverlaysView {
 mod tests {
     use std::collections::HashMap;
 
-    use forge_events::EventSource;
+    use forge_events::{EventSource, LatestChanged, TypedEvent};
     use forge_overlay::config::LABEL;
     use forge_types::LATEST_DONATION_SLOT;
     use serde_json::json;

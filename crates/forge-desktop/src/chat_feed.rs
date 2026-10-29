@@ -530,7 +530,6 @@ fn format_amount(micros: u64) -> String {
 mod tests {
     use crate::chat_row::ChatBody;
     use crate::platform_visuals::BadgeKind;
-    use crate::runtime_event::{self, RuntimeEvent};
     use forge_events::{Event, EventSource};
     use forge_types::{
         ChatEventDetail, ChatModerationAction, ChatModerationPayload, ChatPayload, ChatReply,
@@ -1625,7 +1624,12 @@ mod tests {
         let message = chat_event(None);
         let message_id = message.id;
         let stranger = EventId::new();
-        let action = serde_json::json!({ "action_name": "Greet" });
+        let action = serde_json::to_value(forge_events::ActionStarted {
+            action_id: forge_types::ActionId::new(),
+            action_name: "Greet".to_owned(),
+            sub_action_count: 1,
+        })
+        .unwrap();
         let command = serde_json::json!({ "command": "!lurk" });
         let steps = [
             ("chat message", message, true),

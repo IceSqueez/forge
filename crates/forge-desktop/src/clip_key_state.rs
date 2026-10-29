@@ -124,7 +124,6 @@ impl ClipKeyState {
 mod tests {
     use forge_hotkey::HotkeyCombo;
     use forge_types::{ActionId, TriggerInstanceId};
-    use serde_json::json;
 
     use super::*;
     use crate::combo_conflict::ClipKey;
@@ -222,20 +221,6 @@ mod tests {
                 expected,
                 "{case}"
             );
-        }
-    }
-
-    #[test]
-    fn only_a_hotkey_registration_change_refreshes_the_key_badges() {
-        for (source, kind, expected) in [
-            (EventSource::Hotkey, event_kinds::REGISTERED, true),
-            (EventSource::Hotkey, event_kinds::UNREGISTERED, true),
-            (EventSource::Hotkey, event_kinds::GLOBAL_PRESSED, false),
-            (EventSource::Midi, event_kinds::REGISTERED, false),
-        ] {
-            let event = Event::new(source, kind, json!({ "combo": "F9" }));
-
-            assert_eq!(changes_registrations(&event), expected, "{source:?} {kind}");
         }
     }
 

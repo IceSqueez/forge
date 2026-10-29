@@ -254,7 +254,19 @@ impl EventLog {
 
 #[cfg(test)]
 mod tests {
+    use forge_events::{
+        ActingSender, ActionDone, ChatSendFailed, ChatSent, QuickActionDone, RunOutcome,
+        ScriptLogLevel, ScriptLogged, SenderRole, SubActionDone, SubActionRun, TimerTick,
+        TypedEvent,
+    };
+    use forge_platform_twitch::vocabulary::SenderFallback;
+    use forge_registry::TriggerRegistry;
+    use forge_storage::Language;
+    use forge_types::{ActionId, TriggerInstanceId};
+
     use super::*;
+    use crate::i18n::install_language;
+    use crate::test_support::{Declares, StubTrigger};
 
     const TWITCH_CHAT: &str =
         include_str!("../../forge-platform-twitch/tests/fixtures/published_chat_message.json");
@@ -272,6 +284,57 @@ mod tests {
         )
     }
 
+    fn item(event: &Event) -> EventItem {
+        EventLog::item_from_event(event, runtime_event::decode(event), Vec::new())
+    }
+
+    fn summary(event: &Event) -> String {
+        EventLog::summarize(event, runtime_event::decode(event).as_ref())
+    }
+
+    fn action_done(outcome: RunOutcome) -> Event {
+        ActionDone {
+            action_id: ActionId::new(),
+            action_name: "Shoutout".to_owned(),
+            outcome,
+            total_ms: 40,
+            manual_test: false,
+            reason: None,
+        }
+        .into_event(EventSource::Core, None)
+    }
+
+    fn sub_action_done(outcome: RunOutcome) -> Event {
+        SubActionDone {
+            step_index: 0,
+            kind: "chat.send".to_owned(),
+            outcome,
+            duration_ms: 2,
+            message: None,
+            integration: None,
+        }
+        .into_event(EventSource::Core, None)
+    }
+
+    fn quick_action_done(outcome: RunOutcome) -> Event {
+        QuickActionDone {
+            kind: "obs.scene".to_owned(),
+            outcome,
+            label: "Go live".to_owned(),
+            builtin_id: "obs".to_owned(),
+        }
+        .into_event(EventSource::Obs, None)
+    }
+
+    fn script_log(level: ScriptLogLevel) -> Event {
+        ScriptLogged {
+            level,
+            message: "tick".to_owned(),
+            script_id: None,
+        }
+        .into_event(EventSource::Rhai, None)
+    }
+
     #[test]
     fn chat_summary_shows_author_and_text_of_each_platforms_published_message() {
         for (fixture, expected) in [
@@ -280,7 +343,7 @@ mod tests {
             (KICK_CHAT, "kick-viewer: gg kick chat"),
         ] {
             let event = published_event(fixture);
-            assert_eq!(EventLog::summarize(&event), expected, "kind={}", event.kind);
+            assert_eq!(summary(&event), expected, "kind={}", event.kind);
         }
     }
 
@@ -293,7 +356,33 @@ mod tests {
             if let Some(envelope) = &envelope {
                 payload.insert(ChatPayload::KEY.to_owned(), envelope.clone());
             }
-            assert_eq!(EventLog::summarize(&event), "", "envelope={envelope:?}");
+            assert_eq!(summary(&event), "", "envelope={envelope:?}");
+        }
+    }
+
+    #[test]
+    fn timer_summary_reads_the_tick_interval_in_minutes() {
+        install_language(Language::En);
+        let tick = TimerTick {
+            instance_id: TriggerInstanceId::new(),
+            interval_minutes: 15,
+            message_count: 3,
+        }
+        .into_event(EventSource::Timer, None);
+
+        let text = summary(&tick).replace(['\u{2068}', '\u{2069}'], "");
+
+        assert_eq!(text, "every 15 min");
+    }
+
+    #[test]
+    fn action_done_summary_is_the_wire_outcome_word() {
+        for (outcome, expected) in [
+            (RunOutcome::Success, "success"),
+            (RunOutcome::Failed, "failed"),
+            (RunOutcome::Skipped, "skipped"),
+        ] {
+            assert_eq!(summary(&action_done(outcome)), expected);
         }
     }
 
@@ -305,9 +394,10 @@ mod tests {
             (KICK_CHAT, "kick-viewer", "kick"),
         ] {
             let event = published_event(fixture);
+            let item = item(&event);
             assert_eq!(
-                EventLog::acting_user(&event),
-                (author.to_owned(), platform.to_owned()),
+                (item.user_login.as_ref(), item.user_platform.as_ref()),
+                (author, platform),
                 "kind={}",
                 event.kind
             );
@@ -320,9 +410,7 @@ mod tests {
             let mut event = published_event(TWITCH_CHAT);
             event.replay = replay;
 
-            let item = EventLog::item_from_event(&event).unwrap();
-
-            assert_eq!(item.replay, replay);
+            assert_eq!(item(&event).replay, replay);
         }
     }
 
@@ -331,10 +419,157 @@ mod tests {
         let mut event = published_event(TWITCH_CHAT);
         event.timestamp = time::OffsetDateTime::from_unix_timestamp(1_773_617_400).unwrap()
             + time::Duration::milliseconds(90);
-        let item = EventLog::item_from_event(&event).unwrap();
 
-        let exported = serde_json::to_value(&item).unwrap();
+        let exported = serde_json::to_value(item(&event)).unwrap();
 
         assert_eq!(exported["timestamp"], "2026-03-15T23:30:00.09Z");
+    }
+
+    #[test]
+    fn failed_run_outcomes_and_error_level_script_logs_render_as_failures() {
+        for (name, event, failure) in [
+            ("action failed", action_done(RunOutcome::Failed), true),
+            ("action success", action_done(RunOutcome::Success), false),
+            ("step failed", sub_action_done(RunOutcome::Failed), true),
+            ("step skipped", sub_action_done(RunOutcome::Skipped), false),
+            ("quick failed", quick_action_done(RunOutcome::Failed), true),
+            (
+                "quick success",
+                quick_action_done(RunOutcome::Success),
+                false,
+            ),
+            ("script error", script_log(ScriptLogLevel::Error), true),
+            ("script warn", script_log(ScriptLogLevel::Warn), false),
+        ] {
+            assert_eq!(item(&event).is_error, failure, "{name}");
+        }
+    }
+
+    #[test]
+    fn a_kind_naming_a_failure_is_not_an_error_without_a_typed_failure() {
+        let event = Event::new(
+            EventSource::Kick,
+            "kick.subscription.renewal_failed",
+            serde_json::json!({}),
+        );
+
+        assert!(!item(&event).is_error);
+    }
+
+    #[test]
+    fn a_sender_fallback_row_is_a_warning_unless_it_is_also_an_error() {
+        let fallback = Event::new(
+            EventSource::Twitch,
+            SenderFallback::KIND,
+            serde_json::json!({ "level": "warning", "operation": "chat.send", "reason": "x" }),
+        );
+        let mut failed = item(&fallback);
+        failed.is_error = true;
+
+        assert_eq!(
+            (item(&fallback).is_warning(), failed.is_warning()),
+            (true, false)
+        );
+    }
+
+    fn feed_categories() -> EventCategories {
+        let mut registry = TriggerRegistry::new();
+        for (id, prefix, category) in [
+            (
+                "sub",
+                "twitch.channel.subscribe",
+                TriggerCategory::Subscriptions,
+            ),
+            ("cheer", "twitch.channel.cheer", TriggerCategory::Bits),
+            ("raid", "twitch.channel.raid", TriggerCategory::Raids),
+        ] {
+            registry
+                .register(Box::new(
+                    StubTrigger::new(id, id, category, Declares::Nothing)
+                        .listening_to(Some(EventSource::Twitch), prefix),
+                ))
+                .unwrap();
+        }
+        EventCategories::from_registry(&registry)
+    }
+
+    fn twitch(kind: &str) -> Event {
+        Event::new(EventSource::Twitch, kind, serde_json::json!({}))
+    }
+
+    fn mixed_feed() -> Vec<(&'static str, Event)> {
+        vec![
+            ("sub", twitch("twitch.channel.subscribe")),
+            ("follow", twitch("twitch.channel.follow")),
+            ("cheer", twitch("twitch.channel.cheer")),
+            ("raid", twitch("twitch.channel.raid")),
+            ("chat", published_event(TWITCH_CHAT)),
+            (
+                "sent",
+                ChatSent {
+                    channel: "twitch".to_owned(),
+                    message: "hi".to_owned(),
+                    reply_to_message_id: None,
+                    sent_as: Some(ActingSender {
+                        role: SenderRole::Bot,
+                        login: "forgebot".to_owned(),
+                    }),
+                }
+                .into_event(EventSource::Twitch, None),
+            ),
+            (
+                "send_failed",
+                ChatSendFailed {
+                    channel: "kick".to_owned(),
+                    error: "rate limited".to_owned(),
+                }
+                .into_event(EventSource::Kick, None),
+            ),
+            (
+                "step",
+                SubActionRun {
+                    step_index: 0,
+                    kind: "subscription.check".to_owned(),
+                }
+                .into_event(EventSource::Core, None),
+            ),
+            ("action_failed", action_done(RunOutcome::Failed)),
+            ("script_error", script_log(ScriptLogLevel::Error)),
+            ("action_ok", action_done(RunOutcome::Success)),
+        ]
+    }
+
+    #[test]
+    fn each_feed_filter_keeps_only_its_kind_of_items_from_a_mixed_log() {
+        let mut log = EventLog::new();
+        log.set_categories(feed_categories());
+        let feed = mixed_feed();
+        for (_, event) in &feed {
+            log.record(event, runtime_event::decode(event));
+        }
+        let names_matching = |filter: EventFilter| -> Vec<&str> {
+            log.items()
+                .iter()
+                .zip(&feed)
+                .filter(|(item, _)| item.matches(filter))
+                .map(|(_, (name, _))| *name)
+                .collect()
+        };
+
+        for (filter, expected) in [
+            (EventFilter::Subs, vec!["sub", "follow"]),
+            (EventFilter::Bits, vec!["cheer", "raid"]),
+            (EventFilter::Chat, vec!["chat", "sent", "send_failed"]),
+            (
+                EventFilter::Errors,
+                vec!["send_failed", "action_failed", "script_error"],
+            ),
+            (
+                EventFilter::All,
+                feed.iter().map(|(name, _)| *name).collect(),
+            ),
+        ] {
+            assert_eq!(names_matching(filter), expected, "{filter:?}");
+        }
     }
 }

@@ -110,15 +110,21 @@ pub fn start_twitch_bot_seed(
 
 #[cfg(test)]
 mod tests {
-    use forge_events::{Event, EventSource};
-    use forge_platform_twitch::vocabulary::event_kinds::BOT_STATUS_CHANGED as BOT_STATUS_CHANGED_KIND;
+    use forge_platform_twitch::vocabulary::{BotStatusChanged, BotStatusTag};
     use forge_platform_twitch::{BotModerator, BotStatus};
-    use serde_json::json;
 
     use super::TwitchBotPresence;
 
-    fn status_event(payload: serde_json::Value) -> Event {
-        Event::new(EventSource::Twitch, BOT_STATUS_CHANGED_KIND, payload)
+    fn status_changed(
+        status: BotStatusTag,
+        login: Option<&str>,
+        moderator: BotModerator,
+    ) -> BotStatusChanged {
+        BotStatusChanged {
+            status,
+            login: login.map(str::to_owned),
+            moderator,
+        }
     }
 
     fn connected(login: &str) -> BotStatus {
@@ -134,22 +140,30 @@ mod tests {
     }
 
     #[test]
-    fn status_event_reads_every_wire_status_with_its_login_and_moderator() {
-        for (payload, status, moderator) in [
+    fn a_live_status_change_replaces_status_and_moderator() {
+        for (changed, status, moderator) in [
             (
-                json!({"status": "connected", "login": "forgebot", "moderator": "not_moderator"}),
+                status_changed(
+                    BotStatusTag::Connected,
+                    Some("forgebot"),
+                    BotModerator::NotModerator,
+                ),
                 connected("forgebot"),
                 BotModerator::NotModerator,
             ),
             (
-                json!({"status": "reauth_required", "login": "forgebot", "moderator": "moderator"}),
+                status_changed(
+                    BotStatusTag::ReauthRequired,
+                    Some("forgebot"),
+                    BotModerator::Moderator,
+                ),
                 BotStatus::ReauthRequired {
                     login: "forgebot".to_owned(),
                 },
                 BotModerator::Moderator,
             ),
             (
-                json!({"status": "not_connected", "login": null, "moderator": "unknown"}),
+                status_changed(BotStatusTag::NotConnected, None, BotModerator::Unknown),
                 BotStatus::NotConnected,
                 BotModerator::Unknown,
             ),
@@ -157,7 +171,7 @@ mod tests {
             let mut presence = TwitchBotPresence::new();
             presence.apply(connected("someone_else"), BotModerator::Moderator);
 
-            presence.apply_event(&status_event(payload));
+            presence.apply_status_changed(&changed);
 
             assert_eq!(
                 (presence.status(), presence.moderator()),
@@ -167,45 +181,15 @@ mod tests {
     }
 
     #[test]
-    fn status_event_with_an_unknown_moderator_word_reads_moderator_as_unknown() {
-        let mut presence = TwitchBotPresence::new();
-
-        presence.apply_event(&status_event(
-            json!({"status": "connected", "login": "forgebot", "moderator": "owner"}),
-        ));
-
-        assert_eq!(presence.moderator(), BotModerator::Unknown);
-    }
-
-    #[test]
-    fn events_of_another_kind_or_source_leave_the_presence_untouched() {
-        let payload = json!({"status": "connected", "login": "forgebot", "moderator": "moderator"});
-        for event in [
-            Event::new(EventSource::Kick, BOT_STATUS_CHANGED_KIND, payload.clone()),
-            Event::new(EventSource::Twitch, "twitch.chat.message", payload.clone()),
-        ] {
+    fn a_status_change_without_the_login_it_needs_changes_nothing_and_does_not_block_the_seed() {
+        for tag in [BotStatusTag::Connected, BotStatusTag::ReauthRequired] {
             let mut presence = TwitchBotPresence::new();
 
-            let changed = presence.apply_event(&event);
-
-            assert!(!changed && !presence.is_connected(), "{}", event.kind);
-        }
-    }
-
-    #[test]
-    fn malformed_status_events_change_nothing_and_do_not_block_the_seed() {
-        for payload in [
-            json!({"status": "connected", "moderator": "moderator"}),
-            json!({"status": "reauth_required", "login": null}),
-            json!({"status": "linked", "login": "forgebot"}),
-            json!({"login": "forgebot"}),
-        ] {
-            let mut presence = TwitchBotPresence::new();
-
-            let changed = presence.apply_event(&status_event(payload.clone()));
+            let changed =
+                presence.apply_status_changed(&status_changed(tag, None, BotModerator::Moderator));
             presence.apply_seed(connected("forgebot"), BotModerator::Moderator);
 
-            assert!(!changed && presence.is_connected(), "{payload}");
+            assert!(!changed && presence.is_connected(), "{tag:?}");
         }
     }
 
@@ -222,8 +206,10 @@ mod tests {
     #[test]
     fn late_seed_never_overwrites_a_live_status_even_one_equal_to_the_initial_state() {
         let mut presence = TwitchBotPresence::new();
-        presence.apply_event(&status_event(
-            json!({"status": "not_connected", "login": null, "moderator": "unknown"}),
+        presence.apply_status_changed(&status_changed(
+            BotStatusTag::NotConnected,
+            None,
+            BotModerator::Unknown,
         ));
 
         let changed = presence.apply_seed(connected("forgebot"), BotModerator::Moderator);

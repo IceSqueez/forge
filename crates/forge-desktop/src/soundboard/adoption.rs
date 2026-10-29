@@ -499,13 +499,13 @@ mod tests {
         }
     }
 
-    fn settled(payload: serde_json::Value) -> Option<(&'static str, Option<String>)> {
-        settled_adoption(&payload).map(|settled| match settled {
-            SettledAdoption::Copied => ("copied", None),
-            SettledAdoption::AlreadyManaged => ("already_managed", None),
-            SettledAdoption::SourceMissing => ("source_missing", None),
-            SettledAdoption::Refused => ("refused", None),
-        })
+    fn settled(verdict: &SettledVerdict) -> &'static str {
+        match SettledAdoption::from(verdict) {
+            SettledAdoption::Copied => "copied",
+            SettledAdoption::AlreadyManaged => "already_managed",
+            SettledAdoption::SourceMissing => "source_missing",
+            SettledAdoption::Refused => "refused",
+        }
     }
 
     fn badge(availability: Option<ClipAvailability>) -> Option<(&'static str, Option<String>)> {
@@ -517,52 +517,26 @@ mod tests {
 
     #[test]
     fn each_settled_adoption_verdict_maps_to_its_outcome() {
-        for (payload, expected) in [
+        for (verdict, expected) in [
+            (SettledVerdict::Adopted, "copied"),
+            (SettledVerdict::AlreadyManaged, "already_managed"),
+            (SettledVerdict::SourceMissing, "source_missing"),
             (
-                serde_json::json!({ "verdict": "adopted" }),
-                ("copied", None),
+                SettledVerdict::Refused {
+                    reason: "notes.txt is not audio".to_owned(),
+                },
+                "refused",
             ),
             (
-                serde_json::json!({ "verdict": "already_managed" }),
-                ("already_managed", None),
-            ),
-            (
-                serde_json::json!({ "verdict": "source_missing" }),
-                ("source_missing", None),
-            ),
-            (
-                serde_json::json!({ "verdict": "refused", "reason": "notes.txt is not audio" }),
-                ("refused", None),
-            ),
-            (
-                serde_json::json!({ "verdict": "refused" }),
-                ("refused", None),
-            ),
-            (
-                serde_json::json!({ "verdict": "refused", "reason": "" }),
-                ("refused", None),
-            ),
-            (
-                serde_json::json!({ "verdict": "refused", "reason": 3 }),
-                ("refused", None),
+                SettledVerdict::Refused {
+                    reason: String::new(),
+                },
+                "refused",
             ),
         ] {
-            assert_eq!(settled(payload.clone()), Some(expected), "{payload}");
+            assert_eq!(settled(&verdict), expected, "{verdict:?}");
         }
     }
-
-    #[test]
-    fn an_adoption_event_without_a_usable_verdict_settles_nothing() {
-        for payload in [
-            serde_json::json!({}),
-            serde_json::json!({ "verdict": "in_flight" }),
-            serde_json::json!({ "verdict": "ADOPTED" }),
-            serde_json::json!({ "verdict": 1 }),
-        ] {
-            assert_eq!(settled(payload.clone()), None, "{payload}");
-        }
-    }
-
     #[test]
     fn the_pad_badge_follows_the_stored_availability() {
         let refusal = unsupported("notes.txt");

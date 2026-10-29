@@ -66,9 +66,9 @@ fn toast_text(failed: &PlaybackFailed) -> String {
 
 #[cfg(test)]
 mod tests {
+    use forge_soundboard::vocabulary::{PlaybackFinished, PlaybackStarted};
     use forge_storage::Language;
     use gpui::TestAppContext;
-    use serde_json::json;
 
     use super::*;
     use forge_components::Toasts;
@@ -84,19 +84,40 @@ mod tests {
         cx.update(|cx| cx.set_global(Toasts::new()));
     }
 
-    fn audio(kind: &str, payload: Value) -> Event {
-        Event::new(EventSource::Audio, kind, payload)
+    fn failed_for(clip_id: Option<ClipId>, label: Option<&str>) -> ClipPlayback {
+        ClipPlayback::Failed(PlaybackFailed {
+            play_id: 1,
+            clip_id,
+            clip_label: label.map(str::to_owned),
+            error: "device lost".to_owned(),
+        })
     }
 
-    fn failed(label: Option<&str>) -> Event {
-        audio(
-            PLAYBACK_FAILED,
-            json!({ "clip_id": CLIP, "clip_label": label, "error": "device lost" }),
-        )
+    fn failed(label: Option<&str>) -> ClipPlayback {
+        failed_for(Some(clip()), label)
     }
 
-    fn report(event: &Event, cx: &mut TestAppContext) {
-        cx.update(|cx| report_clip_playback(event, cx));
+    fn started() -> ClipPlayback {
+        ClipPlayback::Started(PlaybackStarted {
+            play_id: 1,
+            clip_id: Some(clip()),
+            clip_label: None,
+            device: "default".to_owned(),
+            duration_secs: None,
+            looped: false,
+        })
+    }
+
+    fn finished() -> ClipPlayback {
+        ClipPlayback::Finished(PlaybackFinished {
+            play_id: 1,
+            clip_id: Some(clip()),
+            clip_label: None,
+        })
+    }
+
+    fn report(playback: &ClipPlayback, cx: &mut TestAppContext) {
+        cx.update(|cx| report_clip_playback(playback, cx));
     }
 
     fn claim(cx: &mut TestAppContext) {
@@ -153,15 +174,25 @@ mod tests {
     #[gpui::test]
     fn a_start_or_finish_releases_the_claim_so_a_later_failure_toasts(cx: &mut TestAppContext) {
         setup(cx);
-        for kind in [PLAYBACK_STARTED, PLAYBACK_FINISHED] {
+        for outcome in [started(), finished()] {
             cx.update(|cx| cx.set_global(Toasts::new()));
             claim(cx);
 
-            report(&audio(kind, json!({ "clip_id": CLIP })), cx);
+            report(&outcome, cx);
             report(&failed(Some("Air Horn")), cx);
 
-            assert_eq!(toasts(cx).len(), 1, "after {kind}");
+            assert_eq!(toasts(cx).len(), 1, "after {outcome:?}");
         }
+    }
+
+    #[gpui::test]
+    fn a_start_or_finish_never_toasts(cx: &mut TestAppContext) {
+        setup(cx);
+
+        report(&started(), cx);
+        report(&finished(), cx);
+
+        assert!(toasts(cx).is_empty());
     }
 
     #[gpui::test]
@@ -204,36 +235,6 @@ mod tests {
     }
 
     #[gpui::test]
-    fn unrelated_events_for_the_clip_neither_toast_nor_release_the_claim(cx: &mut TestAppContext) {
-        setup(cx);
-        claim(cx);
-
-        report(
-            &audio("soundboard.clip.adopted", json!({ "clip_id": CLIP })),
-            cx,
-        );
-        report(
-            &Event::new(
-                EventSource::Core,
-                PLAYBACK_STARTED,
-                json!({ "clip_id": CLIP }),
-            ),
-            cx,
-        );
-        report(
-            &Event::new(
-                EventSource::Core,
-                PLAYBACK_FAILED,
-                json!({ "clip_id": CLIP, "error": "x" }),
-            ),
-            cx,
-        );
-        report(&failed(Some("Air Horn")), cx);
-
-        assert!(toasts(cx).is_empty());
-    }
-
-    #[gpui::test]
     fn a_failure_without_a_clip_label_still_toasts_its_error(cx: &mut TestAppContext) {
         setup(cx);
 
@@ -245,19 +246,14 @@ mod tests {
     }
 
     #[gpui::test]
-    fn a_failure_without_a_usable_clip_id_toasts_and_leaves_claims_alone(cx: &mut TestAppContext) {
+    fn failures_of_other_or_unknown_clips_toast_and_leave_the_claim_alone(cx: &mut TestAppContext) {
         setup(cx);
         claim(cx);
 
-        for payload in [
-            json!({ "error": "device lost" }),
-            json!({ "clip_id": "not-a-ulid", "error": "device lost" }),
-            json!({ "clip_id": 7, "error": "device lost" }),
-        ] {
-            report(&audio(PLAYBACK_FAILED, payload), cx);
-        }
+        report(&failed_for(None, None), cx);
+        report(&failed_for(Some(ClipId::new()), Some("Other")), cx);
         report(&failed(Some("Air Horn")), cx);
 
-        assert_eq!(toasts(cx).len(), 3);
+        assert_eq!(toasts(cx).len(), 2);
     }
 }

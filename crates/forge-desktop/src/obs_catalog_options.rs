@@ -185,6 +185,7 @@ pub(crate) fn watch_obs_catalog<V: 'static>(
 #[cfg(test)]
 mod tests {
     use async_trait::async_trait;
+    use forge_events::{Event, EventSource};
     use forge_obs::{ObsError, SourceInfo};
     use gpui::{AppContext, TestAppContext};
 
@@ -396,26 +397,6 @@ mod tests {
             (snapshot.scenes, snapshot.audio_inputs),
             (names(&["Main"]), Vec::new())
         );
-    }
-
-    #[test]
-    fn only_obs_connection_and_name_list_events_change_the_catalog() {
-        for (source, kind, expected) in [
-            (EventSource::Obs, "obs.connection.connected", true),
-            (EventSource::Obs, "obs.connection.disconnected", true),
-            (EventSource::Obs, "obs.scene.created", true),
-            (EventSource::Obs, "obs.scene.renamed", true),
-            (EventSource::Obs, "obs.source.input_removed", true),
-            (EventSource::Obs, "obs.source.scene_item_created", true),
-            (EventSource::Obs, "obs.scene.changed", false),
-            (EventSource::Obs, "obs.recording.started", false),
-            (EventSource::Twitch, "obs.scene.created", false),
-            (EventSource::VTube, "obs.connection.connected", false),
-        ] {
-            let event = Event::new(source, kind, serde_json::json!({}));
-
-            assert_eq!(changes_obs_catalog(&event), expected, "{source:?} {kind}");
-        }
     }
 
     struct Watcher {

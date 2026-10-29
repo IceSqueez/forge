@@ -765,6 +765,8 @@ pub(crate) struct StubTrigger {
     defaults: TriggerConfig,
     chat_family: Option<ChatTriggerFamily>,
     contract: KindPlatformContract,
+    filter_source: Option<forge_events::EventSource>,
+    filter_prefix: Option<String>,
 }
 
 impl StubTrigger {
@@ -783,7 +785,19 @@ impl StubTrigger {
             defaults: TriggerConfig::new(),
             chat_family: None,
             contract: KindPlatformContract::PlatformSpecific(PlatformId::Twitch),
+            filter_source: None,
+            filter_prefix: None,
         }
+    }
+
+    pub(crate) fn listening_to(
+        mut self,
+        source: Option<forge_events::EventSource>,
+        prefix: &str,
+    ) -> Self {
+        self.filter_source = source;
+        self.filter_prefix = Some(prefix.to_owned());
+        self
     }
 
     pub(crate) fn with_contract(mut self, contract: KindPlatformContract) -> Self {
@@ -854,8 +868,8 @@ impl TriggerKindDescriptor for StubTrigger {
 
     fn event_filter(&self) -> EventFilter {
         EventFilter {
-            source: None,
-            kind_prefix: None,
+            source: self.filter_source,
+            kind_prefix: self.filter_prefix.clone(),
         }
     }
 

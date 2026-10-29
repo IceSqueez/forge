@@ -509,65 +509,55 @@ async fn load_prefill(
 }
 #[cfg(test)]
 mod tests {
+    use forge_events::{EventSource, TypedEvent};
+    use forge_vtube::vocabulary::VTubeConnectionChanged;
+
     use super::*;
 
-    fn outcome_tag(outcome: Option<ConnectOutcome>) -> String {
+    fn outcome_tag(outcome: Option<ConnectOutcome>) -> (&'static str, Option<VTubeDisconnect>) {
         match outcome {
-            None => "ignored".to_owned(),
-            Some(ConnectOutcome::Connected) => "connected".to_owned(),
-            Some(ConnectOutcome::AwaitingApproval) => "awaiting".to_owned(),
-            Some(ConnectOutcome::Failed(reason)) => format!("failed:{reason}"),
+            None => ("ignored", None),
+            Some(ConnectOutcome::Connected) => ("connected", None),
+            Some(ConnectOutcome::AwaitingApproval) => ("awaiting", None),
+            Some(ConnectOutcome::Failed(reason)) => ("failed", Some(reason)),
         }
     }
 
+    fn connection_event(is_connected: bool, reason: Option<&str>) -> Event {
+        VTubeConnectionChanged {
+            is_connected,
+            endpoint: "ws://localhost:8001".to_owned(),
+            reason: reason.map(str::to_owned),
+            detail: None,
+        }
+        .into_event(EventSource::VTube, None)
+    }
+
     #[test]
-    fn each_connection_payload_resolves_to_a_phase_the_connect_screen_can_show() {
-        for (payload, expected) in [
+    fn each_connection_change_resolves_to_a_phase_the_connect_screen_can_show() {
+        for (is_connected, reason, expected) in [
+            (true, None, ("connected", None)),
+            (false, Some("awaiting_approval"), ("awaiting", None)),
             (
-                serde_json::json!({ "is_connected": true, "reason": null }),
-                "connected",
+                false,
+                Some("auth_denied"),
+                ("failed", Some(VTubeDisconnect::Denied)),
             ),
             (
-                serde_json::json!({ "is_connected": false, "reason": "awaiting_approval" }),
-                "awaiting",
+                false,
+                Some("connect_failed"),
+                ("failed", Some(VTubeDisconnect::Unreachable)),
             ),
-            (
-                serde_json::json!({ "is_connected": false, "reason": "auth_denied" }),
-                "failed:auth_denied",
-            ),
-            (
-                serde_json::json!({ "is_connected": false, "reason": "connect_failed" }),
-                "failed:connect_failed",
-            ),
-            (
-                serde_json::json!({ "is_connected": false, "reason": null }),
-                "ignored",
-            ),
+            (false, None, ("ignored", None)),
         ] {
-            let event = Event::new(EventSource::VTube, CONNECTION_CHANGED, payload.clone());
+            let event = connection_event(is_connected, reason);
+
             assert_eq!(
                 outcome_tag(connect_outcome(&event)),
                 expected,
-                "unexpected phase for {payload}"
+                "{is_connected} {reason:?}"
             );
         }
-    }
-
-    #[test]
-    fn events_from_another_source_or_kind_are_ignored() {
-        let foreign_source = Event::new(
-            EventSource::Obs,
-            CONNECTION_CHANGED,
-            serde_json::json!({ "is_connected": true }),
-        );
-        let foreign_kind = Event::new(
-            EventSource::VTube,
-            "vtube.model.loaded",
-            serde_json::json!({ "is_connected": true }),
-        );
-
-        assert_eq!(outcome_tag(connect_outcome(&foreign_source)), "ignored");
-        assert_eq!(outcome_tag(connect_outcome(&foreign_kind)), "ignored");
     }
 
     #[test]
@@ -582,10 +572,15 @@ mod tests {
             "socket_closed",
             "unresponsive",
         ];
+        let reported = |reason: &str| match connect_outcome(&connection_event(false, Some(reason)))
+        {
+            Some(ConnectOutcome::Failed(disconnect)) => disconnect,
+            _ => VTubeDisconnect::Unknown,
+        };
         for lang in [forge_storage::Language::En, forge_storage::Language::Uk] {
             crate::i18n::install_language(lang);
-            let unknown = failure_detail("something_new");
-            let details = REASONS.map(failure_detail);
+            let unknown = failure_detail(reported("something_new"));
+            let details = REASONS.map(|reason| failure_detail(reported(reason)));
 
             for (reason, detail) in REASONS.iter().zip(&details) {
                 assert!(

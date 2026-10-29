@@ -377,3 +377,837 @@ impl VTubeConnection {
             .map(|reason| Self::Disconnected(VTubeDisconnect::from_reason(reason)))
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use forge_events::{ConnectionState, RunOutcome, ScriptLogLevel};
+    use forge_platform_twitch::BotModerator;
+    use forge_platform_twitch::vocabulary::{BotStatusTag, FallbackLevel};
+    use forge_soundboard::vocabulary::SettledVerdict;
+    use forge_speak_queue::RequestId;
+    use forge_speak_queue::vocabulary::FailureReason;
+    use forge_types::{ActionId, QueueId, TriggerInstanceId};
+    use serde_json::json;
+
+    use super::*;
+
+    const SERVER_ERROR_STATUS: u16 = 503;
+
+    fn typed<T: TypedEvent>(value: T, source: EventSource) -> Event {
+        value.into_event(source, None)
+    }
+
+    fn bare(source: EventSource, kind: &str) -> Event {
+        Event::new(source, kind, json!({}))
+    }
+
+    fn action_done(outcome: RunOutcome) -> ActionDone {
+        ActionDone {
+            action_id: ActionId::new(),
+            action_name: "Shoutout".to_owned(),
+            outcome,
+            total_ms: 12,
+            manual_test: false,
+            reason: None,
+        }
+    }
+
+    fn sub_action_done(outcome: RunOutcome) -> SubActionDone {
+        SubActionDone {
+            step_index: 0,
+            kind: "chat.send".to_owned(),
+            outcome,
+            duration_ms: 3,
+            message: None,
+            integration: None,
+        }
+    }
+
+    fn quick_action_done(outcome: RunOutcome) -> QuickActionDone {
+        QuickActionDone {
+            kind: "obs.scene".to_owned(),
+            outcome,
+            label: "Go live".to_owned(),
+            builtin_id: "obs".to_owned(),
+        }
+    }
+
+    fn script_logged(level: ScriptLogLevel) -> ScriptLogged {
+        ScriptLogged {
+            level,
+            message: "tick".to_owned(),
+            script_id: None,
+        }
+    }
+
+    fn playback_failed() -> PlaybackFailed {
+        PlaybackFailed {
+            play_id: 7,
+            clip_id: Some(ClipId::new()),
+            clip_label: Some("Air Horn".to_owned()),
+            error: "device lost".to_owned(),
+        }
+    }
+
+    fn sender_fallback() -> SenderFallback {
+        SenderFallback {
+            level: FallbackLevel::Warning,
+            operation: "chat.send".to_owned(),
+            reason: "bot is not connected".to_owned(),
+        }
+    }
+
+    fn bot_status() -> BotStatusChanged {
+        BotStatusChanged {
+            status: BotStatusTag::Connected,
+            login: Some("forgebot".to_owned()),
+            moderator: BotModerator::Moderator,
+        }
+    }
+
+    fn vtube_changed() -> VTubeConnectionChanged {
+        VTubeConnectionChanged {
+            is_connected: true,
+            endpoint: "ws://localhost:8001".to_owned(),
+            reason: None,
+            detail: None,
+        }
+    }
+
+    fn hotkey_pressed() -> HotkeyPressed {
+        HotkeyPressed {
+            combo: "F9".to_owned(),
+            id: 1,
+            timestamp_us: 5,
+        }
+    }
+
+    fn adoption_settled() -> ClipAdoptionSettled {
+        ClipAdoptionSettled {
+            clip_id: ClipId::new(),
+            verdict: SettledVerdict::Refused {
+                reason: "not audio".to_owned(),
+            },
+        }
+    }
+
+    fn speak_failed() -> SpeakFailed {
+        SpeakFailed {
+            request_id: RequestId::new(),
+            reason: FailureReason::EngineError,
+            error: "engine crashed".to_owned(),
+            viewer_name: "viewer".to_owned(),
+            text: "hello".to_owned(),
+        }
+    }
+
+    fn typed_cases() -> Vec<(Event, RuntimeEvent)> {
+        let connection = PlatformConnectionChanged {
+            platform_id: "kick".to_owned(),
+            state: ConnectionState::Connected,
+            expected: false,
+        };
+        let reauth = PlatformReauthRequired {
+            platform_id: PlatformId::Twitch,
+        };
+        let chat_sent = ChatSent {
+            channel: "twitch".to_owned(),
+            message: "hi".to_owned(),
+            reply_to_message_id: None,
+            sent_as: Some(ActingSender {
+                role: forge_events::SenderRole::Bot,
+                login: "forgebot".to_owned(),
+            }),
+        };
+        let send_failed = ChatSendFailed {
+            channel: "kick".to_owned(),
+            error: "rate limited".to_owned(),
+        };
+        let started = ActionStarted {
+            action_id: ActionId::new(),
+            action_name: "Shoutout".to_owned(),
+            sub_action_count: 2,
+        };
+        let skipped = ActionSkipped {
+            action_id: ActionId::new(),
+            reason: "queue busy".to_owned(),
+            queue_id: QueueId::new(),
+        };
+        let step_run = SubActionRun {
+            step_index: 1,
+            kind: "chat.send".to_owned(),
+        };
+        let tick = TimerTick {
+            instance_id: TriggerInstanceId::new(),
+            interval_minutes: 5,
+            message_count: 0,
+        };
+        let script_started = ScriptStarted {
+            script_id: None,
+            script_name: Some("greet".to_owned()),
+            is_inline: true,
+        };
+        let script_failed = ScriptFailed {
+            script_id: None,
+            script_name: Some("greet".to_owned()),
+            is_inline: false,
+            error_type: "runtime".to_owned(),
+            message: "boom".to_owned(),
+        };
+        let request_failed = RequestFailed {
+            endpoint: "helix/chat".to_owned(),
+            status_code: SERVER_ERROR_STATUS,
+            body_snippet: String::new(),
+            retry_after_secs: None,
+        };
+        let latest = LatestChanged {
+            slot: "donation".to_owned(),
+            platform: None,
+            merged_changed: true,
+            cleared: false,
+        };
+        let enable_failed = HotkeyEnableFailed {
+            combos: vec!["F9".to_owned()],
+        };
+        let playback_started = PlaybackStarted {
+            play_id: 1,
+            clip_id: None,
+            clip_label: None,
+            device: "default".to_owned(),
+            duration_secs: Some(1.5),
+            looped: false,
+        };
+        let playback_finished = PlaybackFinished {
+            play_id: 1,
+            clip_id: None,
+            clip_label: None,
+        };
+        let done = action_done(RunOutcome::Success);
+        let playback_failed = playback_failed();
+        let adoption = adoption_settled();
+        let speak = speak_failed();
+        vec![
+            (
+                typed(connection.clone(), EventSource::Kick),
+                RuntimeEvent::PlatformConnection(connection),
+            ),
+            (
+                typed(reauth.clone(), EventSource::Twitch),
+                RuntimeEvent::ReauthRequired(reauth),
+            ),
+            (
+                typed(bot_status(), EventSource::Twitch),
+                RuntimeEvent::TwitchBotStatus(bot_status()),
+            ),
+            (
+                typed(sender_fallback(), EventSource::Twitch),
+                RuntimeEvent::SenderFallback(sender_fallback()),
+            ),
+            (
+                typed(vtube_changed(), EventSource::VTube),
+                RuntimeEvent::VTubeConnection(vtube_changed()),
+            ),
+            (
+                typed(chat_sent.clone(), EventSource::Twitch),
+                RuntimeEvent::ChatSent(chat_sent),
+            ),
+            (
+                typed(send_failed.clone(), EventSource::Kick),
+                RuntimeEvent::ChatSendFailed(send_failed),
+            ),
+            (
+                typed(started.clone(), EventSource::Core),
+                RuntimeEvent::ActionStarted(started),
+            ),
+            (
+                typed(done.clone(), EventSource::Core),
+                RuntimeEvent::ActionDone(done),
+            ),
+            (
+                typed(skipped.clone(), EventSource::Core),
+                RuntimeEvent::ActionSkipped(skipped),
+            ),
+            (
+                typed(quick_action_done(RunOutcome::Success), EventSource::Obs),
+                RuntimeEvent::QuickActionDone(quick_action_done(RunOutcome::Success)),
+            ),
+            (
+                typed(step_run.clone(), EventSource::Core),
+                RuntimeEvent::SubActionRun(step_run),
+            ),
+            (
+                typed(sub_action_done(RunOutcome::Failed), EventSource::Core),
+                RuntimeEvent::SubActionDone(sub_action_done(RunOutcome::Failed)),
+            ),
+            (
+                typed(tick.clone(), EventSource::Timer),
+                RuntimeEvent::TimerTick(tick),
+            ),
+            (
+                typed(script_started.clone(), EventSource::Rhai),
+                RuntimeEvent::ScriptStarted(script_started),
+            ),
+            (
+                typed(script_failed.clone(), EventSource::Rhai),
+                RuntimeEvent::ScriptFailed(script_failed),
+            ),
+            (
+                typed(script_logged(ScriptLogLevel::Warn), EventSource::Rhai),
+                RuntimeEvent::ScriptLogged(script_logged(ScriptLogLevel::Warn)),
+            ),
+            (
+                typed(request_failed.clone(), EventSource::Http),
+                RuntimeEvent::RequestFailed(request_failed),
+            ),
+            (
+                typed(latest.clone(), EventSource::Core),
+                RuntimeEvent::LatestChanged(latest),
+            ),
+            (
+                typed(hotkey_pressed(), EventSource::Hotkey),
+                RuntimeEvent::HotkeyPressed(hotkey_pressed()),
+            ),
+            (
+                typed(enable_failed.clone(), EventSource::Hotkey),
+                RuntimeEvent::HotkeyEnableFailed(enable_failed),
+            ),
+            (
+                typed(playback_started.clone(), EventSource::Audio),
+                RuntimeEvent::ClipPlayback(ClipPlayback::Started(playback_started)),
+            ),
+            (
+                typed(playback_finished.clone(), EventSource::Audio),
+                RuntimeEvent::ClipPlayback(ClipPlayback::Finished(playback_finished)),
+            ),
+            (
+                typed(playback_failed.clone(), EventSource::Audio),
+                RuntimeEvent::ClipPlayback(ClipPlayback::Failed(playback_failed)),
+            ),
+            (
+                typed(adoption.clone(), EventSource::Audio),
+                RuntimeEvent::ClipAdoptionSettled(adoption),
+            ),
+            (
+                typed(speak.clone(), EventSource::Audio),
+                RuntimeEvent::SpeakFailed(speak),
+            ),
+        ]
+    }
+
+    #[test]
+    fn decode_returns_the_producers_typed_payload_for_every_typed_kind() {
+        for (event, expected) in typed_cases() {
+            assert_eq!(
+                decode(&event),
+                Some(expected),
+                "{} from {:?}",
+                event.kind,
+                event.source
+            );
+        }
+    }
+
+    #[test]
+    fn decode_recognises_every_payload_less_signal_by_kind() {
+        let mut cases = vec![
+            (
+                bare(EventSource::Obs, obs_kinds::CONNECTION_CONNECTED),
+                RuntimeEvent::ObsConnection(ObsConnection::Connected),
+            ),
+            (
+                bare(EventSource::Obs, obs_kinds::CONNECTION_AUTH_FAILED),
+                RuntimeEvent::ObsConnection(ObsConnection::PasswordRejected),
+            ),
+            (
+                bare(EventSource::Obs, obs_kinds::SCENE_CHANGED),
+                RuntimeEvent::ObsSceneChanged,
+            ),
+            (
+                bare(EventSource::Twitch, twitch_kinds::CHANNEL_CHAT_MESSAGE),
+                RuntimeEvent::ChatMessage,
+            ),
+            (
+                bare(EventSource::YouTube, youtube_kinds::CHAT_MESSAGE),
+                RuntimeEvent::ChatMessage,
+            ),
+            (
+                bare(EventSource::Kick, kick_kinds::CHAT_MESSAGE_SENT),
+                RuntimeEvent::ChatMessage,
+            ),
+            (
+                bare(EventSource::Rhai, ScriptHttpCall::KIND),
+                RuntimeEvent::ScriptActivity,
+            ),
+            (
+                bare(EventSource::Rhai, ScriptReloaded::KIND),
+                RuntimeEvent::ScriptActivity,
+            ),
+            (
+                bare(EventSource::Hotkey, hotkey_kinds::REGISTERED),
+                RuntimeEvent::HotkeyRegistrationsChanged,
+            ),
+            (
+                bare(EventSource::Hotkey, hotkey_kinds::UNREGISTERED),
+                RuntimeEvent::HotkeyRegistrationsChanged,
+            ),
+            (
+                bare(EventSource::Core, OVERLAY_SPEECH_FAILED_KIND),
+                RuntimeEvent::OverlaySpeechFailed,
+            ),
+            (
+                bare(EventSource::Discord, discord_kinds::WEBHOOK_FAILED),
+                RuntimeEvent::DiscordWebhookFailed,
+            ),
+        ];
+        cases.extend(
+            GLOBAL_CHANGE_KINDS
+                .iter()
+                .map(|kind| (bare(EventSource::Core, kind), RuntimeEvent::GlobalChanged)),
+        );
+
+        for (event, expected) in cases {
+            assert_eq!(decode(&event), Some(expected), "{}", event.kind);
+        }
+    }
+
+    #[test]
+    fn decode_reads_the_matched_command_and_tolerates_its_absence() {
+        for (payload, command) in [
+            (json!({ "command": "!so" }), Some("!so".to_owned())),
+            (json!({ "command": 7 }), None),
+            (json!({}), None),
+        ] {
+            let event = Event::new(EventSource::Core, COMMAND_MATCHED_KIND, payload.clone());
+
+            assert_eq!(
+                decode(&event),
+                Some(RuntimeEvent::CommandMatched { command }),
+                "{payload}"
+            );
+        }
+    }
+
+    #[test]
+    fn decode_reads_the_whisper_acting_sender_only_when_it_is_well_formed() {
+        let bot = ActingSender {
+            role: forge_events::SenderRole::Bot,
+            login: "forgebot".to_owned(),
+        };
+        for (payload, sent_as) in [
+            (
+                json!({ "sent_as": { "role": "bot", "login": "forgebot" } }),
+                Some(bot),
+            ),
+            (json!({ "sent_as": { "role": "bot" } }), None),
+            (json!({ "sent_as": { "role": "bot", "login": 7 } }), None),
+            (json!({}), None),
+        ] {
+            let event = Event::new(EventSource::Twitch, WHISPER_SENT_KIND, payload.clone());
+
+            assert_eq!(
+                decode(&event),
+                Some(RuntimeEvent::WhisperSent { sent_as }),
+                "{payload}"
+            );
+        }
+    }
+
+    #[test]
+    fn decode_ignores_source_gated_kinds_published_by_another_source() {
+        for event in [
+            typed(
+                PlatformReauthRequired {
+                    platform_id: PlatformId::Kick,
+                },
+                EventSource::Kick,
+            ),
+            typed(bot_status(), EventSource::Kick),
+            bare(EventSource::Core, obs_kinds::CONNECTION_CONNECTED),
+            bare(EventSource::VTube, obs_kinds::CONNECTION_AUTH_FAILED),
+            typed(vtube_changed(), EventSource::Obs),
+            typed(hotkey_pressed(), EventSource::Midi),
+            typed(HotkeyEnableFailed { combos: Vec::new() }, EventSource::Core),
+            bare(EventSource::Midi, hotkey_kinds::REGISTERED),
+            typed(playback_failed(), EventSource::Core),
+            typed(adoption_settled(), EventSource::Core),
+            bare(EventSource::Server, OVERLAY_SPEECH_FAILED_KIND),
+        ] {
+            assert_eq!(
+                decode(&event),
+                None,
+                "{} from {:?}",
+                event.kind,
+                event.source
+            );
+        }
+    }
+
+    #[test]
+    fn decode_drops_a_typed_kind_whose_payload_does_not_match_its_schema() {
+        for (event, _) in typed_cases() {
+            let malformed = Event::new(event.source, &event.kind, json!({ "unexpected": true }));
+
+            assert_eq!(decode(&malformed), None, "{}", event.kind);
+        }
+    }
+
+    #[test]
+    fn decode_drops_a_typed_kind_with_an_unknown_enum_value() {
+        let mut payload = serde_json::to_value(action_done(RunOutcome::Failed)).unwrap();
+        payload["outcome"] = json!("exploded");
+
+        let event = Event::new(EventSource::Core, ActionDone::KIND, payload);
+
+        assert_eq!(decode(&event), None);
+    }
+
+    #[test]
+    fn decode_ignores_kinds_the_desktop_does_not_read() {
+        for event in [
+            bare(EventSource::Twitch, twitch_kinds::CHANNEL_FOLLOW),
+            bare(EventSource::Obs, "obs.scene"),
+            bare(EventSource::Core, ""),
+            bare(EventSource::Core, "ACTION.DONE"),
+        ] {
+            assert_eq!(decode(&event), None, "{:?}", event.kind);
+        }
+    }
+
+    #[test]
+    fn is_failure_follows_the_typed_outcome_not_the_kind() {
+        for (event, failure) in [
+            (
+                RuntimeEvent::ActionDone(action_done(RunOutcome::Failed)),
+                true,
+            ),
+            (
+                RuntimeEvent::ActionDone(action_done(RunOutcome::Success)),
+                false,
+            ),
+            (
+                RuntimeEvent::ActionDone(action_done(RunOutcome::Skipped)),
+                false,
+            ),
+            (
+                RuntimeEvent::SubActionDone(sub_action_done(RunOutcome::Failed)),
+                true,
+            ),
+            (
+                RuntimeEvent::SubActionDone(sub_action_done(RunOutcome::Success)),
+                false,
+            ),
+            (
+                RuntimeEvent::QuickActionDone(quick_action_done(RunOutcome::Failed)),
+                true,
+            ),
+            (
+                RuntimeEvent::QuickActionDone(quick_action_done(RunOutcome::Skipped)),
+                false,
+            ),
+            (
+                RuntimeEvent::ScriptLogged(script_logged(ScriptLogLevel::Error)),
+                true,
+            ),
+            (
+                RuntimeEvent::ScriptLogged(script_logged(ScriptLogLevel::Warn)),
+                false,
+            ),
+            (
+                RuntimeEvent::ScriptLogged(script_logged(ScriptLogLevel::Info)),
+                false,
+            ),
+            (
+                RuntimeEvent::ObsConnection(ObsConnection::PasswordRejected),
+                true,
+            ),
+            (RuntimeEvent::ObsConnection(ObsConnection::Connected), false),
+            (
+                RuntimeEvent::ClipPlayback(ClipPlayback::Failed(playback_failed())),
+                true,
+            ),
+            (
+                RuntimeEvent::ClipPlayback(ClipPlayback::Finished(PlaybackFinished {
+                    play_id: 1,
+                    clip_id: None,
+                    clip_label: None,
+                })),
+                false,
+            ),
+            (
+                RuntimeEvent::ChatSendFailed(ChatSendFailed {
+                    channel: "kick".to_owned(),
+                    error: "x".to_owned(),
+                }),
+                true,
+            ),
+            (
+                RuntimeEvent::HotkeyEnableFailed(HotkeyEnableFailed { combos: Vec::new() }),
+                true,
+            ),
+            (RuntimeEvent::SpeakFailed(speak_failed()), true),
+            (typed_case(ScriptFailed::KIND), true),
+            (typed_case(RequestFailed::KIND), true),
+            (RuntimeEvent::OverlaySpeechFailed, true),
+            (RuntimeEvent::DiscordWebhookFailed, true),
+            (RuntimeEvent::SenderFallback(sender_fallback()), false),
+            (RuntimeEvent::ChatMessage, false),
+            (RuntimeEvent::GlobalChanged, false),
+        ] {
+            assert_eq!(event.is_failure(), failure, "{event:?}");
+        }
+    }
+
+    #[test]
+    fn only_a_sender_fallback_is_a_warning() {
+        for (event, warning) in [
+            (RuntimeEvent::SenderFallback(sender_fallback()), true),
+            (
+                RuntimeEvent::ScriptLogged(script_logged(ScriptLogLevel::Warn)),
+                false,
+            ),
+            (
+                RuntimeEvent::ActionDone(action_done(RunOutcome::Failed)),
+                false,
+            ),
+            (RuntimeEvent::ChatMessage, false),
+        ] {
+            assert_eq!(event.is_warning(), warning, "{event:?}");
+        }
+    }
+
+    fn typed_case(kind: &str) -> RuntimeEvent {
+        typed_cases()
+            .into_iter()
+            .find(|(event, _)| event.kind == kind)
+            .map(|(_, typed)| typed)
+            .unwrap()
+    }
+
+    #[test]
+    fn run_bookkeeping_covers_step_script_and_global_traffic_but_not_run_results() {
+        for (event, bookkeeping) in [
+            (typed_case(ActionStarted::KIND), true),
+            (typed_case(SubActionRun::KIND), true),
+            (typed_case(SubActionDone::KIND), true),
+            (typed_case(ScriptStarted::KIND), true),
+            (typed_case(ScriptFailed::KIND), true),
+            (typed_case(ScriptLogged::KIND), true),
+            (RuntimeEvent::GlobalChanged, true),
+            (RuntimeEvent::ScriptActivity, true),
+            (typed_case(ActionDone::KIND), false),
+            (typed_case(ActionSkipped::KIND), false),
+            (typed_case(QuickActionDone::KIND), false),
+            (typed_case(TimerTick::KIND), false),
+            (typed_case(ChatSent::KIND), false),
+            (RuntimeEvent::ChatMessage, false),
+            (RuntimeEvent::ObsSceneChanged, false),
+            (RuntimeEvent::DiscordWebhookFailed, false),
+        ] {
+            assert_eq!(event.is_run_bookkeeping(), bookkeeping, "{event:?}");
+        }
+    }
+
+    #[test]
+    fn viewer_ban_platform_recognises_only_the_ban_and_unban_kinds_of_each_platform() {
+        for (kind, expected) in [
+            ("twitch.channel.ban", Some(PlatformId::Twitch)),
+            ("twitch.channel.unban", Some(PlatformId::Twitch)),
+            ("youtube.channel.user_banned", Some(PlatformId::YouTube)),
+            ("kick.moderation.banned", Some(PlatformId::Kick)),
+            ("twitch.channel.ban.extra", None),
+            ("twitch.channel", None),
+            ("TWITCH.CHANNEL.BAN", None),
+            ("twitch.chat.message", None),
+            ("kick.moderation.unbanned", None),
+            ("", None),
+        ] {
+            assert_eq!(
+                viewer_ban_platform(&bare(EventSource::Twitch, kind)),
+                expected,
+                "{kind:?}"
+            );
+        }
+    }
+
+    const PUBLISHED_LIFECYCLE_KINDS: [&str; 8] = [
+        "twitch.channel.poll.begin",
+        "twitch.channel.poll.progress",
+        "twitch.channel.poll.end",
+        "twitch.channel.prediction.begin",
+        "twitch.channel.prediction.progress",
+        "twitch.channel.prediction.lock",
+        "twitch.channel.prediction.end",
+        "twitch.channel.raid",
+    ];
+
+    #[test]
+    fn obs_connection_and_twitch_lifecycle_events_rebuild_the_descriptors() {
+        let mut cases: Vec<(EventSource, &str)> = vec![
+            (EventSource::Obs, "obs.connection.opened"),
+            (EventSource::Obs, "obs.connection.closed"),
+        ];
+        cases.extend(
+            PUBLISHED_LIFECYCLE_KINDS
+                .iter()
+                .map(|kind| (EventSource::Twitch, *kind)),
+        );
+
+        for (source, kind) in cases {
+            assert!(
+                rebuilds_descriptors(&bare(source, kind)),
+                "{source:?} / {kind} must trigger a descriptor rebuild"
+            );
+        }
+    }
+
+    #[test]
+    fn unrelated_kinds_and_mismatched_sources_do_not_rebuild_the_descriptors() {
+        for (source, kind) in [
+            (EventSource::Twitch, "twitch.chat.message"),
+            (EventSource::Twitch, "twitch.channel.follow"),
+            (EventSource::Twitch, "twitch.channel.poll"),
+            (EventSource::Twitch, "twitch.channel.raid_received"),
+            (EventSource::Twitch, "obs.connection.opened"),
+            (EventSource::Obs, "twitch.channel.poll.begin"),
+            (EventSource::Obs, "obs.scene.changed"),
+            (EventSource::Obs, "obs.connection"),
+            (EventSource::Core, "twitch.channel.raid"),
+            (EventSource::Kick, "obs.connection.opened"),
+        ] {
+            assert!(
+                !rebuilds_descriptors(&bare(source, kind)),
+                "{source:?} / {kind} must not trigger a descriptor rebuild"
+            );
+        }
+    }
+
+    const PUBLISHED_CATALOG_KINDS: [&str; 13] = [
+        "obs.scene.changed",
+        "obs.scene.preview_changed",
+        "obs.scene.list_changed",
+        "obs.scene.created",
+        "obs.scene.removed",
+        "obs.scene.renamed",
+        "obs.source.visibility_changed",
+        "obs.source.lock_changed",
+        "obs.source.input_created",
+        "obs.source.input_removed",
+        "obs.source.input_renamed",
+        "obs.source.scene_item_created",
+        "obs.source.scene_item_removed",
+    ];
+
+    #[test]
+    fn every_obs_scene_and_source_change_refreshes_the_content_rows() {
+        for kind in PUBLISHED_CATALOG_KINDS {
+            assert!(
+                changes_obs_content(&bare(EventSource::Obs, kind)),
+                "{kind} must refresh the OBS content rows"
+            );
+        }
+    }
+
+    #[test]
+    fn audio_level_and_non_catalog_events_leave_the_content_rows_alone() {
+        for (source, kind) in [
+            (EventSource::Obs, "obs.audio.source_volume_changed"),
+            (EventSource::Obs, "obs.audio.source_mute_changed"),
+            (EventSource::Obs, "obs.audio.source_balance_changed"),
+            (EventSource::Obs, "obs.audio.source_sync_offset_changed"),
+            (EventSource::Obs, "obs.connection.connected"),
+            (EventSource::Obs, "obs.streaming.started"),
+            (EventSource::Obs, "obs.scene"),
+            (EventSource::Core, "obs.scene.changed"),
+            (EventSource::Server, "obs.source.visibility_changed"),
+        ] {
+            assert!(
+                !changes_obs_content(&bare(source, kind)),
+                "{source:?} / {kind} must not refresh the OBS content rows"
+            );
+        }
+    }
+
+    #[test]
+    fn only_obs_connection_and_name_list_events_change_the_obs_catalog() {
+        for (source, kind, expected) in [
+            (EventSource::Obs, "obs.connection.connected", true),
+            (EventSource::Obs, "obs.connection.disconnected", true),
+            (EventSource::Obs, "obs.scene.created", true),
+            (EventSource::Obs, "obs.scene.renamed", true),
+            (EventSource::Obs, "obs.source.input_removed", true),
+            (EventSource::Obs, "obs.source.scene_item_created", true),
+            (EventSource::Obs, "obs.scene.changed", false),
+            (EventSource::Obs, "obs.recording.started", false),
+            (EventSource::Twitch, "obs.scene.created", false),
+            (EventSource::VTube, "obs.connection.connected", false),
+        ] {
+            assert_eq!(
+                changes_obs_catalog(&bare(source, kind)),
+                expected,
+                "{source:?} {kind}"
+            );
+        }
+    }
+
+    #[test]
+    fn only_the_vtube_connection_event_changes_the_vtube_catalog() {
+        for (source, kind, expected) in [
+            (EventSource::VTube, "vtube.connection.changed", true),
+            (EventSource::VTube, "vtube.model.loaded", false),
+            (EventSource::VTube, "vtube.hotkey.triggered", false),
+            (EventSource::Obs, "vtube.connection.changed", false),
+        ] {
+            assert_eq!(
+                changes_vtube_connection(&bare(source, kind)),
+                expected,
+                "{source:?} {kind}"
+            );
+        }
+    }
+
+    #[test]
+    fn every_vtube_wire_reason_maps_to_its_own_disconnect_and_unknown_words_to_unknown() {
+        for (reason, expected) in [
+            ("awaiting_approval", VTubeDisconnect::AwaitingApproval),
+            ("connect_failed", VTubeDisconnect::Unreachable),
+            ("auth_required", VTubeDisconnect::TokenRejected),
+            ("auth_denied", VTubeDisconnect::Denied),
+            ("auth_timeout", VTubeDisconnect::TimedOut),
+            ("auth_failed", VTubeDisconnect::AuthFailed),
+            ("subscribe_failed", VTubeDisconnect::SubscribeFailed),
+            ("socket_closed", VTubeDisconnect::SocketClosed),
+            ("unresponsive", VTubeDisconnect::Unresponsive),
+            ("", VTubeDisconnect::Unknown),
+            ("AUTH_DENIED", VTubeDisconnect::Unknown),
+            ("something_new", VTubeDisconnect::Unknown),
+        ] {
+            assert_eq!(VTubeDisconnect::from_reason(reason), expected, "{reason:?}");
+        }
+    }
+
+    #[test]
+    fn vtube_connection_is_connected_regardless_of_reason_and_silent_without_one() {
+        for (is_connected, reason, expected) in [
+            (true, None, Some(VTubeConnection::Connected)),
+            (true, Some("auth_denied"), Some(VTubeConnection::Connected)),
+            (
+                false,
+                Some("auth_denied"),
+                Some(VTubeConnection::Disconnected(VTubeDisconnect::Denied)),
+            ),
+            (false, None, None),
+        ] {
+            let changed = VTubeConnectionChanged {
+                is_connected,
+                reason: reason.map(str::to_owned),
+                ..vtube_changed()
+            };
+
+            assert_eq!(
+                VTubeConnection::of(&changed),
+                expected,
+                "{is_connected} {reason:?}"
+            );
+        }
+    }
+}

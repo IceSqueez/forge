@@ -953,6 +953,7 @@ mod tests {
     use gpui::TestAppContext;
 
     use super::*;
+    use crate::home_stats::Integration;
     use crate::test_support::{
         held_queue_scheduler, hold_one_dispatch, pump, runtime, test_backend, writes_to,
     };

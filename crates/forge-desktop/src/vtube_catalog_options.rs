@@ -180,6 +180,8 @@ impl VTubeCatalogFollow {
 
 #[cfg(test)]
 mod tests {
+    use forge_events::{Event, EventSource, TypedEvent};
+    use forge_vtube::vocabulary::VTubeConnectionChanged;
     use gpui::{AppContext, TestAppContext};
 
     use super::*;
@@ -268,24 +270,6 @@ mod tests {
         );
     }
 
-    #[test]
-    fn only_the_vtube_connection_event_changes_the_catalog() {
-        for (source, kind, expected) in [
-            (EventSource::VTube, "vtube.connection.changed", true),
-            (EventSource::VTube, "vtube.model.loaded", false),
-            (EventSource::VTube, "vtube.hotkey.triggered", false),
-            (EventSource::Obs, "vtube.connection.changed", false),
-        ] {
-            let event = Event::new(source, kind, serde_json::json!({}));
-
-            assert_eq!(
-                changes_vtube_connection(&event),
-                expected,
-                "{source:?} {kind}"
-            );
-        }
-    }
-
     struct Watcher {
         reloads: usize,
         _watch: Task<()>,
@@ -317,7 +301,7 @@ mod tests {
         let after_model_switch = cx.update(|cx| watcher.read(cx).reloads);
         bus.publish(Event::new(
             EventSource::VTube,
-            VTUBE_CONNECTION_KIND,
+            VTubeConnectionChanged::KIND,
             serde_json::json!({}),
         ));
         cx.run_until_parked();

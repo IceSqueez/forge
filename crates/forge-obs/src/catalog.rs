@@ -524,7 +524,7 @@ mod tests {
     #[test]
     fn scene_row_switches_to_itself_only_when_connected_and_not_already_live() {
         let switch_to_brb = Some(expected_step(
-            "obs.scenes.switch_current",
+            "obs.scene.switch_current",
             &[("scene", Variant::String("BRB".to_owned()))],
         ));
         for (row, actionable, expected) in [
@@ -571,12 +571,12 @@ mod tests {
                     TrailingToken::ActionIcon {
                         icon: SectionIcon::new(eye),
                         tint: eye_tint,
-                        step: expected_step("obs.sources.set_visible", &with("visible", !visible)),
+                        step: expected_step("obs.source.set_visible", &with("visible", !visible)),
                     },
                     TrailingToken::ActionIcon {
                         icon: SectionIcon::new(lock),
                         tint: lock_tint,
-                        step: expected_step("obs.sources.set_locked", &with("locked", !locked)),
+                        step: expected_step("obs.source.set_locked", &with("locked", !locked)),
                     },
                 ],
                 "visible={visible} locked={locked}"

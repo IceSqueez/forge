@@ -9,7 +9,7 @@
         "action_name": "Preview BRB",
         "steps": [
           {
-            "kind_id": "obs.scenes.set_preview",
+            "kind_id": "obs.scene.set_preview",
             "config": { "scene": { "type": "string", "value": "BRB" } },
             "enabled": true
           }
@@ -52,7 +52,7 @@
             "source": "core",
             "kind": "subaction.done",
             "payload": {
-              "/kind": { "equals": "obs.scenes.set_preview" },
+              "/kind": { "equals": "obs.scene.set_preview" },
               "/outcome": { "equals": "failed" },
               "/message": { "contains": "Studio Mode is off in OBS" }
             },
@@ -90,7 +90,7 @@
             "source": "core",
             "kind": "subaction.done",
             "payload": {
-              "/kind": { "equals": "obs.scenes.set_preview" },
+              "/kind": { "equals": "obs.scene.set_preview" },
               "/outcome": { "equals": "success" }
             },
             "within_ms": 5000

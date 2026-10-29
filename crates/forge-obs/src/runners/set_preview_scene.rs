@@ -119,7 +119,7 @@ mod tests {
         let config = BTreeMap::from([("scene".to_owned(), Variant::String("Intro".to_owned()))]);
         let (tel, extra) = runner.execute(&config, &make_ctx(&stack)).await;
         assert_eq!(tel.outcome, SubActionOutcome::Success);
-        assert_eq!(tel.kind, "obs.scenes.set_preview");
+        assert_eq!(tel.kind, "obs.scene.set_preview");
         assert!(extra.is_none());
     }
 }

@@ -7,7 +7,7 @@ use std::path::PathBuf;
 use forge_registry::{
     CASE_CHAIN_KEY, ChainEntry, FormField, StepNode, StepReach, SubActionRegistry,
     UndecodableReason, UndecodableStep, decode_chain, decode_step, encode_chain, encode_step_onto,
-    nested_chains, rewrite_steps, walk_steps,
+    nested_chains, rename_step_kinds, rewrite_steps, walk_steps,
 };
 use forge_types::{SubActionConfig, SubActionStep, Variant};
 
@@ -505,5 +505,90 @@ fn encode_onto_stored_keeps_unchanged_entries_verbatim_and_unknown_keys_on_edit(
         ),
     ] {
         assert_eq!(encode_step_onto(&edit, &stored), expected, "{case}");
+    }
+}
+
+fn current_of(id: &str) -> Option<String> {
+    (id == OLD_LEAF).then(|| NEW_LEAF.to_owned())
+}
+
+#[test]
+fn rename_step_kinds_renames_kind_ids_at_every_depth_and_nothing_else() {
+    let undecodable = |kind_id: &str| {
+        obj([
+            ("enabled", s("yes")),
+            ("kind_id", s(kind_id)),
+            ("x_extra", Variant::Int(1)),
+        ])
+    };
+    let deep = |kind_id: &str| {
+        obj([(
+            "cases",
+            Variant::Array(vec![obj([(
+                "chain",
+                Variant::Array(vec![leaf(kind_id), undecodable(kind_id)]),
+            )])]),
+        )])
+    };
+    for (case, (kind_id, config), (expected_kind, expected_config), expected_changed) in [
+        (
+            "top-level kind",
+            (OLD_LEAF, cfg([("message", s("hi"))])),
+            (NEW_LEAF, cfg([("message", s("hi"))])),
+            true,
+        ),
+        (
+            "nested entries at depth, decodable or not",
+            (BRANCH_KIND, cfg([(THEN_KEY, deep(OLD_LEAF))])),
+            (BRANCH_KIND, cfg([(THEN_KEY, deep(NEW_LEAF))])),
+            true,
+        ),
+        (
+            "config text naming a retired id",
+            (BRANCH_KIND, cfg([("message", s(OLD_LEAF))])),
+            (BRANCH_KIND, cfg([("message", s(OLD_LEAF))])),
+            false,
+        ),
+        (
+            "non-string kind id",
+            (
+                BRANCH_KIND,
+                cfg([(
+                    THEN_KEY,
+                    Variant::Array(vec![obj([("kind_id", Variant::Int(7))])]),
+                )]),
+            ),
+            (
+                BRANCH_KIND,
+                cfg([(
+                    THEN_KEY,
+                    Variant::Array(vec![obj([("kind_id", Variant::Int(7))])]),
+                )]),
+            ),
+            false,
+        ),
+        (
+            "no retired id anywhere",
+            (
+                BRANCH_KIND,
+                cfg([(THEN_KEY, Variant::Array(vec![leaf(NEW_LEAF)]))]),
+            ),
+            (
+                BRANCH_KIND,
+                cfg([(THEN_KEY, Variant::Array(vec![leaf(NEW_LEAF)]))]),
+            ),
+            false,
+        ),
+    ] {
+        let mut kind_id = kind_id.to_owned();
+        let mut config = config;
+
+        let changed = rename_step_kinds(&mut kind_id, &mut config, &current_of);
+
+        assert_eq!(
+            (changed, kind_id.as_str(), config),
+            (expected_changed, expected_kind, expected_config),
+            "{case}"
+        );
     }
 }

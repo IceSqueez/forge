@@ -74,13 +74,15 @@ async fn script_rows(pool: &SqlitePool) -> Vec<ScriptColumns> {
 }
 
 #[tokio::test]
-async fn migration_moves_the_schema_to_the_next_version_and_drops_only_the_hash_column() {
+async fn migration_records_the_drop_in_the_journal_and_drops_only_the_hash_column() {
     let (pool, _dir) = migrated_from_schema_56().await;
 
-    let version: i64 = sqlx::query_scalar("SELECT MAX(version) FROM _sqlx_migrations")
-        .fetch_one(&pool)
-        .await
-        .expect("version");
+    let version: Option<i64> =
+        sqlx::query_scalar("SELECT version FROM _sqlx_migrations WHERE version = ?")
+            .bind(VERSION_AFTER_DROP)
+            .fetch_optional(&pool)
+            .await
+            .expect("version");
     let columns: Vec<String> =
         sqlx::query_scalar("SELECT name FROM pragma_table_info('scripts') ORDER BY cid")
             .fetch_all(&pool)
@@ -90,7 +92,7 @@ async fn migration_moves_the_schema_to_the_next_version_and_drops_only_the_hash_
     assert_eq!(
         (version, columns),
         (
-            VERSION_AFTER_DROP,
+            Some(VERSION_AFTER_DROP),
             [
                 "id",
                 "name",

@@ -150,8 +150,8 @@ mod tests {
     use crate::runners::test_support::{MockSink, RecordingSink, make_ctx};
 
     const SET_ACTIVE_RUNNERS: &[(&str, &str, &str)] = &[
-        ("obs.stream.set_active", "start_stream", "stop_stream"),
-        ("obs.record.set_active", "start_record", "stop_record"),
+        ("obs.streaming.set_active", "start_stream", "stop_stream"),
+        ("obs.recording.set_active", "start_record", "stop_record"),
         (
             "obs.virtualcam.set_active",
             "start_virtual_cam",
@@ -165,17 +165,21 @@ mod tests {
     ];
 
     const SCENE_ITEM_FLAG_RUNNERS: &[(&str, &str, &str)] = &[
-        ("obs.sources.set_visible", "visible", "set_source_visible"),
-        ("obs.sources.set_locked", "locked", "set_source_locked"),
+        ("obs.source.set_visible", "visible", "set_source_visible"),
+        ("obs.source.set_locked", "locked", "set_source_locked"),
     ];
 
     const SINGLE_STRING_RUNNERS: &[(&str, &str, &str)] = &[
         ("obs.browser.refresh", "source", "refresh_browser_source"),
         ("obs.media.restart", "source", "restart_media_input"),
-        ("obs.record.set_directory", "path", "set_record_directory"),
+        (
+            "obs.recording.set_directory",
+            "path",
+            "set_record_directory",
+        ),
         ("obs.profile.switch", "name", "set_current_profile"),
         (
-            "obs.scene_collection.switch",
+            "obs.collection.switch",
             "name",
             "set_current_scene_collection",
         ),
@@ -191,28 +195,24 @@ mod tests {
         ("obs.browser.refresh", "source", &[]),
         ("obs.media.restart", "source", &[]),
         ("obs.profile.switch", "name", &[]),
-        ("obs.scene_collection.switch", "name", &[]),
-        ("obs.record.set_directory", "path", &[]),
-        ("obs.scenes.switch_current", "scene", &[]),
-        ("obs.scenes.set_preview", "scene", &[]),
-        ("obs.scenes.set_transition", "transition", &[]),
+        ("obs.collection.switch", "name", &[]),
+        ("obs.recording.set_directory", "path", &[]),
+        ("obs.scene.switch_current", "scene", &[]),
+        ("obs.scene.set_preview", "scene", &[]),
+        ("obs.scene.set_transition", "transition", &[]),
         ("obs.audio.set_mute", "source", &[]),
         ("obs.audio.set_volume", "source", &[("volume_db", "-6.0")]),
-        ("obs.sources.get_input_settings", "source", &[]),
-        ("obs.stream.send_caption", "caption_text", &[]),
+        ("obs.source.get_input_settings", "source", &[]),
+        ("obs.streaming.send_caption", "caption_text", &[]),
         (
-            "obs.sources.set_input_settings",
+            "obs.source.set_input_settings",
             "source",
             &[("settings_json", "{}")],
         ),
-        ("obs.sources.set_visible", "scene", &[("source", "Cam")]),
-        (
-            "obs.sources.set_visible",
-            "source",
-            &[("scene", "Gameplay")],
-        ),
-        ("obs.sources.set_locked", "scene", &[("source", "Cam")]),
-        ("obs.sources.set_locked", "source", &[("scene", "Gameplay")]),
+        ("obs.source.set_visible", "scene", &[("source", "Cam")]),
+        ("obs.source.set_visible", "source", &[("scene", "Gameplay")]),
+        ("obs.source.set_locked", "scene", &[("source", "Cam")]),
+        ("obs.source.set_locked", "source", &[("scene", "Gameplay")]),
         ("obs.filter.set_enabled", "source", &[("filter", "Blur")]),
         ("obs.filter.set_enabled", "filter", &[("source", "Cam")]),
         (
@@ -234,27 +234,27 @@ mod tests {
         let mut reg = SubActionRegistry::new();
         register_obs_sub_actions(&mut reg, Arc::new(MockSink)).unwrap();
         for id in &[
-            "obs.scenes.get_list",
-            "obs.sources.get_list",
-            "obs.record.get_status",
-            "obs.stream.get_status",
-            "obs.sources.get_input_settings",
-            "obs.scenes.switch_current",
-            "obs.scenes.set_preview",
-            "obs.scenes.set_transition",
-            "obs.sources.set_visible",
-            "obs.sources.set_locked",
-            "obs.sources.set_input_settings",
+            "obs.scene.get_list",
+            "obs.source.get_list",
+            "obs.recording.get_status",
+            "obs.streaming.get_status",
+            "obs.source.get_input_settings",
+            "obs.scene.switch_current",
+            "obs.scene.set_preview",
+            "obs.scene.set_transition",
+            "obs.source.set_visible",
+            "obs.source.set_locked",
+            "obs.source.set_input_settings",
             "obs.audio.set_mute",
             "obs.audio.set_volume",
-            "obs.record.start",
-            "obs.record.stop",
-            "obs.record.pause",
-            "obs.record.resume",
-            "obs.record.toggle_pause",
-            "obs.stream.start",
-            "obs.stream.stop",
-            "obs.stream.send_caption",
+            "obs.recording.start",
+            "obs.recording.stop",
+            "obs.recording.pause",
+            "obs.recording.resume",
+            "obs.recording.toggle_pause",
+            "obs.streaming.start",
+            "obs.streaming.stop",
+            "obs.streaming.send_caption",
             "obs.replay.start",
             "obs.replay.stop",
             "obs.replay.save",
@@ -262,17 +262,17 @@ mod tests {
             "obs.studio.disable",
             "obs.studio.trigger_transition",
             "obs.studio.set_enabled",
-            "obs.stream.set_active",
-            "obs.record.set_active",
+            "obs.streaming.set_active",
+            "obs.recording.set_active",
             "obs.virtualcam.set_active",
             "obs.replay.set_active",
             "obs.filter.set_enabled",
             "obs.browser.refresh",
             "obs.media.restart",
             "obs.capture.screenshot",
-            "obs.record.set_directory",
+            "obs.recording.set_directory",
             "obs.profile.switch",
-            "obs.scene_collection.switch",
+            "obs.collection.switch",
         ] {
             assert!(reg.get(id).is_some(), "missing runner: {id}");
         }
@@ -438,18 +438,21 @@ mod tests {
     #[tokio::test]
     async fn every_screen_roster_runner_reports_a_failed_outcome_when_the_sink_errors() {
         let cases: Vec<(&str, BTreeMap<String, Variant>)> = vec![
-            ("obs.stream.set_active", on_flag(true)),
-            ("obs.record.set_active", on_flag(false)),
+            ("obs.streaming.set_active", on_flag(true)),
+            ("obs.recording.set_active", on_flag(false)),
             ("obs.virtualcam.set_active", on_flag(true)),
             ("obs.replay.set_active", on_flag(false)),
             ("obs.studio.set_enabled", on_flag(true)),
-            ("obs.sources.set_visible", scene_item("visible", true)),
-            ("obs.sources.set_locked", scene_item("locked", true)),
+            ("obs.source.set_visible", scene_item("visible", true)),
+            ("obs.source.set_locked", scene_item("locked", true)),
             ("obs.browser.refresh", one_string("source", "Overlay")),
             ("obs.media.restart", one_string("source", "Intro Video")),
-            ("obs.record.set_directory", one_string("path", "/tmp/rec")),
+            (
+                "obs.recording.set_directory",
+                one_string("path", "/tmp/rec"),
+            ),
             ("obs.profile.switch", one_string("name", "Streaming")),
-            ("obs.scene_collection.switch", one_string("name", "Main")),
+            ("obs.collection.switch", one_string("name", "Main")),
             (
                 "obs.filter.set_enabled",
                 BTreeMap::from([
@@ -599,11 +602,11 @@ mod tests {
         assert_eq!(
             returned_stack,
             [
-                "obs.scenes.get_list",
-                "obs.sources.get_list",
-                "obs.sources.get_input_settings",
-                "obs.record.get_status",
-                "obs.stream.get_status",
+                "obs.scene.get_list",
+                "obs.source.get_list",
+                "obs.source.get_input_settings",
+                "obs.recording.get_status",
+                "obs.streaming.get_status",
             ]
             .into_iter()
             .map(str::to_owned)

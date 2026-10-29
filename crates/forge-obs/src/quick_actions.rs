@@ -490,7 +490,7 @@ mod tests {
             .filter(|a| a.destructive)
             .map(|a| a.subaction_template.kind_id.clone())
             .collect();
-        assert_eq!(destructive, vec!["obs.stream.set_active".to_owned()]);
+        assert_eq!(destructive, vec!["obs.streaming.set_active".to_owned()]);
     }
 
     #[test]
@@ -540,14 +540,14 @@ mod tests {
     #[test]
     fn picker_fields_read_the_option_list_that_matches_the_runner_key() {
         let expected: BTreeMap<&str, Vec<(&str, &str)>> = BTreeMap::from([
-            ("obs.scenes.switch_current", vec![("scene", SCENE_LIST)]),
-            ("obs.scenes.set_preview", vec![("scene", SCENE_LIST)]),
+            ("obs.scene.switch_current", vec![("scene", SCENE_LIST)]),
+            ("obs.scene.set_preview", vec![("scene", SCENE_LIST)]),
             (
-                "obs.scenes.set_transition",
+                "obs.scene.set_transition",
                 vec![("transition", TRANSITION_LIST)],
             ),
             (
-                "obs.sources.set_visible",
+                "obs.source.set_visible",
                 vec![("scene", SCENE_LIST), ("source", SOURCE_LIST)],
             ),
             ("obs.audio.set_mute", vec![("source", INPUT_LIST)]),
@@ -558,7 +558,7 @@ mod tests {
             ("obs.capture.screenshot", vec![("source", SOURCE_LIST)]),
             ("obs.profile.switch", vec![("name", PROFILE_LIST)]),
             (
-                "obs.scene_collection.switch",
+                "obs.collection.switch",
                 vec![("name", SCENE_COLLECTION_LIST)],
             ),
         ]);

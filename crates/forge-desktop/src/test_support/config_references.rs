@@ -164,7 +164,7 @@ fn nested_steps_naming(deep: &str, other: &str) -> Config {
             "else_chain",
             chain(vec![
                 step(
-                    "obs.scenes.set_preview",
+                    "obs.scene.set_preview",
                     config(&[("scene", text("action-deep"))]),
                 ),
                 step("core.action.run", config(&[("action_id", text(other))])),
@@ -337,10 +337,8 @@ async fn integration_owned_names_are_listed_as_external_references() {
     let (triggers, sub_actions) = every_registry_entry().await;
     let catalog = ReferenceCatalog::new(&sub_actions, &triggers);
 
-    let scene = catalog.sub_action_references(
-        "obs.scenes.set_preview",
-        &config(&[("scene", text("Live"))]),
-    );
+    let scene =
+        catalog.sub_action_references("obs.scene.set_preview", &config(&[("scene", text("Live"))]));
     let reward = catalog.trigger_references(
         "twitch.channel_points.redemption",
         &config(&[("reward_id", text("reward-9"))]),
@@ -696,7 +694,7 @@ async fn a_queue_remapped_to_a_non_id_is_refused_and_the_action_is_left_unchange
 async fn a_trigger_instance_lists_its_override_references_under_overrides() {
     let (triggers, sub_actions) = every_registry_entry().await;
     let catalog = ReferenceCatalog::new(&sub_actions, &triggers);
-    let mut trigger = crate::test_support::trigger_of("obs.scenes.current_changed");
+    let mut trigger = crate::test_support::trigger_of("obs.scene.changed");
     trigger.overrides = config(&[("scene", text("Live"))]);
 
     let listing = catalog.trigger_instance_references(&trigger);

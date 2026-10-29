@@ -9,7 +9,7 @@
         "action_name": "Switch To BRB",
         "steps": [
           {
-            "kind_id": "obs.scenes.switch_current",
+            "kind_id": "obs.scene.switch_current",
             "config": { "scene": { "type": "string", "value": "BRB" } },
             "enabled": true
           }

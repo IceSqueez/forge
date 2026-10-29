@@ -97,7 +97,7 @@ mod tests {
         let runner = RecordResumeRunner::new(Arc::new(MockSink));
         let (tel, extra) = runner.execute(&BTreeMap::new(), &make_ctx(&stack)).await;
         assert_eq!(tel.outcome, SubActionOutcome::Success);
-        assert_eq!(tel.kind, "obs.record.resume");
+        assert_eq!(tel.kind, "obs.recording.resume");
         assert!(extra.is_none());
     }
 }

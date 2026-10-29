@@ -121,7 +121,7 @@ mod tests {
         let config = BTreeMap::from([("transition".to_owned(), Variant::String("Cut".to_owned()))]);
         let (tel, extra) = runner.execute(&config, &make_ctx(&stack)).await;
         assert_eq!(tel.outcome, SubActionOutcome::Success);
-        assert_eq!(tel.kind, "obs.scenes.set_transition");
+        assert_eq!(tel.kind, "obs.scene.set_transition");
         assert!(extra.is_none());
     }
 }

@@ -5,12 +5,12 @@
     "obs": { "password": "emulator-obs-password" },
     "event_triggers": [
       {
-        "trigger_kind": "obs.scenes.current_changed",
+        "trigger_kind": "obs.scene.changed",
         "config": { "scene": { "type": "string", "value": "BRB" } },
         "action_name": "Be Right Back"
       },
       {
-        "trigger_kind": "obs.stream.started",
+        "trigger_kind": "obs.streaming.started",
         "action_name": "Went Live"
       }
     ]

@@ -38,6 +38,8 @@ const PACK_DOCUMENTS_ENTRY: &str = "pack/documents.json";
 const PACK_IMPORTED_GOLDEN: &str = include_str!("fixtures/older_pack/imported.json");
 const BACKUP_SEED: &str = include_str!("fixtures/older_backup/seed.json");
 const BACKUP_DATABASE_ENTRY: &str = "forge/forge.db";
+const FAVORITE_STEPS_KEY: &str = "picker.favorites.sub_actions";
+const FAVORITE_STEPS_AFTER_RENAME: &str = r#"["core.logic.wait","obs.scene.switch_current"]"#;
 
 fn sha256_hex(bytes: &[u8]) -> String {
     Sha256::digest(bytes)
@@ -308,7 +310,7 @@ async fn restored_steps(provider: &dyn DataProvider, seed: &BackupSeed) -> Vec<S
 }
 
 #[tokio::test]
-async fn a_full_backup_of_an_older_schema_restores_and_migrates_with_its_data_intact() {
+async fn an_older_full_backup_restores_with_its_data_intact_and_retired_ids_renamed() {
     let seed = backup_seed();
     let dir = TempDir::new().unwrap();
     let database = older_database(&dir.path().join("older.db"), &seed).await;
@@ -330,6 +332,11 @@ async fn a_full_backup_of_an_older_schema_restores_and_migrates_with_its_data_in
                 .unwrap_or_default(),
         );
     }
+    let mut expected_settings = seed.settings.clone();
+    expected_settings.insert(
+        FAVORITE_STEPS_KEY.to_owned(),
+        FAVORITE_STEPS_AFTER_RENAME.to_owned(),
+    );
     let mut globals = BTreeMap::new();
     for name in seed.globals.keys() {
         globals.insert(
@@ -350,7 +357,7 @@ async fn a_full_backup_of_an_older_schema_restores_and_migrates_with_its_data_in
         (
             seed.action.sub_actions.clone(),
             Some(seed.queue.clone()),
-            seed.settings.clone(),
+            expected_settings,
             seed.globals.clone(),
         )
     );

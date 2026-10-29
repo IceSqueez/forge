@@ -1221,7 +1221,7 @@ mod tests {
             destructive: false,
             accent: QuickActionAccent::Brand,
             subaction_template: SubActionStep {
-                kind_id: "obs.scenes.switch_current".to_owned(),
+                kind_id: "obs.scene.switch_current".to_owned(),
                 config: BTreeMap::from([("scene".to_owned(), Variant::String(String::new()))]),
                 enabled: true,
                 continue_on_error: false,

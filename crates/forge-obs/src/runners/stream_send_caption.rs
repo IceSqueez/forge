@@ -126,7 +126,7 @@ mod tests {
             .execute(&config_with("On screen now"), &make_ctx(&stack))
             .await;
         assert_eq!(tel.outcome, SubActionOutcome::Success);
-        assert_eq!(tel.kind, "obs.stream.send_caption");
+        assert_eq!(tel.kind, "obs.streaming.send_caption");
         assert!(extra.is_none());
     }
 }

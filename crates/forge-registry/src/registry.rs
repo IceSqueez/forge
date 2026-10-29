@@ -300,17 +300,6 @@ mod tests {
     }
 
     #[test]
-    fn trigger_registry_get_returns_correct_id() {
-        let mut reg = TriggerRegistry::new();
-        reg.register(Box::new(StubDescriptor {
-            kind_id: "twitch.chat.command",
-        }))
-        .unwrap();
-        let d = reg.get("twitch.chat.command").unwrap();
-        assert_eq!(d.id(), "twitch.chat.command");
-    }
-
-    #[test]
     fn sub_action_registry_register_and_get() {
         let mut reg = SubActionRegistry::new();
         reg.register(Box::new(StubRunner {
@@ -343,15 +332,61 @@ mod tests {
         assert_eq!(reg.all().count(), 3);
     }
 
+    const SUCCESSOR: IdSuccession = IdSuccession {
+        current: "obs.recording.start",
+        retired: &["obs.record.start", "obs.rec.start"],
+    };
+
     #[test]
-    fn sub_action_registry_get_returns_correct_id() {
+    fn every_retired_id_of_a_declared_succession_resolves_to_its_current_id() {
+        let mut triggers = TriggerRegistry::new();
+        let mut sub_actions = SubActionRegistry::new();
+        triggers.declare_retired(&SUCCESSOR).unwrap();
+        sub_actions.declare_retired(&SUCCESSOR).unwrap();
+
+        let ids = ["obs.record.start", "obs.rec.start", "obs.recording.start"];
+        let current = Some("obs.recording.start");
+
+        assert_eq!(
+            (
+                ids.map(|id| triggers.current_id(id)),
+                ids.map(|id| sub_actions.current_id(id)),
+            ),
+            ([current, current, None], [current, current, None])
+        );
+    }
+
+    #[test]
+    fn a_succession_reusing_a_retired_id_is_rejected_whole() {
         let mut reg = SubActionRegistry::new();
-        reg.register(Box::new(StubRunner {
-            kind_id: "core.globals.set",
-        }))
-        .unwrap();
-        let r = reg.get("core.globals.set").unwrap();
-        assert_eq!(r.id(), "core.globals.set");
+        reg.declare_retired(&SUCCESSOR).unwrap();
+
+        let result = reg.declare_retired(&IdSuccession {
+            current: "obs.other",
+            retired: &["obs.fresh", "obs.record.start"],
+        });
+
+        assert!(matches!(result, Err(RegistryError::DuplicateId(id)) if id == "obs.record.start"));
+        assert_eq!(
+            reg.retired_ids().collect::<Vec<_>>(),
+            [
+                ("obs.rec.start", "obs.recording.start"),
+                ("obs.record.start", "obs.recording.start")
+            ]
+        );
+    }
+
+    #[test]
+    fn retired_ids_declared_through_an_owned_registration_reach_the_registry() {
+        let obs = forge_types::IntegrationId::from_static("obs");
+        let mut triggers = TriggerRegistry::new();
+
+        triggers.owned_by(obs).declare_retired(&SUCCESSOR).unwrap();
+
+        assert_eq!(
+            triggers.current_id("obs.record.start"),
+            Some("obs.recording.start")
+        );
     }
 
     #[test]

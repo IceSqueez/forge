@@ -97,7 +97,7 @@ mod tests {
         let runner = RecordTogglePauseRunner::new(Arc::new(MockSink));
         let (tel, extra) = runner.execute(&BTreeMap::new(), &make_ctx(&stack)).await;
         assert_eq!(tel.outcome, SubActionOutcome::Success);
-        assert_eq!(tel.kind, "obs.record.toggle_pause");
+        assert_eq!(tel.kind, "obs.recording.toggle_pause");
         assert!(extra.is_none());
     }
 }

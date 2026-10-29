@@ -783,7 +783,7 @@ mod tests {
             destructive: true,
             accent: QuickActionAccent::Danger,
             subaction_template: SubActionStep {
-                kind_id: "obs.scenes.switch_current".to_owned(),
+                kind_id: "obs.scene.switch_current".to_owned(),
                 config: BTreeMap::from([(
                     "scene".to_owned(),
                     Variant::String("Main Scene".to_owned()),
@@ -814,7 +814,7 @@ mod tests {
     #[test]
     fn quick_action_deserializes_legacy_json_missing_new_fields_as_defaults() {
         let template = SubActionStep {
-            kind_id: "obs.scenes.switch_current".to_owned(),
+            kind_id: "obs.scene.switch_current".to_owned(),
             config: BTreeMap::new(),
             enabled: true,
             continue_on_error: false,

@@ -1,23 +1,50 @@
-use crate::vocabulary::sub_action_ids;
-use std::collections::BTreeMap;
 use std::sync::Arc;
-use std::time::Instant;
 
 use async_trait::async_trait;
 use forge_registry::runner::SubActionConfig;
 use forge_registry::{
-    ConfigReason, FormField, RegistryError, RunContext, SubActionCategory, SubActionConfigExt,
-    SubActionRunner,
+    ConfigProblem, ConfigReason, ConfigSpec, Interpolation, RunContext, StepTimer,
+    SubActionCategory, SubActionConfigExt, SubActionRunner, TextEditor, TextField, TypedField,
 };
-use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, Variant};
-use time::OffsetDateTime;
+use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry};
 
 use crate::account::identity::SelfIdentity;
 use crate::helix::{HelixError, HelixMethod, HelixRequest, HelixTransport};
+use crate::vocabulary::{config_keys, sub_action_ids};
 
 const KIND_ID: &str = sub_action_ids::CHANNEL_UPDATE_CATEGORY;
-const CATEGORY_ID_KEY: &str = "category_id";
-const CATEGORY_NAME_KEY: &str = "category_name";
+
+const CATEGORY_ID: TextField = TextField {
+    key: config_keys::CATEGORY_ID,
+    label: "Category ID",
+    editor: TextEditor::Line {
+        placeholder: "e.g. 509658",
+    },
+    default: "",
+    required: false,
+};
+
+const CATEGORY_NAME: TextField = TextField {
+    key: config_keys::CATEGORY_NAME,
+    label: "Category Name",
+    editor: TextEditor::Line {
+        placeholder: "e.g. Just Chatting",
+    },
+    default: "",
+    required: false,
+};
+
+const CONFIG: ConfigSpec = ConfigSpec::new(&[&CATEGORY_ID, &CATEGORY_NAME]);
+
+fn read_config(
+    config: &SubActionConfig,
+    args: &ArgStack,
+) -> Result<(String, String), ConfigProblem> {
+    Ok((
+        CATEGORY_ID.read(config, args)?,
+        CATEGORY_NAME.read(config, args)?,
+    ))
+}
 
 pub struct UpdateCategoryRunner {
     transport: Arc<dyn HelixTransport>,
@@ -100,36 +127,22 @@ impl SubActionRunner for UpdateCategoryRunner {
         "game-controller"
     }
 
-    fn default_config(&self) -> SubActionConfig {
-        BTreeMap::from([
-            (CATEGORY_ID_KEY.to_owned(), Variant::String(String::new())),
-            (CATEGORY_NAME_KEY.to_owned(), Variant::String(String::new())),
-        ])
+    fn config_spec(&self) -> Option<ConfigSpec> {
+        Some(CONFIG)
     }
 
-    fn config_fields(&self) -> Vec<FormField> {
-        vec![
-            FormField::Text {
-                key: CATEGORY_ID_KEY,
-                label: "Category ID",
-                placeholder: "e.g. 509658",
-            },
-            FormField::Text {
-                key: CATEGORY_NAME_KEY,
-                label: "Category Name",
-                placeholder: "e.g. Just Chatting",
-            },
-        ]
-    }
-
-    fn validate_config(&self, config: &SubActionConfig) -> Result<(), RegistryError> {
-        if config.str_nonempty(CATEGORY_ID_KEY).is_some()
-            || config.str_nonempty(CATEGORY_NAME_KEY).is_some()
+    fn check_config(
+        &self,
+        config: &SubActionConfig,
+        _interpolation: Interpolation<'_>,
+    ) -> Result<(), ConfigProblem> {
+        if config.str_nonempty(CATEGORY_ID.key).is_some()
+            || config.str_nonempty(CATEGORY_NAME.key).is_some()
         {
             return Ok(());
         }
-        Err(RegistryError::invalid_field(
-            CATEGORY_ID_KEY,
+        Err(ConfigProblem::field(
+            CATEGORY_ID.key,
             ConfigReason::Required,
         ))
     }
@@ -139,30 +152,13 @@ impl SubActionRunner for UpdateCategoryRunner {
         config: &SubActionConfig,
         ctx: &RunContext<'_>,
     ) -> (SubActionTelemetry, Option<ArgStack>) {
-        let started_at = OffsetDateTime::now_utc();
-        let start = Instant::now();
-
-        let interpolate = |key: &str| {
-            config
-                .str(key)
-                .map(|template| ctx.arg_stack.interpolate(template))
-                .unwrap_or_default()
+        let timer = StepTimer::start(ctx, KIND_ID);
+        let (category_id, category_name) = match read_config(config, ctx.arg_stack) {
+            Ok(values) => values,
+            Err(problem) => return (timer.invalid_config(&problem), None),
         };
-        let category_id = interpolate(CATEGORY_ID_KEY);
-        let category_name = interpolate(CATEGORY_NAME_KEY);
-
-        let outcome = self.apply(&category_id, &category_name).await;
-
         (
-            SubActionTelemetry {
-                args_in: ::std::collections::BTreeMap::new(),
-                produced: ::std::collections::BTreeMap::new(),
-                kind: KIND_ID.to_owned(),
-                started_at,
-                duration_ms: start.elapsed().as_millis() as u64,
-                outcome,
-                index: ctx.index,
-            },
+            timer.finish(self.apply(&category_id, &category_name).await),
             None,
         )
     }

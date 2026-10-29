@@ -1,21 +1,31 @@
-use crate::vocabulary::sub_action_ids;
-use std::collections::BTreeMap;
 use std::sync::Arc;
-use std::time::Instant;
 
 use async_trait::async_trait;
 use forge_registry::runner::SubActionConfig;
 use forge_registry::{
-    ConfigReason, FormField, RegistryError, RunContext, SubActionCategory, SubActionConfigExt,
-    SubActionRunner,
+    ConfigSpec, RunContext, StepTimer, SubActionCategory, SubActionRunner, TextEditor, TextField,
+    TypedField,
 };
-use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, Variant};
-use time::OffsetDateTime;
+use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry};
 
 use crate::account::identity::SelfIdentity;
 use crate::helix::{HelixMethod, HelixRequest, HelixTransport};
+use crate::vocabulary::{config_keys, sub_action_ids};
 
 const KIND_ID: &str = sub_action_ids::AUTOMOD_APPROVE_MESSAGE;
+const MESSAGE_ID_TEMPLATE: &str = "%automod.message_id%";
+
+const MESSAGE_ID: TextField = TextField {
+    key: config_keys::MESSAGE_ID,
+    label: "Message ID",
+    editor: TextEditor::Line {
+        placeholder: MESSAGE_ID_TEMPLATE,
+    },
+    default: MESSAGE_ID_TEMPLATE,
+    required: true,
+};
+
+pub(crate) const AUTOMOD_CONFIG: ConfigSpec = ConfigSpec::new(&[&MESSAGE_ID]);
 
 pub struct ApproveAutomodMessageRunner {
     transport: Arc<dyn HelixTransport>,
@@ -31,52 +41,27 @@ impl ApproveAutomodMessageRunner {
     }
 }
 
-pub(crate) fn automod_default_config() -> SubActionConfig {
-    BTreeMap::from([(
-        "message_id".to_owned(),
-        Variant::String("%automod.message_id%".to_owned()),
-    )])
-}
-
-pub(crate) fn automod_config_fields() -> Vec<FormField> {
-    vec![FormField::Text {
-        key: "message_id",
-        label: "Message ID",
-        placeholder: "%automod.message_id%",
-    }]
-}
-
-pub(crate) fn validate_automod_config(config: &SubActionConfig) -> Result<(), RegistryError> {
-    match config.get("message_id") {
-        Some(Variant::String(s)) if !s.is_empty() => Ok(()),
-        _ => Err(RegistryError::invalid_field(
-            "message_id",
-            ConfigReason::Required,
-        )),
-    }
-}
-
-pub(crate) async fn manage_automod_message(
+async fn manage_automod_message(
     transport: &Arc<dyn HelixTransport>,
     identity: &Arc<SelfIdentity>,
     kind_id: &str,
     message_id: &str,
     action: &str,
 ) -> SubActionOutcome {
+    if message_id.is_empty() {
+        return SubActionOutcome::Failed("message_id is required".to_owned());
+    }
     let user_id = match identity.user_id().await {
         Ok(id) => id,
         Err(e) => return SubActionOutcome::Failed(e.to_string()),
     };
-
     let body = serde_json::json!({
         "user_id": user_id,
         "msg_id": message_id,
         "action": action,
     });
-
     let request =
         HelixRequest::new(HelixMethod::Post, "/helix/moderation/automod/message").body(body);
-
     match transport.execute(request).await {
         Ok(_) => SubActionOutcome::Success,
         Err(e) => SubActionOutcome::Failed(format!("{kind_id}: {e}")),
@@ -91,30 +76,13 @@ pub(crate) async fn execute_automod_runner(
     config: &SubActionConfig,
     ctx: &RunContext<'_>,
 ) -> (SubActionTelemetry, Option<ArgStack>) {
-    let started_at = OffsetDateTime::now_utc();
-    let start = Instant::now();
-
-    let message_id_template = config.str("message_id").unwrap_or_default();
-    let message_id = ctx.arg_stack.interpolate(message_id_template);
-
-    let outcome = if message_id.is_empty() {
-        SubActionOutcome::Failed("message_id is required".to_owned())
-    } else {
-        manage_automod_message(transport, identity, kind_id, &message_id, action).await
+    let timer = StepTimer::start(ctx, kind_id);
+    let message_id = match MESSAGE_ID.read(config, ctx.arg_stack) {
+        Ok(message_id) => message_id,
+        Err(problem) => return (timer.invalid_config(&problem), None),
     };
-
-    (
-        SubActionTelemetry {
-            args_in: ::std::collections::BTreeMap::new(),
-            produced: ::std::collections::BTreeMap::new(),
-            kind: kind_id.to_owned(),
-            started_at,
-            duration_ms: start.elapsed().as_millis() as u64,
-            outcome,
-            index: ctx.index,
-        },
-        None,
-    )
+    let outcome = manage_automod_message(transport, identity, kind_id, &message_id, action).await;
+    (timer.finish(outcome), None)
 }
 
 #[async_trait]
@@ -143,16 +111,8 @@ impl SubActionRunner for ApproveAutomodMessageRunner {
         "check"
     }
 
-    fn default_config(&self) -> SubActionConfig {
-        automod_default_config()
-    }
-
-    fn config_fields(&self) -> Vec<FormField> {
-        automod_config_fields()
-    }
-
-    fn validate_config(&self, config: &SubActionConfig) -> Result<(), RegistryError> {
-        validate_automod_config(config)
+    fn config_spec(&self) -> Option<ConfigSpec> {
+        Some(AUTOMOD_CONFIG)
     }
 
     async fn execute(

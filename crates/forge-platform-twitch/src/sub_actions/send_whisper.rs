@@ -1,30 +1,64 @@
-use crate::vocabulary::sub_action_ids;
-use std::collections::BTreeMap;
 use std::sync::Arc;
-use std::time::Instant;
 
 use async_trait::async_trait;
 use forge_events::EventPublisher;
-use forge_platform_core::{SENDER_FIELD, SenderPreference};
+use forge_platform_core::SenderPreference;
 use forge_registry::runner::SubActionConfig;
 use forge_registry::{
-    ConfigReason, FormField, RegistryError, RunContext, SubActionCategory, SubActionConfigExt,
-    SubActionRunner,
+    ConfigProblem, ConfigSpec, Interpolation, RunContext, StepTimer, SubActionCategory,
+    SubActionRunner, TextEditor, TextField, TypedField,
 };
-use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, Variant};
-use time::OffsetDateTime;
+use forge_types::{ArgStack, SubActionTelemetry};
 
+use super::fields::{SENDER, SendAs, TARGET_LOGIN};
 use crate::account::identity::SelfIdentity;
-use crate::account::user_target::{TargetKeys, UserTarget};
+use crate::account::user_target::{InterpolatedTarget, TargetFields, UserTarget};
 use crate::bot_account::TwitchBotAccount;
-use crate::chat_sender::{ChatDelivery, ChatSenders, StepResult, configured_sender, step_result};
+use crate::chat_sender::{ChatDelivery, ChatSenders, StepResult, step_result};
 use crate::helix::HelixTransport;
+use crate::vocabulary::{config_keys, sub_action_ids};
 
 const KIND_ID: &str = sub_action_ids::CHAT_SEND_WHISPER;
-const RECIPIENT_KEYS: TargetKeys = TargetKeys {
-    id: "to_user_id",
-    login: "to_user_login",
+
+const RECIPIENT: TargetFields = TargetFields {
+    id: TextField {
+        key: config_keys::TO_USER_ID,
+        label: "Recipient User ID",
+        editor: TextEditor::Line { placeholder: "" },
+        default: "",
+        required: false,
+    },
+    login: TextField {
+        key: config_keys::TO_USER_LOGIN,
+        label: "Recipient Username",
+        required: false,
+        ..TARGET_LOGIN
+    },
 };
+
+const MESSAGE: TextField = TextField {
+    key: config_keys::MESSAGE,
+    label: "Message",
+    editor: TextEditor::Area,
+    default: "",
+    required: true,
+};
+
+const CONFIG: ConfigSpec = ConfigSpec::new(&[&RECIPIENT.login, &MESSAGE, &SENDER]);
+
+struct WhisperConfig {
+    recipient: InterpolatedTarget,
+    message: String,
+    sender: SendAs,
+}
+
+fn read_config(config: &SubActionConfig, args: &ArgStack) -> Result<WhisperConfig, ConfigProblem> {
+    Ok(WhisperConfig {
+        recipient: RECIPIENT.read(config, args)?,
+        message: MESSAGE.read(config, args)?,
+        sender: SENDER.read(config, args)?,
+    })
+}
 
 pub struct SendWhisperRunner {
     senders: ChatSenders,
@@ -83,51 +117,16 @@ impl SubActionRunner for SendWhisperRunner {
         "message"
     }
 
-    fn default_config(&self) -> SubActionConfig {
-        BTreeMap::from([
-            (
-                RECIPIENT_KEYS.login.to_owned(),
-                Variant::String(String::new()),
-            ),
-            ("message".to_owned(), Variant::String(String::new())),
-            (
-                SENDER_FIELD.to_owned(),
-                Variant::String(SenderPreference::Default.as_str().to_owned()),
-            ),
-        ])
+    fn config_spec(&self) -> Option<ConfigSpec> {
+        Some(CONFIG)
     }
 
-    fn config_fields(&self) -> Vec<FormField> {
-        vec![
-            FormField::Text {
-                key: RECIPIENT_KEYS.login,
-                label: "Recipient Username",
-                placeholder: "%user_login%",
-            },
-            FormField::TextArea {
-                key: "message",
-                label: "Message",
-            },
-            FormField::Select {
-                key: SENDER_FIELD,
-                label: "Send As",
-                options: SenderPreference::WIRE_NAMES,
-            },
-        ]
-    }
-
-    fn validate_config(&self, config: &SubActionConfig) -> Result<(), RegistryError> {
-        RECIPIENT_KEYS.validate(config)?;
-        match config.get("message") {
-            Some(Variant::String(s)) if !s.is_empty() => {}
-            _ => {
-                return Err(RegistryError::invalid_field(
-                    "message",
-                    ConfigReason::Required,
-                ));
-            }
-        }
-        configured_sender(config).map(|_| ())
+    fn check_config(
+        &self,
+        config: &SubActionConfig,
+        interpolation: Interpolation<'_>,
+    ) -> Result<(), ConfigProblem> {
+        RECIPIENT.check(config, interpolation)
     }
 
     async fn execute(
@@ -135,34 +134,22 @@ impl SubActionRunner for SendWhisperRunner {
         config: &SubActionConfig,
         ctx: &RunContext<'_>,
     ) -> (SubActionTelemetry, Option<ArgStack>) {
-        let started_at = OffsetDateTime::now_utc();
-        let start = Instant::now();
-
-        let recipient = RECIPIENT_KEYS.interpolate(config, ctx);
-
-        let msg_template = config.str("message").unwrap_or_default();
-        let message = ctx.arg_stack.interpolate(msg_template);
-
-        let (outcome, produced) = match configured_sender(config) {
-            Ok(sender) => {
-                self.whisper(recipient.target(), &message, sender, ctx.publisher)
-                    .await
-            }
-            Err(e) => (SubActionOutcome::Failed(e.to_string()), BTreeMap::new()),
+        let timer = StepTimer::start(ctx, KIND_ID);
+        let read = match read_config(config, ctx.arg_stack) {
+            Ok(read) => read,
+            Err(problem) => return (timer.invalid_config(&problem), None),
         };
-
-        (
-            SubActionTelemetry {
-                args_in: ::std::collections::BTreeMap::new(),
-                produced,
-                kind: KIND_ID.to_owned(),
-                started_at,
-                duration_ms: start.elapsed().as_millis() as u64,
-                outcome,
-                index: ctx.index,
-            },
-            None,
-        )
+        let (outcome, produced) = self
+            .whisper(
+                read.recipient.target(),
+                &read.message,
+                read.sender.0,
+                ctx.publisher,
+            )
+            .await;
+        let mut telemetry = timer.finish(outcome);
+        telemetry.produced = produced;
+        (telemetry, None)
     }
 }
 

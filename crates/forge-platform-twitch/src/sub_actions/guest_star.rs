@@ -1,71 +1,44 @@
-use forge_registry::runner::SubActionConfig;
-use forge_registry::{ConfigReason, FormField, RegistryError, SubActionConfigExt};
-use forge_types::Variant;
+use forge_registry::{TextEditor, TextField};
 
 use crate::account::identity::{SelfIdentity, resolve_user_id};
 use crate::helix::{HelixError, HelixTransport};
+use crate::vocabulary::config_keys;
 
-pub(crate) const SESSION_ID_DEFAULT: &str = "%guest_star.session_id%";
+const SESSION_ID_TEMPLATE: &str = "%guest_star.session_id%";
 
-pub(crate) fn session_id_field() -> FormField {
-    FormField::Text {
-        key: "session_id",
-        label: "Session ID",
-        placeholder: SESSION_ID_DEFAULT,
-    }
-}
+pub(crate) const SESSION_ID: TextField = TextField {
+    key: config_keys::SESSION_ID,
+    label: "Session ID",
+    editor: TextEditor::Line {
+        placeholder: SESSION_ID_TEMPLATE,
+    },
+    default: SESSION_ID_TEMPLATE,
+    required: true,
+};
 
-pub(crate) fn target_login_field() -> FormField {
-    FormField::Text {
-        key: "target_user_login",
-        label: "Guest Login",
+pub(crate) const GUEST_LOGIN: TextField = TextField {
+    key: config_keys::TARGET_USER_LOGIN,
+    label: "Guest Login",
+    editor: TextEditor::Line {
         placeholder: "%user_login%",
-    }
-}
+    },
+    default: "",
+    required: true,
+};
 
-pub(crate) fn with_session_id(mut config: SubActionConfig) -> SubActionConfig {
-    config.insert(
-        "session_id".to_owned(),
-        Variant::String(SESSION_ID_DEFAULT.to_owned()),
-    );
-    config
-}
+pub(crate) const SLOT_ID: TextField = TextField {
+    key: config_keys::SLOT_ID,
+    label: "Slot ID",
+    editor: TextEditor::Line { placeholder: "1" },
+    default: "",
+    required: true,
+};
 
-pub(crate) fn with_target_login(mut config: SubActionConfig) -> SubActionConfig {
-    config.insert(
-        "target_user_login".to_owned(),
-        Variant::String(String::new()),
-    );
-    config
-}
-
-pub(crate) fn validate_session_id(config: &SubActionConfig) -> Result<(), RegistryError> {
-    match config.get("session_id") {
-        Some(Variant::String(s)) if !s.is_empty() => Ok(()),
-        _ => Err(RegistryError::invalid_field(
-            "session_id",
-            ConfigReason::Required,
-        )),
-    }
-}
-
-pub(crate) fn validate_target_login(config: &SubActionConfig) -> Result<(), RegistryError> {
-    match config.get("target_user_login") {
-        Some(Variant::String(s)) if !s.is_empty() => Ok(()),
-        _ => Err(RegistryError::invalid_field(
-            "target_user_login",
-            ConfigReason::Required,
-        )),
-    }
-}
-
-pub(crate) fn interpolate(
-    config: &SubActionConfig,
-    arg_stack: &forge_types::ArgStack,
-    key: &str,
-) -> String {
-    let template = config.str(key).unwrap_or_default();
-    arg_stack.interpolate(template)
+pub(crate) fn first_missing(values: &[(&TextField, &str)]) -> Option<String> {
+    values
+        .iter()
+        .find(|(_, value)| value.is_empty())
+        .map(|(field, _)| format!("{} is required", field.key))
 }
 
 pub(crate) struct GuestStarContext {

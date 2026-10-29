@@ -1,22 +1,31 @@
-use crate::vocabulary::sub_action_ids;
-use std::collections::BTreeMap;
 use std::sync::Arc;
-use std::time::Instant;
 
 use async_trait::async_trait;
 use forge_registry::runner::SubActionConfig;
-use forge_registry::{FormField, RegistryError, RunContext, SubActionCategory, SubActionRunner};
-use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry};
-use time::OffsetDateTime;
-
-use super::guest_star::{
-    GuestStarContext, interpolate, session_id_field, target_login_field, validate_session_id,
-    validate_target_login, with_session_id, with_target_login,
+use forge_registry::{
+    ConfigProblem, ConfigSpec, RunContext, StepTimer, SubActionCategory, SubActionRunner,
+    TypedField,
 };
+use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry};
+
+use super::guest_star::{GUEST_LOGIN, GuestStarContext, SESSION_ID, first_missing};
 use crate::account::identity::SelfIdentity;
 use crate::helix::{HelixMethod, HelixRequest, HelixTransport};
+use crate::vocabulary::sub_action_ids;
 
 const KIND_ID: &str = sub_action_ids::GUEST_STAR_INVITE;
+
+const CONFIG: ConfigSpec = ConfigSpec::new(&[&SESSION_ID, &GUEST_LOGIN]);
+
+fn read_config(
+    config: &SubActionConfig,
+    args: &ArgStack,
+) -> Result<(String, String), ConfigProblem> {
+    Ok((
+        SESSION_ID.read(config, args)?,
+        GUEST_LOGIN.read(config, args)?,
+    ))
+}
 
 pub struct GuestStarInviteRunner {
     transport: Arc<dyn HelixTransport>,
@@ -32,6 +41,11 @@ impl GuestStarInviteRunner {
     }
 
     async fn invite(&self, session_id: &str, target_login: &str) -> SubActionOutcome {
+        if let Some(missing) =
+            first_missing(&[(&SESSION_ID, session_id), (&GUEST_LOGIN, target_login)])
+        {
+            return SubActionOutcome::Failed(missing);
+        }
         let ctx =
             match GuestStarContext::resolve(self.transport.as_ref(), &self.identity, target_login)
                 .await
@@ -39,13 +53,11 @@ impl GuestStarInviteRunner {
                 Ok(c) => c,
                 Err(e) => return SubActionOutcome::Failed(format!("{KIND_ID}: {e}")),
             };
-
         let request = HelixRequest::new(HelixMethod::Post, "/helix/guest_star/invites")
             .query("broadcaster_id", ctx.self_id.clone())
             .query("moderator_id", ctx.self_id)
             .query("session_id", session_id.to_owned())
             .query("guest_id", ctx.guest_id);
-
         match self.transport.execute(request).await {
             Ok(_) => SubActionOutcome::Success,
             Err(e) => SubActionOutcome::Failed(format!("{KIND_ID}: {e}")),
@@ -79,17 +91,8 @@ impl SubActionRunner for GuestStarInviteRunner {
         "user-plus"
     }
 
-    fn default_config(&self) -> SubActionConfig {
-        with_target_login(with_session_id(BTreeMap::new()))
-    }
-
-    fn config_fields(&self) -> Vec<FormField> {
-        vec![session_id_field(), target_login_field()]
-    }
-
-    fn validate_config(&self, config: &SubActionConfig) -> Result<(), RegistryError> {
-        validate_session_id(config)?;
-        validate_target_login(config)
+    fn config_spec(&self) -> Option<ConfigSpec> {
+        Some(CONFIG)
     }
 
     async fn execute(
@@ -97,30 +100,13 @@ impl SubActionRunner for GuestStarInviteRunner {
         config: &SubActionConfig,
         ctx: &RunContext<'_>,
     ) -> (SubActionTelemetry, Option<ArgStack>) {
-        let started_at = OffsetDateTime::now_utc();
-        let start = Instant::now();
-
-        let session_id = interpolate(config, ctx.arg_stack, "session_id");
-        let target_login = interpolate(config, ctx.arg_stack, "target_user_login");
-
-        let outcome = if session_id.is_empty() {
-            SubActionOutcome::Failed("session_id is required".to_owned())
-        } else if target_login.is_empty() {
-            SubActionOutcome::Failed("target_user_login is required".to_owned())
-        } else {
-            self.invite(&session_id, &target_login).await
+        let timer = StepTimer::start(ctx, KIND_ID);
+        let (session_id, target_login) = match read_config(config, ctx.arg_stack) {
+            Ok(values) => values,
+            Err(problem) => return (timer.invalid_config(&problem), None),
         };
-
         (
-            SubActionTelemetry {
-                args_in: ::std::collections::BTreeMap::new(),
-                produced: ::std::collections::BTreeMap::new(),
-                kind: KIND_ID.to_owned(),
-                started_at,
-                duration_ms: start.elapsed().as_millis() as u64,
-                outcome,
-                index: ctx.index,
-            },
+            timer.finish(self.invite(&session_id, &target_login).await),
             None,
         )
     }

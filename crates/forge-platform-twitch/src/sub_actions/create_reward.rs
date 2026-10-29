@@ -1,25 +1,173 @@
-use crate::vocabulary::sub_action_ids;
-use std::collections::BTreeMap;
 use std::sync::Arc;
-use std::time::Instant;
 
 use async_trait::async_trait;
 use forge_registry::runner::SubActionConfig;
 use forge_registry::{
-    ConfigReason, DurationBounds, FormField, RegistryError, RunContext, SubActionCategory,
-    SubActionConfigExt, SubActionRunner, ValueBounds,
+    BoundedTextField, ConfigProblem, ConfigSpec, DurationBounds, DurationField, IntegerEditor,
+    IntegerField, RunContext, StepTimer, SubActionCategory, SubActionRunner, TextEditor,
+    ToggleField, TypedField, ValueBounds,
 };
 use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, Variant};
-use time::OffsetDateTime;
 
+use super::fields::HexColorField;
 use crate::account::identity::SelfIdentity;
 use crate::custom_rewards::{
-    MAX_PROMPT_CHARS, MAX_TITLE_CHARS, RewardBody, create_request, is_valid_hex_color,
+    MAX_PROMPT_CHARS, MAX_TITLE_CHARS, MIN_COST, RewardBody, create_request,
 };
 use crate::helix::HelixTransport;
 use crate::helix_envelope::first_row;
+use crate::vocabulary::{config_keys, sub_action_ids};
 
 const KIND_ID: &str = sub_action_ids::CHANNEL_POINTS_CREATE_REWARD;
+const UNLIMITED: i64 = 0;
+
+const TITLE: BoundedTextField = BoundedTextField {
+    key: config_keys::TITLE,
+    label: "Title",
+    editor: TextEditor::Line {
+        placeholder: "My Reward",
+    },
+    default: "",
+    required: true,
+    length: ValueBounds {
+        min: None,
+        max: Some(MAX_TITLE_CHARS as i64),
+    },
+};
+
+const COST: IntegerField = IntegerField {
+    key: config_keys::COST,
+    label: "Cost (points)",
+    editor: IntegerEditor::Number,
+    default: MIN_COST,
+    bounds: ValueBounds {
+        min: Some(MIN_COST),
+        max: None,
+    },
+};
+
+const PROMPT: BoundedTextField = BoundedTextField {
+    key: config_keys::PROMPT,
+    label: "Prompt (optional)",
+    editor: TextEditor::Line {
+        placeholder: "Enter your message",
+    },
+    default: "",
+    required: false,
+    length: ValueBounds {
+        min: None,
+        max: Some(MAX_PROMPT_CHARS as i64),
+    },
+};
+
+const IS_ENABLED: ToggleField = ToggleField {
+    key: config_keys::IS_ENABLED,
+    label: "Enabled",
+    default: true,
+};
+
+const REQUIRES_USER_INPUT: ToggleField = ToggleField {
+    key: config_keys::REQUIRES_USER_INPUT,
+    label: "Require User Input",
+    default: false,
+};
+
+const SKIP_REQUEST_QUEUE: ToggleField = ToggleField {
+    key: config_keys::SKIP_REQUEST_QUEUE,
+    label: "Skip Redemption Queue",
+    default: false,
+};
+
+const MAX_PER_STREAM: IntegerField = IntegerField {
+    key: config_keys::MAX_PER_STREAM,
+    label: "Max Per Stream (0 = unlimited)",
+    editor: IntegerEditor::Number,
+    default: UNLIMITED,
+    bounds: ValueBounds {
+        min: Some(UNLIMITED),
+        max: None,
+    },
+};
+
+const MAX_PER_USER_PER_STREAM: IntegerField = IntegerField {
+    key: config_keys::MAX_PER_USER_PER_STREAM,
+    label: "Max Per User Per Stream (0 = unlimited)",
+    ..MAX_PER_STREAM
+};
+
+const GLOBAL_COOLDOWN: DurationField = DurationField {
+    key: config_keys::GLOBAL_COOLDOWN_SECONDS,
+    label: "Global Cooldown (0 = disabled)",
+    default: UNLIMITED,
+    bounds: DurationBounds::in_seconds(UNLIMITED, i64::MAX),
+};
+
+const BACKGROUND_COLOR: HexColorField = HexColorField {
+    key: config_keys::BACKGROUND_COLOR_HEX,
+    label: "Background Color (#RRGGBB or empty)",
+    placeholder: "#9147FF",
+};
+
+const CONFIG: ConfigSpec = ConfigSpec::new(&[
+    &TITLE,
+    &COST,
+    &PROMPT,
+    &IS_ENABLED,
+    &REQUIRES_USER_INPUT,
+    &SKIP_REQUEST_QUEUE,
+    &MAX_PER_STREAM,
+    &MAX_PER_USER_PER_STREAM,
+    &GLOBAL_COOLDOWN,
+    &BACKGROUND_COLOR,
+]);
+
+struct ResolvedConfig {
+    title: String,
+    cost: i64,
+    prompt: String,
+    is_enabled: bool,
+    is_user_input_required: bool,
+    should_redemptions_skip_request_queue: bool,
+    max_per_stream: i64,
+    max_per_user_per_stream: i64,
+    global_cooldown_seconds: u64,
+    background_color_hex: String,
+}
+
+impl ResolvedConfig {
+    fn read(config: &SubActionConfig, args: &ArgStack) -> Result<Self, ConfigProblem> {
+        Ok(Self {
+            title: TITLE.read(config, args)?,
+            cost: COST.read(config, args)?,
+            prompt: PROMPT.read(config, args)?,
+            is_enabled: IS_ENABLED.read(config, args)?,
+            is_user_input_required: REQUIRES_USER_INPUT.read(config, args)?,
+            should_redemptions_skip_request_queue: SKIP_REQUEST_QUEUE.read(config, args)?,
+            max_per_stream: MAX_PER_STREAM.read(config, args)?,
+            max_per_user_per_stream: MAX_PER_USER_PER_STREAM.read(config, args)?,
+            global_cooldown_seconds: GLOBAL_COOLDOWN.read(config, args)?.as_secs(),
+            background_color_hex: BACKGROUND_COLOR.read(config, args)?,
+        })
+    }
+
+    fn body(&self) -> RewardBody {
+        let mut body = RewardBody::new()
+            .title(self.title.clone())
+            .cost(self.cost)
+            .enabled(self.is_enabled)
+            .user_input_required(self.is_user_input_required)
+            .skip_request_queue(self.should_redemptions_skip_request_queue);
+        if self.is_user_input_required && !self.prompt.is_empty() {
+            body = body.prompt(self.prompt.clone());
+        }
+        if !self.background_color_hex.is_empty() {
+            body = body.background_color(self.background_color_hex.clone());
+        }
+        body.max_per_stream(self.max_per_stream)
+            .max_per_user_per_stream(self.max_per_user_per_stream)
+            .global_cooldown_seconds(self.global_cooldown_seconds.cast_signed())
+    }
+}
 
 pub struct CreateRewardRunner {
     transport: Arc<dyn HelixTransport>,
@@ -35,58 +183,24 @@ impl CreateRewardRunner {
     }
 
     async fn create(&self, cfg: &ResolvedConfig) -> Result<String, SubActionOutcome> {
+        if cfg.title.is_empty() {
+            return Err(SubActionOutcome::Failed("title is required".to_owned()));
+        }
         let user_id = match self.identity.user_id().await {
             Ok(id) => id,
             Err(e) => return Err(SubActionOutcome::Failed(e.to_string())),
         };
-
-        let request = create_request(user_id, build_body(cfg));
-
+        let request = create_request(user_id, cfg.body());
         let resp = self
             .transport
             .execute(request)
             .await
             .map_err(|e| SubActionOutcome::Failed(e.to_string()))?;
-
         first_row(&resp)
             .and_then(|r| r["id"].as_str())
             .map(|s| s.to_owned())
             .ok_or_else(|| SubActionOutcome::Failed("empty response from create_reward".to_owned()))
     }
-}
-
-struct ResolvedConfig {
-    title: String,
-    cost: i64,
-    prompt: String,
-    is_enabled: bool,
-    is_user_input_required: bool,
-    should_redemptions_skip_request_queue: bool,
-    max_per_stream: i64,
-    max_per_user_per_stream: i64,
-    global_cooldown_seconds: i64,
-    background_color_hex: String,
-}
-
-fn build_body(cfg: &ResolvedConfig) -> RewardBody {
-    let mut body = RewardBody::new()
-        .title(cfg.title.clone())
-        .cost(cfg.cost)
-        .enabled(cfg.is_enabled)
-        .user_input_required(cfg.is_user_input_required)
-        .skip_request_queue(cfg.should_redemptions_skip_request_queue);
-
-    if cfg.is_user_input_required && !cfg.prompt.is_empty() {
-        body = body.prompt(cfg.prompt.clone());
-    }
-
-    if !cfg.background_color_hex.is_empty() {
-        body = body.background_color(cfg.background_color_hex.clone());
-    }
-
-    body.max_per_stream(cfg.max_per_stream)
-        .max_per_user_per_stream(cfg.max_per_user_per_stream)
-        .global_cooldown_seconds(cfg.global_cooldown_seconds)
 }
 
 #[async_trait]
@@ -115,130 +229,8 @@ impl SubActionRunner for CreateRewardRunner {
         "star"
     }
 
-    fn default_config(&self) -> SubActionConfig {
-        BTreeMap::from([
-            ("title".to_owned(), Variant::String(String::new())),
-            ("cost".to_owned(), Variant::Int(1)),
-            ("prompt".to_owned(), Variant::String(String::new())),
-            ("is_enabled".to_owned(), Variant::Bool(true)),
-            ("requires_user_input".to_owned(), Variant::Bool(false)),
-            (
-                "should_redemptions_skip_request_queue".to_owned(),
-                Variant::Bool(false),
-            ),
-            ("max_per_stream".to_owned(), Variant::Int(0)),
-            ("max_per_user_per_stream".to_owned(), Variant::Int(0)),
-            ("global_cooldown_seconds".to_owned(), Variant::Int(0)),
-            (
-                "background_color_hex".to_owned(),
-                Variant::String(String::new()),
-            ),
-        ])
-    }
-
-    fn config_fields(&self) -> Vec<FormField> {
-        vec![
-            FormField::Text {
-                key: "title",
-                label: "Title",
-                placeholder: "My Reward",
-            },
-            FormField::Integer {
-                key: "cost",
-                label: "Cost (points)",
-                min: 1,
-                max: i64::MAX,
-            },
-            FormField::Text {
-                key: "prompt",
-                label: "Prompt (optional)",
-                placeholder: "Enter your message",
-            },
-            FormField::Toggle {
-                key: "is_enabled",
-                label: "Enabled",
-            },
-            FormField::Toggle {
-                key: "requires_user_input",
-                label: "Require User Input",
-            },
-            FormField::Toggle {
-                key: "should_redemptions_skip_request_queue",
-                label: "Skip Redemption Queue",
-            },
-            FormField::Integer {
-                key: "max_per_stream",
-                label: "Max Per Stream (0 = unlimited)",
-                min: 0,
-                max: i64::MAX,
-            },
-            FormField::Integer {
-                key: "max_per_user_per_stream",
-                label: "Max Per User Per Stream (0 = unlimited)",
-                min: 0,
-                max: i64::MAX,
-            },
-            FormField::Duration {
-                key: "global_cooldown_seconds",
-                label: "Global Cooldown (0 = disabled)",
-                bounds: DurationBounds::in_seconds(0, i64::MAX),
-            },
-            FormField::Text {
-                key: "background_color_hex",
-                label: "Background Color (#RRGGBB or empty)",
-                placeholder: "#9147FF",
-            },
-        ]
-    }
-
-    fn validate_config(&self, config: &SubActionConfig) -> Result<(), RegistryError> {
-        let title = match config.get("title") {
-            Some(Variant::String(s)) => s.as_str(),
-            _ => "",
-        };
-        if title.is_empty() {
-            return Err(RegistryError::invalid_field(
-                "title",
-                ConfigReason::Required,
-            ));
-        }
-        if title.chars().count() > MAX_TITLE_CHARS {
-            return Err(RegistryError::invalid_field(
-                "title",
-                ConfigReason::LengthOutOfRange(ValueBounds::at_most(MAX_TITLE_CHARS)),
-            ));
-        }
-
-        match config.get("cost") {
-            Some(Variant::Int(n)) if *n >= 1 => {}
-            _ => {
-                return Err(RegistryError::invalid_field(
-                    "cost",
-                    ConfigReason::OutOfRange(ValueBounds::at_least(1)),
-                ));
-            }
-        }
-
-        if let Some(Variant::String(s)) = config.get("prompt")
-            && s.chars().count() > MAX_PROMPT_CHARS
-        {
-            return Err(RegistryError::invalid_field(
-                "prompt",
-                ConfigReason::LengthOutOfRange(ValueBounds::at_most(MAX_PROMPT_CHARS)),
-            ));
-        }
-
-        if let Some(Variant::String(s)) = config.get("background_color_hex")
-            && !s.is_empty()
-            && !is_valid_hex_color(s)
-        {
-            return Err(RegistryError::invalid_field(
-                "background_color_hex",
-                ConfigReason::InvalidFormat("expected a #RRGGBB color".to_owned()),
-            ));
-        }
-
-        Ok(())
+    fn config_spec(&self) -> Option<ConfigSpec> {
+        Some(CONFIG)
     }
 
     async fn execute(
@@ -246,140 +238,20 @@ impl SubActionRunner for CreateRewardRunner {
         config: &SubActionConfig,
         ctx: &RunContext<'_>,
     ) -> (SubActionTelemetry, Option<ArgStack>) {
-        let started_at = OffsetDateTime::now_utc();
-        let start = Instant::now();
-
-        let title_template = config.str("title").unwrap_or_default();
-        let title = ctx.arg_stack.interpolate(title_template);
-
-        if title.is_empty() {
-            return (
-                SubActionTelemetry {
-                    args_in: ::std::collections::BTreeMap::new(),
-                    produced: ::std::collections::BTreeMap::new(),
-                    kind: KIND_ID.to_owned(),
-                    started_at,
-                    duration_ms: start.elapsed().as_millis() as u64,
-                    outcome: SubActionOutcome::Failed("title is required".to_owned()),
-                    index: ctx.index,
-                },
-                None,
-            );
-        }
-        if title.chars().count() > MAX_TITLE_CHARS {
-            return (
-                SubActionTelemetry {
-                    args_in: ::std::collections::BTreeMap::new(),
-                    produced: ::std::collections::BTreeMap::new(),
-                    kind: KIND_ID.to_owned(),
-                    started_at,
-                    duration_ms: start.elapsed().as_millis() as u64,
-                    outcome: SubActionOutcome::Failed(format!(
-                        "title exceeds {MAX_TITLE_CHARS}-character limit"
-                    )),
-                    index: ctx.index,
-                },
-                None,
-            );
-        }
-
-        let cost = match config.get("cost") {
-            Some(Variant::Int(n)) if *n >= 1 => *n,
-            _ => {
-                return (
-                    SubActionTelemetry {
-                        args_in: ::std::collections::BTreeMap::new(),
-                        produced: ::std::collections::BTreeMap::new(),
-                        kind: KIND_ID.to_owned(),
-                        started_at,
-                        duration_ms: start.elapsed().as_millis() as u64,
-                        outcome: SubActionOutcome::Failed("cost must be ≥1".to_owned()),
-                        index: ctx.index,
-                    },
-                    None,
-                );
-            }
+        let timer = StepTimer::start(ctx, KIND_ID);
+        let resolved = match ResolvedConfig::read(config, ctx.arg_stack) {
+            Ok(resolved) => resolved,
+            Err(problem) => return (timer.invalid_config(&problem), None),
         };
-
-        let prompt_template = config.str("prompt").unwrap_or_default();
-        let prompt = ctx.arg_stack.interpolate(prompt_template);
-
-        let is_enabled = config
-            .get("is_enabled")
-            .and_then(|v| v.as_bool())
-            .unwrap_or(true);
-        let is_user_input_required = config
-            .get("requires_user_input")
-            .and_then(|v| v.as_bool())
-            .unwrap_or(false);
-        let should_redemptions_skip_request_queue = config
-            .get("should_redemptions_skip_request_queue")
-            .and_then(|v| v.as_bool())
-            .unwrap_or(false);
-        let max_per_stream = config
-            .get("max_per_stream")
-            .and_then(|v| v.as_int())
-            .unwrap_or(0)
-            .max(0);
-        let max_per_user_per_stream = config
-            .get("max_per_user_per_stream")
-            .and_then(|v| v.as_int())
-            .unwrap_or(0)
-            .max(0);
-        let global_cooldown_seconds = config
-            .get("global_cooldown_seconds")
-            .and_then(|v| v.as_int())
-            .unwrap_or(0)
-            .max(0);
-        let background_color_hex = config
-            .str("background_color_hex")
-            .unwrap_or_default()
-            .to_owned();
-
-        let resolved = ResolvedConfig {
-            title,
-            cost,
-            prompt,
-            is_enabled,
-            is_user_input_required,
-            should_redemptions_skip_request_queue,
-            max_per_stream,
-            max_per_user_per_stream,
-            global_cooldown_seconds,
-            background_color_hex,
-        };
-
         match self.create(&resolved).await {
             Ok(reward_id) => {
                 let output_stack = ctx
                     .arg_stack
                     .clone()
                     .set("reward.id".to_owned(), Variant::String(reward_id));
-                (
-                    SubActionTelemetry {
-                        args_in: ::std::collections::BTreeMap::new(),
-                        produced: ::std::collections::BTreeMap::new(),
-                        kind: KIND_ID.to_owned(),
-                        started_at,
-                        duration_ms: start.elapsed().as_millis() as u64,
-                        outcome: SubActionOutcome::Success,
-                        index: ctx.index,
-                    },
-                    Some(output_stack),
-                )
+                (timer.success(), Some(output_stack))
             }
-            Err(outcome) => (
-                SubActionTelemetry {
-                    args_in: ::std::collections::BTreeMap::new(),
-                    produced: ::std::collections::BTreeMap::new(),
-                    kind: KIND_ID.to_owned(),
-                    started_at,
-                    duration_ms: start.elapsed().as_millis() as u64,
-                    outcome,
-                    index: ctx.index,
-                },
-                None,
-            ),
+            Err(outcome) => (timer.finish(outcome), None),
         }
     }
 }

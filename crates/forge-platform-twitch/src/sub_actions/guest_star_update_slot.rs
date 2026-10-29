@@ -1,30 +1,79 @@
-use crate::vocabulary::sub_action_ids;
-use std::collections::BTreeMap;
 use std::sync::Arc;
-use std::time::Instant;
 
 use async_trait::async_trait;
 use forge_registry::runner::SubActionConfig;
 use forge_registry::{
-    ConfigReason, FormField, RegistryError, RunContext, SubActionCategory, SubActionConfigExt,
-    SubActionRunner, ValueBounds,
+    ChoiceField, ConfigProblem, ConfigSpec, IntegerEditor, IntegerField, OptionalField, RunContext,
+    StepTimer, SubActionCategory, SubActionRunner, TypedField, ValueBounds,
 };
-use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, Variant};
-use time::OffsetDateTime;
+use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry};
 
-use super::guest_star::{interpolate, session_id_field, validate_session_id, with_session_id};
+use super::fields::{ModeToggle, mode_toggle};
+use super::guest_star::{SESSION_ID, SLOT_ID, first_missing};
 use crate::account::identity::SelfIdentity;
 use crate::helix::{HelixMethod, HelixRequest, HelixTransport};
+use crate::vocabulary::{config_keys, sub_action_ids};
 
 const KIND_ID: &str = sub_action_ids::GUEST_STAR_UPDATE_SLOT;
-
-const UNCHANGED: &str = "unchanged";
-const ON: &str = "on";
-const OFF: &str = "off";
-const TOGGLE_OPTIONS: &[&str] = &[UNCHANGED, ON, OFF];
-
 const VOLUME_MIN: i64 = 0;
 const VOLUME_MAX: i64 = 100;
+
+const AUDIO_ENABLED: ChoiceField<ModeToggle> =
+    mode_toggle(config_keys::AUDIO_ENABLED, "Audio Enabled");
+const VIDEO_ENABLED: ChoiceField<ModeToggle> =
+    mode_toggle(config_keys::VIDEO_ENABLED, "Video Enabled");
+const VOLUME: OptionalField<IntegerField> = OptionalField::shared(IntegerField {
+    key: config_keys::VOLUME,
+    label: "Volume (0-100)",
+    editor: IntegerEditor::Number,
+    default: VOLUME_MIN,
+    bounds: ValueBounds {
+        min: Some(VOLUME_MIN),
+        max: Some(VOLUME_MAX),
+    },
+});
+
+const CONFIG: ConfigSpec = ConfigSpec::new(&[
+    &SESSION_ID,
+    &SLOT_ID,
+    &AUDIO_ENABLED,
+    &VIDEO_ENABLED,
+    &VOLUME,
+]);
+
+struct SlotSettings {
+    session_id: String,
+    slot_id: String,
+    audio_enabled: ModeToggle,
+    video_enabled: ModeToggle,
+    volume: Option<i64>,
+}
+
+impl SlotSettings {
+    fn read(config: &SubActionConfig, args: &ArgStack) -> Result<Self, ConfigProblem> {
+        Ok(Self {
+            session_id: SESSION_ID.read(config, args)?,
+            slot_id: SLOT_ID.read(config, args)?,
+            audio_enabled: AUDIO_ENABLED.read(config, args)?,
+            video_enabled: VIDEO_ENABLED.read(config, args)?,
+            volume: VOLUME.read(config, args)?,
+        })
+    }
+
+    fn body(&self) -> serde_json::Map<String, serde_json::Value> {
+        let mut body = serde_json::Map::new();
+        if let Some(on) = self.audio_enabled.applied() {
+            body.insert("is_audio_enabled".to_owned(), on.into());
+        }
+        if let Some(on) = self.video_enabled.applied() {
+            body.insert("is_video_enabled".to_owned(), on.into());
+        }
+        if let Some(volume) = self.volume {
+            body.insert("volume".to_owned(), volume.into());
+        }
+        body
+    }
+}
 
 pub struct GuestStarUpdateSlotRunner {
     transport: Arc<dyn HelixTransport>,
@@ -39,63 +88,31 @@ impl GuestStarUpdateSlotRunner {
         }
     }
 
-    async fn apply(
-        &self,
-        session_id: &str,
-        slot_id: &str,
-        config: &SubActionConfig,
-    ) -> SubActionOutcome {
+    async fn apply(&self, settings: &SlotSettings) -> SubActionOutcome {
+        if let Some(missing) = first_missing(&[
+            (&SESSION_ID, &settings.session_id),
+            (&SLOT_ID, &settings.slot_id),
+        ]) {
+            return SubActionOutcome::Failed(missing);
+        }
         let user_id = match self.identity.user_id().await {
             Ok(id) => id,
             Err(e) => return SubActionOutcome::Failed(format!("{KIND_ID}: {e}")),
         };
-
-        let mut body = serde_json::Map::new();
-
-        if let Some(on) = toggle_to_bool(mode_toggle(config, "audio_enabled")) {
-            body.insert("is_audio_enabled".to_owned(), on.into());
-        }
-        if let Some(on) = toggle_to_bool(mode_toggle(config, "video_enabled")) {
-            body.insert("is_video_enabled".to_owned(), on.into());
-        }
-        if let Some(vol) = read_opt_int(config, "volume") {
-            body.insert("volume".to_owned(), vol.into());
-        }
-
+        let body = settings.body();
         if body.is_empty() {
             return SubActionOutcome::Success;
         }
-
         let request = HelixRequest::new(HelixMethod::Patch, "/helix/guest_star/slot_settings")
             .query("broadcaster_id", user_id.clone())
             .query("moderator_id", user_id)
-            .query("session_id", session_id.to_owned())
-            .query("slot_id", slot_id.to_owned())
+            .query("session_id", settings.session_id.clone())
+            .query("slot_id", settings.slot_id.clone())
             .body(serde_json::Value::Object(body));
-
         match self.transport.execute(request).await {
             Ok(_) => SubActionOutcome::Success,
             Err(e) => SubActionOutcome::Failed(format!("{KIND_ID}: {e}")),
         }
-    }
-}
-
-fn mode_toggle<'a>(config: &'a SubActionConfig, key: &str) -> Option<&'a str> {
-    config.str(key)
-}
-
-fn toggle_to_bool(value: Option<&str>) -> Option<bool> {
-    match value {
-        Some(ON) => Some(true),
-        Some(OFF) => Some(false),
-        _ => None,
-    }
-}
-
-fn read_opt_int(config: &SubActionConfig, key: &str) -> Option<i64> {
-    match config.get(key) {
-        Some(Variant::Int(n)) => Some(*n),
-        _ => None,
     }
 }
 
@@ -125,87 +142,8 @@ impl SubActionRunner for GuestStarUpdateSlotRunner {
         "adjustments"
     }
 
-    fn default_config(&self) -> SubActionConfig {
-        let mut config = with_session_id(BTreeMap::new());
-        config.insert("slot_id".to_owned(), Variant::String(String::new()));
-        config.insert(
-            "audio_enabled".to_owned(),
-            Variant::String(UNCHANGED.to_owned()),
-        );
-        config.insert(
-            "video_enabled".to_owned(),
-            Variant::String(UNCHANGED.to_owned()),
-        );
-        config
-    }
-
-    fn config_fields(&self) -> Vec<FormField> {
-        vec![
-            session_id_field(),
-            FormField::Text {
-                key: "slot_id",
-                label: "Slot ID",
-                placeholder: "1",
-            },
-            FormField::Select {
-                key: "audio_enabled",
-                label: "Audio Enabled",
-                options: TOGGLE_OPTIONS,
-            },
-            FormField::Select {
-                key: "video_enabled",
-                label: "Video Enabled",
-                options: TOGGLE_OPTIONS,
-            },
-            FormField::Optional {
-                key: "volume",
-                label: "Volume (0-100)",
-                inner: Box::new(FormField::Integer {
-                    key: "volume",
-                    label: "Volume (0-100)",
-                    min: VOLUME_MIN,
-                    max: VOLUME_MAX,
-                }),
-            },
-        ]
-    }
-
-    fn validate_config(&self, config: &SubActionConfig) -> Result<(), RegistryError> {
-        validate_session_id(config)?;
-
-        match config.get("slot_id") {
-            Some(Variant::String(s)) if !s.is_empty() => {}
-            _ => {
-                return Err(RegistryError::invalid_field(
-                    "slot_id",
-                    ConfigReason::Required,
-                ));
-            }
-        }
-
-        for key in &["audio_enabled", "video_enabled"] {
-            match config.get(*key) {
-                None => {}
-                Some(Variant::String(s)) if TOGGLE_OPTIONS.contains(&s.as_str()) => {}
-                _ => {
-                    return Err(RegistryError::invalid_field(
-                        *key,
-                        ConfigReason::choices(["unchanged", "on", "off"]),
-                    ));
-                }
-            }
-        }
-
-        if let Some(vol) = read_opt_int(config, "volume")
-            && !(VOLUME_MIN..=VOLUME_MAX).contains(&vol)
-        {
-            return Err(RegistryError::invalid_field(
-                "volume",
-                ConfigReason::OutOfRange(ValueBounds::between(VOLUME_MIN, VOLUME_MAX)),
-            ));
-        }
-
-        Ok(())
+    fn config_spec(&self) -> Option<ConfigSpec> {
+        Some(CONFIG)
     }
 
     async fn execute(
@@ -213,32 +151,12 @@ impl SubActionRunner for GuestStarUpdateSlotRunner {
         config: &SubActionConfig,
         ctx: &RunContext<'_>,
     ) -> (SubActionTelemetry, Option<ArgStack>) {
-        let started_at = OffsetDateTime::now_utc();
-        let start = Instant::now();
-
-        let session_id = interpolate(config, ctx.arg_stack, "session_id");
-        let slot_id = interpolate(config, ctx.arg_stack, "slot_id");
-
-        let outcome = if session_id.is_empty() {
-            SubActionOutcome::Failed("session_id is required".to_owned())
-        } else if slot_id.is_empty() {
-            SubActionOutcome::Failed("slot_id is required".to_owned())
-        } else {
-            self.apply(&session_id, &slot_id, config).await
+        let timer = StepTimer::start(ctx, KIND_ID);
+        let settings = match SlotSettings::read(config, ctx.arg_stack) {
+            Ok(settings) => settings,
+            Err(problem) => return (timer.invalid_config(&problem), None),
         };
-
-        (
-            SubActionTelemetry {
-                args_in: ::std::collections::BTreeMap::new(),
-                produced: ::std::collections::BTreeMap::new(),
-                kind: KIND_ID.to_owned(),
-                started_at,
-                duration_ms: start.elapsed().as_millis() as u64,
-                outcome,
-                index: ctx.index,
-            },
-            None,
-        )
+        (timer.finish(self.apply(&settings).await), None)
     }
 }
 

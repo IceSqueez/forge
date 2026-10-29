@@ -15,6 +15,7 @@ mod deny_automod_message;
 mod disable_reward;
 mod enable_reward;
 mod end_poll;
+mod fields;
 mod fulfill_redemption;
 mod get_current_goal;
 mod guest_star;
@@ -56,6 +57,15 @@ use forge_registry::{RegistryError, SubActionRegistry};
 use forge_storage::CredentialsRepo;
 
 use crate::account::identity::SelfIdentity;
+
+pub(crate) use end_poll::PollEndStatus;
+pub(crate) use fields::ModeToggle;
+pub(crate) use run_ad::{AD_LENGTH, AdLength};
+pub(crate) use send_announcement::{AnnouncementColor, COLOR as ANNOUNCEMENT_COLOR};
+pub(crate) use set_mode::{EMOTE_ONLY, FOLLOWER_MODE_MIN_AGE, SLOW_MODE_WAIT};
+pub(crate) use start_poll::POLL_DURATION;
+pub(crate) use start_prediction::PREDICTION_WINDOW;
+pub(crate) use timeout_user::TIMEOUT_DURATION;
 
 pub use add_blocked_term::AddBlockedTermRunner;
 pub use add_moderator::AddModeratorRunner;

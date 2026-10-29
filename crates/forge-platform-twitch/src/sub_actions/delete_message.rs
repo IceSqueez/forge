@@ -1,23 +1,26 @@
-use crate::vocabulary::sub_action_ids;
-use std::collections::BTreeMap;
 use std::sync::Arc;
-use std::time::Instant;
 
 use async_trait::async_trait;
 use forge_registry::runner::SubActionConfig;
 use forge_registry::{
-    ConfigReason, FormField, RegistryError, RunContext, SubActionCategory, SubActionConfigExt,
-    SubActionRunner,
+    ConfigSpec, RunContext, StepTimer, SubActionCategory, SubActionRunner, TypedField,
 };
-use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, Variant};
-use time::OffsetDateTime;
+use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry};
 
+use super::fields::ResolvedIdField;
 use crate::account::identity::SelfIdentity;
 use crate::helix::{HelixMethod, HelixRequest, HelixTransport};
+use crate::vocabulary::{config_keys, sub_action_ids};
 
 const KIND_ID: &str = sub_action_ids::CHAT_DELETE_MESSAGE;
-const DEFAULT_MESSAGE_ID_TEMPLATE: &str = "%message_id%";
-const UNRESOLVED_REFERENCE_MARKER: char = '%';
+
+const MESSAGE_ID: ResolvedIdField = ResolvedIdField {
+    key: config_keys::MESSAGE_ID,
+    label: "Message ID",
+    default: "%message_id%",
+};
+
+const CONFIG: ConfigSpec = ConfigSpec::new(&[&MESSAGE_ID]);
 
 pub struct DeleteMessageRunner {
     transport: Arc<dyn HelixTransport>,
@@ -33,14 +36,6 @@ impl DeleteMessageRunner {
     }
 
     async fn delete(&self, message_id: &str) -> SubActionOutcome {
-        if message_id.is_empty() {
-            return SubActionOutcome::Failed("message_id is empty after interpolation".to_owned());
-        }
-        if message_id.contains(UNRESOLVED_REFERENCE_MARKER) {
-            return SubActionOutcome::Failed(
-                "message_id has an unresolved variable reference".to_owned(),
-            );
-        }
         let user_id = match self.identity.user_id().await {
             Ok(id) => id,
             Err(e) => return SubActionOutcome::Failed(e.to_string()),
@@ -79,32 +74,8 @@ impl SubActionRunner for DeleteMessageRunner {
         "trash"
     }
 
-    fn default_config(&self) -> SubActionConfig {
-        BTreeMap::from([(
-            "message_id".to_owned(),
-            Variant::String(DEFAULT_MESSAGE_ID_TEMPLATE.to_owned()),
-        )])
-    }
-
-    fn config_fields(&self) -> Vec<FormField> {
-        vec![FormField::Text {
-            key: "message_id",
-            label: "Message ID",
-            placeholder: DEFAULT_MESSAGE_ID_TEMPLATE,
-        }]
-    }
-
-    fn validate_config(&self, config: &SubActionConfig) -> Result<(), RegistryError> {
-        match config.get("message_id") {
-            Some(Variant::String(s)) if !s.is_empty() => {}
-            _ => {
-                return Err(RegistryError::invalid_field(
-                    "message_id",
-                    ConfigReason::Required,
-                ));
-            }
-        }
-        Ok(())
+    fn config_spec(&self) -> Option<ConfigSpec> {
+        Some(CONFIG)
     }
 
     async fn execute(
@@ -112,26 +83,12 @@ impl SubActionRunner for DeleteMessageRunner {
         config: &SubActionConfig,
         ctx: &RunContext<'_>,
     ) -> (SubActionTelemetry, Option<ArgStack>) {
-        let started_at = OffsetDateTime::now_utc();
-        let start = Instant::now();
-
-        let template = config.str("message_id").unwrap_or_default();
-        let message_id = ctx.arg_stack.interpolate(template);
-
-        let outcome = self.delete(&message_id).await;
-
-        (
-            SubActionTelemetry {
-                args_in: ::std::collections::BTreeMap::new(),
-                produced: ::std::collections::BTreeMap::new(),
-                kind: KIND_ID.to_owned(),
-                started_at,
-                duration_ms: start.elapsed().as_millis() as u64,
-                outcome,
-                index: ctx.index,
-            },
-            None,
-        )
+        let timer = StepTimer::start(ctx, KIND_ID);
+        let message_id = match MESSAGE_ID.read(config, ctx.arg_stack) {
+            Ok(message_id) => message_id,
+            Err(problem) => return (timer.invalid_config(&problem), None),
+        };
+        (timer.finish(self.delete(&message_id).await), None)
     }
 }
 

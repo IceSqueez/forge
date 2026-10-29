@@ -1,24 +1,36 @@
-use crate::vocabulary::sub_action_ids;
-use std::collections::BTreeMap;
 use std::sync::Arc;
-use std::time::Instant;
 
 use async_trait::async_trait;
 use forge_registry::runner::SubActionConfig;
 use forge_registry::{
-    ConfigReason, FormField, RegistryError, RunContext, SubActionCategory, SubActionConfigExt,
-    SubActionRunner, ValueBounds,
+    BoundedTextField, ConfigSpec, RunContext, StepTimer, SubActionCategory, SubActionRunner,
+    TextEditor, TypedField, ValueBounds,
 };
 use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, Variant};
-use time::OffsetDateTime;
 
 use crate::account::identity::SelfIdentity;
 use crate::helix::{HelixMethod, HelixRequest, HelixTransport};
+use crate::vocabulary::{config_keys, sub_action_ids};
 
 const KIND_ID: &str = sub_action_ids::AUTOMOD_ADD_BLOCKED_TERM;
+const MIN_TERM_CHARS: i64 = 2;
+const MAX_TERM_CHARS: i64 = 500;
 
-const MIN_TERM_CHARS: usize = 2;
-const MAX_TERM_CHARS: usize = 500;
+const TEXT: BoundedTextField = BoundedTextField {
+    key: config_keys::TEXT,
+    label: "Term to block",
+    editor: TextEditor::Line {
+        placeholder: "word or phrase (2-500 characters)",
+    },
+    default: "",
+    required: true,
+    length: ValueBounds {
+        min: Some(MIN_TERM_CHARS),
+        max: Some(MAX_TERM_CHARS),
+    },
+};
+
+const CONFIG: ConfigSpec = ConfigSpec::new(&[&TEXT]);
 
 pub struct AddBlockedTermRunner {
     transport: Arc<dyn HelixTransport>,
@@ -31,36 +43,6 @@ impl AddBlockedTermRunner {
             transport,
             identity,
         }
-    }
-}
-
-pub(crate) fn blocked_term_default_config() -> SubActionConfig {
-    BTreeMap::from([("text".to_owned(), Variant::String(String::new()))])
-}
-
-pub(crate) fn blocked_term_config_fields() -> Vec<FormField> {
-    vec![FormField::Text {
-        key: "text",
-        label: "Term to block",
-        placeholder: "word or phrase (2-500 characters)",
-    }]
-}
-
-pub(crate) fn validate_blocked_term_config(config: &SubActionConfig) -> Result<(), RegistryError> {
-    match config.get("text") {
-        Some(Variant::String(s))
-            if s.chars().count() >= MIN_TERM_CHARS && s.chars().count() <= MAX_TERM_CHARS =>
-        {
-            Ok(())
-        }
-        Some(Variant::String(s)) if s.is_empty() => {
-            Err(RegistryError::invalid_field("text", ConfigReason::Required))
-        }
-        Some(Variant::String(_)) => Err(RegistryError::invalid_field(
-            "text",
-            ConfigReason::LengthOutOfRange(ValueBounds::between(MIN_TERM_CHARS, MAX_TERM_CHARS)),
-        )),
-        _ => Err(RegistryError::invalid_field("text", ConfigReason::Required)),
     }
 }
 
@@ -90,16 +72,8 @@ impl SubActionRunner for AddBlockedTermRunner {
         "slash"
     }
 
-    fn default_config(&self) -> SubActionConfig {
-        blocked_term_default_config()
-    }
-
-    fn config_fields(&self) -> Vec<FormField> {
-        blocked_term_config_fields()
-    }
-
-    fn validate_config(&self, config: &SubActionConfig) -> Result<(), RegistryError> {
-        validate_blocked_term_config(config)
+    fn config_spec(&self) -> Option<ConfigSpec> {
+        Some(CONFIG)
     }
 
     async fn execute(
@@ -107,58 +81,20 @@ impl SubActionRunner for AddBlockedTermRunner {
         config: &SubActionConfig,
         ctx: &RunContext<'_>,
     ) -> (SubActionTelemetry, Option<ArgStack>) {
-        let started_at = OffsetDateTime::now_utc();
-        let start = Instant::now();
-
-        let text_template = config.str("text").unwrap_or_default();
-        let text = ctx.arg_stack.interpolate(text_template);
-
-        if text.is_empty() {
-            return (
-                SubActionTelemetry {
-                    args_in: ::std::collections::BTreeMap::new(),
-                    produced: ::std::collections::BTreeMap::new(),
-                    kind: KIND_ID.to_owned(),
-                    started_at,
-                    duration_ms: start.elapsed().as_millis() as u64,
-                    outcome: SubActionOutcome::Failed("text is required".to_owned()),
-                    index: ctx.index,
-                },
-                None,
-            );
-        }
-
+        let timer = StepTimer::start(ctx, KIND_ID);
+        let text = match TEXT.read(config, ctx.arg_stack) {
+            Ok(text) => text,
+            Err(problem) => return (timer.invalid_config(&problem), None),
+        };
         match post_blocked_term(&self.transport, &self.identity, KIND_ID, &text).await {
             Ok(term_id) => {
                 let output_stack = ctx
                     .arg_stack
                     .clone()
                     .set("blocked_term.id".to_owned(), Variant::String(term_id));
-                (
-                    SubActionTelemetry {
-                        args_in: ::std::collections::BTreeMap::new(),
-                        produced: ::std::collections::BTreeMap::new(),
-                        kind: KIND_ID.to_owned(),
-                        started_at,
-                        duration_ms: start.elapsed().as_millis() as u64,
-                        outcome: SubActionOutcome::Success,
-                        index: ctx.index,
-                    },
-                    Some(output_stack),
-                )
+                (timer.success(), Some(output_stack))
             }
-            Err(outcome) => (
-                SubActionTelemetry {
-                    args_in: ::std::collections::BTreeMap::new(),
-                    produced: ::std::collections::BTreeMap::new(),
-                    kind: KIND_ID.to_owned(),
-                    started_at,
-                    duration_ms: start.elapsed().as_millis() as u64,
-                    outcome,
-                    index: ctx.index,
-                },
-                None,
-            ),
+            Err(outcome) => (timer.finish(outcome), None),
         }
     }
 }
@@ -173,17 +109,14 @@ async fn post_blocked_term(
         .user_id()
         .await
         .map_err(|e| SubActionOutcome::Failed(e.to_string()))?;
-
     let request = HelixRequest::new(HelixMethod::Post, "/helix/moderation/blocked_terms")
         .query("broadcaster_id", user_id.clone())
         .query("moderator_id", user_id)
         .body(serde_json::json!({ "text": text }));
-
     let resp = transport
         .execute(request)
         .await
         .map_err(|e| SubActionOutcome::Failed(format!("{kind_id}: {e}")))?;
-
     resp["data"]
         .as_array()
         .and_then(|arr| arr.first())

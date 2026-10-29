@@ -1,22 +1,40 @@
-use crate::vocabulary::sub_action_ids;
-use std::collections::BTreeMap;
 use std::sync::Arc;
-use std::time::Instant;
 
 use async_trait::async_trait;
 use forge_registry::runner::SubActionConfig;
 use forge_registry::{
-    ConfigReason, FormField, RegistryError, RunContext, SubActionCategory, SubActionConfigExt,
-    SubActionRunner, ValueBounds,
+    BoundedTextField, ConfigProblem, ConfigSpec, RunContext, StepTimer, SubActionCategory,
+    SubActionRunner, TextEditor, TypedField, ValueBounds,
 };
-use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, Variant};
-use time::OffsetDateTime;
+use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry};
 
+use super::fields::{MAX_REASON_CHARS, TARGET_LOGIN};
 use crate::account::identity::{SelfIdentity, resolve_user_id};
 use crate::helix::{HelixMethod, HelixRequest, HelixTransport};
+use crate::vocabulary::{config_keys, sub_action_ids};
 
 const KIND_ID: &str = sub_action_ids::MODERATION_WARN_USER;
-const MAX_REASON_CHARS: usize = 500;
+
+const REASON: BoundedTextField = BoundedTextField {
+    key: config_keys::REASON,
+    label: "Reason (required, max 500 chars)",
+    editor: TextEditor::Area,
+    default: "",
+    required: true,
+    length: ValueBounds {
+        min: None,
+        max: Some(MAX_REASON_CHARS),
+    },
+};
+
+const CONFIG: ConfigSpec = ConfigSpec::new(&[&TARGET_LOGIN, &REASON]);
+
+fn read_config(
+    config: &SubActionConfig,
+    args: &ArgStack,
+) -> Result<(String, String), ConfigProblem> {
+    Ok((TARGET_LOGIN.read(config, args)?, REASON.read(config, args)?))
+}
 
 pub struct WarnUserRunner {
     transport: Arc<dyn HelixTransport>,
@@ -87,57 +105,8 @@ impl SubActionRunner for WarnUserRunner {
         "alert-triangle"
     }
 
-    fn default_config(&self) -> SubActionConfig {
-        BTreeMap::from([
-            (
-                "target_user_login".to_owned(),
-                Variant::String(String::new()),
-            ),
-            ("reason".to_owned(), Variant::String(String::new())),
-        ])
-    }
-
-    fn config_fields(&self) -> Vec<FormField> {
-        vec![
-            FormField::Text {
-                key: "target_user_login",
-                label: "Target Username",
-                placeholder: "%user_login%",
-            },
-            FormField::TextArea {
-                key: "reason",
-                label: "Reason (required, max 500 chars)",
-            },
-        ]
-    }
-
-    fn validate_config(&self, config: &SubActionConfig) -> Result<(), RegistryError> {
-        match config.get("target_user_login") {
-            Some(Variant::String(s)) if !s.is_empty() => {}
-            _ => {
-                return Err(RegistryError::invalid_field(
-                    "target_user_login",
-                    ConfigReason::Required,
-                ));
-            }
-        }
-        match config.get("reason") {
-            Some(Variant::String(r)) if !r.is_empty() => {
-                if r.chars().count() > MAX_REASON_CHARS {
-                    return Err(RegistryError::invalid_field(
-                        "reason",
-                        ConfigReason::LengthOutOfRange(ValueBounds::at_most(MAX_REASON_CHARS)),
-                    ));
-                }
-            }
-            _ => {
-                return Err(RegistryError::invalid_field(
-                    "reason",
-                    ConfigReason::Required,
-                ));
-            }
-        }
-        Ok(())
+    fn config_spec(&self) -> Option<ConfigSpec> {
+        Some(CONFIG)
     }
 
     async fn execute(
@@ -145,30 +114,12 @@ impl SubActionRunner for WarnUserRunner {
         config: &SubActionConfig,
         ctx: &RunContext<'_>,
     ) -> (SubActionTelemetry, Option<ArgStack>) {
-        let started_at = OffsetDateTime::now_utc();
-        let start = Instant::now();
-
-        let login_template = config.str("target_user_login").unwrap_or_default();
-        let target_login = ctx.arg_stack.interpolate(login_template);
-        let reason = config
-            .str("reason")
-            .map(|s| ctx.arg_stack.interpolate(s))
-            .unwrap_or_default();
-
-        let outcome = self.warn(&target_login, &reason).await;
-
-        (
-            SubActionTelemetry {
-                args_in: ::std::collections::BTreeMap::new(),
-                produced: ::std::collections::BTreeMap::new(),
-                kind: KIND_ID.to_owned(),
-                started_at,
-                duration_ms: start.elapsed().as_millis() as u64,
-                outcome,
-                index: ctx.index,
-            },
-            None,
-        )
+        let timer = StepTimer::start(ctx, KIND_ID);
+        let (target_login, reason) = match read_config(config, ctx.arg_stack) {
+            Ok(values) => values,
+            Err(problem) => return (timer.invalid_config(&problem), None),
+        };
+        (timer.finish(self.warn(&target_login, &reason).await), None)
     }
 }
 

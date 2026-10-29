@@ -1,21 +1,30 @@
-use crate::vocabulary::sub_action_ids;
 use std::sync::Arc;
 
 use async_trait::async_trait;
 use forge_registry::runner::SubActionConfig;
 use forge_registry::{
-    ConfigReason, FormField, RegistryError, RunContext, SubActionCategory, SubActionRunner,
+    ConfigSpec, RunContext, SubActionCategory, SubActionRunner, TextEditor, TextField,
 };
-use forge_types::{ArgStack, SubActionTelemetry, Variant};
+use forge_types::{ArgStack, SubActionTelemetry};
 
-use super::lock_prediction::{
-    execute_prediction_runner, prediction_config_fields, prediction_default_config,
-    validate_prediction_config,
-};
+use super::lock_prediction::{PREDICTION_ID, PredictionUpdate};
 use crate::account::identity::SelfIdentity;
 use crate::helix::HelixTransport;
+use crate::vocabulary::{config_keys, sub_action_ids};
 
 const KIND_ID: &str = sub_action_ids::PREDICTION_RESOLVE;
+
+const WINNING_OUTCOME_ID: TextField = TextField {
+    key: config_keys::WINNING_OUTCOME_ID,
+    label: "Winning Outcome ID",
+    editor: TextEditor::Line {
+        placeholder: "%prediction.outcome.id%",
+    },
+    default: "",
+    required: true,
+};
+
+const CONFIG: ConfigSpec = ConfigSpec::new(&[&PREDICTION_ID, &WINNING_OUTCOME_ID]);
 
 pub struct ResolvePredictionRunner {
     transport: Arc<dyn HelixTransport>,
@@ -57,34 +66,8 @@ impl SubActionRunner for ResolvePredictionRunner {
         "trophy"
     }
 
-    fn default_config(&self) -> SubActionConfig {
-        let mut cfg = prediction_default_config();
-        cfg.insert(
-            "winning_outcome_id".to_owned(),
-            Variant::String(String::new()),
-        );
-        cfg
-    }
-
-    fn config_fields(&self) -> Vec<FormField> {
-        let mut fields = prediction_config_fields();
-        fields.push(FormField::Text {
-            key: "winning_outcome_id",
-            label: "Winning Outcome ID",
-            placeholder: "%prediction.outcome.id%",
-        });
-        fields
-    }
-
-    fn validate_config(&self, config: &SubActionConfig) -> Result<(), RegistryError> {
-        validate_prediction_config(config)?;
-        match config.get("winning_outcome_id") {
-            Some(Variant::String(s)) if !s.is_empty() => Ok(()),
-            _ => Err(RegistryError::invalid_field(
-                "winning_outcome_id",
-                ConfigReason::Required,
-            )),
-        }
+    fn config_spec(&self) -> Option<ConfigSpec> {
+        Some(CONFIG)
     }
 
     async fn execute(
@@ -92,15 +75,12 @@ impl SubActionRunner for ResolvePredictionRunner {
         config: &SubActionConfig,
         ctx: &RunContext<'_>,
     ) -> (SubActionTelemetry, Option<ArgStack>) {
-        execute_prediction_runner(
-            &self.transport,
-            &self.identity,
-            KIND_ID,
-            "RESOLVED",
-            Some("winning_outcome_id"),
-            config,
-            ctx,
-        )
+        PredictionUpdate {
+            kind_id: KIND_ID,
+            status: "RESOLVED",
+            winning_outcome: Some(&WINNING_OUTCOME_ID),
+        }
+        .execute(&self.transport, &self.identity, config, ctx)
         .await
     }
 }

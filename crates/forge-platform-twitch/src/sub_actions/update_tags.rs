@@ -1,23 +1,36 @@
-use crate::vocabulary::sub_action_ids;
-use std::collections::BTreeMap;
 use std::sync::Arc;
-use std::time::Instant;
 
 use async_trait::async_trait;
 use forge_registry::runner::SubActionConfig;
 use forge_registry::{
-    ConfigReason, FormField, RegistryError, RunContext, SubActionCategory, SubActionConfigExt,
-    SubActionRunner,
+    ConfigSpec, RunContext, SeparatedListField, StepTimer, SubActionCategory, SubActionRunner,
+    TypedField, ValueBounds,
 };
-use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, Variant};
-use time::OffsetDateTime;
+use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry};
 
 use crate::account::identity::SelfIdentity;
 use crate::helix::{HelixMethod, HelixRequest, HelixTransport};
+use crate::vocabulary::{config_keys, sub_action_ids};
 
 const KIND_ID: &str = sub_action_ids::CHANNEL_UPDATE_TAGS;
-const MAX_TAGS: usize = 10;
-const MAX_TAG_CHARS: usize = 25;
+const MAX_TAGS: i64 = 10;
+const MAX_TAG_CHARS: i64 = 25;
+
+const TAGS: SeparatedListField = SeparatedListField {
+    key: config_keys::TAGS,
+    label: "Tags (one per line or comma-separated)",
+    default: "",
+    count: ValueBounds {
+        min: None,
+        max: Some(MAX_TAGS),
+    },
+    item_length: ValueBounds {
+        min: None,
+        max: Some(MAX_TAG_CHARS),
+    },
+};
+
+const CONFIG: ConfigSpec = ConfigSpec::new(&[&TAGS]);
 
 pub struct UpdateTagsRunner {
     transport: Arc<dyn HelixTransport>,
@@ -42,26 +55,6 @@ impl UpdateTagsRunner {
             .body(serde_json::json!({ "tags": tags }));
         SubActionOutcome::from_result(&self.transport.execute(request).await)
     }
-}
-
-fn parse_tags(raw: &str) -> Result<Vec<String>, String> {
-    let tags: Vec<String> = raw
-        .split(['\n', ','])
-        .map(|s| s.trim().to_owned())
-        .filter(|s| !s.is_empty())
-        .collect();
-
-    for tag in &tags {
-        if tag.chars().count() > MAX_TAG_CHARS {
-            return Err(format!(
-                "tag '{tag}' exceeds {MAX_TAG_CHARS}-character limit"
-            ));
-        }
-    }
-    if tags.len() > MAX_TAGS {
-        return Err(format!("too many tags: max {MAX_TAGS}, got {}", tags.len()));
-    }
-    Ok(tags)
 }
 
 #[async_trait]
@@ -90,29 +83,8 @@ impl SubActionRunner for UpdateTagsRunner {
         "tag"
     }
 
-    fn default_config(&self) -> SubActionConfig {
-        BTreeMap::from([("tags".to_owned(), Variant::String(String::new()))])
-    }
-
-    fn config_fields(&self) -> Vec<FormField> {
-        vec![FormField::TextArea {
-            key: "tags",
-            label: "Tags (one per line or comma-separated)",
-        }]
-    }
-
-    fn validate_config(&self, config: &SubActionConfig) -> Result<(), RegistryError> {
-        let raw = match config.get("tags") {
-            Some(Variant::String(s)) => s.as_str(),
-            None => "",
-            _ => {
-                return Err(RegistryError::invalid_field("tags", ConfigReason::Required));
-            }
-        };
-        parse_tags(raw).map_err(|detail| {
-            RegistryError::invalid_field("tags", ConfigReason::InvalidFormat(detail))
-        })?;
-        Ok(())
+    fn config_spec(&self) -> Option<ConfigSpec> {
+        Some(CONFIG)
     }
 
     async fn execute(
@@ -120,29 +92,12 @@ impl SubActionRunner for UpdateTagsRunner {
         config: &SubActionConfig,
         ctx: &RunContext<'_>,
     ) -> (SubActionTelemetry, Option<ArgStack>) {
-        let started_at = OffsetDateTime::now_utc();
-        let start = Instant::now();
-
-        let template = config.str("tags").unwrap_or_default();
-        let raw = ctx.arg_stack.interpolate(template);
-
-        let outcome = match parse_tags(&raw) {
-            Ok(tags) => self.apply(tags).await,
-            Err(msg) => SubActionOutcome::Failed(msg),
+        let timer = StepTimer::start(ctx, KIND_ID);
+        let tags = match TAGS.read(config, ctx.arg_stack) {
+            Ok(tags) => tags,
+            Err(problem) => return (timer.invalid_config(&problem), None),
         };
-
-        (
-            SubActionTelemetry {
-                args_in: ::std::collections::BTreeMap::new(),
-                produced: ::std::collections::BTreeMap::new(),
-                kind: KIND_ID.to_owned(),
-                started_at,
-                duration_ms: start.elapsed().as_millis() as u64,
-                outcome,
-                index: ctx.index,
-            },
-            None,
-        )
+        (timer.finish(self.apply(tags).await), None)
     }
 }
 

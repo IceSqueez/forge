@@ -1,5 +1,8 @@
 use forge_registry::runner::SubActionConfig;
-use forge_registry::{ConfigReason, RegistryError, RunContext, SubActionConfigExt};
+use forge_registry::{
+    ConfigProblem, ConfigReason, Interpolation, SubActionConfigExt, TextField, TypedField,
+};
+use forge_types::ArgStack;
 
 use super::identity::{login_handle, resolve_user_id};
 use crate::helix::{HelixError, HelixTransport};
@@ -34,43 +37,41 @@ impl<'a> UserTarget<'a> {
     }
 }
 
-pub(crate) struct TargetKeys {
-    pub(crate) id: &'static str,
-    pub(crate) login: &'static str,
+pub(crate) struct TargetFields {
+    pub(crate) id: TextField,
+    pub(crate) login: TextField,
 }
 
-impl TargetKeys {
-    pub(crate) fn validate(&self, config: &SubActionConfig) -> Result<(), RegistryError> {
-        if config.str_nonempty(self.id).is_some() || config.str_nonempty(self.login).is_some() {
-            return Ok(());
-        }
-        Err(RegistryError::invalid_field(
-            self.login,
-            ConfigReason::Required,
-        ))
-    }
-
-    pub(crate) fn interpolate(
+impl TargetFields {
+    pub(crate) fn check(
         &self,
         config: &SubActionConfig,
-        ctx: &RunContext<'_>,
-    ) -> InterpolatedTarget {
-        let interpolate = |key: &str| {
-            config
-                .str(key)
-                .map(|template| ctx.arg_stack.interpolate(template))
-                .unwrap_or_default()
-        };
-        InterpolatedTarget {
-            id: interpolate(self.id),
-            login: interpolate(self.login),
+        interpolation: Interpolation<'_>,
+    ) -> Result<(), ConfigProblem> {
+        self.id.peek(config, interpolation)?;
+        if config.str_nonempty(self.id.key).is_some()
+            || config.str_nonempty(self.login.key).is_some()
+        {
+            return Ok(());
         }
+        Err(ConfigProblem::field(self.login.key, ConfigReason::Required))
+    }
+
+    pub(crate) fn read(
+        &self,
+        config: &SubActionConfig,
+        args: &ArgStack,
+    ) -> Result<InterpolatedTarget, ConfigProblem> {
+        Ok(InterpolatedTarget {
+            id: self.id.read(config, args)?,
+            login: self.login.read(config, args)?,
+        })
     }
 
     pub(crate) fn empty_after_interpolation(&self) -> String {
         format!(
             "{} and {} are empty after interpolation",
-            self.login, self.id
+            self.login.key, self.id.key
         )
     }
 }

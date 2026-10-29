@@ -1,19 +1,17 @@
-use crate::vocabulary::sub_action_ids;
 use std::sync::Arc;
-use std::time::Instant;
 
 use async_trait::async_trait;
 use forge_registry::runner::SubActionConfig;
 use forge_registry::{
-    FormField, RegistryError, RunContext, SubActionCategory, SubActionConfigExt, SubActionRunner,
+    ConfigSpec, RunContext, StepTimer, SubActionCategory, SubActionRunner, TypedField,
 };
 use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry};
-use time::OffsetDateTime;
 
-use super::enable_reward::{config_fields, default_config, validate_reward_id};
+use super::enable_reward::{REWARD_CONFIG, REWARD_ID};
 use crate::account::identity::SelfIdentity;
 use crate::custom_rewards::delete_request;
 use crate::helix::HelixTransport;
+use crate::vocabulary::sub_action_ids;
 
 const KIND_ID: &str = sub_action_ids::CHANNEL_POINTS_DELETE_REWARD;
 
@@ -28,6 +26,18 @@ impl DeleteRewardRunner {
             transport,
             identity,
         }
+    }
+
+    async fn apply(&self, reward_id: &str) -> SubActionOutcome {
+        if reward_id.is_empty() {
+            return SubActionOutcome::Failed("reward_id is required".to_owned());
+        }
+        let user_id = match self.identity.user_id().await {
+            Ok(id) => id,
+            Err(e) => return SubActionOutcome::Failed(e.to_string()),
+        };
+        let request = delete_request(user_id, reward_id);
+        SubActionOutcome::from_result(&self.transport.execute(request).await)
     }
 }
 
@@ -57,16 +67,8 @@ impl SubActionRunner for DeleteRewardRunner {
         "star"
     }
 
-    fn default_config(&self) -> SubActionConfig {
-        default_config()
-    }
-
-    fn config_fields(&self) -> Vec<FormField> {
-        config_fields()
-    }
-
-    fn validate_config(&self, config: &SubActionConfig) -> Result<(), RegistryError> {
-        validate_reward_id(config)
+    fn config_spec(&self) -> Option<ConfigSpec> {
+        Some(REWARD_CONFIG)
     }
 
     async fn execute(
@@ -74,43 +76,12 @@ impl SubActionRunner for DeleteRewardRunner {
         config: &SubActionConfig,
         ctx: &RunContext<'_>,
     ) -> (SubActionTelemetry, Option<ArgStack>) {
-        let started_at = OffsetDateTime::now_utc();
-        let start = Instant::now();
-
-        let reward_id_template = config.str("reward_id").unwrap_or_default();
-        let reward_id = ctx.arg_stack.interpolate(reward_id_template);
-
-        let outcome = if reward_id.is_empty() {
-            SubActionOutcome::Failed("reward_id is required".to_owned())
-        } else {
-            self.apply(&reward_id).await
+        let timer = StepTimer::start(ctx, KIND_ID);
+        let reward_id = match REWARD_ID.read(config, ctx.arg_stack) {
+            Ok(reward_id) => reward_id,
+            Err(problem) => return (timer.invalid_config(&problem), None),
         };
-
-        (
-            SubActionTelemetry {
-                args_in: ::std::collections::BTreeMap::new(),
-                produced: ::std::collections::BTreeMap::new(),
-                kind: KIND_ID.to_owned(),
-                started_at,
-                duration_ms: start.elapsed().as_millis() as u64,
-                outcome,
-                index: ctx.index,
-            },
-            None,
-        )
-    }
-}
-
-impl DeleteRewardRunner {
-    async fn apply(&self, reward_id: &str) -> SubActionOutcome {
-        let user_id = match self.identity.user_id().await {
-            Ok(id) => id,
-            Err(e) => return SubActionOutcome::Failed(e.to_string()),
-        };
-
-        let request = delete_request(user_id, reward_id);
-
-        SubActionOutcome::from_result(&self.transport.execute(request).await)
+        (timer.finish(self.apply(&reward_id).await), None)
     }
 }
 

@@ -1,30 +1,50 @@
-use crate::vocabulary::sub_action_ids;
-use std::collections::BTreeMap;
 use std::sync::Arc;
-use std::time::Instant;
 
 use async_trait::async_trait;
 use forge_registry::runner::SubActionConfig;
 use forge_registry::{
-    ConfigReason, DurationBounds, FormField, RegistryError, RunContext, SubActionCategory,
-    SubActionConfigExt, SubActionRunner, ValueBounds,
+    ConfigProblem, ConfigSpec, DurationBounds, DurationField, Interpolation, RunContext, StepTimer,
+    SubActionCategory, SubActionRunner, TypedField,
 };
-use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, Variant};
-use time::OffsetDateTime;
+use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry};
 
+use super::fields::{MODERATION_TARGET, OPTIONAL_REASON};
 use crate::account::identity::SelfIdentity;
-use crate::account::user_target::{TargetKeys, UserTarget};
+use crate::account::user_target::{InterpolatedTarget, UserTarget};
 use crate::helix::{HelixMethod, HelixRequest, HelixTransport};
+use crate::vocabulary::{config_keys, sub_action_ids};
 
-const TARGET_KEYS: TargetKeys = TargetKeys {
-    id: "target_user_id",
-    login: "target_user_login",
-};
 const KIND_ID: &str = sub_action_ids::MODERATION_TIMEOUT_USER;
 const DEFAULT_DURATION_SECONDS: i64 = 600;
 const MIN_DURATION_SECONDS: i64 = 1;
 const MAX_DURATION_SECONDS: i64 = 1_209_600;
-const MAX_REASON_CHARS: usize = 500;
+
+pub(crate) const TIMEOUT_DURATION: DurationField = DurationField {
+    key: config_keys::DURATION_SECONDS,
+    label: "Duration",
+    default: DEFAULT_DURATION_SECONDS,
+    bounds: DurationBounds::in_seconds(MIN_DURATION_SECONDS, MAX_DURATION_SECONDS),
+};
+
+const CONFIG: ConfigSpec = ConfigSpec::new(&[
+    &MODERATION_TARGET.login,
+    &OPTIONAL_REASON,
+    &TIMEOUT_DURATION,
+]);
+
+struct TimeoutConfig {
+    target: InterpolatedTarget,
+    reason: String,
+    duration: u64,
+}
+
+fn read_config(config: &SubActionConfig, args: &ArgStack) -> Result<TimeoutConfig, ConfigProblem> {
+    Ok(TimeoutConfig {
+        target: MODERATION_TARGET.read(config, args)?,
+        reason: OPTIONAL_REASON.read(config, args)?,
+        duration: TIMEOUT_DURATION.read(config, args)?.as_secs(),
+    })
+}
 
 pub struct TimeoutUserRunner {
     transport: Arc<dyn HelixTransport>,
@@ -43,10 +63,10 @@ impl TimeoutUserRunner {
         &self,
         target: Option<UserTarget<'_>>,
         reason: &str,
-        duration: i64,
+        duration: u64,
     ) -> SubActionOutcome {
         let Some(target) = target else {
-            return SubActionOutcome::Failed(TARGET_KEYS.empty_after_interpolation());
+            return SubActionOutcome::Failed(MODERATION_TARGET.empty_after_interpolation());
         };
         let user_id = match self.identity.user_id().await {
             Ok(id) => id,
@@ -94,59 +114,16 @@ impl SubActionRunner for TimeoutUserRunner {
         "clock-off"
     }
 
-    fn default_config(&self) -> SubActionConfig {
-        BTreeMap::from([
-            (TARGET_KEYS.login.to_owned(), Variant::String(String::new())),
-            ("reason".to_owned(), Variant::String(String::new())),
-            (
-                "duration_seconds".to_owned(),
-                Variant::Int(DEFAULT_DURATION_SECONDS),
-            ),
-        ])
+    fn config_spec(&self) -> Option<ConfigSpec> {
+        Some(CONFIG)
     }
 
-    fn config_fields(&self) -> Vec<FormField> {
-        vec![
-            FormField::Text {
-                key: TARGET_KEYS.login,
-                label: "Target Username",
-                placeholder: "%user_login%",
-            },
-            FormField::Text {
-                key: "reason",
-                label: "Reason (optional, max 500 chars)",
-                placeholder: "",
-            },
-            FormField::Duration {
-                key: "duration_seconds",
-                label: "Duration",
-                bounds: DurationBounds::in_seconds(MIN_DURATION_SECONDS, MAX_DURATION_SECONDS),
-            },
-        ]
-    }
-
-    fn validate_config(&self, config: &SubActionConfig) -> Result<(), RegistryError> {
-        TARGET_KEYS.validate(config)?;
-        if let Some(Variant::String(r)) = config.get("reason")
-            && r.chars().count() > MAX_REASON_CHARS
-        {
-            return Err(RegistryError::invalid_field(
-                "reason",
-                ConfigReason::LengthOutOfRange(ValueBounds::at_most(MAX_REASON_CHARS)),
-            ));
-        }
-        if let Some(Variant::Int(d)) = config.get("duration_seconds")
-            && !((MIN_DURATION_SECONDS..=MAX_DURATION_SECONDS).contains(d))
-        {
-            return Err(RegistryError::invalid_field(
-                "duration_seconds",
-                ConfigReason::OutOfRange(ValueBounds::between(
-                    MIN_DURATION_SECONDS,
-                    MAX_DURATION_SECONDS,
-                )),
-            ));
-        }
-        Ok(())
+    fn check_config(
+        &self,
+        config: &SubActionConfig,
+        interpolation: Interpolation<'_>,
+    ) -> Result<(), ConfigProblem> {
+        MODERATION_TARGET.check(config, interpolation)
     }
 
     async fn execute(
@@ -154,40 +131,15 @@ impl SubActionRunner for TimeoutUserRunner {
         config: &SubActionConfig,
         ctx: &RunContext<'_>,
     ) -> (SubActionTelemetry, Option<ArgStack>) {
-        let started_at = OffsetDateTime::now_utc();
-        let start = Instant::now();
-
-        let interpolated = TARGET_KEYS.interpolate(config, ctx);
-        let reason = config
-            .str("reason")
-            .map(|s| ctx.arg_stack.interpolate(s))
-            .unwrap_or_default();
-        let duration = config
-            .get("duration_seconds")
-            .and_then(|v| {
-                if let Variant::Int(d) = v {
-                    Some(*d)
-                } else {
-                    None
-                }
-            })
-            .filter(|&d| (MIN_DURATION_SECONDS..=MAX_DURATION_SECONDS).contains(&d))
-            .unwrap_or(DEFAULT_DURATION_SECONDS);
-
-        let outcome = self.timeout(interpolated.target(), &reason, duration).await;
-
-        (
-            SubActionTelemetry {
-                args_in: ::std::collections::BTreeMap::new(),
-                produced: ::std::collections::BTreeMap::new(),
-                kind: KIND_ID.to_owned(),
-                started_at,
-                duration_ms: start.elapsed().as_millis() as u64,
-                outcome,
-                index: ctx.index,
-            },
-            None,
-        )
+        let timer = StepTimer::start(ctx, KIND_ID);
+        let read = match read_config(config, ctx.arg_stack) {
+            Ok(read) => read,
+            Err(problem) => return (timer.invalid_config(&problem), None),
+        };
+        let outcome = self
+            .timeout(read.target.target(), &read.reason, read.duration)
+            .await;
+        (timer.finish(outcome), None)
     }
 }
 

@@ -1,24 +1,83 @@
-use crate::vocabulary::sub_action_ids;
-use std::collections::BTreeMap;
 use std::sync::Arc;
-use std::time::Instant;
 
 use async_trait::async_trait;
 use forge_registry::runner::SubActionConfig;
 use forge_registry::{
-    ConfigReason, FormField, RegistryError, RunContext, SubActionCategory, SubActionRunner,
+    ChoiceField, ConfigChoice, ConfigSpec, RunContext, StepTimer, SubActionCategory,
+    SubActionRunner, TypedField,
 };
-use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, Variant};
-use time::OffsetDateTime;
+use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry};
 
 use crate::account::identity::SelfIdentity;
 use crate::helix::{HelixMethod, HelixRequest, HelixTransport};
+use crate::vocabulary::{config_keys, sub_action_ids};
 
 const KIND_ID: &str = sub_action_ids::CHANNEL_RUN_AD;
 
-const ALLOWED_DURATIONS: &[&str] = &["30", "60", "90", "120", "150", "180"];
-const DEFAULT_DURATION: &str = "60";
-const DEFAULT_DURATION_SECS: i64 = 60;
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum AdLength {
+    Seconds30,
+    Seconds60,
+    Seconds90,
+    Seconds120,
+    Seconds150,
+    Seconds180,
+}
+
+impl AdLength {
+    fn seconds(self) -> i64 {
+        match self {
+            Self::Seconds30 => 30,
+            Self::Seconds60 => 60,
+            Self::Seconds90 => 90,
+            Self::Seconds120 => 120,
+            Self::Seconds150 => 150,
+            Self::Seconds180 => 180,
+        }
+    }
+
+    pub(crate) fn label(self) -> &'static str {
+        match self {
+            Self::Seconds30 => "30 seconds",
+            Self::Seconds60 => "60 seconds",
+            Self::Seconds90 => "90 seconds",
+            Self::Seconds120 => "120 seconds",
+            Self::Seconds150 => "150 seconds",
+            Self::Seconds180 => "180 seconds",
+        }
+    }
+}
+
+impl ConfigChoice for AdLength {
+    const ALL: &'static [Self] = &[
+        Self::Seconds30,
+        Self::Seconds60,
+        Self::Seconds90,
+        Self::Seconds120,
+        Self::Seconds150,
+        Self::Seconds180,
+    ];
+    const WIRE_NAMES: &'static [&'static str] = &["30", "60", "90", "120", "150", "180"];
+
+    fn wire_name(self) -> &'static str {
+        match self {
+            Self::Seconds30 => "30",
+            Self::Seconds60 => "60",
+            Self::Seconds90 => "90",
+            Self::Seconds120 => "120",
+            Self::Seconds150 => "150",
+            Self::Seconds180 => "180",
+        }
+    }
+}
+
+pub(crate) const AD_LENGTH: ChoiceField<AdLength> = ChoiceField {
+    key: config_keys::DURATION_SECONDS,
+    label: "Duration",
+    default: AdLength::Seconds60,
+};
+
+const CONFIG: ConfigSpec = ConfigSpec::new(&[&AD_LENGTH]);
 
 pub struct RunAdRunner {
     transport: Arc<dyn HelixTransport>,
@@ -33,13 +92,13 @@ impl RunAdRunner {
         }
     }
 
-    async fn run(&self, duration: i64) -> SubActionOutcome {
+    async fn run(&self, length: AdLength) -> SubActionOutcome {
         let user_id = match self.identity.user_id().await {
             Ok(id) => id,
             Err(e) => return SubActionOutcome::Failed(e.to_string()),
         };
         let request = HelixRequest::new(HelixMethod::Post, "/helix/channels/commercial")
-            .body(serde_json::json!({ "broadcaster_id": user_id, "length": duration }));
+            .body(serde_json::json!({ "broadcaster_id": user_id, "length": length.seconds() }));
         SubActionOutcome::from_result(&self.transport.execute(request).await)
     }
 }
@@ -70,32 +129,8 @@ impl SubActionRunner for RunAdRunner {
         "player-play"
     }
 
-    fn default_config(&self) -> SubActionConfig {
-        BTreeMap::from([(
-            "duration_seconds".to_owned(),
-            Variant::String(DEFAULT_DURATION.to_owned()),
-        )])
-    }
-
-    fn config_fields(&self) -> Vec<FormField> {
-        vec![FormField::Select {
-            key: "duration_seconds",
-            label: "Duration",
-            options: ALLOWED_DURATIONS,
-        }]
-    }
-
-    fn validate_config(&self, config: &SubActionConfig) -> Result<(), RegistryError> {
-        match config.get("duration_seconds") {
-            Some(Variant::String(s)) if ALLOWED_DURATIONS.contains(&s.as_str()) => {}
-            _ => {
-                return Err(RegistryError::invalid_field(
-                    "duration_seconds",
-                    ConfigReason::choices(["30", "60", "90", "120", "150", "180"]),
-                ));
-            }
-        }
-        Ok(())
+    fn config_spec(&self) -> Option<ConfigSpec> {
+        Some(CONFIG)
     }
 
     async fn execute(
@@ -103,31 +138,12 @@ impl SubActionRunner for RunAdRunner {
         config: &SubActionConfig,
         ctx: &RunContext<'_>,
     ) -> (SubActionTelemetry, Option<ArgStack>) {
-        let started_at = OffsetDateTime::now_utc();
-        let start = Instant::now();
-
-        let duration = config
-            .get("duration_seconds")
-            .and_then(|v| match v {
-                Variant::String(s) if ALLOWED_DURATIONS.contains(&s.as_str()) => s.parse().ok(),
-                _ => None,
-            })
-            .unwrap_or(DEFAULT_DURATION_SECS);
-
-        let outcome = self.run(duration).await;
-
-        (
-            SubActionTelemetry {
-                args_in: ::std::collections::BTreeMap::new(),
-                produced: ::std::collections::BTreeMap::new(),
-                kind: KIND_ID.to_owned(),
-                started_at,
-                duration_ms: start.elapsed().as_millis() as u64,
-                outcome,
-                index: ctx.index,
-            },
-            None,
-        )
+        let timer = StepTimer::start(ctx, KIND_ID);
+        let length = match AD_LENGTH.read(config, ctx.arg_stack) {
+            Ok(length) => length,
+            Err(problem) => return (timer.invalid_config(&problem), None),
+        };
+        (timer.finish(self.run(length).await), None)
     }
 }
 

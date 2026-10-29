@@ -1,31 +1,113 @@
-use crate::vocabulary::sub_action_ids;
-use std::collections::BTreeMap;
 use std::sync::Arc;
-use std::time::Instant;
 
 use async_trait::async_trait;
 use forge_registry::runner::SubActionConfig;
 use forge_registry::{
-    ConfigReason, DurationBounds, FormField, RegistryError, RunContext, SubActionCategory,
-    SubActionConfigExt, SubActionRunner, ValueBounds,
+    ChoiceField, ConfigProblem, ConfigSpec, DurationBounds, DurationField, RunContext, StepTimer,
+    SubActionCategory, SubActionRunner, TypedField,
 };
-use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, Variant};
-use time::OffsetDateTime;
+use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry};
 
+use super::fields::{ModeToggle, mode_toggle};
 use crate::account::identity::SelfIdentity;
 use crate::helix::{HelixMethod, HelixRequest, HelixTransport};
+use crate::vocabulary::{config_keys, sub_action_ids};
 
 const KIND_ID: &str = sub_action_ids::CHAT_SET_MODE;
-
-const UNCHANGED: &str = "unchanged";
-const ON: &str = "on";
-const OFF: &str = "off";
-const TOGGLE_OPTIONS: &[&str] = &[UNCHANGED, ON, OFF];
-
+const SECONDS_PER_MINUTE: u64 = 60;
 const FOLLOWER_MODE_MIN_MINUTES: i64 = 0;
 const FOLLOWER_MODE_MAX_MINUTES: i64 = 129_600;
 const SLOW_MODE_MIN_WAIT_SECONDS: i64 = 3;
 const SLOW_MODE_MAX_WAIT_SECONDS: i64 = 120;
+
+pub(crate) const EMOTE_ONLY: ChoiceField<ModeToggle> =
+    mode_toggle(config_keys::EMOTE_ONLY, "Emote-Only Mode");
+const FOLLOWER_MODE: ChoiceField<ModeToggle> =
+    mode_toggle(config_keys::FOLLOWER_MODE, "Follower-Only Mode");
+pub(crate) const FOLLOWER_MODE_MIN_AGE: DurationField = DurationField {
+    key: config_keys::FOLLOWER_MODE_MIN_MINUTES,
+    label: "Follower Min. Duration",
+    default: FOLLOWER_MODE_MIN_MINUTES,
+    bounds: DurationBounds::in_minutes(FOLLOWER_MODE_MIN_MINUTES, FOLLOWER_MODE_MAX_MINUTES),
+};
+const SLOW_MODE: ChoiceField<ModeToggle> = mode_toggle(config_keys::SLOW_MODE, "Slow Mode");
+pub(crate) const SLOW_MODE_WAIT: DurationField = DurationField {
+    key: config_keys::SLOW_MODE_WAIT_SECONDS,
+    label: "Slow Mode Wait",
+    default: SLOW_MODE_MIN_WAIT_SECONDS,
+    bounds: DurationBounds::in_seconds(SLOW_MODE_MIN_WAIT_SECONDS, SLOW_MODE_MAX_WAIT_SECONDS),
+};
+const SUBSCRIBER_MODE: ChoiceField<ModeToggle> =
+    mode_toggle(config_keys::SUBSCRIBER_MODE, "Subscriber-Only Mode");
+const UNIQUE_CHAT_MODE: ChoiceField<ModeToggle> =
+    mode_toggle(config_keys::UNIQUE_CHAT_MODE, "Unique Chat Mode");
+
+const CONFIG: ConfigSpec = ConfigSpec::new(&[
+    &EMOTE_ONLY,
+    &FOLLOWER_MODE,
+    &FOLLOWER_MODE_MIN_AGE,
+    &SLOW_MODE,
+    &SLOW_MODE_WAIT,
+    &SUBSCRIBER_MODE,
+    &UNIQUE_CHAT_MODE,
+]);
+
+struct ChatModes {
+    emote_only: ModeToggle,
+    follower_mode: ModeToggle,
+    follower_mode_min_minutes: u64,
+    slow_mode: ModeToggle,
+    slow_mode_wait_seconds: u64,
+    subscriber_mode: ModeToggle,
+    unique_chat_mode: ModeToggle,
+}
+
+impl ChatModes {
+    fn read(config: &SubActionConfig, args: &ArgStack) -> Result<Self, ConfigProblem> {
+        Ok(Self {
+            emote_only: EMOTE_ONLY.read(config, args)?,
+            follower_mode: FOLLOWER_MODE.read(config, args)?,
+            follower_mode_min_minutes: FOLLOWER_MODE_MIN_AGE.read(config, args)?.as_secs()
+                / SECONDS_PER_MINUTE,
+            slow_mode: SLOW_MODE.read(config, args)?,
+            slow_mode_wait_seconds: SLOW_MODE_WAIT.read(config, args)?.as_secs(),
+            subscriber_mode: SUBSCRIBER_MODE.read(config, args)?,
+            unique_chat_mode: UNIQUE_CHAT_MODE.read(config, args)?,
+        })
+    }
+
+    fn body(&self) -> serde_json::Map<String, serde_json::Value> {
+        let mut body = serde_json::Map::new();
+        if let Some(on) = self.emote_only.applied() {
+            body.insert("emote_mode".to_owned(), on.into());
+        }
+        if let Some(on) = self.follower_mode.applied() {
+            body.insert("follower_mode".to_owned(), on.into());
+            if on {
+                body.insert(
+                    "follower_mode_duration".to_owned(),
+                    self.follower_mode_min_minutes.into(),
+                );
+            }
+        }
+        if let Some(on) = self.slow_mode.applied() {
+            body.insert("slow_mode".to_owned(), on.into());
+            if on {
+                body.insert(
+                    "slow_mode_wait_time".to_owned(),
+                    self.slow_mode_wait_seconds.into(),
+                );
+            }
+        }
+        if let Some(on) = self.subscriber_mode.applied() {
+            body.insert("subscriber_mode".to_owned(), on.into());
+        }
+        if let Some(on) = self.unique_chat_mode.applied() {
+            body.insert("unique_chat_mode".to_owned(), on.into());
+        }
+        body
+    }
+}
 
 pub struct SetModeRunner {
     transport: Arc<dyn HelixTransport>,
@@ -40,82 +122,20 @@ impl SetModeRunner {
         }
     }
 
-    async fn apply(&self, config: &SubActionConfig) -> SubActionOutcome {
+    async fn apply(&self, modes: &ChatModes) -> SubActionOutcome {
         let user_id = match self.identity.user_id().await {
             Ok(id) => id,
             Err(e) => return SubActionOutcome::Failed(e.to_string()),
         };
-
-        let emote_only = mode_toggle(config, "emote_only");
-        let follower_mode = mode_toggle(config, "follower_mode");
-        let follower_mode_min_minutes = int_field(config, "follower_mode_min_minutes");
-        let slow_mode = mode_toggle(config, "slow_mode");
-        let slow_mode_wait_seconds = int_field(config, "slow_mode_wait_seconds");
-        let subscriber_mode = mode_toggle(config, "subscriber_mode");
-        let unique_chat_mode = mode_toggle(config, "unique_chat_mode");
-
-        let mut body = serde_json::Map::new();
-
-        if let Some(on) = toggle_to_bool(emote_only) {
-            body.insert("emote_mode".to_owned(), on.into());
-        }
-        if let Some(on) = toggle_to_bool(follower_mode) {
-            body.insert("follower_mode".to_owned(), on.into());
-            if on {
-                let duration = follower_mode_min_minutes
-                    .unwrap_or(FOLLOWER_MODE_MIN_MINUTES)
-                    .clamp(FOLLOWER_MODE_MIN_MINUTES, FOLLOWER_MODE_MAX_MINUTES);
-                body.insert("follower_mode_duration".to_owned(), duration.into());
-            }
-        }
-        if let Some(on) = toggle_to_bool(slow_mode) {
-            body.insert("slow_mode".to_owned(), on.into());
-            if on {
-                let wait = slow_mode_wait_seconds
-                    .unwrap_or(SLOW_MODE_MIN_WAIT_SECONDS)
-                    .clamp(SLOW_MODE_MIN_WAIT_SECONDS, SLOW_MODE_MAX_WAIT_SECONDS);
-                body.insert("slow_mode_wait_time".to_owned(), wait.into());
-            }
-        }
-        if let Some(on) = toggle_to_bool(subscriber_mode) {
-            body.insert("subscriber_mode".to_owned(), on.into());
-        }
-        if let Some(on) = toggle_to_bool(unique_chat_mode) {
-            body.insert("unique_chat_mode".to_owned(), on.into());
-        }
-
+        let body = modes.body();
         if body.is_empty() {
             return SubActionOutcome::Success;
         }
-
         let request = HelixRequest::new(HelixMethod::Patch, "/helix/chat/settings")
             .query("broadcaster_id", user_id.clone())
             .query("moderator_id", user_id)
             .body(serde_json::Value::Object(body));
-
         SubActionOutcome::from_result(&self.transport.execute(request).await)
-    }
-}
-
-fn mode_toggle<'a>(config: &'a SubActionConfig, key: &str) -> Option<&'a str> {
-    config.str(key)
-}
-
-fn int_field(config: &SubActionConfig, key: &str) -> Option<i64> {
-    config.get(key).and_then(|v| {
-        if let Variant::Int(n) = v {
-            Some(*n)
-        } else {
-            None
-        }
-    })
-}
-
-fn toggle_to_bool(value: Option<&str>) -> Option<bool> {
-    match value {
-        Some(ON) => Some(true),
-        Some(OFF) => Some(false),
-        _ => None,
     }
 }
 
@@ -145,127 +165,8 @@ impl SubActionRunner for SetModeRunner {
         "adjustments"
     }
 
-    fn default_config(&self) -> SubActionConfig {
-        BTreeMap::from([
-            (
-                "emote_only".to_owned(),
-                Variant::String(UNCHANGED.to_owned()),
-            ),
-            (
-                "follower_mode".to_owned(),
-                Variant::String(UNCHANGED.to_owned()),
-            ),
-            (
-                "follower_mode_min_minutes".to_owned(),
-                Variant::Int(FOLLOWER_MODE_MIN_MINUTES),
-            ),
-            (
-                "slow_mode".to_owned(),
-                Variant::String(UNCHANGED.to_owned()),
-            ),
-            (
-                "slow_mode_wait_seconds".to_owned(),
-                Variant::Int(SLOW_MODE_MIN_WAIT_SECONDS),
-            ),
-            (
-                "subscriber_mode".to_owned(),
-                Variant::String(UNCHANGED.to_owned()),
-            ),
-            (
-                "unique_chat_mode".to_owned(),
-                Variant::String(UNCHANGED.to_owned()),
-            ),
-        ])
-    }
-
-    fn config_fields(&self) -> Vec<FormField> {
-        vec![
-            FormField::Select {
-                key: "emote_only",
-                label: "Emote-Only Mode",
-                options: TOGGLE_OPTIONS,
-            },
-            FormField::Select {
-                key: "follower_mode",
-                label: "Follower-Only Mode",
-                options: TOGGLE_OPTIONS,
-            },
-            FormField::Duration {
-                key: "follower_mode_min_minutes",
-                label: "Follower Min. Duration",
-                bounds: DurationBounds::in_minutes(
-                    FOLLOWER_MODE_MIN_MINUTES,
-                    FOLLOWER_MODE_MAX_MINUTES,
-                ),
-            },
-            FormField::Select {
-                key: "slow_mode",
-                label: "Slow Mode",
-                options: TOGGLE_OPTIONS,
-            },
-            FormField::Duration {
-                key: "slow_mode_wait_seconds",
-                label: "Slow Mode Wait",
-                bounds: DurationBounds::in_seconds(
-                    SLOW_MODE_MIN_WAIT_SECONDS,
-                    SLOW_MODE_MAX_WAIT_SECONDS,
-                ),
-            },
-            FormField::Select {
-                key: "subscriber_mode",
-                label: "Subscriber-Only Mode",
-                options: TOGGLE_OPTIONS,
-            },
-            FormField::Select {
-                key: "unique_chat_mode",
-                label: "Unique Chat Mode",
-                options: TOGGLE_OPTIONS,
-            },
-        ]
-    }
-
-    fn validate_config(&self, config: &SubActionConfig) -> Result<(), RegistryError> {
-        for key in &[
-            "emote_only",
-            "follower_mode",
-            "slow_mode",
-            "subscriber_mode",
-            "unique_chat_mode",
-        ] {
-            match config.get(*key) {
-                None => {}
-                Some(Variant::String(s)) if TOGGLE_OPTIONS.contains(&s.as_str()) => {}
-                _ => {
-                    return Err(RegistryError::invalid_field(
-                        *key,
-                        ConfigReason::choices(["unchanged", "on", "off"]),
-                    ));
-                }
-            }
-        }
-        if let Some(Variant::Int(n)) = config.get("follower_mode_min_minutes")
-            && (*n < FOLLOWER_MODE_MIN_MINUTES || *n > FOLLOWER_MODE_MAX_MINUTES)
-        {
-            return Err(RegistryError::invalid_field(
-                "follower_mode_min_minutes",
-                ConfigReason::OutOfRange(ValueBounds::between(
-                    FOLLOWER_MODE_MIN_MINUTES,
-                    FOLLOWER_MODE_MAX_MINUTES,
-                )),
-            ));
-        }
-        if let Some(Variant::Int(n)) = config.get("slow_mode_wait_seconds")
-            && (*n < SLOW_MODE_MIN_WAIT_SECONDS || *n > SLOW_MODE_MAX_WAIT_SECONDS)
-        {
-            return Err(RegistryError::invalid_field(
-                "slow_mode_wait_seconds",
-                ConfigReason::OutOfRange(ValueBounds::between(
-                    SLOW_MODE_MIN_WAIT_SECONDS,
-                    SLOW_MODE_MAX_WAIT_SECONDS,
-                )),
-            ));
-        }
-        Ok(())
+    fn config_spec(&self) -> Option<ConfigSpec> {
+        Some(CONFIG)
     }
 
     async fn execute(
@@ -273,23 +174,12 @@ impl SubActionRunner for SetModeRunner {
         config: &SubActionConfig,
         ctx: &RunContext<'_>,
     ) -> (SubActionTelemetry, Option<ArgStack>) {
-        let started_at = OffsetDateTime::now_utc();
-        let start = Instant::now();
-
-        let outcome = self.apply(config).await;
-
-        (
-            SubActionTelemetry {
-                args_in: ::std::collections::BTreeMap::new(),
-                produced: ::std::collections::BTreeMap::new(),
-                kind: KIND_ID.to_owned(),
-                started_at,
-                duration_ms: start.elapsed().as_millis() as u64,
-                outcome,
-                index: ctx.index,
-            },
-            None,
-        )
+        let timer = StepTimer::start(ctx, KIND_ID);
+        let modes = match ChatModes::read(config, ctx.arg_stack) {
+            Ok(modes) => modes,
+            Err(problem) => return (timer.invalid_config(&problem), None),
+        };
+        (timer.finish(self.apply(&modes).await), None)
     }
 }
 

@@ -1,17 +1,14 @@
-use crate::vocabulary::sub_action_ids;
 use std::sync::Arc;
 
 use async_trait::async_trait;
 use forge_registry::runner::SubActionConfig;
-use forge_registry::{FormField, RegistryError, RunContext, SubActionCategory, SubActionRunner};
+use forge_registry::{ConfigSpec, RunContext, SubActionCategory, SubActionRunner};
 use forge_types::{ArgStack, SubActionTelemetry};
 
-use super::lock_prediction::{
-    execute_prediction_runner, prediction_config_fields, prediction_default_config,
-    validate_prediction_config,
-};
+use super::lock_prediction::{PREDICTION_CONFIG, PredictionUpdate};
 use crate::account::identity::SelfIdentity;
 use crate::helix::HelixTransport;
+use crate::vocabulary::sub_action_ids;
 
 const KIND_ID: &str = sub_action_ids::PREDICTION_CANCEL;
 
@@ -55,16 +52,8 @@ impl SubActionRunner for CancelPredictionRunner {
         "x"
     }
 
-    fn default_config(&self) -> SubActionConfig {
-        prediction_default_config()
-    }
-
-    fn config_fields(&self) -> Vec<FormField> {
-        prediction_config_fields()
-    }
-
-    fn validate_config(&self, config: &SubActionConfig) -> Result<(), RegistryError> {
-        validate_prediction_config(config)
+    fn config_spec(&self) -> Option<ConfigSpec> {
+        Some(PREDICTION_CONFIG)
     }
 
     async fn execute(
@@ -72,15 +61,12 @@ impl SubActionRunner for CancelPredictionRunner {
         config: &SubActionConfig,
         ctx: &RunContext<'_>,
     ) -> (SubActionTelemetry, Option<ArgStack>) {
-        execute_prediction_runner(
-            &self.transport,
-            &self.identity,
-            KIND_ID,
-            "CANCELED",
-            None,
-            config,
-            ctx,
-        )
+        PredictionUpdate {
+            kind_id: KIND_ID,
+            status: "CANCELED",
+            winning_outcome: None,
+        }
+        .execute(&self.transport, &self.identity, config, ctx)
         .await
     }
 }

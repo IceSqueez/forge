@@ -2,11 +2,7 @@ use std::collections::BTreeMap;
 use std::sync::Arc;
 
 use forge_events::{EventPublisher, EventSource, TypedEvent};
-use forge_platform_core::{
-    ActingSender, SENDER_FIELD, SENT_AS_FIELD, SenderPreference, SenderRole,
-};
-use forge_registry::runner::SubActionConfig;
-use forge_registry::{ConfigReason, RegistryError};
+use forge_platform_core::{ActingSender, SENT_AS_FIELD, SenderPreference, SenderRole};
 use forge_types::SubActionOutcome;
 use thiserror::Error;
 use tracing::warn;
@@ -358,23 +354,6 @@ fn announce_fallback(
         reason: reason.to_string(),
     }
     .publish(events, EventSource::Twitch, None);
-}
-
-pub(crate) fn configured_sender(
-    config: &SubActionConfig,
-) -> Result<SenderPreference, RegistryError> {
-    match config.get(SENDER_FIELD) {
-        None => Ok(SenderPreference::Default),
-        Some(value) => value
-            .as_str()
-            .and_then(SenderPreference::parse)
-            .ok_or_else(|| {
-                RegistryError::invalid_field(
-                    SENDER_FIELD,
-                    ConfigReason::choices(SenderPreference::WIRE_NAMES.iter().copied()),
-                )
-            }),
-    }
 }
 
 pub(crate) type StepResult = (SubActionOutcome, BTreeMap<String, String>);

@@ -1,22 +1,52 @@
-use crate::vocabulary::sub_action_ids;
-use std::collections::BTreeMap;
 use std::sync::Arc;
-use std::time::Instant;
 
 use async_trait::async_trait;
 use forge_registry::runner::SubActionConfig;
 use forge_registry::{
-    ConfigReason, FormField, RegistryError, RunContext, SubActionCategory, SubActionConfigExt,
-    SubActionRunner,
+    ConfigProblem, ConfigSpec, PickedTextField, RunContext, StepTimer, SubActionCategory,
+    SubActionRunner, TextEditor, TextField, TextPicker, TypedField,
 };
-use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, Variant};
-use time::OffsetDateTime;
+use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry};
 
 use crate::account::identity::SelfIdentity;
 use crate::collection_keys::REWARD_OPTIONS_KEY;
 use crate::helix::{HelixMethod, HelixRequest, HelixTransport};
+use crate::vocabulary::{config_keys, sub_action_ids};
 
 const KIND_ID: &str = sub_action_ids::CHANNEL_POINTS_FULFILL_REDEMPTION;
+const REDEMPTION_ID_TEMPLATE: &str = "%redemption.id%";
+
+const REDEMPTION_ID: TextField = TextField {
+    key: config_keys::REDEMPTION_ID,
+    label: "Redemption ID",
+    editor: TextEditor::Line {
+        placeholder: REDEMPTION_ID_TEMPLATE,
+    },
+    default: REDEMPTION_ID_TEMPLATE,
+    required: true,
+};
+
+const REWARD_ID: PickedTextField = PickedTextField {
+    key: config_keys::REWARD_ID,
+    label: "Reward ID",
+    picker: TextPicker::Options {
+        options_key: REWARD_OPTIONS_KEY,
+    },
+    default: "%reward.id%",
+    required: true,
+};
+
+pub(crate) const REDEMPTION_CONFIG: ConfigSpec = ConfigSpec::new(&[&REDEMPTION_ID, &REWARD_ID]);
+
+fn read_config(
+    config: &SubActionConfig,
+    args: &ArgStack,
+) -> Result<(String, String), ConfigProblem> {
+    Ok((
+        REDEMPTION_ID.read(config, args)?,
+        REWARD_ID.read(config, args)?,
+    ))
+}
 
 pub struct FulfillRedemptionRunner {
     transport: Arc<dyn HelixTransport>,
@@ -32,54 +62,7 @@ impl FulfillRedemptionRunner {
     }
 }
 
-pub(crate) fn redemption_default_config() -> SubActionConfig {
-    BTreeMap::from([
-        (
-            "redemption_id".to_owned(),
-            Variant::String("%redemption.id%".to_owned()),
-        ),
-        (
-            "reward_id".to_owned(),
-            Variant::String("%reward.id%".to_owned()),
-        ),
-    ])
-}
-
-pub(crate) fn redemption_config_fields() -> Vec<FormField> {
-    vec![
-        FormField::Text {
-            key: "redemption_id",
-            label: "Redemption ID",
-            placeholder: "%redemption.id%",
-        },
-        FormField::DynamicSelect {
-            key: "reward_id",
-            label: "Reward ID",
-            options_key: REWARD_OPTIONS_KEY,
-        },
-    ]
-}
-
-pub(crate) fn validate_redemption_config(config: &SubActionConfig) -> Result<(), RegistryError> {
-    match config.get("redemption_id") {
-        Some(Variant::String(s)) if !s.is_empty() => {}
-        _ => {
-            return Err(RegistryError::invalid_field(
-                "redemption_id",
-                ConfigReason::Required,
-            ));
-        }
-    }
-    match config.get("reward_id") {
-        Some(Variant::String(s)) if !s.is_empty() => Ok(()),
-        _ => Err(RegistryError::invalid_field(
-            "reward_id",
-            ConfigReason::Required,
-        )),
-    }
-}
-
-pub(crate) async fn patch_redemption_status(
+async fn patch_redemption_status(
     transport: &Arc<dyn HelixTransport>,
     identity: &Arc<SelfIdentity>,
     kind_id: &str,
@@ -87,14 +70,18 @@ pub(crate) async fn patch_redemption_status(
     reward_id: &str,
     status: &str,
 ) -> SubActionOutcome {
+    if redemption_id.is_empty() {
+        return SubActionOutcome::Failed("redemption_id is required".to_owned());
+    }
+    if reward_id.is_empty() {
+        return SubActionOutcome::Failed("reward_id is required".to_owned());
+    }
     let user_id = match identity.user_id().await {
         Ok(id) => id,
         Err(e) => return SubActionOutcome::Failed(e.to_string()),
     };
-
     let mut body = serde_json::Map::new();
     body.insert("status".to_owned(), status.into());
-
     let request = HelixRequest::new(
         HelixMethod::Patch,
         "/helix/channel_points/custom_rewards/redemptions",
@@ -103,7 +90,6 @@ pub(crate) async fn patch_redemption_status(
     .query("reward_id", reward_id.to_owned())
     .query("id", redemption_id.to_owned())
     .body(serde_json::Value::Object(body));
-
     match transport.execute(request).await {
         Ok(_) => SubActionOutcome::Success,
         Err(e) => SubActionOutcome::Failed(format!("{kind_id}: {e}")),
@@ -118,43 +104,21 @@ pub(crate) async fn execute_redemption_runner(
     config: &SubActionConfig,
     ctx: &RunContext<'_>,
 ) -> (SubActionTelemetry, Option<ArgStack>) {
-    let started_at = OffsetDateTime::now_utc();
-    let start = Instant::now();
-
-    let redemption_id_template = config.str("redemption_id").unwrap_or_default();
-    let redemption_id = ctx.arg_stack.interpolate(redemption_id_template);
-
-    let reward_id_template = config.str("reward_id").unwrap_or_default();
-    let reward_id = ctx.arg_stack.interpolate(reward_id_template);
-
-    let outcome = if redemption_id.is_empty() {
-        SubActionOutcome::Failed("redemption_id is required".to_owned())
-    } else if reward_id.is_empty() {
-        SubActionOutcome::Failed("reward_id is required".to_owned())
-    } else {
-        patch_redemption_status(
-            transport,
-            identity,
-            kind_id,
-            &redemption_id,
-            &reward_id,
-            status,
-        )
-        .await
+    let timer = StepTimer::start(ctx, kind_id);
+    let (redemption_id, reward_id) = match read_config(config, ctx.arg_stack) {
+        Ok(values) => values,
+        Err(problem) => return (timer.invalid_config(&problem), None),
     };
-
-    (
-        SubActionTelemetry {
-            args_in: ::std::collections::BTreeMap::new(),
-            produced: ::std::collections::BTreeMap::new(),
-            kind: kind_id.to_owned(),
-            started_at,
-            duration_ms: start.elapsed().as_millis() as u64,
-            outcome,
-            index: ctx.index,
-        },
-        None,
+    let outcome = patch_redemption_status(
+        transport,
+        identity,
+        kind_id,
+        &redemption_id,
+        &reward_id,
+        status,
     )
+    .await;
+    (timer.finish(outcome), None)
 }
 
 #[async_trait]
@@ -183,16 +147,8 @@ impl SubActionRunner for FulfillRedemptionRunner {
         "check"
     }
 
-    fn default_config(&self) -> SubActionConfig {
-        redemption_default_config()
-    }
-
-    fn config_fields(&self) -> Vec<FormField> {
-        redemption_config_fields()
-    }
-
-    fn validate_config(&self, config: &SubActionConfig) -> Result<(), RegistryError> {
-        validate_redemption_config(config)
+    fn config_spec(&self) -> Option<ConfigSpec> {
+        Some(REDEMPTION_CONFIG)
     }
 
     async fn execute(

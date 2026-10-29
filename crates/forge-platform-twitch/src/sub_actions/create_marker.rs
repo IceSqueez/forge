@@ -1,22 +1,39 @@
-use crate::vocabulary::sub_action_ids;
-use std::collections::BTreeMap;
 use std::sync::Arc;
-use std::time::Instant;
 
 use async_trait::async_trait;
 use forge_registry::runner::SubActionConfig;
 use forge_registry::{
-    ConfigReason, FormField, RegistryError, RunContext, SubActionCategory, SubActionConfigExt,
-    SubActionRunner, ValueBounds,
+    BoundedTextField, ConfigSpec, RunContext, StepTimer, SubActionCategory, SubActionRunner,
+    TextEditor, TypedField, ValueBounds,
 };
 use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, Variant};
-use time::OffsetDateTime;
 
 use crate::account::identity::SelfIdentity;
 use crate::helix::{HelixMethod, HelixRequest, HelixTransport};
+use crate::vocabulary::{config_keys, sub_action_ids};
 
 const KIND_ID: &str = sub_action_ids::CHANNEL_CREATE_MARKER;
-const MAX_DESCRIPTION_CHARS: usize = 140;
+const MAX_DESCRIPTION_CHARS: i64 = 140;
+
+const DESCRIPTION: BoundedTextField = BoundedTextField {
+    key: config_keys::DESCRIPTION,
+    label: "Description (optional)",
+    editor: TextEditor::Area,
+    default: "",
+    required: false,
+    length: ValueBounds {
+        min: None,
+        max: Some(MAX_DESCRIPTION_CHARS),
+    },
+};
+
+const CONFIG: ConfigSpec = ConfigSpec::new(&[&DESCRIPTION]);
+
+struct Marker {
+    id: String,
+    position_seconds: i64,
+    created_at: Option<Variant>,
+}
 
 pub struct CreateMarkerRunner {
     transport: Arc<dyn HelixTransport>,
@@ -31,37 +48,29 @@ impl CreateMarkerRunner {
         }
     }
 
-    async fn create(
-        &self,
-        description: &str,
-    ) -> Result<(String, i64, Option<Variant>), SubActionOutcome> {
+    async fn create(&self, description: &str) -> Result<Marker, SubActionOutcome> {
         let user_id = match self.identity.user_id().await {
             Ok(id) => id,
             Err(e) => return Err(SubActionOutcome::Failed(e.to_string())),
         };
-
         let mut body = serde_json::Map::new();
         if !description.is_empty() {
             body.insert("description".to_owned(), description.into());
         }
-
         let request = HelixRequest::new(HelixMethod::Post, "/helix/streams/markers")
             .query("broadcaster_id", user_id)
             .body(serde_json::Value::Object(body));
-
         let resp = self
             .transport
             .execute(request)
             .await
             .map_err(|e| SubActionOutcome::Failed(e.to_string()))?;
-
         let marker = resp["data"]
             .as_array()
             .and_then(|arr| arr.first())
             .ok_or_else(|| {
                 SubActionOutcome::Failed("empty response from stream markers".to_owned())
             })?;
-
         let id = marker["id"]
             .as_str()
             .ok_or_else(|| SubActionOutcome::Failed("marker id missing in response".to_owned()))?
@@ -72,8 +81,11 @@ impl CreateMarkerRunner {
         let created_at = marker["created_at"]
             .as_str()
             .and_then(crate::timestamp::variant);
-
-        Ok((id, position_seconds, created_at))
+        Ok(Marker {
+            id,
+            position_seconds,
+            created_at,
+        })
     }
 }
 
@@ -103,27 +115,8 @@ impl SubActionRunner for CreateMarkerRunner {
         "flag"
     }
 
-    fn default_config(&self) -> SubActionConfig {
-        BTreeMap::from([("description".to_owned(), Variant::String(String::new()))])
-    }
-
-    fn config_fields(&self) -> Vec<FormField> {
-        vec![FormField::TextArea {
-            key: "description",
-            label: "Description (optional)",
-        }]
-    }
-
-    fn validate_config(&self, config: &SubActionConfig) -> Result<(), RegistryError> {
-        if let Some(Variant::String(s)) = config.get("description")
-            && s.chars().count() > MAX_DESCRIPTION_CHARS
-        {
-            return Err(RegistryError::invalid_field(
-                "description",
-                ConfigReason::LengthOutOfRange(ValueBounds::at_most(MAX_DESCRIPTION_CHARS)),
-            ));
-        }
-        Ok(())
+    fn config_spec(&self) -> Option<ConfigSpec> {
+        Some(CONFIG)
     }
 
     async fn execute(
@@ -131,66 +124,26 @@ impl SubActionRunner for CreateMarkerRunner {
         config: &SubActionConfig,
         ctx: &RunContext<'_>,
     ) -> (SubActionTelemetry, Option<ArgStack>) {
-        let started_at = OffsetDateTime::now_utc();
-        let start = Instant::now();
-
-        let template = config.str("description").unwrap_or_default();
-        let description = ctx.arg_stack.interpolate(template);
-
-        if description.chars().count() > MAX_DESCRIPTION_CHARS {
-            return (
-                SubActionTelemetry {
-                    args_in: ::std::collections::BTreeMap::new(),
-                    produced: ::std::collections::BTreeMap::new(),
-                    kind: KIND_ID.to_owned(),
-                    started_at,
-                    duration_ms: start.elapsed().as_millis() as u64,
-                    outcome: SubActionOutcome::Failed(
-                        "description exceeds 140-character limit".to_owned(),
-                    ),
-                    index: ctx.index,
-                },
-                None,
-            );
-        }
-
+        let timer = StepTimer::start(ctx, KIND_ID);
+        let description = match DESCRIPTION.read(config, ctx.arg_stack) {
+            Ok(description) => description,
+            Err(problem) => return (timer.invalid_config(&problem), None),
+        };
         match self.create(&description).await {
-            Ok((id, position_seconds, created_at)) => {
+            Ok(marker) => {
                 let output_stack = ctx
                     .arg_stack
                     .clone()
-                    .set("marker.id".to_owned(), Variant::String(id))
+                    .set("marker.id".to_owned(), Variant::String(marker.id))
                     .set(
                         "marker.position_seconds".to_owned(),
-                        Variant::Int(position_seconds),
+                        Variant::Int(marker.position_seconds),
                     );
                 let output_stack =
-                    crate::timestamp::set(output_stack, "marker.created_at", created_at);
-                (
-                    SubActionTelemetry {
-                        args_in: ::std::collections::BTreeMap::new(),
-                        produced: ::std::collections::BTreeMap::new(),
-                        kind: KIND_ID.to_owned(),
-                        started_at,
-                        duration_ms: start.elapsed().as_millis() as u64,
-                        outcome: SubActionOutcome::Success,
-                        index: ctx.index,
-                    },
-                    Some(output_stack),
-                )
+                    crate::timestamp::set(output_stack, "marker.created_at", marker.created_at);
+                (timer.success(), Some(output_stack))
             }
-            Err(outcome) => (
-                SubActionTelemetry {
-                    args_in: ::std::collections::BTreeMap::new(),
-                    produced: ::std::collections::BTreeMap::new(),
-                    kind: KIND_ID.to_owned(),
-                    started_at,
-                    duration_ms: start.elapsed().as_millis() as u64,
-                    outcome,
-                    index: ctx.index,
-                },
-                None,
-            ),
+            Err(outcome) => (timer.finish(outcome), None),
         }
     }
 }

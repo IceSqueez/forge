@@ -1,24 +1,71 @@
-use crate::vocabulary::sub_action_ids;
-use std::collections::BTreeMap;
 use std::sync::Arc;
-use std::time::Instant;
 
 use async_trait::async_trait;
 use forge_registry::runner::SubActionConfig;
 use forge_registry::{
-    ConfigReason, FormField, RegistryError, RunContext, SubActionCategory, SubActionConfigExt,
-    SubActionRunner,
+    ChoiceField, ConfigChoice, ConfigProblem, ConfigSpec, RunContext, StepTimer, SubActionCategory,
+    SubActionRunner, TextEditor, TextField, TypedField,
 };
-use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, Variant};
-use time::OffsetDateTime;
+use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry};
 
 use crate::account::identity::SelfIdentity;
 use crate::helix::{HelixMethod, HelixRequest, HelixTransport};
+use crate::vocabulary::{config_keys, sub_action_ids};
 
 const KIND_ID: &str = sub_action_ids::POLL_END;
+const POLL_ID_TEMPLATE: &str = "%poll.id%";
 
-const STATUS_TERMINATED: &str = "terminated";
-const STATUS_ARCHIVED: &str = "archived";
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum PollEndStatus {
+    Terminated,
+    Archived,
+}
+
+impl PollEndStatus {
+    fn helix_status(self) -> &'static str {
+        match self {
+            Self::Terminated => "TERMINATED",
+            Self::Archived => "ARCHIVED",
+        }
+    }
+}
+
+impl ConfigChoice for PollEndStatus {
+    const ALL: &'static [Self] = &[Self::Terminated, Self::Archived];
+    const WIRE_NAMES: &'static [&'static str] = &["terminated", "archived"];
+
+    fn wire_name(self) -> &'static str {
+        match self {
+            Self::Terminated => "terminated",
+            Self::Archived => "archived",
+        }
+    }
+}
+
+const POLL_ID: TextField = TextField {
+    key: config_keys::POLL_ID,
+    label: "Poll ID",
+    editor: TextEditor::Line {
+        placeholder: POLL_ID_TEMPLATE,
+    },
+    default: POLL_ID_TEMPLATE,
+    required: true,
+};
+
+const STATUS: ChoiceField<PollEndStatus> = ChoiceField {
+    key: config_keys::STATUS,
+    label: "End Status",
+    default: PollEndStatus::Terminated,
+};
+
+const CONFIG: ConfigSpec = ConfigSpec::new(&[&POLL_ID, &STATUS]);
+
+fn read_config(
+    config: &SubActionConfig,
+    args: &ArgStack,
+) -> Result<(String, PollEndStatus), ConfigProblem> {
+    Ok((POLL_ID.read(config, args)?, STATUS.read(config, args)?))
+}
 
 pub struct EndPollRunner {
     transport: Arc<dyn HelixTransport>,
@@ -33,19 +80,20 @@ impl EndPollRunner {
         }
     }
 
-    async fn end(&self, poll_id: &str, status_uppercase: &str) -> SubActionOutcome {
+    async fn end(&self, poll_id: &str, status: PollEndStatus) -> SubActionOutcome {
+        if poll_id.is_empty() {
+            return SubActionOutcome::Failed("poll_id is required".to_owned());
+        }
         let user_id = match self.identity.user_id().await {
             Ok(id) => id,
             Err(e) => return SubActionOutcome::Failed(e.to_string()),
         };
-
         let request = HelixRequest::new(HelixMethod::Patch, "/helix/polls")
             .query("broadcaster_id", user_id)
             .body(serde_json::json!({
                 "id": poll_id,
-                "status": status_uppercase,
+                "status": status.helix_status(),
             }));
-
         SubActionOutcome::from_result(&self.transport.execute(request).await)
     }
 }
@@ -76,57 +124,8 @@ impl SubActionRunner for EndPollRunner {
         "chart-bar"
     }
 
-    fn default_config(&self) -> SubActionConfig {
-        BTreeMap::from([
-            (
-                "poll_id".to_owned(),
-                Variant::String("%poll.id%".to_owned()),
-            ),
-            (
-                "status".to_owned(),
-                Variant::String(STATUS_TERMINATED.to_owned()),
-            ),
-        ])
-    }
-
-    fn config_fields(&self) -> Vec<FormField> {
-        vec![
-            FormField::Text {
-                key: "poll_id",
-                label: "Poll ID",
-                placeholder: "%poll.id%",
-            },
-            FormField::Select {
-                key: "status",
-                label: "End Status",
-                options: &[STATUS_TERMINATED, STATUS_ARCHIVED],
-            },
-        ]
-    }
-
-    fn validate_config(&self, config: &SubActionConfig) -> Result<(), RegistryError> {
-        let poll_id = match config.get("poll_id") {
-            Some(Variant::String(s)) => s.as_str(),
-            _ => "",
-        };
-        if poll_id.is_empty() {
-            return Err(RegistryError::invalid_field(
-                "poll_id",
-                ConfigReason::Required,
-            ));
-        }
-
-        match config.get("status") {
-            Some(Variant::String(s)) if s == STATUS_TERMINATED || s == STATUS_ARCHIVED => {}
-            _ => {
-                return Err(RegistryError::invalid_field(
-                    "status",
-                    ConfigReason::choices([STATUS_TERMINATED, STATUS_ARCHIVED]),
-                ));
-            }
-        }
-
-        Ok(())
+    fn config_spec(&self) -> Option<ConfigSpec> {
+        Some(CONFIG)
     }
 
     async fn execute(
@@ -134,44 +133,12 @@ impl SubActionRunner for EndPollRunner {
         config: &SubActionConfig,
         ctx: &RunContext<'_>,
     ) -> (SubActionTelemetry, Option<ArgStack>) {
-        let started_at = OffsetDateTime::now_utc();
-        let start = Instant::now();
-
-        let poll_id_template = config.str("poll_id").unwrap_or_default();
-        let poll_id = ctx.arg_stack.interpolate(poll_id_template);
-
-        if poll_id.is_empty() {
-            return (
-                SubActionTelemetry {
-                    args_in: ::std::collections::BTreeMap::new(),
-                    produced: ::std::collections::BTreeMap::new(),
-                    kind: KIND_ID.to_owned(),
-                    started_at,
-                    duration_ms: start.elapsed().as_millis() as u64,
-                    outcome: SubActionOutcome::Failed("poll_id is required".to_owned()),
-                    index: ctx.index,
-                },
-                None,
-            );
-        }
-
-        let status_lower = config.str("status").unwrap_or(STATUS_TERMINATED);
-        let status_uppercase = status_lower.to_uppercase();
-
-        let outcome = self.end(&poll_id, &status_uppercase).await;
-
-        (
-            SubActionTelemetry {
-                args_in: ::std::collections::BTreeMap::new(),
-                produced: ::std::collections::BTreeMap::new(),
-                kind: KIND_ID.to_owned(),
-                started_at,
-                duration_ms: start.elapsed().as_millis() as u64,
-                outcome,
-                index: ctx.index,
-            },
-            None,
-        )
+        let timer = StepTimer::start(ctx, KIND_ID);
+        let (poll_id, status) = match read_config(config, ctx.arg_stack) {
+            Ok(values) => values,
+            Err(problem) => return (timer.invalid_config(&problem), None),
+        };
+        (timer.finish(self.end(&poll_id, status).await), None)
     }
 }
 

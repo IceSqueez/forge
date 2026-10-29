@@ -1,22 +1,15 @@
-use crate::vocabulary::sub_action_ids;
-use std::collections::BTreeMap;
 use std::sync::Arc;
-use std::time::Instant;
 
 use async_trait::async_trait;
 use forge_registry::runner::SubActionConfig;
-use forge_registry::{
-    ConfigReason, FormField, RegistryError, RunContext, SubActionCategory, SubActionRunner,
-};
-use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, Variant};
-use time::OffsetDateTime;
+use forge_registry::{ConfigSpec, RunContext, StepTimer, SubActionCategory, SubActionRunner};
+use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry};
 
-use super::guest_star::{
-    GuestStarContext, interpolate, session_id_field, target_login_field, validate_session_id,
-    validate_target_login, with_session_id, with_target_login,
-};
+use super::guest_star::GuestStarContext;
+use super::guest_star_assign_slot::{GUEST_SLOT_CONFIG, GuestSlot};
 use crate::account::identity::SelfIdentity;
 use crate::helix::{HelixMethod, HelixRequest, HelixTransport};
+use crate::vocabulary::sub_action_ids;
 
 const KIND_ID: &str = sub_action_ids::GUEST_STAR_REMOVE_GUEST;
 
@@ -33,27 +26,26 @@ impl GuestStarRemoveGuestRunner {
         }
     }
 
-    async fn remove(
-        &self,
-        session_id: &str,
-        target_login: &str,
-        slot_id: &str,
-    ) -> SubActionOutcome {
-        let ctx =
-            match GuestStarContext::resolve(self.transport.as_ref(), &self.identity, target_login)
-                .await
-            {
-                Ok(c) => c,
-                Err(e) => return SubActionOutcome::Failed(format!("{KIND_ID}: {e}")),
-            };
-
+    async fn remove(&self, slot: &GuestSlot) -> SubActionOutcome {
+        if let Some(missing) = slot.first_missing() {
+            return SubActionOutcome::Failed(missing);
+        }
+        let ctx = match GuestStarContext::resolve(
+            self.transport.as_ref(),
+            &self.identity,
+            &slot.target_login,
+        )
+        .await
+        {
+            Ok(c) => c,
+            Err(e) => return SubActionOutcome::Failed(format!("{KIND_ID}: {e}")),
+        };
         let request = HelixRequest::new(HelixMethod::Delete, "/helix/guest_star/slot")
             .query("broadcaster_id", ctx.self_id.clone())
             .query("moderator_id", ctx.self_id)
-            .query("session_id", session_id.to_owned())
+            .query("session_id", slot.session_id.clone())
             .query("guest_id", ctx.guest_id)
-            .query("slot_id", slot_id.to_owned());
-
+            .query("slot_id", slot.slot_id.clone());
         match self.transport.execute(request).await {
             Ok(_) => SubActionOutcome::Success,
             Err(e) => SubActionOutcome::Failed(format!("{KIND_ID}: {e}")),
@@ -87,34 +79,8 @@ impl SubActionRunner for GuestStarRemoveGuestRunner {
         "user-minus"
     }
 
-    fn default_config(&self) -> SubActionConfig {
-        let mut config = with_target_login(with_session_id(BTreeMap::new()));
-        config.insert("slot_id".to_owned(), Variant::String(String::new()));
-        config
-    }
-
-    fn config_fields(&self) -> Vec<FormField> {
-        vec![
-            session_id_field(),
-            target_login_field(),
-            FormField::Text {
-                key: "slot_id",
-                label: "Slot ID",
-                placeholder: "1",
-            },
-        ]
-    }
-
-    fn validate_config(&self, config: &SubActionConfig) -> Result<(), RegistryError> {
-        validate_session_id(config)?;
-        validate_target_login(config)?;
-        match config.get("slot_id") {
-            Some(Variant::String(s)) if !s.is_empty() => Ok(()),
-            _ => Err(RegistryError::invalid_field(
-                "slot_id",
-                ConfigReason::Required,
-            )),
-        }
+    fn config_spec(&self) -> Option<ConfigSpec> {
+        Some(GUEST_SLOT_CONFIG)
     }
 
     async fn execute(
@@ -122,35 +88,12 @@ impl SubActionRunner for GuestStarRemoveGuestRunner {
         config: &SubActionConfig,
         ctx: &RunContext<'_>,
     ) -> (SubActionTelemetry, Option<ArgStack>) {
-        let started_at = OffsetDateTime::now_utc();
-        let start = Instant::now();
-
-        let session_id = interpolate(config, ctx.arg_stack, "session_id");
-        let target_login = interpolate(config, ctx.arg_stack, "target_user_login");
-        let slot_id = interpolate(config, ctx.arg_stack, "slot_id");
-
-        let outcome = if session_id.is_empty() {
-            SubActionOutcome::Failed("session_id is required".to_owned())
-        } else if target_login.is_empty() {
-            SubActionOutcome::Failed("target_user_login is required".to_owned())
-        } else if slot_id.is_empty() {
-            SubActionOutcome::Failed("slot_id is required".to_owned())
-        } else {
-            self.remove(&session_id, &target_login, &slot_id).await
+        let timer = StepTimer::start(ctx, KIND_ID);
+        let slot = match GuestSlot::read(config, ctx.arg_stack) {
+            Ok(slot) => slot,
+            Err(problem) => return (timer.invalid_config(&problem), None),
         };
-
-        (
-            SubActionTelemetry {
-                args_in: ::std::collections::BTreeMap::new(),
-                produced: ::std::collections::BTreeMap::new(),
-                kind: KIND_ID.to_owned(),
-                started_at,
-                duration_ms: start.elapsed().as_millis() as u64,
-                outcome,
-                index: ctx.index,
-            },
-            None,
-        )
+        (timer.finish(self.remove(&slot).await), None)
     }
 }
 

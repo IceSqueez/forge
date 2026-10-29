@@ -1,27 +1,32 @@
-use crate::vocabulary::sub_action_ids;
-use std::collections::BTreeMap;
 use std::sync::Arc;
-use std::time::Instant;
 
 use async_trait::async_trait;
 use forge_registry::runner::SubActionConfig;
 use forge_registry::{
-    ConfigReason, FormField, RegistryError, RunContext, SubActionCategory, SubActionConfigExt,
-    SubActionRunner, ValueBounds,
+    ConfigProblem, ConfigSpec, Interpolation, RunContext, StepTimer, SubActionCategory,
+    SubActionRunner, TypedField,
 };
-use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, Variant};
-use time::OffsetDateTime;
+use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry};
 
+use super::fields::{MODERATION_TARGET, OPTIONAL_REASON};
 use crate::account::identity::SelfIdentity;
-use crate::account::user_target::{TargetKeys, UserTarget};
+use crate::account::user_target::{InterpolatedTarget, UserTarget};
 use crate::helix::{HelixMethod, HelixRequest, HelixTransport};
+use crate::vocabulary::sub_action_ids;
 
-const TARGET_KEYS: TargetKeys = TargetKeys {
-    id: "target_user_id",
-    login: "target_user_login",
-};
 const KIND_ID: &str = sub_action_ids::MODERATION_BAN_USER;
-const MAX_REASON_CHARS: usize = 500;
+
+const CONFIG: ConfigSpec = ConfigSpec::new(&[&MODERATION_TARGET.login, &OPTIONAL_REASON]);
+
+fn read_config(
+    config: &SubActionConfig,
+    args: &ArgStack,
+) -> Result<(InterpolatedTarget, String), ConfigProblem> {
+    Ok((
+        MODERATION_TARGET.read(config, args)?,
+        OPTIONAL_REASON.read(config, args)?,
+    ))
+}
 
 pub struct BanUserRunner {
     transport: Arc<dyn HelixTransport>,
@@ -38,7 +43,7 @@ impl BanUserRunner {
 
     async fn ban(&self, target: Option<UserTarget<'_>>, reason: &str) -> SubActionOutcome {
         let Some(target) = target else {
-            return SubActionOutcome::Failed(TARGET_KEYS.empty_after_interpolation());
+            return SubActionOutcome::Failed(MODERATION_TARGET.empty_after_interpolation());
         };
         let user_id = match self.identity.user_id().await {
             Ok(id) => id,
@@ -86,39 +91,16 @@ impl SubActionRunner for BanUserRunner {
         "ban"
     }
 
-    fn default_config(&self) -> SubActionConfig {
-        BTreeMap::from([
-            (TARGET_KEYS.login.to_owned(), Variant::String(String::new())),
-            ("reason".to_owned(), Variant::String(String::new())),
-        ])
+    fn config_spec(&self) -> Option<ConfigSpec> {
+        Some(CONFIG)
     }
 
-    fn config_fields(&self) -> Vec<FormField> {
-        vec![
-            FormField::Text {
-                key: TARGET_KEYS.login,
-                label: "Target Username",
-                placeholder: "%user_login%",
-            },
-            FormField::Text {
-                key: "reason",
-                label: "Reason (optional, max 500 chars)",
-                placeholder: "",
-            },
-        ]
-    }
-
-    fn validate_config(&self, config: &SubActionConfig) -> Result<(), RegistryError> {
-        TARGET_KEYS.validate(config)?;
-        if let Some(Variant::String(r)) = config.get("reason")
-            && r.chars().count() > MAX_REASON_CHARS
-        {
-            return Err(RegistryError::invalid_field(
-                "reason",
-                ConfigReason::LengthOutOfRange(ValueBounds::at_most(MAX_REASON_CHARS)),
-            ));
-        }
-        Ok(())
+    fn check_config(
+        &self,
+        config: &SubActionConfig,
+        interpolation: Interpolation<'_>,
+    ) -> Result<(), ConfigProblem> {
+        MODERATION_TARGET.check(config, interpolation)
     }
 
     async fn execute(
@@ -126,29 +108,12 @@ impl SubActionRunner for BanUserRunner {
         config: &SubActionConfig,
         ctx: &RunContext<'_>,
     ) -> (SubActionTelemetry, Option<ArgStack>) {
-        let started_at = OffsetDateTime::now_utc();
-        let start = Instant::now();
-
-        let interpolated = TARGET_KEYS.interpolate(config, ctx);
-        let reason = config
-            .str("reason")
-            .map(|s| ctx.arg_stack.interpolate(s))
-            .unwrap_or_default();
-
-        let outcome = self.ban(interpolated.target(), &reason).await;
-
-        (
-            SubActionTelemetry {
-                args_in: ::std::collections::BTreeMap::new(),
-                produced: ::std::collections::BTreeMap::new(),
-                kind: KIND_ID.to_owned(),
-                started_at,
-                duration_ms: start.elapsed().as_millis() as u64,
-                outcome,
-                index: ctx.index,
-            },
-            None,
-        )
+        let timer = StepTimer::start(ctx, KIND_ID);
+        let (target, reason) = match read_config(config, ctx.arg_stack) {
+            Ok(values) => values,
+            Err(problem) => return (timer.invalid_config(&problem), None),
+        };
+        (timer.finish(self.ban(target.target(), &reason).await), None)
     }
 }
 

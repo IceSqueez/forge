@@ -1,21 +1,31 @@
-use crate::vocabulary::sub_action_ids;
-use std::collections::BTreeMap;
 use std::sync::Arc;
-use std::time::Instant;
 
 use async_trait::async_trait;
 use forge_registry::runner::SubActionConfig;
 use forge_registry::{
-    ConfigReason, FormField, RegistryError, RunContext, SubActionCategory, SubActionConfigExt,
-    SubActionRunner,
+    ConfigProblem, ConfigSpec, RunContext, StepTimer, SubActionCategory, SubActionRunner,
+    TextEditor, TextField, TypedField,
 };
-use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, Variant};
-use time::OffsetDateTime;
+use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry};
 
 use crate::account::identity::SelfIdentity;
 use crate::helix::{HelixMethod, HelixRequest, HelixTransport};
+use crate::vocabulary::{config_keys, sub_action_ids};
 
 const KIND_ID: &str = sub_action_ids::PREDICTION_LOCK;
+const PREDICTION_ID_TEMPLATE: &str = "%prediction.id%";
+
+pub(crate) const PREDICTION_ID: TextField = TextField {
+    key: config_keys::PREDICTION_ID,
+    label: "Prediction ID",
+    editor: TextEditor::Line {
+        placeholder: PREDICTION_ID_TEMPLATE,
+    },
+    default: PREDICTION_ID_TEMPLATE,
+    required: true,
+};
+
+pub(crate) const PREDICTION_CONFIG: ConfigSpec = ConfigSpec::new(&[&PREDICTION_ID]);
 
 pub struct LockPredictionRunner {
     transport: Arc<dyn HelixTransport>,
@@ -31,133 +41,84 @@ impl LockPredictionRunner {
     }
 }
 
-pub(crate) fn prediction_default_config() -> SubActionConfig {
-    BTreeMap::from([(
-        "prediction_id".to_owned(),
-        Variant::String("%prediction.id%".to_owned()),
-    )])
+pub(crate) struct PredictionUpdate<'a> {
+    pub(crate) kind_id: &'a str,
+    pub(crate) status: &'a str,
+    pub(crate) winning_outcome: Option<&'a TextField>,
 }
 
-pub(crate) fn prediction_config_fields() -> Vec<FormField> {
-    vec![FormField::Text {
-        key: "prediction_id",
-        label: "Prediction ID",
-        placeholder: "%prediction.id%",
-    }]
+struct ResolvedUpdate {
+    prediction_id: String,
+    winning_outcome_id: Option<String>,
 }
 
-pub(crate) fn validate_prediction_config(config: &SubActionConfig) -> Result<(), RegistryError> {
-    match config.get("prediction_id") {
-        Some(Variant::String(s)) if !s.is_empty() => Ok(()),
-        _ => Err(RegistryError::invalid_field(
-            "prediction_id",
-            ConfigReason::Required,
-        )),
-    }
-}
-
-pub(crate) async fn patch_prediction_status(
-    transport: &Arc<dyn HelixTransport>,
-    identity: &Arc<SelfIdentity>,
-    kind_id: &str,
-    prediction_id: &str,
-    status: &str,
-    winning_outcome_id: Option<&str>,
-) -> SubActionOutcome {
-    let user_id = match identity.user_id().await {
-        Ok(id) => id,
-        Err(e) => return SubActionOutcome::Failed(e.to_string()),
-    };
-
-    let mut body = serde_json::Map::new();
-    body.insert("id".to_owned(), prediction_id.into());
-    body.insert("status".to_owned(), status.into());
-    if let Some(wid) = winning_outcome_id {
-        body.insert("winning_outcome_id".to_owned(), wid.into());
+impl PredictionUpdate<'_> {
+    fn read(
+        &self,
+        config: &SubActionConfig,
+        args: &ArgStack,
+    ) -> Result<ResolvedUpdate, ConfigProblem> {
+        Ok(ResolvedUpdate {
+            prediction_id: PREDICTION_ID.read(config, args)?,
+            winning_outcome_id: self
+                .winning_outcome
+                .map(|field| field.read(config, args))
+                .transpose()?,
+        })
     }
 
-    let request = HelixRequest::new(HelixMethod::Patch, "/helix/predictions")
-        .query("broadcaster_id", user_id)
-        .body(serde_json::Value::Object(body));
-
-    match transport.execute(request).await {
-        Ok(_) => SubActionOutcome::Success,
-        Err(e) => SubActionOutcome::Failed(format!("{kind_id}: {e}")),
+    async fn patch(
+        &self,
+        transport: &Arc<dyn HelixTransport>,
+        identity: &Arc<SelfIdentity>,
+        resolved: ResolvedUpdate,
+    ) -> SubActionOutcome {
+        if resolved.prediction_id.is_empty() {
+            return SubActionOutcome::Failed("prediction_id is required".to_owned());
+        }
+        if resolved
+            .winning_outcome_id
+            .as_ref()
+            .is_some_and(String::is_empty)
+        {
+            return SubActionOutcome::Failed("winning_outcome_id is required".to_owned());
+        }
+        let user_id = match identity.user_id().await {
+            Ok(id) => id,
+            Err(e) => return SubActionOutcome::Failed(e.to_string()),
+        };
+        let mut body = serde_json::Map::new();
+        body.insert("id".to_owned(), resolved.prediction_id.into());
+        body.insert("status".to_owned(), self.status.into());
+        if let Some(winning_outcome_id) = resolved.winning_outcome_id {
+            body.insert("winning_outcome_id".to_owned(), winning_outcome_id.into());
+        }
+        let request = HelixRequest::new(HelixMethod::Patch, "/helix/predictions")
+            .query("broadcaster_id", user_id)
+            .body(serde_json::Value::Object(body));
+        match transport.execute(request).await {
+            Ok(_) => SubActionOutcome::Success,
+            Err(e) => SubActionOutcome::Failed(format!("{}: {e}", self.kind_id)),
+        }
     }
-}
 
-pub(crate) async fn execute_prediction_runner(
-    transport: &Arc<dyn HelixTransport>,
-    identity: &Arc<SelfIdentity>,
-    kind_id: &str,
-    status: &str,
-    winning_outcome_id_key: Option<&str>,
-    config: &SubActionConfig,
-    ctx: &RunContext<'_>,
-) -> (SubActionTelemetry, Option<ArgStack>) {
-    let started_at = OffsetDateTime::now_utc();
-    let start = Instant::now();
-
-    let prediction_id_template = config.str("prediction_id").unwrap_or_default();
-    let prediction_id = ctx.arg_stack.interpolate(prediction_id_template);
-
-    if prediction_id.is_empty() {
-        return (
-            SubActionTelemetry {
-                args_in: ::std::collections::BTreeMap::new(),
-                produced: ::std::collections::BTreeMap::new(),
-                kind: kind_id.to_owned(),
-                started_at,
-                duration_ms: start.elapsed().as_millis() as u64,
-                outcome: SubActionOutcome::Failed("prediction_id is required".to_owned()),
-                index: ctx.index,
-            },
+    pub(crate) async fn execute(
+        &self,
+        transport: &Arc<dyn HelixTransport>,
+        identity: &Arc<SelfIdentity>,
+        config: &SubActionConfig,
+        ctx: &RunContext<'_>,
+    ) -> (SubActionTelemetry, Option<ArgStack>) {
+        let timer = StepTimer::start(ctx, self.kind_id);
+        let resolved = match self.read(config, ctx.arg_stack) {
+            Ok(resolved) => resolved,
+            Err(problem) => return (timer.invalid_config(&problem), None),
+        };
+        (
+            timer.finish(self.patch(transport, identity, resolved).await),
             None,
-        );
+        )
     }
-
-    let winning_outcome_id_owned = winning_outcome_id_key
-        .and_then(|key| config.str(key).map(|t| ctx.arg_stack.interpolate(t)));
-
-    if let Some(ref wid) = winning_outcome_id_owned
-        && wid.is_empty()
-    {
-        return (
-            SubActionTelemetry {
-                args_in: ::std::collections::BTreeMap::new(),
-                produced: ::std::collections::BTreeMap::new(),
-                kind: kind_id.to_owned(),
-                started_at,
-                duration_ms: start.elapsed().as_millis() as u64,
-                outcome: SubActionOutcome::Failed("winning_outcome_id is required".to_owned()),
-                index: ctx.index,
-            },
-            None,
-        );
-    }
-
-    let outcome = patch_prediction_status(
-        transport,
-        identity,
-        kind_id,
-        &prediction_id,
-        status,
-        winning_outcome_id_owned.as_deref(),
-    )
-    .await;
-
-    (
-        SubActionTelemetry {
-            args_in: ::std::collections::BTreeMap::new(),
-            produced: ::std::collections::BTreeMap::new(),
-            kind: kind_id.to_owned(),
-            started_at,
-            duration_ms: start.elapsed().as_millis() as u64,
-            outcome,
-            index: ctx.index,
-        },
-        None,
-    )
 }
 
 #[async_trait]
@@ -186,16 +147,8 @@ impl SubActionRunner for LockPredictionRunner {
         "lock"
     }
 
-    fn default_config(&self) -> SubActionConfig {
-        prediction_default_config()
-    }
-
-    fn config_fields(&self) -> Vec<FormField> {
-        prediction_config_fields()
-    }
-
-    fn validate_config(&self, config: &SubActionConfig) -> Result<(), RegistryError> {
-        validate_prediction_config(config)
+    fn config_spec(&self) -> Option<ConfigSpec> {
+        Some(PREDICTION_CONFIG)
     }
 
     async fn execute(
@@ -203,15 +156,12 @@ impl SubActionRunner for LockPredictionRunner {
         config: &SubActionConfig,
         ctx: &RunContext<'_>,
     ) -> (SubActionTelemetry, Option<ArgStack>) {
-        execute_prediction_runner(
-            &self.transport,
-            &self.identity,
-            KIND_ID,
-            "LOCKED",
-            None,
-            config,
-            ctx,
-        )
+        PredictionUpdate {
+            kind_id: KIND_ID,
+            status: "LOCKED",
+            winning_outcome: None,
+        }
+        .execute(&self.transport, &self.identity, config, ctx)
         .await
     }
 }

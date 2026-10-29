@@ -1,30 +1,54 @@
-use crate::vocabulary::sub_action_ids;
-use std::collections::BTreeMap;
 use std::sync::Arc;
-use std::time::Instant;
 
 use async_trait::async_trait;
 use forge_events::EventPublisher;
-use forge_platform_core::{SENDER_FIELD, SenderPreference};
+use forge_platform_core::SenderPreference;
 use forge_registry::runner::SubActionConfig;
 use forge_registry::{
-    ConfigReason, FormField, RegistryError, RunContext, SubActionCategory, SubActionConfigExt,
-    SubActionRunner,
+    ConfigProblem, ConfigSpec, RunContext, StepTimer, SubActionCategory, SubActionRunner,
+    TextEditor, TextField, TypedField,
 };
-use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, Variant};
-use time::OffsetDateTime;
+use forge_types::{ArgStack, SubActionTelemetry};
 
+use super::fields::{ResolvedIdField, SENDER, SendAs};
 use crate::account::identity::SelfIdentity;
 use crate::bot_account::TwitchBotAccount;
-use crate::chat_sender::{
-    ChatDelivery, ChatSenders, StepResult, configured_sender, failed_step, step_result,
-};
+use crate::chat_sender::{ChatDelivery, ChatSenders, StepResult, failed_step, step_result};
 use crate::helix::HelixTransport;
+use crate::vocabulary::{config_keys, sub_action_ids};
 
 const KIND_ID: &str = sub_action_ids::CHAT_REPLY;
 const MAX_MESSAGE_CHARS: usize = 500;
-const DEFAULT_PARENT_TEMPLATE: &str = "%message_id%";
-const UNRESOLVED_REFERENCE_MARKER: char = '%';
+
+const MESSAGE: TextField = TextField {
+    key: config_keys::MESSAGE,
+    label: "Message",
+    editor: TextEditor::Area,
+    default: "",
+    required: true,
+};
+
+const PARENT_MESSAGE_ID: ResolvedIdField = ResolvedIdField {
+    key: config_keys::PARENT_MESSAGE_ID,
+    label: "Parent Message ID",
+    default: "%message_id%",
+};
+
+const CONFIG: ConfigSpec = ConfigSpec::new(&[&MESSAGE, &PARENT_MESSAGE_ID, &SENDER]);
+
+struct ReplyConfig {
+    message: String,
+    parent_message_id: String,
+    sender: SendAs,
+}
+
+fn read_config(config: &SubActionConfig, args: &ArgStack) -> Result<ReplyConfig, ConfigProblem> {
+    Ok(ReplyConfig {
+        message: MESSAGE.read(config, args)?,
+        parent_message_id: PARENT_MESSAGE_ID.read(config, args)?,
+        sender: SENDER.read(config, args)?,
+    })
+}
 
 pub struct ReplyChatRunner {
     senders: ChatSenders,
@@ -54,12 +78,6 @@ impl ReplyChatRunner {
         }
         if message.chars().count() > MAX_MESSAGE_CHARS {
             return failed_step("message exceeds 500-character limit");
-        }
-        if parent_message_id.is_empty() {
-            return failed_step("parent_message_id is empty after interpolation");
-        }
-        if parent_message_id.contains(UNRESOLVED_REFERENCE_MARKER) {
-            return failed_step("parent_message_id has an unresolved variable reference");
         }
         let delivery = ChatDelivery::Reply {
             text: message,
@@ -95,59 +113,8 @@ impl SubActionRunner for ReplyChatRunner {
         "reply"
     }
 
-    fn default_config(&self) -> SubActionConfig {
-        BTreeMap::from([
-            ("message".to_owned(), Variant::String(String::new())),
-            (
-                "parent_message_id".to_owned(),
-                Variant::String(DEFAULT_PARENT_TEMPLATE.to_owned()),
-            ),
-            (
-                SENDER_FIELD.to_owned(),
-                Variant::String(SenderPreference::Default.as_str().to_owned()),
-            ),
-        ])
-    }
-
-    fn config_fields(&self) -> Vec<FormField> {
-        vec![
-            FormField::TextArea {
-                key: "message",
-                label: "Message",
-            },
-            FormField::Text {
-                key: "parent_message_id",
-                label: "Parent Message ID",
-                placeholder: DEFAULT_PARENT_TEMPLATE,
-            },
-            FormField::Select {
-                key: SENDER_FIELD,
-                label: "Send As",
-                options: SenderPreference::WIRE_NAMES,
-            },
-        ]
-    }
-
-    fn validate_config(&self, config: &SubActionConfig) -> Result<(), RegistryError> {
-        match config.get("message") {
-            Some(Variant::String(s)) if !s.is_empty() => {}
-            _ => {
-                return Err(RegistryError::invalid_field(
-                    "message",
-                    ConfigReason::Required,
-                ));
-            }
-        }
-        match config.get("parent_message_id") {
-            Some(Variant::String(s)) if !s.is_empty() => {}
-            _ => {
-                return Err(RegistryError::invalid_field(
-                    "parent_message_id",
-                    ConfigReason::Required,
-                ));
-            }
-        }
-        configured_sender(config).map(|_| ())
+    fn config_spec(&self) -> Option<ConfigSpec> {
+        Some(CONFIG)
     }
 
     async fn execute(
@@ -155,37 +122,22 @@ impl SubActionRunner for ReplyChatRunner {
         config: &SubActionConfig,
         ctx: &RunContext<'_>,
     ) -> (SubActionTelemetry, Option<ArgStack>) {
-        let started_at = OffsetDateTime::now_utc();
-        let start = Instant::now();
-
-        let msg_template = config.str("message").unwrap_or_default();
-        let message = ctx.arg_stack.interpolate(msg_template);
-
-        let parent_template = config
-            .str("parent_message_id")
-            .unwrap_or(DEFAULT_PARENT_TEMPLATE);
-        let parent_message_id = ctx.arg_stack.interpolate(parent_template);
-
-        let (outcome, produced) = match configured_sender(config) {
-            Ok(sender) => {
-                self.reply(&message, &parent_message_id, sender, ctx.publisher)
-                    .await
-            }
-            Err(e) => (SubActionOutcome::Failed(e.to_string()), BTreeMap::new()),
+        let timer = StepTimer::start(ctx, KIND_ID);
+        let read = match read_config(config, ctx.arg_stack) {
+            Ok(read) => read,
+            Err(problem) => return (timer.invalid_config(&problem), None),
         };
-
-        (
-            SubActionTelemetry {
-                args_in: ::std::collections::BTreeMap::new(),
-                produced,
-                kind: KIND_ID.to_owned(),
-                started_at,
-                duration_ms: start.elapsed().as_millis() as u64,
-                outcome,
-                index: ctx.index,
-            },
-            None,
-        )
+        let (outcome, produced) = self
+            .reply(
+                &read.message,
+                &read.parent_message_id,
+                read.sender.0,
+                ctx.publisher,
+            )
+            .await;
+        let mut telemetry = timer.finish(outcome);
+        telemetry.produced = produced;
+        (telemetry, None)
     }
 }
 

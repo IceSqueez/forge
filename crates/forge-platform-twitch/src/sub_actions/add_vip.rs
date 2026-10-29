@@ -1,21 +1,20 @@
-use crate::vocabulary::sub_action_ids;
-use std::collections::BTreeMap;
 use std::sync::Arc;
-use std::time::Instant;
 
 use async_trait::async_trait;
 use forge_registry::runner::SubActionConfig;
 use forge_registry::{
-    ConfigReason, FormField, RegistryError, RunContext, SubActionCategory, SubActionConfigExt,
-    SubActionRunner,
+    ConfigSpec, RunContext, StepTimer, SubActionCategory, SubActionRunner, TypedField,
 };
-use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, Variant};
-use time::OffsetDateTime;
+use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry};
 
+use super::fields::TARGET_LOGIN;
 use crate::account::identity::{SelfIdentity, resolve_user_id};
 use crate::helix::{HelixMethod, HelixRequest, HelixTransport};
+use crate::vocabulary::sub_action_ids;
 
 const KIND_ID: &str = sub_action_ids::MODERATION_ADD_VIP;
+
+const CONFIG: ConfigSpec = ConfigSpec::new(&[&TARGET_LOGIN]);
 
 pub struct AddVipRunner {
     transport: Arc<dyn HelixTransport>,
@@ -77,29 +76,8 @@ impl SubActionRunner for AddVipRunner {
         "star-plus"
     }
 
-    fn default_config(&self) -> SubActionConfig {
-        BTreeMap::from([(
-            "target_user_login".to_owned(),
-            Variant::String(String::new()),
-        )])
-    }
-
-    fn config_fields(&self) -> Vec<FormField> {
-        vec![FormField::Text {
-            key: "target_user_login",
-            label: "Target Username",
-            placeholder: "%user_login%",
-        }]
-    }
-
-    fn validate_config(&self, config: &SubActionConfig) -> Result<(), RegistryError> {
-        match config.get("target_user_login") {
-            Some(Variant::String(s)) if !s.is_empty() => Ok(()),
-            _ => Err(RegistryError::invalid_field(
-                "target_user_login",
-                ConfigReason::Required,
-            )),
-        }
+    fn config_spec(&self) -> Option<ConfigSpec> {
+        Some(CONFIG)
     }
 
     async fn execute(
@@ -107,25 +85,11 @@ impl SubActionRunner for AddVipRunner {
         config: &SubActionConfig,
         ctx: &RunContext<'_>,
     ) -> (SubActionTelemetry, Option<ArgStack>) {
-        let started_at = OffsetDateTime::now_utc();
-        let start = Instant::now();
-
-        let login_template = config.str("target_user_login").unwrap_or_default();
-        let target_login = ctx.arg_stack.interpolate(login_template);
-
-        let outcome = self.apply(&target_login).await;
-
-        (
-            SubActionTelemetry {
-                args_in: ::std::collections::BTreeMap::new(),
-                produced: ::std::collections::BTreeMap::new(),
-                kind: KIND_ID.to_owned(),
-                started_at,
-                duration_ms: start.elapsed().as_millis() as u64,
-                outcome,
-                index: ctx.index,
-            },
-            None,
-        )
+        let timer = StepTimer::start(ctx, KIND_ID);
+        let target_login = match TARGET_LOGIN.read(config, ctx.arg_stack) {
+            Ok(login) => login,
+            Err(problem) => return (timer.invalid_config(&problem), None),
+        };
+        (timer.finish(self.apply(&target_login).await), None)
     }
 }

@@ -1,25 +1,24 @@
-use crate::vocabulary::sub_action_ids;
-use std::collections::BTreeMap;
 use std::sync::Arc;
-use std::time::Instant;
 
 use async_trait::async_trait;
-use forge_registry::runner::SubActionConfig;
-use forge_registry::{FormField, RegistryError, RunContext, SubActionCategory, SubActionRunner};
-use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, Variant};
-use time::OffsetDateTime;
-
-use crate::account::identity::SelfIdentity;
-use crate::account::user_target::{TargetKeys, UserTarget};
-use crate::helix::{HelixError, HelixMethod, HelixRequest, HelixTransport};
 use forge_net::status::BAD_REQUEST;
-
-const TARGET_KEYS: TargetKeys = TargetKeys {
-    id: "target_user_id",
-    login: "target_user_login",
+use forge_registry::runner::SubActionConfig;
+use forge_registry::{
+    ConfigProblem, ConfigSpec, Interpolation, RunContext, StepTimer, SubActionCategory,
+    SubActionRunner,
 };
+use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry};
+
+use super::fields::MODERATION_TARGET;
+use crate::account::identity::SelfIdentity;
+use crate::account::user_target::UserTarget;
+use crate::helix::{HelixError, HelixMethod, HelixRequest, HelixTransport};
+use crate::vocabulary::sub_action_ids;
+
 const KIND_ID: &str = sub_action_ids::MODERATION_UNBAN_USER;
 const NOT_BANNED_MARKER: &str = "not banned";
+
+const CONFIG: ConfigSpec = ConfigSpec::new(&[&MODERATION_TARGET.login]);
 
 fn already_unbanned(error: &HelixError) -> bool {
     match error {
@@ -45,7 +44,7 @@ impl UnbanUserRunner {
 
     async fn unban(&self, target: Option<UserTarget<'_>>) -> SubActionOutcome {
         let Some(target) = target else {
-            return SubActionOutcome::Failed(TARGET_KEYS.empty_after_interpolation());
+            return SubActionOutcome::Failed(MODERATION_TARGET.empty_after_interpolation());
         };
         let user_id = match self.identity.user_id().await {
             Ok(id) => id,
@@ -93,20 +92,16 @@ impl SubActionRunner for UnbanUserRunner {
         "shield-check"
     }
 
-    fn default_config(&self) -> SubActionConfig {
-        BTreeMap::from([(TARGET_KEYS.login.to_owned(), Variant::String(String::new()))])
+    fn config_spec(&self) -> Option<ConfigSpec> {
+        Some(CONFIG)
     }
 
-    fn config_fields(&self) -> Vec<FormField> {
-        vec![FormField::Text {
-            key: TARGET_KEYS.login,
-            label: "Target Username",
-            placeholder: "%user_login%",
-        }]
-    }
-
-    fn validate_config(&self, config: &SubActionConfig) -> Result<(), RegistryError> {
-        TARGET_KEYS.validate(config)
+    fn check_config(
+        &self,
+        config: &SubActionConfig,
+        interpolation: Interpolation<'_>,
+    ) -> Result<(), ConfigProblem> {
+        MODERATION_TARGET.check(config, interpolation)
     }
 
     async fn execute(
@@ -114,25 +109,12 @@ impl SubActionRunner for UnbanUserRunner {
         config: &SubActionConfig,
         ctx: &RunContext<'_>,
     ) -> (SubActionTelemetry, Option<ArgStack>) {
-        let started_at = OffsetDateTime::now_utc();
-        let start = Instant::now();
-
-        let interpolated = TARGET_KEYS.interpolate(config, ctx);
-
-        let outcome = self.unban(interpolated.target()).await;
-
-        (
-            SubActionTelemetry {
-                args_in: ::std::collections::BTreeMap::new(),
-                produced: ::std::collections::BTreeMap::new(),
-                kind: KIND_ID.to_owned(),
-                started_at,
-                duration_ms: start.elapsed().as_millis() as u64,
-                outcome,
-                index: ctx.index,
-            },
-            None,
-        )
+        let timer = StepTimer::start(ctx, KIND_ID);
+        let target = match MODERATION_TARGET.read(config, ctx.arg_stack) {
+            Ok(target) => target,
+            Err(problem) => return (timer.invalid_config(&problem), None),
+        };
+        (timer.finish(self.unban(target.target()).await), None)
     }
 }
 

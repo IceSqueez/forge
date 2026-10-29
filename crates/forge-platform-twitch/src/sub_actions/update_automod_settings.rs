@@ -1,37 +1,130 @@
-use crate::vocabulary::sub_action_ids;
-use std::collections::BTreeMap;
 use std::sync::Arc;
-use std::time::Instant;
 
 use async_trait::async_trait;
 use forge_registry::runner::SubActionConfig;
 use forge_registry::{
-    ConfigReason, FormField, RegistryError, RunContext, SubActionCategory, SubActionRunner,
+    ChoiceField, ConfigChoice, ConfigProblem, ConfigSpec, RunContext, StepTimer, SubActionCategory,
+    SubActionRunner, TypedField,
 };
-use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, Variant};
-use time::OffsetDateTime;
+use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry};
 
 use crate::account::identity::SelfIdentity;
 use crate::helix::{HelixError, HelixMethod, HelixRequest, HelixTransport};
+use crate::vocabulary::{config_keys, sub_action_ids};
 
 const KIND_ID: &str = sub_action_ids::AUTOMOD_UPDATE_SETTINGS;
 const PATH: &str = "/helix/moderation/automod/settings";
+const FALLBACK_LEVEL: u8 = 0;
 
-const UNCHANGED: &str = "unchanged";
-const LEVEL_OPTIONS: &[&str] = &[UNCHANGED, "0", "1", "2", "3", "4"];
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum AutomodLevel {
+    Unchanged,
+    Level0,
+    Level1,
+    Level2,
+    Level3,
+    Level4,
+}
 
-const OVERALL_KEY: &str = "overall_level";
+impl AutomodLevel {
+    fn level(self) -> Option<u8> {
+        match self {
+            Self::Unchanged => None,
+            Self::Level0 => Some(0),
+            Self::Level1 => Some(1),
+            Self::Level2 => Some(2),
+            Self::Level3 => Some(3),
+            Self::Level4 => Some(4),
+        }
+    }
+}
 
-const CATEGORY_KEYS: &[&str] = &[
-    "aggression",
-    "bullying",
-    "disability",
-    "misogyny",
-    "race_ethnicity_or_religion",
-    "sex_based_terms",
-    "sexuality_sex_or_gender",
-    "swearing",
+impl ConfigChoice for AutomodLevel {
+    const ALL: &'static [Self] = &[
+        Self::Unchanged,
+        Self::Level0,
+        Self::Level1,
+        Self::Level2,
+        Self::Level3,
+        Self::Level4,
+    ];
+    const WIRE_NAMES: &'static [&'static str] = &["unchanged", "0", "1", "2", "3", "4"];
+
+    fn wire_name(self) -> &'static str {
+        match self {
+            Self::Unchanged => "unchanged",
+            Self::Level0 => "0",
+            Self::Level1 => "1",
+            Self::Level2 => "2",
+            Self::Level3 => "3",
+            Self::Level4 => "4",
+        }
+    }
+}
+
+const fn level_field(key: &'static str, label: &'static str) -> ChoiceField<AutomodLevel> {
+    ChoiceField {
+        key,
+        label,
+        default: AutomodLevel::Unchanged,
+    }
+}
+
+const OVERALL: ChoiceField<AutomodLevel> = level_field(
+    config_keys::OVERALL_LEVEL,
+    "Overall Level (overrides individual categories)",
+);
+
+const CATEGORIES: [ChoiceField<AutomodLevel>; 8] = [
+    level_field(config_keys::AGGRESSION, "Aggression"),
+    level_field(config_keys::BULLYING, "Bullying"),
+    level_field(config_keys::DISABILITY, "Disability"),
+    level_field(config_keys::MISOGYNY, "Misogyny"),
+    level_field(
+        config_keys::RACE_ETHNICITY_OR_RELIGION,
+        "Race, Ethnicity, or Religion",
+    ),
+    level_field(config_keys::SEX_BASED_TERMS, "Sex-Based Terms"),
+    level_field(
+        config_keys::SEXUALITY_SEX_OR_GENDER,
+        "Sexuality, Sex, or Gender",
+    ),
+    level_field(config_keys::SWEARING, "Swearing"),
 ];
+
+const CONFIG: ConfigSpec = ConfigSpec::new(&[
+    &OVERALL,
+    &CATEGORIES[0],
+    &CATEGORIES[1],
+    &CATEGORIES[2],
+    &CATEGORIES[3],
+    &CATEGORIES[4],
+    &CATEGORIES[5],
+    &CATEGORIES[6],
+    &CATEGORIES[7],
+]);
+
+struct LevelUpdate {
+    overall: Option<u8>,
+    categories: Vec<(&'static str, Option<u8>)>,
+}
+
+impl LevelUpdate {
+    fn read(config: &SubActionConfig, args: &ArgStack) -> Result<Self, ConfigProblem> {
+        let categories = CATEGORIES
+            .iter()
+            .map(|field| Ok((field.key, field.read(config, args)?.level())))
+            .collect::<Result<_, ConfigProblem>>()?;
+        Ok(Self {
+            overall: OVERALL.read(config, args)?.level(),
+            categories,
+        })
+    }
+
+    fn is_empty(&self) -> bool {
+        self.overall.is_none() && self.categories.iter().all(|(_, level)| level.is_none())
+    }
+}
 
 pub struct UpdateAutomodSettingsRunner {
     transport: Arc<dyn HelixTransport>,
@@ -46,44 +139,34 @@ impl UpdateAutomodSettingsRunner {
         }
     }
 
-    async fn apply(&self, config: &SubActionConfig) -> SubActionOutcome {
+    async fn apply(&self, update: &LevelUpdate) -> SubActionOutcome {
         let user_id = match self.identity.user_id().await {
             Ok(id) => id,
             Err(e) => return SubActionOutcome::Failed(e.to_string()),
         };
-
-        let overall = parse_level(config, OVERALL_KEY);
-        let categories: Vec<Option<u8>> = CATEGORY_KEYS
-            .iter()
-            .map(|key| parse_level(config, key))
-            .collect();
-
-        if overall.is_none() && categories.iter().all(Option::is_none) {
+        if update.is_empty() {
             return SubActionOutcome::Success;
         }
-
-        let body = if let Some(level) = overall {
-            serde_json::json!({ OVERALL_KEY: level })
+        let body = if let Some(level) = update.overall {
+            serde_json::json!({ config_keys::OVERALL_LEVEL: level })
         } else {
             let current = match self.fetch_current(&user_id).await {
                 Ok(c) => c,
                 Err(e) => return SubActionOutcome::Failed(e.to_string()),
             };
             let mut map = serde_json::Map::new();
-            for (key, override_level) in CATEGORY_KEYS.iter().zip(categories.iter()) {
+            for (key, override_level) in &update.categories {
                 let level = override_level
                     .or_else(|| current_level(&current, key))
-                    .unwrap_or(0);
+                    .unwrap_or(FALLBACK_LEVEL);
                 map.insert((*key).to_owned(), level.into());
             }
             serde_json::Value::Object(map)
         };
-
         let request = HelixRequest::new(HelixMethod::Put, PATH)
             .query("broadcaster_id", user_id.clone())
             .query("moderator_id", user_id)
             .body(body);
-
         SubActionOutcome::from_result(&self.transport.execute(request).await)
     }
 
@@ -92,13 +175,6 @@ impl UpdateAutomodSettingsRunner {
             .query("broadcaster_id", user_id.to_owned())
             .query("moderator_id", user_id.to_owned());
         self.transport.execute(request).await
-    }
-}
-
-fn parse_level(config: &SubActionConfig, key: &str) -> Option<u8> {
-    match config.get(key).and_then(Variant::as_str) {
-        Some(s) if s != UNCHANGED => s.parse::<u8>().ok().filter(|n| *n <= 4),
-        _ => None,
     }
 }
 
@@ -136,84 +212,8 @@ impl SubActionRunner for UpdateAutomodSettingsRunner {
         "shield-check"
     }
 
-    fn default_config(&self) -> SubActionConfig {
-        let mut config = BTreeMap::new();
-        config.insert(
-            OVERALL_KEY.to_owned(),
-            Variant::String(UNCHANGED.to_owned()),
-        );
-        for key in CATEGORY_KEYS {
-            config.insert((*key).to_owned(), Variant::String(UNCHANGED.to_owned()));
-        }
-        config
-    }
-
-    fn config_fields(&self) -> Vec<FormField> {
-        vec![
-            FormField::Select {
-                key: OVERALL_KEY,
-                label: "Overall Level (overrides individual categories)",
-                options: LEVEL_OPTIONS,
-            },
-            FormField::Select {
-                key: "aggression",
-                label: "Aggression",
-                options: LEVEL_OPTIONS,
-            },
-            FormField::Select {
-                key: "bullying",
-                label: "Bullying",
-                options: LEVEL_OPTIONS,
-            },
-            FormField::Select {
-                key: "disability",
-                label: "Disability",
-                options: LEVEL_OPTIONS,
-            },
-            FormField::Select {
-                key: "misogyny",
-                label: "Misogyny",
-                options: LEVEL_OPTIONS,
-            },
-            FormField::Select {
-                key: "race_ethnicity_or_religion",
-                label: "Race, Ethnicity, or Religion",
-                options: LEVEL_OPTIONS,
-            },
-            FormField::Select {
-                key: "sex_based_terms",
-                label: "Sex-Based Terms",
-                options: LEVEL_OPTIONS,
-            },
-            FormField::Select {
-                key: "sexuality_sex_or_gender",
-                label: "Sexuality, Sex, or Gender",
-                options: LEVEL_OPTIONS,
-            },
-            FormField::Select {
-                key: "swearing",
-                label: "Swearing",
-                options: LEVEL_OPTIONS,
-            },
-        ]
-    }
-
-    fn validate_config(&self, config: &SubActionConfig) -> Result<(), RegistryError> {
-        let mut keys = vec![OVERALL_KEY];
-        keys.extend_from_slice(CATEGORY_KEYS);
-        for key in keys {
-            match config.get(key) {
-                None => {}
-                Some(Variant::String(s)) if LEVEL_OPTIONS.contains(&s.as_str()) => {}
-                _ => {
-                    return Err(RegistryError::invalid_field(
-                        key,
-                        ConfigReason::choices(["unchanged", "0", "1", "2", "3", "4"]),
-                    ));
-                }
-            }
-        }
-        Ok(())
+    fn config_spec(&self) -> Option<ConfigSpec> {
+        Some(CONFIG)
     }
 
     async fn execute(
@@ -221,23 +221,12 @@ impl SubActionRunner for UpdateAutomodSettingsRunner {
         config: &SubActionConfig,
         ctx: &RunContext<'_>,
     ) -> (SubActionTelemetry, Option<ArgStack>) {
-        let started_at = OffsetDateTime::now_utc();
-        let start = Instant::now();
-
-        let outcome = self.apply(config).await;
-
-        (
-            SubActionTelemetry {
-                args_in: ::std::collections::BTreeMap::new(),
-                produced: ::std::collections::BTreeMap::new(),
-                kind: KIND_ID.to_owned(),
-                started_at,
-                duration_ms: start.elapsed().as_millis() as u64,
-                outcome,
-                index: ctx.index,
-            },
-            None,
-        )
+        let timer = StepTimer::start(ctx, KIND_ID);
+        let update = match LevelUpdate::read(config, ctx.arg_stack) {
+            Ok(update) => update,
+            Err(problem) => return (timer.invalid_config(&problem), None),
+        };
+        (timer.finish(self.apply(&update).await), None)
     }
 }
 

@@ -1,3 +1,4 @@
+pub(crate) mod config_keys;
 pub mod event_kinds;
 mod events;
 mod eventsub_topics;

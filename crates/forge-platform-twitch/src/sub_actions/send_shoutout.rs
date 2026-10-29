@@ -1,30 +1,50 @@
-use crate::vocabulary::sub_action_ids;
-use std::collections::BTreeMap;
 use std::sync::Arc;
-use std::time::Instant;
 
 use async_trait::async_trait;
 use forge_events::EventPublisher;
-use forge_platform_core::{SENDER_FIELD, SenderPreference};
+use forge_platform_core::SenderPreference;
 use forge_registry::runner::SubActionConfig;
-use forge_registry::{FormField, RegistryError, RunContext, SubActionCategory, SubActionRunner};
-use forge_types::{ArgStack, SubActionTelemetry, Variant};
-use time::OffsetDateTime;
+use forge_registry::{
+    ConfigProblem, ConfigSpec, Interpolation, RunContext, StepTimer, SubActionCategory,
+    SubActionRunner, TextEditor, TextField, TypedField,
+};
+use forge_types::{ArgStack, SubActionTelemetry};
 
+use super::fields::{SENDER, SendAs, TARGET_LOGIN};
 use crate::account::identity::SelfIdentity;
-use crate::account::user_target::{TargetKeys, UserTarget};
+use crate::account::user_target::{InterpolatedTarget, TargetFields, UserTarget};
 use crate::bot_account::TwitchBotAccount;
 use crate::cadence::CadenceLedger;
-use crate::chat_sender::{
-    ChatDelivery, ChatSenders, StepResult, configured_sender, failed_step, step_result,
-};
+use crate::chat_sender::{ChatDelivery, ChatSenders, StepResult, failed_step, step_result};
 use crate::helix::HelixTransport;
+use crate::vocabulary::{config_keys, sub_action_ids};
 
 const KIND_ID: &str = sub_action_ids::CHANNEL_SEND_SHOUTOUT;
-const TARGET_KEYS: TargetKeys = TargetKeys {
-    id: "to_broadcaster_id",
-    login: "to_broadcaster_login",
+
+const TARGET: TargetFields = TargetFields {
+    id: TextField {
+        key: config_keys::TO_BROADCASTER_ID,
+        label: "Target Channel ID",
+        editor: TextEditor::Line { placeholder: "" },
+        default: "",
+        required: false,
+    },
+    login: TextField {
+        key: config_keys::TO_BROADCASTER_LOGIN,
+        label: "Target Channel",
+        required: false,
+        ..TARGET_LOGIN
+    },
 };
+
+const CONFIG: ConfigSpec = ConfigSpec::new(&[&TARGET.login, &SENDER]);
+
+fn read_config(
+    config: &SubActionConfig,
+    args: &ArgStack,
+) -> Result<(InterpolatedTarget, SendAs), ConfigProblem> {
+    Ok((TARGET.read(config, args)?, SENDER.read(config, args)?))
+}
 
 pub struct SendShoutoutRunner {
     senders: ChatSenders,
@@ -54,7 +74,7 @@ impl SendShoutoutRunner {
         events: &dyn EventPublisher,
     ) -> StepResult {
         let Some(target) = target else {
-            return failed_step(&TARGET_KEYS.empty_after_interpolation());
+            return failed_step(&TARGET.empty_after_interpolation());
         };
         step_result(
             self.senders
@@ -90,34 +110,16 @@ impl SubActionRunner for SendShoutoutRunner {
         "shoutout"
     }
 
-    fn default_config(&self) -> SubActionConfig {
-        BTreeMap::from([
-            (TARGET_KEYS.login.to_owned(), Variant::String(String::new())),
-            (
-                SENDER_FIELD.to_owned(),
-                Variant::String(SenderPreference::Default.as_str().to_owned()),
-            ),
-        ])
+    fn config_spec(&self) -> Option<ConfigSpec> {
+        Some(CONFIG)
     }
 
-    fn config_fields(&self) -> Vec<FormField> {
-        vec![
-            FormField::Text {
-                key: TARGET_KEYS.login,
-                label: "Target Channel",
-                placeholder: "%user_login%",
-            },
-            FormField::Select {
-                key: SENDER_FIELD,
-                label: "Send As",
-                options: SenderPreference::WIRE_NAMES,
-            },
-        ]
-    }
-
-    fn validate_config(&self, config: &SubActionConfig) -> Result<(), RegistryError> {
-        TARGET_KEYS.validate(config)?;
-        configured_sender(config).map(|_| ())
+    fn check_config(
+        &self,
+        config: &SubActionConfig,
+        interpolation: Interpolation<'_>,
+    ) -> Result<(), ConfigProblem> {
+        TARGET.check(config, interpolation)
     }
 
     async fn execute(
@@ -125,31 +127,17 @@ impl SubActionRunner for SendShoutoutRunner {
         config: &SubActionConfig,
         ctx: &RunContext<'_>,
     ) -> (SubActionTelemetry, Option<ArgStack>) {
-        let started_at = OffsetDateTime::now_utc();
-        let start = Instant::now();
-
-        let interpolated = TARGET_KEYS.interpolate(config, ctx);
-
-        let (outcome, produced) = match configured_sender(config) {
-            Ok(sender) => {
-                self.shoutout(interpolated.target(), sender, ctx.publisher)
-                    .await
-            }
-            Err(e) => failed_step(&e.to_string()),
+        let timer = StepTimer::start(ctx, KIND_ID);
+        let (target, sender) = match read_config(config, ctx.arg_stack) {
+            Ok(values) => values,
+            Err(problem) => return (timer.invalid_config(&problem), None),
         };
-
-        (
-            SubActionTelemetry {
-                args_in: ::std::collections::BTreeMap::new(),
-                produced,
-                kind: KIND_ID.to_owned(),
-                started_at,
-                duration_ms: start.elapsed().as_millis() as u64,
-                outcome,
-                index: ctx.index,
-            },
-            None,
-        )
+        let (outcome, produced) = self
+            .shoutout(target.target(), sender.0, ctx.publisher)
+            .await;
+        let mut telemetry = timer.finish(outcome);
+        telemetry.produced = produced;
+        (telemetry, None)
     }
 }
 

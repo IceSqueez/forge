@@ -1,27 +1,108 @@
-use crate::vocabulary::sub_action_ids;
-use std::collections::BTreeMap;
 use std::sync::Arc;
-use std::time::Instant;
 
 use async_trait::async_trait;
 use forge_registry::runner::SubActionConfig;
 use forge_registry::{
-    ConfigReason, DurationBounds, FormField, RegistryError, RunContext, SubActionCategory,
-    SubActionConfigExt, SubActionRunner, ValueBounds,
+    BoundedTextField, ConfigProblem, ConfigSpec, DurationBounds, DurationField, IntegerEditor,
+    IntegerField, RunContext, SeparatedListField, StepTimer, SubActionCategory, SubActionRunner,
+    TextEditor, ToggleField, TypedField, ValueBounds,
 };
 use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, Variant};
-use time::OffsetDateTime;
 
 use crate::account::identity::SelfIdentity;
 use crate::helix::{HelixMethod, HelixRequest, HelixTransport};
+use crate::vocabulary::{config_keys, sub_action_ids};
 
 const KIND_ID: &str = sub_action_ids::POLL_START;
-const MAX_TITLE_CHARS: usize = 60;
-const MAX_CHOICES: usize = 5;
-const MIN_CHOICES: usize = 2;
-const MAX_CHOICE_CHARS: usize = 25;
+const MAX_TITLE_CHARS: i64 = 60;
+const MIN_CHOICES: i64 = 2;
+const MAX_CHOICES: i64 = 5;
+const MAX_CHOICE_CHARS: i64 = 25;
+const DEFAULT_DURATION_SECS: i64 = 60;
 const MIN_DURATION_SECS: i64 = 15;
 const MAX_DURATION_SECS: i64 = 1800;
+const DEFAULT_POINTS_PER_VOTE: i64 = 0;
+const MAX_POINTS_PER_VOTE: i64 = 1_000_000;
+
+const TITLE: BoundedTextField = BoundedTextField {
+    key: config_keys::TITLE,
+    label: "Question",
+    editor: TextEditor::Line {
+        placeholder: "What should we play next?",
+    },
+    default: "",
+    required: true,
+    length: ValueBounds {
+        min: None,
+        max: Some(MAX_TITLE_CHARS),
+    },
+};
+
+const CHOICES: SeparatedListField = SeparatedListField {
+    key: config_keys::CHOICES,
+    label: "Choices (one per line or comma-separated, 2-5)",
+    default: "",
+    count: ValueBounds {
+        min: Some(MIN_CHOICES),
+        max: Some(MAX_CHOICES),
+    },
+    item_length: ValueBounds {
+        min: None,
+        max: Some(MAX_CHOICE_CHARS),
+    },
+};
+
+pub(crate) const POLL_DURATION: DurationField = DurationField {
+    key: config_keys::DURATION_SECONDS,
+    label: "Duration",
+    default: DEFAULT_DURATION_SECS,
+    bounds: DurationBounds::in_seconds(MIN_DURATION_SECS, MAX_DURATION_SECS),
+};
+
+const CHANNEL_POINTS_VOTING: ToggleField = ToggleField {
+    key: config_keys::CHANNEL_POINTS_VOTING_ENABLED,
+    label: "Enable Channel Points Voting",
+    default: false,
+};
+
+const CHANNEL_POINTS_PER_VOTE: IntegerField = IntegerField {
+    key: config_keys::CHANNEL_POINTS_PER_VOTE,
+    label: "Channel Points Per Vote (0 = default; active only when voting enabled)",
+    editor: IntegerEditor::Number,
+    default: DEFAULT_POINTS_PER_VOTE,
+    bounds: ValueBounds {
+        min: Some(DEFAULT_POINTS_PER_VOTE),
+        max: Some(MAX_POINTS_PER_VOTE),
+    },
+};
+
+const CONFIG: ConfigSpec = ConfigSpec::new(&[
+    &TITLE,
+    &CHOICES,
+    &POLL_DURATION,
+    &CHANNEL_POINTS_VOTING,
+    &CHANNEL_POINTS_PER_VOTE,
+]);
+
+struct ResolvedConfig {
+    title: String,
+    choices: Vec<String>,
+    duration_seconds: u64,
+    channel_points_voting_enabled: bool,
+    channel_points_per_vote: i64,
+}
+
+impl ResolvedConfig {
+    fn read(config: &SubActionConfig, args: &ArgStack) -> Result<Self, ConfigProblem> {
+        Ok(Self {
+            title: TITLE.read(config, args)?,
+            choices: CHOICES.read(config, args)?,
+            duration_seconds: POLL_DURATION.read(config, args)?.as_secs(),
+            channel_points_voting_enabled: CHANNEL_POINTS_VOTING.read(config, args)?,
+            channel_points_per_vote: CHANNEL_POINTS_PER_VOTE.read(config, args)?,
+        })
+    }
+}
 
 pub struct StartPollRunner {
     transport: Arc<dyn HelixTransport>,
@@ -37,42 +118,39 @@ impl StartPollRunner {
     }
 
     async fn start(&self, cfg: &ResolvedConfig) -> Result<String, SubActionOutcome> {
+        if cfg.title.is_empty() {
+            return Err(SubActionOutcome::Failed("title is required".to_owned()));
+        }
         let user_id = match self.identity.user_id().await {
             Ok(id) => id,
             Err(e) => return Err(SubActionOutcome::Failed(e.to_string())),
         };
-
         let choices: Vec<serde_json::Value> = cfg
             .choices
             .iter()
             .map(|c| serde_json::json!({ "title": c }))
             .collect();
-
         let mut body = serde_json::Map::new();
         body.insert("title".to_owned(), cfg.title.clone().into());
         body.insert("choices".to_owned(), choices.into());
         body.insert("duration".to_owned(), cfg.duration_seconds.into());
-
         if cfg.channel_points_voting_enabled {
             body.insert("channel_points_voting_enabled".to_owned(), true.into());
-            if cfg.channel_points_per_vote > 0 {
+            if cfg.channel_points_per_vote > DEFAULT_POINTS_PER_VOTE {
                 body.insert(
                     "channel_points_per_vote".to_owned(),
                     cfg.channel_points_per_vote.into(),
                 );
             }
         }
-
         let request = HelixRequest::new(HelixMethod::Post, "/helix/polls")
             .query("broadcaster_id", user_id)
             .body(serde_json::Value::Object(body));
-
         let resp = self
             .transport
             .execute(request)
             .await
             .map_err(|e| SubActionOutcome::Failed(e.to_string()))?;
-
         resp["data"]
             .as_array()
             .and_then(|arr| arr.first())
@@ -80,40 +158,6 @@ impl StartPollRunner {
             .map(|s| s.to_owned())
             .ok_or_else(|| SubActionOutcome::Failed("empty response from start_poll".to_owned()))
     }
-}
-
-struct ResolvedConfig {
-    title: String,
-    choices: Vec<String>,
-    duration_seconds: i64,
-    channel_points_voting_enabled: bool,
-    channel_points_per_vote: i64,
-}
-
-fn parse_choices(raw: &str) -> Result<Vec<String>, String> {
-    let choices: Vec<String> = raw
-        .split(['\n', ','])
-        .map(|s| s.trim().to_owned())
-        .filter(|s| !s.is_empty())
-        .collect();
-
-    if choices.len() < MIN_CHOICES {
-        return Err(format!("at least {MIN_CHOICES} choices required"));
-    }
-    if choices.len() > MAX_CHOICES {
-        return Err(format!(
-            "too many choices: max {MAX_CHOICES}, got {}",
-            choices.len()
-        ));
-    }
-    for choice in &choices {
-        if choice.chars().count() > MAX_CHOICE_CHARS {
-            return Err(format!(
-                "choice '{choice}' exceeds {MAX_CHOICE_CHARS}-character limit"
-            ));
-        }
-    }
-    Ok(choices)
 }
 
 #[async_trait]
@@ -142,88 +186,8 @@ impl SubActionRunner for StartPollRunner {
         "chart-bar"
     }
 
-    fn default_config(&self) -> SubActionConfig {
-        BTreeMap::from([
-            ("title".to_owned(), Variant::String(String::new())),
-            ("choices".to_owned(), Variant::String(String::new())),
-            ("duration_seconds".to_owned(), Variant::Int(60)),
-            (
-                "channel_points_voting_enabled".to_owned(),
-                Variant::Bool(false),
-            ),
-            ("channel_points_per_vote".to_owned(), Variant::Int(0)),
-        ])
-    }
-
-    fn config_fields(&self) -> Vec<FormField> {
-        vec![
-            FormField::Text {
-                key: "title",
-                label: "Question",
-                placeholder: "What should we play next?",
-            },
-            FormField::TextArea {
-                key: "choices",
-                label: "Choices (one per line or comma-separated, 2-5)",
-            },
-            FormField::Duration {
-                key: "duration_seconds",
-                label: "Duration",
-                bounds: DurationBounds::in_seconds(MIN_DURATION_SECS, MAX_DURATION_SECS),
-            },
-            FormField::Toggle {
-                key: "channel_points_voting_enabled",
-                label: "Enable Channel Points Voting",
-            },
-            FormField::Integer {
-                key: "channel_points_per_vote",
-                label: "Channel Points Per Vote (0 = default; active only when voting enabled)",
-                min: 0,
-                max: 1_000_000,
-            },
-        ]
-    }
-
-    fn validate_config(&self, config: &SubActionConfig) -> Result<(), RegistryError> {
-        let title = match config.get("title") {
-            Some(Variant::String(s)) => s.as_str(),
-            _ => "",
-        };
-        if title.is_empty() {
-            return Err(RegistryError::invalid_field(
-                "title",
-                ConfigReason::Required,
-            ));
-        }
-        if title.chars().count() > MAX_TITLE_CHARS {
-            return Err(RegistryError::invalid_field(
-                "title",
-                ConfigReason::LengthOutOfRange(ValueBounds::at_most(MAX_TITLE_CHARS)),
-            ));
-        }
-
-        let raw_choices = match config.get("choices") {
-            Some(Variant::String(s)) => s.as_str(),
-            _ => "",
-        };
-        parse_choices(raw_choices).map_err(|detail| {
-            RegistryError::invalid_field("choices", ConfigReason::InvalidFormat(detail))
-        })?;
-
-        match config.get("duration_seconds") {
-            Some(Variant::Int(n)) if *n >= MIN_DURATION_SECS && *n <= MAX_DURATION_SECS => {}
-            _ => {
-                return Err(RegistryError::invalid_field(
-                    "duration_seconds",
-                    ConfigReason::OutOfRange(ValueBounds::between(
-                        MIN_DURATION_SECS,
-                        MAX_DURATION_SECS,
-                    )),
-                ));
-            }
-        }
-
-        Ok(())
+    fn config_spec(&self) -> Option<ConfigSpec> {
+        Some(CONFIG)
     }
 
     async fn execute(
@@ -231,120 +195,20 @@ impl SubActionRunner for StartPollRunner {
         config: &SubActionConfig,
         ctx: &RunContext<'_>,
     ) -> (SubActionTelemetry, Option<ArgStack>) {
-        let started_at = OffsetDateTime::now_utc();
-        let start = Instant::now();
-
-        let title_template = config.str("title").unwrap_or_default();
-        let title = ctx.arg_stack.interpolate(title_template);
-
-        if title.is_empty() {
-            return (
-                SubActionTelemetry {
-                    args_in: ::std::collections::BTreeMap::new(),
-                    produced: ::std::collections::BTreeMap::new(),
-                    kind: KIND_ID.to_owned(),
-                    started_at,
-                    duration_ms: start.elapsed().as_millis() as u64,
-                    outcome: SubActionOutcome::Failed("title is required".to_owned()),
-                    index: ctx.index,
-                },
-                None,
-            );
-        }
-        if title.chars().count() > MAX_TITLE_CHARS {
-            return (
-                SubActionTelemetry {
-                    args_in: ::std::collections::BTreeMap::new(),
-                    produced: ::std::collections::BTreeMap::new(),
-                    kind: KIND_ID.to_owned(),
-                    started_at,
-                    duration_ms: start.elapsed().as_millis() as u64,
-                    outcome: SubActionOutcome::Failed(format!(
-                        "title exceeds {MAX_TITLE_CHARS}-character limit"
-                    )),
-                    index: ctx.index,
-                },
-                None,
-            );
-        }
-
-        let choices_template = config.str("choices").unwrap_or_default();
-        let raw_choices = ctx.arg_stack.interpolate(choices_template);
-
-        let choices = match parse_choices(&raw_choices) {
-            Ok(v) => v,
-            Err(msg) => {
-                return (
-                    SubActionTelemetry {
-                        args_in: ::std::collections::BTreeMap::new(),
-                        produced: ::std::collections::BTreeMap::new(),
-                        kind: KIND_ID.to_owned(),
-                        started_at,
-                        duration_ms: start.elapsed().as_millis() as u64,
-                        outcome: SubActionOutcome::Failed(msg),
-                        index: ctx.index,
-                    },
-                    None,
-                );
-            }
+        let timer = StepTimer::start(ctx, KIND_ID);
+        let resolved = match ResolvedConfig::read(config, ctx.arg_stack) {
+            Ok(resolved) => resolved,
+            Err(problem) => return (timer.invalid_config(&problem), None),
         };
-
-        let duration_seconds = config
-            .get("duration_seconds")
-            .and_then(|v| v.as_int())
-            .unwrap_or(60)
-            .clamp(MIN_DURATION_SECS, MAX_DURATION_SECS);
-
-        let channel_points_voting_enabled = config
-            .get("channel_points_voting_enabled")
-            .and_then(|v| v.as_bool())
-            .unwrap_or(false);
-
-        let channel_points_per_vote = config
-            .get("channel_points_per_vote")
-            .and_then(|v| v.as_int())
-            .unwrap_or(0)
-            .max(0);
-
-        let resolved = ResolvedConfig {
-            title,
-            choices,
-            duration_seconds,
-            channel_points_voting_enabled,
-            channel_points_per_vote,
-        };
-
         match self.start(&resolved).await {
             Ok(poll_id) => {
                 let output_stack = ctx
                     .arg_stack
                     .clone()
                     .set("poll.id".to_owned(), Variant::String(poll_id));
-                (
-                    SubActionTelemetry {
-                        args_in: ::std::collections::BTreeMap::new(),
-                        produced: ::std::collections::BTreeMap::new(),
-                        kind: KIND_ID.to_owned(),
-                        started_at,
-                        duration_ms: start.elapsed().as_millis() as u64,
-                        outcome: SubActionOutcome::Success,
-                        index: ctx.index,
-                    },
-                    Some(output_stack),
-                )
+                (timer.success(), Some(output_stack))
             }
-            Err(outcome) => (
-                SubActionTelemetry {
-                    args_in: ::std::collections::BTreeMap::new(),
-                    produced: ::std::collections::BTreeMap::new(),
-                    kind: KIND_ID.to_owned(),
-                    started_at,
-                    duration_ms: start.elapsed().as_millis() as u64,
-                    outcome,
-                    index: ctx.index,
-                },
-                None,
-            ),
+            Err(outcome) => (timer.finish(outcome), None),
         }
     }
 }

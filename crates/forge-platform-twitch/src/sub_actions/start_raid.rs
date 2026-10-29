@@ -1,22 +1,27 @@
-use crate::vocabulary::sub_action_ids;
-use std::collections::BTreeMap;
 use std::sync::Arc;
-use std::time::Instant;
 
 use async_trait::async_trait;
 use forge_registry::runner::SubActionConfig;
 use forge_registry::{
-    ConfigReason, FormField, RegistryError, RunContext, SubActionCategory, SubActionConfigExt,
-    SubActionRunner,
+    ConfigSpec, RunContext, StepTimer, SubActionCategory, SubActionRunner, TextField, TypedField,
 };
-use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, Variant};
-use time::OffsetDateTime;
+use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry};
 
+use super::fields::TARGET_LOGIN;
 use crate::account::identity::{SelfIdentity, resolve_user_id};
 use crate::helix::{HelixMethod, HelixRequest, HelixTransport};
 use crate::lifecycle::TwitchLifecycle;
+use crate::vocabulary::{config_keys, sub_action_ids};
 
 const KIND_ID: &str = sub_action_ids::CHANNEL_START_RAID;
+
+const TO_BROADCASTER_LOGIN: TextField = TextField {
+    key: config_keys::TO_BROADCASTER_LOGIN,
+    label: "Target Channel",
+    ..TARGET_LOGIN
+};
+
+const CONFIG: ConfigSpec = ConfigSpec::new(&[&TO_BROADCASTER_LOGIN]);
 
 pub struct StartRaidRunner {
     transport: Arc<dyn HelixTransport>,
@@ -89,29 +94,8 @@ impl SubActionRunner for StartRaidRunner {
         "raid"
     }
 
-    fn default_config(&self) -> SubActionConfig {
-        BTreeMap::from([(
-            "to_broadcaster_login".to_owned(),
-            Variant::String(String::new()),
-        )])
-    }
-
-    fn config_fields(&self) -> Vec<FormField> {
-        vec![FormField::Text {
-            key: "to_broadcaster_login",
-            label: "Target Channel",
-            placeholder: "%user_login%",
-        }]
-    }
-
-    fn validate_config(&self, config: &SubActionConfig) -> Result<(), RegistryError> {
-        match config.get("to_broadcaster_login") {
-            Some(Variant::String(s)) if !s.is_empty() => Ok(()),
-            _ => Err(RegistryError::invalid_field(
-                "to_broadcaster_login",
-                ConfigReason::Required,
-            )),
-        }
+    fn config_spec(&self) -> Option<ConfigSpec> {
+        Some(CONFIG)
     }
 
     async fn execute(
@@ -119,24 +103,13 @@ impl SubActionRunner for StartRaidRunner {
         config: &SubActionConfig,
         ctx: &RunContext<'_>,
     ) -> (SubActionTelemetry, Option<ArgStack>) {
-        let started_at = OffsetDateTime::now_utc();
-        let start = Instant::now();
-
-        let login_template = config.str("to_broadcaster_login").unwrap_or_default();
-        let to_broadcaster_login = ctx.arg_stack.interpolate(login_template);
-
-        let outcome = self.start_raid(&to_broadcaster_login).await;
-
+        let timer = StepTimer::start(ctx, KIND_ID);
+        let to_broadcaster_login = match TO_BROADCASTER_LOGIN.read(config, ctx.arg_stack) {
+            Ok(login) => login,
+            Err(problem) => return (timer.invalid_config(&problem), None),
+        };
         (
-            SubActionTelemetry {
-                args_in: ::std::collections::BTreeMap::new(),
-                produced: ::std::collections::BTreeMap::new(),
-                kind: KIND_ID.to_owned(),
-                started_at,
-                duration_ms: start.elapsed().as_millis() as u64,
-                outcome,
-                index: ctx.index,
-            },
+            timer.finish(self.start_raid(&to_broadcaster_login).await),
             None,
         )
     }

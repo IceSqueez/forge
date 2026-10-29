@@ -1,23 +1,32 @@
-use crate::vocabulary::sub_action_ids;
-use std::collections::BTreeMap;
 use std::sync::Arc;
-use std::time::Instant;
 
 use async_trait::async_trait;
 use forge_registry::runner::SubActionConfig;
 use forge_registry::{
-    ConfigReason, FormField, RegistryError, RunContext, SubActionCategory, SubActionConfigExt,
-    SubActionRunner,
+    ConfigSpec, PickedTextField, RunContext, StepTimer, SubActionCategory, SubActionRunner,
+    TextPicker, TypedField,
 };
-use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, Variant};
-use time::OffsetDateTime;
+use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry};
 
 use crate::account::identity::SelfIdentity;
 use crate::collection_keys::MANAGEABLE_REWARD_OPTIONS_KEY;
 use crate::custom_rewards::{RewardBody, update_request};
 use crate::helix::HelixTransport;
+use crate::vocabulary::{config_keys, sub_action_ids};
 
 const KIND_ID: &str = sub_action_ids::CHANNEL_POINTS_ENABLE_REWARD;
+
+pub(crate) const REWARD_ID: PickedTextField = PickedTextField {
+    key: config_keys::REWARD_ID,
+    label: "Reward ID",
+    picker: TextPicker::Options {
+        options_key: MANAGEABLE_REWARD_OPTIONS_KEY,
+    },
+    default: "%reward.id%",
+    required: true,
+};
+
+pub(crate) const REWARD_CONFIG: ConfigSpec = ConfigSpec::new(&[&REWARD_ID]);
 
 pub struct EnableRewardRunner {
     transport: Arc<dyn HelixTransport>,
@@ -33,7 +42,7 @@ impl EnableRewardRunner {
     }
 }
 
-pub(crate) async fn patch_reward_bool(
+async fn patch_reward_bool(
     transport: &Arc<dyn HelixTransport>,
     identity: &Arc<SelfIdentity>,
     reward_id: &str,
@@ -43,35 +52,8 @@ pub(crate) async fn patch_reward_bool(
         Ok(id) => id,
         Err(e) => return SubActionOutcome::Failed(e.to_string()),
     };
-
     let request = update_request(user_id, reward_id, body);
-
     SubActionOutcome::from_result(&transport.execute(request).await)
-}
-
-pub(crate) fn default_config() -> SubActionConfig {
-    BTreeMap::from([(
-        "reward_id".to_owned(),
-        Variant::String("%reward.id%".to_owned()),
-    )])
-}
-
-pub(crate) fn config_fields() -> Vec<FormField> {
-    vec![FormField::DynamicSelect {
-        key: "reward_id",
-        label: "Reward ID",
-        options_key: MANAGEABLE_REWARD_OPTIONS_KEY,
-    }]
-}
-
-pub(crate) fn validate_reward_id(config: &SubActionConfig) -> Result<(), RegistryError> {
-    match config.get("reward_id") {
-        Some(Variant::String(s)) if !s.is_empty() => Ok(()),
-        _ => Err(RegistryError::invalid_field(
-            "reward_id",
-            ConfigReason::Required,
-        )),
-    }
 }
 
 pub(crate) async fn execute_bool_runner(
@@ -82,30 +64,17 @@ pub(crate) async fn execute_bool_runner(
     config: &SubActionConfig,
     ctx: &RunContext<'_>,
 ) -> (SubActionTelemetry, Option<ArgStack>) {
-    let started_at = OffsetDateTime::now_utc();
-    let start = Instant::now();
-
-    let reward_id_template = config.str("reward_id").unwrap_or_default();
-    let reward_id = ctx.arg_stack.interpolate(reward_id_template);
-
+    let timer = StepTimer::start(ctx, kind_id);
+    let reward_id = match REWARD_ID.read(config, ctx.arg_stack) {
+        Ok(reward_id) => reward_id,
+        Err(problem) => return (timer.invalid_config(&problem), None),
+    };
     let outcome = if reward_id.is_empty() {
         SubActionOutcome::Failed("reward_id is required".to_owned())
     } else {
         patch_reward_bool(transport, identity, &reward_id, body).await
     };
-
-    (
-        SubActionTelemetry {
-            args_in: ::std::collections::BTreeMap::new(),
-            produced: ::std::collections::BTreeMap::new(),
-            kind: kind_id.to_owned(),
-            started_at,
-            duration_ms: start.elapsed().as_millis() as u64,
-            outcome,
-            index: ctx.index,
-        },
-        None,
-    )
+    (timer.finish(outcome), None)
 }
 
 #[async_trait]
@@ -134,16 +103,8 @@ impl SubActionRunner for EnableRewardRunner {
         "star"
     }
 
-    fn default_config(&self) -> SubActionConfig {
-        default_config()
-    }
-
-    fn config_fields(&self) -> Vec<FormField> {
-        config_fields()
-    }
-
-    fn validate_config(&self, config: &SubActionConfig) -> Result<(), RegistryError> {
-        validate_reward_id(config)
+    fn config_spec(&self) -> Option<ConfigSpec> {
+        Some(REWARD_CONFIG)
     }
 
     async fn execute(

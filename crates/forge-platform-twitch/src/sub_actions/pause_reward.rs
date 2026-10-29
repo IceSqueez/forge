@@ -1,17 +1,15 @@
-use crate::vocabulary::sub_action_ids;
 use std::sync::Arc;
 
 use async_trait::async_trait;
 use forge_registry::runner::SubActionConfig;
-use forge_registry::{FormField, RegistryError, RunContext, SubActionCategory, SubActionRunner};
+use forge_registry::{ConfigSpec, RunContext, SubActionCategory, SubActionRunner};
 use forge_types::{ArgStack, SubActionTelemetry};
 
-use super::enable_reward::{
-    config_fields, default_config, execute_bool_runner, validate_reward_id,
-};
+use super::enable_reward::{REWARD_CONFIG, execute_bool_runner};
 use crate::account::identity::SelfIdentity;
 use crate::custom_rewards::RewardBody;
 use crate::helix::HelixTransport;
+use crate::vocabulary::sub_action_ids;
 
 const KIND_ID: &str = sub_action_ids::CHANNEL_POINTS_PAUSE_REWARD;
 
@@ -55,16 +53,8 @@ impl SubActionRunner for PauseRewardRunner {
         "star"
     }
 
-    fn default_config(&self) -> SubActionConfig {
-        default_config()
-    }
-
-    fn config_fields(&self) -> Vec<FormField> {
-        config_fields()
-    }
-
-    fn validate_config(&self, config: &SubActionConfig) -> Result<(), RegistryError> {
-        validate_reward_id(config)
+    fn config_spec(&self) -> Option<ConfigSpec> {
+        Some(REWARD_CONFIG)
     }
 
     async fn execute(

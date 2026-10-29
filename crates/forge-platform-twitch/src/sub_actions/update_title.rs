@@ -1,22 +1,33 @@
-use crate::vocabulary::sub_action_ids;
-use std::collections::BTreeMap;
 use std::sync::Arc;
-use std::time::Instant;
 
 use async_trait::async_trait;
 use forge_registry::runner::SubActionConfig;
 use forge_registry::{
-    ConfigReason, FormField, RegistryError, RunContext, SubActionCategory, SubActionConfigExt,
-    SubActionRunner, ValueBounds,
+    BoundedTextField, ConfigSpec, RunContext, StepTimer, SubActionCategory, SubActionRunner,
+    TextEditor, TypedField, ValueBounds,
 };
-use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, Variant};
-use time::OffsetDateTime;
+use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry};
 
 use crate::account::identity::SelfIdentity;
 use crate::helix::{HelixMethod, HelixRequest, HelixTransport};
+use crate::vocabulary::{config_keys, sub_action_ids};
 
 const KIND_ID: &str = sub_action_ids::CHANNEL_UPDATE_TITLE;
-const MAX_TITLE_CHARS: usize = 140;
+const MAX_TITLE_CHARS: i64 = 140;
+
+const TITLE: BoundedTextField = BoundedTextField {
+    key: config_keys::TITLE,
+    label: "Title",
+    editor: TextEditor::Area,
+    default: "",
+    required: true,
+    length: ValueBounds {
+        min: None,
+        max: Some(MAX_TITLE_CHARS),
+    },
+};
+
+const CONFIG: ConfigSpec = ConfigSpec::new(&[&TITLE]);
 
 pub struct UpdateTitleRunner {
     transport: Arc<dyn HelixTransport>,
@@ -34,9 +45,6 @@ impl UpdateTitleRunner {
     async fn apply(&self, title: &str) -> SubActionOutcome {
         if title.is_empty() {
             return SubActionOutcome::Failed("title is empty after interpolation".to_owned());
-        }
-        if title.chars().count() > MAX_TITLE_CHARS {
-            return SubActionOutcome::Failed("title exceeds 140-character limit".to_owned());
         }
         let user_id = match self.identity.user_id().await {
             Ok(id) => id,
@@ -75,40 +83,8 @@ impl SubActionRunner for UpdateTitleRunner {
         "pencil"
     }
 
-    fn default_config(&self) -> SubActionConfig {
-        BTreeMap::from([("title".to_owned(), Variant::String(String::new()))])
-    }
-
-    fn config_fields(&self) -> Vec<FormField> {
-        vec![FormField::TextArea {
-            key: "title",
-            label: "Title",
-        }]
-    }
-
-    fn validate_config(&self, config: &SubActionConfig) -> Result<(), RegistryError> {
-        match config.get("title") {
-            Some(Variant::String(s)) if !s.is_empty() && s.chars().count() <= MAX_TITLE_CHARS => {}
-            Some(Variant::String(s)) if s.is_empty() => {
-                return Err(RegistryError::invalid_field(
-                    "title",
-                    ConfigReason::Required,
-                ));
-            }
-            Some(Variant::String(_)) => {
-                return Err(RegistryError::invalid_field(
-                    "title",
-                    ConfigReason::LengthOutOfRange(ValueBounds::at_most(MAX_TITLE_CHARS)),
-                ));
-            }
-            _ => {
-                return Err(RegistryError::invalid_field(
-                    "title",
-                    ConfigReason::Required,
-                ));
-            }
-        }
-        Ok(())
+    fn config_spec(&self) -> Option<ConfigSpec> {
+        Some(CONFIG)
     }
 
     async fn execute(
@@ -116,26 +92,12 @@ impl SubActionRunner for UpdateTitleRunner {
         config: &SubActionConfig,
         ctx: &RunContext<'_>,
     ) -> (SubActionTelemetry, Option<ArgStack>) {
-        let started_at = OffsetDateTime::now_utc();
-        let start = Instant::now();
-
-        let template = config.str("title").unwrap_or_default();
-        let title = ctx.arg_stack.interpolate(template);
-
-        let outcome = self.apply(&title).await;
-
-        (
-            SubActionTelemetry {
-                args_in: ::std::collections::BTreeMap::new(),
-                produced: ::std::collections::BTreeMap::new(),
-                kind: KIND_ID.to_owned(),
-                started_at,
-                duration_ms: start.elapsed().as_millis() as u64,
-                outcome,
-                index: ctx.index,
-            },
-            None,
-        )
+        let timer = StepTimer::start(ctx, KIND_ID);
+        let title = match TITLE.read(config, ctx.arg_stack) {
+            Ok(title) => title,
+            Err(problem) => return (timer.invalid_config(&problem), None),
+        };
+        (timer.finish(self.apply(&title).await), None)
     }
 }
 

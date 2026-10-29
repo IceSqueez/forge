@@ -1,17 +1,14 @@
-use crate::vocabulary::sub_action_ids;
 use std::sync::Arc;
 
 use async_trait::async_trait;
 use forge_registry::runner::SubActionConfig;
-use forge_registry::{FormField, RegistryError, RunContext, SubActionCategory, SubActionRunner};
+use forge_registry::{ConfigSpec, RunContext, SubActionCategory, SubActionRunner};
 use forge_types::{ArgStack, SubActionTelemetry};
 
-use super::fulfill_redemption::{
-    execute_redemption_runner, redemption_config_fields, redemption_default_config,
-    validate_redemption_config,
-};
+use super::fulfill_redemption::{REDEMPTION_CONFIG, execute_redemption_runner};
 use crate::account::identity::SelfIdentity;
 use crate::helix::HelixTransport;
+use crate::vocabulary::sub_action_ids;
 
 const KIND_ID: &str = sub_action_ids::CHANNEL_POINTS_CANCEL_REDEMPTION;
 
@@ -55,16 +52,8 @@ impl SubActionRunner for CancelRedemptionRunner {
         "x"
     }
 
-    fn default_config(&self) -> SubActionConfig {
-        redemption_default_config()
-    }
-
-    fn config_fields(&self) -> Vec<FormField> {
-        redemption_config_fields()
-    }
-
-    fn validate_config(&self, config: &SubActionConfig) -> Result<(), RegistryError> {
-        validate_redemption_config(config)
+    fn config_spec(&self) -> Option<ConfigSpec> {
+        Some(REDEMPTION_CONFIG)
     }
 
     async fn execute(

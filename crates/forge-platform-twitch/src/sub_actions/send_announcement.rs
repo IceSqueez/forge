@@ -1,31 +1,100 @@
-use crate::vocabulary::sub_action_ids;
-use std::collections::BTreeMap;
 use std::sync::Arc;
-use std::time::Instant;
 
 use async_trait::async_trait;
 use forge_events::EventPublisher;
-use forge_platform_core::{SENDER_FIELD, SenderPreference};
+use forge_platform_core::SenderPreference;
 use forge_registry::runner::SubActionConfig;
 use forge_registry::{
-    ConfigReason, FormField, RegistryError, RunContext, SubActionCategory, SubActionConfigExt,
-    SubActionRunner,
+    ChoiceField, ConfigChoice, ConfigProblem, ConfigSpec, RunContext, StepTimer, SubActionCategory,
+    SubActionRunner, TextEditor, TextField, TypedField,
 };
-use forge_types::{ArgStack, SubActionTelemetry, Variant};
-use time::OffsetDateTime;
+use forge_types::{ArgStack, SubActionTelemetry};
 
+use super::fields::{SENDER, SendAs};
 use crate::account::identity::SelfIdentity;
 use crate::bot_account::TwitchBotAccount;
 use crate::cadence::CadenceLedger;
-use crate::chat_sender::{
-    ChatDelivery, ChatSenders, StepResult, configured_sender, failed_step, step_result,
-};
+use crate::chat_sender::{ChatDelivery, ChatSenders, StepResult, failed_step, step_result};
 use crate::helix::HelixTransport;
+use crate::vocabulary::{config_keys, sub_action_ids};
 
 const KIND_ID: &str = sub_action_ids::CHAT_SEND_ANNOUNCEMENT;
 const MAX_MESSAGE_CHARS: usize = 500;
-const COLORS: &[&str] = &["primary", "blue", "green", "orange", "purple"];
-const DEFAULT_COLOR: &str = "primary";
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum AnnouncementColor {
+    Primary,
+    Blue,
+    Green,
+    Orange,
+    Purple,
+}
+
+impl AnnouncementColor {
+    pub(crate) fn label(self) -> &'static str {
+        match self {
+            Self::Primary => "Primary",
+            Self::Blue => "Blue",
+            Self::Green => "Green",
+            Self::Orange => "Orange",
+            Self::Purple => "Purple",
+        }
+    }
+}
+
+impl ConfigChoice for AnnouncementColor {
+    const ALL: &'static [Self] = &[
+        Self::Primary,
+        Self::Blue,
+        Self::Green,
+        Self::Orange,
+        Self::Purple,
+    ];
+    const WIRE_NAMES: &'static [&'static str] = &["primary", "blue", "green", "orange", "purple"];
+
+    fn wire_name(self) -> &'static str {
+        match self {
+            Self::Primary => "primary",
+            Self::Blue => "blue",
+            Self::Green => "green",
+            Self::Orange => "orange",
+            Self::Purple => "purple",
+        }
+    }
+}
+
+const MESSAGE: TextField = TextField {
+    key: config_keys::MESSAGE,
+    label: "Message",
+    editor: TextEditor::Area,
+    default: "",
+    required: true,
+};
+
+pub(crate) const COLOR: ChoiceField<AnnouncementColor> = ChoiceField {
+    key: config_keys::COLOR,
+    label: "Color",
+    default: AnnouncementColor::Primary,
+};
+
+const CONFIG: ConfigSpec = ConfigSpec::new(&[&MESSAGE, &COLOR, &SENDER]);
+
+struct AnnouncementConfig {
+    message: String,
+    color: AnnouncementColor,
+    sender: SendAs,
+}
+
+fn read_config(
+    config: &SubActionConfig,
+    args: &ArgStack,
+) -> Result<AnnouncementConfig, ConfigProblem> {
+    Ok(AnnouncementConfig {
+        message: MESSAGE.read(config, args)?,
+        color: COLOR.read(config, args)?,
+        sender: SENDER.read(config, args)?,
+    })
+}
 
 pub struct SendAnnouncementRunner {
     senders: ChatSenders,
@@ -51,7 +120,7 @@ impl SendAnnouncementRunner {
     async fn send(
         &self,
         message: &str,
-        color: &str,
+        color: AnnouncementColor,
         sender: SenderPreference,
         events: &dyn EventPublisher,
     ) -> StepResult {
@@ -63,7 +132,7 @@ impl SendAnnouncementRunner {
         }
         let delivery = ChatDelivery::Announcement {
             text: message,
-            color,
+            color: color.wire_name(),
         };
         step_result(self.senders.deliver(delivery, sender, events).await)
     }
@@ -95,60 +164,8 @@ impl SubActionRunner for SendAnnouncementRunner {
         "speakerphone"
     }
 
-    fn default_config(&self) -> SubActionConfig {
-        BTreeMap::from([
-            ("message".to_owned(), Variant::String(String::new())),
-            (
-                "color".to_owned(),
-                Variant::String(DEFAULT_COLOR.to_owned()),
-            ),
-            (
-                SENDER_FIELD.to_owned(),
-                Variant::String(SenderPreference::Default.as_str().to_owned()),
-            ),
-        ])
-    }
-
-    fn config_fields(&self) -> Vec<FormField> {
-        vec![
-            FormField::TextArea {
-                key: "message",
-                label: "Message",
-            },
-            FormField::Select {
-                key: "color",
-                label: "Color",
-                options: COLORS,
-            },
-            FormField::Select {
-                key: SENDER_FIELD,
-                label: "Send As",
-                options: SenderPreference::WIRE_NAMES,
-            },
-        ]
-    }
-
-    fn validate_config(&self, config: &SubActionConfig) -> Result<(), RegistryError> {
-        match config.get("message") {
-            Some(Variant::String(s)) if !s.is_empty() => {}
-            _ => {
-                return Err(RegistryError::invalid_field(
-                    "message",
-                    ConfigReason::Required,
-                ));
-            }
-        }
-        match config.get("color") {
-            None => {}
-            Some(Variant::String(c)) if COLORS.contains(&c.as_str()) => {}
-            _ => {
-                return Err(RegistryError::invalid_field(
-                    "color",
-                    ConfigReason::choices(["blue", "green", "orange", "purple", "primary"]),
-                ));
-            }
-        }
-        configured_sender(config).map(|_| ())
+    fn config_spec(&self) -> Option<ConfigSpec> {
+        Some(CONFIG)
     }
 
     async fn execute(
@@ -156,33 +173,17 @@ impl SubActionRunner for SendAnnouncementRunner {
         config: &SubActionConfig,
         ctx: &RunContext<'_>,
     ) -> (SubActionTelemetry, Option<ArgStack>) {
-        let started_at = OffsetDateTime::now_utc();
-        let start = Instant::now();
-
-        let template = config.str("message").unwrap_or_default();
-        let message = ctx.arg_stack.interpolate(template);
-        let color = config
-            .str("color")
-            .filter(|c| COLORS.contains(c))
-            .unwrap_or(DEFAULT_COLOR);
-
-        let (outcome, produced) = match configured_sender(config) {
-            Ok(sender) => self.send(&message, color, sender, ctx.publisher).await,
-            Err(e) => failed_step(&e.to_string()),
+        let timer = StepTimer::start(ctx, KIND_ID);
+        let read = match read_config(config, ctx.arg_stack) {
+            Ok(read) => read,
+            Err(problem) => return (timer.invalid_config(&problem), None),
         };
-
-        (
-            SubActionTelemetry {
-                args_in: ::std::collections::BTreeMap::new(),
-                produced,
-                kind: KIND_ID.to_owned(),
-                started_at,
-                duration_ms: start.elapsed().as_millis() as u64,
-                outcome,
-                index: ctx.index,
-            },
-            None,
-        )
+        let (outcome, produced) = self
+            .send(&read.message, read.color, read.sender.0, ctx.publisher)
+            .await;
+        let mut telemetry = timer.finish(outcome);
+        telemetry.produced = produced;
+        (telemetry, None)
     }
 }
 

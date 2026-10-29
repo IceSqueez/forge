@@ -1,21 +1,31 @@
-use crate::vocabulary::sub_action_ids;
-use std::collections::BTreeMap;
 use std::sync::Arc;
-use std::time::Instant;
 
 use async_trait::async_trait;
 use forge_registry::runner::SubActionConfig;
 use forge_registry::{
-    ConfigReason, FormField, RegistryError, RunContext, SubActionCategory, SubActionConfigExt,
-    SubActionRunner,
+    ConfigSpec, RunContext, StepTimer, SubActionCategory, SubActionRunner, TextEditor, TextField,
+    TypedField,
 };
-use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, Variant};
-use time::OffsetDateTime;
+use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry};
 
 use crate::account::identity::SelfIdentity;
 use crate::helix::{HelixMethod, HelixRequest, HelixTransport};
+use crate::vocabulary::{config_keys, sub_action_ids};
 
 const KIND_ID: &str = sub_action_ids::AUTOMOD_REMOVE_BLOCKED_TERM;
+const TERM_ID_TEMPLATE: &str = "%blocked_term.id%";
+
+const TERM_ID: TextField = TextField {
+    key: config_keys::TERM_ID,
+    label: "Blocked Term ID",
+    editor: TextEditor::Line {
+        placeholder: TERM_ID_TEMPLATE,
+    },
+    default: TERM_ID_TEMPLATE,
+    required: true,
+};
+
+const CONFIG: ConfigSpec = ConfigSpec::new(&[&TERM_ID]);
 
 pub struct RemoveBlockedTermRunner {
     transport: Arc<dyn HelixTransport>,
@@ -28,33 +38,6 @@ impl RemoveBlockedTermRunner {
             transport,
             identity,
         }
-    }
-}
-
-pub(crate) fn remove_blocked_term_default_config() -> SubActionConfig {
-    BTreeMap::from([(
-        "term_id".to_owned(),
-        Variant::String("%blocked_term.id%".to_owned()),
-    )])
-}
-
-pub(crate) fn remove_blocked_term_config_fields() -> Vec<FormField> {
-    vec![FormField::Text {
-        key: "term_id",
-        label: "Blocked Term ID",
-        placeholder: "%blocked_term.id%",
-    }]
-}
-
-pub(crate) fn validate_remove_blocked_term_config(
-    config: &SubActionConfig,
-) -> Result<(), RegistryError> {
-    match config.get("term_id") {
-        Some(Variant::String(s)) if !s.is_empty() => Ok(()),
-        _ => Err(RegistryError::invalid_field(
-            "term_id",
-            ConfigReason::Required,
-        )),
     }
 }
 
@@ -84,16 +67,8 @@ impl SubActionRunner for RemoveBlockedTermRunner {
         "slash-off"
     }
 
-    fn default_config(&self) -> SubActionConfig {
-        remove_blocked_term_default_config()
-    }
-
-    fn config_fields(&self) -> Vec<FormField> {
-        remove_blocked_term_config_fields()
-    }
-
-    fn validate_config(&self, config: &SubActionConfig) -> Result<(), RegistryError> {
-        validate_remove_blocked_term_config(config)
+    fn config_spec(&self) -> Option<ConfigSpec> {
+        Some(CONFIG)
     }
 
     async fn execute(
@@ -101,41 +76,16 @@ impl SubActionRunner for RemoveBlockedTermRunner {
         config: &SubActionConfig,
         ctx: &RunContext<'_>,
     ) -> (SubActionTelemetry, Option<ArgStack>) {
-        let started_at = OffsetDateTime::now_utc();
-        let start = Instant::now();
-
-        let term_id_template = config.str("term_id").unwrap_or_default();
-        let term_id = ctx.arg_stack.interpolate(term_id_template);
-
+        let timer = StepTimer::start(ctx, KIND_ID);
+        let term_id = match TERM_ID.read(config, ctx.arg_stack) {
+            Ok(term_id) => term_id,
+            Err(problem) => return (timer.invalid_config(&problem), None),
+        };
         if term_id.is_empty() {
-            return (
-                SubActionTelemetry {
-                    args_in: ::std::collections::BTreeMap::new(),
-                    produced: ::std::collections::BTreeMap::new(),
-                    kind: KIND_ID.to_owned(),
-                    started_at,
-                    duration_ms: start.elapsed().as_millis() as u64,
-                    outcome: SubActionOutcome::Failed("term_id is required".to_owned()),
-                    index: ctx.index,
-                },
-                None,
-            );
+            return (timer.failed("term_id is required"), None);
         }
-
         let outcome = delete_blocked_term(&self.transport, &self.identity, KIND_ID, &term_id).await;
-
-        (
-            SubActionTelemetry {
-                args_in: ::std::collections::BTreeMap::new(),
-                produced: ::std::collections::BTreeMap::new(),
-                kind: KIND_ID.to_owned(),
-                started_at,
-                duration_ms: start.elapsed().as_millis() as u64,
-                outcome,
-                index: ctx.index,
-            },
-            None,
-        )
+        (timer.finish(outcome), None)
     }
 }
 
@@ -149,12 +99,10 @@ async fn delete_blocked_term(
         Ok(id) => id,
         Err(e) => return SubActionOutcome::Failed(e.to_string()),
     };
-
     let request = HelixRequest::new(HelixMethod::Delete, "/helix/moderation/blocked_terms")
         .query("broadcaster_id", user_id.clone())
         .query("moderator_id", user_id)
         .query("id", term_id.to_owned());
-
     match transport.execute(request).await {
         Ok(_) => SubActionOutcome::Success,
         Err(e) => SubActionOutcome::Failed(format!("{kind_id}: {e}")),

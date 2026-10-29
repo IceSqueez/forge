@@ -8,6 +8,7 @@ mod declared_composite_fields;
 mod declared_config;
 mod declared_fields;
 mod declared_fields_extra;
+mod declared_fields_more;
 mod descriptor;
 mod duration_bounds;
 mod error;
@@ -52,6 +53,7 @@ pub use declared_fields::{
     TextField, ToggleField, ValueField, VariableField,
 };
 pub use declared_fields_extra::{OptionalField, OptionalSwitch, PickedTextField, TextPicker};
+pub use declared_fields_more::{BoundedTextField, SeparatedListField};
 pub use descriptor::{
     ChatTriggerFamily, IGNORE_BOT_MESSAGES_KEY, TriggerKindDescriptor, ignores_bot_messages,
 };

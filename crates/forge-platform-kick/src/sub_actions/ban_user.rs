@@ -15,8 +15,10 @@ use time::OffsetDateTime;
 
 use super::{ban_reason, display_name};
 use crate::api::moderation::KickModeration;
+use crate::vocabulary::sub_action_ids;
+use crate::vocabulary::variables::references;
 
-const KIND_ID: &str = "kick.moderation.ban";
+const KIND_ID: &str = sub_action_ids::MODERATION_BAN;
 
 pub struct BanUserRunner {
     client: Arc<KickModeration>,
@@ -81,7 +83,7 @@ impl SubActionRunner for BanUserRunner {
             FormField::Text {
                 key: "user_id",
                 label: "Target User ID",
-                placeholder: "%user_id%",
+                placeholder: references::USER_ID,
             },
             ban_reason::form_field(),
         ]

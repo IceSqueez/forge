@@ -12,14 +12,11 @@ use tracing::warn;
 
 use crate::api::channel::{ChannelSnapshot, KickChannel};
 use crate::api::rewards::{KickRewards, RedemptionRecord};
-use crate::payload_fields::{reward as reward_fields, stream as stream_fields};
+use crate::vocabulary::event_kinds;
+use crate::vocabulary::fields::{reward as reward_fields, stream as stream_fields};
 
 const CHANNEL_POLL_INTERVAL: Duration = Duration::from_secs(30);
 const REDEMPTION_POLL_INTERVAL: Duration = Duration::from_secs(12);
-
-const LIVESTREAM_STATUS_KIND: &str = "kick.livestream.status.updated";
-const LIVESTREAM_METADATA_KIND: &str = "kick.livestream.metadata.updated";
-const REWARD_REDEEMED_KIND: &str = "kick.channel.reward.redemption.updated";
 
 pub(crate) type TokenSource =
     Arc<dyn Fn() -> BoxFuture<'static, Result<String, PlatformError>> + Send + Sync>;
@@ -308,12 +305,17 @@ async fn poll_channel(
     if let Some(prev) = last_snapshot.as_ref() {
         let delta = diff_channel(prev, &snapshot);
         if delta.status_changed {
-            emit(event_tx, LIVESTREAM_STATUS_KIND, status_payload(&snapshot)).await?;
+            emit(
+                event_tx,
+                event_kinds::LIVESTREAM_STATUS_UPDATED,
+                status_payload(&snapshot),
+            )
+            .await?;
         }
         if delta.metadata_changed {
             emit(
                 event_tx,
-                LIVESTREAM_METADATA_KIND,
+                event_kinds::LIVESTREAM_METADATA_UPDATED,
                 metadata_payload(&snapshot),
             )
             .await?;
@@ -364,7 +366,12 @@ async fn poll_redemptions(
     let emit_allowed = *seeded;
     for record in &records {
         if seen.try_insert(record.id.clone()) && emit_allowed {
-            emit(event_tx, REWARD_REDEEMED_KIND, redemption_payload(record)).await?;
+            emit(
+                event_tx,
+                event_kinds::CHANNEL_REWARD_REDEMPTION_UPDATED,
+                redemption_payload(record),
+            )
+            .await?;
         }
     }
     seen.retain_present(records.iter().map(|r| r.id.as_str()));

@@ -10,7 +10,7 @@ use forge_platform_core::{
 use forge_storage::BanLedgerRepo;
 use tokio::sync::{mpsc, watch};
 
-use crate::ban_ledger::{USER_BANNED_EVENT_KIND, observed_ban};
+use crate::ban_ledger::observed_ban;
 
 use crate::api::chat_messages::KickSendChat;
 use crate::auth::credentials_manager::KickCredentialsManager;
@@ -19,6 +19,7 @@ use crate::platform::sessions::{ChatSessions, PLATFORM_ID, SessionPublisher};
 use crate::pusher::chat::{ChatLinkStatus, KickChat};
 use crate::pusher::chatroom_lookup::ChannelInfoFetcher;
 use crate::pusher::error::KickError;
+use crate::vocabulary::event_kinds;
 
 const CHAT_FORWARD_CAPACITY: usize = 256;
 pub(crate) const EVENT_CHANNEL_CAPACITY: usize = 256;
@@ -102,7 +103,7 @@ async fn forward_chat_events(
     publisher: SessionPublisher,
 ) {
     while let Some(event) = chat_rx.recv().await {
-        if event.kind == USER_BANNED_EVENT_KIND {
+        if event.kind == event_kinds::MODERATION_BANNED {
             recorder.record(&event).await;
         }
         if !publisher.publish_event(event) {

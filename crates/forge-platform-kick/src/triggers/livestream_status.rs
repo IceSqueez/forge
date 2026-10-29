@@ -6,13 +6,14 @@ use forge_registry::{
 use forge_types::{DeclaredVariable, PlatformId, TriggerConfig, Variant, VariantKind};
 
 use super::payload_read;
-use crate::payload_fields::stream as fields;
+use crate::vocabulary::fields::stream as fields;
+use crate::vocabulary::{event_kinds, trigger_ids, variables};
 
 pub(crate) struct LivestreamStatusDescriptor;
 
 impl TriggerKindDescriptor for LivestreamStatusDescriptor {
     fn id(&self) -> &str {
-        "kick.livestream.status.updated"
+        trigger_ids::LIVESTREAM_STATUS_UPDATED
     }
 
     fn category(&self) -> TriggerCategory {
@@ -54,7 +55,7 @@ impl TriggerKindDescriptor for LivestreamStatusDescriptor {
     fn event_filter(&self) -> EventFilter {
         EventFilter {
             source: Some(EventSource::Kick),
-            kind_prefix: Some("kick.livestream.status.updated".to_owned()),
+            kind_prefix: Some(event_kinds::LIVESTREAM_STATUS_UPDATED.to_owned()),
         }
     }
 
@@ -67,7 +68,7 @@ impl TriggerKindDescriptor for LivestreamStatusDescriptor {
             TriggerVariables::new()
                 .event_specific(
                     DeclaredVariable {
-                        name: "is_live".to_owned(),
+                        name: variables::livestream::IS_LIVE.to_owned(),
                         kind: VariantKind::Bool,
                         label: "Is live".to_owned(),
                         synthesis: None,
@@ -76,7 +77,7 @@ impl TriggerKindDescriptor for LivestreamStatusDescriptor {
                 )
                 .event_specific(
                     DeclaredVariable {
-                        name: "stream_title".to_owned(),
+                        name: variables::livestream::STREAM_TITLE.to_owned(),
                         kind: VariantKind::String,
                         label: "Stream title".to_owned(),
                         synthesis: None,
@@ -85,7 +86,7 @@ impl TriggerKindDescriptor for LivestreamStatusDescriptor {
                 )
                 .event_specific(
                     DeclaredVariable {
-                        name: "category_id".to_owned(),
+                        name: variables::livestream::CATEGORY_ID.to_owned(),
                         kind: VariantKind::String,
                         label: "Category ID".to_owned(),
                         synthesis: None,
@@ -99,7 +100,7 @@ impl TriggerKindDescriptor for LivestreamStatusDescriptor {
                 )
                 .event_specific(
                     DeclaredVariable {
-                        name: "category_name".to_owned(),
+                        name: variables::livestream::CATEGORY_NAME.to_owned(),
                         kind: VariantKind::String,
                         label: "Category name".to_owned(),
                         synthesis: None,

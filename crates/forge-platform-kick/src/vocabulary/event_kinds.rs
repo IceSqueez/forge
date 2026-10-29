@@ -1,0 +1,9 @@
+pub const CHAT_MESSAGE_SENT: &str = "kick.chat.message.sent";
+pub const CHAT_MESSAGE_DELETED: &str = "kick.chat.message.deleted";
+pub const MODERATION_BANNED: &str = "kick.moderation.banned";
+pub const CHANNEL_SUBSCRIBED: &str = "kick.channel.subscribed";
+pub const CHANNEL_SUBSCRIPTION_GIFTS: &str = "kick.channel.subscription.gifts";
+pub const CHANNEL_HOSTED: &str = "kick.channel.hosted";
+pub const CHANNEL_REWARD_REDEMPTION_UPDATED: &str = "kick.channel.reward.redemption.updated";
+pub const LIVESTREAM_STATUS_UPDATED: &str = "kick.livestream.status.updated";
+pub const LIVESTREAM_METADATA_UPDATED: &str = "kick.livestream.metadata.updated";

@@ -14,8 +14,10 @@ use futures::future::BoxFuture;
 use time::OffsetDateTime;
 
 use crate::api::channel::KickChannel;
+use crate::vocabulary::sub_action_ids;
+use crate::vocabulary::variables;
 
-const KIND_ID: &str = "kick.lookup.user";
+const KIND_ID: &str = sub_action_ids::LOOKUP_USER;
 
 pub struct LookupUserRunner {
     client: Arc<KickChannel>,
@@ -115,27 +117,27 @@ impl SubActionRunner for LookupUserRunner {
                 Ok(snapshot) => {
                     let mut stack = ctx.arg_stack.clone();
                     stack = stack.set(
-                        "kick.viewer.id".to_owned(),
+                        variables::viewer::ID.to_owned(),
                         Variant::Int(snapshot.broadcaster_user_id as i64),
                     );
                     stack = stack.set(
-                        "kick.viewer.username".to_owned(),
+                        variables::viewer::USERNAME.to_owned(),
                         Variant::String(snapshot.slug),
                     );
                     stack = stack.set(
-                        "kick.viewer.is_live".to_owned(),
+                        variables::viewer::IS_LIVE.to_owned(),
                         Variant::Bool(snapshot.is_live),
                     );
                     stack = stack.set(
-                        "kick.viewer.stream_title".to_owned(),
+                        variables::viewer::STREAM_TITLE.to_owned(),
                         Variant::String(snapshot.stream_title),
                     );
                     stack = stack.set(
-                        "kick.viewer.category_name".to_owned(),
+                        variables::viewer::CATEGORY_NAME.to_owned(),
                         Variant::String(snapshot.category_name),
                     );
                     stack = stack.set(
-                        "kick.viewer.viewer_count".to_owned(),
+                        variables::viewer::VIEWER_COUNT.to_owned(),
                         Variant::Int(snapshot.viewer_count as i64),
                     );
                     Ok(stack)

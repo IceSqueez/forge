@@ -10,13 +10,14 @@ use forge_types::{
 
 use super::chat::{sender_color, sender_identity};
 use super::payload_read::{self, kick_actor};
-use crate::payload_fields::chat as fields;
+use crate::vocabulary::fields::chat as fields;
+use crate::vocabulary::{event_kinds, trigger_ids, variables};
 
 pub(crate) struct ChatCommandDescriptor;
 
 impl TriggerKindDescriptor for ChatCommandDescriptor {
     fn id(&self) -> &str {
-        "kick.chat.command"
+        trigger_ids::CHAT_COMMAND
     }
 
     fn category(&self) -> TriggerCategory {
@@ -82,7 +83,7 @@ impl TriggerKindDescriptor for ChatCommandDescriptor {
     fn event_filter(&self) -> EventFilter {
         EventFilter {
             source: Some(EventSource::Kick),
-            kind_prefix: Some("kick.chat.message.sent".to_owned()),
+            kind_prefix: Some(event_kinds::CHAT_MESSAGE_SENT.to_owned()),
         }
     }
 
@@ -131,7 +132,7 @@ impl TriggerKindDescriptor for ChatCommandDescriptor {
                 .chat_message_id(|event| payload_read::text(event, fields::MESSAGE_ID))
                 .event_specific(
                     DeclaredVariable {
-                        name: "color".to_owned(),
+                        name: variables::chat::COLOR.to_owned(),
                         kind: VariantKind::String,
                         label: "Sender name color".to_owned(),
                         synthesis: None,
@@ -140,7 +141,7 @@ impl TriggerKindDescriptor for ChatCommandDescriptor {
                 )
                 .event_specific(
                     DeclaredVariable {
-                        name: "reply_to_id".to_owned(),
+                        name: variables::chat::REPLY_TO_ID.to_owned(),
                         kind: VariantKind::String,
                         label: "Replied-to message ID".to_owned(),
                         synthesis: None,
@@ -149,7 +150,7 @@ impl TriggerKindDescriptor for ChatCommandDescriptor {
                 )
                 .event_specific(
                     DeclaredVariable {
-                        name: "command_name".to_owned(),
+                        name: variables::chat::COMMAND_NAME.to_owned(),
                         kind: VariantKind::String,
                         label: "Command name".to_owned(),
                         synthesis: None,
@@ -158,7 +159,7 @@ impl TriggerKindDescriptor for ChatCommandDescriptor {
                 )
                 .event_specific(
                     DeclaredVariable {
-                        name: "args".to_owned(),
+                        name: variables::chat::COMMAND_ARGS.to_owned(),
                         kind: VariantKind::String,
                         label: "Command arguments".to_owned(),
                         synthesis: Some(SynthesisHint::Message),
@@ -166,21 +167,25 @@ impl TriggerKindDescriptor for ChatCommandDescriptor {
                     |event| Variant::String(command_args(event)),
                 )
                 .legacy(
-                    "sender_id",
+                    variables::legacy::SENDER_ID,
                     "Sender user ID",
                     CanonicalVariable::actor(ActorRole::Principal, ActorSlot::Id),
                 )
                 .legacy(
-                    "username",
+                    variables::legacy::USERNAME,
                     "Sender username",
                     CanonicalVariable::actor(ActorRole::Principal, ActorSlot::Login),
                 )
                 .legacy(
-                    "display_name",
+                    variables::legacy::DISPLAY_NAME,
                     "Sender display name",
                     CanonicalVariable::actor(ActorRole::Principal, ActorSlot::Name),
                 )
-                .legacy("content", "Message content", CanonicalVariable::MessageText),
+                .legacy(
+                    variables::legacy::CONTENT,
+                    "Message content",
+                    CanonicalVariable::MessageText,
+                ),
         )
     }
 

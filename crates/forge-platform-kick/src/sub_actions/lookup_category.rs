@@ -14,8 +14,10 @@ use futures::future::BoxFuture;
 use time::OffsetDateTime;
 
 use crate::api::categories::KickCategories;
+use crate::vocabulary::sub_action_ids;
+use crate::vocabulary::variables;
 
-const KIND_ID: &str = "kick.lookup.category";
+const KIND_ID: &str = sub_action_ids::LOOKUP_CATEGORY;
 
 pub struct LookupCategoryRunner {
     client: Arc<KickCategories>,
@@ -120,15 +122,21 @@ impl SubActionRunner for LookupCategoryRunner {
                         .into_iter()
                         .map(|m| {
                             Variant::Object(BTreeMap::from([
-                                ("id".to_owned(), Variant::Int(m.id as i64)),
-                                ("name".to_owned(), Variant::String(m.name)),
+                                (
+                                    variables::category::MATCH_ID.to_owned(),
+                                    Variant::Int(m.id as i64),
+                                ),
+                                (
+                                    variables::category::MATCH_NAME.to_owned(),
+                                    Variant::String(m.name),
+                                ),
                             ]))
                         })
                         .collect();
-                    let stack = ctx
-                        .arg_stack
-                        .clone()
-                        .set("kick.category.matches".to_owned(), Variant::Array(items));
+                    let stack = ctx.arg_stack.clone().set(
+                        variables::category::MATCHES.to_owned(),
+                        Variant::Array(items),
+                    );
                     Ok(stack)
                 }
                 Err(e) => Err(e.to_string()),

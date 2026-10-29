@@ -14,8 +14,10 @@ use futures::future::BoxFuture;
 use time::OffsetDateTime;
 
 use crate::api::rewards::KickRewards;
+use crate::vocabulary::sub_action_ids;
+use crate::vocabulary::variables::references;
 
-const KIND_ID: &str = "kick.reward.delete";
+const KIND_ID: &str = sub_action_ids::REWARD_DELETE;
 
 pub struct DeleteRewardRunner {
     client: Arc<KickRewards>,
@@ -70,7 +72,7 @@ impl SubActionRunner for DeleteRewardRunner {
         vec![FormField::Text {
             key: "reward_id",
             label: "Reward ID",
-            placeholder: "%reward_id%",
+            placeholder: references::REWARD_ID,
         }]
     }
 

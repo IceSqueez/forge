@@ -9,13 +9,14 @@ use forge_types::{
 };
 
 use super::payload_read::{self, kick_actor};
-use crate::payload_fields::moderation as fields;
+use crate::vocabulary::fields::moderation as fields;
+use crate::vocabulary::{event_kinds, trigger_ids, variables};
 
 pub(crate) struct BanDescriptor;
 
 impl TriggerKindDescriptor for BanDescriptor {
     fn id(&self) -> &str {
-        "kick.moderation.banned"
+        trigger_ids::MODERATION_BANNED
     }
 
     fn category(&self) -> TriggerCategory {
@@ -57,7 +58,7 @@ impl TriggerKindDescriptor for BanDescriptor {
     fn event_filter(&self) -> EventFilter {
         EventFilter {
             source: Some(EventSource::Kick),
-            kind_prefix: Some("kick.moderation.banned".to_owned()),
+            kind_prefix: Some(event_kinds::MODERATION_BANNED.to_owned()),
         }
     }
 
@@ -72,7 +73,7 @@ impl TriggerKindDescriptor for BanDescriptor {
                 .actor(kick_actor(ActorRole::Moderator), moderator_identity)
                 .event_specific(
                     DeclaredVariable {
-                        name: "duration_secs".to_owned(),
+                        name: variables::ban::DURATION_SECS.to_owned(),
                         kind: VariantKind::Int,
                         label: "Ban duration (seconds)".to_owned(),
                         synthesis: Some(SynthesisHint::BoundedInt {
@@ -84,7 +85,7 @@ impl TriggerKindDescriptor for BanDescriptor {
                 )
                 .event_specific(
                     DeclaredVariable {
-                        name: "reason".to_owned(),
+                        name: variables::ban::REASON.to_owned(),
                         kind: VariantKind::String,
                         label: "Ban reason".to_owned(),
                         synthesis: None,
@@ -92,12 +93,12 @@ impl TriggerKindDescriptor for BanDescriptor {
                     |event| Variant::String(payload_read::text(event, fields::REASON)),
                 )
                 .legacy(
-                    "banned_user_id",
+                    variables::legacy::BANNED_USER_ID,
                     "Banned user ID",
                     CanonicalVariable::actor(ActorRole::Principal, ActorSlot::Id),
                 )
                 .legacy(
-                    "banned_username",
+                    variables::legacy::BANNED_USERNAME,
                     "Banned username",
                     CanonicalVariable::actor(ActorRole::Principal, ActorSlot::Login),
                 ),

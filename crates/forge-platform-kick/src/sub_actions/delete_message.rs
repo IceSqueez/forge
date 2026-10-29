@@ -14,8 +14,10 @@ use futures::future::BoxFuture;
 use time::OffsetDateTime;
 
 use crate::api::chat_messages::KickSendChat;
+use crate::vocabulary::sub_action_ids;
+use crate::vocabulary::variables::references;
 
-const KIND_ID: &str = "kick.chat.delete_message";
+const KIND_ID: &str = sub_action_ids::CHAT_DELETE_MESSAGE;
 const UNRESOLVED_REFERENCE_MARKER: char = '%';
 
 pub struct DeleteMessageRunner {
@@ -66,7 +68,7 @@ impl SubActionRunner for DeleteMessageRunner {
     fn default_config(&self) -> SubActionConfig {
         BTreeMap::from([(
             "message_id".to_owned(),
-            Variant::String("%message_id%".to_owned()),
+            Variant::String(references::MESSAGE_ID.to_owned()),
         )])
     }
 
@@ -74,7 +76,7 @@ impl SubActionRunner for DeleteMessageRunner {
         vec![FormField::Text {
             key: "message_id",
             label: "Message ID",
-            placeholder: "%message_id%",
+            placeholder: references::MESSAGE_ID,
         }]
     }
 

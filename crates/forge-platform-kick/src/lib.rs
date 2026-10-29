@@ -13,12 +13,12 @@ mod gateway;
 mod integration;
 #[cfg(test)]
 mod log_capture;
-mod payload_fields;
 mod platform;
 mod pusher;
 mod sub_actions;
 mod timestamp;
 mod triggers;
+pub mod vocabulary;
 
 pub use api::categories::{CategoryMatch, KickCategories};
 pub use api::channel::{ChannelSnapshot, KickChannel};
@@ -46,7 +46,7 @@ pub use integration::KICK_INTEGRATION;
 pub use platform::KickPlatform;
 pub use pusher::chat::{KickChat, KickChatHandle};
 pub use pusher::chatroom_lookup::{ChannelInfoFetcher, KickChannelInfo};
-pub use pusher::{chat, error};
+pub use pusher::{chat, error, protocol};
 pub use sub_actions::{
     AcceptRedemptionRunner, BanUserRunner, CreateRewardRunner, DeleteMessageRunner,
     DeleteRewardRunner, KickSubActionDeps, LookupCategoryRunner, LookupStreamStatsRunner,

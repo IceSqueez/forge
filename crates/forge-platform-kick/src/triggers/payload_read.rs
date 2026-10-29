@@ -2,7 +2,7 @@ use forge_events::Event;
 use forge_registry::{ActorBlock, ActorIdentity, LoginSlot};
 use forge_types::{ActorRole, PlatformId};
 
-use crate::payload_fields::entity as entity_fields;
+use crate::vocabulary::fields::entity as entity_fields;
 
 pub(super) const fn kick_actor(role: ActorRole) -> ActorBlock {
     ActorBlock {

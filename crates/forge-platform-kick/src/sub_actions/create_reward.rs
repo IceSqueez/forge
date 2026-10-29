@@ -14,8 +14,9 @@ use futures::future::BoxFuture;
 use time::OffsetDateTime;
 
 use crate::api::rewards::{CreateRewardParams, KickRewards};
+use crate::vocabulary::sub_action_ids;
 
-const KIND_ID: &str = "kick.reward.create";
+const KIND_ID: &str = sub_action_ids::REWARD_CREATE;
 
 pub struct CreateRewardRunner {
     client: Arc<KickRewards>,

@@ -14,8 +14,10 @@ use futures::future::BoxFuture;
 use time::OffsetDateTime;
 
 use crate::api::rewards::KickRewards;
+use crate::vocabulary::sub_action_ids;
+use crate::vocabulary::variables::references;
 
-const KIND_ID: &str = "kick.reward.redemption_accept";
+const KIND_ID: &str = sub_action_ids::REWARD_REDEMPTION_ACCEPT;
 const MAX_BATCH: usize = 25;
 
 pub struct AcceptRedemptionRunner {
@@ -73,7 +75,7 @@ impl SubActionRunner for AcceptRedemptionRunner {
     fn default_config(&self) -> SubActionConfig {
         BTreeMap::from([(
             "redemption_ids".to_owned(),
-            Variant::String("%redemption_id%".to_owned()),
+            Variant::String(references::REDEMPTION_ID.to_owned()),
         )])
     }
 
@@ -81,7 +83,7 @@ impl SubActionRunner for AcceptRedemptionRunner {
         vec![FormField::Text {
             key: "redemption_ids",
             label: "Redemption ID(s)",
-            placeholder: "%redemption_id% or id1,id2,id3 (max 25)",
+            placeholder: references::REDEMPTION_IDS_HINT,
         }]
     }
 

@@ -14,8 +14,10 @@ use futures::future::BoxFuture;
 use time::OffsetDateTime;
 
 use crate::api::moderation::KickModeration;
+use crate::vocabulary::sub_action_ids;
+use crate::vocabulary::variables::references;
 
-const KIND_ID: &str = "kick.moderation.unban";
+const KIND_ID: &str = sub_action_ids::MODERATION_UNBAN;
 
 pub struct UnbanUserRunner {
     client: Arc<KickModeration>,
@@ -76,7 +78,7 @@ impl SubActionRunner for UnbanUserRunner {
         vec![FormField::Text {
             key: "user_id",
             label: "Target User ID",
-            placeholder: "%user_id%",
+            placeholder: references::USER_ID,
         }]
     }
 

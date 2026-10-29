@@ -8,7 +8,6 @@ use forge_platform_core::chat::ConnectionState;
 use forge_platform_core::{ConnectionTransition, EndpointSurface, PlatformEndpoints};
 use forge_types::ChatPayload;
 use futures::StreamExt;
-use serde::Deserialize;
 use tokio::sync::{mpsc, watch};
 use tokio::task::JoinSet;
 use tokio_tungstenite::tungstenite::Message;
@@ -16,14 +15,11 @@ use tokio_tungstenite::tungstenite::protocol::CloseFrame;
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, info, warn};
 
-use crate::ban_ledger::USER_BANNED_EVENT_KIND;
 use crate::pusher::chatroom_lookup::ChannelInfoFetcher;
 use crate::pusher::error::KickError;
 use crate::pusher::normalize;
-
-pub const PUSHER_APP_KEY: &str = "32cbd69e4b950bf97679";
-
-const PUSHER_PROTOCOL_PARAMS: &str = "protocol=7&client=js&version=7.6.0&flash=false";
+use crate::pusher::protocol::{self, InboundFrame, app_events};
+use crate::vocabulary::event_kinds;
 
 const PING_INTERVAL: Duration = Duration::from_secs(30);
 
@@ -127,7 +123,7 @@ impl KickChat {
         Self {
             fetcher: channel_info,
             slug,
-            ws_url: pusher_ws_url(endpoints.base_url(EndpointSurface::KickChatSocket)),
+            ws_url: protocol::socket_url(endpoints.base_url(EndpointSurface::KickChatSocket)),
         }
     }
 
@@ -179,10 +175,6 @@ impl KickChat {
     }
 }
 
-fn pusher_ws_url(ws_base: &str) -> String {
-    format!("{ws_base}/{PUSHER_APP_KEY}?{PUSHER_PROTOCOL_PARAMS}")
-}
-
 async fn connect_ws(url: &str) -> Result<PusherSocket, KickError> {
     let (ws_stream, _) = tokio::time::timeout(
         PUSHER_CONNECT_TIMEOUT,
@@ -201,29 +193,9 @@ async fn connect_ws(url: &str) -> Result<PusherSocket, KickError> {
     Ok(ws_stream)
 }
 
-async fn send_subscribe(ws: &mut PusherSocket, chatroom_id: u64) -> Result<(), KickError> {
+async fn send_frame(ws: &mut PusherSocket, frame: &serde_json::Value) -> Result<(), KickError> {
     use futures::SinkExt;
-    let frame = serde_json::json!({
-        "event": "pusher:subscribe",
-        "data": { "channel": format!("chatrooms.{chatroom_id}.v2") }
-    });
-    let text = serde_json::to_string(&frame).map_err(|e| KickError::WebSocket {
-        reason: format!("serialize subscribe: {e}"),
-    })?;
-    ws.send(Message::Text(text.into()))
-        .await
-        .map_err(|e| KickError::WebSocket {
-            reason: e.to_string(),
-        })
-}
-
-async fn send_ping(ws: &mut PusherSocket) -> Result<(), KickError> {
-    use futures::SinkExt;
-    let frame = serde_json::json!({"event": "pusher:ping", "data": {}});
-    let text = serde_json::to_string(&frame).map_err(|e| KickError::WebSocket {
-        reason: format!("serialize ping: {e}"),
-    })?;
-    ws.send(Message::Text(text.into()))
+    ws.send(Message::Text(frame.to_string().into()))
         .await
         .map_err(|e| KickError::WebSocket {
             reason: e.to_string(),
@@ -286,7 +258,10 @@ async fn run_session(
 ) -> SessionEnd {
     match ctx
         .cancel
-        .run_until_cancelled(send_subscribe(ws_stream, chatroom_id))
+        .run_until_cancelled(send_frame(
+            ws_stream,
+            &protocol::subscribe_frame(chatroom_id),
+        ))
         .await
     {
         None => return SessionEnd::Closed,
@@ -308,7 +283,7 @@ async fn run_session(
             () = ctx.cancel.cancelled() => return SessionEnd::Closed,
 
             () = tokio::time::sleep_until(ping_deadline) => {
-                match ctx.cancel.run_until_cancelled(send_ping(ws_stream)).await {
+                match ctx.cancel.run_until_cancelled(send_frame(ws_stream, &protocol::ping_frame())).await {
                     None => return SessionEnd::Closed,
                     Some(Err(e)) => {
                         warn!(error = %e, "ping failed; reconnecting");
@@ -396,7 +371,7 @@ async fn reconnect(ctx: &RunLoopContext, backoff: &mut Backoff) -> Option<(Pushe
     }
 }
 async fn handle_ws_text(raw: &str, event_tx: &mpsc::Sender<Event>) -> WsFrameHealth {
-    let frame: PusherFrame = match serde_json::from_str(raw) {
+    let frame: InboundFrame = match serde_json::from_str(raw) {
         Ok(f) => f,
         Err(e) => {
             debug!(error = %e, "unparseable Pusher frame; skipping");
@@ -406,7 +381,7 @@ async fn handle_ws_text(raw: &str, event_tx: &mpsc::Sender<Event>) -> WsFrameHea
 
     let event_name = frame.event.as_str();
 
-    if event_name == "pusher:error" {
+    if event_name == protocol::ERROR {
         match pusher_error_code(&frame.data) {
             Some(code) => warn!(code, frame_len = raw.len(), "kick chat pusher error frame"),
             None => warn!(frame_len = raw.len(), "kick chat pusher error frame"),
@@ -414,7 +389,7 @@ async fn handle_ws_text(raw: &str, event_tx: &mpsc::Sender<Event>) -> WsFrameHea
         return WsFrameHealth::Error;
     }
 
-    if event_name == "pusher:pong" || event_name.starts_with("pusher_internal:") {
+    if event_name == protocol::PONG || event_name.starts_with(protocol::INTERNAL_EVENT_PREFIX) {
         return WsFrameHealth::Healthy;
     }
 
@@ -451,7 +426,7 @@ fn pusher_error_code(data: &serde_json::Value) -> Option<i64> {
         }
         None => data,
     };
-    let code = body.get("code")?;
+    let code = body.get(protocol::ERROR_CODE_KEY)?;
     code.as_i64().or_else(|| code.as_str()?.parse().ok())
 }
 
@@ -463,34 +438,35 @@ enum WsFrameHealth {
 
 pub(crate) fn build_event(event_name: &str, payload: serde_json::Value) -> Option<Event> {
     let (kind, normalized) = match event_name {
-        "App\\Events\\ChatMessageEvent" => {
+        app_events::CHAT_MESSAGE => {
             let mut normalized = normalize::chat_message_sent(&payload);
             let chat_payload = normalize::chat_message_chat_payload(&payload);
             normalized[ChatPayload::KEY] = serde_json::to_value(&chat_payload).ok()?;
             if let Some(viewer) = normalize::chat_message_viewer(&payload) {
                 viewer.attach(&mut normalized);
             }
-            ("kick.chat.message.sent", normalized)
+            (event_kinds::CHAT_MESSAGE_SENT, normalized)
         }
-        "App\\Events\\MessageDeletedEvent" => (
-            "kick.chat.message.deleted",
+        app_events::MESSAGE_DELETED => (
+            event_kinds::CHAT_MESSAGE_DELETED,
             normalize::chat_message_deleted(&payload),
         ),
-        "App\\Events\\UserBannedEvent" => (
-            USER_BANNED_EVENT_KIND,
+        app_events::USER_BANNED => (
+            event_kinds::MODERATION_BANNED,
             normalize::moderation_banned(&payload),
         ),
-        "App\\Events\\SubscriptionEvent" => (
-            "kick.channel.subscribed",
+        app_events::SUBSCRIPTION => (
+            event_kinds::CHANNEL_SUBSCRIBED,
             normalize::channel_subscribed(&payload),
         ),
-        "App\\Events\\GiftedSubscriptionsEvent" => (
-            "kick.channel.subscription.gifts",
+        app_events::GIFTED_SUBSCRIPTIONS => (
+            event_kinds::CHANNEL_SUBSCRIPTION_GIFTS,
             normalize::channel_subscription_gifted(&payload),
         ),
-        "App\\Events\\StreamHostEvent" => {
-            ("kick.channel.hosted", normalize::channel_hosted(&payload))
-        }
+        app_events::STREAM_HOST => (
+            event_kinds::CHANNEL_HOSTED,
+            normalize::channel_hosted(&payload),
+        ),
         other => {
             debug!(event = %other, "unhandled Kick Pusher event");
             return None;
@@ -498,13 +474,6 @@ pub(crate) fn build_event(event_name: &str, payload: serde_json::Value) -> Optio
     };
 
     Some(Event::new(EventSource::Kick, kind, normalized))
-}
-
-#[derive(Deserialize)]
-struct PusherFrame {
-    event: String,
-    #[serde(default)]
-    data: serde_json::Value,
 }
 
 #[cfg(test)]

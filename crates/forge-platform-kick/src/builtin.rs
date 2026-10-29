@@ -22,6 +22,7 @@ use crate::api::poller::PollerAuth;
 use crate::auth::credentials_manager::KickCredentialsManager;
 use crate::capabilities::KICK_COMMUNITY_NOTE;
 use crate::platform::KickPlatform;
+use crate::pusher::protocol::chatroom_channel;
 use crate::triggers::ban::BanDescriptor;
 use crate::triggers::chat::ChatDescriptor;
 use crate::triggers::chat_command::ChatCommandDescriptor;
@@ -32,6 +33,8 @@ use crate::triggers::message_deleted::MessageDeletedDescriptor;
 use crate::triggers::reward_redeemed::RewardRedeemedDescriptor;
 use crate::triggers::sub::SubDescriptor;
 use crate::triggers::sub_gift::SubGiftDescriptor;
+use crate::vocabulary::sub_action_ids;
+use crate::vocabulary::variables::references;
 
 pub fn register_kick_triggers(registry: &mut TriggerRegistry) -> Result<(), RegistryError> {
     let mut registry = registry.owned_by(crate::KICK_INTEGRATION.id);
@@ -105,7 +108,7 @@ impl KickIntegrationBundle {
         HealthValue::Status {
             label: state.label().to_owned(),
             active: state.is_connected(),
-            detail: Some(format!("chatrooms.{}.v2", self.slug)),
+            detail: Some(chatroom_channel(&self.slug)),
         }
     }
 
@@ -500,7 +503,7 @@ impl QuickActions for KickIntegrationBundle {
                 connected,
                 "Stream info",
                 false,
-                "kick.channel.update_info",
+                sub_action_ids::CHANNEL_UPDATE_INFO,
                 config([("title", blank())]),
                 vec![text_field("title", "Stream Title", "Stream title").required()],
             ),
@@ -511,7 +514,7 @@ impl QuickActions for KickIntegrationBundle {
                 connected,
                 "Stream info",
                 false,
-                "kick.channel.update_info",
+                sub_action_ids::CHANNEL_UPDATE_INFO,
                 config([("category_id", blank())]),
                 vec![
                     text_field_hint(
@@ -529,7 +532,7 @@ impl QuickActions for KickIntegrationBundle {
                 connected,
                 "Stream info",
                 false,
-                "kick.channel.update_info",
+                sub_action_ids::CHANNEL_UPDATE_INFO,
                 config([("tags", blank())]),
                 vec![
                     text_field(
@@ -547,7 +550,7 @@ impl QuickActions for KickIntegrationBundle {
                 connected,
                 "Chat",
                 false,
-                "kick.chat.send_message",
+                sub_action_ids::CHAT_SEND_MESSAGE,
                 config([("message", blank()), ("as_bot", Variant::Bool(false))]),
                 vec![
                     multiline_field("message", "Message", "Message").required(),
@@ -561,9 +564,9 @@ impl QuickActions for KickIntegrationBundle {
                 connected,
                 "Chat",
                 true,
-                "kick.chat.delete_message",
+                sub_action_ids::CHAT_DELETE_MESSAGE,
                 config([("message_id", blank())]),
-                vec![text_field("message_id", "Message ID", "%message_id%").required()],
+                vec![text_field("message_id", "Message ID", references::MESSAGE_ID).required()],
             ),
             quick_action(
                 "Timeout user",
@@ -572,9 +575,9 @@ impl QuickActions for KickIntegrationBundle {
                 connected,
                 "Moderation",
                 false,
-                "kick.moderation.timeout",
+                sub_action_ids::MODERATION_TIMEOUT,
                 config([("user_id", blank()), ("duration_minutes", Variant::Int(10))]),
-                vec![text_field("user_id", "Target User ID", "%user_id%").required()],
+                vec![text_field("user_id", "Target User ID", references::USER_ID).required()],
             ),
             quick_action(
                 "Ban user",
@@ -583,9 +586,9 @@ impl QuickActions for KickIntegrationBundle {
                 connected,
                 "Moderation",
                 true,
-                "kick.moderation.ban",
+                sub_action_ids::MODERATION_BAN,
                 config([("user_id", blank())]),
-                vec![text_field("user_id", "Target User ID", "%user_id%").required()],
+                vec![text_field("user_id", "Target User ID", references::USER_ID).required()],
             ),
             quick_action(
                 "Unban user",
@@ -594,9 +597,9 @@ impl QuickActions for KickIntegrationBundle {
                 connected,
                 "Moderation",
                 false,
-                "kick.moderation.unban",
+                sub_action_ids::MODERATION_UNBAN,
                 config([("user_id", blank())]),
-                vec![text_field("user_id", "Target User ID", "%user_id%").required()],
+                vec![text_field("user_id", "Target User ID", references::USER_ID).required()],
             ),
             quick_action(
                 "Create reward",
@@ -605,7 +608,7 @@ impl QuickActions for KickIntegrationBundle {
                 connected,
                 "Rewards",
                 false,
-                "kick.reward.create",
+                sub_action_ids::REWARD_CREATE,
                 config([("title", blank()), ("cost", blank())]),
                 vec![
                     text_field("title", "Reward Title", "e.g. Hydrate").required(),
@@ -619,14 +622,14 @@ impl QuickActions for KickIntegrationBundle {
                 connected,
                 "Rewards",
                 false,
-                "kick.reward.update",
+                sub_action_ids::REWARD_UPDATE,
                 config([
                     ("reward_id", blank()),
                     ("title", blank()),
                     ("cost", blank()),
                 ]),
                 vec![
-                    text_field("reward_id", "Reward ID", "%reward_id%").required(),
+                    text_field("reward_id", "Reward ID", references::REWARD_ID).required(),
                     text_field(
                         "title",
                         "New Title (optional)",
@@ -642,9 +645,9 @@ impl QuickActions for KickIntegrationBundle {
                 connected,
                 "Rewards",
                 true,
-                "kick.reward.delete",
+                sub_action_ids::REWARD_DELETE,
                 config([("reward_id", blank())]),
-                vec![text_field("reward_id", "Reward ID", "%reward_id%").required()],
+                vec![text_field("reward_id", "Reward ID", references::REWARD_ID).required()],
             ),
             quick_action(
                 "Accept redemption",
@@ -653,13 +656,13 @@ impl QuickActions for KickIntegrationBundle {
                 connected,
                 "Rewards",
                 false,
-                "kick.reward.redemption_accept",
+                sub_action_ids::REWARD_REDEMPTION_ACCEPT,
                 config([("redemption_ids", blank())]),
                 vec![
                     text_field(
                         "redemption_ids",
                         "Redemption ID(s)",
-                        "%redemption_id% or id1,id2,id3 (max 25)",
+                        references::REDEMPTION_IDS_HINT,
                     )
                     .required(),
                 ],
@@ -671,13 +674,13 @@ impl QuickActions for KickIntegrationBundle {
                 connected,
                 "Rewards",
                 false,
-                "kick.reward.redemption_reject",
+                sub_action_ids::REWARD_REDEMPTION_REJECT,
                 config([("redemption_ids", blank())]),
                 vec![
                     text_field(
                         "redemption_ids",
                         "Redemption ID(s)",
-                        "%redemption_id% or id1,id2,id3 (max 25)",
+                        references::REDEMPTION_IDS_HINT,
                     )
                     .required(),
                 ],
@@ -689,7 +692,7 @@ impl QuickActions for KickIntegrationBundle {
                 connected,
                 "Lookups",
                 false,
-                "kick.lookup.user",
+                sub_action_ids::LOOKUP_USER,
                 config([("slug", blank())]),
                 vec![text_field("slug", "Channel Slug", "channel-slug").required()],
             ),
@@ -700,7 +703,7 @@ impl QuickActions for KickIntegrationBundle {
                 connected,
                 "Lookups",
                 false,
-                "kick.lookup.stream_stats",
+                sub_action_ids::LOOKUP_STREAM_STATS,
                 BTreeMap::new(),
                 Vec::new(),
             ),
@@ -711,7 +714,7 @@ impl QuickActions for KickIntegrationBundle {
                 connected,
                 "Lookups",
                 false,
-                "kick.lookup.category",
+                sub_action_ids::LOOKUP_CATEGORY,
                 config([("query", blank())]),
                 vec![text_field("query", "Search Query", "just chatting").required()],
             ),

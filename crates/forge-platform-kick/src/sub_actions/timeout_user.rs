@@ -15,8 +15,10 @@ use time::OffsetDateTime;
 
 use super::{ban_reason, display_name};
 use crate::api::moderation::KickModeration;
+use crate::vocabulary::sub_action_ids;
+use crate::vocabulary::variables::references;
 
-const KIND_ID: &str = "kick.moderation.timeout";
+const KIND_ID: &str = sub_action_ids::MODERATION_TIMEOUT;
 const MIN_TIMEOUT_MINUTES: i64 = 1;
 const MAX_TIMEOUT_MINUTES: i64 = 10080;
 
@@ -84,7 +86,7 @@ impl SubActionRunner for TimeoutUserRunner {
             FormField::Text {
                 key: "user_id",
                 label: "Target User ID",
-                placeholder: "%user_id%",
+                placeholder: references::USER_ID,
             },
             FormField::Duration {
                 key: "duration_minutes",

@@ -15,8 +15,9 @@ use futures::future::BoxFuture;
 use time::OffsetDateTime;
 
 use crate::api::chat_messages::KickSendChat;
+use crate::vocabulary::sub_action_ids;
 
-const KIND_ID: &str = "kick.chat.send_message";
+const KIND_ID: &str = sub_action_ids::CHAT_SEND_MESSAGE;
 
 pub struct SendMessageRunner {
     client: Arc<KickSendChat>,

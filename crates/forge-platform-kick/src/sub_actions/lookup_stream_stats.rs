@@ -11,8 +11,10 @@ use futures::future::BoxFuture;
 use time::OffsetDateTime;
 
 use crate::api::channel::KickChannel;
+use crate::vocabulary::sub_action_ids;
+use crate::vocabulary::variables;
 
-const KIND_ID: &str = "kick.lookup.stream_stats";
+const KIND_ID: &str = sub_action_ids::LOOKUP_STREAM_STATS;
 
 pub struct LookupStreamStatsRunner {
     client: Arc<KickChannel>,
@@ -85,26 +87,26 @@ impl SubActionRunner for LookupStreamStatsRunner {
                 Ok(snapshot) => {
                     let mut stack = ctx.arg_stack.clone();
                     stack = stack.set(
-                        "kick.stream.is_live".to_owned(),
+                        variables::stream_stats::IS_LIVE.to_owned(),
                         Variant::Bool(snapshot.is_live),
                     );
                     stack = stack.set(
-                        "kick.stream.viewer_count".to_owned(),
+                        variables::stream_stats::VIEWER_COUNT.to_owned(),
                         Variant::Int(snapshot.viewer_count as i64),
                     );
                     if let Some(started) = crate::timestamp::variant(snapshot.started_at) {
-                        stack = stack.set("kick.stream.started_at".to_owned(), started);
+                        stack = stack.set(variables::stream_stats::STARTED_AT.to_owned(), started);
                     }
                     stack = stack.set(
-                        "kick.stream.category_id".to_owned(),
+                        variables::stream_stats::CATEGORY_ID.to_owned(),
                         Variant::Int(snapshot.category_id as i64),
                     );
                     stack = stack.set(
-                        "kick.stream.category_name".to_owned(),
+                        variables::stream_stats::CATEGORY_NAME.to_owned(),
                         Variant::String(snapshot.category_name),
                     );
                     stack = stack.set(
-                        "kick.stream.stream_title".to_owned(),
+                        variables::stream_stats::STREAM_TITLE.to_owned(),
                         Variant::String(snapshot.stream_title),
                     );
                     Ok(stack)

@@ -2,7 +2,7 @@ use forge_types::{ChatPayload, ChatSegment, ChatViewer, ModerationMarks, UserBad
 use serde_json::Value;
 use tracing::debug;
 
-use crate::payload_fields::{chat, entity, host, moderation, subscription, subscription_gift};
+use crate::vocabulary::fields::{chat, entity, host, moderation, subscription, subscription_gift};
 
 fn u64_field(v: &Value, key: &str) -> Option<u64> {
     v.get(key).and_then(Value::as_u64)

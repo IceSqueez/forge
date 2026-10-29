@@ -3,9 +3,7 @@ use forge_types::PlatformId;
 use serde_json::Value;
 use time::{Duration, OffsetDateTime};
 
-use crate::payload_fields::{entity, moderation};
-
-pub(crate) const USER_BANNED_EVENT_KIND: &str = "kick.moderation.banned";
+use crate::vocabulary::fields::{entity, moderation};
 
 pub(crate) fn ban_ledger_key(broadcaster_user_id: u64, viewer_user_id: &str) -> BanLedgerKey {
     BanLedgerKey {

@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use forge_platform_kick::chat::PUSHER_APP_KEY;
+use forge_platform_kick::protocol::PUSHER_APP_KEY;
 use futures_util::{SinkExt, StreamExt};
 use serde_json::{Value, json};
 use tokio::net::{TcpListener, TcpStream};

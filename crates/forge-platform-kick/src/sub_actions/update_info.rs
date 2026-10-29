@@ -14,8 +14,9 @@ use futures::future::BoxFuture;
 use time::OffsetDateTime;
 
 use crate::api::channel::KickChannel;
+use crate::vocabulary::sub_action_ids;
 
-const KIND_ID: &str = "kick.channel.update_info";
+const KIND_ID: &str = sub_action_ids::CHANNEL_UPDATE_INFO;
 const MAX_TAGS: usize = 10;
 
 pub struct UpdateInfoRunner {

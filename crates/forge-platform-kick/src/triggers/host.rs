@@ -8,13 +8,14 @@ use forge_types::{
 };
 
 use super::payload_read::{self, kick_actor};
-use crate::payload_fields::host as fields;
+use crate::vocabulary::fields::host as fields;
+use crate::vocabulary::{event_kinds, trigger_ids, variables};
 
 pub(crate) struct HostDescriptor;
 
 impl TriggerKindDescriptor for HostDescriptor {
     fn id(&self) -> &str {
-        "kick.channel.hosted"
+        trigger_ids::CHANNEL_HOSTED
     }
 
     fn category(&self) -> TriggerCategory {
@@ -56,7 +57,7 @@ impl TriggerKindDescriptor for HostDescriptor {
     fn event_filter(&self) -> EventFilter {
         EventFilter {
             source: Some(EventSource::Kick),
-            kind_prefix: Some("kick.channel.hosted".to_owned()),
+            kind_prefix: Some(event_kinds::CHANNEL_HOSTED.to_owned()),
         }
     }
 
@@ -72,7 +73,7 @@ impl TriggerKindDescriptor for HostDescriptor {
                     payload_read::number(event, fields::VIEWER_COUNT)
                 })
                 .legacy(
-                    "host_username",
+                    variables::legacy::HOST_USERNAME,
                     "Hosting channel username",
                     CanonicalVariable::actor(ActorRole::Principal, ActorSlot::Login),
                 ),

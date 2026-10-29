@@ -9,13 +9,14 @@ use forge_types::{
 };
 
 use super::payload_read::{self, kick_actor};
-use crate::payload_fields::reward as fields;
+use crate::vocabulary::fields::reward as fields;
+use crate::vocabulary::{event_kinds, trigger_ids, variables};
 
 pub(crate) struct RewardRedeemedDescriptor;
 
 impl TriggerKindDescriptor for RewardRedeemedDescriptor {
     fn id(&self) -> &str {
-        "kick.channel.reward.redemption.updated"
+        trigger_ids::CHANNEL_REWARD_REDEMPTION_UPDATED
     }
 
     fn category(&self) -> TriggerCategory {
@@ -57,7 +58,7 @@ impl TriggerKindDescriptor for RewardRedeemedDescriptor {
     fn event_filter(&self) -> EventFilter {
         EventFilter {
             source: Some(EventSource::Kick),
-            kind_prefix: Some("kick.channel.reward.redemption.updated".to_owned()),
+            kind_prefix: Some(event_kinds::CHANNEL_REWARD_REDEMPTION_UPDATED.to_owned()),
         }
     }
 
@@ -72,7 +73,7 @@ impl TriggerKindDescriptor for RewardRedeemedDescriptor {
                 .message_text(|event| payload_read::text(event, fields::USER_INPUT))
                 .event_specific(
                     DeclaredVariable {
-                        name: "redemption_id".to_owned(),
+                        name: variables::reward::REDEMPTION_ID.to_owned(),
                         kind: VariantKind::String,
                         label: "Redemption ID".to_owned(),
                         synthesis: None,
@@ -81,7 +82,7 @@ impl TriggerKindDescriptor for RewardRedeemedDescriptor {
                 )
                 .event_specific(
                     DeclaredVariable {
-                        name: "reward_id".to_owned(),
+                        name: variables::reward::REWARD_ID.to_owned(),
                         kind: VariantKind::String,
                         label: "Reward ID".to_owned(),
                         synthesis: None,
@@ -95,7 +96,7 @@ impl TriggerKindDescriptor for RewardRedeemedDescriptor {
                 )
                 .event_specific(
                     DeclaredVariable {
-                        name: "reward_title".to_owned(),
+                        name: variables::reward::REWARD_TITLE.to_owned(),
                         kind: VariantKind::String,
                         label: "Reward title".to_owned(),
                         synthesis: None,
@@ -108,12 +109,12 @@ impl TriggerKindDescriptor for RewardRedeemedDescriptor {
                     },
                 )
                 .legacy(
-                    "username",
+                    variables::legacy::USERNAME,
                     "Redeeming username",
                     CanonicalVariable::actor(ActorRole::Principal, ActorSlot::Login),
                 )
                 .legacy(
-                    "user_input",
+                    variables::legacy::USER_INPUT,
                     "User input text",
                     CanonicalVariable::MessageText,
                 ),

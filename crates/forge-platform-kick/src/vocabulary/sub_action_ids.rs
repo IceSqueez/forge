@@ -1,0 +1,14 @@
+pub const CHANNEL_UPDATE_INFO: &str = "kick.channel.update_info";
+pub const CHAT_DELETE_MESSAGE: &str = "kick.chat.delete_message";
+pub const CHAT_SEND_MESSAGE: &str = "kick.chat.send_message";
+pub const LOOKUP_CATEGORY: &str = "kick.lookup.category";
+pub const LOOKUP_STREAM_STATS: &str = "kick.lookup.stream_stats";
+pub const LOOKUP_USER: &str = "kick.lookup.user";
+pub const MODERATION_BAN: &str = "kick.moderation.ban";
+pub const MODERATION_TIMEOUT: &str = "kick.moderation.timeout";
+pub const MODERATION_UNBAN: &str = "kick.moderation.unban";
+pub const REWARD_CREATE: &str = "kick.reward.create";
+pub const REWARD_DELETE: &str = "kick.reward.delete";
+pub const REWARD_REDEMPTION_ACCEPT: &str = "kick.reward.redemption_accept";
+pub const REWARD_REDEMPTION_REJECT: &str = "kick.reward.redemption_reject";
+pub const REWARD_UPDATE: &str = "kick.reward.update";

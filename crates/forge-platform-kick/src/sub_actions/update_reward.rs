@@ -14,8 +14,10 @@ use futures::future::BoxFuture;
 use time::OffsetDateTime;
 
 use crate::api::rewards::{KickRewards, UpdateRewardParams};
+use crate::vocabulary::sub_action_ids;
+use crate::vocabulary::variables::references;
 
-const KIND_ID: &str = "kick.reward.update";
+const KIND_ID: &str = sub_action_ids::REWARD_UPDATE;
 
 pub struct UpdateRewardRunner {
     client: Arc<KickRewards>,
@@ -76,7 +78,7 @@ impl SubActionRunner for UpdateRewardRunner {
             FormField::Text {
                 key: "reward_id",
                 label: "Reward ID",
-                placeholder: "%reward_id%",
+                placeholder: references::REWARD_ID,
             },
             FormField::Text {
                 key: "title",

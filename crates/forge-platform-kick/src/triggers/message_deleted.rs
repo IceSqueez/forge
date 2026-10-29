@@ -6,13 +6,14 @@ use forge_registry::{
 use forge_types::{ActorRole, ActorSlot, CanonicalVariable, PlatformId, TriggerConfig};
 
 use super::payload_read::{self, kick_actor};
-use crate::payload_fields::chat as fields;
+use crate::vocabulary::fields::chat as fields;
+use crate::vocabulary::{event_kinds, trigger_ids, variables};
 
 pub(crate) struct MessageDeletedDescriptor;
 
 impl TriggerKindDescriptor for MessageDeletedDescriptor {
     fn id(&self) -> &str {
-        "kick.chat.message.deleted"
+        trigger_ids::CHAT_MESSAGE_DELETED
     }
 
     fn category(&self) -> TriggerCategory {
@@ -54,7 +55,7 @@ impl TriggerKindDescriptor for MessageDeletedDescriptor {
     fn event_filter(&self) -> EventFilter {
         EventFilter {
             source: Some(EventSource::Kick),
-            kind_prefix: Some("kick.chat.message.deleted".to_owned()),
+            kind_prefix: Some(event_kinds::CHAT_MESSAGE_DELETED.to_owned()),
         }
     }
 
@@ -68,7 +69,7 @@ impl TriggerKindDescriptor for MessageDeletedDescriptor {
                 .actor(kick_actor(ActorRole::Principal), deleted_by_identity)
                 .chat_message_id(|event| payload_read::text(event, fields::MESSAGE_ID))
                 .legacy(
-                    "deleted_by_id",
+                    variables::legacy::DELETED_BY_ID,
                     "Moderator user ID",
                     CanonicalVariable::actor(ActorRole::Principal, ActorSlot::Id),
                 ),

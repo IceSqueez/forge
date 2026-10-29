@@ -8,13 +8,14 @@ use forge_types::{
 };
 
 use super::payload_read::{self, kick_actor};
-use crate::payload_fields::subscription as fields;
+use crate::vocabulary::fields::subscription as fields;
+use crate::vocabulary::{event_kinds, trigger_ids, variables};
 
 pub(crate) struct SubDescriptor;
 
 impl TriggerKindDescriptor for SubDescriptor {
     fn id(&self) -> &str {
-        "kick.channel.subscribed"
+        trigger_ids::CHANNEL_SUBSCRIBED
     }
 
     fn category(&self) -> TriggerCategory {
@@ -56,7 +57,7 @@ impl TriggerKindDescriptor for SubDescriptor {
     fn event_filter(&self) -> EventFilter {
         EventFilter {
             source: Some(EventSource::Kick),
-            kind_prefix: Some("kick.channel.subscribed".to_owned()),
+            kind_prefix: Some(event_kinds::CHANNEL_SUBSCRIBED.to_owned()),
         }
     }
 
@@ -73,16 +74,20 @@ impl TriggerKindDescriptor for SubDescriptor {
                 })
                 .sub_tier(|event| payload_read::text(event, fields::TIER))
                 .legacy(
-                    "username",
+                    variables::legacy::USERNAME,
                     "Subscriber username",
                     CanonicalVariable::actor(ActorRole::Principal, ActorSlot::Login),
                 )
                 .legacy(
-                    "months",
+                    variables::legacy::MONTHS,
                     "Subscribed months",
                     CanonicalVariable::Count(CanonicalCount::SubCumulativeMonths),
                 )
-                .legacy("tier", "Subscription tier", CanonicalVariable::SubTier),
+                .legacy(
+                    variables::legacy::TIER,
+                    "Subscription tier",
+                    CanonicalVariable::SubTier,
+                ),
         )
     }
 

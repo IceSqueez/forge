@@ -1,11 +1,11 @@
 use forge_events::Event;
+use forge_registry::{CanonicalCount, CanonicalVariable, VariableStanding};
 use forge_registry::{
     EventFilter, FormField, KindPlatformContract, TriggerCategory, TriggerKindDescriptor,
     TriggerVariables, declared_variables,
 };
 use forge_types::{
-    CanonicalCount, CanonicalVariable, DeclaredVariable, PlatformId, TriggerConfig, VariableSchema,
-    VariableStanding, Variant, VariantKind,
+    DeclaredVariable, PlatformId, TriggerConfig, VariableSchema, Variant, VariantKind,
 };
 
 struct StubTrigger {

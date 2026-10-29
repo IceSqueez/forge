@@ -16,8 +16,11 @@ pub(crate) mod title_changed;
 #[cfg(test)]
 mod tests {
     use forge_events::{Event, EventSource};
-    use forge_registry::{TriggerKindDescriptor, TriggerRegistry};
-    use forge_types::{ActorRole, ActorSlot, CanonicalCount, CanonicalVariable, Variant};
+    use forge_registry::{
+        ActorRole, ActorSlot, CanonicalCount, CanonicalVariable, TriggerKindDescriptor,
+        TriggerRegistry,
+    };
+    use forge_types::Variant;
 
     use crate::register_youtube_triggers;
 
@@ -69,7 +72,7 @@ mod tests {
             let declarations = forge_registry::declared_variables(descriptor).unwrap_or_default();
             for (legacy, canonical) in legacy_twins(descriptor) {
                 let twin = declarations.iter().find(|variable| {
-                    variable.standing == forge_types::VariableStanding::Canonical(canonical)
+                    variable.standing == forge_registry::VariableStanding::Canonical(canonical)
                 });
                 assert_eq!(
                     twin.map(|twin| (twin.declared.kind, twin.declared.synthesis.clone())),

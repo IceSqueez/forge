@@ -1,13 +1,14 @@
 #![allow(clippy::expect_used)]
 mod fakes;
 
+use forge_registry::{ActorRole, ActorSlot, CanonicalVariable};
 use forge_registry::{
     FormField, ProducedVariable, ScopeLevel, ScopeOrigin, ScopedVariable, SubActionIo,
     SubActionRegistry, TriggerRegistry, TriggerVariables, variables_in_scope,
 };
 use forge_types::{
-    Action, ActorRole, ActorSlot, CanonicalVariable, DeclaredVariable, ExecutionMode,
-    SubActionConfig, SubActionStep, TriggerInstance, Variant, VariantKind,
+    Action, DeclaredVariable, ExecutionMode, SubActionConfig, SubActionStep, TriggerInstance,
+    Variant, VariantKind,
 };
 
 use fakes::{FakeTrigger, action, encode_chain, runner, step, trigger_of};

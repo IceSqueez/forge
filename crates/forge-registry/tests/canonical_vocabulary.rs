@@ -2,10 +2,10 @@ use std::collections::BTreeSet;
 
 use forge_events::{Event, EventSource};
 use forge_registry::{ActorBlock, ActorIdentity, LoginSlot, TriggerVariables, money_value};
-use forge_types::{
-    ActorRole, ActorSlot, CanonicalCount, CanonicalVariable, CurrencyCode, DeclaredVariable,
-    MoneyAmount, MoneySlot, PlatformId, VariableStanding, Variant, VariantKind,
+use forge_registry::{
+    ActorRole, ActorSlot, CanonicalCount, CanonicalVariable, MoneySlot, VariableStanding,
 };
+use forge_types::{CurrencyCode, DeclaredVariable, MoneyAmount, PlatformId, Variant, VariantKind};
 
 const CANONICAL_ROSTER: &[(&str, VariantKind)] = &[
     ("user_id", VariantKind::String),

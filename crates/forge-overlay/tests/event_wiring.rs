@@ -11,11 +11,9 @@ use forge_overlay::{
     EventWiringTrigger, OverlayKindRegistry, PageAssets, accepts_event_wiring, is_curated,
     order_curated_first, register_builtin_kinds, suggested_content,
 };
+use forge_registry::{ActorRole, ActorSlot, CanonicalCount, CanonicalVariable, VariableStanding};
 use forge_registry::{TriggerRegistry, TriggerVariable, declared_variables};
-use forge_types::{
-    ActorRole, ActorSlot, ArgStack, CanonicalCount, CanonicalVariable, DeclaredVariable,
-    SynthesisHint, VariableStanding, Variant, VariantKind,
-};
+use forge_types::{ArgStack, DeclaredVariable, SynthesisHint, Variant, VariantKind};
 
 const CURATED_IN_PICKER_ORDER: &[&str] = &[
     "twitch.support.subscriber",

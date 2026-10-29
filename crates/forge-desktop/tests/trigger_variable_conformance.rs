@@ -3,7 +3,8 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use forge_events::{Event, EventSource};
 use forge_registry::{ActorDeclaration, KindPlatformContract, TriggerRegistry};
-use forge_types::{ActorRole, ActorSlot, CanonicalVariable, SlotPresence, VariantKind};
+use forge_registry::{ActorRole, ActorSlot, CanonicalVariable, SlotPresence};
+use forge_types::VariantKind;
 
 const VOCABULARY_HAS_NOT_REACHED: &[&str] = &[];
 
@@ -44,7 +45,7 @@ fn canonical_by_name() -> BTreeMap<&'static str, CanonicalVariable> {
         })
         .chain(std::iter::once(CanonicalVariable::MessageText))
         .chain(
-            forge_types::CanonicalCount::ALL
+            forge_registry::CanonicalCount::ALL
                 .into_iter()
                 .map(CanonicalVariable::Count),
         )

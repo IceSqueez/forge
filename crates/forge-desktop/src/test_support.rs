@@ -10,6 +10,7 @@ use std::sync::{Arc, Mutex};
 
 use forge_audio::{AudioError, AudioSink, ControlledPlayback, PlaybackHandle};
 use forge_events::Event;
+use forge_registry::ActorRole;
 use forge_registry::{
     ActorBlock, ActorIdentity, ChatTriggerFamily, EventFilter, FormField, KindPlatformContract,
     LoginSlot, SubActionRegistry, TriggerCategory, TriggerKindDescriptor, TriggerRegistry,
@@ -29,8 +30,7 @@ use forge_storage::{
     TtsFiltersRepo, UserGlobalEntry, UserGlobalsRepo, ViewerRepo, VoiceAliasRepo,
 };
 use forge_types::{
-    Action, ActionId, ActorRole, EventId, ExecutionContext, PlatformId, ScriptId, TriggerConfig,
-    Variant,
+    Action, ActionId, EventId, ExecutionContext, PlatformId, ScriptId, TriggerConfig, Variant,
 };
 use time::OffsetDateTime;
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender, unbounded_channel};

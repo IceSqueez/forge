@@ -9,10 +9,10 @@ use forge_registry::{
     LoginSlot, ProducedVariable, STOP_KIND_ID, StepHealth, SubActionIo, SubActionRegistry,
     TriggerRegistry, TriggerVariables, UndecodableReason, analyze, flag_failed, flag_switched_off,
 };
+use forge_registry::{ActorRole, ActorSlot, CanonicalVariable};
 use forge_types::{
-    Action, ActorRole, ActorSlot, CanonicalVariable, DatePattern, DeclaredVariable, ExecutionMode,
-    IntegrationId, PlatformId, SubActionConfig, SubActionOutcome, SubActionStep, TriggerInstance,
-    Variant, VariantKind,
+    Action, DatePattern, DeclaredVariable, ExecutionMode, IntegrationId, PlatformId,
+    SubActionConfig, SubActionOutcome, SubActionStep, TriggerInstance, Variant, VariantKind,
 };
 
 use fakes::{FakeTrigger, action, encode_chain, runner, step, trigger_of};

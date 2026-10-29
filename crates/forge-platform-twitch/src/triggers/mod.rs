@@ -223,8 +223,9 @@ pub fn register_twitch_triggers(reg: &mut TriggerRegistry) -> Result<(), Registr
 mod tests {
     use super::*;
 
-    use forge_registry::TriggerKindDescriptor;
-    use forge_types::{ActorRole, ActorSlot, CanonicalCount, CanonicalVariable};
+    use forge_registry::{
+        ActorRole, ActorSlot, CanonicalCount, CanonicalVariable, TriggerKindDescriptor,
+    };
 
     fn twitch_registry() -> TriggerRegistry {
         let mut registry = TriggerRegistry::new();
@@ -251,7 +252,7 @@ mod tests {
             let declarations = forge_registry::declared_variables(descriptor).unwrap_or_default();
             for (legacy, canonical) in legacy_twins(descriptor) {
                 let twin = declarations.iter().find(|variable| {
-                    variable.standing == forge_types::VariableStanding::Canonical(canonical)
+                    variable.standing == forge_registry::VariableStanding::Canonical(canonical)
                 });
                 assert_eq!(
                     twin.map(|twin| (twin.declared.kind, twin.declared.synthesis.clone())),

@@ -251,7 +251,7 @@ fn sample_token(base: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use forge_types::CanonicalCount;
+    use crate::vocabulary::CanonicalCount;
 
     use super::*;
 

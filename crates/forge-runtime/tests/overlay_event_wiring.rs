@@ -9,6 +9,7 @@ use forge_overlay::descriptor::{
 use forge_overlay::kinds::alert::AlertOverlayKind;
 use forge_overlay::preview::PreviewComposition;
 use forge_overlay::{EventWiringTrigger, PageAssets, suggested_content};
+use forge_registry::ActorRole;
 use forge_registry::{
     ActorBlock, ActorIdentity, EventFilter, FormField, KindPlatformContract, LoginSlot,
     SubActionRegistry, TriggerCategory, TriggerKindDescriptor, TriggerVariables,
@@ -26,9 +27,8 @@ use forge_storage::queue::MockQueueRepo;
 use forge_storage::trigger_instance::MockTriggerInstanceRepo;
 use forge_storage::{OverlayCredential, OverlayDefinition, OverlayId, StorageError};
 use forge_types::{
-    Action, ActionId, ActorRole, ExecutionMode, PermissionRung, PlatformId, PlatformScope, Queue,
-    QueueId, SubActionConfig, SubActionStep, TriggerConfig, TriggerInstance, TriggerInstanceId,
-    Variant,
+    Action, ActionId, ExecutionMode, PermissionRung, PlatformId, PlatformScope, Queue, QueueId,
+    SubActionConfig, SubActionStep, TriggerConfig, TriggerInstance, TriggerInstanceId, Variant,
 };
 use time::OffsetDateTime;
 

@@ -2,11 +2,9 @@
 use forge_overlay::config::{HEADLINE, SUBLINE};
 use forge_overlay::kinds::alert::AlertOverlayKind;
 use forge_overlay::{OverlayConfig, SampleContext, SampleTrigger, sample_content, sample_context};
+use forge_registry::{CanonicalCount, CanonicalVariable, VariableStanding};
 use forge_registry::{KindPlatformContract, TriggerVariable};
-use forge_types::{
-    CanonicalCount, CanonicalVariable, DeclaredVariable, PlatformId, VariableStanding, Variant,
-    VariantKind,
-};
+use forge_types::{DeclaredVariable, PlatformId, Variant, VariantKind};
 
 const CHATTER: &str = "stub.chatter";
 const RAIDER: &str = "stub.raider";

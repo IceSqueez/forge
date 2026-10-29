@@ -10,13 +10,13 @@ use forge_net::{
 };
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
+use tokio::sync::Notify;
 use tokio_util::sync::CancellationToken;
 
 const HEADER_END: &[u8] = b"\r\n\r\n";
 const READ_CHUNK: usize = 4096;
 const CHUNKED_END: &[u8] = b"0\r\n\r\n";
 pub const UNLIMITED: u64 = u64::MAX;
-pub const FRAME_GAP: Duration = Duration::from_secs(1);
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SinkRefused {
@@ -28,6 +28,7 @@ pub struct MemorySink {
     bytes: Arc<Mutex<Vec<u8>>>,
     accepted_chunks: usize,
     refuse_chunk: Option<usize>,
+    delivered: Option<Arc<Notify>>,
 }
 
 impl MemorySink {
@@ -57,6 +58,9 @@ impl BodySink for MemorySink {
         }
         self.accepted_chunks += 1;
         self.bytes.lock().unwrap().extend_from_slice(chunk);
+        if let Some(delivered) = &self.delivered {
+            delivered.notify_one();
+        }
         Ok(())
     }
 }
@@ -94,6 +98,15 @@ pub async fn stream(gateway: &Gateway, request: GatewayRequest, cap: u64) -> Str
         &CancellationToken::new(),
     )
     .await
+}
+
+pub async fn stream_into(
+    gateway: &Gateway,
+    request: GatewayRequest,
+    cap: u64,
+    sink: MemorySink,
+) -> Streamed {
+    stream_with(gateway, request, cap, sink, &CancellationToken::new()).await
 }
 
 pub async fn stream_with(
@@ -135,7 +148,61 @@ pub fn transport_kind(failure: &GatewayFailure) -> TransportKind {
 pub enum Step {
     Send(Vec<u8>),
     Wait(Duration),
+    Await(Arc<Notify>),
     Hold,
+}
+
+#[derive(Clone, Default)]
+pub struct Gate(Arc<Notify>);
+
+impl Gate {
+    pub fn step(&self) -> Step {
+        Step::Await(Arc::clone(&self.0))
+    }
+
+    pub fn open(&self) {
+        self.0.notify_one();
+    }
+}
+
+#[derive(Clone, Default)]
+pub struct Pace(Arc<Notify>);
+
+impl Pace {
+    pub fn sink(&self) -> MemorySink {
+        MemorySink {
+            delivered: Some(Arc::clone(&self.0)),
+            ..MemorySink::default()
+        }
+    }
+
+    pub fn chunked_body(&self, chunks: &[&[u8]]) -> Vec<Step> {
+        let mut steps = vec![chunked_head(200)];
+        for (index, bytes) in chunks.iter().enumerate() {
+            if index > 0 {
+                steps.push(self.next_delivery());
+            }
+            steps.push(chunk_frame(bytes));
+        }
+        steps.push(chunked_end());
+        steps
+    }
+
+    pub fn sized_body(&self, pieces: &[&[u8]]) -> Vec<Step> {
+        let length = pieces.iter().map(|piece| piece.len()).sum();
+        let mut steps = vec![sized_head(length)];
+        for (index, piece) in pieces.iter().enumerate() {
+            if index > 0 {
+                steps.push(self.next_delivery());
+            }
+            steps.push(Step::Send(piece.to_vec()));
+        }
+        steps
+    }
+
+    fn next_delivery(&self) -> Step {
+        Step::Await(Arc::clone(&self.0))
+    }
 }
 
 pub fn chunked_head(status: u16) -> Step {
@@ -191,12 +258,7 @@ pub fn chunked_body(chunks: &[&[u8]], gap: Duration) -> Vec<Step> {
 pub fn sized_body(pieces: &[&[u8]]) -> Vec<Step> {
     let length = pieces.iter().map(|piece| piece.len()).sum();
     let mut steps = vec![sized_head(length)];
-    for (index, piece) in pieces.iter().enumerate() {
-        if index > 0 {
-            steps.push(Step::Wait(FRAME_GAP));
-        }
-        steps.push(Step::Send(piece.to_vec()));
-    }
+    steps.extend(pieces.iter().map(|piece| Step::Send(piece.to_vec())));
     steps
 }
 
@@ -255,6 +317,7 @@ async fn answer(mut connection: TcpStream, steps: Vec<Step>, heads: Arc<Mutex<Ve
                 }
             }
             Step::Wait(duration) => tokio::time::sleep(duration).await,
+            Step::Await(released) => released.notified().await,
             Step::Hold => std::future::pending::<()>().await,
         }
     }

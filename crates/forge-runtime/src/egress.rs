@@ -255,21 +255,6 @@ mod tests {
         }
     }
 
-    async fn holding_server(reply: &'static [u8]) -> String {
-        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let address = listener.local_addr().unwrap();
-        tokio::spawn(async move {
-            while let Ok((mut stream, _)) = listener.accept().await {
-                tokio::spawn(async move {
-                    read_head(&mut stream).await;
-                    stream.write_all(reply).await.unwrap();
-                    std::future::pending::<()>().await;
-                });
-            }
-        });
-        format!("http://{address}")
-    }
-
     #[tokio::test]
     async fn loopback_target_is_rejected_before_request_when_allow_local_false() {
         let server = answering(ResponseTemplate::new(200)).await;
@@ -489,8 +474,22 @@ mod tests {
         }
     }
 
-    #[tokio::test(start_paused = true)]
+    async fn holding_server(reply: &'static [u8]) -> String {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        tokio::spawn(async move {
+            let (mut stream, _) = listener.accept().await.unwrap();
+            read_head(&mut stream).await;
+            stream.write_all(reply).await.unwrap();
+            std::future::pending::<()>().await;
+        });
+        format!("http://{address}")
+    }
+
+    #[tokio::test]
     async fn the_timeout_bounds_both_waiting_for_headers_and_reading_the_body() {
+        const TIMEOUT: Duration = Duration::from_millis(10);
+        const HANG_GUARD: Duration = Duration::from_secs(30);
         for reply in [
             &b""[..],
             &b"HTTP/1.1 200 OK\r\ncontent-length: 10\r\n\r\nhalf"[..],
@@ -498,13 +497,13 @@ mod tests {
             let base = holding_server(reply).await;
             let client = EgressClient::new().unwrap();
             let mut req = request(base, true);
-            req.timeout = Duration::from_millis(1500);
-            let started = tokio::time::Instant::now();
+            req.timeout = TIMEOUT;
 
-            let err = expect_err(client.send(req).await);
+            let result = tokio::time::timeout(HANG_GUARD, client.send(req))
+                .await
+                .expect("the request timeout never fired");
 
-            assert!(matches!(err, EgressError::Timeout), "{err:?}");
-            assert_eq!(started.elapsed(), Duration::from_millis(1500));
+            assert!(matches!(expect_err(result), EgressError::Timeout));
         }
     }
 

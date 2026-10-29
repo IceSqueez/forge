@@ -666,6 +666,13 @@ pub(crate) mod tests {
     pub(crate) const HOOK_TOKEN: &str = "hook-token-Qx7vT2";
     const MESSAGE_ID: &str = "1400000000000000001";
     const UNROUTABLE_API_BASE: &str = "https://192.0.2.1/api";
+
+    fn refused_api_base() -> String {
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let address = listener.local_addr().unwrap();
+        drop(listener);
+        format!("http://{address}/api")
+    }
     const OVER_CAP_HINT_SECS: f64 = 30.0;
     const SHORT_HINT_SECS: f64 = 0.05;
 
@@ -1563,11 +1570,11 @@ pub(crate) mod tests {
         );
     }
 
-    #[tokio::test(start_paused = true)]
+    #[tokio::test]
     async fn transport_failures_surface_as_connect_without_the_endpoint() {
         let creds = MockCreds::new();
         creds.store_hook("leaky", &hook_url("discord.com", ""));
-        let client = client_at(UNROUTABLE_API_BASE, &MockPublisher::new(), &creds);
+        let client = client_at(&refused_api_base(), &MockPublisher::new(), &creds);
         let embed = DiscordEmbed {
             title: Some("t".to_owned()),
             ..Default::default()
@@ -1607,12 +1614,12 @@ pub(crate) mod tests {
         }
     }
 
-    #[tokio::test(start_paused = true)]
+    #[tokio::test]
     async fn a_transport_failure_writes_no_health_and_publishes_no_failed_event() {
         let creds = MockCreds::new();
         creds.store_hook("alerts", &hook_url("discord.com", ""));
         let publisher = MockPublisher::new();
-        let client = client_at(UNROUTABLE_API_BASE, &publisher, &creds);
+        let client = client_at(&refused_api_base(), &publisher, &creds);
 
         client.post_text("alerts", "hi").await.unwrap_err();
 

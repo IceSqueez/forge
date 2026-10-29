@@ -854,7 +854,6 @@ pub(crate) mod tests {
     #[tokio::test]
     async fn disconnect_during_an_in_flight_connect_resolves_that_connect_ok_and_disconnected() {
         let (platform, in_flight) = platform_with_a_connect_in_flight().await;
-        tokio::time::pause();
 
         platform.disconnect().await.unwrap();
         let resolved = tokio::time::timeout(NO_PROGRESS_HORIZON, in_flight).await;
@@ -871,7 +870,6 @@ pub(crate) mod tests {
     #[tokio::test]
     async fn a_connect_superseded_by_a_newer_connect_resolves_ok() {
         let (platform, superseded) = platform_with_a_connect_in_flight().await;
-        tokio::time::pause();
 
         let newer = Arc::clone(&platform);
         let _newer = tokio::spawn(async move { newer.connect().await });

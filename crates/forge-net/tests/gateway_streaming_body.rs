@@ -9,8 +9,9 @@ use forge_net::{
     STREAMING_READ_IDLE_BUDGET, TransportKind,
 };
 use gateway_streaming_support::{
-    FRAME_GAP, MemorySink, Step, StubServer, UNLIMITED, chunk_frame, chunked_body, chunked_head,
-    sized_body, sized_head, spawn_stream, spin_until, stream, stream_with, transport_kind,
+    Gate, MemorySink, Pace, Step, StubServer, UNLIMITED, chunk_frame, chunked_body, chunked_end,
+    chunked_head, sized_body, sized_head, spawn_stream, spin_until, stream, stream_into,
+    stream_with, transport_kind,
 };
 use gateway_support::{Harness, platform};
 use tokio_util::sync::CancellationToken;
@@ -18,7 +19,8 @@ use tokio_util::sync::CancellationToken;
 const NEVER: Duration = Duration::from_secs(3600);
 const JUST_UNDER_IDLE: Duration = Duration::from_secs(29);
 const JUST_OVER_IDLE: Duration = Duration::from_secs(31);
-const STEADY_GAP: Duration = Duration::from_secs(25);
+const TOTAL_BUDGET: Duration = Duration::from_millis(1);
+const PAST_TOTAL_BUDGET: Duration = Duration::from_millis(20);
 
 fn progress(received: u64, declared_length: Option<u64>) -> BodyProgress {
     BodyProgress {
@@ -27,12 +29,19 @@ fn progress(received: u64, declared_length: Option<u64>) -> BodyProgress {
     }
 }
 
-#[tokio::test(start_paused = true)]
+#[tokio::test]
 async fn a_success_body_streams_into_the_sink_with_status_headers_and_byte_count() {
-    let server = StubServer::serving(chunked_body(&[b"abc", b"defg", b"hi"], FRAME_GAP)).await;
+    let pace = Pace::default();
+    let server = StubServer::serving(pace.chunked_body(&[b"abc", b"defg", b"hi"])).await;
     let harness = Harness::new(&server.uri(), platform());
 
-    let streamed = stream(&harness.gateway, GatewayRequest::get("asset"), UNLIMITED).await;
+    let streamed = stream_into(
+        &harness.gateway,
+        GatewayRequest::get("asset"),
+        UNLIMITED,
+        pace.sink(),
+    )
+    .await;
 
     let response = streamed.response();
     assert_eq!(
@@ -46,37 +55,34 @@ async fn a_success_body_streams_into_the_sink_with_status_headers_and_byte_count
     );
 }
 
-#[tokio::test(start_paused = true)]
+#[tokio::test]
 async fn the_cap_refuses_a_declared_or_cumulative_overrun_without_handing_the_sink_bytes_past_it() {
     let ten: &[&[u8]] = &[b"01234", b"56789"];
     let twelve: &[&[u8]] = &[b"aaaa", b"bbbb", b"cccc"];
-    for (steps, cap, delivered, accepted) in [
-        (sized_body(ten), 9, b"".as_slice(), false),
-        (sized_body(ten), 10, b"0123456789".as_slice(), true),
-        (sized_body(&[]), 0, b"".as_slice(), true),
-        (
-            chunked_body(twelve, FRAME_GAP),
-            8,
-            b"aaaabbbb".as_slice(),
-            false,
-        ),
-        (
-            chunked_body(twelve, FRAME_GAP),
-            11,
-            b"aaaabbbb".as_slice(),
-            false,
-        ),
-        (
-            chunked_body(twelve, FRAME_GAP),
-            12,
-            b"aaaabbbbcccc".as_slice(),
-            true,
-        ),
+    for (chunked, pieces, cap, delivered, accepted) in [
+        (false, ten, 9, b"".as_slice(), false),
+        (false, ten, 10, b"0123456789".as_slice(), true),
+        (false, &[][..], 0, b"".as_slice(), true),
+        (true, twelve, 8, b"aaaabbbb".as_slice(), false),
+        (true, twelve, 11, b"aaaabbbb".as_slice(), false),
+        (true, twelve, 12, b"aaaabbbbcccc".as_slice(), true),
     ] {
+        let pace = Pace::default();
+        let steps = if chunked {
+            pace.chunked_body(pieces)
+        } else {
+            pace.sized_body(pieces)
+        };
         let server = StubServer::serving(steps).await;
         let harness = Harness::new(&server.uri(), platform());
 
-        let streamed = stream(&harness.gateway, GatewayRequest::get("asset"), cap).await;
+        let streamed = stream_into(
+            &harness.gateway,
+            GatewayRequest::get("asset"),
+            cap,
+            pace.sink(),
+        )
+        .await;
 
         assert_eq!(streamed.sink.bytes(), delivered, "cap {cap}");
         if accepted {
@@ -95,7 +101,7 @@ async fn the_cap_refuses_a_declared_or_cumulative_overrun_without_handing_the_si
     }
 }
 
-#[tokio::test(start_paused = true)]
+#[tokio::test]
 async fn a_declared_overrun_is_refused_before_any_progress_is_reported() {
     let server = StubServer::serving(sized_body(&[b"0123456789"])).await;
     let harness = Harness::new(&server.uri(), platform());
@@ -105,11 +111,12 @@ async fn a_declared_overrun_is_refused_before_any_progress_is_reported() {
     assert!(streamed.progress.is_empty(), "{:?}", streamed.progress);
 }
 
-#[tokio::test(start_paused = true)]
+#[tokio::test]
 async fn progress_fires_once_at_zero_and_then_after_every_delivered_chunk() {
-    for (steps, expected) in [
+    for (chunked, pieces, expected) in [
         (
-            sized_body(&[b"ab", b"cdef"]),
+            false,
+            &[b"ab".as_slice(), b"cdef"][..],
             vec![
                 progress(0, Some(6)),
                 progress(2, Some(6)),
@@ -117,15 +124,28 @@ async fn progress_fires_once_at_zero_and_then_after_every_delivered_chunk() {
             ],
         ),
         (
-            chunked_body(&[b"abc", b"d"], FRAME_GAP),
+            true,
+            &[b"abc".as_slice(), b"d"][..],
             vec![progress(0, None), progress(3, None), progress(4, None)],
         ),
-        (sized_body(&[]), vec![progress(0, Some(0))]),
+        (false, &[][..], vec![progress(0, Some(0))]),
     ] {
+        let pace = Pace::default();
+        let steps = if chunked {
+            pace.chunked_body(pieces)
+        } else {
+            pace.sized_body(pieces)
+        };
         let server = StubServer::serving(steps).await;
         let harness = Harness::new(&server.uri(), platform());
 
-        let streamed = stream(&harness.gateway, GatewayRequest::get("asset"), UNLIMITED).await;
+        let streamed = stream_into(
+            &harness.gateway,
+            GatewayRequest::get("asset"),
+            UNLIMITED,
+            pace.sink(),
+        )
+        .await;
 
         assert_eq!(streamed.progress, expected);
     }
@@ -188,29 +208,34 @@ async fn a_gap_between_body_chunks_gets_the_read_idle_budget_and_no_more() {
     }
 }
 
-#[tokio::test(start_paused = true)]
-async fn a_slow_steady_body_outlasting_every_class_total_budget_still_completes() {
-    let server = StubServer::serving(chunked_body(
-        &[b"part-1", b"part-2", b"part-3", b"part-4"],
-        STEADY_GAP,
-    ))
+#[tokio::test]
+async fn a_body_still_flowing_after_the_request_total_budget_completes() {
+    let gate = Gate::default();
+    let server = StubServer::serving(vec![
+        chunked_head(200),
+        chunk_frame(b"part-1"),
+        gate.step(),
+        chunk_frame(b"part-2"),
+        chunked_end(),
+    ])
     .await;
     let harness = Harness::new(&server.uri(), platform());
-    let started = tokio::time::Instant::now();
-
-    let streamed = stream(
+    let sink = MemorySink::default();
+    let task = spawn_stream(
         &harness.gateway,
-        GatewayRequest::get("asset").class(CallClass::Media),
-        UNLIMITED,
-    )
-    .await;
-
-    assert_eq!(streamed.response().received(), 24);
-    assert!(
-        started.elapsed() > CallClass::Media.total_budget(),
-        "{:?}",
-        started.elapsed()
+        GatewayRequest::get("asset")
+            .class(CallClass::Media)
+            .total_budget(TOTAL_BUDGET),
+        sink.clone(),
+        CancellationToken::new(),
     );
+    spin_until(|| sink.len() > 0, "first chunk never delivered").await;
+    tokio::time::sleep(PAST_TOTAL_BUDGET).await;
+
+    gate.open();
+    let streamed = task.await.unwrap();
+
+    assert_eq!(streamed.response().received(), 12);
 }
 
 #[tokio::test]
@@ -319,7 +344,7 @@ async fn cancelling_mid_body_yields_cancelled_and_keeps_only_the_delivered_bytes
     }
 }
 
-#[tokio::test(start_paused = true)]
+#[tokio::test]
 async fn a_body_cut_short_is_an_observed_transport_failure() {
     for steps in [
         vec![chunked_head(200), chunk_frame(b"first")],

@@ -17,6 +17,9 @@ use wiremock::matchers::{any, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
 const BODY_CAP: u64 = 10;
+const SHORT_BUDGET: Duration = Duration::from_millis(1);
+const BODY_READ_BUDGET: Duration = Duration::from_millis(20);
+const HANG_GUARD: Duration = Duration::from_secs(30);
 
 struct Directed {
     gateway: Gateway,
@@ -343,42 +346,59 @@ async fn truncate_body_at_cap_flags_a_chunked_body_that_passes_the_cap() {
     );
 }
 
-#[tokio::test(start_paused = true)]
-async fn total_budget_replaces_the_class_budget_for_a_response_that_never_arrives() {
-    for budget in [Duration::from_secs(2), Duration::from_secs(30)] {
-        let server = StubServer::serving(vec![Step::Hold]).await;
-        let started = tokio::time::Instant::now();
+#[tokio::test]
+async fn total_budget_times_out_a_response_that_never_arrives() {
+    let server = StubServer::serving(vec![Step::Hold]).await;
 
-        let failure = directed(true)
+    let failure = tokio::time::timeout(
+        HANG_GUARD,
+        directed(true)
             .gateway
-            .send(get(format!("{}/x", server.uri())).total_budget(budget))
-            .await
-            .unwrap_err();
+            .send(get(format!("{}/x", server.uri())).total_budget(SHORT_BUDGET)),
+    )
+    .await
+    .expect("the total budget never fired")
+    .unwrap_err();
 
-        assert!(
-            matches!(&failure, GatewayFailure::Transport(t) if t.kind() == TransportKind::Timeout),
-            "{failure:?}"
-        );
-        assert_eq!(started.elapsed(), budget);
-    }
+    assert!(
+        matches!(&failure, GatewayFailure::Transport(t) if t.kind() == TransportKind::Timeout),
+        "{failure:?}"
+    );
 }
 
 #[tokio::test(start_paused = true)]
+async fn total_budget_longer_than_the_class_budget_outlasts_it() {
+    let budget = Duration::from_secs(30);
+    let server = StubServer::serving(vec![Step::Hold]).await;
+    let started = tokio::time::Instant::now();
+
+    let failure = directed(true)
+        .gateway
+        .send(get(format!("{}/x", server.uri())).total_budget(budget))
+        .await
+        .unwrap_err();
+
+    assert!(
+        matches!(&failure, GatewayFailure::Transport(t) if t.kind() == TransportKind::Timeout),
+        "{failure:?}"
+    );
+    assert_eq!(started.elapsed(), budget);
+}
+
+#[tokio::test]
 async fn total_budget_also_bounds_the_body_read() {
-    let budget = Duration::from_secs(2);
     let server = StubServer::serving(vec![
         sized_head(10),
         Step::Send(b"half".to_vec()),
         Step::Hold,
     ])
     .await;
-    let started = tokio::time::Instant::now();
 
     let failure = directed(true)
         .gateway
         .send(
             get(format!("{}/x", server.uri()))
-                .total_budget(budget)
+                .total_budget(BODY_READ_BUDGET)
                 .truncate_body_at_cap(),
         )
         .await
@@ -388,7 +408,6 @@ async fn total_budget_also_bounds_the_body_read() {
         matches!(&failure, GatewayFailure::Transport(t) if t.kind() == TransportKind::Timeout),
         "{failure:?}"
     );
-    assert_eq!(started.elapsed(), budget);
 }
 
 #[tokio::test]

@@ -13,12 +13,19 @@ use forge_net::{
 use gateway_streaming_support::{
     StubServer, UNLIMITED, redirect_to, sized_body, stream, transport_kind,
 };
-use gateway_support::{RecordingObserver, platform, received};
+use gateway_support::{RecordingObserver, platform, received, refused_base};
 use wiremock::matchers::any;
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
-const UNROUTABLE_HTTPS: &str = "https://192.0.2.1/release/asset.bin";
 const UNROUTABLE_HTTP: &str = "http://192.0.2.1/release/asset.bin";
+const UNSPECIFIED_HOST: &str = "0.0.0.0";
+const LOOPBACK_HOST: &str = "127.0.0.1";
+
+fn refusing_off_loopback(scheme: &str) -> String {
+    let refused = refused_base().replacen(LOOPBACK_HOST, UNSPECIFIED_HOST, 1);
+    let authority = refused.trim_start_matches("http://");
+    format!("{scheme}://{authority}/release/asset.bin")
+}
 
 fn trusted() -> GatewayProfile {
     GatewayProfile::absolute_https(
@@ -59,13 +66,13 @@ async fn ok_server() -> MockServer {
     server
 }
 
-#[tokio::test(start_paused = true)]
+#[tokio::test]
 async fn trusted_absolute_sends_https_to_a_non_loopback_host() {
     let trusted = base_less(trusted());
 
     let streamed = stream(
         &trusted.gateway,
-        GatewayRequest::absolute(Method::Get, UNROUTABLE_HTTPS),
+        GatewayRequest::absolute(Method::Get, refusing_off_loopback("https")),
         UNLIMITED,
     )
     .await;
@@ -123,12 +130,12 @@ enum HopOutcome {
     FollowedOffHost,
 }
 
-#[tokio::test(start_paused = true)]
+#[tokio::test]
 async fn trusted_absolute_redirects_follow_the_same_scheme_rule_as_the_first_hop() {
     let landing = StubServer::serving(sized_body(&[b"asset"])).await;
     for (location, expected) in [
         (UNROUTABLE_HTTP.to_owned(), HopOutcome::Refused),
-        (UNROUTABLE_HTTPS.to_owned(), HopOutcome::FollowedOffHost),
+        (refusing_off_loopback("https"), HopOutcome::FollowedOffHost),
         (format!("{}/asset", landing.uri()), HopOutcome::Landed),
     ] {
         let start = StubServer::serving(redirect_to(&location)).await;
@@ -260,13 +267,16 @@ async fn a_trusted_absolute_gateway_with_a_base_serves_path_and_absolute_targets
     assert_eq!(paths, vec!["/by-path".to_owned(), "/by-url".to_owned()]);
 }
 
-#[tokio::test(start_paused = true)]
+#[tokio::test]
 async fn user_directed_still_sends_plain_http_to_a_non_loopback_host() {
     let directed = base_less(GatewayProfile::user_directed(true));
 
     let failure = directed
         .gateway
-        .send(GatewayRequest::absolute(Method::Post, UNROUTABLE_HTTP))
+        .send(GatewayRequest::absolute(
+            Method::Post,
+            refusing_off_loopback("http"),
+        ))
         .await
         .unwrap_err();
 

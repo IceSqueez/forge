@@ -22,10 +22,6 @@ pub struct ServerInfo {
 }
 
 impl ServerInfo {
-    pub fn new() -> Arc<Self> {
-        Self::serving(BTreeSet::new())
-    }
-
     pub fn serving(available_platforms: BTreeSet<PlatformId>) -> Arc<Self> {
         Arc::new(Self {
             version: env!("CARGO_PKG_VERSION"),

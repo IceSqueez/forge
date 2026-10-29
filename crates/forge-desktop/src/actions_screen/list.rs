@@ -1330,13 +1330,13 @@ mod tests {
 
         fn visible(&self, cx: &mut gpui::TestAppContext, name: &str) -> bool {
             self.view.read_with(cx, |view, _| {
-                let group = view
+                let action = view
                     .groups
                     .iter()
-                    .find(|g| g.actions.iter().any(|a| a.name == name))
+                    .flat_map(|g| g.actions.iter())
+                    .find(|a| a.name == name)
                     .unwrap();
-                let action = group.actions.iter().find(|a| a.name == name).unwrap();
-                view.action_passes(group, action)
+                view.action_passes(action)
             })
         }
 
@@ -1395,6 +1395,16 @@ mod tests {
                 trigger_kinds: &[REWARD_KIND],
             },
             Seed {
+                name: "Shoutout",
+                group: "Misc",
+                trigger_kinds: &[CHAT_KIND],
+            },
+            Seed {
+                name: "Free hug",
+                group: "Channel Points",
+                trigger_kinds: &[],
+            },
+            Seed {
                 name: "Spin the wheel",
                 group: "Misc",
                 trigger_kinds: &[TIMER_TICK_KIND, REWARD_KIND],
@@ -1408,6 +1418,7 @@ mod tests {
     ) {
         let fixture = Fixture::new(cx, &seeds());
         for (filter, name) in [
+            (ActionsFilter::Chat, "Shoutout"),
             (ActionsFilter::Timers, "Hydrate"),
             (ActionsFilter::Points, "Hug"),
         ] {
@@ -1422,6 +1433,8 @@ mod tests {
     ) {
         let fixture = Fixture::new(cx, &seeds());
         for (filter, name) in [
+            (ActionsFilter::Chat, "Hug"),
+            (ActionsFilter::Chat, "Stretch"),
             (ActionsFilter::Timers, "Lurk"),
             (ActionsFilter::Timers, "Hug"),
             (ActionsFilter::Points, "Lurk"),
@@ -1444,19 +1457,18 @@ mod tests {
     }
 
     #[gpui::test]
-    fn timers_filter_shows_an_untriggered_action_in_the_timers_group(
+    fn a_group_named_after_a_filter_puts_no_action_under_it_without_a_trigger(
         cx: &mut gpui::TestAppContext,
     ) {
         let fixture = Fixture::new(cx, &seeds());
-        fixture.set_filter(cx, ActionsFilter::Timers);
-        assert!(fixture.visible(cx, "Raid train"));
-    }
-
-    #[gpui::test]
-    fn chat_filter_ignores_timer_triggers_outside_the_chat_group(cx: &mut gpui::TestAppContext) {
-        let fixture = Fixture::new(cx, &seeds());
-        fixture.set_filter(cx, ActionsFilter::Chat);
-        assert!(!fixture.visible(cx, "Stretch"));
+        for (filter, name) in [
+            (ActionsFilter::Timers, "Raid train"),
+            (ActionsFilter::Chat, "Hydrate"),
+            (ActionsFilter::Points, "Free hug"),
+        ] {
+            fixture.set_filter(cx, filter);
+            assert!(!fixture.visible(cx, name), "{name} under {}", label(filter));
+        }
     }
 
     #[gpui::test]

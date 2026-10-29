@@ -623,6 +623,18 @@ pub(super) mod tests {
         &mut VisualTestContext,
         tokio::runtime::Runtime,
     ) {
+        open_launch_in_scope(cx, launch_with(specs, config), scope)
+    }
+
+    fn open_launch_in_scope(
+        cx: &mut TestAppContext,
+        launch: SubFormLaunch,
+        scope: Vec<ScopedVariable>,
+    ) -> (
+        Entity<EditSubActionForm>,
+        &mut VisualTestContext,
+        tokio::runtime::Runtime,
+    ) {
         crate::i18n::install_language(Language::En);
         cx.update(|cx| {
             cx.set_global(Presentation::new(ThemeId::ForgeDefault, Density::Cozy));
@@ -631,7 +643,6 @@ pub(super) mod tests {
         });
         let rt = runtime();
         let handle = rt.handle().clone();
-        let launch = launch_with(specs, config);
         let (form, vcx) = cx.add_window_view(move |_window, cx| {
             EditSubActionForm::new(launch, handle, cx).with_variable_scope(scope)
         });
@@ -727,7 +738,9 @@ pub(super) mod tests {
             code(CONDITION, CodeKind::Expression),
             code(SCRIPT, CodeKind::Script),
         ];
-        let (form, vcx, _rt) = open_form(cx, specs, SubActionConfig::new());
+        let mut launch = launch_with(specs, SubActionConfig::new());
+        launch.output_name_keys = vec!["into_var".to_owned()];
+        let (form, vcx, _rt) = open_launch_in_scope(cx, launch, Vec::new());
 
         let accepting: Vec<String> = vcx.update(|_window, cx| {
             form.read(cx)

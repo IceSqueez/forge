@@ -343,6 +343,7 @@ mod tests {
             kind_id: "twitch.channel_points.enable_reward".to_owned(),
             target: SubFormTarget::Add,
             specs,
+            output_name_keys: Vec::new(),
             config,
             name_value: String::new(),
             condition_value: String::new(),
@@ -1257,5 +1258,82 @@ mod tests {
             overrides,
             [(DURATION_FIELD.to_owned(), Variant::Int(120_000))]
         );
+    }
+
+    const NAME_FIELD: &str = "name";
+
+    fn name_spec() -> FormField {
+        FormField::Text {
+            key: NAME_FIELD,
+            label: "Name",
+            placeholder: "",
+        }
+    }
+
+    fn submitted_name(
+        output_name_keys: &[&str],
+        typed: &str,
+        cx: &mut TestAppContext,
+    ) -> Option<Vec<(String, Variant)>> {
+        let mut launch = launch_with(
+            vec![name_spec()],
+            [(NAME_FIELD.to_owned(), Variant::String(typed.to_owned()))]
+                .into_iter()
+                .collect(),
+        );
+        launch.output_name_keys = output_name_keys
+            .iter()
+            .map(|key| (*key).to_owned())
+            .collect();
+        let (form, vcx, _rt) = open_launch(cx, launch);
+        let heard = std::rc::Rc::new(std::cell::RefCell::new(None));
+        let sink = std::rc::Rc::clone(&heard);
+        let _subscription = vcx.update(|_window, cx| {
+            cx.subscribe(&form, move |_, event: &SubFormEvent, _| {
+                if let SubFormEvent::Commit(commit) = event {
+                    *sink.borrow_mut() = Some(commit.overrides.clone());
+                }
+            })
+        });
+        vcx.update(|_window, cx| form.update(cx, |form, cx| form.submit(cx)));
+        heard.borrow_mut().take()
+    }
+
+    #[gpui::test]
+    fn a_field_the_step_declares_as_an_output_name_saves_the_bare_variable_name(
+        cx: &mut TestAppContext,
+    ) {
+        for (outputs, expected) in [
+            (&[NAME_FIELD][..], "winner"),
+            (&["other_output"][..], "%winner%"),
+            (&[][..], "%winner%"),
+        ] {
+            let overrides = submitted_name(outputs, "%winner%", cx)
+                .unwrap_or_else(|| panic!("outputs {outputs:?}: a valid name must commit"));
+            assert_eq!(
+                override_for(&overrides, NAME_FIELD),
+                Some(&Variant::String(expected.to_owned())),
+                "outputs {outputs:?}"
+            );
+        }
+    }
+
+    #[gpui::test]
+    fn an_invalid_variable_name_blocks_save_only_in_a_declared_output_name_field(
+        cx: &mut TestAppContext,
+    ) {
+        for (outputs, typed, commits) in [
+            (&[NAME_FIELD][..], "my winner", false),
+            (&[NAME_FIELD][..], "%%", false),
+            (&[NAME_FIELD][..], "", true),
+            (&[NAME_FIELD][..], "my_winner_2", true),
+            (&[][..], "my winner", true),
+        ] {
+            assert_eq!(
+                submitted_name(outputs, typed, cx).is_some(),
+                commits,
+                "outputs {outputs:?}, typed {typed:?}"
+            );
+        }
     }
 }

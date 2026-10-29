@@ -2825,4 +2825,127 @@ mod tests {
 
         assert_eq!((taken, buffer.len()), (vec![ids[2]], 2));
     }
+
+    #[test]
+    fn a_mode_change_event_keeps_the_legacy_wire_shape_and_decodes_back() {
+        for (mode, kind, processing, intake) in [
+            (QueueMode::RUNNING, "queue.resumed", "running", "accept"),
+            (QueueMode::DRAINING, "queue.draining", "running", "skip"),
+            (QueueMode::HOLDING, "queue.held", "frozen", "accept"),
+            (QueueMode::PAUSED, "queue.paused", "frozen", "skip"),
+        ] {
+            let changed = QueueModeChanged {
+                queue_id: QueueId::new(),
+                queue_name: "serial".to_owned(),
+                mode,
+            };
+
+            let event = changed.clone().into_event();
+
+            assert_eq!(
+                (event.source, event.kind.as_str(), &event.payload),
+                (
+                    EventSource::Core,
+                    kind,
+                    &json!({
+                        "queue_id": changed.queue_id.to_string(),
+                        "queue_name": "serial",
+                        "processing": processing,
+                        "intake": intake,
+                    })
+                ),
+                "{kind} wire"
+            );
+            assert_eq!(
+                QueueModeChanged::from_event(&event),
+                Some(changed),
+                "{kind} round-trip"
+            );
+        }
+    }
+
+    #[test]
+    fn a_mode_payload_under_a_non_mode_kind_does_not_decode() {
+        let event = QueueModeChanged {
+            queue_id: QueueId::new(),
+            queue_name: "serial".to_owned(),
+            mode: QueueMode::PAUSED,
+        }
+        .into_event();
+        let cleared = Event::new(EventSource::Core, "queue.cleared", event.payload);
+
+        assert_eq!(QueueModeChanged::from_event(&cleared), None);
+    }
+
+    #[test]
+    fn a_mode_kind_with_an_unreadable_payload_does_not_decode() {
+        let queue_id = QueueId::new().to_string();
+        for payload in [
+            json!({ "processing": "frozen", "intake": "skip" }),
+            json!({ "queue_id": "not-a-queue-id", "processing": "frozen", "intake": "skip" }),
+            json!({ "queue_id": queue_id, "processing": "Frozen", "intake": "skip" }),
+            json!({ "queue_id": queue_id, "processing": "frozen", "intake": "hoard" }),
+            json!({ "queue_id": queue_id, "intake": "skip" }),
+            serde_json::Value::Null,
+        ] {
+            let event = Event::new(EventSource::Core, "queue.paused", payload.clone());
+            assert_eq!(QueueModeChanged::from_event(&event), None, "{payload}");
+        }
+    }
+
+    #[test]
+    fn a_mode_payload_without_a_queue_name_decodes_with_an_empty_name() {
+        let queue_id = QueueId::new();
+        let event = Event::new(
+            EventSource::Core,
+            "queue.held",
+            json!({ "queue_id": queue_id.to_string(), "processing": "frozen", "intake": "accept" }),
+        );
+
+        assert_eq!(
+            QueueModeChanged::from_event(&event),
+            Some(QueueModeChanged {
+                queue_id,
+                queue_name: String::new(),
+                mode: QueueMode::HOLDING,
+            })
+        );
+    }
+
+    #[test]
+    fn queue_mode_axes_serialize_lowercase_and_reject_other_casings() {
+        for (mode, wire) in [
+            (
+                QueueMode::RUNNING,
+                json!({ "processing": "running", "intake": "accept" }),
+            ),
+            (
+                QueueMode::PAUSED,
+                json!({ "processing": "frozen", "intake": "skip" }),
+            ),
+        ] {
+            assert_eq!(
+                serde_json::to_value(mode).ok(),
+                Some(wire.clone()),
+                "{mode:?}"
+            );
+            assert_eq!(
+                serde_json::from_value::<QueueMode>(wire).ok(),
+                Some(mode),
+                "{mode:?}"
+            );
+        }
+        for rejected in [json!("Running"), json!("FROZEN")] {
+            assert!(
+                serde_json::from_value::<QueueProcessing>(rejected.clone()).is_err(),
+                "{rejected}"
+            );
+        }
+        for rejected in [json!("Accept"), json!("SKIP")] {
+            assert!(
+                serde_json::from_value::<QueueIntake>(rejected.clone()).is_err(),
+                "{rejected}"
+            );
+        }
+    }
 }

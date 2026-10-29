@@ -115,24 +115,7 @@ mod tests {
             "queue.cleared",
             json!({ "queue_id": id.to_string(), "queue_name": "default", "keep_current": true }),
         );
-        let no_queue_id = Event::new(
-            EventSource::Core,
-            "queue.held",
-            json!({ "processing": "frozen", "intake": "accept" }),
-        );
-        let unparseable_id = Event::new(
-            EventSource::Core,
-            "queue.held",
-            json!({ "queue_id": "not-a-queue-id", "processing": "frozen", "intake": "accept" }),
-        );
-
-        for event in [
-            cleared,
-            no_queue_id,
-            unparseable_id,
-            mode_event("queue.held", id, "thawing", "accept"),
-            mode_event("queue.held", id, "frozen", "hoard"),
-        ] {
+        for event in [cleared, mode_event("queue.held", id, "thawing", "accept")] {
             assert!(
                 !health.apply_event(&event),
                 "unreadable {} must not report a change",
@@ -169,6 +152,27 @@ mod tests {
             ),
             (true, false, true, None),
             "new depths repaint, a repeat does not, a removed queue does and is forgotten"
+        );
+    }
+
+    #[test]
+    fn a_queue_missing_from_a_new_depth_snapshot_loses_its_tracked_mode() {
+        let (kept, removed) = (QueueId::new(), QueueId::new());
+        let idle = QueueDepth {
+            pending: 0,
+            in_flight: 0,
+            overflowed: 0,
+        };
+        let mut health = QueueHealth::new();
+        health.apply_depths(QueueDepths::from([(kept, idle), (removed, idle)]));
+        health.apply_event(&mode_event("queue.paused", kept, "frozen", "skip"));
+        health.apply_event(&mode_event("queue.held", removed, "frozen", "accept"));
+
+        health.apply_depths(QueueDepths::from([(kept, idle)]));
+
+        assert_eq!(
+            (health.mode(kept), health.mode(removed)),
+            (Some(QueueMode::PAUSED), None)
         );
     }
 }

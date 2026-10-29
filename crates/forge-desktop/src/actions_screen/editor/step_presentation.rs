@@ -445,6 +445,45 @@ mod tests {
         assert_eq!(card_detail(AIRHORN_ID, &clip_options(&[])), MISSING_LABEL);
     }
 
+    fn random_int_detail(min: Option<Variant>, max: Option<Variant>) -> String {
+        let mut step = crate::test_support::step(RANDOM_INT_KIND_ID, true);
+        for (key, bound) in [(RANDOM_INT_MIN_KEY, min), (RANDOM_INT_MAX_KEY, max)] {
+            if let Some(bound) = bound {
+                step.config.insert(key.to_owned(), bound);
+            }
+        }
+        step.config.insert(
+            RANDOM_INT_TARGET_VAR_KEY.to_owned(),
+            Variant::String("roll".to_owned()),
+        );
+        sub_action_summary(&step, &HashMap::new())
+            .2
+            .unwrap_or_default()
+    }
+
+    #[test]
+    fn random_int_card_shows_the_bounds_as_the_editor_stored_them() {
+        crate::i18n::install_language(Language::En);
+        let text = |s: &str| Some(Variant::String(s.to_owned()));
+
+        for (min, max, expected) in [
+            (text("1"), text("100"), "[1..100] \u{2192} %roll%"),
+            (
+                Some(Variant::Int(1)),
+                Some(Variant::Int(100)),
+                "[1..100] \u{2192} %roll%",
+            ),
+            (text("%low%"), text("-5"), "[%low%..-5] \u{2192} %roll%"),
+            (None, None, "[..] \u{2192} %roll%"),
+        ] {
+            assert_eq!(
+                random_int_detail(min.clone(), max.clone()),
+                expected,
+                "{min:?}..{max:?}"
+            );
+        }
+    }
+
     #[test]
     fn variable_segments_split_text_plain_references_and_formatted_references() {
         use VariableSegment::{FormattedVariable, Text, Variable};

@@ -133,7 +133,8 @@ impl EventPublisher for RecordingPublisher {
 }
 
 const SETTLE_TURNS: usize = 256;
-const DRIVE_STEP: std::time::Duration = std::time::Duration::from_secs(1);
+const WAIT_STEP: std::time::Duration = std::time::Duration::from_millis(1);
+pub(crate) const HANG_GUARD: std::time::Duration = std::time::Duration::from_secs(30);
 const HEADER_END: &[u8] = b"\r\n\r\n";
 const READ_CHUNK: usize = 4096;
 
@@ -217,11 +218,13 @@ struct StubRoutes {
     queued: std::collections::HashMap<String, std::collections::VecDeque<StubReply>>,
     standing: std::collections::HashMap<String, StubReply>,
     answered: Vec<String>,
+    arrived_at: Vec<tokio::time::Instant>,
 }
 
 impl StubRoutes {
     fn reply_for(&mut self, path: &str) -> StubReply {
         self.answered.push(path.to_owned());
+        self.arrived_at.push(tokio::time::Instant::now());
         self.queued
             .get_mut(path)
             .and_then(std::collections::VecDeque::pop_front)
@@ -272,13 +275,36 @@ impl StubServer {
     }
 
     pub(crate) fn request_count(&self, path: &str) -> usize {
-        self.routes
-            .lock()
-            .unwrap()
+        self.request_counter(path)()
+    }
+
+    pub(crate) fn request_counter(&self, path: &str) -> impl Fn() -> usize + Send + Sync + 'static {
+        let routes = Arc::clone(&self.routes);
+        let path = path.to_owned();
+        move || {
+            routes
+                .lock()
+                .unwrap()
+                .answered
+                .iter()
+                .filter(|answered| **answered == path)
+                .count()
+        }
+    }
+
+    pub(crate) fn answered_paths(&self) -> Vec<String> {
+        self.routes.lock().unwrap().answered.clone()
+    }
+
+    pub(crate) fn arrivals_of(&self, path: &str) -> Vec<tokio::time::Instant> {
+        let routes = self.routes.lock().unwrap();
+        routes
             .answered
             .iter()
-            .filter(|answered| answered.as_str() == path)
-            .count()
+            .zip(&routes.arrived_at)
+            .filter(|(answered, _)| answered.as_str() == path)
+            .map(|(_, at)| *at)
+            .collect()
     }
 }
 
@@ -350,22 +376,14 @@ pub(crate) async fn settle() {
     }
 }
 
-pub(crate) async fn drive_until(
-    mut reached: impl FnMut() -> bool,
-    virtual_budget: std::time::Duration,
-) -> bool {
-    let mut driven = std::time::Duration::ZERO;
-    loop {
-        settle().await;
-        if reached() {
-            return true;
+pub(crate) async fn wait_until(mut reached: impl FnMut() -> bool) -> bool {
+    tokio::time::timeout(HANG_GUARD, async {
+        while !reached() {
+            tokio::time::sleep(WAIT_STEP).await;
         }
-        if driven >= virtual_budget {
-            return false;
-        }
-        tokio::time::advance(DRIVE_STEP).await;
-        driven += DRIVE_STEP;
-    }
+    })
+    .await
+    .is_ok()
 }
 
 const SPIN_SETTLES: usize = 64;

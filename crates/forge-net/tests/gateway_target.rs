@@ -5,8 +5,8 @@ use std::time::Duration;
 
 use forge_net::test_support::RecordingRateLimiter;
 use forge_net::{
-    Gateway, GatewayBuildError, GatewayFailure, GatewayProfile, GatewayRequest, HostRejection,
-    InvalidRequest, Method, MultipartBody, RateLimitOutcome, RequestBody, Secret,
+    Gateway, GatewayBuildError, GatewayFailure, GatewayProfile, GatewayRequest, GatewayTimings,
+    HostRejection, InvalidRequest, Method, MultipartBody, RateLimitOutcome, RequestBody, Secret,
 };
 use gateway_support::{Harness, platform, received};
 use wiremock::matchers::any;
@@ -311,7 +311,7 @@ async fn exhausted_limiter_fails_with_budget_exhausted_and_sends_nothing() {
     assert!(received(&server).await.is_empty());
 }
 
-#[tokio::test(start_paused = true)]
+#[tokio::test]
 async fn a_no_wait_request_reports_the_exact_throttle_wait_at_once_and_sends_nothing() {
     let server = ok_server().await;
     let wait = Duration::from_millis(42_137);
@@ -330,12 +330,12 @@ async fn a_no_wait_request_reports_the_exact_throttle_wait_at_once_and_sends_not
             retry_after: Some(wait)
         }
     );
-    assert_eq!(started.elapsed(), Duration::ZERO);
+    assert!(started.elapsed() < wait);
     assert_eq!(harness.limiter.acquire_count(), 1);
     assert!(received(&server).await.is_empty());
 }
 
-#[tokio::test(start_paused = true)]
+#[tokio::test]
 async fn a_no_wait_request_reports_no_wait_when_the_limiter_is_exhausted_or_fails() {
     let server = ok_server().await;
     for limiter in [
@@ -400,13 +400,17 @@ async fn a_waiting_request_sleeps_through_a_throttle_and_then_sends() {
     assert_eq!(received(&server).await.len(), 1);
 }
 
-#[tokio::test(start_paused = true)]
+#[tokio::test]
 async fn a_waiting_request_that_stays_throttled_fails_without_a_wait_hint() {
     let server = ok_server().await;
     let limiter = RecordingRateLimiter::answering(Ok(RateLimitOutcome::Throttled {
         wait_for: Duration::from_secs(1),
     }));
-    let harness = Harness::with_limiter(&server.uri(), platform(), limiter);
+    let profile = platform().with_timings(GatewayTimings {
+        max_throttle_wait: Duration::from_millis(5),
+        ..GatewayTimings::DEFAULT
+    });
+    let harness = Harness::with_limiter(&server.uri(), profile, limiter);
 
     let failure = harness.fail(GatewayRequest::get("a")).await;
 

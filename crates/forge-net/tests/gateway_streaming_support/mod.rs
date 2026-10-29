@@ -29,6 +29,7 @@ pub struct MemorySink {
     accepted_chunks: usize,
     refuse_chunk: Option<usize>,
     delivered: Option<Arc<Notify>>,
+    last_accepted: Arc<Mutex<Option<tokio::time::Instant>>>,
 }
 
 impl MemorySink {
@@ -46,6 +47,10 @@ impl MemorySink {
     pub fn len(&self) -> u64 {
         u64::try_from(self.bytes.lock().unwrap().len()).unwrap()
     }
+
+    pub fn last_accepted_at(&self) -> Option<tokio::time::Instant> {
+        *self.last_accepted.lock().unwrap()
+    }
 }
 
 impl BodySink for MemorySink {
@@ -61,6 +66,7 @@ impl BodySink for MemorySink {
         if let Some(delivered) = &self.delivered {
             delivered.notify_one();
         }
+        *self.last_accepted.lock().unwrap() = Some(tokio::time::Instant::now());
         Ok(())
     }
 }
@@ -241,18 +247,6 @@ pub fn chunk_frame(bytes: &[u8]) -> Step {
 
 pub fn chunked_end() -> Step {
     Step::Send(CHUNKED_END.to_vec())
-}
-
-pub fn chunked_body(chunks: &[&[u8]], gap: Duration) -> Vec<Step> {
-    let mut steps = vec![chunked_head(200)];
-    for (index, bytes) in chunks.iter().enumerate() {
-        if index > 0 {
-            steps.push(Step::Wait(gap));
-        }
-        steps.push(chunk_frame(bytes));
-    }
-    steps.push(chunked_end());
-    steps
 }
 
 pub fn sized_body(pieces: &[&[u8]]) -> Vec<Step> {

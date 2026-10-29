@@ -8,10 +8,10 @@ use std::time::Duration;
 use forge_net::test_support::RecordingRateLimiter;
 use forge_net::{
     CallClass, FailureObserver, Gateway, GatewayFailure, GatewayProfile, GatewayRequest,
-    HostRejection, InvalidRequest, Method, RedirectRefusal, ResolvedTarget, ThrottleHintFamily,
-    TransportKind,
+    GatewayTimings, HostRejection, InvalidRequest, Method, RedirectRefusal, ResolvedTarget,
+    ThrottleHintFamily, TransportKind,
 };
-use gateway_streaming_support::{Step, StubServer, UNLIMITED, sized_head, stream};
+use gateway_streaming_support::{Step, StubServer, UNLIMITED, sized_body, sized_head, stream};
 use gateway_support::{RecordingObserver, chunked_ok, platform, received, serve_raw_once};
 use wiremock::matchers::{any, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
@@ -20,6 +20,7 @@ const BODY_CAP: u64 = 10;
 const SHORT_BUDGET: Duration = Duration::from_millis(1);
 const BODY_READ_BUDGET: Duration = Duration::from_millis(20);
 const HANG_GUARD: Duration = Duration::from_secs(30);
+const SHORT_CLASS_BUDGET: Duration = Duration::from_millis(200);
 
 struct Directed {
     gateway: Gateway,
@@ -366,23 +367,24 @@ async fn total_budget_times_out_a_response_that_never_arrives() {
     );
 }
 
-#[tokio::test(start_paused = true)]
+#[tokio::test]
 async fn total_budget_longer_than_the_class_budget_outlasts_it() {
-    let budget = Duration::from_secs(30);
-    let server = StubServer::serving(vec![Step::Hold]).await;
-    let started = tokio::time::Instant::now();
+    let mut steps = vec![Step::Wait(SHORT_CLASS_BUDGET * 2)];
+    steps.extend(sized_body(&[b"late"]));
+    let server = StubServer::serving(steps).await;
+    let profile = GatewayProfile::user_directed(true).with_timings(GatewayTimings {
+        interactive_total: SHORT_CLASS_BUDGET,
+        ..GatewayTimings::DEFAULT
+    });
+    let gateway =
+        Gateway::without_base(Arc::new(RecordingRateLimiter::granting()), profile, None).unwrap();
 
-    let failure = directed(true)
-        .gateway
-        .send(get(format!("{}/x", server.uri())).total_budget(budget))
+    let response = gateway
+        .send(get(format!("{}/x", server.uri())).total_budget(HANG_GUARD))
         .await
-        .unwrap_err();
+        .unwrap();
 
-    assert!(
-        matches!(&failure, GatewayFailure::Transport(t) if t.kind() == TransportKind::Timeout),
-        "{failure:?}"
-    );
-    assert_eq!(started.elapsed(), budget);
+    assert_eq!(response.body(), b"late");
 }
 
 #[tokio::test]

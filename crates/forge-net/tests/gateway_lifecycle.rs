@@ -5,17 +5,19 @@ use std::time::Duration;
 
 use forge_net::test_support::RecordingRateLimiter;
 use forge_net::{
-    CallClass, FailureContext, GatewayFailure, GatewayProfile, GatewayRequest, Method,
-    RateLimitOutcome, ThrottleHintFamily, TransportKind,
+    CallClass, FailureContext, GatewayFailure, GatewayProfile, GatewayRequest, GatewayTimings,
+    Method, RateLimitOutcome, ThrottleHintFamily, TransportKind,
 };
 use gateway_support::{
     Harness, accept_request_head, platform, received, refused_base, silent_listener,
 };
 use tokio_util::sync::CancellationToken;
-use wiremock::matchers::{any, path};
+use wiremock::matchers::any;
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
 const NEVER: Duration = Duration::from_secs(3600);
+const SHORT_TOTAL_BUDGET: Duration = Duration::from_millis(200);
+const HANG_GUARD: Duration = Duration::from_secs(30);
 
 fn catalog_default() -> GatewayProfile {
     GatewayProfile::platform_api(
@@ -43,20 +45,25 @@ async fn serving(status: u16) -> MockServer {
 
 #[tokio::test]
 async fn unanswered_request_fails_with_a_transport_timeout_once_the_budget_elapses() {
-    let server = MockServer::start().await;
-    Mock::given(path("/warm"))
-        .respond_with(ResponseTemplate::new(200))
-        .mount(&server)
-        .await;
-    Mock::given(path("/slow"))
-        .respond_with(ResponseTemplate::new(200).set_delay(NEVER))
-        .mount(&server)
-        .await;
-    let harness = Harness::new(&server.uri(), platform());
-    harness.ok(GatewayRequest::get("warm")).await;
-    tokio::time::pause();
-    let failure = harness.fail(GatewayRequest::get("slow")).await;
-    assert_eq!(transport_kind(&failure), TransportKind::Timeout);
+    let (_listener, base) = silent_listener();
+    let profile = platform().with_timings(GatewayTimings {
+        interactive_total: SHORT_TOTAL_BUDGET,
+        ..GatewayTimings::DEFAULT
+    });
+    let harness = Harness::new(&base, profile);
+    let started = tokio::time::Instant::now();
+
+    let failure = tokio::time::timeout(HANG_GUARD, harness.fail(GatewayRequest::get("slow")))
+        .await
+        .expect("the total budget never fired");
+
+    assert_eq!(
+        (
+            transport_kind(&failure),
+            started.elapsed() >= SHORT_TOTAL_BUDGET
+        ),
+        (TransportKind::Timeout, true)
+    );
 }
 
 #[tokio::test]

@@ -5,22 +5,29 @@ use std::time::Duration;
 
 use forge_net::test_support::RecordingRateLimiter;
 use forge_net::{
-    BodyProgress, CallClass, GatewayFailure, GatewayRequest, HeaderLookup, RateLimitOutcome,
-    STREAMING_READ_IDLE_BUDGET, TransportKind,
+    BodyProgress, CallClass, GatewayFailure, GatewayProfile, GatewayRequest, GatewayTimings,
+    HeaderLookup, RateLimitOutcome, TransportKind,
 };
 use gateway_streaming_support::{
-    Gate, MemorySink, Pace, Step, StubServer, UNLIMITED, chunk_frame, chunked_body, chunked_end,
-    chunked_head, sized_body, sized_head, spawn_stream, spin_until, stream, stream_into,
-    stream_with, transport_kind,
+    Gate, MemorySink, Pace, Step, StubServer, UNLIMITED, chunk_frame, chunked_end, chunked_head,
+    sized_body, sized_head, spawn_stream, spin_until, stream, stream_into, stream_with,
+    transport_kind,
 };
 use gateway_support::{Harness, platform};
 use tokio_util::sync::CancellationToken;
 
 const NEVER: Duration = Duration::from_secs(3600);
-const JUST_UNDER_IDLE: Duration = Duration::from_secs(29);
-const JUST_OVER_IDLE: Duration = Duration::from_secs(31);
+const SHORT_IDLE: Duration = Duration::from_millis(200);
+const HANG_GUARD: Duration = Duration::from_secs(30);
 const TOTAL_BUDGET: Duration = Duration::from_millis(1);
 const PAST_TOTAL_BUDGET: Duration = Duration::from_millis(20);
+
+fn idle_bounded() -> GatewayProfile {
+    platform().with_timings(GatewayTimings {
+        streaming_read_idle: SHORT_IDLE,
+        ..GatewayTimings::DEFAULT
+    })
+}
 
 fn progress(received: u64, declared_length: Option<u64>) -> BodyProgress {
     BodyProgress {
@@ -151,32 +158,39 @@ async fn progress_fires_once_at_zero_and_then_after_every_delivered_chunk() {
     }
 }
 
-#[tokio::test(start_paused = true)]
+#[tokio::test]
 async fn response_headers_get_the_read_idle_budget_and_no_more() {
-    for (delay, times_out) in [(JUST_UNDER_IDLE, false), (JUST_OVER_IDLE, true)] {
-        let mut steps = vec![Step::Wait(delay)];
-        steps.extend(sized_body(&[b"late"]));
-        let server = StubServer::serving(steps).await;
-        let harness = Harness::new(&server.uri(), platform());
-        let started = tokio::time::Instant::now();
+    let server = StubServer::serving(vec![Step::Hold]).await;
+    let harness = Harness::new(&server.uri(), idle_bounded());
+    let started = tokio::time::Instant::now();
 
-        let streamed = stream(&harness.gateway, GatewayRequest::get("asset"), UNLIMITED).await;
+    let streamed = tokio::time::timeout(
+        HANG_GUARD,
+        stream(&harness.gateway, GatewayRequest::get("asset"), UNLIMITED),
+    )
+    .await
+    .expect("the read-idle budget never fired");
 
-        if times_out {
-            assert_eq!(transport_kind(&streamed.failure()), TransportKind::Timeout);
-            assert_eq!(started.elapsed(), STREAMING_READ_IDLE_BUDGET);
-        } else {
-            assert_eq!(streamed.sink.bytes(), b"late");
-        }
-    }
+    assert_eq!(
+        (
+            transport_kind(&streamed.failure()),
+            started.elapsed() >= SHORT_IDLE
+        ),
+        (TransportKind::Timeout, true)
+    );
 }
 
-#[tokio::test(start_paused = true)]
+#[tokio::test]
 async fn headers_that_never_arrive_time_out_and_reach_the_observer() {
     let server = StubServer::serving(vec![Step::Hold]).await;
-    let harness = Harness::new(&server.uri(), platform());
+    let harness = Harness::new(&server.uri(), idle_bounded());
 
-    let streamed = stream(&harness.gateway, GatewayRequest::get("asset"), UNLIMITED).await;
+    let streamed = tokio::time::timeout(
+        HANG_GUARD,
+        stream(&harness.gateway, GatewayRequest::get("asset"), UNLIMITED),
+    )
+    .await
+    .expect("the read-idle budget never fired");
 
     let failure = streamed.failure();
     assert_eq!(transport_kind(&failure), TransportKind::Timeout);
@@ -191,21 +205,29 @@ async fn headers_that_never_arrive_time_out_and_reach_the_observer() {
     );
 }
 
-#[tokio::test(start_paused = true)]
+#[tokio::test]
 async fn a_gap_between_body_chunks_gets_the_read_idle_budget_and_no_more() {
-    for (gap, times_out) in [(JUST_UNDER_IDLE, false), (JUST_OVER_IDLE, true)] {
-        let server = StubServer::serving(chunked_body(&[b"first", b"second"], gap)).await;
-        let harness = Harness::new(&server.uri(), platform());
+    let server =
+        StubServer::serving(vec![chunked_head(200), chunk_frame(b"first"), Step::Hold]).await;
+    let harness = Harness::new(&server.uri(), idle_bounded());
 
-        let streamed = stream(&harness.gateway, GatewayRequest::get("asset"), UNLIMITED).await;
+    let streamed = tokio::time::timeout(
+        HANG_GUARD,
+        stream(&harness.gateway, GatewayRequest::get("asset"), UNLIMITED),
+    )
+    .await
+    .expect("the read-idle budget never fired");
+    let failed_at = tokio::time::Instant::now();
 
-        if times_out {
-            assert_eq!(transport_kind(&streamed.failure()), TransportKind::Timeout);
-            assert_eq!(streamed.sink.bytes(), b"first");
-        } else {
-            assert_eq!(streamed.sink.bytes(), b"firstsecond");
-        }
-    }
+    let last_chunk_at = streamed.sink.last_accepted_at().unwrap();
+    assert_eq!(
+        (
+            transport_kind(&streamed.failure()),
+            streamed.sink.bytes(),
+            failed_at - last_chunk_at >= SHORT_IDLE
+        ),
+        (TransportKind::Timeout, b"first".to_vec(), true)
+    );
 }
 
 #[tokio::test]

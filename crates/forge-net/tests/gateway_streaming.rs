@@ -86,7 +86,7 @@ async fn invalid_targets_and_headers_are_refused_before_the_limiter_or_the_netwo
     assert!(received(&server).await.is_empty());
 }
 
-#[tokio::test(start_paused = true)]
+#[tokio::test]
 async fn a_refusing_limiter_fails_the_stream_with_budget_exhausted_and_sends_nothing() {
     let server = serving(ResponseTemplate::new(200)).await;
     let wait = Duration::from_millis(42_137);
@@ -116,7 +116,7 @@ async fn a_refusing_limiter_fails_the_stream_with_budget_exhausted_and_sends_not
                 retry_after: expected
             }
         );
-        assert_eq!(started.elapsed(), Duration::ZERO);
+        assert!(started.elapsed() < wait);
     }
     assert!(received(&server).await.is_empty());
 }

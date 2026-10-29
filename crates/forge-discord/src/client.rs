@@ -1195,9 +1195,10 @@ pub(crate) mod tests {
         ScriptedHttp { base, served }
     }
 
-    #[tokio::test(start_paused = true)]
+    #[tokio::test]
     async fn a_hint_of_exactly_the_wait_cap_is_waited_out_and_retried() {
-        for (hint, retried) in [("10", true), ("10.5", false)] {
+        let cap = Duration::from_millis(125);
+        for (hint, retried) in [("0.125", true), ("0.126", false)] {
             let stub = scripted_http(vec![
                 http_reply("429 Too Many Requests", &[("retry-after", hint)], "{}"),
                 http_reply("200 OK", &[], r#"{"id":"msg_cap"}"#),
@@ -1205,7 +1206,16 @@ pub(crate) mod tests {
             .await;
             let creds = MockCreds::new();
             creds.store_hook("alerts", &hook_url("discord.com", ""));
-            let client = client_at(&stub.base, &MockPublisher::new(), &creds);
+            let client = DiscordClient::with_timings(
+                &stub.base,
+                MockPublisher::new().publisher(),
+                creds.creds(),
+                GatewayTimings {
+                    max_throttle_wait: cap,
+                    ..GatewayTimings::DEFAULT
+                },
+            )
+            .unwrap();
 
             let result = client.post_text("alerts", "at the cap").await;
 

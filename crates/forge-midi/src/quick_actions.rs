@@ -109,12 +109,91 @@ impl QuickActions for MidiClient {
 }
 #[cfg(test)]
 mod tests {
+    use std::collections::BTreeMap;
+    use std::sync::{Arc, Mutex};
+
+    use async_trait::async_trait;
+    use forge_events::{Event, EventPublisher};
     use forge_platform_core::QuickActions;
+    use forge_registry::{RunContext, SubActionRunner};
+    use forge_types::{ArgStack, EventId, SubActionOutcome};
 
     use super::*;
     use crate::client::MidiClient;
     use crate::content::record_port_added;
-    use crate::events::{MidiPortInfo, PortDirection};
+    use crate::error::MidiError;
+    use crate::events::{MidiOutMessage, MidiPortInfo, PortDirection};
+    use crate::runners::MidiSendRunner;
+    use crate::sink::MidiSink;
+
+    const FULL_STORED_TEMPLATES: [(&str, &str); 4] = [
+        (
+            "Send Note On",
+            r#"{"channel":{"type":"int","value":0},"message_kind":{"type":"string","value":"note_on"},"note":{"type":"int","value":60},"port":{"type":"string","value":"Synth"},"velocity":{"type":"int","value":127}}"#,
+        ),
+        (
+            "Send Note Off",
+            r#"{"channel":{"type":"int","value":0},"message_kind":{"type":"string","value":"note_off"},"note":{"type":"int","value":60},"port":{"type":"string","value":"Synth"},"velocity":{"type":"int","value":0}}"#,
+        ),
+        (
+            "Send CC",
+            r#"{"channel":{"type":"int","value":0},"controller":{"type":"int","value":7},"message_kind":{"type":"string","value":"cc"},"port":{"type":"string","value":"Synth"},"value":{"type":"int","value":127}}"#,
+        ),
+        (
+            "Send Raw",
+            r#"{"message_kind":{"type":"string","value":"raw"},"port":{"type":"string","value":"Synth"},"raw_bytes":{"type":"array","value":[{"type":"int","value":144},{"type":"int","value":60},{"type":"int","value":127}]}}"#,
+        ),
+    ];
+
+    struct NoopPublisher;
+    impl EventPublisher for NoopPublisher {
+        fn publish(&self, _: Event) {}
+    }
+
+    #[derive(Default)]
+    struct RecordingSink {
+        sent: Mutex<Vec<(String, MidiOutMessage)>>,
+    }
+
+    #[async_trait]
+    impl MidiSink for RecordingSink {
+        async fn send_output(
+            &self,
+            port_name: &str,
+            message: &MidiOutMessage,
+        ) -> Result<(), MidiError> {
+            self.sent
+                .lock()
+                .unwrap()
+                .push((port_name.to_owned(), message.clone()));
+            Ok(())
+        }
+    }
+
+    async fn sent_by(config: &SubActionConfig) -> Vec<(String, MidiOutMessage)> {
+        let sink = Arc::new(RecordingSink::default());
+        let runner = MidiSendRunner::new(Arc::clone(&sink) as Arc<dyn MidiSink>);
+        let stack = ArgStack::new();
+        let ctx = RunContext::leaf(&stack, 0, EventId::new(), &NoopPublisher);
+        let (telemetry, _) = runner.execute(config, &ctx).await;
+        assert_eq!(telemetry.outcome, SubActionOutcome::Success);
+        sink.sent.lock().unwrap().clone()
+    }
+
+    fn client_with_output_port() -> Arc<MidiClient> {
+        let c = MidiClient::new_for_test();
+        {
+            let mut snap = c.content_state.lock().unwrap();
+            record_port_added(
+                &mut snap,
+                MidiPortInfo {
+                    name: "Synth".to_owned(),
+                    direction: PortDirection::Output,
+                },
+            );
+        }
+        c
+    }
 
     #[test]
     fn all_actions_disabled_when_no_output_ports() {
@@ -130,41 +209,50 @@ mod tests {
 
     #[test]
     fn actions_enabled_after_output_port_registered() {
-        let c = MidiClient::new_for_test();
-        {
-            let mut snap = c.content_state.lock().unwrap();
-            record_port_added(
-                &mut snap,
-                MidiPortInfo {
-                    name: "Synth".to_owned(),
-                    direction: PortDirection::Output,
-                },
-            );
-        }
-        for action in c.actions() {
+        for action in client_with_output_port().actions() {
             assert!(action.enabled, "{} must be enabled", action.label);
         }
     }
 
-    #[test]
-    fn send_note_on_action_has_correct_kind_id() {
-        let c = MidiClient::new_for_test();
-        {
-            let mut snap = c.content_state.lock().unwrap();
-            record_port_added(
-                &mut snap,
-                MidiPortInfo {
-                    name: "Synth".to_owned(),
-                    direction: PortDirection::Output,
-                },
+    #[tokio::test]
+    async fn every_action_sends_what_its_full_stored_template_sent() {
+        let actions = client_with_output_port().actions();
+        let labels: Vec<&str> = actions.iter().map(|a| a.label.as_str()).collect();
+        assert_eq!(
+            labels,
+            FULL_STORED_TEMPLATES
+                .iter()
+                .map(|(label, _)| *label)
+                .collect::<Vec<_>>()
+        );
+
+        for (action, (label, stored)) in actions.iter().zip(FULL_STORED_TEMPLATES) {
+            let stored: SubActionConfig = serde_json::from_str(stored).unwrap();
+            let template = &action.subaction_template;
+
+            assert_eq!(template.kind_id, "midi.send", "{label}");
+            assert_eq!(
+                sent_by(&template.config).await,
+                sent_by(&stored).await,
+                "{label}"
             );
         }
-        let actions = c.actions();
-        let note_on = actions.iter().find(|a| a.label == "Send Note On").unwrap();
-        assert_eq!(note_on.subaction_template.kind_id, "midi.send");
-        assert_eq!(
-            note_on.subaction_template.config.get("message_kind"),
-            Some(&Variant::String("note_on".to_owned()))
-        );
+    }
+
+    #[test]
+    fn every_action_template_validates_once_a_port_exists() {
+        let runner = MidiSendRunner::new(Arc::new(RecordingSink::default()));
+        let problems: BTreeMap<String, String> = client_with_output_port()
+            .actions()
+            .into_iter()
+            .filter_map(|action| {
+                let error = runner
+                    .validate_config(&action.subaction_template.config)
+                    .err()?;
+                Some((action.label, error.to_string()))
+            })
+            .collect();
+
+        assert!(problems.is_empty(), "{problems:?}");
     }
 }

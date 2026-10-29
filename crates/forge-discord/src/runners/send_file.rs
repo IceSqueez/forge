@@ -143,6 +143,10 @@ impl SubActionRunner for SendFileRunner {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::BTreeMap;
+
+    use forge_types::Variant;
+
     use super::*;
     use crate::embed::DiscordEmbed;
     use crate::error::DiscordError;

@@ -25,10 +25,16 @@ mod tests {
     use crate::sink::tests::NoopSink;
 
     #[test]
-    fn midi_send_runner_id_is_correct() {
+    fn registration_adds_the_send_runner_owned_by_the_midi_integration() {
         let mut reg = SubActionRegistry::new();
         let sink: Arc<dyn MidiSink> = Arc::new(NoopSink);
-        reg.register(Box::new(MidiSendRunner::new(sink))).unwrap();
+
+        register_midi_sub_actions(&mut reg, sink).unwrap();
+
         assert!(reg.get("midi.send").is_some());
+        assert_eq!(
+            reg.owning_integration("midi.send"),
+            Some(&crate::MIDI_INTEGRATION.id)
+        );
     }
 }

@@ -305,4 +305,269 @@ mod tests {
             );
         }
     }
+
+    const STORED_DEFAULT_CONFIGS: [(&str, &str); 5] = [
+        (
+            "discord.webhook.send_message",
+            r#"{"allow_everyone_pings":{"type":"bool","value":false},"allow_role_pings":{"type":"bool","value":true},"content":{"type":"string","value":""},"webhook_name":{"type":"string","value":""}}"#,
+        ),
+        (
+            "discord.webhook.send_embed",
+            r#"{"embed_description":{"type":"string","value":""},"embed_title":{"type":"string","value":""},"webhook_name":{"type":"string","value":""}}"#,
+        ),
+        (
+            "discord.webhook.update_message",
+            r#"{"allow_everyone_pings":{"type":"bool","value":false},"allow_role_pings":{"type":"bool","value":true},"content":{"type":"string","value":""},"message_id":{"type":"string","value":""},"webhook_name":{"type":"string","value":""}}"#,
+        ),
+        (
+            "discord.webhook.send_file",
+            r#"{"allow_everyone_pings":{"type":"bool","value":false},"allow_role_pings":{"type":"bool","value":true},"content":{"type":"string","value":""},"file_path":{"type":"string","value":""},"webhook_name":{"type":"string","value":""}}"#,
+        ),
+        (
+            "discord.webhook.delete_message",
+            r#"{"message_id":{"type":"string","value":""},"webhook_name":{"type":"string","value":""}}"#,
+        ),
+    ];
+
+    fn all_runners(sink: &Arc<dyn DiscordSink>) -> Vec<Box<dyn forge_registry::SubActionRunner>> {
+        vec![
+            Box::new(PostTextRunner::new(Arc::clone(sink))),
+            Box::new(PostEmbedRunner::new(Arc::clone(sink))),
+            Box::new(EditMessageRunner::new(Arc::clone(sink))),
+            Box::new(SendFileRunner::new(Arc::clone(sink))),
+            Box::new(DeleteMessageRunner::new(Arc::clone(sink))),
+        ]
+    }
+
+    fn config_of(entries: &[(&str, &str)]) -> forge_types::SubActionConfig {
+        entries
+            .iter()
+            .map(|(key, value)| ((*key).to_owned(), text(value)))
+            .collect()
+    }
+
+    #[test]
+    fn every_runner_seeds_the_same_stored_default_config_as_before_declared_fields() {
+        let sink: Arc<dyn DiscordSink> = Arc::new(MockSink);
+        let runners = all_runners(&sink);
+        assert_eq!(runners.len(), STORED_DEFAULT_CONFIGS.len());
+
+        for (id, stored) in STORED_DEFAULT_CONFIGS {
+            let runner = runners
+                .iter()
+                .find(|runner| runner.id() == id)
+                .unwrap_or_else(|| panic!("missing runner: {id}"));
+            let expected: serde_json::Value = serde_json::from_str(stored).unwrap();
+
+            assert_eq!(
+                serde_json::to_value(runner.default_config()).unwrap(),
+                expected,
+                "{id} seeds a different default config"
+            );
+        }
+    }
+
+    #[derive(Default)]
+    struct CountingSink {
+        calls: std::sync::atomic::AtomicUsize,
+    }
+
+    impl CountingSink {
+        fn called(&self) {
+            self.calls.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        }
+
+        fn calls(&self) -> usize {
+            self.calls.load(std::sync::atomic::Ordering::SeqCst)
+        }
+    }
+
+    #[async_trait]
+    impl DiscordSink for CountingSink {
+        async fn post_text(
+            &self,
+            _: &str,
+            _: &str,
+            _: MentionPolicy,
+        ) -> Result<String, DiscordError> {
+            self.called();
+            Ok(String::new())
+        }
+        async fn post_embed(&self, _: &str, _: DiscordEmbed) -> Result<String, DiscordError> {
+            self.called();
+            Ok(String::new())
+        }
+        async fn edit_message(
+            &self,
+            _: &str,
+            _: &str,
+            _: Option<&str>,
+            _: Option<DiscordEmbed>,
+            _: MentionPolicy,
+        ) -> Result<(), DiscordError> {
+            self.called();
+            Ok(())
+        }
+        async fn send_file(
+            &self,
+            _: &str,
+            _: Option<&str>,
+            _: &str,
+            _: &[u8],
+            _: MentionPolicy,
+        ) -> Result<String, DiscordError> {
+            self.called();
+            Ok(String::new())
+        }
+        async fn delete_message(&self, _: &str, _: &str) -> Result<(), DiscordError> {
+            self.called();
+            Ok(())
+        }
+    }
+
+    fn invalid_config(problem: forge_registry::ConfigProblem) -> forge_types::SubActionOutcome {
+        forge_types::SubActionOutcome::Failed(format!("invalid step config: {problem}"))
+    }
+
+    #[tokio::test]
+    async fn required_fields_that_resolve_to_blank_fail_without_calling_the_sink() {
+        use forge_registry::{ConfigProblem, ConfigReason, RunContext};
+        use forge_types::EventId;
+
+        let base = [
+            ("discord.webhook.send_message", vec![("content", "hi")]),
+            ("discord.webhook.send_embed", vec![("embed_title", "Live")]),
+            (
+                "discord.webhook.update_message",
+                vec![("message_id", "42"), ("content", "hi")],
+            ),
+            (
+                "discord.webhook.send_file",
+                vec![("file_path", "/nonexistent/clip.png")],
+            ),
+            ("discord.webhook.delete_message", vec![("message_id", "42")]),
+        ];
+        let cases = [
+            ("discord.webhook.send_message", "webhook_name"),
+            ("discord.webhook.send_message", "content"),
+            ("discord.webhook.send_embed", "webhook_name"),
+            ("discord.webhook.update_message", "webhook_name"),
+            ("discord.webhook.update_message", "message_id"),
+            ("discord.webhook.send_file", "webhook_name"),
+            ("discord.webhook.send_file", "file_path"),
+            ("discord.webhook.delete_message", "webhook_name"),
+            ("discord.webhook.delete_message", "message_id"),
+        ];
+        let stack = ArgStack::new().set("blank".to_owned(), text(" \t "));
+        let publisher = SilentPublisher;
+
+        for (id, key) in cases {
+            let counting = Arc::new(CountingSink::default());
+            let sink: Arc<dyn DiscordSink> = counting.clone();
+            let runners = all_runners(&sink);
+            let runner = runners.iter().find(|runner| runner.id() == id).unwrap();
+            let entries = base.iter().find(|(base_id, _)| *base_id == id).unwrap();
+            let mut config = config_of(&entries.1);
+            config.insert("webhook_name".to_owned(), text("alerts"));
+            config.insert(key.to_owned(), text("%blank%"));
+
+            assert!(runner.validate_config(&config).is_ok(), "{id} {key}");
+            let ctx = RunContext::leaf(&stack, 0, EventId::new(), &publisher);
+            let (telemetry, _) = runner.execute(&config, &ctx).await;
+
+            assert_eq!(
+                telemetry.outcome,
+                invalid_config(ConfigProblem::field(key, ConfigReason::Required)),
+                "{id} {key}"
+            );
+            assert_eq!(counting.calls(), 0, "{id} {key}");
+        }
+    }
+
+    fn any_of(keys: [&str; 2]) -> forge_registry::ConfigProblem {
+        forge_registry::ConfigProblem::whole(forge_registry::ConfigReason::any_of(keys))
+    }
+
+    #[test]
+    fn content_steps_validate_only_with_at_least_one_content_field() {
+        use forge_registry::SubActionRunner;
+
+        let embed = PostEmbedRunner::new(Arc::new(MockSink));
+        let edit = EditMessageRunner::new(Arc::new(MockSink));
+        let embed_needs = Some(any_of(["embed_title", "embed_description"]));
+        let edit_needs = Some(any_of(["content", "embed_title"]));
+        type Case<'a> = (
+            &'a dyn SubActionRunner,
+            Vec<(&'a str, &'a str)>,
+            Option<forge_registry::ConfigProblem>,
+        );
+        let cases: [Case<'_>; 10] = [
+            (&embed, vec![], embed_needs.clone()),
+            (
+                &embed,
+                vec![("embed_title", ""), ("embed_description", "")],
+                embed_needs,
+            ),
+            (&embed, vec![("embed_title", "Live")], None),
+            (&embed, vec![("embed_description", "Now playing")], None),
+            (&embed, vec![("embed_title", "%title%")], None),
+            (&edit, vec![], edit_needs.clone()),
+            (&edit, vec![("content", "")], edit_needs),
+            (&edit, vec![("embed_title", "Live")], None),
+            (&edit, vec![("content", "Ended")], None),
+            (&edit, vec![("content", "%summary%")], None),
+        ];
+
+        for (runner, entries, expected) in cases {
+            let mut config = config_of(&entries);
+            config.insert("webhook_name".to_owned(), text("alerts"));
+            config.insert("message_id".to_owned(), text("42"));
+            let problem = runner
+                .validate_config(&config)
+                .err()
+                .map(|error| error.into_config_problem());
+
+            assert_eq!(problem, expected, "{} {entries:?}", runner.id());
+        }
+    }
+
+    #[tokio::test]
+    async fn content_steps_whose_content_resolves_empty_fail_without_calling_the_sink() {
+        use forge_registry::{RunContext, SubActionRunner};
+        use forge_types::EventId;
+
+        let counting = Arc::new(CountingSink::default());
+        let sink: Arc<dyn DiscordSink> = counting.clone();
+        let embed = PostEmbedRunner::new(Arc::clone(&sink));
+        let edit = EditMessageRunner::new(Arc::clone(&sink));
+        let cases: [(&dyn SubActionRunner, &str, _); 2] = [
+            (
+                &embed,
+                "embed_title",
+                any_of(["embed_title", "embed_description"]),
+            ),
+            (&edit, "content", any_of(["content", "embed_title"])),
+        ];
+        let stack = ArgStack::new().set("empty".to_owned(), text(""));
+        let publisher = SilentPublisher;
+
+        for (runner, key, problem) in cases {
+            let config = config_of(&[
+                ("webhook_name", "alerts"),
+                ("message_id", "42"),
+                (key, "%empty%"),
+            ]);
+            let ctx = RunContext::leaf(&stack, 0, EventId::new(), &publisher);
+
+            let (telemetry, _) = runner.execute(&config, &ctx).await;
+
+            assert_eq!(
+                telemetry.outcome,
+                invalid_config(problem),
+                "{}",
+                runner.id()
+            );
+        }
+        assert_eq!(counting.calls(), 0);
+    }
 }

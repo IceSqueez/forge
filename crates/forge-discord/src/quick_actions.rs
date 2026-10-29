@@ -133,21 +133,27 @@ mod tests {
     }
 
     #[test]
-    fn test_webhook_prefills_forge_test_post_content() {
+    fn test_webhook_template_is_a_post_ready_to_send_to_the_first_webhook() {
+        use forge_registry::SubActionRunner;
+
         let c = DiscordClient::new_for_test();
         {
             let mut snap = c.content_state.lock().unwrap();
             record_send(&mut snap, "alerts", None, false, true);
         }
         let actions = c.actions();
-        let test_action = actions.iter().find(|a| a.label == "Test Webhook").unwrap();
+        let template = &actions
+            .iter()
+            .find(|a| a.label == "Test Webhook")
+            .unwrap()
+            .subaction_template;
+        let runner = crate::runners::PostTextRunner::new(c.clone());
+
+        assert_eq!(template.kind_id, runner.id());
         assert_eq!(
-            test_action.subaction_template.kind_id,
-            "discord.webhook.send_message"
+            template.config.get("webhook_name"),
+            Some(&Variant::String("alerts".to_owned()))
         );
-        assert_eq!(
-            test_action.subaction_template.config.get("content"),
-            Some(&Variant::String("forge test post".to_owned()))
-        );
+        assert!(runner.validate_config(&template.config).is_ok());
     }
 }

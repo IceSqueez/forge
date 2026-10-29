@@ -1,6 +1,6 @@
 use forge_events::Event;
-use forge_registry::{ActorBlock, ActorIdentity, LoginSlot};
-use forge_types::{ActorRole, PlatformId, Variant};
+use forge_registry::{ActorBlock, ActorIdentity, ActorRole, LoginSlot};
+use forge_types::{PlatformId, Variant};
 
 pub(super) const fn twitch_actor(role: ActorRole) -> ActorBlock {
     ActorBlock {

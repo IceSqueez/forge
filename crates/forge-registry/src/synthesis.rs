@@ -1,15 +1,15 @@
 use std::collections::BTreeMap;
 
 use forge_types::{
-    ActorRole, ActorSlot, ArgStack, CanonicalVariable, CurrencyCode, DeclaredVariable,
-    MICROS_PER_MAJOR_UNIT, MoneyAmount, PlatformId, SynthesisHint, VariableStanding, Variant,
-    VariantKind,
+    ArgStack, CurrencyCode, DeclaredVariable, MICROS_PER_MAJOR_UNIT, MoneyAmount, PlatformId,
+    SynthesisHint, Variant, VariantKind,
 };
 use rand::RngExt;
 use time::OffsetDateTime;
 
 use crate::kind_platform_contract::KindPlatformContract;
 use crate::variables::{TriggerVariable, money_value};
+use crate::vocabulary::{ActorRole, ActorSlot, CanonicalVariable, VariableStanding};
 
 const DISPLAY_NAME_POOL: &[&str] = &[
     "TestUser",

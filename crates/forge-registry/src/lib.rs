@@ -25,7 +25,9 @@ mod scope;
 mod step_tree;
 mod synthesis;
 mod telemetry;
+mod trigger_seed;
 mod variables;
+mod vocabulary;
 
 pub use analyzer::{Finding, HealthSeverity, StepHealth, analyze, flag_failed, flag_switched_off};
 pub use category::{SubActionCategory, TriggerCategory};
@@ -79,7 +81,12 @@ pub use step_tree::{
 };
 pub use synthesis::{SynthesisSample, synthesize_args};
 pub use telemetry::StepTimer;
+pub use trigger_seed::{SeedVariable, TriggerCoverage, TriggerSeed};
 pub use variables::{
     ActorBlock, ActorDeclaration, ActorIdentity, LoginSlot, SourcedActor, TriggerVariable,
     TriggerVariables, declared_variables, money_value,
+};
+pub use vocabulary::{
+    ActorRole, ActorSlot, CanonicalCount, CanonicalVariable, MoneySlot, SlotPresence,
+    VariableStanding,
 };

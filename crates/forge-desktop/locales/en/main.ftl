@@ -867,6 +867,7 @@ action_editor_health_unknown_var = Uses %{ $name }%, which no trigger provides a
 action_editor_health_produced_later = Uses %{ $name }%, but it is only produced by a later step
 action_editor_health_isolated_sibling = Uses %{ $name }%, produced by a sibling step that runs in isolation and does not share it
 action_editor_health_some_triggers = Uses %{ $name }%, which only some of this action's triggers provide
+action_editor_health_unverifiable_var = Uses %{ $name }%, which no declared trigger provides; a trigger of this action does not declare its variables, so this cannot be checked
 action_editor_health_last_run_failed = Last run failed: { $message }
 action_editor_health_disabled = Integration disabled
 action_editor_health_integration_disabled = { $name } is disabled

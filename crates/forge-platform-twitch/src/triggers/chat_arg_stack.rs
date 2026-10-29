@@ -1,6 +1,6 @@
 use forge_events::Event;
-use forge_registry::{ActorBlock, ActorIdentity, LoginSlot, TriggerVariables};
-use forge_types::{ActorRole, ChatPayload, DeclaredVariable, PlatformId, Variant, VariantKind};
+use forge_registry::{ActorBlock, ActorIdentity, ActorRole, LoginSlot, TriggerVariables};
+use forge_types::{ChatPayload, DeclaredVariable, PlatformId, Variant, VariantKind};
 
 use crate::vocabulary::fields::chat as fields;
 

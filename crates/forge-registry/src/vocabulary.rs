@@ -1,5 +1,4 @@
-use crate::data_flow::SynthesisHint;
-use crate::variant::VariantKind;
+use forge_types::{SynthesisHint, VariantKind};
 
 const USER_ID: &str = "user_id";
 const USER_NAME: &str = "user_name";

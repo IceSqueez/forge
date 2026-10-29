@@ -1,11 +1,10 @@
 use forge_events::{Event, EventSource};
 use forge_registry::{
-    ActorDeclaration, ActorIdentity, EventFilter, FormField, KindPlatformContract, TriggerCategory,
-    TriggerKindDescriptor, TriggerVariables,
+    ActorDeclaration, ActorIdentity, ActorRole, ActorSlot, CanonicalVariable, EventFilter,
+    FormField, KindPlatformContract, TriggerCategory, TriggerKindDescriptor, TriggerVariables,
 };
 use forge_types::{
-    ActorRole, ActorSlot, CanonicalVariable, DeclaredVariable, PlatformId, SynthesisHint,
-    TriggerConfig, Variant, VariantKind,
+    DeclaredVariable, PlatformId, SynthesisHint, TriggerConfig, Variant, VariantKind,
 };
 
 use super::payload_read::{self, youtube_actor};

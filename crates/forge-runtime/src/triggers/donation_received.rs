@@ -1,9 +1,9 @@
 use forge_events::{DONATION_RECEIVED_KIND, DonationReceived, Event, EventSource, TypedEvent};
 use forge_registry::{
-    ActorDeclaration, ActorIdentity, EventFilter, FormField, KindPlatformContract, LoginSlot,
-    SourcedActor, TriggerCategory, TriggerKindDescriptor, TriggerVariables,
+    ActorDeclaration, ActorIdentity, ActorRole, EventFilter, FormField, KindPlatformContract,
+    LoginSlot, SourcedActor, TriggerCategory, TriggerKindDescriptor, TriggerVariables,
 };
-use forge_types::{ActorRole, DeclaredVariable, TriggerConfig, Variant, VariantKind};
+use forge_types::{DeclaredVariable, TriggerConfig, Variant, VariantKind};
 
 pub const DONATION_PROVIDER_OPTIONS_KEY: &str = "donations.provider_ids";
 

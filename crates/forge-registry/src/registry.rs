@@ -1,15 +1,22 @@
 use std::collections::{BTreeSet, HashMap};
 
-use forge_types::{IntegrationId, PlatformId};
+use forge_events::Event;
+use forge_types::{ArgStack, IntegrationId, PlatformId};
 
 use crate::descriptor::TriggerKindDescriptor;
 use crate::error::RegistryError;
 use crate::retired_ids::{IdSuccession, RetiredIds};
 use crate::runner::SubActionRunner;
+use crate::variables::{DescriptorDeclaration, TriggerVariable};
+
+struct RegisteredTrigger {
+    descriptor: Box<dyn TriggerKindDescriptor>,
+    declaration: DescriptorDeclaration,
+}
 
 #[derive(Default)]
 pub struct TriggerRegistry {
-    descriptors: HashMap<String, Box<dyn TriggerKindDescriptor>>,
+    descriptors: HashMap<String, RegisteredTrigger>,
     owners: HashMap<String, IntegrationId>,
     retired: RetiredIds,
 }
@@ -24,7 +31,14 @@ impl TriggerRegistry {
         if self.descriptors.contains_key(&id) {
             return Err(RegistryError::DuplicateId(id));
         }
-        self.descriptors.insert(id, d);
+        let declaration = DescriptorDeclaration::of(d.as_ref());
+        self.descriptors.insert(
+            id,
+            RegisteredTrigger {
+                descriptor: d,
+                declaration,
+            },
+        );
         Ok(())
     }
 
@@ -36,11 +50,29 @@ impl TriggerRegistry {
     }
 
     pub fn get(&self, kind_id: &str) -> Option<&dyn TriggerKindDescriptor> {
-        self.descriptors.get(kind_id).map(|b| b.as_ref())
+        self.descriptors
+            .get(kind_id)
+            .map(|registered| registered.descriptor.as_ref())
     }
 
     pub fn all(&self) -> impl Iterator<Item = &dyn TriggerKindDescriptor> {
-        self.descriptors.values().map(|b| b.as_ref())
+        self.descriptors
+            .values()
+            .map(|registered| registered.descriptor.as_ref())
+    }
+
+    pub fn declared_variables(&self, kind_id: &str) -> Option<&[TriggerVariable]> {
+        self.descriptors.get(kind_id)?.declaration.listed()
+    }
+
+    pub fn arg_stack(&self, kind_id: &str, event: &Event) -> ArgStack {
+        let Some(registered) = self.descriptors.get(kind_id) else {
+            return ArgStack::new();
+        };
+        match registered.declaration.variables() {
+            Some(variables) => variables.arg_stack(event),
+            None => registered.descriptor.build_arg_stack(event),
+        }
     }
 
     pub fn owning_integration(&self, kind_id: &str) -> Option<&IntegrationId> {

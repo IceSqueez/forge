@@ -2,10 +2,10 @@ use crate::vocabulary::event_kinds;
 use crate::vocabulary::trigger_ids;
 use forge_events::{Event, EventSource};
 use forge_registry::{
-    ActorDeclaration, EventFilter, FormField, KindPlatformContract, TriggerCategory,
-    TriggerKindDescriptor, TriggerVariables,
+    ActorDeclaration, CanonicalCount, CanonicalVariable, EventFilter, FormField,
+    KindPlatformContract, TriggerCategory, TriggerKindDescriptor, TriggerVariables,
 };
-use forge_types::{CanonicalCount, CanonicalVariable, PlatformId, TriggerConfig, Variant};
+use forge_types::{PlatformId, TriggerConfig, Variant};
 
 use super::chat_arg_stack::base_chat_variables;
 use crate::vocabulary::fields::chat as fields;

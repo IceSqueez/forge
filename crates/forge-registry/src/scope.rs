@@ -1,13 +1,11 @@
 use std::collections::HashMap;
 
-use forge_types::{
-    Action, ExecutionMode, SubActionStep, TriggerInstance, VariableStanding, VariantKind,
-};
+use forge_types::{Action, ExecutionMode, SubActionStep, TriggerInstance, VariantKind};
 
-use crate::analyzer::{body_locals, names_on_some_triggers_only, step_outputs};
+use crate::analyzer::{body_locals, step_outputs};
 use crate::registry::{SubActionRegistry, TriggerRegistry};
 use crate::step_tree::{StepNode, StepReach, walk_steps};
-use crate::variables::declared_variables;
+use crate::trigger_seed::TriggerSeed;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ScopeOrigin {
@@ -110,23 +108,20 @@ fn add_trigger_variables(
     triggers: &[TriggerInstance],
     registry: &TriggerRegistry,
 ) {
-    let schemas: Vec<_> = triggers
+    let seed = TriggerSeed::build(triggers, registry);
+    for variable in seed
+        .variables()
         .iter()
-        .filter_map(|instance| declared_variables(registry.get(&instance.kind_id)?))
-        .collect();
-    let some_only = names_on_some_triggers_only(&schemas);
-    for variable in schemas.into_iter().flatten() {
-        if matches!(variable.standing, VariableStanding::Legacy(_)) {
-            continue;
-        }
-        let name = variable.declared.name;
-        if scope.index.contains_key(&name) {
-            continue;
-        }
-        let some_triggers_only = some_only.contains(&name);
-        scope.add(name, Some(variable.declared.kind), ScopeOrigin::Trigger);
-        if let Some(added) = scope.variables.last_mut() {
-            added.some_triggers_only = some_triggers_only;
-        }
+        .filter(|variable| !variable.superseded)
+    {
+        scope
+            .index
+            .insert(variable.name.clone(), scope.variables.len());
+        scope.variables.push(ScopedVariable {
+            name: variable.name.clone(),
+            kind: Some(variable.kind),
+            origin: ScopeOrigin::Trigger,
+            some_triggers_only: variable.some_triggers_only,
+        });
     }
 }

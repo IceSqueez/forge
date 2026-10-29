@@ -1,14 +1,14 @@
 use std::sync::Arc;
 
 use forge_events::Event;
-use forge_types::{
-    ActorRole, ActorSlot, ArgStack, CanonicalCount, CanonicalVariable, DeclaredVariable,
-    MoneyAmount, MoneySlot, PlatformId, VariableSchema, VariableStanding, Variant,
-};
+use forge_types::{ArgStack, DeclaredVariable, MoneyAmount, PlatformId, VariableSchema, Variant};
 
 use crate::descriptor::TriggerKindDescriptor;
 use crate::first_chatter::{first_message_declaration, is_first_chat_message};
 use crate::message_emotes::{chat_emote_codes, message_emotes_declaration};
+use crate::vocabulary::{
+    ActorRole, ActorSlot, CanonicalCount, CanonicalVariable, MoneySlot, VariableStanding,
+};
 
 const CANONICAL_CLASS: u8 = 0;
 const EVENT_SPECIFIC_CLASS: u8 = 1;
@@ -81,19 +81,42 @@ impl TriggerVariable {
 }
 
 pub fn declared_variables(descriptor: &dyn TriggerKindDescriptor) -> Option<Vec<TriggerVariable>> {
-    if let Some(variables) = descriptor.variables() {
-        return Some(variables.declarations());
+    DescriptorDeclaration::of(descriptor).listed
+}
+
+pub(crate) struct DescriptorDeclaration {
+    variables: Option<TriggerVariables>,
+    listed: Option<Vec<TriggerVariable>>,
+}
+
+impl DescriptorDeclaration {
+    pub(crate) fn of(descriptor: &dyn TriggerKindDescriptor) -> Self {
+        let variables = descriptor.variables();
+        let listed = match &variables {
+            Some(variables) => Some(variables.declarations()),
+            None => descriptor.output_schema().map(event_specific_listing),
+        };
+        DescriptorDeclaration { variables, listed }
     }
-    descriptor.output_schema().map(|schema| {
-        schema
-            .variables
-            .into_iter()
-            .map(|declared| TriggerVariable {
-                declared,
-                standing: VariableStanding::EventSpecific,
-            })
-            .collect()
-    })
+
+    pub(crate) fn listed(&self) -> Option<&[TriggerVariable]> {
+        self.listed.as_deref()
+    }
+
+    pub(crate) fn variables(&self) -> Option<&TriggerVariables> {
+        self.variables.as_ref()
+    }
+}
+
+fn event_specific_listing(schema: VariableSchema) -> Vec<TriggerVariable> {
+    schema
+        .variables
+        .into_iter()
+        .map(|declared| TriggerVariable {
+            declared,
+            standing: VariableStanding::EventSpecific,
+        })
+        .collect()
 }
 
 type ValueReader = Arc<dyn Fn(&Event) -> Option<Variant> + Send + Sync>;

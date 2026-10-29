@@ -888,6 +888,7 @@ action_editor_health_unknown_var = Використовує %{ $name }%, яко�
 action_editor_health_produced_later = Використовує %{ $name }%, але її створює лише пізніший крок
 action_editor_health_isolated_sibling = Використовує %{ $name }%, яку створює сусідній крок, що виконується ізольовано й не ділиться нею
 action_editor_health_some_triggers = Використовує %{ $name }%, яку надають лише деякі тригери цієї дії
+action_editor_health_unverifiable_var = Використовує %{ $name }%, якої не оголошує жоден тригер; один із тригерів цієї дії не оголошує своїх змінних, тож це неможливо перевірити
 action_editor_health_last_run_failed = Останній запуск завершився помилкою: { $message }
 action_editor_health_disabled = Інтеграцію вимкнено
 action_editor_health_integration_disabled = { $name } вимкнено

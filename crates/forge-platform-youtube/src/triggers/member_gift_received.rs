@@ -1,9 +1,9 @@
 use forge_events::{Event, EventSource};
 use forge_registry::{
-    ActorDeclaration, ActorIdentity, EventFilter, FormField, KindPlatformContract, TriggerCategory,
-    TriggerKindDescriptor, TriggerVariables,
+    ActorDeclaration, ActorIdentity, ActorRole, ActorSlot, CanonicalVariable, EventFilter,
+    FormField, KindPlatformContract, TriggerCategory, TriggerKindDescriptor, TriggerVariables,
 };
-use forge_types::{ActorRole, ActorSlot, CanonicalVariable, PlatformId, TriggerConfig};
+use forge_types::{PlatformId, TriggerConfig};
 
 use super::payload_read::{self, youtube_actor};
 use crate::vocabulary::fields::gift as fields;

@@ -1,4 +1,5 @@
-use forge_types::{ActorRole, ActorSlot, ArgStack, CanonicalVariable, PlatformId, Variant};
+use forge_registry::{ActorRole, ActorSlot, CanonicalVariable};
+use forge_types::{ArgStack, PlatformId, Variant};
 
 use crate::assets::PageAssets;
 use crate::config;

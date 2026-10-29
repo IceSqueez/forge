@@ -24,7 +24,6 @@ mod trigger_config;
 mod trigger_instance;
 pub mod unified_chat;
 mod variant;
-mod vocabulary;
 
 pub use action::{Action, ExecutionMode};
 pub use data_flow::{DeclaredVariable, SynthesisHint, VariableSchema};
@@ -73,8 +72,4 @@ pub use unified_chat::{
 pub use variant::{
     MAX_COLLECTION_LEN as VARIANT_MAX_COLLECTION_LEN, MAX_DEPTH as VARIANT_MAX_DEPTH, Variant,
     VariantError, VariantKind, VariantType, display_scalar,
-};
-pub use vocabulary::{
-    ActorRole, ActorSlot, CanonicalCount, CanonicalVariable, MoneySlot, SlotPresence,
-    VariableStanding,
 };

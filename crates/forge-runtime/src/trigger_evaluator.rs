@@ -229,7 +229,7 @@ impl TriggerEvaluator {
             return None;
         }
 
-        let args = descriptor.build_arg_stack(event);
+        let args = self.registry.arg_stack(&instance.kind_id, event);
 
         if is_command {
             self.bus.publish(Event::caused_by(

@@ -1,12 +1,10 @@
 use forge_events::{Event, EventSource};
 use forge_registry::{
-    ActorDeclaration, ActorIdentity, ChatTriggerFamily, EventFilter, FormField,
-    KindPlatformContract, TriggerCategory, TriggerKindDescriptor, TriggerVariables,
+    ActorDeclaration, ActorIdentity, ActorRole, ActorSlot, CanonicalVariable, ChatTriggerFamily,
+    EventFilter, FormField, KindPlatformContract, TriggerCategory, TriggerKindDescriptor,
+    TriggerVariables,
 };
-use forge_types::{
-    ActorRole, ActorSlot, CanonicalVariable, DeclaredVariable, PlatformId, TriggerConfig, Variant,
-    VariantKind,
-};
+use forge_types::{DeclaredVariable, PlatformId, TriggerConfig, Variant, VariantKind};
 
 use super::payload_read::{self, youtube_actor};
 use crate::vocabulary::fields::chat as fields;

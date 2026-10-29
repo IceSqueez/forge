@@ -9,7 +9,7 @@ use crate::config_problem::ConfigProblem;
 use crate::form::FormField;
 use crate::registry::{SubActionRegistry, TriggerRegistry};
 use crate::step_tree::{StepNode, StepReach, UndecodableReason, nested_chains, walk_steps};
-use crate::variables::{TriggerVariable, declared_variables};
+use crate::trigger_seed::{TriggerCoverage, TriggerSeed};
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug)]
 pub enum HealthSeverity {
@@ -21,6 +21,7 @@ pub enum HealthSeverity {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Finding {
     UnknownVariable(String),
+    UnverifiableVariable(String),
     ProducedLater(String),
     IsolatedSibling(String),
     SomeTriggersOnly(String),
@@ -52,6 +53,7 @@ impl Finding {
             | Finding::ProducedLater(_)
             | Finding::IsolatedSibling(_)
             | Finding::SomeTriggersOnly(_)
+            | Finding::UnverifiableVariable(_)
             | Finding::IntegrationDisabled(_)
             | Finding::IntegrationFailed(_) => HealthSeverity::Yellow,
         }
@@ -148,10 +150,11 @@ fn gated_owner(
     first
 }
 
-struct TriggerSeed {
+struct VariableSeed {
     all: HashSet<String>,
     some_only: HashSet<String>,
     datetime_reach: DatetimeReach,
+    unresolved: fn(String) -> Finding,
 }
 
 #[derive(Default)]
@@ -175,6 +178,7 @@ struct ConsumedReferences {
 
 struct AnalyzeCtx<'a> {
     some_only: &'a HashSet<String>,
+    unresolved: fn(String) -> Finding,
     produced_anywhere: &'a HashSet<String>,
     datetime_reach: &'a DatetimeReach,
     sub_registry: &'a SubActionRegistry,
@@ -193,7 +197,7 @@ pub fn analyze(
     sub_registry: &SubActionRegistry,
     trigger_registry: &TriggerRegistry,
 ) -> Vec<StepHealth> {
-    let mut seed = trigger_seed(triggers, trigger_registry);
+    let mut seed = variable_seed(&TriggerSeed::build(triggers, trigger_registry));
     let isolated = action.execution_mode == ExecutionMode::RandomPick;
 
     let mut produced_anywhere = HashSet::new();
@@ -208,6 +212,7 @@ pub fn analyze(
         Some(seed) => {
             let ctx = AnalyzeCtx {
                 some_only: &seed.some_only,
+                unresolved: seed.unresolved,
                 produced_anywhere: &produced_anywhere,
                 datetime_reach: &seed.datetime_reach,
                 sub_registry,
@@ -254,56 +259,27 @@ pub fn analyze(
     result
 }
 
-fn trigger_schemas(
-    triggers: &[TriggerInstance],
-    registry: &TriggerRegistry,
-) -> Option<Vec<Vec<TriggerVariable>>> {
-    triggers
-        .iter()
-        .map(|instance| declared_variables(registry.get(&instance.kind_id)?))
-        .collect()
-}
-
-pub(crate) fn names_on_some_triggers_only(schemas: &[Vec<TriggerVariable>]) -> HashSet<String> {
-    let sets: Vec<HashSet<&str>> = schemas
-        .iter()
-        .map(|schema| {
-            schema
-                .iter()
-                .map(|variable| variable.declared.name.as_str())
-                .collect()
-        })
-        .collect();
-    let mut some_only = HashSet::new();
-    for set in &sets {
-        for name in set {
-            if sets.iter().any(|other| !other.contains(name)) {
-                some_only.insert((*name).to_owned());
-            }
-        }
-    }
-    some_only
-}
-
-fn trigger_seed(triggers: &[TriggerInstance], registry: &TriggerRegistry) -> Option<TriggerSeed> {
-    if triggers.is_empty() {
-        return None;
-    }
-    let schemas = trigger_schemas(triggers, registry)?;
+fn variable_seed(seed: &TriggerSeed) -> Option<VariableSeed> {
+    let unresolved: fn(String) -> Finding = match seed.coverage() {
+        TriggerCoverage::NoTriggers => return None,
+        TriggerCoverage::Declared => Finding::UnknownVariable,
+        TriggerCoverage::PartlyUnknown { .. } => Finding::UnverifiableVariable,
+    };
     let mut all = HashSet::new();
+    let mut some_only = HashSet::new();
     let mut datetime_reach = DatetimeReach::default();
-    for variable in schemas.iter().flatten() {
-        datetime_reach.note(
-            variable.declared.name.clone(),
-            variable.declared.kind == VariantKind::Datetime,
-        );
-        all.insert(variable.declared.name.clone());
+    for variable in seed.variables() {
+        datetime_reach.note(variable.name.clone(), variable.may_hold_datetime);
+        if variable.some_triggers_only {
+            some_only.insert(variable.name.clone());
+        }
+        all.insert(variable.name.clone());
     }
-    let some_only = names_on_some_triggers_only(&schemas);
-    Some(TriggerSeed {
+    Some(VariableSeed {
         all,
         some_only,
         datetime_reach,
+        unresolved,
     })
 }
 
@@ -343,7 +319,7 @@ fn analyze_step(
                 DirectMode::Isolated => findings.push(Finding::IsolatedSibling(var)),
             }
         } else {
-            findings.push(Finding::UnknownVariable(var));
+            findings.push((ctx.unresolved)(var));
         }
     }
 

@@ -9,7 +9,7 @@ use forge_components::{
 use forge_events::{
     ActionDone, ActionSkipped, ActionStarted, Event, SubActionDone, SubActionRun, TypedEvent,
 };
-use forge_registry::{SynthesisSample, declared_variables, synthesize_args};
+use forge_registry::{SynthesisSample, synthesize_args};
 use forge_runtime::QueueAdmission;
 use forge_types::{ArgStack, EventId};
 use gpui::{Rgba, Task, relative};
@@ -951,15 +951,14 @@ impl ScreenActionsView {
 
             let selected_inst = selected.and_then(|i| detail.trigger_instances.get(i));
             let trigger_kind = selected_inst.map(|inst| inst.kind_id.clone());
-            let declared = selected_inst
-                .and_then(|inst| self.trigger_registry.get(&inst.kind_id))
-                .and_then(|descriptor| {
-                    declared_variables(descriptor)
-                        .map(|variables| (variables, descriptor.platform_contract()))
-                });
+            let declared = selected_inst.and_then(|inst| {
+                let descriptor = self.trigger_registry.get(&inst.kind_id)?;
+                let variables = self.trigger_registry.declared_variables(&inst.kind_id)?;
+                Some((variables, descriptor.platform_contract()))
+            });
             let (initial_args, note) = match (selected_inst, declared) {
                 (Some(_), Some((variables, contract))) => (
-                    synthesize_args(&variables, &SynthesisSample::random(contract)),
+                    synthesize_args(variables, &SynthesisSample::random(contract)),
                     None,
                 ),
                 (Some(_), None) => (ArgStack::new(), Some(TestRunNote::NoSchema)),

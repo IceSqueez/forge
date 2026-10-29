@@ -1,7 +1,7 @@
 use std::collections::BTreeSet;
 
-use forge_registry::TriggerVariable;
-use forge_types::{ActorRole, ActorSlot, CanonicalVariable, VariableStanding, variable_references};
+use forge_registry::{ActorRole, ActorSlot, CanonicalVariable, TriggerVariable, VariableStanding};
+use forge_types::variable_references;
 
 use crate::config;
 use crate::descriptor::{ConfigSection, DeliveryDisposition, OverlayConfig, OverlayKindDescriptor};

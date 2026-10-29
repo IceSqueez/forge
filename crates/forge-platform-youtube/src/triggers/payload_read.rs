@@ -1,6 +1,6 @@
 use forge_events::Event;
-use forge_registry::{ActorBlock, ActorIdentity, LoginSlot};
-use forge_types::{ActorRole, PlatformId};
+use forge_registry::{ActorBlock, ActorIdentity, ActorRole, LoginSlot};
+use forge_types::PlatformId;
 
 use crate::vocabulary::fields::entity as entity_fields;
 

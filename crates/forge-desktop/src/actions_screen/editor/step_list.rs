@@ -30,6 +30,9 @@ fn analyzer_finding_message(
         Finding::SomeTriggersOnly(name) => {
             tr!("action_editor_health_some_triggers", name = name.clone())
         }
+        Finding::UnverifiableVariable(name) => {
+            tr!("action_editor_health_unverifiable_var", name = name.clone())
+        }
         Finding::LastRunFailed(message) => {
             tr!(
                 "action_editor_health_last_run_failed",

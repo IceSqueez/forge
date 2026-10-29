@@ -2,12 +2,10 @@ use crate::vocabulary::event_kinds;
 use crate::vocabulary::trigger_ids;
 use forge_events::{Event, EventSource};
 use forge_registry::{
-    ActorDeclaration, ActorIdentity, EventFilter, FormField, KindPlatformContract, TriggerCategory,
-    TriggerKindDescriptor, TriggerVariables,
+    ActorDeclaration, ActorIdentity, ActorRole, CanonicalCount, EventFilter, FormField,
+    KindPlatformContract, TriggerCategory, TriggerKindDescriptor, TriggerVariables,
 };
-use forge_types::{
-    ActorRole, CanonicalCount, DeclaredVariable, PlatformId, TriggerConfig, Variant, VariantKind,
-};
+use forge_types::{DeclaredVariable, PlatformId, TriggerConfig, Variant, VariantKind};
 
 use super::payload_read::{self, twitch_actor};
 use crate::vocabulary::fields::support as fields;

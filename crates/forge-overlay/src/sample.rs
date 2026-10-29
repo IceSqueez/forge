@@ -1,7 +1,9 @@
 use std::collections::BTreeMap;
 
-use forge_registry::{KindPlatformContract, SynthesisSample, TriggerVariable, synthesize_args};
-use forge_types::{ArgStack, CanonicalVariable, Variant};
+use forge_registry::{
+    CanonicalVariable, KindPlatformContract, SynthesisSample, TriggerVariable, synthesize_args,
+};
+use forge_types::{ArgStack, Variant};
 
 use crate::config::SPEECH;
 use crate::content::delivered_content;

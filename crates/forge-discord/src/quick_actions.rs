@@ -6,6 +6,7 @@ use forge_platform_core::{
 use forge_types::{SubActionStep, Variant};
 
 use crate::client::DiscordClient;
+use crate::vocabulary::sub_action_ids;
 
 impl QuickActions for DiscordClient {
     fn actions(&self) -> Vec<QuickAction> {
@@ -29,7 +30,7 @@ impl QuickActions for DiscordClient {
                 destructive: false,
                 accent: QuickActionAccent::Brand,
                 subaction_template: SubActionStep {
-                    kind_id: "discord.webhook.send_message".to_owned(),
+                    kind_id: sub_action_ids::WEBHOOK_SEND_MESSAGE.to_owned(),
                     config: BTreeMap::from([
                         (
                             "webhook_name".to_owned(),
@@ -57,7 +58,7 @@ impl QuickActions for DiscordClient {
                 destructive: false,
                 accent: QuickActionAccent::Brand,
                 subaction_template: SubActionStep {
-                    kind_id: "discord.webhook.send_embed".to_owned(),
+                    kind_id: sub_action_ids::WEBHOOK_SEND_EMBED.to_owned(),
                     config: BTreeMap::from([
                         (
                             "webhook_name".to_owned(),
@@ -89,7 +90,7 @@ impl QuickActions for DiscordClient {
                 destructive: false,
                 accent: QuickActionAccent::Brand,
                 subaction_template: SubActionStep {
-                    kind_id: "discord.webhook.update_message".to_owned(),
+                    kind_id: sub_action_ids::WEBHOOK_UPDATE_MESSAGE.to_owned(),
                     config: BTreeMap::from([
                         (
                             "webhook_name".to_owned(),
@@ -118,7 +119,7 @@ impl QuickActions for DiscordClient {
                 destructive: false,
                 accent: QuickActionAccent::Brand,
                 subaction_template: SubActionStep {
-                    kind_id: "discord.webhook.send_message".to_owned(),
+                    kind_id: sub_action_ids::WEBHOOK_SEND_MESSAGE.to_owned(),
                     config: BTreeMap::from([
                         ("webhook_name".to_owned(), Variant::String(first_webhook)),
                         (

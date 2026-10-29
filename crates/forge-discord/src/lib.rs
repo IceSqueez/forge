@@ -13,6 +13,7 @@ pub(crate) mod route;
 mod runners;
 mod sink;
 mod status;
+pub mod vocabulary;
 mod webhooks;
 
 pub use client::DiscordClient;

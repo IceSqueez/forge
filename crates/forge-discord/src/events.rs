@@ -2,6 +2,8 @@ use forge_events::{Event, EventPublisher, EventSource};
 use serde_json::json;
 
 use crate::error::DiscordError;
+use crate::vocabulary::event_kinds;
+use crate::vocabulary::fields::{failed, posted, rate_limited, webhook};
 
 pub(crate) fn publish_posted(
     publisher: &dyn EventPublisher,
@@ -11,11 +13,11 @@ pub(crate) fn publish_posted(
 ) {
     publisher.publish(Event::new(
         EventSource::Discord,
-        "discord.webhook.posted",
+        event_kinds::WEBHOOK_POSTED,
         json!({
-            "webhook_name": webhook_name,
-            "message_id":   message_id,
-            "embed_count":  embed_count,
+            (webhook::WEBHOOK_NAME): webhook_name,
+            (posted::MESSAGE_ID): message_id,
+            (posted::EMBED_COUNT): embed_count,
         }),
     ));
 }
@@ -27,12 +29,12 @@ pub(crate) fn publish_failed(
 ) {
     publisher.publish(Event::new(
         EventSource::Discord,
-        "discord.webhook.failed",
+        event_kinds::WEBHOOK_FAILED,
         json!({
-            "webhook_name": webhook_name,
-            "reason":       err.reason_token(),
-            "detail":       err.detail(),
-            "status_code":  err.status_code(),
+            (webhook::WEBHOOK_NAME): webhook_name,
+            (failed::REASON): err.reason_token(),
+            (failed::DETAIL): err.detail(),
+            (failed::STATUS_CODE): err.status_code(),
         }),
     ));
 }
@@ -44,10 +46,10 @@ pub(crate) fn publish_rate_limited(
 ) {
     publisher.publish(Event::new(
         EventSource::Discord,
-        "discord.webhook.rate_limited",
+        event_kinds::WEBHOOK_RATE_LIMITED,
         json!({
-            "webhook_name":      webhook_name,
-            "retry_after_secs":  retry_after_secs,
+            (webhook::WEBHOOK_NAME): webhook_name,
+            (rate_limited::RETRY_AFTER_SECS): retry_after_secs,
         }),
     ));
 }

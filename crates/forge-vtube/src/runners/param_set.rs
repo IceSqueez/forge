@@ -14,6 +14,7 @@ use time::OffsetDateTime;
 use crate::runners::hold_registry::HoldRegistry;
 use crate::runners::numeric::{accepts_number, optional_number, required_number};
 use crate::sink::VTubeSink;
+use crate::vocabulary::sub_action_ids;
 
 const PARAM_HOLD_RESEND_INTERVAL: Duration = Duration::from_millis(400);
 const PARAM_HOLD_MAX_SECS: f64 = 600.0;
@@ -47,7 +48,7 @@ impl ParamSetRunner {
 #[async_trait]
 impl SubActionRunner for ParamSetRunner {
     fn id(&self) -> &str {
-        "vtube.param.set"
+        sub_action_ids::PARAM_SET
     }
 
     fn category(&self) -> SubActionCategory {
@@ -159,7 +160,7 @@ impl SubActionRunner for ParamSetRunner {
             SubActionTelemetry {
                 args_in: ::std::collections::BTreeMap::new(),
                 produced: ::std::collections::BTreeMap::new(),
-                kind: "vtube.param.set".to_owned(),
+                kind: sub_action_ids::PARAM_SET.to_owned(),
                 started_at,
                 duration_ms: start.elapsed().as_millis() as u64,
                 outcome,

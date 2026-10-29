@@ -8,8 +8,8 @@ use forge_registry::{
 use forge_types::{ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetry, Variant};
 
 use crate::control::SoundboardControl;
+use crate::vocabulary::sub_action_ids;
 
-const KIND: &str = "soundboard.volume.set_master";
 const VOLUME_DB_KEY: &str = "volume_db";
 const MIN_VOLUME_DB: i32 = -30;
 const MAX_VOLUME_DB: i32 = 0;
@@ -51,7 +51,7 @@ impl SetMasterVolumeRunner {
 #[async_trait]
 impl SubActionRunner for SetMasterVolumeRunner {
     fn id(&self) -> &str {
-        KIND
+        sub_action_ids::VOLUME_SET_MASTER
     }
 
     fn category(&self) -> SubActionCategory {
@@ -101,7 +101,7 @@ impl SubActionRunner for SetMasterVolumeRunner {
         config: &SubActionConfig,
         ctx: &RunContext<'_>,
     ) -> (SubActionTelemetry, Option<ArgStack>) {
-        let timer = StepTimer::start(ctx, KIND);
+        let timer = StepTimer::start(ctx, sub_action_ids::VOLUME_SET_MASTER);
         let volume_db = match read_volume_db(config) {
             Ok(volume_db) => volume_db,
             Err(e) => return (timer.failed(e.to_string()), None),

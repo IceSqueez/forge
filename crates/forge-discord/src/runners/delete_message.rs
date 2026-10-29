@@ -12,6 +12,7 @@ use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, Variant};
 use time::OffsetDateTime;
 
 use crate::sink::DiscordSink;
+use crate::vocabulary::sub_action_ids;
 
 pub struct DeleteMessageRunner {
     sink: Arc<dyn DiscordSink>,
@@ -26,7 +27,7 @@ impl DeleteMessageRunner {
 #[async_trait]
 impl SubActionRunner for DeleteMessageRunner {
     fn id(&self) -> &str {
-        "discord.webhook.delete_message"
+        sub_action_ids::WEBHOOK_DELETE_MESSAGE
     }
 
     fn category(&self) -> SubActionCategory {
@@ -107,7 +108,7 @@ impl SubActionRunner for DeleteMessageRunner {
                 SubActionTelemetry {
                     args_in: ::std::collections::BTreeMap::new(),
                     produced: ::std::collections::BTreeMap::new(),
-                    kind: "discord.webhook.delete_message".to_owned(),
+                    kind: sub_action_ids::WEBHOOK_DELETE_MESSAGE.to_owned(),
                     started_at,
                     duration_ms: start.elapsed().as_millis() as u64,
                     outcome: SubActionOutcome::Failed("message_id is empty".to_owned()),
@@ -125,7 +126,7 @@ impl SubActionRunner for DeleteMessageRunner {
             SubActionTelemetry {
                 args_in: ::std::collections::BTreeMap::new(),
                 produced: ::std::collections::BTreeMap::new(),
-                kind: "discord.webhook.delete_message".to_owned(),
+                kind: sub_action_ids::WEBHOOK_DELETE_MESSAGE.to_owned(),
                 started_at,
                 duration_ms: start.elapsed().as_millis() as u64,
                 outcome,

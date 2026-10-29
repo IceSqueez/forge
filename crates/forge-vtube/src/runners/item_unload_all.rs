@@ -9,6 +9,7 @@ use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry};
 use time::OffsetDateTime;
 
 use crate::sink::VTubeSink;
+use crate::vocabulary::sub_action_ids;
 
 pub struct ItemUnloadAllRunner {
     sink: Arc<dyn VTubeSink>,
@@ -23,7 +24,7 @@ impl ItemUnloadAllRunner {
 #[async_trait]
 impl SubActionRunner for ItemUnloadAllRunner {
     fn id(&self) -> &str {
-        "vtube.item.unload_all"
+        sub_action_ids::ITEM_UNLOAD_ALL
     }
 
     fn category(&self) -> SubActionCategory {
@@ -72,7 +73,7 @@ impl SubActionRunner for ItemUnloadAllRunner {
             SubActionTelemetry {
                 args_in: ::std::collections::BTreeMap::new(),
                 produced: ::std::collections::BTreeMap::new(),
-                kind: "vtube.item.unload_all".to_owned(),
+                kind: sub_action_ids::ITEM_UNLOAD_ALL.to_owned(),
                 started_at,
                 duration_ms: start.elapsed().as_millis() as u64,
                 outcome,

@@ -5,7 +5,8 @@ use forge_components::{
     BreadcrumbCrumb, Icon, ToastKind, body_family, icon, page_frame, scaled, tr,
 };
 use forge_events::Event;
-use forge_hotkey::{HotkeyClient, event_kinds};
+use forge_hotkey::HotkeyClient;
+use forge_hotkey::vocabulary::event_kinds;
 use forge_runtime::EventBus;
 use forge_storage::{DataProvider, SettingsRepo, StorageError};
 use forge_types::TriggerInstanceId;

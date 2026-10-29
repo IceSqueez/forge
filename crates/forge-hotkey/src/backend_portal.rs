@@ -519,12 +519,13 @@ impl ShortcutsPortal for DbusShortcutsPortal {
 }
 
 fn shortcut_properties(combo: &HotkeyCombo) -> HashMap<&'static str, Variant<'_>> {
-    let mut props: HashMap<&'static str, Variant<'_>> =
-        HashMap::from([(SHORTCUT_DESCRIPTION, Variant::from(combo.as_str()))]);
-    if let Some(trigger) = preferred_trigger(combo) {
-        props.insert(SHORTCUT_PREFERRED_TRIGGER, Variant::from(trigger));
-    }
-    props
+    HashMap::from([
+        (SHORTCUT_DESCRIPTION, Variant::from(combo.as_str())),
+        (
+            SHORTCUT_PREFERRED_TRIGGER,
+            Variant::from(preferred_trigger(combo)),
+        ),
+    ])
 }
 
 fn bound_triggers(results: &HashMap<String, OwnedVariant>) -> HashMap<String, String> {

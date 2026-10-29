@@ -3,7 +3,7 @@ use forge_types::{ActionId, TriggerInstanceId};
 
 use crate::backend::HotkeyId;
 use crate::client::HotkeyClient;
-use crate::event_kinds;
+use crate::vocabulary::event_kinds;
 
 pub const COMBO_FIELD: &str = "combo";
 const CONFLICTS_METRIC: &str = "CONFLICTS";

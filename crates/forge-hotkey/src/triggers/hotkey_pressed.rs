@@ -8,14 +8,13 @@ use forge_types::{
     ArgStack, DeclaredVariable, TriggerConfig, VariableSchema, Variant, VariantKind,
 };
 
-use crate::event_kinds;
-use crate::payload_fields as fields;
+use crate::vocabulary::{event_kinds, fields, trigger_ids, variables};
 
 pub struct HotkeyPressedDescriptor;
 
 impl TriggerKindDescriptor for HotkeyPressedDescriptor {
     fn id(&self) -> &str {
-        "hotkey.global.pressed"
+        trigger_ids::GLOBAL_PRESSED
     }
 
     fn category(&self) -> TriggerCategory {
@@ -87,17 +86,20 @@ impl TriggerKindDescriptor for HotkeyPressedDescriptor {
     fn build_arg_stack(&self, event: &Event) -> ArgStack {
         let mut stack = ArgStack::new();
         if let Some(combo) = event.payload.get(fields::COMBO).and_then(|v| v.as_str()) {
-            stack = stack.set("hotkey.combo".to_owned(), Variant::String(combo.to_owned()));
+            stack = stack.set(
+                variables::COMBO.to_owned(),
+                Variant::String(combo.to_owned()),
+            );
         }
         if let Some(id) = event.payload.get(fields::ID).and_then(|v| v.as_u64()) {
-            stack = stack.set("hotkey.id".to_owned(), Variant::Int(id as i64));
+            stack = stack.set(variables::ID.to_owned(), Variant::Int(id as i64));
         }
         if let Some(ts) = event
             .payload
             .get(fields::TIMESTAMP_US)
             .and_then(|v| v.as_u64())
         {
-            stack = stack.set("hotkey.timestamp_us".to_owned(), Variant::Int(ts as i64));
+            stack = stack.set(variables::TIMESTAMP_US.to_owned(), Variant::Int(ts as i64));
         }
         stack
     }
@@ -106,19 +108,19 @@ impl TriggerKindDescriptor for HotkeyPressedDescriptor {
         Some(VariableSchema {
             variables: vec![
                 DeclaredVariable {
-                    name: "hotkey.combo".to_owned(),
+                    name: variables::COMBO.to_owned(),
                     kind: VariantKind::String,
                     label: "Hotkey combo".to_owned(),
                     synthesis: None,
                 },
                 DeclaredVariable {
-                    name: "hotkey.id".to_owned(),
+                    name: variables::ID.to_owned(),
                     kind: VariantKind::Int,
                     label: "Hotkey ID".to_owned(),
                     synthesis: None,
                 },
                 DeclaredVariable {
-                    name: "hotkey.timestamp_us".to_owned(),
+                    name: variables::TIMESTAMP_US.to_owned(),
                     kind: VariantKind::Int,
                     label: "Timestamp (microseconds)".to_owned(),
                     synthesis: None,

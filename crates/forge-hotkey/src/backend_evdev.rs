@@ -15,12 +15,21 @@ use crate::combo::HotkeyCombo;
 use crate::error::HotkeyError;
 use crate::evdev_watch::{EVENT_NODE_PREFIX, INPUT_DIR, InputDirChange, InputDirWatcher};
 use crate::owned_fd_readiness::register_readiness;
+use crate::vocabulary::keys::{Key, Modifier, Modifiers};
 
 const EV_SYN: u16 = 0;
 const EV_KEY: u16 = 1;
 const SYN_DROPPED: u16 = 3;
 const KEY_DOWN: i32 = 1;
 const KEY_UP: i32 = 0;
+const KEY_LEFTCTRL: u16 = 29;
+const KEY_RIGHTCTRL: u16 = 97;
+const KEY_LEFTSHIFT: u16 = 42;
+const KEY_RIGHTSHIFT: u16 = 54;
+const KEY_LEFTALT: u16 = 56;
+const KEY_RIGHTALT: u16 = 100;
+const KEY_LEFTMETA: u16 = 125;
+const KEY_RIGHTMETA: u16 = 126;
 const INPUT_EVENT_SIZE: usize = 24;
 const READ_CHUNK_EVENTS: usize = 64;
 const COMMAND_QUEUE_CAPACITY: usize = 64;
@@ -323,21 +332,19 @@ async fn handle_key_event(
         return;
     }
 
-    if key_code_to_modifier(code).is_some() {
+    if modifier_at(code).is_some() {
         let mut state = modifier_state.lock().unwrap_or_else(|p| p.into_inner());
         if value == KEY_DOWN {
             state.insert(code);
         } else if value == KEY_UP {
             state.remove(&code);
         }
-    } else if let Some(key_name) = key_code_to_name(code) {
+    } else if let Some(key) = key_at(code) {
         if value == KEY_DOWN {
-            let modifiers_held: HashSet<u16> = modifier_state
-                .lock()
-                .unwrap_or_else(|p| p.into_inner())
-                .clone();
-            let combo_str = build_combo_string(&modifiers_held, key_name);
-            press_key(code, &combo_str, held_keys, registered, fired_tx).await;
+            let modifiers =
+                held_modifiers(&modifier_state.lock().unwrap_or_else(|p| p.into_inner()));
+            let pressed = HotkeyCombo::new(modifiers, key);
+            press_key(code, &pressed, held_keys, registered, fired_tx).await;
         } else if value == KEY_UP {
             release_key(code, held_keys, fired_tx).await;
         }
@@ -346,7 +353,7 @@ async fn handle_key_event(
 
 async fn press_key(
     code: u16,
-    combo_str: &str,
+    pressed: &HotkeyCombo,
     held_keys: &HeldKeys,
     registered: &Registered,
     fired_tx: &mpsc::Sender<HotkeyFiredEvent>,
@@ -355,7 +362,7 @@ async fn press_key(
         let guard = registered.read().unwrap_or_else(|p| p.into_inner());
         guard
             .iter()
-            .find(|(_, combo)| combo.as_str() == combo_str)
+            .find(|(_, combo)| *combo == pressed)
             .map(|(id, combo)| (*id, combo.clone()))
     };
     let Some((id, combo)) = matched else {
@@ -404,33 +411,6 @@ async fn release_key(code: u16, held_keys: &HeldKeys, fired_tx: &mpsc::Sender<Ho
     }
 }
 
-fn build_combo_string(held_modifier_codes: &HashSet<u16>, key: &str) -> String {
-    const CTRL_CODE: u16 = 29;
-    const SHIFT_CODE: u16 = 42;
-    const ALT_CODE: u16 = 56;
-    const META_CODE: u16 = 125;
-
-    let modifiers: HashSet<u16> = held_modifier_codes
-        .iter()
-        .filter_map(|&code| key_code_to_modifier(code))
-        .collect();
-    let mut parts: Vec<&str> = Vec::new();
-    if modifiers.contains(&CTRL_CODE) {
-        parts.push("Ctrl");
-    }
-    if modifiers.contains(&SHIFT_CODE) {
-        parts.push("Shift");
-    }
-    if modifiers.contains(&ALT_CODE) {
-        parts.push("Alt");
-    }
-    if modifiers.contains(&META_CODE) {
-        parts.push("Meta");
-    }
-    parts.push(key);
-    parts.join("+")
-}
-
 fn current_timestamp_us() -> u64 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -438,92 +418,99 @@ fn current_timestamp_us() -> u64 {
         .as_micros() as u64
 }
 
-fn key_code_to_modifier(code: u16) -> Option<u16> {
+fn held_modifiers(codes: &HashSet<u16>) -> Modifiers {
+    codes.iter().filter_map(|&code| modifier_at(code)).collect()
+}
+
+fn modifier_at(code: u16) -> Option<Modifier> {
     match code {
-        29 | 97 => Some(29),
-        42 | 54 => Some(42),
-        56 | 100 => Some(56),
-        125 | 126 => Some(125),
+        KEY_LEFTCTRL | KEY_RIGHTCTRL => Some(Modifier::Ctrl),
+        KEY_LEFTSHIFT | KEY_RIGHTSHIFT => Some(Modifier::Shift),
+        KEY_LEFTALT | KEY_RIGHTALT => Some(Modifier::Alt),
+        KEY_LEFTMETA | KEY_RIGHTMETA => Some(Modifier::Meta),
         _ => None,
     }
 }
 
-fn key_code_to_name(code: u16) -> Option<&'static str> {
-    match code {
-        2 => Some("1"),
-        3 => Some("2"),
-        4 => Some("3"),
-        5 => Some("4"),
-        6 => Some("5"),
-        7 => Some("6"),
-        8 => Some("7"),
-        9 => Some("8"),
-        10 => Some("9"),
-        11 => Some("0"),
-        16 => Some("Q"),
-        17 => Some("W"),
-        18 => Some("E"),
-        19 => Some("R"),
-        20 => Some("T"),
-        21 => Some("Y"),
-        22 => Some("U"),
-        23 => Some("I"),
-        24 => Some("O"),
-        25 => Some("P"),
-        30 => Some("A"),
-        31 => Some("S"),
-        32 => Some("D"),
-        33 => Some("F"),
-        34 => Some("G"),
-        35 => Some("H"),
-        36 => Some("J"),
-        37 => Some("K"),
-        38 => Some("L"),
-        44 => Some("Z"),
-        45 => Some("X"),
-        46 => Some("C"),
-        47 => Some("V"),
-        48 => Some("B"),
-        49 => Some("N"),
-        50 => Some("M"),
-        59 => Some("F1"),
-        60 => Some("F2"),
-        61 => Some("F3"),
-        62 => Some("F4"),
-        63 => Some("F5"),
-        64 => Some("F6"),
-        65 => Some("F7"),
-        66 => Some("F8"),
-        67 => Some("F9"),
-        68 => Some("F10"),
-        87 => Some("F11"),
-        88 => Some("F12"),
-        1 => Some("Escape"),
-        14 => Some("Backspace"),
-        15 => Some("Tab"),
-        28 => Some("Enter"),
-        57 => Some("Space"),
-        102 => Some("Home"),
-        107 => Some("End"),
-        104 => Some("PageUp"),
-        109 => Some("PageDown"),
-        110 => Some("Insert"),
-        111 => Some("Delete"),
-        103 => Some("ArrowUp"),
-        108 => Some("ArrowDown"),
-        105 => Some("ArrowLeft"),
-        106 => Some("ArrowRight"),
-        71 => Some("Num7"),
-        72 => Some("Num8"),
-        73 => Some("Num9"),
-        75 => Some("Num4"),
-        76 => Some("Num5"),
-        77 => Some("Num6"),
-        79 => Some("Num1"),
-        80 => Some("Num2"),
-        81 => Some("Num3"),
-        82 => Some("Num0"),
-        _ => None,
+fn key_at(code: u16) -> Option<Key> {
+    Key::ALL.into_iter().find(|&key| scancode(key) == code)
+}
+
+fn scancode(key: Key) -> u16 {
+    match key {
+        Key::A => 30,
+        Key::B => 48,
+        Key::C => 46,
+        Key::D => 32,
+        Key::E => 18,
+        Key::F => 33,
+        Key::G => 34,
+        Key::H => 35,
+        Key::I => 23,
+        Key::J => 36,
+        Key::K => 37,
+        Key::L => 38,
+        Key::M => 50,
+        Key::N => 49,
+        Key::O => 24,
+        Key::P => 25,
+        Key::Q => 16,
+        Key::R => 19,
+        Key::S => 31,
+        Key::T => 20,
+        Key::U => 22,
+        Key::V => 47,
+        Key::W => 17,
+        Key::X => 45,
+        Key::Y => 21,
+        Key::Z => 44,
+        Key::Digit0 => 11,
+        Key::Digit1 => 2,
+        Key::Digit2 => 3,
+        Key::Digit3 => 4,
+        Key::Digit4 => 5,
+        Key::Digit5 => 6,
+        Key::Digit6 => 7,
+        Key::Digit7 => 8,
+        Key::Digit8 => 9,
+        Key::Digit9 => 10,
+        Key::F1 => 59,
+        Key::F2 => 60,
+        Key::F3 => 61,
+        Key::F4 => 62,
+        Key::F5 => 63,
+        Key::F6 => 64,
+        Key::F7 => 65,
+        Key::F8 => 66,
+        Key::F9 => 67,
+        Key::F10 => 68,
+        Key::F11 => 87,
+        Key::F12 => 88,
+        Key::Delete => 111,
+        Key::Insert => 110,
+        Key::Home => 102,
+        Key::End => 107,
+        Key::PageUp => 104,
+        Key::PageDown => 109,
+        Key::Backspace => 14,
+        Key::Tab => 15,
+        Key::Enter => 28,
+        Key::Escape => 1,
+        Key::Space => 57,
+        Key::ArrowUp => 103,
+        Key::ArrowDown => 108,
+        Key::ArrowLeft => 105,
+        Key::ArrowRight => 106,
+        Key::Num0 => 82,
+        Key::Num1 => 79,
+        Key::Num2 => 80,
+        Key::Num3 => 81,
+        Key::Num4 => 75,
+        Key::Num5 => 76,
+        Key::Num6 => 77,
+        Key::Num7 => 71,
+        Key::Num8 => 72,
+        Key::Num9 => 73,
     }
 }
 

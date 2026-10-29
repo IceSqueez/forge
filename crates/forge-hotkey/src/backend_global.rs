@@ -13,6 +13,7 @@ use crate::backend::{HotkeyBackend, HotkeyEdge, HotkeyFiredEvent, HotkeyId};
 use crate::combo::HotkeyCombo;
 use crate::error::HotkeyError;
 use crate::main_thread::MainThreadLink;
+use crate::vocabulary::keys::{Key, Modifier};
 
 const FIRED_QUEUE: usize = 64;
 const EVENT_POLL_INTERVAL: std::time::Duration = std::time::Duration::from_millis(5);
@@ -86,7 +87,7 @@ fn map_manager_error(error: global_hotkey::Error, combo: &HotkeyCombo) -> Hotkey
 #[async_trait]
 impl HotkeyBackend for GlobalHotkeyBackend {
     async fn register(&self, id: HotkeyId, combo: &HotkeyCombo) -> Result<(), HotkeyError> {
-        let hotkey = combo_to_hotkey(combo)?;
+        let hotkey = combo_to_hotkey(combo);
         if combo.swallows_typing() {
             tracing::warn!(
                 combo = %combo,
@@ -181,111 +182,100 @@ async fn poll_global_hotkey_events(
     }
 }
 
-fn combo_to_hotkey(combo: &HotkeyCombo) -> Result<HotKey, HotkeyError> {
-    let s = combo.as_str();
-    let parts: Vec<&str> = s.split('+').collect();
-    let Some((&key_str, modifier_parts)) = parts.split_last() else {
-        return Err(HotkeyError::InvalidCombo(s.to_owned()));
-    };
-
-    let mut modifiers = Modifiers::empty();
-    for m in modifier_parts {
-        match *m {
-            "Ctrl" => modifiers |= Modifiers::CONTROL,
-            "Shift" => modifiers |= Modifiers::SHIFT,
-            "Alt" => modifiers |= Modifiers::ALT,
-            "Meta" => modifiers |= Modifiers::META,
-            _ => return Err(HotkeyError::InvalidCombo(s.to_owned())),
-        }
-    }
-
-    let code = str_to_code(key_str).ok_or_else(|| HotkeyError::InvalidCombo(s.to_owned()))?;
-
-    let mods = if modifiers.is_empty() {
-        None
-    } else {
-        Some(modifiers)
-    };
-
-    Ok(HotKey::new(mods, code))
+fn combo_to_hotkey(combo: &HotkeyCombo) -> HotKey {
+    let modifiers: Modifiers = combo
+        .modifiers()
+        .iter()
+        .map(modifier_flag)
+        .fold(Modifiers::empty(), |all, flag| all | flag);
+    let modifiers = (!modifiers.is_empty()).then_some(modifiers);
+    HotKey::new(modifiers, key_code(combo.key()))
 }
 
-fn str_to_code(s: &str) -> Option<Code> {
-    match s {
-        "A" => Some(Code::KeyA),
-        "B" => Some(Code::KeyB),
-        "C" => Some(Code::KeyC),
-        "D" => Some(Code::KeyD),
-        "E" => Some(Code::KeyE),
-        "F" => Some(Code::KeyF),
-        "G" => Some(Code::KeyG),
-        "H" => Some(Code::KeyH),
-        "I" => Some(Code::KeyI),
-        "J" => Some(Code::KeyJ),
-        "K" => Some(Code::KeyK),
-        "L" => Some(Code::KeyL),
-        "M" => Some(Code::KeyM),
-        "N" => Some(Code::KeyN),
-        "O" => Some(Code::KeyO),
-        "P" => Some(Code::KeyP),
-        "Q" => Some(Code::KeyQ),
-        "R" => Some(Code::KeyR),
-        "S" => Some(Code::KeyS),
-        "T" => Some(Code::KeyT),
-        "U" => Some(Code::KeyU),
-        "V" => Some(Code::KeyV),
-        "W" => Some(Code::KeyW),
-        "X" => Some(Code::KeyX),
-        "Y" => Some(Code::KeyY),
-        "Z" => Some(Code::KeyZ),
-        "0" => Some(Code::Digit0),
-        "1" => Some(Code::Digit1),
-        "2" => Some(Code::Digit2),
-        "3" => Some(Code::Digit3),
-        "4" => Some(Code::Digit4),
-        "5" => Some(Code::Digit5),
-        "6" => Some(Code::Digit6),
-        "7" => Some(Code::Digit7),
-        "8" => Some(Code::Digit8),
-        "9" => Some(Code::Digit9),
-        "F1" => Some(Code::F1),
-        "F2" => Some(Code::F2),
-        "F3" => Some(Code::F3),
-        "F4" => Some(Code::F4),
-        "F5" => Some(Code::F5),
-        "F6" => Some(Code::F6),
-        "F7" => Some(Code::F7),
-        "F8" => Some(Code::F8),
-        "F9" => Some(Code::F9),
-        "F10" => Some(Code::F10),
-        "F11" => Some(Code::F11),
-        "F12" => Some(Code::F12),
-        "Delete" => Some(Code::Delete),
-        "Insert" => Some(Code::Insert),
-        "Home" => Some(Code::Home),
-        "End" => Some(Code::End),
-        "PageUp" => Some(Code::PageUp),
-        "PageDown" => Some(Code::PageDown),
-        "Backspace" => Some(Code::Backspace),
-        "Tab" => Some(Code::Tab),
-        "Enter" => Some(Code::Enter),
-        "Escape" => Some(Code::Escape),
-        "Space" => Some(Code::Space),
-        "ArrowUp" => Some(Code::ArrowUp),
-        "ArrowDown" => Some(Code::ArrowDown),
-        "ArrowLeft" => Some(Code::ArrowLeft),
-        "ArrowRight" => Some(Code::ArrowRight),
-        "Num0" => Some(Code::Numpad0),
-        "Num1" => Some(Code::Numpad1),
-        "Num2" => Some(Code::Numpad2),
-        "Num3" => Some(Code::Numpad3),
-        "Num4" => Some(Code::Numpad4),
-        "Num5" => Some(Code::Numpad5),
-        "Num6" => Some(Code::Numpad6),
-        "Num7" => Some(Code::Numpad7),
-        "Num8" => Some(Code::Numpad8),
-        "Num9" => Some(Code::Numpad9),
-        _ => None,
+fn modifier_flag(modifier: Modifier) -> Modifiers {
+    match modifier {
+        Modifier::Ctrl => Modifiers::CONTROL,
+        Modifier::Shift => Modifiers::SHIFT,
+        Modifier::Alt => Modifiers::ALT,
+        Modifier::Meta => Modifiers::META,
+    }
+}
+
+fn key_code(key: Key) -> Code {
+    match key {
+        Key::A => Code::KeyA,
+        Key::B => Code::KeyB,
+        Key::C => Code::KeyC,
+        Key::D => Code::KeyD,
+        Key::E => Code::KeyE,
+        Key::F => Code::KeyF,
+        Key::G => Code::KeyG,
+        Key::H => Code::KeyH,
+        Key::I => Code::KeyI,
+        Key::J => Code::KeyJ,
+        Key::K => Code::KeyK,
+        Key::L => Code::KeyL,
+        Key::M => Code::KeyM,
+        Key::N => Code::KeyN,
+        Key::O => Code::KeyO,
+        Key::P => Code::KeyP,
+        Key::Q => Code::KeyQ,
+        Key::R => Code::KeyR,
+        Key::S => Code::KeyS,
+        Key::T => Code::KeyT,
+        Key::U => Code::KeyU,
+        Key::V => Code::KeyV,
+        Key::W => Code::KeyW,
+        Key::X => Code::KeyX,
+        Key::Y => Code::KeyY,
+        Key::Z => Code::KeyZ,
+        Key::Digit0 => Code::Digit0,
+        Key::Digit1 => Code::Digit1,
+        Key::Digit2 => Code::Digit2,
+        Key::Digit3 => Code::Digit3,
+        Key::Digit4 => Code::Digit4,
+        Key::Digit5 => Code::Digit5,
+        Key::Digit6 => Code::Digit6,
+        Key::Digit7 => Code::Digit7,
+        Key::Digit8 => Code::Digit8,
+        Key::Digit9 => Code::Digit9,
+        Key::F1 => Code::F1,
+        Key::F2 => Code::F2,
+        Key::F3 => Code::F3,
+        Key::F4 => Code::F4,
+        Key::F5 => Code::F5,
+        Key::F6 => Code::F6,
+        Key::F7 => Code::F7,
+        Key::F8 => Code::F8,
+        Key::F9 => Code::F9,
+        Key::F10 => Code::F10,
+        Key::F11 => Code::F11,
+        Key::F12 => Code::F12,
+        Key::Delete => Code::Delete,
+        Key::Insert => Code::Insert,
+        Key::Home => Code::Home,
+        Key::End => Code::End,
+        Key::PageUp => Code::PageUp,
+        Key::PageDown => Code::PageDown,
+        Key::Backspace => Code::Backspace,
+        Key::Tab => Code::Tab,
+        Key::Enter => Code::Enter,
+        Key::Escape => Code::Escape,
+        Key::Space => Code::Space,
+        Key::ArrowUp => Code::ArrowUp,
+        Key::ArrowDown => Code::ArrowDown,
+        Key::ArrowLeft => Code::ArrowLeft,
+        Key::ArrowRight => Code::ArrowRight,
+        Key::Num0 => Code::Numpad0,
+        Key::Num1 => Code::Numpad1,
+        Key::Num2 => Code::Numpad2,
+        Key::Num3 => Code::Numpad3,
+        Key::Num4 => Code::Numpad4,
+        Key::Num5 => Code::Numpad5,
+        Key::Num6 => Code::Numpad6,
+        Key::Num7 => Code::Numpad7,
+        Key::Num8 => Code::Numpad8,
+        Key::Num9 => Code::Numpad9,
     }
 }
 

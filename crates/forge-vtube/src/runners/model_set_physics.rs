@@ -12,6 +12,7 @@ use time::OffsetDateTime;
 
 use crate::runners::numeric::optional_number;
 use crate::sink::VTubeSink;
+use crate::vocabulary::sub_action_ids;
 
 pub struct ModelSetPhysicsRunner {
     sink: Arc<dyn VTubeSink>,
@@ -28,7 +29,7 @@ const DEFAULT_OVERRIDE_SECONDS: f64 = 2.0;
 #[async_trait]
 impl SubActionRunner for ModelSetPhysicsRunner {
     fn id(&self) -> &str {
-        "vtube.model.set_physics"
+        sub_action_ids::MODEL_SET_PHYSICS
     }
 
     fn category(&self) -> SubActionCategory {
@@ -107,7 +108,7 @@ impl SubActionRunner for ModelSetPhysicsRunner {
             SubActionTelemetry {
                 args_in: ::std::collections::BTreeMap::new(),
                 produced: ::std::collections::BTreeMap::new(),
-                kind: "vtube.model.set_physics".to_owned(),
+                kind: sub_action_ids::MODEL_SET_PHYSICS.to_owned(),
                 started_at,
                 duration_ms: start.elapsed().as_millis() as u64,
                 outcome,

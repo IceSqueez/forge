@@ -9,7 +9,6 @@ mod events;
 mod health;
 mod integration;
 mod option_source;
-mod payload_fields;
 mod probe;
 mod quick_actions;
 mod runners;
@@ -19,6 +18,7 @@ mod status;
 pub(crate) mod supervisor;
 mod switchable_sink;
 mod triggers;
+pub mod vocabulary;
 mod vts;
 
 pub const PLUGIN_NAME: &str = "Forge";

@@ -9,6 +9,7 @@ use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, Variant};
 use time::OffsetDateTime;
 
 use crate::sink::{VTubeSink, result_keys};
+use crate::vocabulary::{sub_action_ids, variables};
 
 pub struct LookupCurrentModelRunner {
     sink: Arc<dyn VTubeSink>,
@@ -23,7 +24,7 @@ impl LookupCurrentModelRunner {
 #[async_trait]
 impl SubActionRunner for LookupCurrentModelRunner {
     fn id(&self) -> &str {
-        "vtube.lookup.current_model"
+        sub_action_ids::LOOKUP_CURRENT_MODEL
     }
 
     fn category(&self) -> SubActionCategory {
@@ -71,20 +72,20 @@ impl SubActionRunner for LookupCurrentModelRunner {
                 let mut stack = ctx.arg_stack.clone();
                 if let Variant::Object(ref map) = variant {
                     if let Some(v) = map.get(result_keys::NAME) {
-                        stack = stack.set("vtube.model.name".to_owned(), v.clone());
+                        stack = stack.set(variables::model::NAME.to_owned(), v.clone());
                     }
                     if let Some(v) = map.get(result_keys::ID) {
-                        stack = stack.set("vtube.model.id".to_owned(), v.clone());
+                        stack = stack.set(variables::model::ID.to_owned(), v.clone());
                     }
                     if let Some(v) = map.get(result_keys::LOADED) {
-                        stack = stack.set("vtube.model.loaded".to_owned(), v.clone());
+                        stack = stack.set(variables::model::LOADED.to_owned(), v.clone());
                     }
                 }
                 (
                     SubActionTelemetry {
                         args_in: ::std::collections::BTreeMap::new(),
                         produced: ::std::collections::BTreeMap::new(),
-                        kind: "vtube.lookup.current_model".to_owned(),
+                        kind: sub_action_ids::LOOKUP_CURRENT_MODEL.to_owned(),
                         started_at,
                         duration_ms: start.elapsed().as_millis() as u64,
                         outcome: SubActionOutcome::Success,
@@ -97,7 +98,7 @@ impl SubActionRunner for LookupCurrentModelRunner {
                 SubActionTelemetry {
                     args_in: ::std::collections::BTreeMap::new(),
                     produced: ::std::collections::BTreeMap::new(),
-                    kind: "vtube.lookup.current_model".to_owned(),
+                    kind: sub_action_ids::LOOKUP_CURRENT_MODEL.to_owned(),
                     started_at,
                     duration_ms: start.elapsed().as_millis() as u64,
                     outcome: SubActionOutcome::Failed(e.to_string()),

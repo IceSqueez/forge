@@ -11,14 +11,11 @@ use crate::catalog::{VTubeChoice, choice};
 use crate::client::VTubeClient;
 use crate::content::ContentSnapshot;
 use crate::error::VTubeError;
+use crate::vocabulary::option_lists::{
+    EXPRESSION_LIST, HOTKEY_LIST, ITEM_FILE_LIST, ITEM_INSTANCE_LIST, MODEL_LIST,
+};
 use crate::vts::message_type::ITEM_LIST_REQUEST;
 use crate::vts::protocol::check_response;
-
-pub const MODEL_LIST: &str = "vtube.models";
-pub const HOTKEY_LIST: &str = "vtube.hotkeys";
-pub const EXPRESSION_LIST: &str = "vtube.expressions";
-pub const ITEM_FILE_LIST: &str = "vtube.item_files";
-pub const ITEM_INSTANCE_LIST: &str = "vtube.item_instances";
 
 const HINT_LOADED: &str = "option_hint_loaded";
 const HINT_ACTIVE: &str = "option_hint_active";

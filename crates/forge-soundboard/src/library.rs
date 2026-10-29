@@ -2,17 +2,17 @@ use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, PoisonError};
 
-use forge_events::{Event, EventPublisher, EventSource};
+use forge_events::{EventPublisher, EventSource, TypedEvent};
 use forge_storage::{
     MediaBlobId, MediaFormat, MediaKind, MediaReferrerKind, MediaRepo, SoundboardClipsRepo,
     StorageError, StoredClip,
 };
 use forge_types::{ClipId, Shared};
-use serde_json::json;
 
 pub use forge_storage::clip_source_referrer;
 
 use crate::error::SoundboardError;
+use crate::vocabulary::{ClipAdoptionSettled, SettledVerdict};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ClipSource {
@@ -397,30 +397,22 @@ impl ClipLibrary {
     }
 
     fn publish_settled(&self, clip_id: ClipId, verdict: &AdoptionVerdict) {
-        let payload = match verdict {
+        let verdict = match verdict {
             AdoptionVerdict::InFlight => return,
-            AdoptionVerdict::Adopted => {
-                json!({ "clip_id": clip_id.to_string(), "verdict": "adopted" })
-            }
-            AdoptionVerdict::AlreadyManaged => {
-                json!({ "clip_id": clip_id.to_string(), "verdict": "already_managed" })
-            }
-            AdoptionVerdict::SourceMissing => {
-                json!({ "clip_id": clip_id.to_string(), "verdict": "source_missing" })
-            }
-            AdoptionVerdict::Refused(refusal) => json!({
-                "clip_id": clip_id.to_string(),
-                "verdict": "refused",
-                "reason": refusal.to_string(),
-            }),
+            AdoptionVerdict::Adopted => SettledVerdict::Adopted,
+            AdoptionVerdict::AlreadyManaged => SettledVerdict::AlreadyManaged,
+            AdoptionVerdict::SourceMissing => SettledVerdict::SourceMissing,
+            AdoptionVerdict::Refused(refusal) => SettledVerdict::Refused {
+                reason: refusal.to_string(),
+            },
         };
         let snapshot = self.publisher.load();
         if let Some(publisher) = snapshot.as_ref() {
-            publisher.publish(Event::new(
+            ClipAdoptionSettled { clip_id, verdict }.publish(
+                publisher.as_ref(),
                 EventSource::Audio,
-                "soundboard.clip.adopted",
-                payload,
-            ));
+                None,
+            );
         }
     }
 

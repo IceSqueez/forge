@@ -8,13 +8,14 @@ use forge_types::{
     ArgStack, DeclaredVariable, TriggerConfig, VariableSchema, Variant, VariantKind,
 };
 
-use crate::payload_fields::tracking as fields;
+use crate::vocabulary::fields::tracking as fields;
+use crate::vocabulary::{event_kinds, trigger_ids, variables};
 
 pub struct FaceFoundDescriptor;
 
 impl TriggerKindDescriptor for FaceFoundDescriptor {
     fn id(&self) -> &str {
-        "vtube.tracking.face_found"
+        trigger_ids::TRACKING_FACE_FOUND
     }
 
     fn category(&self) -> TriggerCategory {
@@ -56,12 +57,12 @@ impl TriggerKindDescriptor for FaceFoundDescriptor {
     fn event_filter(&self) -> EventFilter {
         EventFilter {
             source: Some(EventSource::VTube),
-            kind_prefix: Some("vtube.tracking.".to_owned()),
+            kind_prefix: Some(event_kinds::TRACKING_PREFIX.to_owned()),
         }
     }
 
     fn matches_trigger(&self, _config: &TriggerConfig, event: &Event) -> bool {
-        event.kind == "vtube.tracking.face_found"
+        event.kind == event_kinds::TRACKING_FACE_FOUND
     }
 
     fn build_arg_stack(&self, event: &Event) -> ArgStack {
@@ -72,7 +73,7 @@ impl TriggerKindDescriptor for FaceFoundDescriptor {
             .and_then(|v| v.as_bool())
         {
             stack = stack.set(
-                "vtube.tracking.is_left_hand_found".to_owned(),
+                variables::tracking::IS_LEFT_HAND_FOUND.to_owned(),
                 Variant::Bool(left),
             );
         }
@@ -82,7 +83,7 @@ impl TriggerKindDescriptor for FaceFoundDescriptor {
             .and_then(|v| v.as_bool())
         {
             stack = stack.set(
-                "vtube.tracking.is_right_hand_found".to_owned(),
+                variables::tracking::IS_RIGHT_HAND_FOUND.to_owned(),
                 Variant::Bool(right),
             );
         }
@@ -93,13 +94,13 @@ impl TriggerKindDescriptor for FaceFoundDescriptor {
         Some(VariableSchema {
             variables: vec![
                 DeclaredVariable {
-                    name: "vtube.tracking.is_left_hand_found".to_owned(),
+                    name: variables::tracking::IS_LEFT_HAND_FOUND.to_owned(),
                     kind: VariantKind::Bool,
                     label: "Left hand tracked".to_owned(),
                     synthesis: None,
                 },
                 DeclaredVariable {
-                    name: "vtube.tracking.is_right_hand_found".to_owned(),
+                    name: variables::tracking::IS_RIGHT_HAND_FOUND.to_owned(),
                     kind: VariantKind::Bool,
                     label: "Right hand tracked".to_owned(),
                     synthesis: None,

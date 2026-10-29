@@ -7,9 +7,10 @@ use forge_platform_core::{
 use forge_types::{SubActionStep, Variant};
 
 use crate::client::VTubeClient;
-use crate::option_source::{
+use crate::vocabulary::option_lists::{
     EXPRESSION_LIST, HOTKEY_LIST, ITEM_FILE_LIST, ITEM_INSTANCE_LIST, MODEL_LIST,
 };
+use crate::vocabulary::sub_action_ids;
 
 const EXPRESSION_FIELD: &str = "expression_file";
 const HOTKEY_FIELD: &str = "hotkey_id";
@@ -116,7 +117,7 @@ impl QuickActions for VTubeClient {
                 connected,
                 "Expressions",
                 false,
-                "vtube.expression.set",
+                sub_action_ids::EXPRESSION_SET,
                 config([(EXPRESSION_FIELD, blank()), ("active", Variant::Bool(true))]),
                 vec![choice_field(
                     EXPRESSION_FIELD,
@@ -131,7 +132,7 @@ impl QuickActions for VTubeClient {
                 connected,
                 "Expressions",
                 false,
-                "vtube.expression.set",
+                sub_action_ids::EXPRESSION_SET,
                 config([
                     (EXPRESSION_FIELD, blank()),
                     ("active", Variant::Bool(false)),
@@ -149,7 +150,7 @@ impl QuickActions for VTubeClient {
                 connected,
                 "Expressions",
                 false,
-                "vtube.params.reset",
+                sub_action_ids::PARAMS_RESET,
                 BTreeMap::new(),
                 Vec::new(),
             ),
@@ -160,7 +161,7 @@ impl QuickActions for VTubeClient {
                 connected,
                 "Hotkeys & animation",
                 false,
-                "vtube.hotkey.trigger",
+                sub_action_ids::HOTKEY_TRIGGER,
                 config([(HOTKEY_FIELD, blank())]),
                 vec![choice_field(HOTKEY_FIELD, "Hotkey", HOTKEY_LIST)],
             ),
@@ -171,7 +172,7 @@ impl QuickActions for VTubeClient {
                 connected,
                 "Hotkeys & animation",
                 false,
-                "vtube.hotkey.trigger",
+                sub_action_ids::HOTKEY_TRIGGER,
                 config([(HOTKEY_FIELD, blank())]),
                 vec![choice_field(HOTKEY_FIELD, "Hotkey", HOTKEY_LIST)],
             ),
@@ -182,7 +183,7 @@ impl QuickActions for VTubeClient {
                 connected,
                 "Items",
                 false,
-                "vtube.item.throw",
+                sub_action_ids::ITEM_THROW,
                 config([(ITEM_FILE_FIELD, blank())]),
                 vec![choice_field(ITEM_FILE_FIELD, "Item file", ITEM_FILE_LIST)],
             ),
@@ -193,7 +194,7 @@ impl QuickActions for VTubeClient {
                 connected,
                 "Items",
                 false,
-                "vtube.item.pin",
+                sub_action_ids::ITEM_PIN,
                 config([(ITEM_INSTANCE_FIELD, blank()), ("pin", Variant::Bool(true))]),
                 vec![choice_field(
                     ITEM_INSTANCE_FIELD,
@@ -208,7 +209,7 @@ impl QuickActions for VTubeClient {
                 connected,
                 "Items",
                 false,
-                "vtube.item.load",
+                sub_action_ids::ITEM_LOAD,
                 config([
                     (ITEM_FILE_FIELD, blank()),
                     ("unload_on_disconnect", Variant::Bool(true)),
@@ -222,7 +223,7 @@ impl QuickActions for VTubeClient {
                 connected,
                 "Items",
                 true,
-                "vtube.item.unload_all",
+                sub_action_ids::ITEM_UNLOAD_ALL,
                 BTreeMap::new(),
                 Vec::new(),
             ),
@@ -233,7 +234,7 @@ impl QuickActions for VTubeClient {
                 connected,
                 "Model & scene",
                 false,
-                "vtube.model.load",
+                sub_action_ids::MODEL_LOAD,
                 config([(MODEL_FIELD, blank())]),
                 vec![choice_field(MODEL_FIELD, "Model", MODEL_LIST)],
             ),
@@ -244,7 +245,7 @@ impl QuickActions for VTubeClient {
                 connected,
                 "Model & scene",
                 false,
-                "vtube.model.move",
+                sub_action_ids::MODEL_MOVE,
                 config([
                     ("x", Variant::Float(0.0)),
                     ("y", Variant::Float(0.0)),
@@ -261,7 +262,7 @@ impl QuickActions for VTubeClient {
                 connected,
                 "Model & scene",
                 false,
-                "vtube.model.tint",
+                sub_action_ids::MODEL_TINT,
                 config([
                     ("color_r", Variant::Int(203)),
                     ("color_g", Variant::Int(166)),
@@ -277,7 +278,7 @@ impl QuickActions for VTubeClient {
                 connected,
                 "Model & scene",
                 false,
-                "vtube.model.set_physics",
+                sub_action_ids::MODEL_SET_PHYSICS,
                 config([("enabled", Variant::Bool(true))]),
                 vec![toggle_field("enabled", "Enabled", true)],
             ),

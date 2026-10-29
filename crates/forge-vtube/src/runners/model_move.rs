@@ -10,6 +10,7 @@ use time::OffsetDateTime;
 
 use crate::runners::numeric::optional_number;
 use crate::sink::VTubeSink;
+use crate::vocabulary::sub_action_ids;
 
 pub struct ModelMoveRunner {
     sink: Arc<dyn VTubeSink>,
@@ -42,7 +43,7 @@ fn read_target(config: &SubActionConfig, ctx: &RunContext<'_>) -> Result<MoveTar
 #[async_trait]
 impl SubActionRunner for ModelMoveRunner {
     fn id(&self) -> &str {
-        "vtube.model.move"
+        sub_action_ids::MODEL_MOVE
     }
 
     fn category(&self) -> SubActionCategory {
@@ -158,7 +159,7 @@ impl SubActionRunner for ModelMoveRunner {
             SubActionTelemetry {
                 args_in: ::std::collections::BTreeMap::new(),
                 produced: ::std::collections::BTreeMap::new(),
-                kind: "vtube.model.move".to_owned(),
+                kind: sub_action_ids::MODEL_MOVE.to_owned(),
                 started_at,
                 duration_ms: start.elapsed().as_millis() as u64,
                 outcome,

@@ -1,193 +1,95 @@
 use std::fmt;
 
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 use crate::error::HotkeyError;
-
-const MOD_ORDER: &[&str] = &["Ctrl", "Shift", "Alt", "Meta"];
+use crate::vocabulary::keys::{COMBO_SEPARATOR, Key, Modifier, Modifiers};
 
 const GRAB_CONSUMES_KEYSTROKE: bool = cfg!(any(target_os = "windows", target_os = "macos"));
 
-const TYPING_KEYS: &[&str] = &[
-    "A",
-    "B",
-    "C",
-    "D",
-    "E",
-    "F",
-    "G",
-    "H",
-    "I",
-    "J",
-    "K",
-    "L",
-    "M",
-    "N",
-    "O",
-    "P",
-    "Q",
-    "R",
-    "S",
-    "T",
-    "U",
-    "V",
-    "W",
-    "X",
-    "Y",
-    "Z",
-    "0",
-    "1",
-    "2",
-    "3",
-    "4",
-    "5",
-    "6",
-    "7",
-    "8",
-    "9",
-    "Num0",
-    "Num1",
-    "Num2",
-    "Num3",
-    "Num4",
-    "Num5",
-    "Num6",
-    "Num7",
-    "Num8",
-    "Num9",
-    "Space",
-    "Enter",
-    "Tab",
-    "Backspace",
-];
-
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
-#[serde(transparent)]
-pub struct HotkeyCombo(String);
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct HotkeyCombo {
+    modifiers: Modifiers,
+    key: Key,
+    canonical: String,
+}
 
 impl HotkeyCombo {
+    pub fn new(modifiers: Modifiers, key: Key) -> Self {
+        let mut canonical = String::new();
+        for name in modifiers.iter().map(Modifier::name) {
+            canonical.push_str(name);
+            canonical.push(COMBO_SEPARATOR);
+        }
+        canonical.push_str(key.name());
+        Self {
+            modifiers,
+            key,
+            canonical,
+        }
+    }
+
     pub fn parse(s: &str) -> Result<Self, HotkeyError> {
+        let invalid = || HotkeyError::InvalidCombo(s.to_owned());
         if s.is_empty() {
-            return Err(HotkeyError::InvalidCombo(s.to_owned()));
+            return Err(invalid());
         }
 
-        let tokens: Vec<&str> = s.split('+').collect();
-        let mut modifiers: Vec<&'static str> = Vec::new();
-        let mut key: Option<String> = None;
+        let mut modifiers = Modifiers::NONE;
+        let mut key: Option<Key> = None;
 
-        for token in &tokens {
+        for token in s.split(COMBO_SEPARATOR) {
             let trimmed = token.trim();
             if trimmed.is_empty() {
-                return Err(HotkeyError::InvalidCombo(s.to_owned()));
+                return Err(invalid());
             }
-            if let Some(m) = normalize_modifier(trimmed) {
-                if !modifiers.contains(&m) {
-                    modifiers.push(m);
+            if let Some(modifier) = Modifier::from_alias(trimmed) {
+                modifiers = modifiers.with(modifier);
+            } else if let Some(parsed) = Key::from_alias(trimmed) {
+                if key.replace(parsed).is_some() {
+                    return Err(invalid());
                 }
-            } else if let Some(k) = normalize_key(trimmed) {
-                if key.is_some() {
-                    return Err(HotkeyError::InvalidCombo(s.to_owned()));
-                }
-                key = Some(k);
             } else {
-                return Err(HotkeyError::InvalidCombo(s.to_owned()));
+                return Err(invalid());
             }
         }
 
-        let key = key.ok_or_else(|| HotkeyError::InvalidCombo(s.to_owned()))?;
-
-        modifiers.sort_by_key(|m| {
-            MOD_ORDER
-                .iter()
-                .position(|k| k == m)
-                .unwrap_or(MOD_ORDER.len())
-        });
-
-        let mut parts: Vec<String> = modifiers.iter().map(|&m| m.to_owned()).collect();
-        parts.push(key);
-        Ok(Self(parts.join("+")))
+        key.map(|key| Self::new(modifiers, key)).ok_or_else(invalid)
     }
 
     pub fn as_str(&self) -> &str {
-        &self.0
+        &self.canonical
+    }
+
+    pub fn modifiers(&self) -> Modifiers {
+        self.modifiers
+    }
+
+    pub fn key(&self) -> Key {
+        self.key
     }
 
     pub fn swallows_typing(&self) -> bool {
-        GRAB_CONSUMES_KEYSTROKE && !self.0.contains('+') && TYPING_KEYS.contains(&self.0.as_str())
+        GRAB_CONSUMES_KEYSTROKE && self.modifiers.is_empty() && self.key.types_text()
     }
 }
 
 impl fmt::Display for HotkeyCombo {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(&self.0)
+        f.write_str(&self.canonical)
     }
 }
 
-fn normalize_modifier(s: &str) -> Option<&'static str> {
-    match s.to_ascii_lowercase().as_str() {
-        "ctrl" | "control" => Some("Ctrl"),
-        "shift" => Some("Shift"),
-        "alt" | "option" => Some("Alt"),
-        "meta" | "cmd" | "super" | "win" => Some("Meta"),
-        "cmdorctrl" | "commandorcontrol" => {
-            #[cfg(target_os = "macos")]
-            {
-                Some("Meta")
-            }
-            #[cfg(not(target_os = "macos"))]
-            {
-                Some("Ctrl")
-            }
-        }
-        _ => None,
+impl Serialize for HotkeyCombo {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.serialize_str(&self.canonical)
     }
 }
 
-fn normalize_key(s: &str) -> Option<String> {
-    match s.to_ascii_lowercase().as_str() {
-        "a" | "b" | "c" | "d" | "e" | "f" | "g" | "h" | "i" | "j" | "k" | "l" | "m" | "n" | "o"
-        | "p" | "q" | "r" | "s" | "t" | "u" | "v" | "w" | "x" | "y" | "z" => {
-            Some(s.to_ascii_uppercase())
-        }
-        "0" | "1" | "2" | "3" | "4" | "5" | "6" | "7" | "8" | "9" => Some(s.to_owned()),
-        "f1" => Some("F1".to_owned()),
-        "f2" => Some("F2".to_owned()),
-        "f3" => Some("F3".to_owned()),
-        "f4" => Some("F4".to_owned()),
-        "f5" => Some("F5".to_owned()),
-        "f6" => Some("F6".to_owned()),
-        "f7" => Some("F7".to_owned()),
-        "f8" => Some("F8".to_owned()),
-        "f9" => Some("F9".to_owned()),
-        "f10" => Some("F10".to_owned()),
-        "f11" => Some("F11".to_owned()),
-        "f12" => Some("F12".to_owned()),
-        "delete" | "del" => Some("Delete".to_owned()),
-        "insert" | "ins" => Some("Insert".to_owned()),
-        "home" => Some("Home".to_owned()),
-        "end" => Some("End".to_owned()),
-        "pageup" | "pgup" => Some("PageUp".to_owned()),
-        "pagedown" | "pgdn" | "pgdown" => Some("PageDown".to_owned()),
-        "backspace" => Some("Backspace".to_owned()),
-        "tab" => Some("Tab".to_owned()),
-        "enter" | "return" => Some("Enter".to_owned()),
-        "escape" | "esc" => Some("Escape".to_owned()),
-        "space" => Some("Space".to_owned()),
-        "arrowup" | "up" => Some("ArrowUp".to_owned()),
-        "arrowdown" | "down" => Some("ArrowDown".to_owned()),
-        "arrowleft" | "left" => Some("ArrowLeft".to_owned()),
-        "arrowright" | "right" => Some("ArrowRight".to_owned()),
-        "num0" | "numpad0" => Some("Num0".to_owned()),
-        "num1" | "numpad1" => Some("Num1".to_owned()),
-        "num2" | "numpad2" => Some("Num2".to_owned()),
-        "num3" | "numpad3" => Some("Num3".to_owned()),
-        "num4" | "numpad4" => Some("Num4".to_owned()),
-        "num5" | "numpad5" => Some("Num5".to_owned()),
-        "num6" | "numpad6" => Some("Num6".to_owned()),
-        "num7" | "numpad7" => Some("Num7".to_owned()),
-        "num8" | "numpad8" => Some("Num8".to_owned()),
-        "num9" | "numpad9" => Some("Num9".to_owned()),
-        _ => None,
+impl<'de> Deserialize<'de> for HotkeyCombo {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let raw = String::deserialize(deserializer)?;
+        Self::parse(&raw).map_err(serde::de::Error::custom)
     }
 }
 

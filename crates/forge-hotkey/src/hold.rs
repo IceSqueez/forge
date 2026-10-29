@@ -1,13 +1,13 @@
 use std::collections::HashMap;
 use std::time::Instant;
 
-use forge_events::{Event, EventSource};
+use forge_events::{Event, EventSource, TypedEvent};
 use forge_types::EventId;
 
 use crate::backend::HotkeyId;
 use crate::client::HotkeyClient;
-use crate::event_kinds;
-use crate::payload_fields;
+use crate::vocabulary::fields;
+use crate::vocabulary::{HotkeyPressed, event_kinds};
 
 pub(crate) struct Hold {
     press_event_id: EventId,
@@ -23,15 +23,12 @@ pub(crate) fn open(client: &HotkeyClient, id: HotkeyId, combo: String, timestamp
         return false;
     }
 
-    let event = Event::new(
-        EventSource::Hotkey,
-        event_kinds::GLOBAL_PRESSED,
-        serde_json::json!({
-            (payload_fields::COMBO): combo,
-            (payload_fields::ID): id.0,
-            (payload_fields::TIMESTAMP_US): timestamp_us,
-        }),
-    );
+    let event = HotkeyPressed {
+        combo: combo.clone(),
+        id: id.0,
+        timestamp_us,
+    }
+    .into_event(EventSource::Hotkey, None);
     let press_event_id = event.id;
     client.publisher.publish(event);
 
@@ -116,11 +113,11 @@ fn publish_release(
         EventSource::Hotkey,
         event_kinds::GLOBAL_RELEASED,
         serde_json::json!({
-            (payload_fields::COMBO): hold.combo,
-            (payload_fields::ID): id.0,
-            (payload_fields::TIMESTAMP_US): timestamp_us,
-            (payload_fields::HOLD_MS): hold_ms,
-            (payload_fields::SYNTHESIZED): synthesized,
+            (fields::COMBO): hold.combo,
+            (fields::ID): id.0,
+            (fields::TIMESTAMP_US): timestamp_us,
+            (fields::HOLD_MS): hold_ms,
+            (fields::SYNTHESIZED): synthesized,
         }),
         hold.press_event_id,
     ));

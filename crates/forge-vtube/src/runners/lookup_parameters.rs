@@ -9,6 +9,7 @@ use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, Variant};
 use time::OffsetDateTime;
 
 use crate::sink::{VTubeSink, result_keys};
+use crate::vocabulary::{sub_action_ids, variables};
 
 pub struct LookupParametersRunner {
     sink: Arc<dyn VTubeSink>,
@@ -23,7 +24,7 @@ impl LookupParametersRunner {
 #[async_trait]
 impl SubActionRunner for LookupParametersRunner {
     fn id(&self) -> &str {
-        "vtube.lookup.parameters"
+        sub_action_ids::LOOKUP_PARAMETERS
     }
 
     fn category(&self) -> SubActionCategory {
@@ -71,17 +72,17 @@ impl SubActionRunner for LookupParametersRunner {
                 let mut stack = ctx.arg_stack.clone();
                 if let Variant::Object(ref map) = variant {
                     if let Some(v) = map.get(result_keys::NAMES) {
-                        stack = stack.set("vtube.parameters.names".to_owned(), v.clone());
+                        stack = stack.set(variables::parameters::NAMES.to_owned(), v.clone());
                     }
                     if let Some(v) = map.get(result_keys::COUNT) {
-                        stack = stack.set("vtube.parameters.count".to_owned(), v.clone());
+                        stack = stack.set(variables::parameters::COUNT.to_owned(), v.clone());
                     }
                 }
                 (
                     SubActionTelemetry {
                         args_in: ::std::collections::BTreeMap::new(),
                         produced: ::std::collections::BTreeMap::new(),
-                        kind: "vtube.lookup.parameters".to_owned(),
+                        kind: sub_action_ids::LOOKUP_PARAMETERS.to_owned(),
                         started_at,
                         duration_ms: start.elapsed().as_millis() as u64,
                         outcome: SubActionOutcome::Success,
@@ -94,7 +95,7 @@ impl SubActionRunner for LookupParametersRunner {
                 SubActionTelemetry {
                     args_in: ::std::collections::BTreeMap::new(),
                     produced: ::std::collections::BTreeMap::new(),
-                    kind: "vtube.lookup.parameters".to_owned(),
+                    kind: sub_action_ids::LOOKUP_PARAMETERS.to_owned(),
                     started_at,
                     duration_ms: start.elapsed().as_millis() as u64,
                     outcome: SubActionOutcome::Failed(e.to_string()),

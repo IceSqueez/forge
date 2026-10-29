@@ -8,13 +8,14 @@ use forge_types::{
     ArgStack, DeclaredVariable, TriggerConfig, VariableSchema, Variant, VariantKind,
 };
 
-use crate::payload_fields::hotkey as fields;
+use crate::vocabulary::fields::hotkey as fields;
+use crate::vocabulary::{event_kinds, trigger_ids, variables};
 
 pub struct HotkeyTriggeredDescriptor;
 
 impl TriggerKindDescriptor for HotkeyTriggeredDescriptor {
     fn id(&self) -> &str {
-        "vtube.hotkey.triggered"
+        trigger_ids::HOTKEY_TRIGGERED
     }
 
     fn category(&self) -> TriggerCategory {
@@ -56,12 +57,12 @@ impl TriggerKindDescriptor for HotkeyTriggeredDescriptor {
     fn event_filter(&self) -> EventFilter {
         EventFilter {
             source: Some(EventSource::VTube),
-            kind_prefix: Some("vtube.hotkey.".to_owned()),
+            kind_prefix: Some(event_kinds::HOTKEY_PREFIX.to_owned()),
         }
     }
 
     fn matches_trigger(&self, _config: &TriggerConfig, event: &Event) -> bool {
-        event.kind == "vtube.hotkey.triggered"
+        event.kind == event_kinds::HOTKEY_TRIGGERED
     }
 
     fn build_arg_stack(&self, event: &Event) -> ArgStack {
@@ -72,7 +73,7 @@ impl TriggerKindDescriptor for HotkeyTriggeredDescriptor {
             .and_then(|v| v.as_str())
         {
             stack = stack.set(
-                "vtube.hotkey.name".to_owned(),
+                variables::hotkey::NAME.to_owned(),
                 Variant::String(name.to_owned()),
             );
         }
@@ -81,7 +82,10 @@ impl TriggerKindDescriptor for HotkeyTriggeredDescriptor {
             .get(fields::HOTKEY_ID)
             .and_then(|v| v.as_str())
         {
-            stack = stack.set("vtube.hotkey.id".to_owned(), Variant::String(id.to_owned()));
+            stack = stack.set(
+                variables::hotkey::ID.to_owned(),
+                Variant::String(id.to_owned()),
+            );
         }
         stack
     }
@@ -90,13 +94,13 @@ impl TriggerKindDescriptor for HotkeyTriggeredDescriptor {
         Some(VariableSchema {
             variables: vec![
                 DeclaredVariable {
-                    name: "vtube.hotkey.name".to_owned(),
+                    name: variables::hotkey::NAME.to_owned(),
                     kind: VariantKind::String,
                     label: "Hotkey name".to_owned(),
                     synthesis: None,
                 },
                 DeclaredVariable {
-                    name: "vtube.hotkey.id".to_owned(),
+                    name: variables::hotkey::ID.to_owned(),
                     kind: VariantKind::String,
                     label: "Hotkey ID".to_owned(),
                     synthesis: None,

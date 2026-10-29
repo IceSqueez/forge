@@ -10,6 +10,7 @@ use time::OffsetDateTime;
 
 use crate::runners::numeric::{optional_integer, optional_number};
 use crate::sink::VTubeSink;
+use crate::vocabulary::sub_action_ids;
 
 pub struct ModelTintRunner {
     sink: Arc<dyn VTubeSink>,
@@ -52,7 +53,7 @@ fn read_tint(config: &SubActionConfig, ctx: &RunContext<'_>) -> Result<Tint, Str
 #[async_trait]
 impl SubActionRunner for ModelTintRunner {
     fn id(&self) -> &str {
-        "vtube.model.tint"
+        sub_action_ids::MODEL_TINT
     }
 
     fn category(&self) -> SubActionCategory {
@@ -154,7 +155,7 @@ impl SubActionRunner for ModelTintRunner {
             SubActionTelemetry {
                 args_in: ::std::collections::BTreeMap::new(),
                 produced: ::std::collections::BTreeMap::new(),
-                kind: "vtube.model.tint".to_owned(),
+                kind: sub_action_ids::MODEL_TINT.to_owned(),
                 started_at,
                 duration_ms: start.elapsed().as_millis() as u64,
                 outcome,

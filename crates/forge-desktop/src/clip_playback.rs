@@ -2,7 +2,7 @@ use std::collections::HashSet;
 
 use forge_components::{ToastKind, tr};
 use forge_events::{Event, EventSource};
-use forge_soundboard::PLAY_ID_KEY;
+use forge_soundboard::vocabulary::fields::PLAY_ID;
 use forge_types::ClipId;
 use gpui::{App, Global};
 use serde_json::Value;
@@ -45,7 +45,7 @@ pub fn clip_id_of(payload: &Value) -> Option<ClipId> {
 }
 
 pub fn play_id_of(payload: &Value) -> Option<u64> {
-    payload.get(PLAY_ID_KEY).and_then(Value::as_u64)
+    payload.get(PLAY_ID).and_then(Value::as_u64)
 }
 
 pub fn report_clip_playback(event: &Event, cx: &mut App) {

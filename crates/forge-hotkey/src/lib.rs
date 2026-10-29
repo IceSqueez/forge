@@ -8,13 +8,11 @@ pub mod config;
 pub(crate) mod content;
 pub(crate) mod control;
 pub mod error;
-pub mod event_kinds;
 pub(crate) mod health;
 pub(crate) mod hold;
 mod hold_ceiling;
 pub mod integration;
 mod main_thread;
-pub mod payload_fields;
 pub mod quick_actions;
 mod reconciler;
 pub(crate) mod status;
@@ -24,6 +22,7 @@ mod synced_triggers;
 #[cfg(feature = "testing")]
 pub mod testing;
 pub mod triggers;
+pub mod vocabulary;
 
 #[cfg(target_os = "linux")]
 pub(crate) mod backend_evdev;

@@ -12,6 +12,7 @@ use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, Variant};
 use time::OffsetDateTime;
 
 use crate::sink::VTubeSink;
+use crate::vocabulary::{picker_keys, sub_action_ids};
 
 pub struct HotkeyTriggerRunner {
     sink: Arc<dyn VTubeSink>,
@@ -26,7 +27,7 @@ impl HotkeyTriggerRunner {
 #[async_trait]
 impl SubActionRunner for HotkeyTriggerRunner {
     fn id(&self) -> &str {
-        "vtube.hotkey.trigger"
+        sub_action_ids::HOTKEY_TRIGGER
     }
 
     fn category(&self) -> SubActionCategory {
@@ -57,7 +58,7 @@ impl SubActionRunner for HotkeyTriggerRunner {
         vec![FormField::DynamicSelect {
             key: "hotkey_id",
             label: "Hotkey",
-            options_key: "vtube.hotkey_ids",
+            options_key: picker_keys::HOTKEY_IDS,
         }]
     }
 
@@ -88,7 +89,7 @@ impl SubActionRunner for HotkeyTriggerRunner {
             SubActionTelemetry {
                 args_in: ::std::collections::BTreeMap::new(),
                 produced: ::std::collections::BTreeMap::new(),
-                kind: "vtube.hotkey.trigger".to_owned(),
+                kind: sub_action_ids::HOTKEY_TRIGGER.to_owned(),
                 started_at,
                 duration_ms: start.elapsed().as_millis() as u64,
                 outcome,

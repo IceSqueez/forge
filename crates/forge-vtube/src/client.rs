@@ -15,7 +15,7 @@ use crate::health::{HealthSnapshot, make_health_channel};
 use crate::vts::endpoint::{DEFAULT_VTS_HOST, DEFAULT_VTS_PORT, endpoint_url};
 use crate::vts::request::{PendingRequest, REQUEST_TIMEOUT, ReqTxSlot, round_trip};
 
-pub(crate) const VTUBE_PLATFORM_ID: &str = "vtube";
+pub(crate) const VTUBE_PLATFORM_ID: &str = crate::vocabulary::INTEGRATION_ID;
 
 #[derive(Debug, Clone)]
 pub struct VTubeConfig {

@@ -6,6 +6,7 @@ use forge_types::{ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetr
 use time::OffsetDateTime;
 
 use crate::control::SoundboardControl;
+use crate::vocabulary::sub_action_ids;
 
 pub struct StopAllSoundsRunner {
     control: Arc<dyn SoundboardControl>,
@@ -20,7 +21,7 @@ impl StopAllSoundsRunner {
 #[async_trait]
 impl SubActionRunner for StopAllSoundsRunner {
     fn id(&self) -> &str {
-        "soundboard.sound.stop_all"
+        sub_action_ids::SOUND_STOP_ALL
     }
 
     fn category(&self) -> SubActionCategory {
@@ -76,7 +77,7 @@ impl SubActionRunner for StopAllSoundsRunner {
                 args_in: ::std::collections::BTreeMap::new(),
                 produced: ::std::collections::BTreeMap::new(),
                 index: ctx.index,
-                kind: "soundboard.sound.stop_all".to_owned(),
+                kind: sub_action_ids::SOUND_STOP_ALL.to_owned(),
                 started_at,
                 duration_ms,
                 outcome,

@@ -2,7 +2,8 @@ use std::collections::HashSet;
 use std::sync::Arc;
 
 use forge_events::{Event, EventSource};
-use forge_hotkey::{HotkeyCombo, event_kinds};
+use forge_hotkey::HotkeyCombo;
+use forge_hotkey::vocabulary::event_kinds;
 use forge_storage::{DataProvider, StoredClip};
 use forge_types::ClipId;
 

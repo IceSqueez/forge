@@ -10,6 +10,7 @@ use time::OffsetDateTime;
 
 use crate::runners::hold_registry::HoldRegistry;
 use crate::sink::VTubeSink;
+use crate::vocabulary::sub_action_ids;
 
 pub struct ParamsResetRunner {
     sink: Arc<dyn VTubeSink>,
@@ -25,7 +26,7 @@ impl ParamsResetRunner {
 #[async_trait]
 impl SubActionRunner for ParamsResetRunner {
     fn id(&self) -> &str {
-        "vtube.params.reset"
+        sub_action_ids::PARAMS_RESET
     }
 
     fn category(&self) -> SubActionCategory {
@@ -75,7 +76,7 @@ impl SubActionRunner for ParamsResetRunner {
             SubActionTelemetry {
                 args_in: ::std::collections::BTreeMap::new(),
                 produced: ::std::collections::BTreeMap::new(),
-                kind: "vtube.params.reset".to_owned(),
+                kind: sub_action_ids::PARAMS_RESET.to_owned(),
                 started_at,
                 duration_ms: start.elapsed().as_millis() as u64,
                 outcome,

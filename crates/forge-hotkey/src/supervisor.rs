@@ -2,7 +2,7 @@ use std::sync::Arc;
 use std::sync::atomic::Ordering;
 use std::time::Duration;
 
-use forge_events::{Event, EventSource};
+use forge_events::{Event, EventSource, TypedEvent};
 use forge_platform_core::HealthDelta;
 use tokio::sync::{mpsc, oneshot};
 use tokio::time::MissedTickBehavior;
@@ -10,12 +10,12 @@ use tokio::time::MissedTickBehavior;
 use crate::backend::{BackendSessionEvent, HotkeyEdge, HotkeyFiredEvent, HotkeyId};
 use crate::client::{EnableFailure, HotkeyClient};
 use crate::combo::HotkeyCombo;
-use crate::event_kinds;
 use crate::health::{
     BACKEND_METRIC_INDEX, backend_health_value, build_trigger_delta, registered_count_health_value,
 };
 use crate::hold;
-use crate::payload_fields;
+use crate::vocabulary::fields;
+use crate::vocabulary::{HotkeyEnableFailed, event_kinds};
 
 const CEILING_SWEEP_INTERVAL: Duration = Duration::from_secs(1);
 
@@ -85,7 +85,7 @@ fn handle_session_event(client: &Arc<HotkeyClient>, event: BackendSessionEvent) 
         BackendSessionEvent::Restored => None,
     };
     if let Some(detail) = &lost_detail {
-        emit_portal_event(client, payload_fields::portal::reason::SESSION_LOST, detail);
+        emit_portal_event(client, fields::portal::reason::SESSION_LOST, detail);
     }
     let new_value = backend_health_value(client.portal_available, lost_detail.as_deref());
     client
@@ -225,11 +225,7 @@ fn emit_enable_failed(client: &Arc<HotkeyClient>, failures: &[EnableFailure]) {
         .iter()
         .map(|f| f.combo.as_str().to_owned())
         .collect();
-    client.publisher.publish(Event::new(
-        EventSource::Hotkey,
-        event_kinds::ENGINE_ENABLE_FAILED,
-        serde_json::json!({ (payload_fields::COMBOS): combos }),
-    ));
+    HotkeyEnableFailed { combos }.publish(&*client.publisher, EventSource::Hotkey, None);
 }
 
 fn known_combos(client: &Arc<HotkeyClient>) -> Vec<(HotkeyId, HotkeyCombo)> {
@@ -273,7 +269,7 @@ pub(crate) fn emit_registered(client: &HotkeyClient, combo_str: &str, id_u32: u3
     client.publisher.publish(Event::new(
         EventSource::Hotkey,
         event_kinds::REGISTERED,
-        serde_json::json!({ (payload_fields::COMBO): combo_str, (payload_fields::ID): id_u32 }),
+        serde_json::json!({ (fields::COMBO): combo_str, (fields::ID): id_u32 }),
     ));
 
     let delta: HealthDelta = {
@@ -301,7 +297,7 @@ pub(crate) fn emit_unregistered(client: &HotkeyClient, combo_str: &str, id_u32: 
     client.publisher.publish(Event::new(
         EventSource::Hotkey,
         event_kinds::UNREGISTERED,
-        serde_json::json!({ (payload_fields::COMBO): combo_str, (payload_fields::ID): id_u32 }),
+        serde_json::json!({ (fields::COMBO): combo_str, (fields::ID): id_u32 }),
     ));
 
     let delta = {
@@ -327,11 +323,7 @@ pub(crate) fn emit_unregistered(client: &HotkeyClient, combo_str: &str, id_u32: 
 
 #[cfg(target_os = "linux")]
 pub(crate) fn emit_portal_unavailable(client: &HotkeyClient, detail: &str) {
-    emit_portal_event(
-        client,
-        payload_fields::portal::reason::NO_BACKEND_AVAILABLE,
-        detail,
-    );
+    emit_portal_event(client, fields::portal::reason::NO_BACKEND_AVAILABLE, detail);
 }
 
 fn emit_portal_event(client: &HotkeyClient, reason: &str, detail: &str) {
@@ -339,8 +331,8 @@ fn emit_portal_event(client: &HotkeyClient, reason: &str, detail: &str) {
         EventSource::Hotkey,
         event_kinds::PORTAL_UNAVAILABLE,
         serde_json::json!({
-            (payload_fields::portal::REASON): reason,
-            (payload_fields::portal::DETAIL): detail,
+            (fields::portal::REASON): reason,
+            (fields::portal::DETAIL): detail,
         }),
     ));
 }

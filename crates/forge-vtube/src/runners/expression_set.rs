@@ -12,6 +12,7 @@ use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, Variant};
 use time::OffsetDateTime;
 
 use crate::sink::VTubeSink;
+use crate::vocabulary::{picker_keys, sub_action_ids};
 
 pub struct ExpressionSetRunner {
     sink: Arc<dyn VTubeSink>,
@@ -26,7 +27,7 @@ impl ExpressionSetRunner {
 #[async_trait]
 impl SubActionRunner for ExpressionSetRunner {
     fn id(&self) -> &str {
-        "vtube.expression.set"
+        sub_action_ids::EXPRESSION_SET
     }
 
     fn category(&self) -> SubActionCategory {
@@ -61,7 +62,7 @@ impl SubActionRunner for ExpressionSetRunner {
             FormField::DynamicSelect {
                 key: "expression_file",
                 label: "Expression",
-                options_key: "vtube.expression_files",
+                options_key: picker_keys::EXPRESSION_FILES,
             },
             FormField::Toggle {
                 key: "active",
@@ -100,7 +101,7 @@ impl SubActionRunner for ExpressionSetRunner {
             SubActionTelemetry {
                 args_in: ::std::collections::BTreeMap::new(),
                 produced: ::std::collections::BTreeMap::new(),
-                kind: "vtube.expression.set".to_owned(),
+                kind: sub_action_ids::EXPRESSION_SET.to_owned(),
                 started_at,
                 duration_ms: start.elapsed().as_millis() as u64,
                 outcome,

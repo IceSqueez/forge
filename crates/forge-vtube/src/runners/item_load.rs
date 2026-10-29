@@ -13,6 +13,7 @@ use time::OffsetDateTime;
 
 use crate::runners::numeric::{optional_integer, optional_number};
 use crate::sink::{VTubeSink, result_keys};
+use crate::vocabulary::{sub_action_ids, variables};
 
 pub struct ItemLoadRunner {
     sink: Arc<dyn VTubeSink>,
@@ -47,7 +48,7 @@ fn read_placement(config: &SubActionConfig, ctx: &RunContext<'_>) -> Result<Plac
 #[async_trait]
 impl SubActionRunner for ItemLoadRunner {
     fn id(&self) -> &str {
-        "vtube.item.load"
+        sub_action_ids::ITEM_LOAD
     }
 
     fn category(&self) -> SubActionCategory {
@@ -179,7 +180,7 @@ impl SubActionRunner for ItemLoadRunner {
                     SubActionTelemetry {
                         args_in: ::std::collections::BTreeMap::new(),
                         produced: ::std::collections::BTreeMap::new(),
-                        kind: "vtube.item.load".to_owned(),
+                        kind: sub_action_ids::ITEM_LOAD.to_owned(),
                         started_at,
                         duration_ms: start.elapsed().as_millis() as u64,
                         outcome: SubActionOutcome::Failed(format!("vtube.item.load: {reason}")),
@@ -212,17 +213,17 @@ impl SubActionRunner for ItemLoadRunner {
                 let mut stack = ctx.arg_stack.clone();
                 if let Variant::Object(ref map) = variant {
                     if let Some(v) = map.get(result_keys::INSTANCE_ID) {
-                        stack = stack.set("vtube.item.instance_id".to_owned(), v.clone());
+                        stack = stack.set(variables::item::INSTANCE_ID.to_owned(), v.clone());
                     }
                     if let Some(v) = map.get(result_keys::FILE_NAME) {
-                        stack = stack.set("vtube.item.file_name".to_owned(), v.clone());
+                        stack = stack.set(variables::item::FILE_NAME.to_owned(), v.clone());
                     }
                 }
                 (
                     SubActionTelemetry {
                         args_in: ::std::collections::BTreeMap::new(),
                         produced: ::std::collections::BTreeMap::new(),
-                        kind: "vtube.item.load".to_owned(),
+                        kind: sub_action_ids::ITEM_LOAD.to_owned(),
                         started_at,
                         duration_ms: start.elapsed().as_millis() as u64,
                         outcome: SubActionOutcome::Success,
@@ -235,7 +236,7 @@ impl SubActionRunner for ItemLoadRunner {
                 SubActionTelemetry {
                     args_in: ::std::collections::BTreeMap::new(),
                     produced: ::std::collections::BTreeMap::new(),
-                    kind: "vtube.item.load".to_owned(),
+                    kind: sub_action_ids::ITEM_LOAD.to_owned(),
                     started_at,
                     duration_ms: start.elapsed().as_millis() as u64,
                     outcome: SubActionOutcome::Failed(e.to_string()),

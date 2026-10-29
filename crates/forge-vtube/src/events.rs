@@ -1,7 +1,8 @@
 use forge_events::{Event, EventPublisher, EventSource};
 use serde_json::json;
 
-use crate::payload_fields::{
+use crate::vocabulary::event_kinds;
+use crate::vocabulary::fields::{
     hotkey as hotkey_fields, item as item_fields, model as model_fields,
     tracking as tracking_fields,
 };
@@ -15,9 +16,9 @@ pub(crate) fn dispatch_vts_event(event: &VtsEvent, publisher: &dyn EventPublishe
             model_name,
         } => {
             let kind = if *loaded {
-                "vtube.model.loaded"
+                event_kinds::MODEL_LOADED
             } else {
-                "vtube.model.unloaded"
+                event_kinds::MODEL_UNLOADED
             };
             publisher.publish(Event::new(
                 EventSource::VTube,
@@ -31,7 +32,7 @@ pub(crate) fn dispatch_vts_event(event: &VtsEvent, publisher: &dyn EventPublishe
         } => {
             publisher.publish(Event::new(
                 EventSource::VTube,
-                "vtube.model.config_changed",
+                event_kinds::MODEL_CONFIG_CHANGED,
                 json!({ (model_fields::MODEL_ID): model_id, (model_fields::MODEL_NAME): model_name }),
             ));
         }
@@ -41,7 +42,7 @@ pub(crate) fn dispatch_vts_event(event: &VtsEvent, publisher: &dyn EventPublishe
         } => {
             publisher.publish(Event::new(
                 EventSource::VTube,
-                "vtube.hotkey.triggered",
+                event_kinds::HOTKEY_TRIGGERED,
                 json!({ (hotkey_fields::HOTKEY_ID): hotkey_id, (hotkey_fields::HOTKEY_NAME): hotkey_name }),
             ));
         }
@@ -51,9 +52,9 @@ pub(crate) fn dispatch_vts_event(event: &VtsEvent, publisher: &dyn EventPublishe
             right_hand_found,
         } => {
             let kind = if *face_found {
-                "vtube.tracking.face_found"
+                event_kinds::TRACKING_FACE_FOUND
             } else {
-                "vtube.tracking.face_lost"
+                event_kinds::TRACKING_FACE_LOST
             };
             publisher.publish(Event::new(
                 EventSource::VTube,
@@ -70,8 +71,8 @@ pub(crate) fn dispatch_vts_event(event: &VtsEvent, publisher: &dyn EventPublishe
             item_file_name,
         } => {
             let kind = match change {
-                ItemChange::Added => "vtube.item.added",
-                ItemChange::Removed => "vtube.item.removed",
+                ItemChange::Added => event_kinds::ITEM_ADDED,
+                ItemChange::Removed => event_kinds::ITEM_REMOVED,
             };
             publisher.publish(Event::new(
                 EventSource::VTube,

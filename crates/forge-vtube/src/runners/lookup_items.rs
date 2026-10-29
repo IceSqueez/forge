@@ -9,6 +9,7 @@ use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, Variant};
 use time::OffsetDateTime;
 
 use crate::sink::{VTubeSink, result_keys};
+use crate::vocabulary::{sub_action_ids, variables};
 
 pub struct LookupItemsRunner {
     sink: Arc<dyn VTubeSink>,
@@ -23,7 +24,7 @@ impl LookupItemsRunner {
 #[async_trait]
 impl SubActionRunner for LookupItemsRunner {
     fn id(&self) -> &str {
-        "vtube.lookup.items"
+        sub_action_ids::LOOKUP_ITEMS
     }
 
     fn category(&self) -> SubActionCategory {
@@ -71,20 +72,20 @@ impl SubActionRunner for LookupItemsRunner {
                 let mut stack = ctx.arg_stack.clone();
                 if let Variant::Object(ref map) = variant {
                     if let Some(v) = map.get(result_keys::INSTANCE_IDS) {
-                        stack = stack.set("vtube.items.instance_ids".to_owned(), v.clone());
+                        stack = stack.set(variables::items::INSTANCE_IDS.to_owned(), v.clone());
                     }
                     if let Some(v) = map.get(result_keys::FILE_NAMES) {
-                        stack = stack.set("vtube.items.file_names".to_owned(), v.clone());
+                        stack = stack.set(variables::items::FILE_NAMES.to_owned(), v.clone());
                     }
                     if let Some(v) = map.get(result_keys::COUNT) {
-                        stack = stack.set("vtube.items.count".to_owned(), v.clone());
+                        stack = stack.set(variables::items::COUNT.to_owned(), v.clone());
                     }
                 }
                 (
                     SubActionTelemetry {
                         args_in: ::std::collections::BTreeMap::new(),
                         produced: ::std::collections::BTreeMap::new(),
-                        kind: "vtube.lookup.items".to_owned(),
+                        kind: sub_action_ids::LOOKUP_ITEMS.to_owned(),
                         started_at,
                         duration_ms: start.elapsed().as_millis() as u64,
                         outcome: SubActionOutcome::Success,
@@ -97,7 +98,7 @@ impl SubActionRunner for LookupItemsRunner {
                 SubActionTelemetry {
                     args_in: ::std::collections::BTreeMap::new(),
                     produced: ::std::collections::BTreeMap::new(),
-                    kind: "vtube.lookup.items".to_owned(),
+                    kind: sub_action_ids::LOOKUP_ITEMS.to_owned(),
                     started_at,
                     duration_ms: start.elapsed().as_millis() as u64,
                     outcome: SubActionOutcome::Failed(e.to_string()),

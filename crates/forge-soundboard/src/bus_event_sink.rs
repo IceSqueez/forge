@@ -1,11 +1,9 @@
 use std::sync::Arc;
 
-use forge_events::{Event, EventPublisher, EventSource};
-use serde_json::json;
+use forge_events::{EventPublisher, EventSource, TypedEvent};
 
 use crate::audio_event::{AudioEvent, AudioEventSink};
-
-pub const PLAY_ID_KEY: &str = "play_id";
+use crate::vocabulary::{PlaybackFailed, PlaybackFinished, PlaybackStarted};
 
 pub struct BusAudioEventSink {
     bus: Arc<dyn EventPublisher>,
@@ -27,46 +25,37 @@ impl AudioEventSink for BusAudioEventSink {
                 device,
                 duration_secs,
                 looped,
-            } => Event::new(
-                EventSource::Audio,
-                "playback.started",
-                json!({
-                    PLAY_ID_KEY: play_id,
-                    "clip_id": clip_id.map(|id| id.to_string()),
-                    "clip_label": clip_label,
-                    "device": device,
-                    "duration_secs": duration_secs,
-                    "looped": looped,
-                }),
-            ),
+            } => PlaybackStarted {
+                play_id,
+                clip_id,
+                clip_label,
+                device,
+                duration_secs,
+                looped,
+            }
+            .into_event(EventSource::Audio, None),
             AudioEvent::PlaybackFinished {
                 play_id,
                 clip_id,
                 clip_label,
-            } => Event::new(
-                EventSource::Audio,
-                "playback.finished",
-                json!({
-                    PLAY_ID_KEY: play_id,
-                    "clip_id": clip_id.map(|id| id.to_string()),
-                    "clip_label": clip_label,
-                }),
-            ),
+            } => PlaybackFinished {
+                play_id,
+                clip_id,
+                clip_label,
+            }
+            .into_event(EventSource::Audio, None),
             AudioEvent::PlaybackFailed {
                 play_id,
                 clip_id,
                 clip_label,
                 error,
-            } => Event::new(
-                EventSource::Audio,
-                "playback.failed",
-                json!({
-                    PLAY_ID_KEY: play_id,
-                    "clip_id": clip_id.map(|id| id.to_string()),
-                    "clip_label": clip_label,
-                    "error": error,
-                }),
-            ),
+            } => PlaybackFailed {
+                play_id,
+                clip_id,
+                clip_label,
+                error,
+            }
+            .into_event(EventSource::Audio, None),
         };
         self.bus.publish(bus_event);
     }

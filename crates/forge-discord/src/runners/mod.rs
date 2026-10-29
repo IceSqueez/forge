@@ -13,6 +13,7 @@ use forge_types::{ArgStack, Variant};
 use crate::client::DiscordClient;
 use crate::error::DiscordError;
 use crate::sink::DiscordSink;
+use crate::vocabulary::variables;
 
 pub use delete_message::DeleteMessageRunner;
 pub use edit_message::EditMessageRunner;
@@ -20,11 +21,9 @@ pub use post_embed::PostEmbedRunner;
 pub use post_text::PostTextRunner;
 pub use send_file::SendFileRunner;
 
-pub(crate) const MESSAGE_ID_VAR: &str = "discord.message_id";
-
 pub(crate) fn message_id_scope_io() -> SubActionIo {
     SubActionIo {
-        fixed_outputs: vec![MESSAGE_ID_VAR.to_owned()],
+        fixed_outputs: vec![variables::MESSAGE_ID.to_owned()],
         ..SubActionIo::default()
     }
 }
@@ -34,9 +33,10 @@ pub(crate) fn message_id_stack(
     posted: &Result<String, DiscordError>,
 ) -> Option<ArgStack> {
     posted.as_ref().ok().map(|id| {
-        stack
-            .clone()
-            .set(MESSAGE_ID_VAR.to_owned(), Variant::String(id.clone()))
+        stack.clone().set(
+            variables::MESSAGE_ID.to_owned(),
+            Variant::String(id.clone()),
+        )
     })
 }
 

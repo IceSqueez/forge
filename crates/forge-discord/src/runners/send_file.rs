@@ -15,6 +15,7 @@ use time::OffsetDateTime;
 use super::mention_fields::{mention_default_entries, mention_form_fields, mention_policy};
 use super::{message_id_scope_io, message_id_stack};
 use crate::sink::DiscordSink;
+use crate::vocabulary::sub_action_ids;
 
 pub struct SendFileRunner {
     sink: Arc<dyn DiscordSink>,
@@ -34,7 +35,7 @@ fn interpolated_string(config: &SubActionConfig, ctx: &RunContext<'_>, key: &str
 #[async_trait]
 impl SubActionRunner for SendFileRunner {
     fn id(&self) -> &str {
-        "discord.webhook.send_file"
+        sub_action_ids::WEBHOOK_SEND_FILE
     }
 
     fn category(&self) -> SubActionCategory {
@@ -132,7 +133,7 @@ impl SubActionRunner for SendFileRunner {
                 SubActionTelemetry {
                     args_in: ::std::collections::BTreeMap::new(),
                     produced: ::std::collections::BTreeMap::new(),
-                    kind: "discord.webhook.send_file".to_owned(),
+                    kind: sub_action_ids::WEBHOOK_SEND_FILE.to_owned(),
                     started_at,
                     duration_ms: start.elapsed().as_millis() as u64,
                     outcome: SubActionOutcome::Failed(msg),
@@ -172,7 +173,7 @@ impl SubActionRunner for SendFileRunner {
             SubActionTelemetry {
                 args_in: ::std::collections::BTreeMap::new(),
                 produced: ::std::collections::BTreeMap::new(),
-                kind: "discord.webhook.send_file".to_owned(),
+                kind: sub_action_ids::WEBHOOK_SEND_FILE.to_owned(),
                 started_at,
                 duration_ms: start.elapsed().as_millis() as u64,
                 outcome,

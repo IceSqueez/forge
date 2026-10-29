@@ -8,13 +8,14 @@ use forge_types::{
     ArgStack, DeclaredVariable, TriggerConfig, VariableSchema, Variant, VariantKind,
 };
 
-use crate::payload_fields::item as fields;
+use crate::vocabulary::fields::item as fields;
+use crate::vocabulary::{event_kinds, trigger_ids, variables};
 
 pub struct ItemAddedDescriptor;
 
 impl TriggerKindDescriptor for ItemAddedDescriptor {
     fn id(&self) -> &str {
-        "vtube.item.added"
+        trigger_ids::ITEM_ADDED
     }
 
     fn category(&self) -> TriggerCategory {
@@ -56,12 +57,12 @@ impl TriggerKindDescriptor for ItemAddedDescriptor {
     fn event_filter(&self) -> EventFilter {
         EventFilter {
             source: Some(EventSource::VTube),
-            kind_prefix: Some("vtube.item.".to_owned()),
+            kind_prefix: Some(event_kinds::ITEM_PREFIX.to_owned()),
         }
     }
 
     fn matches_trigger(&self, _config: &TriggerConfig, event: &Event) -> bool {
-        event.kind == "vtube.item.added"
+        event.kind == event_kinds::ITEM_ADDED
     }
 
     fn build_arg_stack(&self, event: &Event) -> ArgStack {
@@ -72,7 +73,7 @@ impl TriggerKindDescriptor for ItemAddedDescriptor {
             .and_then(|v| v.as_str())
         {
             stack = stack.set(
-                "vtube.item.instance_id".to_owned(),
+                variables::item::INSTANCE_ID.to_owned(),
                 Variant::String(id.to_owned()),
             );
         }
@@ -82,7 +83,7 @@ impl TriggerKindDescriptor for ItemAddedDescriptor {
             .and_then(|v| v.as_str())
         {
             stack = stack.set(
-                "vtube.item.file_name".to_owned(),
+                variables::item::FILE_NAME.to_owned(),
                 Variant::String(file.to_owned()),
             );
         }
@@ -93,13 +94,13 @@ impl TriggerKindDescriptor for ItemAddedDescriptor {
         Some(VariableSchema {
             variables: vec![
                 DeclaredVariable {
-                    name: "vtube.item.instance_id".to_owned(),
+                    name: variables::item::INSTANCE_ID.to_owned(),
                     kind: VariantKind::String,
                     label: "Item instance ID".to_owned(),
                     synthesis: None,
                 },
                 DeclaredVariable {
-                    name: "vtube.item.file_name".to_owned(),
+                    name: variables::item::FILE_NAME.to_owned(),
                     kind: VariantKind::String,
                     label: "Item file name".to_owned(),
                     synthesis: None,

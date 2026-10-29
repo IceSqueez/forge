@@ -13,6 +13,7 @@ use time::OffsetDateTime;
 
 use crate::runners::numeric::optional_number;
 use crate::sink::{VTubeSink, result_keys};
+use crate::vocabulary::{sub_action_ids, variables};
 
 pub struct ItemThrowRunner {
     sink: Arc<dyn VTubeSink>,
@@ -49,7 +50,7 @@ fn read_trajectory(config: &SubActionConfig, ctx: &RunContext<'_>) -> Result<Tra
 #[async_trait]
 impl SubActionRunner for ItemThrowRunner {
     fn id(&self) -> &str {
-        "vtube.item.throw"
+        sub_action_ids::ITEM_THROW
     }
 
     fn category(&self) -> SubActionCategory {
@@ -262,7 +263,7 @@ impl SubActionRunner for ItemThrowRunner {
 
         let mut stack = ctx.arg_stack.clone();
         stack = stack.set(
-            "vtube.item.instance_id".to_owned(),
+            variables::item::INSTANCE_ID.to_owned(),
             Variant::String(instance_id),
         );
 
@@ -287,7 +288,7 @@ fn telemetry(
     SubActionTelemetry {
         args_in: ::std::collections::BTreeMap::new(),
         produced: ::std::collections::BTreeMap::new(),
-        kind: "vtube.item.throw".to_owned(),
+        kind: sub_action_ids::ITEM_THROW.to_owned(),
         started_at,
         duration_ms: start.elapsed().as_millis() as u64,
         outcome,

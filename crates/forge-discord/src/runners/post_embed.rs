@@ -14,6 +14,7 @@ use time::OffsetDateTime;
 use super::{message_id_scope_io, message_id_stack};
 use crate::embed::DiscordEmbed;
 use crate::sink::DiscordSink;
+use crate::vocabulary::sub_action_ids;
 
 pub struct PostEmbedRunner {
     sink: Arc<dyn DiscordSink>,
@@ -28,7 +29,7 @@ impl PostEmbedRunner {
 #[async_trait]
 impl SubActionRunner for PostEmbedRunner {
     fn id(&self) -> &str {
-        "discord.webhook.send_embed"
+        sub_action_ids::WEBHOOK_SEND_EMBED
     }
 
     fn category(&self) -> SubActionCategory {
@@ -120,7 +121,7 @@ impl SubActionRunner for PostEmbedRunner {
                 SubActionTelemetry {
                     args_in: ::std::collections::BTreeMap::new(),
                     produced: ::std::collections::BTreeMap::new(),
-                    kind: "discord.webhook.send_embed".to_owned(),
+                    kind: sub_action_ids::WEBHOOK_SEND_EMBED.to_owned(),
                     started_at,
                     duration_ms: start.elapsed().as_millis() as u64,
                     outcome: SubActionOutcome::Failed("embed has no content".to_owned()),
@@ -155,7 +156,7 @@ impl SubActionRunner for PostEmbedRunner {
             SubActionTelemetry {
                 args_in: ::std::collections::BTreeMap::new(),
                 produced: ::std::collections::BTreeMap::new(),
-                kind: "discord.webhook.send_embed".to_owned(),
+                kind: sub_action_ids::WEBHOOK_SEND_EMBED.to_owned(),
                 started_at,
                 duration_ms: start.elapsed().as_millis() as u64,
                 outcome,

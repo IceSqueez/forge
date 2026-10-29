@@ -14,6 +14,7 @@ use time::OffsetDateTime;
 use super::mention_fields::{mention_default_entries, mention_form_fields, mention_policy};
 use crate::embed::DiscordEmbed;
 use crate::sink::DiscordSink;
+use crate::vocabulary::sub_action_ids;
 
 pub struct EditMessageRunner {
     sink: Arc<dyn DiscordSink>,
@@ -28,7 +29,7 @@ impl EditMessageRunner {
 #[async_trait]
 impl SubActionRunner for EditMessageRunner {
     fn id(&self) -> &str {
-        "discord.webhook.update_message"
+        sub_action_ids::WEBHOOK_UPDATE_MESSAGE
     }
 
     fn category(&self) -> SubActionCategory {
@@ -128,7 +129,7 @@ impl SubActionRunner for EditMessageRunner {
                 SubActionTelemetry {
                     args_in: ::std::collections::BTreeMap::new(),
                     produced: ::std::collections::BTreeMap::new(),
-                    kind: "discord.webhook.update_message".to_owned(),
+                    kind: sub_action_ids::WEBHOOK_UPDATE_MESSAGE.to_owned(),
                     started_at,
                     duration_ms: start.elapsed().as_millis() as u64,
                     outcome: SubActionOutcome::Failed("edit has no content or embed".to_owned()),
@@ -160,7 +161,7 @@ impl SubActionRunner for EditMessageRunner {
             SubActionTelemetry {
                 args_in: ::std::collections::BTreeMap::new(),
                 produced: ::std::collections::BTreeMap::new(),
-                kind: "discord.webhook.update_message".to_owned(),
+                kind: sub_action_ids::WEBHOOK_UPDATE_MESSAGE.to_owned(),
                 started_at,
                 duration_ms: start.elapsed().as_millis() as u64,
                 outcome,

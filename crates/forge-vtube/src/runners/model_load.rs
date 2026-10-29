@@ -12,6 +12,7 @@ use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, Variant};
 use time::OffsetDateTime;
 
 use crate::sink::VTubeSink;
+use crate::vocabulary::{picker_keys, sub_action_ids};
 
 pub struct ModelLoadRunner {
     sink: Arc<dyn VTubeSink>,
@@ -26,7 +27,7 @@ impl ModelLoadRunner {
 #[async_trait]
 impl SubActionRunner for ModelLoadRunner {
     fn id(&self) -> &str {
-        "vtube.model.load"
+        sub_action_ids::MODEL_LOAD
     }
 
     fn category(&self) -> SubActionCategory {
@@ -57,7 +58,7 @@ impl SubActionRunner for ModelLoadRunner {
         vec![FormField::DynamicSelect {
             key: "model_id",
             label: "Model",
-            options_key: "vtube.model_ids",
+            options_key: picker_keys::MODEL_IDS,
         }]
     }
 
@@ -88,7 +89,7 @@ impl SubActionRunner for ModelLoadRunner {
             SubActionTelemetry {
                 args_in: ::std::collections::BTreeMap::new(),
                 produced: ::std::collections::BTreeMap::new(),
-                kind: "vtube.model.load".to_owned(),
+                kind: sub_action_ids::MODEL_LOAD.to_owned(),
                 started_at,
                 duration_ms: start.elapsed().as_millis() as u64,
                 outcome,

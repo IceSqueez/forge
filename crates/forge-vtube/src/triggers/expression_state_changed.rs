@@ -8,13 +8,14 @@ use forge_types::{
     ArgStack, DeclaredVariable, TriggerConfig, VariableSchema, Variant, VariantKind,
 };
 
-use crate::payload_fields::expression as fields;
+use crate::vocabulary::fields::expression as fields;
+use crate::vocabulary::{event_kinds, trigger_ids, variables};
 
 pub struct ExpressionStateChangedDescriptor;
 
 impl TriggerKindDescriptor for ExpressionStateChangedDescriptor {
     fn id(&self) -> &str {
-        "vtube.expression.state_changed"
+        trigger_ids::EXPRESSION_STATE_CHANGED
     }
 
     fn category(&self) -> TriggerCategory {
@@ -56,12 +57,12 @@ impl TriggerKindDescriptor for ExpressionStateChangedDescriptor {
     fn event_filter(&self) -> EventFilter {
         EventFilter {
             source: Some(EventSource::VTube),
-            kind_prefix: Some("vtube.expression.".to_owned()),
+            kind_prefix: Some(event_kinds::EXPRESSION_PREFIX.to_owned()),
         }
     }
 
     fn matches_trigger(&self, _config: &TriggerConfig, event: &Event) -> bool {
-        event.kind == "vtube.expression.state_changed"
+        event.kind == event_kinds::EXPRESSION_STATE_CHANGED
     }
 
     fn build_arg_stack(&self, event: &Event) -> ArgStack {
@@ -72,7 +73,7 @@ impl TriggerKindDescriptor for ExpressionStateChangedDescriptor {
             .and_then(|v| v.as_str())
         {
             stack = stack.set(
-                "vtube.expression.file".to_owned(),
+                variables::expression::FILE.to_owned(),
                 Variant::String(file.to_owned()),
             );
         }
@@ -82,7 +83,7 @@ impl TriggerKindDescriptor for ExpressionStateChangedDescriptor {
             .and_then(|v| v.as_bool())
         {
             stack = stack.set(
-                "vtube.expression.is_active".to_owned(),
+                variables::expression::IS_ACTIVE.to_owned(),
                 Variant::Bool(is_active),
             );
         }
@@ -93,13 +94,13 @@ impl TriggerKindDescriptor for ExpressionStateChangedDescriptor {
         Some(VariableSchema {
             variables: vec![
                 DeclaredVariable {
-                    name: "vtube.expression.file".to_owned(),
+                    name: variables::expression::FILE.to_owned(),
                     kind: VariantKind::String,
                     label: "Expression file".to_owned(),
                     synthesis: None,
                 },
                 DeclaredVariable {
-                    name: "vtube.expression.is_active".to_owned(),
+                    name: variables::expression::IS_ACTIVE.to_owned(),
                     kind: VariantKind::Bool,
                     label: "Expression active".to_owned(),
                     synthesis: None,

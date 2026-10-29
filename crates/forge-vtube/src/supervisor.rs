@@ -6,7 +6,7 @@ use time::OffsetDateTime;
 use tokio::sync::{Notify, broadcast, mpsc, oneshot, watch};
 use tokio::time::Instant;
 
-use forge_events::{Event, EventPublisher, EventSource};
+use forge_events::{Event, EventPublisher, EventSource, TypedEvent};
 use forge_net::Backoff;
 use forge_platform_core::{
     AtomicConnectionState, ConnectionState, ConnectionTransition, HealthDelta,
@@ -20,8 +20,8 @@ use crate::error::VTubeError;
 use crate::health::{
     HealthSnapshot, apply_model, apply_tracking, clear_session_state, update_from_event,
 };
-use crate::payload_fields::connection as connection_fields;
-use crate::payload_fields::expression as expression_fields;
+use crate::vocabulary::fields::expression as expression_fields;
+use crate::vocabulary::{VTubeConnectionChanged, event_kinds};
 use crate::vts::endpoint::split_endpoint;
 use crate::vts::event::{VtsEvent, subscribe_all};
 use crate::vts::message_type::{
@@ -74,17 +74,13 @@ fn emit_connection_changed(
     reason: Option<&str>,
     detail: Option<String>,
 ) {
-    let payload = serde_json::json!({
-        (connection_fields::IS_CONNECTED): is_connected,
-        (connection_fields::ENDPOINT): endpoint,
-        (connection_fields::REASON): reason,
-        (connection_fields::DETAIL): detail,
-    });
-    publisher.publish(Event::new(
-        EventSource::VTube,
-        "vtube.connection.changed",
-        payload,
-    ));
+    VTubeConnectionChanged {
+        is_connected,
+        endpoint: endpoint.to_owned(),
+        reason: reason.map(str::to_owned),
+        detail,
+    }
+    .publish(publisher, EventSource::VTube, None);
 }
 
 fn snapshot_expressions(data: &serde_json::Value) -> HashMap<String, bool> {
@@ -116,7 +112,7 @@ fn diff_and_emit_expressions(
             {
                 publisher.publish(Event::new(
                     EventSource::VTube,
-                    "vtube.expression.state_changed",
+                    event_kinds::EXPRESSION_STATE_CHANGED,
                     serde_json::json!({
                         (expression_fields::EXPRESSION_FILE): file,
                         (expression_fields::IS_ACTIVE): is_active,

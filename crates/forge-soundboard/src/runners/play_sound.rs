@@ -10,6 +10,7 @@ use forge_types::{
 };
 
 use crate::control::SoundboardControl;
+use crate::vocabulary::{picker_keys, sub_action_ids};
 
 pub struct PlaySoundRunner {
     control: Arc<dyn SoundboardControl>,
@@ -24,7 +25,7 @@ impl PlaySoundRunner {
 #[async_trait]
 impl SubActionRunner for PlaySoundRunner {
     fn id(&self) -> &str {
-        "soundboard.sound.play"
+        sub_action_ids::SOUND_PLAY
     }
 
     fn category(&self) -> SubActionCategory {
@@ -57,7 +58,7 @@ impl SubActionRunner for PlaySoundRunner {
         vec![FormField::DynamicSelect {
             key: "clip_id",
             label: "Clip",
-            options_key: "soundboard.clip_ids",
+            options_key: picker_keys::CLIP_IDS,
         }]
     }
 
@@ -76,7 +77,7 @@ impl SubActionRunner for PlaySoundRunner {
         config: &SubActionConfig,
         ctx: &RunContext<'_>,
     ) -> (SubActionTelemetry, Option<ArgStack>) {
-        let timer = StepTimer::start(ctx, "soundboard.sound.play");
+        let timer = StepTimer::start(ctx, sub_action_ids::SOUND_PLAY);
 
         let clip_id_str = config.str("clip_id").unwrap_or_default();
         let interpolated = ctx.arg_stack.interpolate(clip_id_str);
@@ -84,7 +85,9 @@ impl SubActionRunner for PlaySoundRunner {
         let parse_result: Result<ClipId, _> = serde_json::from_str(&format!("\"{interpolated}\""));
 
         let outcome = match parse_result {
-            Err(_) => SubActionOutcome::Failed("soundboard.sound.play: invalid clip_id".to_owned()),
+            Err(_) => {
+                SubActionOutcome::Failed(format!("{}: invalid clip_id", sub_action_ids::SOUND_PLAY))
+            }
             Ok(clip_id) => SubActionOutcome::from_result(&self.control.play(clip_id, None).await),
         };
 

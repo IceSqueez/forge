@@ -22,10 +22,3 @@ pub(crate) mod item {
     pub(crate) const ITEM_INSTANCE_ID: &str = "item_instance_id";
     pub(crate) const ITEM_FILE_NAME: &str = "item_file_name";
 }
-
-pub(crate) mod connection {
-    pub(crate) const IS_CONNECTED: &str = "is_connected";
-    pub(crate) const ENDPOINT: &str = "endpoint";
-    pub(crate) const REASON: &str = "reason";
-    pub(crate) const DETAIL: &str = "detail";
-}

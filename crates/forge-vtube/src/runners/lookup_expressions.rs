@@ -9,6 +9,7 @@ use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, Variant};
 use time::OffsetDateTime;
 
 use crate::sink::{VTubeSink, result_keys};
+use crate::vocabulary::{sub_action_ids, variables};
 
 pub struct LookupExpressionsRunner {
     sink: Arc<dyn VTubeSink>,
@@ -23,7 +24,7 @@ impl LookupExpressionsRunner {
 #[async_trait]
 impl SubActionRunner for LookupExpressionsRunner {
     fn id(&self) -> &str {
-        "vtube.lookup.expressions"
+        sub_action_ids::LOOKUP_EXPRESSIONS
     }
 
     fn category(&self) -> SubActionCategory {
@@ -71,20 +72,20 @@ impl SubActionRunner for LookupExpressionsRunner {
                 let mut stack = ctx.arg_stack.clone();
                 if let Variant::Object(ref map) = variant {
                     if let Some(v) = map.get(result_keys::NAMES) {
-                        stack = stack.set("vtube.expressions.names".to_owned(), v.clone());
+                        stack = stack.set(variables::expressions::NAMES.to_owned(), v.clone());
                     }
                     if let Some(v) = map.get(result_keys::ACTIVE) {
-                        stack = stack.set("vtube.expressions.active".to_owned(), v.clone());
+                        stack = stack.set(variables::expressions::ACTIVE.to_owned(), v.clone());
                     }
                     if let Some(v) = map.get(result_keys::COUNT) {
-                        stack = stack.set("vtube.expressions.count".to_owned(), v.clone());
+                        stack = stack.set(variables::expressions::COUNT.to_owned(), v.clone());
                     }
                 }
                 (
                     SubActionTelemetry {
                         args_in: ::std::collections::BTreeMap::new(),
                         produced: ::std::collections::BTreeMap::new(),
-                        kind: "vtube.lookup.expressions".to_owned(),
+                        kind: sub_action_ids::LOOKUP_EXPRESSIONS.to_owned(),
                         started_at,
                         duration_ms: start.elapsed().as_millis() as u64,
                         outcome: SubActionOutcome::Success,
@@ -97,7 +98,7 @@ impl SubActionRunner for LookupExpressionsRunner {
                 SubActionTelemetry {
                     args_in: ::std::collections::BTreeMap::new(),
                     produced: ::std::collections::BTreeMap::new(),
-                    kind: "vtube.lookup.expressions".to_owned(),
+                    kind: sub_action_ids::LOOKUP_EXPRESSIONS.to_owned(),
                     started_at,
                     duration_ms: start.elapsed().as_millis() as u64,
                     outcome: SubActionOutcome::Failed(e.to_string()),

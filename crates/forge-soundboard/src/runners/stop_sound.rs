@@ -8,6 +8,7 @@ use forge_types::{
 use time::OffsetDateTime;
 
 use crate::control::SoundboardControl;
+use crate::vocabulary::{picker_keys, sub_action_ids};
 
 pub struct StopSoundRunner {
     control: Arc<dyn SoundboardControl>,
@@ -22,7 +23,7 @@ impl StopSoundRunner {
 #[async_trait]
 impl SubActionRunner for StopSoundRunner {
     fn id(&self) -> &str {
-        "soundboard.sound.stop"
+        sub_action_ids::SOUND_STOP
     }
 
     fn category(&self) -> SubActionCategory {
@@ -55,7 +56,7 @@ impl SubActionRunner for StopSoundRunner {
         vec![FormField::DynamicSelect {
             key: "clip_id",
             label: "Clip",
-            options_key: "soundboard.clip_ids",
+            options_key: picker_keys::CLIP_IDS,
         }]
     }
 
@@ -85,9 +86,10 @@ impl SubActionRunner for StopSoundRunner {
             let parse_result: Result<ClipId, _> =
                 serde_json::from_str(&format!("\"{interpolated}\""));
             match parse_result {
-                Err(_) => {
-                    SubActionOutcome::Failed("soundboard.sound.stop: invalid clip_id".to_owned())
-                }
+                Err(_) => SubActionOutcome::Failed(format!(
+                    "{}: invalid clip_id",
+                    sub_action_ids::SOUND_STOP
+                )),
                 Ok(clip_id) => match self.control.stop(clip_id).await {
                     Ok(()) => SubActionOutcome::Success,
                     Err(e) => SubActionOutcome::Failed(e.to_string()),
@@ -104,7 +106,7 @@ impl SubActionRunner for StopSoundRunner {
                 args_in: ::std::collections::BTreeMap::new(),
                 produced: ::std::collections::BTreeMap::new(),
                 index: ctx.index,
-                kind: "soundboard.sound.stop".to_owned(),
+                kind: sub_action_ids::SOUND_STOP.to_owned(),
                 started_at,
                 duration_ms,
                 outcome,

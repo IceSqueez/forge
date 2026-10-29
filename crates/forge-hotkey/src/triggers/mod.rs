@@ -9,7 +9,7 @@ use forge_registry::{RegistryError, TriggerRegistry};
 use forge_types::{TriggerConfig, Variant};
 
 use crate::combo::HotkeyCombo;
-use crate::payload_fields as fields;
+use crate::vocabulary::fields;
 
 pub fn register_hotkey_triggers(reg: &mut TriggerRegistry) -> Result<(), RegistryError> {
     let mut reg = reg.owned_by(crate::HOTKEY_INTEGRATION.id);

@@ -228,23 +228,27 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn clamps_out_of_range_timeout_instead_of_rejecting() {
-        for (input, expected) in [
-            (10_i64, 1000_u32),
-            (999, 1000),
-            (1000, 1000),
-            (5000, 5000),
-            (60000, 60000),
-            (999_999, 60000),
-        ] {
+    async fn a_timeout_inside_its_bounds_reaches_the_notice() {
+        for timeout in [TIMEOUT_MIN_MS, DEFAULT_TIMEOUT_MS, TIMEOUT_MAX_MS] {
             let port = Arc::new(RecordingNotifyPort::new());
-            let cfg = cfg_with("x", "", "normal", input);
+            let cfg = cfg_with("x", "", "normal", timeout);
+            let outcome = run(Arc::clone(&port), ArgStack::new(), cfg).await;
+            assert!(matches!(outcome, SubActionOutcome::Success), "{timeout}");
+            assert_eq!(i64::from(port.shown()[0].timeout_ms), timeout, "{timeout}");
+        }
+    }
+
+    #[tokio::test]
+    async fn a_timeout_outside_its_bounds_fails_without_showing_a_notice() {
+        for timeout in [TIMEOUT_MIN_MS - 1, TIMEOUT_MAX_MS + 1] {
+            let port = Arc::new(RecordingNotifyPort::new());
+            let cfg = cfg_with("x", "", "normal", timeout);
             let outcome = run(Arc::clone(&port), ArgStack::new(), cfg).await;
             assert!(
-                matches!(outcome, SubActionOutcome::Success),
-                "input {input}"
+                matches!(&outcome, SubActionOutcome::Failed(m) if m.contains("'timeout_ms'")),
+                "{timeout}: {outcome:?}"
             );
-            assert_eq!(port.shown()[0].timeout_ms, expected, "input {input}");
+            assert!(port.shown().is_empty(), "{timeout}");
         }
     }
 

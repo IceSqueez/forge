@@ -133,6 +133,7 @@ mod tests {
     use forge_events::EventPublisher;
     use forge_storage::{GlobalEntry, StorageError};
     use forge_types::EventId;
+    use forge_types::Variant;
     use std::collections::BTreeMap;
     use std::sync::Mutex;
     use time::OffsetDateTime;

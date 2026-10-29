@@ -201,6 +201,7 @@ mod tests {
     use forge_types::{EventId, Shared};
 
     use super::*;
+    use forge_types::Variant;
 
     const PLACEHOLDER: &str = "Anonymous donor";
 

@@ -161,6 +161,7 @@ mod tests {
     use super::*;
     use crate::speak_dispatcher::{SpeakDispatchError, SpeakDispatcher, SpeakingViewer};
     use forge_events::{Event, EventPublisher};
+    use forge_types::Variant;
 
     struct NullPublisher;
 

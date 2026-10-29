@@ -276,11 +276,26 @@ async fn schedule_step_places_the_run_after_the_delay_in_each_unit() {
         (1, "minutes", MINUTE),
         (3, "hours", 3 * HOUR),
         (2, "days", 2 * DAY),
-        (4, "weeks", 4 * MINUTE),
     ] {
         let run = harness.schedule_target(target, &delay(amount, unit)).await;
         assert_eq!(run.spec.due_at, base() + expected, "{amount} {unit}");
     }
+}
+
+#[tokio::test]
+async fn schedule_step_with_an_unknown_delay_unit_fails_without_placing_a_run() {
+    let harness = Harness::new().await;
+    let target = harness.target().await;
+
+    let mut pairs = delay(4, "weeks").to_vec();
+    pairs.push(("action_id", text(&target.to_string())));
+    let (outcome, _) = harness.schedule(&ArgStack::new(), &pairs).await;
+
+    assert!(
+        failure(&outcome).is_some_and(|reason| reason.contains("'delay_unit'")),
+        "{outcome:?}"
+    );
+    assert!(harness.pending().await.is_empty());
 }
 
 #[tokio::test]
@@ -343,21 +358,23 @@ async fn schedule_step_writes_its_outputs_under_custom_variable_names() {
 async fn schedule_step_refuses_delays_outside_one_minute_to_one_year() {
     let harness = Harness::new().await;
     let target = harness.target().await;
-    let too_short = ScheduleError::DelayTooShort.to_string();
-    let too_long = ScheduleError::DelayTooLong.to_string();
 
-    for (amount, unit, expected) in [
-        (0, "minutes", Some(too_short.as_str())),
-        (-5, "days", Some(too_short.as_str())),
-        (1, "minutes", None),
-        (365, "days", None),
-        (366, "days", Some(too_long.as_str())),
-        (i64::MAX, "days", Some(too_long.as_str())),
+    for (amount, unit, refused) in [
+        (0, "minutes", true),
+        (-5, "days", true),
+        (1, "minutes", false),
+        (365, "days", false),
+        (366, "days", true),
+        (i64::MAX, "days", true),
     ] {
         let mut pairs = delay(amount, unit).to_vec();
         pairs.push(("action_id", text(&target.to_string())));
         let (outcome, _) = harness.schedule(&ArgStack::new(), &pairs).await;
-        assert_eq!(failure(&outcome), expected, "{amount} {unit}");
+        assert_eq!(
+            failure(&outcome).is_some_and(|reason| reason.contains("'delay_amount'")),
+            refused,
+            "{amount} {unit}: {outcome:?}"
+        );
     }
 }
 
@@ -382,21 +399,24 @@ async fn schedule_step_form_bounds_match_what_the_scheduler_accepts_in_every_uni
     let harness = Harness::new().await;
     let target = harness.target().await;
     let bounds = delay_bounds(&harness.scheduler());
-    let too_short = ScheduleError::DelayTooShort.to_string();
-    let too_long = ScheduleError::DelayTooLong.to_string();
 
     for unit in bounds.units {
         let range = bounds.range_for(unit.value);
-        for (amount, expected) in [
-            (*range.start() - 1, Some(too_short.as_str())),
-            (*range.start(), None),
-            (*range.end(), None),
-            (*range.end() + 1, Some(too_long.as_str())),
+        for (amount, accepted) in [
+            (*range.start() - 1, false),
+            (*range.start(), true),
+            (*range.end(), true),
+            (*range.end() + 1, false),
         ] {
             let mut pairs = delay(amount, unit.value).to_vec();
             pairs.push(("action_id", text(&target.to_string())));
             let (outcome, _) = harness.schedule(&ArgStack::new(), &pairs).await;
-            assert_eq!(failure(&outcome), expected, "{amount} {}", unit.value);
+            assert_eq!(
+                matches!(outcome, SubActionOutcome::Success),
+                accepted,
+                "{amount} {}: {outcome:?}",
+                unit.value
+            );
         }
     }
 }
@@ -442,7 +462,7 @@ async fn schedule_step_fails_on_a_due_time_it_cannot_read() {
         pairs.push(("action_id", text(&target.to_string())));
         let (outcome, produced) = harness.schedule(&ArgStack::new(), &pairs).await;
         assert!(
-            failure(&outcome).is_some_and(|reason| reason.starts_with("due date-time")),
+            failure(&outcome).is_some_and(|reason| reason.contains("'due_at'")),
             "{value:?}: {outcome:?}"
         );
         assert!(produced.is_none(), "{value:?}");
@@ -469,8 +489,14 @@ async fn schedule_step_without_a_known_action_fails_without_placing_a_run() {
     let unknown = ScheduleError::UnknownAction.to_string();
 
     for (action_id, expected) in [
-        (String::new(), "no valid action is selected"),
-        ("not-an-action".to_owned(), "no valid action is selected"),
+        (
+            String::new(),
+            "invalid step config: 'action_id' is required",
+        ),
+        (
+            "not-an-action".to_owned(),
+            "invalid step config: 'action_id' is invalid: not a known entry",
+        ),
         (ActionId::new().to_string(), unknown.as_str()),
     ] {
         let (outcome, _) = harness
@@ -612,7 +638,6 @@ async fn schedule_step_maps_the_skip_toggle_to_the_stored_policy() {
 async fn schedule_step_refuses_a_skip_tolerance_below_the_minimum() {
     let harness = Harness::new().await;
     let target = harness.target().await;
-    let out_of_range = ScheduleError::LateToleranceOutOfRange.to_string();
     let below = i64::try_from(MIN_LATE_TOLERANCE.as_secs() / 60).unwrap() - 1;
 
     for minutes in [below, 0, -5] {
@@ -626,7 +651,10 @@ async fn schedule_step_refuses_a_skip_tolerance_below_the_minimum() {
                 ],
             )
             .await;
-        assert_eq!(failure(&outcome), Some(out_of_range.as_str()), "{minutes}");
+        assert!(
+            failure(&outcome).is_some_and(|reason| reason.contains("'late_tolerance_minutes'")),
+            "{minutes}: {outcome:?}"
+        );
     }
 }
 
@@ -645,8 +673,6 @@ async fn cancel_step_reports_whether_a_pending_run_held_the_exact_key() {
         "vip:%user%",
         "VIP:bob",
         "vip:carol",
-        "",
-        "  ",
         "  vip:bob  ",
     ] {
         let (_, cancelled) = harness.cancel(&stack, key).await;
@@ -658,14 +684,31 @@ async fn cancel_step_reports_whether_a_pending_run_held_the_exact_key() {
         ("vip:%user%", false),
         ("VIP:bob", false),
         ("vip:carol", false),
-        ("", false),
-        ("  ", false),
         ("  vip:bob  ", true),
     ]
     .into_iter()
     .map(|(key, cancelled)| (key, Some(Variant::Bool(cancelled))))
     .collect();
     assert_eq!(seen, expected);
+}
+
+#[tokio::test]
+async fn cancel_step_with_a_blank_key_fails_and_keeps_every_pending_run() {
+    let harness = Harness::new().await;
+    let target = harness.target().await;
+    harness
+        .schedule_target(target, &[("key", text("vip:bob"))])
+        .await;
+
+    for key in ["", "  "] {
+        let (outcome, cancelled) = harness.cancel(&ArgStack::new(), key).await;
+        assert!(
+            failure(&outcome).is_some_and(|reason| reason.contains("'key' is required")),
+            "{key:?}: {outcome:?}"
+        );
+        assert_eq!(cancelled, None, "{key:?}");
+    }
+    assert_eq!(harness.pending().await.len(), 1);
 }
 
 #[tokio::test]

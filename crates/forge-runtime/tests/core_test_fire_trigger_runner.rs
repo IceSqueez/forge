@@ -406,7 +406,7 @@ async fn unparseable_trigger_instance_id_fails() {
         panic!("an unparseable trigger_instance_id must fail before any lookup, got {outcome:?}");
     };
     assert!(
-        msg.contains("invalid trigger_instance_id"),
+        msg.contains("'trigger_instance_id' is invalid"),
         "the failure must name the field it could not parse: {msg}"
     );
     assert!(!msg.contains(SENTINEL), "echoed the unparsed value: {msg}");

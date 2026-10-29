@@ -212,7 +212,9 @@ mod tests {
 
     use super::*;
     use crate::config_problem::ConfigProblem;
+    use crate::config_problem::ValueBounds;
     use crate::declared_config::{ConfigSpec, Interpolation};
+    use crate::declared_fields::{NumberField, StoredNumber};
 
     const SCENE: PickedTextField = PickedTextField {
         key: "scene",
@@ -230,7 +232,7 @@ mod tests {
         default: "shot.png",
         required: false,
     };
-    const HOLD: DecimalField = DecimalField {
+    const HOLD: NumberField = NumberField {
         key: "hold",
         label: "Hold",
         placeholder: "0",
@@ -240,22 +242,32 @@ mod tests {
             max: Some(600),
         },
     };
-    const GAIN: DecimalField = DecimalField {
+    const GAIN: NumberField = NumberField {
         key: "gain",
         label: "Gain",
         placeholder: "0.0",
         default: StoredNumber::Text("0.0"),
         bounds: ValueBounds::UNBOUNDED,
     };
-    const MAYBE_HOLD: OptionalField<DecimalField> = OptionalField { field: HOLD };
-    const MAYBE_NOTE: OptionalField<TextField> = OptionalField {
-        field: TextField {
-            key: "note",
-            label: "Note",
-            editor: TextEditor::Line { placeholder: "" },
-            default: "",
-            required: true,
-        },
+    const MAYBE_HOLD: OptionalField<NumberField> = OptionalField::shared(HOLD);
+    const MAYBE_NOTE: OptionalField<TextField> = OptionalField::shared(TextField {
+        key: "note",
+        label: "Note",
+        editor: TextEditor::Line { placeholder: "" },
+        default: "",
+        required: true,
+    });
+    const MAYBE_FLAG: OptionalField<ToggleField> = OptionalField::shared(ToggleField {
+        key: "flag",
+        label: "Flag",
+        default: false,
+    });
+    const REQUIRED_NOTE: TextField = TextField {
+        key: "required_note",
+        label: "Note",
+        editor: TextEditor::Line { placeholder: "" },
+        default: "",
+        required: true,
     };
     const SPEC: ConfigSpec = ConfigSpec::new(&[&SCENE, &HOLD, &GAIN, &MAYBE_NOTE]);
 
@@ -318,7 +330,7 @@ mod tests {
     }
 
     #[test]
-    fn decimal_field_stores_its_default_in_the_declared_shape() {
+    fn number_field_stores_its_default_as_a_float_or_as_text() {
         assert_eq!(
             (HOLD.default_value(), GAIN.default_value()),
             (Variant::Float(0.0), text("0.0")),
@@ -326,7 +338,7 @@ mod tests {
     }
 
     #[test]
-    fn decimal_field_reads_its_default_when_the_value_is_absent() {
+    fn number_field_reads_a_float_or_text_default_when_the_value_is_absent() {
         let args = args();
         assert_eq!(
             (
@@ -338,58 +350,15 @@ mod tests {
     }
 
     #[test]
-    fn decimal_field_admits_its_bounds_and_refuses_one_past_each() {
-        let out_of_range = || rejected(&HOLD, ConfigReason::OutOfRange(HOLD.bounds));
-        for (value, expected) in [
-            (Variant::Float(-0.001), out_of_range()),
-            (Variant::Float(0.0), Ok(0.0)),
-            (Variant::Int(600), Ok(600.0)),
-            (text(" 600 "), Ok(600.0)),
-            (Variant::Float(600.001), out_of_range()),
-            (Variant::Int(601), out_of_range()),
-            (text("-1"), out_of_range()),
-        ] {
-            assert_eq!(read(&HOLD, value.clone()), expected, "{value:?}");
-        }
+    fn number_field_reads_a_template_resolving_to_blank_as_required() {
+        assert_eq!(
+            read(&HOLD, text("%nothing%")),
+            rejected(&HOLD, ConfigReason::Required)
+        );
     }
 
     #[test]
-    fn decimal_field_refuses_blank_non_finite_and_non_numeric_values() {
-        for (value, reason) in [
-            (text(""), ConfigReason::Required),
-            (text(" \t "), ConfigReason::Required),
-            (text("NaN"), ConfigReason::NotANumber),
-            (text("inf"), ConfigReason::NotANumber),
-            (Variant::Float(f64::NAN), ConfigReason::NotANumber),
-            (Variant::Float(f64::INFINITY), ConfigReason::NotANumber),
-            (text("loud"), ConfigReason::NotANumber),
-            (Variant::Bool(true), ConfigReason::NotANumber),
-        ] {
-            assert_eq!(
-                read(&GAIN, value.clone()),
-                rejected(&GAIN, reason),
-                "{value:?}"
-            );
-        }
-    }
-
-    #[test]
-    fn decimal_field_checks_an_interpolated_template_like_a_typed_value() {
-        for (template, expected) in [
-            ("%n%", Ok(7.0)),
-            (
-                "%big%",
-                rejected(&HOLD, ConfigReason::OutOfRange(HOLD.bounds)),
-            ),
-            ("%nothing%", rejected(&HOLD, ConfigReason::Required)),
-            ("%who%", rejected(&HOLD, ConfigReason::NotANumber)),
-        ] {
-            assert_eq!(read(&HOLD, text(template)), expected, "{template}");
-        }
-    }
-
-    #[test]
-    fn decimal_field_defers_a_template_until_run_time() {
+    fn number_field_defers_a_template_until_run_time() {
         assert_eq!(
             HOLD.peek(
                 &SubActionConfig::from([("hold".to_owned(), text("%big%"))]),
@@ -423,12 +392,29 @@ mod tests {
                 text("%big%"),
                 rejected(&HOLD, ConfigReason::OutOfRange(HOLD.bounds)),
             ),
-            (
-                Variant::Bool(false),
-                rejected(&HOLD, ConfigReason::NotANumber),
-            ),
+            (Variant::Bool(false), Ok(None)),
+            (Variant::Bool(true), Ok(None)),
         ] {
             assert_eq!(read(&MAYBE_HOLD, value.clone()), expected, "{value:?}");
+        }
+    }
+
+    #[test]
+    fn optional_field_passes_a_bool_through_when_the_inner_field_takes_a_bool() {
+        assert_eq!(read(&MAYBE_FLAG, Variant::Bool(true)), Ok(Some(true)));
+        assert_eq!(read(&MAYBE_FLAG, Variant::Bool(false)), Ok(Some(false)));
+    }
+
+    #[test]
+    fn required_text_field_rejects_a_template_resolving_to_whitespace() {
+        let args = args().set("blank".to_owned(), text("   "));
+        for value in [text("%blank%"), text("%nothing%"), text("  ")] {
+            let config = SubActionConfig::from([("required_note".to_owned(), value.clone())]);
+            assert_eq!(
+                REQUIRED_NOTE.read(&config, &args),
+                rejected(&REQUIRED_NOTE, ConfigReason::Required),
+                "{value:?}",
+            );
         }
     }
 

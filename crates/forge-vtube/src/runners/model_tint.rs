@@ -208,7 +208,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn a_blank_scene_lighting_mix_is_left_out_and_a_flag_there_fails() {
+    async fn a_blank_or_boolean_scene_lighting_mix_is_left_out() {
         let sink = Arc::new(RecordingSink::default());
         let runner = ModelTintRunner::new(Arc::clone(&sink) as Arc<dyn VTubeSink>);
         let stack = ArgStack::new();
@@ -224,12 +224,7 @@ mod tests {
 
         assert_eq!(blank_tel.outcome, SubActionOutcome::Success);
         assert_eq!(sent.map(|args| args[4]), Some(None));
-        assert!(
-            matches!(&flag_tel.outcome, SubActionOutcome::Failed(reason)
-                if reason.starts_with("invalid step config: 'mix_with_scene_lighting' ")),
-            "{:?}",
-            flag_tel.outcome,
-        );
+        assert_eq!(flag_tel.outcome, SubActionOutcome::Success);
     }
 
     #[tokio::test]

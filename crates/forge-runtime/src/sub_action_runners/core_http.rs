@@ -423,6 +423,8 @@ mod tests {
     use crate::test_support::{Sandboxed, sandboxed_backend};
     use forge_events::{Event, EventPublisher};
     use forge_registry::ConfigProblem;
+    use forge_registry::ConfigReason;
+    use forge_registry::RegistryError;
     use forge_storage::{SettingsRepo, reserved_keys};
     use forge_storage_sqlite::SqliteBackend;
     use forge_types::EventId;
@@ -576,9 +578,9 @@ mod tests {
     async fn configured_content_type_is_sent_only_by_methods_that_carry_a_body() {
         for (http_method, expected) in [
             (HttpMethod::Get, None),
-            (HttpMethod::Delete, Some("application/xml")),
-            (HttpMethod::Post, Some("application/xml")),
-            (HttpMethod::Put, Some("application/xml")),
+            (HttpMethod::Delete, Some("text/plain")),
+            (HttpMethod::Post, Some("text/plain")),
+            (HttpMethod::Put, Some("text/plain")),
         ] {
             let server = MockServer::start().await;
             Mock::given(wiremock::matchers::any())
@@ -589,7 +591,7 @@ mod tests {
             let mut cfg = url_cfg(server.uri());
             cfg.insert(
                 "content_type".to_owned(),
-                Variant::String("application/xml".to_owned()),
+                Variant::String("text/plain".to_owned()),
             );
             cfg.insert("body".to_owned(), Variant::String("<a/>".to_owned()));
 
@@ -681,11 +683,11 @@ mod tests {
         let dp = local_backend().await;
         let mut cfg = url_cfg(server.uri());
         cfg.insert(
-            HEADERS_KEY.to_owned(),
+            HEADERS.key.to_owned(),
             Variant::String(r#"{"x-key": "v1"}"#.to_owned()),
         );
         cfg.insert(
-            QUERY_PARAMS_KEY.to_owned(),
+            QUERY_PARAMS.key.to_owned(),
             Variant::String(r#"{"q": 2}"#.to_owned()),
         );
 
@@ -705,16 +707,15 @@ mod tests {
             .await;
         let dp = local_backend().await;
         for (key, value) in [
-            (HEADERS_KEY, "object{0}"),
-            (HEADERS_KEY, "null"),
-            (QUERY_PARAMS_KEY, "[1]"),
-            (QUERY_PARAMS_KEY, r#"{"a": null}"#),
+            (HEADERS.key, "object{0}"),
+            (HEADERS.key, "null"),
+            (QUERY_PARAMS.key, "[1]"),
         ] {
             let mut cfg = url_cfg(server.uri());
             cfg.insert(key.to_owned(), Variant::String(value.to_owned()));
             let (tel, stack) = run(&runner(HttpMethod::Get, &dp), &cfg).await;
             assert!(
-                matches!(&tel.outcome, SubActionOutcome::Failed(m) if m.starts_with(key)),
+                matches!(&tel.outcome, SubActionOutcome::Failed(m) if m.contains(&format!("'{key}'"))),
                 "{key}={value}: {:?}",
                 tel.outcome
             );
@@ -724,9 +725,35 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn a_null_header_or_query_param_value_fails_instead_of_sending_the_text_null() {
+        for key in [HEADERS.key, QUERY_PARAMS.key] {
+            let server = MockServer::start().await;
+            Mock::given(method("GET"))
+                .respond_with(ResponseTemplate::new(200))
+                .mount(&server)
+                .await;
+            let dp = local_backend().await;
+            let mut cfg = url_cfg(server.uri());
+            cfg.insert(key.to_owned(), Variant::String(r#"{"a": null}"#.to_owned()));
+
+            let (tel, _) = run(&runner(HttpMethod::Get, &dp), &cfg).await;
+
+            assert!(
+                matches!(&tel.outcome, SubActionOutcome::Failed(m) if m.contains(&format!("'{key}'"))),
+                "{key}: {:?}",
+                tel.outcome
+            );
+            assert!(
+                server.received_requests().await.unwrap().is_empty(),
+                "{key}"
+            );
+        }
+    }
+
+    #[tokio::test]
     async fn validate_config_rejects_non_object_headers_and_query_params() {
         let dp = backend().await;
-        for key in [HEADERS_KEY, QUERY_PARAMS_KEY] {
+        for key in [HEADERS.key, QUERY_PARAMS.key] {
             let mut cfg = url_cfg("https://example.com".to_owned());
             cfg.insert(key.to_owned(), Variant::String("object{0}".to_owned()));
             let err = runner(HttpMethod::Get, &dp)

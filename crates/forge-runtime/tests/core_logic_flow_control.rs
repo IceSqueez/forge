@@ -228,17 +228,17 @@ async fn loop_runs_its_inline_body_each_iteration_threading_the_index() {
 }
 
 #[tokio::test]
-async fn if_branch_with_non_array_body_is_a_noop_and_still_succeeds() {
+async fn if_branch_with_non_array_body_fails_the_step_without_taking_a_branch() {
     let eng = engine();
     let cfg = if_cfg("1 == 1", Variant::Int(7), inline(vec![]));
     let run = run_top(&eng, vec![step("core.logic.if_then_else", cfg)]).await;
 
-    assert_eq!(run.signal, ChainSignal::Completed);
-    assert_eq!(run.arg_stack.get("branch.taken"), Some(&s("then")));
     assert!(
-        run.arg_stack.get("marker").is_none(),
-        "an empty branch must produce no body effect",
+        matches!(&run.signal, ChainSignal::Error(m) if m.contains("'then_chain'")),
+        "{:?}",
+        run.signal
     );
+    assert!(run.arg_stack.get("branch.taken").is_none());
 }
 
 fn marker_branches(condition: &str) -> SubActionConfig {

@@ -154,6 +154,8 @@ impl SubActionRunner for CoreTimeFormatRunner {
 mod tests {
     use super::*;
     use forge_events::{Event, EventPublisher};
+    use forge_registry::ConfigReason;
+    use forge_registry::RegistryError;
     use forge_types::{EventId, SubActionOutcome};
     use time::{Date, Month, OffsetDateTime, Time};
 
@@ -262,7 +264,8 @@ mod tests {
             ("yyyy qqq", "qqq"),
             ("[unix_timestamp]", "[unix_timestamp]"),
         ] {
-            let result = CoreTimeFormatRunner.validate_config(&cfg(Variant::Bool(false), fmt));
+            let source = Variant::Datetime(utc(2024, Month::January, 15, 0, 0, 0));
+            let result = CoreTimeFormatRunner.validate_config(&cfg(source, fmt));
             assert!(
                 matches!(
                     &result,

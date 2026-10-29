@@ -1025,7 +1025,7 @@ mod tests {
         key: "ratio",
         label: "Ratio",
         placeholder: "",
-        default: 0.5,
+        default: StoredNumber::Text("0.5"),
         bounds: ValueBounds {
             min: Some(0),
             max: Some(10),
@@ -1275,6 +1275,8 @@ mod tests {
             (text("NaN"), ConfigReason::NotANumber),
             (text("inf"), ConfigReason::NotANumber),
             (text("half"), ConfigReason::NotANumber),
+            (Variant::Float(f64::NAN), ConfigReason::NotANumber),
+            (Variant::Float(f64::INFINITY), ConfigReason::NotANumber),
             (Variant::Bool(false), ConfigReason::NotANumber),
         ] {
             assert_eq!(

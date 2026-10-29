@@ -458,32 +458,32 @@ async fn unparseable_id_fails_with_shape_only_text_and_persists_nothing() {
     let cases: [(&str, &str, ParseFailureCase); 6] = [
         (
             "core.action.enable",
-            "invalid action_id",
+            "'action_id' is invalid",
             action_case(|r| Box::new(CoreActionEnableRunner::new(r)), SENTINEL),
         ),
         (
             "core.action.disable",
-            "invalid action_id",
+            "'action_id' is invalid",
             action_case(|r| Box::new(CoreActionDisableRunner::new(r)), SENTINEL),
         ),
         (
             "core.action.toggle",
-            "invalid action_id",
+            "'action_id' is invalid",
             action_case(|r| Box::new(CoreActionToggleRunner::new(r)), SENTINEL),
         ),
         (
             "core.trigger.enable",
-            "invalid trigger_instance_id",
+            "'trigger_instance_id' is invalid",
             trigger_case(|r| Box::new(CoreTriggerEnableRunner::new(r)), SENTINEL),
         ),
         (
             "core.trigger.disable",
-            "invalid trigger_instance_id",
+            "'trigger_instance_id' is invalid",
             trigger_case(|r| Box::new(CoreTriggerDisableRunner::new(r)), SENTINEL),
         ),
         (
             "core.trigger.toggle",
-            "invalid trigger_instance_id",
+            "'trigger_instance_id' is invalid",
             trigger_case(|r| Box::new(CoreTriggerToggleRunner::new(r)), SENTINEL),
         ),
     ];

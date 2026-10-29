@@ -93,6 +93,7 @@ mod tests {
     use forge_events::{Event, EventPublisher};
     use forge_registry::RunContext;
     use forge_storage::{GlobalEntry, StorageError};
+    use forge_types::Variant;
     use forge_types::{EventId, VariantKind};
     use std::collections::BTreeMap;
     use std::sync::Mutex;

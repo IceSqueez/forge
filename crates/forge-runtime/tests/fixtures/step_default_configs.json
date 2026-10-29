@@ -1,0 +1,1116 @@
+{
+  "core.action.cancel": {
+    "action_id": {
+      "type": "string",
+      "value": ""
+    }
+  },
+  "core.action.cancel_scheduled": {
+    "into_var": {
+      "type": "string",
+      "value": "schedule.cancelled"
+    },
+    "key": {
+      "type": "string",
+      "value": ""
+    }
+  },
+  "core.action.disable": {
+    "action_id": {
+      "type": "string",
+      "value": ""
+    }
+  },
+  "core.action.enable": {
+    "action_id": {
+      "type": "string",
+      "value": ""
+    }
+  },
+  "core.action.run": {
+    "action_id": {
+      "type": "string",
+      "value": ""
+    },
+    "inherit_args": {
+      "type": "bool",
+      "value": true
+    }
+  },
+  "core.action.schedule": {
+    "action_id": {
+      "type": "string",
+      "value": ""
+    },
+    "delay_amount": {
+      "type": "int",
+      "value": 10
+    },
+    "delay_unit": {
+      "type": "string",
+      "value": "minutes"
+    },
+    "due_at": {
+      "type": "string",
+      "value": ""
+    },
+    "due_at_into_var": {
+      "type": "string",
+      "value": "schedule.due_at"
+    },
+    "id_into_var": {
+      "type": "string",
+      "value": "schedule.id"
+    },
+    "inherit_args": {
+      "type": "bool",
+      "value": true
+    },
+    "key": {
+      "type": "string",
+      "value": ""
+    },
+    "late_tolerance_minutes": {
+      "type": "int",
+      "value": 10
+    },
+    "skip_if_late": {
+      "type": "bool",
+      "value": false
+    },
+    "use_due_at": {
+      "type": "bool",
+      "value": false
+    }
+  },
+  "core.action.toggle": {
+    "action_id": {
+      "type": "string",
+      "value": ""
+    }
+  },
+  "core.args.set": {
+    "name": {
+      "type": "string",
+      "value": ""
+    },
+    "value": {
+      "type": "string",
+      "value": ""
+    }
+  },
+  "core.clipboard.copy": {
+    "text": {
+      "type": "string",
+      "value": ""
+    }
+  },
+  "core.clipboard.read": {
+    "into_var": {
+      "type": "string",
+      "value": "clipboard.text"
+    }
+  },
+  "core.file.delete": {
+    "ignore_missing": {
+      "type": "bool",
+      "value": false
+    },
+    "path": {
+      "type": "string",
+      "value": ""
+    }
+  },
+  "core.file.list": {
+    "include_dirs": {
+      "type": "bool",
+      "value": false
+    },
+    "into_var": {
+      "type": "string",
+      "value": "file.entries"
+    },
+    "path": {
+      "type": "string",
+      "value": ""
+    },
+    "pattern": {
+      "type": "string",
+      "value": "*"
+    },
+    "recursive": {
+      "type": "bool",
+      "value": false
+    }
+  },
+  "core.file.read": {
+    "path": {
+      "type": "string",
+      "value": ""
+    },
+    "read_as": {
+      "type": "string",
+      "value": "Lines array"
+    },
+    "target_var": {
+      "type": "string",
+      "value": ""
+    }
+  },
+  "core.file.write": {
+    "content": {
+      "type": "string",
+      "value": ""
+    },
+    "create_parent_dirs": {
+      "type": "bool",
+      "value": false
+    },
+    "encoding": {
+      "type": "string",
+      "value": "utf8"
+    },
+    "mode": {
+      "type": "string",
+      "value": "overwrite"
+    },
+    "path": {
+      "type": "string",
+      "value": ""
+    }
+  },
+  "core.globals.array_append": {
+    "key": {
+      "type": "string",
+      "value": ""
+    },
+    "max_length": {
+      "type": "int",
+      "value": 0
+    },
+    "value": {
+      "type": "string",
+      "value": ""
+    }
+  },
+  "core.globals.array_remove": {
+    "key": {
+      "type": "string",
+      "value": ""
+    },
+    "remove_all": {
+      "type": "bool",
+      "value": false
+    },
+    "value": {
+      "type": "string",
+      "value": ""
+    }
+  },
+  "core.globals.decrement": {
+    "amount": {
+      "type": "int",
+      "value": 1
+    },
+    "key": {
+      "type": "string",
+      "value": ""
+    }
+  },
+  "core.globals.delete": {
+    "name": {
+      "type": "string",
+      "value": ""
+    }
+  },
+  "core.globals.get": {
+    "into_arg": {
+      "type": "string",
+      "value": ""
+    },
+    "name": {
+      "type": "string",
+      "value": ""
+    }
+  },
+  "core.globals.increment": {
+    "amount": {
+      "type": "int",
+      "value": 1
+    },
+    "name": {
+      "type": "string",
+      "value": ""
+    }
+  },
+  "core.globals.set": {
+    "name": {
+      "type": "string",
+      "value": ""
+    },
+    "persisted": {
+      "type": "bool",
+      "value": false
+    },
+    "value": {
+      "type": "string",
+      "value": ""
+    }
+  },
+  "core.globals.toggle": {
+    "key": {
+      "type": "string",
+      "value": ""
+    }
+  },
+  "core.http.delete": {
+    "body": {
+      "type": "string",
+      "value": ""
+    },
+    "content_type": {
+      "type": "string",
+      "value": "application/json"
+    },
+    "follow_redirects": {
+      "type": "bool",
+      "value": true
+    },
+    "headers": {
+      "type": "string",
+      "value": "{}"
+    },
+    "parse_response_as": {
+      "type": "string",
+      "value": "json"
+    },
+    "query_params": {
+      "type": "string",
+      "value": "{}"
+    },
+    "timeout_ms": {
+      "type": "int",
+      "value": 10000
+    },
+    "url": {
+      "type": "string",
+      "value": ""
+    }
+  },
+  "core.http.get": {
+    "follow_redirects": {
+      "type": "bool",
+      "value": true
+    },
+    "headers": {
+      "type": "string",
+      "value": "{}"
+    },
+    "parse_response_as": {
+      "type": "string",
+      "value": "json"
+    },
+    "query_params": {
+      "type": "string",
+      "value": "{}"
+    },
+    "timeout_ms": {
+      "type": "int",
+      "value": 10000
+    },
+    "url": {
+      "type": "string",
+      "value": ""
+    }
+  },
+  "core.http.patch": {
+    "body": {
+      "type": "string",
+      "value": ""
+    },
+    "content_type": {
+      "type": "string",
+      "value": "application/json"
+    },
+    "follow_redirects": {
+      "type": "bool",
+      "value": true
+    },
+    "headers": {
+      "type": "string",
+      "value": "{}"
+    },
+    "parse_response_as": {
+      "type": "string",
+      "value": "json"
+    },
+    "query_params": {
+      "type": "string",
+      "value": "{}"
+    },
+    "timeout_ms": {
+      "type": "int",
+      "value": 10000
+    },
+    "url": {
+      "type": "string",
+      "value": ""
+    }
+  },
+  "core.http.post": {
+    "body": {
+      "type": "string",
+      "value": ""
+    },
+    "content_type": {
+      "type": "string",
+      "value": "application/json"
+    },
+    "follow_redirects": {
+      "type": "bool",
+      "value": true
+    },
+    "headers": {
+      "type": "string",
+      "value": "{}"
+    },
+    "parse_response_as": {
+      "type": "string",
+      "value": "json"
+    },
+    "query_params": {
+      "type": "string",
+      "value": "{}"
+    },
+    "timeout_ms": {
+      "type": "int",
+      "value": 10000
+    },
+    "url": {
+      "type": "string",
+      "value": ""
+    }
+  },
+  "core.http.put": {
+    "body": {
+      "type": "string",
+      "value": ""
+    },
+    "content_type": {
+      "type": "string",
+      "value": "application/json"
+    },
+    "follow_redirects": {
+      "type": "bool",
+      "value": true
+    },
+    "headers": {
+      "type": "string",
+      "value": "{}"
+    },
+    "parse_response_as": {
+      "type": "string",
+      "value": "json"
+    },
+    "query_params": {
+      "type": "string",
+      "value": "{}"
+    },
+    "timeout_ms": {
+      "type": "int",
+      "value": 10000
+    },
+    "url": {
+      "type": "string",
+      "value": ""
+    }
+  },
+  "core.latest.get": {
+    "into_var": {
+      "type": "string",
+      "value": "latest"
+    },
+    "platform": {
+      "type": "string",
+      "value": ""
+    },
+    "slot": {
+      "type": "string",
+      "value": "donation"
+    }
+  },
+  "core.log.write": {
+    "level": {
+      "type": "string",
+      "value": "info"
+    },
+    "message": {
+      "type": "string",
+      "value": ""
+    }
+  },
+  "core.logic.break_loop": {},
+  "core.logic.continue_loop": {},
+  "core.logic.if_then_else": {
+    "condition": {
+      "type": "string",
+      "value": ""
+    },
+    "treat_undefined_as_false": {
+      "type": "bool",
+      "value": true
+    }
+  },
+  "core.logic.loop": {
+    "array_source": {
+      "type": "string",
+      "value": ""
+    },
+    "count": {
+      "type": "int",
+      "value": 1
+    },
+    "max_iterations": {
+      "type": "int",
+      "value": 1000
+    },
+    "mode": {
+      "type": "string",
+      "value": "count"
+    },
+    "while_condition": {
+      "type": "string",
+      "value": ""
+    }
+  },
+  "core.logic.stop": {
+    "mark_as": {
+      "type": "string",
+      "value": "completed"
+    },
+    "reason": {
+      "type": "string",
+      "value": ""
+    }
+  },
+  "core.logic.switch_case": {
+    "cases": {
+      "type": "array",
+      "value": []
+    },
+    "expression": {
+      "type": "string",
+      "value": ""
+    }
+  },
+  "core.logic.wait": {
+    "ms": {
+      "type": "int",
+      "value": 1000
+    }
+  },
+  "core.logic.wait_until": {
+    "condition": {
+      "type": "string",
+      "value": ""
+    },
+    "poll_interval_ms": {
+      "type": "int",
+      "value": 500
+    },
+    "timeout_ms": {
+      "type": "int",
+      "value": 30000
+    }
+  },
+  "core.math.evaluate": {
+    "expression": {
+      "type": "string",
+      "value": ""
+    },
+    "into_var": {
+      "type": "string",
+      "value": "result"
+    },
+    "result_type": {
+      "type": "string",
+      "value": "auto"
+    }
+  },
+  "core.notify.show": {
+    "body": {
+      "type": "string",
+      "value": ""
+    },
+    "icon_path": {
+      "type": "string",
+      "value": ""
+    },
+    "timeout_ms": {
+      "type": "int",
+      "value": 5000
+    },
+    "title": {
+      "type": "string",
+      "value": ""
+    },
+    "urgency": {
+      "type": "string",
+      "value": "normal"
+    }
+  },
+  "core.queue.clear": {
+    "keep_current": {
+      "type": "bool",
+      "value": true
+    },
+    "queue_id": {
+      "type": "string",
+      "value": ""
+    }
+  },
+  "core.queue.pause": {
+    "queue_id": {
+      "type": "string",
+      "value": ""
+    }
+  },
+  "core.queue.resume": {
+    "queue_id": {
+      "type": "string",
+      "value": ""
+    }
+  },
+  "core.random.bool": {
+    "into_var": {
+      "type": "string",
+      "value": ""
+    },
+    "probability_true": {
+      "type": "string",
+      "value": "0.5"
+    }
+  },
+  "core.random.float": {
+    "into_var": {
+      "type": "string",
+      "value": ""
+    },
+    "max": {
+      "type": "string",
+      "value": "1.0"
+    },
+    "min": {
+      "type": "string",
+      "value": "0.0"
+    }
+  },
+  "core.random.int": {
+    "max": {
+      "type": "string",
+      "value": "100"
+    },
+    "min": {
+      "type": "string",
+      "value": "1"
+    },
+    "target_var": {
+      "type": "string",
+      "value": ""
+    }
+  },
+  "core.random.pick": {
+    "into_var": {
+      "type": "string",
+      "value": "picked"
+    },
+    "items": {
+      "type": "string",
+      "value": ""
+    },
+    "weights": {
+      "type": "string",
+      "value": ""
+    }
+  },
+  "core.string.concat": {
+    "into_var": {
+      "type": "string",
+      "value": "string.result"
+    },
+    "parts": {
+      "type": "string",
+      "value": ""
+    },
+    "separator": {
+      "type": "string",
+      "value": ""
+    }
+  },
+  "core.string.format": {
+    "into_var": {
+      "type": "string",
+      "value": "string.formatted"
+    },
+    "template": {
+      "type": "string",
+      "value": ""
+    }
+  },
+  "core.string.length": {
+    "into_var": {
+      "type": "string",
+      "value": "string.result"
+    },
+    "mode": {
+      "type": "string",
+      "value": "chars"
+    },
+    "source": {
+      "type": "string",
+      "value": ""
+    }
+  },
+  "core.string.lowercase": {
+    "into_var": {
+      "type": "string",
+      "value": "string.result"
+    },
+    "source": {
+      "type": "string",
+      "value": ""
+    }
+  },
+  "core.string.regex_match": {
+    "captures_into_var": {
+      "type": "string",
+      "value": "regex.captures"
+    },
+    "into_var": {
+      "type": "string",
+      "value": "regex.matched"
+    },
+    "pattern": {
+      "type": "string",
+      "value": ""
+    },
+    "source": {
+      "type": "string",
+      "value": ""
+    }
+  },
+  "core.string.replace": {
+    "case_sensitive": {
+      "type": "bool",
+      "value": true
+    },
+    "into_var": {
+      "type": "string",
+      "value": "string.result"
+    },
+    "is_regex": {
+      "type": "bool",
+      "value": false
+    },
+    "replace_with": {
+      "type": "string",
+      "value": ""
+    },
+    "search": {
+      "type": "string",
+      "value": ""
+    },
+    "source": {
+      "type": "string",
+      "value": ""
+    }
+  },
+  "core.string.split": {
+    "into_var": {
+      "type": "string",
+      "value": "string.parts"
+    },
+    "max_parts": {
+      "type": "int",
+      "value": 0
+    },
+    "separator": {
+      "type": "string",
+      "value": ","
+    },
+    "source": {
+      "type": "string",
+      "value": ""
+    },
+    "trim_each": {
+      "type": "bool",
+      "value": false
+    }
+  },
+  "core.string.substring": {
+    "end_index": {
+      "type": "int",
+      "value": -1
+    },
+    "into_var": {
+      "type": "string",
+      "value": "string.result"
+    },
+    "source": {
+      "type": "string",
+      "value": ""
+    },
+    "start_index": {
+      "type": "int",
+      "value": 0
+    }
+  },
+  "core.string.titlecase": {
+    "into_var": {
+      "type": "string",
+      "value": "string.result"
+    },
+    "source": {
+      "type": "string",
+      "value": ""
+    }
+  },
+  "core.string.trim": {
+    "into_var": {
+      "type": "string",
+      "value": "string.result"
+    },
+    "mode": {
+      "type": "string",
+      "value": "both"
+    },
+    "source": {
+      "type": "string",
+      "value": ""
+    }
+  },
+  "core.string.uppercase": {
+    "into_var": {
+      "type": "string",
+      "value": "string.result"
+    },
+    "source": {
+      "type": "string",
+      "value": ""
+    }
+  },
+  "core.test.fire_trigger": {
+    "override_outputs": {
+      "type": "string",
+      "value": "{}"
+    },
+    "trigger_instance_id": {
+      "type": "string",
+      "value": ""
+    }
+  },
+  "core.time.add": {
+    "add_amount": {
+      "type": "int",
+      "value": 0
+    },
+    "base": {
+      "type": "string",
+      "value": ""
+    },
+    "into_var": {
+      "type": "string",
+      "value": "time.result"
+    },
+    "unit": {
+      "type": "string",
+      "value": "seconds"
+    }
+  },
+  "core.time.diff": {
+    "from": {
+      "type": "string",
+      "value": ""
+    },
+    "into_var": {
+      "type": "string",
+      "value": "time.diff_value"
+    },
+    "to": {
+      "type": "string",
+      "value": ""
+    },
+    "unit": {
+      "type": "string",
+      "value": "seconds"
+    }
+  },
+  "core.time.format": {
+    "format_string": {
+      "type": "string",
+      "value": "yyyy-MM-dd HH:mm:ss"
+    },
+    "into_var": {
+      "type": "string",
+      "value": "time.formatted"
+    },
+    "source": {
+      "type": "string",
+      "value": ""
+    },
+    "utc": {
+      "type": "bool",
+      "value": false
+    }
+  },
+  "core.time.now": {
+    "custom_format_string": {
+      "type": "string",
+      "value": ""
+    },
+    "format": {
+      "type": "string",
+      "value": "iso8601"
+    },
+    "into_var": {
+      "type": "string",
+      "value": "now"
+    },
+    "utc": {
+      "type": "bool",
+      "value": false
+    }
+  },
+  "core.time.parse": {
+    "format": {
+      "type": "string",
+      "value": "yyyy-MM-dd HH:mm:ss"
+    },
+    "into_var": {
+      "type": "string",
+      "value": "time.parsed"
+    },
+    "source": {
+      "type": "string",
+      "value": ""
+    },
+    "utc": {
+      "type": "bool",
+      "value": false
+    }
+  },
+  "core.trigger.disable": {
+    "trigger_instance_id": {
+      "type": "string",
+      "value": ""
+    }
+  },
+  "core.trigger.enable": {
+    "trigger_instance_id": {
+      "type": "string",
+      "value": ""
+    }
+  },
+  "core.trigger.toggle": {
+    "trigger_instance_id": {
+      "type": "string",
+      "value": ""
+    }
+  },
+  "core.url.open": {
+    "url": {
+      "type": "string",
+      "value": ""
+    }
+  },
+  "core.users.get_var": {
+    "default_value": {
+      "type": "string",
+      "value": ""
+    },
+    "into_var": {
+      "type": "string",
+      "value": ""
+    },
+    "user_login": {
+      "type": "string",
+      "value": "%user_login%"
+    },
+    "var_name": {
+      "type": "string",
+      "value": ""
+    }
+  },
+  "core.users.increment_var": {
+    "amount": {
+      "type": "int",
+      "value": 1
+    },
+    "user_login": {
+      "type": "string",
+      "value": "%user_login%"
+    },
+    "var_name": {
+      "type": "string",
+      "value": ""
+    }
+  },
+  "core.users.set_var": {
+    "user_login": {
+      "type": "string",
+      "value": "%user_login%"
+    },
+    "value": {
+      "type": "string",
+      "value": ""
+    },
+    "var_name": {
+      "type": "string",
+      "value": ""
+    }
+  },
+  "donations.test_donation": {
+    "amount": {
+      "type": "string",
+      "value": "50"
+    },
+    "currency": {
+      "type": "string",
+      "value": "UAH"
+    },
+    "donor_name": {
+      "type": "string",
+      "value": "Test donor"
+    },
+    "message": {
+      "type": "string",
+      "value": "This is a test donation"
+    },
+    "provider": {
+      "type": "string",
+      "value": ""
+    }
+  },
+  "overlay.send": {
+    "overlay_id": {
+      "type": "string",
+      "value": ""
+    },
+    "wait_for_show": {
+      "type": "bool",
+      "value": false
+    }
+  },
+  "script.emit_event": {
+    "event_name": {
+      "type": "string",
+      "value": ""
+    },
+    "payload": {
+      "type": "string",
+      "value": "{}"
+    }
+  },
+  "script.run.inline": {
+    "body": {
+      "type": "string",
+      "value": ""
+    }
+  },
+  "script.run.named": {
+    "script_name": {
+      "type": "string",
+      "value": ""
+    },
+    "target_var": {
+      "type": "string",
+      "value": ""
+    }
+  },
+  "server.broadcast": {
+    "event_name": {
+      "type": "string",
+      "value": ""
+    },
+    "payload": {
+      "type": "string",
+      "value": "{}"
+    }
+  },
+  "tts.alias.set": {
+    "alias_name": {
+      "type": "string",
+      "value": ""
+    },
+    "engine_id": {
+      "type": "string",
+      "value": ""
+    },
+    "voice_id": {
+      "type": "string",
+      "value": ""
+    }
+  },
+  "tts.alias.switch_active": {
+    "alias_name": {
+      "type": "string",
+      "value": ""
+    },
+    "engine_id": {
+      "type": "string",
+      "value": ""
+    },
+    "voice_id": {
+      "type": "string",
+      "value": ""
+    }
+  },
+  "tts.queue.clear": {
+    "keep_current": {
+      "type": "bool",
+      "value": true
+    }
+  },
+  "tts.queue.pause": {},
+  "tts.queue.resume": {},
+  "tts.queue.skip_current": {},
+  "tts.speak.stop": {},
+  "tts.speak.text": {
+    "text": {
+      "type": "string",
+      "value": ""
+    },
+    "wait_for_completion": {
+      "type": "bool",
+      "value": true
+    }
+  },
+  "tts.speak.text_with_engine": {
+    "engine_id": {
+      "type": "string",
+      "value": "piper"
+    },
+    "text": {
+      "type": "string",
+      "value": ""
+    },
+    "wait_for_completion": {
+      "type": "bool",
+      "value": true
+    }
+  },
+  "twitch.chat.send_message": {
+    "message": {
+      "type": "string",
+      "value": ""
+    },
+    "sender": {
+      "type": "string",
+      "value": "default"
+    },
+    "target": {
+      "type": "string",
+      "value": "twitch"
+    }
+  }
+}

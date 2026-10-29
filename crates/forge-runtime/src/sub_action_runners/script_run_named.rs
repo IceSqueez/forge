@@ -292,6 +292,7 @@ mod tests {
     use crate::{EventBus, NullEventLogRepo};
     use forge_events::Event;
     use forge_storage::ScriptRecord;
+    use forge_types::Variant;
     use forge_types::{EventId, ScriptContract, ScriptId};
     use time::OffsetDateTime;
 

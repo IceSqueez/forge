@@ -218,12 +218,12 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn substring_negative_indices_fail_at_run_time_naming_the_original_value() {
+    async fn substring_negative_indices_fail_at_run_time_naming_the_index_and_its_bound() {
         for (start, end, named) in [
-            (-1, 3, "start_index -1"),
-            (i64::MIN, -1, "start_index -9223372036854775808"),
-            (0, -2, "end_index -2"),
-            (0, i64::MIN, "end_index -9223372036854775808"),
+            (-1, 3, "'start_index' must be at least 0"),
+            (i64::MIN, -1, "'start_index' must be at least 0"),
+            (0, -2, "'end_index' must be at least -1"),
+            (0, i64::MIN, "'end_index' must be at least -1"),
         ] {
             let (tel, stack) = run(&cfg("hello", start, end)).await;
             assert!(

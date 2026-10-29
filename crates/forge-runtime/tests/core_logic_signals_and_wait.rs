@@ -119,14 +119,6 @@ async fn stop_runner_maps_config_to_the_control_stop_signal() {
             },
         ),
         (
-            Some("FAILED"),
-            None,
-            StopMark {
-                failed: true,
-                reason: None,
-            },
-        ),
-        (
             Some("failed"),
             Some("%who%"),
             StopMark {
@@ -266,4 +258,29 @@ async fn wait_until_argument_text_cannot_satisfy_the_condition() {
         Some(&Variant::Bool(true)),
         "viewer text must not end the wait",
     );
+}
+
+#[tokio::test]
+async fn stop_runner_with_an_unknown_mark_fails_without_signalling() {
+    let stack = ArgStack::new();
+    for mark_as in ["FAILED", "aborted"] {
+        let cfg =
+            SubActionConfig::from([("mark_as".to_owned(), Variant::String(mark_as.to_owned()))]);
+        let cell = ControlCell::new();
+        let ctx = ctx_with(
+            &stack,
+            &NullPublisher,
+            &NoopExec,
+            cell.clone(),
+            CancelSignal::new(),
+        );
+        let (tel, _) = CoreLogicStopRunner.execute(&cfg, &ctx).await;
+
+        assert!(
+            matches!(&tel.outcome, SubActionOutcome::Failed(m) if m.contains("'mark_as'")),
+            "{mark_as}: {:?}",
+            tel.outcome
+        );
+        assert_eq!(cell.take(), None, "{mark_as}");
+    }
 }

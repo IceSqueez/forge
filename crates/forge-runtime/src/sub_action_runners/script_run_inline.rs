@@ -219,6 +219,7 @@ mod tests {
     use forge_storage::{GlobalsRepo, SettingsRepo};
     use forge_storage_sqlite::SqliteBackend;
     use forge_types::EventId;
+    use forge_types::Variant;
 
     async fn make_backend() -> Sandboxed<Arc<SqliteBackend>> {
         let backend = sandboxed_backend([0xab; 32]).await.map(Arc::new);

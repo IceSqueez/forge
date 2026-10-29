@@ -88,6 +88,7 @@ mod tests {
         MockErr, NullPublisher, RecordingClipboardPort,
     };
     use forge_types::EventId;
+    use forge_types::Variant;
 
     async fn run(
         clipboard: Arc<RecordingClipboardPort>,

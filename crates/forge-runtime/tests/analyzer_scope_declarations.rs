@@ -321,7 +321,10 @@ fn a_usable_or_unused_time_pattern_raises_no_step_finding() {
     for (runner, overrides, case) in [
         (
             &CoreTimeFormatRunner as &dyn SubActionRunner,
-            vec![("format_string", s("[day].[month].[year] [hour]:[minute]"))],
+            vec![
+                ("source", s("2024-01-15T00:00:00Z")),
+                ("format_string", s("[day].[month].[year] [hour]:[minute]")),
+            ],
             "a format step with a translatable legacy pattern",
         ),
         (

@@ -90,6 +90,8 @@ mod tests {
     use forge_types::EventId;
 
     use super::*;
+    use forge_types::SubActionOutcome;
+    use forge_types::Variant;
 
     struct NullPublisher;
     impl EventPublisher for NullPublisher {
@@ -166,7 +168,7 @@ mod tests {
             panic!("expected a Failed outcome, got {outcome:?}");
         };
         assert!(
-            msg.contains("invalid action_id"),
+            msg.contains("'action_id' is invalid"),
             "the failure must name the field it could not parse: {msg}"
         );
         assert!(!msg.contains(SENTINEL), "echoed the unparsed value: {msg}");

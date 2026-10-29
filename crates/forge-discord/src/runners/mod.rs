@@ -531,6 +531,39 @@ mod tests {
         }
     }
 
+    #[test]
+    fn content_steps_holding_only_whitespace_content_fail_validation() {
+        use forge_registry::SubActionRunner;
+
+        let embed = PostEmbedRunner::new(Arc::new(MockSink));
+        let edit = EditMessageRunner::new(Arc::new(MockSink));
+        type Case<'a> = (
+            &'a dyn SubActionRunner,
+            Vec<(&'a str, &'a str)>,
+            [&'a str; 2],
+        );
+        let cases: [Case<'_>; 2] = [
+            (
+                &embed,
+                vec![("embed_title", "  "), ("embed_description", "\t")],
+                ["embed_title", "embed_description"],
+            ),
+            (&edit, vec![("content", "  ")], ["content", "embed_title"]),
+        ];
+
+        for (runner, entries, needs) in cases {
+            let mut config = config_of(&entries);
+            config.insert("webhook_name".to_owned(), text("alerts"));
+            config.insert("message_id".to_owned(), text("42"));
+            let problem = runner
+                .validate_config(&config)
+                .err()
+                .map(|error| error.into_config_problem());
+
+            assert_eq!(problem, Some(any_of(needs)), "{} {entries:?}", runner.id());
+        }
+    }
+
     #[tokio::test]
     async fn content_steps_whose_content_resolves_empty_fail_without_calling_the_sink() {
         use forge_registry::{RunContext, SubActionRunner};

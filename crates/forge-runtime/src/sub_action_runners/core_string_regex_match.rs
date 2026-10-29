@@ -159,7 +159,9 @@ mod tests {
     use super::*;
     use forge_events::{Event, EventPublisher};
     use forge_registry::ConfigReason;
+    use forge_registry::RegistryError;
     use forge_types::EventId;
+    use forge_types::SubActionOutcome;
 
     struct NullPublisher;
     impl EventPublisher for NullPublisher {

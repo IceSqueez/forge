@@ -240,37 +240,39 @@ mod tests {
     #[test]
     fn encode_content_utf8_returns_raw_utf8_bytes() {
         let expected = "héllo".as_bytes().to_vec();
-        assert_eq!(encode_content("héllo", "utf8").unwrap(), expected);
-        assert_eq!(encode_content("héllo", "").unwrap(), expected);
+        assert_eq!(encode_content("héllo", Encoding::Utf8).unwrap(), expected);
     }
 
     #[test]
     fn encode_content_latin1_maps_each_char_to_one_byte() {
-        assert_eq!(encode_content("Aÿ", "latin1").unwrap(), vec![0x41, 0xFF]);
+        assert_eq!(
+            encode_content("Aÿ", Encoding::Latin1).unwrap(),
+            vec![0x41, 0xFF]
+        );
     }
 
     #[test]
     fn encode_content_latin1_accepts_ff_boundary_and_rejects_above() {
-        assert_eq!(encode_content("\u{00FF}", "latin1").unwrap(), vec![0xFF]);
-        let err = encode_content("\u{0100}", "latin1").unwrap_err();
+        assert_eq!(
+            encode_content("\u{00FF}", Encoding::Latin1).unwrap(),
+            vec![0xFF]
+        );
+        let err = encode_content("\u{0100}", Encoding::Latin1).unwrap_err();
         assert!(err.contains("Latin-1"), "{err}");
     }
 
     #[test]
     fn encode_content_base64_decodes_trimmed_input() {
-        assert_eq!(encode_content("aGk=", "raw_base64").unwrap(), b"hi");
-        assert_eq!(encode_content("  aGk=\n", "raw_base64").unwrap(), b"hi");
+        assert_eq!(encode_content("aGk=", Encoding::RawBase64).unwrap(), b"hi");
+        assert_eq!(
+            encode_content("  aGk=\n", Encoding::RawBase64).unwrap(),
+            b"hi"
+        );
     }
 
     #[test]
     fn encode_content_base64_rejects_invalid_payload() {
-        let err = encode_content("not base64!", "raw_base64").unwrap_err();
+        let err = encode_content("not base64!", Encoding::RawBase64).unwrap_err();
         assert!(err.contains("base64 decode failed"), "{err}");
-    }
-
-    #[test]
-    fn encode_content_rejects_unknown_encoding() {
-        let err = encode_content("x", "utf16").unwrap_err();
-        assert!(err.contains("unknown encoding"), "{err}");
     }
 }

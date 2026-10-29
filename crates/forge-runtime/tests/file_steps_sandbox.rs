@@ -14,7 +14,7 @@ const TRAVERSAL: &str = "\"..\" is not allowed";
 const ABSOLUTE: &str = "absolute paths are not allowed";
 #[cfg(unix)]
 const ESCAPE: &str = "leads outside the files folder";
-const EMPTY: &str = "path is empty";
+const PATH_REQUIRED: &str = "'path' is required";
 const READ_CAP_BYTES: usize = 1024 * 1024;
 const SENTINEL: &str = "qa-sentinel";
 
@@ -164,7 +164,7 @@ async fn every_file_step_refuses_an_empty_or_whitespace_path() {
     for path in ["", " ", "\t\n"] {
         for step in ALL_STEPS {
             let msg = failure(step, path).await;
-            assert!(msg.contains(EMPTY), "{step:?} {path:?}: {msg}");
+            assert!(msg.contains(PATH_REQUIRED), "{step:?} {path:?}: {msg}");
         }
     }
 }
@@ -463,12 +463,20 @@ async fn lines_mode_splits_on_newlines_stripping_trailing_carriage_returns() {
 }
 
 #[tokio::test]
-async fn unrecognised_read_as_defaults_to_lines_array() {
-    for read_as in [None, Some("something-else")] {
-        let (outcome, value) = read_fixture(read_as, "out", "out", "x\ny").await;
-        assert_eq!(outcome, SubActionOutcome::Success, "read_as={read_as:?}");
-        assert_eq!(value, Some(strings(&["x", "y"])), "read_as={read_as:?}");
-    }
+async fn absent_read_as_defaults_to_lines_array() {
+    let (outcome, value) = read_fixture(None, "out", "out", "x\ny").await;
+    assert_eq!(outcome, SubActionOutcome::Success);
+    assert_eq!(value, Some(strings(&["x", "y"])));
+}
+
+#[tokio::test]
+async fn unrecognised_read_as_fails_without_producing_a_value() {
+    let (outcome, value) = read_fixture(Some("something-else"), "out", "out", "x\ny").await;
+    assert!(
+        matches!(&outcome, SubActionOutcome::Failed(m) if m.contains("'read_as'")),
+        "{outcome:?}"
+    );
+    assert_eq!(value, None);
 }
 
 #[tokio::test]

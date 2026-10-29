@@ -244,12 +244,8 @@ async fn custom_now_follows_the_system_zone_when_utc_is_off() {
 }
 
 #[test]
-fn every_time_step_default_config_validates() {
-    let runners: [&dyn SubActionRunner; 3] = [
-        &CoreTimeFormatRunner,
-        &CoreTimeParseRunner,
-        &CoreTimeNowRunner,
-    ];
+fn parse_and_now_default_configs_validate() {
+    let runners: [&dyn SubActionRunner; 2] = [&CoreTimeParseRunner, &CoreTimeNowRunner];
     for runner in runners {
         assert!(
             runner.validate_config(&runner.default_config()).is_ok(),
@@ -257,4 +253,16 @@ fn every_time_step_default_config_validates() {
             runner.id()
         );
     }
+}
+
+#[test]
+fn a_fresh_format_step_fails_validation_on_its_empty_source() {
+    let problem = CoreTimeFormatRunner
+        .validate_config(&CoreTimeFormatRunner.default_config())
+        .unwrap_err()
+        .into_config_problem();
+    assert_eq!(
+        problem,
+        forge_registry::ConfigProblem::field("source", forge_registry::ConfigReason::Required)
+    );
 }

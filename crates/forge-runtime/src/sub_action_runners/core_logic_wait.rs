@@ -89,6 +89,7 @@ async fn wait_for_cancel(cancel: &CancelSignal) {
 mod tests {
     use super::*;
     use forge_events::{Event, EventPublisher};
+    use forge_types::Variant;
     use forge_types::{EventId, SubActionOutcome};
 
     const TIMER_GRANULARITY: Duration = Duration::from_millis(2);
@@ -102,40 +103,46 @@ mod tests {
         RunContext::leaf(stack, 0, EventId::new(), &NullPublisher)
     }
 
+    async fn run_wait(configured_ms: i64) -> (SubActionOutcome, Duration) {
+        let mut cfg = SubActionConfig::new();
+        cfg.insert(WAIT_MS_KEY.to_owned(), Variant::Int(configured_ms));
+        let stack = ArgStack::new();
+        let ctx = make_ctx(&stack);
+        let before = tokio::time::Instant::now();
+        let (telemetry, updated) = CoreLogicWaitRunner.execute(&cfg, &ctx).await;
+        assert!(updated.is_none(), "a wait produces no arguments");
+        (telemetry.outcome, before.elapsed())
+    }
+
     #[tokio::test(start_paused = true)]
-    async fn a_wait_holds_for_its_own_delay_up_to_the_cap_and_never_past_it() {
-        for (configured_ms, held_ms) in [
-            (-5_i64, 0_u64),
-            (0, 0),
-            (1_500, 1_500),
-            (MAX_DELAY_MS as i64, MAX_DELAY_MS),
-            (MAX_DELAY_MS as i64 + 1, MAX_DELAY_MS),
-            (120_000, MAX_DELAY_MS),
-        ] {
-            let runner = CoreLogicWaitRunner;
-            let mut cfg = SubActionConfig::new();
-            cfg.insert(WAIT_MS_KEY.to_owned(), Variant::Int(configured_ms));
-            let stack = ArgStack::new();
-            let ctx = make_ctx(&stack);
-
-            let before = tokio::time::Instant::now();
-            let (telemetry, updated) = runner.execute(&cfg, &ctx).await;
-            let held = before.elapsed();
-
-            assert!(matches!(telemetry.outcome, SubActionOutcome::Success));
-            assert!(updated.is_none(), "a wait produces no arguments");
+    async fn a_wait_holds_for_its_own_delay_up_to_and_including_the_cap() {
+        for held_ms in [0, 1_500, MAX_DELAY_MS] {
+            let (outcome, held) = run_wait(held_ms).await;
+            let expected = Duration::from_millis(held_ms.unsigned_abs());
+            assert!(matches!(outcome, SubActionOutcome::Success), "{held_ms}");
             assert!(
-                held >= Duration::from_millis(held_ms)
-                    && held < Duration::from_millis(held_ms) + TIMER_GRANULARITY,
-                "{configured_ms} ms held {held:?}, expected about {held_ms} ms",
+                held >= expected && held < expected + TIMER_GRANULARITY,
+                "{held_ms} ms held {held:?}",
             );
+        }
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_wait_outside_its_bounds_fails_without_holding() {
+        for configured_ms in [-5, MAX_DELAY_MS + 1] {
+            let (outcome, held) = run_wait(configured_ms).await;
+            assert!(
+                matches!(&outcome, SubActionOutcome::Failed(m) if m.contains(WAIT_MS_KEY)),
+                "{configured_ms}: {outcome:?}"
+            );
+            assert!(held < TIMER_GRANULARITY, "{configured_ms} held {held:?}");
         }
     }
 
     #[tokio::test(start_paused = true)]
     async fn a_cancelled_run_leaves_a_long_wait_within_one_cancel_poll() {
         let mut cfg = SubActionConfig::new();
-        cfg.insert(WAIT_MS_KEY.to_owned(), Variant::Int(MAX_DELAY_MS as i64));
+        cfg.insert(WAIT_MS_KEY.to_owned(), Variant::Int(MAX_DELAY_MS));
         let stack = ArgStack::new();
         let mut ctx = make_ctx(&stack);
         let cancel = CancelSignal::new();

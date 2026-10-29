@@ -227,6 +227,7 @@ impl SubActionRunner for CoreTimeNowRunner {
 mod tests {
     use super::*;
     use forge_events::{Event, EventPublisher};
+    use forge_registry::RegistryError;
     use forge_types::{EventId, SubActionOutcome};
 
     struct NullPublisher;

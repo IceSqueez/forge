@@ -155,16 +155,13 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn blank_into_var_falls_back_to_default_key() {
+    async fn blank_into_var_fails_instead_of_writing_a_default_name() {
         let port = Arc::new(RecordingClipboardPort::new().reads("data"));
         let (outcome, updated) = run(port, "").await;
-        assert!(matches!(outcome, SubActionOutcome::Success));
-        assert_eq!(
-            updated
-                .unwrap()
-                .get("clipboard.text")
-                .and_then(|v| v.as_str()),
-            Some("data")
+        assert!(
+            matches!(&outcome, SubActionOutcome::Failed(m) if m.contains("'into_var' is required")),
+            "{outcome:?}"
         );
+        assert!(updated.is_none());
     }
 }

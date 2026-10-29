@@ -166,6 +166,8 @@ impl SubActionRunner for CoreTimeParseRunner {
 mod tests {
     use super::*;
     use forge_events::{Event, EventPublisher};
+    use forge_registry::ConfigReason;
+    use forge_registry::RegistryError;
     use forge_types::{EventId, SubActionOutcome};
     use time::{Date, Month, OffsetDateTime, Time};
 

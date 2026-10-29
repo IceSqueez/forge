@@ -188,6 +188,7 @@ mod tests {
     use forge_types::{EventId, SubActionOutcome};
 
     use super::*;
+    use forge_types::Variant;
 
     struct NullPublisher;
     impl EventPublisher for NullPublisher {
@@ -201,53 +202,66 @@ mod tests {
             .collect()
     }
 
-    #[test]
-    fn an_override_duration_becomes_milliseconds_only_for_a_positive_whole_number_of_seconds() {
-        for (held, expected, label) in [
-            (
-                Some(Variant::Int(5)),
-                Some(5_000),
-                "a duration inside the slider range",
-            ),
-            (
-                Some(Variant::Int(1)),
-                Some(1_000),
-                "the shortest duration offered",
-            ),
-            (
-                Some(Variant::Int(15)),
-                Some(15_000),
-                "the longest duration offered",
-            ),
-            (Some(Variant::Int(0)), None, "a duration of no time at all"),
-            (Some(Variant::Int(-1)), None, "a duration below zero"),
-            (
-                Some(Variant::Int(i64::MAX)),
-                Some(u64::MAX),
-                "a duration large enough to overflow the conversion",
-            ),
-            (
-                Some(Variant::Bool(false)),
-                None,
-                "the toggle while the override is off",
-            ),
-            (
-                Some(Variant::Bool(true)),
-                None,
-                "the toggle switched on before a number was picked",
-            ),
-            (
-                Some(Variant::String("5".to_owned())),
-                None,
-                "seconds written as text",
-            ),
-            (None, None, "no override field at all"),
-        ] {
-            let cfg = held.map_or_else(SubActionConfig::new, |value| {
-                config(&[(DURATION_KEY, value)])
-            });
+    fn override_ms(cfg: &SubActionConfig) -> Result<Option<u64>, ConfigProblem> {
+        let mut targeted = cfg.clone();
+        targeted.insert(
+            OVERLAY_TARGET_KEY.to_owned(),
+            Variant::String("goal-box".to_owned()),
+        );
+        read_config(&targeted, &ArgStack::new()).map(|read| read.duration_ms)
+    }
 
-            assert_eq!(duration_override(&cfg), expected, "{label}");
+    #[test]
+    fn an_override_duration_inside_the_slider_range_becomes_milliseconds() {
+        for (held, expected) in [
+            (
+                Variant::Int(DURATION_MIN_SECS),
+                DURATION_MIN_SECS as u64 * 1_000,
+            ),
+            (Variant::Int(5), 5_000),
+            (
+                Variant::Int(DURATION_MAX_SECS),
+                DURATION_MAX_SECS as u64 * 1_000,
+            ),
+            (Variant::String("5".to_owned()), 5_000),
+        ] {
+            let cfg = config(&[(DURATION_KEY, held.clone())]);
+            assert_eq!(override_ms(&cfg), Ok(Some(expected)), "{held:?}");
+        }
+    }
+
+    #[test]
+    fn an_unset_override_leaves_the_overlay_its_own_duration() {
+        for cfg in [
+            SubActionConfig::new(),
+            config(&[(DURATION_KEY, Variant::String(String::new()))]),
+        ] {
+            assert_eq!(override_ms(&cfg), Ok(None), "{cfg:?}");
+        }
+    }
+
+    #[test]
+    fn an_override_switched_off_by_an_older_editor_leaves_the_overlay_its_own_duration() {
+        let cfg = config(&[(DURATION_KEY, Variant::Bool(false))]);
+
+        assert_eq!(override_ms(&cfg), Ok(None));
+    }
+
+    #[test]
+    fn an_override_duration_outside_the_slider_range_is_a_config_problem() {
+        for held in [DURATION_MIN_SECS - 1, DURATION_MAX_SECS + 1, i64::MAX] {
+            let cfg = config(&[(DURATION_KEY, Variant::Int(held))]);
+            assert_eq!(
+                override_ms(&cfg).unwrap_err(),
+                ConfigProblem::field(
+                    DURATION_KEY,
+                    forge_registry::ConfigReason::OutOfRange(ValueBounds::between(
+                        DURATION_MIN_SECS,
+                        DURATION_MAX_SECS
+                    ))
+                ),
+                "{held}"
+            );
         }
     }
 

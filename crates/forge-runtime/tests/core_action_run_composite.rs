@@ -402,7 +402,7 @@ async fn unparseable_action_id_fails_without_running_a_child_chain() {
         panic!("an unparseable action_id must fail, got {outcome:?}");
     };
     assert!(
-        msg.contains("invalid action_id"),
+        msg.contains("'action_id' is invalid"),
         "the failure must name the field it could not parse: {msg}"
     );
     assert!(!msg.contains(SENTINEL), "echoed the unparsed value: {msg}");

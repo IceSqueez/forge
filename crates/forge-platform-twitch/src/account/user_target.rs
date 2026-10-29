@@ -91,7 +91,7 @@ mod tests {
     use std::collections::BTreeMap;
     use std::sync::Arc;
 
-    use forge_registry::SubActionRunner;
+    use forge_registry::{ConfigProblem, ConfigReason, RegistryError, SubActionRunner};
     use forge_types::{ArgStack, SubActionOutcome, Variant};
 
     use super::super::identity::SelfIdentity;
@@ -352,6 +352,42 @@ mod tests {
                     case.kind
                 );
                 assert_eq!(transport.call_count(), 0, "{} {non_text_key}", case.kind);
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn whitespace_id_with_whitespace_or_bare_at_login_is_required_on_the_login_key() {
+        for (id, login) in [
+            (Some("  "), Some("  ")),
+            (Some("  "), Some("@")),
+            (Some(" "), Some(" @ ")),
+            (None, Some("@")),
+        ] {
+            for case in cases() {
+                let config = case.config(id, login);
+                let (_, runner) = case.runner_with(Vec::new());
+
+                let validated = runner.validate_config(&config);
+                let (transport, outcome) = case.run(&config, &ArgStack::new()).await;
+
+                let label = format!("{} id={id:?} login={login:?}", case.kind);
+                assert_eq!(
+                    validated.err().map(|e| e.to_string()),
+                    Some(
+                        RegistryError::InvalidConfig(ConfigProblem::field(
+                            case.login_key,
+                            ConfigReason::Required,
+                        ))
+                        .to_string()
+                    ),
+                    "{label}"
+                );
+                assert!(
+                    matches!(outcome, SubActionOutcome::Failed(_)),
+                    "{label}: {outcome:?}"
+                );
+                assert_eq!(transport.call_count(), 0, "{label}");
             }
         }
     }

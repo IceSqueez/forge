@@ -132,14 +132,31 @@ impl SubActionRunner for CoreLogWriteRunner {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use forge_registry::ConfigReason;
+    use forge_types::Variant;
+
+    fn level_config(level: &str) -> SubActionConfig {
+        SubActionConfig::from([(LEVEL.key.to_owned(), Variant::String(level.to_owned()))])
+    }
 
     #[test]
-    fn parse_level_all_variants() {
-        assert!(matches!(parse_level("trace"), LogLevel::Trace));
-        assert!(matches!(parse_level("debug"), LogLevel::Debug));
-        assert!(matches!(parse_level("info"), LogLevel::Info));
-        assert!(matches!(parse_level("warn"), LogLevel::Warn));
-        assert!(matches!(parse_level("error"), LogLevel::Error));
-        assert!(matches!(parse_level("unknown"), LogLevel::Info));
+    fn each_stored_level_maps_to_its_log_level() {
+        for (stored, expected) in [
+            ("trace", LogLevel::Trace),
+            ("debug", LogLevel::Debug),
+            ("info", LogLevel::Info),
+            ("warn", LogLevel::Warn),
+            ("error", LogLevel::Error),
+        ] {
+            let (level, _) = read_config(&level_config(stored), &ArgStack::new()).unwrap();
+            assert_eq!(level, expected, "{stored}");
+        }
+    }
+
+    #[test]
+    fn unknown_level_fails_instead_of_logging_at_info() {
+        let problem = read_config(&level_config("loud"), &ArgStack::new()).unwrap_err();
+        assert_eq!(problem.field.as_deref(), Some(LEVEL.key));
+        assert!(matches!(problem.reason, ConfigReason::InvalidChoice(_)));
     }
 }

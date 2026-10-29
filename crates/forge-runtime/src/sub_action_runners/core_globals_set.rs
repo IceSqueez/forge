@@ -129,10 +129,11 @@ impl SubActionRunner for CoreGlobalsSetRunner {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::sub_action_runners::interpolate::parse_variant;
+    use crate::sub_action_runners::variant_text::parse_variant;
     use forge_events::{Event, EventPublisher};
     use forge_registry::RunContext;
     use forge_storage::{GlobalEntry, StorageError};
+    use forge_types::Variant;
     use forge_types::{ArgStack, EventId};
     use std::collections::BTreeMap;
     use std::sync::Mutex;

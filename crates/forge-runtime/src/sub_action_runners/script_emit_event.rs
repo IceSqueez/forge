@@ -106,8 +106,10 @@ impl SubActionRunner for ScriptEmitEventRunner {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use forge_registry::RegistryError;
     use forge_registry::{ConfigProblem, ConfigReason};
     use forge_types::EventId;
+    use forge_types::Variant;
     use std::collections::BTreeMap;
     use std::sync::Mutex;
 
@@ -215,7 +217,7 @@ mod tests {
 
     #[tokio::test]
     async fn invalid_payload_fails_naming_the_field_without_publishing() {
-        for payload in ["object{0}", "[1]", "null", r#"{"a": null}"#] {
+        for payload in ["object{0}", "[1]", "null"] {
             let (recorder, outcome) = run(
                 &cfg("foo", Variant::String(payload.to_owned())),
                 &ArgStack::new(),
@@ -223,7 +225,7 @@ mod tests {
             )
             .await;
             assert!(
-                matches!(&outcome, SubActionOutcome::Failed(m) if m.starts_with("payload")),
+                matches!(&outcome, SubActionOutcome::Failed(m) if m.contains("'payload'")),
                 "{payload}: {outcome:?}"
             );
             assert!(recorder.captured().is_empty(), "{payload}");

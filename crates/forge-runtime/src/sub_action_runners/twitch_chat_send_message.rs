@@ -165,6 +165,9 @@ mod tests {
     use super::*;
     use crate::integration_gate::{GatedLeafExecutor, IntegrationGate};
     use forge_events::Event;
+    use forge_registry::FormField;
+    use forge_registry::RegistryError;
+    use forge_types::Variant;
 
     #[derive(Default)]
     struct CapturingPublisher(Mutex<Vec<Event>>);

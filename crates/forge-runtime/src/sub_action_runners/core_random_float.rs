@@ -141,6 +141,7 @@ mod tests {
     use super::*;
     use forge_events::{Event, EventPublisher};
     use forge_types::EventId;
+    use forge_types::SubActionOutcome;
 
     struct NullPublisher;
     impl EventPublisher for NullPublisher {
@@ -193,7 +194,7 @@ mod tests {
             let (outcome, produced) = run(&cfg).await;
             assert!(produced.is_none(), "{key}: must not produce a scope stack");
             assert!(
-                matches!(&outcome, SubActionOutcome::Failed(m) if m.starts_with(key) && m.contains("finite")),
+                matches!(&outcome, SubActionOutcome::Failed(m) if m.contains(&format!("'{key}' must be a number"))),
                 "{key}: got {outcome:?}"
             );
         }

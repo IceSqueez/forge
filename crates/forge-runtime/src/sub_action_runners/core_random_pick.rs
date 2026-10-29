@@ -197,6 +197,7 @@ mod tests {
     use super::*;
     use forge_events::{Event, EventPublisher};
     use forge_types::EventId;
+    use forge_types::SubActionOutcome;
 
     struct NullPublisher;
     impl EventPublisher for NullPublisher {
@@ -269,11 +270,14 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn pick_defaults_target_var_to_picked_when_blank() {
+    async fn pick_with_a_blank_target_var_fails_instead_of_writing_a_default_name() {
         let runner = CoreRandomPickRunner;
         let (outcome, produced) = run(&runner, &cfg(str_array(&["only"]), "")).await;
-        assert!(matches!(outcome, SubActionOutcome::Success));
-        assert!(produced.unwrap().get("picked").is_some());
+        assert!(
+            matches!(&outcome, SubActionOutcome::Failed(m) if m.contains("'into_var' is required")),
+            "{outcome:?}"
+        );
+        assert!(produced.is_none());
     }
 
     #[tokio::test]
@@ -330,7 +334,7 @@ mod tests {
             let (outcome, produced) = run(&runner, &cfg).await;
             assert!(
                 matches!(&outcome, SubActionOutcome::Failed(reason)
-                    if reason.contains("weight 2") && reason.contains("abc")),
+                    if reason.contains("'weights' is invalid: weight 2 is not a number")),
                 "{label}: {outcome:?}"
             );
             assert!(produced.is_none(), "{label}");

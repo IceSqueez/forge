@@ -148,6 +148,7 @@ mod tests {
     use time::OffsetDateTime;
 
     use super::*;
+    use forge_registry::ConfigReason;
 
     #[derive(Debug, Clone, PartialEq, Eq)]
     enum Asked {
@@ -191,9 +192,9 @@ mod tests {
 
     fn config(slot: &str, platform: &str, into_var: &str) -> SubActionConfig {
         SubActionConfig::from([
-            (SLOT_KEY.to_owned(), Variant::String(slot.to_owned())),
+            (SLOT.key.to_owned(), Variant::String(slot.to_owned())),
             (
-                PLATFORM_KEY.to_owned(),
+                PLATFORM.key.to_owned(),
                 Variant::String(platform.to_owned()),
             ),
             (
@@ -294,14 +295,15 @@ mod tests {
         .await;
 
         assert!(
-            matches!(outcome, SubActionOutcome::Failed(reason) if reason.contains("no_such_slot"))
+            matches!(&outcome, SubActionOutcome::Failed(reason) if reason.contains(SLOT.key)),
+            "{outcome:?}"
         );
         assert!(stack.is_none());
         assert!(reader.asked.lock().unwrap().is_empty());
     }
 
     #[test]
-    fn validate_config_accepts_every_declared_slot_and_lists_the_slots_for_any_other() {
+    fn validate_config_accepts_every_declared_slot_and_lists_the_slots_for_any_other_or_blank() {
         let runner = LatestGetRunner::new(Arc::new(Reader::default()));
         for slot in latest_slot_ids() {
             assert!(
@@ -311,7 +313,7 @@ mod tests {
         }
         let listing = ConfigReason::choices(latest_slot_ids().iter().copied());
         for (slot, reason) in [
-            ("", ConfigReason::Required),
+            ("", listing.clone()),
             ("no_such_slot", listing.clone()),
             ("Donation", listing),
         ] {
@@ -320,7 +322,7 @@ mod tests {
                     .validate_config(&config(slot, "", "latest"))
                     .unwrap_err()
                     .into_config_problem(),
-                forge_registry::ConfigProblem::field(SLOT_KEY, reason),
+                forge_registry::ConfigProblem::field(SLOT.key, reason),
                 "{slot:?}"
             );
         }

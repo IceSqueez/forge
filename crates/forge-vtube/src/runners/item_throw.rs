@@ -260,7 +260,7 @@ impl SubActionRunner for ItemThrowRunner {
             )
             .await;
 
-        let mut stack = ArgStack::new();
+        let mut stack = ctx.arg_stack.clone();
         stack = stack.set(
             "vtube.item.instance_id".to_owned(),
             Variant::String(instance_id),

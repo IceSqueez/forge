@@ -68,7 +68,7 @@ impl SubActionRunner for LookupHotkeysRunner {
 
         match self.sink.get_hotkeys().await {
             Ok(variant) => {
-                let mut stack = ArgStack::new();
+                let mut stack = ctx.arg_stack.clone();
                 if let Variant::Object(ref map) = variant {
                     if let Some(v) = map.get(result_keys::NAMES) {
                         stack = stack.set("vtube.hotkeys.names".to_owned(), v.clone());

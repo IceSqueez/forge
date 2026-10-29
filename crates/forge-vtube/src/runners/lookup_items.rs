@@ -68,7 +68,7 @@ impl SubActionRunner for LookupItemsRunner {
 
         match self.sink.get_items().await {
             Ok(variant) => {
-                let mut stack = ArgStack::new();
+                let mut stack = ctx.arg_stack.clone();
                 if let Variant::Object(ref map) = variant {
                     if let Some(v) = map.get(result_keys::INSTANCE_IDS) {
                         stack = stack.set("vtube.items.instance_ids".to_owned(), v.clone());

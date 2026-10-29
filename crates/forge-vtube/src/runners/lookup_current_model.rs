@@ -68,7 +68,7 @@ impl SubActionRunner for LookupCurrentModelRunner {
 
         match self.sink.get_current_model().await {
             Ok(variant) => {
-                let mut stack = ArgStack::new();
+                let mut stack = ctx.arg_stack.clone();
                 if let Variant::Object(ref map) = variant {
                     if let Some(v) = map.get(result_keys::NAME) {
                         stack = stack.set("vtube.model.name".to_owned(), v.clone());

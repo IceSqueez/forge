@@ -209,7 +209,7 @@ impl SubActionRunner for ItemLoadRunner {
             .await
         {
             Ok(variant) => {
-                let mut stack = ArgStack::new();
+                let mut stack = ctx.arg_stack.clone();
                 if let Variant::Object(ref map) = variant {
                     if let Some(v) = map.get(result_keys::INSTANCE_ID) {
                         stack = stack.set("vtube.item.instance_id".to_owned(), v.clone());

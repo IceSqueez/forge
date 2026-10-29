@@ -536,7 +536,7 @@ pub(crate) mod tests {
         tokio::time::timeout(BANNED_STEP_DEADLINE, async {
             loop {
                 let event = stream.recv().await.unwrap();
-                if event.kind == USER_BANNED_EVENT_KIND {
+                if event.kind == event_kinds::MODERATION_BANNED {
                     return event;
                 }
             }
@@ -570,7 +570,7 @@ pub(crate) mod tests {
         assert!(
             !published_while_recording
                 .iter()
-                .any(|kind| kind == USER_BANNED_EVENT_KIND),
+                .any(|kind| kind == event_kinds::MODERATION_BANNED),
             "published before the ledger write finished: {published_while_recording:?}"
         );
         next_banned_event(&mut stream).await;

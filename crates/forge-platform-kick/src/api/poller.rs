@@ -738,7 +738,7 @@ mod tests {
         .unwrap();
 
         let event = rx.try_recv().unwrap();
-        assert_eq!(event.kind, LIVESTREAM_STATUS_KIND);
+        assert_eq!(event.kind, event_kinds::LIVESTREAM_STATUS_UPDATED);
         assert_eq!(event.payload["is_live"], true);
         assert!(
             rx.try_recv().is_err(),
@@ -773,7 +773,7 @@ mod tests {
         .unwrap();
 
         let event = rx.try_recv().unwrap();
-        assert_eq!(event.kind, LIVESTREAM_METADATA_KIND);
+        assert_eq!(event.kind, event_kinds::LIVESTREAM_METADATA_UPDATED);
         assert_eq!(event.payload["stream_title"], "New");
         assert!(
             rx.try_recv().is_err(),
@@ -960,7 +960,7 @@ mod tests {
         .unwrap();
 
         let event = rx.try_recv().unwrap();
-        assert_eq!(event.kind, REWARD_REDEEMED_KIND);
+        assert_eq!(event.kind, event_kinds::CHANNEL_REWARD_REDEMPTION_UPDATED);
         assert_eq!(event.payload["id"], "rd_new");
         assert!(
             rx.try_recv().is_err(),
@@ -1026,7 +1026,7 @@ mod tests {
         .await
         .unwrap();
         let event = rx.try_recv().unwrap();
-        assert_eq!(event.kind, REWARD_REDEEMED_KIND);
+        assert_eq!(event.kind, event_kinds::CHANNEL_REWARD_REDEMPTION_UPDATED);
         assert_eq!(event.payload["id"], "c");
         assert!(
             rx.try_recv().is_err(),

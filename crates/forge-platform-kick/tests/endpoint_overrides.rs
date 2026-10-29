@@ -8,7 +8,6 @@ use async_trait::async_trait;
 use forge_events::{Event, EventPublisher};
 use forge_net::{Gateway, RateLimitError, RateLimitOutcome, RateLimiter};
 use forge_platform_core::{ChatPlatform, EndpointSurface, PlatformEndpoints};
-use forge_platform_kick::chat::PUSHER_APP_KEY;
 use forge_platform_kick::{
     ChannelInfoFetcher, KickAuthBundle, KickCategories, KickChannel, KickChat,
     KickCredentialsManager, KickModeration, KickOAuthClient, KickPlatform, KickRewards,
@@ -17,7 +16,7 @@ use forge_platform_kick::{
 use forge_storage::ban_ledger::MockBanLedgerRepo;
 use forge_storage::{BanLedgerRepo, CredentialId, CredentialsRepo, StorageError};
 use futures_util::StreamExt;
-use serde_json::{Value, json};
+use serde_json::json;
 use time::OffsetDateTime;
 use tokio::net::TcpListener;
 use tokio::sync::{mpsc, oneshot};
@@ -259,7 +258,7 @@ impl Callback for PathCapture<'_> {
     }
 }
 
-async fn spawn_pusher_peer() -> (String, oneshot::Receiver<(String, Value)>) {
+async fn spawn_pusher_peer() -> (String, oneshot::Receiver<(String, String)>) {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let socket_addr = listener.local_addr().unwrap();
     let (seen_tx, seen_rx) = oneshot::channel();
@@ -271,8 +270,7 @@ async fn spawn_pusher_peer() -> (String, oneshot::Receiver<(String, Value)>) {
             .unwrap();
         while let Some(Ok(frame)) = ws.next().await {
             if let Message::Text(text) = frame {
-                let parsed: Value = serde_json::from_str(&text).unwrap();
-                seen_tx.send((request_path, parsed)).unwrap();
+                seen_tx.send((request_path, text.to_string())).unwrap();
                 break;
             }
         }
@@ -281,13 +279,10 @@ async fn spawn_pusher_peer() -> (String, oneshot::Receiver<(String, Value)>) {
     (format!("ws://{socket_addr}/app"), seen_rx)
 }
 
-fn expected_handshake() -> (String, Value) {
+fn expected_handshake() -> (String, String) {
     (
-        format!("/app/{PUSHER_APP_KEY}"),
-        json!({
-            "event": "pusher:subscribe",
-            "data": { "channel": format!("chatrooms.{CHATROOM_ID}.v2") }
-        }),
+        "/app/32cbd69e4b950bf97679".to_owned(),
+        r#"{"data":{"channel":"chatrooms.4242.v2"},"event":"pusher:subscribe"}"#.to_owned(),
     )
 }
 

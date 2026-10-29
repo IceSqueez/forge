@@ -14,7 +14,7 @@ use forge_emulator::fixture::KickAccount;
 use forge_events::{Event, EventPublisher};
 use forge_net::{Gateway, RateLimitError, RateLimitOutcome, RateLimiter};
 use forge_platform_core::{EndpointSurface, PlatformEndpoints, PlatformError};
-use forge_platform_kick::chat::PUSHER_APP_KEY;
+use forge_platform_kick::protocol::PUSHER_APP_KEY;
 use forge_platform_kick::error::KickError;
 use forge_platform_kick::{
     ChannelInfoFetcher, KickAuthBundle, KickChannel, KickChat, KickChatHandle,

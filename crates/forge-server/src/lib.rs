@@ -18,6 +18,7 @@ mod run_state;
 mod sandbox;
 mod server;
 mod server_info;
+pub mod settings;
 mod snapshot;
 mod ws_client;
 

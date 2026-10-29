@@ -1,7 +1,52 @@
 use std::sync::{Arc, PoisonError, RwLock};
 
-use forge_storage::SettingsRepo;
+use forge_storage::SettingDisclosure::{Presence, Verbatim};
+use forge_storage::SettingPortability::{MachineLocal, Portable};
+use forge_storage::settings::{FULL_LEVEL, SILENT_LEVEL};
+use forge_storage::{
+    Flag, Level, Setting, SettingEncoding, SettingSpec, SettingsRepo, StorageError,
+    read_setting_or_default, write_setting,
+};
 use forge_types::OutputDevice;
+
+pub const ENABLED: Setting<Flag> = Setting::new(
+    "soundboard.enabled",
+    Flag { default: true },
+    Portable,
+    Verbatim,
+);
+
+pub const OUTPUT_DEVICE: SettingSpec = SettingSpec::exact(
+    "soundboard.output_device",
+    SettingEncoding::Text,
+    MachineLocal,
+    Presence,
+);
+
+pub const MASTER_VOLUME: Setting<Level> = Setting::new(
+    "soundboard.master_volume",
+    Level {
+        default: FULL_LEVEL,
+        min: SILENT_LEVEL,
+        max: FULL_LEVEL,
+    },
+    Portable,
+    Verbatim,
+);
+
+pub const ALSO_HEADPHONES: Setting<Flag> = Setting::new(
+    "soundboard.also_headphones",
+    Flag { default: false },
+    Portable,
+    Verbatim,
+);
+
+pub const SETTING_SPECS: &[SettingSpec] = &[
+    ENABLED.spec(),
+    OUTPUT_DEVICE,
+    MASTER_VOLUME.spec(),
+    ALSO_HEADPHONES.spec(),
+];
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct SoundboardSettings {
@@ -14,10 +59,10 @@ pub struct SoundboardSettings {
 impl Default for SoundboardSettings {
     fn default() -> Self {
         Self {
-            enabled: true,
+            enabled: ENABLED.codec().default,
             output_device_id: None,
-            master_volume: 1.0,
-            also_headphones: false,
+            master_volume: MASTER_VOLUME.codec().default,
+            also_headphones: ALSO_HEADPHONES.codec().default,
         }
     }
 }
@@ -64,18 +109,25 @@ impl Default for SoundboardSettingsHandle {
 }
 
 pub async fn load_soundboard_settings(repo: &dyn SettingsRepo) -> SoundboardSettings {
+    let output_device_id = match repo.get_string(OUTPUT_DEVICE.key.name()).await {
+        Ok(device) => device,
+        Err(error) => {
+            tracing::warn!(
+                key = OUTPUT_DEVICE.key.name(),
+                error = %error,
+                "stored setting cannot be read; using its default"
+            );
+            None
+        }
+    };
     SoundboardSettings {
-        enabled: forge_storage::soundboard_enabled(repo)
-            .await
-            .unwrap_or(true),
-        output_device_id: forge_storage::soundboard_output_device(repo)
-            .await
-            .unwrap_or(None),
-        master_volume: forge_storage::soundboard_master_volume(repo)
-            .await
-            .unwrap_or(1.0),
-        also_headphones: forge_storage::soundboard_also_headphones(repo)
-            .await
-            .unwrap_or(false),
+        enabled: read_setting_or_default(repo, &ENABLED).await,
+        output_device_id,
+        master_volume: read_setting_or_default(repo, &MASTER_VOLUME).await,
+        also_headphones: read_setting_or_default(repo, &ALSO_HEADPHONES).await,
     }
+}
+
+pub async fn save_master_volume(repo: &dyn SettingsRepo, volume: f32) -> Result<(), StorageError> {
+    write_setting(repo, &MASTER_VOLUME, &volume).await
 }

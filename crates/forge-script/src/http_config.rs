@@ -1,6 +1,6 @@
-use forge_storage::{
-    SettingsRepo, StorageError, get_bool_setting, reserved_keys, stored_json_setting,
-};
+use forge_storage::{SettingsRepo, StorageError, read_setting_or_default, stored_json_setting};
+
+use crate::settings;
 
 pub struct ScriptHttpConfig {
     pub allowed_domains: Vec<String>,
@@ -14,65 +14,42 @@ impl Default for ScriptHttpConfig {
     fn default() -> Self {
         Self {
             allowed_domains: Vec::new(),
-            max_calls_per_script: 10,
-            timeout_ms: 5_000,
-            allow_local: false,
-            max_response_bytes: 1_048_576,
+            max_calls_per_script: settings::HTTP_MAX_CALLS.codec().default,
+            timeout_ms: settings::HTTP_TIMEOUT_MS.codec().default,
+            allow_local: settings::HTTP_ALLOW_LOCAL.codec().default,
+            max_response_bytes: settings::HTTP_MAX_RESPONSE_BYTES.codec().default,
         }
     }
 }
 
-pub async fn load_script_http_config(repo: &dyn SettingsRepo) -> ScriptHttpConfig {
-    let defaults = ScriptHttpConfig::default();
-
-    let allowed_domains = stored_script_http_allowed_domains(repo)
-        .await
-        .unwrap_or_default();
-
-    let max_calls_per_script = repo
-        .get_string(reserved_keys::SCRIPT_HTTP_MAX_CALLS)
-        .await
-        .ok()
-        .flatten()
-        .and_then(|s| s.parse::<u32>().ok())
-        .unwrap_or(defaults.max_calls_per_script);
-
-    let timeout_ms = repo
-        .get_string(reserved_keys::SCRIPT_HTTP_TIMEOUT_MS)
-        .await
-        .ok()
-        .flatten()
-        .and_then(|s| s.parse::<u32>().ok())
-        .unwrap_or(defaults.timeout_ms);
-
-    let allow_local = get_bool_setting(
-        repo,
-        reserved_keys::SCRIPT_HTTP_ALLOW_LOCAL,
-        defaults.allow_local,
-    )
-    .await;
-
-    let max_response_bytes = repo
-        .get_string(reserved_keys::SCRIPT_HTTP_MAX_RESPONSE_BYTES)
-        .await
-        .ok()
-        .flatten()
-        .and_then(|s| s.parse::<u32>().ok())
-        .unwrap_or(defaults.max_response_bytes);
-
-    ScriptHttpConfig {
-        allowed_domains,
-        max_calls_per_script,
-        timeout_ms,
-        allow_local,
-        max_response_bytes,
+impl ScriptHttpConfig {
+    pub async fn read(repo: &dyn SettingsRepo) -> Self {
+        let allowed_domains = match stored_script_http_allowed_domains(repo).await {
+            Ok(domains) => domains,
+            Err(error) => {
+                tracing::warn!(
+                    key = settings::HTTP_ALLOWED_DOMAINS.key.name(),
+                    error = %error,
+                    "stored setting cannot be read; using its default"
+                );
+                Vec::new()
+            }
+        };
+        Self {
+            allowed_domains,
+            max_calls_per_script: read_setting_or_default(repo, &settings::HTTP_MAX_CALLS).await,
+            timeout_ms: read_setting_or_default(repo, &settings::HTTP_TIMEOUT_MS).await,
+            allow_local: read_setting_or_default(repo, &settings::HTTP_ALLOW_LOCAL).await,
+            max_response_bytes: read_setting_or_default(repo, &settings::HTTP_MAX_RESPONSE_BYTES)
+                .await,
+        }
     }
 }
 
 pub async fn stored_script_http_allowed_domains(
     repo: &dyn SettingsRepo,
 ) -> Result<Vec<String>, StorageError> {
-    let key = reserved_keys::SCRIPT_HTTP_ALLOWED_DOMAINS;
+    let key = settings::HTTP_ALLOWED_DOMAINS.key.name();
     match stored_json_setting::<Vec<String>>(repo, key).await {
         Ok(domains) => Ok(domains.unwrap_or_default()),
         Err(StorageError::UndecodableSetting { .. }) => Ok(repo

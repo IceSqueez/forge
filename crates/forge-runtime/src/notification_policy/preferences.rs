@@ -1,9 +1,7 @@
-use forge_storage::settings::{
-    DEFAULT_NOTIFICATIONS_ACTION_FAILURE_OS_NOTICE, DEFAULT_NOTIFICATIONS_CONNECTION_LOSS_SOUND,
-};
-use forge_storage::{SettingsRepo, get_bool_setting, reserved_keys};
+use forge_storage::{SettingsRepo, read_setting_or_default};
 
 use super::intent::NotificationIntent;
+use crate::settings;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct NotificationPreferences {
@@ -14,27 +12,22 @@ pub struct NotificationPreferences {
 impl Default for NotificationPreferences {
     fn default() -> Self {
         Self {
-            action_failure_notice: DEFAULT_NOTIFICATIONS_ACTION_FAILURE_OS_NOTICE,
-            connection_loss_cue: DEFAULT_NOTIFICATIONS_CONNECTION_LOSS_SOUND,
+            action_failure_notice: settings::ACTION_FAILURE_OS_NOTICE.codec().default,
+            connection_loss_cue: settings::CONNECTION_LOSS_SOUND.codec().default,
         }
     }
 }
 
 impl NotificationPreferences {
-    pub async fn load(settings: &dyn SettingsRepo) -> Self {
+    pub async fn load(repo: &dyn SettingsRepo) -> Self {
         Self {
-            action_failure_notice: get_bool_setting(
-                settings,
-                reserved_keys::NOTIFICATIONS_ACTION_FAILURE_OS_NOTICE,
-                DEFAULT_NOTIFICATIONS_ACTION_FAILURE_OS_NOTICE,
+            action_failure_notice: read_setting_or_default(
+                repo,
+                &settings::ACTION_FAILURE_OS_NOTICE,
             )
             .await,
-            connection_loss_cue: get_bool_setting(
-                settings,
-                reserved_keys::NOTIFICATIONS_CONNECTION_LOSS_SOUND,
-                DEFAULT_NOTIFICATIONS_CONNECTION_LOSS_SOUND,
-            )
-            .await,
+            connection_loss_cue: read_setting_or_default(repo, &settings::CONNECTION_LOSS_SOUND)
+                .await,
         }
     }
 

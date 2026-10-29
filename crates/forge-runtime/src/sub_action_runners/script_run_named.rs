@@ -8,8 +8,8 @@ use forge_registry::{
     SubActionIo, SubActionRunner,
 };
 use forge_script::{
-    Engine, ForgeApi, ScriptError, ScriptGlobals, ScriptHttpClient, build_scope_for_contract,
-    load_script_engine_config, load_script_http_config,
+    Engine, EngineConfig, ForgeApi, ScriptError, ScriptGlobals, ScriptHttpClient, ScriptHttpConfig,
+    build_scope_for_contract,
 };
 use forge_storage::{
     ExecutionStatus, GlobalsRepo, SCRIPT_NAME_KEY, SCRIPT_RUN_NAMED_KIND, ScriptRepo, SettingsRepo,
@@ -160,8 +160,8 @@ impl SubActionRunner for ScriptRunNamedRunner {
             .action_scheduler(SchedulingContext::of_run(ctx));
         let parent_event_id = ctx.parent_event_id;
         let integrations = ctx.executor.integration_availability();
-        let http_cfg = Arc::new(load_script_http_config(self.settings.as_ref()).await);
-        let engine_cfg = load_script_engine_config(self.settings.as_ref()).await;
+        let http_cfg = Arc::new(ScriptHttpConfig::read(self.settings.as_ref()).await);
+        let engine_cfg = EngineConfig::read(self.settings.as_ref()).await;
 
         let exec_event = ScriptStarted {
             script_id: Some(script_id),

@@ -13,9 +13,8 @@ use tokio::net::TcpListener;
 use forge_events::EventObserver;
 use forge_runtime::{ActionEngineHandle, EventHistory};
 use forge_storage::{
-    ActionRepo, CredentialsRepo, GlobalsRepo, OverlayRepo,
-    SERVER_HTTP_OVERLAY_REQUIRE_TOKEN_DEFAULT, SettingsRepo, UserGlobalsRepo, get_bool_setting,
-    reserved_keys,
+    ActionRepo, CredentialsRepo, GlobalsRepo, OverlayRepo, SettingsRepo, UserGlobalsRepo,
+    read_setting_or_default,
 };
 
 use crate::audio_clips::AudioClipStore;
@@ -25,6 +24,7 @@ use crate::listener::{GuardedListener, PeerInfo};
 use crate::origin::{accepts_host, build_allowed_origins};
 use crate::routes::{api_v1, audio, overlays, ws};
 use crate::server_info::ServerInfo;
+use crate::settings;
 use crate::{ServerConfig, ServerError, ServerHandle};
 
 #[derive(Clone)]
@@ -81,10 +81,9 @@ impl Server {
 async fn build_state(config: ServerConfig, bind_addr: SocketAddr) -> Result<AppState, ServerError> {
     let auth = AuthState::load(config.auth_required_for_reads, config.credentials.as_ref()).await?;
     auth.overlay_token().set_required(
-        get_bool_setting(
+        read_setting_or_default(
             config.settings.as_ref(),
-            reserved_keys::SERVER_HTTP_OVERLAY_REQUIRE_TOKEN,
-            SERVER_HTTP_OVERLAY_REQUIRE_TOKEN_DEFAULT,
+            &settings::HTTP_OVERLAY_REQUIRE_TOKEN,
         )
         .await,
     );

@@ -19,8 +19,8 @@ use forge_components::{DateShape, fmt_display};
 use forge_events::{Event, EventPublisher, ScriptLogged, TypedEvent};
 use forge_runtime::{EventBus, RuntimeScriptGlobals, SchedulingContext, ScriptRegistry};
 use forge_script::{
-    MethodDescriptor, RunResult, ScriptError, ScriptHost, format_script, inert_annotation_lines,
-    is_engine_bound_name, load_script_engine_config, run_inline, validate_syntax,
+    EngineConfig, MethodDescriptor, RunResult, ScriptError, ScriptHost, format_script,
+    inert_annotation_lines, is_engine_bound_name, run_inline, validate_syntax,
 };
 use forge_storage::{
     DataProvider, ExecutionStatus, GlobalsRepo, SCRIPT_NAME_KEY, SCRIPT_RUN_NAMED_KIND,
@@ -715,11 +715,7 @@ impl ScriptEditorView {
         let settings = Arc::clone(&self.backend) as Arc<dyn SettingsRepo>;
         async_bridge::run_async(
             &self.rt_handle,
-            async move {
-                load_script_engine_config(settings.as_ref())
-                    .await
-                    .wall_time_ms
-            },
+            async move { EngineConfig::read(settings.as_ref()).await.wall_time_ms },
             |this, wall_time_ms, cx| this.apply_engine_timeout(wall_time_ms, cx),
             cx,
         );

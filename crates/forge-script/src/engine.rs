@@ -1,7 +1,7 @@
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
 
-use forge_storage::{SettingsRepo, reserved_keys};
+use forge_storage::{SettingsRepo, read_setting_or_default};
 use forge_types::{VARIANT_MAX_COLLECTION_LEN, Variant};
 use rhai::Dynamic;
 use rhai::packages::{BasicArrayPackage, BasicMapPackage, CorePackage, LogicPackage, Package};
@@ -9,6 +9,7 @@ use rhai::packages::{BasicArrayPackage, BasicMapPackage, CorePackage, LogicPacka
 use crate::ScriptError;
 use crate::api::ForgeApi;
 use crate::convert::{dynamic_to_variant, register_variant_types};
+use crate::settings;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct EngineConfig {
@@ -19,34 +20,18 @@ pub struct EngineConfig {
 impl Default for EngineConfig {
     fn default() -> Self {
         Self {
-            op_limit: 100_000,
-            wall_time_ms: 500,
+            op_limit: u64::from(settings::OP_LIMIT.codec().default),
+            wall_time_ms: u64::from(settings::TIMEOUT_MS.codec().default),
         }
     }
 }
 
-pub async fn load_script_engine_config(repo: &dyn SettingsRepo) -> EngineConfig {
-    let defaults = EngineConfig::default();
-
-    let op_limit = repo
-        .get_string(reserved_keys::SCRIPT_OP_LIMIT)
-        .await
-        .ok()
-        .flatten()
-        .and_then(|s| s.parse::<u64>().ok())
-        .unwrap_or(defaults.op_limit);
-
-    let wall_time_ms = repo
-        .get_string(reserved_keys::SCRIPT_TIMEOUT_MS)
-        .await
-        .ok()
-        .flatten()
-        .and_then(|s| s.parse::<u64>().ok())
-        .unwrap_or(defaults.wall_time_ms);
-
-    EngineConfig {
-        op_limit,
-        wall_time_ms,
+impl EngineConfig {
+    pub async fn read(repo: &dyn SettingsRepo) -> Self {
+        Self {
+            op_limit: u64::from(read_setting_or_default(repo, &settings::OP_LIMIT).await),
+            wall_time_ms: u64::from(read_setting_or_default(repo, &settings::TIMEOUT_MS).await),
+        }
     }
 }
 

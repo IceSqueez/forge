@@ -40,6 +40,7 @@ pub mod queue_scheduler;
 mod run_history;
 pub mod scheduled_runs;
 mod script_registry;
+pub mod settings;
 mod speak_dispatcher;
 mod stream_live;
 pub mod sub_action_runners;

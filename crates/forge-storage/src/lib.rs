@@ -88,10 +88,13 @@ pub use script::{
     ScriptRepo, ScriptTelemetry,
 };
 pub use settings::catalog::{SettingsCatalog, report_undeclared_settings};
+pub use settings::disclosure::SettingDisclosure;
 pub use settings::favorites::rename_favorite_ids;
+pub use settings::portability::SettingPortability;
 pub use settings::spec::{SettingEncoding, SettingKey, SettingSpec};
 pub use settings::typed::{
-    Count, Flag, Level, Setting, SettingCodec, Verbosity, read_setting, write_setting,
+    Count, Flag, Level, Setting, SettingCodec, Verbosity, read_setting, read_setting_or_default,
+    write_setting,
 };
 pub use settings::{
     CredentialsKeyLoss, DEFAULT_CHAT_HISTORY_DISPLAY_LIMIT, DEFAULT_CHAT_HISTORY_PER_VIEWER_LIMIT,

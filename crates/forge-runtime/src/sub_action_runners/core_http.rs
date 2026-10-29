@@ -7,11 +7,12 @@ use forge_registry::{
     ConfigReason, DurationBounds, FormField, RegistryError, RunContext, StepTimer,
     SubActionCategory, SubActionConfigExt, SubActionIo, SubActionRunner,
 };
-use forge_storage::{SettingsRepo, get_bool_setting, reserved_keys};
+use forge_storage::{SettingsRepo, read_setting_or_default};
 use forge_types::{ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetry, Variant};
 
 use super::json_object_input::{EMPTY_JSON_OBJECT, read_json_object, validate_json_object};
 use crate::egress::{EgressClient, EgressRequest, EgressResponse, HttpMethod};
+use crate::settings;
 
 const TIMEOUT_MIN_MS: i64 = 100;
 const TIMEOUT_MAX_MS: i64 = 60_000;
@@ -83,12 +84,7 @@ impl CoreHttpRunner {
     }
 
     async fn allow_local(&self) -> bool {
-        get_bool_setting(
-            self.settings.as_ref(),
-            reserved_keys::CORE_HTTP_ALLOW_LOCAL,
-            false,
-        )
-        .await
+        read_setting_or_default(self.settings.as_ref(), &settings::CORE_HTTP_ALLOW_LOCAL).await
     }
 }
 

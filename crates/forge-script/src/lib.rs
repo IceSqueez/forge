@@ -17,6 +17,7 @@ mod registration;
 mod runner;
 mod schedule;
 mod schedule_api;
+pub mod settings;
 #[cfg(test)]
 mod test_support;
 
@@ -25,14 +26,12 @@ pub use arg_binding::BoundExpression;
 pub use catalog::{MethodDescriptor, ParamDescriptor, catalog, is_engine_bound_name};
 pub use condition::ConditionEvaluator;
 pub use contract::{InputMismatchError, build_scope_for_contract, inert_annotation_lines};
-pub use engine::{Engine, EngineConfig, load_script_engine_config, validate_syntax};
+pub use engine::{Engine, EngineConfig, validate_syntax};
 pub use error::ScriptError;
 pub use format::format_script;
 pub use globals_port::{GlobalDeletion, GlobalIncrement, ScriptGlobals, ScriptGlobalsError};
 pub use http_client::{HttpError, HttpResponse, ScriptHttpClient};
-pub use http_config::{
-    ScriptHttpConfig, load_script_http_config, stored_script_http_allowed_domains,
-};
+pub use http_config::{ScriptHttpConfig, stored_script_http_allowed_domains};
 pub use math_evaluator::MathEvaluator;
 pub use runner::{RunResult, ScriptHost, run_inline};
 pub use schedule::{

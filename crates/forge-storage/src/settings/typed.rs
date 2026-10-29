@@ -199,6 +199,23 @@ pub async fn read_setting<C: SettingCodec>(
     Ok(setting.decode_or_default(raw.as_deref()))
 }
 
+pub async fn read_setting_or_default<C: SettingCodec>(
+    repo: &dyn SettingsRepo,
+    setting: &Setting<C>,
+) -> C::Value {
+    match read_setting(repo, setting).await {
+        Ok(value) => value,
+        Err(error) => {
+            tracing::warn!(
+                key = setting.name(),
+                error = %error,
+                "stored setting cannot be read; using its default"
+            );
+            setting.codec.default_value()
+        }
+    }
+}
+
 pub async fn write_setting<C: SettingCodec>(
     repo: &dyn SettingsRepo,
     setting: &Setting<C>,

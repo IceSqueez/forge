@@ -9,7 +9,7 @@ use forge_types::{
 use crate::error::ScriptError;
 use crate::globals_port::ScriptGlobals;
 use crate::schedule::ActionScheduler;
-use crate::{Engine, ForgeApi, build_scope_for_contract, load_script_engine_config};
+use crate::{Engine, EngineConfig, ForgeApi, build_scope_for_contract};
 
 #[derive(Debug, Clone)]
 pub struct RunResult {
@@ -47,7 +47,7 @@ pub async fn run_inline(
         build_scope_for_contract(&contract, &arg_stack).map_err(|e| ScriptError::Runtime {
             reason: e.to_string(),
         })?;
-    let cfg = load_script_engine_config(settings.as_ref()).await;
+    let cfg = EngineConfig::read(settings.as_ref()).await;
     let deadline = std::time::Instant::now() + std::time::Duration::from_millis(cfg.wall_time_ms);
     let mut api = ForgeApi::new(bus, globals, EventId::new(), deadline)
         .with_script_id(script_id)

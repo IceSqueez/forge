@@ -12,7 +12,7 @@ mod hotkey_dispatch;
 mod library;
 mod player;
 mod runners;
-mod settings;
+pub mod settings;
 mod sink_factory;
 pub mod vocabulary;
 

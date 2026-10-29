@@ -7,12 +7,13 @@ use rand::Rng as _;
 use subtle::ConstantTimeEq as _;
 
 use forge_storage::{
-    CredentialId, CredentialsRepo, OVERLAY_TOKEN_PREFIX, SERVER_HTTP_OVERLAY_REQUIRE_TOKEN_DEFAULT,
-    SERVER_OVERLAY_TOKEN_CREDENTIAL_ID, StorageError,
+    CredentialId, CredentialsRepo, OVERLAY_TOKEN_PREFIX, SERVER_OVERLAY_TOKEN_CREDENTIAL_ID,
+    StorageError,
 };
 
 use crate::ServerError;
 use crate::auth::mask_with_prefix;
+use crate::settings;
 
 const OVERLAY_TOKEN_BYTE_LEN: usize = 32;
 
@@ -45,7 +46,7 @@ impl OverlayTokenState {
         };
         Ok(Self::with_token(
             token,
-            SERVER_HTTP_OVERLAY_REQUIRE_TOKEN_DEFAULT,
+            settings::HTTP_OVERLAY_REQUIRE_TOKEN.codec().default,
         ))
     }
 

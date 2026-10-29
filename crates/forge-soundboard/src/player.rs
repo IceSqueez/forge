@@ -772,7 +772,7 @@ impl SoundboardControl for SoundboardPlayer {
         let Some(store) = self.settings_store.load().as_ref().clone() else {
             return Ok(());
         };
-        forge_storage::set_soundboard_master_volume(store.as_ref(), volume)
+        crate::settings::save_master_volume(store.as_ref(), volume)
             .await
             .map_err(SoundboardError::MasterVolumeNotSaved)
     }

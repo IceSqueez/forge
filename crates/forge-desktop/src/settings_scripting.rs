@@ -7,10 +7,7 @@ use forge_components::{
     icon_button, radius, setting_block, setting_groups, setting_row, setting_rows, spacing, toggle,
     tr,
 };
-use forge_script::{
-    EngineConfig, ScriptHttpConfig, load_script_engine_config, load_script_http_config,
-    stored_script_http_allowed_domains,
-};
+use forge_script::{EngineConfig, ScriptHttpConfig, stored_script_http_allowed_domains};
 use forge_storage::{
     DataProvider, SettingsRepo, StorageError, get_bool_setting, reserved_keys, set_bool_setting,
     set_json_setting,
@@ -669,8 +666,8 @@ fn snapshot_defaults() -> ScriptingSnapshot {
 }
 
 async fn load_scripting_settings(repo: Arc<dyn SettingsRepo>) -> ScriptingSnapshot {
-    let http = load_script_http_config(repo.as_ref()).await;
-    let engine = load_script_engine_config(repo.as_ref()).await;
+    let http = ScriptHttpConfig::read(repo.as_ref()).await;
+    let engine = EngineConfig::read(repo.as_ref()).await;
     let core_allow_local =
         get_bool_setting(repo.as_ref(), reserved_keys::CORE_HTTP_ALLOW_LOCAL, false).await;
     snapshot_from(http, engine, core_allow_local)

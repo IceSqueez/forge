@@ -56,7 +56,9 @@ pub use clip_bindings::{
 pub use combo::HotkeyCombo;
 pub use config::{DEFAULT_HOLD_CEILING_SECS, HotkeyConfig};
 pub use error::HotkeyError;
-pub use hold_ceiling::{HOTKEY_HOLD_CEILING_KEY, load_hold_ceiling, save_hold_ceiling};
+pub use hold_ceiling::{
+    HOLD_CEILING, HOTKEY_HOLD_CEILING_KEY, SETTING_SPECS, load_hold_ceiling, save_hold_ceiling,
+};
 pub use integration::HOTKEY_INTEGRATION;
 pub use main_thread::{MainThreadHost, MainThreadLink, main_thread_channel};
 pub use reconciler::HotkeyReconciler;

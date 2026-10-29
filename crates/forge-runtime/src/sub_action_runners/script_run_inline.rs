@@ -8,8 +8,8 @@ use forge_registry::{
     SubActionConfigExt, SubActionRunner,
 };
 use forge_script::{
-    Engine, ForgeApi, ScriptError, ScriptGlobals, ScriptHttpClient, build_scope_for_contract,
-    load_script_engine_config, load_script_http_config,
+    Engine, EngineConfig, ForgeApi, ScriptError, ScriptGlobals, ScriptHttpClient, ScriptHttpConfig,
+    build_scope_for_contract,
 };
 use forge_storage::{GlobalsRepo, SettingsRepo};
 use forge_types::{ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetry, Variant};
@@ -107,8 +107,8 @@ impl SubActionRunner for ScriptRunInlineRunner {
         let parent_event_id = ctx.parent_event_id;
         let integrations = ctx.executor.integration_availability();
         let arg_stack_clone = ctx.arg_stack.clone();
-        let http_cfg = Arc::new(load_script_http_config(self.settings.as_ref()).await);
-        let engine_cfg = load_script_engine_config(self.settings.as_ref()).await;
+        let http_cfg = Arc::new(ScriptHttpConfig::read(self.settings.as_ref()).await);
+        let engine_cfg = EngineConfig::read(self.settings.as_ref()).await;
 
         let exec_event = ScriptStarted {
             script_id: None,

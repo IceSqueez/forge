@@ -1,4 +1,3 @@
-use crate::event_kinds;
 use std::collections::BTreeMap;
 
 use forge_events::{Event, EventSource};
@@ -9,13 +8,14 @@ use forge_types::{
     ArgStack, DeclaredVariable, TriggerConfig, VariableSchema, Variant, VariantKind,
 };
 
-use crate::payload_fields::connection as fields;
+use crate::vocabulary::fields::connection as fields;
+use crate::vocabulary::{event_kinds, trigger_ids, variables};
 
 pub struct ConnectionAuthFailedDescriptor;
 
 impl TriggerKindDescriptor for ConnectionAuthFailedDescriptor {
     fn id(&self) -> &str {
-        "obs.connection.auth_failed"
+        trigger_ids::CONNECTION_AUTH_FAILED
     }
 
     fn category(&self) -> TriggerCategory {
@@ -73,7 +73,7 @@ impl TriggerKindDescriptor for ConnectionAuthFailedDescriptor {
             .and_then(|v| v.as_str())
         {
             stack = stack.set(
-                "obs.error_message".to_owned(),
+                variables::connection::ERROR_MESSAGE.to_owned(),
                 Variant::String(msg.to_owned()),
             );
         }
@@ -83,7 +83,7 @@ impl TriggerKindDescriptor for ConnectionAuthFailedDescriptor {
     fn output_schema(&self) -> Option<VariableSchema> {
         Some(VariableSchema {
             variables: vec![DeclaredVariable {
-                name: "obs.error_message".to_owned(),
+                name: variables::connection::ERROR_MESSAGE.to_owned(),
                 kind: VariantKind::String,
                 label: "Error message".to_owned(),
                 synthesis: None,

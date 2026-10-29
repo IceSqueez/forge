@@ -11,6 +11,9 @@ use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, Variant};
 use time::OffsetDateTime;
 
 use crate::ObsSink;
+use crate::vocabulary::sub_action_ids;
+
+const KIND_ID: &str = sub_action_ids::STREAMING_SET_ACTIVE;
 
 pub struct StreamSetActiveRunner {
     sink: Arc<dyn ObsSink>,
@@ -25,7 +28,7 @@ impl StreamSetActiveRunner {
 #[async_trait]
 impl SubActionRunner for StreamSetActiveRunner {
     fn id(&self) -> &str {
-        "obs.stream.set_active"
+        KIND_ID
     }
 
     fn category(&self) -> SubActionCategory {
@@ -86,7 +89,7 @@ impl SubActionRunner for StreamSetActiveRunner {
             SubActionTelemetry {
                 args_in: ::std::collections::BTreeMap::new(),
                 produced: ::std::collections::BTreeMap::new(),
-                kind: "obs.stream.set_active".to_owned(),
+                kind: KIND_ID.to_owned(),
                 started_at,
                 duration_ms: start.elapsed().as_millis() as u64,
                 outcome,

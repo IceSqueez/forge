@@ -1,4 +1,3 @@
-use crate::event_kinds;
 use std::collections::BTreeMap;
 
 use forge_events::{Event, EventSource};
@@ -9,13 +8,14 @@ use forge_types::{
     ArgStack, DeclaredVariable, TriggerConfig, VariableSchema, Variant, VariantKind,
 };
 
-use crate::payload_fields::recording as fields;
+use crate::vocabulary::fields::recording as fields;
+use crate::vocabulary::{event_kinds, trigger_ids, variables};
 
 pub struct RecordFileChangedDescriptor;
 
 impl TriggerKindDescriptor for RecordFileChangedDescriptor {
     fn id(&self) -> &str {
-        "obs.record.file_changed"
+        trigger_ids::RECORDING_FILE_CHANGED
     }
 
     fn category(&self) -> TriggerCategory {
@@ -73,7 +73,7 @@ impl TriggerKindDescriptor for RecordFileChangedDescriptor {
             .and_then(|v| v.as_str())
         {
             stack = stack.set(
-                "obs.record.output_path".to_owned(),
+                variables::recording::OUTPUT_PATH.to_owned(),
                 Variant::String(p.to_owned()),
             );
         }
@@ -83,7 +83,7 @@ impl TriggerKindDescriptor for RecordFileChangedDescriptor {
     fn output_schema(&self) -> Option<VariableSchema> {
         Some(VariableSchema {
             variables: vec![DeclaredVariable {
-                name: "obs.record.output_path".to_owned(),
+                name: variables::recording::OUTPUT_PATH.to_owned(),
                 kind: VariantKind::String,
                 label: "New recording file path".to_owned(),
                 synthesis: None,

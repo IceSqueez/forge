@@ -12,6 +12,9 @@ use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, Variant};
 use time::OffsetDateTime;
 
 use crate::ObsSink;
+use crate::vocabulary::sub_action_ids;
+
+const KIND_ID: &str = sub_action_ids::STREAMING_SEND_CAPTION;
 
 pub struct StreamSendCaptionRunner {
     sink: Arc<dyn ObsSink>,
@@ -26,7 +29,7 @@ impl StreamSendCaptionRunner {
 #[async_trait]
 impl SubActionRunner for StreamSendCaptionRunner {
     fn id(&self) -> &str {
-        "obs.stream.send_caption"
+        KIND_ID
     }
 
     fn category(&self) -> SubActionCategory {
@@ -92,7 +95,7 @@ impl SubActionRunner for StreamSendCaptionRunner {
             SubActionTelemetry {
                 args_in: ::std::collections::BTreeMap::new(),
                 produced: ::std::collections::BTreeMap::new(),
-                kind: "obs.stream.send_caption".to_owned(),
+                kind: KIND_ID.to_owned(),
                 started_at,
                 duration_ms: start.elapsed().as_millis() as u64,
                 outcome,

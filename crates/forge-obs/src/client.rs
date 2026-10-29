@@ -695,7 +695,7 @@ async fn run_supervisor(host: String, port: u16, password: Option<String>, ctx: 
             ConnectionTransition::Unexpected,
         );
         publisher.publish(crate::events::make_connection_disconnected(
-            crate::payload_fields::connection::reason::CONNECTION_LOST,
+            crate::vocabulary::fields::connection::reason::CONNECTION_LOST,
             None,
         ));
         backoff.reset();

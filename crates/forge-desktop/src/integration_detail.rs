@@ -1669,14 +1669,14 @@ impl Render for IntegrationDetail {
 
 fn refreshes_obs_content(event: &Event) -> bool {
     matches!(event.source, EventSource::Obs)
-        && forge_obs::event_kinds::CATALOG_CHANGING_KINDS.contains(&event.kind.as_str())
+        && forge_obs::vocabulary::event_kinds::CATALOG_CHANGING_KINDS.contains(&event.kind.as_str())
 }
 
 pub(crate) fn rebuilds_descriptors(event: &Event) -> bool {
     match event.source {
         EventSource::Obs => event
             .kind
-            .starts_with(forge_obs::event_kinds::CONNECTION_PREFIX),
+            .starts_with(forge_obs::vocabulary::event_kinds::CONNECTION_PREFIX),
         EventSource::Twitch => {
             forge_platform_twitch::vocabulary::event_kinds::DESCRIPTOR_REBUILDING_KINDS
                 .contains(&event.kind.as_str())

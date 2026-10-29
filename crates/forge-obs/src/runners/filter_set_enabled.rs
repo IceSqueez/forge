@@ -12,6 +12,9 @@ use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, Variant};
 use time::OffsetDateTime;
 
 use crate::ObsSink;
+use crate::vocabulary::{picker_keys, sub_action_ids};
+
+const KIND_ID: &str = sub_action_ids::FILTER_SET_ENABLED;
 
 pub struct FilterSetEnabledRunner {
     sink: Arc<dyn ObsSink>,
@@ -26,7 +29,7 @@ impl FilterSetEnabledRunner {
 #[async_trait]
 impl SubActionRunner for FilterSetEnabledRunner {
     fn id(&self) -> &str {
-        "obs.filter.set_enabled"
+        KIND_ID
     }
 
     fn category(&self) -> SubActionCategory {
@@ -62,7 +65,7 @@ impl SubActionRunner for FilterSetEnabledRunner {
             FormField::DynamicSelect {
                 key: "source",
                 label: "Source",
-                options_key: "obs.source_names",
+                options_key: picker_keys::SOURCE_NAMES,
             },
             FormField::Text {
                 key: "filter",
@@ -121,7 +124,7 @@ impl SubActionRunner for FilterSetEnabledRunner {
             SubActionTelemetry {
                 args_in: ::std::collections::BTreeMap::new(),
                 produced: ::std::collections::BTreeMap::new(),
-                kind: "obs.filter.set_enabled".to_owned(),
+                kind: KIND_ID.to_owned(),
                 started_at,
                 duration_ms: start.elapsed().as_millis() as u64,
                 outcome,

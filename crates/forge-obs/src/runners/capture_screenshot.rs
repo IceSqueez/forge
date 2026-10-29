@@ -13,6 +13,9 @@ use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, Variant};
 use time::OffsetDateTime;
 
 use crate::ObsSink;
+use crate::vocabulary::{picker_keys, sub_action_ids};
+
+const KIND_ID: &str = sub_action_ids::CAPTURE_SCREENSHOT;
 
 pub struct CaptureScreenshotRunner {
     sink: Arc<dyn ObsSink>,
@@ -27,7 +30,7 @@ impl CaptureScreenshotRunner {
 #[async_trait]
 impl SubActionRunner for CaptureScreenshotRunner {
     fn id(&self) -> &str {
-        "obs.capture.screenshot"
+        KIND_ID
     }
 
     fn category(&self) -> SubActionCategory {
@@ -62,7 +65,7 @@ impl SubActionRunner for CaptureScreenshotRunner {
             FormField::DynamicSelect {
                 key: "source",
                 label: "Source",
-                options_key: "obs.source_names",
+                options_key: picker_keys::SOURCE_NAMES,
             },
             FormField::FilePicker {
                 key: "path",
@@ -117,7 +120,7 @@ impl SubActionRunner for CaptureScreenshotRunner {
             SubActionTelemetry {
                 args_in: ::std::collections::BTreeMap::new(),
                 produced: ::std::collections::BTreeMap::new(),
-                kind: "obs.capture.screenshot".to_owned(),
+                kind: KIND_ID.to_owned(),
                 started_at,
                 duration_ms: start.elapsed().as_millis() as u64,
                 outcome,

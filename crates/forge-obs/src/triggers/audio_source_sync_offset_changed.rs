@@ -1,4 +1,3 @@
-use crate::event_kinds;
 use std::collections::BTreeMap;
 
 use forge_events::{Event, EventSource};
@@ -10,13 +9,14 @@ use forge_types::{
 };
 
 use super::audio_source_mute_changed::source_name_matches;
-use crate::payload_fields::audio as fields;
+use crate::vocabulary::fields::audio as fields;
+use crate::vocabulary::{event_kinds, picker_keys, trigger_ids, variables};
 
 pub struct AudioSourceSyncOffsetChangedDescriptor;
 
 impl TriggerKindDescriptor for AudioSourceSyncOffsetChangedDescriptor {
     fn id(&self) -> &str {
-        "obs.audio.source_sync_offset_changed"
+        trigger_ids::AUDIO_SOURCE_SYNC_OFFSET_CHANGED
     }
 
     fn category(&self) -> TriggerCategory {
@@ -54,7 +54,7 @@ impl TriggerKindDescriptor for AudioSourceSyncOffsetChangedDescriptor {
             inner: Box::new(FormField::DynamicSelect {
                 key: "source_name",
                 label: "Source name",
-                options_key: "obs.audio_input_names",
+                options_key: picker_keys::AUDIO_INPUT_NAMES,
             }),
         }]
     }
@@ -88,7 +88,7 @@ impl TriggerKindDescriptor for AudioSourceSyncOffsetChangedDescriptor {
             .and_then(|v| v.as_str())
         {
             stack = stack.set(
-                "obs.source.name".to_owned(),
+                variables::source::NAME.to_owned(),
                 Variant::String(name.to_owned()),
             );
         }
@@ -97,7 +97,10 @@ impl TriggerKindDescriptor for AudioSourceSyncOffsetChangedDescriptor {
             .get(fields::SYNC_OFFSET_MS)
             .and_then(|v| v.as_i64())
         {
-            stack = stack.set("obs.source.sync_offset_ms".to_owned(), Variant::Int(ms));
+            stack = stack.set(
+                variables::source::SYNC_OFFSET_MS.to_owned(),
+                Variant::Int(ms),
+            );
         }
         stack
     }
@@ -106,13 +109,13 @@ impl TriggerKindDescriptor for AudioSourceSyncOffsetChangedDescriptor {
         Some(VariableSchema {
             variables: vec![
                 DeclaredVariable {
-                    name: "obs.source.name".to_owned(),
+                    name: variables::source::NAME.to_owned(),
                     kind: VariantKind::String,
                     label: "Source name".to_owned(),
                     synthesis: None,
                 },
                 DeclaredVariable {
-                    name: "obs.source.sync_offset_ms".to_owned(),
+                    name: variables::source::SYNC_OFFSET_MS.to_owned(),
                     kind: VariantKind::Int,
                     label: "Sync offset (ms)".to_owned(),
                     synthesis: Some(SynthesisHint::BoundedInt {

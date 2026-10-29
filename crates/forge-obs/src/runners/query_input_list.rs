@@ -4,11 +4,17 @@ use std::time::Instant;
 
 use async_trait::async_trait;
 use forge_registry::runner::SubActionConfig;
-use forge_registry::{FormField, RegistryError, RunContext, SubActionCategory, SubActionRunner};
+use forge_registry::{
+    FormField, RegistryError, RunContext, SubActionCategory, SubActionIo, SubActionRunner,
+};
 use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, Variant};
 use time::OffsetDateTime;
 
 use crate::ObsSink;
+use crate::vocabulary::fields::query;
+use crate::vocabulary::{sub_action_ids, variables};
+
+const KIND_ID: &str = sub_action_ids::SOURCE_GET_LIST;
 
 pub struct QueryInputListRunner {
     sink: Arc<dyn ObsSink>,
@@ -23,7 +29,7 @@ impl QueryInputListRunner {
 #[async_trait]
 impl SubActionRunner for QueryInputListRunner {
     fn id(&self) -> &str {
-        "obs.sources.get_list"
+        KIND_ID
     }
 
     fn category(&self) -> SubActionCategory {
@@ -58,6 +64,13 @@ impl SubActionRunner for QueryInputListRunner {
         Ok(())
     }
 
+    fn scope_io(&self) -> SubActionIo {
+        SubActionIo {
+            fixed_outputs: vec![variables::source_query::ALL_NAMES.to_owned()],
+            ..SubActionIo::default()
+        }
+    }
+
     async fn execute(
         &self,
         _config: &SubActionConfig,
@@ -68,17 +81,17 @@ impl SubActionRunner for QueryInputListRunner {
 
         match self.sink.get_input_list().await {
             Ok(variant) => {
-                let mut stack = ArgStack::new();
+                let mut stack = ctx.arg_stack.clone();
                 if let Variant::Object(ref map) = variant
-                    && let Some(names) = map.get("all_names")
+                    && let Some(names) = map.get(query::ALL_NAMES)
                 {
-                    stack = stack.set("obs.sources.all_names".to_owned(), names.clone());
+                    stack = stack.set(variables::source_query::ALL_NAMES.to_owned(), names.clone());
                 }
                 (
                     SubActionTelemetry {
                         args_in: ::std::collections::BTreeMap::new(),
                         produced: ::std::collections::BTreeMap::new(),
-                        kind: "obs.sources.get_list".to_owned(),
+                        kind: KIND_ID.to_owned(),
                         started_at,
                         duration_ms: start.elapsed().as_millis() as u64,
                         outcome: SubActionOutcome::Success,
@@ -91,7 +104,7 @@ impl SubActionRunner for QueryInputListRunner {
                 SubActionTelemetry {
                     args_in: ::std::collections::BTreeMap::new(),
                     produced: ::std::collections::BTreeMap::new(),
-                    kind: "obs.sources.get_list".to_owned(),
+                    kind: KIND_ID.to_owned(),
                     started_at,
                     duration_ms: start.elapsed().as_millis() as u64,
                     outcome: SubActionOutcome::Failed(e.to_string()),

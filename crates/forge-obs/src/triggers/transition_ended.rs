@@ -1,4 +1,3 @@
-use crate::event_kinds;
 use std::collections::BTreeMap;
 
 use forge_events::{Event, EventSource};
@@ -9,11 +8,13 @@ use forge_types::{ArgStack, TriggerConfig, VariableSchema};
 
 use super::transition_started::{build_transition_arg_stack, transition_variables};
 
+use crate::vocabulary::{event_kinds, trigger_ids};
+
 pub struct TransitionEndedDescriptor;
 
 impl TriggerKindDescriptor for TransitionEndedDescriptor {
     fn id(&self) -> &str {
-        "obs.transition.ended"
+        trigger_ids::TRANSITION_ENDED
     }
 
     fn category(&self) -> TriggerCategory {

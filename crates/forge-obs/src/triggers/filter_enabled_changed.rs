@@ -1,4 +1,3 @@
-use crate::event_kinds;
 use std::collections::BTreeMap;
 
 use forge_events::{Event, EventSource};
@@ -10,13 +9,14 @@ use forge_types::{
 };
 
 use super::filter_removed::{build_filter_source_arg_stack, filter_source_variables};
-use crate::payload_fields::filter as fields;
+use crate::vocabulary::fields::filter as fields;
+use crate::vocabulary::{event_kinds, trigger_ids, variables};
 
 pub struct FilterEnabledChangedDescriptor;
 
 impl TriggerKindDescriptor for FilterEnabledChangedDescriptor {
     fn id(&self) -> &str {
-        "obs.filters.enabled_changed"
+        trigger_ids::FILTER_ENABLED_CHANGED
     }
 
     fn category(&self) -> TriggerCategory {
@@ -73,7 +73,10 @@ impl TriggerKindDescriptor for FilterEnabledChangedDescriptor {
             .get(fields::IS_ENABLED)
             .and_then(|v| v.as_bool())
         {
-            stack = stack.set("obs.filter.is_enabled".to_owned(), Variant::Bool(enabled));
+            stack = stack.set(
+                variables::filter::IS_ENABLED.to_owned(),
+                Variant::Bool(enabled),
+            );
         }
         stack
     }
@@ -81,7 +84,7 @@ impl TriggerKindDescriptor for FilterEnabledChangedDescriptor {
     fn output_schema(&self) -> Option<VariableSchema> {
         let mut variables = filter_source_variables();
         variables.push(DeclaredVariable {
-            name: "obs.filter.is_enabled".to_owned(),
+            name: variables::filter::IS_ENABLED.to_owned(),
             kind: VariantKind::Bool,
             label: "Filter enabled".to_owned(),
             synthesis: None,

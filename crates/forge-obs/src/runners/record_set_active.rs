@@ -11,6 +11,9 @@ use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, Variant};
 use time::OffsetDateTime;
 
 use crate::ObsSink;
+use crate::vocabulary::sub_action_ids;
+
+const KIND_ID: &str = sub_action_ids::RECORDING_SET_ACTIVE;
 
 pub struct RecordSetActiveRunner {
     sink: Arc<dyn ObsSink>,
@@ -25,7 +28,7 @@ impl RecordSetActiveRunner {
 #[async_trait]
 impl SubActionRunner for RecordSetActiveRunner {
     fn id(&self) -> &str {
-        "obs.record.set_active"
+        KIND_ID
     }
 
     fn category(&self) -> SubActionCategory {
@@ -86,7 +89,7 @@ impl SubActionRunner for RecordSetActiveRunner {
             SubActionTelemetry {
                 args_in: ::std::collections::BTreeMap::new(),
                 produced: ::std::collections::BTreeMap::new(),
-                kind: "obs.record.set_active".to_owned(),
+                kind: KIND_ID.to_owned(),
                 started_at,
                 duration_ms: start.elapsed().as_millis() as u64,
                 outcome,

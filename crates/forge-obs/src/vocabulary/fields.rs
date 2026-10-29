@@ -70,3 +70,13 @@ pub(crate) mod filter {
     pub(crate) const FILTER_NAME: &str = "filter_name";
     pub(crate) const IS_ENABLED: &str = "is_enabled";
 }
+
+pub(crate) mod query {
+    pub(crate) const ALL_NAMES: &str = "all_names";
+    pub(crate) const CURRENT: &str = "current";
+    pub(crate) const IS_ACTIVE: &str = "is_active";
+    pub(crate) const IS_PAUSED: &str = "is_paused";
+    pub(crate) const DURATION_MS: &str = "duration_ms";
+    pub(crate) const SETTINGS: &str = "settings";
+    pub(crate) const KIND: &str = "kind";
+}

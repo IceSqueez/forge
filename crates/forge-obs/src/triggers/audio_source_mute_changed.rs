@@ -1,4 +1,3 @@
-use crate::event_kinds;
 use std::collections::BTreeMap;
 
 use forge_events::{Event, EventSource};
@@ -9,13 +8,14 @@ use forge_types::{
     ArgStack, DeclaredVariable, TriggerConfig, VariableSchema, Variant, VariantKind,
 };
 
-use crate::payload_fields::audio as fields;
+use crate::vocabulary::fields::audio as fields;
+use crate::vocabulary::{event_kinds, picker_keys, trigger_ids, variables};
 
 pub struct AudioSourceMuteChangedDescriptor;
 
 impl TriggerKindDescriptor for AudioSourceMuteChangedDescriptor {
     fn id(&self) -> &str {
-        "obs.audio.source_mute_changed"
+        trigger_ids::AUDIO_SOURCE_MUTE_CHANGED
     }
 
     fn category(&self) -> TriggerCategory {
@@ -53,7 +53,7 @@ impl TriggerKindDescriptor for AudioSourceMuteChangedDescriptor {
             inner: Box::new(FormField::DynamicSelect {
                 key: "source_name",
                 label: "Source name",
-                options_key: "obs.audio_input_names",
+                options_key: picker_keys::AUDIO_INPUT_NAMES,
             }),
         }]
     }
@@ -87,13 +87,13 @@ impl TriggerKindDescriptor for AudioSourceMuteChangedDescriptor {
         Some(VariableSchema {
             variables: vec![
                 DeclaredVariable {
-                    name: "obs.source.name".to_owned(),
+                    name: variables::source::NAME.to_owned(),
                     kind: VariantKind::String,
                     label: "Source name".to_owned(),
                     synthesis: None,
                 },
                 DeclaredVariable {
-                    name: "obs.source.is_muted".to_owned(),
+                    name: variables::source::IS_MUTED.to_owned(),
                     kind: VariantKind::Bool,
                     label: "Source muted".to_owned(),
                     synthesis: None,
@@ -111,7 +111,7 @@ pub(crate) fn build_mute_arg_stack(event: &Event) -> ArgStack {
         .and_then(|v| v.as_str())
     {
         stack = stack.set(
-            "obs.source.name".to_owned(),
+            variables::source::NAME.to_owned(),
             Variant::String(name.to_owned()),
         );
     }
@@ -120,7 +120,7 @@ pub(crate) fn build_mute_arg_stack(event: &Event) -> ArgStack {
         .get(fields::IS_MUTED)
         .and_then(|v| v.as_bool())
     {
-        stack = stack.set("obs.source.is_muted".to_owned(), Variant::Bool(muted));
+        stack = stack.set(variables::source::IS_MUTED.to_owned(), Variant::Bool(muted));
     }
     stack
 }

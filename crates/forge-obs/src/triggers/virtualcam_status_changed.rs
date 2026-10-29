@@ -1,4 +1,3 @@
-use crate::event_kinds;
 use std::collections::BTreeMap;
 
 use forge_events::{Event, EventSource};
@@ -9,13 +8,14 @@ use forge_types::{
     ArgStack, DeclaredVariable, TriggerConfig, VariableSchema, Variant, VariantKind,
 };
 
-use crate::payload_fields::virtualcam as fields;
+use crate::vocabulary::fields::virtualcam as fields;
+use crate::vocabulary::{event_kinds, trigger_ids, variables};
 
 pub struct VirtualcamStatusChangedDescriptor;
 
 impl TriggerKindDescriptor for VirtualcamStatusChangedDescriptor {
     fn id(&self) -> &str {
-        "obs.virtualcam.state_changed"
+        trigger_ids::VIRTUALCAM_STATUS_CHANGED
     }
 
     fn category(&self) -> TriggerCategory {
@@ -79,13 +79,13 @@ impl TriggerKindDescriptor for VirtualcamStatusChangedDescriptor {
 pub(crate) fn virtualcam_variables() -> Vec<DeclaredVariable> {
     vec![
         DeclaredVariable {
-            name: "obs.virtualcam.output_state".to_owned(),
+            name: variables::virtualcam::OUTPUT_STATE.to_owned(),
             kind: VariantKind::String,
             label: "Virtual camera output state".to_owned(),
             synthesis: None,
         },
         DeclaredVariable {
-            name: "obs.virtualcam.is_active".to_owned(),
+            name: variables::virtualcam::IS_ACTIVE.to_owned(),
             kind: VariantKind::Bool,
             label: "Virtual camera active".to_owned(),
             synthesis: None,
@@ -97,7 +97,7 @@ pub(crate) fn build_virtualcam_arg_stack(event: &Event) -> ArgStack {
     let mut stack = ArgStack::new();
     if let Some(s) = event.kind.rsplit('.').next() {
         stack = stack.set(
-            "obs.virtualcam.output_state".to_owned(),
+            variables::virtualcam::OUTPUT_STATE.to_owned(),
             Variant::String(s.to_owned()),
         );
     }
@@ -106,7 +106,10 @@ pub(crate) fn build_virtualcam_arg_stack(event: &Event) -> ArgStack {
         .get(fields::IS_ACTIVE)
         .and_then(|v| v.as_bool())
     {
-        stack = stack.set("obs.virtualcam.is_active".to_owned(), Variant::Bool(b));
+        stack = stack.set(
+            variables::virtualcam::IS_ACTIVE.to_owned(),
+            Variant::Bool(b),
+        );
     }
     stack
 }

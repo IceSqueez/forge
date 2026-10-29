@@ -9,6 +9,9 @@ use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry};
 use time::OffsetDateTime;
 
 use crate::ObsSink;
+use crate::vocabulary::sub_action_ids;
+
+const KIND_ID: &str = sub_action_ids::STUDIO_DISABLE;
 
 pub struct StudioDisableRunner {
     sink: Arc<dyn ObsSink>,
@@ -23,7 +26,7 @@ impl StudioDisableRunner {
 #[async_trait]
 impl SubActionRunner for StudioDisableRunner {
     fn id(&self) -> &str {
-        "obs.studio.disable"
+        KIND_ID
     }
 
     fn category(&self) -> SubActionCategory {
@@ -72,7 +75,7 @@ impl SubActionRunner for StudioDisableRunner {
             SubActionTelemetry {
                 args_in: ::std::collections::BTreeMap::new(),
                 produced: ::std::collections::BTreeMap::new(),
-                kind: "obs.studio.disable".to_owned(),
+                kind: KIND_ID.to_owned(),
                 started_at,
                 duration_ms: start.elapsed().as_millis() as u64,
                 outcome,

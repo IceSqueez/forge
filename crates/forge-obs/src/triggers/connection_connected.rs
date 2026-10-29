@@ -1,4 +1,3 @@
-use crate::event_kinds;
 use std::collections::BTreeMap;
 
 use forge_events::{Event, EventSource};
@@ -7,11 +6,13 @@ use forge_registry::{
 };
 use forge_types::{ArgStack, TriggerConfig, VariableSchema};
 
+use crate::vocabulary::{event_kinds, trigger_ids};
+
 pub struct ConnectionConnectedDescriptor;
 
 impl TriggerKindDescriptor for ConnectionConnectedDescriptor {
     fn id(&self) -> &str {
-        "obs.connection.connected"
+        trigger_ids::CONNECTION_CONNECTED
     }
 
     fn category(&self) -> TriggerCategory {

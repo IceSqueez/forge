@@ -9,8 +9,8 @@ use forge_platform_core::{
 use forge_types::{SubActionStep, Variant};
 
 use crate::client::ObsClient;
-use crate::runners::{SET_LOCKED_KIND_ID, SET_VISIBLE_KIND_ID, SWITCH_CURRENT_SCENE_KIND_ID};
 use crate::source::SourceInfo;
+use crate::vocabulary::sub_action_ids;
 
 const PANEL_VISIBLE_ROWS: u16 = 8;
 const SCENE_ROW_PADDING_Y_PX: u8 = 8;
@@ -89,7 +89,7 @@ fn scene_to_item(
         enabled: true,
         on_click: (actionable && !is_current).then(|| {
             step(
-                SWITCH_CURRENT_SCENE_KIND_ID,
+                sub_action_ids::SCENE_SWITCH_CURRENT,
                 [("scene", Variant::String(name.to_owned()))],
             )
         }),
@@ -159,7 +159,7 @@ fn source_to_item(scene: &str, info: &SourceInfo, actionable: bool) -> ContentLi
         actionable,
         || {
             step(
-                SET_VISIBLE_KIND_ID,
+                sub_action_ids::SOURCE_SET_VISIBLE,
                 [
                     ("scene", Variant::String(scene.to_owned())),
                     ("source", Variant::String(info.name.clone())),
@@ -178,7 +178,7 @@ fn source_to_item(scene: &str, info: &SourceInfo, actionable: bool) -> ContentLi
         actionable,
         || {
             step(
-                SET_LOCKED_KIND_ID,
+                sub_action_ids::SOURCE_SET_LOCKED,
                 [
                     ("scene", Variant::String(scene.to_owned())),
                     ("source", Variant::String(info.name.clone())),

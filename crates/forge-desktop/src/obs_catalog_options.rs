@@ -166,8 +166,9 @@ pub(crate) fn changes_obs_catalog(event: &Event) -> bool {
     event.source == EventSource::Obs
         && (event
             .kind
-            .starts_with(forge_obs::event_kinds::CONNECTION_PREFIX)
-            || forge_obs::event_kinds::NAME_LIST_CHANGING_KINDS.contains(&event.kind.as_str()))
+            .starts_with(forge_obs::vocabulary::event_kinds::CONNECTION_PREFIX)
+            || forge_obs::vocabulary::event_kinds::NAME_LIST_CHANGING_KINDS
+                .contains(&event.kind.as_str()))
 }
 
 pub(crate) fn watch_obs_catalog<V: 'static>(

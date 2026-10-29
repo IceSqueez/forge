@@ -1,4 +1,3 @@
-use crate::event_kinds;
 use std::collections::BTreeMap;
 
 use forge_events::{Event, EventSource};
@@ -9,13 +8,14 @@ use forge_types::{
     ArgStack, DeclaredVariable, TriggerConfig, VariableSchema, Variant, VariantKind,
 };
 
-use crate::payload_fields::recording as fields;
+use crate::vocabulary::fields::recording as fields;
+use crate::vocabulary::{event_kinds, trigger_ids, variables};
 
 pub struct RecordStartingDescriptor;
 
 impl TriggerKindDescriptor for RecordStartingDescriptor {
     fn id(&self) -> &str {
-        "obs.record.starting"
+        trigger_ids::RECORDING_STARTING
     }
 
     fn category(&self) -> TriggerCategory {
@@ -79,19 +79,19 @@ impl TriggerKindDescriptor for RecordStartingDescriptor {
 pub(crate) fn record_variables() -> Vec<DeclaredVariable> {
     vec![
         DeclaredVariable {
-            name: "obs.record.output_state".to_owned(),
+            name: variables::recording::OUTPUT_STATE.to_owned(),
             kind: VariantKind::String,
             label: "Recording output state".to_owned(),
             synthesis: None,
         },
         DeclaredVariable {
-            name: "obs.record.is_active".to_owned(),
+            name: variables::recording::IS_ACTIVE.to_owned(),
             kind: VariantKind::Bool,
             label: "Recording active".to_owned(),
             synthesis: None,
         },
         DeclaredVariable {
-            name: "obs.record.output_path".to_owned(),
+            name: variables::recording::OUTPUT_PATH.to_owned(),
             kind: VariantKind::String,
             label: "Recording file path".to_owned(),
             synthesis: None,
@@ -103,7 +103,7 @@ pub(crate) fn build_record_arg_stack(event: &Event) -> ArgStack {
     let mut stack = ArgStack::new();
     if let Some(s) = event.kind.rsplit('.').next() {
         stack = stack.set(
-            "obs.record.output_state".to_owned(),
+            variables::recording::OUTPUT_STATE.to_owned(),
             Variant::String(s.to_owned()),
         );
     }
@@ -112,7 +112,7 @@ pub(crate) fn build_record_arg_stack(event: &Event) -> ArgStack {
         .get(fields::IS_ACTIVE)
         .and_then(|v| v.as_bool())
     {
-        stack = stack.set("obs.record.is_active".to_owned(), Variant::Bool(b));
+        stack = stack.set(variables::recording::IS_ACTIVE.to_owned(), Variant::Bool(b));
     }
     if let Some(p) = event
         .payload
@@ -120,7 +120,7 @@ pub(crate) fn build_record_arg_stack(event: &Event) -> ArgStack {
         .and_then(|v| v.as_str())
     {
         stack = stack.set(
-            "obs.record.output_path".to_owned(),
+            variables::recording::OUTPUT_PATH.to_owned(),
             Variant::String(p.to_owned()),
         );
     }

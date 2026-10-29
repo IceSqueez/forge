@@ -1,4 +1,3 @@
-use crate::event_kinds;
 use std::collections::BTreeMap;
 
 use forge_events::{Event, EventSource};
@@ -9,13 +8,14 @@ use forge_types::{
     ArgStack, DeclaredVariable, TriggerConfig, VariableSchema, Variant, VariantKind,
 };
 
-use crate::payload_fields::connection as fields;
+use crate::vocabulary::fields::connection as fields;
+use crate::vocabulary::{event_kinds, trigger_ids, variables};
 
 pub struct ConnectionDisconnectedDescriptor;
 
 impl TriggerKindDescriptor for ConnectionDisconnectedDescriptor {
     fn id(&self) -> &str {
-        "obs.connection.disconnected"
+        trigger_ids::CONNECTION_DISCONNECTED
     }
 
     fn category(&self) -> TriggerCategory {
@@ -68,10 +68,16 @@ impl TriggerKindDescriptor for ConnectionDisconnectedDescriptor {
     fn build_arg_stack(&self, event: &Event) -> ArgStack {
         let mut stack = ArgStack::new();
         if let Some(reason) = event.payload.get(fields::REASON).and_then(|v| v.as_str()) {
-            stack = stack.set("obs.reason".to_owned(), Variant::String(reason.to_owned()));
+            stack = stack.set(
+                variables::connection::REASON.to_owned(),
+                Variant::String(reason.to_owned()),
+            );
         }
         if let Some(detail) = event.payload.get(fields::DETAIL).and_then(|v| v.as_str()) {
-            stack = stack.set("obs.detail".to_owned(), Variant::String(detail.to_owned()));
+            stack = stack.set(
+                variables::connection::DETAIL.to_owned(),
+                Variant::String(detail.to_owned()),
+            );
         }
         stack
     }
@@ -80,13 +86,13 @@ impl TriggerKindDescriptor for ConnectionDisconnectedDescriptor {
         Some(VariableSchema {
             variables: vec![
                 DeclaredVariable {
-                    name: "obs.reason".to_owned(),
+                    name: variables::connection::REASON.to_owned(),
                     kind: VariantKind::String,
                     label: "Disconnect reason".to_owned(),
                     synthesis: None,
                 },
                 DeclaredVariable {
-                    name: "obs.detail".to_owned(),
+                    name: variables::connection::DETAIL.to_owned(),
                     kind: VariantKind::String,
                     label: "Disconnect detail".to_owned(),
                     synthesis: None,

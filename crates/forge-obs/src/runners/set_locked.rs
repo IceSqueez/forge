@@ -12,8 +12,9 @@ use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, Variant};
 use time::OffsetDateTime;
 
 use crate::ObsSink;
+use crate::vocabulary::{picker_keys, sub_action_ids};
 
-pub(crate) const KIND_ID: &str = "obs.sources.set_locked";
+const KIND_ID: &str = sub_action_ids::SOURCE_SET_LOCKED;
 
 pub struct SetLockedRunner {
     sink: Arc<dyn ObsSink>,
@@ -64,12 +65,12 @@ impl SubActionRunner for SetLockedRunner {
             FormField::DynamicSelect {
                 key: "scene",
                 label: "Scene",
-                options_key: "obs.scene_names",
+                options_key: picker_keys::SCENE_NAMES,
             },
             FormField::DynamicSelect {
                 key: "source",
                 label: "Source",
-                options_key: "obs.source_names",
+                options_key: picker_keys::SOURCE_NAMES,
             },
             FormField::Toggle {
                 key: "locked",

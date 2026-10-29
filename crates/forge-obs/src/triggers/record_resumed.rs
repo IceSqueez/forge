@@ -1,4 +1,3 @@
-use crate::event_kinds;
 use std::collections::BTreeMap;
 
 use forge_events::{Event, EventSource};
@@ -9,11 +8,13 @@ use forge_types::{ArgStack, TriggerConfig, VariableSchema};
 
 use super::record_starting::{build_record_arg_stack, record_variables};
 
+use crate::vocabulary::{event_kinds, trigger_ids};
+
 pub struct RecordResumedDescriptor;
 
 impl TriggerKindDescriptor for RecordResumedDescriptor {
     fn id(&self) -> &str {
-        "obs.record.resumed"
+        trigger_ids::RECORDING_RESUMED
     }
 
     fn category(&self) -> TriggerCategory {

@@ -1,4 +1,3 @@
-use crate::event_kinds;
 use std::collections::BTreeMap;
 
 use forge_events::{Event, EventSource};
@@ -9,13 +8,14 @@ use forge_types::{
     ArgStack, DeclaredVariable, TriggerConfig, VariableSchema, Variant, VariantKind,
 };
 
-use crate::payload_fields::scene as fields;
+use crate::vocabulary::fields::scene as fields;
+use crate::vocabulary::{event_kinds, picker_keys, trigger_ids, variables};
 
 pub struct SceneCurrentChangedDescriptor;
 
 impl TriggerKindDescriptor for SceneCurrentChangedDescriptor {
     fn id(&self) -> &str {
-        "obs.scenes.current_changed"
+        trigger_ids::SCENE_CHANGED
     }
 
     fn category(&self) -> TriggerCategory {
@@ -53,7 +53,7 @@ impl TriggerKindDescriptor for SceneCurrentChangedDescriptor {
             inner: Box::new(FormField::DynamicSelect {
                 key: "scene",
                 label: "Scene",
-                options_key: "obs.scene_names",
+                options_key: picker_keys::SCENE_NAMES,
             }),
         }]
     }
@@ -87,7 +87,10 @@ impl TriggerKindDescriptor for SceneCurrentChangedDescriptor {
     fn build_arg_stack(&self, event: &Event) -> ArgStack {
         let mut stack = ArgStack::new();
         if let Some(to) = event.payload.get(fields::TO_SCENE).and_then(|v| v.as_str()) {
-            stack = stack.set("obs.scene".to_owned(), Variant::String(to.to_owned()));
+            stack = stack.set(
+                variables::scene::PROGRAM.to_owned(),
+                Variant::String(to.to_owned()),
+            );
         }
         if let Some(from) = event
             .payload
@@ -95,7 +98,7 @@ impl TriggerKindDescriptor for SceneCurrentChangedDescriptor {
             .and_then(|v| v.as_str())
         {
             stack = stack.set(
-                "obs.previous_scene".to_owned(),
+                variables::scene::PREVIOUS.to_owned(),
                 Variant::String(from.to_owned()),
             );
         }
@@ -106,13 +109,13 @@ impl TriggerKindDescriptor for SceneCurrentChangedDescriptor {
         Some(VariableSchema {
             variables: vec![
                 DeclaredVariable {
-                    name: "obs.scene".to_owned(),
+                    name: variables::scene::PROGRAM.to_owned(),
                     kind: VariantKind::String,
                     label: "Scene name".to_owned(),
                     synthesis: None,
                 },
                 DeclaredVariable {
-                    name: "obs.previous_scene".to_owned(),
+                    name: variables::scene::PREVIOUS.to_owned(),
                     kind: VariantKind::String,
                     label: "Previous scene name".to_owned(),
                     synthesis: None,

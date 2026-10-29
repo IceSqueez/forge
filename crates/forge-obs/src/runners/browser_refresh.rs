@@ -12,6 +12,9 @@ use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, Variant};
 use time::OffsetDateTime;
 
 use crate::ObsSink;
+use crate::vocabulary::{picker_keys, sub_action_ids};
+
+const KIND_ID: &str = sub_action_ids::BROWSER_REFRESH;
 
 pub struct BrowserRefreshRunner {
     sink: Arc<dyn ObsSink>,
@@ -26,7 +29,7 @@ impl BrowserRefreshRunner {
 #[async_trait]
 impl SubActionRunner for BrowserRefreshRunner {
     fn id(&self) -> &str {
-        "obs.browser.refresh"
+        KIND_ID
     }
 
     fn category(&self) -> SubActionCategory {
@@ -57,7 +60,7 @@ impl SubActionRunner for BrowserRefreshRunner {
         vec![FormField::DynamicSelect {
             key: "source",
             label: "Browser Source",
-            options_key: "obs.input_names",
+            options_key: picker_keys::INPUT_NAMES,
         }]
     }
 
@@ -93,7 +96,7 @@ impl SubActionRunner for BrowserRefreshRunner {
             SubActionTelemetry {
                 args_in: ::std::collections::BTreeMap::new(),
                 produced: ::std::collections::BTreeMap::new(),
-                kind: "obs.browser.refresh".to_owned(),
+                kind: KIND_ID.to_owned(),
                 started_at,
                 duration_ms: start.elapsed().as_millis() as u64,
                 outcome,

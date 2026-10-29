@@ -1,4 +1,3 @@
-use crate::event_kinds;
 use std::collections::BTreeMap;
 
 use forge_events::{Event, EventSource};
@@ -9,13 +8,14 @@ use forge_types::{
     ArgStack, DeclaredVariable, TriggerConfig, VariableSchema, Variant, VariantKind,
 };
 
-use crate::payload_fields::scene as fields;
+use crate::vocabulary::fields::scene as fields;
+use crate::vocabulary::{event_kinds, trigger_ids, variables};
 
 pub struct SceneListChangedDescriptor;
 
 impl TriggerKindDescriptor for SceneListChangedDescriptor {
     fn id(&self) -> &str {
-        "obs.scenes.list_changed"
+        trigger_ids::SCENE_LIST_CHANGED
     }
 
     fn category(&self) -> TriggerCategory {
@@ -77,7 +77,10 @@ impl TriggerKindDescriptor for SceneListChangedDescriptor {
                 .filter_map(|v| v.as_str())
                 .map(|s| Variant::String(s.to_owned()))
                 .collect();
-            stack = stack.set("obs.scene_names".to_owned(), Variant::Array(scenes));
+            stack = stack.set(
+                variables::scene::ALL_NAMES.to_owned(),
+                Variant::Array(scenes),
+            );
         }
         stack
     }
@@ -85,7 +88,7 @@ impl TriggerKindDescriptor for SceneListChangedDescriptor {
     fn output_schema(&self) -> Option<VariableSchema> {
         Some(VariableSchema {
             variables: vec![DeclaredVariable {
-                name: "obs.scene_names".to_owned(),
+                name: variables::scene::ALL_NAMES.to_owned(),
                 kind: VariantKind::Array,
                 label: "All scene names".to_owned(),
                 synthesis: None,

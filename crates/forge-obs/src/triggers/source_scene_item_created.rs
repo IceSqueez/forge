@@ -1,4 +1,3 @@
-use crate::event_kinds;
 use std::collections::BTreeMap;
 
 use forge_events::{Event, EventSource};
@@ -9,13 +8,14 @@ use forge_types::{
     ArgStack, DeclaredVariable, TriggerConfig, VariableSchema, Variant, VariantKind,
 };
 
-use crate::payload_fields::source as fields;
+use crate::vocabulary::fields::source as fields;
+use crate::vocabulary::{event_kinds, trigger_ids, variables};
 
 pub struct SourceSceneItemCreatedDescriptor;
 
 impl TriggerKindDescriptor for SourceSceneItemCreatedDescriptor {
     fn id(&self) -> &str {
-        "obs.sources.scene_item_created"
+        trigger_ids::SOURCE_SCENE_ITEM_CREATED
     }
 
     fn category(&self) -> TriggerCategory {
@@ -73,7 +73,7 @@ impl TriggerKindDescriptor for SourceSceneItemCreatedDescriptor {
             .and_then(|v| v.as_str())
         {
             stack = stack.set(
-                "obs.scene.name".to_owned(),
+                variables::scene::NAME.to_owned(),
                 Variant::String(scene.to_owned()),
             );
         }
@@ -83,12 +83,12 @@ impl TriggerKindDescriptor for SourceSceneItemCreatedDescriptor {
             .and_then(|v| v.as_str())
         {
             stack = stack.set(
-                "obs.source.name".to_owned(),
+                variables::source::NAME.to_owned(),
                 Variant::String(source.to_owned()),
             );
         }
         if let Some(item_id) = event.payload.get(fields::ITEM_ID).and_then(|v| v.as_i64()) {
-            stack = stack.set("obs.source.item_id".to_owned(), Variant::Int(item_id));
+            stack = stack.set(variables::source::ITEM_ID.to_owned(), Variant::Int(item_id));
         }
         stack
     }
@@ -97,19 +97,19 @@ impl TriggerKindDescriptor for SourceSceneItemCreatedDescriptor {
         Some(VariableSchema {
             variables: vec![
                 DeclaredVariable {
-                    name: "obs.scene.name".to_owned(),
+                    name: variables::scene::NAME.to_owned(),
                     kind: VariantKind::String,
                     label: "Scene name".to_owned(),
                     synthesis: None,
                 },
                 DeclaredVariable {
-                    name: "obs.source.name".to_owned(),
+                    name: variables::source::NAME.to_owned(),
                     kind: VariantKind::String,
                     label: "Source name".to_owned(),
                     synthesis: None,
                 },
                 DeclaredVariable {
-                    name: "obs.source.item_id".to_owned(),
+                    name: variables::source::ITEM_ID.to_owned(),
                     kind: VariantKind::Int,
                     label: "Scene item ID".to_owned(),
                     synthesis: None,

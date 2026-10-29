@@ -9,6 +9,9 @@ use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry};
 use time::OffsetDateTime;
 
 use crate::ObsSink;
+use crate::vocabulary::sub_action_ids;
+
+const KIND_ID: &str = sub_action_ids::REPLAY_SAVE;
 
 pub struct ReplaySaveRunner {
     sink: Arc<dyn ObsSink>,
@@ -23,7 +26,7 @@ impl ReplaySaveRunner {
 #[async_trait]
 impl SubActionRunner for ReplaySaveRunner {
     fn id(&self) -> &str {
-        "obs.replay.save"
+        KIND_ID
     }
 
     fn category(&self) -> SubActionCategory {
@@ -72,7 +75,7 @@ impl SubActionRunner for ReplaySaveRunner {
             SubActionTelemetry {
                 args_in: ::std::collections::BTreeMap::new(),
                 produced: ::std::collections::BTreeMap::new(),
-                kind: "obs.replay.save".to_owned(),
+                kind: KIND_ID.to_owned(),
                 started_at,
                 duration_ms: start.elapsed().as_millis() as u64,
                 outcome,

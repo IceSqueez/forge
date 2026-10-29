@@ -4,11 +4,17 @@ use std::time::Instant;
 
 use async_trait::async_trait;
 use forge_registry::runner::SubActionConfig;
-use forge_registry::{FormField, RegistryError, RunContext, SubActionCategory, SubActionRunner};
+use forge_registry::{
+    FormField, RegistryError, RunContext, SubActionCategory, SubActionIo, SubActionRunner,
+};
 use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, Variant};
 use time::OffsetDateTime;
 
 use crate::ObsSink;
+use crate::vocabulary::fields::query;
+use crate::vocabulary::{sub_action_ids, variables};
+
+const KIND_ID: &str = sub_action_ids::STREAMING_GET_STATUS;
 
 pub struct QueryStreamStatusRunner {
     sink: Arc<dyn ObsSink>,
@@ -23,7 +29,7 @@ impl QueryStreamStatusRunner {
 #[async_trait]
 impl SubActionRunner for QueryStreamStatusRunner {
     fn id(&self) -> &str {
-        "obs.stream.get_status"
+        KIND_ID
     }
 
     fn category(&self) -> SubActionCategory {
@@ -58,6 +64,16 @@ impl SubActionRunner for QueryStreamStatusRunner {
         Ok(())
     }
 
+    fn scope_io(&self) -> SubActionIo {
+        SubActionIo {
+            fixed_outputs: vec![
+                variables::streaming::IS_ACTIVE.to_owned(),
+                variables::streaming::DURATION_MS.to_owned(),
+            ],
+            ..SubActionIo::default()
+        }
+    }
+
     async fn execute(
         &self,
         _config: &SubActionConfig,
@@ -68,20 +84,20 @@ impl SubActionRunner for QueryStreamStatusRunner {
 
         match self.sink.get_stream_status().await {
             Ok(variant) => {
-                let mut stack = ArgStack::new();
+                let mut stack = ctx.arg_stack.clone();
                 if let Variant::Object(ref map) = variant {
-                    if let Some(v) = map.get("is_active") {
-                        stack = stack.set("obs.stream.is_active".to_owned(), v.clone());
+                    if let Some(v) = map.get(query::IS_ACTIVE) {
+                        stack = stack.set(variables::streaming::IS_ACTIVE.to_owned(), v.clone());
                     }
-                    if let Some(v) = map.get("duration_ms") {
-                        stack = stack.set("obs.stream.duration_ms".to_owned(), v.clone());
+                    if let Some(v) = map.get(query::DURATION_MS) {
+                        stack = stack.set(variables::streaming::DURATION_MS.to_owned(), v.clone());
                     }
                 }
                 (
                     SubActionTelemetry {
                         args_in: ::std::collections::BTreeMap::new(),
                         produced: ::std::collections::BTreeMap::new(),
-                        kind: "obs.stream.get_status".to_owned(),
+                        kind: KIND_ID.to_owned(),
                         started_at,
                         duration_ms: start.elapsed().as_millis() as u64,
                         outcome: SubActionOutcome::Success,
@@ -94,7 +110,7 @@ impl SubActionRunner for QueryStreamStatusRunner {
                 SubActionTelemetry {
                     args_in: ::std::collections::BTreeMap::new(),
                     produced: ::std::collections::BTreeMap::new(),
-                    kind: "obs.stream.get_status".to_owned(),
+                    kind: KIND_ID.to_owned(),
                     started_at,
                     duration_ms: start.elapsed().as_millis() as u64,
                     outcome: SubActionOutcome::Failed(e.to_string()),

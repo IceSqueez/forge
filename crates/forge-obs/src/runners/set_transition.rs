@@ -12,6 +12,9 @@ use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, Variant};
 use time::OffsetDateTime;
 
 use crate::ObsSink;
+use crate::vocabulary::sub_action_ids;
+
+const KIND_ID: &str = sub_action_ids::SCENE_SET_TRANSITION;
 
 pub struct SetTransitionRunner {
     sink: Arc<dyn ObsSink>,
@@ -26,7 +29,7 @@ impl SetTransitionRunner {
 #[async_trait]
 impl SubActionRunner for SetTransitionRunner {
     fn id(&self) -> &str {
-        "obs.scenes.set_transition"
+        KIND_ID
     }
 
     fn category(&self) -> SubActionCategory {
@@ -95,7 +98,7 @@ impl SubActionRunner for SetTransitionRunner {
             SubActionTelemetry {
                 args_in: ::std::collections::BTreeMap::new(),
                 produced: ::std::collections::BTreeMap::new(),
-                kind: "obs.scenes.set_transition".to_owned(),
+                kind: KIND_ID.to_owned(),
                 started_at,
                 duration_ms: start.elapsed().as_millis() as u64,
                 outcome,

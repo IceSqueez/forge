@@ -14,6 +14,7 @@ use crate::client::ObsClient;
 use crate::error::ObsError;
 use crate::session::{CONFIG_SWITCH_TIMEOUT, LiveSession};
 use crate::sink::ObsSink;
+use crate::vocabulary::fields::query;
 
 fn without_nulls(value: serde_json::Value) -> serde_json::Value {
     match value {
@@ -330,8 +331,8 @@ impl ObsSink for ObsClient {
             .map(|id| id.name)
             .unwrap_or_default();
         let mut obj = BTreeMap::new();
-        obj.insert("all_names".to_owned(), Variant::Array(all_names));
-        obj.insert("current".to_owned(), Variant::String(current));
+        obj.insert(query::ALL_NAMES.to_owned(), Variant::Array(all_names));
+        obj.insert(query::CURRENT.to_owned(), Variant::String(current));
         Ok(Variant::Object(obj))
     }
 
@@ -345,7 +346,7 @@ impl ObsSink for ObsClient {
             .map(|i| Variant::String(i.id.name.clone()))
             .collect();
         let mut obj = BTreeMap::new();
-        obj.insert("all_names".to_owned(), Variant::Array(all_names));
+        obj.insert(query::ALL_NAMES.to_owned(), Variant::Array(all_names));
         Ok(Variant::Object(obj))
     }
 
@@ -355,10 +356,10 @@ impl ObsSink for ObsClient {
             .request("GetRecordStatus", session.obs().recording().status())
             .await?;
         let mut obj = BTreeMap::new();
-        obj.insert("is_active".to_owned(), Variant::Bool(status.active));
-        obj.insert("is_paused".to_owned(), Variant::Bool(status.paused));
+        obj.insert(query::IS_ACTIVE.to_owned(), Variant::Bool(status.active));
+        obj.insert(query::IS_PAUSED.to_owned(), Variant::Bool(status.paused));
         obj.insert(
-            "duration_ms".to_owned(),
+            query::DURATION_MS.to_owned(),
             Variant::Int(status.duration.whole_milliseconds() as i64),
         );
         Ok(Variant::Object(obj))
@@ -370,9 +371,9 @@ impl ObsSink for ObsClient {
             .request("GetStreamStatus", session.obs().streaming().status())
             .await?;
         let mut obj = BTreeMap::new();
-        obj.insert("is_active".to_owned(), Variant::Bool(status.active));
+        obj.insert(query::IS_ACTIVE.to_owned(), Variant::Bool(status.active));
         obj.insert(
-            "duration_ms".to_owned(),
+            query::DURATION_MS.to_owned(),
             Variant::Int(status.duration.whole_milliseconds() as i64),
         );
         Ok(Variant::Object(obj))
@@ -414,8 +415,8 @@ impl ObsSink for ObsClient {
             ))
         })?;
         let mut obj = BTreeMap::new();
-        obj.insert("settings".to_owned(), settings_variant);
-        obj.insert("kind".to_owned(), Variant::String(result.kind));
+        obj.insert(query::SETTINGS.to_owned(), settings_variant);
+        obj.insert(query::KIND.to_owned(), Variant::String(result.kind));
         Ok(Variant::Object(obj))
     }
 

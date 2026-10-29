@@ -1,4 +1,3 @@
-use crate::event_kinds;
 use std::collections::BTreeMap;
 
 use forge_events::{Event, EventSource};
@@ -9,13 +8,14 @@ use forge_types::{
     ArgStack, DeclaredVariable, TriggerConfig, VariableSchema, Variant, VariantKind,
 };
 
-use crate::payload_fields::source as fields;
+use crate::vocabulary::fields::source as fields;
+use crate::vocabulary::{event_kinds, trigger_ids, variables};
 
 pub struct SourceInputCreatedDescriptor;
 
 impl TriggerKindDescriptor for SourceInputCreatedDescriptor {
     fn id(&self) -> &str {
-        "obs.sources.input_created"
+        trigger_ids::SOURCE_INPUT_CREATED
     }
 
     fn category(&self) -> TriggerCategory {
@@ -73,7 +73,7 @@ impl TriggerKindDescriptor for SourceInputCreatedDescriptor {
             .and_then(|v| v.as_str())
         {
             stack = stack.set(
-                "obs.source.name".to_owned(),
+                variables::source::NAME.to_owned(),
                 Variant::String(name.to_owned()),
             );
         }
@@ -83,7 +83,7 @@ impl TriggerKindDescriptor for SourceInputCreatedDescriptor {
             .and_then(|v| v.as_str())
         {
             stack = stack.set(
-                "obs.source.kind".to_owned(),
+                variables::source::KIND.to_owned(),
                 Variant::String(kind.to_owned()),
             );
         }
@@ -94,13 +94,13 @@ impl TriggerKindDescriptor for SourceInputCreatedDescriptor {
         Some(VariableSchema {
             variables: vec![
                 DeclaredVariable {
-                    name: "obs.source.name".to_owned(),
+                    name: variables::source::NAME.to_owned(),
                     kind: VariantKind::String,
                     label: "Source name".to_owned(),
                     synthesis: None,
                 },
                 DeclaredVariable {
-                    name: "obs.source.kind".to_owned(),
+                    name: variables::source::KIND.to_owned(),
                     kind: VariantKind::String,
                     label: "Source kind".to_owned(),
                     synthesis: None,

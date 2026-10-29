@@ -1,4 +1,3 @@
-use crate::event_kinds;
 use std::collections::BTreeMap;
 
 use forge_events::{Event, EventSource};
@@ -9,13 +8,14 @@ use forge_types::{
     ArgStack, DeclaredVariable, TriggerConfig, VariableSchema, Variant, VariantKind,
 };
 
-use crate::payload_fields::profile as fields;
+use crate::vocabulary::fields::profile as fields;
+use crate::vocabulary::{event_kinds, trigger_ids, variables};
 
 pub struct ProfileCurrentChangedDescriptor;
 
 impl TriggerKindDescriptor for ProfileCurrentChangedDescriptor {
     fn id(&self) -> &str {
-        "obs.profile.current_changed"
+        trigger_ids::PROFILE_CURRENT_CHANGED
     }
 
     fn category(&self) -> TriggerCategory {
@@ -73,7 +73,7 @@ impl TriggerKindDescriptor for ProfileCurrentChangedDescriptor {
             .and_then(|v| v.as_str())
         {
             stack = stack.set(
-                "obs.profile.name".to_owned(),
+                variables::profile::NAME.to_owned(),
                 Variant::String(name.to_owned()),
             );
         }
@@ -83,7 +83,7 @@ impl TriggerKindDescriptor for ProfileCurrentChangedDescriptor {
     fn output_schema(&self) -> Option<VariableSchema> {
         Some(VariableSchema {
             variables: vec![DeclaredVariable {
-                name: "obs.profile.name".to_owned(),
+                name: variables::profile::NAME.to_owned(),
                 kind: VariantKind::String,
                 label: "Profile name".to_owned(),
                 synthesis: None,

@@ -1,4 +1,3 @@
-use crate::event_kinds;
 use std::collections::BTreeMap;
 
 use forge_events::{Event, EventSource};
@@ -9,13 +8,14 @@ use forge_types::{
     ArgStack, DeclaredVariable, TriggerConfig, VariableSchema, Variant, VariantKind,
 };
 
-use crate::payload_fields::scene as fields;
+use crate::vocabulary::fields::scene as fields;
+use crate::vocabulary::{event_kinds, trigger_ids, variables};
 
 pub struct SceneRenamedDescriptor;
 
 impl TriggerKindDescriptor for SceneRenamedDescriptor {
     fn id(&self) -> &str {
-        "obs.scenes.renamed"
+        trigger_ids::SCENE_RENAMED
     }
 
     fn category(&self) -> TriggerCategory {
@@ -73,7 +73,7 @@ impl TriggerKindDescriptor for SceneRenamedDescriptor {
             .and_then(|v| v.as_str())
         {
             stack = stack.set(
-                "obs.scene.name_old".to_owned(),
+                variables::scene::NAME_OLD.to_owned(),
                 Variant::String(old.to_owned()),
             );
         }
@@ -83,7 +83,7 @@ impl TriggerKindDescriptor for SceneRenamedDescriptor {
             .and_then(|v| v.as_str())
         {
             stack = stack.set(
-                "obs.scene.name_new".to_owned(),
+                variables::scene::NAME_NEW.to_owned(),
                 Variant::String(new.to_owned()),
             );
         }
@@ -94,13 +94,13 @@ impl TriggerKindDescriptor for SceneRenamedDescriptor {
         Some(VariableSchema {
             variables: vec![
                 DeclaredVariable {
-                    name: "obs.scene.name_old".to_owned(),
+                    name: variables::scene::NAME_OLD.to_owned(),
                     kind: VariantKind::String,
                     label: "Old scene name".to_owned(),
                     synthesis: None,
                 },
                 DeclaredVariable {
-                    name: "obs.scene.name_new".to_owned(),
+                    name: variables::scene::NAME_NEW.to_owned(),
                     kind: VariantKind::String,
                     label: "New scene name".to_owned(),
                     synthesis: None,

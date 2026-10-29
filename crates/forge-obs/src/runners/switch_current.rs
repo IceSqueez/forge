@@ -12,8 +12,9 @@ use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, Variant};
 use time::OffsetDateTime;
 
 use crate::ObsSink;
+use crate::vocabulary::{picker_keys, sub_action_ids};
 
-pub(crate) const KIND_ID: &str = "obs.scenes.switch_current";
+const KIND_ID: &str = sub_action_ids::SCENE_SWITCH_CURRENT;
 
 pub struct SwitchCurrentSceneRunner {
     sink: Arc<dyn ObsSink>,
@@ -59,7 +60,7 @@ impl SubActionRunner for SwitchCurrentSceneRunner {
         vec![FormField::DynamicSelect {
             key: "scene",
             label: "Scene",
-            options_key: "obs.scene_names",
+            options_key: picker_keys::SCENE_NAMES,
         }]
     }
 

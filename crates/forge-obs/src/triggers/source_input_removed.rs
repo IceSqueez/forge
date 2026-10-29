@@ -1,4 +1,3 @@
-use crate::event_kinds;
 use std::collections::BTreeMap;
 
 use forge_events::{Event, EventSource};
@@ -9,13 +8,14 @@ use forge_types::{
     ArgStack, DeclaredVariable, TriggerConfig, VariableSchema, Variant, VariantKind,
 };
 
-use crate::payload_fields::source as fields;
+use crate::vocabulary::fields::source as fields;
+use crate::vocabulary::{event_kinds, trigger_ids, variables};
 
 pub struct SourceInputRemovedDescriptor;
 
 impl TriggerKindDescriptor for SourceInputRemovedDescriptor {
     fn id(&self) -> &str {
-        "obs.sources.input_removed"
+        trigger_ids::SOURCE_INPUT_REMOVED
     }
 
     fn category(&self) -> TriggerCategory {
@@ -73,7 +73,7 @@ impl TriggerKindDescriptor for SourceInputRemovedDescriptor {
             .and_then(|v| v.as_str())
         {
             stack = stack.set(
-                "obs.source.name".to_owned(),
+                variables::source::NAME.to_owned(),
                 Variant::String(name.to_owned()),
             );
         }
@@ -83,7 +83,7 @@ impl TriggerKindDescriptor for SourceInputRemovedDescriptor {
     fn output_schema(&self) -> Option<VariableSchema> {
         Some(VariableSchema {
             variables: vec![DeclaredVariable {
-                name: "obs.source.name".to_owned(),
+                name: variables::source::NAME.to_owned(),
                 kind: VariantKind::String,
                 label: "Source name".to_owned(),
                 synthesis: None,

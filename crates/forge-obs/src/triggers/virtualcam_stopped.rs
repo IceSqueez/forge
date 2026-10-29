@@ -1,4 +1,3 @@
-use crate::event_kinds;
 use std::collections::BTreeMap;
 
 use forge_events::{Event, EventSource};
@@ -9,11 +8,13 @@ use forge_types::{ArgStack, TriggerConfig, VariableSchema};
 
 use super::virtualcam_status_changed::{build_virtualcam_arg_stack, virtualcam_variables};
 
+use crate::vocabulary::{event_kinds, trigger_ids};
+
 pub struct VirtualcamStoppedDescriptor;
 
 impl TriggerKindDescriptor for VirtualcamStoppedDescriptor {
     fn id(&self) -> &str {
-        "obs.virtualcam.stopped"
+        trigger_ids::VIRTUALCAM_STOPPED
     }
 
     fn category(&self) -> TriggerCategory {

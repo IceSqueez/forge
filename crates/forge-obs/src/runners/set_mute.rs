@@ -12,6 +12,9 @@ use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, Variant};
 use time::OffsetDateTime;
 
 use crate::ObsSink;
+use crate::vocabulary::{picker_keys, sub_action_ids};
+
+const KIND_ID: &str = sub_action_ids::AUDIO_SET_MUTE;
 
 pub struct SetMuteRunner {
     sink: Arc<dyn ObsSink>,
@@ -26,7 +29,7 @@ impl SetMuteRunner {
 #[async_trait]
 impl SubActionRunner for SetMuteRunner {
     fn id(&self) -> &str {
-        "obs.audio.set_mute"
+        KIND_ID
     }
 
     fn category(&self) -> SubActionCategory {
@@ -61,7 +64,7 @@ impl SubActionRunner for SetMuteRunner {
             FormField::DynamicSelect {
                 key: "source",
                 label: "Input",
-                options_key: "obs.input_names",
+                options_key: picker_keys::INPUT_NAMES,
             },
             FormField::Toggle {
                 key: "muted",
@@ -103,7 +106,7 @@ impl SubActionRunner for SetMuteRunner {
             SubActionTelemetry {
                 args_in: ::std::collections::BTreeMap::new(),
                 produced: ::std::collections::BTreeMap::new(),
-                kind: "obs.audio.set_mute".to_owned(),
+                kind: KIND_ID.to_owned(),
                 started_at,
                 duration_ms: start.elapsed().as_millis() as u64,
                 outcome,

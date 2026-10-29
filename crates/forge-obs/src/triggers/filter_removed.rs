@@ -1,4 +1,3 @@
-use crate::event_kinds;
 use std::collections::BTreeMap;
 
 use forge_events::{Event, EventSource};
@@ -9,13 +8,14 @@ use forge_types::{
     ArgStack, DeclaredVariable, TriggerConfig, VariableSchema, Variant, VariantKind,
 };
 
-use crate::payload_fields::filter as fields;
+use crate::vocabulary::fields::filter as fields;
+use crate::vocabulary::{event_kinds, trigger_ids, variables};
 
 pub struct FilterRemovedDescriptor;
 
 impl TriggerKindDescriptor for FilterRemovedDescriptor {
     fn id(&self) -> &str {
-        "obs.filters.removed"
+        trigger_ids::FILTER_REMOVED
     }
 
     fn category(&self) -> TriggerCategory {
@@ -79,13 +79,13 @@ impl TriggerKindDescriptor for FilterRemovedDescriptor {
 pub(crate) fn filter_source_variables() -> Vec<DeclaredVariable> {
     vec![
         DeclaredVariable {
-            name: "obs.source.name".to_owned(),
+            name: variables::source::NAME.to_owned(),
             kind: VariantKind::String,
             label: "Source name".to_owned(),
             synthesis: None,
         },
         DeclaredVariable {
-            name: "obs.filter.name".to_owned(),
+            name: variables::filter::NAME.to_owned(),
             kind: VariantKind::String,
             label: "Filter name".to_owned(),
             synthesis: None,
@@ -101,7 +101,7 @@ pub(crate) fn build_filter_source_arg_stack(event: &Event) -> ArgStack {
         .and_then(|v| v.as_str())
     {
         stack = stack.set(
-            "obs.source.name".to_owned(),
+            variables::source::NAME.to_owned(),
             Variant::String(name.to_owned()),
         );
     }
@@ -111,7 +111,7 @@ pub(crate) fn build_filter_source_arg_stack(event: &Event) -> ArgStack {
         .and_then(|v| v.as_str())
     {
         stack = stack.set(
-            "obs.filter.name".to_owned(),
+            variables::filter::NAME.to_owned(),
             Variant::String(name.to_owned()),
         );
     }

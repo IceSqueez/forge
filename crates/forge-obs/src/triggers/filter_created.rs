@@ -1,4 +1,3 @@
-use crate::event_kinds;
 use std::collections::BTreeMap;
 
 use forge_events::{Event, EventSource};
@@ -10,13 +9,14 @@ use forge_types::{
 };
 
 use super::filter_removed::{build_filter_source_arg_stack, filter_source_variables};
-use crate::payload_fields::filter as fields;
+use crate::vocabulary::fields::filter as fields;
+use crate::vocabulary::{event_kinds, trigger_ids, variables};
 
 pub struct FilterCreatedDescriptor;
 
 impl TriggerKindDescriptor for FilterCreatedDescriptor {
     fn id(&self) -> &str {
-        "obs.filters.created"
+        trigger_ids::FILTER_CREATED
     }
 
     fn category(&self) -> TriggerCategory {
@@ -74,7 +74,7 @@ impl TriggerKindDescriptor for FilterCreatedDescriptor {
             .and_then(|v| v.as_str())
         {
             stack = stack.set(
-                "obs.filter.kind".to_owned(),
+                variables::filter::KIND.to_owned(),
                 Variant::String(kind.to_owned()),
             );
         }
@@ -84,7 +84,7 @@ impl TriggerKindDescriptor for FilterCreatedDescriptor {
     fn output_schema(&self) -> Option<VariableSchema> {
         let mut variables = filter_source_variables();
         variables.push(DeclaredVariable {
-            name: "obs.filter.kind".to_owned(),
+            name: variables::filter::KIND.to_owned(),
             kind: VariantKind::String,
             label: "Filter kind".to_owned(),
             synthesis: None,

@@ -1,4 +1,3 @@
-use crate::event_kinds;
 use std::collections::BTreeMap;
 
 use forge_events::{Event, EventSource};
@@ -9,11 +8,13 @@ use forge_types::{ArgStack, TriggerConfig, VariableSchema};
 
 use super::studio_enabled::{build_studio_arg_stack, studio_variables};
 
+use crate::vocabulary::{event_kinds, trigger_ids};
+
 pub struct StudioDisabledDescriptor;
 
 impl TriggerKindDescriptor for StudioDisabledDescriptor {
     fn id(&self) -> &str {
-        "obs.studio.disabled"
+        trigger_ids::STUDIO_DISABLED
     }
 
     fn category(&self) -> TriggerCategory {

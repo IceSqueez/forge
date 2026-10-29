@@ -1,4 +1,3 @@
-use crate::event_kinds;
 use std::collections::BTreeMap;
 
 use forge_events::{Event, EventSource};
@@ -9,13 +8,14 @@ use forge_types::{
     ArgStack, DeclaredVariable, TriggerConfig, VariableSchema, Variant, VariantKind,
 };
 
-use crate::payload_fields::transition as fields;
+use crate::vocabulary::fields::transition as fields;
+use crate::vocabulary::{event_kinds, trigger_ids, variables};
 
 pub struct TransitionStartedDescriptor;
 
 impl TriggerKindDescriptor for TransitionStartedDescriptor {
     fn id(&self) -> &str {
-        "obs.transition.started"
+        trigger_ids::TRANSITION_STARTED
     }
 
     fn category(&self) -> TriggerCategory {
@@ -78,7 +78,7 @@ impl TriggerKindDescriptor for TransitionStartedDescriptor {
 
 pub(crate) fn transition_variables() -> Vec<DeclaredVariable> {
     vec![DeclaredVariable {
-        name: "obs.transition.name".to_owned(),
+        name: variables::transition::NAME.to_owned(),
         kind: VariantKind::String,
         label: "Transition name".to_owned(),
         synthesis: None,
@@ -93,7 +93,7 @@ pub(crate) fn build_transition_arg_stack(event: &Event) -> ArgStack {
         .and_then(|v| v.as_str())
     {
         stack = stack.set(
-            "obs.transition.name".to_owned(),
+            variables::transition::NAME.to_owned(),
             Variant::String(name.to_owned()),
         );
     }

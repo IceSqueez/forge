@@ -1,4 +1,3 @@
-use crate::event_kinds;
 use std::collections::BTreeMap;
 
 use forge_events::{Event, EventSource};
@@ -9,13 +8,14 @@ use forge_types::{
     ArgStack, DeclaredVariable, TriggerConfig, VariableSchema, Variant, VariantKind,
 };
 
-use crate::payload_fields::source as fields;
+use crate::vocabulary::fields::source as fields;
+use crate::vocabulary::{event_kinds, trigger_ids, variables};
 
 pub struct SourceSceneItemLockChangedDescriptor;
 
 impl TriggerKindDescriptor for SourceSceneItemLockChangedDescriptor {
     fn id(&self) -> &str {
-        "obs.sources.scene_item_lock_changed"
+        trigger_ids::SOURCE_LOCK_CHANGED
     }
 
     fn category(&self) -> TriggerCategory {
@@ -73,7 +73,7 @@ impl TriggerKindDescriptor for SourceSceneItemLockChangedDescriptor {
             .and_then(|v| v.as_str())
         {
             stack = stack.set(
-                "obs.scene.name".to_owned(),
+                variables::scene::NAME.to_owned(),
                 Variant::String(scene.to_owned()),
             );
         }
@@ -83,7 +83,7 @@ impl TriggerKindDescriptor for SourceSceneItemLockChangedDescriptor {
             .and_then(|v| v.as_str())
         {
             stack = stack.set(
-                "obs.source.name".to_owned(),
+                variables::source::NAME.to_owned(),
                 Variant::String(source.to_owned()),
             );
         }
@@ -92,7 +92,10 @@ impl TriggerKindDescriptor for SourceSceneItemLockChangedDescriptor {
             .get(fields::IS_LOCKED)
             .and_then(|v| v.as_bool())
         {
-            stack = stack.set("obs.source.is_locked".to_owned(), Variant::Bool(locked));
+            stack = stack.set(
+                variables::source::IS_LOCKED.to_owned(),
+                Variant::Bool(locked),
+            );
         }
         stack
     }
@@ -101,19 +104,19 @@ impl TriggerKindDescriptor for SourceSceneItemLockChangedDescriptor {
         Some(VariableSchema {
             variables: vec![
                 DeclaredVariable {
-                    name: "obs.scene.name".to_owned(),
+                    name: variables::scene::NAME.to_owned(),
                     kind: VariantKind::String,
                     label: "Scene name".to_owned(),
                     synthesis: None,
                 },
                 DeclaredVariable {
-                    name: "obs.source.name".to_owned(),
+                    name: variables::source::NAME.to_owned(),
                     kind: VariantKind::String,
                     label: "Source name".to_owned(),
                     synthesis: None,
                 },
                 DeclaredVariable {
-                    name: "obs.source.is_locked".to_owned(),
+                    name: variables::source::IS_LOCKED.to_owned(),
                     kind: VariantKind::Bool,
                     label: "Source locked".to_owned(),
                     synthesis: None,

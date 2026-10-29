@@ -1,4 +1,3 @@
-use crate::event_kinds;
 use std::collections::BTreeMap;
 
 use forge_events::{Event, EventSource};
@@ -9,11 +8,13 @@ use forge_types::{ArgStack, TriggerConfig, VariableSchema};
 
 use super::stream_starting::{build_stream_arg_stack, stream_variables};
 
+use crate::vocabulary::{event_kinds, trigger_ids};
+
 pub struct StreamStoppingDescriptor;
 
 impl TriggerKindDescriptor for StreamStoppingDescriptor {
     fn id(&self) -> &str {
-        "obs.stream.stopping"
+        trigger_ids::STREAMING_STOPPING
     }
 
     fn category(&self) -> TriggerCategory {

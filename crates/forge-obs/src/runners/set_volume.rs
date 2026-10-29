@@ -12,6 +12,9 @@ use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, Variant};
 use time::OffsetDateTime;
 
 use crate::ObsSink;
+use crate::vocabulary::{picker_keys, sub_action_ids};
+
+const KIND_ID: &str = sub_action_ids::AUDIO_SET_VOLUME;
 
 pub struct SetVolumeRunner {
     sink: Arc<dyn ObsSink>,
@@ -26,7 +29,7 @@ impl SetVolumeRunner {
 #[async_trait]
 impl SubActionRunner for SetVolumeRunner {
     fn id(&self) -> &str {
-        "obs.audio.set_volume"
+        KIND_ID
     }
 
     fn category(&self) -> SubActionCategory {
@@ -61,7 +64,7 @@ impl SubActionRunner for SetVolumeRunner {
             FormField::DynamicSelect {
                 key: "source",
                 label: "Audio Input",
-                options_key: "obs.audio_inputs",
+                options_key: picker_keys::AUDIO_INPUTS,
             },
             FormField::Text {
                 key: "volume_db",
@@ -123,7 +126,7 @@ impl SubActionRunner for SetVolumeRunner {
             SubActionTelemetry {
                 args_in: ::std::collections::BTreeMap::new(),
                 produced: ::std::collections::BTreeMap::new(),
-                kind: "obs.audio.set_volume".to_owned(),
+                kind: KIND_ID.to_owned(),
                 started_at,
                 duration_ms: start.elapsed().as_millis() as u64,
                 outcome,

@@ -12,6 +12,9 @@ use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, Variant};
 use time::OffsetDateTime;
 
 use crate::ObsSink;
+use crate::vocabulary::{picker_keys, sub_action_ids};
+
+const KIND_ID: &str = sub_action_ids::MEDIA_RESTART;
 
 pub struct MediaRestartRunner {
     sink: Arc<dyn ObsSink>,
@@ -26,7 +29,7 @@ impl MediaRestartRunner {
 #[async_trait]
 impl SubActionRunner for MediaRestartRunner {
     fn id(&self) -> &str {
-        "obs.media.restart"
+        KIND_ID
     }
 
     fn category(&self) -> SubActionCategory {
@@ -57,7 +60,7 @@ impl SubActionRunner for MediaRestartRunner {
         vec![FormField::DynamicSelect {
             key: "source",
             label: "Media Input",
-            options_key: "obs.input_names",
+            options_key: picker_keys::INPUT_NAMES,
         }]
     }
 
@@ -92,7 +95,7 @@ impl SubActionRunner for MediaRestartRunner {
             SubActionTelemetry {
                 args_in: ::std::collections::BTreeMap::new(),
                 produced: ::std::collections::BTreeMap::new(),
-                kind: "obs.media.restart".to_owned(),
+                kind: KIND_ID.to_owned(),
                 started_at,
                 duration_ms: start.elapsed().as_millis() as u64,
                 outcome,

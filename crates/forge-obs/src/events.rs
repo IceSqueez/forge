@@ -5,15 +5,15 @@ use forge_platform_core::HealthDelta;
 use serde_json::json;
 
 use crate::catalog::ObsCatalog;
-use crate::event_kinds;
 use crate::health::{FrameCounterSample, HealthSnapshot};
-use crate::payload_fields::{
+use crate::source::SourceInfo;
+use crate::vocabulary::event_kinds;
+use crate::vocabulary::fields::{
     audio as audio_fields, collection as collection_fields, connection as connection_fields,
     filter as filter_fields, profile as profile_fields, recording as recording_fields,
     scene as scene_fields, source as source_fields, streaming as streaming_fields,
     transition as transition_fields, virtualcam as virtualcam_fields,
 };
-use crate::source::SourceInfo;
 
 pub(crate) fn make_connection_connected() -> Event {
     Event::new(

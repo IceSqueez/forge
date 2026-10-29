@@ -9,15 +9,11 @@ use forge_platform_core::{
 use crate::catalog::{ObsCatalog, icon_for_kind};
 use crate::client::ObsClient;
 use crate::error::ObsError;
+use crate::vocabulary::option_lists::{
+    INPUT_LIST, PROFILE_LIST, SCENE_COLLECTION_LIST, SCENE_LIST, SOURCE_LIST, TRANSITION_LIST,
+};
 
-pub const SCENE_LIST: &str = "obs.scenes";
-pub const SOURCE_LIST: &str = "obs.sources";
-pub const INPUT_LIST: &str = "obs.inputs";
-pub const TRANSITION_LIST: &str = "obs.transitions";
-pub const PROFILE_LIST: &str = "obs.profiles";
-pub const SCENE_COLLECTION_LIST: &str = "obs.scene_collections";
-
-pub const SCENE_FIELD: &str = "scene";
+pub(crate) const SCENE_FIELD: &str = "scene";
 
 const HINT_LIVE: &str = "option_hint_live";
 const HINT_ACTIVE: &str = "option_hint_active";

@@ -4,11 +4,17 @@ use std::time::Instant;
 
 use async_trait::async_trait;
 use forge_registry::runner::SubActionConfig;
-use forge_registry::{FormField, RegistryError, RunContext, SubActionCategory, SubActionRunner};
+use forge_registry::{
+    FormField, RegistryError, RunContext, SubActionCategory, SubActionIo, SubActionRunner,
+};
 use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, Variant};
 use time::OffsetDateTime;
 
 use crate::ObsSink;
+use crate::vocabulary::fields::query;
+use crate::vocabulary::{sub_action_ids, variables};
+
+const KIND_ID: &str = sub_action_ids::SCENE_GET_LIST;
 
 pub struct QuerySceneListRunner {
     sink: Arc<dyn ObsSink>,
@@ -23,7 +29,7 @@ impl QuerySceneListRunner {
 #[async_trait]
 impl SubActionRunner for QuerySceneListRunner {
     fn id(&self) -> &str {
-        "obs.scenes.get_list"
+        KIND_ID
     }
 
     fn category(&self) -> SubActionCategory {
@@ -58,6 +64,16 @@ impl SubActionRunner for QuerySceneListRunner {
         Ok(())
     }
 
+    fn scope_io(&self) -> SubActionIo {
+        SubActionIo {
+            fixed_outputs: vec![
+                variables::scene_query::ALL_NAMES.to_owned(),
+                variables::scene_query::CURRENT.to_owned(),
+            ],
+            ..SubActionIo::default()
+        }
+    }
+
     async fn execute(
         &self,
         _config: &SubActionConfig,
@@ -68,20 +84,22 @@ impl SubActionRunner for QuerySceneListRunner {
 
         match self.sink.get_scene_list().await {
             Ok(variant) => {
-                let mut stack = ArgStack::new();
+                let mut stack = ctx.arg_stack.clone();
                 if let Variant::Object(ref map) = variant {
-                    if let Some(names) = map.get("all_names") {
-                        stack = stack.set("obs.scenes.all_names".to_owned(), names.clone());
+                    if let Some(names) = map.get(query::ALL_NAMES) {
+                        stack =
+                            stack.set(variables::scene_query::ALL_NAMES.to_owned(), names.clone());
                     }
-                    if let Some(current) = map.get("current") {
-                        stack = stack.set("obs.scenes.current".to_owned(), current.clone());
+                    if let Some(current) = map.get(query::CURRENT) {
+                        stack =
+                            stack.set(variables::scene_query::CURRENT.to_owned(), current.clone());
                     }
                 }
                 (
                     SubActionTelemetry {
                         args_in: ::std::collections::BTreeMap::new(),
                         produced: ::std::collections::BTreeMap::new(),
-                        kind: "obs.scenes.get_list".to_owned(),
+                        kind: KIND_ID.to_owned(),
                         started_at,
                         duration_ms: start.elapsed().as_millis() as u64,
                         outcome: SubActionOutcome::Success,
@@ -94,7 +112,7 @@ impl SubActionRunner for QuerySceneListRunner {
                 SubActionTelemetry {
                     args_in: ::std::collections::BTreeMap::new(),
                     produced: ::std::collections::BTreeMap::new(),
-                    kind: "obs.scenes.get_list".to_owned(),
+                    kind: KIND_ID.to_owned(),
                     started_at,
                     duration_ms: start.elapsed().as_millis() as u64,
                     outcome: SubActionOutcome::Failed(e.to_string()),

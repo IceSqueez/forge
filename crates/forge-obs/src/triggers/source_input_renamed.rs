@@ -1,4 +1,3 @@
-use crate::event_kinds;
 use std::collections::BTreeMap;
 
 use forge_events::{Event, EventSource};
@@ -9,13 +8,14 @@ use forge_types::{
     ArgStack, DeclaredVariable, TriggerConfig, VariableSchema, Variant, VariantKind,
 };
 
-use crate::payload_fields::source as fields;
+use crate::vocabulary::fields::source as fields;
+use crate::vocabulary::{event_kinds, trigger_ids, variables};
 
 pub struct SourceInputRenamedDescriptor;
 
 impl TriggerKindDescriptor for SourceInputRenamedDescriptor {
     fn id(&self) -> &str {
-        "obs.sources.input_renamed"
+        trigger_ids::SOURCE_INPUT_RENAMED
     }
 
     fn category(&self) -> TriggerCategory {
@@ -73,7 +73,7 @@ impl TriggerKindDescriptor for SourceInputRenamedDescriptor {
             .and_then(|v| v.as_str())
         {
             stack = stack.set(
-                "obs.source.name_old".to_owned(),
+                variables::source::NAME_OLD.to_owned(),
                 Variant::String(name.to_owned()),
             );
         }
@@ -83,7 +83,7 @@ impl TriggerKindDescriptor for SourceInputRenamedDescriptor {
             .and_then(|v| v.as_str())
         {
             stack = stack.set(
-                "obs.source.name_new".to_owned(),
+                variables::source::NAME_NEW.to_owned(),
                 Variant::String(name.to_owned()),
             );
         }
@@ -94,13 +94,13 @@ impl TriggerKindDescriptor for SourceInputRenamedDescriptor {
         Some(VariableSchema {
             variables: vec![
                 DeclaredVariable {
-                    name: "obs.source.name_old".to_owned(),
+                    name: variables::source::NAME_OLD.to_owned(),
                     kind: VariantKind::String,
                     label: "Old source name".to_owned(),
                     synthesis: None,
                 },
                 DeclaredVariable {
-                    name: "obs.source.name_new".to_owned(),
+                    name: variables::source::NAME_NEW.to_owned(),
                     kind: VariantKind::String,
                     label: "New source name".to_owned(),
                     synthesis: None,

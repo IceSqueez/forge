@@ -1,4 +1,3 @@
-use crate::event_kinds;
 use std::collections::BTreeMap;
 
 use forge_events::{Event, EventSource};
@@ -10,13 +9,14 @@ use forge_types::{
 };
 
 use super::audio_source_mute_changed::source_name_matches;
-use crate::payload_fields::audio as fields;
+use crate::vocabulary::fields::audio as fields;
+use crate::vocabulary::{event_kinds, picker_keys, trigger_ids, variables};
 
 pub struct AudioSourceBalanceChangedDescriptor;
 
 impl TriggerKindDescriptor for AudioSourceBalanceChangedDescriptor {
     fn id(&self) -> &str {
-        "obs.audio.source_balance_changed"
+        trigger_ids::AUDIO_SOURCE_BALANCE_CHANGED
     }
 
     fn category(&self) -> TriggerCategory {
@@ -54,7 +54,7 @@ impl TriggerKindDescriptor for AudioSourceBalanceChangedDescriptor {
             inner: Box::new(FormField::DynamicSelect {
                 key: "source_name",
                 label: "Source name",
-                options_key: "obs.audio_input_names",
+                options_key: picker_keys::AUDIO_INPUT_NAMES,
             }),
         }]
     }
@@ -88,12 +88,15 @@ impl TriggerKindDescriptor for AudioSourceBalanceChangedDescriptor {
             .and_then(|v| v.as_str())
         {
             stack = stack.set(
-                "obs.source.name".to_owned(),
+                variables::source::NAME.to_owned(),
                 Variant::String(name.to_owned()),
             );
         }
         if let Some(balance) = event.payload.get(fields::BALANCE).and_then(|v| v.as_f64()) {
-            stack = stack.set("obs.source.balance".to_owned(), Variant::Float(balance));
+            stack = stack.set(
+                variables::source::BALANCE.to_owned(),
+                Variant::Float(balance),
+            );
         }
         stack
     }
@@ -102,13 +105,13 @@ impl TriggerKindDescriptor for AudioSourceBalanceChangedDescriptor {
         Some(VariableSchema {
             variables: vec![
                 DeclaredVariable {
-                    name: "obs.source.name".to_owned(),
+                    name: variables::source::NAME.to_owned(),
                     kind: VariantKind::String,
                     label: "Source name".to_owned(),
                     synthesis: None,
                 },
                 DeclaredVariable {
-                    name: "obs.source.balance".to_owned(),
+                    name: variables::source::BALANCE.to_owned(),
                     kind: VariantKind::Float,
                     label: "Source balance".to_owned(),
                     synthesis: None,

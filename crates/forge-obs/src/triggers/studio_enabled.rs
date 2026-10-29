@@ -1,4 +1,3 @@
-use crate::event_kinds;
 use std::collections::BTreeMap;
 
 use forge_events::{Event, EventSource};
@@ -9,11 +8,13 @@ use forge_types::{
     ArgStack, DeclaredVariable, TriggerConfig, VariableSchema, Variant, VariantKind,
 };
 
+use crate::vocabulary::{event_kinds, trigger_ids, variables};
+
 pub struct StudioEnabledDescriptor;
 
 impl TriggerKindDescriptor for StudioEnabledDescriptor {
     fn id(&self) -> &str {
-        "obs.studio.enabled"
+        trigger_ids::STUDIO_ENABLED
     }
 
     fn category(&self) -> TriggerCategory {
@@ -76,7 +77,7 @@ impl TriggerKindDescriptor for StudioEnabledDescriptor {
 
 pub(crate) fn studio_variables() -> Vec<DeclaredVariable> {
     vec![DeclaredVariable {
-        name: "obs.studio.enabled".to_owned(),
+        name: variables::studio::ENABLED.to_owned(),
         kind: VariantKind::Bool,
         label: "Studio mode enabled".to_owned(),
         synthesis: None,
@@ -86,7 +87,7 @@ pub(crate) fn studio_variables() -> Vec<DeclaredVariable> {
 pub(crate) fn build_studio_arg_stack(event: &Event) -> ArgStack {
     let mut stack = ArgStack::new();
     stack = stack.set(
-        "obs.studio.enabled".to_owned(),
+        variables::studio::ENABLED.to_owned(),
         Variant::Bool(event.kind == event_kinds::STUDIO_ENABLED),
     );
     stack

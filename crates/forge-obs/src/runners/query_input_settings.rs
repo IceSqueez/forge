@@ -6,12 +6,16 @@ use async_trait::async_trait;
 use forge_registry::runner::SubActionConfig;
 use forge_registry::{
     ConfigReason, FormField, RegistryError, RunContext, SubActionCategory, SubActionConfigExt,
-    SubActionRunner,
+    SubActionIo, SubActionRunner,
 };
 use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, Variant};
 use time::OffsetDateTime;
 
 use crate::ObsSink;
+use crate::vocabulary::fields::query;
+use crate::vocabulary::{sub_action_ids, variables};
+
+const KIND_ID: &str = sub_action_ids::SOURCE_GET_INPUT_SETTINGS;
 
 pub struct QueryInputSettingsRunner {
     sink: Arc<dyn ObsSink>,
@@ -26,7 +30,7 @@ impl QueryInputSettingsRunner {
 #[async_trait]
 impl SubActionRunner for QueryInputSettingsRunner {
     fn id(&self) -> &str {
-        "obs.sources.get_input_settings"
+        KIND_ID
     }
 
     fn category(&self) -> SubActionCategory {
@@ -75,6 +79,16 @@ impl SubActionRunner for QueryInputSettingsRunner {
         }
     }
 
+    fn scope_io(&self) -> SubActionIo {
+        SubActionIo {
+            fixed_outputs: vec![
+                variables::input_query::SETTINGS.to_owned(),
+                variables::input_query::KIND.to_owned(),
+            ],
+            ..SubActionIo::default()
+        }
+    }
+
     async fn execute(
         &self,
         config: &SubActionConfig,
@@ -88,20 +102,20 @@ impl SubActionRunner for QueryInputSettingsRunner {
 
         match self.sink.get_input_settings(&source).await {
             Ok(variant) => {
-                let mut stack = ArgStack::new();
+                let mut stack = ctx.arg_stack.clone();
                 if let Variant::Object(ref map) = variant {
-                    if let Some(v) = map.get("settings") {
-                        stack = stack.set("obs.input.settings".to_owned(), v.clone());
+                    if let Some(v) = map.get(query::SETTINGS) {
+                        stack = stack.set(variables::input_query::SETTINGS.to_owned(), v.clone());
                     }
-                    if let Some(v) = map.get("kind") {
-                        stack = stack.set("obs.input.kind".to_owned(), v.clone());
+                    if let Some(v) = map.get(query::KIND) {
+                        stack = stack.set(variables::input_query::KIND.to_owned(), v.clone());
                     }
                 }
                 (
                     SubActionTelemetry {
                         args_in: ::std::collections::BTreeMap::new(),
                         produced: ::std::collections::BTreeMap::new(),
-                        kind: "obs.sources.get_input_settings".to_owned(),
+                        kind: KIND_ID.to_owned(),
                         started_at,
                         duration_ms: start.elapsed().as_millis() as u64,
                         outcome: SubActionOutcome::Success,
@@ -114,7 +128,7 @@ impl SubActionRunner for QueryInputSettingsRunner {
                 SubActionTelemetry {
                     args_in: ::std::collections::BTreeMap::new(),
                     produced: ::std::collections::BTreeMap::new(),
-                    kind: "obs.sources.get_input_settings".to_owned(),
+                    kind: KIND_ID.to_owned(),
                     started_at,
                     duration_ms: start.elapsed().as_millis() as u64,
                     outcome: SubActionOutcome::Failed(e.to_string()),

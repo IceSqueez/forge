@@ -1,4 +1,3 @@
-use crate::event_kinds;
 use std::collections::BTreeMap;
 
 use forge_events::{Event, EventSource};
@@ -9,13 +8,14 @@ use forge_types::{
     ArgStack, DeclaredVariable, TriggerConfig, VariableSchema, Variant, VariantKind,
 };
 
-use crate::payload_fields::streaming as fields;
+use crate::vocabulary::fields::streaming as fields;
+use crate::vocabulary::{event_kinds, trigger_ids, variables};
 
 pub struct StreamStartingDescriptor;
 
 impl TriggerKindDescriptor for StreamStartingDescriptor {
     fn id(&self) -> &str {
-        "obs.stream.starting"
+        trigger_ids::STREAMING_STARTING
     }
 
     fn category(&self) -> TriggerCategory {
@@ -79,13 +79,13 @@ impl TriggerKindDescriptor for StreamStartingDescriptor {
 pub(crate) fn stream_variables() -> Vec<DeclaredVariable> {
     vec![
         DeclaredVariable {
-            name: "obs.stream.output_state".to_owned(),
+            name: variables::streaming::OUTPUT_STATE.to_owned(),
             kind: VariantKind::String,
             label: "Streaming output state".to_owned(),
             synthesis: None,
         },
         DeclaredVariable {
-            name: "obs.stream.is_active".to_owned(),
+            name: variables::streaming::IS_ACTIVE.to_owned(),
             kind: VariantKind::Bool,
             label: "Streaming active".to_owned(),
             synthesis: None,
@@ -97,7 +97,7 @@ pub(crate) fn build_stream_arg_stack(event: &Event) -> ArgStack {
     let mut stack = ArgStack::new();
     if let Some(s) = event.kind.rsplit('.').next() {
         stack = stack.set(
-            "obs.stream.output_state".to_owned(),
+            variables::streaming::OUTPUT_STATE.to_owned(),
             Variant::String(s.to_owned()),
         );
     }
@@ -106,7 +106,7 @@ pub(crate) fn build_stream_arg_stack(event: &Event) -> ArgStack {
         .get(fields::IS_ACTIVE)
         .and_then(|v| v.as_bool())
     {
-        stack = stack.set("obs.stream.is_active".to_owned(), Variant::Bool(b));
+        stack = stack.set(variables::streaming::IS_ACTIVE.to_owned(), Variant::Bool(b));
     }
     stack
 }

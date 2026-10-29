@@ -111,12 +111,12 @@ impl Gateway {
                 request,
                 first,
                 first_builder,
-                Some(STREAMING_READ_IDLE_BUDGET),
+                Some(self.inner.profile.timings.streaming_read_idle),
             )
             .await?;
         let status = response.status();
         let headers = collect_headers(&response);
-        let body = IdleBoundedBody::new(response, STREAMING_READ_IDLE_BUDGET);
+        let body = IdleBoundedBody::new(response, self.inner.profile.timings.streaming_read_idle);
         if !status.is_success() && !request.any_status_as_data {
             return Err(self.refusal(request, status, &headers, body).await.into());
         }

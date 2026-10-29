@@ -57,6 +57,27 @@ impl From<DataApiError> for FetchFailure {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct ChatPollTimings {
+    pub poll_floor: Duration,
+    pub long_interval: Duration,
+    pub broadcast_cadence: Duration,
+}
+
+impl ChatPollTimings {
+    pub const DEFAULT: Self = Self {
+        poll_floor: Duration::from_millis(POLL_FLOOR_MS),
+        long_interval: Duration::from_millis(LONG_INTERVAL_MS),
+        broadcast_cadence: Duration::from_secs(BROADCAST_CADENCE_SECS),
+    };
+}
+
+impl Default for ChatPollTimings {
+    fn default() -> Self {
+        Self::DEFAULT
+    }
+}
+
 struct ChatMessagesResponse {
     items: Vec<serde_json::Value>,
     next_page_token: Option<String>,
@@ -73,6 +94,7 @@ pub struct YoutubeChatPoller {
     active_broadcast_id: ActiveBroadcastIdHandle,
     ban_ledger: Arc<dyn BanLedgerRepo>,
     health_reporter: Option<PollHealthReporter>,
+    timings: ChatPollTimings,
 }
 
 impl YoutubeChatPoller {
@@ -96,7 +118,13 @@ impl YoutubeChatPoller {
             active_broadcast_id,
             ban_ledger,
             health_reporter: None,
+            timings: ChatPollTimings::DEFAULT,
         }
+    }
+
+    pub fn with_timings(mut self, timings: ChatPollTimings) -> Self {
+        self.timings = timings;
+        self
     }
 
     pub(crate) fn with_health_reporter(mut self, reporter: PollHealthReporter) -> Self {
@@ -130,7 +158,7 @@ impl YoutubeChatPoller {
                         crate::error_shape::redact_platform_error(&e)
                     );
                     tokio::select! {
-                        () = tokio::time::sleep(Duration::from_secs(BROADCAST_CADENCE_SECS)) => {}
+                        () = tokio::time::sleep(self.timings.broadcast_cadence) => {}
                         () = cancel.cancelled() => return Ok(()),
                     }
                     continue 'outer;
@@ -164,7 +192,7 @@ impl YoutubeChatPoller {
                         }
                     }
                     tokio::select! {
-                        () = tokio::time::sleep(Duration::from_secs(BROADCAST_CADENCE_SECS)) => {}
+                        () = tokio::time::sleep(self.timings.broadcast_cadence) => {}
                         () = cancel.cancelled() => return Ok(()),
                     }
                     continue 'outer;
@@ -176,7 +204,7 @@ impl YoutubeChatPoller {
                         PlatformError::QuotaExhausted
                     );
                     tokio::select! {
-                        () = tokio::time::sleep(Duration::from_secs(BROADCAST_CADENCE_SECS)) => {}
+                        () = tokio::time::sleep(self.timings.broadcast_cadence) => {}
                         () = cancel.cancelled() => return Ok(()),
                     }
                     continue 'outer;
@@ -188,7 +216,7 @@ impl YoutubeChatPoller {
                     last_seen_title = None;
                     tracing::warn!("broadcast resolution failed: {e}");
                     tokio::select! {
-                        () = tokio::time::sleep(Duration::from_secs(BROADCAST_CADENCE_SECS)) => {}
+                        () = tokio::time::sleep(self.timings.broadcast_cadence) => {}
                         () = cancel.cancelled() => return Ok(()),
                     }
                     continue 'outer;
@@ -242,7 +270,7 @@ impl YoutubeChatPoller {
                     return Ok(());
                 }
 
-                if broadcast_resolved_at.elapsed() >= Duration::from_secs(BROADCAST_CADENCE_SECS) {
+                if broadcast_resolved_at.elapsed() >= self.timings.broadcast_cadence {
                     break 'inner;
                 }
 
@@ -287,7 +315,7 @@ impl YoutubeChatPoller {
                             PlatformError::QuotaExhausted
                         );
                         tokio::select! {
-                            () = tokio::time::sleep(Duration::from_secs(BROADCAST_CADENCE_SECS)) => {}
+                            () = tokio::time::sleep(self.timings.broadcast_cadence) => {}
                             () = cancel.cancelled() => return Ok(()),
                         }
                         break 'inner;
@@ -346,7 +374,7 @@ impl YoutubeChatPoller {
 
             tokio::select! {
                 () = tokio::time::sleep_until(
-                    broadcast_resolved_at + Duration::from_secs(BROADCAST_CADENCE_SECS)
+                    broadcast_resolved_at + self.timings.broadcast_cadence
                 ) => {}
                 () = cancel.cancelled() => return Ok(()),
             }
@@ -391,9 +419,9 @@ impl YoutubeChatPoller {
             .await
             .long_interval_mode(today_pacific())
         {
-            Duration::from_millis(LONG_INTERVAL_MS)
+            self.timings.long_interval
         } else {
-            Duration::from_millis(POLL_FLOOR_MS)
+            self.timings.poll_floor
         }
     }
 

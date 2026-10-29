@@ -11,6 +11,7 @@ mod response_body;
 mod secret;
 mod streaming;
 mod target;
+mod timings;
 mod user_directed;
 
 use std::fmt;
@@ -41,10 +42,13 @@ pub use streaming::{
     STREAMING_CONNECT_BUDGET, STREAMING_READ_IDLE_BUDGET, StreamFailure, StreamedResponse,
 };
 pub use target::GatewayBuildError;
+pub use timings::GatewayTimings;
 
 use crate::address_guard::{PublicAddressResolver, host_rejection_cause};
 use crate::body_read::{BodySource, CappedReadError, TruncatedBody, read_capped, read_truncated};
-use crate::rate_limit::{RateLimitUsage, RateLimiter, acquire_or_wait, acquire_without_wait};
+use crate::rate_limit::{
+    RateLimitUsage, RateLimiter, acquire_or_wait_within, acquire_without_wait,
+};
 use classify::{ERROR_BODY_READ_CAP, excerpt_of, status_failure, throttle_for};
 use request::{BodyRepr, FieldValue, PartContent, Target};
 use response_body::ResponseBody;
@@ -186,7 +190,9 @@ impl Gateway {
         let first = self.first_hop(request)?;
         let first_builder = self.build_hop(client, request, &first)?;
         self.acquire_budget(request).await?;
-        let budget = request.total_budget.unwrap_or(class.total_budget());
+        let budget = request
+            .total_budget
+            .unwrap_or(self.inner.profile.timings.total_budget(class));
         tokio::time::timeout(budget, async {
             let response = self
                 .follow(client, request, first, first_builder, None)
@@ -205,9 +211,13 @@ impl Gateway {
     async fn acquire_budget(&self, request: &GatewayRequest) -> Result<(), GatewayFailure> {
         let limiter = self.inner.limiter.as_ref();
         let refused = if request.wait_for_limiter {
-            acquire_or_wait(limiter, request.weight)
-                .await
-                .map_err(|_| None)
+            acquire_or_wait_within(
+                limiter,
+                request.weight,
+                self.inner.profile.timings.max_throttle_wait,
+            )
+            .await
+            .map_err(|_| None)
         } else {
             acquire_without_wait(limiter, request.weight).await
         };
@@ -339,8 +349,11 @@ impl Gateway {
         if let Some(client) = slot.as_ref() {
             return Ok(client.clone());
         }
-        let client = build_client(&self.inner.profile, STREAMING_CONNECT_BUDGET)
-            .map_err(GatewayFailure::Transport)?;
+        let client = build_client(
+            &self.inner.profile,
+            self.inner.profile.timings.streaming_connect,
+        )
+        .map_err(GatewayFailure::Transport)?;
         *slot = Some(client.clone());
         Ok(client)
     }

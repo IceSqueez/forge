@@ -28,16 +28,17 @@ pub use dedup::DedupSet;
 pub use gateway::{
     BodyExcerpt, CallClass, Credential, DecodeCategory, EgressKind, ExpectedRefusal,
     FailureContext, FailureObserver, FormBody, Gateway, GatewayBuildError, GatewayFailure,
-    GatewayProfile, GatewayRequest, GatewayResponse, InvalidRequest, Method, MultipartBody,
-    RedirectRefusal, RequestBody, RequestEncodeError, ResolvedTarget, ResponseDecodeError,
-    STREAMING_CONNECT_BUDGET, STREAMING_READ_IDLE_BUDGET, Secret, StreamFailure, StreamedResponse,
-    TransportFailure, TransportKind,
+    GatewayProfile, GatewayRequest, GatewayResponse, GatewayTimings, InvalidRequest, Method,
+    MultipartBody, RedirectRefusal, RequestBody, RequestEncodeError, ResolvedTarget,
+    ResponseDecodeError, STREAMING_CONNECT_BUDGET, STREAMING_READ_IDLE_BUDGET, Secret,
+    StreamFailure, StreamedResponse, TransportFailure, TransportKind,
 };
 pub use header_lookup::HeaderLookup;
 pub use header_value::is_valid_header_value;
 pub use rate_limit::{
     DEFAULT_RETRY_AFTER_SECS, MAX_ACQUIRE_ATTEMPTS, MAX_THROTTLE_WAIT, RateLimitError,
     RateLimitOutcome, RateLimitUsage, RateLimiter, TokenBucketRateLimiter, acquire_or_wait,
+    acquire_or_wait_within,
 };
 pub use status_reason::canonical_status_reason;
 pub use throttle_hint::{

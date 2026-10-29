@@ -4,7 +4,7 @@ use std::time::{Duration, Instant};
 use forge_events::EventPublisher;
 use forge_net::{
     CallClass, Gateway, GatewayFailure, GatewayProfile, GatewayRequest, GatewayResponse,
-    HeaderLookup, MAX_THROTTLE_WAIT, Method, MultipartBody, RequestBody, ThrottleHintFamily,
+    GatewayTimings, HeaderLookup, Method, MultipartBody, RequestBody, ThrottleHintFamily,
     ThrottleScope,
 };
 use forge_platform_core::ConnectionState;
@@ -78,12 +78,21 @@ impl DiscordClient {
         publisher: Arc<dyn EventPublisher>,
         creds: Arc<dyn CredentialsRepo>,
     ) -> Result<Arc<Self>, DiscordError> {
+        Self::with_timings(api_base, publisher, creds, GatewayTimings::DEFAULT)
+    }
+
+    pub fn with_timings(
+        api_base: &str,
+        publisher: Arc<dyn EventPublisher>,
+        creds: Arc<dyn CredentialsRepo>,
+        timings: GatewayTimings,
+    ) -> Result<Arc<Self>, DiscordError> {
         let rate_limiter: SharedDiscordRateLimiter =
             Arc::new(Mutex::new(DiscordRateLimiter::new()));
         let gateway = Gateway::new(
             api_base,
             Arc::new(GlobalThrottleGate::new(Arc::clone(&rate_limiter))),
-            DISCORD_GATEWAY_PROFILE,
+            DISCORD_GATEWAY_PROFILE.with_timings(timings),
             None,
         )
         .map_err(|e| DiscordError::Connect(e.to_string()))?;
@@ -361,7 +370,7 @@ impl DiscordClient {
             webhook_name,
             retry_after.as_secs_f64(),
         );
-        if retry_after > MAX_THROTTLE_WAIT {
+        if retry_after > self.gateway.profile().timings.max_throttle_wait {
             return Err(self.rate_limited(webhook_name, retry_after, start, record));
         }
 

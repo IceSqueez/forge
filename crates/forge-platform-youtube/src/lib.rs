@@ -44,7 +44,7 @@ pub use auth::{
 pub use builtin::{YoutubeIntegrationBundle, register_youtube_triggers};
 pub use channel_lookup::YoutubeChannelLookup;
 pub use chat_platform::YoutubePlatform;
-pub use chat_poller::YoutubeChatPoller;
+pub use chat_poller::{ChatPollTimings, YoutubeChatPoller};
 pub use credentials::{CREDENTIAL_KEY, YoutubeBroadcaster, YoutubeCredentials};
 pub use credentials_manager::YoutubeCredentialsManager;
 pub use data_api::YoutubeDataApi;

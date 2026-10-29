@@ -1,6 +1,7 @@
 use std::time::Duration;
 
 use super::call_class::CallClass;
+use super::timings::GatewayTimings;
 use crate::rate_limit::DEFAULT_RETRY_AFTER_SECS;
 use crate::throttle_hint::ThrottleHintFamily;
 
@@ -19,6 +20,7 @@ pub struct GatewayProfile {
     pub hint_family: ThrottleHintFamily,
     pub no_hint_default: Duration,
     pub egress: EgressKind,
+    pub timings: GatewayTimings,
 }
 
 impl GatewayProfile {
@@ -32,6 +34,7 @@ impl GatewayProfile {
             hint_family,
             no_hint_default,
             egress: EgressKind::PlatformApi,
+            timings: GatewayTimings::DEFAULT,
         }
     }
 
@@ -41,6 +44,7 @@ impl GatewayProfile {
             hint_family: ThrottleHintFamily::RetryAfter,
             no_hint_default: USER_DIRECTED_NO_HINT_WAIT,
             egress: EgressKind::UserDirected { allow_local },
+            timings: GatewayTimings::DEFAULT,
         }
     }
 
@@ -54,7 +58,13 @@ impl GatewayProfile {
             hint_family,
             no_hint_default,
             egress: EgressKind::TrustedAbsolute,
+            timings: GatewayTimings::DEFAULT,
         }
+    }
+
+    pub const fn with_timings(mut self, timings: GatewayTimings) -> Self {
+        self.timings = timings;
+        self
     }
 
     pub const fn accepts_absolute_urls(&self) -> bool {

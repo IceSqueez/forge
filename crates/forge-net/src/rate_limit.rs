@@ -40,6 +40,14 @@ pub const MAX_ACQUIRE_ATTEMPTS: u32 = 3;
 pub const DEFAULT_RETRY_AFTER_SECS: u32 = 30;
 
 pub async fn acquire_or_wait(limiter: &dyn RateLimiter, weight: u32) -> Result<(), RateLimitError> {
+    acquire_or_wait_within(limiter, weight, MAX_THROTTLE_WAIT).await
+}
+
+pub async fn acquire_or_wait_within(
+    limiter: &dyn RateLimiter,
+    weight: u32,
+    max_wait: Duration,
+) -> Result<(), RateLimitError> {
     let mut waited = Duration::ZERO;
     let mut attempts = 0;
     loop {
@@ -47,10 +55,10 @@ pub async fn acquire_or_wait(limiter: &dyn RateLimiter, weight: u32) -> Result<(
             RateLimitOutcome::Granted => return Ok(()),
             RateLimitOutcome::Throttled { wait_for } => {
                 attempts += 1;
-                if attempts >= MAX_ACQUIRE_ATTEMPTS || waited >= MAX_THROTTLE_WAIT {
+                if attempts >= MAX_ACQUIRE_ATTEMPTS || waited >= max_wait {
                     return Err(RateLimitError::Exhausted);
                 }
-                let sleep_for = wait_for.min(MAX_THROTTLE_WAIT);
+                let sleep_for = wait_for.min(max_wait);
                 tokio::time::sleep(sleep_for).await;
                 waited += sleep_for;
             }

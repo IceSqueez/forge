@@ -556,7 +556,7 @@ mod tests {
 
     impl Harness {
         fn spawn(self) -> (Arc<SpeakQueueHandle>, forge_speak_queue::SpeakEventStream) {
-            let resolver = forge_voice::VoiceAliasResolver::new(
+            let resolver = forge_speak_queue::VoiceAliasResolver::new(
                 self.aliases,
                 forge_speech_types::AssignmentStrategy::DeterministicByName,
                 forge_speech_types::IgnoreProfile::default(),

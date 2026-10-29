@@ -5,6 +5,7 @@ use std::time::Duration;
 use async_trait::async_trait;
 use forge_audio::{AudioError, AudioSink};
 use forge_events::{Event, EventPublisher};
+use forge_speak_queue::VoiceAliasResolver;
 use forge_speak_queue::{
     Priority, QueueConfig, QueueDeps, RequestId, SpeakCommand, SpeakEvent, SpeakEventStream,
     SpeakRequest,
@@ -16,7 +17,6 @@ use forge_tts_core::{
     EngineCapabilities, SynthesisRequest, TtsEngine, TtsEngineFactory, TtsError, TtsRegistry,
 };
 use forge_types::EventId;
-use forge_voice::VoiceAliasResolver;
 use tokio::sync::Notify;
 
 const ENGINE: &str = "gated";

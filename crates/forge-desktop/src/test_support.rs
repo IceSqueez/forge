@@ -1690,7 +1690,7 @@ pub(crate) fn quiet_bus(rt: &tokio::runtime::Runtime) -> Arc<EventBus> {
     rt.block_on(async { EventBus::new(Arc::new(StubEventLog)) })
 }
 
-pub(crate) type LiveAliases = Arc<std::sync::RwLock<forge_voice::VoiceAliasResolver>>;
+pub(crate) type LiveAliases = Arc<std::sync::RwLock<forge_speak_queue::VoiceAliasResolver>>;
 
 struct SilentPublisher;
 
@@ -1706,7 +1706,7 @@ pub(crate) fn spawn_speak_queue(
     LiveAliases,
 ) {
     let resolver = Arc::new(std::sync::RwLock::new(
-        forge_voice::VoiceAliasResolver::new(
+        forge_speak_queue::VoiceAliasResolver::new(
             aliases,
             forge_speech_types::AssignmentStrategy::DeterministicByName,
             forge_speech_types::IgnoreProfile::default(),
@@ -1736,7 +1736,7 @@ pub(crate) fn live_alias(
     resolver
         .read()
         .expect("resolver lock")
-        .aliases
+        .aliases()
         .iter()
         .find(|alias| alias.viewer_id == viewer_id)
         .cloned()

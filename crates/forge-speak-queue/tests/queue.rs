@@ -4,6 +4,7 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use forge_audio::{AudioError, AudioSink};
 use forge_events::{Event, EventPublisher};
+use forge_speak_queue::VoiceAliasResolver;
 use forge_speak_queue::{
     Priority, QueueConfig, QueueDeps, RequestId, SpeakCommand, SpeakEvent, SpeakRequest,
 };
@@ -14,7 +15,6 @@ use forge_tts_core::{
     EngineCapabilities, SynthesisRequest, TtsEngine, TtsEngineFactory, TtsError, TtsRegistry,
 };
 use forge_types::EventId;
-use forge_voice::VoiceAliasResolver;
 
 const HANG_GUARD_MS: u64 = 30_000;
 

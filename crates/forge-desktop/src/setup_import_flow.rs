@@ -417,7 +417,9 @@ mod tests {
     use crate::restore_problem::RestoreProblem;
     use crate::setup_confirm::{SetupCount, SetupPart};
     use crate::test_support::pack_flow::{PackWorld, pack_world, queue_named, seed_queued_action};
-    use crate::test_support::{install_presentation, runtime, worker_runtime};
+    use crate::test_support::{
+        alive_tasks, install_presentation, runtime, wait_until_worker_drains_to, worker_runtime,
+    };
     use forge_components::tr;
 
     const SETTLE_DEADLINE: Duration = Duration::from_secs(30);
@@ -831,17 +833,22 @@ mod tests {
         install_language(Language::Uk);
         let junk = rig.world.data_dir().join("junk.forgebundle");
         std::fs::write(&junk, b"not a bundle").unwrap();
+        let background_tasks = alive_tasks(&rig.rt);
 
         rig.flow.update(cx, |flow, cx| flow.open(junk, cx));
-        settle_until(cx, &rig, |cx| step(cx, &rig) == "idle");
+        wait_until_worker_drains_to(&rig.rt, background_tasks);
+        cx.run_until_parked();
 
         let messages: Vec<String> = toasts(cx).into_iter().map(|toast| toast.1).collect();
         assert_eq!(
-            messages,
-            vec![tr!(
-                "home_import_failed",
-                error = RestoreProblem::NotABundle.message()
-            )]
+            (step(cx, &rig), messages),
+            (
+                "idle",
+                vec![tr!(
+                    "home_import_failed",
+                    error = RestoreProblem::NotABundle.message()
+                )]
+            )
         );
     }
 }

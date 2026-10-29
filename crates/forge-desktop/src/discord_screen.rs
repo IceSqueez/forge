@@ -1109,8 +1109,8 @@ mod tests {
     use crate::i18n::install_language;
     use crate::navigation::Screen;
     use crate::test_support::{
-        StubActions, hub_crumb_targets, install_presentation, quiet_bus, runtime, test_backend,
-        worker_runtime,
+        StubActions, alive_tasks, hub_crumb_targets, install_presentation, quiet_bus, runtime,
+        test_backend, wait_until_worker_drains_to, worker_runtime,
     };
 
     #[gpui::test]
@@ -1212,7 +1212,6 @@ mod tests {
         let addr = listener
             .local_addr()
             .expect("a bound listener has an address");
-        let posted = rt.spawn(first_posted_body(listener));
         let creds = webhook_pointing_at("https://discord.com/api/webhooks/1/token".to_owned());
         let client = {
             let _entered = rt.enter();
@@ -1223,6 +1222,8 @@ mod tests {
             )
             .expect("the discord gateway builds")
         };
+        let background_tasks = alive_tasks(&rt);
+        let posted = rt.spawn(first_posted_body(listener));
         install_language(Language::Uk);
         install_presentation(cx);
         cx.update(|cx| cx.set_global(forge_components::Toasts::new()));
@@ -1235,6 +1236,8 @@ mod tests {
 
         view.update(cx, |view, cx| view.test_webhook("alerts".to_owned(), cx));
         let body = rt.block_on(posted).ok().flatten();
+        wait_until_worker_drains_to(&rt, background_tasks);
+        cx.run_until_parked();
 
         assert_eq!(
             body.map(|body| body["content"].clone()),

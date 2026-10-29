@@ -38,6 +38,8 @@ use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender, unbounded_channel};
 pub(crate) use memory_scripts::MemoryScripts;
 
 const RUNTIME_PUMPS: usize = 8;
+const WORKER_DRAIN_DEADLINE: std::time::Duration = std::time::Duration::from_secs(30);
+const WORKER_DRAIN_POLL: std::time::Duration = std::time::Duration::from_millis(1);
 
 pub(crate) type SettingWrite = (String, String);
 
@@ -957,6 +959,22 @@ pub(crate) fn worker_runtime() -> tokio::runtime::Runtime {
         .enable_all()
         .build()
         .expect("multi-thread runtime")
+}
+
+pub(crate) fn alive_tasks(rt: &tokio::runtime::Runtime) -> usize {
+    rt.metrics().num_alive_tasks()
+}
+
+pub(crate) fn wait_until_worker_drains_to(rt: &tokio::runtime::Runtime, background_tasks: usize) {
+    let deadline = std::time::Instant::now() + WORKER_DRAIN_DEADLINE;
+    while alive_tasks(rt) > background_tasks {
+        assert!(
+            std::time::Instant::now() < deadline,
+            "the worker runtime still runs {} tasks, {background_tasks} expected",
+            alive_tasks(rt)
+        );
+        std::thread::sleep(WORKER_DRAIN_POLL);
+    }
 }
 
 pub(crate) fn stored_shortcut_overrides(

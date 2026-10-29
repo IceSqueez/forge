@@ -29,7 +29,6 @@ members = [
   "crates/forge-audio",
   "crates/forge-soundboard",
   "crates/forge-tts-core",
-  "crates/forge-voice",
   "crates/forge-tts-pipeline",
   "crates/forge-tts-piper",
   "crates/forge-tts-espeak",

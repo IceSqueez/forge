@@ -3,6 +3,7 @@ mod catalog;
 mod emitter;
 mod filters;
 pub mod vocabulary;
+mod voice;
 
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
@@ -23,7 +24,7 @@ pub use forge_tts_core::TtsError;
 use forge_tts_core::TtsRegistry;
 pub use forge_tts_pipeline::EmoteTokenSet;
 use forge_types::Shared;
-use forge_voice::VoiceAliasResolver;
+pub use voice::{AliasKey, ResolveResult, VoiceAliasResolver, VoiceSkip};
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct RequestId(pub String);

@@ -3,6 +3,7 @@ use forge_components::{
     body_family, field_label, modal, mono_family, overlay, primary_button, secondary_button,
     segment, segmented, spacing, toggle, tr,
 };
+use forge_speak_queue::AliasKey;
 use forge_speech_types::{AliasId, VoiceAlias};
 use forge_speech_types::{AliasState, EngineId, VoiceId};
 use forge_types::PlatformId;
@@ -40,12 +41,6 @@ impl AliasScope {
         }
     }
 
-    pub(crate) fn from_token(token: &str) -> Option<AliasScope> {
-        AliasScope::ALL
-            .into_iter()
-            .find(|scope| scope.token() == Some(token))
-    }
-
     pub(crate) fn label(self) -> String {
         match self {
             AliasScope::Any => tr!("tts_aliases_platform_any"),
@@ -73,17 +68,8 @@ pub(crate) fn platform_scope(platform: PlatformId) -> AliasScope {
     }
 }
 
-pub(crate) fn split_alias_key(key: &str) -> (AliasScope, &str) {
-    key.split_once(':')
-        .and_then(|(token, name)| AliasScope::from_token(token).map(|scope| (scope, name)))
-        .unwrap_or((AliasScope::Any, key))
-}
-
-pub(crate) fn alias_key(scope: AliasScope, name: &str) -> String {
-    match scope.token() {
-        Some(token) => format!("{token}:{name}"),
-        None => name.to_owned(),
-    }
+pub(crate) fn alias_key_scope(key: &AliasKey) -> AliasScope {
+    key.platform.map_or(AliasScope::Any, platform_scope)
 }
 
 pub(crate) fn fmt_field(value: Option<f32>) -> String {
@@ -521,7 +507,7 @@ fn form_to_alias(form: &AliasForm, cx: &App) -> VoiceAlias {
         viewer_id: form
             .locked_key
             .clone()
-            .unwrap_or_else(|| alias_key(form.platform, &viewer)),
+            .unwrap_or_else(|| AliasKey::new(form.platform.kind(), &viewer).to_stored()),
         viewer_name: viewer,
         engine_id: EngineId(engine),
         voice_id: VoiceId(voice),

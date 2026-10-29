@@ -7,6 +7,7 @@ use crate::vocabulary::{
     SpeakFinished, SpeakPaused, SpeakRejected, SpeakRemoved, SpeakReordered, SpeakResumed,
     SpeakSkipped, SpeakStarted,
 };
+use crate::voice::VoiceSkip;
 use crate::{Priority, RequestId, SpeakEvent, SpeakRequest};
 
 const USER_PAUSED: &str = "user paused";
@@ -297,16 +298,15 @@ pub(crate) fn pipeline_skip(
     }
 }
 
-pub(crate) fn resolver_skip(reason: &str) -> SkipReason {
-    match reason {
-        "blocked by alias" => SkipReason::BlockedByAlias,
-        "no voices available" => SkipReason::NoVoicesAvailable,
-        VOICE_OVERRIDE_NOT_FOUND => SkipReason::VoiceOverrideNotFound,
-        _ => SkipReason::VoiceResolutionFailed,
+impl From<VoiceSkip> for SkipReason {
+    fn from(skip: VoiceSkip) -> Self {
+        match skip {
+            VoiceSkip::BlockedByAlias => SkipReason::BlockedByAlias,
+            VoiceSkip::NoVoicesAvailable => SkipReason::NoVoicesAvailable,
+            VoiceSkip::VoiceOverrideNotFound => SkipReason::VoiceOverrideNotFound,
+        }
     }
 }
-
-pub(crate) const VOICE_OVERRIDE_NOT_FOUND: &str = "voice override not found in catalog";
 
 #[cfg(test)]
 mod tests {

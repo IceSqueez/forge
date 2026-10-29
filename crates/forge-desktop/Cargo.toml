@@ -55,7 +55,6 @@ forge-tts-pipeline = { path = "../forge-tts-pipeline" }
 forge-tts-sapi = { path = "../forge-tts-sapi" }
 forge-types = { path = "../forge-types" }
 forge-update = { path = "../forge-update" }
-forge-voice = { path = "../forge-voice" }
 forge-vtube = { path = "../forge-vtube" }
 fluent = { workspace = true }
 fluent-langneg = { workspace = true }

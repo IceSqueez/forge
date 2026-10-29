@@ -16,7 +16,7 @@ use forge_components::{
     with_alpha,
 };
 use forge_speak_queue::{
-    EmoteTokenSet, Priority, RequestId, SpeakCommand, SpeakQueueHandle, SpeakRequest,
+    AliasKey, EmoteTokenSet, Priority, RequestId, SpeakCommand, SpeakQueueHandle, SpeakRequest,
 };
 use forge_speech_types::AliasState;
 use forge_speech_types::{AliasId, AssignmentStrategy, VoiceAlias};
@@ -29,8 +29,7 @@ use gpui::{
 
 use crate::async_bridge::{self, Loadable, SnapshotWriter, WriteOutcome};
 use crate::voice_alias_form::{
-    AliasForm, AliasFormEvent, AliasIdentity, AliasScope, AliasValues, alias_key, fmt_field,
-    split_alias_key,
+    AliasForm, AliasFormEvent, AliasIdentity, AliasScope, AliasValues, alias_key_scope, fmt_field,
 };
 use crate::voice_alias_store::save_alias;
 use forge_components::ActivePresentation;
@@ -332,7 +331,8 @@ impl VoiceAliasesView {
         let Some(row) = self.row_by_id(id) else {
             return;
         };
-        let id_keyed = row.viewer_id != alias_key(row.platform, &row.viewer_name);
+        let id_keyed =
+            row.viewer_id != AliasKey::new(row.platform.kind(), &row.viewer_name).to_stored();
         let identity = AliasIdentity {
             key: row.viewer_id.clone(),
             name: row.viewer_name.clone(),
@@ -984,9 +984,11 @@ fn row_from_alias(a: VoiceAlias) -> AliasRow {
     let engine = a.engine_id.0;
     let engine_label = engine_display_name(&engine).to_owned();
     let voice = a.voice_id.0;
-    let (platform, _) = split_alias_key(&a.viewer_id);
-    let viewer_name = match a.viewer_name.split_once(':') {
-        Some((token, name)) if AliasScope::from_token(token) == Some(platform) => name.to_owned(),
+    let key = AliasKey::parse(&a.viewer_id);
+    let platform = alias_key_scope(&key);
+    let named = AliasKey::parse(&a.viewer_name);
+    let viewer_name = match named.platform {
+        Some(_) if named.platform == key.platform => named.handle,
         _ => a.viewer_name,
     };
     AliasRow {

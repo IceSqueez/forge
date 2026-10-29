@@ -4,7 +4,7 @@ use forge_types::{PlatformId, SubActionStep, Variant};
 
 use super::platform_gate::platform_integration;
 use crate::chat_author::{AuthorHandle, AuthorKey};
-use crate::voice_alias_form::{alias_key, platform_scope};
+use forge_speak_queue::AliasKey;
 
 const TWITCH_SHOUTOUT_KIND: &str = "twitch.channel.send_shoutout";
 const TWITCH_WHISPER_KIND: &str = "twitch.chat.send_whisper";
@@ -64,7 +64,7 @@ impl ViewerTarget {
             .as_deref()
             .map(str::trim)
             .filter(|id| !id.is_empty())?;
-        Some(alias_key(platform_scope(self.platform), id))
+        Some(AliasKey::new(Some(self.platform), id).to_stored())
     }
 
     pub fn builtin_id(&self) -> String {

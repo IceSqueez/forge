@@ -6,7 +6,9 @@ const PIPER_SYNTHESIS_TIMEOUT: Duration = Duration::from_secs(30);
 use forge_audio::{DeviceSink, OutputDeviceHandle, stored_output_device};
 use forge_events::EventPublisher;
 use forge_runtime::EventBus;
-use forge_speak_queue::{PipelineConfigHandle, QueueConfig, QueueDeps, SpeakEventStream};
+use forge_speak_queue::{
+    PipelineConfigHandle, QueueConfig, QueueDeps, SpeakEventStream, VoiceAliasResolver,
+};
 use forge_speech_types::EngineId;
 use forge_speech_types::{AssignmentStrategy, IgnoreProfile, SynthesisDefaults};
 use forge_storage::{CredentialsRepo, DataProvider};
@@ -16,7 +18,6 @@ use forge_tts_espeak::EspeakEngineFactory;
 use forge_tts_nsspeech::NsSpeechEngineFactory;
 use forge_tts_piper::{PiperEngine, PiperEngineFactory};
 use forge_tts_sapi::SapiEngineFactory;
-use forge_voice::VoiceAliasResolver;
 
 use crate::cloud_tts_boot::register_cloud_engines;
 
@@ -216,7 +217,7 @@ pub async fn build_speak_queue(
     let (engine_defaults, engine_gains) = load_engine_params(backend, &engine_ids).await;
 
     let mut resolver = load_resolver(backend).await;
-    resolver.engine_defaults = engine_defaults;
+    resolver.set_engine_defaults(engine_defaults);
     let resolver = Arc::new(std::sync::RwLock::new(resolver));
     let pipeline = PipelineConfigHandle::new(load_pipeline(backend).await);
     let disabled_engines = load_disabled_engines(backend).await;

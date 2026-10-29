@@ -6,7 +6,6 @@ use std::time::Duration;
 const PLAYBACK_PROGRESS_TICK: Duration = Duration::from_secs(1);
 
 use forge_audio::{AudioError, AudioSink};
-use forge_speech_types::LanguageCode;
 use forge_speech_types::PcmBuffer;
 use forge_speech_types::{EngineId, TtsVoice, VoiceId};
 use forge_tts_core::{SynthesisRequest, TtsError, engine_display_name};
@@ -15,12 +14,10 @@ use forge_types::Shared;
 
 use crate::catalog::{CATALOG_UPDATE_CAPACITY, CatalogUpdate, VoiceCatalogState};
 use crate::emitter::{
-    DetectedLanguage, EnqueuePreview, Outcome, ResolvedPlayback, SpeakEmitter,
-    VOICE_OVERRIDE_NOT_FOUND, pipeline_skip, resolver_skip,
+    DetectedLanguage, EnqueuePreview, Outcome, ResolvedPlayback, SpeakEmitter, pipeline_skip,
 };
 use crate::vocabulary::{FailureReason, HoldReason, RejectReason, SkipReason};
-use forge_speech_types::AliasState;
-use forge_voice::{ResolveResult, VoiceAliasResolver, candidate_languages, voice_speaks_language};
+use crate::voice::{ResolveResult, VoiceAliasResolver, candidate_languages, voice_speaks_language};
 
 use crate::{
     PipelineConfigHandle, Priority, QueueConfig, QueueDeps, QueuedOrderEntry, RequestId,
@@ -103,7 +100,7 @@ enum SynthOutcome {
 }
 
 struct SynthTaskDeps {
-    resolver: Arc<std::sync::RwLock<forge_voice::VoiceAliasResolver>>,
+    resolver: Arc<std::sync::RwLock<VoiceAliasResolver>>,
     pipeline: PipelineConfigHandle,
     registry: Arc<std::sync::RwLock<forge_tts_core::TtsRegistry>>,
     voice_catalog: Arc<Vec<TtsVoice>>,
@@ -154,12 +151,7 @@ async fn run_synthesis(
 
     let resolve_result = {
         let guard = deps.resolver.read().unwrap_or_else(|e| e.into_inner());
-        resolve_with_overrides(
-            &guard,
-            &req,
-            &deps.voice_catalog,
-            detected.as_ref().map(|d| d.code),
-        )
+        guard.resolve(&req, detected.as_ref().map(|d| d.code), &deps.voice_catalog)
     };
 
     let (voice_id, engine_id, pitch, rate) = match resolve_result {
@@ -173,7 +165,7 @@ async fn run_synthesis(
             return SynthTaskResult::new(
                 req,
                 SynthOutcome::Skipped {
-                    reason: resolver_skip(reason),
+                    reason: reason.into(),
                     detail: None,
                 },
             );
@@ -288,64 +280,6 @@ async fn detect_language(
             code: language,
             confidence,
         })
-}
-
-fn scope_to_engine(catalog: &[TtsVoice], engine_id: &EngineId) -> Vec<TtsVoice> {
-    catalog
-        .iter()
-        .filter(|v| &v.engine_id == engine_id)
-        .cloned()
-        .collect()
-}
-
-fn resolve_with_overrides(
-    resolver: &VoiceAliasResolver,
-    req: &SpeakRequest,
-    catalog: &[TtsVoice],
-    language: Option<LanguageCode>,
-) -> ResolveResult {
-    if let Some(voice_id) = &req.voice_override {
-        let engine_id = req.engine_override.clone().or_else(|| {
-            catalog
-                .iter()
-                .find(|v| &v.id == voice_id)
-                .map(|v| v.engine_id.clone())
-        });
-        return match engine_id {
-            Some(engine_id) => {
-                let engine_defaults = resolver.defaults_for(&engine_id);
-                ResolveResult::Speak {
-                    voice_id: voice_id.clone(),
-                    engine_id,
-                    pitch: engine_defaults.pitch_semitones,
-                    rate: engine_defaults.rate_multiplier,
-                }
-            }
-            None => ResolveResult::Skip {
-                reason: VOICE_OVERRIDE_NOT_FOUND,
-            },
-        };
-    }
-
-    let language_scoped = language.and_then(|code| {
-        let scoped: Vec<TtsVoice> = catalog
-            .iter()
-            .filter(|v| voice_speaks_language(v, code))
-            .cloned()
-            .collect();
-        (!scoped.is_empty()).then_some(scoped)
-    });
-    let candidates: &[TtsVoice] = language_scoped.as_deref().unwrap_or(catalog);
-
-    if let Some(engine_id) = &req.engine_override {
-        let mut scoped = scope_to_engine(candidates, engine_id);
-        if scoped.is_empty() {
-            scoped = scope_to_engine(catalog, engine_id);
-        }
-        return resolver.resolve(&req.viewer_id, &req.viewer_name, &scoped);
-    }
-
-    resolver.resolve(&req.viewer_id, &req.viewer_name, candidates)
 }
 
 fn queue_changed_event(
@@ -564,7 +498,7 @@ pub(crate) async fn run_actor(
                     Some(SpeakCommand::SetEngineParams(engine_id, defaults, gain)) => {
                         {
                             let mut guard = deps.resolver.write().unwrap_or_else(|e| e.into_inner());
-                            guard.engine_defaults.insert(engine_id.clone(), defaults);
+                            guard.set_engine_default(engine_id.clone(), defaults);
                         }
                         let mut next = (*engine_gains.load()).clone();
                         next.insert(engine_id, gain.clamp(0.0, 1.0));
@@ -885,7 +819,7 @@ fn enqueue_preview(req: &SpeakRequest, deps: &QueueDeps, catalog: &[TtsVoice]) -
         None => spoken_secs,
     };
     let guard = deps.resolver.read().unwrap_or_else(|e| e.into_inner());
-    let preview = match resolve_with_overrides(&guard, req, catalog, None) {
+    let preview = match guard.resolve(req, None, catalog) {
         ResolveResult::Speak {
             voice_id,
             engine_id,
@@ -1109,57 +1043,35 @@ fn handle_command(
             );
         }
         SpeakCommand::SetAlias(alias) => {
-            let mut guard = deps.resolver.write().unwrap_or_else(|e| e.into_inner());
-            if let Some(existing) = guard
-                .aliases
-                .iter_mut()
-                .find(|a| a.viewer_id == alias.viewer_id)
-            {
-                *existing = alias;
-            } else {
-                guard.aliases.push(alias);
-            }
+            deps.resolver
+                .write()
+                .unwrap_or_else(|e| e.into_inner())
+                .set_alias(alias);
         }
         SpeakCommand::SwitchAlias {
             viewer_id,
             engine_id,
             voice_id,
         } => {
-            let mut guard = deps.resolver.write().unwrap_or_else(|e| e.into_inner());
-            let scoped_key = viewer_id.to_lowercase();
-            let unscoped_key = scoped_key
-                .split_once(':')
-                .map_or(scoped_key.as_str(), |(_, name)| name);
-            let target = guard
-                .aliases
-                .iter()
-                .position(|a| a.viewer_id == viewer_id)
-                .or_else(|| {
-                    [scoped_key.as_str(), unscoped_key]
-                        .into_iter()
-                        .find_map(|key| {
-                            guard
-                                .aliases
-                                .iter()
-                                .position(|a| a.viewer_id.to_lowercase() == key)
-                        })
-                });
-            if let Some(existing) = target.map(|index| &mut guard.aliases[index]) {
-                existing.engine_id = engine_id;
-                existing.voice_id = voice_id;
-                existing.state = AliasState::Active;
-            }
+            deps.resolver
+                .write()
+                .unwrap_or_else(|e| e.into_inner())
+                .switch_alias(&viewer_id, engine_id, voice_id);
         }
         SpeakCommand::SetStrategy(strategy) => {
-            let mut guard = deps.resolver.write().unwrap_or_else(|e| e.into_inner());
-            guard.strategy = strategy;
+            deps.resolver
+                .write()
+                .unwrap_or_else(|e| e.into_inner())
+                .set_strategy(strategy);
         }
         SpeakCommand::SetVolume(volume) => {
             config.master_volume = volume.clamp(0.0, 1.0);
         }
         SpeakCommand::RemoveAlias(id) => {
-            let mut guard = deps.resolver.write().unwrap_or_else(|e| e.into_inner());
-            guard.aliases.retain(|a| a.id != id);
+            deps.resolver
+                .write()
+                .unwrap_or_else(|e| e.into_inner())
+                .remove_alias(&id);
         }
         SpeakCommand::RefreshVoiceCatalog
         | SpeakCommand::SetEngineEnabled(_, _)

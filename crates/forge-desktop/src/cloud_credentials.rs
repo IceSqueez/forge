@@ -68,12 +68,7 @@ impl CloudEngineKind {
     }
 
     pub fn display_name(self) -> &'static str {
-        match self {
-            CloudEngineKind::Azure => "Azure Speech",
-            CloudEngineKind::ElevenLabs => "ElevenLabs",
-            CloudEngineKind::OpenAI => "OpenAI TTS",
-            CloudEngineKind::Polly => "Amazon Polly",
-        }
+        forge_tts_core::engine_display_name(self.key())
     }
 
     pub fn from_engine_id(id: &str) -> Option<CloudEngineKind> {

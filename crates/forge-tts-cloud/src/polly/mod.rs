@@ -102,6 +102,10 @@ impl PollyEngineFactory {
 }
 
 impl forge_tts_core::TtsEngineFactory for PollyEngineFactory {
+    fn class(&self) -> forge_tts_core::EngineClass {
+        forge_tts_core::EngineClass::Cloud
+    }
+
     fn create(&self) -> Result<Box<dyn TtsEngine>, TtsError> {
         Ok(Box::new(PollyEngine::new(
             self.credentials.clone(),

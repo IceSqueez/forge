@@ -1387,15 +1387,25 @@ tts_engines_rail_sub = { $kind } · { $count ->
    *[other] { $count } голосів
 }
 
+## TTS Engines - класи рушіїв і типи голосів
+
+tts_engine_class_local = локальний
+tts_engine_class_system = системний
+tts_engine_class_cloud = хмарний
+tts_voice_kind_male = чоловічий
+tts_voice_kind_female = жіночий
+tts_voice_kind_neural = нейронний
+tts_voice_kind_standard = стандартний
+
 ## TTS Engines - заголовок деталей
 
-tts_engines_detail_sub = рушій { $kind } · { $count ->
+tts_engines_detail_sub = { $kind } рушій · { $count ->
     [one] { $count } голос
     [few] { $count } голоси
     [many] { $count } голосів
    *[other] { $count } голосів
 }
-tts_engines_detail_sub_region = рушій { $kind } · { $region } · { $count ->
+tts_engines_detail_sub_region = { $kind } рушій · { $region } · { $count ->
     [one] { $count } голос
     [few] { $count } голоси
     [many] { $count } голосів

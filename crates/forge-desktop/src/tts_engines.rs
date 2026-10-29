@@ -14,10 +14,10 @@ use forge_speak_queue::{
     EmoteTokenSet, Priority, RequestId, SpeakCommand, SpeakQueueHandle, SpeakRequest,
 };
 use forge_speech_types::SynthesisDefaults;
-use forge_speech_types::{EngineId, TtsVoice, VoiceGender, VoiceId};
+use forge_speech_types::{EngineId, TtsVoice, VoiceId};
 use forge_storage::{CredentialId, CredentialsRepo, EngineParams, SettingsRepo, StorageError};
 use forge_tts_cloud::CloudGateways;
-use forge_tts_core::{TtsRegistry, engine_display_name};
+use forge_tts_core::{EngineClass, TtsRegistry};
 use gpui::{
     AnyElement, ClickEvent, Context, Entity, FontWeight, Pixels, Rgba, SharedString, Subscription,
     Window, div, prelude::*, px,
@@ -27,6 +27,9 @@ use crate::async_bridge::{
     self, ErrorSink, Generation, Loadable, SLIDER_PERSIST_DEBOUNCE, SnapshotWriter, WriteOutcome,
 };
 use crate::cloud_credentials::{CloudCredentialsView, CloudEngineKind, CloudEngineRegistered};
+use crate::tts_engine_roster::{
+    RosterEngine, engine_class_label, load_engine_roster, voice_descriptor_label,
+};
 use forge_components::ActivePresentation;
 
 const RAIL_W: Pixels = px(240.0);
@@ -52,12 +55,6 @@ struct ParamsSave {
     params: EngineParams,
 }
 
-struct EngineEntry {
-    id: String,
-    name: String,
-    kind: &'static str,
-}
-
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Selection {
     None,
@@ -71,7 +68,7 @@ pub struct TtsEnginesView {
     settings: Arc<dyn SettingsRepo>,
     speak: Option<SpeakQueueHandle>,
     rt_handle: tokio::runtime::Handle,
-    engines: Vec<EngineEntry>,
+    engines: Vec<RosterEngine>,
     selected: Selection,
     disabled: Loadable<HashSet<String>>,
     disabled_writer: SnapshotWriter,
@@ -112,7 +109,7 @@ impl TtsEnginesView {
         );
 
         let mut view = Self {
-            engines: load_roster(registry.as_ref()),
+            engines: load_engine_roster(registry.as_ref()),
             registry,
             credentials,
             settings,
@@ -421,7 +418,7 @@ impl TtsEnginesView {
     }
 
     fn on_engine_registered(&mut self, engine_id: &EngineId, cx: &mut Context<Self>) {
-        self.engines = load_roster(self.registry.as_ref());
+        self.engines = load_engine_roster(self.registry.as_ref());
         if let Some(index) = self.engines.iter().position(|e| e.id == engine_id.0) {
             self.selected = Selection::Engine(index);
             self.load_params(engine_id.0.clone(), cx);
@@ -585,7 +582,7 @@ impl TtsEnginesView {
     fn engine_entry(
         &self,
         index: usize,
-        engine: &EngineEntry,
+        engine: &RosterEngine,
         voice_count: usize,
         disabled: bool,
         palette: &ForgePalette,
@@ -603,7 +600,7 @@ impl TtsEnginesView {
         let dot_color = if disabled {
             palette.text_faint
         } else {
-            engine_status_color(engine.kind, palette)
+            engine_status_color(engine.class, palette)
         };
 
         let identity = div()
@@ -626,7 +623,7 @@ impl TtsEnginesView {
                     .text_color(palette.text_faint)
                     .child(tr!(
                         "tts_engines_rail_sub",
-                        kind = engine.kind,
+                        kind = engine_class_label(engine.class),
                         count = voice_count as i64
                     )),
             );
@@ -789,7 +786,7 @@ impl TtsEnginesView {
 
     fn engine_detail(
         &self,
-        engine: &EngineEntry,
+        engine: &RosterEngine,
         catalog: &[TtsVoice],
         palette: &ForgePalette,
         density: Density,
@@ -804,7 +801,7 @@ impl TtsEnginesView {
 
         let mut col = div().w_full().flex().flex_col().child(self.detail_header(
             &engine.name,
-            engine.kind,
+            engine.class,
             region,
             voices.len(),
             Some(&engine.id),
@@ -833,7 +830,7 @@ impl TtsEnginesView {
             .flex_col()
             .child(self.detail_header(
                 kind.display_name(),
-                "cloud",
+                EngineClass::Cloud,
                 None,
                 0,
                 None,
@@ -852,7 +849,7 @@ impl TtsEnginesView {
     fn detail_header(
         &self,
         name: &str,
-        kind: &str,
+        class: EngineClass,
         region: Option<&str>,
         voice_count: usize,
         engine_id: Option<&str>,
@@ -869,8 +866,9 @@ impl TtsEnginesView {
             .justify_center()
             .rounded(radius(Radius::Md))
             .bg(palette.surface_overlay)
-            .child(icon(engine_glyph(kind), TILE_GLYPH, palette.brand));
+            .child(icon(engine_glyph(class), TILE_GLYPH, palette.brand));
 
+        let kind = engine_class_label(class);
         let subtitle = match region {
             Some(region) => tr!(
                 "tts_engines_detail_sub_region",
@@ -942,7 +940,7 @@ impl TtsEnginesView {
 
     fn voices_section(
         &self,
-        engine: &EngineEntry,
+        engine: &RosterEngine,
         voices: &[&TtsVoice],
         palette: &ForgePalette,
         density: Density,
@@ -1040,7 +1038,11 @@ impl TtsEnginesView {
                     .font_family(mono_family())
                     .text_size(FONT_MICRO)
                     .text_color(palette.text_faint)
-                    .child(format!("{} · {}", voice.locale, voice_descriptor(voice))),
+                    .child(format!(
+                        "{} · {}",
+                        voice.locale,
+                        voice_descriptor_label(voice)
+                    )),
             );
 
         let engine_id = engine_id.to_owned();
@@ -1215,19 +1217,17 @@ fn param_row(
         )
 }
 
-fn engine_status_color(kind: &str, palette: &ForgePalette) -> Rgba {
-    if kind == "system" {
-        palette.info
-    } else {
-        palette.success
+fn engine_status_color(class: EngineClass, palette: &ForgePalette) -> Rgba {
+    match class {
+        EngineClass::System => palette.info,
+        EngineClass::Local | EngineClass::Cloud => palette.success,
     }
 }
 
-fn engine_glyph(kind: &str) -> Icon {
-    if kind == "cloud" {
-        Icon::Cloud
-    } else {
-        Icon::Cpu
+fn engine_glyph(class: EngineClass) -> Icon {
+    match class {
+        EngineClass::Cloud => Icon::Cloud,
+        EngineClass::Local | EngineClass::System => Icon::Cpu,
     }
 }
 
@@ -1238,50 +1238,11 @@ fn engine_voice_count(catalog: &[TtsVoice], engine_id: &str) -> usize {
         .count()
 }
 
-fn voice_descriptor(voice: &TtsVoice) -> &'static str {
-    match voice.gender {
-        VoiceGender::Male => "male",
-        VoiceGender::Female => "female",
-        VoiceGender::Neutral => {
-            if voice.is_neural {
-                "neural"
-            } else {
-                "standard"
-            }
-        }
-    }
-}
-
 fn voice_initial(name: &str) -> String {
     name.chars()
         .next()
         .map(|c| c.to_uppercase().to_string())
         .unwrap_or_default()
-}
-
-fn load_roster(registry: Option<&Arc<RwLock<TtsRegistry>>>) -> Vec<EngineEntry> {
-    let Some(registry) = registry else {
-        return Vec::new();
-    };
-    let ids = registry
-        .read()
-        .unwrap_or_else(|e| e.into_inner())
-        .engine_ids();
-    ids.into_iter()
-        .map(|id| EngineEntry {
-            kind: engine_kind(&id.0),
-            name: engine_display_name(&id.0).to_owned(),
-            id: id.0,
-        })
-        .collect()
-}
-
-fn engine_kind(id: &str) -> &'static str {
-    match id {
-        forge_tts_core::ENGINE_ID_PIPER | forge_tts_core::ENGINE_ID_ESPEAK_NG => "local",
-        forge_tts_core::ENGINE_ID_SAPI | forge_tts_core::ENGINE_ID_NSSPEECH => "system",
-        _ => "cloud",
-    }
 }
 
 #[cfg(test)]

@@ -61,6 +61,10 @@ impl TtsEngine for SapiEngine {
 pub struct SapiEngineFactory;
 
 impl TtsEngineFactory for SapiEngineFactory {
+    fn class(&self) -> forge_tts_core::EngineClass {
+        forge_tts_core::EngineClass::System
+    }
+
     fn create(&self) -> Result<Box<dyn TtsEngine>, TtsError> {
         let engine_id = EngineId(ENGINE_ID_SAPI.into());
         let (sta_tx, catalog) = spawn_sta_worker(engine_id.clone()).map_err(TtsError::from)?;

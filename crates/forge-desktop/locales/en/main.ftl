@@ -1346,6 +1346,16 @@ tts_engines_rail_sub = { $kind } · { $count ->
    *[other] { $count } voices
 }
 
+## TTS Engines - engine classes and voice kinds
+
+tts_engine_class_local = local
+tts_engine_class_system = system
+tts_engine_class_cloud = cloud
+tts_voice_kind_male = male
+tts_voice_kind_female = female
+tts_voice_kind_neural = neural
+tts_voice_kind_standard = standard
+
 ## TTS Engines - detail header
 
 tts_engines_detail_sub = { $kind } engine · { $count ->

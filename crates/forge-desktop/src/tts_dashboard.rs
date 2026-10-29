@@ -30,6 +30,7 @@ use gpui::{
 
 use crate::async_bridge;
 use crate::speak_state::{NowSpeaking, QueueItem, SessionStats, SpeakState};
+use crate::tts_engine_roster::{RosterEngine, engine_class_label, load_engine_roster};
 use forge_components::ActivePresentation;
 
 const VOL_SLIDER_W: Pixels = px(90.0);
@@ -158,13 +159,6 @@ impl Render for QueueRowGhost {
     }
 }
 
-struct EngineStatus {
-    id: String,
-    name: String,
-    meta: String,
-    warn: bool,
-}
-
 pub struct TtsDashboardView {
     speak_state: Entity<SpeakState>,
     speak: Option<SpeakQueueHandle>,
@@ -172,7 +166,7 @@ pub struct TtsDashboardView {
     rt_handle: tokio::runtime::Handle,
     volume: f32,
     rail_width: Pixels,
-    engines: Vec<EngineStatus>,
+    engines: Vec<RosterEngine>,
     pending_stop_all: bool,
     dragged_row: Option<RequestId>,
     test_input: Entity<TextInput>,
@@ -627,15 +621,16 @@ impl TtsDashboardView {
         for eng in &self.engines {
             let voice_count = voices.iter().filter(|v| v.engine_id.0 == eng.id).count();
             let voiceless = voice_count == 0;
-            let color = if eng.warn || voiceless {
+            let color = if voiceless {
                 palette.warning
             } else {
                 palette.success
             };
+            let class = engine_class_label(eng.class);
             let meta = if voiceless {
-                format!("{} \u{b7} {}", eng.meta, tr!("tts_dash_engine_no_voices"))
+                format!("{class} \u{b7} {}", tr!("tts_dash_engine_no_voices"))
             } else {
-                eng.meta.clone()
+                class
             };
             content = content.child(engine_card(eng.name.clone(), meta, color, palette, density));
         }
@@ -1334,31 +1329,5 @@ fn test_speak_request(text: String, speaker_name: String) -> SpeakRequest {
         is_reward: false,
         target: None,
         message_emotes: EmoteTokenSet::default(),
-    }
-}
-
-fn load_engine_roster(registry: Option<&Arc<RwLock<TtsRegistry>>>) -> Vec<EngineStatus> {
-    let Some(registry) = registry else {
-        return Vec::new();
-    };
-    let ids = registry
-        .read()
-        .unwrap_or_else(|e| e.into_inner())
-        .engine_ids();
-    ids.into_iter()
-        .map(|id| EngineStatus {
-            name: engine_display_name(&id.0).to_owned(),
-            meta: engine_kind(&id.0).to_owned(),
-            warn: false,
-            id: id.0,
-        })
-        .collect()
-}
-
-fn engine_kind(id: &str) -> &'static str {
-    match id {
-        forge_tts_core::ENGINE_ID_PIPER | forge_tts_core::ENGINE_ID_ESPEAK_NG => "local",
-        forge_tts_core::ENGINE_ID_SAPI | forge_tts_core::ENGINE_ID_NSSPEECH => "system",
-        _ => "cloud",
     }
 }

@@ -99,6 +99,10 @@ impl AzureEngineFactory {
 }
 
 impl forge_tts_core::TtsEngineFactory for AzureEngineFactory {
+    fn class(&self) -> forge_tts_core::EngineClass {
+        forge_tts_core::EngineClass::Cloud
+    }
+
     fn create(&self) -> Result<Box<dyn TtsEngine>, TtsError> {
         Ok(Box::new(AzureEngine::new(
             self.credentials.clone(),

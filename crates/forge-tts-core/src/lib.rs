@@ -49,6 +49,19 @@ pub struct EngineCapabilities {
     pub custom_lexicons: bool,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum EngineClass {
+    Local,
+    System,
+    Cloud,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RegisteredEngine {
+    pub id: EngineId,
+    pub class: EngineClass,
+}
+
 #[derive(Debug, thiserror::Error)]
 pub enum TtsError {
     #[error("synthesis timed out after {ms}ms")]
@@ -95,6 +108,8 @@ pub trait TtsEngine: Send + Sync {
 }
 
 pub trait TtsEngineFactory: Send + Sync {
+    fn class(&self) -> EngineClass;
+
     fn create(&self) -> Result<Box<dyn TtsEngine>, TtsError>;
 }
 
@@ -183,6 +198,19 @@ impl TtsRegistry {
         for id in ids {
             self.invalidate(&id);
         }
+    }
+
+    pub fn roster(&self) -> Vec<RegisteredEngine> {
+        let mut roster: Vec<_> = self
+            .slots
+            .iter()
+            .map(|(id, slot)| RegisteredEngine {
+                id: id.clone(),
+                class: slot.factory.class(),
+            })
+            .collect();
+        roster.sort_by(|a, b| a.id.0.cmp(&b.id.0));
+        roster
     }
 
     pub fn engine_ids(&self) -> Vec<EngineId> {

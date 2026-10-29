@@ -189,6 +189,7 @@ mod trigger_form_shape;
 mod triggers_screen;
 mod tts;
 mod tts_dashboard;
+mod tts_engine_roster;
 mod tts_engines;
 mod tts_filters;
 mod twitch_bot_presence;

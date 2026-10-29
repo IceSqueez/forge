@@ -96,6 +96,10 @@ impl TtsEngine for EspeakEngine {
 pub struct EspeakEngineFactory;
 
 impl TtsEngineFactory for EspeakEngineFactory {
+    fn class(&self) -> forge_tts_core::EngineClass {
+        forge_tts_core::EngineClass::Local
+    }
+
     fn create(&self) -> Result<Box<dyn TtsEngine>, TtsError> {
         EspeakEngine::new().map(|e| Box::new(e) as Box<dyn TtsEngine>)
     }

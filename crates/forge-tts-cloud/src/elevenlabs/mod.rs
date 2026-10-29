@@ -87,6 +87,10 @@ impl ElevenLabsEngineFactory {
 }
 
 impl forge_tts_core::TtsEngineFactory for ElevenLabsEngineFactory {
+    fn class(&self) -> forge_tts_core::EngineClass {
+        forge_tts_core::EngineClass::Cloud
+    }
+
     fn create(&self) -> Result<Box<dyn TtsEngine>, TtsError> {
         Ok(Box::new(ElevenLabsEngine::new(
             self.credentials.clone(),

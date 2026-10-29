@@ -267,6 +267,10 @@ pub struct PiperEngineFactory {
 }
 
 impl TtsEngineFactory for PiperEngineFactory {
+    fn class(&self) -> forge_tts_core::EngineClass {
+        forge_tts_core::EngineClass::Local
+    }
+
     fn create(&self) -> Result<Box<dyn TtsEngine>, TtsError> {
         PiperEngine::new(
             self.piper_binary.clone(),

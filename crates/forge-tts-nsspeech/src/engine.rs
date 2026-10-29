@@ -73,6 +73,10 @@ impl TtsEngine for NsSpeechEngine {
 pub struct NsSpeechEngineFactory;
 
 impl TtsEngineFactory for NsSpeechEngineFactory {
+    fn class(&self) -> forge_tts_core::EngineClass {
+        forge_tts_core::EngineClass::System
+    }
+
     fn create(&self) -> Result<Box<dyn TtsEngine>, TtsError> {
         let engine_id = EngineId(ENGINE_ID_NSSPEECH.into());
         let catalog = voices::voice_catalog(&engine_id).map_err(TtsError::from)?;

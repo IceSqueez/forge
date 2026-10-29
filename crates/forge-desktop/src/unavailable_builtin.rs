@@ -4,13 +4,19 @@ use std::time::Duration;
 use forge_components::tr;
 use forge_platform_core::{
     BuiltinContent, BuiltinHealth, BuiltinStatus, CapabilityFlags, ConnectionState, DetailSection,
-    HeaderAction, HealthMetric, HealthStream, HealthValue, QuickAction, QuickActions, SectionIcon,
+    HeaderAction, HealthMetric, HealthMetricId, HealthStream, HealthValue, QuickAction,
+    QuickActions, SectionIcon,
 };
 use forge_types::IntegrationId;
 
 use crate::integrations::BuiltinObject;
 
 const MISSING_VALUE: &str = "-";
+
+const STATUS_METRIC: HealthMetricId = HealthMetricId::new("status");
+const UPTIME_METRIC: HealthMetricId = HealthMetricId::new("uptime");
+const ENDPOINT_METRIC: HealthMetricId = HealthMetricId::new("endpoint");
+const VERSION_METRIC: HealthMetricId = HealthMetricId::new("version");
 
 struct UnavailableStatus {
     id: IntegrationId,
@@ -53,6 +59,7 @@ impl BuiltinHealth for UnavailableHealth {
     fn metrics(&self) -> [HealthMetric; 4] {
         [
             HealthMetric {
+                id: STATUS_METRIC,
                 label: tr!("builtin_unavailable_metric_status"),
                 value: HealthValue::Status {
                     label: tr!("common_status_not_connected"),
@@ -60,9 +67,9 @@ impl BuiltinHealth for UnavailableHealth {
                     detail: None,
                 },
             },
-            blank_metric(tr!("builtin_unavailable_metric_uptime")),
-            blank_metric(tr!("builtin_unavailable_metric_endpoint")),
-            blank_metric(tr!("builtin_unavailable_metric_version")),
+            blank_metric(UPTIME_METRIC, tr!("builtin_unavailable_metric_uptime")),
+            blank_metric(ENDPOINT_METRIC, tr!("builtin_unavailable_metric_endpoint")),
+            blank_metric(VERSION_METRIC, tr!("builtin_unavailable_metric_version")),
         ]
     }
 
@@ -87,8 +94,9 @@ impl QuickActions for UnavailableQuickActions {
     }
 }
 
-fn blank_metric(label: String) -> HealthMetric {
+fn blank_metric(id: HealthMetricId, label: String) -> HealthMetric {
     HealthMetric {
+        id,
         label,
         value: HealthValue::Text {
             primary: MISSING_VALUE.to_owned(),

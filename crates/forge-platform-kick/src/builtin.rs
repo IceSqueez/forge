@@ -5,10 +5,10 @@ use std::time::{Duration, SystemTime};
 use forge_net::RateLimiter;
 use forge_platform_core::{
     BannerLevel, BuiltinContent, BuiltinHealth, BuiltinStatus, CapabilityFlags, ChatPlatform,
-    ConnectionState, DetailSection, HeaderAction, HealthDelta, HealthMetric, HealthStream,
-    HealthValue, HeroBadge, HeroBadgeTone, QuickAction, QuickActionAccent, QuickActionField,
-    QuickActionFieldKind, QuickActionFieldValue, QuickActionLiveness, QuickActions, SectionIcon,
-    ViewerReport,
+    ConnectionState, DetailSection, HeaderAction, HealthDelta, HealthMetric, HealthMetricId,
+    HealthStream, HealthValue, HeroBadge, HeroBadgeTone, QuickAction, QuickActionAccent,
+    QuickActionField, QuickActionFieldKind, QuickActionFieldValue, QuickActionLiveness,
+    QuickActions, SectionIcon, ViewerReport,
 };
 use forge_registry::{RegistryError, TriggerRegistry};
 use forge_types::IntegrationId;
@@ -35,6 +35,10 @@ use crate::triggers::sub::SubDescriptor;
 use crate::triggers::sub_gift::SubGiftDescriptor;
 use crate::vocabulary::sub_action_ids;
 use crate::vocabulary::variables::references;
+
+const LIVE_CHAT_METRIC: HealthMetricId = HealthMetricId::new("live_chat");
+const EVENTS_METRIC: HealthMetricId = HealthMetricId::new("events");
+const API_CALLS_METRIC: HealthMetricId = HealthMetricId::new("api_calls");
 
 pub fn register_kick_triggers(registry: &mut TriggerRegistry) -> Result<(), RegistryError> {
     let mut registry = registry.owned_by(crate::KICK_INTEGRATION.id);
@@ -146,7 +150,7 @@ impl KickIntegrationBundle {
                 let current = *state_rx.borrow();
 
                 let ws_delta = HealthDelta {
-                    index: 0,
+                    metric: LIVE_CHAT_METRIC,
                     new_value: bundle.ws_health_value(),
                 };
                 #[expect(
@@ -156,7 +160,7 @@ impl KickIntegrationBundle {
                 let _ = bundle.health_tx.send(ws_delta);
 
                 let api_calls_delta = HealthDelta {
-                    index: 3,
+                    metric: API_CALLS_METRIC,
                     new_value: bundle.api_calls_health_value(),
                 };
                 #[expect(
@@ -187,7 +191,7 @@ impl KickIntegrationBundle {
                     changed = reports_rx.changed() => if changed.is_err() { break },
                 }
                 let viewers_delta = HealthDelta {
-                    index: 2,
+                    metric: HealthMetricId::VIEWERS,
                     new_value: viewers_health_value(*reports_rx.borrow()),
                 };
                 #[expect(
@@ -197,7 +201,7 @@ impl KickIntegrationBundle {
                 let _ = bundle.health_tx.send(viewers_delta);
 
                 let api_calls_delta = HealthDelta {
-                    index: 3,
+                    metric: API_CALLS_METRIC,
                     new_value: bundle.api_calls_health_value(),
                 };
                 #[expect(
@@ -223,7 +227,7 @@ impl KickIntegrationBundle {
                     changed = auth_rx.changed() => if changed.is_err() { break },
                 }
                 let events_delta = HealthDelta {
-                    index: 1,
+                    metric: EVENTS_METRIC,
                     new_value: events_health_value(*auth_rx.borrow()),
                 };
                 #[expect(
@@ -358,18 +362,22 @@ impl BuiltinHealth for KickIntegrationBundle {
     fn metrics(&self) -> [HealthMetric; 4] {
         [
             HealthMetric {
+                id: LIVE_CHAT_METRIC,
                 label: "Live Chat".to_owned(),
                 value: self.ws_health_value(),
             },
             HealthMetric {
+                id: EVENTS_METRIC,
                 label: "Events".to_owned(),
                 value: events_health_value(*self.poller_auth_rx.borrow()),
             },
             HealthMetric {
+                id: HealthMetricId::VIEWERS,
                 label: "Viewers".to_owned(),
                 value: viewers_health_value(*self.viewer_report_rx.borrow()),
             },
             HealthMetric {
+                id: API_CALLS_METRIC,
                 label: "API Calls".to_owned(),
                 value: self.api_calls_health_value(),
             },

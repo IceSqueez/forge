@@ -17,7 +17,10 @@ use crate::client::MidiClient;
 use crate::content::{record_midi_event, record_port_added, record_port_removed};
 use crate::decode::decode_midi_bytes;
 use crate::events::{MidiEvent, MidiPortInfo, PortDirection};
-use crate::health::{MidiHealthSnapshot, events_per_minute, input_port_health_value};
+use crate::health::{
+    EVENTS_PER_MINUTE_METRIC, INPUT_PORTS_METRIC, LAST_NOTE_ON_METRIC, MidiHealthSnapshot,
+    OUTPUT_PORTS_METRIC, events_per_minute, input_port_health_value,
+};
 use crate::monitor::{bus_payload, to_monitor_event};
 use crate::vocabulary::event_kinds;
 use crate::vocabulary::fields::port as port_fields;
@@ -138,7 +141,7 @@ fn emit_engine_state_change(client: &Arc<MidiClient>, enabled: bool) {
         snap.input_count
     };
     let delta = HealthDelta {
-        index: 0,
+        metric: INPUT_PORTS_METRIC,
         new_value: input_port_health_value(enabled, input_count),
     };
     #[expect(
@@ -362,14 +365,14 @@ fn build_port_count_deltas(
         snap.input_count = input_count;
         let enabled = client.enabled.load(Ordering::Relaxed);
         deltas.push(HealthDelta {
-            index: 0,
+            metric: INPUT_PORTS_METRIC,
             new_value: input_port_health_value(enabled, input_count),
         });
     }
     if snap.output_count != output_count {
         snap.output_count = output_count;
         deltas.push(HealthDelta {
-            index: 1,
+            metric: OUTPUT_PORTS_METRIC,
             new_value: forge_platform_core::HealthValue::Text {
                 primary: output_count.to_string(),
                 secondary: Some("available".to_owned()),
@@ -390,7 +393,7 @@ fn build_event_deltas(snap: &mut MidiHealthSnapshot, is_note_on: bool) -> Vec<He
             )
             .unwrap_or_else(|_| "--:--:--".to_owned());
         deltas.push(HealthDelta {
-            index: 2,
+            metric: LAST_NOTE_ON_METRIC,
             new_value: forge_platform_core::HealthValue::Text {
                 primary: formatted,
                 secondary: None,
@@ -400,7 +403,7 @@ fn build_event_deltas(snap: &mut MidiHealthSnapshot, is_note_on: bool) -> Vec<He
 
     let epm = events_per_minute(&mut snap.event_timestamps);
     deltas.push(HealthDelta {
-        index: 3,
+        metric: EVENTS_PER_MINUTE_METRIC,
         new_value: forge_platform_core::HealthValue::Text {
             primary: epm.to_string(),
             secondary: Some("last 60 s".to_owned()),

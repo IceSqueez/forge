@@ -12,9 +12,9 @@ use tracing::debug;
 use forge_net::Gateway;
 use forge_platform_core::{
     BuiltinContent, BuiltinHealth, BuiltinStatus, CapabilityFlags, ChatPlatform, ConnectionState,
-    DetailSection, HeaderAction, HealthDelta, HealthMetric, HealthStream, HealthValue, HeroBadge,
-    HeroBadgeTone, LiveViewerSource, SectionIcon, SubscriptionRow, SubscriptionStatus,
-    ViewerReport, ViewerReportStream,
+    DetailSection, HeaderAction, HealthDelta, HealthMetric, HealthMetricId, HealthStream,
+    HealthValue, HeroBadge, HeroBadgeTone, LiveViewerSource, SectionIcon, SubscriptionRow,
+    SubscriptionStatus, ViewerReport, ViewerReportStream,
 };
 use forge_types::IntegrationId;
 
@@ -38,7 +38,9 @@ use crate::subscriptions::{SubStatus, SubscriptionTracker};
 
 mod quick_actions;
 
-const API_CALLS_METRIC_INDEX: u8 = 3;
+const CHAT_METRIC: HealthMetricId = HealthMetricId::new("chat");
+const EVENTSUB_METRIC: HealthMetricId = HealthMetricId::new("eventsub");
+const API_CALLS_METRIC: HealthMetricId = HealthMetricId::new("api_calls");
 const VIEWER_POLL_INTERVAL: Duration = Duration::from_secs(60);
 
 #[derive(Debug, Clone, Copy, Default)]
@@ -157,7 +159,7 @@ impl TwitchIntegrationBundle {
                 bundle.on_chat_state_changed(state);
 
                 let chat_delta = HealthDelta {
-                    index: 0,
+                    metric: CHAT_METRIC,
                     new_value: bundle.chat_health_value(),
                 };
                 #[expect(
@@ -167,7 +169,7 @@ impl TwitchIntegrationBundle {
                 let _ = bundle.health_tx.send(chat_delta);
 
                 let eventsub_delta = HealthDelta {
-                    index: 1,
+                    metric: EVENTSUB_METRIC,
                     new_value: bundle.eventsub_health_value(),
                 };
                 #[expect(
@@ -177,7 +179,7 @@ impl TwitchIntegrationBundle {
                 let _ = bundle.health_tx.send(eventsub_delta);
 
                 let api_calls_delta = HealthDelta {
-                    index: 3,
+                    metric: API_CALLS_METRIC,
                     new_value: bundle.api_calls_health_value(),
                 };
                 #[expect(
@@ -204,7 +206,7 @@ impl TwitchIntegrationBundle {
                     *guard = expiry;
                 }
                 let delta = HealthDelta {
-                    index: API_CALLS_METRIC_INDEX,
+                    metric: API_CALLS_METRIC,
                     new_value: bundle.api_calls_health_value(),
                 };
                 #[expect(
@@ -309,7 +311,7 @@ impl TwitchIntegrationBundle {
                 }
 
                 let api_calls_delta = HealthDelta {
-                    index: 3,
+                    metric: API_CALLS_METRIC,
                     new_value: bundle.api_calls_health_value(),
                 };
                 #[expect(
@@ -332,7 +334,7 @@ impl TwitchIntegrationBundle {
                 }
                 bundle.viewer_report_tx.send_replace(new_state.as_report());
                 let delta = HealthDelta {
-                    index: 2,
+                    metric: HealthMetricId::VIEWERS,
                     new_value: bundle.viewers_health_value(),
                 };
                 #[expect(
@@ -621,18 +623,22 @@ impl BuiltinHealth for TwitchIntegrationBundle {
     fn metrics(&self) -> [HealthMetric; 4] {
         [
             HealthMetric {
+                id: CHAT_METRIC,
                 label: "Chat IRC".to_owned(),
                 value: self.chat_health_value(),
             },
             HealthMetric {
+                id: EVENTSUB_METRIC,
                 label: "EventSub".to_owned(),
                 value: self.eventsub_health_value(),
             },
             HealthMetric {
+                id: HealthMetricId::VIEWERS,
                 label: "Viewers".to_owned(),
                 value: self.viewers_health_value(),
             },
             HealthMetric {
+                id: API_CALLS_METRIC,
                 label: "API Calls".to_owned(),
                 value: self.api_calls_health_value(),
             },

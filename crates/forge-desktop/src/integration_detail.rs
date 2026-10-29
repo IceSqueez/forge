@@ -10,8 +10,8 @@ use forge_obs::ObsClient;
 use forge_platform_core::{
     BuiltinCollections, BuiltinContent, BuiltinControl, BuiltinHealth, BuiltinOptionSource,
     BuiltinStatus, CapabilityFlags, CollectionId, ConnectionState, ControlFailure, DetailSection,
-    HeaderAction, HealthDelta, HealthMetric, HealthValue, HeroBadge, HeroBadgeTone, PlatformError,
-    QuickAction, QuickActions, RevisionWait, SectionIcon,
+    HeaderAction, HealthDelta, HealthMetric, HealthMetricId, HealthValue, HeroBadge, HeroBadgeTone,
+    PlatformError, QuickAction, QuickActions, RevisionWait, SectionIcon,
 };
 use forge_registry::TriggerRegistry;
 use forge_runtime::{ActionEngineHandle, EventBus, LiveViewerAggregatorHandle, LiveViewerCount};
@@ -427,13 +427,18 @@ impl IntegrationDetail {
     }
 
     fn apply_health_delta(&mut self, delta: HealthDelta, cx: &mut Context<Self>) {
-        let idx = delta.index as usize;
-        if idx < self.health_metrics.len() {
-            self.health_metrics[idx].value = delta.new_value;
-            self.connection = self.status.connection();
-            self.header_actions = self.status.header_actions();
-            self.refresh_content(cx);
-        }
+        let Some(metric) = self
+            .health_metrics
+            .iter_mut()
+            .find(|metric| metric.id == delta.metric)
+        else {
+            tracing::warn!(metric = %delta.metric, "health delta for an undeclared metric");
+            return;
+        };
+        metric.value = delta.new_value;
+        self.connection = self.status.connection();
+        self.header_actions = self.status.header_actions();
+        self.refresh_content(cx);
     }
 
     fn refresh_content(&mut self, cx: &mut Context<Self>) {
@@ -1148,7 +1153,7 @@ impl IntegrationDetail {
 
     fn augmented_health(&self) -> [HealthMetric; 4] {
         let mut metrics = self.health_metrics.clone();
-        if let Some(metric) = metrics.iter_mut().find(|m| m.label == "Viewers")
+        if let Some(metric) = metrics.iter_mut().find(|m| m.id == HealthMetricId::VIEWERS)
             && let HealthValue::Text { secondary, .. } = &mut metric.value
         {
             let delta = self.viewer_delta().unwrap_or(0);

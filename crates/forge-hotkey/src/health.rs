@@ -7,7 +7,9 @@ use tokio::sync::broadcast;
 use tokio_stream::StreamExt;
 use tokio_stream::wrappers::BroadcastStream;
 
-use forge_platform_core::{BuiltinHealth, HealthDelta, HealthMetric, HealthStream, HealthValue};
+use forge_platform_core::{
+    BuiltinHealth, HealthDelta, HealthMetric, HealthMetricId, HealthStream, HealthValue,
+};
 
 use crate::client::HotkeyClient;
 
@@ -30,7 +32,10 @@ pub(crate) struct HotkeyHealthSnapshot {
     pub(crate) backend_session_lost: Option<String>,
 }
 
-pub(crate) const BACKEND_METRIC_INDEX: u8 = 3;
+pub(crate) const REGISTERED_METRIC: HealthMetricId = HealthMetricId::new("registered");
+pub(crate) const LAST_TRIGGERED_METRIC: HealthMetricId = HealthMetricId::new("last_triggered");
+pub(crate) const CONFLICTS_METRIC: HealthMetricId = HealthMetricId::new("conflicts");
+pub(crate) const BACKEND_METRIC: HealthMetricId = HealthMetricId::new("backend");
 
 impl HotkeyHealthSnapshot {
     pub(crate) fn record_synthesized_release(&mut self) {
@@ -82,7 +87,7 @@ pub(crate) fn build_trigger_delta(snap: &HotkeyHealthSnapshot) -> HealthDelta {
         _ => "\u{2014}".to_owned(),
     };
     HealthDelta {
-        index: 1,
+        metric: LAST_TRIGGERED_METRIC,
         new_value: HealthValue::Text {
             primary,
             secondary: None,
@@ -128,18 +133,22 @@ impl BuiltinHealth for HotkeyClient {
 
         [
             HealthMetric {
+                id: REGISTERED_METRIC,
                 label: "REGISTERED".to_owned(),
                 value: registered_value,
             },
             HealthMetric {
+                id: LAST_TRIGGERED_METRIC,
                 label: "LAST TRIGGERED".to_owned(),
                 value: last_triggered_value,
             },
             HealthMetric {
+                id: CONFLICTS_METRIC,
                 label: "CONFLICTS".to_owned(),
                 value: conflicts_value,
             },
             HealthMetric {
+                id: BACKEND_METRIC,
                 label: backend_label(self.portal_available),
                 value: portal_value,
             },

@@ -11,7 +11,8 @@ use crate::backend::{BackendSessionEvent, HotkeyEdge, HotkeyFiredEvent, HotkeyId
 use crate::client::{EnableFailure, HotkeyClient};
 use crate::combo::HotkeyCombo;
 use crate::health::{
-    BACKEND_METRIC_INDEX, backend_health_value, build_trigger_delta, registered_count_health_value,
+    BACKEND_METRIC, REGISTERED_METRIC, backend_health_value, build_trigger_delta,
+    registered_count_health_value,
 };
 use crate::hold;
 use crate::vocabulary::fields;
@@ -98,7 +99,7 @@ fn handle_session_event(client: &Arc<HotkeyClient>, event: BackendSessionEvent) 
         reason = "having no subscribers is a normal state"
     )]
     let _ = client.health_tx.send(HealthDelta {
-        index: BACKEND_METRIC_INDEX,
+        metric: BACKEND_METRIC,
         new_value,
     });
 }
@@ -254,7 +255,7 @@ fn emit_engine_state_change(client: &Arc<HotkeyClient>, enabled: bool) {
             .lock()
             .unwrap_or_else(|p| p.into_inner());
         HealthDelta {
-            index: 0,
+            metric: REGISTERED_METRIC,
             new_value: registered_count_health_value(enabled, snap.registered_count),
         }
     };
@@ -279,7 +280,7 @@ pub(crate) fn emit_registered(client: &HotkeyClient, combo_str: &str, id_u32: u3
             .unwrap_or_else(|p| p.into_inner());
         snap.registered_count = snap.registered_count.saturating_add(1);
         HealthDelta {
-            index: 0,
+            metric: REGISTERED_METRIC,
             new_value: registered_count_health_value(
                 client.enabled.load(Ordering::Relaxed),
                 snap.registered_count,
@@ -307,7 +308,7 @@ pub(crate) fn emit_unregistered(client: &HotkeyClient, combo_str: &str, id_u32: 
             .unwrap_or_else(|p| p.into_inner());
         snap.registered_count = snap.registered_count.saturating_sub(1);
         HealthDelta {
-            index: 0,
+            metric: REGISTERED_METRIC,
             new_value: registered_count_health_value(
                 client.enabled.load(Ordering::Relaxed),
                 snap.registered_count,

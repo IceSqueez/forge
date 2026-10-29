@@ -4,10 +4,10 @@ use std::time::{Duration, SystemTime};
 
 use forge_platform_core::{
     BuiltinContent, BuiltinHealth, BuiltinStatus, CapabilityFlags, ChatPlatform, ConnectionState,
-    DetailSection, HeaderAction, HealthDelta, HealthMetric, HealthStream, HealthValue, HeroBadge,
-    HeroBadgeTone, LiveViewerSource, QuickAction, QuickActionAccent, QuickActionChoiceOption,
-    QuickActionChoiceSource, QuickActionField, QuickActionFieldKind, QuickActionFieldValue,
-    QuickActionLiveness, QuickActions, SectionIcon, ViewerReport,
+    DetailSection, HeaderAction, HealthDelta, HealthMetric, HealthMetricId, HealthStream,
+    HealthValue, HeroBadge, HeroBadgeTone, LiveViewerSource, QuickAction, QuickActionAccent,
+    QuickActionChoiceOption, QuickActionChoiceSource, QuickActionField, QuickActionFieldKind,
+    QuickActionFieldValue, QuickActionLiveness, QuickActions, SectionIcon, ViewerReport,
 };
 use forge_registry::{RegistryError, TriggerRegistry};
 use forge_types::IntegrationId;
@@ -39,6 +39,9 @@ use crate::vocabulary::sub_action_ids;
 
 const QUOTA_DAILY_BUDGET: u64 = 10_000;
 const GAMING_CATEGORY_ID: &str = "20";
+const LIVE_CHAT_METRIC: HealthMetricId = HealthMetricId::new("live_chat");
+const EVENTS_METRIC: HealthMetricId = HealthMetricId::new("events");
+const API_CALLS_METRIC: HealthMetricId = HealthMetricId::new("api_calls");
 
 pub fn register_youtube_triggers(registry: &mut TriggerRegistry) -> Result<(), RegistryError> {
     let mut registry = registry.owned_by(crate::YOUTUBE_INTEGRATION.id);
@@ -168,7 +171,7 @@ impl YoutubeIntegrationBundle {
                 let current = *state_rx.borrow();
 
                 let chat_delta = HealthDelta {
-                    index: 0,
+                    metric: LIVE_CHAT_METRIC,
                     new_value: chat_poller_health_value(current),
                 };
                 #[expect(
@@ -178,7 +181,7 @@ impl YoutubeIntegrationBundle {
                 let _ = bundle.health_tx.send(chat_delta);
 
                 let events_delta = HealthDelta {
-                    index: 1,
+                    metric: EVENTS_METRIC,
                     new_value: events_health_value(current),
                 };
                 #[expect(
@@ -209,7 +212,7 @@ impl YoutubeIntegrationBundle {
                     changed = reports_rx.changed() => if changed.is_err() { break },
                 }
                 let delta = HealthDelta {
-                    index: 2,
+                    metric: HealthMetricId::VIEWERS,
                     new_value: viewers_health_value(*reports_rx.borrow()),
                 };
                 #[expect(
@@ -281,6 +284,7 @@ impl YoutubeIntegrationBundle {
             },
         };
         HealthMetric {
+            id: API_CALLS_METRIC,
             label: "API Calls".to_owned(),
             value,
         }
@@ -384,14 +388,17 @@ impl BuiltinHealth for YoutubeIntegrationBundle {
         let state = self.current_state();
         [
             HealthMetric {
+                id: LIVE_CHAT_METRIC,
                 label: "Live Chat".to_owned(),
                 value: chat_poller_health_value(state),
             },
             HealthMetric {
+                id: EVENTS_METRIC,
                 label: "Events".to_owned(),
                 value: events_health_value(state),
             },
             HealthMetric {
+                id: HealthMetricId::VIEWERS,
                 label: "Viewers".to_owned(),
                 value: viewers_health_value(*self.viewer_report_rx.borrow()),
             },

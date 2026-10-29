@@ -10,9 +10,17 @@ use tokio::sync::broadcast;
 use tokio_stream::StreamExt;
 use tokio_stream::wrappers::BroadcastStream;
 
-use forge_platform_core::{BuiltinHealth, HealthDelta, HealthMetric, HealthStream, HealthValue};
+use forge_platform_core::{
+    BuiltinHealth, HealthDelta, HealthMetric, HealthMetricId, HealthStream, HealthValue,
+};
 
 use crate::client::MidiClient;
+
+pub(crate) const INPUT_PORTS_METRIC: HealthMetricId = HealthMetricId::new("input_ports");
+pub(crate) const OUTPUT_PORTS_METRIC: HealthMetricId = HealthMetricId::new("output_ports");
+pub(crate) const LAST_NOTE_ON_METRIC: HealthMetricId = HealthMetricId::new("last_note_on");
+pub(crate) const EVENTS_PER_MINUTE_METRIC: HealthMetricId =
+    HealthMetricId::new("events_per_minute");
 
 pub(crate) type HealthTx = broadcast::Sender<HealthDelta>;
 
@@ -91,18 +99,22 @@ impl BuiltinHealth for MidiClient {
 
         [
             HealthMetric {
+                id: INPUT_PORTS_METRIC,
                 label: "INPUT PORTS".to_owned(),
                 value: input_value,
             },
             HealthMetric {
+                id: OUTPUT_PORTS_METRIC,
                 label: "OUTPUT PORTS".to_owned(),
                 value: output_value,
             },
             HealthMetric {
+                id: LAST_NOTE_ON_METRIC,
                 label: "LAST NOTE ON".to_owned(),
                 value: last_note_value,
             },
             HealthMetric {
+                id: EVENTS_PER_MINUTE_METRIC,
                 label: "EVENTS / MIN".to_owned(),
                 value: events_value,
             },

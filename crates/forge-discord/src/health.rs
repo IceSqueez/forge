@@ -6,12 +6,19 @@ use tokio::sync::broadcast;
 use tokio_stream::StreamExt;
 use tokio_stream::wrappers::BroadcastStream;
 
-use forge_platform_core::{BuiltinHealth, HealthDelta, HealthMetric, HealthStream, HealthValue};
+use forge_platform_core::{
+    BuiltinHealth, HealthDelta, HealthMetric, HealthMetricId, HealthStream, HealthValue,
+};
 
 use crate::client::DiscordClient;
 
 const LATENCY_WINDOW: usize = 20;
 const ERROR_WINDOW: Duration = Duration::from_secs(3600);
+
+pub(crate) const LATENCY_METRIC: HealthMetricId = HealthMetricId::new("webhook_latency");
+pub(crate) const RATE_LIMIT_METRIC: HealthMetricId = HealthMetricId::new("rate_limit");
+pub(crate) const LAST_SEND_METRIC: HealthMetricId = HealthMetricId::new("last_send");
+pub(crate) const ERRORS_METRIC: HealthMetricId = HealthMetricId::new("errors");
 
 #[derive(Default)]
 pub(crate) struct DiscordHealthSnapshot {
@@ -48,7 +55,7 @@ pub(crate) fn update_on_send(
 
     let p50 = compute_p50(&snap.latencies_ms);
     deltas.push(HealthDelta {
-        index: 0,
+        metric: LATENCY_METRIC,
         new_value: HealthValue::Text {
             primary: p50
                 .map(|v| format!("{v}ms"))
@@ -64,7 +71,7 @@ pub(crate) fn update_on_send(
     snap.rate_limit_reset_hint = rate_reset_hint.clone();
     if prev_remaining != rate_remaining || prev_total != rate_total {
         deltas.push(HealthDelta {
-            index: 1,
+            metric: RATE_LIMIT_METRIC,
             new_value: HealthValue::Ratio {
                 used: rate_total.saturating_sub(rate_remaining),
                 total: rate_total,
@@ -82,7 +89,7 @@ pub(crate) fn update_on_send(
             "Failed".to_owned()
         };
         deltas.push(HealthDelta {
-            index: 2,
+            metric: LAST_SEND_METRIC,
             new_value: HealthValue::Status {
                 label,
                 active: ok,
@@ -96,7 +103,7 @@ pub(crate) fn update_on_send(
     }
     let count = age_out_errors(&mut snap.error_timestamps);
     deltas.push(HealthDelta {
-        index: 3,
+        metric: ERRORS_METRIC,
         new_value: HealthValue::Text {
             primary: count.to_string(),
             secondary: Some("last 60 min".to_owned()),
@@ -113,7 +120,7 @@ pub(crate) fn record_missing_webhook(snap: &mut DiscordHealthSnapshot) -> Vec<He
     snap.last_send_ok = Some(false);
     if prev_ok != Some(false) {
         deltas.push(HealthDelta {
-            index: 2,
+            metric: LAST_SEND_METRIC,
             new_value: HealthValue::Status {
                 label: "Failed".to_owned(),
                 active: false,
@@ -125,7 +132,7 @@ pub(crate) fn record_missing_webhook(snap: &mut DiscordHealthSnapshot) -> Vec<He
     snap.error_timestamps.push_back(Instant::now());
     let count = age_out_errors(&mut snap.error_timestamps);
     deltas.push(HealthDelta {
-        index: 3,
+        metric: ERRORS_METRIC,
         new_value: HealthValue::Text {
             primary: count.to_string(),
             secondary: Some("last 60 min".to_owned()),
@@ -233,18 +240,22 @@ impl BuiltinHealth for DiscordClient {
 
         [
             HealthMetric {
+                id: LATENCY_METRIC,
                 label: "WEBHOOK LATENCY".to_owned(),
                 value: latency_value,
             },
             HealthMetric {
+                id: RATE_LIMIT_METRIC,
                 label: "RATE LIMIT".to_owned(),
                 value: budget_value,
             },
             HealthMetric {
+                id: LAST_SEND_METRIC,
                 label: "LAST SEND".to_owned(),
                 value: last_send_value,
             },
             HealthMetric {
+                id: ERRORS_METRIC,
                 label: "ERRORS".to_owned(),
                 value: errors_value,
             },

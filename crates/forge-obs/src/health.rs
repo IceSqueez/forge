@@ -5,9 +5,16 @@ use tokio::sync::broadcast;
 use tokio_stream::StreamExt;
 use tokio_stream::wrappers::BroadcastStream;
 
-use forge_platform_core::{BuiltinHealth, HealthDelta, HealthMetric, HealthStream, HealthValue};
+use forge_platform_core::{
+    BuiltinHealth, HealthDelta, HealthMetric, HealthMetricId, HealthStream, HealthValue,
+};
 
 use crate::client::ObsClient;
+
+pub(crate) const STREAM_METRIC: HealthMetricId = HealthMetricId::new("stream");
+pub(crate) const RECORDING_METRIC: HealthMetricId = HealthMetricId::new("recording");
+pub(crate) const CPU_FPS_METRIC: HealthMetricId = HealthMetricId::new("cpu_fps");
+pub(crate) const DROPPED_METRIC: HealthMetricId = HealthMetricId::new("dropped_frames");
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct FrameCounterSample {
@@ -120,10 +127,12 @@ impl BuiltinHealth for ObsClient {
 
         [
             HealthMetric {
+                id: STREAM_METRIC,
                 label: "Stream".to_owned(),
                 value: stream_health_value(snap.stream_active, snap.stream_duration),
             },
             HealthMetric {
+                id: RECORDING_METRIC,
                 label: "Recording".to_owned(),
                 value: record_health_value(
                     snap.record_active,
@@ -132,10 +141,12 @@ impl BuiltinHealth for ObsClient {
                 ),
             },
             HealthMetric {
+                id: CPU_FPS_METRIC,
                 label: "CPU \u{00b7} FPS".to_owned(),
                 value: cpu_fps_value(snap.cpu_percent, snap.fps, snap.render_lag),
             },
             HealthMetric {
+                id: DROPPED_METRIC,
                 label: "Dropped".to_owned(),
                 value: dropped_value(snap.dropped_frames, snap.total_frames),
             },

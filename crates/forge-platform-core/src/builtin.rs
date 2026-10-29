@@ -1,3 +1,4 @@
+use std::borrow::Cow;
 use std::collections::BTreeMap;
 use std::fmt;
 use std::pin::Pin;
@@ -50,15 +51,38 @@ pub enum HealthValue {
     },
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(transparent)]
+pub struct HealthMetricId(Cow<'static, str>);
+
+impl HealthMetricId {
+    pub const VIEWERS: Self = Self::new("viewers");
+
+    pub const fn new(id: &'static str) -> Self {
+        Self(Cow::Borrowed(id))
+    }
+
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+impl fmt::Display for HealthMetricId {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(&self.0)
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct HealthMetric {
+    pub id: HealthMetricId,
     pub label: String,
     pub value: HealthValue,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct HealthDelta {
-    pub index: u8,
+    pub metric: HealthMetricId,
     pub new_value: HealthValue,
 }
 

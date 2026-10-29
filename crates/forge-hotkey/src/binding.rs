@@ -1,4 +1,3 @@
-use forge_platform_core::{BuiltinHealth, HealthValue};
 use forge_types::{ActionId, TriggerInstanceId};
 
 use crate::backend::HotkeyId;
@@ -6,7 +5,6 @@ use crate::client::HotkeyClient;
 use crate::vocabulary::event_kinds;
 
 pub const COMBO_FIELD: &str = "combo";
-const CONFLICTS_METRIC: &str = "CONFLICTS";
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum HotkeyEdge {
@@ -111,14 +109,10 @@ pub fn registered_combos(client: &HotkeyClient) -> Vec<(HotkeyId, String)> {
 
 pub fn conflict_count(client: &HotkeyClient) -> usize {
     client
-        .metrics()
-        .into_iter()
-        .find(|metric| metric.label == CONFLICTS_METRIC)
-        .and_then(|metric| match metric.value {
-            HealthValue::Text { primary, .. } => primary.parse::<usize>().ok(),
-            _ => None,
-        })
-        .unwrap_or(0)
+        .health_state
+        .lock()
+        .unwrap_or_else(|p| p.into_inner())
+        .conflict_count
 }
 
 #[cfg(test)]

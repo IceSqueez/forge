@@ -80,7 +80,7 @@ pub fn integration_facts(builtins: &BuiltinRegistry) -> Vec<IntegrationFacts> {
                 .health
                 .metrics()
                 .iter()
-                .map(|metric| (metric.label.clone(), health_shape(&metric.value)))
+                .map(|metric| (metric.id.as_str().to_owned(), health_shape(&metric.value)))
                 .collect(),
             quick_actions: object.quick.actions().len(),
         })

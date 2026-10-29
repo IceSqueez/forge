@@ -5,7 +5,10 @@ use forge_platform_core::HealthDelta;
 use serde_json::json;
 
 use crate::catalog::ObsCatalog;
-use crate::health::{FrameCounterSample, HealthSnapshot};
+use crate::health::{
+    CPU_FPS_METRIC, DROPPED_METRIC, FrameCounterSample, HealthSnapshot, RECORDING_METRIC,
+    STREAM_METRIC,
+};
 use crate::source::SourceInfo;
 use crate::vocabulary::event_kinds;
 use crate::vocabulary::fields::{
@@ -517,7 +520,7 @@ pub(crate) fn apply_health_update(
             }
             snapshot.stream_active = *active;
             vec![HealthDelta {
-                index: 0,
+                metric: STREAM_METRIC,
                 new_value: crate::health::stream_health_value(*active, snapshot.stream_duration),
             }]
         }
@@ -527,7 +530,7 @@ pub(crate) fn apply_health_update(
             }
             snapshot.record_active = *active;
             vec![HealthDelta {
-                index: 1,
+                metric: RECORDING_METRIC,
                 new_value: crate::health::record_health_value(
                     *active,
                     snapshot.record_paused,
@@ -590,7 +593,7 @@ pub(crate) fn apply_stats_update(
     snapshot.fps = stats.active_fps;
     snapshot.render_lag = render_lag;
     vec![HealthDelta {
-        index: 2,
+        metric: CPU_FPS_METRIC,
         new_value: crate::health::cpu_fps_value(
             snapshot.cpu_percent,
             snapshot.fps,
@@ -612,7 +615,7 @@ pub(crate) fn apply_stream_status_update(
         snapshot.stream_active = status.active;
         snapshot.stream_duration = duration;
         deltas.push(HealthDelta {
-            index: 0,
+            metric: STREAM_METRIC,
             new_value: crate::health::stream_health_value(status.active, duration),
         });
     }
@@ -621,7 +624,7 @@ pub(crate) fn apply_stream_status_update(
         snapshot.dropped_frames = dropped;
         snapshot.total_frames = total;
         deltas.push(HealthDelta {
-            index: 3,
+            metric: DROPPED_METRIC,
             new_value: crate::health::dropped_value(dropped, total),
         });
     }
@@ -644,7 +647,7 @@ pub(crate) fn apply_record_status_update(
     snapshot.record_paused = status.paused;
     snapshot.record_duration = duration;
     vec![HealthDelta {
-        index: 1,
+        metric: RECORDING_METRIC,
         new_value: crate::health::record_health_value(status.active, status.paused, duration),
     }]
 }

@@ -9,7 +9,7 @@ use forge_platform_core::{
 
 use crate::client::VTubeClient;
 use crate::error::VTubeError;
-use crate::health::HealthSnapshot;
+use crate::health::{EXPRESSIONS_METRIC, HealthSnapshot, ITEMS_METRIC, MODEL_METRIC};
 use crate::vts::message_type::{
     API_STATE_REQUEST, AVAILABLE_MODELS_REQUEST, CURRENT_MODEL_REQUEST, EXPRESSION_STATE_REQUEST,
     HOTKEYS_IN_CURRENT_MODEL_REQUEST, ITEM_LIST_REQUEST,
@@ -171,7 +171,7 @@ async fn report_expressions(
             reason = "having no subscribers is a normal state"
         )]
         let _ = health_tx.send(HealthDelta {
-            index: 1,
+            metric: EXPRESSIONS_METRIC,
             new_value: HealthValue::Text {
                 primary: after.to_string(),
                 secondary: Some("hotkey-bound".to_owned()),
@@ -194,7 +194,7 @@ async fn report_items(
             reason = "having no subscribers is a normal state"
         )]
         let _ = health_tx.send(HealthDelta {
-            index: 2,
+            metric: ITEMS_METRIC,
             new_value: HealthValue::Text {
                 primary: after.unwrap_or(0).to_string(),
                 secondary: Some("throwable / pinned".to_owned()),
@@ -232,7 +232,7 @@ fn report_model_secondary(
         reason = "having no subscribers is a normal state"
     )]
     let _ = health_tx.send(HealthDelta {
-        index: 0,
+        metric: MODEL_METRIC,
         new_value: HealthValue::Text {
             primary,
             secondary: param_count.map(|n| format!("{n} parameters")),

@@ -4,7 +4,9 @@ use tokio::sync::broadcast;
 use tokio_stream::StreamExt;
 use tokio_stream::wrappers::BroadcastStream;
 
-use forge_platform_core::{BuiltinHealth, HealthDelta, HealthMetric, HealthStream, HealthValue};
+use forge_platform_core::{
+    BuiltinHealth, HealthDelta, HealthMetric, HealthMetricId, HealthStream, HealthValue,
+};
 
 use crate::client::VTubeClient;
 use crate::vts::event::VtsEvent;
@@ -23,8 +25,10 @@ pub(crate) fn make_health_channel() -> (broadcast::Sender<HealthDelta>, Arc<RwLo
     (tx, Arc::new(RwLock::new(HealthSnapshot::default())))
 }
 
-const MODEL_METRIC_INDEX: u8 = 0;
-const TRACKING_METRIC_INDEX: u8 = 3;
+pub(crate) const MODEL_METRIC: HealthMetricId = HealthMetricId::new("model");
+pub(crate) const EXPRESSIONS_METRIC: HealthMetricId = HealthMetricId::new("expressions");
+pub(crate) const ITEMS_METRIC: HealthMetricId = HealthMetricId::new("items");
+pub(crate) const TRACKING_METRIC: HealthMetricId = HealthMetricId::new("tracking");
 
 pub(crate) fn update_from_event(
     event: &VtsEvent,
@@ -62,7 +66,7 @@ pub(crate) fn apply_tracking(
             reason = "having no subscribers is a normal state"
         )]
         let _ = tx.send(HealthDelta {
-            index: TRACKING_METRIC_INDEX,
+            metric: TRACKING_METRIC,
             new_value: tracking_value(face_found),
         });
     }
@@ -99,7 +103,7 @@ pub(crate) fn apply_model(
             reason = "having no subscribers is a normal state"
         )]
         let _ = tx.send(HealthDelta {
-            index: MODEL_METRIC_INDEX,
+            metric: MODEL_METRIC,
             new_value: HealthValue::Text { primary, secondary },
         });
     }
@@ -152,6 +156,7 @@ impl BuiltinHealth for VTubeClient {
 
         [
             HealthMetric {
+                id: MODEL_METRIC,
                 label: "MODEL".to_owned(),
                 value: HealthValue::Text {
                     primary: model_primary,
@@ -159,6 +164,7 @@ impl BuiltinHealth for VTubeClient {
                 },
             },
             HealthMetric {
+                id: EXPRESSIONS_METRIC,
                 label: "EXPRESSIONS".to_owned(),
                 value: HealthValue::Text {
                     primary: content.expressions.len().to_string(),
@@ -166,6 +172,7 @@ impl BuiltinHealth for VTubeClient {
                 },
             },
             HealthMetric {
+                id: ITEMS_METRIC,
                 label: "ITEMS".to_owned(),
                 value: HealthValue::Text {
                     primary: content.item_count.unwrap_or(0).to_string(),
@@ -173,6 +180,7 @@ impl BuiltinHealth for VTubeClient {
                 },
             },
             HealthMetric {
+                id: TRACKING_METRIC,
                 label: "TRACKING".to_owned(),
                 value: tracking_value(snap.tracking_active),
             },

@@ -1633,3 +1633,48 @@ async fn the_preview_flags_scripts_http_and_script_steps_and_overlay_sources_as_
         ])
     );
 }
+
+#[tokio::test]
+async fn the_preview_flags_an_http_step_nested_under_a_disabled_branch_as_executable() {
+    let registries = Registries::real().await;
+    let source = Store::open().await;
+    let queue = Queue {
+        id: QueueId::new(),
+        name: QUEUE_NAME.to_owned(),
+        description: "pack queue".to_owned(),
+        concurrency: 1,
+    };
+    source.provider.queue_repo().save(&queue).await.unwrap();
+    let nested_http = Variant::Object(config(&[
+        ("kind_id", text(HTTP_STEP)),
+        (
+            "config",
+            Variant::Object(config(&[("url", text("https://example.invalid/hook"))])),
+        ),
+        ("enabled", Variant::Bool(true)),
+    ]));
+    let disabled_branch = SubActionStep {
+        enabled: false,
+        ..step(
+            "core.logic.if_then_else",
+            config(&[
+                ("condition", text("true")),
+                ("then_chain", Variant::Array(vec![nested_http])),
+            ]),
+        )
+    };
+    let nested = action(ActionId::new(), "Nested", queue.id, vec![disabled_branch]);
+    source.provider.action_repo().save(&nested).await.unwrap();
+    let bundle = export(&source, &registries, &[nested.id]).await;
+    let target = Store::open().await;
+
+    let (_staged, plan) = preview(&target, &registries, &bundle).await;
+
+    assert_eq!(
+        plan.executable_content(),
+        [ExecutableContent::HttpStep {
+            action: "Nested".to_owned(),
+            kind_id: HTTP_STEP.to_owned(),
+        }]
+    );
+}

@@ -737,3 +737,64 @@ async fn foreach_limit_exit_reason_reaches_the_next_step_when_the_loop_continues
 
     assert_eq!(run.arg_stack.get("observed"), Some(&s("foreach_limit")));
 }
+
+#[tokio::test]
+async fn logic_steps_skip_unreadable_nested_entries_and_run_the_rest_of_the_chain() {
+    let eng = engine();
+    let chain = || {
+        let mut wrong_flag = SubActionConfig::new();
+        wrong_flag.insert("kind_id".to_owned(), s("core.args.set"));
+        wrong_flag.insert(
+            "config".to_owned(),
+            Variant::Object(args_set("skipped", "ran")),
+        );
+        wrong_flag.insert("enabled".to_owned(), s("yes"));
+        let mut no_kind = SubActionConfig::new();
+        no_kind.insert(
+            "config".to_owned(),
+            Variant::Object(args_set("skipped", "ran")),
+        );
+        inline(vec![
+            chain_step("core.args.set", args_set("before", "ran")),
+            Variant::Object(wrong_flag),
+            s("not a step"),
+            Variant::Object(no_kind),
+            chain_step("core.args.set", args_set("after", "ran")),
+        ])
+    };
+    for (arm, logic) in [
+        (
+            "then",
+            step(
+                "core.logic.if_then_else",
+                if_cfg("1 == 1", chain(), inline(vec![])),
+            ),
+        ),
+        (
+            "else",
+            step(
+                "core.logic.if_then_else",
+                if_cfg("1 == 2", inline(vec![]), chain()),
+            ),
+        ),
+        ("loop body", step("core.logic.loop", loop_cfg(1, chain()))),
+        (
+            "case",
+            step(
+                "core.logic.switch_case",
+                switch_cfg("a", vec![case(s("a"), chain())], inline(vec![])),
+            ),
+        ),
+        (
+            "default",
+            step("core.logic.switch_case", switch_cfg("zzz", vec![], chain())),
+        ),
+    ] {
+        let run = run_top(&eng, vec![logic]).await;
+
+        assert_eq!(run.signal, ChainSignal::Completed, "{arm}");
+        assert_eq!(run.arg_stack.get("before"), Some(&s("ran")), "{arm}");
+        assert_eq!(run.arg_stack.get("after"), Some(&s("ran")), "{arm}");
+        assert!(run.arg_stack.get("skipped").is_none(), "{arm}");
+    }
+}

@@ -7,7 +7,7 @@ use forge_registry::{
     ActorBlock, ActorIdentity, BREAK_LOOP_KIND_ID, CASE_CHAIN_KEY, CONTINUE_LOOP_KIND_ID, CodeKind,
     CodeLanguage, ConfigProblem, ConfigReason, Finding, FormField, HealthSeverity, LOOP_KIND_ID,
     LoginSlot, ProducedVariable, STOP_KIND_ID, StepHealth, SubActionIo, SubActionRegistry,
-    TriggerRegistry, TriggerVariables, analyze, flag_failed, flag_switched_off,
+    TriggerRegistry, TriggerVariables, UndecodableReason, analyze, flag_failed, flag_switched_off,
 };
 use forge_types::{
     Action, ActorRole, ActorSlot, CanonicalVariable, DatePattern, DeclaredVariable, ExecutionMode,
@@ -1034,11 +1034,18 @@ fn a_disabled_step_raises_no_date_pattern_or_step_config_finding() {
 }
 
 #[test]
-fn date_pattern_and_step_config_errors_break_the_step_while_a_kind_mismatch_warns() {
+fn broken_patterns_configs_and_unreadable_steps_break_the_step_while_a_kind_mismatch_warns() {
     for (finding, severity) in [
         (invalid_pattern("qq"), HealthSeverity::Red),
         (
             Finding::InvalidStepConfig(check_failure()),
+            HealthSeverity::Red,
+        ),
+        (
+            Finding::UndecodableStep {
+                position: 0,
+                reason: UndecodableReason::MissingKind,
+            },
             HealthSeverity::Red,
         ),
         (
@@ -1052,4 +1059,43 @@ fn date_pattern_and_step_config_errors_break_the_step_while_a_kind_mismatch_warn
             "{finding:?}"
         );
     }
+}
+
+#[test]
+fn an_unreadable_nested_step_is_reported_on_its_top_level_step_only_when_that_step_is_enabled() {
+    let branch_holding_garbage = |enabled| {
+        let mut chain = encode_chain(&[plain(CORE_LOG)]);
+        if let Variant::Array(entries) = &mut chain {
+            entries.push(Variant::String("not a step".to_owned()));
+        }
+        step(
+            BRANCH_KIND,
+            SubActionConfig::from([(THEN_CHAIN_KEY.to_owned(), chain)]),
+            enabled,
+        )
+    };
+
+    let health = analyze(
+        &action(
+            "stub action",
+            vec![branch_holding_garbage(true), branch_holding_garbage(false)],
+        ),
+        &[],
+        &[None, None],
+        &flow_registry(),
+        &TriggerRegistry::new(),
+    );
+
+    assert_eq!(
+        health,
+        vec![
+            StepHealth {
+                findings: vec![Finding::UndecodableStep {
+                    position: 1,
+                    reason: UndecodableReason::NotAnObject,
+                }],
+            },
+            StepHealth::default(),
+        ]
+    );
 }

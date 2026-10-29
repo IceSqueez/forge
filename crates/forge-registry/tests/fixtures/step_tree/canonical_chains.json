@@ -1,0 +1,218 @@
+[
+  {
+    "type": "array",
+    "value": [
+      {
+        "type": "object",
+        "value": {
+          "config": {
+            "type": "object",
+            "value": {
+              "message": {
+                "type": "string",
+                "value": "then 👋"
+              }
+            }
+          },
+          "continue_on_error": {
+            "type": "bool",
+            "value": false
+          },
+          "enabled": {
+            "type": "bool",
+            "value": true
+          },
+          "kind_id": {
+            "type": "string",
+            "value": "core.log.write"
+          }
+        }
+      },
+      {
+        "type": "object",
+        "value": {
+          "config": {
+            "type": "object",
+            "value": {
+              "body": {
+                "type": "array",
+                "value": [
+                  {
+                    "type": "object",
+                    "value": {
+                      "config": {
+                        "type": "object",
+                        "value": {
+                          "cases": {
+                            "type": "array",
+                            "value": [
+                              {
+                                "type": "object",
+                                "value": {
+                                  "chain": {
+                                    "type": "array",
+                                    "value": [
+                                      {
+                                        "type": "object",
+                                        "value": {
+                                          "config": {
+                                            "type": "object",
+                                            "value": {
+                                              "message": {
+                                                "type": "string",
+                                                "value": "first"
+                                              }
+                                            }
+                                          },
+                                          "continue_on_error": {
+                                            "type": "bool",
+                                            "value": false
+                                          },
+                                          "enabled": {
+                                            "type": "bool",
+                                            "value": true
+                                          },
+                                          "kind_id": {
+                                            "type": "string",
+                                            "value": "core.log.write"
+                                          }
+                                        }
+                                      }
+                                    ]
+                                  },
+                                  "match": {
+                                    "type": "string",
+                                    "value": "0"
+                                  }
+                                }
+                              },
+                              {
+                                "type": "object",
+                                "value": {
+                                  "chain": {
+                                    "type": "array",
+                                    "value": []
+                                  },
+                                  "match": {
+                                    "type": "string",
+                                    "value": "1"
+                                  }
+                                }
+                              }
+                            ]
+                          },
+                          "default_chain": {
+                            "type": "array",
+                            "value": [
+                              {
+                                "type": "object",
+                                "value": {
+                                  "config": {
+                                    "type": "object",
+                                    "value": {
+                                      "message": {
+                                        "type": "string",
+                                        "value": "other"
+                                      }
+                                    }
+                                  },
+                                  "continue_on_error": {
+                                    "type": "bool",
+                                    "value": false
+                                  },
+                                  "enabled": {
+                                    "type": "bool",
+                                    "value": true
+                                  },
+                                  "kind_id": {
+                                    "type": "string",
+                                    "value": "core.log.write"
+                                  }
+                                }
+                              }
+                            ]
+                          },
+                          "expression": {
+                            "type": "string",
+                            "value": "%loop.index%"
+                          }
+                        }
+                      },
+                      "continue_on_error": {
+                        "type": "bool",
+                        "value": true
+                      },
+                      "enabled": {
+                        "type": "bool",
+                        "value": true
+                      },
+                      "kind_id": {
+                        "type": "string",
+                        "value": "core.logic.switch_case"
+                      },
+                      "label": {
+                        "type": "string",
+                        "value": "inner switch"
+                      }
+                    }
+                  }
+                ]
+              },
+              "count": {
+                "type": "int",
+                "value": 3
+              },
+              "mode": {
+                "type": "string",
+                "value": "count"
+              }
+            }
+          },
+          "continue_on_error": {
+            "type": "bool",
+            "value": false
+          },
+          "enabled": {
+            "type": "bool",
+            "value": true
+          },
+          "kind_id": {
+            "type": "string",
+            "value": "core.logic.loop"
+          }
+        }
+      }
+    ]
+  },
+  {
+    "type": "array",
+    "value": [
+      {
+        "type": "object",
+        "value": {
+          "config": {
+            "type": "object",
+            "value": {
+              "message": {
+                "type": "string",
+                "value": "else"
+              }
+            }
+          },
+          "continue_on_error": {
+            "type": "bool",
+            "value": false
+          },
+          "enabled": {
+            "type": "bool",
+            "value": true
+          },
+          "kind_id": {
+            "type": "string",
+            "value": "core.log.write"
+          }
+        }
+      }
+    ]
+  }
+]

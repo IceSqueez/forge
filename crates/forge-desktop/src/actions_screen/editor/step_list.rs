@@ -441,4 +441,22 @@ mod tests {
 
         assert!(rendered.contains("Target scene"), "{rendered}");
     }
+
+    #[test]
+    fn an_unreadable_nested_step_line_counts_its_position_from_one_in_both_locales() {
+        for lang in [Language::En, Language::Uk] {
+            install_language(lang);
+            let finding = Finding::UndecodableStep {
+                position: 41,
+                reason: forge_registry::UndecodableReason::NotAnObject,
+            };
+
+            let rendered = analyzer_finding_message(&finding, "test.step", &[]);
+
+            assert!(
+                rendered.contains("42") && !rendered.contains("41"),
+                "{lang:?}: {rendered}"
+            );
+        }
+    }
 }

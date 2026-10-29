@@ -1,0 +1,283 @@
+[
+  {
+    "type": "array",
+    "value": [
+      {
+        "type": "object",
+        "value": {
+          "config": {
+            "type": "object",
+            "value": {
+              "message": {
+                "type": "string",
+                "value": "first"
+              }
+            }
+          },
+          "continue_on_error": {
+            "type": "bool",
+            "value": false
+          },
+          "enabled": {
+            "type": "bool",
+            "value": true
+          },
+          "kind_id": {
+            "type": "string",
+            "value": "core.log.write"
+          }
+        }
+      },
+      {
+        "type": "string",
+        "value": "not a step"
+      },
+      {
+        "type": "object",
+        "value": {
+          "config": {
+            "type": "object",
+            "value": {
+              "message": {
+                "type": "string",
+                "value": "no kind"
+              }
+            }
+          },
+          "enabled": {
+            "type": "bool",
+            "value": true
+          }
+        }
+      },
+      {
+        "type": "object",
+        "value": {
+          "config": {
+            "type": "object",
+            "value": {}
+          },
+          "kind_id": {
+            "type": "int",
+            "value": 7
+          }
+        }
+      },
+      {
+        "type": "object",
+        "value": {
+          "config": {
+            "type": "object",
+            "value": {}
+          },
+          "enabled": {
+            "type": "string",
+            "value": "yes"
+          },
+          "kind_id": {
+            "type": "string",
+            "value": "core.log.write"
+          }
+        }
+      },
+      {
+        "type": "object",
+        "value": {
+          "config": {
+            "type": "object",
+            "value": {}
+          },
+          "continue_on_error": {
+            "type": "int",
+            "value": 1
+          },
+          "kind_id": {
+            "type": "string",
+            "value": "core.log.write"
+          }
+        }
+      },
+      {
+        "type": "object",
+        "value": {
+          "condition": {
+            "type": "bool",
+            "value": true
+          },
+          "config": {
+            "type": "object",
+            "value": {}
+          },
+          "kind_id": {
+            "type": "string",
+            "value": "core.log.write"
+          }
+        }
+      },
+      {
+        "type": "object",
+        "value": {
+          "config": {
+            "type": "object",
+            "value": {}
+          },
+          "kind_id": {
+            "type": "string",
+            "value": "core.log.write"
+          },
+          "label": {
+            "type": "array",
+            "value": []
+          }
+        }
+      },
+      {
+        "type": "object",
+        "value": {
+          "config": {
+            "type": "string",
+            "value": "not an object"
+          },
+          "kind_id": {
+            "type": "string",
+            "value": "core.log.write"
+          }
+        }
+      },
+      {
+        "type": "object",
+        "value": {
+          "config": {
+            "type": "array",
+            "value": []
+          },
+          "kind_id": {
+            "type": "string",
+            "value": "core.log.write"
+          }
+        }
+      },
+      {
+        "type": "int",
+        "value": 7
+      },
+      {
+        "type": "array",
+        "value": []
+      },
+      {
+        "type": "object",
+        "value": {
+          "condition": {
+            "type": "string",
+            "value": "%armed%"
+          },
+          "config": {
+            "type": "object",
+            "value": {
+              "message": {
+                "type": "string",
+                "value": "кінець 👋"
+              }
+            }
+          },
+          "continue_on_error": {
+            "type": "bool",
+            "value": true
+          },
+          "enabled": {
+            "type": "bool",
+            "value": false
+          },
+          "kind_id": {
+            "type": "string",
+            "value": "core.log.write"
+          },
+          "label": {
+            "type": "string",
+            "value": "мітка"
+          }
+        }
+      },
+      {
+        "type": "object",
+        "value": {
+          "config": {
+            "type": "object",
+            "value": {
+              "condition": {
+                "type": "string",
+                "value": "true"
+              },
+              "then_chain": {
+                "type": "array",
+                "value": [
+                  {
+                    "type": "object",
+                    "value": {
+                      "kind_id": {
+                        "type": "bool",
+                        "value": false
+                      }
+                    }
+                  },
+                  {
+                    "type": "object",
+                    "value": {
+                      "config": {
+                        "type": "object",
+                        "value": {
+                          "message": {
+                            "type": "string",
+                            "value": "inside"
+                          }
+                        }
+                      },
+                      "continue_on_error": {
+                        "type": "bool",
+                        "value": false
+                      },
+                      "enabled": {
+                        "type": "bool",
+                        "value": true
+                      },
+                      "kind_id": {
+                        "type": "string",
+                        "value": "core.log.write"
+                      }
+                    }
+                  }
+                ]
+              }
+            }
+          },
+          "continue_on_error": {
+            "type": "bool",
+            "value": false
+          },
+          "enabled": {
+            "type": "bool",
+            "value": true
+          },
+          "kind_id": {
+            "type": "string",
+            "value": "core.logic.if_then_else"
+          }
+        }
+      }
+    ]
+  },
+  {
+    "type": "array",
+    "value": [
+      {
+        "type": "string",
+        "value": "only garbage"
+      },
+      {
+        "type": "object",
+        "value": {}
+      }
+    ]
+  }
+]

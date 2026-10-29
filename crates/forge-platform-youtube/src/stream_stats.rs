@@ -139,7 +139,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn fetch_returns_live_details_variant_with_query_contract() {
+    async fn fetch_returns_typed_details_with_query_contract() {
         let server = MockServer::start().await;
         Mock::given(method("GET"))
             .and(path("/videos"))
@@ -157,39 +157,32 @@ mod tests {
             .mount(&server)
             .await;
 
-        let result = stats_on(&server, Some("bc-live")).fetch().await.unwrap();
-        let Variant::Object(map) = result else {
-            panic!("expected Object, got {result:?}");
-        };
-        assert_eq!(map.get("concurrent_viewers"), Some(&Variant::Int(1234)));
+        let details = stats_on(&server, Some("bc-live")).fetch().await.unwrap();
         assert_eq!(
-            map.get("actual_start_time"),
-            Some(&Variant::Datetime(instant("2026-07-24T10:00:00Z")))
-        );
-        assert_eq!(
-            map.get("scheduled_start_time"),
-            Some(&Variant::Datetime(instant("2026-07-24T09:30:00Z")))
-        );
-        assert_eq!(
-            map.get("live_chat_id"),
-            Some(&Variant::String("lc-abc".to_owned()))
+            details,
+            YoutubeStreamDetails {
+                concurrent_viewers: 1234,
+                live_chat_id: "lc-abc".to_owned(),
+                actual_start: Some(instant("2026-07-24T10:00:00Z")),
+                scheduled_start: Some(instant("2026-07-24T09:30:00Z")),
+            }
         );
     }
 
     #[tokio::test]
     async fn fetch_omits_each_start_time_independently_when_absent_or_unreadable() {
-        let actual = Variant::Datetime(instant("2026-07-24T10:00:00Z"));
-        let scheduled = Variant::Datetime(instant("2026-07-24T09:30:00Z"));
+        let actual = instant("2026-07-24T10:00:00Z");
+        let scheduled = instant("2026-07-24T09:30:00Z");
         for (details, expected_actual, expected_scheduled, what) in [
             (
                 json!({ "scheduledStartTime": "2026-07-24T09:30:00Z" }),
                 None,
-                Some(&scheduled),
+                Some(scheduled),
                 "upcoming broadcast without actualStartTime",
             ),
             (
                 json!({ "actualStartTime": "2026-07-24T10:00:00Z" }),
-                Some(&actual),
+                Some(actual),
                 None,
                 "unscheduled broadcast without scheduledStartTime",
             ),
@@ -217,26 +210,11 @@ mod tests {
                 .mount(&server)
                 .await;
 
-            let result = stats_on(&server, Some("bc")).fetch().await.unwrap();
-            let Variant::Object(map) = result else {
-                panic!("{what}: expected Object, got {result:?}");
-            };
-            assert_eq!(map.get("actual_start_time"), expected_actual, "{what}");
-            assert_eq!(
-                map.get("scheduled_start_time"),
-                expected_scheduled,
-                "{what}"
-            );
-            assert_eq!(
-                map.get("live_chat_id"),
-                Some(&Variant::String("lc-abc".to_owned())),
-                "{what}"
-            );
-            assert_eq!(
-                map.get("concurrent_viewers"),
-                Some(&Variant::Int(7)),
-                "{what}"
-            );
+            let details = stats_on(&server, Some("bc")).fetch().await.unwrap();
+            assert_eq!(details.actual_start, expected_actual, "{what}");
+            assert_eq!(details.scheduled_start, expected_scheduled, "{what}");
+            assert_eq!(details.live_chat_id, "lc-abc", "{what}");
+            assert_eq!(details.concurrent_viewers, 7, "{what}");
         }
     }
 
@@ -253,11 +231,9 @@ mod tests {
             .mount(&server)
             .await;
 
-        let result = stats_on(&server, Some("bc")).fetch().await.unwrap();
-        let Variant::Object(map) = result else {
-            panic!("expected Object, got {result:?}");
-        };
-        assert_eq!(map.get("concurrent_viewers"), Some(&Variant::Int(0)));
+        let details = stats_on(&server, Some("bc")).fetch().await.unwrap();
+        assert_eq!(details.concurrent_viewers, 0);
+        assert_eq!(details.live_chat_id, "");
     }
 
     #[tokio::test]

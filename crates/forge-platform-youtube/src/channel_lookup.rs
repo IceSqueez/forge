@@ -149,7 +149,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn lookup_parses_channel_into_variant_object() {
+    async fn lookup_parses_channel_into_typed_profile() {
         let server = MockServer::start().await;
         Mock::given(method("GET"))
             .and(path("/channels"))
@@ -157,20 +157,46 @@ mod tests {
             .mount(&server)
             .await;
 
-        let result = lookup_on(&server).lookup("@creator").await.unwrap();
-        let Variant::Object(map) = result else {
-            panic!("expected Object, got {result:?}");
-        };
+        let profile = lookup_on(&server).lookup("@creator").await.unwrap();
         assert_eq!(
-            map.get("channel_id"),
-            Some(&Variant::String("UCxyzchannelid".to_owned()))
+            profile,
+            YoutubeChannelProfile {
+                channel_id: "UCxyzchannelid".to_owned(),
+                title: "Creator Name".to_owned(),
+                subscriber_count: 500,
+                view_count: 12000,
+            }
         );
-        assert_eq!(
-            map.get("title"),
-            Some(&Variant::String("Creator Name".to_owned()))
-        );
-        assert_eq!(map.get("subscriber_count"), Some(&Variant::Int(500)));
-        assert_eq!(map.get("view_count"), Some(&Variant::Int(12000)));
+    }
+
+    #[tokio::test]
+    async fn lookup_defaults_hidden_or_unparsable_statistics_to_zero() {
+        for (statistics, expected_views, what) in [
+            (
+                json!({ "hiddenSubscriberCount": true, "viewCount": "9" }),
+                9,
+                "hidden subscribers",
+            ),
+            (
+                json!({ "subscriberCount": "many", "viewCount": 9 }),
+                0,
+                "garbage and number",
+            ),
+            (json!({}), 0, "statistics absent"),
+        ] {
+            let server = MockServer::start().await;
+            Mock::given(method("GET"))
+                .and(path("/channels"))
+                .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+                    "items": [{ "id": "UCx", "snippet": { "title": "T" }, "statistics": statistics }]
+                })))
+                .mount(&server)
+                .await;
+
+            let profile = lookup_on(&server).lookup("@creator").await.unwrap();
+            assert_eq!(profile.subscriber_count, 0, "{what}");
+            assert_eq!(profile.view_count, expected_views, "{what}");
+        }
     }
 
     #[tokio::test]

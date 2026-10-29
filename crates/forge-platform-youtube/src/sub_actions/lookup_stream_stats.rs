@@ -239,6 +239,36 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn execute_publishes_zero_viewers_and_empty_chat_id_when_api_omits_them() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/videos"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+                "items": [{ "liveStreamingDetails": {} }]
+            })))
+            .mount(&server)
+            .await;
+
+        let runner = runner_on(&server, Some("bc"));
+        let (telemetry, produced) = runner
+            .execute(&BTreeMap::new(), &make_ctx(&ArgStack::new()))
+            .await;
+
+        assert_eq!(telemetry.outcome, SubActionOutcome::Success);
+        let stack = produced.expect("stats lookup must produce an arg stack");
+        assert_eq!(
+            stack.get("youtube.stream.concurrent_viewers"),
+            Some(&Variant::Int(0))
+        );
+        assert_eq!(
+            stack.get("youtube.stream.live_chat_id"),
+            Some(&Variant::String(String::new()))
+        );
+        assert_eq!(stack.get("youtube.stream.actual_start_time"), None);
+        assert_eq!(stack.get("youtube.stream.scheduled_start_time"), None);
+    }
+
+    #[tokio::test]
     async fn execute_fails_when_no_active_broadcast() {
         let server = MockServer::start().await;
         let runner = runner_on(&server, None);

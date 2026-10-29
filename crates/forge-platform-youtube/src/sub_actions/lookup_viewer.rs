@@ -281,6 +281,42 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn execute_publishes_zero_counts_when_statistics_are_hidden() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/channels"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+                "items": [{
+                    "id": "UCchan",
+                    "snippet": { "title": "Creator" },
+                    "statistics": { "hiddenSubscriberCount": true }
+                }]
+            })))
+            .mount(&server)
+            .await;
+
+        let runner = runner_on(&server);
+        let (telemetry, produced) = runner
+            .execute(&config("@creator"), &make_ctx(&ArgStack::new()))
+            .await;
+
+        assert_eq!(telemetry.outcome, SubActionOutcome::Success);
+        let stack = produced.expect("lookup must produce an arg stack");
+        assert_eq!(
+            stack.get("youtube.viewer.subscriber_count"),
+            Some(&Variant::Int(0))
+        );
+        assert_eq!(
+            stack.get("youtube.viewer.view_count"),
+            Some(&Variant::Int(0))
+        );
+        assert_eq!(
+            stack.get("youtube.viewer.title"),
+            Some(&Variant::String("Creator".to_owned()))
+        );
+    }
+
+    #[tokio::test]
     async fn lookup_error_maps_to_failed_without_leaking_token_url_or_response_body() {
         let server = MockServer::start().await;
         Mock::given(method("GET"))

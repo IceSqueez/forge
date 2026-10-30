@@ -528,11 +528,10 @@ impl ScreenActionsView {
         let service = Arc::clone(&self.actions_service);
         async_bridge::run_async(
             &self.rt_handle,
-            async move { service.load_telemetry(id).await },
-            move |this, result, cx| {
-                if let Ok(telemetry) = result {
-                    this.apply_telemetry(id, telemetry, cx);
-                }
+            async move { service.load_telemetry(id).await.map_err(RepoFailure::from) },
+            move |this, result, cx| match result {
+                Ok(telemetry) => this.apply_telemetry(id, telemetry, cx),
+                Err(failure) => this.on_repo_error(&failure, cx),
             },
             cx,
         );
@@ -540,12 +539,13 @@ impl ScreenActionsView {
         let service = Arc::clone(&self.actions_service);
         async_bridge::run_async(
             &self.rt_handle,
-            async move { service.recent_runs(id, 1).await },
-            move |this, result, cx| {
-                if let Ok(runs) = result {
+            async move { service.recent_runs(id, 1).await.map_err(RepoFailure::from) },
+            move |this, result, cx| match result {
+                Ok(runs) => {
                     let outcome = runs.into_iter().next().map(|ctx| ctx.outcome);
                     this.apply_last_outcome(id, outcome, cx);
                 }
+                Err(failure) => this.on_repo_error(&failure, cx),
             },
             cx,
         );

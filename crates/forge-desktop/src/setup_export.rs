@@ -13,6 +13,7 @@ use gpui::{AnyElement, App, ClickEvent, Context, Window, div, prelude::*};
 
 use crate::async_bridge::{self, DialogFilter};
 use crate::pack_services::PackServices;
+use crate::repo_failure::RepoFailure;
 use crate::restore_confirm::statement;
 
 const SETUP_TOAST_DURATION: Duration = Duration::from_secs(10);
@@ -102,21 +103,21 @@ impl SetupExportFlow {
                     destination,
                 })
                 .await
-                .map_err(|error| error.to_string())
+                .map_err(RepoFailure::from)
             },
             |this, result, cx| this.written(result, cx),
             cx,
         );
     }
 
-    fn written(&mut self, result: Result<PathBuf, String>, cx: &mut Context<Self>) {
+    fn written(&mut self, result: Result<PathBuf, RepoFailure>, cx: &mut Context<Self>) {
         self.step = SetupExportStep::Idle;
         report(result, cx);
         cx.notify();
     }
 }
 
-fn report(result: Result<PathBuf, String>, cx: &mut Context<SetupExportFlow>) {
+fn report(result: Result<PathBuf, RepoFailure>, cx: &mut Context<SetupExportFlow>) {
     match result {
         Ok(path) => {
             tracing::info!(path = %path.display(), "setup exported");
@@ -136,7 +137,7 @@ fn report(result: Result<PathBuf, String>, cx: &mut Context<SetupExportFlow>) {
             tracing::warn!(error = %message, "setup export failed");
             cx.push_toast(
                 ToastKind::Error,
-                tr!("setup_export_failed", error = message.as_str()),
+                tr!("setup_export_failed", error = message.text()),
             );
         }
     }
@@ -331,7 +332,10 @@ mod tests {
         let rig = rig(cx);
         rig.flow.update(cx, |flow, cx| {
             flow.step = SetupExportStep::Writing;
-            flow.written(Err("disk full".to_owned()), cx);
+            flow.written(
+                Err(crate::repo_failure::RepoFailure::operation("disk full")),
+                cx,
+            );
         });
 
         assert_eq!(

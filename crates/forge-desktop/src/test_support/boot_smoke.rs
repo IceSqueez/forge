@@ -172,7 +172,7 @@ impl AudioSinkFactory for RecordingSinkFactory {
 fn fake_identities() -> PlatformIdentities {
     let identity = |name: &str| OAuthClientIdentity {
         client_id: format!("{name}-client"),
-        client_secret: format!("{name}-secret"),
+        client_secret: forge_types::Secret::new(format!("{name}-secret")),
     };
     PlatformIdentities {
         twitch_client_id: Some("twitch-client".to_owned()),
@@ -277,7 +277,7 @@ async fn boot(platform_identities: PlatformIdentities) -> Booted {
             panic!("boot wants schema {expected}, found {found}")
         }
         Err(BootFailure::PreBaseline { found }) => panic!("schema {found} is before the baseline"),
-        Err(BootFailure::Retry { reason }) => panic!("boot failed: {reason}"),
+        Err(BootFailure::Retry { failure }) => panic!("boot failed: {failure}"),
     };
     Booted {
         handles,

@@ -1,4 +1,5 @@
 use crate::platform_visuals::platform_color;
+use crate::repo_failure::RepoFailure;
 use forge_components::breadcrumb::BreadcrumbCrumb;
 use forge_components::{
     BORDER_THIN, ColumnWidth, Confirm, ConfirmTone, DataRow, Density, FONT_SM, FONT_XS, FONT_XXS,
@@ -239,11 +240,11 @@ impl ServerConsoleView {
         async_bridge::run_async(
             &self.rt_handle,
             async move { restart_ignoring_disabled(&handle).await },
-            |this, result: Result<(), String>, cx| {
+            |this, result: Result<(), RepoFailure>, cx| {
                 this.restarting = false;
                 if let Err(message) = result {
                     tracing::warn!(error = %message, "failed to restart websocket server");
-                    ErrorSink::Toast.report(message, cx);
+                    ErrorSink::Toast.report(message.text(), cx);
                 }
                 cx.notify();
             },
@@ -363,13 +364,13 @@ impl ServerConsoleView {
         async_bridge::run_async(
             &self.rt_handle,
             server_bearer::current_bearer_token(server, credentials),
-            |this, result: Result<Option<Secret>, String>, cx| match result {
+            |this, result: Result<Option<Secret>, RepoFailure>, cx| match result {
                 Ok(Some(token)) => {
                     this.bearer_token = token;
                     cx.notify();
                 }
                 Ok(None) => {}
-                Err(reason) => server_bearer::token_load_failed(&reason, cx),
+                Err(reason) => server_bearer::token_load_failed(&reason.text(), cx),
             },
             cx,
         );
@@ -587,14 +588,14 @@ impl ServerConsoleView {
                 handle
                     .regenerate_bearer_token()
                     .await
-                    .map_err(|e| e.to_string())
+                    .map_err(RepoFailure::from)
             },
-            |this, result: Result<Secret, String>, cx| match result {
+            |this, result: Result<Secret, RepoFailure>, cx| match result {
                 Ok(token) => {
                     this.bearer_token = token;
                     cx.notify();
                 }
-                Err(reason) => server_bearer::token_regenerate_failed(&reason, cx),
+                Err(reason) => server_bearer::token_regenerate_failed(&reason.text(), cx),
             },
             cx,
         );

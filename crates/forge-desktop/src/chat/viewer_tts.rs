@@ -8,6 +8,7 @@ use gpui::{AppContext, Context, Entity, Subscription, Window};
 use super::ChatView;
 use super::viewer_actions::ViewerTarget;
 use crate::async_bridge;
+use crate::repo_failure::RepoFailure;
 use crate::voice_alias_form::{
     AliasForm, AliasFormEvent, AliasIdentity, AliasValues, platform_scope,
 };
@@ -36,7 +37,10 @@ impl ChatView {
                 Ok(_) => cx.push_toast(ToastKind::Success, tr!("chat_drawer_block_tts_sent")),
                 Err(e) => cx.push_toast(
                     ToastKind::Error,
-                    tr!("chat_drawer_block_tts_failed", error = e.to_string()),
+                    tr!(
+                        "chat_drawer_block_tts_failed",
+                        error = RepoFailure::from(e).text()
+                    ),
                 ),
             },
             cx,
@@ -79,7 +83,10 @@ impl ChatView {
                 Ok(existing) => this.show_tts_voice_form(target, key, existing, window, cx),
                 Err(e) => cx.push_toast(
                     ToastKind::Error,
-                    tr!("chat_drawer_tts_voice_failed", error = e.to_string()),
+                    tr!(
+                        "chat_drawer_tts_voice_failed",
+                        error = RepoFailure::from(e).text()
+                    ),
                 ),
             });
         })
@@ -150,7 +157,10 @@ impl ChatView {
                     form.update(cx, |form, cx| form.set_saving(false, cx));
                     let message = match e {
                         StorageError::AliasViewerTaken => tr!("tts_aliases_viewer_taken"),
-                        other => tr!("chat_drawer_tts_voice_failed", error = other.to_string()),
+                        other => tr!(
+                            "chat_drawer_tts_voice_failed",
+                            error = RepoFailure::from(other).text()
+                        ),
                     };
                     cx.push_toast(ToastKind::Error, message);
                 }

@@ -8,17 +8,19 @@ use forge_storage::{CredentialId, CredentialsRepo, SERVER_BEARER_CREDENTIAL_ID};
 use forge_types::Secret;
 use gpui::{AnyElement, App, ClickEvent, Context, prelude::*};
 
+use crate::repo_failure::RepoFailure;
+
 pub(crate) async fn current_bearer_token(
     server: Option<ServerHandle>,
     credentials: Arc<dyn CredentialsRepo>,
-) -> Result<Option<Secret>, String> {
+) -> Result<Option<Secret>, RepoFailure> {
     match server {
         Some(handle) => Ok(Some(handle.bearer_token().await)),
         None => credentials
             .load(&CredentialId::new(SERVER_BEARER_CREDENTIAL_ID))
             .await
             .map(|stored| stored.map(Secret::new))
-            .map_err(|e| e.to_string()),
+            .map_err(RepoFailure::from),
     }
 }
 

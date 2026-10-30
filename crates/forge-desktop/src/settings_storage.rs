@@ -26,6 +26,7 @@ use gpui::{
 use crate::async_bridge;
 use crate::backup_schedule::BackupScheduleView;
 use crate::navigation::SettingsSection;
+use crate::repo_failure::RepoFailure;
 use crate::safety_copies::SafetyCopiesView;
 use crate::settings_pane_header::SettingsPaneHeader;
 use crate::transfer_flows::TransferFlows;
@@ -227,7 +228,7 @@ impl SettingsStorageView {
         );
     }
 
-    fn apply_loaded(&mut self, result: Result<StoredLimits, String>, cx: &mut Context<Self>) {
+    fn apply_loaded(&mut self, result: Result<StoredLimits, RepoFailure>, cx: &mut Context<Self>) {
         match result {
             Ok(limits) => {
                 self.per_viewer_limit = limits.per_viewer;
@@ -610,19 +611,19 @@ impl Render for SettingsStorageView {
     }
 }
 
-async fn load_limits(repo: Arc<dyn SettingsRepo>) -> Result<StoredLimits, String> {
+async fn load_limits(repo: Arc<dyn SettingsRepo>) -> Result<StoredLimits, RepoFailure> {
     let per_viewer = chat_history_per_viewer_limit(repo.as_ref())
         .await
-        .map_err(|e| e.to_string())?;
+        .map_err(RepoFailure::from)?;
     let display = chat_history_display_limit(repo.as_ref())
         .await
-        .map_err(|e| e.to_string())?;
+        .map_err(RepoFailure::from)?;
     let event_log_retention = event_log_retention_days(repo.as_ref())
         .await
-        .map_err(|e| e.to_string())?;
+        .map_err(RepoFailure::from)?;
     let action_history_retention = action_history_retention_days(repo.as_ref())
         .await
-        .map_err(|e| e.to_string())?;
+        .map_err(RepoFailure::from)?;
     Ok(StoredLimits {
         per_viewer,
         display,

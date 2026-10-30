@@ -231,22 +231,23 @@ use forge_components::{
     bind_text_input_keys,
 };
 use gpui::{
-    App, AppContext, Pixels, Point, QuitMode, SharedString, TitlebarOptions, WindowOptions, point,
-    px, size,
+    AnyWindowHandle, App, AppContext, Bounds, Pixels, Point, QuitMode, SharedString, Size,
+    TitlebarOptions, WindowBounds, WindowOptions, point, px, size,
 };
 
 use crate::actions::{bind_list_keys, register_shell_key_bindings};
 use crate::log_tail::LogTail;
 use crate::navigation::Screen;
-use crate::root::{RootView, run_boot};
+use crate::root::{RestoreWaitView, RootView, run_boot};
 use crate::settings::{NAV_WIDTH, PANE_MIN_WIDTH};
 use crate::shutdown::{RUNTIME_SHUTDOWN_BUDGET, RuntimeSlot, silence_logging};
 use crate::sidebar::SIDEBAR_MAX;
 use crate::titlebar::TITLEBAR_HEIGHT;
-use forge_components::Presentation;
+use forge_components::{AccentColor, Density, Presentation, ThemeId};
 
 const SHELL_MIN_CONTENT_HEIGHT: Pixels = px(480.0);
 const TRAFFIC_LIGHT_OFFSET: Point<Pixels> = point(px(14.0), px(10.0));
+const RESTORE_WAIT_WINDOW_SIZE: Size<Pixels> = size(px(420.0), px(240.0));
 
 const FLAG_SCREEN: &str = "--screen";
 const FLAG_SELECT: &str = "--select";
@@ -400,6 +401,250 @@ fn prewarm_kit_fonts(cx: &mut App) {
         .detach();
 }
 
+struct MainWindowLaunch {
+    rt_handle: tokio::runtime::Handle,
+    log_tail: LogTail,
+    endpoints: forge_platform_core::PlatformEndpoints,
+    initial_screen: Screen,
+    window_failure: Rc<Cell<bool>>,
+    splash: Option<AnyWindowHandle>,
+}
+
+enum StartupGate {
+    Claimed(InstanceClaim),
+    AwaitingPrevious(u32),
+}
+
+struct InstanceClaim {
+    instance_lock: Option<instance_lock::InstanceLock>,
+    restore_outcome: forge_transfer::RestoreOutcome,
+}
+
+fn claim_instance() -> Result<InstanceClaim, i32> {
+    let instance_lock = match instance_lock::acquire(&forge_paths::data_dir()) {
+        instance_lock::LockOutcome::Acquired(lock) => Some(lock),
+        instance_lock::LockOutcome::AlreadyRunning => {
+            boot_signal::already_running();
+            return Err(
+                match instance_raise::ask_running_instance(&forge_paths::data_dir()) {
+                    Ok(()) => EXIT_RAISED_RUNNING_INSTANCE,
+                    Err(err) => {
+                        tracing::warn!(error = %err, "running instance could not be raised");
+                        EXIT_STARTUP_FAILURE
+                    }
+                },
+            );
+        }
+        instance_lock::LockOutcome::Unavailable(err) => {
+            tracing::warn!(error = %err, "single-instance lock unavailable; starting anyway");
+            None
+        }
+    };
+    let restore_outcome =
+        boot_restore::settle_pending_restore(&forge_paths::data_dir(), instance_lock.is_some())
+            .map_err(|err| {
+                tracing::error!(error = %err, "pending restore could not be settled; exiting");
+                EXIT_STARTUP_FAILURE
+            })?;
+    if instance_lock.is_some()
+        && let Err(err) = forge_transfer::sweep_import_staging(&forge_paths::data_dir())
+    {
+        tracing::warn!(error = %err, "leftover import staging could not be removed");
+    }
+    Ok(InstanceClaim {
+        instance_lock,
+        restore_outcome,
+    })
+}
+
+fn await_previous_then_claim(previous: u32) -> Result<InstanceClaim, i32> {
+    if restore_relaunch::await_previous_exit(previous) {
+        tracing::info!(previous, "previous forge instance exited");
+    } else {
+        tracing::warn!(
+            previous,
+            "previous forge instance still running after the wait"
+        );
+    }
+    claim_instance()
+}
+
+fn finish_restore_first(previous: u32, mut launch: MainWindowLaunch, cx: &mut App) {
+    cx.set_global(Presentation::accented(
+        ThemeId::default(),
+        AccentColor::default(),
+        Density::default(),
+    ));
+    launch.splash = open_restore_wait_window(cx);
+    let claim = launch
+        .rt_handle
+        .spawn_blocking(move || await_previous_then_claim(previous));
+    cx.spawn(async move |cx| match claim.await {
+        Ok(Ok(claim)) => cx.update(|cx| begin_boot(claim, launch, cx)),
+        Ok(Err(exit_code)) => cx.update(|cx| {
+            launch
+                .window_failure
+                .set(exit_code != EXIT_RAISED_RUNNING_INSTANCE);
+            cx.quit();
+        }),
+        Err(error) => {
+            tracing::error!(error = %error, "the startup wait stopped; exiting");
+            cx.update(|cx| {
+                launch.window_failure.set(true);
+                cx.quit();
+            });
+        }
+    })
+    .detach();
+}
+
+fn open_restore_wait_window(cx: &mut App) -> Option<AnyWindowHandle> {
+    let options = WindowOptions {
+        window_bounds: Some(WindowBounds::Windowed(Bounds::centered(
+            None,
+            RESTORE_WAIT_WINDOW_SIZE,
+            cx,
+        ))),
+        titlebar: Some(TitlebarOptions {
+            title: Some(SharedString::from("forge")),
+            ..Default::default()
+        }),
+        app_id: Some("forge-desktop".to_owned()),
+        ..Default::default()
+    };
+    cx.open_window(options, |_, cx| cx.new(|_| RestoreWaitView))
+        .inspect_err(|err| tracing::warn!(error = %err, "restore wait window could not open"))
+        .ok()
+        .map(Into::into)
+}
+
+fn begin_boot(claim: InstanceClaim, launch: MainWindowLaunch, cx: &mut App) {
+    let InstanceClaim {
+        instance_lock,
+        restore_outcome,
+    } = claim;
+    let holds_lock = instance_lock.is_some();
+    cx.global::<update_exit::ExitHandoff>()
+        .adopt_lock(instance_lock);
+    cx.set_global(boot_restore::BootRestore(restore_outcome));
+    if holds_lock {
+        match instance_raise::listen(&forge_paths::data_dir()) {
+            Ok(requests) => instance_raise::follow_raise_requests(requests, cx),
+            Err(err) => tracing::warn!(error = %err, "raise endpoint unavailable"),
+        }
+    }
+    let crate::boot::BootStorage {
+        presentation,
+        opening,
+    } = crate::boot::open_boot_storage(&launch.rt_handle);
+    cx.spawn(async move |cx| {
+        let presentation = presentation.arrived().await;
+        cx.update(|cx| open_main_window(presentation, opening, launch, cx));
+    })
+    .detach();
+}
+
+fn open_main_window(
+    presentation: crate::boot::BootPresentation,
+    opening: crate::boot::BackendOpening,
+    launch: MainWindowLaunch,
+    cx: &mut App,
+) {
+    let MainWindowLaunch {
+        rt_handle,
+        log_tail,
+        endpoints,
+        initial_screen,
+        window_failure,
+        splash,
+    } = launch;
+    let appearance = &presentation.appearance;
+    cx.set_global(Presentation::accented(
+        appearance.theme,
+        appearance.accent,
+        appearance.density,
+    ));
+    forge_components::set_body_family(appearance.body_font.clone().map(Into::into));
+    forge_components::set_mono_family(appearance.mono_font.clone().map(Into::into));
+    #[cfg(target_os = "linux")]
+    prewarm_kit_fonts(cx);
+
+    let (window_bounds, display_id) =
+        crate::window_placement::initial_window_bounds(presentation.window_placement.as_ref(), cx);
+    let options = WindowOptions {
+        window_bounds: Some(window_bounds),
+        display_id,
+        titlebar: Some(TitlebarOptions {
+            title: Some(SharedString::from("forge")),
+            appears_transparent: true,
+            traffic_light_position: Some(TRAFFIC_LIGHT_OFFSET),
+        }),
+        app_id: Some("forge-desktop".to_owned()),
+        window_min_size: Some(size(
+            SIDEBAR_MAX + NAV_WIDTH + PANE_MIN_WIDTH,
+            TITLEBAR_HEIGHT + FOOTER_HEIGHT + SHELL_MIN_CONTENT_HEIGHT,
+        )),
+        ..Default::default()
+    };
+
+    let rt_handle_for_root = rt_handle.clone();
+    let log_tail_for_root = log_tail.clone();
+    let endpoints_for_root = endpoints.clone();
+    let initial_screen_for_root = initial_screen.clone();
+    let placement_storage = presentation.backend.clone().map(|backend| {
+        (
+            backend,
+            rt_handle.clone(),
+            presentation.window_placement.clone(),
+        )
+    });
+    let window = match cx.open_window(options, move |window, cx| {
+        crate::window_presence::track_window_presence(window, cx);
+        if let Some((backend, rt_handle, persisted)) = placement_storage {
+            crate::window_placement::track_window_placement(
+                window, backend, rt_handle, persisted, cx,
+            );
+        }
+        cx.new(|cx| {
+            RootView::new(
+                rt_handle_for_root.clone(),
+                log_tail_for_root.clone(),
+                endpoints_for_root.clone(),
+                initial_screen_for_root.clone(),
+                cx,
+            )
+        })
+    }) {
+        Ok(window) => window,
+        Err(err) => {
+            tracing::error!(error = %err, "failed to open window");
+            window_failure.set(true);
+            cx.quit();
+            return;
+        }
+    };
+    cx.activate(true);
+    if let Some(splash) = splash
+        && let Err(err) = splash.update(cx, |_, window, _| window.remove_window())
+    {
+        tracing::debug!(error = %err, "restore wait window was already gone");
+    }
+
+    window
+        .update(cx, |root, _window, _cx| root.set_window(window))
+        .ok();
+
+    run_boot(
+        rt_handle.clone(),
+        log_tail.clone(),
+        endpoints.clone(),
+        initial_screen.clone(),
+        Some(opening),
+        window,
+        cx,
+    );
+}
+
 fn main() {
     let deferred_update_error = match update_launch::decide_start(std::env::args_os().skip(1)) {
         update_launch::StartDecision::Boot { deferred_error } => deferred_error,
@@ -428,17 +673,6 @@ fn main() {
         tracing::warn!(error = %error, "pending update could not be resumed at start");
     }
 
-    if let Some(previous) = restore_relaunch::previous_instance(std::env::args().skip(1)) {
-        if restore_relaunch::await_previous_exit(previous) {
-            tracing::info!(previous, "previous forge instance exited");
-        } else {
-            tracing::warn!(
-                previous,
-                "previous forge instance still running after the wait"
-            );
-        }
-    }
-
     let endpoints = match forge_platform_core::PlatformEndpoints::from_env() {
         Ok(endpoints) => endpoints,
         Err(err) => {
@@ -447,43 +681,6 @@ fn main() {
             std::process::exit(EXIT_STARTUP_FAILURE);
         }
     };
-
-    let instance_lock = match instance_lock::acquire(&forge_paths::data_dir()) {
-        instance_lock::LockOutcome::Acquired(lock) => Some(lock),
-        instance_lock::LockOutcome::AlreadyRunning => {
-            boot_signal::already_running();
-            let exit_code = match instance_raise::ask_running_instance(&forge_paths::data_dir()) {
-                Ok(()) => EXIT_RAISED_RUNNING_INSTANCE,
-                Err(err) => {
-                    tracing::warn!(error = %err, "running instance could not be raised");
-                    EXIT_STARTUP_FAILURE
-                }
-            };
-            drop(log_guard);
-            std::process::exit(exit_code);
-        }
-        instance_lock::LockOutcome::Unavailable(err) => {
-            tracing::warn!(error = %err, "single-instance lock unavailable; starting anyway");
-            None
-        }
-    };
-
-    let restore_outcome = match boot_restore::settle_pending_restore(
-        &forge_paths::data_dir(),
-        instance_lock.is_some(),
-    ) {
-        Ok(outcome) => outcome,
-        Err(err) => {
-            tracing::error!(error = %err, "pending restore could not be settled; exiting");
-            drop(log_guard);
-            std::process::exit(EXIT_STARTUP_FAILURE);
-        }
-    };
-    if instance_lock.is_some()
-        && let Err(err) = forge_transfer::sweep_import_staging(&forge_paths::data_dir())
-    {
-        tracing::warn!(error = %err, "leftover import staging could not be removed");
-    }
 
     let rt = match tokio::runtime::Runtime::new() {
         Ok(rt) => rt,
@@ -497,16 +694,19 @@ fn main() {
 
     let guard_handle = rt_handle.clone();
     let rt_guard = guard_handle.enter();
-    let raise_requests = if instance_lock.is_some() {
-        instance_raise::listen(&forge_paths::data_dir())
-            .inspect_err(|err| tracing::warn!(error = %err, "raise endpoint unavailable"))
-            .ok()
-    } else {
-        None
+    let startup_gate = match restore_relaunch::previous_instance(std::env::args().skip(1)) {
+        Some(previous) => StartupGate::AwaitingPrevious(previous),
+        None => match claim_instance() {
+            Ok(claim) => StartupGate::Claimed(claim),
+            Err(exit_code) => {
+                drop(log_guard);
+                std::process::exit(exit_code);
+            }
+        },
     };
     let runtime_slot = RuntimeSlot::new(rt);
     let slot_for_app = runtime_slot.clone();
-    let exit_handoff = update_exit::ExitHandoff::new(instance_lock);
+    let exit_handoff = update_exit::ExitHandoff::new(None);
     let exit_for_app = exit_handoff.clone();
     let window_failed = Rc::new(Cell::new(false));
     let window_failure = Rc::clone(&window_failed);
@@ -520,11 +720,7 @@ fn main() {
 
     application.run(move |cx: &mut App| {
         cx.set_global(slot_for_app);
-        cx.set_global(boot_restore::BootRestore(restore_outcome));
         cx.set_global(exit_for_app);
-        if let Some(requests) = raise_requests {
-            instance_raise::follow_raise_requests(requests, cx);
-        }
         if let Err(err) = cx
             .text_system()
             .add_fonts(forge_components::embedded_fonts())
@@ -532,17 +728,6 @@ fn main() {
             tracing::error!(error = %err, "failed to register embedded fonts");
         }
 
-        let boot_storage = crate::boot::open_boot_storage(&rt_handle);
-        let appearance = boot_storage.appearance;
-        cx.set_global(Presentation::accented(
-            appearance.theme,
-            appearance.accent,
-            appearance.density,
-        ));
-        forge_components::set_body_family(appearance.body_font.map(Into::into));
-        forge_components::set_mono_family(appearance.mono_font.map(Into::into));
-        #[cfg(target_os = "linux")]
-        prewarm_kit_fonts(cx);
         cx.set_global(crate::presentation::ActiveLanguage(
             forge_storage::Language::default(),
         ));
@@ -571,77 +756,18 @@ fn main() {
             )])]);
         }
 
-        let (window_bounds, display_id) = crate::window_placement::initial_window_bounds(
-            boot_storage.window_placement.as_ref(),
-            cx,
-        );
-        let options = WindowOptions {
-            window_bounds: Some(window_bounds),
-            display_id,
-            titlebar: Some(TitlebarOptions {
-                title: Some(SharedString::from("forge")),
-                appears_transparent: true,
-                traffic_light_position: Some(TRAFFIC_LIGHT_OFFSET),
-            }),
-            app_id: Some("forge-desktop".to_owned()),
-            window_min_size: Some(size(
-                SIDEBAR_MAX + NAV_WIDTH + PANE_MIN_WIDTH,
-                TITLEBAR_HEIGHT + FOOTER_HEIGHT + SHELL_MIN_CONTENT_HEIGHT,
-            )),
-            ..Default::default()
+        let launch = MainWindowLaunch {
+            rt_handle,
+            log_tail,
+            endpoints,
+            initial_screen,
+            window_failure,
+            splash: None,
         };
-
-        let rt_handle_for_root = rt_handle.clone();
-        let log_tail_for_root = log_tail.clone();
-        let endpoints_for_root = endpoints.clone();
-        let initial_screen_for_root = initial_screen.clone();
-        let placement_storage = boot_storage.backend.clone().map(|backend| {
-            (
-                backend,
-                rt_handle.clone(),
-                boot_storage.window_placement.clone(),
-            )
-        });
-        let window = match cx.open_window(options, move |window, cx| {
-            crate::window_presence::track_window_presence(window, cx);
-            if let Some((backend, rt_handle, persisted)) = placement_storage {
-                crate::window_placement::track_window_placement(
-                    window, backend, rt_handle, persisted, cx,
-                );
-            }
-            cx.new(|cx| {
-                RootView::new(
-                    rt_handle_for_root.clone(),
-                    log_tail_for_root.clone(),
-                    endpoints_for_root.clone(),
-                    initial_screen_for_root.clone(),
-                    cx,
-                )
-            })
-        }) {
-            Ok(window) => window,
-            Err(err) => {
-                tracing::error!(error = %err, "failed to open window");
-                window_failure.set(true);
-                cx.quit();
-                return;
-            }
-        };
-        cx.activate(true);
-
-        window
-            .update(cx, |root, _window, _cx| root.set_window(window))
-            .ok();
-
-        run_boot(
-            rt_handle.clone(),
-            log_tail.clone(),
-            endpoints.clone(),
-            initial_screen.clone(),
-            Some(boot_storage.opening),
-            window,
-            cx,
-        );
+        match startup_gate {
+            StartupGate::Claimed(claim) => begin_boot(claim, launch, cx),
+            StartupGate::AwaitingPrevious(previous) => finish_restore_first(previous, launch, cx),
+        }
     });
 
     drop(rt_guard);
@@ -659,9 +785,167 @@ fn main() {
 mod tests {
     use forge_update::CANDIDATE_FLAG;
 
-    use super::{FLAG_SCREEN, StartupRequest, parse_startup_request};
+    use super::{
+        EXIT_RAISED_RUNNING_INSTANCE, EXIT_STARTUP_FAILURE, FLAG_SCREEN, StartupRequest,
+        await_previous_then_claim, claim_instance, parse_startup_request,
+    };
+    use crate::instance_lock::{LockOutcome, acquire};
+    use crate::instance_raise;
     use crate::navigation::Screen;
     use crate::restore_relaunch::PREVIOUS_INSTANCE_FLAG;
+
+    const CLAIM_CHILD_MARKER: &str = "FORGE_CLAIM_CHILD";
+
+    fn is_claim_child() -> bool {
+        std::env::var_os(CLAIM_CHILD_MARKER).is_some()
+    }
+
+    fn run_as_claim_child(test_name: &str, data_dir: &std::path::Path) {
+        let (_binary, module) = module_path!().split_once("::").unwrap();
+        let output = std::process::Command::new(std::env::current_exe().unwrap())
+            .args([
+                format!("{module}::{test_name}").as_str(),
+                "--exact",
+                "--test-threads=1",
+                "--nocapture",
+            ])
+            .env(CLAIM_CHILD_MARKER, "1")
+            .env("FORGE_DATA_DIR", data_dir)
+            .output()
+            .unwrap();
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        assert!(
+            output.status.success() && stdout.contains("1 passed"),
+            "{test_name} failed in its own process:\n{stdout}\n{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
+
+    fn holding_the_lock(data_dir: &std::path::Path) -> crate::instance_lock::InstanceLock {
+        match acquire(data_dir) {
+            LockOutcome::Acquired(lock) => lock,
+            LockOutcome::AlreadyRunning | LockOutcome::Unavailable(_) => {
+                panic!("the parent process could not take the lock")
+            }
+        }
+    }
+
+    fn an_exited_process() -> u32 {
+        let mut child = std::process::Command::new(std::env::current_exe().unwrap())
+            .arg("--list")
+            .stdin(std::process::Stdio::null())
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .spawn()
+            .unwrap();
+        child.wait().unwrap();
+        child.id()
+    }
+
+    #[test]
+    fn a_claim_on_a_free_data_directory_holds_the_lock() {
+        if is_claim_child() {
+            assert_eq!(
+                claim_instance().map(|claim| claim.instance_lock.is_some()),
+                Ok(true)
+            );
+            return;
+        }
+        let data = tempfile::tempdir().unwrap();
+
+        run_as_claim_child(
+            "a_claim_on_a_free_data_directory_holds_the_lock",
+            data.path(),
+        );
+    }
+
+    #[test]
+    fn a_claim_with_no_usable_lock_file_starts_without_the_lock() {
+        if is_claim_child() {
+            assert_eq!(
+                claim_instance().map(|claim| claim.instance_lock.is_some()),
+                Ok(false)
+            );
+            return;
+        }
+        let data = tempfile::tempdir().unwrap();
+        std::fs::create_dir(data.path().join("forge.lock")).unwrap();
+
+        run_as_claim_child(
+            "a_claim_with_no_usable_lock_file_starts_without_the_lock",
+            data.path(),
+        );
+    }
+
+    #[test]
+    fn a_data_directory_that_cannot_settle_a_restore_is_a_startup_failure() {
+        if is_claim_child() {
+            assert_eq!(claim_instance().err(), Some(EXIT_STARTUP_FAILURE));
+            return;
+        }
+        let parent = tempfile::tempdir().unwrap();
+        let not_a_directory = parent.path().join("data");
+        std::fs::write(&not_a_directory, "a file").unwrap();
+
+        run_as_claim_child(
+            "a_data_directory_that_cannot_settle_a_restore_is_a_startup_failure",
+            &not_a_directory,
+        );
+    }
+
+    #[test]
+    fn a_held_lock_with_no_instance_answering_is_a_startup_failure() {
+        if is_claim_child() {
+            assert_eq!(claim_instance().err(), Some(EXIT_STARTUP_FAILURE));
+            return;
+        }
+        let data = tempfile::tempdir().unwrap();
+        let _lock = holding_the_lock(data.path());
+
+        run_as_claim_child(
+            "a_held_lock_with_no_instance_answering_is_a_startup_failure",
+            data.path(),
+        );
+    }
+
+    #[test]
+    fn a_held_lock_with_a_running_instance_raises_it_and_exits_cleanly() {
+        if is_claim_child() {
+            assert_eq!(claim_instance().err(), Some(EXIT_RAISED_RUNNING_INSTANCE));
+            return;
+        }
+        let data = tempfile::tempdir().unwrap();
+        let _lock = holding_the_lock(data.path());
+        let rt = crate::test_support::worker_runtime();
+        let _serving = rt.enter();
+        let mut requests = instance_raise::listen(data.path()).unwrap();
+
+        run_as_claim_child(
+            "a_held_lock_with_a_running_instance_raises_it_and_exits_cleanly",
+            data.path(),
+        );
+
+        assert_eq!(rt.block_on(requests.recv()), Some(()));
+    }
+
+    #[test]
+    fn a_relaunch_that_finds_another_instance_running_refuses_to_start() {
+        if is_claim_child() {
+            let previous = an_exited_process();
+            assert_eq!(
+                await_previous_then_claim(previous).err(),
+                Some(EXIT_STARTUP_FAILURE)
+            );
+            return;
+        }
+        let data = tempfile::tempdir().unwrap();
+        let _lock = holding_the_lock(data.path());
+
+        run_as_claim_child(
+            "a_relaunch_that_finds_another_instance_running_refuses_to_start",
+            data.path(),
+        );
+    }
 
     fn parse(args: &[&str]) -> Result<StartupRequest, String> {
         parse_startup_request(args.iter().map(|arg| (*arg).to_owned()))

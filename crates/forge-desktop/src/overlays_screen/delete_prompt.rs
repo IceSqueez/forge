@@ -9,6 +9,7 @@ use gpui::{AnyElement, ClickEvent, Context, prelude::*};
 use super::OverlaysView;
 use super::receiver;
 use crate::async_bridge;
+use crate::repo_failure::RepoFailure;
 use forge_components::PushToast;
 
 pub(super) struct PendingDelete {
@@ -60,14 +61,14 @@ impl OverlaysView {
             async move {
                 let was_receiver = receiver::release_receiver(settings.as_ref(), &id)
                     .await
-                    .map_err(|e| e.to_string())?;
+                    .map_err(RepoFailure::from)?;
                 let removed = match service.delete(&id).await {
                     Ok(removed) => removed,
                     Err(error) => {
                         if was_receiver {
                             receiver::restore_receiver(settings.as_ref(), &id).await;
                         }
-                        return Err(error.to_string());
+                        return Err(RepoFailure::from(error));
                     }
                 };
                 if !removed {
@@ -86,22 +87,22 @@ impl OverlaysView {
                     .remove_folder(&id)
                     .await
                     .err()
-                    .map(|e| e.to_string());
+                    .map(RepoFailure::from);
                 Ok((true, swept))
             },
-            move |this, result: Result<(bool, Option<String>), String>, cx| match result {
+            move |this, result: Result<(bool, Option<RepoFailure>), RepoFailure>, cx| match result {
                 Ok((true, swept)) => {
                     if this.receiver.as_ref() == Some(&deleted) {
                         this.apply_receiver(None, cx);
                     }
                     cx.push_toast(ToastKind::Success, tr!("overlays_toast_deleted"));
                     if let Some(message) = swept {
-                        this.report(&message, cx);
+                        this.report(&message.text(), cx);
                     }
                     this.load(cx);
                 }
                 Ok((false, _)) => this.report(&tr!("overlays_toast_missing"), cx),
-                Err(message) => this.report(&message, cx),
+                Err(message) => this.report(&message.text(), cx),
             },
             cx,
         );

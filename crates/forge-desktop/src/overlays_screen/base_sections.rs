@@ -24,6 +24,7 @@ use super::property_panel::{
 use super::sizing_section::{is_source_box_key, with_source_box};
 use crate::async_bridge;
 use crate::config_form::{ChoiceDropdown, ConfigField, ConfigFieldHandlers, render_config_control};
+use crate::repo_failure::RepoFailure;
 use forge_components::ActivePresentation;
 
 const LOOK_FIELD_KEY: &str = "look";
@@ -287,7 +288,7 @@ impl OverlayPropertyPanel {
                         .test_fire(&id, samples.as_ref())
                         .await
                         .map(|fired| Fired::Applied(fired.delivery))
-                        .map_err(|error| error.to_string())
+                        .map_err(RepoFailure::from)
                 },
                 move |this, result, cx| this.on_show_fired(epoch, result, cx),
                 cx,
@@ -308,7 +309,7 @@ impl OverlayPropertyPanel {
                         let delivery = service.receivers(&id).await.outcome();
                         Ok(Fired::Queued(delivery, ticket))
                     }
-                    Err(error) => Err(error.to_string()),
+                    Err(error) => Err(RepoFailure::from(error)),
                 }
             },
             move |this, result, cx| this.on_show_fired(epoch, result, cx),
@@ -317,7 +318,12 @@ impl OverlayPropertyPanel {
         cx.notify();
     }
 
-    fn on_show_fired(&mut self, epoch: u64, result: Result<Fired, String>, cx: &mut Context<Self>) {
+    fn on_show_fired(
+        &mut self,
+        epoch: u64,
+        result: Result<Fired, RepoFailure>,
+        cx: &mut Context<Self>,
+    ) {
         if self.base.fire_epoch != epoch {
             return;
         }
@@ -332,7 +338,7 @@ impl OverlayPropertyPanel {
                     cx,
                 );
             }
-            Err(message) => self.base.fire = ShowFire::Failed(message),
+            Err(message) => self.base.fire = ShowFire::Failed(message.text()),
         }
         cx.notify();
     }

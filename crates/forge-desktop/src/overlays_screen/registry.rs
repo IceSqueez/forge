@@ -10,6 +10,7 @@ use super::OverlaysView;
 use super::code_pane::LeaveIntent;
 use super::sound_choice;
 use crate::async_bridge;
+use crate::repo_failure::RepoFailure;
 use crate::toasts::copy_to_clipboard;
 use forge_components::PushToast;
 
@@ -97,7 +98,7 @@ impl OverlaysView {
         let repo = Arc::clone(&self.handles.repo);
         async_bridge::run_async(
             &self.handles.rt_handle,
-            async move { repo.list().await.map_err(|e| e.to_string()) },
+            async move { repo.list().await.map_err(RepoFailure::from) },
             |this, result, cx| this.apply_list(result, cx),
             cx,
         );
@@ -106,7 +107,7 @@ impl OverlaysView {
 
     fn apply_list(
         &mut self,
-        result: Result<Vec<OverlayDefinition>, String>,
+        result: Result<Vec<OverlayDefinition>, RepoFailure>,
         cx: &mut Context<Self>,
     ) {
         self.registry.loading = false;
@@ -132,7 +133,7 @@ impl OverlaysView {
                 self.sync_source(cx);
                 self.sync_wiring(cx);
             }
-            Err(message) => self.report(&message, cx),
+            Err(message) => self.report(&message.text(), cx),
         }
         cx.notify();
     }
@@ -177,13 +178,13 @@ impl OverlaysView {
                 service
                     .set_enabled(&target, next)
                     .await
-                    .map_err(|e| e.to_string())
+                    .map_err(RepoFailure::from)
             },
-            move |this, result: Result<bool, String>, cx| {
+            move |this, result: Result<bool, RepoFailure>, cx| {
                 let failure = match result {
                     Ok(true) => None,
                     Ok(false) => Some(tr!("overlays_toast_missing")),
-                    Err(message) => Some(message),
+                    Err(failure) => Some(failure.text()),
                 };
                 let Some(message) = failure else {
                     return;

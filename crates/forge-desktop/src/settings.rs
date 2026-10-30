@@ -269,12 +269,16 @@ impl SettingsView {
             storage
         });
         let about = cx.new(|cx| {
-            SettingsAboutView::new(
+            let mut about = SettingsAboutView::new(
                 Arc::clone(&handles.backend),
                 handles.rt_handle.clone(),
                 problem_report,
                 cx,
-            )
+            );
+            if section == SettingsSection::About {
+                about.begin_collection(cx);
+            }
+            about
         });
         let diagnostics = cx.new(|cx| {
             SettingsDiagnosticsView::new(
@@ -354,6 +358,9 @@ impl SettingsView {
 
     fn select_section(&mut self, section: SettingsSection, cx: &mut Context<Self>) {
         self.section = section;
+        if section == SettingsSection::About {
+            self.about.update(cx, SettingsAboutView::begin_collection);
+        }
         let diagnostics_open = section == SettingsSection::Diagnostics;
         self.diagnostics.update(cx, |view, cx| {
             view.set_active(diagnostics_open, cx);

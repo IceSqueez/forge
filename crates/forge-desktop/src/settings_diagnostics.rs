@@ -27,6 +27,7 @@ use crate::integrations::BuiltinRegistry;
 use crate::log_archive;
 use crate::log_tail::{LogLine, LogTail};
 use crate::navigation::SettingsSection;
+use crate::repo_failure::RepoFailure;
 use crate::settings_pane_header::SettingsPaneHeader;
 use crate::window_presence::PresenceGate;
 use forge_components::ActivePresentation;
@@ -115,7 +116,7 @@ impl SettingsDiagnosticsView {
             async move {
                 diagnostic_log_level(repo.as_ref())
                     .await
-                    .map_err(|e| e.to_string())
+                    .map_err(RepoFailure::from)
             },
             |this, result, cx| {
                 match result {
@@ -223,15 +224,15 @@ impl SettingsDiagnosticsView {
                         .await?;
                 tokio::task::spawn_blocking(move || diagnostic_bundle::assemble(&input))
                     .await
-                    .map_err(|e| e.to_string())?
+                    .map_err(RepoFailure::from)?
             },
-            |this, result: Result<Bundle, String>, cx| {
+            |this, result: Result<Bundle, RepoFailure>, cx| {
                 this.preparing_export = false;
                 match result {
                     Ok(bundle) => this.pending_export = Some(bundle),
                     Err(e) => cx.push_toast(
                         ToastKind::Error,
-                        tr!("settings_diagnostics_export_failed", error = e.as_str()),
+                        tr!("settings_diagnostics_export_failed", error = e.text()),
                     ),
                 }
                 cx.notify();
@@ -322,7 +323,7 @@ impl SettingsDiagnosticsView {
                     }
                     Err(e) => cx.push_toast(
                         ToastKind::Error,
-                        tr!("settings_diagnostics_clear_failed", error = e.as_str()),
+                        tr!("settings_diagnostics_clear_failed", error = e.text()),
                     ),
                 }
                 cx.notify();

@@ -18,6 +18,7 @@ use crate::async_bridge;
 use crate::collection_form::{CollectionForm, CollectionFormEvent};
 use crate::collection_list::{CollectionList, CollectionListEvent, ListLoad};
 use crate::collection_text::collection_failure_message;
+use crate::repo_failure::RepoFailure;
 use crate::user_text::resolve_message;
 use crate::user_text::user_text_string;
 use forge_components::ActivePresentation;
@@ -127,7 +128,9 @@ impl CollectionManager {
                     .update(cx, |list, cx| list.mark_unavailable(reason, cx));
             }
             result => {
-                let listing = result.map_err(|failure| collection_failure_message(&failure));
+                let listing = result.map_err(|failure| {
+                    RepoFailure::localized(collection_failure_message(&failure))
+                });
                 self.list
                     .update(cx, |list, cx| list.apply_listing(listing, cx));
             }

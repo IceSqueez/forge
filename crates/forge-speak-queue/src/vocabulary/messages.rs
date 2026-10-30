@@ -149,7 +149,7 @@ fn voice_not_recognized(voice: &VoiceId) -> MessageRef {
     MessageRef::new(VOICE_NOT_RECOGNIZED).with_arg(VOICE_ARG, VerbatimText::new(voice.0.as_str()))
 }
 
-pub(crate) fn tts_failure(error: &TtsError) -> MessageRef {
+pub fn tts_failure(error: &TtsError) -> MessageRef {
     match error {
         TtsError::Timeout { ms } => synthesis_timed_out(*ms),
         TtsError::AuthFailed { reason } => with_detail(MessageRef::new(ENGINE_AUTH_FAILED), reason),
@@ -176,7 +176,7 @@ pub(crate) fn audio_start_timed_out(seconds: u64) -> MessageRef {
     MessageRef::new(AUDIO_START_TIMED_OUT).with_arg(SECONDS_ARG, seconds)
 }
 
-pub(crate) fn audio_failure(error: &AudioError) -> MessageRef {
+pub fn audio_failure(error: &AudioError) -> MessageRef {
     match error {
         AudioError::NoDefaultDevice => MessageRef::new(NO_OUTPUT_DEVICE),
         AudioError::Host(detail) => with_detail(MessageRef::new(AUDIO_HOST_FAILED), detail),

@@ -33,6 +33,7 @@ use gpui::{
 use crate::async_bridge;
 use crate::navigation::NavRequested;
 use crate::queue_health::QueueHealth;
+use crate::repo_failure::RepoFailure;
 use crate::scheduled_runs_section::ScheduledRunsView;
 use crate::window_presence::PresenceGate;
 use forge_components::ActivePresentation;
@@ -751,7 +752,7 @@ impl QueuesView {
                     this.action_names = listing.action_names;
                     this.apply_rows(listing.rows, cx);
                 }
-                Err(message) => this.on_load_error(&message, cx),
+                Err(message) => this.on_load_error(&message.text(), cx),
             },
             cx,
         );
@@ -773,7 +774,7 @@ impl QueuesView {
         cx.notify();
     }
 
-    fn log_membership_outcome(id: QueueId, outcome: &Result<MembershipOutcome, String>) {
+    fn log_membership_outcome(id: QueueId, outcome: &Result<MembershipOutcome, RepoFailure>) {
         match outcome {
             Ok(MembershipOutcome::Applied | MembershipOutcome::AlreadyRegistered) => {}
             Ok(MembershipOutcome::NotFound) => {
@@ -818,11 +819,14 @@ impl QueuesView {
                 scheduler
                     .set_mode(id, mode)
                     .await
-                    .map_err(|e| e.to_string())
+                    .map_err(RepoFailure::from)
             },
             |this, result, cx| {
                 if let Err(message) = result {
-                    this.on_scheduler_error(tr!("queues_mode_change_failed", error = message), cx);
+                    this.on_scheduler_error(
+                        tr!("queues_mode_change_failed", error = message.text()),
+                        cx,
+                    );
                 }
             },
             cx,
@@ -834,12 +838,12 @@ impl QueuesView {
         async_bridge::run_async(
             &self.rt_handle,
             async move {
-                let mut failure: Option<String> = None;
+                let mut failure: Option<RepoFailure> = None;
                 for id in ids {
                     if let Err(err) = scheduler.set_mode(id, QueueMode::PAUSED).await
                         && failure.is_none()
                     {
-                        failure = Some(err.to_string());
+                        failure = Some(RepoFailure::from(err));
                     }
                 }
                 match failure {
@@ -849,7 +853,10 @@ impl QueuesView {
             },
             |this, result, cx| {
                 if let Err(message) = result {
-                    this.on_scheduler_error(tr!("queues_pause_all_failed", error = message), cx);
+                    this.on_scheduler_error(
+                        tr!("queues_pause_all_failed", error = message.text()),
+                        cx,
+                    );
                 }
             },
             cx,
@@ -888,7 +895,7 @@ impl QueuesView {
         let scheduler = self.scheduler.clone();
         async_bridge::run_async(
             &self.rt_handle,
-            async move { scheduler.clear(id, true).await.map_err(|e| e.to_string()) },
+            async move { scheduler.clear(id, true).await.map_err(RepoFailure::from) },
             move |this, result, cx| match result {
                 Ok(()) => {
                     cx.push_toast(
@@ -902,7 +909,7 @@ impl QueuesView {
                     this.reload(cx);
                 }
                 Err(message) => {
-                    this.on_scheduler_error(tr!("queues_free_failed", error = message), cx)
+                    this.on_scheduler_error(tr!("queues_free_failed", error = message.text()), cx)
                 }
             },
             cx,
@@ -945,7 +952,7 @@ impl QueuesView {
             |this, result, cx| match result {
                 Ok(()) => this.reload(cx),
                 Err(message) => {
-                    this.on_scheduler_error(tr!("queues_delete_failed", error = message), cx)
+                    this.on_scheduler_error(tr!("queues_delete_failed", error = message.text()), cx)
                 }
             },
             cx,
@@ -1031,13 +1038,13 @@ impl QueuesView {
         async_bridge::run_async(
             &self.rt_handle,
             async move {
-                queue_repo.save(&queue).await.map_err(|e| e.to_string())?;
+                queue_repo.save(&queue).await.map_err(RepoFailure::from)?;
                 let membership = if is_edit {
                     scheduler.reconfigure(queue).await
                 } else {
                     scheduler.register(queue).await
                 };
-                Ok::<_, String>(membership.map_err(|e| e.to_string()))
+                Ok::<_, RepoFailure>(membership.map_err(RepoFailure::from))
             },
             move |this, result, cx| match result {
                 Ok(membership) => {
@@ -1045,7 +1052,7 @@ impl QueuesView {
                     this.close_modal(cx);
                     this.reload(cx);
                 }
-                Err(message) => this.on_save_error(&message, cx),
+                Err(message) => this.on_save_error(&message.text(), cx),
             },
             cx,
         );
@@ -2014,9 +2021,9 @@ async fn load_queues(
     queue_repo: Arc<dyn QueueRepo>,
     action_repo: Arc<dyn ActionRepo>,
     scheduler: QueueSchedulerHandle,
-) -> Result<QueueListing, String> {
-    let queues = queue_repo.list().await.map_err(|e| e.to_string())?;
-    let actions = action_repo.list().await.map_err(|e| e.to_string())?;
+) -> Result<QueueListing, RepoFailure> {
+    let queues = queue_repo.list().await.map_err(RepoFailure::from)?;
+    let actions = action_repo.list().await.map_err(RepoFailure::from)?;
     let live_states = scheduler
         .queue_states()
         .await
@@ -2059,7 +2066,7 @@ async fn load_queues(
 enum LiveApplyFailure {
     QueueMissing,
     SchedulerLostQueue,
-    Failed(String),
+    Failed(RepoFailure),
 }
 
 impl LiveApplyFailure {
@@ -2067,7 +2074,7 @@ impl LiveApplyFailure {
         match self {
             Self::QueueMissing => tr!("queues_apply_live_missing"),
             Self::SchedulerLostQueue => tr!("queues_apply_live_not_found"),
-            Self::Failed(message) => message,
+            Self::Failed(failure) => failure.text(),
         }
     }
 }
@@ -2080,7 +2087,7 @@ async fn apply_queue_live(
     let queues = queue_repo
         .list()
         .await
-        .map_err(|e| LiveApplyFailure::Failed(e.to_string()))?;
+        .map_err(|e| LiveApplyFailure::Failed(e.into()))?;
     let queue = queues
         .into_iter()
         .find(|q| q.id == id)
@@ -2092,7 +2099,7 @@ async fn apply_queue_live(
     match outcome {
         Ok(MembershipOutcome::Applied | MembershipOutcome::AlreadyRegistered) => Ok(()),
         Ok(MembershipOutcome::NotFound) => Err(LiveApplyFailure::SchedulerLostQueue),
-        Err(error) => Err(LiveApplyFailure::Failed(error.to_string())),
+        Err(error) => Err(LiveApplyFailure::Failed(error.into())),
     }
 }
 
@@ -2100,11 +2107,11 @@ async fn delete_queue(
     queue_repo: Arc<dyn QueueRepo>,
     scheduler: QueueSchedulerHandle,
     deleted_id: QueueId,
-) -> Result<(), String> {
+) -> Result<(), RepoFailure> {
     let deleted = queue_repo
         .delete_reassigning_actions(deleted_id)
         .await
-        .map_err(|e| e.to_string())?;
+        .map_err(RepoFailure::from)?;
     if deleted.is_some()
         && let Err(err) = scheduler.deregister(deleted_id).await
     {
@@ -2458,7 +2465,11 @@ mod tests {
     }
 
     #[test]
-    fn apply_queue_live_carries_a_store_failure_as_its_text() {
+    fn apply_queue_live_reports_a_store_failure_without_its_diagnostic() {
+        let shown =
+            crate::test_support::shown_in_english(forge_storage::StorageError::Connection {
+                reason: "disk gone".to_owned(),
+            });
         let rt = runtime();
         let id = QueueId::new();
         let scheduler = held_queue_scheduler(&rt, queue(id));
@@ -2471,10 +2482,7 @@ mod tests {
 
         let outcome = rt.block_on(apply_queue_live(Arc::new(repo), scheduler, id));
 
-        assert!(
-            matches!(&outcome, Err(LiveApplyFailure::Failed(message)) if message.contains("disk gone")),
-            "{outcome:?}"
-        );
+        assert_eq!(outcome.map_err(LiveApplyFailure::message), Err(shown));
     }
 
     #[test]
@@ -2498,6 +2506,32 @@ mod tests {
     }
 
     #[test]
+    fn apply_queue_live_on_a_worker_thread_leaves_a_store_failure_for_the_ui_language() {
+        let shown =
+            crate::test_support::shown_in_english(forge_storage::StorageError::Connection {
+                reason: "disk gone".to_owned(),
+            });
+        let rt = worker_runtime();
+        let id = QueueId::new();
+        let scheduler = held_queue_scheduler(&rt, queue(id));
+        let mut repo = MockQueueRepo::new();
+        repo.expect_list().returning(|| {
+            Err(forge_storage::StorageError::Connection {
+                reason: "disk gone".to_owned(),
+            })
+        });
+
+        let joined = rt.block_on(rt.spawn(apply_queue_live(Arc::new(repo), scheduler, id)));
+
+        assert_eq!(
+            joined
+                .ok()
+                .map(|outcome| outcome.map_err(LiveApplyFailure::message)),
+            Some(Err(shown))
+        );
+    }
+
+    #[test]
     fn live_apply_failures_resolve_their_text_in_the_installed_language() {
         install_language(Language::Uk);
         for (failure, expected) in [
@@ -2507,7 +2541,7 @@ mod tests {
                 "планувальник не знає цієї черги",
             ),
             (
-                LiveApplyFailure::Failed("disk gone".to_owned()),
+                LiveApplyFailure::Failed(crate::repo_failure::RepoFailure::localized("disk gone")),
                 "disk gone",
             ),
         ] {

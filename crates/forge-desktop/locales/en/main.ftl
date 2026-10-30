@@ -1,6 +1,7 @@
 ## Boot - splash and data-open failure screens
 
 boot_starting = Starting...
+boot_finishing_restore = Finishing the restore...
 boot_upgrade_title = Update required
 boot_upgrade_body = Your forge data uses schema version { $found }, newer than this build's version { $expected }. Update forge to the latest release to open it.
 boot_upgrade_reassure = Your data is safe and untouched.
@@ -1539,6 +1540,9 @@ tts_cloud_save_failed_toast = Failed to save { $name } credentials: { $error }
 
 tts_aliases_strategy_label = Default assignment strategy
 tts_aliases_strategy_sublabel = How a voice is chosen for viewers without a manual alias
+tts_aliases_strategy_voice_search = Search voices
+tts_aliases_strategy_no_voices = No voices are available yet. Enable a TTS engine first.
+tts_aliases_strategy_single_current = Every viewer without a manual alias speaks with { $voice }
 tts_aliases_strategy_load_failed = Could not load the voice assignment strategy, so changing it is off to protect it: { $reason }
 tts_aliases_strategy_save_failed = Could not save the voice assignment strategy: { $reason }
 tts_aliases_operation_failed = Voice alias change failed: { $error }
@@ -2352,6 +2356,7 @@ integration_disconnect_title = Disconnect integration
 integration_settings_coming_soon = Settings coming soon
 integration_control_failed = Control command failed
 integration_sign_out_failed = Could not sign out of { $name }: the saved credentials could not be removed
+integration_sign_out_still_connected = Signed out of { $name }, but its live connection could not be closed. Restart forge if it stays connected.
 integration_signing_out = Signing out...
 integration_quick_action_failed = Quick action failed
 integration_row_action_failed = Could not run that row action: { $error }
@@ -2616,6 +2621,7 @@ script_editor_delete_maybe_used_by = { $count ->
 script_editor_delete_archive_note = Their steps fail until the script is restored. You can undo right after deleting.
 script_editor_deleted_toast = Deleted '{ $name }'
 script_editor_delete_failed = Could not delete the script: { $error }
+script_editor_telemetry_failed = Could not load the script run statistics: { $error }
 script_editor_restore_failed = Could not restore the script: { $error }
 script_editor_rename_title = Rename script?
 script_editor_rename_updates_none = No action names this script directly.
@@ -5087,4 +5093,3 @@ viewer_step_timeout = Timeout { $name }
 viewer_step_ban = Ban { $name }
 viewer_step_unban = Unban { $name }
 viewer_step_reply = Reply to { $name }
-boot_task_ended = The app could not finish starting. Try again.

@@ -3,6 +3,7 @@ use std::fmt::Write as _;
 use std::path::PathBuf;
 use std::sync::Arc;
 
+use crate::repo_failure::RepoFailure;
 use crate::run_disclosure::{
     DisclosedOutcome, DisclosedRun, DisclosedStep, DisclosedStepOutcome, DisclosedTrigger,
     DisclosedValue,
@@ -107,16 +108,16 @@ pub async fn gather_input(
     integrations: Vec<IntegrationFacts>,
     level: LogLevel,
     env_overridden: bool,
-) -> Result<BundleInput, String> {
+) -> Result<BundleInput, RepoFailure> {
     let history = backend.history_repo();
     let settings = backend as Arc<dyn SettingsRepo>;
     let stored = load_setting_rows(settings.as_ref())
         .await
-        .map_err(|e| e.to_string())?;
+        .map_err(RepoFailure::from)?;
     let runs = history
         .recent(RUN_HISTORY_LIMIT)
         .await
-        .map_err(|e| e.to_string())?;
+        .map_err(RepoFailure::from)?;
     Ok(BundleInput {
         log_dir: log_dir(),
         level,
@@ -127,7 +128,7 @@ pub async fn gather_input(
     })
 }
 
-pub fn assemble(input: &BundleInput) -> Result<Bundle, String> {
+pub fn assemble(input: &BundleInput) -> Result<Bundle, RepoFailure> {
     let mut out = String::new();
     write_header(&mut out, input);
     write_integrations(&mut out, &input.integrations);

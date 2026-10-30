@@ -10,6 +10,7 @@ use forge_transfer::{
 use forge_update::{ApplyMode, HandoffPlan, HandoffRequest, StagedArtifact, UpdatableInstall};
 use time::OffsetDateTime;
 
+use crate::repo_failure::RepoFailure;
 use crate::update_check::CURRENT_VERSION;
 
 pub const HANDOFF_PREPARE_BUDGET: Duration = Duration::from_secs(30);
@@ -34,7 +35,7 @@ pub fn update_snapshot_path(data_dir: &Path, now: OffsetDateTime, suffix: &str) 
 #[derive(Debug, PartialEq, Eq)]
 pub enum HandoffError {
     Busy,
-    Failed(String),
+    Failed(RepoFailure),
 }
 
 pub async fn prepare_handoff(
@@ -53,18 +54,21 @@ pub async fn prepare_handoff_holding(
     backend: Arc<dyn DataProvider>,
     input: HandoffInput,
     guard: TransferGuard,
-) -> Result<(), String> {
+) -> Result<(), RepoFailure> {
     let _guard = guard;
     tokio::time::timeout(HANDOFF_PREPARE_BUDGET, write_handoff(backend, input))
         .await
-        .unwrap_or_else(|_| Err("preparing the update took too long".to_owned()))
+        .unwrap_or_else(|elapsed| Err(RepoFailure::operation(elapsed)))
 }
 
-async fn write_handoff(backend: Arc<dyn DataProvider>, input: HandoffInput) -> Result<(), String> {
+async fn write_handoff(
+    backend: Arc<dyn DataProvider>,
+    input: HandoffInput,
+) -> Result<(), RepoFailure> {
     let dir = backups_dir(&input.data_dir);
     tokio::fs::create_dir_all(&dir)
         .await
-        .map_err(|e| format!("could not create {}: {e}", dir.display()))?;
+        .map_err(RepoFailure::from)?;
     let snapshot =
         update_snapshot_path(&input.data_dir, OffsetDateTime::now_utc(), &unique_suffix());
     let written = snapshot_and_plan(backend, input, snapshot.clone()).await;
@@ -80,17 +84,10 @@ async fn snapshot_and_plan(
     backend: Arc<dyn DataProvider>,
     input: HandoffInput,
     snapshot: PathBuf,
-) -> Result<(), String> {
-    backend
-        .export(&snapshot)
-        .await
-        .map_err(|e| format!("database snapshot failed: {e}"))?;
-    let schema_version = backend
-        .schema_version()
-        .await
-        .map_err(|e| format!("schema version unavailable: {e}"))?;
-    let running =
-        std::env::current_exe().map_err(|e| format!("running executable unknown: {e}"))?;
+) -> Result<(), RepoFailure> {
+    backend.export(&snapshot).await.map_err(RepoFailure::from)?;
+    let schema_version = backend.schema_version().await.map_err(RepoFailure::from)?;
+    let running = std::env::current_exe().map_err(RepoFailure::from)?;
     tokio::task::spawn_blocking(move || {
         let plan = HandoffPlan::new(HandoffRequest {
             install: &input.install,
@@ -105,8 +102,8 @@ async fn snapshot_and_plan(
         plan.write(&input.data_dir)
     })
     .await
-    .map_err(|e| e.to_string())?
-    .map_err(|e| e.to_string())
+    .map_err(RepoFailure::from)?
+    .map_err(RepoFailure::from)
 }
 
 #[cfg(test)]

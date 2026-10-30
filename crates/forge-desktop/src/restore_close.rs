@@ -2,13 +2,14 @@ use std::path::PathBuf;
 
 use forge_components::{PushToast, ToastKind, tr};
 use forge_transfer::{
-    ScheduledBackupHandle, StagedRestore, TransferError, UpdateActivity, cancel_pending_restore,
+    ScheduledBackupHandle, StagedRestore, UpdateActivity, cancel_pending_restore,
     discard_staged_restore,
 };
 use gpui::{App, Context, Entity, EventEmitter, Global};
 use tokio::runtime::Handle;
 
 use crate::async_bridge::run_async;
+use crate::repo_failure::RepoFailure;
 use crate::update_exit::ExitHandoff;
 use crate::update_flow::UpdateFlow;
 
@@ -125,7 +126,7 @@ impl RestoreClose {
                     tracing::warn!(error = %error, "cancelled restore could not be withdrawn");
                     cx.push_toast(
                         ToastKind::Error,
-                        tr!("restore_close_cancel_failed", error = error.as_str()),
+                        tr!("restore_close_cancel_failed", error = error.text()),
                     );
                 }
             },
@@ -157,12 +158,10 @@ impl WithdrawNotice {
     }
 }
 
-async fn withdraw(data_dir: PathBuf, staged: StagedRestore) -> Result<(), String> {
+async fn withdraw(data_dir: PathBuf, staged: StagedRestore) -> Result<(), RepoFailure> {
     let cancelled = cancel_pending_restore(&data_dir).await;
     let discarded = discard_staged_restore(staged).await;
-    cancelled
-        .and(discarded)
-        .map_err(|error: TransferError| error.to_string())
+    cancelled.and(discarded).map_err(RepoFailure::from)
 }
 
 #[cfg(test)]

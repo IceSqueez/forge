@@ -1,5 +1,6 @@
 use crate::error::DesktopError;
 use crate::platform_visuals::platform_color;
+use crate::repo_failure::RepoFailure;
 use forge_components::FONT_BADGE;
 use forge_components::FONT_META;
 use forge_components::FONT_MICRO;
@@ -109,10 +110,10 @@ fn parse_event_id(raw: &str) -> Option<EventId> {
 fn replay_failure_message(error: &BusError) -> String {
     match error {
         BusError::EventNotFound(_) => tr!("event_feed_replay_not_found"),
-        BusError::Storage(e) => {
-            let detail = e.to_string();
-            tr!("event_feed_replay_failed", error = detail.as_str())
-        }
+        BusError::Storage(e) => tr!(
+            "event_feed_replay_failed",
+            error = RepoFailure::from_storage_ref(e).text()
+        ),
     }
 }
 
@@ -1482,7 +1483,7 @@ mod tests {
 
         assert_eq!(missing, tr_lookup("event_feed_replay_not_found", None));
         assert_ne!(missing, storage);
-        assert!(storage.contains("disk gone"), "{storage}");
+        assert!(!storage.contains("disk gone"), "{storage}");
     }
 
     #[test]

@@ -9,6 +9,7 @@ use gpui::{
     AnyElement, ClickEvent, Context, EventEmitter, SharedString, Window, div, prelude::*, px,
 };
 
+use crate::repo_failure::RepoFailure;
 use crate::toasts::copy_to_clipboard;
 use crate::user_text::user_text_string;
 use forge_components::ActivePresentation;
@@ -90,7 +91,7 @@ impl CollectionList {
 
     pub fn apply_listing(
         &mut self,
-        listing: Result<Vec<CollectionItem>, String>,
+        listing: Result<Vec<CollectionItem>, RepoFailure>,
         cx: &mut Context<Self>,
     ) {
         match listing {
@@ -100,7 +101,7 @@ impl CollectionList {
                 self.items = items;
                 self.load = ListLoad::Ready;
             }
-            Err(reason) => self.load = ListLoad::Failed(reason),
+            Err(reason) => self.load = ListLoad::Failed(reason.text()),
         }
         cx.notify();
     }
@@ -478,7 +479,7 @@ mod tests {
         let (list, _) = mount(cx);
         cx.update(|cx| {
             list.update(cx, |list, cx| {
-                list.apply_listing(Err("offline".to_owned()), cx);
+                list.apply_listing(Err(RepoFailure::operation("offline")), cx);
                 list.begin_loading(cx);
             })
         });

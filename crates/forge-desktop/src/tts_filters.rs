@@ -27,6 +27,7 @@ use gpui::{
 };
 
 use crate::async_bridge::{self, Loadable, SnapshotWriter, WriteOutcome};
+use crate::repo_failure::RepoFailure;
 use forge_components::{ActivePresentation, DISABLED_OPACITY, error_row_with_retry};
 
 const STAGE_CIRCLE: Pixels = px(22.0);
@@ -560,12 +561,12 @@ impl TtsFiltersView {
         async_bridge::run_async(
             &self.rt_handle,
             async move {
-                let rules = repo.list_rules().await.map_err(|e| e.to_string())?;
+                let rules = repo.list_rules().await.map_err(RepoFailure::from)?;
                 let settings = repo
                     .get_pipeline_settings()
                     .await
-                    .map_err(|e| e.to_string())?;
-                Ok::<_, String>((rules, settings))
+                    .map_err(RepoFailure::from)?;
+                Ok::<_, RepoFailure>((rules, settings))
             },
             |this, result, cx| this.apply_loaded(result, cx),
             cx,
@@ -575,7 +576,7 @@ impl TtsFiltersView {
 
     fn apply_loaded(
         &mut self,
-        result: Result<(Vec<FilterRule>, TtsPipelineSettings), String>,
+        result: Result<(Vec<FilterRule>, TtsPipelineSettings), RepoFailure>,
         cx: &mut Context<Self>,
     ) {
         if let Err(message) = &result {
@@ -713,7 +714,7 @@ impl TtsFiltersView {
         let config = match build_config(&filters.rules, &filters.settings).require_valid() {
             Ok(config) => config,
             Err(e) => {
-                self.save_error = Some(e.to_string());
+                self.save_error = Some(RepoFailure::from(e).text());
                 return;
             }
         };
@@ -729,10 +730,10 @@ impl TtsFiltersView {
             async move {
                 repo.replace_rules(&rules)
                     .await
-                    .map_err(|e| e.to_string())?;
+                    .map_err(RepoFailure::from)?;
                 repo.set_pipeline_settings(&settings)
                     .await
-                    .map_err(|e| e.to_string())?;
+                    .map_err(RepoFailure::from)?;
                 bot_accounts.store(settings.bot_accounts);
                 if let Some(handle) = pipeline_config {
                     handle.swap(config);
@@ -742,7 +743,7 @@ impl TtsFiltersView {
                 {
                     tracing::warn!(error = %e, "speak queue did not take the new repeat window");
                 }
-                Ok::<(), String>(())
+                Ok::<(), RepoFailure>(())
             },
             Self::on_write_settled,
             cx,
@@ -751,7 +752,7 @@ impl TtsFiltersView {
 
     fn on_write_settled(&mut self, outcome: WriteOutcome, cx: &mut Context<Self>) {
         if let WriteOutcome::Failed(message) = outcome {
-            self.save_error = Some(message);
+            self.save_error = Some(message.text());
             self.reload(cx);
         }
     }
@@ -770,7 +771,7 @@ impl TtsFiltersView {
                 true
             }
             Err(e) => {
-                self.save_error = Some(e.to_string());
+                self.save_error = Some(RepoFailure::from(e).text());
                 cx.notify();
                 false
             }
@@ -2944,16 +2945,17 @@ mod tests {
             LoadFault::SettingsUnreadable,
         ] {
             for (case, edit) in edit_paths() {
+                let shown = crate::test_support::shown_in_english(fault.error());
                 let repo = RecordingFilters::storing(stored_rules()).failing_loads(fault);
                 let view = view_over(&repo, &rt, cx);
 
                 view.update(cx, edit);
                 settle(&rt, cx);
 
-                let failure = view.read_with(cx, |v, _| v.filters.failure().map(str::to_owned));
+                let failure = view.read_with(cx, |v, _| v.filters.failure());
                 assert_eq!(
                     (repo.writes(), failure),
-                    (0, Some(fault.error().to_string())),
+                    (0, Some(shown)),
                     "{fault:?}: {case}"
                 );
             }
@@ -3009,6 +3011,9 @@ mod tests {
 
     #[gpui::test]
     fn a_failed_write_reports_the_error_and_reloads_what_the_store_holds(cx: &mut TestAppContext) {
+        let read_only = crate::test_support::shown_in_english(StorageError::Connection {
+            reason: STORE_READ_ONLY.to_owned(),
+        });
         install_presentation(cx);
         let rt = runtime();
         let repo = RecordingFilters::storing(stored_rules());
@@ -3025,10 +3030,6 @@ mod tests {
                 v.filters.loaded().map(|f| f.rules.clone()),
             )
         });
-        let read_only = StorageError::Connection {
-            reason: STORE_READ_ONLY.to_owned(),
-        }
-        .to_string();
         assert_eq!(
             (save_error, repo.loads(), shown),
             (Some(read_only), 2, Some(stored_rules()))

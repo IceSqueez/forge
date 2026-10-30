@@ -19,6 +19,7 @@ use crate::audio_routes::{
     AudioDomain, RouteFallback, RoutePlan, load_audio_routes, plan_route, resolve_destination,
     set_destination, set_route,
 };
+use crate::repo_failure::RepoFailure;
 use crate::settings_audio::test_tone;
 use forge_components::ActivePresentation;
 
@@ -125,7 +126,7 @@ impl SettingsAudioRoutingView {
         );
     }
 
-    fn apply_loaded(&mut self, result: Result<Loaded, String>, cx: &mut Context<Self>) {
+    fn apply_loaded(&mut self, result: Result<Loaded, RepoFailure>, cx: &mut Context<Self>) {
         self.loading = false;
         match result {
             Ok(loaded) => {
@@ -141,7 +142,7 @@ impl SettingsAudioRoutingView {
             }
             Err(message) => {
                 tracing::warn!(error = %message, "failed to read the audio routing settings");
-                self.load_error = Some(message);
+                self.load_error = Some(message.text());
             }
         }
         cx.notify();
@@ -160,7 +161,7 @@ impl SettingsAudioRoutingView {
             async move {
                 set_route(settings.as_ref(), domain, route)
                     .await
-                    .map_err(|e| e.to_string())?;
+                    .map_err(RepoFailure::from)?;
                 Ok(router.apply().await)
             },
             |this, result, cx| this.apply_persisted(result, cx),
@@ -182,7 +183,7 @@ impl SettingsAudioRoutingView {
             async move {
                 set_destination(settings.as_ref(), destination.as_ref())
                     .await
-                    .map_err(|e| e.to_string())?;
+                    .map_err(RepoFailure::from)?;
                 Ok(router.apply().await)
             },
             |this, result, cx| this.apply_persisted(result, cx),
@@ -214,7 +215,7 @@ impl SettingsAudioRoutingView {
 
     fn apply_persisted(
         &mut self,
-        result: Result<Option<AppliedRoutes>, String>,
+        result: Result<Option<AppliedRoutes>, RepoFailure>,
         cx: &mut Context<Self>,
     ) {
         match result {
@@ -227,7 +228,7 @@ impl SettingsAudioRoutingView {
             Ok(None) => return,
             Err(message) => {
                 tracing::warn!(error = %message, "failed to persist an audio routing setting");
-                self.persist_error = Some(message);
+                self.persist_error = Some(message.text());
             }
         }
         cx.notify();
@@ -242,18 +243,18 @@ impl SettingsAudioRoutingView {
         let sink = Arc::clone(&self.speech_sink);
         async_bridge::run_async(
             &self.rt_handle,
-            async move { sink.play(test_tone()).await.map_err(|e| e.to_string()) },
+            async move { sink.play(test_tone()).await.map_err(RepoFailure::from) },
             |this, result, cx| this.apply_tested(result, cx),
             cx,
         );
         cx.notify();
     }
 
-    fn apply_tested(&mut self, result: Result<(), String>, cx: &mut Context<Self>) {
+    fn apply_tested(&mut self, result: Result<(), RepoFailure>, cx: &mut Context<Self>) {
         self.testing = false;
         if let Err(message) = result {
             tracing::warn!(error = %message, "the audio overlay test tone did not play");
-            self.test_error = Some(message);
+            self.test_error = Some(message.text());
         }
         self.count_pages(cx);
         cx.notify();
@@ -698,12 +699,12 @@ async fn load_routing(
     settings: Arc<dyn SettingsRepo>,
     overlays: Arc<dyn OverlayRepo>,
     server_available: bool,
-) -> Result<Loaded, String> {
+) -> Result<Loaded, RepoFailure> {
     let routes = load_audio_routes(settings.as_ref()).await;
     let choices = overlays
         .list()
         .await
-        .map_err(|e| e.to_string())?
+        .map_err(RepoFailure::from)?
         .into_iter()
         .map(|definition| OverlayChoice {
             id: definition.id,

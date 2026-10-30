@@ -2,6 +2,7 @@ use forge_components::NAME_FIELD_LIMIT;
 use forge_components::TINT_BORDER_ALPHA;
 use forge_components::TINT_FILL_ALPHA;
 use forge_components::UNDO_TOAST_DURATION;
+use std::collections::HashMap;
 use std::future::Future;
 use std::sync::Arc;
 
@@ -30,7 +31,7 @@ use gpui::{
     SharedString, Subscription, Task, UniformListScrollHandle, Window, div, prelude::*, px, svg,
 };
 
-use crate::async_bridge;
+use crate::async_bridge::{self, KeyedSnapshotWriters, WriteOutcome};
 use crate::error::DesktopError;
 use crate::globals::{Global, Globals, GlobalsFilter, variant_kind_color};
 use crate::repo_failure::RepoFailure;
@@ -349,6 +350,8 @@ pub struct GlobalsView {
     _globals_obs: Subscription,
     _search_sub: Subscription,
     reload_generation: async_bridge::Generation,
+    persist_writers: KeyedSnapshotWriters<String>,
+    persist_pending: HashMap<String, bool>,
     _runtime_writes: Option<Task<()>>,
 }
 
@@ -369,6 +372,7 @@ impl GlobalsView {
         let palette = cx.palette();
         let search = SearchState::new(cx, palette, tr!("globals_search_placeholder"));
 
+        let persist_writers = KeyedSnapshotWriters::new(&rt_handle);
         let globals_obs = cx.observe(&globals, Self::on_globals_changed);
         let search_sub = cx.subscribe(search.field(), Self::on_search_event);
 
@@ -390,6 +394,8 @@ impl GlobalsView {
             _globals_obs: globals_obs,
             _search_sub: search_sub,
             reload_generation: async_bridge::Generation::default(),
+            persist_writers,
+            persist_pending: HashMap::new(),
             _runtime_writes: None,
         };
         view.reload(cx);
@@ -526,23 +532,46 @@ impl GlobalsView {
     }
 
     fn toggle_persist(&mut self, name: SharedString, cx: &mut Context<Self>) {
-        let next = !self
-            .globals
-            .read(cx)
-            .entries()
-            .iter()
-            .any(|g| g.name == name && g.persisted);
-        let backend = Arc::clone(&self.backend);
         let key = name.to_string();
-        self.spawn_write(
+        let current = self.persist_pending.get(&key).copied().unwrap_or_else(|| {
+            self.globals
+                .read(cx)
+                .entries()
+                .iter()
+                .any(|g| g.name == name && g.persisted)
+        });
+        let next = !current;
+        self.persist_pending.insert(key.clone(), next);
+        let backend = Arc::clone(&self.backend);
+        let settled_key = key.clone();
+        self.persist_writers.writer(key.clone()).write(
             async move {
                 backend
                     .set_persisted(&key, next)
                     .await
+                    .map(drop)
                     .map_err(RepoFailure::from)
+            },
+            move |this: &mut Self, outcome, cx| {
+                this.on_persist_write_settled(&settled_key, outcome, cx)
             },
             cx,
         );
+    }
+
+    fn on_persist_write_settled(
+        &mut self,
+        key: &str,
+        outcome: WriteOutcome,
+        cx: &mut Context<Self>,
+    ) {
+        let written = match outcome {
+            WriteOutcome::Superseded => return,
+            WriteOutcome::Written => Ok(()),
+            WriteOutcome::Failed(failure) => Err(failure),
+        };
+        self.persist_pending.remove(key);
+        self.on_write_settled(written, cx);
     }
 
     fn request_delete(&mut self, name: SharedString, cx: &mut Context<Self>) {
@@ -1908,6 +1937,77 @@ mod tests {
             Ok(rows.lock().unwrap().clone())
         });
         (stored, Arc::new(repo))
+    }
+
+    fn persist_recording_repo(
+        rows: Vec<GlobalEntry>,
+    ) -> (Arc<Mutex<Vec<bool>>>, Arc<dyn GlobalsRepo>) {
+        let rows = Arc::new(Mutex::new(rows));
+        let writes = Arc::new(Mutex::new(Vec::new()));
+        let listed = Arc::clone(&rows);
+        let mut repo = MockGlobalsRepo::new();
+        repo.expect_list()
+            .returning(move || Ok(listed.lock().unwrap().clone()));
+        let recorded = Arc::clone(&writes);
+        repo.expect_set_persisted()
+            .returning(move |name, persisted| {
+                recorded.lock().unwrap().push(persisted);
+                for row in rows
+                    .lock()
+                    .unwrap()
+                    .iter_mut()
+                    .filter(|row| row.name == name)
+                {
+                    row.persisted = persisted;
+                }
+                Ok(true)
+            });
+        (writes, Arc::new(repo))
+    }
+
+    fn settle_persist(cx: &mut TestAppContext, rt: &tokio::runtime::Runtime) {
+        for _ in 0..3 {
+            cx.run_until_parked();
+            pump(rt);
+        }
+        cx.run_until_parked();
+    }
+
+    fn toggle(view: &Entity<GlobalsView>, cx: &mut TestAppContext) {
+        view.update(cx, |view, cx| view.toggle_persist(SCORE.into(), cx));
+    }
+
+    #[gpui::test]
+    fn toggling_persistence_with_the_store_answering_between_writes_in_click_order(
+        cx: &mut TestAppContext,
+    ) {
+        let rt = runtime();
+        let bus = EventBus::new(Arc::new(StubEventLog));
+        let (writes, repo) = persist_recording_repo(vec![entry(SCORE)]);
+        let (_globals, view) = mount(cx, &rt, repo, &bus);
+
+        for _ in 0..2 {
+            toggle(&view, cx);
+            settle_persist(cx, &rt);
+        }
+
+        assert_eq!(writes.lock().unwrap().clone(), vec![false, true]);
+    }
+
+    #[gpui::test]
+    fn toggling_persistence_twice_before_the_store_answers_returns_to_the_first_state(
+        cx: &mut TestAppContext,
+    ) {
+        let rt = runtime();
+        let bus = EventBus::new(Arc::new(StubEventLog));
+        let (writes, repo) = persist_recording_repo(vec![entry(SCORE)]);
+        let (_globals, view) = mount(cx, &rt, repo, &bus);
+
+        toggle(&view, cx);
+        toggle(&view, cx);
+        settle_persist(cx, &rt);
+
+        assert_eq!(writes.lock().unwrap().last().copied(), Some(true));
     }
 
     fn mount(

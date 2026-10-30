@@ -24,6 +24,7 @@ use crate::async_bridge;
 use crate::midi_signal::{
     MIDI_CHANNELS, MidiSignal, kind_label, selector_key, shown_channel, stored_channel,
 };
+use crate::repo_failure::RepoFailure;
 use forge_components::ActivePresentation;
 use forge_midi::vocabulary::event_kinds::SIGNAL_KINDS;
 
@@ -196,7 +197,7 @@ impl MidiMappingModal {
                             })
                             .collect::<Vec<_>>()
                     })
-                    .map_err(|e| e.to_string())
+                    .map_err(RepoFailure::from)
             },
             |this, result, cx| this.apply_actions(result, cx),
             cx,
@@ -231,13 +232,17 @@ impl MidiMappingModal {
         cx.notify();
     }
 
-    fn apply_actions(&mut self, result: Result<Vec<ActionChoice>, String>, cx: &mut Context<Self>) {
+    fn apply_actions(
+        &mut self,
+        result: Result<Vec<ActionChoice>, RepoFailure>,
+        cx: &mut Context<Self>,
+    ) {
         self.actions = match result {
             Ok(mut actions) => {
                 actions.sort_by_key(|a| a.name.to_lowercase());
                 ActionsState::Ready(actions)
             }
-            Err(message) => ActionsState::Failed(message),
+            Err(message) => ActionsState::Failed(message.text()),
         };
         cx.notify();
     }

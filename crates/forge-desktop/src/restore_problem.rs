@@ -44,7 +44,12 @@ pub(crate) enum RestoreProblem {
 
 impl RestoreProblem {
     pub(crate) fn of(error: &TransferError) -> Self {
-        match error {
+        Self::classified(error)
+            .unwrap_or_else(|| Self::Failed(resolve_message(&error.user_message()).inline()))
+    }
+
+    pub(crate) fn classified(error: &TransferError) -> Option<Self> {
+        Some(match error {
             TransferError::NotABundle => Self::NotABundle,
             TransferError::UnknownKind { .. } => Self::UnknownKind,
             TransferError::KindMismatch { expected, found } => Self::KindMismatch {
@@ -87,8 +92,8 @@ impl RestoreProblem {
             TransferError::MissingCredentialsKey => Self::MissingCredentialsKey,
             TransferError::UpdateInProgress => Self::UpdateInProgress,
             TransferError::RestoreAlreadyPending => Self::RestoreAlreadyPending,
-            other => Self::Failed(resolve_message(&other.user_message()).inline()),
-        }
+            _ => return None,
+        })
     }
 
     pub(crate) fn plain_text(&self) -> String {

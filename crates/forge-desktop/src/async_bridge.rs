@@ -11,12 +11,12 @@ use std::time::Duration;
 use forge_components::ToastKind;
 use forge_events::{Event, EventSubscription, EventsError};
 use forge_runtime::{ActionEngineHandle, EventBus};
-use forge_types::{SubActionOutcome, SubActionStep, UserText, integration_disabled_message};
-use gpui::{App, AsyncApp, Context, Entity, SharedString};
+use forge_types::{SubActionOutcome, SubActionStep, integration_disabled_message};
+use gpui::{App, AsyncApp, Context, Entity, SharedString, Window};
 use tokio::runtime::Handle;
 
 use crate::error::DesktopError;
-use crate::user_text::resolve_user_text;
+use crate::repo_failure::RepoFailure;
 
 use forge_components::PushToast;
 
@@ -56,20 +56,20 @@ pub async fn run_quick_step(
     step: SubActionStep,
     builtin_id: String,
     label: String,
-) -> Result<(), String> {
+) -> Result<(), RepoFailure> {
     let pending = engine
         .execute_quick_action(step, builtin_id, label, None)
         .await
-        .map_err(|err| err.to_string())?;
-    match pending.outcome().await.map_err(|err| err.to_string())? {
+        .map_err(RepoFailure::from)?;
+    match pending.outcome().await.map_err(RepoFailure::from)? {
         SubActionOutcome::Success => Ok(()),
         SubActionOutcome::Failed(reason) | SubActionOutcome::Skipped(reason) => {
-            Err(resolve_user_text(&reason).inline())
+            Err(RepoFailure::shown(reason.clone(), reason.code_or_text()))
         }
-        SubActionOutcome::IntegrationDisabled(integration) => Err(resolve_user_text(
-            &UserText::from(integration_disabled_message(&integration)),
-        )
-        .inline()),
+        SubActionOutcome::IntegrationDisabled(integration) => Err(RepoFailure::shown(
+            integration_disabled_message(&integration),
+            integration.as_str(),
+        )),
     }
 }
 
@@ -257,6 +257,24 @@ pub fn run_async<V, Fut, T>(
     .detach();
 }
 
+pub fn attach_to_window<V: 'static>(
+    attach: impl FnOnce(&mut V, &mut Window, &mut Context<V>) + 'static,
+    cx: &mut Context<V>,
+) {
+    let Some(window) = cx.windows().first().copied() else {
+        return;
+    };
+    cx.spawn(async move |this, cx| {
+        let attached = window.update(cx, |_, window, cx| {
+            this.update(cx, |this, cx| attach(this, window, cx))
+        });
+        if !matches!(attached, Ok(Ok(()))) {
+            tracing::debug!("the view or its window closed before it could attach");
+        }
+    })
+    .detach();
+}
+
 pub fn run_async_entity<V, Fut, T>(
     handle: &Handle,
     view: Entity<V>,
@@ -410,13 +428,13 @@ pub fn optimistic<V, S, F, E>(
     handle: &Handle,
     snapshot: S,
     fut: F,
-    restore: impl FnOnce(&mut V, S, String, &mut Context<V>) + Send + 'static,
+    restore: impl FnOnce(&mut V, S, RepoFailure, &mut Context<V>) + Send + 'static,
     cx: &mut Context<V>,
 ) where
     V: 'static,
     S: Send + 'static,
     F: Future<Output = Result<(), E>> + Send + 'static,
-    E: Display + Send + 'static,
+    E: Into<RepoFailure> + Send + 'static,
 {
     let (tx, rx) = tokio::sync::oneshot::channel();
     handle.spawn(async move {
@@ -424,17 +442,17 @@ pub fn optimistic<V, S, F, E>(
             clippy::let_underscore_must_use,
             reason = "the view may close before the result arrives"
         )]
-        let _ = tx.send(fut.await.map_err(|e| e.to_string()));
+        let _ = tx.send(fut.await.map_err(Into::into));
     });
     cx.spawn(async move |this, cx| {
-        if let Ok(Err(message)) = rx.await {
-            tracing::warn!(error = %message, "optimistic persist failed");
+        if let Ok(Err(failure)) = rx.await {
+            tracing::warn!(error = %failure, "optimistic persist failed");
             #[expect(
                 clippy::let_underscore_must_use,
                 reason = "the view may close before the result arrives"
             )]
             let _ = this.update(cx, |this, cx| {
-                restore(this, snapshot, message, cx);
+                restore(this, snapshot, failure, cx);
                 cx.notify();
             });
         }
@@ -445,14 +463,14 @@ pub fn optimistic<V, S, F, E>(
 pub enum Loadable<T> {
     Loading,
     Loaded(T),
-    Failed(String),
+    Failed(RepoFailure),
 }
 
 impl<T> Loadable<T> {
-    pub fn settled<E: Display>(result: Result<T, E>) -> Self {
+    pub fn settled<E: Into<RepoFailure>>(result: Result<T, E>) -> Self {
         match result {
             Ok(value) => Loadable::Loaded(value),
-            Err(e) => Loadable::Failed(e.to_string()),
+            Err(e) => Loadable::Failed(e.into()),
         }
     }
 
@@ -474,9 +492,9 @@ impl<T> Loadable<T> {
         matches!(self, Loadable::Loaded(_))
     }
 
-    pub fn failure(&self) -> Option<&str> {
+    pub fn failure(&self) -> Option<String> {
         match self {
-            Loadable::Failed(reason) => Some(reason),
+            Loadable::Failed(reason) => Some(reason.text()),
             Loadable::Loading | Loadable::Loaded(_) => None,
         }
     }
@@ -486,10 +504,10 @@ impl<T> Loadable<T> {
 pub enum WriteOutcome {
     Written,
     Superseded,
-    Failed(String),
+    Failed(RepoFailure),
 }
 
-type SnapshotWrite = std::pin::Pin<Box<dyn Future<Output = Result<(), String>> + Send>>;
+type SnapshotWrite = std::pin::Pin<Box<dyn Future<Output = Result<(), RepoFailure>> + Send>>;
 
 struct SnapshotJob {
     write: SnapshotWrite,
@@ -519,13 +537,13 @@ impl SnapshotWriter {
     ) where
         V: 'static,
         F: Future<Output = Result<(), E>> + Send + 'static,
-        E: Display + Send + 'static,
+        E: Into<RepoFailure> + Send + 'static,
     {
         let ticket = self.generation.fetch_add(1, Ordering::SeqCst) + 1;
         let generation = Arc::clone(&self.generation);
         let (settled, outcome) = tokio::sync::oneshot::channel();
         let job = SnapshotJob {
-            write: Box::pin(async move { write.await.map_err(|e| e.to_string()) }),
+            write: Box::pin(async move { write.await.map_err(Into::into) }),
             settled,
         };
         if self.jobs.send(job).is_err() {
@@ -555,12 +573,12 @@ impl SnapshotWriter {
     pub fn write_on_release<F, E>(&self, write: F, failure: impl Into<SharedString>, cx: &mut App)
     where
         F: Future<Output = Result<(), E>> + Send + 'static,
-        E: Display + Send + 'static,
+        E: Into<RepoFailure> + Send + 'static,
     {
         let failure = failure.into();
         let (settled, outcome) = tokio::sync::oneshot::channel();
         let job = SnapshotJob {
-            write: Box::pin(async move { write.await.map_err(|e| e.to_string()) }),
+            write: Box::pin(async move { write.await.map_err(Into::into) }),
             settled,
         };
         if self.jobs.send(job).is_err() {
@@ -606,7 +624,7 @@ impl<K: Eq + Hash> KeyedSnapshotWriters<K> {
     ) where
         V: 'static,
         F: Future<Output = Result<(), E>> + Send + 'static,
-        E: Display + Send + 'static,
+        E: Into<RepoFailure> + Send + 'static,
     {
         let context = context.into();
         self.writer(key).write(
@@ -633,9 +651,9 @@ async fn run_snapshot_queue(mut queue: tokio::sync::mpsc::UnboundedReceiver<Snap
         }
         let outcome = match job.write.await {
             Ok(()) => WriteOutcome::Written,
-            Err(message) => {
-                tracing::warn!(error = %message, "snapshot write failed");
-                WriteOutcome::Failed(message)
+            Err(failure) => {
+                tracing::warn!(error = %failure, "snapshot write failed");
+                WriteOutcome::Failed(failure)
             }
         };
         #[expect(
@@ -652,6 +670,9 @@ mod tests {
         FormField, RegistryError, RunContext, StepTimer, SubActionCategory, SubActionRegistry,
         SubActionRunner,
     };
+    use std::cell::Cell;
+    use std::rc::Rc;
+
     use forge_runtime::{ActionCancelRegistry, DispatchError, spawn_action_engine};
     use forge_storage::history::MockHistoryRepo;
     use forge_types::{ArgStack, SubActionConfig, SubActionTelemetry};
@@ -762,6 +783,7 @@ mod tests {
             kind_id.to_owned(),
         )
         .await
+        .map_err(|failure| failure.to_string())
     }
 
     #[test]
@@ -843,10 +865,10 @@ mod tests {
         cx.update(|cx| cx.set_global(Toasts::new()));
         let rt = runtime();
         let probe = cx.new(|_| Probe);
-        let outcomes: [(Result<(), String>, Reported); 2] = [
+        let outcomes: [(Result<(), RepoFailure>, Reported); 2] = [
             (Ok(()), Vec::new()),
             (
-                Err("disk gone".to_owned()),
+                Err(RepoFailure::operation("disk gone")),
                 vec![(ToastKind::Error, PERSIST_FAILED.to_owned())],
             ),
         ];
@@ -895,7 +917,7 @@ mod tests {
                 PERSIST_FAILED,
                 async move {
                     second_ran.fetch_add(10, Ordering::SeqCst);
-                    Ok::<(), String>(())
+                    Ok::<(), RepoFailure>(())
                 },
                 ErrorSink::Toast,
                 cx,
@@ -913,7 +935,7 @@ mod tests {
         for (write_result, expected) in [
             (Ok(()), Vec::new()),
             (
-                Err("disk gone".to_owned()),
+                Err(RepoFailure::operation("disk gone")),
                 vec![(ToastKind::Error, PERSIST_FAILED.to_owned())],
             ),
         ] {
@@ -943,7 +965,7 @@ mod tests {
         writer: &SnapshotWriter,
         writes: &Entity<SettledWrites>,
         index: usize,
-        write: impl Future<Output = Result<(), String>> + Send + 'static,
+        write: impl Future<Output = Result<(), RepoFailure>> + Send + 'static,
         cx: &mut TestAppContext,
     ) {
         writes.update(cx, |_, cx| {
@@ -969,8 +991,8 @@ mod tests {
     fn counted(
         ran: &Arc<AtomicU64>,
         mark: u64,
-        result: Result<(), String>,
-    ) -> impl Future<Output = Result<(), String>> + Send + 'static {
+        result: Result<(), RepoFailure>,
+    ) -> impl Future<Output = Result<(), RepoFailure>> + Send + 'static {
         let ran = Arc::clone(ran);
         async move {
             ran.fetch_add(mark, Ordering::SeqCst);
@@ -984,8 +1006,8 @@ mod tests {
         for (result, expected) in [
             (Ok(()), WriteOutcome::Written),
             (
-                Err(WRITE_FAILED.to_owned()),
-                WriteOutcome::Failed(WRITE_FAILED.to_owned()),
+                Err(RepoFailure::operation(WRITE_FAILED)),
+                WriteOutcome::Failed(RepoFailure::operation(WRITE_FAILED)),
             ),
         ] {
             let writer = SnapshotWriter::new(rt.handle());
@@ -1044,7 +1066,7 @@ mod tests {
             0,
             async move {
                 held.notified().await;
-                Err(WRITE_FAILED.to_owned())
+                Err(RepoFailure::operation(WRITE_FAILED))
             },
             cx,
         );
@@ -1100,20 +1122,21 @@ mod tests {
         let mut writers = KeyedSnapshotWriters::new(rt.handle());
         let marks = Marks::default();
         let (release, held) = tokio::sync::oneshot::channel::<()>();
-        let enqueue = |writers: &mut KeyedSnapshotWriters<&str>,
-                       work: std::pin::Pin<Box<dyn Future<Output = Result<(), String>> + Send>>,
-                       cx: &mut TestAppContext| {
-            probe.update(cx, |_, cx| {
-                writers.write_reporting("alpha", work, PERSIST_FAILED, cx);
-            });
-        };
+        let enqueue =
+            |writers: &mut KeyedSnapshotWriters<&str>,
+             work: std::pin::Pin<Box<dyn Future<Output = Result<(), RepoFailure>> + Send>>,
+             cx: &mut TestAppContext| {
+                probe.update(cx, |_, cx| {
+                    writers.write_reporting("alpha", work, PERSIST_FAILED, cx);
+                });
+            };
 
         let first = Arc::clone(&marks);
         enqueue(
             &mut writers,
             Box::pin(async move {
                 mark(&first, "first started");
-                held.await.map_err(|e| e.to_string())?;
+                held.await.map_err(RepoFailure::operation)?;
                 mark(&first, "first finished");
                 Ok(())
             }),
@@ -1173,7 +1196,7 @@ mod tests {
             writers.write_reporting("alpha", counted(&ran, 1, Ok(())), "alpha failed", cx);
             writers.write_reporting(
                 "bravo",
-                counted(&ran, 10, Err(WRITE_FAILED.to_owned())),
+                counted(&ran, 10, Err(RepoFailure::operation(WRITE_FAILED))),
                 "bravo failed",
                 cx,
             );
@@ -1193,7 +1216,7 @@ mod tests {
         for (result, expected) in [
             (Ok(()), Vec::new()),
             (
-                Err(WRITE_FAILED.to_owned()),
+                Err(RepoFailure::operation(WRITE_FAILED)),
                 vec![(ToastKind::Error, PERSIST_FAILED.to_owned())],
             ),
         ] {
@@ -1218,7 +1241,7 @@ mod tests {
 
         cx.update(|cx| {
             writer.write_on_release(
-                counted(&ran, 1, Err(WRITE_FAILED.to_owned())),
+                counted(&ran, 1, Err(RepoFailure::operation(WRITE_FAILED))),
                 PERSIST_FAILED,
                 cx,
             );
@@ -1228,5 +1251,52 @@ mod tests {
         cx.run_until_parked();
 
         assert_eq!(reported(cx), Vec::new());
+    }
+
+    fn attach_count(cx: &mut TestAppContext, probe: &Entity<Probe>) -> Rc<Cell<usize>> {
+        let attached = Rc::new(Cell::new(0));
+        let counter = Rc::clone(&attached);
+        probe.update(cx, |_, cx| {
+            attach_to_window(
+                move |_: &mut Probe, _, _| counter.set(counter.get() + 1),
+                cx,
+            );
+        });
+        cx.run_until_parked();
+        attached
+    }
+
+    #[gpui::test]
+    fn attaching_with_no_window_open_does_nothing(cx: &mut TestAppContext) {
+        let probe = cx.new(|_| Probe);
+
+        assert_eq!(attach_count(cx, &probe).get(), 0);
+    }
+
+    #[gpui::test]
+    fn attaching_with_a_window_open_runs_once(cx: &mut TestAppContext) {
+        let probe = cx.new(|_| Probe);
+        crate::test_support::blank_window(cx);
+
+        assert_eq!(attach_count(cx, &probe).get(), 1);
+    }
+
+    #[gpui::test]
+    fn a_view_gone_before_the_attach_lands_is_left_alone(cx: &mut TestAppContext) {
+        let probe = cx.new(|_| Probe);
+        crate::test_support::blank_window(cx);
+        let attached = Rc::new(Cell::new(0));
+        let counter = Rc::clone(&attached);
+        probe.update(cx, |_, cx| {
+            attach_to_window(
+                move |_: &mut Probe, _, _| counter.set(counter.get() + 1),
+                cx,
+            );
+        });
+
+        drop(probe);
+        cx.run_until_parked();
+
+        assert_eq!(attached.get(), 0);
     }
 }

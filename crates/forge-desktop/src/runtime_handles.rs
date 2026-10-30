@@ -61,7 +61,7 @@ pub struct RuntimeHandles {
     pub platform_credentials: PlatformCredentialManagers,
     pub midi_sink: Arc<forge_midi::SwitchableMidiSink>,
     pub server: Option<forge_server::ServerHandle>,
-    pub server_unavailable: Option<String>,
+    pub server_unavailable: Option<crate::repo_failure::RepoFailure>,
     pub speak: Option<forge_speak_queue::SpeakQueueHandle>,
     pub pipeline_config: Option<forge_speak_queue::PipelineConfigHandle>,
     pub bot_accounts: forge_types::Shared<Vec<String>>,

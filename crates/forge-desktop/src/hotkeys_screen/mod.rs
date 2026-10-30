@@ -260,7 +260,7 @@ impl HotkeysScreenView {
 
     fn on_shortcuts_written(&mut self, outcome: WriteOutcome, cx: &mut Context<Self>) {
         if let WriteOutcome::Failed(reason) = outcome {
-            self.on_repo_error(&RepoFailure::operation(reason), cx);
+            self.on_repo_error(&reason, cx);
             self.rollback_shortcuts(cx);
         }
     }
@@ -556,11 +556,12 @@ mod tests {
     fn no_app_shortcut_edit_after_a_failed_load_writes_over_the_stored_shortcuts(
         cx: &mut TestAppContext,
     ) {
-        let unreachable = StorageError::Connection {
+        let unreachable = crate::test_support::shown_in_english(StorageError::Connection {
             reason: SETTINGS_READ_FAILED.to_owned(),
-        }
-        .to_string();
-        let undecodable = format!("stored setting '{KEYBOARD_SHORTCUTS}' cannot be decoded");
+        });
+        let undecodable = crate::test_support::shown_in_english(StorageError::UndecodableSetting {
+            key: KEYBOARD_SHORTCUTS.to_owned(),
+        });
         for (fault, stored, failing_read, reason) in [
             ("unreachable store", STORED, true, unreachable),
             ("undecodable value", "not json", false, undecodable),
@@ -577,7 +578,7 @@ mod tests {
                 view.update(cx, edit);
                 harness.settle(cx);
 
-                let failure = view.read_with(cx, |v, _| v.shortcuts.failure().map(str::to_owned));
+                let failure = view.read_with(cx, |v, _| v.shortcuts.failure());
                 assert_eq!(
                     (harness.shortcut_writes(), failure),
                     (Vec::<String>::new(), Some(reason.clone())),

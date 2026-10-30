@@ -10,7 +10,7 @@ use gpui::{Context, Entity, Subscription, Window, div, prelude::*};
 use crate::async_bridge::{self, DialogFilter};
 use crate::pack_export_modal::{PackDraft, PackExportModal, PackExportModalEvent};
 use crate::pack_services::PackServices;
-use crate::restore_problem::RestoreProblem;
+use crate::repo_failure::RepoFailure;
 
 const PACK_TOAST_DURATION: Duration = Duration::from_secs(10);
 const FALLBACK_FILE_STEM: &str = "pack";
@@ -129,7 +129,7 @@ impl PackExportFlow {
                 .await
                 .map_err(|error| {
                     tracing::warn!(%error, "pack export failed");
-                    RestoreProblem::of(&error).plain_text()
+                    RepoFailure::from(error)
                 })
             },
             |this, result, cx| this.written(result, cx),
@@ -137,14 +137,14 @@ impl PackExportFlow {
         );
     }
 
-    fn written(&mut self, result: Result<PathBuf, String>, cx: &mut Context<Self>) {
+    fn written(&mut self, result: Result<PathBuf, RepoFailure>, cx: &mut Context<Self>) {
         self.step = PackExportStep::Idle;
         report(result, cx);
         cx.notify();
     }
 }
 
-fn report(result: Result<PathBuf, String>, cx: &mut Context<PackExportFlow>) {
+fn report(result: Result<PathBuf, RepoFailure>, cx: &mut Context<PackExportFlow>) {
     match result {
         Ok(path) => {
             tracing::info!(path = %path.display(), "pack exported");
@@ -164,7 +164,7 @@ fn report(result: Result<PathBuf, String>, cx: &mut Context<PackExportFlow>) {
             tracing::warn!(error = %message, "pack export failed");
             cx.push_toast(
                 ToastKind::Error,
-                tr!("pack_export_failed", error = message.as_str()),
+                tr!("pack_export_failed", error = message.text()),
             );
         }
     }

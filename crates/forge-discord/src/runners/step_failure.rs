@@ -39,6 +39,12 @@ fn validation_message(fault: &ValidationFault) -> MessageRef {
     }
 }
 
+impl DiscordError {
+    pub fn user_message(&self) -> MessageRef {
+        message(self)
+    }
+}
+
 pub(crate) fn failed(error: &DiscordError) -> SubActionOutcome {
     SubActionOutcome::Failed(message(error).into())
 }

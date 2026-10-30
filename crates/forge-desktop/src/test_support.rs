@@ -1053,6 +1053,20 @@ pub(crate) fn default_twitch_bot(
     )
 }
 
+pub(crate) fn shown_in_english<F>(failure: F) -> String
+where
+    F: Into<crate::repo_failure::RepoFailure> + std::fmt::Display,
+{
+    crate::i18n::install_language(forge_storage::Language::En);
+    let diagnostic = failure.to_string();
+    let shown = failure.into().text();
+    assert!(
+        !shown.contains(&diagnostic),
+        "the diagnostic reached the user: {shown}"
+    );
+    shown
+}
+
 pub(crate) fn runtime() -> tokio::runtime::Runtime {
     tokio::runtime::Builder::new_current_thread()
         .enable_all()
@@ -1817,6 +1831,10 @@ pub(crate) fn press_undo(cx: &mut gpui::TestAppContext) {
     });
 }
 
+pub(crate) fn blank_window(cx: &mut gpui::TestAppContext) {
+    cx.add_window(|_, _| BlankWindow);
+}
+
 pub(crate) fn install_presentation(cx: &mut gpui::TestAppContext) {
     cx.update(|cx| {
         cx.set_global(forge_components::Presentation::new(
@@ -1923,6 +1941,95 @@ pub(crate) fn spawn_speak_queue(
     let (handle, stream) =
         forge_speak_queue::spawn(forge_speak_queue::QueueConfig::default(), deps);
     (handle, stream, resolver)
+}
+
+struct ListedVoices {
+    id: forge_speech_types::EngineId,
+    voices: Vec<forge_speech_types::TtsVoice>,
+}
+
+#[async_trait::async_trait]
+impl forge_tts_core::TtsEngine for ListedVoices {
+    fn engine_id(&self) -> &forge_speech_types::EngineId {
+        &self.id
+    }
+
+    fn capabilities(&self) -> &forge_tts_core::EngineCapabilities {
+        static CAPABILITIES: forge_tts_core::EngineCapabilities =
+            forge_tts_core::EngineCapabilities {
+                ssml: false,
+                neural_voices: false,
+                streaming: false,
+                custom_lexicons: false,
+            };
+        &CAPABILITIES
+    }
+
+    async fn list_voices(
+        &self,
+    ) -> Result<Vec<forge_speech_types::TtsVoice>, forge_tts_core::TtsError> {
+        Ok(self.voices.clone())
+    }
+
+    async fn synthesize(
+        &self,
+        _request: forge_tts_core::SynthesisRequest,
+    ) -> Result<PcmBuffer, forge_tts_core::TtsError> {
+        Ok(PcmBuffer::new(vec![0i16; 8], 22_050, 1))
+    }
+}
+
+struct ListedVoicesFactory(
+    forge_speech_types::EngineId,
+    Vec<forge_speech_types::TtsVoice>,
+);
+
+impl forge_tts_core::TtsEngineFactory for ListedVoicesFactory {
+    fn class(&self) -> forge_tts_core::EngineClass {
+        forge_tts_core::EngineClass::Local
+    }
+
+    fn create(&self) -> Result<Box<dyn forge_tts_core::TtsEngine>, forge_tts_core::TtsError> {
+        Ok(Box::new(ListedVoices {
+            id: self.0.clone(),
+            voices: self.1.clone(),
+        }))
+    }
+}
+
+pub(crate) fn spawn_speak_queue_listing(
+    rt: &tokio::runtime::Runtime,
+    engine: &forge_speech_types::EngineId,
+    voices: Vec<forge_speech_types::TtsVoice>,
+) -> forge_speak_queue::SpeakQueueHandle {
+    let expected = voices.len();
+    let mut registry = forge_tts_core::TtsRegistry::new();
+    registry.register(
+        engine.clone(),
+        Arc::new(ListedVoicesFactory(engine.clone(), voices)),
+    );
+    let resolver = Arc::new(std::sync::RwLock::new(
+        forge_speak_queue::VoiceAliasResolver::new(
+            Vec::new(),
+            forge_speech_types::AssignmentStrategy::DeterministicByName,
+            forge_speech_types::IgnoreProfile::default(),
+            forge_speech_types::SynthesisDefaults::default(),
+        ),
+    ));
+    let deps = forge_speak_queue::QueueDeps {
+        registry: Arc::new(std::sync::RwLock::new(registry)),
+        resolver,
+        pipeline: forge_speak_queue::PipelineConfigHandle::new(neutral_pipeline_config()),
+        audio_sink: Arc::new(forge_audio::NullSink),
+        event_bus: Arc::new(SilentPublisher),
+        disabled_engines: std::collections::HashSet::new(),
+        engine_gains: HashMap::new(),
+    };
+    let (handle, _events) = rt.block_on(async {
+        forge_speak_queue::spawn(forge_speak_queue::QueueConfig::default(), deps)
+    });
+    pump_until(rt, || handle.available_voices().len() == expected);
+    handle
 }
 
 pub(crate) fn live_alias(

@@ -14,7 +14,7 @@ use tokio::runtime::Handle;
 
 use crate::async_bridge::{self, DialogFilter};
 use crate::backup_passphrase_modal::{BackupPassphraseEvent, BackupPassphraseModal};
-use crate::restore_problem::RestoreProblem;
+use crate::repo_failure::RepoFailure;
 
 const BACKUP_TOAST_DURATION: Duration = Duration::from_secs(10);
 
@@ -146,7 +146,7 @@ impl BackupFlow {
             async move {
                 backup.await.map_err(|error| {
                     tracing::warn!(%error, "data backup failed");
-                    RestoreProblem::of(&error).plain_text()
+                    RepoFailure::from(error)
                 })
             },
             |this, result, cx| this.written(result, cx),
@@ -155,13 +155,13 @@ impl BackupFlow {
         cx.notify();
     }
 
-    fn written(&mut self, result: Result<PathBuf, String>, cx: &mut Context<Self>) {
+    fn written(&mut self, result: Result<PathBuf, RepoFailure>, cx: &mut Context<Self>) {
         self.step = BackupStep::Idle;
         self.report(result, cx);
         cx.notify();
     }
 
-    fn report(&self, result: Result<PathBuf, String>, cx: &mut Context<Self>) {
+    fn report(&self, result: Result<PathBuf, RepoFailure>, cx: &mut Context<Self>) {
         match result {
             Ok(path) => {
                 tracing::info!(path = %path.display(), "data backup created");
@@ -181,7 +181,7 @@ impl BackupFlow {
                 tracing::warn!(error = %message, "data backup failed");
                 cx.push_toast(
                     ToastKind::Error,
-                    tr!("settings_storage_backup_failed", error = message.as_str()),
+                    tr!("settings_storage_backup_failed", error = message.text()),
                 );
             }
         }

@@ -31,6 +31,7 @@ use crate::discord_webhooks::{WebhookRow, distinct_linked_actions, load_webhooks
 use crate::hub_crumb::hub_crumb;
 use crate::integrations::BuiltinObject;
 use crate::navigation::NavRequested;
+use crate::repo_failure::RepoFailure;
 use crate::runtime_event;
 use forge_components::ActivePresentation;
 use forge_components::PushToast;
@@ -172,10 +173,14 @@ impl DiscordScreenView {
         );
     }
 
-    fn apply_webhooks(&mut self, result: Result<Vec<WebhookRow>, String>, cx: &mut Context<Self>) {
+    fn apply_webhooks(
+        &mut self,
+        result: Result<Vec<WebhookRow>, RepoFailure>,
+        cx: &mut Context<Self>,
+    ) {
         match result {
             Ok(rows) => self.webhooks = rows,
-            Err(message) => self.on_error(&message, cx),
+            Err(message) => self.on_error(&message.text(), cx),
         }
         self.refresh_from_client(cx);
     }
@@ -246,7 +251,7 @@ impl DiscordScreenView {
                 client
                     .webhook_url(&lookup)
                     .await
-                    .map_err(|e| e.to_string())
+                    .map_err(RepoFailure::from)
                     .map(|url| (lookup, url))
             },
             |this, result, cx| match result {
@@ -258,7 +263,7 @@ impl DiscordScreenView {
                     },
                     cx,
                 ),
-                Err(message) => this.on_error(&message, cx),
+                Err(message) => this.on_error(&message.text(), cx),
             },
             cx,
         );
@@ -311,7 +316,7 @@ impl DiscordScreenView {
                 client
                     .save_webhook(&name, &url)
                     .await
-                    .map_err(|e| e.to_string())
+                    .map_err(RepoFailure::from)
             },
             |this, result, cx| match result {
                 Ok(()) => {
@@ -321,7 +326,7 @@ impl DiscordScreenView {
                     }
                     this.load(cx);
                 }
-                Err(message) => this.on_error(&message, cx),
+                Err(message) => this.on_error(&message.text(), cx),
             },
             cx,
         );
@@ -339,7 +344,7 @@ impl DiscordScreenView {
                     .post_test(&name, &url, &content)
                     .await
                     .map(|_| ())
-                    .map_err(|e| e.to_string())
+                    .map_err(RepoFailure::from)
             },
             |this, result, cx| {
                 if let Some(open) = &this.modal {
@@ -363,7 +368,7 @@ impl DiscordScreenView {
                     .post_text(&name, &content)
                     .await
                     .map(|_| ())
-                    .map_err(|e| e.to_string())
+                    .map_err(RepoFailure::from)
             },
             |this, result, cx| this.report_test(result, cx),
             cx,
@@ -371,12 +376,12 @@ impl DiscordScreenView {
         cx.notify();
     }
 
-    fn report_test(&mut self, result: Result<(), String>, cx: &mut Context<Self>) {
+    fn report_test(&mut self, result: Result<(), RepoFailure>, cx: &mut Context<Self>) {
         match result {
             Ok(()) => cx.push_toast(ToastKind::Success, tr!("discord_toast_test_sent")),
             Err(message) => cx.push_toast(
                 ToastKind::Error,
-                tr!("discord_toast_test_failed", message = message.as_str()),
+                tr!("discord_toast_test_failed", message = message.text()),
             ),
         }
         self.refresh_from_client(cx);
@@ -409,14 +414,14 @@ impl DiscordScreenView {
                     .delete_webhook(&name)
                     .await
                     .map(|_| ())
-                    .map_err(|e| e.to_string())
+                    .map_err(RepoFailure::from)
             },
             |this, result, cx| match result {
                 Ok(()) => {
                     cx.push_toast(ToastKind::Success, tr!("discord_toast_deleted"));
                     this.load(cx);
                 }
-                Err(message) => this.on_error(&message, cx),
+                Err(message) => this.on_error(&message.text(), cx),
             },
             cx,
         );

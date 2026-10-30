@@ -10,7 +10,7 @@ use forge_transfer::{ClosureRegistries, PackInventory, load_pack_inventory};
 use tokio::runtime::Handle;
 
 use crate::actions_screen::overlay_schema::OverlayContentSchema;
-use crate::restore_problem::RestoreProblem;
+use crate::repo_failure::RepoFailure;
 use crate::runtime_handles::RuntimeHandles;
 
 #[derive(Clone)]
@@ -58,16 +58,16 @@ impl PackServices {
         }
     }
 
-    pub async fn load_source(&self) -> Result<PackSource, String> {
+    pub async fn load_source(&self) -> Result<PackSource, RepoFailure> {
         let inventory = load_pack_inventory(self.backend.as_ref())
             .await
-            .map_err(|error| RestoreProblem::of(&error).plain_text())?;
+            .map_err(RepoFailure::from)?;
         let overlays = self
             .backend
             .overlay_repo()
             .list()
             .await
-            .map_err(|error| error.to_string())?;
+            .map_err(RepoFailure::from)?;
         let kind_by_identity = overlays
             .into_iter()
             .map(|overlay| (overlay.id.to_string(), overlay.kind_id))

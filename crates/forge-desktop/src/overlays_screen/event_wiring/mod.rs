@@ -26,6 +26,7 @@ use gpui::{
 use crate::async_bridge::{self, Generation};
 use crate::navigation::NavRequested;
 use crate::navigation::Screen;
+use crate::repo_failure::RepoFailure;
 use forge_components::ActivePresentation;
 use forge_components::PushToast;
 
@@ -83,7 +84,7 @@ enum Landing {
         queue: Option<QueueLanding>,
     },
     AlreadyWired(ActionId),
-    Failed(String),
+    Failed(RepoFailure),
     Missing,
 }
 
@@ -390,7 +391,7 @@ impl EventWiringView {
                         let queue = register_created_queue(&scheduler, &records).await;
                         Landing::Wired { records, queue }
                     }
-                    Err(error) => Landing::Failed(error.to_string()),
+                    Err(error) => Landing::Failed(RepoFailure::operation(error)),
                 }
             },
             Self::settle_wiring,
@@ -420,9 +421,9 @@ impl EventWiringView {
                 action_id,
                 cx,
             ),
-            Landing::Failed(message) => {
-                tracing::warn!(error = %message, "overlay event wiring failed");
-                cx.push_toast(ToastKind::Error, message);
+            Landing::Failed(failure) => {
+                tracing::warn!(error = %failure, "overlay event wiring failed");
+                cx.push_toast(ToastKind::Error, failure.text());
             }
             Landing::Missing => cx.push_toast(ToastKind::Error, tr!("overlays_wire_toast_missing")),
         }

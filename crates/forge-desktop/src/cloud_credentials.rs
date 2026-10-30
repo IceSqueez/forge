@@ -27,6 +27,7 @@ use gpui::{
 
 use crate::async_bridge;
 use crate::cloud_tts_boot;
+use crate::repo_failure::RepoFailure;
 use forge_components::ActivePresentation;
 use forge_components::PushToast;
 
@@ -124,18 +125,15 @@ impl CloudCreds {
         }
     }
 
-    async fn test(self, gateways: CloudGateways) -> Result<(), String> {
+    async fn test(self, gateways: CloudGateways) -> Result<(), RepoFailure> {
         let engine = match self {
             CloudCreds::Azure(c) => AzureEngineFactory::new(c, &gateways).create(),
             CloudCreds::ElevenLabs(c) => ElevenLabsEngineFactory::new(c, &gateways).create(),
             CloudCreds::OpenAi(c) => OpenAiEngineFactory::new(c, &gateways).create(),
             CloudCreds::Polly(c) => PollyEngineFactory::new(c, &gateways).create(),
         }
-        .map_err(|e| e.to_string())?;
-        engine
-            .test_connection()
-            .await
-            .map_err(|e| truncate_err(e.to_string()))
+        .map_err(RepoFailure::from)?;
+        engine.test_connection().await.map_err(RepoFailure::from)
     }
 }
 
@@ -419,7 +417,7 @@ impl CloudCredentialsView {
                     tr!(
                         "tts_cloud_save_failed_toast",
                         name = kind.display_name(),
-                        error = e.to_string()
+                        error = RepoFailure::operation(e).text()
                     ),
                 );
                 return;
@@ -432,11 +430,11 @@ impl CloudCredentialsView {
             async move {
                 repo.store(&CredentialId::new(credential_id), &json)
                     .await
-                    .map_err(|e| e.to_string())
+                    .map_err(RepoFailure::from)
             },
             move |this, result, cx| match result {
                 Ok(()) => this.on_saved(kind, creds, cx),
-                Err(message) => this.on_save_failed(kind, &message, cx),
+                Err(message) => this.on_save_failed(kind, &message.text(), cx),
             },
             cx,
         );
@@ -507,10 +505,10 @@ impl CloudCredentialsView {
         async_bridge::run_async(
             &self.rt_handle,
             async move { creds.test(gateways).await },
-            move |this, result: Result<(), String>, cx| {
+            move |this, result: Result<(), RepoFailure>, cx| {
                 let status = match result {
                     Ok(()) => TestStatus::Ok,
-                    Err(e) => TestStatus::Err(e),
+                    Err(e) => TestStatus::Err(e.text()),
                 };
                 this.set_test_status(kind, status);
                 cx.notify();
@@ -973,13 +971,4 @@ fn field(
 
 fn nonempty(input: &Entity<TextInput>, cx: &App) -> bool {
     !input.read(cx).content().trim().is_empty()
-}
-
-fn truncate_err(s: String) -> String {
-    const MAX: usize = 120;
-    if s.chars().count() <= MAX {
-        s
-    } else {
-        s.chars().take(MAX).collect::<String>() + "\u{2026}"
-    }
 }

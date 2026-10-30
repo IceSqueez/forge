@@ -1,5 +1,6 @@
 use super::*;
 use crate::async_bridge::{BridgeFlow, drain_subscription};
+use crate::repo_failure::RepoFailure;
 use crate::runtime_event::{self, RuntimeEvent};
 use crate::user_text::resolve_user_text;
 use forge_components::ROW_OFF_OPACITY;
@@ -266,7 +267,12 @@ impl TestRunModal {
         cx.emit(TestRunEvent::Cancelled(self.action_id));
     }
 
-    fn on_test_fired(&mut self, id: ActionId, result: Result<(), String>, cx: &mut Context<Self>) {
+    fn on_test_fired(
+        &mut self,
+        id: ActionId,
+        result: Result<(), RepoFailure>,
+        cx: &mut Context<Self>,
+    ) {
         if self.action_id != id {
             return;
         }
@@ -278,7 +284,7 @@ impl TestRunModal {
                     FireOutcome::Repaint
                 }
             }
-            Err(message) => FireOutcome::Error(message),
+            Err(message) => FireOutcome::Error(message.text()),
         };
         match outcome {
             FireOutcome::StartTimeout => self.start_test_timeout(cx),

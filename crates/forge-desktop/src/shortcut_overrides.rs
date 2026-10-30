@@ -13,6 +13,7 @@ use crate::actions::{
     SHORTCUTS, ShortcutEntry, canonical_chord, chord_is_bindable, effective_chord,
     reapply_key_bindings, shortcut_entry,
 };
+use crate::repo_failure::RepoFailure;
 
 pub enum ChordVerdict {
     Unusable,
@@ -257,14 +258,14 @@ impl ShortcutOverrides {
 pub async fn save_overrides(
     repo: Arc<dyn SettingsRepo>,
     map: HashMap<String, OverrideEntry>,
-) -> Result<(), String> {
+) -> Result<(), RepoFailure> {
     let stored = StoredShortcuts {
         entries: map,
         unreadable: false,
     };
     write_setting(repo.as_ref(), &KEYBOARD_SHORTCUTS, &stored)
         .await
-        .map_err(|e| e.to_string())
+        .map_err(RepoFailure::from)
 }
 
 #[cfg(test)]

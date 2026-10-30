@@ -239,14 +239,24 @@ impl TriggersRegistryView {
         self.show_enabled(id, enabled);
         cx.notify();
         let repo = Arc::clone(&self.repo);
-        self.spawn_write(
+        self.enabled_writers.writer(id).write(
             async move {
                 repo.set_enabled(id, enabled)
                     .await
+                    .map(drop)
                     .map_err(RepoFailure::from)
             },
+            Self::on_enabled_write_settled,
             cx,
         );
+    }
+
+    fn on_enabled_write_settled(&mut self, outcome: WriteOutcome, cx: &mut Context<Self>) {
+        match outcome {
+            WriteOutcome::Written => self.on_write_settled(Ok(()), cx),
+            WriteOutcome::Failed(failure) => self.on_write_settled(Err(failure), cx),
+            WriteOutcome::Superseded => {}
+        }
     }
 
     fn show_enabled(&mut self, id: TriggerInstanceId, enabled: bool) {
@@ -1108,7 +1118,9 @@ impl TriggersRegistryView {
 
 #[cfg(test)]
 mod tests {
-    use super::super::tests::{open_trigger_list, row_named};
+    use std::sync::{Arc, Mutex};
+
+    use super::super::tests::{open_list_recording_writes, open_trigger_list, row_named};
     use crate::test_support::press_undo;
 
     #[gpui::test]
@@ -1125,5 +1137,66 @@ mod tests {
         press_undo(cx);
 
         list.wait_for_names(cx, &["Greeter".to_owned()]);
+    }
+
+    #[gpui::test]
+    fn toggling_twice_before_the_store_answers_stores_only_the_second_state(
+        cx: &mut gpui::TestAppContext,
+    ) {
+        let seeded = row_named("Greeter");
+        let id = seeded.id;
+        let writes = Arc::new(Mutex::new(Vec::new()));
+        let list = open_list_recording_writes(cx, vec![seeded], Arc::clone(&writes));
+
+        list.view.update(cx, |view, cx| {
+            view.toggle_enable(id, cx);
+            view.toggle_enable(id, cx);
+        });
+        list.settle(cx);
+
+        let shown = list.view.read_with(cx, |view, _| {
+            view.instances
+                .iter()
+                .find(|row| row.id == id)
+                .map(|row| row.enabled)
+        });
+        assert_eq!(
+            (writes.lock().unwrap().clone(), shown, list.errors(cx)),
+            (vec![true], Some(true), 0)
+        );
+    }
+
+    #[gpui::test]
+    fn toggling_twice_with_the_store_answering_between_writes_in_click_order(
+        cx: &mut gpui::TestAppContext,
+    ) {
+        let seeded = row_named("Greeter");
+        let id = seeded.id;
+        let writes = Arc::new(Mutex::new(Vec::new()));
+        let list = open_list_recording_writes(cx, vec![seeded], Arc::clone(&writes));
+
+        for _ in 0..2 {
+            list.view.update(cx, |view, cx| view.toggle_enable(id, cx));
+            list.settle(cx);
+        }
+
+        assert_eq!(writes.lock().unwrap().clone(), vec![false, true]);
+    }
+
+    #[gpui::test]
+    fn two_triggers_toggled_together_both_land(cx: &mut gpui::TestAppContext) {
+        let first = row_named("First");
+        let second = row_named("Second");
+        let (first_id, second_id) = (first.id, second.id);
+        let writes = Arc::new(Mutex::new(Vec::new()));
+        let list = open_list_recording_writes(cx, vec![first, second], Arc::clone(&writes));
+
+        list.view.update(cx, |view, cx| {
+            view.toggle_enable(first_id, cx);
+            view.toggle_enable(second_id, cx);
+        });
+        list.settle(cx);
+
+        assert_eq!(writes.lock().unwrap().clone(), vec![false, false]);
     }
 }

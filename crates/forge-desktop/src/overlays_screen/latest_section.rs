@@ -24,6 +24,7 @@ use super::property_panel::{
 use crate::async_bridge::{self, BridgeFlow};
 use crate::config_form::ConfigField;
 use crate::option_labels::shared_option_label;
+use crate::repo_failure::RepoFailure;
 use crate::runtime_event::{self, RuntimeEvent};
 
 const VALUE_GAP: Pixels = px(2.0);
@@ -254,7 +255,7 @@ impl OverlayPropertyPanel {
                     .values
                     .reset(&binding.slot)
                     .await
-                    .map_err(|error| error.to_string())
+                    .map_err(RepoFailure::from)
             },
             |this, result, cx| this.on_reset_done(result, cx),
             cx,
@@ -262,10 +263,10 @@ impl OverlayPropertyPanel {
         cx.notify();
     }
 
-    fn on_reset_done(&mut self, result: Result<(), String>, cx: &mut Context<Self>) {
+    fn on_reset_done(&mut self, result: Result<(), RepoFailure>, cx: &mut Context<Self>) {
         self.latest.reset = match result {
             Ok(()) => ResetStage::Idle,
-            Err(message) => ResetStage::Failed(message),
+            Err(message) => ResetStage::Failed(message.text()),
         };
         self.refresh_latest(cx);
         cx.notify();

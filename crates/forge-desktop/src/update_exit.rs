@@ -31,6 +31,10 @@ impl ExitHandoff {
         })))
     }
 
+    pub fn adopt_lock(&self, instance_lock: Option<InstanceLock>) {
+        self.0.borrow_mut().instance_lock = instance_lock;
+    }
+
     pub fn arm_update(&self, data_dir: PathBuf) {
         self.0.borrow_mut().armed = Some(ExitRelaunch::UpdateSupervisor(data_dir));
     }

@@ -35,6 +35,7 @@ use crate::config_form::{
     collect_field_values, fold_config_field, render_config_control, resolve_dependent_choices,
     set_picked_value, sparse_overrides,
 };
+use crate::repo_failure::RepoFailure;
 use forge_components::ActivePresentation;
 
 const PANE_W: Pixels = px(246.0);
@@ -345,14 +346,14 @@ impl OverlayPropertyPanel {
             let stored = service
                 .update_config(&id, &sparse)
                 .await
-                .map_err(|e| e.to_string())?;
+                .map_err(RepoFailure::from)?;
             if stored {
                 service
                     .materialize(&id, samples.as_ref())
                     .await
-                    .map_err(|e| e.to_string())?;
+                    .map_err(RepoFailure::from)?;
             }
-            Ok::<(), String>(())
+            Ok::<(), RepoFailure>(())
         });
     }
 

@@ -43,7 +43,7 @@ use crate::in_flight_steps::InFlightSteps;
 use crate::integration_catalog::{declaration_of, is_donation_service, look_of};
 use crate::integration_quick_action_modal::{QuickActionModal, QuickActionModalEvent};
 use crate::integration_quick_actions::accent_color;
-use crate::integration_sign_out::forget_then_disconnect;
+use crate::integration_sign_out::{SignOutOutcome, forget_then_disconnect};
 use crate::integrations::{BuiltinObject, ObsInstallSeed, VTubeInstallSeed};
 use crate::navigation::NavRequested;
 use crate::navigation::Screen;
@@ -51,6 +51,7 @@ use crate::obs_credentials_form::ObsConnected;
 use crate::obs_settings_modal::{ObsSettingsModal, ObsSettingsModalEvent};
 use crate::platform_credentials::PlatformCredentialManagers;
 use crate::platforms::PlatformConnectivity;
+use crate::repo_failure::RepoFailure;
 use crate::run_history_modal::{RunHistoryDismissed, RunHistoryModal, RunHistoryOpenIntegration};
 use crate::runtime_event::{self, RuntimeEvent};
 use crate::twitch_bot_presence::TwitchBotPresence;
@@ -823,7 +824,7 @@ impl IntegrationDetail {
         &mut self,
         step: SubActionStep,
         label: String,
-        settled: impl FnOnce(&mut Self, Result<(), String>, &mut Context<Self>) + Send + 'static,
+        settled: impl FnOnce(&mut Self, Result<(), RepoFailure>, &mut Context<Self>) + Send + 'static,
         cx: &mut Context<Self>,
     ) {
         let builtin_id = self.status.id().as_str().to_owned();
@@ -874,7 +875,7 @@ impl IntegrationDetail {
                     tracing::warn!(error = %err, "content row action failed");
                     cx.push_toast(
                         ToastKind::Error,
-                        tr!("integration_row_action_failed", error = err.as_str()),
+                        tr!("integration_row_action_failed", error = err.text()),
                     );
                 }
                 cx.notify();
@@ -950,7 +951,7 @@ impl IntegrationDetail {
                 history
                     .recent_for_builtin(&builtin_id, HISTORY_LIMIT)
                     .await
-                    .map_err(|err| err.to_string())
+                    .map_err(RepoFailure::from)
             },
             move |_detail, result, cx| match result {
                 Ok(runs) => modal.update(cx, |modal, cx| modal.set_runs(runs, cx)),
@@ -958,7 +959,7 @@ impl IntegrationDetail {
                     tracing::warn!(error = %message, "quick action run history load failed");
                     modal.update(cx, |modal, cx| {
                         modal.set_error(
-                            tr!("action_editor_run_history_failed", error = message.as_str()),
+                            tr!("action_editor_run_history_failed", error = message.text()),
                             cx,
                         );
                     });
@@ -1015,7 +1016,7 @@ impl IntegrationDetail {
         let managers = self.platform_credentials.clone();
         let slot = self.slot_of(platform);
         let forget = async move {
-            forget_then_disconnect(
+            let outcome = forget_then_disconnect(
                 async move { managers.forget(platform, credentials.as_ref()).await },
                 None,
             )
@@ -1023,7 +1024,7 @@ impl IntegrationDetail {
             if let Some(slot) = slot {
                 slot.rebuild().await;
             }
-            Ok::<(), PlatformError>(())
+            Ok::<SignOutOutcome, PlatformError>(outcome)
         };
         self.run_sign_out(
             forget,
@@ -1045,7 +1046,7 @@ impl IntegrationDetail {
         apply_signed_out: impl FnOnce(&mut Self, &mut Context<Self>) + Send + 'static,
         cx: &mut Context<Self>,
     ) where
-        F: Future<Output = Result<(), E>> + Send + 'static,
+        F: Future<Output = Result<SignOutOutcome, E>> + Send + 'static,
         E: std::fmt::Display + Send + 'static,
     {
         if self.signing_out {
@@ -1059,7 +1060,18 @@ impl IntegrationDetail {
             move |this, result, cx| {
                 this.signing_out = false;
                 match result {
-                    Ok(()) => apply_signed_out(this, cx),
+                    Ok(outcome) => {
+                        if outcome == SignOutOutcome::StillConnected {
+                            cx.push_toast(
+                                ToastKind::Warn,
+                                tr!(
+                                    "integration_sign_out_still_connected",
+                                    name = this.display_name.clone()
+                                ),
+                            );
+                        }
+                        apply_signed_out(this, cx);
+                    }
                     Err(err) => {
                         tracing::warn!(
                             error = %err,
@@ -2456,6 +2468,32 @@ mod tests {
             }
         }
 
+        struct UnreachableControl;
+
+        #[async_trait]
+        impl BuiltinControl for UnreachableControl {
+            async fn reconnect(&self) -> forge_platform_core::ControlOutcome {
+                Ok(())
+            }
+            async fn disconnect(&self) -> forge_platform_core::ControlOutcome {
+                Err(forge_platform_core::ControlFailure::Transport)
+            }
+            async fn refresh_token(&self) -> forge_platform_core::ControlOutcome {
+                Ok(())
+            }
+        }
+
+        fn warnings(cx: &mut TestAppContext) -> Vec<String> {
+            cx.update(|cx| {
+                cx.global::<Toasts>()
+                    .items()
+                    .iter()
+                    .filter(|toast| toast.kind == ToastKind::Warn)
+                    .map(|toast| toast.message.to_string())
+                    .collect()
+            })
+        }
+
         fn confirm_sign_out(cx: &mut TestAppContext, detail: &SignedInDetail) {
             detail.view.update(cx, |this, cx| {
                 this.request_disconnect(cx);
@@ -2504,6 +2542,59 @@ mod tests {
                     "{id}"
                 );
             }
+        }
+
+        #[gpui::test]
+        fn a_connection_that_will_not_close_warns_and_still_signs_out(cx: &mut TestAppContext) {
+            crate::i18n::install_language(forge_storage::Language::En);
+            let rt = runtime();
+            let _enter = rt.enter();
+            for id in ["obs", "vtube"] {
+                let detail = signed_in_detail(cx, &rt, id, ScriptedCredentials::new(false, None));
+                detail.view.update(cx, |this, _| {
+                    this.control = Some(Arc::new(UnreachableControl));
+                });
+
+                confirm_sign_out(cx, &detail);
+                settle(cx, &rt);
+
+                let display_name = detail
+                    .view
+                    .read_with(cx, |this, _| this.display_name.clone());
+                assert_eq!(
+                    (
+                        observe(cx, &detail),
+                        warnings(cx)
+                            .iter()
+                            .map(|toast| toast.replace(['\u{2068}', '\u{2069}'], ""))
+                            .collect::<Vec<_>>()
+                    ),
+                    (
+                        SignOutView {
+                            control_kept: false,
+                            connect_flow_open: false,
+                            signed_out_events: 1,
+                            error_toasts: 0,
+                        },
+                        vec![format!(
+                            "Signed out of {display_name}, but its live connection could not be closed. Restart forge if it stays connected."
+                        )]
+                    ),
+                    "{id}"
+                );
+            }
+        }
+
+        #[gpui::test]
+        fn a_clean_sign_out_warns_about_nothing(cx: &mut TestAppContext) {
+            let rt = runtime();
+            let _enter = rt.enter();
+            let detail = signed_in_detail(cx, &rt, "obs", ScriptedCredentials::new(false, None));
+
+            confirm_sign_out(cx, &detail);
+            settle(cx, &rt);
+
+            assert_eq!(warnings(cx), Vec::<String>::new());
         }
 
         #[gpui::test]

@@ -13,6 +13,7 @@ use super::base_sections::{BaseLaunch, LookSummary};
 use super::sizing_section::keep_sizing_notice;
 use super::writes::{Regenerated, regenerate};
 use crate::async_bridge;
+use crate::repo_failure::RepoFailure;
 
 pub(super) fn look_summary(descriptor: &dyn OverlayKindDescriptor) -> LookSummary {
     LookSummary {
@@ -93,22 +94,22 @@ impl OverlaysView {
         async_bridge::run_async(
             &self.handles.rt_handle,
             async move {
-                let Some(mut definition) = repo.get(&id).await.map_err(|e| e.to_string())? else {
+                let Some(mut definition) = repo.get(&id).await.map_err(RepoFailure::from)? else {
                     return Ok((false, Regenerated::default()));
                 };
                 definition.kind_id = kind_id;
                 definition.config = carried;
                 definition.config_schema_version = schema_version;
-                service.save(&definition).await.map_err(|e| e.to_string())?;
+                service.save(&definition).await.map_err(RepoFailure::from)?;
                 Ok((true, regenerate(&service, samples.as_ref(), &id).await))
             },
-            move |this, result: Result<(bool, Regenerated), String>, cx| match result {
+            move |this, result: Result<(bool, Regenerated), RepoFailure>, cx| match result {
                 Ok((true, regenerated)) => {
                     this.apply_regenerated(&target, regenerated, cx);
                     this.load(cx);
                 }
                 Ok((false, _)) => this.report(&forge_components::tr!("overlays_toast_missing"), cx),
-                Err(message) => this.report(&message, cx),
+                Err(message) => this.report(&message.text(), cx),
             },
             cx,
         );

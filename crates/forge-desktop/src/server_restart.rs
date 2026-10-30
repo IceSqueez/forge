@@ -1,10 +1,12 @@
 use forge_server::{ServerError, ServerHandle};
 
-pub(crate) async fn restart_ignoring_disabled(handle: &ServerHandle) -> Result<(), String> {
+use crate::repo_failure::RepoFailure;
+
+pub(crate) async fn restart_ignoring_disabled(handle: &ServerHandle) -> Result<(), RepoFailure> {
     match handle.restart().await {
         Ok(()) => Ok(()),
         Err(ServerError::Disabled) => Ok(()),
-        Err(other) => Err(other.to_string()),
+        Err(other) => Err(other.into()),
     }
 }
 
@@ -13,10 +15,11 @@ mod tests {
     use std::sync::Arc;
 
     use forge_server::ServerSettings;
-    use forge_storage::SettingsRepo;
+    use forge_storage::{Language, SettingsRepo};
     use tokio::net::TcpListener;
 
     use super::*;
+    use crate::i18n::install_language;
     use crate::test_support::{TestBackend, stopped_server_handle, test_backend};
 
     const LOOPBACK: &str = "127.0.0.1";
@@ -44,6 +47,7 @@ mod tests {
 
     #[tokio::test]
     async fn a_restart_that_cannot_take_the_port_reports_the_address_it_wanted() {
+        install_language(Language::En);
         let (backend, _writes) = test_backend();
         let squatter = TcpListener::bind(format!("{LOOPBACK}:0"))
             .await
@@ -52,13 +56,14 @@ mod tests {
         persist_bind(&backend, port).await;
         let handle = stopped_server_handle(&backend).await;
 
-        let message = restart_ignoring_disabled(&handle)
+        let failure = restart_ignoring_disabled(&handle)
             .await
             .expect_err("a port already held must surface");
 
+        let shown = failure.text();
         assert!(
-            message.contains(&port.to_string()),
-            "the user must be told which address was refused: {message}"
+            shown.contains(&format!("{LOOPBACK}:{port}")) && !shown.contains("os error"),
+            "the user must be told which address was refused, not why the OS said so: {shown}"
         );
         drop(squatter);
     }

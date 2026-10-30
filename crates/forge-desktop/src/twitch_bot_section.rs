@@ -16,6 +16,7 @@ use gpui::{
 
 use crate::async_bridge;
 use crate::builtin_sections::panel_header_row;
+use crate::repo_failure::RepoFailure;
 use crate::twitch_bot_presence::TwitchBotPresence;
 
 const SECTION_ICON: &str = "user-check";
@@ -244,7 +245,7 @@ impl TwitchBotSection {
             Err(error) => {
                 self.problem = Some(BotProblem::Disconnect(tr!(
                     "twitch_bot_disconnect_failed",
-                    error = error.to_string()
+                    error = bot_failure_text(&error)
                 )));
             }
         }
@@ -693,9 +694,10 @@ pub(crate) fn login_failure(error: &BotLoginError) -> BotLogin {
         BotLoginError::NotStarted
         | BotLoginError::Platform(_)
         | BotLoginError::Storage(_)
-        | BotLoginError::CredentialsNotCleared(_) => {
-            BotLogin::Failed(tr!("twitch_bot_error_failed", error = error.to_string()))
-        }
+        | BotLoginError::CredentialsNotCleared(_) => BotLogin::Failed(tr!(
+            "twitch_bot_error_failed",
+            error = bot_failure_text(error)
+        )),
     }
 }
 
@@ -818,6 +820,11 @@ fn copy_row(
                 ),
         )
         .into_any_element()
+}
+
+fn bot_failure_text(error: &BotLoginError) -> String {
+    tracing::warn!(error = %error, "twitch bot account operation failed");
+    RepoFailure::operation(error).text()
 }
 
 #[cfg(test)]
@@ -1037,7 +1044,7 @@ mod tests {
         });
 
         assert!(
-            matches!(after_disconnect, (None, Some(BotProblem::Disconnect(ref m))) if m.contains("disk full")),
+            matches!(after_disconnect, (None, Some(BotProblem::Disconnect(ref m))) if !m.contains("disk full")),
             "{after_disconnect:?}"
         );
         assert!(
@@ -1119,7 +1126,7 @@ mod tests {
     }
 
     #[test]
-    fn each_login_failure_reads_differently_and_generic_ones_carry_the_cause() {
+    fn each_login_failure_reads_differently_and_generic_ones_hide_the_cause() {
         install_language(Language::En);
         let messages: Vec<String> = [
             BotLoginError::SameAsBroadcaster,
@@ -1144,7 +1151,7 @@ mod tests {
                 "{message}"
             );
         }
-        assert!(messages[3].contains("disk full"), "{}", messages[3]);
+        assert!(!messages[3].contains("disk full"), "{}", messages[3]);
     }
 
     #[test]

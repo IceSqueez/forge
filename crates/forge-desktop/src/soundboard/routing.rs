@@ -13,6 +13,7 @@ use gpui::{AnyElement, ClickEvent, Context, Pixels, SharedString, div, prelude::
 use super::labels::{field_lite_label, section_label};
 use super::{LABEL_FS, SMALL_GLYPH, SoundboardView};
 use crate::async_bridge::{self, ErrorSink};
+use crate::repo_failure::RepoFailure;
 
 pub(super) const ROUTING_PAD: Pixels = px(14.0);
 const SELECT_RADIUS: Pixels = px(7.0);
@@ -24,8 +25,8 @@ impl SoundboardView {
     pub(super) fn reload_devices(&self, cx: &mut Context<Self>) {
         async_bridge::run_blocking(
             &self.rt_handle,
-            || list_output_devices().map_err(|e| e.to_string()),
-            |this, result: Result<Vec<_>, String>, cx| {
+            || list_output_devices().map_err(RepoFailure::from),
+            |this, result: Result<Vec<_>, RepoFailure>, cx| {
                 if let Ok(devices) = result {
                     this.devices = devices;
                     cx.notify();

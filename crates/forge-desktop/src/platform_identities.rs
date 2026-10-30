@@ -1,13 +1,15 @@
+use forge_types::Secret;
+
 pub struct OAuthClientIdentity {
     pub client_id: String,
-    pub client_secret: String,
+    pub client_secret: Secret,
 }
 
 impl From<(String, String)> for OAuthClientIdentity {
     fn from((client_id, client_secret): (String, String)) -> Self {
         Self {
             client_id,
-            client_secret,
+            client_secret: Secret::new(client_secret),
         }
     }
 }

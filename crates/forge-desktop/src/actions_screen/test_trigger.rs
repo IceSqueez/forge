@@ -2,6 +2,8 @@ use forge_events::{Event, EventSource, ManualTestRun, TypedEvent};
 use forge_runtime::{EventBus, QueueAdmission, QueueSchedulerHandle, SchedulerRequest};
 use forge_types::{ActionId, ArgStack, QueueId};
 
+use crate::repo_failure::RepoFailure;
+
 pub(super) fn manual_test_root(action_id: ActionId) -> Event {
     ManualTestRun { action_id }.into_event(EventSource::Core, None)
 }
@@ -19,7 +21,7 @@ pub(super) async fn dispatch_test_run(
     scheduler: &QueueSchedulerHandle,
     bus: &EventBus,
     request: TestRunRequest,
-) -> Result<(), String> {
+) -> Result<(), RepoFailure> {
     let TestRunRequest {
         root,
         action_id,
@@ -41,7 +43,7 @@ pub(super) async fn dispatch_test_run(
             admission,
         })
         .await
-        .map_err(|e| e.to_string())
+        .map_err(RepoFailure::from)
 }
 
 #[cfg(test)]

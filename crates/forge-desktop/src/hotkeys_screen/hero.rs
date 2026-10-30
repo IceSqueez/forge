@@ -6,6 +6,7 @@ use gpui::{AnyElement, ClickEvent, Context, Pixels, div, prelude::*, px};
 
 use super::{HotkeysScreenView, LABEL_FS};
 use crate::async_bridge::{self, ErrorSink};
+use crate::repo_failure::RepoFailure;
 use forge_runtime::LifecycleState;
 
 const HERO_PAD_V: Pixels = px(14.0);
@@ -29,13 +30,14 @@ impl HotkeysScreenView {
             &self.rt_handle,
             previous,
             async move {
-                let engine = engine.ok_or_else(|| "hotkey integration unavailable".to_owned())?;
+                let engine = engine
+                    .ok_or_else(|| RepoFailure::operation("hotkey integration unavailable"))?;
                 match engine
                     .set_enabled(enabled)
                     .await
-                    .map_err(|e| e.to_string())?
+                    .map_err(RepoFailure::from)?
                 {
-                    LifecycleState::Failed(error) => Err(error.to_string()),
+                    LifecycleState::Failed(error) => Err(RepoFailure::operation(error)),
                     _ => Ok(()),
                 }
             },

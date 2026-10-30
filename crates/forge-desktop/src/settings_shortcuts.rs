@@ -17,6 +17,7 @@ use gpui::{
 use crate::actions::{SHORTCUTS, ShortcutEntry, shortcut_entry};
 use crate::async_bridge::{self, Loadable, SnapshotWriter, WriteOutcome};
 use crate::navigation::SettingsSection;
+use crate::repo_failure::RepoFailure;
 use crate::settings_pane_header::SettingsPaneHeader;
 use crate::shortcut_overrides::{ChordVerdict, ShortcutOverrides, load_overrides, save_overrides};
 use forge_components::ActivePresentation;
@@ -143,8 +144,8 @@ impl SettingsShortcutsView {
         let repo = Arc::clone(&self.backend) as Arc<dyn SettingsRepo>;
         async_bridge::run_async(
             &self.rt_handle,
-            async move { Ok::<_, String>(load_hold_ceiling(repo.as_ref()).await) },
-            |this, result: Result<Option<u64>, String>, cx| {
+            async move { Ok::<_, RepoFailure>(load_hold_ceiling(repo.as_ref()).await) },
+            |this, result: Result<Option<u64>, RepoFailure>, cx| {
                 if let Ok(stored) = result {
                     this.apply_hold_ceiling(stored, cx);
                 }
@@ -348,7 +349,7 @@ impl SettingsShortcutsView {
             WriteOutcome::Written => self.save_error = None,
             WriteOutcome::Superseded => {}
             WriteOutcome::Failed(message) => {
-                self.save_error = Some(message);
+                self.save_error = Some(message.text());
                 self.rollback(cx);
             }
         }
@@ -759,11 +760,12 @@ mod tests {
 
     #[gpui::test]
     fn no_edit_after_a_failed_load_writes_over_the_stored_shortcuts(cx: &mut TestAppContext) {
-        let unreachable = StorageError::Connection {
+        let unreachable = crate::test_support::shown_in_english(StorageError::Connection {
             reason: SETTINGS_READ_FAILED.to_owned(),
-        }
-        .to_string();
-        let undecodable = format!("stored setting '{KEYBOARD_SHORTCUTS}' cannot be decoded");
+        });
+        let undecodable = crate::test_support::shown_in_english(StorageError::UndecodableSetting {
+            key: KEYBOARD_SHORTCUTS.to_owned(),
+        });
         for (fault, stored, failing_read, reason) in [
             ("unreachable store", STORED, true, unreachable),
             ("undecodable value", "not json", false, undecodable),
@@ -780,7 +782,7 @@ mod tests {
                 view.update(cx, edit);
                 harness.settle(cx);
 
-                let failure = view.read_with(cx, |v, _| v.overrides.failure().map(str::to_owned));
+                let failure = view.read_with(cx, |v, _| v.overrides.failure());
                 assert_eq!(
                     (harness.shortcut_writes(), failure),
                     (Vec::<String>::new(), Some(reason.clone())),
@@ -859,6 +861,9 @@ mod tests {
     fn a_failed_write_reports_the_error_and_rolls_back_to_the_stored_shortcuts(
         cx: &mut TestAppContext,
     ) {
+        let read_only = crate::test_support::shown_in_english(StorageError::Connection {
+            reason: SETTINGS_WRITE_FAILED.to_owned(),
+        });
         let harness = Harness::new(STORED);
         harness.backend.fail_writes(KEYBOARD_SHORTCUTS);
         let view = harness.open(cx);
@@ -870,10 +875,6 @@ mod tests {
         harness.settle(cx);
 
         let save_error = view.read_with(cx, |v, _| v.save_error.clone());
-        let read_only = StorageError::Connection {
-            reason: SETTINGS_WRITE_FAILED.to_owned(),
-        }
-        .to_string();
         assert_eq!(
             (save_error, shown_chord(&view, HOME, cx)),
             (Some(read_only), Some(HOME_DEFAULT.to_owned()))

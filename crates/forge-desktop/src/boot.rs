@@ -37,6 +37,7 @@ use crate::integrations::{IntegrationInputs, build_integrations};
 use crate::log_tail::LogTail;
 use crate::overlay_build_failure::OverlayBuildFailure;
 use crate::platform_identities::PlatformIdentities;
+use crate::repo_failure::RepoFailure;
 use crate::routed_sink::RoutedSink;
 use crate::runtime_handles::RuntimeHandles;
 use crate::settings_catalog::DENSITY;
@@ -51,7 +52,7 @@ use forge_soundboard::spawn_clip_hotkey_dispatcher;
 pub enum BootFailure {
     UpgradeRequired { expected: u32, found: u32 },
     PreBaseline { found: u32 },
-    Retry { reason: String },
+    Retry { failure: RepoFailure },
 }
 
 fn default_db_path() -> PathBuf {
@@ -69,10 +70,33 @@ pub struct PersistedAppearance {
     pub mono_font: Option<String>,
 }
 
-pub struct BootStorage {
+#[derive(Default)]
+pub struct BootPresentation {
     pub appearance: PersistedAppearance,
     pub window_placement: Option<WindowPlacement>,
     pub backend: Option<Arc<dyn DataProvider>>,
+}
+
+pub struct PresentationRead(tokio::task::JoinHandle<BootPresentation>);
+
+impl PresentationRead {
+    pub async fn arrived(self) -> BootPresentation {
+        let presentation = self.0.await.unwrap_or_else(|error| {
+            tracing::warn!(error = %error, "persisted presentation read stopped");
+            BootPresentation::default()
+        });
+        tracing::info!(
+            theme = ?presentation.appearance.theme,
+            accent = ?presentation.appearance.accent,
+            density = ?presentation.appearance.density,
+            "applied persisted presentation"
+        );
+        presentation
+    }
+}
+
+pub struct BootStorage {
+    pub presentation: PresentationRead,
     pub opening: BackendOpening,
 }
 
@@ -83,7 +107,7 @@ impl BackendOpening {
         match self.0.await {
             Ok(opened) => opened,
             Err(e) => Err(BootFailure::Retry {
-                reason: e.to_string(),
+                failure: RepoFailure::startup_stopped(e),
             }),
         }
     }
@@ -97,37 +121,34 @@ fn open_boot_storage_with(
     rt_handle: &tokio::runtime::Handle,
     open: impl Future<Output = Result<Arc<dyn DataProvider>, BootFailure>> + Send + 'static,
 ) -> BootStorage {
-    let (tx, rx) = std::sync::mpsc::channel();
+    let (tx, rx) = tokio::sync::oneshot::channel();
     let opening = BackendOpening(rt_handle.spawn(async move {
         let opened = open.await;
         let presentation = match &opened {
-            Ok(backend) => {
-                let appearance = load_appearance(backend.as_ref()).await;
-                let window_placement =
-                    read_setting_or_default(backend.as_ref(), &WINDOW_PLACEMENT).await;
-                (appearance, window_placement, Some(Arc::clone(backend)))
-            }
-            Err(_) => (PersistedAppearance::default(), None, None),
+            Ok(backend) => BootPresentation {
+                appearance: load_appearance(backend.as_ref()).await,
+                window_placement: read_setting_or_default(backend.as_ref(), &WINDOW_PLACEMENT)
+                    .await,
+                backend: Some(Arc::clone(backend)),
+            },
+            Err(_) => BootPresentation::default(),
         };
         #[expect(
             clippy::let_underscore_must_use,
-            reason = "the boot thread stops waiting once its read budget runs out"
+            reason = "the window opens with defaults once the read budget runs out"
         )]
         let _ = tx.send(presentation);
         opened
     }));
-    let (appearance, window_placement, backend) =
-        rx.recv_timeout(APPEARANCE_READ_BUDGET).unwrap_or_default();
-    tracing::info!(
-        theme = ?appearance.theme,
-        accent = ?appearance.accent,
-        density = ?appearance.density,
-        "applied persisted presentation"
-    );
+    let presentation = PresentationRead(rt_handle.spawn(async move {
+        tokio::time::timeout(APPEARANCE_READ_BUDGET, rx)
+            .await
+            .ok()
+            .and_then(Result::ok)
+            .unwrap_or_default()
+    }));
     BootStorage {
-        appearance,
-        window_placement,
-        backend,
+        presentation,
         opening,
     }
 }
@@ -160,7 +181,7 @@ async fn open_backend() -> Result<Arc<dyn DataProvider>, BootFailure> {
         && let Err(e) = std::fs::create_dir_all(parent)
     {
         return Err(BootFailure::Retry {
-            reason: format!("failed to create data directory {}: {e}", parent.display()),
+            failure: RepoFailure::data_dir_unavailable(parent, &e),
         });
     }
     let url = format!("sqlite://{}?mode=rwc", db_path.display());
@@ -174,7 +195,7 @@ async fn open_backend() -> Result<Arc<dyn DataProvider>, BootFailure> {
                 }
                 StorageError::PreBaselineSchema { found } => BootFailure::PreBaseline { found },
                 other => BootFailure::Retry {
-                    reason: other.to_string(),
+                    failure: RepoFailure::from(other),
                 },
             })
         }
@@ -678,7 +699,7 @@ async fn build_voice_gate(
 
 struct ServerBoot {
     handle: Option<forge_server::ServerHandle>,
-    unavailable_reason: Option<String>,
+    unavailable_reason: Option<RepoFailure>,
 }
 
 impl ServerBoot {
@@ -689,7 +710,7 @@ impl ServerBoot {
         }
     }
 
-    fn unavailable(reason: String) -> Self {
+    fn unavailable(reason: RepoFailure) -> Self {
         Self {
             handle: None,
             unavailable_reason: Some(reason),
@@ -708,7 +729,7 @@ async fn build_server(
         Ok(settings) => settings,
         Err(e) => {
             crate::boot_signal::server_settings_unavailable(&e);
-            return ServerBoot::unavailable(e.to_string());
+            return ServerBoot::unavailable(RepoFailure::from(e));
         }
     };
     let bind_addr = match settings.bind_address.parse::<std::net::IpAddr>() {
@@ -775,7 +796,7 @@ async fn build_server(
         Ok(handle) => ServerBoot::running(handle),
         Err(e) => {
             tracing::error!(error = %e, "server state unavailable, leaving it off");
-            ServerBoot::unavailable(e.to_string())
+            ServerBoot::unavailable(RepoFailure::from(e))
         }
     }
 }
@@ -788,7 +809,10 @@ mod tests {
 
     use crate::settings_catalog::DENSITY;
 
-    use super::{BackendOpening, BootFailure, load_appearance, open_boot_storage_with};
+    use super::{
+        APPEARANCE_READ_BUDGET, BackendOpening, BootFailure, BootPresentation, PresentationRead,
+        load_appearance, open_boot_storage_with,
+    };
     use crate::test_support::{test_backend, worker_runtime};
     use forge_storage::DataProvider;
     use std::sync::Arc;
@@ -943,7 +967,7 @@ mod tests {
     async fn a_retryable_failure_passes_through_with_its_reason() {
         let opening = BackendOpening(tokio::spawn(async {
             Err(BootFailure::Retry {
-                reason: "disk gone".to_owned(),
+                failure: crate::repo_failure::RepoFailure::startup_stopped("disk gone"),
             })
         }));
 
@@ -951,7 +975,7 @@ mod tests {
 
         assert!(matches!(
             failure,
-            Some(BootFailure::Retry { reason }) if reason == "disk gone"
+            Some(BootFailure::Retry { failure }) if failure.to_string() == "disk gone"
         ));
     }
 
@@ -988,6 +1012,58 @@ mod tests {
         );
     }
 
+    #[tokio::test(start_paused = true)]
+    async fn the_window_opens_with_defaults_once_the_read_budget_runs_out() {
+        let started = tokio::time::Instant::now();
+        let storage = open_boot_storage_with(
+            &tokio::runtime::Handle::current(),
+            std::future::pending::<Result<Arc<dyn DataProvider>, BootFailure>>(),
+        );
+
+        let presentation = storage.presentation.arrived().await;
+
+        assert_eq!(
+            (
+                presentation.backend.is_some(),
+                presentation.window_placement.is_some(),
+                presentation.appearance.theme,
+                started.elapsed(),
+            ),
+            (false, false, ThemeId::default(), APPEARANCE_READ_BUDGET)
+        );
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn an_open_slower_than_the_read_budget_still_hands_over_its_backend() {
+        let backend = opened_backend();
+        let handed = Arc::clone(&backend);
+        let storage = open_boot_storage_with(&tokio::runtime::Handle::current(), async move {
+            tokio::time::sleep(APPEARANCE_READ_BUDGET * 2).await;
+            Ok(handed)
+        });
+
+        let early_backend = storage.presentation.arrived().await.backend.is_some();
+        let finished = storage.opening.finished().await;
+
+        assert_eq!(
+            (
+                early_backend,
+                finished.is_ok_and(|opened| Arc::ptr_eq(&opened, &backend))
+            ),
+            (false, true)
+        );
+    }
+
+    #[tokio::test]
+    async fn a_presentation_read_that_died_arrives_as_the_defaults() {
+        let dying = tokio::spawn(std::future::pending::<BootPresentation>());
+        dying.abort();
+
+        let presentation = PresentationRead(dying).arrived().await;
+
+        assert!(presentation.backend.is_none());
+    }
+
     #[test]
     fn boot_storage_passes_a_failed_open_through_without_a_backend() {
         let rt = worker_runtime();
@@ -995,7 +1071,10 @@ mod tests {
         let storage = open_boot_storage_with(rt.handle(), async {
             Err(BootFailure::PreBaseline { found: 3 })
         });
-        let early_backend = storage.backend.is_some();
+        let early_backend = rt
+            .block_on(storage.presentation.arrived())
+            .backend
+            .is_some();
         let failure = rt.block_on(storage.opening.finished()).err();
 
         assert!(!early_backend);

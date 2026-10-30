@@ -8,6 +8,7 @@ use gpui::Context;
 
 use super::OverlaysView;
 use crate::async_bridge;
+use crate::repo_failure::RepoFailure;
 use forge_components::PushToast;
 
 #[derive(Default)]
@@ -29,7 +30,7 @@ pub(super) async fn regenerate(
             media_issues: report.media_issues,
         },
         Err(error) => Regenerated {
-            failure: Some(error.to_string()),
+            failure: Some(RepoFailure::from(error).text()),
             missing: Vec::new(),
             media_issues: Vec::new(),
         },
@@ -66,19 +67,19 @@ impl OverlaysView {
                 let stored = service
                     .update_config(&id, &config)
                     .await
-                    .map_err(|e| e.to_string())?;
+                    .map_err(RepoFailure::from)?;
                 if !stored {
                     return Ok((false, Regenerated::default()));
                 }
                 Ok((true, regenerate(&service, samples.as_ref(), &id).await))
             },
-            move |this, result: Result<(bool, Regenerated), String>, cx| match result {
+            move |this, result: Result<(bool, Regenerated), RepoFailure>, cx| match result {
                 Ok((true, regenerated)) => {
                     this.apply_regenerated(&target, regenerated, cx);
                     this.load(cx);
                 }
                 Ok((false, _)) => this.report(&tr!("overlays_toast_missing"), cx),
-                Err(message) => this.report(&message, cx),
+                Err(message) => this.report(&message.text(), cx),
             },
             cx,
         );
@@ -109,11 +110,11 @@ impl OverlaysView {
                 let definition = repo
                     .create(&display_name, &kind_id, schema_version)
                     .await
-                    .map_err(|e| e.to_string())?;
+                    .map_err(RepoFailure::from)?;
                 let regenerated = regenerate(&service, samples.as_ref(), &definition.id).await;
                 Ok((definition, regenerated))
             },
-            |this, result: Result<(OverlayDefinition, Regenerated), String>, cx| match result {
+            |this, result: Result<(OverlayDefinition, Regenerated), RepoFailure>, cx| match result {
                 Ok((definition, regenerated)) => {
                     let created = definition.id;
                     this.registry.selected = Some(created.clone());
@@ -121,7 +122,7 @@ impl OverlaysView {
                     this.apply_regenerated(&created, regenerated, cx);
                     this.load(cx);
                 }
-                Err(message) => this.report(&message, cx),
+                Err(message) => this.report(&message.text(), cx),
             },
             cx,
         );
@@ -142,20 +143,20 @@ impl OverlaysView {
                 let renamed = service
                     .rename(&id, &display_name)
                     .await
-                    .map_err(|e| e.to_string())?;
+                    .map_err(RepoFailure::from)?;
                 if !renamed {
                     return Ok((false, Regenerated::default()));
                 }
                 Ok((true, regenerate(&service, samples.as_ref(), &id).await))
             },
-            move |this, result: Result<(bool, Regenerated), String>, cx| match result {
+            move |this, result: Result<(bool, Regenerated), RepoFailure>, cx| match result {
                 Ok((true, regenerated)) => {
                     cx.push_toast(ToastKind::Success, tr!("overlays_toast_renamed"));
                     this.apply_regenerated(&target, regenerated, cx);
                     this.load(cx);
                 }
                 Ok((false, _)) => this.report(&tr!("overlays_toast_missing"), cx),
-                Err(message) => this.report(&message, cx),
+                Err(message) => this.report(&message.text(), cx),
             },
             cx,
         );

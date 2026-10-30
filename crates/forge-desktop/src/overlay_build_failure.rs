@@ -7,9 +7,11 @@ use gpui::App;
 
 use forge_components::PushToast;
 
+use crate::repo_failure::RepoFailure;
+
 pub enum OverlayBuildFailure {
     Pages(usize),
-    Pass(String),
+    Pass(RepoFailure),
 }
 
 impl OverlayBuildFailure {
@@ -17,7 +19,7 @@ impl OverlayBuildFailure {
         match outcome {
             Ok(pass) if pass.failed > 0 => Some(Self::Pages(pass.failed)),
             Ok(_) => None,
-            Err(error) => Some(Self::Pass(error.to_string())),
+            Err(error) => Some(Self::Pass(RepoFailure::operation(error))),
         }
     }
 
@@ -27,7 +29,9 @@ impl OverlayBuildFailure {
                 "overlays_toast_build_failed_pages",
                 count = i64::try_from(*failed).unwrap_or(i64::MAX)
             ),
-            Self::Pass(reason) => tr!("overlays_toast_build_failed_pass", reason = reason.as_str()),
+            Self::Pass(reason) => {
+                tr!("overlays_toast_build_failed_pass", reason = reason.text())
+            }
         }
     }
 
@@ -83,7 +87,7 @@ mod tests {
 
         assert!(matches!(
             OverlayBuildFailure::from_outcome(&outcome),
-            Some(OverlayBuildFailure::Pass(reason)) if reason == "overlay root is missing"
+            Some(OverlayBuildFailure::Pass(reason)) if reason.to_string() == "overlay root is missing"
         ));
     }
 }

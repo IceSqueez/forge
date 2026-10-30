@@ -16,6 +16,7 @@ use crate::async_bridge;
 use crate::import_busy::{busy_overlay, refuse_while_busy};
 use crate::pack_import_live::{LiveRefresh, SetupLiveHandles, refresh_setup_live, voice_baseline};
 use crate::pack_services::PackServices;
+use crate::repo_failure::RepoFailure;
 use crate::restore_close::RestoreClose;
 use crate::restore_problem::RestoreProblem;
 use crate::setup_confirm::{SetupConfirmCard, SetupCount, setup_counts};
@@ -31,7 +32,7 @@ pub(crate) enum SetupApplied {
     },
     Failed {
         staged: Box<StagedSetup>,
-        message: String,
+        message: RepoFailure,
     },
     RollbackIncomplete {
         message: String,
@@ -112,13 +113,18 @@ impl SetupImportFlow {
                 });
                 Ok::<_, RestoreProblem>(staged)
             },
-            |this, result, cx| this.staged(result.map_err(|problem| problem.message()), cx),
+            |this, result, cx| {
+                this.staged(
+                    result.map_err(|problem| RepoFailure::localized(problem.message())),
+                    cx,
+                )
+            },
             cx,
         );
         cx.notify();
     }
 
-    fn staged(&mut self, result: Result<StagedSetup, String>, cx: &mut Context<Self>) {
+    fn staged(&mut self, result: Result<StagedSetup, RepoFailure>, cx: &mut Context<Self>) {
         match result {
             Ok(staged) => {
                 self.step = SetupImportStep::Confirming(Box::new(Confirming {
@@ -132,7 +138,7 @@ impl SetupImportFlow {
                 tracing::warn!(error = %message, "setup could not be staged");
                 cx.push_toast(
                     ToastKind::Error,
-                    tr!("home_import_failed", error = message.as_str()),
+                    tr!("home_import_failed", error = message.text()),
                 );
             }
         }
@@ -172,7 +178,7 @@ impl SetupImportFlow {
                     SetupImportStep::Confirming(confirming) => {
                         confirming.staged = Some(*staged);
                         confirming.failure =
-                            Some(tr!("setup_import_failed", error = message.as_str()));
+                            Some(tr!("setup_import_failed", error = message.text()));
                     }
                     SetupImportStep::Idle | SetupImportStep::Staging => self.discard(*staged),
                 }
@@ -373,7 +379,7 @@ async fn apply_staged(
             tracing::warn!(%error, "setup import failed");
             SetupApplied::Failed {
                 staged: Box::new(staged),
-                message: RestoreProblem::of(&error).plain_text(),
+                message: RepoFailure::from(error),
             }
         }
     }
@@ -739,7 +745,7 @@ mod tests {
             flow.applied(
                 SetupApplied::Failed {
                     staged: Box::new(staged),
-                    message: "disk full".to_owned(),
+                    message: crate::repo_failure::RepoFailure::localized("disk full"),
                 },
                 cx,
             )

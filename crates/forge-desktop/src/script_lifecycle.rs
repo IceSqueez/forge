@@ -5,6 +5,8 @@ use forge_runtime::{EventBus, ScriptRegistry};
 use forge_storage::{ScriptReferences, ScriptReferrer, ScriptRepo};
 use forge_types::ScriptId;
 
+use crate::repo_failure::RepoFailure;
+
 #[derive(Clone)]
 pub struct ScriptLifecycle {
     repo: Arc<dyn ScriptRepo>,
@@ -31,16 +33,16 @@ impl ScriptLifecycle {
         }
     }
 
-    pub async fn referrers(&self, name: String) -> Result<ScriptReferences, String> {
-        self.repo.referrers(&name).await.map_err(|e| e.to_string())
+    pub async fn referrers(&self, name: String) -> Result<ScriptReferences, RepoFailure> {
+        self.repo.referrers(&name).await.map_err(RepoFailure::from)
     }
 
-    pub async fn rename(&self, id: ScriptId, name: String) -> Result<ScriptRenamed, String> {
+    pub async fn rename(&self, id: ScriptId, name: String) -> Result<ScriptRenamed, RepoFailure> {
         let references = self
             .repo
             .rename_cascading(id, &name)
             .await
-            .map_err(|e| e.to_string())?;
+            .map_err(RepoFailure::from)?;
         if let Err(error) = self.reload(id).await {
             tracing::warn!(%error, "renamed script did not reload into the registry");
         }
@@ -51,36 +53,36 @@ impl ScriptLifecycle {
         })
     }
 
-    pub async fn archive(&self, id: ScriptId) -> Result<bool, String> {
+    pub async fn archive(&self, id: ScriptId) -> Result<bool, RepoFailure> {
         let archived = self
             .repo
             .archive_script(id)
             .await
-            .map_err(|e| e.to_string())?;
+            .map_err(RepoFailure::from)?;
         self.registry.remove(id).await;
         Ok(archived)
     }
 
-    pub async fn restore(&self, id: ScriptId) -> Result<bool, String> {
+    pub async fn restore(&self, id: ScriptId) -> Result<bool, RepoFailure> {
         let restored = self
             .repo
             .restore_script(id)
             .await
-            .map_err(|e| e.to_string())?;
+            .map_err(RepoFailure::from)?;
         if restored && let Err(error) = self.reload(id).await {
             tracing::warn!(%error, "restored script did not reload into the registry");
         }
         Ok(restored)
     }
 
-    async fn reload(&self, id: ScriptId) -> Result<(), String> {
-        let Some(record) = self.repo.get(id).await.map_err(|e| e.to_string())? else {
+    async fn reload(&self, id: ScriptId) -> Result<(), RepoFailure> {
+        let Some(record) = self.repo.get(id).await.map_err(RepoFailure::from)? else {
             return Ok(());
         };
         self.registry
             .reload(record, &self.bus)
             .await
-            .map_err(|e| e.to_string())
+            .map_err(RepoFailure::from)
     }
 }
 

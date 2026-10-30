@@ -10,17 +10,17 @@ use std::sync::Arc;
 
 use forge_components::{
     BORDER_THIN, ColumnWidth, Confirm, ConfirmTone, DataRow, Density, FONT_XS, FONT_XXS,
-    ForgePalette, Icon, OverlayPosition, Radius, SearchState, Spacing, ToastKind, avatar_tile,
-    badge, body_family, card, column, confirm_modal, data_table, empty_state, error_row,
-    error_row_with_retry, hash_accent, icon, mono_family, overlay, primary_button_with_icon,
-    radius, scaled, segment, segmented, spacing, status_dot, toolbar_row, tr, virtual_table,
-    with_alpha,
+    ForgePalette, Icon, OverlayPosition, Picker, PickerEvent, PickerItem, PickerLabels, Radius,
+    SearchState, Spacing, ToastKind, avatar_tile, badge, body_family, card, column, confirm_modal,
+    data_table, dropdown, empty_state, error_row, error_row_with_retry, hash_accent, icon,
+    mono_family, overlay, primary_button_with_icon, radius, scaled, segment, segmented, spacing,
+    status_dot, toolbar_row, tr, virtual_table, with_alpha,
 };
 use forge_speak_queue::{
     AliasKey, EmoteTokenSet, Priority, RequestId, SpeakCommand, SpeakQueueHandle, SpeakRequest,
 };
 use forge_speech_types::AliasState;
-use forge_speech_types::{AliasId, AssignmentStrategy, VoiceAlias};
+use forge_speech_types::{AliasId, AssignmentStrategy, EngineId, TtsVoice, VoiceAlias, VoiceId};
 use forge_storage::{StorageError, ViewerRepo, VoiceAliasRepo};
 use forge_tts_core::engine_display_name;
 use gpui::{
@@ -73,6 +73,17 @@ enum StrategyChoice {
     SingleVoice,
 }
 
+struct SingleVoice {
+    voice_id: VoiceId,
+    engine_id: EngineId,
+}
+
+struct VoicePicker {
+    picker: Entity<Picker>,
+    voices: Arc<Vec<TtsVoice>>,
+    _sub: Subscription,
+}
+
 impl StrategyChoice {
     const ALL: [StrategyChoice; 3] = [
         StrategyChoice::DeterministicByName,
@@ -120,6 +131,8 @@ pub struct VoiceAliasesView {
     strategy: Loadable<StrategyChoice>,
     strategy_writer: SnapshotWriter,
     strategy_error: Option<String>,
+    single_voice: Option<SingleVoice>,
+    voice_picker: Option<VoicePicker>,
     aliases: Vec<AliasRow>,
     visible: Vec<usize>,
     total_count: usize,
@@ -160,6 +173,8 @@ impl VoiceAliasesView {
             strategy: Loadable::Loading,
             strategy_writer,
             strategy_error: None,
+            single_voice: None,
+            voice_picker: None,
             aliases: Vec::new(),
             visible: Vec::new(),
             total_count: 0,
@@ -186,6 +201,9 @@ impl VoiceAliasesView {
                 if let Err(error) = &result {
                     tracing::warn!(%error, "failed to load the voice assignment strategy");
                 }
+                if let Ok(strategy) = &result {
+                    this.single_voice = single_voice_of(strategy);
+                }
                 this.strategy = Loadable::settled(result.map(|s| choice_from_strategy(&s)));
                 cx.notify();
             },
@@ -204,7 +222,7 @@ impl VoiceAliasesView {
             WriteOutcome::Written => self.strategy_error = None,
             WriteOutcome::Superseded => {}
             WriteOutcome::Failed(error) => {
-                self.strategy_error = Some(error);
+                self.strategy_error = Some(error.text());
                 self.load_strategy(cx);
             }
         }
@@ -300,16 +318,111 @@ impl VoiceAliasesView {
         cx.notify();
     }
 
+    fn choose_strategy(
+        &mut self,
+        choice: StrategyChoice,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        match choice {
+            StrategyChoice::SingleVoice => self.open_voice_picker(window, cx),
+            other => self.set_strategy(other, cx),
+        }
+    }
+
     fn set_strategy(&mut self, choice: StrategyChoice, cx: &mut Context<Self>) {
+        let strategy = match choice {
+            StrategyChoice::DeterministicByName => AssignmentStrategy::DeterministicByName,
+            StrategyChoice::Random => AssignmentStrategy::Random,
+            StrategyChoice::SingleVoice => return,
+        };
+        self.persist_strategy(strategy, cx);
+    }
+
+    fn open_voice_picker(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if !self.strategy.is_loaded() {
             return;
         }
-        let Some(strategy) = self.strategy_to_assignment(choice) else {
+        let voices = self.available_voices();
+        if voices.is_empty() {
+            self.strategy_error = Some(tr!("tts_aliases_strategy_no_voices"));
+            cx.notify();
+            return;
+        }
+        let items = voices
+            .iter()
+            .enumerate()
+            .map(|(index, voice)| PickerItem {
+                id: index.to_string().into(),
+                label: voice.name.clone().into(),
+                sublabel: Some(engine_display_name(&voice.engine_id.0).into()),
+                icon: None,
+            })
+            .collect();
+        let labels = PickerLabels {
+            placeholder: tr!("tts_aliases_strategy_voice_search").into(),
+            empty: tr!("widget_picker_no_results").into(),
+            loading: tr!("widget_picker_loading").into(),
+        };
+        let palette = cx.palette();
+        let picker = cx.new(|cx| Picker::new(labels, items, palette, cx));
+        let sub = cx.subscribe(&picker, Self::on_voice_picker_event);
+        picker.update(cx, |p, cx| p.focus(window, cx));
+        self.strategy_error = None;
+        self.voice_picker = Some(VoicePicker {
+            picker,
+            voices,
+            _sub: sub,
+        });
+        cx.notify();
+    }
+
+    fn available_voices(&self) -> Arc<Vec<TtsVoice>> {
+        self.speak
+            .as_ref()
+            .map(|speak| speak.available_voices())
+            .unwrap_or_default()
+    }
+
+    fn on_voice_picker_event(
+        &mut self,
+        _picker: Entity<Picker>,
+        event: &PickerEvent,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(pending) = self.voice_picker.take() else {
             return;
         };
-        if let Some(current) = self.strategy.loaded_mut() {
-            *current = choice;
+        if let PickerEvent::Selected(id) = event
+            && let Some(voice) = id
+                .parse::<usize>()
+                .ok()
+                .and_then(|ix| pending.voices.get(ix))
+        {
+            self.persist_strategy(
+                AssignmentStrategy::Single {
+                    voice_id: voice.id.clone(),
+                    engine_id: voice.engine_id.clone(),
+                },
+                cx,
+            );
         }
+        cx.notify();
+    }
+
+    fn close_voice_picker(&mut self, cx: &mut Context<Self>) {
+        self.voice_picker = None;
+        cx.notify();
+    }
+
+    fn persist_strategy(&mut self, strategy: AssignmentStrategy, cx: &mut Context<Self>) {
+        if !self.strategy.is_loaded() {
+            return;
+        }
+        if let Some(current) = self.strategy.loaded_mut() {
+            *current = choice_from_strategy(&strategy);
+        }
+        self.single_voice = single_voice_of(&strategy);
         let repo = Arc::clone(&self.repo);
         let speak = self.speak.clone();
         self.strategy_writer.write(
@@ -326,21 +439,6 @@ impl VoiceAliasesView {
             cx,
         );
         cx.notify();
-    }
-
-    fn strategy_to_assignment(&self, choice: StrategyChoice) -> Option<AssignmentStrategy> {
-        match choice {
-            StrategyChoice::DeterministicByName => Some(AssignmentStrategy::DeterministicByName),
-            StrategyChoice::Random => Some(AssignmentStrategy::Random),
-            StrategyChoice::SingleVoice => {
-                let voices = self.speak.as_ref()?.available_voices();
-                let first = voices.first()?;
-                Some(AssignmentStrategy::Single {
-                    voice_id: first.id.clone(),
-                    engine_id: first.engine_id.clone(),
-                })
-            }
-        }
     }
 
     fn open_assign(&mut self, window: &mut Window, cx: &mut Context<Self>) {
@@ -511,6 +609,13 @@ impl VoiceAliasesView {
         );
     }
 
+    fn voice_label(&self, voice: &SingleVoice) -> String {
+        self.available_voices()
+            .iter()
+            .find(|known| known.id == voice.voice_id && known.engine_id == voice.engine_id)
+            .map_or_else(|| voice.voice_id.0.clone(), |known| known.name.clone())
+    }
+
     fn strategy_banner(&self, palette: &ForgePalette, cx: &mut Context<Self>) -> AnyElement {
         let density = cx.density();
         let current = self.strategy.loaded().copied();
@@ -521,12 +626,30 @@ impl VoiceAliasesView {
                     SharedString::from(format!("va-strat-{}", choice.key())),
                     choice.label(),
                     current == Some(choice),
-                    cx.listener(move |this, _: &ClickEvent, _, cx| this.set_strategy(choice, cx)),
+                    cx.listener(move |this, _: &ClickEvent, window, cx| {
+                        this.choose_strategy(choice, window, cx)
+                    }),
                 )
                 .disabled(current.is_none())
             })
             .collect();
-        let strategy_segments = segmented(segments, palette);
+        let voice_popover = self.voice_picker.as_ref().map(|pending| {
+            let view = cx.entity();
+            dropdown(pending.picker.clone()).on_dismiss(move |_window, cx| {
+                view.update(cx, |this, cx| this.close_voice_picker(cx));
+            })
+        });
+        let strategy_segments = div()
+            .relative()
+            .child(segmented(segments, palette))
+            .children(voice_popover);
+        let sublabel = match (current, &self.single_voice) {
+            (Some(StrategyChoice::SingleVoice), Some(voice)) => tr!(
+                "tts_aliases_strategy_single_current",
+                voice = self.voice_label(voice)
+            ),
+            _ => tr!("tts_aliases_strategy_sublabel"),
+        };
 
         let heading = div()
             .flex_1()
@@ -546,7 +669,7 @@ impl VoiceAliasesView {
                     .font_family(body_family())
                     .text_size(META_FS)
                     .text_color(palette.text_muted)
-                    .child(tr!("tts_aliases_strategy_sublabel")),
+                    .child(sublabel),
             );
 
         let row = div()
@@ -1045,6 +1168,19 @@ fn row_from_alias(a: VoiceAlias) -> AliasRow {
         pitch_semitones: a.pitch_semitones,
         rate_multiplier: a.rate_multiplier,
         blocked: matches!(a.state, AliasState::Blocked),
+    }
+}
+
+fn single_voice_of(strategy: &AssignmentStrategy) -> Option<SingleVoice> {
+    match strategy {
+        AssignmentStrategy::Single {
+            voice_id,
+            engine_id,
+        } => Some(SingleVoice {
+            voice_id: voice_id.clone(),
+            engine_id: engine_id.clone(),
+        }),
+        AssignmentStrategy::DeterministicByName | AssignmentStrategy::Random => None,
     }
 }
 
@@ -1635,7 +1771,9 @@ mod tests {
         cx: &mut TestAppContext,
     ) {
         for read in [StrategyRead::Unreachable, StrategyRead::Undecodable] {
-            let reason = read.failure().expect_err("a faulty read fails").to_string();
+            let reason = crate::test_support::shown_in_english(
+                read.failure().expect_err("a faulty read fails"),
+            );
             for choice in STRATEGY_EDITS {
                 let harness = StrategyHarness::new(AssignmentStrategy::Random, cx);
                 harness.repo.lock().read = read;
@@ -1644,8 +1782,7 @@ mod tests {
                 view.update(cx, |view, cx| view.set_strategy(choice, cx));
                 harness.settle(cx);
 
-                let failure_shown =
-                    view.read_with(cx, |view, _| view.strategy.failure().map(str::to_owned));
+                let failure_shown = view.read_with(cx, |view, _| view.strategy.failure());
                 assert_eq!(
                     (harness.repo.writes(), failure_shown),
                     (Vec::new(), Some(reason.clone())),
@@ -1717,15 +1854,261 @@ mod tests {
         });
         harness.settle(cx);
 
-        let read_only = StorageError::Connection {
+        let read_only = crate::test_support::shown_in_english(StorageError::Connection {
             reason: crate::test_support::SETTINGS_WRITE_FAILED.to_owned(),
-        }
-        .to_string();
+        });
         let save_error = view.read_with(cx, |view, _| view.strategy_error.clone());
         assert_eq!(
             (save_error, shown_strategy(&view, cx)),
             (Some(read_only), Some(StrategyChoice::Random))
         );
+    }
+
+    const ENGINE: &str = "test-engine";
+
+    fn listed_voice(id: &str, name: &str) -> TtsVoice {
+        TtsVoice {
+            id: VoiceId(id.to_owned()),
+            name: name.to_owned(),
+            locale: "en-US".to_owned(),
+            gender: forge_speech_types::VoiceGender::Neutral,
+            engine_id: EngineId(ENGINE.to_owned()),
+            is_neural: false,
+            sample_rate_hint: 22_050,
+        }
+    }
+
+    fn single(id: &str) -> AssignmentStrategy {
+        AssignmentStrategy::Single {
+            voice_id: VoiceId(id.to_owned()),
+            engine_id: EngineId(ENGINE.to_owned()),
+        }
+    }
+
+    impl StrategyHarness {
+        fn speak_listing(&self, voices: Vec<TtsVoice>) -> SpeakQueueHandle {
+            crate::test_support::spawn_speak_queue_listing(
+                &self.rt,
+                &EngineId(ENGINE.to_owned()),
+                voices,
+            )
+        }
+
+        fn open_in_window<'a>(
+            &self,
+            speak: Option<SpeakQueueHandle>,
+            cx: &'a mut TestAppContext,
+        ) -> (Entity<VoiceAliasesView>, &'a mut VisualTestContext) {
+            let mut viewers = forge_storage::viewer::MockViewerRepo::new();
+            viewers.expect_count().returning(|| Ok(0));
+            let repo = Arc::clone(&self.repo) as Arc<dyn VoiceAliasRepo>;
+            let handle = self.rt.handle().clone();
+            let (view, vcx) = cx.add_window_view(|_window, cx| {
+                VoiceAliasesView::new(repo, Arc::new(viewers), speak, handle, cx)
+            });
+            self.settle(vcx);
+            (view, vcx)
+        }
+    }
+
+    fn pick_single_voice(view: &Entity<VoiceAliasesView>, vcx: &mut VisualTestContext) {
+        view.update_in(vcx, |view, window, cx| {
+            view.choose_strategy(StrategyChoice::SingleVoice, window, cx)
+        });
+    }
+
+    fn answer_picker(
+        view: &Entity<VoiceAliasesView>,
+        event: PickerEvent,
+        vcx: &mut VisualTestContext,
+    ) {
+        let picker = view.read_with(vcx, |view, _| {
+            view.voice_picker.as_ref().map(|open| open.picker.clone())
+        });
+        picker
+            .expect("the voice picker is open")
+            .update(vcx, |_, cx| cx.emit(event));
+    }
+
+    fn picker_open(view: &Entity<VoiceAliasesView>, cx: &mut TestAppContext) -> bool {
+        view.read_with(cx, |view, _| view.voice_picker.is_some())
+    }
+
+    fn sublabel_voice(view: &Entity<VoiceAliasesView>, cx: &mut TestAppContext) -> Option<String> {
+        view.read_with(cx, |view, _| {
+            view.single_voice
+                .as_ref()
+                .map(|voice| view.voice_label(voice))
+        })
+    }
+
+    #[gpui::test]
+    fn the_single_voice_choice_explains_itself_when_no_voice_is_available(cx: &mut TestAppContext) {
+        let harness = StrategyHarness::new(AssignmentStrategy::Random, cx);
+        let speak = harness.speak_listing(Vec::new());
+        for speak in [None, Some(speak)] {
+            let (view, vcx) = harness.open_in_window(speak, cx);
+
+            pick_single_voice(&view, vcx);
+            harness.settle(vcx);
+
+            let error = view.read_with(vcx, |view, _| view.strategy_error.clone());
+            assert_eq!(
+                (
+                    error,
+                    picker_open(&view, vcx),
+                    harness.repo.writes(),
+                    shown_strategy(&view, vcx)
+                ),
+                (
+                    Some("No voices are available yet. Enable a TTS engine first.".to_owned()),
+                    false,
+                    Vec::new(),
+                    Some(StrategyChoice::Random)
+                )
+            );
+        }
+    }
+
+    #[gpui::test]
+    fn choosing_a_voice_stores_exactly_that_voice_and_closes_the_picker(cx: &mut TestAppContext) {
+        let harness = StrategyHarness::new(AssignmentStrategy::Random, cx);
+        let speak = harness.speak_listing(vec![
+            listed_voice("first", "First"),
+            listed_voice("second", "Second"),
+        ]);
+        let (view, vcx) = harness.open_in_window(Some(speak), cx);
+        pick_single_voice(&view, vcx);
+        let opened = picker_open(&view, vcx);
+
+        answer_picker(&view, PickerEvent::Selected("1".into()), vcx);
+        harness.settle(vcx);
+
+        assert_eq!(
+            (
+                opened,
+                picker_open(&view, vcx),
+                harness.repo.writes(),
+                shown_strategy(&view, vcx),
+                sublabel_voice(&view, vcx)
+            ),
+            (
+                true,
+                false,
+                vec![single("second")],
+                Some(StrategyChoice::SingleVoice),
+                Some("Second".to_owned())
+            )
+        );
+    }
+
+    #[gpui::test]
+    fn cancelling_the_picker_leaves_the_strategy_and_the_store_alone(cx: &mut TestAppContext) {
+        let harness = StrategyHarness::new(single("stored"), cx);
+        let speak = harness.speak_listing(vec![listed_voice("stored", "Stored")]);
+        let (view, vcx) = harness.open_in_window(Some(speak), cx);
+        pick_single_voice(&view, vcx);
+
+        answer_picker(&view, PickerEvent::Cancelled, vcx);
+        harness.settle(vcx);
+
+        assert_eq!(
+            (
+                picker_open(&view, vcx),
+                harness.repo.writes(),
+                shown_strategy(&view, vcx),
+                sublabel_voice(&view, vcx)
+            ),
+            (
+                false,
+                Vec::new(),
+                Some(StrategyChoice::SingleVoice),
+                Some("Stored".to_owned())
+            )
+        );
+    }
+
+    #[gpui::test]
+    fn dismissing_the_picker_closes_it_without_writing(cx: &mut TestAppContext) {
+        let harness = StrategyHarness::new(AssignmentStrategy::Random, cx);
+        let speak = harness.speak_listing(vec![listed_voice("first", "First")]);
+        let (view, vcx) = harness.open_in_window(Some(speak), cx);
+        pick_single_voice(&view, vcx);
+
+        view.update(vcx, |view, cx| view.close_voice_picker(cx));
+        harness.settle(vcx);
+
+        assert_eq!(
+            (picker_open(&view, vcx), harness.repo.writes()),
+            (false, Vec::new())
+        );
+    }
+
+    #[gpui::test]
+    fn a_picker_answer_naming_no_listed_voice_writes_nothing(cx: &mut TestAppContext) {
+        let harness = StrategyHarness::new(AssignmentStrategy::Random, cx);
+        let speak = harness.speak_listing(vec![listed_voice("first", "First")]);
+        let (view, vcx) = harness.open_in_window(Some(speak), cx);
+        for answer in ["7", "not-a-number"] {
+            pick_single_voice(&view, vcx);
+
+            answer_picker(&view, PickerEvent::Selected(answer.into()), vcx);
+            harness.settle(vcx);
+
+            assert_eq!(
+                (picker_open(&view, vcx), harness.repo.writes()),
+                (false, Vec::new()),
+                "{answer}"
+            );
+        }
+    }
+
+    #[gpui::test]
+    fn the_stored_voice_comes_back_by_name_and_by_id_once_its_engine_is_gone(
+        cx: &mut TestAppContext,
+    ) {
+        for (voices, expected) in [
+            (vec![listed_voice("stored", "Stored Voice")], "Stored Voice"),
+            (vec![listed_voice("other", "Other")], "stored"),
+        ] {
+            let harness = StrategyHarness::new(single("stored"), cx);
+            let speak = harness.speak_listing(voices);
+            let (view, vcx) = harness.open_in_window(Some(speak), cx);
+
+            assert_eq!(
+                (shown_strategy(&view, vcx), sublabel_voice(&view, vcx)),
+                (Some(StrategyChoice::SingleVoice), Some(expected.to_owned()))
+            );
+        }
+    }
+
+    #[gpui::test]
+    fn a_failed_voice_write_reloads_the_stored_strategy(cx: &mut TestAppContext) {
+        let harness = StrategyHarness::new(AssignmentStrategy::Random, cx);
+        harness.repo.lock().writes_fail = true;
+        let speak = harness.speak_listing(vec![listed_voice("first", "First")]);
+        let (view, vcx) = harness.open_in_window(Some(speak), cx);
+        pick_single_voice(&view, vcx);
+
+        answer_picker(&view, PickerEvent::Selected("0".into()), vcx);
+        harness.settle(vcx);
+
+        assert_eq!(
+            (shown_strategy(&view, vcx), sublabel_voice(&view, vcx)),
+            (Some(StrategyChoice::Random), None)
+        );
+    }
+
+    #[gpui::test]
+    fn the_voice_picker_stays_shut_until_the_strategy_has_loaded(cx: &mut TestAppContext) {
+        let harness = StrategyHarness::new(AssignmentStrategy::Random, cx);
+        harness.repo.lock().read = StrategyRead::Unreachable;
+        let speak = harness.speak_listing(vec![listed_voice("first", "First")]);
+        let (view, vcx) = harness.open_in_window(Some(speak), cx);
+
+        pick_single_voice(&view, vcx);
+
+        assert!(!picker_open(&view, vcx));
     }
 
     const FLAKY_VIEWER: &str = "twitch:alice";

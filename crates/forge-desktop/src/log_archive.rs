@@ -4,13 +4,15 @@ use std::path::{Path, PathBuf};
 
 use time::OffsetDateTime;
 
+use crate::repo_failure::RepoFailure;
+
 const LOG_PREFIX: &str = "forge.log";
 
-pub fn files(dir: &Path) -> Result<Vec<PathBuf>, String> {
+pub fn files(dir: &Path) -> Result<Vec<PathBuf>, RepoFailure> {
     let entries = match fs::read_dir(dir) {
         Ok(entries) => entries,
         Err(e) if e.kind() == ErrorKind::NotFound => return Ok(Vec::new()),
-        Err(e) => return Err(e.to_string()),
+        Err(e) => return Err(e.into()),
     };
 
     let mut paths: Vec<PathBuf> = entries
@@ -29,7 +31,7 @@ pub struct Corpus {
     pub files_kept: usize,
 }
 
-pub fn corpus(dir: &Path, budget: usize) -> Result<Corpus, String> {
+pub fn corpus(dir: &Path, budget: usize) -> Result<Corpus, RepoFailure> {
     let mut remaining = budget;
     let mut elided_bytes = 0u64;
     let mut blocks: Vec<String> = Vec::new();
@@ -78,7 +80,7 @@ pub fn line_start_at_or_after(text: &str, from: usize) -> usize {
     }
 }
 
-pub fn clear(dir: &Path) -> Result<(), String> {
+pub fn clear(dir: &Path) -> Result<(), RepoFailure> {
     let active = active_file_name();
     for path in files(dir)? {
         if path.file_name().and_then(|name| name.to_str()) == Some(active.as_str()) {
@@ -86,9 +88,9 @@ pub fn clear(dir: &Path) -> Result<(), String> {
                 .write(true)
                 .truncate(true)
                 .open(&path)
-                .map_err(|e| e.to_string())?;
+                .map_err(RepoFailure::from)?;
         } else {
-            fs::remove_file(&path).map_err(|e| e.to_string())?;
+            fs::remove_file(&path).map_err(RepoFailure::from)?;
         }
     }
     Ok(())

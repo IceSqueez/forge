@@ -50,6 +50,15 @@ impl SettingsAboutView {
         });
     }
 
+    pub fn begin_collection(&mut self, cx: &mut Context<Self>) {
+        if matches!(self.state, AboutState::NotStarted) {
+            async_bridge::attach_to_window(
+                |this: &mut Self, window, cx| this.start_collection(window, cx),
+                cx,
+            );
+        }
+    }
+
     fn start_collection(&mut self, window: &Window, cx: &mut Context<Self>) {
         if !matches!(self.state, AboutState::NotStarted) {
             return;
@@ -166,10 +175,7 @@ fn field_label(field: InfoField) -> String {
 }
 
 impl Render for SettingsAboutView {
-    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        if matches!(self.state, AboutState::NotStarted) {
-            cx.defer_in(window, |this, window, cx| this.start_collection(window, cx));
-        }
+    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let palette = cx.palette();
         let density = cx.density();
         let ready = matches!(self.state, AboutState::Ready(_));
@@ -207,5 +213,55 @@ impl Render for SettingsAboutView {
             .child(self.render_rows(&palette, cx));
 
         card(body, &palette).full_width()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use forge_components::{Density, Presentation, ThemeId};
+    use gpui::{TestAppContext, VisualTestContext};
+
+    use super::*;
+    use crate::integrations::BuiltinRegistry;
+    use crate::test_support::{alive_tasks, runtime, test_backend};
+
+    fn about_in_window<'a>(
+        rt: &tokio::runtime::Runtime,
+        cx: &'a mut TestAppContext,
+    ) -> (Entity<SettingsAboutView>, &'a mut VisualTestContext) {
+        crate::i18n::install_language(forge_storage::Language::En);
+        cx.update(|cx| cx.set_global(Presentation::new(ThemeId::ForgeDefault, Density::Cozy)));
+        let (backend, _writes) = test_backend();
+        let handle = rt.handle().clone();
+        cx.add_window_view(|_window, cx| {
+            let backend = backend as Arc<dyn DataProvider>;
+            let report = cx.new(|_| {
+                ProblemReport::new(
+                    Arc::clone(&backend),
+                    BuiltinRegistry::default(),
+                    handle.clone(),
+                )
+            });
+            SettingsAboutView::new(backend, handle, report, cx)
+        })
+    }
+
+    #[gpui::test]
+    fn opening_the_screen_repeatedly_starts_one_collection(cx: &mut TestAppContext) {
+        let rt = runtime();
+        let (view, vcx) = about_in_window(&rt, cx);
+        let idle_tasks = alive_tasks(&rt);
+
+        view.update(vcx, |view, cx| {
+            view.begin_collection(cx);
+            view.begin_collection(cx);
+        });
+        vcx.run_until_parked();
+        view.update(vcx, |view, cx| view.begin_collection(cx));
+        vcx.run_until_parked();
+
+        let collecting =
+            view.read_with(vcx, |view, _| matches!(view.state, AboutState::Collecting));
+        assert_eq!((collecting, alive_tasks(&rt) - idle_tasks), (true, 1));
     }
 }

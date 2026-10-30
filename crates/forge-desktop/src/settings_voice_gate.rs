@@ -18,6 +18,7 @@ use gpui::{
 };
 
 use crate::async_bridge;
+use crate::repo_failure::RepoFailure;
 use crate::settings_audio::DeviceRow;
 use crate::voice_gate::VoiceGateOwner;
 use crate::window_presence::PresenceGate;
@@ -157,7 +158,7 @@ impl SettingsVoiceGateView {
 
     fn apply_loaded(
         &mut self,
-        result: Result<(Vec<DeviceRow>, VoiceGateSettings), String>,
+        result: Result<(Vec<DeviceRow>, VoiceGateSettings), RepoFailure>,
         cx: &mut Context<Self>,
     ) {
         self.loading = false;
@@ -178,7 +179,7 @@ impl SettingsVoiceGateView {
             }
             Err(message) => {
                 tracing::warn!(error = %message, "failed to load voice gate settings");
-                self.devices_error = Some(message);
+                self.devices_error = Some(message.text());
             }
         }
         self.read_gate(cx);
@@ -247,7 +248,7 @@ impl SettingsVoiceGateView {
             async move {
                 forge_storage::set_voice_gate_enabled(settings.as_ref(), enabled)
                     .await
-                    .map_err(|e| e.to_string())
+                    .map_err(RepoFailure::from)
             },
             |this, result, cx| this.apply_persist_result(result, cx),
             cx,
@@ -278,7 +279,7 @@ impl SettingsVoiceGateView {
             async move {
                 forge_storage::set_voice_gate_input_device_id(settings.as_ref(), device_id)
                     .await
-                    .map_err(|e| e.to_string())
+                    .map_err(RepoFailure::from)
             },
             |this, result, cx| this.apply_persist_result(result, cx),
             cx,
@@ -320,10 +321,10 @@ impl SettingsVoiceGateView {
         cx.notify();
     }
 
-    fn apply_persist_result(&mut self, result: Result<(), String>, cx: &mut Context<Self>) {
+    fn apply_persist_result(&mut self, result: Result<(), RepoFailure>, cx: &mut Context<Self>) {
         if let Err(message) = result {
             tracing::warn!(error = %message, "failed to persist voice gate settings");
-            self.persist_error = Some(message);
+            self.persist_error = Some(message.text());
             cx.notify();
         }
     }
@@ -659,7 +660,7 @@ fn resolve_input_idx(devices: &[DeviceRow], want_id: Option<&str>) -> usize {
         .unwrap_or(0)
 }
 
-async fn enumerate_inputs(uncached: bool) -> Result<Vec<DeviceRow>, String> {
+async fn enumerate_inputs(uncached: bool) -> Result<Vec<DeviceRow>, RepoFailure> {
     tokio::task::spawn_blocking(move || {
         let listed = if uncached {
             refresh_input_devices()
@@ -668,20 +669,20 @@ async fn enumerate_inputs(uncached: bool) -> Result<Vec<DeviceRow>, String> {
         };
         listed
             .map(|devs| devs.into_iter().map(DeviceRow::from_info).collect())
-            .map_err(|e| e.to_string())
+            .map_err(RepoFailure::from)
     })
     .await
-    .map_err(|e| e.to_string())?
+    .map_err(RepoFailure::from)?
 }
 
 async fn load_devices_and_settings(
     settings: Arc<dyn SettingsRepo>,
     uncached: bool,
-) -> Result<(Vec<DeviceRow>, VoiceGateSettings), String> {
+) -> Result<(Vec<DeviceRow>, VoiceGateSettings), RepoFailure> {
     let devices = enumerate_inputs(uncached).await?;
     let stored = forge_storage::voice_gate_settings(settings.as_ref())
         .await
-        .map_err(|e| e.to_string())?;
+        .map_err(RepoFailure::from)?;
     Ok((devices, stored))
 }
 

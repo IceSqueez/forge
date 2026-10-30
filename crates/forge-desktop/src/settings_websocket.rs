@@ -25,6 +25,7 @@ use crate::async_bridge::{self, ErrorSink};
 use crate::navigation::SettingsSection;
 use crate::overlay_build_failure::OverlayBuildFailure;
 use crate::overlay_link_token;
+use crate::repo_failure::RepoFailure;
 use crate::server_bearer;
 use crate::server_restart::restart_ignoring_disabled;
 use crate::settings_pane_header::SettingsPaneHeader;
@@ -201,6 +202,7 @@ impl SettingsWebSocketView {
             lan_sub: None,
             _subs: subs,
         };
+        async_bridge::attach_to_window(Self::attach_origins_blur, cx);
         view.load(cx);
         view.fetch_token(cx);
         view.start_run_state_bridge(cx);
@@ -249,7 +251,11 @@ impl SettingsWebSocketView {
         cx.notify();
     }
 
-    fn apply_loaded(&mut self, result: Result<WebSocketSnapshot, String>, cx: &mut Context<Self>) {
+    fn apply_loaded(
+        &mut self,
+        result: Result<WebSocketSnapshot, RepoFailure>,
+        cx: &mut Context<Self>,
+    ) {
         self.loading = false;
         match result {
             Ok(snap) => {
@@ -276,7 +282,7 @@ impl SettingsWebSocketView {
             }
             Err(message) => {
                 tracing::warn!(error = %message, "failed to load websocket settings");
-                self.load_failure = Some(message.into());
+                self.load_failure = Some(message.text().into());
             }
         }
         cx.notify();
@@ -288,13 +294,13 @@ impl SettingsWebSocketView {
         async_bridge::run_async(
             &self.rt_handle,
             server_bearer::current_bearer_token(server, credentials),
-            |this, result: Result<Option<Secret>, String>, cx| match result {
+            |this, result: Result<Option<Secret>, RepoFailure>, cx| match result {
                 Ok(Some(token)) => {
                     this.bearer_token = token;
                     cx.notify();
                 }
                 Ok(None) => {}
-                Err(reason) => server_bearer::token_load_failed(&reason, cx),
+                Err(reason) => server_bearer::token_load_failed(&reason.text(), cx),
             },
             cx,
         );
@@ -305,14 +311,14 @@ impl SettingsWebSocketView {
         prev: T,
         restore: impl FnOnce(&mut Self, T, &mut Context<Self>) + Send + 'static,
         after_save: AfterSave,
-        fut: impl Future<Output = Result<(), String>> + Send + 'static,
+        fut: impl Future<Output = Result<(), RepoFailure>> + Send + 'static,
         cx: &mut Context<Self>,
     ) {
         self.save_state = SaveState::Saving;
         async_bridge::run_async(
             &self.rt_handle,
             fut,
-            move |this, result: Result<(), String>, cx| {
+            move |this, result: Result<(), RepoFailure>, cx| {
                 if result.is_err() {
                     restore(this, prev, cx);
                 }
@@ -325,7 +331,7 @@ impl SettingsWebSocketView {
 
     fn apply_persist_outcome(
         &mut self,
-        result: Result<(), String>,
+        result: Result<(), RepoFailure>,
         after_save: AfterSave,
         cx: &mut Context<Self>,
     ) {
@@ -340,7 +346,7 @@ impl SettingsWebSocketView {
             }
             Err(message) => {
                 tracing::warn!(error = %message, "failed to save websocket settings");
-                self.save_state = SaveState::Error(message.into());
+                self.save_state = SaveState::Error(message.text().into());
             }
         }
         cx.notify();
@@ -368,7 +374,7 @@ impl SettingsWebSocketView {
             async move {
                 ServerSettings::save_enabled(repo.as_ref(), value)
                     .await
-                    .map_err(|e| e.to_string())
+                    .map_err(RepoFailure::from)
             },
             cx,
         );
@@ -384,13 +390,13 @@ impl SettingsWebSocketView {
                 if enabled {
                     restart_ignoring_disabled(&handle).await
                 } else {
-                    handle.stop().await.map_err(|e| e.to_string())
+                    handle.stop().await.map_err(RepoFailure::from)
                 }
             },
-            |this, result: Result<(), String>, cx| {
+            |this, result: Result<(), RepoFailure>, cx| {
                 if let Err(message) = result {
                     tracing::warn!(error = %message, "saved server state could not be applied");
-                    this.save_state = SaveState::Error(message.into());
+                    this.save_state = SaveState::Error(message.text().into());
                     cx.notify();
                 }
             },
@@ -411,17 +417,17 @@ impl SettingsWebSocketView {
         async_bridge::run_async(
             &self.rt_handle,
             async move { restart_ignoring_disabled(&handle).await },
-            |this, result: Result<(), String>, cx| this.finish_restart(result, cx),
+            |this, result: Result<(), RepoFailure>, cx| this.finish_restart(result, cx),
             cx,
         );
         cx.notify();
     }
 
-    fn finish_restart(&mut self, result: Result<(), String>, cx: &mut Context<Self>) {
+    fn finish_restart(&mut self, result: Result<(), RepoFailure>, cx: &mut Context<Self>) {
         self.restarting = false;
         if let Err(message) = result {
             tracing::warn!(error = %message, "failed to restart websocket server");
-            self.save_state = SaveState::Error(message.into());
+            self.save_state = SaveState::Error(message.text().into());
         }
         cx.notify();
         if std::mem::take(&mut self.restart_queued) {
@@ -501,10 +507,10 @@ impl SettingsWebSocketView {
             async move {
                 ServerSettings::save_bind_address(repo.as_ref(), LOCALHOST_BIND_ADDRESS)
                     .await
-                    .map_err(|e| e.to_string())?;
+                    .map_err(RepoFailure::from)?;
                 ServerSettings::save_lan_bind_enabled(repo.as_ref(), false)
                     .await
-                    .map_err(|e| e.to_string())
+                    .map_err(RepoFailure::from)
             },
             cx,
         );
@@ -559,10 +565,10 @@ impl SettingsWebSocketView {
             async move {
                 ServerSettings::save_bind_address(repo.as_ref(), LAN_BIND_ADDRESS)
                     .await
-                    .map_err(|e| e.to_string())?;
+                    .map_err(RepoFailure::from)?;
                 ServerSettings::save_lan_bind_enabled(repo.as_ref(), true)
                     .await
-                    .map_err(|e| e.to_string())
+                    .map_err(RepoFailure::from)
             },
             cx,
         );
@@ -601,7 +607,7 @@ impl SettingsWebSocketView {
                     async move {
                         ServerSettings::save_port(repo.as_ref(), port)
                             .await
-                            .map_err(|e| e.to_string())
+                            .map_err(RepoFailure::from)
                     },
                     cx,
                 );
@@ -616,9 +622,6 @@ impl SettingsWebSocketView {
     }
 
     fn attach_origins_blur(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if self.origins_blur.is_some() {
-            return;
-        }
         let handle = self.origins_input.focus_handle(cx);
         self.origins_blur = Some(cx.on_blur(&handle, window, |this, _window, cx| {
             this.commit_origins(cx);
@@ -672,7 +675,7 @@ impl SettingsWebSocketView {
                     async move {
                         ServerSettings::save_additional_origins(repo.as_ref(), &origins)
                             .await
-                            .map_err(|e| e.to_string())
+                            .map_err(RepoFailure::from)
                     },
                     cx,
                 );
@@ -703,11 +706,11 @@ impl SettingsWebSocketView {
         async_bridge::detached(&self.rt_handle, ORIGINS_PERSIST_CONTEXT, async move {
             ServerSettings::save_additional_origins(repo.as_ref(), &origins)
                 .await
-                .map_err(|e| e.to_string())?;
+                .map_err(RepoFailure::from)?;
             if let Some(handle) = server {
                 restart_ignoring_disabled(&handle).await?;
             }
-            Ok::<(), String>(())
+            Ok::<(), RepoFailure>(())
         });
     }
 
@@ -729,10 +732,10 @@ impl SettingsWebSocketView {
                     Some(handle) => handle
                         .set_reads_require_auth(value)
                         .await
-                        .map_err(|e| e.to_string()),
+                        .map_err(RepoFailure::from),
                     None => ServerSettings::save_auth_required_for_reads(repo.as_ref(), value)
                         .await
-                        .map_err(|e| e.to_string()),
+                        .map_err(RepoFailure::from),
                 }
             },
             cx,
@@ -755,7 +758,7 @@ impl SettingsWebSocketView {
             async move {
                 ServerSettings::save_http_overlay_require_token(repo.as_ref(), value)
                     .await
-                    .map_err(|e| e.to_string())?;
+                    .map_err(RepoFailure::from)?;
                 if let Some(handle) = server {
                     handle.set_http_overlay_token_required(value).await;
                 }
@@ -815,10 +818,10 @@ impl SettingsWebSocketView {
                     Err(forge_server::ServerError::OverlayTokenRestoreFailed { token, reason }) => {
                         Ok((token, TokenRegenerateNote::RestoreFailed(reason)))
                     }
-                    Err(e) => Err(e.to_string()),
+                    Err(e) => Err(RepoFailure::from(e)),
                 }
             },
-            |this, result: Result<(Secret, TokenRegenerateNote), String>, cx| {
+            |this, result: Result<(Secret, TokenRegenerateNote), RepoFailure>, cx| {
                 this.finish_overlay_token_regenerate(result, cx)
             },
             cx,
@@ -828,7 +831,7 @@ impl SettingsWebSocketView {
 
     fn finish_overlay_token_regenerate(
         &mut self,
-        result: Result<(Secret, TokenRegenerateNote), String>,
+        result: Result<(Secret, TokenRegenerateNote), RepoFailure>,
         cx: &mut Context<Self>,
     ) {
         self.overlay_token_regenerating = false;
@@ -850,7 +853,7 @@ impl SettingsWebSocketView {
             }
             Err(message) => {
                 tracing::warn!(error = %message, "failed to regenerate the overlay token");
-                ErrorSink::Toast.report(message, cx);
+                ErrorSink::Toast.report(message.text(), cx);
             }
         }
         cx.notify();
@@ -871,7 +874,7 @@ impl SettingsWebSocketView {
             async move {
                 ServerSettings::save_overlay_cors_any_origin(repo.as_ref(), value)
                     .await
-                    .map_err(|e| e.to_string())
+                    .map_err(RepoFailure::from)
             },
             cx,
         );
@@ -905,11 +908,11 @@ impl SettingsWebSocketView {
             async move {
                 ServerSettings::save_overlay_root(repo.as_ref(), &path_str)
                     .await
-                    .map_err(|e| e.to_string())?;
+                    .map_err(RepoFailure::from)?;
                 let pass = overlays.materialize_all(samples.as_ref()).await;
                 Ok(OverlayBuildFailure::from_outcome(&pass))
             },
-            |this, result: Result<Option<OverlayBuildFailure>, String>, cx| {
+            |this, result: Result<Option<OverlayBuildFailure>, RepoFailure>, cx| {
                 let build_failure = result.as_ref().ok().and_then(Option::as_ref);
                 if let Some(failure) = build_failure {
                     failure.raise(cx);
@@ -959,14 +962,14 @@ impl SettingsWebSocketView {
                 handle
                     .regenerate_bearer_token()
                     .await
-                    .map_err(|e| e.to_string())
+                    .map_err(RepoFailure::from)
             },
-            |this, result: Result<Secret, String>, cx| match result {
+            |this, result: Result<Secret, RepoFailure>, cx| match result {
                 Ok(token) => {
                     this.bearer_token = token;
                     cx.notify();
                 }
-                Err(reason) => server_bearer::token_regenerate_failed(&reason, cx),
+                Err(reason) => server_bearer::token_regenerate_failed(&reason.text(), cx),
             },
             cx,
         );
@@ -1573,12 +1576,7 @@ impl SettingsWebSocketView {
 }
 
 impl Render for SettingsWebSocketView {
-    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        if self.origins_blur.is_none() {
-            cx.defer_in(window, |this, window, cx| {
-                this.attach_origins_blur(window, cx);
-            });
-        }
+    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let palette = cx.palette();
         let density = cx.density();
 
@@ -1661,10 +1659,12 @@ impl Render for SettingsWebSocketView {
     }
 }
 
-async fn load_websocket_settings(repo: Arc<dyn SettingsRepo>) -> Result<WebSocketSnapshot, String> {
+async fn load_websocket_settings(
+    repo: Arc<dyn SettingsRepo>,
+) -> Result<WebSocketSnapshot, RepoFailure> {
     let snap = ServerSettings::load(repo.as_ref())
         .await
-        .map_err(|e| e.to_string())?;
+        .map_err(RepoFailure::from)?;
     Ok(WebSocketSnapshot {
         enabled: snap.enabled,
         lan_bind_enabled: snap.lan_bind_enabled,
@@ -2073,7 +2073,7 @@ mod tests {
                     this.restart_server(cx);
                 }
 
-                this.finish_restart(Err(RESTART_FAILURE.to_owned()), cx);
+                this.finish_restart(Err(RepoFailure::operation(RESTART_FAILURE)), cx);
 
                 assert!(!this.restart_queued, "{case}");
                 assert_eq!(this.restarting, expect_rerun, "{case}");

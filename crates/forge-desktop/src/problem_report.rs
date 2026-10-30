@@ -29,6 +29,7 @@ use crate::integrations::BuiltinRegistry;
 use crate::issue_link::{
     CRASH_REPORT_FILE_NAME, ISSUE_URL_MAX_BYTES, IssueForm, SYSTEM_INFO_FILE_NAME,
 };
+use crate::repo_failure::RepoFailure;
 use crate::system_info::{HostFacts, InfoField, SystemInfo, WindowFacts};
 use crate::update_check::REPO_URL;
 
@@ -136,7 +137,7 @@ impl ProblemReport {
         &mut self,
         subject: ReportSubject,
         window_facts: WindowFacts,
-        gathered: Result<Gathered, String>,
+        gathered: Result<Gathered, RepoFailure>,
         cx: &mut Context<Self>,
     ) {
         match gathered {
@@ -157,7 +158,7 @@ impl ProblemReport {
                 self.stage = ReportStage::Idle;
                 cx.push_toast(
                     ToastKind::Error,
-                    tr!("problem_report_prepare_failed", error = error.as_str()),
+                    tr!("problem_report_prepare_failed", error = error.text()),
                 );
                 self.reoffer_crash(subject, cx);
             }
@@ -239,10 +240,12 @@ impl ProblemReport {
             }
             Err(error) => {
                 tracing::warn!(error = %error, "problem report files could not be written");
-                let error = error.to_string();
                 cx.push_toast(
                     ToastKind::Error,
-                    tr!("problem_report_save_failed", error = error.as_str()),
+                    tr!(
+                        "problem_report_save_failed",
+                        error = RepoFailure::from(error).text()
+                    ),
                 );
                 self.reoffer_crash(draft.subject, cx);
             }
@@ -391,7 +394,7 @@ async fn gather(
     backend: Arc<dyn DataProvider>,
     integrations: Vec<diagnostic_bundle::IntegrationFacts>,
     env_overridden: bool,
-) -> Result<Gathered, String> {
+) -> Result<Gathered, RepoFailure> {
     let settings = Arc::clone(&backend) as Arc<dyn SettingsRepo>;
     let level = diagnostic_log_level(settings.as_ref())
         .await
@@ -415,7 +418,7 @@ async fn gather(
         })
     })
     .await
-    .map_err(|e| e.to_string())?
+    .map_err(RepoFailure::from)?
 }
 
 pub struct ReportFolderContents {

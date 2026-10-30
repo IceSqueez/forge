@@ -8,6 +8,7 @@ use gpui::Context;
 use super::OverlaysView;
 use crate::async_bridge;
 use crate::audio_routes::{AudioDomain, load_audio_routes, set_destination, set_route};
+use crate::repo_failure::RepoFailure;
 
 impl OverlaysView {
     pub(super) fn load_receiver(&mut self, cx: &mut Context<Self>) {
@@ -54,15 +55,15 @@ impl OverlaysView {
             async move {
                 route_audio_to(settings.as_ref(), next.as_ref())
                     .await
-                    .map_err(|e| e.to_string())?;
+                    .map_err(RepoFailure::from)?;
                 router.apply().await;
                 Ok(())
             },
-            move |this, result: Result<(), String>, cx| {
+            move |this, result: Result<(), RepoFailure>, cx| {
                 if let Err(message) = result {
                     this.apply_receiver(previous, cx);
                     this.report(
-                        &tr!("overlays_receiver_save_failed", reason = message.as_str()),
+                        &tr!("overlays_receiver_save_failed", reason = message.text()),
                         cx,
                     );
                 }

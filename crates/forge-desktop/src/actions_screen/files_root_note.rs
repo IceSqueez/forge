@@ -5,6 +5,8 @@ use forge_components::{
 };
 use gpui::{AnyElement, App, ClickEvent, Window, div, prelude::*};
 
+use crate::repo_failure::RepoFailure;
+
 pub(super) fn files_root_note(palette: &ForgePalette, density: Density) -> AnyElement {
     let root = forge_paths::assets_dir();
     let caption = div()
@@ -60,7 +62,7 @@ fn open_files_root(cx: &mut App) {
             ToastKind::Error,
             tr!(
                 "actions_sub_files_root_create_failed",
-                reason = e.to_string()
+                reason = RepoFailure::from(e).text()
             ),
         );
         return;

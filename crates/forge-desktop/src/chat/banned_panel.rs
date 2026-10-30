@@ -1,4 +1,5 @@
 use crate::platform_visuals::platform_color;
+use crate::repo_failure::RepoFailure;
 use forge_types::PlatformId;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -554,7 +555,7 @@ impl BannedPanel {
         cx.spawn(async move |this, cx| {
             let outcome = rx
                 .await
-                .unwrap_or_else(|_| Err(tr!("chat_dispatch_cancelled")));
+                .unwrap_or_else(|_| Err(RepoFailure::localized(tr!("chat_dispatch_cancelled"))));
             #[expect(
                 clippy::let_underscore_must_use,
                 reason = "the view may close before the result arrives"
@@ -571,7 +572,7 @@ impl BannedPanel {
         &mut self,
         platform: PlatformId,
         viewer_id: &str,
-        outcome: Result<(), String>,
+        outcome: Result<(), RepoFailure>,
         cx: &mut Context<Self>,
     ) {
         let now = cx.background_executor().now();
@@ -587,7 +588,7 @@ impl BannedPanel {
             }
             Err(error) => {
                 if let Some(row) = group.row_mut(viewer_id) {
-                    row.unban = UnbanState::Failed(error);
+                    row.unban = UnbanState::Failed(error.text());
                 }
             }
         }

@@ -250,7 +250,9 @@ mod tests {
             (BootFailure::PreBaseline { found: 3 }, "pre_baseline"),
             (
                 BootFailure::Retry {
-                    reason: "database is locked".to_owned(),
+                    failure: crate::repo_failure::RepoFailure::startup_stopped(
+                        "database is locked",
+                    ),
                 },
                 "retry",
             ),

@@ -23,6 +23,7 @@ use crate::hub_card::hub_section_header;
 use crate::navigation::NavRequested;
 use crate::navigation::Screen;
 use crate::queues::running_pill;
+use crate::repo_failure::RepoFailure;
 use crate::scheduled_run_labels::{
     Countdown, OutcomeTone, Span, countdown, countdown_label, outcome_badge_key, outcome_tone,
     reason_label,
@@ -181,7 +182,7 @@ impl ScheduledRunsView {
             load_snapshot(repo, action_repo),
             |this, result, cx| match result {
                 Ok(snapshot) => this.apply_snapshot(snapshot, OffsetDateTime::now_utc(), cx),
-                Err(message) => this.on_load_error(&message, cx),
+                Err(message) => this.on_load_error(&message.text(), cx),
             },
             cx,
         );
@@ -230,7 +231,7 @@ impl ScheduledRunsView {
         let runs = self.runs.clone();
         async_bridge::run_async(
             &self.rt_handle,
-            async move { runs.run_now(id).await.map_err(|e| e.to_string()) },
+            async move { runs.run_now(id).await.map_err(RepoFailure::from) },
             move |this, result, cx| this.on_run_now_result(id, &label, result, cx),
             cx,
         );
@@ -241,7 +242,7 @@ impl ScheduledRunsView {
         &mut self,
         id: ScheduledRunId,
         label: &str,
-        result: Result<HandOff, String>,
+        result: Result<HandOff, RepoFailure>,
         cx: &mut Context<Self>,
     ) {
         self.busy.remove(&id);
@@ -269,7 +270,7 @@ impl ScheduledRunsView {
             Ok(HandOff::NotPending) => (ToastKind::Info, tr!("queues_scheduled_not_pending")),
             Err(message) => (
                 ToastKind::Error,
-                tr!("queues_scheduled_run_now_failed", error = message),
+                tr!("queues_scheduled_run_now_failed", error = message.text()),
             ),
         };
         cx.push_toast(kind, message);
@@ -283,7 +284,7 @@ impl ScheduledRunsView {
         let runs = self.runs.clone();
         async_bridge::run_async(
             &self.rt_handle,
-            async move { runs.cancel(id).await.map_err(|e| e.to_string()) },
+            async move { runs.cancel(id).await.map_err(RepoFailure::from) },
             move |this, result, cx| this.on_cancel_result(id, result, cx),
             cx,
         );
@@ -293,7 +294,7 @@ impl ScheduledRunsView {
     fn on_cancel_result(
         &mut self,
         id: ScheduledRunId,
-        result: Result<bool, String>,
+        result: Result<bool, RepoFailure>,
         cx: &mut Context<Self>,
     ) {
         self.busy.remove(&id);
@@ -302,7 +303,7 @@ impl ScheduledRunsView {
             Ok(false) => cx.push_toast(ToastKind::Info, tr!("queues_scheduled_not_pending")),
             Err(message) => cx.push_toast(
                 ToastKind::Error,
-                tr!("queues_scheduled_cancel_failed", error = message),
+                tr!("queues_scheduled_cancel_failed", error = message.text()),
             ),
         }
         cx.notify();
@@ -702,16 +703,16 @@ fn tone_glyph(tone: OutcomeTone) -> Icon {
 async fn load_snapshot(
     repo: Arc<dyn ScheduledRunRepo>,
     action_repo: Arc<dyn ActionRepo>,
-) -> Result<ScheduledSnapshot, String> {
-    let pending = repo.list_pending().await.map_err(|e| e.to_string())?;
+) -> Result<ScheduledSnapshot, RepoFailure> {
+    let pending = repo.list_pending().await.map_err(RepoFailure::from)?;
     let recent = repo
         .list_recent_resolved(RECENT_LIMIT)
         .await
-        .map_err(|e| e.to_string())?;
+        .map_err(RepoFailure::from)?;
     let names: HashMap<ActionId, String> = action_repo
         .list()
         .await
-        .map_err(|e| e.to_string())?
+        .map_err(RepoFailure::from)?
         .into_iter()
         .map(|action| (action.id, action.name))
         .collect();

@@ -22,7 +22,7 @@ use std::future::Future;
 use std::sync::Arc;
 
 use crate::actions::LIST_CONTEXT;
-use crate::async_bridge::{self, KeyedSnapshotWriters};
+use crate::async_bridge::{self, KeyedSnapshotWriters, WriteOutcome};
 use crate::collection_options::ChoiceOptions;
 use crate::config_form::{CollectionChoices, ConfigField};
 use crate::integration_switch::{IntegrationSwitch, SwitchWatch};
@@ -260,6 +260,7 @@ pub struct TriggersRegistryView {
     loading: bool,
     reload_generation: async_bridge::Generation,
     detail_writers: KeyedSnapshotWriters<TriggerInstanceId>,
+    enabled_writers: KeyedSnapshotWriters<TriggerInstanceId>,
     instances: Vec<TriggerInstanceRow>,
     visible: Vec<usize>,
     list_scroll: UniformListScrollHandle,
@@ -309,6 +310,7 @@ impl TriggersRegistryView {
         );
 
         let detail_writers = KeyedSnapshotWriters::new(&rt_handle);
+        let enabled_writers = KeyedSnapshotWriters::new(&rt_handle);
         let view = Self {
             repo,
             action_repo,
@@ -319,6 +321,7 @@ impl TriggersRegistryView {
             loading: true,
             reload_generation: async_bridge::Generation::default(),
             detail_writers,
+            enabled_writers,
             instances: Vec::new(),
             visible: Vec::new(),
             list_scroll: UniformListScrollHandle::new(),
@@ -584,7 +587,7 @@ mod tests {
 
     use super::*;
     use crate::test_support::{
-        StubActions, error_toasts, lifecycle_switch, owned_triggers, pump_until, runtime,
+        StubActions, error_toasts, lifecycle_switch, owned_triggers, pump, pump_until, runtime,
         switch_lifecycle, test_backend, trigger_of,
     };
     use forge_components::Presentation;
@@ -781,6 +784,22 @@ mod tests {
         cx: &mut gpui::TestAppContext,
         seeded: Vec<TriggerInstance>,
     ) -> TriggerList {
+        open_list_over(cx, seeded, None)
+    }
+
+    pub(super) fn open_list_recording_writes(
+        cx: &mut gpui::TestAppContext,
+        seeded: Vec<TriggerInstance>,
+        writes: Arc<std::sync::Mutex<Vec<bool>>>,
+    ) -> TriggerList {
+        open_list_over(cx, seeded, Some(writes))
+    }
+
+    fn open_list_over(
+        cx: &mut gpui::TestAppContext,
+        seeded: Vec<TriggerInstance>,
+        writes: Option<Arc<std::sync::Mutex<Vec<bool>>>>,
+    ) -> TriggerList {
         crate::i18n::install_language(forge_storage::Language::En);
         cx.update(|cx| {
             cx.set_global(Presentation::new(ThemeId::ForgeDefault, Density::Cozy));
@@ -795,11 +814,16 @@ mod tests {
         repo.expect_list_all().returning(|| Ok(Vec::new()));
         repo.expect_actions_by_instance()
             .returning(|| Ok(Default::default()));
-        repo.expect_set_enabled().returning(|_, _| {
-            Err(forge_storage::StorageError::Connection {
-                reason: "database is locked".to_owned(),
-            })
-        });
+        repo.expect_set_enabled()
+            .returning(move |_, enabled| match &writes {
+                Some(writes) => {
+                    writes.lock().unwrap().push(enabled);
+                    Ok(())
+                }
+                None => Err(forge_storage::StorageError::Connection {
+                    reason: "database is locked".to_owned(),
+                }),
+            });
         let archived = Arc::new(std::sync::Mutex::new(Vec::new()));
         let (live, shelf) = (Arc::clone(&rows), Arc::clone(&archived));
         repo.expect_archive().returning(move |id| {
@@ -836,6 +860,12 @@ mod tests {
     }
 
     impl TriggerList {
+        pub(super) fn settle(&self, cx: &mut gpui::TestAppContext) {
+            cx.run_until_parked();
+            pump(&self.rt);
+            cx.run_until_parked();
+        }
+
         fn names(&self, cx: &mut gpui::TestAppContext) -> Vec<String> {
             self.view.read_with(cx, |view, _| {
                 view.instances.iter().map(|row| row.name.clone()).collect()
@@ -849,7 +879,7 @@ mod tests {
             });
         }
 
-        fn errors(&self, cx: &mut gpui::TestAppContext) -> usize {
+        pub(super) fn errors(&self, cx: &mut gpui::TestAppContext) -> usize {
             cx.update(|cx| error_toasts(cx))
         }
     }

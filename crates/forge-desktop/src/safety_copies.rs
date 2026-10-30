@@ -23,6 +23,7 @@ use gpui::{
 };
 
 use crate::async_bridge;
+use crate::repo_failure::RepoFailure;
 
 const MODE_SELECT_W: Pixels = px(200.0);
 const NUMBER_INPUT_W: Pixels = px(96.0);
@@ -134,11 +135,11 @@ pub(crate) enum SafetyCopyNotice {
 
 pub(crate) fn notices(
     origin: SweepOrigin,
-    result: &Result<SafetyCopyReport, String>,
+    result: &Result<SafetyCopyReport, RepoFailure>,
 ) -> Vec<SafetyCopyNotice> {
     let report = match result {
         Ok(report) => report,
-        Err(error) => return vec![SafetyCopyNotice::Failed(origin, error.clone())],
+        Err(error) => return vec![SafetyCopyNotice::Failed(origin, error.clone().text())],
     };
     if report.deferred_by_transfer {
         return vec![SafetyCopyNotice::Deferred(origin)];
@@ -305,7 +306,7 @@ impl SafetyCopiesView {
             async move {
                 SafetyCopySettings::load(repo.as_ref())
                     .await
-                    .map_err(|error| error.to_string())
+                    .map_err(RepoFailure::from)
             },
             |this, result, cx| match result {
                 Ok(_) if this.changed_locally => {}
@@ -338,7 +339,7 @@ impl SafetyCopiesView {
             async move {
                 safety_copy_usage(&data_dir)
                     .await
-                    .map_err(|error| error.to_string())
+                    .map_err(RepoFailure::from)
             },
             |this, result, cx| this.apply_usage(result, cx),
             cx,
@@ -347,7 +348,7 @@ impl SafetyCopiesView {
 
     pub(crate) fn apply_usage(
         &mut self,
-        result: Result<SafetyCopyUsage, String>,
+        result: Result<SafetyCopyUsage, RepoFailure>,
         cx: &mut Context<Self>,
     ) {
         self.usage = match result {
@@ -420,7 +421,7 @@ impl SafetyCopiesView {
             async move {
                 change_safety_copy_settings(repo.as_ref(), &data_dir, &exclusivity, changed)
                     .await
-                    .map_err(|error| error.to_string())
+                    .map_err(RepoFailure::from)
             },
             |this, result, cx| this.sweep_finished(SweepOrigin::SettingChange, result, cx),
             cx,
@@ -454,7 +455,7 @@ impl SafetyCopiesView {
             async move {
                 clean_up_safety_copies(&data_dir, &exclusivity)
                     .await
-                    .map_err(|error| error.to_string())
+                    .map_err(RepoFailure::from)
             },
             |this, result, cx| {
                 this.cleaning = false;
@@ -468,7 +469,7 @@ impl SafetyCopiesView {
     pub(crate) fn sweep_finished(
         &mut self,
         origin: SweepOrigin,
-        result: Result<SafetyCopyReport, String>,
+        result: Result<SafetyCopyReport, RepoFailure>,
         cx: &mut Context<Self>,
     ) {
         if let Err(error) = &result {
@@ -995,8 +996,11 @@ mod tests {
         for (origin, result, expected) in [
             (
                 CleanUp,
-                Err("disk gone".to_owned()),
-                vec![N::Failed(CleanUp, "disk gone".to_owned())],
+                Err(RepoFailure::operation("disk gone")),
+                vec![N::Failed(
+                    CleanUp,
+                    crate::test_support::shown_in_english(RepoFailure::operation("disk gone")),
+                )],
             ),
             (
                 SettingChange,
@@ -1244,7 +1248,7 @@ mod tests {
         let r = rig(cx, &[], 1);
 
         r.view.update(cx, |view, cx| {
-            view.apply_usage(Err("unreadable".to_owned()), cx)
+            view.apply_usage(Err(RepoFailure::operation("unreadable")), cx)
         });
 
         assert_eq!(r.usage(cx), None);

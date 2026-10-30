@@ -11,6 +11,7 @@ use tokio::runtime::Handle;
 use tokio_util::sync::CancellationToken;
 
 use crate::async_bridge::{detached, open_path, run_async};
+use crate::repo_failure::RepoFailure;
 use crate::update_exit::ExitHandoff;
 use crate::update_handoff::{HandoffError, HandoffInput, prepare_handoff, prepare_handoff_holding};
 use crate::update_toast::{UpdateCommand, toast_data, update_toast};
@@ -506,7 +507,7 @@ impl UpdateFlow {
         }
     }
 
-    pub fn handoff_settled(&mut self, result: Result<(), String>, cx: &mut Context<Self>) {
+    pub fn handoff_settled(&mut self, result: Result<(), RepoFailure>, cx: &mut Context<Self>) {
         let Some(UpdateStage::HandingOff {
             candidate,
             staged,
@@ -929,7 +930,7 @@ mod tests {
         h.flow.update(cx, |flow, cx| flow.close_decision(cx))
     }
 
-    fn settle(cx: &mut TestAppContext, h: &Harness, result: Result<(), String>) {
+    fn settle(cx: &mut TestAppContext, h: &Harness, result: Result<(), RepoFailure>) {
         h.flow
             .update(cx, |flow, cx| flow.handoff_settled(result, cx));
         cx.run_until_parked();
@@ -1237,7 +1238,7 @@ mod tests {
         ready(cx, &h);
         run(cx, &h, UpdateCommand::Restart);
         close(cx, &h);
-        settle(cx, &h, Err("snapshot failed".to_owned()));
+        settle(cx, &h, Err(RepoFailure::operation("snapshot failed")));
 
         assert_eq!(events(cx, &h), vec![UpdateFlowEvent::RestartRequested]);
         assert!(matches!(
@@ -1255,7 +1256,7 @@ mod tests {
         let h = harness(cx);
         ready(cx, &h);
         close(cx, &h);
-        settle(cx, &h, Err("snapshot failed".to_owned()));
+        settle(cx, &h, Err(RepoFailure::operation("snapshot failed")));
 
         assert_eq!(events(cx, &h), vec![UpdateFlowEvent::CloseApproved]);
         assert_eq!(close(cx, &h), CloseDecision::Proceed);
@@ -1457,7 +1458,7 @@ mod tests {
         ready(cx, &h);
         run(cx, &h, UpdateCommand::Restart);
         close(cx, &h);
-        settle(cx, &h, Err("snapshot failed".to_owned()));
+        settle(cx, &h, Err(RepoFailure::operation("snapshot failed")));
         run(cx, &h, UpdateCommand::Retry);
 
         assert_eq!(

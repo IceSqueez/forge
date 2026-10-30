@@ -1,6 +1,7 @@
 ## Boot - splash and data-open failure screens
 
 boot_starting = Запуск...
+boot_finishing_restore = Завершення відновлення...
 boot_upgrade_title = Потрібне оновлення
 boot_upgrade_body = Ваші дані forge використовують схему версії { $found }, новішу за версію цієї збірки { $expected }. Оновіть forge до останнього випуску, щоб відкрити їх.
 boot_upgrade_reassure = Ваші дані у безпеці й недоторкані.
@@ -1570,6 +1571,9 @@ tts_cloud_save_failed_toast = Не вдалося зберегти обліко�
 
 tts_aliases_strategy_label = Типова стратегія призначення
 tts_aliases_strategy_sublabel = Як обирається голос для глядачів без ручного псевдоніма
+tts_aliases_strategy_voice_search = Пошук голосів
+tts_aliases_strategy_no_voices = Голосів поки немає. Спершу увімкніть рушій TTS.
+tts_aliases_strategy_single_current = Кожен глядач без власного псевдоніма говорить голосом { $voice }
 tts_aliases_strategy_load_failed = Не вдалося завантажити стратегію призначення голосу, тому її зміну вимкнено, щоб її зберегти: { $reason }
 tts_aliases_strategy_save_failed = Не вдалося зберегти стратегію призначення голосу: { $reason }
 tts_aliases_operation_failed = Не вдалося змінити голосовий псевдонім: { $error }
@@ -2404,6 +2408,7 @@ integration_disconnect_title = Відключити інтеграцію
 integration_settings_coming_soon = Налаштування зʼявляться згодом
 integration_control_failed = Команда керування не виконалася
 integration_sign_out_failed = Не вдалося вийти з { $name }: збережені облікові дані не вдалося видалити
+integration_sign_out_still_connected = Вихід із { $name } виконано, але поточне підключення не вдалося закрити. Перезапустіть forge, якщо воно залишиться активним.
 integration_signing_out = Вихід...
 integration_quick_action_failed = Швидка дія не виконалася
 integration_row_action_failed = Не вдалося виконати дію рядка: { $error }
@@ -2681,6 +2686,7 @@ script_editor_delete_maybe_used_by = { $count ->
 script_editor_delete_archive_note = Їхні кроки не працюватимуть, доки скрипт не буде відновлено. Видалення можна скасувати одразу після нього.
 script_editor_deleted_toast = Видалено '{ $name }'
 script_editor_delete_failed = Не вдалося видалити скрипт: { $error }
+script_editor_telemetry_failed = Не вдалося завантажити статистику запусків скрипта: { $error }
 script_editor_restore_failed = Не вдалося відновити скрипт: { $error }
 script_editor_rename_title = Перейменувати скрипт?
 script_editor_rename_updates_none = Жодна дія не називає цей скрипт напряму.
@@ -5194,4 +5200,3 @@ viewer_step_timeout = Тайм-аут { $name }
 viewer_step_ban = Бан { $name }
 viewer_step_unban = Розбан { $name }
 viewer_step_reply = Відповідь { $name }
-boot_task_ended = Застосунок не зміг завершити запуск. Спробуйте ще раз.

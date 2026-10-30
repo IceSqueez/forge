@@ -1,8 +1,10 @@
 use forge_components::ActivePresentation;
 use forge_components::{ForgePalette, error_row, tr};
-use gpui::{AnyElement, App, Global, IntoElement, SharedString};
+use gpui::{AnyElement, App, Global, IntoElement};
 
-pub(crate) struct ServerUnavailable(pub SharedString);
+use crate::repo_failure::RepoFailure;
+
+pub(crate) struct ServerUnavailable(pub RepoFailure);
 
 impl Global for ServerUnavailable {}
 
@@ -11,7 +13,7 @@ pub(crate) fn unavailable_banner(cx: &App, palette: &ForgePalette) -> Option<Any
     let reason = cx.try_global::<ServerUnavailable>()?;
     Some(
         error_row(
-            tr!("server_unavailable_banner", reason = reason.0.as_ref()),
+            tr!("server_unavailable_banner", reason = reason.0.text()),
             palette,
             density,
         )
@@ -35,7 +37,7 @@ mod tests {
         };
 
         let before = shown(cx);
-        cx.update(|cx| cx.set_global(ServerUnavailable("port in use".into())));
+        cx.update(|cx| cx.set_global(ServerUnavailable(RepoFailure::operation("port in use"))));
         let after = shown(cx);
 
         assert_eq!((before, after), (false, true));

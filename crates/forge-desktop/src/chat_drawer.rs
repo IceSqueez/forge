@@ -56,6 +56,7 @@ pub(crate) struct ViewerDirectory {
 }
 
 impl ViewerDirectory {
+    #[cfg(test)]
     pub fn new(viewers: Vec<Viewer>) -> Self {
         let mut by_key = HashMap::with_capacity(viewers.len());
         for (ix, viewer) in viewers.iter().enumerate() {
@@ -70,8 +71,29 @@ impl ViewerDirectory {
         Self { viewers, by_key }
     }
 
-    pub fn viewers(&self) -> &[Viewer] {
-        &self.viewers
+    pub fn absorb(&mut self, fresh: Vec<Viewer>) -> bool {
+        let mut changed = false;
+        for viewer in fresh {
+            let id_key = AuthorKey::by_viewer_id(viewer.platform, &viewer.viewer_id);
+            let name_key = AuthorKey::by_name(viewer.platform, &viewer.username);
+            match self.by_key.get(&id_key).copied() {
+                Some(ix) if self.viewers.get(ix) == Some(&viewer) => continue,
+                Some(ix) => {
+                    self.by_key.insert(name_key, ix);
+                    if let Some(slot) = self.viewers.get_mut(ix) {
+                        *slot = viewer;
+                    }
+                }
+                None => {
+                    let ix = self.viewers.len();
+                    self.by_key.insert(id_key, ix);
+                    self.by_key.insert(name_key, ix);
+                    self.viewers.push(viewer);
+                }
+            }
+            changed = true;
+        }
+        changed
     }
 
     pub fn get(&self, key: &AuthorKey) -> Option<&Viewer> {
@@ -507,5 +529,123 @@ mod tests {
                 "{key:?}"
             );
         }
+    }
+
+    fn renamed(mut viewer: Viewer, username: &str) -> Viewer {
+        viewer.username = username.to_owned();
+        viewer
+    }
+
+    #[test]
+    fn absorbing_a_new_viewer_reports_a_change_and_answers_by_id_and_by_name() {
+        let alice = stored(PlatformId::Twitch, "t1", "alice");
+        let mut directory = ViewerDirectory::default();
+
+        let changed = directory.absorb(vec![alice.clone()]);
+
+        assert_eq!(
+            (
+                changed,
+                directory.get(&AuthorKey::by_viewer_id(PlatformId::Twitch, "t1")),
+                directory.get(&AuthorKey::by_name(PlatformId::Twitch, "alice")),
+            ),
+            (true, Some(&alice), Some(&alice))
+        );
+    }
+
+    #[test]
+    fn absorbing_a_viewer_unchanged_reports_nothing() {
+        let alice = stored(PlatformId::Twitch, "t1", "alice");
+        let mut directory = ViewerDirectory::default();
+        directory.absorb(vec![alice.clone()]);
+
+        assert!(!directory.absorb(vec![alice]));
+    }
+
+    #[test]
+    fn absorbing_a_newer_row_replaces_the_viewer_under_its_id_and_its_new_name() {
+        let alice = stored(PlatformId::Twitch, "t1", "alice");
+        let fresh = renamed(alice.clone(), "alice_new");
+        let mut directory = ViewerDirectory::default();
+        directory.absorb(vec![alice]);
+
+        let changed = directory.absorb(vec![fresh.clone()]);
+
+        assert_eq!(
+            (
+                changed,
+                directory.get(&AuthorKey::by_viewer_id(PlatformId::Twitch, "t1")),
+                directory.get(&AuthorKey::by_name(PlatformId::Twitch, "alice_new")),
+            ),
+            (true, Some(&fresh), Some(&fresh))
+        );
+    }
+
+    #[test]
+    fn absorbing_keeps_a_viewer_met_earlier_and_keeps_platforms_apart() {
+        let on_twitch = stored(PlatformId::Twitch, "same-id", "alice");
+        let on_kick = stored(PlatformId::Kick, "same-id", "alice");
+        let mut directory = ViewerDirectory::default();
+        directory.absorb(vec![on_twitch.clone()]);
+
+        directory.absorb(vec![on_kick.clone()]);
+
+        assert_eq!(
+            (
+                directory.get(&AuthorKey::by_viewer_id(PlatformId::Twitch, "same-id")),
+                directory.get(&AuthorKey::by_name(PlatformId::Twitch, "alice")),
+                directory.get(&AuthorKey::by_viewer_id(PlatformId::Kick, "same-id")),
+            ),
+            (Some(&on_twitch), Some(&on_twitch), Some(&on_kick))
+        );
+    }
+
+    #[test]
+    fn a_viewer_known_only_by_name_keeps_the_role_chat_gave_them_with_no_stored_row() {
+        let badged = msg("alice", vec![BadgeKind::Subscriber]);
+        let feed = feed_of(std::slice::from_ref(&badged));
+
+        let summary = author_summary(
+            &key("alice"),
+            feed.authors(),
+            &ViewerDirectory::default(),
+            &ledger_of(&feed),
+            &FORGE_DEFAULT,
+        )
+        .unwrap();
+
+        assert_eq!(
+            (
+                summary.role,
+                summary.sub == SubStatus::Subscribed,
+                summary.last_seen_at
+            ),
+            (Some(BadgeKind::Subscriber), true, badged.received_at)
+        );
+    }
+
+    #[test]
+    fn a_stored_row_changes_only_the_last_seen_time_of_a_chat_author() {
+        let badged = msg("alice", vec![BadgeKind::Subscriber]);
+        let feed = feed_of(std::slice::from_ref(&badged));
+        let earlier = badged.received_at - Duration::days(3);
+        let mut row = stored(PlatformId::Twitch, "t1", "alice");
+        row.last_seen_at = earlier;
+        let mut directory = ViewerDirectory::default();
+        directory.absorb(vec![row]);
+
+        let summary = author_summary(
+            &key("alice"),
+            feed.authors(),
+            &directory,
+            &ledger_of(&feed),
+            &FORGE_DEFAULT,
+        )
+        .unwrap();
+
+        assert_eq!(
+            (summary.role, summary.last_seen_at),
+            (Some(BadgeKind::Subscriber), earlier)
+        );
     }
 }

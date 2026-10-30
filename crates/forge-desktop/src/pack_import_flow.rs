@@ -14,6 +14,7 @@ use crate::import_busy::{busy_overlay, refuse_while_busy};
 use crate::pack_import_live::{LiveRefresh, LiveTargets, refresh_live};
 use crate::pack_import_modal::{PackHeader, PackImportModal, PackImportModalEvent, carry_choices};
 use crate::pack_services::PackServices;
+use crate::repo_failure::RepoFailure;
 use crate::restore_problem::RestoreProblem;
 
 const PACK_TOAST_DURATION: Duration = Duration::from_secs(10);
@@ -27,14 +28,14 @@ pub(crate) struct Planned {
 
 enum PlanFailure {
     Refused(RestoreProblem),
-    SourceUnreadable(String),
+    SourceUnreadable(RepoFailure),
 }
 
 impl PlanFailure {
-    fn message(self) -> String {
+    fn into_failure(self) -> RepoFailure {
         match self {
-            Self::Refused(problem) => problem.message(),
-            Self::SourceUnreadable(message) => message,
+            Self::Refused(problem) => RepoFailure::localized(problem.message()),
+            Self::SourceUnreadable(failure) => failure,
         }
     }
 }
@@ -50,7 +51,7 @@ pub(crate) enum Applied {
     },
     Failed {
         staged: StagedPack,
-        message: String,
+        message: RepoFailure,
     },
     RollbackIncomplete {
         message: String,
@@ -136,13 +137,13 @@ impl PackImportFlow {
         async_bridge::run_async(
             &self.services.rt_handle,
             async move { stage_and_plan(services, bundle, data_dir).await },
-            |this, result, cx| this.planned(result.map_err(PlanFailure::message), cx),
+            |this, result, cx| this.planned(result.map_err(PlanFailure::into_failure), cx),
             cx,
         );
         cx.notify();
     }
 
-    fn planned(&mut self, result: Result<Planned, String>, cx: &mut Context<Self>) {
+    fn planned(&mut self, result: Result<Planned, RepoFailure>, cx: &mut Context<Self>) {
         match result {
             Ok(Planned { staged, plan }) => {
                 let header = PackHeader::of(staged.manifest());
@@ -166,7 +167,7 @@ impl PackImportFlow {
                 tracing::warn!(error = %message, "pack import planning failed");
                 cx.push_toast(
                     ToastKind::Error,
-                    tr!("home_import_failed", error = message.as_str()),
+                    tr!("home_import_failed", error = message.text()),
                 );
             }
         }
@@ -212,7 +213,7 @@ impl PackImportFlow {
             Applied::Failed { staged, message } => {
                 tracing::warn!(error = %message, "pack import failed and was undone");
                 if let Some(modal) = self.restore_staged(staged) {
-                    let shown = tr!("pack_import_failed", error = message.as_str());
+                    let shown = tr!("pack_import_failed", error = message.text());
                     modal.update(cx, |modal, cx| modal.fail(shown, cx));
                 }
             }
@@ -359,7 +360,9 @@ async fn apply_staged(
 ) -> Applied {
     let source = match services.load_source().await {
         Ok(source) => source,
-        Err(message) => return Applied::Failed { staged, message },
+        Err(message) => {
+            return Applied::Failed { staged, message };
+        }
     };
     let snapshot_taken = plan.replaces_anything();
     let overlay_root = services.overlays.root().await;
@@ -390,7 +393,7 @@ async fn apply_staged(
             tracing::warn!(%error, "pack import failed");
             Applied::Failed {
                 staged,
-                message: RestoreProblem::of(&error).plain_text(),
+                message: RepoFailure::from(error),
             }
         }
     }
@@ -408,7 +411,7 @@ async fn replan(services: &PackServices, staged: StagedPack, previous: &PackImpo
                     tracing::warn!(%error, "pack replan failed");
                     Applied::Failed {
                         staged,
-                        message: RestoreProblem::of(&error).plain_text(),
+                        message: RepoFailure::from(error),
                     }
                 }
             }
@@ -600,7 +603,10 @@ mod tests {
         let rig = rig(cx);
         rig.flow.update(cx, |flow, cx| {
             flow.step = PackImportStep::Planning;
-            flow.planned(Err("not a pack".to_owned()), cx);
+            flow.planned(
+                Err(crate::repo_failure::RepoFailure::operation("not a pack")),
+                cx,
+            );
         });
 
         let kinds: Vec<ToastKind> = toasts(cx).into_iter().map(|toast| toast.0).collect();
@@ -662,7 +668,7 @@ mod tests {
             flow.applied(
                 Applied::Failed {
                     staged,
-                    message: "disk full".to_owned(),
+                    message: crate::repo_failure::RepoFailure::localized("disk full"),
                 },
                 cx,
             )
@@ -689,7 +695,7 @@ mod tests {
             flow.applied(
                 Applied::Failed {
                     staged,
-                    message: "disk full".to_owned(),
+                    message: crate::repo_failure::RepoFailure::localized("disk full"),
                 },
                 cx,
             )

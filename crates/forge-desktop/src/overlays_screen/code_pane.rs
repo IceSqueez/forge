@@ -21,6 +21,7 @@ use gpui::{
 use std::sync::Arc;
 
 use crate::async_bridge;
+use crate::repo_failure::RepoFailure;
 use crate::unsaved_work::UnsavedWork;
 use forge_components::ActivePresentation;
 
@@ -212,7 +213,7 @@ impl OverlaysView {
                 service
                     .read_source(&target, file)
                     .await
-                    .map_err(|e| e.to_string())
+                    .map_err(RepoFailure::from)
             },
             move |this, result, cx| this.apply_source(id, file, revision, result, cx),
             cx,
@@ -225,7 +226,7 @@ impl OverlaysView {
         id: OverlayId,
         file: &'static str,
         revision: u64,
-        result: Result<Option<String>, String>,
+        result: Result<Option<String>, RepoFailure>,
         cx: &mut Context<Self>,
     ) {
         self.editor.code.loading = false;
@@ -249,7 +250,7 @@ impl OverlaysView {
                 });
                 self.sync_source(cx);
             }
-            Err(message) => self.report(&message, cx),
+            Err(message) => self.report(&message.text(), cx),
         }
         cx.notify();
     }
@@ -289,21 +290,21 @@ impl OverlaysView {
         async_bridge::run_async(
             &self.handles.rt_handle,
             async move {
-                let Some(mut definition) = repo.get(&id).await.map_err(|e| e.to_string())? else {
+                let Some(mut definition) = repo.get(&id).await.map_err(RepoFailure::from)? else {
                     return Ok(false);
                 };
                 service
                     .write_source(&id, file, stored)
                     .await
-                    .map_err(|e| e.to_string())?;
+                    .map_err(RepoFailure::from)?;
                 if !definition.source_overrides.iter().any(|held| held == file) {
                     definition.source_overrides.push(file.to_owned());
-                    repo.save(&definition).await.map_err(|e| e.to_string())?;
+                    repo.save(&definition).await.map_err(RepoFailure::from)?;
                 }
                 service.reload_page(&id).await;
                 Ok(true)
             },
-            move |this, result: Result<bool, String>, cx| {
+            move |this, result: Result<bool, RepoFailure>, cx| {
                 this.editor.code.saving = false;
                 match result {
                     Ok(true) => {
@@ -320,7 +321,7 @@ impl OverlaysView {
                         this.load(cx);
                     }
                     Ok(false) => this.report(&tr!("overlays_toast_missing"), cx),
-                    Err(message) => this.report(&message, cx),
+                    Err(message) => this.report(&message.text(), cx),
                 }
                 cx.notify();
             },
@@ -357,18 +358,18 @@ impl OverlaysView {
         async_bridge::run_async(
             &self.handles.rt_handle,
             async move {
-                let Some(mut definition) = repo.get(&id).await.map_err(|e| e.to_string())? else {
+                let Some(mut definition) = repo.get(&id).await.map_err(RepoFailure::from)? else {
                     return Ok((false, Vec::new(), Vec::new()));
                 };
                 definition.source_overrides.retain(|held| held != file);
-                repo.save(&definition).await.map_err(|e| e.to_string())?;
+                repo.save(&definition).await.map_err(RepoFailure::from)?;
                 let report = service
                     .materialize(&id, samples.as_ref())
                     .await
-                    .map_err(|e| e.to_string())?;
+                    .map_err(RepoFailure::from)?;
                 Ok((true, report.missing_overrides, report.media_issues))
             },
-            move |this, result: Result<(bool, Vec<String>, Vec<MediaIssue>), String>, cx| {
+            move |this, result: Result<(bool, Vec<String>, Vec<MediaIssue>), RepoFailure>, cx| {
                 match result {
                     Ok((true, missing, issues)) => {
                         this.note_missing_overrides(missing);
@@ -379,7 +380,7 @@ impl OverlaysView {
                         this.sync_source(cx);
                     }
                     Ok((false, _, _)) => this.report(&tr!("overlays_toast_missing"), cx),
-                    Err(message) => this.report(&message, cx),
+                    Err(message) => this.report(&message.text(), cx),
                 }
                 cx.notify();
             },

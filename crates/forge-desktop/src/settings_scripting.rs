@@ -331,7 +331,7 @@ impl SettingsScriptingView {
                 ToastKind::Error,
                 tr!(
                     "settings_scripting_domains_save_failed",
-                    reason = error.as_str()
+                    reason = error.text()
                 ),
             );
             self.load_domains(cx);
@@ -1086,10 +1086,9 @@ mod tests {
 
     #[gpui::test]
     fn no_domain_edit_writes_the_allowlist_until_it_loads(cx: &mut TestAppContext) {
-        let unreachable = StorageError::Connection {
+        let unreachable = crate::test_support::shown_in_english(StorageError::Connection {
             reason: SETTINGS_READ_FAILED.to_owned(),
-        }
-        .to_string();
+        });
         for (state, fault, reason) in [
             ("failed", ReadFault::Fails, Some(unreachable)),
             (
@@ -1107,9 +1106,7 @@ mod tests {
                 view.update(cx, edit);
                 settle(cx, &rt);
 
-                let failure = view.read_with(cx, |this, _| {
-                    this.allowed_domains.failure().map(str::to_owned)
-                });
+                let failure = view.read_with(cx, |this, _| this.allowed_domains.failure());
                 assert_eq!(
                     (domain_writes(&mut writes), failure),
                     (Vec::<Vec<String>>::new(), reason.clone()),

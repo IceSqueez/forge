@@ -22,6 +22,7 @@ use gpui::{
 };
 
 use crate::async_bridge::{self, ErrorSink};
+use crate::repo_failure::RepoFailure;
 
 use super::OverlaysView;
 use super::event_wiring;
@@ -187,9 +188,11 @@ impl OverlaysView {
                 service
                     .test_fire(&target, samples.as_ref())
                     .await
-                    .map_err(|e| e.to_string())
+                    .map_err(RepoFailure::from)
             },
-            move |this, result: Result<TestFire, String>, cx| this.on_test_fired(epoch, result, cx),
+            move |this, result: Result<TestFire, RepoFailure>, cx| {
+                this.on_test_fired(epoch, result, cx)
+            },
             cx,
         );
         cx.notify();
@@ -198,7 +201,7 @@ impl OverlaysView {
     fn on_test_fired(
         &mut self,
         epoch: u64,
-        result: Result<TestFire, String>,
+        result: Result<TestFire, RepoFailure>,
         cx: &mut Context<Self>,
     ) {
         if self.stage.fire_epoch != epoch {
@@ -221,7 +224,7 @@ impl OverlaysView {
                 });
                 self.sync_preview();
             }
-            Err(message) => self.report(&message, cx),
+            Err(message) => self.report(&message.text(), cx),
         }
         cx.notify();
     }

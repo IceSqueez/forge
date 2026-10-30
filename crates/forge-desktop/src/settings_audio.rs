@@ -17,6 +17,7 @@ use gpui::{AnyElement, ClickEvent, Context, Entity, FocusHandle, Window, div, pr
 
 use crate::async_bridge;
 use crate::navigation::SettingsSection;
+use crate::repo_failure::RepoFailure;
 use crate::runtime_handles::RuntimeHandles;
 use crate::settings_audio_routing::SettingsAudioRoutingView;
 use crate::settings_pane_header::SettingsPaneHeader;
@@ -145,7 +146,7 @@ impl SettingsAudioView {
 
     fn apply_devices_loaded(
         &mut self,
-        result: Result<(Vec<DeviceRow>, Option<String>), String>,
+        result: Result<(Vec<DeviceRow>, Option<String>), RepoFailure>,
         cx: &mut Context<Self>,
     ) {
         self.loading = false;
@@ -158,7 +159,7 @@ impl SettingsAudioView {
             }
             Err(message) => {
                 tracing::warn!(error = %message, "failed to enumerate audio output devices");
-                self.devices_error = Some(message);
+                self.devices_error = Some(message.text());
             }
         }
         cx.notify();
@@ -187,7 +188,7 @@ impl SettingsAudioView {
                     &device_id,
                 )
                 .await
-                .map_err(|e| e.to_string())
+                .map_err(RepoFailure::from)
             },
             |this, result, cx| this.apply_persist_result(result, cx),
             cx,
@@ -195,10 +196,10 @@ impl SettingsAudioView {
         cx.notify();
     }
 
-    fn apply_persist_result(&mut self, result: Result<(), String>, cx: &mut Context<Self>) {
+    fn apply_persist_result(&mut self, result: Result<(), RepoFailure>, cx: &mut Context<Self>) {
         if let Err(message) = result {
             tracing::warn!(error = %message, "failed to persist audio output device");
-            self.persist_error = Some(message);
+            self.persist_error = Some(message.text());
             cx.notify();
         }
     }
@@ -218,11 +219,11 @@ impl SettingsAudioView {
         cx.notify();
     }
 
-    fn apply_test_result(&mut self, result: Result<(), String>, cx: &mut Context<Self>) {
+    fn apply_test_result(&mut self, result: Result<(), RepoFailure>, cx: &mut Context<Self>) {
         self.test_playing = false;
         if let Err(message) = result {
             tracing::warn!(error = %message, "audio test tone playback failed");
-            self.test_error = Some(message);
+            self.test_error = Some(message.text());
         }
         cx.notify();
     }
@@ -450,7 +451,7 @@ fn resolve_selected_idx(devices: &[DeviceRow], want_id: Option<&str>) -> usize {
         .unwrap_or(0)
 }
 
-async fn enumerate_devices(uncached: bool) -> Result<Vec<DeviceRow>, String> {
+async fn enumerate_devices(uncached: bool) -> Result<Vec<DeviceRow>, RepoFailure> {
     tokio::task::spawn_blocking(move || {
         let listed = if uncached {
             refresh_output_devices()
@@ -459,20 +460,20 @@ async fn enumerate_devices(uncached: bool) -> Result<Vec<DeviceRow>, String> {
         };
         listed
             .map(|devs| devs.into_iter().map(DeviceRow::from_info).collect())
-            .map_err(|e| e.to_string())
+            .map_err(RepoFailure::from)
     })
     .await
-    .map_err(|e| e.to_string())?
+    .map_err(RepoFailure::from)?
 }
 
 async fn enumerate_devices_and_preference(
     settings: Arc<dyn SettingsRepo>,
     uncached: bool,
-) -> Result<(Vec<DeviceRow>, Option<String>), String> {
+) -> Result<(Vec<DeviceRow>, Option<String>), RepoFailure> {
     let devices = enumerate_devices(uncached).await?;
     let preference = read_setting(settings.as_ref(), &core_settings::AUDIO_OUTPUT_DEVICE_ID)
         .await
-        .map_err(|e| e.to_string())?;
+        .map_err(RepoFailure::from)?;
     Ok((devices, preference))
 }
 
@@ -489,6 +490,6 @@ pub(crate) fn test_tone() -> PcmBuffer {
     PcmBuffer::new(samples, TEST_TONE_SAMPLE_RATE, TEST_TONE_CHANNELS)
 }
 
-async fn play_test_tone(sink: Arc<DeviceSink>) -> Result<(), String> {
-    sink.play(test_tone()).await.map_err(|e| e.to_string())
+async fn play_test_tone(sink: Arc<DeviceSink>) -> Result<(), RepoFailure> {
+    sink.play(test_tone()).await.map_err(RepoFailure::from)
 }

@@ -143,7 +143,7 @@ impl StoredFavorites {
         if let WriteOutcome::Failed(error) = outcome {
             cx.push_toast(
                 ToastKind::Error,
-                tr!("picker_favorites_save_failed", reason = error.as_str()),
+                tr!("picker_favorites_save_failed", reason = error.text()),
             );
             self.load(cx);
         }

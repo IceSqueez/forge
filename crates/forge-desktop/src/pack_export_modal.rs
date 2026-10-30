@@ -16,7 +16,7 @@ use gpui::{
 use crate::async_bridge::{self, Generation};
 use crate::integration_switch::integration_name;
 use crate::pack_services::{PackServices, PackSource};
-use crate::restore_problem::RestoreProblem;
+use crate::repo_failure::RepoFailure;
 
 const ACTION_LIST_H: Pixels = px(320.0);
 const COUNT_COLUMNS: usize = 2;
@@ -186,7 +186,7 @@ impl PackExportModal {
         }
     }
 
-    fn source_loaded(&mut self, result: Result<PackSource, String>, cx: &mut Context<Self>) {
+    fn source_loaded(&mut self, result: Result<PackSource, RepoFailure>, cx: &mut Context<Self>) {
         self.source = match result {
             Ok(source) => {
                 let choices = action_choices(&source.inventory);
@@ -196,7 +196,7 @@ impl PackExportModal {
             }
             Err(message) => {
                 tracing::warn!(error = %message, "pack inventory failed to load");
-                SourceState::Failed(message)
+                SourceState::Failed(message.text())
             }
         };
         self.resolve(cx);
@@ -232,7 +232,7 @@ impl PackExportModal {
             &self.services.rt_handle,
             move || {
                 resolve_pack_closure(&source.inventory, services.registries(&source), &roots)
-                    .map_err(|error| RestoreProblem::of(&error).plain_text())
+                    .map_err(RepoFailure::from)
             },
             move |this, result, cx| this.resolved(ticket, result, cx),
             cx,
@@ -242,7 +242,7 @@ impl PackExportModal {
     fn resolved(
         &mut self,
         ticket: u64,
-        result: Result<PackSelection, String>,
+        result: Result<PackSelection, RepoFailure>,
         cx: &mut Context<Self>,
     ) {
         if !self.generation.is_current(ticket) {
@@ -253,7 +253,7 @@ impl PackExportModal {
             Ok(selection) => self.closure = Some(selection),
             Err(message) => {
                 self.closure = None;
-                self.closure_failure = Some(message);
+                self.closure_failure = Some(message.text());
             }
         }
         cx.notify();
@@ -797,7 +797,7 @@ mod tests {
             rig.world.services.registries(&source),
             &roots,
         )
-        .map_err(|error| error.to_string());
+        .map_err(crate::repo_failure::RepoFailure::from);
         rig.modal
             .update(cx, |modal, cx| modal.resolved(ticket, closure, cx));
     }
@@ -933,18 +933,16 @@ mod tests {
         rig.modal
             .update(cx, |modal, cx| modal.toggle(rig.farewell, cx));
         let ticket = rig.modal.read_with(cx, |modal, _| current_ticket(modal));
+        let failure = crate::repo_failure::RepoFailure::operation("unreadable action");
+        let shown = crate::test_support::shown_in_english(failure.clone());
 
-        rig.modal.update(cx, |modal, cx| {
-            modal.resolved(ticket, Err("unreadable action".to_owned()), cx)
-        });
+        rig.modal
+            .update(cx, |modal, cx| modal.resolved(ticket, Err(failure), cx));
 
         let failure = rig
             .modal
             .read_with(cx, |modal, _| modal.closure_failure.clone());
-        assert_eq!(
-            (can_export(cx, &rig), failure.as_deref()),
-            (false, Some("unreadable action"))
-        );
+        assert_eq!((can_export(cx, &rig), failure), (false, Some(shown)));
     }
 
     #[gpui::test]

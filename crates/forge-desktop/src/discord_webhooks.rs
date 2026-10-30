@@ -5,6 +5,8 @@ use forge_discord::DiscordClient;
 use forge_storage::ActionRepo;
 use forge_types::Action;
 
+use crate::repo_failure::RepoFailure;
+
 const DISCORD_SUB_ACTION_PREFIX: &str = "discord.";
 const WEBHOOK_NAME_FIELD: &str = "webhook_name";
 
@@ -16,9 +18,9 @@ pub struct WebhookRow {
 pub async fn load_webhooks(
     client: Arc<DiscordClient>,
     actions: Arc<dyn ActionRepo>,
-) -> Result<Vec<WebhookRow>, String> {
-    let names = client.list_webhooks().await.map_err(|e| e.to_string())?;
-    let actions = actions.list().await.map_err(|e| e.to_string())?;
+) -> Result<Vec<WebhookRow>, RepoFailure> {
+    let names = client.list_webhooks().await.map_err(RepoFailure::from)?;
+    let actions = actions.list().await.map_err(RepoFailure::from)?;
     Ok(names
         .into_iter()
         .map(|name| WebhookRow {

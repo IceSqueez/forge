@@ -339,7 +339,7 @@ impl TriggersRegistryView {
             }
             WriteOutcome::Superseded => after == DetailAfterSave::Rebuild,
             WriteOutcome::Failed(reason) => {
-                self.on_repo_error(&RepoFailure::operation(reason), cx);
+                self.on_repo_error(&reason, cx);
                 true
             }
         };

@@ -34,6 +34,7 @@ use crate::platform_identities::PlatformIdentities;
 use crate::platforms::PlatformConnectivity;
 use crate::problem_report::ProblemReport;
 use crate::queue_health::QueueHealth;
+use crate::repo_failure::RepoFailure;
 use crate::runtime_event::{self, RuntimeEvent};
 use crate::runtime_handles::RuntimeHandles;
 use crate::runtime_status::RuntimeStatus;
@@ -184,8 +185,8 @@ pub fn run_boot(
     cx.spawn(async move |cx| {
         let outcome = match result_rx.await {
             Ok(outcome) => outcome,
-            Err(_) => Err(BootFailure::Retry {
-                reason: tr!("boot_task_ended"),
+            Err(error) => Err(BootFailure::Retry {
+                failure: RepoFailure::startup_stopped(error),
             }),
         };
         match outcome {
@@ -256,7 +257,7 @@ pub fn run_boot(
                     ));
                     crate::message_catalogs::report_catalog_problems(cx);
                     if let Some(reason) = handles.server_unavailable.clone() {
-                        cx.set_global(crate::server_unavailable::ServerUnavailable(reason.into()));
+                        cx.set_global(crate::server_unavailable::ServerUnavailable(reason));
                     }
                     platforms.update(cx, |connectivity, cx| {
                         connectivity.seed_from_builtins(&handles.builtins);
@@ -804,7 +805,7 @@ impl Render for RootView {
         let palette = cx.palette();
         let density = cx.density();
         let failure_screen = match &self.state {
-            BootState::Booting => return splash(&palette, density),
+            BootState::Booting => return splash(tr!("boot_starting"), &palette, density),
             BootState::Ready { shell } => {
                 return div().size_full().child(shell.clone()).into_any_element();
             }
@@ -814,8 +815,8 @@ impl Render for RootView {
             BootState::Failed(BootFailure::PreBaseline { found }) => {
                 pre_baseline_screen(*found, &palette, density)
             }
-            BootState::Failed(BootFailure::Retry { reason }) => {
-                retry_screen(reason, cx.entity(), &palette, density)
+            BootState::Failed(BootFailure::Retry { failure }) => {
+                retry_screen(&failure.text(), cx.entity(), &palette, density)
             }
         };
         div()
@@ -839,7 +840,17 @@ fn centered(child: impl IntoElement, palette: &ForgePalette, density: Density) -
         .into_any_element()
 }
 
-fn splash(palette: &ForgePalette, density: Density) -> AnyElement {
+pub struct RestoreWaitView;
+
+impl Render for RestoreWaitView {
+    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let palette = cx.palette();
+        let density = cx.density();
+        splash(tr!("boot_finishing_restore"), &palette, density)
+    }
+}
+
+fn splash(status: String, palette: &ForgePalette, density: Density) -> AnyElement {
     let column = div()
         .flex()
         .flex_col()
@@ -857,7 +868,7 @@ fn splash(palette: &ForgePalette, density: Density) -> AnyElement {
                 .font_family(body_family())
                 .text_size(FONT_SM)
                 .text_color(palette.text_muted)
-                .child(tr!("boot_starting")),
+                .child(status),
         );
     centered(column, palette, density)
 }

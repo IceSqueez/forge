@@ -45,6 +45,7 @@ use crate::async_bridge::{
 use crate::backup_passphrase_modal::{
     BackupPassphraseEvent, BackupPassphraseModal, PassphrasePurpose,
 };
+use crate::repo_failure::RepoFailure;
 use crate::restore_problem::RestoreProblem;
 
 const NUMBER_INPUT_W: Pixels = px(120.0);
@@ -526,7 +527,7 @@ impl BackupScheduleView {
                 Ok(snapshot) => this.apply_snapshot(snapshot, cx),
                 Err(error) => {
                     tracing::warn!(%error, "failed to load the backup schedule settings");
-                    this.settings = Loadable::Failed(error.to_string());
+                    this.settings = Loadable::Failed(RepoFailure::operation(&error));
                     cx.notify();
                 }
             },
@@ -644,7 +645,7 @@ impl BackupScheduleView {
             ErrorSink::Toast.report(
                 tr!(
                     "backup_schedule_persist_failed_reason",
-                    reason = error.as_str()
+                    reason = error.text()
                 ),
                 cx,
             );
@@ -2485,7 +2486,7 @@ pub(crate) mod tests {
     }
 
     fn view_failure(view: &Entity<BackupScheduleView>, cx: &mut TestAppContext) -> Option<String> {
-        view.read_with(cx, |view, _| view.settings.failure().map(str::to_owned))
+        view.read_with(cx, |view, _| view.settings.failure())
     }
 
     fn view_prompt(
@@ -2498,14 +2499,9 @@ pub(crate) mod tests {
     #[gpui::test]
     fn no_edit_after_a_failed_load_writes_over_the_stored_schedule(cx: &mut TestAppContext) {
         let key = key_for(OLD_PASSPHRASE);
-        let unreachable = forge_storage::StorageError::Connection {
-            reason: crate::test_support::SETTINGS_READ_FAILED.to_owned(),
-        }
-        .to_string();
-        let bad_number = forge_storage::StorageError::UndecodableSetting {
-            key: ScheduleNumber::Interval.storage_key().to_owned(),
-        }
-        .to_string();
+        let reason = crate::test_support::shown_in_english(
+            crate::repo_failure::RepoFailure::operation(crate::test_support::SETTINGS_READ_FAILED),
+        );
         type Corrupt = fn(&crate::test_support::TestBackend);
         let faults: [(&str, &str, Option<Corrupt>); 4] = [
             (
@@ -2532,22 +2528,12 @@ pub(crate) mod tests {
         for (fault, faulty_key, corrupt) in faults {
             for (case, edit) in edit_paths() {
                 let schedule = FakeSchedule::new(cx, &key);
-                let reason = match corrupt {
-                    Some(corrupt) => {
-                        corrupt(&schedule.backend);
-                        if faulty_key == BACKUP_SCHEDULE_INTERVAL_MINUTES.name() {
-                            bad_number.clone()
-                        } else {
-                            format!("stored setting '{faulty_key}' cannot be decoded")
-                        }
-                    }
-                    None => {
-                        schedule
-                            .backend
-                            .fault_reads(faulty_key, crate::test_support::ReadFault::Fails);
-                        unreachable.clone()
-                    }
-                };
+                match corrupt {
+                    Some(corrupt) => corrupt(&schedule.backend),
+                    None => schedule
+                        .backend
+                        .fault_reads(faulty_key, crate::test_support::ReadFault::Fails),
+                }
                 let before = schedule.stored();
                 let view = schedule.open(cx);
 
@@ -2560,7 +2546,7 @@ pub(crate) mod tests {
                         view_failure(&view, cx),
                         view_prompt(&view, cx),
                     ),
-                    (true, Some(reason), None),
+                    (true, Some(reason.clone()), None),
                     "{fault}: {case}"
                 );
             }

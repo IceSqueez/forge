@@ -7,6 +7,7 @@ use forge_storage::{Flag, Setting, SettingsRepo, read_setting_or_default, write_
 use gpui::Context;
 
 use crate::async_bridge::{SnapshotWriter, WriteOutcome};
+use crate::repo_failure::RepoFailure;
 
 pub(crate) const ENABLED_BY_DEFAULT: bool = true;
 
@@ -49,8 +50,8 @@ impl StayAwakeSetting {
             async move {
                 write_setting(settings.as_ref(), &STAY_AWAKE, &enabled)
                     .await
-                    .map_err(|e| e.to_string())?;
-                service.set_enabled(enabled).map_err(|e| e.to_string())
+                    .map_err(RepoFailure::from)?;
+                service.set_enabled(enabled).map_err(RepoFailure::from)
             },
             on_settled,
             cx,
@@ -167,7 +168,7 @@ mod tests {
         assert!(
             matches!(
                 outcomes(&settled, cx).as_slice(),
-                [WriteOutcome::Failed(message)] if message.contains(SETTINGS_WRITE_FAILED)
+                [WriteOutcome::Failed(message)] if message.to_string().contains(SETTINGS_WRITE_FAILED)
             ),
             "{:?}",
             outcomes(&settled, cx)
@@ -191,7 +192,7 @@ mod tests {
                 writes_to(&mut writes, STAY_AWAKE.name())
             ),
             (
-                vec![WriteOutcome::Failed(AwakeError::Stopped.to_string())],
+                vec![WriteOutcome::Failed(AwakeError::Stopped.into())],
                 vec!["false".to_owned()]
             )
         );

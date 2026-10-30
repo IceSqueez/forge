@@ -1,9 +1,11 @@
 use crate::platform_visuals::{
     BadgeKind, badge_color, badge_label, platform_color, platform_mark, role_badge,
 };
+use crate::repo_failure::RepoFailure;
 use forge_components::DISABLED_OPACITY;
 use forge_components::SEARCH_FIELD_WIDTH;
-use std::collections::{BTreeMap, VecDeque};
+
+use std::collections::{BTreeMap, HashMap, VecDeque};
 use std::path::PathBuf;
 use std::rc::Rc;
 use std::sync::Arc;
@@ -20,7 +22,10 @@ use forge_components::{
 use forge_platform_twitch::vocabulary::config_keys as twitch_config_keys;
 use forge_runtime::ActionEngineHandle;
 use forge_speak_queue::SpeakQueueHandle;
-use forge_storage::{ChatAuthorTally, ChatHistoryRepo, Viewer, ViewerRepo, VoiceAliasRepo};
+use forge_storage::{
+    ChatAuthorKey, ChatAuthorTally, ChatHistoryRepo, StorageError, Viewer, ViewerRepo,
+    VoiceAliasRepo,
+};
 use forge_types::{PlatformId, Shared, SubActionStep, Variant, is_bot_account};
 use gpui::{
     AnyElement, App, ClickEvent, Context, Div, Entity, FontWeight, ListAlignment, ListState,
@@ -29,6 +34,8 @@ use gpui::{
 };
 
 use crate::async_bridge;
+use time::OffsetDateTime;
+
 use crate::chat_author::AuthorKey;
 use crate::chat_drawer::{
     DASH, SubStatus, ViewerDirectory, ViewerSummary, author_summary, current_name,
@@ -164,6 +171,43 @@ impl Render for ChatViewerCount {
                     .text_color(palette.text_secondary)
                     .child(format!("{} {}", viewer_count, tr!("chat_viewers_unit"))),
             )
+    }
+}
+
+struct StaleViewer {
+    key: AuthorKey,
+    seen_at: OffsetDateTime,
+}
+
+async fn read_viewers(
+    repo: &dyn ViewerRepo,
+    authors: &[ChatAuthorKey],
+) -> Result<Vec<Viewer>, StorageError> {
+    let mut viewers = Vec::with_capacity(authors.len());
+    for author in authors {
+        if let Some(viewer) = repo.get(author.source, &author.author_id).await? {
+            viewers.push(viewer);
+        }
+    }
+    Ok(viewers)
+}
+
+fn note_refreshed(
+    stale: Vec<StaleViewer>,
+    viewers: &[Viewer],
+    refreshed: &mut HashMap<AuthorKey, OffsetDateTime>,
+) {
+    for StaleViewer { key, seen_at } in stale {
+        let caught_up = stored_author(&key).is_some_and(|author| {
+            viewers.iter().any(|viewer| {
+                viewer.platform == author.source
+                    && viewer.viewer_id == author.author_id
+                    && viewer.last_seen_at >= seen_at
+            })
+        });
+        if caught_up {
+            refreshed.insert(key, seen_at);
+        }
     }
 }
 
@@ -354,17 +398,24 @@ impl ChatView {
     ) {
         let mut presence = PresenceGate::of(cx);
         cx.spawn(async move |this, cx| {
+            let mut refreshed: HashMap<AuthorKey, OffsetDateTime> = HashMap::new();
             loop {
                 presence.until_visible().await;
-                let Ok(keys) = this.update(cx, |this, cx| this.stored_author_keys(cx)) else {
+                let Ok((keys, stale)) = this.update(cx, |this, cx| {
+                    (
+                        this.stored_author_keys(cx),
+                        this.stale_viewers(&refreshed, cx),
+                    )
+                }) else {
                     break;
                 };
                 let repo = Arc::clone(&repo);
                 let chat_history = Arc::clone(&chat_history);
                 let (tx, rx) = tokio::sync::oneshot::channel();
                 let queries: Vec<_> = keys.iter().filter_map(stored_author).collect();
+                let lookups: Vec<_> = stale.iter().filter_map(|s| stored_author(&s.key)).collect();
                 rt_handle.spawn(async move {
-                    let viewers = repo.list().await;
+                    let viewers = read_viewers(repo.as_ref(), &lookups).await;
                     let tallies = if queries.is_empty() {
                         Ok(Vec::new())
                     } else {
@@ -382,6 +433,9 @@ impl ChatView {
                             tracing::warn!(error = %err, "viewer snapshot load failed");
                         })
                         .ok();
+                    if let Some(list) = &viewers {
+                        note_refreshed(stale, list, &mut refreshed);
+                    }
                     let tallies = tallies
                         .inspect_err(|err| {
                             tracing::warn!(error = %err, "viewer message tally load failed");
@@ -409,10 +463,29 @@ impl ChatView {
     }
 
     fn apply_viewers(&mut self, viewers: Vec<Viewer>, cx: &mut Context<Self>) {
-        if self.viewers.viewers() != viewers.as_slice() {
-            self.viewers = ViewerDirectory::new(viewers);
+        if self.viewers.absorb(viewers) {
             cx.notify();
         }
+    }
+
+    fn stale_viewers(
+        &self,
+        refreshed: &HashMap<AuthorKey, OffsetDateTime>,
+        cx: &App,
+    ) -> Vec<StaleViewer> {
+        self.feed
+            .read(cx)
+            .authors()
+            .newest_first()
+            .filter(|(key, activity)| {
+                stored_author(key).is_some()
+                    && refreshed.get(*key) != Some(&activity.last_received_at)
+            })
+            .map(|(key, activity)| StaleViewer {
+                key: key.clone(),
+                seen_at: activity.last_received_at,
+            })
+            .collect()
     }
 
     fn stored_author_keys(&self, cx: &App) -> Vec<AuthorKey> {
@@ -640,7 +713,7 @@ impl ChatView {
         &self,
         target: &ViewerTarget,
         action: ViewerAction,
-        toast: impl FnOnce(Result<(), String>) -> (ToastKind, String) + 'static,
+        toast: impl FnOnce(Result<(), RepoFailure>) -> (ToastKind, String) + 'static,
         cx: &mut Context<Self>,
     ) {
         let Some(step) = target.step(&action) else {
@@ -670,7 +743,7 @@ impl ChatView {
         step: SubActionStep,
         builtin_id: String,
         label: String,
-        toast: impl FnOnce(Result<(), String>) -> (ToastKind, String) + 'static,
+        toast: impl FnOnce(Result<(), RepoFailure>) -> (ToastKind, String) + 'static,
         cx: &mut Context<Self>,
     ) {
         self.dispatch_quick_action_then(step, builtin_id, label, toast, |_, _, _| {}, cx);
@@ -681,7 +754,7 @@ impl ChatView {
         step: SubActionStep,
         builtin_id: String,
         label: String,
-        toast: impl FnOnce(Result<(), String>) -> (ToastKind, String) + 'static,
+        toast: impl FnOnce(Result<(), RepoFailure>) -> (ToastKind, String) + 'static,
         after: impl FnOnce(&mut Self, bool, &mut Context<Self>) + 'static,
         cx: &mut Context<Self>,
     ) {
@@ -698,7 +771,7 @@ impl ChatView {
         cx.spawn(async move |this, cx| {
             let outcome = rx
                 .await
-                .unwrap_or_else(|_| Err(tr!("chat_dispatch_cancelled")));
+                .unwrap_or_else(|_| Err(RepoFailure::localized(tr!("chat_dispatch_cancelled"))));
             #[expect(
                 clippy::let_underscore_must_use,
                 reason = "the view may close before the result arrives"
@@ -722,7 +795,7 @@ impl ChatView {
                 Ok(()) => (ToastKind::Success, tr!("chat_drawer_shoutout_sent")),
                 Err(e) => (
                     ToastKind::Error,
-                    tr!("chat_drawer_shoutout_failed", error = e),
+                    tr!("chat_drawer_shoutout_failed", error = e.text()),
                 ),
             },
             cx,
@@ -741,7 +814,7 @@ impl ChatView {
                 Ok(()) => (ToastKind::Success, tr!("chat_drawer_timeout_sent")),
                 Err(e) => (
                     ToastKind::Error,
-                    tr!("chat_drawer_timeout_failed", error = e),
+                    tr!("chat_drawer_timeout_failed", error = e.text()),
                 ),
             },
             cx,
@@ -807,7 +880,10 @@ impl ChatView {
             ViewerAction::Ban,
             |outcome| match outcome {
                 Ok(()) => (ToastKind::Success, tr!("chat_drawer_ban_sent")),
-                Err(e) => (ToastKind::Error, tr!("chat_drawer_ban_failed", error = e)),
+                Err(e) => (
+                    ToastKind::Error,
+                    tr!("chat_drawer_ban_failed", error = e.text()),
+                ),
             },
             cx,
         );
@@ -848,7 +924,7 @@ impl ChatView {
                 Ok(()) => (ToastKind::Success, tr!("chat_ctx_timeout_sent")),
                 Err(e) => (
                     ToastKind::Error,
-                    tr!("chat_drawer_timeout_failed", error = e),
+                    tr!("chat_drawer_timeout_failed", error = e.text()),
                 ),
             },
             cx,
@@ -910,7 +986,7 @@ impl ChatView {
             tr!("viewer_step_reply", name = username),
             |outcome| match outcome {
                 Ok(()) => (ToastKind::Success, tr!("chat_reply_sent")),
-                Err(e) => (ToastKind::Error, tr!("chat_reply_failed", error = e)),
+                Err(e) => (ToastKind::Error, tr!("chat_reply_failed", error = e.text())),
             },
             cx,
         );
@@ -1056,7 +1132,7 @@ impl ChatView {
                 Ok(()) => (ToastKind::Success, tr!("chat_drawer_whisper_sent")),
                 Err(e) => (
                     ToastKind::Error,
-                    tr!("chat_drawer_whisper_failed", error = e),
+                    tr!("chat_drawer_whisper_failed", error = e.text()),
                 ),
             },
             cx,
@@ -1102,7 +1178,7 @@ impl ChatView {
             }
         }
 
-        let stamp = time::OffsetDateTime::now_utc();
+        let stamp = OffsetDateTime::now_utc();
         let when = export_stamp(stamp);
         let title = tr!(
             "chat_export_header",
@@ -1120,14 +1196,14 @@ impl ChatView {
                 tokio::fs::write(&path, contents)
                     .await
                     .map(|()| path)
-                    .map_err(|e| e.to_string())
+                    .map_err(RepoFailure::from)
             },
             |_this, result, cx| Self::report_chat_export(result, cx),
             cx,
         );
     }
 
-    fn report_chat_export(result: Result<PathBuf, String>, cx: &mut Context<Self>) {
+    fn report_chat_export(result: Result<PathBuf, RepoFailure>, cx: &mut Context<Self>) {
         match result {
             Ok(path) => {
                 tracing::info!(path = %path.display(), "chat log exported");
@@ -1147,7 +1223,7 @@ impl ChatView {
                 tracing::warn!(error = %e, "chat log export failed");
                 cx.push_toast(
                     ToastKind::Error,
-                    tr!("chat_export_failed", error = e.as_str()),
+                    tr!("chat_export_failed", error = e.text()),
                 );
             }
         }
@@ -2368,6 +2444,8 @@ mod tests {
 
     use super::viewer_actions::ViewerTarget;
     use super::{ChatView, PlatformFilter};
+    use super::{StaleViewer, note_refreshed, read_viewers};
+    use crate::chat_author::AuthorKey;
     use crate::chat_feed::{ChatFeed, ChatMessage};
     use crate::home_stats::{HomeStats, Integration};
     use crate::i18n::install_language;
@@ -2378,9 +2456,188 @@ mod tests {
     };
     use forge_components::Toasts;
     use forge_runtime::{LifecycleState, LifecycleStates};
+    use forge_storage::{ChatAuthorKey, StorageError, Viewer};
+    use std::collections::HashMap;
 
     const CAP: usize = 5;
     const OVERFLOW: usize = 8;
+
+    fn at(unix: i64) -> OffsetDateTime {
+        OffsetDateTime::from_unix_timestamp(unix).unwrap()
+    }
+
+    fn stored_viewer(platform: PlatformId, viewer_id: &str, last_seen_at: i64) -> Viewer {
+        Viewer {
+            viewer_id: viewer_id.to_owned(),
+            platform,
+            username: viewer_id.to_owned(),
+            first_seen_at: at(0),
+            last_seen_at: at(last_seen_at),
+            custom_greeting: false,
+        }
+    }
+
+    fn line_by(key: &AuthorKey, unix: i64) -> ChatMessage {
+        let (author_id, username) = match &key.handle {
+            crate::chat_author::AuthorHandle::ViewerId(id) => (Some(id.clone()), id.clone()),
+            crate::chat_author::AuthorHandle::Name(name) => (None, name.clone()),
+        };
+        ChatMessage {
+            platform: key.platform,
+            received_at: at(unix),
+            username,
+            author_id,
+            ..message(0, false)
+        }
+    }
+
+    fn stale_keys(
+        view: &Entity<ChatView>,
+        refreshed: &HashMap<AuthorKey, OffsetDateTime>,
+        cx: &mut TestAppContext,
+    ) -> Vec<(AuthorKey, OffsetDateTime)> {
+        view.read_with(cx, |view, cx| {
+            view.stale_viewers(refreshed, cx)
+                .into_iter()
+                .map(|stale| (stale.key, stale.seen_at))
+                .collect()
+        })
+    }
+
+    #[test]
+    fn note_refreshed_records_only_an_author_whose_stored_row_caught_up() {
+        let twitch = AuthorKey::by_viewer_id(PlatformId::Twitch, "42");
+        for (viewers, caught_up, case) in [
+            (
+                vec![stored_viewer(PlatformId::Twitch, "42", 100)],
+                true,
+                "same moment",
+            ),
+            (
+                vec![stored_viewer(PlatformId::Twitch, "42", 101)],
+                true,
+                "row is newer",
+            ),
+            (
+                vec![stored_viewer(PlatformId::Twitch, "42", 99)],
+                false,
+                "row is older",
+            ),
+            (
+                vec![stored_viewer(PlatformId::Kick, "42", 100)],
+                false,
+                "other platform",
+            ),
+            (
+                vec![stored_viewer(PlatformId::Twitch, "7", 100)],
+                false,
+                "other viewer",
+            ),
+            (Vec::new(), false, "not stored yet"),
+        ] {
+            let mut refreshed = HashMap::new();
+
+            note_refreshed(
+                vec![StaleViewer {
+                    key: twitch.clone(),
+                    seen_at: at(100),
+                }],
+                &viewers,
+                &mut refreshed,
+            );
+
+            assert_eq!(
+                refreshed.get(&twitch).copied(),
+                caught_up.then(|| at(100)),
+                "{case}"
+            );
+        }
+    }
+
+    #[test]
+    fn note_refreshed_never_records_an_author_with_no_stored_identity() {
+        let by_name = AuthorKey::by_name(PlatformId::Kick, "ann");
+        let mut refreshed = HashMap::new();
+
+        note_refreshed(
+            vec![StaleViewer {
+                key: by_name,
+                seen_at: at(100),
+            }],
+            &[stored_viewer(PlatformId::Kick, "ann", 200)],
+            &mut refreshed,
+        );
+
+        assert!(refreshed.is_empty());
+    }
+
+    #[tokio::test]
+    async fn read_viewers_skips_an_author_with_no_row_and_keeps_the_ones_found() {
+        let mut repo = MockViewerRepo::new();
+        repo.expect_get()
+            .returning(|platform, id| Ok((id == "known").then(|| stored_viewer(platform, id, 1))));
+        let authors = ["unknown", "known"].map(|id| ChatAuthorKey {
+            source: PlatformId::Twitch,
+            author_id: id.to_owned(),
+        });
+
+        let found = read_viewers(&repo, &authors).await.unwrap();
+
+        assert_eq!(found, vec![stored_viewer(PlatformId::Twitch, "known", 1)]);
+    }
+
+    #[tokio::test]
+    async fn read_viewers_reports_a_store_failure_instead_of_a_partial_answer() {
+        let mut repo = MockViewerRepo::new();
+        repo.expect_get().returning(|_, _| {
+            Err(StorageError::Connection {
+                reason: "database is locked".to_owned(),
+            })
+        });
+        let author = ChatAuthorKey {
+            source: PlatformId::Twitch,
+            author_id: "42".to_owned(),
+        };
+
+        assert!(read_viewers(&repo, &[author]).await.is_err());
+    }
+
+    #[gpui::test]
+    fn an_author_is_stale_until_refreshed_and_again_after_their_next_message(
+        cx: &mut TestAppContext,
+    ) {
+        install_presentation(cx);
+        let rt = runtime();
+        let (feed, view) = mount(cx, &rt);
+        let author = AuthorKey::by_viewer_id(PlatformId::Twitch, "42");
+        feed.update(cx, |feed, _| feed.push(line_by(&author, 100)));
+
+        let unseen = stale_keys(&view, &HashMap::new(), cx);
+        let refreshed = HashMap::from([(author.clone(), at(100))]);
+        let caught_up = stale_keys(&view, &refreshed, cx);
+        feed.update(cx, |feed, _| feed.push(line_by(&author, 200)));
+        let spoke_again = stale_keys(&view, &refreshed, cx);
+
+        assert_eq!(
+            (unseen, caught_up, spoke_again),
+            (
+                vec![(author.clone(), at(100))],
+                Vec::new(),
+                vec![(author, at(200))]
+            )
+        );
+    }
+
+    #[gpui::test]
+    fn an_author_known_only_by_name_is_never_looked_up(cx: &mut TestAppContext) {
+        install_presentation(cx);
+        let rt = runtime();
+        let (feed, view) = mount(cx, &rt);
+        let by_name = AuthorKey::by_name(PlatformId::Kick, "ann");
+        feed.update(cx, |feed, _| feed.push(line_by(&by_name, 100)));
+
+        assert_eq!(stale_keys(&view, &HashMap::new(), cx), Vec::new());
+    }
 
     pub(super) fn message(ix: usize, is_bot: bool) -> ChatMessage {
         ChatMessage {
@@ -2424,7 +2681,7 @@ mod tests {
     ) -> ChatView {
         let home_stats = cx.new(|_| HomeStats::new());
         let mut viewers = MockViewerRepo::new();
-        viewers.expect_list().returning(|| Ok(Vec::new()));
+        viewers.expect_get().returning(|_, _| Ok(None));
         let engine = spawn_action_engine(
             EventBus::new(Arc::new(StubEventLog)),
             crate::test_support::stub_catalog(),

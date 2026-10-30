@@ -21,6 +21,7 @@ use gpui::{
 };
 
 use crate::async_bridge;
+use crate::repo_failure::RepoFailure;
 use forge_components::ActivePresentation;
 use forge_hotkey::{HotkeyEdge, combo_keys};
 
@@ -141,7 +142,7 @@ impl HotkeyActionModal {
                             })
                             .collect::<Vec<_>>()
                     })
-                    .map_err(|e| e.to_string())
+                    .map_err(RepoFailure::from)
             },
             |this, result, cx| this.apply_actions(result, cx),
             cx,
@@ -183,13 +184,17 @@ impl HotkeyActionModal {
         cx.notify();
     }
 
-    fn apply_actions(&mut self, result: Result<Vec<ActionChoice>, String>, cx: &mut Context<Self>) {
+    fn apply_actions(
+        &mut self,
+        result: Result<Vec<ActionChoice>, RepoFailure>,
+        cx: &mut Context<Self>,
+    ) {
         self.actions = match result {
             Ok(mut actions) => {
                 actions.sort_by_key(|a| a.name.to_lowercase());
                 ActionsState::Ready(actions)
             }
-            Err(message) => ActionsState::Failed(message),
+            Err(message) => ActionsState::Failed(message.text()),
         };
         cx.notify();
     }

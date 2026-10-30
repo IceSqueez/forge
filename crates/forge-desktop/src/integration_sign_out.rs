@@ -1,22 +1,32 @@
 use std::future::Future;
 use std::sync::Arc;
 
-use forge_platform_core::BuiltinControl;
+use forge_platform_core::{BuiltinControl, ControlFailure};
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SignOutOutcome {
+    Disconnected,
+    StillConnected,
+}
 
 pub async fn forget_then_disconnect<F, T, E>(
     forget: F,
     control: Option<Arc<dyn BuiltinControl>>,
-) -> Result<(), E>
+) -> Result<SignOutOutcome, E>
 where
     F: Future<Output = Result<T, E>>,
 {
     forget.await?;
-    if let Some(control) = control
-        && let Err(err) = control.disconnect().await
-    {
-        tracing::warn!(error = %err, "integration disconnect after sign-out failed");
-    }
-    Ok(())
+    let Some(control) = control else {
+        return Ok(SignOutOutcome::Disconnected);
+    };
+    Ok(match control.disconnect().await {
+        Ok(()) | Err(ControlFailure::NotConnected) => SignOutOutcome::Disconnected,
+        Err(err) => {
+            tracing::warn!(error = %err, "integration disconnect after sign-out failed");
+            SignOutOutcome::StillConnected
+        }
+    })
 }
 
 #[cfg(test)]
@@ -58,19 +68,39 @@ mod tests {
     #[test]
     fn the_live_connection_is_dropped_only_after_the_credentials_are_forgotten() {
         let rt = runtime();
-        for (forget_outcome, disconnect_outcome, signed_out, disconnects, case) in [
-            (Ok(true), Ok(()), true, 1, "forgotten and disconnected"),
+        for (forget_outcome, disconnect_outcome, outcome, disconnects, case) in [
+            (
+                Ok(true),
+                Ok(()),
+                Some(SignOutOutcome::Disconnected),
+                1,
+                "forgotten and disconnected",
+            ),
+            (
+                Ok(true),
+                Err(ControlFailure::NotConnected),
+                Some(SignOutOutcome::Disconnected),
+                1,
+                "forgotten, nothing was connected",
+            ),
             (
                 Ok(true),
                 Err(ControlFailure::Transport),
-                true,
+                Some(SignOutOutcome::StillConnected),
                 1,
                 "forgotten, disconnect failed",
             ),
             (
+                Ok(true),
+                Err(ControlFailure::Unauthorized),
+                Some(SignOutOutcome::StillConnected),
+                1,
+                "forgotten, disconnect refused",
+            ),
+            (
                 Err(store_unreachable()),
                 Ok(()),
-                false,
+                None,
                 0,
                 "credentials could not be forgotten",
             ),
@@ -86,10 +116,22 @@ mod tests {
             ));
 
             assert_eq!(
-                (result.is_ok(), control.disconnects.load(Ordering::SeqCst)),
-                (signed_out, disconnects),
+                (result.ok(), control.disconnects.load(Ordering::SeqCst)),
+                (outcome, disconnects),
                 "{case}"
             );
         }
+    }
+
+    #[test]
+    fn with_no_live_connection_a_forgotten_credential_counts_as_disconnected() {
+        let rt = runtime();
+
+        let result = rt.block_on(forget_then_disconnect(
+            async { Ok::<bool, StorageError>(true) },
+            None,
+        ));
+
+        assert_eq!(result.ok(), Some(SignOutOutcome::Disconnected));
     }
 }

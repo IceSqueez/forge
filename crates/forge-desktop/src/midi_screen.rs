@@ -734,13 +734,14 @@ impl MidiScreenView {
             &self.rt_handle,
             previous,
             async move {
-                let integration = integration.ok_or_else(|| tr!("midi_toggle_failed"))?;
+                let integration =
+                    integration.ok_or_else(|| RepoFailure::localized(tr!("midi_toggle_failed")))?;
                 match integration
                     .set_enabled(enabled)
                     .await
-                    .map_err(|e| e.to_string())?
+                    .map_err(RepoFailure::from)?
                 {
-                    LifecycleState::Failed(error) => Err(error.to_string()),
+                    LifecycleState::Failed(error) => Err(RepoFailure::operation(error)),
                     _ => Ok(()),
                 }
             },
@@ -2291,9 +2292,7 @@ mod tests {
         view: &Entity<MidiScreenView>,
         cx: &mut gpui::TestAppContext,
     ) -> Option<String> {
-        view.read_with(cx, |view, _| {
-            view.known_devices.failure().map(str::to_owned)
-        })
+        view.read_with(cx, |view, _| view.known_devices.failure())
     }
 
     fn merged() -> Vec<String> {
@@ -2304,14 +2303,12 @@ mod tests {
     fn a_live_port_after_a_failed_load_writes_nothing_over_the_known_devices(
         cx: &mut gpui::TestAppContext,
     ) {
-        let unreachable = StorageError::Connection {
+        let unreachable = crate::test_support::shown_in_english(StorageError::Connection {
             reason: crate::test_support::SETTINGS_READ_FAILED.to_owned(),
-        }
-        .to_string();
-        let undecodable = format!(
-            "stored setting '{}' cannot be decoded",
-            MIDI_KNOWN_DEVICES.name()
-        );
+        });
+        let undecodable = crate::test_support::shown_in_english(StorageError::UndecodableSetting {
+            key: MIDI_KNOWN_DEVICES.name().to_owned(),
+        });
         for (fault, stored, failing_read, reason) in [
             ("unreachable store", STORED_DEVICES, true, unreachable),
             ("undecodable value", "not json", false, undecodable),
@@ -2385,6 +2382,9 @@ mod tests {
     fn a_failed_device_write_shows_the_error_without_reloading_into_another_write(
         cx: &mut gpui::TestAppContext,
     ) {
+        let read_only = crate::test_support::shown_in_english(StorageError::Connection {
+            reason: crate::test_support::SETTINGS_WRITE_FAILED.to_owned(),
+        });
         let harness = DeviceHarness::new(STORED_DEVICES, cx);
         harness.backend.fail_writes(MIDI_KNOWN_DEVICES.name());
         let view = harness.open(cx);
@@ -2397,10 +2397,6 @@ mod tests {
         plug_in(&view, cx);
         harness.settle(cx);
 
-        let read_only = StorageError::Connection {
-            reason: crate::test_support::SETTINGS_WRITE_FAILED.to_owned(),
-        }
-        .to_string();
         assert_eq!(device_failure(&view, cx), Some(read_only));
     }
 }

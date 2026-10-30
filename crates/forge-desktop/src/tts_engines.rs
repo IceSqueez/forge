@@ -27,6 +27,7 @@ use crate::async_bridge::{
     self, ErrorSink, Generation, Loadable, SLIDER_PERSIST_DEBOUNCE, SnapshotWriter, WriteOutcome,
 };
 use crate::cloud_credentials::{CloudCredentialsView, CloudEngineKind, CloudEngineRegistered};
+use crate::repo_failure::RepoFailure;
 use crate::tts_engine_roster::{
     RosterEngine, engine_class_label, load_engine_roster, voice_descriptor_label,
 };
@@ -305,7 +306,7 @@ impl TtsEnginesView {
                 ToastKind::Error,
                 tr!(
                     "tts_engines_persist_disabled_failed_reason",
-                    reason = error.as_str()
+                    reason = error.text()
                 ),
             );
             self.rollback_disabled(cx);
@@ -382,7 +383,7 @@ impl TtsEnginesView {
                 async move {
                     forge_storage::set_engine_params(settings.as_ref(), &eid.0, params)
                         .await
-                        .map_err(|e| e.to_string())?;
+                        .map_err(RepoFailure::from)?;
                     if let Some(speak) = speak {
                         let defaults = SynthesisDefaults {
                             pitch_semitones: params.pitch_semitones,
@@ -391,9 +392,9 @@ impl TtsEnginesView {
                         speak
                             .send(SpeakCommand::SetEngineParams(eid, defaults, params.gain))
                             .await
-                            .map_err(|e| e.to_string())?;
+                            .map_err(RepoFailure::from)?;
                     }
-                    Ok::<(), String>(())
+                    Ok::<(), RepoFailure>(())
                 },
                 move |this, outcome, cx| this.params_write_settled(&engine_id, outcome, cx),
                 cx,
@@ -409,7 +410,7 @@ impl TtsEnginesView {
         if let WriteOutcome::Failed(error) = outcome {
             cx.push_toast(
                 ToastKind::Error,
-                tr!("tts_engines_persist_params_failed", reason = error.as_str()),
+                tr!("tts_engines_persist_params_failed", reason = error.text()),
             );
             if self.selected_engine_id().as_deref() == Some(engine_id) {
                 self.load_params(engine_id.to_owned(), cx);
@@ -1299,14 +1300,15 @@ mod tests {
     }
 
     fn undecodable(key: &str) -> String {
-        format!("stored setting '{key}' cannot be decoded")
+        crate::test_support::shown_in_english(StorageError::UndecodableSetting {
+            key: key.to_owned(),
+        })
     }
 
     fn unreachable() -> String {
-        StorageError::Connection {
+        crate::test_support::shown_in_english(StorageError::Connection {
             reason: SETTINGS_READ_FAILED.to_owned(),
-        }
-        .to_string()
+        })
     }
 
     struct EnginesRig {
@@ -1597,7 +1599,7 @@ mod tests {
             view.update(cx, |v, cx| v.toggle_engine(ENGINE_ID_PIPER.to_owned(), cx));
             rig.settle(cx);
 
-            let failure = view.read_with(cx, |v, _| v.disabled.failure().map(str::to_owned));
+            let failure = view.read_with(cx, |v, _| v.disabled.failure());
             assert_eq!(
                 (rig.writes_to(TTS_DISABLED_ENGINES.name()), failure),
                 (Vec::<String>::new(), reason.clone()),
@@ -1620,7 +1622,7 @@ mod tests {
                 view.update(cx, edit);
                 rig.past_the_save_debounce(cx);
 
-                let failure = view.read_with(cx, |v, _| v.params.failure().map(str::to_owned));
+                let failure = view.read_with(cx, |v, _| v.params.failure());
                 assert_eq!(
                     (rig.written_params(ENGINE_ID_PIPER), failure),
                     (Vec::new(), reason.clone()),

@@ -41,6 +41,7 @@ use crate::async_bridge::{self, BridgeFlow, drain_events};
 use crate::globals::variant_kind_color;
 use crate::navigation::NavRequested;
 use crate::navigation::Screen;
+use crate::repo_failure::RepoFailure;
 use crate::runtime_event::{self, RuntimeEvent};
 use crate::screen_shortcuts::ScreenShortcuts;
 use crate::script_lifecycle::{
@@ -528,7 +529,7 @@ struct EditorProblem {
 
 enum ScriptSaveFailure {
     Syntax(String),
-    Storage(String),
+    Storage(RepoFailure),
 }
 
 fn compile_problem(body: &str) -> Option<String> {
@@ -883,8 +884,8 @@ impl ScriptEditorView {
         async_bridge::run_async(
             &self.rt_handle,
             async move {
-                let records = repo.list().await.map_err(|e| e.to_string())?;
-                let actions = action_repo.list().await.map_err(|e| e.to_string())?;
+                let records = repo.list().await.map_err(RepoFailure::from)?;
+                let actions = action_repo.list().await.map_err(RepoFailure::from)?;
                 Ok(records
                     .into_iter()
                     .map(|r| ScriptEntry {
@@ -904,7 +905,7 @@ impl ScriptEditorView {
 
     fn apply_scripts_loaded(
         &mut self,
-        result: Result<Vec<ScriptEntry>, String>,
+        result: Result<Vec<ScriptEntry>, RepoFailure>,
         cx: &mut Context<Self>,
     ) {
         self.loading = false;
@@ -922,7 +923,7 @@ impl ScriptEditorView {
                 tracing::warn!(error = %e, "script list load failed");
                 self.push_console(
                     LogTag::Err,
-                    tr!("script_console_load_failed", error = e.as_str()),
+                    tr!("script_console_load_failed", error = e.text()),
                 );
             }
         }
@@ -934,10 +935,11 @@ impl ScriptEditorView {
         let repo = Arc::clone(&self.backend) as Arc<dyn ScriptRepo>;
         async_bridge::run_async(
             &self.rt_handle,
-            async move { ScriptRepo::get(&*repo, id).await.map_err(|e| e.to_string()) },
+            async move { ScriptRepo::get(&*repo, id).await.map_err(RepoFailure::from) },
             |this, result, cx| {
-                let opened =
-                    result.and_then(|found| found.ok_or_else(|| tr!("script_console_missing")));
+                let opened = result.and_then(|found| {
+                    found.ok_or_else(|| RepoFailure::localized(tr!("script_console_missing")))
+                });
                 this.apply_script_opened(opened, cx);
             },
             cx,
@@ -947,7 +949,7 @@ impl ScriptEditorView {
 
     fn apply_script_opened(
         &mut self,
-        result: Result<ScriptRecord, String>,
+        result: Result<ScriptRecord, RepoFailure>,
         cx: &mut Context<Self>,
     ) {
         match result {
@@ -971,7 +973,7 @@ impl ScriptEditorView {
                 tracing::warn!(error = %e, "script open failed");
                 self.push_console(
                     LogTag::Err,
-                    tr!("script_console_open_failed", error = e.as_str()),
+                    tr!("script_console_open_failed", error = e.text()),
                 );
             }
         }
@@ -983,12 +985,22 @@ impl ScriptEditorView {
         let repo = Arc::clone(&self.backend) as Arc<dyn ScriptRepo>;
         async_bridge::run_async(
             &self.rt_handle,
-            async move { repo.telemetry(id).await.ok() },
+            async move { repo.telemetry(id).await.map_err(RepoFailure::from) },
             move |this, result, cx| {
-                if this.open.as_ref().is_some_and(|o| o.id == id) {
-                    this.telemetry = result;
-                    cx.notify();
+                if !this.open.as_ref().is_some_and(|o| o.id == id) {
+                    return;
                 }
+                match result {
+                    Ok(telemetry) => this.telemetry = Some(telemetry),
+                    Err(failure) => {
+                        tracing::warn!(error = %failure, "script telemetry load failed");
+                        this.push_console(
+                            LogTag::Err,
+                            tr!("script_editor_telemetry_failed", error = failure.text()),
+                        );
+                    }
+                }
+                cx.notify();
             },
             cx,
         );
@@ -1246,15 +1258,15 @@ impl ScriptEditorView {
                 let candidate = record.body.clone();
                 tokio::task::spawn_blocking(move || validate_syntax(&candidate))
                     .await
-                    .map_err(|e| ScriptSaveFailure::Storage(e.to_string()))?
+                    .map_err(|e| ScriptSaveFailure::Storage(e.into()))?
                     .map_err(|e| ScriptSaveFailure::Syntax(e.to_string()))?;
                 ScriptRepo::save(&*repo, record.clone())
                     .await
-                    .map_err(|e| ScriptSaveFailure::Storage(e.to_string()))?;
+                    .map_err(|e| ScriptSaveFailure::Storage(e.into()))?;
                 let reload = registry
                     .reload(record.clone(), bus.as_ref())
                     .await
-                    .map_err(|e| e.to_string());
+                    .map_err(RepoFailure::from);
                 Ok((record, reload))
             },
             |this, result, cx| this.apply_saved(result, cx),
@@ -1265,7 +1277,7 @@ impl ScriptEditorView {
 
     fn apply_saved(
         &mut self,
-        result: Result<(ScriptRecord, Result<(), String>), ScriptSaveFailure>,
+        result: Result<(ScriptRecord, Result<(), RepoFailure>), ScriptSaveFailure>,
         cx: &mut Context<Self>,
     ) {
         self.saving = false;
@@ -1285,7 +1297,7 @@ impl ScriptEditorView {
                 if let Err(e) = reload {
                     self.push_console(
                         LogTag::Err,
-                        tr!("script_console_reload_failed", error = e.as_str()),
+                        tr!("script_console_reload_failed", error = e.text()),
                     );
                 }
             }
@@ -1299,7 +1311,7 @@ impl ScriptEditorView {
             Err(ScriptSaveFailure::Storage(e)) => {
                 self.push_console(
                     LogTag::Err,
-                    tr!("script_console_save_failed", error = e.as_str()),
+                    tr!("script_console_save_failed", error = e.text()),
                 );
             }
         }
@@ -1378,7 +1390,7 @@ impl ScriptEditorView {
                 let started_at = OffsetDateTime::now_utc();
                 let result = run_inline(body, contract, args, host, script_id)
                     .await
-                    .map_err(|e| e.to_string());
+                    .map_err(RepoFailure::from);
                 if let Ok(r) = &result {
                     let status = if r.error_count == 0 {
                         ExecutionStatus::Success
@@ -1399,7 +1411,11 @@ impl ScriptEditorView {
         );
     }
 
-    fn apply_run_finished(&mut self, result: Result<RunResult, String>, cx: &mut Context<Self>) {
+    fn apply_run_finished(
+        &mut self,
+        result: Result<RunResult, RepoFailure>,
+        cx: &mut Context<Self>,
+    ) {
         self.run_in_flight = false;
         match result {
             Ok(r) => {
@@ -1421,13 +1437,13 @@ impl ScriptEditorView {
                 if let Some(modal) = self.run_modal.as_ref() {
                     modal.update(cx, |m, cx| {
                         m.running = false;
-                        m.error = Some(e.clone().into());
+                        m.error = Some(e.text().into());
                         cx.notify();
                     });
                 }
                 self.push_console(
                     LogTag::Err,
-                    tr!("script_console_run_failed", error = e.as_str()),
+                    tr!("script_console_run_failed", error = e.text()),
                 );
             }
         }
@@ -1506,7 +1522,7 @@ impl ScriptEditorView {
                 ScriptRepo::save(&*repo, record.clone())
                     .await
                     .map(|_| record)
-                    .map_err(|e| e.to_string())
+                    .map_err(RepoFailure::from)
             },
             |this, result, cx| this.apply_new_script(result, cx),
             cx,
@@ -1514,7 +1530,11 @@ impl ScriptEditorView {
         cx.notify();
     }
 
-    fn apply_new_script(&mut self, result: Result<ScriptRecord, String>, cx: &mut Context<Self>) {
+    fn apply_new_script(
+        &mut self,
+        result: Result<ScriptRecord, RepoFailure>,
+        cx: &mut Context<Self>,
+    ) {
         match result {
             Ok(record) => {
                 let body = record.body.clone();
@@ -1544,7 +1564,7 @@ impl ScriptEditorView {
                 tracing::warn!(error = %e, "new script creation failed");
                 self.push_console(
                     LogTag::Err,
-                    tr!("script_console_create_failed", error = e.as_str()),
+                    tr!("script_console_create_failed", error = e.text()),
                 );
             }
         }
@@ -1579,7 +1599,7 @@ impl ScriptEditorView {
     fn apply_delete_referrers(
         &mut self,
         id: ScriptId,
-        result: Result<ScriptReferences, String>,
+        result: Result<ScriptReferences, RepoFailure>,
         cx: &mut Context<Self>,
     ) {
         if self.pending_delete.get() != Some(&id) {
@@ -1591,7 +1611,7 @@ impl ScriptEditorView {
                 self.pending_delete.cancel();
                 cx.push_toast(
                     ToastKind::Error,
-                    tr!("script_editor_delete_failed", error = error.as_str()),
+                    tr!("script_editor_delete_failed", error = error.text()),
                 );
             }
         }
@@ -1627,7 +1647,7 @@ impl ScriptEditorView {
         &mut self,
         id: ScriptId,
         name: String,
-        result: Result<bool, String>,
+        result: Result<bool, RepoFailure>,
         cx: &mut Context<Self>,
     ) {
         match result {
@@ -1650,7 +1670,7 @@ impl ScriptEditorView {
                 tracing::warn!(%error, "script archive failed");
                 cx.push_toast(
                     ToastKind::Error,
-                    tr!("script_editor_delete_failed", error = error.as_str()),
+                    tr!("script_editor_delete_failed", error = error.text()),
                 );
                 cx.notify();
             }
@@ -1683,12 +1703,12 @@ impl ScriptEditorView {
         );
     }
 
-    fn apply_restored(&mut self, result: Result<bool, String>, cx: &mut Context<Self>) {
+    fn apply_restored(&mut self, result: Result<bool, RepoFailure>, cx: &mut Context<Self>) {
         if let Err(error) = result {
             tracing::warn!(%error, "script restore failed");
             cx.push_toast(
                 ToastKind::Error,
-                tr!("script_editor_restore_failed", error = error.as_str()),
+                tr!("script_editor_restore_failed", error = error.text()),
             );
         }
         self.load_scripts(cx);
@@ -1765,7 +1785,7 @@ impl ScriptEditorView {
     fn stage_rename(
         &mut self,
         pending: PendingRename,
-        result: Result<ScriptReferences, String>,
+        result: Result<ScriptReferences, RepoFailure>,
         cx: &mut Context<Self>,
     ) {
         match result {
@@ -1777,7 +1797,7 @@ impl ScriptEditorView {
                 cx.notify();
             }
             Ok(_) => self.run_rename(pending.id, pending.new_name, cx),
-            Err(error) => self.on_rename_failed(&error, cx),
+            Err(error) => self.on_rename_failed(&error.text(), cx),
         }
     }
 
@@ -1804,11 +1824,15 @@ impl ScriptEditorView {
         );
     }
 
-    fn apply_renamed(&mut self, result: Result<ScriptRenamed, String>, cx: &mut Context<Self>) {
+    fn apply_renamed(
+        &mut self,
+        result: Result<ScriptRenamed, RepoFailure>,
+        cx: &mut Context<Self>,
+    ) {
         let renamed = match result {
             Ok(renamed) => renamed,
             Err(error) => {
-                self.on_rename_failed(&error, cx);
+                self.on_rename_failed(&error.text(), cx);
                 return;
             }
         };
@@ -1875,7 +1899,7 @@ impl ScriptEditorView {
             async move {
                 let Some(mut record) = ScriptRepo::get(&*repo, id)
                     .await
-                    .map_err(|e| e.to_string())?
+                    .map_err(RepoFailure::from)?
                 else {
                     return Ok(false);
                 };
@@ -1883,13 +1907,13 @@ impl ScriptEditorView {
                 ScriptRepo::save(&*repo, record)
                     .await
                     .map(|()| true)
-                    .map_err(|e| e.to_string())
+                    .map_err(RepoFailure::from)
             },
             |this, result, cx| {
                 let updated = result.and_then(|found| {
                     found
                         .then_some(())
-                        .ok_or_else(|| tr!("script_console_missing"))
+                        .ok_or_else(|| RepoFailure::localized(tr!("script_console_missing")))
                 });
                 this.apply_enabled_set(updated, cx);
             },
@@ -1897,14 +1921,14 @@ impl ScriptEditorView {
         );
     }
 
-    fn apply_enabled_set(&mut self, result: Result<(), String>, cx: &mut Context<Self>) {
+    fn apply_enabled_set(&mut self, result: Result<(), RepoFailure>, cx: &mut Context<Self>) {
         match result {
             Ok(()) => self.load_scripts(cx),
             Err(e) => {
                 tracing::warn!(error = %e, "script enable toggle failed");
                 self.push_console(
                     LogTag::Err,
-                    tr!("script_console_update_failed", error = e.as_str()),
+                    tr!("script_console_update_failed", error = e.text()),
                 );
                 cx.notify();
             }
@@ -4551,7 +4575,7 @@ mod tests {
             let while_running = started_runs(&rig, cx);
 
             rig.view.update(cx, |view, cx| {
-                view.apply_run_finished(Err("stopped".to_owned()), cx);
+                view.apply_run_finished(Err(RepoFailure::operation("stopped")), cx);
                 view.run_shortcut(cx);
             });
 

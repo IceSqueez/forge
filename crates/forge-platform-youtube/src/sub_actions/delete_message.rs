@@ -198,13 +198,13 @@ mod tests {
         let server = MockServer::start().await;
         let runner = runner_on(&server);
         let blank = ArgStack::new().set("mid".to_owned(), Variant::String(String::new()));
-        let required = SubActionOutcome::Failed(forge_types::UserText::unlocalized(format!(
-            "invalid step config: {}",
+        let required = crate::sub_actions::rejected_config(
+            KIND_ID,
             forge_registry::ConfigProblem::field(
                 crate::vocabulary::config_keys::MESSAGE_ID,
-                forge_registry::ConfigReason::Required
-            )
-        )));
+                forge_registry::ConfigReason::Required,
+            ),
+        );
         let unresolved = SubActionOutcome::Failed(
             crate::vocabulary::messages::unresolved_reference(
                 crate::vocabulary::config_keys::MESSAGE_ID,

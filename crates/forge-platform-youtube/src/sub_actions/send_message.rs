@@ -201,13 +201,13 @@ mod tests {
 
         assert_eq!(
             telemetry.outcome,
-            SubActionOutcome::Failed(forge_types::UserText::unlocalized(format!(
-                "invalid step config: {}",
+            crate::sub_actions::rejected_config(
+                &telemetry.kind,
                 forge_registry::ConfigProblem::field(
                     crate::vocabulary::config_keys::MESSAGE,
                     forge_registry::ConfigReason::Required
                 )
-            )))
+            )
         );
         assert!(
             server.received_requests().await.unwrap().is_empty(),

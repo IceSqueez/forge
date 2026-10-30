@@ -83,3 +83,15 @@ pub fn register_youtube_sub_actions(
     reg.register(Box::new(LookupViewerRunner::new(channel_lookup)))?;
     Ok(())
 }
+
+#[cfg(test)]
+pub(crate) fn rejected_config(
+    kind: &str,
+    problem: forge_registry::ConfigProblem,
+) -> forge_types::SubActionOutcome {
+    let message = problem.message(|keys| forge_types::MessageArg::StepFields {
+        kind: kind.to_owned(),
+        keys: keys.to_vec(),
+    });
+    forge_types::SubActionOutcome::Failed(message.into())
+}

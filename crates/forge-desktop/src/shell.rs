@@ -435,12 +435,7 @@ impl AppShell {
                     settings_repo: Arc::clone(&handles.backend) as Arc<dyn SettingsRepo>,
                     audio_router: Arc::clone(&handles.audio_router),
                     speak: handles.speak.clone(),
-                    actions: Arc::new(forge_runtime::actions::ActionsService::new(
-                        handles.backend.action_repo(),
-                        handles.backend.queue_repo(),
-                        handles.backend.history_repo(),
-                        handles.backend.trigger_instance_repo(),
-                    )),
+                    actions: Arc::clone(&handles.overlay_actions),
                     triggers: handles.trigger_registry.clone(),
                     sub_actions: handles.sub_action_registry.clone(),
                     scheduler: handles.scheduler.clone(),

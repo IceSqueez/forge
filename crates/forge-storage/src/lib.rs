@@ -79,7 +79,7 @@ pub use provider::{
     DATABASE_FILE_NAME, DataProvider, EXPECTED_SCHEMA_VERSION, LAST_PRE_BASELINE_RELEASE,
     database_unit_file_names,
 };
-pub use queue::QueueRepo;
+pub use queue::{OVERLAY_ALERT_QUEUE_NAME, QueueRepo, QueueRole};
 pub use scheduled_run::{
     ACTION_REMOVED_REASON, CANCELLED_REASON, MissedRunPolicy, RevisingScheduledRunRepo,
     SUPERSEDED_REASON, ScheduledRun, ScheduledRunId, ScheduledRunOutcome, ScheduledRunPlacement,
@@ -124,7 +124,8 @@ pub use soundboard::{CLIP_SOURCE_SLOT, SoundboardClipsRepo, StoredClip, clip_sou
 pub use transit::{CURRENT_FORMAT_VERSION, GlobalTransit, GlobalsExport};
 pub use trigger_instance::{TriggerChanges, TriggerInstanceRepo, TriggerWiring};
 pub use tts_filters::{
-    BlocklistMode, FilterRule, FilterRuleKind, TtsFiltersRepo, TtsPipelineSettings, UrlMode,
+    BlocklistMode, FilterRule, FilterRuleKind, SkipRegex, TtsFiltersRepo, TtsPipelineSettings,
+    UrlMode,
 };
 pub use unit_of_work::StoreChange;
 pub use user_globals::{UserGlobalEntry, UserGlobalsRepo};

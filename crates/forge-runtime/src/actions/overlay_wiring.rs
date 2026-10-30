@@ -1,4 +1,3 @@
-use std::fmt;
 use std::time::Duration;
 
 use forge_overlay::config::DURATION;
@@ -7,7 +6,7 @@ use forge_overlay::{
     effective_overlay_config, suggested_content,
 };
 use forge_registry::{TriggerKindDescriptor, declared_variables};
-use forge_storage::{OverlayDefinition, StorageError};
+use forge_storage::{OVERLAY_ALERT_QUEUE_NAME, OverlayDefinition, StorageError};
 use forge_types::{
     Action, ActionId, ExecutionMode, PermissionRung, PlatformScope, Queue, QueueId,
     SubActionConfig, SubActionStep, TriggerConfig, TriggerInstance, TriggerInstanceId, Variant,
@@ -18,7 +17,7 @@ use crate::sub_action_runners::{
 };
 
 pub const OVERLAY_ALERT_QUEUE: QueuePlacement = QueuePlacement {
-    name: "Overlay Alerts",
+    name: OVERLAY_ALERT_QUEUE_NAME,
     description: "Shows one overlay alert at a time, so a second event waits its turn.",
     concurrency: 1,
 };
@@ -113,24 +112,6 @@ pub struct OverlayWiringRecords {
     pub linked: bool,
 }
 
-impl fmt::Display for OverlayWiringRecords {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self.action_id {
-            Some(id) => write!(f, "action {id}")?,
-            None => f.write_str("no action")?,
-        }
-        match self.trigger_instance_id {
-            Some(id) => write!(f, ", trigger {id}")?,
-            None => f.write_str(", no trigger")?,
-        }
-        f.write_str(if self.linked {
-            ", linked"
-        } else {
-            ", not linked"
-        })
-    }
-}
-
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum OverlayWiringOutcome {
     AlreadyWired { action_id: ActionId },
@@ -143,12 +124,6 @@ pub enum OverlayWiringError {
     Refused(#[from] OverlayWiringRefusal),
     #[error("nothing was written: {source}")]
     NothingWritten {
-        #[source]
-        source: StorageError,
-    },
-    #[error("wiring stopped with {records}: {source}")]
-    Incomplete {
-        records: Box<OverlayWiringRecords>,
         #[source]
         source: StorageError,
     },

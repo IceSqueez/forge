@@ -1,7 +1,16 @@
 use async_trait::async_trait;
 use forge_types::{Queue, QueueId};
+use serde::{Deserialize, Serialize};
 
 use crate::StorageError;
+
+pub const OVERLAY_ALERT_QUEUE_NAME: &str = "Overlay Alerts";
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum QueueRole {
+    OverlayAlerts,
+}
 
 #[cfg_attr(feature = "test-mocks", mockall::automock)]
 #[async_trait]

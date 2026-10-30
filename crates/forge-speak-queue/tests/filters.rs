@@ -1,11 +1,12 @@
 mod filters {
     use forge_speak_queue::{
         EmoteTokenSet, EmoteTreatment, PipelineConfigHandle, ReplacementSource, build_config,
-        effective_skip_prefix, emote_treatment, repeat_window, store_emote_treatment,
+        configured_skip_prefix, effective_skip_prefix, emote_treatment, repeat_window,
+        store_emote_treatment,
     };
     use forge_storage::{
-        BlocklistMode as StorageBlocklistMode, FilterRule, FilterRuleKind, TtsPipelineSettings,
-        UrlMode as StorageUrlMode,
+        BlocklistMode as StorageBlocklistMode, FilterRule, FilterRuleKind, SkipRegex,
+        TtsPipelineSettings, UrlMode as StorageUrlMode,
     };
     use forge_tts_pipeline::{
         PipelineConfig, PipelineContext, PipelineResult, SkipReason, SkipRule, process,
@@ -541,7 +542,10 @@ mod filters {
 
     fn skip_regex_settings(patterns: &[&str]) -> TtsPipelineSettings {
         TtsPipelineSettings {
-            skip_custom_regexes: patterns.iter().map(|p| (*p).to_owned()).collect(),
+            skip_custom_regexes: patterns
+                .iter()
+                .map(|p| forge_storage::SkipRegex::enabled(*p))
+                .collect(),
             ..default_settings()
         }
     }
@@ -586,6 +590,124 @@ mod filters {
             ),
             "{err:?}"
         );
+    }
+
+    fn switched_regex(pattern: &str, enabled: bool) -> SkipRegex {
+        SkipRegex {
+            pattern: pattern.to_owned(),
+            enabled,
+        }
+    }
+
+    type SwitchedSettings = fn(bool) -> TtsPipelineSettings;
+
+    #[test]
+    fn a_skip_row_filters_only_while_its_switch_is_on() {
+        let rows: [(&str, &str, SwitchedSettings); 3] = [
+            ("regex", "skip me", |on| TtsPipelineSettings {
+                skip_custom_regexes: vec![switched_regex("^skip me$", on)],
+                ..default_settings()
+            }),
+            ("prefix", "#skip me", |on| TtsPipelineSettings {
+                skip_prefix: Some("#".to_owned()),
+                skip_prefix_enabled: on,
+                ..default_settings()
+            }),
+            ("bang", "!skip me", |on| TtsPipelineSettings {
+                skip_starts_with_bang: true,
+                skip_prefix_enabled: on,
+                ..default_settings()
+            }),
+        ];
+
+        for (row, message, settings) in rows {
+            let filters = [true, false].map(|on| {
+                let config = build_config_lenient(&[], &settings(on));
+                matches!(
+                    process(message, &config, &ctx()),
+                    PipelineResult::Skip { .. }
+                )
+            });
+            assert_eq!(filters, [true, false], "{row}");
+        }
+    }
+
+    #[test]
+    fn a_duration_cap_applies_only_while_its_switch_is_on() {
+        let caps = [true, false].map(|on| {
+            let settings = TtsPipelineSettings {
+                output_max_duration_secs: Some(30),
+                output_max_duration_enabled: on,
+                ..default_settings()
+            };
+            build_config_lenient(&[], &settings)
+                .output
+                .max_duration_secs
+        });
+
+        assert_eq!(caps, [Some(30), None]);
+    }
+
+    #[test]
+    fn a_switched_off_invalid_skip_regex_is_not_rejected() {
+        let settings = TtsPipelineSettings {
+            skip_custom_regexes: vec![switched_regex("(bad", false)],
+            ..default_settings()
+        };
+
+        let built = build_config_strict(&[], &settings);
+
+        assert!(built.is_ok(), "{:?}", built.err());
+    }
+
+    #[test]
+    fn an_invalid_skip_regex_is_reported_by_its_stored_index_past_switched_off_rows() {
+        let settings = TtsPipelineSettings {
+            skip_custom_regexes: vec![
+                switched_regex("(off", false),
+                switched_regex("^ok$", true),
+                switched_regex("^off$", false),
+                switched_regex("(bad", true),
+            ],
+            ..default_settings()
+        };
+
+        let err = build_config_strict(&[], &settings).unwrap_err();
+
+        assert!(
+            matches!(
+                &err,
+                forge_speak_queue::FilterMappingError::InvalidSkipRegex { index: 3, pattern, .. }
+                    if pattern == "(bad"
+            ),
+            "{err:?}"
+        );
+    }
+
+    #[test]
+    fn a_switched_off_prefix_stays_configured_but_takes_no_effect() {
+        for (skip_prefix, bang, expected) in [
+            (Some("#"), false, "#"),
+            (None, true, "!"),
+            (Some(""), true, "!"),
+            (Some("#"), true, "#"),
+        ] {
+            let settings = TtsPipelineSettings {
+                skip_prefix: skip_prefix.map(str::to_owned),
+                skip_starts_with_bang: bang,
+                skip_prefix_enabled: false,
+                ..default_settings()
+            };
+
+            assert_eq!(
+                (
+                    configured_skip_prefix(&settings).as_deref(),
+                    effective_skip_prefix(&settings),
+                ),
+                (Some(expected), None),
+                "{skip_prefix:?} {bang}"
+            );
+        }
     }
 
     #[test]

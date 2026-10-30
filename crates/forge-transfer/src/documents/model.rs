@@ -1,7 +1,7 @@
 use std::collections::BTreeMap;
 
 use forge_storage::{
-    GlobalEntry, MediaBlob, MediaFormat, OverlayDefinition, ScriptRecord, StoredClip,
+    GlobalEntry, MediaBlob, MediaFormat, OverlayDefinition, QueueRole, ScriptRecord, StoredClip,
 };
 use forge_types::{
     Action, ActionId, ClipId, ExecutionMode, PermissionRung, PlatformScope, Queue, QueueId,
@@ -136,15 +136,18 @@ pub struct QueueDocument {
     pub name: String,
     pub description: String,
     pub concurrency: u32,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub role: Option<QueueRole>,
 }
 
 impl QueueDocument {
-    pub(crate) fn of(queue: &Queue) -> Self {
+    pub(crate) fn of(queue: &Queue, role: Option<QueueRole>) -> Self {
         Self {
             id: queue.id,
             name: queue.name.clone(),
             description: queue.description.clone(),
             concurrency: queue.concurrency,
+            role,
         }
     }
 }

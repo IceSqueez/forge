@@ -599,13 +599,14 @@ pub async fn build_runtime(inputs: RuntimeInputs) -> Result<RuntimeHandles, Boot
         speaker: show_speaker,
         latest: Some(Arc::new(latest_values.clone()) as Arc<dyn LatestValueReader>),
     });
+    let overlay_actions = Arc::new(forge_runtime::actions::ActionsService::new(
+        backend.action_repo(),
+        backend.queue_repo(),
+        backend.history_repo(),
+        backend.trigger_instance_repo(),
+    ));
     let overlay_samples: Arc<dyn OverlaySampleSource> = Arc::new(OverlaySamples::new(
-        Arc::new(forge_runtime::actions::ActionsService::new(
-            backend.action_repo(),
-            backend.queue_repo(),
-            backend.history_repo(),
-            backend.trigger_instance_repo(),
-        )),
+        Arc::clone(&overlay_actions),
         Arc::clone(&sub_action_registry),
         Arc::clone(&trigger_registry),
     ));
@@ -691,6 +692,7 @@ pub async fn build_runtime(inputs: RuntimeInputs) -> Result<RuntimeHandles, Boot
         server,
         overlays,
         overlay_samples,
+        overlay_actions,
         overlay_kinds,
         speak,
         speak_events,

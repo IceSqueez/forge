@@ -48,6 +48,42 @@ pub struct FilterRule {
     pub kind: FilterRuleKind,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(from = "SkipRegexForm")]
+pub struct SkipRegex {
+    pub pattern: String,
+    pub enabled: bool,
+}
+
+impl SkipRegex {
+    pub fn enabled(pattern: impl Into<String>) -> Self {
+        Self {
+            pattern: pattern.into(),
+            enabled: true,
+        }
+    }
+}
+
+#[derive(Deserialize)]
+#[serde(untagged)]
+enum SkipRegexForm {
+    Bare(String),
+    Toggled {
+        pattern: String,
+        #[serde(default = "default_row_enabled")]
+        enabled: bool,
+    },
+}
+
+impl From<SkipRegexForm> for SkipRegex {
+    fn from(form: SkipRegexForm) -> Self {
+        match form {
+            SkipRegexForm::Bare(pattern) => Self::enabled(pattern),
+            SkipRegexForm::Toggled { pattern, enabled } => Self { pattern, enabled },
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct TtsPipelineSettings {
     pub url_mode: UrlMode,
@@ -63,6 +99,8 @@ pub struct TtsPipelineSettings {
     pub skip_starts_with_bang: bool,
     #[serde(default)]
     pub skip_prefix: Option<String>,
+    #[serde(default = "default_row_enabled")]
+    pub skip_prefix_enabled: bool,
     #[serde(default)]
     pub skip_from_bot_accounts: bool,
     #[serde(default)]
@@ -84,13 +122,19 @@ pub struct TtsPipelineSettings {
     #[serde(default)]
     pub skip_mostly_non_latin: bool,
     #[serde(default)]
-    pub skip_custom_regexes: Vec<String>,
+    pub skip_custom_regexes: Vec<SkipRegex>,
     #[serde(default)]
     pub output_sanitize_punctuation: bool,
     #[serde(default)]
     pub output_max_duration_secs: Option<u32>,
+    #[serde(default = "default_row_enabled")]
+    pub output_max_duration_enabled: bool,
     #[serde(default)]
     pub output_language_aware_voice: Option<bool>,
+}
+
+fn default_row_enabled() -> bool {
+    true
 }
 
 fn default_longer_than_max_chars() -> u32 {
@@ -113,6 +157,7 @@ impl Default for TtsPipelineSettings {
             skip_contains_url: false,
             skip_starts_with_bang: false,
             skip_prefix: None,
+            skip_prefix_enabled: default_row_enabled(),
             skip_from_bot_accounts: false,
             bot_accounts: Vec::new(),
             skip_longer_than: false,
@@ -126,6 +171,7 @@ impl Default for TtsPipelineSettings {
             skip_custom_regexes: Vec::new(),
             output_sanitize_punctuation: false,
             output_max_duration_secs: None,
+            output_max_duration_enabled: default_row_enabled(),
             output_language_aware_voice: None,
         }
     }

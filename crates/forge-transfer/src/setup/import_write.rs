@@ -5,7 +5,7 @@ use forge_registry::InternalNamespace;
 use forge_storage::settings::core_settings;
 use forge_storage::{
     MediaBlobId, MediaReferrer, MediaReferrerKind, NewOverlay, OverlayConfig, OverlayDefinition,
-    OverlayId, ScriptRecord, SettingRow, StorageError, StoreChange, StoredClip,
+    OverlayId, QueueRole, ScriptRecord, SettingRow, StorageError, StoreChange, StoredClip,
     clip_source_referrer, setting_row, unique_overlay_id,
 };
 use forge_types::{ClipId, OutputDevice};
@@ -69,7 +69,11 @@ impl SetupImport<'_, '_> {
                 Some(local) if *local != queue => self.queues.changed.push(queue.clone()),
                 Some(_) => {}
             }
+            let id = queue.id;
             self.changes.push(StoreChange::SaveQueue(queue));
+            if document.role == Some(QueueRole::OverlayAlerts) {
+                self.changes.push(StoreChange::AssignOverlayAlertQueue(id));
+            }
             self.refresh.insert(SetupLivePart::Queues);
         }
     }

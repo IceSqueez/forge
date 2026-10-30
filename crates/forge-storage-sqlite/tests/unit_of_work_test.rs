@@ -212,6 +212,88 @@ fn wiring() -> TriggerWiring {
     }
 }
 
+impl Store {
+    async fn with_alert_queue_and_another() -> (Store, QueueId, QueueId) {
+        let store = open().await;
+        let (holder, other) = (queue(), queue());
+        let (holder_id, other_id) = (holder.id, other.id);
+        store
+            .backend
+            .commit_changes(&[
+                StoreChange::SaveQueue(holder),
+                StoreChange::AssignOverlayAlertQueue(holder_id),
+                StoreChange::SaveQueue(other),
+            ])
+            .await
+            .unwrap();
+        (store, holder_id, other_id)
+    }
+
+    async fn role_holders(&self) -> Vec<String> {
+        sqlx::query_scalar("SELECT id FROM queues WHERE role IS NOT NULL")
+            .fetch_all(&self.side)
+            .await
+            .unwrap()
+    }
+}
+
+#[tokio::test]
+async fn assigning_the_alert_role_moves_it_off_the_queue_holding_it() {
+    let (store, _holder, other) = Store::with_alert_queue_and_another().await;
+
+    store
+        .backend
+        .commit_changes(&[StoreChange::AssignOverlayAlertQueue(other)])
+        .await
+        .unwrap();
+
+    assert_eq!(store.role_holders().await, [other.to_string()]);
+}
+
+#[tokio::test]
+async fn assigning_the_alert_role_to_its_holder_keeps_it_there() {
+    let (store, holder, _other) = Store::with_alert_queue_and_another().await;
+
+    store
+        .backend
+        .commit_changes(&[StoreChange::AssignOverlayAlertQueue(holder)])
+        .await
+        .unwrap();
+
+    assert_eq!(store.role_holders().await, [holder.to_string()]);
+}
+
+#[tokio::test]
+async fn claiming_a_taken_alert_role_changes_nothing() {
+    let (store, holder, other) = Store::with_alert_queue_and_another().await;
+
+    store
+        .backend
+        .commit_changes(&[StoreChange::ClaimOverlayAlertQueue(other)])
+        .await
+        .unwrap();
+
+    assert_eq!(store.role_holders().await, [holder.to_string()]);
+}
+
+#[tokio::test]
+async fn claiming_a_free_alert_role_takes_it() {
+    let store = open().await;
+    let claimant = queue();
+    let id = claimant.id;
+
+    store
+        .backend
+        .commit_changes(&[
+            StoreChange::SaveQueue(claimant),
+            StoreChange::ClaimOverlayAlertQueue(id),
+        ])
+        .await
+        .unwrap();
+
+    assert_eq!(store.role_holders().await, [id.to_string()]);
+}
+
 #[tokio::test]
 async fn a_failure_mid_batch_leaves_every_other_change_unwritten() {
     let store = open().await;

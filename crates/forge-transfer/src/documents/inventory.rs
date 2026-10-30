@@ -1,8 +1,9 @@
 use std::collections::BTreeMap;
 
 use forge_storage::{
-    DataProvider, GlobalEntry, GlobalsRepo, MediaBlob, MediaBlobId, OverlayDefinition, OverlayId,
-    ScriptRecord, ScriptRepo, StoredClip, clip_source_referrer,
+    DataProvider, GlobalEntry, GlobalsRepo, MediaBlob, MediaBlobId, OVERLAY_ALERT_QUEUE_NAME,
+    OverlayDefinition, OverlayId, QueueRole, ScriptRecord, ScriptRepo, StoredClip,
+    clip_source_referrer,
 };
 use forge_types::{
     Action, ActionId, ClipId, Queue, QueueId, ScriptId, TriggerInstance, TriggerInstanceId,
@@ -18,6 +19,7 @@ pub struct PackInventory {
     pub(crate) triggers: BTreeMap<TriggerInstanceId, TriggerInstance>,
     pub(crate) archived_triggers: BTreeMap<TriggerInstanceId, TriggerInstance>,
     pub(crate) queues: BTreeMap<QueueId, Queue>,
+    pub(crate) overlay_alert_queue: Option<QueueId>,
     pub(crate) scripts: BTreeMap<String, ScriptRecord>,
     pub(crate) archived_scripts: BTreeMap<String, ScriptRecord>,
     pub(crate) globals: BTreeMap<String, GlobalEntry>,
@@ -29,6 +31,10 @@ pub struct PackInventory {
 }
 
 impl PackInventory {
+    pub(crate) fn queue_role(&self, id: QueueId) -> Option<QueueRole> {
+        (self.overlay_alert_queue == Some(id)).then_some(QueueRole::OverlayAlerts)
+    }
+
     pub fn actions(&self) -> impl Iterator<Item = &Action> {
         self.actions.values()
     }
@@ -92,6 +98,11 @@ pub async fn load_pack_inventory(
         triggers: keyed(trigger_repo.list_all().await?, |trigger| trigger.id),
         archived_triggers: keyed(trigger_repo.list_archived().await?, |trigger| trigger.id),
         queues: keyed(provider.queue_repo().list().await?, |queue| queue.id),
+        overlay_alert_queue: provider
+            .queue_repo()
+            .overlay_alert_queue(OVERLAY_ALERT_QUEUE_NAME)
+            .await?
+            .map(|queue| queue.id),
         scripts: keyed(ScriptRepo::list(provider).await?, |script| {
             script.name.clone()
         }),

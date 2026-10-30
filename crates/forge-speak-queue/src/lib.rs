@@ -15,7 +15,8 @@ use serde::{Deserialize, Serialize};
 
 pub use filters::{
     BuiltConfig, FilterMappingError, PipelineConfigHandle, ReplacementSource, build_config,
-    effective_skip_prefix, emote_treatment, repeat_window, store_emote_treatment,
+    configured_skip_prefix, effective_skip_prefix, emote_treatment, repeat_window,
+    store_emote_treatment,
 };
 pub use forge_audio::PlaybackTarget;
 use forge_audio::TargetedSinkFactory;

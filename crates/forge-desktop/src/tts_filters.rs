@@ -10,11 +10,11 @@ use forge_components::{
 };
 use forge_speak_queue::{
     EmoteTokenSet, EmoteTreatment, PipelineConfigHandle, Priority, ReplacementSource, RequestId,
-    SpeakCommand, SpeakQueueHandle, SpeakRequest, build_config, effective_skip_prefix,
+    SpeakCommand, SpeakQueueHandle, SpeakRequest, build_config, configured_skip_prefix,
     emote_treatment, repeat_window, store_emote_treatment,
 };
 use forge_storage::{
-    BlocklistMode, FilterRule, FilterRuleKind, TtsFiltersRepo, TtsPipelineSettings,
+    BlocklistMode, FilterRule, FilterRuleKind, SkipRegex, TtsFiltersRepo, TtsPipelineSettings,
 };
 use forge_tts_pipeline::{
     AppliedReplacement, PipelineResult, ReplacementOrigin, SkipReason, StageAction, StageName,
@@ -818,7 +818,23 @@ impl TtsFiltersView {
         }
         self.edit(cx, |filters| {
             filters.settings.skip_prefix = None;
+            filters.settings.skip_prefix_enabled = true;
             filters.settings.skip_starts_with_bang = false;
+        });
+    }
+
+    fn toggle_skip_prefix(&mut self, cx: &mut Context<Self>) {
+        self.edit(cx, |filters| {
+            let settings = &mut filters.settings;
+            settings.skip_prefix_enabled = !settings.skip_prefix_enabled;
+        });
+    }
+
+    fn toggle_skip_regex(&mut self, index: usize, cx: &mut Context<Self>) {
+        self.try_apply(cx, |filters| {
+            if let Some(regex) = filters.settings.skip_custom_regexes.get_mut(index) {
+                regex.enabled = !regex.enabled;
+            }
         });
     }
 
@@ -866,22 +882,32 @@ impl TtsFiltersView {
         self.set_output(opt, value, cx);
     }
 
+    fn toggle_output_max_duration(&mut self, cx: &mut Context<Self>) {
+        self.edit(cx, |filters| {
+            let settings = &mut filters.settings;
+            settings.output_max_duration_enabled = !settings.output_max_duration_enabled;
+        });
+    }
+
     fn clear_output_max_duration(&mut self, cx: &mut Context<Self>) {
         if self.shown().settings.output_max_duration_secs.is_none() {
             return;
         }
         self.edit(cx, |filters| {
-            filters.settings.output_max_duration_secs = None
+            filters.settings.output_max_duration_secs = None;
+            filters.settings.output_max_duration_enabled = true;
+        });
+    }
+
+    fn toggle_output_lang(&mut self, cx: &mut Context<Self>) {
+        self.edit(cx, |filters| {
+            let language = &mut filters.settings.output_language_aware_voice;
+            *language = language.map(|enabled| !enabled);
         });
     }
 
     fn clear_output_lang(&mut self, cx: &mut Context<Self>) {
-        if !self
-            .shown()
-            .settings
-            .output_language_aware_voice
-            .unwrap_or(false)
-        {
+        if self.shown().settings.output_language_aware_voice.is_none() {
             return;
         }
         self.edit(cx, |filters| {
@@ -890,6 +916,14 @@ impl TtsFiltersView {
     }
 
     fn set_blocklist_mode(&mut self, mode: BlocklistMode, cx: &mut Context<Self>) {
+        let shown = self.shown();
+        let every_rule_matches = shown.rules.iter().all(|rule| match &rule.kind {
+            FilterRuleKind::Blocklist { mode: held, .. } => *held == mode,
+            _ => true,
+        });
+        if shown.settings.blocklist_mode == mode && every_rule_matches {
+            return;
+        }
         self.edit(cx, |filters| {
             filters.settings.blocklist_mode = mode;
             for rule in filters.rules.iter_mut() {
@@ -1007,6 +1041,7 @@ impl TtsFiltersView {
             SkipPreset::Url => filters.settings.skip_contains_url = true,
             SkipPreset::Prefix => {
                 filters.settings.skip_prefix = Some(param);
+                filters.settings.skip_prefix_enabled = true;
                 filters.settings.skip_starts_with_bang = false;
             }
             SkipPreset::Bots => filters.settings.skip_from_bot_accounts = true,
@@ -1019,7 +1054,10 @@ impl TtsFiltersView {
             SkipPreset::Repeat => filters.settings.skip_repeat_of_recent = true,
             SkipPreset::EmoteOnly => filters.settings.skip_emote_only = true,
             SkipPreset::NonLatin => filters.settings.skip_mostly_non_latin = true,
-            SkipPreset::Regex => filters.settings.skip_custom_regexes.push(param),
+            SkipPreset::Regex => filters
+                .settings
+                .skip_custom_regexes
+                .push(SkipRegex::enabled(param)),
         })
     }
 
@@ -1037,7 +1075,10 @@ impl TtsFiltersView {
             OutputPreset::Name => filters.settings.output_read_display_name_first = true,
             OutputPreset::Emote => set_emote_to_word(&mut filters.settings, true),
             OutputPreset::Sanitize => filters.settings.output_sanitize_punctuation = true,
-            OutputPreset::MaxDur => filters.settings.output_max_duration_secs = max_duration,
+            OutputPreset::MaxDur => {
+                filters.settings.output_max_duration_secs = max_duration;
+                filters.settings.output_max_duration_enabled = true;
+            }
             OutputPreset::Lang => filters.settings.output_language_aware_voice = Some(true),
         })
     }
@@ -1416,7 +1457,7 @@ impl TtsFiltersView {
             ),
         ];
 
-        let prefix_display = effective_skip_prefix(settings);
+        let prefix_display = configured_skip_prefix(settings);
         let regex_count = settings.skip_custom_regexes.len();
         let total = fixed.len() + usize::from(prefix_display.is_some()) + regex_count;
 
@@ -1445,35 +1486,41 @@ impl TtsFiltersView {
             i += 1;
             body = body.child(self.stage_row(
                 tr!("tts_filters_skip_prefix", prefix = prefix).into(),
-                true,
+                settings.skip_prefix_enabled,
                 None,
                 "filt-skip-t-prefix".into(),
                 "filt-skip-x-prefix".into(),
                 i != total,
                 true,
-                cx.listener(|this, _: &ClickEvent, _, cx| this.clear_skip_prefix(cx)),
+                cx.listener(|this, _: &ClickEvent, _, cx| this.toggle_skip_prefix(cx)),
                 cx.listener(|this, _: &ClickEvent, _, cx| this.clear_skip_prefix(cx)),
                 palette,
                 density,
             ));
         }
-        for (ri, pattern) in settings.skip_custom_regexes.iter().enumerate() {
+        for (ri, regex) in settings.skip_custom_regexes.iter().enumerate() {
             i += 1;
             let x_id = SharedString::from(format!("filt-skip-regex-x-{ri}"));
             let toggle_id = SharedString::from(format!("filt-skip-regex-t-{ri}"));
-            body = body.child(self.stage_row(
-                tr!("tts_filters_skip_regex_row", pattern = pattern.clone()).into(),
-                true,
-                Some(tr!("tts_filters_badge_regex").into()),
-                toggle_id,
-                x_id,
-                i != total,
-                true,
-                cx.listener(move |this, _: &ClickEvent, _, cx| this.remove_skip_regex(ri, cx)),
-                cx.listener(move |this, _: &ClickEvent, _, cx| this.remove_skip_regex(ri, cx)),
-                palette,
-                density,
-            ));
+            body = body.child(
+                self.stage_row(
+                    tr!(
+                        "tts_filters_skip_regex_row",
+                        pattern = regex.pattern.clone()
+                    )
+                    .into(),
+                    regex.enabled,
+                    Some(tr!("tts_filters_badge_regex").into()),
+                    toggle_id,
+                    x_id,
+                    i != total,
+                    true,
+                    cx.listener(move |this, _: &ClickEvent, _, cx| this.toggle_skip_regex(ri, cx)),
+                    cx.listener(move |this, _: &ClickEvent, _, cx| this.remove_skip_regex(ri, cx)),
+                    palette,
+                    density,
+                ),
+            );
         }
 
         let add = self.add_button(
@@ -1505,39 +1552,53 @@ impl TtsFiltersView {
         let censor_on = settings.blocklist_mode == BlocklistMode::Censor;
         let skip_on = settings.blocklist_mode == BlocklistMode::Suppress;
 
-        let mut body = div().flex().flex_col();
-        body = body.child(self.stage_row(
-            tr!("tts_filters_blocklist_censor").into(),
-            censor_on,
-            Some(tr!("tts_filters_blocklist_censor_meta").into()),
-            "filt-bl-censor-t".into(),
-            "filt-bl-censor-x".into(),
-            true,
-            false,
-            cx.listener(|this, _: &ClickEvent, _, cx| {
-                this.set_blocklist_mode(BlocklistMode::Censor, cx)
-            }),
-            |_, _, _| {},
-            palette,
-            density,
-        ));
-        body = body.child(self.stage_row(
-            tr!("tts_filters_blocklist_skip").into(),
-            skip_on,
-            None,
-            "filt-bl-skip-t".into(),
-            "filt-bl-skip-x".into(),
-            true,
-            false,
-            cx.listener(|this, _: &ClickEvent, _, cx| {
-                this.set_blocklist_mode(BlocklistMode::Suppress, cx)
-            }),
-            |_, _, _| {},
-            palette,
-            density,
-        ));
+        let mode_choice = div()
+            .flex()
+            .flex_col()
+            .gap(scaled(px(5.0), density))
+            .py(spacing(Spacing::Xs, density))
+            .child(
+                radio_row(
+                    "filt-bl-censor",
+                    censor_on,
+                    palette.warning,
+                    radio_row_label(
+                        tr!("tts_filters_blocklist_censor"),
+                        Some(tr!("tts_filters_blocklist_censor_meta").into()),
+                        censor_on,
+                        palette,
+                        density,
+                    ),
+                    palette,
+                )
+                .on_click(cx.listener(|this, _: &ClickEvent, _, cx| {
+                    this.set_blocklist_mode(BlocklistMode::Censor, cx)
+                })),
+            )
+            .child(
+                radio_row(
+                    "filt-bl-skip",
+                    skip_on,
+                    palette.warning,
+                    radio_row_label(
+                        tr!("tts_filters_blocklist_skip"),
+                        None,
+                        skip_on,
+                        palette,
+                        density,
+                    ),
+                    palette,
+                )
+                .on_click(cx.listener(|this, _: &ClickEvent, _, cx| {
+                    this.set_blocklist_mode(BlocklistMode::Suppress, cx)
+                })),
+            );
 
-        body = body.child(self.blocklist_chips(palette, density, cx));
+        let body = div()
+            .flex()
+            .flex_col()
+            .child(mode_choice)
+            .child(self.blocklist_chips(palette, density, cx));
 
         let add = self.add_button(
             "filt-bl-add",
@@ -1767,8 +1828,9 @@ impl TtsFiltersView {
         ];
 
         let max_duration = settings.output_max_duration_secs;
-        let lang_on = settings.output_language_aware_voice.unwrap_or(false);
-        let total = rows.len() + usize::from(max_duration.is_some()) + usize::from(lang_on);
+        let language = settings.output_language_aware_voice;
+        let total =
+            rows.len() + usize::from(max_duration.is_some()) + usize::from(language.is_some());
         let mut body = div().flex().flex_col();
         let mut i = 0usize;
         for (opt, label, meta, on) in rows {
@@ -1793,29 +1855,29 @@ impl TtsFiltersView {
             i += 1;
             body = body.child(self.stage_row(
                 tr!("tts_filters_preset_output_maxdur").into(),
-                true,
+                settings.output_max_duration_enabled,
                 Some(tr!("tts_filters_output_max_duration_meta", secs = secs as i64).into()),
                 "filt-out-t-maxdur".into(),
                 "filt-out-x-maxdur".into(),
                 i != total,
                 true,
-                cx.listener(|this, _: &ClickEvent, _, cx| this.clear_output_max_duration(cx)),
+                cx.listener(|this, _: &ClickEvent, _, cx| this.toggle_output_max_duration(cx)),
                 cx.listener(|this, _: &ClickEvent, _, cx| this.clear_output_max_duration(cx)),
                 palette,
                 density,
             ));
         }
-        if lang_on {
+        if let Some(lang_on) = language {
             i += 1;
             body = body.child(self.stage_row(
                 tr!("tts_filters_preset_output_lang").into(),
-                true,
+                lang_on,
                 Some(tr!("tts_filters_output_lang_meta").into()),
                 "filt-out-t-lang".into(),
                 "filt-out-x-lang".into(),
                 i != total,
                 true,
-                cx.listener(|this, _: &ClickEvent, _, cx| this.clear_output_lang(cx)),
+                cx.listener(|this, _: &ClickEvent, _, cx| this.toggle_output_lang(cx)),
                 cx.listener(|this, _: &ClickEvent, _, cx| this.clear_output_lang(cx)),
                 palette,
                 density,
@@ -3396,6 +3458,292 @@ mod tests {
         assert_eq!(initial, (false, false));
         assert_eq!(after_on, (true, Some(true), true));
         assert_eq!(after_off, (Some(false), false));
+    }
+
+    struct SwitchableRow {
+        name: &'static str,
+        seed: fn(&mut TtsPipelineSettings),
+        toggle: Edit,
+        remove: Edit,
+        state: fn(&TtsPipelineSettings) -> Option<bool>,
+    }
+
+    fn prefix_state(settings: &TtsPipelineSettings) -> Option<bool> {
+        configured_skip_prefix(settings).map(|_| settings.skip_prefix_enabled)
+    }
+
+    fn switchable_rows() -> [SwitchableRow; 5] {
+        [
+            SwitchableRow {
+                name: "custom prefix",
+                seed: |s| s.skip_prefix = Some("#".to_owned()),
+                toggle: |v, cx| v.toggle_skip_prefix(cx),
+                remove: |v, cx| v.clear_skip_prefix(cx),
+                state: prefix_state,
+            },
+            SwitchableRow {
+                name: "bang prefix",
+                seed: |s| s.skip_starts_with_bang = true,
+                toggle: |v, cx| v.toggle_skip_prefix(cx),
+                remove: |v, cx| v.clear_skip_prefix(cx),
+                state: prefix_state,
+            },
+            SwitchableRow {
+                name: "skip regex",
+                seed: |s| s.skip_custom_regexes = vec![SkipRegex::enabled("^a$")],
+                toggle: |v, cx| v.toggle_skip_regex(0, cx),
+                remove: |v, cx| v.remove_skip_regex(0, cx),
+                state: |s| s.skip_custom_regexes.first().map(|regex| regex.enabled),
+            },
+            SwitchableRow {
+                name: "max duration",
+                seed: |s| s.output_max_duration_secs = Some(30),
+                toggle: |v, cx| v.toggle_output_max_duration(cx),
+                remove: |v, cx| v.clear_output_max_duration(cx),
+                state: |s| {
+                    s.output_max_duration_secs
+                        .map(|_| s.output_max_duration_enabled)
+                },
+            },
+            SwitchableRow {
+                name: "language aware voice",
+                seed: |s| s.output_language_aware_voice = Some(true),
+                toggle: |v, cx| v.toggle_output_lang(cx),
+                remove: |v, cx| v.clear_output_lang(cx),
+                state: |s| s.output_language_aware_voice,
+            },
+        ]
+    }
+
+    #[gpui::test]
+    fn a_row_switch_persists_and_only_its_x_removes_the_row(cx: &mut TestAppContext) {
+        install_presentation(cx);
+        let rt = runtime();
+        for row in switchable_rows() {
+            let repo = RecordingFilters::storing(Vec::new());
+            let view = view_over(&repo, &rt, cx);
+            view.update(cx, |v, _| {
+                (row.seed)(&mut v.filters.loaded_mut().unwrap().settings);
+            });
+            let mut saved = Vec::new();
+
+            for step in [row.toggle, row.toggle, row.toggle, row.remove] {
+                view.update(cx, step);
+                settle(&rt, cx);
+                saved.push(repo.saved.lock().unwrap().last().and_then(row.state));
+            }
+
+            assert_eq!(
+                saved,
+                [Some(false), Some(true), Some(false), None],
+                "{}",
+                row.name
+            );
+        }
+    }
+
+    #[gpui::test]
+    fn removing_or_adding_a_row_over_a_switched_off_one_leaves_the_switch_on(
+        cx: &mut TestAppContext,
+    ) {
+        type Flag = fn(&TtsPipelineSettings) -> bool;
+        type Seed = fn(&mut TtsPipelineSettings);
+        let prefix_on: Flag = |s| s.skip_prefix_enabled;
+        let duration_on: Flag = |s| s.output_max_duration_enabled;
+        let seed_prefix: Seed = |s| {
+            s.skip_prefix = Some("#".to_owned());
+            s.skip_prefix_enabled = false;
+        };
+        let seed_duration: Seed = |s| {
+            s.output_max_duration_secs = Some(30);
+            s.output_max_duration_enabled = false;
+        };
+        let cases: [(&str, Seed, Edit, Flag); 4] = [
+            (
+                "removed prefix",
+                seed_prefix,
+                |v, cx| v.clear_skip_prefix(cx),
+                prefix_on,
+            ),
+            (
+                "added prefix",
+                seed_prefix,
+                |v, cx| {
+                    v.apply_skip_preset(SkipPreset::Prefix, "$".to_owned(), cx);
+                },
+                prefix_on,
+            ),
+            (
+                "removed duration",
+                seed_duration,
+                |v, cx| v.clear_output_max_duration(cx),
+                duration_on,
+            ),
+            (
+                "added duration",
+                seed_duration,
+                |v, cx| {
+                    v.apply_output_preset(OutputPreset::MaxDur, "45", cx);
+                },
+                duration_on,
+            ),
+        ];
+        install_presentation(cx);
+        let rt = runtime();
+        for (case, seed, edit, flag) in cases {
+            let repo = RecordingFilters::storing(Vec::new());
+            let view = view_over(&repo, &rt, cx);
+            view.update(cx, |v, _| {
+                seed(&mut v.filters.loaded_mut().unwrap().settings)
+            });
+
+            view.update(cx, edit);
+            settle(&rt, cx);
+
+            assert_eq!(
+                repo.saved.lock().unwrap().last().map(flag),
+                Some(true),
+                "{case}"
+            );
+        }
+    }
+
+    #[gpui::test]
+    fn switching_on_an_invalid_regex_is_refused_and_writes_nothing(cx: &mut TestAppContext) {
+        install_presentation(cx);
+        let rt = runtime();
+        let repo = RecordingFilters::storing(Vec::new());
+        let view = view_over(&repo, &rt, cx);
+        view.update(cx, |v, _| {
+            v.filters.loaded_mut().unwrap().settings.skip_custom_regexes = vec![SkipRegex {
+                pattern: "(bad".to_owned(),
+                enabled: false,
+            }];
+        });
+
+        view.update(cx, |v, cx| v.toggle_skip_regex(0, cx));
+        settle(&rt, cx);
+
+        let (enabled, refused) = view.read_with(cx, |v, _| {
+            (
+                v.shown().settings.skip_custom_regexes[0].enabled,
+                v.save_error.is_some(),
+            )
+        });
+        assert_eq!((enabled, refused, repo.writes()), (false, true, 0));
+    }
+
+    fn blocklist_rule(mode: BlocklistMode) -> FilterRule {
+        filter_row(
+            true,
+            FilterRuleKind::Blocklist {
+                words: vec!["gtfo".to_owned()],
+                mode,
+            },
+        )
+    }
+
+    #[gpui::test]
+    fn picking_the_blocklist_mode_already_held_by_settings_and_rules_writes_nothing(
+        cx: &mut TestAppContext,
+    ) {
+        install_presentation(cx);
+        let rt = runtime();
+        let repo = RecordingFilters::storing(vec![blocklist_rule(BlocklistMode::Censor)]);
+        let view = view_over(&repo, &rt, cx);
+
+        view.update(cx, |v, cx| v.set_blocklist_mode(BlocklistMode::Censor, cx));
+        settle(&rt, cx);
+
+        assert_eq!(repo.writes(), 0);
+    }
+
+    #[gpui::test]
+    fn picking_the_held_blocklist_mode_heals_a_rule_stored_with_the_other_mode(
+        cx: &mut TestAppContext,
+    ) {
+        install_presentation(cx);
+        let rt = runtime();
+        let repo = RecordingFilters::storing(vec![blocklist_rule(BlocklistMode::Suppress)]);
+        let view = view_over(&repo, &rt, cx);
+
+        view.update(cx, |v, cx| v.set_blocklist_mode(BlocklistMode::Censor, cx));
+        settle(&rt, cx);
+
+        let stored = repo.stored_rules.lock().unwrap().clone();
+        assert!(
+            matches!(
+                stored.as_slice(),
+                [FilterRule {
+                    kind: FilterRuleKind::Blocklist {
+                        mode: BlocklistMode::Censor,
+                        ..
+                    },
+                    ..
+                }]
+            ),
+            "{stored:?}"
+        );
+    }
+
+    const SWITCH_SCAN_WINDOW: f32 = 1400.0;
+    const SWITCH_COLUMN_END: f32 = 60.0;
+    const SWITCH_COLUMN_STEP: f32 = 12.0;
+    const SWITCH_ROW_STEP: f32 = 6.0;
+
+    #[gpui::test]
+    fn a_switched_off_bang_row_stays_on_screen_where_a_click_can_switch_it_back(
+        cx: &mut TestAppContext,
+    ) {
+        install_presentation(cx);
+        let rt = runtime();
+        let repo = RecordingFilters::storing(Vec::new());
+        let handle = rt.handle().clone();
+        let (view, vcx) = cx.add_window_view(|_, cx| {
+            TtsFiltersView::new(
+                repo.clone(),
+                None,
+                Shared::new(Vec::new()),
+                None,
+                handle,
+                cx,
+            )
+        });
+        for _ in 0..SETTLE_ROUNDS {
+            pump(&rt);
+            vcx.run_until_parked();
+        }
+        vcx.simulate_resize(gpui::size(px(SWITCH_SCAN_WINDOW), px(SWITCH_SCAN_WINDOW)));
+        view.update(vcx, |v, cx| {
+            let settings = &mut v.filters.loaded_mut().unwrap().settings;
+            settings.skip_starts_with_bang = true;
+            settings.skip_prefix_enabled = false;
+            cx.notify();
+        });
+        vcx.run_until_parked();
+
+        let mut y = 0.0;
+        'scan: while y < SWITCH_SCAN_WINDOW {
+            let mut x = 0.0;
+            while x < SWITCH_COLUMN_END {
+                vcx.simulate_click(gpui::point(px(x), px(y)), gpui::Modifiers::none());
+                let switched = view.read_with(vcx, |v, _| {
+                    let settings = &v.shown().settings;
+                    settings.skip_prefix_enabled || !settings.skip_starts_with_bang
+                });
+                if switched {
+                    break 'scan;
+                }
+                x += SWITCH_COLUMN_STEP;
+            }
+            y += SWITCH_ROW_STEP;
+        }
+
+        let bang = view.read_with(vcx, |v, _| {
+            let settings = &v.shown().settings;
+            (settings.skip_prefix_enabled, settings.skip_starts_with_bang)
+        });
+        assert_eq!(bang, (true, true));
     }
 
     #[gpui::test]

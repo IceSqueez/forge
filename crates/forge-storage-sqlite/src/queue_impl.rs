@@ -89,6 +89,38 @@ pub(crate) async fn mark_overlay_alert_queue<'e>(
     Ok(())
 }
 
+pub(crate) async fn assign_overlay_alert_queue(
+    conn: &mut sqlx::SqliteConnection,
+    id: QueueId,
+) -> Result<(), StorageError> {
+    sqlx::query("UPDATE queues SET role = NULL WHERE role = ? AND id <> ?")
+        .bind(OVERLAY_ALERT_ROLE)
+        .bind(id.to_string())
+        .execute(&mut *conn)
+        .await
+        .map_err(SqliteStorageError::Sqlx)?;
+
+    mark_overlay_alert_queue(conn, id).await
+}
+
+pub(crate) async fn claim_overlay_alert_queue<'e>(
+    executor: impl sqlx::SqliteExecutor<'e>,
+    id: QueueId,
+) -> Result<(), StorageError> {
+    sqlx::query(
+        "UPDATE queues SET role = ?
+         WHERE id = ? AND NOT EXISTS (SELECT 1 FROM queues WHERE role = ?)",
+    )
+    .bind(OVERLAY_ALERT_ROLE)
+    .bind(id.to_string())
+    .bind(OVERLAY_ALERT_ROLE)
+    .execute(executor)
+    .await
+    .map_err(SqliteStorageError::Sqlx)?;
+
+    Ok(())
+}
+
 pub struct SqliteQueueRepo {
     db: SqlitePools,
 }

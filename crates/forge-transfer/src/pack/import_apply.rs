@@ -6,8 +6,8 @@ use forge_overlay::image_references;
 use forge_registry::{InternalNamespace, ReferenceRemap};
 use forge_storage::{
     DataProvider, MediaBlobId, MediaReferrer, MediaReferrerKind, NewOverlay, OverlayConfig,
-    OverlayDefinition, OverlayId, ScriptRecord, StoreChange, StoredClip, clip_source_referrer,
-    unique_overlay_id,
+    OverlayDefinition, OverlayId, QueueRole, ScriptRecord, StoreChange, StoredClip,
+    clip_source_referrer, unique_overlay_id,
 };
 use forge_types::{ActionId, ClipId, OutputDevice, QueueId, ScriptId, TriggerInstanceId};
 use time::OffsetDateTime;
@@ -444,6 +444,10 @@ impl<'a> PackImport<'_, 'a> {
             queue.name = target.name.clone();
             self.written_queues.insert(queue.id);
             self.changes.push(StoreChange::SaveQueue(queue.clone()));
+            if document.role == Some(QueueRole::OverlayAlerts) {
+                self.changes
+                    .push(StoreChange::ClaimOverlayAlertQueue(queue.id));
+            }
             self.record_written(item, queue.id.to_string(), &target);
         }
         Ok(())

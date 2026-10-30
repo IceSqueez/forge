@@ -10,18 +10,21 @@ use forge_storage::{
     DATABASE_FILE_NAME, DataProvider, EXPECTED_SCHEMA_VERSION, MediaBlobId, MediaFormat,
     clip_source_referrer,
 };
+use forge_storage::{OVERLAY_ALERT_QUEUE_NAME, StoreChange};
 use forge_storage::{OverlayDefinition, OverlayId};
 use forge_storage_sqlite::SqliteBackend;
 use forge_transfer::{
     ActionDocument, BUNDLE_FORMAT_VERSION, BundleKind, ClipDocument, ClipSourceDocument,
     ClosureRegistries, ContentEntry, MANIFEST_ENTRY_NAME, MediaDocument, OverlayDocument,
-    OverlayFileDocument, PACK_DOCUMENTS_VERSION, PackDocuments, PackImportOutcome, PackImportPlan,
-    PackImportRequest, PackItemKey, PackItemKind, PackManifest, PackResolution, QueueDocument,
-    StagedPack, TransferError, TriggerDocument, apply_pack_import, backups_dir,
-    load_pack_inventory, pack_staging_root, plan_pack_import, stage_pack,
+    OverlayFileDocument, PACK_DOCUMENTS_VERSION, PackDocuments, PackExportRequest,
+    PackImportOutcome, PackImportPlan, PackImportRequest, PackItemKey, PackItemKind, PackManifest,
+    PackMetadata, PackResolution, QueueDocument, StagedPack, TransferError, TriggerDocument,
+    apply_pack_import, backups_dir, load_pack_inventory, pack_staging_root, plan_pack_import,
+    resolve_pack_closure, stage_pack, write_pack,
 };
 use forge_types::{
-    ActionId, ClipId, ExecutionMode, PermissionRung, QueueId, TriggerInstanceId, Variant,
+    Action, ActionId, ClipId, ExecutionMode, PermissionRung, Queue, QueueId, TriggerInstanceId,
+    Variant,
 };
 use sha2::{Digest, Sha256};
 use sqlx::Connection;
@@ -626,6 +629,7 @@ async fn a_pack_import_reaches_the_catalog_as_a_single_revision() {
             name: "Packed".to_owned(),
             description: String::new(),
             concurrency: 1,
+            role: None,
         }],
         triggers: vec![TriggerDocument {
             id: trigger_id,
@@ -726,4 +730,135 @@ async fn two_new_pack_overlays_with_one_name_land_under_distinct_ids() {
         .collect();
     ids.sort();
     assert_eq!(ids, ["twin", "twin-2"]);
+}
+
+const RENAMED_ALERT_QUEUE: &str = "Stream alerts";
+
+fn named_queue(name: &str) -> Queue {
+    Queue {
+        id: QueueId::new(),
+        name: name.to_owned(),
+        description: String::new(),
+        concurrency: 1,
+    }
+}
+
+impl Store {
+    async fn hold_alert_role(&self, queue: &Queue) {
+        self.provider
+            .commit_changes(&[
+                StoreChange::SaveQueue(queue.clone()),
+                StoreChange::AssignOverlayAlertQueue(queue.id),
+            ])
+            .await
+            .unwrap();
+    }
+
+    async fn alert_queue(&self) -> Option<Queue> {
+        self.provider
+            .queue_repo()
+            .overlay_alert_queue(OVERLAY_ALERT_QUEUE_NAME)
+            .await
+            .unwrap()
+    }
+
+    async fn pack_of_alert_queue(&self, queue: &Queue) -> PathBuf {
+        let action = Action {
+            id: ActionId::new(),
+            name: "alert".to_owned(),
+            group: None,
+            queue_id: queue.id,
+            enabled: true,
+            concurrent: false,
+            bypass_pause: false,
+            execution_mode: ExecutionMode::Sequential,
+            description: None,
+            sub_actions: Vec::new(),
+        };
+        self.provider.action_repo().save(&action).await.unwrap();
+        let registries = Registries::builtin();
+        let inventory = load_pack_inventory(self.provider.as_ref()).await.unwrap();
+        let selection =
+            resolve_pack_closure(&inventory, registries.closure(), &[action.id]).unwrap();
+        write_pack(PackExportRequest {
+            provider: Arc::clone(&self.provider),
+            inventory,
+            selection,
+            metadata: PackMetadata {
+                name: "alerts".to_owned(),
+                author: String::new(),
+                description: String::new(),
+            },
+            overlay_root: self.data_dir().join(OVERLAYS_DIR_NAME),
+            destination: self.data_dir().join("alerts.forgebundle"),
+        })
+        .await
+        .unwrap()
+    }
+}
+
+#[tokio::test]
+async fn a_renamed_alert_queue_carried_by_a_pack_takes_the_free_role() {
+    let source = Store::open().await;
+    let queue = named_queue(RENAMED_ALERT_QUEUE);
+    source.hold_alert_role(&queue).await;
+    let pack = source.pack_of_alert_queue(&queue).await;
+    let target = Store::open().await;
+
+    target.import(pack).await.unwrap();
+
+    let holder = target.alert_queue().await.map(|queue| queue.name);
+    assert_eq!(holder.as_deref(), Some(RENAMED_ALERT_QUEUE));
+}
+
+#[tokio::test]
+async fn a_pack_alert_queue_leaves_the_role_with_the_queue_holding_it_here() {
+    let source = Store::open().await;
+    let queue = named_queue(RENAMED_ALERT_QUEUE);
+    source.hold_alert_role(&queue).await;
+    let pack = source.pack_of_alert_queue(&queue).await;
+    let target = Store::open().await;
+    let local = named_queue("Local alerts");
+    target.hold_alert_role(&local).await;
+
+    target.import(pack).await.unwrap();
+
+    assert_eq!(target.alert_queue().await, Some(local));
+}
+
+#[tokio::test]
+async fn a_pack_written_before_queue_roles_imports_with_no_role_taken() {
+    let store = Store::open().await;
+    let queue_id = QueueId::new();
+    let document: QueueDocument = serde_json::from_value(serde_json::json!({
+        "id": queue_id,
+        "name": RENAMED_ALERT_QUEUE,
+        "description": "",
+        "concurrency": 1,
+    }))
+    .unwrap();
+    let documents = PackDocuments {
+        queues: vec![document],
+        actions: vec![ActionDocument {
+            id: ActionId::new(),
+            name: "alert".to_owned(),
+            group: None,
+            queue_id,
+            enabled: true,
+            concurrent: false,
+            bypass_pause: false,
+            execution_mode: ExecutionMode::Sequential,
+            description: None,
+            steps: Vec::new(),
+            trigger_ids: Vec::new(),
+        }],
+        ..empty_documents()
+    };
+
+    store
+        .import(bundle(store.data_dir(), &documents, &[]))
+        .await
+        .unwrap();
+
+    assert_eq!(store.alert_queue().await, None);
 }

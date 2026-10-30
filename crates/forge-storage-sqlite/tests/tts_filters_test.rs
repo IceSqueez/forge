@@ -1,7 +1,7 @@
 #![allow(clippy::expect_used)]
 use forge_storage::{
-    BlocklistMode, DataProvider, FilterRule, FilterRuleKind, TtsFiltersRepo, TtsPipelineSettings,
-    UrlMode,
+    BlocklistMode, DataProvider, FilterRule, FilterRuleKind, SkipRegex, TtsFiltersRepo,
+    TtsPipelineSettings, UrlMode,
 };
 use forge_storage_sqlite::{SqliteBackend, SqliteTtsFiltersRepo, apply_migrations};
 
@@ -219,6 +219,34 @@ async fn pipeline_settings_language_aware_voice_round_trips_through_all_three_st
             got.output_language_aware_voice, flag,
             "flag {flag:?} did not survive the round-trip"
         );
+    }
+}
+
+#[tokio::test]
+async fn switched_off_rows_round_trip_and_an_overwrite_switches_them_back_on() {
+    let r = repo().await;
+
+    for on in [false, true, false] {
+        let settings = TtsPipelineSettings {
+            skip_prefix: Some("#".to_owned()),
+            skip_prefix_enabled: on,
+            output_max_duration_secs: Some(30),
+            output_max_duration_enabled: on,
+            output_language_aware_voice: Some(on),
+            skip_custom_regexes: vec![
+                SkipRegex {
+                    pattern: "^second$".to_owned(),
+                    enabled: on,
+                },
+                SkipRegex::enabled("^first$"),
+            ],
+            ..TtsPipelineSettings::default()
+        };
+        r.set_pipeline_settings(&settings).await.expect("set");
+
+        let got = r.get_pipeline_settings().await.expect("get");
+
+        assert_eq!(got, settings, "rows switched to {on}");
     }
 }
 

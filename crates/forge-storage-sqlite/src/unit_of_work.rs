@@ -7,7 +7,9 @@ use crate::globals_impl;
 use crate::media_impl::{release_all_references, release_reference, retain_reference};
 use crate::overlay_impl::{delete_overlay, insert_new_overlay, update_overlay};
 use crate::pool::SqlitePools;
-use crate::queue_impl::{delete_queue, upsert_queue};
+use crate::queue_impl::{
+    assign_overlay_alert_queue, claim_overlay_alert_queue, delete_queue, upsert_queue,
+};
 use crate::script_impl::upsert_script;
 use crate::settings_impl::{delete_row, upsert_row};
 use crate::soundboard_impl::{delete_clip, upsert_clip};
@@ -48,6 +50,8 @@ async fn apply(conn: &mut SqliteConnection, change: &StoreChange) -> Result<(), 
     match change {
         StoreChange::SaveQueue(queue) => upsert_queue(conn, queue).await,
         StoreChange::DeleteQueue(id) => delete_queue(conn, *id).await.map(drop),
+        StoreChange::AssignOverlayAlertQueue(id) => assign_overlay_alert_queue(conn, *id).await,
+        StoreChange::ClaimOverlayAlertQueue(id) => claim_overlay_alert_queue(conn, *id).await,
         StoreChange::SaveScript(record) => upsert_script(conn, record).await,
         StoreChange::RestoreScript(id) => {
             execute(

@@ -37,6 +37,7 @@ pub struct RuntimeHandles {
     pub overlay_kinds: Arc<OverlayKindRegistry>,
     pub overlays: OverlayServiceHandle,
     pub overlay_samples: Arc<dyn OverlaySampleSource>,
+    pub overlay_actions: Arc<forge_runtime::actions::ActionsService>,
     pub action_engine: ActionEngineHandle,
     pub scheduler: QueueSchedulerHandle,
     pub trigger_evaluator: TriggerEvaluatorHandle,

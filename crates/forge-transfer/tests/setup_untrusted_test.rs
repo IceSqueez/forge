@@ -11,8 +11,9 @@ use forge_speech_types::{AssignmentStrategy, IgnoreProfile};
 use forge_storage::settings::core_settings;
 use forge_storage::{
     DATABASE_FILE_NAME, DataProvider, EXPECTED_SCHEMA_VERSION, MediaBlobId, MediaFormat,
-    RowClasses, SettingDisclosure, SettingEncoding, SettingPortability, SettingSkip, SettingSpec,
-    SettingsCatalog, TtsPipelineSettings,
+    OVERLAY_ALERT_QUEUE_NAME, QueueRole, RowClasses, SettingDisclosure, SettingEncoding,
+    SettingPortability, SettingSkip, SettingSpec, SettingsCatalog, StoreChange,
+    TtsPipelineSettings,
 };
 use forge_storage_sqlite::{SqliteBackend, SqliteDatabaseFileSchema};
 use forge_transfer::{
@@ -25,7 +26,7 @@ use forge_transfer::{
     setup_staging_root, stage_full_restore, stage_pack, stage_setup, write_setup,
 };
 use forge_types::{
-    Action, ActionId, ClipId, DEFAULT_QUEUE_ID, ExecutionMode, PermissionRung, QueueId,
+    Action, ActionId, ClipId, DEFAULT_QUEUE_ID, ExecutionMode, PermissionRung, Queue, QueueId,
     TriggerConfig, TriggerInstance, TriggerInstanceId, Variant,
 };
 use sha2::{Digest, Sha256};
@@ -999,6 +1000,7 @@ fn default_queue_document() -> QueueDocument {
         name: "Default".to_owned(),
         description: String::new(),
         concurrency: 1,
+        role: None,
     }
 }
 
@@ -1216,4 +1218,139 @@ async fn a_setup_import_clears_the_links_a_local_action_holds_to_an_archived_tri
 
     assert_eq!(triggers.list_for_action(action.id).await.unwrap(), []);
     assert_eq!(triggers.actions_using(trigger.id).await.unwrap(), []);
+}
+
+const RENAMED_ALERT_QUEUE: &str = "Stream alerts";
+
+fn named_queue(name: &str) -> Queue {
+    Queue {
+        id: QueueId::new(),
+        name: name.to_owned(),
+        description: String::new(),
+        concurrency: 1,
+    }
+}
+
+fn queue_document(queue: &Queue, role: Option<QueueRole>) -> QueueDocument {
+    QueueDocument {
+        id: queue.id,
+        name: queue.name.clone(),
+        description: queue.description.clone(),
+        concurrency: queue.concurrency,
+        role,
+    }
+}
+
+fn setup_of_queues(queues: Vec<QueueDocument>) -> SetupDocuments {
+    let mut documents = empty_setup();
+    documents.configuration.queues = queues;
+    documents
+}
+
+impl Store {
+    async fn hold_alert_role(&self, queue: &Queue) {
+        self.provider
+            .commit_changes(&[
+                StoreChange::SaveQueue(queue.clone()),
+                StoreChange::AssignOverlayAlertQueue(queue.id),
+            ])
+            .await
+            .unwrap();
+    }
+
+    async fn alert_queue(&self) -> Option<Queue> {
+        self.provider
+            .queue_repo()
+            .overlay_alert_queue(OVERLAY_ALERT_QUEUE_NAME)
+            .await
+            .unwrap()
+    }
+
+    async fn export(&self) -> PathBuf {
+        write_setup(SetupExportRequest {
+            provider: Arc::clone(&self.provider),
+            overlay_root: self.data_dir().join(OVERLAYS_DIR_NAME),
+            destination: self.data_dir().join("export.forgebundle"),
+        })
+        .await
+        .unwrap()
+    }
+}
+
+#[tokio::test]
+async fn an_exported_setup_marks_only_the_queue_holding_the_alert_role() {
+    let store = Store::open().await;
+    let queue = named_queue(RENAMED_ALERT_QUEUE);
+    store.hold_alert_role(&queue).await;
+
+    let staged = stage_setup(store.export().await, store.data_dir().to_path_buf())
+        .await
+        .unwrap();
+
+    let marked: Vec<QueueId> = staged
+        .documents()
+        .configuration
+        .queues
+        .iter()
+        .filter(|document| document.role == Some(QueueRole::OverlayAlerts))
+        .map(|document| document.id)
+        .collect();
+    assert_eq!(marked, [queue.id]);
+}
+
+#[tokio::test]
+async fn a_renamed_alert_queue_keeps_the_role_through_a_setup_export_and_import() {
+    let source = Store::open().await;
+    let queue = named_queue(RENAMED_ALERT_QUEUE);
+    source.hold_alert_role(&queue).await;
+    let exported = source.export().await;
+    let target = Store::open().await;
+
+    target.import(exported).await.unwrap();
+
+    assert_eq!(target.alert_queue().await, Some(queue));
+}
+
+#[tokio::test]
+async fn a_setup_moves_the_alert_role_off_a_local_queue_it_also_carries() {
+    let store = Store::open().await;
+    let holder = named_queue("Old alerts");
+    store.hold_alert_role(&holder).await;
+    let incoming = named_queue(RENAMED_ALERT_QUEUE);
+    let documents = setup_of_queues(vec![
+        queue_document(&holder, None),
+        queue_document(&incoming, Some(QueueRole::OverlayAlerts)),
+    ]);
+
+    store
+        .import(bundle(store.data_dir(), &documents, &[]))
+        .await
+        .unwrap();
+
+    assert_eq!(store.alert_queue().await, Some(incoming));
+}
+
+#[tokio::test]
+async fn a_setup_written_before_queue_roles_leaves_the_local_holder_in_place() {
+    let store = Store::open().await;
+    let holder = named_queue(RENAMED_ALERT_QUEUE);
+    store.hold_alert_role(&holder).await;
+    let document: QueueDocument = serde_json::from_value(serde_json::json!({
+        "id": holder.id,
+        "name": holder.name,
+        "description": holder.description,
+        "concurrency": holder.concurrency,
+    }))
+    .unwrap();
+
+    store
+        .import(bundle(
+            store.data_dir(),
+            &setup_of_queues(vec![document]),
+            &[],
+        ))
+        .await
+        .unwrap();
+
+    assert_eq!(store.alert_queue().await, Some(holder));
 }

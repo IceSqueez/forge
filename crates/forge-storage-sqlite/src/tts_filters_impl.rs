@@ -1,7 +1,7 @@
 use async_trait::async_trait;
 use forge_storage::{
-    BlocklistMode, FilterRule, FilterRuleKind, StorageError, TtsFiltersRepo, TtsPipelineSettings,
-    UrlMode,
+    BlocklistMode, FilterRule, FilterRuleKind, SkipRegex, StorageError, TtsFiltersRepo,
+    TtsPipelineSettings, UrlMode,
 };
 
 use crate::error::SqliteStorageError;
@@ -169,6 +169,8 @@ struct SettingsExtRow {
     output_max_duration_secs: Option<i64>,
     output_language_aware_voice: Option<i64>,
     strip_emoji: i64,
+    skip_prefix_enabled: i64,
+    output_max_duration_enabled: i64,
 }
 
 fn decode_settings_row(
@@ -187,8 +189,8 @@ fn decode_settings_row(
         StorageError::Parse(format!("invalid bot_accounts json: {}", row.bot_accounts))
     })?;
 
-    let skip_custom_regexes: Vec<String> =
-        serde_json::from_str(&ext.skip_custom_regexes).map_err(|_| {
+    let skip_custom_regexes: Vec<SkipRegex> = serde_json::from_str(&ext.skip_custom_regexes)
+        .map_err(|_| {
             StorageError::Parse(format!(
                 "invalid skip_custom_regexes json: {}",
                 ext.skip_custom_regexes
@@ -205,6 +207,7 @@ fn decode_settings_row(
         skip_contains_url: row.skip_contains_url != 0,
         skip_starts_with_bang: row.skip_starts_with_bang != 0,
         skip_prefix: ext.skip_prefix,
+        skip_prefix_enabled: ext.skip_prefix_enabled != 0,
         skip_from_bot_accounts: row.skip_from_bot_accounts != 0,
         bot_accounts,
         skip_longer_than: row.skip_longer_than != 0,
@@ -218,6 +221,7 @@ fn decode_settings_row(
         skip_custom_regexes,
         output_sanitize_punctuation: ext.output_sanitize_punctuation != 0,
         output_max_duration_secs: ext.output_max_duration_secs.map(|v| v as u32),
+        output_max_duration_enabled: ext.output_max_duration_enabled != 0,
         output_language_aware_voice: ext.output_language_aware_voice.map(|v| v != 0),
     })
 }
@@ -276,8 +280,8 @@ pub(crate) async fn write_pipeline_settings<'e>(
              repeat_of_recent_window, output_read_display_name_first, output_emote_to_word,
              skip_prefix, skip_emote_only, skip_mostly_non_latin, skip_custom_regexes,
              output_sanitize_punctuation, output_max_duration_secs, output_language_aware_voice,
-             strip_emoji)
-         VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+             strip_emoji, skip_prefix_enabled, output_max_duration_enabled)
+         VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT(id) DO UPDATE SET
             url_mode                       = excluded.url_mode,
             max_length                     = excluded.max_length,
@@ -301,7 +305,9 @@ pub(crate) async fn write_pipeline_settings<'e>(
             output_sanitize_punctuation    = excluded.output_sanitize_punctuation,
             output_max_duration_secs       = excluded.output_max_duration_secs,
             output_language_aware_voice    = excluded.output_language_aware_voice,
-            strip_emoji                    = excluded.strip_emoji",
+            strip_emoji                    = excluded.strip_emoji,
+            skip_prefix_enabled            = excluded.skip_prefix_enabled,
+            output_max_duration_enabled    = excluded.output_max_duration_enabled",
     )
     .bind(&url_mode_str)
     .bind(settings.max_length.map(|v| v as i64))
@@ -326,6 +332,8 @@ pub(crate) async fn write_pipeline_settings<'e>(
     .bind(settings.output_max_duration_secs.map(|v| v as i64))
     .bind(settings.output_language_aware_voice.map(|v| v as i64))
     .bind(settings.strip_emoji as i64)
+    .bind(settings.skip_prefix_enabled as i64)
+    .bind(settings.output_max_duration_enabled as i64)
     .execute(executor)
     .await
     .map_err(SqliteStorageError::Sqlx)?;
@@ -379,7 +387,8 @@ impl TtsFiltersRepo for SqliteTtsFiltersRepo {
         let ext: SettingsExtRow = sqlx::query_as(
             "SELECT skip_prefix, skip_emote_only, skip_mostly_non_latin,
                     skip_custom_regexes, output_sanitize_punctuation,
-                    output_max_duration_secs, output_language_aware_voice, strip_emoji
+                    output_max_duration_secs, output_language_aware_voice, strip_emoji,
+                    skip_prefix_enabled, output_max_duration_enabled
              FROM tts_pipeline_settings WHERE id = 1",
         )
         .fetch_one(self.db.reader())

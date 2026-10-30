@@ -6,9 +6,7 @@ use forge_overlay::{
     is_curated, order_curated_first, sample_context,
 };
 use forge_registry::{TriggerKindDescriptor, TriggerRegistry, declared_variables};
-use forge_runtime::actions::{
-    OverlayFeed, OverlayWiringRecords, OverlayWiringRefusal, plan_overlay_wiring,
-};
+use forge_runtime::actions::{OverlayFeed, OverlayWiringRefusal, plan_overlay_wiring};
 use forge_storage::OverlayDefinition;
 use forge_types::{ActionId, Variant};
 use gpui::SharedString;
@@ -160,23 +158,6 @@ pub(super) fn refusal_message(refusal: &OverlayWiringRefusal) -> String {
             tr!("overlays_wire_refused_trigger")
         }
     }
-}
-
-pub(super) fn landed_note(records: &OverlayWiringRecords) -> String {
-    let mut landed: Vec<String> = Vec::new();
-    if records.action_id.is_some() {
-        landed.push(tr!("overlays_wire_landed_action"));
-    }
-    if records.trigger_instance_id.is_some() {
-        landed.push(tr!("overlays_wire_landed_trigger"));
-    }
-    if records.linked {
-        landed.push(tr!("overlays_wire_landed_link"));
-    }
-    if landed.is_empty() {
-        return tr!("overlays_wire_landed_nothing");
-    }
-    landed.join(", ")
 }
 
 #[cfg(test)]
@@ -462,42 +443,6 @@ mod tests {
                 expected,
                 "headline {headline:?} with subline {subline:?} read wrong",
             );
-        }
-    }
-
-    #[test]
-    fn the_landed_note_names_exactly_the_records_that_landed() {
-        en();
-        let action = ActionId::new();
-        let trigger = TriggerInstanceId::new();
-
-        for (records, expected) in [
-            (OverlayWiringRecords::default(), "nothing"),
-            (
-                OverlayWiringRecords {
-                    action_id: Some(action),
-                    ..OverlayWiringRecords::default()
-                },
-                "the action",
-            ),
-            (
-                OverlayWiringRecords {
-                    trigger_instance_id: Some(trigger),
-                    ..OverlayWiringRecords::default()
-                },
-                "the trigger",
-            ),
-            (
-                OverlayWiringRecords {
-                    action_id: Some(action),
-                    trigger_instance_id: Some(trigger),
-                    linked: true,
-                    ..OverlayWiringRecords::default()
-                },
-                "the action, the trigger, the link between them",
-            ),
-        ] {
-            assert_eq!(landed_note(&records), expected);
         }
     }
 }

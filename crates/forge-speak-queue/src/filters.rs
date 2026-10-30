@@ -1,7 +1,9 @@
 use std::num::NonZeroUsize;
 use std::sync::{Arc, LazyLock};
 
-use forge_storage::{FilterRule, FilterRuleKind, TtsPipelineSettings, UrlMode as StorageUrlMode};
+use forge_storage::{
+    FilterRule, FilterRuleKind, SkipRegex, TtsPipelineSettings, UrlMode as StorageUrlMode,
+};
 use forge_tts_pipeline::{
     BlocklistMode, EmoteTokenSet, EmoteTreatment, OutputConfig, PipelineConfig, ReplacementRule,
     SkipRulesConfig,
@@ -112,6 +114,10 @@ pub fn store_emote_treatment(settings: &mut TtsPipelineSettings, treatment: Emot
 }
 
 pub fn effective_skip_prefix(settings: &TtsPipelineSettings) -> Option<String> {
+    configured_skip_prefix(settings).filter(|_| settings.skip_prefix_enabled)
+}
+
+pub fn configured_skip_prefix(settings: &TtsPipelineSettings) -> Option<String> {
     match &settings.skip_prefix {
         Some(prefix) if !prefix.is_empty() => Some(prefix.clone()),
         _ if settings.skip_starts_with_bang => Some(BANG_COMMAND_PREFIX.to_owned()),
@@ -156,10 +162,13 @@ fn apply_url_mode(
     }
 }
 
-fn compile_skip_regexes(patterns: &[String]) -> (Vec<regex::Regex>, Vec<FilterMappingError>) {
-    let mut compiled = Vec::with_capacity(patterns.len());
+fn compile_skip_regexes(regexes: &[SkipRegex]) -> (Vec<regex::Regex>, Vec<FilterMappingError>) {
+    let mut compiled = Vec::with_capacity(regexes.len());
     let mut rejected = Vec::new();
-    for (index, pattern) in patterns.iter().enumerate() {
+    for (index, SkipRegex { pattern, enabled }) in regexes.iter().enumerate() {
+        if !enabled {
+            continue;
+        }
         match regex::Regex::new(pattern) {
             Ok(regex) => compiled.push(regex),
             Err(source) => rejected.push(FilterMappingError::InvalidSkipRegex {
@@ -178,7 +187,9 @@ fn output_from_settings(settings: &TtsPipelineSettings) -> OutputConfig {
         emote_treatment: emote_treatment(settings),
         strip_emoji: settings.strip_emoji,
         sanitize_punctuation: settings.output_sanitize_punctuation,
-        max_duration_secs: settings.output_max_duration_secs,
+        max_duration_secs: settings
+            .output_max_duration_secs
+            .filter(|_| settings.output_max_duration_enabled),
         language_aware_voice: settings.output_language_aware_voice.unwrap_or(false),
     }
 }

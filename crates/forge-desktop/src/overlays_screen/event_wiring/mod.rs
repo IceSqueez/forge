@@ -13,8 +13,8 @@ use forge_components::{
 use forge_overlay::{OverlayKindRegistry, accepts_event_wiring};
 use forge_registry::{SubActionRegistry, TriggerRegistry};
 use forge_runtime::actions::{
-    ActionsService, OverlayFeed, OverlayWiringError, OverlayWiringOutcome, OverlayWiringRecords,
-    OverlayWiringRefusal, WiredQueue,
+    ActionsService, OverlayFeed, OverlayWiringOutcome, OverlayWiringRecords, OverlayWiringRefusal,
+    WiredQueue,
 };
 use forge_runtime::{MembershipOutcome, QueueSchedulerHandle};
 use forge_storage::{OverlayDefinition, OverlayId};
@@ -83,10 +83,6 @@ enum Landing {
         queue: Option<QueueLanding>,
     },
     AlreadyWired(ActionId),
-    Incomplete {
-        records: OverlayWiringRecords,
-        message: String,
-    },
     Failed(String),
     Missing,
 }
@@ -394,12 +390,6 @@ impl EventWiringView {
                         let queue = register_created_queue(&scheduler, &records).await;
                         Landing::Wired { records, queue }
                     }
-                    Err(OverlayWiringError::Incomplete { records, source }) => {
-                        Landing::Incomplete {
-                            records: *records,
-                            message: source.to_string(),
-                        }
-                    }
                     Err(error) => Landing::Failed(error.to_string()),
                 }
             },
@@ -430,16 +420,6 @@ impl EventWiringView {
                 action_id,
                 cx,
             ),
-            Landing::Incomplete { records, message } => {
-                tracing::warn!(error = %message, "overlay event wiring stopped part-way");
-                let landed = plan::landed_note(&records);
-                let note = tr!("overlays_wire_toast_incomplete", landed = landed.as_str());
-                match records.action_id {
-                    Some(action_id) => self.raise_open_toast(ToastKind::Error, note, action_id, cx),
-                    None => cx.push_toast(ToastKind::Error, note),
-                }
-                self.refresh_feeds(cx);
-            }
             Landing::Failed(message) => {
                 tracing::warn!(error = %message, "overlay event wiring failed");
                 cx.push_toast(ToastKind::Error, message);
@@ -563,7 +543,7 @@ mod tests {
     use forge_storage::history::MockHistoryRepo;
     use forge_storage::queue::MockQueueRepo;
     use forge_storage::trigger_instance::MockTriggerInstanceRepo;
-    use forge_types::{QueueId, TriggerInstanceId};
+    use forge_types::QueueId;
     use gpui::TestAppContext;
 
     use super::*;
@@ -775,45 +755,6 @@ mod tests {
                         raised[1].message,
                     );
                 }
-            });
-        }
-    }
-
-    #[gpui::test]
-    fn a_wiring_that_stopped_part_way_names_what_landed_and_opens_what_it_can(
-        cx: &mut TestAppContext,
-    ) {
-        for action_id in [Some(ActionId::new()), None] {
-            let (view, _rt) = mount(cx);
-            let records = OverlayWiringRecords {
-                action_id,
-                trigger_instance_id: Some(TriggerInstanceId::new()),
-                ..OverlayWiringRecords::default()
-            };
-
-            view.update(cx, |this, cx| {
-                this.settle_wiring(
-                    Landing::Incomplete {
-                        records,
-                        message: "the disk is full".to_owned(),
-                    },
-                    cx,
-                )
-            });
-
-            toasts(cx, |raised| {
-                assert_eq!(raised.len(), 1);
-                assert!(matches!(raised[0].kind, ToastKind::Error));
-                assert!(
-                    raised[0].message.contains("the trigger"),
-                    "the toast hides what landed: {}",
-                    raised[0].message,
-                );
-                assert_eq!(
-                    raised[0].action.is_some(),
-                    action_id.is_some(),
-                    "an action id of {action_id:?} offered the wrong way out",
-                );
             });
         }
     }

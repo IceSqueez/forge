@@ -966,22 +966,50 @@ async fn wiring_the_same_event_twice_reports_the_second_as_already_wired() {
     );
 }
 
-#[tokio::test]
-async fn two_wirings_of_the_same_event_at_once_land_a_single_action() {
-    let stored = stored().await;
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn two_wirings_of_one_event_on_a_shared_service_land_a_single_wiring() {
+    let Stored {
+        provider,
+        service,
+        _media_root,
+    } = stored().await;
+    let service = Arc::new(service);
+    let first = Arc::clone(&service);
+    let second = Arc::clone(&service);
 
-    let (first, second) = tokio::join!(wire(&stored.service), wire(&stored.service));
+    let (first, second) = tokio::join!(
+        tokio::spawn(async move { wire(&first).await }),
+        tokio::spawn(async move { wire(&second).await }),
+    );
 
-    let outcomes = [first.expect("one wiring"), second.expect("other wiring")];
+    let outcomes = [
+        first.expect("one task").expect("one wiring"),
+        second.expect("other task").expect("other wiring"),
+    ];
     let wired = outcomes
         .iter()
         .filter(|outcome| matches!(outcome, OverlayWiringOutcome::Wired(_)))
         .count();
+    let alert_queues = provider
+        .queue_repo()
+        .list()
+        .await
+        .unwrap()
+        .into_iter()
+        .filter(|queue| queue.name == OVERLAY_ALERT_QUEUE.name)
+        .count();
     assert_eq!(
         (
             wired,
-            stored.provider.action_repo().list().await.unwrap().len()
+            provider.action_repo().list().await.unwrap().len(),
+            provider
+                .trigger_instance_repo()
+                .list_all()
+                .await
+                .unwrap()
+                .len(),
+            alert_queues,
         ),
-        (1, 1)
+        (1, 1, 1, 1)
     );
 }

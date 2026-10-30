@@ -4,9 +4,10 @@ use std::time::Instant;
 use async_trait::async_trait;
 use forge_registry::runner::SubActionConfig;
 use forge_registry::{RunContext, SubActionCategory, SubActionIo, SubActionRunner};
-use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, UserText, Variant};
+use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, Variant};
 use time::OffsetDateTime;
 
+use super::step_failure;
 use crate::ObsSink;
 use crate::vocabulary::fields::query;
 use crate::vocabulary::{sub_action_ids, variables};
@@ -98,7 +99,7 @@ impl SubActionRunner for QueryStreamStatusRunner {
                     kind: KIND_ID.to_owned(),
                     started_at,
                     duration_ms: start.elapsed().as_millis() as u64,
-                    outcome: SubActionOutcome::Failed(UserText::unlocalized(e.to_string())),
+                    outcome: step_failure::failed(&e),
                     index: ctx.index,
                 },
                 None,

@@ -6,8 +6,9 @@ use forge_registry::{
     ConfigSpec, RunContext, StepTimer, SubActionCategory, SubActionRunner, TextEditor, TextField,
     TypedField,
 };
-use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry};
+use forge_types::{ArgStack, SubActionTelemetry};
 
+use super::step_failure;
 use crate::ObsSink;
 use crate::vocabulary::{config_keys, sub_action_ids};
 
@@ -75,8 +76,7 @@ impl SubActionRunner for SceneCollectionSwitchRunner {
             Ok(name) => name,
             Err(problem) => return (timer.invalid_config(&problem), None),
         };
-        let outcome =
-            SubActionOutcome::from_result(&self.sink.set_current_scene_collection(&name).await);
+        let outcome = step_failure::outcome(&self.sink.set_current_scene_collection(&name).await);
         (timer.finish(outcome), None)
     }
 }

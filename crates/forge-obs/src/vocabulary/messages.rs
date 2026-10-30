@@ -1,4 +1,4 @@
-use forge_types::{MessageCatalog, MessageCode, MessageRef};
+use forge_types::{MessageCatalog, MessageCode, MessageRef, UpstreamDetail, VerbatimText};
 
 use crate::vocabulary::INTEGRATION_ID;
 
@@ -9,6 +9,16 @@ const PASSWORD_REJECTED: MessageCode =
 const CONNECT_FAILED: MessageCode = MessageCode::from_static(INTEGRATION_ID, "connect_failed");
 const CONNECTION_LOST: MessageCode = MessageCode::from_static(INTEGRATION_ID, "connection_lost");
 const UNRESPONSIVE: MessageCode = MessageCode::from_static(INTEGRATION_ID, "unresponsive");
+const NOT_CONNECTED: MessageCode = MessageCode::from_static(INTEGRATION_ID, "not_connected");
+const REQUEST_TIMED_OUT: MessageCode =
+    MessageCode::from_static(INTEGRATION_ID, "request_timed_out");
+const REQUEST_REJECTED: MessageCode = MessageCode::from_static(INTEGRATION_ID, "request_rejected");
+const PROTOCOL_ERROR: MessageCode = MessageCode::from_static(INTEGRATION_ID, "protocol_error");
+const PAYLOAD_INVALID: MessageCode = MessageCode::from_static(INTEGRATION_ID, "payload_invalid");
+const STUDIO_MODE_INACTIVE: MessageCode =
+    MessageCode::from_static(INTEGRATION_ID, "studio_mode_inactive");
+
+const REQUEST_ARG: &str = "request";
 
 pub const HEALTH_STREAM: MessageCode = MessageCode::from_static(INTEGRATION_ID, "health_stream");
 pub const HEALTH_RECORDING: MessageCode =
@@ -30,6 +40,12 @@ pub const OBS_MESSAGES: MessageCatalog = MessageCatalog {
         CONNECT_FAILED,
         CONNECTION_LOST,
         UNRESPONSIVE,
+        NOT_CONNECTED,
+        REQUEST_TIMED_OUT,
+        REQUEST_REJECTED,
+        PROTOCOL_ERROR,
+        PAYLOAD_INVALID,
+        STUDIO_MODE_INACTIVE,
     ],
     en_ftl: include_str!("../../locales/en/messages.ftl"),
     uk_ftl: include_str!("../../locales/uk/messages.ftl"),
@@ -49,6 +65,36 @@ pub(crate) fn password_rejected() -> MessageRef {
 
 pub(crate) fn connect_failed() -> MessageRef {
     MessageRef::new(CONNECT_FAILED)
+}
+
+pub(crate) fn connect_failed_with(detail: &str) -> MessageRef {
+    connect_failed().with_detail(UpstreamDetail::from_redacted(detail))
+}
+
+pub(crate) fn not_connected() -> MessageRef {
+    MessageRef::new(NOT_CONNECTED)
+}
+
+pub(crate) fn request_timed_out() -> MessageRef {
+    MessageRef::new(REQUEST_TIMED_OUT)
+}
+
+pub(crate) fn request_rejected(request: &str, detail: &str) -> MessageRef {
+    MessageRef::new(REQUEST_REJECTED)
+        .with_arg(REQUEST_ARG, VerbatimText::new(request))
+        .with_detail(UpstreamDetail::from_redacted(detail))
+}
+
+pub(crate) fn protocol_error(detail: &str) -> MessageRef {
+    MessageRef::new(PROTOCOL_ERROR).with_detail(UpstreamDetail::from_redacted(detail))
+}
+
+pub(crate) fn payload_invalid(detail: &str) -> MessageRef {
+    MessageRef::new(PAYLOAD_INVALID).with_detail(UpstreamDetail::from_redacted(detail))
+}
+
+pub(crate) fn studio_mode_inactive() -> MessageRef {
+    MessageRef::new(STUDIO_MODE_INACTIVE)
 }
 
 pub(crate) fn connection_lost() -> MessageRef {

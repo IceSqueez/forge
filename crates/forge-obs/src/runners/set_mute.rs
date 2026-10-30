@@ -6,8 +6,9 @@ use forge_registry::{
     ConfigProblem, ConfigSpec, PickedTextField, RunContext, StepTimer, SubActionCategory,
     SubActionRunner, TextPicker, ToggleField, TypedField,
 };
-use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry};
+use forge_types::{ArgStack, SubActionTelemetry};
 
+use super::step_failure;
 use crate::ObsSink;
 use crate::vocabulary::{config_keys, picker_keys, sub_action_ids};
 
@@ -85,8 +86,7 @@ impl SubActionRunner for SetMuteRunner {
             Ok(values) => values,
             Err(problem) => return (timer.invalid_config(&problem), None),
         };
-        let outcome =
-            SubActionOutcome::from_result(&self.sink.set_input_mute(&source, muted).await);
+        let outcome = step_failure::outcome(&self.sink.set_input_mute(&source, muted).await);
         (timer.finish(outcome), None)
     }
 }

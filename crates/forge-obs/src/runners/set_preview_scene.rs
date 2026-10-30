@@ -5,8 +5,9 @@ use forge_registry::runner::SubActionConfig;
 use forge_registry::{
     ConfigSpec, RunContext, StepTimer, SubActionCategory, SubActionRunner, TypedField,
 };
-use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry};
+use forge_types::{ArgStack, SubActionTelemetry};
 
+use super::step_failure;
 use crate::ObsSink;
 use crate::runners::fields::SCENE;
 use crate::vocabulary::sub_action_ids;
@@ -65,7 +66,7 @@ impl SubActionRunner for SetPreviewSceneRunner {
             Ok(scene) => scene,
             Err(problem) => return (timer.invalid_config(&problem), None),
         };
-        let outcome = SubActionOutcome::from_result(&self.sink.set_preview_scene(&scene).await);
+        let outcome = step_failure::outcome(&self.sink.set_preview_scene(&scene).await);
         (timer.finish(outcome), None)
     }
 }

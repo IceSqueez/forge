@@ -5,8 +5,9 @@ use forge_registry::runner::SubActionConfig;
 use forge_registry::{
     ConfigSpec, RunContext, StepTimer, SubActionCategory, SubActionRunner, TypedField,
 };
-use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry};
+use forge_types::{ArgStack, SubActionTelemetry};
 
+use super::step_failure;
 use crate::ObsSink;
 use crate::runners::fields::ACTIVE;
 use crate::vocabulary::sub_action_ids;
@@ -70,6 +71,6 @@ impl SubActionRunner for RecordSetActiveRunner {
         } else {
             self.sink.stop_record().await
         };
-        (timer.finish(SubActionOutcome::from_result(&result)), None)
+        (timer.finish(step_failure::outcome(&result)), None)
     }
 }

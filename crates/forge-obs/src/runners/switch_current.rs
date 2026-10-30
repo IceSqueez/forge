@@ -7,6 +7,7 @@ use forge_registry::{
 };
 use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry};
 
+use super::step_failure;
 use crate::ObsSink;
 use crate::runners::fields::SCENE;
 use crate::vocabulary::sub_action_ids;
@@ -73,7 +74,7 @@ impl SubActionRunner for SwitchCurrentSceneRunner {
         let outcome = if already_current {
             SubActionOutcome::Success
         } else {
-            SubActionOutcome::from_result(&self.sink.set_scene(&scene).await)
+            step_failure::outcome(&self.sink.set_scene(&scene).await)
         };
         (timer.finish(outcome), None)
     }

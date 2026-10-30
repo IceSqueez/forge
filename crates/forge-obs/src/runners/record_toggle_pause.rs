@@ -4,9 +4,10 @@ use std::time::Instant;
 use async_trait::async_trait;
 use forge_registry::runner::SubActionConfig;
 use forge_registry::{RunContext, SubActionCategory, SubActionRunner};
-use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry};
+use forge_types::{ArgStack, SubActionTelemetry};
 use time::OffsetDateTime;
 
+use super::step_failure;
 use crate::ObsSink;
 use crate::vocabulary::sub_action_ids;
 
@@ -56,7 +57,7 @@ impl SubActionRunner for RecordTogglePauseRunner {
         let started_at = OffsetDateTime::now_utc();
         let start = Instant::now();
 
-        let outcome = SubActionOutcome::from_result(&self.sink.toggle_record_pause().await);
+        let outcome = step_failure::outcome(&self.sink.toggle_record_pause().await);
 
         (
             SubActionTelemetry {

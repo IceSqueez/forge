@@ -6,8 +6,9 @@ use forge_registry::{
     ConfigProblem, ConfigSpec, RunContext, StepTimer, SubActionCategory, SubActionRunner,
     TextEditor, TextField, ToggleField, TypedField,
 };
-use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry};
+use forge_types::{ArgStack, SubActionTelemetry};
 
+use super::step_failure;
 use crate::ObsSink;
 use crate::runners::fields::SOURCE;
 use crate::vocabulary::{config_keys, sub_action_ids};
@@ -93,7 +94,7 @@ impl SubActionRunner for FilterSetEnabledRunner {
             Ok(values) => values,
             Err(problem) => return (timer.invalid_config(&problem), None),
         };
-        let outcome = SubActionOutcome::from_result(
+        let outcome = step_failure::outcome(
             &self
                 .sink
                 .set_source_filter_enabled(&source, &filter, enabled)

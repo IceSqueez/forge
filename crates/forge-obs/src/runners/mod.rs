@@ -28,6 +28,7 @@ mod set_preview_scene;
 mod set_transition;
 mod set_visible;
 mod set_volume;
+mod step_failure;
 mod stream_send_caption;
 mod stream_set_active;
 mod stream_start;

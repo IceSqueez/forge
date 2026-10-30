@@ -7,8 +7,9 @@ use forge_registry::{
     ConfigProblem, ConfigSpec, PickedTextField, RunContext, StepTimer, SubActionCategory,
     SubActionRunner, TextPicker, TypedField,
 };
-use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry};
+use forge_types::{ArgStack, SubActionTelemetry};
 
+use super::step_failure;
 use crate::ObsSink;
 use crate::runners::fields::SOURCE;
 use crate::vocabulary::{config_keys, sub_action_ids};
@@ -87,7 +88,7 @@ impl SubActionRunner for CaptureScreenshotRunner {
             .and_then(|ext| ext.to_str())
             .map(str::to_lowercase)
             .unwrap_or_else(|| "png".to_owned());
-        let outcome = SubActionOutcome::from_result(
+        let outcome = step_failure::outcome(
             &self
                 .sink
                 .save_source_screenshot(&source, &path, &format)

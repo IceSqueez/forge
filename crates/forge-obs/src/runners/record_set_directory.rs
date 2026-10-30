@@ -6,8 +6,9 @@ use forge_registry::{
     ConfigSpec, PickedTextField, RunContext, StepTimer, SubActionCategory, SubActionRunner,
     TextPicker, TypedField,
 };
-use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry};
+use forge_types::{ArgStack, SubActionTelemetry};
 
+use super::step_failure;
 use crate::ObsSink;
 use crate::vocabulary::{config_keys, sub_action_ids};
 
@@ -73,7 +74,7 @@ impl SubActionRunner for RecordSetDirectoryRunner {
             Ok(path) => path,
             Err(problem) => return (timer.invalid_config(&problem), None),
         };
-        let outcome = SubActionOutcome::from_result(&self.sink.set_record_directory(&path).await);
+        let outcome = step_failure::outcome(&self.sink.set_record_directory(&path).await);
         (timer.finish(outcome), None)
     }
 }

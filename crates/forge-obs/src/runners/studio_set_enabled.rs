@@ -5,8 +5,9 @@ use forge_registry::runner::SubActionConfig;
 use forge_registry::{
     ConfigSpec, RunContext, StepTimer, SubActionCategory, SubActionRunner, ToggleField, TypedField,
 };
-use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry};
+use forge_types::{ArgStack, SubActionTelemetry};
 
+use super::step_failure;
 use crate::ObsSink;
 use crate::vocabulary::{config_keys, sub_action_ids};
 
@@ -70,7 +71,7 @@ impl SubActionRunner for StudioSetEnabledRunner {
             Ok(on) => on,
             Err(problem) => return (timer.invalid_config(&problem), None),
         };
-        let outcome = SubActionOutcome::from_result(&self.sink.set_studio_mode(on).await);
+        let outcome = step_failure::outcome(&self.sink.set_studio_mode(on).await);
         (timer.finish(outcome), None)
     }
 }

@@ -6,9 +6,10 @@ use forge_registry::{
     ConfigProblem, ConfigSpec, JsonObjectField, RunContext, StepTimer, SubActionCategory,
     SubActionRunner, TextEditor, TextField, ToggleField, TypedField,
 };
-use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry};
+use forge_types::{ArgStack, SubActionTelemetry};
 use serde_json::{Map, Value};
 
+use super::step_failure;
 use crate::ObsSink;
 use crate::vocabulary::{config_keys, sub_action_ids};
 
@@ -99,7 +100,7 @@ impl SubActionRunner for SetInputSettingsRunner {
             Ok(values) => values,
             Err(problem) => return (timer.invalid_config(&problem), None),
         };
-        let outcome = SubActionOutcome::from_result(
+        let outcome = step_failure::outcome(
             &self
                 .sink
                 .set_input_settings(&source, &settings, overlay)

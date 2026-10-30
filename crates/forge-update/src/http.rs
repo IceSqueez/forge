@@ -3,8 +3,8 @@ use std::time::Duration;
 
 use forge_net::{
     BodyProgress, BodySink, CallClass, DEFAULT_RETRY_AFTER_SECS, Gateway, GatewayFailure,
-    GatewayProfile, GatewayRequest, GatewayResponse, Method, RateLimiter, StreamFailure,
-    ThrottleHintFamily, TokenBucketRateLimiter,
+    GatewayProfile, GatewayRequest, GatewayResponse, GatewayTimings, Method, RateLimiter,
+    StreamFailure, ThrottleHintFamily, TokenBucketRateLimiter,
 };
 use tokio_util::sync::CancellationToken;
 
@@ -40,7 +40,14 @@ pub(crate) enum StreamError {
 
 impl UpdateClient {
     pub fn new(limiter: Arc<dyn RateLimiter>) -> Result<Self, UpdateError> {
-        Self::with_limiters(Arc::clone(&limiter), limiter)
+        Self::with_timings(limiter, GatewayTimings::DEFAULT)
+    }
+
+    pub fn with_timings(
+        limiter: Arc<dyn RateLimiter>,
+        timings: GatewayTimings,
+    ) -> Result<Self, UpdateError> {
+        Self::assemble(Arc::clone(&limiter), limiter, timings)
     }
 
     pub fn for_github() -> Result<Self, UpdateError> {
@@ -65,8 +72,16 @@ impl UpdateClient {
         api_limiter: Arc<dyn RateLimiter>,
         download_limiter: Arc<dyn RateLimiter>,
     ) -> Result<Self, UpdateError> {
-        let build = |limiter, profile| {
-            Gateway::without_base(limiter, profile, None)
+        Self::assemble(api_limiter, download_limiter, GatewayTimings::DEFAULT)
+    }
+
+    fn assemble(
+        api_limiter: Arc<dyn RateLimiter>,
+        download_limiter: Arc<dyn RateLimiter>,
+        timings: GatewayTimings,
+    ) -> Result<Self, UpdateError> {
+        let build = |limiter, profile: GatewayProfile| {
+            Gateway::without_base(limiter, profile.with_timings(timings), None)
                 .map_err(|error| UpdateError::Client(error.to_string()))
         };
         Ok(Self {

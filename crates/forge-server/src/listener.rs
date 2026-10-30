@@ -23,6 +23,7 @@ pub(crate) struct GuardedListener {
     inner: TcpListener,
     permits: Arc<Semaphore>,
     per_ip: Arc<PerIpLimiter>,
+    read_timeout: Duration,
 }
 
 impl GuardedListener {
@@ -31,7 +32,13 @@ impl GuardedListener {
             inner,
             permits: Arc::new(Semaphore::new(MAX_CONCURRENT_CONNECTIONS)),
             per_ip: Arc::new(PerIpLimiter::default()),
+            read_timeout: REQUEST_READ_TIMEOUT,
         }
+    }
+
+    pub(crate) fn with_read_timeout(mut self, read_timeout: Duration) -> Self {
+        self.read_timeout = read_timeout;
+        self
     }
 }
 
@@ -64,7 +71,9 @@ impl Listener for GuardedListener {
                     }
                 }
             };
-            return (GuardedStream::new(stream, permit, per_ip_permit), addr);
+            let guarded = GuardedStream::new(stream, permit, per_ip_permit)
+                .with_read_timeout(self.read_timeout);
+            return (guarded, addr);
         }
     }
 
@@ -114,27 +123,33 @@ impl Drop for PerIpPermit {
     }
 }
 
-pub(crate) struct GuardedStream {
-    stream: TcpStream,
+pub(crate) struct GuardedStream<S = TcpStream> {
+    stream: S,
+    read_timeout: Duration,
     read_deadline: Pin<Box<Sleep>>,
     upgraded: Arc<AtomicBool>,
     _permit: OwnedSemaphorePermit,
     _per_ip_permit: Option<PerIpPermit>,
 }
 
-impl GuardedStream {
-    fn new(
-        stream: TcpStream,
-        permit: OwnedSemaphorePermit,
-        per_ip_permit: Option<PerIpPermit>,
-    ) -> Self {
+impl<S> GuardedStream<S> {
+    fn new(stream: S, permit: OwnedSemaphorePermit, per_ip_permit: Option<PerIpPermit>) -> Self {
         Self {
             stream,
+            read_timeout: REQUEST_READ_TIMEOUT,
             read_deadline: Box::pin(tokio::time::sleep(REQUEST_READ_TIMEOUT)),
             upgraded: Arc::new(AtomicBool::new(false)),
             _permit: permit,
             _per_ip_permit: per_ip_permit,
         }
+    }
+
+    fn with_read_timeout(mut self, read_timeout: Duration) -> Self {
+        self.read_timeout = read_timeout;
+        self.read_deadline
+            .as_mut()
+            .reset(Instant::now() + read_timeout);
+        self
     }
 
     fn is_upgraded(&self) -> bool {
@@ -149,7 +164,7 @@ impl GuardedStream {
         if !self.is_upgraded() {
             self.read_deadline
                 .as_mut()
-                .reset(Instant::now() + REQUEST_READ_TIMEOUT);
+                .reset(Instant::now() + self.read_timeout);
         }
     }
 
@@ -160,7 +175,7 @@ impl GuardedStream {
     }
 }
 
-impl AsyncRead for GuardedStream {
+impl<S: AsyncRead + Unpin> AsyncRead for GuardedStream<S> {
     fn poll_read(
         self: Pin<&mut Self>,
         cx: &mut Context<'_>,
@@ -174,7 +189,7 @@ impl AsyncRead for GuardedStream {
     }
 }
 
-impl AsyncWrite for GuardedStream {
+impl<S: AsyncWrite + Unpin> AsyncWrite for GuardedStream<S> {
     fn poll_write(
         self: Pin<&mut Self>,
         cx: &mut Context<'_>,

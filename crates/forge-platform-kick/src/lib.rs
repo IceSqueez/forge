@@ -48,7 +48,7 @@ pub use gateway::{
 };
 pub use integration::KICK_INTEGRATION;
 pub use platform::KickPlatform;
-pub use pusher::chat::{KickChat, KickChatHandle};
+pub use pusher::chat::{KickChat, KickChatHandle, PusherTiming};
 pub use pusher::chatroom_lookup::{ChannelInfoFetcher, KickChannelInfo};
 pub use pusher::{chat, error, protocol};
 pub use sub_actions::{

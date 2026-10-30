@@ -35,6 +35,7 @@ pub use bandwidth::BandwidthTracker;
 pub use bus_adapter::{BusAdapter, ClientId, EventFilter};
 pub use config::{
     DEFAULT_PORT, LAN_BIND_ADDRESS, LOCALHOST_BIND_ADDRESS, ServerConfig, ServerSettings,
+    ServerTiming,
 };
 pub use delivery_hub::DeliveryHub;
 pub use error::ServerError;

@@ -21,7 +21,9 @@ mod wire;
 pub use api::{
     DONATELLO_GATEWAY_PROFILE, DonatelloAccount, default_rate_limiter, donatello_gateway,
 };
-pub use config::{DEFAULT_POLL_INTERVAL, DonatelloConfig, MAX_POLL_INTERVAL, MIN_POLL_INTERVAL};
+pub use config::{
+    DEFAULT_POLL_INTERVAL, DonatelloConfig, DonatelloTiming, MAX_POLL_INTERVAL, MIN_POLL_INTERVAL,
+};
 pub use credentials::DONATELLO_CREDENTIAL_ID;
 pub use error::DonatelloError;
 pub use integration::DONATELLO_INTEGRATION;

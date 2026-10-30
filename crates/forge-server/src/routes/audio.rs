@@ -305,6 +305,7 @@ mod tests {
             overlay_root: Arc::new(overlay_root),
             overlay_cors_any_origin,
             bind_addr: addr,
+            timing: crate::ServerTiming::default(),
             allowed_origins: Arc::new(build_allowed_origins(addr, &[])),
         };
 

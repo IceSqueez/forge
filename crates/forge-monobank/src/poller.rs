@@ -10,7 +10,7 @@ use tokio::sync::{mpsc, watch};
 use tracing::{debug, warn};
 
 use crate::api::MonobankApi;
-use crate::config::STATEMENT_CALL_INTERVAL;
+use crate::config::MonobankTiming;
 use crate::credentials;
 use crate::error::MonobankError;
 use crate::jar::{JarDirectory, JarId};
@@ -20,8 +20,6 @@ use crate::window::{Coverage, StatementWindow, WindowPlanner};
 use crate::wire::{StatementItemWire, TRANSACTION_ID_FIELD, TRANSACTION_TIME_FIELD};
 
 const SEEN_TRANSACTION_CAPACITY: usize = 4096;
-const ERROR_BACKOFF_BASE: Duration = Duration::from_secs(5);
-const ERROR_BACKOFF_CAP: Duration = Duration::from_secs(300);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct PollControl {
@@ -40,6 +38,7 @@ pub(crate) struct PollContext {
     pub(crate) control: watch::Receiver<PollControl>,
     pub(crate) status: Arc<StatusBoard>,
     pub(crate) sink: DonationSink,
+    pub(crate) timing: MonobankTiming,
 }
 
 #[derive(Clone, PartialEq, Eq)]
@@ -93,7 +92,7 @@ pub(crate) async fn run(mut ctx: PollContext) {
     let mut session: Option<Session> = None;
     let mut memory: Option<PollMemory> = None;
     let mut generation = None;
-    let mut backoff = Backoff::new(ERROR_BACKOFF_BASE, ERROR_BACKOFF_CAP);
+    let mut backoff = Backoff::new(ctx.timing.error_backoff_base, ctx.timing.error_backoff_cap);
     loop {
         let control = *ctx.control.borrow_and_update();
         if !control.enabled {
@@ -111,7 +110,7 @@ pub(crate) async fn run(mut ctx: PollContext) {
         let delay = match cycle(&ctx, &mut session, &mut memory).await {
             Ok(()) => {
                 backoff.reset();
-                Some(STATEMENT_CALL_INTERVAL)
+                Some(ctx.timing.statement_call_interval)
             }
             Err(CycleError::SinkClosed) => return,
             Err(CycleError::Poll(MonobankError::CoolingDown { retry_after_secs })) => {
@@ -132,7 +131,7 @@ pub(crate) async fn run(mut ctx: PollContext) {
                 if ctx.sink.send(Err(error.into())).await.is_err() {
                     return;
                 }
-                (!needs_user).then(|| STATEMENT_CALL_INTERVAL + backoff.next_delay())
+                (!needs_user).then(|| ctx.timing.statement_call_interval + backoff.next_delay())
             }
         };
         if let Wake::Closed = wait(&mut ctx, delay).await {

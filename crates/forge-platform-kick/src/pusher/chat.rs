@@ -3,7 +3,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use forge_events::{Event, EventSource};
-use forge_net::Backoff;
+use forge_net::{Backoff, DEFAULT_BACKOFF_BASE, DEFAULT_BACKOFF_CAP};
 use forge_platform_core::chat::ConnectionState;
 use forge_platform_core::{ConnectionTransition, EndpointSurface, PlatformEndpoints};
 use forge_types::ChatPayload;
@@ -30,6 +30,27 @@ const SESSION_STOP_GRACE: Duration = Duration::from_secs(5);
 const PUSHER_CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
 
 const SUBSCRIPTION_ACK_TIMEOUT: Duration = Duration::from_secs(10);
+
+#[derive(Clone, Copy, Debug)]
+pub struct PusherTiming {
+    pub connect_timeout: Duration,
+    pub subscription_ack_timeout: Duration,
+    pub session_stop_grace: Duration,
+    pub reconnect_backoff_base: Duration,
+    pub reconnect_backoff_cap: Duration,
+}
+
+impl Default for PusherTiming {
+    fn default() -> Self {
+        Self {
+            connect_timeout: PUSHER_CONNECT_TIMEOUT,
+            subscription_ack_timeout: SUBSCRIPTION_ACK_TIMEOUT,
+            session_stop_grace: SESSION_STOP_GRACE,
+            reconnect_backoff_base: DEFAULT_BACKOFF_BASE,
+            reconnect_backoff_cap: DEFAULT_BACKOFF_CAP,
+        }
+    }
+}
 
 type PusherSocket =
     tokio_tungstenite::WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>>;
@@ -64,12 +85,14 @@ pub struct KickChat {
     fetcher: Arc<ChannelInfoFetcher>,
     slug: String,
     ws_url: String,
+    timing: PusherTiming,
 }
 
 pub struct KickChatHandle {
     cancel: CancellationToken,
     tasks: JoinSet<()>,
     state_rx: watch::Receiver<ChatLinkStatus>,
+    stop_grace: Duration,
 }
 
 impl KickChatHandle {
@@ -95,7 +118,7 @@ impl KickChatHandle {
 
     pub async fn stop(mut self) {
         self.cancel.cancel();
-        if tokio::time::timeout(SESSION_STOP_GRACE, join_all(&mut self.tasks))
+        if tokio::time::timeout(self.stop_grace, join_all(&mut self.tasks))
             .await
             .is_err()
         {
@@ -126,7 +149,13 @@ impl KickChat {
             fetcher: channel_info,
             slug,
             ws_url: protocol::socket_url(endpoints.base_url(EndpointSurface::KickChatSocket)),
+            timing: PusherTiming::default(),
         }
+    }
+
+    pub fn with_timing(mut self, timing: PusherTiming) -> Self {
+        self.timing = timing;
+        self
     }
 
     pub async fn connect(self, event_tx: mpsc::Sender<Event>) -> Result<KickChatHandle, KickError> {
@@ -142,13 +171,14 @@ impl KickChat {
             fetcher,
             slug,
             ws_url,
+            timing,
         } = self;
         let channel_info = cancel
             .run_until_cancelled(fetcher.fetch(&slug))
             .await
             .ok_or(KickError::ConnectCancelled)??;
         let ws_stream = cancel
-            .run_until_cancelled(connect_ws(&ws_url))
+            .run_until_cancelled(connect_ws(&ws_url, timing.connect_timeout))
             .await
             .ok_or(KickError::ConnectCancelled)??;
 
@@ -166,6 +196,7 @@ impl KickChat {
                 fetcher,
                 slug,
                 state_tx,
+                timing,
             },
         ));
 
@@ -173,25 +204,21 @@ impl KickChat {
             cancel,
             tasks,
             state_rx,
+            stop_grace: timing.session_stop_grace,
         })
     }
 }
 
-async fn connect_ws(url: &str) -> Result<PusherSocket, KickError> {
-    let (ws_stream, _) = tokio::time::timeout(
-        PUSHER_CONNECT_TIMEOUT,
-        tokio_tungstenite::connect_async(url),
-    )
-    .await
-    .map_err(|_| KickError::WebSocket {
-        reason: format!(
-            "connect timed out after {}s",
-            PUSHER_CONNECT_TIMEOUT.as_secs()
-        ),
-    })?
-    .map_err(|e| KickError::WebSocket {
-        reason: e.to_string(),
-    })?;
+async fn connect_ws(url: &str, connect_timeout: Duration) -> Result<PusherSocket, KickError> {
+    let (ws_stream, _) =
+        tokio::time::timeout(connect_timeout, tokio_tungstenite::connect_async(url))
+            .await
+            .map_err(|_| KickError::WebSocket {
+                reason: format!("connect timed out after {}s", connect_timeout.as_secs()),
+            })?
+            .map_err(|e| KickError::WebSocket {
+                reason: e.to_string(),
+            })?;
     Ok(ws_stream)
 }
 
@@ -211,6 +238,7 @@ struct RunLoopContext {
     fetcher: Arc<ChannelInfoFetcher>,
     slug: String,
     state_tx: watch::Sender<ChatLinkStatus>,
+    timing: PusherTiming,
 }
 
 enum SessionEnd {
@@ -231,7 +259,10 @@ fn channel_info_failure(err: &KickError) -> String {
 }
 
 async fn run_loop(ws_stream: PusherSocket, chatroom_id: u64, ctx: RunLoopContext) {
-    let mut backoff = Backoff::default();
+    let mut backoff = Backoff::new(
+        ctx.timing.reconnect_backoff_base,
+        ctx.timing.reconnect_backoff_cap,
+    );
     let mut link = Some((ws_stream, chatroom_id));
 
     while let Some((mut ws_stream, chatroom_id)) = link {
@@ -275,7 +306,7 @@ async fn run_session(
     }
 
     let mut ping_deadline = tokio::time::Instant::now() + PING_INTERVAL;
-    let ack_deadline = tokio::time::Instant::now() + SUBSCRIPTION_ACK_TIMEOUT;
+    let ack_deadline = tokio::time::Instant::now() + ctx.timing.subscription_ack_timeout;
     let mut subscribed = false;
     let mut session_healthy = false;
 
@@ -373,7 +404,7 @@ async fn reconnect(ctx: &RunLoopContext, backoff: &mut Backoff) -> Option<(Pushe
 
         match ctx
             .cancel
-            .run_until_cancelled(connect_ws(&ctx.ws_url))
+            .run_until_cancelled(connect_ws(&ctx.ws_url, ctx.timing.connect_timeout))
             .await?
         {
             Ok(ws_stream) => {
@@ -513,6 +544,7 @@ pub(crate) mod tests {
             cancel,
             tasks: JoinSet::new(),
             state_rx,
+            stop_grace: SESSION_STOP_GRACE,
         }
     }
 

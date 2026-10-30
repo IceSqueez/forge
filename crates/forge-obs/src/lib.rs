@@ -21,6 +21,7 @@ mod source;
 mod source_impl;
 mod stream_output;
 mod switchable_sink;
+mod timing;
 mod triggers;
 pub mod vocabulary;
 
@@ -33,6 +34,7 @@ pub use sink::ObsSink;
 pub use source::{ObsSource, SourceInfo};
 pub use stream_output::{ObsStatsWatch, ObsStreamStats, StreamOutputActive};
 pub use switchable_sink::SwitchableObsSink;
+pub use timing::ObsTiming;
 pub use triggers::register_obs_triggers;
 
 fn _assert_object_safe(_: &dyn ObsSink, _: &dyn ObsSource) {}

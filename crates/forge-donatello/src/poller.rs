@@ -10,6 +10,7 @@ use tokio::sync::{mpsc, watch};
 use tracing::{debug, warn};
 
 use crate::api::DonatelloApi;
+use crate::config::DonatelloTiming;
 use crate::credentials;
 use crate::error::DonatelloError;
 use crate::normalize::donation_from_wire;
@@ -17,8 +18,6 @@ use crate::status::{PollFailure, PollPhase, StatusBoard};
 use crate::wire::{DONATION_ID_FIELD, DonateWire, DonatesPageWire};
 
 const MAX_SCAN_PAGES: u64 = 500;
-const ERROR_BACKOFF_BASE: Duration = Duration::from_secs(5);
-const ERROR_BACKOFF_CAP: Duration = Duration::from_secs(300);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct PollControl {
@@ -36,6 +35,7 @@ pub(crate) struct PollContext {
     pub(crate) control: watch::Receiver<PollControl>,
     pub(crate) status: Arc<StatusBoard>,
     pub(crate) sink: DonationSink,
+    pub(crate) timing: DonatelloTiming,
 }
 
 struct PollMemory {
@@ -94,7 +94,7 @@ pub(crate) async fn run(mut ctx: PollContext) {
     let mut session: Option<Secret> = None;
     let mut memory: Option<PollMemory> = None;
     let mut generation = None;
-    let mut backoff = Backoff::new(ERROR_BACKOFF_BASE, ERROR_BACKOFF_CAP);
+    let mut backoff = Backoff::new(ctx.timing.error_backoff_base, ctx.timing.error_backoff_cap);
     loop {
         let control = *ctx.control.borrow_and_update();
         ctx.status.set_poll_interval(control.interval);

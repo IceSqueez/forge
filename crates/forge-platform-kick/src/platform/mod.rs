@@ -16,7 +16,7 @@ use crate::api::chat_messages::KickSendChat;
 use crate::auth::credentials_manager::KickCredentialsManager;
 use crate::capabilities::kick_capabilities;
 use crate::platform::sessions::{ChatSessions, PLATFORM_ID, SessionPublisher};
-use crate::pusher::chat::{ChatLinkStatus, KickChat};
+use crate::pusher::chat::{ChatLinkStatus, KickChat, PusherTiming};
 use crate::pusher::chatroom_lookup::ChannelInfoFetcher;
 use crate::pusher::error::KickError;
 use crate::vocabulary::event_kinds;
@@ -33,6 +33,7 @@ pub struct KickPlatform {
     sender: Arc<KickSendChat>,
     ban_ledger: Arc<dyn BanLedgerRepo>,
     sessions: ChatSessions,
+    pusher_timing: PusherTiming,
 }
 
 impl KickPlatform {
@@ -53,7 +54,13 @@ impl KickPlatform {
             channel_info,
             sender,
             ban_ledger,
+            pusher_timing: PusherTiming::default(),
         }
+    }
+
+    pub fn with_pusher_timing(mut self, timing: PusherTiming) -> Self {
+        self.pusher_timing = timing;
+        self
     }
 
     pub(crate) fn state_receiver(&self) -> watch::Receiver<ConnectionState> {
@@ -144,6 +151,7 @@ impl ChatPlatform for KickPlatform {
             creds.username,
             Arc::clone(&self.channel_info),
         )
+        .with_timing(self.pusher_timing)
         .connect_until(chat_tx, ticket.cancellation())
         .await;
         let mut handle = match connected {

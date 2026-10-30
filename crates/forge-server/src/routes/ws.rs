@@ -26,7 +26,7 @@ use crate::ws_client::{WsClient, detect_from_user_agent};
 const HEADER_LOG_PLACEHOLDER: &str = "<absent-or-invalid>";
 const MAX_MESSAGE_BYTES: usize = 256 * 1024;
 const PRE_AUTH_MAX_MESSAGE_BYTES: usize = 16 * 1024;
-const PRE_AUTH_WINDOW: Duration = Duration::from_secs(10);
+pub(crate) const PRE_AUTH_WINDOW: Duration = Duration::from_secs(10);
 
 pub async fn ws_handler(
     upgrade: WebSocketUpgrade,
@@ -137,7 +137,7 @@ async fn handle_socket(
     let mut overlay_session = false;
     let mut has_sent_any_message = false;
     let mut pre_auth_window_open = true;
-    let pre_auth_deadline = tokio::time::sleep(PRE_AUTH_WINDOW);
+    let pre_auth_deadline = tokio::time::sleep(state.timing.pre_auth_window);
     tokio::pin!(pre_auth_deadline);
 
     loop {

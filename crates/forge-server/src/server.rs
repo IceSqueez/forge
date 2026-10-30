@@ -26,7 +26,7 @@ use crate::origin::{accepts_host, build_allowed_origins};
 use crate::routes::{api_v1, audio, overlays, ws};
 use crate::server_info::ServerInfo;
 use crate::settings;
-use crate::{ServerConfig, ServerError, ServerHandle};
+use crate::{ServerConfig, ServerError, ServerHandle, ServerTiming};
 
 #[derive(Clone)]
 pub struct AppState {
@@ -46,6 +46,7 @@ pub struct AppState {
     pub overlay_cors_any_origin: bool,
     pub bind_addr: std::net::SocketAddr,
     pub allowed_origins: Arc<HashSet<String>>,
+    pub timing: ServerTiming,
 }
 
 pub struct Server {
@@ -108,6 +109,7 @@ async fn build_state(config: ServerConfig, bind_addr: SocketAddr) -> Result<AppS
         overlay_cors_any_origin: config.overlay_cors_any_origin,
         bind_addr,
         allowed_origins,
+        timing: config.timing,
     })
 }
 
@@ -249,9 +251,10 @@ pub fn serve_on_with_shutdown(
     tokio::sync::watch::Sender<bool>,
 ) {
     let (shutdown_tx, mut shutdown_rx) = tokio::sync::watch::channel(false);
+    let read_timeout = state.timing.request_read_timeout;
     let app =
         build_router(state, shutdown_rx.clone()).into_make_service_with_connect_info::<PeerInfo>();
-    let listener = GuardedListener::new(listener);
+    let listener = GuardedListener::new(listener).with_read_timeout(read_timeout);
     let join = tokio::spawn(async move {
         let result = axum::serve(listener, app)
             .with_graceful_shutdown(async move {
@@ -418,6 +421,7 @@ pub(crate) mod tests {
             overlay_root: Arc::new(std::path::PathBuf::from("/tmp/forge-test-overlays")),
             overlay_cors_any_origin: true,
             bind_addr: "127.0.0.1:9515".parse().expect("addr"),
+            timing: crate::ServerTiming::default(),
             allowed_origins: Arc::new(crate::origin::build_allowed_origins(
                 "127.0.0.1:9515".parse().expect("addr"),
                 &[],

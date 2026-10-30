@@ -10,7 +10,7 @@ use tokio::sync::{mpsc, watch};
 use tokio_stream::wrappers::ReceiverStream;
 
 use crate::api::{MonobankApi, MonobankGateways};
-use crate::config::MonobankConfig;
+use crate::config::{MonobankConfig, MonobankTiming};
 use crate::credentials::{self, MonobankCredential};
 use crate::error::MonobankError;
 use crate::integration::MONOBANK_INTEGRATION;
@@ -30,6 +30,7 @@ pub struct MonobankProvider {
     creds: Arc<dyn CredentialsRepo>,
     control: watch::Sender<PollControl>,
     pub(crate) status: Arc<StatusBoard>,
+    timing: MonobankTiming,
 }
 
 impl MonobankProvider {
@@ -51,7 +52,13 @@ impl MonobankProvider {
             creds,
             control,
             status: Arc::new(StatusBoard::new()),
+            timing: MonobankTiming::default(),
         }
+    }
+
+    pub fn with_timing(mut self, timing: MonobankTiming) -> Self {
+        self.timing = timing;
+        self
     }
 
     pub fn with_event_publisher(self, publisher: Arc<dyn EventPublisher>) -> Self {
@@ -165,6 +172,7 @@ impl DonationProvider for MonobankProvider {
                     control: self.control.subscribe(),
                     status: Arc::clone(&self.status),
                     sink,
+                    timing: self.timing,
                 }));
             }
             Err(_) => {

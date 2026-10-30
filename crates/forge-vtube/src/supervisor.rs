@@ -21,6 +21,7 @@ use crate::error::VTubeError;
 use crate::health::{
     HealthSnapshot, apply_model, apply_tracking, clear_session_state, update_from_event,
 };
+use crate::timing::VTubeTiming;
 use crate::vocabulary::fields::expression as expression_fields;
 use crate::vocabulary::{VTubeConnectionChanged, VTubeDisconnectReason, event_kinds, messages};
 use crate::vts::endpoint::{is_secure_endpoint, split_endpoint};
@@ -34,15 +35,14 @@ use crate::vts::protocol::{
     API_ERROR_MESSAGE_TYPE, API_VERSION, TOKEN_REQUEST_DENIED_ERROR_ID, check_response, is_reply,
     new_request,
 };
-use crate::vts::request::{PendingRequest, REQUEST_TIMEOUT};
+use crate::vts::request::PendingRequest;
 use crate::vts::socket::{Inbound, VtsWs, dial, exchange, next_inbound, send_text, send_ws_msg};
 
 const VTS_BACKOFF_CAP: Duration = Duration::from_secs(30);
-const EXPRESSION_POLL_INTERVAL: Duration = Duration::from_secs(3);
-const EXPRESSION_POLL_TIMEOUT: Duration = Duration::from_secs(5);
+pub(crate) const EXPRESSION_POLL_INTERVAL: Duration = Duration::from_secs(3);
+pub(crate) const EXPRESSION_POLL_TIMEOUT: Duration = Duration::from_secs(5);
 const UNANSWERED_POLLS_BEFORE_SUSPECT: u32 = 2;
-const REQUEST_SWEEP_INTERVAL: Duration = Duration::from_secs(1);
-const UNRESPONSIVE_THRESHOLD: Duration = REQUEST_TIMEOUT.saturating_add(REQUEST_SWEEP_INTERVAL);
+pub(crate) const REQUEST_SWEEP_INTERVAL: Duration = Duration::from_secs(1);
 pub(crate) const TOKEN_APPROVAL_TIMEOUT: Duration = Duration::from_secs(30);
 pub(crate) const HANDSHAKE_REPLY_TIMEOUT: Duration = Duration::from_secs(10);
 
@@ -149,7 +149,11 @@ fn unexpected_reply(expected: &str, msg: &serde_json::Value) -> VTubeError {
     }
 }
 
-async fn request_new_token(ws: &mut VtsWs, endpoint: &str) -> Result<String, VTubeError> {
+async fn request_new_token(
+    ws: &mut VtsWs,
+    endpoint: &str,
+    approval_timeout: Duration,
+) -> Result<String, VTubeError> {
     tracing::debug!(
         endpoint,
         "sending AuthenticationTokenRequest, awaiting popup"
@@ -161,7 +165,7 @@ async fn request_new_token(ws: &mut VtsWs, endpoint: &str) -> Result<String, VTu
             "pluginName": crate::PLUGIN_NAME,
             "pluginDeveloper": crate::PLUGIN_NAME
         }),
-        TOKEN_APPROVAL_TIMEOUT,
+        approval_timeout,
     )
     .await
     .map_err(|e| match e {
@@ -190,6 +194,7 @@ async fn authenticate_with_token(
     creds: &dyn CredentialsRepo,
     token: &str,
     endpoint: &str,
+    reply_timeout: Duration,
 ) -> Result<(), VTubeError> {
     tracing::debug!(endpoint, "sending AuthenticationRequest");
     let msg = exchange(
@@ -200,7 +205,7 @@ async fn authenticate_with_token(
             "pluginDeveloper": crate::PLUGIN_NAME,
             "authenticationToken": token
         }),
-        HANDSHAKE_REPLY_TIMEOUT,
+        reply_timeout,
     )
     .await?;
 
@@ -233,6 +238,7 @@ async fn run_auth(
     endpoint: &str,
     auth_state: &RwLock<AuthState>,
     publisher: &dyn EventPublisher,
+    timing: VTubeTiming,
 ) -> Result<(), VTubeError> {
     let stored = crate::credentials::load(creds).await.ok().flatten();
 
@@ -250,10 +256,10 @@ async fn run_auth(
             Some(VTubeDisconnectReason::AwaitingApproval),
             None,
         );
-        request_new_token(ws, endpoint).await?
+        request_new_token(ws, endpoint, timing.token_approval_timeout).await?
     };
 
-    authenticate_with_token(ws, creds, &token, endpoint).await?;
+    authenticate_with_token(ws, creds, &token, endpoint, timing.handshake_reply_timeout).await?;
 
     let (host, port) = split_endpoint(endpoint);
     let secure = is_secure_endpoint(endpoint);
@@ -301,6 +307,7 @@ pub(crate) struct SupervisorContext {
     pub(crate) connected_notifier: mpsc::UnboundedSender<()>,
     pub(crate) auto_reconnect: watch::Receiver<bool>,
     pub(crate) last_failure: Arc<RwLock<Option<MessageRef>>>,
+    pub(crate) timing: VTubeTiming,
 }
 
 enum RetryWait {
@@ -374,6 +381,7 @@ pub(crate) async fn run_supervisor(ctx: SupervisorContext) {
         connected_notifier,
         mut auto_reconnect,
         last_failure,
+        timing,
     } = ctx;
 
     let mut backoff = Backoff::with_cap(VTS_BACKOFF_CAP);
@@ -470,7 +478,7 @@ pub(crate) async fn run_supervisor(ctx: SupervisorContext) {
         };
 
         let auth_outcome = tokio::select! {
-            outcome = run_auth(&mut ws, &*creds, &endpoint, &auth_state, &*publisher) => outcome,
+            outcome = run_auth(&mut ws, &*creds, &endpoint, &auth_state, &*publisher, timing) => outcome,
             () = shutdown.notified() => {
                 announce_stopped(&state, &*publisher, &auth_state, &endpoint);
                 return;
@@ -560,7 +568,7 @@ pub(crate) async fn run_supervisor(ctx: SupervisorContext) {
         }
 
         let subscribe_outcome = tokio::select! {
-            outcome = tokio::time::timeout(HANDSHAKE_REPLY_TIMEOUT, subscribe_all(&mut ws)) => {
+            outcome = tokio::time::timeout(timing.handshake_reply_timeout, subscribe_all(&mut ws)) => {
                 outcome.unwrap_or(Err(VTubeError::Timeout))
             }
             () = shutdown.notified() => {
@@ -612,7 +620,7 @@ pub(crate) async fn run_supervisor(ctx: SupervisorContext) {
         let mut pending: HashMap<String, InFlight> = HashMap::new();
         let mut seeds: HashMap<String, SeedQuery> = HashMap::new();
         let mut last_face_found: Option<bool> = None;
-        let mut expr_tick = tokio::time::interval(EXPRESSION_POLL_INTERVAL);
+        let mut expr_tick = tokio::time::interval(timing.expression_poll_interval);
         let mut sweep_tick = tokio::time::interval(REQUEST_SWEEP_INTERVAL);
         let mut expr_baseline: Option<HashMap<String, bool>> = None;
         let mut expr_poll: Option<ExpressionPoll> = None;
@@ -640,7 +648,7 @@ pub(crate) async fn run_supervisor(ctx: SupervisorContext) {
                     return;
                 }
                 Some(req) = req_rx.recv() => {
-                    match tokio::time::timeout(REQUEST_TIMEOUT, send_text(&mut ws, req.payload)).await {
+                    match tokio::time::timeout(timing.request_timeout, send_text(&mut ws, req.payload)).await {
                         Ok(Ok(())) => {}
                         Ok(Err(error)) => {
                             tracing::info!(endpoint = %endpoint, %error, "VTube Studio write failed; dropping the session");
@@ -728,7 +736,7 @@ pub(crate) async fn run_supervisor(ctx: SupervisorContext) {
                         expr_poll = Some(ExpressionPoll {
                             request_id: req.request_id,
                             reply: rx,
-                            deadline: sent_at + EXPRESSION_POLL_TIMEOUT,
+                            deadline: sent_at + timing.expression_poll_timeout,
                         });
                     }
                 }
@@ -755,7 +763,7 @@ pub(crate) async fn run_supervisor(ctx: SupervisorContext) {
                     }
                 }
                 _ = sweep_tick.tick() => {
-                    if pending.values().any(|f| f.sent_at.elapsed() >= UNRESPONSIVE_THRESHOLD) {
+                    if pending.values().any(|f| f.sent_at.elapsed() >= timing.unresponsive_threshold()) {
                         tracing::warn!(
                             endpoint = %endpoint,
                             "VTube Studio left a request unanswered; dropping the session"

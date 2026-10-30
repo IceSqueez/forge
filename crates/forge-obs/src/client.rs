@@ -28,6 +28,7 @@ use crate::item_ids::SceneItemIds;
 use crate::session::{LiveSession, with_deadline};
 use crate::source::SourceInfo;
 use crate::stream_output::StreamOutputFeed;
+use crate::timing::ObsTiming;
 use crate::vocabulary::messages;
 
 const OBS_PLATFORM_ID: &str = crate::vocabulary::INTEGRATION_ID;
@@ -94,6 +95,7 @@ pub struct ObsClient {
     last_failure: Arc<RwLock<Option<MessageRef>>>,
     resync_nudge: Arc<Notify>,
     pub(crate) stream_output: StreamOutputFeed,
+    timing: ObsTiming,
 }
 
 impl ObsClient {
@@ -101,6 +103,15 @@ impl ObsClient {
         endpoint: &str,
         password: Option<&str>,
         publisher: Arc<dyn EventPublisher>,
+    ) -> Result<Self, ObsError> {
+        Self::connect_with_timing(endpoint, password, publisher, ObsTiming::default()).await
+    }
+
+    pub async fn connect_with_timing(
+        endpoint: &str,
+        password: Option<&str>,
+        publisher: Arc<dyn EventPublisher>,
+        timing: ObsTiming,
     ) -> Result<Self, ObsError> {
         let (host, port) = parse_endpoint(endpoint)?;
 
@@ -140,6 +151,7 @@ impl ObsClient {
             last_failure: Arc::clone(&last_failure),
             resync_nudge: Arc::clone(&resync_nudge),
             stream_output: stream_output.clone(),
+            timing,
         };
         let handle = tokio::spawn(run_supervisor(
             host.clone(),
@@ -171,6 +183,7 @@ impl ObsClient {
             last_failure,
             resync_nudge,
             stream_output,
+            timing,
         })
     }
 
@@ -225,6 +238,8 @@ impl ObsClient {
             last_failure: Arc::new(RwLock::new(None)),
             resync_nudge: Arc::new(Notify::new()),
             stream_output,
+
+            timing: ObsTiming::default(),
         }
     }
 }
@@ -357,6 +372,7 @@ impl BuiltinControl for ObsClient {
             last_failure: Arc::clone(&self.last_failure),
             resync_nudge: Arc::clone(&self.resync_nudge),
             stream_output: self.stream_output.clone(),
+            timing: self.timing,
         };
         let password = (*self.reconnect_password).clone();
         let handle = tokio::spawn(run_supervisor(
@@ -416,10 +432,8 @@ struct SupervisorContext {
     last_failure: Arc<RwLock<Option<MessageRef>>>,
     resync_nudge: Arc<Notify>,
     stream_output: StreamOutputFeed,
+    timing: ObsTiming,
 }
-
-const RECONNECT_BASE_DELAY: Duration = Duration::from_secs(1);
-const RECONNECT_MAX_DELAY: Duration = Duration::from_secs(60);
 
 const EVENT_BUFFER_CAPACITY: usize = 1024;
 
@@ -475,8 +489,9 @@ async fn run_supervisor(host: String, port: u16, password: Option<String>, ctx: 
         last_failure,
         resync_nudge,
         stream_output,
+        timing,
     } = ctx;
-    let mut backoff = Backoff::new(RECONNECT_BASE_DELAY, RECONNECT_MAX_DELAY);
+    let mut backoff = Backoff::new(timing.reconnect_base_delay, timing.reconnect_max_delay);
     let mut reconnecting = false;
 
     loop {
@@ -542,7 +557,7 @@ async fn run_supervisor(host: String, port: u16, password: Option<String>, ctx: 
             password: password.as_deref(),
             event_subscriptions: Some(required_event_subscriptions()),
             broadcast_capacity: EVENT_BUFFER_CAPACITY,
-            connect_timeout: obws::client::DEFAULT_CONNECT_TIMEOUT,
+            connect_timeout: timing.connect_timeout,
             dangerous: None,
         };
 
@@ -582,7 +597,7 @@ async fn run_supervisor(host: String, port: u16, password: Option<String>, ctx: 
             }
         };
 
-        let session = LiveSession::new(client);
+        let session = LiveSession::new(client, timing.request_timeout);
         let mut stream = match session.obs().events() {
             Ok(stream) => stream,
             Err(e) => {

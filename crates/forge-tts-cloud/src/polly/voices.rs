@@ -64,7 +64,7 @@ pub(super) async fn fetch_voices(
     link: &ProviderLink,
     signer: &PollySigner,
 ) -> Result<Vec<TtsVoice>, PollyError> {
-    let deadline = Instant::now() + CallClass::Catalog.total_budget();
+    let deadline = Instant::now() + link.catalog_budget();
     timeout_at(deadline, fetch_all_pages(link, signer))
         .await
         .unwrap_or_else(|_| Err(PollyError::Http(LISTING_BUDGET_ELAPSED.into())))

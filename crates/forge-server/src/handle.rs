@@ -18,7 +18,7 @@ use crate::run_state::{Generation, RunState};
 use crate::server::AppState;
 use crate::{ServerError, server};
 
-const CONNECTION_DRAIN_BUDGET: Duration = Duration::from_secs(5);
+pub(crate) const CONNECTION_DRAIN_BUDGET: Duration = Duration::from_secs(5);
 
 struct HandleInner {
     join: Option<tokio::task::JoinHandle<Result<(), ServerError>>>,
@@ -92,7 +92,7 @@ impl ServerHandle {
     }
 
     async fn stop_serving(&self) -> Result<(), ServerError> {
-        let (shutdown_tx, join, bus_adapter) = {
+        let (shutdown_tx, join, bus_adapter, drain_budget) = {
             let mut guard = self.inner.lock().await;
 
             if guard.shutdown_tx.is_none() {
@@ -105,6 +105,7 @@ impl ServerHandle {
                 guard.shutdown_tx.take(),
                 guard.join.take(),
                 Arc::clone(&guard.state.bus_adapter),
+                guard.state.timing.connection_drain_budget,
             )
         };
 
@@ -127,11 +128,8 @@ impl ServerHandle {
             }
         };
 
-        if tokio::time::timeout(CONNECTION_DRAIN_BUDGET, drain)
-            .await
-            .is_err()
-        {
-            tracing::warn!(budget = ?CONNECTION_DRAIN_BUDGET, "server connections did not drain in time");
+        if tokio::time::timeout(drain_budget, drain).await.is_err() {
+            tracing::warn!(budget = ?drain_budget, "server connections did not drain in time");
         }
 
         Ok(())
@@ -210,6 +208,7 @@ impl ServerHandle {
             overlay_cors_any_origin: settings.overlay_cors_any_origin,
             bind_addr,
             allowed_origins,
+            timing: state.timing,
         };
 
         let (reported_tx, reported_rx) = watch::channel(true);

@@ -5,7 +5,7 @@ use std::time::Duration;
 
 use forge_net::{
     CallClass, Gateway, GatewayBuildError, GatewayFailure, GatewayProfile, GatewayRequest,
-    GatewayResponse, RateLimiter, ResolvedTarget, ThrottleHintFamily,
+    GatewayResponse, GatewayTimings, RateLimiter, ResolvedTarget, ThrottleHintFamily,
 };
 
 use crate::policy::{RetryConfig, SynthesisRateLimiter};
@@ -24,6 +24,7 @@ pub const CLOUD_TTS_PROFILE: GatewayProfile = GatewayProfile::platform_api(
 #[derive(Clone, Default)]
 pub struct CloudGateways {
     providers: Arc<Mutex<HashMap<&'static str, ProviderGateway>>>,
+    timings: GatewayTimings,
 }
 
 impl CloudGateways {
@@ -31,10 +32,17 @@ impl CloudGateways {
         Self::default()
     }
 
+    pub fn with_timings(timings: GatewayTimings) -> Self {
+        Self {
+            timings,
+            ..Self::default()
+        }
+    }
+
     pub fn provider(&self, provider: &'static str) -> ProviderGateway {
         lock(&self.providers)
             .entry(provider)
-            .or_insert_with(ProviderGateway::new)
+            .or_insert_with(|| ProviderGateway::new(self.timings))
             .clone()
     }
 }
@@ -53,6 +61,7 @@ impl fmt::Debug for CloudGateways {
 pub struct ProviderGateway {
     limiter: Arc<SynthesisRateLimiter>,
     bound: Arc<Mutex<Option<BoundGateway>>>,
+    timings: GatewayTimings,
 }
 
 struct BoundGateway {
@@ -61,10 +70,11 @@ struct BoundGateway {
 }
 
 impl ProviderGateway {
-    fn new() -> Self {
+    fn new(timings: GatewayTimings) -> Self {
         Self {
             limiter: Arc::new(SynthesisRateLimiter::new()),
             bound: Arc::new(Mutex::new(None)),
+            timings,
         }
     }
 
@@ -76,7 +86,7 @@ impl ProviderGateway {
         let gateway = Gateway::new(
             base_url,
             Arc::clone(&self.limiter) as Arc<dyn RateLimiter>,
-            CLOUD_TTS_PROFILE,
+            CLOUD_TTS_PROFILE.with_timings(self.timings),
             None,
         )?;
         *bound = Some(BoundGateway {
@@ -107,6 +117,13 @@ impl ProviderLink {
 
     pub fn resolve_path(&self, path: &str) -> Result<ResolvedTarget, GatewayFailure> {
         self.gateway.resolve_path(path)
+    }
+
+    pub fn catalog_budget(&self) -> Duration {
+        self.gateway
+            .profile()
+            .timings
+            .total_budget(CallClass::Catalog)
     }
 
     pub fn throttle_secs(&self, failure: &GatewayFailure) -> Option<u64> {

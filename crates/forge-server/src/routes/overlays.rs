@@ -365,6 +365,7 @@ mod tests {
             overlay_root: Arc::new(overlay_root),
             overlay_cors_any_origin,
             bind_addr,
+            timing: crate::ServerTiming::default(),
             allowed_origins: Arc::new(crate::origin::build_allowed_origins(bind_addr, &[])),
         };
         let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");

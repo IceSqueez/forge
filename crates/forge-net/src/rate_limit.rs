@@ -92,7 +92,7 @@ struct BucketState {
 
 impl TokenBucketRateLimiter {
     pub fn new(capacity: u32, refill_per: Duration) -> Self {
-        Self::new_at(capacity, refill_per, Instant::now())
+        Self::new_at(capacity, refill_per, runtime_now())
     }
 
     pub fn new_at(capacity: u32, refill_per: Duration, now: Instant) -> Self {
@@ -199,6 +199,10 @@ impl TokenBucketRateLimiter {
     }
 }
 
+fn runtime_now() -> Instant {
+    tokio::time::Instant::now().into_std()
+}
+
 fn secs_to_duration(secs: f64) -> Duration {
     Duration::try_from_secs_f64(secs).unwrap_or(Duration::MAX)
 }
@@ -206,15 +210,15 @@ fn secs_to_duration(secs: f64) -> Duration {
 #[async_trait]
 impl RateLimiter for TokenBucketRateLimiter {
     async fn acquire(&self, weight: u32) -> Result<RateLimitOutcome, RateLimitError> {
-        Ok(self.acquire_at(Instant::now(), weight))
+        Ok(self.acquire_at(runtime_now(), weight))
     }
 
     async fn observe_remote_throttle(&self, retry_after: Duration) {
-        self.observe_remote_throttle_at(Instant::now(), retry_after);
+        self.observe_remote_throttle_at(runtime_now(), retry_after);
     }
 
     fn usage(&self) -> RateLimitUsage {
-        self.usage_at(Instant::now())
+        self.usage_at(runtime_now())
     }
 }
 

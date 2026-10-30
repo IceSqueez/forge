@@ -14,13 +14,15 @@ pub(crate) const CONFIG_SWITCH_TIMEOUT: Duration = Duration::from_secs(60);
 pub(crate) struct LiveSession {
     client: Arc<obws::Client>,
     suspect: Arc<Notify>,
+    request_timeout: Duration,
 }
 
 impl LiveSession {
-    pub(crate) fn new(client: obws::Client) -> Self {
+    pub(crate) fn new(client: obws::Client, request_timeout: Duration) -> Self {
         Self {
             client: Arc::new(client),
             suspect: Arc::new(Notify::new()),
+            request_timeout,
         }
     }
 
@@ -33,7 +35,7 @@ impl LiveSession {
         request_type: &'static str,
         request: impl Future<Output = Result<T, obws::error::Error>>,
     ) -> Result<T, ObsError> {
-        self.request_within(REQUEST_TIMEOUT, request_type, request)
+        self.request_within(self.request_timeout, request_type, request)
             .await
     }
 

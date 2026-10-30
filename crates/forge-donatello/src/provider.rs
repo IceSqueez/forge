@@ -11,7 +11,7 @@ use tokio::sync::{mpsc, watch};
 use tokio_stream::wrappers::ReceiverStream;
 
 use crate::api::{DonatelloAccount, DonatelloApi};
-use crate::config::{DonatelloConfig, bounded_poll_interval};
+use crate::config::{DonatelloConfig, DonatelloTiming};
 use crate::credentials;
 use crate::error::DonatelloError;
 use crate::integration::DONATELLO_INTEGRATION;
@@ -28,11 +28,13 @@ pub struct DonatelloProvider {
     creds: Arc<dyn CredentialsRepo>,
     control: watch::Sender<PollControl>,
     pub(crate) status: Arc<StatusBoard>,
+    timing: DonatelloTiming,
 }
 
 impl DonatelloProvider {
     pub fn new(config: DonatelloConfig, creds: Arc<dyn CredentialsRepo>, gateway: Gateway) -> Self {
-        let interval = bounded_poll_interval(config.poll_interval);
+        let timing = DonatelloTiming::default();
+        let interval = timing.bounded_poll_interval(config.poll_interval);
         let api = Arc::new(DonatelloApi::new(gateway));
         let (control, _) = watch::channel(PollControl {
             enabled: true,
@@ -46,7 +48,15 @@ impl DonatelloProvider {
             creds,
             control,
             status: Arc::new(StatusBoard::new(interval)),
+            timing,
         }
+    }
+
+    pub fn with_timing(mut self, timing: DonatelloTiming) -> Self {
+        self.timing = timing;
+        let interval = self.set_poll_interval(self.config.poll_interval);
+        self.status.set_poll_interval(interval);
+        self
     }
 
     pub fn with_event_publisher(self, publisher: Arc<dyn EventPublisher>) -> Self {
@@ -63,7 +73,7 @@ impl DonatelloProvider {
     }
 
     pub fn set_poll_interval(&self, requested: Duration) -> Duration {
-        let interval = bounded_poll_interval(requested);
+        let interval = self.timing.bounded_poll_interval(requested);
         self.control.send_if_modified(|control| {
             let changed = control.interval != interval;
             control.interval = interval;
@@ -125,6 +135,7 @@ impl DonationProvider for DonatelloProvider {
                     control: self.control.subscribe(),
                     status: Arc::clone(&self.status),
                     sink,
+                    timing: self.timing,
                 }));
             }
             Err(_) => {

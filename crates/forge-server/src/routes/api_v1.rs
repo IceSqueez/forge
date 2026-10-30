@@ -354,6 +354,7 @@ mod tests {
             overlay_root: Arc::new(std::path::PathBuf::from("/tmp/forge-test-overlays")),
             overlay_cors_any_origin: true,
             bind_addr: "127.0.0.1:9515".parse().expect("addr"),
+            timing: crate::ServerTiming::default(),
             allowed_origins: Arc::new(crate::origin::build_allowed_origins(
                 "127.0.0.1:9515".parse().expect("addr"),
                 &[],

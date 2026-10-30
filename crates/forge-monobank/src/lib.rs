@@ -24,7 +24,7 @@ mod wire;
 pub use api::{MONOBANK_GATEWAY_PROFILE, MonobankGateways, MonobankRateLimits, monobank_gateways};
 pub use config::{
     DEFAULT_HISTORY_LOOKBACK, DEFAULT_WINDOW_OVERLAP, MAX_STATEMENT_WINDOW, MonobankConfig,
-    STATEMENT_CALL_INTERVAL,
+    MonobankTiming, STATEMENT_CALL_INTERVAL,
 };
 pub use credentials::MONOBANK_CREDENTIAL_ID;
 pub use error::MonobankError;

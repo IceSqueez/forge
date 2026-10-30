@@ -2,6 +2,7 @@ use std::collections::BTreeSet;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::path::PathBuf;
 use std::sync::Arc;
+use std::time::Duration;
 
 use forge_runtime::{ActionEngineHandle, EventHistory};
 use forge_storage::{
@@ -11,6 +12,9 @@ use forge_storage::{
 use forge_types::PlatformId;
 
 use crate::DeliveryHub;
+use crate::handle::CONNECTION_DRAIN_BUDGET;
+use crate::listener::REQUEST_READ_TIMEOUT;
+use crate::routes::ws::PRE_AUTH_WINDOW;
 use crate::settings::{self, StoredOrigins};
 use forge_storage::settings::core_settings;
 
@@ -19,6 +23,23 @@ pub const LAN_BIND_ADDRESS: &str = "0.0.0.0";
 pub const DEFAULT_PORT: u16 = 8081;
 
 const VALID_BIND_ADDRESSES: &[&str] = &[LOCALHOST_BIND_ADDRESS, LAN_BIND_ADDRESS, "::1", "::"];
+
+#[derive(Clone, Copy, Debug)]
+pub struct ServerTiming {
+    pub request_read_timeout: Duration,
+    pub pre_auth_window: Duration,
+    pub connection_drain_budget: Duration,
+}
+
+impl Default for ServerTiming {
+    fn default() -> Self {
+        Self {
+            request_read_timeout: REQUEST_READ_TIMEOUT,
+            pre_auth_window: PRE_AUTH_WINDOW,
+            connection_drain_budget: CONNECTION_DRAIN_BUDGET,
+        }
+    }
+}
 
 pub struct ServerConfig {
     pub bind_addr: SocketAddr,
@@ -37,6 +58,7 @@ pub struct ServerConfig {
     pub overlays: Arc<dyn OverlayRepo>,
     pub action_engine: Arc<ActionEngineHandle>,
     pub delivery_hub: Option<DeliveryHub>,
+    pub timing: ServerTiming,
 }
 
 impl ServerConfig {
@@ -71,6 +93,7 @@ impl ServerConfig {
             overlays,
             action_engine,
             delivery_hub: None,
+            timing: ServerTiming::default(),
         }
     }
 }

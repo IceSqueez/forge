@@ -12,8 +12,9 @@ use forge_types::{IntegrationId, MessageRef};
 use crate::auth::AuthState;
 use crate::error::VTubeError;
 use crate::health::{HealthSnapshot, make_health_channel};
+use crate::timing::VTubeTiming;
 use crate::vts::endpoint::{DEFAULT_VTS_HOST, DEFAULT_VTS_PORT, endpoint_url};
-use crate::vts::request::{PendingRequest, REQUEST_TIMEOUT, ReqTxSlot, round_trip};
+use crate::vts::request::{PendingRequest, ReqTxSlot, round_trip};
 
 pub(crate) const VTUBE_PLATFORM_ID: &str = crate::vocabulary::INTEGRATION_ID;
 
@@ -53,6 +54,7 @@ pub struct VTubeClient {
     pub(crate) last_failure: Arc<RwLock<Option<MessageRef>>>,
     pub(crate) reconnect_publisher: Arc<dyn EventPublisher>,
     pub(crate) reconnect_creds: Arc<dyn CredentialsRepo>,
+    pub(crate) timing: VTubeTiming,
 }
 
 impl VTubeClient {
@@ -64,11 +66,36 @@ impl VTubeClient {
         Self::connect_with_auto_reconnect(cfg, publisher, creds, true)
     }
 
+    pub fn connect_with_timing(
+        cfg: VTubeConfig,
+        publisher: Arc<dyn EventPublisher>,
+        creds: Arc<dyn CredentialsRepo>,
+        timing: VTubeTiming,
+    ) -> Self {
+        Self::start(cfg, publisher, creds, true, timing)
+    }
+
     pub(crate) fn connect_with_auto_reconnect(
         cfg: VTubeConfig,
         publisher: Arc<dyn EventPublisher>,
         creds: Arc<dyn CredentialsRepo>,
         auto_reconnect: bool,
+    ) -> Self {
+        Self::start(
+            cfg,
+            publisher,
+            creds,
+            auto_reconnect,
+            VTubeTiming::default(),
+        )
+    }
+
+    fn start(
+        cfg: VTubeConfig,
+        publisher: Arc<dyn EventPublisher>,
+        creds: Arc<dyn CredentialsRepo>,
+        auto_reconnect: bool,
+        timing: VTubeTiming,
     ) -> Self {
         let state = Arc::new(AtomicConnectionState::new(ConnectionState::Connecting));
         let auth_state = Arc::new(RwLock::new(AuthState::Cold));
@@ -125,6 +152,7 @@ impl VTubeClient {
             connected_notifier: connected_tx.clone(),
             auto_reconnect: auto_reconnect.subscribe(),
             last_failure: Arc::clone(&last_failure),
+            timing,
         };
         let handle = tokio::spawn(crate::supervisor::run_supervisor(ctx));
 
@@ -151,6 +179,7 @@ impl VTubeClient {
             last_failure,
             reconnect_publisher: publisher,
             reconnect_creds: creds,
+            timing,
         }
     }
 
@@ -179,7 +208,7 @@ impl VTubeClient {
             return Err(VTubeError::NotConnected);
         }
         let req_tx = self.req_tx.lock().await.clone();
-        round_trip(&req_tx, msg_type, data, REQUEST_TIMEOUT).await
+        round_trip(&req_tx, msg_type, data, self.timing.request_timeout).await
     }
 
     pub async fn shutdown(&self) {
@@ -235,6 +264,7 @@ impl VTubeClient {
             last_failure: Arc::new(RwLock::new(None)),
             reconnect_publisher: publisher,
             reconnect_creds: creds,
+            timing: VTubeTiming::default(),
         }
     }
 }

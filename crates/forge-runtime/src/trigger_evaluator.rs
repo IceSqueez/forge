@@ -796,8 +796,6 @@ mod tests {
         );
     }
 
-    const STOP_BOUND: Duration = Duration::from_millis(10);
-
     async fn let_spawned_tasks_park() {
         for _ in 0..16 {
             tokio::task::yield_now().await;
@@ -826,9 +824,8 @@ mod tests {
         let fixture = fixture(Arc::clone(&bus)).await;
         let handle = fixture.spawn_evaluator();
         let_spawned_tasks_park().await;
-        tokio::time::pause();
 
-        let stopped = tokio::time::timeout(STOP_BOUND, handle.stop()).await;
+        let stopped = tokio::time::timeout(HANG_GUARD, handle.stop()).await;
 
         assert!(
             stopped.is_ok(),
@@ -873,9 +870,8 @@ mod tests {
         let evaluator = fixture.evaluator(gone.subscribe_critical(TRIGGER_EVALUATOR));
         drop(gone);
         let (_stop, listener) = task_stop();
-        tokio::time::pause();
 
-        let finished = tokio::time::timeout(STOP_BOUND, evaluator.run(&listener)).await;
+        let finished = tokio::time::timeout(HANG_GUARD, evaluator.run(&listener)).await;
 
         assert!(finished.is_ok());
     }

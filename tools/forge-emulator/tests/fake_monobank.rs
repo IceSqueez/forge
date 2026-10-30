@@ -12,7 +12,9 @@ use forge_emulator::fakes::monobank::{
 use forge_emulator::vocabulary::FAKE_MONOBANK_TOKEN;
 use forge_monobank::{MonobankConfig, MonobankError, MonobankProvider, MonobankRateLimits};
 use forge_net::TokenBucketRateLimiter;
-use forge_platform_core::{DonationProvider, DonationStream, PlatformEndpoints, PlatformError};
+use forge_platform_core::{
+    BuiltinControl, DonationProvider, DonationStream, PlatformEndpoints, PlatformError,
+};
 use forge_storage::{CredentialId, CredentialsRepo, StorageError};
 use forge_types::{Donation, DonationOrigin, Donor};
 use futures_util::StreamExt;
@@ -277,16 +279,16 @@ async fn each_endpoint_allows_one_call_per_window() {
 
 #[tokio::test]
 async fn endpoint_answers_again_once_its_window_has_passed() {
+    const SHORT_WINDOW: Duration = Duration::from_millis(50);
     let fake = fake_with(FakeMonobankConfig {
         jars: jars(),
+        call_window: SHORT_WINDOW,
         ..FakeMonobankConfig::default()
     })
     .await;
     let first = get(&fake, "/personal/client-info", Some(FAKE_MONOBANK_TOKEN)).await;
 
-    tokio::time::pause();
-    tokio::time::advance(Duration::from_secs(60)).await;
-    tokio::time::resume();
+    tokio::time::sleep(SHORT_WINDOW).await;
     let later = get(&fake, "/personal/client-info", Some(FAKE_MONOBANK_TOKEN)).await;
 
     assert_eq!(
@@ -442,6 +444,7 @@ async fn real_provider_reads_history_from_the_fake_then_a_live_top_up() {
             JAR.to_owned(),
             FakeTransaction::top_up("HIST", now_unix() - 600, 5_000, "Олена"),
         )],
+        call_window: Duration::ZERO,
         ..FakeMonobankConfig::default()
     })
     .await;
@@ -454,9 +457,7 @@ async fn real_provider_reads_history_from_the_fake_then_a_live_top_up() {
         JAR,
         FakeTransaction::top_up("LIVE", now_unix(), 2_550, "Петро").with_comment("gl hf"),
     );
-    tokio::time::pause();
-    tokio::time::advance(Duration::from_secs(61)).await;
-    tokio::time::resume();
+    assert!(provider.reconnect().await.is_ok());
     let live = next(&mut stream).await.unwrap();
 
     assert_eq!(

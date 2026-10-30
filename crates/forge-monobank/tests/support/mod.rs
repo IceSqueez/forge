@@ -10,7 +10,7 @@ use forge_monobank::{
     MonobankProvider, MonobankRateLimits, PollStatus, monobank_gateways,
 };
 use forge_net::{RateLimitError, RateLimitOutcome, RateLimiter};
-use forge_platform_core::{DonationProvider, DonationStream, PlatformError};
+use forge_platform_core::{BuiltinControl, DonationProvider, DonationStream, PlatformError};
 use forge_storage::{CredentialId, CredentialsRepo, StorageError};
 use forge_types::Donation;
 use serde_json::{Value, json};
@@ -394,18 +394,16 @@ impl Harness {
         }
     }
 
+    pub async fn wake_poller(&self) {
+        assert!(self.provider.reconnect().await.is_ok());
+    }
+
     pub async fn poll_now(&mut self) {
         let before = self.provider.poll_status().last_poll_at;
-        after_long_idle().await;
+        self.wake_poller().await;
         self.wait_for("next completed poll", |status| {
             status.last_poll_at.is_some() && status.last_poll_at != before
         })
         .await;
     }
-}
-
-pub async fn after_long_idle() {
-    tokio::time::pause();
-    tokio::time::advance(Duration::from_secs(3_600)).await;
-    tokio::time::resume();
 }

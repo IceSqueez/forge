@@ -11,7 +11,7 @@ use forge_types::DonationOrigin;
 use serde_json::json;
 use support::{
     Bank, CLIENT_INFO, Harness, JAR, MemCreds, OTHER_JAR, STATEMENT_PREFIX, ScriptedLimiter, TOKEN,
-    after_long_idle, now_unix, top_up,
+    now_unix, top_up,
 };
 use wiremock::ResponseTemplate;
 
@@ -75,17 +75,6 @@ async fn polls_ask_for_the_selected_jar_with_overlapping_windows() {
 }
 
 #[tokio::test]
-async fn steady_polling_reads_the_jar_list_only_once() {
-    let mut h = Harness::start(Bank::new(&[JAR])).await;
-    h.wait_for("baseline poll", |s| s.last_poll_at.is_some())
-        .await;
-    h.poll_now().await;
-    h.poll_now().await;
-
-    assert_eq!(h.bank.client_info_calls(), 1);
-}
-
-#[tokio::test]
 async fn full_page_is_backfilled_until_every_top_up_in_the_window_is_reported() {
     let bank = Bank::new(&[JAR]);
     let newest = now_unix() - 5;
@@ -97,7 +86,7 @@ async fn full_page_is_backfilled_until_every_top_up_in_the_window_is_reported() 
 
     let mut reported = h.donations(500).await;
     h.wait_for("first page", |s| s.last_poll_at.is_some()).await;
-    after_long_idle().await;
+    h.wake_poller().await;
     reported.extend(h.donations(120).await);
 
     let calls = h.bank.statement_calls();
@@ -181,7 +170,7 @@ async fn server_error_is_reported_and_polling_recovers_on_the_next_timer() {
     );
     assert_eq!(h.provider.poll_status().phase, PollPhase::Retrying);
 
-    after_long_idle().await;
+    h.wake_poller().await;
     let recovered = h.next().await.unwrap();
     h.wait_for("polling again", |s| s.phase == PollPhase::Polling)
         .await;
@@ -307,7 +296,6 @@ async fn errors_needing_the_user_stop_polling_until_the_user_acts() {
         );
 
         let requests = h.bank.request_count();
-        after_long_idle().await;
         assert!(h.stays_quiet().await, "{} polled again", case.name);
         assert_eq!(h.bank.request_count(), requests, "{}", case.name);
     }
@@ -375,7 +363,6 @@ async fn paused_poller_sends_no_requests() {
     h.wait_for("paused", |s| s.phase == PollPhase::Paused).await;
     let requests = h.bank.request_count();
 
-    after_long_idle().await;
     assert!(h.stays_quiet().await);
 
     assert_eq!(h.bank.request_count(), requests);

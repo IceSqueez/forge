@@ -233,7 +233,6 @@ impl Connected<IncomingStream<'_, GuardedListener>> for PeerInfo {
 
 #[cfg(test)]
 mod tests {
-    use std::cell::Cell;
     use std::io;
     use std::net::{IpAddr, Ipv4Addr};
     use std::sync::Arc;
@@ -248,11 +247,9 @@ mod tests {
         GuardedListener, GuardedStream, MAX_CONCURRENT_CONNECTIONS, PER_IP_MAX_CONNECTIONS,
         PerIpLimiter, REQUEST_READ_TIMEOUT,
     };
-    use crate::server::tests::elapse;
 
     const BYTE_BUDGET: Duration = Duration::from_secs(30);
     const MARGIN: Duration = Duration::from_secs(1);
-    const SETTLE_YIELDS: usize = 8;
 
     async fn guarded_pair() -> (TcpStream, GuardedStream) {
         let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
@@ -266,12 +263,6 @@ mod tests {
         (client, GuardedStream::new(server, permit, None))
     }
 
-    async fn settle() {
-        for _ in 0..SETTLE_YIELDS {
-            tokio::task::yield_now().await;
-        }
-    }
-
     async fn read_one(stream: &mut GuardedStream) -> io::Result<usize> {
         let mut buf = [0_u8; 16];
         stream.read(&mut buf).await
@@ -281,7 +272,7 @@ mod tests {
     async fn a_trickling_request_head_is_cut_at_the_deadline_counted_from_accept() {
         let (mut client, mut guarded) = guarded_pair().await;
 
-        elapse(REQUEST_READ_TIMEOUT - MARGIN).await;
+        tokio::time::sleep(REQUEST_READ_TIMEOUT / 2).await;
         client.write_all(b"G").await.expect("write");
         assert_eq!(
             read_one(&mut guarded)
@@ -290,7 +281,7 @@ mod tests {
             1
         );
 
-        elapse(MARGIN * 2).await;
+        tokio::time::sleep(REQUEST_READ_TIMEOUT / 2 + MARGIN).await;
         client.write_all(b"E").await.expect("write");
         let late = read_one(&mut guarded).await;
 
@@ -305,12 +296,13 @@ mod tests {
     async fn a_response_write_restarts_the_read_deadline() {
         let (mut client, mut guarded) = guarded_pair().await;
 
-        elapse(REQUEST_READ_TIMEOUT - MARGIN).await;
+        tokio::time::sleep(REQUEST_READ_TIMEOUT / 2 + MARGIN).await;
         guarded
             .write_all(b"HTTP/1.1 204 No Content\r\n\r\n")
             .await
             .expect("respond");
-        elapse(MARGIN * 2).await;
+        let responded = tokio::time::Instant::now();
+        tokio::time::sleep(REQUEST_READ_TIMEOUT / 2).await;
         client.write_all(b"G").await.expect("write");
         assert_eq!(
             read_one(&mut guarded)
@@ -319,27 +311,16 @@ mod tests {
             1
         );
 
-        let timed_out = Cell::new(false);
-        let (idle, ()) = tokio::join!(
-            async {
-                let idle = read_one(&mut guarded).await;
-                timed_out.set(true);
-                idle
-            },
-            async {
-                elapse(REQUEST_READ_TIMEOUT - MARGIN * 3).await;
-                settle().await;
-                assert!(
-                    !timed_out.get(),
-                    "the idle read timed out before a full deadline had passed since the response"
-                );
-                elapse(MARGIN * 2).await;
-            }
-        );
+        let idle = read_one(&mut guarded).await;
+
         assert_eq!(
             idle.expect_err("an idle keep-alive must still time out")
                 .kind(),
             io::ErrorKind::TimedOut
+        );
+        assert!(
+            responded.elapsed() >= REQUEST_READ_TIMEOUT,
+            "the idle read timed out before a full deadline had passed since the response"
         );
     }
 

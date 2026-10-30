@@ -709,20 +709,23 @@ mod tests {
         clients: &Clients,
         image: &str,
     ) -> Vec<(&'static str, Result<(), PlatformError>)> {
+        let (stats, ad_break, thumbnail, lookup, metadata, moderator, send) = tokio::join!(
+            clients.stats.fetch(),
+            clients.ad_break.insert_cuepoint(30),
+            clients.thumbnail.set(image),
+            clients.lookup.lookup("@viewer"),
+            clients.metadata.set_title("t"),
+            clients.moderation.add_moderator(VIEWER),
+            clients.send.send("hi"),
+        );
         vec![
-            ("stream stats", clients.stats.fetch().await.map(drop)),
-            ("ad break", clients.ad_break.insert_cuepoint(30).await),
-            ("thumbnail upload", clients.thumbnail.set(image).await),
-            (
-                "channel lookup",
-                clients.lookup.lookup("@viewer").await.map(drop),
-            ),
-            ("metadata update", clients.metadata.set_title("t").await),
-            (
-                "moderator add",
-                clients.moderation.add_moderator(VIEWER).await,
-            ),
-            ("chat send", clients.send.send("hi").await),
+            ("stream stats", stats.map(drop)),
+            ("ad break", ad_break),
+            ("thumbnail upload", thumbnail),
+            ("channel lookup", lookup.map(drop)),
+            ("metadata update", metadata),
+            ("moderator add", moderator),
+            ("chat send", send),
         ]
     }
 
@@ -736,7 +739,6 @@ mod tests {
         let image = tempfile::Builder::new().suffix(".png").tempfile().unwrap();
         let first = clients.send.send("hi").await;
         let charged_by_throttled_call = used_today(&quota).await;
-        tokio::time::pause();
 
         let outcomes = every_client_outcome(&clients, image.path().to_str().unwrap()).await;
         let follow = clients.follow.status_of(VIEWER).await;

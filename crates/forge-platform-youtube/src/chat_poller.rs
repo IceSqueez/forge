@@ -3191,7 +3191,6 @@ mod tests {
         );
         let throttled = sender.send("hi").await;
         let charged_by_send = used_today(&quota).await;
-        tokio::time::pause();
 
         let lookup = poller
             .fetch_live_chat_id("tok", &CancellationToken::new())

@@ -338,7 +338,7 @@ mod tests {
         );
     }
 
-    #[tokio::test(start_paused = true)]
+    #[tokio::test]
     async fn every_gateway_failure_without_a_body_is_classified_by_the_provider_table() {
         let link = crate::network::CloudGateways::new()
             .provider("p")

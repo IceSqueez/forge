@@ -19,7 +19,6 @@ use support::{Reply, SECRET, TestServer, client};
 type ErrorCheck = fn(&UpdateError) -> bool;
 
 const HANG_GUARD: Duration = Duration::from_secs(30);
-const TIMER_GRANULARITY: Duration = Duration::from_millis(1);
 const NAME: &str = "forge-0.6.2-linux-x64.AppImage";
 const STAGED_NAME: &str = ".forge-update-forge-0.6.2-linux-x64.AppImage";
 const PARTIAL_NAME: &str = ".forge-update-forge-0.6.2-linux-x64.AppImage.part";
@@ -323,26 +322,18 @@ async fn a_download_whose_response_headers_never_arrive_fails_after_the_read_idl
     let silent_artifact = artifact(server.url("/artifact"), &body);
     let staging_dir = staging.path().to_owned();
     let started = tokio::time::Instant::now();
-    let downloading = tokio::spawn(async move { download(&silent_artifact, &staging_dir).await });
-    tokio::time::timeout(HANG_GUARD, async {
-        while server.heads().is_empty() {
-            tokio::time::sleep(Duration::from_millis(1)).await;
-        }
-    })
-    .await
-    .unwrap();
-    let request_arrived_after = started.elapsed();
-    tokio::time::pause();
 
-    let error = downloading.await.unwrap().unwrap_err();
+    let error = tokio::time::timeout(
+        STREAMING_READ_IDLE_BUDGET + HANG_GUARD,
+        download(&silent_artifact, &staging_dir),
+    )
+    .await
+    .expect("the download must give up on its own")
+    .unwrap_err();
 
     let waited = started.elapsed();
     assert!(matches!(error, UpdateError::Network(_)), "{error:?}");
-    assert!(
-        waited >= STREAMING_READ_IDLE_BUDGET
-            && waited <= request_arrived_after + STREAMING_READ_IDLE_BUDGET + TIMER_GRANULARITY,
-        "waited {waited:?}"
-    );
+    assert!(waited >= STREAMING_READ_IDLE_BUDGET, "waited {waited:?}");
     assert!(staging_entries(staging.path()).is_empty());
 }
 

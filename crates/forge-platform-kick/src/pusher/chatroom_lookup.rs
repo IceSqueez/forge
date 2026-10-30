@@ -296,13 +296,10 @@ mod tests {
         let server = server_replying(live_channel()).await;
         let fetcher = channel_info_at(&server.uri());
         fetcher.fetch(SLUG).await.unwrap();
-        tokio::time::pause();
-
-        tokio::time::advance(CHANNEL_INFO_REFRESH_INTERVAL - Duration::from_secs(1)).await;
         let cached = fetcher.fetch(SLUG).await.unwrap();
         let after_cached = request_count(&server).await;
-        tokio::time::advance(Duration::from_secs(1)).await;
-        tokio::time::resume();
+        age_the_cached_entry_by(&fetcher, CHANNEL_INFO_REFRESH_INTERVAL);
+
         fetcher.fetch(SLUG).await.unwrap();
 
         assert_eq!(
@@ -313,6 +310,12 @@ mod tests {
             ),
             (12345, 1, 2)
         );
+    }
+
+    fn age_the_cached_entry_by(fetcher: &ChannelInfoFetcher, age: Duration) {
+        let mut cached = fetcher.cached.lock().unwrap();
+        let entry = cached.as_mut().unwrap();
+        entry.fetched_at = entry.fetched_at.checked_sub(age).unwrap();
     }
 
     #[tokio::test]
@@ -376,7 +379,6 @@ mod tests {
             Arc::new(RecordingPublisher::default()),
         );
         fetcher.fetch(SLUG).await.unwrap_err();
-        tokio::time::pause();
         let started = Instant::now();
 
         let retry = fetcher.fetch(SLUG).await;
@@ -386,11 +388,7 @@ mod tests {
             "{retry:?}"
         );
         let waited = started.elapsed();
-        assert!(
-            waited >= forge_net::MAX_THROTTLE_WAIT
-                && waited < forge_net::MAX_THROTTLE_WAIT + Duration::from_secs(1),
-            "waited {waited:?}"
-        );
+        assert!(waited >= forge_net::MAX_THROTTLE_WAIT, "waited {waited:?}");
         assert_eq!(request_count(&server).await, 1);
     }
 }

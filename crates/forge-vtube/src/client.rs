@@ -475,8 +475,6 @@ pub(crate) mod tests {
 
     pub(crate) const POLL_STEP: Duration = Duration::from_millis(10);
 
-    const BACKOFF_JUMP: Duration = Duration::from_secs(1);
-
     pub(crate) async fn wait_until(budget: Duration, cond: impl Fn() -> bool) -> bool {
         let started = std::time::Instant::now();
         while started.elapsed() < budget {
@@ -486,12 +484,6 @@ pub(crate) mod tests {
             tokio::time::sleep(POLL_STEP).await;
         }
         cond()
-    }
-
-    pub(crate) async fn elapse(by: Duration) {
-        tokio::time::pause();
-        tokio::time::advance(by).await;
-        tokio::time::resume();
     }
 
     pub(crate) fn stored_token_creds() -> Arc<MockCreds> {
@@ -699,24 +691,14 @@ pub(crate) mod tests {
         }
 
         pub(crate) async fn next_conn(&mut self, budget: Duration) -> Option<PeerConn> {
-            let started = std::time::Instant::now();
-            while started.elapsed() < budget {
-                if let Ok(conn) = tokio::time::timeout(POLL_STEP, self.conns.recv()).await {
-                    return conn;
-                }
-            }
-            None
+            tokio::time::timeout(budget, self.conns.recv())
+                .await
+                .ok()
+                .flatten()
         }
 
         pub(crate) async fn next_redial(&mut self, budget: Duration) -> Option<PeerConn> {
-            let started = std::time::Instant::now();
-            while started.elapsed() < budget {
-                if let Ok(conn) = tokio::time::timeout(POLL_STEP, self.conns.recv()).await {
-                    return conn;
-                }
-                elapse(BACKOFF_JUMP).await;
-            }
-            None
+            self.next_conn(budget).await
         }
 
         pub(crate) async fn logged_in_conn(&mut self) -> PeerConn {
@@ -1254,55 +1236,6 @@ pub(crate) mod tests {
 
     const PARKED_WINDOW: Duration = Duration::from_millis(500);
 
-    pub(crate) struct FrozenClock {
-        _release: std::sync::mpsc::Sender<()>,
-    }
-
-    pub(crate) fn freeze_clock() -> FrozenClock {
-        tokio::time::pause();
-        let (release, held) = std::sync::mpsc::channel::<()>();
-        tokio::task::spawn_blocking(move || {
-            #[expect(
-                clippy::let_underscore_must_use,
-                reason = "recv returns once the sender is dropped"
-            )]
-            let _ = held.recv();
-        });
-        FrozenClock { _release: release }
-    }
-
-    pub(crate) async fn settle_on_a_frozen_clock(
-        budget: Duration,
-        cond: impl Fn() -> bool,
-    ) -> bool {
-        let started = std::time::Instant::now();
-        while started.elapsed() < budget {
-            if cond() {
-                return true;
-            }
-            tokio::task::spawn_blocking(|| std::thread::sleep(POLL_STEP))
-                .await
-                .unwrap();
-        }
-        cond()
-    }
-
-    pub(crate) async fn finishes_on_a_frozen_clock<F: std::future::Future>(
-        budget: Duration,
-        work: F,
-    ) -> Option<F::Output> {
-        tokio::pin!(work);
-        let started = std::time::Instant::now();
-        while started.elapsed() < budget {
-            tokio::select! {
-                biased;
-                done = &mut work => return Some(done),
-                _ = tokio::task::spawn_blocking(|| std::thread::sleep(POLL_STEP)) => {}
-            }
-        }
-        None
-    }
-
     fn failure_code(client: &VTubeClient) -> Option<String> {
         client
             .connect_failure()
@@ -1404,7 +1337,6 @@ pub(crate) mod tests {
      {
         let (addr, _accepted) = refusing_vts().await;
         let publisher = MockPublisher::new();
-        let _clock = freeze_clock();
         let client = VTubeClient::connect(
             VTubeConfig {
                 endpoint: format!("ws://{addr}"),
@@ -1413,7 +1345,7 @@ pub(crate) mod tests {
             MockCreds::new().creds(),
         );
         assert!(
-            settle_on_a_frozen_clock(SETTLE, || publisher
+            wait_until(SETTLE, || publisher
                 .disconnected_with_reason("connect_failed"))
             .await,
             "precondition: the first attempt never failed"
@@ -1422,7 +1354,7 @@ pub(crate) mod tests {
         client.set_auto_reconnect(false);
 
         assert!(
-            settle_on_a_frozen_clock(SETTLE, || is_disconnected(&client)).await,
+            wait_until(SETTLE, || is_disconnected(&client)).await,
             "turning auto-reconnect off waited for the backoff pause to end"
         );
     }
@@ -1660,22 +1592,12 @@ pub(crate) mod tests {
 
     const PEER_SPEAKS_WINDOW: Duration = Duration::from_secs(2);
 
-    async fn next_accept_jumping_backoffs(
-        accepted: &mut mpsc::UnboundedReceiver<()>,
-        attempt: usize,
-    ) {
-        let started = std::time::Instant::now();
-        loop {
-            assert!(
-                started.elapsed() < RETRY_WALL_BUDGET,
-                "the supervisor stopped retrying before attempt {attempt}"
-            );
-            match tokio::time::timeout(POLL_STEP, accepted.recv()).await {
-                Ok(Some(())) => return,
-                Ok(None) => panic!("the mock server stopped before attempt {attempt}"),
-                Err(_) => elapse(BACKOFF_JUMP).await,
-            }
-        }
+    async fn next_accept(accepted: &mut mpsc::UnboundedReceiver<()>, attempt: usize) {
+        let next = tokio::time::timeout(RETRY_WALL_BUDGET, accepted.recv()).await;
+        assert!(
+            matches!(next, Ok(Some(()))),
+            "the supervisor stopped retrying before attempt {attempt}"
+        );
     }
 
     async fn serve_refused_handshakes(
@@ -1751,7 +1673,7 @@ pub(crate) mod tests {
         );
 
         for attempt in 1..=ATTEMPTS_BEFORE_VERDICT {
-            next_accept_jumping_backoffs(&mut accept_rx, attempt).await;
+            next_accept(&mut accept_rx, attempt).await;
         }
         client.disconnect().await.unwrap();
         server.abort();
@@ -1835,13 +1757,12 @@ pub(crate) mod tests {
                 .is_ok_and(|dial| dial.is_some()),
             "the client never dialed"
         );
-        let _frozen = freeze_clock();
 
-        let outcome = finishes_on_a_frozen_clock(DISCONNECT_HANG_GUARD, client.disconnect()).await;
+        let outcome = tokio::time::timeout(DISCONNECT_HANG_GUARD, client.disconnect()).await;
         server.abort();
 
         assert!(
-            outcome.is_some(),
+            outcome.is_ok(),
             "disconnect queued behind the connect instead of cancelling it"
         );
     }

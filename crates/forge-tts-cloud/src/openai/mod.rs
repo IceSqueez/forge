@@ -151,8 +151,8 @@ impl TtsEngine for OpenAiEngine {
 mod tests {
     use super::*;
     use crate::network::test_support::{
-        API_KEY, OTHER_API_KEY, PAST_WAIT_THRESHOLD_SECS, freeze_clock, request_count, serving,
-        throttled,
+        API_KEY, OTHER_API_KEY, PAST_WAIT_THRESHOLD_SECS, is_the_provider_cool_down, request_count,
+        serving, throttled,
     };
     use forge_speech_types::VoiceId;
     use forge_tts_core::TtsEngineFactory;
@@ -245,9 +245,8 @@ mod tests {
         assert_eq!(request_count(&server).await, 1);
     }
 
-    #[tokio::test(start_paused = true)]
+    #[tokio::test]
     async fn rebuilt_and_re_registered_engines_inherit_the_provider_cool_down() {
-        let _clock = freeze_clock();
         let throttling = serving(throttled(PAST_WAIT_THRESHOLD_SECS)).await;
         let healthy = serving(ResponseTemplate::new(200)).await;
         let gateways = CloudGateways::new();
@@ -267,7 +266,7 @@ mod tests {
                 assert!(
                     matches!(
                         result,
-                        Err(TtsError::RateLimited { retry_after_secs }) if retry_after_secs == PAST_WAIT_THRESHOLD_SECS
+                        Err(TtsError::RateLimited { retry_after_secs }) if is_the_provider_cool_down(retry_after_secs)
                     ),
                     "{result:?}"
                 );

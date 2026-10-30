@@ -322,11 +322,6 @@ mod tests {
             .enable_all()
             .build()
             .unwrap();
-        let paused_runtime = tokio::runtime::Builder::new_current_thread()
-            .enable_all()
-            .start_paused(true)
-            .build()
-            .unwrap();
         let older_runs = 2 * i64::from(PRUNE_CHUNK_ROWS) + 500;
         let newer = run_started_at(cutoff());
         let mut runs: Vec<_> = (1..=older_runs)
@@ -341,7 +336,7 @@ mod tests {
             history
         });
 
-        let outcome = paused_runtime.block_on(prune_in_chunks(
+        let outcome = db_runtime.block_on(prune_in_chunks(
             "action_history",
             cutoff(),
             &signals(),

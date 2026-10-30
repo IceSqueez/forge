@@ -2,7 +2,6 @@ mod support;
 
 use std::collections::BTreeSet;
 use std::sync::Arc;
-use std::time::Duration;
 
 use forge_donatello::PollPhase;
 use forge_platform_core::{BuiltinControl, PlatformError};
@@ -11,12 +10,6 @@ use serde_json::json;
 use support::{Harness, MemCreds, OTHER_TOKEN, Order, donate, donates};
 use wiremock::matchers::{method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
-
-async fn after_long_idle() {
-    tokio::time::pause();
-    tokio::time::advance(Duration::from_secs(3600)).await;
-    tokio::time::resume();
-}
 
 #[tokio::test]
 async fn baseline_reports_every_existing_donation_as_history_across_all_pages() {
@@ -231,7 +224,7 @@ async fn server_error_backs_off_then_recovers_on_the_next_timer() {
     );
     assert_eq!(h.provider.poll_status().phase, PollPhase::Retrying);
 
-    after_long_idle().await;
+    h.wake_poller();
     let recovered = h.next().await.unwrap();
     h.wait_for("polling again", |s| s.phase == PollPhase::Polling)
         .await;
@@ -272,7 +265,6 @@ async fn errors_needing_the_user_stop_polling_until_the_user_acts() {
         assert!(expected_platform_error, "{me_status:?}: {failure:?}");
         assert_eq!(h.provider.poll_status().phase, phase, "{me_status:?}");
 
-        after_long_idle().await;
         assert!(h.stays_quiet().await, "{me_status:?} polled again");
         assert_eq!(
             h.me_requests().await,
@@ -311,7 +303,6 @@ async fn paused_poller_sends_no_requests() {
     h.wait_for("paused", |s| s.phase == PollPhase::Paused).await;
     h.list.forget_requests();
 
-    after_long_idle().await;
     tokio::time::sleep(support::QUIET).await;
 
     assert!(h.list.requested_pages().is_empty());

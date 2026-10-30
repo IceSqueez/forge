@@ -236,8 +236,9 @@ async fn throttle_lands_only_on_the_endpoint_that_was_throttled() {
     assert!(limits.statement.throttles().is_empty());
 }
 
-#[tokio::test(start_paused = true)]
+#[tokio::test]
 async fn a_local_cooldown_answers_at_once_with_the_remaining_wait_and_no_request() {
+    const SHORTEST_SCRIPTED_WAIT: Duration = Duration::from_secs(7);
     for (outcome, secs) in [
         (
             RateLimitOutcome::Throttled {
@@ -259,12 +260,16 @@ async fn a_local_cooldown_answers_at_once_with_the_remaining_wait_and_no_request
             statement: ScriptedLimiter::open(),
         };
         let provider = provider(&server.uri(), MemCreds::with(TOKEN, Some(JAR)), limits);
-        let started = tokio::time::Instant::now();
 
-        let verified = provider.verify_token(TOKEN).await;
-        let listed = provider.stored_jars().await;
+        let (verified, listed) = tokio::time::timeout(SHORTEST_SCRIPTED_WAIT, async {
+            (
+                provider.verify_token(TOKEN).await,
+                provider.stored_jars().await,
+            )
+        })
+        .await
+        .expect("a local cooldown must not wait out the remaining time");
 
-        assert_eq!(started.elapsed(), Duration::ZERO, "{outcome:?}");
         for result in [verified, listed] {
             assert!(
                 matches!(result, Err(MonobankError::CoolingDown { retry_after_secs }) if retry_after_secs == secs),

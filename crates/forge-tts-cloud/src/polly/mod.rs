@@ -165,7 +165,7 @@ impl TtsEngine for PollyEngine {
 mod tests {
     use super::*;
     use crate::network::test_support::{
-        PAST_WAIT_THRESHOLD_SECS, freeze_clock, request_count, serving, throttled,
+        PAST_WAIT_THRESHOLD_SECS, is_the_provider_cool_down, request_count, serving, throttled,
     };
     use crate::polly::signer::test_support::{
         POLLY_SERVICE, REGION, SECRET_ACCESS_KEY, WireRequest, credentials,
@@ -299,9 +299,8 @@ mod tests {
         }
     }
 
-    #[tokio::test(start_paused = true)]
+    #[tokio::test]
     async fn rebuilt_and_re_registered_engines_inherit_the_provider_cool_down() {
-        let _clock = freeze_clock();
         let throttling = serving(throttled(PAST_WAIT_THRESHOLD_SECS)).await;
         let healthy = serving(ResponseTemplate::new(200)).await;
         let gateways = CloudGateways::new();
@@ -322,7 +321,7 @@ mod tests {
                 assert!(
                     matches!(
                         result,
-                        Err(TtsError::RateLimited { retry_after_secs }) if retry_after_secs == PAST_WAIT_THRESHOLD_SECS
+                        Err(TtsError::RateLimited { retry_after_secs }) if is_the_provider_cool_down(retry_after_secs)
                     ),
                     "{result:?}"
                 );

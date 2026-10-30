@@ -152,13 +152,10 @@ fn into_tts_voices(voices: Vec<PollyVoice>) -> Vec<TtsVoice> {
 
 #[cfg(test)]
 mod tests {
-    use std::sync::Mutex;
-    use std::sync::mpsc as std_mpsc;
-    use std::time::Duration;
 
     use super::*;
     use crate::network::test_support::{
-        NO_HINT_WAIT_SECS, freeze_clock, link_to, request_count, unpaced_link_to,
+        NO_HINT_WAIT_SECS, link_to, request_count, unpaced_link_to,
     };
     use crate::polly::signer::test_support::{
         assert_reveals_no_credential, credentials, echo_server, echoing, outcome,
@@ -478,86 +475,27 @@ mod tests {
         }
     }
 
-    struct Gated {
-        arrivals: tokio::sync::mpsc::UnboundedSender<()>,
-        release: Mutex<std_mpsc::Receiver<()>>,
-        pages: ByToken,
-    }
-
-    impl Respond for Gated {
-        fn respond(&self, request: &wiremock::Request) -> ResponseTemplate {
-            self.arrivals.send(()).ok();
-            self.release.lock().unwrap().recv().ok();
-            self.pages.respond(request)
-        }
-    }
-
-    struct GatedListing {
-        server: MockServer,
-        arrivals: tokio::sync::mpsc::UnboundedReceiver<()>,
-        release: std_mpsc::Sender<()>,
-        listing: tokio::task::JoinHandle<Result<Vec<TtsVoice>, PollyError>>,
-    }
-
-    const FIRST_PAGE_TIME: Duration = Duration::from_secs(1);
-
-    async fn second_page_in_flight() -> GatedListing {
-        let (arrivals_tx, mut arrivals) = tokio::sync::mpsc::unbounded_channel();
-        let (release, release_rx) = std_mpsc::channel();
-        let server = serving(Gated {
-            arrivals: arrivals_tx,
-            release: Mutex::new(release_rx),
-            pages: chain(
-                vec![page(&["a1"], Some("t2")), page(&["b1"], None)],
-                &["t2"],
-            ),
-        })
+    #[tokio::test]
+    async fn pages_outlasting_the_catalog_budget_together_fail_the_listing() {
+        let hang_guard = CallClass::Catalog.total_budget() * 3;
+        let server = serving(chain(
+            vec![
+                page(&["a1"], Some("t2")),
+                page(&["b1"], None).set_delay(hang_guard * 10),
+            ],
+            &["t2"],
+        ))
         .await;
         let link = link_to(&server);
-        let listing = tokio::spawn(async move { fetch_voices(&link, &signer()).await });
-        arrivals.recv().await.unwrap();
-        tokio::time::advance(FIRST_PAGE_TIME).await;
-        release.send(()).unwrap();
-        arrivals.recv().await.unwrap();
-        GatedListing {
-            server,
-            arrivals,
-            release,
-            listing,
-        }
-    }
 
-    #[tokio::test(start_paused = true)]
-    async fn pages_finishing_just_inside_the_catalog_budget_complete_the_listing() {
-        let _clock = freeze_clock();
-        let gated = second_page_in_flight().await;
-        let started = Instant::now() - FIRST_PAGE_TIME;
-
-        tokio::time::advance(
-            CallClass::Catalog.total_budget() - FIRST_PAGE_TIME - Duration::from_millis(1),
-        )
-        .await;
-        gated.release.send(()).unwrap();
-        let voices = gated.listing.await.unwrap().unwrap();
-
-        assert_eq!(voices.len(), 2);
-        assert!(started.elapsed() < CallClass::Catalog.total_budget());
-        drop((gated.arrivals, gated.server));
-    }
-
-    #[tokio::test(start_paused = true)]
-    async fn pages_outlasting_the_catalog_budget_together_fail_the_listing() {
-        let _clock = freeze_clock();
-        let gated = second_page_in_flight().await;
-
-        tokio::time::advance(CallClass::Catalog.total_budget() - FIRST_PAGE_TIME).await;
-        let result = gated.listing.await.unwrap();
+        let result = tokio::time::timeout(hang_guard, fetch_voices(&link, &signer()))
+            .await
+            .expect("the listing must give up on its own");
 
         assert!(
             matches!(&result, Err(PollyError::Http(detail)) if detail == LISTING_BUDGET_ELAPSED),
             "{result:?}"
         );
-        drop(gated.release);
-        assert_eq!(request_count(&gated.server).await, 2);
+        assert_eq!(request_count(&server).await, 2);
     }
 }

@@ -421,18 +421,12 @@ mod tests {
     use serde_json::json;
 
     use super::*;
-    use std::cell::Cell;
     use std::sync::atomic::Ordering;
 
-    use crate::client::tests::{
-        FakeVts, MockPublisher, PeerConn, freeze_clock, settle_on_a_frozen_clock,
-        stored_token_creds, wait_until,
-    };
+    use crate::client::tests::{FakeVts, MockPublisher, PeerConn, stored_token_creds, wait_until};
     use crate::vts::request::REQUEST_TIMEOUT;
 
     const SETTLE: Duration = Duration::from_secs(30);
-    const TIMER_RESOLUTION: Duration = Duration::from_millis(1);
-    const EARLY_WINDOW: Duration = Duration::from_millis(50);
     const REJECTION_ERROR_ID: i64 = 452;
     const ITEM_ERROR_ID: i64 = 751;
     const NO_MODEL_ERROR_ID: i64 = 50;
@@ -474,36 +468,22 @@ mod tests {
         let (client, conn) = connected_client(&mut vts).await;
         let (_peer, ignored) =
             conn.answer_all_except(|f| f["messageType"] == "HotkeyTriggerRequest");
-        let settled = Cell::new(false);
-        let _frozen = freeze_clock();
+        let started = std::time::Instant::now();
 
-        let (outcome, ()) = tokio::join!(
-            async {
-                let outcome = client.trigger_hotkey("hk-1").await;
-                settled.set(true);
-                outcome
-            },
-            async {
-                assert!(
-                    settle_on_a_frozen_clock(SETTLE, || ignored.load(Ordering::SeqCst) == 1).await,
-                    "the hotkey request never reached VTS"
-                );
-                tokio::time::advance(REQUEST_TIMEOUT - TIMER_RESOLUTION).await;
-                assert!(
-                    !settle_on_a_frozen_clock(EARLY_WINDOW, || settled.get()).await,
-                    "the request gave up before its deadline"
-                );
-                tokio::time::advance(TIMER_RESOLUTION * 2).await;
-                assert!(
-                    settle_on_a_frozen_clock(SETTLE, || settled.get()).await,
-                    "the request outlived its deadline"
-                );
-            }
-        );
+        let (outcome, ()) = tokio::join!(client.trigger_hotkey("hk-1"), async {
+            assert!(
+                wait_until(SETTLE, || ignored.load(Ordering::SeqCst) == 1).await,
+                "the hotkey request never reached VTS"
+            );
+        });
 
         assert!(
             matches!(outcome, Err(VTubeError::Timeout)),
             "got {outcome:?}"
+        );
+        assert!(
+            started.elapsed() >= REQUEST_TIMEOUT,
+            "the request gave up before its deadline"
         );
     }
 

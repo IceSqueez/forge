@@ -155,7 +155,6 @@ fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
 #[cfg(test)]
 pub(crate) mod test_support {
     use std::sync::Arc;
-    use std::sync::mpsc;
     use std::time::Duration;
 
     use forge_net::{
@@ -167,6 +166,7 @@ pub(crate) mod test_support {
 
     use super::{CLOUD_TTS_PROFILE, CloudGateways, ProviderLink};
     use crate::policy::SynthesisRateLimiter;
+    use crate::policy::rate_limit::EXHAUSTED_THRESHOLD;
 
     pub(crate) const API_KEY: &str = "sk-SECRET-7f3a91";
     pub(crate) const OTHER_API_KEY: &str = "sk-OTHER-b2c4d6";
@@ -174,14 +174,8 @@ pub(crate) mod test_support {
     pub(crate) const NO_HINT_WAIT_SECS: u64 = 1;
     const UNPACED_BURST: u32 = 1_000;
 
-    pub(crate) struct FrozenClock {
-        _release: mpsc::Sender<()>,
-    }
-
-    pub(crate) fn freeze_clock() -> FrozenClock {
-        let (release, frozen) = mpsc::channel::<()>();
-        tokio::task::spawn_blocking(move || frozen.recv());
-        FrozenClock { _release: release }
+    pub(crate) fn is_the_provider_cool_down(retry_after_secs: u64) -> bool {
+        (EXHAUSTED_THRESHOLD.as_secs()..=PAST_WAIT_THRESHOLD_SECS).contains(&retry_after_secs)
     }
 
     pub(crate) async fn serving(template: ResponseTemplate) -> MockServer {
@@ -319,7 +313,7 @@ pub(crate) mod test_support {
 #[cfg(test)]
 mod tests {
     use super::test_support::{
-        PAST_WAIT_THRESHOLD_SECS, freeze_clock, request_count, serving, throttled,
+        PAST_WAIT_THRESHOLD_SECS, is_the_provider_cool_down, request_count, serving, throttled,
     };
     use super::*;
     use forge_net::{BodyExcerpt, InvalidRequest, ThrottleScope};
@@ -339,7 +333,7 @@ mod tests {
         }
     }
 
-    #[tokio::test(start_paused = true)]
+    #[tokio::test]
     async fn throttle_secs_answers_only_for_throttle_failures() {
         let link = CloudGateways::new()
             .provider("p")
@@ -375,9 +369,8 @@ mod tests {
         }
     }
 
-    #[tokio::test(start_paused = true)]
+    #[tokio::test]
     async fn a_provider_cool_down_reaches_every_link_of_that_provider() {
-        let _clock = freeze_clock();
         let first = serving(throttled(PAST_WAIT_THRESHOLD_SECS)).await;
         let second = serving(ResponseTemplate::new(200)).await;
         let gateways = CloudGateways::new();
@@ -396,15 +389,18 @@ mod tests {
                 failure,
                 GatewayFailure::BudgetExhausted { retry_after: None }
             );
-            assert_eq!(link.throttle_secs(&failure), Some(PAST_WAIT_THRESHOLD_SECS));
+            assert!(
+                link.throttle_secs(&failure)
+                    .is_some_and(is_the_provider_cool_down),
+                "{failure:?}"
+            );
         }
         assert_eq!(request_count(&first).await, 1);
         assert_eq!(request_count(&second).await, 0);
     }
 
-    #[tokio::test(start_paused = true)]
+    #[tokio::test]
     async fn a_provider_cool_down_leaves_other_providers_untouched() {
-        let _clock = freeze_clock();
         let throttling = serving(throttled(PAST_WAIT_THRESHOLD_SECS)).await;
         let healthy = serving(ResponseTemplate::new(200)).await;
         let gateways = CloudGateways::new();

@@ -196,33 +196,28 @@ mod tests {
         }
 
         async fn every_call(&self) -> Vec<(&'static str, Outcome)> {
+            let (send, delete, categories, update, get, ban, unban, reward, pending) = tokio::join!(
+                self.send.send("hi", TOKEN, 42, false),
+                self.send.delete("msg-1", TOKEN),
+                self.categories.search(TOKEN, "q"),
+                self.channel
+                    .update_info(TOKEN, Some("t".to_owned()), None, None),
+                self.channel.get_channel(TOKEN),
+                self.moderation.ban(99, 42, None, None, TOKEN),
+                self.moderation.unban(99, 42, TOKEN),
+                self.rewards.create(reward(), TOKEN),
+                self.rewards.list_pending_redemptions(TOKEN),
+            );
             vec![
-                ("send", self.send.send("hi", TOKEN, 42, false).await),
-                ("delete chat", self.send.delete("msg-1", TOKEN).await),
-                (
-                    "categories",
-                    self.categories.search(TOKEN, "q").await.map(drop),
-                ),
-                (
-                    "channel update",
-                    self.channel
-                        .update_info(TOKEN, Some("t".to_owned()), None, None)
-                        .await,
-                ),
-                (
-                    "channel get",
-                    self.channel.get_channel(TOKEN).await.map(drop),
-                ),
-                ("ban", self.moderation.ban(99, 42, None, None, TOKEN).await),
-                ("unban", self.moderation.unban(99, 42, TOKEN).await),
-                (
-                    "reward create",
-                    self.rewards.create(reward(), TOKEN).await.map(drop),
-                ),
-                (
-                    "pending redemptions",
-                    self.rewards.list_pending_redemptions(TOKEN).await.map(drop),
-                ),
+                ("send", send),
+                ("delete chat", delete),
+                ("categories", categories.map(drop)),
+                ("channel update", update),
+                ("channel get", get.map(drop)),
+                ("ban", ban),
+                ("unban", unban),
+                ("reward create", reward.map(drop)),
+                ("pending redemptions", pending.map(drop)),
             ]
         }
     }
@@ -469,12 +464,11 @@ mod tests {
         let server = MockServer::start().await;
         Mock::given(method("POST"))
             .and(path("/chat"))
-            .respond_with(ResponseTemplate::new(429).insert_header("retry-after", "60"))
+            .respond_with(ResponseTemplate::new(429).insert_header("retry-after", "3600"))
             .mount(&server)
             .await;
         let clients = Clients::over(&api_limited_by(&server.uri(), official_bucket()));
         let throttled = clients.send.send("hi", TOKEN, 42, false).await;
-        tokio::time::pause();
 
         let after = clients.every_call().await;
 
@@ -482,7 +476,7 @@ mod tests {
             matches!(
                 throttled,
                 Err(PlatformError::RateLimited {
-                    retry_after_secs: 60
+                    retry_after_secs: 3600
                 })
             ),
             "{throttled:?}"

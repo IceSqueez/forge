@@ -705,9 +705,6 @@ pub(crate) mod tests {
     const LOOPBACK_SETTLE: std::time::Duration = std::time::Duration::from_millis(50);
     const SETUP_ATTEMPTS: usize = 20;
     const OLD_LISTENER_WINDOW: std::time::Duration = std::time::Duration::from_millis(50);
-    const REAL_CLOCK_WINDOW: std::time::Duration = std::time::Duration::from_millis(10);
-    const REAL_CLOCK_GRACE: std::time::Duration = std::time::Duration::from_secs(5);
-    const CLOCK_STEP: std::time::Duration = std::time::Duration::from_secs(1);
 
     #[tokio::test]
     async fn ws_handshake_without_an_origin_header_is_accepted() {
@@ -1334,9 +1331,9 @@ pub(crate) mod tests {
             tokio::time::sleep(LOOPBACK_SETTLE).await;
 
             let started = tokio::time::Instant::now();
-            run_stepping_the_clock(handle.restart(), DRAIN_BUDGET * 2)
+            tokio::time::timeout(DRAIN_BUDGET * 6, handle.restart())
                 .await
-                .expect("the restart outlived twice the drain budget")
+                .expect("the restart never finished draining")
                 .expect("restart");
             if started.elapsed() >= DRAIN_BUDGET {
                 outlasted_the_drain = Some((handle, lingering));
@@ -2035,28 +2032,6 @@ pub(crate) mod tests {
         socket
     }
 
-    pub(crate) async fn elapse(by: std::time::Duration) {
-        tokio::time::pause();
-        tokio::time::advance(by).await;
-        tokio::time::resume();
-    }
-
-    async fn run_stepping_the_clock<T>(
-        work: impl std::future::Future<Output = T>,
-        budget: std::time::Duration,
-    ) -> Option<T> {
-        tokio::pin!(work);
-        let mut jumped = std::time::Duration::ZERO;
-        while jumped < budget {
-            if let Ok(done) = tokio::time::timeout(REAL_CLOCK_WINDOW, &mut work).await {
-                return Some(done);
-            }
-            elapse(CLOCK_STEP).await;
-            jumped += CLOCK_STEP;
-        }
-        tokio::time::timeout(REAL_CLOCK_GRACE, &mut work).await.ok()
-    }
-
     async fn assert_still_serving(socket: &mut ClientSocket, who: &str) {
         for _ in 0..ROUND_TRIPS {
             send_text(socket, get_info_request().to_string()).await;
@@ -2444,9 +2419,9 @@ pub(crate) mod tests {
         let opened = tokio::time::Instant::now();
 
         let mut buf = [0_u8; 1];
-        let outcome = run_stepping_the_clock(
-            silent.read(&mut buf),
+        let outcome = tokio::time::timeout(
             crate::listener::REQUEST_READ_TIMEOUT * 2,
+            silent.read(&mut buf),
         )
         .await
         .expect("a silent connection was held past twice the read deadline");
@@ -2468,7 +2443,7 @@ pub(crate) mod tests {
         let mut socket = open_ws(addr).await;
         assert_eq!(ask(&mut socket, get_info_request()).await["status"], "ok");
 
-        elapse(crate::listener::REQUEST_READ_TIMEOUT * 2).await;
+        tokio::time::sleep(crate::listener::REQUEST_READ_TIMEOUT + PRE_AUTH_MARGIN).await;
 
         assert_eq!(ask(&mut socket, get_info_request()).await["status"], "ok");
         handle.stop().await.expect("stop");
@@ -2479,11 +2454,12 @@ pub(crate) mod tests {
         let (handle, addr) = make_server(false, MemCreds::new()).await;
         let mut socket = open_ws(addr).await;
 
-        let closed = run_stepping_the_clock(
-            futures_util::StreamExt::next(&mut socket),
+        let closed = tokio::time::timeout(
             (PRE_AUTH_WINDOW + PRE_AUTH_MARGIN) * 2,
+            futures_util::StreamExt::next(&mut socket),
         )
-        .await;
+        .await
+        .ok();
 
         assert_eq!(
             close_code_of(closed.flatten().and_then(Result::ok)),
@@ -2499,7 +2475,7 @@ pub(crate) mod tests {
         let mut socket = open_ws(addr).await;
 
         assert_eq!(ask(&mut socket, get_info_request()).await["status"], "ok");
-        elapse(PRE_AUTH_WINDOW + PRE_AUTH_MARGIN).await;
+        tokio::time::sleep(PRE_AUTH_WINDOW + PRE_AUTH_MARGIN).await;
 
         assert_still_serving(&mut socket, "a reader that had spoken while reads are open").await;
         handle.stop().await.expect("stop");
@@ -2516,7 +2492,7 @@ pub(crate) mod tests {
             "UNAUTHENTICATED",
             "an unauthenticated request must be answered, not silently dropped"
         );
-        elapse(PRE_AUTH_WINDOW + PRE_AUTH_MARGIN).await;
+        tokio::time::sleep(PRE_AUTH_WINDOW + PRE_AUTH_MARGIN).await;
 
         assert_eq!(
             close_code_of(next_message(&mut socket).await),
@@ -2531,7 +2507,7 @@ pub(crate) mod tests {
         let (handle, addr) = make_server(true, MemCreds::with_token(BEARER_TOKEN)).await;
         let mut session = authenticated_ws(addr, BEARER_TOKEN).await;
 
-        elapse(PRE_AUTH_WINDOW + PRE_AUTH_MARGIN).await;
+        tokio::time::sleep(PRE_AUTH_WINDOW + PRE_AUTH_MARGIN).await;
 
         assert_still_serving(&mut session, "a bearer-authenticated session").await;
         handle.stop().await.expect("stop");
@@ -2556,7 +2532,7 @@ pub(crate) mod tests {
             "the page never became an overlay session"
         );
 
-        elapse(PRE_AUTH_WINDOW + PRE_AUTH_MARGIN).await;
+        tokio::time::sleep(PRE_AUTH_WINDOW + PRE_AUTH_MARGIN).await;
 
         assert_still_serving(&mut page, "an overlay session").await;
         handle.stop().await.expect("stop");

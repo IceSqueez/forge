@@ -11,7 +11,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::actions::{
     SHORTCUTS, ShortcutEntry, canonical_chord, chord_is_bindable, effective_chord,
-    reapply_key_bindings, shortcut_entry,
+    platform_default_chord, reapply_key_bindings, shortcut_entry,
 };
 use crate::repo_failure::RepoFailure;
 
@@ -157,6 +157,14 @@ impl ShortcutOverrides {
         }
     }
 
+    pub fn resolved_chord_of(&self, entry: &'static ShortcutEntry) -> Option<String> {
+        if self.is_overridden(entry.id) {
+            self.chord_of(entry).map(str::to_owned)
+        } else {
+            Some(platform_default_chord(entry))
+        }
+    }
+
     pub fn is_enabled(&self, id: &str) -> bool {
         self.map.get(id).is_none_or(|stored| stored.enabled)
     }
@@ -191,7 +199,9 @@ impl ShortcutOverrides {
     pub fn owner_of(&self, chord: &str, exclude: &str) -> Option<&'static str> {
         SHORTCUTS
             .iter()
-            .find(|entry| entry.id != exclude && self.chord_of(entry) == Some(chord))
+            .find(|entry| {
+                entry.id != exclude && self.resolved_chord_of(entry).as_deref() == Some(chord)
+            })
             .map(|entry| entry.id)
     }
 
@@ -219,8 +229,8 @@ impl ShortcutOverrides {
     }
 
     pub fn bind(&mut self, id: &str, chord: String) {
-        let default = shortcut_entry(id).map(|entry| entry.default_chord);
-        self.entry_mut(id).chord = if default == Some(chord.as_str()) {
+        let default = shortcut_entry(id).map(platform_default_chord);
+        self.entry_mut(id).chord = if default.as_deref() == Some(chord.as_str()) {
             None
         } else {
             Some(chord)
@@ -375,6 +385,46 @@ mod tests {
             "the excluded shortcut must not be reported as its own owner"
         );
         assert_eq!(overrides.owner_of("ctrl-9", HOME), None);
+    }
+
+    #[test]
+    fn a_recorded_chord_conflicts_with_the_default_it_resolves_to() {
+        let overrides = ShortcutOverrides::default();
+        let home = shortcut_entry(HOME).unwrap();
+
+        assert_eq!(
+            overrides.owner_of(&platform_default_chord(home), CHAT),
+            Some(HOME)
+        );
+    }
+
+    #[test]
+    fn recording_the_resolved_default_clears_the_override() {
+        let mut overrides = ShortcutOverrides::default();
+        let home = shortcut_entry(HOME).unwrap();
+        overrides.bind(HOME, "alt-9".to_owned());
+
+        overrides.bind(HOME, platform_default_chord(home));
+
+        assert!(!overrides.is_overridden(HOME));
+    }
+
+    #[test]
+    fn a_recorded_chord_other_than_the_resolved_default_is_stored_literally() {
+        let mut overrides = ShortcutOverrides::default();
+        let home = shortcut_entry(HOME).unwrap();
+        let other_modifier = if cfg!(target_os = "macos") {
+            "ctrl-1"
+        } else {
+            "cmd-1"
+        };
+
+        overrides.bind(HOME, other_modifier.to_owned());
+
+        assert_eq!(
+            overrides.resolved_chord_of(home).as_deref(),
+            Some(other_modifier)
+        );
     }
 
     #[test]

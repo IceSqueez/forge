@@ -226,16 +226,13 @@ mod window_presence;
 use std::cell::Cell;
 use std::rc::Rc;
 
-use forge_components::{
-    FOOTER_HEIGHT, IconAssets, bind_code_editor_keys, bind_picker_keys, bind_text_area_keys,
-    bind_text_input_keys,
-};
+use forge_components::{FOOTER_HEIGHT, IconAssets};
 use gpui::{
     AnyWindowHandle, App, AppContext, Bounds, Pixels, Point, QuitMode, SharedString, Size,
     TitlebarOptions, WindowBounds, WindowOptions, point, px, size,
 };
 
-use crate::actions::{bind_list_keys, register_shell_key_bindings};
+use crate::actions::register_key_bindings;
 use crate::log_tail::LogTail;
 use crate::navigation::Screen;
 use crate::root::{RestoreWaitView, RootView, run_boot};
@@ -399,6 +396,12 @@ fn prewarm_kit_fonts(cx: &mut App) {
     let text_system = cx.text_system().clone();
     cx.background_spawn(async move { text_system.prewarm_fonts(&fonts) })
         .detach();
+}
+
+fn lossy_cli_args() -> impl Iterator<Item = String> {
+    std::env::args_os()
+        .skip(1)
+        .map(|arg| arg.to_string_lossy().into_owned())
 }
 
 struct MainWindowLaunch {
@@ -652,7 +655,7 @@ fn main() {
     };
     crash_hook::install(forge_paths::crashes_dir());
 
-    let initial_screen = match parse_startup_request(std::env::args().skip(1)) {
+    let initial_screen = match parse_startup_request(lossy_cli_args()) {
         Ok(StartupRequest::Open(screen)) => screen,
         Ok(StartupRequest::Help) => {
             print_usage();
@@ -694,7 +697,7 @@ fn main() {
 
     let guard_handle = rt_handle.clone();
     let rt_guard = guard_handle.enter();
-    let startup_gate = match restore_relaunch::previous_instance(std::env::args().skip(1)) {
+    let startup_gate = match restore_relaunch::previous_instance(lossy_cli_args()) {
         Some(previous) => StartupGate::AwaitingPrevious(previous),
         None => match claim_instance() {
             Ok(claim) => StartupGate::Claimed(claim),
@@ -742,12 +745,7 @@ fn main() {
 
         crate::i18n::install_os_default();
 
-        bind_text_input_keys(cx);
-        bind_text_area_keys(cx);
-        bind_code_editor_keys(cx);
-        bind_picker_keys(cx);
-        bind_list_keys(cx);
-        register_shell_key_bindings(cx);
+        register_key_bindings(cx);
         cx.on_action(|_: &crate::actions::Quit, cx| cx.quit());
         if cfg!(target_os = "macos") {
             cx.set_menus([gpui::Menu::new("forge").items([gpui::MenuItem::action(

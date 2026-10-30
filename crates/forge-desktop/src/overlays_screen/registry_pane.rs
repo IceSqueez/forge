@@ -109,6 +109,8 @@ impl OverlaysView {
         if self.registry.overlays.is_empty() {
             let message = if self.registry.loading {
                 tr!("overlays_pane_loading")
+            } else if let Some(reason) = &self.registry.load_failure {
+                tr!("overlays_pane_load_failed", reason = reason.as_str())
             } else {
                 tr!("overlays_pane_empty")
             };

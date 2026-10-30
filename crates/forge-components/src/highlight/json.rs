@@ -73,7 +73,7 @@ pub(super) fn lex(src: &str, range: Range<usize>, state: &mut JsonState, out: &m
         let start = cur.pos();
         let class = if c.is_whitespace() {
             cur.eat_while(char::is_whitespace);
-            TokenClass::Punctuation
+            TokenClass::Plain
         } else if c == '"' {
             cur.bump();
             let closed = finish_string(&mut cur);
@@ -95,7 +95,11 @@ pub(super) fn lex(src: &str, range: Range<usize>, state: &mut JsonState, out: &m
             TokenClass::Keyword
         } else {
             cur.bump();
-            TokenClass::Plain
+            if matches!(c, '{' | '}' | '[' | ']' | ',' | ':') {
+                TokenClass::Punctuation
+            } else {
+                TokenClass::Plain
+            }
         };
         out.push(cur.pos() - start, class);
     }
@@ -140,10 +144,10 @@ mod tests {
         assert_eq!(
             pieces(Json, "[1, \"ab\n2]\n"),
             vec![
-                ("[", Plain),
+                ("[", Punctuation),
                 ("1", Number),
-                (",", Plain),
-                (" ", Punctuation),
+                (",", Punctuation),
+                (" ", Plain),
                 ("\"ab\n2]\n", String)
             ]
         );

@@ -249,7 +249,10 @@ impl RenderOnce for Button {
                 .id
                 .clone()
                 .map(|id| ElementId::NamedChild(Arc::new(id), SharedString::new_static("busy")))
-                .unwrap_or_else(|| ElementId::Name(SharedString::new_static("forge-button-busy")));
+                .unwrap_or_else(|| {
+                    let label = self.label.as_deref().unwrap_or_default();
+                    ElementId::Name(format!("forge-button-busy-{label}").into())
+                });
             root = root.child(spinner(clock, Icon::Loader2, glyph_size, text));
         } else if let Some(leading) = self.leading {
             root = if icon_only && !disabled {

@@ -112,6 +112,7 @@ impl PackExportFlow {
 
     fn write(&mut self, destination: PathBuf, draft: PackDraft, cx: &mut Context<Self>) {
         self.step = PackExportStep::Writing;
+        cx.push_toast(ToastKind::Info, tr!("pack_export_writing"));
         let provider = Arc::clone(&self.services.backend);
         let overlays = self.services.overlays.clone();
         async_bridge::run_async(

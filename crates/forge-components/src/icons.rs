@@ -110,6 +110,7 @@ tabler_icons! {
     Flag => "flag.svg",
     LayoutSidebar => "layout-sidebar.svg",
     Search => "search.svg",
+    MoodSad => "mood-sad.svg",
     MoodSmile => "mood-smile.svg",
     MoodTongue => "mood-tongue.svg",
     Send => "send.svg",
@@ -201,7 +202,11 @@ tabler_icons! {
 
 impl Icon {
     pub fn from_name(name: &str) -> Self {
-        match name {
+        Self::named(name).unwrap_or(Icon::InfoCircle)
+    }
+
+    pub fn named(name: &str) -> Option<Self> {
+        Some(match name {
             "home" => Icon::Home,
             "clock" => Icon::Clock,
             "history" => Icon::History,
@@ -250,6 +255,7 @@ impl Icon {
             "calendar" | "calendar-event" | "clock-plus" => Icon::Calendar,
             "send" | "paper-plane" => Icon::Send,
             "mood-smile" | "emoji" | "smile" => Icon::MoodSmile,
+            "mood-sad" | "sad" => Icon::MoodSad,
             "mood-tongue" => Icon::MoodTongue,
             "download" => Icon::Download,
             "plus" => Icon::Plus,
@@ -276,9 +282,9 @@ impl Icon {
             "key" => Icon::Key,
             "lock-open" | "unlock" => Icon::LockOpen,
             "x" | "close" => Icon::X,
-            "circle-check" | "check" | "check-circle" | "shield-check" | "circle" => {
-                Icon::CircleCheck
-            }
+            "circle-check" | "check-circle" | "shield-check" => Icon::CircleCheck,
+            "check" => Icon::Check,
+            "circle" => Icon::Circle,
             "info-circle" | "info" | "list" | "flag-alert" => Icon::InfoCircle,
             "keyboard" => Icon::Keyboard,
             "folder" => Icon::Folder,
@@ -367,8 +373,8 @@ impl Icon {
             "frame" => Icon::Frame,
             "arrow-badge-right" => Icon::ArrowBadgeRight,
             "link" => Icon::Link,
-            _ => Icon::InfoCircle,
-        }
+            _ => return None,
+        })
     }
 }
 

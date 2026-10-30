@@ -182,7 +182,7 @@ impl Picker {
             .enumerate()
             .filter(|(_, item)| {
                 item_matches(&item.label, item.sublabel.as_deref(), query)
-                    || item.id.as_ref() == query.trim()
+                    || item.id.to_lowercase() == query
             })
             .map(|(idx, _)| idx)
             .collect();
@@ -812,5 +812,27 @@ mod tests {
         vcx.simulate_keystrokes("enter");
 
         assert_eq!(selections(&heard, vcx), Vec::<String>::new());
+    }
+
+    #[gpui::test]
+    fn a_row_id_with_capitals_matches_when_pasted_whatever_its_case(cx: &mut gpui::TestAppContext) {
+        const MIXED_CASE_ID: &str = "Reward-7C1E";
+        for pasted in [MIXED_CASE_ID, " reward-7c1e ", "REWARD-7C1E"] {
+            let roster = vec![PickerItem {
+                id: SharedString::from(MIXED_CASE_ID),
+                label: SharedString::from("Hydrate"),
+                sublabel: None,
+                icon: None,
+            }];
+            let (picker, _heard, vcx) = open_typable(cx, roster);
+
+            type_query(&picker, vcx, pasted);
+
+            assert_eq!(
+                visible_ids(&picker, vcx),
+                vec![MIXED_CASE_ID.to_owned()],
+                "{pasted:?}"
+            );
+        }
     }
 }

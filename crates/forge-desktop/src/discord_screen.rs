@@ -6,6 +6,7 @@ use forge_components::FONT_MICRO;
 use forge_components::FONT_XXS;
 use forge_components::Spacing;
 use forge_components::spacing;
+use std::collections::HashSet;
 use std::sync::Arc;
 
 use forge_components::{
@@ -114,6 +115,8 @@ pub struct DiscordScreenView {
     health: DiscordSendHealth,
     menu_open: Option<String>,
     menu_click_pos: Option<Point<Pixels>>,
+    saving: bool,
+    testing_rows: HashSet<String>,
     modal: Option<OpenModal>,
     delete_prompt: Option<DeletePrompt>,
     _bus_bridge: Task<()>,
@@ -139,6 +142,8 @@ impl DiscordScreenView {
             webhooks: Vec::new(),
             menu_open: None,
             menu_click_pos: None,
+            saving: false,
+            testing_rows: HashSet::new(),
             modal: None,
             delete_prompt: None,
             _bus_bridge: bus_bridge,
@@ -297,6 +302,9 @@ impl DiscordScreenView {
     }
 
     fn save_webhook(&mut self, draft: &WebhookDraft, cx: &mut Context<Self>) {
+        if self.saving {
+            return;
+        }
         let name = draft.name.clone();
         if draft.original_name.is_none() && name_is_taken(&self.webhooks, &name) {
             cx.push_toast(
@@ -307,7 +315,7 @@ impl DiscordScreenView {
             return;
         }
 
-        self.close_modal(cx);
+        self.saving = true;
         let client = Arc::clone(&self.client);
         let url = draft.url.clone();
         async_bridge::run_async(
@@ -318,15 +326,19 @@ impl DiscordScreenView {
                     .await
                     .map_err(RepoFailure::from)
             },
-            |this, result, cx| match result {
-                Ok(()) => {
-                    cx.push_toast(ToastKind::Success, tr!("discord_toast_saved"));
-                    if let Some(integration) = &this.integration {
-                        integration.request_enable();
+            |this, result, cx| {
+                this.saving = false;
+                match result {
+                    Ok(()) => {
+                        this.close_modal(cx);
+                        cx.push_toast(ToastKind::Success, tr!("discord_toast_saved"));
+                        if let Some(integration) = &this.integration {
+                            integration.request_enable();
+                        }
+                        this.load(cx);
                     }
-                    this.load(cx);
+                    Err(message) => this.on_error(&message.text(), cx),
                 }
-                Err(message) => this.on_error(&message.text(), cx),
             },
             cx,
         );
@@ -359,6 +371,11 @@ impl DiscordScreenView {
 
     fn test_webhook(&mut self, name: String, cx: &mut Context<Self>) {
         self.menu_open = None;
+        if !self.testing_rows.insert(name.clone()) {
+            cx.notify();
+            return;
+        }
+        let settled_name = name.clone();
         let client = Arc::clone(&self.client);
         let content = tr!("discord_test_content");
         async_bridge::run_async(
@@ -370,7 +387,10 @@ impl DiscordScreenView {
                     .map(|_| ())
                     .map_err(RepoFailure::from)
             },
-            |this, result, cx| this.report_test(result, cx),
+            move |this, result, cx| {
+                this.testing_rows.remove(&settled_name);
+                this.report_test(result, cx);
+            },
             cx,
         );
         cx.notify();
@@ -757,6 +777,7 @@ impl DiscordScreenView {
                         this.test_webhook(test_name.clone(), cx)
                     }),
                 )
+                .disabled(self.testing_rows.contains(name))
                 .icon(Icon::Send)
                 .into(),
                 menu_divider(),
@@ -1110,8 +1131,8 @@ mod tests {
     use crate::i18n::install_language;
     use crate::navigation::Screen;
     use crate::test_support::{
-        StubActions, alive_tasks, hub_crumb_targets, install_presentation, quiet_bus, runtime,
-        test_backend, wait_until_worker_drains_to, worker_runtime,
+        StubActions, alive_tasks, error_toasts, hub_crumb_targets, install_presentation,
+        pump_until, quiet_bus, runtime, test_backend, wait_until_worker_drains_to, worker_runtime,
     };
 
     #[gpui::test]
@@ -1244,5 +1265,181 @@ mod tests {
             body.map(|body| body["content"].clone()),
             Some(serde_json::json!("Тестове повідомлення з forge."))
         );
+    }
+
+    const VALID_WEBHOOK_URL: &str = "https://discord.com/api/webhooks/1/token";
+    const STORE_REFUSED: &str = "the credential store is read-only";
+
+    struct Counted {
+        stores: Arc<std::sync::atomic::AtomicUsize>,
+        lookups: Arc<std::sync::atomic::AtomicUsize>,
+    }
+
+    fn counted_creds(store_fails: bool) -> (MockCredentialsRepo, Counted) {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        let stores = Arc::new(AtomicUsize::new(0));
+        let lookups = Arc::new(AtomicUsize::new(0));
+        let (stored, looked_up) = (Arc::clone(&stores), Arc::clone(&lookups));
+        let mut creds = MockCredentialsRepo::new();
+        creds.expect_list_ids().returning(|| Ok(Vec::new()));
+        creds.expect_load().returning(move |_| {
+            looked_up.fetch_add(1, Ordering::SeqCst);
+            Ok(None)
+        });
+        creds.expect_store().returning(move |_, _| {
+            stored.fetch_add(1, Ordering::SeqCst);
+            if store_fails {
+                Err(forge_storage::StorageError::Connection {
+                    reason: STORE_REFUSED.to_owned(),
+                })
+            } else {
+                Ok(())
+            }
+        });
+        (creds, Counted { stores, lookups })
+    }
+
+    fn view_over(
+        creds: MockCredentialsRepo,
+        rt: &tokio::runtime::Runtime,
+        cx: &mut TestAppContext,
+    ) -> Entity<DiscordScreenView> {
+        install_language(Language::En);
+        install_presentation(cx);
+        cx.update(|cx| cx.set_global(forge_components::Toasts::new()));
+        let bus = quiet_bus(rt);
+        let client = {
+            let _entered = rt.enter();
+            DiscordClient::new(
+                "http://127.0.0.1:1/api",
+                Arc::clone(&bus) as Arc<dyn forge_events::EventPublisher>,
+                Arc::new(creds) as Arc<dyn CredentialsRepo>,
+            )
+            .expect("the discord gateway builds")
+        };
+        let handle = rt.handle().clone();
+        let view = cx.update(|cx| {
+            cx.new(|cx| {
+                DiscordScreenView::new(client, None, Arc::new(StubActions), bus, handle, cx)
+            })
+        });
+        settle_discord(&view, rt, cx);
+        view
+    }
+
+    fn settle_discord(
+        view: &Entity<DiscordScreenView>,
+        rt: &tokio::runtime::Runtime,
+        cx: &mut TestAppContext,
+    ) {
+        pump_until(rt, || {
+            cx.run_until_parked();
+            view.read_with(cx, |view, _| !view.saving && view.testing_rows.is_empty())
+        });
+    }
+
+    fn draft() -> WebhookDraft {
+        WebhookDraft {
+            original_name: None,
+            name: "alerts".to_owned(),
+            url: VALID_WEBHOOK_URL.to_owned(),
+        }
+    }
+
+    fn modal_open(view: &Entity<DiscordScreenView>, cx: &mut TestAppContext) -> bool {
+        view.read_with(cx, |view, _| view.modal.is_some())
+    }
+
+    #[gpui::test]
+    fn a_saved_webhook_closes_the_modal_only_once_the_write_landed(cx: &mut TestAppContext) {
+        let rt = runtime();
+        let (creds, _counted) = counted_creds(false);
+        let view = view_over(creds, &rt, cx);
+        view.update(cx, |view, cx| {
+            view.open_add_modal(cx);
+            view.save_webhook(&draft(), cx);
+        });
+        let open_while_writing = modal_open(&view, cx);
+
+        settle_discord(&view, &rt, cx);
+
+        assert_eq!((open_while_writing, modal_open(&view, cx)), (true, false));
+    }
+
+    #[gpui::test]
+    fn a_refused_write_keeps_the_modal_open_and_reports_the_failure(cx: &mut TestAppContext) {
+        let rt = runtime();
+        let (creds, _counted) = counted_creds(true);
+        let view = view_over(creds, &rt, cx);
+        view.update(cx, |view, cx| {
+            view.open_add_modal(cx);
+            view.save_webhook(&draft(), cx);
+        });
+
+        settle_discord(&view, &rt, cx);
+
+        assert_eq!(
+            (modal_open(&view, cx), cx.update(|cx| error_toasts(cx))),
+            (true, 1)
+        );
+    }
+
+    #[gpui::test]
+    fn a_second_save_while_one_runs_writes_nothing_more(cx: &mut TestAppContext) {
+        let rt = runtime();
+        let (creds, counted) = counted_creds(false);
+        let view = view_over(creds, &rt, cx);
+
+        view.update(cx, |view, cx| {
+            view.save_webhook(&draft(), cx);
+            view.save_webhook(&draft(), cx);
+        });
+        settle_discord(&view, &rt, cx);
+
+        assert_eq!(counted.stores.load(std::sync::atomic::Ordering::SeqCst), 1);
+    }
+
+    #[gpui::test]
+    fn a_second_row_test_while_one_runs_sends_nothing_more(cx: &mut TestAppContext) {
+        let rt = runtime();
+        let (creds, counted) = counted_creds(false);
+        let view = view_over(creds, &rt, cx);
+
+        view.update(cx, |view, cx| {
+            view.test_webhook("alerts".to_owned(), cx);
+            view.test_webhook("alerts".to_owned(), cx);
+        });
+        settle_discord(&view, &rt, cx);
+
+        assert_eq!(counted.lookups.load(std::sync::atomic::Ordering::SeqCst), 1);
+    }
+
+    #[gpui::test]
+    fn a_settled_row_test_can_be_sent_again(cx: &mut TestAppContext) {
+        let rt = runtime();
+        let (creds, counted) = counted_creds(false);
+        let view = view_over(creds, &rt, cx);
+
+        for _ in 0..2 {
+            view.update(cx, |view, cx| view.test_webhook("alerts".to_owned(), cx));
+            settle_discord(&view, &rt, cx);
+        }
+
+        assert_eq!(counted.lookups.load(std::sync::atomic::Ordering::SeqCst), 2);
+    }
+
+    #[gpui::test]
+    fn a_test_on_one_row_leaves_another_row_free(cx: &mut TestAppContext) {
+        let rt = runtime();
+        let (creds, counted) = counted_creds(false);
+        let view = view_over(creds, &rt, cx);
+
+        view.update(cx, |view, cx| {
+            view.test_webhook("alerts".to_owned(), cx);
+            view.test_webhook("raids".to_owned(), cx);
+        });
+        settle_discord(&view, &rt, cx);
+
+        assert_eq!(counted.lookups.load(std::sync::atomic::Ordering::SeqCst), 2);
     }
 }

@@ -1,4 +1,5 @@
-use std::collections::HashSet;
+use std::collections::HashMap;
+use std::time::{Duration, Instant};
 
 use forge_components::{ToastKind, tr};
 use forge_soundboard::vocabulary::PlaybackFailed;
@@ -9,9 +10,25 @@ use forge_components::PushToast;
 
 use crate::runtime_event::ClipPlayback;
 
+const PAD_CLAIM_LIFETIME: Duration = Duration::from_secs(30);
+
 #[derive(Default)]
 pub struct PadPlays {
-    awaiting_outcome: HashSet<ClipId>,
+    awaiting_outcome: HashMap<ClipId, Instant>,
+}
+
+impl PadPlays {
+    fn claim(&mut self, clip: ClipId) {
+        self.awaiting_outcome
+            .retain(|_, claimed_at| claimed_at.elapsed() < PAD_CLAIM_LIFETIME);
+        self.awaiting_outcome.insert(clip, Instant::now());
+    }
+
+    fn take_live_claim(&mut self, clip: &ClipId) -> bool {
+        self.awaiting_outcome
+            .remove(clip)
+            .is_some_and(|claimed_at| claimed_at.elapsed() < PAD_CLAIM_LIFETIME)
+    }
 }
 
 impl Global for PadPlays {}
@@ -23,9 +40,7 @@ pub trait PadPlayClaims {
 
 impl PadPlayClaims for App {
     fn claim_pad_play(&mut self, clip: ClipId) {
-        self.default_global::<PadPlays>()
-            .awaiting_outcome
-            .insert(clip);
+        self.default_global::<PadPlays>().claim(clip);
     }
 
     fn release_pad_play(&mut self, clip: ClipId) {
@@ -36,11 +51,9 @@ impl PadPlayClaims for App {
 }
 
 pub fn report_clip_playback(playback: &ClipPlayback, cx: &mut App) {
-    let claimed_by_pad = playback.clip_id().is_some_and(|clip| {
-        cx.default_global::<PadPlays>()
-            .awaiting_outcome
-            .remove(&clip)
-    });
+    let claimed_by_pad = playback
+        .clip_id()
+        .is_some_and(|clip| cx.default_global::<PadPlays>().take_live_claim(&clip));
     let ClipPlayback::Failed(failed) = playback else {
         return;
     };
@@ -255,5 +268,49 @@ mod tests {
         report(&failed(Some("Air Horn")), cx);
 
         assert_eq!(toasts(cx).len(), 2);
+    }
+
+    fn claim_aged_past_its_lifetime(cx: &mut TestAppContext) -> bool {
+        let Some(claimed_at) = Instant::now().checked_sub(PAD_CLAIM_LIFETIME) else {
+            return false;
+        };
+        cx.update(|cx| {
+            cx.default_global::<PadPlays>()
+                .awaiting_outcome
+                .insert(clip(), claimed_at);
+        });
+        true
+    }
+
+    #[gpui::test]
+    fn a_failure_after_the_claim_expired_is_toasted(cx: &mut TestAppContext) {
+        setup(cx);
+        if !claim_aged_past_its_lifetime(cx) {
+            return;
+        }
+
+        report(&failed(Some("airhorn")), cx);
+
+        assert_eq!(toasts(cx).len(), 1);
+    }
+
+    #[gpui::test]
+    fn claiming_another_clip_drops_claims_whose_outcome_never_came(cx: &mut TestAppContext) {
+        setup(cx);
+        if !claim_aged_past_its_lifetime(cx) {
+            return;
+        }
+        let other: ClipId = "01J8Z3N5Q7R9T1V3X5Z7B9D1F4".parse().unwrap();
+
+        cx.update(|cx| cx.claim_pad_play(other));
+
+        let held = cx.update(|cx| {
+            cx.default_global::<PadPlays>()
+                .awaiting_outcome
+                .keys()
+                .copied()
+                .collect::<Vec<_>>()
+        });
+        assert_eq!(held, [other]);
     }
 }

@@ -86,7 +86,7 @@ impl SoundboardView {
             },
             |this, result, cx| match result {
                 Ok(()) => this.reload(cx),
-                Err(error) => this.on_load_error(failure_message(&error), cx),
+                Err(error) => this.on_action_failure(failure_message(&error), cx),
             },
             cx,
         );
@@ -126,8 +126,7 @@ impl SoundboardView {
     ) -> AnyElement {
         let density = cx.density();
         let color = category_color(entry.category, palette);
-        let glyph =
-            glyph_for_name(entry.icon_name).unwrap_or_else(|| category_glyph(entry.category));
+        let glyph = Icon::named(entry.icon_name).unwrap_or_else(|| category_glyph(entry.category));
         pad_tile(
             (
                 gpui::ElementId::from("sb-lib"),
@@ -150,30 +149,4 @@ impl SoundboardView {
         .on_click(cx.listener(move |this, _: &ClickEvent, _, cx| this.import_builtin(entry, cx)))
         .into_any_element()
     }
-}
-
-pub(super) fn glyph_for_name(name: &str) -> Option<Icon> {
-    Some(match name {
-        "music" => Icon::Music,
-        "repeat" => Icon::Repeat,
-        "star" => Icon::Star,
-        "flag" => Icon::Flag,
-        "speakerphone" => Icon::Speakerphone,
-        "sparkles" => Icon::Sparkles,
-        "wave-sine" => Icon::WaveSine,
-        "wave-saw-tool" => Icon::WaveSawTool,
-        "ripple" => Icon::Ripple,
-        "hand-click" => Icon::HandClick,
-        "user-plus" => Icon::UserPlus,
-        "mood-crazy-happy" => Icon::MoodCrazyHappy,
-        "mood-sad" => Icon::MoodSmile,
-        "alert-triangle" => Icon::AlertTriangle,
-        "player-skip-forward" => Icon::PlayerSkipForward,
-        "bolt" => Icon::Bolt,
-        "volume" => Icon::Volume,
-        "eye" => Icon::Eye,
-        "x" => Icon::X,
-        "message-circle" => Icon::MessageCircle,
-        _ => return None,
-    })
 }

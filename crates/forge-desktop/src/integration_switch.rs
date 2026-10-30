@@ -78,8 +78,9 @@ impl IntegrationSwitch {
 }
 
 impl SwitchWatch {
-    pub fn replace(&mut self, off: HashSet<IntegrationId>) {
+    pub fn replace(&mut self, off: HashSet<IntegrationId>, cx: &App) {
         self.off = off;
+        self.sync_failed(cx);
     }
 
     pub fn sync_failed(&mut self, cx: &App) {
@@ -310,9 +311,9 @@ mod tests {
             HashSet::from([donatello, monobank]),
         ]
         .map(|off| {
-            host.update(cx, |host, _| {
+            host.update(cx, |host, cx| {
                 let watch = host.watch.as_mut().expect("the host keeps its watch");
-                watch.replace(off);
+                watch.replace(off, cx);
                 watch.uncovered_category(DONATION_RECEIVED_KIND)
             })
         });
@@ -333,9 +334,9 @@ mod tests {
         ]);
         let (_lifecycle, host) = watching(cx, &rt, LifecycleStates::new());
 
-        let uncovered = host.update(cx, |host, _| {
+        let uncovered = host.update(cx, |host, cx| {
             let watch = host.watch.as_mut().expect("the host keeps its watch");
-            watch.replace(off);
+            watch.replace(off, cx);
             watch.uncovered_category("obs.scene.changed")
         });
 

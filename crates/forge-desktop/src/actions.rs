@@ -28,7 +28,7 @@ actions!(forge_list, [ListSelectPrev, ListSelectNext, ListActivate]);
 
 actions!(forge_app, [Quit]);
 
-pub fn bind_list_keys(cx: &mut App) {
+fn bind_list_keys(cx: &mut App) {
     cx.bind_keys([
         KeyBinding::new("up", ListSelectPrev, Some(LIST_CONTEXT)),
         KeyBinding::new("down", ListSelectNext, Some(LIST_CONTEXT)),
@@ -147,13 +147,15 @@ pub fn canonical_chord(keystroke: &Keystroke) -> Option<String> {
         return None;
     }
     let modifiers = &keystroke.modifiers;
-    let ctrl = modifiers.control || modifiers.platform;
     let mut out = String::new();
     if modifiers.function {
         out.push_str("fn-");
     }
-    if ctrl {
+    if modifiers.control {
         out.push_str("ctrl-");
+    }
+    if modifiers.platform {
+        out.push_str("cmd-");
     }
     if modifiers.alt {
         out.push_str("alt-");
@@ -171,7 +173,9 @@ fn cap_token(token: &str) -> String {
         "alt" => "Alt".to_owned(),
         "shift" => "Shift".to_owned(),
         "cmd" | "super" | "win" | "platform" => "Meta".to_owned(),
-        "fn" | "function" | "secondary" => "Fn".to_owned(),
+        "secondary" if cfg!(target_os = "macos") => "Meta".to_owned(),
+        "secondary" => "Ctrl".to_owned(),
+        "fn" | "function" => "Fn".to_owned(),
         other => {
             let mut chars = other.chars();
             match chars.next() {
@@ -194,6 +198,15 @@ pub fn chord_caps(chord: &str) -> String {
     }
     caps.push(cap_token(rest));
     caps.join("+")
+}
+
+pub fn platform_default_chord(entry: &ShortcutEntry) -> String {
+    let primary = if cfg!(target_os = "macos") {
+        "cmd-"
+    } else {
+        "ctrl-"
+    };
+    entry.default_chord.replacen("ctrl-", primary, 1)
 }
 
 pub fn shortcut_entry(id: &str) -> Option<&'static ShortcutEntry> {
@@ -233,16 +246,12 @@ fn make_binding(entry_id: &str, chord: &str) -> Option<KeyBinding> {
     Some(binding)
 }
 
-fn key_bindings_for(entry_id: &str, chord: &str) -> Vec<KeyBinding> {
-    let mut chords = vec![chord.to_owned()];
-    let platform_variant = chord.replacen("ctrl-", "cmd-", 1);
-    if platform_variant != chord {
-        chords.push(platform_variant);
+fn keymap_chord(overrides: &HashMap<String, String>, entry: &ShortcutEntry) -> Option<String> {
+    if overrides.contains_key(entry.id) {
+        effective_chord(overrides, entry).map(str::to_owned)
+    } else {
+        Some(entry.default_chord.replacen("ctrl-", "secondary-", 1))
     }
-    chords
-        .iter()
-        .filter_map(|chord| make_binding(entry_id, chord))
-        .collect()
 }
 
 fn bind_shell(cx: &mut App, overrides: &HashMap<String, String>) {
@@ -252,8 +261,8 @@ fn bind_shell(cx: &mut App, overrides: &HashMap<String, String>) {
         Some(SHELL_CONTEXT),
     )];
     for entry in SHORTCUTS {
-        if let Some(chord) = effective_chord(overrides, entry) {
-            bindings.extend(key_bindings_for(entry.id, chord));
+        if let Some(chord) = keymap_chord(overrides, entry) {
+            bindings.extend(make_binding(entry.id, &chord));
         }
     }
     if cfg!(target_os = "macos") {
@@ -262,12 +271,16 @@ fn bind_shell(cx: &mut App, overrides: &HashMap<String, String>) {
     cx.bind_keys(bindings);
 }
 
-pub fn register_shell_key_bindings(cx: &mut App) {
-    bind_shell(cx, &HashMap::new());
+pub fn register_key_bindings(cx: &mut App) {
+    bind_all(cx, &HashMap::new());
 }
 
 pub fn reapply_key_bindings(cx: &mut App, overrides: &HashMap<String, String>) {
     cx.clear_key_bindings();
+    bind_all(cx, overrides);
+}
+
+fn bind_all(cx: &mut App, overrides: &HashMap<String, String>) {
     forge_components::bind_text_input_keys(cx);
     forge_components::bind_text_area_keys(cx);
     forge_components::bind_code_editor_keys(cx);
@@ -377,5 +390,136 @@ mod tests {
 
         overrides.insert("nav.home".to_owned(), "ctrl-9".to_owned());
         assert_eq!(effective_chord(&overrides, entry), Some("ctrl-9"));
+    }
+
+    struct ShellSaveHost {
+        focus: gpui::FocusHandle,
+        saves: usize,
+    }
+
+    impl gpui::Render for ShellSaveHost {
+        fn render(
+            &mut self,
+            _: &mut gpui::Window,
+            cx: &mut gpui::Context<Self>,
+        ) -> impl gpui::IntoElement {
+            use gpui::prelude::*;
+            gpui::div()
+                .key_context(SHELL_CONTEXT)
+                .track_focus(&self.focus)
+                .on_action(cx.listener(|this, _: &SaveFocused, _, _| this.saves += 1))
+                .size_full()
+        }
+    }
+
+    fn saves_after(cx: &mut gpui::TestAppContext, keystroke: &str) -> usize {
+        let (host, vcx) = cx.add_window_view(|_, cx| ShellSaveHost {
+            focus: cx.focus_handle(),
+            saves: 0,
+        });
+        vcx.update(|window, cx| window.focus(&host.read(cx).focus.clone(), cx));
+        vcx.run_until_parked();
+        vcx.simulate_keystrokes(keystroke);
+        vcx.update(|_, cx| host.read(cx).saves)
+    }
+
+    fn other_platforms_save_key() -> &'static str {
+        if cfg!(target_os = "macos") {
+            "ctrl-s"
+        } else {
+            "cmd-s"
+        }
+    }
+
+    #[test]
+    fn default_chords_follow_the_platform_and_recorded_chords_stay_literal() {
+        let save = shortcut_entry("app.save").expect("the save shortcut exists");
+
+        assert_eq!(
+            keymap_chord(&HashMap::new(), save).as_deref(),
+            Some("secondary-s")
+        );
+        for chord in ["ctrl-s", "ctrl-shift-s", "cmd-s", "alt-s"] {
+            let recorded = HashMap::from([(save.id.to_owned(), chord.to_owned())]);
+            assert_eq!(
+                keymap_chord(&recorded, save).as_deref(),
+                Some(chord),
+                "{chord}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_cleared_override_binds_nothing() {
+        let save = shortcut_entry("app.save").expect("the save shortcut exists");
+        let cleared = HashMap::from([(save.id.to_owned(), String::new())]);
+
+        assert_eq!(keymap_chord(&cleared, save), None);
+    }
+
+    #[test]
+    fn a_recording_keeps_control_and_the_platform_key_apart() {
+        for (typed, recorded) in [
+            ("ctrl-s", "ctrl-s"),
+            ("cmd-s", "cmd-s"),
+            ("ctrl-cmd-s", "ctrl-cmd-s"),
+        ] {
+            let keystroke = Keystroke::parse(typed).expect("a parsable keystroke");
+            assert_eq!(
+                canonical_chord(&keystroke).as_deref(),
+                Some(recorded),
+                "{typed}"
+            );
+        }
+    }
+
+    #[test]
+    fn every_ctrl_default_binds_through_the_secondary_modifier() {
+        for entry in SHORTCUTS {
+            let bound = keymap_chord(&HashMap::new(), entry).expect("a default binds");
+            assert_eq!(
+                bound,
+                entry.default_chord.replacen("ctrl-", "secondary-", 1),
+                "{}",
+                entry.id
+            );
+            assert!(make_binding(entry.id, &bound).is_some(), "{}", entry.id);
+        }
+    }
+
+    #[test]
+    fn a_default_chord_reads_as_the_key_the_platform_really_binds() {
+        let save = shortcut_entry("app.save").expect("the save shortcut exists");
+        let modifier = if cfg!(target_os = "macos") {
+            "Meta"
+        } else {
+            "Ctrl"
+        };
+
+        assert_eq!(
+            chord_caps(&platform_default_chord(save)),
+            format!("{modifier}+S")
+        );
+    }
+
+    #[gpui::test]
+    fn the_default_save_fires_on_the_platform_secondary_key_only(cx: &mut gpui::TestAppContext) {
+        cx.update(register_key_bindings);
+
+        let on_this_platform = saves_after(cx, "secondary-s");
+        let on_the_other_platform = saves_after(cx, other_platforms_save_key());
+
+        assert_eq!((on_this_platform, on_the_other_platform), (1, 0));
+    }
+
+    #[gpui::test]
+    fn a_recorded_save_chord_fires_as_recorded_on_every_platform(cx: &mut gpui::TestAppContext) {
+        let overrides = HashMap::from([("app.save".to_owned(), "ctrl-shift-s".to_owned())]);
+        cx.update(|cx| reapply_key_bindings(cx, &overrides));
+
+        let recorded = saves_after(cx, "ctrl-shift-s");
+        let replaced_default = saves_after(cx, "secondary-s");
+
+        assert_eq!((recorded, replaced_default), (1, 0));
     }
 }

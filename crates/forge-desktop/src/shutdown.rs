@@ -215,11 +215,12 @@ impl ShutdownHandles {
 
         if tokio::time::timeout(STORAGE_CLOSE_BUDGET, self.storage.shutdown())
             .await
-            .is_err()
+            .is_ok()
         {
+            tracing::info!("graceful shutdown: storage closed");
+        } else {
             tracing::warn!(budget = ?STORAGE_CLOSE_BUDGET, "storage did not close in time");
         }
-        tracing::info!("graceful shutdown: storage closed");
     }
 }
 

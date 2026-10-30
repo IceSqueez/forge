@@ -540,6 +540,7 @@ pub async fn build_runtime(inputs: RuntimeInputs) -> Result<RuntimeHandles, Boot
         &action_engine,
         trigger_registry.platforms(),
         &delivery_hub,
+        &mut boot_warnings,
     )
     .await;
 
@@ -724,6 +725,7 @@ async fn build_server(
     action_engine: &ActionEngineHandle,
     available_platforms: std::collections::BTreeSet<PlatformId>,
     delivery_hub: &DeliveryHub,
+    warnings: &mut BootWarnings,
 ) -> ServerBoot {
     let settings = match forge_server::ServerSettings::load(backend.as_ref()).await {
         Ok(settings) => settings,
@@ -788,7 +790,10 @@ async fn build_server(
             }
             Err(e) => crate::boot_signal::server_bind_failed(addr, &e),
         },
-        (true, None) => crate::boot_signal::server_address_invalid(&settings.bind_address),
+        (true, None) => {
+            crate::boot_signal::server_address_invalid(&settings.bind_address);
+            warnings.record(BootWarning::ServerBindAddress);
+        }
         (false, _) => crate::boot_signal::server_disabled(),
     }
 

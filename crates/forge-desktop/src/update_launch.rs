@@ -18,6 +18,8 @@ const EXIT_UPDATE_NOT_KEPT: i32 = 3;
 const EXIT_ROLLBACK_FAILED: i32 = 4;
 
 const SUPERVISOR_LOG_FILE: &str = "update-supervisor.log";
+const SUPERVISOR_LOG_LIMIT_BYTES: u64 = 5 * 1024 * 1024;
+const RETIRED_LOG_EXTENSION: &str = "log.1";
 
 pub enum StartDecision {
     Boot { deferred_error: Option<UpdateError> },
@@ -100,13 +102,23 @@ pub fn supervisor_exit_code(outcome: SupervisorOutcome) -> i32 {
     }
 }
 
+fn retire_oversized_log(path: &Path) -> std::io::Result<()> {
+    match std::fs::metadata(path) {
+        Ok(metadata) if metadata.len() > SUPERVISOR_LOG_LIMIT_BYTES => {
+            std::fs::rename(path, path.with_extension(RETIRED_LOG_EXTENSION))
+        }
+        Ok(_) => Ok(()),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(error) => Err(error),
+    }
+}
+
 fn init_supervisor_logging(data_dir: &Path) {
     let log_dir = data_dir.join(forge_paths::LOGS_DIR_NAME);
+    let log_path = log_dir.join(SUPERVISOR_LOG_FILE);
     let file = std::fs::create_dir_all(&log_dir).and_then(|()| {
-        OpenOptions::new()
-            .create(true)
-            .append(true)
-            .open(log_dir.join(SUPERVISOR_LOG_FILE))
+        retire_oversized_log(&log_path)?;
+        OpenOptions::new().create(true).append(true).open(&log_path)
     });
     let builder = tracing_subscriber::fmt()
         .with_target(false)

@@ -1,9 +1,9 @@
-use std::collections::BTreeSet;
+use std::collections::HashSet;
 use std::sync::Arc;
 
 use forge_discord::DiscordClient;
 use forge_storage::ActionRepo;
-use forge_types::Action;
+use forge_types::{Action, ActionId};
 
 use crate::repo_failure::RepoFailure;
 
@@ -13,6 +13,7 @@ const WEBHOOK_NAME_FIELD: &str = "webhook_name";
 pub struct WebhookRow {
     pub name: String,
     pub linked_actions: Vec<String>,
+    pub linked_action_ids: Vec<ActionId>,
 }
 
 pub async fn load_webhooks(
@@ -25,6 +26,7 @@ pub async fn load_webhooks(
         .into_iter()
         .map(|name| WebhookRow {
             linked_actions: linked_action_names(&actions, &name),
+            linked_action_ids: linked_action_ids(&actions, &name),
             name,
         })
         .collect())
@@ -38,10 +40,18 @@ pub fn linked_action_names(actions: &[Action], webhook_name: &str) -> Vec<String
         .collect()
 }
 
+fn linked_action_ids(actions: &[Action], webhook_name: &str) -> Vec<ActionId> {
+    actions
+        .iter()
+        .filter(|action| posts_to(action, webhook_name))
+        .map(|action| action.id)
+        .collect()
+}
+
 pub fn distinct_linked_actions(rows: &[WebhookRow]) -> usize {
     rows.iter()
-        .flat_map(|row| row.linked_actions.iter().map(String::as_str))
-        .collect::<BTreeSet<&str>>()
+        .flat_map(|row| row.linked_action_ids.iter())
+        .collect::<HashSet<&ActionId>>()
         .len()
 }
 
@@ -108,10 +118,16 @@ mod tests {
         )
     }
 
+    fn id_of(name: &str) -> ActionId {
+        let seed: u32 = name.bytes().map(u32::from).sum();
+        format!("{seed:0>26}").parse().expect("a valid action id")
+    }
+
     fn row(name: &str, linked: &[&str]) -> WebhookRow {
         WebhookRow {
             name: name.to_owned(),
             linked_actions: linked.iter().map(|s| (*s).to_owned()).collect(),
+            linked_action_ids: linked.iter().map(|s| id_of(s)).collect(),
         }
     }
 
@@ -164,6 +180,20 @@ mod tests {
         ];
 
         assert_eq!(distinct_linked_actions(&rows), 3);
+    }
+
+    #[test]
+    fn distinct_linked_actions_counts_two_actions_sharing_a_name_separately() {
+        let actions = [targeting("Alert", "first"), targeting("Alert", "second")];
+        let rows: Vec<WebhookRow> = ["first", "second"]
+            .map(|webhook| WebhookRow {
+                name: webhook.to_owned(),
+                linked_actions: linked_action_names(&actions, webhook),
+                linked_action_ids: linked_action_ids(&actions, webhook),
+            })
+            .into();
+
+        assert_eq!(distinct_linked_actions(&rows), 2);
     }
 
     #[test]

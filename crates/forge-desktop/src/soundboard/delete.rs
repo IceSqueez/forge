@@ -32,7 +32,7 @@ impl SoundboardView {
             async move { library.delete_clip(id).await },
             |this, result, cx| match result {
                 Ok(_) => this.reload(cx),
-                Err(error) => this.on_load_error(failure_message(&error), cx),
+                Err(error) => this.on_action_failure(failure_message(&error), cx),
             },
             cx,
         );

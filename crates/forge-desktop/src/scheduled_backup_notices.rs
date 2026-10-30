@@ -48,7 +48,7 @@ pub struct FailureStreakWatch {
 impl FailureStreakWatch {
     pub fn observe(&mut self, failure: Option<FailureStreak>) -> StreakChange {
         match failure {
-            Some(streak) if streak.attempts == 1 && self.announced != Some(streak.since) => {
+            Some(streak) if self.announced != Some(streak.since) => {
                 self.announced = Some(streak.since);
                 StreakChange::Started(streak)
             }
@@ -234,6 +234,22 @@ mod tests {
                 StreakChange::Unchanged,
                 StreakChange::Unchanged,
             ]
+        );
+    }
+
+    #[test]
+    fn a_streak_first_seen_past_its_first_attempt_is_still_announced_once() {
+        let mut watch = FailureStreakWatch::default();
+        let joined_late = streak(0, 3);
+
+        let changes: Vec<StreakChange> = [Some(joined_late), Some(streak(0, 4))]
+            .into_iter()
+            .map(|failure| watch.observe(failure))
+            .collect();
+
+        assert_eq!(
+            changes,
+            vec![StreakChange::Started(joined_late), StreakChange::Unchanged]
         );
     }
 

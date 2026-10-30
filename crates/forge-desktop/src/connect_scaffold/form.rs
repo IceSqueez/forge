@@ -152,6 +152,15 @@ pub(crate) fn endpoint_input(
         .with_font_size(BOX_TEXT_SIZE)
 }
 
+pub(crate) fn endpoint_host_is_valid(host: &str) -> bool {
+    let bracketed_ipv6 = host.starts_with('[') && host.ends_with(']');
+    !host.is_empty()
+        && !host
+            .chars()
+            .any(|c| c.is_whitespace() || matches!(c, '/' | '\\' | '?' | '#' | '@'))
+        && (bracketed_ipv6 || !host.contains(':'))
+}
+
 pub(crate) fn read_endpoint(
     host: &str,
     port: &str,
@@ -569,4 +578,33 @@ pub(crate) fn form_buttons<V: 'static>(
         .child(test)
         .child(submit)
         .into_any_element()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::endpoint_host_is_valid;
+
+    #[test]
+    fn endpoint_host_accepts_names_and_addresses_and_refuses_urls_and_stray_characters() {
+        for (host, valid) in [
+            ("localhost", true),
+            ("studio.lan", true),
+            ("192.0.2.10", true),
+            ("[::1]", true),
+            ("[fe80::1%eth0]", true),
+            ("", false),
+            ("::1", false),
+            ("host:8001", false),
+            ("ws://host", false),
+            ("host/path", false),
+            ("host\\path", false),
+            ("host?query", false),
+            ("host#frag", false),
+            ("user@host", false),
+            ("my host", false),
+            ("host\t", false),
+        ] {
+            assert_eq!(endpoint_host_is_valid(host), valid, "{host:?}");
+        }
+    }
 }

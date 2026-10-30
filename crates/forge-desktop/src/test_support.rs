@@ -74,6 +74,8 @@ pub(crate) struct TestBackend {
     actions: Option<Arc<dyn ActionRepo>>,
     media: Arc<dyn MediaRepo>,
     export_gate: Option<Arc<tokio::sync::Notify>>,
+    export_stalls_midway: bool,
+    export_lands_late: bool,
     on_shutdown: Option<Box<dyn Fn() + Send + Sync>>,
 }
 
@@ -124,6 +126,22 @@ pub(crate) fn test_backend_with_gated_export() -> (Arc<TestBackend>, Arc<tokio::
     (Arc::new(backend), gate)
 }
 
+pub(crate) fn test_backend_with_late_export() -> (Arc<TestBackend>, Arc<tokio::sync::Notify>) {
+    let (backend, _) = backend_over(None, None, Arc::new(EmptyMediaLibrary));
+    let gate = Arc::new(tokio::sync::Notify::new());
+    let mut backend = Arc::into_inner(backend).unwrap();
+    backend.export_gate = Some(Arc::clone(&gate));
+    backend.export_lands_late = true;
+    (Arc::new(backend), gate)
+}
+
+pub(crate) fn test_backend_with_stalling_export() -> Arc<TestBackend> {
+    let (backend, _) = backend_over(None, None, Arc::new(EmptyMediaLibrary));
+    let mut backend = Arc::into_inner(backend).unwrap();
+    backend.export_stalls_midway = true;
+    Arc::new(backend)
+}
+
 fn backend_over(
     overlays: Option<Arc<dyn OverlayRepo>>,
     scripts: Option<Arc<dyn ScriptRepo>>,
@@ -141,6 +159,8 @@ fn backend_over(
             actions: None,
             media,
             export_gate: None,
+            export_stalls_midway: false,
+            export_lands_late: false,
             on_shutdown: None,
         }),
         rx,
@@ -209,6 +229,8 @@ fn enabled_schedule_over_test_backend(
         actions: None,
         media: Arc::new(EmptyMediaLibrary),
         export_gate: Some(Arc::clone(&export_gate)),
+        export_stalls_midway: false,
+        export_lands_late: false,
         on_shutdown: None,
     });
     let data_dir = tempfile::tempdir().unwrap();
@@ -575,11 +597,19 @@ impl DataProvider for TestBackend {
         unreachable!("the settings pane reaches no catalog")
     }
 
-    async fn export(&self, _: &std::path::Path) -> Result<(), StorageError> {
+    async fn export(&self, snapshot: &std::path::Path) -> Result<(), StorageError> {
+        if self.export_stalls_midway {
+            std::fs::write(snapshot, b"partial").unwrap();
+            std::future::pending::<()>().await;
+        }
         let Some(gate) = &self.export_gate else {
             unreachable!("the settings pane never exports")
         };
         gate.notified().await;
+        if self.export_lands_late {
+            std::fs::write(snapshot, b"finished too late").unwrap();
+            return Ok(());
+        }
         Err(StorageError::Connection {
             reason: "the gated export was released without a snapshot".to_owned(),
         })
@@ -1360,9 +1390,16 @@ pub(crate) const REWARDS: &str = "rewards";
 pub(crate) struct FakeCollections {
     listing:
         Mutex<forge_platform_core::CollectionOutcome<Vec<forge_platform_core::CollectionItem>>>,
+    held_listings: Mutex<std::collections::VecDeque<HeldListing>>,
+    released_listings: AtomicUsize,
     lists: AtomicUsize,
     signal: forge_platform_core::CollectionRevisionSignal,
 }
+
+type HeldListing = (
+    tokio::sync::oneshot::Receiver<()>,
+    forge_platform_core::CollectionOutcome<Vec<forge_platform_core::CollectionItem>>,
+);
 
 impl FakeCollections {
     pub(crate) fn listing(
@@ -1370,6 +1407,8 @@ impl FakeCollections {
     ) -> Arc<Self> {
         Arc::new(Self {
             listing: Mutex::new(listing),
+            held_listings: Mutex::default(),
+            released_listings: AtomicUsize::new(0),
             lists: AtomicUsize::new(0),
             signal: forge_platform_core::CollectionRevisionSignal::new(),
         })
@@ -1382,12 +1421,28 @@ impl FakeCollections {
         *self.listing.lock().unwrap() = listing;
     }
 
+    pub(crate) fn hold_next_listing(
+        &self,
+        listing: forge_platform_core::CollectionOutcome<Vec<forge_platform_core::CollectionItem>>,
+    ) -> tokio::sync::oneshot::Sender<()> {
+        let (release, released) = tokio::sync::oneshot::channel();
+        self.held_listings
+            .lock()
+            .unwrap()
+            .push_back((released, listing));
+        release
+    }
+
     pub(crate) fn bump(&self) {
         self.signal.bump();
     }
 
     pub(crate) fn list_calls(&self) -> usize {
         self.lists.load(Ordering::SeqCst)
+    }
+
+    pub(crate) fn released_listings(&self) -> usize {
+        self.released_listings.load(Ordering::SeqCst)
     }
 
     pub(crate) fn metadata() -> forge_platform_core::CollectionMetadata {
@@ -1463,6 +1518,12 @@ impl forge_platform_core::BuiltinCollections for FakeCollections {
         _: &forge_platform_core::CollectionId,
     ) -> forge_platform_core::CollectionOutcome<Vec<forge_platform_core::CollectionItem>> {
         self.lists.fetch_add(1, Ordering::SeqCst);
+        let held = self.held_listings.lock().unwrap().pop_front();
+        if let Some((released, listing)) = held {
+            released.await.unwrap();
+            self.released_listings.fetch_add(1, Ordering::SeqCst);
+            return listing;
+        }
         self.listing.lock().unwrap().clone()
     }
 

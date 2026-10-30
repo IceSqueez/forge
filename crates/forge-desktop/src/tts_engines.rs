@@ -424,6 +424,7 @@ impl TtsEnginesView {
             self.selected = Selection::Engine(index);
             self.load_params(engine_id.0.clone(), cx);
         }
+        self.regions.remove(&engine_id.0);
         self.ensure_region_loaded(&engine_id.0.clone(), cx);
         cx.notify();
     }

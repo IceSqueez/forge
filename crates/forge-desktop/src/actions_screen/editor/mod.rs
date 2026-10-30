@@ -194,6 +194,9 @@ pub(super) mod tests {
         triggers
             .expect_list_for_action()
             .returning(|_| Ok(Vec::new()));
+        triggers
+            .expect_actions_by_instance()
+            .returning(|| Ok(Default::default()));
         let trigger_repo: Arc<dyn TriggerInstanceRepo> = Arc::new(triggers);
         let mut scripts = MockScriptRepo::new();
         scripts.expect_list().returning(|| Ok(Vec::new()));

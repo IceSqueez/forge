@@ -151,11 +151,17 @@ async fn read_snapshot(source: &dyn ObsSource) -> ObsCatalogSnapshot {
     });
     let mut scene_items = Vec::new();
     for scene in &scenes {
-        if let Ok(items) = source.sources(scene).await {
-            scene_items.extend(items.into_iter().map(|item| item.name));
+        match source.sources(scene).await {
+            Ok(items) => scene_items.extend(items.into_iter().map(|item| item.name)),
+            Err(failure) => {
+                tracing::warn!(%failure, scene = %scene, "OBS scene items unavailable");
+            }
         }
     }
-    let audio_inputs = source.audio_inputs().await.unwrap_or_default();
+    let audio_inputs = source.audio_inputs().await.unwrap_or_else(|failure| {
+        tracing::warn!(%failure, "OBS audio inputs unavailable");
+        Vec::new()
+    });
     ObsCatalogSnapshot {
         scenes,
         scene_items,

@@ -10,6 +10,7 @@ use forge_components::Spacing;
 use forge_components::spacing;
 use std::sync::Arc;
 use std::time::Duration;
+use tokio::sync::mpsc::error::TrySendError;
 
 use forge_components::{
     BORDER_THIN, BreadcrumbCrumb, FONT_XS, ForgePalette, Icon, MenuPlacement, Radius, SectionLabel,
@@ -56,6 +57,7 @@ pub const MIDI_KNOWN_DEVICES: Setting<JsonDocument<Vec<String>>> = Setting::new(
 );
 
 const UNKNOWN_VALUE: &str = "-";
+const MONITOR_BRIDGE_CAPACITY: usize = 256;
 
 const SCROLL_PAD_X: Pixels = px(22.0);
 const SCROLL_PAD_Y: Pixels = px(18.0);
@@ -372,11 +374,18 @@ impl MidiScreenView {
         rt_handle: &tokio::runtime::Handle,
         cx: &mut Context<Self>,
     ) -> Task<()> {
-        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+        let (tx, mut rx) = tokio::sync::mpsc::channel(MONITOR_BRIDGE_CAPACITY);
         let mut stream = client.monitor_stream();
         rt_handle.spawn(async move {
-            while let Some(event) = stream.next().await {
-                if tx.send(event).is_err() {
+            loop {
+                let event = tokio::select! {
+                    () = tx.closed() => break,
+                    event = stream.next() => event,
+                };
+                let Some(event) = event else {
+                    break;
+                };
+                if matches!(tx.try_send(event), Err(TrySendError::Closed(_))) {
                     break;
                 }
             }

@@ -54,7 +54,7 @@ impl HotkeysScreenView {
             cx.notify();
             return;
         };
-        let chord = shortcuts.chord_of(entry).map(str::to_owned);
+        let chord = shortcuts.resolved_chord_of(entry);
         let view = cx.new(|_| AppShortcutModal::new(entry, chord));
         let sub = cx.subscribe(&view, Self::on_app_modal_event);
         self.app_modal = Some(OpenAppModal {

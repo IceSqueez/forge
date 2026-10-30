@@ -592,6 +592,7 @@ impl SettingsWebSocketView {
             .ok()
             .filter(|p| *p >= MIN_PORT);
         match parsed {
+            Some(port) if port == self.port => {}
             Some(port) => {
                 let prev = self.port;
                 self.port = port;
@@ -2221,6 +2222,48 @@ mod tests {
 
             assert_eq!(view.read_with(cx, shown_fields), before, "{key}");
         }
+    }
+
+    #[gpui::test]
+    fn committing_an_unchanged_port_writes_nothing(cx: &mut TestAppContext) {
+        let rt = runtime();
+        let (backend, mut writes) = test_backend();
+        let view = settings_view(cx, &rt, backend);
+        settle(cx, &rt);
+        let shown = view.read_with(cx, |this, _| this.port.to_string());
+
+        view.update(cx, |this, cx| {
+            this.port_input
+                .update(cx, |input, cx| input.set_content(shown.clone(), cx));
+            this.commit_port(cx);
+        });
+        settle(cx, &rt);
+
+        assert_eq!(
+            crate::test_support::writes_to(&mut writes, PORT.name()),
+            Vec::<String>::new()
+        );
+    }
+
+    #[gpui::test]
+    fn committing_a_new_port_writes_it_once(cx: &mut TestAppContext) {
+        const NEXT_PORT: &str = "9321";
+        let rt = runtime();
+        let (backend, mut writes) = test_backend();
+        let view = settings_view(cx, &rt, backend);
+        settle(cx, &rt);
+
+        view.update(cx, |this, cx| {
+            this.port_input
+                .update(cx, |input, cx| input.set_content(NEXT_PORT, cx));
+            this.commit_port(cx);
+        });
+        settle(cx, &rt);
+
+        assert_eq!(
+            crate::test_support::writes_to(&mut writes, PORT.name()),
+            [NEXT_PORT]
+        );
     }
 
     #[gpui::test]

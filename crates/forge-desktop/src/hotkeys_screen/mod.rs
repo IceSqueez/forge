@@ -1,5 +1,6 @@
 use forge_components::FONT_LABEL;
 use std::sync::Arc;
+use std::time::Duration;
 
 use forge_components::{
     BreadcrumbCrumb, Icon, ToastKind, body_family, icon, page_frame, scaled, tr,
@@ -49,6 +50,7 @@ use conflict::ConflictPrompt;
 use delete::DeletePrompt;
 use list::RowKey;
 
+const RELATIVE_TIME_TICK: Duration = Duration::from_secs(30);
 const SCROLL_PAD_X: Pixels = px(22.0);
 const SCROLL_PAD_Y: Pixels = px(18.0);
 
@@ -86,6 +88,7 @@ pub struct HotkeysScreenView {
     menu_open: Option<RowKey>,
     menu_click_pos: Option<Point<Pixels>>,
     _bus_bridge: Task<()>,
+    _relative_time_tick: Task<()>,
 }
 
 impl HotkeysScreenView {
@@ -124,10 +127,27 @@ impl HotkeysScreenView {
             menu_open: None,
             menu_click_pos: None,
             _bus_bridge: bus_bridge,
+            _relative_time_tick: Self::spawn_relative_time_tick(cx),
         };
         view.load(cx);
         view.load_shortcuts(cx);
         view
+    }
+
+    fn spawn_relative_time_tick(cx: &mut Context<Self>) -> Task<()> {
+        cx.spawn(async move |this, cx| {
+            loop {
+                cx.background_executor().timer(RELATIVE_TIME_TICK).await;
+                let repainted = this.update(cx, |this, cx| {
+                    if this.last_fired.is_some() {
+                        cx.notify();
+                    }
+                });
+                if repainted.is_err() {
+                    break;
+                }
+            }
+        })
     }
 
     fn spawn_bus_bridge(bus: Arc<EventBus>, cx: &mut Context<Self>) -> Task<()> {

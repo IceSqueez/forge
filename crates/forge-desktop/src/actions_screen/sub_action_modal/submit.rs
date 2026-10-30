@@ -36,7 +36,9 @@ impl EditSubActionForm {
             let text = input.read(cx).content().to_owned();
             let invalid = match flavor {
                 InputFlavor::VariableName => {
-                    !text.trim().is_empty() && normalize_var_name(&text).is_none()
+                    gate_on(gate.as_ref())
+                        && !text.trim().is_empty()
+                        && normalize_var_name(&text).is_none()
                 }
                 InputFlavor::Integer(_) | InputFlavor::OneBased(_) => {
                     gate_on(gate.as_ref())

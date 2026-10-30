@@ -2,7 +2,7 @@ mod confirm;
 mod plan;
 mod readout;
 
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -17,7 +17,7 @@ use forge_runtime::actions::{
     WiredQueue,
 };
 use forge_runtime::{MembershipOutcome, QueueSchedulerHandle};
-use forge_storage::{OverlayDefinition, OverlayId};
+use forge_storage::{OverlayDefinition, OverlayId, SettingsRepo};
 use forge_types::{ActionId, Queue};
 use gpui::{
     App, Context, Entity, EventEmitter, SharedString, Subscription, Window, div, prelude::*,
@@ -26,6 +26,9 @@ use gpui::{
 use crate::async_bridge::{self, Generation};
 use crate::navigation::NavRequested;
 use crate::navigation::Screen;
+use crate::picker_favorites::{
+    StoredFavorites, TRIGGER_FAVORITES, bind_picker, follow_picker_event,
+};
 use crate::repo_failure::RepoFailure;
 use forge_components::ActivePresentation;
 use forge_components::PushToast;
@@ -42,6 +45,7 @@ pub(super) struct WiringLaunch {
     pub sub_actions: Arc<SubActionRegistry>,
     pub scheduler: QueueSchedulerHandle,
     pub kinds: Arc<OverlayKindRegistry>,
+    pub settings: Arc<dyn SettingsRepo>,
     pub rt_handle: tokio::runtime::Handle,
 }
 
@@ -66,6 +70,7 @@ struct PickStage {
     picker: Entity<GridPicker>,
     picks: HashMap<SharedString, String>,
     _sub: Subscription,
+    _favorites_sub: Subscription,
 }
 
 enum WiringStage {
@@ -94,19 +99,25 @@ pub(super) struct EventWiringView {
     feeds: Vec<FeedRow>,
     feeds_gen: Generation,
     stage: Option<WiringStage>,
-    favorites: HashSet<SharedString>,
+    favorites: Entity<StoredFavorites>,
     delete_count: Option<(OverlayId, usize)>,
 }
 
 impl EventWiringView {
-    pub(super) fn new(handles: WiringLaunch) -> Self {
+    pub(super) fn new(handles: WiringLaunch, cx: &mut Context<Self>) -> Self {
+        let favorites = StoredFavorites::shared(
+            TRIGGER_FAVORITES,
+            Arc::clone(&handles.settings),
+            &handles.rt_handle,
+            cx,
+        );
         Self {
             handles,
             overlay: None,
             feeds: Vec::new(),
             feeds_gen: Generation::default(),
             stage: None,
-            favorites: HashSet::new(),
+            favorites,
             delete_count: None,
         }
     }
@@ -219,13 +230,15 @@ impl EventWiringView {
             favorites_label: tr!("picker_favorites").into(),
             favorites_empty: tr!("picker_favorites_empty").into(),
         };
-        let favorites = self.favorites.clone();
+        let favorites = self.favorites.read(cx).ids().cloned().unwrap_or_default();
         let picker = cx.new(|cx| GridPicker::new(config, groups, favorites, palette, cx));
+        let favorites_sub = bind_picker(&self.favorites, &picker, cx);
         let sub = cx.subscribe(&picker, Self::on_picker_event);
         picker.update(cx, |picker, cx| picker.focus(window, cx));
         self.stage = Some(WiringStage::Pick(PickStage {
             picker,
             picks,
+            _favorites_sub: favorites_sub,
             _sub: sub,
         }));
         cx.notify();
@@ -247,13 +260,10 @@ impl EventWiringView {
                     self.begin_confirm(kind_id, cx);
                 }
             }
-            GridPickerEvent::FavoriteToggled(id) => {
-                if !self.favorites.remove(id) {
-                    self.favorites.insert(id.clone());
-                }
+            GridPickerEvent::FavoriteToggled(_) | GridPickerEvent::FavoritesRetry => {
+                follow_picker_event(&self.favorites, event, cx);
                 cx.notify();
             }
-            GridPickerEvent::FavoritesRetry => {}
             GridPickerEvent::Dismissed => self.close(cx),
         }
     }
@@ -543,6 +553,7 @@ mod tests {
     use forge_storage::action::MockActionRepo;
     use forge_storage::history::MockHistoryRepo;
     use forge_storage::queue::MockQueueRepo;
+    use forge_storage::test_support::MemorySettings;
     use forge_storage::trigger_instance::MockTriggerInstanceRepo;
     use forge_types::QueueId;
     use gpui::TestAppContext;
@@ -550,7 +561,8 @@ mod tests {
     use super::*;
     use crate::i18n::install_language;
     use crate::test_support::{
-        Declares, StubEventLog, StubTrigger, overlay_definition, runtime, trigger_registry,
+        Declares, StubEventLog, StubTrigger, overlay_definition, pump_until, runtime,
+        trigger_registry,
     };
     use forge_components::Presentation;
     use forge_components::Toasts;
@@ -619,6 +631,7 @@ mod tests {
             sub_actions: Arc::new(SubActionRegistry::new()),
             scheduler: scheduler_on(rt),
             kinds: Arc::new(kinds),
+            settings: Arc::new(forge_storage::test_support::MemorySettings::new()),
             rt_handle: rt.handle().clone(),
         }
     }
@@ -630,8 +643,97 @@ mod tests {
             cx.set_global(Toasts::new());
         });
         let rt = runtime();
-        let view = cx.update(|cx| cx.new(|_| EventWiringView::new(launch(&rt))));
+        let view = cx.update(|cx| cx.new(|cx| EventWiringView::new(launch(&rt), cx)));
         (view, rt)
+    }
+
+    fn stored_favorites(
+        settings: &Arc<MemorySettings>,
+        rt: &tokio::runtime::Runtime,
+    ) -> Option<Vec<String>> {
+        rt.block_on(forge_storage::read_stored_setting(
+            settings.as_ref(),
+            TRIGGER_FAVORITES.setting,
+        ))
+        .expect("the memory store reads")
+    }
+
+    fn open_wiring_picker(
+        settings: &Arc<MemorySettings>,
+        rt: &tokio::runtime::Runtime,
+        cx: &mut TestAppContext,
+    ) -> Entity<GridPicker> {
+        install_language(Language::En);
+        cx.update(|cx| {
+            cx.set_global(Presentation::new(ThemeId::ForgeDefault, Density::Cozy));
+            cx.set_global(Toasts::new());
+        });
+        let handles = WiringLaunch {
+            settings: Arc::clone(settings) as Arc<dyn SettingsRepo>,
+            ..launch(rt)
+        };
+        let (view, vcx) = cx.add_window_view(|_, cx| EventWiringView::new(handles, cx));
+        pump_until(rt, || {
+            vcx.run_until_parked();
+            vcx.update(|_, cx| view.read(cx).favorites.read(cx).ids().is_some())
+        });
+        vcx.update(|window, cx| {
+            view.update(cx, |this, cx| {
+                this.overlay = Some(overlay_definition(alert::KIND_ID, OverlayConfig::new()));
+                this.open_picker(window, cx);
+            });
+        });
+        vcx.update(|_, cx| match view.read(cx).stage.as_ref() {
+            Some(WiringStage::Pick(stage)) => stage.picker.clone(),
+            _ => panic!("the event picker did not open"),
+        })
+    }
+
+    #[gpui::test]
+    fn a_favorite_starred_in_the_event_picker_is_stored_for_the_next_launch(
+        cx: &mut TestAppContext,
+    ) {
+        let rt = runtime();
+        let settings = Arc::new(MemorySettings::new());
+        let picker = open_wiring_picker(&settings, &rt, cx);
+
+        picker.update(cx, |_, cx| {
+            cx.emit(GridPickerEvent::FavoriteToggled(SUBSCRIBER.into()));
+        });
+        pump_until(&rt, || {
+            cx.run_until_parked();
+            stored_favorites(&settings, &rt).is_some()
+        });
+
+        assert_eq!(
+            stored_favorites(&settings, &rt),
+            Some(vec![SUBSCRIBER.to_owned()])
+        );
+    }
+
+    #[gpui::test]
+    fn the_event_picker_opens_with_the_favorites_already_stored(cx: &mut TestAppContext) {
+        let rt = runtime();
+        let settings = Arc::new(MemorySettings::new());
+        rt.block_on(forge_storage::write_setting(
+            settings.as_ref(),
+            TRIGGER_FAVORITES.setting,
+            &vec![FOLLOW.to_owned()],
+        ))
+        .expect("the memory store writes");
+
+        let picker = open_wiring_picker(&settings, &rt, cx);
+        picker.update(cx, |_, cx| {
+            cx.emit(GridPickerEvent::FavoriteToggled(SUBSCRIBER.into()));
+        });
+        pump_until(&rt, || {
+            cx.run_until_parked();
+            stored_favorites(&settings, &rt).is_some_and(|ids| ids.len() == 2)
+        });
+
+        let mut stored = stored_favorites(&settings, &rt).unwrap_or_default();
+        stored.sort();
+        assert_eq!(stored, [FOLLOW, SUBSCRIBER]);
     }
 
     fn checking_on(view: &Entity<EventWiringView>, cx: &mut TestAppContext, kind_id: &str) {

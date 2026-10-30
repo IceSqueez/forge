@@ -93,10 +93,15 @@ impl ScreenActionsView {
             return;
         }
         let client = live_obs_client(&self.builtins);
+        let ticket = self.obs_catalog_options_gen.next();
         async_bridge::run_async(
             &self.rt_handle,
             load_obs_catalog_options(client, fields),
-            Self::apply_collection_options,
+            move |this, options, cx| {
+                if this.obs_catalog_options_gen.is_current(ticket) {
+                    this.apply_collection_options(options, cx);
+                }
+            },
             cx,
         );
     }
@@ -107,10 +112,15 @@ impl ScreenActionsView {
             return;
         }
         let builtins = self.builtins.clone();
+        let ticket = self.collection_options_gen.next();
         async_bridge::run_async(
             &self.rt_handle,
             load_collection_options(builtins, sources),
-            Self::apply_collection_options,
+            move |this, options, cx| {
+                if this.collection_options_gen.is_current(ticket) {
+                    this.apply_collection_options(options, cx);
+                }
+            },
             cx,
         );
     }
@@ -137,6 +147,17 @@ impl ScreenActionsView {
 
 #[cfg(test)]
 mod tests {
+    use std::sync::Arc;
+
+    use forge_platform_core::{CollectionItem, CollectionOutcome};
+    use forge_storage::MockMediaRepo;
+    use gpui::Entity;
+
+    use crate::actions_screen::ScreenActionsView;
+    use crate::actions_screen::editor::tests::view_with;
+    use crate::collection_options::{CollectionChoiceField, CollectionSource};
+    use crate::test_support::{FakeCollections, StubActions, owned_reward, pump_until, runtime};
+
     use forge_registry::{FormField, SubActionRegistry};
 
     use crate::collection_options::collection_choice_fields;
@@ -183,5 +204,70 @@ mod tests {
 
         assert!(!declared.is_empty());
         assert_eq!(unserved, Vec::<(String, &str)>::new());
+    }
+
+    const REWARD_OPTIONS: &str = "collections.twitch.rewards";
+
+    fn listing_of(title: &str) -> CollectionOutcome<Vec<CollectionItem>> {
+        Ok(vec![owned_reward(title, title)])
+    }
+
+    fn offered_titles(
+        view: &Entity<ScreenActionsView>,
+        cx: &mut gpui::TestAppContext,
+    ) -> Option<Vec<String>> {
+        view.read_with(cx, |view, _| {
+            view.collection_options.get(REWARD_OPTIONS).map(|choices| {
+                choices
+                    .iter()
+                    .map(|(_, title)| title.clone())
+                    .collect::<Vec<_>>()
+            })
+        })
+    }
+
+    #[gpui::test]
+    fn a_reload_that_finishes_after_a_newer_one_does_not_replace_its_options(
+        cx: &mut gpui::TestAppContext,
+    ) {
+        let rt = runtime();
+        let fake = FakeCollections::listing(Ok(Vec::new()));
+        let older = fake.hold_next_listing(listing_of("before the rename"));
+        let newer = fake.hold_next_listing(listing_of("after the rename"));
+        let mut media = MockMediaRepo::new();
+        media.expect_blob_of().returning(|_| Ok(None));
+        let view = view_with(
+            cx,
+            &rt,
+            Vec::new(),
+            media,
+            SubActionRegistry::new(),
+            Arc::new(StubActions),
+        );
+        let builtins = fake.installed_as("twitch");
+        view.update(cx, |view, cx| {
+            view.builtins = builtins;
+            view.sub_form_choice_fields = vec![CollectionChoiceField {
+                field_key: "reward".to_owned(),
+                source: CollectionSource::parse(REWARD_OPTIONS).expect("a collection key"),
+            }];
+            view.reload_collection_options(cx);
+            view.reload_collection_options(cx);
+        });
+        pump_until(&rt, || fake.list_calls() == 2);
+
+        newer.send(()).expect("the newer listing is waiting");
+        pump_until(&rt, || {
+            cx.run_until_parked();
+            offered_titles(&view, cx).is_some()
+        });
+        older.send(()).expect("the older listing is waiting");
+        pump_until(&rt, || fake.released_listings() == 2);
+        cx.run_until_parked();
+
+        assert_eq!(
+            offered_titles(&view, cx),
+            Some(vec!["after the rename".to_owned()])
+        );
     }
 }

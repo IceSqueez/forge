@@ -701,7 +701,7 @@ impl ConnectFlow {
             .bg(palette.brand)
             .cursor_pointer()
             .hover(|s| s.bg(with_alpha(palette.brand, CTA_HOVER_ALPHA)))
-            .on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.reset_flow(cx)))
+            .on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.start_connect(cx)))
             .child(
                 div()
                     .font_family(body_family())

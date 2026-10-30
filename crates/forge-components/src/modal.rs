@@ -29,6 +29,7 @@ fn cycle_focus_within(scope: &FocusHandle, forward: bool, window: &mut Window, c
             return;
         }
     }
+    window.focus(scope, cx);
 }
 
 type CloseHandler = Box<dyn Fn(&ClickEvent, &mut Window, &mut App) + 'static>;
@@ -243,9 +244,8 @@ impl Modal {
 impl RenderOnce for Modal {
     fn render(mut self, window: &mut Window, cx: &mut App) -> impl IntoElement {
         let density = cx.density();
-        let scope_key = ElementId::Name(format!("modal-focus-scope-{}", self.title).into());
         let scope = window
-            .use_keyed_state(scope_key, cx, |_, cx| cx.focus_handle())
+            .use_state(cx, |_, cx| cx.focus_handle())
             .read(cx)
             .clone();
         let forward_scope = scope.clone();

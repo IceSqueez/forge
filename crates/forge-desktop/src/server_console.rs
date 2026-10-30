@@ -35,6 +35,7 @@ use crate::server_restart::restart_ignoring_disabled;
 use crate::window_presence::PresenceGate;
 use forge_components::ActivePresentation;
 use forge_components::grow_cell;
+use forge_components::{PushToast, ToastKind};
 use forge_server::overlay_url::{
     extract_port, overlay_file_url, overlay_origin, overlay_page_url, resolve_routable_host,
 };
@@ -143,7 +144,7 @@ impl OwnedOverlayEntry {
 struct ServerStats {
     events_per_second: f32,
     http_requests: u64,
-    bandwidth_kbps: f32,
+    bandwidth_kilobytes_per_second: f32,
     total_bytes_sent: u64,
     total_events_out: u64,
     dropped_events: u64,
@@ -490,7 +491,8 @@ impl ServerConsoleView {
             self.stats = ServerStats {
                 events_per_second: snapshot.aggregate_events_per_second,
                 http_requests: snapshot.http_requests_total,
-                bandwidth_kbps: snapshot.bandwidth.outbound_bytes_per_second as f32 / 1000.0,
+                bandwidth_kilobytes_per_second: snapshot.bandwidth.outbound_bytes_per_second as f32
+                    / 1000.0,
                 total_bytes_sent: snapshot.bandwidth.outbound_bytes_total,
                 total_events_out: snapshot.events_out_total,
                 dropped_events: snapshot.dropped_events_total,
@@ -670,12 +672,12 @@ impl ServerConsoleView {
         };
         async_bridge::run_async(
             &self.rt_handle,
-            async move {
-                handle.kick_client(id).await;
-                id
-            },
-            |this, id: ClientId, cx| {
+            async move { (id, handle.kick_client(id).await) },
+            |this, (id, kicked): (ClientId, bool), cx| {
                 this.connected_clients.retain(|c| c.id != id);
+                if !kicked {
+                    cx.push_toast(ToastKind::Info, tr!("server_client_already_gone"));
+                }
                 cx.notify();
             },
             cx,
@@ -951,7 +953,7 @@ impl ServerConsoleView {
                     tr!("server_stat_bandwidth"),
                     tr!(
                         "server_stat_bandwidth_value",
-                        rate = fmt_number(self.stats.bandwidth_kbps as f64, 0)
+                        rate = fmt_number(self.stats.bandwidth_kilobytes_per_second as f64, 0)
                     ),
                     Some(tr!("server_stat_bandwidth_sub")),
                     None,
@@ -2568,6 +2570,7 @@ mod tests {
     fn console_hosting_a_folder(cx: &mut TestAppContext) -> HostingConsole {
         install_language(Language::En);
         install_presentation(cx);
+        cx.update(|cx| cx.set_global(forge_components::Toasts::new()));
         let rt = runtime();
         let root = tempfile::tempdir().expect("tempdir");
         let (backend, _writes) = test_backend();
@@ -2641,6 +2644,35 @@ mod tests {
 
         assert_eq!(console.seated_ids(cx), [first]);
         assert_ne!(first, second);
+    }
+
+    #[gpui::test]
+    fn disconnecting_a_client_the_server_no_longer_holds_says_it_had_already_gone(
+        cx: &mut TestAppContext,
+    ) {
+        let console = console_hosting_a_folder(cx);
+        console.seat_namesake_clients(cx);
+
+        console.view.update(cx, |view, cx| {
+            view.request_disconnect(0, cx);
+            view.confirm_disconnect(cx);
+        });
+        pump_until(&console.rt, || {
+            cx.run_until_parked();
+            console.seated_ids(cx).len() == 1
+        });
+
+        let shown = cx.update(|cx| {
+            cx.global::<forge_components::Toasts>()
+                .items()
+                .iter()
+                .map(|toast| (toast.kind, toast.message.to_string()))
+                .collect::<Vec<_>>()
+        });
+        assert_eq!(
+            shown,
+            [(ToastKind::Info, tr!("server_client_already_gone"))]
+        );
     }
 
     #[gpui::test]

@@ -354,7 +354,7 @@ fn render_subscription_list(
         let owned: Vec<SubscriptionRow> = items.to_vec();
         let pal = *palette;
         uniform_list(
-            "eventsub-scroll",
+            SharedString::from(format!("eventsub-scroll-{title}")),
             owned.len(),
             move |range, _window, _cx| {
                 range
@@ -370,7 +370,7 @@ fn render_subscription_list(
         .into_any_element()
     } else {
         let mut rows = div()
-            .id("eventsub-scroll")
+            .id(SharedString::from(format!("eventsub-scroll-{title}")))
             .w_full()
             .flex_1()
             .min_h(px(0.0))
@@ -439,11 +439,15 @@ fn render_scopes_list(
     let list_region: AnyElement = if panel_overflows(scopes.len()) {
         let owned: Vec<String> = scopes.to_vec();
         let pal = *palette;
-        uniform_list("scopes-scroll", owned.len(), move |range, _window, _cx| {
-            range
-                .map(|i| scope_row_elem(&owned[i], &pal, density))
-                .collect::<Vec<_>>()
-        })
+        uniform_list(
+            SharedString::from(format!("scopes-scroll-{title}")),
+            owned.len(),
+            move |range, _window, _cx| {
+                range
+                    .map(|i| scope_row_elem(&owned[i], &pal, density))
+                    .collect::<Vec<_>>()
+            },
+        )
         .w_full()
         .flex_1()
         .min_h(px(0.0))
@@ -452,7 +456,7 @@ fn render_scopes_list(
         .into_any_element()
     } else {
         let mut rows = div()
-            .id("scopes-scroll")
+            .id(SharedString::from(format!("scopes-scroll-{title}")))
             .w_full()
             .flex_1()
             .min_h(px(0.0))

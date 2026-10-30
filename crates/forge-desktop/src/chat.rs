@@ -506,6 +506,11 @@ impl ChatView {
         cx: &mut Context<Self>,
     ) {
         if keys.len() != tallies.len() {
+            tracing::warn!(
+                keys = keys.len(),
+                tallies = tallies.len(),
+                "viewer message tally does not match the requested authors"
+            );
             return;
         }
         let feed = self.feed.clone();

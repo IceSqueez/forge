@@ -244,6 +244,17 @@ impl GlobalEditor {
             self.set_error(tr!("globals_error_name_required").into(), cx);
             return;
         }
+        if name.chars().count() > NAME_FIELD_LIMIT {
+            self.set_error(
+                tr!(
+                    "globals_error_name_too_long",
+                    limit = NAME_FIELD_LIMIT as i64
+                )
+                .into(),
+                cx,
+            );
+            return;
+        }
         let collides =
             self.globals.read(cx).contains(&name) && original.as_deref() != Some(name.as_str());
         if collides {
@@ -1345,13 +1356,7 @@ impl Render for GlobalEditor {
         };
         let locked = matches!(ed.mode, EditorMode::Edit(_));
 
-        let name_len = ed
-            .name_input
-            .read(cx)
-            .content()
-            .chars()
-            .count()
-            .min(NAME_FIELD_LIMIT);
+        let name_len = ed.name_input.read(cx).content().chars().count();
         let name_row = div()
             .flex()
             .items_center()

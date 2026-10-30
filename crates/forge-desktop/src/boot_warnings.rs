@@ -21,6 +21,7 @@ pub enum BootWarning {
     BotAccounts,
     VoiceGate,
     VoiceAliases,
+    ServerBindAddress,
 }
 
 impl BootWarning {
@@ -40,6 +41,7 @@ impl BootWarning {
             Self::BotAccounts => "boot_warning_bot_accounts",
             Self::VoiceGate => "boot_warning_voice_gate",
             Self::VoiceAliases => "boot_warning_voice_aliases",
+            Self::ServerBindAddress => "boot_warning_server_bind_address",
         }
     }
 

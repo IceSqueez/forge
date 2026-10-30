@@ -1,12 +1,11 @@
 use std::sync::Arc;
 
-use forge_components::Icon;
+use forge_components::{Icon, PushToast, ToastKind};
 use forge_soundboard::builtin_library::BUILTIN_SOUNDS;
 use forge_storage::StoredClip;
 use gpui::Context;
 
 use super::categories::category_glyph;
-use super::library::glyph_for_name;
 use super::{SoundClip, SoundboardView};
 use crate::async_bridge;
 use crate::clip_messages::failure_message;
@@ -57,6 +56,11 @@ impl SoundboardView {
         cx.notify();
     }
 
+    pub(super) fn on_action_failure(&mut self, message: String, cx: &mut Context<Self>) {
+        cx.push_toast(ToastKind::Error, message);
+        cx.notify();
+    }
+
     pub(super) fn refresh_library_size(&self, cx: &mut Context<Self>) {
         let library = Arc::clone(&self.library);
         async_bridge::run_async(
@@ -82,7 +86,7 @@ pub(super) fn stored_to_clip(c: StoredClip) -> SoundClip {
         .builtin_id
         .as_deref()
         .and_then(|id| BUILTIN_SOUNDS.iter().find(|e| e.builtin_id == id))
-        .and_then(|e| glyph_for_name(e.icon_name).or_else(|| Some(category_glyph(e.category))))
+        .and_then(|e| Icon::named(e.icon_name).or_else(|| Some(category_glyph(e.category))))
         .unwrap_or(Icon::Music);
     SoundClip {
         id: c.id,

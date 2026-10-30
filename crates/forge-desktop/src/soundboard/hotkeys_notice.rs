@@ -16,9 +16,9 @@ impl SoundboardView {
         switch: IntegrationSwitch,
         cx: &mut Context<Self>,
     ) -> Self {
-        self.integrations = Some(switch.watch(cx, |this: &mut Self, off, _cx| {
+        self.integrations = Some(switch.watch(cx, |this: &mut Self, off, cx| {
             if let Some(integrations) = &mut this.integrations {
-                integrations.replace(off);
+                integrations.replace(off, cx);
             }
         }));
         self

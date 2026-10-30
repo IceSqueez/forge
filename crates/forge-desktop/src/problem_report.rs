@@ -224,7 +224,6 @@ impl ProblemReport {
             Ok(folder) => {
                 let url = draft.form.url(REPO_URL);
                 tracing::info!(bytes = url.len(), "opening the prefilled issue page");
-                tracing::debug!(url = %url, "prefilled issue url");
                 cx.reveal_path(&folder);
                 detached(&self.rt_handle, "open the issue page", open_path(url));
                 if draft.subject.crash().is_some() {

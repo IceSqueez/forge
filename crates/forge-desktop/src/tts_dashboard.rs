@@ -32,6 +32,7 @@ use crate::async_bridge;
 use crate::speak_state::{NowSpeaking, QueueItem, SessionStats, SpeakState};
 use crate::tts_engine_roster::{RosterEngine, engine_class_label, load_engine_roster};
 use forge_components::ActivePresentation;
+use forge_components::{PushToast, ToastKind};
 
 const VOL_SLIDER_W: Pixels = px(90.0);
 const TEST_INPUT_W: Pixels = px(160.0);
@@ -231,6 +232,33 @@ impl TtsDashboardView {
         });
     }
 
+    fn dispatch_confirmed(
+        &self,
+        cmd: SpeakCommand,
+        accepted: impl FnOnce(&mut SpeakState) + Send + 'static,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(handle) = self.speak.clone() else {
+            cx.push_toast(ToastKind::Error, tr!("tts_dashboard_queue_unavailable"));
+            return;
+        };
+        async_bridge::run_async(
+            &self.rt_handle,
+            async move { handle.send(cmd).await.map_err(|error| error.to_string()) },
+            move |this, result, cx| match result {
+                Ok(()) => this.speak_state.update(cx, |state, cx| {
+                    accepted(state);
+                    cx.notify();
+                }),
+                Err(error) => {
+                    tracing::error!(%error, "TTS command dispatch failed");
+                    cx.push_toast(ToastKind::Error, tr!("tts_dashboard_queue_unavailable"));
+                }
+            },
+            cx,
+        );
+    }
+
     fn toggle_pause(&mut self, cx: &mut Context<Self>) {
         let paused = self.speak_state.read(cx).manual_paused();
         let cmd = if paused {
@@ -238,11 +266,7 @@ impl TtsDashboardView {
         } else {
             SpeakCommand::Pause
         };
-        self.speak_state.update(cx, |state, cx| {
-            state.set_manual_paused(!paused);
-            cx.notify();
-        });
-        self.dispatch(cmd);
+        self.dispatch_confirmed(cmd, move |state| state.set_manual_paused(!paused), cx);
     }
 
     fn skip(&mut self, _cx: &mut Context<Self>) {
@@ -294,11 +318,7 @@ impl TtsDashboardView {
 
     fn confirm_stop_all(&mut self, cx: &mut Context<Self>) {
         self.pending_stop_all = false;
-        self.speak_state.update(cx, |state, cx| {
-            state.clear_all();
-            cx.notify();
-        });
-        self.dispatch(SpeakCommand::Clear);
+        self.dispatch_confirmed(SpeakCommand::Clear, SpeakState::clear_all, cx);
         cx.notify();
     }
 
@@ -1329,5 +1349,175 @@ fn test_speak_request(text: String, speaker_name: String) -> SpeakRequest {
         is_reward: false,
         target: None,
         message_emotes: EmoteTokenSet::default(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use forge_speak_queue::{SpeakEvent, SpeakEventStream};
+    use forge_storage::Language;
+    use gpui::TestAppContext;
+
+    use super::*;
+    use crate::test_support::{
+        LiveAliases, error_toasts, install_presentation, pump_until, runtime, spawn_speak_queue,
+        test_backend,
+    };
+
+    struct Queue {
+        handle: SpeakQueueHandle,
+        _events: SpeakEventStream,
+        _aliases: LiveAliases,
+    }
+
+    fn live_queue(rt: &tokio::runtime::Runtime) -> Queue {
+        let (handle, _events, _aliases) = rt.block_on(async { spawn_speak_queue(Vec::new()) });
+        Queue {
+            handle,
+            _events,
+            _aliases,
+        }
+    }
+
+    fn queue_that_refuses() -> Queue {
+        let actor_runtime = runtime();
+        live_queue(&actor_runtime)
+    }
+
+    struct Dashboard {
+        view: Entity<TtsDashboardView>,
+        state: Entity<SpeakState>,
+    }
+
+    fn dashboard(
+        speak: Option<SpeakQueueHandle>,
+        rt: &tokio::runtime::Runtime,
+        cx: &mut TestAppContext,
+    ) -> Dashboard {
+        crate::i18n::install_language(Language::En);
+        install_presentation(cx);
+        cx.update(|cx| cx.set_global(forge_components::Toasts::new()));
+        let (backend, _writes) = test_backend();
+        let state = cx.new(|_| SpeakState::new());
+        let shared = state.clone();
+        let handle = rt.handle().clone();
+        let view = cx.new(|cx| {
+            TtsDashboardView::new(
+                shared,
+                speak,
+                backend as Arc<dyn SettingsRepo>,
+                None,
+                handle,
+                cx,
+            )
+        });
+        Dashboard { view, state }
+    }
+
+    impl Dashboard {
+        fn paused(&self, cx: &mut TestAppContext) -> bool {
+            self.state.read_with(cx, |state, _| state.manual_paused())
+        }
+
+        fn queued(&self, cx: &mut TestAppContext) -> usize {
+            self.state
+                .read_with(cx, |state, _| state.queue_snapshot().len())
+        }
+
+        fn seat_one_line(&self, cx: &mut TestAppContext) {
+            self.state.update(cx, |state, _| {
+                state.apply_event(SpeakEvent::Enqueued {
+                    request_id: RequestId::new(),
+                    queue_len: 1,
+                    viewer_name: "viewer".to_owned(),
+                    text: "hello".to_owned(),
+                    is_high_priority: false,
+                    voice_preview: "voice".to_owned(),
+                    estimated_secs: 1,
+                });
+            });
+        }
+
+        fn wait_for_a_refusal(&self, rt: &tokio::runtime::Runtime, cx: &mut TestAppContext) {
+            pump_until(rt, || {
+                cx.run_until_parked();
+                cx.update(|cx| error_toasts(cx)) == 1
+            });
+        }
+    }
+
+    #[gpui::test]
+    fn pause_shows_only_once_the_queue_took_the_command(cx: &mut TestAppContext) {
+        let rt = runtime();
+        let queue = live_queue(&rt);
+        let dashboard = dashboard(Some(queue.handle.clone()), &rt, cx);
+
+        dashboard.view.update(cx, |view, cx| view.toggle_pause(cx));
+        let paused_before_the_answer = dashboard.paused(cx);
+        pump_until(&rt, || {
+            cx.run_until_parked();
+            dashboard.paused(cx)
+        });
+
+        assert!(!paused_before_the_answer);
+    }
+
+    #[gpui::test]
+    fn a_refused_pause_leaves_the_state_and_reports_it(cx: &mut TestAppContext) {
+        let rt = runtime();
+        let queue = queue_that_refuses();
+        let dashboard = dashboard(Some(queue.handle.clone()), &rt, cx);
+
+        dashboard.view.update(cx, |view, cx| view.toggle_pause(cx));
+        dashboard.wait_for_a_refusal(&rt, cx);
+
+        assert!(!dashboard.paused(cx));
+    }
+
+    #[gpui::test]
+    fn pause_with_no_queue_at_all_is_reported_and_changes_nothing(cx: &mut TestAppContext) {
+        let rt = runtime();
+        let dashboard = dashboard(None, &rt, cx);
+
+        dashboard.view.update(cx, |view, cx| view.toggle_pause(cx));
+
+        assert_eq!(
+            (dashboard.paused(cx), cx.update(|cx| error_toasts(cx))),
+            (false, 1)
+        );
+    }
+
+    #[gpui::test]
+    fn stop_all_empties_the_rows_only_once_the_queue_took_the_command(cx: &mut TestAppContext) {
+        let rt = runtime();
+        let queue = live_queue(&rt);
+        let dashboard = dashboard(Some(queue.handle.clone()), &rt, cx);
+        dashboard.seat_one_line(cx);
+
+        dashboard
+            .view
+            .update(cx, |view, cx| view.confirm_stop_all(cx));
+        let queued_before_the_answer = dashboard.queued(cx);
+        pump_until(&rt, || {
+            cx.run_until_parked();
+            dashboard.queued(cx) == 0
+        });
+
+        assert_eq!(queued_before_the_answer, 1);
+    }
+
+    #[gpui::test]
+    fn a_refused_stop_all_keeps_the_rows_and_reports_it(cx: &mut TestAppContext) {
+        let rt = runtime();
+        let queue = queue_that_refuses();
+        let dashboard = dashboard(Some(queue.handle.clone()), &rt, cx);
+        dashboard.seat_one_line(cx);
+
+        dashboard
+            .view
+            .update(cx, |view, cx| view.confirm_stop_all(cx));
+        dashboard.wait_for_a_refusal(&rt, cx);
+
+        assert_eq!(dashboard.queued(cx), 1);
     }
 }

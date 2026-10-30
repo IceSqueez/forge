@@ -1206,13 +1206,20 @@ fn engine_visual(engine_id: &str, palette: &ForgePalette) -> (Icon, Rgba) {
     }
 }
 
+fn fmt_pitch_amount(semitones: f32) -> String {
+    format!("{semitones:.2}")
+        .trim_end_matches('0')
+        .trim_end_matches('.')
+        .to_owned()
+}
+
 fn fmt_pitch(value: Option<f32>, blocked: bool) -> String {
     if blocked {
         return "-".to_owned();
     }
     match value {
-        Some(p) if p >= 0.0 => format!("+{p:.0} st"),
-        Some(p) => format!("{p:.0} st"),
+        Some(p) if p >= 0.0 => format!("+{} st", fmt_pitch_amount(p)),
+        Some(p) => format!("{} st", fmt_pitch_amount(p)),
         None => "0 st".to_owned(),
     }
 }

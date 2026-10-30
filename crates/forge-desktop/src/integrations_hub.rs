@@ -28,7 +28,7 @@ use gpui::{
     SharedString, Subscription, Window, div, prelude::*, px,
 };
 
-use crate::async_bridge;
+use crate::async_bridge::{self, Generation};
 use crate::integration_catalog::{
     CoreFeature, activity_key, core_features, core_tint, declaration_of, declarations,
     disclaimer_of, look_of,
@@ -98,6 +98,8 @@ pub struct IntegrationsHubView {
     connectivity: Entity<PlatformConnectivity>,
     launch: HubLaunch,
     references: HashMap<IntegrationId, IntegrationReferences>,
+    references_loaded: bool,
+    refresh_gen: Generation,
     activity: HashMap<IntegrationId, usize>,
     pending_disable: Option<IntegrationId>,
     welcome: bool,
@@ -127,6 +129,8 @@ impl IntegrationsHubView {
             connectivity,
             launch,
             references: HashMap::new(),
+            references_loaded: false,
+            refresh_gen: Generation::default(),
             activity: HashMap::new(),
             pending_disable: None,
             welcome: false,
@@ -142,6 +146,7 @@ impl IntegrationsHubView {
     }
 
     fn refresh(&mut self, cx: &mut Context<Self>) {
+        let ticket = self.refresh_gen.next();
         let backend = Arc::clone(&self.launch.backend);
         let sub_actions = Arc::clone(&self.launch.sub_actions);
         let triggers = Arc::clone(&self.launch.triggers);
@@ -179,8 +184,10 @@ impl IntegrationsHubView {
                 reason = "the view may close before the result arrives"
             )]
             let _ = this.update(cx, |view, cx| {
-                view.apply_refresh(references, activity);
-                cx.notify();
+                if view.refresh_gen.is_current(ticket) {
+                    view.apply_refresh(references, activity);
+                    cx.notify();
+                }
             });
         })
         .detach();
@@ -193,6 +200,7 @@ impl IntegrationsHubView {
     ) {
         if let Some(references) = references {
             self.references = references;
+            self.references_loaded = true;
         }
         self.activity = activity;
     }
@@ -202,7 +210,8 @@ impl IntegrationsHubView {
     }
 
     pub fn request_enabled(&mut self, id: IntegrationId, enabled: bool, cx: &mut Context<Self>) {
-        if !enabled && !self.welcome && self.references_of(&id).total() > 0 {
+        let may_be_referenced = !self.references_loaded || self.references_of(&id).total() > 0;
+        if !enabled && !self.welcome && may_be_referenced {
             self.pending_disable = Some(id);
             cx.notify();
             return;
@@ -730,6 +739,7 @@ impl IntegrationsHubView {
         Some(DisablePrompt {
             name: declaration.brand_name,
             references: self.references_of(id),
+            references_known: self.references_loaded,
         })
     }
 }
@@ -948,7 +958,7 @@ mod tests {
 
     use super::*;
     use crate::test_support::{
-        ClickArea, Sandboxed, SettingWrite, click_grid, error_toasts, idle_supervisor,
+        ClickArea, Sandboxed, SettingWrite, alive_tasks, click_grid, error_toasts, idle_supervisor,
         install_presentation, link, nav_log, owned_sub_actions, owned_triggers, pump, pump_until,
         runtime, sandboxed_provider, seed_action, seed_trigger, step, test_backend,
     };
@@ -958,6 +968,7 @@ mod tests {
     const OBS_SCENE: &str = "obs.scene.set";
     const TWITCH_CHAT: &str = "twitch.chat";
     const SETTLE_DEADLINE: Duration = Duration::from_secs(30);
+    const QUIET_ROUNDS: usize = 50;
 
     fn until_the_settle_deadline() -> impl Iterator<Item = ()> {
         let deadline = std::time::Instant::now() + SETTLE_DEADLINE;
@@ -1025,6 +1036,19 @@ mod tests {
     }
 
     fn mount_as(cx: &mut TestAppContext, rt: &tokio::runtime::Runtime, welcome: bool) -> Hub {
+        let mut hub = open_uncounted(cx, rt, welcome);
+        let counted = until_the_settle_deadline().any(|()| {
+            rt.block_on(async { tokio::time::sleep(Duration::from_millis(1)).await });
+            cx.run_until_parked();
+            hub.view
+                .read_with(cx, |view, _| view.references_of(&obs()).total() > 0)
+        });
+        assert!(counted, "the hub never counted the seeded references");
+        hub.drain_writes(rt);
+        hub
+    }
+
+    fn open_uncounted(cx: &mut TestAppContext, rt: &tokio::runtime::Runtime, welcome: bool) -> Hub {
         let storage = rt.block_on(async {
             let storage = sandboxed_provider().await;
             let scene = seed_action(&storage, "Scene", vec![step(OBS_SCENE, true)]).await;
@@ -1056,20 +1080,11 @@ mod tests {
                 if welcome { hub.welcome() } else { hub }
             })
         });
-        let mut hub = Hub {
+        Hub {
             view,
             writes,
             _storage: storage,
-        };
-        let counted = until_the_settle_deadline().any(|()| {
-            rt.block_on(async { tokio::time::sleep(Duration::from_millis(1)).await });
-            cx.run_until_parked();
-            hub.view
-                .read_with(cx, |view, _| view.references_of(&obs()).total() > 0)
-        });
-        assert!(counted, "the hub never counted the seeded references");
-        hub.drain_writes(rt);
-        hub
+        }
     }
 
     #[gpui::test]
@@ -1102,6 +1117,65 @@ mod tests {
 
         assert_eq!(hub.pending(cx), None);
         assert_eq!(hub.drain_writes(&rt), vec![enabled_write(&kick(), false)]);
+    }
+
+    #[gpui::test]
+    fn disabling_before_the_references_are_counted_waits_for_confirmation(cx: &mut TestAppContext) {
+        let rt = runtime();
+        let mut hub = open_uncounted(cx, &rt, false);
+
+        hub.view
+            .update(cx, |view, cx| view.request_enabled(kick(), false, cx));
+
+        assert_eq!(
+            (hub.pending(cx), hub.drain_writes(&rt)),
+            (Some(kick()), Vec::new())
+        );
+    }
+
+    #[gpui::test]
+    fn a_failed_count_leaves_disabling_behind_the_confirmation(cx: &mut TestAppContext) {
+        let rt = runtime();
+        let hub = open_uncounted(cx, &rt, false);
+
+        hub.view.update(cx, |view, cx| {
+            view.apply_refresh(None, HashMap::new());
+            view.request_enabled(kick(), false, cx);
+        });
+
+        assert_eq!(hub.pending(cx), Some(kick()));
+    }
+
+    #[gpui::test]
+    fn a_refresh_overtaken_by_a_newer_one_leaves_the_counts_alone(cx: &mut TestAppContext) {
+        let rt = runtime();
+        let hub = mount(cx, &rt);
+        let counted = hub
+            .view
+            .read_with(cx, |view, _| view.references_of(&obs()).total());
+        rt.block_on(seed_action(
+            &hub._storage,
+            "Second scene",
+            vec![step(OBS_SCENE, true)],
+        ));
+        for () in until_the_settle_deadline().take(QUIET_ROUNDS) {
+            rt.block_on(async { tokio::time::sleep(Duration::from_millis(1)).await });
+            cx.run_until_parked();
+        }
+        let background_tasks = alive_tasks(&rt);
+
+        hub.view.update(cx, |view, cx| {
+            view.refresh(cx);
+            view.refresh_gen.next();
+        });
+        pump_until(&rt, || alive_tasks(&rt) <= background_tasks);
+        cx.run_until_parked();
+
+        assert_eq!(
+            hub.view
+                .read_with(cx, |view, _| view.references_of(&obs()).total()),
+            counted
+        );
     }
 
     #[gpui::test]

@@ -38,14 +38,14 @@ impl HotkeysScreenView {
         let id = entry.id;
         let shortcuts = self.shortcuts.loaded();
         let enabled = shortcuts.is_some_and(|shortcuts| shortcuts.is_enabled(id));
-        let chord = shortcuts.and_then(|shortcuts| shortcuts.chord_of(entry));
+        let chord = shortcuts.and_then(|shortcuts| shortcuts.resolved_chord_of(entry));
         let dot_color = if chord.is_some() {
             palette.warning
         } else {
             palette.text_faint
         };
         let combo: AnyElement = match (shortcuts, chord) {
-            (_, Some(chord)) => keycaps(&chord_caps(chord), palette, density).into_any_element(),
+            (_, Some(chord)) => keycaps(&chord_caps(&chord), palette, density).into_any_element(),
             (Some(_), None) => unbound_chip(tr!("settings_shortcuts_unbound"), palette, density),
             (None, None) => unbound_chip(UNKNOWN_CHORD.to_owned(), palette, density),
         };

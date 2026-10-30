@@ -290,13 +290,24 @@ impl TriggersRegistryView {
 
         let mut instance = detail.instance.clone();
         instance.overrides = sparse_overrides(&default, &buffer);
-        instance.cooldown_secs = parse_cooldown(detail.cooldown_input.read(cx).content());
+        if let Some(cooldown) = parse_cooldown(detail.cooldown_input.read(cx).content()) {
+            instance.cooldown_secs = cooldown;
+        }
         instance.cooldown_global = !detail.cooldown_per_user;
         instance.permission_rung = detail.permission_rung;
         Some(instance)
     }
 
+    fn flag_cooldown_entry(&self, cx: &mut Context<Self>) {
+        if let Some(detail) = self.detail.as_ref() {
+            let input = detail.cooldown_input.clone();
+            let invalid = parse_cooldown(input.read(cx).content()).is_none();
+            input.update(cx, |input, cx| input.set_invalid(invalid, cx));
+        }
+    }
+
     pub(super) fn commit_config(&mut self, cx: &mut Context<Self>) {
+        self.flag_cooldown_entry(cx);
         let Some(instance) = self.pending_instance(cx) else {
             return;
         };
@@ -1124,8 +1135,12 @@ impl TriggersRegistryView {
     }
 }
 
-fn parse_cooldown(text: &str) -> u32 {
-    text.trim().parse::<u32>().unwrap_or(0)
+fn parse_cooldown(text: &str) -> Option<u32> {
+    let text = text.trim();
+    if text.is_empty() {
+        return Some(0);
+    }
+    text.parse::<u32>().ok()
 }
 
 async fn load_detail_data(
@@ -1493,15 +1508,52 @@ pub(super) mod tests {
     }
 
     #[gpui::test]
-    fn an_unreadable_cooldown_is_written_as_zero_rather_than_left_alone(
+    fn an_unreadable_cooldown_keeps_the_stored_value_and_flags_the_field(
         cx: &mut gpui::TestAppContext,
     ) {
         let mut fixture = Fixture::new(cx);
         fixture.type_cooldown(cx, "later");
+        let flagged = Arc::new(AtomicUsize::new(0));
+        let field_changes = Arc::clone(&flagged);
+        let field = fixture.cooldown_input(cx);
+        let _watch = cx.update(|cx| {
+            cx.observe(&field, move |_, _| {
+                field_changes.fetch_add(1, Ordering::SeqCst);
+            })
+        });
 
+        fixture.commit(cx);
+        let flagged_by_the_commit = flagged.load(Ordering::SeqCst);
+        fixture.commit(cx);
+        let stored_after_commits = fixture.detail_instance(cx).cooldown_secs;
         fixture.release(cx);
 
-        assert_eq!(fixture.repo.saved_cooldowns(), [0]);
+        assert_eq!(
+            (
+                flagged_by_the_commit,
+                flagged.load(Ordering::SeqCst),
+                stored_after_commits,
+                fixture.repo.saved_cooldowns(),
+            ),
+            (1, 1, SEEDED_COOLDOWN, Vec::new())
+        );
+    }
+
+    #[test]
+    fn parse_cooldown_reads_a_blank_field_as_zero_and_refuses_what_is_not_a_u32() {
+        for (text, expected) in [
+            ("", Some(0)),
+            ("   ", Some(0)),
+            ("0", Some(0)),
+            (" 45 ", Some(45)),
+            ("4294967295", Some(u32::MAX)),
+            ("4294967296", None),
+            ("-1", None),
+            ("1.5", None),
+            ("later", None),
+        ] {
+            assert_eq!(parse_cooldown(text), expected, "{text:?}");
+        }
     }
 
     const REWARD_KIND: &str = "twitch.channel_points.redemption";

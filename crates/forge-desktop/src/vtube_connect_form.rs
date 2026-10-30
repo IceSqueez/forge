@@ -15,6 +15,7 @@ use gpui::{
 };
 
 use crate::async_bridge;
+use crate::connect_scaffold::endpoint_host_is_valid;
 use crate::connect_scaffold::{
     AttemptStatus, ConnectFlag, ConnectFlagSpec, ConnectFlags, EndpointFields, FIELD_BLOCK_GAP,
     FormButtons, StripContent, StripLook, box_frame, endpoint_input, endpoint_row, field_label,
@@ -170,6 +171,18 @@ impl VTubeConnectForm {
             DEFAULT_HOST,
             DEFAULT_PORT,
         );
+
+        let host_valid = endpoint_host_is_valid(&host);
+        self.host
+            .update(cx, |input, cx| input.set_invalid(!host_valid, cx));
+        if !host_valid {
+            self.status = Status::Attempt(AttemptStatus::Failure {
+                title: tr!("vtube_connect_error_title"),
+                detail: tr!("vtube_connect_error_invalid_host"),
+            });
+            cx.notify();
+            return None;
+        }
 
         match port {
             Some(port) => {
@@ -609,6 +622,43 @@ mod tests {
         cx.run_until_parked();
 
         pump_until(&rt, || bus.saw_client_stop());
+    }
+
+    #[gpui::test]
+    fn a_host_that_is_not_a_host_is_refused_before_any_attempt(cx: &mut TestAppContext) {
+        crate::i18n::install_language(forge_storage::Language::En);
+        for host in ["ws://localhost", "local host", "::1", "user@host"] {
+            let mounted = mounted_form(cx);
+            mounted.form.update(cx, |form, cx| {
+                form.host
+                    .update(cx, |input, cx| input.set_content(host, cx));
+            });
+
+            mounted.form.update(cx, |form, cx| form.on_submit(cx));
+
+            mounted.form.read_with(cx, |form, _| {
+                let refused = matches!(
+                    &form.status,
+                    Status::Attempt(AttemptStatus::Failure { detail, .. })
+                        if *detail == tr!("vtube_connect_error_invalid_host")
+                );
+                assert!(form.attempt.is_none() && refused, "{host:?}");
+            });
+        }
+    }
+
+    #[gpui::test]
+    fn a_bracketed_ipv6_host_passes_the_host_check(cx: &mut TestAppContext) {
+        crate::i18n::install_language(forge_storage::Language::En);
+        let mounted = mounted_form(cx);
+        mounted.form.update(cx, |form, cx| {
+            form.host
+                .update(cx, |input, cx| input.set_content("[::1]", cx));
+        });
+
+        let values = mounted.form.update(cx, |form, cx| form.read_form(cx));
+
+        assert_eq!(values.map(|values| values.host), Some("[::1]".to_owned()));
     }
 
     #[gpui::test]

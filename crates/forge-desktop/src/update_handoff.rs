@@ -2,13 +2,15 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
 
-use forge_storage::DataProvider;
+use forge_storage::{DataProvider, StorageError};
 use forge_transfer::{
     PRE_UPDATE_SNAPSHOT_EXTENSION, TransferExclusivity, TransferGuard, backup_file_stem,
     backups_dir, unique_suffix,
 };
 use forge_update::{ApplyMode, HandoffPlan, HandoffRequest, StagedArtifact, UpdatableInstall};
 use time::OffsetDateTime;
+use tokio::task::JoinHandle;
+use tokio::time::Instant;
 
 use crate::repo_failure::RepoFailure;
 use crate::update_check::CURRENT_VERSION;
@@ -56,9 +58,7 @@ pub async fn prepare_handoff_holding(
     guard: TransferGuard,
 ) -> Result<(), RepoFailure> {
     let _guard = guard;
-    tokio::time::timeout(HANDOFF_PREPARE_BUDGET, write_handoff(backend, input))
-        .await
-        .unwrap_or_else(|elapsed| Err(RepoFailure::operation(elapsed)))
+    write_handoff(backend, input).await
 }
 
 async fn write_handoff(
@@ -71,22 +71,56 @@ async fn write_handoff(
         .map_err(RepoFailure::from)?;
     let snapshot =
         update_snapshot_path(&input.data_dir, OffsetDateTime::now_utc(), &unique_suffix());
-    let written = snapshot_and_plan(backend, input, snapshot.clone()).await;
-    if written.is_err()
-        && let Err(error) = tokio::fs::remove_file(&snapshot).await
-    {
-        tracing::debug!(%error, path = %snapshot.display(), "partial update snapshot could not be removed");
+    let deadline = Instant::now() + HANDOFF_PREPARE_BUDGET;
+    let exporter = Arc::clone(&backend);
+    let target = snapshot.clone();
+    let mut export = tokio::spawn(async move { exporter.export(&target).await });
+    let exported = match tokio::time::timeout_at(deadline, &mut export).await {
+        Ok(joined) => joined
+            .map_err(RepoFailure::from)
+            .and_then(|exported| exported.map_err(RepoFailure::from)),
+        Err(elapsed) => {
+            tokio::spawn(discard_once_settled(export, snapshot.clone()));
+            Err(RepoFailure::operation(elapsed))
+        }
+    };
+    let written = match exported {
+        Ok(()) => write_plan(backend, input, snapshot.clone(), deadline).await,
+        Err(failure) => Err(failure),
+    };
+    if written.is_err() {
+        discard_snapshot(&snapshot).await;
     }
     written
 }
 
-async fn snapshot_and_plan(
+async fn discard_snapshot(snapshot: &Path) {
+    if let Err(error) = tokio::fs::remove_file(snapshot).await
+        && error.kind() != std::io::ErrorKind::NotFound
+    {
+        tracing::debug!(%error, path = %snapshot.display(), "partial update snapshot could not be removed");
+    }
+}
+
+async fn discard_once_settled(export: JoinHandle<Result<(), StorageError>>, snapshot: PathBuf) {
+    match export.await {
+        Ok(Ok(())) => {}
+        Ok(Err(error)) => tracing::debug!(%error, "abandoned update snapshot failed"),
+        Err(error) => tracing::debug!(%error, "abandoned update snapshot did not finish"),
+    }
+    discard_snapshot(&snapshot).await;
+}
+
+async fn write_plan(
     backend: Arc<dyn DataProvider>,
     input: HandoffInput,
     snapshot: PathBuf,
+    deadline: Instant,
 ) -> Result<(), RepoFailure> {
-    backend.export(&snapshot).await.map_err(RepoFailure::from)?;
-    let schema_version = backend.schema_version().await.map_err(RepoFailure::from)?;
+    let schema_version = tokio::time::timeout_at(deadline, backend.schema_version())
+        .await
+        .map_err(RepoFailure::operation)?
+        .map_err(RepoFailure::from)?;
     let running = std::env::current_exe().map_err(RepoFailure::from)?;
     tokio::task::spawn_blocking(move || {
         let plan = HandoffPlan::new(HandoffRequest {
@@ -112,7 +146,10 @@ mod tests {
     use time::{Date, Month, PrimitiveDateTime, Time};
 
     use super::*;
-    use crate::test_support::{pump, runtime, test_backend, test_backend_with_gated_export};
+    use crate::test_support::{
+        pump, runtime, test_backend, test_backend_with_gated_export, test_backend_with_late_export,
+        test_backend_with_stalling_export,
+    };
 
     const STAGED_SIZE: u64 = 100;
 
@@ -173,6 +210,52 @@ mod tests {
                 exclusivity.is_held()
             ),
             (true, true, false)
+        );
+    }
+
+    #[test]
+    fn a_snapshot_that_runs_out_of_budget_fails_and_leaves_no_partial_file() {
+        let rt = runtime();
+        let data = tempfile::tempdir().unwrap();
+        let exclusivity = TransferExclusivity::new();
+        let backend = test_backend_with_stalling_export();
+
+        let result = rt.block_on(async {
+            tokio::time::pause();
+            prepare_handoff(backend, input(data.path(), &exclusivity)).await
+        });
+
+        assert_eq!(
+            (
+                matches!(result, Err(HandoffError::Failed(_))),
+                backups_entries(data.path()),
+                exclusivity.is_held(),
+            ),
+            (true, 0, false)
+        );
+    }
+
+    #[test]
+    fn a_snapshot_that_finishes_after_the_budget_is_removed_when_it_lands() {
+        let rt = runtime();
+        let data = tempfile::tempdir().unwrap();
+        let exclusivity = TransferExclusivity::new();
+        let (backend, gate) = test_backend_with_late_export();
+
+        let result = rt.block_on(async {
+            tokio::time::pause();
+            let result = prepare_handoff(backend, input(data.path(), &exclusivity)).await;
+            gate.notify_one();
+            tokio::time::sleep(HANDOFF_PREPARE_BUDGET).await;
+            result
+        });
+
+        assert_eq!(
+            (
+                matches!(result, Err(HandoffError::Failed(_))),
+                backups_entries(data.path()),
+            ),
+            (true, 0)
         );
     }
 

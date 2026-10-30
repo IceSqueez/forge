@@ -135,15 +135,19 @@ impl OverlaysView {
             .is_some_and(|handle| *handle.run_state().borrow());
 
         let editor = EditorState::new(cx);
-        let wiring = cx.new(|_| {
-            EventWiringView::new(WiringLaunch {
-                actions: Arc::clone(&launch.actions),
-                triggers: Arc::clone(&launch.triggers),
-                sub_actions: Arc::clone(&launch.sub_actions),
-                scheduler: launch.scheduler,
-                kinds: Arc::clone(&launch.kinds),
-                rt_handle: launch.rt_handle.clone(),
-            })
+        let wiring = cx.new(|cx| {
+            EventWiringView::new(
+                WiringLaunch {
+                    actions: Arc::clone(&launch.actions),
+                    triggers: Arc::clone(&launch.triggers),
+                    sub_actions: Arc::clone(&launch.sub_actions),
+                    scheduler: launch.scheduler,
+                    kinds: Arc::clone(&launch.kinds),
+                    settings: Arc::clone(&launch.settings_repo),
+                    rt_handle: launch.rt_handle.clone(),
+                },
+                cx,
+            )
         });
         let nav = cx.subscribe(&wiring, |_, _, event: &NavRequested, cx| {
             cx.emit(NavRequested(event.0.clone()));

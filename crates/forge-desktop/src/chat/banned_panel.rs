@@ -384,7 +384,7 @@ impl BannedPanel {
     fn relist(&mut self, platform: PlatformId, cx: &mut Context<Self>) {
         if self.visible {
             self.list_group(platform, None, cx);
-        } else if self.source_for(platform).is_some() {
+        } else if self.platform_running(platform, cx) && self.source_for(platform).is_some() {
             self.ensure_group(platform).stale = true;
         }
     }
@@ -2046,6 +2046,32 @@ pub(super) mod tests {
 
         assert_eq!(twitch.calls(), 1);
         assert!(group_of(cx, &panel, PlatformId::Twitch, |group| group.stale));
+    }
+
+    #[gpui::test]
+    fn while_hidden_a_ban_event_for_a_stopped_platform_adds_no_group(cx: &mut TestAppContext) {
+        let rt = runtime();
+        let twitch = FakeBans::answering(Vec::new());
+        let bus = crate::test_support::quiet_bus(&rt);
+        let lifecycle = cx.new(|_| {
+            IntegrationLifecycle::new(chat_states(&[(
+                Integration::Twitch,
+                LifecycleState::Disabled,
+            )]))
+        });
+        let mut mount = Mount::over(registry_with(&[(
+            Integration::Twitch,
+            Some(Arc::clone(&twitch)),
+        )]));
+        mount.lifecycle = Some(lifecycle);
+        mount.bus = Some(Arc::clone(&bus));
+        let panel = mount.open(cx, &rt);
+
+        set_visible(cx, &panel, false);
+        bus.publish(ban_event("twitch.channel.ban"));
+        quiet_past_debounce(cx, &rt);
+
+        assert_eq!(shown(cx, &panel), Vec::<PlatformId>::new());
     }
 
     #[gpui::test]

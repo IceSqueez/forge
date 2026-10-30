@@ -5,7 +5,8 @@ use crate::update_report::ROLLED_BACK_VERSION;
 use forge_storage::{DataProvider, SettingsRepo, read_setting};
 use forge_update::{
     GithubRepo, InstallKind, ManualReason, Platform, PublishedRelease, TrustedKeys, UpdateClient,
-    UpdateOffer, check_for_update, detect_install, fetch_latest_release, is_newer, parse_version,
+    UpdateError, UpdateOffer, check_for_update, detect_install, fetch_latest_release, is_newer,
+    parse_version,
 };
 use gpui::{AsyncApp, Entity, Task};
 use time::OffsetDateTime;
@@ -244,7 +245,7 @@ async fn check_signed(client: &UpdateClient, repo: &GithubRepo) -> SignedCheck {
     let keys = match TrustedKeys::production() {
         Ok(keys) => keys,
         Err(error) => {
-            tracing::debug!(error = %error, "signed update check could not start");
+            tracing::warn!(error = %error, "signed update check could not start");
             return SignedCheck::Unavailable;
         }
     };
@@ -252,8 +253,12 @@ async fn check_signed(client: &UpdateClient, repo: &GithubRepo) -> SignedCheck {
     match check_for_update(client, &source, &keys, &running).await {
         Ok(Some(offer)) => SignedCheck::Offer(offer),
         Ok(None) => SignedCheck::UpToDate,
+        Err(UpdateError::Network(_) | UpdateError::RateLimited | UpdateError::Status(_)) => {
+            tracing::debug!("signed update manifest unreachable; falling back");
+            SignedCheck::Unavailable
+        }
         Err(error) => {
-            tracing::debug!(error = %error, "signed update manifest unavailable; falling back");
+            tracing::warn!(error = %error, "signed update manifest rejected; falling back");
             SignedCheck::Unavailable
         }
     }

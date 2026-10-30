@@ -1,5 +1,6 @@
 use crate::platform_visuals::BadgeKind;
 use std::collections::HashMap;
+use std::time::{Duration, Instant};
 
 use forge_components::{DateShape, ForgePalette, fmt_display, tr};
 use forge_platform_core::FollowStatus;
@@ -59,10 +60,17 @@ pub(crate) fn follow_display(
     })
 }
 
+struct KnownFollow {
+    status: FollowStatus,
+    checked_at: Instant,
+}
+
+const FOLLOW_STATUS_TTL: Duration = Duration::from_secs(10 * 60);
+
 #[derive(Default)]
 pub(crate) struct FollowLookups {
     builtins: BuiltinRegistry,
-    known: HashMap<AuthorKey, FollowStatus>,
+    known: HashMap<AuthorKey, KnownFollow>,
     pending: Option<AuthorKey>,
     _request: Option<Task<()>>,
 }
@@ -76,11 +84,15 @@ impl FollowLookups {
     }
 
     pub fn status_of(&self, key: &AuthorKey) -> Option<FollowStatus> {
-        self.known.get(key).copied()
+        self.known.get(key).map(|known| known.status)
     }
 
     pub fn needs_request(&self, key: &AuthorKey) -> bool {
-        !self.known.contains_key(key) && self.pending.as_ref() != Some(key)
+        let fresh = self
+            .known
+            .get(key)
+            .is_some_and(|known| known.checked_at.elapsed() < FOLLOW_STATUS_TTL);
+        !fresh && self.pending.as_ref() != Some(key)
     }
 
     fn begin(&mut self, key: AuthorKey, request: Task<()>) {
@@ -94,7 +106,13 @@ impl FollowLookups {
         }
         self.pending = None;
         if status != FollowStatus::Unavailable {
-            self.known.insert(key, status);
+            self.known.insert(
+                key,
+                KnownFollow {
+                    status,
+                    checked_at: Instant::now(),
+                },
+            );
         }
         true
     }
@@ -179,7 +197,7 @@ mod tests {
     use gpui::{AppContext as _, Entity, TestAppContext};
     use time::OffsetDateTime;
 
-    use super::{FollowLookups, follow_display, follow_request};
+    use super::{FOLLOW_STATUS_TTL, FollowLookups, KnownFollow, follow_display, follow_request};
     use crate::chat::ChatView;
     use crate::chat::tests::{chat_states, message, mount_gated, mount_in_window};
     use crate::chat_author::AuthorKey;
@@ -451,6 +469,48 @@ mod tests {
             assert_eq!(lookups.status_of(&key), Some(status));
             assert!(!lookups.needs_request(&key));
         }
+    }
+
+    #[test]
+    fn a_status_past_its_lifetime_stays_shown_but_is_asked_for_again() {
+        let Some(checked_at) = std::time::Instant::now().checked_sub(FOLLOW_STATUS_TTL) else {
+            return;
+        };
+        let key = AuthorKey::by_viewer_id(PlatformId::Twitch, "42");
+        let mut lookups = FollowLookups::default();
+        lookups.known.insert(
+            key.clone(),
+            KnownFollow {
+                status: FollowStatus::NotFollowing,
+                checked_at,
+            },
+        );
+
+        assert_eq!(
+            (lookups.status_of(&key), lookups.needs_request(&key)),
+            (Some(FollowStatus::NotFollowing), true)
+        );
+    }
+
+    #[test]
+    fn a_stale_status_with_its_refresh_in_flight_is_not_asked_for_twice() {
+        let Some(checked_at) = std::time::Instant::now().checked_sub(FOLLOW_STATUS_TTL) else {
+            return;
+        };
+        let key = AuthorKey::by_viewer_id(PlatformId::Twitch, "42");
+        let mut lookups = FollowLookups {
+            pending: Some(key.clone()),
+            ..FollowLookups::default()
+        };
+        lookups.known.insert(
+            key.clone(),
+            KnownFollow {
+                status: FollowStatus::NotFollowing,
+                checked_at,
+            },
+        );
+
+        assert!(!lookups.needs_request(&key));
     }
 
     #[test]

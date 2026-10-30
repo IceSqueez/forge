@@ -1082,12 +1082,13 @@ impl TriggersRegistryView {
             .find(id)
             .map(|i| (i.name.clone(), i.used_in_count))
             .unwrap_or_default();
-        let message = if used_in > 0 {
+        let blocked = used_in > 0;
+        let message = if blocked {
             tr!("triggers_delete_reference_block")
         } else {
             tr!("triggers_confirm_delete_body")
         };
-        let card = confirm_modal(
+        let mut card = confirm_modal(
             tr!("triggers_confirm_delete_title"),
             message,
             ConfirmTone::Destructive,
@@ -1099,12 +1100,14 @@ impl TriggersRegistryView {
             "triggers-delete-cancel",
             tr!("common_cancel"),
             cx.listener(|this, _: &ClickEvent, _, cx| this.cancel_delete(cx)),
-        )
-        .on_confirm(
-            "triggers-delete-confirm",
-            tr!("common_delete"),
-            cx.listener(|this, _: &ClickEvent, _, cx| this.confirm_delete(cx)),
         );
+        if !blocked {
+            card = card.on_confirm(
+                "triggers-delete-confirm",
+                tr!("common_delete"),
+                cx.listener(|this, _: &ClickEvent, _, cx| this.confirm_delete(cx)),
+            );
+        }
 
         let view = cx.entity();
         overlay(card, palette)

@@ -693,12 +693,7 @@ impl TtsFiltersView {
     }
 
     fn edit(&mut self, cx: &mut Context<Self>, mutate: impl FnOnce(&mut FilterSet)) {
-        let Some(filters) = self.filters.loaded_mut() else {
-            return;
-        };
-        mutate(filters);
-        renumber(&mut filters.rules);
-        self.after_change(cx);
+        self.try_apply(cx, mutate);
     }
 
     fn after_change(&mut self, cx: &mut Context<Self>) {
@@ -3632,6 +3627,85 @@ mod tests {
             )
         });
         assert_eq!((enabled, refused, repo.writes()), (false, true, 0));
+    }
+
+    fn stored_with_a_disabled_bad_regex() -> Vec<FilterRule> {
+        let mut rules = stored_rules();
+        let mut bad = filter_row(
+            false,
+            FilterRuleKind::Regex {
+                pattern: "(bad".to_owned(),
+                replacement: String::new(),
+            },
+        );
+        bad.id = "bad".to_owned();
+        bad.position = rules.len() as u32;
+        rules.push(bad);
+        rules
+    }
+
+    #[gpui::test]
+    fn an_edit_that_breaks_the_filters_is_undone_and_reported(cx: &mut TestAppContext) {
+        install_presentation(cx);
+        let rt = runtime();
+        let repo = RecordingFilters::storing(stored_with_a_disabled_bad_regex());
+        let view = view_over(&repo, &rt, cx);
+        let bad_row = stored_rules().len();
+
+        view.update(cx, |v, cx| v.toggle_rule(bad_row, cx));
+        settle(&rt, cx);
+
+        let (enabled, refused) = view.read_with(cx, |v, _| {
+            (v.shown().rules[bad_row].enabled, v.save_error.is_some())
+        });
+        assert_eq!((enabled, refused, repo.writes()), (false, true, 0));
+    }
+
+    #[gpui::test]
+    fn a_refused_edit_does_not_block_the_next_valid_one(cx: &mut TestAppContext) {
+        install_presentation(cx);
+        let rt = runtime();
+        let repo = RecordingFilters::storing(stored_with_a_disabled_bad_regex());
+        let view = view_over(&repo, &rt, cx);
+        let bad_row = stored_rules().len();
+        view.update(cx, |v, cx| v.toggle_rule(bad_row, cx));
+        settle(&rt, cx);
+
+        view.update(cx, |v, cx| v.toggle_rule(0, cx));
+        settle(&rt, cx);
+
+        let (cleared, first_rule_on) = view.read_with(cx, |v, _| {
+            (v.save_error.is_none(), v.shown().rules[0].enabled)
+        });
+        assert_eq!(
+            (cleared, first_rule_on, repo.writes() > 0),
+            (true, false, true)
+        );
+    }
+
+    #[gpui::test]
+    fn a_replacement_with_a_bad_pattern_is_refused_and_adds_no_row(cx: &mut TestAppContext) {
+        install_presentation(cx);
+        let rt = runtime();
+        let repo = RecordingFilters::storing(stored_rules());
+        let view = view_over(&repo, &rt, cx);
+
+        let applied = view.update(cx, |v, cx| {
+            v.apply_replacement(
+                ReplaceKind::Regex,
+                "(bad".to_owned(),
+                String::new(),
+                false,
+                cx,
+            )
+        });
+        settle(&rt, cx);
+
+        let rows = view.read_with(cx, |v, _| v.shown().rules.len());
+        assert_eq!(
+            (applied, rows, repo.writes()),
+            (false, stored_rules().len(), 0)
+        );
     }
 
     fn blocklist_rule(mode: BlocklistMode) -> FilterRule {

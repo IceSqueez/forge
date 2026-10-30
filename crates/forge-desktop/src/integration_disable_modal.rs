@@ -48,6 +48,7 @@ const CONFIRM_ICON: Pixels = px(12.0);
 pub struct DisablePrompt {
     pub name: &'static str,
     pub references: IntegrationReferences,
+    pub references_known: bool,
 }
 
 struct Emphasis {
@@ -87,17 +88,21 @@ fn lead(prompt: &DisablePrompt, palette: &ForgePalette) -> AnyElement {
     let actions = prompt.references.actions.len();
     let triggers = prompt.references.triggers;
     let mut text = Emphasis::new();
-    text.plain(&tr!("integration_disable_lead_prefix", name = prompt.name));
-    match (actions > 0, triggers > 0) {
-        (true, true) => {
-            text.strong(&tr!("integration_refs_actions", count = actions as i64));
-            text.plain(&tr!("integration_disable_lead_and"));
-            text.strong(&tr!("integration_refs_triggers", count = triggers as i64));
+    if prompt.references_known {
+        text.plain(&tr!("integration_disable_lead_prefix", name = prompt.name));
+        match (actions > 0, triggers > 0) {
+            (true, true) => {
+                text.strong(&tr!("integration_refs_actions", count = actions as i64));
+                text.plain(&tr!("integration_disable_lead_and"));
+                text.strong(&tr!("integration_refs_triggers", count = triggers as i64));
+            }
+            (true, false) => text.strong(&tr!("integration_refs_actions", count = actions as i64)),
+            _ => text.strong(&tr!("integration_refs_triggers", count = triggers as i64)),
         }
-        (true, false) => text.strong(&tr!("integration_refs_actions", count = actions as i64)),
-        _ => text.strong(&tr!("integration_refs_triggers", count = triggers as i64)),
+        text.plain(&tr!("integration_disable_lead_suffix"));
+    } else {
+        text.plain(&tr!("integration_disable_lead_unknown", name = prompt.name));
     }
-    text.plain(&tr!("integration_disable_lead_suffix"));
     let style = HighlightStyle {
         color: Some(Hsla::from(palette.text_primary)),
         font_weight: Some(FontWeight::MEDIUM),

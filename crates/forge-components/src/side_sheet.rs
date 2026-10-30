@@ -1,4 +1,5 @@
 use crate::presentation::ActivePresentation;
+use crate::resize_handle::clamp_extent;
 use crate::tokens::Density;
 use crate::tokens::Spacing;
 use crate::tokens::spacing;
@@ -298,7 +299,7 @@ impl RenderOnce for SideSheet {
                     let raw = match position {
                         SheetPosition::Right => e.bounds.right() - cursor_x,
                     };
-                    handler(&raw.clamp(min, max), window, cx);
+                    handler(&clamp_extent(raw, min, max), window, cx);
                 })
                 .children(header)
                 .child(content)

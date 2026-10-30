@@ -19,6 +19,7 @@ pub(super) struct RegistryState {
     pub(super) overlays: Vec<OverlayDefinition>,
     pub(super) selected: Option<OverlayId>,
     pub(super) loading: bool,
+    pub(super) load_failure: Option<String>,
     media_issues: HashMap<OverlayId, Vec<MediaIssue>>,
     pub(super) menu_open: Option<OverlayId>,
     pub(super) menu_click_pos: Option<Point<Pixels>>,
@@ -113,6 +114,7 @@ impl OverlaysView {
         self.registry.loading = false;
         match result {
             Ok(rows) => {
+                self.registry.load_failure = None;
                 self.registry.overlays = rows;
                 let live = &self.registry.overlays;
                 self.registry
@@ -133,7 +135,10 @@ impl OverlaysView {
                 self.sync_source(cx);
                 self.sync_wiring(cx);
             }
-            Err(message) => self.report(&message.text(), cx),
+            Err(message) => {
+                self.registry.load_failure = Some(message.text());
+                self.report(&message.text(), cx);
+            }
         }
         cx.notify();
     }

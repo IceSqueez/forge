@@ -66,6 +66,7 @@ pub struct SettingsAudioRoutingView {
     choices: Vec<OverlayChoice>,
     connected_pages: Option<usize>,
     pages_gen: async_bridge::Generation,
+    apply_gen: async_bridge::Generation,
     in_effect: Option<InEffect>,
     picker_open: bool,
     overlay_focus: FocusHandle,
@@ -101,6 +102,7 @@ impl SettingsAudioRoutingView {
             choices: Vec::new(),
             connected_pages: None,
             pages_gen: async_bridge::Generation::default(),
+            apply_gen: async_bridge::Generation::default(),
             in_effect: None,
             picker_open: false,
             overlay_focus: cx.focus_handle(),
@@ -156,6 +158,7 @@ impl SettingsAudioRoutingView {
         self.persist_error = None;
         let settings = Arc::clone(&self.settings);
         let router = Arc::clone(&self.router);
+        let ticket = self.apply_gen.next();
         async_bridge::run_async(
             &self.rt_handle,
             async move {
@@ -164,7 +167,7 @@ impl SettingsAudioRoutingView {
                     .map_err(RepoFailure::from)?;
                 Ok(router.apply().await)
             },
-            |this, result, cx| this.apply_persisted(result, cx),
+            move |this, result, cx| this.settle_apply(ticket, result, cx),
             cx,
         );
         cx.notify();
@@ -178,6 +181,7 @@ impl SettingsAudioRoutingView {
         self.count_pages(cx);
         let settings = Arc::clone(&self.settings);
         let router = Arc::clone(&self.router);
+        let ticket = self.apply_gen.next();
         async_bridge::run_async(
             &self.rt_handle,
             async move {
@@ -186,7 +190,7 @@ impl SettingsAudioRoutingView {
                     .map_err(RepoFailure::from)?;
                 Ok(router.apply().await)
             },
-            |this, result, cx| this.apply_persisted(result, cx),
+            move |this, result, cx| this.settle_apply(ticket, result, cx),
             cx,
         );
         cx.notify();
@@ -211,6 +215,17 @@ impl SettingsAudioRoutingView {
             },
             cx,
         );
+    }
+
+    fn settle_apply(
+        &mut self,
+        ticket: u64,
+        result: Result<Option<AppliedRoutes>, RepoFailure>,
+        cx: &mut Context<Self>,
+    ) {
+        if result.is_err() || self.apply_gen.is_current(ticket) {
+            self.apply_persisted(result, cx);
+        }
     }
 
     fn apply_persisted(
@@ -736,11 +751,16 @@ mod tests {
     use forge_storage::settings::core_settings::AUDIO_OVERLAY_ID;
     use forge_storage::{Language, MockOverlayRepo, StorageError};
 
+    use crate::audio_router::AudioRouterParts;
     use crate::audio_routes::SPEECH_ROUTE;
+    use crate::routed_sink::RoutedSink;
+    use forge_soundboard::SoundboardPlayer;
 
     use super::*;
     use crate::i18n::install_language;
-    use crate::test_support::{overlay_named, test_backend};
+    use crate::test_support::{
+        NoOverlayPages, RecordingSink, StubEventLog, StubOverlays, overlay_named, test_backend,
+    };
 
     const CHOSEN: &str = "stage-audio";
 
@@ -996,5 +1016,112 @@ mod tests {
             loaded.speech_plan.fallback,
             Some(RouteFallback::ServerUnavailable)
         );
+    }
+
+    fn routing_view(
+        cx: &mut gpui::TestAppContext,
+        rt: &tokio::runtime::Runtime,
+    ) -> gpui::Entity<SettingsAudioRoutingView> {
+        install_language(Language::En);
+        cx.update(install_test_presentation);
+        let (backend, _writes) = test_backend();
+        let _entered = rt.enter();
+        let overlay_service = OverlayServiceHandle::new(forge_runtime::OverlayServiceParts {
+            repo: Arc::new(StubOverlays),
+            settings: Arc::clone(&backend) as Arc<dyn SettingsRepo>,
+            kinds: Arc::new(forge_overlay::OverlayKindRegistry::new()),
+            bus: forge_runtime::EventBus::new(Arc::new(StubEventLog)),
+            frames: Arc::new(NoOverlayPages),
+            media: None,
+            speaker: None,
+            latest: None,
+        });
+        let local = RecordingSink::new();
+        let player = SoundboardPlayer::with_settings(
+            Arc::new(forge_audio::CpalSinkFactory),
+            Arc::new(forge_soundboard::NullAudioEventSink),
+            Arc::new(forge_soundboard::ClipLibrary::new(
+                Arc::new(forge_storage::soundboard::MockSoundboardClipsRepo::new()),
+                Arc::new(forge_storage::MockMediaRepo::new()),
+            )),
+            forge_soundboard::SoundboardSettingsHandle::new(Default::default()),
+        );
+        let router = Arc::new(AudioRouter::new(AudioRouterParts {
+            backend: Arc::clone(&backend) as Arc<dyn forge_storage::DataProvider>,
+            server: None,
+            overlays: overlay_service.clone(),
+            speech_sink: Arc::new(RoutedSink::new(Arc::clone(&local) as Arc<dyn AudioSink>)),
+            speech_output: local,
+            soundboard_player: Arc::new(player),
+            speak: None,
+        }));
+        let handle = rt.handle().clone();
+        cx.new(|cx| {
+            SettingsAudioRoutingView::new(
+                backend as Arc<dyn SettingsRepo>,
+                catalog(Vec::new()),
+                overlay_service,
+                handle,
+                router,
+                false,
+                cx,
+            )
+        })
+    }
+
+    fn install_test_presentation(cx: &mut gpui::App) {
+        cx.set_global(forge_components::Presentation::new(
+            forge_components::ThemeId::default(),
+            Density::default(),
+        ));
+    }
+
+    fn applied() -> AppliedRoutes {
+        let plan = RoutePlan {
+            route: AudioRoute::Local,
+            destination: None,
+            fallback: None,
+        };
+        AppliedRoutes {
+            speech: plan.clone(),
+            clips: plan,
+        }
+    }
+
+    #[gpui::test]
+    fn an_apply_overtaken_by_a_newer_choice_never_reports_what_is_in_effect(
+        cx: &mut gpui::TestAppContext,
+    ) {
+        let rt = crate::test_support::runtime();
+        let view = routing_view(cx, &rt);
+
+        let (after_stale, after_current) = view.update(cx, |this, cx| {
+            let stale = this.apply_gen.next();
+            let current = this.apply_gen.next();
+            this.settle_apply(stale, Ok(Some(applied())), cx);
+            let after_stale = this.in_effect.is_some();
+            this.settle_apply(current, Ok(Some(applied())), cx);
+            (after_stale, this.in_effect.is_some())
+        });
+
+        assert_eq!((after_stale, after_current), (false, true));
+    }
+
+    #[gpui::test]
+    fn a_refused_write_is_shown_even_after_a_newer_choice(cx: &mut gpui::TestAppContext) {
+        let rt = crate::test_support::runtime();
+        let view = routing_view(cx, &rt);
+
+        let shown = view.update(cx, |this, cx| {
+            let stale = this.apply_gen.next();
+            this.apply_gen.next();
+            let refused = RepoFailure::from(StorageError::Connection {
+                reason: "the database went away".to_owned(),
+            });
+            this.settle_apply(stale, Err(refused), cx);
+            this.persist_error.is_some()
+        });
+
+        assert!(shown);
     }
 }

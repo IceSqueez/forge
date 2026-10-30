@@ -110,10 +110,15 @@ impl TriggersRegistryView {
             return;
         }
         let client = live_obs_client(&self.builtins);
+        let ticket = self.obs_catalog_options_gen.next();
         async_bridge::run_async(
             &self.rt_handle,
             load_obs_catalog_options(client, fields),
-            Self::apply_collection_options,
+            move |this, options, cx| {
+                if this.obs_catalog_options_gen.is_current(ticket) {
+                    this.apply_collection_options(options, cx);
+                }
+            },
             cx,
         );
     }
@@ -134,10 +139,15 @@ impl TriggersRegistryView {
             return;
         }
         let builtins = self.builtins.clone();
+        let ticket = self.collection_options_gen.next();
         async_bridge::run_async(
             &self.rt_handle,
             load_collection_options(builtins, sources),
-            Self::apply_collection_options,
+            move |this, options, cx| {
+                if this.collection_options_gen.is_current(ticket) {
+                    this.apply_collection_options(options, cx);
+                }
+            },
             cx,
         );
     }

@@ -370,6 +370,9 @@ impl ChatFeed {
     }
 
     pub fn mark_deleted(&mut self, platform: PlatformId, msg_id: &str) -> bool {
+        if msg_id.is_empty() {
+            return false;
+        }
         self.moderate_where(|m| m.platform == platform && m.id == msg_id)
     }
 

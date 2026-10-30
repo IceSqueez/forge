@@ -23,6 +23,7 @@ use std::sync::Arc;
 
 use crate::actions::LIST_CONTEXT;
 use crate::actions_screen::config_problem_text::config_problem_text;
+use crate::async_bridge::Generation;
 use crate::async_bridge::{self, KeyedSnapshotWriters, WriteOutcome};
 use crate::collection_options::ChoiceOptions;
 use crate::config_form::{CollectionChoices, ConfigField};
@@ -284,6 +285,8 @@ pub struct TriggersRegistryView {
     bus: Option<Arc<EventBus>>,
     integrations: Option<SwitchWatch>,
     collection_options: ChoiceOptions,
+    collection_options_gen: Generation,
+    obs_catalog_options_gen: Generation,
     _collection_watch: Vec<gpui::Task<()>>,
     _search_sub: Subscription,
     _release: Subscription,
@@ -345,6 +348,8 @@ impl TriggersRegistryView {
             bus: None,
             integrations: None,
             collection_options: ChoiceOptions::new(),
+            collection_options_gen: Generation::default(),
+            obs_catalog_options_gen: Generation::default(),
             _collection_watch: Vec::new(),
             _search_sub: search_sub,
             _release: release,
@@ -359,9 +364,9 @@ impl TriggersRegistryView {
         switch: IntegrationSwitch,
         cx: &mut Context<Self>,
     ) -> Self {
-        self.integrations = Some(switch.watch(cx, |this: &mut Self, off, _cx| {
+        self.integrations = Some(switch.watch(cx, |this: &mut Self, off, cx| {
             if let Some(integrations) = &mut this.integrations {
-                integrations.replace(off);
+                integrations.replace(off, cx);
             }
         }));
         self

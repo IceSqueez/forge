@@ -3422,7 +3422,7 @@ impl ScriptEditorView {
             return div().into_any_element();
         };
         let record = &open.record;
-        let line_count = record.body.lines().count();
+        let line_count = self.code_input.read(cx).content().lines().count();
         let edited = fmt_display_relative(Some(record.last_modified));
 
         let linked = self.find_entry(open.id).and_then(|e| e.linked.as_ref());
@@ -4125,7 +4125,6 @@ mod tests {
         use forge_components::{Density, ThemeId};
         use std::sync::atomic::{AtomicUsize, Ordering};
 
-        use forge_components::bind_code_editor_keys;
         use forge_storage::script::MockScriptRepo;
         use forge_storage::{Language, StorageError};
         use forge_types::IntegrationId;
@@ -4449,8 +4448,7 @@ mod tests {
             cx: &mut TestAppContext,
             in_code_editor: bool,
         ) -> Arc<AtomicUsize> {
-            cx.update(bind_code_editor_keys);
-            cx.update(crate::actions::register_shell_key_bindings);
+            cx.update(crate::actions::register_key_bindings);
             let shell_saves = Arc::new(AtomicUsize::new(0));
             let hosted = rig.view.clone();
             let counted = Arc::clone(&shell_saves);
@@ -4475,7 +4473,7 @@ mod tests {
                 }
             });
             vcx.run_until_parked();
-            vcx.simulate_keystrokes("ctrl-s");
+            vcx.simulate_keystrokes("secondary-s");
             rig.settle(cx);
             shell_saves
         }

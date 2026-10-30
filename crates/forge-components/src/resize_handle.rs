@@ -23,6 +23,10 @@ impl ResizeEdge {
     }
 }
 
+pub(crate) fn clamp_extent(raw: Pixels, min: Pixels, max: Pixels) -> Pixels {
+    raw.min(max).max(min)
+}
+
 #[derive(Clone, Copy, Debug)]
 pub struct ResizeRange {
     pub min: Pixels,
@@ -107,7 +111,36 @@ pub fn install_resize<T: 'static>(
                 ResizeEdge::Top => e.bounds.bottom() - e.event.position.y,
                 ResizeEdge::Bottom => e.event.position.y - e.bounds.top(),
             };
-            handler(&raw.clamp(range.min, range.max), window, cx);
+            handler(&clamp_extent(raw, range.min, range.max), window, cx);
         })
         .child(strip)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const MIN: Pixels = px(200.0);
+    const MAX: Pixels = px(400.0);
+
+    #[test]
+    fn clamp_extent_holds_the_drag_inside_the_range_at_each_edge() {
+        for (raw, expected) in [
+            (px(199.0), MIN),
+            (MIN, MIN),
+            (px(201.0), px(201.0)),
+            (px(399.0), px(399.0)),
+            (MAX, MAX),
+            (px(401.0), MAX),
+        ] {
+            assert_eq!(clamp_extent(raw, MIN, MAX), expected, "{raw:?}");
+        }
+    }
+
+    #[test]
+    fn clamp_extent_settles_on_the_minimum_when_the_range_is_inverted() {
+        for raw in [px(100.0), px(300.0), px(500.0)] {
+            assert_eq!(clamp_extent(raw, MAX, MIN), MAX, "{raw:?}");
+        }
+    }
 }

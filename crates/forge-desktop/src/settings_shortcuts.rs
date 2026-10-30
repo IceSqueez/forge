@@ -423,10 +423,8 @@ impl SettingsShortcutsView {
                     cx.listener(|this, _: &ClickEvent, _, cx| this.cancel_capture(cx)),
                 ));
         } else if let Some(overrides) = self.overrides.loaded() {
-            match overrides.chord_of(entry) {
-                Some(chord) => {
-                    controls = controls.child(self.chord_chip(chord.to_owned(), palette, density))
-                }
+            match overrides.resolved_chord_of(entry) {
+                Some(chord) => controls = controls.child(self.chord_chip(chord, palette, density)),
                 None => {
                     controls = controls.child(
                         div()

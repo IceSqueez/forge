@@ -8,6 +8,7 @@ use crate::system_info::IdentityScrubber;
 
 const CRASH_FILE_PREFIX: &str = "crash-";
 const CRASH_FILE_EXTENSION: &str = "json";
+const PENDING_CRASH_EXTENSION: &str = "json.tmp";
 const HANDLED_DIR_NAME: &str = "handled";
 const KEPT_HANDLED_CRASHES: usize = 20;
 const SUMMARY_MAX_CHARS: usize = 80;
@@ -139,7 +140,9 @@ pub fn write_crash(dir: &Path, file_name: &str, record: &CrashRecord) -> io::Res
     fs::create_dir_all(dir)?;
     let path = dir.join(file_name);
     let bytes = serde_json::to_vec_pretty(record).map_err(io::Error::other)?;
-    fs::write(&path, bytes)?;
+    let pending = path.with_extension(PENDING_CRASH_EXTENSION);
+    fs::write(&pending, bytes)?;
+    fs::rename(&pending, &path)?;
     Ok(path)
 }
 
@@ -190,17 +193,19 @@ pub fn latest_pending(dir: &Path, current_process_id: u32) -> Option<PendingCras
 pub fn mark_handled(dir: &Path, current_process_id: u32) -> io::Result<()> {
     let handled_dir = dir.join(HANDLED_DIR_NAME);
     fs::create_dir_all(&handled_dir)?;
+    let mut first_failure = Ok(());
     for (path, _) in earlier_process_files(dir, current_process_id) {
         if let Some(name) = path.file_name() {
-            fs::rename(&path, handled_dir.join(name))?;
+            let moved = fs::rename(&path, handled_dir.join(name));
+            first_failure = first_failure.and(moved);
         }
     }
     let handled = crash_files(&handled_dir);
     let excess = handled.len().saturating_sub(KEPT_HANDLED_CRASHES);
     for stale in handled.into_iter().take(excess) {
-        fs::remove_file(stale)?;
+        first_failure = first_failure.and(fs::remove_file(stale));
     }
-    Ok(())
+    first_failure
 }
 
 #[cfg(test)]
@@ -488,6 +493,62 @@ mod tests {
                 crash_file_name(1, OTHER_PROCESS),
                 crash_file_name(2, OTHER_PROCESS)
             ]
+        );
+    }
+
+    #[test]
+    fn a_failed_write_leaves_the_crash_already_on_disk_whole() {
+        let temp = tempfile::tempdir().unwrap();
+        write(temp.path(), 1, OTHER_PROCESS, "the first record");
+        let name = crash_file_name(1, OTHER_PROCESS);
+        fs::create_dir(temp.path().join(format!("{name}.tmp"))).unwrap();
+
+        let replaced = write_crash(temp.path(), &name, &record("replacement", OTHER_PROCESS));
+
+        let kept = latest_pending(temp.path(), CURRENT_PROCESS).unwrap();
+        assert_eq!(
+            (replaced.is_err(), kept.record.message.as_str()),
+            (true, "the first record")
+        );
+    }
+
+    #[test]
+    fn a_torn_write_is_never_offered_as_a_pending_crash() {
+        let temp = tempfile::tempdir().unwrap();
+        fs::write(
+            temp.path()
+                .join(format!("{}.tmp", crash_file_name(1, OTHER_PROCESS))),
+            "{ torn",
+        )
+        .unwrap();
+
+        assert!(latest_pending(temp.path(), CURRENT_PROCESS).is_none());
+    }
+
+    #[test]
+    fn a_crash_that_cannot_move_does_not_strand_the_ones_after_it() {
+        let temp = tempfile::tempdir().unwrap();
+        write(temp.path(), 1, OTHER_PROCESS, "blocked");
+        write(temp.path(), 2, OTHER_PROCESS, "movable");
+        let blocker = temp
+            .path()
+            .join("handled")
+            .join(crash_file_name(1, OTHER_PROCESS));
+        fs::create_dir_all(blocker.join("occupied")).unwrap();
+
+        let outcome = mark_handled(temp.path(), CURRENT_PROCESS);
+
+        assert_eq!(
+            (
+                outcome.is_err(),
+                file_names(temp.path()),
+                file_names(&temp.path().join("handled")),
+            ),
+            (
+                true,
+                vec![crash_file_name(1, OTHER_PROCESS)],
+                vec![crash_file_name(2, OTHER_PROCESS)],
+            )
         );
     }
 

@@ -82,8 +82,8 @@ impl QueueFilter {
     fn keeps(self, row: &QueueRow) -> bool {
         match self {
             QueueFilter::All => true,
-            QueueFilter::Running => row.mode == QueueMode::RUNNING,
-            QueueFilter::Paused => row.mode != QueueMode::RUNNING,
+            QueueFilter::Running => !row.frozen(),
+            QueueFilter::Paused => row.frozen(),
             QueueFilter::Parallel => !row.blocking,
             QueueFilter::Sequential => row.blocking,
         }
@@ -267,6 +267,7 @@ struct EditQueueModal {
     concurrency: u32,
     saving: bool,
     _name_sub: Subscription,
+    _desc_sub: Subscription,
 }
 
 impl EventEmitter<EditQueueEvent> for EditQueueModal {}
@@ -304,6 +305,14 @@ impl EditQueueModal {
                 InputEvent::Blurred(_) => {}
             },
         );
+        let desc_sub = cx.subscribe(
+            &desc_input,
+            |this, _f, event: &InputEvent, cx| match event {
+                InputEvent::Submitted(_) => this.submit(cx),
+                InputEvent::Cancelled => this.cancel(cx),
+                InputEvent::Changed(_) | InputEvent::Blurred(_) => {}
+            },
+        );
         EditQueueModal {
             editing,
             orig_name,
@@ -312,6 +321,7 @@ impl EditQueueModal {
             concurrency: concurrency.clamp(MIN_CONCURRENCY, MAX_CONCURRENCY),
             saving: false,
             _name_sub: name_sub,
+            _desc_sub: desc_sub,
         }
     }
 
@@ -890,7 +900,6 @@ impl QueuesView {
             return;
         };
         let name = q.name.clone();
-        let dropped = q.pending as i64;
 
         let scheduler = self.scheduler.clone();
         async_bridge::run_async(
@@ -900,11 +909,7 @@ impl QueuesView {
                 Ok(()) => {
                     cx.push_toast(
                         ToastKind::Info,
-                        tr!(
-                            "queues_free_feedback",
-                            name = name.as_str(),
-                            count = dropped
-                        ),
+                        tr!("queues_free_feedback", name = name.as_str()),
                     );
                     this.reload(cx);
                 }
@@ -1465,12 +1470,8 @@ impl QueuesView {
         palette: &'a ForgePalette,
         density: Density,
     ) -> impl IntoElement + use<'a> {
-        let running_count = self
-            .queues
-            .iter()
-            .filter(|q| q.mode == QueueMode::RUNNING)
-            .count();
-        let paused_count = self.queues.len().saturating_sub(running_count);
+        let paused_count = self.queues.iter().filter(|q| q.frozen()).count();
+        let running_count = self.queues.len().saturating_sub(paused_count);
 
         header_stats(
             vec![
@@ -2216,6 +2217,40 @@ mod tests {
         pump(rt);
         cx.run_until_parked();
         view
+    }
+
+    #[test]
+    fn only_a_frozen_queue_reads_as_paused_in_the_filters() {
+        for (mode, paused) in [
+            (QueueMode::RUNNING, false),
+            (QueueMode::DRAINING, false),
+            (QueueMode::HOLDING, true),
+            (QueueMode::PAUSED, true),
+        ] {
+            let row = QueueRow {
+                id: QueueId::new(),
+                name: String::new(),
+                description: String::new(),
+                blocking: true,
+                concurrency: 1,
+                mode,
+                live: true,
+                pending: 0,
+                in_flight: 0,
+                overflowed: 0,
+                actions: 0,
+                running: Vec::new(),
+            };
+
+            assert_eq!(
+                (
+                    QueueFilter::Paused.keeps(&row),
+                    QueueFilter::Running.keeps(&row)
+                ),
+                (paused, !paused),
+                "{mode:?}"
+            );
+        }
     }
 
     fn row_depth(view: &Entity<QueuesView>, cx: &mut TestAppContext) -> Option<(u32, u32, u64)> {

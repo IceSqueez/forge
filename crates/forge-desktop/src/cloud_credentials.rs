@@ -25,7 +25,7 @@ use gpui::{
     Subscription, Window, div, prelude::*, px,
 };
 
-use crate::async_bridge;
+use crate::async_bridge::{self, Generation};
 use crate::cloud_tts_boot;
 use crate::repo_failure::RepoFailure;
 use forge_components::ActivePresentation;
@@ -151,6 +151,7 @@ struct AzureForm {
     api_revealed: bool,
     dirty: bool,
     test_status: TestStatus,
+    test_gen: Generation,
     is_registered: bool,
 }
 
@@ -159,6 +160,7 @@ struct ElevenLabsForm {
     api_revealed: bool,
     dirty: bool,
     test_status: TestStatus,
+    test_gen: Generation,
     is_registered: bool,
 }
 
@@ -167,6 +169,7 @@ struct OpenAiForm {
     api_revealed: bool,
     dirty: bool,
     test_status: TestStatus,
+    test_gen: Generation,
     is_registered: bool,
 }
 
@@ -178,6 +181,7 @@ struct PollyForm {
     secret_revealed: bool,
     dirty: bool,
     test_status: TestStatus,
+    test_gen: Generation,
     is_registered: bool,
 }
 
@@ -274,6 +278,7 @@ impl CloudCredentialsView {
                 api_revealed: false,
                 dirty: false,
                 test_status: TestStatus::Idle,
+                test_gen: Generation::default(),
                 is_registered: is_registered(CloudEngineKind::Azure),
             },
             elevenlabs: ElevenLabsForm {
@@ -281,6 +286,7 @@ impl CloudCredentialsView {
                 api_revealed: false,
                 dirty: false,
                 test_status: TestStatus::Idle,
+                test_gen: Generation::default(),
                 is_registered: is_registered(CloudEngineKind::ElevenLabs),
             },
             openai: OpenAiForm {
@@ -288,6 +294,7 @@ impl CloudCredentialsView {
                 api_revealed: false,
                 dirty: false,
                 test_status: TestStatus::Idle,
+                test_gen: Generation::default(),
                 is_registered: is_registered(CloudEngineKind::OpenAI),
             },
             polly: PollyForm {
@@ -298,6 +305,7 @@ impl CloudCredentialsView {
                 secret_revealed: false,
                 dirty: false,
                 test_status: TestStatus::Idle,
+                test_gen: Generation::default(),
                 is_registered: is_registered(CloudEngineKind::Polly),
             },
             _subs: subs,
@@ -318,6 +326,8 @@ impl CloudCredentialsView {
             CloudEngineKind::OpenAI => self.openai.dirty = true,
             CloudEngineKind::Polly => self.polly.dirty = true,
         }
+        self.test_gen(kind).next();
+        self.set_test_status(kind, TestStatus::Idle);
         cx.notify();
     }
 
@@ -354,9 +364,9 @@ impl CloudCredentialsView {
     fn build_creds(&self, kind: CloudEngineKind, cx: &App) -> Option<CloudCreds> {
         match kind {
             CloudEngineKind::Azure => {
-                let api_key = self.azure.api_key.read(cx).content().to_owned();
-                let region = self.azure.region.read(cx).content().to_owned();
-                if api_key.trim().is_empty() || region.trim().is_empty() {
+                let api_key = self.azure.api_key.read(cx).content().trim().to_owned();
+                let region = self.azure.region.read(cx).content().trim().to_owned();
+                if api_key.is_empty() || region.is_empty() {
                     return None;
                 }
                 Some(CloudCreds::Azure(AzureCredentials {
@@ -366,8 +376,8 @@ impl CloudCredentialsView {
                 }))
             }
             CloudEngineKind::ElevenLabs => {
-                let api_key = self.elevenlabs.api_key.read(cx).content().to_owned();
-                if api_key.trim().is_empty() {
+                let api_key = self.elevenlabs.api_key.read(cx).content().trim().to_owned();
+                if api_key.is_empty() {
                     return None;
                 }
                 Some(CloudCreds::ElevenLabs(ElevenLabsCredentials {
@@ -376,8 +386,8 @@ impl CloudCredentialsView {
                 }))
             }
             CloudEngineKind::OpenAI => {
-                let api_key = self.openai.api_key.read(cx).content().to_owned();
-                if api_key.trim().is_empty() {
+                let api_key = self.openai.api_key.read(cx).content().trim().to_owned();
+                if api_key.is_empty() {
                     return None;
                 }
                 Some(CloudCreds::OpenAi(OpenAiCredentials {
@@ -386,13 +396,10 @@ impl CloudCredentialsView {
                 }))
             }
             CloudEngineKind::Polly => {
-                let access_key_id = self.polly.access_key.read(cx).content().to_owned();
-                let secret_access_key = self.polly.secret_key.read(cx).content().to_owned();
-                let region = self.polly.region.read(cx).content().to_owned();
-                if access_key_id.trim().is_empty()
-                    || secret_access_key.trim().is_empty()
-                    || region.trim().is_empty()
-                {
+                let access_key_id = self.polly.access_key.read(cx).content().trim().to_owned();
+                let secret_access_key = self.polly.secret_key.read(cx).content().trim().to_owned();
+                let region = self.polly.region.read(cx).content().trim().to_owned();
+                if access_key_id.is_empty() || secret_access_key.is_empty() || region.is_empty() {
                     return None;
                 }
                 Some(CloudCreds::Polly(PollyCredentials {
@@ -500,12 +507,16 @@ impl CloudCredentialsView {
             return;
         };
         self.set_test_status(kind, TestStatus::Testing);
+        let ticket = self.test_gen(kind).next();
         cx.notify();
         let gateways = self.gateways.clone();
         async_bridge::run_async(
             &self.rt_handle,
             async move { creds.test(gateways).await },
             move |this, result: Result<(), RepoFailure>, cx| {
+                if !this.test_gen(kind).is_current(ticket) {
+                    return;
+                }
                 let status = match result {
                     Ok(()) => TestStatus::Ok,
                     Err(e) => TestStatus::Err(e.text()),
@@ -515,6 +526,15 @@ impl CloudCredentialsView {
             },
             cx,
         );
+    }
+
+    fn test_gen(&self, kind: CloudEngineKind) -> &Generation {
+        match kind {
+            CloudEngineKind::Azure => &self.azure.test_gen,
+            CloudEngineKind::ElevenLabs => &self.elevenlabs.test_gen,
+            CloudEngineKind::OpenAI => &self.openai.test_gen,
+            CloudEngineKind::Polly => &self.polly.test_gen,
+        }
     }
 
     fn set_test_status(&mut self, kind: CloudEngineKind, status: TestStatus) {
@@ -971,4 +991,164 @@ fn field(
 
 fn nonempty(input: &Entity<TextInput>, cx: &App) -> bool {
     !input.read(cx).content().trim().is_empty()
+}
+
+#[cfg(test)]
+mod tests {
+    use forge_storage::Language;
+    use forge_storage::credentials::MockCredentialsRepo;
+    use gpui::TestAppContext;
+
+    use super::*;
+    use crate::test_support::{alive_tasks, install_presentation, pump_until, runtime};
+
+    const ENGINES: [CloudEngineKind; 4] = [
+        CloudEngineKind::Azure,
+        CloudEngineKind::ElevenLabs,
+        CloudEngineKind::OpenAI,
+        CloudEngineKind::Polly,
+    ];
+    const UNADDRESSABLE_REGION: &str = "not a region";
+
+    fn view_on(
+        cx: &mut TestAppContext,
+        rt: &tokio::runtime::Runtime,
+    ) -> Entity<CloudCredentialsView> {
+        crate::i18n::install_language(Language::En);
+        install_presentation(cx);
+        cx.new(|cx| {
+            CloudCredentialsView::new(
+                None,
+                CloudGateways::new(),
+                Arc::new(MockCredentialsRepo::new()),
+                rt.handle().clone(),
+                None,
+                cx,
+            )
+        })
+    }
+
+    fn status_of(this: &CloudCredentialsView, kind: CloudEngineKind) -> TestStatus {
+        match kind {
+            CloudEngineKind::Azure => this.azure.test_status.clone(),
+            CloudEngineKind::ElevenLabs => this.elevenlabs.test_status.clone(),
+            CloudEngineKind::OpenAI => this.openai.test_status.clone(),
+            CloudEngineKind::Polly => this.polly.test_status.clone(),
+        }
+    }
+
+    fn key_field(this: &CloudCredentialsView, kind: CloudEngineKind) -> Entity<TextInput> {
+        match kind {
+            CloudEngineKind::Azure => this.azure.api_key.clone(),
+            CloudEngineKind::ElevenLabs => this.elevenlabs.api_key.clone(),
+            CloudEngineKind::OpenAI => this.openai.api_key.clone(),
+            CloudEngineKind::Polly => this.polly.access_key.clone(),
+        }
+    }
+
+    fn edit_key(
+        view: &Entity<CloudCredentialsView>,
+        kind: CloudEngineKind,
+        cx: &mut TestAppContext,
+    ) {
+        let field = view.read_with(cx, |this, _| key_field(this, kind));
+        field.update(cx, |_, cx| {
+            cx.emit(InputEvent::Changed(SharedString::new_static("edited")));
+        });
+        cx.run_until_parked();
+    }
+
+    fn azure_probe_that_fails_offline(
+        view: &Entity<CloudCredentialsView>,
+        cx: &mut TestAppContext,
+    ) {
+        view.update(cx, |this, cx| {
+            this.azure
+                .api_key
+                .update(cx, |input, cx| input.set_content("key", cx));
+            this.azure
+                .region
+                .update(cx, |input, cx| input.set_content(UNADDRESSABLE_REGION, cx));
+            this.test(CloudEngineKind::Azure, cx);
+        });
+    }
+
+    #[gpui::test]
+    fn editing_a_key_forgets_only_that_engines_verified_connection(cx: &mut TestAppContext) {
+        let rt = runtime();
+        let view = view_on(cx, &rt);
+        for edited in ENGINES {
+            view.update(cx, |this, _| {
+                for kind in ENGINES {
+                    this.set_test_status(kind, TestStatus::Ok);
+                }
+            });
+
+            edit_key(&view, edited, cx);
+
+            view.read_with(cx, |this, _| {
+                for kind in ENGINES {
+                    let expected = if kind == edited {
+                        TestStatus::Idle
+                    } else {
+                        TestStatus::Ok
+                    };
+                    assert_eq!(status_of(this, kind), expected, "{edited:?} then {kind:?}");
+                }
+            });
+        }
+    }
+
+    #[gpui::test]
+    fn a_probe_of_fields_edited_since_it_started_reports_nothing(cx: &mut TestAppContext) {
+        let rt = runtime();
+        let view = view_on(cx, &rt);
+        let background_tasks = alive_tasks(&rt);
+        azure_probe_that_fails_offline(&view, cx);
+
+        edit_key(&view, CloudEngineKind::Azure, cx);
+        pump_until(&rt, || alive_tasks(&rt) == background_tasks);
+        cx.run_until_parked();
+
+        assert_eq!(
+            view.read_with(cx, |this, _| status_of(this, CloudEngineKind::Azure)),
+            TestStatus::Idle
+        );
+    }
+
+    #[gpui::test]
+    fn a_stale_probe_does_not_settle_the_probe_that_replaced_it(cx: &mut TestAppContext) {
+        let rt = runtime();
+        let view = view_on(cx, &rt);
+        let background_tasks = alive_tasks(&rt);
+        azure_probe_that_fails_offline(&view, cx);
+
+        edit_key(&view, CloudEngineKind::Azure, cx);
+        view.update(cx, |this, _| {
+            this.set_test_status(CloudEngineKind::Azure, TestStatus::Testing);
+        });
+        pump_until(&rt, || alive_tasks(&rt) == background_tasks);
+        cx.run_until_parked();
+
+        assert_eq!(
+            view.read_with(cx, |this, _| status_of(this, CloudEngineKind::Azure)),
+            TestStatus::Testing
+        );
+    }
+
+    #[gpui::test]
+    fn a_probe_of_untouched_fields_reports_its_result(cx: &mut TestAppContext) {
+        let rt = runtime();
+        let view = view_on(cx, &rt);
+        let background_tasks = alive_tasks(&rt);
+        azure_probe_that_fails_offline(&view, cx);
+
+        pump_until(&rt, || alive_tasks(&rt) == background_tasks);
+        cx.run_until_parked();
+
+        assert!(matches!(
+            view.read_with(cx, |this, _| status_of(this, CloudEngineKind::Azure)),
+            TestStatus::Err(_)
+        ));
+    }
 }

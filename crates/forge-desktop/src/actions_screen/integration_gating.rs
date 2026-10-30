@@ -12,8 +12,7 @@ impl ScreenActionsView {
     ) -> Self {
         self.integrations = Some(switch.watch(cx, |this: &mut Self, off, cx| {
             if let Some(integrations) = &mut this.integrations {
-                integrations.replace(off);
-                integrations.sync_failed(cx);
+                integrations.replace(off, cx);
             }
             this.recompute_step_health();
         }));

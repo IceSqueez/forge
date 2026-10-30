@@ -24,9 +24,11 @@ mod event_ring;
 mod first_chat_ledger;
 mod global_mutation;
 mod integration_gate;
+mod integration_start_error;
 mod integration_supervisor;
 mod latest;
 mod latest_overlay_feed;
+mod lifecycle_messages;
 mod live_viewers;
 mod notification_policy;
 mod overlay_definition_revision;
@@ -78,6 +80,7 @@ pub use event_log_bridge::spawn_event_log_bridge;
 pub use first_chat_ledger::FirstChatLedger;
 pub use global_mutation::RuntimeScriptGlobals;
 pub use integration_gate::IntegrationGate;
+pub use integration_start_error::{IntegrationStartError, StartFailureCategory};
 pub use integration_supervisor::{
     DEFAULT_TEARDOWN_GRACE, IntegrationFactory, IntegrationObjects, IntegrationSlot,
     IntegrationSupervisor, LifecycleState, LifecycleStates, LifecycleWatch, RunningIntegration,
@@ -87,6 +90,7 @@ pub use latest::{
     LatestResetError, LatestValues, register_latest_sub_actions, spawn_latest_projector,
 };
 pub use latest_overlay_feed::spawn_latest_overlay_feed;
+pub use lifecycle_messages::LIFECYCLE_MESSAGES;
 pub use live_viewers::{LiveViewerAggregatorHandle, LiveViewerCount, spawn_live_viewer_aggregator};
 pub use notification_policy::{
     ActionFailureNotice, NotificationIntent, NotificationIntents, NotificationPolicyHandle,

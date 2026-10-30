@@ -84,6 +84,7 @@ mod integration_lifecycle;
 mod integration_quick_action_modal;
 mod integration_quick_actions;
 mod integration_sign_out;
+mod integration_start_errors;
 mod integration_switch;
 mod integrations;
 mod integrations_hub;
@@ -180,6 +181,7 @@ mod speak_boot;
 mod speak_bridge;
 mod speak_state;
 mod spoken_words;
+mod start_failure;
 mod stay_awake;
 mod step_option_labels;
 mod system_info;
@@ -209,13 +211,6 @@ mod update_launch;
 mod update_leftover;
 mod update_report;
 mod update_toast;
-#[cfg_attr(
-    not(test),
-    expect(
-        dead_code,
-        reason = "the typed start error and step outcomes are its first consumers"
-    )
-)]
 mod user_text;
 mod voice_alias_form;
 mod voice_alias_store;

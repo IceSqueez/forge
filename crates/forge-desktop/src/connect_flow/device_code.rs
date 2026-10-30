@@ -23,6 +23,8 @@ use tokio_util::sync::CancellationToken;
 use super::{ConnectFlow, status_dot};
 use crate::async_bridge;
 use crate::integrations::BuiltinObject;
+use crate::start_failure::start_failure_text;
+use forge_runtime::IntegrationStartError;
 
 pub(super) type TwitchFlowHandle = Arc<tokio::sync::Mutex<Option<TwitchAuthFlow>>>;
 
@@ -293,16 +295,16 @@ impl ConnectFlow {
 
     fn apply_twitch_activation(
         &mut self,
-        result: Result<BuiltinObject, String>,
+        result: Result<BuiltinObject, IntegrationStartError>,
         cx: &mut Context<Self>,
     ) {
         match result {
             Ok(object) => self.finish(object, cx),
-            Err(message) => {
-                tracing::warn!(error = %message, "twitch in-session connect failed");
+            Err(error) => {
+                tracing::warn!(error = %error, "twitch in-session connect failed");
                 if let Some(dev) = &mut self.twitch_device {
                     dev.phase = TwitchDevicePhase::Failed;
-                    dev.error = Some(message);
+                    dev.error = Some(start_failure_text(&error).primary);
                 }
                 cx.notify();
             }

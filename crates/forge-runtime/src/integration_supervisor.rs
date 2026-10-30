@@ -7,24 +7,29 @@ use forge_platform_core::LiveViewerSource;
 use forge_storage::{
     SettingsRepo, StorageError, resolve_integration_enabled, set_integration_enabled,
 };
-use forge_types::{IntegrationId, PlatformId};
+use forge_types::{IntegrationId, MessageCode, MessageRef, PlatformId};
 use futures_util::future::{BoxFuture, join_all};
 use tokio::sync::{mpsc, oneshot, watch};
 use tokio::task::{AbortHandle, JoinHandle};
 
-use crate::{IntegrationGate, LiveViewerAggregatorHandle};
+use crate::lifecycle_messages::{
+    INTEGRATION_ARG, SECONDS_ARG, SIGNED_OUT, START_INTERRUPTED, START_TIMED_OUT, STATE_NOT_SAVED,
+};
+use crate::{
+    IntegrationGate, IntegrationStartError, LiveViewerAggregatorHandle, StartFailureCategory,
+};
 
 pub const DEFAULT_TEARDOWN_GRACE: Duration = Duration::from_secs(5);
 const TEARDOWN_MARGIN: Duration = Duration::from_secs(5);
 const START_BOUND: Duration = Duration::from_secs(15);
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum LifecycleState {
     Disabled,
     Starting,
     Running,
     Stopping,
-    Failed(String),
+    Failed(IntegrationStartError),
 }
 
 impl LifecycleState {
@@ -90,7 +95,7 @@ pub trait IntegrationFactory<O>: Send + Sync {
     fn id(&self) -> IntegrationId;
     fn teardown_grace(&self) -> Duration;
     async fn is_configured(&self) -> Result<bool, StorageError>;
-    async fn start(&self) -> Result<RunningIntegration<O>, String>;
+    async fn start(&self) -> Result<RunningIntegration<O>, IntegrationStartError>;
 }
 
 pub trait IntegrationObjects<O>: Send + Sync {
@@ -208,12 +213,7 @@ async fn run_slot<O>(
             host.publish(&id, LifecycleState::Starting);
             let started = tokio::time::timeout(START_BOUND, factory.start())
                 .await
-                .unwrap_or_else(|_| {
-                    Err(format!(
-                        "did not start within {} seconds",
-                        START_BOUND.as_secs()
-                    ))
-                });
+                .unwrap_or_else(|_| Err(start_timed_out(&id)));
             current = match started {
                 Ok(running) => {
                     retained = Some(host.install(&id, running));
@@ -238,6 +238,17 @@ async fn run_slot<O>(
     if let Some(live) = retained.take() {
         host.retire(&id, live, teardown_bound).await;
     }
+}
+
+fn about_integration(code: MessageCode, id: &IntegrationId) -> MessageRef {
+    MessageRef::new(code).with_arg(INTEGRATION_ARG, id.clone())
+}
+
+fn start_timed_out(id: &IntegrationId) -> IntegrationStartError {
+    IntegrationStartError::new(
+        StartFailureCategory::Unreachable,
+        about_integration(START_TIMED_OUT, id).with_arg(SECONDS_ARG, START_BOUND.as_secs()),
+    )
 }
 
 struct SupervisorInner<O> {
@@ -424,27 +435,46 @@ impl<O> IntegrationSlot<O> {
         self.supervisor.watch()
     }
 
-    pub async fn set_enabled(&self, enabled: bool) -> Result<LifecycleState, String> {
-        set_integration_enabled(self.supervisor.inner.settings.as_ref(), &self.id, enabled)
-            .await
-            .map_err(|e| e.to_string())?;
+    pub async fn set_enabled(
+        &self,
+        enabled: bool,
+    ) -> Result<LifecycleState, IntegrationStartError> {
+        self.persist_enabled(enabled).await?;
         Ok(self.supervisor.desire(&self.id, Some(enabled), false).await)
     }
 
-    pub async fn activate(&self) -> Result<O, String> {
-        set_integration_enabled(self.supervisor.inner.settings.as_ref(), &self.id, true)
-            .await
-            .map_err(|e| e.to_string())?;
+    pub async fn activate(&self) -> Result<O, IntegrationStartError> {
+        self.persist_enabled(true).await?;
         match self.supervisor.desire(&self.id, Some(true), true).await {
-            LifecycleState::Running => self
-                .supervisor
-                .inner
-                .objects
-                .get(&self.id)
-                .ok_or_else(|| format!("{} started without a signed-in session", self.id)),
-            LifecycleState::Failed(reason) => Err(reason),
-            other => Err(format!("{} settled as {other:?}", self.id)),
+            LifecycleState::Running => {
+                self.supervisor.inner.objects.get(&self.id).ok_or_else(|| {
+                    IntegrationStartError::new(
+                        StartFailureCategory::Credentials,
+                        about_integration(SIGNED_OUT, &self.id),
+                    )
+                })
+            }
+            LifecycleState::Failed(error) => Err(error),
+            other => {
+                tracing::warn!(integration = %self.id, state = ?other, "activation settled without a running integration");
+                Err(IntegrationStartError::new(
+                    StartFailureCategory::Internal,
+                    about_integration(START_INTERRUPTED, &self.id),
+                ))
+            }
         }
+    }
+
+    async fn persist_enabled(&self, enabled: bool) -> Result<(), IntegrationStartError> {
+        set_integration_enabled(self.supervisor.inner.settings.as_ref(), &self.id, enabled)
+            .await
+            .map_err(|e| {
+                tracing::warn!(integration = %self.id, error = %e, "could not save whether the integration is enabled");
+                IntegrationStartError::new(
+                    StartFailureCategory::Internal,
+                    about_integration(STATE_NOT_SAVED, &self.id),
+                )
+            })
     }
 
     pub async fn rebuild(&self) -> LifecycleState {

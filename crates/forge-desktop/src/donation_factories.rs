@@ -7,8 +7,8 @@ use forge_platform_core::{
     PlatformEndpoints, QuickActions, SectionIcon,
 };
 use forge_runtime::{
-    DEFAULT_TEARDOWN_GRACE, DonationIngest, EventBus, IntegrationFactory, RunningIntegration,
-    TaskGroup,
+    DEFAULT_TEARDOWN_GRACE, DonationIngest, EventBus, IntegrationFactory, IntegrationStartError,
+    RunningIntegration, TaskGroup,
 };
 use forge_storage::{CredentialsRepo, DataProvider, StorageError, has_credentials_for};
 use forge_types::IntegrationId;
@@ -58,7 +58,7 @@ impl<P: DonationIntegration + 'static> IntegrationFactory<BuiltinObject> for Don
         has_credentials_for(self.creds.as_ref(), &self.id()).await
     }
 
-    async fn start(&self) -> Result<RunningIntegration<BuiltinObject>, String> {
+    async fn start(&self) -> Result<RunningIntegration<BuiltinObject>, IntegrationStartError> {
         if let Err(failure) = self.provider.reconnect().await {
             tracing::warn!(integration = %self.id(), failure = ?failure, "donation polling could not be resumed");
         }

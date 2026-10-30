@@ -24,7 +24,8 @@ use tokio_util::sync::CancellationToken;
 
 use super::{ConnectFlow, status_dot};
 use crate::integrations::BuiltinObject;
-use forge_runtime::IntegrationSlot;
+use crate::start_failure::start_failure_text;
+use forge_runtime::{IntegrationSlot, IntegrationStartError};
 
 pub(super) type YoutubeFlowHandle =
     Arc<tokio::sync::Mutex<Option<forge_platform_youtube::GoogleAuthFlow>>>;
@@ -205,39 +206,52 @@ impl ConnectFlow {
     }
 
     fn install_youtube(&mut self, cx: &mut Context<Self>) {
-        self.activate(self.youtube_slot.clone(), "YouTube", cx);
+        self.activate(
+            self.youtube_slot.clone(),
+            "auth_error_credentials_missing_youtube",
+            cx,
+        );
     }
 
     fn install_kick(&mut self, cx: &mut Context<Self>) {
-        self.activate(self.kick_slot.clone(), "Kick", cx);
+        self.activate(
+            self.kick_slot.clone(),
+            "auth_error_credentials_missing_kick",
+            cx,
+        );
     }
 
     fn activate(
         &mut self,
         slot: Option<IntegrationSlot<BuiltinObject>>,
-        platform_name: &'static str,
+        missing_key: &'static str,
         cx: &mut Context<Self>,
     ) {
+        let Some(slot) = slot else {
+            self.phase = LocalCallbackFlowPhase::Failed;
+            self.error = Some(tr!(missing_key));
+            cx.notify();
+            return;
+        };
         async_bridge::run_async(
             &self.rt_handle,
-            async move {
-                let slot = slot.ok_or_else(|| {
-                    format!("{platform_name} OAuth client credentials are not configured")
-                })?;
-                slot.activate().await
-            },
+            async move { slot.activate().await },
             |this, result, cx| this.apply_activation(result, cx),
             cx,
         );
     }
 
-    fn apply_activation(&mut self, result: Result<BuiltinObject, String>, cx: &mut Context<Self>) {
+    fn apply_activation(
+        &mut self,
+        result: Result<BuiltinObject, IntegrationStartError>,
+        cx: &mut Context<Self>,
+    ) {
         match result {
             Ok(object) => self.finish(object, cx),
-            Err(e) => {
-                tracing::warn!(error = %e, "in-session connect failed");
+            Err(error) => {
+                tracing::warn!(error = %error, "in-session connect failed");
                 self.phase = LocalCallbackFlowPhase::Failed;
-                self.error = Some(e);
+                self.error = Some(start_failure_text(&error).primary);
                 cx.notify();
             }
         }

@@ -2,7 +2,7 @@ use forge_platform_core::{ConnectionAffordance, IntegrationCategory, Integration
 use forge_types::IntegrationId;
 
 pub const YOUTUBE_INTEGRATION: IntegrationDeclaration = IntegrationDeclaration {
-    id: IntegrationId::from_static("youtube"),
+    id: IntegrationId::from_static(crate::vocabulary::INTEGRATION_ID),
     brand_name: "YouTube",
     category: IntegrationCategory::STREAMING,
     description_key: "integration_youtube_description",

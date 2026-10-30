@@ -3895,6 +3895,7 @@ integration_failed_title = { $name } could not start
 integration_failed_lead = Retry starts it again. Sign-in and settings are kept.
 integration_failed_retrying = Starting again
 integration_failed_sign_in = Sign in again
+integration_failed_open_settings = Open settings
 integration_connect = Connect
 integration_disconnect = Disconnect
 integration_settings_tooltip = { $name } settings

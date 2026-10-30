@@ -34,12 +34,14 @@ use crate::integration_catalog::{
     disclaimer_of, look_of,
 };
 use crate::integration_disable_modal::{DisablePrompt, render_disable_modal};
+use crate::integration_failed::LiveDetailRequested;
 use crate::integration_lifecycle::{CardStatus, IntegrationLifecycle};
 use crate::integration_switch::category_members;
 use crate::integrations::{BuiltinObject, BuiltinRegistry};
 use crate::navigation::NavRequested;
 use crate::navigation::Screen;
 use crate::platforms::PlatformConnectivity;
+use crate::start_failure::{StartRemedy, start_failure_text, start_failure_tooltip};
 use forge_components::ActivePresentation;
 use forge_components::PushToast;
 use forge_runtime::{IntegrationSupervisor, LifecycleState};
@@ -100,6 +102,8 @@ pub struct IntegrationsHubView {
 }
 
 impl EventEmitter<NavRequested> for IntegrationsHubView {}
+
+impl EventEmitter<LiveDetailRequested> for IntegrationsHubView {}
 
 impl IntegrationsHubView {
     pub fn new(
@@ -284,16 +288,25 @@ impl IntegrationsHubView {
         }
     }
 
-    fn retry_link(
+    fn apply_remedy(&mut self, id: &IntegrationId, remedy: StartRemedy, cx: &mut Context<Self>) {
+        if remedy.opens_detail() {
+            cx.emit(LiveDetailRequested(id.clone()));
+        } else {
+            self.retry(id);
+        }
+    }
+
+    fn remedy_link(
         &self,
         id: &IntegrationId,
+        remedy: StartRemedy,
         palette: &ForgePalette,
         cx: &mut Context<Self>,
     ) -> AnyElement {
         let density = cx.density();
-        let retry_id = id.clone();
+        let remedy_id = id.clone();
         div()
-            .id(ElementId::Name(format!("hub-retry-{id}").into()))
+            .id(ElementId::Name(format!("hub-remedy-{id}").into()))
             .flex_none()
             .flex()
             .items_center()
@@ -302,11 +315,11 @@ impl IntegrationsHubView {
             .font_family(body_family())
             .text_size(FOOTER_TEXT)
             .text_color(palette.brand)
-            .child(icon(Icon::Refresh, FOOTER_ICON, palette.brand))
-            .child(tr!("integration_retry"))
+            .child(icon(remedy.icon(), FOOTER_ICON, palette.brand))
+            .child(remedy.label())
             .on_click(cx.listener(move |this, _: &ClickEvent, _, cx| {
                 cx.stop_propagation();
-                this.retry(&retry_id)
+                this.apply_remedy(&remedy_id, remedy, cx)
             }))
             .into_any_element()
     }
@@ -408,11 +421,15 @@ impl IntegrationsHubView {
 
         let disclaimer = disclaimer_of(&id);
         let note = match (&status, &disclaimer) {
-            (CardStatus::Failed(reason), None) => Some(
-                hub_note(Icon::AlertCircle, palette.danger, reason.clone())
-                    .emphasized()
-                    .tooltip(reason.clone())
-                    .action(self.retry_link(&id, palette, cx)),
+            (CardStatus::Failed(error), None) => Some(
+                hub_note(
+                    Icon::AlertCircle,
+                    palette.danger,
+                    start_failure_text(error).primary,
+                )
+                .emphasized()
+                .tooltip(start_failure_tooltip(error))
+                .action(self.remedy_link(&id, StartRemedy::of(error), palette, cx)),
             ),
             (_, Some(disclaimer)) => Some(
                 hub_note(
@@ -432,18 +449,23 @@ impl IntegrationsHubView {
             _ => None,
         };
         let footer_retry = match (&status, &disclaimer) {
-            (CardStatus::Failed(reason), Some(_)) => {
-                let retry_id = id.clone();
+            (CardStatus::Failed(error), Some(_)) => {
+                let remedy = StartRemedy::of(error);
+                let remedy_id = id.clone();
                 Some(
                     compact_button(
-                        ElementId::Name(format!("hub-retry-{id}").into()),
+                        ElementId::Name(format!("hub-remedy-{id}").into()),
                         CompactTone::Primary,
-                        Icon::Refresh,
+                        remedy.icon(),
                         palette,
                     )
-                    .label(tr!("integration_retry"))
-                    .tooltip(reason.clone())
-                    .on_click(cx.listener(move |this, _: &ClickEvent, _, _| this.retry(&retry_id))),
+                    .label(remedy.label())
+                    .tooltip(start_failure_tooltip(error))
+                    .on_click(cx.listener(
+                        move |this, _: &ClickEvent, _, cx| {
+                            this.apply_remedy(&remedy_id, remedy, cx)
+                        },
+                    )),
                 )
             }
             _ => None,

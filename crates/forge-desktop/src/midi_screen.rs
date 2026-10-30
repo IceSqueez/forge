@@ -722,8 +722,12 @@ impl MidiScreenView {
             async move {
                 let integration =
                     integration.ok_or_else(|| "MIDI integration unavailable".to_owned())?;
-                match integration.set_enabled(enabled).await? {
-                    LifecycleState::Failed(reason) => Err(reason),
+                match integration
+                    .set_enabled(enabled)
+                    .await
+                    .map_err(|e| e.to_string())?
+                {
+                    LifecycleState::Failed(error) => Err(error.to_string()),
                     _ => Ok(()),
                 }
             },

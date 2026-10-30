@@ -32,7 +32,7 @@ use crate::home::HomeView;
 use crate::hotkeys_screen::HotkeysScreenView;
 use crate::integration_detail::{IntegrationDetail, ObsSignedOut, VTubeSignedOut};
 use crate::integration_disabled::{DisabledLaunch, IntegrationDisabledView};
-use crate::integration_failed::{IntegrationFailedView, SignInRequested};
+use crate::integration_failed::{IntegrationFailedView, LiveDetailRequested};
 use crate::integration_lifecycle::IntegrationLifecycle;
 use crate::integration_switch::IntegrationSwitch;
 use crate::integrations::{obs_builtin_object, vtube_builtin_object};
@@ -324,6 +324,7 @@ impl AppShell {
                     IntegrationsHubView::new(None, lifecycle, connectivity, launch, cx).welcome()
                 });
                 Self::follow_nav(&hub, cx);
+                Self::follow_live_detail(&hub, cx);
                 hub.into()
             }
             Screen::Integrations(focus) => {
@@ -334,6 +335,7 @@ impl AppShell {
                 let hub = cx
                     .new(|cx| IntegrationsHubView::new(focus, lifecycle, connectivity, launch, cx));
                 Self::follow_nav(&hub, cx);
+                Self::follow_live_detail(&hub, cx);
                 hub.into()
             }
             Screen::BuiltinDetail(id) => match Self::detail_route(id, topics, cx) {
@@ -566,6 +568,17 @@ impl AppShell {
         }
     }
 
+    fn follow_live_detail<V: EventEmitter<LiveDetailRequested>>(
+        view: &Entity<V>,
+        cx: &mut Context<Self>,
+    ) {
+        cx.subscribe(view, |this, _view, event: &LiveDetailRequested, cx| {
+            this.navigate(Screen::BuiltinDetail(event.0.clone()), cx);
+            this.show_detail_despite_failure(&event.0, cx);
+        })
+        .detach();
+    }
+
     fn follow_nav<V: EventEmitter<NavRequested>>(view: &Entity<V>, cx: &mut Context<Self>) {
         cx.subscribe(view, |this, _view, event: &NavRequested, cx| {
             this.navigate(event.0.clone(), cx);
@@ -762,10 +775,7 @@ impl AppShell {
         let view =
             cx.new(|cx| IntegrationFailedView::new(id.clone(), lifecycle, slot, rt_handle, cx));
         Self::follow_nav(&view, cx);
-        cx.subscribe(&view, move |this, _view, _: &SignInRequested, cx| {
-            this.show_detail_despite_failure(&id, cx);
-        })
-        .detach();
+        Self::follow_live_detail(&view, cx);
         view.into()
     }
 

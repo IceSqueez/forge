@@ -30,8 +30,12 @@ impl HotkeysScreenView {
             previous,
             async move {
                 let engine = engine.ok_or_else(|| "hotkey integration unavailable".to_owned())?;
-                match engine.set_enabled(enabled).await? {
-                    LifecycleState::Failed(reason) => Err(reason),
+                match engine
+                    .set_enabled(enabled)
+                    .await
+                    .map_err(|e| e.to_string())?
+                {
+                    LifecycleState::Failed(error) => Err(error.to_string()),
                     _ => Ok(()),
                 }
             },

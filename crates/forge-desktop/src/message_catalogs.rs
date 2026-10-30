@@ -2,13 +2,21 @@ use std::collections::BTreeSet;
 use std::time::Duration;
 
 use forge_components::{PushToast, ToastKind, duplicate_message_ids, tr};
+use forge_runtime::LIFECYCLE_MESSAGES;
 use forge_storage::Language;
 use forge_types::{COMMON_MESSAGES, MessageCatalog, MessageCatalogError};
 use gpui::{AppContext, Context};
 
 use crate::i18n::{app_catalogs, catalog_language};
 
-pub const REGISTERED_CATALOGS: &[MessageCatalog] = &[COMMON_MESSAGES];
+pub const REGISTERED_CATALOGS: &[MessageCatalog] = &[
+    COMMON_MESSAGES,
+    LIFECYCLE_MESSAGES,
+    forge_platform_youtube::vocabulary::messages::YOUTUBE_MESSAGES,
+    forge_platform_kick::vocabulary::messages::KICK_MESSAGES,
+    forge_midi::vocabulary::messages::MIDI_MESSAGES,
+    forge_hotkey::vocabulary::messages::HOTKEY_MESSAGES,
+];
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum CatalogProblem {

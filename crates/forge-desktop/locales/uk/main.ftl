@@ -4005,6 +4005,7 @@ integration_failed_title = { $name } не вдалося запустити
 integration_failed_lead = Повторна спроба запустить її знову. Вхід і налаштування зберігаються.
 integration_failed_retrying = Запускається знову
 integration_failed_sign_in = Увійти знову
+integration_failed_open_settings = Відкрити налаштування
 integration_connect = Підключити
 integration_disconnect = Відключити
 integration_settings_tooltip = Налаштування { $name }

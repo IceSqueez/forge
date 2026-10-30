@@ -10,6 +10,10 @@ pub struct ResolvedText {
     pub secondary: Option<String>,
 }
 
+#[cfg_attr(
+    not(test),
+    expect(dead_code, reason = "step outcomes are its first consumer")
+)]
 pub fn resolve_user_text(text: &UserText) -> ResolvedText {
     match text {
         UserText::Message(message) => resolve_message(message),

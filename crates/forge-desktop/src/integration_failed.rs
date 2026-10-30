@@ -20,9 +20,10 @@ use crate::integrations::BuiltinObject;
 use crate::integrations_hub::card_status_badge;
 use crate::navigation::NavRequested;
 use crate::navigation::Screen;
+use crate::start_failure::{StartRemedy, start_failure_text};
 use forge_components::ActivePresentation;
 use forge_components::PushToast;
-use forge_runtime::{IntegrationSlot, LifecycleState};
+use forge_runtime::{IntegrationSlot, IntegrationStartError, LifecycleState};
 
 const BODY_PAD_V: Pixels = px(18.0);
 const BODY_PAD_H: Pixels = px(22.0);
@@ -39,11 +40,11 @@ pub struct IntegrationFailedView {
     _lifecycle_observer: Subscription,
 }
 
-pub struct SignInRequested;
+pub struct LiveDetailRequested(pub IntegrationId);
 
 impl EventEmitter<NavRequested> for IntegrationFailedView {}
 
-impl EventEmitter<SignInRequested> for IntegrationFailedView {}
+impl EventEmitter<LiveDetailRequested> for IntegrationFailedView {}
 
 impl IntegrationFailedView {
     pub fn new(
@@ -79,7 +80,7 @@ impl IntegrationFailedView {
 
     pub fn apply_retry_outcome(
         &mut self,
-        outcome: Result<LifecycleState, String>,
+        outcome: Result<LifecycleState, IntegrationStartError>,
         cx: &mut Context<Self>,
     ) {
         if let Err(e) = outcome {
@@ -92,8 +93,8 @@ impl IntegrationFailedView {
         cx.notify();
     }
 
-    pub fn sign_in(&mut self, cx: &mut Context<Self>) {
-        cx.emit(SignInRequested);
+    pub fn open_live_detail(&mut self, cx: &mut Context<Self>) {
+        cx.emit(LiveDetailRequested(self.id.clone()));
     }
 
     pub fn offers_sign_in(&self) -> bool {
@@ -117,9 +118,9 @@ impl IntegrationFailedView {
         self.lifecycle.read(cx).state_of(&self.id)
     }
 
-    fn reason(&self, cx: &Context<Self>) -> Option<String> {
+    fn failure(&self, cx: &Context<Self>) -> Option<IntegrationStartError> {
         match self.state(cx) {
-            LifecycleState::Failed(reason) => Some(reason),
+            LifecycleState::Failed(error) => Some(error),
             _ => None,
         }
     }
@@ -131,9 +132,13 @@ impl IntegrationFailedView {
 
     fn lead(&self, palette: &ForgePalette, cx: &Context<Self>) -> AnyElement {
         let density = cx.density();
-        let reason = self
-            .reason(cx)
-            .unwrap_or_else(|| tr!("integration_failed_retrying"));
+        let (reason, detail) = match self.failure(cx) {
+            Some(error) => {
+                let text = start_failure_text(&error);
+                (text.primary, text.secondary)
+            }
+            None => (tr!("integration_failed_retrying"), None),
+        };
         div()
             .flex()
             .flex_col()
@@ -165,6 +170,15 @@ impl IntegrationFailedView {
                             .child(reason),
                     ),
             )
+            .children(detail.map(|detail| {
+                div()
+                    .mt(spacing(Spacing::Xs, density))
+                    .font_family(mono_family())
+                    .text_size(FONT_XS)
+                    .line_height(relative(REASON_LINE_HEIGHT))
+                    .text_color(palette.text_muted)
+                    .child(detail)
+            }))
             .into_any_element()
     }
 
@@ -182,24 +196,49 @@ impl IntegrationFailedView {
                         this.go(Screen::Integrations(None), cx)
                     }),
                 );
-        let retry = primary_button_with_icon(Icon::Refresh, tr!("integration_retry"), palette)
-            .busy(busy)
-            .on_click(
-                "integration-failed-retry",
-                cx.listener(|this, _: &ClickEvent, _, cx| this.retry(cx)),
-            );
+        let remedy = self
+            .failure(cx)
+            .map_or(StartRemedy::Retry, |error| StartRemedy::of(&error));
         let mut actions = vec![all.into_any_element()];
-        if self.offers_sign_in() {
+        if remedy.opens_detail() {
             actions.push(
-                ghost_button_with_icon(Icon::Plug, tr!("integration_failed_sign_in"), palette)
+                ghost_button_with_icon(Icon::Refresh, tr!("integration_retry"), palette)
                     .on_click(
-                        "integration-failed-sign-in",
-                        cx.listener(|this, _: &ClickEvent, _, cx| this.sign_in(cx)),
+                        "integration-failed-retry",
+                        cx.listener(|this, _: &ClickEvent, _, cx| this.retry(cx)),
+                    )
+                    .into_any_element(),
+            );
+            actions.push(
+                primary_button_with_icon(remedy.icon(), remedy.label(), palette)
+                    .busy(busy)
+                    .on_click(
+                        "integration-failed-remedy",
+                        cx.listener(|this, _: &ClickEvent, _, cx| this.open_live_detail(cx)),
+                    )
+                    .into_any_element(),
+            );
+        } else {
+            if self.offers_sign_in() {
+                actions.push(
+                    ghost_button_with_icon(Icon::Plug, tr!("integration_failed_sign_in"), palette)
+                        .on_click(
+                            "integration-failed-sign-in",
+                            cx.listener(|this, _: &ClickEvent, _, cx| this.open_live_detail(cx)),
+                        )
+                        .into_any_element(),
+                );
+            }
+            actions.push(
+                primary_button_with_icon(Icon::Refresh, tr!("integration_retry"), palette)
+                    .busy(busy)
+                    .on_click(
+                        "integration-failed-retry",
+                        cx.listener(|this, _: &ClickEvent, _, cx| this.retry(cx)),
                     )
                     .into_any_element(),
             );
         }
-        actions.push(retry.into_any_element());
         hero_card(
             &self.id,
             tr!("integration_failed_title", name = self.name().to_string()),

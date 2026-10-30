@@ -7,8 +7,8 @@ use forge_net::{Gateway, RateLimiter, TokenBucketRateLimiter};
 use forge_platform_core::{ChatPlatform, EndpointSurface, PlatformEndpoints, SectionIcon};
 use forge_registry::SubActionRegistry;
 use forge_runtime::{
-    DEFAULT_TEARDOWN_GRACE, EventBus, IntegrationFactory, RunningIntegration, TaskGroup,
-    spawn_chat_send_router,
+    DEFAULT_TEARDOWN_GRACE, EventBus, IntegrationFactory, IntegrationStartError,
+    RunningIntegration, TaskGroup, spawn_chat_send_router,
 };
 use forge_storage::{
     BanLedgerRepo, CredentialsRepo, DataProvider, SettingsRepo, SoundboardClipsRepo, StorageError,
@@ -18,6 +18,9 @@ use forge_types::{IntegrationId, PlatformId};
 use futures_util::future::BoxFuture;
 use tokio::sync::mpsc;
 
+use crate::integration_start_errors::{
+    hotkey_start_error, kick_start_error, midi_start_error, youtube_start_error,
+};
 use crate::integrations::{
     BuiltinObject, ObsInstallSeed, VTubeInstallSeed, creds_of, kick_builtin_object, publisher,
     spawn_connect, spawn_event_bridge, twitch_builtin_object, youtube_builtin_object,
@@ -156,7 +159,7 @@ impl IntegrationFactory<BuiltinObject> for TwitchFactory {
         has_credentials_for(self.creds.as_ref(), &self.id()).await
     }
 
-    async fn start(&self) -> Result<RunningIntegration<BuiltinObject>, String> {
+    async fn start(&self) -> Result<RunningIntegration<BuiltinObject>, IntegrationStartError> {
         let stored = forge_platform_twitch::credentials::load(self.creds.as_ref())
             .await
             .ok()
@@ -360,8 +363,13 @@ impl IntegrationFactory<BuiltinObject> for YoutubeFactory {
         has_credentials_for(self.creds.as_ref(), &self.id()).await
     }
 
-    async fn start(&self) -> Result<RunningIntegration<BuiltinObject>, String> {
-        let Some(stored) = self.manager.load().await.map_err(|e| e.to_string())? else {
+    async fn start(&self) -> Result<RunningIntegration<BuiltinObject>, IntegrationStartError> {
+        let Some(stored) = self
+            .manager
+            .load()
+            .await
+            .map_err(|e| youtube_start_error(&e))?
+        else {
             return Ok(RunningIntegration::idle());
         };
         let platform = Arc::new(forge_platform_youtube::YoutubePlatform::new(
@@ -545,7 +553,7 @@ impl IntegrationFactory<BuiltinObject> for KickFactory {
         has_credentials_for(self.creds.as_ref(), &self.id()).await
     }
 
-    async fn start(&self) -> Result<RunningIntegration<BuiltinObject>, String> {
+    async fn start(&self) -> Result<RunningIntegration<BuiltinObject>, IntegrationStartError> {
         let chat_platform: Arc<dyn ChatPlatform> = Arc::clone(&self.platform) as _;
         let mut tasks = spawn_chat_send_router(
             Arc::clone(&self.bus),
@@ -557,7 +565,7 @@ impl IntegrationFactory<BuiltinObject> for KickFactory {
             Ok(None) => return Ok(idle_with_tasks(tasks)),
             Err(e) => {
                 tasks.abort_all();
-                return Err(e.to_string());
+                return Err(kick_start_error(&e));
             }
         };
 
@@ -657,7 +665,7 @@ impl IntegrationFactory<BuiltinObject> for ObsFactory {
         has_credentials_for(self.creds.as_ref(), &self.id()).await
     }
 
-    async fn start(&self) -> Result<RunningIntegration<BuiltinObject>, String> {
+    async fn start(&self) -> Result<RunningIntegration<BuiltinObject>, IntegrationStartError> {
         let seed = self.seed.clone();
         let running = RunningIntegration::idle().with_teardown(Box::pin({
             let seed = seed.clone();
@@ -731,7 +739,7 @@ impl IntegrationFactory<BuiltinObject> for VTubeFactory {
         has_credentials_for(self.creds.as_ref(), &self.id()).await
     }
 
-    async fn start(&self) -> Result<RunningIntegration<BuiltinObject>, String> {
+    async fn start(&self) -> Result<RunningIntegration<BuiltinObject>, IntegrationStartError> {
         let seed = self.seed.clone();
         let running = RunningIntegration::idle().with_teardown(Box::pin({
             let seed = seed.clone();
@@ -808,7 +816,7 @@ impl IntegrationFactory<BuiltinObject> for DiscordFactory {
         has_credentials_for(self.creds.as_ref(), &self.id()).await
     }
 
-    async fn start(&self) -> Result<RunningIntegration<BuiltinObject>, String> {
+    async fn start(&self) -> Result<RunningIntegration<BuiltinObject>, IntegrationStartError> {
         let client = Arc::clone(&self.client);
         Ok(RunningIntegration::idle().with_object(BuiltinObject {
             icon: SectionIcon::new("brand-discord"),
@@ -880,12 +888,12 @@ impl IntegrationFactory<BuiltinObject> for MidiFactory {
             .any(|instance| self.owned_kinds.contains(&instance.kind_id)))
     }
 
-    async fn start(&self) -> Result<RunningIntegration<BuiltinObject>, String> {
+    async fn start(&self) -> Result<RunningIntegration<BuiltinObject>, IntegrationStartError> {
         let client = forge_midi::MidiClient::start_with_midir(
             forge_midi::MidiConfig::default(),
             publisher(&self.bus),
         )
-        .map_err(|e| e.to_string())?;
+        .map_err(|e| midi_start_error(&e))?;
         self.sink.install(Arc::clone(&client));
         let object = BuiltinObject {
             icon: SectionIcon::new("piano"),
@@ -973,8 +981,12 @@ impl IntegrationFactory<BuiltinObject> for HotkeyFactory {
         Ok(!clip_bindings_of(&self.clips.list().await?).is_empty())
     }
 
-    async fn start(&self) -> Result<RunningIntegration<BuiltinObject>, String> {
-        let failures = self.client.enable().await.map_err(|e| e.to_string())?;
+    async fn start(&self) -> Result<RunningIntegration<BuiltinObject>, IntegrationStartError> {
+        let failures = self
+            .client
+            .enable()
+            .await
+            .map_err(|e| hotkey_start_error(&e))?;
         if !failures.is_empty() {
             tracing::warn!(
                 failed = failures.len(),

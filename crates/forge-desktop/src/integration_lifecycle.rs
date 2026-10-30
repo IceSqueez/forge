@@ -3,14 +3,14 @@ use std::collections::HashSet;
 use forge_platform_core::ConnectionAffordance;
 use forge_types::IntegrationId;
 
-use forge_runtime::{LifecycleState, LifecycleStates};
+use forge_runtime::{IntegrationStartError, LifecycleState, LifecycleStates};
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum CardStatus {
     Disabled,
     Starting,
     Stopping,
-    Failed(String),
+    Failed(IntegrationStartError),
     Active,
     Connected,
     NotConnected,

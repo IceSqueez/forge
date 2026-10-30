@@ -954,7 +954,7 @@ impl Render for TtsDashboardView {
             .speak_state
             .read(cx)
             .last_drop()
-            .map(|reason| reason.to_owned());
+            .map(|reason| crate::user_text::resolve_user_text(reason).inline());
 
         let voices = self
             .speak

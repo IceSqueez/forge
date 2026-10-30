@@ -1,7 +1,7 @@
 mod filters {
     use forge_speak_queue::{
-        EmoteTokenSet, EmoteTreatment, PipelineConfigHandle, ReplacementSource, SpokenWords,
-        build_config, effective_skip_prefix, emote_treatment, repeat_window, store_emote_treatment,
+        EmoteTokenSet, EmoteTreatment, PipelineConfigHandle, ReplacementSource, build_config,
+        effective_skip_prefix, emote_treatment, repeat_window, store_emote_treatment,
     };
     use forge_storage::{
         BlocklistMode as StorageBlocklistMode, FilterRule, FilterRuleKind, TtsPipelineSettings,
@@ -15,6 +15,7 @@ mod filters {
         PipelineContext {
             viewer_name: "viewer",
             recent_messages: &[],
+            speech_language: None,
         }
     }
 
@@ -22,27 +23,18 @@ mod filters {
         TtsPipelineSettings::default()
     }
 
-    fn english_words() -> SpokenWords {
-        SpokenWords {
-            link: "link".into(),
-            says: "says".into(),
-        }
-    }
-
     fn build_config_strict(
         rules: &[FilterRule],
         settings: &TtsPipelineSettings,
     ) -> Result<PipelineConfig, forge_speak_queue::FilterMappingError> {
-        build_config(rules, settings, &english_words()).require_valid()
+        build_config(rules, settings).require_valid()
     }
 
     fn build_config_lenient(
         rules: &[FilterRule],
         settings: &TtsPipelineSettings,
     ) -> PipelineConfig {
-        build_config(rules, settings, &english_words())
-            .dropping_invalid()
-            .0
+        build_config(rules, settings).dropping_invalid().0
     }
 
     fn literal_rule(name: &str, pattern: &str, replacement: &str, enabled: bool) -> FilterRule {
@@ -325,18 +317,24 @@ mod filters {
     }
 
     #[test]
-    fn url_mode_replace_substitutes_the_spoken_link_word_in_output() {
+    fn url_mode_replace_substitutes_the_link_word_of_the_voice_language() {
         let mut settings = default_settings();
         settings.url_mode = StorageUrlMode::Replace;
-        let words = SpokenWords {
-            link: "посилання".into(),
-            says: "каже".into(),
+        let config = build_config(&[], &settings).require_valid().unwrap();
+        let spoken = |locale: &str| {
+            let context = PipelineContext {
+                speech_language: forge_speech_types::LanguageCode::from_locale(locale),
+                ..ctx()
+            };
+            process("check https://example.com now", &config, &context)
         };
-        let config = build_config(&[], &settings, &words)
-            .require_valid()
-            .unwrap();
-        let result = process("check https://example.com now", &config, &ctx());
-        assert_eq!(result, PipelineResult::Speak("check посилання now".into()));
+        assert_eq!(
+            (spoken("en-US"), spoken("uk-UA")),
+            (
+                PipelineResult::Speak("check link now".into()),
+                PipelineResult::Speak("check посилання now".into()),
+            )
+        );
     }
 
     #[test]
@@ -531,8 +529,7 @@ mod filters {
         ] {
             let mut settings = default_settings();
             settings.url_mode = url_mode;
-            let (config, sources) =
-                build_config(&rules, &settings, &english_words()).dropping_invalid();
+            let (config, sources) = build_config(&rules, &settings).dropping_invalid();
             assert_eq!(sources, expected, "{url_mode:?}");
             assert_eq!(
                 config.replacement_rules.len(),
@@ -617,7 +614,7 @@ mod filters {
         let rules = rules_with_bad_regexes_at_one_and_three();
         let settings = skip_regex_settings(&["(bad", "^fine$", "[worse"]);
         let reported = warning_patterns_while(|| {
-            build_config(&rules, &settings, &english_words()).dropping_invalid();
+            build_config(&rules, &settings).dropping_invalid();
         });
 
         assert_eq!(reported, vec!["((one", "[three", "(bad", "[worse"]);
@@ -1120,6 +1117,7 @@ mod filters {
         let context = PipelineContext {
             viewer_name: "koval_dev",
             recent_messages: &recent,
+            speech_language: None,
         };
         let emotes: EmoteTokenSet = ["Kappa".to_owned()].into_iter().collect();
         for (case, mutate, expected) in cases {

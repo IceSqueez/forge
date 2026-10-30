@@ -1,5 +1,6 @@
 use forge_events::TypedEvent;
 use forge_speech_types::{EngineId, VoiceId};
+use forge_types::MessageRef;
 use serde::{Deserialize, Serialize};
 
 use super::event_kinds;
@@ -62,7 +63,7 @@ impl TypedEvent for SpeakSkipped {
 pub struct SpeakFailed {
     pub request_id: RequestId,
     pub reason: FailureReason,
-    pub error: String,
+    pub message: MessageRef,
     pub viewer_name: String,
     pub text: String,
 }

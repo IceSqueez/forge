@@ -254,7 +254,6 @@ where
 pub fn neutral_output() -> forge_tts_pipeline::OutputConfig {
     forge_tts_pipeline::OutputConfig {
         read_display_name_first: false,
-        says: "says".into(),
         emote_treatment: forge_tts_pipeline::EmoteTreatment::Keep,
         strip_emoji: false,
         sanitize_punctuation: false,

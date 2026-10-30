@@ -120,11 +120,17 @@ async fn speak_and_settle(
         }
         match tokio::time::timeout(remaining, stream.recv()).await {
             Ok(Ok(SpeakEvent::Finished { request_id })) if request_id == id => return,
-            Ok(Ok(SpeakEvent::Skipped { request_id, reason })) if request_id == id => {
-                panic!("request was skipped: {reason}")
+            Ok(Ok(SpeakEvent::Skipped {
+                request_id,
+                message,
+            })) if request_id == id => {
+                panic!("request was skipped: {message:?}")
             }
-            Ok(Ok(SpeakEvent::Failed { request_id, error })) if request_id == id => {
-                panic!("request failed: {error}")
+            Ok(Ok(SpeakEvent::Failed {
+                request_id,
+                message,
+            })) if request_id == id => {
+                panic!("request failed: {message:?}")
             }
             Ok(Ok(_)) => continue,
             Ok(Err(_)) => panic!("stream closed"),

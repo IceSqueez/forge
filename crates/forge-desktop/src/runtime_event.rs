@@ -483,7 +483,10 @@ mod tests {
         SpeakFailed {
             request_id: RequestId::new(),
             reason: FailureReason::EngineError,
-            error: "engine crashed".to_owned(),
+            message: forge_types::MessageRef::new(forge_types::MessageCode::from_static(
+                "speak",
+                "synthesis_failed",
+            )),
             viewer_name: "viewer".to_owned(),
             text: "hello".to_owned(),
         }

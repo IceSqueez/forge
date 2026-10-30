@@ -5,7 +5,6 @@ use forge_tts_pipeline::{
 pub fn neutral_output() -> OutputConfig {
     OutputConfig {
         read_display_name_first: false,
-        says: "says".into(),
         emote_treatment: EmoteTreatment::Keep,
         strip_emoji: false,
         sanitize_punctuation: false,

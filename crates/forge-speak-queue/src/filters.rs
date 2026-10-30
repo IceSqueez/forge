@@ -35,12 +35,6 @@ pub enum ReplacementSource {
     UrlMode,
 }
 
-#[derive(Debug, Clone)]
-pub struct SpokenWords {
-    pub link: String,
-    pub says: String,
-}
-
 const BANG_COMMAND_PREFIX: &str = "!";
 
 pub struct BuiltConfig {
@@ -70,11 +64,7 @@ impl BuiltConfig {
     }
 }
 
-pub fn build_config(
-    rules: &[FilterRule],
-    settings: &TtsPipelineSettings,
-    words: &SpokenWords,
-) -> BuiltConfig {
+pub fn build_config(rules: &[FilterRule], settings: &TtsPipelineSettings) -> BuiltConfig {
     let (mut mapped, mut rejected) = map_rules(rules, settings);
     let (custom_regexes, skip_regex_errors) = compile_skip_regexes(&settings.skip_custom_regexes);
     rejected.extend(skip_regex_errors);
@@ -89,14 +79,14 @@ pub fn build_config(
         mostly_non_latin: settings.skip_mostly_non_latin,
         custom_regexes,
     };
-    apply_url_mode(settings.url_mode, &words.link, &mut mapped, &mut skip_rules);
+    apply_url_mode(settings.url_mode, &mut mapped, &mut skip_rules);
     let config = PipelineConfig {
         emote_tokens: EmoteTokenSet::default(),
         skip_rules,
         replacement_rules: mapped.replacement_rules,
         word_blocklist: mapped.word_blocklist,
         blocklist_mode: mapped.blocklist_mode,
-        output: output_from_settings(settings, &words.says),
+        output: output_from_settings(settings),
         strip_reward_emotes: settings.strip_reward_emotes,
     };
     BuiltConfig {
@@ -144,7 +134,6 @@ fn max_chars(settings: &TtsPipelineSettings) -> Option<usize> {
 
 fn apply_url_mode(
     mode: StorageUrlMode,
-    link_word: &str,
     mapped: &mut MappedRules,
     skip_rules: &mut SkipRulesConfig,
 ) {
@@ -153,9 +142,8 @@ fn apply_url_mode(
         StorageUrlMode::Replace => {
             mapped.replacement_rules.insert(
                 0,
-                ReplacementRule::Regex {
+                ReplacementRule::LinkWord {
                     compiled: MIGRATED_URL_REGEX.clone(),
-                    replacement: link_word.to_owned(),
                 },
             );
             mapped
@@ -184,10 +172,9 @@ fn compile_skip_regexes(patterns: &[String]) -> (Vec<regex::Regex>, Vec<FilterMa
     (compiled, rejected)
 }
 
-fn output_from_settings(settings: &TtsPipelineSettings, says: &str) -> OutputConfig {
+fn output_from_settings(settings: &TtsPipelineSettings) -> OutputConfig {
     OutputConfig {
         read_display_name_first: settings.output_read_display_name_first,
-        says: says.to_owned(),
         emote_treatment: emote_treatment(settings),
         strip_emoji: settings.strip_emoji,
         sanitize_punctuation: settings.output_sanitize_punctuation,

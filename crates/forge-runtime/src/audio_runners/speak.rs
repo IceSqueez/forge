@@ -160,7 +160,7 @@ impl SubActionRunner for SpeakRunner {
         };
 
         (
-            timer.finish(SubActionOutcome::from_result(&dispatch_result)),
+            timer.finish(crate::speak_dispatcher::dispatch_outcome(&dispatch_result)),
             None,
         )
     }
@@ -171,7 +171,7 @@ mod tests {
     use std::sync::Mutex;
 
     use async_trait::async_trait;
-    use forge_types::{EventId, SubActionOutcome};
+    use forge_types::{EventId, MessageCode, MessageRef, SubActionOutcome};
 
     use super::*;
     use crate::speak_dispatcher::{SpeakDispatchError, SpeakDispatcher, SpeakingViewer};
@@ -252,7 +252,9 @@ mod tests {
             _voice_id_override: Option<String>,
             _origin: SpeechOrigin,
         ) -> Result<(), SpeakDispatchError> {
-            Err(SpeakDispatchError::Dispatch("queue full".to_owned()))
+            Err(SpeakDispatchError::Dispatch(MessageRef::new(
+                MessageCode::from_static("speak", "queue_stopped"),
+            )))
         }
     }
 
@@ -430,14 +432,17 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn a_dispatch_error_fails_the_step() {
+    async fn a_dispatch_error_fails_the_step_with_its_catalogued_message_not_a_bare_code() {
         let runner = SpeakRunner::new(Arc::new(FailSpeaker));
         let stack = ArgStack::new();
         let ctx = make_ctx(&stack);
 
         let (telemetry, _) = runner.execute(&config("Hello!", false), &ctx).await;
 
-        assert!(matches!(telemetry.outcome, SubActionOutcome::Failed(_)));
+        assert_eq!(
+            failure_message(&telemetry.outcome),
+            &MessageRef::new(MessageCode::from_static("speak", "queue_stopped"))
+        );
     }
 
     #[tokio::test]

@@ -110,7 +110,10 @@ mod tests {
     use async_trait::async_trait;
     use forge_events::{Event, EventPublisher};
     use forge_registry::{FormField, RunContext, SubActionRunner};
-    use forge_types::{ArgStack, EventId, SubActionConfig, SubActionOutcome, Variant};
+    use forge_types::{
+        ArgStack, EventId, MessageCode, MessageRef, SubActionConfig, SubActionOutcome, UserText,
+        Variant,
+    };
 
     use super::*;
     use crate::speak_dispatcher::{
@@ -165,7 +168,9 @@ mod tests {
         fn record(&self, call: DispatchCall) -> Result<(), SpeakDispatchError> {
             self.calls.lock().unwrap().push(call);
             if self.fail {
-                Err(SpeakDispatchError::Dispatch("boom".to_owned()))
+                Err(SpeakDispatchError::Dispatch(MessageRef::new(
+                    MessageCode::from_static("speak", "queue_stopped"),
+                )))
             } else {
                 Ok(())
             }
@@ -502,7 +507,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn speak_with_engine_dispatch_error_yields_failed_with_message() {
+    async fn speak_with_engine_dispatch_error_yields_a_localizable_message_not_a_bare_code() {
         let disp = RecordingDispatcher::failing();
         let runner = SpeakWithEngineRunner::new(disp.clone());
         let stack = ArgStack::new();
@@ -514,10 +519,11 @@ mod tests {
         ]);
         let (telemetry, _) = runner.execute(&cfg, &ctx).await;
 
-        assert!(
-            matches!(&telemetry.outcome, SubActionOutcome::Failed(msg) if msg.code_or_text() == "boom"),
-            "expected Failed(\"boom\"), got {:?}",
-            telemetry.outcome
+        assert_eq!(
+            telemetry.outcome,
+            SubActionOutcome::Failed(UserText::Message(MessageRef::new(
+                MessageCode::from_static("speak", "queue_stopped")
+            )))
         );
     }
 

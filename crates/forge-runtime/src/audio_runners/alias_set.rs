@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use forge_registry::{ConfigSpec, RunContext, StepTimer, SubActionCategory, SubActionRunner};
-use forge_types::{ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetry};
+use forge_types::{ArgStack, SubActionConfig, SubActionTelemetry};
 
 use super::{ALIAS_SPEC, AliasTarget, read_alias};
 use crate::speak_dispatcher::{SpeakDispatcher, platform_scoped_alias_key};
@@ -70,6 +70,9 @@ impl SubActionRunner for AliasSetRunner {
             .alias_set(alias_key, alias_name, engine_id, voice_id)
             .await;
 
-        (timer.finish(SubActionOutcome::from_result(&result)), None)
+        (
+            timer.finish(crate::speak_dispatcher::dispatch_outcome(&result)),
+            None,
+        )
     }
 }

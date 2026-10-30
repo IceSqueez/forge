@@ -14,8 +14,8 @@ use std::time::Duration;
 use serde::{Deserialize, Serialize};
 
 pub use filters::{
-    BuiltConfig, FilterMappingError, PipelineConfigHandle, ReplacementSource, SpokenWords,
-    build_config, effective_skip_prefix, emote_treatment, repeat_window, store_emote_treatment,
+    BuiltConfig, FilterMappingError, PipelineConfigHandle, ReplacementSource, build_config,
+    effective_skip_prefix, emote_treatment, repeat_window, store_emote_treatment,
 };
 pub use forge_audio::PlaybackTarget;
 use forge_audio::TargetedSinkFactory;
@@ -24,7 +24,7 @@ use forge_speech_types::{EngineId, TtsVoice, VoiceId};
 pub use forge_tts_core::TtsError;
 use forge_tts_core::TtsRegistry;
 pub use forge_tts_pipeline::{EmoteTokenSet, EmoteTreatment};
-use forge_types::Shared;
+use forge_types::{MessageRef, Shared};
 pub use voice::{AliasKey, ResolveResult, VoiceAliasResolver, VoiceSkip};
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -130,18 +130,18 @@ pub enum SpeakEvent {
     },
     Failed {
         request_id: RequestId,
-        error: String,
+        message: MessageRef,
     },
     Skipped {
         request_id: RequestId,
-        reason: String,
+        message: MessageRef,
     },
     Removed {
         request_id: RequestId,
     },
     Rejected {
         request_id: RequestId,
-        reason: String,
+        message: MessageRef,
     },
     QueueChanged {
         queue_len: usize,

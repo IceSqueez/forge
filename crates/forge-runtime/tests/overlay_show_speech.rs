@@ -21,7 +21,9 @@ use forge_storage::{
     MockOverlayRepo, OverlayConfig, OverlayCredential, OverlayDefinition, OverlayId, OverlayRepo,
     SettingsRepo,
 };
-use forge_types::{ArgStack, EventId, SubActionConfig, SubActionOutcome, Variant};
+use forge_types::{
+    ArgStack, EventId, MessageCode, MessageRef, SubActionConfig, SubActionOutcome, Variant,
+};
 use time::OffsetDateTime;
 use tokio::time::Instant;
 
@@ -162,7 +164,9 @@ impl SpeakDispatcher for ScriptedSpeaker {
         };
         let (after, lasts) = match self.speaks {
             Speaks::FailsAtOnce => {
-                return Err(SpeakDispatchError::Dispatch("rejected by a filter".into()));
+                return Err(SpeakDispatchError::Dispatch(MessageRef::new(
+                    MessageCode::from_static("speak", "skipped_word_filter"),
+                )));
             }
             Speaks::Starts { after, lasts } => (after, lasts),
         };
@@ -183,7 +187,9 @@ impl ScriptedSpeaker {
         while Instant::now() < ends {
             if cancel.is_cancelled() {
                 self.spoken.lock().unwrap()[index].cancelled = true;
-                return Err(SpeakDispatchError::Dispatch("cancelled".into()));
+                return Err(SpeakDispatchError::Dispatch(MessageRef::new(
+                    MessageCode::from_static("speak", "skipped_cancelled"),
+                )));
             }
             tokio::time::sleep(CANCEL_POLL).await;
         }

@@ -10,6 +10,7 @@ fn ctx() -> PipelineContext<'static> {
     PipelineContext {
         viewer_name: "viewer",
         recent_messages: &[],
+        speech_language: None,
     }
 }
 

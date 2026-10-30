@@ -14,7 +14,7 @@ use forge_speech_types::PcmBuffer;
 use common::{assert_no_event, make_deps, request, standard_registry};
 
 const DEVICE_LOSS: &str = "output stream disconnected";
-const EXPECTED_FAILURE: &str = "cpal host error: output stream disconnected";
+const EXPECTED_CODE: &str = "speak.audio_host_failed";
 const DEVICE_ERROR_REASON: &str = "device_error";
 const SPEAK_FAILED_KIND: &str = "speak.failed";
 const SETTLE_BUDGET: Duration = Duration::from_secs(30);
@@ -65,7 +65,7 @@ impl AudioSink for DyingSink {
 struct RecordingBus(Mutex<Vec<Event>>);
 
 impl RecordingBus {
-    fn failures(&self) -> Vec<(String, String)> {
+    fn failures(&self) -> Vec<(String, String, String)> {
         self.0
             .lock()
             .unwrap()
@@ -74,7 +74,14 @@ impl RecordingBus {
             .map(|e| {
                 (
                     e.payload["reason"].as_str().unwrap_or_default().to_owned(),
-                    e.payload["error"].as_str().unwrap_or_default().to_owned(),
+                    e.payload["message"]["code"]
+                        .as_str()
+                        .unwrap_or_default()
+                        .to_owned(),
+                    e.payload["message"]["detail"]
+                        .as_str()
+                        .unwrap_or_default()
+                        .to_owned(),
                 )
             })
             .collect()
@@ -90,14 +97,20 @@ impl EventPublisher for RecordingBus {
 async fn failure_for(
     stream: &mut forge_speak_queue::SpeakEventStream,
     wanted: &RequestId,
-) -> String {
+) -> (String, Option<String>) {
     let deadline = std::time::Instant::now() + SETTLE_BUDGET;
     loop {
         let remaining = deadline.saturating_duration_since(std::time::Instant::now());
         assert!(!remaining.is_zero(), "the utterance never settled");
         match tokio::time::timeout(remaining, stream.recv()).await {
-            Ok(Ok(SpeakEvent::Failed { request_id, error })) if &request_id == wanted => {
-                return error;
+            Ok(Ok(SpeakEvent::Failed {
+                request_id,
+                message,
+            })) if &request_id == wanted => {
+                return (
+                    message.code().to_string(),
+                    message.detail().map(|d| d.as_str().to_owned()),
+                );
             }
             Ok(Ok(SpeakEvent::Finished { request_id })) if &request_id == wanted => {
                 panic!("a device that died mid-clip must not finish the utterance")
@@ -127,11 +140,15 @@ async fn a_device_lost_mid_utterance_fails_it_with_the_device_reason_on_both_fee
 
     assert_eq!(
         failure_for(&mut stream, &utterance_id).await,
-        EXPECTED_FAILURE
+        (EXPECTED_CODE.to_owned(), Some(DEVICE_LOSS.to_owned()))
     );
     assert_eq!(
         bus.failures(),
-        vec![(DEVICE_ERROR_REASON.to_owned(), EXPECTED_FAILURE.to_owned())],
+        vec![(
+            DEVICE_ERROR_REASON.to_owned(),
+            EXPECTED_CODE.to_owned(),
+            DEVICE_LOSS.to_owned()
+        )],
         "the dashboard reads the drop off the bus, so it must name the device as the cause"
     );
 }
@@ -168,7 +185,10 @@ async fn a_device_that_dies_while_the_queue_believes_it_is_playing_releases_the_
     )]
     let _ = gate_tx.send(());
 
-    assert_eq!(failure_for(&mut stream, &first_id).await, EXPECTED_FAILURE);
+    assert_eq!(
+        failure_for(&mut stream, &first_id).await,
+        (EXPECTED_CODE.to_owned(), Some(DEVICE_LOSS.to_owned()))
+    );
     let started_next = tokio::time::timeout(SETTLE_BUDGET, async {
         loop {
             match stream.recv().await {

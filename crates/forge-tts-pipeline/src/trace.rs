@@ -1,8 +1,10 @@
 use std::ops::Range;
 
+use forge_speech_types::LanguageCode;
+
 use crate::{
     LiteralScope, PipelineConfig, PipelineContext, ReplacementRule, StageName, StageOut,
-    equals_ignoring_case, literal_replace_logged, run_stage, stage_output_logged,
+    equals_ignoring_case, literal_replace_logged, run_stage, spoken_words, stage_output_logged,
     stage_word_blocklist_logged,
 };
 
@@ -82,7 +84,12 @@ pub(crate) fn run_stage_traced(
         ),
         StageName::WordBlocklist => blocklist_traced(text, config),
         StageName::TextReplacements => {
-            let (output, carried) = replacements_traced(text, &config.replacement_rules, marks);
+            let (output, carried) = replacements_traced(
+                text,
+                &config.replacement_rules,
+                marks,
+                context.speech_language,
+            );
             (StageOut::Ok(output), carried)
         }
         StageName::Output => {
@@ -139,6 +146,7 @@ fn replacements_traced(
     text: &str,
     rules: &[ReplacementRule],
     marks: &[AppliedReplacement],
+    language: Option<LanguageCode>,
 ) -> (String, Vec<AppliedReplacement>) {
     let mut current = text.to_owned();
     let mut carried = marks.to_vec();
@@ -169,6 +177,9 @@ fn replacements_traced(
                 compiled,
                 replacement,
             } => regex_replace_logged(&current, compiled, replacement, &mut edits),
+            ReplacementRule::LinkWord { compiled } => {
+                regex_replace_logged(&current, compiled, spoken_words(language).link, &mut edits)
+            }
         };
         carried = carry_through_pass(
             carried,

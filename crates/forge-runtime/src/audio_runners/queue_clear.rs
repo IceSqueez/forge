@@ -4,7 +4,7 @@ use async_trait::async_trait;
 use forge_registry::{
     ConfigSpec, RunContext, StepTimer, SubActionCategory, SubActionRunner, ToggleField, TypedField,
 };
-use forge_types::{ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetry};
+use forge_types::{ArgStack, SubActionConfig, SubActionTelemetry};
 
 use crate::speak_dispatcher::{SpeakDispatchError, SpeakDispatcher};
 
@@ -75,7 +75,7 @@ impl SubActionRunner for QueueClearRunner {
             Ok(keep_current) => keep_current,
             Err(problem) => return (timer.invalid_config(&problem), None),
         };
-        let outcome = SubActionOutcome::from_result(&self.clear(keep_current).await);
+        let outcome = crate::speak_dispatcher::dispatch_outcome(&self.clear(keep_current).await);
         (timer.finish(outcome), None)
     }
 }

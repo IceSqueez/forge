@@ -5,7 +5,7 @@ use std::sync::Arc;
 use forge_hotkey::HotkeyReconciler;
 use forge_runtime::{MembershipOutcome, OverlayServiceError};
 use forge_speak_queue::{
-    PipelineConfigHandle, SpeakCommand, SpeakQueueHandle, SpokenWords, build_config, repeat_window,
+    PipelineConfigHandle, SpeakCommand, SpeakQueueHandle, build_config, repeat_window,
 };
 use forge_speech_types::AliasId;
 use forge_speech_types::IgnoreProfile;
@@ -175,7 +175,6 @@ pub(crate) async fn refresh_setup_live(
     live: &SetupLiveHandles,
     outcome: &SetupImportOutcome,
     baseline: Option<&VoiceBaseline>,
-    spoken_words: &SpokenWords,
 ) -> LiveRefresh {
     let mut applied = true;
     for part in &outcome.refresh {
@@ -184,7 +183,7 @@ pub(crate) async fn refresh_setup_live(
             SetupLivePart::Scripts => refresh_scripts(services).await,
             SetupLivePart::Overlays => materialize_stored_overlays(services).await,
             SetupLivePart::Hotkeys => refresh_hotkeys(live).await,
-            SetupLivePart::Tts => refresh_tts(services, live, baseline, spoken_words).await,
+            SetupLivePart::Tts => refresh_tts(services, live, baseline).await,
         };
     }
     if applied {
@@ -246,7 +245,6 @@ async fn refresh_tts(
     services: &PackServices,
     live: &SetupLiveHandles,
     baseline: Option<&VoiceBaseline>,
-    spoken_words: &SpokenWords,
 ) -> bool {
     let Some(baseline) = baseline else {
         return false;
@@ -273,11 +271,7 @@ async fn refresh_tts(
         bot_accounts.store(settings.bot_accounts.clone());
     }
     if let Some(pipeline) = &live.pipeline_config {
-        pipeline.swap(
-            build_config(&rules, &settings, spoken_words)
-                .dropping_invalid()
-                .0,
-        );
+        pipeline.swap(build_config(&rules, &settings).dropping_invalid().0);
     }
     let mut applied = same_ignore_profile(&baseline.ignore_profile, &ignore_profile);
     let Some(speak) = &live.speak else {
@@ -566,13 +560,7 @@ mod tests {
         outcome: &SetupImportOutcome,
         baseline: Option<&VoiceBaseline>,
     ) -> LiveRefresh {
-        rt.block_on(refresh_setup_live(
-            &world.services,
-            live,
-            outcome,
-            baseline,
-            &crate::test_support::english_spoken_words(),
-        ))
+        rt.block_on(refresh_setup_live(&world.services, live, outcome, baseline))
     }
 
     fn voice_alias(viewer_id: &str) -> VoiceAlias {

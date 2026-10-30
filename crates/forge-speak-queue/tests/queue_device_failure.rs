@@ -49,10 +49,17 @@ async fn a_device_that_refuses_the_stream_fails_the_utterance_with_the_device_re
             "the utterance never settled after the device refused the stream"
         );
         match tokio::time::timeout(remaining, stream.recv()).await {
-            Ok(Ok(SpeakEvent::Failed { error, .. })) => {
-                assert!(
-                    error.contains(DEVICE_REFUSAL),
-                    "the device reason was replaced by {error:?}"
+            Ok(Ok(SpeakEvent::Failed { message, .. })) => {
+                assert_eq!(
+                    (
+                        message.code().to_string(),
+                        message.detail().map(|d| d.as_str().to_owned()),
+                    ),
+                    (
+                        "speak.audio_host_failed".to_owned(),
+                        Some(DEVICE_REFUSAL.to_owned()),
+                    ),
+                    "the device reason was replaced"
                 );
                 return;
             }

@@ -44,8 +44,11 @@ async fn is_spoken(handle: &SpeakQueueHandle, stream: &mut SpeakEventStream, tex
         match tokio::time::timeout(HANG_GUARD, stream.recv()).await {
             Ok(Ok(SpeakEvent::Finished { request_id })) if request_id == id => return true,
             Ok(Ok(SpeakEvent::Skipped { request_id, .. })) if request_id == id => return false,
-            Ok(Ok(SpeakEvent::Failed { request_id, error })) if request_id == id => {
-                panic!("{text:?} failed: {error}")
+            Ok(Ok(SpeakEvent::Failed {
+                request_id,
+                message,
+            })) if request_id == id => {
+                panic!("{text:?} failed: {message:?}")
             }
             Ok(Ok(_)) => continue,
             Ok(Err(_)) => panic!("event stream closed"),

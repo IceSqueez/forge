@@ -1,7 +1,9 @@
 use forge_events::{EventPublisher, EventSource, TypedEvent};
 use forge_speech_types::{EngineId, LanguageCode, VoiceId};
+use forge_types::MessageRef;
 use tokio::sync::broadcast;
 
+use crate::vocabulary::messages;
 use crate::vocabulary::{
     FailureReason, HoldReason, RejectReason, SkipReason, SpeakCleared, SpeakEnqueued, SpeakFailed,
     SpeakFinished, SpeakPaused, SpeakRejected, SpeakRemoved, SpeakReordered, SpeakResumed,
@@ -37,7 +39,7 @@ pub(crate) enum Outcome {
     },
     Failed {
         reason: FailureReason,
-        error: String,
+        message: MessageRef,
     },
     Removed,
     Rejected {
@@ -101,16 +103,16 @@ impl<'a> SpeakEmitter<'a> {
                     caused_by,
                 );
             }
-            Outcome::Failed { reason, error } => {
+            Outcome::Failed { reason, message } => {
                 self.feed(SpeakEvent::Failed {
                     request_id: request_id.clone(),
-                    error: error.clone(),
+                    message: message.clone(),
                 });
                 self.publish(
                     SpeakFailed {
                         request_id,
                         reason,
-                        error,
+                        message,
                         viewer_name,
                         text,
                     },
@@ -137,7 +139,7 @@ impl<'a> SpeakEmitter<'a> {
             } => {
                 self.feed(SpeakEvent::Rejected {
                     request_id: request_id.clone(),
-                    reason: reason.describe(limit),
+                    message: messages::reject_message(reason, limit),
                 });
                 self.publish(
                     SpeakRejected {
@@ -167,13 +169,9 @@ impl<'a> SpeakEmitter<'a> {
         text: Option<String>,
         caused_by: Option<forge_types::EventId>,
     ) {
-        let described = match &detail {
-            Some(detail) => format!("{}: {detail}", reason.describe()),
-            None => reason.describe().to_owned(),
-        };
         self.feed(SpeakEvent::Skipped {
             request_id: request_id.clone(),
-            reason: described,
+            message: messages::skip_message(reason, detail.as_deref()),
         });
         self.publish(
             SpeakSkipped {
@@ -312,6 +310,7 @@ impl From<VoiceSkip> for SkipReason {
 mod tests {
     use std::sync::{Arc, Mutex};
 
+    use forge_audio::AudioError;
     use forge_events::{Event, EventPublisher, EventSource};
     use forge_speech_types::{EngineId, LanguageCode, VoiceId};
     use forge_types::EventId;
@@ -471,14 +470,19 @@ mod tests {
                         &req,
                         Outcome::Failed {
                             reason: FailureReason::DeviceError,
-                            error: "device unplugged".into(),
+                            message: messages::audio_failure(&AudioError::DeviceLost(
+                                "device unplugged".into(),
+                            )),
                         },
                     )
                 }),
                 json!({
                     "request_id": "req-1",
                     "reason": "device_error",
-                    "error": "device unplugged",
+                    "message": {
+                        "code": "speak.audio_device_lost",
+                        "detail": "device unplugged",
+                    },
                     "viewer_name": "nova",
                     "text": "hi chat",
                 }),
@@ -611,14 +615,14 @@ mod tests {
     }
 
     #[test]
-    fn feed_skip_text_appends_the_detail_only_when_present() {
-        for (reason, detail, expected) in [
+    fn feed_skip_message_carries_the_detail_as_detail_only_when_present() {
+        for (reason, detail, code) in [
             (
                 SkipReason::SkipRuleMatched,
                 Some("no urls"),
-                "matched a skip rule: no urls",
+                "speak.skipped_rule_matched",
             ),
-            (SkipReason::UserSkip, None, "skipped by user"),
+            (SkipReason::UserSkip, None, "speak.skipped_by_user"),
         ] {
             let req = request(None);
             let (_, feed) = emitted(|e| {
@@ -630,21 +634,25 @@ mod tests {
                     },
                 )
             });
-            assert!(
-                matches!(
-                    feed.as_slice(),
-                    [SpeakEvent::Skipped { reason, .. }] if reason == expected
+            let [SpeakEvent::Skipped { message, .. }] = feed.as_slice() else {
+                panic!("expected one Skipped event, got {feed:?}");
+            };
+            assert_eq!(
+                (
+                    message.code().to_string(),
+                    message.detail().map(|d| d.as_str().to_owned()),
+                    message.args().count(),
                 ),
-                "{expected}"
+                (code.to_owned(), detail.map(str::to_owned), 0),
             );
         }
     }
 
     #[test]
-    fn feed_reject_text_names_the_limit_that_was_hit() {
-        for (reason, expected) in [
-            (RejectReason::QueueFull, "queue full (max 7)"),
-            (RejectReason::PerUserLimit, "per-user limit (max 7)"),
+    fn feed_reject_message_names_the_limit_that_was_hit() {
+        for (reason, code) in [
+            (RejectReason::QueueFull, "speak.rejected_queue_full"),
+            (RejectReason::PerUserLimit, "speak.rejected_per_user_limit"),
         ] {
             let req = request(None);
             let (_, feed) = emitted(|e| {
@@ -657,12 +665,12 @@ mod tests {
                     },
                 )
             });
-            assert!(
-                matches!(
-                    feed.as_slice(),
-                    [SpeakEvent::Rejected { reason, .. }] if reason == expected
-                ),
-                "{expected}"
+            let [SpeakEvent::Rejected { message, .. }] = feed.as_slice() else {
+                panic!("expected one Rejected event, got {feed:?}");
+            };
+            assert_eq!(
+                (message.code().to_string(), message.arg("limit")),
+                (code.to_owned(), Some(&forge_types::MessageArg::Int(7))),
             );
         }
     }

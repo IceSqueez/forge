@@ -7,8 +7,8 @@ use forge_audio::{DeviceSink, OutputDeviceHandle, stored_output_device};
 use forge_events::EventPublisher;
 use forge_runtime::EventBus;
 use forge_speak_queue::{
-    PipelineConfigHandle, QueueConfig, QueueDeps, SpeakEventStream, SpokenWords,
-    VoiceAliasResolver, build_config, repeat_window,
+    PipelineConfigHandle, QueueConfig, QueueDeps, SpeakEventStream, VoiceAliasResolver,
+    build_config, repeat_window,
 };
 use forge_speech_types::EngineId;
 use forge_speech_types::{AssignmentStrategy, IgnoreProfile, SynthesisDefaults};
@@ -195,7 +195,6 @@ pub async fn build_speak_queue(
     backend: &Arc<dyn DataProvider>,
     audio_sink: Arc<dyn forge_audio::AudioSink>,
     cloud_gateways: &CloudGateways,
-    spoken_words: &SpokenWords,
 ) -> (
     Option<forge_speak_queue::SpeakQueueHandle>,
     Option<SpeakEventStream>,
@@ -220,8 +219,7 @@ pub async fn build_speak_queue(
     resolver.set_engine_defaults(engine_defaults);
     let resolver = Arc::new(std::sync::RwLock::new(resolver));
     let (filter_rules, filter_settings) = load_filters(backend).await;
-    let (pipeline_config, _) =
-        build_config(&filter_rules, &filter_settings, spoken_words).dropping_invalid();
+    let (pipeline_config, _) = build_config(&filter_rules, &filter_settings).dropping_invalid();
     let pipeline = PipelineConfigHandle::new(pipeline_config);
     let disabled_engines = load_disabled_engines(backend).await;
 

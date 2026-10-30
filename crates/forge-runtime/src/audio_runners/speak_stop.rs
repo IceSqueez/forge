@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use forge_registry::{ConfigSpec, RunContext, StepTimer, SubActionCategory, SubActionRunner};
-use forge_types::{ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetry};
+use forge_types::{ArgStack, SubActionConfig, SubActionTelemetry};
 
 use crate::speak_dispatcher::SpeakDispatcher;
 
@@ -54,7 +54,7 @@ impl SubActionRunner for SpeakStopRunner {
         ctx: &RunContext<'_>,
     ) -> (SubActionTelemetry, Option<ArgStack>) {
         let timer = StepTimer::start(ctx, SPEAK_STOP_KIND_ID);
-        let outcome = SubActionOutcome::from_result(&self.speak.stop_current().await);
+        let outcome = crate::speak_dispatcher::dispatch_outcome(&self.speak.stop_current().await);
         (timer.finish(outcome), None)
     }
 }

@@ -619,7 +619,8 @@ mod tests {
             assert!(
                 matches!(
                     first_outcome(&mut stream).await,
-                    SpeakEvent::Skipped { ref reason, .. } if reason.contains("blocked")
+                    SpeakEvent::Skipped { ref message, .. }
+                        if message.code().to_string() == "speak.skipped_alias"
                 ),
                 "{key:?} did not match the queued speaker"
             );

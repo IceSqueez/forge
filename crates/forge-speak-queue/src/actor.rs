@@ -6,16 +6,17 @@ use std::time::Duration;
 const PLAYBACK_PROGRESS_TICK: Duration = Duration::from_secs(1);
 
 use forge_audio::{AudioError, AudioSink};
-use forge_speech_types::PcmBuffer;
 use forge_speech_types::{EngineId, TtsVoice, VoiceId};
-use forge_tts_core::{SynthesisRequest, TtsError, engine_display_name};
-use forge_tts_pipeline::{DetectionOutcome, LanguageDetector, PipelineResult};
-use forge_types::Shared;
+use forge_speech_types::{LanguageCode, PcmBuffer};
+use forge_tts_core::{SynthesisRequest, engine_display_name};
+use forge_tts_pipeline::{DetectionOutcome, LanguageDetector, PipelineResult, spoken_words};
+use forge_types::{MessageRef, Shared};
 
 use crate::catalog::{CATALOG_UPDATE_CAPACITY, CatalogUpdate, VoiceCatalogState};
 use crate::emitter::{
     DetectedLanguage, EnqueuePreview, Outcome, ResolvedPlayback, SpeakEmitter, pipeline_skip,
 };
+use crate::vocabulary::messages;
 use crate::vocabulary::{FailureReason, HoldReason, RejectReason, SkipReason};
 use crate::voice::{ResolveResult, VoiceAliasResolver, candidate_languages, voice_speaks_language};
 
@@ -95,7 +96,7 @@ enum SynthOutcome {
     },
     Failed {
         reason: FailureReason,
-        error: String,
+        message: MessageRef,
     },
 }
 
@@ -130,6 +131,7 @@ async fn run_synthesis(
     let context = forge_tts_pipeline::PipelineContext {
         viewer_name: &req.viewer_name,
         recent_messages: &recent_messages,
+        speech_language: None,
     };
     let pipeline_result = forge_tts_pipeline::process(text_for_pipeline, &pipeline_cfg, &context);
     let text_to_speak = match pipeline_result {
@@ -172,6 +174,20 @@ async fn run_synthesis(
         }
     };
 
+    let text_to_speak = match voiced_text(
+        text_to_speak,
+        text_for_pipeline,
+        &pipeline_cfg,
+        &context,
+        voice_language(&deps.voice_catalog, &voice_id, &engine_id),
+    ) {
+        PipelineResult::Speak(text) => text,
+        PipelineResult::Skip { reason } => {
+            let (reason, detail) = pipeline_skip(&reason);
+            return SynthTaskResult::new(req, SynthOutcome::Skipped { reason, detail });
+        }
+    };
+
     let slot = deps
         .registry
         .read()
@@ -180,15 +196,15 @@ async fn run_synthesis(
     let slot = match slot {
         Some(slot) => slot,
         None => {
-            let error = format!("engine {:?} not registered", engine_id);
-            return SynthTaskResult::new(req, engine_failure(error));
+            let message = messages::engine_not_registered(&engine_id);
+            return SynthTaskResult::new(req, engine_failure(message));
         }
     };
 
     let engine = match slot.engine().await {
         Ok(e) => e,
         Err(e) => {
-            return SynthTaskResult::new(req, engine_failure(e.to_string()));
+            return SynthTaskResult::new(req, engine_failure(messages::tts_failure(&e)));
         }
     };
 
@@ -207,15 +223,43 @@ async fn run_synthesis(
             engine_id,
             language: detected,
         },
-        Err(e) => engine_failure(e.to_string()),
+        Err(e) => engine_failure(messages::tts_failure(&e)),
     };
     SynthTaskResult::new(req, outcome)
 }
 
-fn engine_failure(error: String) -> SynthOutcome {
+fn voice_language(
+    catalog: &[TtsVoice],
+    voice_id: &VoiceId,
+    engine_id: &EngineId,
+) -> Option<LanguageCode> {
+    catalog
+        .iter()
+        .find(|voice| &voice.id == voice_id && &voice.engine_id == engine_id)
+        .and_then(|voice| LanguageCode::from_locale(&voice.locale))
+}
+
+fn voiced_text(
+    neutral: String,
+    input: &str,
+    config: &forge_tts_pipeline::PipelineConfig,
+    context: &forge_tts_pipeline::PipelineContext<'_>,
+    language: Option<LanguageCode>,
+) -> PipelineResult {
+    if spoken_words(language) == spoken_words(None) {
+        return PipelineResult::Speak(neutral);
+    }
+    let voiced = forge_tts_pipeline::PipelineContext {
+        speech_language: language,
+        ..*context
+    };
+    forge_tts_pipeline::process(input, config, &voiced)
+}
+
+fn engine_failure(message: MessageRef) -> SynthOutcome {
     SynthOutcome::Failed {
         reason: FailureReason::EngineError,
-        error,
+        message,
     }
 }
 
@@ -232,10 +276,9 @@ async fn run_synthesis_bounded(
             fallback,
             SynthOutcome::Failed {
                 reason: FailureReason::EngineTimeout,
-                error: TtsError::Timeout {
-                    ms: u64::try_from(timeout.as_millis()).unwrap_or(u64::MAX),
-                }
-                .to_string(),
+                message: messages::synthesis_timed_out(
+                    u64::try_from(timeout.as_millis()).unwrap_or(u64::MAX),
+                ),
             },
         ),
     }
@@ -612,11 +655,11 @@ async fn handle_synth_result(
             SpeakEmitter::new(event_tx, deps.event_bus.as_ref())
                 .outcome(&result.request, Outcome::Skipped { reason, detail });
         }
-        SynthOutcome::Failed { reason, error } => {
+        SynthOutcome::Failed { reason, message } => {
             *active_request_id = None;
-            tracing::warn!(request_id = %result.request.request_id.0, error = %error, "speak failed");
+            tracing::warn!(request_id = %result.request.request_id.0, code = %message.code(), detail = message.detail().map(|detail| detail.as_str()), "speak failed");
             SpeakEmitter::new(event_tx, deps.event_bus.as_ref())
-                .outcome(&result.request, Outcome::Failed { reason, error });
+                .outcome(&result.request, Outcome::Failed { reason, message });
         }
         SynthOutcome::Speak {
             mut pcm,
@@ -760,7 +803,7 @@ async fn finish_playback(
 fn device_failure(error: &AudioError) -> Outcome {
     Outcome::Failed {
         reason: FailureReason::DeviceError,
-        error: error.to_string(),
+        message: messages::audio_failure(error),
     }
 }
 
@@ -1243,7 +1286,6 @@ mod tests {
             blocklist_mode: forge_tts_pipeline::BlocklistMode::Censor,
             output: forge_tts_pipeline::OutputConfig {
                 read_display_name_first: false,
-                says: "says".into(),
                 emote_treatment: forge_tts_pipeline::EmoteTreatment::Keep,
                 strip_emoji: false,
                 sanitize_punctuation: false,
@@ -1251,13 +1293,6 @@ mod tests {
                 language_aware_voice: false,
             },
             strip_reward_emotes: false,
-        }
-    }
-
-    fn english_words() -> crate::SpokenWords {
-        crate::SpokenWords {
-            link: "link".into(),
-            says: "says".into(),
         }
     }
 
@@ -1803,8 +1838,7 @@ mod tests {
                 strip_emoji,
                 ..Default::default()
             };
-            let (mut cfg, _) =
-                crate::build_config(&[], &settings, &english_words()).dropping_invalid();
+            let (mut cfg, _) = crate::build_config(&[], &settings).dropping_invalid();
             cfg.emote_tokens.tokens.insert("LUL".into());
 
             let spoken = spoken_by_capturing_engine(cfg, text, is_reward, &[]).await;
@@ -2164,5 +2198,70 @@ mod tests {
             })
         );
         assert!(ev.caused_by.is_none());
+    }
+
+    fn prefixing_pipeline() -> forge_tts_pipeline::PipelineConfig {
+        let mut config = neutral_pipeline();
+        config.output.read_display_name_first = true;
+        config
+    }
+
+    #[test]
+    fn voiced_text_keeps_the_neutral_text_for_english_unknown_and_missing_voice_languages() {
+        let config = prefixing_pipeline();
+        let context = forge_tts_pipeline::PipelineContext {
+            viewer_name: "nova",
+            recent_messages: &[],
+            speech_language: None,
+        };
+        for language in [
+            LanguageCode::from_locale("en-US"),
+            LanguageCode::from_locale("de-DE"),
+            None,
+        ] {
+            let result = voiced_text("NEUTRAL".into(), "hi", &config, &context, language);
+            assert_eq!(
+                result,
+                PipelineResult::Speak("NEUTRAL".into()),
+                "{language:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn voiced_text_reprocesses_the_input_in_a_ukrainian_voice_language() {
+        let config = prefixing_pipeline();
+        let context = forge_tts_pipeline::PipelineContext {
+            viewer_name: "nova",
+            recent_messages: &[],
+            speech_language: None,
+        };
+        let result = voiced_text(
+            "NEUTRAL".into(),
+            "hi",
+            &config,
+            &context,
+            LanguageCode::from_locale("uk-UA"),
+        );
+        assert_eq!(result, PipelineResult::Speak("nova каже: hi".into()));
+    }
+
+    #[test]
+    fn voiced_text_reports_a_skip_that_only_the_voice_language_pass_raises() {
+        let mut config = neutral_pipeline();
+        config.output.read_display_name_first = false;
+        let context = forge_tts_pipeline::PipelineContext {
+            viewer_name: "nova",
+            recent_messages: &[],
+            speech_language: None,
+        };
+        let result = voiced_text(
+            "NEUTRAL".into(),
+            "   ",
+            &config,
+            &context,
+            LanguageCode::from_locale("uk"),
+        );
+        assert!(matches!(result, PipelineResult::Skip { .. }), "{result:?}");
     }
 }

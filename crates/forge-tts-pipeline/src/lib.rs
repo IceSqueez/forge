@@ -2,12 +2,15 @@ use std::collections::HashSet;
 use std::ops::Range;
 use std::sync::LazyLock;
 
+use forge_speech_types::LanguageCode;
 use forge_types::is_bot_account;
 
 mod language;
+mod spoken_words;
 mod trace;
 
 pub use language::{DetectionOutcome, LanguageDetector};
+pub use spoken_words::{SpokenWords, spoken_words};
 pub use trace::{AppliedReplacement, ReplacementOrigin};
 
 use trace::{EditLog, Unlogged};
@@ -90,6 +93,9 @@ pub enum ReplacementRule {
         compiled: regex::Regex,
         replacement: String,
     },
+    LinkWord {
+        compiled: regex::Regex,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -121,7 +127,6 @@ pub enum EmoteTreatment {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct OutputConfig {
     pub read_display_name_first: bool,
-    pub says: String,
     pub emote_treatment: EmoteTreatment,
     pub strip_emoji: bool,
     pub sanitize_punctuation: bool,
@@ -133,6 +138,7 @@ pub struct OutputConfig {
 pub struct PipelineContext<'a> {
     pub viewer_name: &'a str,
     pub recent_messages: &'a [String],
+    pub speech_language: Option<LanguageCode>,
 }
 
 #[derive(Debug, Clone)]
@@ -331,7 +337,11 @@ fn stage_skip_rules(
     None
 }
 
-fn stage_text_replacements(text: &str, rules: &[ReplacementRule]) -> String {
+fn stage_text_replacements(
+    text: &str,
+    rules: &[ReplacementRule],
+    language: Option<LanguageCode>,
+) -> String {
     let mut current = text.to_owned();
     for rule in rules {
         match rule {
@@ -353,6 +363,11 @@ fn stage_text_replacements(text: &str, rules: &[ReplacementRule]) -> String {
             } => {
                 current = compiled
                     .replace_all(&current, replacement.as_str())
+                    .into_owned();
+            }
+            ReplacementRule::LinkWord { compiled } => {
+                current = compiled
+                    .replace_all(&current, spoken_words(language).link)
                     .into_owned();
             }
         }
@@ -604,7 +619,10 @@ fn stage_output_logged(
     };
     log.end_pass();
     let named = if prepend_display_name {
-        let mut named = spoken_name_prefix(context.viewer_name, &config.output.says);
+        let mut named = spoken_name_prefix(
+            context.viewer_name,
+            spoken_words(context.speech_language).says,
+        );
         log.record(0..named.len(), "", &named);
         named.push_str(&emoji_pass);
         named
@@ -644,9 +662,11 @@ fn run_stage(
                 Err(r) => StageOut::Skip(r),
             }
         }
-        StageName::TextReplacements => {
-            StageOut::Ok(stage_text_replacements(text, &config.replacement_rules))
-        }
+        StageName::TextReplacements => StageOut::Ok(stage_text_replacements(
+            text,
+            &config.replacement_rules,
+            context.speech_language,
+        )),
         StageName::Output => {
             StageOut::Ok(stage_output(text, config, context, prepend_display_name))
         }
@@ -770,7 +790,6 @@ mod tests {
     fn neutral_output() -> OutputConfig {
         OutputConfig {
             read_display_name_first: false,
-            says: "says".into(),
             emote_treatment: EmoteTreatment::Keep,
             strip_emoji: false,
             sanitize_punctuation: false,
@@ -795,6 +814,7 @@ mod tests {
         PipelineContext {
             viewer_name: "viewer",
             recent_messages: &[],
+            speech_language: None,
         }
     }
 
@@ -851,6 +871,7 @@ mod tests {
         let builtin_ctx = PipelineContext {
             viewer_name: "NightBot",
             recent_messages: &[],
+            speech_language: None,
         };
         assert!(matches!(
             process("hi chat", &config, &builtin_ctx),
@@ -859,6 +880,7 @@ mod tests {
         let custom_ctx = PipelineContext {
             viewer_name: "CustomBot",
             recent_messages: &[],
+            speech_language: None,
         };
         assert!(matches!(
             process("hi chat", &config, &custom_ctx),
@@ -867,6 +889,7 @@ mod tests {
         let human_ctx = PipelineContext {
             viewer_name: "a_real_viewer",
             recent_messages: &[],
+            speech_language: None,
         };
         assert_eq!(
             process("hi chat", &config, &human_ctx),
@@ -925,6 +948,7 @@ mod tests {
         let repeat_ctx = PipelineContext {
             viewer_name: "viewer",
             recent_messages: &recent,
+            speech_language: None,
         };
         assert!(matches!(
             process("  hello chat  ", &config, &repeat_ctx),
@@ -991,11 +1015,10 @@ mod tests {
     }
 
     #[test]
-    fn output_read_display_name_first_prefixes_viewer_name_with_the_configured_says_word() {
+    fn output_read_display_name_first_prefixes_viewer_name_with_the_voice_language_says_word() {
         let config = PipelineConfig {
             output: OutputConfig {
                 read_display_name_first: true,
-                says: "каже".into(),
                 ..neutral_output()
             },
             ..neutral_config()
@@ -1003,12 +1026,58 @@ mod tests {
         let context = PipelineContext {
             viewer_name: "koval_dev",
             recent_messages: &[],
+            speech_language: LanguageCode::from_locale("uk-UA"),
         };
         let result = process("hi chat", &config, &context);
         assert_eq!(
             result,
             PipelineResult::Speak("koval_dev каже: hi chat".into())
         );
+    }
+
+    #[test]
+    fn link_word_rule_speaks_the_voice_language_link_word_for_each_language() {
+        let config = PipelineConfig {
+            replacement_rules: vec![ReplacementRule::LinkWord {
+                compiled: regex::Regex::new(r"https?://\S+").unwrap(),
+            }],
+            ..neutral_config()
+        };
+        let spoken = |language: Option<LanguageCode>| {
+            let context = PipelineContext {
+                speech_language: language,
+                ..ctx()
+            };
+            process("see https://example.com now", &config, &context)
+        };
+        assert_eq!(
+            (
+                spoken(LanguageCode::from_locale("uk")),
+                spoken(LanguageCode::from_locale("en-US")),
+                spoken(None),
+            ),
+            (
+                PipelineResult::Speak("see посилання now".into()),
+                PipelineResult::Speak("see link now".into()),
+                PipelineResult::Speak("see link now".into()),
+            )
+        );
+    }
+
+    #[test]
+    fn traced_link_word_rule_records_the_voice_language_link_word() {
+        let config = PipelineConfig {
+            replacement_rules: vec![ReplacementRule::LinkWord {
+                compiled: regex::Regex::new(r"https?://\S+").unwrap(),
+            }],
+            ..neutral_config()
+        };
+        let context = PipelineContext {
+            speech_language: LanguageCode::from_locale("uk"),
+            ..ctx()
+        };
+        let (result, _) = preview("see https://example.com now", &config, &context);
+        assert_eq!(result, PipelineResult::Speak("see посилання now".into()));
     }
 
     #[test]
@@ -1323,6 +1392,7 @@ mod tests {
         let context = PipelineContext {
             viewer_name: "koval_dev",
             recent_messages: &[],
+            speech_language: None,
         };
         assert_eq!(
             process("hi chat", &config, &context),

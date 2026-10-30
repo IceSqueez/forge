@@ -19,8 +19,6 @@ use crate::pack_services::PackServices;
 use crate::restore_close::RestoreClose;
 use crate::restore_problem::RestoreProblem;
 use crate::setup_confirm::{SetupConfirmCard, SetupCount, setup_counts};
-use crate::spoken_words::active_spoken_words;
-use forge_speak_queue::SpokenWords;
 
 const SETUP_TOAST_DURATION: Duration = Duration::from_secs(10);
 const STICKY: Duration = Duration::ZERO;
@@ -152,10 +150,9 @@ impl SetupImportFlow {
         let services = self.services.clone();
         let live = self.live.clone();
         let data_dir = self.data_dir.clone();
-        let spoken_words = active_spoken_words();
         async_bridge::run_async(
             &self.services.rt_handle,
-            async move { apply_staged(services, live, data_dir, staged, spoken_words).await },
+            async move { apply_staged(services, live, data_dir, staged).await },
             |this, result, cx| this.applied(result, cx),
             cx,
         );
@@ -330,7 +327,6 @@ async fn apply_staged(
     live: SetupLiveHandles,
     data_dir: PathBuf,
     staged: StagedSetup,
-    spoken_words: SpokenWords,
 ) -> SetupApplied {
     let source = match services.load_source().await {
         Ok(source) => source,
@@ -359,9 +355,7 @@ async fn apply_staged(
     match applied {
         Ok(outcome) => {
             discard_quietly(staged).await;
-            let live =
-                refresh_setup_live(&services, &live, &outcome, baseline.as_ref(), &spoken_words)
-                    .await;
+            let live = refresh_setup_live(&services, &live, &outcome, baseline.as_ref()).await;
             SetupApplied::Done { outcome, live }
         }
         Err(TransferError::SetupRollbackIncomplete {

@@ -59,7 +59,8 @@ async fn voice_override_absent_from_catalog_with_no_engine_override_skips() {
         |e| {
             matches!(
                 e,
-                SpeakEvent::Skipped { reason, .. } if reason.contains("voice override not found")
+                SpeakEvent::Skipped { message, .. }
+                    if message.code().to_string() == "speak.skipped_voice_override_missing"
             )
         },
         2_000,

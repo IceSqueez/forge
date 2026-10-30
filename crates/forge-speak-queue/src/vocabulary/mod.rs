@@ -1,5 +1,6 @@
 pub mod event_kinds;
 mod events;
+pub mod messages;
 mod reasons;
 
 pub use events::{

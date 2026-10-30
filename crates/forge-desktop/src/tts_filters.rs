@@ -27,7 +27,6 @@ use gpui::{
 };
 
 use crate::async_bridge::{self, Loadable, SnapshotWriter, WriteOutcome};
-use crate::spoken_words::active_spoken_words;
 use forge_components::{ActivePresentation, DISABLED_OPACITY, error_row_with_retry};
 
 const STAGE_CIRCLE: Pixels = px(22.0);
@@ -608,11 +607,12 @@ impl TtsFiltersView {
         }
         let shown = self.shown();
         let (config, replacement_sources) =
-            build_config(&shown.rules, &shown.settings, &active_spoken_words()).dropping_invalid();
+            build_config(&shown.rules, &shown.settings).dropping_invalid();
         let speaker_name = tr!("tts_filters_preview_speaker_name");
         let context = forge_tts_pipeline::PipelineContext {
             viewer_name: &speaker_name,
             recent_messages: &[],
+            speech_language: None,
         };
         let (result, stages) = forge_tts_pipeline::preview(&input, &config, &context);
         self.cached_preview = Some(CachedPreview {
@@ -710,9 +710,7 @@ impl TtsFiltersView {
         let Some(filters) = self.filters.loaded() else {
             return;
         };
-        let config = match build_config(&filters.rules, &filters.settings, &active_spoken_words())
-            .require_valid()
-        {
+        let config = match build_config(&filters.rules, &filters.settings).require_valid() {
             Ok(config) => config,
             Err(e) => {
                 self.save_error = Some(e.to_string());
@@ -765,13 +763,7 @@ impl TtsFiltersView {
         let mut candidate = filters.clone();
         mutate(&mut candidate);
         renumber(&mut candidate.rules);
-        match build_config(
-            &candidate.rules,
-            &candidate.settings,
-            &active_spoken_words(),
-        )
-        .require_valid()
-        {
+        match build_config(&candidate.rules, &candidate.settings).require_valid() {
             Ok(_) => {
                 *filters = candidate;
                 self.after_change(cx);
@@ -2771,13 +2763,9 @@ mod tests {
 
     fn initial_config() -> PipelineConfigHandle {
         PipelineConfigHandle::new(
-            forge_speak_queue::build_config(
-                &[],
-                &TtsPipelineSettings::default(),
-                &crate::test_support::english_spoken_words(),
-            )
-            .dropping_invalid()
-            .0,
+            forge_speak_queue::build_config(&[], &TtsPipelineSettings::default())
+                .dropping_invalid()
+                .0,
         )
     }
 

@@ -23,6 +23,7 @@ pub const REGISTERED_CATALOGS: &[MessageCatalog] = &[
     forge_discord::vocabulary::messages::DISCORD_MESSAGES,
     forge_donatello::DONATELLO_MESSAGES,
     forge_monobank::MONOBANK_MESSAGES,
+    forge_speak_queue::vocabulary::messages::SPEAK_MESSAGES,
 ];
 
 #[derive(Debug, Clone, PartialEq, Eq)]

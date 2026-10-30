@@ -2,15 +2,47 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use forge_registry::{ActorRole, ActorSlot, CancelSignal, CanonicalVariable, message_emote_codes};
-use forge_types::{ArgStack, EventId, Variant};
+use forge_types::{
+    ArgStack, EventId, MessageCode, MessageRef, SubActionOutcome, UserText, Variant,
+};
 use tokio::sync::watch;
 
 use crate::engine_voice_ref::EngineVoiceError;
 
 #[derive(Debug, thiserror::Error)]
 pub enum SpeakDispatchError {
-    #[error("{0}")]
-    Dispatch(String),
+    #[error("{}", .0.code())]
+    Dispatch(MessageRef),
+}
+
+impl SpeakDispatchError {
+    pub fn message(&self) -> &MessageRef {
+        let Self::Dispatch(message) = self;
+        message
+    }
+}
+
+impl From<EngineVoiceError> for SpeakDispatchError {
+    fn from(error: EngineVoiceError) -> Self {
+        Self::Dispatch(match error {
+            EngineVoiceError::NotAnEngineVoice(voice) => {
+                crate::core_messages::voice_not_engine_voice(&voice)
+            }
+            EngineVoiceError::NotInstalled {
+                engine_id,
+                voice_id,
+            } => crate::core_messages::voice_not_installed(
+                &crate::engine_voice_ref::EngineVoiceRef::new(engine_id, voice_id).to_string(),
+            ),
+        })
+    }
+}
+
+pub(crate) fn dispatch_outcome<T>(result: &Result<T, SpeakDispatchError>) -> SubActionOutcome {
+    match result {
+        Ok(_) => SubActionOutcome::Success,
+        Err(error) => SubActionOutcome::Failed(UserText::Message(error.message().clone())),
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -21,7 +53,8 @@ pub struct VoiceDescriptor {
     pub engine_id: String,
 }
 
-const SHOW_SPEECH_UNAVAILABLE: &str = "speech for an overlay show is not available";
+const SHOW_SPEECH_UNAVAILABLE: MessageCode =
+    MessageCode::from_static("speak", "show_speech_unavailable");
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SpeakingViewer {
@@ -178,9 +211,9 @@ pub trait SpeakDispatcher: Send + Sync {
         started: SpeechStartSignal,
     ) -> Result<(), SpeakDispatchError> {
         let _ = (speech, cancel, started);
-        Err(SpeakDispatchError::Dispatch(
-            SHOW_SPEECH_UNAVAILABLE.to_owned(),
-        ))
+        Err(SpeakDispatchError::Dispatch(MessageRef::new(
+            SHOW_SPEECH_UNAVAILABLE,
+        )))
     }
 
     async fn stop_current(&self) -> Result<(), SpeakDispatchError> {
@@ -342,5 +375,77 @@ mod tests {
 
             assert_eq!(key, expected, "{pairs:?} / {name:?}");
         }
+    }
+
+    fn queue_stopped() -> MessageRef {
+        MessageRef::new(MessageCode::from_static("speak", "queue_stopped"))
+    }
+
+    #[test]
+    fn dispatch_outcome_wraps_the_error_message_as_localizable_text_and_passes_success_through() {
+        assert_eq!(
+            (
+                dispatch_outcome(&Ok(())),
+                dispatch_outcome::<()>(&Err(SpeakDispatchError::Dispatch(queue_stopped()))),
+            ),
+            (
+                SubActionOutcome::Success,
+                SubActionOutcome::Failed(UserText::Message(queue_stopped())),
+            )
+        );
+    }
+
+    #[test]
+    fn engine_voice_errors_become_catalogued_messages_naming_the_voice() {
+        let not_engine: SpeakDispatchError =
+            EngineVoiceError::NotAnEngineVoice("plain".into()).into();
+        let not_installed: SpeakDispatchError = EngineVoiceError::NotInstalled {
+            engine_id: "piper".into(),
+            voice_id: "amy".into(),
+        }
+        .into();
+        assert_eq!(
+            (
+                not_engine.message().clone(),
+                not_installed.message().clone()
+            ),
+            (
+                crate::core_messages::voice_not_engine_voice("plain"),
+                crate::core_messages::voice_not_installed(
+                    &crate::engine_voice_ref::EngineVoiceRef::new("piper", "amy").to_string()
+                ),
+            )
+        );
+    }
+
+    #[tokio::test]
+    async fn the_default_show_speech_refuses_with_the_catalogued_unavailable_message() {
+        struct Bare;
+        #[async_trait]
+        impl SpeakDispatcher for Bare {
+            async fn speak(
+                &self,
+                _text: String,
+                _voice_id_override: Option<String>,
+                _origin: SpeechOrigin,
+            ) -> Result<(), SpeakDispatchError> {
+                Ok(())
+            }
+        }
+        let speech = ShowSpeech {
+            text: "hi".into(),
+            voice: None,
+            overlay: "main".into(),
+            show: "alert".into(),
+            origin: SpeechOrigin::default(),
+        };
+        let error = Bare
+            .speak_for_show(speech, CancelSignal::new(), SpeechStartSignal::new())
+            .await
+            .unwrap_err();
+        assert_eq!(
+            error.message(),
+            &MessageRef::new(MessageCode::from_static("speak", "show_speech_unavailable"))
+        );
     }
 }

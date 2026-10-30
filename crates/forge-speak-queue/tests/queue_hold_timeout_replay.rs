@@ -371,7 +371,7 @@ async fn a_replay_is_rejected_when_the_queue_is_full() {
 
     let admission = next_admission(&mut q).await;
     assert!(
-        matches!(&admission, SpeakEvent::Rejected { reason, .. } if reason.starts_with("queue full")),
+        matches!(&admission, SpeakEvent::Rejected { message, .. } if message.code().to_string() == "speak.rejected_queue_full"),
         "a replay must not grow a full queue, got {admission:?}"
     );
 }
@@ -392,7 +392,7 @@ async fn a_replay_is_rejected_when_the_viewer_has_spent_the_per_user_limit() {
 
     let admission = next_admission(&mut q).await;
     assert!(
-        matches!(&admission, SpeakEvent::Rejected { reason, .. } if reason.starts_with("per-user limit")),
+        matches!(&admission, SpeakEvent::Rejected { message, .. } if message.code().to_string() == "speak.rejected_per_user_limit"),
         "a replay must respect the viewer's limit, got {admission:?}"
     );
 }
@@ -424,7 +424,7 @@ async fn an_admitted_replay_counts_against_the_viewers_limit() {
 
     let admission = next_admission(&mut q).await;
     assert!(
-        matches!(&admission, SpeakEvent::Rejected { reason, .. } if reason.starts_with("per-user limit")),
+        matches!(&admission, SpeakEvent::Rejected { message, .. } if message.code().to_string() == "speak.rejected_per_user_limit"),
         "the replay must have used one of the viewer's slots, got {admission:?}"
     );
 }

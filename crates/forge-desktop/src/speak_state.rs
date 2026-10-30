@@ -1,4 +1,5 @@
 use forge_speak_queue::{QueuedOrderEntry, RequestId, SpeakEvent};
+use forge_types::UserText;
 
 #[derive(Clone)]
 pub struct NowSpeaking {
@@ -36,7 +37,7 @@ pub struct SpeakState {
     now_speaking: Option<NowSpeaking>,
     queue: Vec<QueueItem>,
     stats: SessionStats,
-    last_drop: Option<String>,
+    last_drop: Option<UserText>,
 }
 
 impl SpeakState {
@@ -56,8 +57,8 @@ impl SpeakState {
         }
     }
 
-    pub fn last_drop(&self) -> Option<&str> {
-        self.last_drop.as_deref()
+    pub fn last_drop(&self) -> Option<&UserText> {
+        self.last_drop.as_ref()
     }
 
     pub fn apply_event(&mut self, event: SpeakEvent) -> bool {
@@ -125,15 +126,15 @@ impl SpeakState {
                 self.stats.spoken = self.stats.spoken.saturating_add(1);
                 true
             }
-            SpeakEvent::Failed { error, .. } => {
+            SpeakEvent::Failed { message, .. } => {
                 self.now_speaking = None;
-                self.last_drop = Some(error);
+                self.last_drop = Some(message.into());
                 true
             }
-            SpeakEvent::Skipped { reason, .. } => {
+            SpeakEvent::Skipped { message, .. } => {
                 self.now_speaking = None;
                 self.stats.skipped = self.stats.skipped.saturating_add(1);
-                self.last_drop = Some(reason);
+                self.last_drop = Some(message.into());
                 true
             }
             SpeakEvent::Removed { .. } => false,
@@ -412,22 +413,52 @@ mod tests {
 
     #[test]
     fn a_failed_utterance_clears_the_now_playing_row_and_keeps_its_reason() {
-        const DEVICE_LOSS: &str = "cpal host error: output stream disconnected";
+        let device_loss = forge_types::MessageRef::new(forge_types::MessageCode::from_static(
+            "speak",
+            "audio_device_lost",
+        ))
+        .with_detail(forge_types::UpstreamDetail::from_redacted(
+            "output stream disconnected",
+        ));
         let mut state = SpeakState::new();
         state.apply_event(started("a"));
 
         let changed = state.apply_event(SpeakEvent::Failed {
             request_id: rid("a"),
-            error: DEVICE_LOSS.to_owned(),
+            message: device_loss.clone(),
         });
 
         assert!(changed);
         assert!(state.now_speaking_snapshot().is_none());
-        assert_eq!(state.last_drop(), Some(DEVICE_LOSS));
+        assert_eq!(state.last_drop(), Some(&UserText::Message(device_loss)));
         assert_eq!(
             state.stats_snapshot().spoken,
             0,
             "an utterance the device dropped must not be counted as spoken"
+        );
+    }
+
+    #[test]
+    fn a_skipped_utterance_keeps_its_message_as_the_last_drop_and_counts_as_skipped() {
+        let skipped = forge_types::MessageRef::new(forge_types::MessageCode::from_static(
+            "speak",
+            "skipped_by_user",
+        ));
+        let mut state = SpeakState::new();
+        state.apply_event(started("a"));
+
+        state.apply_event(SpeakEvent::Skipped {
+            request_id: rid("a"),
+            message: skipped.clone(),
+        });
+
+        assert_eq!(
+            (
+                state.last_drop().cloned(),
+                state.stats_snapshot().skipped,
+                state.now_speaking_snapshot().is_none(),
+            ),
+            (Some(UserText::Message(skipped)), 1, true)
         );
     }
 

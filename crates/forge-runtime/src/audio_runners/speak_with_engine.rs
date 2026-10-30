@@ -5,7 +5,7 @@ use forge_registry::{
     ConfigProblem, ConfigSpec, DynamicSelectField, RunContext, StepTimer, SubActionCategory,
     SubActionRunner, TypedField,
 };
-use forge_types::{ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetry};
+use forge_types::{ArgStack, SubActionConfig, SubActionTelemetry};
 
 use super::{ENGINE, SPEECH_TEXT, WAIT_FOR_COMPLETION};
 use crate::speak_dispatcher::{SpeakDispatcher, SpeechOrigin};
@@ -97,7 +97,7 @@ impl SubActionRunner for SpeakWithEngineRunner {
         };
 
         (
-            timer.finish(SubActionOutcome::from_result(&dispatch_result)),
+            timer.finish(crate::speak_dispatcher::dispatch_outcome(&dispatch_result)),
             None,
         )
     }

@@ -1819,7 +1819,6 @@ pub(crate) fn neutral_pipeline_config() -> forge_tts_pipeline::PipelineConfig {
         blocklist_mode: forge_tts_pipeline::BlocklistMode::Censor,
         output: forge_tts_pipeline::OutputConfig {
             read_display_name_first: false,
-            says: "says".to_owned(),
             emote_treatment: forge_tts_pipeline::EmoteTreatment::Keep,
             strip_emoji: false,
             sanitize_punctuation: false,
@@ -1827,13 +1826,6 @@ pub(crate) fn neutral_pipeline_config() -> forge_tts_pipeline::PipelineConfig {
             language_aware_voice: false,
         },
         strip_reward_emotes: false,
-    }
-}
-
-pub(crate) fn english_spoken_words() -> forge_speak_queue::SpokenWords {
-    forge_speak_queue::SpokenWords {
-        link: "link".to_owned(),
-        says: "says".to_owned(),
     }
 }
 

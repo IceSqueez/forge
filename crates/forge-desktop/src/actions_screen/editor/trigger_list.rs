@@ -2,6 +2,7 @@ use super::cards::{add_row_button, empty_placeholder_card};
 use super::*;
 use crate::async_bridge;
 use crate::integration_switch::{category_inactive_badge, inactive_badge};
+use crate::repo_failure::RepoFailure;
 use forge_components::{
     BORDER_THIN, Density, FONT_XS, FONT_XXS, ForgePalette, Icon, Radius, Spacing, body_family,
     icon, mono_family, radius, row_card, spacing, status_dot, tr,
@@ -45,11 +46,11 @@ impl ScreenActionsView {
                 service
                     .unlink_trigger_instance(action_id, instance_id)
                     .await
-                    .map_err(|e| e.to_string())
+                    .map_err(RepoFailure::from)
             },
             |this, result, cx| match result {
                 Ok(()) => this.reload_detail(cx),
-                Err(message) => this.on_repo_error(&message, cx),
+                Err(failure) => this.on_repo_error(&failure, cx),
             },
             cx,
         );

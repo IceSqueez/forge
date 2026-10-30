@@ -8,6 +8,7 @@ use super::capture::Capture;
 use crate::actions::chord_caps;
 use crate::async_bridge;
 use crate::combo_conflict::{ComboHolder, conflict_prompt, release_holder};
+use crate::repo_failure::RepoFailure;
 
 pub(super) struct ConflictPrompt {
     pub(super) combo: String,
@@ -59,7 +60,7 @@ impl HotkeysScreenView {
                     }
                     this.apply_capture(capture, combo, cx);
                 }
-                Err(message) => this.on_repo_error(&message, cx),
+                Err(reason) => this.on_repo_error(&RepoFailure::operation(reason), cx),
             },
             cx,
         );

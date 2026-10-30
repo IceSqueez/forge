@@ -1,4 +1,5 @@
-use std::collections::VecDeque;
+use std::collections::{HashMap, VecDeque};
+use std::sync::Arc;
 
 use forge_events::{Event, EventSource};
 use forge_registry::TriggerCategory;
@@ -93,8 +94,55 @@ impl EventItem {
     }
 }
 
+#[derive(Default)]
+pub struct EventCausation {
+    downstream: HashMap<SharedString, u32>,
+    matched: HashMap<SharedString, u32>,
+}
+
+impl EventCausation {
+    pub fn downstream_of(&self, id: &SharedString) -> u32 {
+        self.downstream.get(id).copied().unwrap_or(0)
+    }
+
+    pub fn is_matched(&self, id: &SharedString) -> bool {
+        self.matched.contains_key(id)
+    }
+
+    fn tally_of<'a>(
+        &'a mut self,
+        item: &EventItem,
+    ) -> Option<(&'a mut HashMap<SharedString, u32>, SharedString)> {
+        let cause = item.caused_by.clone()?;
+        match item.typed {
+            Some(RuntimeEvent::ActionStarted(_)) => Some((&mut self.downstream, cause)),
+            Some(RuntimeEvent::CommandMatched(_)) => Some((&mut self.matched, cause)),
+            _ => None,
+        }
+    }
+
+    fn count(&mut self, item: &EventItem) {
+        if let Some((tally, cause)) = self.tally_of(item) {
+            *tally.entry(cause).or_default() += 1;
+        }
+    }
+
+    fn forget(&mut self, item: &EventItem) {
+        if let Some((tally, cause)) = self.tally_of(item)
+            && let Some(left) = tally.get_mut(&cause)
+        {
+            *left = left.saturating_sub(1);
+            if *left == 0 {
+                tally.remove(&cause);
+            }
+        }
+    }
+}
+
 pub struct EventLog {
-    items: VecDeque<EventItem>,
+    items: VecDeque<Arc<EventItem>>,
+    first_seq: u64,
+    causation: EventCausation,
     paused: bool,
     categories: EventCategories,
 }
@@ -103,6 +151,8 @@ impl EventLog {
     pub fn new() -> Self {
         Self {
             items: VecDeque::new(),
+            first_seq: 0,
+            causation: EventCausation::default(),
             paused: false,
             categories: EventCategories::default(),
         }
@@ -120,8 +170,20 @@ impl EventLog {
         self.push(Self::item_from_event(event, typed, categories));
     }
 
-    pub fn items(&self) -> &VecDeque<EventItem> {
+    pub fn items(&self) -> &VecDeque<Arc<EventItem>> {
         &self.items
+    }
+
+    pub fn first_seq(&self) -> u64 {
+        self.first_seq
+    }
+
+    pub fn end_seq(&self) -> u64 {
+        self.first_seq + self.items.len() as u64
+    }
+
+    pub fn causation(&self) -> &EventCausation {
+        &self.causation
     }
 
     pub fn is_paused(&self) -> bool {
@@ -134,17 +196,23 @@ impl EventLog {
     }
 
     pub fn clear(&mut self) {
+        self.first_seq = self.end_seq();
         self.items.clear();
+        self.causation = EventCausation::default();
     }
 
     pub fn push(&mut self, item: EventItem) {
         if self.paused {
             return;
         }
-        if self.items.len() >= RING_CAP {
-            self.items.pop_front();
+        if self.items.len() >= RING_CAP
+            && let Some(evicted) = self.items.pop_front()
+        {
+            self.first_seq += 1;
+            self.causation.forget(&evicted);
         }
-        self.items.push_back(item);
+        self.causation.count(&item);
+        self.items.push_back(Arc::new(item));
     }
 
     pub fn item_from_event(
@@ -255,9 +323,9 @@ impl EventLog {
 #[cfg(test)]
 mod tests {
     use forge_events::{
-        ActingSender, ActionDone, ChatSendFailed, ChatSent, QuickActionDone, RunOutcome,
-        ScriptLogLevel, ScriptLogged, SenderRole, SubActionDone, SubActionRun, TimerTick,
-        TypedEvent,
+        ActingSender, ActionDone, ActionStarted, ChatSendFailed, ChatSent, CommandMatched,
+        QuickActionDone, RunOutcome, ScriptLogLevel, ScriptLogged, SenderRole, SubActionDone,
+        SubActionRun, TimerTick, TypedEvent,
     };
     use forge_platform_twitch::vocabulary::SenderFallback;
     use forge_registry::TriggerRegistry;
@@ -573,5 +641,136 @@ mod tests {
         ] {
             assert_eq!(names_matching(filter), expected, "{filter:?}");
         }
+    }
+
+    fn chat_message() -> Event {
+        Event::new(EventSource::Twitch, "twitch.chat", serde_json::Value::Null)
+    }
+
+    fn noise() -> Event {
+        Event::new(EventSource::Core, "core.noise", serde_json::Value::Null)
+    }
+
+    fn action_started_by(cause: &Event) -> Event {
+        ActionStarted {
+            action_id: ActionId::new(),
+            action_name: "Shoutout".to_owned(),
+            sub_action_count: 1,
+        }
+        .into_event(EventSource::Core, Some(cause.id))
+    }
+
+    fn command_matched_by(cause: &Event) -> Event {
+        CommandMatched {
+            command: "!so".to_owned(),
+            kind_id: "twitch.chat".to_owned(),
+        }
+        .into_event(EventSource::Core, Some(cause.id))
+    }
+
+    fn logged(log: &mut EventLog, event: &Event) {
+        log.record(event, runtime_event::decode(event));
+    }
+
+    fn logged_noise(log: &mut EventLog, count: usize) {
+        for _ in 0..count {
+            logged(log, &noise());
+        }
+    }
+
+    fn item_id(event: &Event) -> SharedString {
+        item(event).id
+    }
+
+    #[test]
+    fn the_ring_keeps_exactly_its_capacity_and_evicts_only_past_it() {
+        let mut log = EventLog::new();
+
+        logged_noise(&mut log, RING_CAP);
+        let full = (log.first_seq(), log.end_seq(), log.items().len());
+        logged_noise(&mut log, 1);
+        let over = (log.first_seq(), log.end_seq(), log.items().len());
+
+        assert_eq!(
+            (full, over),
+            (
+                (0, RING_CAP as u64, RING_CAP),
+                (1, RING_CAP as u64 + 1, RING_CAP)
+            )
+        );
+    }
+
+    #[test]
+    fn an_evicted_action_stops_counting_toward_its_cause_one_at_a_time() {
+        let mut log = EventLog::new();
+        let cause = chat_message();
+        let id = item_id(&cause);
+        logged(&mut log, &cause);
+        logged(&mut log, &action_started_by(&cause));
+        logged(&mut log, &action_started_by(&cause));
+        let live = log.causation().downstream_of(&id);
+
+        logged_noise(&mut log, RING_CAP - 1);
+        let first_evicted = log.causation().downstream_of(&id);
+        logged_noise(&mut log, 1);
+        let second_evicted = log.causation().downstream_of(&id);
+
+        assert_eq!((live, first_evicted, second_evicted), (2, 1, 0));
+    }
+
+    #[test]
+    fn a_cause_stays_matched_until_its_last_command_match_is_evicted() {
+        let mut log = EventLog::new();
+        let cause = chat_message();
+        let id = item_id(&cause);
+        logged(&mut log, &cause);
+        logged(&mut log, &command_matched_by(&cause));
+        logged(&mut log, &command_matched_by(&cause));
+
+        logged_noise(&mut log, RING_CAP - 1);
+        let one_left = log.causation().is_matched(&id);
+        logged_noise(&mut log, 1);
+        let none_left = log.causation().is_matched(&id);
+
+        assert_eq!((one_left, none_left), (true, false));
+    }
+
+    #[test]
+    fn clearing_forgets_the_causation_and_never_reuses_a_sequence_number() {
+        let mut log = EventLog::new();
+        let cause = chat_message();
+        let id = item_id(&cause);
+        logged(&mut log, &cause);
+        logged(&mut log, &action_started_by(&cause));
+        logged(&mut log, &command_matched_by(&cause));
+        let end_before_clear = log.end_seq();
+
+        log.clear();
+
+        assert_eq!(
+            (
+                log.causation().downstream_of(&id),
+                log.causation().is_matched(&id),
+                log.first_seq(),
+                log.end_seq(),
+            ),
+            (0, false, end_before_clear, end_before_clear)
+        );
+    }
+
+    #[test]
+    fn an_action_arriving_while_paused_is_neither_listed_nor_counted() {
+        let mut log = EventLog::new();
+        let cause = chat_message();
+        let id = item_id(&cause);
+        logged(&mut log, &cause);
+
+        log.toggle_paused();
+        logged(&mut log, &action_started_by(&cause));
+
+        assert_eq!(
+            (log.causation().downstream_of(&id), log.items().len()),
+            (0, 1)
+        );
     }
 }

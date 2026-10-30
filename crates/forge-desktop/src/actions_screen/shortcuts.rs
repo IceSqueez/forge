@@ -8,7 +8,7 @@ impl ActionForm {
 }
 
 impl ScreenActionsView {
-    pub(super) fn has_open_modal(&self) -> bool {
+    pub(super) fn has_open_modal(&self, cx: &App) -> bool {
         self.action_modal.is_some()
             || self.sub_form.is_some()
             || self.add_trigger.is_some()
@@ -16,6 +16,10 @@ impl ScreenActionsView {
             || self.history_modal.is_some()
             || self.test_run.is_some()
             || self.pending_delete.get().is_some()
+            || self
+                .pack_export
+                .as_ref()
+                .is_some_and(|host| host.flow.read(cx).is_busy())
     }
 }
 
@@ -39,14 +43,14 @@ impl ScreenShortcuts for ScreenActionsView {
     }
 
     fn run_shortcut(&mut self, cx: &mut Context<Self>) {
-        if self.has_open_modal() {
+        if self.has_open_modal(cx) {
             return;
         }
         self.start_test_run(cx);
     }
 
     fn new_action_shortcut(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if self.has_open_modal() {
+        if self.has_open_modal(cx) {
             return;
         }
         self.open_action_modal(None, window, cx);

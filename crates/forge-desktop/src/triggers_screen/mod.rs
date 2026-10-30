@@ -1,4 +1,5 @@
 use crate::platform_visuals::platform_color;
+use crate::repo_failure::RepoFailure;
 use forge_components::FONT_BADGE;
 use forge_components::FONT_META;
 use forge_components::FONT_SM;
@@ -21,7 +22,7 @@ use std::future::Future;
 use std::sync::Arc;
 
 use crate::actions::LIST_CONTEXT;
-use crate::async_bridge;
+use crate::async_bridge::{self, KeyedSnapshotWriters};
 use crate::collection_options::ChoiceOptions;
 use crate::config_form::{CollectionChoices, ConfigField};
 use crate::integration_switch::{IntegrationSwitch, SwitchWatch};
@@ -257,6 +258,8 @@ pub struct TriggersRegistryView {
     rt_handle: tokio::runtime::Handle,
     detail_width: Pixels,
     loading: bool,
+    reload_generation: async_bridge::Generation,
+    detail_writers: KeyedSnapshotWriters<TriggerInstanceId>,
     instances: Vec<TriggerInstanceRow>,
     visible: Vec<usize>,
     list_scroll: UniformListScrollHandle,
@@ -305,6 +308,7 @@ impl TriggersRegistryView {
             cx,
         );
 
+        let detail_writers = KeyedSnapshotWriters::new(&rt_handle);
         let view = Self {
             repo,
             action_repo,
@@ -313,6 +317,8 @@ impl TriggersRegistryView {
             rt_handle,
             detail_width: detail::DETAIL_SHEET_W,
             loading: true,
+            reload_generation: async_bridge::Generation::default(),
+            detail_writers,
             instances: Vec::new(),
             visible: Vec::new(),
             list_scroll: UniformListScrollHandle::new(),
@@ -385,28 +391,43 @@ impl TriggersRegistryView {
 
     fn spawn_reload(
         &self,
-        work: impl Future<Output = Result<Vec<TriggerInstanceRow>, String>> + Send + 'static,
+        work: impl Future<Output = Result<Vec<TriggerInstanceRow>, RepoFailure>> + Send + 'static,
         cx: &mut Context<Self>,
     ) {
-        Self::reload_entity(cx.entity(), self.rt_handle.clone(), work, cx);
+        let ticket = self.reload_generation.next();
+        async_bridge::run_async(
+            &self.rt_handle,
+            work,
+            move |this, result, cx| match result {
+                _ if !this.reload_generation.is_current(ticket) => {}
+                Ok(rows) => this.apply_rows(rows, cx),
+                Err(failure) => this.on_repo_error(&failure, cx),
+            },
+            cx,
+        );
     }
 
-    fn reload_entity(
-        view: Entity<TriggersRegistryView>,
-        rt_handle: tokio::runtime::Handle,
-        work: impl Future<Output = Result<Vec<TriggerInstanceRow>, String>> + Send + 'static,
-        app: &mut App,
+    fn spawn_write<T: Send + 'static>(
+        &self,
+        write: impl Future<Output = Result<T, RepoFailure>> + Send + 'static,
+        cx: &mut Context<Self>,
     ) {
-        async_bridge::run_async_entity(
-            &rt_handle,
-            view,
-            work,
-            |this, result, cx| match result {
-                Ok(rows) => this.apply_rows(rows, cx),
-                Err(message) => this.on_repo_error(&message, cx),
-            },
-            app,
+        async_bridge::run_async(
+            &self.rt_handle,
+            write,
+            |this, written, cx| this.on_write_settled(written.map(drop), cx),
+            cx,
         );
+    }
+
+    fn on_write_settled(&mut self, written: Result<(), RepoFailure>, cx: &mut Context<Self>) {
+        match written {
+            Ok(()) => self.reload(cx),
+            Err(failure) => {
+                self.on_repo_error(&failure, cx);
+                self.reload(cx);
+            }
+        }
     }
 
     fn apply_rows(&mut self, rows: Vec<TriggerInstanceRow>, cx: &mut Context<Self>) {
@@ -419,18 +440,32 @@ impl TriggersRegistryView {
             self.detail = None;
         }
         self.loading = false;
-        if let Some(id) = self.selected {
+        if let Some(id) = self.selected
+            && !self.adopt_row_into_detail(id)
+        {
             self.load_detail(id, cx);
         }
         cx.notify();
     }
 
-    fn on_repo_error(&mut self, message: &str, cx: &mut Context<Self>) {
-        tracing::error!(error = %message, "triggers operation failed");
+    fn adopt_row_into_detail(&mut self, id: TriggerInstanceId) -> bool {
+        let Some(detail) = self.detail.as_mut().filter(|d| d.instance.id == id) else {
+            return false;
+        };
+        if let Some(row) = self.instances.iter().find(|r| r.id == id) {
+            detail.instance.enabled = row.enabled;
+            detail.instance.name.clone_from(&row.name);
+        }
+        true
+    }
+
+    fn on_repo_error(&mut self, failure: &RepoFailure, cx: &mut Context<Self>) {
+        tracing::error!(error = %failure, "triggers operation failed");
+        let message = failure.text();
         self.loading = false;
         cx.push_toast(
             ToastKind::Error,
-            tr!("triggers_toast_error", message = message),
+            tr!("triggers_toast_error", message = message.as_str()),
         );
         cx.notify();
     }
@@ -516,8 +551,8 @@ impl Render for TriggersRegistryView {
     }
 }
 
-async fn load_rows(repo: &dyn TriggerInstanceRepo) -> Result<Vec<TriggerInstanceRow>, String> {
-    let instances = repo.list_user_defined().await.map_err(|e| e.to_string())?;
+async fn load_rows(repo: &dyn TriggerInstanceRepo) -> Result<Vec<TriggerInstanceRow>, RepoFailure> {
+    let instances = repo.list_user_defined().await.map_err(RepoFailure::from)?;
     let mut rows = Vec::with_capacity(instances.len());
     for instance in instances {
         let used_in_count = repo
@@ -549,10 +584,13 @@ mod tests {
 
     use super::*;
     use crate::test_support::{
-        StubActions, lifecycle_switch, owned_triggers, runtime, switch_lifecycle, test_backend,
+        StubActions, error_toasts, lifecycle_switch, owned_triggers, pump_until, runtime,
+        switch_lifecycle, test_backend, trigger_of,
     };
     use forge_components::Presentation;
     use forge_runtime::{LifecycleState, LifecycleStates};
+    use forge_types::TriggerInstance;
+    use std::sync::atomic::{AtomicBool, Ordering};
 
     const TWITCH_CHAT: &str = "twitch.chat";
 
@@ -578,6 +616,35 @@ mod tests {
         ] {
             assert!(Platform::from_kind_id(kind_id) == expected, "{kind_id:?}");
         }
+    }
+
+    #[test]
+    fn the_kind_picker_shows_each_registered_category_in_the_canonical_order() {
+        let mut registry = forge_registry::TriggerRegistry::new();
+        for (id, category) in [
+            ("core.startup", forge_registry::TriggerCategory::Core),
+            ("twitch.chat", forge_registry::TriggerCategory::Chat),
+            ("twitch.ban", forge_registry::TriggerCategory::Moderation),
+        ] {
+            registry
+                .register(Box::new(crate::test_support::StubTrigger::new(
+                    id,
+                    id,
+                    category,
+                    crate::test_support::Declares::Nothing,
+                )))
+                .expect("every stub carries its own id");
+        }
+
+        let (groups, _) = build_kind_groups(&registry, &forge_components::FORGE_DEFAULT);
+
+        assert_eq!(
+            groups
+                .iter()
+                .map(|group| group.items[0].id.to_string())
+                .collect::<Vec<_>>(),
+            ["kind-twitch.chat", "kind-twitch.ban", "kind-core.startup"]
+        );
     }
 
     #[test]
@@ -681,5 +748,213 @@ mod tests {
             view.read_with(cx, |view, _| view.favorites.entity_id()),
             app_wide
         );
+    }
+
+    #[test]
+    fn every_registered_trigger_kind_can_be_picked_when_creating_a_trigger() {
+        let mut registry = forge_registry::TriggerRegistry::new();
+        forge_runtime::register_core_triggers(&mut registry).unwrap();
+        forge_platform_twitch::register_twitch_triggers(&mut registry).unwrap();
+        forge_platform_kick::register_kick_triggers(&mut registry).unwrap();
+        forge_platform_youtube::register_youtube_triggers(&mut registry).unwrap();
+        forge_obs::register_obs_triggers(&mut registry).unwrap();
+        forge_vtube::register_vtube_triggers(&mut registry).unwrap();
+        forge_midi::register_midi_triggers(&mut registry).unwrap();
+
+        let (_, picks) = build_kind_groups(&registry, &forge_components::FORGE_DEFAULT);
+
+        let unreachable: Vec<&str> = registry
+            .all()
+            .map(|descriptor| descriptor.id())
+            .filter(|id| !picks.values().any(|picked| picked == id))
+            .collect();
+        assert_eq!(unreachable, Vec::<&str>::new());
+    }
+
+    pub(super) struct TriggerList {
+        pub(super) view: Entity<TriggersRegistryView>,
+        rows: Arc<std::sync::Mutex<Vec<TriggerInstance>>>,
+        rt: tokio::runtime::Runtime,
+    }
+
+    pub(super) fn open_trigger_list(
+        cx: &mut gpui::TestAppContext,
+        seeded: Vec<TriggerInstance>,
+    ) -> TriggerList {
+        crate::i18n::install_language(forge_storage::Language::En);
+        cx.update(|cx| {
+            cx.set_global(Presentation::new(ThemeId::ForgeDefault, Density::Cozy));
+            cx.set_global(forge_components::Toasts::new());
+        });
+        let rt = runtime();
+        let rows = Arc::new(std::sync::Mutex::new(seeded));
+        let mut repo = MockTriggerInstanceRepo::new();
+        let listed = Arc::clone(&rows);
+        repo.expect_list_user_defined()
+            .returning(move || Ok(listed.lock().unwrap().clone()));
+        repo.expect_list_all().returning(|| Ok(Vec::new()));
+        repo.expect_actions_using().returning(|_| Ok(Vec::new()));
+        repo.expect_set_enabled().returning(|_, _| {
+            Err(forge_storage::StorageError::Connection {
+                reason: "database is locked".to_owned(),
+            })
+        });
+        let archived = Arc::new(std::sync::Mutex::new(Vec::new()));
+        let (live, shelf) = (Arc::clone(&rows), Arc::clone(&archived));
+        repo.expect_archive().returning(move |id| {
+            let mut live = live.lock().unwrap();
+            let position = live.iter().position(|row| row.id == id).unwrap();
+            shelf.lock().unwrap().push(live.remove(position));
+            Ok(true)
+        });
+        let (live, shelf) = (Arc::clone(&rows), archived);
+        repo.expect_restore().returning(move |_| {
+            live.lock().unwrap().append(&mut shelf.lock().unwrap());
+            Ok(true)
+        });
+        let (settings, _writes) = test_backend();
+        let handle = rt.handle().clone();
+        let view = cx.update(|cx| {
+            cx.new(|cx| {
+                TriggersRegistryView::new(
+                    Arc::new(repo),
+                    Arc::new(StubActions),
+                    Arc::new(forge_registry::TriggerRegistry::new()),
+                    settings as Arc<dyn SettingsRepo>,
+                    handle,
+                    None,
+                    cx,
+                )
+            })
+        });
+        pump_until(&rt, || {
+            cx.run_until_parked();
+            view.read_with(cx, |view, _| !view.loading)
+        });
+        TriggerList { view, rows, rt }
+    }
+
+    impl TriggerList {
+        fn names(&self, cx: &mut gpui::TestAppContext) -> Vec<String> {
+            self.view.read_with(cx, |view, _| {
+                view.instances.iter().map(|row| row.name.clone()).collect()
+            })
+        }
+
+        pub(super) fn wait_for_names(&self, cx: &mut gpui::TestAppContext, expected: &[String]) {
+            pump_until(&self.rt, || {
+                cx.run_until_parked();
+                self.names(cx) == expected
+            });
+        }
+
+        fn errors(&self, cx: &mut gpui::TestAppContext) -> usize {
+            cx.update(|cx| error_toasts(cx))
+        }
+    }
+
+    pub(super) fn row_named(name: &str) -> TriggerInstance {
+        let mut instance = trigger_of(TWITCH_CHAT);
+        instance.name = name.to_owned();
+        instance
+    }
+
+    #[gpui::test]
+    fn opening_the_trigger_list_lands_its_rows(cx: &mut gpui::TestAppContext) {
+        let list = open_trigger_list(cx, vec![row_named("Greeter")]);
+
+        assert_eq!(list.names(cx), ["Greeter"]);
+    }
+
+    #[gpui::test]
+    fn a_failed_write_toasts_even_with_a_newer_reload_in_flight(cx: &mut gpui::TestAppContext) {
+        let list = open_trigger_list(cx, Vec::new());
+        let (_held, reload_gate) = tokio::sync::oneshot::channel::<()>();
+
+        list.view.update(cx, |view, cx| {
+            view.spawn_reload(
+                async move {
+                    reload_gate.await.map_err(RepoFailure::operation)?;
+                    Ok(Vec::new())
+                },
+                cx,
+            );
+            view.spawn_write(
+                async { Err::<(), _>(RepoFailure::operation("disk gone")) },
+                cx,
+            );
+        });
+
+        pump_until(&list.rt, || {
+            cx.run_until_parked();
+            list.errors(cx) == 1
+        });
+    }
+
+    #[gpui::test]
+    fn a_successful_write_relists_and_shows_what_it_wrote(cx: &mut gpui::TestAppContext) {
+        let list = open_trigger_list(cx, Vec::new());
+        let rows = Arc::clone(&list.rows);
+
+        list.view.update(cx, |view, cx| {
+            view.spawn_write(
+                async move {
+                    rows.lock().unwrap().push(row_named("Written"));
+                    Ok(())
+                },
+                cx,
+            );
+        });
+
+        list.wait_for_names(cx, &["Written".to_owned()]);
+    }
+
+    #[gpui::test]
+    fn a_stale_reload_that_failed_is_dropped_without_a_toast(cx: &mut gpui::TestAppContext) {
+        let list = open_trigger_list(cx, Vec::new());
+        let (release_stale, stale_gate) = tokio::sync::oneshot::channel::<()>();
+        let stale_landed = Arc::new(AtomicBool::new(false));
+        let landed = Arc::clone(&stale_landed);
+
+        list.view.update(cx, |view, cx| {
+            view.spawn_reload(
+                async move {
+                    stale_gate.await.map_err(RepoFailure::operation)?;
+                    landed.store(true, Ordering::SeqCst);
+                    Err(RepoFailure::operation("disk gone"))
+                },
+                cx,
+            );
+            view.reload(cx);
+        });
+        list.rows.lock().unwrap().push(row_named("Newest"));
+        list.wait_for_names(cx, &["Newest".to_owned()]);
+        release_stale.send(()).unwrap();
+        pump_until(&list.rt, || stale_landed.load(Ordering::SeqCst));
+        cx.run_until_parked();
+
+        assert_eq!(list.errors(cx), 0);
+    }
+
+    #[gpui::test]
+    fn a_failed_toggle_toasts_and_the_reload_restores_the_stored_state(
+        cx: &mut gpui::TestAppContext,
+    ) {
+        let list = open_trigger_list(cx, vec![row_named("Greeter")]);
+        let id = list.rows.lock().unwrap()[0].id;
+        let stored = list.rows.lock().unwrap()[0].enabled;
+        let shown = |list: &TriggerList, cx: &mut gpui::TestAppContext| {
+            list.view
+                .read_with(cx, |view, _| view.find(id).map(|row| row.enabled))
+        };
+
+        list.view.update(cx, |view, cx| view.toggle_enable(id, cx));
+        let optimistic = shown(&list, cx);
+        pump_until(&list.rt, || {
+            cx.run_until_parked();
+            list.errors(cx) == 1 && shown(&list, cx) == Some(stored)
+        });
+
+        assert_eq!(optimistic, Some(!stored));
     }
 }

@@ -1,4 +1,5 @@
 use crate::platform_visuals::platform_color;
+use crate::repo_failure::RepoFailure;
 use forge_components::FONT_LABEL;
 use forge_components::FONT_META;
 use forge_components::FONT_ROLE_BADGE;
@@ -115,6 +116,7 @@ pub struct VoiceAliasesView {
     speak: Option<SpeakQueueHandle>,
     rt_handle: tokio::runtime::Handle,
     loading: bool,
+    load_failed: bool,
     strategy: Loadable<StrategyChoice>,
     strategy_writer: SnapshotWriter,
     strategy_error: Option<String>,
@@ -154,6 +156,7 @@ impl VoiceAliasesView {
             speak,
             rt_handle,
             loading: true,
+            load_failed: false,
             strategy: Loadable::Loading,
             strategy_writer,
             strategy_error: None,
@@ -207,19 +210,32 @@ impl VoiceAliasesView {
         }
     }
 
+    fn retry_load(&mut self, cx: &mut Context<Self>) {
+        self.load_failed = false;
+        self.loading = true;
+        self.reload(cx);
+        cx.notify();
+    }
+
     fn reload(&self, cx: &mut Context<Self>) {
         let repo = Arc::clone(&self.repo);
         let viewer_repo = Arc::clone(&self.viewer_repo);
         async_bridge::run_async(
             &self.rt_handle,
             async move {
-                let aliases = repo.list().await.map_err(|e| e.to_string())?;
-                let viewers = viewer_repo.count().await.map_err(|e| e.to_string())?;
-                Ok::<_, String>((aliases, viewers))
+                let aliases = repo.list().await.map_err(RepoFailure::from)?;
+                let viewers = viewer_repo.count().await.map_err(RepoFailure::from)?;
+                Ok::<_, RepoFailure>((aliases, viewers))
             },
             |this, result, cx| match result {
-                Ok((aliases, viewers)) => this.apply_loaded(aliases, viewers, cx),
-                Err(message) => this.on_repo_error(&message, cx),
+                Ok((aliases, viewers)) => {
+                    this.load_failed = false;
+                    this.apply_loaded(aliases, viewers, cx);
+                }
+                Err(failure) => {
+                    this.load_failed = true;
+                    this.on_repo_error(&failure, cx);
+                }
             },
             cx,
         );
@@ -227,7 +243,7 @@ impl VoiceAliasesView {
 
     fn spawn_write(
         &self,
-        work: impl Future<Output = Result<Vec<VoiceAlias>, String>> + Send + 'static,
+        work: impl Future<Output = Result<Vec<VoiceAlias>, RepoFailure>> + Send + 'static,
         cx: &mut Context<Self>,
     ) {
         async_bridge::run_async(
@@ -235,7 +251,7 @@ impl VoiceAliasesView {
             work,
             |this, result, cx| match result {
                 Ok(aliases) => this.apply_aliases(aliases, cx),
-                Err(message) => this.on_repo_error(&message, cx),
+                Err(failure) => this.on_repo_error(&failure, cx),
             },
             cx,
         );
@@ -273,9 +289,14 @@ impl VoiceAliasesView {
             .collect();
     }
 
-    fn on_repo_error(&mut self, message: &str, cx: &mut Context<Self>) {
-        tracing::warn!(error = %message, "voice aliases operation failed");
+    fn on_repo_error(&mut self, failure: &RepoFailure, cx: &mut Context<Self>) {
+        tracing::warn!(error = %failure, "voice aliases operation failed");
+        let message = failure.text();
         self.loading = false;
+        cx.push_toast(
+            ToastKind::Error,
+            tr!("tts_aliases_operation_failed", error = message.as_str()),
+        );
         cx.notify();
     }
 
@@ -403,16 +424,20 @@ impl VoiceAliasesView {
                         form.update(cx, |f, cx| f.set_saving(false, cx));
                     }
                     if matches!(error, StorageError::AliasViewerTaken) {
+                        tracing::warn!(error = %error, "voice alias viewer already taken");
+                        this.loading = false;
                         cx.push_toast(ToastKind::Error, tr!("tts_aliases_viewer_taken"));
+                        cx.notify();
+                    } else {
+                        this.on_repo_error(&error.into(), cx);
                     }
-                    this.on_repo_error(&error.to_string(), cx);
                 }
             },
             cx,
         );
     }
 
-    fn preview(&self, id: &AliasId) {
+    fn preview(&self, id: &AliasId, cx: &mut Context<Self>) {
         let Some(row) = self.row_by_id(id) else {
             return;
         };
@@ -425,24 +450,28 @@ impl VoiceAliasesView {
         let viewer_id = row.viewer_id.clone();
         let viewer_name = row.viewer_name.clone();
         let text = tr!("tts_aliases_preview_text");
-        self.rt_handle.spawn(async move {
-            let request = SpeakRequest {
-                request_id: RequestId::new(),
-                viewer_id,
-                viewer_name,
-                text,
-                priority: Priority::Normal,
-                engine_override: None,
-                voice_override: None,
-                source_event_id: None,
-                is_reward: false,
-                target: None,
-                message_emotes: EmoteTokenSet::default(),
-            };
-            if let Err(e) = handle.send(SpeakCommand::Enqueue(request)).await {
-                tracing::warn!(error = %e, "voice alias preview failed");
-            }
-        });
+        async_bridge::report_failure(
+            &self.rt_handle,
+            async move {
+                let request = SpeakRequest {
+                    request_id: RequestId::new(),
+                    viewer_id,
+                    viewer_name,
+                    text,
+                    priority: Priority::Normal,
+                    engine_override: None,
+                    voice_override: None,
+                    source_event_id: None,
+                    is_reward: false,
+                    target: None,
+                    message_emotes: EmoteTokenSet::default(),
+                };
+                handle.send(SpeakCommand::Enqueue(request)).await
+            },
+            async_bridge::ErrorSink::Toast,
+            tr!("tts_aliases_preview_failed"),
+            cx,
+        );
     }
 
     fn request_delete(&mut self, id: AliasId, cx: &mut Context<Self>) {
@@ -470,13 +499,13 @@ impl VoiceAliasesView {
         let speak = self.speak.clone();
         self.spawn_write(
             async move {
-                repo.delete(&id).await.map_err(|e| e.to_string())?;
+                repo.delete(&id).await.map_err(RepoFailure::from)?;
                 if let Some(handle) = speak
                     && let Err(e) = handle.send(SpeakCommand::RemoveAlias(id)).await
                 {
                     tracing::warn!(error = %e, "voice alias hot-reload (remove) failed");
                 }
-                repo.list().await.map_err(|e| e.to_string())
+                repo.list().await.map_err(RepoFailure::from)
             },
             cx,
         );
@@ -646,10 +675,24 @@ impl VoiceAliasesView {
             } else {
                 tr!("tts_aliases_empty")
             };
-            let mut state = empty_state(caption, palette).density(density);
-            if self.loading {
-                state = state.loading("voice-aliases-loading");
-            }
+            let state = if self.load_failed {
+                div()
+                    .p(spacing(Spacing::Md, density))
+                    .child(error_row_with_retry(
+                        "va-load-retry",
+                        tr!("tts_aliases_load_failed"),
+                        palette,
+                        cx.listener(|this, _: &ClickEvent, _, cx| this.retry_load(cx)),
+                        density,
+                    ))
+                    .into_any_element()
+            } else {
+                let mut state = empty_state(caption, palette).density(density);
+                if self.loading {
+                    state = state.loading("voice-aliases-loading");
+                }
+                state.into_any_element()
+            };
             let header_only = data_table(palette, columns, Vec::new())
                 .density(density)
                 .header_padding(scaled(HEADER_PAD_V, density), scaled(HEADER_PAD_H, density))
@@ -829,7 +872,7 @@ impl VoiceAliasesView {
             .child(icon(Icon::PlayerPlay, ACTION_GLYPH, preview_color));
         if !muted {
             preview = preview.cursor_pointer().on_click(
-                cx.listener(move |this, _: &ClickEvent, _, _| this.preview(&preview_alias)),
+                cx.listener(move |this, _: &ClickEvent, _, cx| this.preview(&preview_alias, cx)),
             );
         }
         let edit = div()
@@ -1219,7 +1262,14 @@ mod tests {
         });
         settle(cx, &rt, |cx| cx.update(|cx| error_toasts(cx)) > 0);
 
-        assert_eq!(cx.update(|cx| error_toasts(cx)), 1);
+        let messages: Vec<String> = cx.update(|cx| {
+            cx.global::<Toasts>()
+                .items()
+                .iter()
+                .map(|toast| toast.message.to_string())
+                .collect()
+        });
+        assert_eq!(messages, [tr!("tts_aliases_viewer_taken")]);
     }
 
     fn stored_ids(fixture: &Fixture, rt: &tokio::runtime::Runtime) -> Vec<String> {
@@ -1676,5 +1726,133 @@ mod tests {
             (save_error, shown_strategy(&view, cx)),
             (Some(read_only), Some(StrategyChoice::Random))
         );
+    }
+
+    const FLAKY_VIEWER: &str = "twitch:alice";
+
+    struct FlakyAliases {
+        view: Entity<VoiceAliasesView>,
+        lists_fail: Arc<std::sync::atomic::AtomicBool>,
+        rt: tokio::runtime::Runtime,
+    }
+
+    fn aliases_listing(
+        cx: &mut TestAppContext,
+        lists_fail: bool,
+        speak: Option<SpeakQueueHandle>,
+        rt: tokio::runtime::Runtime,
+    ) -> FlakyAliases {
+        use std::sync::atomic::{AtomicBool, Ordering};
+
+        install_language(Language::En);
+        cx.update(|cx| {
+            cx.set_global(Presentation::new(ThemeId::ForgeDefault, Density::Cozy));
+            cx.set_global(Toasts::new());
+        });
+        let lists_fail = Arc::new(AtomicBool::new(lists_fail));
+        let failing = Arc::clone(&lists_fail);
+        let mut repo = forge_storage::voice_aliases::MockVoiceAliasRepo::new();
+        repo.expect_list().returning(move || {
+            if failing.load(Ordering::SeqCst) {
+                Err(StorageError::Connection {
+                    reason: "database is locked".to_owned(),
+                })
+            } else {
+                Ok(vec![keyed("a", FLAKY_VIEWER, "voice-a")])
+            }
+        });
+        repo.expect_get_strategy()
+            .returning(|| Ok(AssignmentStrategy::Random));
+        let mut viewers = forge_storage::viewer::MockViewerRepo::new();
+        viewers.expect_count().returning(|| Ok(0));
+        let handle = rt.handle().clone();
+        let view = cx.update(|cx| {
+            cx.new(|cx| VoiceAliasesView::new(Arc::new(repo), Arc::new(viewers), speak, handle, cx))
+        });
+        FlakyAliases {
+            view,
+            lists_fail,
+            rt,
+        }
+    }
+
+    impl FlakyAliases {
+        fn wait_for(
+            &self,
+            cx: &mut TestAppContext,
+            mut reached: impl FnMut(&mut TestAppContext) -> bool,
+        ) {
+            crate::test_support::pump_until(&self.rt, || {
+                cx.run_until_parked();
+                reached(cx)
+            });
+        }
+
+        fn load_failed(&self, cx: &mut TestAppContext) -> bool {
+            self.view.read_with(cx, |view, _| view.load_failed)
+        }
+
+        fn rows(&self, cx: &mut TestAppContext) -> usize {
+            self.view.read_with(cx, |view, _| view.aliases.len())
+        }
+    }
+
+    #[gpui::test]
+    fn a_failed_list_load_shows_the_retry_state_with_one_toast(cx: &mut TestAppContext) {
+        let listing = aliases_listing(cx, true, None, runtime());
+
+        listing.wait_for(cx, |cx| listing.load_failed(cx));
+
+        assert_eq!(
+            (
+                cx.update(|cx| error_toasts(cx)),
+                listing.view.read_with(cx, |view, _| view.loading),
+            ),
+            (1, false)
+        );
+    }
+
+    #[gpui::test]
+    fn a_retry_after_a_failed_list_load_lands_the_aliases(cx: &mut TestAppContext) {
+        let listing = aliases_listing(cx, true, None, runtime());
+        listing.wait_for(cx, |cx| listing.load_failed(cx));
+        listing
+            .lists_fail
+            .store(false, std::sync::atomic::Ordering::SeqCst);
+
+        listing.view.update(cx, |view, cx| view.retry_load(cx));
+        let retrying = listing.load_failed(cx);
+        listing.wait_for(cx, |cx| listing.rows(cx) == 1);
+
+        assert_eq!((retrying, listing.load_failed(cx)), (false, false));
+    }
+
+    #[gpui::test]
+    fn a_retry_that_fails_again_returns_to_the_retry_state(cx: &mut TestAppContext) {
+        let listing = aliases_listing(cx, true, None, runtime());
+        listing.wait_for(cx, |cx| listing.load_failed(cx));
+
+        listing.view.update(cx, |view, cx| view.retry_load(cx));
+        listing.wait_for(cx, |cx| listing.load_failed(cx));
+
+        assert_eq!(cx.update(|cx| error_toasts(cx)), 2);
+    }
+
+    #[gpui::test]
+    fn a_preview_the_speech_queue_refused_toasts_the_failure(cx: &mut TestAppContext) {
+        let queue_runtime = runtime();
+        let (speak, _events, _resolver) =
+            queue_runtime.block_on(async { spawn_speak_queue(Vec::new()) });
+        drop(queue_runtime);
+        let listing = aliases_listing(cx, false, Some(speak), runtime());
+        listing.wait_for(cx, |cx| listing.rows(cx) == 1);
+
+        listing.view.update(cx, |view, cx| {
+            view.preview(&AliasId("a".to_owned()), cx);
+        });
+        listing.wait_for(cx, |cx| cx.update(|cx| error_toasts(cx)) == 1);
+
+        let message = cx.update(|cx| cx.global::<Toasts>().items()[0].message.to_string());
+        assert_eq!(message, tr!("tts_aliases_preview_failed"));
     }
 }

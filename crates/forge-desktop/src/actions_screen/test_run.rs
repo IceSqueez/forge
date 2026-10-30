@@ -117,6 +117,7 @@ pub(super) struct TestRunModal {
     selected_trigger: Option<usize>,
     note: Option<TestRunNote>,
     trigger_menu: Option<Point<Pixels>>,
+    dispatched: EventId,
     root: Option<EventId>,
     top_run_ids: HashMap<EventId, usize>,
     phase: TestRunPhase,
@@ -162,6 +163,8 @@ impl TestRunModal {
             .await;
         });
 
+        let dispatch_root = super::test_trigger::manual_test_root(action_id);
+        let dispatched = dispatch_root.id;
         let (tx, rx) = tokio::sync::oneshot::channel();
         rt_handle.spawn(async move {
             #[expect(
@@ -172,11 +175,14 @@ impl TestRunModal {
                 super::test_trigger::dispatch_test_run(
                     &scheduler,
                     &bus,
-                    action_id,
-                    queue_id,
-                    admission,
-                    trigger_kind,
-                    initial_args,
+                    super::test_trigger::TestRunRequest {
+                        root: dispatch_root,
+                        action_id,
+                        queue_id,
+                        admission,
+                        trigger_kind,
+                        initial_args,
+                    },
                 )
                 .await,
             );
@@ -199,6 +205,7 @@ impl TestRunModal {
             selected_trigger,
             note,
             trigger_menu: None,
+            dispatched,
             root: None,
             top_run_ids: HashMap::new(),
             phase: TestRunPhase::Awaiting,
@@ -303,7 +310,10 @@ impl TestRunModal {
     fn on_test_event(&mut self, event: &Event, cx: &mut Context<Self>) -> bool {
         match runtime_event::decode(event) {
             Some(RuntimeEvent::ActionStarted(started)) => {
-                if self.root.is_some() || started.action_id != self.action_id {
+                if self.root.is_some()
+                    || started.action_id != self.action_id
+                    || event.caused_by != Some(self.dispatched)
+                {
                     return false;
                 }
                 self.root = Some(event.id);
@@ -315,6 +325,7 @@ impl TestRunModal {
             }
             Some(RuntimeEvent::ActionSkipped(skipped)) => {
                 if skipped.action_id == self.action_id
+                    && event.caused_by == Some(self.dispatched)
                     && matches!(self.phase, TestRunPhase::Awaiting)
                 {
                     self.phase = TestRunPhase::NotStarted;

@@ -41,6 +41,7 @@ use crate::midi_mapping_modal::{
 };
 use crate::midi_signal::{MidiSignal, kind_color, note_name, short_kind_label};
 use crate::navigation::NavRequested;
+use crate::repo_failure::RepoFailure;
 use crate::runtime_event;
 use forge_components::ActivePresentation;
 use forge_components::PushToast;
@@ -156,8 +157,8 @@ struct MappingRow {
 async fn load_mappings(
     triggers: &dyn TriggerInstanceRepo,
     actions: &dyn ActionRepo,
-) -> Result<Vec<MappingRow>, String> {
-    let instances = triggers.list_all().await.map_err(|e| e.to_string())?;
+) -> Result<Vec<MappingRow>, RepoFailure> {
+    let instances = triggers.list_all().await.map_err(RepoFailure::from)?;
     let mut rows = Vec::new();
     for instance in instances {
         if !instance.kind_id.starts_with(INPUT_PREFIX) {
@@ -166,13 +167,13 @@ async fn load_mappings(
         let linked = triggers
             .actions_using(instance.id)
             .await
-            .map_err(|e| e.to_string())?;
+            .map_err(RepoFailure::from)?;
         if !instance.user_defined && linked.is_empty() {
             continue;
         }
         let mut action = None;
         if let Some(first) = linked.first()
-            && let Some(found) = actions.get(*first).await.map_err(|e| e.to_string())?
+            && let Some(found) = actions.get(*first).await.map_err(RepoFailure::from)?
         {
             action = Some((found.id, found.name));
         }
@@ -190,22 +191,22 @@ async fn save_mapping(
     triggers: &dyn TriggerInstanceRepo,
     actions: &dyn ActionRepo,
     draft: MappingDraft,
-) -> Result<Vec<MappingRow>, String> {
+) -> Result<Vec<MappingRow>, RepoFailure> {
     let overrides = draft.signal.overrides();
     let instance_id = match draft.instance_id {
         Some(id) => {
             let source = triggers
                 .get(id)
                 .await
-                .map_err(|e| e.to_string())?
-                .ok_or_else(|| "trigger instance not found".to_owned())?;
+                .map_err(RepoFailure::from)?
+                .ok_or_else(RepoFailure::trigger_gone)?;
             let updated = TriggerInstance {
                 kind_id: draft.signal.kind_id.clone(),
                 name: draft.name.clone(),
                 overrides,
                 ..source
             };
-            triggers.save(&updated).await.map_err(|e| e.to_string())?;
+            triggers.save(&updated).await.map_err(RepoFailure::from)?;
             id
         }
         None => {
@@ -221,7 +222,7 @@ async fn save_mapping(
                 cooldown_global: true,
                 permission_rung: PermissionRung::Everyone,
             };
-            triggers.save(&instance).await.map_err(|e| e.to_string())?;
+            triggers.save(&instance).await.map_err(RepoFailure::from)?;
             instance.id
         }
     };
@@ -229,18 +230,18 @@ async fn save_mapping(
     let linked = triggers
         .actions_using(instance_id)
         .await
-        .map_err(|e| e.to_string())?;
+        .map_err(RepoFailure::from)?;
     if !linked.contains(&draft.action_id) {
         for previous in linked {
             triggers
                 .unlink_action(previous, instance_id)
                 .await
-                .map_err(|e| e.to_string())?;
+                .map_err(RepoFailure::from)?;
         }
         triggers
             .link_action(draft.action_id, instance_id)
             .await
-            .map_err(|e| e.to_string())?;
+            .map_err(RepoFailure::from)?;
     }
 
     load_mappings(triggers, actions).await
@@ -497,19 +498,27 @@ impl MidiScreenView {
         }
     }
 
-    fn apply_mappings(&mut self, result: Result<Vec<MappingRow>, String>, cx: &mut Context<Self>) {
+    fn apply_mappings(
+        &mut self,
+        result: Result<Vec<MappingRow>, RepoFailure>,
+        cx: &mut Context<Self>,
+    ) {
         match result {
             Ok(rows) => {
                 self.mappings = rows;
                 cx.notify();
             }
-            Err(message) => self.on_repo_error(&message, cx),
+            Err(failure) => self.on_repo_error(&failure, cx),
         }
     }
 
-    fn on_repo_error(&mut self, message: &str, cx: &mut Context<Self>) {
-        tracing::warn!(error = %message, "midi operation failed");
-        cx.push_toast(ToastKind::Error, tr!("midi_toast_error", message = message));
+    fn on_repo_error(&mut self, failure: &RepoFailure, cx: &mut Context<Self>) {
+        tracing::warn!(error = %failure, "midi operation failed");
+        let message = failure.text();
+        cx.push_toast(
+            ToastKind::Error,
+            tr!("midi_toast_error", message = message.as_str()),
+        );
         cx.notify();
     }
 
@@ -754,10 +763,10 @@ impl MidiScreenView {
         };
         async_bridge::run_async(
             &self.rt_handle,
-            async move { client.rescan_ports().await.map_err(|e| e.to_string()) },
-            |this, result: Result<(), String>, cx| match result {
+            async move { client.rescan_ports().await.map_err(RepoFailure::operation) },
+            |this, result: Result<(), RepoFailure>, cx| match result {
                 Ok(()) => this.refresh_ports(cx),
-                Err(message) => this.on_repo_error(&message, cx),
+                Err(failure) => this.on_repo_error(&failure, cx),
             },
             cx,
         );
@@ -802,15 +811,15 @@ impl MidiScreenView {
                 let source = triggers
                     .get(id)
                     .await
-                    .map_err(|e| e.to_string())?
-                    .ok_or_else(|| "trigger instance not found".to_owned())?;
+                    .map_err(RepoFailure::from)?
+                    .ok_or_else(RepoFailure::trigger_gone)?;
                 let copy = TriggerInstance {
                     id: TriggerInstanceId::new(),
                     name: copy_name,
                     user_defined: true,
                     ..source
                 };
-                triggers.save(&copy).await.map_err(|e| e.to_string())?;
+                triggers.save(&copy).await.map_err(RepoFailure::from)?;
                 load_mappings(&*triggers, &*actions).await
             },
             |this, result, cx| this.apply_mappings(result, cx),
@@ -834,7 +843,7 @@ impl MidiScreenView {
         async_bridge::run_async(
             &self.rt_handle,
             async move {
-                triggers.archive(id).await.map_err(|e| e.to_string())?;
+                triggers.archive(id).await.map_err(RepoFailure::from)?;
                 load_mappings(&*triggers, &*actions).await
             },
             move |this, result, cx| {
@@ -866,7 +875,7 @@ impl MidiScreenView {
                         &rt_handle,
                         view.clone(),
                         async move {
-                            triggers.restore(id).await.map_err(|e| e.to_string())?;
+                            triggers.restore(id).await.map_err(RepoFailure::from)?;
                             load_mappings(&*triggers, &*actions).await
                         },
                         |this, result, cx| this.apply_mappings(result, cx),

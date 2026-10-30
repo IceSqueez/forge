@@ -53,11 +53,15 @@ impl SearchState {
     }
 
     pub fn matches(&self, hay: &str) -> bool {
-        self.query.is_empty() || hay.to_lowercase().contains(&self.query)
+        contains_folded(hay, &self.query)
     }
 
     pub fn clear<V: 'static>(&mut self, cx: &mut Context<V>) {
         self.query.clear();
         self.field.update(cx, |input, cx| input.set_content("", cx));
     }
+}
+
+pub fn contains_folded(hay: &str, folded_query: &str) -> bool {
+    folded_query.is_empty() || hay.to_lowercase().contains(folded_query)
 }

@@ -222,12 +222,27 @@ impl CloudCredentialsView {
             palette,
             cx,
         );
-        let azure_region = field("e.g. eastus", false, palette, cx);
+        let azure_region = field(
+            tr!("tts_cloud_field_placeholder_azure_region"),
+            false,
+            palette,
+            cx,
+        );
         let eleven_api = field("xi-api-key", true, palette, cx);
         let openai_api = field("sk-...", true, palette, cx);
         let polly_access = field("AKIA...", true, palette, cx);
-        let polly_secret = field("secret access key", true, palette, cx);
-        let polly_region = field("e.g. us-east-1", false, palette, cx);
+        let polly_secret = field(
+            tr!("tts_cloud_field_placeholder_secret_key"),
+            true,
+            palette,
+            cx,
+        );
+        let polly_region = field(
+            tr!("tts_cloud_field_placeholder_polly_region"),
+            false,
+            palette,
+            cx,
+        );
 
         let mut subs = Vec::new();
         for (entity, kind) in [

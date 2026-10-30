@@ -17,9 +17,25 @@ use std::collections::HashMap;
 
 struct SelectOptionsFetch {
     options: HashMap<String, Vec<(String, String)>>,
+    failed_keys: Vec<&'static str>,
     overlay_kind_by_identity: HashMap<String, String>,
     concurrent_queue_ids: HashSet<String>,
     unavailable_clip_ids: HashSet<String>,
+}
+
+fn loaded_options<T, E: std::fmt::Display>(
+    result: Result<T, E>,
+    key: &'static str,
+    failed_keys: &mut Vec<&'static str>,
+) -> Option<T> {
+    match result {
+        Ok(listed) => Some(listed),
+        Err(error) => {
+            tracing::warn!(%error, options = key, "picker options failed to load");
+            failed_keys.push(key);
+            None
+        }
+    }
 }
 
 fn mark_unavailable_clips(
@@ -50,13 +66,18 @@ impl ScreenActionsView {
             &self.rt_handle,
             async move {
                 let mut map: HashMap<String, Vec<(String, String)>> = HashMap::new();
+                let mut failed_keys: Vec<&'static str> = Vec::new();
                 map.insert(
                     DONATION_PROVIDER_OPTIONS_KEY.to_owned(),
                     donation_provider_options(),
                 );
                 let mut overlay_kind_by_identity: HashMap<String, String> = HashMap::new();
                 let mut concurrent_queue_ids: HashSet<String> = HashSet::new();
-                if let Ok(actions) = action_repo.list().await {
+                if let Some(actions) = loaded_options(
+                    action_repo.list().await,
+                    ACTION_OPTIONS_KEY,
+                    &mut failed_keys,
+                ) {
                     map.insert(
                         ACTION_OPTIONS_KEY.to_owned(),
                         actions
@@ -65,7 +86,9 @@ impl ScreenActionsView {
                             .collect(),
                     );
                 }
-                if let Ok(queues) = queue_repo.list().await {
+                if let Some(queues) =
+                    loaded_options(queue_repo.list().await, QUEUE_OPTIONS_KEY, &mut failed_keys)
+                {
                     concurrent_queue_ids = queues
                         .iter()
                         .filter(|q| !q.is_serial())
@@ -79,7 +102,11 @@ impl ScreenActionsView {
                             .collect(),
                     );
                 }
-                if let Ok(instances) = ti_repo.list_all().await {
+                if let Some(instances) = loaded_options(
+                    ti_repo.list_all().await,
+                    TRIGGER_INSTANCE_OPTIONS_KEY,
+                    &mut failed_keys,
+                ) {
                     map.insert(
                         TRIGGER_INSTANCE_OPTIONS_KEY.to_owned(),
                         instances
@@ -88,7 +115,11 @@ impl ScreenActionsView {
                             .collect(),
                     );
                 }
-                if let Ok(scripts) = script_repo.list().await {
+                if let Some(scripts) = loaded_options(
+                    script_repo.list().await,
+                    SCRIPT_OPTIONS_KEY,
+                    &mut failed_keys,
+                ) {
                     map.insert(
                         SCRIPT_OPTIONS_KEY.to_owned(),
                         scripts
@@ -98,7 +129,11 @@ impl ScreenActionsView {
                     );
                 }
                 let mut unavailable_clip_ids: HashSet<String> = HashSet::new();
-                if let Ok(clips) = clip_library.list().await {
+                if let Some(clips) = loaded_options(
+                    clip_library.list().await,
+                    CLIP_OPTIONS_KEY,
+                    &mut failed_keys,
+                ) {
                     unavailable_clip_ids = clip_library
                         .availability_of(&clips)
                         .await
@@ -114,7 +149,11 @@ impl ScreenActionsView {
                             .collect(),
                     );
                 }
-                if let Ok(globals) = globals_repo.list().await {
+                if let Some(globals) = loaded_options(
+                    globals_repo.list().await,
+                    GLOBAL_OPTIONS_KEY,
+                    &mut failed_keys,
+                ) {
                     map.insert(
                         GLOBAL_OPTIONS_KEY.to_owned(),
                         globals
@@ -123,7 +162,11 @@ impl ScreenActionsView {
                             .collect(),
                     );
                 }
-                if let Ok(overlays) = overlay_repo.list().await {
+                if let Some(overlays) = loaded_options(
+                    overlay_repo.list().await,
+                    OVERLAY_OPTIONS_KEY,
+                    &mut failed_keys,
+                ) {
                     map.insert(
                         OVERLAY_OPTIONS_KEY.to_owned(),
                         overlays
@@ -164,6 +207,7 @@ impl ScreenActionsView {
                 }
                 SelectOptionsFetch {
                     options: map,
+                    failed_keys,
                     overlay_kind_by_identity,
                     concurrent_queue_ids,
                     unavailable_clip_ids,
@@ -177,6 +221,7 @@ impl ScreenActionsView {
     fn on_select_options_fetched(&mut self, fetch: SelectOptionsFetch, cx: &mut Context<Self>) {
         let SelectOptionsFetch {
             mut options,
+            failed_keys,
             overlay_kind_by_identity,
             concurrent_queue_ids,
             unavailable_clip_ids,
@@ -188,11 +233,25 @@ impl ScreenActionsView {
                 &tr!("soundboard_pad_source_missing"),
             );
         }
-        self.overlay_schema = Arc::new(
-            self.overlay_schema
-                .with_identities(overlay_kind_by_identity),
-        );
-        self.concurrent_queue_ids = concurrent_queue_ids;
+        if !failed_keys.contains(&OVERLAY_OPTIONS_KEY) {
+            self.overlay_schema = Arc::new(
+                self.overlay_schema
+                    .with_identities(overlay_kind_by_identity),
+            );
+        }
+        if !failed_keys.contains(&QUEUE_OPTIONS_KEY) {
+            self.concurrent_queue_ids = concurrent_queue_ids;
+        }
+        for key in &failed_keys {
+            if let Some(previous) = self.select_options.remove(*key) {
+                options.insert((*key).to_owned(), previous);
+            }
+        }
+        let failed_anew = !failed_keys.is_empty() && !self.select_options_failed;
+        self.select_options_failed = !failed_keys.is_empty();
+        if failed_anew {
+            cx.push_toast(ToastKind::Error, tr!("action_editor_options_load_failed"));
+        }
         self.select_options = options;
         self.select_options.extend(self.collection_options.clone());
         if let Some(form) = self.sub_form.clone() {
@@ -217,7 +276,10 @@ mod tests {
 
     use super::super::tests::view_with;
     use super::*;
-    use crate::test_support::{StubActions, pump_until, runtime};
+    use crate::test_support::{StubActions, error_toasts, pump_until, runtime};
+    use forge_storage::action::MockActionRepo;
+    use std::sync::Arc;
+    use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
     const MISSING: &str = "file missing";
 
@@ -359,5 +421,177 @@ mod tests {
             details,
             Some((Some("Airhorn".to_owned()), Some("Missing clip".to_owned())))
         );
+    }
+
+    struct FlakyListing {
+        view: Entity<ScreenActionsView>,
+        lists_fail: Arc<AtomicBool>,
+        lists: Arc<AtomicUsize>,
+        rt: tokio::runtime::Runtime,
+    }
+
+    fn flaky_action_listing(cx: &mut gpui::TestAppContext) -> FlakyListing {
+        crate::i18n::install_language(forge_storage::Language::En);
+        cx.update(|cx| cx.set_global(forge_components::Toasts::new()));
+        let rt = runtime();
+        let lists_fail = Arc::new(AtomicBool::new(false));
+        let lists = Arc::new(AtomicUsize::new(0));
+        let listed = crate::test_support::action_running("Alpha", Vec::new());
+        let (failing, counter) = (Arc::clone(&lists_fail), Arc::clone(&lists));
+        let mut repo = MockActionRepo::new();
+        repo.expect_list().returning(move || {
+            counter.fetch_add(1, Ordering::SeqCst);
+            if failing.load(Ordering::SeqCst) {
+                Err(forge_storage::StorageError::Connection {
+                    reason: "database is locked".to_owned(),
+                })
+            } else {
+                Ok(vec![listed.clone()])
+            }
+        });
+        let view = view_with(
+            cx,
+            &rt,
+            Vec::new(),
+            MockMediaRepo::new(),
+            SubActionRegistry::new(),
+            Arc::new(repo),
+        );
+        let listing = FlakyListing {
+            view,
+            lists_fail,
+            lists,
+            rt,
+        };
+        pump_until(&listing.rt, || {
+            cx.run_until_parked();
+            listing.action_options(cx).is_some()
+        });
+        listing
+    }
+
+    impl FlakyListing {
+        fn action_options(&self, cx: &mut gpui::TestAppContext) -> Option<Vec<(String, String)>> {
+            self.view.read_with(cx, |view, _| {
+                view.select_options.get(ACTION_OPTIONS_KEY).cloned()
+            })
+        }
+
+        fn failed(&self, cx: &mut gpui::TestAppContext) -> bool {
+            self.view
+                .read_with(cx, |view, _| view.select_options_failed)
+        }
+
+        fn refetch(&self, cx: &mut gpui::TestAppContext, fail: bool) {
+            self.lists_fail.store(fail, Ordering::SeqCst);
+            let listed_before = self.lists.load(Ordering::SeqCst);
+            self.view
+                .update(cx, |view, cx| view.fetch_select_options(cx));
+            pump_until(&self.rt, || {
+                cx.run_until_parked();
+                self.lists.load(Ordering::SeqCst) > listed_before && self.failed(cx) == fail
+            });
+        }
+    }
+
+    #[gpui::test]
+    fn a_picker_whose_list_failed_to_load_keeps_the_options_it_had(cx: &mut gpui::TestAppContext) {
+        let listing = flaky_action_listing(cx);
+        let before = listing.action_options(cx);
+
+        listing.refetch(cx, true);
+
+        assert_eq!(listing.action_options(cx), before);
+    }
+
+    #[gpui::test]
+    fn a_picker_list_failing_on_every_fetch_toasts_once(cx: &mut gpui::TestAppContext) {
+        let listing = flaky_action_listing(cx);
+
+        listing.refetch(cx, true);
+        listing.refetch(cx, true);
+        listing.refetch(cx, false);
+
+        assert_eq!(cx.update(|cx| error_toasts(cx)), 1);
+    }
+
+    #[gpui::test]
+    fn a_picker_list_failing_again_after_recovering_toasts_again(cx: &mut gpui::TestAppContext) {
+        let listing = flaky_action_listing(cx);
+
+        listing.refetch(cx, true);
+        listing.refetch(cx, false);
+        listing.refetch(cx, true);
+
+        assert_eq!(cx.update(|cx| error_toasts(cx)), 2);
+    }
+
+    #[gpui::test]
+    fn a_failed_queue_list_keeps_what_the_screen_knew_about_concurrent_queues(
+        cx: &mut gpui::TestAppContext,
+    ) {
+        let listing = flaky_action_listing(cx);
+        let known: HashSet<String> = ["queue-1".to_owned()].into_iter().collect();
+        listing
+            .view
+            .update(cx, |view, _| view.concurrent_queue_ids = known.clone());
+
+        listing.view.update(cx, |view, cx| {
+            view.on_select_options_fetched(
+                SelectOptionsFetch {
+                    options: HashMap::new(),
+                    failed_keys: vec![QUEUE_OPTIONS_KEY],
+                    overlay_kind_by_identity: HashMap::new(),
+                    concurrent_queue_ids: HashSet::new(),
+                    unavailable_clip_ids: HashSet::new(),
+                },
+                cx,
+            );
+        });
+
+        let kept = listing
+            .view
+            .read_with(cx, |view, _| view.concurrent_queue_ids.clone());
+        assert_eq!(kept, known);
+    }
+
+    #[gpui::test]
+    fn a_failed_overlay_list_keeps_the_identities_the_content_form_reads(
+        cx: &mut gpui::TestAppContext,
+    ) {
+        const IDENTITY: &str = "overlay-1";
+        let listing = flaky_action_listing(cx);
+        let mut kinds = forge_overlay::OverlayKindRegistry::new();
+        forge_overlay::register_builtin_kinds(&mut kinds).unwrap();
+        let known: HashMap<String, String> =
+            [(IDENTITY.to_owned(), "overlay.alert".to_owned())].into();
+        let content_fields = |view: &ScreenActionsView| {
+            view.overlay_schema
+                .fields_for(forge_runtime::CONTENT_SCHEMA_KEY, IDENTITY)
+                .len()
+        };
+        let before = listing.view.update(cx, |view, _| {
+            view.overlay_schema = Arc::new(
+                crate::actions_screen::overlay_schema::OverlayContentSchema::new(Arc::new(kinds))
+                    .with_identities(known),
+            );
+            content_fields(view)
+        });
+
+        listing.view.update(cx, |view, cx| {
+            view.on_select_options_fetched(
+                SelectOptionsFetch {
+                    options: HashMap::new(),
+                    failed_keys: vec![OVERLAY_OPTIONS_KEY],
+                    overlay_kind_by_identity: HashMap::new(),
+                    concurrent_queue_ids: HashSet::new(),
+                    unavailable_clip_ids: HashSet::new(),
+                },
+                cx,
+            );
+        });
+
+        let after = listing.view.read_with(cx, |view, _| content_fields(view));
+        assert_eq!((before > 0, after), (true, before));
     }
 }

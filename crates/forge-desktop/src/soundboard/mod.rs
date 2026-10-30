@@ -15,7 +15,9 @@ use forge_components::{
 use forge_events::Event;
 use forge_runtime::EventBus;
 use forge_soundboard::builtin_library::BuiltinSoundEntry;
-use forge_soundboard::{ClipAvailability, ClipLibrary, SoundboardPlayer, SoundboardSettings};
+use forge_soundboard::{
+    ClipAvailability, ClipLibrary, SoundboardPlayer, SoundboardSettings, SoundboardSettingsHandle,
+};
 use forge_storage::SettingsRepo;
 use forge_types::ClipId;
 use gpui::{
@@ -108,9 +110,11 @@ pub struct SoundboardView {
     settings_repo: Arc<dyn SettingsRepo>,
     rt_handle: tokio::runtime::Handle,
     master_volume_debounce: async_bridge::Debounced,
+    settings_writers: async_bridge::KeyedSnapshotWriters<&'static str>,
     reload_gen: async_bridge::Generation,
     availability_gen: async_bridge::Generation,
     _event_bridge: Task<()>,
+    _settings_bridge: Task<()>,
 }
 
 impl SoundboardView {
@@ -126,6 +130,7 @@ impl SoundboardView {
         let search = SearchState::new(cx, palette, tr!("soundboard_search_placeholder"));
         let search_sub = cx.subscribe(search.field(), Self::on_search_event);
         let settings = player.settings_handle().load();
+        let settings_bridge = Self::follow_settings(player.settings_handle(), cx);
 
         let event_bridge = cx.spawn(async move |this, cx| {
             drain_events(&bus, cx, move |batch, cx| {
@@ -168,6 +173,7 @@ impl SoundboardView {
             player,
             library,
             settings_repo,
+            settings_writers: async_bridge::KeyedSnapshotWriters::new(&rt_handle),
             rt_handle,
             master_volume_debounce: async_bridge::Debounced::new(
                 async_bridge::SLIDER_PERSIST_DEBOUNCE,
@@ -175,6 +181,7 @@ impl SoundboardView {
             reload_gen: async_bridge::Generation::default(),
             availability_gen: async_bridge::Generation::default(),
             _event_bridge: event_bridge,
+            _settings_bridge: settings_bridge,
         };
         view.reload(cx);
         view.reload_devices(cx);
@@ -223,11 +230,28 @@ impl SoundboardView {
     }
 }
 
+impl SoundboardView {
+    fn follow_settings(handle: SoundboardSettingsHandle, cx: &mut Context<Self>) -> Task<()> {
+        let mut changes = handle.changes();
+        cx.spawn(async move |this, cx| {
+            while changes.changed().await {
+                let latest = handle.load();
+                let applied = this.update(cx, |view, cx| {
+                    view.settings = latest;
+                    cx.notify();
+                });
+                if applied.is_err() {
+                    return;
+                }
+            }
+        })
+    }
+}
+
 impl EventEmitter<NavRequested> for SoundboardView {}
 
 impl Render for SoundboardView {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        self.settings = self.player.settings_handle().load();
         let palette = cx.palette();
         let density = cx.density();
 

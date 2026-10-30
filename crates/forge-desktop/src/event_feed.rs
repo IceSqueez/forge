@@ -4,7 +4,7 @@ use forge_components::FONT_META;
 use forge_components::FONT_MICRO;
 use forge_components::ROW_HOVER_WASH_ALPHA;
 use forge_components::SEARCH_FIELD_WIDTH;
-use std::collections::{HashMap, HashSet};
+use std::collections::{HashSet, VecDeque};
 
 use forge_components::{
     BORDER_THIN, BreadcrumbCrumb, Density, FONT_XS, FONT_XXS, ForgePalette, Icon, InputEvent,
@@ -26,7 +26,7 @@ use gpui::{
 
 use crate::actions::{LIST_CONTEXT, ListActivate, ListSelectNext, ListSelectPrev};
 use crate::async_bridge;
-use crate::event_log::{EventFilter, EventItem, EventLog};
+use crate::event_log::{EventCausation, EventFilter, EventItem, EventLog};
 use crate::runtime_event::RuntimeEvent;
 use forge_components::ActivePresentation;
 use forge_components::PushToast;
@@ -80,11 +80,10 @@ pub struct EventFeedView {
     active_filter: EventFilter,
     search: SearchState,
     selected: Option<gpui::SharedString>,
-    visible: Vec<EventItem>,
+    visible: VecDeque<ListedEvent>,
+    synced_end: u64,
     measured_kinds: HashSet<gpui::SharedString>,
     kind_col_w: Pixels,
-    downstream: HashMap<gpui::SharedString, u32>,
-    matched: HashSet<gpui::SharedString>,
     auto_scroll: bool,
     inspector_width: f32,
     list_scroll: UniformListScrollHandle,
@@ -95,6 +94,11 @@ pub struct EventFeedView {
     replaying: bool,
     _log_obs: Subscription,
     _search_sub: Subscription,
+}
+
+struct ListedEvent {
+    seq: u64,
+    item: Arc<EventItem>,
 }
 
 fn parse_event_id(raw: &str) -> Option<EventId> {
@@ -127,39 +131,30 @@ fn matches_query(item: &EventItem, query: &str) -> bool {
         || item.summary.to_lowercase().contains(query)
 }
 
-fn compute_projection(
+fn extend_projection(
+    visible: &mut VecDeque<ListedEvent>,
+    synced_end: u64,
     log: &EventLog,
     filter: EventFilter,
     query: &str,
-) -> (
-    Vec<EventItem>,
-    HashMap<gpui::SharedString, u32>,
-    HashSet<gpui::SharedString>,
-) {
-    let mut downstream: HashMap<gpui::SharedString, u32> = HashMap::new();
-    let mut matched: HashSet<gpui::SharedString> = HashSet::new();
-    for item in log.items() {
-        match item.typed {
-            Some(RuntimeEvent::ActionStarted(_)) => {
-                if let Some(cb) = &item.caused_by {
-                    *downstream.entry(cb.clone()).or_default() += 1;
-                }
-            }
-            Some(RuntimeEvent::CommandMatched(_)) => {
-                if let Some(cb) = &item.caused_by {
-                    matched.insert(cb.clone());
-                }
-            }
-            _ => {}
-        }
+) -> u64 {
+    let first = log.first_seq();
+    while visible.front().is_some_and(|listed| listed.seq < first) {
+        visible.pop_front();
     }
-    let visible: Vec<EventItem> = log
+    let unsynced = usize::try_from(synced_end.saturating_sub(first)).unwrap_or(usize::MAX);
+    let additions = log
         .items()
         .iter()
-        .filter(|item| item.matches(filter) && matches_query(item, query))
-        .cloned()
-        .collect();
-    (visible, downstream, matched)
+        .zip(first..)
+        .skip(unsynced)
+        .filter(|(item, _)| item.matches(filter) && matches_query(item, query))
+        .map(|(item, seq)| ListedEvent {
+            seq,
+            item: Arc::clone(item),
+        });
+    visible.extend(additions);
+    log.end_seq()
 }
 
 impl EventFeedView {
@@ -175,18 +170,15 @@ impl EventFeedView {
         let log_obs = cx.observe(&log, Self::on_log_changed);
         let list_scroll = UniformListScrollHandle::new();
         list_scroll.scroll_to_bottom();
-        let (visible, downstream, matched) =
-            compute_projection(log.read(cx), EventFilter::default(), "");
         let mut view = Self {
             log,
             active_filter: EventFilter::default(),
             search,
             selected: None,
-            visible,
+            visible: VecDeque::new(),
+            synced_end: 0,
             measured_kinds: HashSet::new(),
             kind_col_w: KIND_COL_MIN_W,
-            downstream,
-            matched,
             auto_scroll: true,
             inspector_width: INSPECTOR_INITIAL,
             list_scroll,
@@ -199,6 +191,7 @@ impl EventFeedView {
             _search_sub: search_sub,
         };
         view.widen_kind_column(cx);
+        view.sync_projection(cx);
         view
     }
 
@@ -206,7 +199,10 @@ impl EventFeedView {
         let text_system = cx.text_system().clone();
         let font_id = text_system.resolve_font(&gpui::font(mono_family()));
         let mut widest = self.kind_col_w;
-        for item in self.log.read(cx).items() {
+        let log = self.log.read(cx);
+        let unsynced =
+            usize::try_from(self.synced_end.saturating_sub(log.first_seq())).unwrap_or(usize::MAX);
+        for item in log.items().iter().skip(unsynced) {
             if !self.measured_kinds.insert(item.kind.clone()) {
                 continue;
             }
@@ -228,11 +224,11 @@ impl EventFeedView {
         let cur = self
             .selected
             .as_ref()
-            .and_then(|id| self.visible.iter().position(|i| &i.id == id))
+            .and_then(|id| self.visible.iter().position(|e| &e.item.id == id))
             .unwrap_or(self.visible.len() - 1);
         let last = self.visible.len() as isize - 1;
         let next = (cur as isize + delta).clamp(0, last) as usize;
-        self.selected = Some(self.visible[next].id.clone());
+        self.selected = self.visible.get(next).map(|e| e.item.id.clone());
         self.auto_scroll = false;
         self.list_scroll
             .scroll_to_item(next, ScrollStrategy::Nearest);
@@ -253,7 +249,7 @@ impl EventFeedView {
 
     fn on_log_changed(&mut self, _log: Entity<EventLog>, cx: &mut Context<Self>) {
         self.widen_kind_column(cx);
-        self.rebuild_projection(cx);
+        self.sync_projection(cx);
         if self.auto_scroll {
             self.list_scroll.scroll_to_bottom();
         }
@@ -278,23 +274,24 @@ impl EventFeedView {
         }
     }
 
+    fn sync_projection(&mut self, cx: &mut Context<Self>) {
+        self.synced_end = extend_projection(
+            &mut self.visible,
+            self.synced_end,
+            self.log.read(cx),
+            self.active_filter,
+            self.search.query(),
+        );
+    }
+
     fn rebuild_projection(&mut self, cx: &mut Context<Self>) {
-        let (visible, downstream, matched) = {
-            let log = self.log.read(cx);
-            compute_projection(log, self.active_filter, self.search.query())
-        };
-        self.visible = visible;
-        self.downstream = downstream;
-        self.matched = matched;
+        self.visible.clear();
+        self.synced_end = 0;
+        self.sync_projection(cx);
     }
 
     fn select(&mut self, id: gpui::SharedString, cx: &mut Context<Self>) {
         self.selected = Some(id);
-        cx.notify();
-    }
-
-    fn deselect(&mut self, cx: &mut Context<Self>) {
-        self.selected = None;
         cx.notify();
     }
 
@@ -316,7 +313,13 @@ impl EventFeedView {
     }
 
     fn export(&mut self, cx: &mut Context<Self>) {
-        let events: Vec<EventItem> = self.log.read(cx).items().iter().cloned().collect();
+        let events: Vec<EventItem> = self
+            .log
+            .read(cx)
+            .items()
+            .iter()
+            .map(|item| EventItem::clone(item))
+            .collect();
         async_bridge::spawn_dialog(
             &self.rt_handle,
             async move {
@@ -518,12 +521,8 @@ impl EventFeedView {
             .into_any_element()
     }
 
-    fn outcome_tag(
-        item: &EventItem,
-        downstream: &HashMap<gpui::SharedString, u32>,
-        matched: &HashSet<gpui::SharedString>,
-    ) -> Option<gpui::SharedString> {
-        let acted = downstream.get(&item.id).copied().unwrap_or(0);
+    fn outcome_tag(item: &EventItem, causation: &EventCausation) -> Option<gpui::SharedString> {
+        let acted = causation.downstream_of(&item.id);
         let actions_tag =
             |n: u32| -> gpui::SharedString { tr!("event_feed_outcome_actions", count = n).into() };
         match &item.typed {
@@ -539,7 +538,7 @@ impl EventFeedView {
             Some(RuntimeEvent::ChatMessage) => {
                 if acted > 0 {
                     Some(actions_tag(acted))
-                } else if matched.contains(&item.id) {
+                } else if causation.is_matched(&item.id) {
                     Some(tr!("event_feed_outcome_trigger").into())
                 } else {
                     Some(tr!("event_feed_outcome_no_match").into())
@@ -700,11 +699,11 @@ impl EventFeedView {
                 cx.processor(move |this, range: std::ops::Range<usize>, _window, cx| {
                     let mut rows = Vec::with_capacity(range.len());
                     for ix in range {
-                        let Some(item) = this.visible.get(ix).cloned() else {
+                        let Some(item) = this.visible.get(ix).map(|e| Arc::clone(&e.item)) else {
                             continue;
                         };
                         let is_sel = selected.as_ref() == Some(&item.id);
-                        let tag = Self::outcome_tag(&item, &this.downstream, &this.matched);
+                        let tag = Self::outcome_tag(&item, this.log.read(cx).causation());
                         rows.push(
                             this.render_row(&item, is_sel, tag, &pal, cx)
                                 .into_any_element(),
@@ -748,10 +747,6 @@ impl EventFeedView {
         forge_components::side_sheet(px(width), content, palette)
             .header(tr!("event_feed_inspector_title"))
             .header_icon(Icon::Pin, palette.brand)
-            .on_close(
-                "event-inspector-close",
-                cx.listener(|this, _: &ClickEvent, _, cx| this.deselect(cx)),
-            )
             .on_resize(
                 "event-inspector-resize",
                 SheetWidth::new(width, INSPECTOR_MIN, INSPECTOR_MAX),
@@ -991,12 +986,12 @@ impl EventFeedView {
             .children(lines)
     }
 
-    fn resolved_selection(&self, cx: &Context<Self>) -> Option<EventItem> {
+    fn resolved_selection(&self, cx: &Context<Self>) -> Option<Arc<EventItem>> {
         let log = self.log.read(cx);
         if let Some(id) = &self.selected
             && let Some(found) = log.items().iter().find(|i| &i.id == id)
         {
-            return Some(found.clone());
+            return Some(Arc::clone(found));
         }
         log.items().back().cloned()
     }
@@ -1600,7 +1595,7 @@ mod tests {
     fn send_outcome(kind: &str, payload: serde_json::Value) -> Option<gpui::SharedString> {
         install_language(Language::En);
         let item = decoded_item(EventSource::Twitch, kind, payload);
-        EventFeedView::outcome_tag(&item, &HashMap::new(), &HashSet::new())
+        EventFeedView::outcome_tag(&item, &EventCausation::default())
     }
 
     #[test]
@@ -1642,5 +1637,230 @@ mod tests {
                 "{kind} {payload}"
             );
         }
+    }
+
+    fn logged(id: &str) -> EventItem {
+        item(id)
+    }
+
+    fn ring_capacity() -> usize {
+        let mut log = EventLog::new();
+        while log.first_seq() == 0 {
+            log.push(logged("filler"));
+        }
+        log.items().len()
+    }
+
+    fn failed(id: &str) -> EventItem {
+        let mut item = item(id);
+        item.is_error = true;
+        item
+    }
+
+    fn log_of(ids: impl IntoIterator<Item = String>) -> EventLog {
+        let mut log = EventLog::new();
+        for id in ids {
+            log.push(logged(&id));
+        }
+        log
+    }
+
+    fn numbered(range: std::ops::Range<usize>) -> impl Iterator<Item = String> {
+        range.map(|n| n.to_string())
+    }
+
+    fn listed(visible: &VecDeque<ListedEvent>) -> Vec<(u64, String)> {
+        visible
+            .iter()
+            .map(|listed| (listed.seq, listed.item.id.to_string()))
+            .collect()
+    }
+
+    fn pairs(entries: &[(u64, &str)]) -> Vec<(u64, String)> {
+        entries
+            .iter()
+            .map(|(seq, id)| (*seq, (*id).to_owned()))
+            .collect()
+    }
+
+    fn extend_all(visible: &mut VecDeque<ListedEvent>, synced_end: u64, log: &EventLog) -> u64 {
+        extend_projection(visible, synced_end, log, EventFilter::All, "")
+    }
+
+    #[test]
+    fn a_sync_appends_only_what_arrived_since_the_last_one() {
+        let mut log = log_of(numbered(0..2));
+        let mut visible = VecDeque::new();
+        let synced = extend_all(&mut visible, 0, &log);
+
+        log.push(logged("2"));
+        let synced = extend_all(&mut visible, synced, &log);
+
+        assert_eq!(
+            (synced, listed(&visible)),
+            (3, pairs(&[(0, "0"), (1, "1"), (2, "2")]))
+        );
+    }
+
+    #[test]
+    fn a_sync_with_nothing_new_changes_nothing() {
+        let log = log_of(numbered(0..2));
+        let mut visible = VecDeque::new();
+        let synced = extend_all(&mut visible, 0, &log);
+
+        let again = extend_all(&mut visible, synced, &log);
+
+        assert_eq!((again, visible.len()), (synced, 2));
+    }
+
+    #[test]
+    fn rows_the_ring_evicted_leave_the_list_from_the_front() {
+        let capacity = ring_capacity();
+        let mut log = log_of(numbered(0..capacity));
+        let mut visible = VecDeque::new();
+        let synced = extend_all(&mut visible, 0, &log);
+
+        log.push(logged("newest"));
+        extend_all(&mut visible, synced, &log);
+
+        assert_eq!(
+            (
+                visible.len(),
+                visible.front().map(|listed| listed.seq),
+                visible.back().map(|listed| listed.item.id.to_string()),
+            ),
+            (capacity, Some(1), Some("newest".to_owned()))
+        );
+    }
+
+    #[test]
+    fn a_burst_longer_than_the_ring_between_syncs_lists_the_whole_ring_once() {
+        let capacity = ring_capacity();
+        let mut log = log_of(numbered(0..2));
+        let mut visible = VecDeque::new();
+        let synced = extend_all(&mut visible, 0, &log);
+
+        for id in numbered(2..capacity + 10) {
+            log.push(logged(&id));
+        }
+        let synced = extend_all(&mut visible, synced, &log);
+
+        let expected: Vec<u64> = (log.first_seq()..log.end_seq()).collect();
+        assert_eq!(
+            (
+                visible.iter().map(|listed| listed.seq).collect::<Vec<_>>(),
+                synced,
+            ),
+            (expected, (capacity + 10) as u64)
+        );
+    }
+
+    #[test]
+    fn a_window_ending_exactly_at_the_oldest_row_skips_nothing() {
+        let capacity = ring_capacity();
+        let mut log = log_of(numbered(0..capacity));
+        let mut visible = VecDeque::new();
+        let synced = extend_all(&mut visible, 0, &log);
+
+        for id in numbered(capacity..2 * capacity) {
+            log.push(logged(&id));
+        }
+        assert_eq!(synced, log.first_seq());
+        extend_all(&mut visible, synced, &log);
+
+        assert_eq!(
+            (
+                visible.len(),
+                visible.front().map(|listed| listed.seq),
+                visible.back().map(|listed| listed.seq),
+            ),
+            (capacity, Some(synced), Some(log.end_seq() - 1))
+        );
+    }
+
+    #[test]
+    fn a_cleared_log_empties_the_list_and_later_rows_append_after_the_cleared_range() {
+        let mut log = log_of(numbered(0..3));
+        let mut visible = VecDeque::new();
+        let synced = extend_all(&mut visible, 0, &log);
+
+        log.clear();
+        let synced = extend_all(&mut visible, synced, &log);
+        let emptied = visible.is_empty();
+        log.push(logged("after"));
+        extend_all(&mut visible, synced, &log);
+
+        assert_eq!((emptied, listed(&visible)), (true, pairs(&[(3, "after")])));
+    }
+
+    #[test]
+    fn rows_the_filter_rejects_are_skipped_yet_never_rescanned() {
+        let mut log = EventLog::new();
+        log.push(logged("plain"));
+        log.push(failed("broken"));
+        let mut visible = VecDeque::new();
+        let synced = extend_projection(&mut visible, 0, &log, EventFilter::Errors, "");
+
+        log.push(logged("plain-2"));
+        log.push(failed("broken-2"));
+        let synced = extend_projection(&mut visible, synced, &log, EventFilter::Errors, "");
+
+        assert_eq!(
+            (synced, listed(&visible)),
+            (4, pairs(&[(1, "broken"), (3, "broken-2")]))
+        );
+    }
+
+    #[test]
+    fn a_new_row_must_also_match_the_search_query_to_be_listed() {
+        let mut log = EventLog::new();
+        let mut greeting = logged("wanted");
+        greeting.summary = "Hello there".into();
+        let mut other = logged("other");
+        other.summary = "bye".into();
+        log.push(greeting);
+        log.push(other);
+        let mut visible = VecDeque::new();
+
+        extend_projection(&mut visible, 0, &log, EventFilter::All, "hello");
+
+        assert_eq!(listed(&visible), pairs(&[(0, "wanted")]));
+    }
+
+    fn shown_ids(view: &Entity<EventFeedView>, cx: &mut TestAppContext) -> Vec<String> {
+        view.read_with(cx, |view, _| {
+            view.visible
+                .iter()
+                .map(|listed| listed.item.id.to_string())
+                .collect()
+        })
+    }
+
+    #[gpui::test]
+    fn changing_the_filter_relists_the_rows_it_hid_before(cx: &mut TestAppContext) {
+        let mounted = mount(cx, &["plain"]);
+        let log = mounted.view.read_with(cx, |view, _| view.log.clone());
+        log.update(cx, |log, cx| {
+            log.push(failed("broken"));
+            cx.notify();
+        });
+        cx.run_until_parked();
+
+        mounted
+            .view
+            .update(cx, |view, cx| view.set_filter(EventFilter::Errors, cx));
+        let errors_only = shown_ids(&mounted.view, cx);
+        mounted
+            .view
+            .update(cx, |view, cx| view.set_filter(EventFilter::All, cx));
+        let everything = shown_ids(&mounted.view, cx);
+
+        assert_eq!(
+            (errors_only, everything),
+            (
+                vec!["broken".to_owned()],
+                vec!["plain".to_owned(), "broken".to_owned()]
+            )
+        );
     }
 }

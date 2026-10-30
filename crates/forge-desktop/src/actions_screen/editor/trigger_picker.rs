@@ -1,6 +1,7 @@
 use super::*;
 use crate::async_bridge;
 use crate::picker_favorites::{bind_picker, follow_picker_event};
+use crate::repo_failure::RepoFailure;
 use crate::triggers_screen::platform_dot_color;
 use forge_components::ActivePresentation;
 use forge_components::LEADING_SCOPE;
@@ -89,7 +90,7 @@ impl ScreenActionsView {
                 service
                     .list_linkable_triggers(action_id)
                     .await
-                    .map_err(|e| e.to_string()),
+                    .map_err(RepoFailure::from),
             );
         });
         cx.spawn_in(window, async move |this, cx| match rx.await {
@@ -222,11 +223,11 @@ impl ScreenActionsView {
                 service
                     .link_trigger_instance(action_id, instance_id)
                     .await
-                    .map_err(|e| e.to_string())
+                    .map_err(RepoFailure::from)
             },
             |this, result, cx| match result {
                 Ok(()) => this.reload_detail(cx),
-                Err(message) => this.on_repo_error(&message, cx),
+                Err(failure) => this.on_repo_error(&failure, cx),
             },
             cx,
         );

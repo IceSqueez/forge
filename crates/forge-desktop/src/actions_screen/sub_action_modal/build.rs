@@ -74,7 +74,7 @@ pub(super) fn build_step_meta_inputs(
         let mut input = TextInput::new("%user.isMod% == true", cx)
             .with_palette(palette)
             .mono()
-            .prefix("if");
+            .prefix(tr!("sub_action_condition_prefix"));
         if !condition_value.is_empty() {
             input.set_content(condition_value, cx);
         }

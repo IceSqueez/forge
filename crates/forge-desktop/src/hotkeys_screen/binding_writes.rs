@@ -7,6 +7,7 @@ use gpui::Context;
 use super::HotkeysScreenView;
 use crate::async_bridge::{self, ErrorSink};
 use crate::hotkey_action_modal::BindingDraft;
+use crate::repo_failure::RepoFailure;
 use forge_hotkey::{do_bind, rebind_combo, relink_action, set_binding_edge, set_binding_enabled};
 
 impl HotkeysScreenView {
@@ -57,7 +58,7 @@ impl HotkeysScreenView {
             work,
             |this, result: Result<(), String>, cx| match result {
                 Ok(()) => this.load(cx),
-                Err(message) => this.on_repo_error(&message, cx),
+                Err(reason) => this.on_repo_error(&RepoFailure::operation(reason), cx),
             },
             cx,
         );

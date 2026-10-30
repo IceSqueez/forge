@@ -10,7 +10,6 @@ use gpui::{AnyElement, ClickEvent, Context, Pixels, div, prelude::*, px};
 
 use super::routing::ROUTING_PAD;
 use super::{LABEL_FS, SoundboardView};
-use crate::async_bridge::{self, ErrorSink};
 
 const HERO_ICON_TILE: Pixels = px(40.0);
 const HERO_ICON_TILE_RADIUS: Pixels = px(10.0);
@@ -26,10 +25,9 @@ impl SoundboardView {
             .update_settings(|settings| settings.enabled = !settings.enabled);
         let repo = Arc::clone(&self.settings_repo);
         let value = self.settings.enabled;
-        async_bridge::report_failure(
-            &self.rt_handle,
+        self.settings_writers.write_reporting(
+            "enabled",
             async move { save_enabled(repo.as_ref(), value).await },
-            ErrorSink::Toast,
             tr!("soundboard_persist_failed"),
             cx,
         );

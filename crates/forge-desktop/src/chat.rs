@@ -4,16 +4,18 @@ use crate::platform_visuals::{
 use forge_components::DISABLED_OPACITY;
 use forge_components::SEARCH_FIELD_WIDTH;
 use std::collections::{BTreeMap, VecDeque};
+use std::path::PathBuf;
 use std::rc::Rc;
 use std::sync::Arc;
 use std::time::Duration;
 
 use forge_components::{
-    BORDER_THIN, BreadcrumbCrumb, ChipGlyph, Density, FONT_MD, FONT_SM, FONT_XS, FONT_XXS,
-    ForgePalette, Icon, InputEvent, MenuPlacement, Radius, ResizeEdge, ResizeRange, SearchState,
-    Spacing, TextInput, ToastKind, avatar_tile, badge, body_family, chip, context_menu,
-    empty_state, hash_accent, icon, install_resize, menu_button, menu_divider, menu_header,
-    menu_item, mono_family, page_frame, radius, spacing, status_dot, tr,
+    BORDER_THIN, BreadcrumbCrumb, ChipGlyph, Confirm, ConfirmTone, Density, FONT_MD, FONT_SM,
+    FONT_XS, FONT_XXS, ForgePalette, Icon, InputEvent, MenuPlacement, OverlayPosition, Radius,
+    ResizeEdge, ResizeRange, SearchState, Spacing, TextInput, ToastAction, ToastKind, avatar_tile,
+    badge, body_family, chip, confirm_modal, context_menu, empty_state, hash_accent, icon,
+    install_resize, menu_button, menu_divider, menu_header, menu_item, mono_family, overlay,
+    page_frame, radius, spacing, status_dot, tr,
 };
 use forge_platform_twitch::vocabulary::config_keys as twitch_config_keys;
 use forge_runtime::ActionEngineHandle;
@@ -67,6 +69,7 @@ const VIEWER_DOT: Pixels = px(6.0);
 const CHIP_DIVIDER_H: Pixels = px(14.0);
 const ICON_BTN_PAD: Pixels = px(5.0);
 const ICON_BTN_RADIUS: Pixels = px(5.0);
+const EXPORT_TOAST: Duration = Duration::from_secs(8);
 const EXPORT_HEADER_RULE: usize = 48;
 
 const DRAWER_WIDTH: Pixels = px(320.0);
@@ -189,6 +192,8 @@ pub struct ChatView {
     _viewer_messages_obs: Subscription,
     viewer_history: Option<ViewerHistoryHost>,
     tts_voice: Option<TtsVoiceHost>,
+    pending_ban: Confirm<ViewerTarget>,
+    feed_changed: tokio::sync::watch::Sender<()>,
     viewers: ViewerDirectory,
     drawer_keys: Vec<AuthorKey>,
     whisper_open: bool,
@@ -277,10 +282,12 @@ impl ChatView {
 
         let viewer_messages = cx.new(|_| ViewerMessages::default());
         let viewer_messages_obs = cx.observe(&viewer_messages, |_, _, cx| cx.notify());
+        let (feed_changed, feed_changes) = tokio::sync::watch::channel(());
         Self::spawn_viewer_refresh(
             viewer_repo,
             Arc::clone(&chat_history_repo),
             rt_handle.clone(),
+            feed_changes,
             cx,
         );
 
@@ -309,6 +316,8 @@ impl ChatView {
             _viewer_messages_obs: viewer_messages_obs,
             viewer_history: None,
             tts_voice: None,
+            pending_ban: Confirm::default(),
+            feed_changed,
             viewers: ViewerDirectory::default(),
             drawer_keys: Vec::new(),
             whisper_open: false,
@@ -340,6 +349,7 @@ impl ChatView {
         repo: Arc<dyn ViewerRepo>,
         chat_history: Arc<dyn ChatHistoryRepo>,
         rt_handle: tokio::runtime::Handle,
+        mut feed_changes: tokio::sync::watch::Receiver<()>,
         cx: &mut Context<Self>,
     ) {
         let mut presence = PresenceGate::of(cx);
@@ -390,6 +400,9 @@ impl ChatView {
                     }
                 }
                 cx.background_executor().timer(VIEWER_REFRESH).await;
+                if feed_changes.changed().await.is_err() {
+                    break;
+                }
             }
         })
         .detach();
@@ -450,6 +463,7 @@ impl ChatView {
             self.unread = self.unread.saturating_add(arrived);
         }
         self.last_seen_seq = end;
+        self.feed_changed.send_replace(());
         self.refresh_drawer_keys(cx);
         self.absorb_viewer_messages(cx);
         cx.notify();
@@ -735,6 +749,57 @@ impl ChatView {
         cx.notify();
     }
 
+    fn request_ban(&mut self, target: ViewerTarget, cx: &mut Context<Self>) {
+        self.drawer_menu_open = None;
+        self.pending_ban.request(target);
+        cx.notify();
+    }
+
+    fn cancel_ban(&mut self, cx: &mut Context<Self>) {
+        self.pending_ban.cancel();
+        cx.notify();
+    }
+
+    fn confirm_ban(&mut self, cx: &mut Context<Self>) {
+        if let Some(target) = self.pending_ban.take() {
+            self.ban_viewer(target, cx);
+        }
+        cx.notify();
+    }
+
+    fn render_ban_confirm(
+        &self,
+        palette: &ForgePalette,
+        cx: &mut Context<Self>,
+    ) -> Option<AnyElement> {
+        let target = self.pending_ban.get()?;
+        let card = confirm_modal(
+            tr!("chat_ban_confirm_title"),
+            tr!("chat_ban_confirm_message", name = target.name.as_str()),
+            ConfirmTone::Destructive,
+            palette,
+        )
+        .on_cancel(
+            "chat-ban-cancel",
+            tr!("common_cancel"),
+            cx.listener(|this, _: &ClickEvent, _, cx| this.cancel_ban(cx)),
+        )
+        .on_confirm(
+            "chat-ban-confirm",
+            tr!("chat_ctx_ban"),
+            cx.listener(|this, _: &ClickEvent, _, cx| this.confirm_ban(cx)),
+        );
+        let view = cx.entity();
+        Some(
+            overlay(card, palette)
+                .position(OverlayPosition::Center)
+                .on_dismiss("chat-ban-scrim", move |_window, cx| {
+                    view.update(cx, |this, cx| this.cancel_ban(cx));
+                })
+                .into_any_element(),
+        )
+    }
+
     fn ban_viewer(&mut self, target: ViewerTarget, cx: &mut Context<Self>) {
         self.drawer_menu_open = None;
         self.run_viewer_action(
@@ -796,16 +861,7 @@ impl ChatView {
             cx.notify();
             return;
         };
-        self.run_viewer_action(
-            &target.viewer,
-            ViewerAction::Ban,
-            |outcome| match outcome {
-                Ok(()) => (ToastKind::Success, tr!("chat_drawer_ban_sent")),
-                Err(e) => (ToastKind::Error, tr!("chat_drawer_ban_failed", error = e)),
-            },
-            cx,
-        );
-        cx.notify();
+        self.request_ban(target.viewer, cx);
     }
 
     fn open_reply(&mut self, window: &mut Window, cx: &mut Context<Self>) {
@@ -1048,22 +1104,53 @@ impl ChatView {
 
         let stamp = time::OffsetDateTime::now_utc();
         let when = export_stamp(stamp);
-        let header = format!(
-            "Forge chat log · exported {} · {} lines\n{}\n",
-            when,
-            lines.len(),
-            "-".repeat(EXPORT_HEADER_RULE),
+        let title = tr!(
+            "chat_export_header",
+            when = when.as_str(),
+            lines = lines.len() as i64
         );
-        let contents = format!("{header}{}", lines.join("\n"));
+        let rule = "-".repeat(EXPORT_HEADER_RULE);
+        let contents = format!("{title}\n{rule}\n{}", lines.join("\n"));
         let filename = format!("forge-chat-{}.txt", stamp.unix_timestamp());
 
-        self.rt_handle.spawn(async move {
-            let path = forge_paths::data_dir().join(filename);
-            match tokio::fs::write(&path, contents).await {
-                Ok(()) => tracing::info!(path = %path.display(), "chat log exported"),
-                Err(e) => tracing::warn!(error = %e, "chat log export failed"),
+        async_bridge::run_async(
+            &self.rt_handle,
+            async move {
+                let path = forge_paths::data_dir().join(filename);
+                tokio::fs::write(&path, contents)
+                    .await
+                    .map(|()| path)
+                    .map_err(|e| e.to_string())
+            },
+            |_this, result, cx| Self::report_chat_export(result, cx),
+            cx,
+        );
+    }
+
+    fn report_chat_export(result: Result<PathBuf, String>, cx: &mut Context<Self>) {
+        match result {
+            Ok(path) => {
+                tracing::info!(path = %path.display(), "chat log exported");
+                let file = path.display().to_string();
+                cx.push_toast_full(
+                    ToastKind::Success,
+                    tr!("chat_export_done", file = file.as_str()),
+                    None,
+                    Some(ToastAction::new(
+                        tr!("chat_export_open_folder"),
+                        move |_window, app: &mut App| app.reveal_path(&path),
+                    )),
+                    EXPORT_TOAST,
+                );
             }
-        });
+            Err(e) => {
+                tracing::warn!(error = %e, "chat log export failed");
+                cx.push_toast(
+                    ToastKind::Error,
+                    tr!("chat_export_failed", error = e.as_str()),
+                );
+            }
+        }
     }
 
     fn row_visible(&self, msg: &ChatMessage) -> bool {
@@ -1866,7 +1953,7 @@ impl ChatView {
                 "chat-drawer-menu-ban",
                 tr!("chat_drawer_ban"),
                 cx.listener(move |this, _: &ClickEvent, _, cx| {
-                    this.ban_viewer(ban_target.clone(), cx)
+                    this.request_ban(ban_target.clone(), cx)
                 }),
             )
             .color(palette.danger)
@@ -2196,6 +2283,7 @@ impl Render for ChatView {
         let filter_right = feed_tab.then(|| self.render_filter_right(&palette, cx));
         let drawer = self.render_drawer(&palette, density, cx);
         let user_menu = self.render_user_menu(&palette, cx);
+        let ban_confirm = self.render_ban_confirm(&palette, cx);
         let reply_compose = self
             .reply_target
             .clone()
@@ -2255,6 +2343,7 @@ impl Render for ChatView {
             .bg(palette.base)
             .child(frame)
             .children(user_menu)
+            .children(ban_confirm)
             .children(self.viewer_history.as_ref().map(|host| host.view.clone()))
             .children(self.tts_voice.as_ref().map(|host| host.view.clone()))
     }
@@ -2277,13 +2366,15 @@ mod tests {
     use gpui::{App, AppContext as _, Context, Entity, TestAppContext, VisualTestContext};
     use time::OffsetDateTime;
 
+    use super::viewer_actions::ViewerTarget;
     use super::{ChatView, PlatformFilter};
     use crate::chat_feed::{ChatFeed, ChatMessage};
     use crate::home_stats::{HomeStats, Integration};
     use crate::i18n::install_language;
     use crate::integration_lifecycle::IntegrationLifecycle;
     use crate::test_support::{
-        StubActions, StubEventLog, StubHistory, install_presentation, runtime, switch_lifecycle,
+        StubActions, StubEventLog, StubHistory, install_presentation, pump, pump_until, runtime,
+        switch_lifecycle,
     };
     use forge_components::Toasts;
     use forge_runtime::{LifecycleState, LifecycleStates};
@@ -2421,6 +2512,49 @@ mod tests {
             });
             cx.run_until_parked();
         }
+    }
+
+    #[gpui::test]
+    fn a_context_menu_ban_goes_out_only_after_it_is_confirmed(cx: &mut TestAppContext) {
+        let rt = runtime();
+        let (view, vcx) = mount_in_window(cx, &rt, MockVoiceAliasRepo::new());
+        let request = |vcx: &mut VisualTestContext| {
+            view.update(vcx, |view, cx| {
+                view.open_user_menu(
+                    gpui::point(gpui::px(0.0), gpui::px(0.0)),
+                    ViewerTarget {
+                        platform: PlatformId::Twitch,
+                        name: "spammer".to_owned(),
+                        viewer_id: Some("42".to_owned()),
+                    },
+                    "m1".to_owned(),
+                    cx,
+                );
+                view.ctx_ban_viewer(cx);
+            });
+        };
+
+        request(vcx);
+        let asked = view.read_with(vcx, |view, _| view.pending_ban.get().is_some());
+        view.update(vcx, |view, cx| view.cancel_ban(cx));
+        pump(&rt);
+        vcx.run_until_parked();
+
+        request(vcx);
+        view.update(vcx, |view, cx| view.confirm_ban(cx));
+        pump_until(&rt, || {
+            vcx.run_until_parked();
+            vcx.update(|_, cx| !cx.global::<Toasts>().items().is_empty())
+        });
+
+        assert_eq!(
+            (
+                asked,
+                view.read_with(vcx, |view, _| view.pending_ban.get().is_some()),
+                vcx.update(|_, cx| cx.global::<Toasts>().items().len()),
+            ),
+            (true, false, 1)
+        );
     }
 
     #[gpui::test]

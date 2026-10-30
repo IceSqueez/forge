@@ -3,8 +3,9 @@ use std::time::{Duration, Instant};
 
 use forge_awake::StatusWatch;
 use forge_components::{
-    Density, FONT_LG, FONT_SM, ForgePalette, Icon, Radius, Spacing, ToastKind, Toasts, body_family,
-    card, icon, mono_family, primary_button, radius, secondary_button, spacing, toast_layer, tr,
+    Density, FONT_LG, FONT_SM, FONT_XXS, ForgePalette, Icon, Radius, Spacing, ToastKind, Toasts,
+    body_family, card, icon, mono_family, primary_button, radius, secondary_button, spacing,
+    toast_layer, tr,
 };
 use forge_events::EventSubscription;
 use forge_platform_core::PlatformEndpoints;
@@ -131,7 +132,7 @@ pub fn run_boot(
     log_tail: LogTail,
     endpoints: PlatformEndpoints,
     initial_screen: Screen,
-    preopened: Option<Arc<dyn forge_storage::DataProvider>>,
+    opening: Option<crate::boot::BackendOpening>,
     window: WindowHandle<RootView>,
     cx: &mut App,
 ) {
@@ -154,20 +155,30 @@ pub fn run_boot(
     let (result_tx, result_rx) =
         tokio::sync::oneshot::channel::<Result<RuntimeHandles, BootFailure>>();
     rt_handle.spawn(async move {
-        let inputs = RuntimeInputs {
-            log_tail,
-            endpoints,
-            hotkey_main_thread,
-            preopened,
-            audio_sinks: Arc::new(forge_audio::CpalSinkFactory),
-            local_tts_engines: discover_local_tts_engines().await,
-            platform_identities: PlatformIdentities::from_environment(),
+        let preopened = match opening {
+            Some(opening) => opening.finished().await.map(Some),
+            None => Ok(None),
+        };
+        let booted = match preopened {
+            Ok(preopened) => {
+                let inputs = RuntimeInputs {
+                    log_tail,
+                    endpoints,
+                    hotkey_main_thread,
+                    preopened,
+                    audio_sinks: Arc::new(forge_audio::CpalSinkFactory),
+                    local_tts_engines: discover_local_tts_engines().await,
+                    platform_identities: PlatformIdentities::from_environment(),
+                };
+                build_runtime(inputs).await
+            }
+            Err(failure) => Err(failure),
         };
         #[expect(
             clippy::let_underscore_must_use,
             reason = "the view may close before the result arrives"
         )]
-        let _ = result_tx.send(build_runtime(inputs).await);
+        let _ = result_tx.send(booted);
     });
 
     cx.spawn(async move |cx| {
@@ -181,6 +192,7 @@ pub fn run_boot(
             Ok(mut handles) => {
                 let speak_events = handles.speak_events.take();
                 let overlay_build_failure = handles.overlay_build_failure.take();
+                let boot_warnings = handles.boot_warnings.clone();
                 let initial_screen = handles.first_run.opening_screen(initial_screen);
                 let handles = Arc::new(handles);
                 let bridge_sub = handles.bus.subscribe_observer(UI_EVENTS);
@@ -349,6 +361,8 @@ pub fn run_boot(
                     if let Some(failure) = overlay_build_failure {
                         cx.update(|cx| failure.raise(cx));
                     }
+                    let warnings_navigator = navigator.clone();
+                    cx.update(|cx| boot_warnings.raise(warnings_navigator, cx));
                     seed_chat_history(
                         cx,
                         chat_feed_for_history.clone(),
@@ -945,6 +959,21 @@ fn retry_screen(
                 .text_size(FONT_LG)
                 .text_color(palette.text_primary)
                 .child(tr!("boot_failure_title")),
+        )
+        .child(
+            div()
+                .font_family(body_family())
+                .text_size(FONT_SM)
+                .text_color(palette.text_secondary)
+                .child(tr!("boot_failure_cause")),
+        )
+        .child(
+            div()
+                .w_full()
+                .font_family(body_family())
+                .text_size(FONT_XXS)
+                .text_color(palette.text_muted)
+                .child(tr!("boot_failure_details")),
         )
         .child(detail)
         .child(

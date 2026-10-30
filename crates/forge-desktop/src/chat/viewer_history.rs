@@ -1086,9 +1086,16 @@ mod tests {
         event
     }
 
-    fn run_viewer_refresh(cx: &mut TestAppContext, rt: &tokio::runtime::Runtime) {
+    fn run_viewer_refresh(
+        cx: &mut TestAppContext,
+        rt: &tokio::runtime::Runtime,
+        view: &Entity<ChatView>,
+    ) {
         settle(cx, rt);
         cx.executor().advance_clock(VIEWER_REFRESH);
+        view.update(cx, |view, _| {
+            view.feed_changed.send_replace(());
+        });
         settle(cx, rt);
     }
 
@@ -1157,7 +1164,7 @@ mod tests {
             &feed,
             vec![line("s0", 1_000, ANN), event_by("cheer", 2_000, ANN)],
         );
-        run_viewer_refresh(cx, &rt);
+        run_viewer_refresh(cx, &rt, &view);
         let history = open_ann_history(cx, &rt, &view);
 
         scroll_to_the_end(cx, &rt, &history);
@@ -1185,7 +1192,7 @@ mod tests {
                 line("live2", 3_000, ANN),
             ],
         );
-        run_viewer_refresh(cx, &rt);
+        run_viewer_refresh(cx, &rt, &view);
         let history = open_ann_history(cx, &rt, &view);
 
         scroll_to_the_end(cx, &rt, &history);
@@ -1209,7 +1216,7 @@ mod tests {
             &feed,
             vec![line("s0", 1_000, ANN), line("live", 2_000, ANN)],
         );
-        run_viewer_refresh(cx, &rt);
+        run_viewer_refresh(cx, &rt, &view);
         let history = open_ann_history(cx, &rt, &view);
 
         kept.store(HISTORY_PAGE_SIZE, Ordering::SeqCst);
@@ -1233,17 +1240,43 @@ mod tests {
         };
         let (feed, view) = mount_with_chat_history(cx, &rt, store.into_repo());
         push_each(cx, &feed, vec![line("s0", 1_000, ANN)]);
-        run_viewer_refresh(cx, &rt);
+        run_viewer_refresh(cx, &rt, &view);
         let history = open_ann_history(cx, &rt, &view);
 
         kept.store(9, Ordering::SeqCst);
-        run_viewer_refresh(cx, &rt);
+        run_viewer_refresh(cx, &rt, &view);
         let while_open = tile_and_dialog_rows(cx, &view, &history);
         history.update(cx, |history, cx| history.dismiss(cx));
         drop(history);
-        run_viewer_refresh(cx, &rt);
+        run_viewer_refresh(cx, &rt, &view);
 
         assert_eq!((while_open, tile_count(cx, &view)), ((5, 5), 9));
+    }
+
+    #[gpui::test]
+    fn the_tile_stays_put_on_a_quiet_feed_and_follows_storage_once_the_feed_moves(
+        cx: &mut TestAppContext,
+    ) {
+        let rt = runtime();
+        let kept = Arc::new(AtomicUsize::new(5));
+        let store = PagedStore {
+            rows: stored_newest_first(9),
+            kept: Arc::clone(&kept),
+        };
+        let (feed, view) = mount_with_chat_history(cx, &rt, store.into_repo());
+        push_each(cx, &feed, vec![line("s0", 1_000, ANN)]);
+        run_viewer_refresh(cx, &rt, &view);
+        cx.executor().advance_clock(VIEWER_REFRESH);
+        settle(cx, &rt);
+
+        kept.store(9, Ordering::SeqCst);
+        cx.executor().advance_clock(VIEWER_REFRESH * 3);
+        settle(cx, &rt);
+        let quiet = tile_count(cx, &view);
+
+        run_viewer_refresh(cx, &rt, &view);
+
+        assert_eq!((quiet, tile_count(cx, &view)), (5, 9));
     }
 
     struct FlakyOlderPages {
@@ -1286,7 +1319,7 @@ mod tests {
         let (repo, flaky) = flaky_older_pages(HISTORY_PAGE_SIZE + 30);
         let (feed, view) = mount_with_chat_history(cx, rt, repo);
         push_each(cx, &feed, vec![line("s0", 1_000, ANN)]);
-        run_viewer_refresh(cx, rt);
+        run_viewer_refresh(cx, rt, &view);
         let history = open_ann_history(cx, rt, &view);
         history.update(cx, |history, cx| {
             history.on_scrolled(history.listed.total, cx);

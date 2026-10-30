@@ -7,6 +7,7 @@ use crate::navigation::NavRequested;
 use crate::navigation::Screen;
 use crate::obs_catalog_options::ObsCatalogField;
 use crate::picker_favorites::{SUB_ACTION_FAVORITES, StoredFavorites, TRIGGER_FAVORITES};
+use crate::repo_failure::RepoFailure;
 use crate::run_history_modal::RunHistoryModal;
 use crate::vtube_catalog_options::VTubeCatalogField;
 use forge_components::ActivePresentation;
@@ -37,6 +38,7 @@ use gpui::{
 };
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::future::Future;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, RwLock};
 
 mod action_writes;
@@ -192,6 +194,7 @@ pub struct ScreenActionsView {
     bus: Arc<EventBus>,
     scheduler: QueueSchedulerHandle,
     select_options: HashMap<String, Vec<(String, String)>>,
+    select_options_failed: bool,
     builtins: BuiltinRegistry,
     collection_options: ChoiceOptions,
     sub_form_choice_fields: Vec<CollectionChoiceField>,
@@ -201,6 +204,8 @@ pub struct ScreenActionsView {
     concurrent_queue_ids: HashSet<String>,
     tree_width: Pixels,
     loading: bool,
+    list_reads: Arc<AtomicU64>,
+    landed_list_read: u64,
     groups: Vec<ActionGroup>,
     filter_action_ids: HashMap<ActionsFilter, HashSet<ActionId>>,
     filter: ActionsFilter,
@@ -235,6 +240,10 @@ pub struct ScreenActionsView {
     integrations: Option<SwitchWatch>,
     pack_export: Option<editor::PackExportHost>,
     _search_sub: Subscription,
+}
+
+fn next_list_read(list_reads: &AtomicU64) -> u64 {
+    list_reads.fetch_add(1, Ordering::Relaxed) + 1
 }
 
 impl ScreenActionsView {
@@ -299,6 +308,7 @@ impl ScreenActionsView {
             bus,
             scheduler,
             select_options: HashMap::new(),
+            select_options_failed: false,
             builtins: BuiltinRegistry::default(),
             collection_options: ChoiceOptions::new(),
             sub_form_choice_fields: Vec::new(),
@@ -308,6 +318,8 @@ impl ScreenActionsView {
             concurrent_queue_ids: HashSet::new(),
             tree_width: LEFT_PANEL_W,
             loading: true,
+            list_reads: Arc::new(AtomicU64::new(0)),
+            landed_list_read: 0,
             groups: Vec::new(),
             filter_action_ids: HashMap::new(),
             filter: ActionsFilter::All,
@@ -358,35 +370,42 @@ impl ScreenActionsView {
     fn reload(&self, cx: &mut Context<Self>) {
         let repo = Arc::clone(&self.action_repo);
         self.spawn_reload(
-            async move { repo.list().await.map_err(|e| e.to_string()) },
+            async move { repo.list().await.map_err(RepoFailure::from) },
             cx,
         );
     }
 
     fn spawn_reload(
         &self,
-        work: impl Future<Output = Result<Vec<Action>, String>> + Send + 'static,
+        work: impl Future<Output = Result<Vec<Action>, RepoFailure>> + Send + 'static,
         cx: &mut Context<Self>,
     ) {
-        Self::reload_entity(cx.entity(), self.rt_handle.clone(), work, cx);
+        let list_read = next_list_read(&self.list_reads);
+        async_bridge::run_async(
+            &self.rt_handle,
+            work,
+            move |this, result, cx| this.land_list(list_read, result, cx),
+            cx,
+        );
     }
 
-    fn reload_entity(
-        view: Entity<ScreenActionsView>,
-        rt_handle: tokio::runtime::Handle,
-        work: impl Future<Output = Result<Vec<Action>, String>> + Send + 'static,
-        app: &mut App,
+    fn land_list(
+        &mut self,
+        list_read: u64,
+        result: Result<Vec<Action>, RepoFailure>,
+        cx: &mut Context<Self>,
     ) {
-        async_bridge::run_async_entity(
-            &rt_handle,
-            view,
-            work,
-            |this, result, cx| match result {
-                Ok(actions) => this.apply_actions(actions, cx),
-                Err(message) => this.on_repo_error(&message, cx),
-            },
-            app,
-        );
+        if list_read <= self.landed_list_read {
+            return;
+        }
+        self.landed_list_read = list_read;
+        match result {
+            Ok(actions) => self.apply_actions(actions, cx),
+            Err(failure) => {
+                self.on_repo_error(&failure, cx);
+                self.reload_detail(cx);
+            }
+        }
     }
 
     fn apply_actions(&mut self, actions: Vec<Action>, cx: &mut Context<Self>) {
@@ -442,11 +461,11 @@ impl ScreenActionsView {
             async move {
                 actions_by_trigger_filter(&*repo, &filter_by_kind)
                     .await
-                    .map_err(|e| e.to_string())
+                    .map_err(RepoFailure::from)
             },
             |this, result, cx| match result {
                 Ok(ids) => this.apply_filter_actions(ids, cx),
-                Err(message) => this.on_repo_error(&message, cx),
+                Err(failure) => this.on_repo_error(&failure, cx),
             },
             cx,
         );
@@ -477,12 +496,13 @@ impl ScreenActionsView {
         }
     }
 
-    fn on_repo_error(&mut self, message: &str, cx: &mut Context<Self>) {
-        tracing::error!(error = %message, "actions operation failed");
+    fn on_repo_error(&mut self, failure: &RepoFailure, cx: &mut Context<Self>) {
+        tracing::error!(error = %failure, "actions operation failed");
+        let message = failure.text();
         self.loading = false;
         cx.push_toast(
             ToastKind::Error,
-            tr!("actions_toast_error", message = message),
+            tr!("actions_toast_error", message = message.as_str()),
         );
         cx.notify();
     }
@@ -497,10 +517,10 @@ impl ScreenActionsView {
         let service = Arc::clone(&self.actions_service);
         async_bridge::run_async(
             &self.rt_handle,
-            async move { service.load_detail(id).await.map_err(|e| e.to_string()) },
+            async move { service.load_detail(id).await.map_err(RepoFailure::from) },
             move |this, result, cx| match result {
                 Ok(detail) => this.apply_detail(id, detail, cx),
-                Err(message) => this.on_repo_error(&message, cx),
+                Err(failure) => this.on_repo_error(&failure, cx),
             },
             cx,
         );

@@ -6,6 +6,7 @@ use crate::config_form::{
     FILL_VAL_FS, FoldContext, collect_field_values, fold_config_field, render_config_row,
     set_picked_value, sparse_overrides,
 };
+use crate::repo_failure::RepoFailure;
 use crate::trigger_form_shape::{trigger_form_defaults, trigger_form_specs};
 use crate::triggers_screen::platform_dot_color;
 use forge_components::ActivePresentation;
@@ -221,13 +222,13 @@ impl ScreenActionsView {
         async_bridge::run_async(
             &self.rt_handle,
             async move {
-                repo.save(&instance).await.map_err(|e| e.to_string())?;
+                repo.save(&instance).await.map_err(RepoFailure::from)?;
                 service
                     .link_trigger_instance(action_id, new_id)
                     .await
-                    .map_err(|e| e.to_string())
+                    .map_err(RepoFailure::from)
             },
-            |this, result: Result<(), String>, cx| match result {
+            |this, result: Result<(), RepoFailure>, cx| match result {
                 Ok(()) => {
                     this.add_trigger = None;
                     this.reload_detail(cx);

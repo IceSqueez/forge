@@ -142,7 +142,7 @@ pub use radio_row::{RadioRow, radio_row, radio_row_label};
 pub use region::{Region, RegionDefaults};
 pub use resize_handle::{ResizeEdge, ResizeRange, install_resize};
 pub use save_state::{SaveState, save_indicator};
-pub use search_state::SearchState;
+pub use search_state::{SearchState, contains_folded};
 pub use section_label::{SectionLabel, section_label};
 pub use segmented::{Segment, SegmentedControl, segment, segmented};
 pub use setting_list::{

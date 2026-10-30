@@ -313,8 +313,13 @@ impl AppShell {
                 let backend: Arc<dyn GlobalsRepo> =
                     Arc::clone(&handles.backend) as Arc<dyn GlobalsRepo>;
                 let rt_handle = handles.rt_handle.clone();
-                cx.new(|cx| GlobalsView::new(globals, backend, rt_handle, cx))
-                    .into()
+                let bus = Arc::clone(&handles.bus);
+                cx.new(|cx| {
+                    let mut view = GlobalsView::new(globals, backend, rt_handle, cx);
+                    view.follow_runtime_writes(bus, cx);
+                    view
+                })
+                .into()
             }
             Screen::Welcome => {
                 let lifecycle = topics.integration_lifecycle.clone();

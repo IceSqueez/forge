@@ -30,6 +30,7 @@ pub const REGISTERED_CATALOGS: &[MessageCatalog] = &[
     forge_donatello::DONATELLO_MESSAGES,
     forge_monobank::MONOBANK_MESSAGES,
     forge_speak_queue::vocabulary::messages::SPEAK_MESSAGES,
+    crate::repo_failure::REPO_MESSAGES,
 ];
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -143,7 +144,7 @@ mod tests {
         source
             .lines()
             .filter(|line| !line.starts_with([' ', '#']))
-            .filter_map(|line| line.split_once(" = ").map(|(id, _)| id.trim().to_owned()))
+            .filter_map(|line| line.split_once('=').map(|(id, _)| id.trim().to_owned()))
             .collect()
     }
 

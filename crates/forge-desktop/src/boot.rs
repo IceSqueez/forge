@@ -37,6 +37,7 @@ use forge_storage_sqlite::SqliteBackend;
 use forge_types::{LatestValueReader, PlatformId, Shared};
 
 use crate::audio_router::{AudioRouter, AudioRouterParts};
+use crate::boot_warnings::{BootWarning, BootWarnings};
 use crate::integrations::{IntegrationInputs, build_integrations};
 use crate::log_tail::LogTail;
 use crate::overlay_build_failure::OverlayBuildFailure;
@@ -77,17 +78,39 @@ pub struct BootStorage {
     pub appearance: PersistedAppearance,
     pub window_placement: Option<WindowPlacement>,
     pub backend: Option<Arc<dyn DataProvider>>,
+    pub opening: BackendOpening,
+}
+
+pub struct BackendOpening(tokio::task::JoinHandle<Result<Arc<dyn DataProvider>, BootFailure>>);
+
+impl BackendOpening {
+    pub async fn finished(self) -> Result<Arc<dyn DataProvider>, BootFailure> {
+        match self.0.await {
+            Ok(opened) => opened,
+            Err(e) => Err(BootFailure::Retry {
+                reason: e.to_string(),
+            }),
+        }
+    }
 }
 
 pub fn open_boot_storage(rt_handle: &tokio::runtime::Handle) -> BootStorage {
+    open_boot_storage_with(rt_handle, open_backend())
+}
+
+fn open_boot_storage_with(
+    rt_handle: &tokio::runtime::Handle,
+    open: impl Future<Output = Result<Arc<dyn DataProvider>, BootFailure>> + Send + 'static,
+) -> BootStorage {
     let (tx, rx) = std::sync::mpsc::channel();
-    rt_handle.spawn(async move {
-        let opened = match open_backend().await {
+    let opening = BackendOpening(rt_handle.spawn(async move {
+        let opened = open.await;
+        let presentation = match &opened {
             Ok(backend) => {
                 let appearance = load_appearance(backend.as_ref()).await;
                 let window_placement =
                     read_setting_or_default(backend.as_ref(), &WINDOW_PLACEMENT).await;
-                (appearance, window_placement, Some(backend))
+                (appearance, window_placement, Some(Arc::clone(backend)))
             }
             Err(_) => (PersistedAppearance::default(), None, None),
         };
@@ -95,8 +118,9 @@ pub fn open_boot_storage(rt_handle: &tokio::runtime::Handle) -> BootStorage {
             clippy::let_underscore_must_use,
             reason = "the boot thread stops waiting once its read budget runs out"
         )]
-        let _ = tx.send(opened);
-    });
+        let _ = tx.send(presentation);
+        opened
+    }));
     let (appearance, window_placement, backend) =
         rx.recv_timeout(APPEARANCE_READ_BUDGET).unwrap_or_default();
     tracing::info!(
@@ -109,6 +133,7 @@ pub fn open_boot_storage(rt_handle: &tokio::runtime::Handle) -> BootStorage {
         appearance,
         window_placement,
         backend,
+        opening,
     }
 }
 
@@ -202,6 +227,7 @@ pub async fn build_runtime(inputs: RuntimeInputs) -> Result<RuntimeHandles, Boot
         None => open_backend().await?,
     };
 
+    let mut boot_warnings = BootWarnings::default();
     let settings_repo: Arc<dyn SettingsRepo> = Arc::clone(&backend) as Arc<dyn SettingsRepo>;
     let credentials_key_loss =
         match forge_storage::take_credentials_key_loss(settings_repo.as_ref()).await {
@@ -289,9 +315,11 @@ pub async fn build_runtime(inputs: RuntimeInputs) -> Result<RuntimeHandles, Boot
         Arc::clone(&speech_sink) as Arc<dyn AudioSink>,
         &cloud_tts_gateways,
         local_tts_engines,
+        &mut boot_warnings,
     )
     .await;
-    let voice_gate = build_voice_gate(settings_repo.as_ref(), speak.clone()).await;
+    let voice_gate =
+        build_voice_gate(settings_repo.as_ref(), speak.clone(), &mut boot_warnings).await;
     let speak_bridge = speak
         .clone()
         .map(|handle| Arc::new(SpeakBridge::new(Arc::new(handle))));
@@ -316,6 +344,7 @@ pub async fn build_runtime(inputs: RuntimeInputs) -> Result<RuntimeHandles, Boot
     }
     if let Err(e) = script_registry_mut.load_all(backend.as_ref()).await {
         tracing::warn!(error = %e, "script registry load failed at boot");
+        boot_warnings.record(BootWarning::Scripts);
     }
     let script_registry = Arc::new(script_registry_mut);
 
@@ -341,6 +370,7 @@ pub async fn build_runtime(inputs: RuntimeInputs) -> Result<RuntimeHandles, Boot
         },
     ) {
         tracing::error!(error = %e, "core sub-action registration failed");
+        boot_warnings.record(BootWarning::CoreSubActions);
     }
 
     let donations = Arc::new(
@@ -355,20 +385,24 @@ pub async fn build_runtime(inputs: RuntimeInputs) -> Result<RuntimeHandles, Boot
         register_scheduled_run_sub_actions(&mut sub_action_reg, scheduled_runs_cell.clone())
     {
         tracing::error!(error = %e, "scheduled run sub-action registration failed");
+        boot_warnings.record(BootWarning::ScheduledRunSubActions);
     }
     if let Err(e) = register_donation_sub_actions(&mut sub_action_reg, Arc::clone(&donations)) {
         tracing::error!(error = %e, "donation sub-action registration failed");
+        boot_warnings.record(BootWarning::DonationSubActions);
     }
     if let Err(e) = register_latest_sub_actions(
         &mut sub_action_reg,
         Arc::new(latest_values.clone()) as Arc<dyn LatestValueReader>,
     ) {
         tracing::error!(error = %e, "latest value sub-action registration failed");
+        boot_warnings.record(BootWarning::LatestValueSubActions);
     }
 
     let mut trigger_reg = TriggerRegistry::new();
     if let Err(e) = register_core_triggers(&mut trigger_reg) {
         tracing::error!(error = %e, "core trigger registration failed");
+        boot_warnings.record(BootWarning::CoreTriggers);
     }
 
     let integrations = build_integrations(
@@ -412,6 +446,7 @@ pub async fn build_runtime(inputs: RuntimeInputs) -> Result<RuntimeHandles, Boot
         Arc::clone(&soundboard_player) as Arc<dyn SoundboardControl>,
     ) {
         tracing::error!(error = %e, "soundboard sub-action runner registration failed");
+        boot_warnings.record(BootWarning::SoundboardSubActions);
     }
     match speak_dispatcher {
         Some(dispatcher) => {
@@ -421,12 +456,14 @@ pub async fn build_runtime(inputs: RuntimeInputs) -> Result<RuntimeHandles, Boot
                 register_speech_sub_actions(&mut sub_action_reg, dispatcher, reward_emotes)
             {
                 tracing::error!(error = %e, "speech sub-action runner registration failed");
+                boot_warnings.record(BootWarning::SpeechSubActions);
             }
         }
         None => {
             tracing::warn!(
                 "no speak dispatcher available; speech sub-action runners not registered"
-            )
+            );
+            boot_warnings.record(BootWarning::SpeechSubActions);
         }
     }
 
@@ -452,6 +489,7 @@ pub async fn build_runtime(inputs: RuntimeInputs) -> Result<RuntimeHandles, Boot
                 error = %e,
                 "default trigger kind could not be stored"
             );
+            boot_warnings.record(BootWarning::TriggerDefaults);
         }
     }
 
@@ -459,6 +497,7 @@ pub async fn build_runtime(inputs: RuntimeInputs) -> Result<RuntimeHandles, Boot
         Ok(queues) => queues,
         Err(e) => {
             tracing::warn!(error = %e, "failed to load queues on boot, starting empty");
+            boot_warnings.record(BootWarning::Queues);
             Vec::new()
         }
     };
@@ -509,7 +548,7 @@ pub async fn build_runtime(inputs: RuntimeInputs) -> Result<RuntimeHandles, Boot
             .stream_output()
             .into_receiver(),
     );
-    let bot_accounts = load_bot_accounts(&backend).await;
+    let bot_accounts = load_bot_accounts(&backend, &mut boot_warnings).await;
     let timer_scheduler = spawn_timer_scheduler(
         Arc::clone(&bus),
         Arc::clone(&catalog),
@@ -544,6 +583,7 @@ pub async fn build_runtime(inputs: RuntimeInputs) -> Result<RuntimeHandles, Boot
     let mut overlay_kinds_mut = OverlayKindRegistry::new();
     if let Err(e) = register_builtin_kinds(&mut overlay_kinds_mut) {
         tracing::error!(error = %e, "overlay type registration failed");
+        boot_warnings.record(BootWarning::OverlayTypes);
     }
     let overlay_kinds = Arc::new(overlay_kinds_mut);
     let overlays = OverlayServiceHandle::new(OverlayServiceParts {
@@ -619,6 +659,7 @@ pub async fn build_runtime(inputs: RuntimeInputs) -> Result<RuntimeHandles, Boot
         latest_values,
         credentials_key_loss,
         overlay_build_failure,
+        boot_warnings,
         bus,
         script_registry,
         sub_action_registry,
@@ -667,11 +708,15 @@ pub async fn build_runtime(inputs: RuntimeInputs) -> Result<RuntimeHandles, Boot
     })
 }
 
-async fn load_bot_accounts(backend: &Arc<dyn DataProvider>) -> forge_types::Shared<Vec<String>> {
+async fn load_bot_accounts(
+    backend: &Arc<dyn DataProvider>,
+    warnings: &mut BootWarnings,
+) -> forge_types::Shared<Vec<String>> {
     match backend.tts_filters_repo().get_pipeline_settings().await {
         Ok(settings) => forge_types::Shared::new(settings.bot_accounts),
         Err(e) => {
             tracing::warn!(error = %e, "failed to load configured bot accounts on boot");
+            warnings.record(BootWarning::BotAccounts);
             forge_types::Shared::default()
         }
     }
@@ -680,6 +725,7 @@ async fn load_bot_accounts(backend: &Arc<dyn DataProvider>) -> forge_types::Shar
 async fn build_voice_gate(
     settings: &dyn SettingsRepo,
     speak: Option<forge_speak_queue::SpeakQueueHandle>,
+    warnings: &mut BootWarnings,
 ) -> Arc<VoiceGateOwner> {
     let owner = Arc::new(VoiceGateOwner::new(
         tokio::runtime::Handle::current(),
@@ -689,7 +735,8 @@ async fn build_voice_gate(
         Ok(settings) if settings.enabled => owner.start(config_from_settings(&settings)),
         Ok(_) => {}
         Err(e) => {
-            tracing::warn!(error = %e, "failed to load voice gate settings; leaving it off")
+            tracing::warn!(error = %e, "failed to load voice gate settings; leaving it off");
+            warnings.record(BootWarning::VoiceGate);
         }
     }
     owner
@@ -807,8 +854,11 @@ mod tests {
 
     use crate::settings_catalog::DENSITY;
 
-    use super::load_appearance;
-    use crate::test_support::test_backend;
+    use super::{BackendOpening, BootFailure, load_appearance, open_boot_storage_with};
+    use crate::test_support::{test_backend, worker_runtime};
+    use forge_storage::DataProvider;
+    use std::sync::Arc;
+    use std::sync::atomic::{AtomicUsize, Ordering};
 
     #[tokio::test]
     async fn the_stored_theme_accent_density_and_both_fonts_come_back_in_their_own_slots() {
@@ -895,5 +945,129 @@ mod tests {
         let appearance = load_appearance(backend.as_ref()).await;
 
         assert_eq!(appearance.accent, AccentColor::Mauve);
+    }
+
+    fn opened_backend() -> Arc<dyn DataProvider> {
+        test_backend().0
+    }
+
+    #[tokio::test]
+    async fn a_slow_open_is_waited_for_and_hands_over_the_backend_it_opened() {
+        let backend = opened_backend();
+        let handed = Arc::clone(&backend);
+        let (finish_open, open_gate) = tokio::sync::oneshot::channel::<()>();
+        let opening = BackendOpening(tokio::spawn(async move {
+            open_gate.await.ok();
+            Ok(handed)
+        }));
+
+        let waiting = tokio::spawn(opening.finished());
+        tokio::task::yield_now().await;
+        let still_waiting = !waiting.is_finished();
+        finish_open.send(()).unwrap();
+        let finished = waiting.await.unwrap();
+
+        assert!(still_waiting);
+        assert!(finished.is_ok_and(|opened| Arc::ptr_eq(&opened, &backend)));
+    }
+
+    #[tokio::test]
+    async fn an_upgrade_failure_passes_through_with_both_versions() {
+        let opening = BackendOpening(tokio::spawn(async {
+            Err(BootFailure::UpgradeRequired {
+                expected: 9,
+                found: 4,
+            })
+        }));
+
+        let failure = opening.finished().await.err();
+
+        assert!(matches!(
+            failure,
+            Some(BootFailure::UpgradeRequired {
+                expected: 9,
+                found: 4
+            })
+        ));
+    }
+
+    #[tokio::test]
+    async fn a_pre_baseline_failure_passes_through_with_its_version() {
+        let opening = BackendOpening(tokio::spawn(async {
+            Err(BootFailure::PreBaseline { found: 3 })
+        }));
+
+        let failure = opening.finished().await.err();
+
+        assert!(matches!(
+            failure,
+            Some(BootFailure::PreBaseline { found: 3 })
+        ));
+    }
+
+    #[tokio::test]
+    async fn a_retryable_failure_passes_through_with_its_reason() {
+        let opening = BackendOpening(tokio::spawn(async {
+            Err(BootFailure::Retry {
+                reason: "disk gone".to_owned(),
+            })
+        }));
+
+        let failure = opening.finished().await.err();
+
+        assert!(matches!(
+            failure,
+            Some(BootFailure::Retry { reason }) if reason == "disk gone"
+        ));
+    }
+
+    #[tokio::test]
+    async fn an_open_that_died_reads_as_a_retryable_failure() {
+        let dying = tokio::spawn(std::future::pending());
+        dying.abort();
+
+        let failure = BackendOpening(dying).finished().await.err();
+
+        assert!(matches!(failure, Some(BootFailure::Retry { .. })));
+    }
+
+    #[test]
+    fn boot_storage_runs_the_open_once_and_hands_that_backend_to_the_waiter() {
+        let rt = worker_runtime();
+        let backend = opened_backend();
+        let handed = Arc::clone(&backend);
+        let opens = Arc::new(AtomicUsize::new(0));
+        let counter = Arc::clone(&opens);
+
+        let storage = open_boot_storage_with(rt.handle(), async move {
+            counter.fetch_add(1, Ordering::SeqCst);
+            Ok(handed)
+        });
+        let finished = rt.block_on(storage.opening.finished());
+
+        assert_eq!(
+            (
+                opens.load(Ordering::SeqCst),
+                finished.is_ok_and(|opened| Arc::ptr_eq(&opened, &backend))
+            ),
+            (1, true)
+        );
+    }
+
+    #[test]
+    fn boot_storage_passes_a_failed_open_through_without_a_backend() {
+        let rt = worker_runtime();
+
+        let storage = open_boot_storage_with(rt.handle(), async {
+            Err(BootFailure::PreBaseline { found: 3 })
+        });
+        let early_backend = storage.backend.is_some();
+        let failure = rt.block_on(storage.opening.finished()).err();
+
+        assert!(!early_backend);
+        assert!(matches!(
+            failure,
+            Some(BootFailure::PreBaseline { found: 3 })
+        ));
     }
 }

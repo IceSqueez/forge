@@ -119,7 +119,7 @@ impl Overlay {
         let scrim = self.scrim;
         let mut layer = div().absolute().top_0().left_0().size_full().occlude();
 
-        if let Some(handler) = self.on_dismiss.clone() {
+        if let Some(handler) = self.on_dismiss.clone().filter(|_| !self.busy) {
             layer =
                 layer.on_mouse_down(MouseButton::Left, move |_: &MouseDownEvent, window, cx| {
                     handler(window, cx);
@@ -344,8 +344,8 @@ mod tests {
     use std::rc::Rc;
 
     use gpui::{
-        AppContext, Context, Entity, EntityInputHandler, IntoElement, Render, TestAppContext,
-        VisualTestContext, Window, div,
+        AppContext, Context, Entity, EntityInputHandler, IntoElement, Modifiers, MouseButton,
+        Render, TestAppContext, VisualTestContext, Window, div, point, px,
     };
 
     use super::{ease_out_cubic, overlay};
@@ -448,6 +448,24 @@ mod tests {
         opened.vcx.simulate_keystrokes("escape");
 
         assert_eq!(opened.outer.get(), 0);
+    }
+
+    #[gpui::test]
+    fn a_scrim_click_dismisses_an_idle_overlay_and_leaves_a_busy_one_open(cx: &mut TestAppContext) {
+        for (busy, dismissals) in [(false, 1), (true, 0)] {
+            let opened = open_focused_input(cx, false, busy);
+            let scrim = point(px(2.0), px(2.0));
+
+            opened
+                .vcx
+                .simulate_mouse_down(scrim, MouseButton::Left, Modifiers::none());
+            opened
+                .vcx
+                .simulate_mouse_up(scrim, MouseButton::Left, Modifiers::none());
+            opened.vcx.run_until_parked();
+
+            assert_eq!(opened.outer.get(), dismissals, "busy={busy}");
+        }
     }
 
     #[test]

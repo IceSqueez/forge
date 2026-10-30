@@ -39,26 +39,19 @@ impl ChatMessage {
     }
 
     pub fn matches_query(&self, query: &str) -> bool {
-        if query.is_empty() {
-            return true;
-        }
-        if self.username.to_lowercase().contains(query) {
-            return true;
-        }
         let body_text = match &self.body {
-            ChatBody::Message(text) => text.to_lowercase(),
-            ChatBody::Command { command, .. } => command.to_lowercase(),
-            ChatBody::Cheer { text, .. } => text.to_lowercase(),
+            ChatBody::Message(text) => text.as_ref(),
+            ChatBody::Command { command, .. } => command.as_ref(),
+            ChatBody::Cheer { text, .. } => text.as_ref(),
             ChatBody::Subscription {
                 descriptor,
                 message,
                 ..
-            } => message
-                .as_ref()
-                .map_or_else(|| descriptor.to_lowercase(), |m| m.to_lowercase()),
-            ChatBody::Raid { descriptor, .. } => descriptor.to_lowercase(),
+            } => message.as_ref().map_or(descriptor.as_ref(), AsRef::as_ref),
+            ChatBody::Raid { descriptor, .. } => descriptor.as_ref(),
         };
-        body_text.contains(query)
+        forge_components::contains_folded(&self.username, query)
+            || forge_components::contains_folded(body_text, query)
     }
 
     pub fn from_row(row: &UnifiedChatRow) -> ChatMessage {

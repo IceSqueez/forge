@@ -43,11 +43,7 @@ async fn unnoticed_leftover(backend: Arc<dyn DataProvider>) -> Option<LeftoverNo
     .flatten()?;
     let repo = backend as Arc<dyn SettingsRepo>;
     let noticed = read_setting_or_default(repo.as_ref(), &LEFTOVER_INSTALL_NOTICED).await;
-    let notice = leftover_notice(Some(leftover), noticed)?;
-    if let Err(error) = write_setting(repo.as_ref(), &LEFTOVER_INSTALL_NOTICED, &true).await {
-        tracing::warn!(error = %error, "leftover install notice could not be remembered");
-    }
-    Some(notice)
+    leftover_notice(Some(leftover), noticed)
 }
 
 pub fn start_leftover_install_notice(
@@ -59,24 +55,36 @@ pub fn start_leftover_install_notice(
         return;
     }
     let (tx, rx) = tokio::sync::oneshot::channel();
+    let detection_backend = Arc::clone(&backend);
     rt_handle.spawn(async move {
         #[expect(
             clippy::let_underscore_must_use,
             reason = "the view may close before the result arrives"
         )]
-        let _ = tx.send(unnoticed_leftover(backend).await);
+        let _ = tx.send(unnoticed_leftover(detection_backend).await);
     });
     cx.spawn(async move |cx| {
         let Ok(Some(notice)) = rx.await else {
             return;
         };
         tracing::info!(path = %notice.install_dir.display(), "leftover all-users install found");
-        cx.update(|cx| raise_leftover_toast(rt_handle, cx));
+        cx.update(|cx| raise_leftover_toast(backend, rt_handle, cx));
     })
     .detach();
 }
 
-fn raise_leftover_toast(rt_handle: Handle, cx: &mut App) {
+async fn remember_leftover_noticed(repo: &dyn SettingsRepo) {
+    if let Err(error) = write_setting(repo, &LEFTOVER_INSTALL_NOTICED, &true).await {
+        tracing::warn!(error = %error, "leftover install notice could not be remembered");
+    }
+}
+
+async fn open_installed_apps(repo: Arc<dyn SettingsRepo>) -> Result<(), String> {
+    remember_leftover_noticed(repo.as_ref()).await;
+    open_path(INSTALLED_APPS_SETTINGS).await
+}
+
+fn raise_leftover_toast(backend: Arc<dyn DataProvider>, rt_handle: Handle, cx: &mut App) {
     cx.push_toast_full(
         ToastKind::Warn,
         tr!("update_leftover_install"),
@@ -87,7 +95,7 @@ fn raise_leftover_toast(rt_handle: Handle, cx: &mut App) {
                 detached(
                     &rt_handle,
                     "open the installed apps settings",
-                    open_path(INSTALLED_APPS_SETTINGS),
+                    open_installed_apps(Arc::clone(&backend) as Arc<dyn SettingsRepo>),
                 );
             },
         )),
@@ -98,8 +106,10 @@ fn raise_leftover_toast(rt_handle: Handle, cx: &mut App) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_support::{pump, runtime, test_backend, writes_to};
 
     const INSTALL_DIR: &str = "C:\\Program Files\\forge";
+    const NOTICED_KEY: &str = "updates.leftover_install_noticed";
 
     #[test]
     fn leftover_notice_is_raised_only_for_an_unnoticed_leftover_install() {
@@ -121,5 +131,55 @@ mod tests {
                 "{leftover:?} noticed={noticed}"
             );
         }
+    }
+
+    #[gpui::test]
+    fn raising_the_notice_records_nothing_until_the_user_acts(cx: &mut gpui::TestAppContext) {
+        cx.update(|cx| cx.set_global(forge_components::Toasts::new()));
+        let rt = runtime();
+        let (backend, mut writes) = test_backend();
+        let provider = Arc::clone(&backend) as Arc<dyn DataProvider>;
+
+        cx.update(|cx| raise_leftover_toast(provider, rt.handle().clone(), cx));
+        pump(&rt);
+        cx.run_until_parked();
+
+        let shown = cx.update(|cx| cx.global::<forge_components::Toasts>().items().len());
+        assert_eq!(
+            (shown, writes_to(&mut writes, NOTICED_KEY)),
+            (1, Vec::<String>::new())
+        );
+    }
+
+    #[test]
+    fn remembering_the_notice_silences_it_on_the_next_launch() {
+        let rt = runtime();
+        let (backend, _writes) = test_backend();
+
+        rt.block_on(remember_leftover_noticed(backend.as_ref()));
+
+        let noticed = rt.block_on(read_setting_or_default(
+            backend.as_ref(),
+            &LEFTOVER_INSTALL_NOTICED,
+        ));
+        assert_eq!(
+            leftover_notice(Some(PathBuf::from(INSTALL_DIR)), noticed),
+            None
+        );
+    }
+
+    #[test]
+    fn a_notice_that_could_not_be_remembered_keeps_showing_on_the_next_launch() {
+        let rt = runtime();
+        let (backend, _writes) = test_backend();
+        backend.fail_writes(NOTICED_KEY);
+
+        rt.block_on(remember_leftover_noticed(backend.as_ref()));
+
+        let noticed = rt.block_on(read_setting_or_default(
+            backend.as_ref(),
+            &LEFTOVER_INSTALL_NOTICED,
+        ));
+        assert!(leftover_notice(Some(PathBuf::from(INSTALL_DIR)), noticed).is_some());
     }
 }

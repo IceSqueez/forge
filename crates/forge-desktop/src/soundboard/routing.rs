@@ -41,10 +41,9 @@ impl SoundboardView {
             .update_settings(|settings| settings.also_headphones = !settings.also_headphones);
         let repo = Arc::clone(&self.settings_repo);
         let value = self.settings.also_headphones;
-        async_bridge::report_failure(
-            &self.rt_handle,
+        self.settings_writers.write_reporting(
+            "also_headphones",
             async move { save_also_headphones(repo.as_ref(), value).await },
-            ErrorSink::Toast,
             tr!("soundboard_persist_failed"),
             cx,
         );
@@ -74,10 +73,9 @@ impl SoundboardView {
             .update_settings(|settings| settings.output_device_id = chosen);
         self.device_menu_open = false;
         let repo = Arc::clone(&self.settings_repo);
-        async_bridge::report_failure(
-            &self.rt_handle,
+        self.settings_writers.write_reporting(
+            "output_device",
             async move { save_output_device(repo.as_ref(), device_id).await },
-            ErrorSink::Toast,
             tr!("soundboard_persist_failed"),
             cx,
         );

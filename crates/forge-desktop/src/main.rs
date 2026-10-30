@@ -12,6 +12,7 @@ mod backup_schedule;
 mod boot;
 mod boot_restore;
 mod boot_signal;
+mod boot_warnings;
 mod builtin_sections;
 mod bundle_preview;
 mod chat;
@@ -128,6 +129,7 @@ mod queue_health;
 mod queues;
 mod quick_action_text;
 mod remote_audio;
+mod repo_failure;
 mod restore_close;
 mod restore_confirm;
 mod restore_flow;
@@ -219,6 +221,9 @@ mod vtube_connect;
 mod vtube_connect_form;
 mod window_placement;
 mod window_presence;
+
+use std::cell::Cell;
+use std::rc::Rc;
 
 use forge_components::{
     FOOTER_HEIGHT, IconAssets, bind_code_editor_keys, bind_picker_keys, bind_text_area_keys,
@@ -475,7 +480,8 @@ fn main() {
         Ok(rt) => rt,
         Err(err) => {
             tracing::error!(error = %err, "failed to start tokio runtime");
-            return;
+            drop(log_guard);
+            std::process::exit(EXIT_STARTUP_FAILURE);
         }
     };
     let rt_handle = rt.handle().clone();
@@ -486,6 +492,8 @@ fn main() {
     let slot_for_app = runtime_slot.clone();
     let exit_handoff = update_exit::ExitHandoff::new(instance_lock);
     let exit_for_app = exit_handoff.clone();
+    let window_failed = Rc::new(Cell::new(false));
+    let window_failure = Rc::clone(&window_failed);
 
     let application = gpui_platform::application()
         .with_assets(IconAssets)
@@ -595,6 +603,8 @@ fn main() {
             Ok(window) => window,
             Err(err) => {
                 tracing::error!(error = %err, "failed to open window");
+                window_failure.set(true);
+                cx.quit();
                 return;
             }
         };
@@ -609,7 +619,7 @@ fn main() {
             log_tail.clone(),
             endpoints.clone(),
             initial_screen.clone(),
-            boot_storage.backend,
+            Some(boot_storage.opening),
             window,
             cx,
         );
@@ -621,6 +631,9 @@ fn main() {
     }
     exit_handoff.finish();
     silence_logging();
+    if window_failed.get() {
+        std::process::exit(EXIT_STARTUP_FAILURE);
+    }
 }
 
 #[cfg(test)]

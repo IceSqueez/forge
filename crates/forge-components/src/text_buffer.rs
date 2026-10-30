@@ -228,12 +228,22 @@ impl TextBuffer {
         true
     }
 
+    fn caret_offset_within_text(&self, offset: usize) -> usize {
+        let mut offset = offset.min(self.text.len());
+        while !self.text.is_char_boundary(offset) {
+            offset -= 1;
+        }
+        offset
+    }
+
     pub(crate) fn move_to(&mut self, offset: usize) {
+        let offset = self.caret_offset_within_text(offset);
         self.selection.range = offset..offset;
         self.group_open = false;
     }
 
     pub(crate) fn select_to(&mut self, offset: usize) {
+        let offset = self.caret_offset_within_text(offset);
         if self.selection.reversed {
             self.selection.range.start = offset;
         } else {
@@ -620,6 +630,39 @@ mod tests {
             let mut buffer = typed(input);
             assert_eq!(undo_trail(&mut buffer), expected, "input {input:?}");
         }
+    }
+
+    #[test]
+    fn a_caret_aimed_past_the_text_or_inside_a_character_lands_on_a_boundary() {
+        for (text, target, expected) in [
+            ("ab", 2, 2),
+            ("ab", 3, 2),
+            ("ab", usize::MAX, 2),
+            ("", 1, 0),
+            ("a\u{e9}", 2, 1),
+            ("\u{1f600}", 3, 0),
+        ] {
+            let mut moved = loaded(text);
+            moved.move_to(target);
+            assert_eq!(moved.selection.range, expected..expected, "move {text:?}");
+
+            let mut extended = loaded(text);
+            extended.move_to(0);
+            extended.select_to(target);
+            assert_eq!(extended.selection.range, 0..expected, "extend {text:?}");
+        }
+    }
+
+    #[test]
+    fn typing_after_a_stale_caret_from_longer_text_appends_to_the_shortened_text() {
+        let mut buffer = loaded("a longer line");
+        let stale = buffer.cursor();
+        buffer.reset(Arc::from("hi"));
+
+        buffer.move_to(stale);
+        buffer.replace_in_utf16_range(None, "!");
+
+        assert_eq!(buffer.as_str(), "hi!");
     }
 
     #[test]

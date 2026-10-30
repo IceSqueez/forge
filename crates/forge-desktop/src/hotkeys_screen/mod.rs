@@ -19,6 +19,7 @@ use crate::combo_conflict::{ClipKey, clip_keys, combo_holder};
 use crate::hub_crumb::hub_crumb;
 use crate::integrations::BuiltinObject;
 use crate::navigation::NavRequested;
+use crate::repo_failure::RepoFailure;
 use crate::runtime_event::{self, RuntimeEvent};
 use crate::shortcut_overrides::{ShortcutOverrides, load_overrides, save_overrides};
 use forge_components::ActivePresentation;
@@ -178,8 +179,10 @@ impl HotkeysScreenView {
                     .soundboard_clips_repo()
                     .list()
                     .await
-                    .map_err(|e| e.to_string())?;
-                let rows = load_bindings(backend, registered).await?;
+                    .map_err(RepoFailure::from)?;
+                let rows = load_bindings(backend, registered)
+                    .await
+                    .map_err(RepoFailure::operation)?;
                 Ok((rows, clip_keys(&clips)))
             },
             |this, result, cx| this.apply_bindings(result, cx),
@@ -189,7 +192,7 @@ impl HotkeysScreenView {
 
     fn apply_bindings(
         &mut self,
-        result: Result<(Vec<BindingRow>, Vec<ClipKey>), String>,
+        result: Result<(Vec<BindingRow>, Vec<ClipKey>), RepoFailure>,
         cx: &mut Context<Self>,
     ) {
         match result {
@@ -198,7 +201,7 @@ impl HotkeysScreenView {
                 self.clip_keys = clips;
                 self.refresh_from_client(cx);
             }
-            Err(message) => self.on_repo_error(&message, cx),
+            Err(failure) => self.on_repo_error(&failure, cx),
         }
     }
 
@@ -256,8 +259,8 @@ impl HotkeysScreenView {
     }
 
     fn on_shortcuts_written(&mut self, outcome: WriteOutcome, cx: &mut Context<Self>) {
-        if let WriteOutcome::Failed(message) = outcome {
-            self.on_repo_error(&message, cx);
+        if let WriteOutcome::Failed(reason) = outcome {
+            self.on_repo_error(&RepoFailure::operation(reason), cx);
             self.rollback_shortcuts(cx);
         }
     }
@@ -273,11 +276,12 @@ impl HotkeysScreenView {
         cx.notify();
     }
 
-    fn on_repo_error(&mut self, message: &str, cx: &mut Context<Self>) {
-        tracing::warn!(error = %message, "hotkey binding operation failed");
+    fn on_repo_error(&mut self, failure: &RepoFailure, cx: &mut Context<Self>) {
+        tracing::warn!(error = %failure, "hotkey binding operation failed");
+        let message = failure.text();
         cx.push_toast(
             ToastKind::Error,
-            tr!("hotkeys_toast_error", message = message),
+            tr!("hotkeys_toast_error", message = message.as_str()),
         );
         cx.notify();
     }

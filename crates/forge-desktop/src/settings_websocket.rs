@@ -32,7 +32,6 @@ use forge_components::ActivePresentation;
 
 const LAN_PHRASE: &str = "expose to LAN";
 const MIN_PORT: u16 = 1024;
-const DEFAULT_OVERLAY_HINT: &str = "~/.local/share/forge/overlays";
 const ORIGINS_PERSIST_CONTEXT: &str = "websocket additional origins";
 const ORIGINS_AREA_HEIGHT: Pixels = px(72.0);
 const PORT_COLUMN_MIN_W: Pixels = px(140.0);
@@ -46,6 +45,13 @@ enum TokenRegenerateNote {
     Clean,
     RewriteFailed(String),
     RestoreFailed(String),
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum AfterSave {
+    Nothing,
+    ReloadServer,
+    ApplyEnabled(bool),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -100,6 +106,8 @@ pub struct SettingsWebSocketView {
     port_input: Entity<TextInput>,
     origins_input: Entity<TextArea>,
     origins_blur: Option<Subscription>,
+    regenerate_pending: bool,
+    default_overlay_root: String,
     lan_modal: Option<Entity<TypeToConfirm>>,
     lan_sub: Option<Subscription>,
     _subs: Vec<Subscription>,
@@ -187,6 +195,8 @@ impl SettingsWebSocketView {
             port_input,
             origins_input,
             origins_blur: None,
+            regenerate_pending: false,
+            default_overlay_root: forge_paths::overlays_dir().display().to_string(),
             lan_modal: None,
             lan_sub: None,
             _subs: subs,
@@ -278,35 +288,23 @@ impl SettingsWebSocketView {
         async_bridge::run_async(
             &self.rt_handle,
             server_bearer::current_bearer_token(server, credentials),
-            |this, result: Option<Secret>, cx| {
-                if let Some(token) = result {
+            |this, result: Result<Option<Secret>, String>, cx| match result {
+                Ok(Some(token)) => {
                     this.bearer_token = token;
                     cx.notify();
                 }
+                Ok(None) => {}
+                Err(reason) => server_bearer::token_load_failed(&reason, cx),
             },
             cx,
         );
     }
 
-    fn persist_and_reload(
+    fn persist_field<T: Send + 'static>(
         &mut self,
-        fut: impl Future<Output = Result<(), String>> + Send + 'static,
-        cx: &mut Context<Self>,
-    ) {
-        self.save_state = SaveState::Saving;
-        async_bridge::run_async(
-            &self.rt_handle,
-            fut,
-            |this, result: Result<(), String>, cx| this.apply_persist_outcome(result, cx),
-            cx,
-        );
-        cx.notify();
-    }
-
-    fn persist_toggle_and_reload(
-        &mut self,
-        prev: bool,
-        set: fn(&mut Self, bool),
+        prev: T,
+        restore: impl FnOnce(&mut Self, T, &mut Context<Self>) + Send + 'static,
+        after_save: AfterSave,
         fut: impl Future<Output = Result<(), String>> + Send + 'static,
         cx: &mut Context<Self>,
     ) {
@@ -316,20 +314,29 @@ impl SettingsWebSocketView {
             fut,
             move |this, result: Result<(), String>, cx| {
                 if result.is_err() {
-                    set(this, prev);
+                    restore(this, prev, cx);
                 }
-                this.apply_persist_outcome(result, cx);
+                this.apply_persist_outcome(result, after_save, cx);
             },
             cx,
         );
         cx.notify();
     }
 
-    fn apply_persist_outcome(&mut self, result: Result<(), String>, cx: &mut Context<Self>) {
+    fn apply_persist_outcome(
+        &mut self,
+        result: Result<(), String>,
+        after_save: AfterSave,
+        cx: &mut Context<Self>,
+    ) {
         match result {
             Ok(()) => {
                 self.save_state = SaveState::Saved;
-                self.reload_running_server(cx);
+                match after_save {
+                    AfterSave::Nothing => {}
+                    AfterSave::ReloadServer => self.reload_running_server(cx),
+                    AfterSave::ApplyEnabled(enabled) => self.apply_enabled(enabled, cx),
+                }
             }
             Err(message) => {
                 tracing::warn!(error = %message, "failed to save websocket settings");
@@ -346,29 +353,6 @@ impl SettingsWebSocketView {
         self.restart_server(cx);
     }
 
-    fn persist_bool(
-        &mut self,
-        prev: bool,
-        set: fn(&mut Self, bool),
-        fut: impl Future<Output = Result<(), String>> + Send + 'static,
-        cx: &mut Context<Self>,
-    ) {
-        self.save_state = SaveState::Saved;
-        async_bridge::optimistic(
-            &self.rt_handle,
-            prev,
-            fut,
-            move |this, prev, message, cx| {
-                set(this, prev);
-                if let Some(message) = ErrorSink::Banner.report(message, cx) {
-                    this.save_state = SaveState::Error(message.into());
-                }
-            },
-            cx,
-        );
-        cx.notify();
-    }
-
     fn toggle_enable(&mut self, cx: &mut Context<Self>) {
         if !self.settings_loaded() {
             return;
@@ -377,22 +361,40 @@ impl SettingsWebSocketView {
         let value = !prev;
         self.enable_server = value;
         let repo = Arc::clone(&self.backend) as Arc<dyn SettingsRepo>;
-        let server = self.server.clone();
-        self.persist_bool(
+        self.persist_field(
             prev,
-            |this, v| this.enable_server = v,
+            |this, prev, _| this.enable_server = prev,
+            AfterSave::ApplyEnabled(value),
             async move {
                 ServerSettings::save_enabled(repo.as_ref(), value)
                     .await
-                    .map_err(|e| e.to_string())?;
-                if let Some(handle) = server {
-                    if value {
-                        restart_ignoring_disabled(&handle).await?;
-                    } else {
-                        handle.stop().await.map_err(|e| e.to_string())?;
-                    }
+                    .map_err(|e| e.to_string())
+            },
+            cx,
+        );
+    }
+
+    fn apply_enabled(&mut self, enabled: bool, cx: &mut Context<Self>) {
+        let Some(handle) = self.server.clone() else {
+            return;
+        };
+        async_bridge::run_async(
+            &self.rt_handle,
+            async move {
+                if enabled {
+                    restart_ignoring_disabled(&handle).await
+                } else {
+                    handle.stop().await.map_err(|e| e.to_string())
                 }
-                Ok(())
+            },
+            |this, result: Result<(), String>, cx| {
+                if let Err(message) = result {
+                    tracing::warn!(error = %message, "saved server state could not be applied");
+                    if let Some(message) = ErrorSink::Banner.report(message, cx) {
+                        this.save_state = SaveState::Error(message.into());
+                    }
+                    cx.notify();
+                }
             },
             cx,
         );
@@ -490,10 +492,14 @@ impl SettingsWebSocketView {
         if !self.settings_loaded() {
             return;
         }
+        let prev = self.bind_choice;
         self.bind_choice = BindChoice::Localhost;
         self.close_lan_modal();
         let repo = Arc::clone(&self.backend) as Arc<dyn SettingsRepo>;
-        self.persist_and_reload(
+        self.persist_field(
+            prev,
+            |this, prev, _| this.bind_choice = prev,
+            AfterSave::ReloadServer,
             async move {
                 ServerSettings::save_bind_address(repo.as_ref(), LOCALHOST_BIND_ADDRESS)
                     .await
@@ -548,7 +554,10 @@ impl SettingsWebSocketView {
         self.bind_choice = BindChoice::Lan;
         self.close_lan_modal();
         let repo = Arc::clone(&self.backend) as Arc<dyn SettingsRepo>;
-        self.persist_and_reload(
+        self.persist_field(
+            BindChoice::Localhost,
+            |this, prev, _| this.bind_choice = prev,
+            AfterSave::ReloadServer,
             async move {
                 ServerSettings::save_bind_address(repo.as_ref(), LAN_BIND_ADDRESS)
                     .await
@@ -580,9 +589,17 @@ impl SettingsWebSocketView {
             .filter(|p| *p >= MIN_PORT);
         match parsed {
             Some(port) => {
+                let prev = self.port;
                 self.port = port;
                 let repo = Arc::clone(&self.backend) as Arc<dyn SettingsRepo>;
-                self.persist_and_reload(
+                self.persist_field(
+                    prev,
+                    |this, prev, cx| {
+                        this.port = prev;
+                        this.port_input
+                            .update(cx, |i, cx| i.set_content(prev.to_string(), cx));
+                    },
+                    AfterSave::ReloadServer,
                     async move {
                         ServerSettings::save_port(repo.as_ref(), port)
                             .await
@@ -644,9 +661,16 @@ impl SettingsWebSocketView {
                     cx.notify();
                     return;
                 }
-                self.additional_origins = origins.clone();
+                let prev = std::mem::replace(&mut self.additional_origins, origins.clone());
                 let repo = Arc::clone(&self.backend) as Arc<dyn SettingsRepo>;
-                self.persist_and_reload(
+                self.persist_field(
+                    prev,
+                    |this, prev, cx| {
+                        this.origins_input
+                            .update(cx, |i, cx| i.set_content(prev.join("\n"), cx));
+                        this.additional_origins = prev;
+                    },
+                    AfterSave::ReloadServer,
                     async move {
                         ServerSettings::save_additional_origins(repo.as_ref(), &origins)
                             .await
@@ -698,9 +722,10 @@ impl SettingsWebSocketView {
         self.require_ws_token = value;
         let repo = Arc::clone(&self.backend) as Arc<dyn SettingsRepo>;
         let server = self.server.clone();
-        self.persist_bool(
+        self.persist_field(
             prev,
-            |this, v| this.require_ws_token = v,
+            |this, prev, _| this.require_ws_token = prev,
+            AfterSave::Nothing,
             async move {
                 match server {
                     Some(handle) => handle
@@ -725,9 +750,10 @@ impl SettingsWebSocketView {
         self.require_overlay_token = value;
         let repo = Arc::clone(&self.backend) as Arc<dyn SettingsRepo>;
         let server = self.server.clone();
-        self.persist_bool(
+        self.persist_field(
             prev,
-            |this, v| this.require_overlay_token = v,
+            |this, prev, _| this.require_overlay_token = prev,
+            AfterSave::Nothing,
             async move {
                 ServerSettings::save_http_overlay_require_token(repo.as_ref(), value)
                     .await
@@ -840,9 +866,10 @@ impl SettingsWebSocketView {
         let value = !prev;
         self.cors_any_origin = value;
         let repo = Arc::clone(&self.backend) as Arc<dyn SettingsRepo>;
-        self.persist_toggle_and_reload(
+        self.persist_field(
             prev,
-            |this, v| this.cors_any_origin = v,
+            |this, prev, _| this.cors_any_origin = prev,
+            AfterSave::ReloadServer,
             async move {
                 ServerSettings::save_overlay_cors_any_origin(repo.as_ref(), value)
                     .await
@@ -870,7 +897,7 @@ impl SettingsWebSocketView {
             return;
         }
         let path_str = path.to_string_lossy().into_owned();
-        self.overlay_root = Some(path_str.clone());
+        let prev_root = self.overlay_root.replace(path_str.clone());
         let repo = Arc::clone(&self.backend) as Arc<dyn SettingsRepo>;
         let overlays = self.overlays.clone();
         let samples = Arc::clone(&self.overlay_samples);
@@ -889,7 +916,10 @@ impl SettingsWebSocketView {
                 if let Some(failure) = build_failure {
                     failure.raise(cx);
                 }
-                this.apply_persist_outcome(result.map(|_| ()), cx);
+                if result.is_err() {
+                    this.overlay_root = prev_root;
+                }
+                this.apply_persist_outcome(result.map(|_| ()), AfterSave::ReloadServer, cx);
             },
             cx,
         );
@@ -905,6 +935,22 @@ impl SettingsWebSocketView {
         crate::toasts::copy_to_clipboard(self.bearer_token.expose().to_owned(), cx);
     }
 
+    fn request_regenerate(&mut self, cx: &mut Context<Self>) {
+        self.regenerate_pending = true;
+        cx.notify();
+    }
+
+    fn cancel_regenerate(&mut self, cx: &mut Context<Self>) {
+        self.regenerate_pending = false;
+        cx.notify();
+    }
+
+    fn confirm_regenerate(&mut self, cx: &mut Context<Self>) {
+        self.regenerate_pending = false;
+        self.regenerate_token(cx);
+        cx.notify();
+    }
+
     fn regenerate_token(&mut self, cx: &mut Context<Self>) {
         let Some(handle) = self.server.clone() else {
             return;
@@ -917,11 +963,12 @@ impl SettingsWebSocketView {
                     .await
                     .map_err(|e| e.to_string())
             },
-            |this, result: Result<Secret, String>, cx| {
-                if let Ok(token) = result {
+            |this, result: Result<Secret, String>, cx| match result {
+                Ok(token) => {
                     this.bearer_token = token;
                     cx.notify();
                 }
+                Err(reason) => server_bearer::token_regenerate_failed(&reason, cx),
             },
             cx,
         );
@@ -1256,7 +1303,7 @@ impl SettingsWebSocketView {
                 .ink(palette.warning)
                 .on_click(
                     "settings-ws-token-regen",
-                    cx.listener(|this, _: &ClickEvent, _, cx| this.regenerate_token(cx)),
+                    cx.listener(|this, _: &ClickEvent, _, cx| this.request_regenerate(cx)),
                 );
 
         div()
@@ -1467,7 +1514,7 @@ impl SettingsWebSocketView {
         let path_label = self
             .overlay_root
             .clone()
-            .unwrap_or_else(|| DEFAULT_OVERLAY_HINT.to_owned());
+            .unwrap_or_else(|| self.default_overlay_root.clone());
         let path_box = div()
             .flex_1()
             .min_w(px(0.0))
@@ -1529,7 +1576,11 @@ impl SettingsWebSocketView {
 
 impl Render for SettingsWebSocketView {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        self.attach_origins_blur(window, cx);
+        if self.origins_blur.is_none() {
+            cx.defer_in(window, |this, window, cx| {
+                this.attach_origins_blur(window, cx);
+            });
+        }
         let palette = cx.palette();
         let density = cx.density();
 
@@ -1599,6 +1650,14 @@ impl Render for SettingsWebSocketView {
         }
         if self.overlay_token_confirm_open {
             root = root.child(self.overlay_token_confirm(&palette, cx));
+        }
+        if self.regenerate_pending {
+            root = root.child(server_bearer::regenerate_confirm(
+                &palette,
+                Self::cancel_regenerate,
+                Self::confirm_regenerate,
+                cx,
+            ));
         }
         root
     }
@@ -1672,7 +1731,7 @@ fn split_host_port(authority: &str) -> Option<(&str, Option<&str>)> {
     }
 }
 
-fn host_is_valid(host: &str) -> bool {
+pub(crate) fn host_is_valid(host: &str) -> bool {
     if let Some(inner) = host.strip_prefix('[').and_then(|h| h.strip_suffix(']')) {
         return !inner.is_empty()
             && inner
@@ -1707,14 +1766,16 @@ mod tests {
     use forge_overlay::OverlayKindRegistry;
     use forge_runtime::EventBus;
     use forge_server::settings::{
-        ADDITIONAL_ORIGINS, AUTH_REQUIRED_FOR_READS, HTTP_OVERLAY_REQUIRE_TOKEN, PORT,
+        ADDITIONAL_ORIGINS, AUTH_REQUIRED_FOR_READS, BIND_ADDRESS, ENABLED,
+        HTTP_OVERLAY_REQUIRE_TOKEN, OVERLAY_CORS_ANY_ORIGIN, PORT,
     };
     use forge_storage::settings::core_settings::SERVER_OVERLAY_ROOT;
     use gpui::TestAppContext;
 
     use super::*;
     use crate::test_support::{
-        StubEventLog, StubOverlays, TestBackend, pump, runtime, stopped_handle, test_backend,
+        StubEventLog, StubOverlays, TestBackend, pump, pump_until, runtime, stopped_handle,
+        test_backend,
     };
 
     const STORED_ORIGIN: &str = "http://stored.test:9000";
@@ -2092,6 +2153,109 @@ mod tests {
         let server = stopped_handle(rt, backend);
         rt.block_on(server.restart()).expect("server starts");
         server
+    }
+
+    type ShownFields = (
+        bool,
+        bool,
+        bool,
+        bool,
+        BindChoice,
+        u16,
+        Vec<String>,
+        String,
+        String,
+    );
+
+    fn shown_fields(this: &SettingsWebSocketView, cx: &App) -> ShownFields {
+        (
+            this.enable_server,
+            this.require_ws_token,
+            this.require_overlay_token,
+            this.cors_any_origin,
+            this.bind_choice,
+            this.port,
+            this.additional_origins.clone(),
+            this.port_input.read(cx).content().to_owned(),
+            this.origins_input.read(cx).content().to_owned(),
+        )
+    }
+
+    #[gpui::test]
+    fn a_failed_save_puts_the_edited_field_back_and_reports_the_error(cx: &mut TestAppContext) {
+        type Edit = fn(&mut SettingsWebSocketView, &mut Context<SettingsWebSocketView>);
+        let edits: [(&str, Edit); 7] = [
+            (ENABLED.name(), |this, cx| this.toggle_enable(cx)),
+            (AUTH_REQUIRED_FOR_READS.name(), |this, cx| {
+                this.toggle_require_ws_token(cx)
+            }),
+            (HTTP_OVERLAY_REQUIRE_TOKEN.name(), |this, cx| {
+                this.toggle_require_overlay_token(cx)
+            }),
+            (OVERLAY_CORS_ANY_ORIGIN.name(), |this, cx| {
+                this.toggle_cors(cx)
+            }),
+            (BIND_ADDRESS.name(), |this, cx| this.confirm_lan(cx)),
+            (PORT.name(), |this, cx| {
+                this.port_input
+                    .update(cx, |input, cx| input.set_content("9321", cx));
+                this.commit_port(cx);
+            }),
+            (ADDITIONAL_ORIGINS.name(), |this, cx| {
+                this.origins_input
+                    .update(cx, |input, cx| input.set_content(TYPED_ORIGIN, cx));
+                this.commit_origins(cx);
+            }),
+        ];
+        for (key, edit) in edits {
+            let rt = runtime();
+            let (backend, _writes) = test_backend();
+            backend.fail_writes(key);
+            let view = settings_view(cx, &rt, backend);
+            settle(cx, &rt);
+            let before = view.read_with(cx, shown_fields);
+
+            view.update(cx, edit);
+            pump_until(&rt, || {
+                cx.run_until_parked();
+                view.read_with(cx, |this, _| matches!(this.save_state, SaveState::Error(_)))
+            });
+
+            assert_eq!(view.read_with(cx, shown_fields), before, "{key}");
+        }
+    }
+
+    #[gpui::test]
+    fn enabling_keeps_the_saved_switch_on_and_reports_a_server_that_cannot_start(
+        cx: &mut TestAppContext,
+    ) {
+        let rt = runtime();
+        let squatter = rt
+            .block_on(tokio::net::TcpListener::bind("127.0.0.1:0"))
+            .expect("squatter bind");
+        let port = squatter.local_addr().expect("squatter addr").port();
+        let (backend, _writes) = test_backend();
+        backend.seed_raw(&ENABLED, "false");
+        backend.seed_raw(&BIND_ADDRESS, "127.0.0.1");
+        backend.seed_raw(&PORT, &port.to_string());
+        let server = stopped_handle(&rt, &backend);
+        let view = settings_view_with_server(cx, &rt, Arc::clone(&backend), Some(server));
+        settle(cx, &rt);
+
+        view.update(cx, |this, cx| this.toggle_enable(cx));
+        pump_until(&rt, || {
+            cx.run_until_parked();
+            view.read_with(cx, |this, _| matches!(this.save_state, SaveState::Error(_)))
+        });
+
+        assert_eq!(
+            (
+                view.read_with(cx, |this, _| this.enable_server),
+                backend.row(ENABLED.name()).map(|row| row.value),
+            ),
+            (true, Some("true".to_owned()))
+        );
+        drop(squatter);
     }
 
     #[gpui::test]

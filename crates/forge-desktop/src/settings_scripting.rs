@@ -143,7 +143,25 @@ pub struct SettingsScriptingView {
     core_allow_local: bool,
     numeric: Vec<NumericField>,
     domain_draft: Entity<TextInput>,
+    domain_invalid: bool,
     _subs: Vec<Subscription>,
+}
+
+const WILDCARD_LABEL_PREFIX: &str = "*.";
+const SCHEME_SEPARATOR: &str = "://";
+
+fn normalized_domain(raw: &str) -> Option<String> {
+    let lowered = raw.trim().to_lowercase();
+    let after_scheme = lowered
+        .split_once(SCHEME_SEPARATOR)
+        .map_or(lowered.as_str(), |(_, rest)| rest);
+    let authority = after_scheme
+        .split(['/', '?', '#'])
+        .next()
+        .unwrap_or_default();
+    let host = authority.split(':').next().unwrap_or_default();
+    let bare = host.strip_prefix(WILDCARD_LABEL_PREFIX).unwrap_or(host);
+    (!bare.is_empty() && crate::settings_websocket::host_is_valid(bare)).then(|| host.to_owned())
 }
 
 impl SettingsScriptingView {
@@ -186,13 +204,14 @@ impl SettingsScriptingView {
                 .with_font_size(FONT_SM)
                 .read_only(true)
         });
-        subs.push(
-            cx.subscribe(&domain_draft, |this, _input, event: &InputEvent, cx| {
-                if let InputEvent::Submitted(_) = event {
-                    this.add_domain(cx);
-                }
-            }),
-        );
+        subs.push(cx.subscribe(
+            &domain_draft,
+            |this, _input, event: &InputEvent, cx| match event {
+                InputEvent::Submitted(_) => this.add_domain(cx),
+                InputEvent::Changed(_) => this.clear_domain_error(cx),
+                _ => {}
+            },
+        ));
 
         let mut view = Self {
             backend,
@@ -203,6 +222,7 @@ impl SettingsScriptingView {
             core_allow_local: defaults.core_allow_local,
             numeric,
             domain_draft,
+            domain_invalid: false,
             _subs: subs,
         };
         view.load(cx);
@@ -331,16 +351,36 @@ impl SettingsScriptingView {
 
     fn add_domain(&mut self, cx: &mut Context<Self>) {
         let draft = self.domain_draft.read(cx).content().trim().to_owned();
+        if !self.allowed_domains.is_loaded() || draft.is_empty() {
+            return;
+        }
+        let Some(normalized) = normalized_domain(&draft) else {
+            self.domain_invalid = true;
+            self.domain_draft
+                .update(cx, |input, cx| input.set_invalid(true, cx));
+            cx.notify();
+            return;
+        };
+        self.clear_domain_error(cx);
+        self.domain_draft.update(cx, |i, cx| i.clear(cx));
         let Some(domains) = self.allowed_domains.loaded_mut() else {
             return;
         };
-        if !draft.is_empty() && !domains.contains(&draft) {
-            domains.push(draft);
+        if !domains.contains(&normalized) {
+            domains.push(normalized);
             let snapshot = domains.clone();
-            self.domain_draft.update(cx, |i, cx| i.clear(cx));
             self.persist_domains(snapshot, cx);
         }
         cx.notify();
+    }
+
+    fn clear_domain_error(&mut self, cx: &mut Context<Self>) {
+        if self.domain_invalid {
+            self.domain_invalid = false;
+            self.domain_draft
+                .update(cx, |input, cx| input.set_invalid(false, cx));
+            cx.notify();
+        }
     }
 
     fn remove_domain(&mut self, index: usize, cx: &mut Context<Self>) {
@@ -526,17 +566,25 @@ impl SettingsScriptingView {
         density: Density,
         cx: &mut Context<Self>,
     ) -> AnyElement {
+        let domains_hint = if self.domain_invalid {
+            tr!("settings_scripting_domain_invalid")
+        } else {
+            tr!("settings_scripting_allowed_domains_hint")
+        };
+        let domains_row = setting_row(
+            tr!("settings_scripting_allowed_domains_label"),
+            Some(domains_hint.into()),
+            self.domain_list(palette, density, cx),
+            palette,
+            density,
+        )
+        .stacked();
         let rows = setting_rows(palette)
-            .row(
-                setting_row(
-                    tr!("settings_scripting_allowed_domains_label"),
-                    Some(tr!("settings_scripting_allowed_domains_hint").into()),
-                    self.domain_list(palette, density, cx),
-                    palette,
-                    density,
-                )
-                .stacked(),
-            )
+            .row(if self.domain_invalid {
+                domains_row.hint_color(palette.danger)
+            } else {
+                domains_row
+            })
             .rows(
                 [
                     NumericSetting::MaxCalls,
@@ -696,6 +744,44 @@ mod tests {
         ReadFault, SETTINGS_READ_FAILED, SettingWrite, TestBackend, install_presentation, pump,
         test_backend, writes_to,
     };
+
+    #[test]
+    fn normalized_domain_reduces_pasted_text_to_its_lowercase_host() {
+        for (raw, expected) in [
+            ("api.example.com", "api.example.com"),
+            ("  API.Example.COM  ", "api.example.com"),
+            (
+                "https://api.example.com/v1/items?x=1#top",
+                "api.example.com",
+            ),
+            ("api.example.com:8443", "api.example.com"),
+            ("HTTP://api.example.com:8443/", "api.example.com"),
+            ("*.Example.com", "*.example.com"),
+            ("https://*.example.com/", "*.example.com"),
+            ("localhost", "localhost"),
+        ] {
+            assert_eq!(normalized_domain(raw).as_deref(), Some(expected), "{raw:?}");
+        }
+    }
+
+    #[test]
+    fn normalized_domain_refuses_text_that_names_no_valid_host() {
+        for raw in [
+            "",
+            "   ",
+            "*.",
+            "*",
+            "*.*.example.com",
+            "https://",
+            "exa mple.com",
+            ".example.com",
+            "example.com.",
+            "user@example.com",
+            "foo_bar.example.com",
+        ] {
+            assert_eq!(normalized_domain(raw), None, "{raw:?}");
+        }
+    }
 
     #[test]
     fn stored_value_from_text_accepts_inclusive_range_bounds() {

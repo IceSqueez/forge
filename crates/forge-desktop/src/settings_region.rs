@@ -14,7 +14,7 @@ use gpui::{
 };
 use time::OffsetDateTime;
 
-use crate::async_bridge::{self, ErrorSink};
+use crate::async_bridge::KeyedSnapshotWriters;
 use crate::presentation::ActiveDisplayFormats;
 
 const SELECT_WIDTH: Pixels = px(240.0);
@@ -71,7 +71,7 @@ pub struct RegionOption {
 
 pub struct SettingsRegionView {
     settings: Arc<dyn SettingsRepo>,
-    rt_handle: tokio::runtime::Handle,
+    writers: KeyedSnapshotWriters<std::mem::Discriminant<RegionPick>>,
     choices: DisplayFormatChoices,
     open: Option<RegionRow>,
     overlay_focus: FocusHandle,
@@ -87,7 +87,7 @@ impl SettingsRegionView {
     ) -> Self {
         Self {
             settings,
-            rt_handle,
+            writers: KeyedSnapshotWriters::new(&rt_handle),
             choices,
             open: None,
             overlay_focus: cx.focus_handle(),
@@ -138,14 +138,14 @@ impl SettingsRegionView {
 
     fn pick(&mut self, pick: RegionPick, cx: &mut Context<Self>) {
         self.open = None;
+        let writer_key = std::mem::discriminant(&pick);
         if let Some((setting, code)) = self.apply_pick(pick) {
             install_process_display_formats(self.choices.resolve());
             cx.set_global(ActiveDisplayFormats(self.choices));
             let settings = Arc::clone(&self.settings);
-            async_bridge::report_failure(
-                &self.rt_handle,
+            self.writers.write_reporting(
+                writer_key,
                 async move { write_setting(settings.as_ref(), setting, &Some(code.to_owned())).await },
-                ErrorSink::Toast,
                 tr!("settings_region_persist_failed"),
                 cx,
             );

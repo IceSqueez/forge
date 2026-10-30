@@ -956,6 +956,7 @@ impl QueuesView {
                 cx.notify();
             });
         }
+        cx.push_toast(ToastKind::Error, tr!("queues_save_failed", error = message));
         cx.notify();
     }
 
@@ -1881,7 +1882,12 @@ async fn load_queues(
 ) -> Result<Vec<QueueRow>, String> {
     let queues = queue_repo.list().await.map_err(|e| e.to_string())?;
     let actions = action_repo.list().await.map_err(|e| e.to_string())?;
-    let states = scheduler.queue_states().await.unwrap_or_default();
+    let live_states = scheduler
+        .queue_states()
+        .await
+        .inspect_err(|error| tracing::warn!(%error, "queue states could not be read"))
+        .ok();
+    let states = live_states.clone().unwrap_or_default();
 
     let rows = queues
         .into_iter()
@@ -1889,7 +1895,7 @@ async fn load_queues(
             let assigned = actions.iter().filter(|a| a.queue_id == q.id).count() as u32;
             let concurrency = q.concurrency.max(1);
             let mode = states.get(&q.id).map_or(QueueMode::RUNNING, |s| s.mode);
-            let live = states.contains_key(&q.id);
+            let live = live_states.is_none() || states.contains_key(&q.id);
             QueueRow {
                 id: q.id,
                 name: q.name,

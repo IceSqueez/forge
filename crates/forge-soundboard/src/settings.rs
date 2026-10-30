@@ -8,6 +8,7 @@ use forge_storage::{
     read_setting_or_default, write_setting,
 };
 use forge_types::OutputDevice;
+use tokio::sync::watch;
 
 pub const ENABLED: Setting<Flag> = Setting::new(
     "soundboard.enabled",
@@ -77,28 +78,57 @@ impl SoundboardSettings {
 }
 
 #[derive(Clone)]
-pub struct SoundboardSettingsHandle(Arc<RwLock<Arc<SoundboardSettings>>>);
+pub struct SoundboardSettingsHandle {
+    current: Arc<RwLock<Arc<SoundboardSettings>>>,
+    revision: Arc<watch::Sender<u64>>,
+}
+
+pub struct SoundboardSettingsChanges(watch::Receiver<u64>);
+
+impl SoundboardSettingsChanges {
+    pub async fn changed(&mut self) -> bool {
+        self.0.changed().await.is_ok()
+    }
+}
 
 impl SoundboardSettingsHandle {
     pub fn new(initial: SoundboardSettings) -> Self {
-        Self(Arc::new(RwLock::new(Arc::new(initial))))
+        let (revision, _) = watch::channel(0);
+        Self {
+            current: Arc::new(RwLock::new(Arc::new(initial))),
+            revision: Arc::new(revision),
+        }
     }
 
     pub fn load(&self) -> Arc<SoundboardSettings> {
-        Arc::clone(&self.0.read().unwrap_or_else(PoisonError::into_inner))
+        Arc::clone(&self.current.read().unwrap_or_else(PoisonError::into_inner))
+    }
+
+    pub fn changes(&self) -> SoundboardSettingsChanges {
+        SoundboardSettingsChanges(self.revision.subscribe())
     }
 
     pub fn swap(&self, settings: SoundboardSettings) {
-        *self.0.write().unwrap_or_else(PoisonError::into_inner) = Arc::new(settings);
+        *self.current.write().unwrap_or_else(PoisonError::into_inner) = Arc::new(settings);
+        self.announce_change();
     }
 
     pub fn update(&self, change: impl FnOnce(&mut SoundboardSettings)) -> Arc<SoundboardSettings> {
-        let mut guard = self.0.write().unwrap_or_else(PoisonError::into_inner);
-        let mut next = (**guard).clone();
-        change(&mut next);
-        let next = Arc::new(next);
-        *guard = Arc::clone(&next);
+        let next = {
+            let mut guard = self.current.write().unwrap_or_else(PoisonError::into_inner);
+            let mut next = (**guard).clone();
+            change(&mut next);
+            let next = Arc::new(next);
+            *guard = Arc::clone(&next);
+            next
+        };
+        self.announce_change();
         next
+    }
+
+    fn announce_change(&self) {
+        self.revision
+            .send_modify(|revision| *revision = revision.wrapping_add(1));
     }
 }
 
@@ -153,6 +183,40 @@ mod tests {
             .into_iter()
             .map(|row| (row.key, row.value))
             .collect()
+    }
+
+    #[tokio::test]
+    async fn a_listener_is_woken_by_swap_and_update_and_reads_the_new_settings() {
+        let changes: [fn(&SoundboardSettingsHandle); 2] = [
+            |handle| {
+                handle.swap(SoundboardSettings {
+                    master_volume: 0.25,
+                    ..SoundboardSettings::default()
+                });
+            },
+            |handle| {
+                handle.update(|settings| settings.master_volume = 0.25);
+            },
+        ];
+        for change in changes {
+            let handle = SoundboardSettingsHandle::default();
+            let mut listener = handle.changes();
+
+            change(&handle);
+
+            assert!(listener.changed().await);
+            assert_eq!(handle.load().master_volume, 0.25);
+        }
+    }
+
+    #[tokio::test]
+    async fn changes_end_once_every_settings_handle_is_gone() {
+        let handle = SoundboardSettingsHandle::default();
+        let mut listener = handle.changes();
+
+        drop(handle);
+
+        assert!(!listener.changed().await);
     }
 
     #[tokio::test]

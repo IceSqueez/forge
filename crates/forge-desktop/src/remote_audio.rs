@@ -24,6 +24,29 @@ const SERVER_STOPPED: &str = "the server stopped before the clip settled";
 struct Pending {
     capability: ClipCapability,
     outcome: Option<ClipOutcomeHandle>,
+    withdrawn: bool,
+}
+
+struct PendingEntryGuard<'a> {
+    destination: &'a OverlayAudioDestination,
+    clip_id: &'a str,
+    abandoned: bool,
+}
+
+impl Drop for PendingEntryGuard<'_> {
+    fn drop(&mut self) {
+        if !self.abandoned {
+            self.destination.forget(self.clip_id);
+            return;
+        }
+        let Some(capability) = self.destination.withdraw_until_next_clip(self.clip_id) else {
+            return;
+        };
+        if let Ok(runtime) = tokio::runtime::Handle::try_current() {
+            let server = self.destination.server.clone();
+            runtime.spawn(async move { server.revoke_audio_clip(&capability).await });
+        }
+    }
 }
 
 pub struct OverlayAudioDestination {
@@ -46,11 +69,14 @@ impl OverlayAudioDestination {
     }
 
     fn register(&self, clip_id: String, capability: ClipCapability, outcome: ClipOutcomeHandle) {
-        self.pending().insert(
+        let mut pending = self.pending();
+        pending.retain(|_, entry| !entry.withdrawn);
+        pending.insert(
             clip_id,
             Pending {
                 capability,
                 outcome: Some(outcome),
+                withdrawn: false,
             },
         );
     }
@@ -65,6 +91,13 @@ impl OverlayAudioDestination {
         self.pending()
             .get_mut(clip_id)
             .and_then(|pending| pending.outcome.take())
+    }
+
+    fn withdraw_until_next_clip(&self, clip_id: &str) -> Option<ClipCapability> {
+        self.pending().get_mut(clip_id).map(|pending| {
+            pending.withdrawn = true;
+            pending.capability.clone()
+        })
     }
 
     fn forget(&self, clip_id: &str) -> Option<ClipCapability> {
@@ -178,8 +211,14 @@ impl RemoteAudioDestination for OverlayAudioDestination {
         let Some(outcome) = self.take_outcome(clip_id.expose()) else {
             return Err(AudioError::RemoteDestination(UNKNOWN_CLIP.to_owned()));
         };
+        let mut entry = PendingEntryGuard {
+            destination: self,
+            clip_id: clip_id.expose(),
+            abandoned: true,
+        };
         let settled = outcome.recv().await;
-        self.forget(clip_id.expose());
+        entry.abandoned = false;
+        drop(entry);
         Ok(verdict_of(settled))
     }
 }
@@ -609,6 +648,33 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn a_verdict_wait_dropped_before_any_stop_withdraws_the_clip_from_the_server() {
+        let (destination, _pages) = listening().await;
+        let delivered = destination
+            .deliver(&destination_id(), clip())
+            .await
+            .expect("the clip is announced");
+        let capability = destination
+            .capability_of(delivered.clip_id.expose())
+            .expect("the announced clip is pending");
+
+        let abandoned =
+            tokio::time::timeout(Duration::ZERO, destination.verdict(&delivered.clip_id)).await;
+        assert!(
+            abandoned.is_err(),
+            "the clip settled before anyone reported"
+        );
+
+        tokio::time::timeout(HANG_GUARD, async {
+            while destination.server.hold_audio_clip(&capability).await {
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .expect("the abandoned clip is revoked");
+    }
+
+    #[tokio::test]
     async fn a_verdict_for_a_clip_that_is_not_waiting_is_an_error_rather_than_a_hang() {
         let (destination, _pages) = listening().await;
 
@@ -672,5 +738,109 @@ mod tests {
 
             assert_eq!(class(&verdict_of(outcome)), expected, "{label}");
         }
+    }
+
+    async fn abandon_verdict_wait(destination: &OverlayAudioDestination, clip_id: &RemoteClipId) {
+        let abandoned = tokio::time::timeout(Duration::ZERO, destination.verdict(clip_id)).await;
+        assert!(
+            abandoned.is_err(),
+            "the clip settled before anyone reported"
+        );
+    }
+
+    #[tokio::test]
+    async fn the_next_clip_clears_entries_a_dropped_verdict_wait_left_behind() {
+        let (destination, _pages) = listening().await;
+        let dropped = destination
+            .deliver(&destination_id(), clip())
+            .await
+            .expect("the clip is announced");
+        abandon_verdict_wait(&destination, &dropped.clip_id).await;
+        let kept_until_then = destination
+            .capability_of(dropped.clip_id.expose())
+            .is_some();
+
+        let next = destination
+            .deliver(&destination_id(), clip())
+            .await
+            .expect("the next clip is announced");
+
+        assert_eq!(
+            (
+                kept_until_then,
+                destination
+                    .capability_of(dropped.clip_id.expose())
+                    .is_some(),
+                destination.capability_of(next.clip_id.expose()).is_some(),
+            ),
+            (true, false, true)
+        );
+    }
+
+    #[tokio::test]
+    async fn the_next_clip_leaves_a_clip_still_awaiting_its_verdict_alone() {
+        let (destination, _pages) = listening().await;
+        let waiting = destination
+            .deliver(&destination_id(), clip())
+            .await
+            .expect("the clip is announced");
+
+        destination
+            .deliver(&destination_id(), clip())
+            .await
+            .expect("the next clip is announced");
+
+        assert!(
+            destination
+                .capability_of(waiting.clip_id.expose())
+                .is_some()
+        );
+    }
+
+    #[tokio::test]
+    async fn revoking_a_clip_twice_is_harmless_and_reports_the_second_as_a_miss() {
+        let (destination, _pages) = listening().await;
+        let delivered = destination
+            .deliver(&destination_id(), clip())
+            .await
+            .expect("the clip is announced");
+        let capability = destination
+            .capability_of(delivered.clip_id.expose())
+            .expect("the announced clip is pending");
+
+        let first = destination.server.revoke_audio_clip(&capability).await;
+        let second = destination.server.revoke_audio_clip(&capability).await;
+        let verdict = settled(&destination, &delivered.clip_id).await;
+
+        assert_eq!(
+            (first, second, verdict.ok()),
+            (
+                true,
+                false,
+                Some(RemoteVerdict::Unknown {
+                    reason: REVOKED.to_owned()
+                })
+            )
+        );
+    }
+
+    #[tokio::test]
+    async fn a_stop_racing_the_revoke_of_a_dropped_wait_still_succeeds() {
+        let (destination, _pages) = listening().await;
+        let delivered = destination
+            .deliver(&destination_id(), clip())
+            .await
+            .expect("the clip is announced");
+        let capability = destination
+            .capability_of(delivered.clip_id.expose())
+            .expect("the announced clip is pending");
+        abandon_verdict_wait(&destination, &delivered.clip_id).await;
+        destination.server.revoke_audio_clip(&capability).await;
+
+        let stopped = destination
+            .control(&destination_id(), &delivered.clip_id, RemoteCommand::Stop)
+            .await;
+
+        assert!(stopped.is_ok(), "{stopped:?}");
     }
 }

@@ -1,6 +1,8 @@
 use std::cell::Cell;
+use std::collections::HashMap;
 use std::fmt::Display;
 use std::future::Future;
+use std::hash::Hash;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -576,6 +578,74 @@ impl SnapshotWriter {
         })
         .detach();
     }
+
+    pub fn write_on_release<F, E>(&self, write: F, failure: impl Into<SharedString>, cx: &mut App)
+    where
+        F: Future<Output = Result<(), E>> + Send + 'static,
+        E: Display + Send + 'static,
+    {
+        let failure = failure.into();
+        let (settled, outcome) = tokio::sync::oneshot::channel();
+        let job = SnapshotJob {
+            write: Box::pin(async move { write.await.map_err(|e| e.to_string()) }),
+            settled,
+        };
+        if self.jobs.send(job).is_err() {
+            tracing::warn!("snapshot queue stopped; write dropped");
+        }
+        cx.spawn(async move |cx| {
+            if let Ok(WriteOutcome::Failed(_)) = outcome.await {
+                cx.update(|cx| {
+                    cx.push_toast_full(ToastKind::Error, failure, None, None, Duration::ZERO);
+                });
+            }
+        })
+        .detach();
+    }
+}
+
+pub struct KeyedSnapshotWriters<K> {
+    handle: Handle,
+    writers: HashMap<K, SnapshotWriter>,
+}
+
+impl<K: Eq + Hash> KeyedSnapshotWriters<K> {
+    pub fn new(handle: &Handle) -> Self {
+        Self {
+            handle: handle.clone(),
+            writers: HashMap::new(),
+        }
+    }
+
+    pub fn writer(&mut self, key: K) -> &SnapshotWriter {
+        let handle = &self.handle;
+        self.writers
+            .entry(key)
+            .or_insert_with(|| SnapshotWriter::new(handle))
+    }
+
+    pub fn write_reporting<V, F, E>(
+        &mut self,
+        key: K,
+        write: F,
+        context: impl Into<SharedString>,
+        cx: &mut Context<V>,
+    ) where
+        V: 'static,
+        F: Future<Output = Result<(), E>> + Send + 'static,
+        E: Display + Send + 'static,
+    {
+        let context = context.into();
+        self.writer(key).write(
+            write,
+            move |_, outcome, cx| {
+                if matches!(outcome, WriteOutcome::Failed(_)) {
+                    ErrorSink::Toast.report(context.to_string(), cx);
+                }
+            },
+            cx,
+        );
+    }
 }
 
 async fn run_snapshot_queue(mut queue: tokio::sync::mpsc::UnboundedReceiver<SnapshotJob>) {
@@ -615,7 +685,7 @@ mod tests {
     use gpui::{AppContext, TestAppContext};
 
     use super::*;
-    use crate::test_support::{StubActions, StubEventLog, pump, runtime};
+    use crate::test_support::{StubActions, StubEventLog, pump, pump_until, runtime};
     use forge_components::Toasts;
 
     const SUCCEEDS: &str = "test.succeeds";
@@ -1035,5 +1105,155 @@ mod tests {
             (ran.load(Ordering::SeqCst), settled_writes(&writes, cx)),
             (0, Vec::new())
         );
+    }
+
+    type Marks = Arc<std::sync::Mutex<Vec<&'static str>>>;
+
+    fn mark(marks: &Marks, step: &'static str) {
+        marks.lock().unwrap().push(step);
+    }
+
+    fn marked(marks: &Marks) -> Vec<&'static str> {
+        marks.lock().unwrap().clone()
+    }
+
+    #[gpui::test]
+    fn one_key_finishes_the_running_write_before_the_newest_queued_one_starts(
+        cx: &mut TestAppContext,
+    ) {
+        cx.update(|cx| cx.set_global(Toasts::new()));
+        let rt = runtime();
+        let probe = cx.new(|_| Probe);
+        let mut writers = KeyedSnapshotWriters::new(rt.handle());
+        let marks = Marks::default();
+        let (release, held) = tokio::sync::oneshot::channel::<()>();
+        let enqueue = |writers: &mut KeyedSnapshotWriters<&str>,
+                       work: std::pin::Pin<Box<dyn Future<Output = Result<(), String>> + Send>>,
+                       cx: &mut TestAppContext| {
+            probe.update(cx, |_, cx| {
+                writers.write_reporting("alpha", work, PERSIST_FAILED, cx);
+            });
+        };
+
+        let first = Arc::clone(&marks);
+        enqueue(
+            &mut writers,
+            Box::pin(async move {
+                mark(&first, "first started");
+                held.await.map_err(|e| e.to_string())?;
+                mark(&first, "first finished");
+                Ok(())
+            }),
+            cx,
+        );
+        pump_until(&rt, || marked(&marks).len() == 1);
+        for step in ["middle started", "newest started"] {
+            let marks = Arc::clone(&marks);
+            enqueue(
+                &mut writers,
+                Box::pin(async move {
+                    mark(&marks, step);
+                    Ok(())
+                }),
+                cx,
+            );
+        }
+        release.send(()).unwrap();
+        pump_until(&rt, || marked(&marks).len() == 3);
+
+        assert_eq!(
+            marked(&marks),
+            ["first started", "first finished", "newest started"]
+        );
+    }
+
+    #[gpui::test]
+    fn writes_on_different_keys_never_supersede_each_other(cx: &mut TestAppContext) {
+        cx.update(|cx| cx.set_global(Toasts::new()));
+        let rt = runtime();
+        let probe = cx.new(|_| Probe);
+        let mut writers = KeyedSnapshotWriters::new(rt.handle());
+        let ran = Arc::new(AtomicU64::new(0));
+
+        probe.update(cx, |_, cx| {
+            for (key, weight) in [("alpha", 1), ("bravo", 10)] {
+                writers.write_reporting(key, counted(&ran, weight, Ok(())), PERSIST_FAILED, cx);
+            }
+        });
+        pump_until(&rt, || ran.load(Ordering::SeqCst) == 11);
+        cx.run_until_parked();
+
+        assert_eq!(reported(cx), Vec::new());
+    }
+
+    #[gpui::test]
+    fn a_failed_keyed_write_toasts_its_own_context_while_the_other_key_stays_silent(
+        cx: &mut TestAppContext,
+    ) {
+        cx.update(|cx| cx.set_global(Toasts::new()));
+        let rt = runtime();
+        let probe = cx.new(|_| Probe);
+        let mut writers = KeyedSnapshotWriters::new(rt.handle());
+        let ran = Arc::new(AtomicU64::new(0));
+
+        probe.update(cx, |_, cx| {
+            writers.write_reporting("alpha", counted(&ran, 1, Ok(())), "alpha failed", cx);
+            writers.write_reporting(
+                "bravo",
+                counted(&ran, 10, Err(WRITE_FAILED.to_owned())),
+                "bravo failed",
+                cx,
+            );
+        });
+        pump_until(&rt, || ran.load(Ordering::SeqCst) == 11);
+        cx.run_until_parked();
+
+        assert_eq!(
+            reported(cx),
+            vec![(ToastKind::Error, "bravo failed".to_owned())]
+        );
+    }
+
+    #[gpui::test]
+    fn a_write_on_release_toasts_only_when_it_failed(cx: &mut TestAppContext) {
+        let rt = runtime();
+        for (result, expected) in [
+            (Ok(()), Vec::new()),
+            (
+                Err(WRITE_FAILED.to_owned()),
+                vec![(ToastKind::Error, PERSIST_FAILED.to_owned())],
+            ),
+        ] {
+            cx.update(|cx| cx.set_global(Toasts::new()));
+            let writer = SnapshotWriter::new(rt.handle());
+            let ran = Arc::new(AtomicU64::new(0));
+
+            cx.update(|cx| writer.write_on_release(counted(&ran, 1, result), PERSIST_FAILED, cx));
+            pump_until(&rt, || ran.load(Ordering::SeqCst) == 1);
+            cx.run_until_parked();
+
+            assert_eq!(reported(cx), expected);
+        }
+    }
+
+    #[gpui::test]
+    fn a_release_write_superseded_by_a_newer_one_stays_silent(cx: &mut TestAppContext) {
+        cx.update(|cx| cx.set_global(Toasts::new()));
+        let rt = runtime();
+        let writer = SnapshotWriter::new(rt.handle());
+        let ran = Arc::new(AtomicU64::new(0));
+
+        cx.update(|cx| {
+            writer.write_on_release(
+                counted(&ran, 1, Err(WRITE_FAILED.to_owned())),
+                PERSIST_FAILED,
+                cx,
+            );
+            writer.write_on_release(counted(&ran, 10, Ok(())), PERSIST_FAILED, cx);
+        });
+        pump_until(&rt, || ran.load(Ordering::SeqCst) == 10);
+        cx.run_until_parked();
+
+        assert_eq!(reported(cx), Vec::new());
     }
 }

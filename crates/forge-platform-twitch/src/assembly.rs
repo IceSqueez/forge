@@ -114,7 +114,11 @@ impl TwitchAssembly {
     }
 
     pub async fn open_session(&self) -> TwitchSession {
-        let stored = credentials::load(self.creds.as_ref()).await.ok().flatten();
+        let stored = credentials::load(self.creds.as_ref())
+            .await
+            .inspect_err(|error| tracing::warn!(%error, "twitch credentials could not be read"))
+            .ok()
+            .flatten();
         let user_id = stored
             .as_ref()
             .map(|stored| stored.user_id.clone())

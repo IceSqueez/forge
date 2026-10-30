@@ -29,6 +29,7 @@ pub struct RuntimeHandles {
     pub latest_values: LatestValues,
     pub credentials_key_loss: Option<CredentialsKeyLoss>,
     pub overlay_build_failure: Option<crate::overlay_build_failure::OverlayBuildFailure>,
+    pub boot_warnings: crate::boot_warnings::BootWarnings,
     pub bus: Arc<EventBus>,
     pub script_registry: Arc<ScriptRegistry>,
     pub sub_action_registry: Arc<SubActionRegistry>,

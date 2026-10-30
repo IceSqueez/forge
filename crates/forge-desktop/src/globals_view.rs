@@ -22,15 +22,17 @@ use forge_components::{
 use forge_components::{Confirm, SearchState};
 use std::path::PathBuf;
 
+use forge_runtime::EventBus;
 use forge_storage::{GlobalEntry, GlobalsExport, GlobalsRepo};
 use forge_types::{Variant, VariantKind};
 use gpui::{
     App, ClickEvent, Context, Entity, EventEmitter, MouseButton, MouseDownEvent, Rgba,
-    SharedString, Subscription, UniformListScrollHandle, Window, div, prelude::*, px, svg,
+    SharedString, Subscription, Task, UniformListScrollHandle, Window, div, prelude::*, px, svg,
 };
 
 use crate::async_bridge;
 use crate::globals::{Global, Globals, GlobalsFilter, variant_kind_color};
+use crate::repo_failure::RepoFailure;
 use forge_components::ActivePresentation;
 use forge_components::PushToast;
 
@@ -345,12 +347,16 @@ pub struct GlobalsView {
     table_scroll: UniformListScrollHandle,
     _globals_obs: Subscription,
     _search_sub: Subscription,
+    reload_generation: async_bridge::Generation,
+    _runtime_writes: Option<Task<()>>,
 }
 
 struct RowMenu {
     name: SharedString,
     position: gpui::Point<gpui::Pixels>,
 }
+
+const GLOBAL_EVENT_PREFIX: &str = "global.";
 
 impl GlobalsView {
     pub fn new(
@@ -382,43 +388,75 @@ impl GlobalsView {
             table_scroll: UniformListScrollHandle::new(),
             _globals_obs: globals_obs,
             _search_sub: search_sub,
+            reload_generation: async_bridge::Generation::default(),
+            _runtime_writes: None,
         };
         view.reload(cx);
         view
     }
 
+    pub fn follow_runtime_writes(&mut self, bus: Arc<EventBus>, cx: &mut Context<Self>) {
+        self._runtime_writes = Some(cx.spawn(async move |this, cx| {
+            async_bridge::drain_events(&bus, cx, move |batch, cx| {
+                if !batch
+                    .iter()
+                    .any(|event| event.kind.starts_with(GLOBAL_EVENT_PREFIX))
+                {
+                    return async_bridge::BridgeFlow::Continue;
+                }
+                match this.update(cx, |this, cx| this.reload(cx)) {
+                    Ok(()) => async_bridge::BridgeFlow::Continue,
+                    Err(_) => async_bridge::BridgeFlow::Stop,
+                }
+            })
+            .await;
+        }));
+    }
+
     fn reload(&self, cx: &mut Context<Self>) {
         let backend = Arc::clone(&self.backend);
         self.spawn_reload(
-            async move { backend.list().await.map_err(|e| e.to_string()) },
+            async move { backend.list().await.map_err(RepoFailure::from) },
             cx,
         );
     }
 
     fn spawn_reload(
         &self,
-        work: impl Future<Output = Result<Vec<GlobalEntry>, String>> + Send + 'static,
+        work: impl Future<Output = Result<Vec<GlobalEntry>, RepoFailure>> + Send + 'static,
         cx: &mut Context<Self>,
     ) {
-        Self::reload_entity(cx.entity(), self.rt_handle.clone(), work, cx);
+        let ticket = self.reload_generation.next();
+        async_bridge::run_async(
+            &self.rt_handle,
+            work,
+            move |this, result, cx| match result {
+                _ if !this.reload_generation.is_current(ticket) => {}
+                Ok(entries) => this.apply_entries(entries, cx),
+                Err(failure) => this.on_repo_error(&failure, cx),
+            },
+            cx,
+        );
     }
 
-    fn reload_entity(
-        view: Entity<GlobalsView>,
-        rt_handle: tokio::runtime::Handle,
-        work: impl Future<Output = Result<Vec<GlobalEntry>, String>> + Send + 'static,
-        app: &mut App,
+    fn spawn_write<T: Send + 'static>(
+        &self,
+        write: impl Future<Output = Result<T, RepoFailure>> + Send + 'static,
+        cx: &mut Context<Self>,
     ) {
-        async_bridge::run_async_entity(
-            &rt_handle,
-            view,
-            work,
-            |this, result, cx| match result {
-                Ok(entries) => this.apply_entries(entries, cx),
-                Err(message) => this.on_repo_error(&message, cx),
-            },
-            app,
+        async_bridge::run_async(
+            &self.rt_handle,
+            write,
+            |this, written, cx| this.on_write_settled(written.map(drop), cx),
+            cx,
         );
+    }
+
+    fn on_write_settled(&mut self, written: Result<(), RepoFailure>, cx: &mut Context<Self>) {
+        match written {
+            Ok(()) => self.reload(cx),
+            Err(failure) => self.on_repo_error(&failure, cx),
+        }
     }
 
     fn apply_entries(&mut self, entries: Vec<GlobalEntry>, cx: &mut Context<Self>) {
@@ -431,12 +469,13 @@ impl GlobalsView {
         cx.notify();
     }
 
-    fn on_repo_error(&mut self, message: &str, cx: &mut Context<Self>) {
-        tracing::error!(error = %message, "globals operation failed");
+    fn on_repo_error(&mut self, failure: &RepoFailure, cx: &mut Context<Self>) {
+        tracing::error!(error = %failure, "globals operation failed");
+        let message = failure.text();
         self.loading = false;
         cx.push_toast(
             ToastKind::Error,
-            tr!("globals_toast_error", message = message),
+            tr!("globals_toast_error", message = message.as_str()),
         );
         cx.notify();
     }
@@ -486,13 +525,12 @@ impl GlobalsView {
             .any(|g| g.name == name && g.persisted);
         let backend = Arc::clone(&self.backend);
         let key = name.to_string();
-        self.spawn_reload(
+        self.spawn_write(
             async move {
                 backend
                     .set_persisted(&key, next)
                     .await
-                    .map_err(|e| e.to_string())?;
-                backend.list().await.map_err(|e| e.to_string())
+                    .map_err(RepoFailure::from)
             },
             cx,
         );
@@ -517,19 +555,18 @@ impl GlobalsView {
         let backend = Arc::clone(&self.backend);
         let key = name.to_string();
         let restore_backend = Arc::clone(&self.backend);
-        let restore_rt = self.rt_handle.clone();
         async_bridge::run_async(
             &self.rt_handle,
             async move {
-                backend.archive(&key).await.map_err(|e| e.to_string())?;
-                backend.list().await.map_err(|e| e.to_string())
+                backend.archive(&key).await.map_err(RepoFailure::from)?;
+                backend.list().await.map_err(RepoFailure::from)
             },
             move |this, result, cx| match result {
                 Ok(entries) => {
                     this.apply_entries(entries, cx);
-                    this.raise_undo_toast(name, restore_backend, restore_rt, cx);
+                    this.raise_undo_toast(name, restore_backend, cx);
                 }
-                Err(message) => this.on_repo_error(&message, cx),
+                Err(failure) => this.on_repo_error(&failure, cx),
             },
             cx,
         );
@@ -539,7 +576,6 @@ impl GlobalsView {
         &self,
         name: SharedString,
         backend: Arc<dyn GlobalsRepo>,
-        rt_handle: tokio::runtime::Handle,
         cx: &mut Context<Self>,
     ) {
         let view = cx.entity();
@@ -552,17 +588,13 @@ impl GlobalsView {
                 tr!("common_undo"),
                 move |_window, app: &mut App| {
                     let backend = Arc::clone(&backend);
-                    let rt_handle = rt_handle.clone();
                     let key = name.to_string();
-                    Self::reload_entity(
-                        view.clone(),
-                        rt_handle,
-                        async move {
-                            backend.restore(&key).await.map_err(|e| e.to_string())?;
-                            backend.list().await.map_err(|e| e.to_string())
-                        },
-                        app,
-                    );
+                    view.update(app, |this, cx| {
+                        this.spawn_write(
+                            async move { backend.restore(&key).await.map_err(RepoFailure::from) },
+                            cx,
+                        );
+                    });
                 },
             )),
             UNDO_TOAST_DURATION,
@@ -630,14 +662,8 @@ impl GlobalsView {
             return;
         }
         let backend = Arc::clone(&self.backend);
-        self.spawn_reload(
-            async move {
-                backend
-                    .rename(&old, &next)
-                    .await
-                    .map_err(|e| e.to_string())?;
-                backend.list().await.map_err(|e| e.to_string())
-            },
+        self.spawn_write(
+            async move { backend.rename(&old, &next).await.map_err(RepoFailure::from) },
             cx,
         );
     }
@@ -735,24 +761,24 @@ impl GlobalsView {
                     backend
                         .rename(&old, &target)
                         .await
-                        .map_err(|e| e.to_string())?;
+                        .map_err(RepoFailure::from)?;
                 }
                 backend
                     .set(&target, variant, persisted)
                     .await
-                    .map_err(|e| e.to_string())?;
-                backend.list().await.map_err(|e| e.to_string())
+                    .map_err(RepoFailure::from)?;
+                backend.list().await.map_err(RepoFailure::from)
             },
             |this, result, cx| match result {
                 Ok(entries) => {
                     this.apply_entries(entries, cx);
                     this.cancel_editor(cx);
                 }
-                Err(message) => {
+                Err(failure) => {
                     if let Some(editor) = this.editor.as_ref() {
                         editor.update(cx, |e, cx| {
                             e.saving = false;
-                            e.error = Some(message.into());
+                            e.error = Some(failure.text().into());
                             cx.notify();
                         });
                     }
@@ -1818,4 +1844,331 @@ fn parse_json_variant(
         return Err(reason);
     }
     Variant::from_json(value).map_err(|_| reason)
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Mutex;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    use forge_events::{EventSource, GlobalSet, ManualTestRun, TypedEvent};
+    use forge_storage::globals::MockGlobalsRepo;
+    use forge_types::ActionId;
+    use gpui::TestAppContext;
+    use time::OffsetDateTime;
+
+    use super::*;
+    use crate::i18n::install_language;
+    use crate::test_support::{
+        StubEventLog, error_toasts, install_presentation, press_undo, pump, pump_until, runtime,
+    };
+
+    const SCORE: &str = "score";
+
+    fn entry(name: &str) -> GlobalEntry {
+        let now = OffsetDateTime::UNIX_EPOCH;
+        GlobalEntry {
+            name: name.to_owned(),
+            value: Variant::Int(1),
+            persisted: true,
+            reads: 0,
+            writes: 0,
+            created_at: now,
+            last_modified: now,
+        }
+    }
+
+    struct Stored {
+        rows: Arc<Mutex<Vec<GlobalEntry>>>,
+        lists: Arc<AtomicUsize>,
+    }
+
+    fn stored_repo() -> (Stored, Arc<dyn GlobalsRepo>) {
+        let stored = Stored {
+            rows: Arc::new(Mutex::new(Vec::new())),
+            lists: Arc::new(AtomicUsize::new(0)),
+        };
+        let (rows, lists) = (Arc::clone(&stored.rows), Arc::clone(&stored.lists));
+        let mut repo = MockGlobalsRepo::new();
+        repo.expect_list().returning(move || {
+            lists.fetch_add(1, Ordering::SeqCst);
+            Ok(rows.lock().unwrap().clone())
+        });
+        (stored, Arc::new(repo))
+    }
+
+    fn mount(
+        cx: &mut TestAppContext,
+        rt: &tokio::runtime::Runtime,
+        repo: Arc<dyn GlobalsRepo>,
+        bus: &Arc<EventBus>,
+    ) -> (Entity<Globals>, Entity<GlobalsView>) {
+        install_language(forge_storage::Language::En);
+        install_presentation(cx);
+        let globals = cx.new(|_| Globals::empty());
+        let shared = globals.clone();
+        let bus = Arc::clone(bus);
+        let handle = rt.handle().clone();
+        let view = cx.new(|cx| {
+            let mut view = GlobalsView::new(shared, repo, handle, cx);
+            view.follow_runtime_writes(bus, cx);
+            view
+        });
+        pump_until(rt, || {
+            cx.run_until_parked();
+            view.read_with(cx, |view, _| !view.loading)
+        });
+        (globals, view)
+    }
+
+    fn publish(rt: &tokio::runtime::Runtime, bus: &EventBus, event: forge_events::Event) {
+        rt.block_on(async { bus.publish(event) });
+    }
+
+    fn global_set() -> forge_events::Event {
+        GlobalSet {
+            key: SCORE.to_owned(),
+            new_value: serde_json::json!(1),
+            prev_value: serde_json::Value::Null,
+            persisted: None,
+            via: None,
+        }
+        .into_event(EventSource::Core, None)
+    }
+
+    fn shown(cx: &mut TestAppContext, globals: &Entity<Globals>, name: &str) -> bool {
+        globals.read_with(cx, |globals, _| globals.contains(name))
+    }
+
+    #[gpui::test]
+    fn a_runtime_global_write_refreshes_the_list_without_touching_the_screen(
+        cx: &mut TestAppContext,
+    ) {
+        let rt = runtime();
+        let bus = EventBus::new(Arc::new(StubEventLog));
+        let (stored, repo) = stored_repo();
+        let (globals, _view) = mount(cx, &rt, repo, &bus);
+
+        stored.rows.lock().unwrap().push(entry(SCORE));
+        publish(&rt, &bus, global_set());
+
+        pump_until(&rt, || {
+            cx.run_until_parked();
+            shown(cx, &globals, SCORE)
+        });
+    }
+
+    #[gpui::test]
+    fn an_event_about_anything_but_globals_does_not_reload_the_list(cx: &mut TestAppContext) {
+        let rt = runtime();
+        let bus = EventBus::new(Arc::new(StubEventLog));
+        let (stored, repo) = stored_repo();
+        let (globals, _view) = mount(cx, &rt, repo, &bus);
+
+        publish(
+            &rt,
+            &bus,
+            ManualTestRun {
+                action_id: ActionId::new(),
+            }
+            .into_event(EventSource::Core, None),
+        );
+        pump(&rt);
+        cx.run_until_parked();
+        stored.rows.lock().unwrap().push(entry(SCORE));
+        publish(&rt, &bus, global_set());
+        pump_until(&rt, || {
+            cx.run_until_parked();
+            shown(cx, &globals, SCORE)
+        });
+
+        assert_eq!(stored.lists.load(Ordering::SeqCst), 2);
+    }
+
+    #[gpui::test]
+    fn a_slow_reload_never_overwrites_a_newer_one_that_landed_first(cx: &mut TestAppContext) {
+        let rt = runtime();
+        let bus = EventBus::new(Arc::new(StubEventLog));
+        let (_stored, repo) = stored_repo();
+        let (globals, view) = mount(cx, &rt, repo, &bus);
+        let (older_tx, older_rx) = tokio::sync::oneshot::channel::<()>();
+        let (newer_tx, newer_rx) = tokio::sync::oneshot::channel::<()>();
+        let older_landed = Arc::new(AtomicUsize::new(0));
+        let landed = Arc::clone(&older_landed);
+
+        view.update(cx, |view, cx| {
+            view.spawn_reload(
+                async move {
+                    older_rx.await.map_err(RepoFailure::operation)?;
+                    landed.store(1, Ordering::SeqCst);
+                    Ok(vec![entry("older")])
+                },
+                cx,
+            );
+            view.spawn_reload(
+                async move {
+                    newer_rx.await.map_err(RepoFailure::operation)?;
+                    Ok(vec![entry("newer")])
+                },
+                cx,
+            );
+        });
+        newer_tx.send(()).unwrap();
+        pump_until(&rt, || {
+            cx.run_until_parked();
+            shown(cx, &globals, "newer")
+        });
+        older_tx.send(()).unwrap();
+        pump_until(&rt, || older_landed.load(Ordering::SeqCst) == 1);
+        cx.run_until_parked();
+
+        assert_eq!(
+            (shown(cx, &globals, "newer"), shown(cx, &globals, "older")),
+            (true, false)
+        );
+    }
+
+    fn errors(cx: &mut TestAppContext) -> usize {
+        cx.update(|cx| error_toasts(cx))
+    }
+
+    fn with_toasts(cx: &mut TestAppContext) {
+        cx.update(|cx| cx.set_global(forge_components::Toasts::new()));
+    }
+
+    #[gpui::test]
+    fn a_failed_write_toasts_even_with_a_newer_reload_in_flight(cx: &mut TestAppContext) {
+        with_toasts(cx);
+        let rt = runtime();
+        let bus = EventBus::new(Arc::new(StubEventLog));
+        let (_stored, repo) = stored_repo();
+        let (_globals, view) = mount(cx, &rt, repo, &bus);
+        let (_held, reload_gate) = tokio::sync::oneshot::channel::<()>();
+
+        view.update(cx, |view, cx| {
+            view.spawn_reload(
+                async move {
+                    reload_gate.await.map_err(RepoFailure::operation)?;
+                    Ok(Vec::new())
+                },
+                cx,
+            );
+            view.spawn_write(
+                async { Err::<(), _>(RepoFailure::operation("disk gone")) },
+                cx,
+            );
+        });
+
+        pump_until(&rt, || {
+            cx.run_until_parked();
+            errors(cx) == 1
+        });
+    }
+
+    #[gpui::test]
+    fn a_successful_write_relists_and_shows_what_it_wrote(cx: &mut TestAppContext) {
+        with_toasts(cx);
+        let rt = runtime();
+        let bus = EventBus::new(Arc::new(StubEventLog));
+        let (stored, repo) = stored_repo();
+        let (globals, view) = mount(cx, &rt, repo, &bus);
+        let rows = Arc::clone(&stored.rows);
+
+        view.update(cx, |view, cx| {
+            view.spawn_write(
+                async move {
+                    rows.lock().unwrap().push(entry(SCORE));
+                    Ok(())
+                },
+                cx,
+            );
+        });
+
+        pump_until(&rt, || {
+            cx.run_until_parked();
+            shown(cx, &globals, SCORE)
+        });
+    }
+
+    #[gpui::test]
+    fn a_stale_reload_that_failed_is_dropped_without_a_toast(cx: &mut TestAppContext) {
+        with_toasts(cx);
+        let rt = runtime();
+        let bus = EventBus::new(Arc::new(StubEventLog));
+        let (stored, repo) = stored_repo();
+        let (globals, view) = mount(cx, &rt, repo, &bus);
+        let (release_stale, stale_gate) = tokio::sync::oneshot::channel::<()>();
+        let stale_landed = Arc::new(AtomicUsize::new(0));
+        let landed = Arc::clone(&stale_landed);
+
+        view.update(cx, |view, cx| {
+            view.spawn_reload(
+                async move {
+                    stale_gate.await.map_err(RepoFailure::operation)?;
+                    landed.store(1, Ordering::SeqCst);
+                    Err(RepoFailure::operation("disk gone"))
+                },
+                cx,
+            );
+            view.reload(cx);
+        });
+        stored.rows.lock().unwrap().push(entry(SCORE));
+        pump_until(&rt, || {
+            cx.run_until_parked();
+            shown(cx, &globals, SCORE)
+        });
+        release_stale.send(()).unwrap();
+        pump_until(&rt, || stale_landed.load(Ordering::SeqCst) == 1);
+        cx.run_until_parked();
+
+        assert_eq!(errors(cx), 0);
+    }
+
+    fn archiving_repo() -> (Arc<Mutex<Vec<GlobalEntry>>>, Arc<dyn GlobalsRepo>) {
+        let rows = Arc::new(Mutex::new(vec![entry(SCORE)]));
+        let shelf = Arc::new(Mutex::new(Vec::new()));
+        let mut repo = MockGlobalsRepo::new();
+        let listed = Arc::clone(&rows);
+        repo.expect_list()
+            .returning(move || Ok(listed.lock().unwrap().clone()));
+        let (live, archived) = (Arc::clone(&rows), Arc::clone(&shelf));
+        repo.expect_archive().returning(move |_| {
+            archived.lock().unwrap().append(&mut live.lock().unwrap());
+            Ok(true)
+        });
+        let live = Arc::clone(&rows);
+        repo.expect_restore().returning(move |_| {
+            live.lock().unwrap().append(&mut shelf.lock().unwrap());
+            Ok(true)
+        });
+        (rows, Arc::new(repo))
+    }
+
+    #[gpui::test]
+    fn undoing_a_delete_brings_the_global_back(cx: &mut TestAppContext) {
+        with_toasts(cx);
+        let rt = runtime();
+        let bus = EventBus::new(Arc::new(StubEventLog));
+        let (_rows, repo) = archiving_repo();
+        let (globals, view) = mount(cx, &rt, repo, &bus);
+        pump_until(&rt, || {
+            cx.run_until_parked();
+            shown(cx, &globals, SCORE)
+        });
+
+        view.update(cx, |view, cx| {
+            view.request_delete(SCORE.into(), cx);
+            view.confirm_delete(cx);
+        });
+        pump_until(&rt, || {
+            cx.run_until_parked();
+            !shown(cx, &globals, SCORE)
+        });
+        press_undo(cx);
+
+        pump_until(&rt, || {
+            cx.run_until_parked();
+            shown(cx, &globals, SCORE)
+        });
+    }
 }

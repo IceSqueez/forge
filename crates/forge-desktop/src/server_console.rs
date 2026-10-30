@@ -28,6 +28,7 @@ use crate::hub_crumb::{core_category, hub_crumb};
 use crate::navigation::NavRequested;
 use crate::navigation::Screen;
 use crate::navigation::SettingsSection;
+use crate::server_bearer;
 use crate::server_restart::restart_ignoring_disabled;
 use crate::window_presence::PresenceGate;
 use forge_components::ActivePresentation;
@@ -169,6 +170,7 @@ pub struct ServerConsoleView {
     overlay_entries: Vec<OwnedOverlayEntry>,
     selected_overlay_entry: Option<String>,
     pending_disconnect: Confirm<String>,
+    regenerate_pending: bool,
 }
 
 impl ServerConsoleView {
@@ -213,6 +215,7 @@ impl ServerConsoleView {
             overlay_entries: Vec::new(),
             selected_overlay_entry: None,
             pending_disconnect: Confirm::default(),
+            regenerate_pending: false,
         };
         view.fetch_token(cx);
         view.fetch_enabled(cx);
@@ -357,12 +360,14 @@ impl ServerConsoleView {
         let server = self.server.clone();
         async_bridge::run_async(
             &self.rt_handle,
-            crate::server_bearer::current_bearer_token(server, credentials),
-            |this, result: Option<Secret>, cx| {
-                if let Some(token) = result {
+            server_bearer::current_bearer_token(server, credentials),
+            |this, result: Result<Option<Secret>, String>, cx| match result {
+                Ok(Some(token)) => {
                     this.bearer_token = token;
                     cx.notify();
                 }
+                Ok(None) => {}
+                Err(reason) => server_bearer::token_load_failed(&reason, cx),
             },
             cx,
         );
@@ -409,21 +414,26 @@ impl ServerConsoleView {
         let rt_handle = self.rt_handle.clone();
         let mut presence = PresenceGate::of(cx);
         cx.spawn(async move |this, cx| {
-            let mut tick: u32 = 0;
+            let mut run_state = handle.run_state();
+            let mut serving_facts_stale = true;
             loop {
                 presence.until_visible().await;
-                tick = tick.wrapping_add(1);
-                let want_overlay = tick == 1 || tick.is_multiple_of(5);
+                let want_serving_facts =
+                    serving_facts_stale || run_state.has_changed().unwrap_or(false);
+                run_state.mark_unchanged();
+                serving_facts_stale = false;
                 let (tx, rx) = tokio::sync::oneshot::channel::<ServerPoll>();
                 let handle = handle.clone();
                 rt_handle.spawn(async move {
                     let snapshot = handle.snapshot().await;
-                    let bind_address = handle.bind_addr().await.to_string();
-                    let overlay = if want_overlay {
+                    let (bind_address, overlay) = if want_serving_facts {
                         let root = handle.overlay_root().await;
-                        Some(scan_overlay_root(root.as_ref()).await)
+                        (
+                            Some(handle.bind_addr().await.to_string()),
+                            Some(scan_overlay_root(root.as_ref()).await),
+                        )
                     } else {
-                        None
+                        (None, None)
                     };
                     #[expect(
                         clippy::let_underscore_must_use,
@@ -454,9 +464,12 @@ impl ServerConsoleView {
     }
 
     fn apply_poll(&mut self, poll: ServerPoll) -> Option<String> {
-        let needs_resolve =
-            self.routable_host_resolved_for.as_deref() != Some(poll.bind_address.as_str());
-        self.bind_address = Some(poll.bind_address.clone());
+        let polled_address = poll.bind_address.clone();
+        if polled_address.is_some() {
+            self.bind_address.clone_from(&polled_address);
+        }
+        let needs_resolve = polled_address.as_deref().is_some()
+            && self.routable_host_resolved_for.as_deref() != polled_address.as_deref();
 
         if self.running {
             let snapshot = &poll.snapshot;
@@ -484,16 +497,10 @@ impl ServerConsoleView {
         }
 
         if let Some(overlay) = poll.overlay {
-            self.overlay_root = overlay.root;
-            self.overlay_entries = overlay.entries;
-            if let Some(name) = &self.selected_overlay_entry
-                && !self.overlay_entries.iter().any(|entry| &entry.name == name)
-            {
-                self.selected_overlay_entry = None;
-            }
+            self.apply_overlay_listing(overlay);
         }
 
-        needs_resolve.then_some(poll.bind_address)
+        polled_address.filter(|_| needs_resolve)
     }
 
     fn browser_source_entry(&self) -> Option<&OwnedOverlayEntry> {
@@ -548,6 +555,22 @@ impl ServerConsoleView {
         }
     }
 
+    fn request_regenerate(&mut self, cx: &mut Context<Self>) {
+        self.regenerate_pending = true;
+        cx.notify();
+    }
+
+    fn cancel_regenerate(&mut self, cx: &mut Context<Self>) {
+        self.regenerate_pending = false;
+        cx.notify();
+    }
+
+    fn confirm_regenerate(&mut self, cx: &mut Context<Self>) {
+        self.regenerate_pending = false;
+        self.regenerate_token(cx);
+        cx.notify();
+    }
+
     fn regenerate_token(&mut self, cx: &mut Context<Self>) {
         let Some(handle) = self.server.clone() else {
             return;
@@ -565,9 +588,7 @@ impl ServerConsoleView {
                     this.bearer_token = token;
                     cx.notify();
                 }
-                Err(reason) => {
-                    tracing::warn!(error = %reason, "failed to regenerate the server bearer token");
-                }
+                Err(reason) => server_bearer::token_regenerate_failed(&reason, cx),
             },
             cx,
         );
@@ -587,6 +608,34 @@ impl ServerConsoleView {
             tr!("server_open_overlay_folder_failed"),
             cx,
         );
+    }
+
+    fn refresh_overlay_listing(&mut self, cx: &mut Context<Self>) {
+        let Some(handle) = self.server.clone() else {
+            return;
+        };
+        async_bridge::run_async(
+            &self.rt_handle,
+            async move {
+                let root = handle.overlay_root().await;
+                scan_overlay_root(root.as_ref()).await
+            },
+            |this, listing, cx| {
+                this.apply_overlay_listing(listing);
+                cx.notify();
+            },
+            cx,
+        );
+    }
+
+    fn apply_overlay_listing(&mut self, overlay: OverlayListing) {
+        self.overlay_root = overlay.root;
+        self.overlay_entries = overlay.entries;
+        if let Some(name) = &self.selected_overlay_entry
+            && !self.overlay_entries.iter().any(|entry| &entry.name == name)
+        {
+            self.selected_overlay_entry = None;
+        }
     }
 
     fn select_overlay_entry(&mut self, name: String, cx: &mut Context<Self>) {
@@ -814,7 +863,7 @@ impl ServerConsoleView {
                     .text_color(palette.warning)
                     .child(tr!("server_btn_regenerate")),
             )
-            .on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.regenerate_token(cx)));
+            .on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.request_regenerate(cx)));
 
         div()
             .w_full()
@@ -1035,6 +1084,28 @@ impl ServerConsoleView {
                         cx.listener(|this, _: &ClickEvent, _, cx| this.open_overlay_folder(cx)),
                     )
                     .child(icon(Icon::FolderOpen, CONTROL_GLYPH, palette.text_muted)),
+            )
+            .child(
+                div()
+                    .id("srv-refresh-overlay-files")
+                    .flex()
+                    .flex_none()
+                    .items_center()
+                    .py(spacing(Spacing::Xs, density))
+                    .px(spacing(Spacing::Xs, density))
+                    .rounded(radius(Radius::Sm))
+                    .border(BORDER_THIN)
+                    .border_color(palette.border_regular)
+                    .cursor_pointer()
+                    .hover(move |s| s.border_color(palette.border_input))
+                    .tooltip(tooltip_builder(
+                        tr!("server_refresh_overlay_files"),
+                        palette,
+                    ))
+                    .on_click(
+                        cx.listener(|this, _: &ClickEvent, _, cx| this.refresh_overlay_listing(cx)),
+                    )
+                    .child(icon(Icon::Refresh, CONTROL_GLYPH, palette.text_muted)),
             );
 
         let files: AnyElement = if self.overlay_entries.is_empty() {
@@ -1529,6 +1600,14 @@ impl Render for ServerConsoleView {
             .child(body);
 
         let modal = self.disconnect_confirm(&palette, cx);
+        let regenerate_modal = self.regenerate_pending.then(|| {
+            server_bearer::regenerate_confirm(
+                &palette,
+                Self::cancel_regenerate,
+                Self::confirm_regenerate,
+                cx,
+            )
+        });
 
         let frame = page_frame(
             vec![
@@ -1563,6 +1642,7 @@ impl Render for ServerConsoleView {
             .bg(palette.base)
             .child(frame)
             .children(modal)
+            .children(regenerate_modal)
     }
 }
 
@@ -1713,7 +1793,7 @@ fn color_for_source(source: EventSource, palette: &ForgePalette) -> Rgba {
 
 struct ServerPoll {
     snapshot: ServerSnapshot,
-    bind_address: String,
+    bind_address: Option<String>,
     overlay: Option<OverlayListing>,
 }
 
@@ -1880,7 +1960,11 @@ mod tests {
     use forge_server::BandwidthSnapshot;
     use gpui::{Entity, TestAppContext};
 
-    use crate::test_support::{runtime, test_backend};
+    use crate::i18n::install_language;
+    use crate::test_support::{
+        install_presentation, pump_until, runtime, stopped_server_hosting, test_backend,
+    };
+    use forge_storage::Language;
 
     const WILDCARD_BIND: &str = "0.0.0.0:9515";
     const ROUTABLE_HOST: &str = "192.168.1.5";
@@ -1951,7 +2035,7 @@ mod tests {
                 events_out_total: 0,
                 dropped_events_total: 0,
             },
-            bind_address: WILDCARD_BIND.to_owned(),
+            bind_address: Some(WILDCARD_BIND.to_owned()),
             overlay: Some(OverlayListing {
                 root: "/overlays".to_owned(),
                 entries,
@@ -2468,5 +2552,155 @@ mod tests {
             assert_eq!(chip.label, expected_label, "source {source} kind {kind}");
             assert_eq!(chip.kind, expected_kind, "source {source} kind {kind}");
         }
+    }
+
+    struct HostingConsole {
+        view: Entity<ServerConsoleView>,
+        root: tempfile::TempDir,
+        rt: tokio::runtime::Runtime,
+    }
+
+    fn console_hosting_a_folder(cx: &mut TestAppContext) -> HostingConsole {
+        install_language(Language::En);
+        install_presentation(cx);
+        let rt = runtime();
+        let root = tempfile::tempdir().expect("tempdir");
+        let (backend, _writes) = test_backend();
+        let server = rt.block_on(stopped_server_hosting(&backend, root.path().to_path_buf()));
+        let handle = rt.handle().clone();
+        let view = cx.new(|cx| {
+            ServerConsoleView::new(
+                Some(server),
+                handle,
+                Arc::clone(&backend) as Arc<dyn CredentialsRepo>,
+                backend as Arc<dyn SettingsRepo>,
+                cx,
+            )
+        });
+        HostingConsole { view, root, rt }
+    }
+
+    impl HostingConsole {
+        fn listed(&self, cx: &mut TestAppContext) -> Vec<String> {
+            self.view.read_with(cx, |view, _| {
+                view.overlay_entries
+                    .iter()
+                    .map(|entry| entry.name.clone())
+                    .collect()
+            })
+        }
+
+        fn refresh_until(
+            &self,
+            cx: &mut TestAppContext,
+            mut reached: impl FnMut(&mut TestAppContext) -> bool,
+        ) {
+            self.view
+                .update(cx, |view, cx| view.refresh_overlay_listing(cx));
+            pump_until(&self.rt, || {
+                cx.run_until_parked();
+                reached(cx)
+            });
+        }
+    }
+
+    #[gpui::test]
+    fn refreshing_lists_a_file_added_to_the_overlay_folder(cx: &mut TestAppContext) {
+        let console = console_hosting_a_folder(cx);
+        std::fs::write(console.root.path().join(LOOSE_PAGE), b"<p>").expect("page");
+
+        console.refresh_until(cx, |cx| console.listed(cx) == [LOOSE_PAGE]);
+    }
+
+    #[gpui::test]
+    fn refreshing_drops_a_picked_entry_that_left_the_overlay_folder(cx: &mut TestAppContext) {
+        let console = console_hosting_a_folder(cx);
+        let page = console.root.path().join(LOOSE_PAGE);
+        std::fs::write(&page, b"<p>").expect("page");
+        console.refresh_until(cx, |cx| console.listed(cx) == [LOOSE_PAGE]);
+        console.view.update(cx, |view, cx| {
+            view.select_overlay_entry(LOOSE_PAGE.to_owned(), cx)
+        });
+
+        std::fs::remove_file(&page).expect("page removed");
+        console.refresh_until(cx, |cx| console.listed(cx).is_empty());
+
+        let picked = console
+            .view
+            .read_with(cx, |view, _| view.selected_overlay_entry.clone());
+        assert_eq!(picked, None);
+    }
+
+    #[gpui::test]
+    fn regenerating_the_token_waits_for_the_confirmation(cx: &mut TestAppContext) {
+        let console = console_hosting_a_folder(cx);
+        let token = |cx: &mut TestAppContext| {
+            console
+                .view
+                .read_with(cx, |view, _| view.bearer_token.expose().to_owned())
+        };
+        pump_until(&console.rt, || {
+            cx.run_until_parked();
+            !token(cx).is_empty()
+        });
+        let original = token(cx);
+
+        console.view.update(cx, |view, cx| {
+            view.request_regenerate(cx);
+            view.cancel_regenerate(cx);
+        });
+        crate::test_support::pump(&console.rt);
+        cx.run_until_parked();
+        let after_cancel = token(cx);
+        console.view.update(cx, |view, cx| {
+            view.request_regenerate(cx);
+            view.confirm_regenerate(cx);
+        });
+        pump_until(&console.rt, || {
+            cx.run_until_parked();
+            token(cx) != original
+        });
+
+        assert_eq!(after_cancel, original);
+    }
+
+    #[gpui::test]
+    fn a_poll_that_skipped_the_serving_facts_keeps_the_known_address_and_listing(
+        cx: &mut TestAppContext,
+    ) {
+        let rt = runtime();
+        let view = serverless_console(cx, &rt);
+
+        let (resolve, address, entries) = view.update(cx, |this, _| {
+            serve(this, vec![dir_entry(OVERLAY_DIR, true)]);
+            let mut poll = listing_poll(Vec::new());
+            poll.bind_address = None;
+            poll.overlay = None;
+            let resolve = this.apply_poll(poll);
+            (
+                resolve,
+                this.bind_address.clone(),
+                this.overlay_entries.len(),
+            )
+        });
+
+        assert_eq!(
+            (resolve, address, entries),
+            (None, Some(WILDCARD_BIND.to_owned()), 1)
+        );
+    }
+
+    #[gpui::test]
+    fn a_new_bind_address_asks_for_a_host_resolve_once(cx: &mut TestAppContext) {
+        let rt = runtime();
+        let view = serverless_console(cx, &rt);
+
+        let (first, repeat) = view.update(cx, |this, _| {
+            let first = this.apply_poll(listing_poll(Vec::new()));
+            this.routable_host_resolved_for.clone_from(&first);
+            (first, this.apply_poll(listing_poll(Vec::new())))
+        });
+
+        assert_eq!((first, repeat), (Some(WILDCARD_BIND.to_owned()), None));
     }
 }

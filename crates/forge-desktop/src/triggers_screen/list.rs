@@ -2,6 +2,7 @@ use super::*;
 use crate::actions::{ListActivate, ListSelectNext, ListSelectPrev};
 use crate::async_bridge;
 use crate::integration_switch::{category_inactive_badge, inactive_badge};
+use crate::repo_failure::RepoFailure;
 use forge_components::ActivePresentation;
 use forge_components::PushToast;
 use forge_components::ROW_OFF_OPACITY;
@@ -235,17 +236,28 @@ impl TriggersRegistryView {
 
     fn persist_enabled(&mut self, id: TriggerInstanceId, enabled: bool, cx: &mut Context<Self>) {
         self.menu_open = None;
+        self.show_enabled(id, enabled);
         cx.notify();
         let repo = Arc::clone(&self.repo);
-        self.spawn_reload(
+        self.spawn_write(
             async move {
                 repo.set_enabled(id, enabled)
                     .await
-                    .map_err(|e| e.to_string())?;
-                load_rows(&*repo).await
+                    .map_err(RepoFailure::from)
             },
             cx,
         );
+    }
+
+    fn show_enabled(&mut self, id: TriggerInstanceId, enabled: bool) {
+        self.reload_generation.next();
+        if let Some(row) = self.instances.iter_mut().find(|row| row.id == id) {
+            row.enabled = enabled;
+        }
+        if let Some(detail) = self.detail.as_mut().filter(|d| d.instance.id == id) {
+            detail.instance.enabled = enabled;
+        }
+        self.rebuild_visible();
     }
 
     pub(super) fn toggle_enable(&mut self, id: TriggerInstanceId, cx: &mut Context<Self>) {
@@ -299,19 +311,18 @@ impl TriggersRegistryView {
 
         let repo = Arc::clone(&self.repo);
         let restore_repo = Arc::clone(&self.repo);
-        let restore_rt = self.rt_handle.clone();
         async_bridge::run_async(
             &self.rt_handle,
             async move {
-                repo.archive(id).await.map_err(|e| e.to_string())?;
+                repo.archive(id).await.map_err(RepoFailure::from)?;
                 load_rows(&*repo).await
             },
             move |this, result, cx| match result {
                 Ok(rows) => {
                     this.apply_rows(rows, cx);
-                    this.raise_undo_toast(id, name, restore_repo, restore_rt, cx);
+                    this.raise_undo_toast(id, name, restore_repo, cx);
                 }
-                Err(message) => this.on_repo_error(&message, cx),
+                Err(failure) => this.on_repo_error(&failure, cx),
             },
             cx,
         );
@@ -322,7 +333,6 @@ impl TriggersRegistryView {
         id: TriggerInstanceId,
         name: String,
         repo: Arc<dyn forge_storage::TriggerInstanceRepo>,
-        rt_handle: tokio::runtime::Handle,
         cx: &mut Context<Self>,
     ) {
         let view = cx.entity();
@@ -335,16 +345,12 @@ impl TriggersRegistryView {
                 tr!("common_undo"),
                 move |_window, app: &mut App| {
                     let repo = Arc::clone(&repo);
-                    let rt_handle = rt_handle.clone();
-                    Self::reload_entity(
-                        view.clone(),
-                        rt_handle,
-                        async move {
-                            repo.restore(id).await.map_err(|e| e.to_string())?;
-                            load_rows(&*repo).await
-                        },
-                        app,
-                    );
+                    view.update(app, |this, cx| {
+                        this.spawn_write(
+                            async move { repo.restore(id).await.map_err(RepoFailure::from) },
+                            cx,
+                        );
+                    });
                 },
             )),
             UNDO_TOAST_DURATION,
@@ -396,16 +402,15 @@ impl TriggersRegistryView {
         }
         let id = form.id;
         let repo = Arc::clone(&self.repo);
-        self.spawn_reload(
+        self.spawn_write(
             async move {
                 let mut instance = repo
                     .get(id)
                     .await
-                    .map_err(|e| e.to_string())?
-                    .ok_or_else(|| "trigger instance not found".to_owned())?;
+                    .map_err(RepoFailure::from)?
+                    .ok_or_else(RepoFailure::trigger_gone)?;
                 instance.name = trimmed;
-                repo.save(&instance).await.map_err(|e| e.to_string())?;
-                load_rows(&*repo).await
+                repo.save(&instance).await.map_err(RepoFailure::from)
             },
             cx,
         );
@@ -1098,5 +1103,27 @@ impl TriggersRegistryView {
                 view.update(cx, |this, cx| this.cancel_delete(cx));
             })
             .into_any_element()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::super::tests::{open_trigger_list, row_named};
+    use crate::test_support::press_undo;
+
+    #[gpui::test]
+    fn undoing_a_delete_brings_the_trigger_back(cx: &mut gpui::TestAppContext) {
+        let seeded = row_named("Greeter");
+        let id = seeded.id;
+        let list = open_trigger_list(cx, vec![seeded]);
+
+        list.view.update(cx, |view, cx| {
+            view.request_delete(id, cx);
+            view.confirm_delete(cx);
+        });
+        list.wait_for_names(cx, &[]);
+        press_undo(cx);
+
+        list.wait_for_names(cx, &["Greeter".to_owned()]);
     }
 }

@@ -91,6 +91,8 @@ const CONTRACT_KINDS: [VariantKind; 7] = [
     VariantKind::Object,
 ];
 
+const SCRIPT_LANGUAGE_LABEL: &str = "Rhai";
+
 const GLYPH_RUN: Pixels = px(11.0);
 const GLYPH_TOOLBAR: Pixels = px(13.0);
 const GLYPH_STATUS: Pixels = px(12.0);
@@ -99,7 +101,12 @@ const GLYPH_TAB: Pixels = px(12.0);
 const GLYPH_ACTION: Pixels = px(12.0);
 
 fn format_run_stats(duration_ms: f64, error_count: usize) -> String {
-    format!("executed in {duration_ms:.2}ms · {error_count} errors")
+    let duration = format!("{duration_ms:.2}");
+    tr!(
+        "script_console_run_stats",
+        duration = duration.as_str(),
+        errors = error_count as i64
+    )
 }
 
 const ARRAY_INPUT_EXAMPLE: &str = "[12, 13, 14]";
@@ -122,14 +129,30 @@ fn parse_json_input(
     shape: &str,
     example: &str,
 ) -> Result<Variant, String> {
-    let shape_error = || format!("`{name}` must be {shape}, e.g. `{example}`");
+    let shape_error = || {
+        tr!(
+            "script_input_must_be_shape",
+            name = name,
+            shape = shape,
+            example = example
+        )
+    };
     let value = serde_json::from_str::<serde_json::Value>(raw.trim()).map_err(|_| shape_error())?;
-    let variant = Variant::from_plain_json(value).map_err(|e| format!("`{name}`: {e}"))?;
+    let variant = Variant::from_plain_json(value).map_err(|e| invalid_input(name, &e))?;
     if VariantKind::from_variant(&variant) == expected {
         Ok(variant)
     } else {
         Err(shape_error())
     }
+}
+
+fn invalid_input(name: &str, reason: &dyn std::fmt::Display) -> String {
+    let reason = reason.to_string();
+    tr!(
+        "script_input_invalid",
+        name = name,
+        reason = reason.as_str()
+    )
 }
 
 fn parse_input_to_variant(name: &str, kind: VariantKind, raw: &str) -> Result<Variant, String> {
@@ -138,36 +161,40 @@ fn parse_input_to_variant(name: &str, kind: VariantKind, raw: &str) -> Result<Va
             .trim()
             .parse::<i64>()
             .map(Variant::Int)
-            .map_err(|_| format!("`{name}` must be an integer")),
+            .map_err(|_| tr!("script_input_must_be_integer", name = name)),
         VariantKind::Float => raw
             .trim()
             .parse::<f64>()
-            .map_err(|_| format!("`{name}` must be a float"))
-            .and_then(|f| Variant::float(f).map_err(|e| format!("`{name}`: {e}"))),
+            .map_err(|_| tr!("script_input_must_be_float", name = name))
+            .and_then(|f| Variant::float(f).map_err(|e| invalid_input(name, &e))),
         VariantKind::Bool => match raw.trim() {
             "true" => Ok(Variant::Bool(true)),
             "false" => Ok(Variant::Bool(false)),
-            _ => Err(format!("`{name}` must be `true` or `false`")),
+            _ => Err(tr!("script_input_must_be_bool", name = name)),
         },
         VariantKind::String => Ok(Variant::String(raw.to_owned())),
         VariantKind::Array => parse_json_input(
             name,
             raw,
             VariantKind::Array,
-            "a JSON array",
+            &tr!("script_input_shape_array"),
             ARRAY_INPUT_EXAMPLE,
         ),
         VariantKind::Object => parse_json_input(
             name,
             raw,
             VariantKind::Object,
-            "a JSON object",
+            &tr!("script_input_shape_object"),
             OBJECT_INPUT_EXAMPLE,
         ),
         VariantKind::Datetime => forge_types::datetime_from_text(raw)
             .map(Variant::Datetime)
             .ok_or_else(|| {
-                format!("`{name}` must be an RFC3339 timestamp, e.g. `{DATETIME_INPUT_EXAMPLE}`")
+                tr!(
+                    "script_input_must_be_datetime",
+                    name = name,
+                    example = DATETIME_INPUT_EXAMPLE
+                )
             }),
     }
 }
@@ -499,6 +526,11 @@ struct EditorProblem {
     text: SharedString,
 }
 
+enum ScriptSaveFailure {
+    Syntax(String),
+    Storage(String),
+}
+
 fn compile_problem(body: &str) -> Option<String> {
     match validate_syntax(body) {
         Ok(()) => None,
@@ -520,6 +552,7 @@ pub struct ScriptEditorView {
     telemetry: Option<ScriptTelemetry>,
     loading: bool,
     saving: bool,
+    run_in_flight: bool,
     engine_timeout_ms: Option<u64>,
 
     list_width: Pixels,
@@ -675,6 +708,7 @@ impl ScriptEditorView {
             telemetry: None,
             loading: false,
             saving: false,
+            run_in_flight: false,
             engine_timeout_ms: None,
             list_width: LEFT_PANE_W,
             details_width: DETAILS_PANE_W,
@@ -781,9 +815,27 @@ impl ScriptEditorView {
     }
 
     fn recompute_diagnostics(&mut self, body: &str, cx: &mut Context<Self>) {
-        self._compile_check = None;
-        self.compile_error = compile_problem(body).map(SharedString::from);
+        self.compile_error = None;
         self.refresh_annotations(body, cx);
+        self.schedule_compile_check(body.to_owned(), Duration::ZERO, cx);
+    }
+
+    fn schedule_compile_check(&mut self, body: String, debounce: Duration, cx: &mut Context<Self>) {
+        self._compile_check = Some(cx.spawn(async move |this, cx| {
+            cx.background_executor().timer(debounce).await;
+            let compile_error = cx
+                .background_spawn(async move { compile_problem(&body) })
+                .await;
+            #[expect(
+                clippy::let_underscore_must_use,
+                reason = "the view may close before the result arrives"
+            )]
+            let _ = this.update(cx, |this, cx| {
+                this.compile_error = compile_error.map(SharedString::from);
+                this.rebuild_problems();
+                cx.notify();
+            });
+        }));
     }
 
     fn refresh_annotations(&mut self, body: &str, cx: &mut Context<Self>) {
@@ -873,7 +925,10 @@ impl ScriptEditorView {
             }
             Err(e) => {
                 tracing::warn!(error = %e, "script list load failed");
-                self.push_console(LogTag::Err, format!("Could not load scripts: {e}"));
+                self.push_console(
+                    LogTag::Err,
+                    tr!("script_console_load_failed", error = e.as_str()),
+                );
             }
         }
         cx.notify();
@@ -884,13 +939,12 @@ impl ScriptEditorView {
         let repo = Arc::clone(&self.backend) as Arc<dyn ScriptRepo>;
         async_bridge::run_async(
             &self.rt_handle,
-            async move {
-                ScriptRepo::get(&*repo, id)
-                    .await
-                    .map_err(|e| e.to_string())
-                    .and_then(|opt| opt.ok_or_else(|| format!("script {id} not found")))
+            async move { ScriptRepo::get(&*repo, id).await.map_err(|e| e.to_string()) },
+            |this, result, cx| {
+                let opened =
+                    result.and_then(|found| found.ok_or_else(|| tr!("script_console_missing")));
+                this.apply_script_opened(opened, cx);
             },
-            |this, result, cx| this.apply_script_opened(result, cx),
             cx,
         );
         cx.notify();
@@ -920,7 +974,10 @@ impl ScriptEditorView {
             }
             Err(e) => {
                 tracing::warn!(error = %e, "script open failed");
-                self.push_console(LogTag::Err, format!("Could not open script: {e}"));
+                self.push_console(
+                    LogTag::Err,
+                    tr!("script_console_open_failed", error = e.as_str()),
+                );
             }
         }
         cx.notify();
@@ -987,21 +1044,7 @@ impl ScriptEditorView {
     fn on_code_changed(&mut self, cx: &mut Context<Self>) {
         let content = self.code_input.read(cx).content().to_owned();
         self.refresh_annotations(&content, cx);
-        self._compile_check = Some(cx.spawn(async move |this, cx| {
-            cx.background_executor().timer(COMPILE_DEBOUNCE).await;
-            let compile_error = cx
-                .background_spawn(async move { compile_problem(&content) })
-                .await;
-            #[expect(
-                clippy::let_underscore_must_use,
-                reason = "the view may close before the result arrives"
-            )]
-            let _ = this.update(cx, |this, cx| {
-                this.compile_error = compile_error.map(SharedString::from);
-                this.rebuild_problems();
-                cx.notify();
-            });
-        }));
+        self.schedule_compile_check(content, COMPILE_DEBOUNCE, cx);
         cx.notify();
     }
 
@@ -1194,13 +1237,6 @@ impl ScriptEditorView {
             return;
         };
         let body = self.code_input.read(cx).content().to_owned();
-        if let Err(e) = validate_syntax(&body) {
-            self.push_console(LogTag::Err, format!("syntax error: {e}"));
-            self.push_console(LogTag::Warn, tr!("script_editor_save_blocked"));
-            cx.notify();
-            return;
-        }
-
         let mut record = record;
         record.body = body.clone();
         record.last_modified = OffsetDateTime::now_utc();
@@ -1212,19 +1248,19 @@ impl ScriptEditorView {
         async_bridge::run_async(
             &self.rt_handle,
             async move {
-                let saved = ScriptRepo::save(&*repo, record.clone())
+                let candidate = record.body.clone();
+                tokio::task::spawn_blocking(move || validate_syntax(&candidate))
+                    .await
+                    .map_err(|e| ScriptSaveFailure::Storage(e.to_string()))?
+                    .map_err(|e| ScriptSaveFailure::Syntax(e.to_string()))?;
+                ScriptRepo::save(&*repo, record.clone())
+                    .await
+                    .map_err(|e| ScriptSaveFailure::Storage(e.to_string()))?;
+                let reload = registry
+                    .reload(record.clone(), bus.as_ref())
                     .await
                     .map_err(|e| e.to_string());
-                match saved {
-                    Ok(()) => {
-                        let reload = registry
-                            .reload(record.clone(), bus.as_ref())
-                            .await
-                            .map_err(|e| e.to_string());
-                        Ok((record, reload))
-                    }
-                    Err(e) => Err(e),
-                }
+                Ok((record, reload))
             },
             |this, result, cx| this.apply_saved(result, cx),
             cx,
@@ -1234,15 +1270,14 @@ impl ScriptEditorView {
 
     fn apply_saved(
         &mut self,
-        result: Result<(ScriptRecord, Result<(), String>), String>,
+        result: Result<(ScriptRecord, Result<(), String>), ScriptSaveFailure>,
         cx: &mut Context<Self>,
     ) {
         self.saving = false;
         match result {
             Ok((record, reload)) => {
-                let status_ok = validate_syntax(&record.body).is_ok();
                 if let Some(entry) = self.scripts.iter_mut().find(|e| e.id == record.id) {
-                    entry.status_ok = status_ok;
+                    entry.status_ok = true;
                 }
                 if let Some(open) = self.open.as_mut()
                     && open.id == record.id
@@ -1251,19 +1286,35 @@ impl ScriptEditorView {
                     open.original_contract = record.contract.clone();
                     open.record = record;
                 }
-                self.push_console(LogTag::Ok, "script saved");
+                self.push_console(LogTag::Ok, tr!("script_console_saved"));
                 if let Err(e) = reload {
-                    self.push_console(LogTag::Err, format!("hot-reload failed: {e}"));
+                    self.push_console(
+                        LogTag::Err,
+                        tr!("script_console_reload_failed", error = e.as_str()),
+                    );
                 }
             }
-            Err(e) => {
-                self.push_console(LogTag::Err, format!("save failed: {e}"));
+            Err(ScriptSaveFailure::Syntax(e)) => {
+                self.push_console(
+                    LogTag::Err,
+                    tr!("script_console_syntax_error", error = e.as_str()),
+                );
+                self.push_console(LogTag::Warn, tr!("script_editor_save_blocked"));
+            }
+            Err(ScriptSaveFailure::Storage(e)) => {
+                self.push_console(
+                    LogTag::Err,
+                    tr!("script_console_save_failed", error = e.as_str()),
+                );
             }
         }
         cx.notify();
     }
 
     fn run(&mut self, cx: &mut Context<Self>) {
+        if self.run_in_flight {
+            return;
+        }
         let Some((script_id, name, contract)) = self
             .open
             .as_ref()
@@ -1273,7 +1324,10 @@ impl ScriptEditorView {
         };
         let body = self.code_input.read(cx).content().to_owned();
         if contract.inputs.is_empty() {
-            self.push_console(LogTag::Run, format!("running {name}"));
+            self.push_console(
+                LogTag::Run,
+                tr!("script_console_running", name = name.as_str()),
+            );
             self.console_tab = ConsoleTab::Output;
             self.console_collapsed = false;
             self.run_inline_exec(body, ArgStack::new(), script_id, cx);
@@ -1300,6 +1354,7 @@ impl ScriptEditorView {
         script_id: ScriptId,
         cx: &mut Context<Self>,
     ) {
+        self.run_in_flight = true;
         let contract = self
             .open
             .as_ref()
@@ -1350,11 +1405,15 @@ impl ScriptEditorView {
     }
 
     fn apply_run_finished(&mut self, result: Result<RunResult, String>, cx: &mut Context<Self>) {
+        self.run_in_flight = false;
         match result {
             Ok(r) => {
                 self.run_modal = None;
                 self._run_sub = None;
-                self.push_console(LogTag::Ok, format!("returned: {}", r.output_display));
+                self.push_console(
+                    LogTag::Ok,
+                    tr!("script_console_returned", value = r.output_display.as_str()),
+                );
                 self.push_console(
                     LogTag::Stats,
                     format_run_stats(r.duration_ms, r.error_count),
@@ -1371,7 +1430,10 @@ impl ScriptEditorView {
                         cx.notify();
                     });
                 }
-                self.push_console(LogTag::Err, format!("run error: {e}"));
+                self.push_console(
+                    LogTag::Err,
+                    tr!("script_console_run_failed", error = e.as_str()),
+                );
             }
         }
         cx.notify();
@@ -1404,7 +1466,10 @@ impl ScriptEditorView {
                 cx.notify();
             });
         }
-        self.push_console(LogTag::Run, format!("running {name} with inputs"));
+        self.push_console(
+            LogTag::Run,
+            tr!("script_console_running_with_inputs", name = name.as_str()),
+        );
         self.console_tab = ConsoleTab::Output;
         self.console_collapsed = false;
         self.run_inline_exec(body, args, script_id, cx);
@@ -1461,7 +1526,7 @@ impl ScriptEditorView {
                 self.scripts.push(ScriptEntry {
                     id: record.id,
                     name: record.name.clone(),
-                    status_ok: validate_syntax(&body).is_ok(),
+                    status_ok: true,
                     enabled: record.enabled,
                     linked: None,
                 });
@@ -1482,7 +1547,10 @@ impl ScriptEditorView {
             }
             Err(e) => {
                 tracing::warn!(error = %e, "new script creation failed");
-                self.push_console(LogTag::Err, format!("Could not create script: {e}"));
+                self.push_console(
+                    LogTag::Err,
+                    tr!("script_console_create_failed", error = e.as_str()),
+                );
             }
         }
         cx.notify();
@@ -1669,9 +1737,12 @@ impl ScriptEditorView {
         let taken = self
             .scripts
             .iter()
-            .any(|e| e.id != id && e.name.eq_ignore_ascii_case(&name));
+            .any(|e| e.id != id && e.name.to_lowercase() == name.to_lowercase());
         if taken {
-            self.push_console(LogTag::Err, format!("Name \"{name}\" is already taken"));
+            self.push_console(
+                LogTag::Err,
+                tr!("script_console_name_taken", name = name.as_str()),
+            );
             return;
         }
 
@@ -1807,16 +1878,26 @@ impl ScriptEditorView {
         async_bridge::run_async(
             &self.rt_handle,
             async move {
-                let mut record = ScriptRepo::get(&*repo, id)
+                let Some(mut record) = ScriptRepo::get(&*repo, id)
                     .await
                     .map_err(|e| e.to_string())?
-                    .ok_or_else(|| "script not found".to_owned())?;
+                else {
+                    return Ok(false);
+                };
                 record.enabled = enabled;
                 ScriptRepo::save(&*repo, record)
                     .await
+                    .map(|()| true)
                     .map_err(|e| e.to_string())
             },
-            |this, result, cx| this.apply_enabled_set(result, cx),
+            |this, result, cx| {
+                let updated = result.and_then(|found| {
+                    found
+                        .then_some(())
+                        .ok_or_else(|| tr!("script_console_missing"))
+                });
+                this.apply_enabled_set(updated, cx);
+            },
             cx,
         );
     }
@@ -1826,7 +1907,10 @@ impl ScriptEditorView {
             Ok(()) => self.load_scripts(cx),
             Err(e) => {
                 tracing::warn!(error = %e, "script enable toggle failed");
-                self.push_console(LogTag::Err, format!("Could not update script: {e}"));
+                self.push_console(
+                    LogTag::Err,
+                    tr!("script_console_update_failed", error = e.as_str()),
+                );
                 cx.notify();
             }
         }
@@ -1928,7 +2012,7 @@ impl ScriptEditorView {
                 .font_family(mono_family())
                 .text_size(FONT_XXS)
                 .text_color(palette.text_muted)
-                .child("Rhai 1.25"),
+                .child(SCRIPT_LANGUAGE_LABEL),
         );
 
         right.into_any_element()
@@ -2035,6 +2119,7 @@ impl ScriptEditorView {
         density: Density,
         cx: &mut Context<Self>,
     ) -> AnyElement {
+        let run_idle = !self.run_in_flight;
         let run = div()
             .id("script-run")
             .flex()
@@ -2044,9 +2129,14 @@ impl ScriptEditorView {
             .px(spacing(Spacing::Sm, density))
             .rounded(radius(Radius::Sm))
             .bg(palette.success)
-            .cursor_pointer()
-            .hover(|s| s.bg(with_alpha(palette.success, HOVER_FILL_ALPHA)))
-            .on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.run(cx)))
+            .when(run_idle, |el| {
+                el.cursor_pointer()
+                    .hover(|s| s.bg(with_alpha(palette.success, HOVER_FILL_ALPHA)))
+                    .on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.run(cx)))
+            })
+            .when(!run_idle, |el| {
+                el.opacity(forge_components::DISABLED_OPACITY)
+            })
             .child(icon(Icon::PlayerPlay, GLYPH_RUN, palette.shell))
             .child(
                 div()
@@ -3861,6 +3951,7 @@ mod tests {
     ];
 
     fn parse(kind: VariantKind, raw: &str) -> Result<Variant, String> {
+        crate::i18n::install_language(forge_storage::Language::En);
         parse_input_to_variant("amount", kind, raw)
     }
 
@@ -3929,7 +4020,7 @@ mod tests {
         ] {
             let err = parse(kind, raw).unwrap_err();
             assert!(
-                err.contains("`amount`"),
+                err.contains("amount"),
                 "{kind:?} input {raw:?} must tell the user which field failed: {err}"
             );
         }
@@ -4025,7 +4116,9 @@ mod tests {
         use crate::i18n::install_language;
         use crate::navigation_guard::{LeaveTarget, NavigationGuard};
         use crate::screen_shortcuts::ScreenShortcuts;
-        use crate::test_support::{StubEventLog, pump, runtime, test_backend_with_scripts};
+        use crate::test_support::{
+            StubEventLog, pump, pump_until, runtime, test_backend_with_scripts,
+        };
         use crate::unsaved_work::UnsavedWorkHandle;
         use forge_components::Presentation;
 
@@ -4141,7 +4234,10 @@ mod tests {
 
             fn settle(&self, cx: &mut TestAppContext) {
                 pump(&self.rt);
-                cx.run_until_parked();
+                pump_until(&self.rt, || {
+                    cx.run_until_parked();
+                    !self.saving(cx)
+                });
             }
 
             fn type_body(&self, body: &str, cx: &mut TestAppContext) {
@@ -4386,6 +4482,35 @@ mod tests {
                 });
                 assert_eq!(runs, expected, "{case}");
             }
+        }
+
+        fn started_runs(rig: &Rig, cx: &mut TestAppContext) -> usize {
+            rig.view.read_with(cx, |view, _| {
+                view.console
+                    .iter()
+                    .filter(|line| matches!(line.tag, LogTag::Run))
+                    .count()
+            })
+        }
+
+        #[gpui::test]
+        fn a_run_asked_for_while_one_is_in_flight_is_ignored_until_it_finishes(
+            cx: &mut TestAppContext,
+        ) {
+            let rig = Rig::mount(cx, Store::NeverCalled);
+
+            rig.view.update(cx, |view, cx| {
+                view.run_shortcut(cx);
+                view.run_shortcut(cx);
+            });
+            let while_running = started_runs(&rig, cx);
+
+            rig.view.update(cx, |view, cx| {
+                view.apply_run_finished(Err("stopped".to_owned()), cx);
+                view.run_shortcut(cx);
+            });
+
+            assert_eq!((while_running, started_runs(&rig, cx)), (1, 2));
         }
     }
 

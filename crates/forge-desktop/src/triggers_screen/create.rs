@@ -8,6 +8,7 @@ use crate::config_form::{
     set_picked_value, sparse_overrides,
 };
 use crate::picker_favorites::{bind_picker, follow_picker_event};
+use crate::repo_failure::RepoFailure;
 use crate::trigger_form_shape::{trigger_form_defaults, trigger_form_specs};
 use forge_components::ActivePresentation;
 use forge_components::{
@@ -309,7 +310,7 @@ impl TriggersRegistryView {
         async_bridge::run_async(
             &self.rt_handle,
             async move {
-                repo.save(&instance).await.map_err(|e| e.to_string())?;
+                repo.save(&instance).await.map_err(RepoFailure::from)?;
                 load_rows(&*repo).await
             },
             move |this, result, cx| match result {
@@ -636,5 +637,57 @@ fn category_meta(
         TriggerCategory::Ungrouped => {
             (tr!("trigger_cat_other").into(), "other", palette.text_muted)
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn successor(category: TriggerCategory) -> Option<TriggerCategory> {
+        use TriggerCategory as C;
+        match category {
+            C::Chat => Some(C::Subscriptions),
+            C::Subscriptions => Some(C::Bits),
+            C::Bits => Some(C::Raids),
+            C::Raids => Some(C::Moderation),
+            C::Moderation => Some(C::ChannelPoints),
+            C::ChannelPoints => Some(C::Polls),
+            C::Polls => Some(C::Predictions),
+            C::Predictions => Some(C::Hype),
+            C::Hype => Some(C::Charity),
+            C::Charity => Some(C::Donations),
+            C::Donations => Some(C::Goals),
+            C::Goals => Some(C::Clips),
+            C::Clips => Some(C::Streams),
+            C::Streams => Some(C::Users),
+            C::Users => Some(C::Obs),
+            C::Obs => Some(C::VTube),
+            C::VTube => Some(C::Discord),
+            C::Discord => Some(C::Midi),
+            C::Midi => Some(C::Hotkey),
+            C::Hotkey => Some(C::Core),
+            C::Core => Some(C::Server),
+            C::Server => Some(C::Timer),
+            C::Timer => Some(C::Ungrouped),
+            C::Ungrouped => None,
+        }
+    }
+
+    #[test]
+    fn every_trigger_category_has_a_place_in_the_kind_picker() {
+        let every_category: Vec<TriggerCategory> =
+            std::iter::successors(Some(TriggerCategory::Chat), |c| successor(*c)).collect();
+
+        let missing: Vec<TriggerCategory> = every_category
+            .iter()
+            .copied()
+            .filter(|category| !CATEGORY_ORDER.contains(category))
+            .collect();
+
+        assert_eq!(
+            (missing, CATEGORY_ORDER.len()),
+            (Vec::new(), every_category.len())
+        );
     }
 }

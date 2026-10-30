@@ -1109,6 +1109,23 @@ impl OverlayFrameSink for NoOverlayPages {
 }
 
 pub(crate) async fn stopped_server_handle(backend: &Arc<TestBackend>) -> ServerHandle {
+    stopped_server(server_config(backend))
+        .await
+        .expect("a stopped server handle")
+}
+
+pub(crate) async fn stopped_server_hosting(
+    backend: &Arc<TestBackend>,
+    overlay_root: std::path::PathBuf,
+) -> ServerHandle {
+    let mut config = server_config(backend);
+    config.overlay_root = overlay_root;
+    stopped_server(config)
+        .await
+        .expect("a stopped server handle")
+}
+
+fn server_config(backend: &Arc<TestBackend>) -> ServerConfig {
     let bus = EventBus::new(Arc::new(StubEventLog));
     let engine = Arc::new(spawn_action_engine(
         Arc::clone(&bus),
@@ -1118,7 +1135,7 @@ pub(crate) async fn stopped_server_handle(backend: &Arc<TestBackend>) -> ServerH
         Arc::new(SubActionRegistry::new()),
         Arc::new(ActionCancelRegistry::new()),
     ));
-    stopped_server(ServerConfig::new(
+    ServerConfig::new(
         Arc::clone(backend) as Arc<dyn SettingsRepo>,
         Arc::clone(backend) as Arc<dyn CredentialsRepo>,
         bus,
@@ -1127,9 +1144,7 @@ pub(crate) async fn stopped_server_handle(backend: &Arc<TestBackend>) -> ServerH
         Arc::clone(backend) as Arc<dyn UserGlobalsRepo>,
         Arc::new(StubOverlays),
         engine,
-    ))
-    .await
-    .expect("a stopped server handle")
+    )
 }
 
 pub(crate) fn stopped_handle(
@@ -1733,6 +1748,41 @@ pub(crate) fn error_toasts(cx: &gpui::App) -> usize {
         .iter()
         .filter(|toast| toast.kind == forge_components::ToastKind::Error)
         .count()
+}
+
+struct BlankWindow;
+
+impl gpui::Render for BlankWindow {
+    fn render(
+        &mut self,
+        _: &mut gpui::Window,
+        _: &mut gpui::Context<Self>,
+    ) -> impl gpui::IntoElement {
+        gpui::Empty
+    }
+}
+
+pub(crate) fn press_undo(cx: &mut gpui::TestAppContext) {
+    use gpui::AppContext as _;
+
+    let action = cx.update(|cx| {
+        let toasts = cx.global_mut::<forge_components::Toasts>();
+        let id = toasts
+            .items()
+            .iter()
+            .find(|toast| toast.kind == forge_components::ToastKind::Undo)
+            .map(|toast| toast.id)
+            .expect("an undo toast");
+        toasts
+            .take(id)
+            .and_then(|toast| toast.action)
+            .expect("an undo action")
+    });
+    let window: gpui::AnyWindowHandle = cx.add_window(|_, _| BlankWindow).into();
+    cx.update(|cx| {
+        cx.update_window(window, |_, window, cx| (action.on_action)(window, cx))
+            .unwrap();
+    });
 }
 
 pub(crate) fn install_presentation(cx: &mut gpui::TestAppContext) {

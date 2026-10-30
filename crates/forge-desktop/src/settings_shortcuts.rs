@@ -244,6 +244,12 @@ impl SettingsShortcutsView {
         self.capture_sub = None;
     }
 
+    pub fn set_active(&mut self, active: bool, cx: &mut Context<Self>) {
+        if !active && self.rebinding.is_some() {
+            self.cancel_capture(cx);
+        }
+    }
+
     fn cancel_capture(&mut self, cx: &mut Context<Self>) {
         self.end_capture();
         cx.notify();

@@ -38,7 +38,7 @@ impl ViewerSummary {
 }
 
 pub(crate) fn drawer_matches(username: &str, search: &str) -> bool {
-    search.is_empty() || username.to_ascii_lowercase().contains(search)
+    forge_components::contains_folded(username, search)
 }
 
 fn sub_status(role: Option<BadgeKind>) -> SubStatus {

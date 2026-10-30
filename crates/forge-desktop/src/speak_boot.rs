@@ -14,6 +14,7 @@ use forge_storage::{CredentialsRepo, DataProvider, FilterRule, TtsPipelineSettin
 use forge_tts_cloud::CloudGateways;
 use forge_tts_core::{TtsEngineFactory, TtsRegistry, build_engine};
 
+use crate::boot_warnings::{BootWarning, BootWarnings};
 use crate::cloud_tts_boot::register_cloud_engines;
 
 pub enum TtsEngineAdmission {
@@ -53,7 +54,10 @@ async fn register_probed(
     }
 }
 
-async fn load_resolver(backend: &Arc<dyn DataProvider>) -> VoiceAliasResolver {
+async fn load_resolver(
+    backend: &Arc<dyn DataProvider>,
+    warnings: &mut BootWarnings,
+) -> VoiceAliasResolver {
     let voice_alias_repo = backend.voice_alias_repo();
     let loaded = async {
         let aliases = voice_alias_repo.list().await?;
@@ -66,6 +70,7 @@ async fn load_resolver(backend: &Arc<dyn DataProvider>) -> VoiceAliasResolver {
         Ok(loaded) => loaded,
         Err(e) => {
             tracing::warn!(error = %e, "failed to load voice aliases on boot; using defaults");
+            warnings.record(BootWarning::VoiceAliases);
             (
                 Vec::new(),
                 AssignmentStrategy::default(),
@@ -173,6 +178,7 @@ pub async fn build_speak_queue(
     audio_sink: Arc<dyn forge_audio::AudioSink>,
     cloud_gateways: &CloudGateways,
     local_engines: Vec<LocalTtsEngine>,
+    warnings: &mut BootWarnings,
 ) -> (
     Option<forge_speak_queue::SpeakQueueHandle>,
     Option<SpeakEventStream>,
@@ -193,7 +199,7 @@ pub async fn build_speak_queue(
         .engine_ids();
     let (engine_defaults, engine_gains) = load_engine_params(backend, &engine_ids).await;
 
-    let mut resolver = load_resolver(backend).await;
+    let mut resolver = load_resolver(backend, warnings).await;
     resolver.set_engine_defaults(engine_defaults);
     let resolver = Arc::new(std::sync::RwLock::new(resolver));
     let (filter_rules, filter_settings) = load_filters(backend).await;

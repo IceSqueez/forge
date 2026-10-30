@@ -1,6 +1,6 @@
 use super::permission_help::{gated_platforms, rung_meanings};
 use super::*;
-use crate::async_bridge;
+use crate::async_bridge::{self, WriteOutcome};
 use crate::config_field_label::{config_field_labels, row_label};
 use crate::config_form::INTEGER_PLACEHOLDER;
 use crate::config_form::{
@@ -9,6 +9,7 @@ use crate::config_form::{
     set_picked_value, sparse_overrides,
 };
 use crate::integration_switch::{category_inactive_badge, inactive_badge};
+use crate::repo_failure::RepoFailure;
 use crate::trigger_form_shape::{trigger_form_defaults, trigger_form_specs};
 use forge_components::ActivePresentation;
 use forge_components::FONT_LABEL;
@@ -51,7 +52,11 @@ const USED_ROW_PAD_H: Pixels = px(10.0);
 const PLACEHOLDER_PAD_V: Pixels = px(14.0);
 const PLACEHOLDER_PAD_H: Pixels = px(12.0);
 
-const RELEASE_PERSIST_CONTEXT: &str = "trigger detail teardown";
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum DetailAfterSave {
+    Keep,
+    Rebuild,
+}
 
 impl TriggersRegistryView {
     pub(super) fn load_detail(&self, id: TriggerInstanceId, cx: &mut Context<Self>) {
@@ -68,7 +73,7 @@ impl TriggersRegistryView {
                         cx.notify();
                     }
                 }
-                Err(message) => this.on_repo_error(&message, cx),
+                Err(failure) => this.on_repo_error(&failure, cx),
             },
             cx,
         );
@@ -302,14 +307,45 @@ impl TriggersRegistryView {
             return;
         }
         detail.instance = instance.clone();
+        self.save_detail(instance, DetailAfterSave::Keep, cx);
+    }
+
+    fn save_detail(
+        &mut self,
+        instance: TriggerInstance,
+        after: DetailAfterSave,
+        cx: &mut Context<Self>,
+    ) {
+        let id = instance.id;
         let repo = Arc::clone(&self.repo);
-        self.spawn_reload(
-            async move {
-                repo.save(&instance).await.map_err(|e| e.to_string())?;
-                load_rows(&*repo).await
-            },
+        self.detail_writers.writer(id).write(
+            async move { repo.save(&instance).await },
+            move |this, outcome, cx| this.detail_save_settled(id, after, outcome, cx),
             cx,
         );
+    }
+
+    fn detail_save_settled(
+        &mut self,
+        id: TriggerInstanceId,
+        after: DetailAfterSave,
+        outcome: WriteOutcome,
+        cx: &mut Context<Self>,
+    ) {
+        let rebuild = match outcome {
+            WriteOutcome::Written => {
+                self.reload(cx);
+                after == DetailAfterSave::Rebuild
+            }
+            WriteOutcome::Superseded => after == DetailAfterSave::Rebuild,
+            WriteOutcome::Failed(reason) => {
+                self.on_repo_error(&RepoFailure::operation(reason), cx);
+                true
+            }
+        };
+        if rebuild && self.selected == Some(id) {
+            self.load_detail(id, cx);
+        }
     }
 
     pub(super) fn persist_detail_on_release(&mut self, cx: &mut App) {
@@ -324,25 +360,26 @@ impl TriggersRegistryView {
             return;
         }
         let repo = Arc::clone(&self.repo);
-        async_bridge::detached(&self.rt_handle, RELEASE_PERSIST_CONTEXT, async move {
-            repo.save(&instance).await.map_err(|e| e.to_string())
-        });
+        let failure = tr!(
+            "triggers_release_persist_failed",
+            name = instance.name.as_str()
+        );
+        self.detail_writers.writer(instance.id).write_on_release(
+            async move { repo.save(&instance).await },
+            failure,
+            cx,
+        );
     }
 
     fn revert_config_field(&mut self, key: String, cx: &mut Context<Self>) {
-        let Some(detail) = self.detail.as_ref() else {
+        let Some(mut instance) = self.pending_instance(cx) else {
             return;
         };
-        let mut instance = detail.instance.clone();
         instance.overrides.remove(&key);
-        let repo = Arc::clone(&self.repo);
-        self.spawn_reload(
-            async move {
-                repo.save(&instance).await.map_err(|e| e.to_string())?;
-                load_rows(&*repo).await
-            },
-            cx,
-        );
+        if let Some(detail) = self.detail.as_mut() {
+            detail.instance = instance.clone();
+        }
+        self.save_detail(instance, DetailAfterSave::Rebuild, cx);
     }
 
     fn use_as_template(&mut self, cx: &mut Context<Self>) {
@@ -361,7 +398,7 @@ impl TriggersRegistryView {
         async_bridge::run_async(
             &self.rt_handle,
             async move {
-                repo.save(&instance).await.map_err(|e| e.to_string())?;
+                repo.save(&instance).await.map_err(RepoFailure::from)?;
                 load_rows(&*repo).await
             },
             move |this, result, cx| match result {
@@ -372,7 +409,7 @@ impl TriggersRegistryView {
                     this.load_detail(new_id, cx);
                     cx.notify();
                 }
-                Err(message) => this.on_repo_error(&message, cx),
+                Err(failure) => this.on_repo_error(&failure, cx),
             },
             cx,
         );
@@ -1067,17 +1104,17 @@ async fn load_detail_data(
     repo: &dyn TriggerInstanceRepo,
     action_repo: &dyn ActionRepo,
     id: TriggerInstanceId,
-) -> Result<Option<TriggerDetailData>, String> {
-    let Some(instance) = repo.get(id).await.map_err(|e| e.to_string())? else {
+) -> Result<Option<TriggerDetailData>, RepoFailure> {
+    let Some(instance) = repo.get(id).await.map_err(RepoFailure::from)? else {
         return Ok(None);
     };
-    let action_ids = repo.actions_using(id).await.map_err(|e| e.to_string())?;
+    let action_ids = repo.actions_using(id).await.map_err(RepoFailure::from)?;
     let mut used_in = Vec::with_capacity(action_ids.len());
     for action_id in action_ids {
         let name = action_repo
             .get(action_id)
             .await
-            .map_err(|e| e.to_string())?
+            .map_err(RepoFailure::from)?
             .map(|a| a.name)
             .unwrap_or_else(|| action_id.to_string());
         used_in.push((action_id, name));
@@ -1088,6 +1125,7 @@ async fn load_detail_data(
 #[cfg(test)]
 mod tests {
     use std::sync::Mutex;
+    use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
     use forge_components::ThemeId;
     use forge_platform_core::CollectionFailure;
@@ -1100,19 +1138,23 @@ mod tests {
     use crate::integrations::BuiltinRegistry;
     use crate::screen_shortcuts::ScreenShortcuts;
     use crate::test_support::{
-        Declares, FakeCollections, StubActions, StubTrigger, owned_reward, pump, runtime,
-        test_backend, trigger_registry,
+        Declares, FakeCollections, StubActions, StubTrigger, error_toasts, owned_reward, pump,
+        pump_until, runtime, test_backend, trigger_registry,
     };
     use forge_components::Presentation;
 
     const KIND: &str = "midi.input.note_on";
     const NAME: &str = "Note on";
     const SEEDED_COOLDOWN: u32 = 30;
+    const SAVE_REFUSED: &str = "database is locked";
+    const GREETING_FIELD: &str = "greeting";
 
     struct RecordingTriggers {
         instance: Mutex<TriggerInstance>,
         saved: Mutex<Vec<u32>>,
         saved_overrides: Mutex<Vec<TriggerConfig>>,
+        saves_fail: AtomicBool,
+        row_lists: AtomicUsize,
     }
 
     impl RecordingTriggers {
@@ -1121,7 +1163,17 @@ mod tests {
                 instance: Mutex::new(instance),
                 saved: Mutex::new(Vec::new()),
                 saved_overrides: Mutex::new(Vec::new()),
+                saves_fail: AtomicBool::new(false),
+                row_lists: AtomicUsize::new(0),
             })
+        }
+
+        fn stored(&self) -> TriggerInstance {
+            self.instance.lock().unwrap().clone()
+        }
+
+        fn fail_saves(&self) {
+            self.saves_fail.store(true, Ordering::SeqCst);
         }
 
         fn saved_cooldowns(&self) -> Vec<u32> {
@@ -1140,7 +1192,8 @@ mod tests {
         }
 
         async fn list_user_defined(&self) -> Result<Vec<TriggerInstance>, StorageError> {
-            Ok(Vec::new())
+            self.row_lists.fetch_add(1, Ordering::SeqCst);
+            Ok(vec![self.instance.lock().unwrap().clone()])
         }
 
         async fn list_for_action(&self, _: ActionId) -> Result<Vec<TriggerInstance>, StorageError> {
@@ -1177,6 +1230,11 @@ mod tests {
         }
 
         async fn save(&self, instance: &TriggerInstance) -> Result<(), StorageError> {
+            if self.saves_fail.load(Ordering::SeqCst) {
+                return Err(StorageError::Connection {
+                    reason: SAVE_REFUSED.to_owned(),
+                });
+            }
             self.saved.lock().unwrap().push(instance.cooldown_secs);
             self.saved_overrides
                 .lock()
@@ -1198,8 +1256,13 @@ mod tests {
             unreachable!("the detail sheet never upserts a default")
         }
 
-        async fn set_enabled(&self, _: TriggerInstanceId, _: bool) -> Result<(), StorageError> {
-            unreachable!("the detail sheet never toggles an instance")
+        async fn set_enabled(
+            &self,
+            _: TriggerInstanceId,
+            enabled: bool,
+        ) -> Result<(), StorageError> {
+            self.instance.lock().unwrap().enabled = enabled;
+            Ok(())
         }
     }
 
@@ -1291,6 +1354,33 @@ mod tests {
             cx.run_until_parked();
             pump(&self.rt);
             cx.run_until_parked();
+        }
+
+        fn cooldown_input(&self, cx: &mut gpui::TestAppContext) -> Entity<TextInput> {
+            self.view().read_with(cx, |view, _| {
+                view.detail.as_ref().unwrap().cooldown_input.clone()
+            })
+        }
+
+        fn cooldown_text(&self, cx: &mut gpui::TestAppContext) -> String {
+            let input = self.cooldown_input(cx);
+            input.read_with(cx, |field, _| field.content().to_owned())
+        }
+
+        fn detail_instance(&self, cx: &mut gpui::TestAppContext) -> TriggerInstance {
+            self.view()
+                .read_with(cx, |view, _| view.detail.as_ref().unwrap().instance.clone())
+        }
+
+        fn wait_for_detail(
+            &self,
+            cx: &mut gpui::TestAppContext,
+            mut reached: impl FnMut(&TriggerInstance) -> bool,
+        ) {
+            pump_until(&self.rt, || {
+                cx.run_until_parked();
+                reached(&self.detail_instance(cx))
+            });
         }
 
         fn type_cooldown(&self, cx: &mut gpui::TestAppContext, text: &str) {
@@ -1512,5 +1602,174 @@ mod tests {
 
             assert_eq!(fixture.repo.saved_cooldowns(), expected, "{case}");
         }
+    }
+
+    #[gpui::test]
+    fn a_landed_commit_keeps_the_field_being_typed_in_with_its_content(
+        cx: &mut gpui::TestAppContext,
+    ) {
+        let mut fixture = Fixture::new(cx);
+        let input = fixture.cooldown_input(cx);
+        fixture.type_cooldown(cx, "5");
+        let lists_before = fixture.repo.row_lists.load(Ordering::SeqCst);
+
+        fixture.commit(cx);
+        pump_until(&fixture.rt, || {
+            cx.run_until_parked();
+            fixture.repo.row_lists.load(Ordering::SeqCst) > lists_before
+        });
+        fixture.settle(cx);
+
+        assert_eq!(
+            (
+                fixture.cooldown_input(cx).entity_id(),
+                fixture.cooldown_text(cx)
+            ),
+            (input.entity_id(), "5".to_owned())
+        );
+    }
+
+    #[gpui::test]
+    fn a_commit_after_a_toggle_keeps_the_toggled_state(cx: &mut gpui::TestAppContext) {
+        let mut fixture = Fixture::new(cx);
+        let id = fixture.detail_instance(cx).id;
+
+        fixture
+            .view()
+            .update(cx, |view, cx| view.toggle_enable(id, cx));
+        fixture.wait_for_detail(cx, |instance| !instance.enabled);
+        fixture.type_cooldown(cx, "5");
+        fixture.commit(cx);
+
+        assert_eq!(
+            (
+                fixture.repo.saved_cooldowns(),
+                fixture.repo.stored().enabled
+            ),
+            (vec![5], false)
+        );
+    }
+
+    #[gpui::test]
+    fn a_failed_save_rolls_the_sheet_back_to_the_stored_trigger_with_one_toast(
+        cx: &mut gpui::TestAppContext,
+    ) {
+        cx.update(|cx| cx.set_global(forge_components::Toasts::new()));
+        let mut fixture = Fixture::new(cx);
+        fixture.repo.fail_saves();
+        fixture.type_cooldown(cx, "5");
+
+        fixture.commit(cx);
+        fixture.wait_for_detail(cx, |instance| instance.cooldown_secs == SEEDED_COOLDOWN);
+
+        assert_eq!(
+            (
+                fixture.cooldown_text(cx),
+                cx.update(|cx| error_toasts(cx)),
+                fixture.repo.stored().cooldown_secs,
+            ),
+            (SEEDED_COOLDOWN.to_string(), 1, SEEDED_COOLDOWN)
+        );
+    }
+
+    #[gpui::test]
+    fn a_failed_write_at_teardown_tells_the_user_which_trigger_lost_its_edit(
+        cx: &mut gpui::TestAppContext,
+    ) {
+        crate::i18n::install_language(forge_storage::Language::En);
+        cx.update(|cx| cx.set_global(forge_components::Toasts::new()));
+        let mut fixture = Fixture::new(cx);
+        fixture.repo.fail_saves();
+        fixture.type_cooldown(cx, "5");
+
+        fixture.release(cx);
+        pump_until(&fixture.rt, || {
+            cx.run_until_parked();
+            cx.update(|cx| error_toasts(cx)) == 1
+        });
+
+        let message = cx.update(|cx| {
+            cx.global::<forge_components::Toasts>().items()[0]
+                .message
+                .to_string()
+        });
+        assert!(message.contains(NAME), "{message}");
+    }
+
+    fn greeting_sheet(cx: &mut gpui::TestAppContext) -> Fixture {
+        let registry = trigger_registry(vec![
+            StubTrigger::new(KIND, NAME, TriggerCategory::Midi, Declares::Nothing).with_fields(
+                vec![FormField::Text {
+                    key: "greeting",
+                    label: "Greeting",
+                    placeholder: "",
+                }],
+            ),
+        ]);
+        let overrides: TriggerConfig = [(
+            GREETING_FIELD.to_owned(),
+            Variant::String("hello".to_owned()),
+        )]
+        .into_iter()
+        .collect();
+        Fixture::build(cx, registry, KIND, overrides, BuiltinRegistry::default())
+    }
+
+    #[gpui::test]
+    fn reverting_one_field_keeps_the_other_unsaved_edits(cx: &mut gpui::TestAppContext) {
+        let mut fixture = greeting_sheet(cx);
+        fixture.type_cooldown(cx, "5");
+
+        fixture.view().update(cx, |view, cx| {
+            view.revert_config_field(GREETING_FIELD.to_owned(), cx)
+        });
+        pump_until(&fixture.rt, || {
+            cx.run_until_parked();
+            !fixture.repo.saved_cooldowns().is_empty()
+        });
+        fixture.settle(cx);
+
+        let stored = fixture.repo.stored();
+        assert_eq!(
+            (
+                stored.cooldown_secs,
+                stored.overrides.contains_key(GREETING_FIELD),
+                fixture.cooldown_text(cx),
+            ),
+            (5, false, "5".to_owned())
+        );
+    }
+
+    #[gpui::test]
+    fn reverting_a_field_shows_its_default_again(cx: &mut gpui::TestAppContext) {
+        let mut fixture = greeting_sheet(cx);
+        let shown_greeting = |fixture: &Fixture, cx: &mut gpui::TestAppContext| {
+            fixture.view().read_with(cx, |view, cx| {
+                view.detail
+                    .as_ref()
+                    .unwrap()
+                    .fields
+                    .iter()
+                    .find_map(|field| match field {
+                        ConfigField::Input { key, input, .. } if key == GREETING_FIELD => {
+                            Some(input.read(cx).content().to_owned())
+                        }
+                        _ => None,
+                    })
+                    .unwrap()
+            })
+        };
+        assert_eq!(shown_greeting(&fixture, cx), "hello");
+
+        fixture.view().update(cx, |view, cx| {
+            view.revert_config_field(GREETING_FIELD.to_owned(), cx)
+        });
+        pump_until(&fixture.rt, || {
+            cx.run_until_parked();
+            shown_greeting(&fixture, cx).is_empty()
+        });
+        fixture.settle(cx);
+
+        assert_eq!(shown_greeting(&fixture, cx), "");
     }
 }

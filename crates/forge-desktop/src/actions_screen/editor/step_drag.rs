@@ -72,18 +72,18 @@ pub(super) fn moved_step_index(from: usize, slot: usize, len: usize) -> Option<u
 }
 
 impl ScreenActionsView {
-    fn step_drag_blocked(&self) -> bool {
-        self.has_open_modal() || self.step_menu_open.is_some()
+    fn step_drag_blocked(&self, cx: &App) -> bool {
+        self.has_open_modal(cx) || self.step_menu_open.is_some()
     }
 
-    fn accepts_step_drag(&self, drag: &StepDrag) -> bool {
+    fn accepts_step_drag(&self, drag: &StepDrag, cx: &App) -> bool {
         let Some(detail) = self.detail.as_ref() else {
             return false;
         };
         detail.action.id == drag.action_id
             && self.nav_path == drag.path
             && drag.from < nav::resolve_chain(&detail.action.sub_actions, &self.nav_path).len()
-            && !self.step_drag_blocked()
+            && !self.step_drag_blocked(cx)
     }
 
     pub(in crate::actions_screen) fn step_drop_indicator_slot(&self) -> Option<usize> {
@@ -129,7 +129,7 @@ impl ScreenActionsView {
         if !event.bounds.contains(&event.event.position) {
             return;
         }
-        let accepted = self.accepts_step_drag(event.drag(cx));
+        let accepted = self.accepts_step_drag(event.drag(cx), cx);
         let slot = accepted.then(|| drop_slot_for_pointer(i, event.event.position.y, event.bounds));
         self.set_step_drop_slot(slot, cx);
     }
@@ -153,7 +153,7 @@ impl ScreenActionsView {
     }
 
     fn drop_step(&mut self, drag: &StepDrag, window: &mut Window, cx: &mut Context<Self>) {
-        let accepted = self.accepts_step_drag(drag);
+        let accepted = self.accepts_step_drag(drag, cx);
         let slot = self.step_drag.as_ref().and_then(|session| session.slot);
         let from = drag.from;
         self.finish_step_drag(window, cx);
@@ -210,7 +210,7 @@ impl ScreenActionsView {
         let Some(detail) = self.detail.as_ref() else {
             return grip.into_any_element();
         };
-        if self.step_drag_blocked() {
+        if self.step_drag_blocked(cx) {
             return grip.into_any_element();
         }
         let payload = StepDrag {
@@ -671,7 +671,7 @@ mod tests {
 
         fn accepts(&mut self, drag: &StepDrag) -> bool {
             self.view
-                .read_with(self.vcx, |view, _| view.accepts_step_drag(drag))
+                .read_with(self.vcx, |view, cx| view.accepts_step_drag(drag, cx))
         }
 
         fn indicator(&mut self) -> Option<usize> {

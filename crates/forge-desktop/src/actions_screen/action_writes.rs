@@ -1,4 +1,5 @@
 use super::*;
+use crate::repo_failure::RepoFailure;
 use forge_types::ExecutionMode;
 
 pub(super) struct ActionSettings {
@@ -55,19 +56,19 @@ pub(super) struct ActionWriteQueue {
 enum ActionWriteError {
     MissingAction,
     MissingChain,
-    Storage(String),
+    Storage(RepoFailure),
 }
 
 impl ActionWriteError {
-    fn storage(error: impl ToString) -> Self {
-        Self::Storage(error.to_string())
+    fn storage(error: StorageError) -> Self {
+        Self::Storage(error.into())
     }
 
-    fn message(&self) -> String {
+    fn failure(&self) -> RepoFailure {
         match self {
-            Self::MissingAction => tr!("actions_error_missing_action"),
-            Self::MissingChain => tr!("actions_error_missing_chain"),
-            Self::Storage(message) => message.clone(),
+            Self::MissingAction => RepoFailure::action_gone(),
+            Self::MissingChain => RepoFailure::steps_gone(),
+            Self::Storage(failure) => failure.clone(),
         }
     }
 }
@@ -76,7 +77,8 @@ struct WriteBatchOutcome {
     effects: Vec<WriteEffect>,
     errors: Vec<ActionWriteError>,
     saved: Option<Action>,
-    listed: Result<Vec<Action>, String>,
+    list_read: u64,
+    listed: Result<Vec<Action>, RepoFailure>,
 }
 
 pub(super) fn apply_action_edit(action: &mut Action, write: &ActionWrite) -> bool {
@@ -202,6 +204,7 @@ async fn perform_writes(
     id: ActionId,
     latest: Option<Action>,
     writes: Vec<ActionWrite>,
+    list_reads: Arc<AtomicU64>,
 ) -> WriteBatchOutcome {
     let mut effects = Vec::new();
     let mut errors = Vec::new();
@@ -236,11 +239,13 @@ async fn perform_writes(
     if settings_changed {
         effects.push(WriteEffect::Select(id));
     }
-    let listed = repo.list().await.map_err(|e| e.to_string());
+    let list_read = next_list_read(&list_reads);
+    let listed = repo.list().await.map_err(RepoFailure::from);
     WriteBatchOutcome {
         effects,
         errors,
         saved: batch.working.filter(|_| !batch.save_failed),
+        list_read,
         listed,
     }
 }
@@ -300,9 +305,10 @@ impl ScreenActionsView {
         let writes = std::mem::take(&mut queue.pending);
         let latest = queue.latest.clone();
         let repo = Arc::clone(&self.action_repo);
+        let list_reads = Arc::clone(&self.list_reads);
         async_bridge::run_async(
             &self.rt_handle,
-            perform_writes(repo, id, latest, writes),
+            perform_writes(repo, id, latest, writes, list_reads),
             move |this, outcome, cx| this.finish_action_writes(id, outcome, cx),
             cx,
         );
@@ -331,7 +337,7 @@ impl ScreenActionsView {
             self.action_writes.remove(&id);
         }
         for error in &outcome.errors {
-            self.on_repo_error(&error.message(), cx);
+            self.on_repo_error(&error.failure(), cx);
         }
         for effect in outcome.effects {
             match effect {
@@ -340,13 +346,7 @@ impl ScreenActionsView {
             }
         }
         if drained {
-            match outcome.listed {
-                Ok(actions) => self.apply_actions(actions, cx),
-                Err(message) => {
-                    self.on_repo_error(&message, cx);
-                    self.reload_detail(cx);
-                }
-            }
+            self.land_list(outcome.list_read, outcome.listed, cx);
         } else {
             self.run_action_writes(id, cx);
         }
@@ -367,7 +367,7 @@ mod tests {
 
     use super::super::editor::tests::view_with;
     use super::*;
-    use crate::test_support::{action_running, error_toasts, pump, runtime, step};
+    use crate::test_support::{action_running, error_toasts, pump, pump_until, runtime, step};
 
     const FIRST: &str = "test.first";
     const SECOND: &str = "test.second";
@@ -503,17 +503,20 @@ mod tests {
     }
 
     #[test]
-    fn write_errors_read_in_the_ui_language_and_storage_errors_pass_through() {
+    fn write_errors_read_in_the_ui_language() {
         crate::i18n::install_language(forge_storage::Language::Uk);
         for (error, expected) in [
-            (ActionWriteError::MissingAction, "дію не знайдено"),
-            (ActionWriteError::MissingChain, "список кроків не знайдено"),
+            (ActionWriteError::MissingAction, "Цієї дії більше немає."),
             (
-                ActionWriteError::Storage("disk full".to_owned()),
-                "disk full",
+                ActionWriteError::MissingChain,
+                "Списку кроків цієї дії більше немає.",
+            ),
+            (
+                ActionWriteError::Storage(RepoFailure::operation("disk full")),
+                "Операцію не виконано. Подробиці в журналі.",
             ),
         ] {
-            assert_eq!(error.message(), expected);
+            assert_eq!(error.failure().text(), expected);
         }
     }
 
@@ -523,6 +526,8 @@ mod tests {
         archived: Mutex<HashSet<ActionId>>,
         failing_saves: Mutex<HashMap<ActionId, usize>>,
         ops: Mutex<Vec<(&'static str, ActionId)>>,
+        next_list_held: Mutex<Option<tokio::sync::oneshot::Receiver<()>>>,
+        detail_reads: std::sync::atomic::AtomicUsize,
     }
 
     impl MemActions {
@@ -548,10 +553,16 @@ mod tests {
                 .cloned()
                 .collect();
             listed.sort_by(|a, b| a.name.cmp(&b.name));
+            let held = self.next_list_held.lock().unwrap().take();
+            if let Some(gate) = held {
+                gate.await.ok();
+            }
             Ok(listed)
         }
 
         async fn get(&self, id: ActionId) -> Result<Option<Action>, StorageError> {
+            self.detail_reads
+                .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
             Ok(self.actions.lock().unwrap().get(&id).cloned())
         }
 
@@ -900,6 +911,243 @@ mod tests {
                 screen.idle(cx)
             ),
             (0, 0, true)
+        );
+    }
+
+    impl Screen {
+        fn detail_reads(&self) -> usize {
+            self.store
+                .detail_reads
+                .load(std::sync::atomic::Ordering::SeqCst)
+        }
+
+        fn listing_named(&self, name: &str) -> Vec<Action> {
+            let mut action = self.store.stored(self.alpha);
+            action.name = name.to_owned();
+            vec![action]
+        }
+
+        fn listed_name(&self, cx: &mut TestAppContext, id: ActionId) -> Option<String> {
+            self.view.read_with(cx, |view, _| {
+                view.find(id).map(|action| action.name.clone())
+            })
+        }
+
+        fn wait_for_name(&self, cx: &mut TestAppContext, id: ActionId, name: &str) {
+            pump_until(&self.rt, || {
+                cx.run_until_parked();
+                self.listed_name(cx, id).as_deref() == Some(name)
+            });
+        }
+    }
+
+    type Landed = Arc<std::sync::atomic::AtomicBool>;
+
+    fn landed() -> Landed {
+        Arc::default()
+    }
+
+    fn has_landed(flag: &Landed) -> bool {
+        flag.load(std::sync::atomic::Ordering::SeqCst)
+    }
+
+    fn mark_landed(flag: &Landed) {
+        flag.store(true, std::sync::atomic::Ordering::SeqCst);
+    }
+
+    #[gpui::test]
+    fn a_slow_reload_never_overwrites_a_newer_one_that_landed_first(cx: &mut TestAppContext) {
+        let screen = Screen::open(cx);
+        let (older, newer) = (screen.listing_named("older"), screen.listing_named("newer"));
+        let (release_older, older_gate) = tokio::sync::oneshot::channel::<()>();
+        let older_landed = landed();
+        let flag = Arc::clone(&older_landed);
+
+        screen.view.update(cx, |view, cx| {
+            view.spawn_reload(
+                async move {
+                    older_gate.await.map_err(RepoFailure::operation)?;
+                    mark_landed(&flag);
+                    Ok(older)
+                },
+                cx,
+            );
+            view.spawn_reload(async move { Ok(newer) }, cx);
+        });
+        screen.wait_for_name(cx, screen.alpha, "newer");
+        release_older.send(()).unwrap();
+        pump_until(&screen.rt, || has_landed(&older_landed));
+        cx.run_until_parked();
+
+        assert_eq!(
+            screen.listed_name(cx, screen.alpha).as_deref(),
+            Some("newer")
+        );
+    }
+
+    #[gpui::test]
+    fn a_stale_reload_that_failed_is_dropped_without_a_toast(cx: &mut TestAppContext) {
+        let screen = Screen::open(cx);
+        let newer = screen.listing_named("newer");
+        let (release_older, older_gate) = tokio::sync::oneshot::channel::<()>();
+        let older_landed = landed();
+        let flag = Arc::clone(&older_landed);
+
+        screen.view.update(cx, |view, cx| {
+            view.spawn_reload(
+                async move {
+                    older_gate.await.map_err(RepoFailure::operation)?;
+                    mark_landed(&flag);
+                    Err(RepoFailure::operation("disk gone"))
+                },
+                cx,
+            );
+            view.spawn_reload(async move { Ok(newer) }, cx);
+        });
+        screen.wait_for_name(cx, screen.alpha, "newer");
+        release_older.send(()).unwrap();
+        pump_until(&screen.rt, || has_landed(&older_landed));
+        cx.run_until_parked();
+
+        assert_eq!(cx.update(|cx| error_toasts(cx)), 0);
+    }
+
+    #[gpui::test]
+    fn a_stale_failed_reload_leaves_the_open_detail_unread(cx: &mut TestAppContext) {
+        let screen = Screen::open(cx);
+        let newer = screen.listing_named("newer");
+        let (release_older, older_gate) = tokio::sync::oneshot::channel::<()>();
+        let older_landed = landed();
+        let flag = Arc::clone(&older_landed);
+
+        screen.view.update(cx, |view, cx| {
+            view.spawn_reload(
+                async move {
+                    older_gate.await.map_err(RepoFailure::operation)?;
+                    mark_landed(&flag);
+                    Err(RepoFailure::operation("disk gone"))
+                },
+                cx,
+            );
+            view.spawn_reload(async move { Ok(newer) }, cx);
+        });
+        screen.wait_for_name(cx, screen.alpha, "newer");
+        screen.settle(cx);
+        let reads_before = screen.detail_reads();
+        release_older.send(()).unwrap();
+        pump_until(&screen.rt, || has_landed(&older_landed));
+        screen.settle(cx);
+
+        assert_eq!(screen.detail_reads(), reads_before);
+    }
+
+    #[gpui::test]
+    fn a_current_failed_reload_rereads_the_open_detail(cx: &mut TestAppContext) {
+        let screen = Screen::open(cx);
+        let reads_before = screen.detail_reads();
+
+        screen.view.update(cx, |view, cx| {
+            view.spawn_reload(async { Err(RepoFailure::operation("disk gone")) }, cx);
+        });
+        screen.settle(cx);
+
+        assert!(screen.detail_reads() > reads_before);
+    }
+
+    #[gpui::test]
+    fn an_older_listing_never_lands_after_a_newer_read_failed(cx: &mut TestAppContext) {
+        let screen = Screen::open(cx);
+        let older = screen.listing_named("older");
+        let (release_older, older_gate) = tokio::sync::oneshot::channel::<()>();
+        let older_landed = landed();
+        let flag = Arc::clone(&older_landed);
+
+        screen.view.update(cx, |view, cx| {
+            view.spawn_reload(
+                async move {
+                    older_gate.await.map_err(RepoFailure::operation)?;
+                    mark_landed(&flag);
+                    Ok(older)
+                },
+                cx,
+            );
+            view.spawn_reload(async { Err(RepoFailure::operation("disk gone")) }, cx);
+        });
+        pump_until(&screen.rt, || {
+            cx.run_until_parked();
+            cx.update(|cx| error_toasts(cx)) == 1
+        });
+        release_older.send(()).unwrap();
+        pump_until(&screen.rt, || has_landed(&older_landed));
+        screen.settle(cx);
+
+        assert_eq!(screen.listed_name(cx, screen.alpha).as_deref(), Some(ALPHA));
+    }
+
+    #[gpui::test]
+    fn a_reload_started_before_a_write_cannot_undo_the_list_that_write_drained(
+        cx: &mut TestAppContext,
+    ) {
+        let screen = Screen::open(cx);
+        let before_the_write = screen.listing_named(ALPHA);
+        let (release_stale, stale_gate) = tokio::sync::oneshot::channel::<()>();
+        let stale_landed = landed();
+        let flag = Arc::clone(&stale_landed);
+
+        screen.view.update(cx, |view, cx| {
+            view.spawn_reload(
+                async move {
+                    stale_gate.await.map_err(RepoFailure::operation)?;
+                    mark_landed(&flag);
+                    Ok(before_the_write)
+                },
+                cx,
+            );
+        });
+        screen.write(cx, screen.alpha, ActionWrite::Rename(RENAMED.to_owned()));
+        screen.wait_for_name(cx, screen.alpha, RENAMED);
+        release_stale.send(()).unwrap();
+        pump_until(&screen.rt, || has_landed(&stale_landed));
+        cx.run_until_parked();
+
+        assert_eq!(
+            screen.listed_name(cx, screen.alpha).as_deref(),
+            Some(RENAMED)
+        );
+    }
+
+    #[gpui::test]
+    fn a_write_drain_holding_an_old_list_keeps_a_newer_drain_on_another_action(
+        cx: &mut TestAppContext,
+    ) {
+        let screen = Screen::open(cx);
+        let (release_alpha_list, alpha_list_gate) = tokio::sync::oneshot::channel::<()>();
+        *screen.store.next_list_held.lock().unwrap() = Some(alpha_list_gate);
+
+        screen.write(
+            cx,
+            screen.alpha,
+            ActionWrite::Rename("Alpha new".to_owned()),
+        );
+        pump_until(&screen.rt, || {
+            screen.store.next_list_held.lock().unwrap().is_none()
+        });
+        screen.write(
+            cx,
+            screen.bravo,
+            ActionWrite::Rename("Bravo new".to_owned()),
+        );
+        screen.wait_for_name(cx, screen.bravo, "Bravo new");
+        release_alpha_list.send(()).unwrap();
+        pump_until(&screen.rt, || {
+            cx.run_until_parked();
+            screen.idle(cx)
+        });
+        screen.settle(cx);
+
+        assert_eq!(
+            screen.listed_name(cx, screen.bravo).as_deref(),
+            Some("Bravo new")
         );
     }
 }

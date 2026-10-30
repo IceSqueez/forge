@@ -10,14 +10,12 @@ use forge_components::{
     BORDER_THIN, ForgePalette, GlyphArt, Icon, body_family, empty_state, ghost_button_with_icon,
     icon, mono_family, scaled, section_label, segment, segmented, tooltip_builder, tr,
 };
-use forge_overlay::config::{DURATION, DURATION_MAX_SECS, DURATION_MIN_SECS};
 use forge_overlay::{
-    ContentMargins, OverlayConfig, PreviewCanvas, PreviewComposition, PreviewPosition,
-    effective_overlay_config, preview_page_url,
+    ContentMargins, OverlayConfig, PreviewCanvas, PreviewComposition, PreviewPosition, ShowTiming,
+    effective_overlay_config, preview_page_url, show_timing,
 };
 use forge_runtime::{OverlayDelivery, TestFire};
 use forge_storage::{OverlayDefinition, OverlayId};
-use forge_types::Variant;
 use gpui::{
     AnyElement, Bounds, ClickEvent, Context, Pixels, Rgba, Size, Window, canvas, div, fill, point,
     prelude::*, px, size,
@@ -257,20 +255,15 @@ impl OverlaysView {
     }
 
     fn decay_delay(&self, id: &OverlayId) -> Duration {
-        let seconds = self
-            .registry
+        self.registry
             .overlays
             .iter()
             .find(|item| &item.id == id)
-            .and_then(|definition| self.effective_config(definition))
-            .and_then(|config| config.get(DURATION).and_then(Variant::as_int));
-
-        match seconds {
-            Some(secs) => {
-                Duration::from_secs(secs.clamp(DURATION_MIN_SECS, DURATION_MAX_SECS) as u64)
-            }
-            None => UNTIMED_DECAY,
-        }
+            .and_then(|definition| {
+                let descriptor = self.handles.kinds.get(&definition.kind_id)?;
+                show_timing(descriptor, &definition.config, None)
+            })
+            .map_or(UNTIMED_DECAY, ShowTiming::total)
     }
 
     pub(super) fn effective_config(&self, definition: &OverlayDefinition) -> Option<OverlayConfig> {

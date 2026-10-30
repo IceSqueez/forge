@@ -96,12 +96,14 @@ impl IntegrationFactory<BuiltinObject> for TwitchFactory {
     async fn start(&self) -> Result<RunningIntegration<BuiltinObject>, IntegrationStartError> {
         let session = self.assembly.open_session().await;
         let chat_platform = session.chat_platform();
-        spawn_event_bridge(publisher(&self.bus), chat_platform.events(), "twitch");
+        let event_bridge =
+            spawn_event_bridge(publisher(&self.bus), chat_platform.events(), "twitch");
         let mut tasks = spawn_chat_send_router(
             Arc::clone(&self.bus),
             Arc::clone(&chat_platform),
             PlatformId::Twitch,
         );
+        tasks.track(event_bridge);
         let bot = self.assembly.bot();
         tasks.track(tokio::spawn(async move { bot.sync_status().await }));
         let Some(bundle) = session.into_bundle() else {

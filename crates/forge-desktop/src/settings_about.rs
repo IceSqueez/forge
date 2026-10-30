@@ -167,7 +167,9 @@ fn field_label(field: InfoField) -> String {
 
 impl Render for SettingsAboutView {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        self.start_collection(window, cx);
+        if matches!(self.state, AboutState::NotStarted) {
+            cx.defer_in(window, |this, window, cx| this.start_collection(window, cx));
+        }
         let palette = cx.palette();
         let density = cx.density();
         let ready = matches!(self.state, AboutState::Ready(_));

@@ -1,22 +1,66 @@
 use std::sync::Arc;
 
+use forge_components::{
+    ConfirmTone, ForgePalette, OverlayPosition, PushToast, ToastKind, confirm_modal, overlay, tr,
+};
 use forge_server::ServerHandle;
 use forge_storage::{CredentialId, CredentialsRepo, SERVER_BEARER_CREDENTIAL_ID};
 use forge_types::Secret;
+use gpui::{AnyElement, App, ClickEvent, Context, prelude::*};
 
 pub(crate) async fn current_bearer_token(
     server: Option<ServerHandle>,
     credentials: Arc<dyn CredentialsRepo>,
-) -> Option<Secret> {
+) -> Result<Option<Secret>, String> {
     match server {
-        Some(handle) => Some(handle.bearer_token().await),
+        Some(handle) => Ok(Some(handle.bearer_token().await)),
         None => credentials
             .load(&CredentialId::new(SERVER_BEARER_CREDENTIAL_ID))
             .await
-            .ok()
-            .flatten()
-            .map(Secret::new),
+            .map(|stored| stored.map(Secret::new))
+            .map_err(|e| e.to_string()),
     }
+}
+
+pub(crate) fn token_load_failed(reason: &str, cx: &mut App) {
+    tracing::warn!(error = %reason, "failed to read the server bearer token");
+    cx.push_toast(ToastKind::Error, tr!("server_token_load_failed"));
+}
+
+pub(crate) fn token_regenerate_failed(reason: &str, cx: &mut App) {
+    tracing::warn!(error = %reason, "failed to regenerate the server bearer token");
+    cx.push_toast(ToastKind::Error, tr!("server_token_regenerate_failed"));
+}
+
+pub(crate) fn regenerate_confirm<V: 'static>(
+    palette: &ForgePalette,
+    cancel: fn(&mut V, &mut Context<V>),
+    confirm: fn(&mut V, &mut Context<V>),
+    cx: &mut Context<V>,
+) -> AnyElement {
+    let card = confirm_modal(
+        tr!("server_token_regen_title"),
+        tr!("server_token_regen_message"),
+        ConfirmTone::Destructive,
+        palette,
+    )
+    .on_cancel(
+        "server-token-regen-cancel",
+        tr!("common_cancel"),
+        cx.listener(move |this, _: &ClickEvent, _, cx| cancel(this, cx)),
+    )
+    .on_confirm(
+        "server-token-regen-confirm",
+        tr!("server_btn_regenerate"),
+        cx.listener(move |this, _: &ClickEvent, _, cx| confirm(this, cx)),
+    );
+    let view = cx.entity();
+    overlay(card, palette)
+        .position(OverlayPosition::Center)
+        .on_dismiss("server-token-regen-scrim", move |_window, cx| {
+            view.update(cx, cancel);
+        })
+        .into_any_element()
 }
 
 #[cfg(test)]
@@ -107,7 +151,7 @@ mod tests {
             Vault::holding(Some(STORED_TOKEN), false),
         ));
 
-        assert_eq!(answered, Some(live));
+        assert_eq!(answered, Ok(Some(live)));
     }
 
     #[test]
@@ -125,7 +169,7 @@ mod tests {
             Vault::holding(Some(retired.expose()), false),
         ));
 
-        assert_eq!(answered, Some(regenerated));
+        assert_eq!(answered, Ok(Some(regenerated)));
     }
 
     #[test]
@@ -147,7 +191,11 @@ mod tests {
             ));
 
             assert_eq!(
-                answered.as_ref().map(forge_types::Secret::expose),
+                answered
+                    .ok()
+                    .flatten()
+                    .as_ref()
+                    .map(forge_types::Secret::expose),
                 expected,
                 "{case}"
             );

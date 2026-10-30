@@ -58,9 +58,9 @@ pub struct LogTailLayer {
 
 impl<S: Subscriber> Layer<S> for LogTailLayer {
     fn on_event(&self, event: &Event<'_>, _ctx: Context<'_, S>) {
-        let mut visitor = MessageVisitor { message: None };
+        let mut visitor = LineVisitor::default();
         event.record(&mut visitor);
-        let Some(message) = visitor.message else {
+        let Some(message) = visitor.line() else {
             return;
         };
         let metadata = event.metadata();
@@ -73,21 +73,36 @@ impl<S: Subscriber> Layer<S> for LogTailLayer {
     }
 }
 
-struct MessageVisitor {
+#[derive(Default)]
+struct LineVisitor {
     message: Option<String>,
+    fields: String,
 }
 
-impl Visit for MessageVisitor {
-    fn record_str(&mut self, field: &Field, value: &str) {
+impl LineVisitor {
+    fn line(self) -> Option<String> {
+        self.message.map(|message| message + self.fields.as_str())
+    }
+
+    fn record_value(&mut self, field: &Field, value: String) {
         if field.name() == "message" {
-            self.message = Some(value.to_owned());
+            self.message = Some(value);
+        } else {
+            self.fields.push(' ');
+            self.fields.push_str(field.name());
+            self.fields.push('=');
+            self.fields.push_str(&value);
         }
+    }
+}
+
+impl Visit for LineVisitor {
+    fn record_str(&mut self, field: &Field, value: &str) {
+        self.record_value(field, value.to_owned());
     }
 
     fn record_debug(&mut self, field: &Field, value: &dyn std::fmt::Debug) {
-        if field.name() == "message" {
-            self.message = Some(format!("{value:?}"));
-        }
+        self.record_value(field, format!("{value:?}"));
     }
 }
 
@@ -189,6 +204,25 @@ mod tests {
         });
 
         let seen: Vec<String> = captured.into_iter().map(|l| l.message).collect();
-        assert_eq!(seen, vec!["carries a message".to_owned()]);
+        assert_eq!(seen, vec!["carries a message counter=8".to_owned()]);
+    }
+
+    #[test]
+    fn a_captured_line_appends_each_structured_field_after_the_message() {
+        let captured = capture(|| {
+            tracing::warn!(
+                target: "qa_probe",
+                error = "disk full",
+                attempt = 3,
+                retried = true,
+                "save failed"
+            );
+        });
+
+        let seen: Vec<String> = captured.into_iter().map(|l| l.message).collect();
+        assert_eq!(
+            seen,
+            vec!["save failed error=disk full attempt=3 retried=true".to_owned()]
+        );
     }
 }

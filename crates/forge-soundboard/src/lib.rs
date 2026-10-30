@@ -34,4 +34,7 @@ pub use runners::{
     PlaySoundRunner, SetMasterVolumeRunner, StopAllSoundsRunner, StopSoundRunner,
     register_soundboard_sub_actions,
 };
-pub use settings::{SoundboardSettings, SoundboardSettingsHandle, load_soundboard_settings};
+pub use settings::{
+    SoundboardSettings, SoundboardSettingsChanges, SoundboardSettingsHandle,
+    load_soundboard_settings,
+};

@@ -19,6 +19,7 @@ use gpui::{
 use tracing::Level;
 
 use crate::async_bridge;
+use crate::boot_warnings::BootWarnings;
 use crate::bundle_preview::{export_statement, statement_row};
 use crate::diagnostic_bundle::{self, BUNDLE_FILE_NAME, Bundle};
 use crate::integrations::BuiltinRegistry;
@@ -56,6 +57,7 @@ pub struct SettingsDiagnosticsView {
     preparing_export: bool,
     pending_export: Option<Bundle>,
     storage_changes: Option<ScheduledBackupHandle>,
+    boot_warnings: BootWarnings,
 }
 
 impl SettingsDiagnosticsView {
@@ -84,6 +86,7 @@ impl SettingsDiagnosticsView {
             preparing_export: false,
             pending_export: None,
             storage_changes: None,
+            boot_warnings: BootWarnings::default(),
         };
         view.load_level(cx);
         if initial_active {
@@ -95,6 +98,12 @@ impl SettingsDiagnosticsView {
     #[must_use]
     pub fn with_storage_changes(mut self, scheduled: ScheduledBackupHandle) -> Self {
         self.storage_changes = Some(scheduled);
+        self
+    }
+
+    #[must_use]
+    pub fn with_boot_warnings(mut self, warnings: BootWarnings) -> Self {
+        self.boot_warnings = warnings;
         self
     }
 
@@ -370,6 +379,42 @@ impl SettingsDiagnosticsView {
             )
     }
 
+    fn boot_warnings_card(
+        &self,
+        palette: &ForgePalette,
+        density: Density,
+    ) -> Option<impl IntoElement + use<>> {
+        if self.boot_warnings.is_empty() {
+            return None;
+        }
+        let rows = self.boot_warnings.iter().map(|warning| {
+            div()
+                .flex()
+                .items_start()
+                .gap(spacing(Spacing::Xxs, density))
+                .child(div().flex_none().child(icon(
+                    Icon::AlertTriangle,
+                    NOTE_GLYPH,
+                    palette.warning,
+                )))
+                .child(
+                    div()
+                        .flex_1()
+                        .min_w(px(0.0))
+                        .text_size(FONT_XS)
+                        .text_color(palette.text_primary)
+                        .child(warning.message()),
+                )
+        });
+        let body = div()
+            .flex()
+            .flex_col()
+            .gap(spacing(Spacing::Xs, density))
+            .child(field_hint(tr!("boot_warnings_card_intro"), palette))
+            .children(rows);
+        Some(card(body, palette).full_width())
+    }
+
     fn level_card(
         &self,
         palette: &ForgePalette,
@@ -571,6 +616,7 @@ impl Render for SettingsDiagnosticsView {
             .flex()
             .flex_col()
             .gap(spacing(Spacing::Md, density))
+            .children(self.boot_warnings_card(&palette, density))
             .child(self.level_card(&palette, density, cx))
             .child(self.actions(&palette, density, cx))
             .child(
@@ -891,5 +937,33 @@ mod tests {
         rig.settle(cx);
 
         assert_eq!(rig.level(cx), LogLevel::Warn);
+    }
+
+    #[gpui::test]
+    fn the_boot_problems_card_appears_only_after_a_start_that_recorded_one(
+        cx: &mut gpui::TestAppContext,
+    ) {
+        use crate::boot_warnings::{BootWarning, BootWarnings};
+
+        let rig = mount_with_stored(LogLevel::Warn, cx);
+        let card_shown = |rig: &LevelRig, cx: &mut gpui::TestAppContext| {
+            rig.view.read_with(cx, |view, _| {
+                view.boot_warnings_card(
+                    &forge_components::FORGE_DEFAULT,
+                    forge_components::Density::Cozy,
+                )
+                .is_some()
+            })
+        };
+
+        let clean = card_shown(&rig, cx);
+        rig.view.update(cx, |view, _| {
+            let mut warnings = BootWarnings::default();
+            warnings.record(BootWarning::Queues);
+            view.boot_warnings = warnings;
+        });
+        let degraded = card_shown(&rig, cx);
+
+        assert_eq!((clean, degraded), (false, true));
     }
 }

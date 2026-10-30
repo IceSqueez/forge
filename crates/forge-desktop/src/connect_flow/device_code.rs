@@ -177,18 +177,34 @@ impl ConnectFlow {
         let handle: TwitchFlowHandle =
             Arc::new(tokio::sync::Mutex::new(Some(sign_in.broadcaster_flow())));
         self.twitch_flow = Some(Arc::clone(&handle));
-        self.twitch_device = Some(TwitchDeviceState::starting());
+        let attempt = TwitchDeviceState::starting();
+        let cancel = attempt.cancel.clone();
+        self.twitch_device = Some(attempt);
         async_bridge::run_async(
             &self.rt_handle,
-            request_code(handle),
-            |this, result, cx| this.apply_twitch_device_start(result, cx),
+            request_code(Arc::clone(&handle)),
+            move |this, result, cx| this.on_twitch_device_start(handle, cancel, result, cx),
             cx,
         );
         cx.notify();
     }
 
+    fn on_twitch_device_start(
+        &mut self,
+        handle: TwitchFlowHandle,
+        cancel: CancellationToken,
+        result: Result<DeviceCodeInfo, String>,
+        cx: &mut Context<Self>,
+    ) {
+        if !cancel.is_cancelled() {
+            self.apply_twitch_device_start(handle, cancel, result, cx);
+        }
+    }
+
     fn apply_twitch_device_start(
         &mut self,
+        handle: TwitchFlowHandle,
+        cancel: CancellationToken,
         result: Result<DeviceCodeInfo, String>,
         cx: &mut Context<Self>,
     ) {
@@ -201,9 +217,6 @@ impl ConnectFlow {
                 return;
             }
         };
-        let Some(cancel) = self.twitch_device.as_ref().map(|d| d.cancel.clone()) else {
-            return;
-        };
         if let Some(dev) = &mut self.twitch_device {
             dev.phase = TwitchDevicePhase::Waiting;
             dev.error = None;
@@ -213,22 +226,25 @@ impl ConnectFlow {
                 expires_at: info.expires_at,
             });
         }
-        let Some(handle) = self.twitch_flow.clone() else {
-            self.twitch_device = Some(TwitchDeviceState::failed(
-                TwitchDevicePhase::Failed,
-                "no active Twitch flow handle".to_owned(),
-            ));
-            cx.notify();
-            return;
-        };
         let credentials = Arc::clone(&self.credentials);
         async_bridge::run_async(
             &self.rt_handle,
-            wait_for_auth(handle, cancel, credentials),
-            |this, result, cx| this.apply_twitch_wait(result, cx),
+            wait_for_auth(handle, cancel.clone(), credentials),
+            move |this, result, cx| this.on_twitch_wait(&cancel, result, cx),
             cx,
         );
         cx.notify();
+    }
+
+    fn on_twitch_wait(
+        &mut self,
+        cancel: &CancellationToken,
+        result: Result<TwitchAuthOutcome, TwitchWaitError>,
+        cx: &mut Context<Self>,
+    ) {
+        if !cancel.is_cancelled() {
+            self.apply_twitch_wait(result, cx);
+        }
     }
 
     fn apply_twitch_wait(
@@ -1011,6 +1027,7 @@ mod tests {
     use crate::connect_flow::ConnectFlowLaunch;
     use forge_storage::{CredentialId, StorageError};
     use forge_types::PlatformId;
+    use gpui::Entity;
 
     struct NoCredentials;
 
@@ -1044,15 +1061,16 @@ mod tests {
         }
     }
 
-    #[gpui::test]
-    fn authorized_sign_in_without_an_install_seed_fails_with_credentials_missing(
-        cx: &mut gpui::TestAppContext,
-    ) {
+    struct Mounted {
+        flow: Entity<ConnectFlow>,
+        _runtime: tokio::runtime::Runtime,
+    }
+
+    fn mounted_flow(cx: &mut gpui::TestAppContext) -> Mounted {
         let runtime = tokio::runtime::Builder::new_current_thread()
             .enable_all()
             .build()
             .unwrap();
-        let _runtime_context = runtime.enter();
         let launch = ConnectFlowLaunch {
             platform: PlatformId::YouTube,
             display_name: "YouTube".to_owned(),
@@ -1065,7 +1083,125 @@ mod tests {
             youtube_sign_in: None,
             kick_sign_in: None,
         };
-        let flow = cx.new(|cx| ConnectFlow::new(launch, cx));
+        let flow = {
+            let _runtime_context = runtime.enter();
+            cx.new(|cx| ConnectFlow::new(launch, cx))
+        };
+        Mounted {
+            flow,
+            _runtime: runtime,
+        }
+    }
+
+    fn device_state(
+        flow: &Entity<ConnectFlow>,
+        cx: &mut gpui::TestAppContext,
+    ) -> (TwitchDevicePhase, Option<String>, bool) {
+        flow.read_with(cx, |this, _| {
+            let dev = this.twitch_device.as_ref().unwrap();
+            (dev.phase, dev.error.clone(), dev.code.is_some())
+        })
+    }
+
+    fn device_code() -> DeviceCodeInfo {
+        DeviceCodeInfo {
+            user_code: "ABCD-EFGH".to_owned(),
+            verification_uri: "https://example.invalid/activate".to_owned(),
+            expires_at: std::time::SystemTime::UNIX_EPOCH,
+        }
+    }
+
+    fn no_flow() -> TwitchFlowHandle {
+        Arc::new(tokio::sync::Mutex::new(None))
+    }
+
+    fn newer_attempt_after_cancelling_one(
+        flow: &Entity<ConnectFlow>,
+        cx: &mut gpui::TestAppContext,
+    ) -> CancellationToken {
+        flow.update(cx, |this, _| {
+            let stale = CancellationToken::new();
+            stale.cancel();
+            this.twitch_device = Some(TwitchDeviceState::starting());
+            stale
+        })
+    }
+
+    #[gpui::test]
+    fn a_device_code_arriving_for_a_cancelled_attempt_leaves_the_newer_one_alone(
+        cx: &mut gpui::TestAppContext,
+    ) {
+        for late in [Ok(device_code()), Err("too late".to_owned())] {
+            let mounted = mounted_flow(cx);
+            let stale = newer_attempt_after_cancelling_one(&mounted.flow, cx);
+
+            mounted.flow.update(cx, |this, cx| {
+                this.on_twitch_device_start(no_flow(), stale, late, cx);
+            });
+
+            assert_eq!(
+                device_state(&mounted.flow, cx),
+                (TwitchDevicePhase::Starting, None, false)
+            );
+        }
+    }
+
+    #[gpui::test]
+    fn a_device_code_failure_for_the_live_attempt_shows_on_the_screen(
+        cx: &mut gpui::TestAppContext,
+    ) {
+        let mounted = mounted_flow(cx);
+        let live = CancellationToken::new();
+        mounted.flow.update(cx, |this, cx| {
+            this.twitch_device = Some(TwitchDeviceState::starting());
+            this.on_twitch_device_start(no_flow(), live, Err("rejected".to_owned()), cx);
+        });
+
+        assert_eq!(
+            device_state(&mounted.flow, cx),
+            (
+                TwitchDevicePhase::Failed,
+                Some("rejected".to_owned()),
+                false
+            )
+        );
+    }
+
+    #[gpui::test]
+    fn a_sign_in_result_for_a_cancelled_attempt_is_dropped(cx: &mut gpui::TestAppContext) {
+        let mounted = mounted_flow(cx);
+        let stale = newer_attempt_after_cancelling_one(&mounted.flow, cx);
+
+        mounted.flow.update(cx, |this, cx| {
+            this.on_twitch_wait(&stale, Err(TwitchWaitError::Denied), cx);
+        });
+
+        assert_eq!(
+            device_state(&mounted.flow, cx),
+            (TwitchDevicePhase::Starting, None, false)
+        );
+    }
+
+    #[gpui::test]
+    fn a_denied_sign_in_for_the_live_attempt_shows_as_denied(cx: &mut gpui::TestAppContext) {
+        let mounted = mounted_flow(cx);
+        let live = CancellationToken::new();
+
+        let phase = mounted.flow.update(cx, |this, cx| {
+            this.twitch_device = Some(TwitchDeviceState::starting());
+            this.on_twitch_wait(&live, Err(TwitchWaitError::Denied), cx);
+            this.twitch_device.as_ref().unwrap().phase
+        });
+
+        assert_eq!(phase, TwitchDevicePhase::Denied);
+    }
+
+    #[gpui::test]
+    fn authorized_sign_in_without_an_install_seed_fails_with_credentials_missing(
+        cx: &mut gpui::TestAppContext,
+    ) {
+        let Mounted { flow, _runtime } = mounted_flow(cx);
+        let _runtime_context = _runtime.enter();
         let outcome = TwitchAuthOutcome {
             user_info: UserInfo {
                 id: "1234".to_owned(),

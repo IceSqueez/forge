@@ -1,6 +1,7 @@
 use super::action_writes::{ActionSettings, ActionWrite};
 use super::*;
 use crate::async_bridge;
+use crate::repo_failure::RepoFailure;
 use forge_components::ActivePresentation;
 use forge_components::NAME_FIELD_LIMIT;
 use forge_components::PushToast;
@@ -202,7 +203,7 @@ impl ScreenActionsView {
             .groups
             .iter()
             .flat_map(|g| g.actions.iter())
-            .any(|a| a.id != id && a.name.eq_ignore_ascii_case(&trimmed));
+            .any(|a| a.id != id && a.name.to_lowercase() == trimmed.to_lowercase());
         if taken {
             cx.push_toast(
                 ToastKind::Error,
@@ -323,10 +324,10 @@ impl ScreenActionsView {
         let repo = Arc::clone(&self.queue_repo);
         async_bridge::run_async(
             &self.rt_handle,
-            async move { repo.list().await.map_err(|e| e.to_string()) },
+            async move { repo.list().await.map_err(RepoFailure::from) },
             |this, result, cx| match result {
                 Ok(queues) => this.apply_queue_options(queues, cx),
-                Err(message) => this.on_repo_error(&message, cx),
+                Err(failure) => this.on_repo_error(&failure, cx),
             },
             cx,
         );
@@ -1119,7 +1120,7 @@ impl ScreenActionsView {
     ) -> AnyElement {
         let name = self.find(id).map(|a| a.name.clone()).unwrap_or_default();
         let body = match self.delete_scheduled_note(id) {
-            Some(note) => format!("{} {note}", tr!("actions_delete_body")),
+            Some(note) => tr!("actions_delete_body_with_note", note = note.as_str()),
             None => tr!("actions_delete_body"),
         };
         let card = confirm_modal(

@@ -1,17 +1,33 @@
-use forge_events::{EventSource, ManualTestRun, TypedEvent};
+use forge_events::{Event, EventSource, ManualTestRun, TypedEvent};
 use forge_runtime::{EventBus, QueueAdmission, QueueSchedulerHandle, SchedulerRequest};
 use forge_types::{ActionId, ArgStack, QueueId};
+
+pub(super) fn manual_test_root(action_id: ActionId) -> Event {
+    ManualTestRun { action_id }.into_event(EventSource::Core, None)
+}
+
+pub(super) struct TestRunRequest {
+    pub root: Event,
+    pub action_id: ActionId,
+    pub queue_id: QueueId,
+    pub admission: QueueAdmission,
+    pub trigger_kind: Option<String>,
+    pub initial_args: ArgStack,
+}
 
 pub(super) async fn dispatch_test_run(
     scheduler: &QueueSchedulerHandle,
     bus: &EventBus,
-    action_id: ActionId,
-    queue_id: QueueId,
-    admission: QueueAdmission,
-    trigger_kind: Option<String>,
-    initial_args: ArgStack,
+    request: TestRunRequest,
 ) -> Result<(), String> {
-    let root = ManualTestRun { action_id }.into_event(EventSource::Core, None);
+    let TestRunRequest {
+        root,
+        action_id,
+        queue_id,
+        admission,
+        trigger_kind,
+        initial_args,
+    } = request;
     let trigger_event_id = root.id;
     bus.record(root);
     scheduler
@@ -69,11 +85,14 @@ mod tests {
             dispatch_test_run(
                 &scheduler,
                 &bus,
-                action_id,
-                queue_id,
-                QueueAdmission::default(),
-                None,
-                ArgStack::new(),
+                TestRunRequest {
+                    root: manual_test_root(action_id),
+                    action_id,
+                    queue_id,
+                    admission: QueueAdmission::default(),
+                    trigger_kind: None,
+                    initial_args: ArgStack::new(),
+                },
             )
             .await
             .unwrap();

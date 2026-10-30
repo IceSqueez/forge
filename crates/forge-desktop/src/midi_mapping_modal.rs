@@ -100,6 +100,28 @@ enum OpenPanel {
     Device,
 }
 
+const MIDI_CHANNEL_MAX: i64 = 15;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ChannelEntry {
+    Any,
+    Only(i64),
+    Invalid,
+}
+
+impl ChannelEntry {
+    fn parse(raw: &str) -> Self {
+        let raw = raw.trim();
+        if raw.is_empty() {
+            return Self::Any;
+        }
+        match raw.parse::<i64>() {
+            Ok(channel) if (0..=MIDI_CHANNEL_MAX).contains(&channel) => Self::Only(channel),
+            _ => Self::Invalid,
+        }
+    }
+}
+
 pub struct MidiMappingModal {
     instance_id: Option<TriggerInstanceId>,
     kind_id: String,
@@ -224,7 +246,11 @@ impl MidiMappingModal {
     ) {
         match event {
             InputEvent::Cancelled => self.cancel(cx),
-            InputEvent::Changed(_) | InputEvent::Submitted(_) => cx.notify(),
+            InputEvent::Changed(_) => {
+                self.sync_channel_validity(cx);
+                cx.notify();
+            }
+            InputEvent::Submitted(_) => cx.notify(),
             InputEvent::Blurred(_) => {}
         }
     }
@@ -244,12 +270,21 @@ impl MidiMappingModal {
         }
     }
 
+    fn channel_entry(&self, cx: &Context<Self>) -> ChannelEntry {
+        ChannelEntry::parse(self.channel_field.read(cx).content())
+    }
+
     fn channel(&self, cx: &Context<Self>) -> Option<i64> {
-        let raw = self.channel_field.read(cx).content().trim().to_owned();
-        if raw.is_empty() {
-            return None;
+        match self.channel_entry(cx) {
+            ChannelEntry::Only(channel) => Some(channel),
+            ChannelEntry::Any | ChannelEntry::Invalid => None,
         }
-        raw.parse::<i64>().ok().map(|value| value.clamp(0, 15))
+    }
+
+    fn sync_channel_validity(&self, cx: &mut Context<Self>) {
+        let invalid = self.channel_entry(cx) == ChannelEntry::Invalid;
+        self.channel_field
+            .update(cx, |field, cx| field.set_invalid(invalid, cx));
     }
 
     fn signal(&self, cx: &Context<Self>) -> MidiSignal {
@@ -305,7 +340,9 @@ impl MidiMappingModal {
     }
 
     fn can_save(&self, cx: &Context<Self>) -> bool {
-        self.selected_action.is_some() && self.signal(cx).is_complete()
+        self.selected_action.is_some()
+            && self.signal(cx).is_complete()
+            && self.channel_entry(cx) != ChannelEntry::Invalid
     }
 
     fn save(&mut self, cx: &mut Context<Self>) {
@@ -862,5 +899,27 @@ impl Render for MidiMappingModal {
                     view.update(cx, |this, cx| this.cancel(cx));
                 }),
         )
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn channel_entry_reads_blank_as_any_and_keeps_only_the_midi_channel_range() {
+        for (raw, expected) in [
+            ("", ChannelEntry::Any),
+            ("   ", ChannelEntry::Any),
+            ("0", ChannelEntry::Only(0)),
+            (" 15 ", ChannelEntry::Only(15)),
+            ("16", ChannelEntry::Invalid),
+            ("-1", ChannelEntry::Invalid),
+            ("1.5", ChannelEntry::Invalid),
+            ("one", ChannelEntry::Invalid),
+            ("99999999999999999999", ChannelEntry::Invalid),
+        ] {
+            assert_eq!(ChannelEntry::parse(raw), expected, "{raw:?}");
+        }
     }
 }

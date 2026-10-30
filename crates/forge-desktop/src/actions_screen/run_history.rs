@@ -1,5 +1,6 @@
 use super::*;
 use crate::async_bridge;
+use crate::repo_failure::RepoFailure;
 use crate::run_history_modal::{RunHistoryDismissed, RunHistoryModal, RunHistoryOpenIntegration};
 
 const RUN_HISTORY_PAGE: u32 = 50;
@@ -35,18 +36,19 @@ impl ScreenActionsView {
                 service
                     .recent_runs(id, RUN_HISTORY_PAGE)
                     .await
-                    .map_err(|e| e.to_string())
+                    .map_err(RepoFailure::from)
             },
             move |this, result, cx| match result {
                 Ok(runs) => view.update(cx, |modal, cx| modal.set_runs(runs, cx)),
-                Err(message) => {
+                Err(failure) => {
+                    let text = failure.text();
                     view.update(cx, |modal, cx| {
                         modal.set_error(
-                            tr!("action_editor_run_history_failed", error = message.as_str()),
+                            tr!("action_editor_run_history_failed", error = text.as_str()),
                             cx,
                         );
                     });
-                    this.on_repo_error(&message, cx);
+                    this.on_repo_error(&failure, cx);
                 }
             },
             cx,

@@ -17,7 +17,7 @@ use gpui::{
     Subscription, Window, div, prelude::*, px,
 };
 
-use crate::async_bridge::{self, ErrorSink, WriteOutcome};
+use crate::async_bridge::{self, ErrorSink, KeyedSnapshotWriters, WriteOutcome};
 use crate::awake_state::AwakeState;
 use crate::backup_schedule::BackupScheduleView;
 use crate::navigation::SettingsSection;
@@ -169,6 +169,7 @@ pub struct SettingsView {
     notifications: Entity<SettingsNotificationsView>,
     storage: Entity<SettingsStorageView>,
     diagnostics: Entity<SettingsDiagnosticsView>,
+    appearance_writers: KeyedSnapshotWriters<&'static str>,
     region: Entity<SettingsRegionView>,
     font_picker: Option<FontPicker>,
 }
@@ -285,6 +286,7 @@ impl SettingsView {
                 cx,
             )
             .with_storage_changes(handles.scheduled_backups.clone())
+            .with_boot_warnings(handles.boot_warnings.clone())
         });
         let region = cx.new(|cx| {
             SettingsRegionView::new(
@@ -294,6 +296,7 @@ impl SettingsView {
                 cx,
             )
         });
+        let appearance_writers = KeyedSnapshotWriters::new(&handles.rt_handle);
         Self {
             section,
             handles,
@@ -310,6 +313,7 @@ impl SettingsView {
             notifications,
             storage,
             diagnostics,
+            appearance_writers,
             region,
             font_picker: None,
         }
@@ -357,6 +361,10 @@ impl SettingsView {
         let audio_open = section == SettingsSection::Audio;
         self.audio.update(cx, |view, cx| {
             view.set_active(audio_open, cx);
+        });
+        let shortcuts_open = section == SettingsSection::Shortcuts;
+        self.shortcuts.update(cx, |view, cx| {
+            view.set_active(shortcuts_open, cx);
         });
         cx.notify();
     }
@@ -441,8 +449,12 @@ impl SettingsView {
         let backend = Arc::clone(&self.handles.backend) as Arc<dyn SettingsRepo>;
         let persisted = family.map(|f| f.to_string());
         let target = pending.target;
-        async_bridge::report_failure(
-            &self.handles.rt_handle,
+        let writer_key = match target {
+            FontTarget::Body => "font_body",
+            FontTarget::Mono => "font_mono",
+        };
+        self.appearance_writers.write_reporting(
+            writer_key,
             async move {
                 let setting = match target {
                     FontTarget::Body => &core_settings::FONT_BODY,
@@ -450,7 +462,6 @@ impl SettingsView {
                 };
                 write_setting(backend.as_ref(), setting, &persisted).await
             },
-            ErrorSink::Toast,
             tr!("settings_appearance_font_persist_failed"),
             cx,
         );
@@ -526,10 +537,9 @@ impl SettingsView {
 
         let backend = Arc::clone(&self.handles.backend) as Arc<dyn SettingsRepo>;
         let key = theme.storage_key().to_owned();
-        async_bridge::report_failure(
-            &self.handles.rt_handle,
+        self.appearance_writers.write_reporting(
+            "theme",
             async move { write_setting(backend.as_ref(), &core_settings::THEME, &Some(key)).await },
-            ErrorSink::Toast,
             tr!("settings_theme_persist_failed"),
             cx,
         );
@@ -547,10 +557,9 @@ impl SettingsView {
 
         let backend = Arc::clone(&self.handles.backend) as Arc<dyn SettingsRepo>;
         let key = accent.storage_key().to_owned();
-        async_bridge::report_failure(
-            &self.handles.rt_handle,
+        self.appearance_writers.write_reporting(
+            "accent",
             async move { write_setting(backend.as_ref(), &core_settings::ACCENT, &Some(key)).await },
-            ErrorSink::Toast,
             tr!("settings_accent_persist_failed"),
             cx,
         );
@@ -573,17 +582,19 @@ impl SettingsView {
         cx.set_global(ActiveLanguage(lang));
 
         let backend = Arc::clone(&self.handles.backend) as Arc<dyn SettingsRepo>;
-        self.handles.rt_handle.spawn(async move {
-            if let Err(e) = write_setting(
-                backend.as_ref(),
-                &core_settings::LANGUAGE,
-                &lang.to_string(),
-            )
-            .await
-            {
-                tracing::warn!(error = %e, "failed to persist language selection");
-            }
-        });
+        self.appearance_writers.write_reporting(
+            "language",
+            async move {
+                write_setting(
+                    backend.as_ref(),
+                    &core_settings::LANGUAGE,
+                    &lang.to_string(),
+                )
+                .await
+            },
+            tr!("settings_language_persist_failed"),
+            cx,
+        );
 
         cx.refresh_windows();
         cx.notify();
@@ -596,10 +607,9 @@ impl SettingsView {
 
         let backend = Arc::clone(&self.handles.backend) as Arc<dyn SettingsRepo>;
         let key = density.storage_key().to_owned();
-        async_bridge::report_failure(
-            &self.handles.rt_handle,
+        self.appearance_writers.write_reporting(
+            "density",
             async move { write_setting(backend.as_ref(), &DENSITY, &Some(key)).await },
-            ErrorSink::Toast,
             tr!("settings_density_persist_failed"),
             cx,
         );

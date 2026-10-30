@@ -128,6 +128,33 @@ impl AliasValues {
     }
 }
 
+#[derive(Debug, PartialEq, Eq)]
+pub(crate) struct InvalidTuning;
+
+fn parse_tuning(raw: &str) -> Result<Option<f32>, InvalidTuning> {
+    let raw = raw.trim();
+    if raw.is_empty() {
+        return Ok(None);
+    }
+    raw.replace(',', ".")
+        .parse::<f32>()
+        .ok()
+        .filter(|value| value.is_finite())
+        .map(Some)
+        .ok_or(InvalidTuning)
+}
+
+pub(crate) fn parse_pitch(raw: &str) -> Result<Option<f32>, InvalidTuning> {
+    parse_tuning(raw)
+}
+
+pub(crate) fn parse_rate(raw: &str) -> Result<Option<f32>, InvalidTuning> {
+    parse_tuning(raw).and_then(|rate| match rate {
+        Some(value) if value <= 0.0 => Err(InvalidTuning),
+        accepted => Ok(accepted),
+    })
+}
+
 pub(crate) enum AliasFormEvent {
     Submit(VoiceAlias),
     Cancel,
@@ -199,7 +226,10 @@ impl AliasForm {
             .into_iter()
             .map(|field| {
                 cx.subscribe(field, |this, _input, event: &InputEvent, cx| match event {
-                    InputEvent::Changed(_) => cx.notify(),
+                    InputEvent::Changed(_) => {
+                        this.sync_tuning_validity(cx);
+                        cx.notify();
+                    }
                     InputEvent::Cancelled => this.cancel(cx),
                     InputEvent::Submitted(_) => this.submit(cx),
                     InputEvent::Blurred(_) => {}
@@ -259,7 +289,19 @@ impl AliasForm {
     }
 
     fn is_saveable(&self, cx: &App) -> bool {
-        !self.saving && !self.viewer.read(cx).content().trim().is_empty()
+        !self.saving
+            && !self.viewer.read(cx).content().trim().is_empty()
+            && parse_pitch(self.pitch.read(cx).content()).is_ok()
+            && parse_rate(self.rate.read(cx).content()).is_ok()
+    }
+
+    fn sync_tuning_validity(&self, cx: &mut Context<Self>) {
+        let pitch_invalid = parse_pitch(self.pitch.read(cx).content()).is_err();
+        let rate_invalid = parse_rate(self.rate.read(cx).content()).is_err();
+        self.pitch
+            .update(cx, |field, cx| field.set_invalid(pitch_invalid, cx));
+        self.rate
+            .update(cx, |field, cx| field.set_invalid(rate_invalid, cx));
     }
 
     fn submit(&mut self, cx: &mut Context<Self>) {
@@ -500,8 +542,8 @@ fn form_to_alias(form: &AliasForm, cx: &App) -> VoiceAlias {
     let viewer = form.viewer.read(cx).content().trim().to_owned();
     let engine = form.engine.clone().unwrap_or_default();
     let voice = form.voice.read(cx).content().trim().to_owned();
-    let pitch = form.pitch.read(cx).content().trim().parse::<f32>().ok();
-    let rate = form.rate.read(cx).content().trim().parse::<f32>().ok();
+    let pitch = parse_pitch(form.pitch.read(cx).content()).unwrap_or_default();
+    let rate = parse_rate(form.rate.read(cx).content()).unwrap_or_default();
     VoiceAlias {
         id: form.editing.clone().unwrap_or_default(),
         viewer_id: form
@@ -530,6 +572,8 @@ mod tests {
     use super::*;
     use crate::i18n::install_language;
     use crate::test_support::{AliasShape, alias_shape, install_presentation};
+
+    type TuningParser = fn(&str) -> Result<Option<f32>, InvalidTuning>;
 
     struct Submitted {
         seen: Vec<VoiceAlias>,
@@ -585,6 +629,71 @@ mod tests {
             form.viewer
                 .update(cx, |field, cx| field.set_content(text.to_owned(), cx))
         });
+    }
+
+    #[test]
+    fn parse_tuning_accepts_blank_as_unset_and_either_decimal_separator() {
+        let parsers: [TuningParser; 2] = [parse_pitch, parse_rate];
+        for parse in parsers {
+            for (raw, expected) in [
+                ("", None),
+                ("   ", None),
+                ("1.5", Some(1.5)),
+                ("1,5", Some(1.5)),
+                ("  2 ", Some(2.0)),
+            ] {
+                assert_eq!(parse(raw), Ok(expected), "{raw:?}");
+            }
+        }
+    }
+
+    #[test]
+    fn parse_tuning_rejects_text_that_is_not_a_finite_number() {
+        let parsers: [TuningParser; 2] = [parse_pitch, parse_rate];
+        for parse in parsers {
+            for raw in ["fast", "1.2.3", "1,2,3", "NaN", "inf", "-inf", "1e99"] {
+                assert_eq!(parse(raw), Err(InvalidTuning), "{raw:?}");
+            }
+        }
+    }
+
+    #[test]
+    fn pitch_may_be_zero_or_negative_while_rate_must_stay_above_zero() {
+        for (raw, pitch, rate) in [
+            ("-2", Ok(Some(-2.0)), Err(InvalidTuning)),
+            ("0", Ok(Some(0.0)), Err(InvalidTuning)),
+            ("0.01", Ok(Some(0.01)), Ok(Some(0.01))),
+        ] {
+            assert_eq!(
+                (parse_pitch(raw), parse_rate(raw)),
+                (pitch, rate),
+                "{raw:?}"
+            );
+        }
+    }
+
+    #[gpui::test]
+    fn an_invalid_tuning_value_blocks_the_submit_until_it_is_corrected(cx: &mut TestAppContext) {
+        let mounted = mount(
+            cx,
+            None,
+            Some(identity("twitch:alice", "alice", AliasScope::Twitch)),
+            false,
+            AliasValues::default(),
+        );
+        type_viewer(cx, &mounted, "alice");
+        let set_rate = |cx: &mut TestAppContext, text: &str| {
+            mounted.form.update(cx, |form, cx| {
+                form.rate
+                    .update(cx, |field, cx| field.set_content(text.to_owned(), cx))
+            });
+        };
+
+        set_rate(cx, "0");
+        assert!(submit(cx, &mounted).is_empty());
+
+        set_rate(cx, "1,25");
+        assert_eq!(submit(cx, &mounted).len(), 1);
     }
 
     #[gpui::test]

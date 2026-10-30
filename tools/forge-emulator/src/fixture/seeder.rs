@@ -288,15 +288,9 @@ async fn seed_vtube_connection(
                     .to_owned(),
         });
     }
-    forge_vtube::credentials::store(
-        provider,
-        &vtube.token,
-        VTUBE_HOST,
-        vtube.port,
-        false,
-    )
-    .await
-    .map_err(storage_error)
+    forge_vtube::credentials::store(provider, &vtube.token, VTUBE_HOST, vtube.port, false)
+        .await
+        .map_err(storage_error)
 }
 
 fn builtin_overlay_kinds() -> Result<OverlayKindRegistry, EmulatorError> {

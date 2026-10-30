@@ -41,7 +41,7 @@ impl SubActionRunner for UnbanUserRunner {
     }
 
     fn summary(&self) -> &str {
-        "Lifts a ban or timeout issued earlier in this session."
+        "Lifts a ban or timeout that forge issued."
     }
 
     fn search_text(&self) -> &str {

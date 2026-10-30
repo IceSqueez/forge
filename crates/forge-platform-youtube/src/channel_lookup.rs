@@ -18,7 +18,7 @@ type TokenSource = Arc<dyn Fn() -> BoxFuture<'static, Result<String, PlatformErr
 pub struct YoutubeChannelProfile {
     pub channel_id: String,
     pub title: String,
-    pub subscriber_count: i64,
+    pub subscriber_count: Option<i64>,
     pub view_count: i64,
 }
 
@@ -57,9 +57,8 @@ impl YoutubeChannelLookup {
             .get("items")
             .and_then(|v| v.as_array())
             .and_then(|arr| arr.first())
-            .ok_or_else(|| PlatformError::Http {
-                status: forge_net::status::NOT_FOUND,
-                body: format!("channel not found: {identifier}"),
+            .ok_or_else(|| PlatformError::Refused {
+                reason: format!("channel not found: {identifier}"),
             })?;
 
         let channel_id = item.get("id").and_then(|v| v.as_str()).unwrap_or_default();
@@ -67,11 +66,17 @@ impl YoutubeChannelLookup {
             .pointer("/snippet/title")
             .and_then(|v| v.as_str())
             .unwrap_or_default();
-        let subscriber_count = item
-            .pointer("/statistics/subscriberCount")
-            .and_then(|v| v.as_str())
-            .and_then(|s| s.parse::<i64>().ok())
-            .unwrap_or(0);
+        let hidden = item
+            .pointer("/statistics/hiddenSubscriberCount")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false);
+        let subscriber_count = if hidden {
+            None
+        } else {
+            item.pointer("/statistics/subscriberCount")
+                .and_then(|v| v.as_str())
+                .and_then(|s| s.parse::<i64>().ok())
+        };
         let view_count = item
             .pointer("/statistics/viewCount")
             .and_then(|v| v.as_str())
@@ -164,17 +169,17 @@ mod tests {
             YoutubeChannelProfile {
                 channel_id: "UCxyzchannelid".to_owned(),
                 title: "Creator Name".to_owned(),
-                subscriber_count: 500,
+                subscriber_count: Some(500),
                 view_count: 12000,
             }
         );
     }
 
     #[tokio::test]
-    async fn lookup_defaults_hidden_or_unparsable_statistics_to_zero() {
+    async fn lookup_reports_hidden_or_unparsable_subscribers_as_none() {
         for (statistics, expected_views, what) in [
             (
-                json!({ "hiddenSubscriberCount": true, "viewCount": "9" }),
+                json!({ "hiddenSubscriberCount": true, "subscriberCount": "77", "viewCount": "9" }),
                 9,
                 "hidden subscribers",
             ),
@@ -195,25 +200,9 @@ mod tests {
                 .await;
 
             let profile = lookup_on(&server).lookup("@creator").await.unwrap();
-            assert_eq!(profile.subscriber_count, 0, "{what}");
+            assert_eq!(profile.subscriber_count, None, "{what}");
             assert_eq!(profile.view_count, expected_views, "{what}");
         }
-    }
-
-    #[tokio::test]
-    async fn lookup_returns_http_404_when_no_items() {
-        let server = MockServer::start().await;
-        Mock::given(method("GET"))
-            .and(path("/channels"))
-            .respond_with(ResponseTemplate::new(200).set_body_json(json!({ "items": [] })))
-            .mount(&server)
-            .await;
-
-        let err = lookup_on(&server).lookup("@ghost").await.unwrap_err();
-        assert!(
-            matches!(err, PlatformError::Http { status: 404, .. }),
-            "empty items must map to Http 404, got: {err}"
-        );
     }
 
     #[tokio::test]

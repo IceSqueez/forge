@@ -3,6 +3,7 @@ use serde::{Deserialize, Serialize};
 use time::OffsetDateTime;
 
 pub const CREDENTIAL_KEY: &str = "youtube:broadcaster";
+pub(crate) const DEFAULT_ACCESS_TOKEN_LIFETIME_SECS: u64 = 3600;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct YoutubeCredentials {

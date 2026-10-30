@@ -45,10 +45,18 @@ impl BanListSource for YoutubeIntegrationBundle {
             )
             .await
         {
-            Ok(entries) => BanListOutcome::Page(BanPage {
-                entries: entries.into_iter().map(ban_entry_of).collect(),
-                next: None,
-            }),
+            Ok(entries) => {
+                if entries.len() >= BAN_LEDGER_LIST_CAP {
+                    tracing::warn!(
+                        cap = BAN_LEDGER_LIST_CAP,
+                        "youtube ban list truncated at the ledger cap"
+                    );
+                }
+                BanListOutcome::Page(BanPage {
+                    entries: entries.into_iter().map(ban_entry_of).collect(),
+                    next: None,
+                })
+            }
             Err(error) => {
                 tracing::warn!(%error, "youtube ban ledger list failed");
                 BanListOutcome::Unavailable(BanListUnavailable::Transport)

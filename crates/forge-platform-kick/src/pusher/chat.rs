@@ -29,6 +29,8 @@ const SESSION_STOP_GRACE: Duration = Duration::from_secs(5);
 
 const PUSHER_CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
 
+const SUBSCRIPTION_ACK_TIMEOUT: Duration = Duration::from_secs(10);
+
 type PusherSocket =
     tokio_tungstenite::WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>>;
 
@@ -265,15 +267,16 @@ async fn run_session(
         .await
     {
         None => return SessionEnd::Closed,
-        Some(Err(e)) => warn!(error = %e, "subscribe send failed"),
+        Some(Err(e)) => {
+            warn!(error = %e, "subscribe send failed; reconnecting");
+            return SessionEnd::Lost(ConnectionTransition::Unexpected);
+        }
         Some(Ok(())) => {}
     }
 
-    ctx.state_tx
-        .send_replace(ChatLinkStatus::unexpected(ConnectionState::Connected));
-    info!(chatroom_id, "kick chat connected");
-
     let mut ping_deadline = tokio::time::Instant::now() + PING_INTERVAL;
+    let ack_deadline = tokio::time::Instant::now() + SUBSCRIPTION_ACK_TIMEOUT;
+    let mut subscribed = false;
     let mut session_healthy = false;
 
     loop {
@@ -281,6 +284,11 @@ async fn run_session(
             biased;
 
             () = ctx.cancel.cancelled() => return SessionEnd::Closed,
+
+            () = tokio::time::sleep_until(ack_deadline), if !subscribed => {
+                warn!(chatroom_id, "kick chat subscription was not acknowledged; reconnecting");
+                return SessionEnd::Lost(ConnectionTransition::Unexpected);
+            }
 
             () = tokio::time::sleep_until(ping_deadline) => {
                 match ctx.cancel.run_until_cancelled(send_frame(ws_stream, &protocol::ping_frame())).await {
@@ -306,7 +314,13 @@ async fn run_session(
                     else {
                         return SessionEnd::Closed;
                     };
-                    if health == WsFrameHealth::Healthy && !session_healthy {
+                    if health == WsFrameHealth::Subscribed && !subscribed {
+                        subscribed = true;
+                        ctx.state_tx
+                            .send_replace(ChatLinkStatus::unexpected(ConnectionState::Connected));
+                        info!(chatroom_id, "kick chat connected");
+                    }
+                    if health != WsFrameHealth::Error && !session_healthy {
                         session_healthy = true;
                         backoff.reset();
                     }
@@ -389,6 +403,10 @@ async fn handle_ws_text(raw: &str, event_tx: &mpsc::Sender<Event>) -> WsFrameHea
         return WsFrameHealth::Error;
     }
 
+    if event_name == protocol::SUBSCRIPTION_SUCCEEDED {
+        return WsFrameHealth::Subscribed;
+    }
+
     if event_name == protocol::PONG || event_name.starts_with(protocol::INTERNAL_EVENT_PREFIX) {
         return WsFrameHealth::Healthy;
     }
@@ -433,6 +451,7 @@ fn pusher_error_code(data: &serde_json::Value) -> Option<i64> {
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum WsFrameHealth {
     Healthy,
+    Subscribed,
     Error,
 }
 
@@ -631,7 +650,7 @@ pub(crate) mod tests {
     }
 
     #[tokio::test]
-    async fn only_a_pusher_error_frame_is_reported_unhealthy() {
+    async fn only_a_pusher_error_frame_is_reported_unhealthy_and_only_the_ack_as_subscribed() {
         let cases = [
             (
                 r#"{"event":"pusher:error","data":"{\"code\":4004,\"message\":\"over quota\"}"}"#,
@@ -643,7 +662,7 @@ pub(crate) mod tests {
             ),
             (
                 r#"{"event":"pusher_internal:subscription_succeeded","channel":"chatrooms.1.v2","data":"{}"}"#,
-                WsFrameHealth::Healthy,
+                WsFrameHealth::Subscribed,
             ),
             (
                 r#"{"event":"App\\Events\\ChatMessageEvent","data":"not json {"}"#,

@@ -15,7 +15,6 @@ use crate::vocabulary::{config_keys, sub_action_ids};
 const KIND_ID: &str = sub_action_ids::CHAT_CREATE_POLL;
 const MIN_OPTIONS: usize = 2;
 const MAX_OPTIONS: usize = 4;
-const OPTION_SEPARATORS: [char; 2] = ['\n', ','];
 
 const QUESTION: TextField = TextField {
     key: config_keys::QUESTION,
@@ -35,7 +34,7 @@ const CONFIG: ConfigSpec = ConfigSpec::new(&[&QUESTION, &OPTIONS]);
 
 fn parse_options(raw: &str) -> Result<Vec<String>, ConfigReason> {
     let options: Vec<String> = raw
-        .split(OPTION_SEPARATORS)
+        .lines()
         .map(str::trim)
         .filter(|option| !option.is_empty())
         .map(str::to_owned)
@@ -219,14 +218,18 @@ mod tests {
     }
 
     #[test]
-    fn parse_options_splits_on_commas_and_newlines_trimming_and_dropping_blanks() {
+    fn parse_options_splits_on_newlines_only_trimming_and_dropping_blanks() {
         for (raw, expected) in [
-            ("Red,Blue", vec!["Red", "Blue"]),
+            ("Red\nBlue", vec!["Red", "Blue"]),
             ("A\nB\nC\nD", vec!["A", "B", "C", "D"]),
-            ("  a , b ", vec!["a", "b"]),
-            ("a\n\n,b", vec!["a", "b"]),
-            ("a,b\nc", vec!["a", "b", "c"]),
-            ("Так,Ні", vec!["Так", "Ні"]),
+            ("  a \n b ", vec!["a", "b"]),
+            ("a\n\n\nb", vec!["a", "b"]),
+            ("a\r\nb", vec!["a", "b"]),
+            (
+                "Yes, definitely\nNo, never",
+                vec!["Yes, definitely", "No, never"],
+            ),
+            ("Так\nНі", vec!["Так", "Ні"]),
         ] {
             assert_eq!(
                 parse_options(raw),
@@ -240,9 +243,10 @@ mod tests {
     fn parse_options_rejects_no_options_as_required_and_counts_outside_two_to_four() {
         for (raw, reason) in [
             ("", ConfigReason::Required),
-            (" , \n ", ConfigReason::Required),
+            (" \n \n ", ConfigReason::Required),
             ("only-one", option_count_out_of_range()),
-            ("a,b,c,d,e", option_count_out_of_range()),
+            ("a,b", option_count_out_of_range()),
+            ("a\nb\nc\nd\ne", option_count_out_of_range()),
         ] {
             assert_eq!(parse_options(raw), Err(reason), "{raw:?}");
         }
@@ -255,16 +259,16 @@ mod tests {
         let options_problem = |reason| Some(ConfigProblem::field("options", reason));
 
         for (label, cfg, expected) in [
-            ("valid", config("Q?", "A,B"), None),
+            ("valid", config("Q?", "A\nB"), None),
             ("templated options", config("Q?", "%choices%"), None),
             (
                 "empty question",
-                config("", "A,B"),
+                config("", "A\nB"),
                 question_required.clone(),
             ),
             (
                 "whitespace-only question",
-                config(" \t ", "A,B"),
+                config(" \t ", "A\nB"),
                 question_required.clone(),
             ),
             ("missing question", BTreeMap::new(), question_required),
@@ -275,7 +279,7 @@ mod tests {
             ),
             (
                 "five options",
-                config("Q?", "A,B,C,D,E"),
+                config("Q?", "A\nB\nC\nD\nE"),
                 options_problem(option_count_out_of_range()),
             ),
             (
@@ -298,9 +302,12 @@ mod tests {
     #[tokio::test]
     async fn options_template_resolving_to_a_bad_count_fails_without_send() {
         let stack = ArgStack::new()
-            .set("none".to_owned(), Variant::String(" , ".to_owned()))
+            .set("none".to_owned(), Variant::String(" \n ".to_owned()))
             .set("one".to_owned(), Variant::String("Pizza".to_owned()))
-            .set("five".to_owned(), Variant::String("a,b,c,d,e".to_owned()));
+            .set(
+                "five".to_owned(),
+                Variant::String("a\nb\nc\nd\ne".to_owned()),
+            );
         for (template, reason) in [
             ("%none%", ConfigReason::Required),
             ("%one%", option_count_out_of_range()),
@@ -339,7 +346,7 @@ mod tests {
         let stack = ArgStack::new().set("q".to_owned(), Variant::String(String::new()));
 
         let (telemetry, _) = runner
-            .execute(&config("%q%", "A,B"), &make_ctx(&stack))
+            .execute(&config("%q%", "A\nB"), &make_ctx(&stack))
             .await;
 
         assert_eq!(
@@ -369,7 +376,7 @@ mod tests {
         let stack = ArgStack::new().set("topic".to_owned(), Variant::String("dinner".to_owned()));
 
         let (telemetry, _) = runner
-            .execute(&config("Pick %topic%?", "Pizza,Sushi"), &make_ctx(&stack))
+            .execute(&config("Pick %topic%?", "Pizza\nSushi"), &make_ctx(&stack))
             .await;
 
         assert_eq!(telemetry.outcome, SubActionOutcome::Success);

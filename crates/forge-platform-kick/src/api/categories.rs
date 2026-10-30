@@ -30,7 +30,7 @@ struct CategoriesEnvelope {
 #[derive(Deserialize, Default)]
 struct CategoryData {
     #[serde(default)]
-    id: u64,
+    id: Option<u64>,
     #[serde(default)]
     name: String,
 }
@@ -57,11 +57,8 @@ impl KickCategories {
         Ok(envelope
             .data
             .into_iter()
+            .filter_map(|c| c.id.map(|id| CategoryMatch { id, name: c.name }))
             .take(MAX_MATCHES)
-            .map(|c| CategoryMatch {
-                id: c.id,
-                name: c.name,
-            })
             .collect())
     }
 }
@@ -127,6 +124,30 @@ mod tests {
 
         assert_eq!(matches.len(), MAX_MATCHES);
         assert_eq!(matches[MAX_MATCHES - 1].id, (MAX_MATCHES - 1) as u64);
+    }
+
+    #[tokio::test]
+    async fn search_drops_rows_without_an_id_before_truncating() {
+        let server = MockServer::start().await;
+        let mut data = vec![
+            serde_json::json!({"name": "no id"}),
+            serde_json::json!({"id": null, "name": "null id"}),
+        ];
+        data.extend(
+            (1..=MAX_MATCHES + 2).map(|i| serde_json::json!({"id": i, "name": format!("cat {i}")})),
+        );
+        mount_categories(
+            &server,
+            ResponseTemplate::new(200).set_body_json(serde_json::json!({ "data": data })),
+        )
+        .await;
+
+        let matches = categories_on(&server).search("tok", "cat").await.unwrap();
+
+        assert_eq!(
+            matches.iter().map(|m| m.id).collect::<Vec<_>>(),
+            (1..=MAX_MATCHES as u64).collect::<Vec<_>>()
+        );
     }
 
     #[tokio::test]

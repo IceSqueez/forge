@@ -17,6 +17,7 @@ use crate::auth::oauth_client::KickOAuthClient;
 use crate::gateway::{authorized, gateway_error, malformed};
 
 pub const KICK_AUTHORIZE_ENDPOINT: &str = "https://id.kick.com/oauth/authorize";
+const DEFAULT_ACCESS_TOKEN_LIFETIME_SECS: u64 = 3600;
 pub const KICK_TOKEN_ENDPOINT: &str = "https://id.kick.com/oauth/token";
 
 pub const KICK_OAUTH_CALLBACK_PORT: u16 = 53127;
@@ -146,7 +147,8 @@ impl KickAuthFlow {
 }
 
 pub(crate) fn expiry_after(expires_in: Option<u64>) -> Result<OffsetDateTime, PlatformError> {
-    let lifetime = i64::try_from(expires_in.unwrap_or(0)).unwrap_or(i64::MAX);
+    let lifetime =
+        i64::try_from(expires_in.unwrap_or(DEFAULT_ACCESS_TOKEN_LIFETIME_SECS)).unwrap_or(i64::MAX);
     OffsetDateTime::now_utc()
         .checked_add(time::Duration::seconds(lifetime))
         .ok_or_else(|| malformed(LIFETIME_OUT_OF_RANGE))
@@ -380,16 +382,22 @@ mod tests {
     }
 
     #[test]
-    fn expiry_after_accepts_representable_lifetimes_and_rejects_overflow() {
+    fn expiry_after_defaults_a_missing_lifetime_to_the_default_access_token_lifetime() {
+        let lifetime = time::Duration::seconds(DEFAULT_ACCESS_TOKEN_LIFETIME_SECS as i64);
         let before = OffsetDateTime::now_utc();
-        let in_an_hour = expiry_after(Some(3600)).unwrap();
         let missing = expiry_after(None).unwrap();
         let after = OffsetDateTime::now_utc();
+        assert!(missing >= before + lifetime && missing <= after + lifetime);
+    }
+
+    #[test]
+    fn expiry_after_accepts_a_given_lifetime_and_rejects_overflow() {
+        let before = OffsetDateTime::now_utc();
+        let in_an_hour = expiry_after(Some(7200)).unwrap();
+        let after = OffsetDateTime::now_utc();
         assert!(
-            in_an_hour >= before + time::Duration::hours(1)
-                && in_an_hour <= after + time::Duration::hours(1)
-                && missing >= before
-                && missing <= after
+            in_an_hour >= before + time::Duration::hours(2)
+                && in_an_hour <= after + time::Duration::hours(2)
         );
         for overflowing in [u64::MAX, i64::MAX as u64, i64::MAX as u64 + 1] {
             assert!(

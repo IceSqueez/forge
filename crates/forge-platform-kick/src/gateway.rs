@@ -295,8 +295,11 @@ mod tests {
     #[tokio::test]
     async fn every_success_status_counts_as_success_for_every_client() {
         for status in [200_u16, 201, 202] {
-            let server =
-                answering(ResponseTemplate::new(status).set_body_string(r#"{"data":[{}]}"#)).await;
+            let server = answering(
+                ResponseTemplate::new(status)
+                    .set_body_string(r#"{"data":[{"broadcaster_user_id":1}]}"#),
+            )
+            .await;
             let clients = Clients::over(&api_at(&server.uri()));
 
             for (label, outcome) in clients.every_call().await {
@@ -435,8 +438,10 @@ mod tests {
 
     #[tokio::test]
     async fn every_client_draws_from_the_one_official_budget() {
-        let server =
-            answering(ResponseTemplate::new(200).set_body_string(r#"{"data":[{}]}"#)).await;
+        let server = answering(
+            ResponseTemplate::new(200).set_body_string(r#"{"data":[{"broadcaster_user_id":1}]}"#),
+        )
+        .await;
         let calls = Clients::over(&api_at(&server.uri()))
             .every_call()
             .await

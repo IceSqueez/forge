@@ -18,7 +18,6 @@ use crate::api::poller::{CHANNEL_POLL_INTERVAL, PollerAuth, REDEMPTION_POLL_INTE
 use crate::auth::credentials_manager::KickCredentialsManager;
 use crate::capabilities::KICK_COMMUNITY_NOTE;
 use crate::platform::KickPlatform;
-use crate::pusher::protocol::chatroom_channel;
 use crate::triggers::ban::BanDescriptor;
 use crate::triggers::chat::ChatDescriptor;
 use crate::triggers::chat_command::ChatCommandDescriptor;
@@ -95,6 +94,7 @@ impl KickIntegrationBundle {
         Self::spawn_viewer_health_bridge(&bundle);
         Self::spawn_events_health_bridge(&bundle);
         Self::spawn_identity_refresh(&bundle);
+        Self::spawn_token_expiry_bridge(&bundle);
         (bundle, health_tx)
     }
 
@@ -108,7 +108,7 @@ impl KickIntegrationBundle {
             label: HealthText::Connection(state),
             active: state.is_connected(),
             detail: Some(HealthText::Text(
-                VerbatimText::new(chatroom_channel(&self.slug)).into(),
+                VerbatimText::new(self.slug.as_str()).into(),
             )),
         }
     }
@@ -236,6 +236,27 @@ impl KickIntegrationBundle {
         });
     }
 
+    fn spawn_token_expiry_bridge(bundle: &Arc<Self>) {
+        let Ok(handle) = tokio::runtime::Handle::try_current() else {
+            return;
+        };
+        let bundle = Arc::clone(bundle);
+        let mut expiry_rx = bundle.credentials_manager.subscribe_expiry();
+        handle.spawn(async move {
+            loop {
+                tokio::select! {
+                    biased;
+                    () = bundle.retired.cancelled() => break,
+                    changed = expiry_rx.changed() => if changed.is_err() { break },
+                }
+                let expiry = *expiry_rx.borrow_and_update();
+                if let Ok(mut guard) = bundle.token_expires_at.write() {
+                    *guard = expiry;
+                }
+            }
+        });
+    }
+
     fn spawn_identity_refresh(bundle: &Arc<Self>) {
         let Ok(handle) = tokio::runtime::Handle::try_current() else {
             return;
@@ -250,7 +271,9 @@ impl KickIntegrationBundle {
         let Ok(Some(stored)) = self.credentials_manager.load().await else {
             return;
         };
-        if let Ok(mut guard) = self.token_expires_at.write() {
+        if let Ok(mut guard) = self.token_expires_at.write()
+            && guard.is_none()
+        {
             *guard = Some(SystemTime::from(stored.expires_at));
         }
     }
@@ -548,7 +571,7 @@ mod tests {
         }
 
         #[test]
-        fn live_chat_health_metric_reports_disconnected_with_slug_topic_while_offline() {
+        fn live_chat_health_metric_reports_disconnected_with_the_channel_slug_while_offline() {
             let bundle = disconnected_bundle();
             let metrics = bundle.metrics();
             let ws = metrics.iter().find(|m| m.id == LIVE_CHAT_METRIC).unwrap();
@@ -557,9 +580,7 @@ mod tests {
                 HealthValue::Status {
                     label: HealthText::Connection(ConnectionState::Disconnected),
                     active: false,
-                    detail: Some(HealthText::Text(
-                        VerbatimText::new("chatrooms.test_channel.v2").into()
-                    )),
+                    detail: Some(HealthText::Text(VerbatimText::new("test_channel").into())),
                 }
             );
         }

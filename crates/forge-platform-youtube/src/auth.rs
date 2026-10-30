@@ -8,6 +8,7 @@ use forge_types::OAuthToken;
 use forge_types::Secret;
 use serde::Deserialize;
 
+use crate::credentials::DEFAULT_ACCESS_TOKEN_LIFETIME_SECS;
 use crate::credentials_manager::YoutubeCredentialsManager;
 use crate::data_api::{YoutubeDataApi, malformed};
 use crate::oauth_client::GoogleOAuthClient;
@@ -123,7 +124,11 @@ impl GoogleAuthFlow {
             reason: "Google did not return a refresh_token; retry with consent prompt".into(),
         })?;
         let expires_at = SystemTime::now()
-            .checked_add(Duration::from_secs(grant.expires_in.unwrap_or(0)))
+            .checked_add(Duration::from_secs(
+                grant
+                    .expires_in
+                    .unwrap_or(DEFAULT_ACCESS_TOKEN_LIFETIME_SECS),
+            ))
             .ok_or_else(|| malformed("token lifetime out of range"))?;
 
         let channel = fetch_own_channel(&self.api, grant.access_token.expose())
@@ -468,6 +473,33 @@ mod tests {
         assert!(
             matches!(err, PlatformError::Auth { ref reason } if reason.contains("refresh_token")),
             "expected Auth error mentioning refresh_token, got: {err:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn a_token_response_without_expires_in_assumes_the_default_lifetime() {
+        let server = MockServer::start().await;
+        mount_token(
+            &server,
+            StatusCode::OK,
+            json!({
+                "access_token": ACCESS_TOKEN,
+                "refresh_token": "1//test_refresh",
+                "token_type": "Bearer",
+            }),
+        )
+        .await;
+        mount_channels(&server, channel_body()).await;
+        let flow = GoogleAuthFlow::new(oauth_client_at(&server.uri()), data_api_at(&server.uri()));
+        let lifetime = Duration::from_secs(DEFAULT_ACCESS_TOKEN_LIFETIME_SECS);
+
+        let before = SystemTime::now();
+        let bundle = sign_in(flow).await.unwrap();
+        let after = SystemTime::now();
+
+        assert!(
+            bundle.expires_at >= before + lifetime && bundle.expires_at <= after + lifetime,
+            "expiry must be sign-in time plus the default lifetime"
         );
     }
 

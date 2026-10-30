@@ -11,6 +11,7 @@ pub const PING: &str = "pusher:ping";
 pub const PONG: &str = "pusher:pong";
 pub const ERROR: &str = "pusher:error";
 pub const INTERNAL_EVENT_PREFIX: &str = "pusher_internal:";
+pub(crate) const SUBSCRIPTION_SUCCEEDED: &str = "pusher_internal:subscription_succeeded";
 pub(crate) const ERROR_CODE_KEY: &str = "code";
 
 const EVENT_KEY: &str = "event";

@@ -11,6 +11,7 @@ use crate::data_api::YoutubeDataApi;
 const THUMBNAIL_SET_COST: u32 = 50;
 const MAX_THUMBNAIL_BYTES: u64 = 2 * 1024 * 1024;
 const THUMBNAIL_SET_PATH: &str = "/thumbnails/set";
+const UNSUPPORTED_IMAGE_TYPE: &str = "thumbnail must be a .png, .jpg or .jpeg file";
 const MISSING_SCOPE: &str = "thumbnail upload scope missing";
 
 type TokenSource = Arc<dyn Fn() -> BoxFuture<'static, Result<String, PlatformError>> + Send + Sync>;
@@ -42,13 +43,19 @@ impl YoutubeThumbnail {
                     feature: "thumbnail - no active YouTube broadcast".to_owned(),
                 })?;
 
+        let content_type = content_type_for(image_path).ok_or_else(|| PlatformError::Refused {
+            reason: UNSUPPORTED_IMAGE_TYPE.to_owned(),
+        })?;
+        let size_limit_error = || PlatformError::Unsupported {
+            feature: format!("thumbnail exceeds the {MAX_THUMBNAIL_BYTES}-byte API limit"),
+        };
+        if tokio::fs::metadata(image_path).await?.len() > MAX_THUMBNAIL_BYTES {
+            return Err(size_limit_error());
+        }
         let bytes = tokio::fs::read(image_path).await?;
         if bytes.len() as u64 > MAX_THUMBNAIL_BYTES {
-            return Err(PlatformError::Unsupported {
-                feature: format!("thumbnail exceeds the {MAX_THUMBNAIL_BYTES}-byte API limit"),
-            });
+            return Err(size_limit_error());
         }
-        let content_type = content_type_for(image_path);
 
         let token = (self.access_token_source)().await?;
         let request = GatewayRequest::post(THUMBNAIL_SET_PATH)
@@ -66,14 +73,14 @@ impl YoutubeThumbnail {
     }
 }
 
-fn content_type_for(path: &str) -> &'static str {
+fn content_type_for(path: &str) -> Option<&'static str> {
     let lower = path.to_lowercase();
     if lower.ends_with(".png") {
-        "image/png"
+        Some("image/png")
     } else if lower.ends_with(".jpg") || lower.ends_with(".jpeg") {
-        "image/jpeg"
+        Some("image/jpeg")
     } else {
-        "application/octet-stream"
+        None
     }
 }
 
@@ -140,13 +147,13 @@ mod tests {
     #[test]
     fn content_type_maps_by_extension() {
         for (input, expected) in [
-            ("photo.png", "image/png"),
-            ("PHOTO.PNG", "image/png"),
-            ("shot.jpg", "image/jpeg"),
-            ("shot.jpeg", "image/jpeg"),
-            ("shot.JPG", "image/jpeg"),
-            ("noext", "application/octet-stream"),
-            ("anim.gif", "application/octet-stream"),
+            ("photo.png", Some("image/png")),
+            ("PHOTO.PNG", Some("image/png")),
+            ("shot.jpg", Some("image/jpeg")),
+            ("shot.jpeg", Some("image/jpeg")),
+            ("shot.JPG", Some("image/jpeg")),
+            ("noext", None),
+            ("anim.gif", None),
         ] {
             assert_eq!(content_type_for(input), expected, "path: {input}");
         }
@@ -245,5 +252,44 @@ mod tests {
             server.received_requests().await.unwrap().is_empty(),
             "unreadable file must short-circuit before upload"
         );
+    }
+
+    #[tokio::test]
+    async fn set_refuses_unsupported_extension_before_reading_the_file() {
+        let server = MockServer::start().await;
+        let (thumb, _quota) = thumbnail_on(&server, Some("vid"));
+        let absent = format!(
+            "{}/forge_yt_thumb_absent_{}.gif",
+            std::env::temp_dir().display(),
+            std::process::id()
+        );
+
+        let err = thumb.set(&absent).await.unwrap_err();
+        assert!(
+            matches!(err, PlatformError::Refused { .. }),
+            "bad extension must be refused before any file access, got: {err}"
+        );
+        assert!(server.received_requests().await.unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn set_refuses_oversized_file_from_metadata_alone() {
+        const SPARSE_LEN: u64 = 256 * 1024 * 1024;
+        let server = MockServer::start().await;
+        let (thumb, _quota) = thumbnail_on(&server, Some("vid"));
+        let img = TempImage::new("sparse.png", b"");
+        std::fs::OpenOptions::new()
+            .write(true)
+            .open(&img.0)
+            .unwrap()
+            .set_len(SPARSE_LEN)
+            .unwrap();
+
+        let err = thumb.set(img.as_str()).await.unwrap_err();
+        assert!(
+            matches!(err, PlatformError::Unsupported { .. }),
+            "oversized file must be refused as Unsupported, got: {err}"
+        );
+        assert!(server.received_requests().await.unwrap().is_empty());
     }
 }

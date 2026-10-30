@@ -14,6 +14,7 @@ pub(crate) struct PollHealthTracker {
     reporter: Option<PollHealthReporter>,
     consecutive_failures: u32,
     lost: bool,
+    confirmed: bool,
 }
 
 impl PollHealthTracker {
@@ -22,13 +23,15 @@ impl PollHealthTracker {
             reporter,
             consecutive_failures: 0,
             lost: false,
+            confirmed: false,
         }
     }
 
     pub(crate) fn succeeded(&mut self) {
         self.consecutive_failures = 0;
-        if self.lost {
+        if self.lost || !self.confirmed {
             self.lost = false;
+            self.confirmed = true;
             self.report(PollLinkHealth::Healthy);
         }
     }
@@ -106,7 +109,7 @@ mod tests {
         let mut polls = failures(CONSECUTIVE_POLL_FAILURES_FOR_LOSS - 1);
         polls.push(Poll::Ok);
         polls.extend(failures(CONSECUTIVE_POLL_FAILURES_FOR_LOSS - 1));
-        assert!(reports_after(&polls).is_empty());
+        assert_eq!(reports_after(&polls), [PollLinkHealth::Healthy]);
     }
 
     #[test]
@@ -120,8 +123,16 @@ mod tests {
     }
 
     #[test]
-    fn successes_on_a_healthy_link_report_nothing() {
-        assert!(reports_after(&[Poll::Ok, Poll::Ok]).is_empty());
+    fn the_first_success_confirms_the_link_once_and_later_successes_report_nothing() {
+        assert_eq!(
+            reports_after(&[Poll::Ok, Poll::Ok, Poll::Ok]),
+            [PollLinkHealth::Healthy]
+        );
+    }
+
+    #[test]
+    fn failures_before_any_success_report_nothing_until_the_threshold() {
+        assert!(reports_after(&failures(CONSECUTIVE_POLL_FAILURES_FOR_LOSS - 1)).is_empty());
     }
 
     #[test]

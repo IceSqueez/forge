@@ -733,7 +733,7 @@ mod tests {
         let quota = SharedQuota::default();
         let api = data_api_charging(&server.uri(), quota.clone());
         let clients = clients(&api, &token_source());
-        let image = tempfile::NamedTempFile::new().unwrap();
+        let image = tempfile::Builder::new().suffix(".png").tempfile().unwrap();
         let first = clients.send.send("hi").await;
         let charged_by_throttled_call = used_today(&quota).await;
         tokio::time::pause();
@@ -767,7 +767,7 @@ mod tests {
         let quota = SharedQuota::default();
         let api = data_api_charging(&server.uri(), quota.clone());
         let clients = clients(&api, &refusing_token_source());
-        let image = tempfile::NamedTempFile::new().unwrap();
+        let image = tempfile::Builder::new().suffix(".png").tempfile().unwrap();
 
         let outcomes = every_client_outcome(&clients, image.path().to_str().unwrap()).await;
         let follow = clients.follow.status_of(VIEWER).await;

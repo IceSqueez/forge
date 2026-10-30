@@ -1,11 +1,12 @@
 use std::sync::Arc;
+use std::time::SystemTime;
 
 use forge_net::Gateway;
 use forge_platform_core::auth::REFRESH_BUFFER_SECS;
 use forge_platform_core::{PlatformError, credential_storage_error, reauth_required};
 use forge_storage::{CredentialId, CredentialsRepo};
 use time::{Duration, OffsetDateTime};
-use tokio::sync::Mutex;
+use tokio::sync::{Mutex, watch};
 
 use crate::auth::credentials::{CREDENTIAL_KEY, KickCredentials};
 use crate::auth::oauth_client::KickOAuthClient;
@@ -25,6 +26,7 @@ pub struct KickCredentialsManager {
 #[derive(Clone)]
 struct CredentialStore {
     repo: Arc<dyn CredentialsRepo>,
+    expiry_tx: Arc<watch::Sender<Option<SystemTime>>>,
 }
 
 enum RefreshTrigger {
@@ -35,11 +37,18 @@ enum RefreshTrigger {
 impl KickCredentialsManager {
     pub fn new(repo: Arc<dyn CredentialsRepo>, oauth: KickOAuthClient, api: Gateway) -> Self {
         Self {
-            store: CredentialStore { repo },
+            store: CredentialStore {
+                repo,
+                expiry_tx: Arc::new(watch::channel(None).0),
+            },
             oauth,
             api,
             refresh_guard: Arc::new(Mutex::new(())),
         }
+    }
+
+    pub(crate) fn subscribe_expiry(&self) -> watch::Receiver<Option<SystemTime>> {
+        self.store.expiry_tx.subscribe()
     }
 
     pub(crate) fn oauth_client(&self) -> &KickOAuthClient {
@@ -161,7 +170,10 @@ impl CredentialStore {
         self.repo
             .store(&CredentialId::new(CREDENTIAL_KEY), &json)
             .await
-            .map_err(|e| credential_storage_error(PLATFORM, e.stored_secret_unrecoverable(), e))
+            .map_err(|e| credential_storage_error(PLATFORM, e.stored_secret_unrecoverable(), e))?;
+        self.expiry_tx
+            .send_replace(Some(SystemTime::from(creds.expires_at)));
+        Ok(())
     }
 
     async fn clear(&self) -> Result<(), PlatformError> {
@@ -169,6 +181,7 @@ impl CredentialStore {
             .delete(&CredentialId::new(CREDENTIAL_KEY))
             .await
             .map_err(|e| credential_storage_error(PLATFORM, e.stored_secret_unrecoverable(), e))?;
+        self.expiry_tx.send_replace(None);
         Ok(())
     }
 }
@@ -183,6 +196,7 @@ mod tests {
     use std::collections::HashMap;
     use std::sync::atomic::{AtomicBool, Ordering};
     use std::sync::{Arc, Mutex};
+    use std::time::SystemTime;
 
     use async_trait::async_trait;
     use forge_platform_core::PlatformError;
@@ -471,6 +485,37 @@ mod tests {
         for _ in 0..SETTLE_TURNS {
             tokio::task::yield_now().await;
         }
+    }
+
+    #[tokio::test]
+    async fn the_expiry_watch_follows_a_persist_and_a_clear() {
+        let repo = Arc::new(InMemRepo::default());
+        let manager = offline_manager(repo.clone());
+        let expiry = manager.subscribe_expiry();
+        let initial = *expiry.borrow();
+
+        manager.save_from_bundle(bundle()).await.unwrap();
+        let persisted = repo.stored().unwrap().expires_at;
+        let after_persist = *expiry.borrow();
+        manager.clear().await.unwrap();
+        let after_clear = *expiry.borrow();
+
+        assert_eq!(
+            (initial, after_persist, after_clear),
+            (None, Some(SystemTime::from(persisted)), None)
+        );
+    }
+
+    #[tokio::test]
+    async fn a_refresh_publishes_the_new_expiry_on_the_watch() {
+        let rig = rig(&near_expiry()).await;
+        rig.answer_always(refreshed_grant(REFRESHED_ACCESS)).await;
+        let expiry = rig.manager.subscribe_expiry();
+
+        rig.manager.get_valid_access_token().await.unwrap();
+
+        let persisted = rig.repo.stored().unwrap().expires_at;
+        assert_eq!(*expiry.borrow(), Some(SystemTime::from(persisted)));
     }
 
     #[tokio::test]

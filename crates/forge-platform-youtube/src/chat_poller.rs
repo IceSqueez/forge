@@ -177,8 +177,7 @@ impl YoutubeChatPoller {
                 }
                 Ok(None) | Err(FetchFailure::ChatEnded) => {
                     health.succeeded();
-                    self.live_chat_id.set(None);
-                    self.active_broadcast_id.set(None);
+                    self.publish_ids(None, None, &cancel);
                     last_seen_title = None;
                     if is_live {
                         is_live = false;
@@ -213,9 +212,6 @@ impl YoutubeChatPoller {
                 }
                 Err(FetchFailure::Failed(e)) => {
                     health.failed();
-                    self.live_chat_id.set(None);
-                    self.active_broadcast_id.set(None);
-                    last_seen_title = None;
                     tracing::warn!("broadcast resolution failed: {e}");
                     tokio::select! {
                         () = tokio::time::sleep(self.timings.broadcast_cadence) => {}
@@ -261,12 +257,16 @@ impl YoutubeChatPoller {
             }
             last_seen_title = Some(current_title);
 
-            self.live_chat_id.set(Some(live_chat_id.clone()));
-            self.active_broadcast_id.set(Some(broadcast_id.clone()));
+            self.publish_ids(
+                Some(live_chat_id.clone()),
+                Some(broadcast_id.clone()),
+                &cancel,
+            );
 
             let mut next_page_token: Option<String> = None;
             let broadcast_resolved_at = tokio::time::Instant::now();
 
+            let mut broadcast_ended = false;
             'inner: loop {
                 if cancel.is_cancelled() {
                     return Ok(());
@@ -309,6 +309,7 @@ impl YoutubeChatPoller {
                     Err(FetchFailure::Cancelled) => return Ok(()),
                     Err(FetchFailure::ChatEnded) => {
                         health.succeeded();
+                        broadcast_ended = true;
                         break 'inner;
                     }
                     Err(FetchFailure::QuotaExhausted) => {
@@ -357,6 +358,7 @@ impl YoutubeChatPoller {
                 }
 
                 if chat_ended {
+                    broadcast_ended = true;
                     break 'inner;
                 }
 
@@ -371,8 +373,9 @@ impl YoutubeChatPoller {
                 }
             }
 
-            self.live_chat_id.set(None);
-            self.active_broadcast_id.set(None);
+            if broadcast_ended {
+                self.publish_ids(None, None, &cancel);
+            }
 
             tokio::select! {
                 () = tokio::time::sleep_until(
@@ -381,6 +384,17 @@ impl YoutubeChatPoller {
                 () = cancel.cancelled() => return Ok(()),
             }
         }
+    }
+
+    fn publish_ids(
+        &self,
+        live_chat_id: Option<String>,
+        broadcast_id: Option<String>,
+        cancel: &CancellationToken,
+    ) {
+        self.live_chat_id.set_while_active(live_chat_id, cancel);
+        self.active_broadcast_id
+            .set_while_active(broadcast_id, cancel);
     }
 
     async fn record_observed_ban(&self, item: &serde_json::Value) {
@@ -2868,14 +2882,14 @@ mod tests {
 
     #[tokio::test]
     async fn each_failing_poll_step_reports_loss_on_the_third_consecutive_failure() {
-        for (label, token, broadcasts, chat, timings, lost_at_call) in [
+        for (label, token, broadcasts, chat, timings, expected) in [
             (
                 "token refused",
                 TokenOutcome::Refused,
                 server_error(),
                 server_error(),
                 FAST,
-                LOSS_THRESHOLD,
+                vec![(PollLinkHealth::Lost, LOSS_THRESHOLD)],
             ),
             (
                 "broadcast lookup failing",
@@ -2883,7 +2897,7 @@ mod tests {
                 server_error(),
                 server_error(),
                 FAST,
-                LOSS_THRESHOLD,
+                vec![(PollLinkHealth::Lost, LOSS_THRESHOLD)],
             ),
             (
                 "chat request failing",
@@ -2891,7 +2905,10 @@ mod tests {
                 live_broadcast(),
                 server_error(),
                 ONE_LONG_ROUND,
-                LIVE_LOOKUP_CALLS + LOSS_THRESHOLD,
+                vec![
+                    (PollLinkHealth::Healthy, LIVE_LOOKUP_CALLS),
+                    (PollLinkHealth::Lost, LIVE_LOOKUP_CALLS + LOSS_THRESHOLD),
+                ],
             ),
         ] {
             let server = StubServer::start().await;
@@ -2899,8 +2916,8 @@ mod tests {
             server.reply_always(CHAT_MESSAGES, chat);
             let mut probed = probed_poller(&server, token, make_quota());
             probed.poller = probed.poller.with_timings(timings);
-            let reports = first_reports(probed, 1).await;
-            assert_eq!(reports, [(PollLinkHealth::Lost, lost_at_call)], "{label}");
+            let reports = first_reports(probed, expected.len()).await;
+            assert_eq!(reports, expected, "{label}");
         }
     }
 
@@ -2948,13 +2965,72 @@ mod tests {
         let lost_at_call = LIVE_LOOKUP_CALLS + LOSS_THRESHOLD;
         let mut probed = probed_poller(&server, TokenOutcome::Issued, make_quota());
         probed.poller = probed.poller.with_timings(ONE_LONG_ROUND);
-        let reports = first_reports(probed, 2).await;
+        let reports = first_reports(probed, 3).await;
         assert_eq!(
             reports,
             [
+                (PollLinkHealth::Healthy, LIVE_LOOKUP_CALLS),
                 (PollLinkHealth::Lost, lost_at_call),
                 (PollLinkHealth::Healthy, lost_at_call + NEXT_CALL),
             ]
+        );
+    }
+
+    async fn ids_once_broadcast_lookup_reaches(
+        lookups: usize,
+        after_first: StubReply,
+    ) -> (Option<String>, Option<String>) {
+        let server = StubServer::start().await;
+        reply_then(
+            &server,
+            BROADCASTS,
+            live_broadcast(),
+            LIVE_LOOKUP_CALLS,
+            after_first,
+        );
+        server.reply_always(
+            CHAT_MESSAGES,
+            StubReply::ok(&json!({ "pollingIntervalMillis": 0, "items": [] })),
+        );
+        let live = LiveChatIdHandle::new();
+        let broadcast = ActiveBroadcastIdHandle::new();
+        let (tx, _events) = tokio::sync::mpsc::unbounded_channel();
+        let poller = YoutubeChatPoller::new(
+            crate::endpoints_test_support::data_api_charging(&server.uri(), make_quota()),
+            token_source(),
+            tx,
+            "UCtest".to_owned(),
+            live.clone(),
+            broadcast.clone(),
+            crate::ban_ledger_test_support::MemoryBanLedger::shared(),
+        )
+        .with_timings(FAST);
+        let cancel = CancellationToken::new();
+        let join = tokio::spawn(poller.run(cancel.clone()));
+
+        let reached = wait_until(|| server.request_count(BROADCASTS) >= lookups).await;
+        let ids = (live.get(), broadcast.get());
+        cancel.cancel();
+        join.await.unwrap().unwrap();
+        assert!(reached, "the poller never re-resolved the broadcast");
+        ids
+    }
+
+    #[tokio::test]
+    async fn ids_stay_published_while_the_broadcast_is_re_resolved() {
+        let ids = ids_once_broadcast_lookup_reaches(LIVE_LOOKUP_CALLS + 1, StubReply::held()).await;
+        assert_eq!(
+            ids,
+            (Some("lc-live".to_owned()), Some("broadcast-1".to_owned()))
+        );
+    }
+
+    #[tokio::test]
+    async fn ids_stay_published_through_a_transient_broadcast_lookup_failure() {
+        let ids = ids_once_broadcast_lookup_reaches(LIVE_LOOKUP_CALLS + 2, server_error()).await;
+        assert_eq!(
+            ids,
+            (Some("lc-live".to_owned()), Some("broadcast-1".to_owned()))
         );
     }
 
@@ -3039,9 +3115,14 @@ mod tests {
 
     #[test]
     fn cancelling_a_poll_mid_fetch_returns_quietly_without_charging_or_reporting_health() {
-        for (label, held_path, charged) in [
-            ("broadcast lookup", BROADCASTS, 0),
-            ("chat poll", CHAT_MESSAGES, BROADCAST_COST),
+        for (label, held_path, charged, expected_reports) in [
+            ("broadcast lookup", BROADCASTS, 0, Vec::new()),
+            (
+                "chat poll",
+                CHAT_MESSAGES,
+                BROADCAST_COST,
+                vec![PollLinkHealth::Healthy],
+            ),
         ] {
             let quota = SharedQuota::default();
             let observed = quota.clone();
@@ -3069,14 +3150,16 @@ mod tests {
 
                     (
                         finished.is_ok(),
-                        reports.try_recv().ok().map(|(health, _)| health),
+                        std::iter::from_fn(|| reports.try_recv().ok())
+                            .map(|(health, _)| health)
+                            .collect::<Vec<_>>(),
                         used_today(&observed).await,
                     )
                 });
 
             assert_eq!(
                 (outcome, crate::log_capture::forge_lines(&lines).len()),
-                ((true, None, charged), 0),
+                ((true, expected_reports, charged), 0),
                 "{label}"
             );
         }

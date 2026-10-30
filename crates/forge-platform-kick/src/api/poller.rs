@@ -56,6 +56,12 @@ impl KickPollerHandle {
     }
 }
 
+impl Drop for KickPollerHandle {
+    fn drop(&mut self) {
+        self.0.abort();
+    }
+}
+
 pub fn spawn_kick_poller(
     channel: Arc<KickChannel>,
     rewards: Arc<KickRewards>,
@@ -389,7 +395,9 @@ async fn run_loop(
 ) {
     let mut auth = AuthTracker::new(auth_tx);
     let mut channel_interval = tokio::time::interval(CHANNEL_POLL_INTERVAL);
+    channel_interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
     let mut redemption_interval = tokio::time::interval(REDEMPTION_POLL_INTERVAL);
+    redemption_interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
     let mut last_snapshot: Option<ChannelSnapshot> = None;
     let mut seen = DedupSet::unbounded();
     let mut redemptions_seeded = false;
@@ -576,6 +584,7 @@ mod tests {
     ) -> serde_json::Value {
         serde_json::json!({
             "data": [{
+                "broadcaster_user_id": 1,
                 "stream_title": title,
                 "category": { "id": category_id, "name": category_name },
                 "stream": { "is_live": is_live }
@@ -1448,6 +1457,76 @@ mod tests {
         assert!(
             matches!(closed, Ok(None)),
             "the poller task outlived stop()"
+        );
+    }
+
+    fn idle_poller_parts(
+        server_uri: &str,
+    ) -> (Arc<KickChannel>, Arc<KickRewards>, mpsc::Sender<Event>) {
+        let (event_tx, _events) = mpsc::channel(4);
+        let api = crate::endpoints_test_support::api_at(server_uri);
+        (
+            Arc::new(KickChannel::new(api.clone())),
+            Arc::new(KickRewards::new(api)),
+            event_tx,
+        )
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn polling_resumes_after_a_stalled_poll_without_a_catch_up_burst() {
+        const STALL: StdDuration = StdDuration::from_secs(120);
+        const WINDOW: StdDuration = StdDuration::from_secs(1);
+        let started_at = tokio::time::Instant::now();
+        let calls = Arc::new(std::sync::Mutex::new(Vec::new()));
+        let recorded = Arc::clone(&calls);
+        let source: TokenSource = Arc::new(move || {
+            let mut calls = recorded.lock().unwrap();
+            let first = calls.is_empty();
+            calls.push(tokio::time::Instant::now() - started_at);
+            Box::pin(async move {
+                if first {
+                    tokio::time::sleep(STALL).await;
+                }
+                Err::<String, _>(network_down())
+            }) as BoxFuture<'static, _>
+        });
+        let (channel, rewards, event_tx) = idle_poller_parts("http://127.0.0.1:0");
+        let (_viewers, _handle) = spawn_kick_poller(channel, rewards, source, event_tx);
+
+        tokio::time::sleep(STALL + WINDOW).await;
+
+        let calls = calls.lock().unwrap();
+        let after_the_stall = calls.iter().filter(|at| **at >= STALL).count();
+        assert_eq!(
+            after_the_stall, 2,
+            "one resumed poll per interval, not one per missed tick: {calls:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn dropping_the_handle_aborts_the_poller_task() {
+        let started = Arc::new(tokio::sync::Notify::new());
+        let signal = Arc::clone(&started);
+        let (guard_tx, guard_rx) = tokio::sync::oneshot::channel::<()>();
+        let guard = Arc::new(std::sync::Mutex::new(Some(guard_tx)));
+        let source: TokenSource = Arc::new(move || {
+            let held = guard.lock().unwrap().take();
+            signal.notify_one();
+            Box::pin(async move {
+                let _held = held;
+                std::future::pending::<Result<String, PlatformError>>().await
+            }) as BoxFuture<'static, _>
+        });
+        let (channel, rewards, event_tx) = idle_poller_parts("http://127.0.0.1:0");
+        let (_viewers, handle) = spawn_kick_poller(channel, rewards, source, event_tx);
+        started.notified().await;
+
+        drop(handle);
+
+        let released = tokio::time::timeout(StdDuration::from_secs(30), guard_rx).await;
+        assert!(
+            matches!(released, Ok(Err(_))),
+            "the in-flight poll must be dropped with the task"
         );
     }
 }

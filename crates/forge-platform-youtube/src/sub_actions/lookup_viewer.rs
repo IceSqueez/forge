@@ -80,22 +80,24 @@ impl SubActionRunner for LookupViewerRunner {
 
         match self.lookup.lookup(&identifier).await {
             Ok(profile) => {
-                let stack = ctx
+                let mut stack = ctx
                     .arg_stack
                     .clone()
                     .set(
                         variables::CHANNEL_ID.to_owned(),
                         Variant::String(profile.channel_id),
                     )
-                    .set(variables::TITLE.to_owned(), Variant::String(profile.title))
-                    .set(
+                    .set(variables::TITLE.to_owned(), Variant::String(profile.title));
+                if let Some(subscribers) = profile.subscriber_count {
+                    stack = stack.set(
                         variables::SUBSCRIBER_COUNT.to_owned(),
-                        Variant::Int(profile.subscriber_count),
-                    )
-                    .set(
-                        variables::VIEW_COUNT.to_owned(),
-                        Variant::Int(profile.view_count),
+                        Variant::Int(subscribers),
                     );
+                }
+                let stack = stack.set(
+                    variables::VIEW_COUNT.to_owned(),
+                    Variant::Int(profile.view_count),
+                );
                 (timer.success(), Some(stack))
             }
             Err(e) => (timer.failed(step_failure::failed(&e)), None),
@@ -233,7 +235,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn execute_publishes_zero_counts_when_statistics_are_hidden() {
+    async fn execute_omits_the_subscriber_variable_when_subscribers_are_hidden() {
         let server = MockServer::start().await;
         Mock::given(method("GET"))
             .and(path("/channels"))
@@ -241,7 +243,7 @@ mod tests {
                 "items": [{
                     "id": "UCchan",
                     "snippet": { "title": "Creator" },
-                    "statistics": { "hiddenSubscriberCount": true }
+                    "statistics": { "hiddenSubscriberCount": true, "viewCount": "7" }
                 }]
             })))
             .mount(&server)
@@ -254,13 +256,10 @@ mod tests {
 
         assert_eq!(telemetry.outcome, SubActionOutcome::Success);
         let stack = produced.expect("lookup must produce an arg stack");
-        assert_eq!(
-            stack.get("youtube.viewer.subscriber_count"),
-            Some(&Variant::Int(0))
-        );
+        assert_eq!(stack.get("youtube.viewer.subscriber_count"), None);
         assert_eq!(
             stack.get("youtube.viewer.view_count"),
-            Some(&Variant::Int(0))
+            Some(&Variant::Int(7))
         );
         assert_eq!(
             stack.get("youtube.viewer.title"),

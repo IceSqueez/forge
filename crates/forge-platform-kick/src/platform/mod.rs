@@ -428,6 +428,15 @@ pub(crate) mod tests {
         .to_string()
     }
 
+    fn subscription_ack() -> String {
+        serde_json::json!({
+            "event": crate::pusher::protocol::SUBSCRIPTION_SUCCEEDED,
+            "channel": "chatrooms.4242.v2",
+            "data": "{}"
+        })
+        .to_string()
+    }
+
     async fn pusher_peer_sending(frame: String) -> String {
         use futures_util::{SinkExt, StreamExt};
         use tokio_tungstenite::tungstenite::Message;
@@ -442,6 +451,9 @@ pub(crate) mod tests {
                     break;
                 }
             }
+            ws.send(Message::Text(subscription_ack().into()))
+                .await
+                .unwrap();
             ws.send(Message::Text(frame.into())).await.unwrap();
             while let Some(Ok(_)) = ws.next().await {}
         });
@@ -641,12 +653,22 @@ pub(crate) mod tests {
     }
 
     async fn pusher_peer_ending(ending: PeerEnding) -> String {
+        let (socket_base, release) = pusher_peer_ending_on_release(ending).await;
+        release.notify_one();
+        socket_base
+    }
+
+    async fn pusher_peer_ending_on_release(
+        ending: PeerEnding,
+    ) -> (String, Arc<tokio::sync::Notify>) {
         use futures_util::{SinkExt, StreamExt};
         use tokio_tungstenite::tungstenite::Message;
         use tokio_tungstenite::tungstenite::protocol::CloseFrame;
 
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let socket_addr = listener.local_addr().unwrap();
+        let release = Arc::new(tokio::sync::Notify::new());
+        let released = Arc::clone(&release);
         tokio::spawn(async move {
             let (stream, _) = listener.accept().await.unwrap();
             let mut ws = tokio_tungstenite::accept_async(stream).await.unwrap();
@@ -655,9 +677,13 @@ pub(crate) mod tests {
                     break;
                 }
             }
+            ws.send(Message::Text(subscription_ack().into()))
+                .await
+                .unwrap();
             match ending {
                 PeerEnding::Holds => {}
                 PeerEnding::ClosesWith(code) => {
+                    released.notified().await;
                     let frame = CloseFrame {
                         code: code.into(),
                         reason: "closed by the test peer".into(),
@@ -668,11 +694,14 @@ pub(crate) mod tests {
                     )]
                     let _ = ws.send(Message::Close(Some(frame))).await;
                 }
-                PeerEnding::DropsTheSocket => return,
+                PeerEnding::DropsTheSocket => {
+                    released.notified().await;
+                    return;
+                }
             }
             while let Some(Ok(_)) = ws.next().await {}
         });
-        format!("ws://{socket_addr}/app")
+        (format!("ws://{socket_addr}/app"), release)
     }
 
     fn link_announcement(event: &Event) -> Option<(String, Option<bool>)> {
@@ -721,7 +750,7 @@ pub(crate) mod tests {
     }
 
     async fn pusher_peer_dropping_only_the_first_link() -> String {
-        use futures_util::StreamExt;
+        use futures_util::{SinkExt, StreamExt};
         use tokio_tungstenite::tungstenite::Message;
 
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -739,6 +768,9 @@ pub(crate) mod tests {
                             break;
                         }
                     }
+                    ws.send(Message::Text(subscription_ack().into()))
+                        .await
+                        .unwrap();
                     if drops_after_subscribe {
                         return;
                     }
@@ -882,6 +914,83 @@ pub(crate) mod tests {
         assert!(matches!(resolved, Ok(Ok(Ok(())))), "{resolved:?}");
     }
 
+    async fn pusher_peer_that_never_acknowledges() -> (String, Arc<tokio::sync::Notify>) {
+        use futures_util::StreamExt;
+        use tokio_tungstenite::tungstenite::Message;
+
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let socket_addr = listener.local_addr().unwrap();
+        let subscribed = Arc::new(tokio::sync::Notify::new());
+        let signal = Arc::clone(&subscribed);
+        tokio::spawn(async move {
+            let mut links = Vec::new();
+            while let Ok((stream, _)) = listener.accept().await {
+                let signal = Arc::clone(&signal);
+                links.push(tokio::spawn(async move {
+                    let Ok(mut ws) = tokio_tungstenite::accept_async(stream).await else {
+                        return;
+                    };
+                    while let Some(Ok(message)) = ws.next().await {
+                        if matches!(message, Message::Text(_)) {
+                            signal.notify_one();
+                            break;
+                        }
+                    }
+                    while let Some(Ok(_)) = ws.next().await {}
+                }));
+            }
+        });
+        (format!("ws://{socket_addr}/app"), subscribed)
+    }
+
+    #[tokio::test]
+    async fn the_link_stays_connecting_until_the_subscription_is_acknowledged() {
+        let (socket_base, subscribed) = pusher_peer_that_never_acknowledges().await;
+        let (platform, _server) = platform_on_socket(
+            socket_base,
+            crate::ban_ledger_test_support::MemoryBanLedger::shared(),
+        )
+        .await;
+        platform.connect().await.unwrap();
+        tokio::time::timeout(BANNED_STEP_DEADLINE, subscribed.notified())
+            .await
+            .unwrap();
+
+        let state = platform.connection_state();
+        platform.disconnect().await.unwrap();
+
+        assert_eq!(state, ConnectionState::Connecting);
+    }
+
+    #[tokio::test]
+    async fn an_unacknowledged_subscription_reconnects_without_ever_announcing_connected() {
+        let (socket_base, subscribed) = pusher_peer_that_never_acknowledges().await;
+        let (platform, _server) = platform_on_socket(
+            socket_base,
+            crate::ban_ledger_test_support::MemoryBanLedger::shared(),
+        )
+        .await;
+        let mut stream = platform.events();
+        platform.connect().await.unwrap();
+        tokio::time::timeout(BANNED_STEP_DEADLINE, subscribed.notified())
+            .await
+            .unwrap();
+        tokio::time::pause();
+
+        let mut announced = Vec::new();
+        loop {
+            let (state, _) = next_link_announcement(&mut stream).await;
+            let reconnecting = state == "reconnecting";
+            announced.push(state);
+            if reconnecting {
+                break;
+            }
+        }
+        platform.disconnect().await.unwrap();
+
+        assert_eq!(announced, ["connecting", "reconnecting"]);
+    }
+
     #[tokio::test]
     async fn platform_state_is_readable_by_a_receiver_subscribed_after_the_change() {
         let (platform, _server) = platform_on_socket(
@@ -915,14 +1024,16 @@ pub(crate) mod tests {
             (PeerEnding::ClosesWith(1000), "reconnecting", false),
             (PeerEnding::DropsTheSocket, "reconnecting", false),
         ] {
+            let (socket_base, release) = pusher_peer_ending_on_release(ending).await;
             let (platform, _server) = platform_on_socket(
-                pusher_peer_ending(ending).await,
+                socket_base,
                 crate::ban_ledger_test_support::MemoryBanLedger::shared(),
             )
             .await;
             let mut stream = platform.events();
             platform.connect().await.unwrap();
             await_link_state(&mut stream, "connected").await;
+            release.notify_one();
 
             if matches!(ending, PeerEnding::Holds) {
                 platform.disconnect().await.unwrap();
@@ -956,7 +1067,7 @@ pub(crate) mod tests {
 
     async fn pusher_peer_answering_only_the_first_link()
     -> (String, tokio::sync::mpsc::UnboundedReceiver<usize>) {
-        use futures_util::StreamExt;
+        use futures_util::{SinkExt, StreamExt};
         use tokio_tungstenite::tungstenite::Message;
 
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -985,6 +1096,9 @@ pub(crate) mod tests {
                             break;
                         }
                     }
+                    ws.send(Message::Text(subscription_ack().into()))
+                        .await
+                        .unwrap();
                 });
             }
         });

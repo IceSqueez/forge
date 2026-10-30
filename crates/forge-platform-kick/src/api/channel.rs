@@ -46,7 +46,7 @@ struct ChannelsEnvelope {
 #[derive(Deserialize, Default)]
 struct ChannelData {
     #[serde(default)]
-    broadcaster_user_id: u64,
+    broadcaster_user_id: Option<u64>,
     #[serde(default)]
     slug: String,
     #[serde(default)]
@@ -138,8 +138,15 @@ impl KickChannel {
                     reason: "channels GET returned no data".to_owned(),
                 })?;
 
+        let broadcaster_user_id =
+            channel
+                .broadcaster_user_id
+                .ok_or_else(|| PlatformError::MalformedResponse {
+                    reason: "channels GET returned no broadcaster id".to_owned(),
+                })?;
+
         Ok(ChannelSnapshot {
-            broadcaster_user_id: channel.broadcaster_user_id,
+            broadcaster_user_id,
             slug: channel.slug,
             is_live: channel.stream.is_live,
             stream_title: channel.stream_title,
@@ -283,7 +290,7 @@ mod tests {
             Mock::given(method("GET"))
                 .and(path("/channels"))
                 .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
-                    "data": [{ "stream_title": "t", "stream": stream }]
+                    "data": [{ "broadcaster_user_id": 1, "stream_title": "t", "stream": stream }]
                 })))
                 .mount(&server)
                 .await;
@@ -317,12 +324,41 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn get_channel_without_a_broadcaster_id_is_malformed() {
+        for (label, entry) in [
+            ("key absent", serde_json::json!({ "slug": "a-streamer" })),
+            (
+                "explicit null",
+                serde_json::json!({ "broadcaster_user_id": null, "slug": "a-streamer" }),
+            ),
+        ] {
+            let server = MockServer::start().await;
+            Mock::given(method("GET"))
+                .and(path("/channels"))
+                .respond_with(
+                    ResponseTemplate::new(200)
+                        .set_body_json(serde_json::json!({ "data": [entry] })),
+                )
+                .mount(&server)
+                .await;
+
+            let result = channel_on(&server).get_channel("tok").await;
+
+            assert!(
+                matches!(result, Err(PlatformError::MalformedResponse { .. })),
+                "{label}"
+            );
+        }
+    }
+
+    #[tokio::test]
     async fn get_channel_missing_optional_objects_default_to_zero_and_empty() {
         let server = MockServer::start().await;
         Mock::given(method("GET"))
             .and(path("/channels"))
             .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
                 "data": [{
+                    "broadcaster_user_id": 1,
                     "stream_title": "Offline"
                 }]
             })))
@@ -344,6 +380,7 @@ mod tests {
             .and(path("/channels"))
             .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
                 "data": [{
+                    "broadcaster_user_id": 1,
                     "is_live": true,
                     "stream": { "is_live": false, "viewer_count": 0 }
                 }]
@@ -362,7 +399,7 @@ mod tests {
             .and(path("/channels"))
             .and(query_param("slug", "other-streamer"))
             .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
-                "data": [{ "slug": "other-streamer" }]
+                "data": [{ "broadcaster_user_id": 1, "slug": "other-streamer" }]
             })))
             .expect(1)
             .mount(&server)

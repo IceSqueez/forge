@@ -237,12 +237,12 @@ impl YoutubeModeration {
                         .and_then(|v| v.as_str())
                         == Some(channel_id);
                     if matches {
-                        let id = item
+                        return item
                             .get("id")
                             .and_then(|v| v.as_str())
-                            .unwrap_or_default()
-                            .to_owned();
-                        return Ok(id);
+                            .filter(|id| !id.is_empty())
+                            .map(str::to_owned)
+                            .ok_or_else(|| malformed("moderator entry without an id"));
                     }
                 }
             }
@@ -576,6 +576,51 @@ mod tests {
                 .any(|(k, v)| k == "id" && v == MODERATOR_RESOURCE_ID),
             "delete must target the resolved moderator resource id"
         );
+    }
+
+    #[tokio::test]
+    async fn remove_moderator_with_a_matching_entry_lacking_an_id_is_malformed_and_sends_no_delete()
+    {
+        for (label, entry) in [
+            (
+                "id absent",
+                json!({ "snippet": { "moderatorDetails": { "channelId": TARGET_CHANNEL } } }),
+            ),
+            (
+                "id empty",
+                json!({
+                    "id": "",
+                    "snippet": { "moderatorDetails": { "channelId": TARGET_CHANNEL } },
+                }),
+            ),
+        ] {
+            let server = MockServer::start().await;
+            Mock::given(method("GET"))
+                .and(path("/liveChat/moderators"))
+                .respond_with(ResponseTemplate::new(200).set_body_json(json!({ "items": [entry] })))
+                .mount(&server)
+                .await;
+            let (moderation, _quota) = moderation_on(&server);
+
+            let err = moderation
+                .remove_moderator(TARGET_CHANNEL)
+                .await
+                .unwrap_err();
+
+            assert!(
+                matches!(err, PlatformError::MalformedResponse { .. }),
+                "{label}: {err:?}"
+            );
+            assert!(
+                server
+                    .received_requests()
+                    .await
+                    .unwrap()
+                    .iter()
+                    .all(|r| r.method != wiremock::http::Method::DELETE),
+                "{label}: no DELETE may be sent"
+            );
+        }
     }
 
     #[tokio::test]

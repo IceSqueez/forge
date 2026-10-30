@@ -58,7 +58,8 @@ pub fn register_youtube_triggers(registry: &mut TriggerRegistry) -> Result<(), R
 pub struct YoutubeIntegrationBundle {
     id: IntegrationId,
     channel_id: String,
-    display_name: OnceLock<String>,
+    channel_title_name: OnceLock<String>,
+    channel_handle_name: OnceLock<String>,
     token_expires_at: RwLock<Option<SystemTime>>,
     health_tx: broadcast::Sender<HealthDelta>,
     platform: Arc<YoutubePlatform>,
@@ -115,7 +116,8 @@ impl YoutubeIntegrationBundle {
         let bundle = Arc::new(Self {
             id: crate::YOUTUBE_INTEGRATION.id,
             channel_id,
-            display_name: OnceLock::new(),
+            channel_title_name: OnceLock::new(),
+            channel_handle_name: OnceLock::new(),
             token_expires_at: RwLock::new(None),
             health_tx,
             platform,
@@ -130,6 +132,7 @@ impl YoutubeIntegrationBundle {
         Self::spawn_health_bridge(&bundle);
         Self::spawn_viewer_health_bridge(&bundle);
         Self::spawn_identity_refresh(&bundle);
+        Self::spawn_token_expiry_bridge(&bundle);
         bundle
     }
 
@@ -218,6 +221,27 @@ impl YoutubeIntegrationBundle {
         });
     }
 
+    fn spawn_token_expiry_bridge(bundle: &Arc<Self>) {
+        let Ok(handle) = tokio::runtime::Handle::try_current() else {
+            return;
+        };
+        let bundle = Arc::clone(bundle);
+        let mut expiry_rx = bundle.credentials_manager.subscribe_expiry();
+        handle.spawn(async move {
+            loop {
+                tokio::select! {
+                    biased;
+                    () = bundle.retired.cancelled() => break,
+                    changed = expiry_rx.changed() => if changed.is_err() { break },
+                }
+                let expiry = *expiry_rx.borrow_and_update();
+                if let Ok(mut guard) = bundle.token_expires_at.write() {
+                    *guard = expiry;
+                }
+            }
+        });
+    }
+
     fn spawn_identity_refresh(bundle: &Arc<Self>) {
         let Ok(handle) = tokio::runtime::Handle::try_current() else {
             return;
@@ -240,15 +264,18 @@ impl YoutubeIntegrationBundle {
                 .await
                 .unwrap_or(stored)
         };
-        #[expect(
-            clippy::let_underscore_must_use,
-            reason = "the first resolved display name is kept"
-        )]
-        let _ = self.display_name.set(preferred_hero_name(
-            &stored.channel_title,
-            stored.channel_handle.as_deref(),
-        ));
-        if let Ok(mut guard) = self.token_expires_at.write() {
+        match handle_hero_name(stored.channel_handle.as_deref()) {
+            Some(handle_name) => {
+                self.channel_handle_name.get_or_init(|| handle_name);
+            }
+            None => {
+                self.channel_title_name
+                    .get_or_init(|| stored.channel_title.clone());
+            }
+        }
+        if let Ok(mut guard) = self.token_expires_at.write()
+            && guard.is_none()
+        {
             *guard = Some(SystemTime::from(stored.expires_at));
         }
     }
@@ -321,11 +348,11 @@ fn viewers_health_value(report: ViewerReport) -> HealthValue {
     }
 }
 
-fn preferred_hero_name(channel_title: &str, channel_handle: Option<&str>) -> String {
-    match channel_handle.map(str::trim).filter(|h| !h.is_empty()) {
-        Some(handle) => format!("@{}", handle.trim_start_matches('@')),
-        None => channel_title.to_owned(),
-    }
+fn handle_hero_name(channel_handle: Option<&str>) -> Option<String> {
+    channel_handle
+        .map(str::trim)
+        .filter(|handle| !handle.is_empty())
+        .map(|handle| format!("@{}", handle.trim_start_matches('@')))
 }
 
 impl BuiltinStatus for YoutubeIntegrationBundle {
@@ -372,7 +399,10 @@ impl BuiltinStatus for YoutubeIntegrationBundle {
     }
 
     fn hero_name(&self) -> Option<&str> {
-        self.display_name.get().map(String::as_str)
+        self.channel_handle_name
+            .get()
+            .or_else(|| self.channel_title_name.get())
+            .map(String::as_str)
     }
 
     fn name_badges(&self) -> Vec<HeroBadge> {
@@ -999,7 +1029,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn health_stream_emits_chat_delta_active_when_platform_connects() {
+    async fn health_stream_emits_chat_delta_inactive_connecting_when_platform_connects() {
         let (bundle, platform) = make_bundle(Arc::new(EmptyRepo));
         let mut health = BuiltinHealth::stream(bundle.as_ref());
 
@@ -1017,12 +1047,16 @@ mod tests {
         .unwrap();
         assert!(matches!(
             delta.new_value,
-            HealthValue::Status { active: true, .. }
+            HealthValue::Status {
+                label: HealthText::Connection(ConnectionState::Connecting),
+                active: false,
+                ..
+            }
         ));
     }
 
     #[tokio::test]
-    async fn health_stream_emits_events_delta_mirroring_chat_state_on_connect() {
+    async fn health_stream_emits_events_delta_mirroring_connecting_state_on_connect() {
         let (bundle, platform) = make_bundle(Arc::new(EmptyRepo));
         let mut health = BuiltinHealth::stream(bundle.as_ref());
 
@@ -1040,7 +1074,11 @@ mod tests {
         .unwrap();
         assert!(matches!(
             delta.new_value,
-            HealthValue::Status { active: true, .. }
+            HealthValue::Status {
+                label: HealthText::Connection(ConnectionState::Connecting),
+                active: false,
+                ..
+            }
         ));
     }
 

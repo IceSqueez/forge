@@ -1,5 +1,7 @@
 use std::sync::Arc;
 
+use tokio_util::sync::CancellationToken;
+
 #[derive(Debug, Clone, Default)]
 pub struct ActiveBroadcastIdHandle {
     inner: Arc<std::sync::Mutex<Option<String>>>,
@@ -16,7 +18,37 @@ impl ActiveBroadcastIdHandle {
         }
     }
 
+    pub fn set_while_active(&self, id: Option<String>, cancel: &CancellationToken) {
+        if let Ok(mut guard) = self.inner.lock()
+            && !cancel.is_cancelled()
+        {
+            *guard = id;
+        }
+    }
+
     pub fn get(&self) -> Option<String> {
         self.inner.lock().ok().and_then(|g| g.clone())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn set_while_active_publishes_until_the_token_is_cancelled_then_changes_nothing() {
+        let handle = ActiveBroadcastIdHandle::new();
+        let cancel = CancellationToken::new();
+
+        handle.set_while_active(Some("live".to_owned()), &cancel);
+        let published = handle.get();
+        cancel.cancel();
+        handle.set_while_active(None, &cancel);
+        handle.set_while_active(Some("stale".to_owned()), &cancel);
+
+        assert_eq!(
+            (published.as_deref(), handle.get().as_deref()),
+            (Some("live"), Some("live"))
+        );
     }
 }

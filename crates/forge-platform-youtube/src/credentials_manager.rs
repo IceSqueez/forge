@@ -1,14 +1,16 @@
 use std::sync::Arc;
-use std::time::UNIX_EPOCH;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use forge_platform_core::auth::REFRESH_BUFFER_SECS;
 use forge_platform_core::{PlatformError, credential_storage_error, reauth_required};
 use forge_storage::{CredentialId, CredentialsRepo};
 use time::{Duration, OffsetDateTime};
-use tokio::sync::Mutex;
+use tokio::sync::{Mutex, watch};
 
 use crate::auth::{YoutubeAuthBundle, fetch_own_channel};
-use crate::credentials::{CREDENTIAL_KEY, YoutubeBroadcaster, YoutubeCredentials};
+use crate::credentials::{
+    CREDENTIAL_KEY, DEFAULT_ACCESS_TOKEN_LIFETIME_SECS, YoutubeBroadcaster, YoutubeCredentials,
+};
 use crate::data_api::YoutubeDataApi;
 use crate::oauth_client::GoogleOAuthClient;
 
@@ -26,6 +28,7 @@ pub struct YoutubeCredentialsManager {
 #[derive(Clone)]
 struct CredentialStore {
     repo: Arc<dyn CredentialsRepo>,
+    expiry_tx: Arc<watch::Sender<Option<SystemTime>>>,
 }
 
 enum RefreshTrigger {
@@ -40,11 +43,18 @@ impl YoutubeCredentialsManager {
         api: YoutubeDataApi,
     ) -> Self {
         Self {
-            store: CredentialStore { repo },
+            store: CredentialStore {
+                repo,
+                expiry_tx: Arc::new(watch::channel(None).0),
+            },
             oauth,
             api,
             refresh_guard: Arc::new(Mutex::new(())),
         }
+    }
+
+    pub(crate) fn subscribe_expiry(&self) -> watch::Receiver<Option<SystemTime>> {
+        self.store.expiry_tx.subscribe()
     }
 
     pub(crate) fn oauth_client(&self) -> &GoogleOAuthClient {
@@ -172,7 +182,12 @@ async fn refresh_under_guard(
     }
 
     let grant = oauth.refresh(existing.refresh_token.expose()).await?;
-    let expires_in = i64::try_from(grant.expires_in.unwrap_or(0)).unwrap_or(i64::MAX);
+    let expires_in = i64::try_from(
+        grant
+            .expires_in
+            .unwrap_or(DEFAULT_ACCESS_TOKEN_LIFETIME_SECS),
+    )
+    .unwrap_or(i64::MAX);
     let expires_at = OffsetDateTime::now_utc()
         .checked_add(Duration::seconds(expires_in))
         .ok_or_else(|| PlatformError::MalformedResponse {
@@ -213,7 +228,10 @@ impl CredentialStore {
         self.repo
             .store(&CredentialId::new(CREDENTIAL_KEY), &json)
             .await
-            .map_err(|e| credential_storage_error(PLATFORM, e.stored_secret_unrecoverable(), e))
+            .map_err(|e| credential_storage_error(PLATFORM, e.stored_secret_unrecoverable(), e))?;
+        self.expiry_tx
+            .send_replace(Some(SystemTime::from(creds.expires_at)));
+        Ok(())
     }
 
     async fn clear(&self) -> Result<(), PlatformError> {
@@ -221,6 +239,7 @@ impl CredentialStore {
             .delete(&CredentialId::new(CREDENTIAL_KEY))
             .await
             .map_err(|e| credential_storage_error(PLATFORM, e.stored_secret_unrecoverable(), e))?;
+        self.expiry_tx.send_replace(None);
         Ok(())
     }
 }
@@ -244,7 +263,9 @@ mod tests {
 
     use super::YoutubeCredentialsManager;
     use crate::auth::YoutubeAuthBundle;
-    use crate::credentials::{CREDENTIAL_KEY, YoutubeCredentials};
+    use crate::credentials::{
+        CREDENTIAL_KEY, DEFAULT_ACCESS_TOKEN_LIFETIME_SECS, YoutubeCredentials,
+    };
     use crate::endpoints_test_support::{
         RecordingPublisher, ReplyGate, StubReply, StubServer, data_api_with, oauth_client_at,
         settle, unreachable_data_api, unreachable_oauth_client, used_today,
@@ -505,6 +526,73 @@ mod tests {
                 stored.client_id.as_str()
             ),
             ("ya29.bundle", "1//bundle_refresh", "UCbundle", "bundle_cid")
+        );
+    }
+
+    #[tokio::test]
+    async fn the_expiry_watch_follows_a_persist_and_a_clear() {
+        let repo = Arc::new(InMemRepo::default());
+        let manager = YoutubeCredentialsManager::new(
+            repo.clone(),
+            unreachable_oauth_client(),
+            unreachable_data_api(),
+        );
+        let expiry = manager.subscribe_expiry();
+        let initial = *expiry.borrow();
+
+        manager
+            .save_from_bundle(YoutubeAuthBundle {
+                access_token: OAuthToken::new("ya29.bundle"),
+                refresh_token: OAuthToken::new("1//bundle_refresh"),
+                channel_id: "UCbundle".to_owned(),
+                channel_title: "Bundle Channel".to_owned(),
+                channel_handle: None,
+                client_id: "bundle_cid".to_owned(),
+                expires_at: SystemTime::now() + StdDuration::from_secs(3600),
+            })
+            .await
+            .unwrap();
+        let persisted = repo.stored().unwrap().expires_at;
+        let after_persist = *expiry.borrow();
+        manager.clear().await.unwrap();
+        let after_clear = *expiry.borrow();
+
+        assert_eq!(
+            (initial, after_persist, after_clear),
+            (None, Some(SystemTime::from(persisted)), None)
+        );
+    }
+
+    #[tokio::test]
+    async fn a_refresh_publishes_the_new_expiry_on_the_watch() {
+        let rig = rig(&near_expiry()).await;
+        rig.server
+            .reply_always(TOKEN_PATH, refreshed_grant(REFRESHED_ACCESS));
+        let expiry = rig.manager.subscribe_expiry();
+
+        rig.manager.get_valid_access_token().await.unwrap();
+
+        let persisted = rig.repo.stored().unwrap().expires_at;
+        assert_eq!(*expiry.borrow(), Some(SystemTime::from(persisted)));
+    }
+
+    #[tokio::test]
+    async fn a_refresh_response_without_expires_in_assumes_the_default_lifetime() {
+        let rig = rig(&fresh()).await;
+        rig.server.reply_always(
+            TOKEN_PATH,
+            StubReply::ok(&json!({ "access_token": "ya29.new_access", "token_type": "Bearer" })),
+        );
+        let lifetime = Duration::seconds(DEFAULT_ACCESS_TOKEN_LIFETIME_SECS as i64);
+
+        let before = OffsetDateTime::now_utc();
+        rig.manager.refresh(EXISTING_ACCESS).await.unwrap();
+        let after = OffsetDateTime::now_utc();
+
+        let expires_at = rig.repo.stored().unwrap().expires_at;
+        assert!(
+            expires_at >= before + lifetime && expires_at <= after + lifetime,
+            "expiry must be refresh time plus the default lifetime"
         );
     }
 

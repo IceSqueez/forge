@@ -128,6 +128,7 @@ mod tests {
             .and(path("/channels"))
             .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
                 "data": [{
+                    "broadcaster_user_id": 1,
                     "stream_title": "Marathon",
                     "category": {"id": 9, "name": "Retro"},
                     "stream": {
@@ -173,7 +174,7 @@ mod tests {
         Mock::given(method("GET"))
             .and(path("/channels"))
             .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
-                "data": [{ "stream_title": "Offline" }]
+                "data": [{ "broadcaster_user_id": 1, "stream_title": "Offline" }]
             })))
             .mount(&server)
             .await;
@@ -223,6 +224,7 @@ mod tests {
                 .and(path("/channels"))
                 .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
                     "data": [{
+                    "broadcaster_user_id": 1,
                         "stream_title": "t",
                         "category": {"id": 9, "name": "Retro"},
                         "stream": stream

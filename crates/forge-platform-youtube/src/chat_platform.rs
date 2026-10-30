@@ -159,13 +159,6 @@ impl ChatPlatform for YoutubePlatform {
         });
 
         *self.cancel.lock().unwrap_or_else(|p| p.into_inner()) = Some(cancel);
-        publish_transition(
-            &self.state,
-            &self.state_tx,
-            &self.events,
-            ConnectionState::Connected,
-            ConnectionTransition::Expected,
-        );
         tracing::info!(channel_id = %self.channel_id, "youtube chat polling started");
         Ok(())
     }
@@ -341,7 +334,8 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn an_explicit_disconnect_is_announced_once_and_flagged_expected() {
+    async fn an_explicit_disconnect_before_any_poll_succeeds_announces_connecting_then_disconnected()
+     {
         let p = platform();
         let mut stream = p.events();
         p.connect().await.unwrap();
@@ -358,23 +352,126 @@ mod tests {
             announcements,
             [
                 ("connecting".to_owned(), Some(true)),
-                ("connected".to_owned(), Some(true)),
                 ("disconnected".to_owned(), Some(true)),
             ]
         );
     }
 
-    #[tokio::test]
-    async fn reconnecting_a_running_poller_stays_connected_after_the_retired_poller_exits() {
-        let p = platform();
-        p.connect().await.unwrap();
-        p.connect().await.unwrap();
-
-        for _ in 0..64 {
-            tokio::task::yield_now().await;
+    struct StoredRepo(String);
+    #[async_trait]
+    impl CredentialsRepo for StoredRepo {
+        async fn store(&self, _: &CredentialId, _: &str) -> Result<(), StorageError> {
+            Ok(())
         }
+        async fn load(&self, _: &CredentialId) -> Result<Option<String>, StorageError> {
+            Ok(Some(self.0.clone()))
+        }
+        async fn delete(&self, _: &CredentialId) -> Result<bool, StorageError> {
+            Ok(true)
+        }
+        async fn list_ids(&self) -> Result<Vec<CredentialId>, StorageError> {
+            Ok(Vec::new())
+        }
+        async fn last_refresh(
+            &self,
+            _: &CredentialId,
+        ) -> Result<Option<OffsetDateTime>, StorageError> {
+            Ok(None)
+        }
+        async fn mark_refreshed(&self, _: &CredentialId) -> Result<(), StorageError> {
+            Ok(())
+        }
+    }
 
-        assert_eq!(p.connection_state(), ConnectionState::Connected);
+    fn platform_polling(server: &crate::endpoints_test_support::StubServer) -> YoutubePlatform {
+        let credentials = serde_json::to_string(&crate::credentials::YoutubeCredentials {
+            access_token: forge_types::OAuthToken::new("access"),
+            refresh_token: forge_types::OAuthToken::new("refresh"),
+            client_id: "client".to_owned(),
+            channel_id: "UCtest".to_owned(),
+            channel_title: "Test".to_owned(),
+            channel_handle: None,
+            expires_at: OffsetDateTime::now_utc() + time::Duration::days(1),
+        })
+        .unwrap();
+        let manager = Arc::new(YoutubeCredentialsManager::new(
+            Arc::new(StoredRepo(credentials)),
+            crate::endpoints_test_support::unreachable_oauth_client(),
+            crate::endpoints_test_support::unreachable_data_api(),
+        ));
+        YoutubePlatform::new(
+            crate::endpoints_test_support::data_api_at(&server.uri()),
+            "UCtest".to_owned(),
+            manager,
+            LiveChatIdHandle::new(),
+            ActiveBroadcastIdHandle::new(),
+            crate::ban_ledger_test_support::MemoryBanLedger::shared(),
+        )
+    }
+
+    #[tokio::test]
+    async fn connect_stays_connecting_until_the_first_poll_succeeds() {
+        let server = crate::endpoints_test_support::StubServer::start().await;
+        server.reply_always(
+            "/liveBroadcasts",
+            crate::endpoints_test_support::StubReply::held(),
+        );
+        let p = platform_polling(&server);
+        p.connect().await.unwrap();
+        let reached_server = crate::endpoints_test_support::wait_until(|| {
+            server.request_count("/liveBroadcasts") == 1
+        })
+        .await;
+
+        assert_eq!(
+            (reached_server, p.connection_state()),
+            (true, ConnectionState::Connecting)
+        );
+    }
+
+    #[tokio::test]
+    async fn the_first_successful_poll_moves_the_link_to_connected() {
+        let server = crate::endpoints_test_support::StubServer::start().await;
+        server.reply_always(
+            "/liveBroadcasts",
+            crate::endpoints_test_support::StubReply::ok(&serde_json::json!({ "items": [] })),
+        );
+        let p = platform_polling(&server);
+        let mut state = p.state_receiver();
+        p.connect().await.unwrap();
+
+        let reached = tokio::time::timeout(
+            crate::endpoints_test_support::HANG_GUARD,
+            state.wait_for(|s| *s == ConnectionState::Connected),
+        )
+        .await;
+
+        assert!(reached.is_ok_and(|r| r.is_ok()));
+        p.disconnect().await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn reconnecting_a_running_poller_does_not_announce_the_retired_poller_exit() {
+        let p = platform();
+        let mut stream = p.events();
+        p.connect().await.unwrap();
+        p.connect().await.unwrap();
+        p.disconnect().await.unwrap();
+        drop(p);
+
+        let mut announcements = Vec::new();
+        while let Ok(event) = stream.recv().await {
+            if let Some(state) = state_of(&event) {
+                announcements.push((state, event.payload["expected"].as_bool()));
+            }
+        }
+        assert_eq!(
+            announcements,
+            [
+                ("connecting".to_owned(), Some(true)),
+                ("disconnected".to_owned(), Some(true)),
+            ]
+        );
     }
 
     fn info_lifecycle_lines(

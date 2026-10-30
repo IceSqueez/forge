@@ -1,33 +1,22 @@
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+mod common;
 use std::collections::BTreeMap;
 use std::path::PathBuf;
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use forge_events::{Event, EventPublisher};
+use forge_events::EventPublisher;
 use forge_registry::SubActionRegistry;
-use forge_runtime::sub_action_runners::{
-    register_core_sub_actions, register_scheduled_run_sub_actions,
-};
 use forge_runtime::{
-    ActionCancelRegistry, Config, CoreSubActionDeps, DonationIngest, OverlayServiceCell,
-    ScheduledRunsCell, SchedulerCell, ScriptRegistry, SpeakDispatchError, SpeakDispatcher,
+    DonationIngest, EventBus, NullEventLogRepo, RuntimeWiring, SpeakDispatchError, SpeakDispatcher,
     SpeechOrigin, TwitchEmoteLexicon, register_donation_sub_actions, register_latest_sub_actions,
     register_speech_sub_actions,
 };
-use forge_storage::{
-    DataProvider, GlobalsRepo, MockDonationRepo, ScriptRepo, SettingsRepo, UserGlobalsRepo,
-};
+use forge_storage::{DataProvider, MockDonationRepo};
 use forge_storage_sqlite::SqliteBackend;
 use forge_types::{LatestScope, LatestValue, LatestValueReader, Shared};
 use serde_json::Value;
 use tempfile::TempDir;
-
-struct NullPublisher;
-
-impl EventPublisher for NullPublisher {
-    fn publish(&self, _event: Event) {}
-}
 
 struct SilentSpeaker;
 
@@ -51,44 +40,26 @@ impl LatestValueReader for NoLatestValues {
     }
 }
 
-async fn every_runtime_step() -> (SubActionRegistry, TempDir) {
+async fn every_runtime_step() -> (Arc<SubActionRegistry>, TempDir) {
     let media = tempfile::tempdir().unwrap();
     let backend =
         SqliteBackend::open_for_test(":memory:", [0x5e; 32], media.path().join("media"), None)
             .await
             .unwrap();
     let dp: Arc<dyn DataProvider> = Arc::new(backend);
-    let publisher: Arc<dyn EventPublisher> = Arc::new(NullPublisher);
-    let mut registry = SubActionRegistry::new();
-    register_core_sub_actions(
-        &mut registry,
-        CoreSubActionDeps {
-            globals: Arc::clone(&dp) as Arc<dyn GlobalsRepo>,
-            user_globals: Arc::clone(&dp) as Arc<dyn UserGlobalsRepo>,
-            scripts: Arc::new(ScriptRegistry::new()),
-            publisher: Arc::clone(&publisher),
-            settings: Arc::clone(&dp) as Arc<dyn SettingsRepo>,
-            scheduler: SchedulerCell::new(),
-            trigger_instances: dp.trigger_instance_repo(),
-            actions: dp.action_repo(),
-            script_repo: Arc::new(forge_storage::script::MockScriptRepo::new())
-                as Arc<dyn ScriptRepo>,
-            cancel_registry: Arc::new(ActionCancelRegistry::new()),
-            overlays: OverlayServiceCell::new(),
-            config: Config::default(),
-        },
-    )
-    .unwrap();
-    register_scheduled_run_sub_actions(&mut registry, ScheduledRunsCell::new()).unwrap();
+    let bus = EventBus::new(Arc::new(NullEventLogRepo));
+    let publisher = Arc::clone(&bus) as Arc<dyn EventPublisher>;
+    let mut wiring =
+        common::with_every_core_step(RuntimeWiring::new(common::wiring_parts(dp, bus).await));
     register_speech_sub_actions(
-        &mut registry,
+        wiring.sub_actions_mut(),
         Arc::new(SilentSpeaker),
         TwitchEmoteLexicon::default(),
     )
     .unwrap();
-    register_latest_sub_actions(&mut registry, Arc::new(NoLatestValues)).unwrap();
+    register_latest_sub_actions(wiring.sub_actions_mut(), Arc::new(NoLatestValues)).unwrap();
     register_donation_sub_actions(
-        &mut registry,
+        wiring.sub_actions_mut(),
         Arc::new(DonationIngest::new(
             Arc::new(MockDonationRepo::new()),
             publisher,
@@ -96,7 +67,7 @@ async fn every_runtime_step() -> (SubActionRegistry, TempDir) {
         )),
     )
     .unwrap();
-    (registry, media)
+    (wiring.freeze().await.sub_action_registry, media)
 }
 
 fn stored_defaults(registry: &SubActionRegistry) -> BTreeMap<String, Value> {

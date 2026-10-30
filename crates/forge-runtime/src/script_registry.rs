@@ -24,6 +24,12 @@ pub struct ScriptRegistry {
     scheduling: Option<ScriptScheduling>,
 }
 
+pub struct ScriptRegistryParts {
+    pub speak_requester: Option<Arc<dyn SpeakRequester>>,
+    pub latest_values: Option<Arc<dyn LatestValueReader>>,
+    pub scheduling: Option<ScriptScheduling>,
+}
+
 #[derive(Debug, thiserror::Error)]
 pub enum ScriptRegistryError {
     #[error("storage: {0}")]
@@ -39,6 +45,20 @@ impl ScriptRegistry {
             speak_requester: None,
             latest_values: None,
             scheduling: None,
+        }
+    }
+
+    pub fn with_parts(parts: ScriptRegistryParts) -> Self {
+        let ScriptRegistryParts {
+            speak_requester,
+            latest_values,
+            scheduling,
+        } = parts;
+        Self {
+            inner: Arc::new(RwLock::new(HashMap::new())),
+            speak_requester,
+            latest_values,
+            scheduling,
         }
     }
 

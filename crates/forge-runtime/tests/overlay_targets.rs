@@ -1,4 +1,5 @@
 #![allow(clippy::expect_used)]
+mod common;
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -6,12 +7,9 @@ use std::sync::Arc;
 
 use forge_registry::SubActionRegistry;
 use forge_runtime::actions::ActionsService;
-use forge_runtime::sub_action_runners::{
-    CoreLogicIfThenElseRunner, CoreLogicSwitchCaseRunner, OverlaySendRunner,
-};
 use forge_runtime::{
-    ConditionGate, Config, OVERLAY_SEND_KIND_ID, OVERLAY_TARGET_KEY, OverlaySendTarget,
-    OverlayServiceCell, feeds_overlay, overlay_send_targets,
+    OVERLAY_SEND_KIND_ID, OVERLAY_TARGET_KEY, OverlaySendTarget, feeds_overlay,
+    overlay_send_targets,
 };
 use forge_storage::OverlayId;
 use forge_storage::action::MockActionRepo;
@@ -32,17 +30,8 @@ const ELSE_CHAIN_KEY: &str = "else_chain";
 const CASES_KEY: &str = "cases";
 const CASE_CHAIN_KEY: &str = "chain";
 
-fn registry() -> SubActionRegistry {
-    let mut reg = SubActionRegistry::new();
-    reg.register(Box::new(OverlaySendRunner::new(OverlayServiceCell::new())))
-        .expect("the overlay send runner registers");
-    reg.register(Box::new(CoreLogicIfThenElseRunner::new(Arc::new(
-        ConditionGate::new(&Config::default()),
-    ))))
-    .expect("the branching runner registers");
-    reg.register(Box::new(CoreLogicSwitchCaseRunner))
-        .expect("the switch runner registers");
-    reg
+fn registry() -> Arc<SubActionRegistry> {
+    common::core_steps_off_any_runtime()
 }
 
 fn step(kind_id: &str, config: SubActionConfig, enabled: bool) -> SubActionStep {

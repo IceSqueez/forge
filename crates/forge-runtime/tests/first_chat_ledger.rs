@@ -20,8 +20,8 @@ fn chat_line(viewer_id: &str) -> Event {
     Event::new(EventSource::Twitch, "twitch.channel.chat.message", payload)
 }
 
-fn bus() -> Arc<EventBus> {
-    EventBus::new(Arc::new(NullEventLogRepo))
+fn bus_with(ledger: Option<FirstChatLedger>) -> Arc<EventBus> {
+    EventBus::with_first_chats(Arc::new(NullEventLogRepo), ledger)
 }
 
 async fn empty_history_ledger() -> FirstChatLedger {
@@ -45,8 +45,7 @@ async fn published_flags(bus: &EventBus, viewer_ids: &[&str]) -> Vec<bool> {
 
 #[tokio::test]
 async fn every_subscriber_and_the_recent_ring_see_the_stamp_made_at_publish() {
-    let bus = bus();
-    bus.track_first_chats(empty_history_ledger().await);
+    let bus = bus_with(Some(empty_history_ledger().await));
     let mut sub = bus.subscribe();
     let line = chat_line("alice");
     let id = line.id;
@@ -61,7 +60,7 @@ async fn every_subscriber_and_the_recent_ring_see_the_stamp_made_at_publish() {
 
 #[tokio::test]
 async fn a_bus_without_a_ledger_flags_nobody_as_a_first_chatter() {
-    let bus = bus();
+    let bus = bus_with(None);
     assert_eq!(
         published_flags(&bus, &["alice", "alice"]).await,
         [false, false]
@@ -70,8 +69,7 @@ async fn a_bus_without_a_ledger_flags_nobody_as_a_first_chatter() {
 
 #[tokio::test]
 async fn back_to_back_lines_of_one_viewer_from_many_threads_yield_exactly_one_first() {
-    let bus = bus();
-    bus.track_first_chats(empty_history_ledger().await);
+    let bus = bus_with(Some(empty_history_ledger().await));
     let mut sub = bus.subscribe();
     let barrier = std::sync::Barrier::new(CONCURRENT_PUBLISHERS);
     std::thread::scope(|scope| {
@@ -102,15 +100,13 @@ async fn a_viewer_greeted_before_a_restart_is_not_first_again_after_it() {
             .unwrap();
     let viewers: Arc<dyn ViewerRepo> = backend.viewer_repo();
 
-    let before = bus();
-    before.track_first_chats(FirstChatLedger::load(viewers.as_ref()).await.unwrap());
+    let before = bus_with(Some(FirstChatLedger::load(viewers.as_ref()).await.unwrap()));
     spawn_viewer_tracker(Arc::clone(&before), Arc::clone(&viewers));
     assert_eq!(published_flags(&before, &["alice"]).await, [true]);
     before.shutdown();
     before.await_flush().await;
 
-    let after = bus();
-    after.track_first_chats(FirstChatLedger::load(viewers.as_ref()).await.unwrap());
+    let after = bus_with(Some(FirstChatLedger::load(viewers.as_ref()).await.unwrap()));
     assert_eq!(
         published_flags(&after, &["alice", "bob"]).await,
         [false, true]

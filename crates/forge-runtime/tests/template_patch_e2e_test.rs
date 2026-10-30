@@ -1,4 +1,5 @@
 #![allow(clippy::unwrap_used)]
+mod common;
 use std::collections::BTreeMap;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -6,18 +7,11 @@ use std::time::Duration;
 use async_trait::async_trait;
 use forge_events::EventSubscription;
 use forge_events::{Event, EventSource};
-use forge_registry::{
-    FormField, RegistryError, RunContext, SubActionCategory, SubActionRegistry, SubActionRunner,
-    TriggerRegistry,
-};
+use forge_registry::{FormField, RegistryError, RunContext, SubActionCategory, SubActionRunner};
 use forge_runtime::{
-    EventBus, NullEventLogRepo, QueueScheduler, ScriptRegistry, spawn_action_engine,
-    spawn_trigger_evaluator, sub_action_runners::register_core_sub_actions,
-    triggers::register_core_triggers,
+    EventBus, FrozenRuntime, NullEventLogRepo, RuntimeWiring, triggers::register_core_triggers,
 };
-use forge_storage::{
-    ActionRepo, DataProvider, GlobalsRepo, SettingsRepo, TriggerInstanceRepo, UserGlobalsRepo,
-};
+use forge_storage::DataProvider;
 use forge_storage_sqlite::SqliteBackend;
 use forge_types::{
     Action, ActionId, ArgStack, ExecutionMode, PermissionRung, Queue, QueueId, SubActionOutcome,
@@ -93,47 +87,11 @@ fn custom_instance(event_name: &str) -> TriggerInstance {
     }
 }
 
-fn build_core_registries(
-    globals: Arc<dyn GlobalsRepo>,
-    user_globals: Arc<dyn UserGlobalsRepo>,
-    settings: Arc<dyn SettingsRepo>,
-    trigger_instances: Arc<dyn TriggerInstanceRepo>,
-    actions: Arc<dyn ActionRepo>,
-) -> (Arc<SubActionRegistry>, Arc<TriggerRegistry>) {
-    let scripts = Arc::new(ScriptRegistry::new());
-    let bus = EventBus::new(Arc::new(NullEventLogRepo));
-    let publisher: Arc<dyn forge_events::EventPublisher> =
-        Arc::clone(&bus) as Arc<dyn forge_events::EventPublisher>;
-
-    let script_repo = {
-        let mut m = forge_storage::script::MockScriptRepo::new();
-        m.expect_record_execution().returning(|_, _, _, _| Ok(()));
-        Arc::new(m) as Arc<dyn forge_storage::ScriptRepo>
-    };
-    let mut sub_reg = SubActionRegistry::new();
-    register_core_sub_actions(
-        &mut sub_reg,
-        forge_runtime::CoreSubActionDeps {
-            globals,
-            user_globals,
-            scripts,
-            publisher,
-            settings,
-            scheduler: forge_runtime::SchedulerCell::new(),
-            trigger_instances,
-            actions,
-            script_repo,
-            cancel_registry: Arc::new(forge_runtime::ActionCancelRegistry::new()),
-            overlays: forge_runtime::OverlayServiceCell::new(),
-            config: forge_runtime::Config::default(),
-        },
-    )
-    .unwrap();
-
-    let mut trig_reg = TriggerRegistry::new();
-    register_core_triggers(&mut trig_reg).unwrap();
-
-    (Arc::new(sub_reg), Arc::new(trig_reg))
+async fn runtime_with_core_steps(dp: Arc<dyn DataProvider>, bus: Arc<EventBus>) -> FrozenRuntime {
+    let mut wiring = RuntimeWiring::new(common::wiring_parts(dp, bus).await);
+    wiring.register_core_sub_actions().unwrap();
+    register_core_triggers(wiring.triggers_mut()).unwrap();
+    wiring.freeze().await
 }
 
 async fn collect_kind(sub: &mut EventSubscription, target: &str) -> Option<Event> {
@@ -250,43 +208,9 @@ async fn trigger_evaluator_applies_effective_config_overrides() {
         .await
         .unwrap();
 
-    let (sub_reg, trig_reg) = build_core_registries(
-        Arc::clone(&dp) as Arc<dyn GlobalsRepo>,
-        Arc::clone(&dp) as Arc<dyn UserGlobalsRepo>,
-        Arc::clone(&dp) as Arc<dyn SettingsRepo>,
-        dp.trigger_instance_repo(),
-        dp.action_repo(),
-    );
-
     let bus = EventBus::new(Arc::new(NullEventLogRepo));
     let mut sub = bus.subscribe();
-
-    let engine = spawn_action_engine(
-        Arc::clone(&bus),
-        forge_runtime::Catalog::new(
-            dp.action_repo(),
-            dp.trigger_instance_repo(),
-            dp.catalog_revision(),
-        ),
-        dp.action_repo(),
-        dp.history_repo(),
-        sub_reg,
-        Arc::new(forge_runtime::ActionCancelRegistry::new()),
-    );
-    let sched = QueueScheduler::spawn(engine, Arc::clone(&bus), vec![make_queue(q_id)]);
-    let _eval = spawn_trigger_evaluator(
-        Arc::clone(&bus),
-        trig_reg,
-        forge_runtime::Catalog::new(
-            dp.action_repo(),
-            dp.trigger_instance_repo(),
-            dp.catalog_revision(),
-        ),
-        sched,
-        forge_runtime::Config::default(),
-    );
-
-    tokio::time::sleep(Duration::from_millis(10)).await;
+    let _runtime = runtime_with_core_steps(Arc::clone(&dp), Arc::clone(&bus)).await;
 
     bus.publish(Event::new(
         EventSource::Server,
@@ -360,43 +284,18 @@ async fn sub_action_runner_sees_merged_default_and_override() {
         .await
         .unwrap();
 
-    let mut sub_reg = SubActionRegistry::new();
-    sub_reg
+    let bus = EventBus::new(Arc::new(NullEventLogRepo));
+    let mut sub = bus.subscribe();
+    let mut wiring =
+        RuntimeWiring::new(common::wiring_parts(Arc::clone(&dp), Arc::clone(&bus)).await);
+    wiring
+        .sub_actions_mut()
         .register(Box::new(RecordingRunner {
             captured: Arc::clone(&captured),
         }))
         .unwrap();
-
-    let mut trig_reg = TriggerRegistry::new();
-    register_core_triggers(&mut trig_reg).unwrap();
-
-    let bus = EventBus::new(Arc::new(NullEventLogRepo));
-    let mut sub = bus.subscribe();
-
-    let engine = spawn_action_engine(
-        Arc::clone(&bus),
-        forge_runtime::Catalog::new(
-            dp.action_repo(),
-            dp.trigger_instance_repo(),
-            dp.catalog_revision(),
-        ),
-        dp.action_repo(),
-        dp.history_repo(),
-        Arc::new(sub_reg),
-        Arc::new(forge_runtime::ActionCancelRegistry::new()),
-    );
-    let sched = QueueScheduler::spawn(engine, Arc::clone(&bus), vec![make_queue(q_id)]);
-    let _eval = spawn_trigger_evaluator(
-        Arc::clone(&bus),
-        Arc::new(trig_reg),
-        forge_runtime::Catalog::new(
-            dp.action_repo(),
-            dp.trigger_instance_repo(),
-            dp.catalog_revision(),
-        ),
-        sched,
-        forge_runtime::Config::default(),
-    );
+    register_core_triggers(wiring.triggers_mut()).unwrap();
+    let _runtime = wiring.freeze().await;
 
     tokio::time::sleep(Duration::from_millis(10)).await;
 
@@ -443,43 +342,9 @@ async fn linked_action_executes_via_join_table_only() {
     let instance = custom_instance("go");
     dp.trigger_instance_repo().save(&instance).await.unwrap();
 
-    let (sub_reg, trig_reg) = build_core_registries(
-        Arc::clone(&dp) as Arc<dyn GlobalsRepo>,
-        Arc::clone(&dp) as Arc<dyn UserGlobalsRepo>,
-        Arc::clone(&dp) as Arc<dyn SettingsRepo>,
-        dp.trigger_instance_repo(),
-        dp.action_repo(),
-    );
-
     let bus = EventBus::new(Arc::new(NullEventLogRepo));
     let mut sub = bus.subscribe();
-
-    let engine = spawn_action_engine(
-        Arc::clone(&bus),
-        forge_runtime::Catalog::new(
-            dp.action_repo(),
-            dp.trigger_instance_repo(),
-            dp.catalog_revision(),
-        ),
-        dp.action_repo(),
-        dp.history_repo(),
-        sub_reg,
-        Arc::new(forge_runtime::ActionCancelRegistry::new()),
-    );
-    let sched = QueueScheduler::spawn(engine, Arc::clone(&bus), vec![make_queue(q_id)]);
-    let _eval = spawn_trigger_evaluator(
-        Arc::clone(&bus),
-        trig_reg,
-        forge_runtime::Catalog::new(
-            dp.action_repo(),
-            dp.trigger_instance_repo(),
-            dp.catalog_revision(),
-        ),
-        sched,
-        forge_runtime::Config::default(),
-    );
-
-    tokio::time::sleep(Duration::from_millis(10)).await;
+    let _runtime = runtime_with_core_steps(Arc::clone(&dp), Arc::clone(&bus)).await;
 
     bus.publish(Event::new(EventSource::Server, "custom.go", json!({})));
 

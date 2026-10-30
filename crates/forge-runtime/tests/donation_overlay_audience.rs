@@ -7,11 +7,10 @@ use async_trait::async_trait;
 use forge_events::DONATION_RECEIVED_KIND;
 use forge_overlay::{OverlayKindRegistry, register_builtin_kinds};
 use forge_registry::SubActionRegistry;
-use forge_runtime::sub_action_runners::{CoreLogicIfThenElseRunner, OverlaySendRunner};
 use forge_runtime::{
-    Catalog, ConditionGate, Config, DonationAudience, DonationOverlayAudience, EventBus,
-    NullEventLogRepo, OVERLAY_SEND_KIND_ID, OVERLAY_TARGET_KEY, OverlayFrameSink, OverlayReceivers,
-    OverlayServiceCell, OverlayServiceHandle, OverlayServiceParts,
+    Catalog, DonationAudience, DonationOverlayAudience, EventBus, NullEventLogRepo,
+    OVERLAY_SEND_KIND_ID, OVERLAY_TARGET_KEY, OverlayFrameSink, OverlayReceivers,
+    OverlayServiceHandle, OverlayServiceParts,
 };
 use forge_storage::action::MockActionRepo;
 use forge_storage::test_support::MemorySettings;
@@ -79,14 +78,7 @@ fn failure() -> StorageError {
 }
 
 fn sub_actions() -> Arc<SubActionRegistry> {
-    let mut reg = SubActionRegistry::new();
-    reg.register(Box::new(OverlaySendRunner::new(OverlayServiceCell::new())))
-        .expect("the overlay send runner registers");
-    reg.register(Box::new(CoreLogicIfThenElseRunner::new(Arc::new(
-        ConditionGate::new(&Config::default()),
-    ))))
-    .expect("the branching runner registers");
-    Arc::new(reg)
+    common::core_steps_off_any_runtime()
 }
 
 fn send(identity: &str) -> SubActionStep {

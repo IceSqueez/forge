@@ -43,6 +43,7 @@ mod persist_batch;
 mod queue_depth;
 pub mod queue_scheduler;
 mod run_history;
+mod runtime_builder;
 pub mod scheduled_runs;
 mod script_registry;
 pub mod settings;
@@ -120,6 +121,7 @@ pub use queue_scheduler::{
     QueueScheduler, QueueSchedulerHandle, QueueSchedulerStart, SchedulerCell, SchedulerError,
     SchedulerRequest,
 };
+pub use runtime_builder::{FrozenRuntime, RuntimeWiring, RuntimeWiringParts, ScheduledRunsWorker};
 pub use scheduled_runs::{
     CatchUpSettle, HandOff, ScheduleDue, ScheduleError, ScheduleIntent, ScheduleRequest,
     ScheduledPlacement, ScheduledRunsCell, ScheduledRunsHandle, ScheduledRunsParts,
@@ -127,7 +129,9 @@ pub use scheduled_runs::{
     SystemWallClock, WaitingForQueueWatch, WaitingRuns, WallClock, reserve_scheduled_runs,
     spawn_scheduled_runs,
 };
-pub use script_registry::{CompiledScript, ScriptRegistry, ScriptRegistryError};
+pub use script_registry::{
+    CompiledScript, ScriptRegistry, ScriptRegistryError, ScriptRegistryParts,
+};
 pub use speak_dispatcher::{
     ShowSpeech, SpeakDispatchError, SpeakDispatcher, SpeakingViewer, SpeechOrigin,
     SpeechStartSignal, VoiceDescriptor,

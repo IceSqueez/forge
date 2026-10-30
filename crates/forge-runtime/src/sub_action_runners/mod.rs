@@ -392,26 +392,22 @@ pub fn register_core_sub_actions(
 #[cfg(test)]
 mod tests {
     use super::{
-        CoreActionScheduleRunner, CoreHttpRunner, CoreLogicIfThenElseRunner, CoreLogicLoopRunner,
-        CoreLogicSwitchCaseRunner, CoreLogicWaitRunner, CoreLogicWaitUntilRunner,
-        CoreNotifyShowRunner, CoreStringLengthRunner, CoreStringTrimRunner, CoreSubActionDeps,
-        CoreTimeAddRunner, CoreTimeDiffRunner, CoreTimeNowRunner, SystemNotifyPort,
-        register_core_sub_actions,
+        CoreHttpRunner, CoreLogicIfThenElseRunner, CoreLogicLoopRunner, CoreLogicSwitchCaseRunner,
+        CoreLogicWaitRunner, CoreLogicWaitUntilRunner, CoreNotifyShowRunner,
+        CoreStringLengthRunner, CoreStringTrimRunner, CoreTimeAddRunner, CoreTimeDiffRunner,
+        CoreTimeNowRunner, SCHEDULE_ACTION_KIND_ID, SystemNotifyPort,
     };
-    use crate::action_cancel::ActionCancelRegistry;
     use crate::condition::ConditionGate;
     use crate::config::Config;
     use crate::egress::{EgressClient, HttpMethod};
-    use crate::scheduled_runs::ScheduledRunsCell;
-    use crate::test_support::sandboxed_backend;
+    use crate::test_support::{frozen_core_runtime, sandboxed_backend};
     use crate::triggers::TimerTickDescriptor;
-    use crate::{EventBus, NullEventLogRepo, OverlayServiceCell, SchedulerCell, ScriptRegistry};
     use forge_events::{Event, EventPublisher};
     use forge_registry::{
-        CodeKind, DurationBounds, FormField, RegistryError, RunContext, SubActionRegistry,
-        SubActionRunner, TriggerKindDescriptor,
+        CodeKind, DurationBounds, FormField, RegistryError, RunContext, SubActionRunner,
+        TriggerKindDescriptor,
     };
-    use forge_storage::{DataProvider, GlobalsRepo, ScriptRepo, SettingsRepo, UserGlobalsRepo};
+    use forge_storage::SettingsRepo;
     use forge_types::{ArgStack, EventId, SubActionConfig, SubActionOutcome, Variant};
     use std::sync::Arc;
 
@@ -426,34 +422,10 @@ mod tests {
             .collect()
     }
 
-    async fn core_registry() -> SubActionRegistry {
-        let backend = sandboxed_backend([0x23; 32]).await.map(Arc::new);
-        let bus = EventBus::new(Arc::new(NullEventLogRepo));
-        let mut registry = SubActionRegistry::new();
-        register_core_sub_actions(
-            &mut registry,
-            CoreSubActionDeps {
-                globals: Arc::clone(&*backend) as Arc<dyn GlobalsRepo>,
-                user_globals: Arc::clone(&*backend) as Arc<dyn UserGlobalsRepo>,
-                scripts: Arc::new(ScriptRegistry::new()),
-                publisher: bus as Arc<dyn EventPublisher>,
-                settings: Arc::clone(&*backend) as Arc<dyn SettingsRepo>,
-                scheduler: SchedulerCell::new(),
-                trigger_instances: backend.trigger_instance_repo(),
-                actions: backend.action_repo(),
-                script_repo: Arc::clone(&*backend) as Arc<dyn ScriptRepo>,
-                cancel_registry: Arc::new(ActionCancelRegistry::new()),
-                overlays: OverlayServiceCell::new(),
-                config: Config::default(),
-            },
-        )
-        .unwrap();
-        registry
-    }
-
     #[tokio::test]
     async fn only_condition_and_value_fields_edit_as_expressions_and_the_inline_body_as_a_script() {
-        let registry = core_registry().await;
+        let (runtime, _backend) = frozen_core_runtime([0x23; 32]).await;
+        let registry = runtime.sub_action_registry;
 
         let mut roster: Vec<(String, &str, CodeKind)> = registry
             .all()
@@ -526,7 +498,11 @@ mod tests {
         );
         let wait_until = CoreLogicWaitUntilRunner::new(gate);
         let notify = CoreNotifyShowRunner::new(Arc::new(SystemNotifyPort));
-        let schedule = CoreActionScheduleRunner::new(ScheduledRunsCell::new());
+        let (runtime, _scheduling_backend) = frozen_core_runtime([0x24; 32]).await;
+        let schedule = runtime
+            .sub_action_registry
+            .get(SCHEDULE_ACTION_KIND_ID)
+            .unwrap();
 
         let expectations: &[(&str, Vec<FormField>, &str, DurationBounds)] = &[
             (
@@ -595,7 +571,8 @@ mod tests {
 
     #[tokio::test]
     async fn text_edited_fields_default_to_text_so_a_new_step_opens_without_rendered_containers() {
-        let registry = core_registry().await;
+        let (runtime, _backend) = frozen_core_runtime([0x25; 32]).await;
+        let registry = runtime.sub_action_registry;
         let offenders: Vec<String> = registry
             .all()
             .flat_map(|runner| {

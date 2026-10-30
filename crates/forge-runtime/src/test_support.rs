@@ -1,7 +1,18 @@
 use std::ops::Deref;
+use std::sync::Arc;
 
+use async_trait::async_trait;
+use forge_events::EventPublisher;
+use forge_overlay::OverlayKindRegistry;
+use forge_storage::{DataProvider, OverlayId};
 use forge_storage_sqlite::SqliteBackend;
+use forge_types::Shared;
 use tempfile::TempDir;
+
+use crate::{
+    EventBus, FrozenRuntime, LatestValues, NullEventLogRepo, OverlayFrameSink, OverlayReceivers,
+    RuntimeWiring, RuntimeWiringParts, SystemWallClock,
+};
 
 pub(crate) struct Sandboxed<T> {
     inner: T,
@@ -34,6 +45,55 @@ pub(crate) async fn sandboxed_backend(key: [u8; 32]) -> Sandboxed<SqliteBackend>
         inner: backend,
         _media_root: media_root,
     }
+}
+
+struct NoPages;
+
+#[async_trait]
+impl OverlayFrameSink for NoPages {
+    async fn deliver_content(
+        &self,
+        _: &OverlayId,
+        _: serde_json::Value,
+        _: Option<u64>,
+    ) -> OverlayReceivers {
+        OverlayReceivers::default()
+    }
+
+    async fn deliver_reload(&self, _: &OverlayId) {}
+
+    async fn revoke(&self, _: &OverlayId) {}
+}
+
+pub(crate) async fn frozen_core_runtime(
+    key: [u8; 32],
+) -> (FrozenRuntime, Sandboxed<Arc<SqliteBackend>>) {
+    let backend = sandboxed_backend(key).await.map(Arc::new);
+    let provider = Arc::clone(&*backend) as Arc<dyn DataProvider>;
+    let bus = EventBus::new(Arc::new(NullEventLogRepo));
+    let latest_values = LatestValues::load(
+        provider.latest_value_repo(),
+        Arc::clone(&bus) as Arc<dyn EventPublisher>,
+        Shared::new(String::new()),
+    )
+    .await;
+    let mut wiring = RuntimeWiring::new(RuntimeWiringParts {
+        bus,
+        provider,
+        latest_values,
+        script_speech: None,
+        overlay_speech: None,
+        overlay_kinds: Arc::new(OverlayKindRegistry::new()),
+        overlay_frames: Arc::new(NoPages),
+        clock: Arc::new(SystemWallClock),
+    });
+    wiring
+        .register_core_sub_actions()
+        .expect("the core steps register");
+    wiring
+        .register_scheduled_run_sub_actions()
+        .expect("the scheduled-run steps register");
+    (wiring.freeze().await, backend)
 }
 
 pub(crate) mod log_capture {

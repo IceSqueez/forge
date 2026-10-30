@@ -15,12 +15,11 @@ use forge_registry::{
     TriggerKindDescriptor, TriggerRegistry, TriggerVariables,
 };
 use forge_runtime::actions::ActionsService;
-use forge_runtime::sub_action_runners::OverlaySendRunner;
 use forge_runtime::{
     EngineVoiceError, EventBus, NullEventLogRepo, OVERLAY_SEND_KIND_ID, OVERLAY_TARGET_KEY,
     OverlayDispatch, OverlayFrameSink, OverlayReceivers, OverlaySampleSource, OverlaySamples,
-    OverlayServiceCell, OverlayServiceHandle, OverlayServiceParts, ShowSpeech, SpeakDispatchError,
-    SpeakDispatcher, SpeechOrigin, SpeechStartSignal,
+    OverlayServiceHandle, OverlayServiceParts, ShowSpeech, SpeakDispatchError, SpeakDispatcher,
+    SpeechOrigin, SpeechStartSignal,
 };
 use forge_storage::action::MockActionRepo;
 use forge_storage::history::MockHistoryRepo;
@@ -214,10 +213,7 @@ fn overlay_kinds() -> Arc<OverlayKindRegistry> {
 }
 
 fn sub_actions() -> Arc<SubActionRegistry> {
-    let mut reg = SubActionRegistry::new();
-    reg.register(Box::new(OverlaySendRunner::new(OverlayServiceCell::new())))
-        .expect("the overlay send runner registers");
-    Arc::new(reg)
+    common::core_steps_off_any_runtime()
 }
 
 fn triggers() -> Arc<TriggerRegistry> {

@@ -1,4 +1,5 @@
 #![allow(clippy::expect_used, clippy::panic)]
+mod common;
 use std::sync::{Arc, Mutex};
 
 use forge_events::Event;
@@ -19,8 +20,8 @@ use forge_runtime::actions::{
     ActionsService, OVERLAY_ALERT_QUEUE, OverlayWiringError, OverlayWiringOutcome,
     OverlayWiringPlan, OverlayWiringRecords, OverlayWiringRefusal, WiredQueue, plan_overlay_wiring,
 };
-use forge_runtime::sub_action_runners::{OverlaySendRunner, WAIT_KIND_ID, WAIT_MS_KEY};
-use forge_runtime::{OVERLAY_SEND_KIND_ID, OVERLAY_TARGET_KEY, OverlayServiceCell};
+use forge_runtime::sub_action_runners::{WAIT_KIND_ID, WAIT_MS_KEY};
+use forge_runtime::{OVERLAY_SEND_KIND_ID, OVERLAY_TARGET_KEY};
 use forge_storage::action::MockActionRepo;
 use forge_storage::history::MockHistoryRepo;
 use forge_storage::queue::MockQueueRepo;
@@ -551,11 +552,8 @@ fn instance_of(kind_id: &str) -> TriggerInstance {
     }
 }
 
-fn registry() -> SubActionRegistry {
-    let mut reg = SubActionRegistry::new();
-    reg.register(Box::new(OverlaySendRunner::new(OverlayServiceCell::new())))
-        .expect("the overlay send runner registers");
-    reg
+fn registry() -> Arc<SubActionRegistry> {
+    common::core_steps_off_any_runtime()
 }
 
 impl Wiring {

@@ -128,6 +128,17 @@ impl EventBus {
         Self::with_config(event_log, &Config::default())
     }
 
+    pub fn with_first_chats(
+        event_log: Arc<dyn EventLogRepo>,
+        ledger: Option<FirstChatLedger>,
+    ) -> Arc<Self> {
+        let bus = Self::new(event_log);
+        if let Some(ledger) = ledger {
+            bus.track_first_chats(ledger);
+        }
+        bus
+    }
+
     pub fn with_config(event_log: Arc<dyn EventLogRepo>, config: &Config) -> Arc<Self> {
         Arc::new(Self {
             observers: EventChannel::new(config.bus_observer_capacity),

@@ -838,7 +838,7 @@ pub(crate) mod tests {
         }
     }
 
-    pub(crate) async fn every_registry_entry() -> (TriggerRegistry, SubActionRegistry) {
+    pub(crate) async fn every_registry_entry() -> (Arc<TriggerRegistry>, Arc<SubActionRegistry>) {
         let media_root = tempfile::tempdir().unwrap();
         let backend: Arc<dyn DataProvider> = Arc::new(
             forge_storage_sqlite::SqliteBackend::open_for_test(
@@ -851,59 +851,55 @@ pub(crate) mod tests {
             .unwrap(),
         );
         let bus = test_bus();
-        let mut triggers = TriggerRegistry::new();
-        forge_runtime::register_core_triggers(&mut triggers).unwrap();
-        register_platform_triggers(&mut triggers);
-
-        let mut sub_actions = SubActionRegistry::new();
-        forge_runtime::register_core_sub_actions(
-            &mut sub_actions,
-            forge_runtime::CoreSubActionDeps {
-                globals: Arc::clone(&backend) as Arc<dyn forge_storage::GlobalsRepo>,
-                user_globals: Arc::clone(&backend) as Arc<dyn forge_storage::UserGlobalsRepo>,
-                scripts: Arc::new(forge_runtime::ScriptRegistry::new()),
-                publisher: publisher(&bus),
-                settings: Arc::clone(&backend) as Arc<dyn forge_storage::SettingsRepo>,
-                scheduler: forge_runtime::SchedulerCell::new(),
-                trigger_instances: backend.trigger_instance_repo(),
-                actions: backend.action_repo(),
-                script_repo: Arc::clone(&backend) as Arc<dyn forge_storage::ScriptRepo>,
-                cancel_registry: Arc::new(forge_runtime::ActionCancelRegistry::new()),
-                overlays: forge_runtime::OverlayServiceCell::new(),
-                config: forge_runtime::Config::default(),
-            },
+        let latest_values = forge_runtime::LatestValues::load(
+            backend.latest_value_repo(),
+            publisher(&bus),
+            forge_types::Shared::new(String::new()),
         )
-        .unwrap();
-        wire_obs(&mut sub_actions, &backend, &bus);
-        wire_vtube(&mut sub_actions, &backend, &bus);
+        .await;
+        let hub = forge_server::DeliveryHub::new(
+            Arc::clone(&bus) as Arc<dyn forge_events::EventObserver>
+        );
+        let mut wiring = forge_runtime::RuntimeWiring::new(forge_runtime::RuntimeWiringParts {
+            bus: Arc::clone(&bus),
+            provider: Arc::clone(&backend),
+            latest_values,
+            script_speech: None,
+            overlay_speech: None,
+            overlay_kinds: Arc::new(forge_overlay::OverlayKindRegistry::new()),
+            overlay_frames: Arc::new(hub) as Arc<dyn forge_runtime::OverlayFrameSink>,
+            clock: Arc::new(forge_runtime::SystemWallClock),
+        });
+        wiring.register_core_sub_actions().unwrap();
+        wiring.register_scheduled_run_sub_actions().unwrap();
+        forge_runtime::register_core_triggers(wiring.triggers_mut()).unwrap();
+        let (sub_actions, triggers) = wiring.registries_mut();
+        register_platform_triggers(triggers);
+        wire_obs(&mut *sub_actions, &backend, &bus);
+        wire_vtube(&mut *sub_actions, &backend, &bus);
         wire_discord(
-            &mut sub_actions,
+            &mut *sub_actions,
             &backend,
             &bus,
             &PlatformEndpoints::default(),
         );
-        wire_midi(&mut sub_actions, &backend, &bus, Vec::new());
-        register_twitch_runners(&mut sub_actions, &backend, &bus);
-        register_youtube_runners(&mut sub_actions, &bus);
-        register_kick_runners(&mut sub_actions, &bus);
-        forge_runtime::register_scheduled_run_sub_actions(
-            &mut sub_actions,
-            forge_runtime::ScheduledRunsCell::new(),
-        )
-        .unwrap();
+        wire_midi(&mut *sub_actions, &backend, &bus, Vec::new());
+        register_twitch_runners(&mut *sub_actions, &backend, &bus);
+        register_youtube_runners(&mut *sub_actions, &bus);
+        register_kick_runners(&mut *sub_actions, &bus);
         forge_soundboard::register_soundboard_sub_actions(
-            &mut sub_actions,
+            &mut *sub_actions,
             Arc::new(SilentSoundboard),
         )
         .unwrap();
         forge_runtime::register_speech_sub_actions(
-            &mut sub_actions,
+            &mut *sub_actions,
             Arc::new(SilentSpeaker),
             forge_runtime::TwitchEmoteLexicon::default(),
         )
         .unwrap();
         forge_runtime::register_donation_sub_actions(
-            &mut sub_actions,
+            &mut *sub_actions,
             Arc::new(DonationIngest::new(
                 backend.donation_repo(),
                 publisher(&bus),
@@ -911,9 +907,10 @@ pub(crate) mod tests {
             )),
         )
         .unwrap();
-        forge_runtime::register_latest_sub_actions(&mut sub_actions, Arc::new(NoLatestValues))
+        forge_runtime::register_latest_sub_actions(&mut *sub_actions, Arc::new(NoLatestValues))
             .unwrap();
-        (triggers, sub_actions)
+        let frozen = wiring.freeze().await;
+        (frozen.trigger_registry, frozen.sub_action_registry)
     }
 
     fn register_twitch_runners(

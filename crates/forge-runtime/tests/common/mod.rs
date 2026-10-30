@@ -1,12 +1,20 @@
-#![allow(dead_code, clippy::panic, clippy::unwrap_used)]
+#![allow(dead_code, clippy::expect_used, clippy::panic, clippy::unwrap_used)]
+
+pub mod stub_provider;
 
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use forge_overlay::SampleContext;
-use forge_runtime::{OverlayFrameSink, OverlayReceivers, OverlaySampleSource};
-use forge_storage::OverlayId;
-use forge_types::{MessageArg, MessageRef, SubActionOutcome, UserText, VerbatimText};
+use forge_events::EventPublisher;
+use forge_overlay::{OverlayKindRegistry, SampleContext, register_builtin_kinds};
+use forge_registry::SubActionRegistry;
+use forge_runtime::{
+    EventBus, FrozenRuntime, LatestValues, NullEventLogRepo, OverlayFrameSink, OverlayReceivers,
+    OverlaySampleSource, RuntimeWiring, RuntimeWiringParts, SystemWallClock,
+};
+use forge_storage::{DataProvider, OverlayId};
+use forge_types::{MessageArg, MessageRef, Shared, SubActionOutcome, UserText, VerbatimText};
+use stub_provider::StubProvider;
 
 pub fn message_of(text: &UserText) -> &MessageRef {
     match text {
@@ -111,4 +119,64 @@ impl OverlayFrameSink for NoPages {
 
 pub fn no_pages() -> Arc<dyn OverlayFrameSink> {
     Arc::new(NoPages)
+}
+
+pub fn builtin_overlay_kinds() -> Arc<OverlayKindRegistry> {
+    let mut kinds = OverlayKindRegistry::new();
+    register_builtin_kinds(&mut kinds).unwrap();
+    Arc::new(kinds)
+}
+
+pub async fn wiring_parts(
+    provider: Arc<dyn DataProvider>,
+    bus: Arc<EventBus>,
+) -> RuntimeWiringParts {
+    let latest_values = LatestValues::load(
+        provider.latest_value_repo(),
+        Arc::clone(&bus) as Arc<dyn EventPublisher>,
+        Shared::new(String::new()),
+    )
+    .await;
+    RuntimeWiringParts {
+        bus,
+        provider,
+        latest_values,
+        script_speech: None,
+        overlay_speech: None,
+        overlay_kinds: builtin_overlay_kinds(),
+        overlay_frames: no_pages(),
+        clock: Arc::new(SystemWallClock),
+    }
+}
+
+pub fn with_every_core_step(mut wiring: RuntimeWiring) -> RuntimeWiring {
+    wiring.register_core_sub_actions().unwrap();
+    wiring.register_scheduled_run_sub_actions().unwrap();
+    wiring
+}
+
+pub async fn frozen_runtime(parts: RuntimeWiringParts) -> FrozenRuntime {
+    with_every_core_step(RuntimeWiring::new(parts))
+        .freeze()
+        .await
+}
+
+pub async fn core_steps() -> Arc<SubActionRegistry> {
+    let provider: Arc<dyn DataProvider> = Arc::new(StubProvider::idle());
+    let bus = EventBus::new(Arc::new(NullEventLogRepo));
+    frozen_runtime(wiring_parts(provider, bus).await)
+        .await
+        .sub_action_registry
+}
+
+pub fn core_steps_off_any_runtime() -> Arc<SubActionRegistry> {
+    std::thread::spawn(|| {
+        tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap()
+            .block_on(core_steps())
+    })
+    .join()
+    .unwrap()
 }

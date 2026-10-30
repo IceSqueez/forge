@@ -1,18 +1,16 @@
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+mod common;
 use std::collections::BTreeMap;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
 
-use forge_events::{Event, EventPublisher, EventSubscription, EventsError};
-use forge_registry::SubActionRegistry;
+use forge_events::{Event, EventSubscription, EventsError};
 use forge_runtime::{
-    ActionCancelRegistry, ActionEngineHandle, Catalog, Config, CoreSubActionDeps, EventBus,
-    NullEventLogRepo, OverlayServiceCell, QueueAdmission, QueueMode, QueueScheduler, SchedulerCell,
-    SchedulerRequest, ScriptRegistry, spawn_action_engine,
-    sub_action_runners::register_core_sub_actions,
+    EventBus, FrozenRuntime, NullEventLogRepo, QueueAdmission, QueueMode, SchedulerRequest,
+    ScriptRegistry,
 };
-use forge_storage::{DataProvider, GlobalsRepo, ScriptRecord, SettingsRepo, UserGlobalsRepo};
+use forge_storage::{DataProvider, ScriptRecord};
 use forge_storage_sqlite::SqliteBackend;
 use forge_types::{
     Action, ArgStack, EventId, ExecutionMode, Queue, ScriptContract, SubActionStep, Variant,
@@ -29,8 +27,8 @@ const SCRIPT_ID: &str = "01JBZ8Q4T5N7W3K2M9X6V1R0SS";
 
 struct Rig {
     bus: Arc<EventBus>,
-    engine: ActionEngineHandle,
     queue: Queue,
+    runtime: FrozenRuntime,
     _media: TempDir,
 }
 
@@ -65,47 +63,11 @@ async fn rig() -> Rig {
         .unwrap();
 
     let bus = EventBus::new(Arc::new(NullEventLogRepo));
-    let publisher: Arc<dyn EventPublisher> = Arc::clone(&bus) as Arc<dyn EventPublisher>;
-    let script_repo = {
-        let mut m = forge_storage::script::MockScriptRepo::new();
-        m.expect_record_execution().returning(|_, _, _, _| Ok(()));
-        Arc::new(m) as Arc<dyn forge_storage::ScriptRepo>
-    };
-    let mut sub_actions = SubActionRegistry::new();
-    register_core_sub_actions(
-        &mut sub_actions,
-        CoreSubActionDeps {
-            globals: Arc::clone(&dp) as Arc<dyn GlobalsRepo>,
-            user_globals: Arc::clone(&dp) as Arc<dyn UserGlobalsRepo>,
-            scripts: Arc::new(ScriptRegistry::new()),
-            publisher,
-            settings: Arc::clone(&dp) as Arc<dyn SettingsRepo>,
-            scheduler: SchedulerCell::new(),
-            trigger_instances: dp.trigger_instance_repo(),
-            actions: dp.action_repo(),
-            script_repo,
-            cancel_registry: Arc::new(ActionCancelRegistry::new()),
-            overlays: OverlayServiceCell::new(),
-            config: Config::default(),
-        },
-    )
-    .unwrap();
-    let engine = spawn_action_engine(
-        Arc::clone(&bus),
-        Catalog::new(
-            dp.action_repo(),
-            dp.trigger_instance_repo(),
-            dp.catalog_revision(),
-        ),
-        dp.action_repo(),
-        dp.history_repo(),
-        Arc::new(sub_actions),
-        Arc::new(ActionCancelRegistry::new()),
-    );
+    let runtime = common::frozen_runtime(common::wiring_parts(dp, Arc::clone(&bus)).await).await;
     Rig {
         bus,
-        engine,
         queue,
+        runtime,
         _media: media,
     }
 }
@@ -195,7 +157,8 @@ async fn run_quick_chat_sends(rig: &Rig) -> (Vec<Event>, Vec<Event>) {
             "Say hello on kick",
         ),
     ] {
-        rig.engine
+        rig.runtime
+            .action_engine
             .execute_quick_action(step, "twitch".to_owned(), label.to_owned(), None)
             .await
             .unwrap();
@@ -227,11 +190,7 @@ async fn quick_action_done_payloads_match_the_golden() {
 #[tokio::test]
 async fn paused_queue_skip_payload_matches_the_golden() {
     let rig = rig().await;
-    let scheduler = QueueScheduler::spawn(
-        rig.engine.clone(),
-        Arc::clone(&rig.bus),
-        vec![rig.queue.clone()],
-    );
+    let scheduler = &rig.runtime.scheduler;
     let mut sub = rig.bus.subscribe();
     scheduler
         .set_mode(rig.queue.id, QueueMode::PAUSED)
@@ -255,7 +214,6 @@ async fn paused_queue_skip_payload_matches_the_golden() {
         &collect(&mut sub, "action.skipped", 1).await,
         "action.skipped.json",
     );
-    scheduler.shutdown();
 }
 
 #[tokio::test]

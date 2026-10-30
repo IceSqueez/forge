@@ -1,4 +1,5 @@
 #![allow(clippy::unwrap_used, clippy::panic)]
+mod common;
 use std::collections::BTreeMap;
 use std::sync::Arc;
 use std::time::Duration;
@@ -6,14 +7,11 @@ use std::time::Duration;
 use forge_events::EventSubscription;
 use forge_events::{Event, EventSource, EventsError};
 use forge_registry::{
-    ChatTriggerFamily, EventFilter, FormField, KindPlatformContract, SubActionRegistry,
-    TriggerCategory, TriggerKindDescriptor, TriggerRegistry,
+    ChatTriggerFamily, EventFilter, FormField, KindPlatformContract, TriggerCategory,
+    TriggerKindDescriptor, TriggerRegistry,
 };
-use forge_runtime::{
-    EventBus, NullEventLogRepo, QueueScheduler, ScriptRegistry, spawn_action_engine,
-    spawn_trigger_evaluator, sub_action_runners::register_core_sub_actions,
-};
-use forge_storage::{DataProvider, GlobalsRepo, SettingsRepo, UserGlobalsRepo};
+use forge_runtime::{EventBus, FrozenRuntime, NullEventLogRepo, RuntimeWiring};
+use forge_storage::DataProvider;
 use forge_storage_sqlite::SqliteBackend;
 use forge_types::{
     Action, ActionId, ArgStack, ChatPayload, ChatSegment, ExecutionMode, ModerationMarks,
@@ -86,8 +84,7 @@ impl TriggerKindDescriptor for FakeDescriptor {
     }
 }
 
-fn fake_registry() -> Arc<TriggerRegistry> {
-    let mut registry = TriggerRegistry::new();
+fn register_fake_triggers(registry: &mut TriggerRegistry) {
     registry
         .register(Box::new(FakeDescriptor {
             id: CHAT_COMMAND_KIND,
@@ -102,7 +99,6 @@ fn fake_registry() -> Arc<TriggerRegistry> {
             family: None,
         }))
         .unwrap();
-    Arc::new(registry)
 }
 
 fn instance(kind_id: &str, rung: PermissionRung, cooldown_secs: u32) -> TriggerInstance {
@@ -180,7 +176,7 @@ fn plain_event(user: &str) -> Event {
 struct Harness {
     bus: Arc<EventBus>,
     sub: EventSubscription,
-    _evaluator: forge_runtime::TriggerEvaluatorHandle,
+    _runtime: FrozenRuntime,
     _media: TempDir,
 }
 
@@ -218,67 +214,17 @@ async fn harness(instances: &[(&TriggerInstance, ActionId)]) -> Harness {
             .unwrap();
     }
 
-    let scripts = Arc::new(ScriptRegistry::new());
-    let publisher_bus = EventBus::new(Arc::new(NullEventLogRepo));
-    let publisher: Arc<dyn forge_events::EventPublisher> =
-        Arc::clone(&publisher_bus) as Arc<dyn forge_events::EventPublisher>;
-    let script_repo = {
-        let mut m = forge_storage::script::MockScriptRepo::new();
-        m.expect_record_execution().returning(|_, _, _, _| Ok(()));
-        Arc::new(m) as Arc<dyn forge_storage::ScriptRepo>
-    };
-    let mut sub_reg = SubActionRegistry::new();
-    register_core_sub_actions(
-        &mut sub_reg,
-        forge_runtime::CoreSubActionDeps {
-            globals: Arc::clone(&dp) as Arc<dyn GlobalsRepo>,
-            user_globals: Arc::clone(&dp) as Arc<dyn UserGlobalsRepo>,
-            scripts,
-            publisher,
-            settings: Arc::clone(&dp) as Arc<dyn SettingsRepo>,
-            scheduler: forge_runtime::SchedulerCell::new(),
-            trigger_instances: dp.trigger_instance_repo(),
-            actions: dp.action_repo(),
-            script_repo,
-            cancel_registry: Arc::new(forge_runtime::ActionCancelRegistry::new()),
-            overlays: forge_runtime::OverlayServiceCell::new(),
-            config: forge_runtime::Config::default(),
-        },
-    )
-    .unwrap();
-
     let bus = EventBus::new(Arc::new(NullEventLogRepo));
     let sub = bus.subscribe();
-    let engine = spawn_action_engine(
-        Arc::clone(&bus),
-        forge_runtime::Catalog::new(
-            dp.action_repo(),
-            dp.trigger_instance_repo(),
-            dp.catalog_revision(),
-        ),
-        dp.action_repo(),
-        dp.history_repo(),
-        Arc::new(sub_reg),
-        Arc::new(forge_runtime::ActionCancelRegistry::new()),
-    );
-    let scheduler = QueueScheduler::spawn(engine, Arc::clone(&bus), vec![queue]);
-    let evaluator = spawn_trigger_evaluator(
-        Arc::clone(&bus),
-        fake_registry(),
-        forge_runtime::Catalog::new(
-            dp.action_repo(),
-            dp.trigger_instance_repo(),
-            dp.catalog_revision(),
-        ),
-        scheduler,
-        forge_runtime::Config::default(),
-    );
+    let mut wiring = RuntimeWiring::new(common::wiring_parts(dp, Arc::clone(&bus)).await);
+    wiring.register_core_sub_actions().unwrap();
+    register_fake_triggers(wiring.triggers_mut());
+    let runtime = wiring.freeze().await;
 
-    tokio::time::sleep(Duration::from_millis(10)).await;
     Harness {
         bus,
         sub,
-        _evaluator: evaluator,
+        _runtime: runtime,
         _media: media,
     }
 }

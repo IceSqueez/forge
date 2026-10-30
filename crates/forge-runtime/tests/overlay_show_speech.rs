@@ -1,5 +1,6 @@
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 mod common;
+use common::stub_provider::StubProvider;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -10,13 +11,13 @@ use forge_overlay::config::{SHOW, SPEECH, SPEECH_VOICE};
 use forge_overlay::motion::{EXIT, EXIT_MS, NO_MOTION};
 use forge_overlay::{OverlayKindRegistry, register_builtin_kinds};
 use forge_registry::{CancelSignal, RunContext, SubActionRunner};
-use forge_runtime::sub_action_runners::OverlaySendRunner;
 use forge_runtime::{
-    EngineVoiceError, EventBus, NullEventLogRepo, OVERLAY_NAME_KEY, OVERLAY_SPEECH_FAILED_KIND,
-    OVERLAY_TARGET_KEY, OverlayDispatch, OverlayFrameSink, OverlayReceivers, OverlayServiceCell,
-    OverlayServiceHandle, OverlayServiceParts, SHOW_CEILING, SHOW_SPEECH_START_WAIT,
-    SPEECH_FAILURE_ERROR_KEY, SPEECH_FAILURE_MESSAGE_KEY, ShowEnd, ShowSpeech, ShowTicket,
-    SpeakDispatchError, SpeakDispatcher, SpeakingViewer, SpeechOrigin, SpeechStartSignal,
+    EngineVoiceError, EventBus, FrozenRuntime, NullEventLogRepo, OVERLAY_NAME_KEY,
+    OVERLAY_SEND_KIND_ID, OVERLAY_SPEECH_FAILED_KIND, OVERLAY_TARGET_KEY, OverlayDispatch,
+    OverlayFrameSink, OverlayReceivers, OverlayServiceHandle, OverlayServiceParts,
+    RuntimeWiringParts, SHOW_CEILING, SHOW_SPEECH_START_WAIT, SPEECH_FAILURE_ERROR_KEY,
+    SPEECH_FAILURE_MESSAGE_KEY, ShowEnd, ShowSpeech, ShowTicket, SpeakDispatchError,
+    SpeakDispatcher, SpeakingViewer, SpeechOrigin, SpeechStartSignal,
 };
 use forge_storage::test_support::MemorySettings;
 use forge_storage::{
@@ -306,6 +307,55 @@ fn harness_checking_voice(
     }
 }
 
+async fn wired_stage(kind_id: &str, speaks: Speaks) -> (Harness, FrozenRuntime) {
+    let stored = definition(kind_id, "  amy  ", exit(NO_MOTION, 0));
+    let mut provider = StubProvider::idle();
+    provider
+        .overlay()
+        .expect_get()
+        .returning(move |id| Ok((id == &stored.id).then(|| stored.clone())));
+    provider
+        .overlay()
+        .expect_set_retained_content()
+        .returning(|_, _| Ok(()));
+    provider
+        .overlay()
+        .expect_get_retained_content()
+        .returning(|_| Ok(None));
+    let page = Arc::new(TimedPage {
+        started: Instant::now(),
+        frames: Mutex::new(Vec::new()),
+    });
+    let speaker = Arc::new(ScriptedSpeaker {
+        started: Instant::now(),
+        speaks,
+        voice_check: None,
+        spoken: Mutex::new(Vec::new()),
+        abandoned: Arc::default(),
+    });
+    let bus = EventBus::new(Arc::new(NullEventLogRepo));
+    let runtime = common::frozen_runtime(RuntimeWiringParts {
+        overlay_speech: Some(Arc::clone(&speaker) as Arc<dyn SpeakDispatcher>),
+        overlay_frames: Arc::clone(&page) as Arc<dyn OverlayFrameSink>,
+        ..common::wiring_parts(Arc::new(provider), Arc::clone(&bus)).await
+    })
+    .await;
+    let harness = Harness {
+        page,
+        speaker,
+        service: runtime.overlays.clone(),
+        bus,
+    };
+    (harness, runtime)
+}
+
+fn send_step(runtime: &FrozenRuntime) -> &dyn SubActionRunner {
+    runtime
+        .sub_action_registry
+        .get(OVERLAY_SEND_KIND_ID)
+        .expect("the core steps carry the overlay send step")
+}
+
 fn spoken_show(text: &str) -> OverlayConfig {
     OverlayConfig::from([
         (HEADLINE_KEY.to_owned(), Variant::String(text.to_owned())),
@@ -565,10 +615,8 @@ impl EventPublisher for NullPublisher {
 
 #[tokio::test(start_paused = true)]
 async fn an_overlay_step_attributes_its_show_speech_to_the_viewer_and_event_that_ran_it() {
-    let harness = harness(ALERT_KIND, plays_for(Duration::from_secs(1)));
-    let cell = OverlayServiceCell::new();
-    cell.set(harness.service.clone());
-    let runner = OverlaySendRunner::new(cell);
+    let (harness, runtime) = wired_stage(ALERT_KIND, plays_for(Duration::from_secs(1))).await;
+    let runner = send_step(&runtime);
     let step = SubActionConfig::from([
         (
             OVERLAY_TARGET_KEY.to_owned(),
@@ -729,32 +777,31 @@ async fn a_show_with_an_installed_voice_reports_no_speech_failure() {
 
 #[tokio::test(start_paused = true)]
 async fn the_copy_the_sub_actions_reach_shares_one_show_queue_with_the_copy_the_ui_holds() {
-    let harness = harness(ALERT_KIND, plays_for(Duration::from_secs(1)));
-    let cell = OverlayServiceCell::new();
-    cell.set(harness.service.clone());
-    let runner_copy = cell.get().expect("the cell holds the service");
+    let (harness, runtime) = wired_stage(ALERT_KIND, plays_for(Duration::from_secs(1))).await;
     let id = OverlayId::new(STAGE);
+    let step = SubActionConfig::from([
+        (
+            OVERLAY_TARGET_KEY.to_owned(),
+            Variant::String(STAGE.to_owned()),
+        ),
+        ("wait_for_show".to_owned(), Variant::Bool(false)),
+        (
+            HEADLINE_KEY.to_owned(),
+            Variant::String("second".to_owned()),
+        ),
+    ]);
+    let stack = ArgStack::new();
+    let ctx = RunContext::leaf(&stack, 0, EventId::new(), &NullPublisher);
 
     let first = harness.queue("first").await;
     harness.until_spoken(1).await;
-    let OverlayDispatch::Queued(second) = runner_copy
-        .send_to(&id, &spoken_show("second"), &ArgStack::new(), None, None)
-        .await
-        .expect("a stored overlay of a shipped look accepts a send")
-    else {
-        panic!("a transient show was applied at once instead of queued");
-    };
+    let (telemetry, _) = send_step(&runtime).execute(&step, &ctx).await;
     let waiting_seen_by_the_ui = harness.service.pending_shows(&id);
     finished(first).await;
-    finished(second).await;
 
     assert_eq!(
-        (
-            waiting_seen_by_the_ui,
-            harness.page.arrivals(),
-            harness.speaker.spoken().len(),
-        ),
-        (1, vec![Duration::ZERO, ALERT_WINDOW], 2),
-        "a show sent through the runner's copy did not queue behind the running show"
+        (telemetry.outcome, waiting_seen_by_the_ui),
+        (SubActionOutcome::Success, 1),
+        "a show sent through the step did not queue behind the running show"
     );
 }

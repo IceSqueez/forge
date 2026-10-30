@@ -53,8 +53,8 @@ pub(super) const SECRET_SETTING: &str = "secret-setting-value-91bc";
 type Config = BTreeMap<String, Variant>;
 
 pub(super) struct Registries {
-    triggers: TriggerRegistry,
-    sub_actions: SubActionRegistry,
+    triggers: Arc<TriggerRegistry>,
+    sub_actions: Arc<SubActionRegistry>,
     overlays: OverlayKindRegistry,
 }
 

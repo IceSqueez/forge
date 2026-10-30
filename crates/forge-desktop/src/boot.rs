@@ -7,21 +7,16 @@ use forge_components::{AccentColor, Density, ThemeId};
 use forge_events::{EventObserver, EventPublisher};
 use forge_overlay::{OverlayKindRegistry, register_builtin_kinds};
 use forge_platform_core::PlatformEndpoints;
-use forge_registry::{SubActionRegistry, TriggerRegistry};
 use forge_runtime::{
-    ActionCancelRegistry, ActionEngineHandle, Catalog, CatchUpSettle, Config, CoreSubActionDeps,
-    DateNamesHandle, DonationIngest, DonationOverlayAudience, EventBus, EventHistory,
-    FirstChatLedger, LatestValues, NotificationPreferences, OverlayConnectFanout,
-    OverlayConnectListener, OverlayFrameSink, OverlayMediaLibrary, OverlaySampleSource,
-    OverlaySamples, OverlayServiceCell, OverlayServiceHandle, OverlayServiceParts, QueueScheduler,
-    ScheduledRunsCell, ScheduledRunsParts, SchedulerCell, ScriptRegistry, ScriptScheduling,
-    SpeakDispatcher, SystemWallClock, TwitchEmoteLexicon, register_core_sub_actions,
-    register_core_triggers, register_donation_sub_actions, register_latest_sub_actions,
-    register_scheduled_run_sub_actions, register_speech_sub_actions, spawn_action_engine,
-    spawn_chat_history_persistence, spawn_event_log_bridge, spawn_latest_overlay_feed,
-    spawn_latest_projector, spawn_live_viewer_aggregator, spawn_notification_policy,
-    spawn_scheduled_runs, spawn_stream_live_signal, spawn_timer_scheduler, spawn_trigger_evaluator,
-    spawn_twitch_emote_learning, spawn_viewer_tracker,
+    ActionEngineHandle, CatchUpSettle, DateNamesHandle, DonationIngest, DonationOverlayAudience,
+    EventBus, EventHistory, FirstChatLedger, FrozenRuntime, LatestValues, NotificationPreferences,
+    OverlayConnectFanout, OverlayConnectListener, OverlayFrameSink, OverlaySampleSource,
+    OverlaySamples, RuntimeWiring, RuntimeWiringParts, SpeakDispatcher, SystemWallClock,
+    TwitchEmoteLexicon, register_core_triggers, register_donation_sub_actions,
+    register_latest_sub_actions, register_speech_sub_actions, spawn_chat_history_persistence,
+    spawn_event_log_bridge, spawn_latest_overlay_feed, spawn_latest_projector,
+    spawn_live_viewer_aggregator, spawn_notification_policy, spawn_stream_live_signal,
+    spawn_timer_scheduler, spawn_twitch_emote_learning, spawn_viewer_tracker,
 };
 use forge_server::DeliveryHub;
 use forge_soundboard::{
@@ -30,8 +25,8 @@ use forge_soundboard::{
 };
 use forge_storage::settings::core_settings::{ACCENT, FONT_BODY, FONT_MONO, LANGUAGE, THEME};
 use forge_storage::{
-    CredentialsRepo, DataProvider, GlobalsRepo, ScriptRepo, SettingsRepo, StorageError,
-    UserGlobalsRepo, read_setting, read_setting_or_default, write_setting,
+    CredentialsRepo, DataProvider, GlobalsRepo, SettingsRepo, StorageError, UserGlobalsRepo,
+    read_setting, read_setting_or_default, write_setting,
 };
 use forge_storage_sqlite::SqliteBackend;
 use forge_types::{LatestValueReader, PlatformId, Shared};
@@ -253,7 +248,15 @@ pub async fn build_runtime(inputs: RuntimeInputs) -> Result<RuntimeHandles, Boot
         crate::i18n::resolve_startup_display_formats(settings_repo.as_ref(), startup_language)
             .await;
 
-    let bus = EventBus::new(backend.event_log_repo());
+    let viewer_repo = backend.viewer_repo();
+    let first_chats = match FirstChatLedger::load(viewer_repo.as_ref()).await {
+        Ok(ledger) => Some(ledger),
+        Err(e) => {
+            tracing::warn!(error = %e, "viewer history unreadable; first-time chatters are not detected");
+            None
+        }
+    };
+    let bus = EventBus::with_first_chats(backend.event_log_repo(), first_chats);
     EventBus::spawn_flush_task(Arc::clone(&bus));
     spawn_event_log_bridge(Arc::clone(&bus));
     if let Err(e) = forge_runtime::sub_action_runners::SystemNotifyPort::adopt_app_identity() {
@@ -281,13 +284,6 @@ pub async fn build_runtime(inputs: RuntimeInputs) -> Result<RuntimeHandles, Boot
         backend.chat_history_repo(),
         Arc::clone(&settings_repo),
     );
-    let viewer_repo = backend.viewer_repo();
-    match FirstChatLedger::load(viewer_repo.as_ref()).await {
-        Ok(ledger) => bus.track_first_chats(ledger),
-        Err(e) => {
-            tracing::warn!(error = %e, "viewer history unreadable; first-time chatters are not detected")
-        }
-    }
     spawn_viewer_tracker(Arc::clone(&bus), viewer_repo);
 
     let date_names = DateNamesHandle;
@@ -330,45 +326,28 @@ pub async fn build_runtime(inputs: RuntimeInputs) -> Result<RuntimeHandles, Boot
     let speak_requester: Option<Arc<dyn forge_script::SpeakRequester>> =
         speak_bridge.map(|bridge| bridge as Arc<dyn forge_script::SpeakRequester>);
 
-    let scheduled_runs_cell = ScheduledRunsCell::new();
-    let mut script_registry_mut = ScriptRegistry::new();
-    script_registry_mut
-        .set_latest_values(Arc::new(latest_values.clone()) as Arc<dyn LatestValueReader>);
-    script_registry_mut.set_scheduling(ScriptScheduling::new(
-        scheduled_runs_cell.clone(),
-        backend.action_repo(),
-    ));
-    match speak_requester {
-        Some(requester) => script_registry_mut.set_speak_requester(requester),
-        None => tracing::warn!("no speak dispatcher available; scripts cannot speak"),
+    let mut overlay_kinds_mut = OverlayKindRegistry::new();
+    if let Err(e) = register_builtin_kinds(&mut overlay_kinds_mut) {
+        tracing::error!(error = %e, "overlay type registration failed");
+        boot_warnings.record(BootWarning::OverlayTypes);
     }
-    if let Err(e) = script_registry_mut.load_all(backend.as_ref()).await {
+    let overlay_kinds = Arc::new(overlay_kinds_mut);
+    let delivery_hub = DeliveryHub::new(Arc::clone(&bus) as Arc<dyn EventObserver>);
+    let mut wiring = RuntimeWiring::new(RuntimeWiringParts {
+        bus: Arc::clone(&bus),
+        provider: Arc::clone(&backend),
+        latest_values: latest_values.clone(),
+        script_speech: speak_requester,
+        overlay_speech: show_speaker,
+        overlay_kinds: Arc::clone(&overlay_kinds),
+        overlay_frames: Arc::new(delivery_hub.clone()) as Arc<dyn OverlayFrameSink>,
+        clock: Arc::new(SystemWallClock),
+    });
+    if let Err(e) = wiring.scripts().load_all(backend.as_ref()).await {
         tracing::warn!(error = %e, "script registry load failed at boot");
         boot_warnings.record(BootWarning::Scripts);
     }
-    let script_registry = Arc::new(script_registry_mut);
-
-    let cancel_registry = Arc::new(ActionCancelRegistry::new());
-    let scheduler_cell = SchedulerCell::new();
-    let overlay_service_cell = OverlayServiceCell::new();
-    let mut sub_action_reg = SubActionRegistry::new();
-    if let Err(e) = register_core_sub_actions(
-        &mut sub_action_reg,
-        CoreSubActionDeps {
-            globals: Arc::clone(&backend) as Arc<dyn GlobalsRepo>,
-            user_globals: Arc::clone(&backend) as Arc<dyn UserGlobalsRepo>,
-            scripts: Arc::clone(&script_registry),
-            publisher: Arc::clone(&bus) as Arc<dyn EventPublisher>,
-            settings: Arc::clone(&backend) as Arc<dyn SettingsRepo>,
-            scheduler: scheduler_cell.clone(),
-            trigger_instances: backend.trigger_instance_repo(),
-            actions: backend.action_repo(),
-            script_repo: Arc::clone(&backend) as Arc<dyn ScriptRepo>,
-            cancel_registry: Arc::clone(&cancel_registry),
-            overlays: overlay_service_cell.clone(),
-            config: Config::default(),
-        },
-    ) {
+    if let Err(e) = wiring.register_core_sub_actions() {
         tracing::error!(error = %e, "core sub-action registration failed");
         boot_warnings.record(BootWarning::CoreSubActions);
     }
@@ -381,33 +360,32 @@ pub async fn build_runtime(inputs: RuntimeInputs) -> Result<RuntimeHandles, Boot
         )
         .holding_catch_up(),
     );
-    if let Err(e) =
-        register_scheduled_run_sub_actions(&mut sub_action_reg, scheduled_runs_cell.clone())
-    {
+    if let Err(e) = wiring.register_scheduled_run_sub_actions() {
         tracing::error!(error = %e, "scheduled run sub-action registration failed");
         boot_warnings.record(BootWarning::ScheduledRunSubActions);
     }
-    if let Err(e) = register_donation_sub_actions(&mut sub_action_reg, Arc::clone(&donations)) {
+    if let Err(e) = register_donation_sub_actions(wiring.sub_actions_mut(), Arc::clone(&donations))
+    {
         tracing::error!(error = %e, "donation sub-action registration failed");
         boot_warnings.record(BootWarning::DonationSubActions);
     }
     if let Err(e) = register_latest_sub_actions(
-        &mut sub_action_reg,
+        wiring.sub_actions_mut(),
         Arc::new(latest_values.clone()) as Arc<dyn LatestValueReader>,
     ) {
         tracing::error!(error = %e, "latest value sub-action registration failed");
         boot_warnings.record(BootWarning::LatestValueSubActions);
     }
 
-    let mut trigger_reg = TriggerRegistry::new();
-    if let Err(e) = register_core_triggers(&mut trigger_reg) {
+    if let Err(e) = register_core_triggers(wiring.triggers_mut()) {
         tracing::error!(error = %e, "core trigger registration failed");
         boot_warnings.record(BootWarning::CoreTriggers);
     }
 
+    let (sub_action_reg, trigger_reg) = wiring.registries_mut();
     let integrations = build_integrations(
-        &mut sub_action_reg,
-        &mut trigger_reg,
+        sub_action_reg,
+        trigger_reg,
         &backend,
         &bus,
         &donations,
@@ -442,7 +420,7 @@ pub async fn build_runtime(inputs: RuntimeInputs) -> Result<RuntimeHandles, Boot
     ));
     soundboard_player.install_settings_store(Arc::clone(&soundboard_settings_repo));
     if let Err(e) = register_soundboard_sub_actions(
-        &mut sub_action_reg,
+        wiring.sub_actions_mut(),
         Arc::clone(&soundboard_player) as Arc<dyn SoundboardControl>,
     ) {
         tracing::error!(error = %e, "soundboard sub-action runner registration failed");
@@ -453,7 +431,7 @@ pub async fn build_runtime(inputs: RuntimeInputs) -> Result<RuntimeHandles, Boot
             let reward_emotes = TwitchEmoteLexicon::default();
             spawn_twitch_emote_learning(&bus, reward_emotes.clone());
             if let Err(e) =
-                register_speech_sub_actions(&mut sub_action_reg, dispatcher, reward_emotes)
+                register_speech_sub_actions(wiring.sub_actions_mut(), dispatcher, reward_emotes)
             {
                 tracing::error!(error = %e, "speech sub-action runner registration failed");
                 boot_warnings.record(BootWarning::SpeechSubActions);
@@ -475,51 +453,26 @@ pub async fn build_runtime(inputs: RuntimeInputs) -> Result<RuntimeHandles, Boot
         );
     }
 
-    let sub_action_registry = Arc::new(sub_action_reg);
-    let trigger_registry = Arc::new(trigger_reg);
-    bus.declare_lanes(&trigger_registry);
-    let trigger_instance_repo = backend.trigger_instance_repo();
-    for descriptor in trigger_registry.all() {
-        if let Err(e) = trigger_instance_repo
-            .upsert_default(descriptor.id(), descriptor.label())
-            .await
-        {
-            tracing::error!(
-                kind_id = %descriptor.id(),
-                error = %e,
-                "default trigger kind could not be stored"
-            );
-            boot_warnings.record(BootWarning::TriggerDefaults);
-        }
+    let FrozenRuntime {
+        catalog,
+        scripts: script_registry,
+        overlays,
+        sub_action_registry,
+        trigger_registry,
+        action_engine,
+        scheduler,
+        trigger_evaluator,
+        scheduled_runs,
+        scheduled_runs_worker,
+        trigger_defaults_stored,
+        queues_loaded,
+    } = wiring.freeze().await;
+    if !trigger_defaults_stored {
+        boot_warnings.record(BootWarning::TriggerDefaults);
     }
-
-    let queues = match backend.queue_repo().list().await {
-        Ok(queues) => queues,
-        Err(e) => {
-            tracing::warn!(error = %e, "failed to load queues on boot, starting empty");
-            boot_warnings.record(BootWarning::Queues);
-            Vec::new()
-        }
-    };
-
-    let catalog = Catalog::from_provider(backend.as_ref());
-    let action_engine = spawn_action_engine(
-        Arc::clone(&bus),
-        Arc::clone(&catalog),
-        backend.action_repo(),
-        backend.history_repo(),
-        Arc::clone(&sub_action_registry),
-        cancel_registry,
-    );
-    let scheduler = QueueScheduler::spawn(action_engine.clone(), Arc::clone(&bus), queues);
-    scheduler_cell.set(scheduler.clone());
-    let trigger_evaluator = spawn_trigger_evaluator(
-        Arc::clone(&bus),
-        Arc::clone(&trigger_registry),
-        Arc::clone(&catalog),
-        scheduler.clone(),
-        Config::default(),
-    );
+    if !queues_loaded {
+        boot_warnings.record(BootWarning::Queues);
+    }
     let live_viewers = spawn_live_viewer_aggregator();
     let supervisor = IntegrationSupervisor::launch(
         integrations.factories,
@@ -555,19 +508,8 @@ pub async fn build_runtime(inputs: RuntimeInputs) -> Result<RuntimeHandles, Boot
         stream_live.clone(),
         bot_accounts.clone(),
     );
-    let scheduled_runs = spawn_scheduled_runs(ScheduledRunsParts {
-        repo: backend.scheduled_run_repo(),
-        revision: backend.scheduled_run_revision(),
-        catalog: Arc::clone(&catalog),
-        actions: backend.action_repo(),
-        queues: scheduler.clone(),
-        bus: Arc::clone(&bus),
-        clock: Arc::new(SystemWallClock),
-        catch_up: CatchUpSettle::when(supervisor.watch().until_all_settled()),
-    });
-    scheduled_runs_cell.set(scheduled_runs.clone());
+    scheduled_runs_worker.start(CatchUpSettle::when(supervisor.watch().until_all_settled()));
 
-    let delivery_hub = DeliveryHub::new(Arc::clone(&bus) as Arc<dyn EventObserver>);
     let ServerBoot {
         handle: server,
         unavailable_reason: server_unavailable,
@@ -580,25 +522,6 @@ pub async fn build_runtime(inputs: RuntimeInputs) -> Result<RuntimeHandles, Boot
     )
     .await;
 
-    let mut overlay_kinds_mut = OverlayKindRegistry::new();
-    if let Err(e) = register_builtin_kinds(&mut overlay_kinds_mut) {
-        tracing::error!(error = %e, "overlay type registration failed");
-        boot_warnings.record(BootWarning::OverlayTypes);
-    }
-    let overlay_kinds = Arc::new(overlay_kinds_mut);
-    let overlays = OverlayServiceHandle::new(OverlayServiceParts {
-        repo: backend.overlay_repo(),
-        settings: Arc::clone(&backend) as Arc<dyn SettingsRepo>,
-        kinds: Arc::clone(&overlay_kinds),
-        bus: Arc::clone(&bus),
-        frames: Arc::new(delivery_hub.clone()) as Arc<dyn OverlayFrameSink>,
-        media: Some(OverlayMediaLibrary::new(
-            backend.media_repo(),
-            backend.soundboard_clips_repo(),
-        )),
-        speaker: show_speaker,
-        latest: Some(Arc::new(latest_values.clone()) as Arc<dyn LatestValueReader>),
-    });
     let overlay_actions = Arc::new(forge_runtime::actions::ActionsService::new(
         backend.action_repo(),
         backend.queue_repo(),
@@ -610,7 +533,6 @@ pub async fn build_runtime(inputs: RuntimeInputs) -> Result<RuntimeHandles, Boot
         Arc::clone(&sub_action_registry),
         Arc::clone(&trigger_registry),
     ));
-    overlay_service_cell.set(overlays.clone());
     spawn_latest_overlay_feed(&bus, overlays.clone());
     let donation_audience = DonationOverlayAudience::new(
         Arc::clone(&catalog),

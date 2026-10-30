@@ -7,13 +7,10 @@ use std::time::Duration;
 
 use forge_events::EventSubscription;
 use forge_events::{Event, EventPublisher};
-use forge_registry::{
-    ConfigProblem, ConfigReason, RegistryError, RunContext, SubActionRegistry, SubActionRunner,
-};
-use forge_runtime::sub_action_runners::{CoreGlobalsSetRunner, CoreTestFireTriggerRunner};
+use forge_registry::{ConfigProblem, ConfigReason, RegistryError, RunContext, SubActionRunner};
 use forge_runtime::{
-    EventBus, NullEventLogRepo, QueueAdmission, QueueScheduler, QueueSchedulerHandle,
-    SchedulerCell, SchedulerRequest, spawn_action_engine,
+    EventBus, FrozenRuntime, NullEventLogRepo, QueueAdmission, QueueSchedulerHandle,
+    SchedulerRequest,
 };
 use forge_storage::{ActionRepo, DataProvider, GlobalsRepo, TriggerInstanceRepo};
 use forge_storage_sqlite::SqliteBackend;
@@ -32,7 +29,7 @@ struct Harness {
     trigger_instances: Arc<dyn TriggerInstanceRepo>,
     actions: Arc<dyn ActionRepo>,
     globals: Arc<dyn GlobalsRepo>,
-    cell: SchedulerCell,
+    runtime: FrozenRuntime,
     handle: QueueSchedulerHandle,
     bus: Arc<EventBus>,
     _media: TempDir,
@@ -69,34 +66,16 @@ async fn harness(queue: Queue) -> Harness {
     let (backend, media) = backend().await;
     backend.queue_repo().save(&queue).await.unwrap();
 
-    let globals: Arc<dyn GlobalsRepo> = Arc::clone(&backend) as Arc<dyn GlobalsRepo>;
-    let mut reg = SubActionRegistry::new();
-    reg.register(Box::new(CoreGlobalsSetRunner::new(Arc::clone(&globals))))
-        .unwrap();
-
     let bus = EventBus::new(Arc::new(NullEventLogRepo));
-    let engine = spawn_action_engine(
-        Arc::clone(&bus),
-        forge_runtime::Catalog::new(
-            backend.action_repo(),
-            backend.trigger_instance_repo(),
-            backend.catalog_revision(),
-        ),
-        backend.action_repo(),
-        backend.history_repo(),
-        Arc::new(reg),
-        Arc::new(forge_runtime::ActionCancelRegistry::new()),
-    );
-    let handle = QueueScheduler::spawn(engine, Arc::clone(&bus), vec![queue]);
-    let cell = SchedulerCell::new();
-    cell.set(handle.clone());
+    let dp: Arc<dyn DataProvider> = Arc::clone(&backend) as Arc<dyn DataProvider>;
+    let runtime = common::frozen_runtime(common::wiring_parts(dp, Arc::clone(&bus)).await).await;
 
     Harness {
         trigger_instances: backend.trigger_instance_repo(),
         actions: backend.action_repo(),
-        globals,
-        cell,
-        handle,
+        globals: Arc::clone(&backend) as Arc<dyn GlobalsRepo>,
+        handle: runtime.scheduler.clone(),
+        runtime,
         bus,
         _media: media,
     }
@@ -176,12 +155,11 @@ async fn await_action_done(sub: &mut EventSubscription, action_id: ActionId) -> 
     .unwrap_or(false)
 }
 
-fn fire_runner(h: &Harness) -> CoreTestFireTriggerRunner {
-    CoreTestFireTriggerRunner::new(
-        Arc::clone(&h.trigger_instances),
-        Arc::clone(&h.actions),
-        h.cell.clone(),
-    )
+fn fire_runner(h: &Harness) -> &dyn SubActionRunner {
+    h.runtime
+        .sub_action_registry
+        .get("core.test.fire_trigger")
+        .unwrap()
 }
 
 #[tokio::test]
@@ -207,7 +185,7 @@ async fn fired_trigger_runs_the_chain_of_its_one_bound_enabled_action() {
 
     let runner = fire_runner(&h);
     let outcome = run_outcome(
-        &runner,
+        runner,
         &fire_cfg(&instance_id.to_string(), one_output("out_key", "ran")),
     )
     .await;
@@ -249,7 +227,7 @@ async fn fire_bound_action(override_outputs: Variant) -> Fired {
 
     let runner = fire_runner(&h);
     let outcome = run_outcome(
-        &runner,
+        runner,
         &fire_cfg(&instance_id.to_string(), override_outputs),
     )
     .await;
@@ -331,12 +309,8 @@ async fn invalid_override_outputs_fail_naming_the_field_and_dispatch_nothing() {
 
 #[tokio::test]
 async fn validate_config_rejects_non_object_override_outputs_as_invalid_format() {
-    let (backend, _media) = backend().await;
-    let runner = CoreTestFireTriggerRunner::new(
-        backend.trigger_instance_repo(),
-        backend.action_repo(),
-        SchedulerCell::new(),
-    );
+    let h = harness(nonblocking(QueueId::new())).await;
+    let runner = fire_runner(&h);
     let err = runner
         .validate_config(&fire_cfg(
             &TriggerInstanceId::new().to_string(),
@@ -361,7 +335,7 @@ async fn unknown_trigger_instance_id_fails() {
     let runner = fire_runner(&h);
 
     let missing = TriggerInstanceId::new();
-    let outcome = run_outcome(&runner, &fire_cfg(&missing.to_string(), no_outputs())).await;
+    let outcome = run_outcome(runner, &fire_cfg(&missing.to_string(), no_outputs())).await;
 
     let refusal = failure_message(&outcome);
     assert_eq!(code_of(refusal), "core.unknown_trigger_instance");
@@ -373,38 +347,12 @@ async fn unknown_trigger_instance_id_fails() {
 }
 
 #[tokio::test]
-async fn fire_with_empty_scheduler_cell_reports_scheduler_not_ready() {
-    let (backend, _media) = backend().await;
-    let trigger_instances = backend.trigger_instance_repo();
-    let instance_id = trigger_instances
-        .upsert_default("test.kind", "Test Trigger")
-        .await
-        .unwrap();
-
-    let runner = CoreTestFireTriggerRunner::new(
-        trigger_instances,
-        backend.action_repo(),
-        SchedulerCell::new(),
-    );
-    let outcome = run_outcome(&runner, &fire_cfg(&instance_id.to_string(), no_outputs())).await;
-
-    assert_eq!(
-        code_of(failure_message(&outcome)),
-        "core.scheduler_not_ready"
-    );
-}
-
-#[tokio::test]
 async fn unparseable_trigger_instance_id_fails() {
     const SENTINEL: &str = "not-an-instance-id-a-viewer-typed-this";
-    let (backend, _media) = backend().await;
-    let runner = CoreTestFireTriggerRunner::new(
-        backend.trigger_instance_repo(),
-        backend.action_repo(),
-        SchedulerCell::new(),
-    );
+    let h = harness(nonblocking(QueueId::new())).await;
+    let runner = fire_runner(&h);
 
-    let outcome = run_outcome(&runner, &fire_cfg(SENTINEL, no_outputs())).await;
+    let outcome = run_outcome(runner, &fire_cfg(SENTINEL, no_outputs())).await;
 
     let SubActionOutcome::Failed(msg) = outcome else {
         panic!("an unparseable trigger_instance_id must fail before any lookup, got {outcome:?}");
@@ -438,7 +386,7 @@ async fn instance_with_no_bound_actions_succeeds_and_dispatches_nothing() {
         .unwrap();
 
     let runner = fire_runner(&h);
-    let outcome = run_outcome(&runner, &fire_cfg(&instance_id.to_string(), no_outputs())).await;
+    let outcome = run_outcome(runner, &fire_cfg(&instance_id.to_string(), no_outputs())).await;
     assert!(
         matches!(outcome, SubActionOutcome::Success),
         "an instance found with no bound actions must succeed, got {outcome:?}"
@@ -496,7 +444,7 @@ async fn fired_trigger_dispatches_disabled_action_but_engine_skips_it() {
 
     let runner = fire_runner(&h);
     let outcome = run_outcome(
-        &runner,
+        runner,
         &fire_cfg(&instance_id.to_string(), one_output("out_key", "x")),
     )
     .await;

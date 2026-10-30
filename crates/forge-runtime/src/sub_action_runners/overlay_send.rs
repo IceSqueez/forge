@@ -187,6 +187,7 @@ mod tests {
     use forge_types::{EventId, SubActionOutcome};
 
     use super::*;
+    use crate::test_support::frozen_core_runtime;
     use forge_types::Variant;
 
     struct NullPublisher;
@@ -290,7 +291,11 @@ mod tests {
 
     #[tokio::test]
     async fn a_step_that_cannot_reach_an_overlay_fails_rather_than_reporting_success() {
-        let runner = OverlaySendRunner::new(OverlayServiceCell::new());
+        let (runtime, _backend) = frozen_core_runtime([0x31; 32]).await;
+        let runner = runtime
+            .sub_action_registry
+            .get(OVERLAY_SEND_KIND_ID)
+            .unwrap();
         let stack = ArgStack::new();
 
         for (cfg, label) in [
@@ -308,7 +313,7 @@ mod tests {
             ),
             (
                 config(&[(OVERLAY_TARGET_KEY, Variant::String("goal-box".to_owned()))]),
-                "an overlay service that is not running yet",
+                "an overlay that is not stored",
             ),
         ] {
             let ctx = RunContext::leaf(&stack, 0, EventId::new(), &NullPublisher);

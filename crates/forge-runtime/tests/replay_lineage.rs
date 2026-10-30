@@ -1,18 +1,18 @@
 #![allow(clippy::unwrap_used, clippy::expect_used)]
+mod common;
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::sync::Arc;
 use std::time::Duration;
 
 use forge_events::EventSubscription;
 use forge_events::{Event, EventPublisher, EventSource};
-use forge_registry::{SubActionRegistry, SubActionRunner};
+use forge_registry::SubActionRunner;
 use forge_runtime::sub_action_runners::ScriptRunInlineRunner;
 use forge_runtime::{
-    ActionCancelRegistry, Catalog, CatchUpSettle, EventBus, NullEventLogRepo, QueueAdmission,
-    QueueScheduler, QueueSchedulerHandle, ScheduledRunsCell, ScheduledRunsParts, SchedulerRequest,
-    ScriptRegistry, ScriptScheduling, WallClock, spawn_action_engine, spawn_scheduled_runs,
+    ActionEngineHandle, CatchUpSettle, EventBus, NullEventLogRepo, QueueAdmission,
+    QueueSchedulerHandle, RuntimeWiringParts, ScheduledRunsHandle, SchedulerRequest,
+    ScriptRegistry, TriggerEvaluatorHandle, WallClock,
 };
-use forge_storage::history::MockHistoryRepo;
 use forge_storage::{DataProvider, GlobalsRepo, SettingsRepo};
 use forge_storage_sqlite::SqliteBackend;
 use forge_types::{Action, ActionId, ArgStack, EventId, ExecutionMode, Queue, QueueId, Variant};
@@ -42,6 +42,9 @@ struct Harness {
     bus: Arc<EventBus>,
     queues: QueueSchedulerHandle,
     queue_id: QueueId,
+    _scheduled_runs: ScheduledRunsHandle,
+    _step_engine: ActionEngineHandle,
+    _evaluator: TriggerEvaluatorHandle,
 }
 
 impl Harness {
@@ -68,46 +71,25 @@ impl Harness {
         };
         dp.queue_repo().save(&queue).await.unwrap();
         let bus = EventBus::new(Arc::new(NullEventLogRepo));
-        let catalog = Catalog::from_provider(dp.as_ref());
-        let cell = ScheduledRunsCell::new();
-        let mut scripts = ScriptRegistry::new();
-        scripts.set_scheduling(ScriptScheduling::new(cell.clone(), dp.action_repo()));
-        let mut steps = SubActionRegistry::new();
-        steps
-            .register(Box::new(ScriptRunInlineRunner::new(
-                Arc::new(scripts),
-                Arc::clone(&backend) as Arc<dyn GlobalsRepo>,
-                Arc::clone(&bus) as Arc<dyn EventPublisher>,
-                Arc::clone(&backend) as Arc<dyn SettingsRepo>,
-            )))
-            .unwrap();
-        let mut history = MockHistoryRepo::new();
-        history.expect_save_batch().returning(|_| Ok(()));
-        let engine = spawn_action_engine(
-            Arc::clone(&bus),
-            Arc::clone(&catalog),
-            dp.action_repo(),
-            Arc::new(history),
-            Arc::new(steps),
-            Arc::new(ActionCancelRegistry::new()),
-        );
-        let queues = QueueScheduler::spawn(engine, Arc::clone(&bus), vec![queue.clone()]);
-        cell.set(spawn_scheduled_runs(ScheduledRunsParts {
-            repo: dp.scheduled_run_repo(),
-            revision: dp.scheduled_run_revision(),
-            catalog,
-            actions: dp.action_repo(),
-            queues: queues.clone(),
-            bus: Arc::clone(&bus),
+        let runtime = common::frozen_runtime(RuntimeWiringParts {
             clock: Arc::new(FixedClock),
-            catch_up: CatchUpSettle::immediately(),
-        }));
+            ..common::wiring_parts(dp, Arc::clone(&bus)).await
+        })
+        .await;
+        let queues = runtime.scheduler.clone();
+        let scheduled_runs = runtime.scheduled_runs.clone();
+        runtime
+            .scheduled_runs_worker
+            .start(CatchUpSettle::immediately());
         Self {
             backend,
             _media: media,
             bus,
             queues,
             queue_id: queue.id,
+            _scheduled_runs: scheduled_runs,
+            _step_engine: runtime.action_engine,
+            _evaluator: runtime.trigger_evaluator,
         }
     }
 

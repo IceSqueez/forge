@@ -1,22 +1,20 @@
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+mod common;
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
 
-use forge_events::{Event, EventPublisher, EventSource, EventSubscription, EventsError};
+use forge_events::{Event, EventSource, EventSubscription, EventsError};
 use forge_registry::{
-    ChatTriggerFamily, EventFilter, FormField, KindPlatformContract, SubActionRegistry,
-    TriggerCategory, TriggerKindDescriptor, TriggerRegistry,
+    ChatTriggerFamily, EventFilter, FormField, KindPlatformContract, TriggerCategory,
+    TriggerKindDescriptor,
 };
 use forge_runtime::triggers::TimerSchedule;
 use forge_runtime::{
-    ActionCancelRegistry, Catalog, Config, CoreSubActionDeps, EventBus, NullEventLogRepo,
-    OverlayServiceCell, QueueMode, QueueScheduler, QueueSchedulerHandle, SchedulerCell,
-    ScriptRegistry, TriggerEvaluatorHandle, spawn_action_engine, spawn_trigger_evaluator,
-    sub_action_runners::register_core_sub_actions,
+    EventBus, FrozenRuntime, NullEventLogRepo, QueueMode, QueueSchedulerHandle, RuntimeWiring,
 };
-use forge_storage::{DataProvider, GlobalsRepo, SettingsRepo, UserGlobalsRepo};
+use forge_storage::DataProvider;
 use forge_storage_sqlite::SqliteBackend;
 use forge_types::{
     Action, ArgStack, ChatPayload, ChatSegment, ExecutionMode, ModerationMarks, PermissionRung,
@@ -185,7 +183,7 @@ struct Rig {
     sub: EventSubscription,
     scheduler: QueueSchedulerHandle,
     queue_id: QueueId,
-    _evaluator: TriggerEvaluatorHandle,
+    _runtime: FrozenRuntime,
     _media: TempDir,
 }
 
@@ -230,64 +228,20 @@ async fn rig() -> Rig {
         .unwrap();
     let bus = EventBus::new(Arc::new(NullEventLogRepo));
     let sub = bus.subscribe();
-    let publisher: Arc<dyn EventPublisher> = Arc::clone(&bus) as Arc<dyn EventPublisher>;
-    let script_repo = {
-        let mut m = forge_storage::script::MockScriptRepo::new();
-        m.expect_record_execution().returning(|_, _, _, _| Ok(()));
-        Arc::new(m) as Arc<dyn forge_storage::ScriptRepo>
-    };
-    let mut sub_actions = SubActionRegistry::new();
-    register_core_sub_actions(
-        &mut sub_actions,
-        CoreSubActionDeps {
-            globals: Arc::clone(&dp) as Arc<dyn GlobalsRepo>,
-            user_globals: Arc::clone(&dp) as Arc<dyn UserGlobalsRepo>,
-            scripts: Arc::new(ScriptRegistry::new()),
-            publisher,
-            settings: Arc::clone(&dp) as Arc<dyn SettingsRepo>,
-            scheduler: SchedulerCell::new(),
-            trigger_instances: dp.trigger_instance_repo(),
-            actions: dp.action_repo(),
-            script_repo,
-            cancel_registry: Arc::new(ActionCancelRegistry::new()),
-            overlays: OverlayServiceCell::new(),
-            config: Config::default(),
-        },
-    )
-    .unwrap();
-
-    let catalog = || {
-        Catalog::new(
-            dp.action_repo(),
-            dp.trigger_instance_repo(),
-            dp.catalog_revision(),
-        )
-    };
-    let engine = spawn_action_engine(
-        Arc::clone(&bus),
-        catalog(),
-        dp.action_repo(),
-        dp.history_repo(),
-        Arc::new(sub_actions),
-        Arc::new(ActionCancelRegistry::new()),
-    );
-    let scheduler = QueueScheduler::spawn(engine, Arc::clone(&bus), vec![queue]);
-    let mut triggers = TriggerRegistry::new();
-    triggers.register(Box::new(CommandDescriptor)).unwrap();
-    let evaluator = spawn_trigger_evaluator(
-        Arc::clone(&bus),
-        Arc::new(triggers),
-        catalog(),
-        scheduler.clone(),
-        Config::default(),
-    );
+    let mut wiring = RuntimeWiring::new(common::wiring_parts(dp, Arc::clone(&bus)).await);
+    wiring.register_core_sub_actions().unwrap();
+    wiring
+        .triggers_mut()
+        .register(Box::new(CommandDescriptor))
+        .unwrap();
+    let runtime = wiring.freeze().await;
 
     Rig {
         bus,
         sub,
-        scheduler,
+        scheduler: runtime.scheduler.clone(),
         queue_id,
-        _evaluator: evaluator,
+        _runtime: runtime,
         _media: media,
     }
 }

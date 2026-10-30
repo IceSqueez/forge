@@ -9,16 +9,11 @@ use forge_registry::{
     FormField, RunContext, SubActionRegistry, SubActionRunner, UnitAmountBounds, effective_config,
 };
 use forge_runtime::scheduled_runs::{MAX_SCHEDULED_ARGS_BYTES, MIN_LATE_TOLERANCE};
-use forge_runtime::sub_action_runners::{
-    CANCEL_SCHEDULED_KIND_ID, CoreActionCancelScheduledRunner, CoreActionRunRunner,
-    CoreActionScheduleRunner, SCHEDULE_ACTION_KIND_ID,
-};
+use forge_runtime::sub_action_runners::{CANCEL_SCHEDULED_KIND_ID, SCHEDULE_ACTION_KIND_ID};
 use forge_runtime::{
-    ActionCancelRegistry, ActionEngineHandle, Catalog, CatchUpSettle, EventBus, ExecutionRequest,
-    NullEventLogRepo, QueueScheduler, ScheduleError, ScheduledRunsCell, ScheduledRunsParts,
-    WallClock, spawn_action_engine, spawn_scheduled_runs,
+    ActionEngineHandle, CatchUpSettle, EventBus, ExecutionRequest, NullEventLogRepo,
+    RuntimeWiringParts, ScheduleError, ScheduledRunsHandle, WallClock,
 };
-use forge_storage::history::MockHistoryRepo;
 use forge_storage::{DataProvider, MissedRunPolicy, ScheduledRun};
 use forge_storage_sqlite::SqliteBackend;
 use forge_types::{
@@ -27,7 +22,6 @@ use forge_types::{
 };
 use tempfile::TempDir;
 use time::OffsetDateTime;
-use tokio::sync::mpsc;
 use tokio::time::timeout;
 
 const DEADLINE: Duration = Duration::from_secs(30);
@@ -112,8 +106,8 @@ struct Harness {
     bus: Arc<EventBus>,
     engine: ActionEngineHandle,
     queue_id: QueueId,
-    cell: ScheduledRunsCell,
-    runs: mpsc::UnboundedReceiver<ExecutionContext>,
+    scheduled_runs: ScheduledRunsHandle,
+    steps: Arc<SubActionRegistry>,
 }
 
 impl Harness {
@@ -132,54 +126,22 @@ impl Harness {
         };
         dp.queue_repo().save(&queue).await.unwrap();
         let bus = EventBus::new(Arc::new(NullEventLogRepo));
-        let catalog = Catalog::from_provider(dp.as_ref());
-        let cell = ScheduledRunsCell::new();
-        let mut registry = SubActionRegistry::new();
-        registry
-            .register(Box::new(CoreActionScheduleRunner::new(cell.clone())))
-            .unwrap();
-        registry
-            .register(Box::new(CoreActionRunRunner::new(dp.action_repo())))
-            .unwrap();
-        let (runs_tx, runs) = mpsc::unbounded_channel();
-        let mut history = MockHistoryRepo::new();
-        history.expect_save_batch().returning(move |contexts| {
-            for context in contexts {
-                #[expect(
-                    clippy::let_underscore_must_use,
-                    reason = "the receiver may already be gone"
-                )]
-                let _ = runs_tx.send(context.clone());
-            }
-            Ok(())
-        });
-        let engine = spawn_action_engine(
-            Arc::clone(&bus),
-            Arc::clone(&catalog),
-            dp.action_repo(),
-            Arc::new(history),
-            Arc::new(registry),
-            Arc::new(ActionCancelRegistry::new()),
-        );
-        let queues = QueueScheduler::spawn(engine.clone(), Arc::clone(&bus), vec![queue.clone()]);
-        cell.set(spawn_scheduled_runs(ScheduledRunsParts {
-            repo: dp.scheduled_run_repo(),
-            revision: dp.scheduled_run_revision(),
-            catalog,
-            actions: dp.action_repo(),
-            queues,
-            bus: Arc::clone(&bus),
+        let runtime = common::frozen_runtime(RuntimeWiringParts {
             clock: Arc::new(FixedClock),
-            catch_up: CatchUpSettle::immediately(),
-        }));
+            ..common::wiring_parts(Arc::clone(&dp), Arc::clone(&bus)).await
+        })
+        .await;
+        runtime
+            .scheduled_runs_worker
+            .start(CatchUpSettle::immediately());
         Self {
             dp,
             _media: media,
             bus,
-            engine,
+            engine: runtime.action_engine,
             queue_id: queue.id,
-            cell,
-            runs,
+            scheduled_runs: runtime.scheduled_runs,
+            steps: runtime.sub_action_registry,
         }
     }
 
@@ -204,12 +166,12 @@ impl Harness {
         self.action(false, Vec::new()).await.id
     }
 
-    fn scheduler(&self) -> CoreActionScheduleRunner {
-        CoreActionScheduleRunner::new(self.cell.clone())
+    fn scheduler(&self) -> &dyn SubActionRunner {
+        self.steps.get(SCHEDULE_ACTION_KIND_ID).unwrap()
     }
 
-    fn canceller(&self) -> CoreActionCancelScheduledRunner {
-        CoreActionCancelScheduledRunner::new(self.cell.clone())
+    fn canceller(&self) -> &dyn SubActionRunner {
+        self.steps.get(CANCEL_SCHEDULED_KIND_ID).unwrap()
     }
 
     async fn schedule(
@@ -219,7 +181,7 @@ impl Harness {
     ) -> (SubActionOutcome, Option<ArgStack>) {
         let runner = self.scheduler();
         let ctx = RunContext::leaf(stack, 0, EventId::new(), &NullPublisher);
-        let (telemetry, produced) = runner.execute(&config(&runner, pairs), &ctx).await;
+        let (telemetry, produced) = runner.execute(&config(runner, pairs), &ctx).await;
         (telemetry.outcome, produced)
     }
 
@@ -260,17 +222,24 @@ impl Harness {
         let runner = self.canceller();
         let ctx = RunContext::leaf(stack, 0, EventId::new(), &NullPublisher);
         let (telemetry, produced) = runner
-            .execute(&config(&runner, &[("key", text(key))]), &ctx)
+            .execute(&config(runner, &[("key", text(key))]), &ctx)
             .await;
         let cancelled = produced.and_then(|stack| stack.get("schedule.cancelled").cloned());
         (telemetry.outcome, cancelled)
     }
 
-    async fn next_run(&mut self) -> ExecutionContext {
-        timeout(DEADLINE, self.runs.recv())
-            .await
-            .expect("no run was recorded")
-            .expect("the run history closed")
+    async fn recorded_run(&self, action: ActionId) -> ExecutionContext {
+        let history = self.dp.history_repo();
+        timeout(DEADLINE, async {
+            loop {
+                if let Some(run) = history.recent_for_action(action, 1).await.unwrap().pop() {
+                    return run;
+                }
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .expect("no run was recorded")
     }
 }
 
@@ -418,7 +387,7 @@ fn delay_bounds(runner: &dyn SubActionRunner) -> UnitAmountBounds {
 async fn schedule_step_form_bounds_match_what_the_scheduler_accepts_in_every_unit() {
     let harness = Harness::new().await;
     let target = harness.target().await;
-    let bounds = delay_bounds(&harness.scheduler());
+    let bounds = delay_bounds(harness.scheduler());
 
     for unit in bounds.units {
         let range = bounds.range_for(unit.value);
@@ -747,28 +716,43 @@ async fn cancel_step_with_a_blank_key_fails_and_keeps_every_pending_run() {
 }
 
 #[tokio::test]
-async fn schedule_and_cancel_steps_fail_while_the_scheduler_is_not_running() {
-    let target = ActionId::new().to_string();
-    let schedule = CoreActionScheduleRunner::new(ScheduledRunsCell::new());
-    let cancel = CoreActionCancelScheduledRunner::new(ScheduledRunsCell::new());
-    let stack = ArgStack::new();
-    let ctx = RunContext::leaf(&stack, 0, EventId::new(), &NullPublisher);
+async fn a_stopped_scheduler_refuses_the_schedule_step_and_still_honours_a_cancel() {
+    let harness = Harness::new().await;
+    let target = harness.target().await;
+    harness
+        .schedule_target(
+            target,
+            &[
+                ("key", text("kept")),
+                delay(1, "hours")[0].clone(),
+                delay(1, "hours")[1].clone(),
+            ],
+        )
+        .await;
+    harness.scheduled_runs.clone().stop().await;
 
-    for (runner, pairs) in [
+    let (refused, produced) = harness
+        .schedule(
+            &ArgStack::new(),
+            &[("action_id", text(&target.to_string()))],
+        )
+        .await;
+    let (cancelling, cancelled) = harness.cancel(&ArgStack::new(), "kept").await;
+
+    assert_eq!(
         (
-            &schedule as &dyn SubActionRunner,
-            vec![("action_id", text(&target))],
+            failure(&refused).as_deref(),
+            produced.is_none(),
+            cancelling,
+            cancelled,
         ),
-        (&cancel as &dyn SubActionRunner, vec![("key", text("k"))]),
-    ] {
-        let (telemetry, produced) = runner.execute(&config(runner, &pairs), &ctx).await;
-        assert_eq!(
-            (failure(&telemetry.outcome).as_deref(), produced.is_none()),
-            (Some("core.scheduler_stopped"), true),
-            "{}",
-            runner.id()
-        );
-    }
+        (
+            Some("core.schedule_failed"),
+            true,
+            SubActionOutcome::Success,
+            Some(Variant::Bool(true)),
+        ),
+    );
 }
 
 type Origin = (Option<ActionId>, Option<String>, Option<EventId>);
@@ -805,7 +789,7 @@ async fn run_through_engine(harness: &mut Harness, action: &Action) -> (EventId,
         })
         .await
         .unwrap();
-    let context = harness.next_run().await;
+    let context = harness.recorded_run(action.id).await;
     assert!(
         context
             .telemetry
@@ -896,11 +880,9 @@ async fn a_quick_action_schedule_has_no_scheduling_run_and_is_caused_by_its_step
     assert_eq!(origins(&pending), vec![(None, None, step_event)]);
 }
 
-#[test]
-fn both_steps_are_registered_under_their_kind_ids() {
-    let mut registry = SubActionRegistry::new();
-    forge_runtime::register_scheduled_run_sub_actions(&mut registry, ScheduledRunsCell::new())
-        .unwrap();
+#[tokio::test]
+async fn both_steps_are_registered_under_their_kind_ids() {
+    let registry = common::core_steps().await;
 
     let present =
         [SCHEDULE_ACTION_KIND_ID, CANCEL_SCHEDULED_KIND_ID].map(|id| registry.get(id).is_some());

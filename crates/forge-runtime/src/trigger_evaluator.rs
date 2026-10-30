@@ -528,9 +528,7 @@ mod tests {
         EventFilter, FormField, IGNORE_BOT_MESSAGES_KEY, KindPlatformContract, SubActionRegistry,
         TriggerCategory, TriggerRegistry,
     };
-    use forge_storage::{
-        ActionRepo, DataProvider, GlobalsRepo, SettingsRepo, TriggerInstanceRepo, UserGlobalsRepo,
-    };
+    use forge_storage::DataProvider;
     use forge_storage_sqlite::SqliteBackend;
     use forge_types::{
         AUTHOR_IS_CONNECTED_BOT_FIELD, Action, ActionId, ChatSegment, DeclaredVariable,
@@ -540,9 +538,9 @@ mod tests {
     use serde_json::json;
 
     use super::*;
+    use crate::sub_action_runners::CoreLogWriteRunner;
     use crate::{
-        EventBus, NullEventLogRepo, QueueMode, QueueScheduler, ScriptRegistry,
-        sub_action_runners::register_core_sub_actions, triggers::register_core_triggers,
+        EventBus, NullEventLogRepo, QueueMode, QueueScheduler, triggers::register_core_triggers,
     };
     use forge_events::EventSubscription;
 
@@ -628,47 +626,16 @@ mod tests {
         false
     }
 
-    fn build_registries(
-        globals: Arc<dyn GlobalsRepo>,
-        user_globals: Arc<dyn UserGlobalsRepo>,
-        settings: Arc<dyn SettingsRepo>,
-        trigger_instances: Arc<dyn TriggerInstanceRepo>,
-        actions: Arc<dyn ActionRepo>,
-    ) -> (Arc<SubActionRegistry>, Arc<TriggerRegistry>) {
-        let registry = Arc::new(ScriptRegistry::new());
-        let bus = EventBus::new(Arc::new(NullEventLogRepo));
-        let publisher: Arc<dyn forge_events::EventPublisher> =
-            Arc::clone(&bus) as Arc<dyn forge_events::EventPublisher>;
+    fn log_step_registry() -> Arc<SubActionRegistry> {
+        let mut steps = SubActionRegistry::new();
+        steps.register(Box::new(CoreLogWriteRunner)).unwrap();
+        Arc::new(steps)
+    }
 
-        let script_repo = {
-            let mut m = forge_storage::script::MockScriptRepo::new();
-            m.expect_record_execution().returning(|_, _, _, _| Ok(()));
-            Arc::new(m) as Arc<dyn forge_storage::ScriptRepo>
-        };
-        let mut sub_reg = SubActionRegistry::new();
-        register_core_sub_actions(
-            &mut sub_reg,
-            crate::CoreSubActionDeps {
-                globals,
-                user_globals,
-                scripts: registry,
-                publisher,
-                settings,
-                scheduler: crate::SchedulerCell::new(),
-                trigger_instances,
-                actions,
-                script_repo,
-                cancel_registry: Arc::new(crate::action_cancel::ActionCancelRegistry::new()),
-                overlays: crate::OverlayServiceCell::new(),
-                config: crate::Config::default(),
-            },
-        )
-        .unwrap();
-
-        let mut trig_reg = TriggerRegistry::new();
-        register_core_triggers(&mut trig_reg).unwrap();
-
-        (Arc::new(sub_reg), Arc::new(trig_reg))
+    fn core_trigger_registry() -> Arc<TriggerRegistry> {
+        let mut triggers = TriggerRegistry::new();
+        register_core_triggers(&mut triggers).unwrap();
+        Arc::new(triggers)
     }
 
     struct EvaluatorFixture {
@@ -702,28 +669,20 @@ mod tests {
             .await
             .unwrap();
 
-        let (sub_reg, trig_reg) = build_registries(
-            Arc::clone(&dp) as Arc<dyn GlobalsRepo>,
-            Arc::clone(&dp) as Arc<dyn UserGlobalsRepo>,
-            Arc::clone(&dp) as Arc<dyn SettingsRepo>,
-            dp.trigger_instance_repo(),
-            dp.action_repo(),
-        );
-
         let catalog = Catalog::from_provider(dp.as_ref());
         let engine = crate::action_engine::spawn_action_engine(
             Arc::clone(&bus),
             Arc::clone(&catalog),
             dp.action_repo(),
             dp.history_repo(),
-            sub_reg,
+            log_step_registry(),
             Arc::new(crate::action_cancel::ActionCancelRegistry::new()),
         );
         let scheduler = QueueScheduler::spawn(engine, Arc::clone(&bus), vec![queue]);
 
         EvaluatorFixture {
             bus,
-            registry: trig_reg,
+            registry: core_trigger_registry(),
             catalog,
             scheduler,
             _backend: backend,
@@ -1648,26 +1607,19 @@ mod tests {
                 .unwrap();
         }
 
-        let (sub_reg, trig_reg) = build_registries(
-            Arc::clone(&dp) as Arc<dyn GlobalsRepo>,
-            Arc::clone(&dp) as Arc<dyn UserGlobalsRepo>,
-            Arc::clone(&dp) as Arc<dyn SettingsRepo>,
-            dp.trigger_instance_repo(),
-            dp.action_repo(),
-        );
         let catalog = Catalog::from_provider(dp.as_ref());
         let engine = crate::action_engine::spawn_action_engine(
             Arc::clone(&bus),
             Arc::clone(&catalog),
             dp.action_repo(),
             dp.history_repo(),
-            sub_reg,
+            log_step_registry(),
             Arc::new(crate::action_cancel::ActionCancelRegistry::new()),
         );
         let scheduler = QueueScheduler::spawn(engine, Arc::clone(&bus), vec![queue.clone()]);
         let evaluator = spawn_trigger_evaluator(
             Arc::clone(&bus),
-            trig_reg,
+            core_trigger_registry(),
             catalog,
             scheduler,
             Config::default(),

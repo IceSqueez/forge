@@ -1,5 +1,6 @@
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 mod common;
+use common::stub_provider::StubProvider;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -9,12 +10,11 @@ use forge_events::{Event, EventPublisher};
 use forge_overlay::motion::{DEFAULT_EXIT_MS, EXIT, EXIT_MS, NO_MOTION};
 use forge_overlay::{OverlayKindRegistry, register_builtin_kinds};
 use forge_registry::{RunContext, SubActionRunner};
-use forge_runtime::sub_action_runners::OverlaySendRunner;
 use forge_runtime::{
-    EventBus, NullEventLogRepo, OVERLAY_TARGET_KEY, OverlayDelivery, OverlayDispatch,
-    OverlayFrameSink, OverlayReceivers, OverlayServiceCell, OverlayServiceError,
-    OverlayServiceHandle, OverlayServiceParts, SHOW_CEILING, SHOW_QUEUE_CAPACITY, ShowDepthWatch,
-    ShowEnd, ShowTicket,
+    EventBus, FrozenRuntime, NullEventLogRepo, OVERLAY_SEND_KIND_ID, OVERLAY_TARGET_KEY,
+    OverlayDelivery, OverlayDispatch, OverlayFrameSink, OverlayReceivers, OverlayServiceError,
+    OverlayServiceHandle, OverlayServiceParts, RuntimeWiringParts, SHOW_CEILING,
+    SHOW_QUEUE_CAPACITY, ShowDepthWatch, ShowEnd, ShowTicket,
 };
 use forge_storage::test_support::MemorySettings;
 use forge_storage::{
@@ -169,6 +169,46 @@ fn harness_with(definitions: Vec<OverlayDefinition>, absent_for: usize) -> Harne
 
 fn harness(definitions: Vec<OverlayDefinition>) -> Harness {
     harness_with(definitions, 0)
+}
+
+async fn wired_stage(definitions: Vec<OverlayDefinition>) -> (Harness, FrozenRuntime) {
+    let mut provider = StubProvider::idle();
+    provider
+        .overlay()
+        .expect_get()
+        .returning(move |id| Ok(definitions.iter().find(|d| &d.id == id).cloned()));
+    provider.overlay().expect_delete().returning(|_| Ok(true));
+    provider
+        .overlay()
+        .expect_set_enabled()
+        .returning(|_, _| Ok(true));
+    provider
+        .overlay()
+        .expect_set_retained_content()
+        .returning(|_, _| Ok(()));
+    provider
+        .overlay()
+        .expect_get_retained_content()
+        .returning(|_| Ok(None));
+    let bus = EventBus::new(Arc::new(NullEventLogRepo));
+    let sink = Arc::new(TimedSink::new(0));
+    let runtime = common::frozen_runtime(RuntimeWiringParts {
+        overlay_frames: Arc::clone(&sink) as Arc<dyn OverlayFrameSink>,
+        ..common::wiring_parts(Arc::new(provider), bus).await
+    })
+    .await;
+    let harness = Harness {
+        sink,
+        service: runtime.overlays.clone(),
+    };
+    (harness, runtime)
+}
+
+fn send_step(runtime: &FrozenRuntime) -> &dyn SubActionRunner {
+    runtime
+        .sub_action_registry
+        .get(OVERLAY_SEND_KIND_ID)
+        .expect("the core steps carry the overlay send step")
 }
 
 fn headline(text: &str) -> OverlayConfig {
@@ -586,20 +626,14 @@ fn step(wait: bool) -> SubActionConfig {
     ])
 }
 
-fn runner_for(harness: &Harness) -> OverlaySendRunner {
-    let cell = OverlayServiceCell::new();
-    cell.set(harness.service.clone());
-    OverlaySendRunner::new(cell)
-}
-
 #[tokio::test(start_paused = true)]
 async fn a_waiting_step_returns_when_its_show_leaves_the_screen_and_a_plain_one_at_once() {
     for (wait, returns_after) in [
         (true, Duration::from_secs(3) + ALERT_EXIT_TAIL),
         (false, Duration::ZERO),
     ] {
-        let harness = harness(vec![definition(STAGE, ALERT_KIND)]);
-        let runner = runner_for(&harness);
+        let (_harness, runtime) = wired_stage(vec![definition(STAGE, ALERT_KIND)]).await;
+        let runner = send_step(&runtime);
         let stack = ArgStack::new();
         let ctx = RunContext::leaf(&stack, 0, EventId::new(), &NullPublisher);
         let started = Instant::now();
@@ -617,10 +651,10 @@ async fn a_waiting_step_returns_when_its_show_leaves_the_screen_and_a_plain_one_
 #[tokio::test(start_paused = true)]
 async fn a_waiting_step_whose_show_is_dropped_before_it_runs_fails_at_once() {
     for change in [Lifecycle::Delete, Lifecycle::Disable] {
-        let harness = harness(vec![definition(STAGE, ALERT_KIND)]);
+        let (harness, runtime) = wired_stage(vec![definition(STAGE, ALERT_KIND)]).await;
         let on_screen = harness.queue(STAGE, "on-screen", None).await;
         harness.until_on_screen(STAGE, 1).await;
-        let runner = runner_for(&harness);
+        let runner = send_step(&runtime);
         let stack = ArgStack::new();
         let ctx = RunContext::leaf(&stack, 0, EventId::new(), &NullPublisher);
         let id = OverlayId::new(STAGE);
@@ -654,10 +688,10 @@ async fn a_waiting_step_whose_show_is_dropped_before_it_runs_fails_at_once() {
 
 #[tokio::test(start_paused = true)]
 async fn a_waiting_step_whose_show_is_cleared_fails_at_once() {
-    let harness = harness(vec![definition(STAGE, ALERT_KIND)]);
+    let (harness, runtime) = wired_stage(vec![definition(STAGE, ALERT_KIND)]).await;
     let on_screen = harness.queue(STAGE, "on-screen", None).await;
     harness.until_on_screen(STAGE, 1).await;
-    let runner = runner_for(&harness);
+    let runner = send_step(&runtime);
     let stack = ArgStack::new();
     let ctx = RunContext::leaf(&stack, 0, EventId::new(), &NullPublisher);
     let id = OverlayId::new(STAGE);

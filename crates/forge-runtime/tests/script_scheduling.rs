@@ -1,26 +1,23 @@
 #![allow(clippy::unwrap_used, clippy::expect_used)]
+mod common;
+use common::stub_provider::StubProvider;
 use std::collections::BTreeMap;
 use std::sync::Arc;
 use std::time::Duration;
 
 use forge_events::{Event, EventPublisher};
-use forge_registry::{RunContext, SubActionRegistry, SubActionRunner};
+use forge_registry::{RunContext, SubActionRegistry};
 use forge_runtime::scheduled_runs::{MAX_SCHEDULE_DELAY, MIN_LATE_TOLERANCE};
-use forge_runtime::sub_action_runners::ScriptRunInlineRunner;
 use forge_runtime::{
-    ActionCancelRegistry, Catalog, CatchUpSettle, EventBus, NullEventLogRepo, QueueScheduler,
-    ScheduleError, ScheduledRunsCell, ScheduledRunsParts, SchedulingContext, ScriptRegistry,
-    ScriptScheduling, WallClock, spawn_action_engine, spawn_scheduled_runs,
+    CatchUpSettle, EventBus, FrozenRuntime, NullEventLogRepo, RuntimeWiringParts, ScheduleError,
+    ScheduledRunsHandle, SchedulingContext, ScriptRegistry, WallClock,
 };
 use forge_script::{
     ActionScheduler, ScriptScheduleDue, ScriptScheduleError, ScriptSchedulePlacement,
     ScriptScheduleRequest,
 };
 use forge_storage::action::MockActionRepo;
-use forge_storage::history::MockHistoryRepo;
-use forge_storage::{
-    DataProvider, GlobalsRepo, MissedRunPolicy, ScheduledRun, SettingsRepo, StorageError,
-};
+use forge_storage::{DataProvider, MissedRunPolicy, ScheduledRun, StorageError};
 use forge_storage_sqlite::SqliteBackend;
 use forge_types::{
     Action, ActionId, ArgStack, EventId, ExecutionMode, Queue, QueueId, SubActionOutcome, Variant,
@@ -32,6 +29,7 @@ use time::format_description::well_known::Rfc3339;
 const BASE_UNIX_SECS: i64 = 1_791_115_200;
 const HOUR: Duration = Duration::from_secs(60 * 60);
 const RAID_KEY: &str = "raid-thanks";
+const INLINE_SCRIPT_KIND_ID: &str = "script.run.inline";
 
 fn base() -> OffsetDateTime {
     OffsetDateTime::from_unix_timestamp(BASE_UNIX_SECS).unwrap()
@@ -76,11 +74,28 @@ fn rejected(error: ScheduleError) -> ScriptScheduleError {
     ScriptScheduleError::Rejected(error.to_string())
 }
 
+async fn fixed_clock_runtime(dp: Arc<dyn DataProvider>) -> FrozenRuntime {
+    let bus = EventBus::new(Arc::new(NullEventLogRepo));
+    common::frozen_runtime(RuntimeWiringParts {
+        clock: Arc::new(FixedClock),
+        ..common::wiring_parts(dp, bus).await
+    })
+    .await
+}
+
+fn script_scheduler(scripts: &ScriptRegistry, args: ArgStack) -> Arc<dyn ActionScheduler> {
+    scripts
+        .action_scheduler(SchedulingContext::outside_any_run(args))
+        .expect("the wired script registry can schedule")
+}
+
 struct Harness {
     backend: Arc<SqliteBackend>,
     _media: TempDir,
     queue_id: QueueId,
-    cell: ScheduledRunsCell,
+    scheduled_runs: ScheduledRunsHandle,
+    scripts: Arc<ScriptRegistry>,
+    steps: Arc<SubActionRegistry>,
 }
 
 impl Harness {
@@ -106,35 +121,17 @@ impl Harness {
             concurrency: 8,
         };
         dp.queue_repo().save(&queue).await.unwrap();
-        let bus = EventBus::new(Arc::new(NullEventLogRepo));
-        let catalog = Catalog::from_provider(dp.as_ref());
-        let mut history = MockHistoryRepo::new();
-        history.expect_save_batch().returning(|_| Ok(()));
-        let engine = spawn_action_engine(
-            Arc::clone(&bus),
-            Arc::clone(&catalog),
-            dp.action_repo(),
-            Arc::new(history),
-            Arc::new(SubActionRegistry::new()),
-            Arc::new(ActionCancelRegistry::new()),
-        );
-        let queues = QueueScheduler::spawn(engine, Arc::clone(&bus), vec![queue.clone()]);
-        let cell = ScheduledRunsCell::new();
-        cell.set(spawn_scheduled_runs(ScheduledRunsParts {
-            repo: dp.scheduled_run_repo(),
-            revision: dp.scheduled_run_revision(),
-            catalog,
-            actions: dp.action_repo(),
-            queues,
-            bus,
-            clock: Arc::new(FixedClock),
-            catch_up: CatchUpSettle::immediately(),
-        }));
+        let runtime = fixed_clock_runtime(dp).await;
+        runtime
+            .scheduled_runs_worker
+            .start(CatchUpSettle::immediately());
         Self {
             backend,
             _media: media,
             queue_id: queue.id,
-            cell,
+            scheduled_runs: runtime.scheduled_runs,
+            scripts: runtime.scripts,
+            steps: runtime.sub_action_registry,
         }
     }
 
@@ -155,13 +152,8 @@ impl Harness {
         action.id
     }
 
-    fn scheduling(&self) -> ScriptScheduling {
-        ScriptScheduling::new(self.cell.clone(), self.backend.action_repo())
-    }
-
     fn scheduler(&self, args: ArgStack) -> Arc<dyn ActionScheduler> {
-        self.scheduling()
-            .for_context(SchedulingContext::outside_any_run(args))
+        script_scheduler(&self.scripts, args)
     }
 
     async fn schedule(
@@ -289,13 +281,14 @@ async fn a_name_shared_by_several_actions_is_ambiguous_with_their_count() {
 
 #[tokio::test]
 async fn a_failing_action_list_makes_name_lookup_unavailable() {
-    let harness = Harness::new().await;
+    let mut provider = StubProvider::idle();
     let mut actions = MockActionRepo::new();
     actions
         .expect_list()
         .returning(|| Err(StorageError::NotReady));
-    let scheduler = ScriptScheduling::new(harness.cell.clone(), Arc::new(actions))
-        .for_context(SchedulingContext::outside_any_run(ArgStack::new()));
+    provider.action_repo = Arc::new(actions);
+    let runtime = fixed_clock_runtime(Arc::new(provider)).await;
+    let scheduler = script_scheduler(&runtime.scripts, ArgStack::new());
 
     let result = scheduler.schedule(in_an_hour("Greet")).await;
 
@@ -308,17 +301,26 @@ async fn a_failing_action_list_makes_name_lookup_unavailable() {
 }
 
 #[tokio::test]
-async fn scheduling_and_cancelling_fail_as_stopped_before_the_scheduler_is_set() {
+async fn a_stopped_scheduler_rejects_a_new_schedule_and_still_cancels_a_pending_run() {
     let harness = Harness::new().await;
     let greet = harness.action_named("Greet").await;
-    let scheduler = ScriptScheduling::new(ScheduledRunsCell::new(), harness.backend.action_repo())
-        .for_context(SchedulingContext::outside_any_run(ArgStack::new()));
-    let stopped = rejected(ScheduleError::SchedulerStopped);
+    let scheduler = harness.scheduler(ArgStack::new());
+    scheduler
+        .schedule(ScriptScheduleRequest {
+            key: Some(RAID_KEY.to_owned()),
+            ..in_an_hour(&greet.to_string())
+        })
+        .await
+        .unwrap();
+    harness.scheduled_runs.clone().stop().await;
 
     let scheduled = scheduler.schedule(in_an_hour(&greet.to_string())).await;
     let cancelled = scheduler.cancel_by_key(RAID_KEY).await;
 
-    assert_eq!((scheduled, cancelled), (Err(stopped.clone()), Err(stopped)));
+    assert_eq!(
+        (scheduled, cancelled),
+        (Err(rejected(ScheduleError::SchedulerStopped)), Ok(true))
+    );
 }
 
 #[tokio::test]
@@ -501,14 +503,7 @@ async fn cancel_by_key_reports_whether_a_pending_run_held_the_key() {
 async fn an_inline_script_step_schedules_with_its_run_as_the_cause_and_its_variables() {
     let harness = Harness::new().await;
     let greet = harness.action_named("Greet").await;
-    let mut registry = ScriptRegistry::new();
-    registry.set_scheduling(harness.scheduling());
-    let runner = ScriptRunInlineRunner::new(
-        Arc::new(registry),
-        Arc::clone(&harness.backend) as Arc<dyn GlobalsRepo>,
-        Arc::new(NullPublisher),
-        Arc::clone(&harness.backend) as Arc<dyn SettingsRepo>,
-    );
+    let runner = harness.steps.get(INLINE_SCRIPT_KIND_ID).unwrap();
     let mut config = runner.default_config();
     config.insert(
         "body".to_owned(),

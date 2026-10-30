@@ -201,9 +201,13 @@ mod tests {
             .to_owned()
     }
 
-    fn failure(outcome: SubActionOutcome) -> String {
+    fn pattern_problem(outcome: &SubActionOutcome) -> forge_types::MessageRef {
         match outcome {
-            SubActionOutcome::Failed(reason) => reason.code_or_text(),
+            SubActionOutcome::Failed(reason) => {
+                crate::test_support::failure::nested_problem(reason)
+                    .cloned()
+                    .expect("a failure on the pattern field")
+            }
             other => panic!("expected a failed outcome, got {other:?}"),
         }
     }
@@ -253,16 +257,31 @@ mod tests {
     async fn format_with_untranslatable_legacy_component_fails_naming_it() {
         let dt = utc(2024, Month::January, 15, 0, 0, 0);
         let (outcome, out) = run(&cfg(Variant::Datetime(dt), "[unix_timestamp]")).await;
-        assert!(failure(outcome).contains("[unix_timestamp]"));
+        let problem = pattern_problem(&outcome);
+        assert_eq!(problem.code(), &crate::core_messages::TIME_PATTERN_LEGACY);
+        assert_eq!(
+            crate::test_support::failure::verbatim_arg(&problem, "component"),
+            Some("[unix_timestamp]")
+        );
         assert!(out.is_none());
     }
 
     #[test]
     fn validate_reports_invalid_and_untranslatable_patterns_as_format_problems_on_the_pattern_key()
     {
-        for (fmt, named) in [
-            ("yyyy qqq", "qqq"),
-            ("[unix_timestamp]", "[unix_timestamp]"),
+        for (fmt, code, arg, named) in [
+            (
+                "yyyy qqq",
+                crate::core_messages::TIME_PATTERN_INVALID,
+                "pattern",
+                "yyyy qqq",
+            ),
+            (
+                "[unix_timestamp]",
+                crate::core_messages::TIME_PATTERN_LEGACY,
+                "component",
+                "[unix_timestamp]",
+            ),
         ] {
             let source = Variant::Datetime(utc(2024, Month::January, 15, 0, 0, 0));
             let result = CoreTimeFormatRunner.validate_config(&cfg(source, fmt));
@@ -271,8 +290,13 @@ mod tests {
                     &result,
                     Err(RegistryError::InvalidConfig(forge_registry::ConfigProblem {
                         field: Some(field),
-                        reason: ConfigReason::InvalidFormat(detail),
-                    })) if field == FORMAT_PATTERN_KEY && detail.contains(named)
+                        reason: ConfigReason::Coded(message),
+                    })) if field == FORMAT_PATTERN_KEY
+                        && message.code() == &code
+                        && message.arg(arg)
+                            == Some(&forge_types::MessageArg::Verbatim(
+                                forge_types::VerbatimText::new(named)
+                            ))
                 ),
                 "{fmt}: {result:?}"
             );
@@ -283,7 +307,12 @@ mod tests {
     async fn format_with_invalid_pattern_yields_failed() {
         let dt = utc(2024, Month::January, 15, 0, 0, 0);
         let (outcome, out) = run(&cfg(Variant::Datetime(dt), "yyyy qqq")).await;
-        assert!(failure(outcome).contains("yyyy qqq"));
+        let problem = pattern_problem(&outcome);
+        assert_eq!(problem.code(), &crate::core_messages::TIME_PATTERN_INVALID);
+        assert_eq!(
+            crate::test_support::failure::verbatim_arg(&problem, "pattern"),
+            Some("yyyy qqq")
+        );
         assert!(out.is_none());
     }
 

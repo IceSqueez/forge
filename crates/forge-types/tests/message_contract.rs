@@ -5,7 +5,7 @@ use std::time::Duration;
 use forge_types::{
     COMMON_MESSAGES, FiniteFloat, IntegrationId, MAX_UPSTREAM_DETAIL_CHARS, MessageArg,
     MessageCatalog, MessageCatalogError, MessageCode, MessageRef, PlatformId, UPSTREAM_FAILURE,
-    UpstreamDetail, UserText, VerbatimText,
+    UpstreamDetail, UserText, VariantKind, VerbatimText,
 };
 use serde_json::{Value, json};
 use time::OffsetDateTime;
@@ -166,6 +166,21 @@ fn arg_variants_serialize_to_tagged_shapes_and_round_trip() {
         (
             MessageArg::Platform(PlatformId::YouTube),
             json!({"platform": "youtube"}),
+        ),
+        (
+            MessageArg::from(VariantKind::Datetime),
+            json!({"value_kind": "datetime"}),
+        ),
+        (
+            MessageArg::StepFields {
+                kind: "core.wait".to_owned(),
+                keys: vec!["from".to_owned(), "to".to_owned()],
+            },
+            json!({"step_fields": {"kind": "core.wait", "keys": ["from", "to"]}}),
+        ),
+        (
+            MessageArg::from(MessageRef::new(sample_code()).with_arg("n", 2_i64)),
+            json!({"message": {"code": "obs.scene_missing", "args": {"n": {"int": 2}}}}),
         ),
     ];
     for (arg, expected) in cases {

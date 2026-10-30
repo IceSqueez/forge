@@ -229,4 +229,45 @@ pub(crate) mod failure {
     pub(crate) fn detail_of(message: &MessageRef) -> Option<&str> {
         message.detail().map(|detail| detail.as_str())
     }
+
+    pub(crate) fn rejected_field(text: &UserText) -> Option<&str> {
+        let UserText::Message(message) = text else {
+            return None;
+        };
+        match message.arg("field") {
+            Some(MessageArg::StepFields { keys, .. }) if keys.len() == 1 => Some(keys[0].as_str()),
+            _ => None,
+        }
+    }
+
+    pub(crate) fn step_problem(kind: &str, problem: &forge_registry::ConfigProblem) -> UserText {
+        problem
+            .message(|keys| MessageArg::StepFields {
+                kind: kind.to_owned(),
+                keys: keys.to_vec(),
+            })
+            .into()
+    }
+
+    pub(crate) fn nested_problem(text: &UserText) -> Option<&MessageRef> {
+        let UserText::Message(message) = text else {
+            return None;
+        };
+        match message.arg("problem") {
+            Some(MessageArg::Message(problem)) => Some(problem),
+            _ => None,
+        }
+    }
+
+    pub(crate) fn is_field_problem(text: &UserText, key: &str, code: &str) -> bool {
+        rejected_field(text) == Some(key)
+            && nested_problem(text).is_some_and(|problem| problem.code().to_string() == code)
+    }
+
+    pub(crate) fn plain_field_problem(kind: &str, key: &str, code: &str) -> UserText {
+        let reason = forge_registry::ConfigReason::Coded(MessageRef::new(
+            forge_types::MessageCode::parse(code).unwrap(),
+        ));
+        step_problem(kind, &forge_registry::ConfigProblem::field(key, reason))
+    }
 }

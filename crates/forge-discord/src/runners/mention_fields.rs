@@ -149,7 +149,15 @@ mod tests {
             let ctx = RunContext::leaf(&stack, 0, EventId::new(), &publisher);
             let (telemetry, _) = runner.execute(&config, &ctx).await;
             assert!(
-                matches!(&telemetry.outcome, SubActionOutcome::Failed(message) if message.code_or_text().contains(config_keys::ALLOW_ROLE_PINGS)),
+                matches!(
+                    &telemetry.outcome,
+                    SubActionOutcome::Failed(forge_types::UserText::Message(message))
+                        if message.arg("field")
+                            == Some(&forge_types::MessageArg::StepFields {
+                                kind: runner.id().to_owned(),
+                                keys: vec![config_keys::ALLOW_ROLE_PINGS.to_owned()],
+                            })
+                ),
                 "{}: {:?}",
                 runner.id(),
                 telemetry.outcome

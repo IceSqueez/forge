@@ -7,11 +7,9 @@ use forge_types::Variant;
 
 use crate::account::user_target::TargetFields;
 use crate::custom_rewards::is_valid_hex_color;
-use crate::vocabulary::config_keys;
+use crate::vocabulary::{config_keys, messages};
 
 const UNRESOLVED_REFERENCE_MARKER: char = '%';
-const UNRESOLVED_REFERENCE_DETAIL: &str = "has an unresolved variable reference";
-const HEX_COLOR_DETAIL: &str = "expected a #RRGGBB color";
 const USER_LOGIN_PLACEHOLDER: &str = "%user_login%";
 pub(crate) const MAX_REASON_CHARS: i64 = 500;
 
@@ -158,9 +156,7 @@ impl TypedField for ResolvedIdField {
         if text.trim().is_empty() {
             Err(ConfigReason::Required)
         } else if text.contains(UNRESOLVED_REFERENCE_MARKER) {
-            Err(ConfigReason::InvalidFormat(
-                UNRESOLVED_REFERENCE_DETAIL.to_owned(),
-            ))
+            Err(ConfigReason::Coded(messages::unresolved_reference()))
         } else {
             Ok(text.to_owned())
         }
@@ -203,7 +199,7 @@ impl TypedField for HexColorField {
         if text.is_empty() || is_valid_hex_color(text) {
             Ok(text.to_owned())
         } else {
-            Err(ConfigReason::InvalidFormat(HEX_COLOR_DETAIL.to_owned()))
+            Err(ConfigReason::Coded(messages::invalid_hex_color()))
         }
     }
 }
@@ -279,10 +275,10 @@ mod tests {
             (stored("parent", text("%message_id%-%typo%")), partial_args),
             (stored("parent", text("abc%")), ArgStack::new()),
         ] {
-            assert!(matches!(
+            assert_eq!(
                 reason(PARENT.read(&config, &args)),
-                ConfigReason::InvalidFormat(_)
-            ));
+                ConfigReason::Coded(messages::unresolved_reference())
+            );
         }
     }
 
@@ -317,11 +313,9 @@ mod tests {
     #[test]
     fn hex_color_refuses_malformed_colors_and_templates() {
         for literal in ["#9147F", "9147FF0", "#9147FZ", "#9147FF0", "%color%"] {
-            assert!(
-                matches!(
-                    reason(SWATCH.read(&stored("swatch", text(literal)), &ArgStack::new())),
-                    ConfigReason::InvalidFormat(_)
-                ),
+            assert_eq!(
+                reason(SWATCH.read(&stored("swatch", text(literal)), &ArgStack::new())),
+                ConfigReason::Coded(messages::invalid_hex_color()),
                 "{literal:?}"
             );
         }

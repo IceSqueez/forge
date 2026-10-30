@@ -65,16 +65,16 @@ const MESSAGE: TextField = TextField {
 const CONFIG: ConfigSpec = ConfigSpec::new(&[&PROVIDER, &DONOR, &AMOUNT, &CURRENCY, &MESSAGE]);
 
 fn money(amount: &str, currency: &str) -> Result<MoneyAmount, ConfigProblem> {
-    let currency = CurrencyCode::parse(currency).map_err(|error| {
+    let currency = CurrencyCode::parse(currency).map_err(|_| {
         ConfigProblem::field(
             TEST_DONATION_CURRENCY_KEY,
-            ConfigReason::InvalidFormat(error.to_string()),
+            ConfigReason::Coded(core_messages::currency_invalid()),
         )
     })?;
-    MoneyAmount::parse_decimal(amount.trim(), currency).map_err(|error| {
+    MoneyAmount::parse_decimal(amount.trim(), currency).map_err(|_| {
         ConfigProblem::field(
             TEST_DONATION_AMOUNT_KEY,
-            ConfigReason::InvalidFormat(error.to_string()),
+            ConfigReason::Coded(core_messages::amount_invalid()),
         )
     })
 }

@@ -687,7 +687,7 @@ mod tests {
             let ctx = RunContext::leaf(&stack, 0, EventId::new(), &NullPublisher);
             let (telemetry, produced) = runner.execute(&config, &ctx).await;
             assert!(
-                matches!(&telemetry.outcome, SubActionOutcome::Failed(reason) if reason.code_or_text().contains(key)),
+                matches!(&telemetry.outcome, SubActionOutcome::Failed(reason) if crate::test_support::failure::rejected_field(reason) == Some(key)),
                 "{id} must fail {key} = {bad} at run time, got {:?}",
                 telemetry.outcome
             );

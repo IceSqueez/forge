@@ -90,11 +90,6 @@ impl StartPredictionRunner {
     }
 
     async fn start(&self, cfg: &ResolvedConfig) -> Result<String, SubActionOutcome> {
-        if cfg.title.is_empty() {
-            return Err(SubActionOutcome::Failed(
-                messages::field_required("title").into(),
-            ));
-        }
         let user_id = match self.identity.user_id().await {
             Ok(id) => id,
             Err(e) => {

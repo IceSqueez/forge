@@ -11,7 +11,6 @@ use super::fields::TARGET_LOGIN;
 use crate::account::identity::{SelfIdentity, resolve_user_id};
 use crate::helix::{HelixMethod, HelixRequest, HelixTransport};
 use crate::step_failure;
-use crate::vocabulary::messages;
 use crate::vocabulary::sub_action_ids;
 
 const KIND_ID: &str = sub_action_ids::MODERATION_ADD_MODERATOR;
@@ -32,11 +31,6 @@ impl AddModeratorRunner {
     }
 
     async fn apply(&self, target_login: &str) -> SubActionOutcome {
-        if target_login.is_empty() {
-            return SubActionOutcome::Failed(
-                messages::empty_after_interpolation("target_user_login").into(),
-            );
-        }
         let broadcaster_id = match self.identity.user_id().await {
             Ok(id) => id,
             Err(e) => return step_failure::failed(&e),

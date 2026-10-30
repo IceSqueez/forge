@@ -4,7 +4,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use async_trait::async_trait;
 use forge_events::{Event, EventPublisher};
 use forge_registry::RunContext;
-use forge_types::{ArgStack, EventId, Variant};
+use forge_types::{ArgStack, EventId, MessageArg, UserText, Variant};
 
 use crate::error::VTubeError;
 use crate::sink::VTubeSink;
@@ -428,5 +428,15 @@ impl VTubeSink for RecordingSink {
     async fn set_physics_override(&self, strength: f64, seconds: f64) -> Result<(), VTubeError> {
         self.record("set_physics_override", vec![Some(strength), Some(seconds)]);
         Ok(())
+    }
+}
+
+pub(crate) fn rejected_field(text: &UserText) -> Option<&str> {
+    let UserText::Message(message) = text else {
+        return None;
+    };
+    match message.arg("field") {
+        Some(MessageArg::StepFields { keys, .. }) if keys.len() == 1 => Some(keys[0].as_str()),
+        _ => None,
     }
 }

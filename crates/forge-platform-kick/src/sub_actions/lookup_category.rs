@@ -89,12 +89,6 @@ impl SubActionRunner for LookupCategoryRunner {
             Ok(query) => query,
             Err(problem) => return (timer.invalid_config(&problem), None),
         };
-        if query.is_empty() {
-            return (
-                timer.failed(step_failure::empty_after_interpolation(config_keys::QUERY)),
-                None,
-            );
-        }
 
         let token = match (self.token_source)().await {
             Ok(token) => token,

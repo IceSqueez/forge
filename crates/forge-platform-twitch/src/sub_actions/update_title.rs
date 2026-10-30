@@ -11,7 +11,7 @@ use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry};
 use crate::account::identity::SelfIdentity;
 use crate::helix::{HelixMethod, HelixRequest, HelixTransport};
 use crate::step_failure;
-use crate::vocabulary::{config_keys, messages, sub_action_ids};
+use crate::vocabulary::{config_keys, sub_action_ids};
 
 const KIND_ID: &str = sub_action_ids::CHANNEL_UPDATE_TITLE;
 const MAX_TITLE_CHARS: i64 = 140;
@@ -44,9 +44,6 @@ impl UpdateTitleRunner {
     }
 
     async fn apply(&self, title: &str) -> SubActionOutcome {
-        if title.is_empty() {
-            return SubActionOutcome::Failed(messages::empty_after_interpolation("title").into());
-        }
         let user_id = match self.identity.user_id().await {
             Ok(id) => id,
             Err(e) => return step_failure::failed(&e),

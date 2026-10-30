@@ -1,11 +1,9 @@
 use forge_registry::{
-    ConfigReason, FieldLiteral, FormField, PickedTextField, TextPicker, TypedField,
+    ConfigReason, FieldLiteral, FormField, PickedTextField, TextPicker, TypedField, invalid_id,
 };
 use forge_types::{ClipId, Variant};
 
 use crate::vocabulary::{config_keys, picker_keys};
-
-const CLIP_ID_SHAPE: &str = "expected a clip id";
 
 pub(super) struct ClipField {
     pub(super) required: bool,
@@ -58,8 +56,6 @@ impl TypedField for ClipField {
                 Ok(None)
             };
         }
-        text.parse::<ClipId>()
-            .map(Some)
-            .map_err(|_| ConfigReason::InvalidFormat(CLIP_ID_SHAPE.to_owned()))
+        text.parse::<ClipId>().map(Some).map_err(|_| invalid_id())
     }
 }

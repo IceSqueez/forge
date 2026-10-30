@@ -137,7 +137,7 @@ async fn pause_runner_with_unparseable_queue_id_fails() {
 
     let outcome = run_outcome(&runner, &cfg_queue("not-a-queue-id")).await;
     assert!(
-        matches!(&outcome, SubActionOutcome::Failed(m) if m.code_or_text().contains("'queue_id' is invalid")),
+        matches!(&outcome, SubActionOutcome::Failed(m) if common::is_field_problem(m, "queue_id", "config.unknown_entry")),
         "unparseable queue_id must fail, got {outcome:?}"
     );
     handle.shutdown();

@@ -74,9 +74,6 @@ impl PredictionUpdate<'_> {
         identity: &Arc<SelfIdentity>,
         resolved: ResolvedUpdate,
     ) -> SubActionOutcome {
-        if resolved.prediction_id.is_empty() {
-            return SubActionOutcome::Failed(messages::field_required("prediction_id").into());
-        }
         if resolved
             .winning_outcome_id
             .as_ref()

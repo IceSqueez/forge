@@ -35,6 +35,13 @@ pub(crate) fn form_field_label(kind_id: &str, fields: &[FormField], key: &str) -
         .filter(|label| !label.is_empty())
 }
 
+pub(crate) fn step_field_label(kind_id: &str, key: &str) -> String {
+    [LABEL_PREFIX, OPTIONAL_PREFIX]
+        .iter()
+        .find_map(|prefix| scoped_copy(prefix, kind_id, key))
+        .map_or_else(|| key.to_owned(), |label| short_label(&label))
+}
+
 pub(crate) fn field_label(kind_id: &str, spec: &FormField) -> String {
     let prefix = match spec {
         FormField::Optional { .. } => OPTIONAL_PREFIX,

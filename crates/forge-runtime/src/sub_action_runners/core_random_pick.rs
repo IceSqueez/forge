@@ -1,3 +1,4 @@
+use crate::core_messages;
 use async_trait::async_trait;
 use forge_registry::{
     ConfigProblem, ConfigReason, ConfigSpec, Interpolation, LinesField, ProducedVariable,
@@ -55,7 +56,7 @@ fn weight_values(entries: &[Variant]) -> Result<Vec<f64>, ConfigProblem> {
             .ok_or_else(|| {
                 ConfigProblem::field(
                     WEIGHTS.key,
-                    ConfigReason::InvalidFormat(format!("weight {} is not a number", index + 1)),
+                    ConfigReason::Coded(core_messages::weight_not_a_number(index + 1)),
                 )
             })
         })
@@ -75,14 +76,17 @@ fn weighted_choice(
     if weights.len() != item_count {
         return Err(ConfigProblem::field(
             WEIGHTS.key,
-            ConfigReason::Custom(format!(
-                "lists {} weights for {item_count} items",
-                weights.len()
+            ConfigReason::Coded(core_messages::weight_count_mismatch(
+                weights.len(),
+                item_count,
             )),
         ));
     }
     WeightedIndex::new(weights).map(Some).map_err(|error| {
-        ConfigProblem::field(WEIGHTS.key, ConfigReason::InvalidFormat(error.to_string()))
+        ConfigProblem::field(
+            WEIGHTS.key,
+            ConfigReason::Coded(core_messages::weights_unusable(error)),
+        )
     })
 }
 
@@ -274,7 +278,7 @@ mod tests {
         let runner = CoreRandomPickRunner;
         let (outcome, produced) = run(&runner, &cfg(str_array(&["only"]), "")).await;
         assert!(
-            matches!(&outcome, SubActionOutcome::Failed(m) if m.code_or_text().contains("'into_var' is required")),
+            matches!(&outcome, SubActionOutcome::Failed(m) if crate::test_support::failure::is_field_problem(m, "into_var", "config.required")),
             "{outcome:?}"
         );
         assert!(produced.is_none());
@@ -332,10 +336,16 @@ mod tests {
         let runner = CoreRandomPickRunner;
         for (label, cfg) in [("text", text_weights), ("array", array_weights)] {
             let (outcome, produced) = run(&runner, &cfg).await;
-            assert!(
-                matches!(&outcome, SubActionOutcome::Failed(reason)
-                    if reason.code_or_text().contains("'weights' is invalid: weight 2 is not a number")),
-                "{label}: {outcome:?}"
+            assert_eq!(
+                outcome,
+                SubActionOutcome::Failed(crate::test_support::failure::step_problem(
+                    "core.random.pick",
+                    &ConfigProblem::field(
+                        "weights",
+                        ConfigReason::Coded(crate::core_messages::weight_not_a_number(2))
+                    )
+                )),
+                "{label}"
             );
             assert!(produced.is_none(), "{label}");
         }

@@ -12,7 +12,7 @@ use crate::account::identity::SelfIdentity;
 use crate::collection_keys::REWARD_OPTIONS_KEY;
 use crate::helix::{HelixMethod, HelixRequest, HelixTransport};
 use crate::step_failure;
-use crate::vocabulary::{config_keys, messages, sub_action_ids};
+use crate::vocabulary::{config_keys, sub_action_ids};
 
 const KIND_ID: &str = sub_action_ids::CHANNEL_POINTS_FULFILL_REDEMPTION;
 const REDEMPTION_ID_TEMPLATE: &str = "%redemption.id%";
@@ -70,12 +70,6 @@ async fn patch_redemption_status(
     reward_id: &str,
     status: &str,
 ) -> SubActionOutcome {
-    if redemption_id.is_empty() {
-        return SubActionOutcome::Failed(messages::field_required("redemption_id").into());
-    }
-    if reward_id.is_empty() {
-        return SubActionOutcome::Failed(messages::field_required("reward_id").into());
-    }
     let user_id = match identity.user_id().await {
         Ok(id) => id,
         Err(e) => return step_failure::failed(&e),

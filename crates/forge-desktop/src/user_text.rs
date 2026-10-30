@@ -1,8 +1,11 @@
-use forge_components::{ArgsBuilder, DateShape, fmt_display, fmt_uptime, tr_find_warned};
-use forge_types::{MessageArg, MessageRef, UPSTREAM_FAILURE, UserText};
+use forge_components::{ArgsBuilder, DateShape, fmt_display, fmt_uptime, tr, tr_find_warned};
+use forge_types::{MessageArg, MessageRef, UPSTREAM_FAILURE, UserText, VariantKind};
 
 use crate::chat::platform_display_name;
+use crate::config_field_label::step_field_label;
 use crate::integration_switch::integration_name;
+
+const LIST_JOINER: &str = ", ";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ResolvedText {
@@ -69,6 +72,24 @@ fn with_fluent_arg<'a>(
         MessageArg::Verbatim(text) => args.set(name, text.as_str().to_owned()),
         MessageArg::Integration(id) => args.set(name, integration_name(id).to_string()),
         MessageArg::Platform(platform) => args.set(name, platform_display_name(*platform)),
+        MessageArg::ValueKind(kind) => args.set(name, value_kind_name(*kind)),
+        MessageArg::StepFields { kind, keys } => {
+            let labels: Vec<String> = keys.iter().map(|key| step_field_label(kind, key)).collect();
+            args.set(name, labels.join(LIST_JOINER))
+        }
+        MessageArg::Message(nested) => args.set(name, resolve_message(nested).primary),
+    }
+}
+
+fn value_kind_name(kind: VariantKind) -> String {
+    match kind {
+        VariantKind::Int => tr!("value_kind_int"),
+        VariantKind::Float => tr!("value_kind_float"),
+        VariantKind::Bool => tr!("value_kind_bool"),
+        VariantKind::String => tr!("value_kind_string"),
+        VariantKind::Datetime => tr!("value_kind_datetime"),
+        VariantKind::Array => tr!("value_kind_array"),
+        VariantKind::Object => tr!("value_kind_object"),
     }
 }
 #[cfg(test)]
@@ -238,6 +259,74 @@ mod tests {
             .with_arg("text", VerbatimText::new("{ $x } <b> ключ"));
 
         assert_eq!(primary(&message), "Сказано { $x } <b> ключ");
+    }
+
+    fn raw(arg: impl Into<MessageArg>) -> String {
+        primary(&MessageRef::new(MessageCode::from_static("probe", "raw")).with_arg("text", arg))
+    }
+
+    #[test]
+    fn a_value_kind_arg_renders_the_translated_kind_name_in_both_languages() {
+        for (language, kinds) in [
+            (
+                Language::En,
+                [
+                    (VariantKind::Int, "Said a whole number"),
+                    (VariantKind::Float, "Said a decimal number"),
+                    (VariantKind::Bool, "Said a true/false value"),
+                    (VariantKind::String, "Said text"),
+                    (VariantKind::Datetime, "Said a date and time"),
+                    (VariantKind::Array, "Said an array"),
+                    (VariantKind::Object, "Said an object"),
+                ],
+            ),
+            (
+                Language::Uk,
+                [
+                    (VariantKind::Int, "Сказано ціле число"),
+                    (VariantKind::Float, "Сказано дробове число"),
+                    (VariantKind::Bool, "Сказано логічне значення"),
+                    (VariantKind::String, "Сказано текст"),
+                    (VariantKind::Datetime, "Сказано дату й час"),
+                    (VariantKind::Array, "Сказано масив"),
+                    (VariantKind::Object, "Сказано об'єкт"),
+                ],
+            ),
+        ] {
+            install(language);
+            for (kind, expected) in kinds {
+                assert_eq!(raw(kind), expected, "{kind:?}");
+            }
+        }
+    }
+
+    #[test]
+    fn step_fields_render_each_key_by_its_short_label_or_by_the_key_when_it_has_none() {
+        install(Language::En);
+
+        let rendered = raw(MessageArg::StepFields {
+            kind: "core.time.format".to_owned(),
+            keys: vec![
+                "format_string".to_owned(),
+                "skip_if_late".to_owned(),
+                "no_such_field".to_owned(),
+            ],
+        });
+
+        assert_eq!(
+            rendered,
+            "Said Date pattern, Skip instead of running late if forge was closed, no_such_field"
+        );
+    }
+
+    #[test]
+    fn a_nested_message_renders_as_its_translated_primary_without_its_detail() {
+        install(Language::Uk);
+        let nested = MessageRef::new(PROBE_COUNT)
+            .with_arg("count", 2_i64)
+            .with_detail(detail("upstream cause"));
+
+        assert_eq!(raw(nested), "Сказано 2 елементи");
     }
 
     #[test]

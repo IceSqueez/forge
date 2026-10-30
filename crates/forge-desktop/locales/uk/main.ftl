@@ -899,49 +899,15 @@ action_editor_health_failed = Інтеграція не запустилася
 action_editor_health_integration_failed = { $name } не вдалося запустити
 action_editor_health_date_format_not_datetime = Крок форматує %{ $name }% як дату, але ця змінна не є датою й часом, тому шаблон ігнорується і значення показується як є
 action_editor_health_invalid_date_pattern = Шаблон дати в %{ $name }:{ $pattern }% недійсний: { $reason }
+value_kind_int = ціле число
+value_kind_float = дробове число
+value_kind_bool = логічне значення
+value_kind_string = текст
+value_kind_datetime = дату й час
+value_kind_array = масив
+value_kind_object = об'єкт
 action_editor_health_invalid_step_config = Налаштування кроку недійсні: { $message }
 action_editor_health_undecodable_step = Вкладений крок { $position } неможливо прочитати; він зберігається без змін і пропускається під час запуску дії
-step_config_required = Обов'язкове поле
-step_config_not_a_number = Має бути числом
-step_config_between = Має бути від { $min } до { $max }
-step_config_at_least = Має бути не менше ніж { $min }
-step_config_at_most = Має бути не більше ніж { $max }
-step_config_length_between = Довжина має бути від { $min } до { $max } { $max ->
-    [one] символу
-    [few] символів
-   *[other] символів
-}
-step_config_length_at_least = Щонайменше { $min } { $min ->
-    [one] символ
-    [few] символи
-   *[other] символів
-}
-step_config_length_at_most = Щонайбільше { $max } { $max ->
-    [one] символ
-    [few] символи
-   *[other] символів
-}
-step_config_out_of_range = Значення поза допустимими межами
-step_config_count_between = Має містити від { $min } до { $max } { $max ->
-    [one] елемента
-    [few] елементів
-   *[other] елементів
-}
-step_config_count_at_least = Щонайменше { $min } { $min ->
-    [one] елемент
-    [few] елементи
-   *[other] елементів
-}
-step_config_count_at_most = Щонайбільше { $max } { $max ->
-    [one] елемент
-    [few] елементи
-   *[other] елементів
-}
-step_config_not_text = Має бути текстом
-step_config_any_of_required = Заповніть хоча б одне з полів: { $fields }
-step_config_invalid_choice = Допустимі значення: { $choices }
-step_config_invalid_format = Неправильний формат: { $detail }
-step_config_field_problem = { $problem } ({ $field })
 action_editor_step_failed_notice = { $name } не вдалося запустити - цей крок завершуватиметься помилкою, доки інтеграція не запрацює
 action_editor_health_ok = Все гаразд: усі посилання резолвляться, останній запуск успішний
 action_editor_health_warn = Статичне попередження

@@ -44,7 +44,7 @@ mod tests {
         ConfigProblem, ConfigReason, FormField, RegistryError, RunContext, SubActionCategory,
     };
     use forge_storage::Language;
-    use forge_types::{ArgStack, SubActionTelemetry};
+    use forge_types::{ArgStack, MessageCode, MessageRef, SubActionTelemetry};
 
     use super::*;
     use crate::i18n::install_language;
@@ -209,23 +209,23 @@ mod tests {
     }
 
     #[test]
-    fn a_custom_reason_is_shown_verbatim_on_the_field_or_in_the_footer() {
-        let text = "pick a clip from the soundboard";
+    fn a_coded_reason_is_rendered_on_the_field_or_in_the_footer() {
+        let coded = ConfigReason::Coded(MessageRef::new(MessageCode::from_static(
+            "config",
+            "not_a_step_list",
+        )));
         for (problem, field_key) in [
             (
-                ConfigProblem::field("clip_id", ConfigReason::Custom(text.to_owned())),
+                ConfigProblem::field("clip_id", coded.clone()),
                 Some("clip_id".to_owned()),
             ),
-            (
-                ConfigProblem::whole(ConfigReason::Custom(text.to_owned())),
-                None,
-            ),
+            (ConfigProblem::whole(coded), None),
         ] {
             assert_eq!(
                 rejection(problem, &[]),
                 Some(StepRejection {
                     field_key,
-                    message: text.to_owned(),
+                    message: "Must be a list of steps".to_owned(),
                 })
             );
         }

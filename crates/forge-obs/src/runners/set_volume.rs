@@ -165,7 +165,7 @@ mod tests {
 
         assert!(
             matches!(&tel.outcome, SubActionOutcome::Failed(reason)
-                if reason.code_or_text().starts_with("invalid step config: 'volume_db' ")),
+                if crate::runners::test_support::rejected_field(reason) == Some("volume_db")),
             "{:?}",
             tel.outcome,
         );

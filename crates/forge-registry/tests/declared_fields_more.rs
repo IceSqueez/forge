@@ -158,6 +158,28 @@ fn bounded_text_checks_the_interpolated_length_when_validating_against_arguments
 }
 
 #[test]
+fn required_bounded_text_refuses_an_argument_that_interpolates_to_blank() {
+    let config = stored("nick", text("%who%"));
+    for blank in ["", "   "] {
+        assert_eq!(
+            NICK.peek(&config, Interpolation::Against(&args("who", blank))),
+            Err(ConfigProblem::field("nick", ConfigReason::Required)),
+            "{blank:?}"
+        );
+    }
+}
+
+#[test]
+fn optional_bounded_text_admits_an_argument_that_interpolates_to_empty() {
+    let config = stored("note", text("%who%"));
+
+    assert_eq!(
+        NOTE.peek(&config, Interpolation::Against(&args("who", ""))),
+        Ok(Some(String::new()))
+    );
+}
+
+#[test]
 fn bounded_text_form_field_follows_its_editor() {
     assert!(matches!(
         NICK.form_field(),

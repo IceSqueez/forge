@@ -5,6 +5,9 @@ use crate::vocabulary::INTEGRATION_ID;
 pub const BACKEND_UNAVAILABLE: MessageCode =
     MessageCode::from_static(INTEGRATION_ID, "backend_unavailable");
 
+pub const RAW_BYTES_SHAPE: MessageCode =
+    MessageCode::from_static(INTEGRATION_ID, "raw_bytes_shape");
+
 pub const HEALTH_INPUT_PORTS: MessageCode =
     MessageCode::from_static(INTEGRATION_ID, "health_input_ports");
 pub const HEALTH_OUTPUT_PORTS: MessageCode =
@@ -22,6 +25,7 @@ pub const MIDI_MESSAGES: MessageCatalog = MessageCatalog {
         HEALTH_LAST_NOTE_ON,
         HEALTH_EVENTS_PER_MINUTE,
         BACKEND_UNAVAILABLE,
+        RAW_BYTES_SHAPE,
     ],
     en_ftl: include_str!("../../locales/en/messages.ftl"),
     uk_ftl: include_str!("../../locales/uk/messages.ftl"),

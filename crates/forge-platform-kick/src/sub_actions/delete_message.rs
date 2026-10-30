@@ -90,14 +90,6 @@ impl SubActionRunner for DeleteMessageRunner {
             Ok(message_id) => message_id,
             Err(problem) => return (timer.invalid_config(&problem), None),
         };
-        if message_id.is_empty() {
-            return (
-                timer.failed(step_failure::empty_after_interpolation(
-                    config_keys::MESSAGE_ID,
-                )),
-                None,
-            );
-        }
         if message_id.contains(UNRESOLVED_REFERENCE_MARKER) {
             return (
                 timer.failed(messages::unresolved_reference(config_keys::MESSAGE_ID).into()),
@@ -187,7 +179,7 @@ mod tests {
                 "empty id",
                 config("%message_id%"),
                 chat_trigger_args(""),
-                "invalid step config",
+                "config.field_problem",
             ),
             (
                 "no chat trigger in scope",
@@ -215,7 +207,7 @@ mod tests {
 
             assert!(
                 matches!(&telemetry.outcome, SubActionOutcome::Failed(reason)
-                    if reason.code_or_text().starts_with(expected_code)),
+                    if reason.code_or_text() == expected_code),
                 "{case}: {:?}",
                 telemetry.outcome
             );

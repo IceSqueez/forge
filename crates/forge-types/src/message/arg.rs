@@ -5,8 +5,10 @@ use serde::{Deserialize, Deserializer, Serialize};
 use time::OffsetDateTime;
 
 use crate::integration::IntegrationId;
+use crate::message::reference::MessageRef;
 use crate::message::verbatim::VerbatimText;
 use crate::platform::PlatformId;
+use crate::variant::VariantKind;
 
 #[derive(Debug, Clone, Copy, PartialEq, PartialOrd, Serialize)]
 #[serde(transparent)]
@@ -42,6 +44,12 @@ pub enum MessageArg {
     Verbatim(VerbatimText),
     Integration(IntegrationId),
     Platform(PlatformId),
+    ValueKind(VariantKind),
+    StepFields {
+        kind: String,
+        keys: Vec<String>,
+    },
+    Message(Box<MessageRef>),
 }
 
 impl From<i64> for MessageArg {
@@ -116,5 +124,17 @@ impl From<IntegrationId> for MessageArg {
 impl From<PlatformId> for MessageArg {
     fn from(value: PlatformId) -> Self {
         Self::Platform(value)
+    }
+}
+
+impl From<VariantKind> for MessageArg {
+    fn from(value: VariantKind) -> Self {
+        Self::ValueKind(value)
+    }
+}
+
+impl From<MessageRef> for MessageArg {
+    fn from(value: MessageRef) -> Self {
+        Self::Message(Box::new(value))
     }
 }

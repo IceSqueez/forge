@@ -641,7 +641,7 @@ mod tests {
                     matches!(
                         &telemetry.outcome,
                         SubActionOutcome::Failed(reason)
-                            if reason.code_or_text().starts_with(&format!("invalid step config: '{flag_key}' "))
+                            if test_support::rejected_field(reason) == Some(flag_key)
                     ),
                     "{id} with {flag_key} = {value:?} ran as {:?}",
                     telemetry.outcome,

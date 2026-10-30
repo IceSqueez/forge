@@ -163,7 +163,7 @@ mod tests {
                 run(&CoreRandomBoolRunner, &cfg(probability.clone(), "flag")).await;
             assert!(produced.is_none(), "{probability:?}");
             assert!(
-                matches!(&outcome, SubActionOutcome::Failed(m) if m.code_or_text().contains(PROBABILITY_KEY)),
+                matches!(&outcome, SubActionOutcome::Failed(m) if crate::test_support::failure::rejected_field(m) == Some(PROBABILITY_KEY)),
                 "{probability:?}: {outcome:?}"
             );
         }

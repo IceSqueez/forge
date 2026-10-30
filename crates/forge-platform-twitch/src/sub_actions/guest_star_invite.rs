@@ -8,7 +8,7 @@ use forge_registry::{
 };
 use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry};
 
-use super::guest_star::{GUEST_LOGIN, GuestStarContext, SESSION_ID, first_missing};
+use super::guest_star::{GUEST_LOGIN, GuestStarContext, SESSION_ID};
 use crate::account::identity::SelfIdentity;
 use crate::helix::{HelixMethod, HelixRequest, HelixTransport};
 use crate::step_failure;
@@ -42,11 +42,6 @@ impl GuestStarInviteRunner {
     }
 
     async fn invite(&self, session_id: &str, target_login: &str) -> SubActionOutcome {
-        if let Some(missing) =
-            first_missing(&[(&SESSION_ID, session_id), (&GUEST_LOGIN, target_login)])
-        {
-            return SubActionOutcome::Failed(missing.into());
-        }
         let ctx =
             match GuestStarContext::resolve(self.transport.as_ref(), &self.identity, target_login)
                 .await

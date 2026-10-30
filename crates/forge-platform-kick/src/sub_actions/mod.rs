@@ -377,8 +377,12 @@ mod tests {
 
         assert_eq!(
             telemetry.outcome,
-            SubActionOutcome::Failed(forge_types::UserText::unlocalized(
-                "invalid step config: 'user_id' must be a number"
+            SubActionOutcome::Failed(test_support::step_problem(
+                "kick.moderation.ban",
+                &forge_registry::ConfigProblem::field(
+                    "user_id",
+                    forge_registry::ConfigReason::NotANumber
+                )
             ))
         );
         assert!(produced.is_none());

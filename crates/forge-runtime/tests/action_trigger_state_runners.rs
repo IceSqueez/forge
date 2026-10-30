@@ -1,4 +1,5 @@
 #![allow(clippy::unwrap_used)]
+mod common;
 use std::collections::BTreeMap;
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -458,32 +459,32 @@ async fn unparseable_id_fails_with_shape_only_text_and_persists_nothing() {
     let cases: [(&str, &str, ParseFailureCase); 6] = [
         (
             "core.action.enable",
-            "'action_id' is invalid",
+            "action_id",
             action_case(|r| Box::new(CoreActionEnableRunner::new(r)), SENTINEL),
         ),
         (
             "core.action.disable",
-            "'action_id' is invalid",
+            "action_id",
             action_case(|r| Box::new(CoreActionDisableRunner::new(r)), SENTINEL),
         ),
         (
             "core.action.toggle",
-            "'action_id' is invalid",
+            "action_id",
             action_case(|r| Box::new(CoreActionToggleRunner::new(r)), SENTINEL),
         ),
         (
             "core.trigger.enable",
-            "'trigger_instance_id' is invalid",
+            "trigger_instance_id",
             trigger_case(|r| Box::new(CoreTriggerEnableRunner::new(r)), SENTINEL),
         ),
         (
             "core.trigger.disable",
-            "'trigger_instance_id' is invalid",
+            "trigger_instance_id",
             trigger_case(|r| Box::new(CoreTriggerDisableRunner::new(r)), SENTINEL),
         ),
         (
             "core.trigger.toggle",
-            "'trigger_instance_id' is invalid",
+            "trigger_instance_id",
             trigger_case(|r| Box::new(CoreTriggerToggleRunner::new(r)), SENTINEL),
         ),
     ];
@@ -494,13 +495,10 @@ async fn unparseable_id_fails_with_shape_only_text_and_persists_nothing() {
         let SubActionOutcome::Failed(msg) = outcome else {
             panic!("{kind} accepted an unparseable id: {outcome:?}");
         };
-        assert!(
-            msg.code_or_text().contains(expected_field),
-            "{kind} must name the field it could not parse: {msg:?}"
-        );
-        assert!(
-            !msg.code_or_text().contains(SENTINEL),
-            "{kind} echoed the value: {msg:?}"
+        assert_eq!(
+            msg,
+            common::plain_field_problem(kind, expected_field, "config.unknown_entry"),
+            "{kind} must name the field without echoing the value"
         );
         assert_eq!(writes(), 0, "{kind} persisted after a parse failure");
     }

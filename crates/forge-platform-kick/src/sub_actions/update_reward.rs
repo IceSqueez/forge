@@ -151,14 +151,6 @@ impl SubActionRunner for UpdateRewardRunner {
             Ok(update) => update,
             Err(problem) => return (timer.invalid_config(&problem), None),
         };
-        if update.reward_id.is_empty() {
-            return (
-                timer.failed(step_failure::empty_after_interpolation(
-                    config_keys::REWARD_ID,
-                )),
-                None,
-            );
-        }
         if update.changes_nothing() {
             return (timer.failed(messages::nothing_to_update().into()), None);
         }

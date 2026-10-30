@@ -112,7 +112,7 @@ mod tests {
     const UNDECLARED: DeclaringRunner = DeclaringRunner { spec: None };
 
     fn cross_check_problem() -> ConfigProblem {
-        ConfigProblem::whole(ConfigReason::Custom("cross check".to_owned()))
+        ConfigProblem::whole(crate::config_messages::invalid_id())
     }
 
     #[async_trait]

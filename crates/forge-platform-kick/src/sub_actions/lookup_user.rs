@@ -88,12 +88,6 @@ impl SubActionRunner for LookupUserRunner {
             Ok(slug) => slug,
             Err(problem) => return (timer.invalid_config(&problem), None),
         };
-        if slug.is_empty() {
-            return (
-                timer.failed(step_failure::empty_after_interpolation(config_keys::SLUG)),
-                None,
-            );
-        }
 
         let token = match (self.token_source)().await {
             Ok(token) => token,

@@ -124,9 +124,6 @@ impl SendAnnouncementRunner {
         sender: SenderPreference,
         events: &dyn EventPublisher,
     ) -> StepResult {
-        if message.is_empty() {
-            return failed_step(messages::message_empty());
-        }
         if message.chars().count() > MAX_MESSAGE_CHARS {
             return failed_step(messages::message_too_long(MAX_MESSAGE_CHARS));
         }
@@ -359,7 +356,7 @@ mod tests {
             .await;
 
         assert!(
-            matches!(&telemetry.outcome, SubActionOutcome::Failed(msg) if msg.code_or_text().contains("color")),
+            matches!(&telemetry.outcome, SubActionOutcome::Failed(msg) if crate::sub_actions::test_support::rejected_field(msg) == Some("color")),
             "{:?}",
             telemetry.outcome
         );

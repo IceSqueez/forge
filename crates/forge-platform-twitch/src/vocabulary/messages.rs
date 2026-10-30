@@ -15,8 +15,9 @@ const REQUEST_FAILED: MessageCode = MessageCode::from_static(PLATFORM_ID, "reque
 const RESPONSE_UNREADABLE: MessageCode =
     MessageCode::from_static(PLATFORM_ID, "response_unreadable");
 const FIELD_REQUIRED: MessageCode = MessageCode::from_static(PLATFORM_ID, "field_required");
-const EMPTY_AFTER_INTERPOLATION: MessageCode =
-    MessageCode::from_static(PLATFORM_ID, "empty_after_interpolation");
+const UNRESOLVED_REFERENCE: MessageCode =
+    MessageCode::from_static(PLATFORM_ID, "unresolved_reference");
+const INVALID_HEX_COLOR: MessageCode = MessageCode::from_static(PLATFORM_ID, "invalid_hex_color");
 const TARGET_EMPTY: MessageCode = MessageCode::from_static(PLATFORM_ID, "target_empty");
 const CATEGORY_EMPTY: MessageCode = MessageCode::from_static(PLATFORM_ID, "category_empty");
 const EMPTY_RESPONSE: MessageCode = MessageCode::from_static(PLATFORM_ID, "empty_response");
@@ -54,7 +55,8 @@ pub const TWITCH_MESSAGES: MessageCatalog = MessageCatalog {
         REQUEST_FAILED,
         RESPONSE_UNREADABLE,
         FIELD_REQUIRED,
-        EMPTY_AFTER_INTERPOLATION,
+        UNRESOLVED_REFERENCE,
+        INVALID_HEX_COLOR,
         TARGET_EMPTY,
         CATEGORY_EMPTY,
         EMPTY_RESPONSE,
@@ -119,8 +121,12 @@ pub(crate) fn field_required(name: &str) -> MessageRef {
     field(FIELD_REQUIRED, name)
 }
 
-pub(crate) fn empty_after_interpolation(name: &str) -> MessageRef {
-    field(EMPTY_AFTER_INTERPOLATION, name)
+pub(crate) fn unresolved_reference() -> MessageRef {
+    MessageRef::new(UNRESOLVED_REFERENCE)
+}
+
+pub(crate) fn invalid_hex_color() -> MessageRef {
+    MessageRef::new(INVALID_HEX_COLOR)
 }
 
 pub(crate) fn target_empty(login_field: &str, id_field: &str) -> MessageRef {
@@ -234,7 +240,8 @@ mod tests {
             request_failed("d"),
             response_unreadable("d"),
             field_required("f"),
-            empty_after_interpolation("f"),
+            unresolved_reference(),
+            invalid_hex_color(),
             target_empty("l", "i"),
             category_empty(),
             empty_response(),

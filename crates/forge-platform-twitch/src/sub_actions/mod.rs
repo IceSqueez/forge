@@ -343,6 +343,18 @@ pub fn register_twitch_sub_actions(
 
 #[cfg(test)]
 pub(crate) mod test_support {
+    pub(crate) fn rejected_field(text: &forge_types::UserText) -> Option<&str> {
+        let forge_types::UserText::Message(message) = text else {
+            return None;
+        };
+        match message.arg("field") {
+            Some(forge_types::MessageArg::StepFields { keys, .. }) if keys.len() == 1 => {
+                Some(keys[0].as_str())
+            }
+            _ => None,
+        }
+    }
+
     use std::collections::VecDeque;
     use std::ffi::OsString;
     use std::sync::Mutex;

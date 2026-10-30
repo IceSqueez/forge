@@ -201,7 +201,7 @@ mod tests {
 
             assert!(
                 matches!(&tel.outcome, SubActionOutcome::Failed(reason)
-                    if reason.code_or_text().starts_with(&format!("invalid step config: '{key}' "))),
+                    if crate::runners::test_support::rejected_field(reason) == Some(key)),
                 "{key} = {value:?} ran as {:?}",
                 tel.outcome,
             );

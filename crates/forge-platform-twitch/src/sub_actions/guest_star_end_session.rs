@@ -7,7 +7,7 @@ use forge_registry::{
 };
 use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry};
 
-use super::guest_star::{SESSION_ID, first_missing};
+use super::guest_star::SESSION_ID;
 use crate::account::identity::SelfIdentity;
 use crate::helix::{HelixMethod, HelixRequest, HelixTransport};
 use crate::step_failure;
@@ -31,9 +31,6 @@ impl GuestStarEndSessionRunner {
     }
 
     async fn end(&self, session_id: &str) -> SubActionOutcome {
-        if let Some(missing) = first_missing(&[(&SESSION_ID, session_id)]) {
-            return SubActionOutcome::Failed(missing.into());
-        }
         let user_id = match self.identity.user_id().await {
             Ok(id) => id,
             Err(e) => {

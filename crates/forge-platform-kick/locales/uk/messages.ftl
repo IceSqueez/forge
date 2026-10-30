@@ -11,6 +11,5 @@ msg-kick-request_failed = Запит до Kick не вдався
 msg-kick-response_unreadable = Kick надіслав відповідь, яку forge не зміг прочитати
 msg-kick-token_unavailable = Не вдалося отримати токен доступу до Kick
 msg-kick-broadcaster_unavailable = Не вдалося отримати ідентифікатор каналу Kick
-msg-kick-empty_after_interpolation = Поле { $field } порожнє після підстановки змінних
 msg-kick-unresolved_reference = Поле { $field } містить непідставлене посилання на змінну
 msg-kick-nothing_to_update = Усі поля порожні після підстановки змінних, оновлювати нічого

@@ -24,8 +24,6 @@ const TOKEN_UNAVAILABLE: MessageCode =
     MessageCode::from_static(INTEGRATION_ID, "token_unavailable");
 const BROADCASTER_UNAVAILABLE: MessageCode =
     MessageCode::from_static(INTEGRATION_ID, "broadcaster_unavailable");
-const EMPTY_AFTER_INTERPOLATION: MessageCode =
-    MessageCode::from_static(INTEGRATION_ID, "empty_after_interpolation");
 const UNRESOLVED_REFERENCE: MessageCode =
     MessageCode::from_static(INTEGRATION_ID, "unresolved_reference");
 const NOTHING_TO_UPDATE: MessageCode =
@@ -47,7 +45,6 @@ pub const KICK_MESSAGES: MessageCatalog = MessageCatalog {
         RESPONSE_UNREADABLE,
         TOKEN_UNAVAILABLE,
         BROADCASTER_UNAVAILABLE,
-        EMPTY_AFTER_INTERPOLATION,
         UNRESOLVED_REFERENCE,
         NOTHING_TO_UPDATE,
     ],
@@ -103,10 +100,6 @@ pub(crate) fn broadcaster_unavailable(detail: &str) -> MessageRef {
     detailed(BROADCASTER_UNAVAILABLE, detail)
 }
 
-pub(crate) fn empty_after_interpolation(name: &str) -> MessageRef {
-    field(EMPTY_AFTER_INTERPOLATION, name)
-}
-
 pub(crate) fn unresolved_reference(name: &str) -> MessageRef {
     field(UNRESOLVED_REFERENCE, name)
 }
@@ -157,7 +150,6 @@ mod tests {
             response_unreadable("c"),
             token_unavailable("c"),
             broadcaster_unavailable("c"),
-            empty_after_interpolation("f"),
             unresolved_reference("f"),
             nothing_to_update(),
         ]

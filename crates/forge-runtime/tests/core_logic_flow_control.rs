@@ -236,7 +236,7 @@ async fn if_branch_with_non_array_body_fails_the_step_without_taking_a_branch() 
     let run = run_top(&eng, vec![step("core.logic.if_then_else", cfg)]).await;
 
     assert!(
-        matches!(&run.signal, ChainSignal::Error(m) if m.code_or_text().contains("'then_chain'")),
+        matches!(&run.signal, ChainSignal::Error(m) if common::rejected_field(m) == Some("then_chain")),
         "{:?}",
         run.signal
     );

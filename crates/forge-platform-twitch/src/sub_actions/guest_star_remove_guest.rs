@@ -28,9 +28,6 @@ impl GuestStarRemoveGuestRunner {
     }
 
     async fn remove(&self, slot: &GuestSlot) -> SubActionOutcome {
-        if let Some(missing) = slot.first_missing() {
-            return SubActionOutcome::Failed(missing.into());
-        }
         let ctx = match GuestStarContext::resolve(
             self.transport.as_ref(),
             &self.identity,

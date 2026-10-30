@@ -179,8 +179,12 @@ mod tests {
 
         assert_eq!(
             telemetry.outcome,
-            SubActionOutcome::Failed(forge_types::UserText::unlocalized(
-                "invalid step config: 'redemption_ids' is required"
+            SubActionOutcome::Failed(super::super::test_support::step_problem(
+                "kick.reward.redemption_reject",
+                &forge_registry::ConfigProblem::field(
+                    "redemption_ids",
+                    forge_registry::ConfigReason::Required
+                )
             ))
         );
         assert!(

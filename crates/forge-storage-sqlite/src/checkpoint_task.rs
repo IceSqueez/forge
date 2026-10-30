@@ -273,19 +273,22 @@ mod tests {
                 }
             }));
         }
+        while i64::from(wal_frames(&db.path)) < RESTART_AT_WAL_FRAMES {
+            tokio::time::sleep(POLL).await;
+        }
+        let mut peak = wal_frames(&db.path);
         spawn_checkpoint_task(
             db.pools.checkpointer().unwrap().clone(),
             db.pools.writer().clone(),
         );
 
         let deadline = Instant::now() + RESET_DEADLINE;
-        let mut peak = wal_frames(&db.path);
-        let mut reset_from = None;
+        let mut reset = false;
         while Instant::now() < deadline {
             tokio::time::sleep(POLL).await;
             let frames = wal_frames(&db.path);
             if frames < peak {
-                reset_from = Some(peak);
+                reset = true;
                 break;
             }
             peak = frames;
@@ -295,11 +298,9 @@ mod tests {
             task.await.unwrap();
         }
 
-        let reset_past_threshold =
-            reset_from.is_some_and(|frames| i64::from(frames) >= RESTART_AT_WAL_FRAMES);
         assert!(
-            reset_past_threshold,
-            "WAL never reset after passing {RESTART_AT_WAL_FRAMES} frames (reset from {reset_from:?}, peak {peak})"
+            reset,
+            "WAL past {RESTART_AT_WAL_FRAMES} frames was never reset (peak {peak})"
         );
     }
 

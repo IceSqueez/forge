@@ -12,7 +12,7 @@ use futures::future::BoxFuture;
 use super::fields::REWARD_ID;
 use super::step_failure;
 use crate::api::rewards::KickRewards;
-use crate::vocabulary::{config_keys, sub_action_ids};
+use crate::vocabulary::sub_action_ids;
 
 const KIND_ID: &str = sub_action_ids::REWARD_DELETE;
 
@@ -77,14 +77,6 @@ impl SubActionRunner for DeleteRewardRunner {
             Ok(reward_id) => reward_id,
             Err(problem) => return (timer.invalid_config(&problem), None),
         };
-        if reward_id.is_empty() {
-            return (
-                timer.failed(step_failure::empty_after_interpolation(
-                    config_keys::REWARD_ID,
-                )),
-                None,
-            );
-        }
 
         let outcome = match (self.token_source)().await {
             Err(e) => SubActionOutcome::Failed(step_failure::token_failed(&e)),

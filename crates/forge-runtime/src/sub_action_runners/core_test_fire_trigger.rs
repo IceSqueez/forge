@@ -51,7 +51,7 @@ fn synthetic_outputs(
                 .map_err(|error| {
                     ConfigProblem::field(
                         OUTPUTS.key,
-                        ConfigReason::InvalidFormat(format!("not convertible ({error})")),
+                        ConfigReason::Coded(core_messages::output_not_convertible(error)),
                     )
                 })
         })

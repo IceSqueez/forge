@@ -1,3 +1,4 @@
+use crate::config_messages::step_rejected;
 use crate::config_problem::{ConfigProblem, ConfigReason};
 
 #[derive(Debug, thiserror::Error)]
@@ -33,7 +34,7 @@ impl RegistryError {
     pub fn into_config_problem(self) -> ConfigProblem {
         match self {
             Self::InvalidConfig(problem) => problem,
-            other => ConfigProblem::whole(ConfigReason::Custom(other.to_string())),
+            _ => ConfigProblem::whole(step_rejected()),
         }
     }
 }

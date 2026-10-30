@@ -11,7 +11,7 @@ use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry};
 use crate::account::identity::SelfIdentity;
 use crate::helix::{HelixMethod, HelixRequest, HelixTransport};
 use crate::step_failure;
-use crate::vocabulary::{config_keys, messages, sub_action_ids};
+use crate::vocabulary::{config_keys, sub_action_ids};
 
 const KIND_ID: &str = sub_action_ids::AUTOMOD_REMOVE_BLOCKED_TERM;
 const TERM_ID_TEMPLATE: &str = "%blocked_term.id%";
@@ -82,12 +82,6 @@ impl SubActionRunner for RemoveBlockedTermRunner {
             Ok(term_id) => term_id,
             Err(problem) => return (timer.invalid_config(&problem), None),
         };
-        if term_id.is_empty() {
-            return (
-                timer.failed(messages::field_required("term_id").into()),
-                None,
-            );
-        }
         let outcome = delete_blocked_term(&self.transport, &self.identity, &term_id).await;
         (timer.finish(outcome), None)
     }

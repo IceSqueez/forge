@@ -226,7 +226,7 @@ mod tests {
             )
             .await;
             assert!(
-                matches!(&outcome, SubActionOutcome::Failed(m) if m.code_or_text().contains("'payload'")),
+                matches!(&outcome, SubActionOutcome::Failed(m) if crate::test_support::failure::rejected_field(m) == Some("payload")),
                 "{payload}: {outcome:?}"
             );
             assert!(recorder.captured().is_empty(), "{payload}");
@@ -244,8 +244,8 @@ mod tests {
                 &err,
                 RegistryError::InvalidConfig(ConfigProblem {
                     field: Some(field),
-                    reason: ConfigReason::InvalidFormat(_),
-                }) if field == "payload"
+                    reason: ConfigReason::Coded(message),
+                }) if field == "payload" && message.code().to_string() == "config.not_json"
             ),
             "{err:?}"
         );

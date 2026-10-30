@@ -5,9 +5,9 @@ use std::collections::HashSet;
 
 use forge_registry::{
     ActorBlock, ActorIdentity, BREAK_LOOP_KIND_ID, CASE_CHAIN_KEY, CONTINUE_LOOP_KIND_ID, CodeKind,
-    CodeLanguage, ConfigProblem, ConfigReason, Finding, FormField, HealthSeverity, LOOP_KIND_ID,
-    LoginSlot, ProducedVariable, STOP_KIND_ID, StepHealth, SubActionIo, SubActionRegistry,
-    TriggerRegistry, TriggerVariables, UndecodableReason, analyze, flag_failed, flag_switched_off,
+    CodeLanguage, ConfigProblem, Finding, FormField, HealthSeverity, LOOP_KIND_ID, LoginSlot,
+    ProducedVariable, STOP_KIND_ID, StepHealth, SubActionIo, SubActionRegistry, TriggerRegistry,
+    TriggerVariables, UndecodableReason, analyze, flag_failed, flag_switched_off,
 };
 use forge_registry::{ActorRole, ActorSlot, CanonicalVariable};
 use forge_types::{
@@ -667,10 +667,7 @@ const CHECKED_KIND: &str = "fake.checked";
 const CHECKED_FIELD: &str = "pattern";
 
 fn check_failure() -> ConfigProblem {
-    ConfigProblem::field(
-        CHECKED_FIELD,
-        ConfigReason::InvalidFormat("the pattern names an unknown component".to_owned()),
-    )
+    ConfigProblem::field(CHECKED_FIELD, forge_registry::invalid_id())
 }
 const INTO_VAR_KEY: &str = "into_var";
 

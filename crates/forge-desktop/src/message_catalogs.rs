@@ -2,6 +2,7 @@ use std::collections::BTreeSet;
 use std::time::Duration;
 
 use forge_components::{PushToast, ToastKind, duplicate_message_ids, tr};
+use forge_registry::CONFIG_MESSAGES;
 use forge_runtime::{CORE_MESSAGES, LIFECYCLE_MESSAGES};
 use forge_storage::Language;
 use forge_types::{COMMON_MESSAGES, MessageCatalog, MessageCatalogError};
@@ -11,6 +12,7 @@ use crate::i18n::{app_catalogs, catalog_language};
 
 pub const REGISTERED_CATALOGS: &[MessageCatalog] = &[
     COMMON_MESSAGES,
+    CONFIG_MESSAGES,
     CORE_MESSAGES,
     LIFECYCLE_MESSAGES,
     forge_platform_twitch::vocabulary::messages::TWITCH_MESSAGES,

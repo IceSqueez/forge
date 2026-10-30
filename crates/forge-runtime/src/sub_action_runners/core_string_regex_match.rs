@@ -240,8 +240,8 @@ mod tests {
             pattern_problem(&pattern("(ab")),
             Some(forge_registry::ConfigProblem {
                 field: Some(field),
-                reason: ConfigReason::InvalidFormat(_),
-            }) if field == "pattern"
+                reason: ConfigReason::Coded(message),
+            }) if field == "pattern" && message.code() == &crate::core_messages::REGEX_INVALID
         ));
     }
 

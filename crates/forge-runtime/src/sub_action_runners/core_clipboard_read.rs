@@ -166,7 +166,7 @@ mod tests {
         let port = Arc::new(RecordingClipboardPort::new().reads("data"));
         let (outcome, updated) = run(port, "").await;
         assert!(
-            matches!(&outcome, SubActionOutcome::Failed(m) if m.code_or_text().contains("'into_var' is required")),
+            matches!(&outcome, SubActionOutcome::Failed(m) if crate::test_support::failure::is_field_problem(m, "into_var", "config.required")),
             "{outcome:?}"
         );
         assert!(updated.is_none());

@@ -305,13 +305,6 @@ mod tests {
         c
     }
 
-    fn failure(outcome: SubActionOutcome) -> String {
-        match outcome {
-            SubActionOutcome::Failed(reason) => reason.code_or_text(),
-            other => panic!("expected a failed outcome, got {other:?}"),
-        }
-    }
-
     #[tokio::test]
     async fn now_custom_pattern_with_utc_on_renders_the_captured_instant_in_utc() {
         let pattern = "yyyy-MM-dd HH:mm:ss.SSSSSSSSS xxx";
@@ -346,14 +339,33 @@ mod tests {
 
     #[tokio::test]
     async fn now_custom_rejected_patterns_fail_the_run_naming_the_cause() {
-        for (pattern, named) in [
-            ("yyyy qqq", "qqq"),
-            ("", "empty"),
-            ("[unix_timestamp]", "[unix_timestamp]"),
+        for (pattern, code, named) in [
+            ("yyyy qqq", crate::core_messages::TIME_PATTERN_INVALID, None),
+            (
+                "",
+                crate::core_messages::TIME_PATTERN_INVALID,
+                Some("empty"),
+            ),
+            (
+                "[unix_timestamp]",
+                crate::core_messages::TIME_PATTERN_LEGACY,
+                None,
+            ),
         ] {
             let (outcome, out) = run(&custom_cfg(pattern, None)).await;
-            let reason = failure(outcome);
-            assert!(reason.contains(named), "{pattern:?}: {reason}");
+            let SubActionOutcome::Failed(reason) = &outcome else {
+                panic!("{pattern:?}: {outcome:?}");
+            };
+            let problem =
+                crate::test_support::failure::nested_problem(reason).expect("a field problem");
+            assert_eq!(problem.code(), &code, "{pattern:?}");
+            if let Some(named) = named {
+                assert!(
+                    crate::test_support::failure::detail_of(problem)
+                        .is_some_and(|detail| detail.contains(named)),
+                    "{pattern:?}: {outcome:?}"
+                );
+            }
             assert!(out.is_none(), "{pattern:?}");
         }
     }

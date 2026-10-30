@@ -11,7 +11,7 @@ use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry};
 use crate::account::identity::SelfIdentity;
 use crate::helix::{HelixMethod, HelixRequest, HelixTransport};
 use crate::step_failure;
-use crate::vocabulary::{config_keys, messages, sub_action_ids};
+use crate::vocabulary::{config_keys, sub_action_ids};
 
 const KIND_ID: &str = sub_action_ids::POLL_END;
 const POLL_ID_TEMPLATE: &str = "%poll.id%";
@@ -82,9 +82,6 @@ impl EndPollRunner {
     }
 
     async fn end(&self, poll_id: &str, status: PollEndStatus) -> SubActionOutcome {
-        if poll_id.is_empty() {
-            return SubActionOutcome::Failed(messages::field_required("poll_id").into());
-        }
         let user_id = match self.identity.user_id().await {
             Ok(id) => id,
             Err(e) => return step_failure::failed(&e),

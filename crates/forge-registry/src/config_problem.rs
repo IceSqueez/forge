@@ -1,5 +1,7 @@
 use std::fmt;
 
+use forge_types::MessageRef;
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct ValueBounds {
     pub min: Option<i64>,
@@ -57,8 +59,7 @@ pub enum ConfigReason {
     NotText,
     InvalidChoice(Vec<String>),
     AnyOfRequired(Vec<String>),
-    InvalidFormat(String),
-    Custom(String),
+    Coded(MessageRef),
 }
 
 impl ConfigReason {
@@ -125,8 +126,7 @@ impl fmt::Display for ConfigReason {
             Self::AnyOfRequired(fields) => {
                 write!(f, "needs at least one of: {}", fields.join(", "))
             }
-            Self::InvalidFormat(detail) => write!(f, "is invalid: {detail}"),
-            Self::Custom(text) => f.write_str(text),
+            Self::Coded(message) => write!(f, "is invalid: {}", message.code()),
         }
     }
 }
@@ -134,9 +134,7 @@ impl fmt::Display for ConfigReason {
 impl fmt::Display for ConfigProblem {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match (&self.field, &self.reason) {
-            (Some(field), ConfigReason::Custom(text)) => write!(f, "'{field}': {text}"),
             (Some(field), reason) => write!(f, "'{field}' {reason}"),
-            (None, ConfigReason::Custom(text)) => f.write_str(text),
             (None, reason @ ConfigReason::AnyOfRequired(_)) => write!(f, "step {reason}"),
             (None, reason) => write!(f, "value {reason}"),
         }
@@ -146,6 +144,7 @@ impl fmt::Display for ConfigProblem {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::config_messages::{invalid_id, step_rejected};
     use crate::error::RegistryError;
 
     #[test]
@@ -157,13 +156,10 @@ mod tests {
                 ConfigProblem::whole(ConfigReason::Required),
                 "value is required",
             ),
+            (keyed(invalid_id()), "'k' is invalid: config.invalid_id"),
             (
-                keyed(ConfigReason::Custom("pick a scene first".to_owned())),
-                "'k': pick a scene first",
-            ),
-            (
-                ConfigProblem::whole(ConfigReason::Custom("pick a scene first".to_owned())),
-                "pick a scene first",
+                ConfigProblem::whole(invalid_id()),
+                "value is invalid: config.invalid_id",
             ),
             (
                 keyed(ConfigReason::OutOfRange(ValueBounds::between(1, 10))),
@@ -201,10 +197,6 @@ mod tests {
             (
                 keyed(ConfigReason::choices(["public", "unlisted"])),
                 "'k' must be one of: public, unlisted",
-            ),
-            (
-                keyed(ConfigReason::InvalidFormat("bad token qq".to_owned())),
-                "'k' is invalid: bad token qq",
             ),
         ] {
             assert_eq!(problem.to_string(), expected);
@@ -274,7 +266,7 @@ mod tests {
     }
 
     #[test]
-    fn into_config_problem_folds_other_errors_into_a_whole_config_custom_reason() {
+    fn into_config_problem_folds_other_errors_into_a_whole_config_rejection() {
         for error in [
             RegistryError::DuplicateId("a.b".to_owned()),
             RegistryError::UnknownKindId("a.b".to_owned()),
@@ -285,10 +277,9 @@ mod tests {
             },
             RegistryError::RunnerInit("boom".to_owned()),
         ] {
-            let text = error.to_string();
             assert_eq!(
                 error.into_config_problem(),
-                ConfigProblem::whole(ConfigReason::Custom(text))
+                ConfigProblem::whole(step_rejected())
             );
         }
     }

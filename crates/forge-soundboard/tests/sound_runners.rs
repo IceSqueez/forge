@@ -218,7 +218,7 @@ fn clip_validation_requires_a_clip_for_play_and_reads_none_as_all_for_stop() {
     let play = PlaySoundRunner::new(RecordingControl::ok());
     let stop = StopSoundRunner::new(RecordingControl::ok());
     let chosen = ClipId::new().to_string();
-    let shape = ConfigReason::InvalidFormat("expected a clip id".to_owned());
+    let shape = forge_registry::invalid_id();
     let cases: [(&dyn SubActionRunner, SubActionConfig, Option<ConfigReason>); 10] = [
         (&play, SubActionConfig::new(), Some(ConfigReason::Required)),
         (&play, clip_config(""), Some(ConfigReason::Required)),
@@ -591,9 +591,14 @@ async fn master_volume_rejects_an_invalid_volume_without_touching_the_player() {
 
         assert_eq!(
             telemetry.outcome,
-            SubActionOutcome::Failed(forge_types::UserText::unlocalized(format!(
-                "invalid step config: {problem}"
-            ))),
+            SubActionOutcome::Failed(
+                problem
+                    .message(|keys| forge_types::MessageArg::StepFields {
+                        kind: "soundboard.volume.set_master".to_owned(),
+                        keys: keys.to_vec(),
+                    })
+                    .into()
+            ),
             "{case}"
         );
         assert!(control.calls().is_empty(), "{case}: {:?}", control.calls());

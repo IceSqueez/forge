@@ -167,13 +167,14 @@ mod tests {
         let SubActionOutcome::Failed(msg) = &outcome else {
             panic!("expected a Failed outcome, got {outcome:?}");
         };
-        assert!(
-            msg.code_or_text().contains("'action_id' is invalid"),
-            "the failure must name the field it could not parse: {msg:?}"
-        );
-        assert!(
-            !msg.code_or_text().contains(SENTINEL),
-            "echoed the unparsed value: {msg:?}"
+        assert_eq!(
+            msg,
+            &crate::test_support::failure::plain_field_problem(
+                "core.action.cancel",
+                "action_id",
+                "config.unknown_entry"
+            ),
+            "the failure must name the field without echoing the value"
         );
         assert!(
             !untouched.is_cancelled(),

@@ -291,7 +291,7 @@ async fn invalid_override_outputs_fail_naming_the_field_and_dispatch_nothing() {
     for outputs in ["object{0}", "[1]", "null"] {
         let mut fired = fire_bound_action(Variant::String(outputs.to_owned())).await;
         assert!(
-            matches!(&fired.outcome, SubActionOutcome::Failed(m) if m.code_or_text().contains("override_outputs")),
+            matches!(&fired.outcome, SubActionOutcome::Failed(m) if common::rejected_field(m) == Some("override_outputs")),
             "{outputs}: {:?}",
             fired.outcome
         );
@@ -348,8 +348,8 @@ async fn validate_config_rejects_non_object_override_outputs_as_invalid_format()
             &err,
             RegistryError::InvalidConfig(ConfigProblem {
                 field: Some(field),
-                reason: ConfigReason::InvalidFormat(_),
-            }) if field == "override_outputs"
+                reason: ConfigReason::Coded(message),
+            }) if field == "override_outputs" && message.code().to_string() == "config.not_json"
         ),
         "{err:?}"
     );
@@ -409,14 +409,14 @@ async fn unparseable_trigger_instance_id_fails() {
     let SubActionOutcome::Failed(msg) = outcome else {
         panic!("an unparseable trigger_instance_id must fail before any lookup, got {outcome:?}");
     };
-    assert!(
-        msg.code_or_text()
-            .contains("'trigger_instance_id' is invalid"),
-        "the failure must name the field it could not parse: {msg:?}"
-    );
-    assert!(
-        !msg.code_or_text().contains(SENTINEL),
-        "echoed the unparsed value: {msg:?}"
+    assert_eq!(
+        msg,
+        common::plain_field_problem(
+            "core.test.fire_trigger",
+            "trigger_instance_id",
+            "config.unknown_entry"
+        ),
+        "the failure must name the field without echoing the value"
     );
 }
 

@@ -4,7 +4,7 @@ use async_trait::async_trait;
 use forge_events::{EventSource, GlobalToggled, TypedEvent};
 use forge_registry::{ConfigSpec, RunContext, StepTimer, SubActionCategory, SubActionRunner};
 use forge_storage::{GlobalsRepo, StorageError};
-use forge_types::{ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetry, VariantKind};
+use forge_types::{ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetry};
 
 use super::core_globals_shared::{GLOBAL_BY_KEY, global_name};
 use crate::core_messages;
@@ -79,13 +79,9 @@ impl SubActionRunner for CoreGlobalsToggleRunner {
             Err(StorageError::NotFound { .. }) => {
                 SubActionOutcome::Failed(core_messages::global_missing(&resolved_key).into())
             }
-            Err(StorageError::TypeMismatch { actual, .. }) => SubActionOutcome::Failed(
-                core_messages::global_not_bool(
-                    VariantKind::from_contract_name(&actual)
-                        .map_or(actual.as_str(), |kind| kind.label()),
-                )
-                .into(),
-            ),
+            Err(StorageError::TypeMismatch { actual, .. }) => {
+                SubActionOutcome::Failed(core_messages::global_not_bool(&actual).into())
+            }
             Err(e) => SubActionOutcome::Failed(core_messages::storage_failed(e).into()),
         };
 
@@ -96,7 +92,7 @@ impl SubActionRunner for CoreGlobalsToggleRunner {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::test_support::failure::{failure_message, verbatim_arg};
+    use crate::test_support::failure::failure_message;
     use forge_events::Event;
     use forge_events::EventPublisher;
     use forge_storage::{GlobalEntry, StorageError};
@@ -228,7 +224,12 @@ mod tests {
         let outcome = run(globals.clone(), &cfg("flag")).await;
         let reason = failure_message(&outcome);
         assert_eq!(reason.code(), &core_messages::GLOBAL_NOT_BOOL);
-        assert_eq!(verbatim_arg(reason, "actual"), Some("INT"));
+        assert_eq!(
+            reason.arg("actual"),
+            Some(&forge_types::MessageArg::ValueKind(
+                forge_types::VariantKind::Int
+            ))
+        );
         assert_eq!(
             globals.snapshot("flag"),
             Some(Variant::Int(7)),

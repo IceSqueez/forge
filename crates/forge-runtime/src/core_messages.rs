@@ -1,8 +1,8 @@
 use std::fmt::Display;
 
 use forge_types::{
-    ActionId, MessageCatalog, MessageCode, MessageRef, TriggerInstanceId, UpstreamDetail,
-    VerbatimText,
+    ActionId, MessageArg, MessageCatalog, MessageCode, MessageRef, TriggerInstanceId,
+    UpstreamDetail, VariantKind, VerbatimText,
 };
 use time::OffsetDateTime;
 
@@ -29,6 +29,10 @@ const VOICE_ARG: &str = "voice";
 const VARIABLE_ARG: &str = "variable";
 const VARIABLES_ARG: &str = "variables";
 const CHAR_ARG: &str = "char";
+const KIND_ARG: &str = "kind";
+const COMPONENT_ARG: &str = "component";
+const POSITION_ARG: &str = "position";
+const WEIGHTS_ARG: &str = "weights";
 
 pub const UNKNOWN_ACTION: MessageCode = MessageCode::from_static(CORE_NAMESPACE, "unknown_action");
 pub const UNKNOWN_TRIGGER_INSTANCE: MessageCode =
@@ -133,6 +137,34 @@ pub const VOICE_NOT_ENGINE_VOICE: MessageCode =
     MessageCode::from_static(CORE_NAMESPACE, "voice_not_engine_voice");
 pub const VOICE_NOT_INSTALLED: MessageCode =
     MessageCode::from_static(CORE_NAMESPACE, "voice_not_installed");
+pub const RUN_DEPTH_EXCEEDED: MessageCode =
+    MessageCode::from_static(CORE_NAMESPACE, "run_depth_exceeded");
+pub const ACTION_STOPPED: MessageCode = MessageCode::from_static(CORE_NAMESPACE, "action_stopped");
+pub const UNKNOWN_STEP_KIND: MessageCode =
+    MessageCode::from_static(CORE_NAMESPACE, "unknown_step_kind");
+pub const STEP_DISABLED: MessageCode = MessageCode::from_static(CORE_NAMESPACE, "step_disabled");
+pub const CONDITION_NOT_MET: MessageCode =
+    MessageCode::from_static(CORE_NAMESPACE, "condition_not_met");
+pub const REGEX_INVALID: MessageCode = MessageCode::from_static(CORE_NAMESPACE, "regex_invalid");
+pub const TIME_PATTERN_LEGACY: MessageCode =
+    MessageCode::from_static(CORE_NAMESPACE, "time_pattern_legacy");
+pub const ENTRY_WITHOUT_VALUE: MessageCode =
+    MessageCode::from_static(CORE_NAMESPACE, "entry_without_value");
+pub const RANDOM_MAX_BELOW_MIN: MessageCode =
+    MessageCode::from_static(CORE_NAMESPACE, "random_max_below_min");
+pub const RANDOM_RANGE_TOO_WIDE: MessageCode =
+    MessageCode::from_static(CORE_NAMESPACE, "random_range_too_wide");
+pub const WEIGHT_NOT_A_NUMBER: MessageCode =
+    MessageCode::from_static(CORE_NAMESPACE, "weight_not_a_number");
+pub const WEIGHT_COUNT_MISMATCH: MessageCode =
+    MessageCode::from_static(CORE_NAMESPACE, "weight_count_mismatch");
+pub const WEIGHTS_UNUSABLE: MessageCode =
+    MessageCode::from_static(CORE_NAMESPACE, "weights_unusable");
+pub const OUTPUT_NOT_CONVERTIBLE: MessageCode =
+    MessageCode::from_static(CORE_NAMESPACE, "output_not_convertible");
+pub const CURRENCY_INVALID: MessageCode =
+    MessageCode::from_static(CORE_NAMESPACE, "currency_invalid");
+pub const AMOUNT_INVALID: MessageCode = MessageCode::from_static(CORE_NAMESPACE, "amount_invalid");
 
 pub const CORE_MESSAGES: MessageCatalog = MessageCatalog {
     namespace: CORE_NAMESPACE,
@@ -195,6 +227,22 @@ pub const CORE_MESSAGES: MessageCatalog = MessageCatalog {
         TEST_DONATION_NOT_ANNOUNCED,
         VOICE_NOT_ENGINE_VOICE,
         VOICE_NOT_INSTALLED,
+        RUN_DEPTH_EXCEEDED,
+        ACTION_STOPPED,
+        UNKNOWN_STEP_KIND,
+        STEP_DISABLED,
+        CONDITION_NOT_MET,
+        REGEX_INVALID,
+        TIME_PATTERN_LEGACY,
+        ENTRY_WITHOUT_VALUE,
+        RANDOM_MAX_BELOW_MIN,
+        RANDOM_RANGE_TOO_WIDE,
+        WEIGHT_NOT_A_NUMBER,
+        WEIGHT_COUNT_MISMATCH,
+        WEIGHTS_UNUSABLE,
+        OUTPUT_NOT_CONVERTIBLE,
+        CURRENCY_INVALID,
+        AMOUNT_INVALID,
     ],
     en_ftl: include_str!("../locales/en/core.ftl"),
     uk_ftl: include_str!("../locales/uk/core.ftl"),
@@ -206,6 +254,77 @@ fn verbatim(text: impl Into<String>) -> VerbatimText {
 
 fn with_cause(code: MessageCode, cause: impl Display) -> MessageRef {
     MessageRef::new(code).with_detail(UpstreamDetail::from_redacted(cause.to_string()))
+}
+
+pub(crate) fn run_depth_exceeded(limit: impl Into<MessageArg>) -> MessageRef {
+    MessageRef::new(RUN_DEPTH_EXCEEDED).with_arg(LIMIT_ARG, limit)
+}
+
+pub(crate) fn action_stopped() -> MessageRef {
+    MessageRef::new(ACTION_STOPPED)
+}
+
+pub(crate) fn unknown_step_kind(kind: &str) -> MessageRef {
+    MessageRef::new(UNKNOWN_STEP_KIND).with_arg(KIND_ARG, verbatim(kind))
+}
+
+pub(crate) fn step_disabled() -> MessageRef {
+    MessageRef::new(STEP_DISABLED)
+}
+
+pub(crate) fn condition_not_met() -> MessageRef {
+    MessageRef::new(CONDITION_NOT_MET)
+}
+
+pub(crate) fn regex_invalid(cause: impl Display) -> MessageRef {
+    with_cause(REGEX_INVALID, cause)
+}
+
+pub(crate) fn time_pattern_legacy(component: &str) -> MessageRef {
+    MessageRef::new(TIME_PATTERN_LEGACY).with_arg(COMPONENT_ARG, verbatim(component))
+}
+
+pub(crate) fn entry_without_value(name: &str) -> MessageRef {
+    MessageRef::new(ENTRY_WITHOUT_VALUE).with_arg(NAME_ARG, verbatim(name))
+}
+
+pub(crate) fn random_max_below_min() -> MessageRef {
+    MessageRef::new(RANDOM_MAX_BELOW_MIN)
+}
+
+pub(crate) fn random_range_too_wide() -> MessageRef {
+    MessageRef::new(RANDOM_RANGE_TOO_WIDE)
+}
+
+pub(crate) fn weight_not_a_number(position: usize) -> MessageRef {
+    MessageRef::new(WEIGHT_NOT_A_NUMBER).with_arg(POSITION_ARG, position)
+}
+
+pub(crate) fn weight_count_mismatch(weights: usize, items: usize) -> MessageRef {
+    MessageRef::new(WEIGHT_COUNT_MISMATCH)
+        .with_arg(WEIGHTS_ARG, weights)
+        .with_arg(ITEMS_ARG, items)
+}
+
+pub(crate) fn weights_unusable(cause: impl Display) -> MessageRef {
+    with_cause(WEIGHTS_UNUSABLE, cause)
+}
+
+pub(crate) fn output_not_convertible(cause: impl Display) -> MessageRef {
+    with_cause(OUTPUT_NOT_CONVERTIBLE, cause)
+}
+
+pub(crate) fn currency_invalid() -> MessageRef {
+    MessageRef::new(CURRENCY_INVALID)
+}
+
+pub(crate) fn amount_invalid() -> MessageRef {
+    MessageRef::new(AMOUNT_INVALID)
+}
+
+fn stored_kind(contract_name: &str) -> MessageArg {
+    VariantKind::from_contract_name(contract_name)
+        .map_or_else(|| verbatim(contract_name).into(), MessageArg::from)
 }
 
 pub(crate) fn unknown_action(action: ActionId) -> MessageRef {
@@ -325,11 +444,11 @@ pub(crate) fn global_missing(name: &str) -> MessageRef {
 }
 
 pub(crate) fn global_not_array(actual: &str) -> MessageRef {
-    MessageRef::new(GLOBAL_NOT_ARRAY).with_arg(ACTUAL_ARG, verbatim(actual))
+    MessageRef::new(GLOBAL_NOT_ARRAY).with_arg(ACTUAL_ARG, stored_kind(actual))
 }
 
 pub(crate) fn global_not_bool(actual: &str) -> MessageRef {
-    MessageRef::new(GLOBAL_NOT_BOOL).with_arg(ACTUAL_ARG, verbatim(actual))
+    MessageRef::new(GLOBAL_NOT_BOOL).with_arg(ACTUAL_ARG, stored_kind(actual))
 }
 
 pub(crate) fn amount_not_negatable(amount: i64) -> MessageRef {
@@ -544,6 +663,22 @@ mod tests {
             test_donation_not_announced(),
             voice_not_engine_voice("v"),
             voice_not_installed("v"),
+            run_depth_exceeded(8_i64),
+            action_stopped(),
+            unknown_step_kind("k"),
+            step_disabled(),
+            condition_not_met(),
+            regex_invalid("c"),
+            time_pattern_legacy("[x]"),
+            entry_without_value("n"),
+            random_max_below_min(),
+            random_range_too_wide(),
+            weight_not_a_number(1),
+            weight_count_mismatch(1, 2),
+            weights_unusable("c"),
+            output_not_convertible("c"),
+            currency_invalid(),
+            amount_invalid(),
         ]
     }
 
@@ -581,6 +716,28 @@ mod tests {
             ftl_variables(CORE_MESSAGES.en_ftl),
             ftl_variables(CORE_MESSAGES.uk_ftl)
         );
+    }
+
+    #[test]
+    fn a_stored_contract_kind_is_a_value_kind_and_any_other_text_stays_verbatim() {
+        for (actual, expected) in [
+            ("int", MessageArg::ValueKind(VariantKind::Int)),
+            (
+                "someday",
+                MessageArg::Verbatim(VerbatimText::new("someday")),
+            ),
+        ] {
+            assert_eq!(
+                global_not_array(actual).arg(ACTUAL_ARG),
+                Some(&expected),
+                "{actual}"
+            );
+            assert_eq!(
+                global_not_bool(actual).arg(ACTUAL_ARG),
+                Some(&expected),
+                "{actual}"
+            );
+        }
     }
 
     #[test]

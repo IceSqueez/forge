@@ -878,37 +878,15 @@ action_editor_health_failed = Integration failed
 action_editor_health_integration_failed = { $name } failed to start
 action_editor_health_date_format_not_datetime = The step formats %{ $name }% as a date, but this variable is not a date and time, so the pattern is ignored and the value shows as is
 action_editor_health_invalid_date_pattern = The date pattern in %{ $name }:{ $pattern }% is invalid: { $reason }
+value_kind_int = a whole number
+value_kind_float = a decimal number
+value_kind_bool = a true/false value
+value_kind_string = text
+value_kind_datetime = a date and time
+value_kind_array = an array
+value_kind_object = an object
 action_editor_health_invalid_step_config = Step settings are invalid: { $message }
 action_editor_health_undecodable_step = Nested step { $position } cannot be read; it is kept as stored and skipped when the action runs
-step_config_required = Required
-step_config_not_a_number = Must be a number
-step_config_between = Must be between { $min } and { $max }
-step_config_at_least = Must be at least { $min }
-step_config_at_most = Must be at most { $max }
-step_config_length_between = Must be { $min } to { $max } characters long
-step_config_length_at_least = Must be at least { $min } { $min ->
-    [one] character
-   *[other] characters
-} long
-step_config_length_at_most = Must be at most { $max } { $max ->
-    [one] character
-   *[other] characters
-} long
-step_config_out_of_range = Out of the allowed range
-step_config_count_between = Must list { $min } to { $max } items
-step_config_count_at_least = Must list at least { $min } { $min ->
-    [one] item
-   *[other] items
-}
-step_config_count_at_most = Must list at most { $max } { $max ->
-    [one] item
-   *[other] items
-}
-step_config_not_text = Must be text
-step_config_any_of_required = Fill in at least one of: { $fields }
-step_config_invalid_choice = Must be one of: { $choices }
-step_config_invalid_format = Invalid format: { $detail }
-step_config_field_problem = { $problem } ({ $field })
 action_editor_step_failed_notice = { $name } failed to start - this step fails until it runs
 action_editor_health_ok = Healthy: all references resolve, last run passed
 action_editor_health_warn = Static warning

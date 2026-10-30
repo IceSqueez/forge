@@ -73,9 +73,6 @@ impl ReplyChatRunner {
         sender: SenderPreference,
         events: &dyn EventPublisher,
     ) -> StepResult {
-        if message.is_empty() {
-            return failed_step(messages::message_empty());
-        }
         if message.chars().count() > MAX_MESSAGE_CHARS {
             return failed_step(messages::message_too_long(MAX_MESSAGE_CHARS));
         }

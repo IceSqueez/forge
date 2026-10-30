@@ -426,10 +426,15 @@ mod tests {
         }
     }
 
-    fn invalid_config(problem: forge_registry::ConfigProblem) -> forge_types::SubActionOutcome {
-        forge_types::SubActionOutcome::Failed(forge_types::UserText::unlocalized(format!(
-            "invalid step config: {problem}"
-        )))
+    fn invalid_config(
+        kind: &str,
+        problem: forge_registry::ConfigProblem,
+    ) -> forge_types::SubActionOutcome {
+        let message = problem.message(|keys| forge_types::MessageArg::StepFields {
+            kind: kind.to_owned(),
+            keys: keys.to_vec(),
+        });
+        forge_types::SubActionOutcome::Failed(message.into())
     }
 
     #[tokio::test]
@@ -480,7 +485,7 @@ mod tests {
 
             assert_eq!(
                 telemetry.outcome,
-                invalid_config(ConfigProblem::field(key, ConfigReason::Required)),
+                invalid_config(id, ConfigProblem::field(key, ConfigReason::Required)),
                 "{id} {key}"
             );
             assert_eq!(counting.calls(), 0, "{id} {key}");
@@ -599,7 +604,7 @@ mod tests {
 
             assert_eq!(
                 telemetry.outcome,
-                invalid_config(problem),
+                invalid_config(runner.id(), problem),
                 "{}",
                 runner.id()
             );

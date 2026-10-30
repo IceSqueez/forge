@@ -462,7 +462,12 @@ mod tests {
                 ),
                 (
                     Finding::InvalidStepConfig(forge_registry::ConfigProblem::whole(
-                        forge_registry::ConfigReason::Custom(REASON.to_owned()),
+                        forge_registry::ConfigReason::Coded(
+                            forge_types::MessageRef::new(forge_types::MessageCode::from_static(
+                                "config", "not_json",
+                            ))
+                            .with_detail(forge_types::UpstreamDetail::from_redacted(REASON)),
+                        ),
                     )),
                     vec![REASON],
                 ),

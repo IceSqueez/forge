@@ -7,7 +7,7 @@ use forge_registry::{
     SubActionCategory, SubActionRunner, TextEditor, TextField, TypedField, ValueBounds,
 };
 use forge_storage::{GlobalsRepo, StorageError};
-use forge_types::{ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetry, VariantKind};
+use forge_types::{ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetry};
 
 use super::core_globals_shared::{GLOBAL_BY_KEY, global_name};
 use crate::core_messages;
@@ -117,13 +117,9 @@ impl SubActionRunner for CoreGlobalsArrayAppendRunner {
                 );
                 SubActionOutcome::Success
             }
-            Err(StorageError::TypeMismatch { actual, .. }) => SubActionOutcome::Failed(
-                core_messages::global_not_array(
-                    VariantKind::from_contract_name(&actual)
-                        .map_or(actual.as_str(), |kind| kind.label()),
-                )
-                .into(),
-            ),
+            Err(StorageError::TypeMismatch { actual, .. }) => {
+                SubActionOutcome::Failed(core_messages::global_not_array(&actual).into())
+            }
             Err(e) => SubActionOutcome::Failed(core_messages::storage_failed(e).into()),
         };
 

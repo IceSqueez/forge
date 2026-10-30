@@ -1,3 +1,4 @@
+use crate::core_messages;
 use async_trait::async_trait;
 use forge_registry::{
     ConfigProblem, ConfigReason, ConfigSpec, Interpolation, NumberField, ProducedVariable,
@@ -38,7 +39,7 @@ fn sampleable(min: f64, max: f64) -> Result<(), ConfigProblem> {
     if min > max {
         return Err(ConfigProblem::field(
             MAX.key,
-            ConfigReason::Custom("must not be below the minimum".to_owned()),
+            ConfigReason::Coded(core_messages::random_max_below_min()),
         ));
     }
     if (max - min).is_finite() {
@@ -46,7 +47,7 @@ fn sampleable(min: f64, max: f64) -> Result<(), ConfigProblem> {
     } else {
         Err(ConfigProblem::field(
             MAX.key,
-            ConfigReason::Custom("range is too wide to sample".to_owned()),
+            ConfigReason::Coded(core_messages::random_range_too_wide()),
         ))
     }
 }
@@ -194,7 +195,7 @@ mod tests {
             let (outcome, produced) = run(&cfg).await;
             assert!(produced.is_none(), "{key}: must not produce a scope stack");
             assert!(
-                matches!(&outcome, SubActionOutcome::Failed(m) if m.code_or_text().contains(&format!("'{key}' must be a number"))),
+                matches!(&outcome, SubActionOutcome::Failed(m) if crate::test_support::failure::is_field_problem(m, key, "config.not_a_number")),
                 "{key}: got {outcome:?}"
             );
         }

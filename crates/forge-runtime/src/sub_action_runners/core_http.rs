@@ -377,7 +377,7 @@ fn interpolated_strings(
                 serde_json::Value::Null => {
                     return Err(ConfigProblem::field(
                         field.key,
-                        ConfigReason::InvalidFormat(format!("'{key}' has no value")),
+                        ConfigReason::Coded(core_messages::entry_without_value(&key)),
                     ));
                 }
                 other => other.to_string(),
@@ -725,7 +725,7 @@ mod tests {
             cfg.insert(key.to_owned(), Variant::String(value.to_owned()));
             let (tel, stack) = run(&runner(HttpMethod::Get, &dp), &cfg).await;
             assert!(
-                matches!(&tel.outcome, SubActionOutcome::Failed(m) if m.code_or_text().contains(&format!("'{key}'"))),
+                matches!(&tel.outcome, SubActionOutcome::Failed(m) if crate::test_support::failure::rejected_field(m) == Some(key)),
                 "{key}={value}: {:?}",
                 tel.outcome
             );
@@ -749,7 +749,7 @@ mod tests {
             let (tel, _) = run(&runner(HttpMethod::Get, &dp), &cfg).await;
 
             assert!(
-                matches!(&tel.outcome, SubActionOutcome::Failed(m) if m.code_or_text().contains(&format!("'{key}'"))),
+                matches!(&tel.outcome, SubActionOutcome::Failed(m) if crate::test_support::failure::rejected_field(m) == Some(key)),
                 "{key}: {:?}",
                 tel.outcome
             );
@@ -774,8 +774,8 @@ mod tests {
                     &err,
                     RegistryError::InvalidConfig(ConfigProblem {
                         field: Some(field),
-                        reason: ConfigReason::InvalidFormat(_),
-                    }) if field == key
+                        reason: ConfigReason::Coded(message),
+                    }) if field == key && message.code().to_string() == "config.not_json"
                 ),
                 "{key}: {err:?}"
             );

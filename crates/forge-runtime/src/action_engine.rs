@@ -17,6 +17,7 @@ use tracing::{info, warn};
 use crate::action_cancel::ActionCancelRegistry;
 use crate::catalog::Catalog;
 use crate::chain::ChainEngine;
+use crate::core_messages;
 use crate::integration_gate::{GatedLeafExecutor, IntegrationGate};
 use crate::run_history::RunHistoryWriter;
 use crate::scheduled_runs::ScheduledOrigin;
@@ -288,9 +289,9 @@ impl ActionEngine {
             started_at,
             completed_at: Some(started_at),
             telemetry: Vec::new(),
-            outcome: ExecutionOutcome::Failed(UserText::unlocalized(format!(
-                "not started: the triggering event is more than {MAX_CAUSATION_DEPTH} action runs deep (event loop between actions?)"
-            ))),
+            outcome: ExecutionOutcome::Failed(
+                core_messages::run_depth_exceeded(MAX_CAUSATION_DEPTH).into(),
+            ),
         };
         self.history.record(ctx, None);
     }
@@ -385,7 +386,7 @@ impl ActionEngine {
             }
             ChainSignal::Stop(mark) if mark.failed => ExecutionOutcome::Failed(match mark.reason {
                 Some(reason) => VerbatimText::new(reason).into(),
-                None => UserText::unlocalized("stopped"),
+                None => core_messages::action_stopped().into(),
             }),
             ChainSignal::Stop(_) => ExecutionOutcome::Success,
             ChainSignal::Error(msg) => ExecutionOutcome::Failed(msg),
@@ -576,9 +577,7 @@ pub(crate) fn skipped_telemetry(index: usize, kind_id: &str) -> SubActionTelemet
         kind: kind_id.to_owned(),
         started_at: OffsetDateTime::now_utc(),
         duration_ms: 0,
-        outcome: SubActionOutcome::Skipped(UserText::unlocalized(format!(
-            "unknown kind_id: {kind_id}"
-        ))),
+        outcome: SubActionOutcome::Skipped(core_messages::unknown_step_kind(kind_id).into()),
     }
 }
 
@@ -590,7 +589,7 @@ pub(crate) fn disabled_telemetry(index: usize, kind_id: &str) -> SubActionTeleme
         kind: kind_id.to_owned(),
         started_at: OffsetDateTime::now_utc(),
         duration_ms: 0,
-        outcome: SubActionOutcome::Skipped(UserText::unlocalized("disabled")),
+        outcome: SubActionOutcome::Skipped(core_messages::step_disabled().into()),
     }
 }
 
@@ -602,14 +601,14 @@ pub(crate) fn condition_skipped_telemetry(index: usize, kind_id: &str) -> SubAct
         kind: kind_id.to_owned(),
         started_at: OffsetDateTime::now_utc(),
         duration_ms: 0,
-        outcome: SubActionOutcome::Skipped(UserText::unlocalized("condition")),
+        outcome: SubActionOutcome::Skipped(core_messages::condition_not_met().into()),
     }
 }
 
 pub(crate) fn condition_failed_telemetry(
     index: usize,
     kind_id: &str,
-    message: String,
+    message: UserText,
 ) -> SubActionTelemetry {
     SubActionTelemetry {
         args_in: ::std::collections::BTreeMap::new(),
@@ -618,7 +617,7 @@ pub(crate) fn condition_failed_telemetry(
         kind: kind_id.to_owned(),
         started_at: OffsetDateTime::now_utc(),
         duration_ms: 0,
-        outcome: SubActionOutcome::Failed(UserText::unlocalized(message)),
+        outcome: SubActionOutcome::Failed(message),
     }
 }
 

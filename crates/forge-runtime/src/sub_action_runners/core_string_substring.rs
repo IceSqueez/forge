@@ -218,17 +218,25 @@ mod tests {
 
     #[tokio::test]
     async fn substring_negative_indices_fail_at_run_time_naming_the_index_and_its_bound() {
-        for (start, end, named) in [
-            (-1, 3, "'start_index' must be at least 0"),
-            (i64::MIN, -1, "'start_index' must be at least 0"),
-            (0, -2, "'end_index' must be at least -1"),
-            (0, i64::MIN, "'end_index' must be at least -1"),
+        for (start, end, key, floor) in [
+            (-1, 3, "start_index", 0),
+            (i64::MIN, -1, "start_index", 0),
+            (0, -2, "end_index", -1),
+            (0, i64::MIN, "end_index", -1),
         ] {
             let (tel, stack) = run(&cfg("hello", start, end)).await;
-            assert!(
-                matches!(&tel.outcome, SubActionOutcome::Failed(reason) if reason.code_or_text().contains(named)),
-                "start={start} end={end}: {:?}",
-                tel.outcome
+            assert_eq!(
+                tel.outcome,
+                SubActionOutcome::Failed(crate::test_support::failure::step_problem(
+                    "core.string.substring",
+                    &forge_registry::ConfigProblem::field(
+                        key,
+                        forge_registry::ConfigReason::OutOfRange(
+                            forge_registry::ValueBounds::at_least(floor)
+                        )
+                    )
+                )),
+                "start={start} end={end}"
             );
             assert!(stack.is_none(), "start={start} end={end}");
         }

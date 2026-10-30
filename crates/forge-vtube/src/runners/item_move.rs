@@ -387,7 +387,7 @@ mod tests {
 
         assert!(
             matches!(&tel.outcome, SubActionOutcome::Failed(reason)
-                if reason.code_or_text().starts_with("invalid step config: 'fade_mode' ")),
+                if crate::runners::test_support::rejected_field(reason) == Some("fade_mode")),
             "{:?}",
             tel.outcome,
         );

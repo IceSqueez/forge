@@ -184,11 +184,6 @@ impl CreateRewardRunner {
     }
 
     async fn create(&self, cfg: &ResolvedConfig) -> Result<String, SubActionOutcome> {
-        if cfg.title.is_empty() {
-            return Err(SubActionOutcome::Failed(
-                messages::field_required("title").into(),
-            ));
-        }
         let user_id = match self.identity.user_id().await {
             Ok(id) => id,
             Err(e) => {
@@ -512,7 +507,7 @@ mod tests {
         let (telemetry, _) = runner.execute(&cfg, &make_ctx(&stack)).await;
 
         assert!(
-            matches!(&telemetry.outcome, SubActionOutcome::Failed(msg) if msg.code_or_text().contains("title")),
+            matches!(&telemetry.outcome, SubActionOutcome::Failed(msg) if crate::sub_actions::test_support::rejected_field(msg) == Some("title")),
             "{:?}",
             telemetry.outcome
         );

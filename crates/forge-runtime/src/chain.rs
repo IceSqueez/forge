@@ -22,6 +22,7 @@ use crate::action_engine::{
 };
 use crate::bus::{EventBus, LineageHold};
 use crate::condition::ConditionGate;
+use crate::core_messages;
 use crate::integration_gate::{IntegrationGate, run_gated_step, step_owner};
 
 pub(crate) fn capture_args_in(
@@ -139,7 +140,7 @@ pub struct ChainEngine {
 enum ConditionVerdict {
     Run,
     Skip,
-    Fail(String),
+    Fail(UserText),
 }
 
 pub struct ChainRun {
@@ -201,7 +202,7 @@ impl ChainEngine {
         match self.gate.evaluate_with_args(cond, scope).await {
             Ok(true) => ConditionVerdict::Run,
             Ok(false) => ConditionVerdict::Skip,
-            Err(e) => ConditionVerdict::Fail(format!("condition evaluation failed: {e}")),
+            Err(e) => ConditionVerdict::Fail(core_messages::condition_failed(e).into()),
         }
     }
 
@@ -286,7 +287,7 @@ impl ChainEngine {
                     telemetry.push(tel);
                     if !step.continue_on_error {
                         return ChainRun {
-                            signal: ChainSignal::Error(UserText::unlocalized(msg)),
+                            signal: ChainSignal::Error(msg),
                             arg_stack: current,
                             telemetry,
                         };
@@ -815,7 +816,7 @@ mod tests {
         assert_eq!(run.telemetry[1].index, 1);
         assert_eq!(run.telemetry[1].kind, "seq.disabled");
         assert!(
-            matches!(&run.telemetry[1].outcome, SubActionOutcome::Skipped(m) if m.code_or_text() == "disabled"),
+            matches!(&run.telemetry[1].outcome, SubActionOutcome::Skipped(m) if m.code_or_text() == "core.step_disabled"),
         );
         assert_eq!(run.telemetry[2].kind, "seq.after");
         assert_eq!(runs.load(Ordering::Relaxed), 0);
@@ -865,7 +866,16 @@ mod tests {
             max: Some(5),
         },
     };
-    const INVALID_LIMIT_FAILURE: &str = "invalid step config: 'limit' must be between 1 and 5";
+
+    fn invalid_limit_failure() -> UserText {
+        crate::test_support::failure::step_problem(
+            "cfg.limited",
+            &forge_registry::ConfigProblem::field(
+                "limit",
+                forge_registry::ConfigReason::OutOfRange(ValueBounds::between(1, 5)),
+            ),
+        )
+    }
 
     fn limited(id: &str) -> ScriptedRunner {
         ScriptedRunner {
@@ -912,10 +922,8 @@ mod tests {
                 after_runs.load(Ordering::Relaxed),
             ),
             (
-                ChainSignal::Error(forge_types::UserText::unlocalized(INVALID_LIMIT_FAILURE)),
-                vec![SubActionOutcome::Failed(
-                    forge_types::UserText::unlocalized(INVALID_LIMIT_FAILURE)
-                )],
+                ChainSignal::Error(invalid_limit_failure()),
+                vec![SubActionOutcome::Failed(invalid_limit_failure())],
                 0,
                 0,
             )
@@ -955,9 +963,7 @@ mod tests {
             (
                 ChainSignal::Completed,
                 vec![
-                    SubActionOutcome::Failed(forge_types::UserText::unlocalized(
-                        INVALID_LIMIT_FAILURE
-                    )),
+                    SubActionOutcome::Failed(invalid_limit_failure()),
                     SubActionOutcome::Success,
                 ],
                 0,
@@ -970,11 +976,7 @@ mod tests {
     async fn a_templated_step_config_is_checked_against_the_run_arguments() {
         for (size, outcome, runs) in [
             (3, SubActionOutcome::Success, 1),
-            (
-                6,
-                SubActionOutcome::Failed(forge_types::UserText::unlocalized(INVALID_LIMIT_FAILURE)),
-                0,
-            ),
+            (6, SubActionOutcome::Failed(invalid_limit_failure()), 0),
         ] {
             let limited_runner = limited("cfg.limited");
             let limited_runs = Arc::clone(&limited_runner.runs);
@@ -1159,8 +1161,8 @@ mod tests {
                 assert_eq!(run.telemetry[0].outcome, SubActionOutcome::Success);
             } else {
                 assert!(
-                    matches!(&run.telemetry[0].outcome, SubActionOutcome::Skipped(m) if m.code_or_text() == "condition"),
-                    "false condition skips with \"condition\" reason, got {:?}",
+                    matches!(&run.telemetry[0].outcome, SubActionOutcome::Skipped(m) if m.code_or_text() == "core.condition_not_met"),
+                    "false condition skips with its own code, got {:?}",
                     run.telemetry[0].outcome,
                 );
             }
@@ -1201,7 +1203,7 @@ mod tests {
         assert_eq!(run.telemetry[1].index, 1);
         assert_eq!(run.telemetry[1].kind, "c.gated");
         assert!(
-            matches!(&run.telemetry[1].outcome, SubActionOutcome::Skipped(m) if m.code_or_text() == "condition"),
+            matches!(&run.telemetry[1].outcome, SubActionOutcome::Skipped(m) if m.code_or_text() == "core.condition_not_met"),
         );
         assert_eq!(gated_runs.load(Ordering::Relaxed), 0);
         assert_eq!(
@@ -1238,7 +1240,7 @@ mod tests {
                 .await;
 
             assert!(
-                matches!(&run.telemetry[0].outcome, SubActionOutcome::Failed(m) if m.code_or_text().contains("condition evaluation failed")),
+                matches!(&run.telemetry[0].outcome, SubActionOutcome::Failed(m) if m.code_or_text() == "core.condition_failed"),
                 "flagged={flagged}: gated row must be a condition-eval failure, got {:?}",
                 run.telemetry[0].outcome,
             );
@@ -1256,7 +1258,7 @@ mod tests {
                 assert_eq!(run.signal, ChainSignal::Completed, "flagged={flagged}");
             } else {
                 assert!(
-                    matches!(&run.signal, ChainSignal::Error(m) if m.code_or_text().contains("condition evaluation failed")),
+                    matches!(&run.signal, ChainSignal::Error(m) if m.code_or_text() == "core.condition_failed"),
                     "flagged={flagged}: {:?}",
                     run.signal,
                 );

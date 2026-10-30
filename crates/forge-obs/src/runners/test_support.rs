@@ -4,7 +4,7 @@ use std::sync::{Arc, Mutex};
 use async_trait::async_trait;
 use forge_events::{Event, EventPublisher};
 use forge_registry::RunContext;
-use forge_types::{ArgStack, EventId, Variant};
+use forge_types::{ArgStack, EventId, MessageArg, UserText, Variant};
 
 use crate::{ObsError, ObsSink};
 
@@ -367,4 +367,14 @@ impl EventPublisher for NoopPublisher {
 
 pub(crate) fn make_ctx(stack: &ArgStack) -> RunContext<'_> {
     RunContext::leaf(stack, 0, EventId::new(), &NoopPublisher)
+}
+
+pub(crate) fn rejected_field(text: &UserText) -> Option<&str> {
+    let UserText::Message(message) = text else {
+        return None;
+    };
+    match message.arg("field") {
+        Some(MessageArg::StepFields { keys, .. }) if keys.len() == 1 => Some(keys[0].as_str()),
+        _ => None,
+    }
 }

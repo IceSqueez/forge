@@ -13,7 +13,7 @@ use crate::collection_keys::MANAGEABLE_REWARD_OPTIONS_KEY;
 use crate::custom_rewards::{RewardBody, update_request};
 use crate::helix::HelixTransport;
 use crate::step_failure;
-use crate::vocabulary::{config_keys, messages, sub_action_ids};
+use crate::vocabulary::{config_keys, sub_action_ids};
 
 const KIND_ID: &str = sub_action_ids::CHANNEL_POINTS_ENABLE_REWARD;
 
@@ -70,11 +70,7 @@ pub(crate) async fn execute_bool_runner(
         Ok(reward_id) => reward_id,
         Err(problem) => return (timer.invalid_config(&problem), None),
     };
-    let outcome = if reward_id.is_empty() {
-        SubActionOutcome::Failed(messages::field_required("reward_id").into())
-    } else {
-        patch_reward_bool(transport, identity, &reward_id, body).await
-    };
+    let outcome = patch_reward_bool(transport, identity, &reward_id, body).await;
     (timer.finish(outcome), None)
 }
 

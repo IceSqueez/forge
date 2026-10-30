@@ -9,7 +9,7 @@ use forge_registry::{
     LinesField, ListedChoiceField, OptionalField, OptionalSwitch, StepChainField, TemplateField,
     TextEditor, TextField, TypedField, UnitAmountBounds, UnitAmountField, ValueBounds, ValueField,
 };
-use forge_types::{ActionId, ArgStack, SubActionConfig, Variant};
+use forge_types::{ActionId, ArgStack, MessageCode, MessageRef, SubActionConfig, Variant};
 use serde_json::json;
 use time::OffsetDateTime;
 
@@ -202,8 +202,12 @@ fn rejected<T>(key: &str, reason: ConfigReason) -> Result<T, ConfigProblem> {
     Err(ConfigProblem::field(key, reason))
 }
 
+fn config_code(name: &'static str) -> ConfigReason {
+    ConfigReason::Coded(MessageRef::new(MessageCode::from_static("config", name)))
+}
+
 fn not_a_known_entry() -> ConfigReason {
-    ConfigReason::InvalidFormat("not a known entry".to_owned())
+    config_code("unknown_entry")
 }
 
 #[test]
@@ -532,11 +536,12 @@ fn date_time_field_refuses_blank_unreadable_out_of_range_and_non_text() {
     for (value, reason) in [
         (text(""), ConfigReason::Required),
         (text("%nothing%"), ConfigReason::Required),
-        (
-            text("next tuesday"),
-            ConfigReason::InvalidFormat("not a date-time or unix timestamp".to_owned()),
-        ),
+        (text("next tuesday"), config_code("not_a_datetime")),
         (Variant::Bool(true), ConfigReason::NotText),
+        (
+            Variant::Int(i64::MAX),
+            config_code("timestamp_out_of_range"),
+        ),
     ] {
         assert_eq!(
             read(&WHEN, value.clone()),
@@ -544,23 +549,11 @@ fn date_time_field_refuses_blank_unreadable_out_of_range_and_non_text() {
             "{value:?}"
         );
     }
-    assert!(matches!(
-        read(&WHEN, Variant::Int(i64::MAX)),
-        Err(ConfigProblem {
-            reason: ConfigReason::InvalidFormat(detail),
-            ..
-        }) if detail.starts_with("unix timestamp out of range")
-    ));
 }
 
 #[test]
 fn step_chain_field_accepts_an_absent_or_listed_chain_and_refuses_anything_else() {
-    let not_a_list = || {
-        Err(ConfigProblem::field(
-            "body",
-            ConfigReason::InvalidFormat("not a list of steps".to_owned()),
-        ))
-    };
+    let not_a_list = || Err(ConfigProblem::field("body", config_code("not_a_step_list")));
     for (config, expected) in [
         (SubActionConfig::new(), Ok(())),
         (stored("body", Variant::Array(Vec::new())), Ok(())),
@@ -620,12 +613,7 @@ fn json_object_field_accepts_a_stored_object() {
 
 #[test]
 fn json_object_field_refuses_non_objects_invalid_json_and_non_text() {
-    let not_an_object = || {
-        rejected(
-            "payload",
-            ConfigReason::InvalidFormat("not a JSON object".to_owned()),
-        )
-    };
+    let not_an_object = || rejected("payload", config_code("not_a_json_object"));
     for (value, expected) in [
         (text("[1]"), not_an_object()),
         (text("null"), not_an_object()),
@@ -641,9 +629,9 @@ fn json_object_field_refuses_non_objects_invalid_json_and_non_text() {
     assert!(matches!(
         read(&PAYLOAD, text("object{0}")),
         Err(ConfigProblem {
-            reason: ConfigReason::InvalidFormat(detail),
+            reason: ConfigReason::Coded(message),
             ..
-        }) if detail.starts_with("not valid JSON")
+        }) if message.code().name() == "not_json" && message.detail().is_some()
     ));
 }
 

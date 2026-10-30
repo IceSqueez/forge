@@ -6,9 +6,9 @@ use forge_registry::{
     ConfigProblem, ConfigSpec, RunContext, StepTimer, SubActionCategory, SubActionRunner,
     TypedField,
 };
-use forge_types::{ArgStack, MessageRef, SubActionOutcome, SubActionTelemetry};
+use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry};
 
-use super::guest_star::{GUEST_LOGIN, GuestStarContext, SESSION_ID, SLOT_ID, first_missing};
+use super::guest_star::{GUEST_LOGIN, GuestStarContext, SESSION_ID, SLOT_ID};
 use crate::account::identity::SelfIdentity;
 use crate::helix::{HelixMethod, HelixRequest, HelixTransport};
 use crate::step_failure;
@@ -33,14 +33,6 @@ impl GuestSlot {
             slot_id: SLOT_ID.read(config, args)?,
         })
     }
-
-    pub(crate) fn first_missing(&self) -> Option<MessageRef> {
-        first_missing(&[
-            (&SESSION_ID, &self.session_id),
-            (&GUEST_LOGIN, &self.target_login),
-            (&SLOT_ID, &self.slot_id),
-        ])
-    }
 }
 
 pub struct GuestStarAssignSlotRunner {
@@ -57,9 +49,6 @@ impl GuestStarAssignSlotRunner {
     }
 
     async fn assign(&self, slot: &GuestSlot) -> SubActionOutcome {
-        if let Some(missing) = slot.first_missing() {
-            return SubActionOutcome::Failed(missing.into());
-        }
         let ctx = match GuestStarContext::resolve(
             self.transport.as_ref(),
             &self.identity,

@@ -6,7 +6,7 @@ use forge_registry::{
     ChoiceField, ConfigProblem, ConfigReason, ConfigSpec, Interpolation, RunContext, StepTimer,
     SubActionCategory, SubActionRunner, TextEditor, TextField, TypedField, ValueBounds,
 };
-use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, Variant};
+use forge_types::{ArgStack, MessageRef, SubActionOutcome, SubActionTelemetry, Variant};
 
 use super::byte_field::ByteField;
 use crate::events::MidiOutMessage;
@@ -14,12 +14,12 @@ use crate::sink::MidiSink;
 use crate::vocabulary::OutMessageKind;
 use crate::vocabulary::config_keys::send;
 use crate::vocabulary::limits::{CHANNEL_MAX, DATA_BYTE_MAX};
+use crate::vocabulary::messages::RAW_BYTES_SHAPE;
 use crate::vocabulary::sub_action_ids;
 
 const KIND_ID: &str = sub_action_ids::SEND;
 const MIDDLE_C: i64 = 60;
 const LOWEST: i64 = 0;
-const RAW_BYTES_SHAPE: &str = "expected a list of byte values";
 
 const PORT: TextField = TextField {
     key: send::PORT,
@@ -117,9 +117,9 @@ fn read_raw_bytes(config: &SubActionConfig) -> Result<Vec<u8>, ConfigProblem> {
         Some(Variant::Array(items)) if !items.is_empty() => items,
         Some(Variant::Array(_)) | None => return Err(invalid(ConfigReason::Required)),
         Some(_) => {
-            return Err(invalid(ConfigReason::InvalidFormat(
-                RAW_BYTES_SHAPE.to_owned(),
-            )));
+            return Err(invalid(ConfigReason::Coded(MessageRef::new(
+                RAW_BYTES_SHAPE,
+            ))));
         }
     };
     items
@@ -289,10 +289,13 @@ mod tests {
     }
 
     fn invalid(field: &str, reason: ConfigReason) -> SubActionOutcome {
-        SubActionOutcome::Failed(forge_types::UserText::unlocalized(format!(
-            "invalid step config: {}",
-            ConfigProblem::field(field, reason)
-        )))
+        let message = ConfigProblem::field(field, reason).message(|keys| {
+            forge_types::MessageArg::StepFields {
+                kind: KIND_ID.to_owned(),
+                keys: keys.to_vec(),
+            }
+        });
+        SubActionOutcome::Failed(message.into())
     }
 
     async fn run_recorded(
@@ -516,7 +519,7 @@ mod tests {
     #[test]
     fn validation_checks_raw_bytes_only_for_the_raw_kind() {
         let runner = MidiSendRunner::new(Arc::new(RecordingSink::default()));
-        let shape = ConfigReason::InvalidFormat(RAW_BYTES_SHAPE.to_owned());
+        let shape = ConfigReason::Coded(MessageRef::new(RAW_BYTES_SHAPE));
         let byte_range = ConfigReason::OutOfRange(ValueBounds::between(0, 255));
         let cases = [
             ("note_on", None, None),

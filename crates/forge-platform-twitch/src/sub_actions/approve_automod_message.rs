@@ -11,7 +11,7 @@ use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry};
 use crate::account::identity::SelfIdentity;
 use crate::helix::{HelixMethod, HelixRequest, HelixTransport};
 use crate::step_failure;
-use crate::vocabulary::{config_keys, messages, sub_action_ids};
+use crate::vocabulary::{config_keys, sub_action_ids};
 
 const KIND_ID: &str = sub_action_ids::AUTOMOD_APPROVE_MESSAGE;
 const MESSAGE_ID_TEMPLATE: &str = "%automod.message_id%";
@@ -48,9 +48,6 @@ async fn manage_automod_message(
     message_id: &str,
     action: &str,
 ) -> SubActionOutcome {
-    if message_id.is_empty() {
-        return SubActionOutcome::Failed(messages::field_required("message_id").into());
-    }
     let user_id = match identity.user_id().await {
         Ok(id) => id,
         Err(e) => return step_failure::failed(&e),

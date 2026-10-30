@@ -12,7 +12,7 @@ use crate::account::identity::{SelfIdentity, resolve_user_id};
 use crate::helix::{HelixMethod, HelixRequest, HelixTransport};
 use crate::lifecycle::TwitchLifecycle;
 use crate::step_failure;
-use crate::vocabulary::{config_keys, messages, sub_action_ids};
+use crate::vocabulary::{config_keys, sub_action_ids};
 
 const KIND_ID: &str = sub_action_ids::CHANNEL_START_RAID;
 
@@ -44,11 +44,6 @@ impl StartRaidRunner {
     }
 
     async fn start_raid(&self, to_broadcaster_login: &str) -> SubActionOutcome {
-        if to_broadcaster_login.is_empty() {
-            return SubActionOutcome::Failed(
-                messages::empty_after_interpolation("to_broadcaster_login").into(),
-            );
-        }
         let self_id = match self.identity.user_id().await {
             Ok(id) => id,
             Err(e) => return step_failure::failed(&e),

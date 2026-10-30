@@ -51,12 +51,9 @@ pub(crate) fn broadcaster_failed(error: &PlatformError) -> UserText {
     }
 }
 
-pub(crate) fn empty_after_interpolation(field: &str) -> UserText {
-    messages::empty_after_interpolation(field).into()
-}
 #[cfg(test)]
 mod tests {
-    use forge_types::{MessageArg, VerbatimText};
+    use forge_types::MessageArg;
 
     use super::*;
 
@@ -277,17 +274,6 @@ mod tests {
         assert_eq!(
             broadcaster_failed(&reauth()).code_or_text(),
             "kick.reauth_required"
-        );
-    }
-
-    #[test]
-    fn empty_after_interpolation_names_the_field_as_a_verbatim_argument() {
-        let text = empty_after_interpolation("title");
-
-        assert_eq!(text.code_or_text(), "kick.empty_after_interpolation");
-        assert_eq!(
-            message(&text).arg("field"),
-            Some(&MessageArg::Verbatim(VerbatimText::new("title")))
         );
     }
 }

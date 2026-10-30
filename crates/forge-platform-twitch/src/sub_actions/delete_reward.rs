@@ -12,7 +12,6 @@ use crate::account::identity::SelfIdentity;
 use crate::custom_rewards::delete_request;
 use crate::helix::HelixTransport;
 use crate::step_failure;
-use crate::vocabulary::messages;
 use crate::vocabulary::sub_action_ids;
 
 const KIND_ID: &str = sub_action_ids::CHANNEL_POINTS_DELETE_REWARD;
@@ -31,9 +30,6 @@ impl DeleteRewardRunner {
     }
 
     async fn apply(&self, reward_id: &str) -> SubActionOutcome {
-        if reward_id.is_empty() {
-            return SubActionOutcome::Failed(messages::field_required("reward_id").into());
-        }
         let user_id = match self.identity.user_id().await {
             Ok(id) => id,
             Err(e) => return step_failure::failed(&e),

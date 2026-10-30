@@ -17,7 +17,7 @@ use crate::custom_rewards::{
 };
 use crate::helix::HelixTransport;
 use crate::step_failure;
-use crate::vocabulary::{config_keys, messages, sub_action_ids};
+use crate::vocabulary::{config_keys, sub_action_ids};
 
 const KIND_ID: &str = sub_action_ids::CHANNEL_POINTS_UPDATE_REWARD;
 const MIN_TITLE_CHARS: i64 = 1;
@@ -224,9 +224,6 @@ impl UpdateRewardRunner {
     }
 
     async fn apply(&self, update: RewardUpdate) -> SubActionOutcome {
-        if update.reward_id.is_empty() {
-            return SubActionOutcome::Failed(messages::field_required("reward_id").into());
-        }
         let reward_id = update.reward_id.clone();
         let body = update.body();
         if body.is_empty() {
@@ -547,7 +544,7 @@ mod tests {
             let (telemetry, _) = runner.execute(&cfg, &make_ctx(&stack)).await;
 
             assert!(
-                matches!(&telemetry.outcome, SubActionOutcome::Failed(msg) if msg.code_or_text().contains("background_color_hex")),
+                matches!(&telemetry.outcome, SubActionOutcome::Failed(msg) if crate::sub_actions::test_support::rejected_field(msg) == Some("background_color_hex")),
                 "{hex}: {:?}",
                 telemetry.outcome
             );

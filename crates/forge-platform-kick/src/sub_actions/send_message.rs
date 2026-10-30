@@ -128,14 +128,6 @@ impl SubActionRunner for SendMessageRunner {
             Ok(values) => values,
             Err(problem) => return (timer.invalid_config(&problem), None),
         };
-        if message.is_empty() {
-            return (
-                timer.failed(step_failure::empty_after_interpolation(
-                    config_keys::MESSAGE,
-                )),
-                None,
-            );
-        }
 
         let outcome = self.send(&message, as_bot).await;
         if matches!(outcome, SubActionOutcome::Success) {
@@ -255,7 +247,7 @@ mod tests {
 
         assert!(
             matches!(&telemetry.outcome, SubActionOutcome::Failed(reason)
-                if reason.code_or_text().starts_with("invalid step config"))
+                if super::super::test_support::rejected_field(reason) == Some(config_keys::MESSAGE))
         );
         assert!(
             server.received_requests().await.unwrap().is_empty(),

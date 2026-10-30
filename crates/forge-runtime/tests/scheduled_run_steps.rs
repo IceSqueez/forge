@@ -1,4 +1,5 @@
 #![allow(clippy::unwrap_used, clippy::expect_used)]
+mod common;
 use std::collections::BTreeMap;
 use std::sync::Arc;
 use std::time::Duration;
@@ -79,6 +80,19 @@ fn step(kind_id: &str, config: SubActionConfig) -> SubActionStep {
 fn failure(outcome: &SubActionOutcome) -> Option<String> {
     match outcome {
         SubActionOutcome::Failed(reason) => Some(reason.code_or_text()),
+        _ => None,
+    }
+}
+
+fn failed_on(outcome: &SubActionOutcome, key: &str) -> bool {
+    matches!(outcome, SubActionOutcome::Failed(reason) if common::rejected_field(reason) == Some(key))
+}
+
+fn field_problem_code(outcome: &SubActionOutcome) -> Option<String> {
+    match outcome {
+        SubActionOutcome::Failed(reason) => {
+            common::nested_problem(reason).map(|problem| problem.code().to_string())
+        }
         _ => None,
     }
 }
@@ -300,10 +314,7 @@ async fn schedule_step_with_an_unknown_delay_unit_fails_without_placing_a_run() 
     pairs.push(("action_id", text(&target.to_string())));
     let (outcome, _) = harness.schedule(&ArgStack::new(), &pairs).await;
 
-    assert!(
-        failure(&outcome).is_some_and(|reason| reason.contains("'delay_unit'")),
-        "{outcome:?}"
-    );
+    assert!(failed_on(&outcome, "delay_unit"), "{outcome:?}");
     assert!(harness.pending().await.is_empty());
 }
 
@@ -380,7 +391,7 @@ async fn schedule_step_refuses_delays_outside_one_minute_to_one_year() {
         pairs.push(("action_id", text(&target.to_string())));
         let (outcome, _) = harness.schedule(&ArgStack::new(), &pairs).await;
         assert_eq!(
-            failure(&outcome).is_some_and(|reason| reason.contains("'delay_amount'")),
+            failed_on(&outcome, "delay_amount"),
             refused,
             "{amount} {unit}: {outcome:?}"
         );
@@ -470,10 +481,7 @@ async fn schedule_step_fails_on_a_due_time_it_cannot_read() {
         let mut pairs = due_at(text(value)).to_vec();
         pairs.push(("action_id", text(&target.to_string())));
         let (outcome, produced) = harness.schedule(&ArgStack::new(), &pairs).await;
-        assert!(
-            failure(&outcome).is_some_and(|reason| reason.contains("'due_at'")),
-            "{value:?}: {outcome:?}"
-        );
+        assert!(failed_on(&outcome, "due_at"), "{value:?}: {outcome:?}");
         assert!(produced.is_none(), "{value:?}");
     }
 }
@@ -501,20 +509,23 @@ async fn schedule_step_without_a_known_action_fails_without_placing_a_run() {
     let harness = Harness::new().await;
     let unknown = ScheduleError::UnknownAction.to_string();
 
-    for (action_id, expected, expected_detail) in [
+    for (action_id, expected, expected_problem, expected_detail) in [
         (
             String::new(),
-            "invalid step config: 'action_id' is required",
+            "config.field_problem",
+            Some("config.required"),
             None,
         ),
         (
             "not-an-action".to_owned(),
-            "invalid step config: 'action_id' is invalid: not a known entry",
+            "config.field_problem",
+            Some("config.unknown_entry"),
             None,
         ),
         (
             ActionId::new().to_string(),
             "core.schedule_failed",
+            None,
             Some(unknown.clone()),
         ),
     ] {
@@ -522,8 +533,12 @@ async fn schedule_step_without_a_known_action_fails_without_placing_a_run() {
             .schedule(&ArgStack::new(), &[("action_id", text(&action_id))])
             .await;
         assert_eq!(
-            (failure(&outcome).as_deref(), failure_detail(&outcome)),
-            (Some(expected), expected_detail),
+            (
+                failure(&outcome).as_deref(),
+                field_problem_code(&outcome).as_deref(),
+                failure_detail(&outcome)
+            ),
+            (Some(expected), expected_problem, expected_detail),
             "{action_id:?}"
         );
     }
@@ -675,7 +690,7 @@ async fn schedule_step_refuses_a_skip_tolerance_below_the_minimum() {
             )
             .await;
         assert!(
-            failure(&outcome).is_some_and(|reason| reason.contains("'late_tolerance_minutes'")),
+            failed_on(&outcome, "late_tolerance_minutes"),
             "{minutes}: {outcome:?}"
         );
     }
@@ -725,10 +740,7 @@ async fn cancel_step_with_a_blank_key_fails_and_keeps_every_pending_run() {
 
     for key in ["", "  "] {
         let (outcome, cancelled) = harness.cancel(&ArgStack::new(), key).await;
-        assert!(
-            failure(&outcome).is_some_and(|reason| reason.contains("'key' is required")),
-            "{key:?}: {outcome:?}"
-        );
+        assert!(failed_on(&outcome, "key"), "{key:?}: {outcome:?}");
         assert_eq!(cancelled, None, "{key:?}");
     }
     assert_eq!(harness.pending().await.len(), 1);

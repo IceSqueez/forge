@@ -337,7 +337,7 @@ mod tests {
                     }
                     Expect::Failed => {
                         assert!(
-                            matches!(&outcome, SubActionOutcome::Failed(reason) if reason.code_or_text().contains(field.key)),
+                            matches!(&outcome, SubActionOutcome::Failed(reason) if test_support::rejected_field(reason) == Some(field.key)),
                             "{case}: expected a failure naming the key, got {outcome:?}"
                         );
                         assert!(!called, "{case}: a rejected value still reached VTS");

@@ -132,12 +132,6 @@ impl SubActionRunner for CreateRewardRunner {
             Ok(params) => params,
             Err(problem) => return (timer.invalid_config(&problem), None),
         };
-        if params.title.is_empty() {
-            return (
-                timer.failed(step_failure::empty_after_interpolation(config_keys::TITLE)),
-                None,
-            );
-        }
 
         let token = match (self.token_source)().await {
             Ok(token) => token,

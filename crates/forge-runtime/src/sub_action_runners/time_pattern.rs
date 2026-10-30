@@ -27,13 +27,6 @@ pub(crate) struct ResolvedTimePattern {
 }
 
 impl ResolvedTimePattern {
-    pub(crate) fn pattern(&self) -> Result<&DatePattern, String> {
-        self.parsed
-            .as_ref()
-            .as_ref()
-            .map_err(|error| format!("invalid pattern '{}': {error}", self.text))
-    }
-
     pub(crate) fn runnable_pattern(&self) -> Result<&DatePattern, MessageRef> {
         self.parsed
             .as_ref()
@@ -46,15 +39,15 @@ impl ResolvedTimePattern {
     }
 }
 
-fn resolve_time_pattern(stored: &str, utc: Option<bool>) -> Result<ResolvedTimePattern, String> {
+fn resolve_time_pattern(
+    stored: &str,
+    utc: Option<bool>,
+) -> Result<ResolvedTimePattern, MessageRef> {
     let (text, utc_when_unset, language) = match translate_legacy_pattern(stored) {
         LegacyTranslation::NotLegacy => (stored.to_owned(), false, current_names_language()),
         LegacyTranslation::Translated(pattern) => (pattern, true, NamesLanguage::En),
         LegacyTranslation::Untranslatable { component } => {
-            return Err(format!(
-                "the old pattern part {component} has no equivalent in date patterns; \
-                 rewrite the pattern with letters such as HH:mm dd.MM.yyyy"
-            ));
+            return Err(core_messages::time_pattern_legacy(&component));
         }
     };
     let zone = if utc.unwrap_or(utc_when_unset) {
@@ -76,9 +69,9 @@ pub(crate) fn checked_time_pattern(
     stored: &str,
     utc: Option<bool>,
 ) -> Result<ResolvedTimePattern, ConfigProblem> {
-    let invalid = |detail| ConfigProblem::field(key, ConfigReason::InvalidFormat(detail));
+    let invalid = |message| ConfigProblem::field(key, ConfigReason::Coded(message));
     let resolved = resolve_time_pattern(stored, utc).map_err(invalid)?;
-    resolved.pattern().map_err(invalid)?;
+    resolved.runnable_pattern().map_err(invalid)?;
     Ok(resolved)
 }
 

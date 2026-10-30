@@ -1,22 +1,17 @@
-use forge_components::tr;
-use forge_registry::{ConfigProblem, ConfigReason, FormField, ValueBounds};
+use forge_registry::{ConfigProblem, ConfigReason, FormField};
+use forge_types::{MessageArg, VerbatimText};
 
 use crate::config_field_label::form_field_label;
+use crate::user_text::resolve_message;
+
+const FIELD_NAME_JOINER: &str = ", ";
 
 pub(super) fn config_problem_text(
     problem: &ConfigProblem,
     kind_id: &str,
     fields: &[FormField],
 ) -> String {
-    let reason = config_reason_text(&problem.reason, kind_id, fields);
-    match &problem.field {
-        Some(field) => tr!(
-            "step_config_field_problem",
-            field = field_name(field, kind_id, fields),
-            problem = reason
-        ),
-        None => reason,
-    }
+    resolve_message(&problem.message(|keys| field_names(keys, kind_id, fields))).inline()
 }
 
 pub(super) fn config_reason_text(
@@ -24,69 +19,22 @@ pub(super) fn config_reason_text(
     kind_id: &str,
     fields: &[FormField],
 ) -> String {
-    match reason {
-        ConfigReason::Required => tr!("step_config_required"),
-        ConfigReason::OutOfRange(bounds) => bounds_text(bounds, BoundsUnit::Value),
-        ConfigReason::LengthOutOfRange(bounds) => bounds_text(bounds, BoundsUnit::Characters),
-        ConfigReason::CountOutOfRange(bounds) => bounds_text(bounds, BoundsUnit::Items),
-        ConfigReason::NotANumber => tr!("step_config_not_a_number"),
-        ConfigReason::NotText => tr!("step_config_not_text"),
-        ConfigReason::InvalidChoice(choices) => {
-            tr!("step_config_invalid_choice", choices = choices.join(", "))
-        }
-        ConfigReason::AnyOfRequired(keys) => {
-            let names: Vec<String> = keys
-                .iter()
-                .map(|key| field_name(key, kind_id, fields))
-                .collect();
-            tr!("step_config_any_of_required", fields = names.join(", "))
-        }
-        ConfigReason::InvalidFormat(detail) => {
-            let first_line = detail.lines().next().unwrap_or_default().to_owned();
-            tr!("step_config_invalid_format", detail = first_line)
-        }
-        ConfigReason::Custom(text) => text.clone(),
-    }
+    resolve_message(&reason.message(|keys| field_names(keys, kind_id, fields))).inline()
 }
 
-fn field_name(key: &str, kind_id: &str, fields: &[FormField]) -> String {
-    form_field_label(kind_id, fields, key).unwrap_or_else(|| key.to_owned())
-}
-
-enum BoundsUnit {
-    Value,
-    Characters,
-    Items,
-}
-
-fn bounds_text(bounds: &ValueBounds, unit: BoundsUnit) -> String {
-    match (bounds.min, bounds.max, unit) {
-        (Some(min), Some(max), BoundsUnit::Value) => {
-            tr!("step_config_between", min = min, max = max)
-        }
-        (Some(min), Some(max), BoundsUnit::Characters) => {
-            tr!("step_config_length_between", min = min, max = max)
-        }
-        (Some(min), None, BoundsUnit::Value) => tr!("step_config_at_least", min = min),
-        (Some(min), None, BoundsUnit::Characters) => {
-            tr!("step_config_length_at_least", min = min)
-        }
-        (None, Some(max), BoundsUnit::Value) => tr!("step_config_at_most", max = max),
-        (None, Some(max), BoundsUnit::Characters) => {
-            tr!("step_config_length_at_most", max = max)
-        }
-        (Some(min), Some(max), BoundsUnit::Items) => {
-            tr!("step_config_count_between", min = min, max = max)
-        }
-        (Some(min), None, BoundsUnit::Items) => tr!("step_config_count_at_least", min = min),
-        (None, Some(max), BoundsUnit::Items) => tr!("step_config_count_at_most", max = max),
-        (None, None, _) => tr!("step_config_out_of_range"),
-    }
+fn field_names(keys: &[String], kind_id: &str, fields: &[FormField]) -> MessageArg {
+    let names: Vec<String> = keys
+        .iter()
+        .map(|key| form_field_label(kind_id, fields, key).unwrap_or_else(|| key.clone()))
+        .collect();
+    VerbatimText::new(names.join(FIELD_NAME_JOINER)).into()
 }
 
 #[cfg(test)]
 mod tests {
+    use forge_registry::ValueBounds;
     use forge_storage::Language;
+    use forge_types::{MessageCode, MessageRef, UpstreamDetail};
 
     use super::*;
     use crate::i18n::install_language;
@@ -101,6 +49,15 @@ mod tests {
     fn reason_in(language: Language, reason: ConfigReason) -> String {
         install_language(language);
         plain(config_reason_text(&reason, "test.step", &[]))
+    }
+
+    fn coded(name: &'static str) -> ConfigReason {
+        ConfigReason::Coded(MessageRef::new(MessageCode::from_static("config", name)))
+    }
+
+    fn not_json_with_cause() -> MessageRef {
+        MessageRef::new(MessageCode::from_static("config", "not_json"))
+            .with_detail(UpstreamDetail::from_redacted("expected value"))
     }
 
     fn count(bounds: ValueBounds) -> ConfigReason {
@@ -170,12 +127,12 @@ mod tests {
                 "Must be one of: public, unlisted, private",
             ),
             (
-                ConfigReason::InvalidFormat("unknown letter q".to_owned()),
-                "Invalid format: unknown letter q",
+                coded("not_a_datetime"),
+                "Must be a date and time or a unix timestamp",
             ),
             (
-                ConfigReason::InvalidFormat("unknown letter q\n  at column 3\n".to_owned()),
-                "Invalid format: unknown letter q",
+                ConfigReason::Coded(not_json_with_cause()),
+                "Must be valid JSON (expected value)",
             ),
             (ConfigReason::NotText, "Must be text"),
             (
@@ -193,10 +150,6 @@ mod tests {
                 "Must list at most 25 items",
             ),
             (count(UNBOUNDED), "Out of the allowed range"),
-            (
-                ConfigReason::Custom("pick a scene first".to_owned()),
-                "pick a scene first",
-            ),
         ] {
             assert_eq!(
                 reason_in(Language::En, reason.clone()),
@@ -226,10 +179,7 @@ mod tests {
                 ConfigReason::choices(["public", "private"]),
                 "Допустимі значення: public, private",
             ),
-            (
-                ConfigReason::InvalidFormat("q".to_owned()),
-                "Неправильний формат: q",
-            ),
+            (coded("not_json"), "Має бути коректним JSON"),
             (ConfigReason::NotText, "Має бути текстом"),
             (
                 count(ValueBounds::between(1, 5)),
@@ -327,6 +277,10 @@ mod tests {
                 "Required (volume)",
             ),
             (ConfigProblem::whole(ConfigReason::Required), "Required"),
+            (
+                ConfigProblem::field("scene", ConfigReason::Coded(not_json_with_cause())),
+                "Must be valid JSON (Scene) (expected value)",
+            ),
         ] {
             assert_eq!(
                 plain(config_problem_text(&problem, "test.step", &form())),

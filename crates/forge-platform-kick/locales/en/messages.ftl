@@ -11,6 +11,5 @@ msg-kick-request_failed = The request to Kick failed
 msg-kick-response_unreadable = Kick sent a response forge could not read
 msg-kick-token_unavailable = The Kick access token could not be obtained
 msg-kick-broadcaster_unavailable = The Kick channel id could not be obtained
-msg-kick-empty_after_interpolation = { $field } is empty after variable substitution
 msg-kick-unresolved_reference = { $field } has an unresolved variable reference
 msg-kick-nothing_to_update = Every field is empty after variable substitution, nothing to update

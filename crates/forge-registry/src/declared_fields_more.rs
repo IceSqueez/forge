@@ -51,8 +51,9 @@ impl TypedField for BoundedTextField {
     }
 
     fn parse_text(&self, text: &str) -> Result<String, ConfigReason> {
-        if within_length(text, self.length) {
-            Ok(text.to_owned())
+        let text = self.as_text().parse_text(text)?;
+        if within_length(&text, self.length) {
+            Ok(text)
         } else {
             Err(ConfigReason::LengthOutOfRange(self.length))
         }

@@ -526,6 +526,9 @@ fn script_arg_text(value: &MessageArg) -> String {
         MessageArg::Verbatim(text) => text.as_str().to_owned(),
         MessageArg::Integration(integration) => integration.to_string(),
         MessageArg::Platform(platform) => platform.as_str().to_owned(),
+        MessageArg::ValueKind(kind) => kind.contract_name().to_owned(),
+        MessageArg::StepFields { keys, .. } => keys.join(", "),
+        MessageArg::Message(message) => message.code().to_string(),
     }
 }
 

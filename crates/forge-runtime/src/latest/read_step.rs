@@ -295,7 +295,7 @@ mod tests {
         .await;
 
         assert!(
-            matches!(&outcome, SubActionOutcome::Failed(reason) if reason.code_or_text().contains(SLOT.key)),
+            matches!(&outcome, SubActionOutcome::Failed(reason) if crate::test_support::failure::rejected_field(reason) == Some(SLOT.key)),
             "{outcome:?}"
         );
         assert!(stack.is_none());

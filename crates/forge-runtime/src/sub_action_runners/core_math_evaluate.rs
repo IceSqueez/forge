@@ -242,7 +242,7 @@ mod tests {
     async fn evaluate_with_a_blank_output_var_fails_instead_of_writing_a_default_name() {
         let (outcome, out) = run(&cfg("1 + 1", "", "auto")).await;
         assert!(
-            matches!(&outcome, SubActionOutcome::Failed(m) if m.code_or_text().contains("'into_var' is required")),
+            matches!(&outcome, SubActionOutcome::Failed(m) if crate::test_support::failure::is_field_problem(m, "into_var", "config.required")),
             "{outcome:?}"
         );
         assert!(out.is_none());

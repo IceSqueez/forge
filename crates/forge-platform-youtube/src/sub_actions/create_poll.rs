@@ -315,10 +315,14 @@ mod tests {
 
             assert_eq!(
                 telemetry.outcome,
-                SubActionOutcome::Failed(forge_types::UserText::unlocalized(format!(
-                    "invalid step config: {}",
+                SubActionOutcome::Failed(
                     ConfigProblem::field("options", reason)
-                ))),
+                        .message(|keys| forge_types::MessageArg::StepFields {
+                            kind: "youtube.chat.create_poll".to_owned(),
+                            keys: keys.to_vec(),
+                        })
+                        .into()
+                ),
                 "{template}"
             );
             assert!(

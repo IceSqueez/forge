@@ -1,11 +1,16 @@
 use forge_registry::{ConfigProblem, ConfigReason};
 use regex::Regex;
 
+use crate::core_messages;
+
 const SYNTAX_DETAIL_PREFIX: &str = "error: ";
 
 pub(super) fn compiled_pattern(key: &str, pattern: &str) -> Result<Regex, ConfigProblem> {
     Regex::new(pattern).map_err(|error| {
-        ConfigProblem::field(key, ConfigReason::InvalidFormat(one_line_summary(&error)))
+        ConfigProblem::field(
+            key,
+            ConfigReason::Coded(core_messages::regex_invalid(one_line_summary(&error))),
+        )
     })
 }
 
@@ -46,7 +51,7 @@ mod tests {
             problem("search", "(ab"),
             ConfigProblem::field(
                 "search",
-                ConfigReason::InvalidFormat("unclosed group".to_owned())
+                ConfigReason::Coded(core_messages::regex_invalid("unclosed group"))
             )
         );
     }
@@ -54,9 +59,10 @@ mod tests {
     #[test]
     fn a_syntax_error_detail_drops_the_parse_error_banner_and_the_echoed_pattern() {
         for pattern in ["(ab", "[a-", "a{2,1}", "(?P<x"] {
-            let ConfigReason::InvalidFormat(detail) = problem("pattern", pattern).reason else {
-                panic!("{pattern:?}: not a format problem");
+            let ConfigReason::Coded(message) = problem("pattern", pattern).reason else {
+                panic!("{pattern:?}: not a coded problem");
             };
+            let detail = message.detail().unwrap().as_str();
             assert!(
                 !detail.contains('\n')
                     && !detail.contains("regex parse error")

@@ -314,9 +314,10 @@ mod tests {
 
             assert_eq!(
                 telemetry.outcome,
-                SubActionOutcome::Failed(forge_types::UserText::unlocalized(format!(
-                    "invalid step config: {out_of_range}"
-                ))),
+                SubActionOutcome::Failed(super::super::test_support::step_problem(
+                    "kick.moderation.timeout",
+                    &out_of_range
+                )),
                 "{template}"
             );
             assert!(

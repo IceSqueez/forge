@@ -3,6 +3,7 @@ mod category;
 mod chain;
 mod config_choice;
 mod config_ext;
+mod config_messages;
 mod config_problem;
 mod declared_composite_fields;
 mod declared_config;
@@ -43,6 +44,7 @@ pub use chain::{
 };
 pub use config_choice::ConfigChoice;
 pub use config_ext::SubActionConfigExt;
+pub use config_messages::{CONFIG_MESSAGES, invalid_id};
 pub use config_problem::{ConfigProblem, ConfigReason, ValueBounds};
 pub use declared_composite_fields::UnitAmountField;
 pub use declared_config::{ConfigSpec, DeclaredField, FieldLiteral, Interpolation, TypedField};

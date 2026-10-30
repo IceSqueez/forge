@@ -406,13 +406,10 @@ async fn unparseable_action_id_fails_without_running_a_child_chain() {
     let SubActionOutcome::Failed(msg) = outcome else {
         panic!("an unparseable action_id must fail, got {outcome:?}");
     };
-    assert!(
-        msg.code_or_text().contains("'action_id' is invalid"),
-        "the failure must name the field it could not parse: {msg:?}"
-    );
-    assert!(
-        !msg.code_or_text().contains(SENTINEL),
-        "echoed the unparsed value: {msg:?}"
+    assert_eq!(
+        msg,
+        common::plain_field_problem("core.action.run", "action_id", "config.unknown_entry"),
+        "the failure must name the field without echoing the value"
     );
     assert_eq!(executor.call_count(), 0);
 }

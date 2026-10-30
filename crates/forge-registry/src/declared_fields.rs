@@ -8,6 +8,10 @@ use forge_types::{SubActionConfig, Variant, datetime_from_text, strip_var_decora
 use time::OffsetDateTime;
 
 use crate::config_choice::ConfigChoice;
+use crate::config_messages::{
+    not_a_datetime, not_a_json_object, not_a_step_list, not_json, timestamp_out_of_range,
+    unknown_entry,
+};
 use crate::config_problem::{ConfigProblem, ConfigReason, ValueBounds};
 use crate::declared_config::{FieldLiteral, Interpolation, TypedField};
 use crate::duration_bounds::DurationBounds;
@@ -685,9 +689,7 @@ fn parse_selected<T: FromStr>(text: &str) -> Result<T, ConfigReason> {
     if selected.is_empty() {
         return Err(ConfigReason::Required);
     }
-    selected
-        .parse::<T>()
-        .map_err(|_| ConfigReason::InvalidFormat("not a known entry".to_owned()))
+    selected.parse::<T>().map_err(|_| unknown_entry())
 }
 
 pub struct DurationField {
@@ -796,17 +798,13 @@ impl TypedField for DateTimeField {
         }
         match typed.parse::<i64>() {
             Ok(seconds) => unix_instant(seconds),
-            Err(_) => Err(ConfigReason::InvalidFormat(
-                "not a date-time or unix timestamp".to_owned(),
-            )),
+            Err(_) => Err(not_a_datetime()),
         }
     }
 }
 
 fn unix_instant(seconds: i64) -> Result<OffsetDateTime, ConfigReason> {
-    OffsetDateTime::from_unix_timestamp(seconds).map_err(|error| {
-        ConfigReason::InvalidFormat(format!("unix timestamp out of range: {error}"))
-    })
+    OffsetDateTime::from_unix_timestamp(seconds).map_err(|_| timestamp_out_of_range())
 }
 
 #[derive(Clone, Copy)]
@@ -853,10 +851,7 @@ impl crate::declared_config::DeclaredField for StepChainField {
     ) -> Result<(), ConfigProblem> {
         match config.get(self.key) {
             None | Some(Variant::Array(_)) => Ok(()),
-            Some(_) => Err(ConfigProblem::field(
-                self.key,
-                ConfigReason::InvalidFormat("not a list of steps".to_owned()),
-            )),
+            Some(_) => Err(ConfigProblem::field(self.key, not_a_step_list())),
         }
     }
 }
@@ -892,7 +887,7 @@ impl TypedField for JsonObjectField {
         match value {
             Variant::Object(_) => match value.to_plain_json() {
                 JsonValue::Object(map) => Ok(FieldLiteral::Value(map)),
-                _ => Err(not_an_object()),
+                _ => Err(not_a_json_object()),
             },
             Variant::String(text) => self.parse_text(text).map(FieldLiteral::Value),
             _ => Err(ConfigReason::NotText),
@@ -905,17 +900,12 @@ impl TypedField for JsonObjectField {
         }
         match serde_json::from_str::<JsonValue>(text) {
             Ok(JsonValue::Object(map)) => Ok(map),
-            Ok(_) => Err(not_an_object()),
-            Err(error) => Err(ConfigReason::InvalidFormat(format!(
-                "not valid JSON ({error})"
-            ))),
+            Ok(_) => Err(not_a_json_object()),
+            Err(error) => Err(not_json(error)),
         }
     }
 }
 
-fn not_an_object() -> ConfigReason {
-    ConfigReason::InvalidFormat("not a JSON object".to_owned())
-}
 pub struct LinesField {
     pub key: &'static str,
     pub label: &'static str,

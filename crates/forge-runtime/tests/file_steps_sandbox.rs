@@ -1,4 +1,5 @@
 #![allow(clippy::unwrap_used, clippy::panic)]
+mod common;
 use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -24,7 +25,6 @@ const TRAVERSAL: &str = "core.file_path_parent";
 const ABSOLUTE: &str = "core.file_path_absolute";
 #[cfg(unix)]
 const ESCAPE: &str = "core.file_path_escapes";
-const PATH_REQUIRED: &str = "'path' is required";
 const READ_CAP_BYTES: usize = 1024 * 1024;
 const SENTINEL: &str = "qa-sentinel";
 
@@ -175,7 +175,7 @@ async fn every_file_step_refuses_an_empty_or_whitespace_path() {
         for step in ALL_STEPS {
             let msg = failure(step, path).await;
             assert!(
-                code(&msg).contains(PATH_REQUIRED),
+                common::is_field_problem(&msg, "path", "config.required"),
                 "{step:?} {path:?}: {msg:?}"
             );
         }
@@ -498,7 +498,7 @@ async fn absent_read_as_defaults_to_lines_array() {
 async fn unrecognised_read_as_fails_without_producing_a_value() {
     let (outcome, value) = read_fixture(Some("something-else"), "out", "out", "x\ny").await;
     assert!(
-        matches!(&outcome, SubActionOutcome::Failed(m) if m.code_or_text().contains("'read_as'")),
+        matches!(&outcome, SubActionOutcome::Failed(m) if common::rejected_field(m) == Some("read_as")),
         "{outcome:?}"
     );
     assert_eq!(value, None);

@@ -18,7 +18,7 @@ use forge_registry::{
 };
 use forge_storage::{
     OverlayConfig, OverlayDefinition, OverlayId, OverlayRepo, SettingsRepo, StorageError,
-    reserved_keys,
+    read_setting, settings::core_settings,
 };
 use forge_types::{ArgStack, EventId, LatestValueReader};
 use serde_json::json;
@@ -308,11 +308,11 @@ impl OverlayServiceHandle {
     }
 
     pub async fn root(&self) -> PathBuf {
-        match self
-            .inner
-            .settings
-            .get_string(reserved_keys::SERVER_OVERLAY_ROOT)
-            .await
+        match read_setting(
+            self.inner.settings.as_ref(),
+            &core_settings::SERVER_OVERLAY_ROOT,
+        )
+        .await
         {
             Ok(Some(root)) if !root.is_empty() => PathBuf::from(root),
             Ok(_) => forge_paths::overlays_dir(),

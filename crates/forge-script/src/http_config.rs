@@ -1,4 +1,4 @@
-use forge_storage::{SettingsRepo, StorageError, read_setting_or_default, stored_json_setting};
+use forge_storage::{SettingsRepo, StorageError, read_setting, read_setting_or_default};
 
 use crate::settings;
 
@@ -28,7 +28,7 @@ impl ScriptHttpConfig {
             Ok(domains) => domains,
             Err(error) => {
                 tracing::warn!(
-                    key = settings::HTTP_ALLOWED_DOMAINS.key.name(),
+                    key = settings::HTTP_ALLOWED_DOMAINS.name(),
                     error = %error,
                     "stored setting cannot be read; using its default"
                 );
@@ -49,25 +49,7 @@ impl ScriptHttpConfig {
 pub async fn stored_script_http_allowed_domains(
     repo: &dyn SettingsRepo,
 ) -> Result<Vec<String>, StorageError> {
-    let key = settings::HTTP_ALLOWED_DOMAINS.key.name();
-    match stored_json_setting::<Vec<String>>(repo, key).await {
-        Ok(domains) => Ok(domains.unwrap_or_default()),
-        Err(StorageError::UndecodableSetting { .. }) => Ok(repo
-            .get_string(key)
-            .await?
-            .map(|legacy| parse_legacy_csv_domains(&legacy))
-            .unwrap_or_default()),
-        Err(error) => Err(error),
-    }
-}
-
-fn parse_legacy_csv_domains(legacy: &str) -> Vec<String> {
-    legacy
-        .split(',')
-        .map(str::trim)
-        .filter(|domain| !domain.is_empty())
-        .map(str::to_owned)
-        .collect()
+    read_setting(repo, &settings::HTTP_ALLOWED_DOMAINS).await
 }
 
 #[cfg(test)]
@@ -142,7 +124,7 @@ mod tests {
             let backend = backend().await;
             if let Some(raw) = stored {
                 backend
-                    .set_string(settings::HTTP_ALLOWED_DOMAINS.key.name(), raw)
+                    .set_string(settings::HTTP_ALLOWED_DOMAINS.name(), raw)
                     .await
                     .unwrap();
             }

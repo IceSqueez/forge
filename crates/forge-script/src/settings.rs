@@ -1,6 +1,6 @@
 use forge_storage::SettingDisclosure::{Kind, Verbatim};
 use forge_storage::SettingPortability::{MachineLocal, Portable};
-use forge_storage::{Count, Flag, Setting, SettingEncoding, SettingSpec};
+use forge_storage::{Count, Flag, Setting, SettingCodec, SettingEncoding, SettingSpec};
 
 const BYTES_PER_KIB: u32 = 1024;
 
@@ -71,15 +71,45 @@ pub const HTTP_ALLOW_LOCAL: Setting<Flag> = Setting::new(
     Verbatim,
 );
 
-pub const HTTP_ALLOWED_DOMAINS: SettingSpec = SettingSpec::exact(
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct AllowedDomains;
+
+impl AllowedDomains {
+    fn parse_comma_separated(raw: &str) -> Vec<String> {
+        raw.split(',')
+            .map(str::trim)
+            .filter(|domain| !domain.is_empty())
+            .map(str::to_owned)
+            .collect()
+    }
+}
+
+impl SettingCodec for AllowedDomains {
+    type Value = Vec<String>;
+    const ENCODING: SettingEncoding = SettingEncoding::Json;
+
+    fn default_value(&self) -> Vec<String> {
+        Vec::new()
+    }
+
+    fn decode(&self, raw: &str) -> Option<Vec<String>> {
+        Some(serde_json::from_str(raw).unwrap_or_else(|_| Self::parse_comma_separated(raw)))
+    }
+
+    fn encode(&self, value: &Vec<String>) -> Option<String> {
+        serde_json::to_string(value).ok()
+    }
+}
+
+pub const HTTP_ALLOWED_DOMAINS: Setting<AllowedDomains> = Setting::new(
     "script.http_allowed_domains",
-    SettingEncoding::Json,
+    AllowedDomains,
     MachineLocal,
     Kind,
 );
 
 pub const SETTING_SPECS: &[SettingSpec] = &[
-    HTTP_ALLOWED_DOMAINS,
+    HTTP_ALLOWED_DOMAINS.spec(),
     HTTP_MAX_CALLS.spec(),
     HTTP_TIMEOUT_MS.spec(),
     HTTP_ALLOW_LOCAL.spec(),

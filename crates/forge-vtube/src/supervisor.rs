@@ -640,9 +640,16 @@ pub(crate) async fn run_supervisor(ctx: SupervisorContext) {
                     return;
                 }
                 Some(req) = req_rx.recv() => {
-                    if let Err(error) = send_text(&mut ws, req.payload).await {
-                        tracing::info!(endpoint = %endpoint, %error, "VTube Studio write failed; dropping the session");
-                        break;
+                    match tokio::time::timeout(REQUEST_TIMEOUT, send_text(&mut ws, req.payload)).await {
+                        Ok(Ok(())) => {}
+                        Ok(Err(error)) => {
+                            tracing::info!(endpoint = %endpoint, %error, "VTube Studio write failed; dropping the session");
+                            break;
+                        }
+                        Err(_) => {
+                            tracing::info!(endpoint = %endpoint, "VTube Studio write stalled; dropping the session");
+                            break;
+                        }
                     }
                     pending.insert(
                         req.request_id,

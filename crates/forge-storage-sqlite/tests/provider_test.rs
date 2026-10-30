@@ -176,13 +176,13 @@ async fn shutdown_closes_the_pool_so_later_queries_fail_instead_of_hanging() {
 
     let backend = common::sandboxed_backend("sqlite::memory:", TEST_KEY).await;
     backend
-        .set_string("theme", "catppuccin_mocha")
+        .set_theme("catppuccin_mocha")
         .await
         .expect("write before shutdown succeeds");
 
     backend.shutdown().await;
 
-    let result = backend.get_string("theme").await;
+    let result = backend.get_theme().await;
     assert!(
         result.is_err(),
         "queries after shutdown must error, not hang"

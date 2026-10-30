@@ -210,9 +210,6 @@ impl ServerSettings {
 
 #[cfg(test)]
 mod tests {
-    use std::collections::HashMap;
-
-    use async_trait::async_trait;
     use forge_storage::StorageError;
     use forge_storage::test_support::MemorySettings;
 
@@ -278,32 +275,6 @@ mod tests {
         );
     }
 
-    struct UnreachableKey(&'static str, MemorySettings);
-
-    #[async_trait]
-    impl SettingsRepo for UnreachableKey {
-        async fn get_string(&self, key: &str) -> Result<Option<String>, StorageError> {
-            if key == self.0 {
-                return Err(StorageError::Connection {
-                    reason: "settings store unreachable".to_owned(),
-                });
-            }
-            self.1.get_string(key).await
-        }
-
-        async fn set_string(&self, key: &str, value: &str) -> Result<(), StorageError> {
-            self.1.set_string(key, value).await
-        }
-
-        async fn delete(&self, key: &str) -> Result<bool, StorageError> {
-            self.1.delete(key).await
-        }
-
-        async fn load_all(&self) -> Result<HashMap<String, String>, StorageError> {
-            self.1.load_all().await
-        }
-    }
-
     #[tokio::test]
     async fn load_flags_undecodable_origins_and_still_serves_the_other_settings() {
         for (stored, origins, unreadable) in [
@@ -357,7 +328,8 @@ mod tests {
             core_settings::SERVER_OVERLAY_ROOT.name(),
             settings::ADDITIONAL_ORIGINS.name(),
         ] {
-            let repo = UnreachableKey(key, MemorySettings::new());
+            let repo = MemorySettings::new();
+            repo.fail_reads_for(key);
 
             let loaded = ServerSettings::load(&repo).await;
 

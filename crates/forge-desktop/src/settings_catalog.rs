@@ -235,7 +235,9 @@ mod tests {
             crate::midi_screen::MIDI_KNOWN_DEVICES.name(),
             crate::window_placement::WINDOW_PLACEMENT.name(),
         ] {
-            let shown = catalog.disclosure_of(name).render(SECRET);
+            let shown = catalog
+                .spec_of(name)
+                .and_then(|spec| spec.disclosure.render(SECRET));
 
             assert!(
                 !shown.is_some_and(|shown| shown.contains(SECRET)),
@@ -276,7 +278,11 @@ mod tests {
             core_settings::BACKUP_SCHEDULE_CONTENT_FINGERPRINT.name(),
         ]
         .into_iter()
-        .filter(|name| catalog.is_portable(name))
+        .filter(|name| {
+            catalog
+                .spec_of(name)
+                .is_some_and(|spec| spec.portability == SettingPortability::Portable)
+        })
         .collect();
 
         assert_eq!(portable, Vec::<&str>::new());

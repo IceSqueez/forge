@@ -1,8 +1,8 @@
-use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
 
 use async_trait::async_trait;
+use forge_storage::settings::core_settings;
 use forge_storage::{
     ActionRepo, BanLedgerRepo, CatalogRevision, ChatHistoryRepo, CredentialId, CredentialsKeyLoss,
     CredentialsRepo, DataProvider, DonationRepo, EXPECTED_SCHEMA_VERSION, EventLogRepo,
@@ -11,7 +11,7 @@ use forge_storage::{
     RevisingScheduledRunRepo, RevisingScriptRepo, RevisingTriggerInstanceRepo, RowClasses, RowGate,
     ScheduledRunRepo, ScriptRecord, ScriptReferences, ScriptRepo, ScriptTelemetry, SettingRow,
     SettingsRepo, SoundboardClipsRepo, StorageError, TriggerInstanceRepo, TtsFiltersRepo,
-    UserGlobalEntry, UserGlobalsRepo, ViewerRepo, VoiceAliasRepo, reserved_keys,
+    UserGlobalEntry, UserGlobalsRepo, ViewerRepo, VoiceAliasRepo,
 };
 use forge_types::{ScriptId, Variant};
 use time::OffsetDateTime;
@@ -153,8 +153,8 @@ impl SqliteBackend {
     }
 
     fn signal_setting_changed(&self, key: &str) {
-        if key == reserved_keys::EVENT_LOG_RETENTION_DAYS
-            || key == reserved_keys::ACTION_HISTORY_RETENTION_DAYS
+        if key == core_settings::EVENT_LOG_RETENTION_DAYS.name()
+            || key == core_settings::ACTION_HISTORY_RETENTION_DAYS.name()
         {
             self.retention_window_changed.notify_one();
         }
@@ -432,14 +432,8 @@ impl UserGlobalsRepo for SqliteBackend {
 
 #[async_trait]
 impl SettingsRepo for SqliteBackend {
-    async fn get_string(&self, key: &str) -> Result<Option<String>, StorageError> {
-        self.settings.get_string(key).await
-    }
-
-    async fn set_string(&self, key: &str, value: &str) -> Result<(), StorageError> {
-        self.settings.set_string(key, value).await?;
-        self.signal_setting_changed(key);
-        Ok(())
+    async fn get_raw(&self, gate: RowGate, key: &str) -> Result<Option<String>, StorageError> {
+        self.settings.get_raw(gate, key).await
     }
 
     async fn put_row(
@@ -458,14 +452,10 @@ impl SettingsRepo for SqliteBackend {
         self.settings.load_rows(gate).await
     }
 
-    async fn delete(&self, key: &str) -> Result<bool, StorageError> {
-        let deleted = self.settings.delete(key).await?;
+    async fn delete_raw(&self, gate: RowGate, key: &str) -> Result<bool, StorageError> {
+        let deleted = self.settings.delete_raw(gate, key).await?;
         self.signal_setting_changed(key);
         Ok(deleted)
-    }
-
-    async fn load_all(&self) -> Result<HashMap<String, String>, StorageError> {
-        self.settings.load_all().await
     }
 }
 
@@ -671,6 +661,7 @@ impl DataProvider for SqliteBackend {
 #[cfg(test)]
 mod tests {
     use forge_storage::DataProvider;
+    use forge_storage::settings::core_settings;
 
     use super::SqliteBackend;
 
@@ -753,11 +744,11 @@ mod tests {
 
     const PROGRESS: [(&str, &str); 2] = [
         (
-            forge_storage::reserved_keys::BACKUP_SCHEDULE_LAST_SUCCESS_AT,
+            core_settings::BACKUP_SCHEDULE_LAST_SUCCESS_AT.name(),
             "2026-10-21T12:00:00Z",
         ),
         (
-            forge_storage::reserved_keys::BACKUP_SCHEDULE_CONTENT_FINGERPRINT,
+            core_settings::BACKUP_SCHEDULE_CONTENT_FINGERPRINT.name(),
             "abc123",
         ),
     ];

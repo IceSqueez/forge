@@ -354,7 +354,7 @@ pub async fn read_setting<C: SettingCodec, R: SettingsRepo + ?Sized>(
     repo: &R,
     setting: &Setting<C>,
 ) -> Result<C::Value, StorageError> {
-    let raw = repo.get_string(setting.name()).await?;
+    let raw = repo.get_raw(RowGate::open(), setting.name()).await?;
     Ok(setting.decode_or_default(raw.as_deref()))
 }
 
@@ -362,7 +362,7 @@ pub async fn read_stored_setting<C: SettingCodec, R: SettingsRepo + ?Sized>(
     repo: &R,
     setting: &Setting<C>,
 ) -> Result<Option<C::Value>, StorageError> {
-    repo.get_string(setting.name())
+    repo.get_raw(RowGate::open(), setting.name())
         .await?
         .map(|raw| {
             setting
@@ -424,7 +424,7 @@ pub async fn reset_setting<C: SettingCodec, R: SettingsRepo + ?Sized>(
     repo: &R,
     setting: &Setting<C>,
 ) -> Result<bool, StorageError> {
-    repo.delete(setting.name()).await
+    repo.delete_raw(RowGate::open(), setting.name()).await
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -489,8 +489,25 @@ pub async fn read_family_setting<C: SettingCodec, R: SettingsRepo + ?Sized>(
     member: &str,
 ) -> Result<C::Value, StorageError> {
     let key = family.member_key(member)?;
-    let raw = repo.get_string(&key).await?;
+    let raw = repo.get_raw(RowGate::open(), &key).await?;
     Ok(family.decode_or_default(&key, raw.as_deref()))
+}
+
+pub async fn read_stored_family_setting<C: SettingCodec, R: SettingsRepo + ?Sized>(
+    repo: &R,
+    family: &SettingFamily<C>,
+    member: &str,
+) -> Result<Option<C::Value>, StorageError> {
+    let key = family.member_key(member)?;
+    repo.get_raw(RowGate::open(), &key)
+        .await?
+        .map(|raw| {
+            family
+                .codec
+                .decode(&raw)
+                .ok_or(StorageError::UndecodableSetting { key })
+        })
+        .transpose()
 }
 
 pub async fn write_family_setting<C: SettingCodec, R: SettingsRepo + ?Sized>(
@@ -513,7 +530,7 @@ pub async fn reset_family_setting<C: SettingCodec, R: SettingsRepo + ?Sized>(
     member: &str,
 ) -> Result<bool, StorageError> {
     let key = family.member_key(member)?;
-    repo.delete(&key).await
+    repo.delete_raw(RowGate::open(), &key).await
 }
 
 pub async fn family_members<C: SettingCodec, R: SettingsRepo + ?Sized>(
@@ -521,15 +538,15 @@ pub async fn family_members<C: SettingCodec, R: SettingsRepo + ?Sized>(
     family: &SettingFamily<C>,
 ) -> Result<Vec<(String, C::Value)>, StorageError> {
     let mut members: Vec<(String, C::Value)> = repo
-        .load_all()
+        .load_rows(RowGate::open())
         .await?
         .into_iter()
-        .filter_map(|(key, raw)| {
-            let member = key.strip_prefix(family.prefix())?;
+        .filter_map(|row| {
+            let member = row.key().strip_prefix(family.prefix())?;
             if member.is_empty() {
                 return None;
             }
-            let value = family.decode_or_default(&key, Some(&raw));
+            let value = family.decode_or_default(row.key(), Some(row.value()));
             Some((member.to_owned(), value))
         })
         .collect();

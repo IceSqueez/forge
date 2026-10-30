@@ -1,13 +1,13 @@
 #![allow(clippy::expect_used)]
-use forge_storage::reserved_keys::{
-    AUDIO_VOICE_GATE_HOLD_MS, AUDIO_VOICE_GATE_INPUT_DEVICE_ID, AUDIO_VOICE_GATE_THRESHOLD,
-    EVENT_LOG_RETENTION_DAYS,
+use forge_storage::settings::core_settings::{
+    ACCENT, AUDIO_VOICE_GATE_HOLD_MS, AUDIO_VOICE_GATE_INPUT_DEVICE_ID, AUDIO_VOICE_GATE_THRESHOLD,
+    EVENT_LOG_RETENTION_DAYS, THEME,
 };
 use forge_storage::{
     Language, SettingsRepo, VOICE_GATE_DEFAULT_HOLD_MS, VOICE_GATE_DEFAULT_THRESHOLD,
-    VoiceGateSettings, event_log_retention_days, set_event_log_retention_days,
-    set_voice_gate_enabled, set_voice_gate_hold_ms, set_voice_gate_input_device_id,
-    set_voice_gate_threshold, voice_gate_settings,
+    VoiceGateSettings, event_log_retention_days, load_setting_rows, reset_setting,
+    set_event_log_retention_days, set_voice_gate_enabled, set_voice_gate_hold_ms,
+    set_voice_gate_input_device_id, set_voice_gate_threshold, voice_gate_settings,
 };
 use forge_storage_sqlite::{SqliteBackend, SqliteSettingsRepo, apply_migrations};
 
@@ -28,70 +28,78 @@ async fn setup() -> SqliteSettingsRepo {
     SqliteSettingsRepo::new(pool)
 }
 
+async fn inject_raw(backend: &Sandboxed<SqliteBackend>, name: &str, value: &str) {
+    backend
+        .seed_foreign_setting(name, value, None)
+        .await
+        .expect("inject raw value");
+}
+
+async fn stored_value(backend: &Sandboxed<SqliteBackend>, name: &str) -> Option<String> {
+    backend
+        .stored_setting_rows()
+        .await
+        .expect("stored rows")
+        .into_iter()
+        .find(|row| row.key == name)
+        .map(|row| row.value)
+}
+
 #[tokio::test]
 async fn set_then_get_roundtrips_value() {
     let repo = setup().await;
-    repo.set_string("theme", "catppuccin_mocha")
-        .await
-        .expect("set");
-    let got = repo.get_string("theme").await.expect("get");
+    repo.set_theme("catppuccin_mocha").await.expect("set");
+    let got = repo.get_theme().await.expect("get");
     assert_eq!(got, Some("catppuccin_mocha".to_owned()));
 }
 
 #[tokio::test]
-async fn get_missing_key_returns_none() {
+async fn get_missing_setting_returns_none() {
     let repo = setup().await;
-    let got = repo.get_string("nonexistent").await.expect("get");
+    let got = repo.get_theme().await.expect("get");
     assert!(got.is_none());
 }
 
 #[tokio::test]
-async fn load_all_returns_all_entries() {
+async fn loading_rows_returns_every_stored_entry() {
     let repo = setup().await;
-    repo.set_string("theme", "catppuccin_mocha")
-        .await
-        .expect("set theme");
-    repo.set_string("density", "cozy")
-        .await
-        .expect("set density");
+    repo.set_theme("catppuccin_mocha").await.expect("set theme");
+    repo.set_accent("lavender").await.expect("set accent");
 
-    let map = repo.load_all().await.expect("load_all");
-    assert_eq!(
-        map.get("theme").map(String::as_str),
-        Some("catppuccin_mocha")
-    );
-    assert_eq!(map.get("density").map(String::as_str), Some("cozy"));
-    assert_eq!(map.len(), 3);
+    let rows = load_setting_rows(&repo).await.expect("load rows");
+    let value_of = |name: &str| {
+        rows.iter()
+            .find(|row| row.key() == name)
+            .map(|row| row.value())
+    };
+    assert_eq!(value_of(THEME.name()), Some("catppuccin_mocha"));
+    assert_eq!(value_of(ACCENT.name()), Some("lavender"));
+    assert_eq!(rows.len(), 3);
 }
 
 #[tokio::test]
-async fn delete_existing_returns_true_and_key_gone() {
+async fn resetting_an_existing_setting_returns_true_and_clears_it() {
     let repo = setup().await;
-    repo.set_string("font_body", "inter").await.expect("set");
-    let deleted = repo.delete("font_body").await.expect("delete");
+    repo.set_theme("inter").await.expect("set");
+    let deleted = reset_setting(&repo, &THEME).await.expect("reset");
     assert!(deleted);
-    let got = repo
-        .get_string("font_body")
-        .await
-        .expect("get after delete");
+    let got = repo.get_theme().await.expect("get after reset");
     assert!(got.is_none());
 }
 
 #[tokio::test]
-async fn delete_missing_returns_false() {
+async fn resetting_a_missing_setting_returns_false() {
     let repo = setup().await;
-    let deleted = repo.delete("ghost_key").await.expect("delete missing");
+    let deleted = reset_setting(&repo, &THEME).await.expect("reset missing");
     assert!(!deleted);
 }
 
 #[tokio::test]
-async fn set_string_overwrites_existing_value() {
+async fn writing_a_setting_again_overwrites_the_value() {
     let repo = setup().await;
-    repo.set_string("accent_color", "lavender")
-        .await
-        .expect("set 1");
-    repo.set_string("accent_color", "sky").await.expect("set 2");
-    let got = repo.get_string("accent_color").await.expect("get");
+    repo.set_accent("lavender").await.expect("set 1");
+    repo.set_accent("sky").await.expect("set 2");
+    let got = repo.get_accent().await.expect("get");
     assert_eq!(got, Some("sky".to_owned()));
 }
 
@@ -129,10 +137,7 @@ async fn event_log_retention_days_roundtrip() {
 #[tokio::test]
 async fn event_log_retention_days_invalid_string_falls_back_to_seven() {
     let backend = setup_backend().await;
-    backend
-        .set_string(EVENT_LOG_RETENTION_DAYS, "not_a_number")
-        .await
-        .expect("set invalid");
+    inject_raw(&backend, EVENT_LOG_RETENTION_DAYS.name(), "not_a_number").await;
     let days = event_log_retention_days(&*backend).await.expect("fallback");
     assert_eq!(days, 7);
 }
@@ -215,10 +220,7 @@ async fn voice_gate_settings_round_trip_through_the_typed_setters() {
 async fn voice_gate_threshold_falls_back_to_the_default_for_unparsable_or_non_finite_values() {
     let backend = setup_backend().await;
     for stored in ["abc", "", " 0.5", "NaN", "inf", "-inf", "1e40"] {
-        backend
-            .set_string(AUDIO_VOICE_GATE_THRESHOLD, stored)
-            .await
-            .expect("inject threshold");
+        inject_raw(&backend, AUDIO_VOICE_GATE_THRESHOLD.name(), stored).await;
         let settings = voice_gate_settings(&*backend).await.expect("load");
         assert_eq!(
             settings.threshold, VOICE_GATE_DEFAULT_THRESHOLD,
@@ -237,10 +239,7 @@ async fn voice_gate_threshold_read_clamps_stored_values_into_the_unit_range() {
         ("1.5", 1.0),
         ("340282350000000000000000000000000000000", 1.0),
     ] {
-        backend
-            .set_string(AUDIO_VOICE_GATE_THRESHOLD, stored)
-            .await
-            .expect("inject threshold");
+        inject_raw(&backend, AUDIO_VOICE_GATE_THRESHOLD.name(), stored).await;
         let settings = voice_gate_settings(&*backend).await.expect("load");
         assert_eq!(
             settings.threshold, expected,
@@ -253,10 +252,7 @@ async fn voice_gate_threshold_read_clamps_stored_values_into_the_unit_range() {
 async fn voice_gate_hold_ms_falls_back_to_the_default_for_unparsable_values() {
     let backend = setup_backend().await;
     for stored in ["abc", "", "-100", "3.5", "4294967296"] {
-        backend
-            .set_string(AUDIO_VOICE_GATE_HOLD_MS, stored)
-            .await
-            .expect("inject hold");
+        inject_raw(&backend, AUDIO_VOICE_GATE_HOLD_MS.name(), stored).await;
         let settings = voice_gate_settings(&*backend).await.expect("load");
         assert_eq!(
             settings.hold_ms, VOICE_GATE_DEFAULT_HOLD_MS,
@@ -272,10 +268,8 @@ async fn set_voice_gate_threshold_persists_an_already_clamped_value() {
         set_voice_gate_threshold(&*backend, written)
             .await
             .expect("set threshold");
-        let raw = backend
-            .get_string(AUDIO_VOICE_GATE_THRESHOLD)
+        let raw = stored_value(&backend, AUDIO_VOICE_GATE_THRESHOLD.name())
             .await
-            .expect("read raw")
             .expect("threshold key present");
         let parsed: f32 = raw.parse().expect("stored threshold is numeric");
         assert_eq!(
@@ -303,10 +297,7 @@ async fn clearing_the_voice_gate_input_device_removes_the_key_rather_than_blanki
         .await
         .expect("clear device");
     assert_eq!(
-        backend
-            .get_string(AUDIO_VOICE_GATE_INPUT_DEVICE_ID)
-            .await
-            .expect("read raw after clear"),
+        stored_value(&backend, AUDIO_VOICE_GATE_INPUT_DEVICE_ID.name()).await,
         None,
         "clearing must delete the key, not store an empty string",
     );

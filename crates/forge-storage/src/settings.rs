@@ -1,4 +1,3 @@
-use std::collections::HashMap;
 use std::fmt;
 use std::str::FromStr;
 
@@ -10,96 +9,12 @@ use serde::{Deserialize, Serialize};
 use crate::StorageError;
 use row::{RowClasses, RowGate, SettingRow};
 pub use typed::log_level_as_str;
-use typed::{read_setting, write_family_setting, write_setting};
+use typed::{
+    read_setting, read_stored_family_setting, read_stored_setting, reset_setting,
+    write_family_setting, write_setting,
+};
 
 pub const SERVER_HTTP_OVERLAY_REQUIRE_TOKEN_DEFAULT: bool = true;
-
-pub mod reserved_keys {
-    pub const THEME: &str = "theme";
-    pub const ACCENT: &str = "accent";
-    pub const DENSITY: &str = "density";
-    pub const FONT_BODY: &str = "font_body";
-    pub const FONT_MONO: &str = "font_mono";
-    pub const EVENT_LOG_RETENTION_DAYS: &str = "event_log_retention_days";
-    pub const ACTION_HISTORY_RETENTION_DAYS: &str = "action_history_retention_days";
-    pub const SERVER_ENABLED: &str = "server.enabled";
-    pub const SERVER_BIND_ADDRESS: &str = "server.bind_address";
-    pub const SERVER_PORT: &str = "server.port";
-    pub const SERVER_LAN_BIND_ENABLED: &str = "server.lan_bind_enabled";
-    pub const SERVER_AUTH_REQUIRED_FOR_READS: &str = "server.auth_required_for_reads";
-    pub const SERVER_HTTP_OVERLAY_REQUIRE_TOKEN: &str = "server.http_overlay_require_token";
-    pub const SERVER_OVERLAY_CORS_ANY_ORIGIN: &str = "server.overlay_cors_any_origin";
-    pub const SERVER_OVERLAY_ROOT: &str = "server.overlay_root";
-    pub const SERVER_ADDITIONAL_ORIGINS: &str = "server.additional_origins";
-    pub const SCRIPT_HTTP_ALLOWED_DOMAINS: &str = "script.http_allowed_domains";
-    pub const SCRIPT_HTTP_MAX_CALLS: &str = "script.http_max_calls_per_script";
-    pub const SCRIPT_HTTP_TIMEOUT_MS: &str = "script.http_timeout_ms";
-    pub const SCRIPT_HTTP_ALLOW_LOCAL: &str = "script.http_allow_local";
-    pub const SCRIPT_HTTP_MAX_RESPONSE_BYTES: &str = "script.http_max_response_bytes";
-    pub const CORE_HTTP_ALLOW_LOCAL: &str = "core.http_allow_local";
-    pub const SCRIPT_OP_LIMIT: &str = "script.op_limit";
-    pub const SCRIPT_TIMEOUT_MS: &str = "script.timeout_ms";
-    pub const LANGUAGE: &str = "app.language";
-    pub const REGION: &str = "app.region";
-    pub const DATE_FORMAT: &str = "app.date_format";
-    pub const TIME_FORMAT: &str = "app.time_format";
-    pub const FIRST_DAY_OF_WEEK: &str = "app.first_day_of_week";
-    pub const KEYBOARD_SHORTCUTS: &str = "app.keyboard_shortcuts";
-    pub const AUDIO_OUTPUT_DEVICE_ID: &str = "audio.output_device_id";
-    pub const AUDIO_VOICE_GATE_ENABLED: &str = "audio.voice_gate_enabled";
-    pub const AUDIO_VOICE_GATE_INPUT_DEVICE_ID: &str = "audio.voice_gate_input_device_id";
-    pub const AUDIO_VOICE_GATE_THRESHOLD: &str = "audio.voice_gate_threshold";
-    pub const AUDIO_VOICE_GATE_HOLD_MS: &str = "audio.voice_gate_hold_ms";
-    pub const AUDIO_SPEECH_ROUTE: &str = "audio.speech_route";
-    pub const AUDIO_CLIPS_ROUTE: &str = "audio.clips_route";
-    pub const AUDIO_OVERLAY_ID: &str = "audio.overlay_id";
-    pub const CHAT_HISTORY_PER_VIEWER_LIMIT: &str = "chat_history.per_viewer_limit";
-    pub const CHAT_HISTORY_DISPLAY_LIMIT: &str = "chat_history.display_limit";
-    pub const PICKER_FAVORITES_SUB_ACTIONS: &str = "picker.favorites.sub_actions";
-    pub const PICKER_FAVORITES_TRIGGERS: &str = "picker.favorites.triggers";
-    pub const PICKER_FAVORITES_ICONS: &str = "picker.favorites.icons";
-    pub const TTS_DISABLED_ENGINES: &str = "tts.disabled_engines";
-    pub const TTS_SYNTHESIS_DEFAULTS: &str = "tts.synthesis_defaults";
-    pub const TTS_MASTER_VOLUME: &str = "tts.master_volume";
-    pub const TTS_ENGINE_PARAMS_PREFIX: &str = "tts.engine_params.";
-    pub const DIAGNOSTICS_LOG_LEVEL: &str = "diagnostics.log_level";
-    pub const STAY_AWAKE: &str = "app.stay_awake";
-    pub const WINDOW_PLACEMENT: &str = "app.window_placement";
-    pub const UPDATES_ROLLED_BACK_VERSION: &str = "updates.rolled_back_version";
-    pub const UPDATES_LEFTOVER_INSTALL_NOTICED: &str = "updates.leftover_install_noticed";
-    pub const CREDENTIALS_KEY_LOSS: &str = "credentials.key_loss_stranded";
-    pub const INTEGRATION_ENABLED_PREFIX: &str = "integration.enabled.";
-    pub const RETIRED_MIDI_ENABLED: &str = "midi.enabled";
-    pub const RETIRED_HOTKEY_ENABLED: &str = "hotkey.enabled";
-    pub const OBS_AUTO_RECONNECT: &str = "obs.auto_reconnect";
-    pub const OBS_CONNECT_ON_LAUNCH: &str = "obs.connect_on_launch";
-    pub const VTUBE_AUTO_RECONNECT: &str = "vtube.auto_reconnect";
-    pub const VTUBE_CONNECT_ON_LAUNCH: &str = "vtube.connect_on_launch";
-    pub const MIDI_KNOWN_DEVICES: &str = "midi.known_devices";
-    pub const HOTKEY_HOLD_CEILING_SECS: &str = "hotkey.hold_ceiling_secs";
-    pub const DONATELLO_POLL_INTERVAL_SECS: &str = "donations.donatello.poll_interval_secs";
-    pub const VOICE_ASSIGNMENT_STRATEGY: &str = "voice:strategy";
-    pub const NOTIFICATIONS_ACTION_FAILURE_OS_NOTICE: &str =
-        "notifications.action_failure_os_notice";
-    pub const NOTIFICATIONS_CONNECTION_LOSS_SOUND: &str = "notifications.connection_loss_sound";
-    pub const NOTIFICATIONS_SCHEDULED_BACKUP_FAILURE_OS_NOTICE: &str =
-        "notifications.scheduled_backup_failure_os_notice";
-    pub const BACKUP_SCHEDULE_ENABLED: &str = "backup_schedule.enabled";
-    pub const BACKUP_SCHEDULE_INTERVAL_MINUTES: &str = "backup_schedule.interval_minutes";
-    pub const BACKUP_SCHEDULE_KEEP_NEWEST: &str = "backup_schedule.keep_newest";
-    pub const BACKUP_SCHEDULE_KEEP_DAILY_DAYS: &str = "backup_schedule.keep_daily_days";
-    pub const BACKUP_SCHEDULE_INCLUDE_MEDIA: &str = "backup_schedule.include_media";
-    pub const BACKUP_SCHEDULE_INCLUDE_VOICES: &str = "backup_schedule.include_voices";
-    pub const BACKUP_SCHEDULE_INCLUDE_OVERLAYS: &str = "backup_schedule.include_overlays";
-    pub const BACKUP_SCHEDULE_INCLUDE_ASSETS: &str = "backup_schedule.include_assets";
-    pub const BACKUP_SCHEDULE_DESTINATION: &str = "backup_schedule.destination";
-    pub const BACKUP_SCHEDULE_KEY: &str = "backup_schedule.key";
-    pub const BACKUP_SCHEDULE_LAST_SUCCESS_AT: &str = "backup_schedule.last_success_at";
-    pub const BACKUP_SCHEDULE_CONTENT_FINGERPRINT: &str = "backup_schedule.content_fingerprint";
-    pub const SAFETY_COPIES_MODE: &str = "safety_copies.mode";
-    pub const SAFETY_COPIES_KEEP_NEWEST: &str = "safety_copies.keep_newest";
-    pub const SAFETY_COPIES_DELETE_AFTER_DAYS: &str = "safety_copies.delete_after_days";
-}
 
 pub mod catalog;
 pub mod core_settings;
@@ -188,38 +103,22 @@ impl FromStr for Language {
     }
 }
 
-#[cfg_attr(feature = "test-mocks", mockall::automock)]
 #[async_trait]
 pub trait SettingsRepo: Send + Sync {
-    async fn get_string(&self, key: &str) -> Result<Option<String>, StorageError>;
-    async fn set_string(&self, key: &str, value: &str) -> Result<(), StorageError>;
-    async fn delete(&self, key: &str) -> Result<bool, StorageError>;
-    async fn load_all(&self) -> Result<HashMap<String, String>, StorageError>;
-
-    async fn load_rows(&self, _gate: RowGate) -> Result<Vec<SettingRow>, StorageError> {
-        let mut rows: Vec<SettingRow> = self
-            .load_all()
-            .await?
-            .into_iter()
-            .map(|(key, value)| SettingRow::new(key, value, RowClasses::FAIL_CLOSED))
-            .collect();
-        rows.sort_by(|a, b| a.key().cmp(b.key()));
-        Ok(rows)
-    }
-
+    async fn get_raw(&self, gate: RowGate, key: &str) -> Result<Option<String>, StorageError>;
+    async fn delete_raw(&self, gate: RowGate, key: &str) -> Result<bool, StorageError>;
+    async fn load_rows(&self, gate: RowGate) -> Result<Vec<SettingRow>, StorageError>;
     async fn put_row(
         &self,
-        _gate: RowGate,
+        gate: RowGate,
         key: &str,
         value: &str,
-        _classes: RowClasses,
-    ) -> Result<(), StorageError> {
-        self.set_string(key, value).await
-    }
+        classes: RowClasses,
+    ) -> Result<(), StorageError>;
 
     async fn language(&self) -> Result<Language, StorageError> {
-        match self.get_string(reserved_keys::LANGUAGE).await? {
-            Some(s) => s
+        match read_stored_setting(self, &core_settings::LANGUAGE).await? {
+            Some(code) => code
                 .parse()
                 .map_err(|e: UnknownLanguage| StorageError::Parse(e.to_string())),
             None => Ok(Language::default()),
@@ -285,39 +184,6 @@ pub(crate) fn decode_bool_setting(s: &str) -> Option<bool> {
     }
 }
 
-fn undecodable(key: &str) -> StorageError {
-    StorageError::UndecodableSetting {
-        key: key.to_owned(),
-    }
-}
-
-pub async fn stored_bool_setting(
-    repo: &dyn SettingsRepo,
-    key: &str,
-) -> Result<Option<bool>, StorageError> {
-    repo.get_string(key)
-        .await?
-        .map(|raw| decode_bool_setting(&raw).ok_or_else(|| undecodable(key)))
-        .transpose()
-}
-
-pub async fn get_bool_setting(repo: &dyn SettingsRepo, key: &str, default: bool) -> bool {
-    stored_bool_setting(repo, key)
-        .await
-        .ok()
-        .flatten()
-        .unwrap_or(default)
-}
-
-pub async fn set_bool_setting(
-    repo: &dyn SettingsRepo,
-    key: &str,
-    value: bool,
-) -> Result<(), StorageError> {
-    repo.set_string(key, if value { "true" } else { "false" })
-        .await
-}
-
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct StoredDisplayFormats {
     pub region: Option<String>,
@@ -335,32 +201,6 @@ pub async fn stored_display_formats(
         time_format: read_setting(repo, &core_settings::TIME_FORMAT).await?,
         first_day_of_week: read_setting(repo, &core_settings::FIRST_DAY_OF_WEEK).await?,
     })
-}
-
-pub async fn stored_json_setting<T: serde::de::DeserializeOwned>(
-    repo: &dyn SettingsRepo,
-    key: &str,
-) -> Result<Option<T>, StorageError> {
-    repo.get_string(key)
-        .await?
-        .map(|raw| serde_json::from_str(&raw).map_err(|_| undecodable(key)))
-        .transpose()
-}
-
-pub async fn get_json_setting<T: serde::de::DeserializeOwned>(
-    repo: &dyn SettingsRepo,
-    key: &str,
-) -> Option<T> {
-    stored_json_setting(repo, key).await.ok().flatten()
-}
-
-pub async fn set_json_setting<T: Serialize>(
-    repo: &dyn SettingsRepo,
-    key: &str,
-    value: &T,
-) -> Result<(), StorageError> {
-    let json = serde_json::to_string(value).map_err(|e| StorageError::Parse(e.to_string()))?;
-    repo.set_string(key, &json).await
 }
 
 pub fn clamp_chat_history_per_viewer_limit(limit: u32) -> u32 {
@@ -382,7 +222,7 @@ pub async fn set_chat_history_per_viewer_limit(
 
 pub async fn disabled_tts_engines(repo: &dyn SettingsRepo) -> Result<Vec<String>, StorageError> {
     Ok(
-        stored_json_setting(repo, reserved_keys::TTS_DISABLED_ENGINES)
+        read_stored_setting(repo, &core_settings::TTS_DISABLED_ENGINES)
             .await?
             .unwrap_or_default(),
     )
@@ -403,13 +243,7 @@ pub async fn set_disabled_tts_engines(
 pub async fn synthesis_defaults(
     repo: &dyn SettingsRepo,
 ) -> Result<SynthesisDefaults, StorageError> {
-    let raw = repo
-        .get_string(reserved_keys::TTS_SYNTHESIS_DEFAULTS)
-        .await?;
-    Ok(raw
-        .as_deref()
-        .and_then(|s| serde_json::from_str(s).ok())
-        .unwrap_or_default())
+    read_setting(repo, &core_settings::TTS_SYNTHESIS_DEFAULTS).await
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
@@ -433,8 +267,11 @@ pub async fn engine_params(
     repo: &dyn SettingsRepo,
     engine_id: &str,
 ) -> Result<EngineParams, StorageError> {
-    let key = core_settings::TTS_ENGINE_PARAMS.member_key(engine_id)?;
-    Ok(stored_json_setting(repo, &key).await?.unwrap_or_default())
+    Ok(
+        read_stored_family_setting(repo, &core_settings::TTS_ENGINE_PARAMS, engine_id)
+            .await?
+            .unwrap_or_default(),
+    )
 }
 
 pub async fn set_engine_params(
@@ -479,9 +316,8 @@ pub async fn voice_gate_settings(
     repo: &dyn SettingsRepo,
 ) -> Result<VoiceGateSettings, StorageError> {
     let enabled = read_setting(repo, &core_settings::AUDIO_VOICE_GATE_ENABLED).await?;
-    let input_device_id = repo
-        .get_string(reserved_keys::AUDIO_VOICE_GATE_INPUT_DEVICE_ID)
-        .await?;
+    let input_device_id =
+        read_setting(repo, &core_settings::AUDIO_VOICE_GATE_INPUT_DEVICE_ID).await?;
     let threshold = read_setting(repo, &core_settings::AUDIO_VOICE_GATE_THRESHOLD).await?;
     let hold_ms = read_setting(repo, &core_settings::AUDIO_VOICE_GATE_HOLD_MS).await?;
     Ok(VoiceGateSettings {
@@ -564,14 +400,14 @@ pub async fn record_credentials_key_loss(
 pub async fn take_credentials_key_loss(
     repo: &dyn SettingsRepo,
 ) -> Result<Option<CredentialsKeyLoss>, StorageError> {
-    let Some(raw) = repo.get_string(reserved_keys::CREDENTIALS_KEY_LOSS).await? else {
-        return Ok(None);
+    let stranded = match read_stored_setting(repo, &core_settings::CREDENTIALS_KEY_LOSS).await {
+        Ok(Some(stranded)) => Some(stranded),
+        Ok(None) => return Ok(None),
+        Err(StorageError::UndecodableSetting { .. }) => None,
+        Err(error) => return Err(error),
     };
-    repo.delete(reserved_keys::CREDENTIALS_KEY_LOSS).await?;
-    Ok(raw
-        .parse::<u64>()
-        .ok()
-        .map(|stranded| CredentialsKeyLoss { stranded }))
+    reset_setting(repo, &core_settings::CREDENTIALS_KEY_LOSS).await?;
+    Ok(stranded.map(|stranded| CredentialsKeyLoss { stranded }))
 }
 
 #[cfg(test)]

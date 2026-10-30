@@ -2,23 +2,33 @@ use std::future::Future;
 
 use forge_types::IntegrationId;
 
-use crate::settings::typed::write_family_setting;
-use crate::settings::{core_settings, decode_bool_setting, reserved_keys};
+use crate::settings::core_settings;
+use crate::settings::typed::{
+    Flag, Setting, read_stored_family_setting, read_stored_setting, reset_setting,
+    write_family_setting,
+};
 use crate::{CredentialsRepo, SettingsRepo, StorageError};
 
 pub fn integration_enabled_key(id: &IntegrationId) -> String {
     format!(
         "{}{}",
-        reserved_keys::INTEGRATION_ENABLED_PREFIX,
+        core_settings::INTEGRATION_ENABLED.prefix(),
         id.as_str()
     )
 }
 
-fn retired_enabled_key_of(id: &IntegrationId) -> Option<&'static str> {
+fn retired_enabled_setting_of(id: &IntegrationId) -> Option<&'static Setting<Flag>> {
     match id.as_str() {
-        "midi" => Some(reserved_keys::RETIRED_MIDI_ENABLED),
-        "hotkey" => Some(reserved_keys::RETIRED_HOTKEY_ENABLED),
+        "midi" => Some(&core_settings::RETIRED_MIDI_ENABLED),
+        "hotkey" => Some(&core_settings::RETIRED_HOTKEY_ENABLED),
         _ => None,
+    }
+}
+
+fn readable_flag(result: Result<Option<bool>, StorageError>) -> Result<Option<bool>, StorageError> {
+    match result {
+        Err(StorageError::UndecodableSetting { .. }) => Ok(None),
+        other => other,
     }
 }
 
@@ -26,11 +36,10 @@ pub async fn stored_integration_enabled(
     settings: &dyn SettingsRepo,
     id: &IntegrationId,
 ) -> Result<Option<bool>, StorageError> {
-    Ok(settings
-        .get_string(&integration_enabled_key(id))
-        .await?
-        .as_deref()
-        .and_then(decode_bool_setting))
+    readable_flag(
+        read_stored_family_setting(settings, &core_settings::INTEGRATION_ENABLED, id.as_str())
+            .await,
+    )
 }
 
 pub async fn set_integration_enabled(
@@ -55,16 +64,12 @@ pub async fn resolve_integration_enabled<F>(
 where
     F: Future<Output = Result<bool, StorageError>> + Send,
 {
-    let retired_key = retired_enabled_key_of(id);
+    let retired = retired_enabled_setting_of(id);
     let resolved = match stored_integration_enabled(settings, id).await? {
         Some(enabled) => enabled,
         None => {
-            let retired_value = match retired_key {
-                Some(key) => settings
-                    .get_string(key)
-                    .await?
-                    .as_deref()
-                    .and_then(decode_bool_setting),
+            let retired_value = match retired {
+                Some(setting) => readable_flag(read_stored_setting(settings, setting).await)?,
                 None => None,
             };
             let seeded = match retired_value {
@@ -75,8 +80,8 @@ where
             seeded
         }
     };
-    if let Some(key) = retired_key {
-        settings.delete(key).await?;
+    if let Some(setting) = retired {
+        reset_setting(settings, setting).await?;
     }
     Ok(resolved)
 }

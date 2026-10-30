@@ -80,33 +80,6 @@ fn classes_of(row: Option<StoredSettingRow>) -> Option<RowClasses> {
     row.map(|row| row.classes)
 }
 
-async fn a_new_raw_row_is_fail_closed(store: &dyn Store) {
-    store
-        .repo()
-        .set_string("raw.fresh", "1")
-        .await
-        .expect("raw write");
-
-    let row = store.row("raw.fresh").await.expect("the row");
-    assert_eq!(
-        (row.value.as_str(), row.classes),
-        ("1", FAIL_CLOSED_CLASSES)
-    );
-}
-
-async fn a_raw_write_keeps_the_classes_of_an_existing_row(store: &dyn Store) {
-    store.seed("raw.known", "old", Some(PORTABLE_KIND)).await;
-
-    store
-        .repo()
-        .set_string("raw.known", "new")
-        .await
-        .expect("raw write");
-
-    let row = store.row("raw.known").await.expect("the row");
-    assert_eq!((row.value.as_str(), row.classes), ("new", PORTABLE_KIND));
-}
-
 async fn a_typed_write_restamps_a_fail_closed_row_with_the_declared_classes(store: &dyn Store) {
     store.seed(SERVER_OVERLAY_ROOT.name(), "/old", None).await;
     assert_eq!(
@@ -177,14 +150,6 @@ macro_rules! on_both_stores {
     };
 }
 
-on_both_stores!(
-    a_new_raw_row_is_stored_fail_closed_on_both_stores,
-    a_new_raw_row_is_fail_closed
-);
-on_both_stores!(
-    a_raw_write_keeps_an_existing_rows_classes_on_both_stores,
-    a_raw_write_keeps_the_classes_of_an_existing_row
-);
 on_both_stores!(
     a_typed_write_restamps_a_fail_closed_row_on_both_stores,
     a_typed_write_restamps_a_fail_closed_row_with_the_declared_classes

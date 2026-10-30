@@ -1,7 +1,5 @@
 use super::disclosure::SettingDisclosure::{Kind, Presence, Verbatim, Withheld};
 use super::portability::SettingPortability::{MachineLocal, Portable, RepositoryOwned};
-use super::reserved_keys as key;
-use super::spec::SettingEncoding::Flag as FlagEncoding;
 use super::spec::SettingSpec;
 use super::typed::{
     Choice, Count, Flag, JsonDocument, Level, OptionalText, Setting, SettingFamily, Tally,
@@ -38,7 +36,7 @@ const FULL_SCALE_VOLUME: Level = Level {
 };
 
 pub const EVENT_LOG_RETENTION_DAYS: Setting<Count> = Setting::new(
-    key::EVENT_LOG_RETENTION_DAYS,
+    "event_log_retention_days",
     Count {
         default: DEFAULT_EVENT_LOG_RETENTION_DAYS,
         min: MIN_EVENT_LOG_RETENTION_DAYS,
@@ -50,7 +48,7 @@ pub const EVENT_LOG_RETENTION_DAYS: Setting<Count> = Setting::new(
 );
 
 pub const ACTION_HISTORY_RETENTION_DAYS: Setting<Count> = Setting::new(
-    key::ACTION_HISTORY_RETENTION_DAYS,
+    "action_history_retention_days",
     Count {
         default: DEFAULT_EVENT_LOG_RETENTION_DAYS,
         min: MIN_ACTION_HISTORY_RETENTION_DAYS,
@@ -62,14 +60,14 @@ pub const ACTION_HISTORY_RETENTION_DAYS: Setting<Count> = Setting::new(
 );
 
 pub const AUDIO_VOICE_GATE_ENABLED: Setting<Flag> = Setting::new(
-    key::AUDIO_VOICE_GATE_ENABLED,
+    "audio.voice_gate_enabled",
     Flag { default: false },
     Portable,
     Verbatim,
 );
 
 pub const AUDIO_VOICE_GATE_THRESHOLD: Setting<Level> = Setting::new(
-    key::AUDIO_VOICE_GATE_THRESHOLD,
+    "audio.voice_gate_threshold",
     Level {
         default: VOICE_GATE_DEFAULT_THRESHOLD,
         min: SILENT_LEVEL,
@@ -80,7 +78,7 @@ pub const AUDIO_VOICE_GATE_THRESHOLD: Setting<Level> = Setting::new(
 );
 
 pub const AUDIO_VOICE_GATE_HOLD_MS: Setting<Count> = Setting::new(
-    key::AUDIO_VOICE_GATE_HOLD_MS,
+    "audio.voice_gate_hold_ms",
     Count {
         default: VOICE_GATE_DEFAULT_HOLD_MS,
         min: MIN_VOICE_GATE_HOLD_MS,
@@ -92,7 +90,7 @@ pub const AUDIO_VOICE_GATE_HOLD_MS: Setting<Count> = Setting::new(
 );
 
 pub const CHAT_HISTORY_PER_VIEWER_LIMIT: Setting<Count> = Setting::new(
-    key::CHAT_HISTORY_PER_VIEWER_LIMIT,
+    "chat_history.per_viewer_limit",
     Count {
         default: DEFAULT_CHAT_HISTORY_PER_VIEWER_LIMIT,
         min: MIN_CHAT_HISTORY_PER_VIEWER_LIMIT,
@@ -104,7 +102,7 @@ pub const CHAT_HISTORY_PER_VIEWER_LIMIT: Setting<Count> = Setting::new(
 );
 
 pub const CHAT_HISTORY_DISPLAY_LIMIT: Setting<Count> = Setting::new(
-    key::CHAT_HISTORY_DISPLAY_LIMIT,
+    "chat_history.display_limit",
     Count {
         default: DEFAULT_CHAT_HISTORY_DISPLAY_LIMIT,
         min: MIN_CHAT_HISTORY_DISPLAY_LIMIT,
@@ -115,15 +113,11 @@ pub const CHAT_HISTORY_DISPLAY_LIMIT: Setting<Count> = Setting::new(
     Verbatim,
 );
 
-pub const TTS_MASTER_VOLUME: Setting<Level> = Setting::new(
-    key::TTS_MASTER_VOLUME,
-    FULL_SCALE_VOLUME,
-    Portable,
-    Verbatim,
-);
+pub const TTS_MASTER_VOLUME: Setting<Level> =
+    Setting::new("tts.master_volume", FULL_SCALE_VOLUME, Portable, Verbatim);
 
 pub const DIAGNOSTICS_LOG_LEVEL: Setting<Verbosity> = Setting::new(
-    key::DIAGNOSTICS_LOG_LEVEL,
+    "diagnostics.log_level",
     Verbosity {
         default: DEFAULT_DIAGNOSTIC_LOG_LEVEL,
     },
@@ -135,7 +129,7 @@ const LANGUAGE_CODES: &[&str] = &["en", "uk"];
 const DEFAULT_LANGUAGE_CODE: &str = "en";
 
 pub const LANGUAGE: Setting<Choice> = Setting::new(
-    key::LANGUAGE,
+    "app.language",
     Choice {
         default: DEFAULT_LANGUAGE_CODE,
         options: LANGUAGE_CODES,
@@ -145,117 +139,112 @@ pub const LANGUAGE: Setting<Choice> = Setting::new(
 );
 
 pub const REGION: Setting<OptionalText> =
-    Setting::new(key::REGION, OptionalText, Portable, Verbatim);
+    Setting::new("app.region", OptionalText, Portable, Verbatim);
 
 pub const DATE_FORMAT: Setting<OptionalText> =
-    Setting::new(key::DATE_FORMAT, OptionalText, Portable, Verbatim);
+    Setting::new("app.date_format", OptionalText, Portable, Verbatim);
 
 pub const TIME_FORMAT: Setting<OptionalText> =
-    Setting::new(key::TIME_FORMAT, OptionalText, Portable, Verbatim);
+    Setting::new("app.time_format", OptionalText, Portable, Verbatim);
 
 pub const FIRST_DAY_OF_WEEK: Setting<OptionalText> =
-    Setting::new(key::FIRST_DAY_OF_WEEK, OptionalText, Portable, Verbatim);
+    Setting::new("app.first_day_of_week", OptionalText, Portable, Verbatim);
 
-pub const THEME: Setting<OptionalText> = Setting::new(key::THEME, OptionalText, Portable, Verbatim);
+pub const THEME: Setting<OptionalText> = Setting::new("theme", OptionalText, Portable, Verbatim);
 
-pub const ACCENT: Setting<OptionalText> =
-    Setting::new(key::ACCENT, OptionalText, Portable, Verbatim);
+pub const ACCENT: Setting<OptionalText> = Setting::new("accent", OptionalText, Portable, Verbatim);
 
 pub const AUDIO_OVERLAY_ID: Setting<OptionalText> =
-    Setting::new(key::AUDIO_OVERLAY_ID, OptionalText, Portable, Presence);
+    Setting::new("audio.overlay_id", OptionalText, Portable, Presence);
 
 pub const FONT_BODY: Setting<OptionalText> =
-    Setting::new(key::FONT_BODY, OptionalText, Portable, Presence);
+    Setting::new("font_body", OptionalText, Portable, Presence);
 
 pub const FONT_MONO: Setting<OptionalText> =
-    Setting::new(key::FONT_MONO, OptionalText, Portable, Presence);
+    Setting::new("font_mono", OptionalText, Portable, Presence);
 
 pub const AUDIO_OUTPUT_DEVICE_ID: Setting<OptionalText> = Setting::new(
-    key::AUDIO_OUTPUT_DEVICE_ID,
+    "audio.output_device_id",
     OptionalText,
     MachineLocal,
     Presence,
 );
 
 pub const AUDIO_VOICE_GATE_INPUT_DEVICE_ID: Setting<OptionalText> = Setting::new(
-    key::AUDIO_VOICE_GATE_INPUT_DEVICE_ID,
+    "audio.voice_gate_input_device_id",
     OptionalText,
     MachineLocal,
     Presence,
 );
 
-pub const SERVER_OVERLAY_ROOT: Setting<OptionalText> = Setting::new(
-    key::SERVER_OVERLAY_ROOT,
-    OptionalText,
-    MachineLocal,
-    Presence,
-);
+pub const SERVER_OVERLAY_ROOT: Setting<OptionalText> =
+    Setting::new("server.overlay_root", OptionalText, MachineLocal, Presence);
 
 pub const TTS_DISABLED_ENGINES: Setting<JsonDocument<Vec<String>>> = Setting::new(
-    key::TTS_DISABLED_ENGINES,
+    "tts.disabled_engines",
     JsonDocument::new(),
     Portable,
     Verbatim,
 );
 
 pub const TTS_SYNTHESIS_DEFAULTS: Setting<JsonDocument<SynthesisDefaults>> = Setting::new(
-    key::TTS_SYNTHESIS_DEFAULTS,
+    "tts.synthesis_defaults",
     JsonDocument::new(),
     Portable,
     Verbatim,
 );
 
 pub const VOICE_ASSIGNMENT_STRATEGY: Setting<JsonDocument<AssignmentStrategy>> = Setting::new(
-    key::VOICE_ASSIGNMENT_STRATEGY,
+    "voice:strategy",
     JsonDocument::new(),
     RepositoryOwned,
     Withheld,
 );
 
 pub const CREDENTIALS_KEY_LOSS: Setting<Tally> = Setting::new(
-    key::CREDENTIALS_KEY_LOSS,
+    "credentials.key_loss_stranded",
     Tally { default: 0 },
     MachineLocal,
     Verbatim,
 );
 
 pub const TTS_ENGINE_PARAMS: SettingFamily<JsonDocument<EngineParams>> = SettingFamily::new(
-    key::TTS_ENGINE_PARAMS_PREFIX,
+    "tts.engine_params.",
     JsonDocument::new(),
     Portable,
     Verbatim,
 );
 
 pub const INTEGRATION_ENABLED: SettingFamily<Flag> = SettingFamily::new(
-    key::INTEGRATION_ENABLED_PREFIX,
+    "integration.enabled.",
     Flag { default: false },
     Portable,
     Verbatim,
 );
 
 pub const PICKER_FAVORITES_SUB_ACTIONS: Setting<JsonDocument<Vec<String>>> = Setting::new(
-    key::PICKER_FAVORITES_SUB_ACTIONS,
+    "picker.favorites.sub_actions",
     JsonDocument::new(),
     Portable,
     Kind,
 );
 
 pub const PICKER_FAVORITES_TRIGGERS: Setting<JsonDocument<Vec<String>>> = Setting::new(
-    key::PICKER_FAVORITES_TRIGGERS,
+    "picker.favorites.triggers",
     JsonDocument::new(),
     Portable,
     Kind,
 );
 
 pub const PICKER_FAVORITES_ICONS: Setting<JsonDocument<Vec<String>>> = Setting::new(
-    key::PICKER_FAVORITES_ICONS,
+    "picker.favorites.icons",
     JsonDocument::new(),
     Portable,
     Kind,
 );
 
 pub const BACKUP_SCHEDULE_ENABLED: Setting<Flag> = Setting::new(
-    key::BACKUP_SCHEDULE_ENABLED,
+    "backup_schedule.enabled",
     Flag {
         default: DEFAULT_BACKUP_SCHEDULE_ENABLED,
     },
@@ -264,7 +253,7 @@ pub const BACKUP_SCHEDULE_ENABLED: Setting<Flag> = Setting::new(
 );
 
 pub const BACKUP_SCHEDULE_INTERVAL_MINUTES: Setting<Count> = Setting::new(
-    key::BACKUP_SCHEDULE_INTERVAL_MINUTES,
+    "backup_schedule.interval_minutes",
     Count {
         default: DEFAULT_BACKUP_SCHEDULE_INTERVAL_MINUTES,
         min: MIN_BACKUP_SCHEDULE_INTERVAL_MINUTES,
@@ -276,7 +265,7 @@ pub const BACKUP_SCHEDULE_INTERVAL_MINUTES: Setting<Count> = Setting::new(
 );
 
 pub const BACKUP_SCHEDULE_KEEP_NEWEST: Setting<Count> = Setting::new(
-    key::BACKUP_SCHEDULE_KEEP_NEWEST,
+    "backup_schedule.keep_newest",
     Count {
         default: DEFAULT_BACKUP_SCHEDULE_KEEP_NEWEST,
         min: MIN_BACKUP_SCHEDULE_KEEP_NEWEST,
@@ -288,7 +277,7 @@ pub const BACKUP_SCHEDULE_KEEP_NEWEST: Setting<Count> = Setting::new(
 );
 
 pub const BACKUP_SCHEDULE_KEEP_DAILY_DAYS: Setting<Count> = Setting::new(
-    key::BACKUP_SCHEDULE_KEEP_DAILY_DAYS,
+    "backup_schedule.keep_daily_days",
     Count {
         default: DEFAULT_BACKUP_SCHEDULE_KEEP_DAILY_DAYS,
         min: MIN_BACKUP_SCHEDULE_KEEP_DAILY_DAYS,
@@ -304,63 +293,59 @@ const INCLUDED_BY_DEFAULT: Flag = Flag {
 };
 
 pub const BACKUP_SCHEDULE_INCLUDE_MEDIA: Setting<Flag> = Setting::new(
-    key::BACKUP_SCHEDULE_INCLUDE_MEDIA,
+    "backup_schedule.include_media",
     INCLUDED_BY_DEFAULT,
     Portable,
     Withheld,
 );
 
 pub const BACKUP_SCHEDULE_INCLUDE_VOICES: Setting<Flag> = Setting::new(
-    key::BACKUP_SCHEDULE_INCLUDE_VOICES,
+    "backup_schedule.include_voices",
     INCLUDED_BY_DEFAULT,
     Portable,
     Withheld,
 );
 
 pub const BACKUP_SCHEDULE_INCLUDE_OVERLAYS: Setting<Flag> = Setting::new(
-    key::BACKUP_SCHEDULE_INCLUDE_OVERLAYS,
+    "backup_schedule.include_overlays",
     INCLUDED_BY_DEFAULT,
     Portable,
     Withheld,
 );
 
 pub const BACKUP_SCHEDULE_INCLUDE_ASSETS: Setting<Flag> = Setting::new(
-    key::BACKUP_SCHEDULE_INCLUDE_ASSETS,
+    "backup_schedule.include_assets",
     INCLUDED_BY_DEFAULT,
     Portable,
     Withheld,
 );
 
 pub const BACKUP_SCHEDULE_DESTINATION: Setting<OptionalText> = Setting::new(
-    key::BACKUP_SCHEDULE_DESTINATION,
+    "backup_schedule.destination",
     OptionalText,
     MachineLocal,
     Withheld,
 );
 
-pub const BACKUP_SCHEDULE_KEY: Setting<OptionalText> = Setting::new(
-    key::BACKUP_SCHEDULE_KEY,
-    OptionalText,
-    MachineLocal,
-    Withheld,
-);
+pub const BACKUP_SCHEDULE_KEY: Setting<OptionalText> =
+    Setting::new("backup_schedule.key", OptionalText, MachineLocal, Withheld);
 
 pub const BACKUP_SCHEDULE_LAST_SUCCESS_AT: Setting<OptionalText> = Setting::new(
-    key::BACKUP_SCHEDULE_LAST_SUCCESS_AT,
+    "backup_schedule.last_success_at",
     OptionalText,
     MachineLocal,
     Withheld,
 );
 
 pub const BACKUP_SCHEDULE_CONTENT_FINGERPRINT: Setting<OptionalText> = Setting::new(
-    key::BACKUP_SCHEDULE_CONTENT_FINGERPRINT,
+    "backup_schedule.content_fingerprint",
     OptionalText,
     MachineLocal,
     Withheld,
 );
 
 pub const SAFETY_COPIES_MODE: Setting<Choice> = Setting::new(
-    key::SAFETY_COPIES_MODE,
+    "safety_copies.mode",
     Choice {
         default: SAFETY_COPIES_MODE_KEEP_NEWEST,
         options: SAFETY_COPIES_MODES,
@@ -370,7 +355,7 @@ pub const SAFETY_COPIES_MODE: Setting<Choice> = Setting::new(
 );
 
 pub const SAFETY_COPIES_KEEP_NEWEST: Setting<Count> = Setting::new(
-    key::SAFETY_COPIES_KEEP_NEWEST,
+    "safety_copies.keep_newest",
     Count {
         default: DEFAULT_SAFETY_COPIES_KEEP_NEWEST,
         min: MIN_SAFETY_COPIES_KEEP_NEWEST,
@@ -382,7 +367,7 @@ pub const SAFETY_COPIES_KEEP_NEWEST: Setting<Count> = Setting::new(
 );
 
 pub const SAFETY_COPIES_DELETE_AFTER_DAYS: Setting<Count> = Setting::new(
-    key::SAFETY_COPIES_DELETE_AFTER_DAYS,
+    "safety_copies.delete_after_days",
     Count {
         default: DEFAULT_SAFETY_COPIES_DELETE_AFTER_DAYS,
         min: MIN_SAFETY_COPIES_DELETE_AFTER_DAYS,
@@ -391,6 +376,20 @@ pub const SAFETY_COPIES_DELETE_AFTER_DAYS: Setting<Count> = Setting::new(
     },
     MachineLocal,
     Withheld,
+);
+
+pub const RETIRED_MIDI_ENABLED: Setting<Flag> = Setting::new(
+    "midi.enabled",
+    Flag { default: false },
+    MachineLocal,
+    Verbatim,
+);
+
+pub const RETIRED_HOTKEY_ENABLED: Setting<Flag> = Setting::new(
+    "hotkey.enabled",
+    Flag { default: false },
+    MachineLocal,
+    Verbatim,
 );
 
 pub const CORE_SETTINGS: &[SettingSpec] = &[
@@ -424,18 +423,8 @@ pub const CORE_SETTINGS: &[SettingSpec] = &[
     CREDENTIALS_KEY_LOSS.spec(),
     SERVER_OVERLAY_ROOT.spec(),
     INTEGRATION_ENABLED.spec(),
-    SettingSpec::exact(
-        key::RETIRED_MIDI_ENABLED,
-        FlagEncoding,
-        MachineLocal,
-        Verbatim,
-    ),
-    SettingSpec::exact(
-        key::RETIRED_HOTKEY_ENABLED,
-        FlagEncoding,
-        MachineLocal,
-        Verbatim,
-    ),
+    RETIRED_MIDI_ENABLED.spec(),
+    RETIRED_HOTKEY_ENABLED.spec(),
     VOICE_ASSIGNMENT_STRATEGY.spec(),
     BACKUP_SCHEDULE_ENABLED.spec(),
     BACKUP_SCHEDULE_INTERVAL_MINUTES.spec(),

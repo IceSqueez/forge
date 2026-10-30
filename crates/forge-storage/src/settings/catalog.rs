@@ -1,12 +1,9 @@
-use std::collections::{BTreeMap, HashMap};
-
 use super::core_settings::CORE_SETTINGS;
-use super::disclosure::SettingDisclosure;
 use super::portability::SettingPortability;
 use super::row::{RowClasses, SettingRow};
 use super::spec::{SettingKey, SettingSpec};
 use super::typed::is_valid_member;
-use crate::{SettingsRepo, StorageError};
+use crate::StorageError;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum SettingSkip {
@@ -43,11 +40,17 @@ impl SettingsCatalog {
         Ok(())
     }
 
+    #[cfg(feature = "settings-test-support")]
     pub fn specs(&self) -> &[SettingSpec] {
         &self.specs
     }
 
+    #[cfg(feature = "settings-test-support")]
     pub fn spec_of(&self, stored_key: &str) -> Option<&SettingSpec> {
+        self.find_spec(stored_key)
+    }
+
+    fn find_spec(&self, stored_key: &str) -> Option<&SettingSpec> {
         self.specs
             .iter()
             .find(|spec| matches!(spec.key, SettingKey::Exact(name) if name == stored_key))
@@ -61,7 +64,7 @@ impl SettingsCatalog {
     }
 
     pub fn admit(&self, key: &str, value: &str) -> Result<SettingRow, SettingSkip> {
-        let spec = self.spec_of(key).ok_or(SettingSkip::Undeclared)?;
+        let spec = self.find_spec(key).ok_or(SettingSkip::Undeclared)?;
         if let SettingKey::Prefix(prefix) = spec.key
             && !key.strip_prefix(prefix).is_some_and(is_valid_member)
         {
@@ -80,73 +83,17 @@ impl SettingsCatalog {
         ))
     }
 
-    pub fn portability_of(&self, stored_key: &str) -> SettingPortability {
-        self.spec_of(stored_key)
-            .map_or(SettingPortability::MachineLocal, |spec| spec.portability)
-    }
-
-    pub fn is_portable(&self, stored_key: &str) -> bool {
-        self.portability_of(stored_key) == SettingPortability::Portable
-    }
-
-    pub fn disclosure_of(&self, stored_key: &str) -> SettingDisclosure {
-        self.spec_of(stored_key)
-            .map_or(SettingDisclosure::Withheld, |spec| spec.disclosure)
-    }
-
-    pub fn disclose_all(&self, stored: &HashMap<String, String>) -> BTreeMap<String, String> {
-        stored
-            .iter()
-            .filter_map(|(key, value)| {
-                self.disclosure_of(key)
-                    .render(value)
-                    .map(|shown| (key.clone(), shown))
-            })
-            .collect()
-    }
-
-    pub fn undeclared_keys<'a>(
-        &self,
-        stored_keys: impl IntoIterator<Item = &'a str>,
-    ) -> Vec<&'a str> {
-        let mut undeclared: Vec<&str> = stored_keys
-            .into_iter()
-            .filter(|key| self.spec_of(key).is_none())
-            .collect();
-        undeclared.sort_unstable();
-        undeclared
-    }
-
     fn declares_name(&self, name: &str) -> bool {
         self.specs.iter().any(|spec| spec.key.name() == name)
     }
 }
 
-pub async fn report_undeclared_settings(
-    repo: &dyn SettingsRepo,
-    catalog: &SettingsCatalog,
-) -> Result<Vec<String>, StorageError> {
-    let stored = repo.load_all().await?;
-    let undeclared: Vec<String> = catalog
-        .undeclared_keys(stored.keys().map(String::as_str))
-        .into_iter()
-        .map(str::to_owned)
-        .collect();
-    for key in &undeclared {
-        tracing::warn!(key = %key, "stored setting has no declared spec");
-    }
-    Ok(undeclared)
-}
-
 #[cfg(test)]
 mod tests {
-    use super::super::core_settings::{
-        ACCENT, AUDIO_OUTPUT_DEVICE_ID, BACKUP_SCHEDULE_DESTINATION, PICKER_FAVORITES_ICONS, THEME,
-        TTS_ENGINE_PARAMS,
-    };
+    use super::super::core_settings::{THEME, TTS_ENGINE_PARAMS};
+    use super::super::disclosure::SettingDisclosure;
     use super::super::spec::SettingEncoding::{Flag, Json, Text};
     use super::*;
-    use crate::test_support::MemorySettings;
 
     const EXTENSION_FLAG: SettingSpec = SettingSpec::exact(
         "extension.flag",
@@ -222,34 +169,21 @@ mod tests {
     }
 
     #[test]
-    fn an_unknown_key_is_machine_local_and_withheld_until_its_spec_is_registered() {
+    fn an_unknown_key_is_undeclared_until_its_spec_is_registered() {
         let mut catalog = SettingsCatalog::core();
-        let before = (
-            catalog.portability_of(EXTENSION_TEXT.key.name()),
-            catalog.disclosure_of(EXTENSION_TEXT.key.name()),
-            catalog.undeclared_keys([EXTENSION_TEXT.key.name()]),
-        );
+        let before = catalog.admit(EXTENSION_TEXT.key.name(), "nova");
 
         catalog.register(&[EXTENSION_TEXT]).unwrap();
-        let after = (
-            catalog.portability_of(EXTENSION_TEXT.key.name()),
-            catalog.disclosure_of(EXTENSION_TEXT.key.name()),
-            catalog.undeclared_keys([EXTENSION_TEXT.key.name()]),
-        );
+        let after = catalog.admit(EXTENSION_TEXT.key.name(), "nova");
 
         assert_eq!(
-            (before, after),
+            (before, after.map(|row| row.classes())),
             (
-                (
-                    SettingPortability::MachineLocal,
-                    SettingDisclosure::Withheld,
-                    vec!["extension.text"],
-                ),
-                (
-                    SettingPortability::Portable,
-                    SettingDisclosure::Presence,
-                    Vec::new(),
-                ),
+                Err(SettingSkip::Undeclared),
+                Ok(RowClasses {
+                    portability: SettingPortability::Portable,
+                    disclosure: SettingDisclosure::Presence,
+                }),
             )
         );
     }
@@ -298,81 +232,5 @@ mod tests {
                 "key {stored_key:?}",
             );
         }
-    }
-
-    #[test]
-    fn undeclared_keys_lists_only_unmatched_keys_in_sorted_order() {
-        let catalog = SettingsCatalog::core();
-
-        let undeclared = catalog.undeclared_keys([
-            "zeta.unknown",
-            THEME.name(),
-            "tts.engine_params.piper",
-            "alpha.unknown",
-            "tts.engine_params",
-        ]);
-
-        assert_eq!(
-            undeclared,
-            ["alpha.unknown", "tts.engine_params", "zeta.unknown"]
-        );
-    }
-
-    #[test]
-    fn disclose_all_drops_withheld_keys_and_renders_the_rest_by_their_class() {
-        let stored: HashMap<String, String> = [
-            (ACCENT.name(), "blue"),
-            (AUDIO_OUTPUT_DEVICE_ID.name(), "nova-speakers"),
-            (PICKER_FAVORITES_ICONS.name(), r#"["nova","star"]"#),
-            (BACKUP_SCHEDULE_DESTINATION.name(), "/home/nova/backups"),
-            ("twitch.account_login", "nova"),
-        ]
-        .into_iter()
-        .map(|(k, v)| (k.to_owned(), v.to_owned()))
-        .collect();
-
-        let shown = SettingsCatalog::core().disclose_all(&stored);
-
-        assert_eq!(
-            shown,
-            BTreeMap::from([
-                (ACCENT.name().to_owned(), "blue".to_owned()),
-                (AUDIO_OUTPUT_DEVICE_ID.name().to_owned(), "set".to_owned()),
-                (
-                    PICKER_FAVORITES_ICONS.name().to_owned(),
-                    "list(2)".to_owned()
-                ),
-            ])
-        );
-    }
-
-    #[tokio::test]
-    async fn report_undeclared_settings_returns_the_undeclared_keys_and_leaves_the_store_untouched()
-    {
-        let repo = MemorySettings::new();
-        for (stored_key, value) in [
-            (THEME.name(), "catppuccin-mocha"),
-            ("legacy.retired_toggle", "true"),
-            ("integration.enabled.twitch", "false"),
-            ("another.stray", "{}"),
-        ] {
-            repo.seed_foreign(stored_key, value, None);
-        }
-        let stored_before = repo.rows();
-
-        let reported = report_undeclared_settings(&repo, &SettingsCatalog::core())
-            .await
-            .unwrap();
-
-        assert_eq!(
-            (reported, repo.rows()),
-            (
-                vec![
-                    "another.stray".to_owned(),
-                    "legacy.retired_toggle".to_owned()
-                ],
-                stored_before,
-            )
-        );
     }
 }

@@ -2,7 +2,7 @@ use async_trait::async_trait;
 use forge_speech_types::{
     AliasId, AliasState, AssignmentStrategy, EngineId, IgnoreProfile, VoiceAlias, VoiceId,
 };
-use forge_storage::settings::{core_settings, reserved_keys};
+use forge_storage::settings::core_settings;
 use forge_storage::{StorageError, VoiceAliasRepo, write_setting};
 
 use crate::error::SqliteStorageError;
@@ -158,7 +158,7 @@ impl VoiceAliasRepo for SqliteVoiceAliasRepo {
     async fn get_strategy(&self) -> Result<AssignmentStrategy, StorageError> {
         let row: Option<(Option<String>,)> =
             sqlx::query_as("SELECT value FROM settings WHERE key = ?")
-                .bind(reserved_keys::VOICE_ASSIGNMENT_STRATEGY)
+                .bind(core_settings::VOICE_ASSIGNMENT_STRATEGY.name())
                 .fetch_optional(self.db.reader())
                 .await
                 .map_err(SqliteStorageError::Sqlx)?;

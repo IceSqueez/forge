@@ -1,4 +1,3 @@
-use std::collections::HashMap;
 use std::path::Path;
 use std::sync::Arc;
 
@@ -28,10 +27,10 @@ use forge_storage::voice_aliases::MockVoiceAliasRepo;
 use forge_storage::{
     ActionRepo, BanLedgerRepo, ChatHistoryRepo, CredentialId, CredentialsRepo, DataProvider,
     DonationRepo, EventLogRepo, ExecutionStatus, GlobalEntry, GlobalsRepo, HistoryRepo,
-    LatestValueRepo, MediaRepo, QueueRepo, ScheduledRunRepo, ScriptRecord, ScriptReferences,
-    ScriptRepo, ScriptTelemetry, SettingsRepo, SoundboardClipsRepo, StorageError,
-    TriggerInstanceRepo, TtsFiltersRepo, UserGlobalEntry, UserGlobalsRepo, ViewerRepo,
-    VoiceAliasRepo,
+    LatestValueRepo, MediaRepo, QueueRepo, RowClasses, RowGate, ScheduledRunRepo, ScriptRecord,
+    ScriptReferences, ScriptRepo, ScriptTelemetry, SettingRow, SettingsRepo, SoundboardClipsRepo,
+    StorageError, TriggerInstanceRepo, TtsFiltersRepo, UserGlobalEntry, UserGlobalsRepo,
+    ViewerRepo, VoiceAliasRepo,
 };
 use forge_types::{ScriptId, Variant};
 use time::OffsetDateTime;
@@ -242,20 +241,26 @@ impl UserGlobalsRepo for TestDataProvider {
 
 #[async_trait]
 impl SettingsRepo for TestDataProvider {
-    async fn get_string(&self, key: &str) -> Result<Option<String>, StorageError> {
-        self.settings_repo.get_string(key).await
+    async fn get_raw(&self, gate: RowGate, key: &str) -> Result<Option<String>, StorageError> {
+        self.settings_repo.get_raw(gate, key).await
     }
 
-    async fn set_string(&self, key: &str, value: &str) -> Result<(), StorageError> {
-        self.settings_repo.set_string(key, value).await
+    async fn delete_raw(&self, gate: RowGate, key: &str) -> Result<bool, StorageError> {
+        self.settings_repo.delete_raw(gate, key).await
     }
 
-    async fn delete(&self, key: &str) -> Result<bool, StorageError> {
-        self.settings_repo.delete(key).await
+    async fn load_rows(&self, gate: RowGate) -> Result<Vec<SettingRow>, StorageError> {
+        self.settings_repo.load_rows(gate).await
     }
 
-    async fn load_all(&self) -> Result<HashMap<String, String>, StorageError> {
-        self.settings_repo.load_all().await
+    async fn put_row(
+        &self,
+        gate: RowGate,
+        key: &str,
+        value: &str,
+        classes: RowClasses,
+    ) -> Result<(), StorageError> {
+        self.settings_repo.put_row(gate, key, value, classes).await
     }
 }
 

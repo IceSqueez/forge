@@ -1,4 +1,4 @@
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, BTreeSet};
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
@@ -20,6 +20,7 @@ struct Shared {
     rows: Mutex<BTreeMap<String, StoredSettingRow>>,
     writes: Mutex<Vec<SettingsWrite>>,
     fail_reads: AtomicBool,
+    failing_keys: Mutex<BTreeSet<String>>,
     fail_writes: AtomicBool,
     writes_open: watch::Sender<bool>,
     reads_open: watch::Sender<bool>,
@@ -74,6 +75,7 @@ impl MemorySettings {
                 rows: Mutex::new(BTreeMap::new()),
                 writes: Mutex::new(Vec::new()),
                 fail_reads: AtomicBool::new(false),
+                failing_keys: Mutex::new(BTreeSet::new()),
                 fail_writes: AtomicBool::new(false),
                 writes_open: watch::channel(true).0,
                 reads_open: watch::channel(true).0,
@@ -173,6 +175,10 @@ impl MemorySettings {
         self.shared.fail_reads.store(fail, Ordering::SeqCst);
     }
 
+    pub fn fail_reads_for(&self, key: &str) {
+        locked(&self.shared.failing_keys).insert(key.to_owned());
+    }
+
     pub fn fail_writes(&self, fail: bool) {
         self.shared.fail_writes.store(fail, Ordering::SeqCst);
     }
@@ -240,39 +246,21 @@ impl MemorySettings {
 
 #[async_trait]
 impl SettingsRepo for MemorySettings {
-    async fn get_string(&self, key: &str) -> Result<Option<String>, StorageError> {
+    async fn get_raw(&self, _gate: RowGate, key: &str) -> Result<Option<String>, StorageError> {
         self.begin_read().await?;
+        if locked(&self.shared.failing_keys).contains(key) {
+            return Err(injected_failure());
+        }
         Ok(locked(&self.shared.rows)
             .get(key)
             .map(|row| row.value.clone()))
     }
 
-    async fn set_string(&self, key: &str, value: &str) -> Result<(), StorageError> {
-        let classes = locked(&self.shared.rows)
-            .get(key)
-            .map_or(FAIL_CLOSED_CLASSES, |row| row.classes);
-        self.write(SettingsWrite::Put {
-            key: key.to_owned(),
-            value: value.to_owned(),
-            classes,
-        })
-        .await
-        .map(|_| ())
-    }
-
-    async fn delete(&self, key: &str) -> Result<bool, StorageError> {
+    async fn delete_raw(&self, _gate: RowGate, key: &str) -> Result<bool, StorageError> {
         self.write(SettingsWrite::Delete {
             key: key.to_owned(),
         })
         .await
-    }
-
-    async fn load_all(&self) -> Result<HashMap<String, String>, StorageError> {
-        self.begin_read().await?;
-        Ok(locked(&self.shared.rows)
-            .values()
-            .map(|row| (row.key.clone(), row.value.clone()))
-            .collect())
     }
 
     async fn load_rows(&self, gate: RowGate) -> Result<Vec<SettingRow>, StorageError> {

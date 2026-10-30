@@ -266,7 +266,7 @@ impl TestBackend {
 
 #[async_trait::async_trait]
 impl SettingsRepo for TestBackend {
-    async fn get_string(&self, key: &str) -> Result<Option<String>, StorageError> {
+    async fn get_raw(&self, gate: RowGate, key: &str) -> Result<Option<String>, StorageError> {
         let fault = self.read_faults.lock().unwrap().get(key).cloned();
         match fault {
             Some(ReadFault::Fails) => {
@@ -274,25 +274,14 @@ impl SettingsRepo for TestBackend {
                     reason: SETTINGS_READ_FAILED.to_owned(),
                 });
             }
-            Some(ReadFault::Held(gate)) => gate.notified().await,
+            Some(ReadFault::Held(held)) => held.notified().await,
             None => {}
         }
-        self.settings.get_string(key).await
+        self.settings.get_raw(gate, key).await
     }
 
-    async fn set_string(&self, key: &str, value: &str) -> Result<(), StorageError> {
-        self.guard_write(key)?;
-        self.settings.set_string(key, value).await?;
-        self.record_write(key, value);
-        Ok(())
-    }
-
-    async fn delete(&self, key: &str) -> Result<bool, StorageError> {
-        self.settings.delete(key).await
-    }
-
-    async fn load_all(&self) -> Result<HashMap<String, String>, StorageError> {
-        self.settings.load_all().await
+    async fn delete_raw(&self, gate: RowGate, key: &str) -> Result<bool, StorageError> {
+        self.settings.delete_raw(gate, key).await
     }
 
     async fn load_rows(&self, gate: RowGate) -> Result<Vec<SettingRow>, StorageError> {

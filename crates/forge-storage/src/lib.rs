@@ -89,7 +89,7 @@ pub use script::{
     SCRIPT_NAME_KEY, SCRIPT_RUN_NAMED_KIND, ScriptRecord, ScriptReferences, ScriptReferrer,
     ScriptRepo, ScriptTelemetry,
 };
-pub use settings::catalog::{SettingSkip, SettingsCatalog, report_undeclared_settings};
+pub use settings::catalog::{SettingSkip, SettingsCatalog};
 pub use settings::disclosure::{SettingDisclosure, disclose_rows};
 pub use settings::favorites::rename_favorite_ids;
 pub use settings::portability::SettingPortability;
@@ -100,8 +100,8 @@ pub use settings::spec::{SettingEncoding, SettingKey, SettingSpec};
 pub use settings::typed::{
     Choice, Count, Flag, JsonDocument, Level, OptionalText, PlainText, Setting, SettingCodec,
     SettingFamily, Tally, Verbosity, family_members, read_family_setting, read_setting,
-    read_setting_or_default, read_stored_setting, reset_family_setting, reset_setting,
-    write_family_setting, write_setting,
+    read_setting_or_default, read_stored_family_setting, read_stored_setting, reset_family_setting,
+    reset_setting, write_family_setting, write_setting,
 };
 pub use settings::{
     CredentialsKeyLoss, DEFAULT_CHAT_HISTORY_DISPLAY_LIMIT, DEFAULT_CHAT_HISTORY_PER_VIEWER_LIMIT,
@@ -112,13 +112,12 @@ pub use settings::{
     UNLIMITED_CHAT_HISTORY_PER_VIEWER_LIMIT, UnknownLanguage, VOICE_GATE_DEFAULT_HOLD_MS,
     VOICE_GATE_DEFAULT_THRESHOLD, VoiceGateSettings, chat_history_display_limit,
     chat_history_per_viewer_limit, clamp_chat_history_per_viewer_limit, diagnostic_log_level,
-    disabled_tts_engines, disclosure, engine_params, get_bool_setting, get_json_setting,
-    log_level_as_str, master_volume, record_credentials_key_loss, reserved_keys, set_bool_setting,
-    set_chat_history_display_limit, set_chat_history_per_viewer_limit, set_diagnostic_log_level,
-    set_disabled_tts_engines, set_engine_params, set_json_setting, set_master_volume,
+    disabled_tts_engines, disclosure, engine_params, log_level_as_str, master_volume,
+    record_credentials_key_loss, set_chat_history_display_limit, set_chat_history_per_viewer_limit,
+    set_diagnostic_log_level, set_disabled_tts_engines, set_engine_params, set_master_volume,
     set_voice_gate_enabled, set_voice_gate_hold_ms, set_voice_gate_input_device_id,
-    set_voice_gate_threshold, stored_bool_setting, stored_display_formats, stored_json_setting,
-    synthesis_defaults, take_credentials_key_loss, voice_gate_settings,
+    set_voice_gate_threshold, stored_display_formats, synthesis_defaults,
+    take_credentials_key_loss, voice_gate_settings,
 };
 pub use soundboard::{CLIP_SOURCE_SLOT, SoundboardClipsRepo, StoredClip, clip_source_referrer};
 pub use transit::{CURRENT_FORMAT_VERSION, GlobalTransit, GlobalsExport};

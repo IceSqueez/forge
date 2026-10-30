@@ -2,7 +2,8 @@ use std::collections::HashMap;
 use std::time::Instant;
 
 use forge_registry::rename_step_kinds;
-use forge_storage::{rename_favorite_ids, reserved_keys};
+use forge_storage::rename_favorite_ids;
+use forge_storage::settings::core_settings;
 use forge_types::SubActionStep;
 use serde_json::Value;
 use sqlx::SqliteConnection;
@@ -213,10 +214,13 @@ async fn rename_favorites(
 ) -> Result<(), SqliteStorageError> {
     let lists = [
         (
-            reserved_keys::PICKER_FAVORITES_SUB_ACTIONS,
+            core_settings::PICKER_FAVORITES_SUB_ACTIONS.name(),
             &renames.sub_actions,
         ),
-        (reserved_keys::PICKER_FAVORITES_TRIGGERS, &renames.triggers),
+        (
+            core_settings::PICKER_FAVORITES_TRIGGERS.name(),
+            &renames.triggers,
+        ),
     ];
     for (key, current_by_retired) in lists {
         let stored: Option<String> = sqlx::query_scalar("SELECT value FROM settings WHERE key = ?")

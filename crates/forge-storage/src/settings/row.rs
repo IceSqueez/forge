@@ -85,5 +85,5 @@ pub async fn remove_row<R: SettingsRepo + ?Sized>(
     repo: &R,
     row: &SettingRow,
 ) -> Result<bool, StorageError> {
-    repo.delete(row.key()).await
+    repo.delete_raw(RowGate::open(), row.key()).await
 }

@@ -1,5 +1,3 @@
-use std::collections::HashMap;
-
 use async_trait::async_trait;
 use forge_storage::{
     RowClasses, RowGate, SettingDisclosure, SettingPortability, SettingRow, SettingsRepo,
@@ -21,7 +19,7 @@ impl SqliteSettingsRepo {
 
 #[async_trait]
 impl SettingsRepo for SqliteSettingsRepo {
-    async fn get_string(&self, key: &str) -> Result<Option<String>, StorageError> {
+    async fn get_raw(&self, _gate: RowGate, key: &str) -> Result<Option<String>, StorageError> {
         let row: Option<(String,)> = sqlx::query_as("SELECT value FROM settings WHERE key = ?")
             .bind(key)
             .fetch_optional(self.db.reader())
@@ -29,20 +27,6 @@ impl SettingsRepo for SqliteSettingsRepo {
             .map_err(SqliteStorageError::Sqlx)?;
 
         Ok(row.map(|(v,)| v))
-    }
-
-    async fn set_string(&self, key: &str, value: &str) -> Result<(), StorageError> {
-        sqlx::query(
-            "INSERT INTO settings (key, value) VALUES (?, ?) \
-             ON CONFLICT(key) DO UPDATE SET value = excluded.value",
-        )
-        .bind(key)
-        .bind(value)
-        .execute(self.db.writer())
-        .await
-        .map_err(SqliteStorageError::Sqlx)?;
-
-        Ok(())
     }
 
     async fn put_row(
@@ -113,7 +97,7 @@ impl SettingsRepo for SqliteSettingsRepo {
             .map_err(StorageError::from)
     }
 
-    async fn delete(&self, key: &str) -> Result<bool, StorageError> {
+    async fn delete_raw(&self, _gate: RowGate, key: &str) -> Result<bool, StorageError> {
         let result = sqlx::query("DELETE FROM settings WHERE key = ?")
             .bind(key)
             .execute(self.db.writer())
@@ -121,20 +105,5 @@ impl SettingsRepo for SqliteSettingsRepo {
             .map_err(SqliteStorageError::Sqlx)?;
 
         Ok(result.rows_affected() > 0)
-    }
-
-    async fn load_all(&self) -> Result<HashMap<String, String>, StorageError> {
-        #[derive(sqlx::FromRow)]
-        struct SettingRow {
-            key: String,
-            value: String,
-        }
-
-        let rows: Vec<SettingRow> = sqlx::query_as("SELECT key, value FROM settings")
-            .fetch_all(self.db.reader())
-            .await
-            .map_err(SqliteStorageError::Sqlx)?;
-
-        Ok(rows.into_iter().map(|row| (row.key, row.value)).collect())
     }
 }

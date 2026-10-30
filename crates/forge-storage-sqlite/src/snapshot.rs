@@ -1,10 +1,10 @@
-use forge_storage::reserved_keys;
+use forge_storage::settings::core_settings;
 use sqlx::sqlite::SqliteConnectOptions;
 use sqlx::{ConnectOptions, Connection, SqlitePool};
 
 const SNAPSHOT_EXCLUDED_KEYS: [&str; 2] = [
-    reserved_keys::BACKUP_SCHEDULE_LAST_SUCCESS_AT,
-    reserved_keys::BACKUP_SCHEDULE_CONTENT_FINGERPRINT,
+    core_settings::BACKUP_SCHEDULE_LAST_SUCCESS_AT.name(),
+    core_settings::BACKUP_SCHEDULE_CONTENT_FINGERPRINT.name(),
 ];
 
 pub(crate) async fn vacuum_into(pool: &SqlitePool, target: &str) -> Result<(), sqlx::Error> {

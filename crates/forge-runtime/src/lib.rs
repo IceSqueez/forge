@@ -11,6 +11,7 @@ mod chat_stream;
 mod condition;
 mod config;
 mod cooldown;
+mod core_messages;
 pub mod dashboard;
 mod date_names;
 pub mod delivery;
@@ -68,6 +69,7 @@ pub use chat_history_persistence::{ChatHistoryRetentionHandle, spawn_chat_histor
 pub use chat_send_router::spawn_chat_send_router;
 pub use condition::{ConditionError, ConditionGate};
 pub use config::Config;
+pub use core_messages::CORE_MESSAGES;
 pub use date_names::DateNamesHandle;
 pub use delivery::CriticalSubscription;
 pub use delivery_loss::{ConsumerLoss, DeliveryTier, LossCount, LossWatch};

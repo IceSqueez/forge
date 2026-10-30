@@ -3,10 +3,12 @@ use forge_registry::{
     TypedField,
 };
 use forge_types::{
-    ArgStack, DatePattern, LegacyTranslation, NamesLanguage, ParsedPattern, PatternZone,
-    SubActionConfig, SubActionStep, Variant, current_names_language, shared_date_pattern,
-    translate_legacy_pattern,
+    ArgStack, DatePattern, LegacyTranslation, MessageRef, NamesLanguage, ParsedPattern,
+    PatternZone, SubActionConfig, SubActionStep, Variant, current_names_language,
+    shared_date_pattern, translate_legacy_pattern,
 };
+
+use crate::core_messages;
 
 pub(crate) const TIME_FORMAT_KIND_ID: &str = "core.time.format";
 pub(crate) const TIME_PARSE_KIND_ID: &str = "core.time.parse";
@@ -30,6 +32,13 @@ impl ResolvedTimePattern {
             .as_ref()
             .as_ref()
             .map_err(|error| format!("invalid pattern '{}': {error}", self.text))
+    }
+
+    pub(crate) fn runnable_pattern(&self) -> Result<&DatePattern, MessageRef> {
+        self.parsed
+            .as_ref()
+            .as_ref()
+            .map_err(|error| core_messages::time_pattern_invalid(&self.text, error))
     }
 
     pub(crate) fn text(&self) -> &str {

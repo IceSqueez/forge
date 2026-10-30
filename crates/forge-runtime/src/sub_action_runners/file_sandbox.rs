@@ -1,24 +1,26 @@
 use std::path::{Component, Path, PathBuf};
 
+use forge_types::MessageRef;
+
+use crate::core_messages;
+
 const DRIVE_SEPARATOR: u8 = b':';
 
-pub(super) async fn resolve_sandboxed(rel: &str) -> Result<PathBuf, String> {
+pub(super) async fn resolve_sandboxed(rel: &str) -> Result<PathBuf, MessageRef> {
     if rel.trim().is_empty() {
-        return Err("path is empty".to_owned());
+        return Err(core_messages::file_path_empty());
     }
     if is_rooted(rel) {
-        return Err(absolute_path_error());
+        return Err(core_messages::file_path_absolute());
     }
     let candidate = PathBuf::from(rel);
     for component in candidate.components() {
         match component {
             Component::ParentDir => {
-                return Err(
-                    "\"..\" is not allowed - the path must stay inside the files folder".to_owned(),
-                );
+                return Err(core_messages::file_path_parent());
             }
             Component::Prefix(_) | Component::RootDir => {
-                return Err(absolute_path_error());
+                return Err(core_messages::file_path_absolute());
             }
             Component::CurDir | Component::Normal(_) => {}
         }
@@ -39,14 +41,14 @@ pub(super) async fn resolve_sandboxed(rel: &str) -> Result<PathBuf, String> {
         match tokio::fs::canonicalize(&probe).await {
             Ok(canon_probe) => {
                 if !canon_probe.starts_with(&canon_root) {
-                    return Err(escape_error());
+                    return Err(core_messages::file_path_escapes());
                 }
                 canon_prefix = canon_probe;
                 remaining.next();
             }
             Err(_) => {
                 if is_symlink(&probe).await {
-                    return Err(escape_error());
+                    return Err(core_messages::file_path_escapes());
                 }
                 break;
             }
@@ -72,14 +74,6 @@ async fn is_symlink(path: &Path) -> bool {
     tokio::fs::symlink_metadata(path)
         .await
         .is_ok_and(|meta| meta.file_type().is_symlink())
-}
-
-fn absolute_path_error() -> String {
-    "absolute paths are not allowed - put the file in the files folder and use a path relative to it".to_owned()
-}
-
-fn escape_error() -> String {
-    "path goes through a link that is broken or leads outside the files folder".to_owned()
 }
 
 pub(super) fn glob_matches(pattern: &str, name: &str) -> bool {

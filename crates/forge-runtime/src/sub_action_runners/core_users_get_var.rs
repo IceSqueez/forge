@@ -7,11 +7,12 @@ use forge_registry::{
 };
 use forge_storage::{GlobalsRepo, UserGlobalsRepo};
 use forge_types::{
-    ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetry, UserText, VariantKind,
+    ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetry, VariantKind,
     strip_var_decoration,
 };
 
 use super::core_users_shared::{USER_LOGIN, VAR_NAME, resolve_broadcaster_id, resolve_user_login};
+use crate::core_messages;
 
 const INTO_VAR_KEY: &str = "into_var";
 
@@ -123,7 +124,7 @@ impl SubActionRunner for CoreUsersGetVarRunner {
         };
         let user_login = match resolve_user_login(&user_login_template, ctx.arg_stack) {
             Ok(login) => login,
-            Err(reason) => return (timer.failed(UserText::unlocalized(reason)), None),
+            Err(reason) => return (timer.failed(reason.into()), None),
         };
 
         let broadcaster_id = resolve_broadcaster_id(ctx.arg_stack, self.globals.as_ref()).await;
@@ -143,7 +144,7 @@ impl SubActionRunner for CoreUsersGetVarRunner {
                 (SubActionOutcome::Success, Some(new_stack))
             }
             Err(e) => (
-                SubActionOutcome::Failed(UserText::unlocalized(e.to_string())),
+                SubActionOutcome::Failed(core_messages::storage_failed(e).into()),
                 None,
             ),
         };

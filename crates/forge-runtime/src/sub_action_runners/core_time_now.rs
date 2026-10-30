@@ -5,7 +5,8 @@ use forge_registry::{
     ToggleField, TypedField, VariableField,
 };
 use forge_types::{
-    ArgStack, SubActionConfig, SubActionTelemetry, UserText, Variant, VariantKind, datetime_to_text,
+    ArgStack, MessageRef, SubActionConfig, SubActionTelemetry, Variant, VariantKind,
+    datetime_to_text,
 };
 use time::OffsetDateTime;
 
@@ -111,7 +112,7 @@ fn read_config(
     Ok((text, INTO_VAR.read(config, args)?))
 }
 
-fn formatted(now: OffsetDateTime, text: &NowText) -> Result<String, String> {
+fn formatted(now: OffsetDateTime, text: &NowText) -> Result<String, MessageRef> {
     Ok(match text {
         NowText::UnixSeconds => now.unix_timestamp().to_string(),
         NowText::UnixMillis => {
@@ -120,7 +121,7 @@ fn formatted(now: OffsetDateTime, text: &NowText) -> Result<String, String> {
         }
         NowText::Custom(resolved) => {
             resolved
-                .pattern()?
+                .runnable_pattern()?
                 .format(now, resolved.zone, resolved.language)
         }
         NowText::Iso8601 => datetime_to_text(&now),
@@ -206,7 +207,7 @@ impl SubActionRunner for CoreTimeNowRunner {
         };
         let formatted = match formatted(now, &text) {
             Ok(formatted) => formatted,
-            Err(e) => return (timer.failed(UserText::unlocalized(e)), None),
+            Err(e) => return (timer.failed(e.into()), None),
         };
 
         let new_stack = ctx

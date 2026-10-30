@@ -1,10 +1,11 @@
+use crate::core_messages;
 use async_trait::async_trait;
 use forge_registry::{
     ChoiceField, ConfigChoice, ConfigProblem, ConfigSpec, DateTimeField, IntegerEditor,
     IntegerField, ProducedVariable, RunContext, StepTimer, SubActionCategory, SubActionIo,
     SubActionRunner, TypedField, ValueBounds, VariableField,
 };
-use forge_types::{ArgStack, SubActionConfig, SubActionTelemetry, UserText, Variant, VariantKind};
+use forge_types::{ArgStack, SubActionConfig, SubActionTelemetry, Variant, VariantKind};
 use time::{Date, Duration, Month, OffsetDateTime};
 
 const INTO_VAR_KEY: &str = "into_var";
@@ -194,10 +195,9 @@ impl SubActionRunner for CoreTimeAddRunner {
 
         let Some(result) = unit.shift(base, add_amount) else {
             return (
-                timer.failed(UserText::unlocalized(format!(
-                    "adding {add_amount} {} to {base} leaves the supported date range",
-                    unit.as_str()
-                ))),
+                timer.failed(
+                    core_messages::time_out_of_range(add_amount, unit.as_str(), base).into(),
+                ),
                 None,
             );
         };

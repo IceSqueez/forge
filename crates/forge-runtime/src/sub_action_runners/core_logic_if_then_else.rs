@@ -5,9 +5,10 @@ use forge_registry::{
     ChainLayout, CodeField, CodeKind, CodeLanguage, ConfigProblem, ConfigSpec, RunContext,
     StepChainField, StepTimer, SubActionCategory, SubActionRunner, ToggleField, TypedField,
 };
-use forge_types::{ArgStack, SubActionConfig, SubActionTelemetry, UserText, Variant};
+use forge_types::{ArgStack, SubActionConfig, SubActionTelemetry, Variant};
 
 use super::core_logic_shared::{chain_at, propagate, retag};
+use crate::core_messages;
 use crate::{ConditionError, ConditionGate};
 
 const BRANCH_TAKEN_VAR: &str = "branch.taken";
@@ -111,9 +112,7 @@ impl SubActionRunner for CoreLogicIfThenElseRunner {
             Err(ConditionError::Undefined { .. }) if undefined_is_false => false,
             Err(e) => {
                 return (
-                    timer.failed(UserText::unlocalized(format!(
-                        "core.logic.if_then_else: {e}"
-                    ))),
+                    timer.failed(core_messages::condition_failed(e).into()),
                     None,
                 );
             }
@@ -146,9 +145,7 @@ impl SubActionRunner for CoreLogicIfThenElseRunner {
                 (timer.finish(outcome), Some(stack))
             }
             Err(e) => (
-                timer.failed(UserText::unlocalized(format!(
-                    "core.logic.if_then_else: {e}"
-                ))),
+                timer.failed(core_messages::condition_failed(e).into()),
                 None,
             ),
         }

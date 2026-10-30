@@ -16,11 +16,12 @@ use forge_storage::{
     ExecutionStatus, GlobalsRepo, SCRIPT_NAME_KEY, SCRIPT_RUN_NAMED_KIND, ScriptRepo, SettingsRepo,
 };
 use forge_types::{
-    ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetry, UserText, VariantKind,
+    ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetry, VariantKind,
     strip_var_decoration,
 };
 use time::OffsetDateTime;
 
+use crate::core_messages;
 use crate::global_mutation::RuntimeScriptGlobals;
 use crate::scheduled_runs::SchedulingContext;
 use crate::script_registry::{SCRIPT_PANIC_ERROR_TYPE, ScriptRegistry};
@@ -145,9 +146,9 @@ impl SubActionRunner for ScriptRunNamedRunner {
                     kind: SCRIPT_RUN_NAMED_KIND.to_owned(),
                     started_at,
                     duration_ms,
-                    outcome: SubActionOutcome::Failed(UserText::unlocalized(format!(
-                        "script '{name}' not found in registry"
-                    ))),
+                    outcome: SubActionOutcome::Failed(
+                        core_messages::script_not_found(name.as_str()).into(),
+                    ),
                     index: ctx.index,
                 },
                 None,
@@ -236,7 +237,9 @@ impl SubActionRunner for ScriptRunNamedRunner {
                     Some(script_event_id),
                 );
                 (
-                    SubActionOutcome::Failed(UserText::unlocalized(message)),
+                    SubActionOutcome::Failed(
+                        core_messages::script_failed(name.as_str(), &script_err).into(),
+                    ),
                     None,
                 )
             }
@@ -254,9 +257,7 @@ impl SubActionRunner for ScriptRunNamedRunner {
                     Some(script_event_id),
                 );
                 (
-                    SubActionOutcome::Failed(UserText::unlocalized(format!(
-                        "script task panicked: {join_err}"
-                    ))),
+                    SubActionOutcome::Failed(core_messages::script_panicked(join_err).into()),
                     None,
                 )
             }

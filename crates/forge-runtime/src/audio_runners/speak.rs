@@ -6,11 +6,12 @@ use forge_registry::{
     OptionalSwitch, RunContext, StepTimer, SubActionCategory, SubActionRunner, TypedField,
 };
 use forge_types::{
-    ArgStack, PlatformId, SubActionConfig, SubActionOutcome, SubActionTelemetry, UserText,
+    ArgStack, MessageRef, PlatformId, SubActionConfig, SubActionOutcome, SubActionTelemetry,
 };
 
 use super::{SPEECH_TEXT, WAIT_FOR_COMPLETION};
-use crate::engine_voice_ref::EngineVoiceRef;
+use crate::core_messages;
+use crate::engine_voice_ref::{EngineVoiceError, EngineVoiceRef};
 use crate::speak_dispatcher::{SpeakDispatcher, SpeechOrigin};
 use crate::twitch_emote_lexicon::TwitchEmoteLexicon;
 
@@ -59,13 +60,23 @@ impl SpeakRunner {
         self
     }
 
-    async fn installed_voice(&self, stored: Option<String>) -> Result<Option<String>, String> {
+    async fn installed_voice(&self, stored: Option<String>) -> Result<Option<String>, MessageRef> {
         let Some(stored) = stored else {
             return Ok(None);
         };
         EngineVoiceRef::installed(&stored, &self.speak.get_available_voices().await)
             .map(|voice| Some(voice.to_string()))
-            .map_err(|reason| format!("{SPEAK_KIND_ID}: {reason} - pick a voice again"))
+            .map_err(|reason| match reason {
+                EngineVoiceError::NotAnEngineVoice(voice) => {
+                    core_messages::voice_not_engine_voice(&voice)
+                }
+                EngineVoiceError::NotInstalled {
+                    engine_id,
+                    voice_id,
+                } => core_messages::voice_not_installed(
+                    &EngineVoiceRef::new(engine_id, voice_id).to_string(),
+                ),
+            })
     }
 
     fn add_learned_reward_emotes(&self, origin: &mut SpeechOrigin, text: &str) {
@@ -129,10 +140,7 @@ impl SubActionRunner for SpeakRunner {
         let voice = match self.installed_voice(voice).await {
             Ok(voice) => voice,
             Err(reason) => {
-                return (
-                    timer.finish(SubActionOutcome::Failed(UserText::unlocalized(reason))),
-                    None,
-                );
+                return (timer.finish(SubActionOutcome::Failed(reason.into())), None);
             }
         };
 

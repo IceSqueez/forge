@@ -8,12 +8,12 @@ use forge_registry::{
 };
 use forge_storage::{ActionRepo, TriggerInstanceRepo};
 use forge_types::{
-    ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetry, TriggerInstanceId, UserText,
-    Variant,
+    ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetry, TriggerInstanceId, Variant,
 };
 
 use super::core_trigger_shared::TRIGGER_INSTANCE_ID_KEY;
 use super::event_payload::EMPTY_JSON_OBJECT;
+use crate::core_messages;
 use crate::{QueueAdmission, SchedulerCell, SchedulerRequest};
 
 const TRIGGER_INSTANCE: DynamicSelectField<TriggerInstanceId> = DynamicSelectField::new(
@@ -85,27 +85,23 @@ impl CoreTestFireTriggerRunner {
         let trigger_kind = match self.trigger_instances.get(instance_id).await {
             Ok(Some(instance)) => instance.kind_id,
             Ok(None) => {
-                return SubActionOutcome::Failed(UserText::unlocalized(format!(
-                    "core.test.fire_trigger: unknown trigger instance '{instance_id}'"
-                )));
+                return SubActionOutcome::Failed(
+                    core_messages::unknown_trigger_instance(instance_id).into(),
+                );
             }
             Err(e) => {
-                return SubActionOutcome::Failed(UserText::unlocalized(format!(
-                    "core.test.fire_trigger: instance lookup failed: {e}"
-                )));
+                return SubActionOutcome::Failed(core_messages::storage_failed(e).into());
             }
         };
 
         let Some(scheduler) = self.scheduler.get() else {
-            return SubActionOutcome::Failed(UserText::unlocalized("queue scheduler not ready"));
+            return SubActionOutcome::Failed(core_messages::scheduler_not_ready().into());
         };
 
         let action_ids = match self.trigger_instances.actions_using(instance_id).await {
             Ok(ids) => ids,
             Err(e) => {
-                return SubActionOutcome::Failed(UserText::unlocalized(format!(
-                    "core.test.fire_trigger: bound-action lookup failed: {e}"
-                )));
+                return SubActionOutcome::Failed(core_messages::storage_failed(e).into());
             }
         };
 
@@ -114,9 +110,7 @@ impl CoreTestFireTriggerRunner {
                 Ok(Some(a)) => a,
                 Ok(None) => continue,
                 Err(e) => {
-                    return SubActionOutcome::Failed(UserText::unlocalized(format!(
-                        "core.test.fire_trigger: action lookup failed: {e}"
-                    )));
+                    return SubActionOutcome::Failed(core_messages::storage_failed(e).into());
                 }
             };
             let req = SchedulerRequest {
@@ -129,9 +123,7 @@ impl CoreTestFireTriggerRunner {
                 admission: QueueAdmission::from(&action),
             };
             if let Err(e) = scheduler.dispatch(req).await {
-                return SubActionOutcome::Failed(UserText::unlocalized(format!(
-                    "core.test.fire_trigger: dispatch failed: {e}"
-                )));
+                return SubActionOutcome::Failed(core_messages::scheduler_failed(e).into());
             }
         }
 

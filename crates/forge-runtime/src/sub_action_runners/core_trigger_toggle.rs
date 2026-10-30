@@ -6,10 +6,11 @@ use forge_registry::{
 };
 use forge_storage::TriggerInstanceRepo;
 use forge_types::{
-    ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetry, TriggerInstanceId, UserText,
+    ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetry, TriggerInstanceId,
 };
 
 use super::core_trigger_shared::{TRIGGER, TRIGGER_SPEC};
+use crate::core_messages;
 
 pub struct CoreTriggerToggleRunner {
     trigger_instances: Arc<dyn TriggerInstanceRepo>,
@@ -24,14 +25,12 @@ impl CoreTriggerToggleRunner {
         let current_enabled = match self.trigger_instances.get(instance_id).await {
             Ok(Some(instance)) => instance.enabled,
             Ok(None) => {
-                return SubActionOutcome::Failed(UserText::unlocalized(format!(
-                    "core.trigger.toggle: unknown trigger instance '{instance_id}'"
-                )));
+                return SubActionOutcome::Failed(
+                    core_messages::unknown_trigger_instance(instance_id).into(),
+                );
             }
             Err(e) => {
-                return SubActionOutcome::Failed(UserText::unlocalized(format!(
-                    "core.trigger.toggle: {e}"
-                )));
+                return SubActionOutcome::Failed(core_messages::storage_failed(e).into());
             }
         };
         match self
@@ -40,9 +39,7 @@ impl CoreTriggerToggleRunner {
             .await
         {
             Ok(()) => SubActionOutcome::Success,
-            Err(e) => {
-                SubActionOutcome::Failed(UserText::unlocalized(format!("core.trigger.toggle: {e}")))
-            }
+            Err(e) => SubActionOutcome::Failed(core_messages::storage_failed(e).into()),
         }
     }
 }

@@ -4,11 +4,10 @@ use async_trait::async_trait;
 use forge_events::{EventSource, GlobalToggled, TypedEvent};
 use forge_registry::{ConfigSpec, RunContext, StepTimer, SubActionCategory, SubActionRunner};
 use forge_storage::{GlobalsRepo, StorageError};
-use forge_types::{
-    ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetry, UserText, VariantKind,
-};
+use forge_types::{ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetry, VariantKind};
 
 use super::core_globals_shared::{GLOBAL_BY_KEY, global_name};
+use crate::core_messages;
 
 const CONFIG: ConfigSpec = ConfigSpec::new(&[&GLOBAL_BY_KEY]);
 
@@ -78,19 +77,16 @@ impl SubActionRunner for CoreGlobalsToggleRunner {
                 SubActionOutcome::Success
             }
             Err(StorageError::NotFound { .. }) => {
-                SubActionOutcome::Failed(UserText::unlocalized(format!(
-                    "core.globals.toggle: global '{}' does not exist",
-                    resolved_key
-                )))
+                SubActionOutcome::Failed(core_messages::global_missing(&resolved_key).into())
             }
-            Err(StorageError::TypeMismatch { actual, .. }) => {
-                SubActionOutcome::Failed(UserText::unlocalized(format!(
-                    "core.globals.toggle: expected bool, found {}",
+            Err(StorageError::TypeMismatch { actual, .. }) => SubActionOutcome::Failed(
+                core_messages::global_not_bool(
                     VariantKind::from_contract_name(&actual)
-                        .map_or(actual.as_str(), |kind| kind.label())
-                )))
-            }
-            Err(e) => SubActionOutcome::Failed(UserText::unlocalized(e.to_string())),
+                        .map_or(actual.as_str(), |kind| kind.label()),
+                )
+                .into(),
+            ),
+            Err(e) => SubActionOutcome::Failed(core_messages::storage_failed(e).into()),
         };
 
         (timer.finish(outcome), None)

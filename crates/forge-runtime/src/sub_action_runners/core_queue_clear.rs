@@ -3,12 +3,11 @@ use forge_registry::{
     ConfigProblem, ConfigSpec, RunContext, StepTimer, SubActionCategory, SubActionRunner,
     ToggleField, TypedField,
 };
-use forge_types::{
-    ArgStack, QueueId, SubActionConfig, SubActionOutcome, SubActionTelemetry, UserText,
-};
+use forge_types::{ArgStack, QueueId, SubActionConfig, SubActionOutcome, SubActionTelemetry};
 
 use super::core_queue_shared::QUEUE;
 use crate::SchedulerCell;
+use crate::core_messages;
 
 const KEEP_CURRENT: ToggleField = ToggleField {
     key: "keep_current",
@@ -36,13 +35,11 @@ impl CoreQueueClearRunner {
 
     async fn run(&self, queue_id: QueueId, keep_current: bool) -> SubActionOutcome {
         let Some(scheduler) = self.scheduler.get() else {
-            return SubActionOutcome::Failed(UserText::unlocalized("queue scheduler not ready"));
+            return SubActionOutcome::Failed(core_messages::scheduler_not_ready().into());
         };
         match scheduler.clear(queue_id, keep_current).await {
             Ok(()) => SubActionOutcome::Success,
-            Err(e) => {
-                SubActionOutcome::Failed(UserText::unlocalized(format!("core.queue.clear: {e}")))
-            }
+            Err(e) => SubActionOutcome::Failed(core_messages::scheduler_failed(e).into()),
         }
     }
 }

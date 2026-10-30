@@ -7,9 +7,10 @@ use forge_registry::{
     TypedField,
 };
 use forge_storage::GlobalsRepo;
-use forge_types::{ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetry, UserText};
+use forge_types::{ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetry};
 
 use super::core_globals_shared::{AMOUNT, GLOBAL_BY_NAME, global_name};
+use crate::core_messages;
 use crate::global_mutation::GlobalMutation;
 
 pub const GLOBAL_INCREMENT_KIND_ID: &str = "core.globals.increment";
@@ -82,7 +83,7 @@ impl SubActionRunner for CoreGlobalsIncrementRunner {
         };
         let outcome = match mutation.increment(&name, amount).await {
             Ok(_increment) => SubActionOutcome::Success,
-            Err(e) => SubActionOutcome::Failed(UserText::unlocalized(e.to_string())),
+            Err(e) => SubActionOutcome::Failed(core_messages::storage_failed(e).into()),
         };
 
         (timer.finish(outcome), None)

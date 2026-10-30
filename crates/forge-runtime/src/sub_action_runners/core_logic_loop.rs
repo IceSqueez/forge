@@ -14,6 +14,7 @@ use forge_types::{
 
 use super::core_logic_shared::{chain_at, retag};
 use crate::ConditionGate;
+use crate::core_messages;
 
 const MAX_COUNT: i64 = 1000;
 const DEFAULT_COUNT: i64 = 1;
@@ -168,7 +169,7 @@ async fn run_body(
             (outcome, child.telemetry)
         }
         Err(e) => (
-            IterOutcome::Fail(UserText::unlocalized(format!("core.logic.loop: {e}"))),
+            IterOutcome::Fail(core_messages::action_run_failed(e).into()),
             Vec::new(),
         ),
     }
@@ -260,10 +261,13 @@ impl SubActionRunner for CoreLogicLoopRunner {
                     };
                     if iterations >= MAX_FOREACH_ITERATIONS {
                         exit_reason = "foreach_limit";
-                        failure = Some(UserText::unlocalized(format!(
-                            "core.logic.loop: foreach stopped after {MAX_FOREACH_ITERATIONS} iterations; the array has {} items",
-                            items.len()
-                        )));
+                        failure = Some(
+                            core_messages::loop_iteration_limit(
+                                MAX_FOREACH_ITERATIONS,
+                                items.len(),
+                            )
+                            .into(),
+                        );
                         break;
                     }
                     current
@@ -284,7 +288,7 @@ impl SubActionRunner for CoreLogicLoopRunner {
                         Ok(true) => {}
                         Ok(false) => break,
                         Err(e) => {
-                            failure = Some(UserText::unlocalized(format!("core.logic.loop: {e}")));
+                            failure = Some(core_messages::condition_failed(e).into());
                             break;
                         }
                     }
@@ -344,9 +348,10 @@ impl SubActionRunner for CoreLogicLoopRunner {
         }
 
         if let Some((timer, last_iteration)) = unrecorded {
-            let mut summary = timer.skipped(UserText::unlocalized(format!(
-                "core.logic.loop: steps of iterations {MAX_RECORDED_ITERATIONS}-{last_iteration} are not recorded"
-            )));
+            let mut summary = timer.skipped(
+                core_messages::loop_iterations_unrecorded(MAX_RECORDED_ITERATIONS, last_iteration)
+                    .into(),
+            );
             summary.kind = format!(
                 "{}.body#{MAX_RECORDED_ITERATIONS}-{last_iteration}",
                 ctx.index

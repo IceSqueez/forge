@@ -1,6 +1,8 @@
 use forge_registry::{TemplateField, TextEditor, TextField};
 use forge_storage::GlobalsRepo;
-use forge_types::{ArgStack, variable_references};
+use forge_types::{ArgStack, MessageRef, variable_references};
+
+use crate::core_messages;
 
 const SINGLE_BROADCASTER_NAMESPACE: &str = "local";
 const USER_LOGIN_TEMPLATE: &str = "%user_login%";
@@ -43,13 +45,14 @@ pub(super) async fn resolve_broadcaster_id(
     }
 }
 
-pub(super) fn resolve_user_login(template: &str, arg_stack: &ArgStack) -> Result<String, String> {
+pub(super) fn resolve_user_login(
+    template: &str,
+    arg_stack: &ArgStack,
+) -> Result<String, MessageRef> {
     if let Some(missing) =
         variable_references(template).find(|name| arg_stack.resolve(name).is_none())
     {
-        return Err(format!(
-            "user login variable %{missing}% is not set in this run"
-        ));
+        return Err(core_messages::user_login_unset(missing));
     }
     let interpolated = arg_stack.interpolate(template);
     let trimmed = interpolated.trim();
@@ -59,7 +62,7 @@ pub(super) fn resolve_user_login(template: &str, arg_stack: &ArgStack) -> Result
         .trim_start()
         .to_lowercase();
     if login.is_empty() {
-        Err("user login is empty".to_owned())
+        Err(core_messages::user_login_empty())
     } else {
         Ok(login)
     }

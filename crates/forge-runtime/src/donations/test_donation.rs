@@ -14,10 +14,11 @@ use forge_registry::{
 };
 use forge_types::{
     ArgStack, CurrencyCode, Donation, DonationOrigin, Donor, IntegrationId, MoneyAmount,
-    SubActionConfig, SubActionOutcome, SubActionTelemetry, UserText,
+    SubActionConfig, SubActionOutcome, SubActionTelemetry,
 };
 use time::OffsetDateTime;
 
+use crate::core_messages;
 use crate::donations::DonationIngest;
 use crate::triggers::DONATION_PROVIDER_OPTIONS_KEY;
 
@@ -120,9 +121,7 @@ impl TestDonationRunner {
         {
             SubActionOutcome::Success
         } else {
-            SubActionOutcome::Failed(UserText::unlocalized(
-                "test donation could not be announced",
-            ))
+            SubActionOutcome::Failed(core_messages::test_donation_not_announced().into())
         }
     }
 }

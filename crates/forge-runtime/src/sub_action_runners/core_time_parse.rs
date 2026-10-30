@@ -4,12 +4,13 @@ use forge_registry::{
     SubActionCategory, SubActionIo, SubActionRunner, TemplateField, TextEditor, TextField,
     ToggleField, TypedField, VariableField,
 };
-use forge_types::{ArgStack, SubActionConfig, SubActionTelemetry, UserText, Variant, VariantKind};
+use forge_types::{ArgStack, SubActionConfig, SubActionTelemetry, Variant, VariantKind};
 
 use super::time_pattern::{
     DEFAULT_TIME_PATTERN, PARSE_PATTERN_KEY, ResolvedTimePattern, TIME_PARSE_KIND_ID, UTC_KEY,
     checked_time_pattern, stored_utc,
 };
+use crate::core_messages;
 
 const INTO_VAR_KEY: &str = "into_var";
 const PARSED_VARIABLE: &str = "time.parsed";
@@ -139,19 +140,18 @@ impl SubActionRunner for CoreTimeParseRunner {
             Err(problem) => return (timer.invalid_config(&problem), None),
         };
 
-        let pattern = match resolved.pattern() {
+        let pattern = match resolved.runnable_pattern() {
             Ok(pattern) => pattern,
-            Err(e) => return (timer.failed(UserText::unlocalized(e)), None),
+            Err(e) => return (timer.failed(e.into()), None),
         };
 
         let dt = match pattern.parse_text(&source, resolved.zone, resolved.language) {
             Ok(dt) => dt,
             Err(e) => {
                 return (
-                    timer.failed(UserText::unlocalized(format!(
-                        "cannot read '{source}' with pattern '{}': {e}",
-                        resolved.text()
-                    ))),
+                    timer.failed(
+                        core_messages::time_text_unreadable(&source, resolved.text(), e).into(),
+                    ),
                     None,
                 );
             }

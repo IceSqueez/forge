@@ -4,7 +4,7 @@ use forge_registry::{
     StepTimer, SubActionCategory, SubActionIo, SubActionRunner, TemplateField, ToggleField,
     TypedField, VariableField,
 };
-use forge_types::{ArgStack, SubActionConfig, SubActionTelemetry, UserText, Variant, VariantKind};
+use forge_types::{ArgStack, SubActionConfig, SubActionTelemetry, Variant, VariantKind};
 use time::OffsetDateTime;
 
 use super::time_pattern::{
@@ -136,9 +136,9 @@ impl SubActionRunner for CoreTimeFormatRunner {
             Err(problem) => return (timer.invalid_config(&problem), None),
         };
 
-        let formatted = match resolved.pattern() {
+        let formatted = match resolved.runnable_pattern() {
             Ok(pattern) => pattern.format(source, resolved.zone, resolved.language),
-            Err(e) => return (timer.failed(UserText::unlocalized(e)), None),
+            Err(e) => return (timer.failed(e.into()), None),
         };
 
         let new_stack = ctx

@@ -7,11 +7,12 @@ use forge_registry::{
 };
 use forge_storage::GlobalsRepo;
 use forge_types::{
-    ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetry, UserText, Variant,
-    VariantKind, strip_var_decoration,
+    ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetry, Variant, VariantKind,
+    strip_var_decoration,
 };
 
 use super::core_globals_shared::{GLOBAL_BY_NAME, global_name};
+use crate::core_messages;
 
 const INTO_ARG_KEY: &str = "into_arg";
 
@@ -106,7 +107,7 @@ impl SubActionRunner for CoreGlobalsGetRunner {
                 (SubActionOutcome::Success, Some(new_stack))
             }
             Err(e) => (
-                SubActionOutcome::Failed(UserText::unlocalized(e.to_string())),
+                SubActionOutcome::Failed(core_messages::storage_failed(e).into()),
                 None,
             ),
         };

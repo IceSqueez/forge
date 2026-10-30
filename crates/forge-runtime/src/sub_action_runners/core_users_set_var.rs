@@ -6,9 +6,10 @@ use forge_registry::{
     TextEditor, TextField, TypedField,
 };
 use forge_storage::{GlobalsRepo, UserGlobalsRepo};
-use forge_types::{ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetry, UserText};
+use forge_types::{ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetry};
 
 use super::core_users_shared::{USER_LOGIN, VAR_NAME, resolve_broadcaster_id, resolve_user_login};
+use crate::core_messages;
 
 const VALUE: TextField = TextField {
     key: "value",
@@ -87,7 +88,7 @@ impl SubActionRunner for CoreUsersSetVarRunner {
         };
         let user_login = match resolve_user_login(&user_login_template, ctx.arg_stack) {
             Ok(login) => login,
-            Err(reason) => return (timer.failed(UserText::unlocalized(reason)), None),
+            Err(reason) => return (timer.failed(reason.into()), None),
         };
         let value = super::variant_text::parse_variant(&raw_value);
 
@@ -99,7 +100,7 @@ impl SubActionRunner for CoreUsersSetVarRunner {
             .await
         {
             Ok(()) => SubActionOutcome::Success,
-            Err(e) => SubActionOutcome::Failed(UserText::unlocalized(e.to_string())),
+            Err(e) => SubActionOutcome::Failed(core_messages::storage_failed(e).into()),
         };
 
         (timer.finish(outcome), None)

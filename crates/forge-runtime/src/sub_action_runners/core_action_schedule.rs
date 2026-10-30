@@ -8,12 +8,13 @@ use forge_registry::{
     UnitAmountField, VariableField,
 };
 use forge_storage::MissedRunPolicy;
-use forge_types::{ArgStack, SubActionConfig, SubActionTelemetry, UserText, Variant, VariantKind};
+use forge_types::{ArgStack, SubActionConfig, SubActionTelemetry, Variant, VariantKind};
 
 use super::core_action_shared::ACTION;
+use crate::core_messages;
 use crate::scheduled_runs::{
-    MAX_LATE_TOLERANCE, MAX_SCHEDULE_DELAY, MIN_LATE_TOLERANCE, ScheduleDue, ScheduleError,
-    ScheduleIntent, ScheduleRequest, ScheduledRunsCell, SchedulingContext,
+    MAX_LATE_TOLERANCE, MAX_SCHEDULE_DELAY, MIN_LATE_TOLERANCE, ScheduleDue, ScheduleIntent,
+    ScheduleRequest, ScheduledRunsCell, SchedulingContext,
 };
 
 pub const SCHEDULE_ACTION_KIND_ID: &str = "core.action.schedule";
@@ -250,15 +251,13 @@ impl SubActionRunner for CoreActionScheduleRunner {
         };
         let Some(scheduled_runs) = self.scheduled_runs.get() else {
             return (
-                timer.failed(UserText::unlocalized(
-                    ScheduleError::SchedulerStopped.to_string(),
-                )),
+                timer.failed(core_messages::scheduler_stopped().into()),
                 None,
             );
         };
         let placement = match scheduled_runs.schedule(request).await {
             Ok(placement) => placement,
-            Err(e) => return (timer.failed(UserText::unlocalized(e.to_string())), None),
+            Err(e) => return (timer.failed(core_messages::schedule_failed(e).into()), None),
         };
         let stack = ctx
             .arg_stack

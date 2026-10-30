@@ -8,11 +8,12 @@ use forge_registry::{
 use forge_storage::ActionRepo;
 use forge_types::{
     Action, ActionId, ArgStack, ExecutionMode, SubActionConfig, SubActionOutcome, SubActionStep,
-    SubActionTelemetry, UserText,
+    SubActionTelemetry,
 };
 use rand::RngExt;
 
 use super::core_action_shared::ACTION;
+use crate::core_messages;
 
 const INHERIT_ARGS: ToggleField = ToggleField {
     key: "inherit_args",
@@ -40,14 +41,10 @@ impl CoreActionRunRunner {
         let target = match self.actions.get(action_id).await {
             Ok(Some(a)) => a,
             Ok(None) => {
-                return SubActionOutcome::Failed(UserText::unlocalized(format!(
-                    "core.action.run: unknown action '{action_id}'"
-                )));
+                return SubActionOutcome::Failed(core_messages::unknown_action(action_id).into());
             }
             Err(e) => {
-                return SubActionOutcome::Failed(UserText::unlocalized(format!(
-                    "core.action.run: {e}"
-                )));
+                return SubActionOutcome::Failed(core_messages::storage_failed(e).into());
             }
         };
 
@@ -64,12 +61,10 @@ impl CoreActionRunRunner {
             .await;
 
         match outcome {
-            Err(RegistryError::DepthExceeded(_)) => SubActionOutcome::Failed(
-                UserText::unlocalized("core.action.run: max nesting depth exceeded"),
-            ),
-            Err(e) => {
-                SubActionOutcome::Failed(UserText::unlocalized(format!("core.action.run: {e}")))
+            Err(RegistryError::DepthExceeded(_)) => {
+                SubActionOutcome::Failed(core_messages::action_nesting_too_deep().into())
             }
+            Err(e) => SubActionOutcome::Failed(core_messages::action_run_failed(e).into()),
             Ok(child) => match child.signal {
                 ChainSignal::Completed
                 | ChainSignal::Stop(_)
@@ -77,7 +72,7 @@ impl CoreActionRunRunner {
                 | ChainSignal::Continue => SubActionOutcome::Success,
                 ChainSignal::Error(msg) => SubActionOutcome::Failed(msg),
                 ChainSignal::Aborted => {
-                    SubActionOutcome::Failed(UserText::unlocalized("core.action.run: cancelled"))
+                    SubActionOutcome::Failed(core_messages::action_run_cancelled().into())
                 }
             },
         }

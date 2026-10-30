@@ -5,11 +5,13 @@ use forge_registry::{
     TypedField,
 };
 use forge_types::{
-    ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetry, UserText, Variant, VariantKind,
+    ArgStack, MessageRef, SubActionConfig, SubActionOutcome, SubActionTelemetry, Variant,
+    VariantKind,
 };
 
 use super::core_string_shared::{INTO_RESULT, INTO_VAR_KEY, source_field};
 use super::regex_pattern::compiled_pattern;
+use crate::core_messages;
 
 const SOURCE: TextField = source_field("Hello World");
 
@@ -169,7 +171,7 @@ impl SubActionRunner for CoreStringReplaceRunner {
                 let new_stack = ctx.arg_stack.clone().set(into_var, Variant::String(result));
                 return (timer.success(), Some(new_stack));
             }
-            Err(msg) => SubActionOutcome::Failed(UserText::unlocalized(msg)),
+            Err(reason) => SubActionOutcome::Failed(reason.into()),
         };
 
         (timer.finish(outcome), None)
@@ -182,7 +184,7 @@ fn apply_replace(
     replace_with: &str,
     case_sensitive: bool,
     is_regex: bool,
-) -> Result<String, String> {
+) -> Result<String, MessageRef> {
     let pattern = if is_regex {
         if case_sensitive {
             search.to_owned()
@@ -198,7 +200,7 @@ fn apply_replace(
         }
     };
 
-    let re = regex::Regex::new(&pattern).map_err(|e| format!("invalid pattern: {e}"))?;
+    let re = regex::Regex::new(&pattern).map_err(core_messages::search_pattern_invalid)?;
     let replacement = if is_regex {
         replace_with.to_owned()
     } else {

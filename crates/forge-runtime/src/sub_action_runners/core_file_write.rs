@@ -1,3 +1,4 @@
+use crate::core_messages;
 use async_trait::async_trait;
 use base64::Engine as _;
 use forge_registry::{
@@ -5,7 +6,7 @@ use forge_registry::{
     SubActionIo, SubActionRunner, TextEditor, TextField, ToggleField, TypedField,
 };
 use forge_types::{
-    ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetry, UserText, Variant,
+    ArgStack, MessageRef, SubActionConfig, SubActionOutcome, SubActionTelemetry, Variant,
 };
 use tokio::io::AsyncWriteExt as _;
 
@@ -159,17 +160,9 @@ impl SubActionRunner for CoreFileWriteRunner {
         };
 
         let (outcome, updated) = match super::file_sandbox::resolve_sandboxed(&request.path).await {
-            Err(reason) => (
-                SubActionOutcome::Failed(UserText::unlocalized(format!(
-                    "sandbox rejected path: {reason}"
-                ))),
-                None,
-            ),
+            Err(reason) => (SubActionOutcome::Failed(reason.into()), None),
             Ok(abs_path) => match do_write(&abs_path, &request).await {
-                Err(reason) => (
-                    SubActionOutcome::Failed(UserText::unlocalized(reason)),
-                    None,
-                ),
+                Err(reason) => (SubActionOutcome::Failed(reason.into()), None),
                 Ok(bytes_written) => {
                     let stack = ctx.arg_stack.clone().set(
                         FILE_BYTES_WRITTEN_VAR.to_owned(),
@@ -184,30 +177,26 @@ impl SubActionRunner for CoreFileWriteRunner {
     }
 }
 
-fn encode_content(content: &str, encoding: Encoding) -> Result<Vec<u8>, String> {
+fn encode_content(content: &str, encoding: Encoding) -> Result<Vec<u8>, MessageRef> {
     match encoding {
         Encoding::Utf8 => Ok(content.as_bytes().to_vec()),
         Encoding::Latin1 => content
             .chars()
-            .map(|c| {
-                let code = u32::from(c);
-                u8::try_from(code)
-                    .map_err(|_| format!("'{c}' (U+{code:04X}) has no Latin-1 encoding"))
-            })
+            .map(|c| u8::try_from(u32::from(c)).map_err(|_| core_messages::file_char_not_latin1(c)))
             .collect(),
         Encoding::RawBase64 => base64::engine::general_purpose::STANDARD
             .decode(content.trim())
-            .map_err(|e| format!("base64 decode failed: {e}")),
+            .map_err(core_messages::file_not_base64),
     }
 }
 
-async fn do_write(abs_path: &std::path::Path, request: &WriteRequest) -> Result<usize, String> {
+async fn do_write(abs_path: &std::path::Path, request: &WriteRequest) -> Result<usize, MessageRef> {
     if request.create_parent_dirs
         && let Some(parent) = abs_path.parent()
     {
         tokio::fs::create_dir_all(parent)
             .await
-            .map_err(|e| format!("create_dir_all failed: {e}"))?;
+            .map_err(core_messages::file_io_failed)?;
     }
 
     let bytes = encode_content(&request.content, request.encoding)?;
@@ -228,14 +217,12 @@ async fn do_write(abs_path: &std::path::Path, request: &WriteRequest) -> Result<
     let mut file = opts
         .open(abs_path)
         .await
-        .map_err(|e| format!("open failed: {e}"))?;
+        .map_err(core_messages::file_io_failed)?;
 
     file.write_all(&bytes)
         .await
-        .map_err(|e| format!("write failed: {e}"))?;
-    file.flush()
-        .await
-        .map_err(|e| format!("write failed: {e}"))?;
+        .map_err(core_messages::file_io_failed)?;
+    file.flush().await.map_err(core_messages::file_io_failed)?;
 
     Ok(bytes.len())
 }

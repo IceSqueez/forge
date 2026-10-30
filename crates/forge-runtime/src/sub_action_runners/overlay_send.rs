@@ -7,9 +7,10 @@ use forge_registry::{
     TypedField, ValueBounds,
 };
 use forge_storage::{OverlayConfig, OverlayId};
-use forge_types::{ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetry, UserText};
+use forge_types::{ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetry};
 
 use super::overlay_targets::{OVERLAY_SEND_KIND_ID, OVERLAY_TARGET_KEY};
+use crate::core_messages;
 use crate::overlay_service::{OverlayDelivery, OverlayDispatch, OverlayServiceCell};
 use crate::overlay_shows::ShowEnd;
 
@@ -76,9 +77,7 @@ impl OverlaySendRunner {
     ) -> SubActionOutcome {
         let identity = send.target.as_str();
         let Some(overlays) = self.overlays.get() else {
-            return SubActionOutcome::Failed(UserText::unlocalized(
-                "overlay.send: the overlay service is not running",
-            ));
+            return SubActionOutcome::Failed(core_messages::overlay_service_not_running().into());
         };
 
         match overlays
@@ -97,7 +96,7 @@ impl OverlaySendRunner {
             }
             Ok(OverlayDispatch::Queued(_)) => SubActionOutcome::Success,
             Err(error) => {
-                SubActionOutcome::Failed(UserText::unlocalized(format!("overlay.send: {error}")))
+                SubActionOutcome::Failed(core_messages::overlay_send_failed(error).into())
             }
         }
     }
@@ -113,12 +112,10 @@ fn delivered(identity: &str, delivery: OverlayDelivery) -> SubActionOutcome {
 fn show_outcome(identity: &str, end: ShowEnd) -> SubActionOutcome {
     match end {
         ShowEnd::Shown(delivery) => delivered(identity, delivery),
-        ShowEnd::Cleared => SubActionOutcome::Failed(UserText::unlocalized(
-            "overlay.send: the overlay's show queue was cleared before this show ran",
-        )),
-        ShowEnd::Withdrawn => SubActionOutcome::Failed(UserText::unlocalized(
-            "overlay.send: the overlay was disabled or deleted before the show ran",
-        )),
+        ShowEnd::Cleared => SubActionOutcome::Failed(core_messages::overlay_show_cleared().into()),
+        ShowEnd::Withdrawn => {
+            SubActionOutcome::Failed(core_messages::overlay_show_withdrawn().into())
+        }
     }
 }
 

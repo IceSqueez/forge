@@ -1,3 +1,4 @@
+use crate::core_messages;
 use async_trait::async_trait;
 use forge_registry::{
     ChoiceField, CodeField, CodeKind, CodeLanguage, ConfigChoice, ConfigProblem, ConfigSpec,
@@ -6,7 +7,7 @@ use forge_registry::{
 };
 use forge_script::{BoundExpression, EngineConfig, MathEvaluator};
 use forge_types::{
-    ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetry, UserText, Variant, VariantKind,
+    ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetry, Variant, VariantKind,
 };
 
 const INTO_VAR_KEY: &str = "into_var";
@@ -165,15 +166,14 @@ impl SubActionRunner for CoreMathEvaluateRunner {
         let evaluated = tokio::task::spawn_blocking(move || {
             let result = evaluator.eval_bound(&bound);
             match result {
-                Err(_) if !bound.unresolved().is_empty() => Err(format!(
-                    "expression references undefined variables: {}",
-                    bound.unresolved().join(", ")
-                )),
-                other => other.map_err(|e| e.to_string()),
+                Err(_) if !bound.unresolved().is_empty() => Err(
+                    core_messages::expression_undefined_variables(bound.unresolved()),
+                ),
+                other => other.map_err(core_messages::expression_failed),
             }
         })
         .await
-        .unwrap_or_else(|_| Err("math evaluation did not run to completion".to_owned()));
+        .unwrap_or_else(|e| Err(core_messages::task_failed(e)));
 
         let (outcome, updated_stack) = match evaluated {
             Ok(variant) => {
@@ -183,10 +183,7 @@ impl SubActionRunner for CoreMathEvaluateRunner {
                     .set(into_var, result_type.coerce(variant));
                 (SubActionOutcome::Success, Some(new_stack))
             }
-            Err(reason) => (
-                SubActionOutcome::Failed(UserText::unlocalized(reason)),
-                None,
-            ),
+            Err(reason) => (SubActionOutcome::Failed(reason.into()), None),
         };
 
         (timer.finish(outcome), updated_stack)

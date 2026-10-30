@@ -9,10 +9,11 @@ use forge_registry::{
 };
 use forge_storage::GlobalsRepo;
 use forge_types::{
-    ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetry, UserText, strip_var_decoration,
+    ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetry, strip_var_decoration,
 };
 
 use super::core_globals_shared::NAME_KEY;
+use crate::core_messages;
 use crate::global_mutation::GlobalMutation;
 
 pub const GLOBAL_SET_KIND_ID: &str = "core.globals.set";
@@ -122,7 +123,7 @@ impl SubActionRunner for CoreGlobalsSetRunner {
         };
         let outcome = match mutation.set(&name, variant, persisted).await {
             Ok(_previous) => SubActionOutcome::Success,
-            Err(e) => SubActionOutcome::Failed(UserText::unlocalized(e.to_string())),
+            Err(e) => SubActionOutcome::Failed(core_messages::storage_failed(e).into()),
         };
 
         (timer.finish(outcome), None)

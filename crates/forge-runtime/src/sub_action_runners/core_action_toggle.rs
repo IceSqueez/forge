@@ -5,11 +5,10 @@ use forge_registry::{
     ConfigSpec, RunContext, StepTimer, SubActionCategory, SubActionRunner, TypedField,
 };
 use forge_storage::ActionRepo;
-use forge_types::{
-    ActionId, ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetry, UserText,
-};
+use forge_types::{ActionId, ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetry};
 
 use super::core_action_shared::{ACTION, ACTION_SPEC};
+use crate::core_messages;
 
 pub struct CoreActionToggleRunner {
     actions: Arc<dyn ActionRepo>,
@@ -23,12 +22,8 @@ impl CoreActionToggleRunner {
     async fn run(&self, action_id: ActionId) -> SubActionOutcome {
         match self.actions.toggle_enabled(action_id).await {
             Ok(Some(_)) => SubActionOutcome::Success,
-            Ok(None) => SubActionOutcome::Failed(UserText::unlocalized(format!(
-                "core.action.toggle: unknown action '{action_id}'"
-            ))),
-            Err(e) => {
-                SubActionOutcome::Failed(UserText::unlocalized(format!("core.action.toggle: {e}")))
-            }
+            Ok(None) => SubActionOutcome::Failed(core_messages::unknown_action(action_id).into()),
+            Err(e) => SubActionOutcome::Failed(core_messages::storage_failed(e).into()),
         }
     }
 }

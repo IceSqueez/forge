@@ -6,10 +6,11 @@ use forge_registry::{
 };
 use forge_storage::TriggerInstanceRepo;
 use forge_types::{
-    ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetry, TriggerInstanceId, UserText,
+    ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetry, TriggerInstanceId,
 };
 
 use super::core_trigger_shared::{TRIGGER, TRIGGER_SPEC};
+use crate::core_messages;
 
 pub struct CoreTriggerEnableRunner {
     trigger_instances: Arc<dyn TriggerInstanceRepo>,
@@ -23,9 +24,7 @@ impl CoreTriggerEnableRunner {
     async fn run(&self, instance_id: TriggerInstanceId) -> SubActionOutcome {
         match self.trigger_instances.set_enabled(instance_id, true).await {
             Ok(()) => SubActionOutcome::Success,
-            Err(e) => {
-                SubActionOutcome::Failed(UserText::unlocalized(format!("core.trigger.enable: {e}")))
-            }
+            Err(e) => SubActionOutcome::Failed(core_messages::storage_failed(e).into()),
         }
     }
 }

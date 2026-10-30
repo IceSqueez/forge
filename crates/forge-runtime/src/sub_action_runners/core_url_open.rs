@@ -5,9 +5,10 @@ use forge_registry::{
     ConfigSpec, RunContext, StepTimer, SubActionCategory, SubActionRunner, TextEditor, TextField,
     TypedField,
 };
-use forge_types::{ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetry, UserText};
+use forge_types::{ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetry};
 
 use super::os_ports::UrlOpenPort;
+use crate::core_messages;
 
 const URL: TextField = TextField {
     key: "url",
@@ -76,13 +77,13 @@ impl SubActionRunner for CoreUrlOpenRunner {
             let opener = Arc::clone(&self.opener);
             match tokio::task::spawn_blocking(move || opener.open(url)).await {
                 Ok(Ok(())) => SubActionOutcome::Success,
-                Ok(Err(e)) => SubActionOutcome::Failed(UserText::unlocalized(e.to_string())),
-                Err(e) => SubActionOutcome::Failed(UserText::unlocalized(e.to_string())),
+                Ok(Err(e)) => {
+                    SubActionOutcome::Failed(core_messages::system_service_failed(e).into())
+                }
+                Err(e) => SubActionOutcome::Failed(core_messages::task_failed(e).into()),
             }
         } else {
-            SubActionOutcome::Failed(UserText::unlocalized(
-                "core.url.open: rejected a non-http(s) URL",
-            ))
+            SubActionOutcome::Failed(core_messages::url_not_http().into())
         };
 
         (timer.finish(outcome), None)

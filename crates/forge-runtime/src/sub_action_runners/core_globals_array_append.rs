@@ -7,11 +7,10 @@ use forge_registry::{
     SubActionCategory, SubActionRunner, TextEditor, TextField, TypedField, ValueBounds,
 };
 use forge_storage::{GlobalsRepo, StorageError};
-use forge_types::{
-    ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetry, UserText, VariantKind,
-};
+use forge_types::{ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetry, VariantKind};
 
 use super::core_globals_shared::{GLOBAL_BY_KEY, global_name};
+use crate::core_messages;
 
 const UNBOUNDED_LENGTH: i64 = 0;
 
@@ -118,14 +117,14 @@ impl SubActionRunner for CoreGlobalsArrayAppendRunner {
                 );
                 SubActionOutcome::Success
             }
-            Err(StorageError::TypeMismatch { actual, .. }) => {
-                SubActionOutcome::Failed(UserText::unlocalized(format!(
-                    "core.globals.array_append: expected array, found {}",
+            Err(StorageError::TypeMismatch { actual, .. }) => SubActionOutcome::Failed(
+                core_messages::global_not_array(
                     VariantKind::from_contract_name(&actual)
-                        .map_or(actual.as_str(), |kind| kind.label())
-                )))
-            }
-            Err(e) => SubActionOutcome::Failed(UserText::unlocalized(e.to_string())),
+                        .map_or(actual.as_str(), |kind| kind.label()),
+                )
+                .into(),
+            ),
+            Err(e) => SubActionOutcome::Failed(core_messages::storage_failed(e).into()),
         };
 
         (timer.finish(outcome), None)

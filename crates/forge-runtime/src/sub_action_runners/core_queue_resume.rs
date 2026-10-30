@@ -2,11 +2,10 @@ use async_trait::async_trait;
 use forge_registry::{
     ConfigSpec, RunContext, StepTimer, SubActionCategory, SubActionRunner, TypedField,
 };
-use forge_types::{
-    ArgStack, QueueId, SubActionConfig, SubActionOutcome, SubActionTelemetry, UserText,
-};
+use forge_types::{ArgStack, QueueId, SubActionConfig, SubActionOutcome, SubActionTelemetry};
 
 use super::core_queue_shared::{QUEUE, QUEUE_SPEC};
+use crate::core_messages;
 use crate::{QueueMode, SchedulerCell};
 
 pub struct CoreQueueResumeRunner {
@@ -20,13 +19,11 @@ impl CoreQueueResumeRunner {
 
     async fn run(&self, queue_id: QueueId) -> SubActionOutcome {
         let Some(scheduler) = self.scheduler.get() else {
-            return SubActionOutcome::Failed(UserText::unlocalized("queue scheduler not ready"));
+            return SubActionOutcome::Failed(core_messages::scheduler_not_ready().into());
         };
         match scheduler.set_mode(queue_id, QueueMode::RUNNING).await {
             Ok(()) => SubActionOutcome::Success,
-            Err(e) => {
-                SubActionOutcome::Failed(UserText::unlocalized(format!("core.queue.resume: {e}")))
-            }
+            Err(e) => SubActionOutcome::Failed(core_messages::scheduler_failed(e).into()),
         }
     }
 }

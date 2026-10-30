@@ -4,10 +4,11 @@ use forge_registry::{
     StepTimer, SubActionCategory, SubActionIo, SubActionRunner, TextField, TypedField, ValueBounds,
 };
 use forge_types::{
-    ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetry, UserText, Variant, VariantKind,
+    ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetry, Variant, VariantKind,
 };
 
 use super::core_string_shared::{INTO_RESULT, INTO_VAR_KEY, source_field};
+use crate::core_messages;
 
 const TO_END_INDEX: i64 = -1;
 
@@ -120,17 +121,15 @@ impl SubActionRunner for CoreStringSubstringRunner {
         let end = end.unwrap_or(char_count);
 
         let outcome = if start > char_count {
-            SubActionOutcome::Failed(UserText::unlocalized(format!(
-                "start_index {start} exceeds string length {char_count}"
-            )))
+            SubActionOutcome::Failed(
+                core_messages::substring_start_out_of_range(start, char_count).into(),
+            )
         } else if end > char_count {
-            SubActionOutcome::Failed(UserText::unlocalized(format!(
-                "end_index {end} exceeds string length {char_count}"
-            )))
+            SubActionOutcome::Failed(
+                core_messages::substring_end_out_of_range(end, char_count).into(),
+            )
         } else if start > end {
-            SubActionOutcome::Failed(UserText::unlocalized(format!(
-                "start_index {start} is greater than end_index {end}"
-            )))
+            SubActionOutcome::Failed(core_messages::substring_start_after_end(start, end).into())
         } else {
             let slice: String = chars[start..end].iter().collect();
             let new_stack = ctx.arg_stack.clone().set(into_var, Variant::String(slice));

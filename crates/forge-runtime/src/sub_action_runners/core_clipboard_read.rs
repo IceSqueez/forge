@@ -6,10 +6,11 @@ use forge_registry::{
     SubActionRunner, TypedField, VariableField,
 };
 use forge_types::{
-    ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetry, UserText, Variant, VariantKind,
+    ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetry, Variant, VariantKind,
 };
 
 use super::os_ports::ClipboardPort;
+use crate::core_messages;
 
 const DEFAULT_INTO_VAR: &str = "clipboard.text";
 const INTO_VAR_KEY: &str = "into_var";
@@ -93,11 +94,11 @@ impl SubActionRunner for CoreClipboardReadRunner {
                     (SubActionOutcome::Success, Some(new_stack))
                 }
                 Ok(Err(e)) => (
-                    SubActionOutcome::Failed(UserText::unlocalized(e.to_string())),
+                    SubActionOutcome::Failed(core_messages::system_service_failed(e).into()),
                     None,
                 ),
                 Err(e) => (
-                    SubActionOutcome::Failed(UserText::unlocalized(e.to_string())),
+                    SubActionOutcome::Failed(core_messages::task_failed(e).into()),
                     None,
                 ),
             };

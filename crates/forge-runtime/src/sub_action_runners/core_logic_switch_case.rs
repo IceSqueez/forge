@@ -3,11 +3,10 @@ use forge_registry::{
     CASE_CHAIN_KEY, CASE_MATCH_KEY, ChainLayout, ConfigSpec, RunContext, StepChainField, StepTimer,
     SubActionCategory, SubActionRunner, TextEditor, TextField, TypedField,
 };
-use forge_types::{
-    ArgStack, SubActionConfig, SubActionStep, SubActionTelemetry, UserText, Variant,
-};
+use forge_types::{ArgStack, SubActionConfig, SubActionStep, SubActionTelemetry, Variant};
 
 use super::core_logic_shared::{chain_at, propagate, retag, runnable_steps};
+use crate::core_messages;
 
 const MATCHED_CASE_INDEX_VAR: &str = "switch.matched_case_index";
 const NO_CASE_MATCHED: i64 = -1;
@@ -109,9 +108,7 @@ impl SubActionRunner for CoreLogicSwitchCaseRunner {
                 (timer.finish(outcome), Some(stack))
             }
             Err(e) => (
-                timer.failed(UserText::unlocalized(format!(
-                    "core.logic.switch_case: {e}"
-                ))),
+                timer.failed(core_messages::condition_failed(e).into()),
                 None,
             ),
         }

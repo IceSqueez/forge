@@ -1,5 +1,6 @@
 use std::path::Path;
 
+use crate::core_messages;
 use async_trait::async_trait;
 use forge_registry::{
     ChoiceField, ConfigChoice, ConfigProblem, ConfigSpec, ProducedVariable, RunContext, StepTimer,
@@ -7,7 +8,8 @@ use forge_registry::{
     VariableField,
 };
 use forge_types::{
-    ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetry, UserText, Variant, VariantKind,
+    ArgStack, MessageRef, SubActionConfig, SubActionOutcome, SubActionTelemetry, Variant,
+    VariantKind,
 };
 use tokio::io::AsyncReadExt;
 
@@ -127,12 +129,7 @@ impl SubActionRunner for CoreFileReadRunner {
         };
 
         let (outcome, produced) = match super::file_sandbox::resolve_sandboxed(&path).await {
-            Err(reason) => (
-                SubActionOutcome::Failed(UserText::unlocalized(format!(
-                    "sandbox rejected path: {reason}"
-                ))),
-                None,
-            ),
+            Err(reason) => (SubActionOutcome::Failed(reason.into()), None),
             Ok(abs_path) => read_into(&abs_path, read_as, target_var, ctx).await,
         };
 
@@ -140,14 +137,12 @@ impl SubActionRunner for CoreFileReadRunner {
     }
 }
 
-fn decode(contents: String, read_as: ReadAs) -> Result<Variant, String> {
+fn decode(contents: String, read_as: ReadAs) -> Result<Variant, MessageRef> {
     match read_as {
         ReadAs::WholeFile => Ok(Variant::String(contents)),
         ReadAs::Json => serde_json::from_str::<serde_json::Value>(&contents)
-            .map_err(|e| format!("invalid JSON: {e}"))
-            .and_then(|json| {
-                Variant::from_json(json).map_err(|e| format!("unsupported JSON value: {e}"))
-            }),
+            .map_err(core_messages::file_not_json)
+            .and_then(|json| Variant::from_json(json).map_err(core_messages::file_not_json)),
         ReadAs::Lines => Ok(Variant::Array(
             contents
                 .lines()
@@ -165,14 +160,11 @@ async fn read_into(
 ) -> (SubActionOutcome, Option<ArgStack>) {
     match tokio::fs::metadata(abs_path).await {
         Ok(meta) if meta.len() > MAX_FILE_BYTES => (
-            SubActionOutcome::Failed(UserText::unlocalized(format!(
-                "file exceeds {MAX_FILE_BYTES} byte cap: {} bytes",
-                meta.len()
-            ))),
+            SubActionOutcome::Failed(core_messages::file_too_large(MAX_FILE_BYTES).into()),
             None,
         ),
         Ok(meta) if !meta.is_file() => (
-            SubActionOutcome::Failed(UserText::unlocalized("path is not a file")),
+            SubActionOutcome::Failed(core_messages::path_not_file().into()),
             None,
         ),
         Ok(_) => match read_capped(abs_path)
@@ -183,30 +175,30 @@ async fn read_into(
                 let stack = ctx.arg_stack.clone().set(target_var, value);
                 (SubActionOutcome::Success, Some(stack))
             }
-            Err(e) => (SubActionOutcome::Failed(UserText::unlocalized(e)), None),
+            Err(e) => (SubActionOutcome::Failed(e.into()), None),
         },
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => (
-            SubActionOutcome::Failed(UserText::unlocalized("file not found in the files folder")),
+            SubActionOutcome::Failed(core_messages::file_not_found().into()),
             None,
         ),
         Err(e) => (
-            SubActionOutcome::Failed(UserText::unlocalized(format!("stat failed: {e}"))),
+            SubActionOutcome::Failed(core_messages::file_io_failed(e).into()),
             None,
         ),
     }
 }
 
-async fn read_capped(path: &Path) -> Result<String, String> {
+async fn read_capped(path: &Path) -> Result<String, MessageRef> {
     let file = tokio::fs::File::open(path)
         .await
-        .map_err(|e| format!("read failed: {e}"))?;
+        .map_err(core_messages::file_io_failed)?;
     let mut bytes = Vec::new();
     file.take(MAX_FILE_BYTES + 1)
         .read_to_end(&mut bytes)
         .await
-        .map_err(|e| format!("read failed: {e}"))?;
+        .map_err(core_messages::file_io_failed)?;
     if u64::try_from(bytes.len()).unwrap_or(u64::MAX) > MAX_FILE_BYTES {
-        return Err(format!("file exceeds {MAX_FILE_BYTES} byte cap"));
+        return Err(core_messages::file_too_large(MAX_FILE_BYTES));
     }
-    String::from_utf8(bytes).map_err(|e| format!("read failed: {e}"))
+    String::from_utf8(bytes).map_err(core_messages::file_io_failed)
 }

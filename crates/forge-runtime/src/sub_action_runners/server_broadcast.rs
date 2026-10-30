@@ -6,9 +6,10 @@ use forge_registry::{
     ConfigProblem, ConfigSpec, RunContext, StepTimer, SubActionCategory, SubActionRunner,
     TextEditor, TextField, TypedField,
 };
-use forge_types::{ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetry, UserText};
+use forge_types::{ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetry};
 
 use super::event_payload::{EVENT_NAME_KEY, PAYLOAD};
+use crate::core_messages;
 
 const BROADCAST_KIND_ID: &str = "server.broadcast";
 const BROADCAST_EVENT_PREFIX: &str = "broadcast.";
@@ -87,9 +88,9 @@ impl SubActionRunner for ServerBroadcastRunner {
         };
         if event_name.is_empty() {
             return (
-                timer.finish(SubActionOutcome::Failed(UserText::unlocalized(format!(
-                    "{EVENT_NAME_KEY} is required"
-                )))),
+                timer.finish(SubActionOutcome::Failed(
+                    core_messages::field_required(EVENT_NAME_KEY).into(),
+                )),
                 None,
             );
         }

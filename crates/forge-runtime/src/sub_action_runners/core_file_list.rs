@@ -1,12 +1,14 @@
 use std::path::Path;
 
+use crate::core_messages;
 use async_trait::async_trait;
 use forge_registry::{
     ConfigProblem, ConfigSpec, ProducedVariable, RunContext, StepTimer, SubActionCategory,
     SubActionIo, SubActionRunner, TextEditor, TextField, ToggleField, TypedField, VariableField,
 };
 use forge_types::{
-    ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetry, UserText, Variant, VariantKind,
+    ArgStack, MessageRef, SubActionConfig, SubActionOutcome, SubActionTelemetry, Variant,
+    VariantKind,
 };
 
 const INTO_VAR_KEY: &str = "into_var";
@@ -126,30 +128,18 @@ impl SubActionRunner for CoreFileListRunner {
 
         let (outcome, produced) = match super::file_sandbox::resolve_sandboxed(&request.path).await
         {
-            Err(reason) => (
-                SubActionOutcome::Failed(UserText::unlocalized(format!(
-                    "sandbox rejected path: {reason}"
-                ))),
-                None,
-            ),
+            Err(reason) => (SubActionOutcome::Failed(reason.into()), None),
             Ok(abs_path) => match tokio::fs::metadata(&abs_path).await {
                 Err(_) => (
-                    SubActionOutcome::Failed(UserText::unlocalized(
-                        "core.file.list: directory not found",
-                    )),
+                    SubActionOutcome::Failed(core_messages::directory_not_found().into()),
                     None,
                 ),
                 Ok(meta) if !meta.is_dir() => (
-                    SubActionOutcome::Failed(UserText::unlocalized(
-                        "core.file.list: path is not a directory",
-                    )),
+                    SubActionOutcome::Failed(core_messages::path_not_directory().into()),
                     None,
                 ),
                 Ok(_) => match collect_entries(&abs_path, &request).await {
-                    Err(reason) => (
-                        SubActionOutcome::Failed(UserText::unlocalized(reason)),
-                        None,
-                    ),
+                    Err(reason) => (SubActionOutcome::Failed(reason.into()), None),
                     Ok(entries) => {
                         let array =
                             Variant::Array(entries.into_iter().map(Variant::String).collect());
@@ -164,24 +154,24 @@ impl SubActionRunner for CoreFileListRunner {
     }
 }
 
-async fn collect_entries(root: &Path, request: &ListRequest) -> Result<Vec<String>, String> {
+async fn collect_entries(root: &Path, request: &ListRequest) -> Result<Vec<String>, MessageRef> {
     let mut result = Vec::new();
     let mut stack = vec![root.to_path_buf()];
 
     while let Some(current) = stack.pop() {
         let mut read_dir = tokio::fs::read_dir(&current)
             .await
-            .map_err(|e| format!("read_dir failed: {e}"))?;
+            .map_err(core_messages::file_io_failed)?;
 
         while let Some(entry) = read_dir
             .next_entry()
             .await
-            .map_err(|e| format!("read entry failed: {e}"))?
+            .map_err(core_messages::file_io_failed)?
         {
             let file_type = entry
                 .file_type()
                 .await
-                .map_err(|e| format!("file_type failed: {e}"))?;
+                .map_err(core_messages::file_io_failed)?;
 
             let name = entry.file_name().to_string_lossy().into_owned();
             let rel = entry

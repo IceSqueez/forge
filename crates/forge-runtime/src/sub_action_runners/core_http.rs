@@ -9,10 +9,9 @@ use forge_registry::{
     SubActionRunner, TextEditor, TextField, ToggleField, TypedField,
 };
 use forge_storage::{SettingsRepo, read_setting_or_default};
-use forge_types::{
-    ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetry, UserText, Variant,
-};
+use forge_types::{ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetry, Variant};
 
+use crate::core_messages;
 use crate::egress::{EgressClient, EgressRequest, EgressResponse, HttpMethod};
 use crate::settings;
 
@@ -357,7 +356,7 @@ impl SubActionRunner for CoreHttpRunner {
                 (SubActionOutcome::Success, Some(stack))
             }
             Err(e) => (
-                SubActionOutcome::Failed(UserText::unlocalized(e.to_string())),
+                SubActionOutcome::Failed(core_messages::http_failed(e).into()),
                 None,
             ),
         };

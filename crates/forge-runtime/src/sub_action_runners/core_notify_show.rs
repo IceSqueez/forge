@@ -6,11 +6,10 @@ use forge_registry::{
     DurationField, Interpolation, RunContext, StepTimer, SubActionCategory, SubActionRunner,
     TextEditor, TextField, TypedField, ValueBounds,
 };
-use forge_types::{
-    ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetry, UserText, Variant,
-};
+use forge_types::{ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetry, Variant};
 
 use super::os_ports::{DesktopNotice, NotifyPort, NotifyUrgency};
+use crate::core_messages;
 
 const TIMEOUT_MIN_MS: i64 = 1000;
 const TIMEOUT_MAX_MS: i64 = 60000;
@@ -162,8 +161,8 @@ impl SubActionRunner for CoreNotifyShowRunner {
         let notify = Arc::clone(&self.notify);
         let outcome = match tokio::task::spawn_blocking(move || notify.show(notice)).await {
             Ok(Ok(())) => SubActionOutcome::Success,
-            Ok(Err(e)) => SubActionOutcome::Failed(UserText::unlocalized(e.to_string())),
-            Err(e) => SubActionOutcome::Failed(UserText::unlocalized(e.to_string())),
+            Ok(Err(e)) => SubActionOutcome::Failed(core_messages::system_service_failed(e).into()),
+            Err(e) => SubActionOutcome::Failed(core_messages::task_failed(e).into()),
         };
 
         (timer.finish(outcome), None)

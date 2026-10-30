@@ -5,9 +5,10 @@ use forge_registry::{
     ConfigSpec, RunContext, StepTimer, SubActionCategory, SubActionRunner, TextEditor, TextField,
     TypedField,
 };
-use forge_types::{ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetry, UserText};
+use forge_types::{ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetry};
 
 use super::os_ports::ClipboardPort;
+use crate::core_messages;
 
 const TEXT: TextField = TextField {
     key: "text",
@@ -73,8 +74,8 @@ impl SubActionRunner for CoreClipboardCopyRunner {
         let clipboard = Arc::clone(&self.clipboard);
         let outcome = match tokio::task::spawn_blocking(move || clipboard.copy(text)).await {
             Ok(Ok(())) => SubActionOutcome::Success,
-            Ok(Err(e)) => SubActionOutcome::Failed(UserText::unlocalized(e.to_string())),
-            Err(e) => SubActionOutcome::Failed(UserText::unlocalized(e.to_string())),
+            Ok(Err(e)) => SubActionOutcome::Failed(core_messages::system_service_failed(e).into()),
+            Err(e) => SubActionOutcome::Failed(core_messages::task_failed(e).into()),
         };
 
         (timer.finish(outcome), None)

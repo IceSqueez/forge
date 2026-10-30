@@ -2,6 +2,7 @@ use std::time::Duration;
 
 use base64::Engine;
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
+use forge_types::Secret;
 use rand::TryRng;
 use sha2::{Digest, Sha256};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
@@ -24,14 +25,14 @@ const FAILURE_HEADING: &str = "Authentication failed";
 pub struct LocalCallbackDriver {
     listener: TcpListener,
     state: String,
-    code_verifier: String,
+    code_verifier: Secret,
     code_challenge: String,
     redirect_uri: String,
 }
 
 #[derive(Debug, Clone)]
 pub struct CallbackCode {
-    pub code: String,
+    pub code: Secret,
 }
 
 impl LocalCallbackDriver {
@@ -56,7 +57,7 @@ impl LocalCallbackDriver {
         Ok(Self {
             listener,
             state,
-            code_verifier,
+            code_verifier: Secret::new(code_verifier),
             code_challenge,
             redirect_uri,
         })
@@ -74,7 +75,7 @@ impl LocalCallbackDriver {
         &self.code_challenge
     }
 
-    pub fn code_verifier(&self) -> &str {
+    pub fn code_verifier(&self) -> &Secret {
         &self.code_verifier
     }
 
@@ -103,7 +104,9 @@ impl LocalCallbackDriver {
             tracing::debug!(%error, "callback response could not be written to the browser");
         }
 
-        result.map(|code| CallbackCode { code })
+        result.map(|code| CallbackCode {
+            code: Secret::new(code),
+        })
     }
 }
 
@@ -360,11 +363,11 @@ mod tests {
         assert_ne!(a.code_verifier(), b.code_verifier());
         assert_ne!(a.code_challenge(), b.code_challenge());
         assert_eq!(
-            challenge_from_verifier(a.code_verifier()),
+            challenge_from_verifier(a.code_verifier().expose()),
             a.code_challenge()
         );
         assert_eq!(
-            challenge_from_verifier(b.code_verifier()),
+            challenge_from_verifier(b.code_verifier().expose()),
             b.code_challenge()
         );
     }
@@ -428,7 +431,7 @@ mod tests {
     async fn bind_state_and_verifier_are_url_safe_lengths() {
         let d = LocalCallbackDriver::bind(None).await.unwrap();
         assert_eq!(d.state().len(), 43);
-        assert_eq!(d.code_verifier().len(), 43);
+        assert_eq!(d.code_verifier().expose().len(), 43);
         assert_eq!(d.code_challenge().len(), 43);
     }
 

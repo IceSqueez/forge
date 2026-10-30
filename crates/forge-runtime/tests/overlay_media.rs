@@ -15,9 +15,10 @@ use forge_storage::soundboard::MockSoundboardClipsRepo;
 use forge_storage::test_support::MemorySettings;
 use forge_storage::{
     MediaBlob, MediaBlobId, MediaFormat, MediaReferrerKind, MediaRepo, MockMediaRepo,
-    MockOverlayRepo, OverlayConfig, OverlayCredential, OverlayDefinition, OverlayId, OverlayRepo,
-    SettingsRepo, SoundboardClipsRepo, StorageError, StoredClip,
+    MockOverlayRepo, OverlayConfig, OverlayDefinition, OverlayId, OverlayRepo, SettingsRepo,
+    SoundboardClipsRepo, StorageError, StoredClip,
 };
+use forge_types::OverlayCredential;
 use forge_types::{ClipId, OutputDevice, Variant};
 use tempfile::TempDir;
 use time::OffsetDateTime;

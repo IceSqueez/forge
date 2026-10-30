@@ -1,4 +1,5 @@
 #![allow(clippy::unwrap_used)]
+use forge_types::OAuthToken;
 use std::collections::BTreeMap;
 use std::ffi::OsString;
 use std::sync::{Arc, Mutex};
@@ -223,8 +224,8 @@ async fn oauth_override_carries_the_token_refresh_to_the_override_host() {
     let manager = manager(&endpoints);
     manager
         .save_from_bundle(KickAuthBundle {
-            access_token: "stale-access".to_owned(),
-            refresh_token: "stale-refresh".to_owned(),
+            access_token: OAuthToken::new("stale-access"),
+            refresh_token: OAuthToken::new("stale-refresh"),
             user_id: 7,
             username: "streamer".to_owned(),
             client_id: "client".to_owned(),
@@ -339,8 +340,8 @@ async fn platform_carries_its_overrides_into_the_chat_session_and_the_sender() {
     let manager = manager(&endpoints);
     manager
         .save_from_bundle(KickAuthBundle {
-            access_token: "live-access".to_owned(),
-            refresh_token: "live-refresh".to_owned(),
+            access_token: OAuthToken::new("live-access"),
+            refresh_token: OAuthToken::new("live-refresh"),
             user_id: 7,
             username: "streamer".to_owned(),
             client_id: "client".to_owned(),

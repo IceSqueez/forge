@@ -1,11 +1,10 @@
-use std::fmt;
-
 use age::secrecy::SecretString;
 
 use crate::error::TransferError;
 
 pub const MIN_PASSPHRASE_CHARS: usize = 12;
 
+#[derive(Debug)]
 pub struct Passphrase(SecretString);
 
 impl Passphrase {
@@ -25,12 +24,6 @@ impl Passphrase {
             });
         }
         Ok(())
-    }
-}
-
-impl fmt::Debug for Passphrase {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str("<redacted>")
     }
 }
 

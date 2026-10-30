@@ -810,7 +810,7 @@ const CREDENTIAL_KEY: &str = "credential";
 
 fn credentialed(credential: Option<&str>) -> OverlayInstance {
     let mut held = instance(&[]);
-    held.credential = credential.map(str::to_owned);
+    held.credential = credential.map(forge_types::OverlayCredential::new);
     held
 }
 

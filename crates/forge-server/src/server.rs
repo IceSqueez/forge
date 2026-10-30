@@ -1047,7 +1047,7 @@ pub(crate) mod tests {
 
         let resp = reqwest::Client::new()
             .post(&url)
-            .header("Authorization", format!("Bearer {}", new_token))
+            .header("Authorization", format!("Bearer {}", new_token.expose()))
             .send()
             .await
             .expect("request");
@@ -1213,7 +1213,7 @@ pub(crate) mod tests {
         let mut config = loopback_config(settings, port, Vec::new());
         let mut overlays = forge_storage::overlay::MockOverlayRepo::new();
         overlays.expect_get_by_credential().returning(|credential| {
-            Ok((credential.as_str() == OVERLAY_PAGE_CREDENTIAL).then(served_overlay))
+            Ok((credential.expose() == OVERLAY_PAGE_CREDENTIAL).then(served_overlay))
         });
         config.overlays = Arc::new(overlays);
         config.delivery_hub = Some(hub.clone());
@@ -1488,7 +1488,7 @@ pub(crate) mod tests {
             config_schema_version: 1,
             generator_version: 0,
             source_overrides: Vec::new(),
-            credential: forge_storage::OverlayCredential::new(OVERLAY_PAGE_CREDENTIAL),
+            credential: forge_types::OverlayCredential::new(OVERLAY_PAGE_CREDENTIAL),
             created_at: OffsetDateTime::UNIX_EPOCH,
             updated_at: OffsetDateTime::UNIX_EPOCH,
         }
@@ -1502,7 +1502,7 @@ pub(crate) mod tests {
 
         let mut overlays = forge_storage::overlay::MockOverlayRepo::new();
         overlays.expect_get_by_credential().returning(|credential| {
-            Ok((credential.as_str() == OVERLAY_PAGE_CREDENTIAL).then(served_overlay))
+            Ok((credential.expose() == OVERLAY_PAGE_CREDENTIAL).then(served_overlay))
         });
         state.overlays = Arc::new(overlays);
 
@@ -1835,7 +1835,7 @@ pub(crate) mod tests {
         let (handle, addr, auth) = make_server_with_shared_auth(false, Arc::clone(&creds)).await;
         let fresh = auth.regenerate(&*creds).await.expect("regenerate");
 
-        let mut session = authenticated_ws(addr, &fresh).await;
+        let mut session = authenticated_ws(addr, fresh.expose()).await;
 
         assert_eq!(
             ask(&mut session, code_event_request()).await["status"],

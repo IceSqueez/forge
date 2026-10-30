@@ -1,3 +1,4 @@
+use forge_types::{OverlayCredential, Secret};
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -13,9 +14,9 @@ pub struct WireEventFilter {
 pub enum WsRequest {
     Auth {
         #[serde(default)]
-        token: Option<String>,
+        token: Option<Secret>,
         #[serde(rename = "overlayCredential", default)]
-        overlay_credential: Option<String>,
+        overlay_credential: Option<OverlayCredential>,
         #[serde(rename = "previewConnection", default)]
         preview_connection: bool,
     },
@@ -165,5 +166,53 @@ mod tests {
                 "a page claiming {claimed:?} was classed as previewConnection={preview_connection}"
             );
         }
+    }
+
+    #[test]
+    fn debug_of_an_auth_frame_never_carries_the_token_or_the_overlay_credential() {
+        let bearer = "fg_bearer-frame-sentinel";
+        let credential = "2f8b1d0c9a7e6f5b4c3d2e1f0a9b8c7d";
+        let parsed: WsEnvelope<WsRequest> = serde_json::from_value(serde_json::json!({
+            "id": "1",
+            "request": "auth",
+            "token": bearer,
+            "overlayCredential": credential,
+        }))
+        .expect("an auth frame");
+
+        let rendered = format!("{:?} {:#?}", parsed.inner, parsed.inner);
+
+        for secret in [bearer, credential] {
+            assert!(!rendered.contains(secret), "leaked: {rendered}");
+        }
+    }
+
+    #[test]
+    fn an_auth_frame_hands_the_session_the_exact_token_and_credential_the_client_sent() {
+        let parsed: WsEnvelope<WsRequest> = serde_json::from_value(serde_json::json!({
+            "id": "1",
+            "request": "auth",
+            "token": "fg_sent",
+            "overlayCredential": "page-sent",
+        }))
+        .expect("an auth frame");
+
+        let WsRequest::Auth {
+            token,
+            overlay_credential,
+            ..
+        } = parsed.inner
+        else {
+            panic!("a frame requesting auth parsed as something else");
+        };
+        assert_eq!(
+            (
+                token.as_ref().map(forge_types::Secret::expose),
+                overlay_credential
+                    .as_ref()
+                    .map(forge_types::OverlayCredential::expose)
+            ),
+            (Some("fg_sent"), Some("page-sent"))
+        );
     }
 }

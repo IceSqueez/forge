@@ -2,13 +2,13 @@ use std::fmt;
 use std::time::Duration;
 
 use bytes::Bytes;
+use forge_types::Secret;
 use serde::Serialize;
 use thiserror::Error;
 use tokio_util::sync::CancellationToken;
 
 use super::call_class::CallClass;
 use super::expected_refusal::ExpectedRefusal;
-use super::secret::Secret;
 
 const DEFAULT_WEIGHT: u32 = 1;
 const CREDENTIAL_HEADER_NAMES: [&str; 3] = ["authorization", "proxy-authorization", "cookie"];
@@ -44,7 +44,7 @@ impl FieldValue {
     }
 }
 
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub enum Credential {
     Bearer(Secret),
     Scheme { scheme: String, token: Secret },
@@ -56,16 +56,6 @@ impl Credential {
         match self {
             Self::Bearer(token) | Self::Scheme { token, .. } => token.expose(),
             Self::ApiKey { key, .. } => key.expose(),
-        }
-    }
-}
-
-impl fmt::Debug for Credential {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Bearer(_) => f.write_str("Bearer"),
-            Self::Scheme { scheme, .. } => f.debug_tuple("Scheme").field(scheme).finish(),
-            Self::ApiKey { .. } => f.write_str("ApiKey"),
         }
     }
 }

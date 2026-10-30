@@ -1,6 +1,7 @@
 use std::collections::BTreeMap;
 
 use async_trait::async_trait;
+use forge_types::OverlayCredential;
 use forge_types::Variant;
 use serde::{Deserialize, Serialize};
 use time::OffsetDateTime;
@@ -35,25 +36,6 @@ impl OverlayId {
 impl std::fmt::Display for OverlayId {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str(&self.0)
-    }
-}
-
-#[derive(Clone, PartialEq, Eq)]
-pub struct OverlayCredential(String);
-
-impl OverlayCredential {
-    pub fn new(token: impl Into<String>) -> Self {
-        Self(token.into())
-    }
-
-    pub fn as_str(&self) -> &str {
-        &self.0
-    }
-}
-
-impl std::fmt::Debug for OverlayCredential {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str("<redacted>")
     }
 }
 

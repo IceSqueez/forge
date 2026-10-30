@@ -2,6 +2,7 @@ use std::sync::Arc;
 
 use forge_events::EventPublisher;
 use forge_storage::{CredentialId, CredentialsRepo, StorageError};
+use forge_types::Secret;
 use serde::{Deserialize, Serialize};
 
 use crate::vts::endpoint::{DEFAULT_VTS_HOST, DEFAULT_VTS_PORT, endpoint_url};
@@ -17,25 +18,15 @@ fn default_port() -> u16 {
     DEFAULT_VTS_PORT
 }
 
-#[derive(Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct VTubeCredentials {
-    pub token: String,
+    #[serde(serialize_with = "Secret::serialize_exposed")]
+    pub token: Secret,
     pub api_version: String,
     #[serde(default = "default_host")]
     pub host: String,
     #[serde(default = "default_port")]
     pub port: u16,
-}
-
-impl std::fmt::Debug for VTubeCredentials {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("VTubeCredentials")
-            .field("token", &"***")
-            .field("api_version", &self.api_version)
-            .field("host", &self.host)
-            .field("port", &self.port)
-            .finish()
-    }
 }
 
 pub async fn store(
@@ -99,7 +90,7 @@ mod tests {
 
         let creds: VTubeCredentials = serde_json::from_str(stored).unwrap();
 
-        assert_eq!(creds.token, "tok-abc123");
+        assert_eq!(creds.token.expose(), "tok-abc123");
         assert_eq!(creds.host, "127.0.0.1");
         assert_eq!(creds.port, 8001);
     }
@@ -113,7 +104,7 @@ mod tests {
             .unwrap();
         let back = load(&*repo).await.unwrap().unwrap();
 
-        assert_eq!(back.token, "tok-xyz");
+        assert_eq!(back.token.expose(), "tok-xyz");
         assert_eq!(back.host, "192.168.1.50");
         assert_eq!(back.port, 9123);
     }
@@ -121,7 +112,7 @@ mod tests {
     #[test]
     fn debug_redacts_token() {
         let creds = VTubeCredentials {
-            token: "super-secret-vtube-token".into(),
+            token: Secret::new("super-secret-vtube-token"),
             api_version: "1.0".into(),
             host: "127.0.0.1".into(),
             port: 8001,
@@ -130,7 +121,6 @@ mod tests {
         let s = format!("{creds:?}");
 
         assert!(!s.contains("super-secret-vtube-token"), "Debug leaked: {s}");
-        assert!(s.contains("***"));
     }
 
     #[tokio::test]
@@ -146,5 +136,30 @@ mod tests {
             .unwrap();
 
         assert_eq!(client.config.endpoint, "ws://203.0.113.7:9123/");
+    }
+
+    const SAVED_BUNDLE: &str =
+        r#"{"token":"tok-abc123","api_version":"1.0","host":"192.0.2.50","port":9123}"#;
+
+    #[test]
+    fn a_saved_bundle_saves_back_byte_identical() {
+        let loaded: VTubeCredentials = serde_json::from_str(SAVED_BUNDLE).unwrap();
+
+        assert_eq!(serde_json::to_string(&loaded).unwrap(), SAVED_BUNDLE);
+    }
+
+    #[tokio::test]
+    async fn store_writes_the_document_earlier_builds_saved() {
+        let repo = MockCreds::new();
+
+        store(&*repo, "tok-abc123", "1.0", "192.0.2.50", 9123)
+            .await
+            .unwrap();
+
+        let written = repo.value(VTUBE_CREDENTIAL_ID).expect("a stored bundle");
+        assert_eq!(
+            serde_json::from_str::<serde_json::Value>(&written).unwrap(),
+            serde_json::from_str::<serde_json::Value>(SAVED_BUNDLE).unwrap()
+        );
     }
 }

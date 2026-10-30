@@ -3,7 +3,9 @@ mod gateway_support;
 
 use std::collections::BTreeMap;
 
-use forge_net::{FormBody, GatewayRequest, MultipartBody, RequestBody, RequestEncodeError, Secret};
+use forge_net::{FormBody, GatewayRequest, MultipartBody, RequestBody, RequestEncodeError};
+
+use forge_types::Secret;
 use gateway_support::{Harness, platform, received};
 use serde_json::json;
 use wiremock::matchers::any;

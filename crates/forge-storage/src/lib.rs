@@ -71,8 +71,7 @@ pub use media::{
     MediaReferrer, MediaReferrerKind, MediaRepo, accept_media, sanitize_label, sniff,
 };
 pub use overlay::{
-    OVERLAY_TOKEN_PREFIX, OverlayConfig, OverlayCredential, OverlayDefinition, OverlayId,
-    OverlayRepo, is_token_shaped,
+    OVERLAY_TOKEN_PREFIX, OverlayConfig, OverlayDefinition, OverlayId, OverlayRepo, is_token_shaped,
 };
 pub use provider::{
     DATABASE_FILE_NAME, DataProvider, EXPECTED_SCHEMA_VERSION, LAST_PRE_BASELINE_RELEASE,

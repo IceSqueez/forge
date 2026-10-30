@@ -5,8 +5,9 @@ use std::collections::BTreeSet;
 use forge_net::test_support::RecordingRateLimiter;
 use forge_net::{
     CallClass, Credential, DecodeCategory, FormBody, GatewayFailure, GatewayProfile,
-    GatewayRequest, Method, MultipartBody, RequestBody, Secret,
+    GatewayRequest, Method, MultipartBody, RequestBody,
 };
+use forge_types::Secret;
 use gateway_support::{Harness, platform, refused_base, serve_raw_once};
 use serde::Deserialize;
 use serde_json::json;
@@ -89,13 +90,6 @@ async fn failure_from(
     Harness::with_limiter(&base, profile, limiter)
         .fail(request)
         .await
-}
-
-#[test]
-fn secret_renders_as_a_mask_in_debug_and_display() {
-    let secret = Secret::new(BEARER);
-    assert_eq!(format!("{secret}"), "***");
-    assert_eq!(format!("{secret:?}"), "***");
 }
 
 #[tokio::test]

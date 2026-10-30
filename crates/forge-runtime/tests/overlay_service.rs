@@ -19,9 +19,9 @@ use forge_runtime::{
 use forge_storage::settings::core_settings;
 use forge_storage::test_support::MemorySettings;
 use forge_storage::{
-    MockOverlayRepo, OverlayConfig, OverlayCredential, OverlayDefinition, OverlayId, OverlayRepo,
-    SettingsRepo,
+    MockOverlayRepo, OverlayConfig, OverlayDefinition, OverlayId, OverlayRepo, SettingsRepo,
 };
+use forge_types::OverlayCredential;
 use forge_types::{ArgStack, Variant};
 use futures_util::FutureExt;
 use tempfile::TempDir;
@@ -1269,7 +1269,7 @@ async fn a_pass_rewrites_the_stored_credential_into_the_kept_config_of_an_unavai
     let config = read_config(&directory);
     assert_eq!(
         config[CREDENTIAL_FIELD].as_str(),
-        Some(unshipped.credential.as_str()),
+        Some(unshipped.credential.expose()),
         "a reissued credential never reached the page of an overlay this build lacks"
     );
     assert_eq!(config[KEPT_FIELD], serde_json::Value::Bool(true));

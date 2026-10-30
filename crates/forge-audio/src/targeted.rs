@@ -48,8 +48,9 @@ mod tests {
 
     use super::*;
     use crate::error::AudioError;
-    use crate::remote::{RemoteClip, RemoteClipId, RemoteCommand, RemoteDelivery, RemoteVerdict};
+    use crate::remote::{RemoteClip, RemoteCommand, RemoteDelivery, RemoteVerdict};
     use forge_speech_types::PcmBuffer;
+    use forge_types::RemoteClipId;
 
     const SHOWING_OVERLAY: &str = "stage-alert";
     const SHOW_TOKEN: &str = "01J9ZC4W6R7Q2N3M4K5P6S7T8V";

@@ -1,3 +1,5 @@
+use forge_types::OverlayCredential;
+
 use crate::descriptor::OverlayConfig;
 use crate::media::OverlayMedia;
 use crate::sample::SampleContext;
@@ -9,7 +11,7 @@ pub struct OverlayInstance {
     pub kind_id: String,
     pub config: OverlayConfig,
     pub source_overrides: Vec<String>,
-    pub credential: Option<String>,
+    pub credential: Option<OverlayCredential>,
     pub media: OverlayMedia,
     pub sample: SampleContext,
 }

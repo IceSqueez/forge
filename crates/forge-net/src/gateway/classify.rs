@@ -4,12 +4,12 @@ use reqwest::StatusCode;
 
 use super::failure::{BodyExcerpt, GatewayFailure};
 use super::profile::GatewayProfile;
-use super::secret::MASK;
 use crate::cooldown::MAX_REMOTE_COOLDOWN;
 use crate::throttle_hint::{ThrottleHintFamily, ThrottleScope, parse_throttle_hint};
 
 pub(crate) const ERROR_BODY_READ_CAP: u64 = 64 * 1024;
 const EXCERPT_MAX_CHARS: usize = 512;
+const MASK: &str = "***";
 
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct Throttle {

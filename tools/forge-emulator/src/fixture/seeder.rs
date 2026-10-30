@@ -171,8 +171,8 @@ async fn seed_kick_account(
 ) -> Result<(), EmulatorError> {
     let now = time::OffsetDateTime::now_utc();
     let credentials = forge_platform_kick::KickCredentials {
-        access_token: account.access_token.clone(),
-        refresh_token: account.refresh_token.clone(),
+        access_token: forge_types::OAuthToken::new(account.access_token.clone()),
+        refresh_token: forge_types::OAuthToken::new(account.refresh_token.clone()),
         user_id: account.user_id,
         username: account.username.clone(),
         client_id: account.client_id.clone(),
@@ -200,8 +200,8 @@ async fn seed_youtube_account(
 ) -> Result<(), EmulatorError> {
     let now = time::OffsetDateTime::now_utc();
     let credentials = forge_platform_youtube::YoutubeCredentials {
-        access_token: account.access_token.clone(),
-        refresh_token: account.refresh_token.clone(),
+        access_token: forge_types::OAuthToken::new(account.access_token.clone()),
+        refresh_token: forge_types::OAuthToken::new(account.refresh_token.clone()),
         client_id: YOUTUBE_SEEDED_CLIENT_ID.to_owned(),
         channel_id: account.channel_id.clone(),
         channel_title: account.channel_title.clone(),
@@ -336,7 +336,7 @@ async fn seed_overlay(
         id: definition.id.as_str().to_owned(),
         display_name: overlay.display_name.clone(),
         kind_id: overlay.kind_id.clone(),
-        credential: definition.credential.as_str().to_owned(),
+        credential: definition.credential.expose().to_owned(),
     })
 }
 

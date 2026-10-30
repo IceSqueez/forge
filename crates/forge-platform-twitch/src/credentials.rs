@@ -8,25 +8,13 @@ use crate::auth::TwitchAuthBundle;
 pub const TWITCH_CREDENTIAL_ID: &str = "twitch:broadcaster";
 pub const TWITCH_BOT_CREDENTIAL_ID: &str = "twitch:bot";
 
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct StoredCredential {
     pub access_token: OAuthToken,
     pub refresh_token: Option<OAuthToken>,
     pub user_id: String,
     pub login: String,
     pub expires_at: Option<SystemTime>,
-}
-
-impl std::fmt::Debug for StoredCredential {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("StoredCredential")
-            .field("access_token", &self.access_token)
-            .field("refresh_token", &self.refresh_token)
-            .field("user_id", &self.user_id)
-            .field("login", &self.login)
-            .field("expires_at", &self.expires_at)
-            .finish()
-    }
 }
 
 pub async fn store(
@@ -212,6 +200,33 @@ mod tests {
         assert!(
             debug.contains("<redacted>"),
             "expected <redacted> marker: {debug}"
+        );
+    }
+
+    const SAVED_BUNDLE: &str = r#"{"access_token":"saved-access","refresh_token":"saved-refresh","user_id":"4242","login":"streamer","expires_at_unix":1790000000}"#;
+
+    #[tokio::test]
+    async fn a_saved_bundle_loads_and_store_writes_the_same_document_back() {
+        let repo = InMemRepo::with_raw(TWITCH_CREDENTIAL_ID, SAVED_BUNDLE);
+
+        let loaded = load(&repo).await.unwrap().expect("a saved credential");
+        store_credential(&repo, &loaded).await.unwrap();
+
+        assert_eq!(
+            (
+                loaded.access_token.expose(),
+                loaded.refresh_token.as_ref().map(OAuthToken::expose)
+            ),
+            ("saved-access", Some("saved-refresh"))
+        );
+        let written = repo
+            .load(&CredentialId::new(TWITCH_CREDENTIAL_ID))
+            .await
+            .unwrap()
+            .expect("a stored bundle");
+        assert_eq!(
+            serde_json::from_str::<serde_json::Value>(&written).unwrap(),
+            serde_json::from_str::<serde_json::Value>(SAVED_BUNDLE).unwrap()
         );
     }
 

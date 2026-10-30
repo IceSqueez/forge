@@ -151,8 +151,8 @@ async fn manager(fake: &FakeKick, client_secret: &str) -> KickCredentialsManager
         KickCredentialsManager::new(Arc::new(MemoryCredentials::default()), oauth, api(fake));
     manager
         .save_from_bundle(KickAuthBundle {
-            access_token: account.access_token,
-            refresh_token: account.refresh_token,
+            access_token: forge_types::OAuthToken::new(account.access_token),
+            refresh_token: forge_types::OAuthToken::new(account.refresh_token),
             user_id: account.user_id,
             username: account.username,
             client_id: account.client_id,

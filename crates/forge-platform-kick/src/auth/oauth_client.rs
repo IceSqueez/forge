@@ -3,10 +3,11 @@ use std::time::Duration;
 
 use forge_net::{
     CallClass, DEFAULT_RETRY_AFTER_SECS, FormBody, Gateway, GatewayBuildError, GatewayFailure,
-    GatewayProfile, GatewayRequest, GatewayResponse, RateLimiter, Secret, ThrottleHintFamily,
+    GatewayProfile, GatewayRequest, GatewayResponse, RateLimiter, ThrottleHintFamily,
 };
 use forge_platform_core::auth::PkceAuthorization;
 use forge_platform_core::{EndpointSurface, PlatformEndpoints, PlatformError, reauth_required};
+use forge_types::{OAuthToken, Secret};
 use serde::Deserialize;
 
 use crate::gateway::{gateway_error, malformed};
@@ -47,13 +48,13 @@ pub struct KickOAuthClient {
     gateway: Gateway,
     authorize_endpoint: String,
     client_id: String,
-    client_secret: String,
+    client_secret: Secret,
 }
 
 #[derive(Deserialize)]
 pub(crate) struct TokenGrant {
-    pub(crate) access_token: String,
-    pub(crate) refresh_token: Option<String>,
+    pub(crate) access_token: OAuthToken,
+    pub(crate) refresh_token: Option<OAuthToken>,
     pub(crate) expires_in: Option<u64>,
 }
 
@@ -71,7 +72,7 @@ impl KickOAuthClient {
                 endpoints.base_url(EndpointSurface::KickOAuth)
             ),
             client_id,
-            client_secret,
+            client_secret: Secret::new(client_secret),
         }
     }
 
@@ -89,14 +90,11 @@ impl KickOAuthClient {
     ) -> Result<TokenGrant, PlatformError> {
         let form = FormBody::new()
             .field("client_id", self.client_id.as_str())
-            .secret_field("code", Secret::new(authorization.code.as_str()))
+            .secret_field("code", authorization.code.clone())
             .field("grant_type", AUTHORIZATION_CODE_GRANT_TYPE)
             .field("redirect_uri", authorization.redirect_uri.as_str())
-            .secret_field(
-                "code_verifier",
-                Secret::new(authorization.code_verifier.as_str()),
-            )
-            .secret_field("client_secret", Secret::new(self.client_secret.as_str()));
+            .secret_field("code_verifier", authorization.code_verifier.clone())
+            .secret_field("client_secret", self.client_secret.clone());
         let request = GatewayRequest::post(TOKEN_PATH)
             .label(TOKEN_PATH)
             .body(form);
@@ -109,7 +107,7 @@ impl KickOAuthClient {
             .field("grant_type", REFRESH_GRANT_TYPE)
             .secret_field("refresh_token", Secret::new(refresh_token))
             .field("client_id", self.client_id.as_str())
-            .secret_field("client_secret", Secret::new(self.client_secret.as_str()));
+            .secret_field("client_secret", self.client_secret.clone());
         let request = GatewayRequest::post(TOKEN_PATH)
             .label(TOKEN_PATH)
             .body(form);
@@ -138,6 +136,7 @@ fn decode(response: &GatewayResponse) -> Result<TokenGrant, PlatformError> {
 
 #[cfg(test)]
 mod tests {
+    use forge_types::Secret;
     use std::collections::BTreeMap;
     use std::sync::Arc;
 
@@ -184,9 +183,9 @@ mod tests {
 
     fn authorization() -> PkceAuthorization {
         PkceAuthorization {
-            code: CODE.to_owned(),
+            code: Secret::new(CODE),
             redirect_uri: REDIRECT_URI.to_owned(),
-            code_verifier: CODE_VERIFIER.to_owned(),
+            code_verifier: Secret::new(CODE_VERIFIER),
         }
     }
 
@@ -278,8 +277,11 @@ mod tests {
         assert_eq!(
             (
                 sent_form(&server).await,
-                grant.access_token.as_str(),
-                grant.refresh_token.as_deref(),
+                grant.access_token.expose(),
+                grant
+                    .refresh_token
+                    .as_ref()
+                    .map(forge_types::OAuthToken::expose),
                 grant.expires_in
             ),
             (

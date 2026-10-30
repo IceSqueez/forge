@@ -167,6 +167,7 @@ async fn route(req: WsRequest, ctx: &DispatchContext) -> WsResponse {
 
 #[cfg(test)]
 mod tests {
+    use forge_types::Secret;
     use std::collections::{BTreeSet, HashSet};
     use std::sync::Arc;
     use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
@@ -1320,7 +1321,7 @@ mod tests {
         let req = WsEnvelope {
             id: Some("a1".to_owned()),
             inner: WsRequest::Auth {
-                token: Some("test-token".to_owned()),
+                token: Some(Secret::new("test-token")),
                 overlay_credential: None,
                 preview_connection: false,
             },
@@ -1345,7 +1346,7 @@ mod tests {
         let req = WsEnvelope {
             id: Some("a2".to_owned()),
             inner: WsRequest::Auth {
-                token: Some("wrong-token".to_owned()),
+                token: Some(Secret::new("wrong-token")),
                 overlay_credential: None,
                 preview_connection: false,
             },
@@ -1620,7 +1621,7 @@ mod tests {
             .expect_get_by_credential()
             .returning(move |credential| {
                 Ok(
-                    (known && credential.as_str() == OVERLAY_PAGE_CREDENTIAL).then(|| {
+                    (known && credential.expose() == OVERLAY_PAGE_CREDENTIAL).then(|| {
                         forge_storage::OverlayDefinition {
                             id: forge_storage::OverlayId::new("goal-box"),
                             display_name: "Sub goal".to_owned(),
@@ -1631,7 +1632,7 @@ mod tests {
                             config_schema_version: 1,
                             generator_version: 1,
                             source_overrides: Vec::new(),
-                            credential: forge_storage::OverlayCredential::new(
+                            credential: forge_types::OverlayCredential::new(
                                 OVERLAY_PAGE_CREDENTIAL,
                             ),
                             created_at: OffsetDateTime::UNIX_EPOCH,
@@ -1680,8 +1681,8 @@ mod tests {
         WsEnvelope {
             id: Some("auth".to_owned()),
             inner: WsRequest::Auth {
-                token: token.map(str::to_owned),
-                overlay_credential: overlay_credential.map(str::to_owned),
+                token: token.map(forge_types::Secret::new),
+                overlay_credential: overlay_credential.map(forge_types::OverlayCredential::new),
                 preview_connection,
             },
         }
@@ -1812,7 +1813,7 @@ mod tests {
         let req = WsEnvelope {
             id: Some("a3".to_owned()),
             inner: WsRequest::Auth {
-                token: Some(String::new()),
+                token: Some(Secret::new("")),
                 overlay_credential: None,
                 preview_connection: false,
             },
@@ -1959,7 +1960,7 @@ mod tests {
             WsEnvelope {
                 id: Some("a".to_owned()),
                 inner: WsRequest::Auth {
-                    token: Some("test-token".to_owned()),
+                    token: Some(Secret::new("test-token")),
                     overlay_credential: None,
                     preview_connection: false,
                 },

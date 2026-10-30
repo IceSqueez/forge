@@ -34,7 +34,7 @@ fn raw_document(config: OverlayConfig, credential: Option<&str>, media: OverlayM
         kind_id: ALERT_KIND.to_owned(),
         config,
         source_overrides: Vec::new(),
-        credential: credential.map(str::to_owned),
+        credential: credential.map(forge_types::OverlayCredential::new),
         media,
         sample: SampleContext::neutral(),
     };

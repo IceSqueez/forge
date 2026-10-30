@@ -16,6 +16,7 @@ test-support = []
 [dependencies]
 async-trait = { workspace = true }
 bytes = { workspace = true }
+forge-types = { path = "../forge-types" }
 httpdate = { workspace = true }
 rand = { workspace = true }
 reqwest = { workspace = true }

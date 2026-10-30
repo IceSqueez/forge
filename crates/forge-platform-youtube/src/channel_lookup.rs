@@ -1,7 +1,8 @@
 use std::sync::Arc;
 
-use forge_net::{GatewayRequest, Secret};
+use forge_net::GatewayRequest;
 use forge_platform_core::PlatformError;
+use forge_types::Secret;
 use futures::future::BoxFuture;
 
 use crate::data_api::{YoutubeDataApi, malformed};

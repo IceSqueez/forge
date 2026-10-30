@@ -132,7 +132,7 @@ impl TtsEngine for OpenAiEngine {
             let api_key = api_key.clone();
             let req = request.clone();
             async move {
-                synth::synthesize(&link, &api_key, req)
+                synth::synthesize(&link, api_key.expose(), req)
                     .await
                     .map_err(TtsError::from)
             }
@@ -141,7 +141,7 @@ impl TtsEngine for OpenAiEngine {
     }
 
     async fn test_connection(&self) -> Result<(), TtsError> {
-        synth::probe_connection(&self.link, &self.credentials.api_key)
+        synth::probe_connection(&self.link, self.credentials.api_key.expose())
             .await
             .map_err(TtsError::from)
     }
@@ -156,11 +156,12 @@ mod tests {
     };
     use forge_speech_types::VoiceId;
     use forge_tts_core::TtsEngineFactory;
+    use forge_types::Secret;
     use wiremock::ResponseTemplate;
 
     fn credentials(api_key: &str, base_url: &str) -> OpenAiCredentials {
         OpenAiCredentials {
-            api_key: api_key.into(),
+            api_key: Secret::new(api_key),
             base_url: Some(base_url.into()),
         }
     }

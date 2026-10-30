@@ -1,7 +1,7 @@
 use std::fmt;
 
 use async_trait::async_trait;
-use forge_types::Redacted;
+use forge_types::RemoteClipId;
 
 use crate::error::AudioError;
 
@@ -36,25 +36,6 @@ impl PlaybackCorrelation {
 
     pub fn as_str(&self) -> &str {
         &self.0
-    }
-}
-
-#[derive(Clone, PartialEq, Eq, Hash)]
-pub struct RemoteClipId(String);
-
-impl RemoteClipId {
-    pub fn new(value: impl Into<String>) -> Self {
-        Self(value.into())
-    }
-
-    pub fn expose(&self) -> &str {
-        &self.0
-    }
-}
-
-impl fmt::Debug for RemoteClipId {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "RemoteClipId({Redacted:?})")
     }
 }
 

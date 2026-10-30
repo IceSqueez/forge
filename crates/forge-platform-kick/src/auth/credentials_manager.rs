@@ -70,11 +70,11 @@ impl KickCredentialsManager {
     pub async fn get_valid_access_token(&self) -> Result<String, PlatformError> {
         let creds = self.store.require().await?;
         if !near_expiry(&creds) {
-            return Ok(creds.access_token);
+            return Ok(creds.access_token.expose().to_owned());
         }
         self.detached_refresh(RefreshTrigger::NearExpiry)
             .await
-            .map(|creds| creds.access_token)
+            .map(|creds| creds.access_token.expose().to_owned())
     }
 
     pub async fn user_id(&self) -> Result<u64, PlatformError> {
@@ -120,13 +120,13 @@ async fn refresh_under_guard(
     let existing = store.require().await?;
     let already_rotated = match &trigger {
         RefreshTrigger::NearExpiry => !near_expiry(&existing),
-        RefreshTrigger::Rejected(failed) => existing.access_token != *failed,
+        RefreshTrigger::Rejected(failed) => existing.access_token.expose() != failed,
     };
     if already_rotated {
         return Ok(existing);
     }
 
-    let grant = oauth.refresh(&existing.refresh_token).await?;
+    let grant = oauth.refresh(existing.refresh_token.expose()).await?;
     let updated = KickCredentials {
         access_token: grant.access_token,
         refresh_token: grant.refresh_token.unwrap_or(existing.refresh_token),
@@ -179,6 +179,7 @@ fn near_expiry(creds: &KickCredentials) -> bool {
 
 #[cfg(test)]
 mod tests {
+    use forge_types::OAuthToken;
     use std::collections::HashMap;
     use std::sync::atomic::{AtomicBool, Ordering};
     use std::sync::{Arc, Mutex};
@@ -374,8 +375,8 @@ mod tests {
 
     fn stub_creds(expires_at: OffsetDateTime) -> KickCredentials {
         KickCredentials {
-            access_token: EXISTING_ACCESS.to_owned(),
-            refresh_token: EXISTING_REFRESH.to_owned(),
+            access_token: OAuthToken::new(EXISTING_ACCESS),
+            refresh_token: OAuthToken::new(EXISTING_REFRESH),
             user_id: 42,
             username: "streamer".to_owned(),
             client_id: "test_cid".to_owned(),
@@ -401,8 +402,8 @@ mod tests {
 
     fn bundle() -> KickAuthBundle {
         KickAuthBundle {
-            access_token: BUNDLE_ACCESS.to_owned(),
-            refresh_token: "kick_refresh_from_new_sign_in".to_owned(),
+            access_token: OAuthToken::new(BUNDLE_ACCESS),
+            refresh_token: OAuthToken::new("kick_refresh_from_new_sign_in"),
             user_id: 99,
             username: "bundle_streamer".to_owned(),
             client_id: "bundle_cid".to_owned(),
@@ -509,8 +510,8 @@ mod tests {
         let stored = repo.stored().unwrap();
         assert_eq!(
             (
-                stored.access_token.as_str(),
-                stored.refresh_token.as_str(),
+                stored.access_token.expose(),
+                stored.refresh_token.expose(),
                 stored.user_id,
                 stored.username.as_str(),
                 stored.client_id.as_str()
@@ -548,8 +549,8 @@ mod tests {
         assert_eq!(
             (
                 token.as_str(),
-                stored.access_token.as_str(),
-                stored.refresh_token.as_str(),
+                stored.access_token.expose(),
+                stored.refresh_token.expose(),
                 stored.user_id,
                 stored.expires_at > OffsetDateTime::now_utc() + Duration::hours(23)
             ),
@@ -588,7 +589,7 @@ mod tests {
 
         let stored = rig.repo.stored().unwrap();
         assert_eq!(
-            (stored.access_token.as_str(), stored.refresh_token.as_str()),
+            (stored.access_token.expose(), stored.refresh_token.expose()),
             ("kick_access_only", EXISTING_REFRESH)
         );
     }
@@ -600,7 +601,7 @@ mod tests {
         let creds = rig.manager.refresh("kick_access_long_gone").await.unwrap();
 
         assert_eq!(
-            (creds.access_token.as_str(), rig.token_posts().await),
+            (creds.access_token.expose(), rig.token_posts().await),
             (EXISTING_ACCESS, 0)
         );
     }
@@ -638,8 +639,8 @@ mod tests {
             assert_eq!(
                 (
                     mapped,
-                    stored.access_token.as_str(),
-                    stored.refresh_token.as_str()
+                    stored.access_token.expose(),
+                    stored.refresh_token.expose()
                 ),
                 (true, EXISTING_ACCESS, EXISTING_REFRESH),
                 "{label}"
@@ -666,7 +667,7 @@ mod tests {
                     manager
                         .refresh(EXISTING_ACCESS)
                         .await
-                        .map(|c| c.access_token)
+                        .map(|c| c.access_token.expose().to_owned())
                 }
             }));
         }
@@ -715,8 +716,8 @@ mod tests {
             (
                 aborted,
                 token.as_str(),
-                stored.access_token.as_str(),
-                stored.refresh_token.as_str(),
+                stored.access_token.expose(),
+                stored.refresh_token.expose(),
                 rig.token_posts().await
             ),
             (true, REFRESHED_ACCESS, REFRESHED_ACCESS, ROTATED_REFRESH, 1)
@@ -771,7 +772,7 @@ mod tests {
         saving.await.unwrap().unwrap();
 
         assert_eq!(
-            rig.repo.stored().unwrap().access_token.as_str(),
+            rig.repo.stored().unwrap().access_token.expose(),
             BUNDLE_ACCESS
         );
     }

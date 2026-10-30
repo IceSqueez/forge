@@ -734,7 +734,7 @@ mod tests {
         ) -> Result<forge_audio::RemoteDelivery, forge_audio::AudioError> {
             self.0.lock().unwrap().push(destination.to_string());
             Ok(forge_audio::RemoteDelivery {
-                clip_id: forge_audio::RemoteClipId::new("clip-1"),
+                clip_id: forge_types::RemoteClipId::new("clip-1"),
                 live_players: 1,
             })
         }
@@ -742,7 +742,7 @@ mod tests {
         async fn control(
             &self,
             _: &forge_audio::RemoteDestinationId,
-            _: &forge_audio::RemoteClipId,
+            _: &forge_types::RemoteClipId,
             _: forge_audio::RemoteCommand,
         ) -> Result<(), forge_audio::AudioError> {
             Ok(())
@@ -750,7 +750,7 @@ mod tests {
 
         async fn verdict(
             &self,
-            _: &forge_audio::RemoteClipId,
+            _: &forge_types::RemoteClipId,
         ) -> Result<forge_audio::RemoteVerdict, forge_audio::AudioError> {
             Ok(forge_audio::RemoteVerdict::Played)
         }

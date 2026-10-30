@@ -17,7 +17,7 @@ use crate::error::DonatelloError;
 use crate::integration::DONATELLO_INTEGRATION;
 use crate::poller::{self, PollContext, PollControl};
 use crate::status::{PollStatus, StatusBoard};
-use crate::token::DonatelloToken;
+use crate::token::parse_token;
 
 const DONATION_BUFFER: usize = 64;
 
@@ -73,12 +73,12 @@ impl DonatelloProvider {
     }
 
     pub async fn verify_token(&self, raw: &str) -> Result<DonatelloAccount, DonatelloError> {
-        let token = DonatelloToken::parse(raw)?;
+        let token = parse_token(raw)?;
         self.api.account(&token).await
     }
 
     pub async fn save_token(&self, raw: &str) -> Result<DonatelloAccount, DonatelloError> {
-        let token = DonatelloToken::parse(raw)?;
+        let token = parse_token(raw)?;
         let account = self.api.account(&token).await?;
         credentials::store(self.creds.as_ref(), &token).await?;
         self.restart();

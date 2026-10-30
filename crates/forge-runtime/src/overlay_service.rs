@@ -366,7 +366,7 @@ impl OverlayServiceHandle {
     ) -> Result<(), OverlayServiceError> {
         let root = self.root().await;
         let identity = definition.id.as_str().to_owned();
-        let credential = definition.credential.as_str().to_owned();
+        let credential = definition.credential.expose().to_owned();
         blocking(move || refresh_config_credential(&root, &identity, &credential)).await??;
         Ok(())
     }
@@ -926,7 +926,7 @@ fn instance_of(
         kind_id: definition.kind_id.clone(),
         config: definition.config.clone(),
         source_overrides: definition.source_overrides.clone(),
-        credential: Some(definition.credential.as_str().to_owned()),
+        credential: Some(definition.credential.clone()),
         media,
         sample,
     }

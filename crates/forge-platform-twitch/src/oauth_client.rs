@@ -3,10 +3,11 @@ use std::time::Duration;
 
 use forge_net::{
     CallClass, FormBody, Gateway, GatewayBuildError, GatewayFailure, GatewayProfile,
-    GatewayRequest, GatewayResponse, RateLimiter, Secret, ThrottleHintFamily,
+    GatewayRequest, GatewayResponse, RateLimiter, ThrottleHintFamily,
 };
 use forge_platform_core::{EndpointSurface, PlatformEndpoints, PlatformError, reauth_required};
 use forge_types::OAuthToken;
+use forge_types::Secret;
 use serde::Deserialize;
 use serde::de::DeserializeOwned;
 use tokio_util::sync::CancellationToken;
@@ -61,7 +62,7 @@ pub struct TwitchOAuthClient {
 
 #[derive(Deserialize)]
 pub(crate) struct DeviceAuthorization {
-    pub(crate) device_code: String,
+    pub(crate) device_code: Secret,
     pub(crate) user_code: String,
     pub(crate) verification_uri: String,
     pub(crate) expires_in: u64,
@@ -70,8 +71,8 @@ pub(crate) struct DeviceAuthorization {
 
 #[derive(Deserialize)]
 pub(crate) struct TokenGrant {
-    pub(crate) access_token: String,
-    pub(crate) refresh_token: Option<String>,
+    pub(crate) access_token: OAuthToken,
+    pub(crate) refresh_token: Option<OAuthToken>,
     pub(crate) expires_in: Option<u64>,
 }
 
@@ -122,12 +123,12 @@ impl TwitchOAuthClient {
 
     pub(crate) async fn poll_device_token(
         &self,
-        device_code: &str,
+        device_code: &Secret,
         cancel: &CancellationToken,
     ) -> Result<DevicePoll, PlatformError> {
         let form = FormBody::new()
             .field("client_id", self.client_id.as_str())
-            .secret_field("device_code", Secret::new(device_code))
+            .secret_field("device_code", device_code.clone())
             .field("grant_type", DEVICE_GRANT_TYPE);
         let request = GatewayRequest::post(TOKEN_PATH)
             .label(TOKEN_PATH)
@@ -255,6 +256,7 @@ mod tests {
     use forge_net::test_support::RecordingRateLimiter;
     use forge_platform_core::PlatformError;
     use forge_types::OAuthToken;
+    use forge_types::Secret;
     use tokio_util::sync::CancellationToken;
     use wiremock::matchers::{header, method, path};
     use wiremock::{Mock, MockServer, ResponseTemplate};
@@ -283,7 +285,7 @@ mod tests {
 
     async fn poll(server: &MockServer) -> Result<DevicePoll, PlatformError> {
         client_for(server)
-            .poll_device_token(DEVICE_CODE, &CancellationToken::new())
+            .poll_device_token(&Secret::new(DEVICE_CODE), &CancellationToken::new())
             .await
     }
 
@@ -318,7 +320,10 @@ mod tests {
         };
 
         assert_eq!(
-            (grant.access_token.as_str(), grant.refresh_token.as_deref()),
+            (
+                grant.access_token.expose(),
+                grant.refresh_token.as_ref().map(OAuthToken::expose)
+            ),
             ("ACCESS_XYZ", Some("REFRESH_XYZ"))
         );
         let body = only_body(&server).await;
@@ -576,7 +581,7 @@ mod tests {
             let client = oauth_client_limited_by(&server.uri(), CLIENT, Arc::new(limiter));
 
             let outcome = client
-                .poll_device_token(DEVICE_CODE, &CancellationToken::new())
+                .poll_device_token(&Secret::new(DEVICE_CODE), &CancellationToken::new())
                 .await;
 
             let Ok(DevicePoll::Throttled { wait }) = outcome else {

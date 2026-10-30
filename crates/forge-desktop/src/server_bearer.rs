@@ -2,18 +2,20 @@ use std::sync::Arc;
 
 use forge_server::ServerHandle;
 use forge_storage::{CredentialId, CredentialsRepo, SERVER_BEARER_CREDENTIAL_ID};
+use forge_types::Secret;
 
 pub(crate) async fn current_bearer_token(
     server: Option<ServerHandle>,
     credentials: Arc<dyn CredentialsRepo>,
-) -> Option<String> {
+) -> Option<Secret> {
     match server {
-        Some(handle) => Some(handle.bearer_token().await.into_inner()),
+        Some(handle) => Some(handle.bearer_token().await),
         None => credentials
             .load(&CredentialId::new(SERVER_BEARER_CREDENTIAL_ID))
             .await
             .ok()
-            .flatten(),
+            .flatten()
+            .map(Secret::new),
     }
 }
 
@@ -98,7 +100,7 @@ mod tests {
         let rt = runtime();
         let (backend, _writes) = test_backend();
         let server = stopped_handle(&rt, &backend);
-        let live = rt.block_on(server.bearer_token()).into_inner();
+        let live = rt.block_on(server.bearer_token());
 
         let answered = rt.block_on(current_bearer_token(
             Some(server),
@@ -113,15 +115,14 @@ mod tests {
         let rt = runtime();
         let (backend, _writes) = test_backend();
         let server = stopped_handle(&rt, &backend);
-        let retired = rt.block_on(server.bearer_token()).into_inner();
+        let retired = rt.block_on(server.bearer_token());
         let regenerated = rt
             .block_on(server.regenerate_bearer_token())
-            .expect("regenerate")
-            .into_inner();
+            .expect("regenerate");
 
         let answered = rt.block_on(current_bearer_token(
             Some(server),
-            Vault::holding(Some(&retired), false),
+            Vault::holding(Some(retired.expose()), false),
         ));
 
         assert_eq!(answered, Some(regenerated));
@@ -145,7 +146,11 @@ mod tests {
                 Vault::holding(stored, load_fails),
             ));
 
-            assert_eq!(answered.as_deref(), expected, "{case}");
+            assert_eq!(
+                answered.as_ref().map(forge_types::Secret::expose),
+                expected,
+                "{case}"
+            );
         }
     }
 }

@@ -22,9 +22,9 @@ use forge_storage::settings::core_settings;
 use forge_storage::test_support::MemorySettings;
 use forge_storage::trigger_instance::MockTriggerInstanceRepo;
 use forge_storage::{
-    MockOverlayRepo, OverlayConfig, OverlayCredential, OverlayDefinition, OverlayId, OverlayRepo,
-    SettingsRepo,
+    MockOverlayRepo, OverlayConfig, OverlayDefinition, OverlayId, OverlayRepo, SettingsRepo,
 };
+use forge_types::OverlayCredential;
 use forge_types::{
     Action, ActionId, ExecutionMode, PermissionRung, PlatformScope, QueueId, SubActionConfig,
     SubActionStep, TriggerConfig, TriggerInstance, TriggerInstanceId, Variant,

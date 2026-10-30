@@ -1,10 +1,11 @@
 use std::sync::Arc;
 use std::time::{Duration, SystemTime};
 
-use forge_net::{GatewayRequest, Secret};
+use forge_net::GatewayRequest;
 use forge_platform_core::PlatformError;
 use forge_platform_core::auth::{PkceAuthorizeConfig, PkceLoopback};
 use forge_types::OAuthToken;
+use forge_types::Secret;
 use serde::Deserialize;
 
 use crate::credentials_manager::YoutubeCredentialsManager;
@@ -125,15 +126,15 @@ impl GoogleAuthFlow {
             .checked_add(Duration::from_secs(grant.expires_in.unwrap_or(0)))
             .ok_or_else(|| malformed("token lifetime out of range"))?;
 
-        let channel = fetch_own_channel(&self.api, &grant.access_token)
+        let channel = fetch_own_channel(&self.api, grant.access_token.expose())
             .await?
             .ok_or_else(|| PlatformError::Refused {
                 reason: NO_CHANNEL_FOUND.to_owned(),
             })?;
 
         Ok(YoutubeAuthBundle {
-            access_token: OAuthToken::new(grant.access_token),
-            refresh_token: OAuthToken::new(refresh_token),
+            access_token: grant.access_token,
+            refresh_token,
             channel_id: channel.id,
             channel_title: channel.snippet.title,
             channel_handle: channel.snippet.custom_url,
@@ -560,6 +561,25 @@ mod tests {
                 ),
                 (vec![json!(YOUTUBE_CHANNELS_PATH)], OWN_CHANNEL_COST)
             );
+        }
+    }
+
+    #[test]
+    fn debug_of_an_auth_bundle_never_carries_a_token() {
+        let bundle = YoutubeAuthBundle {
+            access_token: OAuthToken::new("bundle-access-sentinel"),
+            refresh_token: OAuthToken::new("bundle-refresh-sentinel"),
+            channel_id: "UC123".to_owned(),
+            channel_title: "Channel".to_owned(),
+            channel_handle: None,
+            client_id: "client".to_owned(),
+            expires_at: SystemTime::UNIX_EPOCH,
+        };
+
+        let rendered = format!("{bundle:?} {bundle:#?}");
+
+        for secret in ["bundle-access-sentinel", "bundle-refresh-sentinel"] {
+            assert!(!rendered.contains(secret), "leaked: {rendered}");
         }
     }
 }

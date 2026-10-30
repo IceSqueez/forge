@@ -4,7 +4,7 @@ use std::time::Duration;
 use forge_net::{Backoff, DedupSet};
 use forge_platform_core::PlatformError;
 use forge_storage::CredentialsRepo;
-use forge_types::{Donation, IntegrationId};
+use forge_types::{Donation, IntegrationId, Secret};
 use time::OffsetDateTime;
 use tokio::sync::{mpsc, watch};
 use tracing::{debug, warn};
@@ -16,7 +16,6 @@ use crate::error::MonobankError;
 use crate::jar::{JarDirectory, JarId};
 use crate::normalize::donation_from_item;
 use crate::status::{PollFailure, PollPhase, StatusBoard};
-use crate::token::MonobankToken;
 use crate::window::{Coverage, StatementWindow, WindowPlanner};
 use crate::wire::{StatementItemWire, TRANSACTION_ID_FIELD, TRANSACTION_TIME_FIELD};
 
@@ -45,7 +44,7 @@ pub(crate) struct PollContext {
 
 #[derive(Clone, PartialEq, Eq)]
 struct Session {
-    token: MonobankToken,
+    token: Secret,
     jar: JarId,
 }
 

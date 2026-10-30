@@ -5,8 +5,10 @@ use std::time::Duration;
 
 use forge_net::{
     CallClass, DEFAULT_RETRY_AFTER_SECS, FormBody, GatewayFailure, GatewayProfile, GatewayRequest,
-    HeaderLookup, MAX_REMOTE_COOLDOWN, Secret, ThrottleHintFamily, ThrottleScope,
+    HeaderLookup, MAX_REMOTE_COOLDOWN, ThrottleHintFamily, ThrottleScope,
 };
+
+use forge_types::Secret;
 use gateway_support::{
     Harness, PLATFORM_NO_HINT_WAIT, chunked_ok, platform, platform_with, serve_raw_once,
 };

@@ -130,9 +130,9 @@ mod tests {
     use forge_soundboard::{ClipLibrary, SoundboardSettingsHandle};
     use forge_storage::soundboard::MockSoundboardClipsRepo;
     use forge_storage::{
-        MockMediaRepo, OverlayConfig, OverlayCredential, OverlayDefinition, OverlayId, OverlayRepo,
-        StorageError,
+        MockMediaRepo, OverlayConfig, OverlayDefinition, OverlayId, OverlayRepo, StorageError,
     };
+    use forge_types::OverlayCredential;
     use tokio::sync::Notify;
     use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender, unbounded_channel};
 

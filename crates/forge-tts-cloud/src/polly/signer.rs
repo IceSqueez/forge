@@ -1,6 +1,7 @@
 use std::fmt::Write as _;
 
-use forge_net::{GatewayRequest, Method, RequestBody, Secret};
+use forge_net::{GatewayRequest, Method, RequestBody};
+use forge_types::Secret;
 use hmac::{Hmac, KeyInit, Mac};
 use sha2::{Digest, Sha256};
 use time::OffsetDateTime;
@@ -102,12 +103,15 @@ impl PollySigner {
             "{ALGORITHM}\n{date_time}\n{scope}\n{}",
             hex_sha256(canonical_request.as_bytes())
         );
-        let signing_key =
-            derive_signing_key(self.credentials.secret_access_key.as_bytes(), &date, region)?;
+        let signing_key = derive_signing_key(
+            self.credentials.secret_access_key.expose().as_bytes(),
+            &date,
+            region,
+        )?;
         let signature = hex_encode(&hmac_sha256(&signing_key, string_to_sign.as_bytes())?);
         let credential = Secret::new(format!(
             "Credential={}/{scope}, SignedHeaders={signed_headers}, Signature={signature}",
-            self.credentials.access_key_id
+            self.credentials.access_key_id.expose()
         ));
 
         let request = query.iter().fold(
@@ -225,6 +229,7 @@ fn format_date(t: &OffsetDateTime) -> String {
 
 #[cfg(test)]
 pub(crate) mod test_support {
+    use forge_types::Secret;
     use std::fmt::Write as _;
 
     use hmac::{Hmac, KeyInit, Mac};
@@ -248,8 +253,8 @@ pub(crate) mod test_support {
 
     pub(crate) fn credentials(base_url: Option<&str>) -> PollyCredentials {
         PollyCredentials {
-            access_key_id: ACCESS_KEY_ID.into(),
-            secret_access_key: SECRET_ACCESS_KEY.into(),
+            access_key_id: Secret::new(ACCESS_KEY_ID),
+            secret_access_key: Secret::new(SECRET_ACCESS_KEY),
             region: REGION.into(),
             base_url: base_url.map(str::to_owned),
         }

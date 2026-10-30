@@ -59,6 +59,7 @@ impl BanListSource for KickIntegrationBundle {
 
 #[cfg(test)]
 mod tests {
+    use forge_types::OAuthToken;
     use std::sync::{Arc, Mutex};
     use std::time::Duration as StdDuration;
 
@@ -101,8 +102,8 @@ mod tests {
                 StoredCredentials::Absent => Ok(None),
                 StoredCredentials::Broadcaster(user_id) => Ok(Some(
                     serde_json::to_string(&KickCredentials {
-                        access_token: "tok".to_owned(),
-                        refresh_token: "ref".to_owned(),
+                        access_token: OAuthToken::new("tok"),
+                        refresh_token: OAuthToken::new("ref"),
                         user_id,
                         username: "streamer".to_owned(),
                         client_id: "cid".to_owned(),

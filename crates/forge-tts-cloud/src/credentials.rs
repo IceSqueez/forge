@@ -1,3 +1,4 @@
+use forge_types::Secret;
 use serde::{Deserialize, Serialize};
 
 pub const AZURE_CREDENTIAL_ID: &str = "audio:azure";
@@ -5,228 +6,164 @@ pub const ELEVENLABS_CREDENTIAL_ID: &str = "audio:elevenlabs";
 pub const OPENAI_CREDENTIAL_ID: &str = "audio:openai";
 pub const POLLY_CREDENTIAL_ID: &str = "audio:polly";
 
-#[derive(Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AzureCredentials {
-    pub api_key: String,
+    #[serde(serialize_with = "Secret::serialize_exposed")]
+    pub api_key: Secret,
     pub region: String,
     #[serde(default)]
     pub base_url: Option<String>,
 }
 
-impl std::fmt::Debug for AzureCredentials {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("AzureCredentials")
-            .field("api_key", &"***")
-            .field("region", &self.region)
-            .field("base_url", &self.base_url)
-            .finish()
-    }
-}
-
-#[derive(Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ElevenLabsCredentials {
-    pub api_key: String,
+    #[serde(serialize_with = "Secret::serialize_exposed")]
+    pub api_key: Secret,
     #[serde(default)]
     pub base_url: Option<String>,
 }
 
-impl std::fmt::Debug for ElevenLabsCredentials {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("ElevenLabsCredentials")
-            .field("api_key", &"***")
-            .field("base_url", &self.base_url)
-            .finish()
-    }
-}
-
-#[derive(Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct OpenAiCredentials {
-    pub api_key: String,
+    #[serde(serialize_with = "Secret::serialize_exposed")]
+    pub api_key: Secret,
     pub base_url: Option<String>,
 }
 
-impl std::fmt::Debug for OpenAiCredentials {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("OpenAiCredentials")
-            .field("api_key", &"***")
-            .field("base_url", &self.base_url)
-            .finish()
-    }
-}
-
-#[derive(Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PollyCredentials {
-    pub access_key_id: String,
-    pub secret_access_key: String,
+    #[serde(serialize_with = "Secret::serialize_exposed")]
+    pub access_key_id: Secret,
+    #[serde(serialize_with = "Secret::serialize_exposed")]
+    pub secret_access_key: Secret,
     pub region: String,
     #[serde(default)]
     pub base_url: Option<String>,
-}
-
-impl std::fmt::Debug for PollyCredentials {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("PollyCredentials")
-            .field("access_key_id", &"***")
-            .field("secret_access_key", &"***")
-            .field("region", &self.region)
-            .field("base_url", &self.base_url)
-            .finish()
-    }
 }
 
 #[cfg(test)]
 mod tests {
+    use serde::de::DeserializeOwned;
+
     use super::*;
 
-    #[test]
-    fn azure_serde_roundtrip() {
-        let creds = AzureCredentials {
-            api_key: "key123".into(),
-            region: "eastus".into(),
-            base_url: None,
-        };
-        let json = serde_json::to_string(&creds).unwrap();
-        let back: AzureCredentials = serde_json::from_str(&json).unwrap();
-        assert_eq!(back.api_key, creds.api_key);
-        assert_eq!(back.region, creds.region);
-        assert!(back.base_url.is_none());
+    fn assert_saved_bytes_survive<T: Serialize + DeserializeOwned>(saved: &str) {
+        let loaded: T = serde_json::from_str(saved).expect("a saved bundle loads");
+
+        assert_eq!(serde_json::to_string(&loaded).unwrap(), saved);
     }
 
     #[test]
-    fn azure_base_url_roundtrip() {
-        let creds = AzureCredentials {
-            api_key: "key456".into(),
-            region: "westus".into(),
-            base_url: Some("http://localhost:8080".into()),
-        };
-        let json = serde_json::to_string(&creds).unwrap();
-        let back: AzureCredentials = serde_json::from_str(&json).unwrap();
-        assert_eq!(back.base_url, Some("http://localhost:8080".into()));
+    fn saved_bundles_save_back_byte_identical_for_every_cloud_engine() {
+        assert_saved_bytes_survive::<AzureCredentials>(
+            r#"{"api_key":"az-key","region":"eastus","base_url":null}"#,
+        );
+        assert_saved_bytes_survive::<AzureCredentials>(
+            r#"{"api_key":"az-key","region":"eastus","base_url":"http://192.0.2.1:8080"}"#,
+        );
+        assert_saved_bytes_survive::<ElevenLabsCredentials>(
+            r#"{"api_key":"xi-key","base_url":null}"#,
+        );
+        assert_saved_bytes_survive::<ElevenLabsCredentials>(
+            r#"{"api_key":"xi-key","base_url":"http://192.0.2.1:8080"}"#,
+        );
+        assert_saved_bytes_survive::<OpenAiCredentials>(r#"{"api_key":"sk-key","base_url":null}"#);
+        assert_saved_bytes_survive::<OpenAiCredentials>(
+            r#"{"api_key":"sk-key","base_url":"https://custom.example.com/v1"}"#,
+        );
+        assert_saved_bytes_survive::<PollyCredentials>(
+            r#"{"access_key_id":"AKID","secret_access_key":"s3cret","region":"us-east-1","base_url":null}"#,
+        );
+        assert_saved_bytes_survive::<PollyCredentials>(
+            r#"{"access_key_id":"AKID","secret_access_key":"s3cret","region":"us-east-1","base_url":"http://192.0.2.1:9000"}"#,
+        );
     }
 
     #[test]
-    fn azure_base_url_absent_deserializes_as_none() {
-        let json = r#"{"api_key":"k","region":"r"}"#;
-        let back: AzureCredentials = serde_json::from_str(json).unwrap();
-        assert!(back.base_url.is_none());
+    fn a_saved_bundle_hands_every_secret_field_back_to_its_engine() {
+        let azure: AzureCredentials =
+            serde_json::from_str(r#"{"api_key":"az-key","region":"r"}"#).unwrap();
+        let eleven: ElevenLabsCredentials =
+            serde_json::from_str(r#"{"api_key":"xi-key"}"#).unwrap();
+        let openai: OpenAiCredentials = serde_json::from_str(r#"{"api_key":"sk-key"}"#).unwrap();
+        let polly: PollyCredentials = serde_json::from_str(
+            r#"{"access_key_id":"AKID","secret_access_key":"s3cret","region":"us-east-1"}"#,
+        )
+        .unwrap();
+
+        assert_eq!(
+            [
+                azure.api_key.expose(),
+                eleven.api_key.expose(),
+                openai.api_key.expose(),
+                polly.access_key_id.expose(),
+                polly.secret_access_key.expose(),
+            ],
+            ["az-key", "xi-key", "sk-key", "AKID", "s3cret"]
+        );
     }
 
     #[test]
-    fn elevenlabs_serde_roundtrip() {
-        let creds = ElevenLabsCredentials {
-            api_key: "xi-key".into(),
-            base_url: None,
-        };
-        let json = serde_json::to_string(&creds).unwrap();
-        let back: ElevenLabsCredentials = serde_json::from_str(&json).unwrap();
-        assert_eq!(back.api_key, creds.api_key);
+    fn a_bundle_saved_without_a_base_url_loads_as_none() {
+        let azure: AzureCredentials =
+            serde_json::from_str(r#"{"api_key":"k","region":"r"}"#).unwrap();
+        let eleven: ElevenLabsCredentials = serde_json::from_str(r#"{"api_key":"k"}"#).unwrap();
+        let openai: OpenAiCredentials = serde_json::from_str(r#"{"api_key":"k"}"#).unwrap();
+        let polly: PollyCredentials = serde_json::from_str(
+            r#"{"access_key_id":"A","secret_access_key":"s","region":"us-east-1"}"#,
+        )
+        .unwrap();
+
+        assert_eq!(
+            [
+                azure.base_url,
+                eleven.base_url,
+                openai.base_url,
+                polly.base_url
+            ],
+            [None, None, None, None]
+        );
     }
 
     #[test]
-    fn openai_serde_roundtrip() {
-        let creds = OpenAiCredentials {
-            api_key: "sk-xxx".into(),
-            base_url: Some("https://custom.openai.example.com/v1".into()),
-        };
-        let json = serde_json::to_string(&creds).unwrap();
-        let back: OpenAiCredentials = serde_json::from_str(&json).unwrap();
-        assert_eq!(back.api_key, creds.api_key);
-        assert_eq!(back.base_url, creds.base_url);
-    }
+    fn debug_of_every_cloud_credential_never_carries_a_key() {
+        const KEY: &str = "cloud-key-sentinel";
+        let rendered = [
+            format!(
+                "{:#?}",
+                AzureCredentials {
+                    api_key: Secret::new(KEY),
+                    region: "eastus".into(),
+                    base_url: None,
+                }
+            ),
+            format!(
+                "{:#?}",
+                ElevenLabsCredentials {
+                    api_key: Secret::new(KEY),
+                    base_url: None,
+                }
+            ),
+            format!(
+                "{:#?}",
+                OpenAiCredentials {
+                    api_key: Secret::new(KEY),
+                    base_url: None,
+                }
+            ),
+            format!(
+                "{:#?}",
+                PollyCredentials {
+                    access_key_id: Secret::new(KEY),
+                    secret_access_key: Secret::new(KEY),
+                    region: "us-east-1".into(),
+                    base_url: None,
+                }
+            ),
+        ];
 
-    #[test]
-    fn openai_base_url_optional_absent() {
-        let creds = OpenAiCredentials {
-            api_key: "sk-xxx".into(),
-            base_url: None,
-        };
-        let json = serde_json::to_string(&creds).unwrap();
-        let back: OpenAiCredentials = serde_json::from_str(&json).unwrap();
-        assert!(back.base_url.is_none());
-    }
-
-    #[test]
-    fn polly_serde_roundtrip() {
-        let creds = PollyCredentials {
-            access_key_id: "AKID".into(),
-            secret_access_key: "secret".into(),
-            region: "us-east-1".into(),
-            base_url: None,
-        };
-        let json = serde_json::to_string(&creds).unwrap();
-        let back: PollyCredentials = serde_json::from_str(&json).unwrap();
-        assert_eq!(back.access_key_id, creds.access_key_id);
-        assert_eq!(back.region, creds.region);
-        assert!(back.base_url.is_none());
-    }
-
-    #[test]
-    fn polly_base_url_roundtrip() {
-        let creds = PollyCredentials {
-            access_key_id: "AKID".into(),
-            secret_access_key: "secret".into(),
-            region: "us-east-1".into(),
-            base_url: Some("http://localhost:9000".into()),
-        };
-        let json = serde_json::to_string(&creds).unwrap();
-        let back: PollyCredentials = serde_json::from_str(&json).unwrap();
-        assert_eq!(back.base_url, Some("http://localhost:9000".into()));
-    }
-
-    #[test]
-    fn polly_base_url_absent_deserializes_as_none() {
-        let json = r#"{"access_key_id":"A","secret_access_key":"s","region":"us-east-1"}"#;
-        let back: PollyCredentials = serde_json::from_str(json).unwrap();
-        assert!(back.base_url.is_none());
-    }
-
-    #[test]
-    fn azure_debug_redacts_api_key() {
-        let creds = AzureCredentials {
-            api_key: "super-secret-key".into(),
-            region: "eastus".into(),
-            base_url: None,
-        };
-        let s = format!("{creds:?}");
-        assert!(!s.contains("super-secret-key"));
-        assert!(s.contains("***"));
-        assert!(s.contains("eastus"));
-    }
-
-    #[test]
-    fn elevenlabs_debug_redacts_api_key() {
-        let creds = ElevenLabsCredentials {
-            api_key: "xi-secret-key".into(),
-            base_url: None,
-        };
-        let s = format!("{creds:?}");
-        assert!(!s.contains("xi-secret-key"));
-        assert!(s.contains("***"));
-    }
-
-    #[test]
-    fn openai_debug_redacts_api_key() {
-        let creds = OpenAiCredentials {
-            api_key: "sk-secret-key".into(),
-            base_url: None,
-        };
-        let s = format!("{creds:?}");
-        assert!(!s.contains("sk-secret-key"));
-        assert!(s.contains("***"));
-    }
-
-    #[test]
-    fn polly_debug_redacts_both_keys() {
-        let creds = PollyCredentials {
-            access_key_id: "AKIASECRETID".into(),
-            secret_access_key: "very-secret-access-key".into(),
-            region: "us-east-1".into(),
-            base_url: None,
-        };
-        let s = format!("{creds:?}");
-        assert!(!s.contains("AKIASECRETID"));
-        assert!(!s.contains("very-secret-access-key"));
-        assert!(s.contains("***"));
-        assert!(s.contains("us-east-1"));
+        for debug in rendered {
+            assert!(!debug.contains(KEY), "leaked: {debug}");
+        }
     }
 }

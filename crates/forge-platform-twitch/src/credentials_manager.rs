@@ -167,11 +167,10 @@ impl TwitchCredentialsManager {
         );
 
         let renewed = StoredCredential {
-            access_token: OAuthToken::new(parsed.access_token),
+            access_token: parsed.access_token,
             refresh_token: Some(
                 parsed
                     .refresh_token
-                    .map(OAuthToken::new)
                     .unwrap_or_else(|| refresh_token.clone()),
             ),
             user_id: existing.user_id,

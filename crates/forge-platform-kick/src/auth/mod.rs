@@ -8,6 +8,7 @@ use std::time::Duration;
 use forge_net::{Gateway, GatewayRequest};
 use forge_platform_core::auth::{CALLBACK_PATH, PkceAuthorizeConfig, PkceLoopback};
 use forge_platform_core::{AuthFlow, PlatformError};
+use forge_types::OAuthToken;
 use serde::Deserialize;
 use time::OffsetDateTime;
 
@@ -52,8 +53,8 @@ pub struct LoopbackCode {
 
 #[derive(Debug, Clone)]
 pub struct KickAuthBundle {
-    pub access_token: String,
-    pub refresh_token: String,
+    pub access_token: OAuthToken,
+    pub refresh_token: OAuthToken,
     pub user_id: u64,
     pub username: String,
     pub client_id: String,
@@ -131,7 +132,7 @@ impl KickAuthFlow {
         })?;
         let expires_at = expiry_after(grant.expires_in)?;
 
-        let user = fetch_user_info(&self.api, &grant.access_token).await?;
+        let user = fetch_user_info(&self.api, grant.access_token.expose()).await?;
 
         Ok(KickAuthBundle {
             access_token: grant.access_token,
@@ -318,7 +319,7 @@ mod tests {
             (
                 bundle.user_id,
                 bundle.username.as_str(),
-                bundle.refresh_token.as_str(),
+                bundle.refresh_token.expose(),
                 routes_of(&oauth).await,
                 routes_of(&api).await
             ),
@@ -622,5 +623,23 @@ mod tests {
             "{:?}",
             outcome.err()
         );
+    }
+
+    #[test]
+    fn debug_of_an_auth_bundle_never_carries_a_token() {
+        let bundle = KickAuthBundle {
+            access_token: OAuthToken::new("bundle-access-sentinel"),
+            refresh_token: OAuthToken::new("bundle-refresh-sentinel"),
+            user_id: 7,
+            username: "streamer".to_owned(),
+            client_id: "client".to_owned(),
+            expires_at: OffsetDateTime::UNIX_EPOCH,
+        };
+
+        let rendered = format!("{bundle:?} {bundle:#?}");
+
+        for secret in ["bundle-access-sentinel", "bundle-refresh-sentinel"] {
+            assert!(!rendered.contains(secret), "leaked: {rendered}");
+        }
     }
 }

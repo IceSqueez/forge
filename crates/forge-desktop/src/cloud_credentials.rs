@@ -19,6 +19,7 @@ use forge_tts_cloud::elevenlabs::ElevenLabsEngineFactory;
 use forge_tts_cloud::openai::OpenAiEngineFactory;
 use forge_tts_cloud::polly::PollyEngineFactory;
 use forge_tts_core::{TtsEngineFactory, TtsRegistry};
+use forge_types::Secret;
 use gpui::{
     AnyElement, App, ClickEvent, Context, Entity, EventEmitter, Pixels, Rgba, SharedString,
     Subscription, Window, div, prelude::*, px,
@@ -346,7 +347,7 @@ impl CloudCredentialsView {
                     return None;
                 }
                 Some(CloudCreds::Azure(AzureCredentials {
-                    api_key,
+                    api_key: Secret::new(api_key),
                     region,
                     base_url: None,
                 }))
@@ -357,7 +358,7 @@ impl CloudCredentialsView {
                     return None;
                 }
                 Some(CloudCreds::ElevenLabs(ElevenLabsCredentials {
-                    api_key,
+                    api_key: Secret::new(api_key),
                     base_url: None,
                 }))
             }
@@ -367,7 +368,7 @@ impl CloudCredentialsView {
                     return None;
                 }
                 Some(CloudCreds::OpenAi(OpenAiCredentials {
-                    api_key,
+                    api_key: Secret::new(api_key),
                     base_url: None,
                 }))
             }
@@ -382,8 +383,8 @@ impl CloudCredentialsView {
                     return None;
                 }
                 Some(CloudCreds::Polly(PollyCredentials {
-                    access_key_id,
-                    secret_access_key,
+                    access_key_id: Secret::new(access_key_id),
+                    secret_access_key: Secret::new(secret_access_key),
                     region,
                     base_url: None,
                 }))

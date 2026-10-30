@@ -1,4 +1,5 @@
-use forge_net::{GatewayRequest, Method, Secret};
+use forge_net::{GatewayRequest, Method};
+use forge_types::Secret;
 
 use crate::error::{DiscordError, ValidationFault};
 
@@ -19,7 +20,7 @@ const KEY_VALUE_SEPARATOR: char = '=';
 
 pub(crate) struct WebhookRoute {
     id: String,
-    token: String,
+    token: Secret,
     query: Vec<(String, String)>,
 }
 
@@ -53,7 +54,7 @@ impl WebhookRoute {
         }
         Ok(Self {
             id: id.to_owned(),
-            token: token.to_owned(),
+            token: Secret::new(token),
             query: saved_query(query),
         })
     }
@@ -80,12 +81,12 @@ impl WebhookRoute {
     }
 
     fn path(&self) -> String {
-        format!("{WEBHOOKS_SEGMENT}/{}/{}", self.id, self.token)
+        format!("{WEBHOOKS_SEGMENT}/{}/{}", self.id, self.token.expose())
     }
 
     fn prepared(&self, request: GatewayRequest) -> GatewayRequest {
         let masked = request
-            .mask(Secret::new(self.token.clone()))
+            .mask(self.token.clone())
             .mask(Secret::new(self.id.clone()));
         self.query
             .iter()

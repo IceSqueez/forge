@@ -22,6 +22,7 @@ forge-speech-types = { path = "../forge-speech-types" }
 forge-tts-core = { path = "../forge-tts-core" }
 forge-audio = { path = "../forge-audio" }
 forge-net = { path = "../forge-net" }
+forge-types = { path = "../forge-types" }
 async-trait = { workspace = true }
 serde = { workspace = true }
 thiserror = { workspace = true }

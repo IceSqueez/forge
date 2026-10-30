@@ -127,7 +127,7 @@ impl TtsEngine for AzureEngine {
     }
 
     async fn list_voices(&self) -> Result<Vec<TtsVoice>, TtsError> {
-        voices::fetch_voices(&self.link, &self.credentials.api_key)
+        voices::fetch_voices(&self.link, self.credentials.api_key.expose())
             .await
             .map_err(TtsError::from)
     }
@@ -142,7 +142,7 @@ impl TtsEngine for AzureEngine {
             let api_key = api_key.clone();
             let req = request.clone();
             async move {
-                synth::synthesize(&link, &api_key, req)
+                synth::synthesize(&link, api_key.expose(), req)
                     .await
                     .map_err(TtsError::from)
             }
@@ -151,7 +151,7 @@ impl TtsEngine for AzureEngine {
     }
 
     async fn test_connection(&self) -> Result<(), TtsError> {
-        synth::probe_connection(&self.link, &self.credentials.api_key)
+        synth::probe_connection(&self.link, self.credentials.api_key.expose())
             .await
             .map_err(TtsError::from)
     }
@@ -166,11 +166,12 @@ mod tests {
     };
     use forge_speech_types::VoiceId;
     use forge_tts_core::TtsEngineFactory;
+    use forge_types::Secret;
     use wiremock::ResponseTemplate;
 
     fn credentials(api_key: &str, region: &str, base_url: Option<&str>) -> AzureCredentials {
         AzureCredentials {
-            api_key: api_key.into(),
+            api_key: Secret::new(api_key),
             region: region.into(),
             base_url: base_url.map(str::to_owned),
         }

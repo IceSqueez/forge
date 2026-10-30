@@ -2,8 +2,10 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 
-use forge_storage::{OverlayConfig, OverlayCredential, OverlayId, OverlayRepo, StorageError};
+use forge_storage::{OverlayConfig, OverlayId, OverlayRepo, StorageError};
+
 use forge_storage_sqlite::{SqliteOverlayRepo, apply_migrations, connect, connect_pools};
+use forge_types::OverlayCredential;
 use forge_types::Variant;
 use sqlx::SqlitePool;
 use time::OffsetDateTime;
@@ -331,7 +333,7 @@ async fn get_by_credential_matches_the_exact_token_only() {
         .expect("exact credential resolves");
     assert_eq!(hit.id, target.id);
 
-    let full = target.credential.as_str();
+    let full = target.credential.expose();
     for near_miss in [
         String::new(),
         "not-a-credential".to_owned(),
@@ -347,6 +349,36 @@ async fn get_by_credential_matches_the_exact_token_only() {
             "credential {near_miss:?} must not resolve an overlay"
         );
     }
+}
+
+#[tokio::test]
+async fn a_credential_already_on_disk_resolves_and_round_trips_its_exact_text() {
+    const SAVED_CREDENTIAL: &str = "2f8b1d0c9a7e6f5b4c3d2e1f0a9b8c7d";
+    let (repo, pool) = fresh().await;
+    let created = repo
+        .create("Saved", "forge.chat", 1)
+        .await
+        .expect("create overlay");
+    sqlx::query("UPDATE overlays SET credential = ? WHERE id = ?")
+        .bind(SAVED_CREDENTIAL)
+        .bind(created.id.as_str())
+        .execute(&pool)
+        .await
+        .expect("plant a saved credential");
+
+    let loaded = repo
+        .get_by_credential(&OverlayCredential::new(SAVED_CREDENTIAL))
+        .await
+        .expect("lookup")
+        .expect("the saved credential resolves");
+    repo.save(&loaded).await.expect("save");
+
+    let on_disk: String = sqlx::query_scalar("SELECT credential FROM overlays WHERE id = ?")
+        .bind(created.id.as_str())
+        .fetch_one(&pool)
+        .await
+        .expect("read the column");
+    assert_eq!(on_disk, SAVED_CREDENTIAL);
 }
 
 #[tokio::test]
@@ -370,7 +402,7 @@ async fn saving_a_duplicate_credential_is_rejected_without_leaking_the_token() {
         "unexpected error variant: {err:?}"
     );
     assert!(
-        !err.to_string().contains(first.credential.as_str()),
+        !err.to_string().contains(first.credential.expose()),
         "the credential must not appear in the error message"
     );
     assert_eq!(row_count(&pool).await, 2);
@@ -572,7 +604,7 @@ async fn reissue_all_credentials_retires_every_old_credential_for_a_fresh_distin
                 .map(|d| d.id),
             Some(id.clone())
         );
-        fresh_credentials.insert(current.credential.as_str().to_owned());
+        fresh_credentials.insert(current.credential.expose().to_owned());
     }
     assert_eq!(
         fresh_credentials.len(),

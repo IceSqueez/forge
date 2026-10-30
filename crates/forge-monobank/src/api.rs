@@ -5,12 +5,12 @@ use forge_net::{
     CallClass, Gateway, GatewayProfile, GatewayRequest, RateLimiter, ThrottleHintFamily,
     TokenBucketRateLimiter,
 };
+use forge_types::Secret;
 use serde::de::DeserializeOwned;
 
 use crate::config::{MonobankConfig, STATEMENT_CALL_INTERVAL};
 use crate::error::MonobankError;
 use crate::jar::{JarId, MonobankJar};
-use crate::token::MonobankToken;
 use crate::wire::ClientInfoWire;
 
 const TOKEN_HEADER: &str = "X-Token";
@@ -77,10 +77,7 @@ impl MonobankApi {
         Self { gateways }
     }
 
-    pub(crate) async fn jars(
-        &self,
-        token: &MonobankToken,
-    ) -> Result<Vec<MonobankJar>, MonobankError> {
+    pub(crate) async fn jars(&self, token: &Secret) -> Result<Vec<MonobankJar>, MonobankError> {
         let info: ClientInfoWire = self
             .get(
                 &self.gateways.client_info,
@@ -97,7 +94,7 @@ impl MonobankApi {
 
     pub(crate) async fn statement(
         &self,
-        token: &MonobankToken,
+        token: &Secret,
         jar: &JarId,
         from_unix: i64,
         to_unix: i64,
@@ -113,11 +110,11 @@ impl MonobankApi {
     async fn get<T: DeserializeOwned>(
         &self,
         gateway: &Gateway,
-        token: &MonobankToken,
+        token: &Secret,
         path: String,
     ) -> Result<T, MonobankError> {
         let request = GatewayRequest::get(path)
-            .api_key(TOKEN_HEADER, token.secret())
+            .api_key(TOKEN_HEADER, token.clone())
             .follow_redirects(false)
             .without_limiter_wait();
         let response = gateway.send(request).await?;

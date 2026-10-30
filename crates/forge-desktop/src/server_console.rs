@@ -7,7 +7,7 @@ use forge_components::{
     header_status, icon, metric_card, mono_family, overlay, page_frame, radius, scaled, spacing,
     sparkline, status_dot, tooltip_builder, tr, virtual_table,
 };
-use forge_types::PlatformId;
+use forge_types::{PlatformId, Secret};
 use std::ffi::OsStr;
 use std::sync::Arc;
 use std::time::Duration;
@@ -15,8 +15,7 @@ use std::time::Duration;
 use forge_events::EventSource;
 use forge_overlay::MARKUP_FILE;
 use forge_server::{
-    ConnectedClientSnapshot, EventFilterSnapshot, SecretToken, ServerHandle, ServerSettings,
-    ServerSnapshot,
+    ConnectedClientSnapshot, EventFilterSnapshot, ServerHandle, ServerSettings, ServerSnapshot,
 };
 use forge_storage::{CredentialsRepo, SettingsRepo};
 use gpui::{
@@ -157,9 +156,9 @@ pub struct ServerConsoleView {
     bind_address: Option<String>,
     routable_host: Option<String>,
     routable_host_resolved_for: Option<String>,
-    bearer_token: String,
+    bearer_token: Secret,
     token_revealed: bool,
-    overlay_token: Option<String>,
+    overlay_token: Option<Secret>,
     _overlay_token_watch: Subscription,
     connected_clients: Vec<OwnedClientRow>,
     recent_clients: usize,
@@ -201,7 +200,7 @@ impl ServerConsoleView {
             bind_address: None,
             routable_host: None,
             routable_host_resolved_for: None,
-            bearer_token: String::new(),
+            bearer_token: Secret::new(""),
             token_revealed: false,
             overlay_token,
             _overlay_token_watch: overlay_token_watch,
@@ -359,7 +358,7 @@ impl ServerConsoleView {
         async_bridge::run_async(
             &self.rt_handle,
             crate::server_bearer::current_bearer_token(server, credentials),
-            |this, result: Option<String>, cx| {
+            |this, result: Option<Secret>, cx| {
                 if let Some(token) = result {
                     this.bearer_token = token;
                     cx.notify();
@@ -507,12 +506,12 @@ impl ServerConsoleView {
     }
 
     fn browser_source_url(&self) -> Option<String> {
-        self.browser_source_url_with(self.overlay_token.as_deref()?)
+        self.browser_source_url_with(self.overlay_token.as_ref()?.expose())
     }
 
     fn displayed_browser_source_url(&self) -> Option<String> {
         self.browser_source_url_with(&crate::overlay_link_token::displayed(
-            self.overlay_token.as_deref()?,
+            self.overlay_token.as_ref()?.expose(),
         ))
     }
 
@@ -540,7 +539,7 @@ impl ServerConsoleView {
     }
 
     fn copy_token(&mut self, cx: &mut Context<Self>) {
-        crate::toasts::copy_to_clipboard(self.bearer_token.clone(), cx);
+        crate::toasts::copy_to_clipboard(self.bearer_token.expose().to_owned(), cx);
     }
 
     fn copy_browser_source_url(&mut self, cx: &mut Context<Self>) {
@@ -559,10 +558,9 @@ impl ServerConsoleView {
                 handle
                     .regenerate_bearer_token()
                     .await
-                    .map(SecretToken::into_inner)
                     .map_err(|e| e.to_string())
             },
-            |this, result: Result<String, String>, cx| match result {
+            |this, result: Result<Secret, String>, cx| match result {
                 Ok(token) => {
                     this.bearer_token = token;
                     cx.notify();
@@ -746,9 +744,9 @@ impl ServerConsoleView {
         cx: &mut Context<Self>,
     ) -> AnyElement {
         let shown = if self.token_revealed {
-            self.bearer_token.clone()
+            self.bearer_token.expose().to_owned()
         } else {
-            forge_server::masked_token(&self.bearer_token)
+            forge_server::masked_token(self.bearer_token.expose())
         };
         let reveal_glyph = if self.token_revealed {
             Icon::EyeOff
@@ -1897,7 +1895,9 @@ mod tests {
         rt: &tokio::runtime::Runtime,
     ) -> Entity<ServerConsoleView> {
         let (backend, _writes) = test_backend();
-        cx.update(|cx| crate::overlay_link_token::publish(OVERLAY_TOKEN.to_owned(), cx));
+        cx.update(|cx| {
+            crate::overlay_link_token::publish(forge_types::Secret::new(OVERLAY_TOKEN), cx)
+        });
         cx.new(|cx| {
             ServerConsoleView::new(
                 None,
@@ -2163,7 +2163,9 @@ mod tests {
             serve(this, vec![dir_entry(OVERLAY_DIR, true)])
         });
 
-        cx.update(|cx| crate::overlay_link_token::publish(ROTATED_TOKEN.to_owned(), cx));
+        cx.update(|cx| {
+            crate::overlay_link_token::publish(forge_types::Secret::new(ROTATED_TOKEN), cx)
+        });
         cx.run_until_parked();
 
         let url = view.update(cx, |this, _| this.browser_source_url());

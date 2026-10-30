@@ -5,6 +5,7 @@ pub(crate) mod pack_flow;
 mod pack_transfer;
 mod setup_transfer;
 
+use forge_types::OverlayCredential;
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
@@ -29,9 +30,9 @@ use forge_storage::{
     ActionRepo, ActionStats, ActionTelemetry, BanLedgerRepo, CatalogRevision, ChatHistoryRepo,
     CredentialId, CredentialsRepo, DataProvider, DonationRepo, EventLogRepo, ExecutionStatus,
     GlobalEntry, GlobalsRepo, HistoryRepo, LatestValueRepo, MediaBlob, MediaBlobId, MediaReferrer,
-    MediaReferrerKind, MediaRepo, OverlayConfig, OverlayCredential, OverlayDefinition, OverlayId,
-    OverlayRepo, QueueRepo, RowClasses, RowGate, ScheduledRunRepo, ScriptRecord, ScriptReferences,
-    ScriptRepo, ScriptTelemetry, Setting, SettingCodec, SettingFamily, SettingRow, SettingsRepo,
+    MediaReferrerKind, MediaRepo, OverlayConfig, OverlayDefinition, OverlayId, OverlayRepo,
+    QueueRepo, RowClasses, RowGate, ScheduledRunRepo, ScriptRecord, ScriptReferences, ScriptRepo,
+    ScriptTelemetry, Setting, SettingCodec, SettingFamily, SettingRow, SettingsRepo,
     SoundboardClipsRepo, StorageError, TriggerInstanceRepo, TtsFiltersRepo, UserGlobalEntry,
     UserGlobalsRepo, ViewerRepo, VoiceAliasRepo,
 };

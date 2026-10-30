@@ -5,9 +5,10 @@ use forge_events::{EventPublisher, EventSource, RequestFailed, TypedEvent};
 use forge_net::{
     CallClass, DEFAULT_RETRY_AFTER_SECS, FailureContext, FailureObserver, Gateway,
     GatewayBuildError, GatewayFailure, GatewayProfile, GatewayRequest, RateLimiter, RequestBody,
-    Secret, ThrottleHintFamily,
+    ThrottleHintFamily,
 };
 use forge_platform_core::{EndpointSurface, PlatformEndpoints, PlatformError};
+use forge_types::Secret;
 use serde::Serialize;
 
 pub const KICK_API_BUDGET_CAPACITY: u32 = 60;

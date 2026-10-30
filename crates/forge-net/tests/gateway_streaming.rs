@@ -7,8 +7,9 @@ use std::time::Duration;
 use forge_net::test_support::RecordingRateLimiter;
 use forge_net::{
     CallClass, ExpectedRefusal, FailureContext, GatewayFailure, GatewayRequest, InvalidRequest,
-    Method, RateLimitOutcome, RequestBody, Secret, StreamFailure, TransportKind,
+    Method, RateLimitOutcome, RequestBody, StreamFailure, TransportKind,
 };
+use forge_types::Secret;
 use gateway_streaming_support::{MemorySink, SinkRefused, UNLIMITED, stream, transport_kind};
 use gateway_support::{Harness, platform, received};
 use serde_json::json;

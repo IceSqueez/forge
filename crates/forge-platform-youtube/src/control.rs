@@ -46,7 +46,7 @@ impl BuiltinControl for YoutubeIntegrationBundle {
 
         match self
             .credentials_manager()
-            .refresh(&creds.access_token)
+            .refresh(creds.access_token.expose())
             .await
         {
             Ok(_) => Ok(()),

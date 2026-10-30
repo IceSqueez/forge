@@ -7,6 +7,7 @@ use subtle::ConstantTimeEq as _;
 use tokio::sync::{RwLock, watch};
 
 use forge_storage::{CredentialId, CredentialsRepo, StorageError};
+use forge_types::Secret;
 
 use crate::ServerError;
 use crate::overlay_token::OverlayTokenState;
@@ -15,7 +16,7 @@ const TOKEN_BYTE_LEN: usize = 64;
 const TOKEN_PREFIX: &str = "fg_";
 
 pub(crate) struct AuthState {
-    bearer_token: Arc<RwLock<String>>,
+    bearer_token: Arc<RwLock<Secret>>,
     token_generation: AtomicU64,
     reads_required: AtomicBool,
     policy_changed: watch::Sender<()>,
@@ -62,7 +63,7 @@ impl AuthState {
     ) -> Self {
         let (policy_changed, _) = watch::channel(());
         Self {
-            bearer_token: Arc::new(RwLock::new(token)),
+            bearer_token: Arc::new(RwLock::new(Secret::new(token))),
             token_generation: AtomicU64::new(0),
             reads_required: AtomicBool::new(auth_required_for_reads),
             policy_changed,
@@ -74,10 +75,10 @@ impl AuthState {
         &self.overlay_token
     }
 
-    pub async fn regenerate(&self, creds: &dyn CredentialsRepo) -> Result<String, ServerError> {
-        let new_token = generate_token();
+    pub async fn regenerate(&self, creds: &dyn CredentialsRepo) -> Result<Secret, ServerError> {
+        let new_token = Secret::new(generate_token());
         let id = CredentialId::new(forge_storage::SERVER_BEARER_CREDENTIAL_ID);
-        creds.store(&id, &new_token).await?;
+        creds.store(&id, new_token.expose()).await?;
         {
             let mut current = self.bearer_token.write().await;
             *current = new_token.clone();
@@ -87,7 +88,7 @@ impl AuthState {
         Ok(new_token)
     }
 
-    pub(crate) async fn current_token(&self) -> String {
+    pub(crate) async fn current_token(&self) -> Secret {
         self.bearer_token.read().await.clone()
     }
 
@@ -98,7 +99,7 @@ impl AuthState {
     pub(crate) async fn verify_generation(&self, candidate: &str) -> Option<u64> {
         let current = self.bearer_token.read().await;
         let generation = self.token_generation.load(Ordering::SeqCst);
-        bool::from(current.as_bytes().ct_eq(candidate.as_bytes())).then_some(generation)
+        bool::from(current.expose().as_bytes().ct_eq(candidate.as_bytes())).then_some(generation)
     }
 
     pub fn token_generation(&self) -> u64 {
@@ -276,11 +277,14 @@ mod tests {
 
         let regenerated = auth.regenerate(&creds).await.expect("regenerate");
 
-        assert!(regenerated.starts_with(TOKEN_PREFIX));
+        assert!(regenerated.expose().starts_with(TOKEN_PREFIX));
         let reloaded = AuthState::load(false, &creds).await.expect("reload");
-        assert!(reloaded.verify(&regenerated).await);
+        assert!(reloaded.verify(regenerated.expose()).await);
         assert!(!reloaded.verify(FIRST_TOKEN).await);
-        assert_eq!(writes.lock().expect("lock").as_slice(), [regenerated]);
+        assert_eq!(
+            writes.lock().expect("lock").as_slice(),
+            [regenerated.expose().to_owned()]
+        );
     }
 
     #[tokio::test]

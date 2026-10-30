@@ -3,10 +3,9 @@ use std::sync::Arc;
 use async_trait::async_trait;
 pub(crate) use forge_net::status::CONFLICT;
 use forge_net::status::TOO_MANY_REQUESTS;
-use forge_net::{
-    ExpectedRefusal, Gateway, GatewayFailure, GatewayRequest, Method, RequestBody, Secret,
-};
+use forge_net::{ExpectedRefusal, Gateway, GatewayFailure, GatewayRequest, Method, RequestBody};
 use forge_types::OAuthToken;
+use forge_types::Secret;
 use thiserror::Error;
 use tracing::{debug, warn};
 

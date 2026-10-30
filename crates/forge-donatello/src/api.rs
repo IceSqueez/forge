@@ -5,11 +5,11 @@ use forge_net::{
     CallClass, DEFAULT_RETRY_AFTER_SECS, Gateway, GatewayProfile, GatewayRequest, RateLimiter,
     ThrottleHintFamily, TokenBucketRateLimiter,
 };
+use forge_types::Secret;
 use serde::de::DeserializeOwned;
 
 use crate::config::DonatelloConfig;
 use crate::error::DonatelloError;
-use crate::token::DonatelloToken;
 use crate::wire::{DonatesPageWire, MeWire};
 
 const TOKEN_HEADER: &str = "X-Token";
@@ -63,10 +63,7 @@ impl DonatelloApi {
         Self { gateway }
     }
 
-    pub(crate) async fn account(
-        &self,
-        token: &DonatelloToken,
-    ) -> Result<DonatelloAccount, DonatelloError> {
+    pub(crate) async fn account(&self, token: &Secret) -> Result<DonatelloAccount, DonatelloError> {
         let me: MeWire = match self.get(token, ME_PATH, &[]).await {
             Err(DonatelloError::Http { status }) if status == NOT_FOUND_STATUS => {
                 return Err(DonatelloError::ProfileIncomplete);
@@ -81,7 +78,7 @@ impl DonatelloApi {
 
     pub(crate) async fn donates_page(
         &self,
-        token: &DonatelloToken,
+        token: &Secret,
         page: u64,
     ) -> Result<DonatesPageWire, DonatelloError> {
         self.get(
@@ -94,13 +91,13 @@ impl DonatelloApi {
 
     async fn get<T: DeserializeOwned>(
         &self,
-        token: &DonatelloToken,
+        token: &Secret,
         path: &str,
         query: &[(&str, u64)],
     ) -> Result<T, DonatelloError> {
         let request = query.iter().fold(
             GatewayRequest::get(path)
-                .api_key(TOKEN_HEADER, token.secret())
+                .api_key(TOKEN_HEADER, token.clone())
                 .follow_redirects(false),
             |request, (name, value)| request.query(*name, value.to_string()),
         );

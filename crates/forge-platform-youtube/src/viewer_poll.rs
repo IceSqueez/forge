@@ -1,8 +1,9 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use forge_net::{GatewayFailure, GatewayRequest, Secret};
+use forge_net::{GatewayFailure, GatewayRequest};
 use forge_platform_core::{LiveViewerSource, PlatformError, ViewerReport, ViewerReportStream};
+use forge_types::Secret;
 use futures::future::BoxFuture;
 use tokio::sync::watch;
 use tokio_stream::wrappers::WatchStream;

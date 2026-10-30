@@ -476,7 +476,7 @@ async fn the_page_credential_the_report_names_is_the_one_the_overlay_row_answers
     let backend = reopen(dir.path()).await;
     let found = backend
         .overlay_repo()
-        .get_by_credential(&forge_storage::OverlayCredential::new(&seeded.credential))
+        .get_by_credential(&forge_types::OverlayCredential::new(&seeded.credential))
         .await
         .unwrap()
         .expect("forge resolves a page by the credential the report carries");
@@ -683,7 +683,7 @@ async fn a_seeded_obs_connection_is_the_one_forge_obs_dials_at_boot() {
         (
             configured.unwrap(),
             stored.url.as_str(),
-            stored.password.as_str()
+            stored.password.expose()
         ),
         (true, "ws://127.0.0.1:4455", "obs-seed-secret")
     );
@@ -729,7 +729,7 @@ async fn a_seeded_vtube_connection_is_the_one_forge_vtube_dials_at_boot() {
             configured.unwrap(),
             stored.host.as_str(),
             stored.port,
-            stored.token.as_str()
+            stored.token.expose()
         ),
         (true, "127.0.0.1", 8123, "vtube-seed-token")
     );

@@ -25,7 +25,8 @@ use forge_storage::action::MockActionRepo;
 use forge_storage::history::MockHistoryRepo;
 use forge_storage::queue::MockQueueRepo;
 use forge_storage::trigger_instance::MockTriggerInstanceRepo;
-use forge_storage::{OverlayCredential, OverlayDefinition, OverlayId, StorageError};
+use forge_storage::{OverlayDefinition, OverlayId, StorageError};
+use forge_types::OverlayCredential;
 use forge_types::{
     Action, ActionId, ExecutionMode, PermissionRung, PlatformId, PlatformScope, Queue, QueueId,
     SubActionConfig, SubActionStep, TriggerConfig, TriggerInstance, TriggerInstanceId, Variant,

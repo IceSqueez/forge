@@ -76,7 +76,7 @@ fn raw_sample(kind_id: &str, credential: Option<&str>) -> String {
         kind_id: kind_id.to_owned(),
         config: OverlayConfig::new(),
         source_overrides: Vec::new(),
-        credential: credential.map(str::to_owned),
+        credential: credential.map(forge_types::OverlayCredential::new),
         media: OverlayMedia::default(),
         sample: SampleContext::neutral(),
     };

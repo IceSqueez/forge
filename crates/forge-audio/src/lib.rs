@@ -35,8 +35,8 @@ pub use error::AudioError;
 pub use fan_out::{FanOutSink, fan_out_stoppable};
 pub use handle::{ControlledPlayback, PlaybackHandle};
 pub use remote::{
-    ClipMediaType, PlaybackCorrelation, RemoteAudioDestination, RemoteClip, RemoteClipId,
-    RemoteCommand, RemoteDelivery, RemoteDestinationId, RemoteVerdict,
+    ClipMediaType, PlaybackCorrelation, RemoteAudioDestination, RemoteClip, RemoteCommand,
+    RemoteDelivery, RemoteDestinationId, RemoteVerdict,
 };
 pub use remote_sink::RemoteSink;
 pub use route::{DevicePreference, build_cpal_sink, resolve_device, resolve_output_device};

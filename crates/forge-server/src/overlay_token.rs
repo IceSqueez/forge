@@ -6,6 +6,8 @@ use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use rand::Rng as _;
 use subtle::ConstantTimeEq as _;
 
+use forge_types::Secret;
+
 use forge_storage::{
     CredentialId, CredentialsRepo, OVERLAY_TOKEN_PREFIX, SERVER_OVERLAY_TOKEN_CREDENTIAL_ID,
     StorageError,
@@ -18,7 +20,7 @@ use crate::settings;
 const OVERLAY_TOKEN_BYTE_LEN: usize = 32;
 
 pub struct OverlayTokenState {
-    token: ArcSwap<String>,
+    token: ArcSwap<Secret>,
     required: AtomicBool,
 }
 
@@ -52,17 +54,17 @@ impl OverlayTokenState {
 
     pub(crate) fn with_token(token: String, required: bool) -> Self {
         Self {
-            token: ArcSwap::from_pointee(token),
+            token: ArcSwap::from_pointee(Secret::new(token)),
             required: AtomicBool::new(required),
         }
     }
 
     pub fn verify(&self, candidate: &str) -> bool {
         let current = self.token.load();
-        bool::from(current.as_bytes().ct_eq(candidate.as_bytes()))
+        bool::from(current.expose().as_bytes().ct_eq(candidate.as_bytes()))
     }
 
-    pub fn current(&self) -> String {
+    pub fn current(&self) -> Secret {
         self.token.load().as_ref().clone()
     }
 
@@ -77,10 +79,10 @@ impl OverlayTokenState {
     pub(crate) async fn stage_rotation(
         &self,
         creds: &dyn CredentialsRepo,
-    ) -> Result<String, ServerError> {
-        let fresh = generate_overlay_token();
+    ) -> Result<Secret, ServerError> {
+        let fresh = Secret::new(generate_overlay_token());
         let id = CredentialId::new(SERVER_OVERLAY_TOKEN_CREDENTIAL_ID);
-        creds.store(&id, &fresh).await?;
+        creds.store(&id, fresh.expose()).await?;
         Ok(fresh)
     }
 
@@ -89,10 +91,10 @@ impl OverlayTokenState {
         creds: &dyn CredentialsRepo,
     ) -> Result<(), StorageError> {
         let id = CredentialId::new(SERVER_OVERLAY_TOKEN_CREDENTIAL_ID);
-        creds.store(&id, &self.current()).await
+        creds.store(&id, self.current().expose()).await
     }
 
-    pub(crate) fn commit_rotation(&self, fresh: String) {
+    pub(crate) fn commit_rotation(&self, fresh: Secret) {
         self.token.store(Arc::new(fresh));
     }
 }
@@ -181,7 +183,7 @@ mod tests {
 
         let state = OverlayTokenState::load(&creds).await.expect("load");
 
-        assert_eq!(state.current(), "fgo_already-issued");
+        assert_eq!(state.current().expose(), "fgo_already-issued");
     }
 
     #[tokio::test]

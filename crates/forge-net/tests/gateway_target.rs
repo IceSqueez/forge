@@ -6,8 +6,9 @@ use std::time::Duration;
 use forge_net::test_support::RecordingRateLimiter;
 use forge_net::{
     Gateway, GatewayBuildError, GatewayFailure, GatewayProfile, GatewayRequest, GatewayTimings,
-    HostRejection, InvalidRequest, Method, MultipartBody, RateLimitOutcome, RequestBody, Secret,
+    HostRejection, InvalidRequest, Method, MultipartBody, RateLimitOutcome, RequestBody,
 };
+use forge_types::Secret;
 use gateway_support::{Harness, platform, received};
 use wiremock::matchers::any;
 use wiremock::{Mock, MockServer, ResponseTemplate};

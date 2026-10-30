@@ -46,7 +46,8 @@ mod tests {
     use forge_components::{AccentColor, ThemeId, accent_swatch};
     use forge_overlay::config::{ACCENT, ACCENT_OPTIONS};
     use forge_overlay::{OverlayConfig, register_builtin_kinds};
-    use forge_storage::{OverlayCredential, OverlayId};
+    use forge_storage::OverlayId;
+    use forge_types::OverlayCredential;
     use forge_types::Variant;
     use time::OffsetDateTime;
 

@@ -5,16 +5,17 @@ use std::time::Duration;
 
 use forge_runtime::{OverlayConnectListener, OverlayReceivers, OverlayServiceHandle};
 use forge_storage::OverlayId;
+use forge_types::{ClipCapability, Secret};
 use tokio::net::TcpListener;
 use tokio::sync::{Mutex, watch};
 
-use crate::audio_clips::{ClipCapability, ClipOffer, ClipOutcomeHandle, ClipTicket};
+use crate::audio_clips::{ClipOffer, ClipOutcomeHandle, ClipTicket};
 use crate::auth::AuthState;
 use crate::config::ServerSettings;
 use crate::origin::build_allowed_origins;
 use crate::run_state::{Generation, RunState};
 use crate::server::AppState;
-use crate::{SecretToken, ServerError, server};
+use crate::{ServerError, server};
 
 const CONNECTION_DRAIN_BUDGET: Duration = Duration::from_secs(5);
 
@@ -224,14 +225,13 @@ impl ServerHandle {
         Arc::clone(&self.inner.lock().await.state.auth)
     }
 
-    pub async fn bearer_token(&self) -> SecretToken {
-        SecretToken::new(self.auth_state().await.current_token().await)
+    pub async fn bearer_token(&self) -> Secret {
+        self.auth_state().await.current_token().await
     }
 
-    pub async fn regenerate_bearer_token(&self) -> Result<SecretToken, ServerError> {
+    pub async fn regenerate_bearer_token(&self) -> Result<Secret, ServerError> {
         let state = self.inner.lock().await.state.clone();
-        let fresh = state.auth.regenerate(state.credentials.as_ref()).await?;
-        Ok(SecretToken::new(fresh))
+        state.auth.regenerate(state.credentials.as_ref()).await
     }
 
     pub async fn reads_require_auth(&self) -> bool {
@@ -245,8 +245,8 @@ impl ServerHandle {
         Ok(())
     }
 
-    pub async fn overlay_token(&self) -> SecretToken {
-        SecretToken::new(self.auth_state().await.overlay_token().current())
+    pub async fn overlay_token(&self) -> Secret {
+        self.auth_state().await.overlay_token().current()
     }
 
     pub async fn set_http_overlay_token_required(&self, required: bool) {
@@ -259,7 +259,7 @@ impl ServerHandle {
     pub async fn regenerate_overlay_token(
         &self,
         overlay_service: &OverlayServiceHandle,
-    ) -> Result<String, ServerError> {
+    ) -> Result<Secret, ServerError> {
         let state = self.inner.lock().await.state.clone();
         let gate = state.auth.overlay_token();
         let fresh = gate.stage_rotation(state.credentials.as_ref()).await?;
@@ -272,7 +272,7 @@ impl ServerHandle {
                         tracing::error!(error = %restore_error, "could not restore the previous overlay token after an aborted rotation");
                         gate.commit_rotation(fresh.clone());
                         Err(ServerError::OverlayTokenRestoreFailed {
-                            token: SecretToken::new(fresh),
+                            token: fresh,
                             reason: format!("{reissue_error}; {restore_error}"),
                         })
                     }
@@ -284,7 +284,7 @@ impl ServerHandle {
             state.bus_adapter.revoke_overlay(identity).await;
         }
         let incomplete = |reason: String| ServerError::OverlayRotationIncomplete {
-            token: SecretToken::new(fresh.clone()),
+            token: fresh.clone(),
             reason,
         };
         let pass = overlay_service
@@ -603,17 +603,17 @@ mod tests {
 
         let gate = handle.auth_state().await;
         assert!(
-            !gate.overlay_token().verify(&old),
+            !gate.overlay_token().verify(old.expose()),
             "the old token still opens overlay files"
         );
-        assert!(gate.overlay_token().verify(&fresh));
+        assert!(gate.overlay_token().verify(fresh.expose()));
         assert_eq!(
             slots
                 .lock()
                 .expect("lock")
                 .get(forge_storage::SERVER_OVERLAY_TOKEN_CREDENTIAL_ID)
                 .map(String::as_str),
-            Some(fresh.as_str()),
+            Some(fresh.expose()),
             "a restart would bring the old token back"
         );
     }
@@ -655,10 +655,16 @@ mod tests {
             matches!(&result, Err(ServerError::Storage(reason)) if reason.contains("database is locked")),
             "a restored rotation must report the reissue failure itself: {result:?}"
         );
-        assert!(handle.auth_state().await.overlay_token().verify(&old));
+        assert!(
+            handle
+                .auth_state()
+                .await
+                .overlay_token()
+                .verify(old.expose())
+        );
         assert_eq!(
-            stored_overlay_token(&slots),
-            Some(old),
+            stored_overlay_token(&slots).as_deref(),
+            Some(old.expose()),
             "a restart would load a token no URL carries"
         );
         assert!(!received_close(&mut page));
@@ -684,23 +690,23 @@ mod tests {
         };
         let gate = handle.auth_state().await;
         assert!(
-            gate.overlay_token().verify(token),
+            gate.overlay_token().verify(token.expose()),
             "the reported token is not the live one"
         );
-        assert!(!gate.overlay_token().verify(&old));
+        assert!(!gate.overlay_token().verify(old.expose()));
         assert_eq!(
             stored_overlay_token(&slots).as_deref(),
-            Some(token.as_str())
+            Some(token.expose())
         );
         assert!(
-            !error.to_string().contains(token.as_str()),
+            !error.to_string().contains(token.expose()),
             "the toast text carries the overlay token"
         );
     }
 
     async fn regenerate_with_a_failed_reissue_and_restore(
         root: &std::path::Path,
-    ) -> (ServerHandle, CredentialSlots, Result<String, ServerError>) {
+    ) -> (ServerHandle, CredentialSlots, Result<Secret, ServerError>) {
         let (handle, slots) = rotation_handle_over(
             Err(forge_storage::StorageError::Connection {
                 reason: "database is locked".into(),
@@ -727,12 +733,12 @@ mod tests {
         };
         let gate = handle.auth_state().await;
         assert!(
-            gate.overlay_token().verify(token),
+            gate.overlay_token().verify(token.expose()),
             "the reported token is not the live one"
         );
         assert_eq!(
             stored_overlay_token(&slots).as_deref(),
-            Some(token.as_str()),
+            Some(token.expose()),
             "a restart would load a token no URL carries"
         );
     }
@@ -767,7 +773,7 @@ mod tests {
             panic!("expected a failed restore, got {error:?}");
         };
         assert!(
-            !error.to_string().contains(token.as_str()) && !reason.contains(token.as_str()),
+            !error.to_string().contains(token.expose()) && !reason.contains(token.expose()),
             "the toast text carries the overlay token"
         );
     }
@@ -863,15 +869,15 @@ mod tests {
         assert_eq!(handle.bearer_token().await, fresh);
         assert_eq!(
             stored_bearer_token(&slots).as_deref(),
-            Some(fresh.as_str()),
+            Some(fresh.expose()),
             "a restart would bring the old token back"
         );
         let gate = handle.auth_state().await;
         assert!(
-            !gate.verify(&old).await,
+            !gate.verify(old.expose()).await,
             "the old bearer still authenticates"
         );
-        assert!(gate.verify(&fresh).await);
+        assert!(gate.verify(fresh.expose()).await);
     }
 
     #[tokio::test]
@@ -889,8 +895,8 @@ mod tests {
             "{result:?}"
         );
         assert_eq!(handle.bearer_token().await, old);
-        assert!(handle.auth_state().await.verify(&old).await);
-        assert_eq!(stored_bearer_token(&slots).as_deref(), Some(old.as_str()));
+        assert!(handle.auth_state().await.verify(old.expose()).await);
+        assert_eq!(stored_bearer_token(&slots).as_deref(), Some(old.expose()));
     }
 
     #[tokio::test]
@@ -941,14 +947,20 @@ mod tests {
         let root = tempfile::tempdir().expect("tempdir");
         let (handle, _slots) = rotation_handle(Ok(Vec::new())).await;
         let before = handle.overlay_token().await;
-        assert!(handle.auth_state().await.overlay_token().verify(&before));
+        assert!(
+            handle
+                .auth_state()
+                .await
+                .overlay_token()
+                .verify(before.expose())
+        );
 
         let fresh = handle
             .regenerate_overlay_token(&empty_overlay_service(root.path()).await)
             .await
             .expect("regenerate");
 
-        assert_eq!(handle.overlay_token().await.as_str(), fresh);
+        assert_eq!(handle.overlay_token().await, fresh);
     }
 
     #[tokio::test]
@@ -962,7 +974,7 @@ mod tests {
             handle.overlay_token().await,
         ] {
             let debug = format!("{token:?}");
-            assert!(!debug.contains(token.as_str()), "token leaked: {debug}");
+            assert!(!debug.contains(token.expose()), "token leaked: {debug}");
         }
     }
 }

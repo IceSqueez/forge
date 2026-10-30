@@ -2,9 +2,10 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use forge_events::{Event, EventSource};
-use forge_net::{DedupSet, ExpectedRefusal, GatewayRequest, Secret};
+use forge_net::{DedupSet, ExpectedRefusal, GatewayRequest};
 use forge_platform_core::PlatformError;
 use forge_storage::BanLedgerRepo;
+use forge_types::Secret;
 use forge_types::{
     ChatEventDetail, ChatPayload, ChatSegment, ChatViewer, ModerationMarks, UserBadge,
 };

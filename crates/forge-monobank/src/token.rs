@@ -1,58 +1,38 @@
-use std::fmt;
-
-use forge_net::{Secret, is_valid_header_value};
+use forge_net::is_valid_header_value;
+use forge_types::Secret;
 
 use crate::error::MonobankError;
 
-#[derive(Clone, PartialEq, Eq)]
-pub(crate) struct MonobankToken(String);
-
-impl MonobankToken {
-    pub(crate) fn parse(raw: &str) -> Result<Self, MonobankError> {
-        let trimmed = raw.trim();
-        if trimmed.is_empty() {
-            return Err(MonobankError::MissingToken);
-        }
-        let token = Self(trimmed.to_owned());
-        if !is_valid_header_value(&token.0) {
-            return Err(MonobankError::MalformedToken);
-        }
-        Ok(token)
+pub(crate) fn parse_token(raw: &str) -> Result<Secret, MonobankError> {
+    let trimmed = raw.trim();
+    if trimmed.is_empty() {
+        return Err(MonobankError::MissingToken);
     }
-
-    pub(crate) fn secret(&self) -> Secret {
-        Secret::new(self.0.clone())
+    if !is_valid_header_value(trimmed) {
+        return Err(MonobankError::MalformedToken);
     }
-
-    pub(crate) fn expose(&self) -> &str {
-        &self.0
-    }
-}
-
-impl fmt::Debug for MonobankToken {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str("MonobankToken(***)")
-    }
+    Ok(Secret::new(trimmed))
 }
 
 #[cfg(test)]
 mod tests {
-    use super::MonobankToken;
+    use super::parse_token;
     use crate::error::MonobankError;
+    use forge_types::Secret;
 
     const RAW: &str = "uMono-secret-token-value";
 
     #[test]
     fn parse_trims_surrounding_whitespace() {
-        let token = MonobankToken::parse(&format!("  {RAW}\n")).ok();
-        assert_eq!(token.as_ref().map(MonobankToken::expose), Some(RAW));
+        let token = parse_token(&format!("  {RAW}\n")).ok();
+        assert_eq!(token.as_ref().map(Secret::expose), Some(RAW));
     }
 
     #[test]
     fn parse_rejects_blank_input_as_missing() {
         for raw in ["", "   ", "\n\t"] {
             assert!(
-                matches!(MonobankToken::parse(raw), Err(MonobankError::MissingToken)),
+                matches!(parse_token(raw), Err(MonobankError::MissingToken)),
                 "raw {raw:?}"
             );
         }
@@ -62,10 +42,7 @@ mod tests {
     fn parse_rejects_text_that_cannot_travel_in_a_header() {
         for raw in ["tok\nen", "tok\u{7f}en", "tok\0en"] {
             assert!(
-                matches!(
-                    MonobankToken::parse(raw),
-                    Err(MonobankError::MalformedToken)
-                ),
+                matches!(parse_token(raw), Err(MonobankError::MalformedToken)),
                 "raw {raw:?}"
             );
         }
@@ -73,19 +50,15 @@ mod tests {
 
     #[test]
     fn debug_never_shows_the_token() {
-        let token = MonobankToken::parse(RAW).ok();
+        let token = parse_token(RAW).ok();
         assert!(!format!("{token:?}").contains(RAW));
     }
 
     #[test]
     fn parse_keeps_inner_tabs_and_non_ascii_text_that_a_header_can_carry() {
         for raw in ["tok\ten", "токен-é"] {
-            let token = MonobankToken::parse(raw).ok();
-            assert_eq!(
-                token.as_ref().map(MonobankToken::expose),
-                Some(raw),
-                "raw {raw:?}"
-            );
+            let token = parse_token(raw).ok();
+            assert_eq!(token.as_ref().map(Secret::expose), Some(raw), "raw {raw:?}");
         }
     }
 }

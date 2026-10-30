@@ -27,8 +27,8 @@ mod ws_client;
 pub mod test_helpers;
 
 pub use audio_clips::{
-    AudioClipStore, ClipCapability, ClipMediaType, ClipOffer, ClipOutcome, ClipOutcomeHandle,
-    ClipTicket, MAX_CLIP_BYTES, MAX_TOTAL_CLIP_BYTES,
+    AudioClipStore, ClipMediaType, ClipOffer, ClipOutcome, ClipOutcomeHandle, ClipTicket,
+    MAX_CLIP_BYTES, MAX_TOTAL_CLIP_BYTES,
 };
 pub use auth::{generate_token, masked_token};
 pub use bandwidth::BandwidthTracker;
@@ -37,7 +37,7 @@ pub use config::{
     DEFAULT_PORT, LAN_BIND_ADDRESS, LOCALHOST_BIND_ADDRESS, ServerConfig, ServerSettings,
 };
 pub use delivery_hub::DeliveryHub;
-pub use error::{SecretToken, ServerError};
+pub use error::ServerError;
 pub use handle::ServerHandle;
 pub use overlay_token::{OverlayTokenState, masked_overlay_token};
 pub use server::{AppState, Server, start_server, stopped_server};

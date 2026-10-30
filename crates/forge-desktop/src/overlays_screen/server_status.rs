@@ -1,4 +1,5 @@
 use forge_storage::OverlayId;
+use forge_types::Secret;
 use gpui::{Context, Subscription};
 
 use super::OverlaysView;
@@ -15,7 +16,7 @@ pub(super) struct ServerStatus {
     pub(super) running: bool,
     pub(super) bind_address: Option<String>,
     routable_host: Option<String>,
-    token: Option<String>,
+    token: Option<Secret>,
     token_watch: Option<Subscription>,
 }
 
@@ -28,11 +29,14 @@ impl ServerStatus {
     }
 
     fn overlay_url(&self, id: &OverlayId) -> Option<String> {
-        self.page_url(self.token.as_deref()?, id)
+        self.page_url(self.token.as_ref()?.expose(), id)
     }
 
     fn displayed_overlay_url(&self, id: &OverlayId) -> Option<String> {
-        self.page_url(&overlay_link_token::displayed(self.token.as_deref()?), id)
+        self.page_url(
+            &overlay_link_token::displayed(self.token.as_ref()?.expose()),
+            id,
+        )
     }
 
     fn page_url(&self, token: &str, id: &OverlayId) -> Option<String> {
@@ -68,7 +72,8 @@ impl OverlaysView {
     }
 
     pub(super) fn displayed_served_path(&self, id: &OverlayId, file: &str) -> String {
-        let token = overlay_link_token::displayed(self.served.token.as_deref().unwrap_or_default());
+        let token =
+            overlay_link_token::displayed(self.served.token.as_ref().map_or("", Secret::expose));
         format!("{}{file}", overlay_page_url("", &token, id.as_str()))
     }
 
@@ -143,7 +148,7 @@ mod tests {
         ServerStatus {
             running: true,
             bind_address: Some("127.0.0.1:9515".to_owned()),
-            token: token.map(str::to_owned),
+            token: token.map(forge_types::Secret::new),
             ..ServerStatus::default()
         }
     }

@@ -1689,7 +1689,7 @@ mod tests {
                 gate.release.notified().await;
             }
             Ok(forge_audio::RemoteDelivery {
-                clip_id: forge_audio::RemoteClipId::new(format!("clip-{n}")),
+                clip_id: forge_types::RemoteClipId::new(format!("clip-{n}")),
                 live_players: 1,
             })
         }
@@ -1697,7 +1697,7 @@ mod tests {
         async fn control(
             &self,
             _destination: &forge_audio::RemoteDestinationId,
-            clip_id: &forge_audio::RemoteClipId,
+            clip_id: &forge_types::RemoteClipId,
             command: forge_audio::RemoteCommand,
         ) -> Result<(), AudioError> {
             #[expect(
@@ -1710,7 +1710,7 @@ mod tests {
 
         async fn verdict(
             &self,
-            _clip_id: &forge_audio::RemoteClipId,
+            _clip_id: &forge_types::RemoteClipId,
         ) -> Result<forge_audio::RemoteVerdict, AudioError> {
             std::future::pending().await
         }

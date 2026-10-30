@@ -5,6 +5,7 @@ use forge_events::EventPublisher;
 use forge_storage::SettingDisclosure::Withheld;
 use forge_storage::SettingPortability::Portable;
 use forge_storage::{CredentialsRepo, Flag, Setting, SettingsRepo, write_setting};
+use forge_types::Secret;
 use gpui::{
     AnyElement, ClickEvent, Context, Entity, EventEmitter, Focusable, Pixels, Subscription, Window,
     div, prelude::*, px,
@@ -82,7 +83,7 @@ impl ObsSubmit {
 struct Prefill {
     host: String,
     port: String,
-    password: String,
+    password: Secret,
     flags: ConnectFlags,
 }
 
@@ -95,7 +96,7 @@ struct ProbeReport {
 struct FormValues {
     host: String,
     port: u16,
-    password: String,
+    password: Secret,
 }
 
 pub struct ObsCredentialsForm {
@@ -178,8 +179,9 @@ impl ObsCredentialsForm {
             .update(cx, |input, cx| input.set_content(prefill.host, cx));
         self.port
             .update(cx, |input, cx| input.set_content(prefill.port, cx));
-        self.password
-            .update(cx, |input, cx| input.set_content(prefill.password, cx));
+        self.password.update(cx, |input, cx| {
+            input.set_content(prefill.password.expose().to_owned(), cx)
+        });
         self.flags = prefill.flags;
         cx.notify();
     }
@@ -191,7 +193,7 @@ impl ObsCredentialsForm {
             DEFAULT_HOST,
             DEFAULT_PORT,
         );
-        let password = self.password.read(cx).content().to_owned();
+        let password = Secret::new(self.password.read(cx).content());
 
         match port {
             Some(port) => {
@@ -413,7 +415,7 @@ async fn load_prefill(
                 .unwrap_or_else(|_| (DEFAULT_HOST.to_owned(), DEFAULT_PORT));
             (host, port, cred.password)
         }
-        None => (DEFAULT_HOST.to_owned(), DEFAULT_PORT, String::new()),
+        None => (DEFAULT_HOST.to_owned(), DEFAULT_PORT, Secret::new("")),
     };
 
     Prefill {
@@ -447,7 +449,7 @@ impl AttemptError {
 }
 
 async fn probe(form: FormValues) -> Result<ProbeReport, AttemptError> {
-    let result = forge_obs::probe_connection(&form.host, form.port, &form.password)
+    let result = forge_obs::probe_connection(&form.host, form.port, form.password.expose())
         .await
         .map_err(AttemptError::Obs)?;
     Ok(ProbeReport {
@@ -465,11 +467,11 @@ async fn connect_obs(
     form: FormValues,
     flags: ConnectFlags,
 ) -> Result<(), AttemptError> {
-    forge_obs::probe_connection(&form.host, form.port, &form.password)
+    forge_obs::probe_connection(&form.host, form.port, form.password.expose())
         .await
         .map_err(AttemptError::Obs)?;
 
-    forge_obs::credentials::store(&*credentials, &form.host, form.port, &form.password)
+    forge_obs::credentials::store(&*credentials, &form.host, form.port, form.password.expose())
         .await
         .map_err(|e| AttemptError::Other(e.to_string()))?;
     write_setting(&*settings, &OBS_AUTO_RECONNECT, &flags.auto_reconnect)

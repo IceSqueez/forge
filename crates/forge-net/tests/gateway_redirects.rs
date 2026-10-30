@@ -1,7 +1,9 @@
 #![allow(clippy::panic)]
 mod gateway_support;
 
-use forge_net::{GatewayFailure, GatewayRequest, RequestBody, Secret, TransportKind};
+use forge_net::{GatewayFailure, GatewayRequest, RequestBody, TransportKind};
+
+use forge_types::Secret;
 use gateway_support::{Harness, platform, received};
 use serde_json::json;
 use wiremock::matchers::path;

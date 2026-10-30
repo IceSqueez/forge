@@ -1247,6 +1247,7 @@ fn voice_initial(name: &str) -> String {
 
 #[cfg(test)]
 mod tests {
+    use forge_types::Secret;
     use std::cell::RefCell;
 
     use forge_components::Toasts;
@@ -1521,7 +1522,7 @@ mod tests {
                 forge_tts_core::ENGINE_ID_AZURE,
                 Arc::new(forge_tts_cloud::azure::AzureEngineFactory::new(
                     forge_tts_cloud::credentials::AzureCredentials {
-                        api_key: "key".into(),
+                        api_key: Secret::new("key"),
                         region: "westeurope".into(),
                         base_url: None,
                     },
@@ -1532,7 +1533,7 @@ mod tests {
                 forge_tts_core::ENGINE_ID_ELEVENLABS,
                 Arc::new(forge_tts_cloud::elevenlabs::ElevenLabsEngineFactory::new(
                     forge_tts_cloud::credentials::ElevenLabsCredentials {
-                        api_key: "key".into(),
+                        api_key: Secret::new("key"),
                         base_url: None,
                     },
                     &gateways,
@@ -1542,7 +1543,7 @@ mod tests {
                 forge_tts_core::ENGINE_ID_OPENAI,
                 Arc::new(forge_tts_cloud::openai::OpenAiEngineFactory::new(
                     forge_tts_cloud::credentials::OpenAiCredentials {
-                        api_key: "key".into(),
+                        api_key: Secret::new("key"),
                         base_url: None,
                     },
                     &gateways,
@@ -1552,8 +1553,8 @@ mod tests {
                 forge_tts_core::ENGINE_ID_POLLY,
                 Arc::new(forge_tts_cloud::polly::PollyEngineFactory::new(
                     forge_tts_cloud::credentials::PollyCredentials {
-                        access_key_id: "id".into(),
-                        secret_access_key: "secret".into(),
+                        access_key_id: Secret::new("id"),
+                        secret_access_key: Secret::new("secret"),
                         region: "eu-west-1".into(),
                         base_url: None,
                     },

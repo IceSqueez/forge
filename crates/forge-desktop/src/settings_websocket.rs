@@ -12,10 +12,10 @@ use forge_components::{
 };
 use forge_runtime::OverlayServiceHandle;
 use forge_server::{
-    DEFAULT_PORT, LAN_BIND_ADDRESS, LOCALHOST_BIND_ADDRESS, SecretToken, ServerHandle,
-    ServerSettings,
+    DEFAULT_PORT, LAN_BIND_ADDRESS, LOCALHOST_BIND_ADDRESS, ServerHandle, ServerSettings,
 };
 use forge_storage::{CredentialsRepo, DataProvider, SettingsRepo};
+use forge_types::Secret;
 use gpui::{
     AnyElement, App, ClickEvent, Context, Entity, Focusable, FontWeight, Pixels, SharedString,
     Subscription, Window, div, prelude::*, px,
@@ -82,9 +82,9 @@ pub struct SettingsWebSocketView {
     additional_origins: Vec<String>,
     additional_origins_unreadable: bool,
 
-    bearer_token: String,
+    bearer_token: Secret,
     token_revealed: bool,
-    overlay_token: Option<String>,
+    overlay_token: Option<Secret>,
     overlay_token_regenerating: bool,
     overlay_token_confirm_open: bool,
 
@@ -169,7 +169,7 @@ impl SettingsWebSocketView {
             overlay_root: None,
             additional_origins: Vec::new(),
             additional_origins_unreadable: false,
-            bearer_token: String::new(),
+            bearer_token: Secret::new(""),
             token_revealed: false,
             overlay_token,
             overlay_token_regenerating: false,
@@ -275,7 +275,7 @@ impl SettingsWebSocketView {
         async_bridge::run_async(
             &self.rt_handle,
             server_bearer::current_bearer_token(server, credentials),
-            |this, result: Option<String>, cx| {
+            |this, result: Option<Secret>, cx| {
                 if let Some(token) = result {
                     this.bearer_token = token;
                     cx.notify();
@@ -739,8 +739,8 @@ impl SettingsWebSocketView {
     }
 
     fn copy_overlay_token(&mut self, cx: &mut Context<Self>) {
-        if let Some(token) = self.overlay_token.clone() {
-            crate::toasts::copy_to_clipboard(token, cx);
+        if let Some(token) = &self.overlay_token {
+            crate::toasts::copy_to_clipboard(token.expose().to_owned(), cx);
         }
     }
 
@@ -779,21 +779,15 @@ impl SettingsWebSocketView {
                 match handle.regenerate_overlay_token(&overlays).await {
                     Ok(token) => Ok((token, TokenRegenerateNote::Clean)),
                     Err(forge_server::ServerError::OverlayRotationIncomplete { token, reason }) => {
-                        Ok((
-                            token.into_inner(),
-                            TokenRegenerateNote::RewriteFailed(reason),
-                        ))
+                        Ok((token, TokenRegenerateNote::RewriteFailed(reason)))
                     }
                     Err(forge_server::ServerError::OverlayTokenRestoreFailed { token, reason }) => {
-                        Ok((
-                            token.into_inner(),
-                            TokenRegenerateNote::RestoreFailed(reason),
-                        ))
+                        Ok((token, TokenRegenerateNote::RestoreFailed(reason)))
                     }
                     Err(e) => Err(e.to_string()),
                 }
             },
-            |this, result: Result<(String, TokenRegenerateNote), String>, cx| {
+            |this, result: Result<(Secret, TokenRegenerateNote), String>, cx| {
                 this.finish_overlay_token_regenerate(result, cx)
             },
             cx,
@@ -803,7 +797,7 @@ impl SettingsWebSocketView {
 
     fn finish_overlay_token_regenerate(
         &mut self,
-        result: Result<(String, TokenRegenerateNote), String>,
+        result: Result<(Secret, TokenRegenerateNote), String>,
         cx: &mut Context<Self>,
     ) {
         self.overlay_token_regenerating = false;
@@ -900,7 +894,7 @@ impl SettingsWebSocketView {
     }
 
     fn copy_token(&mut self, cx: &mut Context<Self>) {
-        crate::toasts::copy_to_clipboard(self.bearer_token.clone(), cx);
+        crate::toasts::copy_to_clipboard(self.bearer_token.expose().to_owned(), cx);
     }
 
     fn regenerate_token(&mut self, cx: &mut Context<Self>) {
@@ -913,10 +907,9 @@ impl SettingsWebSocketView {
                 handle
                     .regenerate_bearer_token()
                     .await
-                    .map(SecretToken::into_inner)
                     .map_err(|e| e.to_string())
             },
-            |this, result: Result<String, String>, cx| {
+            |this, result: Result<Secret, String>, cx| {
                 if let Ok(token) = result {
                     this.bearer_token = token;
                     cx.notify();
@@ -1189,9 +1182,9 @@ impl SettingsWebSocketView {
         cx: &mut Context<Self>,
     ) -> impl IntoElement {
         let shown = if self.token_revealed {
-            self.bearer_token.clone()
+            self.bearer_token.expose().to_owned()
         } else {
-            forge_server::masked_token(&self.bearer_token)
+            forge_server::masked_token(self.bearer_token.expose())
         };
         let reveal_glyph = if self.token_revealed {
             Icon::EyeOff
@@ -1336,7 +1329,7 @@ impl SettingsWebSocketView {
         cx: &mut Context<Self>,
     ) -> impl IntoElement {
         let shown =
-            overlay_link_token::displayed(self.overlay_token.as_deref().unwrap_or_default());
+            overlay_link_token::displayed(self.overlay_token.as_ref().map_or("", Secret::expose));
 
         let mut field = div()
             .flex_1()
@@ -2017,8 +2010,11 @@ mod tests {
         }
     }
 
-    fn live_overlay_token(rt: &tokio::runtime::Runtime, server: &ServerHandle) -> String {
-        rt.block_on(server.overlay_token()).into_inner()
+    fn live_overlay_token(
+        rt: &tokio::runtime::Runtime,
+        server: &ServerHandle,
+    ) -> forge_types::Secret {
+        rt.block_on(server.overlay_token())
     }
 
     fn overlay_page_status(rt: &tokio::runtime::Runtime, server: &ServerHandle) -> String {

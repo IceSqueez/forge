@@ -6,7 +6,7 @@ use std::time::Duration;
 use axum::body::Bytes;
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use forge_storage::OverlayId;
-use forge_types::Redacted;
+use forge_types::{ClipCapability, Secret};
 use rand::Rng as _;
 use tokio::sync::{Notify, oneshot};
 use tokio::time::Instant;
@@ -45,31 +45,17 @@ impl fmt::Display for ClipMediaType {
     }
 }
 
-#[derive(Clone, PartialEq, Eq, Hash)]
-pub struct ClipCapability(String);
-
-impl ClipCapability {
-    pub fn expose(&self) -> &str {
-        &self.0
-    }
-}
-
-impl fmt::Debug for ClipCapability {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "ClipCapability({Redacted:?})")
-    }
-}
-
 pub struct ClipOffer {
     pub bytes: Vec<u8>,
     pub media_type: ClipMediaType,
     pub duration_ms: u64,
 }
 
+#[derive(Debug)]
 pub struct ClipTicket {
     capability: ClipCapability,
-    clip_path: String,
-    report_path: String,
+    clip_path: Secret,
+    report_path: Secret,
 }
 
 impl ClipTicket {
@@ -78,17 +64,11 @@ impl ClipTicket {
     }
 
     pub fn clip_path(&self) -> &str {
-        &self.clip_path
+        self.clip_path.expose()
     }
 
     pub fn report_path(&self) -> &str {
-        &self.report_path
-    }
-}
-
-impl fmt::Debug for ClipTicket {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "ClipTicket({Redacted:?})")
+        self.report_path.expose()
     }
 }
 
@@ -229,9 +209,9 @@ impl AudioClipStore {
 
         Ok((
             ClipTicket {
-                clip_path: clip_path(&capability),
-                report_path: report_path(&capability),
-                capability: ClipCapability(capability),
+                clip_path: Secret::new(clip_path(&capability)),
+                report_path: Secret::new(report_path(&capability)),
+                capability: ClipCapability::new(capability),
             },
             ClipOutcomeHandle(outcome_rx),
         ))

@@ -418,6 +418,7 @@ impl BuiltinContent for YoutubeIntegrationBundle {
 
 #[cfg(test)]
 mod tests {
+    use forge_types::OAuthToken;
     use std::collections::{BTreeMap, BTreeSet};
 
     use async_trait::async_trait;
@@ -611,8 +612,8 @@ mod tests {
         expires_at: OffsetDateTime,
     ) -> String {
         serde_json::to_string(&YoutubeCredentials {
-            access_token: "access".to_owned(),
-            refresh_token: "refresh".to_owned(),
+            access_token: OAuthToken::new("access"),
+            refresh_token: OAuthToken::new("refresh"),
             client_id: "client".to_owned(),
             channel_id: "UCabc123".to_owned(),
             channel_title: channel_title.to_owned(),

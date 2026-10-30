@@ -3,7 +3,8 @@ mod gateway_support;
 use std::collections::BTreeMap;
 use std::sync::{Arc, Mutex, OnceLock};
 
-use forge_net::{CallClass, GatewayRequest, Secret};
+use forge_net::{CallClass, GatewayRequest};
+use forge_types::Secret;
 use gateway_support::{Harness, platform};
 use tracing::field::{Field, Visit};
 use tracing::span;

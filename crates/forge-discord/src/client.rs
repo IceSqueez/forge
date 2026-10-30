@@ -9,7 +9,7 @@ use forge_net::{
 };
 use forge_platform_core::ConnectionState;
 use forge_storage::{CredentialId, CredentialsRepo};
-use forge_types::IntegrationId;
+use forge_types::{IntegrationId, Secret};
 use tokio::sync::broadcast;
 
 use crate::content::{DiscordContentSnapshot, make_content_state, record_send, record_test_send};
@@ -143,11 +143,10 @@ impl DiscordClient {
         let blob: serde_json::Value = serde_json::from_str(&json)?;
         let url = blob["url"]
             .as_str()
-            .ok_or_else(|| DiscordError::Credential(format!("missing url in {name}")))?
-            .to_owned();
+            .ok_or_else(|| DiscordError::Credential(format!("missing url in {name}")))?;
         Ok(WebhookCredential {
             name: name.to_owned(),
-            url,
+            url: Secret::new(url),
         })
     }
 
@@ -159,7 +158,7 @@ impl DiscordClient {
                 return Err(err);
             }
         };
-        WebhookRoute::parse(&cred.url)
+        WebhookRoute::parse(cred.url.expose())
     }
 
     fn record_missing_webhook_failure(&self, webhook_name: &str, err: &DiscordError) {

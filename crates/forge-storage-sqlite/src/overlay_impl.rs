@@ -1,8 +1,8 @@
 use async_trait::async_trait;
 use forge_storage::{
-    OverlayConfig, OverlayCredential, OverlayDefinition, OverlayId, OverlayRepo, StorageError,
-    is_token_shaped,
+    OverlayConfig, OverlayDefinition, OverlayId, OverlayRepo, StorageError, is_token_shaped,
 };
+use forge_types::OverlayCredential;
 use rand::rand_core::Rng;
 use sqlx::SqliteConnection;
 
@@ -178,7 +178,7 @@ impl OverlayRepo for SqliteOverlayRepo {
                     credential, created_at, updated_at
              FROM overlays WHERE credential = ?",
         )
-        .bind(credential.as_str())
+        .bind(credential.expose())
         .fetch_optional(self.db.reader())
         .await
         .map_err(SqliteStorageError::Sqlx)?;
@@ -205,7 +205,7 @@ impl OverlayRepo for SqliteOverlayRepo {
         for (id,) in ids {
             let credential = generate_credential();
             sqlx::query("UPDATE overlays SET credential = ?, updated_at = ? WHERE id = ?")
-                .bind(credential.as_str())
+                .bind(credential.expose())
                 .bind(now_ms)
                 .bind(&id)
                 .execute(&mut *tx)
@@ -249,7 +249,7 @@ impl OverlayRepo for SqliteOverlayRepo {
         .bind(kind_id)
         .bind(position)
         .bind(config_schema_version as i64)
-        .bind(credential.as_str())
+        .bind(credential.expose())
         .bind(now_ms)
         .bind(now_ms)
         .execute(&mut *tx)
@@ -306,7 +306,7 @@ impl OverlayRepo for SqliteOverlayRepo {
         .bind(definition.config_schema_version as i64)
         .bind(definition.generator_version as i64)
         .bind(&source_overrides_json)
-        .bind(definition.credential.as_str())
+        .bind(definition.credential.expose())
         .bind(now_ms)
         .bind(definition.id.as_str())
         .execute(self.db.writer())

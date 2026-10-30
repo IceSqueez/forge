@@ -238,7 +238,7 @@ async fn run_auth(
 
     let token = if let Some(c) = stored {
         tracing::debug!(endpoint, "using stored VTube Studio credential");
-        c.token
+        c.token.expose().to_owned()
     } else {
         if let Ok(mut g) = auth_state.write() {
             *g = AuthState::AwaitingApproval;

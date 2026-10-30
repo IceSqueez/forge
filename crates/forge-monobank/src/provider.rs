@@ -4,6 +4,7 @@ use forge_events::EventPublisher;
 use forge_platform_core::{DonationProvider, DonationStream};
 use forge_storage::CredentialsRepo;
 use forge_types::IntegrationId;
+use forge_types::Secret;
 use tokio::runtime::Handle;
 use tokio::sync::{mpsc, watch};
 use tokio_stream::wrappers::ReceiverStream;
@@ -16,7 +17,7 @@ use crate::integration::MONOBANK_INTEGRATION;
 use crate::jar::{JarDirectory, JarId, MonobankJar};
 use crate::poller::{self, PollContext, PollControl};
 use crate::status::{PollStatus, StatusBoard};
-use crate::token::MonobankToken;
+use crate::token::parse_token;
 use crate::window::WindowPlanner;
 
 const DONATION_BUFFER: usize = 64;
@@ -67,7 +68,7 @@ impl MonobankProvider {
     }
 
     pub async fn verify_token(&self, raw: &str) -> Result<Vec<MonobankJar>, MonobankError> {
-        let token = MonobankToken::parse(raw)?;
+        let token = parse_token(raw)?;
         self.jars.jars(&self.api, &token).await
     }
 
@@ -84,7 +85,7 @@ impl MonobankProvider {
     }
 
     pub async fn save_token(&self, raw: &str, jar_id: &str) -> Result<MonobankJar, MonobankError> {
-        let token = MonobankToken::parse(raw)?;
+        let token = parse_token(raw)?;
         self.store_selection(token, jar_id).await
     }
 
@@ -125,7 +126,7 @@ impl MonobankProvider {
 
     async fn store_selection(
         &self,
-        token: MonobankToken,
+        token: Secret,
         jar_id: &str,
     ) -> Result<MonobankJar, MonobankError> {
         let jar_id = JarId::parse(jar_id)?;

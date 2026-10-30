@@ -12,9 +12,9 @@ use forge_runtime::{
 };
 use forge_storage::test_support::MemorySettings;
 use forge_storage::{
-    MockOverlayRepo, OverlayConfig, OverlayCredential, OverlayDefinition, OverlayId, OverlayRepo,
-    SettingsRepo,
+    MockOverlayRepo, OverlayConfig, OverlayDefinition, OverlayId, OverlayRepo, SettingsRepo,
 };
+use forge_types::OverlayCredential;
 use forge_types::{
     ArgStack, LATEST_DONATION_SLOT, LatestScope, LatestValue, LatestValueReader, NOW_PLAYING_SLOT,
     Variant, latest_fields,

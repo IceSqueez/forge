@@ -216,6 +216,7 @@ fn map_connect_error(err: KickError) -> PlatformError {
 
 #[cfg(test)]
 pub(crate) mod tests {
+    use forge_types::OAuthToken;
     use std::collections::HashMap;
     use std::sync::Mutex as StdMutex;
     use std::time::Duration as StdDuration;
@@ -237,8 +238,8 @@ pub(crate) mod tests {
 
         fn with_valid_creds() -> Arc<Self> {
             let creds = KickCredentials {
-                access_token: "tok".to_owned(),
-                refresh_token: "ref".to_owned(),
+                access_token: OAuthToken::new("tok"),
+                refresh_token: OAuthToken::new("ref"),
                 user_id: 42,
                 username: "streamer".to_owned(),
                 client_id: "cid".to_owned(),

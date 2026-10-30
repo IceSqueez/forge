@@ -2,9 +2,10 @@ use std::time::{Duration, SystemTime};
 
 use tokio::time::Instant;
 
-use forge_net::{Gateway, GatewayRequest, Secret};
+use forge_net::{Gateway, GatewayRequest};
 use forge_platform_core::{AuthFlow, EndpointSurface, PlatformEndpoints, PlatformError};
 use forge_types::OAuthToken;
+use forge_types::Secret;
 use serde::Deserialize;
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, info, trace};
@@ -118,25 +119,13 @@ pub struct DeviceCodeInfo {
     pub expires_at: SystemTime,
 }
 
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct TwitchAuthBundle {
     pub access_token: OAuthToken,
     pub refresh_token: Option<OAuthToken>,
     pub user_info: UserInfo,
     pub client_id: String,
     pub expires_at: Option<std::time::SystemTime>,
-}
-
-impl std::fmt::Debug for TwitchAuthBundle {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("TwitchAuthBundle")
-            .field("access_token", &self.access_token)
-            .field("refresh_token", &self.refresh_token)
-            .field("user_info", &self.user_info)
-            .field("client_id", &self.client_id)
-            .field("expires_at", &self.expires_at)
-            .finish()
-    }
 }
 
 #[derive(Deserialize)]
@@ -190,7 +179,7 @@ pub struct TwitchAuthFlow {
     oauth: TwitchOAuthClient,
     helix: Gateway,
     scopes: &'static [&'static str],
-    device_code: Option<String>,
+    device_code: Option<Secret>,
     poll_interval: Duration,
     deadline: Option<Instant>,
     timing: DeviceTiming,
@@ -309,7 +298,7 @@ impl TwitchAuthFlow {
         grant: TokenGrant,
         cancel: &CancellationToken,
     ) -> Result<TwitchAuthBundle, PlatformError> {
-        let access_token = OAuthToken::new(grant.access_token);
+        let access_token = grant.access_token;
         let validated = self
             .oauth
             .validate(&access_token, cancel)
@@ -332,7 +321,7 @@ impl TwitchAuthFlow {
 
         Ok(TwitchAuthBundle {
             access_token,
-            refresh_token: grant.refresh_token.map(OAuthToken::new),
+            refresh_token: grant.refresh_token,
             user_info,
             client_id: self.oauth.client_id().to_owned(),
             expires_at,
@@ -439,7 +428,7 @@ mod tests {
     }
 
     fn armed(mut flow: TwitchAuthFlow) -> TwitchAuthFlow {
-        flow.device_code = Some("DEV123".to_owned());
+        flow.device_code = Some(Secret::new("DEV123"));
         flow.deadline = Some(tokio::time::Instant::now() + Duration::from_secs(3600));
         flow.poll_interval = QUICK_POLL;
         flow
@@ -447,8 +436,8 @@ mod tests {
 
     fn grant(expires_in: Option<u64>) -> TokenGrant {
         TokenGrant {
-            access_token: ACCESS.to_owned(),
-            refresh_token: Some("REFRESH".to_owned()),
+            access_token: OAuthToken::new(ACCESS),
+            refresh_token: Some(OAuthToken::new("REFRESH")),
             expires_in,
         }
     }
@@ -1182,5 +1171,27 @@ mod tests {
 
         assert_eq!(reason, DEVICE_EXPIRED_REASON);
         assert!(server.received_requests().await.unwrap().is_empty());
+    }
+
+    #[test]
+    fn debug_of_an_auth_bundle_never_carries_a_token() {
+        let bundle = TwitchAuthBundle {
+            access_token: OAuthToken::new("bundle-access-sentinel"),
+            refresh_token: Some(OAuthToken::new("bundle-refresh-sentinel")),
+            user_info: UserInfo {
+                id: USER_ID.to_owned(),
+                login: "streamer".to_owned(),
+                display_name: "Streamer".to_owned(),
+                broadcaster_type: BroadcasterTier::Standard,
+            },
+            client_id: CLIENT.to_owned(),
+            expires_at: None,
+        };
+
+        let rendered = format!("{bundle:?} {bundle:#?}");
+
+        for secret in ["bundle-access-sentinel", "bundle-refresh-sentinel"] {
+            assert!(!rendered.contains(secret), "leaked: {rendered}");
+        }
     }
 }

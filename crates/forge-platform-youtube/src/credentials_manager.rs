@@ -81,8 +81,8 @@ impl YoutubeCredentialsManager {
             }
         })?;
         let creds = YoutubeCredentials {
-            access_token: bundle.access_token.expose().to_owned(),
-            refresh_token: bundle.refresh_token.expose().to_owned(),
+            access_token: bundle.access_token,
+            refresh_token: bundle.refresh_token,
             client_id: bundle.client_id,
             channel_id: bundle.channel_id,
             channel_title: bundle.channel_title,
@@ -96,11 +96,11 @@ impl YoutubeCredentialsManager {
     pub async fn get_valid_access_token(&self) -> Result<String, PlatformError> {
         let creds = self.store.require().await?;
         if !near_expiry(&creds) {
-            return Ok(creds.access_token);
+            return Ok(creds.access_token.expose().to_owned());
         }
         self.detached_refresh(RefreshTrigger::NearExpiry)
             .await
-            .map(|creds| creds.access_token)
+            .map(|creds| creds.access_token.expose().to_owned())
     }
 
     pub async fn refresh(
@@ -165,13 +165,13 @@ async fn refresh_under_guard(
     let existing = store.require().await?;
     let already_rotated = match &trigger {
         RefreshTrigger::NearExpiry => !near_expiry(&existing),
-        RefreshTrigger::Rejected(failed) => existing.access_token != *failed,
+        RefreshTrigger::Rejected(failed) => existing.access_token.expose() != failed,
     };
     if already_rotated {
         return Ok(existing);
     }
 
-    let grant = oauth.refresh(&existing.refresh_token).await?;
+    let grant = oauth.refresh(existing.refresh_token.expose()).await?;
     let expires_in = i64::try_from(grant.expires_in.unwrap_or(0)).unwrap_or(i64::MAX);
     let expires_at = OffsetDateTime::now_utc()
         .checked_add(Duration::seconds(expires_in))
@@ -389,8 +389,8 @@ mod tests {
 
     fn stub_creds(expires_at: OffsetDateTime) -> YoutubeCredentials {
         YoutubeCredentials {
-            access_token: EXISTING_ACCESS.to_owned(),
-            refresh_token: EXISTING_REFRESH.to_owned(),
+            access_token: OAuthToken::new(EXISTING_ACCESS),
+            refresh_token: OAuthToken::new(EXISTING_REFRESH),
             client_id: "test_client_id".to_owned(),
             channel_id: "UCtest123".to_owned(),
             channel_title: "Test Channel".to_owned(),
@@ -499,8 +499,8 @@ mod tests {
         let stored = repo.stored().unwrap();
         assert_eq!(
             (
-                stored.access_token.as_str(),
-                stored.refresh_token.as_str(),
+                stored.access_token.expose(),
+                stored.refresh_token.expose(),
                 stored.channel_id.as_str(),
                 stored.client_id.as_str()
             ),
@@ -532,8 +532,8 @@ mod tests {
         assert_eq!(
             (
                 token.as_str(),
-                stored.access_token.as_str(),
-                stored.refresh_token.as_str()
+                stored.access_token.expose(),
+                stored.refresh_token.expose()
             ),
             (REFRESHED_ACCESS, REFRESHED_ACCESS, ROTATED_REFRESH)
         );
@@ -567,7 +567,7 @@ mod tests {
 
         let stored = rig.repo.stored().unwrap();
         assert_eq!(
-            (stored.access_token.as_str(), stored.refresh_token.as_str()),
+            (stored.access_token.expose(), stored.refresh_token.expose()),
             ("ya29.new_access", EXISTING_REFRESH)
         );
     }
@@ -580,7 +580,7 @@ mod tests {
 
         assert_eq!(
             (
-                creds.access_token.as_str(),
+                creds.access_token.expose(),
                 rig.server.request_count(TOKEN_PATH)
             ),
             (EXISTING_ACCESS, 0)
@@ -601,8 +601,8 @@ mod tests {
         assert_eq!(
             (
                 matches!(outcome, Err(PlatformError::ReauthRequired { .. })),
-                stored.access_token.as_str(),
-                stored.refresh_token.as_str()
+                stored.access_token.expose(),
+                stored.refresh_token.expose()
             ),
             (true, EXISTING_ACCESS, EXISTING_REFRESH)
         );
@@ -629,7 +629,7 @@ mod tests {
                     manager
                         .refresh(EXISTING_ACCESS)
                         .await
-                        .map(|c| c.access_token)
+                        .map(|c| c.access_token.expose().to_owned())
                 }
             }));
         }
@@ -680,8 +680,8 @@ mod tests {
             (
                 aborted,
                 token.as_str(),
-                stored.access_token.as_str(),
-                stored.refresh_token.as_str(),
+                stored.access_token.expose(),
+                stored.refresh_token.expose(),
                 rig.server.request_count(TOKEN_PATH)
             ),
             (true, REFRESHED_ACCESS, REFRESHED_ACCESS, ROTATED_REFRESH, 1)
@@ -775,8 +775,8 @@ mod tests {
         let stored = rig.repo.stored().unwrap();
         assert_eq!(
             (
-                stored.access_token.as_str(),
-                stored.refresh_token.as_str(),
+                stored.access_token.expose(),
+                stored.refresh_token.expose(),
                 stored.channel_handle.as_deref()
             ),
             (REFRESHED_ACCESS, ROTATED_REFRESH, Some("@backfilled"))

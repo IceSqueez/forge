@@ -1,6 +1,7 @@
-use forge_net::{CallClass, GatewayFailure, GatewayRequest, Secret};
+use forge_net::{CallClass, GatewayFailure, GatewayRequest};
 use forge_speech_types::{EngineId, TtsVoice, VoiceGender, VoiceId};
 use forge_tts_core::ENGINE_ID_AZURE;
+use forge_types::Secret;
 use serde::Deserialize;
 
 use crate::azure::SAMPLE_RATE_HZ;

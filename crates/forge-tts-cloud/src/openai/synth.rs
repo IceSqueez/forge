@@ -1,7 +1,8 @@
-use forge_net::{CallClass, GatewayFailure, GatewayRequest, RequestBody, Secret};
+use forge_net::{CallClass, GatewayFailure, GatewayRequest, RequestBody};
 use forge_speech_types::PcmBuffer;
 use forge_speech_types::VoiceId;
 use forge_tts_core::SynthesisRequest;
+use forge_types::Secret;
 use serde_json::json;
 
 use crate::gateway_failure::{

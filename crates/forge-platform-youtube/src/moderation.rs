@@ -1,8 +1,9 @@
 use std::sync::Arc;
 
-use forge_net::{ExpectedRefusal, GatewayFailure, GatewayRequest, Secret};
+use forge_net::{ExpectedRefusal, GatewayFailure, GatewayRequest};
 use forge_platform_core::PlatformError;
 use forge_storage::{BanLedgerEntry, BanLedgerKey, BanLedgerRepo, BanOrigin, StorageError};
+use forge_types::Secret;
 use futures::future::BoxFuture;
 use time::OffsetDateTime;
 

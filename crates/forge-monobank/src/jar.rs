@@ -1,12 +1,11 @@
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
-use forge_types::{CurrencyCode, MoneyAmount};
+use forge_types::{CurrencyCode, MoneyAmount, Secret};
 
 use crate::api::MonobankApi;
 use crate::currency;
 use crate::error::MonobankError;
-use crate::token::MonobankToken;
 use crate::wire::JarWire;
 
 const JAR_LIST_REUSE_WINDOW: Duration = Duration::from_secs(600);
@@ -64,7 +63,7 @@ impl MonobankJar {
 }
 
 struct JarListing {
-    owner: MonobankToken,
+    owner: Secret,
     fetched_at: Instant,
     jars: Vec<MonobankJar>,
 }
@@ -78,7 +77,7 @@ impl JarDirectory {
     pub(crate) async fn jars(
         &self,
         api: &MonobankApi,
-        token: &MonobankToken,
+        token: &Secret,
     ) -> Result<Vec<MonobankJar>, MonobankError> {
         if let Some(jars) = self.reusable(token) {
             return Ok(jars);
@@ -95,7 +94,7 @@ impl JarDirectory {
     pub(crate) async fn find(
         &self,
         api: &MonobankApi,
-        token: &MonobankToken,
+        token: &Secret,
         jar_id: &JarId,
     ) -> Result<MonobankJar, MonobankError> {
         self.jars(api, token)
@@ -109,7 +108,7 @@ impl JarDirectory {
         *self.lock() = None;
     }
 
-    fn reusable(&self, token: &MonobankToken) -> Option<Vec<MonobankJar>> {
+    fn reusable(&self, token: &Secret) -> Option<Vec<MonobankJar>> {
         self.lock()
             .as_ref()
             .filter(|listing| {

@@ -8,8 +8,9 @@ use std::time::Duration;
 use forge_net::test_support::RecordingRateLimiter;
 use forge_net::{
     CallClass, FailureObserver, Gateway, GatewayBuildError, GatewayFailure, GatewayProfile,
-    GatewayRequest, InvalidRequest, Method, Secret, ThrottleHintFamily, TransportKind,
+    GatewayRequest, InvalidRequest, Method, ThrottleHintFamily, TransportKind,
 };
+use forge_types::Secret;
 use gateway_streaming_support::{
     StubServer, UNLIMITED, redirect_to, sized_body, stream, transport_kind,
 };

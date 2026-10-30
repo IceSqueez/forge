@@ -240,9 +240,9 @@ mod tests {
     use forge_runtime::{EventBus, NullEventLogRepo, ScriptRegistry, spawn_action_engine};
     use forge_storage::{
         CredentialId, CredentialsRepo, DataProvider, GlobalsRepo, MockOverlayRepo, OverlayConfig,
-        OverlayCredential, OverlayDefinition, OverlayId, OverlayRepo, StorageError,
-        UserGlobalsRepo,
+        OverlayDefinition, OverlayId, OverlayRepo, StorageError, UserGlobalsRepo,
     };
+    use forge_types::OverlayCredential;
     use time::OffsetDateTime;
     use tokio::net::TcpListener;
 

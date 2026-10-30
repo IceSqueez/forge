@@ -1,24 +1,25 @@
 use forge_server::ServerHandle;
 use forge_server::masked_overlay_token;
+use forge_types::Secret;
 use gpui::{App, Context, Global, Subscription};
 
-struct OverlayLinkToken(Option<String>);
+struct OverlayLinkToken(Option<Secret>);
 
 impl Global for OverlayLinkToken {}
 
-pub(crate) fn current(cx: &App) -> Option<String> {
+pub(crate) fn current(cx: &App) -> Option<Secret> {
     cx.try_global::<OverlayLinkToken>()
         .and_then(|token| token.0.clone())
 }
 
-pub(crate) fn publish(token: String, cx: &mut App) {
+pub(crate) fn publish(token: Secret, cx: &mut App) {
     cx.set_global(OverlayLinkToken(Some(token)));
 }
 
 pub(crate) fn follow<V: 'static>(
     server: Option<&ServerHandle>,
     rt_handle: &tokio::runtime::Handle,
-    apply: fn(&mut V, Option<String>),
+    apply: fn(&mut V, Option<Secret>),
     cx: &mut Context<V>,
 ) -> Subscription {
     load_once(server, rt_handle, cx);
@@ -46,7 +47,7 @@ fn load_once(server: Option<&ServerHandle>, rt_handle: &tokio::runtime::Handle, 
             clippy::let_underscore_must_use,
             reason = "the view may close before the result arrives"
         )]
-        let _ = tx.send(handle.overlay_token().await.into_inner());
+        let _ = tx.send(handle.overlay_token().await);
     });
     cx.spawn(async move |cx| {
         if let Ok(token) = rx.await {

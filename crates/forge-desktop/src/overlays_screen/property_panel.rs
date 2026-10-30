@@ -827,7 +827,8 @@ pub(crate) mod tests {
     use forge_overlay::{OverlayKindDescriptor, OverlayKindRegistry, image_reference};
     use forge_registry::FormField;
     use forge_runtime::EventBus;
-    use forge_storage::{OverlayCredential, OverlayDefinition, StorageError};
+    use forge_storage::{OverlayDefinition, StorageError};
+    use forge_types::OverlayCredential;
     use forge_types::Variant;
     use time::OffsetDateTime;
 

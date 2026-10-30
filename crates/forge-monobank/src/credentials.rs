@@ -1,22 +1,24 @@
 use forge_storage::{CredentialId, CredentialsRepo};
+use forge_types::Secret;
 use serde::{Deserialize, Serialize};
 
 use crate::error::MonobankError;
 use crate::jar::JarId;
-use crate::token::MonobankToken;
+use crate::token::parse_token;
 
 pub const MONOBANK_CREDENTIAL_ID: &str = "monobank:default";
 
 #[derive(Serialize, Deserialize)]
 struct StoredCredential {
-    token: String,
+    #[serde(serialize_with = "Secret::serialize_exposed")]
+    token: Secret,
     #[serde(default)]
     jar_id: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct MonobankCredential {
-    pub(crate) token: MonobankToken,
+    pub(crate) token: Secret,
     pub(crate) jar_id: Option<JarId>,
 }
 
@@ -42,7 +44,7 @@ pub(crate) async fn load(
     };
     let stored: StoredCredential = serde_json::from_str(&bundle)
         .map_err(|error| storage_failure(format!("{:?} error", error.classify())))?;
-    let token = MonobankToken::parse(&stored.token)?;
+    let token = parse_token(stored.token.expose())?;
     let jar_id = stored.jar_id.as_deref().map(JarId::parse).transpose()?;
     Ok(Some(MonobankCredential { token, jar_id }))
 }
@@ -52,7 +54,7 @@ pub(crate) async fn store(
     credential: &MonobankCredential,
 ) -> Result<(), MonobankError> {
     let bundle = serde_json::to_string(&StoredCredential {
-        token: credential.token.expose().to_owned(),
+        token: credential.token.clone(),
         jar_id: credential
             .jar_id
             .as_ref()
@@ -70,4 +72,41 @@ pub(crate) async fn delete(creds: &dyn CredentialsRepo) -> Result<bool, Monobank
         .delete(&credential_id())
         .await
         .map_err(storage_failure)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_saved_credential_loads_and_saves_back_byte_identical_with_and_without_a_jar() {
+        for saved in [
+            r#"{"token":"uMono-saved","jar_id":"jar-1"}"#,
+            r#"{"token":"uMono-saved","jar_id":null}"#,
+        ] {
+            let loaded: StoredCredential = serde_json::from_str(saved).unwrap();
+
+            assert_eq!(loaded.token.expose(), "uMono-saved");
+            assert_eq!(serde_json::to_string(&loaded).unwrap(), saved);
+        }
+    }
+
+    #[test]
+    fn a_credential_saved_before_jars_existed_loads_without_one() {
+        let loaded: StoredCredential = serde_json::from_str(r#"{"token":"uMono-saved"}"#).unwrap();
+
+        assert_eq!(loaded.jar_id, None);
+    }
+
+    #[test]
+    fn debug_of_a_loaded_credential_never_carries_the_token() {
+        let credential = MonobankCredential {
+            token: Secret::new("uMono-debug-sentinel"),
+            jar_id: None,
+        };
+
+        let rendered = format!("{credential:?} {credential:#?}");
+
+        assert!(!rendered.contains("uMono-debug-sentinel"), "{rendered}");
+    }
 }

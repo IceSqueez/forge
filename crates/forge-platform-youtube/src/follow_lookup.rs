@@ -1,8 +1,9 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use forge_net::{ExpectedRefusal, GatewayFailure, GatewayRequest, Secret};
+use forge_net::{ExpectedRefusal, GatewayFailure, GatewayRequest};
 use forge_platform_core::{FollowLookup, FollowStatus, PlatformError};
+use forge_types::Secret;
 use futures::future::BoxFuture;
 use serde::Deserialize;
 use time::OffsetDateTime;

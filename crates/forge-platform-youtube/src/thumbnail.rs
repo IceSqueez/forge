@@ -1,7 +1,8 @@
 use std::sync::Arc;
 
-use forge_net::{GatewayRequest, RequestBody, Secret};
+use forge_net::{GatewayRequest, RequestBody};
 use forge_platform_core::PlatformError;
+use forge_types::Secret;
 use futures::future::BoxFuture;
 
 use crate::active_broadcast_id::ActiveBroadcastIdHandle;

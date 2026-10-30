@@ -8,7 +8,6 @@ mod request;
 mod resolved_target;
 mod response;
 mod response_body;
-mod secret;
 mod streaming;
 mod target;
 mod timings;
@@ -37,7 +36,6 @@ pub use request::{
 };
 pub use resolved_target::ResolvedTarget;
 pub use response::{DecodeCategory, GatewayResponse, ResponseDecodeError};
-pub use secret::Secret;
 pub use streaming::{
     STREAMING_CONNECT_BUDGET, STREAMING_READ_IDLE_BUDGET, StreamFailure, StreamedResponse,
 };

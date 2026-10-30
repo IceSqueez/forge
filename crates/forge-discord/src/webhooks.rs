@@ -1,4 +1,5 @@
 use forge_storage::CredentialId;
+use forge_types::Secret;
 
 use crate::client::{DiscordClient, SendRecord};
 use crate::credentials::{DISCORD_CRED_PREFIX, WebhookCredential};
@@ -47,7 +48,7 @@ impl DiscordClient {
         let _serial = self.webhook_registry_serial.lock().await;
         let payload = serde_json::to_string(&WebhookCredential {
             name: name.to_owned(),
-            url: url.to_owned(),
+            url: Secret::new(url),
         })?;
         self.creds
             .store(&credential_id(name), &payload)
@@ -79,7 +80,7 @@ impl DiscordClient {
     }
 
     pub async fn webhook_url(&self, name: &str) -> Result<String, DiscordError> {
-        Ok(self.load_webhook(name).await?.url)
+        Ok(self.load_webhook(name).await?.url.expose().to_owned())
     }
 
     pub async fn post_test(

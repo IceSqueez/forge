@@ -1,3 +1,4 @@
+use forge_types::OverlayCredential;
 use forge_types::Variant;
 use serde::Serialize;
 use serde_json::{Map, Value};
@@ -44,7 +45,7 @@ pub fn config_document(
         document_version: DOCUMENT_VERSION,
         generator_version: GENERATOR_VERSION,
         overlay_id: instance.id.as_str(),
-        credential: instance.credential.as_deref(),
+        credential: instance.credential.as_ref().map(OverlayCredential::expose),
         display_name: instance.display_name.as_str(),
         kind_id: descriptor.id(),
         config_schema_version: descriptor.config_schema_version(),

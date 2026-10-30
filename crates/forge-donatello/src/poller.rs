@@ -4,7 +4,7 @@ use std::time::Duration;
 use forge_net::{Backoff, DedupSet};
 use forge_platform_core::PlatformError;
 use forge_storage::CredentialsRepo;
-use forge_types::{Donation, DonationOrigin, IntegrationId};
+use forge_types::{Donation, DonationOrigin, IntegrationId, Secret};
 use time::OffsetDateTime;
 use tokio::sync::{mpsc, watch};
 use tracing::{debug, warn};
@@ -14,7 +14,6 @@ use crate::credentials;
 use crate::error::DonatelloError;
 use crate::normalize::donation_from_wire;
 use crate::status::{PollFailure, PollPhase, StatusBoard};
-use crate::token::DonatelloToken;
 use crate::wire::{DONATION_ID_FIELD, DonateWire, DonatesPageWire};
 
 const MAX_SCAN_PAGES: u64 = 500;
@@ -40,14 +39,14 @@ pub(crate) struct PollContext {
 }
 
 struct PollMemory {
-    owner: DonatelloToken,
+    owner: Secret,
     seen: DedupSet,
     known_total: Option<u64>,
     baseline_taken: bool,
 }
 
 impl PollMemory {
-    fn new(owner: DonatelloToken) -> Self {
+    fn new(owner: Secret) -> Self {
         Self {
             owner,
             seen: DedupSet::unbounded(),
@@ -92,7 +91,7 @@ impl Harvest {
 
 pub(crate) async fn run(mut ctx: PollContext) {
     let _running = ctx.status.poller_started();
-    let mut session: Option<DonatelloToken> = None;
+    let mut session: Option<Secret> = None;
     let mut memory: Option<PollMemory> = None;
     let mut generation = None;
     let mut backoff = Backoff::new(ERROR_BACKOFF_BASE, ERROR_BACKOFF_CAP);
@@ -158,7 +157,7 @@ async fn wait(ctx: &mut PollContext, delay: Option<Duration>) -> Wake {
 
 async fn cycle(
     ctx: &PollContext,
-    session: &mut Option<DonatelloToken>,
+    session: &mut Option<Secret>,
     memory: &mut Option<PollMemory>,
 ) -> Result<(), CycleError> {
     let token = match session {
@@ -189,7 +188,7 @@ async fn cycle(
 
 async fn take_baseline(
     ctx: &PollContext,
-    token: &DonatelloToken,
+    token: &Secret,
     memory: &mut PollMemory,
 ) -> Result<Option<OffsetDateTime>, CycleError> {
     let mut newest = None;
@@ -215,7 +214,7 @@ async fn take_baseline(
 
 async fn scan_for_new(
     ctx: &PollContext,
-    token: &DonatelloToken,
+    token: &Secret,
     memory: &mut PollMemory,
 ) -> Result<Option<OffsetDateTime>, CycleError> {
     let first = ctx.api.donates_page(token, 0).await?;

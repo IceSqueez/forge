@@ -230,8 +230,9 @@ mod tests {
     use std::sync::Arc;
 
     use forge_events::EventSource;
-    use forge_net::{GatewayRequest, Secret};
+    use forge_net::GatewayRequest;
     use forge_platform_core::{FollowStatus, PlatformError};
+    use forge_types::Secret;
     use futures::future::BoxFuture;
     use reqwest::StatusCode;
     use serde_json::{Value, json};

@@ -1,5 +1,7 @@
 use std::time::Duration;
 
+use forge_types::Secret;
+
 use crate::error::PlatformError;
 
 use super::local_callback::LocalCallbackDriver;
@@ -22,9 +24,9 @@ pub struct PkceAuthorizeConfig {
 }
 
 pub struct PkceAuthorization {
-    pub code: String,
+    pub code: Secret,
     pub redirect_uri: String,
-    pub code_verifier: String,
+    pub code_verifier: Secret,
 }
 
 pub struct PkceLoopback {

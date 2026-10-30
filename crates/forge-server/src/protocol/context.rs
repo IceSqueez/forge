@@ -2,9 +2,8 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use forge_runtime::{ActionEngineHandle, EventHistory};
-use forge_storage::{
-    ActionRepo, CredentialsRepo, GlobalsRepo, OverlayCredential, OverlayRepo, UserGlobalsRepo,
-};
+use forge_storage::{ActionRepo, CredentialsRepo, GlobalsRepo, OverlayRepo, UserGlobalsRepo};
+use forge_types::{OverlayCredential, Secret};
 use tokio::sync::{Mutex, broadcast};
 
 use crate::auth::AuthState;
@@ -49,8 +48,8 @@ pub(super) fn unauthenticated() -> WsResponse {
 }
 
 pub(super) async fn handle_authenticate(
-    token: Option<String>,
-    overlay_credential: Option<String>,
+    token: Option<Secret>,
+    overlay_credential: Option<OverlayCredential>,
     preview_connection: bool,
     ctx: &DispatchContext,
 ) -> WsResponse {
@@ -62,8 +61,8 @@ pub(super) async fn handle_authenticate(
     }
 }
 
-async fn authenticate_bearer(token: String, ctx: &DispatchContext) -> WsResponse {
-    if let Some(generation) = ctx.auth_state.verify_generation(&token).await {
+async fn authenticate_bearer(token: Secret, ctx: &DispatchContext) -> WsResponse {
+    if let Some(generation) = ctx.auth_state.verify_generation(token.expose()).await {
         ctx.client.mark_bearer_authenticated(generation);
         WsResponse::Ok(serde_json::json!({ "authenticated": true }))
     } else {
@@ -72,14 +71,11 @@ async fn authenticate_bearer(token: String, ctx: &DispatchContext) -> WsResponse
 }
 
 async fn authenticate_overlay(
-    credential: String,
+    credential: OverlayCredential,
     preview_connection: bool,
     ctx: &DispatchContext,
 ) -> WsResponse {
-    let lookup = ctx
-        .overlays
-        .get_by_credential(&OverlayCredential::new(credential))
-        .await;
+    let lookup = ctx.overlays.get_by_credential(&credential).await;
     let Ok(Some(definition)) = lookup else {
         ctx.close_after_auth_failure.store(true, Ordering::SeqCst);
         return auth_failed("invalid credential");

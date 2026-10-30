@@ -32,8 +32,8 @@ pub use gateway::{
     FailureContext, FailureObserver, FormBody, Gateway, GatewayBuildError, GatewayFailure,
     GatewayProfile, GatewayRequest, GatewayResponse, GatewayTimings, InvalidRequest, Method,
     MultipartBody, RedirectRefusal, RequestBody, RequestEncodeError, ResolvedTarget,
-    ResponseDecodeError, STREAMING_CONNECT_BUDGET, STREAMING_READ_IDLE_BUDGET, Secret,
-    StreamFailure, StreamedResponse, TransportFailure, TransportKind,
+    ResponseDecodeError, STREAMING_CONNECT_BUDGET, STREAMING_READ_IDLE_BUDGET, StreamFailure,
+    StreamedResponse, TransportFailure, TransportKind,
 };
 pub use header_lookup::HeaderLookup;
 pub use header_value::is_valid_header_value;

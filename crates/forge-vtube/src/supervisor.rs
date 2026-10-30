@@ -21,7 +21,7 @@ use crate::health::{
     HealthSnapshot, apply_model, apply_tracking, clear_session_state, update_from_event,
 };
 use crate::vocabulary::fields::expression as expression_fields;
-use crate::vocabulary::{VTubeConnectionChanged, event_kinds};
+use crate::vocabulary::{VTubeConnectionChanged, VTubeDisconnectReason, event_kinds};
 use crate::vts::endpoint::split_endpoint;
 use crate::vts::event::{VtsEvent, subscribe_all};
 use crate::vts::message_type::{
@@ -44,9 +44,6 @@ const REQUEST_SWEEP_INTERVAL: Duration = Duration::from_secs(1);
 const UNRESPONSIVE_THRESHOLD: Duration = REQUEST_TIMEOUT.saturating_add(REQUEST_SWEEP_INTERVAL);
 const TOKEN_APPROVAL_TIMEOUT: Duration = Duration::from_secs(30);
 const HANDSHAKE_REPLY_TIMEOUT: Duration = Duration::from_secs(10);
-
-const REASON_SOCKET_CLOSED: &str = "socket_closed";
-const REASON_UNRESPONSIVE: &str = "unresponsive";
 
 const FAILURE_CONNECTION_LOST: &str = "the connection to VTube Studio was lost";
 const FAILURE_UNRESPONSIVE: &str = "VTube Studio stopped answering requests";
@@ -71,13 +68,13 @@ fn emit_connection_changed(
     publisher: &dyn EventPublisher,
     endpoint: &str,
     is_connected: bool,
-    reason: Option<&str>,
+    reason: Option<VTubeDisconnectReason>,
     detail: Option<String>,
 ) {
     VTubeConnectionChanged {
         is_connected,
         endpoint: endpoint.to_owned(),
-        reason: reason.map(str::to_owned),
+        reason,
         detail,
     }
     .publish(publisher, EventSource::VTube, None);
@@ -248,7 +245,13 @@ async fn run_auth(
         if let Ok(mut g) = auth_state.write() {
             *g = AuthState::AwaitingApproval;
         }
-        emit_connection_changed(publisher, endpoint, false, Some("awaiting_approval"), None);
+        emit_connection_changed(
+            publisher,
+            endpoint,
+            false,
+            Some(VTubeDisconnectReason::AwaitingApproval),
+            None,
+        );
         request_new_token(ws, endpoint).await?
     };
 
@@ -479,7 +482,7 @@ pub(crate) async fn run_supervisor(ctx: SupervisorContext) {
                     &*publisher,
                     &endpoint,
                     false,
-                    Some("connect_failed"),
+                    Some(VTubeDisconnectReason::ConnectFailed),
                     Some(detail),
                 );
                 reconnecting = true;
@@ -508,7 +511,13 @@ pub(crate) async fn run_supervisor(ctx: SupervisorContext) {
                     ConnectionState::Disconnected,
                     ConnectionTransition::Unexpected,
                 );
-                emit_connection_changed(&*publisher, &endpoint, false, Some("auth_required"), None);
+                emit_connection_changed(
+                    &*publisher,
+                    &endpoint,
+                    false,
+                    Some(VTubeDisconnectReason::AuthRequired),
+                    None,
+                );
                 return;
             }
             Err(VTubeError::TokenDenied) => {
@@ -523,7 +532,13 @@ pub(crate) async fn run_supervisor(ctx: SupervisorContext) {
                     ConnectionState::Disconnected,
                     ConnectionTransition::Unexpected,
                 );
-                emit_connection_changed(&*publisher, &endpoint, false, Some("auth_denied"), None);
+                emit_connection_changed(
+                    &*publisher,
+                    &endpoint,
+                    false,
+                    Some(VTubeDisconnectReason::AuthDenied),
+                    None,
+                );
                 return;
             }
             Err(VTubeError::TokenTimeout) => {
@@ -538,7 +553,13 @@ pub(crate) async fn run_supervisor(ctx: SupervisorContext) {
                     ConnectionState::Disconnected,
                     ConnectionTransition::Unexpected,
                 );
-                emit_connection_changed(&*publisher, &endpoint, false, Some("auth_timeout"), None);
+                emit_connection_changed(
+                    &*publisher,
+                    &endpoint,
+                    false,
+                    Some(VTubeDisconnectReason::AuthTimeout),
+                    None,
+                );
                 return;
             }
             Err(e) => {
@@ -560,7 +581,7 @@ pub(crate) async fn run_supervisor(ctx: SupervisorContext) {
                     &*publisher,
                     &endpoint,
                     false,
-                    Some("auth_failed"),
+                    Some(VTubeDisconnectReason::AuthFailed),
                     Some(failure.clone()),
                 );
                 reconnecting = true;
@@ -592,7 +613,7 @@ pub(crate) async fn run_supervisor(ctx: SupervisorContext) {
                 &*publisher,
                 &endpoint,
                 false,
-                Some("subscribe_failed"),
+                Some(VTubeDisconnectReason::SubscribeFailed),
                 Some(failure.clone()),
             );
             reconnecting = true;
@@ -630,7 +651,7 @@ pub(crate) async fn run_supervisor(ctx: SupervisorContext) {
         let mut expr_baseline: Option<HashMap<String, bool>> = None;
         let mut expr_poll: Option<ExpressionPoll> = None;
         let mut unanswered_polls: u32 = 0;
-        let mut close_reason = REASON_SOCKET_CLOSED;
+        let mut close_reason = VTubeDisconnectReason::SocketClosed;
 
         for (msg_type, query) in [
             (CURRENT_MODEL_REQUEST, SeedQuery::CurrentModel),
@@ -742,7 +763,7 @@ pub(crate) async fn run_supervisor(ctx: SupervisorContext) {
                                 endpoint = %endpoint,
                                 "VTube Studio stopped answering the expression poll; dropping the session"
                             );
-                            close_reason = REASON_UNRESPONSIVE;
+                            close_reason = VTubeDisconnectReason::Unresponsive;
                             break;
                         }
                     }
@@ -753,7 +774,7 @@ pub(crate) async fn run_supervisor(ctx: SupervisorContext) {
                             endpoint = %endpoint,
                             "VTube Studio left a request unanswered; dropping the session"
                         );
-                        close_reason = REASON_UNRESPONSIVE;
+                        close_reason = VTubeDisconnectReason::Unresponsive;
                         break;
                     }
                 }
@@ -769,7 +790,7 @@ pub(crate) async fn run_supervisor(ctx: SupervisorContext) {
         if let Ok(mut g) = auth_state.write() {
             *g = AuthState::Cold;
         }
-        failure = if close_reason == REASON_UNRESPONSIVE {
+        failure = if close_reason == VTubeDisconnectReason::Unresponsive {
             FAILURE_UNRESPONSIVE
         } else {
             FAILURE_CONNECTION_LOST
@@ -1127,7 +1148,7 @@ mod tests {
             &*p,
             "ws://x:1",
             false,
-            Some("connect_failed"),
+            Some(VTubeDisconnectReason::ConnectFailed),
             Some("dns failure".to_owned()),
         );
 

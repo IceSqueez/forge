@@ -8,6 +8,6 @@ pub mod sub_action_ids;
 pub mod trigger_ids;
 pub(crate) mod variables;
 
-pub use events::VTubeConnectionChanged;
+pub use events::{VTubeConnectionChanged, VTubeDisconnectReason};
 
 pub const INTEGRATION_ID: &str = "vtube";

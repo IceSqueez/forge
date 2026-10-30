@@ -330,21 +330,13 @@ pub(crate) async fn handle_get_active_viewers(ctx: &DispatchContext) -> WsRespon
         let Some(viewer) = forge_types::ChatViewer::read(&ev.payload) else {
             continue;
         };
-        let user = ev.payload.get("user");
-        let login = user
-            .and_then(|u| u.get("login"))
-            .and_then(|v| v.as_str())
-            .filter(|login| !login.is_empty())
-            .map_or_else(|| viewer.name.clone(), str::to_owned);
-        let roles: Vec<String> = user
-            .and_then(|u| u.get("roles"))
-            .and_then(|v| v.as_array())
-            .map(|arr| {
-                arr.iter()
-                    .filter_map(|r| r.as_str().map(str::to_owned))
-                    .collect()
-            })
-            .unwrap_or_default();
+        let profile = forge_types::ChatViewerProfile::read(&ev.payload);
+        let login = if profile.login.is_empty() {
+            viewer.name.clone()
+        } else {
+            profile.login
+        };
+        let roles = profile.roles;
 
         viewers
             .entry((platform, viewer.id.clone()))

@@ -22,7 +22,7 @@ use forge_soundboard::vocabulary::{
 use forge_speak_queue::vocabulary::SpeakFailed;
 use forge_types::{ClipId, PlatformId};
 use forge_vtube::VTubeError;
-use forge_vtube::vocabulary::VTubeConnectionChanged;
+use forge_vtube::vocabulary::{VTubeConnectionChanged, VTubeDisconnectReason};
 
 use crate::integrations::WHISPER_SENT_KIND;
 
@@ -331,19 +331,18 @@ pub(crate) enum VTubeDisconnect {
     Unknown,
 }
 
-impl VTubeDisconnect {
-    fn from_reason(reason: &str) -> Self {
+impl From<VTubeDisconnectReason> for VTubeDisconnect {
+    fn from(reason: VTubeDisconnectReason) -> Self {
         match reason {
-            "awaiting_approval" => Self::AwaitingApproval,
-            "connect_failed" => Self::Unreachable,
-            "auth_required" => Self::TokenRejected,
-            "auth_denied" => Self::Denied,
-            "auth_timeout" => Self::TimedOut,
-            "auth_failed" => Self::AuthFailed,
-            "subscribe_failed" => Self::SubscribeFailed,
-            "socket_closed" => Self::SocketClosed,
-            "unresponsive" => Self::Unresponsive,
-            _ => Self::Unknown,
+            VTubeDisconnectReason::AwaitingApproval => Self::AwaitingApproval,
+            VTubeDisconnectReason::ConnectFailed => Self::Unreachable,
+            VTubeDisconnectReason::AuthRequired => Self::TokenRejected,
+            VTubeDisconnectReason::AuthDenied => Self::Denied,
+            VTubeDisconnectReason::AuthTimeout => Self::TimedOut,
+            VTubeDisconnectReason::AuthFailed => Self::AuthFailed,
+            VTubeDisconnectReason::SubscribeFailed => Self::SubscribeFailed,
+            VTubeDisconnectReason::SocketClosed => Self::SocketClosed,
+            VTubeDisconnectReason::Unresponsive => Self::Unresponsive,
         }
     }
 }
@@ -373,8 +372,7 @@ impl VTubeConnection {
         }
         changed
             .reason
-            .as_deref()
-            .map(|reason| Self::Disconnected(VTubeDisconnect::from_reason(reason)))
+            .map(|reason| Self::Disconnected(VTubeDisconnect::from(reason)))
     }
 }
 

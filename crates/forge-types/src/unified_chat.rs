@@ -175,6 +175,34 @@ impl ChatViewer {
     }
 }
 
+#[derive(Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ChatViewerProfile {
+    #[serde(default)]
+    pub login: String,
+    #[serde(default)]
+    pub roles: Vec<String>,
+}
+
+impl fmt::Debug for ChatViewerProfile {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("ChatViewerProfile")
+            .field("login", &Redacted)
+            .field("roles", &self.roles)
+            .finish()
+    }
+}
+
+impl ChatViewerProfile {
+    pub const KEY: &'static str = "user";
+
+    pub fn read(payload: &serde_json::Value) -> Self {
+        payload
+            .get(Self::KEY)
+            .and_then(|profile| serde_json::from_value(profile.clone()).ok())
+            .unwrap_or_default()
+    }
+}
+
 #[derive(Clone, Serialize, Deserialize)]
 pub struct UnifiedChatRow {
     pub id: String,

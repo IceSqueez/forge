@@ -511,18 +511,6 @@ mod tests {
         }
     }
 
-    fn install_catalog(language: CatalogLanguage) {
-        let tag = match language {
-            CatalogLanguage::En => "en-US",
-            CatalogLanguage::Uk => "uk-UA",
-        };
-        let mut bundle = FluentBundle::new(vec![tag.parse().unwrap()]);
-        bundle
-            .add_resource(FluentResource::try_new(catalog_source(language).to_owned()).unwrap())
-            .unwrap();
-        install_bundle(Rc::new(bundle));
-    }
-
     fn unmarked(text: String) -> String {
         text.replace(['\u{2068}', '\u{2069}'], "")
     }
@@ -541,7 +529,7 @@ mod tests {
             (CatalogLanguage::Uk, 3_599, "59 хв 59 с"),
             (CatalogLanguage::Uk, 3_600, "1 год 0 хв"),
         ] {
-            install_catalog(language);
+            install_thread_language(language, &[]);
             assert_eq!(unmarked(fmt_uptime(secs)), expected, "{language:?} {secs}");
         }
     }
@@ -560,7 +548,7 @@ mod tests {
             (CatalogLanguage::Uk, 3_599, "59 хв"),
             (CatalogLanguage::Uk, 3_600, "1 год"),
         ] {
-            install_catalog(language);
+            install_thread_language(language, &[]);
             assert_eq!(
                 unmarked(fmt_uptime_short(secs)),
                 expected,

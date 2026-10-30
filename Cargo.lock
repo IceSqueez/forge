@@ -2654,6 +2654,7 @@ dependencies = [
  "gpui",
  "jiff",
  "time",
+ "tokio",
  "tracing",
  "unic-langid",
  "unicode-segmentation",

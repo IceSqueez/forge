@@ -3,9 +3,7 @@ use std::time::Duration;
 
 use tokio::sync::{broadcast, mpsc};
 
-use forge_platform_core::{
-    BannerLevel, BuiltinContent, DetailSection, HealthDelta, HealthValue, SectionIcon,
-};
+use forge_platform_core::{BuiltinContent, DetailSection, HealthDelta, HealthValue, SectionIcon};
 
 use crate::client::VTubeClient;
 use crate::error::VTubeError;
@@ -427,18 +425,7 @@ impl BuiltinContent for VTubeClient {
             chip_icon: SectionIcon::new("mood-smile"),
             items: expression_names,
         };
-        match self.last_failure() {
-            Some(reason) => vec![
-                DetailSection::WarningBanner {
-                    level: BannerLevel::Error,
-                    title: "Could not connect to VTube Studio".to_owned(),
-                    body: reason,
-                    cta: None,
-                },
-                expressions,
-            ],
-            None => vec![expressions],
-        }
+        vec![expressions]
     }
 }
 

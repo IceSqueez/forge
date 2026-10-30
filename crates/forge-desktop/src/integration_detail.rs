@@ -54,6 +54,7 @@ use crate::run_history_modal::{RunHistoryDismissed, RunHistoryModal, RunHistoryO
 use crate::runtime_event::{self, RuntimeEvent};
 use crate::twitch_bot_presence::TwitchBotPresence;
 use crate::twitch_bot_section::{StreamerSignInRequested, TwitchBotSection};
+use crate::user_text::resolve_message;
 use crate::window_presence::PresenceGate;
 use forge_components::ActivePresentation;
 use forge_components::PushToast;
@@ -1508,6 +1509,14 @@ impl IntegrationDetail {
             ),
         };
 
+        let failure_reason = if self.obs_password_rejected {
+            None
+        } else {
+            self.status
+                .connect_failure()
+                .map(|failure| resolve_message(&failure).inline())
+        };
+
         let text_col = div()
             .flex_1()
             .min_w(px(0.0))
@@ -1527,7 +1536,14 @@ impl IntegrationDetail {
                     .text_size(FONT_XS)
                     .text_color(palette.text_muted)
                     .child(detail),
-            );
+            )
+            .children(failure_reason.map(|reason| {
+                div()
+                    .font_family(body_family())
+                    .text_size(FONT_XS)
+                    .text_color(palette.text_secondary)
+                    .child(reason)
+            }));
 
         Some(
             div()

@@ -22,7 +22,7 @@ use forge_platform_core::{
 };
 use forge_registry::{IntegrationReferences, SubActionRegistry, TriggerRegistry, tally_references};
 use forge_storage::{DataProvider, StorageError};
-use forge_types::{Action, IntegrationId, TriggerInstance, TriggerInstanceId};
+use forge_types::{Action, IntegrationId, MessageRef, TriggerInstance, TriggerInstanceId};
 use gpui::{
     AnyElement, ClickEvent, Context, ElementId, Entity, EventEmitter, FontWeight, Pixels,
     SharedString, Subscription, Window, div, prelude::*, px,
@@ -37,11 +37,12 @@ use crate::integration_disable_modal::{DisablePrompt, render_disable_modal};
 use crate::integration_failed::LiveDetailRequested;
 use crate::integration_lifecycle::{CardStatus, IntegrationLifecycle};
 use crate::integration_switch::category_members;
-use crate::integrations::{BuiltinObject, BuiltinRegistry};
+use crate::integrations::{BuiltinObject, BuiltinRegistry, ObsInstallSeed, VTubeInstallSeed};
 use crate::navigation::NavRequested;
 use crate::navigation::Screen;
 use crate::platforms::PlatformConnectivity;
 use crate::start_failure::{StartRemedy, start_failure_text, start_failure_tooltip};
+use crate::user_text::resolve_message;
 use forge_components::ActivePresentation;
 use forge_components::PushToast;
 use forge_runtime::{IntegrationSupervisor, LifecycleState};
@@ -87,6 +88,8 @@ pub struct HubLaunch {
     pub sub_actions: Arc<SubActionRegistry>,
     pub triggers: Arc<TriggerRegistry>,
     pub rt_handle: tokio::runtime::Handle,
+    pub obs_install_seed: ObsInstallSeed,
+    pub vtube_install_seed: VTubeInstallSeed,
 }
 
 pub struct IntegrationsHubView {
@@ -348,6 +351,16 @@ impl IntegrationsHubView {
         self.connectivity.read(cx).is_integration_connected(id)
     }
 
+    fn connect_failure_of(&self, id: &IntegrationId) -> Option<MessageRef> {
+        if *id == forge_obs::OBS_INTEGRATION.id {
+            self.launch.obs_install_seed.connect_failure()
+        } else if *id == forge_vtube::VTUBE_INTEGRATION.id {
+            self.launch.vtube_install_seed.connect_failure()
+        } else {
+            None
+        }
+    }
+
     fn reference_chip(
         &self,
         id: &IntegrationId,
@@ -431,6 +444,11 @@ impl IntegrationsHubView {
                 .tooltip(start_failure_tooltip(error))
                 .action(self.remedy_link(&id, StartRemedy::of(error), palette, cx)),
             ),
+            (CardStatus::NotConnected, None) => self.connect_failure_of(&id).map(|failure| {
+                let text = resolve_message(&failure);
+                hub_note(Icon::AlertTriangle, palette.warning, text.primary.clone())
+                    .tooltip(text.inline())
+            }),
             (_, Some(disclaimer)) => Some(
                 hub_note(
                     Icon::AlertTriangle,

@@ -14,6 +14,8 @@ pub const REGISTERED_CATALOGS: &[MessageCatalog] = &[
     LIFECYCLE_MESSAGES,
     forge_platform_youtube::vocabulary::messages::YOUTUBE_MESSAGES,
     forge_platform_kick::vocabulary::messages::KICK_MESSAGES,
+    forge_obs::vocabulary::messages::OBS_MESSAGES,
+    forge_vtube::vocabulary::messages::VTUBE_MESSAGES,
     forge_midi::vocabulary::messages::MIDI_MESSAGES,
     forge_hotkey::vocabulary::messages::HOTKEY_MESSAGES,
 ];

@@ -1,10 +1,14 @@
+use std::io::ErrorKind;
 use std::time::Duration;
 
 use futures_util::{SinkExt, StreamExt};
 use serde_json::Value;
 use tokio_tungstenite::tungstenite::{Error as WsError, Message};
 
+use forge_types::MessageRef;
+
 use crate::error::VTubeError;
+use crate::vocabulary::messages;
 use crate::vts::protocol::new_request;
 
 pub(crate) type VtsWs =
@@ -16,11 +20,32 @@ pub(crate) enum Inbound {
     Skipped,
 }
 
-pub(crate) async fn dial(endpoint: &str) -> Result<VtsWs, String> {
+pub(crate) struct DialFailure {
+    pub(crate) message: MessageRef,
+    pub(crate) detail: String,
+}
+
+impl DialFailure {
+    fn of(error: &WsError) -> Self {
+        let message = match error {
+            WsError::Io(io_error) if io_error.kind() == ErrorKind::ConnectionRefused => {
+                messages::connect_refused()
+            }
+            WsError::Io(_) => messages::unreachable(),
+            _ => messages::connect_failed(),
+        };
+        Self {
+            message,
+            detail: error.to_string(),
+        }
+    }
+}
+
+pub(crate) async fn dial(endpoint: &str) -> Result<VtsWs, DialFailure> {
     tokio_tungstenite::connect_async(endpoint)
         .await
         .map(|(ws, _)| ws)
-        .map_err(|e| e.to_string())
+        .map_err(|e| DialFailure::of(&e))
 }
 
 pub(crate) async fn send_text(ws: &mut VtsWs, text: String) -> Result<(), VTubeError> {

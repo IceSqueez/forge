@@ -685,7 +685,7 @@ impl IntegrationFactory<BuiltinObject> for ObsFactory {
                 );
                 seed.install(client);
             }
-            Ok(Err(_)) => {}
+            Ok(Err(error)) => tracing::warn!(%error, "obs connect was not started"),
             Err(_) => tracing::warn!(timeout = ?CONNECT_GUARD, "obs connect timed out"),
         }
         Ok(running)
@@ -762,7 +762,7 @@ impl IntegrationFactory<BuiltinObject> for VTubeFactory {
                 );
                 seed.install(client);
             }
-            Ok(Err(_)) => {}
+            Ok(Err(error)) => tracing::warn!(%error, "vtube connect was not started"),
             Err(_) => tracing::warn!(timeout = ?CONNECT_GUARD, "vtube connect timed out"),
         }
         Ok(running)

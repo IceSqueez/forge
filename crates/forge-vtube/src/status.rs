@@ -3,7 +3,7 @@ use std::time::Duration;
 use time::OffsetDateTime;
 
 use forge_platform_core::{BuiltinStatus, CapabilityFlags, ConnectionState, HeaderAction};
-use forge_types::IntegrationId;
+use forge_types::{IntegrationId, MessageRef};
 
 use crate::client::VTubeClient;
 
@@ -22,6 +22,10 @@ impl BuiltinStatus for VTubeClient {
 
     fn connection(&self) -> ConnectionState {
         self.connection_state()
+    }
+
+    fn connect_failure(&self) -> Option<MessageRef> {
+        self.last_failure.read().ok().and_then(|g| g.clone())
     }
 
     fn uptime(&self) -> Option<Duration> {

@@ -1,0 +1,10 @@
+msg-vtube-connect_refused = VTube Studio не приймає підключення. Запустіть його та ввімкніть API в налаштуваннях.
+msg-vtube-unreachable = Не вдалося зв'язатися з VTube Studio. Перевірте адресу та мережу.
+msg-vtube-connect_failed = Не вдалося підключитися до VTube Studio.
+msg-vtube-token_rejected = VTube Studio відхилив збережений токен. Підключіться знову та підтвердьте доступ.
+msg-vtube-access_denied = Доступ відхилено у вікні VTube Studio.
+msg-vtube-approval_timeout = На запит доступу у VTube Studio не відповіли вчасно.
+msg-vtube-auth_failed = VTube Studio не прийняв вхід.
+msg-vtube-subscribe_failed = VTube Studio не прийняв підписку на події.
+msg-vtube-connection_lost = З'єднання з VTube Studio втрачено.
+msg-vtube-unresponsive = VTube Studio перестав відповідати на запити.

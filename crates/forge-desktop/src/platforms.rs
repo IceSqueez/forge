@@ -45,7 +45,10 @@ impl PlatformConnectivity {
                 std::mem::replace(&mut self.obs_password_rejected, rejected) != rejected
             }
             RuntimeEvent::PlatformConnection(change) => Integration::from_id(&change.platform_id)
-                .is_some_and(|integ| self.set_connected(integ, change.state.is_connected())),
+                .is_some_and(|integ| {
+                    self.set_connected(integ, change.state.is_connected());
+                    true
+                }),
             _ => false,
         }
     }

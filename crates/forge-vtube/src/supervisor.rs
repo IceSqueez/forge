@@ -13,6 +13,7 @@ use forge_platform_core::{
     connection_state_changed_event,
 };
 use forge_storage::CredentialsRepo;
+use forge_types::MessageRef;
 
 use crate::auth::AuthState;
 use crate::client::VTUBE_PLATFORM_ID;
@@ -21,7 +22,7 @@ use crate::health::{
     HealthSnapshot, apply_model, apply_tracking, clear_session_state, update_from_event,
 };
 use crate::vocabulary::fields::expression as expression_fields;
-use crate::vocabulary::{VTubeConnectionChanged, VTubeDisconnectReason, event_kinds};
+use crate::vocabulary::{VTubeConnectionChanged, VTubeDisconnectReason, event_kinds, messages};
 use crate::vts::endpoint::split_endpoint;
 use crate::vts::event::{VtsEvent, subscribe_all};
 use crate::vts::message_type::{
@@ -44,9 +45,6 @@ const REQUEST_SWEEP_INTERVAL: Duration = Duration::from_secs(1);
 const UNRESPONSIVE_THRESHOLD: Duration = REQUEST_TIMEOUT.saturating_add(REQUEST_SWEEP_INTERVAL);
 const TOKEN_APPROVAL_TIMEOUT: Duration = Duration::from_secs(30);
 const HANDSHAKE_REPLY_TIMEOUT: Duration = Duration::from_secs(10);
-
-const FAILURE_CONNECTION_LOST: &str = "the connection to VTube Studio was lost";
-const FAILURE_UNRESPONSIVE: &str = "VTube Studio stopped answering requests";
 
 struct InFlight {
     respond_to: oneshot::Sender<serde_json::Value>,
@@ -308,7 +306,7 @@ pub(crate) struct SupervisorContext {
     pub(crate) catalog_signal: crate::catalog::CatalogSignal,
     pub(crate) connected_notifier: mpsc::UnboundedSender<()>,
     pub(crate) auto_reconnect: watch::Receiver<bool>,
-    pub(crate) last_failure: Arc<RwLock<Option<String>>>,
+    pub(crate) last_failure: Arc<RwLock<Option<MessageRef>>>,
 }
 
 enum RetryWait {
@@ -339,16 +337,18 @@ async fn park_until_auto_reconnect(
     }
 }
 
-pub(crate) fn record_failure(slot: &RwLock<Option<String>>, failure: Option<String>) {
+pub(crate) fn record_failure(slot: &RwLock<Option<MessageRef>>, failure: Option<MessageRef>) {
     if let Ok(mut g) = slot.write() {
         *g = failure;
     }
 }
 
+fn record_reason(slot: &RwLock<Option<MessageRef>>, reason: VTubeDisconnectReason) {
+    record_failure(slot, messages::for_disconnect_reason(reason));
+}
+
 fn settle_unless_retrying(
     retry: bool,
-    failure: &str,
-    last_failure: &RwLock<Option<String>>,
     state: &AtomicConnectionState,
     health_state: &RwLock<HealthSnapshot>,
     publisher: &dyn EventPublisher,
@@ -356,7 +356,6 @@ fn settle_unless_retrying(
     if retry {
         return;
     }
-    record_failure(last_failure, Some(failure.to_owned()));
     set_connection_state(
         state,
         health_state,
@@ -387,7 +386,6 @@ pub(crate) async fn run_supervisor(ctx: SupervisorContext) {
 
     let mut backoff = Backoff::with_cap(VTS_BACKOFF_CAP);
     let mut reconnecting = false;
-    let mut failure = String::new();
 
     loop {
         if reconnecting {
@@ -420,7 +418,6 @@ pub(crate) async fn run_supervisor(ctx: SupervisorContext) {
                         endpoint = %endpoint,
                         "VTube Studio auto-reconnect is off; waiting for a manual connect"
                     );
-                    record_failure(&last_failure, Some(std::mem::take(&mut failure)));
                     if state.load() != ConnectionState::Disconnected {
                         set_connection_state(
                             &state,
@@ -463,17 +460,15 @@ pub(crate) async fn run_supervisor(ctx: SupervisorContext) {
 
         let mut ws = match connect_attempt {
             Ok(ws) => ws,
-            Err(detail) => {
+            Err(failed) => {
                 tracing::debug!(
                     endpoint = %endpoint,
-                    error = %detail,
+                    error = %failed.detail,
                     "VTube Studio connection attempt failed"
                 );
-                failure = VTubeError::Connect(detail.clone()).to_string();
+                record_failure(&last_failure, Some(failed.message));
                 settle_unless_retrying(
                     *auto_reconnect.borrow_and_update(),
-                    &failure,
-                    &last_failure,
                     &state,
                     &health_state,
                     &*publisher,
@@ -483,7 +478,7 @@ pub(crate) async fn run_supervisor(ctx: SupervisorContext) {
                     &endpoint,
                     false,
                     Some(VTubeDisconnectReason::ConnectFailed),
-                    Some(detail),
+                    Some(failed.detail),
                 );
                 reconnecting = true;
                 continue;
@@ -503,7 +498,7 @@ pub(crate) async fn run_supervisor(ctx: SupervisorContext) {
                 if let Ok(mut g) = auth_state.write() {
                     *g = AuthState::AuthRequired;
                 }
-                record_failure(&last_failure, Some(VTubeError::TokenRejected.to_string()));
+                record_reason(&last_failure, VTubeDisconnectReason::AuthRequired);
                 set_connection_state(
                     &state,
                     &health_state,
@@ -524,7 +519,7 @@ pub(crate) async fn run_supervisor(ctx: SupervisorContext) {
                 if let Ok(mut g) = auth_state.write() {
                     *g = AuthState::AuthRequired;
                 }
-                record_failure(&last_failure, Some(VTubeError::TokenDenied.to_string()));
+                record_reason(&last_failure, VTubeDisconnectReason::AuthDenied);
                 set_connection_state(
                     &state,
                     &health_state,
@@ -545,7 +540,7 @@ pub(crate) async fn run_supervisor(ctx: SupervisorContext) {
                 if let Ok(mut g) = auth_state.write() {
                     *g = AuthState::AuthRequired;
                 }
-                record_failure(&last_failure, Some(VTubeError::TokenTimeout.to_string()));
+                record_reason(&last_failure, VTubeDisconnectReason::AuthTimeout);
                 set_connection_state(
                     &state,
                     &health_state,
@@ -568,11 +563,10 @@ pub(crate) async fn run_supervisor(ctx: SupervisorContext) {
                     error = %e,
                     "auth failed, will retry"
                 );
-                failure = e.to_string();
+                let detail = e.to_string();
+                record_reason(&last_failure, VTubeDisconnectReason::AuthFailed);
                 settle_unless_retrying(
                     *auto_reconnect.borrow_and_update(),
-                    &failure,
-                    &last_failure,
                     &state,
                     &health_state,
                     &*publisher,
@@ -582,7 +576,7 @@ pub(crate) async fn run_supervisor(ctx: SupervisorContext) {
                     &endpoint,
                     false,
                     Some(VTubeDisconnectReason::AuthFailed),
-                    Some(failure.clone()),
+                    Some(detail),
                 );
                 reconnecting = true;
                 continue;
@@ -600,11 +594,10 @@ pub(crate) async fn run_supervisor(ctx: SupervisorContext) {
         };
         if let Err(e) = subscribe_outcome {
             tracing::debug!(endpoint = %endpoint, error = %e, "event subscription failed, will retry");
-            failure = e.to_string();
+            let detail = e.to_string();
+            record_reason(&last_failure, VTubeDisconnectReason::SubscribeFailed);
             settle_unless_retrying(
                 *auto_reconnect.borrow_and_update(),
-                &failure,
-                &last_failure,
                 &state,
                 &health_state,
                 &*publisher,
@@ -614,7 +607,7 @@ pub(crate) async fn run_supervisor(ctx: SupervisorContext) {
                 &endpoint,
                 false,
                 Some(VTubeDisconnectReason::SubscribeFailed),
-                Some(failure.clone()),
+                Some(detail),
             );
             reconnecting = true;
             continue;
@@ -790,21 +783,9 @@ pub(crate) async fn run_supervisor(ctx: SupervisorContext) {
         if let Ok(mut g) = auth_state.write() {
             *g = AuthState::Cold;
         }
-        failure = if close_reason == VTubeDisconnectReason::Unresponsive {
-            FAILURE_UNRESPONSIVE
-        } else {
-            FAILURE_CONNECTION_LOST
-        }
-        .to_owned();
+        record_reason(&last_failure, close_reason);
         let retry = *auto_reconnect.borrow_and_update();
-        settle_unless_retrying(
-            retry,
-            &failure,
-            &last_failure,
-            &state,
-            &health_state,
-            &*publisher,
-        );
+        settle_unless_retrying(retry, &state, &health_state, &*publisher);
         if retry {
             set_connection_state(
                 &state,

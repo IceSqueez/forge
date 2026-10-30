@@ -16,16 +16,18 @@ use forge_platform_core::{
     ControlOutcome, HeaderAction, HealthDelta, HeroBadge, HeroBadgeTone,
     connection_state_changed_event,
 };
-use forge_types::IntegrationId;
+use forge_types::{IntegrationId, MessageRef};
 
 use crate::catalog::ObsCatalog;
+use crate::connect_failure::connect_failure_message;
 use crate::error::ObsError;
 use crate::health::{HealthSnapshot, make_health_channel};
 use crate::session::{LiveSession, with_deadline};
 use crate::source::SourceInfo;
 use crate::stream_output::StreamOutputFeed;
+use crate::vocabulary::messages;
 
-const OBS_PLATFORM_ID: &str = "obs";
+const OBS_PLATFORM_ID: &str = crate::vocabulary::INTEGRATION_ID;
 
 fn connection_state_transition(
     previous: ConnectionState,
@@ -72,7 +74,7 @@ pub struct ObsClient {
     reconnect_password: Arc<Option<String>>,
     reconnect_publisher: Arc<dyn EventPublisher>,
     auto_reconnect: Arc<watch::Sender<bool>>,
-    last_failure: Arc<RwLock<Option<String>>>,
+    last_failure: Arc<RwLock<Option<MessageRef>>>,
     resync_nudge: Arc<Notify>,
     pub(crate) stream_output: StreamOutputFeed,
 }
@@ -100,7 +102,7 @@ impl ObsClient {
 
         let stored_password = password.map(str::to_owned);
         let auto_reconnect = Arc::new(watch::Sender::new(true));
-        let last_failure = Arc::new(RwLock::new(None::<String>));
+        let last_failure = Arc::new(RwLock::new(None::<MessageRef>));
         let resync_nudge = Arc::new(Notify::new());
         let stream_output = StreamOutputFeed::new(Arc::clone(&state), Arc::clone(&health_state));
 
@@ -171,13 +173,6 @@ impl ObsClient {
         *self.auto_reconnect.borrow()
     }
 
-    pub(crate) fn last_failure(&self) -> Option<String> {
-        if self.connection_state() != ConnectionState::Disconnected {
-            return None;
-        }
-        self.last_failure.read().ok().and_then(|g| g.clone())
-    }
-
     pub(crate) async fn active_session(&self) -> Result<LiveSession, ObsError> {
         let guard = self.inner.read().await;
         guard.clone().ok_or(ObsError::Disconnected)
@@ -231,6 +226,10 @@ impl BuiltinStatus for ObsClient {
 
     fn connection(&self) -> ConnectionState {
         self.connection_state()
+    }
+
+    fn connect_failure(&self) -> Option<MessageRef> {
+        self.last_failure.read().ok().and_then(|g| g.clone())
     }
 
     fn uptime(&self) -> Option<Duration> {
@@ -380,7 +379,7 @@ struct SupervisorContext {
     publisher: Arc<dyn EventPublisher>,
     item_cache: Arc<Mutex<HashMap<(String, String), i64>>>,
     auto_reconnect: watch::Receiver<bool>,
-    last_failure: Arc<RwLock<Option<String>>>,
+    last_failure: Arc<RwLock<Option<MessageRef>>>,
     resync_nudge: Arc<Notify>,
     stream_output: StreamOutputFeed,
 }
@@ -418,7 +417,7 @@ async fn park_until_auto_reconnect(
     }
 }
 
-fn record_failure(slot: &RwLock<Option<String>>, failure: Option<String>) {
+fn record_failure(slot: &RwLock<Option<MessageRef>>, failure: Option<MessageRef>) {
     if let Ok(mut g) = slot.write() {
         *g = failure;
     }
@@ -445,7 +444,6 @@ async fn run_supervisor(host: String, port: u16, password: Option<String>, ctx: 
     } = ctx;
     let mut backoff = Backoff::new(RECONNECT_BASE_DELAY, RECONNECT_MAX_DELAY);
     let mut reconnecting = false;
-    let mut failure = String::new();
 
     loop {
         if reconnecting {
@@ -476,7 +474,6 @@ async fn run_supervisor(host: String, port: u16, password: Option<String>, ctx: 
                 }
                 RetryWait::Disabled => {
                     tracing::info!(host = %host, port, "OBS auto-reconnect is off; waiting for a manual connect");
-                    record_failure(&last_failure, Some(std::mem::take(&mut failure)));
                     settle_connection_state(
                         &state,
                         &*publisher,
@@ -516,7 +513,10 @@ async fn run_supervisor(host: String, port: u16, password: Option<String>, ctx: 
         };
 
         let attempt = tokio::select! {
-            outcome = obws::Client::connect_with_config(connect_config) => outcome.map_err(map_obws_error),
+            outcome = obws::Client::connect_with_config(connect_config) => outcome.map_err(|e| {
+                let message = connect_failure_message(&e);
+                (message, map_obws_error(e))
+            }),
             () = shutdown.notified() => {
                 settle_connection_state(&state, &*publisher, &stream_output, ConnectionState::Disconnected, ConnectionTransition::Expected);
                 return;
@@ -525,9 +525,9 @@ async fn run_supervisor(host: String, port: u16, password: Option<String>, ctx: 
 
         let client = match attempt {
             Ok(client) => client,
-            Err(ObsError::Authentication) => {
+            Err((message, ObsError::Authentication)) => {
                 tracing::warn!(host = %host, port, "OBS authentication rejected");
-                record_failure(&last_failure, Some(ObsError::Authentication.to_string()));
+                record_failure(&last_failure, Some(message));
                 settle_connection_state(
                     &state,
                     &*publisher,
@@ -540,9 +540,9 @@ async fn run_supervisor(host: String, port: u16, password: Option<String>, ctx: 
                 ));
                 return;
             }
-            Err(e) => {
+            Err((message, e)) => {
                 tracing::debug!(host = %host, port, error = %e, "OBS connection attempt failed");
-                failure = e.to_string();
+                record_failure(&last_failure, Some(message));
                 reconnecting = true;
                 continue;
             }
@@ -558,7 +558,7 @@ async fn run_supervisor(host: String, port: u16, password: Option<String>, ctx: 
                     error = %e,
                     "OBS closed the connection right after the handshake"
                 );
-                failure = e.to_string();
+                record_failure(&last_failure, Some(messages::connection_lost()));
                 reconnecting = true;
                 continue;
             }
@@ -586,7 +586,13 @@ async fn run_supervisor(host: String, port: u16, password: Option<String>, ctx: 
                 error = %e,
                 "OBS connection lost while loading its catalog"
             );
-            failure = e.to_string();
+            record_failure(
+                &last_failure,
+                Some(match e {
+                    ObsError::Timeout => messages::unresponsive(),
+                    _ => messages::connection_lost(),
+                }),
+            );
             reconnecting = true;
             continue;
         }
@@ -638,7 +644,7 @@ async fn run_supervisor(host: String, port: u16, password: Option<String>, ctx: 
                 }
                 () = session.suspected() => {
                     tracing::warn!(host = %host, port, "OBS stopped answering requests; reconnecting");
-                    failure = "OBS stopped answering requests".to_owned();
+                    record_failure(&last_failure, Some(messages::unresponsive()));
                     break;
                 }
                 item = stream.next() => match item {
@@ -665,7 +671,7 @@ async fn run_supervisor(host: String, port: u16, password: Option<String>, ctx: 
                     }
                     None => {
                         tracing::info!(host = %host, port, "OBS connection lost; reconnecting");
-                        failure = "the connection to OBS was lost".to_owned();
+                        record_failure(&last_failure, Some(messages::connection_lost()));
                         break;
                     }
                 },
@@ -680,9 +686,6 @@ async fn run_supervisor(host: String, port: u16, password: Option<String>, ctx: 
         clear_connected_at(&connected_at);
         option_revisions.bump();
         let retry = *auto_reconnect.borrow_and_update();
-        if !retry {
-            record_failure(&last_failure, Some(failure.clone()));
-        }
         settle_connection_state(
             &state,
             &*publisher,

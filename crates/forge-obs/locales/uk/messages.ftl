@@ -1,0 +1,6 @@
+msg-obs-connect_refused = OBS не приймає підключення. Запустіть OBS і ввімкніть його WebSocket-сервер.
+msg-obs-unreachable = Не вдалося зв'язатися з OBS. Перевірте адресу та мережу.
+msg-obs-password_rejected = OBS відхилив пароль. Введіть пароль WebSocket ще раз.
+msg-obs-connect_failed = Не вдалося підключитися до OBS.
+msg-obs-connection_lost = З'єднання з OBS втрачено.
+msg-obs-unresponsive = OBS перестав відповідати на запити.

@@ -1,0 +1,10 @@
+msg-vtube-connect_refused = VTube Studio is not accepting connections. Start it and turn on the API in its settings.
+msg-vtube-unreachable = VTube Studio could not be reached. Check the address and the network.
+msg-vtube-connect_failed = Could not connect to VTube Studio.
+msg-vtube-token_rejected = VTube Studio rejected the saved token. Connect again and approve access.
+msg-vtube-access_denied = Access was denied in the VTube Studio popup.
+msg-vtube-approval_timeout = The access request in VTube Studio was not answered in time.
+msg-vtube-auth_failed = VTube Studio did not accept the sign-in.
+msg-vtube-subscribe_failed = VTube Studio did not accept the event subscription.
+msg-vtube-connection_lost = The connection to VTube Studio was lost.
+msg-vtube-unresponsive = VTube Studio stopped answering requests.

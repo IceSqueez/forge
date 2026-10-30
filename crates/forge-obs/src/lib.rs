@@ -1,5 +1,6 @@
 mod catalog;
 mod client;
+mod connect_failure;
 pub mod credentials;
 mod error;
 mod events;

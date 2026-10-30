@@ -646,6 +646,8 @@ impl AppShell {
             sub_actions: Arc::clone(&handles.sub_action_registry),
             triggers: Arc::clone(&handles.trigger_registry),
             rt_handle: handles.rt_handle.clone(),
+            obs_install_seed: handles.obs_install_seed.clone(),
+            vtube_install_seed: handles.vtube_install_seed.clone(),
         }
     }
 

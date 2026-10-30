@@ -24,7 +24,7 @@ pub async fn probe_connection(host: &str, port: u16) -> Result<VTubeProbeResult,
 async fn run_probe(host: &str, port: u16) -> Result<VTubeProbeResult, VTubeError> {
     let mut ws = dial(&endpoint_url(host, port))
         .await
-        .map_err(VTubeError::Connect)?;
+        .map_err(|failed| VTubeError::Connect(failed.detail))?;
 
     let started = Instant::now();
     let req = new_request(API_STATE_REQUEST, serde_json::json!({}));

@@ -10,7 +10,7 @@ use forge_platform_core::{
 use forge_registry::{SubActionRegistry, TriggerRegistry};
 use forge_runtime::{DonationIngest, EventBus};
 use forge_storage::{CredentialsRepo, DataProvider};
-use forge_types::IntegrationId;
+use forge_types::{IntegrationId, MessageRef};
 use tokio::task::JoinHandle;
 
 use crate::donation_factories::{wire_donatello, wire_monobank};
@@ -143,6 +143,10 @@ impl ObsInstallSeed {
         let guard = self.live.read().unwrap_or_else(|e| e.into_inner());
         guard.clone()
     }
+
+    pub fn connect_failure(&self) -> Option<MessageRef> {
+        self.live()?.connect_failure()
+    }
 }
 
 #[derive(Clone)]
@@ -185,6 +189,10 @@ impl VTubeInstallSeed {
     pub fn live(&self) -> Option<Arc<forge_vtube::VTubeClient>> {
         let guard = self.live.read().unwrap_or_else(|e| e.into_inner());
         guard.clone()
+    }
+
+    pub fn connect_failure(&self) -> Option<MessageRef> {
+        self.live()?.connect_failure()
     }
 }
 

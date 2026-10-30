@@ -7,7 +7,7 @@ use std::time::{Duration, SystemTime};
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 
-use forge_types::{IntegrationId, SubActionStep, Variant};
+use forge_types::{IntegrationId, MessageRef, SubActionStep, Variant};
 
 use crate::ConnectionState;
 use crate::collections::{CollectionId, CollectionRevisions};
@@ -474,6 +474,9 @@ pub trait BuiltinStatus: Send + Sync {
         None
     }
     fn activity_count(&self) -> Option<usize> {
+        None
+    }
+    fn connect_failure(&self) -> Option<MessageRef> {
         None
     }
 }

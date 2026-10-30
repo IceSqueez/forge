@@ -7,7 +7,7 @@ use tokio::task::JoinHandle;
 use forge_events::EventPublisher;
 use forge_platform_core::{AtomicConnectionState, ConnectionState, HealthDelta};
 use forge_storage::CredentialsRepo;
-use forge_types::IntegrationId;
+use forge_types::{IntegrationId, MessageRef};
 
 use crate::auth::AuthState;
 use crate::error::VTubeError;
@@ -49,7 +49,7 @@ pub struct VTubeClient {
     catalog_metrics_task: Arc<std::sync::Mutex<Option<JoinHandle<()>>>>,
     version_task: Arc<std::sync::Mutex<Option<JoinHandle<()>>>>,
     pub(crate) auto_reconnect: Arc<watch::Sender<bool>>,
-    pub(crate) last_failure: Arc<RwLock<Option<String>>>,
+    pub(crate) last_failure: Arc<RwLock<Option<MessageRef>>>,
     pub(crate) reconnect_publisher: Arc<dyn EventPublisher>,
     pub(crate) reconnect_creds: Arc<dyn CredentialsRepo>,
 }
@@ -77,7 +77,7 @@ impl VTubeClient {
         let (content_notifier, content_changed_rx) = crate::content::ContentNotifier::new();
         let (connected_tx, connected_rx) = mpsc::unbounded_channel::<()>();
         let auto_reconnect = Arc::new(watch::Sender::new(true));
-        let last_failure = Arc::new(RwLock::new(None::<String>));
+        let last_failure = Arc::new(RwLock::new(None::<MessageRef>));
 
         let content_handle = crate::content::spawn_content_task(
             Arc::clone(&content_state),
@@ -154,13 +154,6 @@ impl VTubeClient {
 
     pub fn auto_reconnect_enabled(&self) -> bool {
         *self.auto_reconnect.borrow()
-    }
-
-    pub(crate) fn last_failure(&self) -> Option<String> {
-        if self.connection_state() != ConnectionState::Disconnected {
-            return None;
-        }
-        self.last_failure.read().ok().and_then(|g| g.clone())
     }
 
     pub(crate) async fn send_json_request(

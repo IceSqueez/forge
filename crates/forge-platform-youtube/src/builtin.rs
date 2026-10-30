@@ -4,7 +4,7 @@ use std::time::{Duration, SystemTime};
 use forge_platform_core::{
     BuiltinContent, BuiltinHealth, BuiltinStatus, CapabilityFlags, ChatPlatform, ConnectionState,
     DetailSection, HeaderAction, HealthDelta, HealthMetric, HealthMetricId, HealthStream,
-    HealthValue, HeroBadge, HeroBadgeTone, LiveViewerSource, ViewerReport,
+    HealthText, HealthValue, HeroBadge, HeroBadgeTone, LiveViewerSource, ViewerReport,
 };
 use forge_registry::{RegistryError, TriggerRegistry};
 use forge_types::IntegrationId;
@@ -31,10 +31,11 @@ use crate::triggers::stream_offline::ChannelBroadcastEndedDescriptor;
 use crate::triggers::stream_online::ChannelBroadcastStartedDescriptor;
 use crate::triggers::title_changed::ChannelBroadcastTitleChangedDescriptor;
 use crate::viewer_poll::{YoutubeViewerPoll, YoutubeViewerSource};
+use crate::vocabulary::messages;
 
-const LIVE_CHAT_METRIC: HealthMetricId = HealthMetricId::new("live_chat");
-const EVENTS_METRIC: HealthMetricId = HealthMetricId::new("events");
-const API_CALLS_METRIC: HealthMetricId = HealthMetricId::new("api_calls");
+const LIVE_CHAT_METRIC: HealthMetricId = HealthMetricId::new(messages::HEALTH_LIVE_CHAT);
+const EVENTS_METRIC: HealthMetricId = HealthMetricId::new(messages::HEALTH_EVENTS);
+const API_CALLS_METRIC: HealthMetricId = HealthMetricId::new(messages::HEALTH_API_CALLS);
 
 pub fn register_youtube_triggers(registry: &mut TriggerRegistry) -> Result<(), RegistryError> {
     let mut registry = registry.owned_by(crate::YOUTUBE_INTEGRATION.id);
@@ -269,16 +270,15 @@ impl YoutubeIntegrationBundle {
             Ok(guard) => HealthValue::Ratio {
                 used: u64::from(guard.used_on(today_pacific())),
                 total: u64::from(QUOTA_DAILY_LIMIT),
-                reset_hint: Some("resets daily (Pacific)".to_owned()),
+                reset_hint: Some(HealthText::unlocalized("resets daily (Pacific)")),
             },
             Err(_) => HealthValue::Text {
-                primary: "unavailable".to_owned(),
+                primary: HealthText::unlocalized("unavailable"),
                 secondary: None,
             },
         };
         HealthMetric {
             id: API_CALLS_METRIC,
-            label: "API Calls".to_owned(),
             value,
         }
     }
@@ -286,28 +286,28 @@ impl YoutubeIntegrationBundle {
 
 fn chat_poller_health_value(state: ConnectionState) -> HealthValue {
     HealthValue::Status {
-        label: state.label().to_owned(),
+        label: HealthText::Connection(state),
         active: state.is_connected(),
-        detail: Some("liveChatMessages.list".to_owned()),
+        detail: Some(HealthText::unlocalized("liveChatMessages.list")),
     }
 }
 
 fn events_health_value(state: ConnectionState) -> HealthValue {
     HealthValue::Status {
-        label: state.label().to_owned(),
+        label: HealthText::Connection(state),
         active: state.is_connected(),
-        detail: Some("shared chat feed".to_owned()),
+        detail: Some(HealthText::unlocalized("shared chat feed")),
     }
 }
 
 fn viewers_health_value(report: ViewerReport) -> HealthValue {
     match report {
         ViewerReport::Live { count } => HealthValue::Text {
-            primary: count.to_string(),
-            secondary: Some("live".to_owned()),
+            primary: HealthText::unlocalized(count.to_string()),
+            secondary: Some(HealthText::unlocalized("live")),
         },
         ViewerReport::Absent => HealthValue::Text {
-            primary: "0".to_owned(),
+            primary: HealthText::unlocalized("0"),
             secondary: None,
         },
     }
@@ -382,17 +382,14 @@ impl BuiltinHealth for YoutubeIntegrationBundle {
         [
             HealthMetric {
                 id: LIVE_CHAT_METRIC,
-                label: "Live Chat".to_owned(),
                 value: chat_poller_health_value(state),
             },
             HealthMetric {
                 id: EVENTS_METRIC,
-                label: "Events".to_owned(),
                 value: events_health_value(state),
             },
             HealthMetric {
                 id: HealthMetricId::VIEWERS,
-                label: "Viewers".to_owned(),
                 value: viewers_health_value(*self.viewer_report_rx.borrow()),
             },
             self.quota_metric(),

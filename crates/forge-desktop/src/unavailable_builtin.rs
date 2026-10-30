@@ -1,22 +1,30 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use forge_components::tr;
 use forge_platform_core::{
     BuiltinContent, BuiltinHealth, BuiltinStatus, CapabilityFlags, ConnectionState, DetailSection,
-    HeaderAction, HealthMetric, HealthMetricId, HealthStream, HealthValue, QuickAction,
+    HeaderAction, HealthMetric, HealthMetricId, HealthStream, HealthText, HealthValue, QuickAction,
     QuickActions, SectionIcon,
 };
-use forge_types::IntegrationId;
+use forge_types::{IntegrationId, MessageCode, UserText, VerbatimText};
 
 use crate::integrations::BuiltinObject;
 
 const MISSING_VALUE: &str = "-";
 
-const STATUS_METRIC: HealthMetricId = HealthMetricId::new("status");
-const UPTIME_METRIC: HealthMetricId = HealthMetricId::new("uptime");
-const ENDPOINT_METRIC: HealthMetricId = HealthMetricId::new("endpoint");
-const VERSION_METRIC: HealthMetricId = HealthMetricId::new("version");
+const DESKTOP_NAMESPACE: &str = "desktop";
+const STATUS_METRIC: HealthMetricId =
+    HealthMetricId::new(MessageCode::from_static(DESKTOP_NAMESPACE, "health_status"));
+const UPTIME_METRIC: HealthMetricId =
+    HealthMetricId::new(MessageCode::from_static(DESKTOP_NAMESPACE, "health_uptime"));
+const ENDPOINT_METRIC: HealthMetricId = HealthMetricId::new(MessageCode::from_static(
+    DESKTOP_NAMESPACE,
+    "health_endpoint",
+));
+const VERSION_METRIC: HealthMetricId = HealthMetricId::new(MessageCode::from_static(
+    DESKTOP_NAMESPACE,
+    "health_version",
+));
 
 struct UnavailableStatus {
     id: IntegrationId,
@@ -60,16 +68,15 @@ impl BuiltinHealth for UnavailableHealth {
         [
             HealthMetric {
                 id: STATUS_METRIC,
-                label: tr!("builtin_unavailable_metric_status"),
                 value: HealthValue::Status {
-                    label: tr!("common_status_not_connected"),
+                    label: HealthText::Connection(ConnectionState::Disconnected),
                     active: false,
                     detail: None,
                 },
             },
-            blank_metric(UPTIME_METRIC, tr!("builtin_unavailable_metric_uptime")),
-            blank_metric(ENDPOINT_METRIC, tr!("builtin_unavailable_metric_endpoint")),
-            blank_metric(VERSION_METRIC, tr!("builtin_unavailable_metric_version")),
+            blank_metric(UPTIME_METRIC),
+            blank_metric(ENDPOINT_METRIC),
+            blank_metric(VERSION_METRIC),
         ]
     }
 
@@ -94,12 +101,11 @@ impl QuickActions for UnavailableQuickActions {
     }
 }
 
-fn blank_metric(id: HealthMetricId, label: String) -> HealthMetric {
+fn blank_metric(id: HealthMetricId) -> HealthMetric {
     HealthMetric {
         id,
-        label,
         value: HealthValue::Text {
-            primary: MISSING_VALUE.to_owned(),
+            primary: HealthText::Text(UserText::Verbatim(VerbatimText::new(MISSING_VALUE))),
             secondary: None,
         },
     }

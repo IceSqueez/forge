@@ -48,7 +48,7 @@ pub use latest::{
 };
 pub use log_target::SCRIPT_LOG_TARGET;
 pub use message::{
-    COMMON_MESSAGES, COMMON_NAMESPACE, FiniteFloat, INTEGRATION_DISABLED,
+    COMMON_MESSAGES, COMMON_NAMESPACE, FiniteFloat, HEALTH_VIEWERS, INTEGRATION_DISABLED,
     MAX_UPSTREAM_DETAIL_CHARS, MESSAGE_KEY_PREFIX, MessageArg, MessageCatalog, MessageCatalogError,
     MessageCode, MessageCodeError, MessageRef, NO_CHAT_PLATFORM_ENABLED,
     NO_WHISPER_PLATFORM_ENABLED, UNKNOWN_CHAT_TARGET, UPSTREAM_FAILURE, UpstreamDetail, UserText,

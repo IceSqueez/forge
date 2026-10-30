@@ -12,12 +12,12 @@ pub enum ConnectionState {
 }
 
 impl ConnectionState {
-    pub fn label(&self) -> &'static str {
+    pub fn as_str(&self) -> &'static str {
         match self {
-            Self::Disconnected => "Disconnected",
-            Self::Connecting => "Connecting",
-            Self::Connected => "Connected",
-            Self::Reconnecting => "Reconnecting",
+            Self::Disconnected => "disconnected",
+            Self::Connecting => "connecting",
+            Self::Connected => "connected",
+            Self::Reconnecting => "reconnecting",
         }
     }
 

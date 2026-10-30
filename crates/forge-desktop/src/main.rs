@@ -63,6 +63,7 @@ mod first_run;
 mod footer;
 mod globals;
 mod globals_view;
+mod health_text;
 mod home;
 mod home_stats;
 mod hotkey_action_modal;

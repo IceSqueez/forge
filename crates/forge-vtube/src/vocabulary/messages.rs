@@ -13,9 +13,20 @@ const SUBSCRIBE_FAILED: MessageCode = MessageCode::from_static(INTEGRATION_ID, "
 const CONNECTION_LOST: MessageCode = MessageCode::from_static(INTEGRATION_ID, "connection_lost");
 const UNRESPONSIVE: MessageCode = MessageCode::from_static(INTEGRATION_ID, "unresponsive");
 
+pub const HEALTH_MODEL: MessageCode = MessageCode::from_static(INTEGRATION_ID, "health_model");
+pub const HEALTH_EXPRESSIONS: MessageCode =
+    MessageCode::from_static(INTEGRATION_ID, "health_expressions");
+pub const HEALTH_ITEMS: MessageCode = MessageCode::from_static(INTEGRATION_ID, "health_items");
+pub const HEALTH_TRACKING: MessageCode =
+    MessageCode::from_static(INTEGRATION_ID, "health_tracking");
+
 pub const VTUBE_MESSAGES: MessageCatalog = MessageCatalog {
     namespace: INTEGRATION_ID,
     codes: &[
+        HEALTH_MODEL,
+        HEALTH_EXPRESSIONS,
+        HEALTH_ITEMS,
+        HEALTH_TRACKING,
         CONNECT_REFUSED,
         UNREACHABLE,
         CONNECT_FAILED,

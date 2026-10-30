@@ -65,7 +65,7 @@ pub fn integration_facts(builtins: &BuiltinRegistry) -> Vec<IntegrationFacts> {
         .iter()
         .map(|object| IntegrationFacts {
             id: object.status.id().as_str().to_owned(),
-            connection: object.status.connection().label(),
+            connection: object.status.connection().as_str(),
             limited: object.status.capability_flags().limited,
             version: object.status.version().map(str::to_owned),
             uptime_secs: object.status.uptime().map(|d| d.as_secs()),
@@ -80,7 +80,7 @@ pub fn integration_facts(builtins: &BuiltinRegistry) -> Vec<IntegrationFacts> {
                 .health
                 .metrics()
                 .iter()
-                .map(|metric| (metric.id.as_str().to_owned(), health_shape(&metric.value)))
+                .map(|metric| (metric.id.to_string(), health_shape(&metric.value)))
                 .collect(),
             quick_actions: object.quick.actions().len(),
         })

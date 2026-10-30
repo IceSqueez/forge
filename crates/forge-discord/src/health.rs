@@ -7,18 +7,21 @@ use tokio_stream::StreamExt;
 use tokio_stream::wrappers::BroadcastStream;
 
 use forge_platform_core::{
-    BuiltinHealth, HealthDelta, HealthMetric, HealthMetricId, HealthStream, HealthValue,
+    BuiltinHealth, HealthDelta, HealthMetric, HealthMetricId, HealthStream, HealthText, HealthValue,
 };
 
 use crate::client::DiscordClient;
+use crate::vocabulary::messages;
 
 const LATENCY_WINDOW: usize = 20;
 const ERROR_WINDOW: Duration = Duration::from_secs(3600);
 
-pub(crate) const LATENCY_METRIC: HealthMetricId = HealthMetricId::new("webhook_latency");
-pub(crate) const RATE_LIMIT_METRIC: HealthMetricId = HealthMetricId::new("rate_limit");
-pub(crate) const LAST_SEND_METRIC: HealthMetricId = HealthMetricId::new("last_send");
-pub(crate) const ERRORS_METRIC: HealthMetricId = HealthMetricId::new("errors");
+pub(crate) const LATENCY_METRIC: HealthMetricId =
+    HealthMetricId::new(messages::HEALTH_WEBHOOK_LATENCY);
+pub(crate) const RATE_LIMIT_METRIC: HealthMetricId =
+    HealthMetricId::new(messages::HEALTH_RATE_LIMIT);
+pub(crate) const LAST_SEND_METRIC: HealthMetricId = HealthMetricId::new(messages::HEALTH_LAST_SEND);
+pub(crate) const ERRORS_METRIC: HealthMetricId = HealthMetricId::new(messages::HEALTH_ERRORS);
 
 #[derive(Default)]
 pub(crate) struct DiscordHealthSnapshot {
@@ -57,10 +60,14 @@ pub(crate) fn update_on_send(
     deltas.push(HealthDelta {
         metric: LATENCY_METRIC,
         new_value: HealthValue::Text {
-            primary: p50
-                .map(|v| format!("{v}ms"))
-                .unwrap_or_else(|| "\u{2014}".to_owned()),
-            secondary: Some(format!("p50 / last {}", snap.latencies_ms.len())),
+            primary: HealthText::unlocalized(
+                p50.map(|v| format!("{v}ms"))
+                    .unwrap_or_else(|| "\u{2014}".to_owned()),
+            ),
+            secondary: Some(HealthText::unlocalized(format!(
+                "p50 / last {}",
+                snap.latencies_ms.len()
+            ))),
         },
     });
 
@@ -75,7 +82,9 @@ pub(crate) fn update_on_send(
             new_value: HealthValue::Ratio {
                 used: rate_total.saturating_sub(rate_remaining),
                 total: rate_total,
-                reset_hint: rate_reset_hint.map(|s| format!("resets in {s}s")),
+                reset_hint: rate_reset_hint
+                    .map(|s| format!("resets in {s}s"))
+                    .map(HealthText::unlocalized),
             },
         });
     }
@@ -91,7 +100,7 @@ pub(crate) fn update_on_send(
         deltas.push(HealthDelta {
             metric: LAST_SEND_METRIC,
             new_value: HealthValue::Status {
-                label,
+                label: HealthText::unlocalized(label),
                 active: ok,
                 detail: None,
             },
@@ -105,8 +114,8 @@ pub(crate) fn update_on_send(
     deltas.push(HealthDelta {
         metric: ERRORS_METRIC,
         new_value: HealthValue::Text {
-            primary: count.to_string(),
-            secondary: Some("last 60 min".to_owned()),
+            primary: HealthText::unlocalized(count.to_string()),
+            secondary: Some(HealthText::unlocalized("last 60 min")),
         },
     });
 
@@ -122,7 +131,7 @@ pub(crate) fn record_missing_webhook(snap: &mut DiscordHealthSnapshot) -> Vec<He
         deltas.push(HealthDelta {
             metric: LAST_SEND_METRIC,
             new_value: HealthValue::Status {
-                label: "Failed".to_owned(),
+                label: HealthText::unlocalized("Failed"),
                 active: false,
                 detail: None,
             },
@@ -134,8 +143,8 @@ pub(crate) fn record_missing_webhook(snap: &mut DiscordHealthSnapshot) -> Vec<He
     deltas.push(HealthDelta {
         metric: ERRORS_METRIC,
         new_value: HealthValue::Text {
-            primary: count.to_string(),
-            secondary: Some("last 60 min".to_owned()),
+            primary: HealthText::unlocalized(count.to_string()),
+            secondary: Some(HealthText::unlocalized("last 60 min")),
         },
     });
 
@@ -192,14 +201,13 @@ impl BuiltinHealth for DiscordClient {
 
         let p50 = compute_p50(&snap.latencies_ms);
         let latency_value = HealthValue::Text {
-            primary: p50
-                .map(|v| format!("{v}ms"))
-                .unwrap_or_else(|| "\u{2014}".to_owned()),
-            secondary: if snap.latencies_ms.is_empty() {
-                None
-            } else {
-                Some(format!("p50 / last {}", snap.latencies_ms.len()))
-            },
+            primary: HealthText::unlocalized(
+                p50.map(|v| format!("{v}ms"))
+                    .unwrap_or_else(|| "\u{2014}".to_owned()),
+            ),
+            secondary: (!snap.latencies_ms.is_empty())
+                .then(|| format!("p50 / last {}", snap.latencies_ms.len()))
+                .map(HealthText::unlocalized),
         };
 
         let budget_used = snap
@@ -211,22 +219,23 @@ impl BuiltinHealth for DiscordClient {
             reset_hint: snap
                 .rate_limit_reset_hint
                 .as_deref()
-                .map(|s| format!("resets in {s}")),
+                .map(|s| format!("resets in {s}"))
+                .map(HealthText::unlocalized),
         };
 
         let last_send_value = match snap.last_send_ok {
             None => HealthValue::Status {
-                label: "No sends yet".to_owned(),
+                label: HealthText::unlocalized("No sends yet"),
                 active: false,
                 detail: None,
             },
             Some(true) => HealthValue::Status {
-                label: "OK".to_owned(),
+                label: HealthText::unlocalized("OK"),
                 active: true,
                 detail: None,
             },
             Some(false) => HealthValue::Status {
-                label: "Failed".to_owned(),
+                label: HealthText::unlocalized("Failed"),
                 active: false,
                 detail: None,
             },
@@ -234,29 +243,25 @@ impl BuiltinHealth for DiscordClient {
 
         let error_count = age_out_errors(&mut snap.error_timestamps);
         let errors_value = HealthValue::Text {
-            primary: error_count.to_string(),
-            secondary: Some("last 60 min".to_owned()),
+            primary: HealthText::unlocalized(error_count.to_string()),
+            secondary: Some(HealthText::unlocalized("last 60 min")),
         };
 
         [
             HealthMetric {
                 id: LATENCY_METRIC,
-                label: "WEBHOOK LATENCY".to_owned(),
                 value: latency_value,
             },
             HealthMetric {
                 id: RATE_LIMIT_METRIC,
-                label: "RATE LIMIT".to_owned(),
                 value: budget_value,
             },
             HealthMetric {
                 id: LAST_SEND_METRIC,
-                label: "LAST SEND".to_owned(),
                 value: last_send_value,
             },
             HealthMetric {
                 id: ERRORS_METRIC,
-                label: "ERRORS".to_owned(),
                 value: errors_value,
             },
         ]

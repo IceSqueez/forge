@@ -26,11 +26,11 @@ pub use builtin::{
     ActiveRow, BannerLevel, BuiltinContent, BuiltinControl, BuiltinHealth, BuiltinStatus,
     CapabilityFlags, ContentList, ContentListItem, ControlFailure, ControlOutcome, DetailSection,
     HEALTH_CHANNEL_CAPACITY, HeaderAction, HealthBar, HealthDelta, HealthLevel, HealthMetric,
-    HealthMetricId, HealthStream, HealthValue, HeroBadge, HeroBadgeTone, InfoField, KeyValueRow,
-    ListFooter, QuickAction, QuickActionAccent, QuickActionChoiceOption, QuickActionChoiceSource,
-    QuickActionField, QuickActionFieldKind, QuickActionFieldValue, QuickActionLiveness,
-    QuickActions, RowAction, SectionIcon, StatColumn, SubscriptionRow, SubscriptionStatus,
-    TokenColor, TrailingToken,
+    HealthMetricId, HealthStream, HealthText, HealthValue, HeroBadge, HeroBadgeTone, InfoField,
+    KeyValueRow, ListFooter, QuickAction, QuickActionAccent, QuickActionChoiceOption,
+    QuickActionChoiceSource, QuickActionField, QuickActionFieldKind, QuickActionFieldValue,
+    QuickActionLiveness, QuickActions, RowAction, SectionIcon, StatColumn, SubscriptionRow,
+    SubscriptionStatus, TokenColor, TrailingToken,
 };
 pub use capabilities::PlatformCapabilities;
 pub use chat::{

@@ -4,3 +4,4 @@ msg-common-no_chat_platform_enabled = Жодну чат-платформу не 
 msg-common-no_whisper_platform_enabled = Жодна увімкнена чат-платформа не підтримує шепіт
 msg-common-whispers_unsupported = Шепіт не підтримується на { $target }
 msg-common-unknown_chat_target = Невідома ціль чату "{ $target }"; доступні цілі: { $valid }
+msg-common-health_viewers = Глядачі

@@ -2657,10 +2657,10 @@ script_editor_rename_failed = Could not rename the script: { $error }
 ## Storage error screen
 
 ## Unavailable integration
-builtin_unavailable_metric_status = Status
-builtin_unavailable_metric_uptime = Uptime
-builtin_unavailable_metric_endpoint = Endpoint
-builtin_unavailable_metric_version = Version
+msg-desktop-health_status = Status
+msg-desktop-health_uptime = Uptime
+msg-desktop-health_endpoint = Endpoint
+msg-desktop-health_version = Version
 
 obs_connect_title = OBS Studio
 obs_connect_subtitle = Connect to control scenes, sources, audio, filters, and recording

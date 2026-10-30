@@ -10,13 +10,13 @@ use forge_obs::ObsClient;
 use forge_platform_core::{
     BuiltinCollections, BuiltinContent, BuiltinControl, BuiltinHealth, BuiltinOptionSource,
     BuiltinStatus, CapabilityFlags, CollectionId, ConnectionState, ControlFailure, DetailSection,
-    HeaderAction, HealthDelta, HealthMetric, HealthMetricId, HealthValue, HeroBadge, HeroBadgeTone,
-    PlatformError, QuickAction, QuickActions, RevisionWait, SectionIcon,
+    HeaderAction, HealthDelta, HealthMetric, HealthMetricId, HealthText, HealthValue, HeroBadge,
+    HeroBadgeTone, PlatformError, QuickAction, QuickActions, RevisionWait, SectionIcon,
 };
 use forge_registry::TriggerRegistry;
 use forge_runtime::{ActionEngineHandle, EventBus, LiveViewerAggregatorHandle, LiveViewerCount};
 use forge_storage::{CredentialsRepo, HistoryRepo, SettingsRepo};
-use forge_types::{IntegrationId, PlatformId, SubActionStep};
+use forge_types::{IntegrationId, PlatformId, SubActionStep, UserText, VerbatimText};
 use futures_util::StreamExt as _;
 use gpui::{
     AnyElement, ClickEvent, Context, Entity, EventEmitter, FontWeight, Rgba, Subscription, Task,
@@ -37,6 +37,7 @@ use crate::collection_manager::{CollectionManager, CollectionManagerEvent};
 use crate::connect_flow::{ConnectFlow, ConnectFlowEvent, ConnectFlowLaunch};
 use crate::donation_services::DonationService;
 use crate::donation_settings::{DonationSettingsLaunch, DonationSettingsView, remove_confirm};
+use crate::health_text::connection_label;
 use crate::hub_crumb::hub_crumb;
 use crate::in_flight_steps::InFlightSteps;
 use crate::integration_catalog::{declaration_of, is_donation_service, look_of};
@@ -1163,11 +1164,13 @@ impl IntegrationDetail {
         {
             let delta = self.viewer_delta().unwrap_or(0);
             let sign = if delta >= 0 { "+" } else { "" };
-            *secondary = Some(tr!(
-                "integration_viewers_delta",
-                delta = format!("{sign}{delta}"),
-                window = format!("{VIEWER_DELTA_WINDOW_MINUTES}m")
-            ));
+            *secondary = Some(HealthText::Text(UserText::Verbatim(VerbatimText::new(
+                tr!(
+                    "integration_viewers_delta",
+                    delta = format!("{sign}{delta}"),
+                    window = format!("{VIEWER_DELTA_WINDOW_MINUTES}m")
+                ),
+            ))));
         }
         metrics
     }
@@ -1234,28 +1237,13 @@ impl IntegrationDetail {
     }
 
     fn header_right_connection(&self, palette: &ForgePalette, density: Density) -> AnyElement {
-        let (dot, text, label) = match self.connection {
-            ConnectionState::Connected => (
-                palette.success,
-                palette.success,
-                tr!("common_status_connected"),
-            ),
-            ConnectionState::Connecting => (
-                palette.info,
-                palette.info,
-                tr!("integration_state_connecting_title"),
-            ),
-            ConnectionState::Reconnecting => (
-                palette.warning,
-                palette.warning,
-                tr!("integration_state_reconnecting_title"),
-            ),
-            ConnectionState::Disconnected => (
-                palette.text_faint,
-                palette.text_muted,
-                tr!("common_status_not_connected"),
-            ),
+        let (dot, text) = match self.connection {
+            ConnectionState::Connected => (palette.success, palette.success),
+            ConnectionState::Connecting => (palette.info, palette.info),
+            ConnectionState::Reconnecting => (palette.warning, palette.warning),
+            ConnectionState::Disconnected => (palette.text_faint, palette.text_muted),
         };
+        let label = connection_label(self.connection);
         div()
             .flex()
             .items_center()

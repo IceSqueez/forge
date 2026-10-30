@@ -14,6 +14,8 @@ use forge_platform_core::{
     StatColumn, SubscriptionRow, SubscriptionStatus, TokenColor, TrailingToken,
 };
 use forge_types::SubActionStep;
+
+use crate::health_text::{health_metric_label, health_text};
 use gpui::{
     AnyElement, App, ClickEvent, Div, FontWeight, ListSizingBehavior, Pixels, Rgba, SharedString,
     Window, div, prelude::*, px, relative, svg, uniform_list,
@@ -1328,7 +1330,7 @@ fn health_metric_card(
         .border_color(palette.border_regular)
         .bg(palette.elevated)
         .child(mono(
-            metric.label.to_uppercase(),
+            health_metric_label(&metric.id).to_uppercase(),
             FONT_XXS,
             palette.text_muted,
         ))
@@ -1353,35 +1355,35 @@ fn health_value_col(value: &HealthValue, palette: &ForgePalette, density: Densit
                 .items_center()
                 .gap(spacing(Spacing::Xs, density))
                 .child(status_dot(color, px(7.0)))
-                .child(body(label.clone(), FONT_SM, color));
+                .child(body(health_text(label), FONT_SM, color));
             if let Some(d) = detail {
                 div()
                     .flex()
                     .flex_col()
                     .gap(scaled(px(2.0), density))
                     .child(value_row)
-                    .child(mono(d.clone(), FONT_XXS, palette.text_faint))
+                    .child(mono(health_text(d), FONT_XXS, palette.text_faint))
                     .into_any_element()
             } else {
                 value_row.into_any_element()
             }
         }
         HealthValue::Text { primary, secondary } => {
-            let primary_el = body(primary.clone(), FONT_SM, palette.text_primary);
+            let primary_el = body(health_text(primary), FONT_SM, palette.text_primary);
             if let Some(sec) = secondary {
                 div()
                     .flex()
                     .flex_col()
                     .gap(scaled(px(2.0), density))
                     .child(primary_el)
-                    .child(mono(sec.clone(), FONT_XXS, palette.text_faint))
+                    .child(mono(health_text(sec), FONT_XXS, palette.text_faint))
                     .into_any_element()
             } else {
                 primary_el.into_any_element()
             }
         }
         HealthValue::Pair { left, right } => mono(
-            format!("{left} \u{00b7} {right}"),
+            format!("{} \u{00b7} {}", health_text(left), health_text(right)),
             FONT_SM,
             palette.text_primary,
         )
@@ -1398,7 +1400,7 @@ fn health_value_col(value: &HealthValue, palette: &ForgePalette, density: Densit
                     .flex_col()
                     .gap(scaled(px(2.0), density))
                     .child(ratio_el)
-                    .child(mono(hint.clone(), FONT_XXS, palette.text_faint))
+                    .child(mono(health_text(hint), FONT_XXS, palette.text_faint))
                     .into_any_element()
             } else {
                 ratio_el.into_any_element()

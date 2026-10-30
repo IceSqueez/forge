@@ -4,3 +4,7 @@ msg-obs-password_rejected = OBS відхилив пароль. Введіть п
 msg-obs-connect_failed = Не вдалося підключитися до OBS.
 msg-obs-connection_lost = З'єднання з OBS втрачено.
 msg-obs-unresponsive = OBS перестав відповідати на запити.
+msg-obs-health_stream = Стрім
+msg-obs-health_recording = Запис
+msg-obs-health_cpu_fps = ЦП · FPS
+msg-obs-health_dropped_frames = Пропущено

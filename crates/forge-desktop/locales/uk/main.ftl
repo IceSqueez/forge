@@ -2744,10 +2744,10 @@ script_editor_rename_failed = Не вдалося перейменувати с�
 ## Storage error screen
 
 ## Недоступна інтеграція
-builtin_unavailable_metric_status = Статус
-builtin_unavailable_metric_uptime = Час роботи
-builtin_unavailable_metric_endpoint = Адреса
-builtin_unavailable_metric_version = Версія
+msg-desktop-health_status = Статус
+msg-desktop-health_uptime = Час роботи
+msg-desktop-health_endpoint = Адреса
+msg-desktop-health_version = Версія
 
 obs_connect_title = OBS Studio
 obs_connect_subtitle = Підключіться, щоб керувати сценами, джерелами, звуком, фільтрами та записом

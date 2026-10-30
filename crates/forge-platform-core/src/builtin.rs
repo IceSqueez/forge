@@ -1,4 +1,3 @@
-use std::borrow::Cow;
 use std::collections::BTreeMap;
 use std::fmt;
 use std::pin::Pin;
@@ -7,7 +6,9 @@ use std::time::{Duration, SystemTime};
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 
-use forge_types::{IntegrationId, MessageRef, SubActionStep, Variant};
+use forge_types::{
+    HEALTH_VIEWERS, IntegrationId, MessageCode, MessageRef, SubActionStep, UserText, Variant,
+};
 
 use crate::ConnectionState;
 use crate::collections::{CollectionId, CollectionRevisions};
@@ -27,56 +28,76 @@ impl SectionIcon {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum HealthText {
+    Text(UserText),
+    Count(u64),
+    Span(Duration),
+    Connection(ConnectionState),
+}
+
+impl HealthText {
+    pub fn unlocalized(text: impl Into<String>) -> Self {
+        Self::Text(UserText::unlocalized(text))
+    }
+}
+
+impl From<UserText> for HealthText {
+    fn from(text: UserText) -> Self {
+        Self::Text(text)
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum HealthValue {
     Status {
-        label: String,
+        label: HealthText,
         active: bool,
         #[serde(default, skip_serializing_if = "Option::is_none")]
-        detail: Option<String>,
+        detail: Option<HealthText>,
     },
     Text {
-        primary: String,
-        secondary: Option<String>,
+        primary: HealthText,
+        secondary: Option<HealthText>,
     },
     Pair {
-        left: String,
-        right: String,
+        left: HealthText,
+        right: HealthText,
     },
     Ratio {
         used: u64,
         total: u64,
-        reset_hint: Option<String>,
+        reset_hint: Option<HealthText>,
     },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(transparent)]
-pub struct HealthMetricId(Cow<'static, str>);
+pub struct HealthMetricId(MessageCode);
 
 impl HealthMetricId {
-    pub const VIEWERS: Self = Self::new("viewers");
+    pub const VIEWERS: Self = Self::new(HEALTH_VIEWERS);
 
-    pub const fn new(id: &'static str) -> Self {
-        Self(Cow::Borrowed(id))
+    pub const fn new(label: MessageCode) -> Self {
+        Self(label)
     }
 
-    pub fn as_str(&self) -> &str {
-        &self.0
+    pub fn label(&self) -> MessageRef {
+        MessageRef::new(self.0.clone())
     }
 }
 
 impl fmt::Display for HealthMetricId {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(&self.0)
+        self.0.fmt(f)
     }
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct HealthMetric {
     pub id: HealthMetricId,
-    pub label: String,
     pub value: HealthValue,
 }
 

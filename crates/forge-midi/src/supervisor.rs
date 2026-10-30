@@ -374,8 +374,8 @@ fn build_port_count_deltas(
         deltas.push(HealthDelta {
             metric: OUTPUT_PORTS_METRIC,
             new_value: forge_platform_core::HealthValue::Text {
-                primary: output_count.to_string(),
-                secondary: Some("available".to_owned()),
+                primary: forge_platform_core::HealthText::unlocalized(output_count.to_string()),
+                secondary: Some(forge_platform_core::HealthText::unlocalized("available")),
             },
         });
     }
@@ -395,7 +395,7 @@ fn build_event_deltas(snap: &mut MidiHealthSnapshot, is_note_on: bool) -> Vec<He
         deltas.push(HealthDelta {
             metric: LAST_NOTE_ON_METRIC,
             new_value: forge_platform_core::HealthValue::Text {
-                primary: formatted,
+                primary: forge_platform_core::HealthText::unlocalized(formatted),
                 secondary: None,
             },
         });
@@ -405,8 +405,8 @@ fn build_event_deltas(snap: &mut MidiHealthSnapshot, is_note_on: bool) -> Vec<He
     deltas.push(HealthDelta {
         metric: EVENTS_PER_MINUTE_METRIC,
         new_value: forge_platform_core::HealthValue::Text {
-            primary: epm.to_string(),
-            secondary: Some("last 60 s".to_owned()),
+            primary: forge_platform_core::HealthText::unlocalized(epm.to_string()),
+            secondary: Some(forge_platform_core::HealthText::unlocalized("last 60 s")),
         },
     });
 

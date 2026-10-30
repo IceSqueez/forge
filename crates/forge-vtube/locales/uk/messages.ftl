@@ -8,3 +8,7 @@ msg-vtube-auth_failed = VTube Studio не прийняв вхід.
 msg-vtube-subscribe_failed = VTube Studio не прийняв підписку на події.
 msg-vtube-connection_lost = З'єднання з VTube Studio втрачено.
 msg-vtube-unresponsive = VTube Studio перестав відповідати на запити.
+msg-vtube-health_model = Модель
+msg-vtube-health_expressions = Вирази
+msg-vtube-health_items = Предмети
+msg-vtube-health_tracking = Трекінг

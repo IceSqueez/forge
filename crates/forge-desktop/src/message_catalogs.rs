@@ -12,12 +12,16 @@ use crate::i18n::{app_catalogs, catalog_language};
 pub const REGISTERED_CATALOGS: &[MessageCatalog] = &[
     COMMON_MESSAGES,
     LIFECYCLE_MESSAGES,
+    forge_platform_twitch::vocabulary::messages::TWITCH_MESSAGES,
     forge_platform_youtube::vocabulary::messages::YOUTUBE_MESSAGES,
     forge_platform_kick::vocabulary::messages::KICK_MESSAGES,
     forge_obs::vocabulary::messages::OBS_MESSAGES,
     forge_vtube::vocabulary::messages::VTUBE_MESSAGES,
     forge_midi::vocabulary::messages::MIDI_MESSAGES,
     forge_hotkey::vocabulary::messages::HOTKEY_MESSAGES,
+    forge_discord::vocabulary::messages::DISCORD_MESSAGES,
+    forge_donatello::DONATELLO_MESSAGES,
+    forge_monobank::MONOBANK_MESSAGES,
 ];
 
 #[derive(Debug, Clone, PartialEq, Eq)]

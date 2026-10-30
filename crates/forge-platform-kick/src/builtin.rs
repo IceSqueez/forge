@@ -5,7 +5,7 @@ use forge_net::RateLimiter;
 use forge_platform_core::{
     BannerLevel, BuiltinContent, BuiltinHealth, BuiltinStatus, CapabilityFlags, ChatPlatform,
     ConnectionState, DetailSection, HeaderAction, HealthDelta, HealthMetric, HealthMetricId,
-    HealthStream, HealthValue, HeroBadge, HeroBadgeTone, ViewerReport,
+    HealthStream, HealthText, HealthValue, HeroBadge, HeroBadgeTone, ViewerReport,
 };
 use forge_registry::{RegistryError, TriggerRegistry};
 use forge_types::IntegrationId;
@@ -29,10 +29,11 @@ use crate::triggers::message_deleted::MessageDeletedDescriptor;
 use crate::triggers::reward_redeemed::RewardRedeemedDescriptor;
 use crate::triggers::sub::SubDescriptor;
 use crate::triggers::sub_gift::SubGiftDescriptor;
+use crate::vocabulary::messages;
 
-const LIVE_CHAT_METRIC: HealthMetricId = HealthMetricId::new("live_chat");
-const EVENTS_METRIC: HealthMetricId = HealthMetricId::new("events");
-const API_CALLS_METRIC: HealthMetricId = HealthMetricId::new("api_calls");
+const LIVE_CHAT_METRIC: HealthMetricId = HealthMetricId::new(messages::HEALTH_LIVE_CHAT);
+const EVENTS_METRIC: HealthMetricId = HealthMetricId::new(messages::HEALTH_EVENTS);
+const API_CALLS_METRIC: HealthMetricId = HealthMetricId::new(messages::HEALTH_API_CALLS);
 
 pub fn register_kick_triggers(registry: &mut TriggerRegistry) -> Result<(), RegistryError> {
     let mut registry = registry.owned_by(crate::KICK_INTEGRATION.id);
@@ -104,9 +105,9 @@ impl KickIntegrationBundle {
     fn ws_health_value(&self) -> HealthValue {
         let state = self.current_state();
         HealthValue::Status {
-            label: state.label().to_owned(),
+            label: HealthText::Connection(state),
             active: state.is_connected(),
-            detail: Some(chatroom_channel(&self.slug)),
+            detail: Some(HealthText::unlocalized(chatroom_channel(&self.slug))),
         }
     }
 
@@ -118,10 +119,11 @@ impl KickIntegrationBundle {
                 total: u64::from(capacity),
                 reset_hint: usage
                     .resets_in
-                    .map(|d| format!("resets in {}s", d.as_secs())),
+                    .map(|d| format!("resets in {}s", d.as_secs()))
+                    .map(HealthText::unlocalized),
             },
             _ => HealthValue::Text {
-                primary: "-".to_owned(),
+                primary: HealthText::unlocalized("-"),
                 secondary: None,
             },
         }
@@ -271,14 +273,14 @@ impl KickIntegrationBundle {
 fn events_health_value(auth: PollerAuth) -> HealthValue {
     match auth {
         PollerAuth::Authorized => HealthValue::Status {
-            label: "Active".to_owned(),
+            label: HealthText::unlocalized("Active"),
             active: true,
-            detail: Some("channels 30s / redemptions 12s".to_owned()),
+            detail: Some(HealthText::unlocalized("channels 30s / redemptions 12s")),
         },
         PollerAuth::AuthRequired => HealthValue::Status {
-            label: "Auth required".to_owned(),
+            label: HealthText::unlocalized("Auth required"),
             active: false,
-            detail: Some("sign in to Kick again".to_owned()),
+            detail: Some(HealthText::unlocalized("sign in to Kick again")),
         },
     }
 }
@@ -286,11 +288,11 @@ fn events_health_value(auth: PollerAuth) -> HealthValue {
 fn viewers_health_value(report: ViewerReport) -> HealthValue {
     match report {
         ViewerReport::Live { count } => HealthValue::Text {
-            primary: count.to_string(),
-            secondary: Some("live".to_owned()),
+            primary: HealthText::unlocalized(count.to_string()),
+            secondary: Some(HealthText::unlocalized("live")),
         },
         ViewerReport::Absent => HealthValue::Text {
-            primary: "0".to_owned(),
+            primary: HealthText::unlocalized("0"),
             secondary: None,
         },
     }
@@ -357,22 +359,18 @@ impl BuiltinHealth for KickIntegrationBundle {
         [
             HealthMetric {
                 id: LIVE_CHAT_METRIC,
-                label: "Live Chat".to_owned(),
                 value: self.ws_health_value(),
             },
             HealthMetric {
                 id: EVENTS_METRIC,
-                label: "Events".to_owned(),
                 value: events_health_value(*self.poller_auth_rx.borrow()),
             },
             HealthMetric {
                 id: HealthMetricId::VIEWERS,
-                label: "Viewers".to_owned(),
                 value: viewers_health_value(*self.viewer_report_rx.borrow()),
             },
             HealthMetric {
                 id: API_CALLS_METRIC,
-                label: "API Calls".to_owned(),
                 value: self.api_calls_health_value(),
             },
         ]

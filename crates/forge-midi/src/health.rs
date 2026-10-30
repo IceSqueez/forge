@@ -11,16 +11,20 @@ use tokio_stream::StreamExt;
 use tokio_stream::wrappers::BroadcastStream;
 
 use forge_platform_core::{
-    BuiltinHealth, HealthDelta, HealthMetric, HealthMetricId, HealthStream, HealthValue,
+    BuiltinHealth, HealthDelta, HealthMetric, HealthMetricId, HealthStream, HealthText, HealthValue,
 };
 
 use crate::client::MidiClient;
+use crate::vocabulary::messages;
 
-pub(crate) const INPUT_PORTS_METRIC: HealthMetricId = HealthMetricId::new("input_ports");
-pub(crate) const OUTPUT_PORTS_METRIC: HealthMetricId = HealthMetricId::new("output_ports");
-pub(crate) const LAST_NOTE_ON_METRIC: HealthMetricId = HealthMetricId::new("last_note_on");
+pub(crate) const INPUT_PORTS_METRIC: HealthMetricId =
+    HealthMetricId::new(messages::HEALTH_INPUT_PORTS);
+pub(crate) const OUTPUT_PORTS_METRIC: HealthMetricId =
+    HealthMetricId::new(messages::HEALTH_OUTPUT_PORTS);
+pub(crate) const LAST_NOTE_ON_METRIC: HealthMetricId =
+    HealthMetricId::new(messages::HEALTH_LAST_NOTE_ON);
 pub(crate) const EVENTS_PER_MINUTE_METRIC: HealthMetricId =
-    HealthMetricId::new("events_per_minute");
+    HealthMetricId::new(messages::HEALTH_EVENTS_PER_MINUTE);
 
 pub(crate) type HealthTx = broadcast::Sender<HealthDelta>;
 
@@ -40,13 +44,13 @@ pub(crate) fn make_health_state() -> (HealthTx, Arc<Mutex<MidiHealthSnapshot>>) 
 pub(crate) fn input_port_health_value(enabled: bool, input_count: usize) -> HealthValue {
     if enabled {
         HealthValue::Text {
-            primary: input_count.to_string(),
-            secondary: Some("connected".to_owned()),
+            primary: HealthText::unlocalized(input_count.to_string()),
+            secondary: Some(HealthText::unlocalized("connected")),
         }
     } else {
         HealthValue::Text {
-            primary: "0".to_owned(),
-            secondary: Some("disabled".to_owned()),
+            primary: HealthText::unlocalized("0"),
+            secondary: Some(HealthText::unlocalized("disabled")),
         }
     }
 }
@@ -68,13 +72,13 @@ impl BuiltinHealth for MidiClient {
         let input_value =
             input_port_health_value(self.enabled.load(Ordering::Relaxed), snap.input_count);
         let output_value = HealthValue::Text {
-            primary: snap.output_count.to_string(),
-            secondary: Some("available".to_owned()),
+            primary: HealthText::unlocalized(snap.output_count.to_string()),
+            secondary: Some(HealthText::unlocalized("available")),
         };
 
         let last_note_value = match snap.last_note_on_at {
             None => HealthValue::Text {
-                primary: "\u{2014}".to_owned(),
+                primary: HealthText::unlocalized("\u{2014}"),
                 secondary: None,
             },
             Some(t) => {
@@ -85,7 +89,7 @@ impl BuiltinHealth for MidiClient {
                     )
                     .unwrap_or_else(|_| "--:--:--".to_owned());
                 HealthValue::Text {
-                    primary: formatted,
+                    primary: HealthText::unlocalized(formatted),
                     secondary: None,
                 }
             }
@@ -93,29 +97,25 @@ impl BuiltinHealth for MidiClient {
 
         let epm = events_per_minute(&mut snap.event_timestamps);
         let events_value = HealthValue::Text {
-            primary: epm.to_string(),
-            secondary: Some("last 60 s".to_owned()),
+            primary: HealthText::unlocalized(epm.to_string()),
+            secondary: Some(HealthText::unlocalized("last 60 s")),
         };
 
         [
             HealthMetric {
                 id: INPUT_PORTS_METRIC,
-                label: "INPUT PORTS".to_owned(),
                 value: input_value,
             },
             HealthMetric {
                 id: OUTPUT_PORTS_METRIC,
-                label: "OUTPUT PORTS".to_owned(),
                 value: output_value,
             },
             HealthMetric {
                 id: LAST_NOTE_ON_METRIC,
-                label: "LAST NOTE ON".to_owned(),
                 value: last_note_value,
             },
             HealthMetric {
                 id: EVENTS_PER_MINUTE_METRIC,
-                label: "EVENTS / MIN".to_owned(),
                 value: events_value,
             },
         ]

@@ -3,7 +3,9 @@ use std::time::Duration;
 
 use tokio::sync::{broadcast, mpsc};
 
-use forge_platform_core::{BuiltinContent, DetailSection, HealthDelta, HealthValue, SectionIcon};
+use forge_platform_core::{
+    BuiltinContent, DetailSection, HealthDelta, HealthText, HealthValue, SectionIcon,
+};
 
 use crate::client::VTubeClient;
 use crate::error::VTubeError;
@@ -171,8 +173,8 @@ async fn report_expressions(
         let _ = health_tx.send(HealthDelta {
             metric: EXPRESSIONS_METRIC,
             new_value: HealthValue::Text {
-                primary: after.to_string(),
-                secondary: Some("hotkey-bound".to_owned()),
+                primary: HealthText::unlocalized(after.to_string()),
+                secondary: Some(HealthText::unlocalized("hotkey-bound")),
             },
         });
     }
@@ -194,8 +196,8 @@ async fn report_items(
         let _ = health_tx.send(HealthDelta {
             metric: ITEMS_METRIC,
             new_value: HealthValue::Text {
-                primary: after.unwrap_or(0).to_string(),
-                secondary: Some("throwable / pinned".to_owned()),
+                primary: HealthText::unlocalized(after.unwrap_or(0).to_string()),
+                secondary: Some(HealthText::unlocalized("throwable / pinned")),
             },
         });
     }
@@ -232,8 +234,10 @@ fn report_model_secondary(
     let _ = health_tx.send(HealthDelta {
         metric: MODEL_METRIC,
         new_value: HealthValue::Text {
-            primary,
-            secondary: param_count.map(|n| format!("{n} parameters")),
+            primary: HealthText::unlocalized(primary),
+            secondary: param_count
+                .map(|n| format!("{n} parameters"))
+                .map(HealthText::unlocalized),
         },
     });
 }

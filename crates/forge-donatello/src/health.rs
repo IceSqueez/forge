@@ -1,5 +1,5 @@
 use forge_platform_core::{
-    BuiltinHealth, HealthDelta, HealthMetric, HealthMetricId, HealthStream, HealthValue,
+    BuiltinHealth, HealthDelta, HealthMetric, HealthMetricId, HealthStream, HealthText, HealthValue,
 };
 use jiff::Timestamp;
 use jiff::tz::TimeZone;
@@ -7,52 +7,54 @@ use time::OffsetDateTime;
 use tokio_stream::StreamExt;
 use tokio_stream::wrappers::BroadcastStream;
 
+use crate::messages;
 use crate::provider::DonatelloProvider;
 use crate::status::PollStatus;
 
 const LOCAL_TIME_FORMAT: &str = "%H:%M:%S";
 const NOT_YET: &str = "-";
 
-const LAST_POLL_METRIC: HealthMetricId = HealthMetricId::new("last_poll");
-const LAST_ERROR_METRIC: HealthMetricId = HealthMetricId::new("last_error");
-const LAST_DONATION_METRIC: HealthMetricId = HealthMetricId::new("last_donation");
-const POLL_INTERVAL_METRIC: HealthMetricId = HealthMetricId::new("poll_interval");
+const LAST_POLL_METRIC: HealthMetricId = HealthMetricId::new(messages::HEALTH_LAST_POLL);
+const LAST_ERROR_METRIC: HealthMetricId = HealthMetricId::new(messages::HEALTH_LAST_ERROR);
+const LAST_DONATION_METRIC: HealthMetricId = HealthMetricId::new(messages::HEALTH_LAST_DONATION);
+const POLL_INTERVAL_METRIC: HealthMetricId = HealthMetricId::new(messages::HEALTH_POLL_INTERVAL);
 
 pub(crate) fn metrics(status: &PollStatus) -> [HealthMetric; 4] {
     [
         HealthMetric {
             id: LAST_POLL_METRIC,
-            label: "LAST POLL".to_owned(),
             value: HealthValue::Text {
-                primary: local_time(status.last_poll_at),
-                secondary: Some(status.phase_label().to_owned()),
+                primary: HealthText::unlocalized(local_time(status.last_poll_at)),
+                secondary: Some(HealthText::unlocalized(status.phase_label().to_owned())),
             },
         },
         HealthMetric {
             id: LAST_ERROR_METRIC,
-            label: "LAST ERROR".to_owned(),
             value: HealthValue::Status {
-                label: status
-                    .last_error
-                    .map_or("None", |failure| failure.label())
-                    .to_owned(),
+                label: HealthText::unlocalized(
+                    status
+                        .last_error
+                        .map_or("None", |failure| failure.label())
+                        .to_owned(),
+                ),
                 active: status.last_error.is_none(),
-                detail: status.last_error.map(|_| local_time(status.last_error_at)),
+                detail: status
+                    .last_error
+                    .map(|_| local_time(status.last_error_at))
+                    .map(HealthText::unlocalized),
             },
         },
         HealthMetric {
             id: LAST_DONATION_METRIC,
-            label: "LAST DONATION".to_owned(),
             value: HealthValue::Text {
-                primary: local_time(status.last_donation_at),
+                primary: HealthText::unlocalized(local_time(status.last_donation_at)),
                 secondary: None,
             },
         },
         HealthMetric {
             id: POLL_INTERVAL_METRIC,
-            label: "POLL INTERVAL".to_owned(),
             value: HealthValue::Text {
-                primary: format!("{}s", status.poll_interval.as_secs()),
+                primary: HealthText::unlocalized(format!("{}s", status.poll_interval.as_secs())),
                 secondary: None,
             },
         },

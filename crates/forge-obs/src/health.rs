@@ -6,15 +6,17 @@ use tokio_stream::StreamExt;
 use tokio_stream::wrappers::BroadcastStream;
 
 use forge_platform_core::{
-    BuiltinHealth, HealthDelta, HealthMetric, HealthMetricId, HealthStream, HealthValue,
+    BuiltinHealth, HealthDelta, HealthMetric, HealthMetricId, HealthStream, HealthText, HealthValue,
 };
 
 use crate::client::ObsClient;
+use crate::vocabulary::messages;
 
-pub(crate) const STREAM_METRIC: HealthMetricId = HealthMetricId::new("stream");
-pub(crate) const RECORDING_METRIC: HealthMetricId = HealthMetricId::new("recording");
-pub(crate) const CPU_FPS_METRIC: HealthMetricId = HealthMetricId::new("cpu_fps");
-pub(crate) const DROPPED_METRIC: HealthMetricId = HealthMetricId::new("dropped_frames");
+pub(crate) const STREAM_METRIC: HealthMetricId = HealthMetricId::new(messages::HEALTH_STREAM);
+pub(crate) const RECORDING_METRIC: HealthMetricId = HealthMetricId::new(messages::HEALTH_RECORDING);
+pub(crate) const CPU_FPS_METRIC: HealthMetricId = HealthMetricId::new(messages::HEALTH_CPU_FPS);
+pub(crate) const DROPPED_METRIC: HealthMetricId =
+    HealthMetricId::new(messages::HEALTH_DROPPED_FRAMES);
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct FrameCounterSample {
@@ -57,17 +59,17 @@ pub(crate) fn format_duration_hm(d: Duration) -> String {
 
 pub(crate) fn stream_health_value(active: bool, duration: Option<Duration>) -> HealthValue {
     HealthValue::Status {
-        label: if active {
+        label: HealthText::unlocalized(if active {
             "Live".to_owned()
         } else {
             "Off".to_owned()
-        },
+        }),
         active,
-        detail: Some(
+        detail: Some(HealthText::unlocalized(
             duration
                 .map(format_duration_hm)
                 .unwrap_or_else(|| "-".to_owned()),
-        ),
+        )),
     }
 }
 
@@ -84,24 +86,24 @@ pub(crate) fn record_health_value(
         "Active".to_owned()
     };
     HealthValue::Status {
-        label,
+        label: HealthText::unlocalized(label),
         active,
-        detail: Some(
+        detail: Some(HealthText::unlocalized(
             duration
                 .map(format_duration_hm)
                 .unwrap_or_else(|| "-".to_owned()),
-        ),
+        )),
     }
 }
 
 pub(crate) fn cpu_fps_value(cpu_percent: f64, fps: f64, render_lag: bool) -> HealthValue {
     HealthValue::Text {
-        primary: format!("{cpu_percent:.1}% \u{00b7} {fps:.1}"),
-        secondary: Some(if render_lag {
+        primary: HealthText::unlocalized(format!("{cpu_percent:.1}% \u{00b7} {fps:.1}")),
+        secondary: Some(HealthText::unlocalized(if render_lag {
             "lagging".to_owned()
         } else {
             "smooth".to_owned()
-        }),
+        })),
     }
 }
 
@@ -112,8 +114,8 @@ pub(crate) fn dropped_value(dropped: u64, total: u64) -> HealthValue {
         0.0
     };
     HealthValue::Text {
-        primary: format!("{dropped} frames"),
-        secondary: Some(format!("{pct:.2}%")),
+        primary: HealthText::unlocalized(format!("{dropped} frames")),
+        secondary: Some(HealthText::unlocalized(format!("{pct:.2}%"))),
     }
 }
 
@@ -128,12 +130,10 @@ impl BuiltinHealth for ObsClient {
         [
             HealthMetric {
                 id: STREAM_METRIC,
-                label: "Stream".to_owned(),
                 value: stream_health_value(snap.stream_active, snap.stream_duration),
             },
             HealthMetric {
                 id: RECORDING_METRIC,
-                label: "Recording".to_owned(),
                 value: record_health_value(
                     snap.record_active,
                     snap.record_paused,
@@ -142,12 +142,10 @@ impl BuiltinHealth for ObsClient {
             },
             HealthMetric {
                 id: CPU_FPS_METRIC,
-                label: "CPU \u{00b7} FPS".to_owned(),
                 value: cpu_fps_value(snap.cpu_percent, snap.fps, snap.render_lag),
             },
             HealthMetric {
                 id: DROPPED_METRIC,
-                label: "Dropped".to_owned(),
                 value: dropped_value(snap.dropped_frames, snap.total_frames),
             },
         ]

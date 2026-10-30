@@ -8,10 +8,11 @@ use tokio_stream::StreamExt;
 use tokio_stream::wrappers::BroadcastStream;
 
 use forge_platform_core::{
-    BuiltinHealth, HealthDelta, HealthMetric, HealthMetricId, HealthStream, HealthValue,
+    BuiltinHealth, HealthDelta, HealthMetric, HealthMetricId, HealthStream, HealthText, HealthValue,
 };
 
 use crate::client::HotkeyClient;
+use crate::vocabulary::messages;
 
 pub(crate) type HealthTx = broadcast::Sender<HealthDelta>;
 
@@ -32,10 +33,15 @@ pub(crate) struct HotkeyHealthSnapshot {
     pub(crate) backend_session_lost: Option<String>,
 }
 
-pub(crate) const REGISTERED_METRIC: HealthMetricId = HealthMetricId::new("registered");
-pub(crate) const LAST_TRIGGERED_METRIC: HealthMetricId = HealthMetricId::new("last_triggered");
-pub(crate) const CONFLICTS_METRIC: HealthMetricId = HealthMetricId::new("conflicts");
-pub(crate) const BACKEND_METRIC: HealthMetricId = HealthMetricId::new("backend");
+pub(crate) const REGISTERED_METRIC: HealthMetricId =
+    HealthMetricId::new(messages::HEALTH_REGISTERED);
+pub(crate) const LAST_TRIGGERED_METRIC: HealthMetricId =
+    HealthMetricId::new(messages::HEALTH_LAST_TRIGGERED);
+pub(crate) const CONFLICTS_METRIC: HealthMetricId = HealthMetricId::new(messages::HEALTH_CONFLICTS);
+#[cfg(target_os = "linux")]
+pub(crate) const BACKEND_METRIC: HealthMetricId = HealthMetricId::new(messages::HEALTH_PORTAL);
+#[cfg(not(target_os = "linux"))]
+pub(crate) const BACKEND_METRIC: HealthMetricId = HealthMetricId::new(messages::HEALTH_BACKEND);
 
 impl HotkeyHealthSnapshot {
     pub(crate) fn record_synthesized_release(&mut self) {
@@ -62,13 +68,13 @@ pub(crate) fn make_health_state() -> (HealthTx, Arc<Mutex<HotkeyHealthSnapshot>>
 pub(crate) fn registered_count_health_value(enabled: bool, count: usize) -> HealthValue {
     if enabled {
         HealthValue::Text {
-            primary: count.to_string(),
-            secondary: Some("hotkeys".to_owned()),
+            primary: HealthText::unlocalized(count.to_string()),
+            secondary: Some(HealthText::unlocalized("hotkeys")),
         }
     } else {
         HealthValue::Text {
-            primary: "0".to_owned(),
-            secondary: Some("disabled".to_owned()),
+            primary: HealthText::unlocalized("0"),
+            secondary: Some(HealthText::unlocalized("disabled")),
         }
     }
 }
@@ -89,7 +95,7 @@ pub(crate) fn build_trigger_delta(snap: &HotkeyHealthSnapshot) -> HealthDelta {
     HealthDelta {
         metric: LAST_TRIGGERED_METRIC,
         new_value: HealthValue::Text {
-            primary,
+            primary: HealthText::unlocalized(primary),
             secondary: None,
         },
     }
@@ -113,19 +119,19 @@ impl BuiltinHealth for HotkeyClient {
                     )
                     .unwrap_or_else(|_| "--:--:--".to_owned());
                 HealthValue::Text {
-                    primary: format!("{formatted} {c}"),
+                    primary: HealthText::unlocalized(format!("{formatted} {c}")),
                     secondary: None,
                 }
             }
             _ => HealthValue::Text {
-                primary: "\u{2014}".to_owned(),
+                primary: HealthText::unlocalized("\u{2014}"),
                 secondary: None,
             },
         };
 
         let conflicts_value = HealthValue::Text {
-            primary: snap.conflict_count.to_string(),
-            secondary: Some("since startup".to_owned()),
+            primary: HealthText::unlocalized(snap.conflict_count.to_string()),
+            secondary: Some(HealthText::unlocalized("since startup")),
         };
 
         let portal_value =
@@ -134,22 +140,18 @@ impl BuiltinHealth for HotkeyClient {
         [
             HealthMetric {
                 id: REGISTERED_METRIC,
-                label: "REGISTERED".to_owned(),
                 value: registered_value,
             },
             HealthMetric {
                 id: LAST_TRIGGERED_METRIC,
-                label: "LAST TRIGGERED".to_owned(),
                 value: last_triggered_value,
             },
             HealthMetric {
                 id: CONFLICTS_METRIC,
-                label: "CONFLICTS".to_owned(),
                 value: conflicts_value,
             },
             HealthMetric {
                 id: BACKEND_METRIC,
-                label: backend_label(self.portal_available),
                 value: portal_value,
             },
         ]
@@ -168,31 +170,26 @@ pub(crate) fn backend_health_value(
 ) -> HealthValue {
     match (portal_available, session_lost) {
         (Some(true), Some(detail)) => HealthValue::Status {
-            label: "Portal session lost - hotkeys will not fire".to_owned(),
+            label: HealthText::unlocalized("Portal session lost - hotkeys will not fire"),
             active: false,
-            detail: Some(detail.to_owned()),
+            detail: Some(HealthText::unlocalized(detail)),
         },
         (Some(true), None) => HealthValue::Status {
-            label: "Portal active".to_owned(),
+            label: HealthText::unlocalized("Portal active"),
             active: true,
             detail: None,
         },
         (Some(false), _) => HealthValue::Status {
-            label: "Portal unavailable - evdev fallback".to_owned(),
+            label: HealthText::unlocalized("Portal unavailable - evdev fallback"),
             active: false,
             detail: None,
         },
         (None, _) => HealthValue::Status {
-            label: "Permission denied - add user to 'input' group".to_owned(),
+            label: HealthText::unlocalized("Permission denied - add user to 'input' group"),
             active: false,
             detail: None,
         },
     }
-}
-
-#[cfg(target_os = "linux")]
-fn backend_label(_portal_available: Option<bool>) -> String {
-    "PORTAL".to_owned()
 }
 
 #[cfg(not(target_os = "linux"))]
@@ -201,14 +198,9 @@ pub(crate) fn backend_health_value(
     _session_lost: Option<&str>,
 ) -> HealthValue {
     HealthValue::Text {
-        primary: "N/A".to_owned(),
+        primary: HealthText::unlocalized("N/A"),
         secondary: None,
     }
-}
-
-#[cfg(not(target_os = "linux"))]
-fn backend_label(_portal_available: Option<bool>) -> String {
-    "BACKEND".to_owned()
 }
 
 #[cfg(test)]

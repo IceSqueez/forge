@@ -4,3 +4,7 @@ msg-obs-password_rejected = OBS rejected the password. Enter the WebSocket passw
 msg-obs-connect_failed = Could not connect to OBS.
 msg-obs-connection_lost = The connection to OBS was lost.
 msg-obs-unresponsive = OBS stopped answering requests.
+msg-obs-health_stream = Stream
+msg-obs-health_recording = Recording
+msg-obs-health_cpu_fps = CPU · FPS
+msg-obs-health_dropped_frames = Dropped

@@ -13,8 +13,8 @@ use forge_net::Gateway;
 use forge_platform_core::{
     BuiltinContent, BuiltinHealth, BuiltinStatus, CapabilityFlags, ChatPlatform, ConnectionState,
     DetailSection, HeaderAction, HealthDelta, HealthMetric, HealthMetricId, HealthStream,
-    HealthValue, HeroBadge, HeroBadgeTone, LiveViewerSource, SectionIcon, SubscriptionRow,
-    SubscriptionStatus, ViewerReport, ViewerReportStream,
+    HealthText, HealthValue, HeroBadge, HeroBadgeTone, LiveViewerSource, SectionIcon,
+    SubscriptionRow, SubscriptionStatus, ViewerReport, ViewerReportStream,
 };
 use forge_types::IntegrationId;
 
@@ -35,12 +35,13 @@ use crate::helix::{
 };
 use crate::lifecycle::TwitchLifecycle;
 use crate::subscriptions::{SubStatus, SubscriptionTracker};
+use crate::vocabulary::messages;
 
 mod quick_actions;
 
-const CHAT_METRIC: HealthMetricId = HealthMetricId::new("chat");
-const EVENTSUB_METRIC: HealthMetricId = HealthMetricId::new("eventsub");
-const API_CALLS_METRIC: HealthMetricId = HealthMetricId::new("api_calls");
+const CHAT_METRIC: HealthMetricId = HealthMetricId::new(messages::HEALTH_CHAT);
+const EVENTSUB_METRIC: HealthMetricId = HealthMetricId::new(messages::HEALTH_EVENTSUB);
+const API_CALLS_METRIC: HealthMetricId = HealthMetricId::new(messages::HEALTH_API_CALLS);
 const VIEWER_POLL_INTERVAL: Duration = Duration::from_secs(60);
 
 #[derive(Debug, Clone, Copy, Default)]
@@ -469,12 +470,12 @@ impl TwitchIntegrationBundle {
         self.chat_connection_state() == ChatConnectionState::Connected
     }
 
-    fn chat_label(&self) -> String {
+    fn chat_status(&self) -> HealthText {
         let state = self.chat_connection_state();
         if state == ChatConnectionState::Connected {
-            return "Joined".to_owned();
+            return HealthText::unlocalized("Joined");
         }
-        state.to_connection_state().label().to_owned()
+        HealthText::Connection(state.to_connection_state())
     }
 
     fn active_sub_count(&self) -> usize {
@@ -487,18 +488,22 @@ impl TwitchIntegrationBundle {
 
     fn chat_health_value(&self) -> HealthValue {
         HealthValue::Status {
-            label: self.chat_label(),
+            label: self.chat_status(),
             active: self.is_chat_connected(),
-            detail: self.login.as_ref().map(|l| format!("#{l}")),
+            detail: self
+                .login
+                .as_ref()
+                .map(|l| format!("#{l}"))
+                .map(HealthText::unlocalized),
         }
     }
 
     fn eventsub_health_value(&self) -> HealthValue {
         let count = self.active_sub_count();
         HealthValue::Status {
-            label: format!("{count} subs"),
+            label: HealthText::unlocalized(format!("{count} subs")),
             active: count > 0,
-            detail: Some("WebSocket".to_owned()),
+            detail: Some(HealthText::unlocalized("WebSocket")),
         }
     }
 
@@ -506,16 +511,16 @@ impl TwitchIntegrationBundle {
         let state = *self.viewer_state.read().unwrap_or_else(|p| p.into_inner());
         match state {
             ViewerPollState::Unknown => HealthValue::Text {
-                primary: "0".to_owned(),
+                primary: HealthText::unlocalized("0"),
                 secondary: None,
             },
             ViewerPollState::Offline => HealthValue::Text {
-                primary: "0".to_owned(),
-                secondary: Some("offline".to_owned()),
+                primary: HealthText::unlocalized("0"),
+                secondary: Some(HealthText::unlocalized("offline")),
             },
             ViewerPollState::Live(count) => HealthValue::Text {
-                primary: count.to_string(),
-                secondary: Some("live".to_owned()),
+                primary: HealthText::unlocalized(count.to_string()),
+                secondary: Some(HealthText::unlocalized("live")),
             },
         }
     }
@@ -528,10 +533,11 @@ impl TwitchIntegrationBundle {
                 total: u64::from(capacity),
                 reset_hint: usage
                     .resets_in
-                    .map(|d| format!("resets in {}s", d.as_secs())),
+                    .map(|d| format!("resets in {}s", d.as_secs()))
+                    .map(HealthText::unlocalized),
             },
             _ => HealthValue::Text {
-                primary: "-".to_owned(),
+                primary: HealthText::unlocalized("-"),
                 secondary: None,
             },
         }
@@ -624,22 +630,18 @@ impl BuiltinHealth for TwitchIntegrationBundle {
         [
             HealthMetric {
                 id: CHAT_METRIC,
-                label: "Chat IRC".to_owned(),
                 value: self.chat_health_value(),
             },
             HealthMetric {
                 id: EVENTSUB_METRIC,
-                label: "EventSub".to_owned(),
                 value: self.eventsub_health_value(),
             },
             HealthMetric {
                 id: HealthMetricId::VIEWERS,
-                label: "Viewers".to_owned(),
                 value: self.viewers_health_value(),
             },
             HealthMetric {
                 id: API_CALLS_METRIC,
-                label: "API Calls".to_owned(),
                 value: self.api_calls_health_value(),
             },
         ]

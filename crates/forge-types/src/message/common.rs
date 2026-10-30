@@ -21,6 +21,9 @@ pub const WHISPERS_UNSUPPORTED: MessageCode =
 pub const UNKNOWN_CHAT_TARGET: MessageCode =
     MessageCode::from_static(COMMON_NAMESPACE, "unknown_chat_target");
 
+pub const HEALTH_VIEWERS: MessageCode =
+    MessageCode::from_static(COMMON_NAMESPACE, "health_viewers");
+
 pub const COMMON_MESSAGES: MessageCatalog = MessageCatalog {
     namespace: COMMON_NAMESPACE,
     codes: &[
@@ -30,6 +33,7 @@ pub const COMMON_MESSAGES: MessageCatalog = MessageCatalog {
         NO_WHISPER_PLATFORM_ENABLED,
         WHISPERS_UNSUPPORTED,
         UNKNOWN_CHAT_TARGET,
+        HEALTH_VIEWERS,
     ],
     en_ftl: include_str!("../../locales/en/messages.ftl"),
     uk_ftl: include_str!("../../locales/uk/messages.ftl"),

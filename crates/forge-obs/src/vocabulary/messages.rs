@@ -10,9 +10,20 @@ const CONNECT_FAILED: MessageCode = MessageCode::from_static(INTEGRATION_ID, "co
 const CONNECTION_LOST: MessageCode = MessageCode::from_static(INTEGRATION_ID, "connection_lost");
 const UNRESPONSIVE: MessageCode = MessageCode::from_static(INTEGRATION_ID, "unresponsive");
 
+pub const HEALTH_STREAM: MessageCode = MessageCode::from_static(INTEGRATION_ID, "health_stream");
+pub const HEALTH_RECORDING: MessageCode =
+    MessageCode::from_static(INTEGRATION_ID, "health_recording");
+pub const HEALTH_CPU_FPS: MessageCode = MessageCode::from_static(INTEGRATION_ID, "health_cpu_fps");
+pub const HEALTH_DROPPED_FRAMES: MessageCode =
+    MessageCode::from_static(INTEGRATION_ID, "health_dropped_frames");
+
 pub const OBS_MESSAGES: MessageCatalog = MessageCatalog {
     namespace: INTEGRATION_ID,
     codes: &[
+        HEALTH_STREAM,
+        HEALTH_RECORDING,
+        HEALTH_CPU_FPS,
+        HEALTH_DROPPED_FRAMES,
         CONNECT_REFUSED,
         UNREACHABLE,
         PASSWORD_REJECTED,

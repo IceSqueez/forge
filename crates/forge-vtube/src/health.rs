@@ -5,10 +5,11 @@ use tokio_stream::StreamExt;
 use tokio_stream::wrappers::BroadcastStream;
 
 use forge_platform_core::{
-    BuiltinHealth, HealthDelta, HealthMetric, HealthMetricId, HealthStream, HealthValue,
+    BuiltinHealth, HealthDelta, HealthMetric, HealthMetricId, HealthStream, HealthText, HealthValue,
 };
 
 use crate::client::VTubeClient;
+use crate::vocabulary::messages;
 use crate::vts::event::VtsEvent;
 
 #[derive(Debug, Clone, Default)]
@@ -25,10 +26,11 @@ pub(crate) fn make_health_channel() -> (broadcast::Sender<HealthDelta>, Arc<RwLo
     (tx, Arc::new(RwLock::new(HealthSnapshot::default())))
 }
 
-pub(crate) const MODEL_METRIC: HealthMetricId = HealthMetricId::new("model");
-pub(crate) const EXPRESSIONS_METRIC: HealthMetricId = HealthMetricId::new("expressions");
-pub(crate) const ITEMS_METRIC: HealthMetricId = HealthMetricId::new("items");
-pub(crate) const TRACKING_METRIC: HealthMetricId = HealthMetricId::new("tracking");
+pub(crate) const MODEL_METRIC: HealthMetricId = HealthMetricId::new(messages::HEALTH_MODEL);
+pub(crate) const EXPRESSIONS_METRIC: HealthMetricId =
+    HealthMetricId::new(messages::HEALTH_EXPRESSIONS);
+pub(crate) const ITEMS_METRIC: HealthMetricId = HealthMetricId::new(messages::HEALTH_ITEMS);
+pub(crate) const TRACKING_METRIC: HealthMetricId = HealthMetricId::new(messages::HEALTH_TRACKING);
 
 pub(crate) fn update_from_event(
     event: &VtsEvent,
@@ -104,7 +106,10 @@ pub(crate) fn apply_model(
         )]
         let _ = tx.send(HealthDelta {
             metric: MODEL_METRIC,
-            new_value: HealthValue::Text { primary, secondary },
+            new_value: HealthValue::Text {
+                primary: HealthText::unlocalized(primary),
+                secondary: secondary.map(HealthText::unlocalized),
+            },
         });
     }
 }
@@ -119,7 +124,7 @@ pub(crate) fn clear_session_state(
 
 fn tracking_value(face_found: bool) -> HealthValue {
     HealthValue::Status {
-        label: tracking_label(face_found).to_owned(),
+        label: HealthText::unlocalized(tracking_label(face_found)),
         active: face_found,
         detail: None,
     }
@@ -157,31 +162,27 @@ impl BuiltinHealth for VTubeClient {
         [
             HealthMetric {
                 id: MODEL_METRIC,
-                label: "MODEL".to_owned(),
                 value: HealthValue::Text {
-                    primary: model_primary,
-                    secondary: model_secondary,
+                    primary: HealthText::unlocalized(model_primary),
+                    secondary: model_secondary.map(HealthText::unlocalized),
                 },
             },
             HealthMetric {
                 id: EXPRESSIONS_METRIC,
-                label: "EXPRESSIONS".to_owned(),
                 value: HealthValue::Text {
-                    primary: content.expressions.len().to_string(),
-                    secondary: Some("hotkey-bound".to_owned()),
+                    primary: HealthText::unlocalized(content.expressions.len().to_string()),
+                    secondary: Some(HealthText::unlocalized("hotkey-bound")),
                 },
             },
             HealthMetric {
                 id: ITEMS_METRIC,
-                label: "ITEMS".to_owned(),
                 value: HealthValue::Text {
-                    primary: content.item_count.unwrap_or(0).to_string(),
-                    secondary: Some("throwable / pinned".to_owned()),
+                    primary: HealthText::unlocalized(content.item_count.unwrap_or(0).to_string()),
+                    secondary: Some(HealthText::unlocalized("throwable / pinned")),
                 },
             },
             HealthMetric {
                 id: TRACKING_METRIC,
-                label: "TRACKING".to_owned(),
                 value: tracking_value(snap.tracking_active),
             },
         ]

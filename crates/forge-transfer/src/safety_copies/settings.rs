@@ -1,15 +1,13 @@
+use forge_storage::settings::core_settings::{
+    SAFETY_COPIES_DELETE_AFTER_DAYS, SAFETY_COPIES_KEEP_NEWEST, SAFETY_COPIES_MODE,
+};
 use forge_storage::settings::{
     DEFAULT_SAFETY_COPIES_DELETE_AFTER_DAYS, DEFAULT_SAFETY_COPIES_KEEP_NEWEST,
     MAX_SAFETY_COPIES_DELETE_AFTER_DAYS, MAX_SAFETY_COPIES_KEEP_NEWEST,
     MIN_SAFETY_COPIES_DELETE_AFTER_DAYS, MIN_SAFETY_COPIES_KEEP_NEWEST,
+    SAFETY_COPIES_MODE_DELETE_AFTER_DAYS, SAFETY_COPIES_MODE_KEEP_NEWEST, SAFETY_COPIES_MODE_NEVER,
 };
-use forge_storage::{SettingsRepo, StorageError, reserved_keys};
-
-use crate::bundle::settings_read::{bounded, text};
-
-const MODE_KEEP_NEWEST: &str = "keep_newest";
-const MODE_DELETE_AFTER_DAYS: &str = "delete_after_days";
-const MODE_NEVER: &str = "never";
+use forge_storage::{SettingsRepo, StorageError, read_setting, write_setting};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum SafetyCopyMode {
@@ -22,17 +20,17 @@ pub enum SafetyCopyMode {
 impl SafetyCopyMode {
     fn as_stored(self) -> &'static str {
         match self {
-            Self::KeepNewest => MODE_KEEP_NEWEST,
-            Self::DeleteAfterDays => MODE_DELETE_AFTER_DAYS,
-            Self::Never => MODE_NEVER,
+            Self::KeepNewest => SAFETY_COPIES_MODE_KEEP_NEWEST,
+            Self::DeleteAfterDays => SAFETY_COPIES_MODE_DELETE_AFTER_DAYS,
+            Self::Never => SAFETY_COPIES_MODE_NEVER,
         }
     }
 
     fn from_stored(raw: &str) -> Option<Self> {
         match raw.trim() {
-            MODE_KEEP_NEWEST => Some(Self::KeepNewest),
-            MODE_DELETE_AFTER_DAYS => Some(Self::DeleteAfterDays),
-            MODE_NEVER => Some(Self::Never),
+            SAFETY_COPIES_MODE_KEEP_NEWEST => Some(Self::KeepNewest),
+            SAFETY_COPIES_MODE_DELETE_AFTER_DAYS => Some(Self::DeleteAfterDays),
+            SAFETY_COPIES_MODE_NEVER => Some(Self::Never),
             _ => None,
         }
     }
@@ -64,32 +62,11 @@ pub(crate) enum SafetyRetention {
 
 impl SafetyCopySettings {
     pub async fn load(repo: &dyn SettingsRepo) -> Result<Self, StorageError> {
-        let mode = text(repo, reserved_keys::SAFETY_COPIES_MODE)
-            .await?
-            .and_then(|raw| SafetyCopyMode::from_stored(&raw))
-            .unwrap_or_default();
         Ok(Self {
-            mode,
-            keep_newest: bounded(
-                repo,
-                reserved_keys::SAFETY_COPIES_KEEP_NEWEST,
-                (
-                    MIN_SAFETY_COPIES_KEEP_NEWEST,
-                    DEFAULT_SAFETY_COPIES_KEEP_NEWEST,
-                    MAX_SAFETY_COPIES_KEEP_NEWEST,
-                ),
-            )
-            .await?,
-            delete_after_days: bounded(
-                repo,
-                reserved_keys::SAFETY_COPIES_DELETE_AFTER_DAYS,
-                (
-                    MIN_SAFETY_COPIES_DELETE_AFTER_DAYS,
-                    DEFAULT_SAFETY_COPIES_DELETE_AFTER_DAYS,
-                    MAX_SAFETY_COPIES_DELETE_AFTER_DAYS,
-                ),
-            )
-            .await?,
+            mode: SafetyCopyMode::from_stored(&read_setting(repo, &SAFETY_COPIES_MODE).await?)
+                .unwrap_or_default(),
+            keep_newest: read_setting(repo, &SAFETY_COPIES_KEEP_NEWEST).await?,
+            delete_after_days: read_setting(repo, &SAFETY_COPIES_DELETE_AFTER_DAYS).await?,
         })
     }
 
@@ -109,16 +86,17 @@ impl SafetyCopySettings {
 
     pub async fn save(&self, repo: &dyn SettingsRepo) -> Result<(), StorageError> {
         let settings = self.clamped();
-        repo.set_string(reserved_keys::SAFETY_COPIES_MODE, settings.mode.as_stored())
-            .await?;
-        repo.set_string(
-            reserved_keys::SAFETY_COPIES_KEEP_NEWEST,
-            &settings.keep_newest.to_string(),
+        write_setting(
+            repo,
+            &SAFETY_COPIES_MODE,
+            &settings.mode.as_stored().to_owned(),
         )
         .await?;
-        repo.set_string(
-            reserved_keys::SAFETY_COPIES_DELETE_AFTER_DAYS,
-            &settings.delete_after_days.to_string(),
+        write_setting(repo, &SAFETY_COPIES_KEEP_NEWEST, &settings.keep_newest).await?;
+        write_setting(
+            repo,
+            &SAFETY_COPIES_DELETE_AFTER_DAYS,
+            &settings.delete_after_days,
         )
         .await
     }

@@ -1,22 +1,10 @@
-use forge_storage::{SettingsRepo, StorageError};
+use forge_storage::{OptionalText, Setting, SettingsRepo, StorageError, read_setting};
 
-pub(crate) async fn text(
+pub(crate) async fn optional_text(
     repo: &dyn SettingsRepo,
-    key: &str,
+    setting: &Setting<OptionalText>,
 ) -> Result<Option<String>, StorageError> {
-    Ok(repo
-        .get_string(key)
+    Ok(read_setting(repo, setting)
         .await?
         .filter(|value| !value.trim().is_empty()))
-}
-
-pub(crate) async fn bounded(
-    repo: &dyn SettingsRepo,
-    key: &str,
-    (min, default, max): (u32, u32, u32),
-) -> Result<u32, StorageError> {
-    Ok(text(repo, key)
-        .await?
-        .and_then(|raw| raw.trim().parse::<u32>().ok())
-        .map_or(default, |value| value.clamp(min, max)))
 }

@@ -1,7 +1,10 @@
 use std::collections::BTreeMap;
 
 use forge_registry::rename_step_kinds;
-use forge_storage::{rename_favorite_ids, reserved_keys};
+use forge_storage::rename_favorite_ids;
+use forge_storage::settings::core_settings::{
+    PICKER_FAVORITES_SUB_ACTIONS, PICKER_FAVORITES_TRIGGERS,
+};
 
 use crate::documents::closure::ClosureRegistries;
 use crate::documents::model::PackDocuments;
@@ -27,12 +30,10 @@ pub(crate) fn upgrade_favorite_settings(
     settings: &mut BTreeMap<String, String>,
     registries: ClosureRegistries<'_>,
 ) {
-    rename_favorites(
-        settings,
-        reserved_keys::PICKER_FAVORITES_SUB_ACTIONS,
-        &|id| registries.sub_actions.current_id(id).map(str::to_owned),
-    );
-    rename_favorites(settings, reserved_keys::PICKER_FAVORITES_TRIGGERS, &|id| {
+    rename_favorites(settings, PICKER_FAVORITES_SUB_ACTIONS.name(), &|id| {
+        registries.sub_actions.current_id(id).map(str::to_owned)
+    });
+    rename_favorites(settings, PICKER_FAVORITES_TRIGGERS.name(), &|id| {
         registries.triggers.current_id(id).map(str::to_owned)
     });
 }

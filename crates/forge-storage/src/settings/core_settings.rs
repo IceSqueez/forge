@@ -1,7 +1,7 @@
 use super::disclosure::SettingDisclosure::{Kind, Presence, Verbatim, Withheld};
 use super::portability::SettingPortability::{MachineLocal, Portable, RepositoryOwned};
 use super::reserved_keys as key;
-use super::spec::SettingEncoding::{Flag as FlagEncoding, Integer, Text};
+use super::spec::SettingEncoding::Flag as FlagEncoding;
 use super::spec::SettingSpec;
 use super::typed::{
     Choice, Count, Flag, JsonDocument, Level, OptionalText, Setting, SettingFamily, Tally,
@@ -11,13 +11,16 @@ use super::{
     DEFAULT_BACKUP_SCHEDULE_ENABLED, DEFAULT_BACKUP_SCHEDULE_INCLUDE_CATEGORY,
     DEFAULT_BACKUP_SCHEDULE_INTERVAL_MINUTES, DEFAULT_BACKUP_SCHEDULE_KEEP_DAILY_DAYS,
     DEFAULT_BACKUP_SCHEDULE_KEEP_NEWEST, DEFAULT_CHAT_HISTORY_DISPLAY_LIMIT,
-    DEFAULT_CHAT_HISTORY_PER_VIEWER_LIMIT, DEFAULT_DIAGNOSTIC_LOG_LEVEL, EngineParams, FULL_LEVEL,
-    MAX_BACKUP_SCHEDULE_INTERVAL_MINUTES, MAX_BACKUP_SCHEDULE_KEEP_DAILY_DAYS,
+    DEFAULT_CHAT_HISTORY_PER_VIEWER_LIMIT, DEFAULT_DIAGNOSTIC_LOG_LEVEL,
+    DEFAULT_SAFETY_COPIES_DELETE_AFTER_DAYS, DEFAULT_SAFETY_COPIES_KEEP_NEWEST, EngineParams,
+    FULL_LEVEL, MAX_BACKUP_SCHEDULE_INTERVAL_MINUTES, MAX_BACKUP_SCHEDULE_KEEP_DAILY_DAYS,
     MAX_BACKUP_SCHEDULE_KEEP_NEWEST, MAX_CHAT_HISTORY_DISPLAY_LIMIT,
-    MAX_CHAT_HISTORY_PER_VIEWER_LIMIT, MAX_VOICE_GATE_HOLD_MS,
-    MIN_BACKUP_SCHEDULE_INTERVAL_MINUTES, MIN_BACKUP_SCHEDULE_KEEP_DAILY_DAYS,
-    MIN_BACKUP_SCHEDULE_KEEP_NEWEST, MIN_CHAT_HISTORY_DISPLAY_LIMIT,
-    MIN_CHAT_HISTORY_PER_VIEWER_LIMIT, MIN_VOICE_GATE_HOLD_MS, SILENT_LEVEL,
+    MAX_CHAT_HISTORY_PER_VIEWER_LIMIT, MAX_SAFETY_COPIES_DELETE_AFTER_DAYS,
+    MAX_SAFETY_COPIES_KEEP_NEWEST, MAX_VOICE_GATE_HOLD_MS, MIN_BACKUP_SCHEDULE_INTERVAL_MINUTES,
+    MIN_BACKUP_SCHEDULE_KEEP_DAILY_DAYS, MIN_BACKUP_SCHEDULE_KEEP_NEWEST,
+    MIN_CHAT_HISTORY_DISPLAY_LIMIT, MIN_CHAT_HISTORY_PER_VIEWER_LIMIT,
+    MIN_SAFETY_COPIES_DELETE_AFTER_DAYS, MIN_SAFETY_COPIES_KEEP_NEWEST, MIN_VOICE_GATE_HOLD_MS,
+    SAFETY_COPIES_MODE_KEEP_NEWEST, SAFETY_COPIES_MODES, SILENT_LEVEL,
     UNLIMITED_CHAT_HISTORY_PER_VIEWER_LIMIT, VOICE_GATE_DEFAULT_HOLD_MS,
     VOICE_GATE_DEFAULT_THRESHOLD,
 };
@@ -342,6 +345,54 @@ pub const BACKUP_SCHEDULE_KEY: Setting<OptionalText> = Setting::new(
     Withheld,
 );
 
+pub const BACKUP_SCHEDULE_LAST_SUCCESS_AT: Setting<OptionalText> = Setting::new(
+    key::BACKUP_SCHEDULE_LAST_SUCCESS_AT,
+    OptionalText,
+    MachineLocal,
+    Withheld,
+);
+
+pub const BACKUP_SCHEDULE_CONTENT_FINGERPRINT: Setting<OptionalText> = Setting::new(
+    key::BACKUP_SCHEDULE_CONTENT_FINGERPRINT,
+    OptionalText,
+    MachineLocal,
+    Withheld,
+);
+
+pub const SAFETY_COPIES_MODE: Setting<Choice> = Setting::new(
+    key::SAFETY_COPIES_MODE,
+    Choice {
+        default: SAFETY_COPIES_MODE_KEEP_NEWEST,
+        options: SAFETY_COPIES_MODES,
+    },
+    MachineLocal,
+    Withheld,
+);
+
+pub const SAFETY_COPIES_KEEP_NEWEST: Setting<Count> = Setting::new(
+    key::SAFETY_COPIES_KEEP_NEWEST,
+    Count {
+        default: DEFAULT_SAFETY_COPIES_KEEP_NEWEST,
+        min: MIN_SAFETY_COPIES_KEEP_NEWEST,
+        max: MAX_SAFETY_COPIES_KEEP_NEWEST,
+        unclamped: None,
+    },
+    MachineLocal,
+    Withheld,
+);
+
+pub const SAFETY_COPIES_DELETE_AFTER_DAYS: Setting<Count> = Setting::new(
+    key::SAFETY_COPIES_DELETE_AFTER_DAYS,
+    Count {
+        default: DEFAULT_SAFETY_COPIES_DELETE_AFTER_DAYS,
+        min: MIN_SAFETY_COPIES_DELETE_AFTER_DAYS,
+        max: MAX_SAFETY_COPIES_DELETE_AFTER_DAYS,
+        unclamped: None,
+    },
+    MachineLocal,
+    Withheld,
+);
+
 pub const CORE_SETTINGS: &[SettingSpec] = &[
     THEME.spec(),
     ACCENT.spec(),
@@ -396,29 +447,9 @@ pub const CORE_SETTINGS: &[SettingSpec] = &[
     BACKUP_SCHEDULE_INCLUDE_ASSETS.spec(),
     BACKUP_SCHEDULE_DESTINATION.spec(),
     BACKUP_SCHEDULE_KEY.spec(),
-    SettingSpec::exact(
-        key::BACKUP_SCHEDULE_LAST_SUCCESS_AT,
-        Text,
-        MachineLocal,
-        Withheld,
-    ),
-    SettingSpec::exact(
-        key::BACKUP_SCHEDULE_CONTENT_FINGERPRINT,
-        Text,
-        MachineLocal,
-        Withheld,
-    ),
-    SettingSpec::exact(key::SAFETY_COPIES_MODE, Text, MachineLocal, Withheld),
-    SettingSpec::exact(
-        key::SAFETY_COPIES_KEEP_NEWEST,
-        Integer,
-        MachineLocal,
-        Withheld,
-    ),
-    SettingSpec::exact(
-        key::SAFETY_COPIES_DELETE_AFTER_DAYS,
-        Integer,
-        MachineLocal,
-        Withheld,
-    ),
+    BACKUP_SCHEDULE_LAST_SUCCESS_AT.spec(),
+    BACKUP_SCHEDULE_CONTENT_FINGERPRINT.spec(),
+    SAFETY_COPIES_MODE.spec(),
+    SAFETY_COPIES_KEEP_NEWEST.spec(),
+    SAFETY_COPIES_DELETE_AFTER_DAYS.spec(),
 ];

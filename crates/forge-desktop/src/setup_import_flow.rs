@@ -346,6 +346,10 @@ async fn apply_staged(
     let applied = apply_setup_import(SetupImportRequest {
         provider: Arc::clone(&services.backend),
         settings_catalog: &services.settings_catalog,
+        hotkey_settings: &[
+            crate::shortcut_overrides::KEYBOARD_SHORTCUTS.spec(),
+            forge_hotkey::HOLD_CEILING.spec(),
+        ],
         registries: services.registries(&source),
         staged: &staged,
         data_dir,

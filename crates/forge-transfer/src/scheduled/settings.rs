@@ -1,20 +1,25 @@
 use std::path::PathBuf;
 
-use forge_storage::settings::{
-    DEFAULT_BACKUP_SCHEDULE_ENABLED, DEFAULT_BACKUP_SCHEDULE_INCLUDE_CATEGORY,
-    DEFAULT_BACKUP_SCHEDULE_INTERVAL_MINUTES, DEFAULT_BACKUP_SCHEDULE_KEEP_DAILY_DAYS,
-    DEFAULT_BACKUP_SCHEDULE_KEEP_NEWEST, MAX_BACKUP_SCHEDULE_INTERVAL_MINUTES,
-    MAX_BACKUP_SCHEDULE_KEEP_DAILY_DAYS, MAX_BACKUP_SCHEDULE_KEEP_NEWEST,
-    MIN_BACKUP_SCHEDULE_INTERVAL_MINUTES, MIN_BACKUP_SCHEDULE_KEEP_DAILY_DAYS,
-    MIN_BACKUP_SCHEDULE_KEEP_NEWEST,
+use forge_storage::settings::core_settings::{
+    BACKUP_SCHEDULE_CONTENT_FINGERPRINT, BACKUP_SCHEDULE_DESTINATION, BACKUP_SCHEDULE_ENABLED,
+    BACKUP_SCHEDULE_INCLUDE_ASSETS, BACKUP_SCHEDULE_INCLUDE_MEDIA,
+    BACKUP_SCHEDULE_INCLUDE_OVERLAYS, BACKUP_SCHEDULE_INCLUDE_VOICES,
+    BACKUP_SCHEDULE_INTERVAL_MINUTES, BACKUP_SCHEDULE_KEEP_DAILY_DAYS, BACKUP_SCHEDULE_KEEP_NEWEST,
+    BACKUP_SCHEDULE_KEY, BACKUP_SCHEDULE_LAST_SUCCESS_AT,
 };
-use forge_storage::{SettingsRepo, StorageError, get_bool_setting, reserved_keys};
+use forge_storage::settings::{
+    DEFAULT_BACKUP_SCHEDULE_ENABLED, DEFAULT_BACKUP_SCHEDULE_INTERVAL_MINUTES,
+    DEFAULT_BACKUP_SCHEDULE_KEEP_DAILY_DAYS, DEFAULT_BACKUP_SCHEDULE_KEEP_NEWEST,
+};
+use forge_storage::{
+    Flag, Setting, SettingsRepo, StorageError, read_setting, read_setting_or_default, write_setting,
+};
 use time::format_description::well_known::Rfc3339;
 use time::{Duration, OffsetDateTime};
 
 use crate::bundle::category::BackupCategory;
 use crate::bundle::schedule_key::ScheduleKey;
-use crate::bundle::settings_read::{bounded, text};
+use crate::bundle::settings_read::optional_text;
 use crate::scheduled::retention::RetentionPolicy;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -51,80 +56,32 @@ impl ScheduleSettings {
     }
 
     pub(crate) async fn load(repo: &dyn SettingsRepo) -> Result<Self, StorageError> {
-        let include = |key: &'static str, category: BackupCategory| async move {
-            get_bool_setting(repo, key, DEFAULT_BACKUP_SCHEDULE_INCLUDE_CATEGORY)
+        let include = |setting: &'static Setting<Flag>, category: BackupCategory| async move {
+            read_setting_or_default(repo, setting)
                 .await
                 .then_some(category)
         };
         let optional_categories = [
-            include(
-                reserved_keys::BACKUP_SCHEDULE_INCLUDE_MEDIA,
-                BackupCategory::Media,
-            )
-            .await,
-            include(
-                reserved_keys::BACKUP_SCHEDULE_INCLUDE_VOICES,
-                BackupCategory::Voices,
-            )
-            .await,
-            include(
-                reserved_keys::BACKUP_SCHEDULE_INCLUDE_OVERLAYS,
-                BackupCategory::Overlays,
-            )
-            .await,
-            include(
-                reserved_keys::BACKUP_SCHEDULE_INCLUDE_ASSETS,
-                BackupCategory::Assets,
-            )
-            .await,
+            include(&BACKUP_SCHEDULE_INCLUDE_MEDIA, BackupCategory::Media).await,
+            include(&BACKUP_SCHEDULE_INCLUDE_VOICES, BackupCategory::Voices).await,
+            include(&BACKUP_SCHEDULE_INCLUDE_OVERLAYS, BackupCategory::Overlays).await,
+            include(&BACKUP_SCHEDULE_INCLUDE_ASSETS, BackupCategory::Assets).await,
         ];
         let categories = std::iter::once(BackupCategory::Database)
             .chain(optional_categories.into_iter().flatten())
             .collect();
-        let stored_key = text(repo, reserved_keys::BACKUP_SCHEDULE_KEY).await?;
+        let stored_key = optional_text(repo, &BACKUP_SCHEDULE_KEY).await?;
         let decoded_key = stored_key.as_deref().map(ScheduleKey::decode);
         let key_unreadable = matches!(decoded_key, Some(Err(_)));
         Ok(Self {
-            enabled: get_bool_setting(
-                repo,
-                reserved_keys::BACKUP_SCHEDULE_ENABLED,
-                DEFAULT_BACKUP_SCHEDULE_ENABLED,
-            )
-            .await,
-            interval_minutes: bounded(
-                repo,
-                reserved_keys::BACKUP_SCHEDULE_INTERVAL_MINUTES,
-                (
-                    MIN_BACKUP_SCHEDULE_INTERVAL_MINUTES,
-                    DEFAULT_BACKUP_SCHEDULE_INTERVAL_MINUTES,
-                    MAX_BACKUP_SCHEDULE_INTERVAL_MINUTES,
-                ),
-            )
-            .await?,
+            enabled: read_setting_or_default(repo, &BACKUP_SCHEDULE_ENABLED).await,
+            interval_minutes: read_setting(repo, &BACKUP_SCHEDULE_INTERVAL_MINUTES).await?,
             retention: RetentionPolicy {
-                keep_newest: bounded(
-                    repo,
-                    reserved_keys::BACKUP_SCHEDULE_KEEP_NEWEST,
-                    (
-                        MIN_BACKUP_SCHEDULE_KEEP_NEWEST,
-                        DEFAULT_BACKUP_SCHEDULE_KEEP_NEWEST,
-                        MAX_BACKUP_SCHEDULE_KEEP_NEWEST,
-                    ),
-                )
-                .await?,
-                keep_daily_days: bounded(
-                    repo,
-                    reserved_keys::BACKUP_SCHEDULE_KEEP_DAILY_DAYS,
-                    (
-                        MIN_BACKUP_SCHEDULE_KEEP_DAILY_DAYS,
-                        DEFAULT_BACKUP_SCHEDULE_KEEP_DAILY_DAYS,
-                        MAX_BACKUP_SCHEDULE_KEEP_DAILY_DAYS,
-                    ),
-                )
-                .await?,
+                keep_newest: read_setting(repo, &BACKUP_SCHEDULE_KEEP_NEWEST).await?,
+                keep_daily_days: read_setting(repo, &BACKUP_SCHEDULE_KEEP_DAILY_DAYS).await?,
             },
             categories,
-            destination: text(repo, reserved_keys::BACKUP_SCHEDULE_DESTINATION)
+            destination: optional_text(repo, &BACKUP_SCHEDULE_DESTINATION)
                 .await?
                 .map(PathBuf::from),
             key: decoded_key.and_then(Result::ok),
@@ -142,22 +99,22 @@ pub(crate) struct Progress {
 impl Progress {
     pub(crate) async fn load(repo: &dyn SettingsRepo) -> Result<Self, StorageError> {
         Ok(Self {
-            last_success_at: text(repo, reserved_keys::BACKUP_SCHEDULE_LAST_SUCCESS_AT)
+            last_success_at: optional_text(repo, &BACKUP_SCHEDULE_LAST_SUCCESS_AT)
                 .await?
                 .and_then(|raw| OffsetDateTime::parse(&raw, &Rfc3339).ok()),
-            fingerprint: text(repo, reserved_keys::BACKUP_SCHEDULE_CONTENT_FINGERPRINT).await?,
+            fingerprint: optional_text(repo, &BACKUP_SCHEDULE_CONTENT_FINGERPRINT).await?,
         })
     }
 
     pub(crate) async fn save(&self, repo: &dyn SettingsRepo) -> Result<(), StorageError> {
         if let Some(at) = self.last_success_at.and_then(|at| at.format(&Rfc3339).ok()) {
-            repo.set_string(reserved_keys::BACKUP_SCHEDULE_LAST_SUCCESS_AT, &at)
-                .await?;
+            write_setting(repo, &BACKUP_SCHEDULE_LAST_SUCCESS_AT, &Some(at)).await?;
         }
         if let Some(fingerprint) = &self.fingerprint {
-            repo.set_string(
-                reserved_keys::BACKUP_SCHEDULE_CONTENT_FINGERPRINT,
-                fingerprint,
+            write_setting(
+                repo,
+                &BACKUP_SCHEDULE_CONTENT_FINGERPRINT,
+                &Some(fingerprint.clone()),
             )
             .await?;
         }

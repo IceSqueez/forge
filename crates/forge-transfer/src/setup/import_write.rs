@@ -3,7 +3,6 @@ use std::collections::BTreeMap;
 use forge_overlay::image_references;
 use forge_registry::InternalNamespace;
 use forge_storage::settings::core_settings;
-use forge_storage::settings::reserved_keys;
 use forge_storage::{
     GlobalsRepo, MediaBlobId, MediaReferrer, MediaReferrerKind, OverlayId, ScriptRecord,
     ScriptRepo, SettingRow, StoredClip, clip_source_referrer, remove_row, restore_row,
@@ -19,14 +18,10 @@ use crate::error::TransferError;
 use crate::setup::import_apply::{SetupImport, SetupLivePart, SkippedSetting};
 use crate::setup::import_undo::SetupUndo;
 
-const HOTKEY_SETTINGS: [&str; 2] = [
-    reserved_keys::KEYBOARD_SHORTCUTS,
-    reserved_keys::HOTKEY_HOLD_CEILING_SECS,
-];
 const TTS_SETTINGS: [&str; 3] = [
-    reserved_keys::TTS_DISABLED_ENGINES,
-    reserved_keys::TTS_SYNTHESIS_DEFAULTS,
-    reserved_keys::TTS_MASTER_VOLUME,
+    core_settings::TTS_DISABLED_ENGINES.name(),
+    core_settings::TTS_SYNTHESIS_DEFAULTS.name(),
+    core_settings::TTS_MASTER_VOLUME.name(),
 ];
 
 impl SetupImport<'_, '_> {
@@ -477,10 +472,15 @@ impl SetupImport<'_, '_> {
 
     fn note_setting_change(&mut self, key: &str) {
         self.settings_changed = true;
-        if HOTKEY_SETTINGS.contains(&key) {
+        if self
+            .hotkey_settings
+            .iter()
+            .any(|spec| spec.key.name() == key)
+        {
             self.refresh.insert(SetupLivePart::Hotkeys);
         }
-        if TTS_SETTINGS.contains(&key) || key.starts_with(reserved_keys::TTS_ENGINE_PARAMS_PREFIX) {
+        if TTS_SETTINGS.contains(&key) || key.starts_with(core_settings::TTS_ENGINE_PARAMS.prefix())
+        {
             self.refresh.insert(SetupLivePart::Tts);
         }
     }

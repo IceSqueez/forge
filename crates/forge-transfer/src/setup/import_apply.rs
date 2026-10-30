@@ -5,7 +5,7 @@ use std::sync::Arc;
 
 use forge_registry::ReferenceRemap;
 use forge_storage::{
-    DataProvider, MediaBlobId, OverlayId, SettingSkip, SettingsCatalog, StorageError,
+    DataProvider, MediaBlobId, OverlayId, SettingSkip, SettingSpec, SettingsCatalog, StorageError,
 };
 use forge_types::{Queue, QueueId};
 
@@ -21,6 +21,7 @@ use crate::setup::reader::StagedSetup;
 pub struct SetupImportRequest<'a> {
     pub provider: Arc<dyn DataProvider>,
     pub settings_catalog: &'a SettingsCatalog,
+    pub hotkey_settings: &'a [SettingSpec],
     pub registries: ClosureRegistries<'a>,
     pub staged: &'a StagedSetup,
     pub data_dir: PathBuf,
@@ -65,6 +66,7 @@ pub async fn apply_setup_import(
     let SetupImportRequest {
         provider,
         settings_catalog,
+        hotkey_settings,
         registries,
         staged,
         data_dir,
@@ -81,6 +83,7 @@ pub async fn apply_setup_import(
     let mut import = SetupImport {
         provider: provider.as_ref(),
         settings_catalog,
+        hotkey_settings,
         registries,
         staged,
         known_media: inventory.configuration.media.keys().cloned().collect(),
@@ -124,6 +127,7 @@ pub async fn apply_setup_import(
 pub(super) struct SetupImport<'p, 'a> {
     pub(super) provider: &'p dyn DataProvider,
     pub(super) settings_catalog: &'a SettingsCatalog,
+    pub(super) hotkey_settings: &'a [SettingSpec],
     pub(super) registries: ClosureRegistries<'a>,
     pub(super) staged: &'a StagedSetup,
     pub(super) inventory: SetupInventory,

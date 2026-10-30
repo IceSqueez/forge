@@ -62,24 +62,12 @@ impl ScriptRegistry {
         }
     }
 
-    pub fn set_speak_requester(&mut self, requester: Arc<dyn SpeakRequester>) {
-        self.speak_requester = Some(requester);
-    }
-
     pub fn speak_requester(&self) -> Option<Arc<dyn SpeakRequester>> {
         self.speak_requester.clone()
     }
 
-    pub fn set_latest_values(&mut self, latest: Arc<dyn LatestValueReader>) {
-        self.latest_values = Some(latest);
-    }
-
     pub fn latest_values(&self) -> Option<Arc<dyn LatestValueReader>> {
         self.latest_values.clone()
-    }
-
-    pub fn set_scheduling(&mut self, scheduling: ScriptScheduling) {
-        self.scheduling = Some(scheduling);
     }
 
     pub fn action_scheduler(&self, context: SchedulingContext) -> Option<Arc<dyn ActionScheduler>> {

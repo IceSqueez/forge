@@ -6,7 +6,7 @@ use forge_registry::{
 use forge_types::{ArgStack, SubActionConfig, SubActionTelemetry, Variant, VariantKind};
 
 use crate::core_messages;
-use crate::scheduled_runs::ScheduledRunsCell;
+use crate::scheduled_runs::ScheduledRunsHandle;
 
 pub const CANCEL_SCHEDULED_KIND_ID: &str = "core.action.cancel_scheduled";
 
@@ -44,11 +44,11 @@ fn read_config(
 }
 
 pub struct CoreActionCancelScheduledRunner {
-    scheduled_runs: ScheduledRunsCell,
+    scheduled_runs: ScheduledRunsHandle,
 }
 
 impl CoreActionCancelScheduledRunner {
-    pub fn new(scheduled_runs: ScheduledRunsCell) -> Self {
+    pub fn new(scheduled_runs: ScheduledRunsHandle) -> Self {
         Self { scheduled_runs }
     }
 }
@@ -104,13 +104,7 @@ impl SubActionRunner for CoreActionCancelScheduledRunner {
             Ok(values) => values,
             Err(problem) => return (timer.invalid_config(&problem), None),
         };
-        let Some(scheduled_runs) = self.scheduled_runs.get() else {
-            return (
-                timer.failed(core_messages::scheduler_stopped().into()),
-                None,
-            );
-        };
-        let cancelled = match scheduled_runs.cancel_by_key(&key).await {
+        let cancelled = match self.scheduled_runs.cancel_by_key(&key).await {
             Ok(cancelled) => cancelled,
             Err(e) => return (timer.failed(core_messages::schedule_failed(e).into()), None),
         };

@@ -17,15 +17,11 @@ use crate::catalog::Catalog;
 use crate::config::Config;
 use crate::latest::LatestValues;
 use crate::overlay_media::OverlayMediaLibrary;
-use crate::overlay_service::{
-    OverlayFrameSink, OverlayServiceCell, OverlayServiceHandle, OverlayServiceParts,
-};
-use crate::queue_scheduler::{
-    QueueScheduler, QueueSchedulerHandle, QueueSchedulerStart, SchedulerCell,
-};
+use crate::overlay_service::{OverlayFrameSink, OverlayServiceHandle, OverlayServiceParts};
+use crate::queue_scheduler::{QueueScheduler, QueueSchedulerHandle, QueueSchedulerStart};
 use crate::scheduled_runs::{
-    CatchUpSettle, ScheduledRunsCell, ScheduledRunsHandle, ScheduledRunsStart,
-    ScheduledRunsStartParts, ScriptScheduling, WallClock, reserve_scheduled_runs,
+    CatchUpSettle, ScheduledRunsHandle, ScheduledRunsStart, ScheduledRunsStartParts,
+    ScriptScheduling, WallClock, reserve_scheduled_runs,
 };
 use crate::script_registry::{ScriptRegistry, ScriptRegistryParts};
 use crate::speak_dispatcher::SpeakDispatcher;
@@ -55,9 +51,6 @@ pub struct RuntimeWiring {
     scheduler_start: QueueSchedulerStart,
     scheduled_runs: ScheduledRunsHandle,
     scheduled_runs_start: ScheduledRunsStart,
-    scheduler_cell: SchedulerCell,
-    scheduled_runs_cell: ScheduledRunsCell,
-    overlay_cell: OverlayServiceCell,
     sub_actions: SubActionRegistry,
     triggers: TriggerRegistry,
 }
@@ -77,10 +70,6 @@ impl RuntimeWiring {
         let (scheduler, scheduler_start) = QueueScheduler::reserve();
         let (scheduled_runs, scheduled_runs_start) =
             reserve_scheduled_runs(provider.scheduled_run_repo(), clock);
-        let scheduler_cell = SchedulerCell::new();
-        scheduler_cell.set(scheduler.clone());
-        let scheduled_runs_cell = ScheduledRunsCell::new();
-        scheduled_runs_cell.set(scheduled_runs.clone());
         let latest: Arc<dyn LatestValueReader> = Arc::new(latest_values);
         if script_speech.is_none() {
             tracing::warn!("no speak dispatcher available; scripts cannot speak");
@@ -89,7 +78,7 @@ impl RuntimeWiring {
             speak_requester: script_speech,
             latest_values: Some(Arc::clone(&latest)),
             scheduling: Some(ScriptScheduling::new(
-                scheduled_runs_cell.clone(),
+                scheduled_runs.clone(),
                 provider.action_repo(),
             )),
         }));
@@ -106,8 +95,6 @@ impl RuntimeWiring {
             speaker: overlay_speech,
             latest: Some(latest),
         });
-        let overlay_cell = OverlayServiceCell::new();
-        overlay_cell.set(overlays.clone());
         Self {
             bus,
             provider,
@@ -118,9 +105,6 @@ impl RuntimeWiring {
             scheduler_start,
             scheduled_runs,
             scheduled_runs_start,
-            scheduler_cell,
-            scheduled_runs_cell,
-            overlay_cell,
             sub_actions: SubActionRegistry::new(),
             triggers: TriggerRegistry::new(),
         }
@@ -151,19 +135,19 @@ impl RuntimeWiring {
                 scripts: Arc::clone(&self.scripts),
                 publisher: Arc::clone(&self.bus) as Arc<dyn EventPublisher>,
                 settings: Arc::clone(&self.provider) as Arc<dyn SettingsRepo>,
-                scheduler: self.scheduler_cell.clone(),
+                scheduler: self.scheduler.clone(),
                 trigger_instances: self.provider.trigger_instance_repo(),
                 actions: self.provider.action_repo(),
                 script_repo: Arc::clone(&self.provider) as Arc<dyn ScriptRepo>,
                 cancel_registry: Arc::clone(&self.cancel_registry),
-                overlays: self.overlay_cell.clone(),
+                overlays: self.overlays.clone(),
                 config: Config::default(),
             },
         )
     }
 
     pub fn register_scheduled_run_sub_actions(&mut self) -> Result<(), RegistryError> {
-        register_scheduled_run_sub_actions(&mut self.sub_actions, self.scheduled_runs_cell.clone())
+        register_scheduled_run_sub_actions(&mut self.sub_actions, self.scheduled_runs.clone())
     }
 
     pub async fn freeze(self) -> FrozenRuntime {
@@ -179,7 +163,6 @@ impl RuntimeWiring {
             scheduled_runs_start,
             sub_actions,
             triggers,
-            ..
         } = self;
         let sub_action_registry = Arc::new(sub_actions);
         let trigger_registry = Arc::new(triggers);

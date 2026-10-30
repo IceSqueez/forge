@@ -9,7 +9,7 @@ use crate::event_log_writer::EventLogSink;
 use crate::event_ring::EventRing;
 use crate::first_chat_ledger::FirstChatLedger;
 use crate::persist_batch::{BatchPolicy, FlushTicket, run_batched};
-use arc_swap::{ArcSwap, ArcSwapOption};
+use arc_swap::ArcSwap;
 use async_trait::async_trait;
 use forge_events::{
     DeliveryLane, Event, EventChannel, EventObserver, EventPublisher, EventSubscription,
@@ -76,7 +76,7 @@ pub struct EventBus {
     flush_abandon: watch::Sender<bool>,
     abandoned_rows: Arc<AtomicU64>,
     flushes: Mutex<Vec<Shared<oneshot::Receiver<()>>>>,
-    first_chats: ArcSwapOption<FirstChatLedger>,
+    first_chats: Option<FirstChatLedger>,
     held_lineages: Mutex<HashMap<EventId, Lineage>>,
 }
 
@@ -132,14 +132,18 @@ impl EventBus {
         event_log: Arc<dyn EventLogRepo>,
         ledger: Option<FirstChatLedger>,
     ) -> Arc<Self> {
-        let bus = Self::new(event_log);
-        if let Some(ledger) = ledger {
-            bus.track_first_chats(ledger);
-        }
-        bus
+        Self::build(event_log, &Config::default(), ledger)
     }
 
     pub fn with_config(event_log: Arc<dyn EventLogRepo>, config: &Config) -> Arc<Self> {
+        Self::build(event_log, config, None)
+    }
+
+    fn build(
+        event_log: Arc<dyn EventLogRepo>,
+        config: &Config,
+        first_chats: Option<FirstChatLedger>,
+    ) -> Arc<Self> {
         Arc::new(Self {
             observers: EventChannel::new(config.bus_observer_capacity),
             ring: Mutex::new(EventRing::new(config.bus_ring_retention)),
@@ -156,7 +160,7 @@ impl EventBus {
             flush_abandon: watch::channel(false).0,
             abandoned_rows: Arc::new(AtomicU64::new(0)),
             flushes: Mutex::new(Vec::new()),
-            first_chats: ArcSwapOption::empty(),
+            first_chats,
             held_lineages: Mutex::new(HashMap::new()),
         })
     }
@@ -181,7 +185,7 @@ impl EventBus {
             let lineage = self.lineage_with_parent(&event, &ring);
             event.causation_depth = lineage.depth;
             event.replay = lineage.replay;
-            if let Some(ledger) = self.first_chats.load().as_deref() {
+            if let Some(ledger) = &self.first_chats {
                 ledger.stamp(&mut event);
             }
             if hold_lineage {
@@ -199,10 +203,6 @@ impl EventBus {
         self.critical.deliver(&event, lane, transient);
         self.observers.send(event);
         self.total_published.fetch_add(1, Ordering::Relaxed);
-    }
-
-    pub fn track_first_chats(&self, ledger: FirstChatLedger) {
-        self.first_chats.store(Some(Arc::new(ledger)));
     }
 
     pub fn record(&self, mut event: Event) {

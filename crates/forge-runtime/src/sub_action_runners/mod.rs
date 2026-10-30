@@ -193,18 +193,18 @@ use forge_storage::{
     ActionRepo, GlobalsRepo, ScriptRepo, SettingsRepo, TriggerInstanceRepo, UserGlobalsRepo,
 };
 
-use crate::SchedulerCell;
+use crate::QueueSchedulerHandle;
 use crate::action_cancel::ActionCancelRegistry;
 use crate::condition::ConditionGate;
 use crate::config::Config;
 use crate::egress::{EgressClient, HttpMethod};
-use crate::overlay_service::OverlayServiceCell;
-use crate::scheduled_runs::ScheduledRunsCell;
+use crate::overlay_service::OverlayServiceHandle;
+use crate::scheduled_runs::ScheduledRunsHandle;
 use crate::script_registry::ScriptRegistry;
 
 pub fn register_scheduled_run_sub_actions(
     reg: &mut SubActionRegistry,
-    scheduled_runs: ScheduledRunsCell,
+    scheduled_runs: ScheduledRunsHandle,
 ) -> Result<(), RegistryError> {
     reg.register(Box::new(CoreActionScheduleRunner::new(
         scheduled_runs.clone(),
@@ -221,12 +221,12 @@ pub struct CoreSubActionDeps {
     pub scripts: Arc<ScriptRegistry>,
     pub publisher: Arc<dyn EventPublisher>,
     pub settings: Arc<dyn SettingsRepo>,
-    pub scheduler: SchedulerCell,
+    pub scheduler: QueueSchedulerHandle,
     pub trigger_instances: Arc<dyn TriggerInstanceRepo>,
     pub actions: Arc<dyn ActionRepo>,
     pub script_repo: Arc<dyn ScriptRepo>,
     pub cancel_registry: Arc<ActionCancelRegistry>,
-    pub overlays: OverlayServiceCell,
+    pub overlays: OverlayServiceHandle,
     pub config: Config,
 }
 

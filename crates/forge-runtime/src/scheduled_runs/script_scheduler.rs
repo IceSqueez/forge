@@ -9,7 +9,6 @@ use forge_script::{
 use forge_storage::{ActionRepo, MissedRunPolicy};
 use forge_types::ActionId;
 
-use super::cell::ScheduledRunsCell;
 use super::handle::ScheduledRunsHandle;
 use super::request::{ScheduleDue, ScheduleError, skip_if_late_by_minutes};
 use super::scheduling_context::{ScheduleIntent, SchedulingContext};
@@ -17,12 +16,12 @@ use crate::sub_action_runners::datetime_input::resolve_datetime;
 
 #[derive(Clone)]
 pub struct ScriptScheduling {
-    scheduled_runs: ScheduledRunsCell,
+    scheduled_runs: ScheduledRunsHandle,
     actions: Arc<dyn ActionRepo>,
 }
 
 impl ScriptScheduling {
-    pub fn new(scheduled_runs: ScheduledRunsCell, actions: Arc<dyn ActionRepo>) -> Self {
+    pub fn new(scheduled_runs: ScheduledRunsHandle, actions: Arc<dyn ActionRepo>) -> Self {
         Self {
             scheduled_runs,
             actions,
@@ -34,12 +33,6 @@ impl ScriptScheduling {
             scheduling: self.clone(),
             context,
         })
-    }
-
-    fn handle(&self) -> Result<ScheduledRunsHandle, ScriptScheduleError> {
-        self.scheduled_runs
-            .get()
-            .ok_or_else(|| rejected(ScheduleError::SchedulerStopped))
     }
 
     async fn resolve_action(&self, id_or_name: &str) -> Result<ActionId, ScriptScheduleError> {
@@ -75,7 +68,6 @@ impl ActionScheduler for ContextScheduler {
         &self,
         request: ScriptScheduleRequest,
     ) -> Result<ScriptSchedulePlacement, ScriptScheduleError> {
-        let handle = self.scheduling.handle()?;
         let target_action_id = self
             .scheduling
             .resolve_action(&request.action_id_or_name)
@@ -89,7 +81,9 @@ impl ActionScheduler for ContextScheduler {
                 .map_or(MissedRunPolicy::RunLateOnce, skip_if_late_by_minutes),
             inherit_args: request.inherit_args,
         };
-        let placement = handle
+        let placement = self
+            .scheduling
+            .scheduled_runs
             .schedule(self.context.request(intent))
             .await
             .map_err(rejected)?;
@@ -101,7 +95,7 @@ impl ActionScheduler for ContextScheduler {
 
     async fn cancel_by_key(&self, key: &str) -> Result<bool, ScriptScheduleError> {
         self.scheduling
-            .handle()?
+            .scheduled_runs
             .cancel_by_key(key)
             .await
             .map_err(rejected)

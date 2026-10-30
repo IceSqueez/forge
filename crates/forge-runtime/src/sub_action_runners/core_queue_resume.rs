@@ -6,22 +6,19 @@ use forge_types::{ArgStack, QueueId, SubActionConfig, SubActionOutcome, SubActio
 
 use super::core_queue_shared::{QUEUE, QUEUE_SPEC};
 use crate::core_messages;
-use crate::{QueueMode, SchedulerCell};
+use crate::{QueueMode, QueueSchedulerHandle};
 
 pub struct CoreQueueResumeRunner {
-    scheduler: SchedulerCell,
+    scheduler: QueueSchedulerHandle,
 }
 
 impl CoreQueueResumeRunner {
-    pub fn new(scheduler: SchedulerCell) -> Self {
+    pub fn new(scheduler: QueueSchedulerHandle) -> Self {
         Self { scheduler }
     }
 
     async fn run(&self, queue_id: QueueId) -> SubActionOutcome {
-        let Some(scheduler) = self.scheduler.get() else {
-            return SubActionOutcome::Failed(core_messages::scheduler_not_ready().into());
-        };
-        match scheduler.set_mode(queue_id, QueueMode::RUNNING).await {
+        match self.scheduler.set_mode(queue_id, QueueMode::RUNNING).await {
             Ok(()) => SubActionOutcome::Success,
             Err(e) => SubActionOutcome::Failed(core_messages::scheduler_failed(e).into()),
         }

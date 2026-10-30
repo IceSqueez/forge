@@ -106,9 +106,8 @@ pub use overlay_samples::{OverlaySampleSource, OverlaySamples};
 pub use overlay_service::{
     EnabledOverlay, MaterializePass, OVERLAY_NAME_KEY, OVERLAY_SPEECH_FAILED_KIND,
     OverlayConnectFanout, OverlayConnectListener, OverlayDelivery, OverlayDispatch,
-    OverlayFrameSink, OverlayReceivers, OverlayServiceCell, OverlayServiceError,
-    OverlayServiceHandle, OverlayServiceParts, SPEECH_FAILURE_ERROR_KEY,
-    SPEECH_FAILURE_MESSAGE_KEY, TestFire,
+    OverlayFrameSink, OverlayReceivers, OverlayServiceError, OverlayServiceHandle,
+    OverlayServiceParts, SPEECH_FAILURE_ERROR_KEY, SPEECH_FAILURE_MESSAGE_KEY, TestFire,
 };
 pub use overlay_shows::{
     SHOW_CEILING, SHOW_QUEUE_CAPACITY, SHOW_SPEECH_START_WAIT, ShowDepthWatch, ShowEnd, ShowTicket,
@@ -118,16 +117,14 @@ pub use queue_scheduler::{
     ENGINE_STOPPED_REASON, MAX_PENDING_PER_QUEUE, MembershipOutcome, QUEUE_DELETED_REASON,
     QUEUE_DRAINING_REASON, QUEUE_NOT_FOUND_REASON, QUEUE_OVERFLOW_REASON, QUEUE_PAUSED_REASON,
     QueueAdmission, QueueIntake, QueueMode, QueueModeChanged, QueueProcessing, QueueRuntimeState,
-    QueueScheduler, QueueSchedulerHandle, QueueSchedulerStart, SchedulerCell, SchedulerError,
-    SchedulerRequest,
+    QueueScheduler, QueueSchedulerHandle, QueueSchedulerStart, SchedulerError, SchedulerRequest,
 };
 pub use runtime_builder::{FrozenRuntime, RuntimeWiring, RuntimeWiringParts, ScheduledRunsWorker};
 pub use scheduled_runs::{
     CatchUpSettle, HandOff, ScheduleDue, ScheduleError, ScheduleIntent, ScheduleRequest,
-    ScheduledPlacement, ScheduledRunsCell, ScheduledRunsHandle, ScheduledRunsParts,
-    ScheduledRunsStart, ScheduledRunsStartParts, SchedulingContext, ScriptScheduling,
-    SystemWallClock, WaitingForQueueWatch, WaitingRuns, WallClock, reserve_scheduled_runs,
-    spawn_scheduled_runs,
+    ScheduledPlacement, ScheduledRunsHandle, ScheduledRunsParts, ScheduledRunsStart,
+    ScheduledRunsStartParts, SchedulingContext, ScriptScheduling, SystemWallClock,
+    WaitingForQueueWatch, WaitingRuns, WallClock, reserve_scheduled_runs, spawn_scheduled_runs,
 };
 pub use script_registry::{
     CompiledScript, ScriptRegistry, ScriptRegistryError, ScriptRegistryParts,

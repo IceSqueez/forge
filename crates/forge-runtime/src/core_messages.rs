@@ -388,14 +388,6 @@ pub(crate) fn action_run_failed(cause: impl Display) -> MessageRef {
     with_cause(ACTION_RUN_FAILED, cause)
 }
 
-pub(crate) fn scheduler_not_ready() -> MessageRef {
-    MessageRef::new(SCHEDULER_NOT_READY)
-}
-
-pub(crate) fn scheduler_stopped() -> MessageRef {
-    MessageRef::new(SCHEDULER_STOPPED)
-}
-
 pub(crate) fn scheduler_failed(cause: impl Display) -> MessageRef {
     with_cause(SCHEDULER_FAILED, cause)
 }
@@ -584,10 +576,6 @@ pub(crate) fn url_not_http() -> MessageRef {
     MessageRef::new(URL_NOT_HTTP)
 }
 
-pub(crate) fn overlay_service_not_running() -> MessageRef {
-    MessageRef::new(OVERLAY_SERVICE_NOT_RUNNING)
-}
-
 pub(crate) fn overlay_show_cleared() -> MessageRef {
     MessageRef::new(OVERLAY_SHOW_CLEARED)
 }
@@ -681,8 +669,8 @@ mod tests {
             action_run_cancelled(),
             action_run_disabled("a"),
             action_run_failed("c"),
-            scheduler_not_ready(),
-            scheduler_stopped(),
+            MessageRef::new(SCHEDULER_NOT_READY),
+            MessageRef::new(SCHEDULER_STOPPED),
             scheduler_failed("c"),
             schedule_failed("c"),
             storage_failed("c"),
@@ -726,7 +714,7 @@ mod tests {
             expression_undefined_variables(&["a".to_owned()]),
             expression_failed("c"),
             url_not_http(),
-            overlay_service_not_running(),
+            MessageRef::new(OVERLAY_SERVICE_NOT_RUNNING),
             overlay_show_cleared(),
             overlay_show_withdrawn(),
             overlay_send_failed("c"),

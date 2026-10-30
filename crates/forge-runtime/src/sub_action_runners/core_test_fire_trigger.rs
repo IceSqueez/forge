@@ -14,7 +14,7 @@ use forge_types::{
 use super::core_trigger_shared::TRIGGER_INSTANCE_ID_KEY;
 use super::event_payload::EMPTY_JSON_OBJECT;
 use crate::core_messages;
-use crate::{QueueAdmission, SchedulerCell, SchedulerRequest};
+use crate::{QueueAdmission, QueueSchedulerHandle, SchedulerRequest};
 
 const TRIGGER_INSTANCE: DynamicSelectField<TriggerInstanceId> = DynamicSelectField::new(
     TRIGGER_INSTANCE_ID_KEY,
@@ -60,14 +60,14 @@ fn synthetic_outputs(
 pub struct CoreTestFireTriggerRunner {
     trigger_instances: Arc<dyn TriggerInstanceRepo>,
     actions: Arc<dyn ActionRepo>,
-    scheduler: SchedulerCell,
+    scheduler: QueueSchedulerHandle,
 }
 
 impl CoreTestFireTriggerRunner {
     pub fn new(
         trigger_instances: Arc<dyn TriggerInstanceRepo>,
         actions: Arc<dyn ActionRepo>,
-        scheduler: SchedulerCell,
+        scheduler: QueueSchedulerHandle,
     ) -> Self {
         Self {
             trigger_instances,
@@ -94,10 +94,6 @@ impl CoreTestFireTriggerRunner {
             }
         };
 
-        let Some(scheduler) = self.scheduler.get() else {
-            return SubActionOutcome::Failed(core_messages::scheduler_not_ready().into());
-        };
-
         let action_ids = match self.trigger_instances.actions_using(instance_id).await {
             Ok(ids) => ids,
             Err(e) => {
@@ -122,7 +118,7 @@ impl CoreTestFireTriggerRunner {
                 initial_args: synthetic_args.clone(),
                 admission: QueueAdmission::from(&action),
             };
-            if let Err(e) = scheduler.dispatch(req).await {
+            if let Err(e) = self.scheduler.dispatch(req).await {
                 return SubActionOutcome::Failed(core_messages::scheduler_failed(e).into());
             }
         }

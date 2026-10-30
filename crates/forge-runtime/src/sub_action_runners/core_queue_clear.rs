@@ -6,7 +6,7 @@ use forge_registry::{
 use forge_types::{ArgStack, QueueId, SubActionConfig, SubActionOutcome, SubActionTelemetry};
 
 use super::core_queue_shared::QUEUE;
-use crate::SchedulerCell;
+use crate::QueueSchedulerHandle;
 use crate::core_messages;
 
 const KEEP_CURRENT: ToggleField = ToggleField {
@@ -25,19 +25,16 @@ fn read_config(
 }
 
 pub struct CoreQueueClearRunner {
-    scheduler: SchedulerCell,
+    scheduler: QueueSchedulerHandle,
 }
 
 impl CoreQueueClearRunner {
-    pub fn new(scheduler: SchedulerCell) -> Self {
+    pub fn new(scheduler: QueueSchedulerHandle) -> Self {
         Self { scheduler }
     }
 
     async fn run(&self, queue_id: QueueId, keep_current: bool) -> SubActionOutcome {
-        let Some(scheduler) = self.scheduler.get() else {
-            return SubActionOutcome::Failed(core_messages::scheduler_not_ready().into());
-        };
-        match scheduler.clear(queue_id, keep_current).await {
+        match self.scheduler.clear(queue_id, keep_current).await {
             Ok(()) => SubActionOutcome::Success,
             Err(e) => SubActionOutcome::Failed(core_messages::scheduler_failed(e).into()),
         }

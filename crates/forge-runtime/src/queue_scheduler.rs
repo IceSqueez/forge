@@ -2,7 +2,6 @@ use std::collections::{BTreeMap, HashMap, VecDeque};
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
 
-use arc_swap::ArcSwapOption;
 use forge_events::{ActionSkipped, Event, EventSource, TypedEvent};
 use forge_registry::CancelSignal;
 use forge_types::{Action, ActionId, ArgStack, EventId, Queue, QueueId};
@@ -25,25 +24,6 @@ pub const QUEUE_PAUSED_REASON: &str = "queue_paused";
 pub const QUEUE_DRAINING_REASON: &str = "queue_draining";
 pub const QUEUE_DELETED_REASON: &str = "queue_deleted";
 pub const ENGINE_STOPPED_REASON: &str = "engine_stopped";
-
-#[derive(Clone, Default)]
-pub struct SchedulerCell {
-    inner: Arc<ArcSwapOption<QueueSchedulerHandle>>,
-}
-
-impl SchedulerCell {
-    pub fn new() -> Self {
-        Self::default()
-    }
-
-    pub fn set(&self, handle: QueueSchedulerHandle) {
-        self.inner.store(Some(Arc::new(handle)));
-    }
-
-    pub fn get(&self) -> Option<QueueSchedulerHandle> {
-        self.inner.load_full().map(|h| (*h).clone())
-    }
-}
 
 pub struct SchedulerRequest {
     pub queue_id: QueueId,

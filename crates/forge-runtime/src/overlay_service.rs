@@ -2,7 +2,6 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
 
-use arc_swap::ArcSwapOption;
 use async_trait::async_trait;
 use forge_events::{Event, EventSource};
 use forge_overlay::{
@@ -804,25 +803,6 @@ impl OverlayServiceHandle {
         let pass = library.resolve(&config).await;
         library.record(&definition.id, &pass).await;
         pass.media
-    }
-}
-
-#[derive(Clone, Default)]
-pub struct OverlayServiceCell {
-    inner: Arc<ArcSwapOption<OverlayServiceHandle>>,
-}
-
-impl OverlayServiceCell {
-    pub fn new() -> Self {
-        Self::default()
-    }
-
-    pub fn set(&self, handle: OverlayServiceHandle) {
-        self.inner.store(Some(Arc::new(handle)));
-    }
-
-    pub fn get(&self) -> Option<OverlayServiceHandle> {
-        self.inner.load_full().map(|handle| (*handle).clone())
     }
 }
 

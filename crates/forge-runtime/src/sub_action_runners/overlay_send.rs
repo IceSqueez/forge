@@ -11,7 +11,7 @@ use forge_types::{ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetr
 
 use super::overlay_targets::{OVERLAY_SEND_KIND_ID, OVERLAY_TARGET_KEY};
 use crate::core_messages;
-use crate::overlay_service::{OverlayDelivery, OverlayDispatch, OverlayServiceCell};
+use crate::overlay_service::{OverlayDelivery, OverlayDispatch, OverlayServiceHandle};
 use crate::overlay_shows::ShowEnd;
 
 const DURATION_KEY: &str = "duration_secs";
@@ -61,11 +61,11 @@ fn read_config(config: &SubActionConfig, args: &ArgStack) -> Result<SendConfig, 
 }
 
 pub struct OverlaySendRunner {
-    overlays: OverlayServiceCell,
+    overlays: OverlayServiceHandle,
 }
 
 impl OverlaySendRunner {
-    pub fn new(overlays: OverlayServiceCell) -> Self {
+    pub fn new(overlays: OverlayServiceHandle) -> Self {
         Self { overlays }
     }
 
@@ -76,11 +76,9 @@ impl OverlaySendRunner {
         ctx: &RunContext<'_>,
     ) -> SubActionOutcome {
         let identity = send.target.as_str();
-        let Some(overlays) = self.overlays.get() else {
-            return SubActionOutcome::Failed(core_messages::overlay_service_not_running().into());
-        };
 
-        match overlays
+        match self
+            .overlays
             .send_to(
                 &OverlayId::new(identity),
                 &supplied_content(config),

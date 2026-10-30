@@ -14,7 +14,7 @@ use super::core_action_shared::ACTION;
 use crate::core_messages;
 use crate::scheduled_runs::{
     MAX_LATE_TOLERANCE, MAX_SCHEDULE_DELAY, MIN_LATE_TOLERANCE, ScheduleDue, ScheduleIntent,
-    ScheduleRequest, ScheduledRunsCell, SchedulingContext,
+    ScheduleRequest, ScheduledRunsHandle, SchedulingContext,
 };
 
 pub const SCHEDULE_ACTION_KIND_ID: &str = "core.action.schedule";
@@ -178,11 +178,11 @@ fn read_config(
 }
 
 pub struct CoreActionScheduleRunner {
-    scheduled_runs: ScheduledRunsCell,
+    scheduled_runs: ScheduledRunsHandle,
 }
 
 impl CoreActionScheduleRunner {
-    pub fn new(scheduled_runs: ScheduledRunsCell) -> Self {
+    pub fn new(scheduled_runs: ScheduledRunsHandle) -> Self {
         Self { scheduled_runs }
     }
 }
@@ -249,13 +249,7 @@ impl SubActionRunner for CoreActionScheduleRunner {
             Ok(read) => read,
             Err(problem) => return (timer.invalid_config(&problem), None),
         };
-        let Some(scheduled_runs) = self.scheduled_runs.get() else {
-            return (
-                timer.failed(core_messages::scheduler_stopped().into()),
-                None,
-            );
-        };
-        let placement = match scheduled_runs.schedule(request).await {
+        let placement = match self.scheduled_runs.schedule(request).await {
             Ok(placement) => placement,
             Err(e) => return (timer.failed(core_messages::schedule_failed(e).into()), None),
         };

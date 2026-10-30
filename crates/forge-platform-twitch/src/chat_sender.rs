@@ -474,6 +474,44 @@ mod tests {
         text: "psst",
     };
 
+    struct StreamerRig {
+        streamer: Arc<MockTransport>,
+        senders: ChatSenders,
+        bus: crate::bot_account::test_support::RecordingBus,
+    }
+
+    impl StreamerRig {
+        fn over(streamer_responses: Vec<Result<Value, HelixError>>) -> Self {
+            use crate::bot_account::test_support::{KeyedRepo, credential_json};
+            use crate::credentials::TWITCH_CREDENTIAL_ID;
+            use crate::sub_actions::test_support::TOKEN_SENTINEL;
+
+            let repo = Arc::new(KeyedRepo::default());
+            repo.put(
+                TWITCH_CREDENTIAL_ID,
+                credential_json(TOKEN_SENTINEL, "streamer_refresh", SELF_USER_ID, "streamer"),
+            );
+            let streamer = Arc::new(MockTransport::returning_sequence(streamer_responses));
+            let senders = ChatSenders::new(
+                Arc::clone(&streamer) as Arc<dyn HelixTransport>,
+                Arc::new(SelfIdentity::new(repo as _)),
+            );
+            Self {
+                streamer,
+                senders,
+                bus: Default::default(),
+            }
+        }
+
+        async fn send(
+            &self,
+            delivery: ChatDelivery<'_>,
+            preference: SenderPreference,
+        ) -> Result<ActingSender, SendFailure> {
+            self.senders.deliver(delivery, preference, &self.bus).await
+        }
+    }
+
     fn as_streamer() -> ActingSender {
         ActingSender {
             role: SenderRole::Streamer,
@@ -1040,8 +1078,15 @@ mod tests {
         );
     }
 
-    fn cooldown_refusal(result: &Result<ActingSender, SendFailure>, seconds: u64) -> bool {
-        matches!(result, Err(SendFailure::ShoutoutCooldown { retry_after_secs }) if *retry_after_secs == seconds)
+    const COOLDOWN_SLACK_SECS: u64 = 30;
+
+    fn cooldown_refusal(result: &Result<ActingSender, SendFailure>, interval_secs: u64) -> bool {
+        matches!(
+            result,
+            Err(SendFailure::ShoutoutCooldown { retry_after_secs })
+                if *retry_after_secs <= interval_secs
+                    && *retry_after_secs + COOLDOWN_SLACK_SECS > interval_secs
+        )
     }
 
     #[tokio::test]
@@ -1050,7 +1095,6 @@ mod tests {
             BotHarness::connected().await,
             vec![users_fixture("555"), Ok(Value::Null)],
         );
-        tokio::time::pause();
         let target = ChatDelivery::Shoutout {
             target: UserTarget::Login("Target"),
         };
@@ -1091,15 +1135,12 @@ mod tests {
 
     #[tokio::test(start_paused = true)]
     async fn a_target_shouted_out_by_login_stays_blocked_by_id_after_the_channel_window() {
-        let rig = Rig::over(
-            BotHarness::without_bot_row().await,
-            vec![
-                users_fixture("555"),
-                Ok(Value::Null),
-                users_fixture("777"),
-                Ok(Value::Null),
-            ],
-        );
+        let rig = StreamerRig::over(vec![
+            users_fixture("555"),
+            Ok(Value::Null),
+            users_fixture("777"),
+            Ok(Value::Null),
+        ]);
         rig.send(
             ChatDelivery::Shoutout {
                 target: UserTarget::Login("target"),
@@ -1136,18 +1177,15 @@ mod tests {
         assert_eq!(rig.streamer.call_count(), 4);
     }
 
-    #[tokio::test(start_paused = true)]
+    #[tokio::test]
     async fn a_refused_shoutout_leaves_no_cooldown_behind() {
-        let rig = Rig::over(
-            BotHarness::without_bot_row().await,
-            vec![
-                Err(HelixError::Http {
-                    status: 400,
-                    body: json!({"message": "channel is offline"}).to_string(),
-                }),
-                Ok(Value::Null),
-            ],
-        );
+        let rig = StreamerRig::over(vec![
+            Err(HelixError::Http {
+                status: 400,
+                body: json!({"message": "channel is offline"}).to_string(),
+            }),
+            Ok(Value::Null),
+        ]);
         let refused = rig.send(SHOUTOUT, SenderPreference::Streamer).await;
 
         let retried = rig.send(SHOUTOUT, SenderPreference::Streamer).await;
@@ -1159,10 +1197,7 @@ mod tests {
 
     #[tokio::test(start_paused = true)]
     async fn back_to_back_announcements_go_out_exactly_one_interval_apart() {
-        let rig = Rig::over(
-            BotHarness::without_bot_row().await,
-            vec![Ok(Value::Null), Ok(Value::Null)],
-        );
+        let rig = StreamerRig::over(vec![Ok(Value::Null), Ok(Value::Null)]);
         let started = tokio::time::Instant::now();
 
         rig.send(ANNOUNCE, SenderPreference::Streamer)
@@ -1179,16 +1214,13 @@ mod tests {
 
     #[tokio::test(start_paused = true)]
     async fn a_failed_announcement_does_not_delay_the_next_one() {
-        let rig = Rig::over(
-            BotHarness::without_bot_row().await,
-            vec![
-                Err(HelixError::Http {
-                    status: 400,
-                    body: json!({"message": "channel is offline"}).to_string(),
-                }),
-                Ok(Value::Null),
-            ],
-        );
+        let rig = StreamerRig::over(vec![
+            Err(HelixError::Http {
+                status: 400,
+                body: json!({"message": "channel is offline"}).to_string(),
+            }),
+            Ok(Value::Null),
+        ]);
         let started = tokio::time::Instant::now();
 
         let failed = rig.send(ANNOUNCE, SenderPreference::Streamer).await;

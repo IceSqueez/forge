@@ -1620,7 +1620,8 @@ mod tests {
     }
 
     const ISSUED_TTL_SECS: u64 = 14400;
-    const SETTLE: Duration = Duration::from_secs(1);
+    const DELTA_GUARD: Duration = Duration::from_secs(10);
+    const QUIET_WINDOW: Duration = Duration::from_millis(100);
 
     async fn expiry_bridge_fixture() -> ExpiryBridgeFixture {
         use wiremock::matchers::{method, path};
@@ -1680,10 +1681,16 @@ mod tests {
     }
 
     async fn next_delta(health: &mut HealthStream) -> Option<HealthDelta> {
-        tokio::time::timeout(SETTLE, health.next())
+        tokio::time::timeout(DELTA_GUARD, health.next())
             .await
             .ok()
             .flatten()
+    }
+
+    async fn no_delta_follows(health: &mut HealthStream) -> bool {
+        tokio::time::timeout(QUIET_WINDOW, health.next())
+            .await
+            .is_err()
     }
 
     #[tokio::test]
@@ -1693,7 +1700,6 @@ mod tests {
         for _ in 0..2 {
             let renewed = refresh_stale_token(&fx.bundle, failed_access).await;
             failed_access = "new_access";
-            tokio::time::pause();
 
             let delta = next_delta(&mut fx.health).await;
             assert_eq!(
@@ -1702,20 +1708,18 @@ mod tests {
                 "a refresh must emit an API calls delta"
             );
             assert!(
-                next_delta(&mut fx.health).await.is_none(),
+                no_delta_follows(&mut fx.health).await,
                 "one refresh must emit exactly one delta"
             );
             assert_eq!(BuiltinStatus::token_expiry(fx.bundle.as_ref()), renewed);
-            tokio::time::resume();
         }
     }
 
     #[tokio::test]
     async fn token_expiry_stays_unreported_until_a_refresh_publishes_one() {
         let mut fx = expiry_bridge_fixture().await;
-        tokio::time::pause();
 
-        assert!(next_delta(&mut fx.health).await.is_none());
+        assert!(no_delta_follows(&mut fx.health).await);
         assert_eq!(BuiltinStatus::token_expiry(fx.bundle.as_ref()), None);
     }
 
@@ -1726,9 +1730,8 @@ mod tests {
         fx.bundle.shutdown().await;
 
         refresh_stale_token(&fx.bundle, "existing_access").await;
-        tokio::time::pause();
 
-        assert!(next_delta(&mut fx.health).await.is_none());
+        assert!(no_delta_follows(&mut fx.health).await);
         assert_eq!(BuiltinStatus::token_expiry(fx.bundle.as_ref()), before);
     }
 

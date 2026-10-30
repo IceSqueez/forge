@@ -115,20 +115,25 @@ pub struct SystemUrlOpenPort;
 
 impl UrlOpenPort for SystemUrlOpenPort {
     fn open(&self, url: String) -> Result<(), OsPortError> {
-        open::that_detached(url)
-            .map_err(|e| OsPortError::Failed(format!("launcher failed: {}", e.kind())))
+        open::that_detached(url).map_err(|e| launcher_failure(&e))
     }
+}
+
+fn launcher_failure(error: &std::io::Error) -> OsPortError {
+    OsPortError::Failed(format!("launcher failed: {}", error.kind()))
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{OsPortError, SystemUrlOpenPort, UrlOpenPort};
+    use super::{OsPortError, launcher_failure};
 
     #[test]
     fn url_open_failure_text_carries_only_the_error_kind() {
-        let url = "https://leak-host.example/watch?access_token=QUERY-SECRET\0".to_owned();
+        let cause = std::io::Error::other(
+            "spawn https://leak-host.example/watch?access_token=QUERY-SECRET",
+        );
 
-        let err = SystemUrlOpenPort.open(url).unwrap_err();
+        let err = launcher_failure(&cause);
 
         let OsPortError::Failed(msg) = err else {
             panic!("expected a Failed launcher error, got {err:?}");
@@ -140,7 +145,7 @@ mod tests {
         assert!(!msg.contains("QUERY-SECRET"), "leaked query token: {msg}");
         assert_eq!(
             msg,
-            format!("launcher failed: {}", std::io::ErrorKind::InvalidInput)
+            format!("launcher failed: {}", std::io::ErrorKind::Other)
         );
     }
 }

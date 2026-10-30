@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use forge_events::{EventPublisher, EventSubscription, EventsError};
+use forge_events::{Delivery, EventPublisher, EventSubscription};
 use forge_platform_core::{
     BanListSource, BuiltinCollections, BuiltinContent, BuiltinControl, BuiltinHealth,
     BuiltinOptionSource, BuiltinStatus, ChatPlatform, FollowLookup, PlatformEndpoints,
@@ -441,14 +441,12 @@ pub(crate) fn spawn_event_bridge(
 ) -> JoinHandle<()> {
     tokio::spawn(async move {
         loop {
-            match events.recv().await {
-                Ok(event) => bus.publish(event),
-                Err(EventsError::BusClosed) => break,
-                Err(EventsError::LaggingReceiver) => {
-                    tracing::warn!(bridge = label, "event bridge lagging");
-                    continue;
+            match events.next().await {
+                Delivery::Event(event) => bus.publish(Arc::unwrap_or_clone(event)),
+                Delivery::Closed => break,
+                Delivery::Skipped(skipped) => {
+                    tracing::warn!(bridge = label, skipped, "event bridge dropped events");
                 }
-                Err(_) => continue,
             }
         }
     })
@@ -468,6 +466,7 @@ pub(crate) fn spawn_connect(
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
+    use crate::event_loss::TWITCH_EVENT_RELAY;
     use forge_events::{Event, EventChannel, EventSource};
     use forge_net::{RateLimitError, RateLimitOutcome, RateLimiter};
     use forge_platform_core::{ConnectionState, PlatformError};
@@ -1132,6 +1131,45 @@ pub(crate) mod tests {
         for state in ["connected", "disconnected"] {
             let event = observer.recv().await.unwrap();
             assert_eq!(event.payload["state"], state);
+        }
+    }
+
+    #[tokio::test]
+    async fn a_lagging_event_bridge_writes_the_skipped_events_to_the_ledger_and_keeps_forwarding() {
+        const CAPACITY: usize = 4;
+        const SENT: usize = 10;
+        let bus = test_bus();
+        let mut observer = bus.subscribe();
+        let platform = EventChannel::new(CAPACITY);
+        let events = platform
+            .subscribe()
+            .recording_lag(bus.relay_lag(TWITCH_EVENT_RELAY));
+        for index in 0..SENT {
+            platform.publish(Event::new(
+                EventSource::Core,
+                "platform.connection.changed",
+                serde_json::json!({ "index": index }),
+            ));
+        }
+        drop(platform);
+
+        tokio::time::timeout(
+            Duration::from_secs(30),
+            spawn_event_bridge(publisher(&bus), events, "twitch"),
+        )
+        .await
+        .expect("the bridge must exit once every platform sender is gone")
+        .unwrap();
+
+        let skipped = bus
+            .loss_report()
+            .into_iter()
+            .find(|entry| entry.consumer == TWITCH_EVENT_RELAY)
+            .map(|entry| entry.loss.skipped);
+        assert_eq!(skipped, Some((SENT - CAPACITY) as u64));
+        for index in (SENT - CAPACITY)..SENT {
+            let event = observer.recv().await.unwrap();
+            assert_eq!(event.payload["index"], index);
         }
     }
 }

@@ -4,8 +4,8 @@ use forge_storage::SettingDisclosure::{Presence, Verbatim};
 use forge_storage::SettingPortability::{MachineLocal, Portable};
 use forge_storage::settings::{FULL_LEVEL, SILENT_LEVEL};
 use forge_storage::{
-    Flag, Level, OptionalText, Setting, SettingSpec, SettingsRepo, StorageError,
-    read_setting_or_default, write_setting,
+    Flag, Level, OptionalText, Setting, SettingSpec, SettingsRepo, StorageError, read_setting,
+    write_setting,
 };
 use forge_types::OutputDevice;
 use tokio::sync::watch;
@@ -138,13 +138,27 @@ impl Default for SoundboardSettingsHandle {
     }
 }
 
+async fn read_soundboard_settings(
+    repo: &dyn SettingsRepo,
+) -> Result<SoundboardSettings, StorageError> {
+    Ok(SoundboardSettings {
+        enabled: read_setting(repo, &ENABLED).await?,
+        output_device_id: read_setting(repo, &OUTPUT_DEVICE).await?,
+        master_volume: read_setting(repo, &MASTER_VOLUME).await?,
+        also_headphones: read_setting(repo, &ALSO_HEADPHONES).await?,
+    })
+}
+
 pub async fn load_soundboard_settings(repo: &dyn SettingsRepo) -> SoundboardSettings {
-    SoundboardSettings {
-        enabled: read_setting_or_default(repo, &ENABLED).await,
-        output_device_id: read_setting_or_default(repo, &OUTPUT_DEVICE).await,
-        master_volume: read_setting_or_default(repo, &MASTER_VOLUME).await,
-        also_headphones: read_setting_or_default(repo, &ALSO_HEADPHONES).await,
-    }
+    read_soundboard_settings(repo)
+        .await
+        .unwrap_or_else(|error| {
+            tracing::error!(%error, "soundboard settings cannot be read; the soundboard stays off");
+            SoundboardSettings {
+                enabled: false,
+                ..SoundboardSettings::default()
+            }
+        })
 }
 
 pub async fn save_master_volume(repo: &dyn SettingsRepo, volume: f32) -> Result<(), StorageError> {
@@ -272,12 +286,37 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn an_unreadable_store_loads_the_default_settings() {
+    async fn an_unreadable_store_loads_the_default_settings_with_the_soundboard_off() {
         let store = MemorySettings::new();
+        store.seed(&ENABLED, &true).unwrap();
         store.fail_reads(true);
 
         let loaded = load_soundboard_settings(&store).await;
 
-        assert_eq!(loaded, SoundboardSettings::default());
+        assert_eq!(
+            loaded,
+            SoundboardSettings {
+                enabled: false,
+                ..SoundboardSettings::default()
+            }
+        );
+    }
+
+    #[tokio::test]
+    async fn one_unreadable_key_keeps_the_soundboard_off_though_its_switch_is_stored_on() {
+        for key in [
+            ENABLED.name(),
+            OUTPUT_DEVICE.name(),
+            MASTER_VOLUME.name(),
+            ALSO_HEADPHONES.name(),
+        ] {
+            let store = MemorySettings::new();
+            store.seed(&ENABLED, &true).unwrap();
+            store.fail_reads_for(key);
+
+            let loaded = load_soundboard_settings(&store).await;
+
+            assert!(!loaded.enabled, "{key}");
+        }
     }
 }

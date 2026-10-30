@@ -3,10 +3,7 @@ use std::future::Future;
 use forge_types::IntegrationId;
 
 use crate::settings::core_settings;
-use crate::settings::typed::{
-    Flag, Setting, read_stored_family_setting, read_stored_setting, reset_setting,
-    write_family_setting,
-};
+use crate::settings::typed::{read_stored_family_setting, write_family_setting};
 use crate::{CredentialsRepo, SettingsRepo, StorageError};
 
 pub fn integration_enabled_key(id: &IntegrationId) -> String {
@@ -17,17 +14,15 @@ pub fn integration_enabled_key(id: &IntegrationId) -> String {
     )
 }
 
-fn retired_enabled_setting_of(id: &IntegrationId) -> Option<&'static Setting<Flag>> {
-    match id.as_str() {
-        "midi" => Some(&core_settings::RETIRED_MIDI_ENABLED),
-        "hotkey" => Some(&core_settings::RETIRED_HOTKEY_ENABLED),
-        _ => None,
-    }
-}
-
 fn readable_flag(result: Result<Option<bool>, StorageError>) -> Result<Option<bool>, StorageError> {
     match result {
-        Err(StorageError::UndecodableSetting { .. }) => Ok(None),
+        Err(StorageError::UndecodableSetting { key }) => {
+            tracing::warn!(
+                key,
+                "stored integration switch cannot be decoded; seeding it again"
+            );
+            Ok(None)
+        }
         other => other,
     }
 }
@@ -64,26 +59,12 @@ pub async fn resolve_integration_enabled<F>(
 where
     F: Future<Output = Result<bool, StorageError>> + Send,
 {
-    let retired = retired_enabled_setting_of(id);
-    let resolved = match stored_integration_enabled(settings, id).await? {
-        Some(enabled) => enabled,
-        None => {
-            let retired_value = match retired {
-                Some(setting) => readable_flag(read_stored_setting(settings, setting).await)?,
-                None => None,
-            };
-            let seeded = match retired_value {
-                Some(enabled) => enabled,
-                None => seed_when_unresolved.await?,
-            };
-            set_integration_enabled(settings, id, seeded).await?;
-            seeded
-        }
-    };
-    if let Some(setting) = retired {
-        reset_setting(settings, setting).await?;
+    if let Some(enabled) = stored_integration_enabled(settings, id).await? {
+        return Ok(enabled);
     }
-    Ok(resolved)
+    let seeded = seed_when_unresolved.await?;
+    set_integration_enabled(settings, id, seeded).await?;
+    Ok(seeded)
 }
 
 pub async fn has_credentials_for(
@@ -149,8 +130,6 @@ mod tests {
     }
 
     const NEW_TWITCH: &str = "integration.enabled.twitch";
-    const NEW_MIDI: &str = "integration.enabled.midi";
-    const NEW_HOTKEY: &str = "integration.enabled.hotkey";
 
     fn id(raw: &'static str) -> IntegrationId {
         IntegrationId::from_static(raw)
@@ -197,62 +176,11 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn a_legacy_switch_seeds_the_new_state_and_is_deleted() {
-        for (integration, legacy, new_key, legacy_value, expected) in [
-            ("midi", "midi.enabled", NEW_MIDI, "false", false),
-            ("hotkey", "hotkey.enabled", NEW_HOTKEY, "true", true),
-        ] {
-            let settings = settings_with(&[(legacy, legacy_value)]);
-            let calls = AtomicUsize::new(0);
-
-            let enabled =
-                resolve_integration_enabled(&settings, &id(integration), probe(!expected, &calls))
-                    .await
-                    .unwrap();
-
-            assert_eq!(enabled, expected, "{integration}");
-            assert_eq!(calls.load(Ordering::SeqCst), 0, "{integration}: probe ran");
-            assert_eq!(value_of(&settings, new_key), Some(expected.to_string()));
-            assert_eq!(
-                value_of(&settings, legacy),
-                None,
-                "{integration}: legacy key kept"
-            );
-        }
-    }
-
-    #[tokio::test]
-    async fn a_legacy_switch_left_beside_a_stored_choice_is_deleted_without_overriding_it() {
-        let settings = settings_with(&[(NEW_MIDI, "true"), ("midi.enabled", "false")]);
-        let calls = AtomicUsize::new(0);
-
-        let enabled = resolve_integration_enabled(&settings, &id("midi"), probe(false, &calls))
-            .await
-            .unwrap();
-
-        assert!(enabled);
-        assert_eq!(value_of(&settings, "midi.enabled"), None);
-    }
-
-    #[tokio::test]
-    async fn a_legacy_key_of_another_integration_is_neither_read_nor_deleted() {
-        let settings = settings_with(&[("midi.enabled", "true")]);
-        let calls = AtomicUsize::new(0);
-
-        let enabled = resolve_integration_enabled(&settings, &id("twitch"), probe(false, &calls))
-            .await
-            .unwrap();
-
-        assert!(!enabled);
-        assert_eq!(value_of(&settings, "midi.enabled").as_deref(), Some("true"));
-    }
-
-    #[tokio::test]
     async fn resolving_again_reuses_the_seeded_answer_without_probing() {
-        let settings = settings_with(&[("hotkey.enabled", "false")]);
+        let settings = MemorySettings::new();
         let calls = AtomicUsize::new(0);
 
-        let first = resolve_integration_enabled(&settings, &id("hotkey"), probe(true, &calls))
+        let first = resolve_integration_enabled(&settings, &id("hotkey"), probe(false, &calls))
             .await
             .unwrap();
         let snapshot = settings.rows();
@@ -261,7 +189,7 @@ mod tests {
             .unwrap();
 
         assert_eq!((first, second), (false, false));
-        assert_eq!(calls.load(Ordering::SeqCst), 0);
+        assert_eq!(calls.load(Ordering::SeqCst), 1);
         assert_eq!(settings.rows(), snapshot);
     }
 

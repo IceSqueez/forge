@@ -103,11 +103,14 @@ pub async fn apply_pack_import(
         Err(e) => Err(e),
     };
     match ran {
-        Ok(()) => Ok(PackImportOutcome {
-            safety_snapshot,
-            written: import.written,
-            skipped: import.skipped,
-        }),
+        Ok(()) => {
+            import.undo.settle_overlay_dirs().await;
+            Ok(PackImportOutcome {
+                safety_snapshot,
+                written: import.written,
+                skipped: import.skipped,
+            })
+        }
         Err(cause) => {
             let journal = std::mem::take(&mut import.undo);
             match journal.roll_back(provider.as_ref()).await {

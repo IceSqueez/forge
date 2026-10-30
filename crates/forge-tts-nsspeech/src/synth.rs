@@ -30,7 +30,7 @@ pub(crate) enum NsSpeechRequest {
 pub(crate) fn spawn_worker() -> mpsc::Sender<NsSpeechRequest> {
     let (tx, rx) = mpsc::channel::<NsSpeechRequest>();
     std::thread::spawn(move || {
-        // SAFETY: created and used only on this dedicated thread; AVFoundation delivers
+        // SAFETY: the synthesizer is created and used only on this worker thread and has no init preconditions.
         let synth = unsafe { objc2_avf_audio::AVSpeechSynthesizer::new() };
         worker_loop(synth, rx);
     });
@@ -91,10 +91,11 @@ fn run_synthesis(
     let block: block2::RcBlock<dyn Fn(NonNull<AVAudioBuffer>)> =
         block2::RcBlock::new(move |raw_buf: NonNull<AVAudioBuffer>| {
             objc2::rc::autoreleasepool(|_| {
-                // SAFETY: writeUtterance:toBufferCallback: always delivers AVAudioPCMBuffer;
+                // SAFETY: writeUtterance:toBufferCallback: always delivers an AVAudioPCMBuffer, alive for this call.
                 let pcm: &AVAudioPCMBuffer =
                     unsafe { &*(raw_buf.as_ptr() as *const AVAudioPCMBuffer) };
 
+                // SAFETY: `pcm` is a live buffer and frameLength is a plain property read.
                 let frame_count = unsafe { pcm.frameLength() } as usize;
 
                 let (mutex, cvar) = &*shared_cb;
@@ -106,18 +107,22 @@ fn run_synthesis(
                     return;
                 }
 
+                // SAFETY: `pcm` is a live buffer and format is a plain property read.
                 let fmt = unsafe { pcm.format() };
+                // SAFETY: `fmt` is retained above and sampleRate is a plain property read.
                 let sr = unsafe { fmt.sampleRate() };
+                // SAFETY: `fmt` is retained above and channelCount is a plain property read.
                 let ch = unsafe { fmt.channelCount() };
                 state.sample_rate = sr as u32;
                 state.channels = ch;
 
                 let channel_count = ch as usize;
-                // SAFETY: each channel pointer is valid for `frameLength` samples while the buffer is alive.
+                // SAFETY: `pcm` is a live buffer; a null result for a non-float format is checked below.
                 let float_channels = unsafe { pcm.floatChannelData() };
                 if !float_channels.is_null() {
                     for frame in 0..frame_count {
                         for channel in 0..channel_count {
+                            // SAFETY: `channel` is below channelCount and `frame` below frameLength of this live buffer.
                             let sample =
                                 unsafe { *(*float_channels.add(channel)).as_ptr().add(frame) };
                             state.samples.push(
@@ -128,7 +133,7 @@ fn run_synthesis(
                     }
                     return;
                 }
-                // SAFETY: each channel pointer is valid for `frameLength` samples while the buffer is alive.
+                // SAFETY: `pcm` is a live buffer; a null result for a non-int16 format is checked below.
                 let int_channels = unsafe { pcm.int16ChannelData() };
                 if int_channels.is_null() {
                     state.done = true;
@@ -137,6 +142,7 @@ fn run_synthesis(
                 }
                 for frame in 0..frame_count {
                     for channel in 0..channel_count {
+                        // SAFETY: `channel` is below channelCount and `frame` below frameLength of this live buffer.
                         let sample = unsafe { *(*int_channels.add(channel)).as_ptr().add(frame) };
                         state.samples.push(sample);
                     }
@@ -146,9 +152,11 @@ fn run_synthesis(
 
     let prepared: Result<(), NsSpeechError> = objc2::rc::autoreleasepool(|_| {
         let ns_text = NSString::from_str(&req.text);
+        // SAFETY: `ns_text` is a valid NSString alive across the call.
         let utterance = unsafe { AVSpeechUtterance::speechUtteranceWithString(&ns_text) };
 
         let ns_voice_id = NSString::from_str(&req.voice_id.0);
+        // SAFETY: `ns_voice_id` is a valid NSString alive across the call.
         let voice_opt = unsafe { AVSpeechSynthesisVoice::voiceWithIdentifier(&ns_voice_id) };
         let Some(voice) = voice_opt else {
             return Err(NsSpeechError::InvalidVoice(req.voice_id.clone()));
@@ -158,11 +166,12 @@ fn run_synthesis(
 
         let apple_rate = crate::synth::rate_apple_from_multiplier(req.rate_multiplier);
         let pitch_mult = crate::synth::pitch_mult_from_semitones(req.pitch_semitones);
-        // SAFETY: simple c_float property setters, no aliasing or lifetime concerns.
+        // SAFETY: plain float property setter on the utterance owned by this closure.
         unsafe { utterance.setRate(apple_rate) };
+        // SAFETY: plain float property setter on the utterance owned by this closure.
         unsafe { utterance.setPitchMultiplier(pitch_mult) };
 
-        // SAFETY: the block pointer is valid for the RcBlock's lifetime, which outlives
+        // SAFETY: the synthesizer copies the block on write, and `block` stays alive until this function waits out completion.
         unsafe {
             synth.writeUtterance_toBufferCallback(&utterance, block2::RcBlock::as_ptr(&block));
         }

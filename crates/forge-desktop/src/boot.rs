@@ -547,6 +547,16 @@ pub async fn build_runtime(inputs: RuntimeInputs) -> Result<RuntimeHandles, Boot
     delivery_hub
         .set_overlay_connect_listener(Arc::new(OverlayConnectFanout::new(connect_listeners)));
     donations.spawn_catch_up_release(Arc::new(donation_audience));
+    match forge_transfer::sweep_abandoned_overlay_imports(
+        backend.overlay_repo().as_ref(),
+        &overlays.root().await,
+    )
+    .await
+    {
+        Ok(0) => {}
+        Ok(removed) => tracing::info!(removed, "abandoned overlay imports removed"),
+        Err(error) => tracing::warn!(%error, "abandoned overlay imports could not be swept"),
+    }
     let overlay_pass = overlays.materialize_all(overlay_samples.as_ref()).await;
     match &overlay_pass {
         Ok(pass) => tracing::info!(

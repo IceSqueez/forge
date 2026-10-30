@@ -236,6 +236,9 @@ event_loss_consumer_observer = Other views
 event_loss_consumer_ui_events = App views
 event_loss_consumer_ui_chat_feed = Chat feed
 event_loss_consumer_ui_chat_display = Chat feed display
+event_loss_consumer_twitch_event_relay = Twitch events
+event_loss_consumer_youtube_event_relay = YouTube events
+event_loss_consumer_kick_event_relay = Kick events
 
 ## Home - connections strip
 

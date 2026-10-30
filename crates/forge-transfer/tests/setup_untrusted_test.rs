@@ -300,6 +300,8 @@ fn overlay_carrying(name: &str) -> OverlayDocument {
     }
 }
 
+const PENDING_IMPORT_MARKER: &str = ".forge-import-pending";
+
 fn file_named_anywhere(root: &Path, name: &str) -> bool {
     let mut pending = vec![root.to_path_buf()];
     while let Some(dir) = pending.pop() {
@@ -1145,6 +1147,85 @@ async fn a_setup_import_whose_commit_fails_puts_back_the_overlay_file_it_replace
         std::fs::read(directory.join(PAYLOAD_NAME)).unwrap(),
         b"local bytes"
     );
+}
+
+#[tokio::test]
+async fn a_finished_setup_import_keeps_its_overlay_folder_and_clears_the_pending_marker() {
+    let store = Store::open().await;
+    let documents = setup_of(PackDocuments {
+        overlays: vec![overlay_carrying(PAYLOAD_NAME)],
+        ..empty_configuration()
+    });
+    let path = bundle(
+        store.data_dir(),
+        &documents,
+        &[(OVERLAY_FILE, OVERLAY_BYTES)],
+    );
+
+    store.import(path).await.unwrap();
+
+    let overlays = store.data_dir().join(OVERLAYS_DIR_NAME);
+    assert!(file_named_anywhere(&overlays, PAYLOAD_NAME));
+    assert!(!file_named_anywhere(&overlays, PENDING_IMPORT_MARKER));
+}
+
+#[tokio::test]
+async fn a_rolled_back_setup_import_leaves_neither_its_overlay_folder_nor_a_pending_marker() {
+    let store = Store::open().await;
+    store.refuse("INSERT", "overlays").await;
+    let documents = setup_of(PackDocuments {
+        overlays: vec![overlay_carrying(PAYLOAD_NAME)],
+        ..empty_configuration()
+    });
+    let path = bundle(
+        store.data_dir(),
+        &documents,
+        &[(OVERLAY_FILE, OVERLAY_BYTES)],
+    );
+
+    let failed = store.import(path).await;
+
+    assert!(failed.is_err(), "{failed:?}");
+    let leftovers = std::fs::read_dir(store.data_dir().join(OVERLAYS_DIR_NAME))
+        .map(Iterator::count)
+        .unwrap_or(0);
+    assert_eq!(leftovers, 0);
+}
+
+#[tokio::test]
+async fn importing_over_an_existing_overlay_folder_never_marks_it_as_pending() {
+    let store = Store::open().await;
+    let local = store
+        .provider
+        .overlay_repo()
+        .create("Escaper", "overlay.alert", 1)
+        .await
+        .unwrap();
+    let directory = store
+        .data_dir()
+        .join(OVERLAYS_DIR_NAME)
+        .join(local.id.as_str());
+    std::fs::create_dir_all(&directory).unwrap();
+    std::fs::write(directory.join("local.css"), b"local bytes").unwrap();
+    store.refuse("UPDATE", "overlays").await;
+    let documents = setup_of(PackDocuments {
+        overlays: vec![OverlayDocument {
+            id: local.id.as_str().to_owned(),
+            ..overlay_carrying(PAYLOAD_NAME)
+        }],
+        ..empty_configuration()
+    });
+    let path = bundle(
+        store.data_dir(),
+        &documents,
+        &[(OVERLAY_FILE, OVERLAY_BYTES)],
+    );
+
+    let failed = store.import(path).await;
+
+    assert!(failed.is_err(), "{failed:?}");
+    assert!(!directory.join(PENDING_IMPORT_MARKER).exists());
+    assert!(directory.join("local.css").exists());
 }
 
 #[tokio::test]

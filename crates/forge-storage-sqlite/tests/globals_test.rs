@@ -1,7 +1,7 @@
 #![allow(clippy::expect_used)]
 use std::sync::Arc;
 
-use forge_storage::{GlobalsExport, GlobalsRepo, StorageError};
+use forge_storage::{DataProvider, GlobalsExport, GlobalsRepo, StorageError};
 use forge_storage_sqlite::{SqliteBackend, SqliteGlobalsRepo, apply_migrations};
 use forge_types::Variant;
 
@@ -43,6 +43,27 @@ async fn peek_reads_the_value_without_counting_a_read() {
     let entries = repo.list().await.expect("list");
     let entry = entries.iter().find(|e| e.name == "x").expect("entry");
     assert_eq!((seen, entry.reads), (Some(Variant::Int(3)), 0));
+}
+
+#[tokio::test]
+async fn shutting_down_stores_reads_not_flushed_yet() {
+    let (dir, backend) = setup_file_backed().await;
+    backend
+        .set("counted", Variant::Int(1), true)
+        .await
+        .expect("set");
+    backend.get("counted").await.expect("get");
+    backend.get("counted").await.expect("get");
+
+    backend.shutdown().await;
+
+    let url = format!("sqlite://{}", dir.path().join("test.sqlite").display());
+    let pool = sqlx::SqlitePool::connect(&url).await.expect("reopen");
+    let reads: i64 = sqlx::query_scalar("SELECT reads FROM globals WHERE name = 'counted'")
+        .fetch_one(&pool)
+        .await
+        .expect("row");
+    assert_eq!(reads, 2);
 }
 
 #[tokio::test]

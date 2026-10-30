@@ -11,12 +11,13 @@ use forge_runtime::{
     RunningIntegration, TaskGroup, spawn_chat_send_router,
 };
 use forge_storage::{
-    CredentialsRepo, DataProvider, SettingsRepo, SoundboardClipsRepo, StorageError,
-    TriggerInstanceRepo, has_credentials_for, read_setting_or_default,
+    CredentialsRepo, DataProvider, Flag, Setting, SettingsRepo, SoundboardClipsRepo, StorageError,
+    TriggerInstanceRepo, has_credentials_for, read_setting, read_setting_or_default,
 };
 use forge_types::{IntegrationId, PlatformId};
 use tokio::sync::mpsc;
 
+use crate::event_loss::{KICK_EVENT_RELAY, TWITCH_EVENT_RELAY, YOUTUBE_EVENT_RELAY};
 use crate::integration_start_errors::{
     hotkey_start_error, kick_start_error, midi_start_error, twitch_start_error, youtube_start_error,
 };
@@ -100,8 +101,13 @@ impl IntegrationFactory<BuiltinObject> for TwitchFactory {
             .await
             .map_err(|e| twitch_start_error(&e))?;
         let chat_platform = session.chat_platform();
-        let event_bridge =
-            spawn_event_bridge(publisher(&self.bus), chat_platform.events(), "twitch");
+        let event_bridge = spawn_event_bridge(
+            publisher(&self.bus),
+            chat_platform
+                .events()
+                .recording_lag(self.bus.relay_lag(TWITCH_EVENT_RELAY)),
+            "twitch",
+        );
         let mut tasks = spawn_chat_send_router(
             Arc::clone(&self.bus),
             Arc::clone(&chat_platform),
@@ -197,7 +203,9 @@ impl IntegrationFactory<BuiltinObject> for YoutubeFactory {
         let mut tasks = TaskGroup::default();
         tasks.track(spawn_event_bridge(
             publisher(&self.bus),
-            chat_platform.events(),
+            chat_platform
+                .events()
+                .recording_lag(self.bus.relay_lag(YOUTUBE_EVENT_RELAY)),
             "youtube",
         ));
         tasks.track(spawn_connect(Arc::clone(&chat_platform), "youtube"));
@@ -379,7 +387,9 @@ impl IntegrationFactory<BuiltinObject> for KickFactory {
         let bus = publisher(&self.bus);
         tasks.track(spawn_event_bridge(
             Arc::clone(&bus),
-            chat_platform.events(),
+            chat_platform
+                .events()
+                .recording_lag(self.bus.relay_lag(KICK_EVENT_RELAY)),
             "kick",
         ));
         tasks.track(spawn_connect(chat_platform, "kick"));
@@ -458,6 +468,19 @@ impl ObsFactory {
     }
 }
 
+async fn connects_on_launch(settings: &dyn SettingsRepo, setting: &Setting<Flag>) -> bool {
+    read_setting(settings, setting)
+        .await
+        .unwrap_or_else(|error| {
+            tracing::warn!(
+                key = setting.name(),
+                %error,
+                "connect on launch cannot be read; staying disconnected"
+            );
+            false
+        })
+}
+
 #[async_trait]
 impl IntegrationFactory<BuiltinObject> for ObsFactory {
     fn id(&self) -> IntegrationId {
@@ -479,7 +502,7 @@ impl IntegrationFactory<BuiltinObject> for ObsFactory {
             async move { seed.disconnect_live().await }
         }));
         if seed.live().is_some()
-            || !read_setting_or_default(self.settings.as_ref(), &OBS_CONNECT_ON_LAUNCH).await
+            || !connects_on_launch(self.settings.as_ref(), &OBS_CONNECT_ON_LAUNCH).await
         {
             return Ok(running);
         }
@@ -553,7 +576,7 @@ impl IntegrationFactory<BuiltinObject> for VTubeFactory {
             async move { seed.disconnect_live().await }
         }));
         if seed.live().is_some()
-            || !read_setting_or_default(self.settings.as_ref(), &VTUBE_CONNECT_ON_LAUNCH).await
+            || !connects_on_launch(self.settings.as_ref(), &VTUBE_CONNECT_ON_LAUNCH).await
         {
             return Ok(running);
         }
@@ -835,6 +858,7 @@ mod tests {
     use forge_hotkey::testing::test_client;
     use forge_hotkey::vocabulary::event_kinds;
     use forge_storage::soundboard::MockSoundboardClipsRepo;
+    use forge_storage::test_support::MemorySettings;
     use forge_storage::trigger_instance::MockTriggerInstanceRepo;
     use forge_types::{PermissionRung, PlatformScope, TriggerInstance, TriggerInstanceId, Variant};
 
@@ -922,5 +946,19 @@ mod tests {
                 StartRemedy::SignIn
             )
         );
+    }
+
+    #[tokio::test]
+    async fn connecting_on_launch_stays_off_when_its_switch_cannot_be_read() {
+        for setting in [&OBS_CONNECT_ON_LAUNCH, &VTUBE_CONNECT_ON_LAUNCH] {
+            let settings = MemorySettings::new();
+            settings.seed(setting, &true).unwrap();
+            let stored = connects_on_launch(&settings, setting).await;
+
+            settings.fail_reads_for(setting.name());
+            let unreadable = connects_on_launch(&settings, setting).await;
+
+            assert_eq!((stored, unreadable), (true, false), "{}", setting.name());
+        }
     }
 }

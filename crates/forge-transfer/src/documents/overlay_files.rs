@@ -11,6 +11,8 @@ use crate::documents::model::{DocumentConfig, OverlayFileDocument};
 use crate::documents::undo::Undo;
 use crate::error::TransferError;
 
+pub(crate) const PENDING_IMPORT_MARKER: &str = ".forge-import-pending";
+
 pub(crate) async fn place_overlay_files(
     overlay_root: &Path,
     id: &OverlayId,
@@ -32,6 +34,7 @@ pub(crate) async fn place_overlay_files(
     if !tokio::fs::try_exists(&directory).await? {
         tokio::fs::create_dir_all(&directory).await?;
         record(Undo::OverlayDir(directory.clone()));
+        tokio::fs::write(directory.join(PENDING_IMPORT_MARKER), []).await?;
     }
     for file in files {
         let segments = safe_segments(&file.name).ok_or_else(|| unsafe_name(&file.name))?;

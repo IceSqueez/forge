@@ -3,6 +3,7 @@ mod documents;
 mod error;
 mod full;
 mod messages;
+mod overlay_import_sweep;
 mod pack;
 mod safety_copies;
 mod scheduled;
@@ -36,6 +37,7 @@ pub use full::{
     write_scheduled_backup_unless_unchanged,
 };
 pub use messages::TRANSFER_MESSAGES;
+pub use overlay_import_sweep::sweep_abandoned_overlay_imports;
 pub use pack::{
     ExecutableContent, PACK_STAGING_DIR_NAME, PackConflict, PackExportRequest, PackImportLimit,
     PackImportOutcome, PackImportPlan, PackImportRequest, PackItemKey, PackItemKind, PackManifest,

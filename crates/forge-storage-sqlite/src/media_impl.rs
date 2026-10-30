@@ -1,3 +1,4 @@
+use std::collections::HashSet;
 use std::io::Read as _;
 use std::io::Write as _;
 use std::path::{Path, PathBuf};
@@ -20,7 +21,7 @@ const BLOB_FILE_EXTENSION_SEPARATOR: char = '.';
 const INCOMING_FILE_PREFIX: &str = ".incoming-";
 const INCOMING_NONCE_BYTES: usize = 8;
 const IMPORT_SNIFF_WINDOW_BYTES: u64 = 4096;
-const STALE_INCOMING_AGE: Duration = Duration::from_hours(1);
+const STALE_FILE_AGE: Duration = Duration::from_hours(1);
 
 fn content_digest(bytes: &[u8]) -> [u8; MEDIA_CONTENT_DIGEST_BYTES] {
     let mut hasher = Sha256::new();
@@ -82,24 +83,46 @@ fn write_blob(root: &Path, format: MediaFormat, bytes: &[u8]) -> std::io::Result
     Ok(id)
 }
 
-fn is_stale_incoming(entry: &std::fs::DirEntry, now: SystemTime) -> bool {
-    let is_incoming = entry
-        .file_name()
-        .to_str()
-        .is_some_and(|name| name.starts_with(INCOMING_FILE_PREFIX));
-    if !is_incoming {
-        return false;
-    }
+fn is_stale_file(entry: &std::fs::DirEntry, now: SystemTime) -> bool {
     entry
         .metadata()
         .ok()
         .filter(std::fs::Metadata::is_file)
         .and_then(|metadata| metadata.modified().ok())
         .and_then(|modified| now.duration_since(modified).ok())
-        .is_some_and(|age| age >= STALE_INCOMING_AGE)
+        .is_some_and(|age| age >= STALE_FILE_AGE)
 }
 
-fn remove_stale_incoming(root: &Path) -> std::io::Result<usize> {
+fn is_stale_incoming(entry: &std::fs::DirEntry, now: SystemTime) -> bool {
+    let is_incoming = entry
+        .file_name()
+        .to_str()
+        .is_some_and(|name| name.starts_with(INCOMING_FILE_PREFIX));
+    is_incoming && is_stale_file(entry, now)
+}
+
+fn is_blob_file_name(name: &str) -> bool {
+    name.rsplit_once(BLOB_FILE_EXTENSION_SEPARATOR)
+        .is_some_and(|(id, format)| {
+            MediaFormat::parse(format).is_some() && MediaBlobId::from_stored(id).is_ok()
+        })
+}
+
+fn is_stale_unindexed_blob(
+    entry: &std::fs::DirEntry,
+    indexed: &HashSet<String>,
+    now: SystemTime,
+) -> bool {
+    let name = entry.file_name();
+    name.to_str()
+        .is_some_and(|name| is_blob_file_name(name) && !indexed.contains(name))
+        && is_stale_file(entry, now)
+}
+
+fn remove_entries(
+    root: &Path,
+    is_removable: impl Fn(&std::fs::DirEntry, SystemTime) -> bool,
+) -> std::io::Result<usize> {
     let entries = match std::fs::read_dir(root) {
         Ok(entries) => entries,
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(0),
@@ -109,12 +132,12 @@ fn remove_stale_incoming(root: &Path) -> std::io::Result<usize> {
     let now = SystemTime::now();
     let mut removed = 0;
     for entry in entries.flatten() {
-        if !is_stale_incoming(&entry, now) {
+        if !is_removable(&entry, now) {
             continue;
         }
         match std::fs::remove_file(entry.path()) {
             Ok(()) => removed += 1,
-            Err(error) => tracing::warn!(%error, "stale media staging file could not be removed"),
+            Err(error) => tracing::warn!(%error, "stale media file could not be removed"),
         }
     }
     Ok(removed)
@@ -285,10 +308,30 @@ impl SqliteMediaRepo {
 
     pub async fn sweep_stale_incoming(&self) -> Result<usize, StorageError> {
         let root = self.root.clone();
-        tokio::task::spawn_blocking(move || remove_stale_incoming(&root))
+        tokio::task::spawn_blocking(move || remove_entries(&root, is_stale_incoming))
             .await
             .map_err(task_failure)?
             .map_err(StorageError::Io)
+    }
+
+    pub async fn sweep_unindexed_blobs(&self) -> Result<usize, StorageError> {
+        let rows: Vec<(String, String)> = sqlx::query_as("SELECT id, format FROM media_blobs")
+            .fetch_all(self.db.reader())
+            .await
+            .map_err(SqliteStorageError::Sqlx)?;
+        let indexed: HashSet<String> = rows
+            .into_iter()
+            .map(|(id, format)| format!("{id}{BLOB_FILE_EXTENSION_SEPARATOR}{format}"))
+            .collect();
+        let root = self.root.clone();
+        tokio::task::spawn_blocking(move || {
+            remove_entries(&root, |entry, now| {
+                is_stale_unindexed_blob(entry, &indexed, now)
+            })
+        })
+        .await
+        .map_err(task_failure)?
+        .map_err(StorageError::Io)
     }
 
     async fn index(

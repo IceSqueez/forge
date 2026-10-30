@@ -183,6 +183,8 @@ fn entry(path: &str, bytes: &[u8]) -> ContentEntry {
     }
 }
 
+const PENDING_IMPORT_MARKER: &str = ".forge-import-pending";
+
 fn empty_documents() -> PackDocuments {
     PackDocuments {
         version: PACK_DOCUMENTS_VERSION,
@@ -699,6 +701,41 @@ async fn a_pack_import_whose_commit_fails_removes_the_files_and_media_it_placed(
         store.provider.soundboard_clips_repo().list().await.unwrap(),
         []
     );
+}
+
+#[tokio::test]
+async fn a_finished_pack_import_keeps_its_overlay_folder_and_clears_the_pending_marker() {
+    let store = Store::open().await;
+    let documents = PackDocuments {
+        overlays: vec![overlay_carrying(PAYLOAD_NAME)],
+        ..empty_documents()
+    };
+    let path = bundle(store.data_dir(), &documents, &[(OVERLAY_FILE, b"body {}")]);
+
+    store.import(path).await.unwrap();
+
+    let overlays = store.data_dir().join(OVERLAYS_DIR_NAME);
+    assert!(file_named_anywhere(&overlays, PAYLOAD_NAME));
+    assert!(!file_named_anywhere(&overlays, PENDING_IMPORT_MARKER));
+}
+
+#[tokio::test]
+async fn a_rolled_back_pack_import_leaves_neither_its_overlay_folder_nor_a_pending_marker() {
+    let store = Store::open().await;
+    store.refuse_overlay_inserts().await;
+    let documents = PackDocuments {
+        overlays: vec![overlay_carrying(PAYLOAD_NAME)],
+        ..empty_documents()
+    };
+    let path = bundle(store.data_dir(), &documents, &[(OVERLAY_FILE, b"body {}")]);
+
+    let failed = store.import(path).await;
+
+    assert!(failed.is_err(), "{failed:?}");
+    let leftovers = std::fs::read_dir(store.data_dir().join(OVERLAYS_DIR_NAME))
+        .map(Iterator::count)
+        .unwrap_or(0);
+    assert_eq!(leftovers, 0);
 }
 
 #[tokio::test]

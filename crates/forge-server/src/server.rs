@@ -14,7 +14,7 @@ use forge_events::EventObserver;
 use forge_runtime::{ActionEngineHandle, EventHistory};
 use forge_storage::{
     ActionRepo, CredentialsRepo, GlobalsRepo, OverlayRepo, SettingsRepo, UserGlobalsRepo,
-    read_setting_or_default,
+    read_setting,
 };
 
 use crate::audio_clips::AudioClipStore;
@@ -79,11 +79,11 @@ async fn build_state(config: ServerConfig, bind_addr: SocketAddr) -> Result<AppS
     let auth = AuthState::load(config.auth_required_for_reads, config.credentials.as_ref()).await?;
     auth.set_lan_exposed(is_lan_bind(bind_addr.ip()));
     auth.overlay_token().set_required(
-        read_setting_or_default(
+        read_setting(
             config.settings.as_ref(),
             &settings::HTTP_OVERLAY_REQUIRE_TOKEN,
         )
-        .await,
+        .await?,
     );
     let bus = Arc::clone(&config.event_bus);
     let observer: Arc<dyn EventObserver> = bus.clone();
@@ -575,6 +575,22 @@ pub(crate) mod tests {
         config.overlay_root = std::path::PathBuf::from("/tmp/forge-test-overlays");
         config.additional_origins = additional_origins;
         config
+    }
+
+    #[tokio::test]
+    async fn a_failed_read_of_the_overlay_token_switch_refuses_to_build_a_server() {
+        let settings = mem_settings();
+        settings.fail_reads_for(crate::settings::HTTP_OVERLAY_REQUIRE_TOKEN.name());
+        let started = start_server(loopback_config(
+            Arc::clone(&settings),
+            EPHEMERAL_PORT,
+            Vec::new(),
+        ))
+        .await;
+        let stopped = stopped_server(loopback_config(settings, EPHEMERAL_PORT, Vec::new())).await;
+
+        assert!(matches!(started, Err(ServerError::Storage(_))));
+        assert!(matches!(stopped, Err(ServerError::Storage(_))));
     }
 
     async fn start_on_an_ephemeral_port(

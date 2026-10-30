@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use async_trait::async_trait;
 use forge_storage::globals::{append_bounded, remove_matching, type_mismatch};
 use forge_storage::user_globals::incremented;
@@ -7,15 +9,33 @@ use time::OffsetDateTime;
 
 use crate::epoch::{epoch_ms_now, from_epoch_ms};
 use crate::error::SqliteStorageError;
+use crate::global_read_tally::GlobalReadTally;
 use crate::pool::SqlitePools;
 
 pub struct SqliteGlobalsRepo {
     db: SqlitePools,
+    read_tally: Arc<GlobalReadTally>,
 }
 
 impl SqliteGlobalsRepo {
     pub fn new(db: impl Into<SqlitePools>) -> Self {
-        Self { db: db.into() }
+        Self {
+            db: db.into(),
+            read_tally: Arc::default(),
+        }
+    }
+
+    pub(crate) fn read_tally(&self) -> &Arc<GlobalReadTally> {
+        &self.read_tally
+    }
+
+    fn with_unflushed_reads(&self, mut entries: Vec<GlobalEntry>) -> Vec<GlobalEntry> {
+        for entry in &mut entries {
+            entry.reads = entry
+                .reads
+                .saturating_add(self.read_tally.unflushed(&entry.name));
+        }
+        entries
     }
 }
 
@@ -138,23 +158,11 @@ fn decode_variant(value_json: &str) -> Result<Variant, StorageError> {
 #[async_trait]
 impl GlobalsRepo for SqliteGlobalsRepo {
     async fn get(&self, name: &str) -> Result<Option<Variant>, StorageError> {
-        let row: Option<(String,)> = sqlx::query_as(
-            "UPDATE globals SET reads = reads + 1 \
-             WHERE name = ? AND archived_at IS NULL RETURNING value",
-        )
-        .bind(name)
-        .fetch_optional(self.db.writer())
-        .await
-        .map_err(SqliteStorageError::Sqlx)?;
-
-        let Some((value_json,)) = row else {
-            return Ok(None);
-        };
-
-        let variant: Variant = serde_json::from_str(&value_json)
-            .map_err(|e| SqliteStorageError::Decode(format!("variant decode: {e}")))?;
-
-        Ok(Some(variant))
+        let value = live_value(self.db.reader(), name).await?;
+        if value.is_some() {
+            self.read_tally.count(name);
+        }
+        Ok(value)
     }
 
     async fn peek(&self, name: &str) -> Result<Option<Variant>, StorageError> {
@@ -226,6 +234,7 @@ impl GlobalsRepo for SqliteGlobalsRepo {
         }
 
         tx.commit().await.map_err(SqliteStorageError::Sqlx)?;
+        self.read_tally.rename(old_name, new_name);
         Ok(())
     }
 
@@ -236,6 +245,7 @@ impl GlobalsRepo for SqliteGlobalsRepo {
             .await
             .map_err(SqliteStorageError::Sqlx)?;
 
+        self.read_tally.forget(name);
         Ok(result.rows_affected() > 0)
     }
 
@@ -248,7 +258,7 @@ impl GlobalsRepo for SqliteGlobalsRepo {
         .await
         .map_err(SqliteStorageError::Sqlx)?;
 
-        decode_entries(rows)
+        decode_entries(rows).map(|entries| self.with_unflushed_reads(entries))
     }
 
     async fn list_archived(&self) -> Result<Vec<GlobalEntry>, StorageError> {
@@ -260,7 +270,7 @@ impl GlobalsRepo for SqliteGlobalsRepo {
         .await
         .map_err(SqliteStorageError::Sqlx)?;
 
-        decode_entries(rows)
+        decode_entries(rows).map(|entries| self.with_unflushed_reads(entries))
     }
 
     async fn archive(&self, name: &str) -> Result<bool, StorageError> {

@@ -244,6 +244,9 @@ event_loss_consumer_observer = Інші вікна
 event_loss_consumer_ui_events = Вікна застосунку
 event_loss_consumer_ui_chat_feed = Стрічка чату
 event_loss_consumer_ui_chat_display = Показ стрічки чату
+event_loss_consumer_twitch_event_relay = Події Twitch
+event_loss_consumer_youtube_event_relay = Події YouTube
+event_loss_consumer_kick_event_relay = Події Kick
 
 ## Головна - смуга підключень
 

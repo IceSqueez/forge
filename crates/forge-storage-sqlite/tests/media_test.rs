@@ -641,6 +641,134 @@ async fn sweep_stale_incoming_of_a_root_that_does_not_exist_yet_removes_nothing(
     assert_eq!(repo.sweep_stale_incoming().await.expect("sweep"), 0);
 }
 
+fn wav_file_of(digit: char) -> String {
+    format!("sha256-{}.wav", digit.to_string().repeat(64))
+}
+
+#[tokio::test]
+async fn sweep_unindexed_blobs_keeps_an_old_file_whose_row_exists() {
+    let dir = tempfile::tempdir().expect("temp dir");
+    let (repo, _pool) = direct_repo(dir.path()).await;
+    let blob = repo
+        .store("fixture", TINY_GIF.to_vec())
+        .await
+        .expect("store");
+    assert_eq!(blob.id.as_str(), TINY_GIF_ID);
+    age(&dir.path().join(TINY_GIF_FILE), STALE_INCOMING_AGE * 2);
+
+    let removed = repo.sweep_unindexed_blobs().await.expect("sweep");
+
+    assert_eq!(
+        (removed, entries(dir.path())),
+        (0, vec![TINY_GIF_FILE.to_owned()])
+    );
+}
+
+#[tokio::test]
+async fn sweep_unindexed_blobs_removes_an_old_file_without_a_row() {
+    let dir = tempfile::tempdir().expect("temp dir");
+    let (repo, _pool) = direct_repo(dir.path()).await;
+    staged_file(dir.path(), &wav_file_of('a'), STALE_INCOMING_AGE * 2);
+
+    let removed = repo.sweep_unindexed_blobs().await.expect("sweep");
+
+    assert_eq!((removed, entries(dir.path())), (1, Vec::<String>::new()));
+}
+
+#[tokio::test]
+async fn sweep_unindexed_blobs_matches_a_row_on_its_format_as_well_as_its_id() {
+    let dir = tempfile::tempdir().expect("temp dir");
+    let (repo, _pool) = direct_repo(dir.path()).await;
+    repo.store("fixture", TINY_GIF.to_vec())
+        .await
+        .expect("store");
+    let same_id_other_format = format!("{TINY_GIF_ID}.wav");
+    staged_file(dir.path(), &same_id_other_format, STALE_INCOMING_AGE * 2);
+
+    let removed = repo.sweep_unindexed_blobs().await.expect("sweep");
+
+    assert_eq!(
+        (removed, entries(dir.path())),
+        (1, vec![TINY_GIF_FILE.to_owned()])
+    );
+}
+
+#[tokio::test]
+async fn sweep_unindexed_blobs_keeps_old_files_that_are_not_named_like_blobs() {
+    let dir = tempfile::tempdir().expect("temp dir");
+    let (repo, _pool) = direct_repo(dir.path()).await;
+    let bare_id = wav_file_of('a').replace(".wav", "");
+    let mut names = vec![
+        "notes.txt".to_owned(),
+        "sha256-abc.wav".to_owned(),
+        format!("{bare_id}.exe"),
+        format!("sha1-{}.wav", "a".repeat(64)),
+        format!("sha256-{}.wav", "A".repeat(64)),
+        format!(".incoming-{bare_id}.wav"),
+        bare_id,
+    ];
+    for name in &names {
+        staged_file(dir.path(), name, STALE_INCOMING_AGE * 2);
+    }
+    names.sort();
+
+    let removed = repo.sweep_unindexed_blobs().await.expect("sweep");
+
+    assert_eq!((removed, entries(dir.path())), (0, names));
+}
+
+#[tokio::test]
+async fn sweep_unindexed_blobs_keeps_a_directory_named_like_a_blob() {
+    let dir = tempfile::tempdir().expect("temp dir");
+    let (repo, _pool) = direct_repo(dir.path()).await;
+    std::fs::create_dir(dir.path().join(wav_file_of('a'))).expect("create directory");
+
+    let removed = repo.sweep_unindexed_blobs().await.expect("sweep");
+
+    assert_eq!((removed, entries(dir.path())), (0, vec![wav_file_of('a')]));
+}
+
+#[tokio::test]
+async fn sweep_unindexed_blobs_removes_a_file_only_at_least_an_hour_old() {
+    let dir = tempfile::tempdir().expect("temp dir");
+    let (repo, _pool) = direct_repo(dir.path()).await;
+    let margin = Duration::from_secs(60);
+    staged_file(dir.path(), &wav_file_of('a'), STALE_INCOMING_AGE + margin);
+    staged_file(dir.path(), &wav_file_of('b'), STALE_INCOMING_AGE - margin);
+
+    let removed = repo.sweep_unindexed_blobs().await.expect("sweep");
+
+    assert_eq!((removed, entries(dir.path())), (1, vec![wav_file_of('b')]));
+}
+
+#[tokio::test]
+async fn sweep_unindexed_blobs_of_a_root_that_does_not_exist_yet_removes_nothing() {
+    let dir = tempfile::tempdir().expect("temp dir");
+    let (repo, _pool) = direct_repo(&dir.path().join("absent")).await;
+
+    assert_eq!(repo.sweep_unindexed_blobs().await.expect("sweep"), 0);
+}
+
+#[tokio::test]
+async fn opening_the_backend_sweeps_unindexed_blobs() {
+    let dir = tempfile::tempdir().expect("temp dir");
+    let root = dir.path().join(MEDIA_SUBDIR);
+    std::fs::create_dir(&root).expect("create media root");
+    staged_file(&root, &wav_file_of('a'), STALE_INCOMING_AGE * 2);
+
+    let _backend = SqliteBackend::open_for_test("sqlite::memory:", TEST_KEY, root.clone(), None)
+        .await
+        .expect("open backend");
+
+    tokio::time::timeout(STARTUP_SWEEP_DEADLINE, async {
+        while !entries(&root).is_empty() {
+            tokio::time::sleep(STARTUP_SWEEP_POLL).await;
+        }
+    })
+    .await
+    .expect("the startup sweep never removed the unindexed file");
+}
+
 #[tokio::test]
 async fn opening_the_backend_sweeps_abandoned_staging_files() {
     let dir = tempfile::tempdir().expect("temp dir");

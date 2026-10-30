@@ -9,6 +9,9 @@ use crate::chat_feed_bridge::UI_CHAT_FEED;
 
 pub const UI_EVENTS: &str = "ui_events";
 const UI_CHAT_DISPLAY: &str = "ui_chat_display";
+pub const TWITCH_EVENT_RELAY: &str = "twitch_event_relay";
+pub const YOUTUBE_EVENT_RELAY: &str = "youtube_event_relay";
+pub const KICK_EVENT_RELAY: &str = "kick_event_relay";
 
 #[derive(Default)]
 pub struct EventLoss {
@@ -92,6 +95,9 @@ pub fn consumer_label(consumer: &str) -> String {
         UI_EVENTS => tr!("event_loss_consumer_ui_events"),
         UI_CHAT_FEED => tr!("event_loss_consumer_ui_chat_feed"),
         UI_CHAT_DISPLAY => tr!("event_loss_consumer_ui_chat_display"),
+        TWITCH_EVENT_RELAY => tr!("event_loss_consumer_twitch_event_relay"),
+        YOUTUBE_EVENT_RELAY => tr!("event_loss_consumer_youtube_event_relay"),
+        KICK_EVENT_RELAY => tr!("event_loss_consumer_kick_event_relay"),
         other => other.replace('_', " "),
     }
 }

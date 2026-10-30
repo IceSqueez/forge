@@ -65,6 +65,11 @@ pub struct EventSubscription {
 }
 
 impl EventSubscription {
+    pub fn recording_lag(mut self, lag: Arc<dyn LagRecorder>) -> Self {
+        self.lag = Some(lag);
+        self
+    }
+
     pub async fn next(&mut self) -> Delivery {
         match self.receiver.recv().await {
             Ok(event) => Delivery::Event(event),

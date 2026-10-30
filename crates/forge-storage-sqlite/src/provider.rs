@@ -19,6 +19,7 @@ use tokio::sync::Notify;
 
 use crate::checkpoint_task::spawn_checkpoint_task;
 use crate::error::SqliteStorageError;
+use crate::global_read_tally::spawn_read_flush_task;
 use crate::pool::SqlitePools;
 use crate::retention_task::{RetentionSignals, RetentionTargets, spawn_retention_task};
 use crate::{
@@ -38,6 +39,11 @@ fn spawn_stale_incoming_sweep(media: Arc<SqliteMediaRepo>) {
             Ok(0) => {}
             Ok(removed) => tracing::info!(removed, "stale media staging files removed"),
             Err(error) => tracing::warn!(%error, "stale media staging sweep failed"),
+        }
+        match media.sweep_unindexed_blobs().await {
+            Ok(0) => {}
+            Ok(removed) => tracing::info!(removed, "unindexed media files removed"),
+            Err(error) => tracing::warn!(%error, "unindexed media sweep failed"),
         }
     });
 }
@@ -95,6 +101,7 @@ pub struct SqliteBackend {
 impl Drop for SqliteBackend {
     fn drop(&mut self) {
         self.shutdown.notify_one();
+        self.globals.read_tally().close();
     }
 }
 
@@ -203,8 +210,11 @@ impl SqliteBackend {
         let media = Arc::new(SqliteMediaRepo::new(pool.clone(), media_root));
         spawn_stale_incoming_sweep(Arc::clone(&media));
 
+        let globals = SqliteGlobalsRepo::new(pool.clone());
+        spawn_read_flush_task(Arc::clone(globals.read_tally()), pool.writer().clone());
+
         Self {
-            globals: SqliteGlobalsRepo::new(pool.clone()),
+            globals,
             user_globals: SqliteUserGlobalsRepo::new(pool.clone()),
             settings: SqliteSettingsRepo::new(pool.clone()),
             action: RevisingActionRepo::wrap_cascading_scheduled_runs(
@@ -682,6 +692,9 @@ impl DataProvider for SqliteBackend {
 
     async fn shutdown(&self) {
         self.shutdown.notify_one();
+        let read_tally = self.globals.read_tally();
+        read_tally.close();
+        read_tally.flush(self.pool.writer()).await;
         self.pool.close().await;
     }
 }

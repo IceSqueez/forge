@@ -11,9 +11,7 @@ use forge_storage::settings::{
     DEFAULT_BACKUP_SCHEDULE_ENABLED, DEFAULT_BACKUP_SCHEDULE_INTERVAL_MINUTES,
     DEFAULT_BACKUP_SCHEDULE_KEEP_DAILY_DAYS, DEFAULT_BACKUP_SCHEDULE_KEEP_NEWEST,
 };
-use forge_storage::{
-    Flag, Setting, SettingsRepo, StorageError, read_setting, read_setting_or_default, write_setting,
-};
+use forge_storage::{Flag, Setting, SettingsRepo, StorageError, read_setting, write_setting};
 use time::format_description::well_known::Rfc3339;
 use time::{Duration, OffsetDateTime};
 
@@ -57,15 +55,15 @@ impl ScheduleSettings {
 
     pub(crate) async fn load(repo: &dyn SettingsRepo) -> Result<Self, StorageError> {
         let include = |setting: &'static Setting<Flag>, category: BackupCategory| async move {
-            read_setting_or_default(repo, setting)
+            read_setting(repo, setting)
                 .await
-                .then_some(category)
+                .map(|included| included.then_some(category))
         };
         let optional_categories = [
-            include(&BACKUP_SCHEDULE_INCLUDE_MEDIA, BackupCategory::Media).await,
-            include(&BACKUP_SCHEDULE_INCLUDE_VOICES, BackupCategory::Voices).await,
-            include(&BACKUP_SCHEDULE_INCLUDE_OVERLAYS, BackupCategory::Overlays).await,
-            include(&BACKUP_SCHEDULE_INCLUDE_ASSETS, BackupCategory::Assets).await,
+            include(&BACKUP_SCHEDULE_INCLUDE_MEDIA, BackupCategory::Media).await?,
+            include(&BACKUP_SCHEDULE_INCLUDE_VOICES, BackupCategory::Voices).await?,
+            include(&BACKUP_SCHEDULE_INCLUDE_OVERLAYS, BackupCategory::Overlays).await?,
+            include(&BACKUP_SCHEDULE_INCLUDE_ASSETS, BackupCategory::Assets).await?,
         ];
         let categories = std::iter::once(BackupCategory::Database)
             .chain(optional_categories.into_iter().flatten())
@@ -74,7 +72,7 @@ impl ScheduleSettings {
         let decoded_key = stored_key.as_deref().map(ScheduleKey::decode);
         let key_unreadable = matches!(decoded_key, Some(Err(_)));
         Ok(Self {
-            enabled: read_setting_or_default(repo, &BACKUP_SCHEDULE_ENABLED).await,
+            enabled: read_setting(repo, &BACKUP_SCHEDULE_ENABLED).await?,
             interval_minutes: read_setting(repo, &BACKUP_SCHEDULE_INTERVAL_MINUTES).await?,
             retention: RetentionPolicy {
                 keep_newest: read_setting(repo, &BACKUP_SCHEDULE_KEEP_NEWEST).await?,
@@ -124,8 +122,9 @@ impl Progress {
 
 #[cfg(test)]
 mod tests {
+    use forge_storage::StorageError;
     use forge_storage::settings::core_settings::{
-        BACKUP_SCHEDULE_INCLUDE_ASSETS, BACKUP_SCHEDULE_INCLUDE_MEDIA,
+        BACKUP_SCHEDULE_ENABLED, BACKUP_SCHEDULE_INCLUDE_ASSETS, BACKUP_SCHEDULE_INCLUDE_MEDIA,
         BACKUP_SCHEDULE_INCLUDE_OVERLAYS, BACKUP_SCHEDULE_INCLUDE_VOICES,
         BACKUP_SCHEDULE_INTERVAL_MINUTES, BACKUP_SCHEDULE_KEY, BACKUP_SCHEDULE_LAST_SUCCESS_AT,
     };
@@ -185,6 +184,27 @@ mod tests {
         let loaded = ScheduleSettings::load(&repo).await.unwrap();
 
         assert_eq!(loaded.categories, [BackupCategory::Database]);
+    }
+
+    #[tokio::test]
+    async fn a_failed_read_of_any_schedule_switch_fails_the_load_instead_of_defaulting() {
+        for key in [
+            BACKUP_SCHEDULE_ENABLED.name(),
+            BACKUP_SCHEDULE_INCLUDE_MEDIA.name(),
+            BACKUP_SCHEDULE_INCLUDE_VOICES.name(),
+            BACKUP_SCHEDULE_INCLUDE_OVERLAYS.name(),
+            BACKUP_SCHEDULE_INCLUDE_ASSETS.name(),
+        ] {
+            let repo = MemorySettings::new();
+            repo.fail_reads_for(key);
+
+            let loaded = ScheduleSettings::load(&repo).await;
+
+            assert!(
+                matches!(loaded, Err(StorageError::Connection { .. })),
+                "{key}"
+            );
+        }
     }
 
     #[tokio::test]

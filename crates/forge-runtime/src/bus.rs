@@ -13,6 +13,7 @@ use arc_swap::ArcSwap;
 use async_trait::async_trait;
 use forge_events::{
     DeliveryLane, Event, EventChannel, EventObserver, EventPublisher, EventSubscription,
+    LagRecorder,
 };
 use forge_registry::TriggerRegistry;
 use forge_storage::{EventLogRepo, StorageError};
@@ -227,6 +228,10 @@ impl EventBus {
     pub fn subscribe_observer(&self, consumer: &'static str) -> EventSubscription {
         self.observers
             .subscribe_recording(self.loss.counters(consumer, DeliveryTier::Observer))
+    }
+
+    pub fn relay_lag(&self, consumer: &'static str) -> Arc<dyn LagRecorder> {
+        self.loss.counters(consumer, DeliveryTier::Observer)
     }
 
     pub fn subscribe_critical(&self, consumer: &'static str) -> CriticalSubscription {

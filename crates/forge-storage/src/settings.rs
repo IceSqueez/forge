@@ -403,7 +403,13 @@ pub async fn take_credentials_key_loss(
     let stranded = match read_stored_setting(repo, &core_settings::CREDENTIALS_KEY_LOSS).await {
         Ok(Some(stranded)) => Some(stranded),
         Ok(None) => return Ok(None),
-        Err(StorageError::UndecodableSetting { .. }) => None,
+        Err(StorageError::UndecodableSetting { key }) => {
+            tracing::warn!(
+                key,
+                "stored credentials key loss record cannot be decoded; clearing it"
+            );
+            None
+        }
         Err(error) => return Err(error),
     };
     reset_setting(repo, &core_settings::CREDENTIALS_KEY_LOSS).await?;

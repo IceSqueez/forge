@@ -378,20 +378,6 @@ pub const SAFETY_COPIES_DELETE_AFTER_DAYS: Setting<Count> = Setting::new(
     Withheld,
 );
 
-pub const RETIRED_MIDI_ENABLED: Setting<Flag> = Setting::new(
-    "midi.enabled",
-    Flag { default: false },
-    MachineLocal,
-    Verbatim,
-);
-
-pub const RETIRED_HOTKEY_ENABLED: Setting<Flag> = Setting::new(
-    "hotkey.enabled",
-    Flag { default: false },
-    MachineLocal,
-    Verbatim,
-);
-
 pub const CORE_SETTINGS: &[SettingSpec] = &[
     THEME.spec(),
     ACCENT.spec(),
@@ -423,8 +409,6 @@ pub const CORE_SETTINGS: &[SettingSpec] = &[
     CREDENTIALS_KEY_LOSS.spec(),
     SERVER_OVERLAY_ROOT.spec(),
     INTEGRATION_ENABLED.spec(),
-    RETIRED_MIDI_ENABLED.spec(),
-    RETIRED_HOTKEY_ENABLED.spec(),
     VOICE_ASSIGNMENT_STRATEGY.spec(),
     BACKUP_SCHEDULE_ENABLED.spec(),
     BACKUP_SCHEDULE_INTERVAL_MINUTES.spec(),

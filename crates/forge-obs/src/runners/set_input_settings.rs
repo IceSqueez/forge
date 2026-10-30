@@ -115,6 +115,7 @@ mod tests {
     use super::*;
     use crate::runners::test_support::{MockSink, RecordingSink, make_ctx};
     use forge_registry::RegistryError;
+    use forge_types::SubActionOutcome;
     use forge_types::Variant;
     use serde_json::json;
     use std::collections::BTreeMap;

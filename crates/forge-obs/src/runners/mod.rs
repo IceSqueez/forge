@@ -452,10 +452,8 @@ mod tests {
             let (telemetry, extra) = runner.execute(&config, &make_ctx(&stack)).await;
             assert_eq!(
                 telemetry.outcome,
-                SubActionOutcome::Failed(forge_types::UserText::unlocalized(
-                    ObsError::Disconnected.to_string()
-                )),
-                "{id} dropped the reason OBS gave for the failure",
+                step_failure::failed(&ObsError::Disconnected),
+                "{id} did not report the sink failure as a catalogued code",
             );
             assert_eq!(telemetry.kind, id);
             assert!(extra.is_none(), "{id} produced an arg stack");

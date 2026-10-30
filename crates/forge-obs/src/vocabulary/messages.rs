@@ -106,23 +106,102 @@ pub(crate) fn unresponsive() -> MessageRef {
 }
 #[cfg(test)]
 mod tests {
+    use std::collections::{BTreeMap, BTreeSet};
+
     use super::*;
 
-    #[test]
-    fn every_code_the_crate_emits_is_listed_in_the_catalog() {
-        for emitted in [
+    fn ftl_variables(source: &str) -> BTreeMap<String, BTreeSet<String>> {
+        let mut found: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
+        let mut current = None;
+        for line in source.lines() {
+            if let Some((id, _)) = line.split_once(" = ").filter(|_| line.starts_with("msg-")) {
+                current = Some(id.trim().to_owned());
+                found.entry(id.trim().to_owned()).or_default();
+            }
+            let Some(id) = &current else { continue };
+            let mut rest = line;
+            while let Some(at) = rest.find('$') {
+                rest = &rest[at + 1..];
+                let name: String = rest
+                    .chars()
+                    .take_while(|c| c.is_ascii_alphanumeric() || *c == '_' || *c == '-')
+                    .collect();
+                found.get_mut(id).unwrap().insert(name);
+            }
+        }
+        found
+    }
+
+    fn every_constructor() -> Vec<MessageRef> {
+        vec![
             connect_refused(),
             unreachable(),
             password_rejected(),
             connect_failed(),
+            connect_failed_with("c"),
             connection_lost(),
             unresponsive(),
-        ] {
-            assert!(
-                OBS_MESSAGES.codes.contains(emitted.code()),
-                "{} is emitted but not catalogued",
-                emitted.code()
-            );
+            not_connected(),
+            request_timed_out(),
+            request_rejected("GetVersion", "c"),
+            protocol_error("c"),
+            payload_invalid("c"),
+            studio_mode_inactive(),
+            MessageRef::new(HEALTH_STREAM),
+            MessageRef::new(HEALTH_RECORDING),
+            MessageRef::new(HEALTH_CPU_FPS),
+            MessageRef::new(HEALTH_DROPPED_FRAMES),
+        ]
+    }
+
+    #[test]
+    fn every_constructor_code_is_catalogued_and_localized_in_both_languages_with_matching_variables()
+     {
+        let en = ftl_variables(OBS_MESSAGES.en_ftl);
+        let uk = ftl_variables(OBS_MESSAGES.uk_ftl);
+        for message in every_constructor() {
+            let code = message.code();
+            assert!(OBS_MESSAGES.codes.contains(code), "{code} not catalogued");
+            let passed: BTreeSet<String> = message.args().map(|(n, _)| n.to_owned()).collect();
+            for (language, ftl) in [("en", &en), ("uk", &uk)] {
+                let used = ftl
+                    .get(&code.ftl_key())
+                    .unwrap_or_else(|| panic!("{code} missing in {language}"));
+                assert_eq!(used, &passed, "{code} variables in {language}");
+            }
         }
+    }
+
+    #[test]
+    fn every_catalogued_code_has_a_constructor_in_the_table() {
+        let produced: BTreeSet<MessageCode> = every_constructor()
+            .iter()
+            .map(|m| m.code().clone())
+            .collect();
+        let catalogued: BTreeSet<MessageCode> = OBS_MESSAGES.codes.iter().cloned().collect();
+        assert_eq!(produced, catalogued);
+    }
+
+    #[test]
+    fn english_and_ukrainian_declare_the_same_messages_with_the_same_variables() {
+        assert_eq!(
+            ftl_variables(OBS_MESSAGES.en_ftl),
+            ftl_variables(OBS_MESSAGES.uk_ftl)
+        );
+    }
+
+    #[test]
+    fn upstream_cause_text_is_carried_as_detail_and_never_as_an_argument() {
+        let failure = request_rejected("SetInputVolume", "ResourceNotFound: no such input");
+
+        assert_eq!(
+            failure.detail().map(|d| d.as_str()),
+            Some("ResourceNotFound: no such input")
+        );
+        assert!(
+            failure
+                .args()
+                .all(|(_, v)| !format!("{v:?}").contains("no such input"))
+        );
     }
 }

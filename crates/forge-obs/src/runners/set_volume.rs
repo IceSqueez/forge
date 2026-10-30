@@ -97,6 +97,7 @@ impl SubActionRunner for SetVolumeRunner {
 mod tests {
     use super::*;
     use crate::runners::test_support::{MockSink, RecordingSink, make_ctx};
+    use forge_types::SubActionOutcome;
     use forge_types::Variant;
     use std::collections::BTreeMap;
 

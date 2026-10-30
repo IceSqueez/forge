@@ -78,6 +78,8 @@ pub trait OverlayRepo: Send + Sync {
 
     async fn save(&self, definition: &OverlayDefinition) -> Result<(), StorageError>;
 
+    async fn restore(&self, definition: &OverlayDefinition) -> Result<(), StorageError>;
+
     async fn set_enabled(&self, id: &OverlayId, enabled: bool) -> Result<bool, StorageError>;
 
     async fn delete(&self, id: &OverlayId) -> Result<bool, StorageError>;

@@ -332,6 +332,19 @@ async fn set_enabled_toggles_flag() {
 }
 
 #[tokio::test]
+async fn set_enabled_on_a_missing_instance_returns_not_found() {
+    let backend = setup().await;
+
+    let err = backend
+        .trigger_instance_repo()
+        .set_enabled(TriggerInstanceId::new(), true)
+        .await
+        .expect_err("a missing instance must not be silently ignored");
+
+    assert!(matches!(err, StorageError::NotFound { .. }), "got {err:?}");
+}
+
+#[tokio::test]
 async fn upsert_default_inserts_on_first_call() {
     let backend = setup().await;
     let repo = backend.trigger_instance_repo();

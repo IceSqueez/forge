@@ -6,6 +6,10 @@ use forge_paths::{
 use forge_storage::DATABASE_FILE_NAME;
 
 use crate::bundle::document_layout::{PACK_LAYOUT, SETUP_LAYOUT, is_documents_scope};
+use crate::bundle::limits::{
+    MAX_ARCHIVE_ENTRIES, MAX_ENTRY_BYTES, MAX_SHARED_ARCHIVE_ENTRIES, MAX_SHARED_ENTRY_BYTES,
+    MAX_SHARED_UNPACKED_BYTES, MAX_UNPACKED_BYTES,
+};
 use crate::error::TransferError;
 
 pub const ARCHIVE_ROOT: &str = "forge";
@@ -18,7 +22,21 @@ pub const INCLUDED_DIRS: [&str; 4] = [
 ];
 
 pub(crate) const ARCHIVE_SEPARATOR: &str = "/";
-pub(crate) const FORBIDDEN_NAME_CHARS: [char; 2] = [':', '\\'];
+const FORBIDDEN_NAME_CHARS: [char; 9] = [':', '\\', '<', '>', '"', '|', '?', '*', '/'];
+const RESERVED_DEVICE_STEMS: [&str; 22] = [
+    "CON", "PRN", "AUX", "NUL", "COM1", "COM2", "COM3", "COM4", "COM5", "COM6", "COM7", "COM8",
+    "COM9", "LPT1", "LPT2", "LPT3", "LPT4", "LPT5", "LPT6", "LPT7", "LPT8", "LPT9",
+];
+
+pub(crate) fn is_portable_segment(segment: &str) -> bool {
+    let stem = segment.split('.').next().unwrap_or(segment).trim_end();
+    !segment.contains(FORBIDDEN_NAME_CHARS)
+        && !segment.chars().any(char::is_control)
+        && !segment.ends_with(['.', ' '])
+        && !RESERVED_DEVICE_STEMS
+            .iter()
+            .any(|reserved| reserved.eq_ignore_ascii_case(stem))
+}
 
 pub(crate) fn database_entry() -> String {
     archive_path([DATABASE_FILE_NAME])
@@ -48,7 +66,28 @@ pub(crate) enum ArchiveScope {
     Setup,
 }
 
+pub(crate) struct ScopeLimits {
+    pub(crate) entry_bytes: u64,
+    pub(crate) unpacked_bytes: u64,
+    pub(crate) entries: usize,
+}
+
 impl ArchiveScope {
+    pub(crate) fn limits(self) -> ScopeLimits {
+        match self {
+            Self::Backup => ScopeLimits {
+                entry_bytes: MAX_ENTRY_BYTES,
+                unpacked_bytes: MAX_UNPACKED_BYTES,
+                entries: MAX_ARCHIVE_ENTRIES,
+            },
+            Self::Pack | Self::Setup => ScopeLimits {
+                entry_bytes: MAX_SHARED_ENTRY_BYTES,
+                unpacked_bytes: MAX_SHARED_UNPACKED_BYTES,
+                entries: MAX_SHARED_ARCHIVE_ENTRIES,
+            },
+        }
+    }
+
     fn root(self) -> &'static str {
         match self {
             Self::Backup => ARCHIVE_ROOT,
@@ -79,7 +118,7 @@ pub(crate) fn confined_relative_path(
     for component in raw.components() {
         match component {
             Component::Normal(segment) => match segment.to_str() {
-                Some(text) if text.contains(FORBIDDEN_NAME_CHARS) => {
+                Some(text) if !is_portable_segment(text) => {
                     return Err(unsafe_entry("name holds a reserved character"));
                 }
                 Some(text) => segments.push(text),
@@ -130,4 +169,76 @@ fn segments_of(path: &Path) -> Option<Vec<&str>> {
             _ => None,
         })
         .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn portable_segments_accept_ordinary_and_non_ascii_names() {
+        for good in [
+            "readme.txt",
+            "payload.css",
+            "COM10",
+            "COM1x.png",
+            "console.log",
+            "auxiliary",
+            "a.b.c",
+            "файл.png",
+            ".hidden",
+        ] {
+            assert!(is_portable_segment(good), "expected portable: {good:?}");
+        }
+    }
+
+    #[test]
+    fn portable_segments_reject_windows_reserved_device_names_with_any_extension_and_case() {
+        for bad in [
+            "CON",
+            "con",
+            "aux.png",
+            "AUX.tar.gz",
+            "COM1",
+            "com9.txt",
+            "LPT1",
+            "lpt9",
+            "NUL.x",
+            "PRN",
+            "CON .txt",
+        ] {
+            assert!(!is_portable_segment(bad), "expected rejected: {bad:?}");
+        }
+    }
+
+    #[test]
+    fn portable_segments_reject_trailing_dot_and_space() {
+        for bad in ["name.", "name ", "...", "name. "] {
+            assert!(!is_portable_segment(bad), "expected rejected: {bad:?}");
+        }
+    }
+
+    #[test]
+    fn portable_segments_reject_every_windows_forbidden_character_and_controls() {
+        for forbidden in [
+            '<', '>', ':', '"', '|', '?', '*', '\\', '/', '\u{0}', '\n', '\u{7f}',
+        ] {
+            let name = format!("a{forbidden}b");
+            assert!(!is_portable_segment(&name), "expected rejected: {name:?}");
+        }
+    }
+
+    #[test]
+    fn confined_relative_path_refuses_a_reserved_device_name_segment() {
+        let refused = confined_relative_path(
+            Path::new("pack/overlays/0/aux.png"),
+            EntryShape::File,
+            ArchiveScope::Pack,
+        );
+
+        assert!(
+            matches!(refused, Err(TransferError::UnsafeEntry { .. })),
+            "{refused:?}"
+        );
+    }
 }

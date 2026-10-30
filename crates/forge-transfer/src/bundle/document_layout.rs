@@ -1,4 +1,4 @@
-use crate::bundle::layout::{ARCHIVE_SEPARATOR, EntryShape, FORBIDDEN_NAME_CHARS};
+use crate::bundle::layout::{ARCHIVE_SEPARATOR, EntryShape, is_portable_segment};
 
 pub const PACK_ROOT: &str = "pack";
 pub const SETUP_ROOT: &str = "setup";
@@ -62,7 +62,7 @@ pub(crate) fn safe_segments(name: &str) -> Option<Vec<&str>> {
         !segment.is_empty()
             && *segment != CURRENT_DIR
             && *segment != PARENT_DIR
-            && !segment.contains(FORBIDDEN_NAME_CHARS)
+            && is_portable_segment(segment)
     });
     safe.then_some(segments)
 }

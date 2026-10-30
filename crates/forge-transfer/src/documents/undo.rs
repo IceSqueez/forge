@@ -155,7 +155,7 @@ pub(crate) async fn revert(provider: &dyn DataProvider, undo: Undo) -> Result<()
         Undo::Overlay { id, previous } => {
             let repo = provider.overlay_repo();
             match previous {
-                Some(definition) => repo.save(&definition).await.map_err(storage),
+                Some(definition) => repo.restore(&definition).await.map_err(storage),
                 None => {
                     provider
                         .media_repo()

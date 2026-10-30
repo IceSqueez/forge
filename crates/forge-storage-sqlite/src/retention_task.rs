@@ -3,7 +3,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use forge_storage::{
-    ActionRepo, DEFAULT_EVENT_LOG_RETENTION_DAYS, ScheduledRunRepo, SettingsRepo,
+    ActionRepo, DEFAULT_EVENT_LOG_RETENTION_DAYS, ScheduledRunRepo, ScriptRepo, SettingsRepo,
     action_history_retention_days, clamp_action_history_retention_days, event_log_retention_days,
 };
 use time::OffsetDateTime;
@@ -25,6 +25,7 @@ pub(crate) struct RetentionTargets {
     pub(crate) event_log: Arc<SqliteEventLogRepo>,
     pub(crate) history: Arc<SqliteHistoryRepo>,
     pub(crate) action: Arc<dyn ActionRepo>,
+    pub(crate) script: Arc<dyn ScriptRepo>,
     pub(crate) settings: Arc<dyn SettingsRepo>,
     pub(crate) scheduled_run: Arc<dyn ScheduledRunRepo>,
 }
@@ -123,6 +124,18 @@ async fn sweep(
         Err(e) => tracing::warn!(
             error = %e,
             "action_executions pruning failed; will retry on next cycle"
+        ),
+    }
+
+    match targets.script.prune_executions_before(history_cutoff).await {
+        Ok(pruned) => tracing::info!(
+            pruned_rows = pruned,
+            cutoff = ?history_cutoff,
+            "script_executions pruning complete"
+        ),
+        Err(e) => tracing::warn!(
+            error = %e,
+            "script_executions pruning failed; will retry on next cycle"
         ),
     }
 

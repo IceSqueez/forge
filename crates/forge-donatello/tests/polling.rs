@@ -126,6 +126,41 @@ async fn oldest_first_list_walks_back_from_the_last_page_until_every_new_donatio
 }
 
 #[tokio::test]
+async fn a_scan_cut_short_by_a_page_error_counts_what_it_found_so_the_retry_does_not_over_walk() {
+    let mut h = Harness::start(Order::OldestFirst, donates(45)).await;
+    h.donations(45).await;
+    h.wait_for("baseline poll", |s| s.last_poll_at.is_some())
+        .await;
+    let baseline_poll = h.provider.poll_status().last_poll_at;
+    for index in 0..16 {
+        h.list.add(donate(
+            &format!("NEW-{index:02}"),
+            &format!("2026-07-02 10:{index:02}:00"),
+        ));
+    }
+    h.list.forget_requests();
+    h.list.fail_after(2, ResponseTemplate::new(503));
+
+    h.wake_poller();
+    let partial = h.next().await.unwrap();
+    let failure = h.next().await;
+    assert!(
+        matches!(failure, Err(PlatformError::Http { status: 503, .. })),
+        "{failure:?}"
+    );
+    assert_eq!(h.list.requested_pages(), vec![0, 3, 2]);
+    h.list.forget_requests();
+    h.wake_poller();
+    let rest = h.donations(15).await;
+    h.wait_for("completed retry", |s| s.last_poll_at != baseline_poll)
+        .await;
+
+    assert_eq!(partial.donation_id, "NEW-15");
+    assert_eq!(rest.len(), 15);
+    assert_eq!(h.list.requested_pages(), vec![0, 3, 2]);
+}
+
+#[tokio::test]
 async fn unreadable_donations_are_reported_once_without_blocking_the_rest() {
     let mut bad_currency = donate("BAD-CURRENCY", "2026-07-01 10:00:00");
     bad_currency["currency"] = json!("UAHX");

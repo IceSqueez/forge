@@ -19,13 +19,13 @@ pub struct ScheduleKey {
 
 impl ScheduleKey {
     pub fn encode(&self) -> Result<String, TransferError> {
-        serde_json::to_string(self).map_err(|reason| TransferError::Encryption {
+        serde_json::to_string(self).map_err(|reason| TransferError::ScheduleKeyUnreadable {
             reason: reason.to_string(),
         })
     }
 
     pub fn decode(stored: &str) -> Result<Self, TransferError> {
-        serde_json::from_str(stored).map_err(|reason| TransferError::Encryption {
+        serde_json::from_str(stored).map_err(|reason| TransferError::ScheduleKeyUnreadable {
             reason: reason.to_string(),
         })
     }
@@ -54,8 +54,10 @@ pub fn change_schedule_passphrase(
 }
 
 pub(crate) fn parse_recipient(recipient: &str) -> Result<age::x25519::Recipient, TransferError> {
-    age::x25519::Recipient::from_str(recipient).map_err(|reason| TransferError::Encryption {
-        reason: reason.to_owned(),
+    age::x25519::Recipient::from_str(recipient).map_err(|reason| {
+        TransferError::ScheduleKeyUnreadable {
+            reason: reason.to_owned(),
+        }
     })
 }
 

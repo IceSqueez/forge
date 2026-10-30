@@ -188,3 +188,27 @@ async fn shutdown_closes_the_pool_so_later_queries_fail_instead_of_hanging() {
         "queries after shutdown must error, not hang"
     );
 }
+
+#[cfg(unix)]
+#[tokio::test]
+async fn export_creates_the_target_readable_by_the_owner_only() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let dir = tempfile::tempdir().expect("a temporary database directory");
+    let source_path = dir.path().join(forge_storage::DATABASE_FILE_NAME);
+    let export_dir = tempfile::tempdir().expect("a temporary export directory");
+    let export_path = export_dir.path().join("export.db");
+    let backend =
+        common::sandboxed_backend(&format!("sqlite://{}", source_path.display()), TEST_KEY).await;
+
+    backend
+        .export(&export_path)
+        .await
+        .expect("export must succeed");
+
+    let mode = std::fs::metadata(&export_path)
+        .expect("the export exists")
+        .permissions()
+        .mode();
+    assert_eq!(mode & 0o777, 0o600);
+}

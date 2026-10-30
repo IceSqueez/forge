@@ -33,8 +33,13 @@ struct AliasRow {
 
 fn decode_alias_row(row: AliasRow) -> Result<VoiceAlias, StorageError> {
     let state = match row.state.as_str() {
+        "Active" => AliasState::Active,
         "Blocked" => AliasState::Blocked,
-        _ => AliasState::Active,
+        other => {
+            return Err(StorageError::Parse(format!(
+                "unknown voice alias state '{other}'"
+            )));
+        }
     };
     Ok(VoiceAlias {
         id: AliasId(row.id),

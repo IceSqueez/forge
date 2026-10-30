@@ -1,6 +1,6 @@
 use forge_speech_types::{AliasId, AssignmentStrategy, IgnoreProfile, VoiceAlias};
 use forge_storage::{
-    DataProvider, FilterRule, OverlayId, SettingRow, StorageError, TtsPipelineSettings, remove_row,
+    DataProvider, FilterRule, SettingRow, StorageError, TtsPipelineSettings, remove_row,
     restore_row,
 };
 use forge_types::{ActionId, TriggerInstanceId};
@@ -24,7 +24,6 @@ pub(crate) enum SetupUndo {
     },
     VoiceStrategy(AssignmentStrategy),
     IgnoreProfile(IgnoreProfile),
-    RemovedOverlay(OverlayId),
 }
 
 #[derive(Default)]
@@ -100,10 +99,6 @@ async fn revert_setup(provider: &dyn DataProvider, undo: SetupUndo) -> Result<()
             .set_ignore_profile(&previous)
             .await
             .map_err(storage),
-        SetupUndo::RemovedOverlay(id) => Err(format!(
-            "overlay '{}' was removed and survives only in the safety backup",
-            id.as_str()
-        )),
     }
 }
 

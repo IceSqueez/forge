@@ -7,10 +7,12 @@ use std::time::Duration;
 use forge_events::{Event, EventSource};
 use forge_storage::{
     DataProvider, ExecutionStatus, MissedRunPolicy, ScheduledRunId, ScheduledRunOutcome,
-    ScheduledRunSpec, set_action_history_retention_days, set_event_log_retention_days,
+    ScheduledRunSpec, ScriptRepo, set_action_history_retention_days, set_event_log_retention_days,
 };
 use forge_storage_sqlite::SqliteBackend;
-use forge_types::{ActionId, EventId, ExecutionContext, ExecutionMetadata, ExecutionOutcome};
+use forge_types::{
+    ActionId, EventId, ExecutionContext, ExecutionMetadata, ExecutionOutcome, ScriptId,
+};
 use sqlx::SqlitePool;
 use sqlx::sqlite::SqlitePoolOptions;
 use time::OffsetDateTime;
@@ -376,4 +378,29 @@ async fn shrinking_the_action_history_window_makes_the_running_pruner_apply_the_
         db.reaches("action_history", |rows| rows == 0).await,
         "a 20-day-old run must go once the action history window shrinks to 10 days"
     );
+}
+
+#[tokio::test]
+async fn a_sweep_prunes_script_executions_older_than_the_action_history_window() {
+    let db = open().await;
+    set_action_history_retention_days(&db.backend, 30)
+        .await
+        .unwrap();
+    let db = db.restarted().await;
+    let script = ScriptId::new();
+    let now = OffsetDateTime::now_utc();
+    for age in [time::Duration::days(40), time::Duration::days(20)] {
+        ScriptRepo::record_execution(&db.backend, script, now - age, 5, ExecutionStatus::Success)
+            .await
+            .unwrap();
+    }
+
+    db.after_a_full_sweep().await;
+
+    let kept: Vec<i64> = sqlx::query_scalar("SELECT started_at FROM script_executions")
+        .fetch_all(&db.side)
+        .await
+        .unwrap();
+    assert_eq!(kept.len(), 1);
+    assert!(kept[0] >= (now - time::Duration::days(30)).unix_timestamp());
 }

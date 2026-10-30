@@ -75,11 +75,8 @@ pub async fn apply_pack_import(
     if !unchanged {
         return Err(TransferError::PackPlanStale);
     }
-    let safety_snapshot = if plan.replaces_anything() {
-        Some(write_safety_snapshot(&provider, &data_dir, fresh_pre_pack_stem()).await?)
-    } else {
-        None
-    };
+    let safety_snapshot =
+        Some(write_safety_snapshot(&provider, &data_dir, fresh_pre_pack_stem()).await?);
 
     let mut import = PackImport {
         provider: provider.as_ref(),

@@ -6,7 +6,7 @@ use forge_types::OverlayCredential;
 use rand::rand_core::Rng;
 use sqlx::SqliteConnection;
 
-use crate::epoch::{epoch_ms_now, from_epoch_ms};
+use crate::epoch::{epoch_ms_now, from_epoch_ms, to_epoch_ms};
 use crate::error::SqliteStorageError;
 use crate::pool::SqlitePools;
 
@@ -318,6 +318,49 @@ impl OverlayRepo for SqliteOverlayRepo {
                 key: definition.id.as_str().to_owned(),
             });
         }
+        Ok(())
+    }
+
+    async fn restore(&self, definition: &OverlayDefinition) -> Result<(), StorageError> {
+        let config_json =
+            serde_json::to_string(&definition.config).map_err(StorageError::Serialization)?;
+        let source_overrides_json = serde_json::to_string(&definition.source_overrides)
+            .map_err(StorageError::Serialization)?;
+
+        sqlx::query(
+            "INSERT INTO overlays
+                 (id, display_name, kind_id, enabled, position, config,
+                  config_schema_version, generator_version, source_overrides,
+                  credential, created_at, updated_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+             ON CONFLICT(id) DO UPDATE SET
+                 display_name          = excluded.display_name,
+                 kind_id               = excluded.kind_id,
+                 enabled               = excluded.enabled,
+                 position              = excluded.position,
+                 config                = excluded.config,
+                 config_schema_version = excluded.config_schema_version,
+                 generator_version     = excluded.generator_version,
+                 source_overrides      = excluded.source_overrides,
+                 credential            = excluded.credential,
+                 created_at            = excluded.created_at,
+                 updated_at            = excluded.updated_at",
+        )
+        .bind(definition.id.as_str())
+        .bind(&definition.display_name)
+        .bind(&definition.kind_id)
+        .bind(i64::from(definition.enabled))
+        .bind(definition.position)
+        .bind(&config_json)
+        .bind(definition.config_schema_version as i64)
+        .bind(definition.generator_version as i64)
+        .bind(&source_overrides_json)
+        .bind(definition.credential.expose())
+        .bind(to_epoch_ms(definition.created_at))
+        .bind(to_epoch_ms(definition.updated_at))
+        .execute(self.db.writer())
+        .await
+        .map_err(SqliteStorageError::Sqlx)?;
         Ok(())
     }
 

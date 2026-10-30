@@ -7,6 +7,21 @@ const SNAPSHOT_EXCLUDED_KEYS: [&str; 2] = [
     core_settings::BACKUP_SCHEDULE_CONTENT_FINGERPRINT.name(),
 ];
 
+#[cfg(unix)]
+const OWNER_ONLY_MODE: u32 = 0o600;
+
+pub(crate) async fn create_owner_only_target(path: &std::path::Path) -> std::io::Result<()> {
+    let mut options = tokio::fs::OpenOptions::new();
+    options.write(true).create_new(true);
+    #[cfg(unix)]
+    options.mode(OWNER_ONLY_MODE);
+    match options.open(path).await {
+        Ok(_) => Ok(()),
+        Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => Ok(()),
+        Err(error) => Err(error),
+    }
+}
+
 pub(crate) async fn vacuum_into(pool: &SqlitePool, target: &str) -> Result<(), sqlx::Error> {
     sqlx::query("VACUUM INTO ?")
         .bind(target)

@@ -185,6 +185,51 @@ async fn incr_on_missing_key_returns_not_found() {
 }
 
 #[tokio::test]
+async fn incr_saturates_at_i64_max_instead_of_wrapping() {
+    let repo = setup().await;
+    repo.set("n", Variant::Int(i64::MAX - 1), false)
+        .await
+        .expect("set");
+
+    let at_max = repo.incr("n", 5).await.expect("incr");
+    let still_max = repo.incr("n", 1).await.expect("incr again");
+
+    assert_eq!(at_max, Variant::Int(i64::MAX));
+    assert_eq!(still_max, Variant::Int(i64::MAX));
+    assert_eq!(
+        repo.get("n").await.expect("get"),
+        Some(Variant::Int(i64::MAX))
+    );
+}
+
+#[tokio::test]
+async fn list_skips_a_row_whose_stored_value_does_not_decode() {
+    let pool = sqlx::SqlitePool::connect("sqlite::memory:")
+        .await
+        .expect("in-memory pool");
+    apply_migrations(&pool).await.expect("migrations apply");
+    let repo = SqliteGlobalsRepo::new(pool.clone());
+    repo.set("good", Variant::Int(1), true).await.expect("set");
+    sqlx::query(
+        "INSERT INTO globals (name, value, type_tag, persisted, created_at, last_modified)
+         VALUES ('corrupt', 'not json', 'int', 1, 0, 0)",
+    )
+    .execute(&pool)
+    .await
+    .expect("insert corrupt row");
+
+    let names: Vec<String> = repo
+        .list()
+        .await
+        .expect("list survives corrupt row")
+        .into_iter()
+        .map(|e| e.name)
+        .collect();
+
+    assert_eq!(names, vec!["good".to_string()]);
+}
+
+#[tokio::test]
 async fn incr_on_string_global_returns_type_mismatch() {
     let repo = setup().await;
     repo.set("s", Variant::String("hello".into()), false)

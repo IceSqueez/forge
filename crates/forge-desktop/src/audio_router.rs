@@ -227,6 +227,10 @@ mod tests {
             unreachable!("routing never saves an overlay")
         }
 
+        async fn restore(&self, _: &OverlayDefinition) -> Result<(), StorageError> {
+            unreachable!("routing never restores an overlay")
+        }
+
         async fn set_enabled(&self, _: &OverlayId, _: bool) -> Result<bool, StorageError> {
             unreachable!("routing never toggles an overlay")
         }

@@ -1282,7 +1282,7 @@ async fn replacing_writes_a_pre_pack_safety_snapshot_that_restore_can_stage() {
 }
 
 #[tokio::test]
-async fn an_import_that_replaces_nothing_writes_no_safety_snapshot() {
+async fn an_import_that_replaces_nothing_still_writes_a_safety_snapshot() {
     let registries = Registries::real().await;
     let store = Store::open().await;
     let f = seed(&store).await;
@@ -1292,7 +1292,15 @@ async fn an_import_that_replaces_nothing_writes_no_safety_snapshot() {
         .await
         .unwrap();
 
-    assert_eq!(outcome.safety_snapshot, None);
+    let snapshot = outcome.safety_snapshot.unwrap();
+    assert!(snapshot.is_file());
+    assert!(
+        snapshot
+            .file_name()
+            .unwrap()
+            .to_string_lossy()
+            .starts_with("forge-pre-pack")
+    );
 }
 
 #[tokio::test]

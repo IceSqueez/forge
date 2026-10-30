@@ -39,10 +39,13 @@ struct ActionRow {
     execution_mode: String,
 }
 
-fn parse_execution_mode(s: &str) -> ExecutionMode {
+fn parse_execution_mode(s: &str) -> Result<ExecutionMode, SqliteStorageError> {
     match s {
-        "random_pick" => ExecutionMode::RandomPick,
-        _ => ExecutionMode::Sequential,
+        "sequential" => Ok(ExecutionMode::Sequential),
+        "random_pick" => Ok(ExecutionMode::RandomPick),
+        other => Err(SqliteStorageError::Decode(format!(
+            "unknown execution_mode '{other}'"
+        ))),
     }
 }
 
@@ -71,7 +74,7 @@ fn decode_row(row: ActionRow) -> Result<Action, SqliteStorageError> {
         enabled: row.enabled != 0,
         concurrent: row.concurrent != 0,
         bypass_pause: row.bypass_pause != 0,
-        execution_mode: parse_execution_mode(&row.execution_mode),
+        execution_mode: parse_execution_mode(&row.execution_mode)?,
         description: if row.description.is_empty() {
             None
         } else {

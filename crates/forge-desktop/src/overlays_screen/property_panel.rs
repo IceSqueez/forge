@@ -921,6 +921,10 @@ pub(crate) mod tests {
             Ok(())
         }
 
+        async fn restore(&self, _: &OverlayDefinition) -> Result<(), StorageError> {
+            unreachable!("the property panel never restores an overlay")
+        }
+
         async fn set_enabled(&self, _: &OverlayId, _: bool) -> Result<bool, StorageError> {
             unreachable!("the property panel never toggles an overlay")
         }

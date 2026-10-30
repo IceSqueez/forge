@@ -191,10 +191,10 @@ async fn restore_returns_archived_instance_to_visibility() {
 }
 
 #[tokio::test]
-async fn delete_is_blocked_by_link_from_archived_action() {
+async fn delete_succeeds_when_only_archived_actions_use_the_instance() {
     let backend = setup().await;
     let repo = backend.trigger_instance_repo();
-    let action_id = insert_action(&backend, "archived blocker").await;
+    let action_id = insert_action(&backend, "archived user").await;
 
     let inst = make_instance("twitch.chat.command", "Referenced", true);
     repo.save(&inst).await.expect("save");
@@ -202,10 +202,36 @@ async fn delete_is_blocked_by_link_from_archived_action() {
         .insert_action_trigger_instance_for_test(action_id, inst.id, 0)
         .await
         .expect("link");
-
     backend
         .action_repo()
         .archive(action_id)
+        .await
+        .expect("archive action");
+
+    assert!(repo.delete(inst.id).await.expect("delete"));
+    assert!(repo.get(inst.id).await.expect("get").is_none());
+}
+
+#[tokio::test]
+async fn delete_is_blocked_by_live_users_and_counts_only_them() {
+    let backend = setup().await;
+    let repo = backend.trigger_instance_repo();
+    let live = insert_action(&backend, "live user").await;
+    let archived = insert_action(&backend, "archived user").await;
+
+    let inst = make_instance("twitch.chat.command", "Shared", true);
+    repo.save(&inst).await.expect("save");
+    backend
+        .insert_action_trigger_instance_for_test(live, inst.id, 0)
+        .await
+        .expect("link live");
+    backend
+        .insert_action_trigger_instance_for_test(archived, inst.id, 1)
+        .await
+        .expect("link archived");
+    backend
+        .action_repo()
+        .archive(archived)
         .await
         .expect("archive action");
 
@@ -213,19 +239,18 @@ async fn delete_is_blocked_by_link_from_archived_action() {
         .delete(inst.id)
         .await
         .expect_err("delete must be blocked");
+
     match err {
         StorageError::ReferenceBlock {
             used_in_count,
             sample_action_names,
         } => {
-            assert_eq!(
-                used_in_count, 1,
-                "the archived action still counts as a reference"
-            );
-            assert_eq!(sample_action_names, vec!["archived blocker"]);
+            assert_eq!(used_in_count, 1);
+            assert_eq!(sample_action_names, vec!["live user"]);
         }
         other => panic!("expected ReferenceBlock, got {other:?}"),
     }
+    assert!(repo.get(inst.id).await.expect("get").is_some());
 }
 
 #[tokio::test]

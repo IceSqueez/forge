@@ -57,8 +57,8 @@ fn token_scope_notice() -> DetailSection {
         level: BannerLevel::Info,
         title: "Token access".to_owned(),
         body: "A monobank personal token can read every account and jar you hold. \
-               forge only reads the statement of the jar you select, and the token never \
-               leaves this computer."
+               forge only reads the statement of the jar you select, and the token is sent \
+               only to monobank."
             .to_owned(),
         cta: None,
     }

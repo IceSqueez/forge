@@ -187,6 +187,7 @@ impl SqliteBackend {
                 event_log: Arc::new(SqliteEventLogRepo::new(pool.clone())),
                 history: Arc::new(SqliteHistoryRepo::new(pool.clone())),
                 action: Arc::new(SqliteActionRepo::new(pool.clone())),
+                script: Arc::new(SqliteScriptRepo::new(pool.clone())),
                 settings: Arc::new(SqliteSettingsRepo::new(pool.clone())),
                 scheduled_run: Arc::clone(&scheduled_run),
             },
@@ -639,6 +640,11 @@ impl DataProvider for SqliteBackend {
             reason: "non-utf8 export path".into(),
         })?;
 
+        crate::snapshot::create_owner_only_target(path)
+            .await
+            .map_err(|e| StorageError::Connection {
+                reason: e.to_string(),
+            })?;
         crate::snapshot::vacuum_into(self.pool.snapshot_source(), path_str)
             .await
             .map_err(|e| StorageError::Connection {

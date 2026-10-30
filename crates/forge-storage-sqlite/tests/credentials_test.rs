@@ -97,6 +97,21 @@ async fn delete_missing_returns_false() {
 }
 
 #[tokio::test]
+async fn mark_refreshed_on_a_missing_credential_returns_not_found() {
+    let repo = setup().await;
+
+    let err = repo
+        .mark_refreshed(&CredentialId::new("never:stored"))
+        .await
+        .expect_err("a missing credential must not be silently ignored");
+
+    assert!(
+        matches!(&err, StorageError::NotFound { key } if key == "never:stored"),
+        "got {err:?}"
+    );
+}
+
+#[tokio::test]
 async fn mark_refreshed_updates_last_refresh_timestamp() {
     let repo = setup().await;
     let id = CredentialId::new("twitch:broadcaster");

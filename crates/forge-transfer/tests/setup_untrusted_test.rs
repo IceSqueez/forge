@@ -908,3 +908,74 @@ async fn a_failed_setup_import_restores_replaced_rows_and_removes_added_ones_wit
     assert!(failed.is_err(), "{failed:?}");
     assert_eq!(after, before);
 }
+
+#[tokio::test]
+async fn a_failed_setup_import_restores_an_overlay_it_had_already_removed() {
+    let store = Store::open().await;
+    let removed_first = store
+        .provider
+        .overlay_repo()
+        .create("Alpha overlay", "overlay.chat", 1)
+        .await
+        .unwrap();
+    let refused = store
+        .provider
+        .overlay_repo()
+        .create("Beta overlay", "overlay.chat", 1)
+        .await
+        .unwrap();
+    assert!(removed_first.id.as_str() < refused.id.as_str());
+    let mut connection = sqlx::SqliteConnection::connect(&format!(
+        "sqlite://{}",
+        store.data_dir().join(DATABASE_FILE_NAME).display()
+    ))
+    .await
+    .unwrap();
+    for statement in [
+        "CREATE TABLE overlay_delete_log (id TEXT NOT NULL)".to_owned(),
+        "CREATE TRIGGER log_overlay_delete AFTER DELETE ON overlays \
+         BEGIN INSERT INTO overlay_delete_log (id) VALUES (OLD.id); END"
+            .to_owned(),
+        format!(
+            "CREATE TRIGGER refuse_overlay_delete BEFORE DELETE ON overlays \
+             WHEN OLD.id = '{}' BEGIN SELECT RAISE(ABORT, 'overlay delete refused'); END",
+            refused.id.as_str()
+        ),
+    ] {
+        sqlx::query(sqlx::AssertSqlSafe(statement))
+            .execute(&mut connection)
+            .await
+            .unwrap();
+    }
+    let path = bundle(store.data_dir(), &empty_setup(), &[]);
+
+    let failed = store.import(path).await;
+
+    let deletions: Vec<String> = sqlx::query_scalar("SELECT id FROM overlay_delete_log")
+        .fetch_all(&mut connection)
+        .await
+        .unwrap();
+    let mut remaining: Vec<String> = store
+        .provider
+        .overlay_repo()
+        .list()
+        .await
+        .unwrap()
+        .into_iter()
+        .map(|overlay| overlay.id.as_str().to_owned())
+        .collect();
+    remaining.sort();
+    assert!(failed.is_err(), "{failed:?}");
+    assert_eq!(
+        deletions,
+        vec![removed_first.id.as_str().to_owned()],
+        "the import must have removed the first overlay before failing on the second"
+    );
+    assert_eq!(
+        remaining,
+        vec![
+            removed_first.id.as_str().to_owned(),
+            refused.id.as_str().to_owned()
+        ]
+    );
+}

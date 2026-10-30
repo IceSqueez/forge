@@ -121,13 +121,18 @@ impl CredentialsRepo for SqliteCredentialsRepo {
     async fn mark_refreshed(&self, id: &CredentialId) -> Result<(), StorageError> {
         let now_ms = epoch_ms_now();
 
-        sqlx::query("UPDATE credentials SET last_refresh = ? WHERE id = ?")
+        let result = sqlx::query("UPDATE credentials SET last_refresh = ? WHERE id = ?")
             .bind(now_ms)
             .bind(id.as_str())
             .execute(self.db.writer())
             .await
             .map_err(SqliteStorageError::Sqlx)?;
 
+        if result.rows_affected() == 0 {
+            return Err(StorageError::NotFound {
+                key: id.as_str().to_owned(),
+            });
+        }
         Ok(())
     }
 }

@@ -289,22 +289,44 @@ impl SetupImport<'_, '_> {
             .iter()
             .map(|overlay| OverlayId::new(overlay.id.as_str()))
             .collect();
-        let absent: Vec<OverlayId> = self
+        let absent: Vec<_> = self
             .inventory
             .configuration
             .overlays
-            .keys()
-            .filter(|id| !kept.contains(*id))
-            .cloned()
+            .iter()
+            .filter(|(id, _)| !kept.contains(*id))
+            .map(|(id, definition)| (id.clone(), definition.clone()))
             .collect();
         let media = self.provider.media_repo();
         let overlays = self.provider.overlay_repo();
-        for id in absent {
-            self.journal.push(SetupUndo::RemovedOverlay(id.clone()));
+        if absent.is_empty() {
+            return Ok(());
+        }
+        let mut overlay_referrers = Vec::new();
+        for blob in media.list().await? {
+            for referrer in media.referrers(&blob.id).await? {
+                if referrer.kind == MediaReferrerKind::Overlay {
+                    overlay_referrers.push((referrer, blob.id.clone()));
+                }
+            }
+        }
+        for (id, definition) in absent {
             media
                 .release_all(MediaReferrerKind::Overlay, id.as_str())
                 .await?;
+            for (referrer, blob) in &overlay_referrers {
+                if referrer.id == id.as_str() {
+                    self.journal.push_configuration(Undo::Referrer {
+                        referrer: referrer.clone(),
+                        previous: Some(blob.clone()),
+                    });
+                }
+            }
             overlays.delete(&id).await?;
+            self.journal.push_configuration(Undo::Overlay {
+                id: id.clone(),
+                previous: Some(definition),
+            });
             self.removed_overlays.push(id);
             self.refresh.insert(SetupLivePart::Overlays);
         }

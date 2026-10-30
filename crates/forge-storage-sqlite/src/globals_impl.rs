@@ -1,5 +1,6 @@
 use async_trait::async_trait;
 use forge_storage::globals::{append_bounded, remove_matching, type_mismatch};
+use forge_storage::user_globals::incremented;
 use forge_storage::{GlobalEntry, GlobalsRepo, StorageError};
 use forge_types::Variant;
 use time::OffsetDateTime;
@@ -32,8 +33,13 @@ struct GlobalRow {
 fn decode_entries(rows: Vec<GlobalRow>) -> Result<Vec<GlobalEntry>, StorageError> {
     let mut entries = Vec::with_capacity(rows.len());
     for row in rows {
-        let value: Variant = serde_json::from_str(&row.value)
-            .map_err(|e| StorageError::Parse(format!("variant decode for '{}': {e}", row.name)))?;
+        let value: Variant = match serde_json::from_str(&row.value) {
+            Ok(value) => value,
+            Err(error) => {
+                tracing::warn!(name = %row.name, %error, "global skipped: stored value does not decode");
+                continue;
+            }
+        };
 
         let created_at = from_epoch_ms(row.created_at)?;
         let last_modified = from_epoch_ms(row.last_modified)?;
@@ -304,27 +310,23 @@ impl GlobalsRepo for SqliteGlobalsRepo {
     }
 
     async fn incr(&self, name: &str, amount: i64) -> Result<Variant, StorageError> {
-        let now_ms = epoch_ms_now();
+        let mut tx = self
+            .db
+            .writer()
+            .begin_with("BEGIN IMMEDIATE")
+            .await
+            .map_err(SqliteStorageError::Sqlx)?;
 
-        let row: Option<(String,)> = sqlx::query_as(
-            "UPDATE globals \
-             SET value         = json_set(value, '$.value', json_extract(value, '$.value') + ?), \
-                 writes        = writes + 1, \
-                 last_modified = ? \
-             WHERE name = ? AND type_tag IN ('int', 'float') AND archived_at IS NULL \
-             RETURNING value",
-        )
-        .bind(amount)
-        .bind(now_ms)
-        .bind(name)
-        .fetch_optional(self.db.writer())
-        .await
-        .map_err(SqliteStorageError::Sqlx)?;
+        let Some(current) = live_value(&mut *tx, name).await? else {
+            return Err(StorageError::NotFound {
+                key: name.to_string(),
+            });
+        };
+        let next = incremented(name, Some(current), amount)?;
+        replace_value(&mut *tx, name, &next).await?;
 
-        match row {
-            Some((value_json,)) => decode_variant(&value_json),
-            None => Err(self.missing_or_mismatch(name).await),
-        }
+        tx.commit().await.map_err(SqliteStorageError::Sqlx)?;
+        Ok(next)
     }
 
     async fn array_append(

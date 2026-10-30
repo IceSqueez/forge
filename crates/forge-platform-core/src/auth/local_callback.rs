@@ -7,7 +7,7 @@ use rand::TryRng;
 use sha2::{Digest, Sha256};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
-use tokio::time::timeout;
+use tokio::time::{timeout, timeout_at};
 
 use crate::error::PlatformError;
 
@@ -18,6 +18,8 @@ const STATE_BYTES: usize = 32;
 const READ_BUFFER: usize = 8192;
 const STATUS_LINE_OK: &str = "200 OK";
 const STATUS_LINE_BAD_REQUEST: &str = "400 Bad Request";
+const STATUS_LINE_NOT_FOUND: &str = "404 Not Found";
+const CONNECTION_READ_TIMEOUT: Duration = Duration::from_secs(5);
 const SUCCESS_HEADING: &str = "Authentication successful";
 const SUCCESS_DETAIL: &str = "You may close this tab and return to forge.";
 const FAILURE_HEADING: &str = "Authentication failed";
@@ -80,34 +82,63 @@ impl LocalCallbackDriver {
     }
 
     pub async fn await_callback(self, dur: Duration) -> Result<CallbackCode, PlatformError> {
-        let (mut socket, _peer) =
-            timeout(dur, self.listener.accept())
-                .await
-                .map_err(|_| PlatformError::Auth {
-                    reason: "callback timeout".into(),
-                })??;
-
-        let request = read_request(&mut socket).await?;
-        let result = process_request(&request, &self.state);
-
-        let (status, body) = match &result {
-            Ok(_) => (
-                STATUS_LINE_OK,
-                callback_page(SUCCESS_HEADING, SUCCESS_DETAIL),
-            ),
-            Err(err) => (
-                STATUS_LINE_BAD_REQUEST,
-                callback_page(FAILURE_HEADING, &err.to_string()),
-            ),
-        };
-        if let Err(error) = write_response(&mut socket, status, &body).await {
-            tracing::debug!(%error, "callback response could not be written to the browser");
-        }
-
-        result.map(|code| CallbackCode {
-            code: Secret::new(code),
-        })
+        let deadline = tokio::time::Instant::now() + dur;
+        timeout_at(deadline, self.serve_until_callback())
+            .await
+            .map_err(|_| PlatformError::Auth {
+                reason: "callback timeout".into(),
+            })?
     }
+
+    async fn serve_until_callback(&self) -> Result<CallbackCode, PlatformError> {
+        loop {
+            let (mut socket, _peer) = self.listener.accept().await?;
+            let request = match timeout(CONNECTION_READ_TIMEOUT, read_request(&mut socket)).await {
+                Ok(Ok(request)) => request,
+                Ok(Err(error)) => {
+                    tracing::debug!(%error, "callback connection ignored");
+                    continue;
+                }
+                Err(_) => {
+                    tracing::debug!(
+                        "callback connection ignored: no request before the read deadline"
+                    );
+                    continue;
+                }
+            };
+            if !targets_callback_path(&request) {
+                if let Err(error) = write_response(&mut socket, STATUS_LINE_NOT_FOUND, "").await {
+                    tracing::debug!(%error, "not-found response could not be written");
+                }
+                continue;
+            }
+            let result = process_request(&request, &self.state);
+            let (status, body) = match &result {
+                Ok(_) => (
+                    STATUS_LINE_OK,
+                    callback_page(SUCCESS_HEADING, SUCCESS_DETAIL),
+                ),
+                Err(err) => (
+                    STATUS_LINE_BAD_REQUEST,
+                    callback_page(FAILURE_HEADING, &err.to_string()),
+                ),
+            };
+            if let Err(error) = write_response(&mut socket, status, &body).await {
+                tracing::debug!(%error, "callback response could not be written to the browser");
+            }
+            return result.map(|code| CallbackCode {
+                code: Secret::new(code),
+            });
+        }
+    }
+}
+
+fn targets_callback_path(request: &str) -> bool {
+    request
+        .lines()
+        .next()
+        .and_then(|line| line.split_whitespace().nth(1))
+        .is_some_and(|target| target.split('?').next() == Some(CALLBACK_PATH))
 }
 
 fn callback_page(heading: &str, detail: &str) -> String {
@@ -504,6 +535,115 @@ mod tests {
         assert!(
             body.contains("<h2>Authentication successful</h2>"),
             "{body}"
+        );
+    }
+
+    const HANG_GUARD: Duration = Duration::from_secs(30);
+
+    fn port_of(driver: &LocalCallbackDriver) -> u16 {
+        driver.listener.local_addr().unwrap().port()
+    }
+
+    async fn send(port: u16, raw: &[u8]) -> String {
+        let mut socket = TcpStream::connect(("127.0.0.1", port)).await.unwrap();
+        socket.write_all(raw).await.unwrap();
+        let mut response = Vec::new();
+        socket.read_to_end(&mut response).await.unwrap_or_default();
+        String::from_utf8_lossy(&response).into_owned()
+    }
+
+    #[tokio::test]
+    async fn a_connection_that_sends_garbage_is_ignored_and_the_real_callback_still_completes() {
+        let driver = LocalCallbackDriver::bind(None).await.unwrap();
+        let port = port_of(&driver);
+        let state = driver.state().to_owned();
+        let waiting = tokio::spawn(driver.await_callback(HANG_GUARD));
+
+        let mut stray = TcpStream::connect(("127.0.0.1", port)).await.unwrap();
+        stray.write_all(&[0xff, 0xfe, 0xfd]).await.unwrap();
+        drop(stray);
+        let response = send(
+            port,
+            format!("GET /oauth/callback?code=real&state={state} HTTP/1.1\r\n\r\n").as_bytes(),
+        )
+        .await;
+
+        let code = waiting.await.unwrap().unwrap();
+        assert_eq!(code.code.expose(), "real");
+        assert!(response.starts_with("HTTP/1.1 200 OK"), "{response}");
+    }
+
+    #[tokio::test]
+    async fn a_request_for_another_path_gets_404_and_does_not_consume_the_callback() {
+        let driver = LocalCallbackDriver::bind(None).await.unwrap();
+        let port = port_of(&driver);
+        let state = driver.state().to_owned();
+        let waiting = tokio::spawn(driver.await_callback(HANG_GUARD));
+
+        let probe = send(
+            port,
+            format!("GET /favicon.ico?code=x&state={state} HTTP/1.1\r\n\r\n").as_bytes(),
+        )
+        .await;
+        let real = send(
+            port,
+            format!("GET /oauth/callback?code=real&state={state} HTTP/1.1\r\n\r\n").as_bytes(),
+        )
+        .await;
+
+        let code = waiting.await.unwrap().unwrap();
+        assert!(probe.starts_with("HTTP/1.1 404 Not Found"), "{probe}");
+        assert!(real.starts_with("HTTP/1.1 200 OK"), "{real}");
+        assert_eq!(code.code.expose(), "real");
+    }
+
+    #[tokio::test]
+    async fn a_callback_with_the_wrong_state_ends_the_wait_with_an_auth_error() {
+        let driver = LocalCallbackDriver::bind(None).await.unwrap();
+        let port = port_of(&driver);
+        let waiting = tokio::spawn(driver.await_callback(HANG_GUARD));
+
+        let response = send(
+            port,
+            b"GET /oauth/callback?code=real&state=forged HTTP/1.1\r\n\r\n",
+        )
+        .await;
+
+        let result = waiting.await.unwrap();
+        assert!(
+            response.starts_with("HTTP/1.1 400 Bad Request"),
+            "{response}"
+        );
+        assert!(
+            matches!(result, Err(PlatformError::Auth { ref reason }) if reason.contains("state mismatch")),
+            "{result:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn waiting_with_no_connection_times_out_with_an_auth_error() {
+        let driver = LocalCallbackDriver::bind(None).await.unwrap();
+
+        let result = driver.await_callback(Duration::from_millis(20)).await;
+
+        assert!(
+            matches!(result, Err(PlatformError::Auth { ref reason }) if reason == "callback timeout"),
+            "{result:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn a_connection_that_never_sends_a_request_cannot_outlast_the_overall_timeout() {
+        let driver = LocalCallbackDriver::bind(None).await.unwrap();
+        let _silent = TcpStream::connect(("127.0.0.1", port_of(&driver)))
+            .await
+            .unwrap();
+
+        let result = driver.await_callback(Duration::from_millis(50)).await;
+
+        assert!(
+            matches!(result, Err(PlatformError::Auth { ref reason }) if reason == "callback timeout"),
+            "{result:?}"
         );
     }
 }

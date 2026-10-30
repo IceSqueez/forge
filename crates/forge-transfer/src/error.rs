@@ -137,6 +137,12 @@ pub enum TransferError {
     #[error("the operation was interrupted: {reason}")]
     Interrupted { reason: String },
 
+    #[error("a background task failed: {reason}")]
+    WorkerFailed { reason: String },
+
+    #[error("the stored backup key cannot be read: {reason}")]
+    ScheduleKeyUnreadable { reason: String },
+
     #[error("an update is ready or being installed; finish or dismiss it before restoring")]
     UpdateInProgress,
 

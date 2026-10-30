@@ -4,7 +4,6 @@ use std::path::{Path, PathBuf};
 
 use crate::bundle::digest::DigestingReader;
 use crate::bundle::layout::{ArchiveScope, EntryShape, confined_relative_path, entry_name};
-use crate::bundle::limits::{MAX_ARCHIVE_ENTRIES, MAX_ENTRY_BYTES, MAX_UNPACKED_BYTES};
 use crate::bundle::manifest::ContentEntry;
 use crate::bundle::private_file::create_private;
 use crate::error::TransferError;
@@ -44,9 +43,10 @@ impl Extractor {
         entry: &mut tar::Entry<'_, R>,
     ) -> Result<(), TransferError> {
         self.entries += 1;
-        if self.entries > MAX_ARCHIVE_ENTRIES {
+        let limits = self.scope.limits();
+        if self.entries > limits.entries {
             return Err(TransferError::TooManyEntries {
-                limit: MAX_ARCHIVE_ENTRIES,
+                limit: limits.entries,
             });
         }
         let entry_type = entry.header().entry_type();
@@ -113,17 +113,18 @@ impl Extractor {
                 reason: "the archive holds this file twice",
             });
         }
-        if size > MAX_ENTRY_BYTES {
+        let limits = self.scope.limits();
+        if size > limits.entry_bytes {
             return Err(TransferError::EntryTooLarge {
                 path: name.to_owned(),
                 size,
-                limit: MAX_ENTRY_BYTES,
+                limit: limits.entry_bytes,
             });
         }
         self.unpacked_bytes = self.unpacked_bytes.saturating_add(size);
-        if self.unpacked_bytes > MAX_UNPACKED_BYTES {
+        if self.unpacked_bytes > limits.unpacked_bytes {
             return Err(TransferError::ArchiveTooLarge {
-                limit: MAX_UNPACKED_BYTES,
+                limit: limits.unpacked_bytes,
             });
         }
         Ok(())
@@ -158,5 +159,121 @@ impl Extractor {
             }),
             None => Ok(()),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::bundle::limits::{
+        MAX_SHARED_ARCHIVE_ENTRIES, MAX_SHARED_ENTRY_BYTES, MAX_SHARED_UNPACKED_BYTES,
+    };
+
+    const PACK_FILE: &str = "pack/documents.json";
+    const SETUP_FILE: &str = "setup/documents.json";
+    const BACKUP_FILE: &str = "forge/forge.db";
+
+    fn header_only(name: &str, declared_size: u64) -> Vec<u8> {
+        let mut header = tar::Header::new_gnu();
+        header.set_path(name).unwrap();
+        header.set_entry_type(tar::EntryType::Regular);
+        header.set_size(declared_size);
+        header.set_mode(0o600);
+        header.set_cksum();
+        header.as_bytes().to_vec()
+    }
+
+    fn extract_declared(
+        scope: ArchiveScope,
+        name: &str,
+        declared_size: u64,
+        prepare: impl FnOnce(&mut Extractor),
+    ) -> Result<(), TransferError> {
+        let root = tempfile::tempdir().unwrap();
+        let mut extractor = Extractor::new(root.path().to_path_buf(), scope, None);
+        prepare(&mut extractor);
+        let bytes = header_only(name, declared_size);
+        let mut archive = tar::Archive::new(std::io::Cursor::new(bytes));
+        let mut entries = archive.entries().unwrap();
+        let mut entry = entries.next().unwrap().unwrap();
+        extractor.extract(&mut entry)
+    }
+
+    #[test]
+    fn a_shared_scope_entry_over_the_shared_cap_is_refused_where_a_backup_entry_of_that_size_is_not()
+     {
+        let size = MAX_SHARED_ENTRY_BYTES + 1;
+
+        let pack = extract_declared(ArchiveScope::Pack, PACK_FILE, size, |_| {});
+        let setup = extract_declared(ArchiveScope::Setup, SETUP_FILE, size, |_| {});
+        let backup = extract_declared(ArchiveScope::Backup, BACKUP_FILE, size, |_| {});
+
+        for refused in [pack, setup] {
+            assert!(
+                matches!(refused, Err(TransferError::EntryTooLarge { limit, .. }) if limit == MAX_SHARED_ENTRY_BYTES),
+                "{refused:?}"
+            );
+        }
+        assert!(
+            !matches!(backup, Err(TransferError::EntryTooLarge { .. })),
+            "{backup:?}"
+        );
+    }
+
+    #[test]
+    fn a_shared_scope_entry_at_the_shared_cap_passes_the_size_check() {
+        let at_cap = extract_declared(
+            ArchiveScope::Pack,
+            PACK_FILE,
+            MAX_SHARED_ENTRY_BYTES,
+            |_| {},
+        );
+
+        assert!(
+            !matches!(at_cap, Err(TransferError::EntryTooLarge { .. })),
+            "{at_cap:?}"
+        );
+    }
+
+    #[test]
+    fn the_entry_past_the_shared_entry_count_cap_is_refused_for_pack_and_setup_but_not_backup() {
+        let past_cap = |scope, name| {
+            extract_declared(scope, name, 0, |extractor| {
+                extractor.entries = MAX_SHARED_ARCHIVE_ENTRIES;
+            })
+        };
+
+        let pack = past_cap(ArchiveScope::Pack, PACK_FILE);
+        let setup = past_cap(ArchiveScope::Setup, SETUP_FILE);
+        let backup = past_cap(ArchiveScope::Backup, BACKUP_FILE);
+
+        for refused in [pack, setup] {
+            assert!(
+                matches!(refused, Err(TransferError::TooManyEntries { limit }) if limit == MAX_SHARED_ARCHIVE_ENTRIES),
+                "{refused:?}"
+            );
+        }
+        assert!(backup.is_ok(), "{backup:?}");
+    }
+
+    #[test]
+    fn the_last_entry_inside_the_shared_entry_count_cap_is_not_refused() {
+        let inside = extract_declared(ArchiveScope::Pack, PACK_FILE, 0, |extractor| {
+            extractor.entries = MAX_SHARED_ARCHIVE_ENTRIES - 1;
+        });
+
+        assert!(inside.is_ok(), "{inside:?}");
+    }
+
+    #[test]
+    fn a_pack_whose_total_unpacked_size_passes_the_shared_cap_is_refused() {
+        let over = extract_declared(ArchiveScope::Pack, PACK_FILE, 1, |extractor| {
+            extractor.unpacked_bytes = MAX_SHARED_UNPACKED_BYTES;
+        });
+
+        assert!(
+            matches!(over, Err(TransferError::ArchiveTooLarge { limit }) if limit == MAX_SHARED_UNPACKED_BYTES),
+            "{over:?}"
+        );
     }
 }

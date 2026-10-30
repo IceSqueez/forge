@@ -7,17 +7,9 @@ use forge_types::EventId;
 use time::OffsetDateTime;
 
 use crate::batch::insert_rows;
+use crate::epoch::{from_epoch_ms, to_epoch_ms};
 use crate::error::SqliteStorageError;
 use crate::pool::SqlitePools;
-
-fn to_epoch_secs(dt: OffsetDateTime) -> i64 {
-    dt.unix_timestamp()
-}
-
-fn from_epoch_secs(secs: i64) -> Result<OffsetDateTime, SqliteStorageError> {
-    OffsetDateTime::from_unix_timestamp(secs)
-        .map_err(|e| SqliteStorageError::Decode(format!("timestamp {secs} out of range: {e}")))
-}
 
 fn parse_id<T: serde::de::DeserializeOwned>(s: &str, label: &str) -> Result<T, SqliteStorageError> {
     serde_json::from_str(&format!("\"{s}\""))
@@ -45,7 +37,7 @@ impl EncodedEvent {
                 .trim_matches('"')
                 .to_string(),
             kind: event.kind.clone(),
-            timestamp: to_epoch_secs(event.timestamp),
+            timestamp: to_epoch_ms(event.timestamp),
             payload: serde_json::to_string(&event.payload).map_err(StorageError::Serialization)?,
             caused_by: event.caused_by.map(|cid| cid.to_string()),
             replay: i64::from(event.replay),
@@ -67,7 +59,7 @@ struct EventLogRow {
 fn decode_row(row: EventLogRow) -> Result<Event, SqliteStorageError> {
     let id: EventId = parse_id(&row.id, "event id")?;
     let source: EventSource = parse_id(&row.source, "event source")?;
-    let timestamp = from_epoch_secs(row.timestamp)?;
+    let timestamp = from_epoch_ms(row.timestamp)?;
     let payload: serde_json::Value = serde_json::from_str(&row.payload)
         .map_err(|e| SqliteStorageError::Decode(format!("invalid payload json: {e}")))?;
     let caused_by: Option<EventId> = row
@@ -108,7 +100,7 @@ impl SqliteEventLogRepo {
                  SELECT rowid FROM event_log WHERE timestamp < ? ORDER BY timestamp LIMIT ?
              )",
         )
-        .bind(to_epoch_secs(cutoff))
+        .bind(to_epoch_ms(cutoff))
         .bind(i64::from(max_rows))
         .execute(self.db.writer())
         .await?;
@@ -194,7 +186,7 @@ impl EventLogRepo for SqliteEventLogRepo {
         let rows: Vec<EventLogRow> = sqlx::query_as(
             "SELECT id, source, kind, timestamp, payload, caused_by, replay
              FROM event_log
-             ORDER BY timestamp DESC
+             ORDER BY rowid DESC
              LIMIT ?",
         )
         .bind(limit as i64)
@@ -218,8 +210,8 @@ impl EventLogRepo for SqliteEventLogRepo {
                 sqlx::query_as(
                     "SELECT id, source, kind, timestamp, payload, caused_by, replay
                      FROM event_log
-                     WHERE timestamp > (SELECT timestamp FROM event_log WHERE id = ?)
-                     ORDER BY timestamp DESC
+                     WHERE rowid > (SELECT rowid FROM event_log WHERE id = ?)
+                     ORDER BY rowid DESC
                      LIMIT ?",
                 )
                 .bind(&id_str)
@@ -231,7 +223,7 @@ impl EventLogRepo for SqliteEventLogRepo {
             None => sqlx::query_as(
                 "SELECT id, source, kind, timestamp, payload, caused_by, replay
                      FROM event_log
-                     ORDER BY timestamp DESC
+                     ORDER BY rowid DESC
                      LIMIT ?",
             )
             .bind(limit as i64)
@@ -298,6 +290,45 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn recent_since_orders_events_sharing_one_second_by_insertion() {
+        let repo = make_repo().await;
+        let events: Vec<Event> = (0..5)
+            .map(|i| event_at(&format!("ev.{i}"), 1_000_000))
+            .collect();
+        for ev in &events {
+            repo.insert(ev).await.unwrap();
+        }
+
+        let newest_first = repo.recent_since(100, None).await.unwrap();
+        let after_mid_anchor = repo.recent_since(100, Some(events[2].id)).await.unwrap();
+
+        let ids = |v: &[Event]| v.iter().map(|e| e.id).collect::<Vec<_>>();
+        assert_eq!(
+            ids(&newest_first),
+            vec![
+                events[4].id,
+                events[3].id,
+                events[2].id,
+                events[1].id,
+                events[0].id
+            ]
+        );
+        assert_eq!(ids(&after_mid_anchor), vec![events[4].id, events[3].id]);
+    }
+
+    #[tokio::test]
+    async fn timestamp_survives_a_round_trip_at_millisecond_precision() {
+        let repo = make_repo().await;
+        let mut ev = event_at("ev", 1_700_000_000);
+        ev.timestamp += time::Duration::milliseconds(789);
+        repo.insert(&ev).await.unwrap();
+
+        let loaded = repo.recent_since(1, None).await.unwrap();
+
+        assert_eq!(loaded[0].timestamp, ev.timestamp);
+    }
+
+    #[tokio::test]
     async fn recent_since_unknown_anchor_returns_empty() {
         let repo = make_repo().await;
         for i in 0..3i64 {
@@ -325,7 +356,7 @@ mod tests {
     }
 
     async fn surviving_timestamps(repo: &SqliteEventLogRepo) -> Vec<i64> {
-        sqlx::query_scalar("SELECT timestamp FROM event_log ORDER BY timestamp")
+        sqlx::query_scalar("SELECT timestamp / 1000 FROM event_log ORDER BY timestamp")
             .fetch_all(repo.db.writer())
             .await
             .unwrap()

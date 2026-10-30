@@ -28,6 +28,7 @@ pub(crate) struct Signals {
     pub storage_changed: Notify,
     pub run_now: Notify,
     pub cancel_in_flight: Notify,
+    pub suspended: watch::Receiver<bool>,
     pub shutdown: CancellationToken,
 }
 
@@ -72,15 +73,16 @@ impl ScheduledBackupHandle {
 }
 
 pub fn spawn_scheduled_backups(parts: ScheduledBackupParts) -> ScheduledBackupHandle {
+    let (status_tx, status_rx) = watch::channel(ScheduledBackupStatus::initial());
+    let (suspended_tx, suspended_rx) = watch::channel(false);
     let signals = Arc::new(Signals {
         settings_changed: Notify::new(),
         storage_changed: Notify::new(),
         run_now: Notify::new(),
         cancel_in_flight: Notify::new(),
+        suspended: suspended_rx.clone(),
         shutdown: CancellationToken::new(),
     });
-    let (status_tx, status_rx) = watch::channel(ScheduledBackupStatus::initial());
-    let (suspended_tx, suspended_rx) = watch::channel(false);
     let service = Service {
         parts,
         signals: Arc::clone(&signals),
@@ -202,14 +204,16 @@ impl Service {
     }
 
     async fn reload_settings(&mut self) {
-        if let Ok(loaded) = ScheduleSettings::load(self.settings_repo()).await {
-            self.settings = loaded;
+        match ScheduleSettings::load(self.settings_repo()).await {
+            Ok(loaded) => self.settings = loaded,
+            Err(error) => tracing::warn!(%error, "backup schedule settings could not be reloaded"),
         }
     }
 
     async fn reload_progress(&mut self) {
-        if let Ok(loaded) = Progress::load(self.settings_repo()).await {
-            self.progress = loaded;
+        match Progress::load(self.settings_repo()).await {
+            Ok(loaded) => self.progress = loaded,
+            Err(error) => tracing::warn!(%error, "backup schedule progress could not be reloaded"),
         }
     }
 
@@ -308,6 +312,7 @@ mod tests {
                 storage_changed: Notify::new(),
                 run_now: Notify::new(),
                 cancel_in_flight: Notify::new(),
+                suspended: watch::channel(false).1,
                 shutdown: CancellationToken::new(),
             }),
             status,
@@ -392,6 +397,43 @@ mod tests {
                 service.retry_after.is_some(),
             ),
             (false, 0, 0, None, None, true)
+        );
+        service.parts.provider.shutdown().await;
+    }
+
+    #[tokio::test]
+    async fn a_run_started_while_already_suspended_is_cancelled_before_it_writes_anything() {
+        let (dir, mut service, _status) = service().await;
+        let folder = dir.path().join("out");
+        std::fs::create_dir_all(&folder).unwrap();
+        service.settings.enabled = true;
+        service.settings.destination = Some(folder.clone());
+        service.settings.key = Some(
+            create_schedule_key(&Passphrase::new("correct horse battery staple".to_owned()))
+                .unwrap(),
+        );
+        service.signals = Arc::new(Signals {
+            settings_changed: Notify::new(),
+            storage_changed: Notify::new(),
+            run_now: Notify::new(),
+            cancel_in_flight: Notify::new(),
+            suspended: watch::channel(true).1,
+            shutdown: CancellationToken::new(),
+        });
+
+        service.attempt(Trigger::Due).await;
+
+        let backups = std::fs::read_dir(dir.path().join(forge_paths::BACKUPS_DIR_NAME))
+            .map(|entries| entries.count())
+            .unwrap_or(0);
+        assert_eq!(
+            (
+                service.parts.exclusivity.is_held(),
+                std::fs::read_dir(&folder).unwrap().count(),
+                backups,
+                service.progress.last_success_at,
+            ),
+            (false, 0, 0, None)
         );
         service.parts.provider.shutdown().await;
     }

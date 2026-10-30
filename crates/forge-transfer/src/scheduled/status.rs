@@ -29,7 +29,7 @@ impl FailureCategory {
                 }
                 _ => Self::SnapshotFailed,
             },
-            TransferError::Encryption { .. } => Self::KeyMissing,
+            TransferError::ScheduleKeyUnreadable { .. } => Self::KeyUnreadable,
             TransferError::Interrupted { .. } => Self::Interrupted,
             _ => Self::SnapshotFailed,
         }
@@ -71,5 +71,61 @@ impl ScheduledBackupStatus {
             prune_failures: 0,
             storage_used: None,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn io(kind: ErrorKind) -> TransferError {
+        TransferError::Io(std::io::Error::from(kind))
+    }
+
+    #[test]
+    fn failure_category_maps_each_error_to_the_category_the_user_can_act_on() {
+        let cases = [
+            (io(ErrorKind::StorageFull), FailureCategory::DiskFull),
+            (io(ErrorKind::QuotaExceeded), FailureCategory::DiskFull),
+            (io(ErrorKind::NotFound), FailureCategory::DestinationMissing),
+            (
+                io(ErrorKind::PermissionDenied),
+                FailureCategory::DestinationNotWritable,
+            ),
+            (
+                io(ErrorKind::ReadOnlyFilesystem),
+                FailureCategory::DestinationNotWritable,
+            ),
+            (io(ErrorKind::BrokenPipe), FailureCategory::SnapshotFailed),
+            (
+                TransferError::ScheduleKeyUnreadable {
+                    reason: "bad".into(),
+                },
+                FailureCategory::KeyUnreadable,
+            ),
+            (
+                TransferError::Interrupted {
+                    reason: "stop".into(),
+                },
+                FailureCategory::Interrupted,
+            ),
+            (
+                TransferError::WorkerFailed {
+                    reason: "panic".into(),
+                },
+                FailureCategory::SnapshotFailed,
+            ),
+        ];
+
+        for (error, expected) in cases {
+            assert_eq!(FailureCategory::of(&error), expected, "{error:?}");
+        }
+    }
+
+    #[test]
+    fn an_encryption_failure_is_not_reported_as_an_unreadable_stored_key() {
+        let error = TransferError::Encryption { reason: "x".into() };
+
+        assert_eq!(FailureCategory::of(&error), FailureCategory::SnapshotFailed);
     }
 }

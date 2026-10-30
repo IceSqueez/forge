@@ -199,6 +199,7 @@ struct ListState {
     order: Order,
     requested_pages: Vec<u64>,
     faults: VecDeque<ResponseTemplate>,
+    delayed_fault: Option<(usize, ResponseTemplate)>,
 }
 
 #[derive(Clone)]
@@ -214,6 +215,7 @@ impl DonatesList {
                 order,
                 requested_pages: Vec::new(),
                 faults: VecDeque::new(),
+                delayed_fault: None,
             })),
         }
     }
@@ -224,6 +226,10 @@ impl DonatesList {
 
     pub fn fail_next(&self, response: ResponseTemplate) {
         self.state.lock().unwrap().faults.push_back(response);
+    }
+
+    pub fn fail_after(&self, passing_requests: usize, response: ResponseTemplate) {
+        self.state.lock().unwrap().delayed_fault = Some((passing_requests, response));
     }
 
     pub fn requested_pages(&self) -> Vec<u64> {
@@ -244,6 +250,15 @@ impl Respond for DonatesList {
         state.requested_pages.push(page);
         if let Some(fault) = state.faults.pop_front() {
             return fault;
+        }
+        if let Some((passing, _)) = state.delayed_fault.as_mut() {
+            if *passing == 0 {
+                if let Some((_, fault)) = state.delayed_fault.take() {
+                    return fault;
+                }
+            } else {
+                *passing -= 1;
+            }
         }
         let mut items = state.oldest_first.clone();
         if state.order == Order::NewestFirst {
@@ -360,8 +375,7 @@ impl Harness {
         }
     }
 
-    pub async fn poll_now(&mut self) {
-        let before = self.provider.poll_status().last_poll_at;
+    pub fn wake_poller(&mut self) {
         self.flip = !self.flip;
         let interval = if self.flip {
             MAX_POLL_INTERVAL - Duration::from_secs(1)
@@ -369,6 +383,11 @@ impl Harness {
             MAX_POLL_INTERVAL
         };
         self.provider.set_poll_interval(interval);
+    }
+
+    pub async fn poll_now(&mut self) {
+        let before = self.provider.poll_status().last_poll_at;
+        self.wake_poller();
         self.wait_for("next completed poll", |status| {
             status.last_poll_at.is_some() && status.last_poll_at != before
         })

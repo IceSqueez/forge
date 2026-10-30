@@ -89,7 +89,7 @@ fn decode_rule_kind(kind: &str, params_json: &str) -> Result<FilterRuleKind, Sto
     }
 }
 
-fn encode_rule_kind(kind: &FilterRuleKind) -> (&'static str, String) {
+fn encode_rule_kind(kind: &FilterRuleKind) -> Result<(&'static str, String), StorageError> {
     #[derive(serde::Serialize)]
     struct LiteralParams<'a> {
         pattern: &'a str,
@@ -118,8 +118,8 @@ fn encode_rule_kind(kind: &FilterRuleKind) -> (&'static str, String) {
                 replacement,
                 match_inside_words: *match_inside_words,
             })
-            .unwrap_or_default();
-            ("literal", json)
+            .map_err(StorageError::Serialization)?;
+            Ok(("literal", json))
         }
         FilterRuleKind::Regex {
             pattern,
@@ -129,13 +129,13 @@ fn encode_rule_kind(kind: &FilterRuleKind) -> (&'static str, String) {
                 pattern,
                 replacement,
             })
-            .unwrap_or_default();
-            ("regex", json)
+            .map_err(StorageError::Serialization)?;
+            Ok(("regex", json))
         }
         FilterRuleKind::Blocklist { words, mode } => {
-            let json =
-                serde_json::to_string(&BlocklistParams { words, mode: *mode }).unwrap_or_default();
-            ("blocklist", json)
+            let json = serde_json::to_string(&BlocklistParams { words, mode: *mode })
+                .map_err(StorageError::Serialization)?;
+            Ok(("blocklist", json))
         }
     }
 }
@@ -250,7 +250,7 @@ impl TtsFiltersRepo for SqliteTtsFiltersRepo {
             .map_err(SqliteStorageError::Sqlx)?;
 
         for rule in rules {
-            let (kind_str, params_json) = encode_rule_kind(&rule.kind);
+            let (kind_str, params_json) = encode_rule_kind(&rule.kind)?;
             sqlx::query(
                 "INSERT INTO tts_filter_rules (id, name, enabled, position, kind, params)
                  VALUES (?, ?, ?, ?, ?, ?)",

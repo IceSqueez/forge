@@ -680,6 +680,10 @@ impl OverlayRepo for StubOverlays {
         unreachable!("the settings pane never saves an overlay")
     }
 
+    async fn restore(&self, _: &OverlayDefinition) -> Result<(), StorageError> {
+        unreachable!("the settings pane never restores an overlay")
+    }
+
     async fn set_enabled(&self, _: &OverlayId, _: bool) -> Result<bool, StorageError> {
         unreachable!("the settings pane never toggles an overlay")
     }

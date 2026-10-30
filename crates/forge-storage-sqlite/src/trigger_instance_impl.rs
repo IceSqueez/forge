@@ -8,6 +8,8 @@ use time::OffsetDateTime;
 use crate::error::SqliteStorageError;
 use crate::pool::SqlitePools;
 
+const REFERENCE_BLOCK_SAMPLE_NAMES: usize = 3;
+
 fn parse_id<T: serde::de::DeserializeOwned>(s: &str, label: &str) -> Result<T, SqliteStorageError> {
     serde_json::from_str(&format!("\"{s}\""))
         .map_err(|e| SqliteStorageError::Decode(format!("invalid {label} id '{s}': {e}")))
@@ -283,47 +285,48 @@ impl TriggerInstanceRepo for SqliteTriggerInstanceRepo {
     }
 
     async fn delete(&self, id: TriggerInstanceId) -> Result<bool, StorageError> {
-        let id_str_probe = id.to_string();
-        let linked_rows: Vec<(String,)> = sqlx::query_as(
-            "SELECT action_id FROM action_trigger_instances WHERE trigger_instance_id = ?",
-        )
-        .bind(&id_str_probe)
-        .fetch_all(self.db.reader())
-        .await
-        .map_err(SqliteStorageError::Sqlx)?;
-        let action_ids = linked_rows
-            .into_iter()
-            .map(|(s,)| parse_id::<ActionId>(&s, "action").map_err(StorageError::from))
-            .collect::<Result<Vec<_>, _>>()?;
-
-        if !action_ids.is_empty() {
-            let used_in_count = action_ids.len() as u32;
-            let mut sample_action_names = Vec::new();
-            for aid in action_ids.iter().take(3) {
-                let aid_str = aid.to_string();
-                let row: Option<(String,)> =
-                    sqlx::query_as("SELECT name FROM actions WHERE id = ?")
-                        .bind(&aid_str)
-                        .fetch_optional(self.db.reader())
-                        .await
-                        .map_err(SqliteStorageError::Sqlx)?;
-                if let Some((name,)) = row {
-                    sample_action_names.push(name);
-                }
-            }
-            return Err(StorageError::ReferenceBlock {
-                used_in_count,
-                sample_action_names,
-            });
-        }
-
         let id_str = id.to_string();
-        let result = sqlx::query("DELETE FROM trigger_instances WHERE id = ?")
-            .bind(&id_str)
-            .execute(self.db.writer())
+        let mut tx = self
+            .db
+            .writer()
+            .begin_with("BEGIN IMMEDIATE")
             .await
             .map_err(SqliteStorageError::Sqlx)?;
 
+        let live_users: Vec<(String,)> = sqlx::query_as(
+            "SELECT a.name FROM action_trigger_instances l
+             JOIN actions a ON a.id = l.action_id
+             WHERE l.trigger_instance_id = ? AND a.archived_at IS NULL
+             ORDER BY a.name",
+        )
+        .bind(&id_str)
+        .fetch_all(&mut *tx)
+        .await
+        .map_err(SqliteStorageError::Sqlx)?;
+
+        if !live_users.is_empty() {
+            return Err(StorageError::ReferenceBlock {
+                used_in_count: live_users.len() as u32,
+                sample_action_names: live_users
+                    .into_iter()
+                    .take(REFERENCE_BLOCK_SAMPLE_NAMES)
+                    .map(|(name,)| name)
+                    .collect(),
+            });
+        }
+
+        sqlx::query("DELETE FROM action_trigger_instances WHERE trigger_instance_id = ?")
+            .bind(&id_str)
+            .execute(&mut *tx)
+            .await
+            .map_err(SqliteStorageError::Sqlx)?;
+        let result = sqlx::query("DELETE FROM trigger_instances WHERE id = ?")
+            .bind(&id_str)
+            .execute(&mut *tx)
+            .await
+            .map_err(SqliteStorageError::Sqlx)?;
+
+        tx.commit().await.map_err(SqliteStorageError::Sqlx)?;
         Ok(result.rows_affected() > 0)
     }
 
@@ -368,13 +371,16 @@ impl TriggerInstanceRepo for SqliteTriggerInstanceRepo {
         let id_str = id.to_string();
         let enabled_val: i64 = if enabled { 1 } else { 0 };
 
-        sqlx::query("UPDATE trigger_instances SET enabled = ? WHERE id = ?")
+        let result = sqlx::query("UPDATE trigger_instances SET enabled = ? WHERE id = ?")
             .bind(enabled_val)
             .bind(&id_str)
             .execute(self.db.writer())
             .await
             .map_err(SqliteStorageError::Sqlx)?;
 
+        if result.rows_affected() == 0 {
+            return Err(StorageError::NotFound { key: id_str });
+        }
         Ok(())
     }
 

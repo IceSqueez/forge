@@ -59,6 +59,7 @@ impl Service {
         };
         let signals = std::sync::Arc::clone(&self.signals);
         let cancel = CancelFlag::new();
+        let mut suspended = signals.suspended.clone();
         let write = write_scheduled_backup_cancellable(request, unchanged_since, cancel.clone());
         tokio::pin!(write);
         let written = tokio::select! {
@@ -68,6 +69,14 @@ impl Service {
                 write.await
             }
             () = signals.cancel_in_flight.notified() => {
+                cancel.raise();
+                write.await
+            }
+            () = async {
+                if suspended.wait_for(|suspended| *suspended).await.is_err() {
+                    std::future::pending::<()>().await;
+                }
+            } => {
                 cancel.raise();
                 write.await
             }

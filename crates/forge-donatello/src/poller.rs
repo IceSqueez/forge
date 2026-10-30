@@ -242,8 +242,12 @@ async fn scan_for_new(
             }
         }
     }
+    let unseen_found = found.unseen;
     let newest = emit(ctx, found).await?;
     if let Some(error) = failure {
+        memory.known_total = memory
+            .known_total
+            .map(|known| known.saturating_add(unseen_found));
         return Err(error.into());
     }
     memory.known_total = total.or(memory.known_total);

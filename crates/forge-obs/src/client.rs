@@ -676,6 +676,7 @@ async fn run_supervisor(host: String, port: u16, password: Option<String>, ctx: 
             Arc::clone(&inner),
             Arc::clone(&resync_nudge),
             feeds.clone(),
+            timing,
         ));
 
         let mut pending_resync: Option<AbortOnDrop> = None;
@@ -1295,8 +1296,8 @@ pub(crate) fn merge_reconciled_topology(catalog: &mut ObsCatalog, fetched: Fetch
     catalog.current_preview_scene = fetched.current_preview_scene;
 }
 
-const STATS_POLL_INTERVAL: Duration = Duration::from_secs(2);
-const STATS_POLL_REQUEST_TIMEOUT: Duration = STATS_POLL_INTERVAL;
+pub(crate) const STATS_POLL_INTERVAL: Duration = Duration::from_secs(2);
+pub(crate) const STATS_POLL_REQUEST_TIMEOUT: Duration = STATS_POLL_INTERVAL;
 const UNANSWERED_STATS_POLLS_BEFORE_SUSPECT: u32 = 3;
 const TOPOLOGY_FETCH_ATTEMPTS: u32 = 5;
 
@@ -1304,6 +1305,7 @@ fn spawn_stats_poll(
     inner: SessionSlot,
     resync_nudge: Arc<Notify>,
     feeds: CatalogFeeds,
+    timing: ObsTiming,
 ) -> JoinHandle<()> {
     let CatalogFeeds {
         catalog_state,
@@ -1314,7 +1316,7 @@ fn spawn_stats_poll(
         stream_output,
     } = feeds;
     tokio::spawn(async move {
-        let mut ticker = tokio::time::interval(STATS_POLL_INTERVAL);
+        let mut ticker = tokio::time::interval(timing.stats_poll_interval);
         ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
         let mut unanswered_polls: u32 = 0;
         loop {
@@ -1336,14 +1338,18 @@ fn spawn_stats_poll(
                 let streaming = session.obs().streaming();
                 let recording = session.obs().recording();
                 let (stats, stream_status, record_status) = tokio::join!(
-                    with_deadline(STATS_POLL_REQUEST_TIMEOUT, "GetStats", general.stats()),
                     with_deadline(
-                        STATS_POLL_REQUEST_TIMEOUT,
+                        timing.stats_poll_request_timeout,
+                        "GetStats",
+                        general.stats()
+                    ),
+                    with_deadline(
+                        timing.stats_poll_request_timeout,
                         "GetStreamStatus",
                         streaming.status()
                     ),
                     with_deadline(
-                        STATS_POLL_REQUEST_TIMEOUT,
+                        timing.stats_poll_request_timeout,
                         "GetRecordStatus",
                         recording.status()
                     ),

@@ -26,6 +26,13 @@ pub(crate) struct DialFailure {
 }
 
 impl DialFailure {
+    fn timed_out() -> Self {
+        Self {
+            message: messages::unreachable(),
+            detail: VTubeError::Timeout.to_string(),
+        }
+    }
+
     fn of(error: &WsError) -> Self {
         let message = match error {
             WsError::Io(io_error) if io_error.kind() == ErrorKind::ConnectionRefused => {
@@ -41,11 +48,17 @@ impl DialFailure {
     }
 }
 
-pub(crate) async fn dial(endpoint: &str) -> Result<VtsWs, DialFailure> {
+async fn dial(endpoint: &str) -> Result<VtsWs, DialFailure> {
     tokio_tungstenite::connect_async(endpoint)
         .await
         .map(|(ws, _)| ws)
         .map_err(|e| DialFailure::of(&e))
+}
+
+pub(crate) async fn dial_within(endpoint: &str, limit: Duration) -> Result<VtsWs, DialFailure> {
+    tokio::time::timeout(limit, dial(endpoint))
+        .await
+        .map_err(|_| DialFailure::timed_out())?
 }
 
 pub(crate) async fn send_text(ws: &mut VtsWs, text: String) -> Result<(), VTubeError> {
@@ -60,6 +73,16 @@ pub(crate) async fn send_ws_msg<T: serde::Serialize>(
 ) -> Result<(), VTubeError> {
     let text = serde_json::to_string(msg).map_err(VTubeError::Json)?;
     send_text(ws, text).await
+}
+
+pub(crate) async fn send_ws_msg_within<T: serde::Serialize>(
+    ws: &mut VtsWs,
+    msg: &T,
+    limit: Duration,
+) -> Result<(), VTubeError> {
+    tokio::time::timeout(limit, send_ws_msg(ws, msg))
+        .await
+        .map_err(|_| VTubeError::Timeout)?
 }
 
 pub(crate) async fn next_inbound(ws: &mut VtsWs) -> Inbound {
@@ -105,17 +128,51 @@ pub(crate) async fn exchange(
     limit: Duration,
 ) -> Result<Value, VTubeError> {
     let req = new_request(msg_type, data);
-    send_ws_msg(ws, &req).await?;
-    tokio::time::timeout(limit, recv_reply(ws, &req.request_id))
+    let round_trip = async {
+        send_ws_msg(ws, &req).await?;
+        recv_reply(ws, &req.request_id).await
+    };
+    tokio::time::timeout(limit, round_trip)
         .await
         .map_err(|_| VTubeError::Timeout)?
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use serde_json::json;
+    use tokio::net::TcpListener;
+    use tokio::task::JoinHandle;
 
     use super::*;
+
+    pub(crate) const HANG_GUARD: Duration = Duration::from_secs(30);
+    pub(crate) const SHORT_LIMIT: Duration = Duration::from_millis(50);
+    const OVERSIZED_FRAME_BYTES: usize = 32 * 1024 * 1024;
+
+    async fn dial_or_panic(endpoint: &str) -> VtsWs {
+        match dial_within(endpoint, HANG_GUARD).await {
+            Ok(ws) => ws,
+            Err(failure) => panic!("the dial failed: {}", failure.detail),
+        }
+    }
+
+    pub(crate) async fn socket_with_a_stalled_write() -> (VtsWs, JoinHandle<()>) {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let endpoint = format!("ws://{}", listener.local_addr().unwrap());
+        let peer = tokio::spawn(async move {
+            let (stream, _) = listener.accept().await.unwrap();
+            let _unread = tokio_tungstenite::accept_async(stream).await.unwrap();
+            std::future::pending::<()>().await;
+        });
+        let mut ws = dial_or_panic(&endpoint).await;
+        let filling = send_text(&mut ws, "x".repeat(OVERSIZED_FRAME_BYTES));
+
+        assert!(
+            tokio::time::timeout(SHORT_LIMIT, filling).await.is_err(),
+            "precondition: the oversized frame must outgrow the socket buffers"
+        );
+        (ws, peer)
+    }
 
     #[test]
     fn a_json_text_frame_is_delivered_as_an_envelope() {
@@ -185,11 +242,52 @@ mod tests {
         let addr = listener.local_addr().unwrap();
         drop(listener);
 
-        let Err(failure) = dial(&format!("ws://{addr}")).await else {
+        let Err(failure) = dial_within(&format!("ws://{addr}"), HANG_GUARD).await else {
             panic!("dialing a closed port succeeded");
         };
 
         assert_eq!(failure.message.code().name(), "connect_refused");
         assert!(!failure.detail.is_empty());
+    }
+
+    #[tokio::test]
+    async fn a_peer_silent_on_the_upgrade_gives_up_as_unreachable_at_the_limit() {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let endpoint = format!("ws://{}", listener.local_addr().unwrap());
+
+        let Err(failure) = dial_within(&endpoint, SHORT_LIMIT).await else {
+            panic!("the dial completed an upgrade nobody answered");
+        };
+
+        assert_eq!(failure.message.code().name(), "unreachable");
+        assert_eq!(failure.detail, VTubeError::Timeout.to_string());
+    }
+
+    #[tokio::test]
+    async fn a_request_whose_write_stalls_times_out() {
+        let (mut ws, _peer) = socket_with_a_stalled_write().await;
+
+        let outcome = tokio::time::timeout(
+            HANG_GUARD,
+            exchange(&mut ws, "AnyRequest", json!({}), SHORT_LIMIT),
+        )
+        .await
+        .expect("the stalled write outlived its limit");
+
+        assert!(matches!(outcome, Err(VTubeError::Timeout)), "{outcome:?}");
+    }
+
+    #[tokio::test]
+    async fn a_message_whose_write_stalls_times_out() {
+        let (mut ws, _peer) = socket_with_a_stalled_write().await;
+
+        let outcome = tokio::time::timeout(
+            HANG_GUARD,
+            send_ws_msg_within(&mut ws, &json!({}), SHORT_LIMIT),
+        )
+        .await
+        .expect("the stalled write outlived its limit");
+
+        assert!(matches!(outcome, Err(VTubeError::Timeout)), "{outcome:?}");
     }
 }

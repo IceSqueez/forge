@@ -35,7 +35,7 @@ pub use connect_attempt::{VTubeAttemptPhase, VTubeConnectAttempt};
 pub use credentials::{VTUBE_CREDENTIAL_ID, VTubeConnectError, VTubeCredentials};
 pub use error::VTubeError;
 pub use integration::VTUBE_INTEGRATION;
-pub use probe::{VTubeProbeResult, probe_connection};
+pub use probe::{VTubeProbeResult, probe_connection, probe_connection_with_timing};
 pub use runners::register_vtube_sub_actions;
 pub use sink::VTubeSink;
 pub use switchable_sink::SwitchableVTubeSink;

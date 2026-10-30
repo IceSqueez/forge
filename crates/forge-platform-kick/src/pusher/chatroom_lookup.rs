@@ -135,11 +135,12 @@ mod tests {
     use wiremock::{Mock, MockServer, ResponseTemplate};
 
     use super::*;
-    use crate::endpoints_test_support::{RecordingPublisher, channel_info_at, channel_info_with};
+    use crate::endpoints_test_support::{channel_info_at, gateway_waiting_at_most};
     use crate::gateway::{KICK_CHANNEL_INFO_BUDGET_CAPACITY, KICK_CHANNEL_INFO_BUDGET_WINDOW};
 
     const SLUG: &str = "streamer_slug";
     const SLUG_PATH: &str = "/channels/streamer_slug";
+    const SHORT_THROTTLE_WAIT: Duration = Duration::from_millis(50);
 
     fn live_channel() -> ResponseTemplate {
         ResponseTemplate::new(200).set_body_json(serde_json::json!({
@@ -373,11 +374,11 @@ mod tests {
             KICK_CHANNEL_INFO_BUDGET_CAPACITY,
             KICK_CHANNEL_INFO_BUDGET_WINDOW,
         ));
-        let fetcher = channel_info_with(
+        let fetcher = ChannelInfoFetcher::new(gateway_waiting_at_most(
             &server.uri(),
             limiter,
-            Arc::new(RecordingPublisher::default()),
-        );
+            SHORT_THROTTLE_WAIT,
+        ));
         fetcher.fetch(SLUG).await.unwrap_err();
         let started = Instant::now();
 
@@ -388,7 +389,7 @@ mod tests {
             "{retry:?}"
         );
         let waited = started.elapsed();
-        assert!(waited >= forge_net::MAX_THROTTLE_WAIT, "waited {waited:?}");
+        assert!(waited >= SHORT_THROTTLE_WAIT, "waited {waited:?}");
         assert_eq!(request_count(&server).await, 1);
     }
 }

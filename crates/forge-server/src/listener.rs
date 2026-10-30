@@ -247,56 +247,116 @@ impl Connected<IncomingStream<'_, GuardedListener>> for PeerInfo {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use std::io;
-    use std::net::{IpAddr, Ipv4Addr};
+    use std::net::{IpAddr, Ipv4Addr, SocketAddr};
     use std::sync::Arc;
+    use std::sync::atomic::AtomicBool;
     use std::time::Duration;
 
-    use axum::serve::Listener;
-    use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
+    use axum::extract::connect_info::Connected;
+    use axum::serve::{IncomingStream, Listener};
+    use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _, DuplexStream, duplex};
     use tokio::net::{TcpListener, TcpStream};
-    use tokio::sync::Semaphore;
+    use tokio::sync::{Semaphore, mpsc};
+    use tokio::time::Instant;
 
     use super::{
         GuardedListener, GuardedStream, MAX_CONCURRENT_CONNECTIONS, PER_IP_MAX_CONNECTIONS,
-        PerIpLimiter, REQUEST_READ_TIMEOUT,
+        PeerInfo, PerIpLimiter,
     };
 
     const BYTE_BUDGET: Duration = Duration::from_secs(30);
-    const MARGIN: Duration = Duration::from_secs(1);
+    const READ_TIMEOUT: Duration = Duration::from_secs(7);
+    const TICK: Duration = Duration::from_millis(1);
+    const DUPLEX_BUFFER: usize = 64 * 1024;
+    const DUPLEX_PEER: SocketAddr = SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 9515);
 
-    async fn guarded_pair() -> (TcpStream, GuardedStream) {
-        let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
-        let client = TcpStream::connect(listener.local_addr().expect("addr"))
-            .await
-            .expect("connect");
-        let (server, _) = listener.accept().await.expect("accept");
+    pub(crate) struct DuplexListener {
+        connections: mpsc::UnboundedReceiver<DuplexStream>,
+        permits: Arc<Semaphore>,
+        read_timeout: Duration,
+    }
+
+    #[derive(Clone)]
+    pub(crate) struct DuplexDialer(mpsc::UnboundedSender<DuplexStream>);
+
+    impl DuplexDialer {
+        pub(crate) fn dial(&self) -> DuplexStream {
+            let (client, server) = duplex(DUPLEX_BUFFER);
+            self.0.send(server).expect("the listener is gone");
+            client
+        }
+    }
+
+    pub(crate) fn duplex_listener(read_timeout: Duration) -> (DuplexListener, DuplexDialer) {
+        let (dialer, connections) = mpsc::unbounded_channel();
+        let listener = DuplexListener {
+            connections,
+            permits: Arc::new(Semaphore::new(MAX_CONCURRENT_CONNECTIONS)),
+            read_timeout,
+        };
+        (listener, DuplexDialer(dialer))
+    }
+
+    impl Listener for DuplexListener {
+        type Io = GuardedStream<DuplexStream>;
+        type Addr = SocketAddr;
+
+        async fn accept(&mut self) -> (Self::Io, Self::Addr) {
+            let Some(stream) = self.connections.recv().await else {
+                return std::future::pending().await;
+            };
+            let permit = Arc::clone(&self.permits)
+                .try_acquire_owned()
+                .expect("permit");
+            let guarded =
+                GuardedStream::new(stream, permit, None).with_read_timeout(self.read_timeout);
+            (guarded, DUPLEX_PEER)
+        }
+
+        fn local_addr(&self) -> io::Result<SocketAddr> {
+            Ok(DUPLEX_PEER)
+        }
+    }
+
+    impl Connected<IncomingStream<'_, DuplexListener>> for PeerInfo {
+        fn connect_info(stream: IncomingStream<'_, DuplexListener>) -> Self {
+            Self {
+                addr: *stream.remote_addr(),
+                upgraded: Arc::<AtomicBool>::clone(&stream.io().upgraded),
+            }
+        }
+    }
+
+    fn guarded_pair() -> (DuplexStream, GuardedStream<DuplexStream>) {
+        let (client, server) = duplex(DUPLEX_BUFFER);
         let permit = Arc::new(Semaphore::new(1))
             .try_acquire_owned()
             .expect("permit");
-        (client, GuardedStream::new(server, permit, None))
+        let guarded = GuardedStream::new(server, permit, None).with_read_timeout(READ_TIMEOUT);
+        (client, guarded)
     }
 
-    async fn read_one(stream: &mut GuardedStream) -> io::Result<usize> {
+    async fn read_one(stream: &mut GuardedStream<DuplexStream>) -> io::Result<usize> {
         let mut buf = [0_u8; 16];
         stream.read(&mut buf).await
     }
 
-    #[tokio::test]
+    #[tokio::test(start_paused = true)]
     async fn a_trickling_request_head_is_cut_at_the_deadline_counted_from_accept() {
-        let (mut client, mut guarded) = guarded_pair().await;
+        let (mut client, mut guarded) = guarded_pair();
 
-        tokio::time::sleep(REQUEST_READ_TIMEOUT / 2).await;
+        tokio::time::sleep(READ_TIMEOUT - TICK).await;
         client.write_all(b"G").await.expect("write");
         assert_eq!(
             read_one(&mut guarded)
                 .await
-                .expect("a byte inside the deadline is read"),
+                .expect("a byte one tick before the deadline is read"),
             1
         );
 
-        tokio::time::sleep(REQUEST_READ_TIMEOUT / 2 + MARGIN).await;
+        tokio::time::sleep(TICK).await;
         client.write_all(b"E").await.expect("write");
         let late = read_one(&mut guarded).await;
 
@@ -307,17 +367,17 @@ mod tests {
         );
     }
 
-    #[tokio::test]
+    #[tokio::test(start_paused = true)]
     async fn a_response_write_restarts_the_read_deadline() {
-        let (mut client, mut guarded) = guarded_pair().await;
+        let (mut client, mut guarded) = guarded_pair();
 
-        tokio::time::sleep(REQUEST_READ_TIMEOUT / 2 + MARGIN).await;
+        tokio::time::sleep(READ_TIMEOUT - TICK).await;
         guarded
             .write_all(b"HTTP/1.1 204 No Content\r\n\r\n")
             .await
             .expect("respond");
-        let responded = tokio::time::Instant::now();
-        tokio::time::sleep(REQUEST_READ_TIMEOUT / 2).await;
+        let responded = Instant::now();
+        tokio::time::sleep(READ_TIMEOUT - TICK).await;
         client.write_all(b"G").await.expect("write");
         assert_eq!(
             read_one(&mut guarded)
@@ -333,10 +393,7 @@ mod tests {
                 .kind(),
             io::ErrorKind::TimedOut
         );
-        assert!(
-            responded.elapsed() >= REQUEST_READ_TIMEOUT,
-            "the idle read timed out before a full deadline had passed since the response"
-        );
+        assert_eq!(responded.elapsed(), READ_TIMEOUT);
     }
 
     #[tokio::test]

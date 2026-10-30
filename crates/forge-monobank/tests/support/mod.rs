@@ -7,7 +7,7 @@ use std::time::Duration;
 use async_trait::async_trait;
 use forge_monobank::{
     DEFAULT_HISTORY_LOOKBACK, DEFAULT_WINDOW_OVERLAP, MONOBANK_CREDENTIAL_ID, MonobankConfig,
-    MonobankProvider, MonobankRateLimits, PollStatus, monobank_gateways,
+    MonobankProvider, MonobankRateLimits, MonobankTiming, PollStatus, monobank_gateways,
 };
 use forge_net::{RateLimitError, RateLimitOutcome, RateLimiter};
 use forge_platform_core::{BuiltinControl, DonationProvider, DonationStream, PlatformError};
@@ -25,6 +25,8 @@ pub const OTHER_JAR: &str = "jarBBB222";
 pub const UAH: i64 = 980;
 pub const WAIT: Duration = Duration::from_secs(30);
 pub const QUIET: Duration = Duration::from_millis(50);
+pub const TICK: Duration = Duration::from_millis(10);
+pub const SEVERAL_TICKS: Duration = Duration::from_millis(100);
 pub const CLIENT_INFO: &str = "/personal/client-info";
 pub const STATEMENT_PREFIX: &str = "/personal/statement/";
 
@@ -162,6 +164,14 @@ pub fn provider_on(
     let config = config(base_url);
     let gateways = monobank_gateways(&config, limits).unwrap();
     MonobankProvider::new(config, creds, gateways)
+}
+
+pub fn ticking_timing() -> MonobankTiming {
+    MonobankTiming {
+        statement_call_interval: TICK,
+        error_backoff_base: TICK,
+        error_backoff_cap: TICK,
+    }
 }
 
 pub fn now_unix() -> i64 {
@@ -346,10 +356,23 @@ impl Harness {
     }
 
     pub async fn with_creds(bank: Bank, creds: Arc<MemCreds>) -> Self {
+        Self::with_timing(bank, creds, MonobankTiming::default()).await
+    }
+
+    pub async fn ticking(bank: Bank) -> Self {
+        Self::ticking_with_creds(bank, MemCreds::with(TOKEN, Some(JAR))).await
+    }
+
+    pub async fn ticking_with_creds(bank: Bank, creds: Arc<MemCreds>) -> Self {
+        Self::with_timing(bank, creds, ticking_timing()).await
+    }
+
+    async fn with_timing(bank: Bank, creds: Arc<MemCreds>, timing: MonobankTiming) -> Self {
         let server = MockServer::start().await;
         mount(&server, &bank).await;
         let limits = Limits::open();
-        let provider = provider_on(&server.uri(), creds.clone(), limits.shared());
+        let provider =
+            provider_on(&server.uri(), creds.clone(), limits.shared()).with_timing(timing);
         let stream = provider.donations();
         Self {
             server,
@@ -386,6 +409,12 @@ impl Harness {
             .is_err()
     }
 
+    pub async fn stays_quiet_for_several_ticks(&mut self) -> bool {
+        tokio::time::timeout(SEVERAL_TICKS, self.stream.next())
+            .await
+            .is_err()
+    }
+
     pub async fn wait_for(&self, what: &str, probe: impl Fn(&PollStatus) -> bool) {
         let deadline = tokio::time::Instant::now() + WAIT;
         while !probe(&self.provider.poll_status()) {
@@ -396,6 +425,17 @@ impl Harness {
 
     pub async fn wake_poller(&self) {
         assert!(self.provider.reconnect().await.is_ok());
+    }
+
+    pub async fn wait_for_statement_calls(&self, count: usize) {
+        let deadline = tokio::time::Instant::now() + WAIT;
+        while self.bank.statement_calls().len() < count {
+            assert!(
+                tokio::time::Instant::now() < deadline,
+                "timed out waiting for {count} statement calls"
+            );
+            tokio::time::sleep(TICK).await;
+        }
     }
 
     pub async fn poll_now(&mut self) {

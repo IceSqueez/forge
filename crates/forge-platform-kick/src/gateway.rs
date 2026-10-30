@@ -166,6 +166,7 @@ mod tests {
     use crate::api::rewards::{CreateRewardParams, KickRewards};
     use crate::endpoints_test_support::{
         ExhaustedLimiter, RecordingPublisher, api_at, api_limited_by, api_with, channel_info_with,
+        gateway_waiting_at_most,
     };
     use crate::pusher::error::KickError;
 
@@ -467,7 +468,11 @@ mod tests {
             .respond_with(ResponseTemplate::new(429).insert_header("retry-after", "3600"))
             .mount(&server)
             .await;
-        let clients = Clients::over(&api_limited_by(&server.uri(), official_bucket()));
+        let clients = Clients::over(&gateway_waiting_at_most(
+            &server.uri(),
+            official_bucket(),
+            std::time::Duration::from_millis(1),
+        ));
         let throttled = clients.send.send("hi", TOKEN, 42, false).await;
 
         let after = clients.every_call().await;

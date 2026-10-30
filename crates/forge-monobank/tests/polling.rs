@@ -17,6 +17,7 @@ use wiremock::ResponseTemplate;
 
 const HOUR: i64 = 3_600;
 const OVERLAP: i64 = 300;
+const STEADY_POLLS: usize = 3;
 
 #[tokio::test]
 async fn first_poll_reports_recent_top_ups_as_history_then_new_ones_live_exactly_once() {
@@ -72,6 +73,15 @@ async fn polls_ask_for_the_selected_jar_with_overlapping_windows() {
     assert!(calls.iter().all(|call| call.jar == JAR), "{calls:?}");
     assert_eq!(calls[0].to - calls[0].from, HOUR, "{calls:?}");
     assert_eq!(calls[1].from, calls[0].to - OVERLAP, "{calls:?}");
+}
+
+#[tokio::test]
+async fn steady_polling_reads_the_jar_list_only_once() {
+    let h = Harness::ticking(Bank::new(&[JAR])).await;
+
+    h.wait_for_statement_calls(STEADY_POLLS).await;
+
+    assert_eq!(h.bank.client_info_calls(), 1);
 }
 
 #[tokio::test]
@@ -161,7 +171,7 @@ async fn server_error_is_reported_and_polling_recovers_on_the_next_timer() {
     let bank = Bank::new(&[JAR]);
     bank.fail_next(STATEMENT_PREFIX, ResponseTemplate::new(503));
     bank.add(JAR, top_up("D-1", now_unix() - 10));
-    let mut h = Harness::start(bank).await;
+    let mut h = Harness::ticking(bank).await;
 
     let failure = h.next().await;
     assert!(
@@ -170,7 +180,6 @@ async fn server_error_is_reported_and_polling_recovers_on_the_next_timer() {
     );
     assert_eq!(h.provider.poll_status().phase, PollPhase::Retrying);
 
-    h.wake_poller().await;
     let recovered = h.next().await.unwrap();
     h.wait_for("polling again", |s| s.phase == PollPhase::Polling)
         .await;
@@ -278,7 +287,7 @@ async fn errors_needing_the_user_stop_polling_until_the_user_acts() {
         if case.reject_token {
             bank.fail_next(CLIENT_INFO, ResponseTemplate::new(403));
         }
-        let mut h = Harness::with_creds(bank, case.creds).await;
+        let mut h = Harness::ticking_with_creds(bank, case.creds).await;
 
         let failure = h.next().await;
         let expected_platform_error = if case.reject_token {
@@ -296,7 +305,11 @@ async fn errors_needing_the_user_stop_polling_until_the_user_acts() {
         );
 
         let requests = h.bank.request_count();
-        assert!(h.stays_quiet().await, "{} polled again", case.name);
+        assert!(
+            h.stays_quiet_for_several_ticks().await,
+            "{} polled again",
+            case.name
+        );
         assert_eq!(h.bank.request_count(), requests, "{}", case.name);
     }
 }
@@ -356,14 +369,14 @@ async fn pause_and_resume_keeps_the_seen_top_ups() {
 
 #[tokio::test]
 async fn paused_poller_sends_no_requests() {
-    let mut h = Harness::start(Bank::new(&[JAR])).await;
+    let mut h = Harness::ticking(Bank::new(&[JAR])).await;
     h.wait_for("baseline poll", |s| s.last_poll_at.is_some())
         .await;
     assert!(h.provider.disconnect().await.is_ok());
     h.wait_for("paused", |s| s.phase == PollPhase::Paused).await;
     let requests = h.bank.request_count();
 
-    assert!(h.stays_quiet().await);
+    assert!(h.stays_quiet_for_several_ticks().await);
 
     assert_eq!(h.bank.request_count(), requests);
 }

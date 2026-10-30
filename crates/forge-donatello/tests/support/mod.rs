@@ -6,8 +6,8 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use forge_donatello::{
-    DONATELLO_CREDENTIAL_ID, DonatelloConfig, DonatelloProvider, MAX_POLL_INTERVAL, PollStatus,
-    donatello_gateway,
+    DONATELLO_CREDENTIAL_ID, DonatelloConfig, DonatelloProvider, DonatelloTiming,
+    MAX_POLL_INTERVAL, PollStatus, donatello_gateway,
 };
 use forge_net::{RateLimitError, RateLimitOutcome, RateLimiter};
 use forge_platform_core::{DonationProvider, DonationStream, PlatformError};
@@ -23,6 +23,8 @@ pub const TOKEN: &str = "dn-test-token-7f3a9c";
 pub const OTHER_TOKEN: &str = "dn-other-token-41be02";
 pub const WAIT: Duration = Duration::from_secs(30);
 pub const QUIET: Duration = Duration::from_millis(50);
+pub const TICK: Duration = Duration::from_millis(10);
+pub const SEVERAL_TICKS: Duration = Duration::from_millis(100);
 
 #[derive(Default)]
 pub struct MemCreds {
@@ -160,6 +162,27 @@ pub fn provider_on(
     let config = config(base_url);
     let gateway = donatello_gateway(&config, limiter).unwrap();
     DonatelloProvider::new(config, creds, gateway)
+}
+
+fn ticking_timing() -> DonatelloTiming {
+    DonatelloTiming {
+        min_poll_interval: TICK,
+        error_backoff_base: TICK,
+        error_backoff_cap: TICK,
+    }
+}
+
+fn ticking_provider_on(
+    base_url: &str,
+    creds: Arc<dyn CredentialsRepo>,
+    limiter: Arc<dyn RateLimiter>,
+) -> DonatelloProvider {
+    let config = DonatelloConfig {
+        poll_interval: TICK,
+        ..config(base_url)
+    };
+    let gateway = donatello_gateway(&config, limiter).unwrap();
+    DonatelloProvider::new(config, creds, gateway).with_timing(ticking_timing())
 }
 
 pub fn donate(id: &str, created_at: &str) -> Value {
@@ -325,8 +348,34 @@ impl Harness {
         Self::with_server(server, list, MemCreds::with_token(TOKEN))
     }
 
+    pub async fn ticking(order: Order, initial: Vec<Value>) -> Self {
+        let server = MockServer::start().await;
+        let list = DonatesList::new(order, initial);
+        mount_me(&server).await;
+        mount_donates(&server, &list).await;
+        Self::ticking_with_server(server, list, MemCreds::with_token(TOKEN))
+    }
+
     pub fn with_server(server: MockServer, list: DonatesList, creds: Arc<MemCreds>) -> Self {
         let provider = provider_on(&server.uri(), creds.clone(), ScriptedLimiter::open());
+        Self::around(server, list, creds, provider)
+    }
+
+    pub fn ticking_with_server(
+        server: MockServer,
+        list: DonatesList,
+        creds: Arc<MemCreds>,
+    ) -> Self {
+        let provider = ticking_provider_on(&server.uri(), creds.clone(), ScriptedLimiter::open());
+        Self::around(server, list, creds, provider)
+    }
+
+    fn around(
+        server: MockServer,
+        list: DonatesList,
+        creds: Arc<MemCreds>,
+        provider: DonatelloProvider,
+    ) -> Self {
         let stream = provider.donations();
         Self {
             server,
@@ -363,6 +412,12 @@ impl Harness {
 
     pub async fn stays_quiet(&mut self) -> bool {
         tokio::time::timeout(QUIET, self.stream.next())
+            .await
+            .is_err()
+    }
+
+    pub async fn stays_quiet_for_several_ticks(&mut self) -> bool {
+        tokio::time::timeout(SEVERAL_TICKS, self.stream.next())
             .await
             .is_err()
     }

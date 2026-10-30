@@ -526,11 +526,24 @@ pub(crate) mod tests {
     }
 
     const LARGE_FRAME_BYTES: usize = 32 * 1024;
+    const MAX_CONTROL_FRAME_BYTES: usize = 125;
+    const PEER_WRITE_STALL: Duration = Duration::from_millis(100);
 
     enum PeerCmd {
         Send(serde_json::Value),
         Close,
         AbandonAtLargeFrame(tokio::sync::oneshot::Sender<()>),
+        StopReading(tokio::sync::oneshot::Sender<()>),
+        FloodPings {
+            stalled: tokio::sync::oneshot::Sender<()>,
+            afterwards: AfterFlood,
+        },
+    }
+
+    #[derive(Clone, Copy)]
+    pub(crate) enum AfterFlood {
+        HoldTheSocket,
+        DropTheSocket,
     }
 
     #[derive(Clone)]
@@ -593,6 +606,28 @@ pub(crate) mod tests {
                 .send(PeerCmd::AbandonAtLargeFrame(armed_tx))
                 .expect("the peer must still be pumping");
             armed_rx.await.expect("the peer must arm itself");
+        }
+
+        pub(crate) async fn stop_reading(&self) {
+            let (stopped_tx, stopped_rx) = tokio::sync::oneshot::channel();
+            self.0
+                .send(PeerCmd::StopReading(stopped_tx))
+                .expect("the peer must still be pumping");
+            stopped_rx.await.expect("the peer must stop reading");
+        }
+
+        pub(crate) fn flood_pings(
+            &self,
+            afterwards: AfterFlood,
+        ) -> tokio::sync::oneshot::Receiver<()> {
+            let (stalled, stalled_rx) = tokio::sync::oneshot::channel();
+            self.0
+                .send(PeerCmd::FloodPings {
+                    stalled,
+                    afterwards,
+                })
+                .expect("the peer must still be pumping");
+            stalled_rx
         }
     }
 
@@ -711,12 +746,22 @@ pub(crate) mod tests {
             publisher: &Arc<MockPublisher>,
             creds: &Arc<MockCreds>,
         ) -> VTubeClient {
-            VTubeClient::connect(
+            self.connect_with_timing(publisher, creds, VTubeTiming::default())
+        }
+
+        pub(crate) fn connect_with_timing(
+            &self,
+            publisher: &Arc<MockPublisher>,
+            creds: &Arc<MockCreds>,
+            timing: VTubeTiming,
+        ) -> VTubeClient {
+            VTubeClient::connect_with_timing(
                 VTubeConfig {
                     endpoint: self.endpoint.clone(),
                 },
                 publisher.publisher(),
                 creds.creds(),
+                timing,
             )
         }
 
@@ -778,6 +823,30 @@ pub(crate) mod tests {
                             tokio::task::yield_now().await;
                         }
                         return;
+                    }
+                    Some(PeerCmd::StopReading(stopped)) => {
+                        #[expect(clippy::let_underscore_must_use, reason = "the receiver may already be gone")]
+                        let _ = stopped.send(());
+                        std::future::pending::<()>().await;
+                    }
+                    Some(PeerCmd::FloodPings { stalled, afterwards }) => {
+                        let ping = vec![0; MAX_CONTROL_FRAME_BYTES];
+                        while let Ok(sent) = tokio::time::timeout(
+                            PEER_WRITE_STALL,
+                            ws.send(Message::Ping(ping.clone().into())),
+                        )
+                        .await
+                        {
+                            if sent.is_err() {
+                                return;
+                            }
+                        }
+                        #[expect(clippy::let_underscore_must_use, reason = "the receiver may already be gone")]
+                        let _ = stalled.send(());
+                        match afterwards {
+                            AfterFlood::HoldTheSocket => std::future::pending::<()>().await,
+                            AfterFlood::DropTheSocket => return,
+                        }
                     }
                 },
             }
@@ -1076,7 +1145,15 @@ pub(crate) mod tests {
         let cfg = VTubeConfig {
             endpoint: format!("ws://{addr}"),
         };
-        let _client = VTubeClient::connect(cfg, publisher.publisher(), creds.creds());
+        let _client = VTubeClient::connect_with_timing(
+            cfg,
+            publisher.publisher(),
+            creds.creds(),
+            VTubeTiming {
+                expression_poll_interval: Duration::from_millis(1),
+                ..VTubeTiming::default()
+            },
+        );
 
         let seen = tokio::time::timeout(Duration::from_secs(30), seen_rx.recv()).await;
         assert!(
@@ -1614,8 +1691,6 @@ pub(crate) mod tests {
         assert_eq!(client.auth_state(), AuthState::AwaitingApproval);
     }
 
-    const DISCONNECT_HANG_GUARD: Duration = Duration::from_secs(30);
-
     const RETRY_WALL_BUDGET: Duration = Duration::from_secs(20);
 
     const ATTEMPTS_BEFORE_VERDICT: usize = 3;
@@ -1757,43 +1832,6 @@ pub(crate) mod tests {
             states,
             vec!["connected".to_owned(), "reconnecting".to_owned()],
             "the shared feed must follow the same session steps the vtube feed reports"
-        );
-    }
-
-    #[tokio::test]
-    async fn disconnecting_during_a_stalled_connect_does_not_wait_out_the_connect_timeout() {
-        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let addr = listener.local_addr().unwrap();
-        let (dialed_tx, mut dialed) = mpsc::unbounded_channel();
-        let server = tokio::spawn(async move {
-            let mut held = Vec::new();
-            while let Ok((stream, _)) = listener.accept().await {
-                held.push(stream);
-                if dialed_tx.send(()).is_err() {
-                    return;
-                }
-            }
-        });
-        let client = VTubeClient::connect(
-            VTubeConfig {
-                endpoint: format!("ws://{addr}"),
-            },
-            MockPublisher::new().publisher(),
-            MockCreds::new().creds(),
-        );
-        assert!(
-            tokio::time::timeout(DISCONNECT_HANG_GUARD, dialed.recv())
-                .await
-                .is_ok_and(|dial| dial.is_some()),
-            "the client never dialed"
-        );
-
-        let outcome = tokio::time::timeout(DISCONNECT_HANG_GUARD, client.disconnect()).await;
-        server.abort();
-
-        assert!(
-            outcome.is_ok(),
-            "disconnect queued behind the connect instead of cancelling it"
         );
     }
 

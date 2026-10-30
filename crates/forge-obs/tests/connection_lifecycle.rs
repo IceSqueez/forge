@@ -6,7 +6,7 @@ use std::time::{Duration, Instant};
 
 use forge_events::{Event, EventPublisher};
 use forge_events::{PlatformConnectionChanged, TypedEvent};
-use forge_obs::{ObsClient, ObsError, ObsSink, ObsSource};
+use forge_obs::{ObsClient, ObsError, ObsSink, ObsSource, ObsTiming};
 use forge_platform_core::{BuiltinControl, BuiltinStatus, ConnectionState};
 use futures_util::{SinkExt, StreamExt};
 use serde_json::{Value, json};
@@ -21,6 +21,20 @@ use tokio_tungstenite::tungstenite::protocol::frame::coding::CloseCode;
 const DISCONNECT_HANG_GUARD: Duration = Duration::from_secs(20);
 
 const PEER_SPEAKS_WINDOW: Duration = Duration::from_secs(2);
+
+const BEYOND_ANY_GUARD: Duration = Duration::from_secs(100 * 24 * 3600);
+
+const SHORT_REQUEST_TIMEOUT: Duration = Duration::from_millis(250);
+
+const SHORT_CONNECT_TIMEOUT: Duration = Duration::from_millis(50);
+
+const FAST_STATS_INTERVAL: Duration = Duration::from_millis(5);
+
+const SHORT_STATS_TIMEOUT: Duration = Duration::from_millis(20);
+
+const FIRST_ANSWERED_STATS_TIMEOUT: Duration = Duration::from_millis(100);
+
+const UNANSWERED_POLLS_BEFORE_SUSPECT: usize = 3;
 
 const HANDSHAKE_BUDGET: Duration = Duration::from_secs(30);
 
@@ -37,6 +51,22 @@ impl EventPublisher for ChannelPublisher {
             reason = "the receiver may already be gone"
         )]
         let _ = self.0.send(event);
+    }
+}
+
+fn fast_retries() -> ObsTiming {
+    ObsTiming {
+        reconnect_base_delay: Duration::from_millis(1),
+        reconnect_max_delay: Duration::from_millis(5),
+        ..ObsTiming::default()
+    }
+}
+
+fn endless_retry_pause() -> ObsTiming {
+    ObsTiming {
+        reconnect_base_delay: BEYOND_ANY_GUARD,
+        reconnect_max_delay: BEYOND_ANY_GUARD,
+        ..ObsTiming::default()
     }
 }
 
@@ -122,10 +152,11 @@ async fn a_backoff_loop_announces_one_state_change_per_real_transition() {
     let server = tokio::spawn(serve_refused_handshakes(listener, accept_tx));
     let (tx, mut rx) = mpsc::unbounded_channel();
 
-    let client = ObsClient::connect(
+    let client = ObsClient::connect_with_timing(
         &format!("127.0.0.1:{port}"),
         None,
         Arc::new(ChannelPublisher(tx)),
+        fast_retries(),
     )
     .await
     .unwrap();
@@ -157,10 +188,14 @@ async fn disconnecting_during_a_stalled_connect_does_not_wait_out_the_connect_ti
         }
     });
     let (tx, _rx) = mpsc::unbounded_channel();
-    let client = ObsClient::connect(
+    let client = ObsClient::connect_with_timing(
         &format!("127.0.0.1:{port}"),
         None,
         Arc::new(ChannelPublisher(tx)),
+        ObsTiming {
+            connect_timeout: BEYOND_ANY_GUARD,
+            ..ObsTiming::default()
+        },
     )
     .await
     .unwrap();
@@ -264,6 +299,7 @@ enum Handshake {
     Complete,
     CloseAfterIdentified,
     Stall,
+    StallUpgrade,
 }
 
 enum Reply {
@@ -487,6 +523,9 @@ async fn serve_fake_connection(
     script: Script,
     log: WireLog,
 ) {
+    if matches!(handshake, Handshake::StallUpgrade) {
+        std::future::pending::<()>().await;
+    }
     let Ok(mut socket) = tokio_tungstenite::accept_async(stream).await else {
         return;
     };
@@ -601,10 +640,19 @@ fn only_the_first_handshake_completes(conn: usize) -> Handshake {
 }
 
 async fn connect_to(fake: &FakeObs, recorder: &Recorder) -> Arc<ObsClient> {
-    let client = ObsClient::connect(
+    connect_with_timing(fake, recorder, fast_retries()).await
+}
+
+async fn connect_with_timing(
+    fake: &FakeObs,
+    recorder: &Recorder,
+    timing: ObsTiming,
+) -> Arc<ObsClient> {
+    let client = ObsClient::connect_with_timing(
         &format!("127.0.0.1:{}", fake.port),
         None,
         Arc::new(recorder.clone()),
+        timing,
     )
     .await
     .unwrap();
@@ -632,17 +680,29 @@ fn scene_item_enable_state_changed(enabled: bool) -> Value {
 
 #[tokio::test]
 async fn a_request_obs_never_answers_times_out_and_sends_the_session_back_to_reconnecting() {
-    let fake = spawn_fake_obs(
-        completes_every_handshake,
-        Arc::new(|seen: Seen<'_>| match seen.request_type {
-            "SetCurrentProgramScene" => Reply::Silent,
-            other => standard_reply(other),
-        }),
-    )
-    .await;
-    let recorder = Recorder::default();
-    let client = connect_to(&fake, &recorder).await;
-    connected(&client).await;
+    let mut request_timeout = SHORT_REQUEST_TIMEOUT;
+    let (fake, recorder, client) = loop {
+        let fake = spawn_fake_obs(
+            completes_every_handshake,
+            Arc::new(|seen: Seen<'_>| match seen.request_type {
+                "SetCurrentProgramScene" => Reply::Silent,
+                other => standard_reply(other),
+            }),
+        )
+        .await;
+        let recorder = Recorder::default();
+        let timing = ObsTiming {
+            request_timeout,
+            ..fast_retries()
+        };
+        let client = connect_with_timing(&fake, &recorder, timing).await;
+        connected(&client).await;
+        if fake.log.accepted() == 1 {
+            break (fake, recorder, client);
+        }
+        request_timeout *= 2;
+        assert!(request_timeout < WALL_BUDGET, "no session ever settled");
+    };
 
     let request = tokio::spawn({
         let client = Arc::clone(&client);
@@ -657,9 +717,10 @@ async fn a_request_obs_never_answers_times_out_and_sends_the_session_back_to_rec
     let outcome = request.await.unwrap();
     assert!(matches!(outcome, Err(ObsError::Timeout)), "got {outcome:?}");
     settle_until("the supervisor dropped the silent session", || {
-        recorder.states() == ["connected", "reconnecting"]
+        recorder.states().len() >= 2
     })
     .await;
+    assert_eq!(recorder.states()[..2], ["connected", "reconnecting"]);
 }
 
 #[tokio::test]
@@ -673,7 +734,11 @@ async fn disconnecting_while_the_catalog_load_waits_on_obs_returns_promptly() {
     )
     .await;
     let recorder = Recorder::default();
-    let client = connect_to(&fake, &recorder).await;
+    let timing = ObsTiming {
+        request_timeout: BEYOND_ANY_GUARD,
+        ..ObsTiming::default()
+    };
+    let client = connect_with_timing(&fake, &recorder, timing).await;
     settle_until("the catalog load asked OBS for its version", || {
         fake.log.count(0, "GetVersion") == 2
     })
@@ -687,8 +752,16 @@ async fn disconnecting_while_the_catalog_load_waits_on_obs_returns_promptly() {
     );
 }
 
+fn stats_polls(request_timeout: Duration) -> ObsTiming {
+    ObsTiming {
+        stats_poll_interval: FAST_STATS_INTERVAL,
+        stats_poll_request_timeout: request_timeout,
+        ..fast_retries()
+    }
+}
+
 #[tokio::test]
-async fn a_silent_stats_heartbeat_sends_the_session_back_to_reconnecting() {
+async fn a_silent_stats_heartbeat_drops_the_session_after_the_third_missed_poll() {
     let fake = spawn_fake_obs(
         completes_every_handshake,
         Arc::new(|seen: Seen<'_>| match seen.request_type {
@@ -698,11 +771,15 @@ async fn a_silent_stats_heartbeat_sends_the_session_back_to_reconnecting() {
     )
     .await;
     let recorder = Recorder::default();
-    let client = connect_to(&fake, &recorder).await;
+    let client = connect_with_timing(&fake, &recorder, stats_polls(SHORT_STATS_TIMEOUT)).await;
     connected(&client).await;
 
     settle_until("the silent heartbeat dropped the session", || {
         recorder.states().len() >= 2
+    })
+    .await;
+    settle_until("three polls reached the dropped session", || {
+        fake.log.count(0, "GetStats") >= UNANSWERED_POLLS_BEFORE_SUSPECT
     })
     .await;
 
@@ -710,29 +787,40 @@ async fn a_silent_stats_heartbeat_sends_the_session_back_to_reconnecting() {
 }
 
 #[tokio::test]
-async fn a_single_missed_stats_poll_keeps_the_session_connected() {
-    const POLLS_AFTER_THE_MISS: usize = 2;
-    let fake = spawn_fake_obs(
-        completes_every_handshake,
-        Arc::new(
-            |seen: Seen<'_>| match (seen.conn, seen.request_type, seen.nth) {
-                (0, "GetStats", 0) => Reply::Silent,
-                (_, other, _) => standard_reply(other),
-            },
-        ),
-    )
-    .await;
-    let recorder = Recorder::default();
-    let client = connect_to(&fake, &recorder).await;
-    connected(&client).await;
+async fn two_missed_stats_polls_keep_the_session_connected() {
+    const POLLS_AFTER_THE_MISSES: usize = 2;
+    let mut request_timeout = FIRST_ANSWERED_STATS_TIMEOUT;
+    loop {
+        let fake = spawn_fake_obs(
+            completes_every_handshake,
+            Arc::new(
+                |seen: Seen<'_>| match (seen.conn, seen.request_type, seen.nth) {
+                    (0, "GetStats", 0 | 1) => Reply::Silent,
+                    (_, other, _) => standard_reply(other),
+                },
+            ),
+        )
+        .await;
+        let recorder = Recorder::default();
+        let client = connect_with_timing(&fake, &recorder, stats_polls(request_timeout)).await;
+        connected(&client).await;
 
-    settle_until("the poll after the miss reached OBS", || {
-        fake.log.count(0, "GetStats") > POLLS_AFTER_THE_MISS
-            || recorder.states().iter().any(|s| s == "reconnecting")
-    })
-    .await;
+        settle_until("the polls after the misses reached OBS", || {
+            fake.log.count(0, "GetStats")
+                > UNANSWERED_POLLS_BEFORE_SUSPECT - 1 + POLLS_AFTER_THE_MISSES
+                || recorder.states().iter().any(|s| s == "reconnecting")
+        })
+        .await;
 
-    assert_eq!(recorder.states(), ["connected"]);
+        if recorder.states() == ["connected"] {
+            return;
+        }
+        request_timeout *= 2;
+        assert!(
+            request_timeout < WALL_BUDGET,
+            "the session dropped before its third miss"
+        );
+    }
 }
 
 async fn drive_a_drop_during_the_catalog_load() -> (Recorder, Arc<ObsClient>, FakeObs) {
@@ -752,7 +840,7 @@ async fn drive_a_drop_during_the_catalog_load() -> (Recorder, Arc<ObsClient>, Fa
     let lost = client.set_scene(SCENE).await;
     assert!(matches!(lost, Err(ObsError::Disconnected)), "got {lost:?}");
     settle_until("the supervisor dialled again after the drop", || {
-        fake.log.accepted() == 2
+        fake.log.accepted() >= 2
     })
     .await;
     settle_until("connection 1 reached its catalog load", || {
@@ -760,7 +848,7 @@ async fn drive_a_drop_during_the_catalog_load() -> (Recorder, Arc<ObsClient>, Fa
     })
     .await;
     settle_until("the supervisor dialled again after the failed load", || {
-        fake.log.accepted() == 3
+        fake.log.accepted() >= 3
     })
     .await;
     assert_eq!(
@@ -815,7 +903,7 @@ async fn obs_closing_right_after_the_handshake_is_retried_without_announcing_con
         let recorder = Recorder::default();
         let _client = connect_to(&fake, &recorder).await;
 
-        settle_until(label, || fake.log.accepted() == 2).await;
+        settle_until(label, || fake.log.accepted() >= 2).await;
 
         assert_eq!(recorder.states(), ["reconnecting"], "{label}");
     }
@@ -1050,7 +1138,7 @@ async fn an_event_burst_that_overflows_the_buffer_resyncs_the_catalog_on_the_sam
 
 const PROBE_PASSWORD: &str = "obs-auto-reconnect-secret-4k2j";
 
-const QUIET_WINDOW: Duration = Duration::from_secs(2);
+const QUIET_WINDOW: Duration = Duration::from_millis(100);
 
 struct RefusingObs {
     port: u16,
@@ -1087,10 +1175,19 @@ impl RefusingObs {
     }
 
     async fn connect(&self, password: Option<&str>) -> Arc<ObsClient> {
-        let client = ObsClient::connect(
+        self.connect_with_timing(password, fast_retries()).await
+    }
+
+    async fn connect_with_timing(
+        &self,
+        password: Option<&str>,
+        timing: ObsTiming,
+    ) -> Arc<ObsClient> {
+        let client = ObsClient::connect_with_timing(
             &format!("127.0.0.1:{}", self.port),
             password,
             Arc::new(Recorder::default()),
+            timing,
         )
         .await
         .unwrap();
@@ -1110,7 +1207,10 @@ async fn disconnected(client: &ObsClient) {
 }
 
 async fn parked_after_one_refusal(fake: &RefusingObs, password: Option<&str>) -> Arc<ObsClient> {
-    let client = fake.connect(password).await;
+    park(fake, fake.connect(password).await).await
+}
+
+async fn park(fake: &RefusingObs, client: Arc<ObsClient>) -> Arc<ObsClient> {
     client.set_auto_reconnect(false);
     disconnected(&client).await;
     assert_eq!(
@@ -1141,8 +1241,11 @@ async fn a_refused_first_connect_with_auto_reconnect_off_is_attempted_exactly_on
 async fn turning_auto_reconnect_off_while_retrying_settles_disconnected_without_waiting_out_the_pause()
  {
     let fake = RefusingObs::spawn().await;
-    let client = fake.connect(None).await;
-    settle_until("the supervisor retried once", || fake.attempts() == 2).await;
+    let client = fake.connect_with_timing(None, endless_retry_pause()).await;
+    settle_until("the first attempt failed", || {
+        failure_code(&client).is_some()
+    })
+    .await;
 
     client.set_auto_reconnect(false);
 
@@ -1152,7 +1255,8 @@ async fn turning_auto_reconnect_off_while_retrying_settles_disconnected_without_
 #[tokio::test]
 async fn turning_auto_reconnect_back_on_resumes_a_parked_supervisor_without_a_pause() {
     let fake = RefusingObs::spawn().await;
-    let client = parked_after_one_refusal(&fake, None).await;
+    let pausing = fake.connect_with_timing(None, endless_retry_pause()).await;
+    let client = park(&fake, pausing).await;
 
     client.set_auto_reconnect(true);
 
@@ -1209,10 +1313,11 @@ async fn a_dropped_handshake_is_recorded_as_a_failure_that_never_carries_the_pas
 async fn a_connect_to_a_closed_port_records_connect_refused() {
     let (listener, port) = bind_loopback().await;
     drop(listener);
-    let client = ObsClient::connect(
+    let client = ObsClient::connect_with_timing(
         &format!("127.0.0.1:{port}"),
         None,
         Arc::new(Recorder::default()),
+        fast_retries(),
     )
     .await
     .unwrap();
@@ -1307,22 +1412,26 @@ async fn a_successful_reconnect_clears_the_connection_lost_failure() {
     assert_eq!(failure_code(&client), None);
 }
 #[tokio::test]
-async fn a_stalled_handshake_records_the_generic_connect_failure() {
+async fn a_stalled_upgrade_records_unreachable_at_the_connect_timeout() {
     let fake = spawn_fake_obs(
-        |_| Handshake::Stall,
+        |_| Handshake::StallUpgrade,
         Arc::new(|seen: Seen<'_>| standard_reply(seen.request_type)),
     )
     .await;
     let recorder = Recorder::default();
-    let client = connect_to(&fake, &recorder).await;
+    let timing = ObsTiming {
+        connect_timeout: SHORT_CONNECT_TIMEOUT,
+        ..fast_retries()
+    };
+    let client = connect_with_timing(&fake, &recorder, timing).await;
     client.set_auto_reconnect(false);
 
-    settle_until("the stalled handshake gave up", || {
+    settle_until("the stalled upgrade gave up", || {
         failure_code(&client).is_some()
     })
     .await;
 
-    assert_eq!(failure_code(&client).as_deref(), Some("connect_failed"));
+    assert_eq!(failure_code(&client).as_deref(), Some("unreachable"));
 }
 
 #[tokio::test]

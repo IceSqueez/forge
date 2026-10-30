@@ -1,11 +1,15 @@
 #![allow(clippy::unwrap_used, clippy::panic)]
 use std::time::Duration;
 
-use forge_vtube::{VTubeError, probe_connection};
+use forge_vtube::{VTubeError, VTubeTiming, probe_connection, probe_connection_with_timing};
 use futures_util::{SinkExt, StreamExt};
 use tokio::net::TcpListener;
 use tokio::sync::oneshot;
 use tokio_tungstenite::tungstenite::Message;
+
+const SHORT_BUDGET: Duration = Duration::from_millis(50);
+const HANG_GUARD: Duration = Duration::from_secs(30);
+const BEYOND_ANY_GUARD: Duration = Duration::from_secs(100 * 24 * 3600);
 
 async fn bind_loopback() -> (TcpListener, u16) {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -183,15 +187,60 @@ async fn a_port_that_drops_every_connection_reports_the_connect_failure_rather_t
 }
 
 #[tokio::test]
-async fn a_peer_that_never_answers_ends_in_a_timeout_instead_of_hanging() {
+async fn a_peer_that_never_answers_ends_in_a_timeout_at_the_probe_budget() {
     let (listener, port) = bind_loopback().await;
     let server = tokio::spawn(serve_silence(listener));
 
-    let error = expect_error(probe_connection("127.0.0.1", port).await);
+    let error = expect_error(
+        probe_connection_with_timing(
+            "127.0.0.1",
+            port,
+            VTubeTiming {
+                probe_timeout: SHORT_BUDGET,
+                ..VTubeTiming::default()
+            },
+        )
+        .await,
+    );
 
     server.abort();
     assert!(
         matches!(error, VTubeError::Timeout),
         "expected the probe deadline to fire, got {error:?}"
     );
+}
+
+#[tokio::test]
+async fn a_stalled_upgrade_ends_at_whichever_budget_is_shorter() {
+    for (case, connect_timeout, probe_timeout, connect_ran_out) in [
+        ("connect budget first", SHORT_BUDGET, HANG_GUARD, true),
+        ("probe budget first", BEYOND_ANY_GUARD, SHORT_BUDGET, false),
+    ] {
+        let (listener, port) = bind_loopback().await;
+
+        let error = expect_error(
+            probe_connection_with_timing(
+                "127.0.0.1",
+                port,
+                VTubeTiming {
+                    connect_timeout,
+                    probe_timeout,
+                    ..VTubeTiming::default()
+                },
+            )
+            .await,
+        );
+
+        drop(listener);
+        assert_eq!(
+            matches!(&error, VTubeError::Connect(detail) if *detail == VTubeError::Timeout.to_string()),
+            connect_ran_out,
+            "{case}: {error:?}"
+        );
+        assert_eq!(
+            matches!(error, VTubeError::Timeout),
+            !connect_ran_out,
+            "{case}"
+        );
+    }
 }

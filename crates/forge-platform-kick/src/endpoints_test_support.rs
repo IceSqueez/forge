@@ -3,13 +3,13 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use forge_events::{Event, EventPublisher};
-use forge_net::{Gateway, RateLimitError, RateLimitOutcome, RateLimiter};
+use forge_net::{Gateway, GatewayTimings, RateLimitError, RateLimitOutcome, RateLimiter};
 use forge_platform_core::{EndpointSurface, PlatformEndpoints};
 use forge_storage::CredentialsRepo;
 
 use crate::auth::credentials_manager::KickCredentialsManager;
 use crate::auth::oauth_client::{KickOAuthClient, kick_oauth_gateway};
-use crate::gateway::{kick_api_gateway, kick_channel_info_gateway};
+use crate::gateway::{KICK_GATEWAY_PROFILE, kick_api_gateway, kick_channel_info_gateway};
 use crate::pusher::chatroom_lookup::ChannelInfoFetcher;
 
 const UNREACHABLE_HTTP: &str = "http://127.0.0.1:0";
@@ -60,6 +60,23 @@ pub(crate) fn api_with(
 
 pub(crate) fn api_limited_by(base: &str, limiter: Arc<dyn RateLimiter>) -> Gateway {
     api_with(base, limiter, Arc::new(RecordingPublisher::default()))
+}
+
+pub(crate) fn gateway_waiting_at_most(
+    base: &str,
+    limiter: Arc<dyn RateLimiter>,
+    max_throttle_wait: Duration,
+) -> Gateway {
+    Gateway::new(
+        base,
+        limiter,
+        KICK_GATEWAY_PROFILE.with_timings(GatewayTimings {
+            max_throttle_wait,
+            ..GatewayTimings::DEFAULT
+        }),
+        None,
+    )
+    .unwrap()
 }
 
 pub(crate) fn api_at(base: &str) -> Gateway {

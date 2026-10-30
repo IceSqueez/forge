@@ -175,8 +175,8 @@ pub(crate) mod test_support {
     use std::time::Duration;
 
     use forge_net::{
-        BodyExcerpt, CallClass, Gateway, GatewayFailure, HostRejection, InvalidRequest,
-        ThrottleScope, TokenBucketRateLimiter,
+        BodyExcerpt, CallClass, Gateway, GatewayFailure, GatewayTimings, HostRejection,
+        InvalidRequest, ThrottleScope, TokenBucketRateLimiter,
     };
     use wiremock::matchers::any;
     use wiremock::{Mock, MockServer, ResponseTemplate};
@@ -212,6 +212,20 @@ pub(crate) mod test_support {
     }
 
     pub(crate) fn unpaced_link_to(server: &MockServer) -> ProviderLink {
+        unpaced_link_with(server, GatewayTimings::DEFAULT)
+    }
+
+    pub(crate) fn link_with_catalog_budget(server: &MockServer, budget: Duration) -> ProviderLink {
+        unpaced_link_with(
+            server,
+            GatewayTimings {
+                catalog_total: budget,
+                ..GatewayTimings::DEFAULT
+            },
+        )
+    }
+
+    fn unpaced_link_with(server: &MockServer, timings: GatewayTimings) -> ProviderLink {
         ProviderLink {
             gateway: Gateway::new(
                 &server.uri(),
@@ -219,7 +233,7 @@ pub(crate) mod test_support {
                     UNPACED_BURST,
                     Duration::from_secs(1),
                 )),
-                CLOUD_TTS_PROFILE,
+                CLOUD_TTS_PROFILE.with_timings(timings),
                 None,
             )
             .unwrap(),

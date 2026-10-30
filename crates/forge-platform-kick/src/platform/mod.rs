@@ -747,7 +747,9 @@ pub(crate) mod tests {
         announcements
     }
 
-    const RETIRED_LOOP_WINDOW: StdDuration = StdDuration::from_secs(2);
+    const RETIRED_LOOP_BACKOFF: StdDuration = StdDuration::from_millis(100);
+    const RETIRED_LOOP_WINDOW: StdDuration = StdDuration::from_millis(500);
+    const BEYOND_ANY_GUARD: StdDuration = StdDuration::from_secs(100 * 24 * 3600);
     const NO_PROGRESS_HORIZON: StdDuration = StdDuration::from_secs(3600);
 
     fn channel_found() -> wiremock::ResponseTemplate {
@@ -844,7 +846,12 @@ pub(crate) mod tests {
             pusher_peer_dropping_only_the_first_link().await,
             channel_api.uri(),
             crate::ban_ledger_test_support::MemoryBanLedger::shared(),
-        );
+        )
+        .with_pusher_timing(PusherTiming {
+            reconnect_backoff_base: RETIRED_LOOP_BACKOFF,
+            reconnect_backoff_cap: RETIRED_LOOP_BACKOFF,
+            ..PusherTiming::default()
+        });
         let mut stream = platform.events();
         platform.connect().await.unwrap();
         await_link_state(&mut stream, "reconnecting").await;
@@ -868,23 +875,33 @@ pub(crate) mod tests {
     }
 
     #[tokio::test]
-    async fn disconnect_during_reconnect_backoff_settles_disconnected_expected_once() {
+    async fn disconnect_during_reconnect_backoff_settles_disconnected_expected_once_without_waiting_it_out()
+     {
         let (platform, _server) = platform_on_socket(
             pusher_peer_ending(PeerEnding::DropsTheSocket).await,
             crate::ban_ledger_test_support::MemoryBanLedger::shared(),
         )
         .await;
+        let platform = platform.with_pusher_timing(PusherTiming {
+            session_stop_grace: BEYOND_ANY_GUARD,
+            reconnect_backoff_base: BEYOND_ANY_GUARD,
+            reconnect_backoff_cap: BEYOND_ANY_GUARD,
+            ..PusherTiming::default()
+        });
         let mut stream = platform.events();
         platform.connect().await.unwrap();
         await_link_state(&mut stream, "reconnecting").await;
+        published_link_announcements(&mut stream);
 
-        platform.disconnect().await.unwrap();
+        tokio::time::timeout(BANNED_STEP_DEADLINE, platform.disconnect())
+            .await
+            .expect("disconnect waited out the reconnect backoff")
+            .unwrap();
 
-        let settled: Vec<_> = published_link_announcements(&mut stream)
-            .into_iter()
-            .filter(|(state, _)| state != "reconnecting")
-            .collect();
-        assert_eq!(settled, vec![("disconnected".to_owned(), Some(true))]);
+        assert_eq!(
+            published_link_announcements(&mut stream),
+            vec![("disconnected".to_owned(), Some(true))]
+        );
     }
 
     #[tokio::test]
@@ -964,14 +981,20 @@ pub(crate) mod tests {
     }
 
     #[tokio::test]
-    async fn an_unacknowledged_subscription_reconnects_without_ever_announcing_connected() {
+    async fn an_unacknowledged_subscription_reconnects_at_the_ack_deadline_without_ever_announcing_connected()
+     {
         let (socket_base, subscribed) = pusher_peer_that_never_acknowledges().await;
         let (platform, _server) = platform_on_socket(
             socket_base,
             crate::ban_ledger_test_support::MemoryBanLedger::shared(),
         )
         .await;
+        let platform = platform.with_pusher_timing(PusherTiming {
+            subscription_ack_timeout: ACK_BOUND,
+            ..PusherTiming::default()
+        });
         let mut stream = platform.events();
+        let started = tokio::time::Instant::now();
         platform.connect().await.unwrap();
         tokio::time::timeout(BANNED_STEP_DEADLINE, subscribed.notified())
             .await
@@ -986,9 +1009,11 @@ pub(crate) mod tests {
                 break;
             }
         }
+        let waited = started.elapsed();
         platform.disconnect().await.unwrap();
 
         assert_eq!(announced, ["connecting", "reconnecting"]);
+        assert!(waited >= ACK_BOUND, "waited {waited:?}");
     }
 
     #[tokio::test]
@@ -1117,7 +1142,9 @@ pub(crate) mod tests {
         format!("ws://{socket_addr}/app")
     }
 
-    const PUSHER_CONNECT_BOUND: StdDuration = StdDuration::from_secs(10);
+    const PUSHER_CONNECT_BOUND: StdDuration = StdDuration::from_millis(100);
+    const ACK_BOUND: StdDuration = StdDuration::from_millis(50);
+    const REDIAL_BACKOFF: StdDuration = StdDuration::from_millis(1);
 
     #[tokio::test]
     async fn a_first_connect_to_a_silent_pusher_socket_fails_as_network_after_the_connect_bound() {
@@ -1127,14 +1154,18 @@ pub(crate) mod tests {
             &endpoints,
             channel_info,
             crate::ban_ledger_test_support::MemoryBanLedger::shared(),
-        );
+        )
+        .with_pusher_timing(PusherTiming {
+            connect_timeout: PUSHER_CONNECT_BOUND,
+            ..PusherTiming::default()
+        });
         let started = tokio::time::Instant::now();
 
         let result = platform.connect().await;
         let waited = started.elapsed();
 
         assert!(
-            matches!(&result, Err(PlatformError::Network { reason }) if reason.contains("timed out after 10s")),
+            matches!(&result, Err(PlatformError::Network { reason }) if reason.contains("timed out after")),
             "{result:?}"
         );
         assert!(waited >= PUSHER_CONNECT_BOUND, "waited {waited:?}");
@@ -1143,15 +1174,31 @@ pub(crate) mod tests {
 
     #[tokio::test]
     async fn a_reconnect_that_times_out_goes_back_to_backoff_and_dials_again() {
-        let (channel_info, server) = primed_channel_info().await;
-        let (socket_base, mut accepted) = pusher_peer_answering_only_the_first_link().await;
-        let endpoints = endpoints_on(socket_base, server.uri());
-        let platform = platform_sharing(
-            &endpoints,
-            channel_info,
-            crate::ban_ledger_test_support::MemoryBanLedger::shared(),
-        );
-        platform.connect().await.unwrap();
+        let mut connect_bound = PUSHER_CONNECT_BOUND;
+        let (platform, mut accepted, _server) = loop {
+            let (channel_info, server) = primed_channel_info().await;
+            let (socket_base, accepted) = pusher_peer_answering_only_the_first_link().await;
+            let endpoints = endpoints_on(socket_base, server.uri());
+            let platform = platform_sharing(
+                &endpoints,
+                channel_info,
+                crate::ban_ledger_test_support::MemoryBanLedger::shared(),
+            )
+            .with_pusher_timing(PusherTiming {
+                connect_timeout: connect_bound,
+                reconnect_backoff_base: REDIAL_BACKOFF,
+                reconnect_backoff_cap: REDIAL_BACKOFF,
+                ..PusherTiming::default()
+            });
+            if platform.connect().await.is_ok() {
+                break (platform, accepted, server);
+            }
+            connect_bound *= 2;
+            assert!(
+                connect_bound < BANNED_STEP_DEADLINE,
+                "the first link never connected"
+            );
+        };
         let first_redial = tokio::time::timeout(BANNED_STEP_DEADLINE, async {
             while accepted.recv().await.unwrap() < 2 {}
         })

@@ -152,10 +152,11 @@ fn into_tts_voices(voices: Vec<PollyVoice>) -> Vec<TtsVoice> {
 
 #[cfg(test)]
 mod tests {
+    use std::time::Duration;
 
     use super::*;
     use crate::network::test_support::{
-        NO_HINT_WAIT_SECS, link_to, request_count, unpaced_link_to,
+        NO_HINT_WAIT_SECS, link_to, link_with_catalog_budget, request_count, unpaced_link_to,
     };
     use crate::polly::signer::test_support::{
         assert_reveals_no_credential, credentials, echo_server, echoing, outcome,
@@ -164,6 +165,8 @@ mod tests {
     use wiremock::{Mock, MockServer, Respond, ResponseTemplate};
 
     const PADDED_TOKEN: &str = "a+b/c=d==";
+    const SHORT_CATALOG_BUDGET: Duration = Duration::from_millis(400);
+    const HANG_GUARD: Duration = Duration::from_secs(30);
 
     fn signer() -> PollySigner {
         PollySigner::new(credentials(None))
@@ -476,26 +479,63 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn pages_finishing_just_inside_the_catalog_budget_complete_the_listing() {
+        let mut budget = SHORT_CATALOG_BUDGET;
+        loop {
+            let server = serving(chain(
+                vec![
+                    page(&["a1"], Some("t2")),
+                    page(&["b1"], None).set_delay(budget * 3 / 4),
+                ],
+                &["t2"],
+            ))
+            .await;
+            let link = link_with_catalog_budget(&server, budget);
+            let started = Instant::now();
+
+            let result = tokio::time::timeout(HANG_GUARD, fetch_voices(&link, &signer()))
+                .await
+                .expect("the listing must give up on its own");
+
+            if started.elapsed() < budget {
+                assert_eq!(result.unwrap().len(), 2);
+                return;
+            }
+            budget *= 2;
+            assert!(budget < HANG_GUARD, "the listing never fit its budget");
+        }
+    }
+
+    #[tokio::test]
     async fn pages_outlasting_the_catalog_budget_together_fail_the_listing() {
-        let hang_guard = CallClass::Catalog.total_budget() * 3;
-        let server = serving(chain(
-            vec![
-                page(&["a1"], Some("t2")),
-                page(&["b1"], None).set_delay(hang_guard * 10),
-            ],
-            &["t2"],
-        ))
-        .await;
-        let link = link_to(&server);
+        let mut budget = SHORT_CATALOG_BUDGET;
+        loop {
+            let server = serving(chain(
+                vec![
+                    page(&["a1"], Some("t2")).set_delay(budget / 2),
+                    page(&["b1"], None).set_delay(HANG_GUARD * 10),
+                ],
+                &["t2"],
+            ))
+            .await;
+            let link = link_with_catalog_budget(&server, budget);
+            let started = Instant::now();
 
-        let result = tokio::time::timeout(hang_guard, fetch_voices(&link, &signer()))
-            .await
-            .expect("the listing must give up on its own");
+            let result = tokio::time::timeout(HANG_GUARD, fetch_voices(&link, &signer()))
+                .await
+                .expect("the listing must give up on its own");
 
-        assert!(
-            matches!(&result, Err(PollyError::Http(detail)) if detail == LISTING_BUDGET_ELAPSED),
-            "{result:?}"
-        );
-        assert_eq!(request_count(&server).await, 2);
+            let waited = started.elapsed();
+            if request_count(&server).await == 2 && waited < budget * 3 / 2 {
+                assert!(
+                    matches!(&result, Err(PollyError::Http(detail)) if detail == LISTING_BUDGET_ELAPSED),
+                    "{result:?}"
+                );
+                assert!(waited >= budget, "waited {waited:?}");
+                return;
+            }
+            budget *= 2;
+            assert!(budget < HANG_GUARD, "the second page never went out");
+        }
     }
 }

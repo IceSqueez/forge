@@ -424,16 +424,24 @@ mod tests {
     use std::sync::atomic::Ordering;
 
     use crate::client::tests::{FakeVts, MockPublisher, PeerConn, stored_token_creds, wait_until};
-    use crate::vts::request::REQUEST_TIMEOUT;
+    use crate::timing::VTubeTiming;
 
     const SETTLE: Duration = Duration::from_secs(30);
+    const SHORT_REQUEST_TIMEOUT: Duration = Duration::from_millis(100);
     const REJECTION_ERROR_ID: i64 = 452;
     const ITEM_ERROR_ID: i64 = 751;
     const NO_MODEL_ERROR_ID: i64 = 50;
     const EXPRESSION_ERROR_ID: i64 = 400;
 
     async fn connected_client(vts: &mut FakeVts) -> (VTubeClient, PeerConn) {
-        let client = vts.connect(&MockPublisher::new(), &stored_token_creds());
+        connected_client_with_timing(vts, VTubeTiming::default()).await
+    }
+
+    async fn connected_client_with_timing(
+        vts: &mut FakeVts,
+        timing: VTubeTiming,
+    ) -> (VTubeClient, PeerConn) {
+        let client = vts.connect_with_timing(&MockPublisher::new(), &stored_token_creds(), timing);
         let conn = vts.logged_in_conn().await;
         assert!(
             wait_until(SETTLE, || client.connection_state().is_connected()).await,
@@ -465,7 +473,11 @@ mod tests {
     #[tokio::test]
     async fn a_request_the_peer_never_answers_times_out_at_the_request_deadline() {
         let mut vts = FakeVts::bind().await;
-        let (client, conn) = connected_client(&mut vts).await;
+        let timing = VTubeTiming {
+            request_timeout: SHORT_REQUEST_TIMEOUT,
+            ..VTubeTiming::default()
+        };
+        let (client, conn) = connected_client_with_timing(&mut vts, timing).await;
         let (_peer, ignored) =
             conn.answer_all_except(|f| f["messageType"] == "HotkeyTriggerRequest");
         let started = std::time::Instant::now();
@@ -482,7 +494,7 @@ mod tests {
             "got {outcome:?}"
         );
         assert!(
-            started.elapsed() >= REQUEST_TIMEOUT,
+            started.elapsed() >= SHORT_REQUEST_TIMEOUT,
             "the request gave up before its deadline"
         );
     }

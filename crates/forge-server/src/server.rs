@@ -581,7 +581,16 @@ pub(crate) mod tests {
         settings: Arc<MemorySettings>,
         additional_origins: Vec<String>,
     ) -> (ServerHandle, std::net::SocketAddr) {
-        let config = loopback_config(settings, EPHEMERAL_PORT, additional_origins);
+        start_with_timing(settings, additional_origins, crate::ServerTiming::default()).await
+    }
+
+    async fn start_with_timing(
+        settings: Arc<MemorySettings>,
+        additional_origins: Vec<String>,
+        timing: crate::ServerTiming,
+    ) -> (ServerHandle, std::net::SocketAddr) {
+        let mut config = loopback_config(settings, EPHEMERAL_PORT, additional_origins);
+        config.timing = timing;
         let handle = start_server(config).await.expect("start");
         let addr = handle.bind_addr().await;
         (handle, addr)
@@ -704,9 +713,9 @@ pub(crate) mod tests {
     const ORIGIN_NOT_ALLOWED: &str = "ORIGIN_NOT_ALLOWED";
     const LOOPBACK: &str = "127.0.0.1";
     const EPHEMERAL_PORT: u16 = 0;
-    const DRAIN_BUDGET: std::time::Duration = std::time::Duration::from_secs(5);
     const UNFINISHED_REQUEST_HEAD: &[u8] = b"GET /api/v1/info HTTP/1.1\r\nHost: localhost\r\n";
     const LOOPBACK_SETTLE: std::time::Duration = std::time::Duration::from_millis(50);
+    const SHORT_DRAIN_BUDGET: std::time::Duration = std::time::Duration::from_millis(100);
     const SETUP_ATTEMPTS: usize = 20;
     const OLD_LISTENER_WINDOW: std::time::Duration = std::time::Duration::from_millis(50);
 
@@ -1314,8 +1323,15 @@ pub(crate) mod tests {
         let mut outlasted_the_drain = None;
         for _ in 0..SETUP_ATTEMPTS {
             let settings = mem_settings();
-            let (handle, boot_addr) =
-                start_on_an_ephemeral_port(Arc::clone(&settings), Vec::new()).await;
+            let (handle, boot_addr) = start_with_timing(
+                Arc::clone(&settings),
+                Vec::new(),
+                crate::ServerTiming {
+                    connection_drain_budget: SHORT_DRAIN_BUDGET,
+                    ..crate::ServerTiming::default()
+                },
+            )
+            .await;
             let new_port = reserve_a_free_port().await;
             crate::config::ServerSettings::save_bind_address(&*settings, LOOPBACK)
                 .await
@@ -1335,11 +1351,11 @@ pub(crate) mod tests {
             tokio::time::sleep(LOOPBACK_SETTLE).await;
 
             let started = tokio::time::Instant::now();
-            tokio::time::timeout(DRAIN_BUDGET * 6, handle.restart())
+            tokio::time::timeout(HANG_GUARD, handle.restart())
                 .await
                 .expect("the restart never finished draining")
                 .expect("restart");
-            if started.elapsed() >= DRAIN_BUDGET {
+            if started.elapsed() >= SHORT_DRAIN_BUDGET {
                 outlasted_the_drain = Some((handle, lingering));
                 break;
             }
@@ -1544,6 +1560,7 @@ pub(crate) mod tests {
     const OVERLAY_IDENTITY: &str = "goal-box";
     const OVERLAY_PAGE_CREDENTIAL: &str = "2f8b1d0c9a7e6f5b4c3d2e1f0a9b8c7d";
     const FRAME_BUDGET: std::time::Duration = std::time::Duration::from_secs(5);
+    const HANG_GUARD: std::time::Duration = std::time::Duration::from_secs(30);
 
     fn served_overlay() -> forge_storage::OverlayDefinition {
         forge_storage::OverlayDefinition {
@@ -1564,6 +1581,15 @@ pub(crate) mod tests {
 
     async fn make_server_serving_one_overlay()
     -> (ServerHandle, std::net::SocketAddr, Arc<BusAdapter>) {
+        let state = state_serving_one_overlay().await;
+        let adapter = Arc::clone(&state.bus_adapter);
+
+        let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
+        let addr = listener.local_addr().expect("local addr");
+        (serve_on(listener, state), addr, adapter)
+    }
+
+    async fn state_serving_one_overlay() -> AppState {
         let creds = MemCreds::with_token(BEARER_TOKEN);
         let auth = AuthState::load(false, &*creds).await.expect("auth load");
         let creds_dyn: Arc<dyn CredentialsRepo> = creds;
@@ -1574,17 +1600,11 @@ pub(crate) mod tests {
             Ok((credential.expose() == OVERLAY_PAGE_CREDENTIAL).then(served_overlay))
         });
         state.overlays = Arc::new(overlays);
-        let adapter = Arc::clone(&state.bus_adapter);
-
-        let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
-        let addr = listener.local_addr().expect("local addr");
-        (serve_on(listener, state), addr, adapter)
+        state
     }
 
-    async fn next_text_frame(
-        socket: &mut tokio_tungstenite::WebSocketStream<
-            tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>,
-        >,
+    async fn next_text_frame<S: ClientIo>(
+        socket: &mut tokio_tungstenite::WebSocketStream<S>,
     ) -> String {
         let message = tokio::time::timeout(FRAME_BUDGET, futures_util::StreamExt::next(socket))
             .await
@@ -1959,9 +1979,14 @@ pub(crate) mod tests {
         }
     }
 
-    type ClientSocket = tokio_tungstenite::WebSocketStream<
-        tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>,
-    >;
+    type ClientSocket<S = tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>> =
+        tokio_tungstenite::WebSocketStream<S>;
+
+    trait ClientIo: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin {}
+
+    impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin> ClientIo for S {}
+
+    type DuplexSocket = ClientSocket<tokio::io::DuplexStream>;
     use axum::extract::ws::close_code;
     use tokio_tungstenite::tungstenite::Message as ClientMessage;
 
@@ -1977,8 +2002,58 @@ pub(crate) mod tests {
     const PROTOCOL_LIMIT: usize = 256 * 1024;
     const PAST_PRE_AUTH_PAYLOAD: usize = 100 * 1024;
     const ROUND_TRIPS: usize = 8;
-    const PRE_AUTH_WINDOW: std::time::Duration = std::time::Duration::from_secs(10);
+    const PRE_AUTH_WINDOW: std::time::Duration = std::time::Duration::from_secs(4);
+    const READ_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(9);
     const PRE_AUTH_MARGIN: std::time::Duration = std::time::Duration::from_secs(1);
+    const SHORT_READ_TIMEOUT: std::time::Duration = std::time::Duration::from_millis(50);
+    const SHORT_PRE_AUTH_WINDOW: std::time::Duration = std::time::Duration::from_millis(50);
+    const DUPLEX_WS_URL: &str = "ws://127.0.0.1:9515/ws/v1/";
+
+    fn duplex_timing() -> crate::ServerTiming {
+        crate::ServerTiming {
+            request_read_timeout: READ_TIMEOUT,
+            pre_auth_window: PRE_AUTH_WINDOW,
+            ..crate::ServerTiming::default()
+        }
+    }
+
+    async fn serve_over_duplex(mut state: AppState) -> crate::listener::tests::DuplexDialer {
+        state.timing = duplex_timing();
+        let (listener, dialer) = crate::listener::tests::duplex_listener(READ_TIMEOUT);
+        let (shutdown_tx, shutdown_rx) = tokio::sync::watch::channel(false);
+        let app = super::build_router(state, shutdown_rx)
+            .into_make_service_with_connect_info::<crate::listener::PeerInfo>();
+        tokio::spawn(async move {
+            let _shutdown_tx = shutdown_tx;
+            axum::serve(listener, app).await
+        });
+        dialer
+    }
+
+    async fn duplex_server(
+        auth_required_for_reads: bool,
+        creds: Arc<MemCreds>,
+    ) -> crate::listener::tests::DuplexDialer {
+        let auth = AuthState::load(auth_required_for_reads, &*creds)
+            .await
+            .expect("auth load");
+        let creds_dyn: Arc<dyn CredentialsRepo> = creds;
+        serve_over_duplex(make_app_state(auth, creds_dyn)).await
+    }
+
+    async fn open_duplex_ws(dialer: &crate::listener::tests::DuplexDialer) -> DuplexSocket {
+        tokio_tungstenite::client_async(DUPLEX_WS_URL, dialer.dial())
+            .await
+            .expect("ws handshake")
+            .0
+    }
+
+    async fn make_server_with_timing(
+        timing: crate::ServerTiming,
+    ) -> (ServerHandle, std::net::SocketAddr) {
+        let (handle, addr) = start_with_timing(mem_settings(), Vec::new(), timing).await;
+        (handle, addr)
+    }
 
     async fn open_ws(addr: std::net::SocketAddr) -> ClientSocket {
         tokio_tungstenite::connect_async(format!("ws://{addr}/ws/v1/"))
@@ -1987,20 +2062,23 @@ pub(crate) mod tests {
             .0
     }
 
-    async fn send_text(socket: &mut ClientSocket, text: String) {
+    async fn send_text<S: ClientIo>(socket: &mut ClientSocket<S>, text: String) {
         futures_util::SinkExt::send(socket, ClientMessage::Text(text.into()))
             .await
             .expect("send frame");
     }
 
-    async fn next_message(socket: &mut ClientSocket) -> Option<ClientMessage> {
+    async fn next_message<S: ClientIo>(socket: &mut ClientSocket<S>) -> Option<ClientMessage> {
         tokio::time::timeout(FRAME_BUDGET, futures_util::StreamExt::next(socket))
             .await
             .expect("timeout waiting for the server")
             .and_then(Result::ok)
     }
 
-    async fn ask(socket: &mut ClientSocket, request: serde_json::Value) -> serde_json::Value {
+    async fn ask<S: ClientIo>(
+        socket: &mut ClientSocket<S>,
+        request: serde_json::Value,
+    ) -> serde_json::Value {
         send_text(socket, request.to_string()).await;
         serde_json::from_str(&next_text_frame(socket).await).expect("json response")
     }
@@ -2029,6 +2107,16 @@ pub(crate) mod tests {
         })
     }
 
+    async fn authenticated_duplex_ws(
+        dialer: &crate::listener::tests::DuplexDialer,
+        token: &str,
+    ) -> DuplexSocket {
+        let mut socket = open_duplex_ws(dialer).await;
+        let ack = ask(&mut socket, bearer_auth_request(token)).await;
+        assert_eq!(ack["status"], "ok", "the bearer was refused: {ack}");
+        socket
+    }
+
     async fn authenticated_ws(addr: std::net::SocketAddr, token: &str) -> ClientSocket {
         let mut socket = open_ws(addr).await;
         let ack = ask(&mut socket, bearer_auth_request(token)).await;
@@ -2036,7 +2124,7 @@ pub(crate) mod tests {
         socket
     }
 
-    async fn assert_still_serving(socket: &mut ClientSocket, who: &str) {
+    async fn assert_still_serving<S: ClientIo>(socket: &mut ClientSocket<S>, who: &str) {
         for _ in 0..ROUND_TRIPS {
             send_text(socket, get_info_request().to_string()).await;
             assert!(
@@ -2414,82 +2502,112 @@ pub(crate) mod tests {
         handle.stop().await.expect("stop");
     }
 
-    #[tokio::test]
-    async fn a_connection_that_never_sends_a_request_is_closed_at_the_read_deadline() {
+    #[tokio::test(start_paused = true)]
+    async fn a_connection_that_never_sends_a_request_is_closed_exactly_at_the_read_deadline() {
         use tokio::io::AsyncReadExt as _;
 
-        let (handle, addr) = make_server(false, MemCreds::new()).await;
-        let mut silent = tokio::net::TcpStream::connect(addr).await.expect("connect");
+        let dialer = duplex_server(false, MemCreds::new()).await;
+        let mut silent = dialer.dial();
         let opened = tokio::time::Instant::now();
 
         let mut buf = [0_u8; 1];
-        let outcome = tokio::time::timeout(
-            crate::listener::REQUEST_READ_TIMEOUT * 2,
-            silent.read(&mut buf),
-        )
-        .await
-        .expect("a silent connection was held past twice the read deadline");
+        let outcome = silent.read(&mut buf).await;
 
         assert!(
             matches!(outcome, Ok(0) | Err(_)),
             "the server answered nothing yet sent bytes"
         );
+        assert_eq!(opened.elapsed(), READ_TIMEOUT);
+    }
+
+    #[tokio::test]
+    async fn the_configured_read_timeout_reaches_the_listener() {
+        use tokio::io::AsyncReadExt as _;
+
+        let (handle, addr) = make_server_with_timing(crate::ServerTiming {
+            request_read_timeout: SHORT_READ_TIMEOUT,
+            ..crate::ServerTiming::default()
+        })
+        .await;
+        let mut silent = tokio::net::TcpStream::connect(addr).await.expect("connect");
+        let opened = tokio::time::Instant::now();
+
+        let mut buf = [0_u8; 1];
+        let outcome = tokio::time::timeout(HANG_GUARD, silent.read(&mut buf))
+            .await
+            .expect("the silent connection outlived the configured read deadline");
+
         assert!(
-            opened.elapsed() >= crate::listener::REQUEST_READ_TIMEOUT,
-            "the connection was dropped before the deadline"
+            matches!(outcome, Ok(0) | Err(_)),
+            "the server answered nothing yet sent bytes"
         );
+        assert!(opened.elapsed() >= SHORT_READ_TIMEOUT);
         handle.stop().await.expect("stop");
     }
 
-    #[tokio::test]
+    #[tokio::test(start_paused = true)]
     async fn an_upgraded_websocket_outlives_the_read_deadline() {
-        let (handle, addr) = make_server(false, MemCreds::new()).await;
-        let mut socket = open_ws(addr).await;
+        let dialer = duplex_server(false, MemCreds::new()).await;
+        let mut socket = open_duplex_ws(&dialer).await;
         assert_eq!(ask(&mut socket, get_info_request()).await["status"], "ok");
 
-        tokio::time::sleep(crate::listener::REQUEST_READ_TIMEOUT + PRE_AUTH_MARGIN).await;
+        tokio::time::sleep(READ_TIMEOUT + PRE_AUTH_MARGIN).await;
 
         assert_eq!(ask(&mut socket, get_info_request()).await["status"], "ok");
-        handle.stop().await.expect("stop");
     }
 
-    #[tokio::test]
-    async fn a_silent_socket_is_closed_with_policy_at_the_pre_auth_window() {
-        let (handle, addr) = make_server(false, MemCreds::new()).await;
-        let mut socket = open_ws(addr).await;
+    #[tokio::test(start_paused = true)]
+    async fn a_silent_socket_is_closed_with_policy_exactly_at_the_pre_auth_window() {
+        let dialer = duplex_server(false, MemCreds::new()).await;
+        let mut socket = open_duplex_ws(&dialer).await;
+        let opened = tokio::time::Instant::now();
 
-        let closed = tokio::time::timeout(
-            (PRE_AUTH_WINDOW + PRE_AUTH_MARGIN) * 2,
-            futures_util::StreamExt::next(&mut socket),
-        )
-        .await
-        .ok();
+        let closed = futures_util::StreamExt::next(&mut socket).await;
 
         assert_eq!(
-            close_code_of(closed.flatten().and_then(Result::ok)),
+            close_code_of(closed.and_then(Result::ok)),
             Some(close_code::POLICY),
             "a socket that never spoke must be closed once the window passes"
         );
-        handle.stop().await.expect("stop");
+        assert_eq!(opened.elapsed(), PRE_AUTH_WINDOW);
     }
 
     #[tokio::test]
-    async fn a_socket_that_spoke_once_stays_open_past_the_window_when_reads_are_open() {
-        let (handle, addr) = make_server(false, MemCreds::new()).await;
+    async fn the_configured_pre_auth_window_reaches_the_socket() {
+        let (handle, addr) = make_server_with_timing(crate::ServerTiming {
+            pre_auth_window: SHORT_PRE_AUTH_WINDOW,
+            ..crate::ServerTiming::default()
+        })
+        .await;
         let mut socket = open_ws(addr).await;
+
+        let closed = tokio::time::timeout(HANG_GUARD, futures_util::StreamExt::next(&mut socket))
+            .await
+            .expect("the silent socket outlived the configured window");
+
+        assert_eq!(
+            close_code_of(closed.and_then(Result::ok)),
+            Some(close_code::POLICY)
+        );
+        handle.stop().await.expect("stop");
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_socket_that_spoke_once_stays_open_past_the_window_when_reads_are_open() {
+        let dialer = duplex_server(false, MemCreds::new()).await;
+        let mut socket = open_duplex_ws(&dialer).await;
 
         assert_eq!(ask(&mut socket, get_info_request()).await["status"], "ok");
         tokio::time::sleep(PRE_AUTH_WINDOW + PRE_AUTH_MARGIN).await;
 
         assert_still_serving(&mut socket, "a reader that had spoken while reads are open").await;
-        handle.stop().await.expect("stop");
     }
 
-    #[tokio::test]
+    #[tokio::test(start_paused = true)]
     async fn an_unauthenticated_socket_that_spoke_is_still_closed_at_the_window_when_reads_are_required()
      {
-        let (handle, addr) = make_server(true, MemCreds::with_token(BEARER_TOKEN)).await;
-        let mut socket = open_ws(addr).await;
+        let dialer = duplex_server(true, MemCreds::with_token(BEARER_TOKEN)).await;
+        let mut socket = open_duplex_ws(&dialer).await;
 
         assert_eq!(
             ask(&mut socket, get_info_request()).await["error"]["code"],
@@ -2503,25 +2621,24 @@ pub(crate) mod tests {
             Some(close_code::POLICY),
             "having sent a message must not exempt an unauthenticated socket at the window"
         );
-        handle.stop().await.expect("stop");
     }
 
-    #[tokio::test]
+    #[tokio::test(start_paused = true)]
     async fn a_bearer_authenticated_socket_stays_open_past_the_window_when_reads_are_required() {
-        let (handle, addr) = make_server(true, MemCreds::with_token(BEARER_TOKEN)).await;
-        let mut session = authenticated_ws(addr, BEARER_TOKEN).await;
+        let dialer = duplex_server(true, MemCreds::with_token(BEARER_TOKEN)).await;
+        let mut session = authenticated_duplex_ws(&dialer, BEARER_TOKEN).await;
 
         tokio::time::sleep(PRE_AUTH_WINDOW + PRE_AUTH_MARGIN).await;
 
         assert_still_serving(&mut session, "a bearer-authenticated session").await;
-        handle.stop().await.expect("stop");
     }
 
-    #[tokio::test]
+    #[tokio::test(start_paused = true)]
     async fn an_overlay_session_stays_open_past_the_window_when_reads_are_required() {
-        let (handle, addr, _) = make_server_serving_one_overlay().await;
-        handle.auth_state().await.set_reads_required(true);
-        let mut page = open_ws(addr).await;
+        let state = state_serving_one_overlay().await;
+        state.auth.set_reads_required(true);
+        let dialer = serve_over_duplex(state).await;
+        let mut page = open_duplex_ws(&dialer).await;
         let ack = ask(
             &mut page,
             serde_json::json!({
@@ -2539,7 +2656,6 @@ pub(crate) mod tests {
         tokio::time::sleep(PRE_AUTH_WINDOW + PRE_AUTH_MARGIN).await;
 
         assert_still_serving(&mut page, "an overlay session").await;
-        handle.stop().await.expect("stop");
     }
 
     #[tokio::test]

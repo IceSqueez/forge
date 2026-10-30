@@ -1,12 +1,13 @@
 use std::time::{Duration, Instant};
 
 use crate::error::VTubeError;
+use crate::timing::VTubeTiming;
 use crate::vts::endpoint::endpoint_url;
 use crate::vts::message_type::{API_STATE_REQUEST, API_STATE_RESPONSE};
 use crate::vts::protocol::new_request;
-use crate::vts::socket::{dial, recv_next_text, send_ws_msg};
+use crate::vts::socket::{dial_within, recv_next_text, send_ws_msg};
 
-const PROBE_TIMEOUT: Duration = Duration::from_secs(5);
+pub(crate) const PROBE_TIMEOUT: Duration = Duration::from_secs(5);
 
 #[derive(Debug, Clone)]
 pub struct VTubeProbeResult {
@@ -16,13 +17,25 @@ pub struct VTubeProbeResult {
 }
 
 pub async fn probe_connection(host: &str, port: u16) -> Result<VTubeProbeResult, VTubeError> {
-    tokio::time::timeout(PROBE_TIMEOUT, run_probe(host, port))
+    probe_connection_with_timing(host, port, VTubeTiming::default()).await
+}
+
+pub async fn probe_connection_with_timing(
+    host: &str,
+    port: u16,
+    timing: VTubeTiming,
+) -> Result<VTubeProbeResult, VTubeError> {
+    tokio::time::timeout(timing.probe_timeout, run_probe(host, port, timing))
         .await
         .unwrap_or(Err(VTubeError::Timeout))
 }
 
-async fn run_probe(host: &str, port: u16) -> Result<VTubeProbeResult, VTubeError> {
-    let mut ws = dial(&endpoint_url(host, port))
+async fn run_probe(
+    host: &str,
+    port: u16,
+    timing: VTubeTiming,
+) -> Result<VTubeProbeResult, VTubeError> {
+    let mut ws = dial_within(&endpoint_url(host, port), timing.connect_timeout)
         .await
         .map_err(|failed| VTubeError::Connect(failed.detail))?;
 

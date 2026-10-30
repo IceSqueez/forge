@@ -215,7 +215,7 @@ async fn server_error_backs_off_then_recovers_on_the_next_timer() {
     let server = MockServer::start().await;
     support::mount_me(&server).await;
     support::mount_donates(&server, &list).await;
-    let mut h = Harness::with_server(server, list, MemCreds::with_token(support::TOKEN));
+    let mut h = Harness::ticking_with_server(server, list, MemCreds::with_token(support::TOKEN));
 
     let failure = h.next().await;
     assert!(
@@ -224,7 +224,6 @@ async fn server_error_backs_off_then_recovers_on_the_next_timer() {
     );
     assert_eq!(h.provider.poll_status().phase, PollPhase::Retrying);
 
-    h.wake_poller();
     let recovered = h.next().await.unwrap();
     h.wait_for("polling again", |s| s.phase == PollPhase::Polling)
         .await;
@@ -253,7 +252,7 @@ async fn errors_needing_the_user_stop_polling_until_the_user_acts() {
         };
         let list = Harness::empty_list(Order::NewestFirst);
         support::mount_donates(&server, &list).await;
-        let mut h = Harness::with_server(server, list, creds);
+        let mut h = Harness::ticking_with_server(server, list, creds);
 
         let failure = h.next().await;
         let expected_platform_error = match me_status {
@@ -265,7 +264,10 @@ async fn errors_needing_the_user_stop_polling_until_the_user_acts() {
         assert!(expected_platform_error, "{me_status:?}: {failure:?}");
         assert_eq!(h.provider.poll_status().phase, phase, "{me_status:?}");
 
-        assert!(h.stays_quiet().await, "{me_status:?} polled again");
+        assert!(
+            h.stays_quiet_for_several_ticks().await,
+            "{me_status:?} polled again"
+        );
         assert_eq!(
             h.me_requests().await,
             usize::from(me_status.is_some()),
@@ -295,7 +297,7 @@ async fn pause_and_resume_keeps_the_seen_donations() {
 
 #[tokio::test]
 async fn paused_poller_sends_no_requests() {
-    let mut h = Harness::start(Order::NewestFirst, donates(1)).await;
+    let mut h = Harness::ticking(Order::NewestFirst, donates(1)).await;
     h.donations(1).await;
     h.wait_for("baseline poll", |s| s.last_poll_at.is_some())
         .await;
@@ -303,7 +305,7 @@ async fn paused_poller_sends_no_requests() {
     h.wait_for("paused", |s| s.phase == PollPhase::Paused).await;
     h.list.forget_requests();
 
-    tokio::time::sleep(support::QUIET).await;
+    tokio::time::sleep(support::SEVERAL_TICKS).await;
 
     assert!(h.list.requested_pages().is_empty());
 }

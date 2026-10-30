@@ -312,9 +312,8 @@ mod tests {
     use serde_json::json;
 
     use super::*;
-    use forge_events::TimerTick;
+    use forge_events::{CommandMatched, TimerTick, TypedEvent};
     use forge_platform_twitch::vocabulary::event_kinds::CHANNEL_CHAT_MESSAGE;
-    use forge_runtime::COMMAND_MATCHED_KIND;
 
     const CHAT_ACTION: usize = 0;
     const COMMAND_ACTION: usize = 1;
@@ -382,7 +381,7 @@ mod tests {
         tracker.injected(0, 1, 0, t0);
         let chat = twitch_event("!hype ~q0~");
         tracker.on_event(&chat, t0);
-        let matched = core(COMMAND_MATCHED_KIND, json!({}), chat.id);
+        let matched = core(CommandMatched::KIND, json!({}), chat.id);
         tracker.on_event(&matched, t0);
         tracker.on_event(
             &start("Hype Command", matched.id),

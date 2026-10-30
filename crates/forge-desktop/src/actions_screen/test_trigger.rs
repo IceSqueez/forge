@@ -90,6 +90,6 @@ mod tests {
             .expect("the engine finishes the test run")
         });
 
-        assert_eq!(manual_test, json!(true));
+        assert_eq!(manual_test, serde_json::Value::Bool(true));
     }
 }

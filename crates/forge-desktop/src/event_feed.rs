@@ -1611,6 +1611,7 @@ mod tests {
                 serde_json::json!({
                     "channel": "twitch",
                     "message": "hi",
+                    "whisper_to_login": "viewer",
                     "sent_as": { "role": "bot", "login": "forgebot" },
                 }),
             );
@@ -1624,7 +1625,7 @@ mod tests {
     }
 
     #[test]
-    fn sent_outcomes_without_a_usable_acting_login_read_plain_sent() {
+    fn sent_outcomes_without_an_acting_account_read_plain_sent() {
         for (kind, payload) in [
             (
                 "chat.send",
@@ -1632,13 +1633,8 @@ mod tests {
             ),
             (
                 "chat.whisper.sent",
-                serde_json::json!({ "sent_as": { "role": "bot" } }),
+                serde_json::json!({ "channel": "twitch", "whisper_to_login": "viewer" }),
             ),
-            (
-                "chat.whisper.sent",
-                serde_json::json!({ "sent_as": { "role": "bot", "login": 7 } }),
-            ),
-            ("chat.whisper.sent", serde_json::Value::Null),
         ] {
             assert_eq!(
                 send_outcome(kind, payload.clone()),

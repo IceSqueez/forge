@@ -894,6 +894,7 @@ mod tests {
     use crate::client::VTUBE_PLATFORM_ID;
     use crate::client::tests::MockPublisher;
     use crate::health::HealthSnapshot;
+    use crate::vocabulary::VTubeDisconnectReason;
 
     const EVERY_CONNECTION_STATE: [ConnectionState; 4] = [
         ConnectionState::Disconnected,

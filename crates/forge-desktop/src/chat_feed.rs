@@ -1630,7 +1630,7 @@ mod tests {
             sub_action_count: 1,
         })
         .unwrap();
-        let command = serde_json::json!({ "command": "!lurk" });
+        let command = serde_json::json!({ "command": "!lurk", "kind_id": "twitch.chat.command" });
         let steps = [
             ("chat message", message, true),
             (

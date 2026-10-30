@@ -1015,6 +1015,86 @@ mod tests {
         assert!(!rendered.contains("SecretName"), "{rendered}");
     }
 
+    fn profile(login: &str, roles: &[&str]) -> ChatViewerProfile {
+        ChatViewerProfile {
+            login: login.to_owned(),
+            roles: roles.iter().map(|role| (*role).to_owned()).collect(),
+        }
+    }
+
+    #[test]
+    fn reading_a_viewer_profile_returns_its_login_and_roles_beside_the_other_user_fields() {
+        let payload = serde_json::json!({
+            "message": "hi",
+            ChatViewerProfile::KEY: {
+                "id": "1",
+                "login": "alice",
+                "display_name": "Alice",
+                "roles": ["moderator", "vip"],
+            },
+        });
+
+        assert_eq!(
+            ChatViewerProfile::read(&payload),
+            profile("alice", &["moderator", "vip"])
+        );
+    }
+
+    #[test]
+    fn a_viewer_profile_without_a_login_or_roles_reads_them_as_empty() {
+        for (user, expected) in [
+            (
+                serde_json::json!({ "roles": ["vip"] }),
+                profile("", &["vip"]),
+            ),
+            (
+                serde_json::json!({ "login": "alice" }),
+                profile("alice", &[]),
+            ),
+            (
+                serde_json::json!({ "login": "", "roles": [] }),
+                profile("", &[]),
+            ),
+        ] {
+            let payload = serde_json::json!({ ChatViewerProfile::KEY: user.clone() });
+            assert_eq!(ChatViewerProfile::read(&payload), expected, "{user}");
+        }
+    }
+
+    #[test]
+    fn a_missing_or_mistyped_viewer_profile_reads_as_the_empty_profile() {
+        for payload in [
+            serde_json::json!({}),
+            serde_json::Value::Null,
+            serde_json::json!({ ChatViewerProfile::KEY: "alice" }),
+            serde_json::json!({ ChatViewerProfile::KEY: null }),
+            serde_json::json!({ ChatViewerProfile::KEY: { "login": 7, "roles": ["vip"] } }),
+            serde_json::json!({ ChatViewerProfile::KEY: { "login": null, "roles": ["vip"] } }),
+            serde_json::json!({ ChatViewerProfile::KEY: { "login": "alice", "roles": "vip" } }),
+            serde_json::json!({ ChatViewerProfile::KEY: { "login": "alice", "roles": ["vip", 3] } }),
+        ] {
+            assert_eq!(
+                ChatViewerProfile::read(&payload),
+                ChatViewerProfile::default(),
+                "{payload}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_viewer_profile_debug_line_hides_the_login_but_keeps_the_roles() {
+        let rendered = format!("{:?}", profile("SecretLogin", &["moderator"]));
+
+        assert_eq!(
+            (
+                rendered.contains("SecretLogin"),
+                rendered.contains("moderator")
+            ),
+            (false, true),
+            "{rendered}"
+        );
+    }
+
     #[test]
     fn removes_author_matches_by_id_then_by_ascii_nocase_name_for_user_removals_only() {
         let remove = |user_id: Option<&str>, user_name: &str| ChatModerationAction::RemoveUser {

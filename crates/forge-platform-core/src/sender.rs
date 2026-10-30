@@ -53,30 +53,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn from_payload_reads_an_absent_or_null_sender_as_default_and_parses_every_wire_name() {
-        for (payload, expected) in [
-            (json!({ "message": "hi" }), SenderPreference::Default),
-            (json!({ SENDER_FIELD: null }), SenderPreference::Default),
-            (
-                json!({ SENDER_FIELD: "default" }),
-                SenderPreference::Default,
-            ),
-            (
-                json!({ SENDER_FIELD: "streamer" }),
-                SenderPreference::Streamer,
-            ),
-            (json!({ SENDER_FIELD: "bot" }), SenderPreference::BotOnly),
-        ] {
-            assert_eq!(
-                SenderPreference::from_payload(&payload),
-                Ok(expected),
-                "{payload}"
-            );
-        }
-    }
-
-    #[test]
-    fn from_payload_rejects_a_non_canonical_string_naming_the_value_it_got() {
+    fn parse_rejects_every_non_canonical_wire_name() {
         for raw in [
             "Bot",
             "STREAMER",
@@ -86,26 +63,7 @@ mod tests {
             "bot_only",
             "broadcaster",
         ] {
-            assert_eq!(
-                SenderPreference::from_payload(&json!({ SENDER_FIELD: raw })),
-                Err(unknown_sender_reason(raw)),
-                "{raw:?}"
-            );
-        }
-    }
-
-    #[test]
-    fn from_payload_rejects_a_non_string_sender() {
-        for value in [
-            json!(1),
-            json!(true),
-            json!(["bot"]),
-            json!({ "role": "bot" }),
-        ] {
-            assert!(
-                SenderPreference::from_payload(&json!({ SENDER_FIELD: value.clone() })).is_err(),
-                "{value}"
-            );
+            assert_eq!(SenderPreference::parse(raw), None, "{raw:?}");
         }
     }
 

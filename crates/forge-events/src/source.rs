@@ -49,16 +49,18 @@ mod tests {
     use super::*;
 
     #[test]
-    fn to_platform_id_for_chat_sources_returns_some() {
-        assert_eq!(
-            EventSource::Twitch.to_platform_id(),
-            Some(PlatformId::Twitch)
-        );
-        assert_eq!(
-            EventSource::YouTube.to_platform_id(),
-            Some(PlatformId::YouTube)
-        );
-        assert_eq!(EventSource::Kick.to_platform_id(), Some(PlatformId::Kick));
+    fn every_platform_id_converts_to_the_event_source_with_its_wire_spelling_and_back() {
+        for platform in PlatformId::ALL {
+            let source = EventSource::from(platform);
+            assert_eq!(
+                (
+                    serde_json::to_value(source).unwrap(),
+                    source.to_platform_id()
+                ),
+                (serde_json::json!(platform.as_str()), Some(platform)),
+                "{platform:?}"
+            );
+        }
     }
 
     #[test]
@@ -75,6 +77,7 @@ mod tests {
             EventSource::Timer,
             EventSource::Server,
             EventSource::Audio,
+            EventSource::Donation,
         ];
         for src in non_platform {
             assert_eq!(

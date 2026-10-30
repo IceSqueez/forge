@@ -62,11 +62,12 @@ mod tests {
     use super::*;
     use crate::{
         ActingSender, ActionDone, ActionSkipped, ActionStarted, ChatSendFailed, ChatSendRequest,
-        ChatSent, ConnectionState, GlobalArrayAppended, GlobalArrayRemoved, GlobalDecremented,
-        GlobalDeleted, GlobalIncremented, GlobalSet, GlobalToggled, LatestChanged, NowPlaying,
-        PlatformConnectionChanged, PlaybackState, QuickActionDone, RequestFailed, RunOutcome,
-        ScriptFailed, ScriptHttpCall, ScriptHttpMethod, ScriptLogLevel, ScriptLogged,
-        ScriptReloaded, ScriptStarted, SenderRole, SubActionDone, SubActionRun, TimerTick,
+        ChatSent, CommandMatched, ConnectionState, GlobalArrayAppended, GlobalArrayRemoved,
+        GlobalDecremented, GlobalDeleted, GlobalIncremented, GlobalSet, GlobalToggled,
+        LatestChanged, ManualTestRun, NowPlaying, PlatformConnectionChanged, PlaybackState,
+        QuickActionDone, RequestFailed, RunOutcome, ScriptFailed, ScriptHttpCall, ScriptHttpMethod,
+        ScriptLogLevel, ScriptLogged, ScriptReloaded, ScriptStarted, SenderRole, SubActionDone,
+        SubActionRun, TimerTick, WhisperSent,
     };
 
     fn decodes_back<T: TypedEvent + Clone + PartialEq + Debug>(value: T) {
@@ -209,6 +210,21 @@ mod tests {
             channel: "kick".to_owned(),
             error: "not connected".to_owned(),
         });
+        decodes_back(WhisperSent {
+            channel: "twitch".to_owned(),
+            whisper_to_login: "viewer".to_owned(),
+            sent_as: Some(ActingSender {
+                role: SenderRole::Streamer,
+                login: "caster".to_owned(),
+            }),
+        });
+        decodes_back(CommandMatched {
+            command: "!so".to_owned(),
+            kind_id: "twitch.chat.command".to_owned(),
+        });
+        decodes_back(ManualTestRun {
+            action_id: ActionId::new(),
+        });
         decodes_back(RequestFailed {
             endpoint: "helix.users".to_owned(),
             status_code: 429,
@@ -240,6 +256,58 @@ mod tests {
             art: None,
             occurred_at: OffsetDateTime::from_unix_timestamp(1_790_000_000).unwrap(),
         });
+    }
+
+    #[test]
+    fn chat_trigger_and_test_run_kinds_keep_their_wire_kind_and_payload_shape() {
+        let action_id = ActionId::new();
+        let cases = [
+            (
+                WhisperSent {
+                    channel: "twitch".to_owned(),
+                    whisper_to_login: "viewer".to_owned(),
+                    sent_as: None,
+                }
+                .into_event(EventSource::Twitch, None),
+                "chat.whisper.sent",
+                json!({ "channel": "twitch", "whisper_to_login": "viewer" }),
+            ),
+            (
+                WhisperSent {
+                    channel: "twitch".to_owned(),
+                    whisper_to_login: "viewer".to_owned(),
+                    sent_as: Some(ActingSender {
+                        role: SenderRole::Bot,
+                        login: "forgebot".to_owned(),
+                    }),
+                }
+                .into_event(EventSource::Twitch, None),
+                "chat.whisper.sent",
+                json!({
+                    "channel": "twitch",
+                    "whisper_to_login": "viewer",
+                    "sent_as": { "role": "bot", "login": "forgebot" },
+                }),
+            ),
+            (
+                CommandMatched {
+                    command: "!so".to_owned(),
+                    kind_id: "twitch.chat.command".to_owned(),
+                }
+                .into_event(EventSource::Core, None),
+                "command.matched",
+                json!({ "command": "!so", "kind_id": "twitch.chat.command" }),
+            ),
+            (
+                ManualTestRun { action_id }.into_event(EventSource::Core, None),
+                "test.run",
+                json!({ "action_id": action_id.to_string() }),
+            ),
+        ];
+
+        for (event, kind, payload) in cases {
+            assert_eq!((event.kind.as_str(), event.payload), (kind, payload));
+        }
     }
 
     #[test]

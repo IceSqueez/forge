@@ -510,7 +510,7 @@ async fn load_prefill(
 #[cfg(test)]
 mod tests {
     use forge_events::{EventSource, TypedEvent};
-    use forge_vtube::vocabulary::VTubeConnectionChanged;
+    use forge_vtube::vocabulary::{VTubeConnectionChanged, VTubeDisconnectReason};
 
     use super::*;
 
@@ -523,11 +523,11 @@ mod tests {
         }
     }
 
-    fn connection_event(is_connected: bool, reason: Option<&str>) -> Event {
+    fn connection_event(is_connected: bool, reason: Option<VTubeDisconnectReason>) -> Event {
         VTubeConnectionChanged {
             is_connected,
             endpoint: "ws://localhost:8001".to_owned(),
-            reason: reason.map(str::to_owned),
+            reason,
             detail: None,
         }
         .into_event(EventSource::VTube, None)
@@ -537,15 +537,19 @@ mod tests {
     fn each_connection_change_resolves_to_a_phase_the_connect_screen_can_show() {
         for (is_connected, reason, expected) in [
             (true, None, ("connected", None)),
-            (false, Some("awaiting_approval"), ("awaiting", None)),
             (
                 false,
-                Some("auth_denied"),
+                Some(VTubeDisconnectReason::AwaitingApproval),
+                ("awaiting", None),
+            ),
+            (
+                false,
+                Some(VTubeDisconnectReason::AuthDenied),
                 ("failed", Some(VTubeDisconnect::Denied)),
             ),
             (
                 false,
-                Some("connect_failed"),
+                Some(VTubeDisconnectReason::ConnectFailed),
                 ("failed", Some(VTubeDisconnect::Unreachable)),
             ),
             (false, None, ("ignored", None)),
@@ -562,30 +566,29 @@ mod tests {
 
     #[test]
     fn every_failure_reason_the_vtube_client_reports_gets_its_own_translated_message() {
-        const REASONS: [&str; 8] = [
-            "connect_failed",
-            "auth_required",
-            "auth_denied",
-            "auth_timeout",
-            "auth_failed",
-            "subscribe_failed",
-            "socket_closed",
-            "unresponsive",
+        const REASONS: [VTubeDisconnectReason; 8] = [
+            VTubeDisconnectReason::ConnectFailed,
+            VTubeDisconnectReason::AuthRequired,
+            VTubeDisconnectReason::AuthDenied,
+            VTubeDisconnectReason::AuthTimeout,
+            VTubeDisconnectReason::AuthFailed,
+            VTubeDisconnectReason::SubscribeFailed,
+            VTubeDisconnectReason::SocketClosed,
+            VTubeDisconnectReason::Unresponsive,
         ];
-        let reported = |reason: &str| match connect_outcome(&connection_event(false, Some(reason)))
-        {
+        let reported = |reason| match connect_outcome(&connection_event(false, Some(reason))) {
             Some(ConnectOutcome::Failed(disconnect)) => disconnect,
             _ => VTubeDisconnect::Unknown,
         };
         for lang in [forge_storage::Language::En, forge_storage::Language::Uk] {
             crate::i18n::install_language(lang);
-            let unknown = failure_detail(reported("something_new"));
+            let unknown = failure_detail(VTubeDisconnect::Unknown);
             let details = REASONS.map(|reason| failure_detail(reported(reason)));
 
             for (reason, detail) in REASONS.iter().zip(&details) {
                 assert!(
                     *detail != unknown && !detail.starts_with("vtube_connect_error_"),
-                    "{lang:?} {reason} falls back to {detail:?}"
+                    "{lang:?} {reason:?} falls back to {detail:?}"
                 );
             }
             let distinct: std::collections::HashSet<&String> = details.iter().collect();

@@ -366,7 +366,7 @@ impl VTubeConnection {
 
 #[cfg(test)]
 mod tests {
-    use forge_events::{ConnectionState, RunOutcome, ScriptLogLevel};
+    use forge_events::{ActingSender, ConnectionState, RunOutcome, ScriptLogLevel};
     use forge_platform_twitch::BotModerator;
     use forge_platform_twitch::vocabulary::{BotStatusTag, FallbackLevel};
     use forge_soundboard::vocabulary::SettledVerdict;
@@ -509,6 +509,18 @@ mod tests {
             channel: "kick".to_owned(),
             error: "rate limited".to_owned(),
         };
+        let matched = CommandMatched {
+            command: "!so".to_owned(),
+            kind_id: "twitch.chat.command".to_owned(),
+        };
+        let whispered = WhisperSent {
+            channel: "twitch".to_owned(),
+            whisper_to_login: "viewer".to_owned(),
+            sent_as: Some(ActingSender {
+                role: forge_events::SenderRole::Bot,
+                login: "forgebot".to_owned(),
+            }),
+        };
         let started = ActionStarted {
             action_id: ActionId::new(),
             action_name: "Shoutout".to_owned(),
@@ -596,6 +608,14 @@ mod tests {
             (
                 typed(chat_sent.clone(), EventSource::Twitch),
                 RuntimeEvent::ChatSent(chat_sent),
+            ),
+            (
+                typed(matched.clone(), EventSource::Core),
+                RuntimeEvent::CommandMatched(matched),
+            ),
+            (
+                typed(whispered.clone(), EventSource::Twitch),
+                RuntimeEvent::WhisperSent(whispered),
             ),
             (
                 typed(send_failed.clone(), EventSource::Kick),
@@ -753,48 +773,6 @@ mod tests {
 
         for (event, expected) in cases {
             assert_eq!(decode(&event), Some(expected), "{}", event.kind);
-        }
-    }
-
-    #[test]
-    fn decode_reads_the_matched_command_and_tolerates_its_absence() {
-        for (payload, command) in [
-            (json!({ "command": "!so" }), Some("!so".to_owned())),
-            (json!({ "command": 7 }), None),
-            (json!({}), None),
-        ] {
-            let event = Event::new(EventSource::Core, COMMAND_MATCHED_KIND, payload.clone());
-
-            assert_eq!(
-                decode(&event),
-                Some(RuntimeEvent::CommandMatched { command }),
-                "{payload}"
-            );
-        }
-    }
-
-    #[test]
-    fn decode_reads_the_whisper_acting_sender_only_when_it_is_well_formed() {
-        let bot = ActingSender {
-            role: forge_events::SenderRole::Bot,
-            login: "forgebot".to_owned(),
-        };
-        for (payload, sent_as) in [
-            (
-                json!({ "sent_as": { "role": "bot", "login": "forgebot" } }),
-                Some(bot),
-            ),
-            (json!({ "sent_as": { "role": "bot" } }), None),
-            (json!({ "sent_as": { "role": "bot", "login": 7 } }), None),
-            (json!({}), None),
-        ] {
-            let event = Event::new(EventSource::Twitch, WHISPER_SENT_KIND, payload.clone());
-
-            assert_eq!(
-                decode(&event),
-                Some(RuntimeEvent::WhisperSent { sent_as }),
-                "{payload}"
-            );
         }
     }
 
@@ -1152,22 +1130,61 @@ mod tests {
     }
 
     #[test]
-    fn every_vtube_wire_reason_maps_to_its_own_disconnect_and_unknown_words_to_unknown() {
+    fn every_vtube_disconnect_reason_maps_to_its_own_disconnect() {
         for (reason, expected) in [
-            ("awaiting_approval", VTubeDisconnect::AwaitingApproval),
-            ("connect_failed", VTubeDisconnect::Unreachable),
-            ("auth_required", VTubeDisconnect::TokenRejected),
-            ("auth_denied", VTubeDisconnect::Denied),
-            ("auth_timeout", VTubeDisconnect::TimedOut),
-            ("auth_failed", VTubeDisconnect::AuthFailed),
-            ("subscribe_failed", VTubeDisconnect::SubscribeFailed),
-            ("socket_closed", VTubeDisconnect::SocketClosed),
-            ("unresponsive", VTubeDisconnect::Unresponsive),
-            ("", VTubeDisconnect::Unknown),
-            ("AUTH_DENIED", VTubeDisconnect::Unknown),
-            ("something_new", VTubeDisconnect::Unknown),
+            (
+                VTubeDisconnectReason::AwaitingApproval,
+                VTubeDisconnect::AwaitingApproval,
+            ),
+            (
+                VTubeDisconnectReason::ConnectFailed,
+                VTubeDisconnect::Unreachable,
+            ),
+            (
+                VTubeDisconnectReason::AuthRequired,
+                VTubeDisconnect::TokenRejected,
+            ),
+            (VTubeDisconnectReason::AuthDenied, VTubeDisconnect::Denied),
+            (
+                VTubeDisconnectReason::AuthTimeout,
+                VTubeDisconnect::TimedOut,
+            ),
+            (
+                VTubeDisconnectReason::AuthFailed,
+                VTubeDisconnect::AuthFailed,
+            ),
+            (
+                VTubeDisconnectReason::SubscribeFailed,
+                VTubeDisconnect::SubscribeFailed,
+            ),
+            (
+                VTubeDisconnectReason::SocketClosed,
+                VTubeDisconnect::SocketClosed,
+            ),
+            (
+                VTubeDisconnectReason::Unresponsive,
+                VTubeDisconnect::Unresponsive,
+            ),
         ] {
-            assert_eq!(VTubeDisconnect::from_reason(reason), expected, "{reason:?}");
+            assert_eq!(VTubeDisconnect::from(reason), expected, "{reason:?}");
+        }
+    }
+
+    #[test]
+    fn vtube_connection_event_with_an_unknown_reason_word_is_not_decoded() {
+        for reason in ["", "AUTH_DENIED", "something_new"] {
+            let event = Event::new(
+                EventSource::VTube,
+                VTubeConnectionChanged::KIND,
+                json!({
+                    "is_connected": false,
+                    "endpoint": "ws://localhost:8001",
+                    "reason": reason,
+                    "detail": null,
+                }),
+            );
+
+            assert_eq!(decode(&event), None, "{reason:?}");
         }
     }
 
@@ -1175,17 +1192,21 @@ mod tests {
     fn vtube_connection_is_connected_regardless_of_reason_and_silent_without_one() {
         for (is_connected, reason, expected) in [
             (true, None, Some(VTubeConnection::Connected)),
-            (true, Some("auth_denied"), Some(VTubeConnection::Connected)),
+            (
+                true,
+                Some(VTubeDisconnectReason::AuthDenied),
+                Some(VTubeConnection::Connected),
+            ),
             (
                 false,
-                Some("auth_denied"),
+                Some(VTubeDisconnectReason::AuthDenied),
                 Some(VTubeConnection::Disconnected(VTubeDisconnect::Denied)),
             ),
             (false, None, None),
         ] {
             let changed = VTubeConnectionChanged {
                 is_connected,
-                reason: reason.map(str::to_owned),
+                reason,
                 ..vtube_changed()
             };
 

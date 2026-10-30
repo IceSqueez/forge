@@ -8,7 +8,7 @@ use std::time::Duration;
 use forge_net::{Gateway, GatewayRequest};
 use forge_platform_core::auth::{CALLBACK_PATH, PkceAuthorizeConfig, PkceLoopback};
 use forge_platform_core::{AuthFlow, PlatformError};
-use forge_types::OAuthToken;
+use forge_types::{OAuthToken, Secret};
 use serde::Deserialize;
 use time::OffsetDateTime;
 
@@ -182,7 +182,7 @@ async fn fetch_user_info(api: &Gateway, access_token: &str) -> Result<UserRecord
         })
 }
 
-pub fn client_credentials() -> Option<(String, String)> {
+pub fn client_credentials() -> Option<(String, Secret)> {
     let client_id = resolve_credential(
         std::env::var("FORGE_KICK_CLIENT_ID").ok().as_deref(),
         option_env!("FORGE_KICK_CLIENT_ID"),
@@ -191,7 +191,7 @@ pub fn client_credentials() -> Option<(String, String)> {
         std::env::var("FORGE_KICK_CLIENT_SECRET").ok().as_deref(),
         option_env!("FORGE_KICK_CLIENT_SECRET"),
     )?;
-    Some((client_id, client_secret))
+    Some((client_id, Secret::new(client_secret)))
 }
 
 fn resolve_credential(

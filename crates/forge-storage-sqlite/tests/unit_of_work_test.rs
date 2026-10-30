@@ -1,4 +1,4 @@
-#![allow(clippy::unwrap_used, clippy::panic)]
+#![allow(clippy::unwrap_used)]
 use std::path::PathBuf;
 
 use forge_storage::settings::core_settings;

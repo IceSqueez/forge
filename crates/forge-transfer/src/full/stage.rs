@@ -62,10 +62,6 @@ impl StagedRestore {
     pub fn credentials_key_file(&self) -> Option<PathBuf> {
         Some(self.payload_dir().join(CREDENTIALS_KEY_FILE_NAME)).filter(|key| key.is_file())
     }
-
-    pub fn included_dir(&self, name: &str) -> Option<PathBuf> {
-        Some(self.payload_dir().join(name)).filter(|dir| dir.is_dir())
-    }
 }
 
 pub fn restore_staging_root(data_dir: &Path) -> PathBuf {

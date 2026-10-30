@@ -208,7 +208,6 @@ pub struct SpeakQueueHandle {
     depth: Arc<AtomicUsize>,
     voices: Shared<Vec<TtsVoice>>,
     disabled_engines: Shared<HashSet<EngineId>>,
-    resolver: Arc<std::sync::RwLock<VoiceAliasResolver>>,
     master_volume_bits: Arc<AtomicU32>,
     engine_gains: Shared<HashMap<EngineId, f32>>,
     targeted_legs: TargetedLegs,
@@ -235,13 +234,6 @@ impl SpeakQueueHandle {
 
     pub fn disabled_engines(&self) -> Arc<HashSet<EngineId>> {
         self.disabled_engines.load()
-    }
-
-    pub fn engine_synthesis_defaults(&self, engine_id: &EngineId) -> SynthesisDefaults {
-        self.resolver
-            .read()
-            .unwrap_or_else(|e| e.into_inner())
-            .defaults_for(engine_id)
     }
 
     pub fn engine_gain(&self, engine_id: &EngineId) -> f32 {
@@ -301,7 +293,6 @@ pub fn spawn(config: QueueConfig, deps: QueueDeps) -> (SpeakQueueHandle, SpeakEv
     let depth = Arc::new(AtomicUsize::new(0));
     let voices = Shared::<Vec<TtsVoice>>::new(Vec::new());
     let disabled_engines = Shared::<HashSet<EngineId>>::new(HashSet::new());
-    let resolver = deps.resolver.clone();
     let master_volume_bits = Arc::new(AtomicU32::new(config.master_volume.to_bits()));
     let engine_gains = Shared::<HashMap<EngineId, f32>>::new(HashMap::new());
     let targeted_legs = TargetedLegs::new(None);
@@ -336,7 +327,6 @@ pub fn spawn(config: QueueConfig, deps: QueueDeps) -> (SpeakQueueHandle, SpeakEv
             depth,
             voices,
             disabled_engines,
-            resolver,
             master_volume_bits,
             engine_gains,
             targeted_legs,
@@ -360,12 +350,6 @@ mod tests {
             depth: Arc::new(AtomicUsize::new(0)),
             voices: Shared::new(Vec::new()),
             disabled_engines: Shared::new(HashSet::new()),
-            resolver: Arc::new(std::sync::RwLock::new(VoiceAliasResolver::new(
-                vec![],
-                AssignmentStrategy::default(),
-                forge_speech_types::IgnoreProfile::default(),
-                SynthesisDefaults::default(),
-            ))),
             master_volume_bits: Arc::new(AtomicU32::new(1.0f32.to_bits())),
             engine_gains: Shared::new(HashMap::new()),
             targeted_legs: Shared::new(None),
@@ -384,12 +368,6 @@ mod tests {
             depth: Arc::new(AtomicUsize::new(0)),
             voices: Shared::new(Vec::new()),
             disabled_engines: Shared::new(HashSet::new()),
-            resolver: Arc::new(std::sync::RwLock::new(VoiceAliasResolver::new(
-                vec![],
-                AssignmentStrategy::default(),
-                forge_speech_types::IgnoreProfile::default(),
-                SynthesisDefaults::default(),
-            ))),
             master_volume_bits: Arc::new(AtomicU32::new(1.0f32.to_bits())),
             engine_gains: Shared::new(HashMap::new()),
             targeted_legs: Shared::new(None),

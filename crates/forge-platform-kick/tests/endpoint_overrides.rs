@@ -114,7 +114,7 @@ fn manager(endpoints: &PlatformEndpoints) -> KickCredentialsManager {
         endpoints,
         kick_oauth_gateway(endpoints, limiter()).unwrap(),
         "client".to_owned(),
-        "secret".to_owned(),
+        forge_types::Secret::new("secret"),
     );
     KickCredentialsManager::new(Arc::new(MemoryRepo::default()), oauth, api(endpoints))
 }

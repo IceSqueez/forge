@@ -1,4 +1,4 @@
-#![allow(clippy::unwrap_used, clippy::expect_used)]
+#![allow(clippy::unwrap_used)]
 use forge_storage::settings::core_settings::{
     AUDIO_VOICE_GATE_ENABLED, AUDIO_VOICE_GATE_HOLD_MS, AUDIO_VOICE_GATE_THRESHOLD,
     CHAT_HISTORY_DISPLAY_LIMIT, CHAT_HISTORY_PER_VIEWER_LIMIT, DIAGNOSTICS_LOG_LEVEL,

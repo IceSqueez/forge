@@ -1,5 +1,4 @@
 pub const OK: u16 = 200;
-pub const NON_AUTHORITATIVE_INFORMATION: u16 = 203;
 pub const BAD_REQUEST: u16 = 400;
 pub const UNAUTHORIZED: u16 = 401;
 pub const FORBIDDEN: u16 = 403;

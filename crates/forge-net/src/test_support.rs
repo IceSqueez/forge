@@ -47,11 +47,6 @@ impl RecordingRateLimiter {
         self
     }
 
-    pub fn with_usage(mut self, usage: RateLimitUsage) -> Self {
-        self.usage = usage;
-        self
-    }
-
     pub fn acquired_weights(&self) -> Vec<u32> {
         self.lock().acquired_weights.clone()
     }

@@ -177,7 +177,7 @@ pub(crate) mod tests {
             forge_platform_youtube::GoogleOAuthClient::new(
                 forge_platform_youtube::google_oauth_gateway(&endpoints, limiter()).unwrap(),
                 "client".to_owned(),
-                "secret".to_owned(),
+                forge_types::Secret::new("secret"),
             ),
             forge_platform_youtube::YoutubeDataApi::new(
                 &endpoints,
@@ -203,7 +203,7 @@ pub(crate) mod tests {
                 &endpoints,
                 forge_platform_kick::kick_oauth_gateway(&endpoints, limiter()).unwrap(),
                 "client".to_owned(),
-                "secret".to_owned(),
+                forge_types::Secret::new("secret"),
             ),
             forge_platform_kick::kick_api_gateway(&endpoints, limiter(), Arc::new(Silent)).unwrap(),
         ))

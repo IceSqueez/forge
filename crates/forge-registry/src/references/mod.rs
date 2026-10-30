@@ -16,7 +16,7 @@ pub use location::{LocationSegment, ReferenceLocation};
 pub use namespace::{
     ACTION_OPTIONS_KEY, ExternalNamespace, GLOBAL_OPTIONS_KEY, InternalNamespace,
     LOCAL_FILE_NAMESPACE, MANAGED_MEDIA_NAMESPACE, OVERLAY_OPTIONS_KEY, QUEUE_OPTIONS_KEY,
-    ReferenceKey, ReferenceNamespace, ReferenceScope, SCRIPT_OPTIONS_KEY,
-    SOUNDBOARD_CLIP_OPTIONS_KEY, TRIGGER_INSTANCE_OPTIONS_KEY,
+    ReferenceNamespace, ReferenceScope, SCRIPT_OPTIONS_KEY, SOUNDBOARD_CLIP_OPTIONS_KEY,
+    TRIGGER_INSTANCE_OPTIONS_KEY,
 };
 pub use remap::ReferenceRemap;

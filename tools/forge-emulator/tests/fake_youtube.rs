@@ -118,7 +118,7 @@ fn google_oauth(endpoints: &PlatformEndpoints) -> GoogleOAuthClient {
     GoogleOAuthClient::new(
         google_oauth_gateway(endpoints, limiter).unwrap(),
         CLIENT_ID.to_owned(),
-        CLIENT_SECRET.to_owned(),
+        forge_types::Secret::new(CLIENT_SECRET),
     )
 }
 

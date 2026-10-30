@@ -39,13 +39,13 @@ pub struct YoutubeAuthBundle {
     pub expires_at: SystemTime,
 }
 
-pub fn client_credentials() -> Option<(String, String)> {
+pub fn client_credentials() -> Option<(String, Secret)> {
     let id = option_env!("FORGE_YOUTUBE_CLIENT_ID")?;
     let secret = option_env!("FORGE_YOUTUBE_CLIENT_SECRET")?;
     if id.is_empty() || secret.is_empty() {
         return None;
     }
-    Some((id.to_owned(), secret.to_owned()))
+    Some((id.to_owned(), Secret::new(secret)))
 }
 
 #[derive(Clone)]
@@ -312,7 +312,7 @@ mod tests {
         )
         .unwrap();
         let flow = GoogleAuthFlow::new(
-            GoogleOAuthClient::new(gateway, "cid".to_owned(), "csec".to_owned()),
+            GoogleOAuthClient::new(gateway, "cid".to_owned(), forge_types::Secret::new("csec")),
             YoutubeDataApi::new(
                 &endpoints,
                 SharedQuota::default(),

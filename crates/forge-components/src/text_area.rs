@@ -141,11 +141,6 @@ impl TextArea {
         cx.notify();
     }
 
-    pub fn set_height(&mut self, height: Pixels, cx: &mut Context<Self>) {
-        self.height = height;
-        cx.notify();
-    }
-
     pub fn set_invalid(&mut self, invalid: bool, cx: &mut Context<Self>) {
         if self.invalid != invalid {
             self.invalid = invalid;

@@ -1,4 +1,4 @@
-#![allow(clippy::unwrap_used, clippy::panic)]
+#![allow(clippy::unwrap_used)]
 mod common;
 
 use std::sync::{Arc, Mutex};

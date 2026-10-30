@@ -1,4 +1,4 @@
-#![allow(clippy::expect_used, clippy::panic)]
+#![allow(clippy::expect_used)]
 use std::collections::BTreeMap;
 
 use forge_storage_sqlite::{MIGRATIONS, apply_migrations, connect};

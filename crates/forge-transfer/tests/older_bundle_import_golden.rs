@@ -1,4 +1,4 @@
-#![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+#![allow(clippy::unwrap_used, clippy::expect_used)]
 use std::collections::BTreeMap;
 use std::io::Write;
 use std::path::{Path, PathBuf};

@@ -25,8 +25,6 @@ pub mod row;
 pub mod spec;
 pub mod typed;
 
-pub const DEFAULT_NOTIFICATIONS_ACTION_FAILURE_OS_NOTICE: bool = true;
-pub const DEFAULT_NOTIFICATIONS_CONNECTION_LOSS_SOUND: bool = false;
 pub const DEFAULT_NOTIFICATIONS_SCHEDULED_BACKUP_FAILURE_OS_NOTICE: bool = true;
 pub const DEFAULT_BACKUP_SCHEDULE_ENABLED: bool = false;
 pub const DEFAULT_BACKUP_SCHEDULE_INTERVAL_MINUTES: u32 = 60;

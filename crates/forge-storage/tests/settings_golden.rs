@@ -1,4 +1,4 @@
-#![allow(clippy::unwrap_used, clippy::expect_used)]
+#![allow(clippy::unwrap_used)]
 use std::collections::BTreeMap;
 
 use forge_storage::settings::core_settings::{

@@ -5,6 +5,7 @@ use forge_net::{RateLimiter, TokenBucketRateLimiter};
 use forge_platform_core::{PlatformEndpoints, PlatformError};
 use forge_registry::SubActionRegistry;
 use forge_storage::{BanLedgerRepo, CredentialsRepo};
+use forge_types::Secret;
 use futures::future::BoxFuture;
 
 use crate::auth::YoutubeSignIn;
@@ -40,7 +41,7 @@ impl YoutubeAssembly {
         events: Arc<dyn EventPublisher>,
         creds: Arc<dyn CredentialsRepo>,
         ban_ledger: Arc<dyn BanLedgerRepo>,
-        (client_id, client_secret): (String, String),
+        (client_id, client_secret): (String, Secret),
     ) -> Option<Self> {
         let limiter: Arc<dyn RateLimiter> = Arc::new(TokenBucketRateLimiter::new(
             GOOGLE_OAUTH_BUDGET_CAPACITY,

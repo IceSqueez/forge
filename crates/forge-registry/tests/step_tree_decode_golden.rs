@@ -1,4 +1,3 @@
-#![allow(clippy::unwrap_used, clippy::expect_used)]
 use forge_registry::decode_steps;
 use forge_types::{SubActionStep, Variant};
 

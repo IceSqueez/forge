@@ -63,7 +63,7 @@ impl KickOAuthClient {
         endpoints: &PlatformEndpoints,
         gateway: Gateway,
         client_id: String,
-        client_secret: String,
+        client_secret: Secret,
     ) -> Self {
         Self {
             gateway,
@@ -72,7 +72,7 @@ impl KickOAuthClient {
                 endpoints.base_url(EndpointSurface::KickOAuth)
             ),
             client_id,
-            client_secret: Secret::new(client_secret),
+            client_secret,
         }
     }
 
@@ -248,7 +248,7 @@ mod tests {
             &defaults,
             super::kick_oauth_gateway(&defaults, Arc::new(GrantingLimiter)).unwrap(),
             OAUTH_CLIENT_ID.to_owned(),
-            OAUTH_CLIENT_SECRET.to_owned(),
+            forge_types::Secret::new(OAUTH_CLIENT_SECRET),
         );
         assert_eq!(
             (

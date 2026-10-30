@@ -122,7 +122,7 @@ pub(crate) fn oauth_client_over(
         endpoints,
         kick_oauth_gateway(endpoints, limiter).unwrap(),
         OAUTH_CLIENT_ID.to_owned(),
-        OAUTH_CLIENT_SECRET.to_owned(),
+        forge_types::Secret::new(OAUTH_CLIENT_SECRET),
     )
 }
 

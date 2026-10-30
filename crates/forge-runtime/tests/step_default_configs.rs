@@ -1,4 +1,4 @@
-#![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+#![allow(clippy::unwrap_used)]
 mod common;
 use std::collections::BTreeMap;
 use std::path::PathBuf;

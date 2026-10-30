@@ -145,7 +145,7 @@ async fn manager(fake: &FakeKick, client_secret: &str) -> KickCredentialsManager
         &endpoints(fake),
         kick_oauth_gateway(&endpoints(fake), limiter()).unwrap(),
         account.client_id.clone(),
-        client_secret.to_owned(),
+        forge_types::Secret::new(client_secret),
     );
     let manager =
         KickCredentialsManager::new(Arc::new(MemoryCredentials::default()), oauth, api(fake));

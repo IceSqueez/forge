@@ -152,10 +152,7 @@ pub(crate) fn wire_youtube(
         publisher(bus),
         Arc::clone(&creds),
         backend.ban_ledger_repo(),
-        (
-            identity.client_id,
-            identity.client_secret.expose().to_owned(),
-        ),
+        (identity.client_id, identity.client_secret),
     )?;
     assembly.register_sub_actions(sub_actions);
     Some(YoutubeFactory {
@@ -253,7 +250,7 @@ pub(crate) fn wire_kick(
         endpoints,
         kick_oauth_gateway(endpoints)?,
         identity.client_id,
-        identity.client_secret.expose().to_owned(),
+        identity.client_secret,
     );
     let rate_limiter: Arc<dyn RateLimiter> = Arc::new(TokenBucketRateLimiter::new(
         forge_platform_kick::KICK_API_BUDGET_CAPACITY,

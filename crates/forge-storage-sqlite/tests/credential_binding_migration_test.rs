@@ -1,4 +1,3 @@
-#![allow(clippy::expect_used)]
 use aes_gcm::aead::{Aead, KeyInit};
 use aes_gcm::{Aes256Gcm, Nonce};
 use forge_storage::{CredentialId, CredentialsRepo};

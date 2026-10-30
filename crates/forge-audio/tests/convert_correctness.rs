@@ -1,8 +1,4 @@
-#![allow(
-    clippy::unwrap_used,
-    clippy::cast_possible_truncation,
-    clippy::cast_sign_loss
-)]
+#![allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
 
 use forge_audio::convert::{remix, resample};
 use forge_speech_types::PcmBuffer;

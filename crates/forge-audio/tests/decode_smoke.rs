@@ -1,8 +1,4 @@
-#![allow(
-    clippy::unwrap_used,
-    clippy::cast_possible_truncation,
-    clippy::cast_sign_loss
-)]
+#![allow(clippy::unwrap_used, clippy::cast_possible_truncation)]
 
 use std::io::Write as _;
 

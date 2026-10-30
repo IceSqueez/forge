@@ -1,4 +1,3 @@
-#![allow(clippy::unwrap_used, clippy::expect_used)]
 use std::collections::BTreeMap;
 
 use forge_platform_core::{ConnectionState, ConnectionTransition, connection_state_changed_event};

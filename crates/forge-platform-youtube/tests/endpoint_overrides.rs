@@ -153,7 +153,7 @@ async fn manager_holding(
         )
         .unwrap(),
         "client".to_owned(),
-        "secret".to_owned(),
+        forge_types::Secret::new("secret"),
     );
     let manager =
         YoutubeCredentialsManager::new(Arc::new(MemoryRepo::default()), oauth, api(endpoints));

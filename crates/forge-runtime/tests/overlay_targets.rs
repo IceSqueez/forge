@@ -1,4 +1,3 @@
-#![allow(clippy::expect_used)]
 mod common;
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::fs;

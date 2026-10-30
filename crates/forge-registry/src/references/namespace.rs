@@ -22,12 +22,6 @@ pub enum InternalNamespace {
     ManagedMedia,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ReferenceKey {
-    Id,
-    Name,
-}
-
 impl InternalNamespace {
     pub const ALL: &'static [Self] = &[
         Self::Action,
@@ -39,18 +33,6 @@ impl InternalNamespace {
         Self::Overlay,
         Self::ManagedMedia,
     ];
-
-    pub fn keyed_by(self) -> ReferenceKey {
-        match self {
-            Self::Script | Self::Global => ReferenceKey::Name,
-            Self::Action
-            | Self::TriggerInstance
-            | Self::Queue
-            | Self::SoundboardClip
-            | Self::Overlay
-            | Self::ManagedMedia => ReferenceKey::Id,
-        }
-    }
 
     pub fn as_str(self) -> &'static str {
         match self {

@@ -61,11 +61,11 @@ struct OAuthErrorBody {
 }
 
 impl GoogleOAuthClient {
-    pub fn new(gateway: Gateway, client_id: String, client_secret: String) -> Self {
+    pub fn new(gateway: Gateway, client_id: String, client_secret: Secret) -> Self {
         Self {
             gateway,
             client_id,
-            client_secret: Secret::new(client_secret),
+            client_secret,
         }
     }
 

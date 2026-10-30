@@ -787,7 +787,7 @@ async fn a_seeded_kick_account_is_served_by_forges_manager_refreshing_only_when_
             )
             .unwrap(),
             account.client_id.clone(),
-            account.client_secret.clone(),
+            forge_types::Secret::new(account.client_secret.clone()),
         );
         let api = forge_platform_kick::kick_api_gateway(
             &endpoints,
@@ -859,7 +859,7 @@ async fn a_seeded_youtube_account_is_served_by_forges_manager_refreshing_only_wh
             )
             .unwrap(),
             "emulator-youtube-client".to_owned(),
-            "emulator-youtube-secret".to_owned(),
+            forge_types::Secret::new("emulator-youtube-secret"),
         );
         let api = forge_platform_youtube::YoutubeDataApi::new(
             &endpoints,

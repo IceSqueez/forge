@@ -86,8 +86,8 @@ pub use merge::effective_config;
 pub use message_emotes::{MESSAGE_EMOTES_VARIABLE, chat_emote_codes, message_emote_codes};
 pub use references::{
     ConfigReference, ExternalNamespace, InternalNamespace, LocationSegment, ReferenceCatalog,
-    ReferenceField, ReferenceKey, ReferenceListing, ReferenceLocation, ReferenceNamespace,
-    ReferenceRemap, ReferenceScope, UnknownKind,
+    ReferenceField, ReferenceListing, ReferenceLocation, ReferenceNamespace, ReferenceRemap,
+    ReferenceScope, UnknownKind,
 };
 pub use refinement::{FormRefinement, FormSchemaSource, refined_fields};
 pub use registry::{

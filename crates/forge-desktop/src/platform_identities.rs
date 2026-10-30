@@ -5,11 +5,11 @@ pub struct OAuthClientIdentity {
     pub client_secret: Secret,
 }
 
-impl From<(String, String)> for OAuthClientIdentity {
-    fn from((client_id, client_secret): (String, String)) -> Self {
+impl From<(String, Secret)> for OAuthClientIdentity {
+    fn from((client_id, client_secret): (String, Secret)) -> Self {
         Self {
             client_id,
-            client_secret: Secret::new(client_secret),
+            client_secret,
         }
     }
 }

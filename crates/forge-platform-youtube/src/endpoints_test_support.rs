@@ -81,7 +81,7 @@ pub(crate) fn oauth_client_limited_by(
     GoogleOAuthClient::new(
         gateway,
         OAUTH_CLIENT_ID.to_owned(),
-        OAUTH_CLIENT_SECRET.to_owned(),
+        forge_types::Secret::new(OAUTH_CLIENT_SECRET),
     )
 }
 

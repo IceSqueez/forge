@@ -12,8 +12,10 @@ use sqlx::migrate::Migration;
 use crate::error::SqliteStorageError;
 use crate::migrations::MIGRATIONS;
 
-pub const KIND_ID_RENAME_VERSION: i64 = 58;
+pub const OBS_KIND_ID_RENAME_VERSION: i64 = 58;
+pub const VTUBE_KIND_ID_RENAME_VERSION: i64 = 67;
 
+const KIND_ID_RENAME_LABEL: &str = "kind id rename";
 const TRIGGER_STORE: &str = "trigger";
 const SUB_ACTION_STORE: &str = "sub_action";
 const TRIGGER_KIND_POINTER: &str = "/metadata/trigger_kind";
@@ -44,22 +46,22 @@ struct RenameCounts {
     skipped: u64,
 }
 
-pub async fn is_pending(pool: &sqlx::SqlitePool) -> Result<bool, SqliteStorageError> {
+pub async fn is_pending(pool: &sqlx::SqlitePool, version: i64) -> Result<bool, SqliteStorageError> {
     let mut conn = pool.acquire().await.map_err(SqliteStorageError::Sqlx)?;
-    pending(&mut conn).await
+    pending(&mut conn, version).await
 }
 
-pub async fn apply(pool: &sqlx::SqlitePool) -> Result<(), SqliteStorageError> {
+pub async fn apply(pool: &sqlx::SqlitePool, version: i64) -> Result<(), SqliteStorageError> {
     let migration = MIGRATIONS
         .iter()
-        .find(|migration| migration.version == KIND_ID_RENAME_VERSION)
+        .find(|migration| migration.version == version)
         .ok_or_else(|| failed("the embedded migrations lack the kind id rename".to_owned()))?;
     let started = Instant::now();
     let mut tx = pool
         .begin_with("BEGIN IMMEDIATE")
         .await
         .map_err(SqliteStorageError::Sqlx)?;
-    if !pending(&mut tx).await? {
+    if !pending(&mut tx, version).await? {
         return Ok(());
     }
     sqlx::raw_sql(migration.sql.clone())
@@ -78,7 +80,7 @@ pub async fn apply(pool: &sqlx::SqlitePool) -> Result<(), SqliteStorageError> {
     record_applied(&mut tx, migration, started).await?;
     tx.commit().await.map_err(|e| failed(e.to_string()))?;
     tracing::info!(
-        version = KIND_ID_RENAME_VERSION,
+        version,
         actions = counts.actions,
         history = counts.history,
         favorites = counts.favorites,
@@ -88,10 +90,10 @@ pub async fn apply(pool: &sqlx::SqlitePool) -> Result<(), SqliteStorageError> {
     Ok(())
 }
 
-async fn pending(conn: &mut SqliteConnection) -> Result<bool, SqliteStorageError> {
+async fn pending(conn: &mut SqliteConnection, version: i64) -> Result<bool, SqliteStorageError> {
     let applied: i64 =
         sqlx::query_scalar("SELECT COUNT(*) FROM _sqlx_migrations WHERE version = ?")
-            .bind(KIND_ID_RENAME_VERSION)
+            .bind(version)
             .fetch_one(&mut *conn)
             .await
             .map_err(SqliteStorageError::Sqlx)?;
@@ -276,7 +278,7 @@ fn rows_naming_a_retired_id(table: &str, column: &str) -> sqlx::AssertSqlSafe<St
 
 fn failed(reason: String) -> SqliteStorageError {
     SqliteStorageError::Migration {
-        migration: format!("{KIND_ID_RENAME_VERSION} kind id rename"),
+        migration: KIND_ID_RENAME_LABEL.to_owned(),
         reason,
     }
 }

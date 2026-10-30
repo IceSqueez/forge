@@ -58,12 +58,11 @@ impl YoutubeStreamMetadata {
     }
 
     async fn update(&self, field: Field, value: &str) -> Result<(), PlatformError> {
-        let broadcast_id =
-            self.active_broadcast_id
-                .get()
-                .ok_or_else(|| PlatformError::Unsupported {
-                    feature: "stream metadata - no active YouTube broadcast".to_owned(),
-                })?;
+        let broadcast_id = self.active_broadcast_id.resolve().await?.ok_or_else(|| {
+            PlatformError::Unsupported {
+                feature: "stream metadata - no active YouTube broadcast".to_owned(),
+            }
+        })?;
 
         let token = (self.access_token_source)().await?;
         let request = GatewayRequest::get(VIDEOS_PATH)

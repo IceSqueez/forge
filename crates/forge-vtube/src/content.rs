@@ -88,11 +88,11 @@ impl ContentNotifier {
     }
 
     pub(crate) fn notify_items_changed(&self) {
-        #[expect(
-            clippy::let_underscore_must_use,
-            reason = "the catalog task may already have stopped"
-        )]
-        let _ = self.items_changed_tx.send(());
+        send_refresh(&self.items_changed_tx);
+    }
+
+    pub(crate) fn items_changed_sender(&self) -> mpsc::UnboundedSender<()> {
+        self.items_changed_tx.clone()
     }
 
     pub(crate) fn notify_model_changed(&self) {
@@ -104,23 +104,39 @@ impl ContentNotifier {
     }
 }
 
+fn send_refresh(items_changed_tx: &mpsc::UnboundedSender<()>) {
+    #[expect(
+        clippy::let_underscore_must_use,
+        reason = "the catalog task may already have stopped"
+    )]
+    let _ = items_changed_tx.send(());
+}
+
 pub(crate) fn spawn_content_task(
     snap: Arc<RwLock<ContentSnapshot>>,
     req_tx: impl Into<ReqTxHandle>,
     model_changed_rx: mpsc::UnboundedReceiver<()>,
+    items_changed_tx: mpsc::UnboundedSender<()>,
 ) -> tokio::task::JoinHandle<()> {
-    tokio::spawn(run_content_task(snap, req_tx.into(), model_changed_rx))
+    tokio::spawn(run_content_task(
+        snap,
+        req_tx.into(),
+        model_changed_rx,
+        items_changed_tx,
+    ))
 }
 
 async fn run_content_task(
     snap: Arc<RwLock<ContentSnapshot>>,
     req_tx: ReqTxHandle,
     mut model_changed_rx: mpsc::UnboundedReceiver<()>,
+    items_changed_tx: mpsc::UnboundedSender<()>,
 ) {
     refresh_models_and_hotkeys(&snap, &req_tx.current().await).await;
 
     while let Some(()) = model_changed_rx.recv().await {
         refresh_models_and_hotkeys(&snap, &req_tx.current().await).await;
+        send_refresh(&items_changed_tx);
     }
 }
 
@@ -150,22 +166,11 @@ async fn run_catalog_metrics_task(
     health_tx: broadcast::Sender<HealthDelta>,
     mut items_changed_rx: mpsc::UnboundedReceiver<()>,
 ) {
-    use tokio::time::{MissedTickBehavior, interval};
-
-    let mut tick = interval(Duration::from_secs(5));
-    tick.set_missed_tick_behavior(MissedTickBehavior::Skip);
     let mut last_param_count: Option<Option<u32>> = None;
     let mut last_model_id: Option<Option<String>> = None;
 
+    let mut items_changed = false;
     loop {
-        let items_changed = tokio::select! {
-            _ = tick.tick() => false,
-            Some(()) = items_changed_rx.recv() => {
-                while items_changed_rx.try_recv().is_ok() {}
-                true
-            }
-        };
-
         if connection.load().is_connected() {
             let tx = req_tx.current().await;
             report_expressions(&content_state, &tx, &health_tx).await;
@@ -189,6 +194,12 @@ async fn run_catalog_metrics_task(
             &health_tx,
             &mut last_param_count,
         );
+
+        if items_changed_rx.recv().await.is_none() {
+            return;
+        }
+        while items_changed_rx.try_recv().is_ok() {}
+        items_changed = true;
     }
 }
 
@@ -574,6 +585,38 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn a_model_refresh_asks_the_catalog_sweep_to_run_again() {
+        let snap = Arc::new(RwLock::new(ContentSnapshot::default()));
+        let (req_tx, req_rx) = mpsc::unbounded_channel::<PendingRequest>();
+        let (notifier, model_changed_rx, mut items_changed_rx) = ContentNotifier::new();
+        let empty_refresh = || {
+            vec![
+                serde_json::json!({ "availableModels": [] }),
+                serde_json::json!({ "modelLoaded": false }),
+                serde_json::json!({ "availableHotkeys": [] }),
+            ]
+        };
+        let done = serve(req_rx, [empty_refresh(), empty_refresh()].concat());
+
+        let handle = spawn_content_task(
+            Arc::clone(&snap),
+            req_tx,
+            model_changed_rx,
+            notifier.items_changed_sender(),
+        );
+        notifier.notify_model_changed();
+        let requested = tokio::time::timeout(
+            tokio::time::Duration::from_secs(30),
+            items_changed_rx.recv(),
+        )
+        .await;
+        await_served(done).await;
+        handle.abort();
+
+        assert_eq!(requested, Ok(Some(())));
+    }
+
+    #[tokio::test]
     async fn model_loaded_notification_triggers_catalog_refresh() {
         let snap = Arc::new(RwLock::new(ContentSnapshot::default()));
         let (req_tx, req_rx) = mpsc::unbounded_channel::<PendingRequest>();
@@ -593,7 +636,12 @@ mod tests {
             ],
         );
 
-        let handle = spawn_content_task(Arc::clone(&snap), req_tx, model_changed_rx);
+        let handle = spawn_content_task(
+            Arc::clone(&snap),
+            req_tx,
+            model_changed_rx,
+            notifier.items_changed_sender(),
+        );
         notifier.notify_model_changed();
         await_served(done).await;
         handle.abort();
@@ -940,7 +988,7 @@ mod tests {
         let mut health_rx = c.health_tx.subscribe();
         let (req_tx, _req_rx) = mpsc::unbounded_channel::<PendingRequest>();
 
-        let (handle, _items_changed_tx) = spawn_sweep(&c, req_tx);
+        let (handle, items_changed_tx) = spawn_sweep(&c, req_tx);
 
         assert_eq!(
             next_text_delta(&mut health_rx, &c).await,
@@ -953,7 +1001,7 @@ mod tests {
         if let Ok(mut s) = c.content_state.write() {
             s.current_model_id = Some("m-b".to_owned());
         }
-        tokio::time::advance(tokio::time::Duration::from_secs(6)).await;
+        items_changed_tx.send(()).unwrap();
 
         let healed = next_text_delta(&mut health_rx, &c).await;
         handle.abort();
@@ -1007,12 +1055,12 @@ mod tests {
         let (fresh_tx, mut fresh_rx) = mpsc::unbounded_channel::<PendingRequest>();
         let slot: ReqTxSlot = Arc::new(tokio::sync::Mutex::new(retired_tx));
 
-        let (handle, _items_changed_tx) = spawn_sweep(&c, Arc::clone(&slot));
+        let (handle, items_changed_tx) = spawn_sweep(&c, Arc::clone(&slot));
 
         drop(next_request(&mut retired_rx).await);
 
         *slot.lock().await = fresh_tx;
-        tokio::time::advance(tokio::time::Duration::from_secs(6)).await;
+        items_changed_tx.send(()).unwrap();
 
         let redirected = next_request(&mut fresh_rx).await;
         handle.abort();

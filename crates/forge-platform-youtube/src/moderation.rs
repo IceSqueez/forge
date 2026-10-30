@@ -156,12 +156,13 @@ impl YoutubeModeration {
     }
 
     pub async fn add_moderator(&self, channel_id: &str) -> Result<(), PlatformError> {
-        let live_chat_id = self
-            .live_chat_id
-            .get()
-            .ok_or_else(|| PlatformError::Unsupported {
-                feature: "moderation - no active YouTube broadcast".to_owned(),
-            })?;
+        let live_chat_id =
+            self.live_chat_id
+                .resolve()
+                .await?
+                .ok_or_else(|| PlatformError::Unsupported {
+                    feature: "moderation - no active YouTube broadcast".to_owned(),
+                })?;
 
         let payload = serde_json::json!({
             "snippet": {
@@ -201,12 +202,13 @@ impl YoutubeModeration {
     }
 
     async fn resolve_moderator_id(&self, channel_id: &str) -> Result<String, PlatformError> {
-        let live_chat_id = self
-            .live_chat_id
-            .get()
-            .ok_or_else(|| PlatformError::Unsupported {
-                feature: "moderation - no active YouTube broadcast".to_owned(),
-            })?;
+        let live_chat_id =
+            self.live_chat_id
+                .resolve()
+                .await?
+                .ok_or_else(|| PlatformError::Unsupported {
+                    feature: "moderation - no active YouTube broadcast".to_owned(),
+                })?;
 
         let mut page_token: Option<String> = None;
 
@@ -265,12 +267,13 @@ impl YoutubeModeration {
         channel_id: &str,
         duration_seconds: Option<u32>,
     ) -> Result<Option<String>, PlatformError> {
-        let live_chat_id = self
-            .live_chat_id
-            .get()
-            .ok_or_else(|| PlatformError::Unsupported {
-                feature: "moderation - no active YouTube broadcast".to_owned(),
-            })?;
+        let live_chat_id =
+            self.live_chat_id
+                .resolve()
+                .await?
+                .ok_or_else(|| PlatformError::Unsupported {
+                    feature: "moderation - no active YouTube broadcast".to_owned(),
+                })?;
 
         let mut ban_details = serde_json::json!({
             "liveChatId": live_chat_id,

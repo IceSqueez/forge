@@ -1,3 +1,4 @@
+use std::cmp::Ordering;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -9,13 +10,13 @@ use time::OffsetDateTime;
 use tokio::sync::{mpsc, watch};
 use tracing::{debug, warn};
 
-use crate::api::DonatelloApi;
+use crate::api::{DonatelloApi, PAGE_SIZE};
 use crate::config::DonatelloTiming;
 use crate::credentials;
 use crate::error::DonatelloError;
-use crate::normalize::donation_from_wire;
+use crate::normalize::{created_at_instant, donation_from_wire};
 use crate::status::{PollFailure, PollPhase, StatusBoard};
-use crate::wire::{DONATION_ID_FIELD, DonateWire, DonatesPageWire};
+use crate::wire::{CREATED_AT_FIELD, DONATION_ID_FIELD, DonateWire, DonatesPageWire};
 
 const MAX_SCAN_PAGES: u64 = 500;
 
@@ -38,11 +39,19 @@ pub(crate) struct PollContext {
     pub(crate) timing: DonatelloTiming,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ListOrder {
+    NewestFirst,
+    OldestFirst,
+}
+
 struct PollMemory {
     owner: Secret,
     seen: DedupSet,
     known_total: Option<u64>,
     baseline_taken: bool,
+    order: Option<ListOrder>,
+    pages_walked_before_failure: u64,
 }
 
 impl PollMemory {
@@ -52,6 +61,8 @@ impl PollMemory {
             seen: DedupSet::unbounded(),
             known_total: None,
             baseline_taken: false,
+            order: None,
+            pages_walked_before_failure: 0,
         }
     }
 }
@@ -195,11 +206,18 @@ async fn take_baseline(
     let mut total = None;
     let mut page_index = 0;
     loop {
-        let page = ctx.api.donates_page(token, page_index).await?;
+        let mut page = ctx.api.donates_page(token, page_index).await?;
         if page_index == 0 {
             total = page.total_count();
+            memory.order = list_order(&page.content);
         }
         let finished = is_final_page(&page, page_index);
+        if memory.order == Some(ListOrder::OldestFirst)
+            && let Some(total) = total
+        {
+            page.content
+                .truncate(items_before_arrivals(total, page_index));
+        }
         let harvest = harvest(&ctx.provider, memory, page.content, DonationOrigin::History);
         newest = newest.max(emit(ctx, harvest).await?);
         if finished {
@@ -219,22 +237,39 @@ async fn scan_for_new(
 ) -> Result<Option<OffsetDateTime>, CycleError> {
     let first = ctx.api.donates_page(token, 0).await?;
     let total = first.total_count();
-    let expected_new = total
-        .zip(memory.known_total)
-        .map_or(0, |(total, known)| total.saturating_sub(known));
+    memory.order = list_order(&first.content).or(memory.order);
+    let expected_new = total.zip(memory.known_total).map_or(0, |(total, known)| {
+        arrivals_to_look_for(total, known, memory.order)
+    });
     let page_count = first.page_count().unwrap_or(1).min(MAX_SCAN_PAGES);
+    let first_listed = first.content.len();
     let mut found = harvest(&ctx.provider, memory, first.content, DonationOrigin::Live);
+    let mut page_was_all_arrivals =
+        memory.order == Some(ListOrder::NewestFirst) && all_arrivals(found.unseen, first_listed);
     let mut failure = None;
-    for page_index in (1..page_count).rev() {
-        if found.unseen >= expected_new {
+    let mut pages_walked = 0;
+    let mut pages_without_arrivals = 0;
+    for page_index in walk_after_first_page(memory.order, page_count) {
+        if found.unseen >= expected_new && !page_was_all_arrivals {
             break;
         }
         match ctx.api.donates_page(token, page_index).await {
             Ok(page) => {
+                let listed = page.content.len();
                 let more = harvest(&ctx.provider, memory, page.content, DonationOrigin::Live);
+                pages_walked += 1;
+                page_was_all_arrivals = memory.order.is_some() && all_arrivals(more.unseen, listed);
+                if more.unseen == 0 {
+                    pages_without_arrivals += 1;
+                }
+                let reached_known_history = memory.order.is_some()
+                    && pages_without_arrivals > memory.pages_walked_before_failure;
                 found.unseen += more.unseen;
                 found.donations.extend(more.donations);
                 found.rejected.extend(more.rejected);
+                if reached_known_history {
+                    break;
+                }
             }
             Err(error) => {
                 failure = Some(error);
@@ -245,13 +280,58 @@ async fn scan_for_new(
     let unseen_found = found.unseen;
     let newest = emit(ctx, found).await?;
     if let Some(error) = failure {
+        memory.pages_walked_before_failure += pages_walked;
         memory.known_total = memory
             .known_total
             .map(|known| known.saturating_add(unseen_found));
         return Err(error.into());
     }
+    memory.pages_walked_before_failure = 0;
     memory.known_total = total.or(memory.known_total);
     Ok(newest)
+}
+
+fn all_arrivals(unseen: u64, listed: usize) -> bool {
+    unseen > 0 && u64::try_from(listed).is_ok_and(|listed| unseen == listed)
+}
+
+fn expected_arrivals(total: u64, known: u64) -> u64 {
+    if total < known { 1 } else { total - known }
+}
+
+fn arrivals_to_look_for(total: u64, known: u64, order: Option<ListOrder>) -> u64 {
+    let expected = expected_arrivals(total, known);
+    match order {
+        Some(ListOrder::OldestFirst) => expected.max(1),
+        Some(ListOrder::NewestFirst) | None => expected,
+    }
+}
+
+fn walk_after_first_page(order: Option<ListOrder>, page_count: u64) -> Vec<u64> {
+    let forward = 1..page_count;
+    match order {
+        Some(ListOrder::NewestFirst) => forward.collect(),
+        Some(ListOrder::OldestFirst) | None => forward.rev().collect(),
+    }
+}
+
+fn items_before_arrivals(total_at_start: u64, page_index: u64) -> usize {
+    let already_listed = page_index.saturating_mul(PAGE_SIZE);
+    usize::try_from(total_at_start.saturating_sub(already_listed)).unwrap_or(usize::MAX)
+}
+
+fn list_order(items: &[serde_json::Value]) -> Option<ListOrder> {
+    let mut created = items.iter().filter_map(|item| {
+        let text = item.get(CREATED_AT_FIELD)?.as_str()?;
+        created_at_instant(text).ok()
+    });
+    let first = created.next()?;
+    let last = created.next_back()?;
+    match first.cmp(&last) {
+        Ordering::Greater => Some(ListOrder::NewestFirst),
+        Ordering::Less => Some(ListOrder::OldestFirst),
+        Ordering::Equal => None,
+    }
 }
 
 fn is_final_page(page: &DonatesPageWire, page_index: u64) -> bool {
@@ -328,7 +408,10 @@ async fn emit(
 mod tests {
     use serde_json::{Value, json};
 
-    use super::{MAX_SCAN_PAGES, is_final_page};
+    use super::{
+        ListOrder, MAX_SCAN_PAGES, expected_arrivals, is_final_page, items_before_arrivals,
+        list_order, walk_after_first_page,
+    };
     use crate::wire::DonatesPageWire;
 
     fn page(body: Value) -> DonatesPageWire {
@@ -355,6 +438,66 @@ mod tests {
                 last,
                 "{body} at {index}"
             );
+        }
+    }
+
+    fn created(stamps: &[&str]) -> Vec<Value> {
+        stamps.iter().map(|at| json!({ "createdAt": at })).collect()
+    }
+
+    #[test]
+    fn list_order_compares_the_first_and_last_readable_stamps() {
+        let early = "2026-07-01 10:00:00";
+        let late = "2026-07-01 11:00:00";
+        for (items, order) in [
+            (created(&[late, early]), Some(ListOrder::NewestFirst)),
+            (created(&[early, late]), Some(ListOrder::OldestFirst)),
+            (created(&[early, early]), None),
+            (created(&[early]), None),
+            (Vec::new(), None),
+            (
+                created(&["not a date", late, early]),
+                Some(ListOrder::NewestFirst),
+            ),
+            (
+                vec![json!({ "createdAt": 7 }), json!({ "createdAt": early })],
+                None,
+            ),
+        ] {
+            assert_eq!(list_order(&items), order, "{items:?}");
+        }
+    }
+
+    #[test]
+    fn a_shrunken_total_still_expects_one_arrival_and_a_grown_one_expects_the_difference() {
+        for (total, known, expected) in [(44, 45, 1), (45, 45, 0), (46, 45, 1), (70, 45, 25)] {
+            assert_eq!(expected_arrivals(total, known), expected, "{total}/{known}");
+        }
+    }
+
+    #[test]
+    fn the_walk_runs_forward_only_on_a_list_known_to_be_newest_first() {
+        for (order, walk) in [
+            (Some(ListOrder::NewestFirst), vec![1, 2, 3]),
+            (Some(ListOrder::OldestFirst), vec![3, 2, 1]),
+            (None, vec![3, 2, 1]),
+        ] {
+            assert_eq!(walk_after_first_page(order, 4), walk, "{order:?}");
+        }
+        assert!(walk_after_first_page(None, 1).is_empty());
+    }
+
+    #[test]
+    fn a_page_keeps_only_the_items_listed_before_the_baseline_started() {
+        for (total, page, kept) in [
+            (45, 2, 5),
+            (40, 1, 20),
+            (40, 2, 0),
+            (41, 2, 1),
+            (45, 3, 0),
+            (0, 0, 0),
+        ] {
+            assert_eq!(items_before_arrivals(total, page), kept, "{total}/{page}");
         }
     }
 

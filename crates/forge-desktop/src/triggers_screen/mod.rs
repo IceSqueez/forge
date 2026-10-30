@@ -22,6 +22,7 @@ use std::future::Future;
 use std::sync::Arc;
 
 use crate::actions::LIST_CONTEXT;
+use crate::actions_screen::config_problem_text::config_problem_text;
 use crate::async_bridge::{self, KeyedSnapshotWriters, WriteOutcome};
 use crate::collection_options::ChoiceOptions;
 use crate::config_form::{CollectionChoices, ConfigField};
@@ -459,6 +460,26 @@ impl TriggersRegistryView {
             detail.instance.enabled = row.enabled;
             detail.instance.name.clone_from(&row.name);
         }
+        true
+    }
+
+    fn refuse_invalid_config(
+        &self,
+        kind_id: &str,
+        config: &TriggerConfig,
+        cx: &mut Context<Self>,
+    ) -> bool {
+        let Some(descriptor) = self.registry.get(kind_id) else {
+            return false;
+        };
+        let Err(problem) = descriptor.check_config(config) else {
+            return false;
+        };
+        let message = config_problem_text(&problem, kind_id, &descriptor.config_fields());
+        cx.push_toast(
+            ToastKind::Error,
+            tr!("triggers_toast_error", message = message.as_str()),
+        );
         true
     }
 

@@ -29,4 +29,7 @@ pub enum VTubeError {
 
     #[error("serialization error: {0}")]
     Json(#[from] serde_json::Error),
+
+    #[error("stored VTube Studio credential could not be read: {0}")]
+    Credentials(#[from] forge_storage::StorageError),
 }

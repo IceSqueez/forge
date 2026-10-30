@@ -44,7 +44,7 @@ pub(crate) fn donation_from_wire(
     })
 }
 
-fn created_at_instant(text: &str) -> Result<OffsetDateTime, String> {
+pub(crate) fn created_at_instant(text: &str) -> Result<OffsetDateTime, String> {
     let wall_clock = DateTime::strptime(CREATED_AT_FORMAT, text.trim())
         .map_err(|_| format!("createdAt {text:?} is not YYYY-MM-DD HH:MM:SS"))?;
     let zone = TimeZone::get(DONATELLO_ASSUMED_TIME_ZONE)

@@ -45,7 +45,7 @@ mod action_writes;
 mod analyzer;
 mod branch;
 mod collection_choices;
-mod config_problem_text;
+pub(crate) mod config_problem_text;
 mod delete_confirm_count;
 mod editor;
 mod files_root_note;

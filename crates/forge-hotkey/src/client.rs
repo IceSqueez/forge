@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, RwLock};
 use std::time::Duration;
@@ -38,6 +38,7 @@ pub struct HotkeyClient {
     pub(crate) portal_available: Option<bool>,
     pub(crate) enabled: Arc<AtomicBool>,
     pub(crate) holds: Mutex<HoldMap>,
+    pub(crate) unreleased: Mutex<HashSet<HotkeyId>>,
     hold_ceiling_secs: AtomicU64,
     control_tx: mpsc::Sender<SupervisorCommand>,
     registration_serial: tokio::sync::Mutex<()>,
@@ -67,6 +68,7 @@ impl HotkeyClient {
             portal_available,
             enabled: Arc::new(AtomicBool::new(true)),
             holds: Mutex::new(HoldMap::new()),
+            unreleased: Mutex::new(HashSet::new()),
             hold_ceiling_secs,
             control_tx,
             registration_serial: tokio::sync::Mutex::new(()),
@@ -143,7 +145,12 @@ impl HotkeyClient {
 
         let combo_str = combo.as_str().to_owned();
 
-        if self.os_registration_active() {
+        let still_held = self
+            .unreleased
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .contains(&id);
+        if self.os_registration_active() || still_held {
             self.backend.unregister(id).await?;
         }
 
@@ -187,7 +194,7 @@ impl HotkeyClient {
         tokio::time::timeout(COMMAND_TIMEOUT, reply_rx)
             .await
             .map_err(|_| HotkeyError::SupervisorUnavailable)?
-            .map_err(|_| HotkeyError::SupervisorUnavailable)
+            .map_err(|_| HotkeyError::SupervisorUnavailable)?
     }
 
     pub async fn enable(&self) -> Result<Vec<EnableFailure>, HotkeyError> {
@@ -287,6 +294,7 @@ impl HotkeyClient {
             portal_available,
             enabled: Arc::new(AtomicBool::new(true)),
             holds: Mutex::new(HoldMap::new()),
+            unreleased: Mutex::new(HashSet::new()),
             hold_ceiling_secs: AtomicU64::new(
                 HotkeyConfig::default().hold_ceiling_secs.unwrap_or(0),
             ),
@@ -887,6 +895,134 @@ pub(crate) mod tests {
         assert!(failures.is_empty());
         assert!(client.is_enabled());
         assert!(os_registered.lock().unwrap().contains_key(&id.0));
+    }
+
+    #[tokio::test]
+    async fn a_disable_the_os_refuses_stops_delivery_reports_the_error_and_announces_nothing() {
+        let publisher = RecordingPublisher::new();
+        let (backend, _tx) = MockPortalBackend::new();
+        let fail_unregister = Arc::clone(&backend.fail_unregister);
+        let client = start_supervised(backend, Arc::clone(&publisher) as Arc<dyn EventPublisher>);
+        client.register(combo("Ctrl+F1")).await.unwrap();
+        fail_unregister.store(true, Ordering::Relaxed);
+
+        let refused = client.disable().await;
+
+        assert!(
+            matches!(refused, Err(HotkeyError::MainThreadUnavailable)),
+            "{refused:?}"
+        );
+        assert!(!client.is_enabled());
+        assert_eq!(publisher.count_kind("hotkey.engine.disabled"), 0);
+    }
+
+    #[tokio::test]
+    async fn retrying_a_refused_disable_releases_the_grab_and_announces_it_once() {
+        let publisher = RecordingPublisher::new();
+        let (backend, _tx) = MockPortalBackend::new();
+        let fail_unregister = Arc::clone(&backend.fail_unregister);
+        let os_registered = Arc::clone(&backend.registered);
+        let client = start_supervised(backend, Arc::clone(&publisher) as Arc<dyn EventPublisher>);
+        client.register(combo("Ctrl+F1")).await.unwrap();
+        fail_unregister.store(true, Ordering::Relaxed);
+        client.disable().await.unwrap_err();
+        fail_unregister.store(false, Ordering::Relaxed);
+
+        client.disable().await.unwrap();
+
+        assert!(os_registered.lock().unwrap().is_empty());
+        assert_eq!(publisher.count_kind("hotkey.engine.disabled"), 1);
+    }
+
+    #[tokio::test]
+    async fn a_retry_still_refused_keeps_the_grab_for_the_next_retry() {
+        let (backend, _tx) = MockPortalBackend::new();
+        let fail_unregister = Arc::clone(&backend.fail_unregister);
+        let unregister_calls = Arc::clone(&backend.unregister_calls);
+        let os_registered = Arc::clone(&backend.registered);
+        let client = start_supervised(backend, noop_publisher());
+        client.register(combo("Ctrl+F1")).await.unwrap();
+        fail_unregister.store(true, Ordering::Relaxed);
+        client.disable().await.unwrap_err();
+        client.disable().await.unwrap_err();
+        fail_unregister.store(false, Ordering::Relaxed);
+
+        client.disable().await.unwrap();
+
+        assert_eq!(unregister_calls.load(Ordering::Relaxed), 3);
+        assert!(os_registered.lock().unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn enabling_after_a_refused_disable_keeps_the_held_grab_without_registering_it_again() {
+        let (backend, _tx) = MockPortalBackend::new();
+        let fail_unregister = Arc::clone(&backend.fail_unregister);
+        let register_calls = Arc::clone(&backend.register_calls);
+        let client = start_supervised(backend, noop_publisher());
+        client.register(combo("Ctrl+F1")).await.unwrap();
+        fail_unregister.store(true, Ordering::Relaxed);
+        client.disable().await.unwrap_err();
+
+        let failures = client.enable().await.unwrap();
+
+        assert!(failures.is_empty());
+        assert!(client.is_enabled());
+        assert_eq!(register_calls.load(Ordering::Relaxed), 1);
+    }
+
+    #[tokio::test]
+    async fn a_disable_after_enabling_over_a_held_grab_releases_it() {
+        let (backend, _tx) = MockPortalBackend::new();
+        let fail_unregister = Arc::clone(&backend.fail_unregister);
+        let os_registered = Arc::clone(&backend.registered);
+        let client = start_supervised(backend, noop_publisher());
+        client.register(combo("Ctrl+F1")).await.unwrap();
+        fail_unregister.store(true, Ordering::Relaxed);
+        client.disable().await.unwrap_err();
+        client.enable().await.unwrap();
+        fail_unregister.store(false, Ordering::Relaxed);
+
+        client.disable().await.unwrap();
+
+        assert!(os_registered.lock().unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn a_binding_removed_between_a_refused_disable_and_its_retry_still_loses_its_os_grab() {
+        let publisher = RecordingPublisher::new();
+        let (backend, _tx) = MockPortalBackend::new();
+        let fail_unregister = Arc::clone(&backend.fail_unregister);
+        let os_registered = Arc::clone(&backend.registered);
+        let client = start_supervised(backend, Arc::clone(&publisher) as Arc<dyn EventPublisher>);
+        let id = client.register(combo("Ctrl+F1")).await.unwrap();
+        fail_unregister.store(true, Ordering::Relaxed);
+        client.disable().await.unwrap_err();
+        fail_unregister.store(false, Ordering::Relaxed);
+
+        client.unregister(id).await.unwrap();
+        client.disable().await.unwrap();
+
+        assert!(os_registered.lock().unwrap().is_empty());
+        assert_eq!(publisher.count_kind("hotkey.engine.disabled"), 1);
+    }
+
+    #[tokio::test]
+    async fn a_removal_the_os_refuses_during_a_refused_disable_keeps_the_binding_for_the_retry() {
+        let publisher = RecordingPublisher::new();
+        let (backend, _tx) = MockPortalBackend::new();
+        let fail_unregister = Arc::clone(&backend.fail_unregister);
+        let os_registered = Arc::clone(&backend.registered);
+        let client = start_supervised(backend, Arc::clone(&publisher) as Arc<dyn EventPublisher>);
+        let id = client.register(combo("Ctrl+F1")).await.unwrap();
+        fail_unregister.store(true, Ordering::Relaxed);
+        client.disable().await.unwrap_err();
+        client.unregister(id).await.unwrap_err();
+        fail_unregister.store(false, Ordering::Relaxed);
+
+        client.disable().await.unwrap();
+
+        assert!(os_registered.lock().unwrap().is_empty());
+        assert_eq!(publisher.count_kind("hotkey.engine.disabled"), 1);
     }
 
     #[tokio::test]

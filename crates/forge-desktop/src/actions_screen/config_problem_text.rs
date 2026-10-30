@@ -6,7 +6,7 @@ use crate::user_text::resolve_message;
 
 const FIELD_NAME_JOINER: &str = ", ";
 
-pub(super) fn config_problem_text(
+pub(crate) fn config_problem_text(
     problem: &ConfigProblem,
     kind_id: &str,
     fields: &[FormField],

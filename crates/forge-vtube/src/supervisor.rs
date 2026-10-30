@@ -37,7 +37,8 @@ use crate::vts::protocol::{
 };
 use crate::vts::request::PendingRequest;
 use crate::vts::socket::{
-    Inbound, VtsWs, dial_within, exchange, next_inbound, send_text, send_ws_msg_within,
+    Inbound, TransportLayer, VtsWs, dial_within, exchange, next_inbound, send_text,
+    send_ws_msg_within,
 };
 
 pub(crate) const RECONNECT_BASE_DELAY: Duration = DEFAULT_BACKOFF_BASE;
@@ -101,8 +102,9 @@ fn diff_and_emit_expressions(
     data: &serde_json::Value,
     baseline: &mut Option<HashMap<String, bool>>,
     publisher: &dyn EventPublisher,
-) {
+) -> bool {
     let current = snapshot_expressions(data);
+    let changed = baseline.as_ref() != Some(&current);
     if let Some(prev) = baseline {
         for (file, is_active) in &current {
             if prev
@@ -121,6 +123,7 @@ fn diff_and_emit_expressions(
         }
     }
     *baseline = Some(current);
+    changed
 }
 
 async fn await_expression_poll(poll: &mut Option<ExpressionPoll>) -> Option<serde_json::Value> {
@@ -244,7 +247,7 @@ async fn run_auth(
     publisher: &dyn EventPublisher,
     timing: VTubeTiming,
 ) -> Result<(), VTubeError> {
-    let stored = crate::credentials::load(creds).await.ok().flatten();
+    let stored = crate::credentials::load(creds).await?;
 
     let token = if let Some(c) = stored {
         tracing::debug!(endpoint, "using stored VTube Studio credential");
@@ -312,6 +315,7 @@ pub(crate) struct SupervisorContext {
     pub(crate) auto_reconnect: watch::Receiver<bool>,
     pub(crate) last_failure: Arc<RwLock<Option<MessageRef>>>,
     pub(crate) timing: VTubeTiming,
+    pub(crate) transport_layer: TransportLayer,
 }
 
 enum RetryWait {
@@ -386,6 +390,7 @@ pub(crate) async fn run_supervisor(ctx: SupervisorContext) {
         mut auto_reconnect,
         last_failure,
         timing,
+        transport_layer,
     } = ctx;
 
     let mut backoff = Backoff::new(timing.reconnect_base_delay, timing.reconnect_max_delay);
@@ -460,7 +465,7 @@ pub(crate) async fn run_supervisor(ctx: SupervisorContext) {
         };
 
         let mut ws = match connect_attempt {
-            Ok(ws) => ws,
+            Ok(ws) => transport_layer(ws),
             Err(failed) => {
                 tracing::debug!(
                     endpoint = %endpoint,
@@ -715,6 +720,9 @@ pub(crate) async fn run_supervisor(ctx: SupervisorContext) {
                             content_notifier.notify_model_changed();
                             expr_baseline = None;
                         }
+                        if matches!(event, VtsEvent::ModelConfigChanged { .. }) {
+                            content_notifier.notify_model_changed();
+                        }
                         if event.changes_scene_items() {
                             catalog_signal.bump_options();
                             content_notifier.notify_items_changed();
@@ -747,8 +755,10 @@ pub(crate) async fn run_supervisor(ctx: SupervisorContext) {
                     let finished = expr_poll.take();
                     if let Some(data) = result {
                         unanswered_polls = 0;
-                        if check_response(&data).is_ok() {
-                            diff_and_emit_expressions(&data, &mut expr_baseline, &*publisher);
+                        if check_response(&data).is_ok()
+                            && diff_and_emit_expressions(&data, &mut expr_baseline, &*publisher)
+                        {
+                            content_notifier.notify_items_changed();
                         }
                     } else {
                         if let Some(poll) = finished {
@@ -1005,6 +1015,55 @@ mod tests {
     }
 
     #[test]
+    fn diff_reports_a_change_only_when_the_expression_list_differs_from_the_baseline() {
+        let list = |entries: &[(&str, bool)]| {
+            json!({
+                "expressions": entries
+                    .iter()
+                    .map(|(file, active)| json!({ "file": file, "active": active }))
+                    .collect::<Vec<_>>()
+            })
+        };
+        for (case, baseline, data, changed) in [
+            ("first snapshot", None, list(&[("a", false)]), true),
+            (
+                "same list",
+                Some(HashMap::from([("a".to_owned(), false)])),
+                list(&[("a", false)]),
+                false,
+            ),
+            (
+                "active flip",
+                Some(HashMap::from([("a".to_owned(), false)])),
+                list(&[("a", true)]),
+                true,
+            ),
+            (
+                "added",
+                Some(HashMap::from([("a".to_owned(), false)])),
+                list(&[("a", false), ("b", false)]),
+                true,
+            ),
+            (
+                "removed",
+                Some(HashMap::from([
+                    ("a".to_owned(), false),
+                    ("b".to_owned(), false),
+                ])),
+                list(&[("a", false)]),
+                true,
+            ),
+        ] {
+            let publisher = MockPublisher::new();
+            let mut baseline = baseline;
+
+            let reported = diff_and_emit_expressions(&data, &mut baseline, &*publisher.publisher());
+
+            assert_eq!(reported, changed, "{case}");
+        }
+    }
+
+    #[test]
     fn first_snapshot_seeds_baseline_without_emitting() {
         let publisher = MockPublisher::new();
         let mut baseline: Option<HashMap<String, bool>> = None;
@@ -1148,7 +1207,7 @@ mod tests {
 
         use super::super::{request_new_token, send_seed_queries};
 
-        #[tokio::test]
+        #[tokio::test(start_paused = true)]
         async fn a_token_request_whose_write_stalls_ends_as_a_token_timeout() {
             let (mut ws, _peer) = socket_with_a_stalled_write().await;
 
@@ -1165,7 +1224,7 @@ mod tests {
             );
         }
 
-        #[tokio::test]
+        #[tokio::test(start_paused = true)]
         async fn seed_queries_whose_write_stalls_give_up_within_the_limit_with_nothing_awaited() {
             let (mut ws, _peer) = socket_with_a_stalled_write().await;
 
@@ -1415,13 +1474,15 @@ mod tests {
             BuiltinControl, BuiltinHealth, ConnectionState, HealthMetricId, HealthValue,
         };
         use serde_json::json;
+        use tokio::sync::oneshot;
 
         use crate::client::VTubeClient;
         use crate::client::tests::{
-            AfterFlood, FakeVts, MockCreds, MockPublisher, PeerConn, stored_token_creds, wait_until,
+            FakeVts, MockCreds, MockPublisher, PeerConn, stored_token_creds, wait_until,
         };
         use crate::sink::VTubeSink;
         use crate::timing::VTubeTiming;
+        use crate::vts::socket::tests::{DoomedWrite, WriteFate};
 
         const SETTLE: Duration = Duration::from_secs(30);
         const BEYOND_ANY_GUARD: Duration = Duration::from_secs(100 * 24 * 3600);
@@ -1432,7 +1493,8 @@ mod tests {
         const FAST_POLL_INTERVAL: Duration = Duration::from_millis(5);
         const FIRST_POLL_TIMEOUT: Duration = Duration::from_millis(250);
         const ANSWERED_POLLS: usize = 10;
-        const OVERSIZED_REQUEST_BYTES: usize = 32 * 1024 * 1024;
+        const HOTKEY_REQUEST: &str = "HotkeyTriggerRequest";
+        const EXPRESSION_POLL: &str = r#""details":false"#;
 
         struct CapturedLog {
             level: tracing::Level,
@@ -1548,6 +1610,25 @@ mod tests {
             (client, conn)
         }
 
+        async fn session_dooming_one_write(
+            vts: &mut FakeVts,
+            publisher: &Arc<MockPublisher>,
+            timing: VTubeTiming,
+            frame_fragment: &'static str,
+            fate: WriteFate,
+        ) -> (VTubeClient, PeerConn, oneshot::Receiver<()>) {
+            let (reached, write_reached) = oneshot::channel();
+            let doomed = DoomedWrite {
+                frame_fragment,
+                fate,
+                reached,
+            };
+            let client =
+                vts.connect_with_doomed_write(publisher, &stored_token_creds(), timing, doomed);
+            let conn = vts.logged_in_conn().await;
+            (client, conn, write_reached)
+        }
+
         fn face_kinds(publisher: &MockPublisher) -> Vec<String> {
             publisher
                 .events
@@ -1640,25 +1721,33 @@ mod tests {
         }
 
         #[tokio::test]
-        async fn a_write_that_fails_mid_frame_ends_the_session_and_redials() {
+        async fn a_request_write_that_fails_ends_the_session_and_redials() {
             let (log, _subscriber) = LogCapture::install();
             let mut vts = FakeVts::bind().await;
             let publisher = MockPublisher::new();
-            let (client, conn) = connected_session(&mut vts, &publisher).await;
-            conn.tx.abandon_at_large_frame().await;
+            let (client, _conn, _reached) = session_dooming_one_write(
+                &mut vts,
+                &publisher,
+                write_stall_timing(BEYOND_ANY_GUARD),
+                HOTKEY_REQUEST,
+                WriteFate::Fail,
+            )
+            .await;
+            assert!(
+                wait_until(SETTLE, || client.connection_state().is_connected()).await,
+                "the session never reached connected"
+            );
 
-            let outcome = client
-                .trigger_hotkey(&"x".repeat(OVERSIZED_REQUEST_BYTES))
-                .await;
+            let outcome = client.trigger_hotkey("hk-1").await;
 
             assert!(outcome.is_err(), "the failed write was reported as sent");
             assert!(
-                log.dropped_the_session_on_a_failed_write(),
-                "the session outlived its failed write"
-            );
-            assert!(
                 vts.next_redial(SETTLE).await.is_some(),
                 "a session lost to a failed write must be redialed"
+            );
+            assert!(
+                log.dropped_the_session_on_a_failed_write(),
+                "the session outlived its failed write"
             );
         }
 
@@ -1749,17 +1838,20 @@ mod tests {
             let (log, _subscriber) = LogCapture::install();
             let mut vts = FakeVts::bind().await;
             let publisher = MockPublisher::new();
-            let (client, conn) = connected_session_with_timing(
+            let (client, _conn, _reached) = session_dooming_one_write(
                 &mut vts,
                 &publisher,
-                fast_redials(short_request_timeout()),
+                write_stall_timing(SHORT_REQUEST_TIMEOUT),
+                HOTKEY_REQUEST,
+                WriteFate::Stall,
             )
             .await;
-            conn.tx.stop_reading().await;
+            assert!(
+                wait_until(SETTLE, || client.connection_state().is_connected()).await,
+                "the session never reached connected"
+            );
 
-            let outcome = client
-                .trigger_hotkey(&"x".repeat(OVERSIZED_REQUEST_BYTES))
-                .await;
+            let outcome = client.trigger_hotkey("hk-1").await;
 
             assert!(outcome.is_err(), "the stalled write was reported as sent");
             assert!(
@@ -1769,96 +1861,69 @@ mod tests {
             assert!(log.logged("write stalled"), "the write never stalled");
         }
 
-        fn poll_stall_timing(request_timeout: Duration) -> VTubeTiming {
+        fn write_stall_timing(request_timeout: Duration) -> VTubeTiming {
             fast_redials(VTubeTiming {
                 request_timeout,
                 request_sweep_interval: BEYOND_ANY_GUARD,
-                expression_poll_interval: FAST_POLL_INTERVAL,
+                expression_poll_timeout: BEYOND_ANY_GUARD,
                 ..VTubeTiming::default()
             })
         }
 
-        async fn flood_once_the_first_poll_arrives(
-            conn: &mut PeerConn,
-            afterwards: AfterFlood,
-        ) -> tokio::sync::oneshot::Receiver<()> {
-            loop {
-                let frame = tokio::time::timeout(SETTLE, conn.next_frame())
-                    .await
-                    .ok()
-                    .flatten()
-                    .expect("the first expression poll never arrived");
-                if is_expression_poll(&frame) {
-                    return conn.tx.flood_pings(afterwards);
-                }
-                conn.tx.reply(&frame, json!({}));
+        fn poll_stall_timing(request_timeout: Duration) -> VTubeTiming {
+            VTubeTiming {
+                expression_poll_interval: FAST_POLL_INTERVAL,
+                ..write_stall_timing(request_timeout)
             }
         }
 
         #[tokio::test]
         async fn an_expression_poll_write_that_stalls_or_fails_drops_the_session_and_redials() {
-            for (case, request_timeout, afterwards) in [
-                ("stalled", SHORT_REQUEST_TIMEOUT, AfterFlood::HoldTheSocket),
-                ("failed", BEYOND_ANY_GUARD, AfterFlood::DropTheSocket),
+            for (case, request_timeout, fate) in [
+                ("stalled", SHORT_REQUEST_TIMEOUT, WriteFate::Stall),
+                ("failed", BEYOND_ANY_GUARD, WriteFate::Fail),
             ] {
-                let mut poll_timeout = FIRST_POLL_TIMEOUT;
-                loop {
-                    let (log, _subscriber) = LogCapture::install();
-                    let mut vts = FakeVts::bind().await;
-                    let publisher = MockPublisher::new();
-                    let timing = VTubeTiming {
-                        expression_poll_timeout: poll_timeout,
-                        ..poll_stall_timing(request_timeout)
-                    };
-                    let (_client, mut conn) =
-                        connected_session_with_timing(&mut vts, &publisher, timing).await;
-                    let _stalled = flood_once_the_first_poll_arrives(&mut conn, afterwards).await;
+                let (log, _subscriber) = LogCapture::install();
+                let mut vts = FakeVts::bind().await;
+                let publisher = MockPublisher::new();
+                let (_client, _conn, _reached) = session_dooming_one_write(
+                    &mut vts,
+                    &publisher,
+                    poll_stall_timing(request_timeout),
+                    EXPRESSION_POLL,
+                    fate,
+                )
+                .await;
 
-                    assert!(
-                        wait_until(SETTLE, || publisher.disconnected_event().is_some()).await,
-                        "{case}: the session outlived its poll write"
-                    );
-                    if log.dropped_the_session_on_a_failed_write() {
-                        assert!(
-                            vts.next_redial(SETTLE).await.is_some(),
-                            "{case}: a session lost to its poll write must be redialed"
-                        );
-                        break;
-                    }
-                    poll_timeout *= 2;
-                    assert!(
-                        poll_timeout < SETTLE,
-                        "{case}: the poll write never stalled"
-                    );
-                }
+                assert!(
+                    vts.next_redial(SETTLE).await.is_some(),
+                    "{case}: a session lost to its poll write must be redialed"
+                );
+                assert!(
+                    log.dropped_the_session_on_a_failed_write(),
+                    "{case}: the session must end on its poll write"
+                );
             }
         }
 
         #[tokio::test]
         async fn disconnecting_during_a_stalled_expression_poll_write_ends_within_its_limit() {
-            let mut poll_timeout = FIRST_POLL_TIMEOUT;
-            loop {
-                let mut vts = FakeVts::bind().await;
-                let publisher = MockPublisher::new();
-                let timing = VTubeTiming {
-                    expression_poll_timeout: poll_timeout,
-                    ..poll_stall_timing(STALLED_WRITE_LIMIT)
-                };
-                let (client, mut conn) =
-                    connected_session_with_timing(&mut vts, &publisher, timing).await;
-                let stalled =
-                    flood_once_the_first_poll_arrives(&mut conn, AfterFlood::HoldTheSocket).await;
+            let mut vts = FakeVts::bind().await;
+            let publisher = MockPublisher::new();
+            let (client, _conn, stalled) = session_dooming_one_write(
+                &mut vts,
+                &publisher,
+                poll_stall_timing(STALLED_WRITE_LIMIT),
+                EXPRESSION_POLL,
+                WriteFate::Stall,
+            )
+            .await;
+            stalled.await.expect("the poll write was never attempted");
 
-                if stalled.await.is_ok() {
-                    let outcome = tokio::time::timeout(SETTLE, client.disconnect()).await;
+            let outcome = tokio::time::timeout(SETTLE, client.disconnect()).await;
 
-                    assert!(outcome.is_ok(), "disconnect outlived the stalled write");
-                    assert_eq!(client.connection_state(), ConnectionState::Disconnected);
-                    return;
-                }
-                poll_timeout *= 2;
-                assert!(poll_timeout < SETTLE, "the poll write never stalled");
-            }
+            assert!(outcome.is_ok(), "disconnect outlived the stalled write");
+            assert_eq!(client.connection_state(), ConnectionState::Disconnected);
         }
 
         #[tokio::test]
@@ -1974,6 +2039,147 @@ mod tests {
                 poll_timeout *= 2;
                 assert!(poll_timeout < SETTLE, "the events never arrived in time");
             }
+        }
+
+        #[tokio::test]
+        async fn a_credential_read_failure_redials_without_asking_the_user_to_pair_again() {
+            let mut vts = FakeVts::bind().await;
+            let publisher = MockPublisher::new();
+            let creds = stored_token_creds();
+            creds.refuse_next_read();
+            let client =
+                vts.connect_with_timing(&publisher, &creds, fast_redials(VTubeTiming::default()));
+
+            let mut refused = vts.next_conn(SETTLE).await.unwrap();
+            let frame = tokio::time::timeout(SETTLE, refused.next_frame())
+                .await
+                .unwrap();
+            let mut redialed = vts.next_redial(SETTLE).await.unwrap();
+            redialed.accept_login().await;
+
+            assert!(frame.is_none(), "forge sent {frame:?} without a credential");
+            assert!(
+                wait_until(SETTLE, || client.connection_state().is_connected()).await,
+                "the stored token never logged in after the read recovered"
+            );
+        }
+
+        fn is_model_list(frame: &serde_json::Value) -> bool {
+            frame["messageType"] == "AvailableModelsRequest"
+        }
+
+        fn is_hotkey_list(frame: &serde_json::Value) -> bool {
+            frame["messageType"] == "HotkeysInCurrentModelRequest"
+        }
+
+        fn is_item_list(frame: &serde_json::Value) -> bool {
+            frame["messageType"] == "ItemListRequest"
+        }
+
+        fn is_expression_sweep(frame: &serde_json::Value) -> bool {
+            frame["messageType"] == "ExpressionStateRequest" && frame["data"]["details"].is_null()
+        }
+
+        async fn next_frame_answering_polls(
+            conn: &mut PeerConn,
+            poll_answer: &serde_json::Value,
+        ) -> serde_json::Value {
+            loop {
+                let frame = tokio::time::timeout(SETTLE, conn.next_frame())
+                    .await
+                    .ok()
+                    .flatten()
+                    .expect("the session must keep sending requests");
+                if !is_expression_poll(&frame) {
+                    return frame;
+                }
+                conn.tx.reply(&frame, poll_answer.clone());
+            }
+        }
+
+        async fn hold_frame(
+            conn: &mut PeerConn,
+            is_wanted: fn(&serde_json::Value) -> bool,
+            poll_answer: &serde_json::Value,
+        ) -> serde_json::Value {
+            loop {
+                let frame = next_frame_answering_polls(conn, poll_answer).await;
+                if is_wanted(&frame) {
+                    return frame;
+                }
+                conn.tx.reply(&frame, json!({}));
+            }
+        }
+
+        async fn serve_past(
+            conn: &mut PeerConn,
+            is_wanted: fn(&serde_json::Value) -> bool,
+            poll_answer: &serde_json::Value,
+        ) {
+            let frame = hold_frame(conn, is_wanted, poll_answer).await;
+            conn.tx.reply(&frame, json!({}));
+        }
+
+        async fn serve_past_one_poll(conn: &mut PeerConn, poll_answer: &serde_json::Value) {
+            loop {
+                let frame = tokio::time::timeout(SETTLE, conn.next_frame())
+                    .await
+                    .ok()
+                    .flatten()
+                    .expect("the session must keep polling");
+                if is_expression_poll(&frame) {
+                    conn.tx.reply(&frame, poll_answer.clone());
+                    return;
+                }
+                conn.tx.reply(&frame, json!({}));
+            }
+        }
+
+        #[tokio::test]
+        async fn a_model_config_change_refreshes_the_catalog_again() {
+            let mut vts = FakeVts::bind().await;
+            let publisher = MockPublisher::new();
+            let (_client, mut conn) = connected_session(&mut vts, &publisher).await;
+            let no_expressions = json!({});
+            serve_past(&mut conn, is_model_list, &no_expressions).await;
+            serve_past(&mut conn, is_model_list, &no_expressions).await;
+
+            conn.tx.event(
+                "ModelConfigChangedEvent",
+                json!({ "modelID": "m-1", "modelName": "MyAvatar" }),
+            );
+
+            serve_past(&mut conn, is_model_list, &no_expressions).await;
+        }
+
+        #[tokio::test]
+        async fn an_expression_poll_that_differs_from_the_last_one_starts_a_catalog_sweep() {
+            let mut vts = FakeVts::bind().await;
+            let publisher = MockPublisher::new();
+            let timing = VTubeTiming {
+                expression_poll_interval: FAST_POLL_INTERVAL,
+                request_timeout: SETTLE,
+                ..VTubeTiming::default()
+            };
+            let (_client, mut conn) =
+                connected_session_with_timing(&mut vts, &publisher, timing).await;
+            let list = |active: bool| json!({ "expressions": [{ "file": "smile.exp3.json", "active": active }] });
+            let idle = list(false);
+            let smiling = list(true);
+
+            let held_sweep = hold_frame(&mut conn, is_expression_sweep, &idle).await;
+            serve_past(&mut conn, is_hotkey_list, &idle).await;
+            serve_past(&mut conn, is_hotkey_list, &idle).await;
+            serve_past_one_poll(&mut conn, &idle).await;
+            serve_past_one_poll(&mut conn, &idle).await;
+            conn.tx.reply(&held_sweep, json!({}));
+            serve_past(&mut conn, is_item_list, &idle).await;
+            serve_past(&mut conn, is_item_list, &idle).await;
+            serve_past_one_poll(&mut conn, &idle).await;
+
+            serve_past_one_poll(&mut conn, &smiling).await;
+
+            serve_past(&mut conn, is_expression_sweep, &smiling).await;
         }
 
         #[tokio::test]

@@ -7,7 +7,7 @@ use sqlx::SqliteConnection;
 use time::OffsetDateTime;
 
 use crate::error::SqliteStorageError;
-use crate::kind_id_rename::KIND_ID_RENAME_VERSION;
+use crate::kind_id_rename::{OBS_KIND_ID_RENAME_VERSION, VTUBE_KIND_ID_RENAME_VERSION};
 use crate::legacy_chain::LEGACY_CHAIN;
 
 pub static MIGRATIONS: sqlx::migrate::Migrator = sqlx::migrate!("./migrations");
@@ -37,12 +37,19 @@ pub async fn apply(pool: &sqlx::SqlitePool) -> Result<(), SqliteStorageError> {
     let mut migrator = sqlx::migrate!("./migrations");
     migrator.set_ignore_missing(true);
     migrator
-        .run_to(KIND_ID_RENAME_VERSION - 1, pool)
+        .run_to(OBS_KIND_ID_RENAME_VERSION - 1, pool)
         .await
         .map_err(migration_failed)?;
-    if crate::kind_id_rename::is_pending(pool).await? {
+    if crate::kind_id_rename::is_pending(pool, OBS_KIND_ID_RENAME_VERSION).await? {
         crate::registry_migration::migrate_registry_format(pool).await?;
-        crate::kind_id_rename::apply(pool).await?;
+        crate::kind_id_rename::apply(pool, OBS_KIND_ID_RENAME_VERSION).await?;
+    }
+    migrator
+        .run_to(VTUBE_KIND_ID_RENAME_VERSION - 1, pool)
+        .await
+        .map_err(migration_failed)?;
+    if crate::kind_id_rename::is_pending(pool, VTUBE_KIND_ID_RENAME_VERSION).await? {
+        crate::kind_id_rename::apply(pool, VTUBE_KIND_ID_RENAME_VERSION).await?;
     }
     migrator.run(pool).await.map_err(migration_failed)
 }

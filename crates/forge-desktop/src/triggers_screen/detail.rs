@@ -300,14 +300,38 @@ impl TriggersRegistryView {
         let Some(instance) = self.pending_instance(cx) else {
             return;
         };
-        let Some(detail) = self.detail.as_mut() else {
+        let Some(detail) = self.detail.as_ref() else {
             return;
         };
         if detail.instance == instance {
             return;
         }
-        detail.instance = instance.clone();
+        if self.refuses_instance(&instance, cx) {
+            return;
+        }
+        if let Some(detail) = self.detail.as_mut() {
+            detail.instance = instance.clone();
+        }
         self.save_detail(instance, DetailAfterSave::Keep, cx);
+    }
+
+    fn instance_config(&self, instance: &TriggerInstance) -> TriggerConfig {
+        let default = trigger_form_defaults(self.registry.get(&instance.kind_id));
+        effective_config(&default, &instance.overrides)
+    }
+
+    fn holds_valid_config(&self, instance: &TriggerInstance) -> bool {
+        self.registry
+            .get(&instance.kind_id)
+            .is_none_or(|descriptor| {
+                descriptor
+                    .check_config(&self.instance_config(instance))
+                    .is_ok()
+            })
+    }
+
+    fn refuses_instance(&self, instance: &TriggerInstance, cx: &mut Context<Self>) -> bool {
+        self.refuse_invalid_config(&instance.kind_id, &self.instance_config(instance), cx)
     }
 
     fn save_detail(
@@ -356,6 +380,7 @@ impl TriggersRegistryView {
             .detail
             .as_ref()
             .is_some_and(|detail| detail.instance == instance)
+            || !self.holds_valid_config(&instance)
         {
             return;
         }
@@ -376,6 +401,9 @@ impl TriggersRegistryView {
             return;
         };
         instance.overrides.remove(&key);
+        if self.refuses_instance(&instance, cx) {
+            return;
+        }
         if let Some(detail) = self.detail.as_mut() {
             detail.instance = instance.clone();
         }
@@ -1123,7 +1151,7 @@ async fn load_detail_data(
 }
 
 #[cfg(test)]
-mod tests {
+pub(super) mod tests {
     use std::sync::Mutex;
     use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
@@ -1143,13 +1171,14 @@ mod tests {
     };
     use forge_components::Presentation;
 
-    const KIND: &str = "midi.input.note_on";
+    pub(in crate::triggers_screen) const KIND: &str = "midi.input.note_on";
     const NAME: &str = "Note on";
     const SEEDED_COOLDOWN: u32 = 30;
     const SAVE_REFUSED: &str = "database is locked";
-    const GREETING_FIELD: &str = "greeting";
+    pub(in crate::triggers_screen) const GREETING_FIELD: &str = "greeting";
+    pub(in crate::triggers_screen) const REFUSED_GREETING: &str = "refused";
 
-    struct RecordingTriggers {
+    pub(in crate::triggers_screen) struct RecordingTriggers {
         instance: Mutex<TriggerInstance>,
         saved: Mutex<Vec<u32>>,
         saved_overrides: Mutex<Vec<TriggerConfig>>,
@@ -1176,11 +1205,11 @@ mod tests {
             self.saves_fail.store(true, Ordering::SeqCst);
         }
 
-        fn saved_cooldowns(&self) -> Vec<u32> {
+        pub(in crate::triggers_screen) fn saved_cooldowns(&self) -> Vec<u32> {
             self.saved.lock().unwrap().clone()
         }
 
-        fn last_saved_overrides(&self) -> Option<TriggerConfig> {
+        pub(in crate::triggers_screen) fn last_saved_overrides(&self) -> Option<TriggerConfig> {
             self.saved_overrides.lock().unwrap().last().cloned()
         }
     }
@@ -1266,10 +1295,10 @@ mod tests {
         }
     }
 
-    struct Fixture {
+    pub(in crate::triggers_screen) struct Fixture {
         view: Option<Entity<TriggersRegistryView>>,
-        repo: Arc<RecordingTriggers>,
-        rt: tokio::runtime::Runtime,
+        pub(in crate::triggers_screen) repo: Arc<RecordingTriggers>,
+        pub(in crate::triggers_screen) rt: tokio::runtime::Runtime,
     }
 
     impl Fixture {
@@ -1283,7 +1312,7 @@ mod tests {
             )
         }
 
-        fn build(
+        pub(in crate::triggers_screen) fn build(
             cx: &mut gpui::TestAppContext,
             registry: TriggerRegistry,
             kind: &str,
@@ -1344,11 +1373,11 @@ mod tests {
             fixture
         }
 
-        fn view(&self) -> &Entity<TriggersRegistryView> {
+        pub(in crate::triggers_screen) fn view(&self) -> &Entity<TriggersRegistryView> {
             self.view.as_ref().unwrap()
         }
 
-        fn settle(&mut self, cx: &mut gpui::TestAppContext) {
+        pub(in crate::triggers_screen) fn settle(&mut self, cx: &mut gpui::TestAppContext) {
             pump(&self.rt);
             cx.update(|_cx| {});
             cx.run_until_parked();
@@ -1400,6 +1429,31 @@ mod tests {
             cx.update(|_cx| {});
             cx.run_until_parked();
             pump(&self.rt);
+        }
+
+        fn type_greeting(&self, cx: &mut gpui::TestAppContext, text: &str) {
+            let input = self.view().read_with(cx, |view, _| {
+                view.detail
+                    .as_ref()
+                    .unwrap()
+                    .fields
+                    .iter()
+                    .find_map(|field| match field {
+                        ConfigField::Input { key, input, .. } if key == GREETING_FIELD => {
+                            Some(input.clone())
+                        }
+                        _ => None,
+                    })
+                    .unwrap()
+            });
+            input.update(cx, |field, cx| field.set_content(text.to_owned(), cx));
+        }
+
+        fn detail_greeting(&self, cx: &mut gpui::TestAppContext) -> Option<Variant> {
+            self.detail_instance(cx)
+                .overrides
+                .get(GREETING_FIELD)
+                .cloned()
         }
     }
 
@@ -1694,6 +1748,138 @@ mod tests {
                 .to_string()
         });
         assert!(message.contains(NAME), "{message}");
+    }
+
+    fn greeting(text: &str) -> Variant {
+        Variant::String(text.to_owned())
+    }
+
+    pub(in crate::triggers_screen) fn refusing_registry(
+        defaults: TriggerConfig,
+    ) -> TriggerRegistry {
+        trigger_registry(vec![
+            StubTrigger::new(KIND, NAME, TriggerCategory::Midi, Declares::Nothing)
+                .with_fields(vec![FormField::Text {
+                    key: "greeting",
+                    label: "Greeting",
+                    placeholder: "",
+                }])
+                .with_defaults(defaults)
+                .refusing(GREETING_FIELD, REFUSED_GREETING),
+        ])
+    }
+
+    fn refusing_sheet(cx: &mut gpui::TestAppContext, defaults: TriggerConfig) -> Fixture {
+        crate::i18n::install_language(forge_storage::Language::En);
+        cx.update(|cx| cx.set_global(forge_components::Toasts::new()));
+        let overrides: TriggerConfig = [(GREETING_FIELD.to_owned(), greeting("hello"))]
+            .into_iter()
+            .collect();
+        Fixture::build(
+            cx,
+            refusing_registry(defaults),
+            KIND,
+            overrides,
+            BuiltinRegistry::default(),
+        )
+    }
+
+    #[gpui::test]
+    fn a_commit_the_kind_refuses_saves_nothing_and_keeps_the_sheet_on_the_stored_value(
+        cx: &mut gpui::TestAppContext,
+    ) {
+        let mut fixture = refusing_sheet(cx, TriggerConfig::new());
+        fixture.type_greeting(cx, REFUSED_GREETING);
+
+        fixture.commit(cx);
+
+        assert_eq!(
+            (
+                fixture.repo.last_saved_overrides(),
+                fixture.detail_greeting(cx),
+            ),
+            (None, Some(greeting("hello")))
+        );
+    }
+
+    #[gpui::test]
+    fn a_refused_commit_names_the_field_in_one_error_toast(cx: &mut gpui::TestAppContext) {
+        let mut fixture = refusing_sheet(cx, TriggerConfig::new());
+        fixture.type_greeting(cx, REFUSED_GREETING);
+
+        fixture.commit(cx);
+
+        let toast = cx.update(|cx| {
+            (
+                error_toasts(cx),
+                cx.global::<forge_components::Toasts>().items()[0]
+                    .message
+                    .to_string(),
+            )
+        });
+        assert_eq!(toast.0, 1);
+        assert!(toast.1.contains("Greeting"), "{}", toast.1);
+    }
+
+    #[gpui::test]
+    fn a_commit_after_correcting_a_refused_value_saves_the_correction(
+        cx: &mut gpui::TestAppContext,
+    ) {
+        let mut fixture = refusing_sheet(cx, TriggerConfig::new());
+        fixture.type_greeting(cx, REFUSED_GREETING);
+        fixture.commit(cx);
+        fixture.type_greeting(cx, "corrected");
+
+        fixture.commit(cx);
+        pump_until(&fixture.rt, || {
+            cx.run_until_parked();
+            fixture.repo.last_saved_overrides().is_some()
+        });
+
+        assert_eq!(
+            fixture
+                .repo
+                .last_saved_overrides()
+                .and_then(|saved| saved.get(GREETING_FIELD).cloned()),
+            Some(greeting("corrected"))
+        );
+    }
+
+    #[gpui::test]
+    fn reverting_a_field_to_a_default_the_kind_refuses_keeps_the_override(
+        cx: &mut gpui::TestAppContext,
+    ) {
+        let defaults: TriggerConfig = [(GREETING_FIELD.to_owned(), greeting(REFUSED_GREETING))]
+            .into_iter()
+            .collect();
+        let mut fixture = refusing_sheet(cx, defaults);
+
+        fixture.view().update(cx, |view, cx| {
+            view.revert_config_field(GREETING_FIELD.to_owned(), cx)
+        });
+        fixture.settle(cx);
+
+        assert_eq!(
+            (
+                fixture.repo.last_saved_overrides(),
+                fixture.detail_greeting(cx),
+                cx.update(|cx| error_toasts(cx)),
+            ),
+            (None, Some(greeting("hello")), 1)
+        );
+    }
+
+    #[gpui::test]
+    fn a_sheet_torn_down_over_a_value_the_kind_refuses_writes_nothing(
+        cx: &mut gpui::TestAppContext,
+    ) {
+        let mut fixture = refusing_sheet(cx, TriggerConfig::new());
+        fixture.type_greeting(cx, REFUSED_GREETING);
+        fixture.type_cooldown(cx, "5");
+
+        fixture.release(cx);
+
+        assert!(fixture.repo.saved_cooldowns().is_empty());
     }
 
     fn greeting_sheet(cx: &mut gpui::TestAppContext) -> Fixture {

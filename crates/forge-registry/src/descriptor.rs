@@ -3,6 +3,7 @@ use forge_types::{ArgStack, TriggerConfig, UserText, VariableSchema};
 
 use crate::category::TriggerCategory;
 use crate::condition_messages::any_condition;
+use crate::config_problem::ConfigProblem;
 use crate::evaluator::EventFilter;
 use crate::form::FormField;
 use crate::kind_platform_contract::KindPlatformContract;
@@ -37,6 +38,9 @@ pub trait TriggerKindDescriptor: Send + Sync {
     fn config_fields(&self) -> Vec<FormField>;
     fn config_refinement(&self) -> Option<FormRefinement> {
         None
+    }
+    fn check_config(&self, _: &TriggerConfig) -> Result<(), ConfigProblem> {
+        Ok(())
     }
     fn declared_references(&self) -> Vec<ReferenceField> {
         Vec::new()

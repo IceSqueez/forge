@@ -1,7 +1,10 @@
 use crate::error::MidiError;
 use crate::events::{MidiEvent, MidiOutMessage};
+use crate::vocabulary::limits::{CHANNEL_MAX, DATA_BYTE_MAX};
 
 pub(crate) const NOTE_ON_STATUS: u8 = 0x90;
+const NOTE_OFF_STATUS: u8 = 0x80;
+const CONTROL_CHANGE_STATUS: u8 = 0xB0;
 
 pub(crate) fn decode_midi_bytes(data: &[u8]) -> Result<Option<MidiEvent>, MidiError> {
     if data.is_empty() {
@@ -72,23 +75,39 @@ pub(crate) fn decode_midi_bytes(data: &[u8]) -> Result<Option<MidiEvent>, MidiEr
     }
 }
 
+fn in_range(value: u8, max: i64) -> Result<u8, MidiError> {
+    if i64::from(value) <= max {
+        Ok(value)
+    } else {
+        Err(MidiError::ValueOutOfRange { value, max })
+    }
+}
+
+fn channel_message(status: u8, channel: u8, first: u8, second: u8) -> Result<Vec<u8>, MidiError> {
+    Ok(vec![
+        status | in_range(channel, CHANNEL_MAX)?,
+        in_range(first, DATA_BYTE_MAX)?,
+        in_range(second, DATA_BYTE_MAX)?,
+    ])
+}
+
 pub(crate) fn message_to_bytes(message: &MidiOutMessage) -> Result<Vec<u8>, MidiError> {
     match message {
         MidiOutMessage::NoteOn {
             note,
             velocity,
             channel,
-        } => Ok(vec![NOTE_ON_STATUS | channel, *note, *velocity]),
+        } => channel_message(NOTE_ON_STATUS, *channel, *note, *velocity),
         MidiOutMessage::NoteOff {
             note,
             velocity,
             channel,
-        } => Ok(vec![0x80 | channel, *note, *velocity]),
+        } => channel_message(NOTE_OFF_STATUS, *channel, *note, *velocity),
         MidiOutMessage::ControlChange {
             controller,
             value,
             channel,
-        } => Ok(vec![0xB0 | channel, *controller, *value]),
+        } => channel_message(CONTROL_CHANGE_STATUS, *channel, *controller, *value),
         MidiOutMessage::Raw(bytes) => {
             if bytes.is_empty() || (bytes[0] & 0x80 == 0) {
                 Err(MidiError::InvalidStatusByte(
@@ -313,6 +332,62 @@ mod tests {
             channel: 3,
         };
         assert_eq!(message_to_bytes(&msg).unwrap(), vec![0xB3, 7, 127]);
+    }
+
+    fn channel_messages(channel: u8, first: u8, second: u8) -> [MidiOutMessage; 3] {
+        [
+            MidiOutMessage::NoteOn {
+                note: first,
+                velocity: second,
+                channel,
+            },
+            MidiOutMessage::NoteOff {
+                note: first,
+                velocity: second,
+                channel,
+            },
+            MidiOutMessage::ControlChange {
+                controller: first,
+                value: second,
+                channel,
+            },
+        ]
+    }
+
+    #[test]
+    fn message_to_bytes_accepts_the_top_of_every_range_for_each_channel_message() {
+        for (message, status) in channel_messages(15, 127, 127)
+            .into_iter()
+            .zip([0x9F, 0x8F, 0xBF])
+        {
+            assert_eq!(
+                message_to_bytes(&message).unwrap(),
+                vec![status, 127, 127],
+                "{message:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn message_to_bytes_refuses_one_past_each_range_for_each_channel_message() {
+        for (channel, first, second, refused, max) in [
+            (16, 127, 127, 16, 15),
+            (15, 128, 127, 128, 127),
+            (15, 127, 128, 128, 127),
+            (255, 255, 255, 255, 15),
+        ] {
+            for message in channel_messages(channel, first, second) {
+                let error = message_to_bytes(&message).unwrap_err();
+                assert!(
+                    matches!(
+                        error,
+                        MidiError::ValueOutOfRange { value, max: limit }
+                            if value == refused && limit == max
+                    ),
+                    "{message:?}: {error:?}"
+                );
+            }
+        }
     }
 
     #[test]

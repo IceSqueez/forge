@@ -17,6 +17,7 @@ pub(crate) fn message(error: &VTubeError) -> MessageRef {
         VTubeError::NotConnected => messages::not_connected(),
         VTubeError::Timeout => messages::request_timed_out(),
         VTubeError::Json(source) => messages::payload_invalid(&source.to_string()),
+        VTubeError::Credentials(source) => messages::request_failed(&source.to_string()),
     }
 }
 
@@ -75,6 +76,11 @@ mod tests {
                 VTubeError::Json(json),
                 "msg-vtube-payload_invalid",
                 Some(json_text),
+            ),
+            (
+                VTubeError::Credentials(forge_storage::StorageError::Decryption),
+                "msg-vtube-request_failed",
+                Some("decryption failed".to_owned()),
             ),
         ];
 

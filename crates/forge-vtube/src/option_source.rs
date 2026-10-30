@@ -37,7 +37,8 @@ fn listing_failure(error: &VTubeError) -> CollectionFailure {
         VTubeError::Timeout
         | VTubeError::Request { .. }
         | VTubeError::Rejected { .. }
-        | VTubeError::Json(_) => CollectionFailure::Transport,
+        | VTubeError::Json(_)
+        | VTubeError::Credentials(_) => CollectionFailure::Transport,
     }
 }
 

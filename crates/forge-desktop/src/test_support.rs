@@ -837,6 +837,7 @@ pub(crate) struct StubTrigger {
     contract: KindPlatformContract,
     filter_source: Option<forge_events::EventSource>,
     filter_prefix: Option<String>,
+    refused: Option<(&'static str, &'static str)>,
 }
 
 impl StubTrigger {
@@ -857,7 +858,13 @@ impl StubTrigger {
             contract: KindPlatformContract::PlatformSpecific(PlatformId::Twitch),
             filter_source: None,
             filter_prefix: None,
+            refused: None,
         }
+    }
+
+    pub(crate) fn refusing(mut self, key: &'static str, value: &'static str) -> Self {
+        self.refused = Some((key, value));
+        self
     }
 
     pub(crate) fn listening_to(
@@ -926,6 +933,20 @@ impl TriggerKindDescriptor for StubTrigger {
 
     fn config_fields(&self) -> Vec<FormField> {
         self.fields.clone()
+    }
+
+    fn check_config(&self, config: &TriggerConfig) -> Result<(), forge_registry::ConfigProblem> {
+        match self.refused {
+            Some((key, value))
+                if config.get(key).and_then(forge_types::Variant::as_str) == Some(value) =>
+            {
+                Err(forge_registry::ConfigProblem::field(
+                    key,
+                    forge_registry::ConfigReason::Required,
+                ))
+            }
+            _ => Ok(()),
+        }
     }
 
     fn chat_trigger_family(&self) -> Option<ChatTriggerFamily> {

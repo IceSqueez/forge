@@ -77,6 +77,9 @@ pub fn register_vtube_sub_actions(
     reg.register(Box::new(ItemThrowRunner::new(Arc::clone(&sink))))?;
     reg.register(Box::new(ModelTintRunner::new(Arc::clone(&sink))))?;
     reg.register(Box::new(ModelSetPhysicsRunner::new(sink)))?;
+    for succession in crate::vocabulary::retired_ids::RETIRED_SUB_ACTION_IDS {
+        reg.declare_retired(succession)?;
+    }
     Ok(())
 }
 
@@ -107,7 +110,7 @@ mod tests {
             "vtube.expression.set",
             "vtube.param.set",
             "vtube.model.load",
-            "vtube.params.reset",
+            "vtube.expressions.reset",
             "vtube.model.move",
             "vtube.model.tint",
             "vtube.model.set_physics",
@@ -157,6 +160,17 @@ mod tests {
                 );
             }
         }
+    }
+
+    #[test]
+    fn the_retired_reset_id_resolves_to_a_registered_runner_and_is_no_runner_itself() {
+        let reg = registry();
+
+        let current = reg.current_id("vtube.params.reset");
+
+        assert_eq!(current, Some("vtube.expressions.reset"));
+        assert!(reg.get("vtube.expressions.reset").is_some());
+        assert!(reg.get("vtube.params.reset").is_none());
     }
 
     #[test]
@@ -367,7 +381,7 @@ mod tests {
             .execute(&hold, &make_ctx(&stack))
             .await;
         tokio::time::sleep(std::time::Duration::from_millis(1000)).await;
-        reg.get("vtube.params.reset")
+        reg.get("vtube.expressions.reset")
             .unwrap()
             .execute(&SubActionConfig::new(), &make_ctx(&stack))
             .await;
@@ -472,7 +486,7 @@ mod tests {
             "vtube.param.set",
             r#"{"hold_secs":{"type":"float","value":0.0},"param_id":{"type":"string","value":""},"value":{"type":"float","value":0.0}}"#,
         ),
-        ("vtube.params.reset", r#"{}"#),
+        ("vtube.expressions.reset", r#"{}"#),
     ];
 
     #[test]

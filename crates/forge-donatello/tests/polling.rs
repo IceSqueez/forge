@@ -1,11 +1,11 @@
 mod support;
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeSet, HashSet};
 use std::sync::Arc;
 
 use forge_donatello::PollPhase;
 use forge_platform_core::{BuiltinControl, PlatformError};
-use forge_types::DonationOrigin;
+use forge_types::{Donation, DonationOrigin};
 use serde_json::json;
 use support::{Harness, MemCreds, OTHER_TOKEN, Order, donate, donates};
 use wiremock::matchers::{method, path};
@@ -151,6 +151,205 @@ async fn a_scan_cut_short_by_a_page_error_counts_what_it_found_so_the_retry_does
     assert_eq!(partial.donation_id, "NEW-15");
     assert_eq!(rest.len(), 15);
     assert_eq!(h.list.requested_pages(), vec![0, 3, 2]);
+}
+
+async fn after_baseline(order: Order, existing: usize) -> Harness {
+    let mut h = Harness::start(order, donates(existing)).await;
+    h.donations(existing).await;
+    h.wait_for("baseline poll", |s| s.last_poll_at.is_some())
+        .await;
+    h.list.forget_requests();
+    h
+}
+
+fn add_new(h: &Harness, count: usize) {
+    for index in 0..count {
+        h.list.add(donate(
+            &format!("NEW-{index:02}"),
+            &format!("2026-07-02 10:{index:02}:00"),
+        ));
+    }
+}
+
+fn new_live_ids(count: usize) -> HashSet<(String, DonationOrigin)> {
+    (0..count)
+        .map(|index| (format!("NEW-{index:02}"), DonationOrigin::Live))
+        .collect()
+}
+
+fn ids_and_origins(reported: &[Donation]) -> HashSet<(String, DonationOrigin)> {
+    reported
+        .iter()
+        .map(|d| (d.donation_id.clone(), d.origin))
+        .collect()
+}
+
+#[tokio::test]
+async fn newest_first_list_walks_forward_until_every_new_donation_is_found() {
+    let mut h = after_baseline(Order::NewestFirst, 45).await;
+
+    add_new(&h, 25);
+    h.poll_now().await;
+    let reported = h.donations(25).await;
+
+    assert_eq!(ids_and_origins(&reported), new_live_ids(25));
+    assert_eq!(h.list.requested_pages(), vec![0, 1]);
+}
+
+#[tokio::test]
+async fn a_newest_first_walk_cut_short_resumes_past_the_pages_it_already_reported() {
+    let mut h = after_baseline(Order::NewestFirst, 45).await;
+    let baseline_poll = h.provider.poll_status().last_poll_at;
+    add_new(&h, 45);
+    h.list.fail_after(2, ResponseTemplate::new(503));
+
+    h.wake_poller();
+    let mut reported = h.donations(40).await;
+    let failure = h.next().await;
+    assert!(
+        matches!(failure, Err(PlatformError::Http { status: 503, .. })),
+        "{failure:?}"
+    );
+    assert_eq!(h.list.requested_pages(), vec![0, 1, 2]);
+    h.list.forget_requests();
+    h.wake_poller();
+    reported.extend(h.donations(5).await);
+    h.wait_for("completed retry", |s| s.last_poll_at != baseline_poll)
+        .await;
+
+    assert_eq!(ids_and_origins(&reported), new_live_ids(45));
+    assert_eq!(h.list.requested_pages(), vec![0, 1, 2]);
+}
+
+#[tokio::test]
+async fn a_shrunken_list_with_an_arrival_still_reports_the_arrival() {
+    for (order, walk) in [
+        (Order::NewestFirst, vec![0]),
+        (Order::OldestFirst, vec![0, 2]),
+    ] {
+        let mut h = after_baseline(order, 45).await;
+
+        h.list.remove("D-010");
+        h.list.remove("D-011");
+        add_new(&h, 1);
+        h.poll_now().await;
+        let reported = h.next().await.unwrap();
+
+        assert_eq!(
+            (reported.donation_id.as_str(), reported.origin),
+            ("NEW-00", DonationOrigin::Live),
+            "{order:?}"
+        );
+        assert_eq!(h.list.requested_pages(), walk, "{order:?}");
+    }
+}
+
+#[tokio::test]
+async fn a_shrunken_list_without_an_arrival_stops_after_one_page_of_known_donations() {
+    for (order, walk) in [
+        (Order::NewestFirst, vec![0, 1]),
+        (Order::OldestFirst, vec![0, 2]),
+    ] {
+        let mut h = after_baseline(order, 45).await;
+
+        h.list.remove("D-010");
+        h.poll_now().await;
+
+        assert_eq!(h.list.requested_pages(), walk, "{order:?}");
+        assert!(h.stays_quiet().await, "{order:?}");
+    }
+}
+
+#[tokio::test]
+async fn a_removal_and_an_arrival_with_an_unchanged_total_still_report_the_arrival() {
+    for (order, walk) in [
+        (Order::NewestFirst, vec![0]),
+        (Order::OldestFirst, vec![0, 2]),
+    ] {
+        let mut h = after_baseline(order, 45).await;
+
+        h.list.remove("D-010");
+        add_new(&h, 1);
+        h.poll_now().await;
+        let reported = h.next().await.unwrap();
+
+        assert_eq!(
+            (reported.donation_id.as_str(), reported.origin),
+            ("NEW-00", DonationOrigin::Live),
+            "{order:?}"
+        );
+        assert_eq!(h.list.requested_pages(), walk, "{order:?}");
+    }
+}
+
+#[tokio::test]
+async fn a_walk_finding_nothing_on_an_unchanged_oldest_first_list_stops_after_one_page() {
+    let mut h = after_baseline(Order::OldestFirst, 45).await;
+
+    h.poll_now().await;
+
+    assert_eq!(h.list.requested_pages(), vec![0, 2]);
+    assert!(h.stays_quiet().await);
+}
+
+#[tokio::test]
+async fn a_walk_expecting_arrivals_that_are_all_restored_donations_stops_after_one_page() {
+    let existing = donates(45);
+    let mut h = after_baseline(Order::OldestFirst, 45).await;
+    h.list.remove("D-010");
+    h.list.remove("D-011");
+    h.poll_now().await;
+    h.list.forget_requests();
+
+    h.list.add(existing[10].clone());
+    h.list.add(existing[11].clone());
+    h.poll_now().await;
+
+    assert_eq!(h.list.requested_pages(), vec![0, 2]);
+    assert!(h.stays_quiet().await);
+}
+
+#[tokio::test]
+async fn a_scan_after_a_shrink_counts_from_the_smaller_total() {
+    let mut h = after_baseline(Order::NewestFirst, 45).await;
+    h.list.remove("D-010");
+    h.poll_now().await;
+    h.list.forget_requests();
+
+    h.poll_now().await;
+
+    assert_eq!(h.list.requested_pages(), vec![0]);
+}
+
+#[tokio::test]
+async fn a_donation_arriving_during_the_baseline_is_history_free_and_reported_live_once() {
+    for (order, existing, arrives_after_page) in [
+        (Order::OldestFirst, 45, 1),
+        (Order::OldestFirst, 40, 0),
+        (Order::NewestFirst, 45, 0),
+        (Order::NewestFirst, 40, 0),
+    ] {
+        let arrival = (arrives_after_page, donate("NEW-00", "2026-07-02 10:00:00"));
+        let mut h = Harness::start_with_arrival(order, donates(existing), arrival).await;
+
+        let baseline = h.donations(existing).await;
+        h.wait_for("baseline poll", |s| s.last_poll_at.is_some())
+            .await;
+        h.poll_now().await;
+        let live = h.next().await.unwrap();
+
+        assert!(
+            baseline
+                .iter()
+                .all(|d| d.origin == DonationOrigin::History && d.donation_id != "NEW-00"),
+            "{order:?} {existing}"
+        );
+        assert_eq!(
+            (live.donation_id.as_str(), live.origin),
+            ("NEW-00", DonationOrigin::Live),
+            "{order:?} {existing}"
+        );
+    }
 }
 
 #[tokio::test]
@@ -341,4 +540,18 @@ async fn removing_the_token_moves_the_poller_to_awaiting_a_token() {
         "{failure:?}"
     );
     assert_eq!(h.provider.poll_status().phase, PollPhase::AwaitingToken);
+}
+
+#[tokio::test]
+async fn replacements_straddling_a_page_boundary_are_all_reported() {
+    let mut h = after_baseline(Order::OldestFirst, 41).await;
+    h.list.remove("D-010");
+    h.list.remove("D-011");
+    add_new(&h, 2);
+
+    h.poll_now().await;
+    h.poll_now().await;
+    let reported = h.donations(2).await;
+
+    assert_eq!(ids_and_origins(&reported), new_live_ids(2));
 }

@@ -51,6 +51,7 @@ msg-twitch-condition_reward = reward = { $reward }
 msg-twitch-condition_state = state = { $state }
 msg-twitch-condition_status = status = { $status }
 msg-twitch-condition_whisper_from = from { $sender }
+msg-twitch-whisper_pattern_invalid = Not a valid regular expression
 msg-twitch-condition_whisper_text = text matches "{ $text }"
 msg-twitch-condition_amount_at_least = amount >= { $min } cents
 msg-twitch-condition_bits_at_least = >= { $min } bits

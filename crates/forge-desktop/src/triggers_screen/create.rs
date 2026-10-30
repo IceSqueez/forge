@@ -285,6 +285,9 @@ impl TriggersRegistryView {
         let default = trigger_form_defaults(self.registry.get(&kind_id));
         let mut buffer = default.clone();
         collect_field_values(&form.fields, &mut buffer, cx);
+        if self.refuse_invalid_config(&kind_id, &buffer, cx) {
+            return;
+        }
         let overrides = sparse_overrides(&default, &buffer);
 
         let new_id = TriggerInstanceId::new();
@@ -642,7 +645,91 @@ fn category_meta(
 
 #[cfg(test)]
 mod tests {
+    use forge_components::Toasts;
+    use forge_types::TriggerConfig;
+    use gpui::TestAppContext;
+
+    use super::super::detail::tests::{
+        Fixture, GREETING_FIELD, KIND, REFUSED_GREETING, refusing_registry,
+    };
     use super::*;
+    use crate::integrations::BuiltinRegistry;
+    use crate::test_support::{error_toasts, pump_until};
+
+    fn fill_form(cx: &mut TestAppContext, greeting: &str) -> Fixture {
+        crate::i18n::install_language(forge_storage::Language::En);
+        cx.update(|cx| cx.set_global(Toasts::new()));
+        let fixture = Fixture::build(
+            cx,
+            refusing_registry(TriggerConfig::new()),
+            KIND,
+            TriggerConfig::new(),
+            BuiltinRegistry::default(),
+        );
+        fixture.view().update(cx, |view, cx| {
+            view.enter_fill(KIND.to_owned(), cx);
+            let Some(CreateStage::Fill(form)) = view.create.as_ref() else {
+                panic!("the fill stage must be open");
+            };
+            let name = form.name_field.clone();
+            let field = form
+                .fields
+                .iter()
+                .find_map(|field| match field {
+                    ConfigField::Input { key, input, .. } if key == GREETING_FIELD => {
+                        Some(input.clone())
+                    }
+                    _ => None,
+                })
+                .unwrap();
+            name.update(cx, |input, cx| input.set_content("New".to_owned(), cx));
+            field.update(cx, |input, cx| input.set_content(greeting.to_owned(), cx));
+        });
+        fixture
+    }
+
+    #[gpui::test]
+    fn creating_with_a_value_the_kind_refuses_saves_nothing_and_stays_on_the_form(
+        cx: &mut TestAppContext,
+    ) {
+        let mut fixture = fill_form(cx, REFUSED_GREETING);
+
+        fixture.view().update(cx, |view, cx| view.submit_create(cx));
+        fixture.settle(cx);
+
+        let still_filling = fixture.view().read_with(
+            cx,
+            |view, _| matches!(&view.create, Some(CreateStage::Fill(form)) if !form.saving),
+        );
+        assert_eq!(
+            (
+                fixture.repo.last_saved_overrides(),
+                still_filling,
+                cx.update(|cx| error_toasts(cx)),
+            ),
+            (None, true, 1)
+        );
+    }
+
+    #[gpui::test]
+    fn creating_with_a_value_the_kind_accepts_saves_it(cx: &mut TestAppContext) {
+        let mut fixture = fill_form(cx, "accepted");
+
+        fixture.view().update(cx, |view, cx| view.submit_create(cx));
+        pump_until(&fixture.rt, || {
+            cx.run_until_parked();
+            fixture.repo.last_saved_overrides().is_some()
+        });
+        fixture.settle(cx);
+
+        assert_eq!(
+            fixture
+                .repo
+                .last_saved_overrides()
+                .and_then(|saved| saved.get(GREETING_FIELD).cloned()),
+            Some(forge_types::Variant::String("accepted".to_owned()))
+        );
+    }
 
     fn successor(category: TriggerCategory) -> Option<TriggerCategory> {
         use TriggerCategory as C;

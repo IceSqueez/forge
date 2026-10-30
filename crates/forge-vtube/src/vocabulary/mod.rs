@@ -6,6 +6,7 @@ pub(crate) mod labels;
 pub mod messages;
 pub(crate) mod option_lists;
 pub mod picker_keys;
+pub mod retired_ids;
 pub mod sub_action_ids;
 pub mod trigger_ids;
 pub(crate) mod variables;

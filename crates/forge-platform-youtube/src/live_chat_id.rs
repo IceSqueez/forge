@@ -1,10 +1,14 @@
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 
+use forge_platform_core::PlatformError;
 use tokio_util::sync::CancellationToken;
+
+use crate::broadcast_lookup::BroadcastLookup;
 
 #[derive(Debug, Clone, Default)]
 pub struct LiveChatIdHandle {
     inner: Arc<std::sync::Mutex<Option<String>>>,
+    fallback: Arc<OnceLock<BroadcastLookup>>,
 }
 
 impl LiveChatIdHandle {
@@ -28,6 +32,23 @@ impl LiveChatIdHandle {
 
     pub fn get(&self) -> Option<String> {
         self.inner.lock().ok().and_then(|g| g.clone())
+    }
+
+    pub(crate) fn fall_back_to(&self, lookup: BroadcastLookup) {
+        self.fallback.get_or_init(|| lookup);
+    }
+
+    pub(crate) async fn resolve(&self) -> Result<Option<String>, PlatformError> {
+        if let Some(id) = self.get() {
+            return Ok(Some(id));
+        }
+        let Some(lookup) = self.fallback.get() else {
+            return Ok(None);
+        };
+        Ok(lookup
+            .active()
+            .await?
+            .map(|broadcast| broadcast.live_chat_id))
     }
 }
 

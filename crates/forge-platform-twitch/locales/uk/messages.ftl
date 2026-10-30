@@ -60,6 +60,7 @@ msg-twitch-condition_status = статус = { $status ->
    *[other] { $status }
 }
 msg-twitch-condition_whisper_from = від { $sender }
+msg-twitch-whisper_pattern_invalid = Некоректний регулярний вираз
 msg-twitch-condition_whisper_text = текст збігається з "{ $text }"
 msg-twitch-condition_amount_at_least = сума >= { $min } { $min ->
     [one] цент

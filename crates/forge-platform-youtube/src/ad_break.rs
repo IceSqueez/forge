@@ -34,12 +34,11 @@ impl YoutubeAdBreak {
     }
 
     pub async fn insert_cuepoint(&self, duration_secs: u32) -> Result<(), PlatformError> {
-        let broadcast_id =
-            self.active_broadcast_id
-                .get()
-                .ok_or_else(|| PlatformError::Unsupported {
-                    feature: "ad break - no active YouTube broadcast".to_owned(),
-                })?;
+        let broadcast_id = self.active_broadcast_id.resolve().await?.ok_or_else(|| {
+            PlatformError::Unsupported {
+                feature: "ad break - no active YouTube broadcast".to_owned(),
+            }
+        })?;
 
         let payload = serde_json::json!({
             "cueType": "cueTypeAd",

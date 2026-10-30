@@ -56,6 +56,7 @@ impl DonatesPageWire {
 }
 
 pub(crate) const DONATION_ID_FIELD: &str = "pubId";
+pub(crate) const CREATED_AT_FIELD: &str = "createdAt";
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]

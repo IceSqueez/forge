@@ -36,12 +36,11 @@ impl YoutubeThumbnail {
     }
 
     pub async fn set(&self, image_path: &str) -> Result<(), PlatformError> {
-        let video_id =
-            self.active_broadcast_id
-                .get()
-                .ok_or_else(|| PlatformError::Unsupported {
-                    feature: "thumbnail - no active YouTube broadcast".to_owned(),
-                })?;
+        let video_id = self.active_broadcast_id.resolve().await?.ok_or_else(|| {
+            PlatformError::Unsupported {
+                feature: "thumbnail - no active YouTube broadcast".to_owned(),
+            }
+        })?;
 
         let content_type = content_type_for(image_path).ok_or_else(|| PlatformError::Refused {
             reason: UNSUPPORTED_IMAGE_TYPE.to_owned(),

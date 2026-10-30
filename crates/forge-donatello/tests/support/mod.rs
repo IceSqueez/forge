@@ -223,6 +223,7 @@ struct ListState {
     requested_pages: Vec<u64>,
     faults: VecDeque<ResponseTemplate>,
     delayed_fault: Option<(usize, ResponseTemplate)>,
+    arrival_after_page: Option<(u64, Value)>,
 }
 
 #[derive(Clone)]
@@ -239,12 +240,25 @@ impl DonatesList {
                 requested_pages: Vec::new(),
                 faults: VecDeque::new(),
                 delayed_fault: None,
+                arrival_after_page: None,
             })),
         }
     }
 
     pub fn add(&self, item: Value) {
         self.state.lock().unwrap().oldest_first.push(item);
+    }
+
+    pub fn add_after_page(&self, page: u64, item: Value) {
+        self.state.lock().unwrap().arrival_after_page = Some((page, item));
+    }
+
+    pub fn remove(&self, id: &str) {
+        self.state
+            .lock()
+            .unwrap()
+            .oldest_first
+            .retain(|item| item["pubId"] != id);
     }
 
     pub fn fail_next(&self, response: ResponseTemplate) {
@@ -294,6 +308,14 @@ impl Respond for DonatesList {
             .skip((page * size) as usize)
             .take(size as usize)
             .collect();
+        if state
+            .arrival_after_page
+            .as_ref()
+            .is_some_and(|(after, _)| *after == page)
+            && let Some((_, item)) = state.arrival_after_page.take()
+        {
+            state.oldest_first.push(item);
+        }
         ResponseTemplate::new(200).set_body_json(json!({
             "content": content,
             "page": page,
@@ -343,6 +365,19 @@ impl Harness {
     pub async fn start(order: Order, initial: Vec<Value>) -> Self {
         let server = MockServer::start().await;
         let list = DonatesList::new(order, initial);
+        mount_me(&server).await;
+        mount_donates(&server, &list).await;
+        Self::with_server(server, list, MemCreds::with_token(TOKEN))
+    }
+
+    pub async fn start_with_arrival(
+        order: Order,
+        initial: Vec<Value>,
+        (after_page, item): (u64, Value),
+    ) -> Self {
+        let server = MockServer::start().await;
+        let list = DonatesList::new(order, initial);
+        list.add_after_page(after_page, item);
         mount_me(&server).await;
         mount_donates(&server, &list).await;
         Self::with_server(server, list, MemCreds::with_token(TOKEN))

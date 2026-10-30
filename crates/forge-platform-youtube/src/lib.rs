@@ -6,6 +6,7 @@ mod ban_ledger;
 #[cfg(test)]
 mod ban_ledger_test_support;
 mod ban_list;
+mod broadcast_lookup;
 mod builtin;
 mod channel_lookup;
 mod chat_platform;

@@ -1,7 +1,8 @@
 use std::io::ErrorKind;
+use std::sync::Arc;
 use std::time::Duration;
 
-use futures_util::{SinkExt, StreamExt};
+use futures_util::{Sink, SinkExt, Stream, StreamExt};
 use serde_json::Value;
 use tokio_tungstenite::tungstenite::{Error as WsError, Message};
 
@@ -11,8 +12,23 @@ use crate::error::VTubeError;
 use crate::vocabulary::messages;
 use crate::vts::protocol::new_request;
 
-pub(crate) type VtsWs =
-    tokio_tungstenite::WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>>;
+pub(crate) trait VtsTransport:
+    Sink<Message, Error = WsError> + Stream<Item = Result<Message, WsError>> + Send + Unpin
+{
+}
+
+impl<T> VtsTransport for T where
+    T: Sink<Message, Error = WsError> + Stream<Item = Result<Message, WsError>> + Send + Unpin
+{
+}
+
+pub(crate) type VtsWs = Box<dyn VtsTransport>;
+
+pub(crate) type TransportLayer = Arc<dyn Fn(VtsWs) -> VtsWs + Send + Sync>;
+
+pub(crate) fn bare_transport() -> TransportLayer {
+    Arc::new(|ws| ws)
+}
 
 pub(crate) enum Inbound {
     Closed,
@@ -51,7 +67,7 @@ impl DialFailure {
 async fn dial(endpoint: &str) -> Result<VtsWs, DialFailure> {
     tokio_tungstenite::connect_async(endpoint)
         .await
-        .map(|(ws, _)| ws)
+        .map(|(ws, _)| Box::new(ws) as VtsWs)
         .map_err(|e| DialFailure::of(&e))
 }
 
@@ -59,6 +75,10 @@ pub(crate) async fn dial_within(endpoint: &str, limit: Duration) -> Result<VtsWs
     tokio::time::timeout(limit, dial(endpoint))
         .await
         .map_err(|_| DialFailure::timed_out())?
+}
+
+pub(crate) async fn send_close(ws: &mut VtsWs) -> Result<(), WsError> {
+    ws.send(Message::Close(None)).await
 }
 
 pub(crate) async fn send_text(ws: &mut VtsWs, text: String) -> Result<(), VTubeError> {
@@ -139,39 +159,114 @@ pub(crate) async fn exchange(
 
 #[cfg(test)]
 pub(crate) mod tests {
+    use std::pin::Pin;
+    use std::sync::Mutex;
+    use std::task::{Context, Poll};
+
     use serde_json::json;
+    use tokio::io::DuplexStream;
     use tokio::net::TcpListener;
-    use tokio::task::JoinHandle;
+    use tokio::sync::oneshot;
+    use tokio_tungstenite::WebSocketStream;
+    use tokio_tungstenite::tungstenite::protocol::Role;
 
     use super::*;
 
     pub(crate) const HANG_GUARD: Duration = Duration::from_secs(30);
     pub(crate) const SHORT_LIMIT: Duration = Duration::from_millis(50);
-    const OVERSIZED_FRAME_BYTES: usize = 32 * 1024 * 1024;
+    const SMALLER_THAN_ANY_FRAME: usize = 1;
 
-    async fn dial_or_panic(endpoint: &str) -> VtsWs {
-        match dial_within(endpoint, HANG_GUARD).await {
-            Ok(ws) => ws,
-            Err(failure) => panic!("the dial failed: {}", failure.detail),
+    pub(crate) async fn socket_with_a_stalled_write() -> (VtsWs, DuplexStream) {
+        let (near, unread_peer) = tokio::io::duplex(SMALLER_THAN_ANY_FRAME);
+        let ws = WebSocketStream::from_raw_socket(near, Role::Client, None).await;
+        (Box::new(ws), unread_peer)
+    }
+
+    #[derive(Clone, Copy)]
+    pub(crate) enum WriteFate {
+        Stall,
+        Fail,
+    }
+
+    pub(crate) struct DoomedWrite {
+        pub(crate) frame_fragment: &'static str,
+        pub(crate) fate: WriteFate,
+        pub(crate) reached: oneshot::Sender<()>,
+    }
+
+    impl DoomedWrite {
+        pub(crate) fn on_the_first_dial(self) -> TransportLayer {
+            let armed = Mutex::new(Some(self));
+            Arc::new(move |ws| match armed.lock().unwrap().take() {
+                Some(doomed) => Box::new(ScriptedWrites {
+                    inner: ws,
+                    doomed: Some(doomed),
+                    blocked_as: None,
+                }),
+                None => ws,
+            })
         }
     }
 
-    pub(crate) async fn socket_with_a_stalled_write() -> (VtsWs, JoinHandle<()>) {
-        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let endpoint = format!("ws://{}", listener.local_addr().unwrap());
-        let peer = tokio::spawn(async move {
-            let (stream, _) = listener.accept().await.unwrap();
-            let _unread = tokio_tungstenite::accept_async(stream).await.unwrap();
-            std::future::pending::<()>().await;
-        });
-        let mut ws = dial_or_panic(&endpoint).await;
-        let filling = send_text(&mut ws, "x".repeat(OVERSIZED_FRAME_BYTES));
+    struct ScriptedWrites {
+        inner: VtsWs,
+        doomed: Option<DoomedWrite>,
+        blocked_as: Option<WriteFate>,
+    }
 
-        assert!(
-            tokio::time::timeout(SHORT_LIMIT, filling).await.is_err(),
-            "precondition: the oversized frame must outgrow the socket buffers"
-        );
-        (ws, peer)
+    impl Sink<Message> for ScriptedWrites {
+        type Error = WsError;
+
+        fn poll_ready(
+            mut self: Pin<&mut Self>,
+            cx: &mut Context<'_>,
+        ) -> Poll<Result<(), Self::Error>> {
+            Pin::new(&mut self.inner).poll_ready(cx)
+        }
+
+        fn start_send(mut self: Pin<&mut Self>, item: Message) -> Result<(), Self::Error> {
+            let is_doomed = self.doomed.as_ref().is_some_and(|doomed| {
+                matches!(&item, Message::Text(text) if text.contains(doomed.frame_fragment))
+            });
+            if !is_doomed {
+                return Pin::new(&mut self.inner).start_send(item);
+            }
+            if let Some(doomed) = self.doomed.take() {
+                self.blocked_as = Some(doomed.fate);
+                #[expect(
+                    clippy::let_underscore_must_use,
+                    reason = "a scenario may not wait for the write to be reached"
+                )]
+                let _ = doomed.reached.send(());
+            }
+            Ok(())
+        }
+
+        fn poll_flush(
+            mut self: Pin<&mut Self>,
+            cx: &mut Context<'_>,
+        ) -> Poll<Result<(), Self::Error>> {
+            match self.blocked_as {
+                None => Pin::new(&mut self.inner).poll_flush(cx),
+                Some(WriteFate::Stall) => Poll::Pending,
+                Some(WriteFate::Fail) => Poll::Ready(Err(WsError::ConnectionClosed)),
+            }
+        }
+
+        fn poll_close(
+            mut self: Pin<&mut Self>,
+            cx: &mut Context<'_>,
+        ) -> Poll<Result<(), Self::Error>> {
+            Pin::new(&mut self.inner).poll_close(cx)
+        }
+    }
+
+    impl Stream for ScriptedWrites {
+        type Item = Result<Message, WsError>;
+
+        fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
+            Pin::new(&mut self.inner).poll_next(cx)
+        }
     }
 
     #[test]
@@ -263,7 +358,7 @@ pub(crate) mod tests {
         assert_eq!(failure.detail, VTubeError::Timeout.to_string());
     }
 
-    #[tokio::test]
+    #[tokio::test(start_paused = true)]
     async fn a_request_whose_write_stalls_times_out() {
         let (mut ws, _peer) = socket_with_a_stalled_write().await;
 
@@ -277,7 +372,7 @@ pub(crate) mod tests {
         assert!(matches!(outcome, Err(VTubeError::Timeout)), "{outcome:?}");
     }
 
-    #[tokio::test]
+    #[tokio::test(start_paused = true)]
     async fn a_message_whose_write_stalls_times_out() {
         let (mut ws, _peer) = socket_with_a_stalled_write().await;
 

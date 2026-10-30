@@ -15,6 +15,7 @@ use crate::health::{HealthSnapshot, make_health_channel};
 use crate::timing::VTubeTiming;
 use crate::vts::endpoint::{DEFAULT_VTS_HOST, DEFAULT_VTS_PORT, endpoint_url};
 use crate::vts::request::{PendingRequest, ReqTxSlot, round_trip};
+use crate::vts::socket::{TransportLayer, bare_transport};
 
 pub(crate) const VTUBE_PLATFORM_ID: &str = crate::vocabulary::INTEGRATION_ID;
 
@@ -55,6 +56,7 @@ pub struct VTubeClient {
     pub(crate) reconnect_publisher: Arc<dyn EventPublisher>,
     pub(crate) reconnect_creds: Arc<dyn CredentialsRepo>,
     pub(crate) timing: VTubeTiming,
+    pub(crate) transport_layer: TransportLayer,
 }
 
 impl VTubeClient {
@@ -72,7 +74,7 @@ impl VTubeClient {
         creds: Arc<dyn CredentialsRepo>,
         timing: VTubeTiming,
     ) -> Self {
-        Self::start(cfg, publisher, creds, true, timing)
+        Self::start(cfg, publisher, creds, true, timing, bare_transport())
     }
 
     pub(crate) fn connect_with_auto_reconnect(
@@ -87,6 +89,7 @@ impl VTubeClient {
             creds,
             auto_reconnect,
             VTubeTiming::default(),
+            bare_transport(),
         )
     }
 
@@ -96,6 +99,7 @@ impl VTubeClient {
         creds: Arc<dyn CredentialsRepo>,
         auto_reconnect: bool,
         timing: VTubeTiming,
+        transport_layer: TransportLayer,
     ) -> Self {
         let state = Arc::new(AtomicConnectionState::new(ConnectionState::Connecting));
         let auth_state = Arc::new(RwLock::new(AuthState::Cold));
@@ -121,6 +125,7 @@ impl VTubeClient {
             Arc::clone(&content_state),
             Arc::clone(&req_tx_slot),
             content_changed_rx,
+            content_notifier.items_changed_sender(),
         );
         let catalog_metrics_handle = crate::content::spawn_catalog_metrics_task(
             Arc::clone(&content_state),
@@ -153,6 +158,7 @@ impl VTubeClient {
             auto_reconnect: auto_reconnect.subscribe(),
             last_failure: Arc::clone(&last_failure),
             timing,
+            transport_layer: Arc::clone(&transport_layer),
         };
         let handle = tokio::spawn(crate::supervisor::run_supervisor(ctx));
 
@@ -180,6 +186,7 @@ impl VTubeClient {
             reconnect_publisher: publisher,
             reconnect_creds: creds,
             timing,
+            transport_layer,
         }
     }
 
@@ -265,6 +272,7 @@ impl VTubeClient {
             reconnect_publisher: publisher,
             reconnect_creds: creds,
             timing: VTubeTiming::default(),
+            transport_layer: bare_transport(),
         }
     }
 }
@@ -304,6 +312,7 @@ pub(crate) mod tests {
     use futures_util::SinkExt;
 
     use super::*;
+    use crate::vts::socket::tests::DoomedWrite;
     use forge_events::{Event, EventPublisher};
     use forge_events::{PlatformConnectionChanged, TypedEvent};
     use forge_platform_core::{BuiltinControl, BuiltinStatus};
@@ -364,13 +373,19 @@ pub(crate) mod tests {
 
     pub(crate) struct MockCreds {
         store: Arc<std::sync::Mutex<std::collections::HashMap<String, String>>>,
+        refused_reads: AtomicU32,
     }
 
     impl MockCreds {
         pub(crate) fn new() -> Arc<Self> {
             Arc::new(Self {
                 store: Arc::new(std::sync::Mutex::new(std::collections::HashMap::new())),
+                refused_reads: AtomicU32::new(0),
             })
+        }
+
+        pub(crate) fn refuse_next_read(&self) {
+            self.refused_reads.fetch_add(1, AO::SeqCst);
         }
 
         pub(crate) fn creds(self: &Arc<Self>) -> Arc<dyn CredentialsRepo> {
@@ -404,6 +419,13 @@ pub(crate) mod tests {
         }
 
         async fn load(&self, id: &CredentialId) -> Result<Option<String>, StorageError> {
+            let refused = self
+                .refused_reads
+                .try_update(AO::SeqCst, AO::SeqCst, |left| left.checked_sub(1))
+                .is_ok();
+            if refused {
+                return Err(StorageError::Decryption);
+            }
             Ok(self.store.lock().unwrap().get(id.as_str()).cloned())
         }
 
@@ -525,25 +547,9 @@ pub(crate) mod tests {
         creds
     }
 
-    const LARGE_FRAME_BYTES: usize = 32 * 1024;
-    const MAX_CONTROL_FRAME_BYTES: usize = 125;
-    const PEER_WRITE_STALL: Duration = Duration::from_millis(100);
-
     enum PeerCmd {
         Send(serde_json::Value),
         Close,
-        AbandonAtLargeFrame(tokio::sync::oneshot::Sender<()>),
-        StopReading(tokio::sync::oneshot::Sender<()>),
-        FloodPings {
-            stalled: tokio::sync::oneshot::Sender<()>,
-            afterwards: AfterFlood,
-        },
-    }
-
-    #[derive(Clone, Copy)]
-    pub(crate) enum AfterFlood {
-        HoldTheSocket,
-        DropTheSocket,
     }
 
     #[derive(Clone)]
@@ -598,36 +604,6 @@ pub(crate) mod tests {
                 reason = "the receiver may already be gone"
             )]
             let _ = self.0.send(PeerCmd::Close);
-        }
-
-        pub(crate) async fn abandon_at_large_frame(&self) {
-            let (armed_tx, armed_rx) = tokio::sync::oneshot::channel();
-            self.0
-                .send(PeerCmd::AbandonAtLargeFrame(armed_tx))
-                .expect("the peer must still be pumping");
-            armed_rx.await.expect("the peer must arm itself");
-        }
-
-        pub(crate) async fn stop_reading(&self) {
-            let (stopped_tx, stopped_rx) = tokio::sync::oneshot::channel();
-            self.0
-                .send(PeerCmd::StopReading(stopped_tx))
-                .expect("the peer must still be pumping");
-            stopped_rx.await.expect("the peer must stop reading");
-        }
-
-        pub(crate) fn flood_pings(
-            &self,
-            afterwards: AfterFlood,
-        ) -> tokio::sync::oneshot::Receiver<()> {
-            let (stalled, stalled_rx) = tokio::sync::oneshot::channel();
-            self.0
-                .send(PeerCmd::FloodPings {
-                    stalled,
-                    afterwards,
-                })
-                .expect("the peer must still be pumping");
-            stalled_rx
         }
     }
 
@@ -765,6 +741,25 @@ pub(crate) mod tests {
             )
         }
 
+        pub(crate) fn connect_with_doomed_write(
+            &self,
+            publisher: &Arc<MockPublisher>,
+            creds: &Arc<MockCreds>,
+            timing: VTubeTiming,
+            doomed: DoomedWrite,
+        ) -> VTubeClient {
+            VTubeClient::start(
+                VTubeConfig {
+                    endpoint: self.endpoint.clone(),
+                },
+                publisher.publisher(),
+                creds.creds(),
+                true,
+                timing,
+                doomed.on_the_first_dial(),
+            )
+        }
+
         pub(crate) async fn next_conn(&mut self, budget: Duration) -> Option<PeerConn> {
             tokio::time::timeout(budget, self.conns.recv())
                 .await
@@ -814,39 +809,6 @@ pub(crate) mod tests {
                         #[expect(clippy::let_underscore_must_use, reason = "a failed close does not affect the scenario")]
                         let _ = ws.close(None).await;
                         return;
-                    }
-                    Some(PeerCmd::AbandonAtLargeFrame(armed)) => {
-                        #[expect(clippy::let_underscore_must_use, reason = "the receiver may already be gone")]
-                        let _ = armed.send(());
-                        let mut unread = vec![0; LARGE_FRAME_BYTES];
-                        while ws.get_ref().peek(&mut unread).await.is_ok_and(|n| n < LARGE_FRAME_BYTES) {
-                            tokio::task::yield_now().await;
-                        }
-                        return;
-                    }
-                    Some(PeerCmd::StopReading(stopped)) => {
-                        #[expect(clippy::let_underscore_must_use, reason = "the receiver may already be gone")]
-                        let _ = stopped.send(());
-                        std::future::pending::<()>().await;
-                    }
-                    Some(PeerCmd::FloodPings { stalled, afterwards }) => {
-                        let ping = vec![0; MAX_CONTROL_FRAME_BYTES];
-                        while let Ok(sent) = tokio::time::timeout(
-                            PEER_WRITE_STALL,
-                            ws.send(Message::Ping(ping.clone().into())),
-                        )
-                        .await
-                        {
-                            if sent.is_err() {
-                                return;
-                            }
-                        }
-                        #[expect(clippy::let_underscore_must_use, reason = "the receiver may already be gone")]
-                        let _ = stalled.send(());
-                        match afterwards {
-                            AfterFlood::HoldTheSocket => std::future::pending::<()>().await,
-                            AfterFlood::DropTheSocket => return,
-                        }
                     }
                 },
             }

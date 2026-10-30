@@ -1,8 +1,8 @@
 use forge_events::{Event, EventSource};
 use forge_registry::{
-    ActorDeclaration, ActorIdentity, ActorRole, ActorSlot, CanonicalVariable, EventFilter,
-    FormField, KindPlatformContract, TriggerCategory, TriggerKindDescriptor, TriggerVariables,
-    joined_condition,
+    ActorDeclaration, ActorIdentity, ActorRole, ActorSlot, CanonicalVariable, ConfigProblem,
+    ConfigReason, EventFilter, FormField, KindPlatformContract, TriggerCategory,
+    TriggerKindDescriptor, TriggerVariables, joined_condition,
 };
 use forge_types::{
     DeclaredVariable, MessageRef, PlatformId, TriggerConfig, UserText, Variant, VariantKind,
@@ -17,6 +17,8 @@ use crate::vocabulary::fields::whisper as whisper_fields;
 use crate::vocabulary::{event_kinds, messages, trigger_ids};
 
 const COMPILED_PATTERN_CACHE_LIMIT: usize = 64;
+const MATCH_TEXT_KEY: &str = "match_text";
+const MATCH_IS_REGEX_KEY: &str = "match_is_regex";
 
 pub(crate) struct WhisperReceivedDescriptor;
 
@@ -41,6 +43,21 @@ fn compiled_pattern(pattern: &str) -> Option<Regex> {
     };
     cache.insert(pattern.to_owned(), compiled.clone());
     compiled
+}
+
+fn match_text(config: &TriggerConfig) -> &str {
+    config
+        .get(MATCH_TEXT_KEY)
+        .and_then(Variant::as_str)
+        .unwrap_or("")
+        .trim()
+}
+
+fn match_is_regex(config: &TriggerConfig) -> bool {
+    config
+        .get(MATCH_IS_REGEX_KEY)
+        .and_then(Variant::as_bool)
+        .unwrap_or(false)
 }
 
 impl TriggerKindDescriptor for WhisperReceivedDescriptor {
@@ -84,15 +101,28 @@ impl TriggerKindDescriptor for WhisperReceivedDescriptor {
                 placeholder: "any",
             },
             FormField::Text {
-                key: "match_text",
+                key: MATCH_TEXT_KEY,
                 label: "Match text",
                 placeholder: "leave empty to match all",
             },
             FormField::Toggle {
-                key: "match_is_regex",
+                key: MATCH_IS_REGEX_KEY,
                 label: "Use regex",
             },
         ]
+    }
+
+    fn check_config(&self, config: &TriggerConfig) -> Result<(), ConfigProblem> {
+        let pattern = match_text(config);
+        if !match_is_regex(config) || pattern.is_empty() {
+            return Ok(());
+        }
+        Regex::new(pattern).map(drop).map_err(|error| {
+            ConfigProblem::field(
+                MATCH_TEXT_KEY,
+                ConfigReason::Coded(messages::whisper_pattern_invalid(&error.to_string())),
+            )
+        })
     }
 
     fn condition_display(&self, config: &TriggerConfig) -> UserText {
@@ -106,7 +136,7 @@ impl TriggerKindDescriptor for WhisperReceivedDescriptor {
         let parts: Vec<MessageRef> = filter_text("from_user")
             .map(messages::condition_whisper_from)
             .into_iter()
-            .chain(filter_text("match_text").map(messages::condition_whisper_text))
+            .chain(filter_text(MATCH_TEXT_KEY).map(messages::condition_whisper_text))
             .collect();
         if parts.is_empty() {
             messages::CONDITION_ANY_WHISPER.into()
@@ -143,13 +173,9 @@ impl TriggerKindDescriptor for WhisperReceivedDescriptor {
             }
         }
 
-        let match_text = config
-            .get("match_text")
-            .and_then(|v| v.as_str())
-            .unwrap_or("")
-            .trim();
+        let wanted_text = match_text(config);
 
-        if match_text.is_empty() {
+        if wanted_text.is_empty() {
             return true;
         }
 
@@ -160,15 +186,10 @@ impl TriggerKindDescriptor for WhisperReceivedDescriptor {
             .and_then(|v| v.as_str())
             .unwrap_or("");
 
-        let is_regex = config
-            .get("match_is_regex")
-            .and_then(|v| v.as_bool())
-            .unwrap_or(false);
-
-        if is_regex {
-            compiled_pattern(match_text).is_some_and(|re| re.is_match(whisper_text))
+        if match_is_regex(config) {
+            compiled_pattern(wanted_text).is_some_and(|re| re.is_match(whisper_text))
         } else {
-            whisper_text.contains(match_text)
+            whisper_text.contains(wanted_text)
         }
     }
 
@@ -350,6 +371,48 @@ mod tests {
             ("match_text", Variant::String(pattern.to_owned())),
             ("match_is_regex", Variant::Bool(true)),
         ])
+    }
+
+    #[test]
+    fn check_config_refuses_a_pattern_that_does_not_compile_on_the_text_field() {
+        for pattern in ["[", "  (unclosed  "] {
+            let problem = WhisperReceivedDescriptor
+                .check_config(&regex_config(pattern))
+                .unwrap_err();
+
+            let ConfigReason::Coded(message) = problem.reason else {
+                panic!("{pattern:?} must be refused with a coded reason");
+            };
+            assert_eq!(problem.field.as_deref(), Some("match_text"), "{pattern:?}");
+            assert_eq!(
+                message.code().to_string(),
+                "twitch.whisper_pattern_invalid",
+                "{pattern:?}"
+            );
+            assert!(message.detail().is_some(), "{pattern:?} lost its cause");
+        }
+    }
+
+    #[test]
+    fn check_config_accepts_everything_the_matcher_would_not_compile_or_compiles_cleanly() {
+        for cfg in [
+            TriggerConfig::new(),
+            regex_config(""),
+            regex_config("   "),
+            regex_config(r"^!play\s+\d+$"),
+            regex_config(" ^trimmed$ "),
+            config(&[("match_text", Variant::String("[".to_owned()))]),
+            config(&[
+                ("match_text", Variant::String("[".to_owned())),
+                ("match_is_regex", Variant::Bool(false)),
+            ]),
+        ] {
+            assert_eq!(
+                WhisperReceivedDescriptor.check_config(&cfg),
+                Ok(()),
+                "{cfg:?}"
+            );
+        }
     }
 
     #[test]

@@ -6,6 +6,7 @@ msg-midi-health_events_per_minute = Подій / хв
 msg-midi-raw_bytes_shape = Має бути списком значень байтів
 msg-midi-port_not_found = MIDI-порт "{ $port }" не знайдено.
 msg-midi-port_disconnected = MIDI-порт "{ $port }" відключено.
+msg-midi-value_out_of_range = Значення MIDI { $value } перевищує максимум { $max }.
 msg-midi-invalid_status_byte = MIDI-повідомлення має недійсний статусний байт ({ $byte }).
 msg-midi-port_connect_failed = Не вдалося підключитися до MIDI-порту.
 msg-midi-send_failed = Не вдалося надіслати MIDI-повідомлення.

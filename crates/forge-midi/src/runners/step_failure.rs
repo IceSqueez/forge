@@ -8,6 +8,7 @@ pub(crate) fn message(error: &MidiError) -> MessageRef {
         MidiError::PortNotFound { name } => messages::port_not_found(name),
         MidiError::PortDisconnected { name } => messages::port_disconnected(name),
         MidiError::InvalidStatusByte(byte) => messages::invalid_status_byte(*byte),
+        MidiError::ValueOutOfRange { value, max } => messages::value_out_of_range(*value, *max),
         MidiError::MidirInit(detail) => messages::backend_unavailable_with(detail),
         MidiError::MidirConnect(detail) => messages::port_connect_failed(detail),
         MidiError::OutputSend(detail) => messages::send_failed(detail),
@@ -40,6 +41,13 @@ mod tests {
             (
                 MidiError::InvalidStatusByte(0x7F),
                 "midi.invalid_status_byte",
+            ),
+            (
+                MidiError::ValueOutOfRange {
+                    value: 200,
+                    max: 127,
+                },
+                "midi.value_out_of_range",
             ),
             (
                 MidiError::MidirInit("alsa down".into()),
@@ -88,6 +96,19 @@ mod tests {
         assert_eq!(
             message(&MidiError::InvalidStatusByte(0x7F)).arg("byte"),
             Some(&MessageArg::Int(0x7F))
+        );
+    }
+
+    #[test]
+    fn an_out_of_range_value_carries_the_value_and_its_maximum() {
+        let mapped = message(&MidiError::ValueOutOfRange {
+            value: 200,
+            max: 127,
+        });
+
+        assert_eq!(
+            (mapped.arg("value"), mapped.arg("max")),
+            (Some(&MessageArg::Int(200)), Some(&MessageArg::Int(127)))
         );
     }
 

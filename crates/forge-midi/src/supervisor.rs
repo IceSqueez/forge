@@ -303,6 +303,7 @@ fn diff_output_ports(client: &Arc<MidiClient>, old: &[MidiPortInfo], new: &[Midi
 
     for port in old {
         if !new_names.contains(port.name.as_str()) {
+            client.backend.release_output(&port.name);
             emit_port_event(client, &port.name, PortDirection::Output, false);
             let mut content = client
                 .content_state
@@ -1108,6 +1109,23 @@ mod tests {
             added.iter().any(|e| e.payload["direction"] == "output"),
             "expected output port added event"
         );
+    }
+
+    #[tokio::test]
+    async fn a_lost_output_port_releases_only_its_own_connection() {
+        let backend = Arc::new(MockMidiBackend::new(
+            vec![],
+            vec![output_port("Synth"), output_port("Drums")],
+        ));
+        let publisher = RecordingPublisher::new();
+        let client = start_client(Arc::clone(&backend), Arc::clone(&publisher)).await;
+        wait_for_port_event(&publisher, "midi.port.added", "Synth").await;
+
+        backend.set_output_ports(vec![output_port("Drums")]);
+        client.rescan_ports().await.unwrap();
+        wait_for_port_event(&publisher, "midi.port.removed", "Synth").await;
+
+        assert_eq!(backend.released_outputs(), ["Synth"]);
     }
 
     #[tokio::test]

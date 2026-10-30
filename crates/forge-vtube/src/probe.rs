@@ -5,7 +5,7 @@ use crate::timing::VTubeTiming;
 use crate::vts::endpoint::endpoint_url;
 use crate::vts::message_type::{API_STATE_REQUEST, API_STATE_RESPONSE};
 use crate::vts::protocol::new_request;
-use crate::vts::socket::{dial_within, recv_next_text, send_ws_msg};
+use crate::vts::socket::{dial_within, recv_next_text, send_close, send_ws_msg};
 
 pub(crate) const PROBE_TIMEOUT: Duration = Duration::from_secs(5);
 
@@ -45,7 +45,7 @@ async fn run_probe(
     let msg = recv_next_text(&mut ws).await?;
     let round_trip_ms = started.elapsed().as_millis().min(u128::from(u64::MAX)) as u64;
 
-    if let Err(error) = ws.close(None).await {
+    if let Err(error) = send_close(&mut ws).await {
         tracing::debug!(%error, "probe socket close failed");
     }
 

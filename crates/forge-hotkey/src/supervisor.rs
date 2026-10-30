@@ -1,3 +1,4 @@
+use std::collections::HashSet;
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
 use std::time::Duration;
@@ -10,6 +11,7 @@ use tokio::time::MissedTickBehavior;
 use crate::backend::{BackendSessionEvent, HotkeyEdge, HotkeyFiredEvent, HotkeyId};
 use crate::client::{EnableFailure, HotkeyClient};
 use crate::combo::HotkeyCombo;
+use crate::error::HotkeyError;
 use crate::health::{
     BACKEND_METRIC, REGISTERED_METRIC, backend_health_value, build_trigger_delta,
     registered_count_health_value,
@@ -22,7 +24,7 @@ const CEILING_SWEEP_INTERVAL: Duration = Duration::from_secs(1);
 
 pub(crate) enum SupervisorCommand {
     Enable(oneshot::Sender<Vec<EnableFailure>>),
-    Disable(oneshot::Sender<()>),
+    Disable(oneshot::Sender<Result<(), HotkeyError>>),
 }
 
 pub(crate) async fn run_supervisor(
@@ -154,29 +156,12 @@ fn handle_press(client: &Arc<HotkeyClient>, event: HotkeyFiredEvent) {
 async fn handle_supervisor_command(client: &Arc<HotkeyClient>, cmd: SupervisorCommand) {
     match cmd {
         SupervisorCommand::Disable(reply) => {
-            if !client.enabled.load(Ordering::Relaxed) {
-                #[expect(
-                    clippy::let_underscore_must_use,
-                    reason = "the requester may stop waiting for the reply"
-                )]
-                let _ = reply.send(());
-                return;
-            }
-            hold::close_all_synthesized(client);
-            if !client.backend.delivery_gate_only() {
-                for (id, _combo) in known_combos(client) {
-                    if let Err(error) = client.backend.unregister(id).await {
-                        tracing::warn!(%error, hotkey = ?id, "hotkey could not be unregistered");
-                    }
-                }
-            }
-            client.enabled.store(false, Ordering::Relaxed);
-            emit_engine_state_change(client, false);
+            let outcome = disable_engine(client).await;
             #[expect(
                 clippy::let_underscore_must_use,
                 reason = "the requester may stop waiting for the reply"
             )]
-            let _ = reply.send(());
+            let _ = reply.send(outcome);
         }
         SupervisorCommand::Enable(reply) => {
             if client.enabled.load(Ordering::Relaxed) {
@@ -188,8 +173,12 @@ async fn handle_supervisor_command(client: &Arc<HotkeyClient>, cmd: SupervisorCo
                 return;
             }
             let mut failures = Vec::new();
+            let still_held = take_unreleased(client);
             if !client.backend.delivery_gate_only() {
                 for (id, combo) in known_combos(client) {
+                    if still_held.contains(&id) {
+                        continue;
+                    }
                     if let Err(error) = client.backend.register(id, &combo).await {
                         failures.push(EnableFailure { id, combo, error });
                     }
@@ -211,6 +200,45 @@ async fn handle_supervisor_command(client: &Arc<HotkeyClient>, cmd: SupervisorCo
             let _ = reply.send(failures);
         }
     }
+}
+
+async fn disable_engine(client: &Arc<HotkeyClient>) -> Result<(), HotkeyError> {
+    let was_enabled = client.enabled.swap(false, Ordering::Relaxed);
+    let retried = take_unreleased(client);
+    if !was_enabled && retried.is_empty() {
+        return Ok(());
+    }
+    let known = known_combos(client).into_iter().map(|(id, _combo)| id);
+    let to_release: Vec<HotkeyId> = if was_enabled {
+        hold::close_all_synthesized(client);
+        if client.backend.delivery_gate_only() {
+            Vec::new()
+        } else {
+            known.collect()
+        }
+    } else {
+        known.filter(|id| retried.contains(id)).collect()
+    };
+
+    let mut first_failure = None;
+    let mut unreleased = HashSet::new();
+    for id in to_release {
+        if let Err(error) = client.backend.unregister(id).await {
+            tracing::warn!(%error, hotkey = ?id, "hotkey could not be unregistered");
+            unreleased.insert(id);
+            first_failure.get_or_insert(error);
+        }
+    }
+    if let Some(error) = first_failure {
+        *client.unreleased.lock().unwrap_or_else(|p| p.into_inner()) = unreleased;
+        return Err(error);
+    }
+    emit_engine_state_change(client, false);
+    Ok(())
+}
+
+fn take_unreleased(client: &HotkeyClient) -> HashSet<HotkeyId> {
+    std::mem::take(&mut client.unreleased.lock().unwrap_or_else(|p| p.into_inner()))
 }
 
 fn record_enable_failures(client: &Arc<HotkeyClient>, failures: &[EnableFailure]) {

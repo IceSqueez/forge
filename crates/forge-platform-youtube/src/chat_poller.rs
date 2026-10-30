@@ -16,10 +16,11 @@ use tokio_util::sync::CancellationToken;
 
 use crate::active_broadcast_id::ActiveBroadcastIdHandle;
 use crate::ban_ledger::{USER_BANNED_EVENT_TYPE, observed_ban};
+use crate::broadcast_lookup::{LookupFailure, fetch_active_broadcast};
 use crate::data_api::{DataApiError, YoutubeDataApi, malformed};
 use crate::live_chat_id::LiveChatIdHandle;
 use crate::poll_health::{PollHealthReporter, PollHealthTracker};
-use crate::quota_state::{BROADCAST_COST, CHAT_POLL_COST, today_pacific};
+use crate::quota_state::{CHAT_POLL_COST, today_pacific};
 use crate::vocabulary::event_kinds;
 use crate::vocabulary::fields::{
     ban as ban_fields, chat as chat_fields, chat_mod as chat_mod_fields, entity,
@@ -36,9 +37,8 @@ const LIVE_CHAT_ENDED_REASON: &str = "liveChatEnded";
 const LIVE_CHAT_ENDED_STATUS: u16 = forge_net::status::FORBIDDEN;
 const CHAT_MESSAGES_PAGE_SIZE: &str = "200";
 const DEFAULT_POLLING_INTERVAL_MS: u64 = 5_000;
-const BROADCASTS_PATH: &str = "/liveBroadcasts";
 const MESSAGES_PATH: &str = "/liveChat/messages";
-const MISSING_SCOPE: &str = "chat read scope missing";
+pub(crate) const MISSING_SCOPE: &str = "chat read scope missing";
 
 enum FetchFailure {
     Cancelled,
@@ -446,42 +446,17 @@ impl YoutubeChatPoller {
         token: &str,
         cancel: &CancellationToken,
     ) -> Result<Option<(String, String, String)>, FetchFailure> {
-        let request = GatewayRequest::get(BROADCASTS_PATH)
-            .label(BROADCASTS_PATH)
-            .bearer(Secret::new(token))
-            .query("part", "snippet,contentDetails")
-            .query("broadcastStatus", "active")
-            .query("broadcastType", "all")
-            .cancel_on(cancel.clone());
-        let body: serde_json::Value = self
-            .api
-            .send(BROADCAST_COST, request)
-            .await?
-            .json()
-            .map_err(|e| FetchFailure::Failed(malformed(e)))?;
-
-        let item = body
-            .get("items")
-            .and_then(|v| v.as_array())
-            .and_then(|arr| arr.first());
-
-        let live_chat_id = item
-            .and_then(|item| item.get("snippet"))
-            .and_then(|snippet| snippet.get("liveChatId"))
-            .and_then(|v| v.as_str());
-        let broadcast_id = item
-            .and_then(|item| item.get("id"))
-            .and_then(|v| v.as_str());
-        let title = item
-            .and_then(|item| item.get("snippet"))
-            .and_then(|snippet| snippet.get("title"))
-            .and_then(|v| v.as_str())
-            .unwrap_or("");
-
-        Ok(match (live_chat_id, broadcast_id) {
-            (Some(lc), Some(b)) => Some((lc.to_owned(), b.to_owned(), title.to_owned())),
-            _ => None,
-        })
+        match fetch_active_broadcast(&self.api, token, Some(cancel)).await {
+            Ok(found) => Ok(found.map(|broadcast| {
+                (
+                    broadcast.live_chat_id,
+                    broadcast.broadcast_id,
+                    broadcast.title,
+                )
+            })),
+            Err(LookupFailure::Api(error)) => Err(error.into()),
+            Err(LookupFailure::Malformed(error)) => Err(FetchFailure::Failed(error)),
+        }
     }
 
     async fn fetch_chat_messages(
@@ -1066,6 +1041,7 @@ mod tests {
         RecordingPublisher, StubReply, StubServer, data_api_with, spin_until, used_today,
         wait_until,
     };
+    use crate::quota_state::BROADCAST_COST;
 
     const REQUEST_FAIL_KIND: &str = "request.fail";
     use crate::live_chat_id::LiveChatIdHandle;

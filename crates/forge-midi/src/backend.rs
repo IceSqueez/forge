@@ -1,3 +1,6 @@
+use std::collections::HashMap;
+use std::sync::Mutex;
+
 use tokio::sync::mpsc;
 
 use crate::error::MidiError;
@@ -16,17 +19,39 @@ pub(crate) trait MidiBackend: Send + Sync {
     ) -> Result<Box<dyn InputHandle>, MidiError>;
 
     fn send_output(&self, port_name: &str, data: &[u8]) -> Result<(), MidiError>;
+
+    fn release_output(&self, _port_name: &str) {}
 }
 
 pub(crate) struct MidirBackend {
     client_name: String,
+    outputs: Mutex<HashMap<String, midir::MidiOutputConnection>>,
 }
 
 impl MidirBackend {
     pub(crate) fn new(client_name: impl Into<String>) -> Result<Self, MidiError> {
         let client_name = client_name.into();
         midir::MidiInput::new(&client_name).map_err(|e| MidiError::MidirInit(e.to_string()))?;
-        Ok(Self { client_name })
+        Ok(Self {
+            client_name,
+            outputs: Mutex::new(HashMap::new()),
+        })
+    }
+
+    fn connect_output(&self, port_name: &str) -> Result<midir::MidiOutputConnection, MidiError> {
+        let output = midir::MidiOutput::new(&self.client_name)
+            .map_err(|e| MidiError::MidirInit(e.to_string()))?;
+        let ports = output.ports();
+        let port = ports
+            .iter()
+            .find(|p| output.port_name(p).ok().as_deref() == Some(port_name))
+            .ok_or_else(|| MidiError::PortNotFound {
+                name: port_name.to_owned(),
+            })?
+            .clone();
+        output
+            .connect(&port, "forge-midi")
+            .map_err(|e| MidiError::MidirConnect(e.to_string()))
     }
 }
 
@@ -103,21 +128,28 @@ impl MidiBackend for MidirBackend {
     }
 
     fn send_output(&self, port_name: &str, data: &[u8]) -> Result<(), MidiError> {
-        let output = midir::MidiOutput::new(&self.client_name)
-            .map_err(|e| MidiError::MidirInit(e.to_string()))?;
-        let ports = output.ports();
-        let port = ports
-            .iter()
-            .find(|p| output.port_name(p).ok().as_deref() == Some(port_name))
-            .ok_or_else(|| MidiError::PortNotFound {
-                name: port_name.to_owned(),
-            })?
-            .clone();
-        let mut conn = output
-            .connect(&port, "forge-midi")
-            .map_err(|e| MidiError::MidirConnect(e.to_string()))?;
-        conn.send(data)
-            .map_err(|e| MidiError::OutputSend(e.to_string()))
+        let mut outputs = self.outputs.lock().unwrap_or_else(|p| p.into_inner());
+        let reused = outputs
+            .remove(port_name)
+            .and_then(|mut conn| conn.send(data).is_ok().then_some(conn));
+        let conn = match reused {
+            Some(conn) => conn,
+            None => {
+                let mut conn = self.connect_output(port_name)?;
+                conn.send(data)
+                    .map_err(|e| MidiError::OutputSend(e.to_string()))?;
+                conn
+            }
+        };
+        outputs.insert(port_name.to_owned(), conn);
+        Ok(())
+    }
+
+    fn release_output(&self, port_name: &str) {
+        self.outputs
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .remove(port_name);
     }
 }
 
@@ -156,6 +188,7 @@ pub(crate) mod tests {
         pub refused_opens: HashSet<String>,
         pub next_token: u64,
         pub sent_outputs: VecDeque<(String, Vec<u8>)>,
+        pub released_outputs: Vec<String>,
     }
 
     pub(crate) struct MockMidiBackend {
@@ -172,6 +205,7 @@ pub(crate) mod tests {
                     refused_opens: HashSet::new(),
                     next_token: 0,
                     sent_outputs: VecDeque::new(),
+                    released_outputs: Vec::new(),
                 })),
             }
         }
@@ -208,6 +242,14 @@ pub(crate) mod tests {
                 )]
                 let _ = sender.send((ts, data.clone())).await;
             }
+        }
+
+        pub(crate) fn released_outputs(&self) -> Vec<String> {
+            self.state
+                .lock()
+                .unwrap_or_else(|p| p.into_inner())
+                .released_outputs
+                .clone()
         }
 
         pub(crate) fn sent_outputs(&self) -> Vec<(String, Vec<u8>)> {
@@ -271,6 +313,14 @@ pub(crate) mod tests {
                 .sent_outputs
                 .push_back((port_name.to_owned(), data.to_vec()));
             Ok(())
+        }
+
+        fn release_output(&self, port_name: &str) {
+            self.state
+                .lock()
+                .unwrap_or_else(|p| p.into_inner())
+                .released_outputs
+                .push(port_name.to_owned());
         }
     }
 }

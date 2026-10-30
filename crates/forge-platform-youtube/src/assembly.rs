@@ -8,6 +8,7 @@ use forge_storage::{BanLedgerRepo, CredentialsRepo};
 use futures::future::BoxFuture;
 
 use crate::auth::YoutubeSignIn;
+use crate::broadcast_lookup::BroadcastLookup;
 use crate::chat_platform::token_source;
 use crate::oauth_client::{
     GOOGLE_OAUTH_BUDGET_CAPACITY, GOOGLE_OAUTH_BUDGET_WINDOW, google_oauth_gateway,
@@ -54,11 +55,16 @@ impl YoutubeAssembly {
             .ok()?;
         let manager = Arc::new(YoutubeCredentialsManager::new(creds, oauth, api.clone()));
         let sign_in = YoutubeSignIn::new(Arc::clone(&manager));
+        let lookup = BroadcastLookup::new(api.clone(), token_source(Arc::clone(&manager)));
+        let live_chat_id = LiveChatIdHandle::new();
+        live_chat_id.fall_back_to(lookup.clone());
+        let active_broadcast = ActiveBroadcastIdHandle::new();
+        active_broadcast.fall_back_to(lookup);
         Some(Self {
             api,
             manager,
-            live_chat_id: LiveChatIdHandle::new(),
-            active_broadcast: ActiveBroadcastIdHandle::new(),
+            live_chat_id,
+            active_broadcast,
             ban_ledger,
             sign_in,
         })

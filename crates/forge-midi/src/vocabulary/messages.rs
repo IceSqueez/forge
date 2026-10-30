@@ -17,6 +17,8 @@ const PORT_DISCONNECTED: MessageCode =
     MessageCode::from_static(INTEGRATION_ID, "port_disconnected");
 const INVALID_STATUS_BYTE: MessageCode =
     MessageCode::from_static(INTEGRATION_ID, "invalid_status_byte");
+const VALUE_OUT_OF_RANGE: MessageCode =
+    MessageCode::from_static(INTEGRATION_ID, "value_out_of_range");
 const PORT_CONNECT_FAILED: MessageCode =
     MessageCode::from_static(INTEGRATION_ID, "port_connect_failed");
 const SEND_FAILED: MessageCode = MessageCode::from_static(INTEGRATION_ID, "send_failed");
@@ -26,6 +28,8 @@ const SUPERVISOR_UNAVAILABLE: MessageCode =
 const PORT_ARG: &str = "port";
 const BYTE_ARG: &str = "byte";
 const TIME_ARG: &str = "time";
+const VALUE_ARG: &str = "value";
+const MAX_ARG: &str = "max";
 
 const HEALTH_INPUT_CONNECTED: MessageCode =
     MessageCode::from_static(INTEGRATION_ID, "health_input_connected");
@@ -88,6 +92,7 @@ pub const MIDI_MESSAGES: MessageCatalog = MessageCatalog {
         PORT_NOT_FOUND,
         PORT_DISCONNECTED,
         INVALID_STATUS_BYTE,
+        VALUE_OUT_OF_RANGE,
         PORT_CONNECT_FAILED,
         SEND_FAILED,
         SUPERVISOR_UNAVAILABLE,
@@ -151,6 +156,12 @@ pub(crate) fn port_not_found(port: &str) -> MessageRef {
 
 pub(crate) fn port_disconnected(port: &str) -> MessageRef {
     MessageRef::new(PORT_DISCONNECTED).with_arg(PORT_ARG, VerbatimText::new(port))
+}
+
+pub(crate) fn value_out_of_range(value: u8, max: i64) -> MessageRef {
+    MessageRef::new(VALUE_OUT_OF_RANGE)
+        .with_arg(VALUE_ARG, i64::from(value))
+        .with_arg(MAX_ARG, max)
 }
 
 pub(crate) fn invalid_status_byte(byte: u8) -> MessageRef {
@@ -227,6 +238,7 @@ mod tests {
             port_not_found("p"),
             port_disconnected("p"),
             invalid_status_byte(1),
+            value_out_of_range(200, 127),
             port_connect_failed("c"),
             send_failed("c"),
             supervisor_unavailable(),

@@ -143,6 +143,8 @@ const CONDITION_REWARD_ID: MessageCode =
 const CONDITION_REWARD: MessageCode = MessageCode::from_static(PLATFORM_ID, "condition_reward");
 const CONDITION_STATE: MessageCode = MessageCode::from_static(PLATFORM_ID, "condition_state");
 const CONDITION_STATUS: MessageCode = MessageCode::from_static(PLATFORM_ID, "condition_status");
+const WHISPER_PATTERN_INVALID: MessageCode =
+    MessageCode::from_static(PLATFORM_ID, "whisper_pattern_invalid");
 const CONDITION_WHISPER_FROM: MessageCode =
     MessageCode::from_static(PLATFORM_ID, "condition_whisper_from");
 const CONDITION_WHISPER_TEXT: MessageCode =
@@ -239,6 +241,7 @@ pub const TWITCH_MESSAGES: MessageCatalog = MessageCatalog {
         SHOUTOUT_COOLDOWN,
         RECIPIENT_EMPTY,
         RECIPIENT_REJECTS_WHISPERS,
+        WHISPER_PATTERN_INVALID,
         CONDITION_ANY_SHARED_CHAT_MESSAGE,
         CONDITION_BITS_BETWEEN,
         CONDITION_ANY_PROFILE_CHANGE,
@@ -592,6 +595,10 @@ pub(crate) fn condition_status(status: &str) -> MessageRef {
     MessageRef::new(CONDITION_STATUS).with_arg(STATUS_CONDITION_ARG, VerbatimText::new(status))
 }
 
+pub(crate) fn whisper_pattern_invalid(cause: &str) -> MessageRef {
+    detailed(WHISPER_PATTERN_INVALID, cause)
+}
+
 pub(crate) fn condition_whisper_from(sender: &str) -> MessageRef {
     MessageRef::new(CONDITION_WHISPER_FROM)
         .with_arg(SENDER_CONDITION_ARG, VerbatimText::new(sender))
@@ -798,6 +805,7 @@ mod tests {
             message_dropped("c", "d"),
             recipient_empty(),
             recipient_rejects_whispers(),
+            whisper_pattern_invalid("d"),
             shoutout_cooldown(30),
             health_chat_joined(),
             health_eventsub_subs(3),

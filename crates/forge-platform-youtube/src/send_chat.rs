@@ -46,12 +46,13 @@ impl YoutubeSendChat {
     }
 
     pub async fn send(&self, body: &str) -> Result<(), PlatformError> {
-        let live_chat_id = self
-            .live_chat_id
-            .get()
-            .ok_or_else(|| PlatformError::Unsupported {
-                feature: "send chat - no active YouTube broadcast".to_owned(),
-            })?;
+        let live_chat_id =
+            self.live_chat_id
+                .resolve()
+                .await?
+                .ok_or_else(|| PlatformError::Unsupported {
+                    feature: "send chat - no active YouTube broadcast".to_owned(),
+                })?;
 
         let payload = serde_json::json!({
             "snippet": {
@@ -68,12 +69,13 @@ impl YoutubeSendChat {
         question: &str,
         options: &[String],
     ) -> Result<(), PlatformError> {
-        let live_chat_id = self
-            .live_chat_id
-            .get()
-            .ok_or_else(|| PlatformError::Unsupported {
-                feature: "create poll - no active YouTube broadcast".to_owned(),
-            })?;
+        let live_chat_id =
+            self.live_chat_id
+                .resolve()
+                .await?
+                .ok_or_else(|| PlatformError::Unsupported {
+                    feature: "create poll - no active YouTube broadcast".to_owned(),
+                })?;
 
         let option_objects: Vec<serde_json::Value> = options
             .iter()

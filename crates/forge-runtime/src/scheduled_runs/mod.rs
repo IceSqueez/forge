@@ -33,7 +33,10 @@ pub use provenance::{
 pub use request::{
     ScheduleDue, ScheduleError, ScheduleRequest, ScheduledPlacement, skip_if_late_by_minutes,
 };
-pub use scheduler::{ScheduledRunsParts, spawn_scheduled_runs};
+pub use scheduler::{
+    ScheduledRunsParts, ScheduledRunsStart, ScheduledRunsStartParts, reserve_scheduled_runs,
+    spawn_scheduled_runs,
+};
 pub use scheduling_context::{ScheduleIntent, SchedulingContext};
 pub use script_scheduler::ScriptScheduling;
 pub use waiting::{WaitingForQueueWatch, WaitingRuns};

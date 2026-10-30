@@ -596,38 +596,60 @@ impl QueueSchedulerHandle {
 
 pub struct QueueScheduler;
 
+pub struct QueueSchedulerStart {
+    commands: mpsc::UnboundedReceiver<SchedulerCommand>,
+    depths: DepthBoard,
+    intake_tx: watch::Sender<()>,
+}
+
+impl QueueSchedulerStart {
+    pub fn start(self, engine: ActionEngineHandle, bus: Arc<EventBus>, initial_queues: Vec<Queue>) {
+        let Self {
+            commands,
+            depths,
+            intake_tx,
+        } = self;
+        let engine = Arc::new(engine);
+
+        let mut slots: HashMap<QueueId, QueueSlot> = HashMap::with_capacity(initial_queues.len());
+        for queue in initial_queues {
+            let id = queue.id;
+            let slot = QueueScheduler::make_queue_slot(queue, Arc::clone(&engine), &depths);
+            slots.insert(id, slot);
+        }
+
+        tokio::spawn(QueueScheduler::run_scheduler(
+            commands, slots, bus, engine, depths, intake_tx,
+        ));
+    }
+}
+
 impl QueueScheduler {
+    pub fn reserve() -> (QueueSchedulerHandle, QueueSchedulerStart) {
+        let (cmd_tx, cmd_rx) = mpsc::unbounded_channel();
+        let depths = DepthBoard::new();
+        let (intake_tx, intake_changes) = watch::channel(());
+        let handle = QueueSchedulerHandle {
+            sender: cmd_tx,
+            depths: depths.clone(),
+            intake_changes,
+        };
+        let start = QueueSchedulerStart {
+            commands: cmd_rx,
+            depths,
+            intake_tx,
+        };
+        (handle, start)
+    }
+
     pub fn spawn(
         engine: ActionEngineHandle,
         bus: Arc<EventBus>,
         initial_queues: Vec<Queue>,
     ) -> QueueSchedulerHandle {
-        let (cmd_tx, cmd_rx) = mpsc::unbounded_channel();
-        let engine = Arc::new(engine);
-        let depths = DepthBoard::new();
-        let (intake_tx, intake_changes) = watch::channel(());
-
-        let mut slots: HashMap<QueueId, QueueSlot> = HashMap::with_capacity(initial_queues.len());
-        for queue in initial_queues {
-            let id = queue.id;
-            let slot = Self::make_queue_slot(queue, Arc::clone(&engine), &depths);
-            slots.insert(id, slot);
-        }
-
-        tokio::spawn(Self::run_scheduler(
-            cmd_rx,
-            slots,
-            bus,
-            engine,
-            depths.clone(),
-            intake_tx,
-        ));
-
-        QueueSchedulerHandle {
-            sender: cmd_tx,
-            depths,
-            intake_changes,
-        }
+        let (handle, start) = Self::reserve();
+        start.start(engine, bus, initial_queues);
+        handle
     }
 
     fn make_queue_slot(

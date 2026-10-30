@@ -35,6 +35,23 @@ pub struct ScheduledRunsParts {
     pub catch_up: CatchUpSettle,
 }
 
+pub struct ScheduledRunsStartParts {
+    pub revision: CatalogRevision,
+    pub catalog: Arc<Catalog>,
+    pub actions: Arc<dyn ActionRepo>,
+    pub queues: QueueSchedulerHandle,
+    pub bus: Arc<EventBus>,
+    pub catch_up: CatchUpSettle,
+}
+
+pub struct ScheduledRunsStart {
+    repo: Arc<dyn ScheduledRunRepo>,
+    clock: Arc<dyn WallClock>,
+    commands: mpsc::Receiver<Command>,
+    waiting: watch::Sender<WaitingRuns>,
+    listener: StopListener,
+}
+
 struct ScheduledRunsTask {
     repo: Arc<dyn ScheduledRunRepo>,
     actions: Arc<dyn ActionRepo>,
@@ -43,6 +60,73 @@ struct ScheduledRunsTask {
     next_due: Option<OffsetDateTime>,
     retry_at: Option<OffsetDateTime>,
     waiting: watch::Sender<WaitingRuns>,
+}
+
+pub fn reserve_scheduled_runs(
+    repo: Arc<dyn ScheduledRunRepo>,
+    clock: Arc<dyn WallClock>,
+) -> (ScheduledRunsHandle, ScheduledRunsStart) {
+    let (commands_tx, commands) = mpsc::channel(COMMAND_CAPACITY);
+    let (waiting, waiting_rx) = watch::channel(WaitingRuns::new());
+    let (stop, listener) = task_stop();
+    let handle = ScheduledRunsHandle::new(
+        commands_tx,
+        Arc::clone(&repo),
+        Arc::clone(&clock),
+        waiting_rx,
+        stop,
+    );
+    let start = ScheduledRunsStart {
+        repo,
+        clock,
+        commands,
+        waiting,
+        listener,
+    };
+    (handle, start)
+}
+
+impl ScheduledRunsStart {
+    pub fn start(self, parts: ScheduledRunsStartParts) {
+        let Self {
+            repo,
+            clock,
+            commands,
+            waiting,
+            listener,
+        } = self;
+        let ScheduledRunsStartParts {
+            revision,
+            catalog,
+            actions,
+            queues,
+            bus,
+            catch_up,
+        } = parts;
+        let changes = revision.subscribe();
+        let intake_changes = queues.intake_changes();
+        let task = ScheduledRunsTask {
+            repo: Arc::clone(&repo),
+            actions: Arc::clone(&actions),
+            clock: Arc::clone(&clock),
+            path: HandOffPath {
+                repo,
+                catalog,
+                actions,
+                queues,
+                bus,
+                clock,
+            },
+            next_due: None,
+            retry_at: None,
+            waiting,
+        };
+        tokio::spawn(async move {
+            task.run(commands, changes, intake_changes, catch_up, &listener)
+                .await;
+            listener.mark_stopped();
+        });
+    }
 }
 
 pub fn spawn_scheduled_runs(parts: ScheduledRunsParts) -> ScheduledRunsHandle {
@@ -56,33 +140,16 @@ pub fn spawn_scheduled_runs(parts: ScheduledRunsParts) -> ScheduledRunsHandle {
         clock,
         catch_up,
     } = parts;
-    let (commands_tx, commands) = mpsc::channel(COMMAND_CAPACITY);
-    let changes = revision.subscribe();
-    let intake_changes = queues.intake_changes();
-    let (waiting, waiting_rx) = watch::channel(WaitingRuns::new());
-    let task = ScheduledRunsTask {
-        repo: Arc::clone(&repo),
-        actions: Arc::clone(&actions),
-        clock: Arc::clone(&clock),
-        path: HandOffPath {
-            repo: Arc::clone(&repo),
-            catalog,
-            actions,
-            queues,
-            bus,
-            clock: Arc::clone(&clock),
-        },
-        next_due: None,
-        retry_at: None,
-        waiting,
-    };
-    let (stop, listener) = task_stop();
-    tokio::spawn(async move {
-        task.run(commands, changes, intake_changes, catch_up, &listener)
-            .await;
-        listener.mark_stopped();
+    let (handle, start) = reserve_scheduled_runs(repo, clock);
+    start.start(ScheduledRunsStartParts {
+        revision,
+        catalog,
+        actions,
+        queues,
+        bus,
+        catch_up,
     });
-    ScheduledRunsHandle::new(commands_tx, repo, clock, waiting_rx, stop)
+    handle
 }
 
 impl ScheduledRunsTask {

@@ -114,13 +114,14 @@ pub use queue_scheduler::{
     MAX_PENDING_PER_QUEUE, MembershipOutcome, QUEUE_DRAINING_REASON, QUEUE_NOT_FOUND_REASON,
     QUEUE_OVERFLOW_REASON, QUEUE_PAUSED_REASON, QueueAdmission, QueueIntake, QueueMode,
     QueueModeChanged, QueueProcessing, QueueRuntimeState, QueueScheduler, QueueSchedulerHandle,
-    SchedulerCell, SchedulerError, SchedulerRequest,
+    QueueSchedulerStart, SchedulerCell, SchedulerError, SchedulerRequest,
 };
 pub use scheduled_runs::{
     CatchUpSettle, HandOff, ScheduleDue, ScheduleError, ScheduleIntent, ScheduleRequest,
     ScheduledPlacement, ScheduledRunsCell, ScheduledRunsHandle, ScheduledRunsParts,
-    SchedulingContext, ScriptScheduling, SystemWallClock, WaitingForQueueWatch, WaitingRuns,
-    WallClock, spawn_scheduled_runs,
+    ScheduledRunsStart, ScheduledRunsStartParts, SchedulingContext, ScriptScheduling,
+    SystemWallClock, WaitingForQueueWatch, WaitingRuns, WallClock, reserve_scheduled_runs,
+    spawn_scheduled_runs,
 };
 pub use script_registry::{CompiledScript, ScriptRegistry, ScriptRegistryError};
 pub use speak_dispatcher::{

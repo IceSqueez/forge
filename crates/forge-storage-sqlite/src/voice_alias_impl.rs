@@ -2,11 +2,12 @@ use async_trait::async_trait;
 use forge_speech_types::{
     AliasId, AliasState, AssignmentStrategy, EngineId, IgnoreProfile, VoiceAlias, VoiceId,
 };
-use forge_storage::settings::reserved_keys;
-use forge_storage::{StorageError, VoiceAliasRepo};
+use forge_storage::settings::{core_settings, reserved_keys};
+use forge_storage::{StorageError, VoiceAliasRepo, write_setting};
 
 use crate::error::SqliteStorageError;
 use crate::pool::SqlitePools;
+use crate::settings_impl::SqliteSettingsRepo;
 
 pub struct SqliteVoiceAliasRepo {
     db: SqlitePools,
@@ -169,17 +170,12 @@ impl VoiceAliasRepo for SqliteVoiceAliasRepo {
     }
 
     async fn set_strategy(&self, strategy: &AssignmentStrategy) -> Result<(), StorageError> {
-        let json = serde_json::to_string(strategy).map_err(StorageError::Serialization)?;
-        sqlx::query(
-            "INSERT INTO settings(key, value) VALUES(?, ?)
-             ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+        write_setting(
+            &SqliteSettingsRepo::new(self.db.clone()),
+            &core_settings::VOICE_ASSIGNMENT_STRATEGY,
+            strategy,
         )
-        .bind(reserved_keys::VOICE_ASSIGNMENT_STRATEGY)
-        .bind(&json)
-        .execute(self.db.writer())
         .await
-        .map_err(SqliteStorageError::Sqlx)?;
-        Ok(())
     }
 
     async fn get_ignore_profile(&self) -> Result<IgnoreProfile, StorageError> {

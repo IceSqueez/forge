@@ -2,7 +2,8 @@ use std::future::Future;
 
 use forge_types::IntegrationId;
 
-use crate::settings::{decode_bool_setting, reserved_keys};
+use crate::settings::typed::write_family_setting;
+use crate::settings::{core_settings, decode_bool_setting, reserved_keys};
 use crate::{CredentialsRepo, SettingsRepo, StorageError};
 
 pub fn integration_enabled_key(id: &IntegrationId) -> String {
@@ -37,12 +38,13 @@ pub async fn set_integration_enabled(
     id: &IntegrationId,
     enabled: bool,
 ) -> Result<(), StorageError> {
-    settings
-        .set_string(
-            &integration_enabled_key(id),
-            if enabled { "true" } else { "false" },
-        )
-        .await
+    write_family_setting(
+        settings,
+        &core_settings::INTEGRATION_ENABLED,
+        id.as_str(),
+        &enabled,
+    )
+    .await
 }
 
 pub async fn resolve_integration_enabled<F>(

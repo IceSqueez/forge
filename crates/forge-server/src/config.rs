@@ -11,6 +11,7 @@ use forge_storage::{
 use forge_types::PlatformId;
 
 use crate::settings;
+use forge_storage::settings::core_settings;
 
 pub const LOCALHOST_BIND_ADDRESS: &str = "127.0.0.1";
 pub const LAN_BIND_ADDRESS: &str = "0.0.0.0";
@@ -138,7 +139,9 @@ impl ServerSettings {
             read_setting(repo, &settings::HTTP_OVERLAY_REQUIRE_TOKEN).await?;
         let overlay_cors_any_origin =
             read_setting(repo, &settings::OVERLAY_CORS_ANY_ORIGIN).await?;
-        let overlay_root = repo.get_string(settings::OVERLAY_ROOT.key.name()).await?;
+        let overlay_root = repo
+            .get_string(core_settings::SERVER_OVERLAY_ROOT.name())
+            .await?;
         let (additional_origins, additional_origins_unreadable) =
             load_additional_origins(repo).await?;
         Ok(Self {
@@ -210,7 +213,7 @@ impl ServerSettings {
         repo: &dyn SettingsRepo,
         path: &str,
     ) -> Result<(), StorageError> {
-        repo.set_string(settings::OVERLAY_ROOT.key.name(), path)
+        repo.set_string(core_settings::SERVER_OVERLAY_ROOT.name(), path)
             .await
     }
 
@@ -401,7 +404,7 @@ mod tests {
             settings::AUTH_REQUIRED_FOR_READS.name(),
             settings::HTTP_OVERLAY_REQUIRE_TOKEN.name(),
             settings::OVERLAY_CORS_ANY_ORIGIN.name(),
-            settings::OVERLAY_ROOT.key.name(),
+            core_settings::SERVER_OVERLAY_ROOT.name(),
             settings::ADDITIONAL_ORIGINS.key.name(),
         ] {
             let repo = UnreachableKey(key, MapRepo::empty());

@@ -9,6 +9,21 @@ pub enum SettingDisclosure {
 }
 
 impl SettingDisclosure {
+    pub const fn code(self) -> &'static str {
+        match self {
+            Self::Verbatim => "verbatim",
+            Self::Kind => "kind",
+            Self::Presence => "presence",
+            Self::Withheld => "withheld",
+        }
+    }
+
+    pub fn from_code(code: &str) -> Option<Self> {
+        [Self::Verbatim, Self::Kind, Self::Presence, Self::Withheld]
+            .into_iter()
+            .find(|class| class.code() == code)
+    }
+
     pub fn render(self, value: &str) -> Option<String> {
         match self {
             Self::Verbatim => Some(value.to_owned()),

@@ -3,15 +3,20 @@ use super::portability::SettingPortability::{MachineLocal, Portable, RepositoryO
 use super::reserved_keys as key;
 use super::spec::SettingEncoding::{Flag as FlagEncoding, Integer, Json, Text};
 use super::spec::SettingSpec;
-use super::typed::{Count, Flag, Level, Setting, Verbosity};
+use super::typed::{
+    Choice, Count, Flag, JsonDocument, Level, OptionalText, Setting, SettingFamily, Tally,
+    Verbosity,
+};
 use super::{
     DEFAULT_CHAT_HISTORY_DISPLAY_LIMIT, DEFAULT_CHAT_HISTORY_PER_VIEWER_LIMIT,
-    DEFAULT_DIAGNOSTIC_LOG_LEVEL, FULL_LEVEL, MAX_CHAT_HISTORY_DISPLAY_LIMIT,
+    DEFAULT_DIAGNOSTIC_LOG_LEVEL, EngineParams, FULL_LEVEL, MAX_CHAT_HISTORY_DISPLAY_LIMIT,
     MAX_CHAT_HISTORY_PER_VIEWER_LIMIT, MAX_VOICE_GATE_HOLD_MS, MIN_CHAT_HISTORY_DISPLAY_LIMIT,
     MIN_CHAT_HISTORY_PER_VIEWER_LIMIT, MIN_VOICE_GATE_HOLD_MS, SILENT_LEVEL,
     UNLIMITED_CHAT_HISTORY_PER_VIEWER_LIMIT, VOICE_GATE_DEFAULT_HOLD_MS,
     VOICE_GATE_DEFAULT_THRESHOLD,
 };
+use forge_speech_types::{AssignmentStrategy, SynthesisDefaults};
+
 use crate::event_log::{
     DEFAULT_EVENT_LOG_RETENTION_DAYS, MAX_EVENT_LOG_RETENTION_DAYS, MIN_EVENT_LOG_RETENTION_DAYS,
 };
@@ -104,11 +109,98 @@ pub const DIAGNOSTICS_LOG_LEVEL: Setting<Verbosity> = Setting::new(
     Verbatim,
 );
 
+const LANGUAGE_CODES: &[&str] = &["en", "uk"];
+const DEFAULT_LANGUAGE_CODE: &str = "en";
+
+pub const LANGUAGE: Setting<Choice> = Setting::new(
+    key::LANGUAGE,
+    Choice {
+        default: DEFAULT_LANGUAGE_CODE,
+        options: LANGUAGE_CODES,
+    },
+    Portable,
+    Verbatim,
+);
+
+pub const THEME: Setting<OptionalText> = Setting::new(key::THEME, OptionalText, Portable, Verbatim);
+
+pub const ACCENT: Setting<OptionalText> =
+    Setting::new(key::ACCENT, OptionalText, Portable, Verbatim);
+
+pub const FONT_BODY: Setting<OptionalText> =
+    Setting::new(key::FONT_BODY, OptionalText, Portable, Presence);
+
+pub const FONT_MONO: Setting<OptionalText> =
+    Setting::new(key::FONT_MONO, OptionalText, Portable, Presence);
+
+pub const AUDIO_OUTPUT_DEVICE_ID: Setting<OptionalText> = Setting::new(
+    key::AUDIO_OUTPUT_DEVICE_ID,
+    OptionalText,
+    MachineLocal,
+    Presence,
+);
+
+pub const AUDIO_VOICE_GATE_INPUT_DEVICE_ID: Setting<OptionalText> = Setting::new(
+    key::AUDIO_VOICE_GATE_INPUT_DEVICE_ID,
+    OptionalText,
+    MachineLocal,
+    Presence,
+);
+
+pub const SERVER_OVERLAY_ROOT: Setting<OptionalText> = Setting::new(
+    key::SERVER_OVERLAY_ROOT,
+    OptionalText,
+    MachineLocal,
+    Presence,
+);
+
+pub const TTS_DISABLED_ENGINES: Setting<JsonDocument<Vec<String>>> = Setting::new(
+    key::TTS_DISABLED_ENGINES,
+    JsonDocument::new(),
+    Portable,
+    Verbatim,
+);
+
+pub const TTS_SYNTHESIS_DEFAULTS: Setting<JsonDocument<SynthesisDefaults>> = Setting::new(
+    key::TTS_SYNTHESIS_DEFAULTS,
+    JsonDocument::new(),
+    Portable,
+    Verbatim,
+);
+
+pub const VOICE_ASSIGNMENT_STRATEGY: Setting<JsonDocument<AssignmentStrategy>> = Setting::new(
+    key::VOICE_ASSIGNMENT_STRATEGY,
+    JsonDocument::new(),
+    RepositoryOwned,
+    Withheld,
+);
+
+pub const CREDENTIALS_KEY_LOSS: Setting<Tally> = Setting::new(
+    key::CREDENTIALS_KEY_LOSS,
+    Tally { default: 0 },
+    MachineLocal,
+    Verbatim,
+);
+
+pub const TTS_ENGINE_PARAMS: SettingFamily<JsonDocument<EngineParams>> = SettingFamily::new(
+    key::TTS_ENGINE_PARAMS_PREFIX,
+    JsonDocument::new(),
+    Portable,
+    Verbatim,
+);
+
+pub const INTEGRATION_ENABLED: SettingFamily<Flag> = SettingFamily::new(
+    key::INTEGRATION_ENABLED_PREFIX,
+    Flag { default: false },
+    Portable,
+    Verbatim,
+);
+
 pub const CORE_SETTINGS: &[SettingSpec] = &[
-    SettingSpec::exact(key::THEME, Text, Portable, Verbatim),
-    SettingSpec::exact(key::ACCENT, Text, Portable, Verbatim),
-    SettingSpec::exact(key::FONT_BODY, Text, Portable, Presence),
-    SettingSpec::exact(key::FONT_MONO, Text, Portable, Presence),
+    THEME.spec(),
+    ACCENT.spec(),
+    FONT_BODY.spec(),
+    FONT_MONO.spec(),
     EVENT_LOG_RETENTION_DAYS.spec(),
     SettingSpec::exact(
         key::ACTION_HISTORY_RETENTION_DAYS,
@@ -116,19 +208,14 @@ pub const CORE_SETTINGS: &[SettingSpec] = &[
         Portable,
         Verbatim,
     ),
-    SettingSpec::exact(key::LANGUAGE, Text, Portable, Verbatim),
+    LANGUAGE.spec(),
     SettingSpec::exact(key::REGION, Text, Portable, Verbatim),
     SettingSpec::exact(key::DATE_FORMAT, Text, Portable, Verbatim),
     SettingSpec::exact(key::TIME_FORMAT, Text, Portable, Verbatim),
     SettingSpec::exact(key::FIRST_DAY_OF_WEEK, Text, Portable, Verbatim),
-    SettingSpec::exact(key::AUDIO_OUTPUT_DEVICE_ID, Text, MachineLocal, Presence),
+    AUDIO_OUTPUT_DEVICE_ID.spec(),
     AUDIO_VOICE_GATE_ENABLED.spec(),
-    SettingSpec::exact(
-        key::AUDIO_VOICE_GATE_INPUT_DEVICE_ID,
-        Text,
-        MachineLocal,
-        Presence,
-    ),
+    AUDIO_VOICE_GATE_INPUT_DEVICE_ID.spec(),
     AUDIO_VOICE_GATE_THRESHOLD.spec(),
     AUDIO_VOICE_GATE_HOLD_MS.spec(),
     SettingSpec::exact(key::AUDIO_OVERLAY_ID, Text, Portable, Presence),
@@ -137,18 +224,14 @@ pub const CORE_SETTINGS: &[SettingSpec] = &[
     SettingSpec::exact(key::PICKER_FAVORITES_SUB_ACTIONS, Json, Portable, Kind),
     SettingSpec::exact(key::PICKER_FAVORITES_TRIGGERS, Json, Portable, Kind),
     SettingSpec::exact(key::PICKER_FAVORITES_ICONS, Json, Portable, Kind),
-    SettingSpec::exact(key::TTS_DISABLED_ENGINES, Json, Portable, Verbatim),
-    SettingSpec::exact(key::TTS_SYNTHESIS_DEFAULTS, Json, Portable, Verbatim),
+    TTS_DISABLED_ENGINES.spec(),
+    TTS_SYNTHESIS_DEFAULTS.spec(),
     TTS_MASTER_VOLUME.spec(),
-    SettingSpec::prefix(key::TTS_ENGINE_PARAMS_PREFIX, Json, Portable, Verbatim),
+    TTS_ENGINE_PARAMS.spec(),
     DIAGNOSTICS_LOG_LEVEL.spec(),
-    SettingSpec::exact(key::CREDENTIALS_KEY_LOSS, Integer, MachineLocal, Verbatim),
-    SettingSpec::prefix(
-        key::INTEGRATION_ENABLED_PREFIX,
-        FlagEncoding,
-        Portable,
-        Verbatim,
-    ),
+    CREDENTIALS_KEY_LOSS.spec(),
+    SERVER_OVERLAY_ROOT.spec(),
+    INTEGRATION_ENABLED.spec(),
     SettingSpec::exact(
         key::RETIRED_MIDI_ENABLED,
         FlagEncoding,
@@ -161,12 +244,7 @@ pub const CORE_SETTINGS: &[SettingSpec] = &[
         MachineLocal,
         Verbatim,
     ),
-    SettingSpec::exact(
-        key::VOICE_ASSIGNMENT_STRATEGY,
-        Json,
-        RepositoryOwned,
-        Withheld,
-    ),
+    VOICE_ASSIGNMENT_STRATEGY.spec(),
     SettingSpec::exact(
         key::BACKUP_SCHEDULE_ENABLED,
         FlagEncoding,

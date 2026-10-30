@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use async_trait::async_trait;
-use forge_storage::{SettingsRepo, StorageError};
+use forge_storage::{RowClasses, RowGate, SettingsRepo, StorageError};
 
 use crate::error::SqliteStorageError;
 use crate::pool::SqlitePools;
@@ -35,6 +35,29 @@ impl SettingsRepo for SqliteSettingsRepo {
         )
         .bind(key)
         .bind(value)
+        .execute(self.db.writer())
+        .await
+        .map_err(SqliteStorageError::Sqlx)?;
+
+        Ok(())
+    }
+
+    async fn put_row(
+        &self,
+        _gate: RowGate,
+        key: &str,
+        value: &str,
+        classes: RowClasses,
+    ) -> Result<(), StorageError> {
+        sqlx::query(
+            "INSERT INTO settings (key, value, portability, disclosure) VALUES (?, ?, ?, ?) \
+             ON CONFLICT(key) DO UPDATE SET value = excluded.value, \
+             portability = excluded.portability, disclosure = excluded.disclosure",
+        )
+        .bind(key)
+        .bind(value)
+        .bind(classes.portability.code())
+        .bind(classes.disclosure.code())
         .execute(self.db.writer())
         .await
         .map_err(SqliteStorageError::Sqlx)?;

@@ -1,8 +1,13 @@
+use std::marker::PhantomData;
+
 use forge_types::LogLevel;
+use serde::Serialize;
+use serde::de::DeserializeOwned;
 
 use super::decode_bool_setting;
 use super::disclosure::SettingDisclosure;
 use super::portability::SettingPortability;
+use super::row::{RowClasses, RowGate};
 use super::spec::{SettingEncoding, SettingSpec};
 use crate::{SettingsRepo, StorageError};
 
@@ -13,6 +18,10 @@ pub trait SettingCodec: Send + Sync {
     fn default_value(&self) -> Self::Value;
     fn decode(&self, raw: &str) -> Option<Self::Value>;
     fn encode(&self, value: &Self::Value) -> Option<String>;
+
+    fn is_absent(&self, _value: &Self::Value) -> bool {
+        false
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -146,6 +155,156 @@ impl SettingCodec for Verbosity {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Tally {
+    pub default: u64,
+}
+
+impl SettingCodec for Tally {
+    type Value = u64;
+    const ENCODING: SettingEncoding = SettingEncoding::Integer;
+
+    fn default_value(&self) -> u64 {
+        self.default
+    }
+
+    fn decode(&self, raw: &str) -> Option<u64> {
+        raw.trim().parse().ok()
+    }
+
+    fn encode(&self, value: &u64) -> Option<String> {
+        Some(value.to_string())
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PlainText {
+    pub default: &'static str,
+}
+
+impl SettingCodec for PlainText {
+    type Value = String;
+    const ENCODING: SettingEncoding = SettingEncoding::Text;
+
+    fn default_value(&self) -> String {
+        self.default.to_owned()
+    }
+
+    fn decode(&self, raw: &str) -> Option<String> {
+        Some(raw.to_owned())
+    }
+
+    fn encode(&self, value: &String) -> Option<String> {
+        Some(value.clone())
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct OptionalText;
+
+impl SettingCodec for OptionalText {
+    type Value = Option<String>;
+    const ENCODING: SettingEncoding = SettingEncoding::Text;
+
+    fn default_value(&self) -> Option<String> {
+        None
+    }
+
+    fn decode(&self, raw: &str) -> Option<Option<String>> {
+        Some(Some(raw.to_owned()))
+    }
+
+    fn encode(&self, value: &Option<String>) -> Option<String> {
+        value.clone()
+    }
+
+    fn is_absent(&self, value: &Option<String>) -> bool {
+        value.is_none()
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Choice {
+    pub default: &'static str,
+    pub options: &'static [&'static str],
+}
+
+impl SettingCodec for Choice {
+    type Value = String;
+    const ENCODING: SettingEncoding = SettingEncoding::Text;
+
+    fn default_value(&self) -> String {
+        self.default.to_owned()
+    }
+
+    fn decode(&self, raw: &str) -> Option<String> {
+        self.options
+            .iter()
+            .find(|option| **option == raw)
+            .map(|option| (*option).to_owned())
+    }
+
+    fn encode(&self, value: &String) -> Option<String> {
+        self.options
+            .contains(&value.as_str())
+            .then(|| value.clone())
+    }
+}
+
+pub struct JsonDocument<T>(PhantomData<fn() -> T>);
+
+impl<T> JsonDocument<T> {
+    pub const fn new() -> Self {
+        Self(PhantomData)
+    }
+}
+
+impl<T> Clone for JsonDocument<T> {
+    fn clone(&self) -> Self {
+        *self
+    }
+}
+
+impl<T> Copy for JsonDocument<T> {}
+
+impl<T> std::fmt::Debug for JsonDocument<T> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("JsonDocument")
+    }
+}
+
+impl<T> PartialEq for JsonDocument<T> {
+    fn eq(&self, _other: &Self) -> bool {
+        true
+    }
+}
+
+impl<T> Default for JsonDocument<T> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl<T> SettingCodec for JsonDocument<T>
+where
+    T: Default + Serialize + DeserializeOwned + Send + Sync,
+{
+    type Value = T;
+    const ENCODING: SettingEncoding = SettingEncoding::Json;
+
+    fn default_value(&self) -> T {
+        T::default()
+    }
+
+    fn decode(&self, raw: &str) -> Option<T> {
+        serde_json::from_str(raw).ok()
+    }
+
+    fn encode(&self, value: &T) -> Option<String> {
+        serde_json::to_string(value).ok()
+    }
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct Setting<C> {
     spec: SettingSpec,
@@ -191,8 +350,8 @@ impl<C: SettingCodec> Setting<C> {
     }
 }
 
-pub async fn read_setting<C: SettingCodec>(
-    repo: &dyn SettingsRepo,
+pub async fn read_setting<C: SettingCodec, R: SettingsRepo + ?Sized>(
+    repo: &R,
     setting: &Setting<C>,
 ) -> Result<C::Value, StorageError> {
     let raw = repo.get_string(setting.name()).await?;
@@ -216,18 +375,147 @@ pub async fn read_setting_or_default<C: SettingCodec>(
     }
 }
 
-pub async fn write_setting<C: SettingCodec>(
-    repo: &dyn SettingsRepo,
+pub(crate) async fn put_declared<R: SettingsRepo + ?Sized>(
+    repo: &R,
+    spec: &SettingSpec,
+    key: &str,
+    value: &str,
+) -> Result<(), StorageError> {
+    repo.put_row(RowGate::open(), key, value, RowClasses::from(spec))
+        .await
+}
+
+pub async fn write_setting<C: SettingCodec, R: SettingsRepo + ?Sized>(
+    repo: &R,
     setting: &Setting<C>,
     value: &C::Value,
 ) -> Result<(), StorageError> {
+    if setting.codec.is_absent(value) {
+        reset_setting(repo, setting).await?;
+        return Ok(());
+    }
     let encoded = setting
         .codec
         .encode(value)
         .ok_or_else(|| StorageError::UnstorableSetting {
             key: setting.name().to_owned(),
         })?;
-    repo.set_string(setting.name(), &encoded).await
+    put_declared(repo, &setting.spec, setting.name(), &encoded).await
+}
+
+pub async fn reset_setting<C: SettingCodec, R: SettingsRepo + ?Sized>(
+    repo: &R,
+    setting: &Setting<C>,
+) -> Result<bool, StorageError> {
+    repo.delete(setting.name()).await
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct SettingFamily<C> {
+    spec: SettingSpec,
+    codec: C,
+}
+
+impl<C: SettingCodec> SettingFamily<C> {
+    pub const fn new(
+        prefix: &'static str,
+        codec: C,
+        portability: SettingPortability,
+        disclosure: SettingDisclosure,
+    ) -> Self {
+        Self {
+            spec: SettingSpec::prefix(prefix, C::ENCODING, portability, disclosure),
+            codec,
+        }
+    }
+
+    pub const fn spec(&self) -> SettingSpec {
+        self.spec
+    }
+
+    pub const fn codec(&self) -> &C {
+        &self.codec
+    }
+
+    pub const fn prefix(&self) -> &'static str {
+        self.spec.key.name()
+    }
+
+    pub fn member_key(&self, member: &str) -> Result<String, StorageError> {
+        let valid =
+            !member.is_empty() && !member.chars().any(|c| c.is_whitespace() || c.is_control());
+        if !valid {
+            return Err(StorageError::InvalidSettingMember {
+                family: self.prefix().to_owned(),
+                member: member.to_owned(),
+            });
+        }
+        Ok(format!("{}{member}", self.prefix()))
+    }
+
+    fn decode_or_default(&self, key: &str, raw: Option<&str>) -> C::Value {
+        let Some(raw) = raw else {
+            return self.codec.default_value();
+        };
+        self.codec.decode(raw).unwrap_or_else(|| {
+            tracing::warn!(key, "stored setting cannot be decoded; using its default");
+            self.codec.default_value()
+        })
+    }
+}
+
+pub async fn read_family_setting<C: SettingCodec, R: SettingsRepo + ?Sized>(
+    repo: &R,
+    family: &SettingFamily<C>,
+    member: &str,
+) -> Result<C::Value, StorageError> {
+    let key = family.member_key(member)?;
+    let raw = repo.get_string(&key).await?;
+    Ok(family.decode_or_default(&key, raw.as_deref()))
+}
+
+pub async fn write_family_setting<C: SettingCodec, R: SettingsRepo + ?Sized>(
+    repo: &R,
+    family: &SettingFamily<C>,
+    member: &str,
+    value: &C::Value,
+) -> Result<(), StorageError> {
+    let key = family.member_key(member)?;
+    let encoded = family
+        .codec
+        .encode(value)
+        .ok_or_else(|| StorageError::UnstorableSetting { key: key.clone() })?;
+    put_declared(repo, &family.spec, &key, &encoded).await
+}
+
+pub async fn reset_family_setting<C: SettingCodec, R: SettingsRepo + ?Sized>(
+    repo: &R,
+    family: &SettingFamily<C>,
+    member: &str,
+) -> Result<bool, StorageError> {
+    let key = family.member_key(member)?;
+    repo.delete(&key).await
+}
+
+pub async fn family_members<C: SettingCodec, R: SettingsRepo + ?Sized>(
+    repo: &R,
+    family: &SettingFamily<C>,
+) -> Result<Vec<(String, C::Value)>, StorageError> {
+    let mut members: Vec<(String, C::Value)> = repo
+        .load_all()
+        .await?
+        .into_iter()
+        .filter_map(|(key, raw)| {
+            let member = key.strip_prefix(family.prefix())?;
+            if member.is_empty() {
+                return None;
+            }
+            let value = family.decode_or_default(&key, Some(&raw));
+            Some((member.to_owned(), value))
+        })
+        .collect();
+    members.sort_by(|a, b| a.0.cmp(&b.0));
+    Ok(members)
 }
 
 #[cfg(test)]

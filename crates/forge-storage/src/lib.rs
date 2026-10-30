@@ -91,9 +91,12 @@ pub use settings::catalog::{SettingsCatalog, report_undeclared_settings};
 pub use settings::disclosure::SettingDisclosure;
 pub use settings::favorites::rename_favorite_ids;
 pub use settings::portability::SettingPortability;
+pub use settings::row::{RowClasses, RowGate};
 pub use settings::spec::{SettingEncoding, SettingKey, SettingSpec};
 pub use settings::typed::{
-    Count, Flag, Level, Setting, SettingCodec, Verbosity, read_setting, read_setting_or_default,
+    Choice, Count, Flag, JsonDocument, Level, OptionalText, PlainText, Setting, SettingCodec,
+    SettingFamily, Tally, Verbosity, family_members, read_family_setting, read_setting,
+    read_setting_or_default, reset_family_setting, reset_setting, write_family_setting,
     write_setting,
 };
 pub use settings::{

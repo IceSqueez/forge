@@ -8,10 +8,10 @@ use forge_storage::{
     CredentialsRepo, DataProvider, DonationRepo, EXPECTED_SCHEMA_VERSION, EventLogRepo,
     ExecutionStatus, GlobalEntry, GlobalTransit, GlobalsRepo, HistoryRepo, LatestValueRepo,
     MediaRepo, OverlayRepo, QueueRepo, RevisingActionRepo, RevisingQueueRepo,
-    RevisingScheduledRunRepo, RevisingScriptRepo, RevisingTriggerInstanceRepo, ScheduledRunRepo,
-    ScriptRecord, ScriptReferences, ScriptRepo, ScriptTelemetry, SettingsRepo, SoundboardClipsRepo,
-    StorageError, TriggerInstanceRepo, TtsFiltersRepo, UserGlobalEntry, UserGlobalsRepo,
-    ViewerRepo, VoiceAliasRepo, reserved_keys,
+    RevisingScheduledRunRepo, RevisingScriptRepo, RevisingTriggerInstanceRepo, RowClasses, RowGate,
+    ScheduledRunRepo, ScriptRecord, ScriptReferences, ScriptRepo, ScriptTelemetry, SettingsRepo,
+    SoundboardClipsRepo, StorageError, TriggerInstanceRepo, TtsFiltersRepo, UserGlobalEntry,
+    UserGlobalsRepo, ViewerRepo, VoiceAliasRepo, reserved_keys,
 };
 use forge_types::{ScriptId, Variant};
 use time::OffsetDateTime;
@@ -434,6 +434,18 @@ impl SettingsRepo for SqliteBackend {
 
     async fn set_string(&self, key: &str, value: &str) -> Result<(), StorageError> {
         self.settings.set_string(key, value).await?;
+        self.signal_setting_changed(key);
+        Ok(())
+    }
+
+    async fn put_row(
+        &self,
+        gate: RowGate,
+        key: &str,
+        value: &str,
+        classes: RowClasses,
+    ) -> Result<(), StorageError> {
+        self.settings.put_row(gate, key, value, classes).await?;
         self.signal_setting_changed(key);
         Ok(())
     }

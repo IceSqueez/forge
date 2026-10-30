@@ -47,13 +47,6 @@ pub const OVERLAY_CORS_ANY_ORIGIN: Setting<Flag> = Setting::new(
     Verbatim,
 );
 
-pub const OVERLAY_ROOT: SettingSpec = SettingSpec::exact(
-    "server.overlay_root",
-    SettingEncoding::Text,
-    MachineLocal,
-    Presence,
-);
-
 pub const ADDITIONAL_ORIGINS: SettingSpec = SettingSpec::exact(
     "server.additional_origins",
     SettingEncoding::Json,
@@ -69,6 +62,5 @@ pub const SETTING_SPECS: &[SettingSpec] = &[
     AUTH_REQUIRED_FOR_READS.spec(),
     HTTP_OVERLAY_REQUIRE_TOKEN.spec(),
     OVERLAY_CORS_ANY_ORIGIN.spec(),
-    OVERLAY_ROOT,
     ADDITIONAL_ORIGINS,
 ];

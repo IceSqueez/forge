@@ -8,8 +8,9 @@ use forge_types::LogLevel;
 use serde::{Deserialize, Serialize};
 
 use crate::StorageError;
+use row::{RowClasses, RowGate};
 pub use typed::log_level_as_str;
-use typed::{read_setting, write_setting};
+use typed::{read_setting, write_family_setting, write_setting};
 
 pub const SERVER_HTTP_OVERLAY_REQUIRE_TOKEN_DEFAULT: bool = true;
 
@@ -105,6 +106,7 @@ pub mod core_settings;
 pub mod disclosure;
 pub mod favorites;
 pub mod portability;
+pub mod row;
 pub mod spec;
 pub mod typed;
 
@@ -186,6 +188,16 @@ pub trait SettingsRepo: Send + Sync {
     async fn delete(&self, key: &str) -> Result<bool, StorageError>;
     async fn load_all(&self) -> Result<HashMap<String, String>, StorageError>;
 
+    async fn put_row(
+        &self,
+        _gate: RowGate,
+        key: &str,
+        value: &str,
+        _classes: RowClasses,
+    ) -> Result<(), StorageError> {
+        self.set_string(key, value).await
+    }
+
     async fn language(&self) -> Result<Language, StorageError> {
         match self.get_string(reserved_keys::LANGUAGE).await? {
             Some(s) => s
@@ -196,72 +208,50 @@ pub trait SettingsRepo: Send + Sync {
     }
 
     async fn set_language(&self, lang: Language) -> Result<(), StorageError> {
-        self.set_string(reserved_keys::LANGUAGE, &lang.to_string())
-            .await
+        write_setting(self, &core_settings::LANGUAGE, &lang.to_string()).await
     }
 
     async fn get_theme(&self) -> Result<Option<String>, StorageError> {
-        self.get_string(reserved_keys::THEME).await
+        read_setting(self, &core_settings::THEME).await
     }
 
     async fn set_theme(&self, theme_key: &str) -> Result<(), StorageError> {
-        self.set_string(reserved_keys::THEME, theme_key).await
+        write_setting(self, &core_settings::THEME, &Some(theme_key.to_owned())).await
     }
 
     async fn get_accent(&self) -> Result<Option<String>, StorageError> {
-        self.get_string(reserved_keys::ACCENT).await
+        read_setting(self, &core_settings::ACCENT).await
     }
 
     async fn set_accent(&self, accent_key: &str) -> Result<(), StorageError> {
-        self.set_string(reserved_keys::ACCENT, accent_key).await
+        write_setting(self, &core_settings::ACCENT, &Some(accent_key.to_owned())).await
     }
 
     async fn font_body(&self) -> Result<Option<String>, StorageError> {
-        self.get_string(reserved_keys::FONT_BODY).await
+        read_setting(self, &core_settings::FONT_BODY).await
     }
 
     async fn set_font_body(&self, name: Option<String>) -> Result<(), StorageError> {
-        match name {
-            Some(family) => self.set_string(reserved_keys::FONT_BODY, &family).await,
-            None => {
-                self.delete(reserved_keys::FONT_BODY).await?;
-                Ok(())
-            }
-        }
+        write_setting(self, &core_settings::FONT_BODY, &name).await
     }
 
     async fn font_mono(&self) -> Result<Option<String>, StorageError> {
-        self.get_string(reserved_keys::FONT_MONO).await
+        read_setting(self, &core_settings::FONT_MONO).await
     }
 
     async fn set_font_mono(&self, name: Option<String>) -> Result<(), StorageError> {
-        match name {
-            Some(family) => self.set_string(reserved_keys::FONT_MONO, &family).await,
-            None => {
-                self.delete(reserved_keys::FONT_MONO).await?;
-                Ok(())
-            }
-        }
+        write_setting(self, &core_settings::FONT_MONO, &name).await
     }
 
     async fn audio_output_device_id(&self) -> Result<Option<String>, StorageError> {
-        self.get_string(reserved_keys::AUDIO_OUTPUT_DEVICE_ID).await
+        read_setting(self, &core_settings::AUDIO_OUTPUT_DEVICE_ID).await
     }
 
     async fn set_audio_output_device_id(
         &self,
         device_id: Option<String>,
     ) -> Result<(), StorageError> {
-        match device_id {
-            Some(id) => {
-                self.set_string(reserved_keys::AUDIO_OUTPUT_DEVICE_ID, &id)
-                    .await
-            }
-            None => {
-                self.delete(reserved_keys::AUDIO_OUTPUT_DEVICE_ID).await?;
-                Ok(())
-            }
-        }
+        write_setting(self, &core_settings::AUDIO_OUTPUT_DEVICE_ID, &device_id).await
     }
 }
 
@@ -383,9 +373,12 @@ pub async fn set_disabled_tts_engines(
     repo: &dyn SettingsRepo,
     engine_ids: &[String],
 ) -> Result<(), StorageError> {
-    let json = serde_json::to_string(engine_ids).map_err(|e| StorageError::Parse(e.to_string()))?;
-    repo.set_string(reserved_keys::TTS_DISABLED_ENGINES, &json)
-        .await
+    write_setting(
+        repo,
+        &core_settings::TTS_DISABLED_ENGINES,
+        &engine_ids.to_vec(),
+    )
+    .await
 }
 
 pub async fn synthesis_defaults(
@@ -421,7 +414,7 @@ pub async fn engine_params(
     repo: &dyn SettingsRepo,
     engine_id: &str,
 ) -> Result<EngineParams, StorageError> {
-    let key = format!("{}{engine_id}", reserved_keys::TTS_ENGINE_PARAMS_PREFIX);
+    let key = core_settings::TTS_ENGINE_PARAMS.member_key(engine_id)?;
     Ok(stored_json_setting(repo, &key).await?.unwrap_or_default())
 }
 
@@ -430,9 +423,7 @@ pub async fn set_engine_params(
     engine_id: &str,
     params: EngineParams,
 ) -> Result<(), StorageError> {
-    let key = format!("{}{engine_id}", reserved_keys::TTS_ENGINE_PARAMS_PREFIX);
-    let json = serde_json::to_string(&params).map_err(|e| StorageError::Parse(e.to_string()))?;
-    repo.set_string(&key, &json).await
+    write_family_setting(repo, &core_settings::TTS_ENGINE_PARAMS, engine_id, &params).await
 }
 
 pub async fn master_volume(repo: &dyn SettingsRepo) -> Result<f32, StorageError> {
@@ -493,17 +484,12 @@ pub async fn set_voice_gate_input_device_id(
     repo: &dyn SettingsRepo,
     device_id: Option<String>,
 ) -> Result<(), StorageError> {
-    match device_id {
-        Some(id) => {
-            repo.set_string(reserved_keys::AUDIO_VOICE_GATE_INPUT_DEVICE_ID, &id)
-                .await
-        }
-        None => {
-            repo.delete(reserved_keys::AUDIO_VOICE_GATE_INPUT_DEVICE_ID)
-                .await?;
-            Ok(())
-        }
-    }
+    write_setting(
+        repo,
+        &core_settings::AUDIO_VOICE_GATE_INPUT_DEVICE_ID,
+        &device_id,
+    )
+    .await
 }
 
 pub async fn set_voice_gate_threshold(
@@ -553,11 +539,7 @@ pub async fn record_credentials_key_loss(
     repo: &dyn SettingsRepo,
     loss: CredentialsKeyLoss,
 ) -> Result<(), StorageError> {
-    repo.set_string(
-        reserved_keys::CREDENTIALS_KEY_LOSS,
-        &loss.stranded.to_string(),
-    )
-    .await
+    write_setting(repo, &core_settings::CREDENTIALS_KEY_LOSS, &loss.stranded).await
 }
 
 pub async fn take_credentials_key_loss(

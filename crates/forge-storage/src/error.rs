@@ -86,6 +86,9 @@ pub enum StorageError {
     #[error("setting '{key}' cannot store this value")]
     UnstorableSetting { key: String },
 
+    #[error("'{member}' is not a valid member of the setting family '{family}'")]
+    InvalidSettingMember { family: String, member: String },
+
     #[error("io error: {0}")]
     Io(#[from] std::io::Error),
 

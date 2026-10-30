@@ -29,16 +29,6 @@ impl SenderPreference {
     pub fn parse(raw: &str) -> Option<Self> {
         Self::ALL.into_iter().find(|sender| sender.as_str() == raw)
     }
-
-    pub fn from_payload(payload: &serde_json::Value) -> Result<Self, String> {
-        match payload.get(SENDER_FIELD) {
-            None | Some(serde_json::Value::Null) => Ok(Self::Default),
-            Some(serde_json::Value::String(raw)) => {
-                Self::parse(raw).ok_or_else(|| unknown_sender_reason(raw))
-            }
-            Some(other) => Err(unknown_sender_reason(&other.to_string())),
-        }
-    }
 }
 
 pub fn unknown_sender_reason(raw: &str) -> String {

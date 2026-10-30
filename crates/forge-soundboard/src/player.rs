@@ -5,7 +5,9 @@ use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::time::Duration;
 
 use async_trait::async_trait;
-use forge_audio::{AudioError, AudioRoute, AudioSink, ControlledPlayback, PlaybackHandle};
+use forge_audio::{
+    AudioError, AudioRoute, AudioSink, AudioSinkFactory, ControlledPlayback, PlaybackHandle,
+};
 use forge_speech_types::PcmBuffer;
 use forge_storage::{SettingsRepo, StoredClip};
 use forge_types::{ClipId, OutputDevice, Shared};
@@ -17,7 +19,6 @@ use crate::error::SoundboardError;
 use crate::fan_out::fan_out_targets;
 use crate::library::{ClipLibrary, ClipSource};
 use crate::settings::{SoundboardSettings, SoundboardSettingsHandle};
-use crate::sink_factory::AudioSinkFactory;
 
 const MAX_VOLUME: f32 = 1.0;
 
@@ -809,7 +810,7 @@ mod tests {
     use time::OffsetDateTime;
 
     use super::*;
-    use crate::sink_factory::AudioSinkFactory;
+    use forge_audio::AudioSinkFactory;
 
     struct NoManagedMedia {
         imports: Arc<std::sync::atomic::AtomicUsize>,

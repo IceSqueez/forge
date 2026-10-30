@@ -1,9 +1,6 @@
 use std::sync::Arc;
-use std::time::Duration;
 
-const PIPER_SYNTHESIS_TIMEOUT: Duration = Duration::from_secs(30);
-
-use forge_audio::{DeviceSink, OutputDeviceHandle, stored_output_device};
+use forge_audio::{AudioSinkFactory, DeviceSink, OutputDeviceHandle, stored_output_device};
 use forge_events::EventPublisher;
 use forge_runtime::EventBus;
 use forge_speak_queue::{
@@ -16,65 +13,41 @@ use forge_storage::settings::core_settings::AUDIO_OUTPUT_DEVICE_ID;
 use forge_storage::{CredentialsRepo, DataProvider, FilterRule, TtsPipelineSettings, read_setting};
 use forge_tts_cloud::CloudGateways;
 use forge_tts_core::{TtsEngineFactory, TtsRegistry, build_engine};
-use forge_tts_espeak::EspeakEngineFactory;
-use forge_tts_nsspeech::NsSpeechEngineFactory;
-use forge_tts_piper::{PiperEngine, PiperEngineFactory};
-use forge_tts_sapi::SapiEngineFactory;
 
 use crate::cloud_tts_boot::register_cloud_engines;
 
-async fn register_local_engines(registry: &mut TtsRegistry) {
-    if let Some(piper_binary) = PiperEngine::locate().await {
-        let voices_dir = PiperEngine::voices_dir(&forge_paths::data_dir());
-        if let Err(e) = std::fs::create_dir_all(&voices_dir) {
-            tracing::warn!(error = %e, path = %voices_dir.display(), "failed to create the piper voices dir");
-        }
-        registry.register(
-            EngineId(forge_tts_core::ENGINE_ID_PIPER.into()),
-            Arc::new(PiperEngineFactory {
-                piper_binary: piper_binary.clone(),
-                voices_dir,
-                timeout: PIPER_SYNTHESIS_TIMEOUT,
-            }),
-        );
-        tracing::info!(path = %piper_binary.display(), "registered the Piper TTS engine");
-    } else {
-        tracing::info!(
-            "Piper binary not found next to the executable or on PATH; Piper TTS disabled"
-        );
-    }
+pub enum TtsEngineAdmission {
+    Unprobed,
+    Probed,
+}
 
-    register_probed(
-        registry,
-        forge_tts_core::ENGINE_ID_ESPEAK_NG,
-        Arc::new(EspeakEngineFactory),
-    )
-    .await;
-    register_probed(
-        registry,
-        forge_tts_core::ENGINE_ID_SAPI,
-        Arc::new(SapiEngineFactory),
-    )
-    .await;
-    register_probed(
-        registry,
-        forge_tts_core::ENGINE_ID_NSSPEECH,
-        Arc::new(NsSpeechEngineFactory),
-    )
-    .await;
+pub struct LocalTtsEngine {
+    pub id: EngineId,
+    pub factory: Arc<dyn TtsEngineFactory>,
+    pub admission: TtsEngineAdmission,
+}
+
+async fn register_local_engines(registry: &mut TtsRegistry, engines: Vec<LocalTtsEngine>) {
+    for engine in engines {
+        match engine.admission {
+            TtsEngineAdmission::Unprobed => registry.register(engine.id, engine.factory),
+            TtsEngineAdmission::Probed => {
+                register_probed(registry, engine.id, engine.factory).await;
+            }
+        }
+    }
 }
 
 async fn register_probed(
     registry: &mut TtsRegistry,
-    engine_id: &str,
+    id: EngineId,
     factory: Arc<dyn TtsEngineFactory>,
 ) {
-    let id = EngineId(engine_id.into());
-    let name = forge_tts_core::engine_display_name(engine_id);
+    let name = forge_tts_core::engine_display_name(&id.0);
     match build_engine(&id, Arc::clone(&factory)).await {
         Ok(engine) => {
-            registry.register_built(id, factory, engine);
             tracing::info!(engine = name, "registered a TTS engine");
+            registry.register_built(id, factory, engine);
         }
         Err(e) => tracing::info!(engine = name, error = %e, "TTS engine unavailable"),
     }
@@ -177,7 +150,10 @@ async fn load_filters(backend: &Arc<dyn DataProvider>) -> (Vec<FilterRule>, TtsP
     })
 }
 
-pub async fn build_speech_output(backend: &Arc<dyn DataProvider>) -> Arc<DeviceSink> {
+pub async fn build_speech_output(
+    backend: &Arc<dyn DataProvider>,
+    audio_sinks: Arc<dyn AudioSinkFactory>,
+) -> Arc<DeviceSink> {
     let stored_device_id = match read_setting(backend.as_ref(), &AUDIO_OUTPUT_DEVICE_ID).await {
         Ok(id) => id,
         Err(e) => {
@@ -185,9 +161,10 @@ pub async fn build_speech_output(backend: &Arc<dyn DataProvider>) -> Arc<DeviceS
             None
         }
     };
-    Arc::new(DeviceSink::new(OutputDeviceHandle::new(
-        stored_output_device(stored_device_id),
-    )))
+    Arc::new(DeviceSink::with_factory(
+        OutputDeviceHandle::new(stored_output_device(stored_device_id)),
+        audio_sinks,
+    ))
 }
 
 pub async fn build_speak_queue(
@@ -195,6 +172,7 @@ pub async fn build_speak_queue(
     backend: &Arc<dyn DataProvider>,
     audio_sink: Arc<dyn forge_audio::AudioSink>,
     cloud_gateways: &CloudGateways,
+    local_engines: Vec<LocalTtsEngine>,
 ) -> (
     Option<forge_speak_queue::SpeakQueueHandle>,
     Option<SpeakEventStream>,
@@ -202,7 +180,7 @@ pub async fn build_speak_queue(
     Option<Arc<std::sync::RwLock<TtsRegistry>>>,
 ) {
     let mut registry = TtsRegistry::new();
-    register_local_engines(&mut registry).await;
+    register_local_engines(&mut registry, local_engines).await;
 
     let registry = std::sync::RwLock::new(registry);
     let creds: Arc<dyn CredentialsRepo> = Arc::clone(backend) as Arc<dyn CredentialsRepo>;

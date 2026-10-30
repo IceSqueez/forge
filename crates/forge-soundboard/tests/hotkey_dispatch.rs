@@ -3,7 +3,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use async_trait::async_trait;
-use forge_audio::{AudioError, AudioSink};
+use forge_audio::{AudioError, AudioSink, AudioSinkFactory};
 use forge_events::{
     Event, EventChannel, EventObserver, EventPublisher, EventSource, EventSubscription,
 };
@@ -12,7 +12,7 @@ use forge_hotkey::vocabulary::event_kinds;
 use forge_hotkey::vocabulary::fields::COMBO;
 use forge_soundboard::NullAudioEventSink;
 use forge_soundboard::{
-    AudioSinkFactory, ClipLibrary, SoundboardPlayer, SoundboardSettingsHandle, pressed_combo,
+    ClipLibrary, SoundboardPlayer, SoundboardSettingsHandle, pressed_combo,
     spawn_clip_hotkey_dispatcher,
 };
 use forge_storage::{MockMediaRepo, SoundboardClipsRepo, StorageError, StoredClip};

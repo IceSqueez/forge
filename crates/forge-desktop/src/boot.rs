@@ -2,7 +2,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
 
-use forge_audio::AudioSink;
+use forge_audio::{AudioSink, AudioSinkFactory};
 use forge_components::{AccentColor, Density, ThemeId};
 use forge_events::EventPublisher;
 use forge_overlay::{OverlayKindRegistry, register_builtin_kinds};
@@ -24,8 +24,8 @@ use forge_runtime::{
     spawn_viewer_tracker,
 };
 use forge_soundboard::{
-    BusAudioEventSink, ClipLibrary, CpalSinkFactory, SoundboardControl, SoundboardPlayer,
-    SoundboardSettingsHandle, load_soundboard_settings, register_soundboard_sub_actions,
+    BusAudioEventSink, ClipLibrary, SoundboardControl, SoundboardPlayer, SoundboardSettingsHandle,
+    load_soundboard_settings, register_soundboard_sub_actions,
 };
 use forge_storage::settings::core_settings::{ACCENT, FONT_BODY, FONT_MONO, LANGUAGE, THEME};
 use forge_storage::{
@@ -36,14 +36,15 @@ use forge_storage_sqlite::SqliteBackend;
 use forge_types::{LatestValueReader, PlatformId, Shared};
 
 use crate::audio_router::{AudioRouter, AudioRouterParts};
-use crate::integrations::build_integrations;
+use crate::integrations::{IntegrationInputs, build_integrations};
 use crate::log_tail::LogTail;
 use crate::overlay_build_failure::OverlayBuildFailure;
 use crate::overlay_frame_sink::ServerOverlayFrameSink;
+use crate::platform_identities::PlatformIdentities;
 use crate::routed_sink::RoutedSink;
 use crate::runtime_handles::RuntimeHandles;
 use crate::settings_catalog::DENSITY;
-use crate::speak_boot::{build_speak_queue, build_speech_output};
+use crate::speak_boot::{LocalTtsEngine, build_speak_queue, build_speech_output};
 use crate::speak_bridge::SpeakBridge;
 use crate::voice_gate::{VoiceGateOwner, config_from_settings};
 use crate::window_placement::{WINDOW_PLACEMENT, WindowPlacement};
@@ -176,12 +177,26 @@ async fn apply_persisted_log_level(repo: &dyn SettingsRepo) {
     }
 }
 
-pub async fn build_runtime(
-    log_tail: LogTail,
-    endpoints: PlatformEndpoints,
-    hotkey_main_thread: forge_hotkey::MainThreadLink,
-    preopened: Option<Arc<dyn DataProvider>>,
-) -> Result<RuntimeHandles, BootFailure> {
+pub struct RuntimeInputs {
+    pub log_tail: LogTail,
+    pub endpoints: PlatformEndpoints,
+    pub hotkey_main_thread: forge_hotkey::MainThreadLink,
+    pub preopened: Option<Arc<dyn DataProvider>>,
+    pub audio_sinks: Arc<dyn AudioSinkFactory>,
+    pub local_tts_engines: Vec<LocalTtsEngine>,
+    pub platform_identities: PlatformIdentities,
+}
+
+pub async fn build_runtime(inputs: RuntimeInputs) -> Result<RuntimeHandles, BootFailure> {
+    let RuntimeInputs {
+        log_tail,
+        endpoints,
+        hotkey_main_thread,
+        preopened,
+        audio_sinks,
+        local_tts_engines,
+        platform_identities,
+    } = inputs;
     let backend = match preopened {
         Some(backend) => backend,
         None => open_backend().await?,
@@ -263,7 +278,7 @@ pub async fn build_runtime(
     .await;
     spawn_latest_projector(&bus, latest_values.clone());
 
-    let speech_output = build_speech_output(&backend).await;
+    let speech_output = build_speech_output(&backend, Arc::clone(&audio_sinks)).await;
     let speech_sink = Arc::new(RoutedSink::new(
         Arc::clone(&speech_output) as Arc<dyn AudioSink>
     ));
@@ -273,6 +288,7 @@ pub async fn build_runtime(
         &backend,
         Arc::clone(&speech_sink) as Arc<dyn AudioSink>,
         &cloud_tts_gateways,
+        local_tts_engines,
     )
     .await;
     let voice_gate = build_voice_gate(settings_repo.as_ref(), speak.clone()).await;
@@ -360,9 +376,12 @@ pub async fn build_runtime(
         &mut trigger_reg,
         &backend,
         &bus,
-        &endpoints,
         &donations,
-        hotkey_main_thread,
+        IntegrationInputs {
+            endpoints,
+            hotkey_main_thread,
+            platform_identities,
+        },
     )
     .await;
 
@@ -380,7 +399,7 @@ pub async fn build_runtime(
     ));
     soundboard_library.install_event_publisher(Arc::clone(&bus) as Arc<dyn EventPublisher>);
     let soundboard_player = Arc::new(SoundboardPlayer::with_settings(
-        Arc::new(CpalSinkFactory),
+        audio_sinks,
         Arc::new(BusAudioEventSink::new(
             Arc::clone(&bus) as Arc<dyn EventPublisher>
         )),

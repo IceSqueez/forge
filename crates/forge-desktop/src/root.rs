@@ -17,7 +17,7 @@ use gpui::{
 
 use crate::async_bridge::{BridgeFlow, drain_subscription};
 use crate::awake_state::AwakeState;
-use crate::boot::{BootFailure, build_runtime};
+use crate::boot::{BootFailure, RuntimeInputs, build_runtime};
 use crate::chat_feed::{ChatFeed, ChatMessage, DEFAULT_DISPLAY_LIMIT};
 use crate::chat_feed_bridge::ChatFeedBridge;
 use crate::event_categories::EventCategories;
@@ -26,8 +26,10 @@ use crate::event_loss::{EventLoss, UI_EVENTS};
 use crate::globals::Globals;
 use crate::home_stats::HomeStats;
 use crate::integration_lifecycle::IntegrationLifecycle;
+use crate::local_tts_engines::discover_local_tts_engines;
 use crate::log_tail::LogTail;
 use crate::navigation::Screen;
+use crate::platform_identities::PlatformIdentities;
 use crate::platforms::PlatformConnectivity;
 use crate::problem_report::ProblemReport;
 use crate::queue_health::QueueHealth;
@@ -152,12 +154,20 @@ pub fn run_boot(
     let (result_tx, result_rx) =
         tokio::sync::oneshot::channel::<Result<RuntimeHandles, BootFailure>>();
     rt_handle.spawn(async move {
+        let inputs = RuntimeInputs {
+            log_tail,
+            endpoints,
+            hotkey_main_thread,
+            preopened,
+            audio_sinks: Arc::new(forge_audio::CpalSinkFactory),
+            local_tts_engines: discover_local_tts_engines().await,
+            platform_identities: PlatformIdentities::from_environment(),
+        };
         #[expect(
             clippy::let_underscore_must_use,
             reason = "the view may close before the result arrives"
         )]
-        let _ =
-            result_tx.send(build_runtime(log_tail, endpoints, hotkey_main_thread, preopened).await);
+        let _ = result_tx.send(build_runtime(inputs).await);
     });
 
     cx.spawn(async move |cx| {

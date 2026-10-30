@@ -12,6 +12,7 @@ use crate::client::HotkeyClient;
 use crate::combo::HotkeyCombo;
 use crate::config::HotkeyConfig;
 use crate::error::HotkeyError;
+use crate::main_thread::MainThreadLink;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum RecordedCall {
@@ -81,6 +82,10 @@ impl HotkeyBackend for RecordingBackend {
             .unwrap_or_else(|p| p.into_inner())
             .take()
     }
+}
+
+pub fn offline_main_thread_link() -> MainThreadLink {
+    MainThreadLink::offline()
 }
 
 pub fn test_client(

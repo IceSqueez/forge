@@ -271,6 +271,11 @@ async fn select_and_start(
     publisher: Arc<dyn EventPublisher>,
     main_thread: MainThreadLink,
 ) -> Arc<HotkeyClient> {
+    #[cfg(feature = "testing")]
+    if main_thread.is_offline() {
+        return HotkeyClient::start(config, publisher, Arc::new(NullBackend::new()), None);
+    }
+
     #[cfg(target_os = "linux")]
     {
         drop(main_thread);

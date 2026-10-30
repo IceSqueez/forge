@@ -63,6 +63,8 @@ pub struct MainThreadLink {
         )
     )]
     timeout: Duration,
+    #[cfg(feature = "testing")]
+    offline: bool,
 }
 
 pub fn main_thread_channel() -> (MainThreadHost, MainThreadLink) {
@@ -73,8 +75,26 @@ pub fn main_thread_channel_with_timeout(timeout: Duration) -> (MainThreadHost, M
     let (tx, rx) = mpsc::channel(MAIN_THREAD_QUEUE);
     (
         MainThreadHost { jobs: rx },
-        MainThreadLink { jobs: tx, timeout },
+        MainThreadLink {
+            jobs: tx,
+            timeout,
+            #[cfg(feature = "testing")]
+            offline: false,
+        },
     )
+}
+
+#[cfg(feature = "testing")]
+impl MainThreadLink {
+    pub(crate) fn offline() -> Self {
+        let (_, mut link) = main_thread_channel();
+        link.offline = true;
+        link
+    }
+
+    pub(crate) fn is_offline(&self) -> bool {
+        self.offline
+    }
 }
 
 impl MainThreadHost {

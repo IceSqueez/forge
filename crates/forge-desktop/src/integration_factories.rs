@@ -25,6 +25,7 @@ use crate::integrations::{
     spawn_connect, spawn_event_bridge, twitch_builtin_object, youtube_builtin_object,
 };
 use crate::obs_credentials_form::{OBS_AUTO_RECONNECT, OBS_CONNECT_ON_LAUNCH};
+use crate::platform_identities::OAuthClientIdentity;
 use crate::vtube_connect_form::{VTUBE_AUTO_RECONNECT, VTUBE_CONNECT_ON_LAUNCH};
 use forge_hotkey::HotkeyReconciler;
 use forge_hotkey::clip_bindings_of;
@@ -54,8 +55,8 @@ pub(crate) fn wire_twitch(
     backend: &Arc<dyn DataProvider>,
     bus: &Arc<EventBus>,
     endpoints: &PlatformEndpoints,
+    client_id: String,
 ) -> Option<TwitchFactory> {
-    let client_id = forge_platform_twitch::client_id()?;
     let creds = creds_of(backend);
     let lifecycle = forge_platform_twitch::TwitchLifecycle::new();
     let oauth = forge_platform_twitch::TwitchOAuthClient::new(
@@ -222,6 +223,7 @@ pub(crate) fn wire_youtube(
     backend: &Arc<dyn DataProvider>,
     bus: &Arc<EventBus>,
     endpoints: &PlatformEndpoints,
+    identity: OAuthClientIdentity,
 ) -> Option<YoutubeFactory> {
     let creds = creds_of(backend);
     let assembly = forge_platform_youtube::YoutubeAssembly::new(
@@ -229,6 +231,7 @@ pub(crate) fn wire_youtube(
         publisher(bus),
         Arc::clone(&creds),
         backend.ban_ledger_repo(),
+        (identity.client_id, identity.client_secret),
     )?;
     assembly.register_sub_actions(sub_actions);
     Some(YoutubeFactory {
@@ -318,13 +321,13 @@ pub(crate) fn wire_kick(
     backend: &Arc<dyn DataProvider>,
     bus: &Arc<EventBus>,
     endpoints: &PlatformEndpoints,
+    identity: OAuthClientIdentity,
 ) -> Option<KickFactory> {
-    let (client_id, client_secret) = forge_platform_kick::client_credentials()?;
     let oauth = forge_platform_kick::KickOAuthClient::new(
         endpoints,
         kick_oauth_gateway(endpoints)?,
-        client_id,
-        client_secret,
+        identity.client_id,
+        identity.client_secret,
     );
     let rate_limiter: Arc<dyn RateLimiter> = Arc::new(TokenBucketRateLimiter::new(
         forge_platform_kick::KICK_API_BUDGET_CAPACITY,

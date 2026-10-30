@@ -4,7 +4,6 @@ mod audio_event;
 pub mod builtin_library;
 mod bus_event_sink;
 mod control;
-mod cpal_factory;
 mod duration;
 mod error;
 mod fan_out;
@@ -13,7 +12,6 @@ mod library;
 mod player;
 mod runners;
 pub mod settings;
-mod sink_factory;
 pub mod vocabulary;
 
 pub use audio_event::{AudioEvent, AudioEventSink, NullAudioEventSink};
@@ -23,7 +21,6 @@ pub use builtin_library::{
 };
 pub use bus_event_sink::BusAudioEventSink;
 pub use control::SoundboardControl;
-pub use cpal_factory::CpalSinkFactory;
 pub use duration::probe_clip_duration_secs;
 pub use error::SoundboardError;
 pub use hotkey_dispatch::{clips_bound_to, pressed_combo, spawn_clip_hotkey_dispatcher};
@@ -38,4 +35,3 @@ pub use runners::{
     register_soundboard_sub_actions,
 };
 pub use settings::{SoundboardSettings, SoundboardSettingsHandle, load_soundboard_settings};
-pub use sink_factory::AudioSinkFactory;

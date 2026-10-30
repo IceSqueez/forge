@@ -34,7 +34,6 @@ const SERVER_BIND_ADDRESS: &str = "127.0.0.1";
 const DISCORD_CREDENTIAL_PREFIX: &str = "discord:";
 const OBS_HOST: &str = "127.0.0.1";
 const VTUBE_HOST: &str = "127.0.0.1";
-const VTUBE_API_VERSION: &str = "1.0";
 const TWITCH_TOKEN_LIFETIME: Duration = Duration::from_secs(10 * 365 * 24 * 60 * 60);
 const KICK_TOKEN_LIFETIME: time::Duration = time::Duration::days(3650);
 const KICK_TOKEN_EXPIRED_AGO: time::Duration = time::Duration::hours(1);
@@ -234,7 +233,8 @@ async fn seed_queue(
             id: QueueId::new(),
             name: queue.name.clone(),
             description: String::new(),
-            concurrency: queue.concurrency,
+            concurrency: std::num::NonZeroU32::new(queue.concurrency)
+                .unwrap_or(std::num::NonZeroU32::MIN),
         })
         .await
         .map_err(storage_error)
@@ -291,7 +291,6 @@ async fn seed_vtube_connection(
     forge_vtube::credentials::store(
         provider,
         &vtube.token,
-        VTUBE_API_VERSION,
         VTUBE_HOST,
         vtube.port,
         false,

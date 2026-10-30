@@ -370,7 +370,7 @@ pub(super) async fn seed(store: &Store) -> Fixture {
         id: QueueId::new(),
         name: QUEUE_NAME.to_owned(),
         description: "pack queue".to_owned(),
-        concurrency: 2,
+        concurrency: std::num::NonZeroU32::new(2).unwrap(),
     };
     p.queue_repo().save(&queue).await.unwrap();
     ScriptRepo::save(
@@ -1094,7 +1094,7 @@ async fn keep_both_renames_a_global_with_a_literal_percent_but_never_a_templated
         id: QueueId::new(),
         name: QUEUE_NAME.to_owned(),
         description: String::new(),
-        concurrency: 1,
+        concurrency: std::num::NonZeroU32::MIN,
     };
     p.queue_repo().save(&queue).await.unwrap();
     for name in [PERCENT_GLOBAL, TEMPLATED_GLOBAL] {
@@ -1353,7 +1353,7 @@ async fn pack_whose_last_action_lacks_its_queue(registries: &Registries) -> Fail
         id: QueueId::new(),
         name: "Orphan queue".to_owned(),
         description: String::new(),
-        concurrency: 1,
+        concurrency: std::num::NonZeroU32::MIN,
     };
     source
         .provider
@@ -1663,7 +1663,7 @@ async fn the_preview_flags_an_http_step_nested_under_a_disabled_branch_as_execut
         id: QueueId::new(),
         name: QUEUE_NAME.to_owned(),
         description: "pack queue".to_owned(),
-        concurrency: 1,
+        concurrency: std::num::NonZeroU32::MIN,
     };
     source.provider.queue_repo().save(&queue).await.unwrap();
     let nested_http = Variant::Object(config(&[

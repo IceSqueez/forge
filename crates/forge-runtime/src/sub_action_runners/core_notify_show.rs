@@ -90,8 +90,15 @@ fn title_length(config: &SubActionConfig) -> Result<(), ConfigProblem> {
 
 fn read_notice(config: &SubActionConfig, args: &ArgStack) -> Result<DesktopNotice, ConfigProblem> {
     let timeout = TIMEOUT.read(config, args)?;
+    let title = TITLE.read(config, args)?;
+    if title.trim().is_empty() {
+        return Err(ConfigProblem::field(
+            TITLE.key,
+            ConfigReason::LengthOutOfRange(ValueBounds::between(MIN_TITLE_CHARS, MAX_TITLE_CHARS)),
+        ));
+    }
     Ok(DesktopNotice {
-        title: TITLE.read(config, args)?,
+        title: title.chars().take(MAX_TITLE_CHARS).collect(),
         body: BODY.read(config, args)?,
         urgency: URGENCY.read(config, args)?,
         icon_path: Some(ICON_PATH.read(config, args)?).filter(|path| !path.is_empty()),
@@ -290,5 +297,42 @@ mod tests {
         let mut too_long = SubActionConfig::new();
         too_long.insert("title".to_owned(), Variant::String("😀".repeat(101)));
         assert!(runner.validate_config(&too_long).is_err());
+    }
+
+    #[tokio::test]
+    async fn a_title_that_interpolates_to_blank_fails_without_showing_a_notice() {
+        let stack = ArgStack::new().set("who".to_owned(), Variant::String("   ".to_owned()));
+        let port = Arc::new(RecordingNotifyPort::new());
+
+        let outcome = run(
+            Arc::clone(&port),
+            stack,
+            cfg_with("%who%", "body", "normal", 5000),
+        )
+        .await;
+
+        assert!(!matches!(outcome, SubActionOutcome::Success));
+        assert_eq!(port.call_count(), 0);
+    }
+
+    #[tokio::test]
+    async fn a_title_interpolated_past_the_limit_is_cut_to_the_limit_in_characters() {
+        for (length, shown) in [
+            (MAX_TITLE_CHARS, MAX_TITLE_CHARS),
+            (MAX_TITLE_CHARS + 1, MAX_TITLE_CHARS),
+        ] {
+            let stack = ArgStack::new().set("who".to_owned(), Variant::String("я".repeat(length)));
+            let port = Arc::new(RecordingNotifyPort::new());
+
+            let outcome = run(
+                Arc::clone(&port),
+                stack,
+                cfg_with("%who%", "body", "normal", 5000),
+            )
+            .await;
+
+            assert!(matches!(outcome, SubActionOutcome::Success));
+            assert_eq!(port.shown()[0].title.chars().count(), shown, "{length}");
+        }
     }
 }

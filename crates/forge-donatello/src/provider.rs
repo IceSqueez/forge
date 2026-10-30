@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use forge_events::EventPublisher;
@@ -8,6 +8,7 @@ use forge_storage::CredentialsRepo;
 use forge_types::IntegrationId;
 use tokio::runtime::Handle;
 use tokio::sync::{mpsc, watch};
+use tokio::task::AbortHandle;
 use tokio_stream::wrappers::ReceiverStream;
 
 use crate::api::{DonatelloAccount, DonatelloApi};
@@ -29,6 +30,7 @@ pub struct DonatelloProvider {
     control: watch::Sender<PollControl>,
     pub(crate) status: Arc<StatusBoard>,
     timing: DonatelloTiming,
+    running_poller: Mutex<Option<AbortHandle>>,
 }
 
 impl DonatelloProvider {
@@ -49,6 +51,7 @@ impl DonatelloProvider {
             control,
             status: Arc::new(StatusBoard::new(interval)),
             timing,
+            running_poller: Mutex::new(None),
         }
     }
 
@@ -128,7 +131,7 @@ impl DonationProvider for DonatelloProvider {
         let (sink, receiver) = mpsc::channel(DONATION_BUFFER);
         match Handle::try_current() {
             Ok(runtime) => {
-                runtime.spawn(poller::run(PollContext {
+                let poller = runtime.spawn(poller::run(PollContext {
                     provider: self.id.clone(),
                     api: Arc::clone(&self.api),
                     creds: Arc::clone(&self.creds),
@@ -136,7 +139,16 @@ impl DonationProvider for DonatelloProvider {
                     status: Arc::clone(&self.status),
                     sink,
                     timing: self.timing,
+                    active_generation: 0,
                 }));
+                let superseded = self
+                    .running_poller
+                    .lock()
+                    .unwrap_or_else(|poisoned| poisoned.into_inner())
+                    .replace(poller.abort_handle());
+                if let Some(superseded) = superseded {
+                    superseded.abort();
+                }
             }
             Err(_) => {
                 #[expect(

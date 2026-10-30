@@ -1,5 +1,6 @@
 use forge_types::UserText;
-use std::sync::{Arc, OnceLock, RwLock};
+use std::sync::atomic::{AtomicU32, Ordering};
+use std::sync::{Arc, RwLock};
 use std::time::{Duration, SystemTime};
 
 use forge_platform_core::{
@@ -59,8 +60,8 @@ pub fn register_youtube_triggers(registry: &mut TriggerRegistry) -> Result<(), R
 pub struct YoutubeIntegrationBundle {
     id: IntegrationId,
     channel_id: String,
-    channel_title_name: OnceLock<String>,
-    channel_handle_name: OnceLock<String>,
+    hero_name: RwLock<Option<String>>,
+    last_quota_used: AtomicU32,
     token_expires_at: RwLock<Option<SystemTime>>,
     health_tx: broadcast::Sender<HealthDelta>,
     platform: Arc<YoutubePlatform>,
@@ -117,8 +118,8 @@ impl YoutubeIntegrationBundle {
         let bundle = Arc::new(Self {
             id: crate::YOUTUBE_INTEGRATION.id,
             channel_id,
-            channel_title_name: OnceLock::new(),
-            channel_handle_name: OnceLock::new(),
+            hero_name: RwLock::new(None),
+            last_quota_used: AtomicU32::new(0),
             token_expires_at: RwLock::new(None),
             health_tx,
             platform,
@@ -236,9 +237,10 @@ impl YoutubeIntegrationBundle {
                     changed = expiry_rx.changed() => if changed.is_err() { break },
                 }
                 let expiry = *expiry_rx.borrow_and_update();
-                if let Ok(mut guard) = bundle.token_expires_at.write() {
-                    *guard = expiry;
-                }
+                *bundle
+                    .token_expires_at
+                    .write()
+                    .unwrap_or_else(|p| p.into_inner()) = expiry;
             }
         });
     }
@@ -265,20 +267,14 @@ impl YoutubeIntegrationBundle {
                 .await
                 .unwrap_or(stored)
         };
-        match handle_hero_name(stored.channel_handle.as_deref()) {
-            Some(handle_name) => {
-                self.channel_handle_name.get_or_init(|| handle_name);
-            }
-            None => {
-                self.channel_title_name
-                    .get_or_init(|| stored.channel_title.clone());
-            }
-        }
-        if let Ok(mut guard) = self.token_expires_at.write()
-            && guard.is_none()
-        {
-            *guard = Some(SystemTime::from(stored.expires_at));
-        }
+        *self.hero_name.write().unwrap_or_else(|p| p.into_inner()) = Some(
+            handle_hero_name(stored.channel_handle.as_deref())
+                .unwrap_or_else(|| stored.channel_title.clone()),
+        );
+        self.token_expires_at
+            .write()
+            .unwrap_or_else(|p| p.into_inner())
+            .get_or_insert_with(|| SystemTime::from(stored.expires_at));
     }
 
     pub(crate) fn credentials_manager(&self) -> &Arc<YoutubeCredentialsManager> {
@@ -294,16 +290,18 @@ impl YoutubeIntegrationBundle {
     }
 
     fn quota_metric(&self) -> HealthMetric {
-        let value = match self.quota.try_lock() {
-            Ok(guard) => HealthValue::Ratio {
-                used: u64::from(guard.used_on(today_pacific())),
-                total: u64::from(QUOTA_DAILY_LIMIT),
-                reset_hint: Some(message_text(messages::health_quota_resets_daily())),
-            },
-            Err(_) => HealthValue::Text {
-                primary: message_text(messages::health_unavailable()),
-                secondary: None,
-            },
+        let used = match self.quota.try_lock() {
+            Ok(guard) => {
+                let used = guard.used_on(today_pacific());
+                self.last_quota_used.store(used, Ordering::Relaxed);
+                used
+            }
+            Err(_) => self.last_quota_used.load(Ordering::Relaxed),
+        };
+        let value = HealthValue::Ratio {
+            used: u64::from(used),
+            total: u64::from(QUOTA_DAILY_LIMIT),
+            reset_hint: Some(message_text(messages::health_quota_resets_daily())),
         };
         HealthMetric {
             id: API_CALLS_METRIC,
@@ -365,7 +363,7 @@ impl BuiltinStatus for YoutubeIntegrationBundle {
         "YouTube"
     }
 
-    fn version(&self) -> Option<&str> {
+    fn version(&self) -> Option<String> {
         None
     }
 
@@ -399,11 +397,11 @@ impl BuiltinStatus for YoutubeIntegrationBundle {
             .unwrap_or_else(|p| p.into_inner())
     }
 
-    fn hero_name(&self) -> Option<&str> {
-        self.channel_handle_name
-            .get()
-            .or_else(|| self.channel_title_name.get())
-            .map(String::as_str)
+    fn hero_name(&self) -> Option<String> {
+        self.hero_name
+            .read()
+            .unwrap_or_else(|p| p.into_inner())
+            .clone()
     }
 
     fn name_badges(&self) -> Vec<HeroBadge> {
@@ -1007,7 +1005,10 @@ mod tests {
 
         bundle.refresh_identity().await;
 
-        assert_eq!(BuiltinStatus::hero_name(bundle.as_ref()), Some("@gtnhlive"));
+        assert_eq!(
+            BuiltinStatus::hero_name(bundle.as_ref()).as_deref(),
+            Some("@gtnhlive")
+        );
         assert_eq!(
             BuiltinStatus::token_expiry(bundle.as_ref()),
             Some(SystemTime::from(expires_at))
@@ -1225,6 +1226,77 @@ mod tests {
         assert_eq!(
             uncatalogued(&emitted, &[YOUTUBE_MESSAGES, forge_types::COMMON_MESSAGES]),
             Vec::<String>::new()
+        );
+    }
+
+    struct ChangingRepo(std::sync::Mutex<String>);
+
+    #[async_trait]
+    impl CredentialsRepo for ChangingRepo {
+        async fn store(&self, _: &CredentialId, _: &str) -> Result<(), StorageError> {
+            Ok(())
+        }
+        async fn load(&self, _: &CredentialId) -> Result<Option<String>, StorageError> {
+            Ok(Some(self.0.lock().unwrap().clone()))
+        }
+        async fn delete(&self, _: &CredentialId) -> Result<bool, StorageError> {
+            Ok(true)
+        }
+        async fn list_ids(&self) -> Result<Vec<CredentialId>, StorageError> {
+            Ok(Vec::new())
+        }
+        async fn last_refresh(
+            &self,
+            _: &CredentialId,
+        ) -> Result<Option<OffsetDateTime>, StorageError> {
+            Ok(None)
+        }
+        async fn mark_refreshed(&self, _: &CredentialId) -> Result<(), StorageError> {
+            Ok(())
+        }
+    }
+
+    #[tokio::test]
+    async fn each_identity_refresh_replaces_the_hero_name() {
+        let expires_at = OffsetDateTime::from_unix_timestamp(1_800_000_000).unwrap();
+        let repo = Arc::new(ChangingRepo(std::sync::Mutex::new(stored_credential_json(
+            "Old Title",
+            Some("@old"),
+            expires_at,
+        ))));
+        let (bundle, _platform) = make_bundle(Arc::clone(&repo) as Arc<dyn CredentialsRepo>);
+        bundle.refresh_identity().await;
+
+        for (title, handle, hero) in [
+            ("Old Title", Some("@renamed"), "@renamed"),
+            ("New Title", None, "New Title"),
+        ] {
+            *repo.0.lock().unwrap() = stored_credential_json(title, handle, expires_at);
+            bundle.refresh_identity().await;
+
+            assert_eq!(
+                BuiltinStatus::hero_name(bundle.as_ref()).as_deref(),
+                Some(hero)
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn api_calls_metric_keeps_the_last_reading_while_the_quota_is_busy() {
+        let quota = SharedQuota::default();
+        let today = today_pacific();
+        quota.lock().await.charge(7, today).unwrap();
+        let (bundle, _platform) = make_bundle_with_quota(Arc::new(EmptyRepo), quota.clone());
+        bundle.quota_metric();
+
+        let held = quota.lock().await;
+        let metric = bundle.quota_metric();
+        drop(held);
+
+        assert!(
+            matches!(metric.value, HealthValue::Ratio { used: 7, .. }),
+            "got {:?}",
+            metric.value
         );
     }
 }

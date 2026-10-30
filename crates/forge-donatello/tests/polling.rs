@@ -4,10 +4,11 @@ use std::collections::{BTreeSet, HashSet};
 use std::sync::Arc;
 
 use forge_donatello::PollPhase;
-use forge_platform_core::{BuiltinControl, PlatformError};
+use forge_platform_core::{BuiltinControl, DonationProvider, PlatformError};
 use forge_types::{Donation, DonationOrigin};
 use serde_json::json;
 use support::{Harness, MemCreds, OTHER_TOKEN, Order, donate, donates};
+use tokio_stream::StreamExt;
 use wiremock::matchers::{method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
@@ -554,4 +555,59 @@ async fn replacements_straddling_a_page_boundary_are_all_reported() {
     let reported = h.donations(2).await;
 
     assert_eq!(ids_and_origins(&reported), new_live_ids(2));
+}
+
+async fn wait_for_requests(h: &Harness, count: usize) {
+    let deadline = tokio::time::Instant::now() + support::WAIT;
+    while h.list.requested_pages().len() < count {
+        assert!(
+            tokio::time::Instant::now() < deadline,
+            "timed out waiting for {count} page requests"
+        );
+        tokio::time::sleep(support::TICK).await;
+    }
+}
+
+#[tokio::test]
+async fn pausing_during_a_stalled_page_still_reports_what_the_scan_collected_and_resumes_the_rest()
+{
+    let mut h = after_baseline(Order::NewestFirst, 45).await;
+    add_new(&h, 21);
+    h.list.forget_requests();
+    h.list
+        .fail_after(1, ResponseTemplate::new(200).set_delay(support::WAIT * 10));
+
+    h.wake_poller();
+    wait_for_requests(&h, 2).await;
+    assert!(h.provider.disconnect().await.is_ok());
+    let collected = h.donations(20).await;
+    h.wait_for("paused", |s| s.phase == PollPhase::Paused).await;
+    assert!(h.provider.reconnect().await.is_ok());
+    let rest = h.donations(1).await;
+
+    let reported: Vec<Donation> = collected.into_iter().chain(rest).collect();
+    assert_eq!(ids_and_origins(&reported), new_live_ids(21));
+}
+
+#[tokio::test]
+async fn a_second_donation_stream_retires_the_first_poller() {
+    let mut h = after_baseline(Order::NewestFirst, 2).await;
+
+    let mut replacement = h.provider.donations();
+
+    assert!(
+        tokio::time::timeout(support::WAIT, h.stream.next())
+            .await
+            .expect("the first stream must close")
+            .is_none(),
+        "the retired poller must drop its stream"
+    );
+    for _ in 0..2 {
+        let baseline = tokio::time::timeout(support::WAIT, replacement.next())
+            .await
+            .expect("the replacement stream reports the baseline")
+            .expect("the replacement stream stays open")
+            .unwrap();
+        assert_eq!(baseline.origin, DonationOrigin::History);
+    }
 }

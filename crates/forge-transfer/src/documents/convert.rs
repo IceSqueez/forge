@@ -1,3 +1,5 @@
+use std::num::NonZeroU32;
+
 use forge_types::{Action, Queue, SubActionStep, TriggerInstance};
 
 use crate::documents::model::{ActionDocument, QueueDocument, StepDocument, TriggerDocument};
@@ -48,6 +50,30 @@ pub(crate) fn queue_of(document: &QueueDocument) -> Queue {
         id: document.id,
         name: document.name.clone(),
         description: document.description.clone(),
-        concurrency: document.concurrency,
+        concurrency: NonZeroU32::new(document.concurrency).unwrap_or(NonZeroU32::MIN),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::num::NonZeroU32;
+
+    use forge_types::QueueId;
+
+    use super::*;
+
+    #[test]
+    fn a_document_with_no_queue_slots_imports_as_a_serial_queue() {
+        for (stored, imported) in [(0, NonZeroU32::MIN), (3, NonZeroU32::new(3).unwrap())] {
+            let document = QueueDocument {
+                id: QueueId::new(),
+                name: "imported".to_owned(),
+                description: String::new(),
+                concurrency: stored,
+                role: None,
+            };
+
+            assert_eq!(queue_of(&document).concurrency, imported, "{stored}");
+        }
     }
 }

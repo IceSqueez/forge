@@ -58,7 +58,7 @@ fn queue(name: &str) -> Queue {
         id: QueueId::new(),
         name: name.to_owned(),
         description: String::new(),
-        concurrency: 8,
+        concurrency: std::num::NonZeroU32::new(8).unwrap(),
     }
 }
 

@@ -73,6 +73,26 @@ impl SqliteTriggerInstanceRepo {
 
 #[async_trait]
 impl TriggerInstanceRepo for SqliteTriggerInstanceRepo {
+    async fn count_of_kinds(&self, kind_ids: &[String]) -> Result<usize, StorageError> {
+        if kind_ids.is_empty() {
+            return Ok(0);
+        }
+        let mut query = sqlx::QueryBuilder::<sqlx::Sqlite>::new(
+            "SELECT COUNT(*) FROM trigger_instances WHERE archived_at IS NULL AND kind_id IN (",
+        );
+        let mut kinds = query.separated(", ");
+        for kind_id in kind_ids {
+            kinds.push_bind(kind_id);
+        }
+        query.push(")");
+        let count: i64 = query
+            .build_query_scalar()
+            .fetch_one(self.db.reader())
+            .await
+            .map_err(SqliteStorageError::Sqlx)?;
+        Ok(usize::try_from(count).unwrap_or(usize::MAX))
+    }
+
     async fn list_all(&self) -> Result<Vec<TriggerInstance>, StorageError> {
         let rows: Vec<InstanceRow> = sqlx::query_as(
             "SELECT id, kind_id, name, overrides, enabled, user_defined, platform_scope,

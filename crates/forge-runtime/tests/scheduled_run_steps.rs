@@ -122,7 +122,7 @@ impl Harness {
             id: QueueId::new(),
             name: "scheduled".to_owned(),
             description: String::new(),
-            concurrency: 8,
+            concurrency: std::num::NonZeroU32::new(8).unwrap(),
         };
         dp.queue_repo().save(&queue).await.unwrap();
         let bus = EventBus::new(Arc::new(NullEventLogRepo));

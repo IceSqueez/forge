@@ -1065,7 +1065,7 @@ async fn a_queue_edited_since_the_export_is_reported_changed_back_to_the_setup_v
         .unwrap();
     queues
         .save(&Queue {
-            concurrency: exported.concurrency + 3,
+            concurrency: exported.concurrency.saturating_add(3),
             ..exported.clone()
         })
         .await

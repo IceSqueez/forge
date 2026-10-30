@@ -257,7 +257,7 @@ fn queue(id: QueueId, concurrency: u32) -> Queue {
         id,
         name: "q".to_owned(),
         description: String::new(),
-        concurrency,
+        concurrency: std::num::NonZeroU32::new(concurrency).unwrap(),
     }
 }
 

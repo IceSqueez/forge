@@ -158,6 +158,15 @@ impl ActionRepo for SqliteActionRepo {
             .collect()
     }
 
+    async fn count(&self) -> Result<usize, StorageError> {
+        let count: i64 =
+            sqlx::query_scalar("SELECT COUNT(*) FROM actions WHERE archived_at IS NULL")
+                .fetch_one(self.db.reader())
+                .await
+                .map_err(SqliteStorageError::Sqlx)?;
+        Ok(usize::try_from(count).unwrap_or(usize::MAX))
+    }
+
     async fn get(&self, id: ActionId) -> Result<Option<Action>, StorageError> {
         let id_str = id.to_string();
         let row: Option<ActionRow> = sqlx::query_as(
@@ -385,10 +394,6 @@ impl ActionRepo for SqliteActionRepo {
         .map_err(SqliteStorageError::Sqlx)?;
 
         Ok(row.map(|(enabled,)| enabled != 0))
-    }
-
-    async fn archive(&self, id: ActionId) -> Result<bool, StorageError> {
-        Ok(self.archive_reporting_cancelled_runs(id).await?.is_some())
     }
 
     async fn archive_reporting_cancelled_runs(

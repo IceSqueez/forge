@@ -235,7 +235,7 @@ struct Forge {
 
 async fn forge_with_token(fake: &FakeVTube, token: &str) -> Forge {
     let credentials = Arc::new(MemoryCredentials::default());
-    forge_vtube::credentials::store(&*credentials, token, "1.0", LOCALHOST, fake.port(), false)
+    forge_vtube::credentials::store(&*credentials, token, LOCALHOST, fake.port(), false)
         .await
         .unwrap();
     let events = Arc::new(Captured::default());

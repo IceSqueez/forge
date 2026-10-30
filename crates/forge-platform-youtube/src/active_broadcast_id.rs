@@ -17,21 +17,18 @@ impl ActiveBroadcastIdHandle {
     }
 
     pub fn set(&self, id: Option<String>) {
-        if let Ok(mut guard) = self.inner.lock() {
-            *guard = id;
-        }
+        *self.inner.lock().unwrap_or_else(|p| p.into_inner()) = id;
     }
 
     pub fn set_while_active(&self, id: Option<String>, cancel: &CancellationToken) {
-        if let Ok(mut guard) = self.inner.lock()
-            && !cancel.is_cancelled()
-        {
+        let mut guard = self.inner.lock().unwrap_or_else(|p| p.into_inner());
+        if !cancel.is_cancelled() {
             *guard = id;
         }
     }
 
     pub fn get(&self) -> Option<String> {
-        self.inner.lock().ok().and_then(|g| g.clone())
+        self.inner.lock().unwrap_or_else(|p| p.into_inner()).clone()
     }
 
     pub(crate) fn fall_back_to(&self, lookup: BroadcastLookup) {

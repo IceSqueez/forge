@@ -118,7 +118,7 @@ pub(crate) fn queue_named(name: &str) -> Queue {
         id: QueueId::new(),
         name: name.to_owned(),
         description: String::new(),
-        concurrency: 1,
+        concurrency: std::num::NonZeroU32::MIN,
     }
 }
 

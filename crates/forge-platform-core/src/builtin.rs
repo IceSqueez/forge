@@ -377,6 +377,25 @@ pub enum QuickActionFieldKind {
 }
 
 impl QuickActionFieldKind {
+    pub fn accepts(&self, value: &QuickActionFieldValue) -> bool {
+        match (self, value) {
+            (
+                Self::Text | Self::Multiline | Self::MultilineList,
+                QuickActionFieldValue::Text(_),
+            )
+            | (Self::Toggle, QuickActionFieldValue::Toggle(_)) => true,
+            (
+                Self::Choice(QuickActionChoiceSource::Static(options)),
+                QuickActionFieldValue::Text(text),
+            ) => text.is_empty() || options.iter().any(|option| option.value == *text),
+            (Self::Choice(_), QuickActionFieldValue::Text(_)) => true,
+            (Self::Int { min, max }, QuickActionFieldValue::Int(number)) => {
+                (*min..=*max).contains(number)
+            }
+            _ => false,
+        }
+    }
+
     pub fn marshal(&self, value: &QuickActionFieldValue) -> Variant {
         match (self, value) {
             (Self::MultilineList, QuickActionFieldValue::Text(text)) => Variant::Array(
@@ -467,6 +486,18 @@ impl QuickAction {
         self.enabled && self.liveness != QuickActionLiveness::Absent
     }
 
+    pub fn first_mismatched_field(
+        &self,
+        values: &BTreeMap<String, QuickActionFieldValue>,
+    ) -> Option<&QuickActionField> {
+        self.fields.iter().find(|field| {
+            values
+                .get(&field.key)
+                .or(field.default.as_ref())
+                .is_some_and(|value| !field.kind.accepts(value))
+        })
+    }
+
     pub fn merge_config(&self, values: &BTreeMap<String, QuickActionFieldValue>) -> SubActionStep {
         let mut step = self.subaction_template.clone();
         for field in &self.fields {
@@ -497,7 +528,7 @@ pub enum HeaderAction {
 pub trait BuiltinStatus: Send + Sync {
     fn id(&self) -> &IntegrationId;
     fn display_name(&self) -> &str;
-    fn version(&self) -> Option<&str>;
+    fn version(&self) -> Option<String>;
     fn connection(&self) -> ConnectionState;
     fn uptime(&self) -> Option<Duration>;
     fn endpoint(&self) -> Option<UserText>;
@@ -509,7 +540,7 @@ pub trait BuiltinStatus: Send + Sync {
     fn name_badges(&self) -> Vec<HeroBadge> {
         Vec::new()
     }
-    fn hero_name(&self) -> Option<&str> {
+    fn hero_name(&self) -> Option<String> {
         None
     }
     fn activity_count(&self) -> Option<usize> {
@@ -1158,5 +1189,107 @@ mod tests {
             uncatalogued(&emitted, &[CATALOG]),
             ["demo.stranger", "demo.untranslated"]
         );
+    }
+
+    fn static_choice(values: &[&str]) -> QuickActionFieldKind {
+        QuickActionFieldKind::Choice(QuickActionChoiceSource::Static(
+            values
+                .iter()
+                .map(|value| QuickActionChoiceOption {
+                    value: (*value).to_owned(),
+                    label: forge_types::VerbatimText::new(*value).into(),
+                })
+                .collect(),
+        ))
+    }
+
+    fn text(value: &str) -> QuickActionFieldValue {
+        QuickActionFieldValue::Text(value.to_owned())
+    }
+
+    #[test]
+    fn a_field_accepts_only_values_its_kind_can_carry() {
+        let bounded = QuickActionFieldKind::Int { min: 1, max: 10 };
+        let options = static_choice(&["a", "b"]);
+        let live_list = QuickActionFieldKind::Choice(QuickActionChoiceSource::OptionList(
+            OptionListId::new("scenes"),
+        ));
+        for (kind, value, accepted) in [
+            (&bounded, QuickActionFieldValue::Int(1), true),
+            (&bounded, QuickActionFieldValue::Int(10), true),
+            (&bounded, QuickActionFieldValue::Int(0), false),
+            (&bounded, QuickActionFieldValue::Int(11), false),
+            (&bounded, text("5"), false),
+            (&options, text("a"), true),
+            (&options, text(""), true),
+            (&options, text("c"), false),
+            (&options, QuickActionFieldValue::Toggle(true), false),
+            (&live_list, text("not known yet"), true),
+            (&live_list, QuickActionFieldValue::Int(1), false),
+            (
+                &QuickActionFieldKind::Toggle,
+                QuickActionFieldValue::Toggle(false),
+                true,
+            ),
+            (&QuickActionFieldKind::Toggle, text("true"), false),
+            (&QuickActionFieldKind::Text, text("x"), true),
+            (&QuickActionFieldKind::Multiline, text("x"), true),
+            (&QuickActionFieldKind::MultilineList, text("x"), true),
+            (
+                &QuickActionFieldKind::Text,
+                QuickActionFieldValue::Int(1),
+                false,
+            ),
+        ] {
+            assert_eq!(kind.accepts(&value), accepted, "{kind:?} with {value:?}");
+        }
+    }
+
+    #[test]
+    fn first_mismatched_field_names_the_first_offender_in_field_order() {
+        let action = qa_with(
+            qa_template(BTreeMap::new()),
+            vec![
+                qa_field("fine", QuickActionFieldKind::Text, None),
+                qa_field("first", QuickActionFieldKind::Int { min: 0, max: 1 }, None),
+                qa_field("second", static_choice(&["a"]), None),
+            ],
+        );
+        let values = BTreeMap::from([
+            ("fine".to_owned(), text("ok")),
+            ("first".to_owned(), QuickActionFieldValue::Int(2)),
+            ("second".to_owned(), text("off the list")),
+        ]);
+
+        let offender = action
+            .first_mismatched_field(&values)
+            .map(|f| f.key.as_str());
+
+        assert_eq!(offender, Some("first"));
+    }
+
+    #[test]
+    fn first_mismatched_field_judges_the_value_merge_config_would_use() {
+        let bad_default = Some(QuickActionFieldValue::Int(99));
+        let action = qa_with(
+            qa_template(BTreeMap::new()),
+            vec![qa_field(
+                "count",
+                QuickActionFieldKind::Int { min: 0, max: 10 },
+                bad_default,
+            )],
+        );
+        let unset = qa_with(
+            qa_template(BTreeMap::new()),
+            vec![qa_field("count", QuickActionFieldKind::Text, None)],
+        );
+        let supplied = BTreeMap::from([("count".to_owned(), QuickActionFieldValue::Int(5))]);
+
+        assert!(
+            action.first_mismatched_field(&BTreeMap::new()).is_some(),
+            "an out-of-range default is what would be sent"
+        );
+        assert!(action.first_mismatched_field(&supplied).is_none());
+        assert!(unset.first_mismatched_field(&BTreeMap::new()).is_none());
     }
 }

@@ -142,7 +142,7 @@ fn decode(contents: String, read_as: ReadAs) -> Result<Variant, MessageRef> {
         ReadAs::WholeFile => Ok(Variant::String(contents)),
         ReadAs::Json => serde_json::from_str::<serde_json::Value>(&contents)
             .map_err(core_messages::file_not_json)
-            .and_then(|json| Variant::from_json(json).map_err(core_messages::file_not_json)),
+            .and_then(|json| Variant::from_plain_json(json).map_err(core_messages::file_not_json)),
         ReadAs::Lines => Ok(Variant::Array(
             contents
                 .lines()
@@ -201,4 +201,38 @@ async fn read_capped(path: &Path) -> Result<String, MessageRef> {
         return Err(core_messages::file_too_large(MAX_FILE_BYTES));
     }
     String::from_utf8(bytes).map_err(core_messages::file_io_failed)
+}
+
+#[cfg(test)]
+mod tests {
+    use std::collections::BTreeMap;
+
+    use super::*;
+
+    #[test]
+    fn a_json_file_that_looks_like_a_tagged_value_keeps_its_own_shape() {
+        for (contents, value) in [
+            (
+                r#"{"type":"int","value":"not a number"}"#,
+                Variant::String("not a number".to_owned()),
+            ),
+            (r#"{"type":"int","value":5}"#, Variant::Int(5)),
+        ] {
+            let decoded = decode(contents.to_owned(), ReadAs::Json).ok();
+
+            assert_eq!(
+                decoded,
+                Some(Variant::Object(BTreeMap::from([
+                    ("type".to_owned(), Variant::String("int".to_owned())),
+                    ("value".to_owned(), value),
+                ]))),
+                "{contents}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_file_that_is_not_json_is_refused_when_read_as_json() {
+        assert!(decode("{not json".to_owned(), ReadAs::Json).is_err());
+    }
 }

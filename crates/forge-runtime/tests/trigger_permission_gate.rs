@@ -194,7 +194,7 @@ async fn harness(instances: &[(&TriggerInstance, ActionId)]) -> Harness {
         id: queue_id,
         name: "gate".into(),
         description: String::new(),
-        concurrency: 8,
+        concurrency: std::num::NonZeroU32::new(8).unwrap(),
     };
     dp.queue_repo().save(&queue).await.unwrap();
 

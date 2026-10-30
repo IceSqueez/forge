@@ -23,6 +23,8 @@ pub const FAILURE_MISSING_TOKEN: MessageCode =
     MessageCode::from_static(INTEGRATION_ID, "failure_missing_token");
 pub const FAILURE_TOKEN_REJECTED: MessageCode =
     MessageCode::from_static(INTEGRATION_ID, "failure_token_rejected");
+pub const FAILURE_TOKEN_UNREADABLE: MessageCode =
+    MessageCode::from_static(INTEGRATION_ID, "failure_token_unreadable");
 pub const FAILURE_RATE_LIMITED: MessageCode =
     MessageCode::from_static(INTEGRATION_ID, "failure_rate_limited");
 pub const FAILURE_NETWORK: MessageCode =
@@ -51,6 +53,8 @@ pub const LABEL_TOKEN_ACCESS_BODY: MessageCode =
     MessageCode::from_static(INTEGRATION_ID, "label_token_access_body");
 pub const LABEL_BANNER_TOKEN_REJECTED: MessageCode =
     MessageCode::from_static(INTEGRATION_ID, "label_banner_token_rejected");
+pub const LABEL_BANNER_TOKEN_UNREADABLE: MessageCode =
+    MessageCode::from_static(INTEGRATION_ID, "label_banner_token_unreadable");
 pub const LABEL_BANNER_JAR_NOT_SELECTED: MessageCode =
     MessageCode::from_static(INTEGRATION_ID, "label_banner_jar_not_selected");
 pub const LABEL_BANNER_JAR_MISSING: MessageCode =
@@ -75,6 +79,7 @@ pub const MONOBANK_MESSAGES: MessageCatalog = MessageCatalog {
         FAILURE_NONE,
         FAILURE_MISSING_TOKEN,
         FAILURE_TOKEN_REJECTED,
+        FAILURE_TOKEN_UNREADABLE,
         FAILURE_RATE_LIMITED,
         FAILURE_NETWORK,
         FAILURE_SERVER_ERROR,
@@ -91,6 +96,7 @@ pub const MONOBANK_MESSAGES: MessageCatalog = MessageCatalog {
         LABEL_TOKEN_ACCESS_TITLE,
         LABEL_TOKEN_ACCESS_BODY,
         LABEL_BANNER_TOKEN_REJECTED,
+        LABEL_BANNER_TOKEN_UNREADABLE,
         LABEL_BANNER_JAR_NOT_SELECTED,
         LABEL_BANNER_JAR_MISSING,
         LABEL_BANNER_TOKEN_MISSING,

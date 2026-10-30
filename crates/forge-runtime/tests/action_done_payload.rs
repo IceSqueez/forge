@@ -143,7 +143,7 @@ async fn rig() -> Rig {
             id: default_queue(),
             name: "default".to_owned(),
             description: String::new(),
-            concurrency: 1,
+            concurrency: std::num::NonZeroU32::MIN,
         }],
     );
     Rig {

@@ -55,6 +55,7 @@ impl PollPhase {
 pub enum PollFailure {
     MissingToken,
     TokenRejected,
+    TokenUnreadable,
     ProfileIncomplete,
     RateLimited,
     Network,
@@ -68,7 +69,8 @@ impl PollFailure {
     pub fn of(error: &DonatelloError) -> Self {
         match error {
             DonatelloError::MissingToken => Self::MissingToken,
-            DonatelloError::MalformedToken | DonatelloError::Unauthorized => Self::TokenRejected,
+            DonatelloError::MalformedToken => Self::TokenUnreadable,
+            DonatelloError::Unauthorized => Self::TokenRejected,
             DonatelloError::ProfileIncomplete => Self::ProfileIncomplete,
             DonatelloError::RateLimited { .. } | DonatelloError::RateLimitExhausted => {
                 Self::RateLimited
@@ -87,6 +89,7 @@ impl PollFailure {
         MessageRef::new(match self {
             Self::MissingToken => messages::FAILURE_MISSING_TOKEN,
             Self::TokenRejected => messages::FAILURE_TOKEN_REJECTED,
+            Self::TokenUnreadable => messages::FAILURE_TOKEN_UNREADABLE,
             Self::ProfileIncomplete => messages::FAILURE_PROFILE_INCOMPLETE,
             Self::RateLimited => messages::FAILURE_RATE_LIMITED,
             Self::Network => messages::FAILURE_NETWORK,
@@ -101,6 +104,7 @@ impl PollFailure {
         match self {
             Self::MissingToken => "No token",
             Self::TokenRejected => "Token rejected",
+            Self::TokenUnreadable => "Token unreadable",
             Self::ProfileIncomplete => "Profile incomplete",
             Self::RateLimited => "Rate limited",
             Self::Network => "Network error",
@@ -344,6 +348,25 @@ mod tests {
             board.record_poll(None);
             board.record_failure(&error);
             assert_eq!(recorder.last(), Some((state, false)), "{error:?}");
+        }
+    }
+
+    #[test]
+    fn a_token_that_cannot_be_read_stops_polling_under_its_own_failure() {
+        for (error, failure) in [
+            (DonatelloError::MalformedToken, PollFailure::TokenUnreadable),
+            (DonatelloError::Unauthorized, PollFailure::TokenRejected),
+        ] {
+            let board = StatusBoard::new(POLL_INTERVAL);
+            board.record_failure(&error);
+
+            let status = board.snapshot();
+
+            assert_eq!(
+                (status.phase, status.last_error),
+                (PollPhase::ActionRequired, Some(failure)),
+                "{error:?}"
+            );
         }
     }
 

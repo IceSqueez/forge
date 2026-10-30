@@ -1,15 +1,15 @@
 use std::collections::BTreeMap;
 
+use super::combo_condition;
 use forge_events::{Event, EventSource};
 use forge_registry::{
     EventFilter, FormField, KindPlatformContract, TriggerCategory, TriggerKindDescriptor,
 };
 use forge_types::{
     ArgStack, DeclaredVariable, TriggerConfig, UserText, VariableSchema, Variant, VariantKind,
-    VerbatimText,
 };
 
-use crate::vocabulary::{event_kinds, fields, messages, trigger_ids, variables};
+use crate::vocabulary::{event_kinds, fields, trigger_ids, variables};
 
 pub struct HotkeyPressedDescriptor;
 
@@ -55,10 +55,7 @@ impl TriggerKindDescriptor for HotkeyPressedDescriptor {
     }
 
     fn condition_display(&self, config: &TriggerConfig) -> UserText {
-        match config.get(crate::COMBO_FIELD) {
-            Some(Variant::String(combo)) => VerbatimText::new(combo.as_str()).into(),
-            _ => messages::CONDITION_ANY_HOTKEY.into(),
-        }
+        combo_condition(config)
     }
 
     fn event_filter(&self) -> EventFilter {
@@ -128,7 +125,9 @@ impl TriggerKindDescriptor for HotkeyPressedDescriptor {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::vocabulary::messages;
     use forge_events::EventSource;
+    use forge_types::VerbatimText;
     use serde_json::json;
 
     fn triggered_event(combo: &str) -> Event {

@@ -22,7 +22,6 @@ fn default_port() -> u16 {
 pub struct VTubeCredentials {
     #[serde(serialize_with = "Secret::serialize_exposed")]
     pub token: Secret,
-    pub api_version: String,
     #[serde(default = "default_host")]
     pub host: String,
     #[serde(default = "default_port")]
@@ -34,14 +33,12 @@ pub struct VTubeCredentials {
 pub async fn store(
     creds: &dyn CredentialsRepo,
     token: &str,
-    api_version: &str,
     host: &str,
     port: u16,
     secure: bool,
 ) -> Result<(), StorageError> {
     let bundle = serde_json::json!({
         "token": token,
-        "api_version": api_version,
         "host": host,
         "port": port,
         "secure": secure,
@@ -119,7 +116,7 @@ mod tests {
     async fn a_custom_endpoint_survives_a_store_then_load_cycle() {
         let repo = MockCreds::new();
 
-        store(&*repo, "tok-xyz", "1.0", "192.168.1.50", 9123, false)
+        store(&*repo, "tok-xyz", "192.168.1.50", 9123, false)
             .await
             .unwrap();
         let back = load(&*repo).await.unwrap().unwrap();
@@ -134,7 +131,7 @@ mod tests {
         for secure in [true, false] {
             let repo = MockCreds::new();
 
-            store(&*repo, "tok", "1.0", "192.0.2.50", 9123, secure)
+            store(&*repo, "tok", "192.0.2.50", 9123, secure)
                 .await
                 .unwrap();
 
@@ -145,7 +142,7 @@ mod tests {
     #[tokio::test]
     async fn a_stored_secure_endpoint_is_redialed_over_tls() {
         let repo = MockCreds::new();
-        store(&*repo, "tok", "1.0", "203.0.113.7", 9123, true)
+        store(&*repo, "tok", "203.0.113.7", 9123, true)
             .await
             .unwrap();
         let publisher = MockPublisher::new();
@@ -161,7 +158,6 @@ mod tests {
     fn debug_redacts_token() {
         let creds = VTubeCredentials {
             token: Secret::new("super-secret-vtube-token"),
-            api_version: "1.0".into(),
             host: "127.0.0.1".into(),
             port: 8001,
             secure: false,
@@ -175,7 +171,7 @@ mod tests {
     #[tokio::test]
     async fn load_and_connect_dials_the_stored_endpoint_not_the_compiled_in_default() {
         let repo = MockCreds::new();
-        store(&*repo, "tok", "1.0", "203.0.113.7", 9123, false)
+        store(&*repo, "tok", "203.0.113.7", 9123, false)
             .await
             .unwrap();
         let publisher = MockPublisher::new();
@@ -187,7 +183,8 @@ mod tests {
         assert_eq!(client.config.endpoint, "ws://203.0.113.7:9123/");
     }
 
-    const SAVED_BUNDLE: &str = r#"{"token":"tok-abc123","api_version":"1.0","host":"192.0.2.50","port":9123,"secure":false}"#;
+    const SAVED_BUNDLE: &str =
+        r#"{"token":"tok-abc123","host":"192.0.2.50","port":9123,"secure":false}"#;
 
     #[test]
     fn a_saved_bundle_saves_back_byte_identical() {
@@ -197,10 +194,10 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn store_writes_the_document_earlier_builds_saved() {
+    async fn store_writes_the_saved_bundle_document() {
         let repo = MockCreds::new();
 
-        store(&*repo, "tok-abc123", "1.0", "192.0.2.50", 9123, false)
+        store(&*repo, "tok-abc123", "192.0.2.50", 9123, false)
             .await
             .unwrap();
 
@@ -209,5 +206,20 @@ mod tests {
             serde_json::from_str::<serde_json::Value>(&written).unwrap(),
             serde_json::from_str::<serde_json::Value>(SAVED_BUNDLE).unwrap()
         );
+    }
+
+    #[tokio::test]
+    async fn a_bundle_saved_with_an_api_version_still_loads() {
+        let repo = MockCreds::new();
+        repo.store(
+            &CredentialId::new(VTUBE_CREDENTIAL_ID),
+            r#"{"token":"tok-abc123","api_version":"1.0","host":"192.0.2.50","port":9123,"secure":false}"#,
+        )
+        .await
+        .unwrap();
+
+        let loaded = load(&*repo).await.unwrap().expect("a stored bundle");
+
+        assert_eq!((loaded.host.as_str(), loaded.port), ("192.0.2.50", 9123));
     }
 }

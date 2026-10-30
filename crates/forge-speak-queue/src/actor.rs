@@ -53,26 +53,42 @@ struct PlayingClip {
     elapsed_secs: u32,
 }
 
+type PlaybackStart = tokio::task::JoinHandle<Result<forge_audio::ControlledPlayback, Outcome>>;
+
+struct StartingClip {
+    request_id: RequestId,
+    request: SpeakRequest,
+    start: PlaybackStart,
+}
+
 enum CurrentPlayback {
+    Starting(StartingClip),
     Playing(PlayingClip),
     Held(ReadyClip),
 }
 
-fn is_playing(current: &Option<CurrentPlayback>) -> bool {
-    matches!(current, Some(CurrentPlayback::Playing(_)))
+fn is_active(current: &Option<CurrentPlayback>) -> bool {
+    matches!(
+        current,
+        Some(CurrentPlayback::Starting(_) | CurrentPlayback::Playing(_))
+    )
+}
+
+enum ActiveStep {
+    Started(Result<Result<forge_audio::ControlledPlayback, Outcome>, tokio::task::JoinError>),
+    Finished(Result<(), AudioError>),
+}
+
+async fn poll_active(current: &mut Option<CurrentPlayback>) -> ActiveStep {
+    match current {
+        Some(CurrentPlayback::Starting(clip)) => ActiveStep::Started((&mut clip.start).await),
+        Some(CurrentPlayback::Playing(clip)) => ActiveStep::Finished((&mut clip.playback).await),
+        _ => std::future::pending().await,
+    }
 }
 
 fn is_held(current: &Option<CurrentPlayback>) -> bool {
     matches!(current, Some(CurrentPlayback::Held(_)))
-}
-
-async fn poll_current(
-    current: &mut Option<CurrentPlayback>,
-) -> Result<(), forge_audio::AudioError> {
-    match current {
-        Some(CurrentPlayback::Playing(c)) => (&mut c.playback).await,
-        _ => std::future::pending().await,
-    }
 }
 
 async fn tick_progress(ticker: &mut Option<tokio::time::Interval>) {
@@ -435,12 +451,10 @@ pub(crate) async fn run_actor(
                 &event_tx,
                 &mut active_request_id,
                 &mut current_playback,
-                &mut progress_ticker,
                 high_queue.len() + normal_queue.len(),
                 gains.as_ref(),
                 &targeted_legs,
-            )
-            .await;
+            );
         }
 
         if active_request_id.is_none()
@@ -589,7 +603,6 @@ pub(crate) async fn run_actor(
                         &event_tx,
                         &mut active_request_id,
                         &mut current_playback,
-                        &mut progress_ticker,
                         paused,
                         high_queue.len() + normal_queue.len(),
                         gains.as_ref(),
@@ -624,17 +637,47 @@ pub(crate) async fn run_actor(
                     });
                 }
             }
-            play_result = poll_current(&mut current_playback), if is_playing(&current_playback) => {
-                if let Some(CurrentPlayback::Playing(current)) = current_playback.take() {
-                    progress_ticker = None;
-                    finish_playback(
-                        play_result,
-                        &deps,
-                        &event_tx,
-                        &mut active_request_id,
-                        &mut last_successful,
-                        current,
-                    ).await;
+            step = poll_active(&mut current_playback), if is_active(&current_playback) => {
+                match (step, current_playback.take()) {
+                    (ActiveStep::Started(started), Some(CurrentPlayback::Starting(clip))) => {
+                        let started = started.unwrap_or_else(|e| {
+                            Err(device_failure(&AudioError::JoinFailed(e.to_string())))
+                        });
+                        match started {
+                            Ok(playback) => {
+                                if paused {
+                                    playback.pause();
+                                }
+                                let mut ticker = tokio::time::interval(PLAYBACK_PROGRESS_TICK);
+                                ticker.tick().await;
+                                progress_ticker = Some(ticker);
+                                current_playback = Some(CurrentPlayback::Playing(PlayingClip {
+                                    request_id: clip.request_id,
+                                    request: clip.request,
+                                    playback,
+                                    elapsed_secs: 0,
+                                }));
+                            }
+                            Err(failure) => {
+                                active_request_id = None;
+                                tracing::warn!(request_id = %clip.request_id.0, ?failure, "audio playback failed to start");
+                                SpeakEmitter::new(&event_tx, deps.event_bus.as_ref())
+                                    .outcome(&clip.request, failure);
+                            }
+                        }
+                    }
+                    (ActiveStep::Finished(play_result), Some(CurrentPlayback::Playing(current))) => {
+                        progress_ticker = None;
+                        finish_playback(
+                            play_result,
+                            &deps,
+                            &event_tx,
+                            &mut active_request_id,
+                            &mut last_successful,
+                            current,
+                        ).await;
+                    }
+                    (_, unchanged) => current_playback = unchanged,
                 }
             }
         }
@@ -652,7 +695,6 @@ async fn handle_synth_result(
     event_tx: &tokio::sync::broadcast::Sender<SpeakEvent>,
     active_request_id: &mut Option<RequestId>,
     current_playback: &mut Option<CurrentPlayback>,
-    progress_ticker: &mut Option<tokio::time::Interval>,
     paused: bool,
     queue_len: usize,
     engine_gains: &HashMap<EngineId, f32>,
@@ -703,12 +745,10 @@ async fn handle_synth_result(
                 event_tx,
                 active_request_id,
                 current_playback,
-                progress_ticker,
                 queue_len,
                 engine_gains,
                 targeted_legs,
-            )
-            .await;
+            );
         }
     }
 }
@@ -717,14 +757,13 @@ async fn handle_synth_result(
     clippy::too_many_arguments,
     reason = "actor state is passed as separate borrows"
 )]
-async fn start_clip(
+fn start_clip(
     clip: ReadyClip,
     config: &QueueConfig,
     deps: &QueueDeps,
     event_tx: &tokio::sync::broadcast::Sender<SpeakEvent>,
     active_request_id: &mut Option<RequestId>,
     current_playback: &mut Option<CurrentPlayback>,
-    progress_ticker: &mut Option<tokio::time::Interval>,
     queue_len: usize,
     engine_gains: &HashMap<EngineId, f32>,
     targeted_legs: &TargetedLegs,
@@ -751,34 +790,27 @@ async fn start_clip(
     );
     let engine_gain = engine_gains.get(&engine_id).copied().unwrap_or(1.0);
     pcm.apply_gain(config.master_volume * engine_gain);
-    let started = match sink_for(&request, deps, targeted_legs) {
+    match sink_for(&request, deps, targeted_legs) {
         Ok(sink) => {
-            match tokio::time::timeout(PLAYBACK_START_BOUND, sink.play_controlled(pcm)).await {
-                Ok(started) => started.map_err(|e| device_failure(&e)),
-                Err(_) => Err(Outcome::Failed {
-                    reason: FailureReason::DeviceError,
-                    message: messages::audio_start_timed_out(PLAYBACK_START_BOUND.as_secs()),
-                }),
-            }
-        }
-        Err(e) => Err(device_failure(&e)),
-    };
-    match started {
-        Ok(playback) => {
-            let mut ticker = tokio::time::interval(PLAYBACK_PROGRESS_TICK);
-            ticker.tick().await;
-            *progress_ticker = Some(ticker);
-            *current_playback = Some(CurrentPlayback::Playing(PlayingClip {
+            let start = tokio::spawn(async move {
+                match tokio::time::timeout(PLAYBACK_START_BOUND, sink.play_controlled(pcm)).await {
+                    Ok(started) => started.map_err(|e| device_failure(&e)),
+                    Err(_) => Err(Outcome::Failed {
+                        reason: FailureReason::DeviceError,
+                        message: messages::audio_start_timed_out(PLAYBACK_START_BOUND.as_secs()),
+                    }),
+                }
+            });
+            *current_playback = Some(CurrentPlayback::Starting(StartingClip {
                 request_id,
                 request,
-                playback,
-                elapsed_secs: 0,
+                start,
             }));
         }
-        Err(failure) => {
+        Err(e) => {
             *active_request_id = None;
-            tracing::warn!(request_id = %request_id.0, ?failure, "audio playback failed to start");
-            emit.outcome(&request, failure);
+            tracing::warn!(request_id = %request_id.0, error = %e, "audio playback failed to start");
+            emit.outcome(&request, device_failure(&e));
         }
     }
 }
@@ -829,6 +861,14 @@ fn device_failure(error: &AudioError) -> Outcome {
     }
 }
 
+fn stop_when_started(start: PlaybackStart) {
+    tokio::spawn(async move {
+        if let Ok(Ok(playback)) = start.await {
+            playback.stop();
+        }
+    });
+}
+
 fn stop_active(
     reason: SkipReason,
     deps: &QueueDeps,
@@ -844,6 +884,10 @@ fn stop_active(
         Some(CurrentPlayback::Playing(current)) => {
             current.playback.stop();
             Some(current.request)
+        }
+        Some(CurrentPlayback::Starting(clip)) => {
+            stop_when_started(clip.start);
+            Some(clip.request)
         }
         Some(CurrentPlayback::Held(held)) => Some(held.request),
         None => None,

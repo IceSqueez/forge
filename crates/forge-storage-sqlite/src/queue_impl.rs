@@ -1,3 +1,5 @@
+use std::num::NonZeroU32;
+
 use async_trait::async_trait;
 use forge_storage::{QueueRepo, StorageError};
 use forge_types::{DEFAULT_QUEUE_ID, Queue, QueueId};
@@ -24,7 +26,7 @@ fn decode_row(row: QueueRow) -> Result<Queue, SqliteStorageError> {
         id,
         name: row.name,
         description: row.description,
-        concurrency: row.concurrency.max(1) as u32,
+        concurrency: NonZeroU32::new(row.concurrency.max(1) as u32).unwrap_or(NonZeroU32::MIN),
     })
 }
 
@@ -35,7 +37,7 @@ pub(crate) async fn upsert_queue<'e>(
     queue: &Queue,
 ) -> Result<(), StorageError> {
     let id_str = queue.id.to_string();
-    let concurrency = i64::from(queue.concurrency.max(1));
+    let concurrency = i64::from(queue.concurrency.get());
     let blocking: i64 = if queue.is_serial() { 1 } else { 0 };
 
     sqlx::query(

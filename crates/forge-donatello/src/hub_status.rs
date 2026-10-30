@@ -15,7 +15,7 @@ impl BuiltinStatus for DonatelloProvider {
         DONATELLO_INTEGRATION.brand_name
     }
 
-    fn version(&self) -> Option<&str> {
+    fn version(&self) -> Option<String> {
         None
     }
 

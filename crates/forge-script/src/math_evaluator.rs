@@ -46,13 +46,9 @@ impl MathEvaluator {
         if let Ok(n) = value.as_int() {
             Ok(Variant::Int(n))
         } else if let Ok(f) = value.as_float() {
-            if f.is_nan() || f.is_infinite() {
-                Err(ScriptError::Runtime {
-                    reason: "non-finite result".to_owned(),
-                })
-            } else {
-                Ok(Variant::Float(f))
-            }
+            Variant::float(f).map_err(|_| ScriptError::Runtime {
+                reason: "non-finite result".to_owned(),
+            })
         } else {
             Err(ScriptError::Runtime {
                 reason: format!("expected numeric result, got {}", value.type_name()),

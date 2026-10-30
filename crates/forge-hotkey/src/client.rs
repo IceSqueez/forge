@@ -1,4 +1,4 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeSet, HashMap, HashSet};
 use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, RwLock};
 use std::time::Duration;
@@ -31,6 +31,7 @@ pub struct HotkeyClient {
     pub(crate) backend: Arc<dyn HotkeyBackend>,
     pub(crate) registry: RwLock<HashMap<String, HotkeyId>>,
     pub(crate) id_to_combo: RwLock<HashMap<HotkeyId, HotkeyCombo>>,
+    pub(crate) refused: Mutex<Vec<HotkeyCombo>>,
     id_counter: AtomicU32,
     pub(crate) publisher: Arc<dyn EventPublisher>,
     pub(crate) health_state: Arc<Mutex<HotkeyHealthSnapshot>>,
@@ -61,6 +62,7 @@ impl HotkeyClient {
             backend,
             registry: RwLock::new(HashMap::new()),
             id_to_combo: RwLock::new(HashMap::new()),
+            refused: Mutex::new(Vec::new()),
             id_counter: AtomicU32::new(1),
             publisher,
             health_state,
@@ -205,7 +207,8 @@ impl HotkeyClient {
             .id_to_combo
             .read()
             .unwrap_or_else(|p| p.into_inner())
-            .len();
+            .len()
+            + self.refused.lock().unwrap_or_else(|p| p.into_inner()).len();
         let budget = COMMAND_TIMEOUT.saturating_mul(
             u32::try_from(registrations)
                 .unwrap_or(u32::MAX)
@@ -215,6 +218,24 @@ impl HotkeyClient {
             .await
             .map_err(|_| HotkeyError::SupervisorUnavailable)?
             .map_err(|_| HotkeyError::SupervisorUnavailable)
+    }
+
+    pub(crate) fn note_refused(&self, combos: impl IntoIterator<Item = HotkeyCombo>) {
+        self.refused
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .extend(combos);
+    }
+
+    pub(crate) fn take_refused(&self) -> Vec<HotkeyCombo> {
+        std::mem::take(&mut *self.refused.lock().unwrap_or_else(|p| p.into_inner()))
+    }
+
+    pub(crate) fn drop_unwanted_refused(&self, wanted: &BTreeSet<String>) {
+        self.refused
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .retain(|combo| wanted.contains(combo.as_str()));
     }
 
     pub fn is_enabled(&self) -> bool {
@@ -287,6 +308,7 @@ impl HotkeyClient {
             backend: Arc::new(backend),
             registry: RwLock::new(HashMap::new()),
             id_to_combo: RwLock::new(HashMap::new()),
+            refused: Mutex::new(Vec::new()),
             id_counter: AtomicU32::new(1),
             publisher: Arc::new(NoopPublisher),
             health_state,
@@ -801,6 +823,49 @@ pub(crate) mod tests {
 
         refuse.lock().unwrap().clear();
         client.register(combo("Alt+X")).await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn a_combo_refused_on_enable_is_taken_back_by_the_next_enable() {
+        let (backend, _tx) = MockPortalBackend::new();
+        let refuse = Arc::clone(&backend.fail_on);
+        let client = start_supervised(backend, noop_publisher());
+        client.register(combo("Alt+X")).await.unwrap();
+        client.disable().await.unwrap();
+        refuse.lock().unwrap().insert("Alt+X".to_owned());
+        client.enable().await.unwrap();
+        refuse.lock().unwrap().clear();
+
+        let failures = client.enable().await.unwrap();
+
+        assert!(failures.is_empty());
+        assert_eq!(
+            client
+                .registered_combos()
+                .into_iter()
+                .map(|(_, registered)| registered)
+                .collect::<Vec<_>>(),
+            [combo("Alt+X")]
+        );
+    }
+
+    #[tokio::test]
+    async fn a_combo_still_refused_stays_owed_through_a_disable_cycle() {
+        let (backend, _tx) = MockPortalBackend::new();
+        let refuse = Arc::clone(&backend.fail_on);
+        let client = start_supervised(backend, noop_publisher());
+        client.register(combo("Alt+X")).await.unwrap();
+        client.disable().await.unwrap();
+        refuse.lock().unwrap().insert("Alt+X".to_owned());
+        client.enable().await.unwrap();
+
+        client.enable().await.unwrap();
+        assert!(client.registered_combos().is_empty());
+        client.disable().await.unwrap();
+        refuse.lock().unwrap().clear();
+        client.enable().await.unwrap();
+
+        assert_eq!(client.registered_combos().len(), 1);
     }
 
     #[tokio::test]

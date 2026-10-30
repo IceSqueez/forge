@@ -43,7 +43,7 @@ async fn rig() -> Rig {
         id: QUEUE_ID.parse().unwrap(),
         name: "golden".to_owned(),
         description: String::new(),
-        concurrency: 1,
+        concurrency: std::num::NonZeroU32::MIN,
     };
     dp.queue_repo().save(&queue).await.unwrap();
     dp.action_repo()

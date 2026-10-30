@@ -32,8 +32,7 @@ use crate::vts::message_type::{
     FACE_FOUND_REQUEST,
 };
 use crate::vts::protocol::{
-    API_ERROR_MESSAGE_TYPE, API_VERSION, TOKEN_REQUEST_DENIED_ERROR_ID, check_response, is_reply,
-    new_request,
+    API_ERROR_MESSAGE_TYPE, TOKEN_REQUEST_DENIED_ERROR_ID, check_response, is_reply, new_request,
 };
 use crate::vts::request::PendingRequest;
 use crate::vts::socket::{
@@ -270,8 +269,7 @@ async fn run_auth(
 
     let (host, port) = split_endpoint(endpoint);
     let secure = is_secure_endpoint(endpoint);
-    if let Err(e) = crate::credentials::store(creds, &token, API_VERSION, &host, port, secure).await
-    {
+    if let Err(e) = crate::credentials::store(creds, &token, &host, port, secure).await {
         tracing::warn!(endpoint, error = %e, "failed to persist VTube Studio credential");
     }
     Ok(())

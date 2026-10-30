@@ -70,6 +70,10 @@ pub trait GlobalsRepo: Send + Sync {
 
     async fn list(&self) -> Result<Vec<GlobalEntry>, StorageError>;
 
+    async fn count(&self) -> Result<usize, StorageError> {
+        Ok(self.list().await?.len())
+    }
+
     async fn archive(&self, _name: &str) -> Result<bool, StorageError> {
         Err(StorageError::NotReady)
     }

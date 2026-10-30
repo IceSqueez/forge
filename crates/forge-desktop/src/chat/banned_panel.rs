@@ -13,6 +13,7 @@ use forge_platform_core::{
     UnbanAbility,
 };
 use forge_runtime::{ActionEngineHandle, EventBus};
+use forge_storage::BAN_LEDGER_LIST_CAP;
 use gpui::{
     AnyElement, App, ClickEvent, Context, Entity, FontWeight, Pixels, SharedString, Subscription,
     Task, Window, div, prelude::*, px,
@@ -643,6 +644,7 @@ impl BannedPanel {
 
     fn render_group_notes(
         platform: PlatformId,
+        listed_rows: usize,
         palette: &ForgePalette,
         density: Density,
     ) -> Option<AnyElement> {
@@ -659,7 +661,17 @@ impl BannedPanel {
                 .child(tr!("chat_banned_seen_by_forge"))
                 .into_any_element()
         });
-        if disclaimer.is_none() && seen_note.is_none() {
+        let capped_note = (lists_only_what_forge_saw(platform)
+            && listed_rows >= BAN_LEDGER_LIST_CAP)
+            .then(|| {
+                div()
+                    .font_family(body_family())
+                    .text_size(FONT_XXS)
+                    .text_color(palette.text_faint)
+                    .child(tr!("chat_banned_list_capped", count = BAN_LEDGER_LIST_CAP))
+                    .into_any_element()
+            });
+        if disclaimer.is_none() && seen_note.is_none() && capped_note.is_none() {
             return None;
         }
         Some(
@@ -672,6 +684,7 @@ impl BannedPanel {
                 .border_b(BORDER_THIN)
                 .border_color(palette.border_regular)
                 .children(seen_note)
+                .children(capped_note)
                 .children(disclaimer)
                 .into_any_element(),
         )
@@ -920,7 +933,12 @@ impl Render for BannedPanel {
                     .bg(palette.shell)
                     .overflow_hidden()
                     .child(Self::render_group_header(group, &palette, density))
-                    .children(Self::render_group_notes(group.platform, &palette, density))
+                    .children(Self::render_group_notes(
+                        group.platform,
+                        group.rows.len(),
+                        &palette,
+                        density,
+                    ))
                     .child(self.render_group_body(group, &palette, density, cx))
                     .into_any_element()
             })
@@ -2015,7 +2033,7 @@ pub(super) mod tests {
             (PlatformId::YouTube, true, false),
             (PlatformId::Kick, true, true),
         ] {
-            let notes = BannedPanel::render_group_notes(platform, &palette, Density::Cozy);
+            let notes = BannedPanel::render_group_notes(platform, 0, &palette, Density::Cozy);
             let kick_disclaimer = disclaimer_line(
                 &platform_integration(platform).builtin_id(),
                 &palette,
@@ -2032,6 +2050,20 @@ pub(super) mod tests {
                 "{platform:?}"
             );
         }
+    }
+
+    #[test]
+    fn a_full_page_from_a_complete_ban_list_adds_no_cap_note() {
+        let palette = ThemeId::ForgeDefault.palette();
+
+        let notes = BannedPanel::render_group_notes(
+            PlatformId::Twitch,
+            forge_storage::BAN_LEDGER_LIST_CAP,
+            &palette,
+            Density::Cozy,
+        );
+
+        assert!(notes.is_none());
     }
 
     #[gpui::test]

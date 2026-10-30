@@ -13,6 +13,7 @@ use support::{
     Bank, CLIENT_INFO, Harness, JAR, MemCreds, OTHER_JAR, STATEMENT_PREFIX, ScriptedLimiter, TOKEN,
     now_unix, top_up,
 };
+use tokio_stream::StreamExt;
 use wiremock::ResponseTemplate;
 
 const HOUR: i64 = 3_600;
@@ -409,4 +410,59 @@ async fn status_carries_the_selected_jar_once_polling() {
         (jar.id.as_str(), jar.currency.map(|c| c.as_str().to_owned())),
         (JAR, Some("UAH".to_owned()))
     );
+}
+
+#[tokio::test]
+async fn pausing_or_reconnecting_abandons_a_stalled_statement_call_and_keeps_the_top_up() {
+    for pause_first in [true, false] {
+        let bank = Bank::new(&[JAR]);
+        let mut h = Harness::start(bank).await;
+        h.wait_for("baseline poll", |s| s.last_poll_at.is_some())
+            .await;
+        let calls = h.bank.statement_calls().len();
+        h.bank.fail_next(
+            STATEMENT_PREFIX,
+            ResponseTemplate::new(200).set_delay(support::WAIT * 10),
+        );
+        h.bank.add(JAR, top_up("NEW", now_unix()));
+
+        h.wake_poller().await;
+        h.wait_for_statement_calls(calls + 1).await;
+        if pause_first {
+            assert!(h.provider.disconnect().await.is_ok());
+            h.wait_for("paused", |s| s.phase == PollPhase::Paused).await;
+        }
+        assert!(h.provider.reconnect().await.is_ok());
+        let next = h.next().await.unwrap();
+
+        assert_eq!(
+            (next.donation_id.as_str(), next.origin),
+            ("NEW", DonationOrigin::Live),
+            "pause_first={pause_first}"
+        );
+    }
+}
+
+#[tokio::test]
+async fn a_second_donation_stream_retires_the_first_poller() {
+    let bank = Bank::new(&[JAR]);
+    bank.add(JAR, top_up("SEEN", now_unix() - 10));
+    let mut h = Harness::start(bank).await;
+    h.next().await.unwrap();
+
+    let mut replacement = h.provider.donations();
+
+    assert!(
+        tokio::time::timeout(support::WAIT, h.stream.next())
+            .await
+            .expect("the first stream must close")
+            .is_none(),
+        "the retired poller must drop its stream"
+    );
+    let baseline = tokio::time::timeout(support::WAIT, replacement.next())
+        .await
+        .expect("the replacement stream reports the baseline")
+        .expect("the replacement stream stays open")
+        .unwrap();
+    assert_eq!(baseline.origin, DonationOrigin::History);
 }

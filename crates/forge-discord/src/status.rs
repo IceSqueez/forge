@@ -14,7 +14,7 @@ impl BuiltinStatus for DiscordClient {
         "Discord"
     }
 
-    fn version(&self) -> Option<&str> {
+    fn version(&self) -> Option<String> {
         None
     }
 

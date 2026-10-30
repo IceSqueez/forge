@@ -37,7 +37,7 @@ fn make_queue(id: QueueId) -> Queue {
         id,
         name: "test".into(),
         description: String::new(),
-        concurrency: 8,
+        concurrency: std::num::NonZeroU32::new(8).unwrap(),
     }
 }
 

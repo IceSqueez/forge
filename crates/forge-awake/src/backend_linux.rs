@@ -44,13 +44,16 @@ pub(crate) struct LinuxBackend {
     system: Result<Connection, String>,
     screen_saver: Option<ScreenSaverHold>,
     idle_lock: Option<OwnedFd>,
+    disruptions: DisruptionSender,
     watchers: Vec<JoinHandle<()>>,
 }
 
 impl LinuxBackend {
     pub(crate) async fn open(reason: String, disruptions: DisruptionSender) -> Self {
-        let session = connect(Connection::session()).await;
-        let system = connect(Connection::system()).await;
+        let (session, system) = tokio::join!(
+            connect(Connection::session()),
+            connect(Connection::system())
+        );
         let mut watchers = Vec::new();
         if let Ok(conn) = &session {
             watchers.push(spawn_owner_watch(
@@ -65,7 +68,7 @@ impl LinuxBackend {
                 conn.clone(),
                 LOGIN_NAME,
                 Aspect::System,
-                disruptions,
+                disruptions.clone(),
             ));
         }
         Self {
@@ -74,22 +77,61 @@ impl LinuxBackend {
             system,
             screen_saver: None,
             idle_lock: None,
+            disruptions,
             watchers,
         }
     }
 
-    async fn inhibit_screen_saver(&mut self) -> Result<(), AwakeError> {
-        let conn = self
-            .session
-            .as_ref()
-            .map_err(|reason| AwakeError::Unreachable {
+    async fn session_connection(&mut self) -> Result<Connection, AwakeError> {
+        if let Ok(conn) = &self.session {
+            return Ok(conn.clone());
+        }
+        self.session = connect(Connection::session()).await;
+        match &self.session {
+            Ok(conn) => {
+                self.watchers.push(spawn_owner_watch(
+                    conn.clone(),
+                    SCREEN_SAVER_NAME,
+                    Aspect::Display,
+                    self.disruptions.clone(),
+                ));
+                Ok(conn.clone())
+            }
+            Err(reason) => Err(AwakeError::Unreachable {
                 service: SESSION_BUS,
                 reason: reason.clone(),
-            })?;
+            }),
+        }
+    }
+
+    async fn system_connection(&mut self) -> Result<Connection, AwakeError> {
+        if let Ok(conn) = &self.system {
+            return Ok(conn.clone());
+        }
+        self.system = connect(Connection::system()).await;
+        match &self.system {
+            Ok(conn) => {
+                self.watchers.push(spawn_owner_watch(
+                    conn.clone(),
+                    LOGIN_NAME,
+                    Aspect::System,
+                    self.disruptions.clone(),
+                ));
+                Ok(conn.clone())
+            }
+            Err(reason) => Err(AwakeError::Unreachable {
+                service: SYSTEM_BUS,
+                reason: reason.clone(),
+            }),
+        }
+    }
+
+    async fn inhibit_screen_saver(&mut self) -> Result<(), AwakeError> {
+        let conn = self.session_connection().await?;
         let mut missing_object = None;
         for path in SCREEN_SAVER_PATHS {
             match call(
-                conn,
+                &conn,
                 SCREEN_SAVER_NAME,
                 path,
                 SCREEN_SAVER_NAME,
@@ -109,7 +151,12 @@ impl LinuxBackend {
                 Err(e) if is_error_named(&e, &[UNKNOWN_OBJECT, UNKNOWN_METHOD]) => {
                     missing_object = Some(e);
                 }
-                Err(e) => return Err(classify(e, SCREEN_SAVER_SERVICE)),
+                Err(e) => {
+                    if is_connection_lost(&e) {
+                        self.session = Err(e.to_string());
+                    }
+                    return Err(classify(e, SCREEN_SAVER_SERVICE));
+                }
             }
         }
         Err(match missing_object {
@@ -139,15 +186,9 @@ impl LinuxBackend {
     }
 
     async fn take_idle_lock(&mut self) -> Result<(), AwakeError> {
-        let conn = self
-            .system
-            .as_ref()
-            .map_err(|reason| AwakeError::Unreachable {
-                service: SYSTEM_BUS,
-                reason: reason.clone(),
-            })?;
+        let conn = self.system_connection().await?;
         let reply = call(
-            conn,
+            &conn,
             LOGIN_NAME,
             LOGIN_PATH,
             LOGIN_MANAGER,
@@ -155,7 +196,12 @@ impl LinuxBackend {
             &(IDLE_LOCK, APP_NAME, self.reason.as_str(), BLOCK_MODE),
         )
         .await
-        .map_err(|e| classify(e, LOGIN_SERVICE))?;
+        .map_err(|e| {
+            if is_connection_lost(&e) {
+                self.system = Err(e.to_string());
+            }
+            classify(e, LOGIN_SERVICE)
+        })?;
         let fd: OwnedFd = reply
             .body()
             .deserialize()
@@ -260,6 +306,10 @@ fn spawn_owner_watch(
     })
 }
 
+fn is_connection_lost(err: &zbus::Error) -> bool {
+    matches!(err, zbus::Error::InputOutput(_))
+}
+
 fn is_error_named(err: &zbus::Error, names: &[&str]) -> bool {
     matches!(err, zbus::Error::MethodError(name, _, _) if names.contains(&name.as_str()))
 }
@@ -275,5 +325,22 @@ fn refused(service: &'static str, err: impl std::fmt::Display) -> AwakeError {
     AwakeError::Refused {
         service,
         reason: err.to_string(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::io;
+    use std::sync::Arc;
+
+    use super::*;
+
+    #[test]
+    fn only_a_broken_transport_counts_as_a_lost_connection() {
+        let broken = zbus::Error::InputOutput(Arc::new(io::Error::from(io::ErrorKind::BrokenPipe)));
+        let answered = zbus::Error::Failure("the service said no".to_owned());
+
+        assert!(is_connection_lost(&broken));
+        assert!(!is_connection_lost(&answered));
     }
 }

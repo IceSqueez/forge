@@ -32,6 +32,8 @@ const EMBED_TOTAL_TOO_LONG: MessageCode =
     MessageCode::from_static(INTEGRATION_ID, "embed_total_too_long");
 const EMBED_CONTROL_CHARACTER: MessageCode =
     MessageCode::from_static(INTEGRATION_ID, "embed_control_character");
+const EMBED_IMAGE_URL_SCHEME: MessageCode =
+    MessageCode::from_static(INTEGRATION_ID, "embed_image_url_scheme");
 const MESSAGE_ID_INVALID: MessageCode =
     MessageCode::from_static(INTEGRATION_ID, "message_id_invalid");
 const NOT_WEBHOOK_ENDPOINT: MessageCode =
@@ -98,6 +100,7 @@ pub const DISCORD_MESSAGES: MessageCatalog = MessageCatalog {
         EMBED_PART_TOO_LONG,
         EMBED_TOTAL_TOO_LONG,
         EMBED_CONTROL_CHARACTER,
+        EMBED_IMAGE_URL_SCHEME,
         MESSAGE_ID_INVALID,
         NOT_WEBHOOK_ENDPOINT,
         WEBHOOK_NAME_EMPTY,
@@ -202,6 +205,10 @@ pub(crate) fn embed_control_character(part: &str) -> MessageRef {
     MessageRef::new(EMBED_CONTROL_CHARACTER).with_arg(PART_ARG, VerbatimText::new(part))
 }
 
+pub(crate) fn embed_image_url_scheme(part: &str) -> MessageRef {
+    MessageRef::new(EMBED_IMAGE_URL_SCHEME).with_arg(PART_ARG, VerbatimText::new(part))
+}
+
 pub(crate) fn message_id_invalid() -> MessageRef {
     MessageRef::new(MESSAGE_ID_INVALID)
 }
@@ -292,6 +299,7 @@ mod tests {
             embed_color_out_of_range(0x1000000),
             embed_too_many_fields(26, 25),
             embed_part_too_long("title", 300, 256),
+            embed_image_url_scheme("image_url"),
             embed_total_too_long(7000, 6000),
             embed_control_character("title"),
             message_id_invalid(),

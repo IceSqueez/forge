@@ -13,6 +13,7 @@ msg-discord-embed_too_many_fields = The embed has { $count } fields, the limit i
 msg-discord-embed_part_too_long = The embed { $part } is { $length } characters long, the limit is { $max }.
 msg-discord-embed_total_too_long = The embed text is { $total } characters long in total, the limit is { $max }.
 msg-discord-embed_control_character = The embed { $part } contains a control character that Discord does not accept.
+msg-discord-embed_image_url_scheme = The embed { $part } must start with http://, https:// or attachment://.
 msg-discord-message_id_invalid = The message id is not a valid Discord message id.
 msg-discord-not_webhook_endpoint = The address is not a Discord webhook address.
 msg-discord-webhook_name_empty = The webhook name is empty.

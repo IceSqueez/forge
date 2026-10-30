@@ -103,7 +103,10 @@ impl Drop for MacBackend {
             .flatten()
         {
             // SAFETY: `assertion_id` was returned by a successful create and has not been released.
-            unsafe { IOPMAssertionRelease(assertion_id) };
+            let status = unsafe { IOPMAssertionRelease(assertion_id) };
+            if status != IO_RETURN_SUCCESS {
+                tracing::debug!(status, "stay awake: power assertion release failed");
+            }
         }
     }
 }

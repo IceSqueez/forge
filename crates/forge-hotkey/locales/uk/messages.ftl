@@ -19,6 +19,7 @@ msg-hotkey-health_portal_permission_denied = Доступ заборонено, 
 msg-hotkey-health_backend_active = Активний
 msg-hotkey-health_backend_unavailable = Недоступний
 msg-hotkey-condition_any_hotkey = будь-яка гаряча клавіша
+msg-hotkey-condition_no_hotkey = гарячу клавішу не задано
 msg-hotkey-label_active = АКТИВНО
 msg-hotkey-label_recent_triggers = Останні спрацювання
 msg-hotkey-label_registered_hotkeys = Зареєстровані гарячі клавіші

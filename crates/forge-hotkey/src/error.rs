@@ -12,7 +12,7 @@ pub enum HotkeyError {
     #[error("portal unavailable: {reason}")]
     PortalUnavailable { reason: String },
 
-    #[error("permission denied - ensure user is in the 'input' group")]
+    #[error("permission denied reading the keyboard")]
     PermissionDenied,
 
     #[error("the desktop did not bind {combo:?}: {reason}")]

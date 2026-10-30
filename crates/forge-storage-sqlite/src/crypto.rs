@@ -2,6 +2,8 @@ use aes_gcm::aead::{Aead, KeyInit, Payload};
 use aes_gcm::{Aes256Gcm, Nonce};
 use rand::rand_core::Rng;
 
+use zeroize::Zeroizing;
+
 use crate::error::SqliteStorageError;
 
 const NONCE_LEN: usize = 12;
@@ -9,11 +11,14 @@ const NONCE_LEN: usize = 12;
 pub fn load_or_create_key() -> Result<CredentialsKey, SqliteStorageError> {
     let path = forge_paths::credentials_key_path();
     let (key, minted) = load_or_create_file_key(&path)?;
-    Ok(CredentialsKey { key, minted })
+    Ok(CredentialsKey {
+        key: Zeroizing::new(key),
+        minted,
+    })
 }
 
 pub struct CredentialsKey {
-    pub key: [u8; 32],
+    pub key: Zeroizing<[u8; 32]>,
     pub minted: bool,
 }
 

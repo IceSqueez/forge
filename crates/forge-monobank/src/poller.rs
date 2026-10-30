@@ -39,6 +39,7 @@ pub(crate) struct PollContext {
     pub(crate) status: Arc<StatusBoard>,
     pub(crate) sink: DonationSink,
     pub(crate) timing: MonobankTiming,
+    pub(crate) active_generation: u64,
 }
 
 #[derive(Clone, PartialEq, Eq)]
@@ -66,6 +67,7 @@ impl PollMemory {
 enum CycleError {
     Poll(MonobankError),
     SinkClosed,
+    Interrupted,
 }
 
 impl From<MonobankError> for CycleError {
@@ -104,6 +106,7 @@ pub(crate) async fn run(mut ctx: PollContext) {
         }
         if generation != Some(control.generation) {
             generation = Some(control.generation);
+            ctx.active_generation = control.generation;
             session = None;
             backoff.reset();
         }
@@ -113,6 +116,7 @@ pub(crate) async fn run(mut ctx: PollContext) {
                 Some(ctx.timing.statement_call_interval)
             }
             Err(CycleError::SinkClosed) => return,
+            Err(CycleError::Interrupted) => continue,
             Err(CycleError::Poll(MonobankError::CoolingDown { retry_after_secs })) => {
                 debug!(retry_after_secs, "monobank call budget cooling down");
                 Some(Duration::from_secs(u64::from(retry_after_secs)))
@@ -156,6 +160,25 @@ async fn wait(ctx: &mut PollContext, delay: Option<Duration>) -> Wake {
     }
 }
 
+fn cycle_is_stale(control: &PollControl, generation: u64) -> bool {
+    !control.enabled || control.generation != generation
+}
+
+async fn interruptible<T, E: Into<CycleError>>(
+    ctx: &PollContext,
+    work: impl Future<Output = Result<T, E>>,
+) -> Result<T, CycleError> {
+    let generation = ctx.active_generation;
+    let mut control = ctx.control.clone();
+    tokio::select! {
+        outcome = work => outcome.map_err(Into::into),
+        _ = control.wait_for(|control| cycle_is_stale(control, generation)) => {
+            Err(CycleError::Interrupted)
+        }
+        () = ctx.sink.closed() => Err(CycleError::SinkClosed),
+    }
+}
+
 async fn cycle(
     ctx: &PollContext,
     session: &mut Option<Session>,
@@ -169,7 +192,8 @@ async fn cycle(
                 .await?
                 .ok_or(MonobankError::MissingToken)?;
             let jar_id = credential.jar_id.ok_or(MonobankError::MissingJar)?;
-            let jar = ctx.jars.find(&ctx.api, &credential.token, &jar_id).await?;
+            let jar =
+                interruptible(ctx, ctx.jars.find(&ctx.api, &credential.token, &jar_id)).await?;
             ctx.status.record_jar(jar);
             let started = Session {
                 token: credential.token,
@@ -186,15 +210,16 @@ async fn cycle(
     let window = ctx
         .planner
         .next(&memory.coverage, OffsetDateTime::now_utc().unix_timestamp());
-    let items = ctx
-        .api
-        .statement(
+    let items = interruptible(
+        ctx,
+        ctx.api.statement(
             &current.token,
             &current.jar,
             window.from_unix,
             window.to_unix,
-        )
-        .await?;
+        ),
+    )
+    .await?;
     let item_count = items.len();
     let harvest = harvest(&ctx.provider, &mut memory.seen, items, window);
     let oldest_item_unix = harvest.oldest_item_unix;

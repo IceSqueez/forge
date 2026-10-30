@@ -15,7 +15,7 @@ impl BuiltinStatus for MidiClient {
         "MIDI"
     }
 
-    fn version(&self) -> Option<&str> {
+    fn version(&self) -> Option<String> {
         None
     }
 

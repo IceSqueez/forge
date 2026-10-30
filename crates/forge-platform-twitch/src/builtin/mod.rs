@@ -565,11 +565,11 @@ impl BuiltinStatus for TwitchIntegrationBundle {
         "Twitch"
     }
 
-    fn hero_name(&self) -> Option<&str> {
-        self.login.as_deref()
+    fn hero_name(&self) -> Option<String> {
+        self.login.clone()
     }
 
-    fn version(&self) -> Option<&str> {
+    fn version(&self) -> Option<String> {
         None
     }
 
@@ -1107,8 +1107,8 @@ mod tests {
     fn hero_name_is_the_login_not_the_display_name() {
         let b = make_bundle(ChatConnectionState::Connected);
         let status: &dyn BuiltinStatus = b.as_ref();
-        assert_eq!(status.hero_name(), Some("streamer"));
-        assert_ne!(status.hero_name(), Some(status.display_name()));
+        assert_eq!(status.hero_name().as_deref(), Some("streamer"));
+        assert_ne!(status.hero_name().as_deref(), Some(status.display_name()));
     }
 
     #[test]

@@ -28,6 +28,7 @@ fn validation_message(fault: &ValidationFault) -> MessageRef {
             messages::embed_total_too_long(*total, *max)
         }
         ValidationFault::ControlCharacter { part } => messages::embed_control_character(part),
+        ValidationFault::ImageUrlScheme { part } => messages::embed_image_url_scheme(part),
         ValidationFault::MessageIdNotSnowflake => messages::message_id_invalid(),
         ValidationFault::NotWebhookEndpoint => messages::not_webhook_endpoint(),
         ValidationFault::WebhookNameEmpty => messages::webhook_name_empty(),

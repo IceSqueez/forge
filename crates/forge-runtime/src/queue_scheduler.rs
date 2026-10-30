@@ -733,7 +733,7 @@ impl QueueScheduler {
         let depth = depths.register(queue.id);
         let inflight = InflightTracker::new(depth.clone());
         let pending = PendingBuffer::new(depth.clone());
-        let gate = ConcurrencyGate::new(queue.concurrency.max(1) as usize);
+        let gate = ConcurrencyGate::new(queue.concurrency.get() as usize);
 
         let launcher = Launcher {
             queue_id: queue.id,
@@ -1082,7 +1082,7 @@ impl QueueScheduler {
             return MembershipOutcome::NotFound;
         };
 
-        let limit = queue.concurrency.max(1) as usize;
+        let limit = queue.concurrency.get() as usize;
         let previous = slot.gate.replace_limit(limit);
         if previous != limit {
             info!(
@@ -1177,7 +1177,7 @@ mod tests {
             id,
             name: "default".to_string(),
             description: String::new(),
-            concurrency: 8,
+            concurrency: std::num::NonZeroU32::new(8).unwrap(),
         }
     }
 
@@ -1186,7 +1186,7 @@ mod tests {
             id,
             name: "serial".to_string(),
             description: String::new(),
-            concurrency: 1,
+            concurrency: std::num::NonZeroU32::MIN,
         }
     }
 
@@ -2109,7 +2109,7 @@ mod tests {
                 id: QueueId::new(),
                 name: "ghost".to_string(),
                 description: String::new(),
-                concurrency: 8,
+                concurrency: std::num::NonZeroU32::new(8).unwrap(),
             })
             .await
             .unwrap();

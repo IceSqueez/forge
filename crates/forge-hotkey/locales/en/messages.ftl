@@ -19,6 +19,7 @@ msg-hotkey-health_portal_permission_denied = Permission denied, add your user to
 msg-hotkey-health_backend_active = Active
 msg-hotkey-health_backend_unavailable = Unavailable
 msg-hotkey-condition_any_hotkey = any hotkey
+msg-hotkey-condition_no_hotkey = no hotkey set
 msg-hotkey-label_active = ACTIVE
 msg-hotkey-label_recent_triggers = Recent Triggers
 msg-hotkey-label_registered_hotkeys = Registered Hotkeys

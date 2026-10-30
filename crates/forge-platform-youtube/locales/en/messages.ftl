@@ -3,7 +3,6 @@ msg-youtube-health_live_chat = Live Chat
 msg-youtube-health_events = Events
 msg-youtube-health_api_calls = API Calls
 msg-youtube-health_quota_resets_daily = resets daily, Pacific time
-msg-youtube-health_unavailable = unavailable
 msg-youtube-health_shared_chat_feed = shared chat feed
 msg-youtube-health_viewers_live = live
 msg-youtube-rate_limited = YouTube asked to slow down. Try again in { $seconds } s

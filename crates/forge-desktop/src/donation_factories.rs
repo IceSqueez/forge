@@ -196,7 +196,7 @@ mod tests {
         fn display_name(&self) -> &str {
             "Fake"
         }
-        fn version(&self) -> Option<&str> {
+        fn version(&self) -> Option<String> {
             None
         }
         fn connection(&self) -> ConnectionState {

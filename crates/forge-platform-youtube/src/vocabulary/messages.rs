@@ -17,8 +17,6 @@ pub const HEALTH_API_CALLS: MessageCode =
 
 pub const HEALTH_QUOTA_RESETS_DAILY: MessageCode =
     MessageCode::from_static(INTEGRATION_ID, "health_quota_resets_daily");
-pub const HEALTH_UNAVAILABLE: MessageCode =
-    MessageCode::from_static(INTEGRATION_ID, "health_unavailable");
 pub const HEALTH_SHARED_CHAT_FEED: MessageCode =
     MessageCode::from_static(INTEGRATION_ID, "health_shared_chat_feed");
 pub const HEALTH_VIEWERS_LIVE: MessageCode =
@@ -53,7 +51,6 @@ pub const YOUTUBE_MESSAGES: MessageCatalog = MessageCatalog {
         HEALTH_EVENTS,
         HEALTH_API_CALLS,
         HEALTH_QUOTA_RESETS_DAILY,
-        HEALTH_UNAVAILABLE,
         HEALTH_SHARED_CHAT_FEED,
         HEALTH_VIEWERS_LIVE,
         STORED_SIGN_IN_UNREADABLE,
@@ -123,10 +120,6 @@ fn detailed(code: MessageCode, detail: &str) -> MessageRef {
 
 pub(crate) fn health_quota_resets_daily() -> MessageRef {
     MessageRef::new(HEALTH_QUOTA_RESETS_DAILY)
-}
-
-pub(crate) fn health_unavailable() -> MessageRef {
-    MessageRef::new(HEALTH_UNAVAILABLE)
 }
 
 pub(crate) fn health_shared_chat_feed() -> MessageRef {
@@ -213,7 +206,6 @@ mod tests {
             MessageRef::new(HEALTH_EVENTS),
             MessageRef::new(HEALTH_API_CALLS),
             health_quota_resets_daily(),
-            health_unavailable(),
             health_shared_chat_feed(),
             health_viewers_live(),
             MessageRef::new(STORED_SIGN_IN_UNREADABLE),

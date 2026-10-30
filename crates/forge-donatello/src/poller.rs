@@ -37,6 +37,7 @@ pub(crate) struct PollContext {
     pub(crate) status: Arc<StatusBoard>,
     pub(crate) sink: DonationSink,
     pub(crate) timing: DonatelloTiming,
+    pub(crate) active_generation: u64,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -70,6 +71,7 @@ impl PollMemory {
 enum CycleError {
     Poll(DonatelloError),
     SinkClosed,
+    Interrupted,
 }
 
 impl From<DonatelloError> for CycleError {
@@ -118,6 +120,7 @@ pub(crate) async fn run(mut ctx: PollContext) {
         }
         if generation != Some(control.generation) {
             generation = Some(control.generation);
+            ctx.active_generation = control.generation;
             session = None;
             backoff.reset();
         }
@@ -127,6 +130,7 @@ pub(crate) async fn run(mut ctx: PollContext) {
                 Some(control.interval)
             }
             Err(CycleError::SinkClosed) => return,
+            Err(CycleError::Interrupted) => continue,
             Err(CycleError::Poll(error)) => {
                 ctx.status.record_failure(&error);
                 warn!(
@@ -166,6 +170,25 @@ async fn wait(ctx: &mut PollContext, delay: Option<Duration>) -> Wake {
     }
 }
 
+fn cycle_is_stale(control: &PollControl, generation: u64) -> bool {
+    !control.enabled || control.generation != generation
+}
+
+async fn interruptible<T, E: Into<CycleError>>(
+    ctx: &PollContext,
+    work: impl Future<Output = Result<T, E>>,
+) -> Result<T, CycleError> {
+    let generation = ctx.active_generation;
+    let mut control = ctx.control.clone();
+    tokio::select! {
+        outcome = work => outcome.map_err(Into::into),
+        _ = control.wait_for(|control| cycle_is_stale(control, generation)) => {
+            Err(CycleError::Interrupted)
+        }
+        () = ctx.sink.closed() => Err(CycleError::SinkClosed),
+    }
+}
+
 async fn cycle(
     ctx: &PollContext,
     session: &mut Option<Secret>,
@@ -178,7 +201,7 @@ async fn cycle(
             let token = credentials::load(ctx.creds.as_ref())
                 .await?
                 .ok_or(DonatelloError::MissingToken)?;
-            let account = ctx.api.account(&token).await?;
+            let account = interruptible(ctx, ctx.api.account(&token)).await?;
             ctx.status.record_account(account);
             *session = Some(token.clone());
             token
@@ -206,7 +229,7 @@ async fn take_baseline(
     let mut total = None;
     let mut page_index = 0;
     loop {
-        let mut page = ctx.api.donates_page(token, page_index).await?;
+        let mut page = interruptible(ctx, ctx.api.donates_page(token, page_index)).await?;
         if page_index == 0 {
             total = page.total_count();
             memory.order = list_order(&page.content);
@@ -235,7 +258,7 @@ async fn scan_for_new(
     token: &Secret,
     memory: &mut PollMemory,
 ) -> Result<Option<OffsetDateTime>, CycleError> {
-    let first = ctx.api.donates_page(token, 0).await?;
+    let first = interruptible(ctx, ctx.api.donates_page(token, 0)).await?;
     let total = first.total_count();
     memory.order = list_order(&first.content).or(memory.order);
     let expected_new = total.zip(memory.known_total).map_or(0, |(total, known)| {
@@ -253,7 +276,7 @@ async fn scan_for_new(
         if found.unseen >= expected_new && !page_was_all_arrivals {
             break;
         }
-        match ctx.api.donates_page(token, page_index).await {
+        match interruptible(ctx, ctx.api.donates_page(token, page_index)).await {
             Ok(page) => {
                 let listed = page.content.len();
                 let more = harvest(&ctx.provider, memory, page.content, DonationOrigin::Live);
@@ -284,7 +307,7 @@ async fn scan_for_new(
         memory.known_total = memory
             .known_total
             .map(|known| known.saturating_add(unseen_found));
-        return Err(error.into());
+        return Err(error);
     }
     memory.pages_walked_before_failure = 0;
     memory.known_total = total.or(memory.known_total);

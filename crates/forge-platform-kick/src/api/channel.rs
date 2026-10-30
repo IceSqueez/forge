@@ -21,7 +21,7 @@ pub struct ChannelSnapshot {
     pub slug: String,
     pub is_live: bool,
     pub stream_title: String,
-    pub category_id: u64,
+    pub category_id: Option<u64>,
     pub category_name: String,
     pub viewer_count: u64,
     pub started_at: Option<OffsetDateTime>,
@@ -60,7 +60,7 @@ struct ChannelData {
 #[derive(Deserialize, Default)]
 struct CategoryData {
     #[serde(default)]
-    id: u64,
+    id: Option<u64>,
     #[serde(default)]
     name: String,
 }
@@ -253,7 +253,7 @@ mod tests {
         assert_eq!(snapshot.slug, "a-streamer");
         assert!(snapshot.is_live);
         assert_eq!(snapshot.stream_title, "Speedrun Night");
-        assert_eq!(snapshot.category_id, 77);
+        assert_eq!(snapshot.category_id, Some(77));
         assert_eq!(snapshot.category_name, "Just Chatting");
         assert_eq!(snapshot.viewer_count, 1234);
     }
@@ -366,7 +366,7 @@ mod tests {
             .await;
 
         let snapshot = channel_on(&server).get_channel("tok").await.unwrap();
-        assert_eq!(snapshot.category_id, 0);
+        assert_eq!(snapshot.category_id, None);
         assert_eq!(snapshot.category_name, "");
         assert_eq!(snapshot.viewer_count, 0);
         assert!(!snapshot.is_live);

@@ -1,7 +1,7 @@
 use crate::vocabulary::labels;
 use forge_types::VerbatimText;
 use std::collections::HashMap;
-use std::sync::{Arc, Mutex, OnceLock, PoisonError, RwLock};
+use std::sync::{Arc, Mutex, PoisonError, RwLock};
 use std::time::Duration;
 
 use async_trait::async_trait;
@@ -81,7 +81,7 @@ pub struct ObsClient {
     supervisor: Arc<std::sync::Mutex<Option<JoinHandle<()>>>>,
     connected_at: Arc<RwLock<Option<OffsetDateTime>>>,
     obs_id: IntegrationId,
-    obs_version: Arc<OnceLock<String>>,
+    obs_version: Arc<RwLock<Option<String>>>,
     obs_ws_version: Arc<RwLock<Option<String>>>,
     pub(crate) health_state: Arc<RwLock<HealthSnapshot>>,
     pub(crate) health_tx: broadcast::Sender<HealthDelta>,
@@ -120,7 +120,7 @@ impl ObsClient {
         let notify = Arc::new(Notify::new());
         let shutdown = Arc::new(tokio::sync::Mutex::new(Arc::clone(&notify)));
         let connected_at = Arc::new(RwLock::new(None::<OffsetDateTime>));
-        let obs_version = Arc::new(OnceLock::new());
+        let obs_version = Arc::new(RwLock::new(None));
         let obs_ws_version = Arc::new(RwLock::new(None::<String>));
         let item_cache = Arc::new(Mutex::new(SceneItemIds::default()));
 
@@ -223,7 +223,7 @@ impl ObsClient {
             supervisor: Arc::new(std::sync::Mutex::new(None)),
             connected_at: Arc::new(RwLock::new(None)),
             obs_id: IntegrationId::new(OBS_PLATFORM_ID),
-            obs_version: Arc::new(OnceLock::new()),
+            obs_version: Arc::new(RwLock::new(None)),
             obs_ws_version: Arc::new(RwLock::new(None)),
             health_state,
             health_tx,
@@ -266,8 +266,8 @@ impl BuiltinStatus for ObsClient {
         "OBS Studio"
     }
 
-    fn version(&self) -> Option<&str> {
-        self.obs_version.get().map(|s| s.as_str())
+    fn version(&self) -> Option<String> {
+        read_lock(&self.obs_version).clone()
     }
 
     fn connection(&self) -> ConnectionState {
@@ -420,7 +420,7 @@ struct SupervisorContext {
     state: Arc<AtomicConnectionState>,
     shutdown: Arc<Notify>,
     connected_at: Arc<RwLock<Option<OffsetDateTime>>>,
-    obs_version: Arc<OnceLock<String>>,
+    obs_version: Arc<RwLock<Option<String>>>,
     obs_ws_version: Arc<RwLock<Option<String>>>,
     catalog_state: Arc<RwLock<ObsCatalog>>,
     option_revisions: Arc<CollectionRevisionSignal>,
@@ -759,7 +759,7 @@ async fn run_supervisor(host: String, port: u16, password: Option<String>, ctx: 
 
 async fn prime_session(
     session: &LiveSession,
-    obs_version: &OnceLock<String>,
+    obs_version: &RwLock<Option<String>>,
     obs_ws_version: &RwLock<Option<String>>,
     catalog_state: &RwLock<ObsCatalog>,
     health_state: &RwLock<HealthSnapshot>,
@@ -771,11 +771,7 @@ async fn prime_session(
         .await
     {
         Ok(v) => {
-            #[expect(
-                clippy::let_underscore_must_use,
-                reason = "the version reported on the first connect is kept"
-            )]
-            let _ = obs_version.set(v.obs_studio_version.to_string());
+            *write_lock(obs_version) = Some(v.obs_studio_version.to_string());
             *write_lock(obs_ws_version) = Some(v.obs_web_socket_version.to_string());
         }
         Err(e) if e.is_connection_loss() => return Err(e),

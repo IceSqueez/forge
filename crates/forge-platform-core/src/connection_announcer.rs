@@ -1,4 +1,4 @@
-use std::sync::{Arc, Mutex, OnceLock};
+use std::sync::{Arc, Mutex, RwLock};
 
 use forge_events::EventPublisher;
 
@@ -6,7 +6,7 @@ use crate::chat::{ConnectionState, ConnectionTransition, connection_state_change
 
 pub struct ConnectionAnnouncer {
     platform_id: String,
-    publisher: OnceLock<Arc<dyn EventPublisher>>,
+    publisher: RwLock<Option<Arc<dyn EventPublisher>>>,
     announced: Mutex<ConnectionState>,
 }
 
@@ -14,17 +14,16 @@ impl ConnectionAnnouncer {
     pub fn new(platform_id: impl Into<String>) -> Self {
         Self {
             platform_id: platform_id.into(),
-            publisher: OnceLock::new(),
+            publisher: RwLock::new(None),
             announced: Mutex::new(ConnectionState::Disconnected),
         }
     }
 
     pub fn attach(&self, publisher: Arc<dyn EventPublisher>) {
-        #[expect(
-            clippy::let_underscore_must_use,
-            reason = "the first attached publisher wins"
-        )]
-        let _ = self.publisher.set(publisher);
+        *self
+            .publisher
+            .write()
+            .unwrap_or_else(|poisoned| poisoned.into_inner()) = Some(publisher);
     }
 
     pub fn announce(&self, state: ConnectionState, transition: ConnectionTransition) {
@@ -40,7 +39,12 @@ impl ConnectionAnnouncer {
                 true
             }
         };
-        if changed && let Some(publisher) = self.publisher.get() {
+        let publisher = self
+            .publisher
+            .read()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .clone();
+        if changed && let Some(publisher) = publisher {
             publisher.publish(connection_state_changed_event(
                 &self.platform_id,
                 state,
@@ -140,6 +144,25 @@ mod tests {
         assert_eq!(
             recorder.announcements(),
             [(PLATFORM.to_owned(), ConnectionState::Disconnected, true)]
+        );
+    }
+
+    #[test]
+    fn a_later_attach_replaces_the_publisher_for_every_following_announcement() {
+        let (announcer, retired) = attached();
+        announcer.announce(ConnectionState::Connected, ConnectionTransition::Expected);
+        let current = Arc::new(Recorder::default());
+
+        announcer.attach(Arc::clone(&current) as Arc<dyn EventPublisher>);
+        announcer.announce(
+            ConnectionState::Reconnecting,
+            ConnectionTransition::Unexpected,
+        );
+
+        assert_eq!(retired.announcements().len(), 1);
+        assert_eq!(
+            current.announcements(),
+            [(PLATFORM.to_owned(), ConnectionState::Reconnecting, false)]
         );
     }
 }

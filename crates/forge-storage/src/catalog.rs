@@ -147,6 +147,10 @@ impl ActionRepo for RevisingActionRepo {
         self.inner.get(id).await
     }
 
+    async fn count(&self) -> Result<usize, StorageError> {
+        self.inner.count().await
+    }
+
     async fn save(&self, action: &Action) -> Result<(), StorageError> {
         let inner = Arc::clone(&self.inner);
         let action = action.clone();
@@ -220,20 +224,21 @@ impl ActionRepo for RevisingActionRepo {
             .await
     }
 
-    async fn archive(&self, id: ActionId) -> Result<bool, StorageError> {
+    async fn archive_reporting_cancelled_runs(
+        &self,
+        id: ActionId,
+    ) -> Result<Option<u64>, StorageError> {
         let inner = Arc::clone(&self.inner);
         let scheduled_run_revision = self.scheduled_run_revision.clone();
         self.revision
             .after(async move {
-                let Some(cancelled) = inner.archive_reporting_cancelled_runs(id).await? else {
-                    return Ok(false);
-                };
-                if cancelled > 0
+                let cancelled = inner.archive_reporting_cancelled_runs(id).await?;
+                if cancelled.is_some_and(|runs| runs > 0)
                     && let Some(revision) = scheduled_run_revision
                 {
                     revision.advance();
                 }
-                Ok(true)
+                Ok(cancelled)
             })
             .await
     }
@@ -268,6 +273,10 @@ impl RevisingTriggerInstanceRepo {
 impl TriggerInstanceRepo for RevisingTriggerInstanceRepo {
     async fn list_all(&self) -> Result<Vec<TriggerInstance>, StorageError> {
         self.inner.list_all().await
+    }
+
+    async fn count_of_kinds(&self, kind_ids: &[String]) -> Result<usize, StorageError> {
+        self.inner.count_of_kinds(kind_ids).await
     }
 
     async fn list_user_defined(&self) -> Result<Vec<TriggerInstance>, StorageError> {
@@ -622,7 +631,7 @@ mod tests {
             id: QueueId::new(),
             name: "q".to_owned(),
             description: String::new(),
-            concurrency: 1,
+            concurrency: std::num::NonZeroU32::MIN,
         }
     }
 

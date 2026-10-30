@@ -399,6 +399,22 @@ async fn a_combo_refused_on_enable_is_registered_again_by_the_next_reconcile() {
 }
 
 #[tokio::test]
+async fn a_refused_combo_whose_trigger_is_gone_is_not_taken_back_on_enable() {
+    let synced = synced().await;
+    let combo = HotkeyCombo::parse("F7").unwrap();
+    let trigger = instance(event_kinds::GLOBAL_PRESSED, Some("F7"));
+    synced.repo.save(&trigger).await.unwrap();
+    synced.client.disable().await.unwrap();
+    synced.backend.fail_next_register(&combo);
+    synced.client.enable().await.unwrap();
+
+    synced.repo.delete(trigger.id).await.unwrap();
+    synced.client.enable().await.unwrap();
+
+    assert!(registered(&synced.client).is_empty());
+}
+
+#[tokio::test]
 async fn a_combo_the_os_refused_is_registered_by_the_next_trigger_write() {
     let synced = synced().await;
     synced
@@ -690,7 +706,7 @@ fn new_queue() -> Queue {
         id: QueueId::new(),
         name: "alerts".to_owned(),
         description: String::new(),
-        concurrency: 1,
+        concurrency: std::num::NonZeroU32::MIN,
     }
 }
 

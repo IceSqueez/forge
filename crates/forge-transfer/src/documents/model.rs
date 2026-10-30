@@ -146,7 +146,7 @@ impl QueueDocument {
             id: queue.id,
             name: queue.name.clone(),
             description: queue.description.clone(),
-            concurrency: queue.concurrency,
+            concurrency: queue.concurrency.get(),
             role,
         }
     }

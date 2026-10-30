@@ -6,16 +6,26 @@ pub use hotkey_released::HotkeyReleasedDescriptor;
 
 use forge_events::Event;
 use forge_registry::{RegistryError, TriggerRegistry};
-use forge_types::{TriggerConfig, Variant};
+use forge_types::{TriggerConfig, UserText, Variant, VerbatimText};
 
 use crate::combo::HotkeyCombo;
-use crate::vocabulary::fields;
+use crate::vocabulary::{fields, messages};
 
 pub fn register_hotkey_triggers(reg: &mut TriggerRegistry) -> Result<(), RegistryError> {
     let mut reg = reg.owned_by(crate::HOTKEY_INTEGRATION.id);
     reg.register(Box::new(HotkeyPressedDescriptor))?;
     reg.register(Box::new(HotkeyReleasedDescriptor))?;
     Ok(())
+}
+
+fn combo_condition(config: &TriggerConfig) -> UserText {
+    match config.get(fields::COMBO) {
+        Some(Variant::String(combo)) if combo.trim().is_empty() => {
+            messages::CONDITION_NO_HOTKEY.into()
+        }
+        Some(Variant::String(combo)) => VerbatimText::new(combo.as_str()).into(),
+        _ => messages::CONDITION_ANY_HOTKEY.into(),
+    }
 }
 
 fn config_accepts_combo(config: &TriggerConfig, event: &Event) -> bool {

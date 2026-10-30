@@ -65,7 +65,7 @@ fn queue() -> Queue {
         id: QueueId::new(),
         name: "alerts".to_owned(),
         description: String::new(),
-        concurrency: 1,
+        concurrency: std::num::NonZeroU32::MIN,
     }
 }
 

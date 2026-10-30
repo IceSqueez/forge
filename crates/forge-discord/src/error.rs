@@ -21,6 +21,9 @@ pub enum ValidationFault {
     #[error("{part} contains invalid control character")]
     ControlCharacter { part: &'static str },
 
+    #[error("{part} must be an http, https or attachment url")]
+    ImageUrlScheme { part: &'static str },
+
     #[error("message id is not a discord snowflake")]
     MessageIdNotSnowflake,
 

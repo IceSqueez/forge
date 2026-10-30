@@ -13,6 +13,7 @@ msg-discord-embed_too_many_fields = В ембеді { $count } полів, а л
 msg-discord-embed_part_too_long = Частина ембеда { $part } має { $length } символів, а ліміт - { $max }.
 msg-discord-embed_total_too_long = Текст ембеда має { $total } символів загалом, а ліміт - { $max }.
 msg-discord-embed_control_character = Частина ембеда { $part } містить керівний символ, який Discord не приймає.
+msg-discord-embed_image_url_scheme = Частина ембеда { $part } має починатися з http://, https:// або attachment://.
 msg-discord-message_id_invalid = Ідентифікатор повідомлення не схожий на ідентифікатор повідомлення Discord.
 msg-discord-not_webhook_endpoint = Ця адреса не є адресою вебхука Discord.
 msg-discord-webhook_name_empty = Назва вебхука порожня.

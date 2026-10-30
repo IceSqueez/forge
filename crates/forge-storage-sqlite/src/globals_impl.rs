@@ -261,6 +261,15 @@ impl GlobalsRepo for SqliteGlobalsRepo {
         decode_entries(rows).map(|entries| self.with_unflushed_reads(entries))
     }
 
+    async fn count(&self) -> Result<usize, StorageError> {
+        let count: i64 =
+            sqlx::query_scalar("SELECT COUNT(*) FROM globals WHERE archived_at IS NULL")
+                .fetch_one(self.db.reader())
+                .await
+                .map_err(SqliteStorageError::Sqlx)?;
+        Ok(usize::try_from(count).unwrap_or(usize::MAX))
+    }
+
     async fn list_archived(&self) -> Result<Vec<GlobalEntry>, StorageError> {
         let rows: Vec<GlobalRow> = sqlx::query_as(
             "SELECT name, value, persisted, reads, writes, created_at, last_modified \

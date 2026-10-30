@@ -1,5 +1,6 @@
 use forge_registry::{ChatTriggerFamily, TriggerRegistry};
 use forge_storage::{ActionRepo, GlobalsRepo, HistoryRepo, StorageError, TriggerInstanceRepo};
+use time::OffsetDateTime;
 
 #[derive(Debug, Clone)]
 pub struct DashboardStats {
@@ -15,21 +16,16 @@ pub async fn compute_stats(
     history: &dyn HistoryRepo,
     triggers: &dyn TriggerInstanceRepo,
     registry: &TriggerRegistry,
+    since: OffsetDateTime,
 ) -> Result<DashboardStats, StorageError> {
-    let actions_count = actions.list().await?.len();
-    let globals_count = globals.list().await?.len();
-    let commands_count = triggers
-        .list_all()
-        .await?
-        .iter()
-        .filter(|t| {
-            registry
-                .get(&t.kind_id)
-                .and_then(|d| d.chat_trigger_family())
-                == Some(ChatTriggerFamily::Command)
-        })
-        .count();
-    let since = time::OffsetDateTime::now_utc() - time::Duration::hours(24);
+    let actions_count = actions.count().await?;
+    let globals_count = globals.count().await?;
+    let command_kinds: Vec<String> = registry
+        .all()
+        .filter(|descriptor| descriptor.chat_trigger_family() == Some(ChatTriggerFamily::Command))
+        .map(|descriptor| descriptor.id().to_owned())
+        .collect();
+    let commands_count = triggers.count_of_kinds(&command_kinds).await?;
     let stats = history.stats_summary(since).await?;
     let triggers_fired: u64 = stats.values().map(|s| u64::from(s.runs_24h)).sum();
     Ok(DashboardStats {

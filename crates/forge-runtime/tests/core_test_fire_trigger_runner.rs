@@ -40,7 +40,7 @@ fn nonblocking(id: QueueId) -> Queue {
         id,
         name: "default".to_string(),
         description: String::new(),
-        concurrency: 8,
+        concurrency: std::num::NonZeroU32::new(8).unwrap(),
     }
 }
 
@@ -49,7 +49,7 @@ fn blocking(id: QueueId) -> Queue {
         id,
         name: "serial".to_string(),
         description: String::new(),
-        concurrency: 1,
+        concurrency: std::num::NonZeroU32::MIN,
     }
 }
 

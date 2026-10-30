@@ -1507,3 +1507,30 @@ async fn leaving_connected_is_flagged_expected_only_when_the_user_asked_for_it()
         );
     }
 }
+
+#[tokio::test]
+async fn a_reconnect_to_an_upgraded_obs_reports_the_new_version() {
+    const UPGRADED: &str = "32.0.0";
+    let fake = spawn_fake_obs(
+        completes_every_handshake,
+        Arc::new(|seen: Seen<'_>| match (seen.conn, seen.request_type) {
+            (0, "GetSceneList") => Reply::DropSocket,
+            (1.., "GetVersion") => {
+                let mut upgraded = version_data();
+                upgraded["obsVersion"] = json!(UPGRADED);
+                Reply::Answer(upgraded)
+            }
+            (_, other) => standard_reply(other),
+        }),
+    )
+    .await;
+    let recorder = Recorder::default();
+    let client = connect_to(&fake, &recorder).await;
+
+    settle_until("the second session reported its version", || {
+        client.version().as_deref() == Some(UPGRADED)
+    })
+    .await;
+
+    assert!(fake.log.accepted() >= 2);
+}

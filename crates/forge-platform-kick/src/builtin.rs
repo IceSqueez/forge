@@ -340,7 +340,7 @@ impl BuiltinStatus for KickIntegrationBundle {
         "Kick"
     }
 
-    fn version(&self) -> Option<&str> {
+    fn version(&self) -> Option<String> {
         None
     }
 
@@ -374,8 +374,8 @@ impl BuiltinStatus for KickIntegrationBundle {
             .unwrap_or_else(|p| p.into_inner())
     }
 
-    fn hero_name(&self) -> Option<&str> {
-        Some(&self.slug)
+    fn hero_name(&self) -> Option<String> {
+        Some(self.slug.clone())
     }
 
     fn name_badges(&self) -> Vec<HeroBadge> {

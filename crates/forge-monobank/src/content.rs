@@ -77,6 +77,7 @@ fn action_banner(status: &PollStatus) -> Option<DetailSection> {
     }
     let body = match status.last_error {
         Some(PollFailure::TokenRejected) => messages::LABEL_BANNER_TOKEN_REJECTED,
+        Some(PollFailure::TokenUnreadable) => messages::LABEL_BANNER_TOKEN_UNREADABLE,
         Some(PollFailure::JarNotSelected) => messages::LABEL_BANNER_JAR_NOT_SELECTED,
         Some(PollFailure::JarMissing) => messages::LABEL_BANNER_JAR_MISSING,
         _ => messages::LABEL_BANNER_TOKEN_MISSING,
@@ -111,6 +112,7 @@ mod tests {
                 None,
                 Some(PollFailure::MissingToken),
                 Some(PollFailure::TokenRejected),
+                Some(PollFailure::TokenUnreadable),
                 Some(PollFailure::JarNotSelected),
                 Some(PollFailure::JarMissing),
             ] {
@@ -135,6 +137,37 @@ mod tests {
                     "{phase:?} {failure:?}"
                 );
             }
+        }
+    }
+
+    #[test]
+    fn a_token_that_cannot_be_read_gets_its_own_banner_not_the_rejected_one() {
+        for (failure, body) in [
+            (
+                PollFailure::TokenUnreadable,
+                messages::LABEL_BANNER_TOKEN_UNREADABLE,
+            ),
+            (
+                PollFailure::TokenRejected,
+                messages::LABEL_BANNER_TOKEN_REJECTED,
+            ),
+        ] {
+            let status = PollStatus {
+                phase: PollPhase::ActionRequired,
+                jar: None,
+                last_poll_at: None,
+                last_donation_at: None,
+                last_error: Some(failure),
+                last_error_at: None,
+                polling_since: None,
+            };
+
+            let Some(DetailSection::WarningBanner { body: shown, .. }) = action_banner(&status)
+            else {
+                panic!("{failure:?} must raise a banner");
+            };
+
+            assert_eq!(shown, body.into(), "{failure:?}");
         }
     }
 }

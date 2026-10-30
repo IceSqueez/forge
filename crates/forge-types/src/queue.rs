@@ -1,26 +1,18 @@
 use crate::ids::{DEFAULT_QUEUE_ID, QueueId};
-use serde::de::Error as _;
-use serde::{Deserialize, Deserializer, Serialize};
+use serde::{Deserialize, Serialize};
+use std::num::NonZeroU32;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Queue {
     pub id: QueueId,
     pub name: String,
     pub description: String,
-    #[serde(deserialize_with = "positive_concurrency")]
-    pub concurrency: u32,
-}
-
-fn positive_concurrency<'de, D: Deserializer<'de>>(deserializer: D) -> Result<u32, D::Error> {
-    match u32::deserialize(deserializer)? {
-        0 => Err(D::Error::custom("queue concurrency must be at least 1")),
-        concurrency => Ok(concurrency),
-    }
+    pub concurrency: NonZeroU32,
 }
 
 impl Queue {
     pub fn is_serial(&self) -> bool {
-        self.concurrency <= 1
+        self.concurrency == NonZeroU32::MIN
     }
 
     pub fn is_default(&self) -> bool {
@@ -45,7 +37,7 @@ mod tests {
     fn a_stored_queue_keeps_any_positive_concurrency() {
         for concurrency in [1, 2, u32::MAX] {
             let queue: Queue = serde_json::from_value(queue_json(concurrency.into())).unwrap();
-            assert_eq!(queue.concurrency, concurrency);
+            assert_eq!(queue.concurrency.get(), concurrency);
         }
     }
 
@@ -53,7 +45,7 @@ mod tests {
     fn a_stored_queue_with_no_slots_is_refused() {
         let error = serde_json::from_value::<Queue>(queue_json(0.into())).unwrap_err();
         assert!(
-            error.to_string().contains("at least 1"),
+            error.to_string().contains("nonzero"),
             "unexpected refusal: {error}"
         );
     }

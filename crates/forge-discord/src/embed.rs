@@ -6,6 +6,7 @@ use crate::error::{DiscordError, ValidationFault};
 const MAX_FIELDS: usize = 25;
 const MAX_TOTAL_TEXT: usize = 6000;
 pub(crate) const MAX_CONTENT_CHARS: usize = 2000;
+const IMAGE_URL_SCHEMES: [&str; 3] = ["http://", "https://", "attachment://"];
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct DiscordEmbedField {
@@ -38,6 +39,8 @@ impl DiscordEmbed {
         check_len("description", self.description.as_deref(), 4096)?;
         check_len("footer_text", self.footer_text.as_deref(), 2048)?;
         check_len("author_name", self.author_name.as_deref(), 256)?;
+        check_image_url("thumbnail_url", self.thumbnail_url.as_deref())?;
+        check_image_url("image_url", self.image_url.as_deref())?;
         if self.fields.len() > MAX_FIELDS {
             return Err(DiscordError::Validation(ValidationFault::TooManyFields {
                 count: self.fields.len(),
@@ -104,6 +107,23 @@ fn check_len(field: &'static str, value: Option<&str>, max: usize) -> Result<(),
         }));
     }
     Ok(())
+}
+
+fn check_image_url(field: &'static str, url: Option<&str>) -> Result<(), DiscordError> {
+    let Some(url) = url else {
+        return Ok(());
+    };
+    let lowered = url.trim_start().to_ascii_lowercase();
+    if IMAGE_URL_SCHEMES
+        .iter()
+        .any(|scheme| lowered.starts_with(scheme))
+    {
+        Ok(())
+    } else {
+        Err(DiscordError::Validation(ValidationFault::ImageUrlScheme {
+            part: field,
+        }))
+    }
 }
 
 fn check_no_nul(field: &'static str, s: &str) -> Result<(), DiscordError> {
@@ -266,5 +286,40 @@ mod tests {
             ..Default::default()
         };
         assert!(matches!(e.validate(), Err(DiscordError::Validation(_))));
+    }
+
+    #[test]
+    fn image_urls_must_use_a_scheme_discord_can_fetch() {
+        for (url, accepted) in [
+            ("https://cdn.example/a.png", true),
+            ("http://cdn.example/a.png", true),
+            ("HTTPS://cdn.example/a.png", true),
+            ("attachment://a.png", true),
+            ("ftp://cdn.example/a.png", false),
+            ("file:///etc/passwd", false),
+            ("data:image/png;base64,AAAA", false),
+            ("javascript:alert(1)", false),
+            ("cdn.example/a.png", false),
+            ("", false),
+        ] {
+            let thumbnail = DiscordEmbed {
+                thumbnail_url: Some(url.to_owned()),
+                ..DiscordEmbed::default()
+            };
+            let image = DiscordEmbed {
+                image_url: Some(url.to_owned()),
+                ..DiscordEmbed::default()
+            };
+            for (embed, field) in [(thumbnail, "thumbnail_url"), (image, "image_url")] {
+                match embed.validate() {
+                    Ok(()) => assert!(accepted, "{field} must refuse {url:?}"),
+                    Err(DiscordError::Validation(ValidationFault::ImageUrlScheme { part })) => {
+                        assert!(!accepted, "{field} must accept {url:?}");
+                        assert_eq!(part, field);
+                    }
+                    Err(other) => panic!("{field} {url:?} failed with {other:?}"),
+                }
+            }
+        }
     }
 }

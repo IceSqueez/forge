@@ -55,6 +55,7 @@ impl PollPhase {
 pub enum PollFailure {
     MissingToken,
     TokenRejected,
+    TokenUnreadable,
     JarNotSelected,
     JarMissing,
     RateLimited,
@@ -69,7 +70,8 @@ impl PollFailure {
     pub fn of(error: &MonobankError) -> Self {
         match error {
             MonobankError::MissingToken => Self::MissingToken,
-            MonobankError::MalformedToken | MonobankError::Unauthorized => Self::TokenRejected,
+            MonobankError::MalformedToken => Self::TokenUnreadable,
+            MonobankError::Unauthorized => Self::TokenRejected,
             MonobankError::MissingJar | MonobankError::InvalidJarId => Self::JarNotSelected,
             MonobankError::JarNotFound => Self::JarMissing,
             MonobankError::CoolingDown { .. } | MonobankError::RateLimited { .. } => {
@@ -89,6 +91,7 @@ impl PollFailure {
         MessageRef::new(match self {
             Self::MissingToken => messages::FAILURE_MISSING_TOKEN,
             Self::TokenRejected => messages::FAILURE_TOKEN_REJECTED,
+            Self::TokenUnreadable => messages::FAILURE_TOKEN_UNREADABLE,
             Self::JarNotSelected => messages::FAILURE_JAR_NOT_SELECTED,
             Self::JarMissing => messages::FAILURE_JAR_MISSING,
             Self::RateLimited => messages::FAILURE_RATE_LIMITED,
@@ -104,6 +107,7 @@ impl PollFailure {
         match self {
             Self::MissingToken => "No token",
             Self::TokenRejected => "Token rejected",
+            Self::TokenUnreadable => "Token unreadable",
             Self::JarNotSelected => "No jar selected",
             Self::JarMissing => "Jar not found",
             Self::RateLimited => "Rate limited",
@@ -304,7 +308,7 @@ mod tests {
             (
                 MonobankError::MalformedToken,
                 PollPhase::ActionRequired,
-                PollFailure::TokenRejected,
+                PollFailure::TokenUnreadable,
             ),
             (
                 MonobankError::Unauthorized,

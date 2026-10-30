@@ -607,17 +607,23 @@ impl QuickActionModal {
         })
     }
 
-    fn build_step(&self, cx: &Context<Self>) -> SubActionStep {
-        let values: BTreeMap<String, QuickActionFieldValue> = self
-            .fields
+    fn current_values(&self, cx: &Context<Self>) -> BTreeMap<String, QuickActionFieldValue> {
+        self.fields
             .iter()
             .map(|field| (field.key.clone(), field.current_value(cx)))
-            .collect();
-        self.action.merge_config(&values)
+            .collect()
+    }
+
+    fn build_step(&self, cx: &Context<Self>) -> SubActionStep {
+        self.action.merge_config(&self.current_values(cx))
     }
 
     fn run(&mut self, cx: &mut Context<Self>) {
         if !self.can_run(cx) {
+            return;
+        }
+        if let Some(field) = self.action.first_mismatched_field(&self.current_values(cx)) {
+            tracing::warn!(field = %field.key, "quick action field value disagrees with its kind");
             return;
         }
         let step = self.build_step(cx);

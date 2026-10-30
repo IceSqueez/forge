@@ -2178,6 +2178,7 @@ chat_banned_not_connected = Not connected
 chat_banned_missing_permission = Missing permission - reconnect to grant it
 chat_banned_try_later = Could not load bans - try again later
 chat_banned_seen_by_forge = Only bans forge issued or saw while connected - not the full platform list
+chat_banned_list_capped = Only the first { $count } bans are shown
 chat_dispatch_cancelled = The action was cancelled before it finished
 
 ## Event Feed - page header / filters

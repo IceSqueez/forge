@@ -1221,6 +1221,8 @@ impl AppShell {
     }
 }
 
+const DASHBOARD_RUN_WINDOW: time::Duration = time::Duration::hours(24);
+
 pub(crate) async fn refresh_dashboard_stats(
     home_stats: Entity<HomeStats>,
     backend: Arc<dyn DataProvider>,
@@ -1245,6 +1247,7 @@ pub(crate) async fn refresh_dashboard_stats(
                 &*history,
                 &*triggers,
                 &trigger_registry,
+                time::OffsetDateTime::now_utc() - DASHBOARD_RUN_WINDOW,
             )
             .await,
         );

@@ -131,7 +131,7 @@ impl Harness {
             id: QueueId::new(),
             name: "scheduled".to_owned(),
             description: String::new(),
-            concurrency: 8,
+            concurrency: std::num::NonZeroU32::new(8).unwrap(),
         };
         dp.queue_repo().save(&queue).await.unwrap();
         let bus = EventBus::new(Arc::new(NullEventLogRepo));
@@ -390,7 +390,7 @@ async fn an_overdue_run_whose_target_cannot_run_is_settled_with_the_matching_rea
                     id: QueueId::new(),
                     name: "not running".to_owned(),
                     description: String::new(),
-                    concurrency: 1,
+                    concurrency: std::num::NonZeroU32::MIN,
                 };
                 harness.dp.queue_repo().save(&unscheduled).await.unwrap();
                 harness
@@ -1630,7 +1630,7 @@ async fn a_run_waiting_on_a_paused_queue_is_rechecked_no_faster_than_the_wall_cl
         id: QueueId::new(),
         name: "paused".to_owned(),
         description: String::new(),
-        concurrency: 1,
+        concurrency: std::num::NonZeroU32::MIN,
     };
     let action = Action {
         id: ActionId::new(),

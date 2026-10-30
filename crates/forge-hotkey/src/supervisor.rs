@@ -165,6 +165,7 @@ async fn handle_supervisor_command(client: &Arc<HotkeyClient>, cmd: SupervisorCo
         }
         SupervisorCommand::Enable(reply) => {
             if client.enabled.load(Ordering::Relaxed) {
+                retry_refused(client).await;
                 #[expect(
                     clippy::let_underscore_must_use,
                     reason = "the requester may stop waiting for the reply"
@@ -189,6 +190,8 @@ async fn handle_supervisor_command(client: &Arc<HotkeyClient>, cmd: SupervisorCo
             }
             client.enabled.store(true, Ordering::Relaxed);
             emit_engine_state_change(client, true);
+            retry_refused(client).await;
+            client.note_refused(failures.iter().map(|failure| failure.combo.clone()));
             if !failures.is_empty() {
                 record_enable_failures(client, &failures);
                 emit_enable_failed(client, &failures);
@@ -200,6 +203,21 @@ async fn handle_supervisor_command(client: &Arc<HotkeyClient>, cmd: SupervisorCo
             let _ = reply.send(failures);
         }
     }
+}
+
+async fn retry_refused(client: &Arc<HotkeyClient>) {
+    let registered = client.registered_combos();
+    let mut still_refused = Vec::new();
+    for combo in client.take_refused() {
+        if registered.iter().any(|(_, known)| known == &combo) {
+            continue;
+        }
+        if let Err(error) = client.register(combo.clone()).await {
+            tracing::warn!(combo = %combo, %error, "hotkey is still refused");
+            still_refused.push(combo);
+        }
+    }
+    client.note_refused(still_refused);
 }
 
 async fn disable_engine(client: &Arc<HotkeyClient>) -> Result<(), HotkeyError> {

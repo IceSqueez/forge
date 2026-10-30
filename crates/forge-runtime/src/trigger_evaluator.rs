@@ -656,7 +656,7 @@ mod tests {
             id: q_id,
             name: "default".into(),
             description: String::new(),
-            concurrency: 8,
+            concurrency: std::num::NonZeroU32::new(8).unwrap(),
         };
         let action = log_action(a_id, q_id);
         let instance = custom_event_instance("my_event");
@@ -1570,7 +1570,7 @@ mod tests {
             id: QueueId::new(),
             name: "serial".into(),
             description: String::new(),
-            concurrency: 1,
+            concurrency: std::num::NonZeroU32::MIN,
         };
         dp.queue_repo().save(&queue).await.unwrap();
 
@@ -1705,7 +1705,7 @@ mod tests {
                         id: QueueId::new(),
                         name: "unscheduled".into(),
                         description: String::new(),
-                        concurrency: 1,
+                        concurrency: std::num::NonZeroU32::MIN,
                     };
                     self.dp.queue_repo().save(&unscheduled).await.unwrap();
                     actions
@@ -1862,7 +1862,7 @@ mod tests {
                 id: QueueId::new(),
                 name: format!("queue {}", QueueId::new()),
                 description: String::new(),
-                concurrency: 8,
+                concurrency: std::num::NonZeroU32::new(8).unwrap(),
             };
             let action = log_action(ActionId::new(), queue.id);
             let backend = &self.fixture._backend;

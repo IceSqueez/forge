@@ -108,6 +108,7 @@ impl HotkeyReconciler {
 }
 
 async fn apply_wanted(client: &HotkeyClient, wanted: &BTreeSet<String>) {
+    client.drop_unwanted_refused(wanted);
     let registered = client.registered_combos();
 
     for (id, combo) in &registered {

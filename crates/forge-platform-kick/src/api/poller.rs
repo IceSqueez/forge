@@ -550,7 +550,7 @@ mod tests {
             slug: String::new(),
             is_live,
             stream_title: title.to_owned(),
-            category_id,
+            category_id: Some(category_id),
             category_name: category_name.to_owned(),
             viewer_count: 0,
             started_at: None,

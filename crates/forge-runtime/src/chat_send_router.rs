@@ -104,6 +104,8 @@ fn whispers_unsupported_reason(channel: &str) -> String {
     format!("whispers are not supported on {channel}")
 }
 
+const BLANK_WHISPER_RECIPIENT: &str = "a whisper needs a recipient login";
+
 fn sender_of(request: &ChatSendRequest) -> Result<SenderPreference, String> {
     match request.sender.as_deref() {
         None => Ok(SenderPreference::Default),
@@ -225,6 +227,11 @@ pub fn spawn_chat_send_router(
                 if requested.is_some() {
                     bus.publish(route.failed(whispers_unsupported_reason(channel), Some(caused_by)));
                 }
+                continue;
+            }
+            if matches!(&intent, ChatSendIntent::Whisper { recipient_login } if recipient_login.is_empty())
+            {
+                bus.publish(route.failed(BLANK_WHISPER_RECIPIENT.to_owned(), Some(caused_by)));
                 continue;
             }
             let queued = QueuedChatSend {
@@ -1116,5 +1123,30 @@ mod tests {
         }
 
         assert_matches_golden(&failed, "chat.send.failed.json");
+    }
+
+    #[tokio::test]
+    async fn a_blank_whisper_recipient_fails_without_reaching_the_platform() {
+        let bus = bus();
+        let (twitch, mut twitch_rx) = mock(MockSpec::default());
+        let _twitch = route(&bus, twitch, PlatformId::Twitch).await;
+        let mut observer = bus.subscribe();
+
+        for blank in ["", "   "] {
+            bus.publish(rhai(
+                json!({ "message": "psst", "whisper_to_login": blank }),
+            ));
+        }
+        bus.publish(rhai(json!({ "message": "after" })));
+
+        assert_eq!(next_call(&mut twitch_rx).await, plain("twitch", "after"));
+        let refusals: Vec<bool> = drain_of_kind(&mut observer, ChatSendFailed::KIND)
+            .iter()
+            .map(|event| {
+                ChatSendFailed::from_event(event)
+                    .is_some_and(|failed| failed.error == BLANK_WHISPER_RECIPIENT)
+            })
+            .collect();
+        assert_eq!(refusals, vec![true, true]);
     }
 }

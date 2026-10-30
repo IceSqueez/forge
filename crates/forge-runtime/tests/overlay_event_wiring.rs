@@ -735,7 +735,7 @@ async fn an_overlay_fed_by_another_trigger_kind_is_wired_onto_the_queue_already_
         id: QueueId::new(),
         name: OVERLAY_ALERT_QUEUE.name.to_owned(),
         description: "widened by hand".to_owned(),
-        concurrency: 8,
+        concurrency: std::num::NonZeroU32::new(8).unwrap(),
     };
     let harness = Wiring::new()
         .fed_by(OTHER_KIND)
@@ -753,7 +753,7 @@ async fn a_queue_found_for_the_wiring_is_reused_exactly_as_the_user_left_it() {
         id: QueueId::new(),
         name: OVERLAY_ALERT_QUEUE.name.to_owned(),
         description: "widened by hand".to_owned(),
-        concurrency: 8,
+        concurrency: std::num::NonZeroU32::new(8).unwrap(),
     };
     let harness = Wiring::new().with_queue(existing.clone()).build();
 
@@ -879,7 +879,7 @@ impl Stored {
             id: QueueId::new(),
             name: name.to_owned(),
             description: String::new(),
-            concurrency: 1,
+            concurrency: std::num::NonZeroU32::MIN,
         };
         self.provider
             .queue_repo()

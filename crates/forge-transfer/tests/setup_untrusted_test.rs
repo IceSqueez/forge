@@ -602,7 +602,7 @@ async fn a_setup_carrying_no_queues_removes_the_local_ones_but_keeps_the_default
         id: forge_types::QueueId::new(),
         name: "Alerts".to_owned(),
         description: String::new(),
-        concurrency: 1,
+        concurrency: std::num::NonZeroU32::MIN,
     };
     queues.save(&local).await.unwrap();
     let path = bundle(store.data_dir(), &empty_setup(), &[]);
@@ -902,7 +902,7 @@ async fn a_failed_setup_import_restores_replaced_rows_and_removes_added_ones_wit
         id: forge_types::QueueId::new(),
         name: "Blocked".to_owned(),
         description: String::new(),
-        concurrency: 1,
+        concurrency: std::num::NonZeroU32::MIN,
     };
     store.provider.queue_repo().save(&blocked).await.unwrap();
     let mut connection = sqlx::SqliteConnection::connect(&format!(
@@ -1308,7 +1308,7 @@ fn named_queue(name: &str) -> Queue {
         id: QueueId::new(),
         name: name.to_owned(),
         description: String::new(),
-        concurrency: 1,
+        concurrency: std::num::NonZeroU32::MIN,
     }
 }
 
@@ -1317,7 +1317,7 @@ fn queue_document(queue: &Queue, role: Option<QueueRole>) -> QueueDocument {
         id: queue.id,
         name: queue.name.clone(),
         description: queue.description.clone(),
-        concurrency: queue.concurrency,
+        concurrency: queue.concurrency.get(),
         role,
     }
 }

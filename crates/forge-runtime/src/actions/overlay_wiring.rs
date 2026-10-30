@@ -19,14 +19,14 @@ use crate::sub_action_runners::{
 pub const OVERLAY_ALERT_QUEUE: QueuePlacement = QueuePlacement {
     name: OVERLAY_ALERT_QUEUE_NAME,
     description: "Shows one overlay alert at a time, so a second event waits its turn.",
-    concurrency: 1,
+    concurrency: std::num::NonZeroU32::MIN,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct QueuePlacement {
     pub name: &'static str,
     pub description: &'static str,
-    pub concurrency: u32,
+    pub concurrency: std::num::NonZeroU32,
 }
 
 impl QueuePlacement {

@@ -212,7 +212,7 @@ impl IntegrationDetail {
         let qa_search_sub = cx.subscribe(qa_search.field(), Self::on_qa_search);
         let connect_platform = connect_platform_for(status.id().as_str(), control.is_some());
         let display_name = status.display_name().to_owned();
-        let version = status.version().map(ToOwned::to_owned);
+        let version = status.version();
         let connection = status.connection();
         let capability_flags = status.capability_flags();
         let header_actions = status.header_actions();
@@ -334,7 +334,7 @@ impl IntegrationDetail {
             return;
         }
         let rt_handle = self.rt_handle.clone();
-        let streamer_login = self.status.hero_name().map(ToOwned::to_owned);
+        let streamer_login = self.status.hero_name();
         let section =
             cx.new(|cx| TwitchBotSection::new(bot, presence, rt_handle, streamer_login, cx));
         self._twitch_bot_subs = vec![
@@ -406,7 +406,7 @@ impl IntegrationDetail {
 
     fn reload(&mut self, cx: &mut Context<Self>) {
         self.display_name = self.status.display_name().to_owned();
-        self.version = self.status.version().map(ToOwned::to_owned);
+        self.version = self.status.version();
         self.connection = self.status.connection();
         self.capability_flags = self.status.capability_flags();
         self.header_actions = self.status.header_actions();
@@ -418,7 +418,7 @@ impl IntegrationDetail {
             manager.update(cx, |manager, cx| manager.set_connected(connected, cx));
         }
         if let Some(section) = self.twitch_bot.clone() {
-            let streamer_login = self.status.hero_name().map(ToOwned::to_owned);
+            let streamer_login = self.status.hero_name();
             section.update(cx, |section, cx| {
                 section.set_streamer_login(streamer_login, cx)
             });
@@ -1293,7 +1293,6 @@ impl IntegrationDetail {
         let hero_name = self
             .status
             .hero_name()
-            .map(ToOwned::to_owned)
             .unwrap_or_else(|| self.display_name.clone());
         let sub = self.hero_subtitle();
         let name_badges = self.hero_badges(palette);
@@ -2051,7 +2050,7 @@ mod tests {
             fn display_name(&self) -> &str {
                 "Discord"
             }
-            fn version(&self) -> Option<&str> {
+            fn version(&self) -> Option<String> {
                 None
             }
             fn connection(&self) -> ConnectionState {

@@ -2228,6 +2228,7 @@ chat_banned_not_connected = Не підключено
 chat_banned_missing_permission = Бракує дозволу - підключіться знову, щоб надати його
 chat_banned_try_later = Не вдалося завантажити бани - спробуйте пізніше
 chat_banned_seen_by_forge = Лише бани, які forge видав або побачив під час підключення - не повний список платформи
+chat_banned_list_capped = Показано лише перші { $count } банів
 chat_dispatch_cancelled = Дію скасовано до завершення
 
 ## Стрічка подій - заголовок / фільтри

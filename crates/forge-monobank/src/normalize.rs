@@ -57,10 +57,9 @@ fn donor_name(counter_name: Option<&str>, description: Option<&str>) -> String {
         .map(str::trim)
         .filter(|name| !name.is_empty())
         .or_else(|| {
-            description.map(|text| {
-                let text = text.trim();
-                text.strip_prefix(SENDER_PREFIX).unwrap_or(text).trim()
-            })
+            description
+                .and_then(|text| text.trim().strip_prefix(SENDER_PREFIX))
+                .map(str::trim)
         })
         .unwrap_or_default()
         .to_owned()
@@ -201,11 +200,7 @@ mod tests {
                 json!("  Від:Петро "),
                 Donor::Named("Петро".to_owned()),
             ),
-            (
-                json!(null),
-                json!("Петро"),
-                Donor::Named("Петро".to_owned()),
-            ),
+            (json!(null), json!("Поповнення банки"), Donor::Anonymous),
             (json!(null), json!("Від: "), Donor::Anonymous),
             (json!(""), json!(""), Donor::Anonymous),
             (json!(null), json!(null), Donor::Anonymous),

@@ -68,7 +68,7 @@ pub fn integration_facts(builtins: &BuiltinRegistry) -> Vec<IntegrationFacts> {
             id: object.status.id().as_str().to_owned(),
             connection: object.status.connection().as_str(),
             limited: object.status.capability_flags().limited,
-            version: object.status.version().map(str::to_owned),
+            version: object.status.version(),
             uptime_secs: object.status.uptime().map(|d| d.as_secs()),
             endpoint_present: object.status.endpoint().is_some(),
             token_expires_in_secs: object.status.token_expiry().map(|at| {
@@ -625,8 +625,8 @@ mod tests {
         fn display_name(&self) -> &str {
             SECRET
         }
-        fn version(&self) -> Option<&str> {
-            Some("5.6.1")
+        fn version(&self) -> Option<String> {
+            Some("5.6.1".to_owned())
         }
         fn connection(&self) -> ConnectionState {
             ConnectionState::Connected
@@ -646,8 +646,8 @@ mod tests {
         fn header_actions(&self) -> Vec<HeaderAction> {
             Vec::new()
         }
-        fn hero_name(&self) -> Option<&str> {
-            Some(SECRET)
+        fn hero_name(&self) -> Option<String> {
+            Some(SECRET.to_owned())
         }
     }
 

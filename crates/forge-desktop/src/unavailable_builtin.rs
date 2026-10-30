@@ -38,7 +38,7 @@ impl BuiltinStatus for UnavailableStatus {
     fn display_name(&self) -> &str {
         &self.display_name
     }
-    fn version(&self) -> Option<&str> {
+    fn version(&self) -> Option<String> {
         None
     }
     fn connection(&self) -> ConnectionState {

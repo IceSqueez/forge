@@ -15,7 +15,7 @@ impl BuiltinStatus for HotkeyClient {
         "Hotkeys"
     }
 
-    fn version(&self) -> Option<&str> {
+    fn version(&self) -> Option<String> {
         None
     }
 

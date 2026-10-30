@@ -16,8 +16,8 @@ impl BuiltinStatus for VTubeClient {
         "VTube Studio"
     }
 
-    fn version(&self) -> Option<&str> {
-        self.vtube_version.get().map(|s| s.as_str())
+    fn version(&self) -> Option<String> {
+        self.vtube_version.get().cloned()
     }
 
     fn connection(&self) -> ConnectionState {

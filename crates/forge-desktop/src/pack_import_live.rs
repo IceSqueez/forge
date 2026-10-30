@@ -428,7 +428,7 @@ mod tests {
         let mut queue = queue_named("Replaced queue");
         rt.block_on(world.services.scheduler.register(queue.clone()))
             .unwrap();
-        queue.concurrency = 4;
+        queue.concurrency = std::num::NonZeroU32::new(4).unwrap();
         rt.block_on(world.provider().queue_repo().save(&queue))
             .unwrap();
 
@@ -618,7 +618,7 @@ mod tests {
         let removed = queue_named("Removed");
         rt.block_on(scheduler.register(changed.clone())).unwrap();
         rt.block_on(scheduler.register(removed.clone())).unwrap();
-        changed.concurrency = 4;
+        changed.concurrency = std::num::NonZeroU32::new(4).unwrap();
         let added = queue_named("Added");
         let outcome = setup_outcome(
             &[SetupLivePart::Queues],

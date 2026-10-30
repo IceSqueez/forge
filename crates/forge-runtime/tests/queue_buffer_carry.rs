@@ -177,7 +177,7 @@ fn queue_with(id: QueueId, concurrency: u32) -> Queue {
         id,
         name: "gated".to_string(),
         description: String::new(),
-        concurrency,
+        concurrency: std::num::NonZeroU32::new(concurrency).unwrap(),
     }
 }
 
@@ -415,7 +415,7 @@ async fn a_concurrency_change_keeps_tasks_queued_behind_busy_slots_in_order() {
 }
 
 #[tokio::test(start_paused = true)]
-async fn a_concurrency_value_that_clamps_to_the_current_one_leaves_the_slot_alone() {
+async fn a_concurrency_value_equal_to_the_current_one_leaves_the_slot_alone() {
     let (running, filler) = (ActionId::new(), ActionId::new());
     let q = gated_queue(1, &[running, filler]).await;
     let mut sub = q.bus.subscribe();
@@ -428,12 +428,12 @@ async fn a_concurrency_value_that_clamps_to_the_current_one_leaves_the_slot_alon
     }
     q.sched.dispatch(req(q.q_id, filler)).await.unwrap();
 
-    q.sched.reconfigure(queue_with(q.q_id, 0)).await.unwrap();
+    q.sched.reconfigure(queue_with(q.q_id, 1)).await.unwrap();
 
     let state = state_of(&q.sched, q.q_id).await;
     assert_eq!(
         state.pending, MAX_PENDING_PER_QUEUE,
-        "a concurrency that clamps to the current one must not touch the buffer"
+        "an unchanged concurrency must not touch the buffer"
     );
     assert_eq!(
         state.overflowed, 1,

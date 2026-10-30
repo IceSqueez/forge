@@ -25,6 +25,16 @@ pub struct TriggerWiring {
 #[async_trait]
 pub trait TriggerInstanceRepo: Send + Sync {
     async fn list_all(&self) -> Result<Vec<TriggerInstance>, StorageError>;
+
+    async fn count_of_kinds(&self, kind_ids: &[String]) -> Result<usize, StorageError> {
+        Ok(self
+            .list_all()
+            .await?
+            .iter()
+            .filter(|instance| kind_ids.contains(&instance.kind_id))
+            .count())
+    }
+
     async fn list_user_defined(&self) -> Result<Vec<TriggerInstance>, StorageError>;
     async fn list_for_action(
         &self,

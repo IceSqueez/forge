@@ -36,7 +36,7 @@ fn nonblocking(id: QueueId) -> Queue {
         id,
         name: "default".to_string(),
         description: String::new(),
-        concurrency: 8,
+        concurrency: std::num::NonZeroU32::new(8).unwrap(),
     }
 }
 

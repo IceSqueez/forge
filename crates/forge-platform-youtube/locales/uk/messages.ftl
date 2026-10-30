@@ -3,7 +3,6 @@ msg-youtube-health_live_chat = Живий чат
 msg-youtube-health_events = Події
 msg-youtube-health_api_calls = Виклики API
 msg-youtube-health_quota_resets_daily = скидається щодня за тихоокеанським часом
-msg-youtube-health_unavailable = недоступно
 msg-youtube-health_shared_chat_feed = спільна стрічка чату
 msg-youtube-health_viewers_live = в ефірі
 msg-youtube-rate_limited = YouTube просить пригальмувати. Спробуйте знову через { $seconds } с

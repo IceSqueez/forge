@@ -51,6 +51,8 @@ fn walk(data_dir: &Path, relative: &Path, out: &mut Vec<PayloadFile>) -> Result<
                     path: child.to_string_lossy().into_owned(),
                 })?;
             out.push(digested(&data_dir.join(&child), archive_name)?);
+        } else {
+            tracing::info!(path = %child.display(), "backup skipped a file that is not a regular file");
         }
     }
     Ok(())

@@ -22,7 +22,7 @@ const BACKOFF: [Duration; 3] = [
 
 #[derive(Clone)]
 pub struct RetryConfig {
-    pub timeout: Duration,
+    pub attempt_timeout: Duration,
     pub total_budget: Duration,
     pub max_retries: u32,
     pub cooldown: Option<Arc<SynthesisRateLimiter>>,
@@ -40,7 +40,7 @@ impl RetryConfig {
 impl Default for RetryConfig {
     fn default() -> Self {
         Self {
-            timeout: DEFAULT_REQUEST_TIMEOUT,
+            attempt_timeout: DEFAULT_REQUEST_TIMEOUT,
             total_budget: ENGINE_SYNTHESIS_BUDGET,
             max_retries: DEFAULT_MAX_RETRIES,
             cooldown: None,
@@ -51,7 +51,7 @@ impl Default for RetryConfig {
 impl fmt::Debug for RetryConfig {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("RetryConfig")
-            .field("timeout", &self.timeout)
+            .field("attempt_timeout", &self.attempt_timeout)
             .field("total_budget", &self.total_budget)
             .field("max_retries", &self.max_retries)
             .field("paced", &self.cooldown.is_some())
@@ -95,15 +95,15 @@ where
     loop {
         sit_out_cooldown(&cfg, deadline).await?;
         let remaining = deadline.saturating_duration_since(Instant::now());
-        let attempt_timeout = cfg.timeout.min(remaining);
-        if attempt_timeout.is_zero() {
+        let bounded_attempt = cfg.attempt_timeout.min(remaining);
+        if bounded_attempt.is_zero() {
             return Err(budget_exhausted(cfg.total_budget));
         }
-        let result = tokio::time::timeout(attempt_timeout, call()).await;
+        let result = tokio::time::timeout(bounded_attempt, call()).await;
 
         match result {
             Err(_elapsed) => {
-                return Err(budget_exhausted(attempt_timeout));
+                return Err(budget_exhausted(bounded_attempt));
             }
             Ok(Ok(buf)) => return Ok(buf),
             Ok(Err(TtsError::RateLimited { retry_after_secs })) => {
@@ -564,7 +564,7 @@ mod tests {
     async fn a_budget_larger_than_the_attempt_timeout_does_not_extend_the_attempt() {
         let cfg = RetryConfig {
             total_budget: Duration::from_secs(25),
-            timeout: Duration::from_secs(4),
+            attempt_timeout: Duration::from_secs(4),
             ..RetryConfig::default()
         };
         let result = retry_synthesize(engine(), cfg, || {

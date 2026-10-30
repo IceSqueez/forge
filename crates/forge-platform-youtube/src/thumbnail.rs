@@ -1,3 +1,4 @@
+use std::path::PathBuf;
 use std::sync::Arc;
 
 use forge_net::{GatewayRequest, RequestBody};
@@ -12,6 +13,7 @@ const THUMBNAIL_SET_COST: u32 = 50;
 const MAX_THUMBNAIL_BYTES: u64 = 2 * 1024 * 1024;
 const THUMBNAIL_SET_PATH: &str = "/thumbnails/set";
 const UNSUPPORTED_IMAGE_TYPE: &str = "thumbnail must be a .png, .jpg or .jpeg file";
+const HOME_PREFIX: &str = "~/";
 const MISSING_SCOPE: &str = "thumbnail upload scope missing";
 
 type TokenSource = Arc<dyn Fn() -> BoxFuture<'static, Result<String, PlatformError>> + Send + Sync>;
@@ -48,10 +50,11 @@ impl YoutubeThumbnail {
         let size_limit_error = || PlatformError::Unsupported {
             feature: format!("thumbnail exceeds the {MAX_THUMBNAIL_BYTES}-byte API limit"),
         };
-        if tokio::fs::metadata(image_path).await?.len() > MAX_THUMBNAIL_BYTES {
+        let image_path = expanded_home(image_path);
+        if tokio::fs::metadata(&image_path).await?.len() > MAX_THUMBNAIL_BYTES {
             return Err(size_limit_error());
         }
-        let bytes = tokio::fs::read(image_path).await?;
+        let bytes = tokio::fs::read(&image_path).await?;
         if bytes.len() as u64 > MAX_THUMBNAIL_BYTES {
             return Err(size_limit_error());
         }
@@ -69,6 +72,13 @@ impl YoutubeThumbnail {
             .await
             .map(drop)
             .map_err(|e| e.into_platform_error(MISSING_SCOPE))
+    }
+}
+
+fn expanded_home(path: &str) -> PathBuf {
+    match (path.strip_prefix(HOME_PREFIX), std::env::home_dir()) {
+        (Some(relative), Some(home)) => home.join(relative),
+        _ => PathBuf::from(path),
     }
 }
 
@@ -290,5 +300,15 @@ mod tests {
             "oversized file must be refused as Unsupported, got: {err}"
         );
         assert!(server.received_requests().await.unwrap().is_empty());
+    }
+
+    #[test]
+    fn only_a_leading_home_prefix_is_expanded() {
+        let home = std::env::home_dir().expect("the test host has a home directory");
+
+        assert_eq!(expanded_home("~/art/thumb.png"), home.join("art/thumb.png"));
+        for literal in ["/art/thumb.png", "art/~/thumb.png", "~other/thumb.png", "~"] {
+            assert_eq!(expanded_home(literal), PathBuf::from(literal), "{literal}");
+        }
     }
 }

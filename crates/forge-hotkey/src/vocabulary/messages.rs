@@ -53,6 +53,8 @@ const HEALTH_BACKEND_ACTIVE: MessageCode =
 const HEALTH_BACKEND_UNAVAILABLE: MessageCode =
     MessageCode::from_static(INTEGRATION_ID, "health_backend_unavailable");
 
+pub(crate) const CONDITION_NO_HOTKEY: MessageCode =
+    MessageCode::from_static(INTEGRATION_ID, "condition_no_hotkey");
 pub(crate) const CONDITION_ANY_HOTKEY: MessageCode =
     MessageCode::from_static(INTEGRATION_ID, "condition_any_hotkey");
 
@@ -84,6 +86,7 @@ pub const HOTKEY_MESSAGES: MessageCatalog = MessageCatalog {
         ENGINE_STOPPED,
         BACKEND_FAILED,
         CONDITION_ANY_HOTKEY,
+        CONDITION_NO_HOTKEY,
         labels::ACTIVE,
         labels::RECENT_TRIGGERS,
         labels::REGISTERED_HOTKEYS,
@@ -306,6 +309,7 @@ mod tests {
     fn every_constructor() -> Vec<MessageRef> {
         let mut all = vec![
             MessageRef::new(CONDITION_ANY_HOTKEY),
+            MessageRef::new(CONDITION_NO_HOTKEY),
             health_registered_hint(),
             health_disabled(),
             health_last_triggered_at(OffsetDateTime::UNIX_EPOCH, "Ctrl+A"),

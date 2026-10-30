@@ -24,6 +24,8 @@ pub const FAILURE_MISSING_TOKEN: MessageCode =
     MessageCode::from_static(INTEGRATION_ID, "failure_missing_token");
 pub const FAILURE_TOKEN_REJECTED: MessageCode =
     MessageCode::from_static(INTEGRATION_ID, "failure_token_rejected");
+pub const FAILURE_TOKEN_UNREADABLE: MessageCode =
+    MessageCode::from_static(INTEGRATION_ID, "failure_token_unreadable");
 pub const FAILURE_RATE_LIMITED: MessageCode =
     MessageCode::from_static(INTEGRATION_ID, "failure_rate_limited");
 pub const FAILURE_NETWORK: MessageCode =
@@ -51,6 +53,8 @@ pub const LABEL_BANNER_PROFILE_INCOMPLETE: MessageCode =
     MessageCode::from_static(INTEGRATION_ID, "label_banner_profile_incomplete");
 pub const LABEL_BANNER_TOKEN_REJECTED: MessageCode =
     MessageCode::from_static(INTEGRATION_ID, "label_banner_token_rejected");
+pub const LABEL_BANNER_TOKEN_UNREADABLE: MessageCode =
+    MessageCode::from_static(INTEGRATION_ID, "label_banner_token_unreadable");
 pub const LABEL_BANNER_TOKEN_MISSING: MessageCode =
     MessageCode::from_static(INTEGRATION_ID, "label_banner_token_missing");
 
@@ -71,6 +75,7 @@ pub const DONATELLO_MESSAGES: MessageCatalog = MessageCatalog {
         FAILURE_NONE,
         FAILURE_MISSING_TOKEN,
         FAILURE_TOKEN_REJECTED,
+        FAILURE_TOKEN_UNREADABLE,
         FAILURE_RATE_LIMITED,
         FAILURE_NETWORK,
         FAILURE_SERVER_ERROR,
@@ -86,6 +91,7 @@ pub const DONATELLO_MESSAGES: MessageCatalog = MessageCatalog {
         LABEL_POLL_INTERVAL_VALUE,
         LABEL_BANNER_PROFILE_INCOMPLETE,
         LABEL_BANNER_TOKEN_REJECTED,
+        LABEL_BANNER_TOKEN_UNREADABLE,
         LABEL_BANNER_TOKEN_MISSING,
     ],
     en_ftl: include_str!("../locales/en/messages.ftl"),

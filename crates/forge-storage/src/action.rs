@@ -30,6 +30,10 @@ pub struct ActionTelemetry {
 #[async_trait]
 pub trait ActionRepo: Send + Sync {
     async fn list(&self) -> Result<Vec<Action>, StorageError>;
+
+    async fn count(&self) -> Result<usize, StorageError> {
+        Ok(self.list().await?.len())
+    }
     async fn get(&self, id: ActionId) -> Result<Option<Action>, StorageError>;
     async fn save(&self, action: &Action) -> Result<(), StorageError>;
     async fn delete(&self, id: ActionId) -> Result<bool, StorageError>;
@@ -90,15 +94,15 @@ pub trait ActionRepo: Send + Sync {
         self.save(&copy).await
     }
 
-    async fn archive(&self, _id: ActionId) -> Result<bool, StorageError> {
-        Err(StorageError::NotReady)
+    async fn archive(&self, id: ActionId) -> Result<bool, StorageError> {
+        Ok(self.archive_reporting_cancelled_runs(id).await?.is_some())
     }
 
     async fn archive_reporting_cancelled_runs(
         &self,
-        id: ActionId,
+        _id: ActionId,
     ) -> Result<Option<u64>, StorageError> {
-        Ok(self.archive(id).await?.then_some(0))
+        Err(StorageError::NotReady)
     }
 
     async fn restore(&self, _id: ActionId) -> Result<bool, StorageError> {

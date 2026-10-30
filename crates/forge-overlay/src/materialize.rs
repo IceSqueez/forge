@@ -287,7 +287,21 @@ pub(crate) fn write_atomic(directory: &Path, name: &str, body: &[u8]) -> Result<
                 path: display(&target),
                 source,
             }
-        })
+        })?;
+    sync_directory(directory).map_err(|source| OverlayError::Io {
+        path: display(directory),
+        source,
+    })
+}
+
+#[cfg(unix)]
+fn sync_directory(directory: &Path) -> std::io::Result<()> {
+    fs::File::open(directory)?.sync_all()
+}
+
+#[cfg(not(unix))]
+fn sync_directory(_directory: &Path) -> std::io::Result<()> {
+    Ok(())
 }
 
 fn write_synced(path: &Path, body: &[u8]) -> std::io::Result<()> {

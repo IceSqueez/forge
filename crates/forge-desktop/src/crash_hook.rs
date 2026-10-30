@@ -81,15 +81,22 @@ fn record_first_crash(
         system_info: system_info_snapshot(),
     }
     .scrubbed(scrubber);
-    #[expect(
-        clippy::let_underscore_must_use,
-        reason = "a failed crash write has nowhere left to be reported"
-    )]
-    let _ = write_crash(
+    if let Err(error) = write_crash(
         crash_dir,
         &crash_file_name(unix_millis, process_id),
         &record,
-    );
+    ) {
+        #[expect(
+            clippy::print_stderr,
+            reason = "stderr is the only channel left inside a panic hook"
+        )]
+        {
+            eprintln!(
+                "forge-desktop: crash report not written to {}: {error}",
+                crash_dir.display()
+            );
+        }
+    }
 }
 
 #[cfg(debug_assertions)]

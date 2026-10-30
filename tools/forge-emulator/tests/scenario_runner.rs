@@ -1366,7 +1366,7 @@ async fn harness_with_vtube(online_at_boot: bool) -> Harness {
 async fn forge_vtube_client(harness: &Harness, token: &str) -> Arc<forge_vtube::VTubeClient> {
     let port = harness.vtube.as_ref().unwrap().port();
     let credentials = Arc::new(MemoryCredentials::default());
-    forge_vtube::credentials::store(&*credentials, token, "1.0", "127.0.0.1", port, false)
+    forge_vtube::credentials::store(&*credentials, token, "127.0.0.1", port, false)
         .await
         .unwrap();
     forge_vtube::credentials::load_and_connect(

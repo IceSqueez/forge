@@ -144,6 +144,13 @@ mod tests {
                 "",
             ),
             (
+                json!({ "is_live": true, "category": { "id": null, "name": "Retro" } }),
+                true,
+                "",
+                "",
+                "Retro",
+            ),
+            (
                 json!({ "is_live": true, "category": { "name": "Software & Game Dev" } }),
                 true,
                 "",

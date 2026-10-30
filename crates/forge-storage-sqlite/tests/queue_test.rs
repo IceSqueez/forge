@@ -16,7 +16,7 @@ fn make_queue(name: &str, concurrency: u32) -> Queue {
         id: QueueId::new(),
         name: name.to_owned(),
         description: String::new(),
-        concurrency,
+        concurrency: std::num::NonZeroU32::new(concurrency).unwrap_or(std::num::NonZeroU32::MIN),
     }
 }
 
@@ -43,7 +43,7 @@ async fn save_then_get_roundtrips_queue() {
     let got = got.unwrap();
     assert_eq!(got.id, id);
     assert_eq!(got.name, "priority");
-    assert_eq!(got.concurrency, 1);
+    assert_eq!(got.concurrency.get(), 1);
 }
 
 #[tokio::test]
@@ -88,11 +88,11 @@ async fn save_updates_existing_queue() {
     let id = queue.id;
     backend.queue_repo().save(&queue).await.expect("save 1");
 
-    queue.concurrency = 1;
+    queue.concurrency = std::num::NonZeroU32::MIN;
     backend.queue_repo().save(&queue).await.expect("save 2");
 
     let got = backend.queue_repo().get(id).await.expect("get").unwrap();
-    assert_eq!(got.concurrency, 1);
+    assert_eq!(got.concurrency.get(), 1);
 }
 
 #[tokio::test]

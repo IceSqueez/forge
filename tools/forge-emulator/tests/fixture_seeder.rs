@@ -249,7 +249,7 @@ async fn an_action_naming_a_fixture_queue_is_stored_on_it_with_the_declared_conc
     backend.shutdown().await;
 
     assert_eq!(queue.name, "Alerts");
-    assert_eq!(queue.concurrency, 1);
+    assert_eq!(queue.concurrency.get(), 1);
 }
 
 #[tokio::test]

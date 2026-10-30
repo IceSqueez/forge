@@ -87,11 +87,13 @@ impl SubActionRunner for LookupStreamStatsRunner {
                 if let Some(started) = crate::timestamp::variant(snapshot.started_at) {
                     stack = stack.set(variables::stream_stats::STARTED_AT.to_owned(), started);
                 }
-                let stack = stack
-                    .set(
+                if let Some(category_id) = snapshot.category_id {
+                    stack = stack.set(
                         variables::stream_stats::CATEGORY_ID.to_owned(),
-                        Variant::Int(snapshot.category_id as i64),
-                    )
+                        Variant::Int(category_id as i64),
+                    );
+                }
+                let stack = stack
                     .set(
                         variables::stream_stats::CATEGORY_NAME.to_owned(),
                         Variant::String(snapshot.category_name),
@@ -275,5 +277,35 @@ mod tests {
 
         assert!(matches!(telemetry.outcome, SubActionOutcome::Failed(_)));
         assert!(produced.is_none());
+    }
+
+    #[tokio::test]
+    async fn a_category_without_an_id_leaves_the_id_variable_unset_and_keeps_the_name() {
+        for category in [
+            serde_json::json!({"name": "Retro"}),
+            serde_json::json!({"id": null, "name": "Retro"}),
+        ] {
+            let server = MockServer::start().await;
+            Mock::given(method("GET"))
+                .and(path("/channels"))
+                .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                    "data": [{ "broadcaster_user_id": 1, "category": category }]
+                })))
+                .mount(&server)
+                .await;
+
+            let stack = ArgStack::new();
+            let (telemetry, produced) = runner_on(&server)
+                .execute(&BTreeMap::new(), &make_ctx(&stack))
+                .await;
+
+            assert_eq!(telemetry.outcome, SubActionOutcome::Success);
+            let produced = produced.expect("a successful lookup must return an arg stack");
+            assert_eq!(produced.get("kick.stream.category_id"), None);
+            assert_eq!(
+                produced.get("kick.stream.category_name"),
+                Some(&Variant::String("Retro".to_owned()))
+            );
+        }
     }
 }

@@ -332,6 +332,10 @@ impl GlobalsRepo for SqliteBackend {
         self.globals.list().await
     }
 
+    async fn count(&self) -> Result<usize, StorageError> {
+        self.globals.count().await
+    }
+
     async fn archive(&self, name: &str) -> Result<bool, StorageError> {
         self.globals.archive(name).await
     }

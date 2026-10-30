@@ -200,7 +200,7 @@ async fn rig() -> Rig {
         id: queue_id,
         name: "golden".to_owned(),
         description: String::new(),
-        concurrency: 1,
+        concurrency: std::num::NonZeroU32::MIN,
     };
     dp.queue_repo().save(&queue).await.unwrap();
     let action = golden_action(queue_id);

@@ -56,6 +56,10 @@ impl TriggerInstanceRepo for HotkeySyncedTriggerRepo {
         self.inner.list_all().await
     }
 
+    async fn count_of_kinds(&self, kind_ids: &[String]) -> Result<usize, StorageError> {
+        self.inner.count_of_kinds(kind_ids).await
+    }
+
     async fn list_user_defined(&self) -> Result<Vec<TriggerInstance>, StorageError> {
         self.inner.list_user_defined().await
     }

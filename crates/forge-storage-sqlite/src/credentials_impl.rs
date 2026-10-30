@@ -1,6 +1,7 @@
 use async_trait::async_trait;
 use forge_storage::{CredentialId, CredentialsRepo, StorageError};
 use time::OffsetDateTime;
+use zeroize::Zeroizing;
 
 use crate::crypto;
 use crate::epoch::{epoch_ms_now, from_epoch_ms};
@@ -9,12 +10,15 @@ use crate::pool::SqlitePools;
 
 pub struct SqliteCredentialsRepo {
     db: SqlitePools,
-    key: [u8; 32],
+    key: Zeroizing<[u8; 32]>,
 }
 
 impl SqliteCredentialsRepo {
-    pub fn new_with_key(db: impl Into<SqlitePools>, key: [u8; 32]) -> Self {
-        Self { db: db.into(), key }
+    pub fn new_with_key(db: impl Into<SqlitePools>, key: impl Into<Zeroizing<[u8; 32]>>) -> Self {
+        Self {
+            db: db.into(),
+            key: key.into(),
+        }
     }
 
     pub(crate) async fn stored_count(&self) -> Result<u64, SqliteStorageError> {

@@ -6,6 +6,7 @@ use forge_components::SEARCH_FIELD_WIDTH;
 use forge_components::TINT_BORDER_ALPHA;
 use forge_components::TINT_STRONG_FILL_ALPHA;
 use std::collections::{HashMap, HashSet};
+use std::num::NonZeroU32;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
@@ -1026,7 +1027,8 @@ impl QueuesView {
             id: editing.unwrap_or_default(),
             name: draft.name.clone(),
             description: draft.description.clone(),
-            concurrency: draft.concurrency.clamp(MIN_CONCURRENCY, MAX_CONCURRENCY),
+            concurrency: NonZeroU32::new(draft.concurrency.clamp(MIN_CONCURRENCY, MAX_CONCURRENCY))
+                .unwrap_or(NonZeroU32::MIN),
         };
         let id = queue.id;
         let is_edit = editing.is_some();
@@ -2036,7 +2038,7 @@ async fn load_queues(
         .into_iter()
         .map(|q| {
             let assigned = actions.iter().filter(|a| a.queue_id == q.id).count() as u32;
-            let concurrency = q.concurrency.max(1);
+            let concurrency = q.concurrency.get();
             let mode = states.get(&q.id).map_or(QueueMode::RUNNING, |s| s.mode);
             let live = live_states.is_none() || states.contains_key(&q.id);
             QueueRow {
@@ -2173,7 +2175,7 @@ mod tests {
             id,
             name: "Default".to_owned(),
             description: String::new(),
-            concurrency: 1,
+            concurrency: std::num::NonZeroU32::MIN,
         }
     }
 
@@ -2487,7 +2489,7 @@ mod tests {
         let id = QueueId::new();
         let scheduler = held_queue_scheduler(&rt, queue(id));
         let mut changed = queue(id);
-        changed.concurrency = 3;
+        changed.concurrency = NonZeroU32::new(3).unwrap();
         let mut repo = MockQueueRepo::new();
         repo.expect_list()
             .returning(move || Ok(vec![changed.clone()]));

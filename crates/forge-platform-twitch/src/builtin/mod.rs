@@ -1529,28 +1529,8 @@ mod tests {
         field: &forge_registry::FormField,
         out: &mut std::collections::BTreeSet<String>,
     ) {
-        use forge_registry::FormField::*;
-        let key = match field {
-            Text { key, .. }
-            | TextArea { key, .. }
-            | Code { key, .. }
-            | Integer { key, .. }
-            | Toggle { key, .. }
-            | FilePicker { key, .. }
-            | DateTime { key, .. }
-            | Select { key, .. }
-            | UnitAmount { key, .. }
-            | Duration { key, .. }
-            | DynamicSelect { key, .. }
-            | DependentSelect { key, .. }
-            | Optional { key, .. }
-            | SubChain { key, .. }
-            | CaseList { key, .. }
-            | Slider { key, .. }
-            | Swatch { key, .. } => *key,
-        };
-        out.insert(key.to_owned());
-        if let Optional { inner, .. } = field {
+        out.insert(field.key().to_owned());
+        if let forge_registry::FormField::Optional { inner, .. } = field {
             form_field_keys(inner, out);
         }
     }

@@ -492,7 +492,7 @@ mod tests {
                     ("channel", Variant::Int(2)),
                     ("device", text("Pad")),
                 ]),
-                "нота=60 · канал=2 · пристрій=Pad",
+                "нота=60 · канал=3 · пристрій=Pad",
             ),
             (
                 "midi.device.connected",

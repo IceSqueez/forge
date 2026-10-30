@@ -10,6 +10,7 @@ use forge_platform_core::{
 };
 
 use crate::client::ObsClient;
+use crate::stream_output::ObsStreamStats;
 use crate::vocabulary::messages;
 
 pub(crate) const STREAM_METRIC: HealthMetricId = HealthMetricId::new(messages::HEALTH_STREAM);
@@ -26,10 +27,18 @@ pub(crate) struct FrameCounterSample {
     pub total: u32,
 }
 
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub(crate) struct StreamByteSample {
+    pub bytes: u64,
+    pub at: Duration,
+}
+
 #[derive(Debug, Clone, Default)]
 pub(crate) struct HealthSnapshot {
     pub stream_active: bool,
     pub stream_duration: Option<Duration>,
+    pub stream_byte_sample: Option<StreamByteSample>,
+    pub bitrate_kbps: Option<u32>,
     pub record_active: bool,
     pub record_paused: bool,
     pub record_duration: Option<Duration>,
@@ -40,6 +49,20 @@ pub(crate) struct HealthSnapshot {
     pub total_frames: u64,
     pub render_frame_sample: Option<FrameCounterSample>,
     pub output_frame_sample: Option<FrameCounterSample>,
+}
+
+impl HealthSnapshot {
+    pub(crate) fn stream_stats(&self) -> ObsStreamStats {
+        ObsStreamStats {
+            stream_active: self.stream_active,
+            stream_duration: self.stream_duration,
+            bitrate_kbps: self.bitrate_kbps,
+            dropped_frames: self.dropped_frames,
+            total_frames: self.total_frames,
+            fps: self.fps,
+            cpu_percent: self.cpu_percent,
+        }
+    }
 }
 
 pub(crate) fn make_health_channel() -> (broadcast::Sender<HealthDelta>, Arc<RwLock<HealthSnapshot>>)

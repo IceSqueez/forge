@@ -6,7 +6,8 @@ use crate::client::ObsClient;
 use crate::error::ObsError;
 use crate::sink::ObsSink;
 use crate::stream_output::{
-    StreamOutputActive, StreamOutputTarget, new_stream_output_target, subscribe,
+    ObsStatsWatch, StreamOutputActive, StreamOutputTarget, new_stream_output_target, subscribe,
+    subscribe_stats,
 };
 use forge_types::Variant;
 
@@ -33,6 +34,10 @@ impl SwitchableObsSink {
 
     pub fn stream_output(&self) -> StreamOutputActive {
         subscribe(&self.stream_output)
+    }
+
+    pub fn stream_stats(&self) -> ObsStatsWatch {
+        subscribe_stats(&self.stream_output)
     }
 
     fn get(&self) -> Result<Arc<ObsClient>, ObsError> {

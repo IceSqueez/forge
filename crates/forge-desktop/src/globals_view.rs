@@ -485,6 +485,14 @@ impl GlobalsView {
         cx.notify();
     }
 
+    fn empty_caption_key(&self, cx: &App) -> &'static str {
+        if self.filter == GlobalsFilter::All && self.globals.read(cx).entries().is_empty() {
+            "globals_empty_none"
+        } else {
+            "globals_empty_caption"
+        }
+    }
+
     fn rebuild_visible(&mut self, cx: &mut Context<Self>) {
         let rows: Vec<Global> = self
             .globals
@@ -915,7 +923,7 @@ impl GlobalsView {
             let caption: SharedString = if self.loading {
                 tr!("globals_loading").into()
             } else {
-                tr!("globals_empty_caption").into()
+                tr!(self.empty_caption_key(cx)).into()
             };
             let mut state = empty_state(caption, palette).density(density);
             if self.loading {
@@ -2170,5 +2178,33 @@ mod tests {
             cx.run_until_parked();
             shown(cx, &globals, SCORE)
         });
+    }
+
+    #[gpui::test]
+    fn the_empty_caption_invites_a_first_variable_only_when_there_are_none_at_all(
+        cx: &mut TestAppContext,
+    ) {
+        for (stored, filter, expected) in [
+            (false, GlobalsFilter::All, "globals_empty_none"),
+            (false, GlobalsFilter::Persisted, "globals_empty_caption"),
+            (false, GlobalsFilter::Session, "globals_empty_caption"),
+            (true, GlobalsFilter::All, "globals_empty_caption"),
+        ] {
+            let rt = runtime();
+            let bus = EventBus::new(Arc::new(StubEventLog));
+            let (rows, repo) = stored_repo();
+            if stored {
+                rows.rows.lock().unwrap().push(entry(SCORE));
+            }
+            let (_globals, view) = mount(cx, &rt, repo, &bus);
+
+            view.update(cx, |view, cx| view.set_filter(filter, cx));
+
+            assert_eq!(
+                view.read_with(cx, |view, cx| view.empty_caption_key(cx)),
+                expected,
+                "stored={stored} filter={filter:?}"
+            );
+        }
     }
 }

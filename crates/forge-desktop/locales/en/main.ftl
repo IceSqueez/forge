@@ -179,6 +179,7 @@ home_card_connections_hint = Manage platforms, apps and modules
 
 home_health_title = Stream health
 home_health_live = LIVE
+home_health_live_for = LIVE { $duration }
 home_health_offline = offline
 home_health_refresh_hint = last 60s · auto-refresh
 home_health_throughput_label = THROUGHPUT · ev/s
@@ -1810,7 +1811,8 @@ queues_metric_held = held
 queues_running_now_header = RUNNING NOW
 queues_no_actions_running = No actions running
 queues_running_count = { $count } actions running
-queues_running_label = running
+queues_running_for = running { $elapsed }
+queues_elapsed_ms = { $ms }ms
 
 ## Queues - status badge
 
@@ -2220,6 +2222,7 @@ globals_stat_total = total
 globals_stat_persisted = persisted
 globals_stat_in_memory = in-memory
 globals_empty_caption = No variables match this filter.
+globals_empty_none = No variables yet. Use New variable to create the first one.
 globals_col_modified = LAST MODIFIED
 globals_col_reads_writes = READS · WRITES
 globals_col_persist = PERSIST
@@ -3660,7 +3663,7 @@ field_label_midi__device = Device
 field_label_midi__direction = Direction
 field_label_midi__note = Note
 field_label_midi__program = Program
-field_label_midi_send__channel = Channel (0-15)
+field_label_midi_send__channel = Channel (1-16)
 field_label_midi_send__controller = Controller (CC)
 field_label_midi_send__note = Note (NoteOn/NoteOff)
 field_label_obs__scene = Scene

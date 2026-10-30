@@ -192,6 +192,7 @@ impl<'a> ReferenceCatalog<'a> {
             | FormField::TextArea { .. }
             | FormField::Code { .. }
             | FormField::Integer { .. }
+            | FormField::OneBasedInteger { .. }
             | FormField::Slider { .. }
             | FormField::Toggle { .. }
             | FormField::DateTime { .. }

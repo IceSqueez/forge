@@ -1,5 +1,6 @@
-use std::collections::{HashMap, VecDeque};
+use std::collections::{BTreeMap, HashMap, VecDeque};
 use std::sync::{Arc, Mutex};
+use std::time::Instant;
 
 use arc_swap::ArcSwapOption;
 use forge_events::{ActionSkipped, Event, EventSource, TypedEvent};
@@ -11,7 +12,7 @@ use tokio::sync::futures::Notified;
 use tokio::sync::{Notify, mpsc, oneshot, watch};
 use tracing::{info, warn};
 
-use crate::queue_depth::{DepthBoard, DepthCell, QueueDepthWatch};
+use crate::queue_depth::{DepthBoard, DepthCell, QueueDepthWatch, RunningAction};
 use crate::scheduled_runs::ScheduledOrigin;
 use crate::{ActionEngineHandle, EventBus, ExecutionRequest};
 
@@ -440,7 +441,12 @@ struct InflightTracker {
 #[derive(Default)]
 struct InflightInner {
     next_id: u64,
-    signals: HashMap<u64, CancelSignal>,
+    runs: BTreeMap<u64, InflightRun>,
+}
+
+struct InflightRun {
+    signal: CancelSignal,
+    action: RunningAction,
 }
 
 impl InflightTracker {
@@ -451,33 +457,38 @@ impl InflightTracker {
         }
     }
 
-    fn register(&self, signal: CancelSignal) -> u64 {
+    fn register(&self, signal: CancelSignal, action_id: ActionId) -> u64 {
         let mut inner = self.lock();
         let id = inner.next_id;
         inner.next_id = inner.next_id.wrapping_add(1);
-        inner.signals.insert(id, signal);
-        self.publish(inner.signals.len());
+        let action = RunningAction {
+            action_id,
+            started_at: Instant::now(),
+        };
+        inner.runs.insert(id, InflightRun { signal, action });
+        self.publish(&inner);
         id
     }
 
     fn complete(&self, id: u64) {
         let mut inner = self.lock();
-        inner.signals.remove(&id);
-        self.publish(inner.signals.len());
+        inner.runs.remove(&id);
+        self.publish(&inner);
     }
 
-    fn publish(&self, in_flight: usize) {
-        self.depth.update(|depth| depth.in_flight = in_flight);
+    fn publish(&self, inner: &InflightInner) {
+        let running = inner.runs.values().map(|run| run.action).collect();
+        self.depth.publish_running(running);
     }
 
     fn cancel_all(&self) {
-        for (_, signal) in self.lock().signals.drain() {
-            signal.cancel();
+        for run in std::mem::take(&mut self.lock().runs).into_values() {
+            run.signal.cancel();
         }
     }
 
     fn len(&self) -> usize {
-        self.lock().signals.len()
+        self.lock().runs.len()
     }
 
     fn lock(&self) -> std::sync::MutexGuard<'_, InflightInner> {
@@ -665,7 +676,7 @@ impl Launcher {
         let origin = task.origin;
 
         let cancel = CancelSignal::new();
-        let id = self.inflight.register(cancel.clone());
+        let id = self.inflight.register(cancel.clone(), action_id);
         let launcher = self.clone();
         tokio::spawn(async move {
             let (done_tx, done_rx) = oneshot::channel::<()>();
@@ -3125,5 +3136,51 @@ mod tests {
         let state = sched.queue_states().await.unwrap().remove(&q_id).unwrap();
         assert_eq!(state.pending, 1);
         sched.shutdown();
+    }
+
+    fn tracked(id: QueueId) -> (crate::queue_depth::DepthBoard, InflightTracker) {
+        let board = crate::queue_depth::DepthBoard::new();
+        let tracker = InflightTracker::new(board.register(id));
+        (board, tracker)
+    }
+
+    fn running_ids(board: &crate::queue_depth::DepthBoard, id: QueueId) -> Vec<ActionId> {
+        board
+            .watch()
+            .running()
+            .get(&id)
+            .map(|runs| runs.iter().map(|run| run.action_id).collect())
+            .unwrap_or_default()
+    }
+
+    #[test]
+    fn the_running_list_follows_launch_order_and_drops_each_finished_run() {
+        let id = QueueId::new();
+        let (board, tracker) = tracked(id);
+        let (first, second, third) = (ActionId::new(), ActionId::new(), ActionId::new());
+
+        tracker.register(CancelSignal::new(), first);
+        let middle = tracker.register(CancelSignal::new(), second);
+        tracker.register(CancelSignal::new(), third);
+        assert_eq!(running_ids(&board, id), vec![first, second, third]);
+
+        tracker.complete(middle);
+
+        assert_eq!(running_ids(&board, id), vec![first, third]);
+    }
+
+    #[test]
+    fn cancelling_every_run_signals_each_of_them_and_the_last_completion_clears_the_list() {
+        let id = QueueId::new();
+        let (board, tracker) = tracked(id);
+        let signals = [CancelSignal::new(), CancelSignal::new()];
+        let run = tracker.register(signals[0].clone(), ActionId::new());
+        tracker.register(signals[1].clone(), ActionId::new());
+
+        tracker.cancel_all();
+        tracker.complete(run);
+
+        assert!(signals.iter().all(CancelSignal::is_cancelled));
+        assert_eq!(running_ids(&board, id), Vec::new());
     }
 }

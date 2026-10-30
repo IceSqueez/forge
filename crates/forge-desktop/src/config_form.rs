@@ -58,6 +58,7 @@ pub(crate) enum ConfigField {
     Input {
         key: String,
         integer: Option<RangeInclusive<i64>>,
+        one_based: bool,
         optional: bool,
         gate: Option<String>,
         input: Entity<TextInput>,
@@ -178,6 +179,7 @@ struct InputSpec<'a> {
     key: &'a str,
     placeholder: SharedString,
     integer: Option<RangeInclusive<i64>>,
+    one_based: bool,
     optional: bool,
 }
 
@@ -186,6 +188,7 @@ fn free_text(key: &str, placeholder: SharedString) -> InputSpec<'_> {
         key,
         placeholder,
         integer: None,
+        one_based: false,
         optional: false,
     }
 }
@@ -231,6 +234,27 @@ pub(crate) fn fold_config_field<V: 'static>(
                     key,
                     placeholder,
                     integer: Some(*min..=*max),
+                    one_based: false,
+                    optional,
+                },
+                gate,
+                ctx,
+                cx,
+            ));
+        }
+        FormField::OneBasedInteger { key, count, .. } => {
+            let optional = !ctx.defaults.contains_key(*key);
+            let placeholder = if optional {
+                SharedString::from(tr!("config_form_auto_placeholder"))
+            } else {
+                SharedString::from(INTEGER_PLACEHOLDER)
+            };
+            out.push(build_config_input(
+                InputSpec {
+                    key,
+                    placeholder,
+                    integer: Some(1..=*count),
+                    one_based: true,
                     optional,
                 },
                 gate,
@@ -704,7 +728,12 @@ fn build_config_input<V: 'static>(
     ctx: &FoldContext<'_, V>,
     cx: &mut Context<V>,
 ) -> ConfigField {
-    let seed = read_text(ctx.config, spec.key);
+    let stored = read_text(ctx.config, spec.key);
+    let seed = if spec.one_based {
+        crate::config_text::shown_one_based(&stored)
+    } else {
+        stored
+    };
     let palette = *ctx.palette;
     let seed_invalid = spec
         .integer
@@ -736,6 +765,7 @@ fn build_config_input<V: 'static>(
     ConfigField::Input {
         key: spec.key.to_owned(),
         integer: spec.integer,
+        one_based: spec.one_based,
         optional: spec.optional,
         gate,
         input,
@@ -968,6 +998,7 @@ pub(crate) fn collect_field_values(fields: &[ConfigField], buffer: &mut FieldCon
             ConfigField::Input {
                 key,
                 integer,
+                one_based,
                 optional,
                 gate,
                 input,
@@ -984,7 +1015,8 @@ pub(crate) fn collect_field_values(fields: &[ConfigField], buffer: &mut FieldCon
                 let typed = text.trim();
                 if let Ok(number) = typed.parse::<i64>() {
                     let bounded = within(number, range);
-                    buffer.insert(key.clone(), Variant::Int(bounded));
+                    let stored = bounded - i64::from(*one_based);
+                    buffer.insert(key.clone(), Variant::Int(stored));
                 } else if *optional && typed.is_empty() {
                     buffer.remove(key);
                 }
@@ -2509,5 +2541,81 @@ mod tests {
             collected(cx, &fields, &FieldConfig::new()),
             stored_millis(120_000)
         );
+    }
+
+    const CHANNEL_KEY: &str = "channel";
+    const CHANNELS: i64 = 16;
+
+    fn channel_spec() -> FormField {
+        FormField::OneBasedInteger {
+            key: CHANNEL_KEY,
+            label: "Channel",
+            count: CHANNELS,
+        }
+    }
+
+    fn optional_channel_spec() -> FormField {
+        FormField::Optional {
+            key: CHANNEL_KEY,
+            label: "Channel",
+            inner: Box::new(channel_spec()),
+        }
+    }
+
+    fn input_text(cx: &mut gpui::TestAppContext, fields: &[ConfigField]) -> Option<String> {
+        cx.update(|cx| {
+            fields.iter().find_map(|field| match field {
+                ConfigField::Input { input, .. } => Some(input.read(cx).content().to_owned()),
+                _ => None,
+            })
+        })
+    }
+
+    #[gpui::test]
+    fn a_one_based_field_shows_the_stored_value_plus_one(cx: &mut gpui::TestAppContext) {
+        for (stored, shown) in [(0, "1"), (15, "16")] {
+            let seeded = config(&[(CHANNEL_KEY, Variant::Int(stored))]);
+
+            let (_host, fields) = fold_untouched(cx, &channel_spec(), &FieldConfig::new(), &seeded);
+
+            assert_eq!(input_text(cx, &fields).as_deref(), Some(shown));
+        }
+    }
+
+    #[gpui::test]
+    fn a_one_based_field_saves_the_typed_value_minus_one_inside_its_bounds(
+        cx: &mut gpui::TestAppContext,
+    ) {
+        for (typed, saved) in [("1", 0), ("16", 15), ("17", 15), ("0", 0), ("-4", 0)] {
+            let seeded = config(&[(CHANNEL_KEY, Variant::Int(SEEDED))]);
+
+            let (_host, fields) = build(cx, &channel_spec(), &FieldConfig::new(), &seeded, typed);
+
+            assert_eq!(
+                collected(cx, &fields, &seeded).get(CHANNEL_KEY),
+                Some(&Variant::Int(saved)),
+                "typed {typed:?}"
+            );
+        }
+    }
+
+    #[gpui::test]
+    fn an_untouched_one_based_field_saves_what_was_stored(cx: &mut gpui::TestAppContext) {
+        for spec in [channel_spec(), optional_channel_spec()] {
+            let seeded = config(&[(CHANNEL_KEY, Variant::Int(9))]);
+
+            let (_host, fields) = fold_untouched(cx, &spec, &FieldConfig::new(), &seeded);
+
+            assert_eq!(collected(cx, &fields, &seeded), seeded, "{spec:?}");
+        }
+    }
+
+    #[gpui::test]
+    fn a_blank_optional_one_based_field_stores_no_value(cx: &mut gpui::TestAppContext) {
+        let seeded = config(&[(CHANNEL_KEY, Variant::Int(2))]);
+
+        let (_host, fields) = build(cx, &channel_spec(), &FieldConfig::new(), &seeded, "");
+
+        assert_eq!(collected(cx, &fields, &seeded).get(CHANNEL_KEY), None);
     }
 }

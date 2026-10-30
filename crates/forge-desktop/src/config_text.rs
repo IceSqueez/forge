@@ -25,6 +25,13 @@ pub(crate) fn editable_line(value: &Variant) -> String {
     }
 }
 
+pub(crate) fn shown_one_based(stored: &str) -> String {
+    stored.trim().parse::<i64>().map_or_else(
+        |_| stored.to_owned(),
+        |number| number.saturating_add(1).to_string(),
+    )
+}
+
 fn is_scalar(value: &Variant) -> bool {
     !matches!(value, Variant::Array(_) | Variant::Object(_))
 }
@@ -100,6 +107,21 @@ mod tests {
                 let json: serde_json::Value = serde_json::from_str(&rendered).unwrap();
                 assert_eq!(Variant::from_plain_json(json).unwrap(), value, "{rendered}");
             }
+        }
+    }
+
+    #[test]
+    fn a_stored_number_is_shown_one_higher_and_anything_else_is_left_alone() {
+        for (stored, shown) in [
+            ("0", "1"),
+            ("15", "16"),
+            (" 3 ", "4"),
+            ("-1", "0"),
+            ("", ""),
+            ("%channel%", "%channel%"),
+            ("1.5", "1.5"),
+        ] {
+            assert_eq!(shown_one_based(stored), shown, "{stored:?}");
         }
     }
 }

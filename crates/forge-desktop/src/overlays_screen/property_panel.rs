@@ -746,6 +746,7 @@ fn index_field(spec: &FormField, section: ConfigSection, out: &mut FieldIndex) {
         | FormField::TextArea { key, label, .. }
         | FormField::Code { key, label, .. }
         | FormField::Integer { key, label, .. }
+        | FormField::OneBasedInteger { key, label, .. }
         | FormField::Slider { key, label, .. }
         | FormField::Toggle { key, label }
         | FormField::FilePicker { key, label }

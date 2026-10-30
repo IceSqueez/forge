@@ -5,7 +5,7 @@ use serde_json::json;
 use crate::catalog::ObsCatalog;
 use crate::health::{
     CPU_FPS_METRIC, DROPPED_METRIC, FrameCounterSample, HealthSnapshot, RECORDING_METRIC,
-    STREAM_METRIC,
+    STREAM_METRIC, StreamByteSample,
 };
 use crate::item_ids::SceneItemIds;
 use crate::source::SourceInfo;
@@ -620,10 +620,41 @@ pub(crate) fn apply_stats_update(
     vec![crate::health::delta(CPU_FPS_METRIC, snapshot)]
 }
 
+const BITS_PER_BYTE: u128 = 8;
+
+fn track_bitrate(status: &obws::responses::streaming::StreamStatus, snapshot: &mut HealthSnapshot) {
+    if !status.active {
+        snapshot.stream_byte_sample = None;
+        snapshot.bitrate_kbps = None;
+        return;
+    }
+    let current = StreamByteSample {
+        bytes: status.bytes,
+        at: status.duration.unsigned_abs(),
+    };
+    let Some(previous) = snapshot.stream_byte_sample else {
+        snapshot.stream_byte_sample = Some(current);
+        return;
+    };
+    if current.at == previous.at {
+        return;
+    }
+    snapshot.stream_byte_sample = Some(current);
+    snapshot.bitrate_kbps = bitrate_between(previous, current);
+}
+
+fn bitrate_between(previous: StreamByteSample, current: StreamByteSample) -> Option<u32> {
+    let sent_bits = u128::from(current.bytes.checked_sub(previous.bytes)?) * BITS_PER_BYTE;
+    let millis = current.at.checked_sub(previous.at)?.as_millis();
+    let kbps = sent_bits.checked_div(millis)?;
+    Some(u32::try_from(kbps).unwrap_or(u32::MAX))
+}
+
 pub(crate) fn apply_stream_status_update(
     status: &obws::responses::streaming::StreamStatus,
     snapshot: &mut HealthSnapshot,
 ) -> Vec<HealthDelta> {
+    track_bitrate(status, snapshot);
     let duration = Some(status.duration.unsigned_abs());
     let dropped = u64::from(status.skipped_frames);
     let total = u64::from(status.total_frames);
@@ -1602,5 +1633,137 @@ mod tests {
                 ev.kind,
             );
         }
+    }
+
+    fn byte_sample(bytes: u64, millis: u64) -> StreamByteSample {
+        StreamByteSample {
+            bytes,
+            at: Duration::from_millis(millis),
+        }
+    }
+
+    fn sending(bytes: u64, secs: i64) -> StreamStatus {
+        StreamStatus {
+            bytes,
+            ..stream_status(true, secs, 0, 0)
+        }
+    }
+
+    #[test]
+    fn bitrate_is_the_bits_sent_per_millisecond_between_two_samples() {
+        for (previous, current, expected, case) in [
+            (
+                byte_sample(0, 0),
+                byte_sample(750_000, 1_000),
+                Some(6_000),
+                "one second at 6000 kbps",
+            ),
+            (
+                byte_sample(100, 1_000),
+                byte_sample(100, 3_000),
+                Some(0),
+                "nothing sent",
+            ),
+            (
+                byte_sample(0, 0),
+                byte_sample(u64::MAX, 1),
+                Some(u32::MAX),
+                "saturates instead of wrapping",
+            ),
+            (
+                byte_sample(1_000, 1_000),
+                byte_sample(999, 2_000),
+                None,
+                "the byte counter went back",
+            ),
+            (
+                byte_sample(0, 2_000),
+                byte_sample(1_000, 1_000),
+                None,
+                "the clock went back",
+            ),
+            (
+                byte_sample(0, 1_000),
+                byte_sample(1_000, 1_000),
+                None,
+                "no time passed",
+            ),
+        ] {
+            assert_eq!(bitrate_between(previous, current), expected, "{case}");
+        }
+    }
+
+    #[test]
+    fn a_step_under_one_millisecond_has_no_bitrate() {
+        let previous = byte_sample(0, 1_000);
+        let current = StreamByteSample {
+            bytes: 1_000,
+            at: previous.at + Duration::from_micros(500),
+        };
+
+        assert_eq!(bitrate_between(previous, current), None);
+    }
+
+    #[test]
+    fn the_first_active_sample_only_sets_the_baseline() {
+        let mut snapshot = HealthSnapshot::default();
+
+        track_bitrate(&sending(5_000, 10), &mut snapshot);
+
+        assert_eq!(
+            (snapshot.stream_byte_sample, snapshot.bitrate_kbps),
+            (Some(byte_sample(5_000, 10_000)), None)
+        );
+    }
+
+    #[test]
+    fn a_stream_status_update_reports_the_rate_since_the_previous_one() {
+        let mut snapshot = HealthSnapshot::default();
+
+        apply_stream_status_update(&sending(0, 10), &mut snapshot);
+        apply_stream_status_update(&sending(750_000, 11), &mut snapshot);
+
+        assert_eq!(snapshot.bitrate_kbps, Some(6_000));
+    }
+
+    #[test]
+    fn an_inactive_stream_forgets_the_bitrate_and_the_baseline() {
+        let mut snapshot = HealthSnapshot::default();
+        track_bitrate(&sending(0, 10), &mut snapshot);
+        track_bitrate(&sending(750_000, 11), &mut snapshot);
+
+        track_bitrate(&stream_status(false, 0, 0, 0), &mut snapshot);
+
+        assert_eq!(
+            (snapshot.stream_byte_sample, snapshot.bitrate_kbps),
+            (None, None)
+        );
+    }
+
+    #[test]
+    fn a_repeated_timestamp_keeps_the_last_bitrate_and_baseline() {
+        let mut snapshot = HealthSnapshot::default();
+        track_bitrate(&sending(0, 10), &mut snapshot);
+        track_bitrate(&sending(750_000, 11), &mut snapshot);
+
+        track_bitrate(&sending(900_000, 11), &mut snapshot);
+
+        assert_eq!(
+            (snapshot.stream_byte_sample, snapshot.bitrate_kbps),
+            (Some(byte_sample(750_000, 11_000)), Some(6_000))
+        );
+    }
+
+    #[test]
+    fn a_restarted_stream_clears_the_rate_and_measures_from_its_own_baseline() {
+        let mut snapshot = HealthSnapshot::default();
+        track_bitrate(&sending(0, 100), &mut snapshot);
+        track_bitrate(&sending(750_000, 101), &mut snapshot);
+
+        track_bitrate(&sending(1_000, 1), &mut snapshot);
+        assert_eq!(snapshot.bitrate_kbps, None);
+
+        track_bitrate(&sending(376_000, 2), &mut snapshot);
+        assert_eq!(snapshot.bitrate_kbps, Some(3_000));
     }
 }

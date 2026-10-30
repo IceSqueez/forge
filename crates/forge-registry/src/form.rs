@@ -69,6 +69,11 @@ pub enum FormField {
         min: i64,
         max: i64,
     },
+    OneBasedInteger {
+        key: &'static str,
+        label: &'static str,
+        count: i64,
+    },
     Slider {
         key: &'static str,
         label: &'static str,
@@ -142,6 +147,7 @@ impl FormField {
             | Self::TextArea { key, .. }
             | Self::Code { key, .. }
             | Self::Integer { key, .. }
+            | Self::OneBasedInteger { key, .. }
             | Self::Slider { key, .. }
             | Self::Toggle { key, .. }
             | Self::FilePicker { key, .. }
@@ -164,6 +170,7 @@ impl FormField {
             | Self::TextArea { label, .. }
             | Self::Code { label, .. }
             | Self::Integer { label, .. }
+            | Self::OneBasedInteger { label, .. }
             | Self::Slider { label, .. }
             | Self::Toggle { label, .. }
             | Self::FilePicker { label, .. }

@@ -1336,4 +1336,78 @@ mod tests {
             );
         }
     }
+
+    const ONE_BASED_FIELD: &str = "channel";
+
+    fn one_based_spec() -> FormField {
+        FormField::OneBasedInteger {
+            key: ONE_BASED_FIELD,
+            label: "Channel",
+            count: 16,
+        }
+    }
+
+    fn stored_one_based(stored: i64) -> SubActionConfig {
+        SubActionConfig::from([(ONE_BASED_FIELD.to_owned(), Variant::Int(stored))])
+    }
+
+    fn typed_one_based(typed: &str, cx: &mut TestAppContext) -> Option<Vec<(String, Variant)>> {
+        let (form, vcx, _rt) =
+            open_launch(cx, launch_with(vec![one_based_spec()], stored_one_based(4)));
+        let heard = std::rc::Rc::new(std::cell::RefCell::new(None));
+        let sink = std::rc::Rc::clone(&heard);
+        let _subscription = vcx.update(|_window, cx| {
+            cx.subscribe(&form, move |_, event: &SubFormEvent, _| {
+                if let SubFormEvent::Commit(commit) = event {
+                    *sink.borrow_mut() = Some(commit.overrides.clone());
+                }
+            })
+        });
+        vcx.update(|_window, cx| {
+            let input = form.read(cx).fields.iter().find_map(|field| match field {
+                SubFormField::Input { input, .. } => Some(input.clone()),
+                _ => None,
+            });
+            input
+                .unwrap_or_else(|| panic!("the field builds an input"))
+                .update(cx, |input, cx| input.set_content(typed.to_owned(), cx));
+            form.update(cx, |form, cx| form.submit(cx));
+        });
+        heard.borrow_mut().take()
+    }
+
+    #[gpui::test]
+    fn a_one_based_step_field_keeps_a_stored_value_through_an_untouched_save(
+        cx: &mut TestAppContext,
+    ) {
+        for stored in [0, 15] {
+            let overrides =
+                committed_overrides(vec![one_based_spec()], stored_one_based(stored), cx);
+
+            assert_eq!(
+                override_for(&overrides, ONE_BASED_FIELD),
+                Some(&Variant::Int(stored))
+            );
+        }
+    }
+
+    #[gpui::test]
+    fn a_one_based_step_field_saves_the_typed_value_minus_one(cx: &mut TestAppContext) {
+        for (typed, saved) in [("1", 0), ("16", 15)] {
+            let overrides = typed_one_based(typed, cx).unwrap();
+
+            assert_eq!(
+                override_for(&overrides, ONE_BASED_FIELD),
+                Some(&Variant::Int(saved)),
+                "typed {typed:?}"
+            );
+        }
+    }
+
+    #[gpui::test]
+    fn a_one_based_step_field_refuses_values_outside_what_it_shows(cx: &mut TestAppContext) {
+        for typed in ["0", "17"] {
+            assert_eq!(typed_one_based(typed, cx), None, "typed {typed:?}");
+        }
+    }
 }

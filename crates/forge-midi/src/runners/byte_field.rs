@@ -9,6 +9,7 @@ pub(crate) struct ByteField {
     pub(crate) default: i64,
     pub(crate) max: i64,
     pub(crate) seeds_default: bool,
+    pub(crate) shown_one_based: bool,
 }
 
 impl ByteField {
@@ -38,6 +39,13 @@ impl TypedField for ByteField {
     }
 
     fn form_field(&self) -> FormField {
+        if self.shown_one_based {
+            return FormField::OneBasedInteger {
+                key: self.key,
+                label: self.label,
+                count: self.max + 1,
+            };
+        }
         self.as_integer().form_field()
     }
 
@@ -60,5 +68,31 @@ impl TypedField for ByteField {
 
     fn parse_text(&self, text: &str) -> Result<u8, ConfigReason> {
         self.narrowed(self.as_integer().parse_text(text)?)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn only_a_one_based_byte_is_offered_as_a_count_of_its_values() {
+        let field = |shown_one_based| ByteField {
+            key: "channel",
+            label: "Channel",
+            default: 0,
+            max: 15,
+            seeds_default: true,
+            shown_one_based,
+        };
+
+        assert!(matches!(
+            field(true).form_field(),
+            FormField::OneBasedInteger { count: 16, .. }
+        ));
+        assert!(matches!(
+            field(false).form_field(),
+            FormField::Integer { max: 15, .. }
+        ));
     }
 }

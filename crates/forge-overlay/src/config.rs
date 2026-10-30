@@ -137,6 +137,7 @@ fn check_field(field: &FormField, config: &OverlayConfig) -> Result<(), OverlayE
         FormField::Integer { key, min, max, .. } | FormField::Slider { key, min, max, .. } => {
             bounded_int(config, key, *min, *max)
         }
+        FormField::OneBasedInteger { key, count, .. } => bounded_int(config, key, 0, *count - 1),
         FormField::UnitAmount {
             key,
             unit_key,
@@ -890,5 +891,24 @@ mod tests {
             matches!(&err, OverlayError::UnknownChoice { key, .. } if key == PROBE_INNER),
             "the inner field was not validated: {err:?}"
         );
+    }
+
+    #[test]
+    fn a_one_based_field_bounds_the_stored_value_from_zero_to_one_below_the_count() {
+        let field = FormField::OneBasedInteger {
+            key: PROBE_INTEGER,
+            label: "Channel",
+            count: 16,
+        };
+
+        for (stored, accepted) in [(-1, false), (0, true), (15, true), (16, false)] {
+            let config = one(PROBE_INTEGER, Variant::Int(stored));
+
+            assert_eq!(
+                check_field(&field, &config).is_ok(),
+                accepted,
+                "stored {stored}"
+            );
+        }
     }
 }

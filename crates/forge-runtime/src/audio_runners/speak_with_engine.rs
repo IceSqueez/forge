@@ -93,7 +93,9 @@ impl SubActionRunner for SpeakWithEngineRunner {
                 .speak_with_engine_and_wait(text, engine_id, origin, ctx.cancel.clone())
                 .await
         } else {
-            self.speak.speak_with_engine(text, engine_id, origin).await
+            self.speak
+                .speak_with_engine_queued_for_run(text, engine_id, origin, ctx.cancel.clone())
+                .await
         };
 
         (

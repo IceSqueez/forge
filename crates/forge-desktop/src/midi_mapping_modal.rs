@@ -21,7 +21,9 @@ use gpui::{
 };
 
 use crate::async_bridge;
-use crate::midi_signal::{MidiSignal, kind_label, selector_key};
+use crate::midi_signal::{
+    MIDI_CHANNELS, MidiSignal, kind_label, selector_key, shown_channel, stored_channel,
+};
 use forge_components::ActivePresentation;
 use forge_midi::vocabulary::event_kinds::SIGNAL_KINDS;
 
@@ -100,13 +102,15 @@ enum OpenPanel {
     Device,
 }
 
-const MIDI_CHANNEL_MAX: i64 = 15;
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum ChannelEntry {
     Any,
     Only(i64),
     Invalid,
+}
+
+fn channel_text(stored: Option<i64>) -> String {
+    stored.map_or_else(String::new, |channel| shown_channel(channel).to_string())
 }
 
 impl ChannelEntry {
@@ -116,7 +120,7 @@ impl ChannelEntry {
             return Self::Any;
         }
         match raw.parse::<i64>() {
-            Ok(channel) if (0..=MIDI_CHANNEL_MAX).contains(&channel) => Self::Only(channel),
+            Ok(shown) if (1..=MIDI_CHANNELS).contains(&shown) => Self::Only(stored_channel(shown)),
             _ => Self::Invalid,
         }
     }
@@ -157,7 +161,7 @@ impl MidiMappingModal {
             input_enabled,
         } = launch;
         let palette = cx.palette();
-        let channel_text = signal.channel.map(|c| c.to_string()).unwrap_or_default();
+        let channel_text = channel_text(signal.channel);
         let channel_field = cx.new(|cx| {
             let mut field = TextInput::new(tr!("midi_modal_channel_any"), cx)
                 .with_palette(palette)
@@ -221,7 +225,7 @@ impl MidiMappingModal {
         self.kind_id = signal.kind_id;
         self.selector = signal.selector;
         self.device = signal.device;
-        let channel = signal.channel.map(|c| c.to_string()).unwrap_or_default();
+        let channel = channel_text(signal.channel);
         self.channel_field
             .update(cx, |field, cx| field.set_content(channel, cx));
         cx.notify();
@@ -911,9 +915,10 @@ mod tests {
         for (raw, expected) in [
             ("", ChannelEntry::Any),
             ("   ", ChannelEntry::Any),
-            ("0", ChannelEntry::Only(0)),
-            (" 15 ", ChannelEntry::Only(15)),
-            ("16", ChannelEntry::Invalid),
+            ("0", ChannelEntry::Invalid),
+            ("1", ChannelEntry::Only(0)),
+            (" 16 ", ChannelEntry::Only(15)),
+            ("17", ChannelEntry::Invalid),
             ("-1", ChannelEntry::Invalid),
             ("1.5", ChannelEntry::Invalid),
             ("one", ChannelEntry::Invalid),

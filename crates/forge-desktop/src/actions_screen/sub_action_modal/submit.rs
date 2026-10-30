@@ -38,9 +38,11 @@ impl EditSubActionForm {
                 InputFlavor::VariableName => {
                     !text.trim().is_empty() && normalize_var_name(&text).is_none()
                 }
-                InputFlavor::Integer(range) => {
+                InputFlavor::Integer(_) | InputFlavor::OneBased(_) => {
                     gate_on(gate.as_ref())
-                        && int_entry_invalid(&text, *range.start(), *range.end(), false)
+                        && flavor.shown_bounds().is_some_and(|range| {
+                            int_entry_invalid(&text, *range.start(), *range.end(), false)
+                        })
                 }
                 InputFlavor::Text | InputFlavor::File | InputFlavor::DateTime => continue,
             };

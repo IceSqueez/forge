@@ -612,28 +612,8 @@ mod tests {
     }
 
     fn form_field_keys(field: &FormField, out: &mut BTreeSet<String>) {
-        use FormField::*;
-        let key = match field {
-            Text { key, .. }
-            | TextArea { key, .. }
-            | Code { key, .. }
-            | Integer { key, .. }
-            | Toggle { key, .. }
-            | FilePicker { key, .. }
-            | DateTime { key, .. }
-            | Select { key, .. }
-            | UnitAmount { key, .. }
-            | Duration { key, .. }
-            | DynamicSelect { key, .. }
-            | DependentSelect { key, .. }
-            | Optional { key, .. }
-            | SubChain { key, .. }
-            | CaseList { key, .. }
-            | Slider { key, .. }
-            | Swatch { key, .. } => *key,
-        };
-        out.insert(key.to_owned());
-        if let Optional { inner, .. } = field {
+        out.insert(field.key().to_owned());
+        if let FormField::Optional { inner, .. } = field {
             form_field_keys(inner, out);
         }
     }

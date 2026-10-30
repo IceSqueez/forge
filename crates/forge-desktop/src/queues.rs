@@ -5,34 +5,36 @@ use forge_components::ROW_HOVER_WASH_ALPHA;
 use forge_components::SEARCH_FIELD_WIDTH;
 use forge_components::TINT_BORDER_ALPHA;
 use forge_components::TINT_STRONG_FILL_ALPHA;
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
+use std::time::{Duration, Instant};
 
 use forge_components::confirm::ConfirmTone;
 use forge_components::{
     BORDER_THIN, BreadcrumbCrumb, ChipGlyph, Confirm, Density, FONT_SM, FONT_XS, FONT_XXS,
     ForgePalette, Icon, InputEvent, MenuItem, MenuPlacement, ModalSize, OverlayPosition, Radius,
     SearchState, Spacing, TextInput, ToastKind, badge, body_family, card, chip, confirm_modal,
-    empty_state, ghost_button_with_icon, header_stat, header_stats, icon, menu_button,
+    empty_state, fmt_uptime, ghost_button_with_icon, header_stat, header_stats, icon, menu_button,
     menu_divider, menu_item, modal, mono_family, overlay, page_frame, primary_button,
     primary_button_with_icon, radius, scaled, secondary_button, slider, spacing, spinner,
     tooltip_builder, tr, with_alpha,
 };
 use forge_runtime::{
     MAX_PENDING_PER_QUEUE, MembershipOutcome, QueueIntake, QueueMode, QueueProcessing,
-    QueueSchedulerHandle,
+    QueueSchedulerHandle, RunningAction,
 };
 use forge_storage::{ActionRepo, QueueRepo};
-use forge_types::{DEFAULT_QUEUE_ID, Queue, QueueId};
+use forge_types::{ActionId, DEFAULT_QUEUE_ID, Queue, QueueId};
 use gpui::{
     AnyElement, App, ClickEvent, Context, Div, Entity, EventEmitter, FontWeight, Pixels, Point,
-    Rgba, SharedString, Stateful, Subscription, Window, div, prelude::*, px,
+    Rgba, SharedString, Stateful, Subscription, Task, Window, div, prelude::*, px,
 };
 
 use crate::async_bridge;
 use crate::navigation::NavRequested;
 use crate::queue_health::QueueHealth;
 use crate::scheduled_runs_section::ScheduledRunsView;
+use crate::window_presence::PresenceGate;
 use forge_components::ActivePresentation;
 use forge_components::PushToast;
 
@@ -50,6 +52,8 @@ const BAR_GAP: Pixels = px(8.0);
 const STAT_VALUE_FS: Pixels = FONT_FIELD;
 const DESC_FS: Pixels = FONT_META;
 const MAX_PILLS: usize = 3;
+const RUNNING_ELAPSED_TICK: Duration = Duration::from_millis(250);
+const UNNAMED_ACTION: &str = "-";
 const SERIAL_CONCURRENCY: u32 = 1;
 const PARALLEL_CONCURRENCY: u32 = 8;
 const MIN_CONCURRENCY: u32 = 1;
@@ -189,7 +193,13 @@ struct QueueRow {
     in_flight: u32,
     overflowed: u64,
     actions: u32,
-    running: Vec<String>,
+    running: Vec<RunningEntry>,
+}
+
+#[derive(Clone, PartialEq, Eq)]
+struct RunningEntry {
+    name: String,
+    started_at: Instant,
 }
 
 impl QueueRow {
@@ -203,6 +213,36 @@ impl QueueRow {
 
     fn frozen(&self) -> bool {
         self.mode.processing == QueueProcessing::Frozen
+    }
+}
+
+struct QueueListing {
+    rows: Vec<QueueRow>,
+    action_names: HashMap<ActionId, String>,
+}
+
+fn running_entries(
+    running: &[RunningAction],
+    action_names: &HashMap<ActionId, String>,
+) -> Vec<RunningEntry> {
+    running
+        .iter()
+        .map(|run| RunningEntry {
+            name: action_names
+                .get(&run.action_id)
+                .cloned()
+                .unwrap_or_else(|| UNNAMED_ACTION.to_owned()),
+            started_at: run.started_at,
+        })
+        .collect()
+}
+
+fn elapsed_text(elapsed: Duration) -> String {
+    let millis = elapsed.as_millis();
+    if millis < 1_000 {
+        tr!("queues_elapsed_ms", ms = millis as i64)
+    } else {
+        fmt_uptime(elapsed.as_secs())
     }
 }
 
@@ -514,6 +554,10 @@ pub struct QueuesView {
     search: SearchState,
     scheduled: Option<Entity<ScheduledRunsView>>,
     _scheduled_sub: Option<Subscription>,
+    action_names: HashMap<ActionId, String>,
+    named_lookups_requested: HashSet<ActionId>,
+    now: Instant,
+    _elapsed_tick: Option<Task<()>>,
     _health_obs: Subscription,
     _search_sub: Subscription,
 }
@@ -535,6 +579,8 @@ impl QueuesView {
             if this.apply_depths(health.read(cx)) {
                 cx.notify();
             }
+            this.look_up_unnamed_runs(&health, cx);
+            this.sync_elapsed_tick(cx);
         });
         let search = SearchState::new(cx, palette, tr!("queues_search_placeholder"));
         let search_sub = cx.subscribe(search.field(), Self::on_search_event);
@@ -556,6 +602,10 @@ impl QueuesView {
             search,
             scheduled: None,
             _scheduled_sub: None,
+            action_names: HashMap::new(),
+            named_lookups_requested: HashSet::new(),
+            now: Instant::now(),
+            _elapsed_tick: None,
             _health_obs: health_obs,
             _search_sub: search_sub,
         };
@@ -619,16 +669,65 @@ impl QueuesView {
             let depth = health.depth(row.id).unwrap_or_default();
             let pending = u32::try_from(depth.pending).unwrap_or(u32::MAX);
             let in_flight = u32::try_from(depth.in_flight).unwrap_or(u32::MAX);
+            let running = running_entries(health.running(row.id), &self.action_names);
             if (row.pending, row.in_flight, row.overflowed)
                 != (pending, in_flight, depth.overflowed)
+                || row.running != running
             {
                 row.pending = pending;
                 row.in_flight = in_flight;
                 row.overflowed = depth.overflowed;
+                row.running = running;
                 changed = true;
             }
         }
+        if changed {
+            self.now = Instant::now();
+        }
         changed
+    }
+
+    fn look_up_unnamed_runs(&mut self, health: &Entity<QueueHealth>, cx: &mut Context<Self>) {
+        let unknown: Vec<ActionId> = {
+            let health = health.read(cx);
+            self.queues
+                .iter()
+                .flat_map(|row| health.running(row.id))
+                .map(|run| run.action_id)
+                .filter(|id| !self.action_names.contains_key(id))
+                .filter(|id| !self.named_lookups_requested.contains(id))
+                .collect()
+        };
+        if !unknown.is_empty() {
+            self.named_lookups_requested.extend(unknown);
+            self.reload(cx);
+        }
+    }
+
+    fn sync_elapsed_tick(&mut self, cx: &mut Context<Self>) {
+        let running = self.queues.iter().any(|row| !row.running.is_empty());
+        if !running {
+            self._elapsed_tick = None;
+        } else if self._elapsed_tick.is_none() {
+            self._elapsed_tick = Some(Self::spawn_elapsed_tick(cx));
+        }
+    }
+
+    fn spawn_elapsed_tick(cx: &mut Context<Self>) -> Task<()> {
+        let mut presence = PresenceGate::of(cx);
+        cx.spawn(async move |this, cx| {
+            loop {
+                cx.background_executor().timer(RUNNING_ELAPSED_TICK).await;
+                presence.until_visible().await;
+                let alive = this.update(cx, |this, cx| {
+                    this.now = Instant::now();
+                    cx.notify();
+                });
+                if alive.is_err() {
+                    break;
+                }
+            }
+        })
     }
 
     fn visible_indices(&self) -> Vec<usize> {
@@ -648,7 +747,10 @@ impl QueuesView {
             &self.rt_handle,
             load_queues(queue_repo, action_repo, scheduler),
             |this, result, cx| match result {
-                Ok(rows) => this.apply_rows(rows, cx),
+                Ok(listing) => {
+                    this.action_names = listing.action_names;
+                    this.apply_rows(listing.rows, cx);
+                }
                 Err(message) => this.on_load_error(&message, cx),
             },
             cx,
@@ -661,6 +763,7 @@ impl QueuesView {
         self.loading = false;
         let health = self.queue_health.clone();
         self.apply_depths(health.read(cx));
+        self.sync_elapsed_tick(cx);
         cx.notify();
     }
 
@@ -982,7 +1085,7 @@ impl QueuesView {
             .flex_col()
             .child(self.card_header(index, q, not_live, palette, cx))
             .child(self.card_metrics(q, palette, density))
-            .child(status_panel(q, palette, density))
+            .child(status_panel(q, self.now, palette, density))
             .child(self.card_buttons(index, q, palette, density, cx));
 
         card(body, palette)
@@ -1610,17 +1713,40 @@ fn metric_col(
         )
 }
 
-fn status_panel(q: &QueueRow, palette: &ForgePalette, density: Density) -> AnyElement {
-    if q.mode != QueueMode::RUNNING {
-        return mode_panel(q, palette, density);
+fn status_panel(
+    q: &QueueRow,
+    now: Instant,
+    palette: &ForgePalette,
+    density: Density,
+) -> AnyElement {
+    let running = running_panel(q, now, palette, density);
+    let status = if q.mode != QueueMode::RUNNING {
+        Some(mode_panel(q, palette, density))
+    } else if running.is_none() || q.overflowed > 0 {
+        Some(activity_panel(q, palette, density))
+    } else {
+        None
+    };
+    div()
+        .w_full()
+        .flex()
+        .flex_col()
+        .children(running)
+        .children(status)
+        .into_any_element()
+}
+
+fn running_panel(
+    q: &QueueRow,
+    now: Instant,
+    palette: &ForgePalette,
+    density: Density,
+) -> Option<AnyElement> {
+    let first = q.running.first()?;
+    if !q.blocking || q.running.len() > 1 {
+        return Some(concurrent_panel(q, palette, density));
     }
-    if q.running.is_empty() {
-        return activity_panel(q, palette, density);
-    }
-    if !q.blocking && q.running.len() > 1 {
-        return concurrent_panel(q, palette, density);
-    }
-    serial_panel(q, palette, density)
+    Some(serial_panel(q, first, now, palette, density))
 }
 
 fn mode_panel(q: &QueueRow, palette: &ForgePalette, density: Density) -> AnyElement {
@@ -1739,8 +1865,14 @@ fn overflow_badge(overflowed: u64, palette: &ForgePalette, density: Density) -> 
         .into_any_element()
 }
 
-fn serial_panel(q: &QueueRow, palette: &ForgePalette, density: Density) -> AnyElement {
-    let name = q.running.first().cloned().unwrap_or_default();
+fn serial_panel(
+    q: &QueueRow,
+    entry: &RunningEntry,
+    now: Instant,
+    palette: &ForgePalette,
+    density: Density,
+) -> AnyElement {
+    let elapsed = elapsed_text(now.saturating_duration_since(entry.started_at));
     let spin_id = SharedString::from(format!("q-serial-spin-{}", q.id));
     div()
         .w_full()
@@ -1759,14 +1891,17 @@ fn serial_panel(q: &QueueRow, palette: &ForgePalette, density: Density) -> AnyEl
                 .font_family(mono_family())
                 .text_size(FONT_XS)
                 .text_color(palette.text_primary)
-                .child(name),
+                .child(entry.name.clone()),
         )
         .child(
             div()
                 .font_family(mono_family())
                 .text_size(FONT_XXS)
                 .text_color(palette.text_faint)
-                .child(SharedString::from(tr!("queues_running_label"))),
+                .child(SharedString::from(tr!(
+                    "queues_running_for",
+                    elapsed = elapsed.as_str()
+                ))),
         )
         .into_any_element()
 }
@@ -1776,8 +1911,8 @@ fn concurrent_panel(q: &QueueRow, palette: &ForgePalette, density: Density) -> A
     let overflow = q.running.len().saturating_sub(MAX_PILLS);
 
     let mut pills = div().flex().flex_wrap().gap(spacing(Spacing::Xxs, density));
-    for name in &q.running[..shown] {
-        pills = pills.child(running_pill(name.clone(), palette, density));
+    for entry in &q.running[..shown] {
+        pills = pills.child(running_pill(entry.name.clone(), palette, density));
     }
     if overflow > 0 {
         pills = pills.child(running_pill(
@@ -1879,7 +2014,7 @@ async fn load_queues(
     queue_repo: Arc<dyn QueueRepo>,
     action_repo: Arc<dyn ActionRepo>,
     scheduler: QueueSchedulerHandle,
-) -> Result<Vec<QueueRow>, String> {
+) -> Result<QueueListing, String> {
     let queues = queue_repo.list().await.map_err(|e| e.to_string())?;
     let actions = action_repo.list().await.map_err(|e| e.to_string())?;
     let live_states = scheduler
@@ -1912,8 +2047,12 @@ async fn load_queues(
             }
         })
         .collect();
+    let action_names = actions
+        .into_iter()
+        .map(|action| (action.id, action.name))
+        .collect();
 
-    Ok(rows)
+    Ok(QueueListing { rows, action_names })
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -2015,7 +2154,9 @@ mod tests {
 
     use super::*;
     use crate::i18n::install_language;
-    use crate::test_support::{StubActions, held_queue_scheduler, pump, runtime, worker_runtime};
+    use crate::test_support::{
+        StubActions, held_queue_scheduler, pump, pump_until, runtime, worker_runtime,
+    };
     use forge_components::Presentation;
     use forge_components::Toasts;
 
@@ -2372,5 +2513,199 @@ mod tests {
         ] {
             assert_eq!(failure.message(), expected);
         }
+    }
+
+    fn run_of(action_id: ActionId) -> RunningAction {
+        RunningAction {
+            action_id,
+            started_at: Instant::now(),
+        }
+    }
+
+    fn stored_action(name: &str, queue_id: QueueId) -> forge_types::Action {
+        forge_types::Action {
+            id: ActionId::new(),
+            name: name.to_owned(),
+            group: None,
+            queue_id,
+            enabled: true,
+            concurrent: false,
+            bypass_pause: false,
+            execution_mode: forge_types::ExecutionMode::default(),
+            description: None,
+            sub_actions: vec![],
+        }
+    }
+
+    fn set_running(
+        health: &Entity<QueueHealth>,
+        id: QueueId,
+        runs: Vec<RunningAction>,
+        cx: &mut TestAppContext,
+    ) {
+        health.update(cx, |health, cx| {
+            health.apply_running(forge_runtime::QueueRunning::from([(id, runs)]));
+            cx.notify();
+        });
+    }
+
+    struct CountedLoads {
+        view: Entity<QueuesView>,
+        loads: Arc<std::sync::atomic::AtomicUsize>,
+        actions: Arc<std::sync::Mutex<Vec<forge_types::Action>>>,
+    }
+
+    impl CountedLoads {
+        fn count(&self) -> usize {
+            self.loads.load(std::sync::atomic::Ordering::SeqCst)
+        }
+
+        fn settle_at(
+            &self,
+            expected: usize,
+            rt: &tokio::runtime::Runtime,
+            cx: &mut TestAppContext,
+        ) {
+            pump_until(rt, || {
+                cx.run_until_parked();
+                self.count() >= expected
+            });
+            pump(rt);
+            cx.run_until_parked();
+        }
+
+        fn running_names(&self, cx: &mut TestAppContext) -> Vec<String> {
+            self.view.read_with(cx, |view, _| {
+                view.queues
+                    .first()
+                    .map(|row| row.running.iter().map(|run| run.name.clone()).collect())
+                    .unwrap_or_default()
+            })
+        }
+    }
+
+    fn mount_counted(
+        cx: &mut TestAppContext,
+        rt: &tokio::runtime::Runtime,
+        id: QueueId,
+        health: Entity<QueueHealth>,
+    ) -> CountedLoads {
+        install_language(Language::En);
+        cx.update(|cx| {
+            cx.set_global(Presentation::new(ThemeId::ForgeDefault, Density::Cozy));
+            cx.set_global(Toasts::new());
+        });
+        let scheduler = held_queue_scheduler(rt, queue(id));
+        let loads = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let actions = Arc::new(std::sync::Mutex::new(Vec::new()));
+        let mut queue_repo = MockQueueRepo::new();
+        let counted = Arc::clone(&loads);
+        queue_repo.expect_list().returning(move || {
+            counted.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            Ok(vec![queue(id)])
+        });
+        let mut action_repo = forge_storage::action::MockActionRepo::new();
+        let stored = Arc::clone(&actions);
+        action_repo
+            .expect_list()
+            .returning(move || Ok(stored.lock().unwrap().clone()));
+        let view = cx.update(|cx| {
+            cx.new(|cx| {
+                QueuesView::new(
+                    health,
+                    scheduler,
+                    Arc::new(queue_repo),
+                    Arc::new(action_repo),
+                    rt.handle().clone(),
+                    cx,
+                )
+            })
+        });
+        let counted = CountedLoads {
+            view,
+            loads,
+            actions,
+        };
+        counted.settle_at(1, rt, cx);
+        counted
+    }
+
+    #[test]
+    fn a_run_is_named_after_its_action_or_a_placeholder_when_the_action_is_unknown() {
+        let (known, unknown) = (ActionId::new(), ActionId::new());
+        let names = HashMap::from([(known, "Intro".to_owned())]);
+        let runs = [run_of(known), run_of(unknown)];
+
+        let entries = running_entries(&runs, &names);
+
+        assert_eq!(
+            entries
+                .iter()
+                .map(|entry| (entry.name.as_str(), entry.started_at))
+                .collect::<Vec<_>>(),
+            vec![
+                ("Intro", runs[0].started_at),
+                (UNNAMED_ACTION, runs[1].started_at),
+            ]
+        );
+    }
+
+    #[test]
+    fn elapsed_time_reads_in_milliseconds_below_a_second_and_as_uptime_from_one() {
+        install_language(Language::En);
+
+        for (elapsed, expected) in [
+            (Duration::ZERO, "0ms"),
+            (Duration::from_millis(999), "999ms"),
+            (Duration::from_millis(1_000), "1s"),
+            (Duration::from_secs(61), "1m 1s"),
+        ] {
+            let shown = elapsed_text(elapsed).replace(['\u{2068}', '\u{2069}'], "");
+
+            assert_eq!(shown, expected, "{elapsed:?}");
+        }
+    }
+
+    #[gpui::test]
+    fn a_run_of_an_action_unknown_to_the_screen_reloads_and_gets_its_name(cx: &mut TestAppContext) {
+        let rt = runtime();
+        let id = QueueId::new();
+        let health = cx.new(|_| QueueHealth::new());
+        let screen = mount_counted(cx, &rt, id, health.clone());
+        let created = stored_action("Intro", id);
+        let created_id = created.id;
+        screen.actions.lock().unwrap().push(created);
+
+        set_running(&health, id, vec![run_of(created_id)], cx);
+        screen.settle_at(2, &rt, cx);
+
+        assert_eq!(screen.running_names(cx), vec!["Intro".to_owned()]);
+    }
+
+    #[gpui::test]
+    fn an_action_that_stays_unknown_reloads_once_and_a_new_unknown_one_reloads_again(
+        cx: &mut TestAppContext,
+    ) {
+        let rt = runtime();
+        let id = QueueId::new();
+        let health = cx.new(|_| QueueHealth::new());
+        let screen = mount_counted(cx, &rt, id, health.clone());
+        let (first, second) = (ActionId::new(), ActionId::new());
+
+        set_running(&health, id, vec![run_of(first)], cx);
+        screen.settle_at(2, &rt, cx);
+        set_running(&health, id, vec![run_of(first)], cx);
+        pump(&rt);
+        cx.run_until_parked();
+        assert_eq!(screen.count(), 2, "the same deleted action reloaded again");
+
+        set_running(&health, id, vec![run_of(first), run_of(second)], cx);
+        screen.settle_at(3, &rt, cx);
+
+        assert_eq!(screen.count(), 3);
+        assert_eq!(
+            screen.running_names(cx),
+            vec![UNNAMED_ACTION.to_owned(), UNNAMED_ACTION.to_owned()]
+        );
     }
 }

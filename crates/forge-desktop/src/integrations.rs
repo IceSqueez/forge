@@ -117,6 +117,10 @@ impl ObsInstallSeed {
         self.sink.stream_output()
     }
 
+    pub fn stream_stats(&self) -> forge_obs::ObsStatsWatch {
+        self.sink.stream_stats()
+    }
+
     pub fn install(&self, client: Arc<forge_obs::ObsClient>) {
         self.sink.install(Arc::clone(&client));
         let mut guard = self.live.write().unwrap_or_else(|e| e.into_inner());

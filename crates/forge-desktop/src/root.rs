@@ -199,6 +199,8 @@ pub fn run_boot(
                 let chat_feed_bridge = ChatFeedBridge::subscribe(&handles.bus, &handles.rt_handle);
                 let loss_watch = handles.bus.watch_loss();
                 let depth_watch = handles.scheduler.watch_depths();
+                let obs_stats_watch = handles.obs_install_seed.stream_stats();
+                let home_stats_for_obs = home_stats.clone();
                 let event_loss_for_bridge = event_loss.clone();
                 let awake_for_bridge = awake.clone();
                 let awake_watch = handles.stay_awake.watch();
@@ -372,6 +374,7 @@ pub fn run_boot(
                     .await;
                     start_loss_bridge(cx, event_loss_for_bridge, loss_watch);
                     start_queue_depth_bridge(cx, queue_health_for_depths, depth_watch);
+                    start_obs_stats_bridge(cx, home_stats_for_obs, obs_stats_watch);
                     chat_feed_bridge.start(cx, chat_feed_for_history, event_loss_for_chat);
                     event_log_for_bridge.update(cx, |log, _| log.set_categories(event_categories));
                     start_bridge(
@@ -652,8 +655,11 @@ fn start_queue_depth_bridge(
     cx.spawn(async move |cx| {
         let mut depths = watch.current();
         loop {
+            let running = watch.running();
             health.update(cx, |health, cx| {
-                if health.apply_depths(depths) {
+                let depths_changed = health.apply_depths(depths);
+                let running_changed = health.apply_running(running);
+                if depths_changed || running_changed {
                     cx.notify();
                 }
             });
@@ -662,6 +668,27 @@ fn start_queue_depth_bridge(
                 .await;
             match watch.changed().await {
                 Some(next) => depths = next,
+                None => break,
+            }
+        }
+    })
+    .detach();
+}
+
+fn start_obs_stats_bridge(
+    cx: &mut AsyncApp,
+    home_stats: Entity<HomeStats>,
+    mut watch: forge_obs::ObsStatsWatch,
+) {
+    cx.spawn(async move |cx| {
+        let mut stats = watch.current();
+        loop {
+            home_stats.update(cx, |home, cx| {
+                home.set_obs_stats(stats, time::OffsetDateTime::now_utc());
+                cx.notify();
+            });
+            match watch.changed().await {
+                Some(next) => stats = next,
                 None => break,
             }
         }

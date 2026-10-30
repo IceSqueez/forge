@@ -177,6 +177,33 @@ pub trait SpeakDispatcher: Send + Sync {
         self.speak(text, voice, origin).await
     }
 
+    async fn speak_queued_for_run(
+        &self,
+        text: String,
+        voice: Option<String>,
+        is_reward: bool,
+        origin: SpeechOrigin,
+        run: CancelSignal,
+    ) -> Result<(), SpeakDispatchError> {
+        let _ = run;
+        if is_reward {
+            self.speak_reward_sourced(text, voice, origin).await
+        } else {
+            self.speak(text, voice, origin).await
+        }
+    }
+
+    async fn speak_with_engine_queued_for_run(
+        &self,
+        text: String,
+        engine_id: String,
+        origin: SpeechOrigin,
+        run: CancelSignal,
+    ) -> Result<(), SpeakDispatchError> {
+        let _ = run;
+        self.speak_with_engine(text, engine_id, origin).await
+    }
+
     async fn speak_and_wait(
         &self,
         text: String,

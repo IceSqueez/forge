@@ -116,11 +116,10 @@ impl TriggerKindDescriptor for MidiInputTrigger {
         form.push(FormField::Optional {
             key: config_keys::CHANNEL,
             label: "Channel (leave empty for any)",
-            inner: Box::new(FormField::Integer {
+            inner: Box::new(FormField::OneBasedInteger {
                 key: config_keys::CHANNEL,
                 label: "Channel",
-                min: 0,
-                max: CHANNEL_MAX,
+                count: CHANNEL_MAX + 1,
             }),
         });
         form.push(FormField::Optional {

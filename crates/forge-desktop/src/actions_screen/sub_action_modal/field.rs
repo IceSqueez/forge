@@ -5,10 +5,21 @@ use forge_registry::{CodeKind, CodeLanguage};
 use forge_types::{Variant, normalize_var_name};
 use std::ops::RangeInclusive;
 
+impl InputFlavor {
+    pub(super) fn shown_bounds(&self) -> Option<RangeInclusive<i64>> {
+        match self {
+            Self::Integer(range) => Some(range.clone()),
+            Self::OneBased(count) => Some(1..=*count),
+            Self::Text | Self::File | Self::DateTime | Self::VariableName => None,
+        }
+    }
+}
+
 #[derive(Clone, PartialEq, Eq)]
 pub(super) enum InputFlavor {
     Text,
     Integer(RangeInclusive<i64>),
+    OneBased(i64),
     File,
     DateTime,
     VariableName,
@@ -169,6 +180,10 @@ fn field_value(field: &SubFormField, cx: &App) -> Option<(String, Variant)> {
                 InputFlavor::Integer(_) => {
                     let parsed = text.trim().parse::<i64>().ok()?;
                     Some((key.clone(), Variant::Int(parsed)))
+                }
+                InputFlavor::OneBased(_) => {
+                    let parsed = text.trim().parse::<i64>().ok()?;
+                    Some((key.clone(), Variant::Int(parsed - 1)))
                 }
                 InputFlavor::VariableName => {
                     let name = normalize_var_name(&text).unwrap_or_default();

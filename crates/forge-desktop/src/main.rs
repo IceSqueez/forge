@@ -75,6 +75,7 @@ mod i18n;
 mod import_busy;
 mod in_flight_steps;
 mod instance_lock;
+mod instance_raise;
 mod integration_catalog;
 mod integration_detail;
 mod integration_disable_modal;
@@ -251,6 +252,7 @@ const FLAG_SELECT: &str = "--select";
 const FLAG_HELP: &str = "--help";
 const EXIT_USAGE_ERROR: i32 = 2;
 const EXIT_STARTUP_FAILURE: i32 = 1;
+const EXIT_RAISED_RUNNING_INSTANCE: i32 = 0;
 
 enum StartupRequest {
     Open(Screen),
@@ -449,8 +451,15 @@ fn main() {
         instance_lock::LockOutcome::Acquired(lock) => Some(lock),
         instance_lock::LockOutcome::AlreadyRunning => {
             boot_signal::already_running();
+            let exit_code = match instance_raise::ask_running_instance(&forge_paths::data_dir()) {
+                Ok(()) => EXIT_RAISED_RUNNING_INSTANCE,
+                Err(err) => {
+                    tracing::warn!(error = %err, "running instance could not be raised");
+                    EXIT_STARTUP_FAILURE
+                }
+            };
             drop(log_guard);
-            std::process::exit(EXIT_STARTUP_FAILURE);
+            std::process::exit(exit_code);
         }
         instance_lock::LockOutcome::Unavailable(err) => {
             tracing::warn!(error = %err, "single-instance lock unavailable; starting anyway");
@@ -487,6 +496,13 @@ fn main() {
 
     let guard_handle = rt_handle.clone();
     let rt_guard = guard_handle.enter();
+    let raise_requests = if instance_lock.is_some() {
+        instance_raise::listen(&forge_paths::data_dir())
+            .inspect_err(|err| tracing::warn!(error = %err, "raise endpoint unavailable"))
+            .ok()
+    } else {
+        None
+    };
     let runtime_slot = RuntimeSlot::new(rt);
     let slot_for_app = runtime_slot.clone();
     let exit_handoff = update_exit::ExitHandoff::new(instance_lock);
@@ -505,6 +521,9 @@ fn main() {
         cx.set_global(slot_for_app);
         cx.set_global(boot_restore::BootRestore(restore_outcome));
         cx.set_global(exit_for_app);
+        if let Some(requests) = raise_requests {
+            instance_raise::follow_raise_requests(requests, cx);
+        }
         if let Err(err) = cx
             .text_system()
             .add_fonts(forge_components::embedded_fonts())

@@ -461,7 +461,7 @@ impl HomeView {
     fn health_stat(
         label: String,
         value: String,
-        unit: Option<&'static str>,
+        unit: Option<String>,
         value_color: Rgba,
         palette: &ForgePalette,
         density: Density,
@@ -505,41 +505,28 @@ impl HomeView {
 
     fn render_stream_health(
         &self,
-        health: Option<ObsHealth>,
+        health: ObsHealth,
         palette: &ForgePalette,
         density: Density,
     ) -> impl IntoElement + use<> {
-        let connected = health.is_some();
-        let accent = if connected {
-            palette.success
-        } else {
-            palette.text_faint
+        let (badge_ink, badge_label) = match &health.live_for {
+            Some(live_for) => (palette.success, live_for.clone()),
+            None => (palette.text_faint, tr!("home_health_offline")),
         };
-        let health_icon_color = if connected {
-            palette.success
-        } else {
-            palette.danger
-        };
-        let badge_label = if connected {
-            tr!("home_health_live")
-        } else {
-            tr!("home_health_offline")
-        };
-
         let status_badge = div()
             .flex()
             .items_center()
             .gap(spacing(Spacing::Xxs, density))
-            .child(if connected {
-                pulse_dot("home-health-live-pulse", accent, HEALTH_LIVE_DOT).into_any_element()
+            .child(if health.live_for.is_some() {
+                pulse_dot("home-health-live-pulse", badge_ink, HEALTH_LIVE_DOT).into_any_element()
             } else {
-                status_dot(accent, HEALTH_LIVE_DOT).into_any_element()
+                status_dot(badge_ink, HEALTH_LIVE_DOT).into_any_element()
             })
             .child(
                 div()
                     .font_family(mono_family())
                     .text_size(FONT_XS)
-                    .text_color(accent)
+                    .text_color(badge_ink)
                     .child(badge_label),
             );
 
@@ -547,7 +534,7 @@ impl HomeView {
             .flex()
             .items_center()
             .gap(spacing(Spacing::Xs, density))
-            .child(icon(Icon::ChartLine, HEALTH_ICON, health_icon_color))
+            .child(icon(Icon::ChartLine, HEALTH_ICON, palette.success))
             .child(
                 div()
                     .font_family(body_family())
@@ -571,10 +558,6 @@ impl HomeView {
                     .child(tr!("home_health_refresh_hint")),
             );
 
-        let throughput_data: Vec<f32> = health
-            .as_ref()
-            .map(|h| h.throughput.clone())
-            .unwrap_or_default();
         let throughput = div()
             .flex_1()
             .flex()
@@ -591,34 +574,15 @@ impl HomeView {
                 div()
                     .w_full()
                     .h(px(40.0))
-                    .child(sparkline(&throughput_data, palette.brand)),
+                    .child(sparkline(&health.throughput, palette.brand)),
             );
 
-        let unit = |u: &'static str| if connected { Some(u) } else { None };
-        let bitrate = health
-            .as_ref()
-            .map_or_else(|| "-".to_owned(), |h| h.bitrate.to_string());
-        let (dropped_value, dropped_color) = match &health {
-            Some(h) => {
-                let color = if h.dropped_ok {
-                    palette.success
-                } else {
-                    palette.warning
-                };
-                let value = match &h.dropped_pct {
-                    Some(pct) => format!("{} {}", h.dropped, pct),
-                    None => h.dropped.to_string(),
-                };
-                (value, color)
-            }
-            None => ("-".to_owned(), palette.text_primary),
+        let dropped_color = if health.dropped_ok {
+            palette.success
+        } else {
+            palette.warning
         };
-        let fps = health
-            .as_ref()
-            .map_or_else(|| "-".to_owned(), |h| h.fps.to_string());
-        let cpu = health
-            .as_ref()
-            .map_or_else(|| "-".to_owned(), |h| h.cpu.to_string());
+        let bitrate_unit = health.bitrate_known.then(|| "kbps".to_owned());
 
         let stats_row = div()
             .w_full()
@@ -628,23 +592,23 @@ impl HomeView {
             .child(throughput)
             .child(Self::health_stat(
                 tr!("home_health_bitrate_label"),
-                bitrate,
-                unit("kbps"),
+                health.bitrate,
+                bitrate_unit,
                 palette.text_primary,
                 palette,
                 density,
             ))
             .child(Self::health_stat(
                 tr!("home_health_dropped_label"),
-                dropped_value,
-                None,
+                health.dropped,
+                health.dropped_pct,
                 dropped_color,
                 palette,
                 density,
             ))
             .child(Self::health_stat(
                 tr!("home_health_fps_label"),
-                fps,
+                health.fps,
                 None,
                 palette.text_primary,
                 palette,
@@ -652,8 +616,8 @@ impl HomeView {
             ))
             .child(Self::health_stat(
                 tr!("home_health_cpu_label"),
-                cpu,
-                unit("%"),
+                health.cpu,
+                Some("%".to_owned()),
                 palette.text_primary,
                 palette,
                 density,
@@ -1149,7 +1113,7 @@ impl Render for HomeView {
             .gap(spacing(Spacing::Md, density))
             .child(hero)
             .child(jump_cards)
-            .child(self.render_stream_health(obs_health, &palette, density))
+            .children(obs_health.map(|health| self.render_stream_health(health, &palette, density)))
             .child(loss_card)
             .child(connections_strip)
             .child(bottom);

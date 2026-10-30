@@ -102,6 +102,7 @@ fn descriptor_label(spec: &FormField) -> &'static str {
         | FormField::TextArea { label, .. }
         | FormField::Code { label, .. }
         | FormField::Integer { label, .. }
+        | FormField::OneBasedInteger { label, .. }
         | FormField::Slider { label, .. }
         | FormField::Toggle { label, .. }
         | FormField::FilePicker { label, .. }

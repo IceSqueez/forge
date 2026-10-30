@@ -97,15 +97,17 @@ fn build_input_field(
     palette: ForgePalette,
     cx: &mut Context<EditSubActionForm>,
 ) -> SubFormField {
-    let seed = config
+    let stored = config
         .get(key)
         .map(crate::config_text::editable_line)
         .unwrap_or_default();
-    let is_var = flavor == InputFlavor::VariableName;
-    let integer = match &flavor {
-        InputFlavor::Integer(range) => Some(range.clone()),
-        _ => None,
+    let seed = if matches!(flavor, InputFlavor::OneBased(_)) {
+        crate::config_text::shown_one_based(&stored)
+    } else {
+        stored
     };
+    let is_var = flavor == InputFlavor::VariableName;
+    let integer = flavor.shown_bounds();
     let invalid_seed = if is_var {
         !seed.trim().is_empty() && normalize_var_name(&seed).is_none()
     } else {
@@ -270,6 +272,16 @@ pub(super) fn push_form_field(
                 palette,
                 cx,
             )),
+        FormField::OneBasedInteger { key, count, .. } => out.push(build_input_field(
+            key,
+            &label,
+            INTEGER_PLACEHOLDER.to_owned(),
+            InputFlavor::OneBased(*count),
+            gate,
+            config,
+            palette,
+            cx,
+        )),
         FormField::UnitAmount { key, .. } | FormField::Duration { key, .. } => {
             if let Some(scale) = AmountScale::of(spec) {
                 out.push(build_unit_amount_field(

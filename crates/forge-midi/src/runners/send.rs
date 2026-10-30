@@ -44,6 +44,7 @@ pub(crate) const NOTE: ByteField = ByteField {
     default: MIDDLE_C,
     max: DATA_BYTE_MAX,
     seeds_default: true,
+    shown_one_based: false,
 };
 
 pub(crate) const VELOCITY: ByteField = ByteField {
@@ -52,6 +53,7 @@ pub(crate) const VELOCITY: ByteField = ByteField {
     default: DATA_BYTE_MAX,
     max: DATA_BYTE_MAX,
     seeds_default: true,
+    shown_one_based: false,
 };
 
 const CONTROLLER: ByteField = ByteField {
@@ -60,6 +62,7 @@ const CONTROLLER: ByteField = ByteField {
     default: LOWEST,
     max: DATA_BYTE_MAX,
     seeds_default: false,
+    shown_one_based: false,
 };
 
 const VALUE: ByteField = ByteField {
@@ -68,14 +71,16 @@ const VALUE: ByteField = ByteField {
     default: LOWEST,
     max: DATA_BYTE_MAX,
     seeds_default: false,
+    shown_one_based: false,
 };
 
 const CHANNEL: ByteField = ByteField {
     key: send::CHANNEL,
-    label: "Channel (0-15)",
+    label: "Channel (1-16)",
     default: LOWEST,
     max: CHANNEL_MAX,
     seeds_default: true,
+    shown_one_based: true,
 };
 
 const CONFIG: ConfigSpec = ConfigSpec::new(&[

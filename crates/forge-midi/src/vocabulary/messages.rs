@@ -178,8 +178,8 @@ pub(crate) fn condition_direction(direction: &str) -> MessageRef {
         .with_arg(DIRECTION_CONDITION_ARG, VerbatimText::new(direction))
 }
 
-pub(crate) fn condition_channel(channel: i64) -> MessageRef {
-    MessageRef::new(CONDITION_CHANNEL).with_arg(CHANNEL_CONDITION_ARG, channel)
+pub(crate) fn condition_channel(stored_channel: i64) -> MessageRef {
+    MessageRef::new(CONDITION_CHANNEL).with_arg(CHANNEL_CONDITION_ARG, stored_channel + 1)
 }
 
 #[cfg(test)]

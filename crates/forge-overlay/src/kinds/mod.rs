@@ -24,8 +24,6 @@ pub fn register_builtin_kinds(reg: &mut OverlayKindRegistry) -> Result<(), Overl
 mod tests {
     use std::collections::BTreeSet;
 
-    use forge_registry::FormField;
-
     use super::*;
     use crate::config::{
         ELEMENT_HEIGHT, ELEMENT_WIDTH, effective_overlay_config, validate_overlay_config,
@@ -44,28 +42,6 @@ mod tests {
         let mut reg = OverlayKindRegistry::new();
         register_builtin_kinds(&mut reg).expect("register the builtin kinds");
         reg
-    }
-
-    fn field_key(field: &FormField) -> &'static str {
-        match field {
-            FormField::Text { key, .. }
-            | FormField::TextArea { key, .. }
-            | FormField::Code { key, .. }
-            | FormField::Integer { key, .. }
-            | FormField::Slider { key, .. }
-            | FormField::Toggle { key, .. }
-            | FormField::FilePicker { key, .. }
-            | FormField::DateTime { key, .. }
-            | FormField::Select { key, .. }
-            | FormField::UnitAmount { key, .. }
-            | FormField::Duration { key, .. }
-            | FormField::DynamicSelect { key, .. }
-            | FormField::DependentSelect { key, .. }
-            | FormField::Swatch { key, .. }
-            | FormField::Optional { key, .. }
-            | FormField::SubChain { key, .. }
-            | FormField::CaseList { key, .. } => key,
-        }
     }
 
     #[test]
@@ -94,7 +70,7 @@ mod tests {
             let declared: BTreeSet<&str> = descriptor
                 .config_fields()
                 .iter()
-                .map(|f| field_key(&f.field))
+                .map(|f| f.field.key())
                 .collect();
             let defaults = descriptor.default_config();
             let defaulted: BTreeSet<&str> = defaults.keys().map(String::as_str).collect();

@@ -1,12 +1,15 @@
 use std::collections::HashMap;
 
 use forge_events::Event;
-use forge_runtime::{QueueDepth, QueueDepths, QueueMode, QueueModeChanged};
+use forge_runtime::{
+    QueueDepth, QueueDepths, QueueMode, QueueModeChanged, QueueRunning, RunningAction,
+};
 use forge_types::QueueId;
 
 pub struct QueueHealth {
     modes: HashMap<QueueId, QueueMode>,
     depths: QueueDepths,
+    running: QueueRunning,
 }
 
 impl QueueHealth {
@@ -14,6 +17,7 @@ impl QueueHealth {
         Self {
             modes: HashMap::new(),
             depths: QueueDepths::new(),
+            running: QueueRunning::new(),
         }
     }
 
@@ -28,6 +32,18 @@ impl QueueHealth {
 
     pub fn depth(&self, id: QueueId) -> Option<QueueDepth> {
         self.depths.get(&id).copied()
+    }
+
+    pub fn apply_running(&mut self, running: QueueRunning) -> bool {
+        if self.running == running {
+            return false;
+        }
+        self.running = running;
+        true
+    }
+
+    pub fn running(&self, id: QueueId) -> &[RunningAction] {
+        self.running.get(&id).map_or(&[], Vec::as_slice)
     }
 
     pub fn apply_event(&mut self, event: &Event) -> bool {
@@ -174,5 +190,44 @@ mod tests {
             (health.mode(kept), health.mode(removed)),
             (Some(QueueMode::PAUSED), None)
         );
+    }
+
+    fn run() -> RunningAction {
+        RunningAction {
+            action_id: forge_types::ActionId::new(),
+            started_at: std::time::Instant::now(),
+        }
+    }
+
+    #[test]
+    fn only_a_different_running_list_reports_a_change() {
+        let id = QueueId::new();
+        let mut health = QueueHealth::new();
+        let busy = QueueRunning::from([(id, vec![run()])]);
+
+        assert!(
+            health.apply_running(busy.clone()),
+            "the first run is a change"
+        );
+        assert!(
+            !health.apply_running(busy),
+            "a repeated list must not request a repaint"
+        );
+        assert!(
+            health.apply_running(QueueRunning::new()),
+            "the run ending is a change"
+        );
+    }
+
+    #[test]
+    fn running_lists_each_queues_own_runs_and_nothing_for_an_unknown_queue() {
+        let (id, other) = (QueueId::new(), QueueId::new());
+        let started = run();
+        let mut health = QueueHealth::new();
+
+        health.apply_running(QueueRunning::from([(id, vec![started])]));
+
+        assert_eq!(health.running(id), [started]);
+        assert!(health.running(other).is_empty());
     }
 }

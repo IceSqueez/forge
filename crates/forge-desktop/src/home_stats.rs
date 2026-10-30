@@ -1,6 +1,9 @@
+use std::collections::VecDeque;
+
 use crate::platform_visuals::platform_color;
-use forge_components::{ForgePalette, fmt_number};
+use forge_components::{ForgePalette, fmt_number, fmt_uptime, tr};
 use forge_events::{Event, EventSource};
+use forge_obs::ObsStreamStats;
 use forge_runtime::{LiveViewerCount, dashboard::DashboardStats};
 use forge_types::{IntegrationId, PlatformId};
 use gpui::{Rgba, SharedString};
@@ -128,15 +131,87 @@ impl HomeEvent {
     }
 }
 
-#[derive(Clone, Debug)]
+const THROUGHPUT_WINDOW_SECS: i64 = 60;
+const HEALTHY_DROPPED_PERCENT: f64 = 1.0;
+const PERCENT_SCALE: f64 = 100.0;
+const NO_READING: &str = "-";
+
+#[derive(Default)]
+struct ThroughputWindow {
+    seconds: VecDeque<(i64, u32)>,
+}
+
+impl ThroughputWindow {
+    fn record(&mut self, second: i64) {
+        if let Some(bucket) = self.seconds.iter_mut().rev().find(|(at, _)| *at == second) {
+            bucket.1 += 1;
+            return;
+        }
+        let position = self.seconds.partition_point(|(at, _)| *at < second);
+        self.seconds.insert(position, (second, 1));
+        let newest = self.seconds.back().map_or(second, |(at, _)| *at);
+        while self
+            .seconds
+            .front()
+            .is_some_and(|(at, _)| newest - *at >= THROUGHPUT_WINDOW_SECS)
+        {
+            self.seconds.pop_front();
+        }
+    }
+
+    fn samples(&self, now_second: i64) -> Vec<f32> {
+        let oldest = now_second - THROUGHPUT_WINDOW_SECS + 1;
+        (oldest..=now_second)
+            .map(|second| {
+                self.seconds
+                    .iter()
+                    .find(|(at, _)| *at == second)
+                    .map_or(0.0, |(_, count)| *count as f32)
+            })
+            .collect()
+    }
+}
+
+#[derive(Clone, Debug, PartialEq)]
 pub struct ObsHealth {
-    pub bitrate: SharedString,
-    pub dropped: SharedString,
-    pub dropped_pct: Option<SharedString>,
+    pub live_for: Option<String>,
+    pub bitrate: String,
+    pub bitrate_known: bool,
+    pub dropped: String,
+    pub dropped_pct: Option<String>,
     pub dropped_ok: bool,
-    pub fps: SharedString,
-    pub cpu: SharedString,
+    pub fps: String,
+    pub cpu: String,
     pub throughput: Vec<f32>,
+}
+
+impl ObsHealth {
+    fn from_stats(stats: ObsStreamStats, throughput: Vec<f32>) -> Self {
+        let live = stats.stream_active;
+        let dropped_share = (live && stats.total_frames > 0)
+            .then(|| stats.dropped_frames as f64 / stats.total_frames as f64 * PERCENT_SCALE);
+        Self {
+            live_for: live.then(|| {
+                let duration = fmt_uptime(stats.stream_duration.unwrap_or_default().as_secs());
+                tr!("home_health_live_for", duration = duration.as_str())
+            }),
+            bitrate: stats.bitrate_kbps.filter(|_| live).map_or_else(
+                || NO_READING.to_owned(),
+                |kbps| fmt_number(f64::from(kbps), 0),
+            ),
+            bitrate_known: live && stats.bitrate_kbps.is_some(),
+            dropped: if live {
+                stats.dropped_frames.to_string()
+            } else {
+                NO_READING.to_owned()
+            },
+            dropped_pct: dropped_share.map(|share| format!("{}%", fmt_number(share, 2))),
+            dropped_ok: dropped_share.is_none_or(|share| share < HEALTHY_DROPPED_PERCENT),
+            fps: fmt_number(stats.fps, 1),
+            cpu: fmt_number(stats.cpu_percent, 1),
+            throughput,
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -160,6 +235,7 @@ pub struct HomeStats {
     globals_count: Option<usize>,
     connections: Vec<(Integration, bool)>,
     obs_health: Option<ObsHealth>,
+    throughput: ThroughputWindow,
     recent_events: Vec<HomeEvent>,
 }
 
@@ -181,11 +257,18 @@ impl HomeStats {
             globals_count: None,
             connections,
             obs_health: None,
+            throughput: ThroughputWindow::default(),
             recent_events: Vec::new(),
         }
     }
 
+    pub fn set_obs_stats(&mut self, stats: Option<ObsStreamStats>, now: OffsetDateTime) {
+        let samples = self.throughput.samples(now.unix_timestamp());
+        self.obs_health = stats.map(|stats| ObsHealth::from_stats(stats, samples));
+    }
+
     pub fn record_event(&mut self, event: &Event, typed: Option<&RuntimeEvent>) -> bool {
+        self.throughput.record(event.timestamp.unix_timestamp());
         let Some(home_event) = HomeEvent::from_event(event, typed) else {
             return false;
         };
@@ -405,5 +488,177 @@ mod tests {
 
             assert_eq!(tally.warn(), warn, "{case}");
         }
+    }
+
+    const NOW: i64 = 1_000;
+    const WINDOW: usize = THROUGHPUT_WINDOW_SECS as usize;
+
+    fn window_of(seconds: &[i64]) -> ThroughputWindow {
+        let mut window = ThroughputWindow::default();
+        for second in seconds {
+            window.record(*second);
+        }
+        window
+    }
+
+    fn live(dropped_frames: u64, total_frames: u64) -> ObsStreamStats {
+        ObsStreamStats {
+            stream_active: true,
+            dropped_frames,
+            total_frames,
+            ..ObsStreamStats::default()
+        }
+    }
+
+    #[test]
+    fn out_of_order_events_land_in_the_second_they_happened() {
+        let window = window_of(&[NOW - 2, NOW, NOW - 1, NOW - 1, NOW - 2, NOW - 2]);
+
+        assert_eq!(window.samples(NOW)[WINDOW - 3..], [3.0, 2.0, 1.0]);
+    }
+
+    #[test]
+    fn the_window_keeps_fifty_nine_seconds_behind_the_newest_event_and_prunes_older() {
+        let at_the_edge = window_of(&[NOW - 59, NOW]);
+        let past_the_edge = window_of(&[NOW - 60, NOW]);
+        let arriving_too_late = window_of(&[NOW, NOW - 60]);
+
+        assert_eq!(at_the_edge.seconds.front().copied(), Some((NOW - 59, 1)));
+        assert_eq!(past_the_edge.seconds.front().copied(), Some((NOW, 1)));
+        assert_eq!(arriving_too_late.seconds.len(), 1);
+    }
+
+    #[test]
+    fn samples_cover_sixty_seconds_ending_at_now() {
+        let samples = window_of(&[NOW - 59, NOW]).samples(NOW);
+
+        assert_eq!(samples.len(), WINDOW);
+        assert_eq!(
+            (samples[0], samples[WINDOW - 1], samples.iter().sum::<f32>()),
+            (1.0, 1.0, 2.0)
+        );
+    }
+
+    #[test]
+    fn samples_leave_out_seconds_outside_the_sixty_ending_at_now() {
+        let too_old = window_of(&[NOW - 60, NOW - 1]).samples(NOW);
+        let still_ahead = window_of(&[NOW, NOW + 1]).samples(NOW);
+
+        assert_eq!(too_old.iter().sum::<f32>(), 1.0);
+        assert_eq!(still_ahead.iter().sum::<f32>(), 1.0);
+    }
+
+    #[test]
+    fn an_empty_window_still_yields_sixty_zero_samples() {
+        assert_eq!(ThroughputWindow::default().samples(NOW), vec![0.0; WINDOW]);
+    }
+
+    #[test]
+    fn a_live_stream_reports_every_reading_with_its_units() {
+        crate::i18n::install_language(forge_storage::Language::En);
+        let stats = ObsStreamStats {
+            stream_active: true,
+            stream_duration: Some(std::time::Duration::from_secs(3_725)),
+            bitrate_kbps: Some(600),
+            dropped_frames: 5,
+            total_frames: 1_000,
+            fps: 59.94,
+            cpu_percent: 12.5,
+        };
+
+        let mut health = ObsHealth::from_stats(stats, vec![1.0]);
+        health.live_for = health
+            .live_for
+            .map(|live_for| live_for.replace(['\u{2068}', '\u{2069}'], ""));
+
+        assert_eq!(
+            health,
+            ObsHealth {
+                live_for: Some("LIVE 1h 2m".to_owned()),
+                bitrate: "600".to_owned(),
+                bitrate_known: true,
+                dropped: "5".to_owned(),
+                dropped_pct: Some("0.50%".to_owned()),
+                dropped_ok: true,
+                fps: "59.9".to_owned(),
+                cpu: "12.5".to_owned(),
+                throughput: vec![1.0],
+            }
+        );
+    }
+
+    #[test]
+    fn a_stream_that_is_not_live_hides_its_stream_readings_and_keeps_the_app_ones() {
+        crate::i18n::install_language(forge_storage::Language::En);
+        let stats = ObsStreamStats {
+            dropped_frames: 90,
+            total_frames: 100,
+            fps: 30.0,
+            cpu_percent: 2.0,
+            ..ObsStreamStats::default()
+        };
+
+        assert_eq!(
+            ObsHealth::from_stats(stats, Vec::new()),
+            ObsHealth {
+                live_for: None,
+                bitrate: "-".to_owned(),
+                bitrate_known: false,
+                dropped: "-".to_owned(),
+                dropped_pct: None,
+                dropped_ok: true,
+                fps: "30.0".to_owned(),
+                cpu: "2.0".to_owned(),
+                throughput: Vec::new(),
+            }
+        );
+    }
+
+    #[test]
+    fn a_dropped_share_stops_being_healthy_at_one_percent() {
+        crate::i18n::install_language(forge_storage::Language::En);
+        for (dropped, healthy) in [(99, true), (100, false), (101, false)] {
+            let health = ObsHealth::from_stats(live(dropped, 10_000), Vec::new());
+
+            assert_eq!(health.dropped_ok, healthy, "{dropped} of 10000");
+        }
+    }
+
+    #[test]
+    fn a_live_stream_with_no_frames_yet_has_no_dropped_share() {
+        crate::i18n::install_language(forge_storage::Language::En);
+
+        let health = ObsHealth::from_stats(live(0, 0), Vec::new());
+
+        assert_eq!((health.dropped_pct, health.dropped_ok), (None, true));
+    }
+
+    #[test]
+    fn losing_the_stats_clears_the_health_card() {
+        crate::i18n::install_language(forge_storage::Language::En);
+        let mut stats = HomeStats::new();
+        let now = OffsetDateTime::UNIX_EPOCH;
+        stats.set_obs_stats(Some(live(0, 0)), now);
+        assert!(stats.obs_health.is_some());
+
+        stats.set_obs_stats(None, now);
+
+        assert_eq!(stats.obs_health, None);
+    }
+
+    #[test]
+    fn the_health_card_carries_the_recent_throughput() {
+        crate::i18n::install_language(forge_storage::Language::En);
+        let mut stats = HomeStats::new();
+        let now = OffsetDateTime::UNIX_EPOCH + time::Duration::seconds(NOW);
+        stats.throughput.record(NOW);
+
+        stats.set_obs_stats(Some(live(0, 0)), now);
+
+        let throughput = stats.obs_health.map(|health| health.throughput);
+        assert_eq!(
+            throughput.and_then(|samples| samples.last().copied()),
+            Some(1.0)
+        );
     }
 }

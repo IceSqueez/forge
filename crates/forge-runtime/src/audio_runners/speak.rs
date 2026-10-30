@@ -153,10 +153,10 @@ impl SubActionRunner for SpeakRunner {
             self.speak
                 .speak_and_wait(text, voice, is_reward, origin, ctx.cancel.clone())
                 .await
-        } else if is_reward {
-            self.speak.speak_reward_sourced(text, voice, origin).await
         } else {
-            self.speak.speak(text, voice, origin).await
+            self.speak
+                .speak_queued_for_run(text, voice, is_reward, origin, ctx.cancel.clone())
+                .await
         };
 
         (
@@ -602,5 +602,55 @@ mod tests {
     fn validate_config_accepts_nonempty_text() {
         let runner = SpeakRunner::new(Arc::new(FailSpeaker));
         assert!(runner.validate_config(&config("hello", true)).is_ok());
+    }
+
+    #[derive(Default)]
+    struct RunScoped {
+        queued: Mutex<Option<(bool, forge_registry::CancelSignal)>>,
+    }
+
+    #[async_trait]
+    impl SpeakDispatcher for RunScoped {
+        async fn speak(
+            &self,
+            _text: String,
+            _voice_id_override: Option<String>,
+            _origin: SpeechOrigin,
+        ) -> Result<(), SpeakDispatchError> {
+            panic!("a queued step must stay tied to its run");
+        }
+
+        async fn speak_queued_for_run(
+            &self,
+            _text: String,
+            _voice: Option<String>,
+            is_reward: bool,
+            _origin: SpeechOrigin,
+            run: forge_registry::CancelSignal,
+        ) -> Result<(), SpeakDispatchError> {
+            *self.queued.lock().unwrap() = Some((is_reward, run));
+            Ok(())
+        }
+    }
+
+    #[tokio::test]
+    async fn a_step_that_does_not_wait_hands_its_run_signal_to_the_queue() {
+        for (stack, is_reward) in [
+            (chat_stack(), false),
+            (
+                chat_stack().set("reward.id".to_owned(), Variant::String("r-1".to_owned())),
+                true,
+            ),
+        ] {
+            let speaker = Arc::new(RunScoped::default());
+            let runner = SpeakRunner::new(speaker.clone());
+            let ctx = make_ctx(&stack);
+
+            runner.execute(&config("hi", false), &ctx).await;
+            ctx.cancel.cancel();
+
+            let (reward, run) = speaker.queued.lock().unwrap().take().unwrap();
+            assert_eq!((reward, run.is_cancelled()), (is_reward, true));
+        }
     }
 }

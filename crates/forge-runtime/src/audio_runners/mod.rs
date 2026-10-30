@@ -621,4 +621,58 @@ mod tests {
             );
         }
     }
+
+    #[derive(Default)]
+    struct RunScopedEngine {
+        queued: Mutex<Option<forge_registry::CancelSignal>>,
+    }
+
+    #[async_trait]
+    impl SpeakDispatcher for RunScopedEngine {
+        async fn speak(
+            &self,
+            _text: String,
+            _voice_id_override: Option<String>,
+            _origin: SpeechOrigin,
+        ) -> Result<(), SpeakDispatchError> {
+            panic!("a queued step must stay tied to its run");
+        }
+
+        async fn speak_with_engine_queued_for_run(
+            &self,
+            _text: String,
+            _engine_id: String,
+            _origin: SpeechOrigin,
+            run: forge_registry::CancelSignal,
+        ) -> Result<(), SpeakDispatchError> {
+            *self.queued.lock().unwrap() = Some(run);
+            Ok(())
+        }
+    }
+
+    #[tokio::test]
+    async fn an_engine_step_that_does_not_wait_hands_its_run_signal_to_the_queue() {
+        let speaker = Arc::new(RunScopedEngine::default());
+        let runner = SpeakWithEngineRunner::new(speaker.clone());
+        let stack = ArgStack::new();
+        let ctx = make_ctx(&stack);
+        let cfg = config(&[
+            ("text", Variant::String("hi".to_owned())),
+            ("engine_id", Variant::String("azure".to_owned())),
+            ("wait_for_completion", Variant::Bool(false)),
+        ]);
+
+        runner.execute(&cfg, &ctx).await;
+        ctx.cancel.cancel();
+
+        assert!(
+            speaker
+                .queued
+                .lock()
+                .unwrap()
+                .take()
+                .unwrap()
+                .is_cancelled()
+        );
+    }
 }

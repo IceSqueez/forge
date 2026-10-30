@@ -9,6 +9,7 @@ use gpui::Rgba;
 
 const MIDI_NOTE_MAX: i64 = 127;
 const SEMITONES_PER_OCTAVE: i64 = 12;
+pub const MIDI_CHANNELS: i64 = 16;
 const NOTE_NAMES: [&str; SEMITONES_PER_OCTAVE as usize] = [
     "C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B",
 ];
@@ -18,6 +19,14 @@ pub fn note_name(note: i64) -> String {
     let octave = clamped / SEMITONES_PER_OCTAVE - 1;
     let name = NOTE_NAMES[(clamped % SEMITONES_PER_OCTAVE) as usize];
     format!("{name}{octave}")
+}
+
+pub fn shown_channel(stored: i64) -> i64 {
+    stored.saturating_add(1)
+}
+
+pub fn stored_channel(shown: i64) -> i64 {
+    shown - 1
 }
 
 pub fn selector_key(kind_id: &str) -> Option<&'static str> {
@@ -137,7 +146,7 @@ impl MidiSignal {
 
     pub fn channel_label(&self) -> String {
         let value = match self.channel {
-            Some(channel) => channel.to_string(),
+            Some(channel) => shown_channel(channel).to_string(),
             None => tr!("midi_value_any"),
         };
         format!("ch {value}")
@@ -364,7 +373,11 @@ mod tests {
 
     #[test]
     fn channel_label_renders_the_channel_number_and_a_placeholder_for_any() {
-        assert_eq!(signal(NOTE_ON, None, Some(0), None).channel_label(), "ch 0");
+        assert_eq!(signal(NOTE_ON, None, Some(0), None).channel_label(), "ch 1");
+        assert_eq!(
+            signal(NOTE_ON, None, Some(15), None).channel_label(),
+            "ch 16"
+        );
 
         let any = signal(NOTE_ON, None, None, None).channel_label();
         assert!(any.starts_with("ch "), "{any} lost its prefix");

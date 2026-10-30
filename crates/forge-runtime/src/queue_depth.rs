@@ -1,7 +1,8 @@
 use std::collections::HashMap;
 use std::sync::Arc;
+use std::time::Instant;
 
-use forge_types::QueueId;
+use forge_types::{ActionId, QueueId};
 use tokio::sync::watch;
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -13,9 +14,18 @@ pub struct QueueDepth {
 
 pub type QueueDepths = HashMap<QueueId, QueueDepth>;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct RunningAction {
+    pub action_id: ActionId,
+    pub started_at: Instant,
+}
+
+pub type QueueRunning = HashMap<QueueId, Vec<RunningAction>>;
+
 #[derive(Default)]
 struct Board {
     depths: QueueDepths,
+    running: QueueRunning,
     epochs: HashMap<QueueId, u64>,
     next_epoch: u64,
 }
@@ -27,6 +37,10 @@ pub struct QueueDepthWatch {
 impl QueueDepthWatch {
     pub fn current(&self) -> QueueDepths {
         self.board.borrow().depths.clone()
+    }
+
+    pub fn running(&self) -> QueueRunning {
+        self.board.borrow().running.clone()
     }
 
     pub async fn changed(&mut self) -> Option<QueueDepths> {
@@ -60,6 +74,7 @@ impl DepthBoard {
             board.next_epoch = board.next_epoch.wrapping_add(1);
             board.epochs.insert(id, epoch);
             board.depths.insert(id, QueueDepth::default());
+            board.running.remove(&id);
         });
         DepthCell {
             id,
@@ -71,6 +86,7 @@ impl DepthBoard {
     pub(crate) fn deregister(&self, id: &QueueId) {
         self.board.send_if_modified(|board| {
             board.epochs.remove(id);
+            board.running.remove(id);
             board.depths.remove(id).is_some()
         });
     }
@@ -95,6 +111,24 @@ impl DepthCell {
             let before = *depth;
             apply(depth);
             *depth != before
+        });
+    }
+
+    pub(crate) fn publish_running(&self, running: Vec<RunningAction>) {
+        self.board.send_if_modified(|board| {
+            if board.epochs.get(&self.id) != Some(&self.epoch) {
+                return false;
+            }
+            let Some(depth) = board.depths.get_mut(&self.id) else {
+                return false;
+            };
+            let published = board.running.get(&self.id).map_or(&[][..], Vec::as_slice);
+            if depth.in_flight == running.len() && published == running {
+                return false;
+            }
+            depth.in_flight = running.len();
+            board.running.insert(self.id, running);
+            true
         });
     }
 }
@@ -185,5 +219,109 @@ mod tests {
         drop(board);
 
         assert!(watch.changed().await.is_none());
+    }
+
+    fn run() -> RunningAction {
+        RunningAction {
+            action_id: ActionId::new(),
+            started_at: Instant::now(),
+        }
+    }
+
+    #[test]
+    fn publishing_the_running_list_keeps_the_in_flight_depth_in_step() {
+        let board = DepthBoard::new();
+        let id = QueueId::new();
+        let cell = board.register(id);
+        let runs = vec![run(), run()];
+
+        cell.publish_running(runs.clone());
+
+        let watch = board.watch();
+        assert_eq!(
+            (
+                watch.current().get(&id).map(|depth| depth.in_flight),
+                watch.running().get(&id).cloned(),
+            ),
+            (Some(2), Some(runs))
+        );
+    }
+
+    #[test]
+    fn a_stale_registration_cannot_publish_runs_or_wake_a_watcher() {
+        let board = DepthBoard::new();
+        let id = QueueId::new();
+        let stale = board.register(id);
+        let fresh = board.register(id);
+        let live = run();
+        fresh.publish_running(vec![live]);
+        let mut watch = board.watch();
+
+        stale.publish_running(vec![run(), run()]);
+
+        assert_eq!(
+            (
+                watch.running().get(&id).cloned(),
+                watch.current().get(&id).map(|depth| depth.in_flight),
+                watch.changed().now_or_never().is_none(),
+            ),
+            (Some(vec![live]), Some(1), true)
+        );
+    }
+
+    #[test]
+    fn republishing_the_same_runs_wakes_no_watcher() {
+        let board = DepthBoard::new();
+        let cell = board.register(QueueId::new());
+        let mut idle = board.watch();
+        cell.publish_running(Vec::new());
+        assert!(
+            idle.changed().now_or_never().is_none(),
+            "an idle queue reporting no runs is not a change"
+        );
+
+        let runs = vec![run()];
+        cell.publish_running(runs.clone());
+        let mut watch = board.watch();
+        cell.publish_running(runs);
+
+        assert!(watch.changed().now_or_never().is_none());
+    }
+
+    #[tokio::test]
+    async fn swapping_one_run_for_another_wakes_the_watcher_at_the_same_depth() {
+        let board = DepthBoard::new();
+        let id = QueueId::new();
+        let cell = board.register(id);
+        cell.publish_running(vec![run()]);
+        let mut watch = board.watch();
+        let next = run();
+
+        cell.publish_running(vec![next]);
+
+        assert!(watch.changed().await.is_some());
+        assert_eq!(watch.running().get(&id).cloned(), Some(vec![next]));
+    }
+
+    #[test]
+    fn leaving_or_rejoining_the_board_forgets_the_runs() {
+        for rejoin in [false, true] {
+            let board = DepthBoard::new();
+            let id = QueueId::new();
+            let cell = board.register(id);
+            cell.publish_running(vec![run()]);
+
+            if rejoin {
+                let _fresh = board.register(id);
+            } else {
+                board.deregister(&id);
+            }
+            cell.publish_running(vec![run()]);
+
+            assert!(
+                !board.watch().running().contains_key(&id),
+                "rejoin={rejoin}"
+            );
+        }
     }
 }

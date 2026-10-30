@@ -6,7 +6,6 @@ use forge_overlay::{
     BEHAVIOR_FILE, ConfigSection, OverlayKindRegistry, RESERVED_DIRECTORY, RUNTIME_ASSET,
     STYLE_FILE, register_builtin_kinds,
 };
-use forge_registry::FormField;
 
 const ALERT_KIND: &str = "overlay.alert";
 const ICON_BOX_MARKER: &str = "class=\"icon\"";
@@ -15,28 +14,6 @@ fn registry() -> OverlayKindRegistry {
     let mut reg = OverlayKindRegistry::new();
     register_builtin_kinds(&mut reg).expect("the builtin overlay kinds register");
     reg
-}
-
-fn field_key(field: &FormField) -> &'static str {
-    match field {
-        FormField::Text { key, .. }
-        | FormField::TextArea { key, .. }
-        | FormField::Code { key, .. }
-        | FormField::Integer { key, .. }
-        | FormField::Slider { key, .. }
-        | FormField::Toggle { key, .. }
-        | FormField::FilePicker { key, .. }
-        | FormField::DateTime { key, .. }
-        | FormField::Select { key, .. }
-        | FormField::UnitAmount { key, .. }
-        | FormField::Duration { key, .. }
-        | FormField::DynamicSelect { key, .. }
-        | FormField::DependentSelect { key, .. }
-        | FormField::Swatch { key, .. }
-        | FormField::Optional { key, .. }
-        | FormField::SubChain { key, .. }
-        | FormField::CaseList { key, .. } => key,
-    }
 }
 
 fn quoted_after(source: &str, marker: &str) -> Vec<String> {
@@ -93,7 +70,7 @@ fn a_page_binds_config_keys_its_own_form_declares_and_binds_none_when_it_draws_n
         let declared: BTreeSet<&str> = descriptor
             .config_fields()
             .iter()
-            .map(|field| field_key(&field.field))
+            .map(|field| field.field.key())
             .collect();
         let bindings = quoted_after(descriptor.page_assets().markup, "data-bind=\"");
 
@@ -121,7 +98,7 @@ fn a_page_reads_config_members_its_own_form_declares_and_reads_none_when_it_draw
         let declared: BTreeSet<&str> = descriptor
             .config_fields()
             .iter()
-            .map(|field| field_key(&field.field))
+            .map(|field| field.field.key())
             .collect();
         let behavior = without_line_comments(descriptor.page_assets().behavior);
         let members = members_after(&behavior, "config.");
@@ -168,7 +145,7 @@ fn a_look_that_draws_no_page_adds_no_style_or_behavior_field_of_its_own() {
                 ConfigSection::Content,
                 "{} declares {} outside its content group, which nothing on a silent page reads",
                 descriptor.id(),
-                field_key(&sectioned.field)
+                sectioned.field.key()
             );
         }
     }

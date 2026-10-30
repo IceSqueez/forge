@@ -179,6 +179,7 @@ home_card_connections_hint = Керуйте платформами, застос
 
 home_health_title = Стан стріму
 home_health_live = ЖИВИЙ
+home_health_live_for = ЖИВИЙ { $duration }
 home_health_offline = офлайн
 home_health_refresh_hint = остання хвилина · автооновлення
 home_health_throughput_label = ПРОПУСКНА ЗДАТНІСТЬ · под/с
@@ -1847,7 +1848,8 @@ queues_metric_held = заблоковано
 queues_running_now_header = ВИКОНУЄТЬСЯ ЗАРАЗ
 queues_no_actions_running = Дій не виконується
 queues_running_count = { $count } дій виконується
-queues_running_label = виконується
+queues_running_for = виконується { $elapsed }
+queues_elapsed_ms = { $ms } мс
 
 ## Черги - бейдж статусу
 
@@ -2272,6 +2274,7 @@ globals_stat_total = усього
 globals_stat_persisted = збережено
 globals_stat_in_memory = у пам'яті
 globals_empty_caption = Немає змінних за цим фільтром.
+globals_empty_none = Змінних ще немає. Створіть першу через Нова змінна.
 globals_col_modified = ЗМІНЕНО
 globals_col_reads_writes = ЧИТАНЬ · ЗАПИСІВ
 globals_col_persist = ЗБЕРІГАТИ

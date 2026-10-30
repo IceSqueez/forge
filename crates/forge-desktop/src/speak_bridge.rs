@@ -106,11 +106,83 @@ impl SpeakBridge {
             .map_err(SpeakDispatchError::from)
     }
 
+    async fn withdraw_unfinished(
+        &self,
+        withdrawal: SpeakCommand,
+        outcome: Result<(), SpeakDispatchError>,
+    ) -> Result<(), SpeakDispatchError> {
+        if outcome.is_err()
+            && let Err(error) = self.dispatch(withdrawal).await
+        {
+            tracing::warn!(error = %error, "abandoned speech could not be withdrawn");
+        }
+        outcome
+    }
+
+    fn withdraw_when_run_stops(
+        &self,
+        mut events: broadcast::Receiver<SpeakEvent>,
+        request_id: RequestId,
+        run: CancelSignal,
+    ) {
+        let handle = Arc::clone(&self.handle);
+        tokio::spawn(async move {
+            tokio::select! {
+                () = speech_left_queue(&mut events, &request_id) => {}
+                () = run.cancelled() => {
+                    if let Err(error) = handle.send(SpeakCommand::RemoveQueued(request_id)).await {
+                        tracing::warn!(%error, "stopped run's speech could not be withdrawn");
+                    }
+                }
+            }
+        });
+    }
+
     async fn dispatch(&self, cmd: SpeakCommand) -> Result<(), SpeakDispatchError> {
         self.handle
             .send(cmd)
             .await
             .map_err(|e| SpeakDispatchError::Dispatch(messages::queue_failure(&e)))
+    }
+}
+
+fn speech_left_queue_event(event: &SpeakEvent, id: &RequestId) -> bool {
+    match event {
+        SpeakEvent::Started { request_id, .. }
+        | SpeakEvent::Finished { request_id }
+        | SpeakEvent::Failed { request_id, .. }
+        | SpeakEvent::Skipped { request_id, .. }
+        | SpeakEvent::Removed { request_id }
+        | SpeakEvent::Rejected { request_id, .. } => request_id == id,
+        _ => false,
+    }
+}
+
+async fn speech_left_queue(events: &mut broadcast::Receiver<SpeakEvent>, id: &RequestId) {
+    loop {
+        match events.recv().await {
+            Ok(event) if speech_left_queue_event(&event, id) => return,
+            Ok(_) => {}
+            Err(RecvError::Closed) => return,
+            Err(RecvError::Lagged(_)) => {
+                let bounded = tokio::time::timeout(
+                    SPEAK_WAIT_HARD_CAP,
+                    speech_left_queue_after_lag(events, id),
+                );
+                drop(bounded.await);
+                return;
+            }
+        }
+    }
+}
+
+async fn speech_left_queue_after_lag(events: &mut broadcast::Receiver<SpeakEvent>, id: &RequestId) {
+    loop {
+        match events.recv().await {
+            Ok(event) if speech_left_queue_event(&event, id) => return,
+            Err(RecvError::Closed) => return,
+            Ok(_) | Err(RecvError::Lagged(_)) => {}
+        }
     }
 }
 
@@ -222,6 +294,38 @@ impl SpeakDispatcher for SpeakBridge {
             .map(|_| ())
     }
 
+    async fn speak_queued_for_run(
+        &self,
+        text: String,
+        voice: Option<String>,
+        is_reward: bool,
+        origin: SpeechOrigin,
+        run: CancelSignal,
+    ) -> Result<(), SpeakDispatchError> {
+        let (engine, voice) = self.dispatch_voice_overrides(voice.as_deref())?;
+        let events = self.handle.subscribe();
+        let request_id = self
+            .enqueue(text, engine, voice, is_reward, None, origin)
+            .await?;
+        self.withdraw_when_run_stops(events, request_id, run);
+        Ok(())
+    }
+
+    async fn speak_with_engine_queued_for_run(
+        &self,
+        text: String,
+        engine_id: String,
+        origin: SpeechOrigin,
+        run: CancelSignal,
+    ) -> Result<(), SpeakDispatchError> {
+        let events = self.handle.subscribe();
+        let request_id = self
+            .enqueue(text, Some(EngineId(engine_id)), None, false, None, origin)
+            .await?;
+        self.withdraw_when_run_stops(events, request_id, run);
+        Ok(())
+    }
+
     async fn speak_and_wait(
         &self,
         text: String,
@@ -235,7 +339,9 @@ impl SpeakDispatcher for SpeakBridge {
         let request_id = self
             .enqueue(text, engine, voice, is_reward, None, origin)
             .await?;
-        wait_for_terminal(&mut events, &request_id, cancel).await
+        let outcome = wait_for_terminal(&mut events, &request_id, cancel).await;
+        self.withdraw_unfinished(SpeakCommand::RemoveQueued(request_id), outcome)
+            .await
     }
 
     async fn speak_with_engine_and_wait(
@@ -249,7 +355,9 @@ impl SpeakDispatcher for SpeakBridge {
         let request_id = self
             .enqueue(text, Some(EngineId(engine_id)), None, false, None, origin)
             .await?;
-        wait_for_terminal(&mut events, &request_id, cancel).await
+        let outcome = wait_for_terminal(&mut events, &request_id, cancel).await;
+        self.withdraw_unfinished(SpeakCommand::RemoveQueued(request_id), outcome)
+            .await
     }
 
     async fn speak_for_show(
@@ -274,12 +382,9 @@ impl SpeakDispatcher for SpeakBridge {
                 speech.origin,
             )
             .await?;
-        let outcome =
-            wait_marking_start(&mut events, &request_id, cancel.clone(), Some(&started)).await;
-        if cancel.is_cancelled() {
-            self.dispatch(SpeakCommand::Cancel(request_id)).await?;
-        }
-        outcome
+        let outcome = wait_marking_start(&mut events, &request_id, cancel, Some(&started)).await;
+        self.withdraw_unfinished(SpeakCommand::Cancel(request_id), outcome)
+            .await
     }
 
     async fn stop_current(&self) -> Result<(), SpeakDispatchError> {
@@ -517,6 +622,7 @@ mod tests {
         pipeline: forge_tts_pipeline::PipelineConfig,
         bus: Arc<dyn forge_events::EventPublisher>,
         engines: forge_tts_core::TtsRegistry,
+        sink: Arc<dyn forge_audio::AudioSink>,
     }
 
     impl Default for Harness {
@@ -527,6 +633,7 @@ mod tests {
                 pipeline: crate::test_support::neutral_pipeline_config(),
                 bus: Arc::new(NullPublisher),
                 engines: forge_tts_core::TtsRegistry::new(),
+                sink: Arc::new(forge_audio::NullSink),
             }
         }
     }
@@ -543,7 +650,7 @@ mod tests {
                 registry: Arc::new(std::sync::RwLock::new(self.engines)),
                 resolver: Arc::new(std::sync::RwLock::new(resolver)),
                 pipeline: forge_speak_queue::PipelineConfigHandle::new(self.pipeline),
-                audio_sink: Arc::new(forge_audio::NullSink),
+                audio_sink: self.sink,
                 event_bus: self.bus,
                 disabled_engines: std::collections::HashSet::new(),
                 engine_gains: std::collections::HashMap::new(),
@@ -1204,10 +1311,17 @@ mod tests {
 
     async fn queue_with_listed_voices()
     -> (Arc<SpeakQueueHandle>, forge_speak_queue::SpeakEventStream) {
+        queue_playing_on(Arc::new(forge_audio::NullSink)).await
+    }
+
+    async fn queue_playing_on(
+        sink: Arc<dyn forge_audio::AudioSink>,
+    ) -> (Arc<SpeakQueueHandle>, forge_speak_queue::SpeakEventStream) {
         let mut engines = forge_tts_core::TtsRegistry::new();
         engines.register(EngineId("cap".to_owned()), Arc::new(ListedVoicesFactory));
         let (handle, stream) = Harness {
             engines,
+            sink,
             ..Harness::default()
         }
         .spawn();
@@ -1368,5 +1482,424 @@ mod tests {
         ] {
             assert_eq!(bridge.check_voice(encoded), expected, "{encoded:?}");
         }
+    }
+
+    const LISTED_VOICE: &str = "cap/cap-a";
+    const LISTED_ENGINE: &str = "cap";
+
+    fn request_ended(request_id: RequestId) -> SpeakEvent {
+        SpeakEvent::Finished { request_id }
+    }
+
+    fn message() -> forge_types::MessageRef {
+        messages::wait_cancelled()
+    }
+
+    fn events_leaving_the_queue(id: &RequestId) -> Vec<SpeakEvent> {
+        let request_id = id.clone();
+        vec![
+            SpeakEvent::Started {
+                request_id: request_id.clone(),
+                voice_id: None,
+                engine_id: None,
+                viewer_name: String::new(),
+                text: String::new(),
+                duration_secs: 0,
+            },
+            SpeakEvent::Finished {
+                request_id: request_id.clone(),
+            },
+            SpeakEvent::Failed {
+                request_id: request_id.clone(),
+                message: message(),
+            },
+            SpeakEvent::Skipped {
+                request_id: request_id.clone(),
+                message: message(),
+            },
+            SpeakEvent::Removed {
+                request_id: request_id.clone(),
+            },
+            SpeakEvent::Rejected {
+                request_id,
+                message: message(),
+            },
+        ]
+    }
+
+    #[test]
+    fn only_an_event_about_this_speech_takes_it_out_of_the_queue() {
+        let id = RequestId::new();
+
+        for event in events_leaving_the_queue(&id) {
+            assert!(speech_left_queue_event(&event, &id), "{event:?}");
+            assert!(
+                !speech_left_queue_event(&event, &RequestId::new()),
+                "{event:?} belongs to another speech"
+            );
+        }
+        assert!(!speech_left_queue_event(
+            &SpeakEvent::Progress {
+                request_id: id.clone(),
+                elapsed_secs: 1,
+            },
+            &id
+        ));
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn the_watch_on_a_queued_speech_ends_at_its_terminal_event_and_not_before() {
+        let (events, mut rx) = broadcast::channel(CAPACITY + 1);
+        let id = RequestId::new();
+        events.send(unrelated()).unwrap();
+        events.send(request_ended(RequestId::new())).unwrap();
+        let unfinished =
+            tokio::time::timeout(SPEAK_WAIT_HARD_CAP * 2, speech_left_queue(&mut rx, &id)).await;
+        assert!(unfinished.is_err(), "another speech ended this watch");
+
+        events.send(request_ended(id.clone())).unwrap();
+
+        tokio::time::timeout(Duration::ZERO, speech_left_queue(&mut rx, &id))
+            .await
+            .expect("the speech's own end must finish the watch at once");
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn the_watch_on_a_queued_speech_ends_once_its_events_stop() {
+        let (events, mut rx) = broadcast::channel::<SpeakEvent>(CAPACITY);
+        drop(events);
+
+        tokio::time::timeout(
+            Duration::ZERO,
+            speech_left_queue(&mut rx, &RequestId::new()),
+        )
+        .await
+        .expect("a closed stream can never report the speech");
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_lagged_watch_gives_up_at_the_hard_cap() {
+        let (events, mut rx) = broadcast::channel(CAPACITY);
+        lag(&events);
+        let started = tokio::time::Instant::now();
+
+        speech_left_queue(&mut rx, &RequestId::new()).await;
+
+        assert_eq!(started.elapsed(), SPEAK_WAIT_HARD_CAP);
+    }
+
+    #[tokio::test]
+    async fn the_withdrawal_task_ends_when_its_speech_leaves_the_queue() {
+        let (handle, _stream) = voiceless_queue();
+        let bridge = SpeakBridge::new(handle);
+        let (events, rx) = broadcast::channel(CAPACITY);
+        let id = RequestId::new();
+        let tasks = tokio::runtime::Handle::current().metrics();
+        let before = tasks.num_alive_tasks();
+
+        bridge.withdraw_when_run_stops(rx, id.clone(), CancelSignal::new());
+        events.send(request_ended(id)).unwrap();
+
+        tokio::time::timeout(Duration::from_secs(30), async {
+            while tasks.num_alive_tasks() > before {
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .expect("the withdrawal task outlived its speech");
+    }
+
+    #[tokio::test]
+    async fn a_lagged_withdrawal_still_takes_a_stopped_runs_speech_out_of_the_queue() {
+        let (handle, mut stream) = voiceless_queue();
+        handle.send(SpeakCommand::Pause).await.unwrap();
+        let bridge = SpeakBridge::new(Arc::clone(&handle));
+        let id = bridge
+            .enqueue(
+                "hi".to_owned(),
+                None,
+                None,
+                false,
+                None,
+                SpeechOrigin::default(),
+            )
+            .await
+            .unwrap();
+        admissions(&mut stream, 1).await;
+        let (events, rx) = broadcast::channel(CAPACITY);
+        lag(&events);
+        let run = CancelSignal::new();
+
+        bridge.withdraw_when_run_stops(rx, id.clone(), run.clone());
+        run.cancel();
+
+        assert_eq!(removal_of(&mut stream, &id).await, id);
+    }
+
+    async fn removal_of(
+        stream: &mut forge_speak_queue::SpeakEventStream,
+        id: &RequestId,
+    ) -> RequestId {
+        next_matching(stream, |event| match event {
+            SpeakEvent::Removed { request_id } if &request_id == id => Some(request_id),
+            _ => None,
+        })
+        .await
+    }
+
+    async fn enqueued_id(stream: &mut forge_speak_queue::SpeakEventStream) -> RequestId {
+        next_matching(stream, |event| match event {
+            SpeakEvent::Enqueued { request_id, .. } => Some(request_id),
+            _ => None,
+        })
+        .await
+    }
+
+    async fn started(stream: &mut forge_speak_queue::SpeakEventStream, id: &RequestId) {
+        next_matching(stream, |event| match event {
+            SpeakEvent::Started { request_id, .. } if &request_id == id => Some(()),
+            _ => None,
+        })
+        .await;
+    }
+
+    async fn ending_of(
+        stream: &mut forge_speak_queue::SpeakEventStream,
+        id: &RequestId,
+    ) -> SpeakEvent {
+        next_matching(stream, |event| {
+            speech_left_queue_event(&event, id)
+                .then_some(event)
+                .filter(|event| !matches!(event, SpeakEvent::Started { .. }))
+        })
+        .await
+    }
+
+    #[derive(Debug, Clone, Copy)]
+    enum Unwaited {
+        Voice,
+        Engine,
+    }
+
+    async fn queue_for_run(
+        bridge: &SpeakBridge,
+        path: Unwaited,
+        run: CancelSignal,
+    ) -> Result<(), SpeakDispatchError> {
+        let (text, origin) = ("hi".to_owned(), SpeechOrigin::default());
+        match path {
+            Unwaited::Voice => {
+                let voice = Some(LISTED_VOICE.to_owned());
+                bridge
+                    .speak_queued_for_run(text, voice, false, origin, run)
+                    .await
+            }
+            Unwaited::Engine => {
+                let engine = LISTED_ENGINE.to_owned();
+                bridge
+                    .speak_with_engine_queued_for_run(text, engine, origin, run)
+                    .await
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn stopping_a_run_removes_its_unwaited_speech_from_the_queue() {
+        for path in [Unwaited::Voice, Unwaited::Engine] {
+            let (handle, mut stream) = queue_with_listed_voices().await;
+            let bridge = SpeakBridge::new(Arc::clone(&handle));
+            let run = CancelSignal::new();
+
+            queue_for_run(&bridge, path, run.clone()).await.unwrap();
+            let id = enqueued_id(&mut stream).await;
+            run.cancel();
+            removal_of(&mut stream, &id).await;
+
+            assert_eq!(handle.queue_depth(), 0, "{path:?}");
+        }
+    }
+
+    #[tokio::test]
+    async fn an_unwaited_speech_of_a_run_that_was_not_stopped_plays_to_the_end() {
+        for path in [Unwaited::Voice, Unwaited::Engine] {
+            let (handle, mut stream) = queue_with_listed_voices().await;
+            let bridge = SpeakBridge::new(Arc::clone(&handle));
+
+            queue_for_run(&bridge, path, CancelSignal::new())
+                .await
+                .unwrap();
+            let id = enqueued_id(&mut stream).await;
+            handle.send(SpeakCommand::Resume).await.unwrap();
+
+            let ending = ending_of(&mut stream, &id).await;
+            assert!(
+                matches!(ending, SpeakEvent::Finished { .. }),
+                "{path:?}: {ending:?}"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn stopping_a_run_that_waits_removes_its_queued_speech() {
+        for engine in [false, true] {
+            let (handle, mut stream) = queue_with_listed_voices().await;
+            let bridge = SpeakBridge::new(Arc::clone(&handle));
+            let run = CancelSignal::new();
+            let (text, origin) = ("hi".to_owned(), SpeechOrigin::default());
+
+            let (outcome, _) = tokio::join!(
+                async {
+                    if engine {
+                        bridge
+                            .speak_with_engine_and_wait(
+                                text,
+                                LISTED_ENGINE.to_owned(),
+                                origin,
+                                run.clone(),
+                            )
+                            .await
+                    } else {
+                        bridge
+                            .speak_and_wait(
+                                text,
+                                Some(LISTED_VOICE.to_owned()),
+                                false,
+                                origin,
+                                run.clone(),
+                            )
+                            .await
+                    }
+                },
+                async {
+                    let id = enqueued_id(&mut stream).await;
+                    run.cancel();
+                    removal_of(&mut stream, &id).await;
+                }
+            );
+
+            assert_eq!(reason(outcome), "speak.wait_cancelled", "engine={engine}");
+            assert_eq!(handle.queue_depth(), 0, "engine={engine}");
+        }
+    }
+
+    struct HeldSink(tokio::sync::watch::Sender<bool>);
+
+    impl HeldSink {
+        fn new() -> Arc<Self> {
+            Arc::new(Self(tokio::sync::watch::Sender::new(false)))
+        }
+
+        fn release(&self) {
+            self.0.send_replace(true);
+        }
+    }
+
+    #[async_trait]
+    impl forge_audio::AudioSink for HeldSink {
+        async fn play(
+            &self,
+            _: forge_speech_types::PcmBuffer,
+        ) -> Result<(), forge_audio::AudioError> {
+            Ok(())
+        }
+
+        async fn play_controlled(
+            &self,
+            _: forge_speech_types::PcmBuffer,
+        ) -> Result<forge_audio::ControlledPlayback, forge_audio::AudioError> {
+            let mut released = self.0.subscribe();
+            Ok(forge_audio::ControlledPlayback::from_future(async move {
+                drop(released.wait_for(|released| *released).await);
+                Ok(())
+            }))
+        }
+    }
+
+    #[tokio::test]
+    async fn stopping_a_run_lets_its_unwaited_speech_finish_once_it_is_playing() {
+        let sink = HeldSink::new();
+        let (handle, mut stream) = queue_playing_on(sink.clone()).await;
+        let bridge = SpeakBridge::new(Arc::clone(&handle));
+        let run = CancelSignal::new();
+
+        queue_for_run(&bridge, Unwaited::Voice, run.clone())
+            .await
+            .unwrap();
+        let id = enqueued_id(&mut stream).await;
+        handle.send(SpeakCommand::Resume).await.unwrap();
+        started(&mut stream, &id).await;
+        run.cancel();
+        sink.release();
+
+        let ending = ending_of(&mut stream, &id).await;
+        assert!(matches!(ending, SpeakEvent::Finished { .. }), "{ending:?}");
+    }
+
+    #[tokio::test]
+    async fn stopping_a_waiting_run_ends_the_wait_and_lets_the_playing_speech_finish() {
+        let sink = HeldSink::new();
+        let (handle, mut stream) = queue_playing_on(sink.clone()).await;
+        let bridge = SpeakBridge::new(Arc::clone(&handle));
+        let run = CancelSignal::new();
+
+        let (outcome, ending) = tokio::join!(
+            bridge.speak_and_wait(
+                "hi".to_owned(),
+                Some(LISTED_VOICE.to_owned()),
+                false,
+                SpeechOrigin::default(),
+                run.clone(),
+            ),
+            async {
+                let id = enqueued_id(&mut stream).await;
+                handle.send(SpeakCommand::Resume).await.unwrap();
+                started(&mut stream, &id).await;
+                run.cancel();
+                id
+            }
+        );
+        assert_eq!(reason(outcome), "speak.wait_cancelled");
+        sink.release();
+
+        let ending = ending_of(&mut stream, &ending).await;
+        assert!(matches!(ending, SpeakEvent::Finished { .. }), "{ending:?}");
+    }
+
+    struct HeldLegs(Arc<HeldSink>);
+
+    impl forge_audio::TargetedSinkFactory for HeldLegs {
+        fn sink_for(&self, _: &PlaybackTarget) -> Arc<dyn forge_audio::AudioSink> {
+            self.0.clone()
+        }
+    }
+
+    #[tokio::test]
+    async fn a_cancelled_show_cuts_its_speech_while_it_is_playing() {
+        let (handle, mut stream) = queue_with_listed_voices().await;
+        handle.install_targeted_legs(Arc::new(HeldLegs(HeldSink::new())));
+        let bridge = SpeakBridge::new(Arc::clone(&handle));
+        let cancel = CancelSignal::new();
+        let speech = ShowSpeech {
+            text: "thanks for the five".to_owned(),
+            voice: Some(LISTED_VOICE.to_owned()),
+            overlay: "stage-alert".to_owned(),
+            show: "01J9ZC4W6R7Q2N3M4K5P6S7T8V".to_owned(),
+            origin: SpeechOrigin::default(),
+        };
+
+        let (outcome, id) = tokio::join!(
+            bridge.speak_for_show(speech, cancel.clone(), SpeechStartSignal::new()),
+            async {
+                let id = enqueued_id(&mut stream).await;
+                handle.send(SpeakCommand::Resume).await.unwrap();
+                started(&mut stream, &id).await;
+                cancel.cancel();
+                id
+            }
+        );
+
+        assert_eq!(reason(outcome), "speak.wait_cancelled");
+        let ending = ending_of(&mut stream, &id).await;
+        assert!(matches!(ending, SpeakEvent::Skipped { .. }), "{ending:?}");
     }
 }

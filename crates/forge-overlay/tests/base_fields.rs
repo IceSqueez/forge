@@ -6,7 +6,6 @@ use forge_overlay::{
     DeliveryDisposition, OverlayConfig, OverlayKindRegistry, SpeechProgram, display_window,
     register_builtin_kinds, take_speech,
 };
-use forge_registry::FormField;
 use forge_types::Variant;
 
 const ALERT_KIND: &str = "overlay.alert";
@@ -22,28 +21,6 @@ fn registry() -> OverlayKindRegistry {
     reg
 }
 
-fn field_key(field: &FormField) -> &'static str {
-    match field {
-        FormField::Text { key, .. }
-        | FormField::TextArea { key, .. }
-        | FormField::Code { key, .. }
-        | FormField::Integer { key, .. }
-        | FormField::Slider { key, .. }
-        | FormField::Toggle { key, .. }
-        | FormField::FilePicker { key, .. }
-        | FormField::DateTime { key, .. }
-        | FormField::Select { key, .. }
-        | FormField::UnitAmount { key, .. }
-        | FormField::Duration { key, .. }
-        | FormField::DynamicSelect { key, .. }
-        | FormField::DependentSelect { key, .. }
-        | FormField::Swatch { key, .. }
-        | FormField::Optional { key, .. }
-        | FormField::SubChain { key, .. }
-        | FormField::CaseList { key, .. } => key,
-    }
-}
-
 fn stored_duration(value: Variant) -> OverlayConfig {
     OverlayConfig::from([(DURATION.to_owned(), value)])
 }
@@ -55,7 +32,7 @@ fn every_look_offers_one_sound_and_only_a_transient_look_offers_a_duration() {
         let offered: Vec<&str> = descriptor
             .config_fields()
             .iter()
-            .map(|sectioned| field_key(&sectioned.field))
+            .map(|sectioned| sectioned.field.key())
             .collect();
         let defaults = descriptor.default_config();
 

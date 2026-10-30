@@ -224,7 +224,10 @@ fn sub_field_is_half(field: &SubFormField) -> bool {
     match field {
         SubFormField::Select { .. } => true,
         SubFormField::Input { flavor, .. } => {
-            matches!(flavor, InputFlavor::Integer(_) | InputFlavor::VariableName)
+            matches!(
+                flavor,
+                InputFlavor::Integer(_) | InputFlavor::OneBased(_) | InputFlavor::VariableName
+            )
         }
         _ => false,
     }

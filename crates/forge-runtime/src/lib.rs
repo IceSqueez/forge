@@ -112,7 +112,7 @@ pub use overlay_service::{
 pub use overlay_shows::{
     SHOW_CEILING, SHOW_QUEUE_CAPACITY, SHOW_SPEECH_START_WAIT, ShowDepthWatch, ShowEnd, ShowTicket,
 };
-pub use queue_depth::{QueueDepth, QueueDepthWatch, QueueDepths};
+pub use queue_depth::{QueueDepth, QueueDepthWatch, QueueDepths, QueueRunning, RunningAction};
 pub use queue_scheduler::{
     ENGINE_STOPPED_REASON, MAX_PENDING_PER_QUEUE, MembershipOutcome, QUEUE_DELETED_REASON,
     QUEUE_DRAINING_REASON, QUEUE_NOT_FOUND_REASON, QUEUE_OVERFLOW_REASON, QUEUE_PAUSED_REASON,

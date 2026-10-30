@@ -1,4 +1,4 @@
-use crate::bus_adapter::BusAdapter;
+use crate::bus_adapter::{BusAdapter, ClientId};
 use crate::server_info::ServerInfo;
 
 pub struct EventFilterSnapshot {
@@ -7,6 +7,7 @@ pub struct EventFilterSnapshot {
 }
 
 pub struct ConnectedClientSnapshot {
+    pub id: ClientId,
     pub identification: String,
     pub remote_addr: String,
     pub client_type: String,
@@ -93,6 +94,7 @@ async fn connected_clients_snapshot(
             .collect();
 
         result.push(ConnectedClientSnapshot {
+            id,
             identification: identification.as_str().to_owned(),
             remote_addr,
             client_type: client_type.type_str().to_owned(),

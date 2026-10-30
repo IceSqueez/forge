@@ -1,3 +1,5 @@
+use std::fmt::Display;
+
 use forge_net::GatewayFailure;
 use thiserror::Error;
 
@@ -63,11 +65,20 @@ pub enum UpdateError {
     InstallerTimedOut,
     #[error("the previous build is missing, so it cannot be restored")]
     PreviousBuildMissing,
+    #[error("the install could not be put back ({undo}) after the swap failed ({cause})")]
+    InstallDisplaced { cause: String, undo: String },
     #[error("an install path has no file name")]
     PathWithoutFileName,
 }
 
 impl UpdateError {
+    pub(crate) fn install_displaced(cause: &dyn Display, undo: &dyn Display) -> Self {
+        Self::InstallDisplaced {
+            cause: cause.to_string(),
+            undo: undo.to_string(),
+        }
+    }
+
     pub(crate) fn from_gateway(failure: GatewayFailure) -> Self {
         match failure {
             GatewayFailure::Cancelled => Self::Cancelled,

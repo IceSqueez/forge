@@ -29,7 +29,11 @@ pub(super) fn apply(
     )]
     let _ = remove_path(&extract_dir);
     swapped?;
-    remove_path(archive)?;
+    #[expect(
+        clippy::let_underscore_must_use,
+        reason = "a leftover archive does not undo a finished swap"
+    )]
+    let _ = remove_path(archive);
     Ok(())
 }
 

@@ -1,5 +1,5 @@
 use std::io;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use crate::UpdateError;
@@ -65,10 +65,16 @@ pub(crate) fn swap_in(
     retry.run(|| remove_path(previous))?;
     retry.rename(target, previous)?;
     if let Err(error) = retry.rename(replacement, target) {
-        retry.rename(previous, target)?;
-        return Err(error.into());
+        return Err(match retry.rename(previous, target) {
+            Ok(()) => error.into(),
+            Err(undo) => UpdateError::install_displaced(&error, &undo),
+        });
     }
     Ok(())
+}
+
+pub(crate) fn failed_build_path(target: &Path) -> Result<PathBuf, UpdateError> {
+    prefixed_sibling(target, FAILED_BUILD_PREFIX)
 }
 
 pub(crate) fn restore_previous_build(
@@ -79,22 +85,17 @@ pub(crate) fn restore_previous_build(
     if !path_exists(previous) {
         return Err(UpdateError::PreviousBuildMissing);
     }
-    let failed = prefixed_sibling(target, FAILED_BUILD_PREFIX)?;
+    let failed = failed_build_path(target)?;
     retry.run(|| remove_path(&failed))?;
     let moved_aside = path_exists(target);
     if moved_aside {
         retry.rename(target, &failed)?;
     }
     if let Err(error) = retry.rename(previous, target) {
-        if moved_aside {
-            retry.rename(&failed, target)?;
+        if moved_aside && let Err(undo) = retry.rename(&failed, target) {
+            return Err(UpdateError::install_displaced(&error, &undo));
         }
         return Err(error.into());
     }
-    #[expect(
-        clippy::let_underscore_must_use,
-        reason = "a leftover failed build does not undo a completed swap"
-    )]
-    let _ = retry.run(|| remove_path(&failed));
     Ok(())
 }

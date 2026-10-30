@@ -12,6 +12,7 @@ mod http;
 mod in_flight;
 mod install;
 mod journal;
+mod leftovers;
 mod manifest;
 mod platform;
 mod process;

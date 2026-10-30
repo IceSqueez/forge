@@ -1,5 +1,5 @@
 use std::collections::HashSet;
-use std::net::SocketAddr;
+use std::net::{IpAddr, SocketAddr};
 use std::sync::Arc;
 
 use axum::extract::{Request, State};
@@ -76,7 +76,7 @@ impl Server {
 
 async fn build_state(config: ServerConfig, bind_addr: SocketAddr) -> Result<AppState, ServerError> {
     let auth = AuthState::load(config.auth_required_for_reads, config.credentials.as_ref()).await?;
-    auth.set_lan_exposed(bind_addr.ip().is_unspecified());
+    auth.set_lan_exposed(is_lan_bind(bind_addr.ip()));
     auth.overlay_token().set_required(
         read_setting_or_default(
             config.settings.as_ref(),
@@ -119,11 +119,15 @@ pub async fn stopped_server(config: ServerConfig) -> Result<ServerHandle, Server
     Server { config }.stopped().await
 }
 
+pub(crate) fn is_lan_bind(address: IpAddr) -> bool {
+    !address.to_canonical().is_loopback()
+}
+
 pub(crate) fn validate_lan_bind(
     addr: &SocketAddr,
     lan_bind_enabled: bool,
 ) -> Result<(), ServerError> {
-    if addr.ip().is_unspecified() && !lan_bind_enabled {
+    if is_lan_bind(addr.ip()) && !lan_bind_enabled {
         return Err(ServerError::LanBindNotEnabled {
             addr: addr.to_string(),
         });
@@ -226,9 +230,9 @@ fn build_router(state: AppState, shutdown: tokio::sync::watch::Receiver<bool>) -
         )
         .route(
             overlays::FAVICON_PATH,
-            get(overlays::serve_empty_favicon).route_layer(host_guard),
+            get(overlays::serve_empty_favicon).route_layer(host_guard.clone()),
         )
-        .merge(audio::router())
+        .merge(audio::router().route_layer(host_guard))
         .layer(middleware::from_fn_with_state(
             state.clone(),
             metrics_middleware,
@@ -296,11 +300,12 @@ pub(crate) mod tests {
     use tracing::Level;
 
     use super::{
-        AppState, AuthState, BusAdapter, ServerConfig, ServerHandle, serve_on, start_server,
-        stopped_server, validate_lan_bind,
+        AppState, AuthState, BusAdapter, ServerConfig, ServerHandle, build_state, is_lan_bind,
+        serve_on, start_server, stopped_server, validate_lan_bind,
     };
     use crate::ServerError;
-    use crate::bus_adapter::{ClientFilterSet, EventFilter, WsFrame};
+    use crate::audio_clips::{ClipMediaType, ClipOffer, ClipOutcome};
+    use crate::bus_adapter::{ClientFilterSet, ClientId, EventFilter, WsFrame};
     use crate::server_info::ServerInfo;
     use crate::test_helpers::{log_capture, mem_settings, test_dp};
     use crate::ws_client::WsClient;
@@ -464,7 +469,7 @@ pub(crate) mod tests {
     async fn attach_client(
         state: &AppState,
         identification: &str,
-    ) -> tokio::sync::broadcast::Receiver<WsFrame> {
+    ) -> (ClientId, tokio::sync::broadcast::Receiver<WsFrame>) {
         let filters = ClientFilterSet::new(std::collections::HashSet::from([EventFilter::new(
             None, None,
         )]));
@@ -478,7 +483,7 @@ pub(crate) mod tests {
             .identification
             .store(Arc::new(identification.to_owned()));
         state.server_info.register(client_handle.id, client).await;
-        rx
+        (client_handle.id, rx)
     }
 
     async fn make_server_targeting_a_free_port() -> (ServerHandle, u16) {
@@ -1068,10 +1073,10 @@ pub(crate) mod tests {
     #[tokio::test]
     async fn kick_client_removes_only_the_named_client_from_the_snapshot() {
         let (handle, state) = make_server_exposing_state().await;
-        let _kicked = attach_client(&state, "dashboard-a").await;
-        let _survivor = attach_client(&state, "dashboard-b").await;
+        let (kicked, _kicked_rx) = attach_client(&state, "dashboard-a").await;
+        let (_survivor, _survivor_rx) = attach_client(&state, "dashboard-b").await;
 
-        assert!(handle.kick_client("dashboard-a").await);
+        assert!(handle.kick_client(kicked).await);
 
         let snapshot = handle.snapshot().await;
         let remaining: Vec<&str> = snapshot
@@ -1087,10 +1092,10 @@ pub(crate) mod tests {
     #[tokio::test]
     async fn kick_client_closes_the_targeted_socket_and_spares_the_others() {
         let (handle, state) = make_server_exposing_state().await;
-        let mut kicked_rx = attach_client(&state, "dashboard-a").await;
-        let mut survivor_rx = attach_client(&state, "dashboard-b").await;
+        let (kicked, mut kicked_rx) = attach_client(&state, "dashboard-a").await;
+        let (_survivor, mut survivor_rx) = attach_client(&state, "dashboard-b").await;
 
-        handle.kick_client("dashboard-a").await;
+        handle.kick_client(kicked).await;
 
         assert!(matches!(
             kicked_rx.try_recv().expect("close frame"),
@@ -1105,17 +1110,51 @@ pub(crate) mod tests {
     }
 
     #[tokio::test]
-    async fn kick_client_with_unknown_identification_returns_false_and_keeps_every_client() {
+    async fn kicking_one_of_two_clients_sharing_an_identification_leaves_the_other_connected() {
         let (handle, state) = make_server_exposing_state().await;
-        let mut rx = attach_client(&state, "dashboard-a").await;
+        let (first, mut first_rx) = attach_client(&state, SHARED_IDENTIFICATION).await;
+        let (second, mut second_rx) = attach_client(&state, SHARED_IDENTIFICATION).await;
 
-        assert!(!handle.kick_client("dashboard-zzz").await);
+        assert!(handle.kick_client(second).await);
+
+        let snapshot = handle.snapshot().await;
+        let remaining: Vec<ClientId> = snapshot.connected_clients.iter().map(|c| c.id).collect();
+        assert_eq!(remaining, [first]);
+        assert!(matches!(
+            second_rx.try_recv().expect("close frame"),
+            WsFrame::Close
+        ));
+        assert!(
+            first_rx.try_recv().is_err(),
+            "the namesake must keep its socket open"
+        );
+
+        handle.stop().await.expect("stop");
+    }
+
+    #[tokio::test]
+    async fn kick_client_with_an_unknown_id_returns_false_and_keeps_every_client() {
+        let (handle, state) = make_server_exposing_state().await;
+        let (_client, mut rx) = attach_client(&state, "dashboard-a").await;
+
+        assert!(!handle.kick_client(ClientId::next()).await);
 
         assert_eq!(handle.snapshot().await.connected_clients.len(), 1);
         assert!(
             rx.try_recv().is_err(),
             "a missed lookup must not close anyone"
         );
+
+        handle.stop().await.expect("stop");
+    }
+
+    #[tokio::test]
+    async fn kicking_the_same_client_twice_misses_the_second_time() {
+        let (handle, state) = make_server_exposing_state().await;
+        let (client, _rx) = attach_client(&state, "dashboard-a").await;
+
+        assert!(handle.kick_client(client).await);
+        assert!(!handle.kick_client(client).await);
 
         handle.stop().await.expect("stop");
     }
@@ -1435,12 +1474,17 @@ pub(crate) mod tests {
     }
 
     #[test]
-    fn validate_lan_bind_refuses_only_an_all_interfaces_bind_without_the_flag() {
+    fn validate_lan_bind_refuses_every_bind_off_loopback_without_the_flag() {
         for (addr, enabled, refused) in [
             ("0.0.0.0:9595", false, true),
             ("[::]:9595", false, true),
+            ("192.168.1.50:9595", false, true),
+            ("[::ffff:192.168.1.50]:9595", false, true),
             ("0.0.0.0:9595", true, false),
+            ("192.168.1.50:9595", true, false),
             ("127.0.0.1:9595", false, false),
+            ("[::1]:9595", false, false),
+            ("[::ffff:127.0.0.1]:9595", false, false),
         ] {
             let parsed: std::net::SocketAddr = addr.parse().expect("addr");
             let result = validate_lan_bind(&parsed, enabled);
@@ -1449,6 +1493,50 @@ pub(crate) mod tests {
                 refused,
                 "{addr} with the flag {enabled}"
             );
+        }
+    }
+
+    #[test]
+    fn is_lan_bind_tells_loopback_from_every_other_address() {
+        for (address, lan) in [
+            ("192.168.1.50", true),
+            ("::ffff:192.168.1.50", true),
+            ("0.0.0.0", true),
+            ("::", true),
+            ("127.0.0.1", false),
+            ("::1", false),
+            ("::ffff:127.0.0.1", false),
+        ] {
+            let parsed: std::net::IpAddr = address.parse().expect("address");
+            assert_eq!(is_lan_bind(parsed), lan, "{address}");
+        }
+    }
+
+    #[tokio::test]
+    async fn a_concrete_address_without_the_flag_refuses_to_start() {
+        let mut config = loopback_config(mem_settings(), EPHEMERAL_PORT, Vec::new());
+        config.bind_addr =
+            std::net::SocketAddr::new(LAN_ADDRESS.parse().expect("address"), EPHEMERAL_PORT);
+
+        let result = start_server(config).await;
+
+        assert!(matches!(result, Err(ServerError::LanBindNotEnabled { .. })));
+    }
+
+    #[tokio::test]
+    async fn only_an_address_off_loopback_demands_a_token_for_reads() {
+        for (address, required) in [
+            (LAN_ADDRESS, true),
+            ("127.0.0.1", false),
+            ("::ffff:127.0.0.1", false),
+        ] {
+            let config = loopback_config(mem_settings(), EPHEMERAL_PORT, Vec::new());
+            let bind_addr =
+                std::net::SocketAddr::new(address.parse().expect("address"), EPHEMERAL_PORT);
+
+            let state = build_state(config, bind_addr).await.expect("state");
+
+            assert_eq!(state.auth.reads_required(), required, "{address}");
         }
     }
 
@@ -1878,6 +1966,11 @@ pub(crate) mod tests {
 
     const BEARER_TOKEN: &str = "fg_bearer-under-test";
     const FOREIGN_HOST: &str = "evil.example";
+    const LAN_ADDRESS: &str = "192.168.1.50";
+    const SHARED_IDENTIFICATION: &str = "obs-browser";
+    const AUDIO_OWNER: &str = "alerts";
+    const AUDIO_CLIP_BYTES: &[u8] = b"RIFF\0\0\0\0WAVEfmt ";
+    const AUDIO_CLIP_DURATION_MS: u64 = 1_200;
     const ADDED_ORIGIN_HOST: &str = "dash.test";
     const PRE_AUTH_LIMIT: usize = 16 * 1024;
     const PROTOCOL_LIMIT: usize = 256 * 1024;
@@ -2088,19 +2181,9 @@ pub(crate) mod tests {
         handle.stop().await.expect("stop");
     }
 
-    async fn raw_request_naming(
-        addr: std::net::SocketAddr,
-        target: &str,
-        host: Option<&str>,
-    ) -> (u16, String) {
+    async fn raw_exchange(addr: std::net::SocketAddr, head: String) -> (u16, String) {
         use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
 
-        let head = match host {
-            Some(host) => {
-                format!("GET {target} HTTP/1.1\r\nHost: {host}\r\nConnection: close\r\n\r\n")
-            }
-            None => format!("GET {target} HTTP/1.0\r\n\r\n"),
-        };
         let mut stream = tokio::net::TcpStream::connect(addr).await.expect("connect");
         stream.write_all(head.as_bytes()).await.expect("write");
         let mut raw = Vec::new();
@@ -2116,6 +2199,135 @@ pub(crate) mod tests {
             .map(|(_, body)| body.to_owned())
             .unwrap_or_default();
         (status, body)
+    }
+
+    async fn raw_request_naming(
+        addr: std::net::SocketAddr,
+        target: &str,
+        host: Option<&str>,
+    ) -> (u16, String) {
+        let head = match host {
+            Some(host) => {
+                format!("GET {target} HTTP/1.1\r\nHost: {host}\r\nConnection: close\r\n\r\n")
+            }
+            None => format!("GET {target} HTTP/1.0\r\n\r\n"),
+        };
+        raw_exchange(addr, head).await
+    }
+
+    async fn raw_report_naming(addr: std::net::SocketAddr, target: &str, host: &str) -> u16 {
+        let body = serde_json::json!({ "verdict": "played" }).to_string();
+        let head = format!(
+            "POST {target} HTTP/1.1\r\nHost: {host}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+            body.len()
+        );
+        raw_exchange(addr, head).await.0
+    }
+
+    fn audio_clip_offer() -> ClipOffer {
+        ClipOffer {
+            bytes: AUDIO_CLIP_BYTES.to_vec(),
+            media_type: ClipMediaType::Wave,
+            duration_ms: AUDIO_CLIP_DURATION_MS,
+        }
+    }
+
+    async fn start_on_all_interfaces() -> (ServerHandle, std::net::SocketAddr) {
+        let mut config = loopback_config(mem_settings(), EPHEMERAL_PORT, Vec::new());
+        config.bind_addr = std::net::SocketAddr::new(
+            std::net::IpAddr::V4(std::net::Ipv4Addr::UNSPECIFIED),
+            EPHEMERAL_PORT,
+        );
+        config.lan_bind_enabled = true;
+        let handle = start_server(config).await.expect("start");
+        let addr = handle.bind_addr().await;
+        assert!(addr.ip().is_unspecified(), "the bind must stay a wildcard");
+        (handle, addr)
+    }
+
+    #[tokio::test]
+    async fn an_overlay_page_on_another_machine_fetches_its_clip_and_reports_on_an_all_interfaces_bind()
+     {
+        let (handle, bound) = start_on_all_interfaces().await;
+        let dial = std::net::SocketAddr::new(
+            std::net::IpAddr::V4(std::net::Ipv4Addr::LOCALHOST),
+            bound.port(),
+        );
+        let page_host = format!("{LAN_ADDRESS}:{}", bound.port());
+        let (ticket, outcome) = handle
+            .offer_audio_clip(
+                &forge_storage::OverlayId::new(AUDIO_OWNER),
+                audio_clip_offer(),
+            )
+            .await
+            .expect("offer");
+
+        let (clip_status, clip_body) =
+            raw_request_naming(dial, ticket.clip_path(), Some(&page_host)).await;
+        let report_status = raw_report_naming(dial, ticket.report_path(), &page_host).await;
+
+        assert_eq!(clip_status, reqwest::StatusCode::OK.as_u16());
+        assert_eq!(clip_body.as_bytes(), AUDIO_CLIP_BYTES);
+        assert_eq!(report_status, reqwest::StatusCode::NO_CONTENT.as_u16());
+        assert_eq!(outcome.recv().await, ClipOutcome::Played);
+        handle.stop().await.expect("stop");
+    }
+
+    #[tokio::test]
+    async fn an_all_interfaces_bind_demands_a_token_for_reads_while_the_clip_route_stays_on_its_capability()
+     {
+        let (handle, bound) = start_on_all_interfaces().await;
+        let dial = std::net::SocketAddr::new(
+            std::net::IpAddr::V4(std::net::Ipv4Addr::LOCALHOST),
+            bound.port(),
+        );
+        let page_host = format!("{LAN_ADDRESS}:{}", bound.port());
+        let (ticket, _outcome) = handle
+            .offer_audio_clip(
+                &forge_storage::OverlayId::new(AUDIO_OWNER),
+                audio_clip_offer(),
+            )
+            .await
+            .expect("offer");
+
+        let (api, _) = raw_request_naming(dial, "/api/v1/info", Some(&page_host)).await;
+        let (clip, _) = raw_request_naming(dial, ticket.clip_path(), Some(&page_host)).await;
+
+        assert_eq!(api, reqwest::StatusCode::UNAUTHORIZED.as_u16());
+        assert_eq!(clip, reqwest::StatusCode::OK.as_u16());
+        handle.stop().await.expect("stop");
+    }
+
+    #[tokio::test]
+    async fn a_foreign_host_cannot_spend_a_clip_or_settle_its_report() {
+        let (handle, addr) = start_on_an_ephemeral_port(mem_settings(), Vec::new()).await;
+        let foreign = format!("{FOREIGN_HOST}:{}", addr.port());
+        let addressed = addr.to_string();
+        let (ticket, outcome) = handle
+            .offer_audio_clip(
+                &forge_storage::OverlayId::new(AUDIO_OWNER),
+                audio_clip_offer(),
+            )
+            .await
+            .expect("offer");
+
+        let (refused_clip, refused_body) =
+            raw_request_naming(addr, ticket.clip_path(), Some(&foreign)).await;
+        let json: serde_json::Value = serde_json::from_str(&refused_body).expect("json body");
+        let (served_clip, served_body) =
+            raw_request_naming(addr, ticket.clip_path(), Some(&addressed)).await;
+        let refused_report = raw_report_naming(addr, ticket.report_path(), &foreign).await;
+        let accepted_report = raw_report_naming(addr, ticket.report_path(), &addressed).await;
+
+        let misdirected = reqwest::StatusCode::MISDIRECTED_REQUEST.as_u16();
+        assert_eq!(refused_clip, misdirected);
+        assert_eq!(json["error"]["code"], "HOST_NOT_ALLOWED");
+        assert_eq!(served_clip, reqwest::StatusCode::OK.as_u16());
+        assert_eq!(served_body.as_bytes(), AUDIO_CLIP_BYTES);
+        assert_eq!(refused_report, misdirected);
+        assert_eq!(accepted_report, reqwest::StatusCode::NO_CONTENT.as_u16());
+        assert_eq!(outcome.recv().await, ClipOutcome::Played);
+        handle.stop().await.expect("stop");
     }
 
     #[tokio::test]

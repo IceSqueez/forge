@@ -3,6 +3,7 @@ use std::path::{Path, PathBuf};
 use serde::{Deserialize, Serialize};
 
 use crate::UpdateError;
+use crate::apply::files::path_exists;
 use crate::apply_state::{ApplyPhase, ApplyState};
 use crate::health::same_version;
 use crate::journal::UpdateJournal;
@@ -24,6 +25,8 @@ pub enum UpdateReport {
         restored_version: String,
         reason: RollbackReason,
         database: DatabaseRestore,
+        #[serde(default)]
+        installer_still_lists_failed: bool,
     },
     RollbackFailed {
         failed_version: String,
@@ -88,6 +91,10 @@ struct OutcomeRecord {
 
 fn outcome_path(data_dir: &Path) -> PathBuf {
     data_dir.join(OUTCOME_FILE)
+}
+
+pub(crate) fn outcome_recorded(data_dir: &Path) -> bool {
+    path_exists(&outcome_path(data_dir))
 }
 
 pub(crate) fn record_outcome(data_dir: &Path, report: UpdateReport) -> Result<(), UpdateError> {

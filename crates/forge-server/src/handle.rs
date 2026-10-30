@@ -11,6 +11,7 @@ use tokio::sync::{Mutex, watch};
 
 use crate::audio_clips::{ClipOffer, ClipOutcomeHandle, ClipTicket};
 use crate::auth::AuthState;
+use crate::bus_adapter::ClientId;
 use crate::config::ServerSettings;
 use crate::origin::build_allowed_origins;
 use crate::run_state::{Generation, RunState};
@@ -172,7 +173,9 @@ impl ServerHandle {
         state
             .auth
             .set_reads_required(settings.auth_required_for_reads);
-        state.auth.set_lan_exposed(bind_addr.ip().is_unspecified());
+        state
+            .auth
+            .set_lan_exposed(server::is_lan_bind(bind_addr.ip()));
         state
             .auth
             .overlay_token()
@@ -348,18 +351,17 @@ impl ServerHandle {
         crate::snapshot::build_server_snapshot(&state.server_info, &state.bus_adapter).await
     }
 
-    pub async fn kick_client(&self, identification: &str) -> bool {
+    pub async fn kick_client(&self, id: ClientId) -> bool {
         let state = self.inner.lock().await.state.clone();
-        let id = {
-            let clients = state.server_info.connected_clients.read().await;
-            clients
-                .iter()
-                .find(|(_, client)| client.identification.load_full().as_str() == identification)
-                .map(|(id, _)| *id)
-        };
-        let Some(id) = id else {
+        let connected = state
+            .server_info
+            .connected_clients
+            .read()
+            .await
+            .contains_key(&id);
+        if !connected {
             return false;
-        };
+        }
         state.server_info.unregister(id).await;
         state.bus_adapter.kick_client(id).await;
         true

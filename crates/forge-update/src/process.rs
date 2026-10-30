@@ -1,5 +1,5 @@
 use std::ffi::OsString;
-use std::io::Read;
+use std::io::{ErrorKind, Read};
 use std::path::Path;
 use std::process::{Child, Command, Stdio};
 use std::sync::mpsc::{self, Receiver, RecvTimeoutError};
@@ -108,9 +108,7 @@ fn watch_stdin_until_closed() -> Result<Receiver<()>, UpdateError> {
     std::thread::Builder::new()
         .name(PARENT_WATCH_THREAD.to_owned())
         .spawn(move || {
-            let mut stdin = std::io::stdin().lock();
-            let mut chunk = [0_u8; STDIN_DRAIN_CHUNK];
-            while matches!(stdin.read(&mut chunk), Ok(read) if read > 0) {}
+            drain_until_closed(std::io::stdin().lock());
             #[expect(
                 clippy::let_underscore_must_use,
                 reason = "the waiter may already have stopped listening"
@@ -118,6 +116,18 @@ fn watch_stdin_until_closed() -> Result<Receiver<()>, UpdateError> {
             let _ = closed_tx.send(());
         })?;
     Ok(closed_rx)
+}
+
+fn drain_until_closed(mut input: impl Read) {
+    let mut chunk = [0_u8; STDIN_DRAIN_CHUNK];
+    loop {
+        match input.read(&mut chunk) {
+            Ok(0) => return,
+            Ok(_) => {}
+            Err(error) if error.kind() == ErrorKind::Interrupted => {}
+            Err(_) => return,
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -140,6 +150,89 @@ impl ChildProcess for SystemChild {
             Ok(()) => Ok(()),
             Err(error) if error.kind() == std::io::ErrorKind::InvalidInput => Ok(()),
             Err(error) => Err(error.into()),
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::collections::VecDeque;
+    use std::io::{self, ErrorKind, Read};
+
+    use super::drain_until_closed;
+
+    enum Step {
+        Bytes(usize),
+        Closed,
+        Fails(ErrorKind),
+    }
+
+    struct ScriptedInput<'a> {
+        steps: VecDeque<Step>,
+        reads: &'a mut usize,
+    }
+
+    impl Read for ScriptedInput<'_> {
+        fn read(&mut self, buffer: &mut [u8]) -> io::Result<usize> {
+            *self.reads += 1;
+            match self
+                .steps
+                .pop_front()
+                .expect("read past the end of the script")
+            {
+                Step::Bytes(count) => Ok(count.min(buffer.len())),
+                Step::Closed => Ok(0),
+                Step::Fails(kind) => Err(kind.into()),
+            }
+        }
+    }
+
+    #[test]
+    fn the_drain_outlasts_interruptions_and_data_and_stops_at_the_first_close_or_real_error() {
+        let cases = [
+            (
+                "interrupted, then data, then closed",
+                vec![
+                    Step::Fails(ErrorKind::Interrupted),
+                    Step::Bytes(5),
+                    Step::Closed,
+                ],
+                3,
+            ),
+            (
+                "a chunk past the buffer, then interrupted twice, then closed",
+                vec![
+                    Step::Bytes(1024),
+                    Step::Fails(ErrorKind::Interrupted),
+                    Step::Fails(ErrorKind::Interrupted),
+                    Step::Closed,
+                ],
+                4,
+            ),
+            ("closed at once", vec![Step::Closed], 1),
+            (
+                "a broken pipe ends it before later data",
+                vec![Step::Fails(ErrorKind::BrokenPipe), Step::Bytes(5)],
+                1,
+            ),
+            (
+                "an error after data ends it",
+                vec![
+                    Step::Bytes(5),
+                    Step::Fails(ErrorKind::Other),
+                    Step::Bytes(5),
+                ],
+                2,
+            ),
+        ];
+        for (label, steps, expected_reads) in cases {
+            let mut reads = 0;
+            drain_until_closed(ScriptedInput {
+                steps: steps.into(),
+                reads: &mut reads,
+            });
+
+            assert_eq!(reads, expected_reads, "{label}");
         }
     }
 }

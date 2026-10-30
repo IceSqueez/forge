@@ -22,7 +22,7 @@ const BUS_CONSUMER: &str = "ws_server";
 pub struct ClientId(pub(crate) u64);
 
 impl ClientId {
-    pub(crate) fn next() -> Self {
+    pub fn next() -> Self {
         static COUNTER: AtomicU64 = AtomicU64::new(0);
         Self(COUNTER.fetch_add(1, Ordering::Relaxed))
     }

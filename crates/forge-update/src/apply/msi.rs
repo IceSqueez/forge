@@ -2,7 +2,7 @@ use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
-use super::files::{FileRetry, remove_path};
+use super::files::{FileRetry, path_exists, remove_path};
 use crate::UpdateError;
 use crate::process::{ChildExit, Clock, ProcessHost};
 
@@ -34,6 +34,12 @@ pub(super) fn apply(
     retry.run(|| remove_path(previous))?;
     std::fs::copy(target, previous)?;
     if let Err(error) = run_installer(package, run) {
+        if !path_exists(target) {
+            return Err(match retry.rename(previous, target) {
+                Ok(()) => error,
+                Err(undo) => UpdateError::install_displaced(&error, &undo),
+            });
+        }
         #[expect(
             clippy::let_underscore_must_use,
             reason = "best-effort cleanup; the installer error is returned"
@@ -41,7 +47,11 @@ pub(super) fn apply(
         let _ = remove_path(previous);
         return Err(error);
     }
-    remove_path(package)?;
+    #[expect(
+        clippy::let_underscore_must_use,
+        reason = "a leftover package does not undo a finished install"
+    )]
+    let _ = remove_path(package);
     Ok(())
 }
 

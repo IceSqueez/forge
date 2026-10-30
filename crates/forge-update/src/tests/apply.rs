@@ -77,7 +77,7 @@ fn with_raw_entry(name: &[u8], body: &[u8]) -> Vec<u8> {
 }
 
 #[cfg(unix)]
-fn valid_bundle() -> Vec<u8> {
+pub(super) fn valid_bundle() -> Vec<u8> {
     archive(
         &[
             Entry {
@@ -326,7 +326,7 @@ fn a_parent_dir_entry_never_lands_outside_the_extract_dir() {
     assert!(!fixture.root.path().join("escaped").exists());
 }
 
-fn msi_installer(exit: ChildExit, target: &Path) -> Spawn {
+pub(super) fn msi_installer(exit: ChildExit, target: &Path) -> Spawn {
     let target = target.to_path_buf();
     Spawn::child(move |_| {
         std::fs::write(&target, NEW_BUILD).unwrap();
@@ -424,6 +424,28 @@ fn an_msi_update_whose_candidate_crashes_restores_the_previous_exe() {
 
     assert_eq!(outcome, SupervisorOutcome::RolledBack);
     assert_eq!(fixture.running_build(), OLD_BUILD);
+}
+
+#[test]
+fn an_msi_failure_that_took_the_target_with_it_puts_the_backup_back() {
+    let fixture = Fixture::file_layout(InstallLayout::WindowsPerUserMsi, ApplyMode::Restart);
+    let target = fixture.target.clone();
+    let mut host = fixture.host([Spawn::child(move |_| {
+        std::fs::remove_file(&target).unwrap();
+        Some(ChildExit::Code(1603))
+    })]);
+
+    let outcome = fixture.supervise(&mut host, Some(SCHEMA)).unwrap();
+
+    assert_eq!(outcome, SupervisorOutcome::NotApplied);
+    assert_eq!(
+        not_applied_reason(&fixture),
+        ApplyFailure::InstallerFailed {
+            exit_code: Some(1603)
+        }
+    );
+    assert_eq!(std::fs::read(&fixture.target).unwrap(), OLD_BUILD);
+    assert!(!fixture.previous().exists());
 }
 
 #[test]

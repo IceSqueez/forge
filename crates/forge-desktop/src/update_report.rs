@@ -42,20 +42,31 @@ pub fn report_notice(report: &UpdateReport) -> ReportNotice {
             restored_version,
             reason,
             database,
+            installer_still_lists_failed,
         } => {
             let key = match database {
                 DatabaseRestore::Unchanged => "update_report_rolled_back",
                 DatabaseRestore::Restored => "update_report_rolled_back_data_restored",
                 DatabaseRestore::Failed { .. } => "update_report_rolled_back_data_failed",
             };
+            let rolled_back = tr!(
+                key,
+                failed = failed_version.as_str(),
+                restored = restored_version.as_str(),
+                reason = rollback_reason(reason),
+            );
+            let message = if *installer_still_lists_failed {
+                let listed = tr!(
+                    "update_report_installer_still_lists",
+                    failed = failed_version.as_str()
+                );
+                format!("{rolled_back} {listed}")
+            } else {
+                rolled_back
+            };
             ReportNotice {
                 kind: ToastKind::Warn,
-                message: tr!(
-                    key,
-                    failed = failed_version.as_str(),
-                    restored = restored_version.as_str(),
-                    reason = rollback_reason(reason),
-                ),
+                message,
                 offer: ReportOffer::Download {
                     version: failed_version.clone(),
                 },
@@ -268,6 +279,7 @@ mod tests {
             restored_version: RESTORED.to_owned(),
             reason,
             database,
+            installer_still_lists_failed: false,
         }
     }
 
@@ -413,6 +425,47 @@ mod tests {
                     reports.len(),
                     "{lang:?} {reason:?}: two data outcomes read the same"
                 );
+            }
+        }
+    }
+
+    #[test]
+    fn only_a_rollback_flagged_by_the_installer_warns_that_windows_still_lists_the_failed_version()
+    {
+        for (lang, phrase) in [
+            (Language::En, "under Installed apps until the next update"),
+            (
+                Language::Uk,
+                "у встановлених програмах до наступного оновлення",
+            ),
+        ] {
+            install_language(lang);
+            for report in every_rolled_back() {
+                let UpdateReport::RolledBack {
+                    failed_version,
+                    restored_version,
+                    reason,
+                    database,
+                    ..
+                } = report.clone()
+                else {
+                    panic!("every_rolled_back built {report:?}");
+                };
+                let flagged = UpdateReport::RolledBack {
+                    failed_version,
+                    restored_version,
+                    reason,
+                    database,
+                    installer_still_lists_failed: true,
+                };
+
+                let plain = report_notice(&report).message;
+                let warned = report_notice(&flagged).message;
+
+                assert!(!plain.contains(phrase), "{lang:?}: {plain:?}");
+                assert!(warned.starts_with(&plain), "{lang:?}: {warned:?}");
+                assert!(warned.contains(phrase), "{lang:?}: {warned:?}");
+                assert!(warned.contains(FAILED), "{lang:?}: {warned:?}");
             }
         }
     }

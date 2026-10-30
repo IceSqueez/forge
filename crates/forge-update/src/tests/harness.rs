@@ -1,4 +1,4 @@
-use std::cell::Cell;
+use std::cell::{Cell, RefCell};
 use std::collections::VecDeque;
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
@@ -7,6 +7,7 @@ use std::time::{Duration, Instant};
 
 use crate::apply_state::{ApplyPhase, ApplyState};
 use crate::journal::UpdateJournal;
+use crate::supervisor_lock::SupervisorLock;
 use crate::{
     ApplyMode, ChildExit, ChildProcess, Clock, DatabaseUnit, HandoffPlan, HandoffRequest,
     HealthMarker, InstallLayout, ProcessHost, SchemaProbe, StagedArtifact, SupervisorContext,
@@ -73,6 +74,7 @@ pub struct Launch {
     pub program: PathBuf,
     pub args: Vec<OsString>,
     pub watched: Option<Vec<u8>>,
+    pub lock_held: Option<bool>,
 }
 
 #[derive(Debug, Default)]
@@ -86,6 +88,7 @@ pub struct FakeHost {
     parent_exits: bool,
     queue: VecDeque<Spawn>,
     watched: Option<PathBuf>,
+    lock_probe: Option<PathBuf>,
     pub log: Arc<Mutex<HostLog>>,
 }
 
@@ -95,6 +98,7 @@ impl FakeHost {
             parent_exits: true,
             queue: spawns.into_iter().collect(),
             watched: None,
+            lock_probe: None,
             log: Arc::default(),
         }
     }
@@ -106,6 +110,11 @@ impl FakeHost {
 
     pub fn watching(mut self, path: &Path) -> Self {
         self.watched = Some(path.to_path_buf());
+        self
+    }
+
+    pub fn probing_the_lock_in(mut self, data_dir: &Path) -> Self {
+        self.lock_probe = Some(data_dir.to_path_buf());
         self
     }
 
@@ -137,12 +146,17 @@ impl ProcessHost for FakeHost {
             .watched
             .as_ref()
             .and_then(|path| std::fs::read(path).ok());
+        let lock_held = self
+            .lock_probe
+            .as_ref()
+            .map(|data_dir| SupervisorLock::is_held(data_dir).unwrap());
         let pid = {
             let mut log = self.log.lock().unwrap();
             log.launches.push(Launch {
                 program: program.to_path_buf(),
                 args: args.to_vec(),
                 watched,
+                lock_held,
             });
             u32::try_from(log.launches.len()).unwrap() + 1000
         };
@@ -211,6 +225,7 @@ impl ChildProcess for FakeChild {
 pub struct FakeClock {
     start: Instant,
     offset: Cell<Duration>,
+    on_first_sleep: RefCell<Option<Box<dyn FnOnce()>>>,
 }
 
 impl FakeClock {
@@ -218,7 +233,13 @@ impl FakeClock {
         Self {
             start: Instant::now(),
             offset: Cell::new(Duration::ZERO),
+            on_first_sleep: RefCell::new(None),
         }
+    }
+
+    pub fn on_first_sleep(self, fault: impl FnOnce() + 'static) -> Self {
+        self.on_first_sleep.replace(Some(Box::new(fault)));
+        self
     }
 
     pub fn elapsed(&self) -> Duration {
@@ -233,6 +254,9 @@ impl Clock for FakeClock {
 
     fn sleep(&self, duration: Duration) {
         self.offset.set(self.offset.get() + duration);
+        if let Some(fault) = self.on_first_sleep.take() {
+            fault();
+        }
     }
 }
 
@@ -360,6 +384,30 @@ impl Fixture {
         }
     }
 
+    pub fn enter_phase(&mut self, phase: ApplyPhase) {
+        self.state.phase = phase;
+        self.state.write(&self.data_dir).unwrap();
+    }
+
+    pub fn relocate_staged(&mut self, dir: &Path) {
+        std::fs::create_dir_all(dir).unwrap();
+        let moved = dir.join(self.staged.file_name().unwrap());
+        std::fs::rename(&self.staged, &moved).unwrap();
+        self.staged.clone_from(&moved);
+        self.state.staged_artifact = moved;
+        self.state.write(&self.data_dir).unwrap();
+    }
+
+    pub fn relocate_previous(&mut self, dir: &Path) {
+        std::fs::create_dir_all(dir).unwrap();
+        let moved = dir.join(self.journal.previous_build.file_name().unwrap());
+        if self.journal.previous_build.exists() {
+            std::fs::rename(&self.journal.previous_build, &moved).unwrap();
+        }
+        self.journal.previous_build = moved;
+        self.journal.write_blocking(&self.data_dir).unwrap();
+    }
+
     pub fn launch_executable(&self) -> PathBuf {
         self.state.launch_executable.clone()
     }
@@ -402,6 +450,11 @@ impl Fixture {
         std::fs::read(self.launch_executable()).unwrap()
     }
 
+    pub fn records_kept(&self) -> bool {
+        UpdateJournal::path_in(&self.data_dir).exists()
+            && ApplyState::path_in(&self.data_dir).exists()
+    }
+
     pub fn records_cleared(&self) -> bool {
         [
             UpdateJournal::path_in(&self.data_dir),
@@ -417,6 +470,14 @@ impl Fixture {
             .unwrap()
             .map(|state| state.phase)
     }
+}
+
+#[cfg(unix)]
+pub fn set_writable(dir: &Path, writable: bool) {
+    use std::os::unix::fs::PermissionsExt;
+
+    let mode = if writable { 0o755 } else { 0o555 };
+    std::fs::set_permissions(dir, std::fs::Permissions::from_mode(mode)).unwrap();
 }
 
 pub fn bundle_binary(bundle: &Path) -> PathBuf {

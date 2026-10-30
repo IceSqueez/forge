@@ -4,9 +4,11 @@ use super::harness::{
     DB_MAIN, DB_SHM, DB_WAL, FROM, FakeClock, Fixture, LIVE_DB, NEW_BUILD, OLD_BUILD, SCHEMA,
     SNAPSHOT_DB, Spawn, TO, candidate_args, settings,
 };
+use crate::apply_state::ApplyPhase;
 use crate::{
-    ApplyMode, ChildExit, DatabaseRestore, InstallLayout, RollbackReason, StartAction,
-    SupervisorOutcome, UpdateError, UpdateReport, pending_start_action, take_update_report,
+    ApplyMode, ChildExit, DatabaseRestore, InstallLayout, OUTCOME_FILE, OUTCOME_FORMAT,
+    RollbackReason, StartAction, SupervisorOutcome, UpdateError, UpdateReport,
+    pending_start_action, take_update_report,
 };
 
 type ReasonCheck = fn(&RollbackReason) -> bool;
@@ -412,6 +414,95 @@ fn a_rollback_without_a_backup_reports_failure_and_does_not_relaunch() {
             ..
         })
     ));
+}
+
+#[test]
+fn only_an_msi_rollback_warns_that_the_installer_still_lists_the_failed_version() {
+    for (layout, expected) in [
+        (InstallLayout::WindowsPerUserMsi, true),
+        (InstallLayout::WindowsPortable, false),
+        (InstallLayout::LinuxAppImage, false),
+        (InstallLayout::MacAppBundle, false),
+    ] {
+        let mut fixture = Fixture::file_layout(layout, ApplyMode::Restart);
+        std::fs::rename(&fixture.target, fixture.previous()).unwrap();
+        std::fs::write(&fixture.target, NEW_BUILD).unwrap();
+        fixture.enter_phase(ApplyPhase::AwaitingHealth);
+        let mut host = fixture.host([Spawn::exits(ChildExit::Code(5))]);
+
+        let outcome = fixture.supervise(&mut host, Some(SCHEMA)).unwrap();
+
+        assert_eq!(outcome, SupervisorOutcome::RolledBack, "{layout:?}");
+        assert!(
+            matches!(
+                take_update_report(&fixture.data_dir, FROM).unwrap(),
+                Some(UpdateReport::RolledBack {
+                    installer_still_lists_failed,
+                    ..
+                }) if installer_still_lists_failed == expected
+            ),
+            "{layout:?}"
+        );
+    }
+}
+
+#[test]
+fn a_rollback_report_written_before_the_installer_flag_existed_still_reads() {
+    let fixture = restart_fixture();
+    let record = serde_json::json!({
+        "format": OUTCOME_FORMAT,
+        "report": {
+            "kind": "rolled_back",
+            "failed_version": TO,
+            "restored_version": FROM,
+            "reason": { "kind": "no_health_signal" },
+            "database": { "kind": "unchanged" },
+        },
+    });
+    std::fs::write(
+        fixture.data_dir.join(OUTCOME_FILE),
+        serde_json::to_vec(&record).unwrap(),
+    )
+    .unwrap();
+
+    let report = take_update_report(&fixture.data_dir, FROM).unwrap();
+
+    assert_eq!(
+        report,
+        Some(UpdateReport::RolledBack {
+            failed_version: TO.to_owned(),
+            restored_version: FROM.to_owned(),
+            reason: RollbackReason::NoHealthSignal,
+            database: DatabaseRestore::Unchanged,
+            installer_still_lists_failed: false,
+        })
+    );
+}
+
+#[test]
+fn the_lock_is_held_through_the_candidate_and_free_when_the_old_build_is_relaunched() {
+    let fixture = restart_fixture();
+    let mut host = fixture
+        .host([Spawn::exits(ChildExit::Code(5))])
+        .probing_the_lock_in(&fixture.data_dir);
+
+    fixture.supervise(&mut host, Some(SCHEMA)).unwrap();
+
+    let held: Vec<Option<bool>> = host.launches().iter().map(|l| l.lock_held).collect();
+    assert_eq!(held, [Some(true), Some(false)]);
+}
+
+#[test]
+fn the_lock_is_free_when_a_failed_apply_relaunches_the_old_build() {
+    let fixture = restart_fixture();
+    std::fs::remove_file(&fixture.staged).unwrap();
+    let mut host = fixture.host([]).probing_the_lock_in(&fixture.data_dir);
+
+    let outcome = fixture.supervise(&mut host, Some(SCHEMA)).unwrap();
+
+    assert_eq!(outcome, SupervisorOutcome::NotApplied);
+    let held: Vec<Option<bool>> = host.launches().iter().map(|l| l.lock_held).collect();
+    assert_eq!(held, [Some(false)]);
 }
 
 #[test]

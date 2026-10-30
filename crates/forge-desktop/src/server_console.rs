@@ -15,7 +15,8 @@ use std::time::Duration;
 use forge_events::EventSource;
 use forge_overlay::MARKUP_FILE;
 use forge_server::{
-    ConnectedClientSnapshot, EventFilterSnapshot, ServerHandle, ServerSettings, ServerSnapshot,
+    ClientId, ConnectedClientSnapshot, EventFilterSnapshot, ServerHandle, ServerSettings,
+    ServerSnapshot,
 };
 use forge_storage::{CredentialsRepo, SettingsRepo};
 use gpui::{
@@ -95,6 +96,7 @@ enum BindState {
 
 #[derive(Debug, Clone)]
 struct OwnedClientRow {
+    id: ClientId,
     key: String,
     identification: String,
     origin_label: String,
@@ -169,7 +171,7 @@ pub struct ServerConsoleView {
     overlay_root: String,
     overlay_entries: Vec<OwnedOverlayEntry>,
     selected_overlay_entry: Option<String>,
-    pending_disconnect: Confirm<String>,
+    pending_disconnect: Confirm<ClientId>,
     regenerate_pending: bool,
 }
 
@@ -645,7 +647,7 @@ impl ServerConsoleView {
 
     fn request_disconnect(&mut self, index: usize, cx: &mut Context<Self>) {
         if let Some(row) = self.connected_clients.get(index) {
-            self.pending_disconnect.request(row.identification.clone());
+            self.pending_disconnect.request(row.id);
             cx.notify();
         }
     }
@@ -658,18 +660,17 @@ impl ServerConsoleView {
     fn confirm_disconnect(&mut self, cx: &mut Context<Self>) {
         let target = self.pending_disconnect.take();
         cx.notify();
-        let (Some(identification), Some(handle)) = (target, self.server.clone()) else {
+        let (Some(id), Some(handle)) = (target, self.server.clone()) else {
             return;
         };
         async_bridge::run_async(
             &self.rt_handle,
             async move {
-                handle.kick_client(&identification).await;
-                identification
+                handle.kick_client(id).await;
+                id
             },
-            |this, identification: String, cx| {
-                this.connected_clients
-                    .retain(|c| c.identification != identification);
+            |this, id: ClientId, cx| {
+                this.connected_clients.retain(|c| c.id != id);
                 cx.notify();
             },
             cx,
@@ -1514,11 +1515,8 @@ impl ServerConsoleView {
         palette: &ForgePalette,
         cx: &mut Context<Self>,
     ) -> Option<AnyElement> {
-        let id = self.pending_disconnect.get()?;
-        let row = self
-            .connected_clients
-            .iter()
-            .find(|c| &c.identification == id)?;
+        let id = *self.pending_disconnect.get()?;
+        let row = self.connected_clients.iter().find(|c| c.id == id)?;
 
         let message = tr!(
             "server_disconnect_confirm_hint",
@@ -1887,7 +1885,8 @@ fn client_row_from_snapshot(client: &ConnectedClientSnapshot) -> OwnedClientRow 
         ClientLiveness::Idle
     };
     OwnedClientRow {
-        key: client.identification.clone(),
+        id: client.id,
+        key: client.id.to_string(),
         identification: client.identification.clone(),
         origin_label: format!("{} · {}", client.remote_addr, client.client_type),
         liveness,
@@ -2296,6 +2295,7 @@ mod tests {
         uptime_seconds: i64,
     ) -> ConnectedClientSnapshot {
         ConnectedClientSnapshot {
+            id: ClientId::next(),
             identification: identification.to_owned(),
             remote_addr: "203.0.113.10".to_owned(),
             client_type: "obs_browser".to_owned(),
@@ -2590,6 +2590,22 @@ mod tests {
             })
         }
 
+        fn seat_namesake_clients(&self, cx: &mut TestAppContext) -> (ClientId, ClientId) {
+            self.view.update(cx, |view, _| {
+                view.connected_clients = vec![
+                    client_row_from_snapshot(&snapshot_client("obs-browser", 0.0, 30)),
+                    client_row_from_snapshot(&snapshot_client("obs-browser", 0.0, 30)),
+                ];
+                (view.connected_clients[0].id, view.connected_clients[1].id)
+            })
+        }
+
+        fn seated_ids(&self, cx: &mut TestAppContext) -> Vec<ClientId> {
+            self.view.read_with(cx, |view, _| {
+                view.connected_clients.iter().map(|row| row.id).collect()
+            })
+        }
+
         fn refresh_until(
             &self,
             cx: &mut TestAppContext,
@@ -2602,6 +2618,24 @@ mod tests {
                 reached(cx)
             });
         }
+    }
+
+    #[gpui::test]
+    fn confirming_a_disconnect_drops_only_the_chosen_row_of_two_namesakes(cx: &mut TestAppContext) {
+        let console = console_hosting_a_folder(cx);
+        let (first, second) = console.seat_namesake_clients(cx);
+
+        console.view.update(cx, |view, cx| {
+            view.request_disconnect(1, cx);
+            view.confirm_disconnect(cx);
+        });
+        pump_until(&console.rt, || {
+            cx.run_until_parked();
+            console.seated_ids(cx).len() == 1
+        });
+
+        assert_eq!(console.seated_ids(cx), [first]);
+        assert_ne!(first, second);
     }
 
     #[gpui::test]

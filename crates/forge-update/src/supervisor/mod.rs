@@ -1,14 +1,18 @@
 use std::ffi::OsString;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use crate::UpdateError;
-use crate::apply::files::{FileRetry, remove_path, restore_previous_build};
+use crate::apply::files::{
+    FileRetry, failed_build_path, path_exists, remove_path, restore_previous_build,
+};
 use crate::apply::{ApplyContext, apply_update};
 use crate::apply_state::{ApplyMode, ApplyPhase, ApplyState};
 use crate::database::{DatabaseUnit, SchemaProbe, restore_database};
 use crate::health::{HealthMarker, clear_health_marker, read_health_marker};
+use crate::install::InstallLayout;
 use crate::journal::UpdateJournal;
+use crate::leftovers::remember_leftovers;
 use crate::process::{ChildProcess, Clock, ProcessHost};
 use crate::report::{ApplyFailure, DatabaseRestore, RollbackReason, UpdateReport, record_outcome};
 use crate::supervisor_lock::SupervisorLock;
@@ -77,7 +81,7 @@ enum Verdict {
 }
 
 pub fn run_supervisor(context: SupervisorContext<'_>) -> Result<SupervisorOutcome, UpdateError> {
-    let Some(_lock) = SupervisorLock::try_acquire(context.data_dir)? else {
+    let Some(lock) = SupervisorLock::try_acquire(context.data_dir)? else {
         return Err(UpdateError::SupervisorBusy);
     };
     let data_dir = context.data_dir;
@@ -91,6 +95,7 @@ pub fn run_supervisor(context: SupervisorContext<'_>) -> Result<SupervisorOutcom
     };
     clear_health_marker(data_dir)?;
     let mut supervisor = Supervisor {
+        lock: Some(lock),
         context,
         journal,
         state,
@@ -104,6 +109,7 @@ pub fn run_supervisor(context: SupervisorContext<'_>) -> Result<SupervisorOutcom
 }
 
 struct Supervisor<'a> {
+    lock: Option<SupervisorLock>,
     context: SupervisorContext<'a>,
     journal: UpdateJournal,
     state: ApplyState,
@@ -149,8 +155,12 @@ impl Supervisor<'_> {
             },
         );
         if let Err(error) = applied {
+            let failure = ApplyFailure::from_error(&error);
+            if !path_exists(&self.journal.install_target) {
+                return self.finish_displaced(failure);
+            }
             let relaunch = self.state.mode == ApplyMode::Restart;
-            return self.finish_not_applied(ApplyFailure::from_error(&error), relaunch);
+            return self.finish_not_applied(failure, relaunch);
         }
         match self.state.mode {
             ApplyMode::OnQuit => {
@@ -239,12 +249,10 @@ impl Supervisor<'_> {
     }
 
     fn confirm(&mut self) -> Result<SupervisorOutcome, UpdateError> {
-        let previous = self.journal.previous_build.clone();
-        #[expect(
-            clippy::let_underscore_must_use,
-            reason = "a leftover previous build does not undo a confirmed update"
-        )]
-        let _ = self.retry().run(|| remove_path(&previous));
+        self.discard(&[
+            self.journal.previous_build.clone(),
+            self.state.staged_artifact.clone(),
+        ]);
         self.clear_records()?;
         Ok(SupervisorOutcome::Updated)
     }
@@ -257,17 +265,28 @@ impl Supervisor<'_> {
             self.retry(),
         );
         if let Err(error) = restored {
+            let displaced = !path_exists(&self.journal.install_target);
+            let detail = if displaced {
+                self.restored_database_detail(error.to_string())
+            } else {
+                error.to_string()
+            };
             record_outcome(
                 data_dir,
                 UpdateReport::RollbackFailed {
                     failed_version: self.journal.to_version.clone(),
                     reason,
-                    detail: error.to_string(),
+                    detail,
                 },
             )?;
-            self.clear_records()?;
+            if displaced {
+                self.launch_previous_build()?;
+            } else {
+                self.clear_records()?;
+            }
             return Ok(SupervisorOutcome::RollbackFailed);
         }
+        self.discard(&[failed_build_path(&self.journal.install_target)?]);
         let database = self.restore_database_if_migrated();
         record_outcome(
             data_dir,
@@ -276,6 +295,7 @@ impl Supervisor<'_> {
                 restored_version: self.journal.from_version.clone(),
                 reason,
                 database,
+                installer_still_lists_failed: self.state.layout == InstallLayout::WindowsPerUserMsi,
             },
         )?;
         self.clear_records()?;
@@ -305,17 +325,53 @@ impl Supervisor<'_> {
         }
     }
 
+    fn restored_database_detail(&self, detail: String) -> String {
+        match self.restore_database_if_migrated() {
+            DatabaseRestore::Failed { detail: database } => format!("{detail}; {database}"),
+            DatabaseRestore::Unchanged | DatabaseRestore::Restored => detail,
+        }
+    }
+
+    fn finish_displaced(&mut self, reason: ApplyFailure) -> Result<SupervisorOutcome, UpdateError> {
+        record_outcome(
+            self.context.data_dir,
+            UpdateReport::NotApplied {
+                version: self.journal.to_version.clone(),
+                reason,
+            },
+        )?;
+        self.launch_previous_build()?;
+        Ok(SupervisorOutcome::NotApplied)
+    }
+
+    fn launch_previous_build(&mut self) -> Result<(), UpdateError> {
+        let Some(program) = self.previous_build_executable() else {
+            return Ok(());
+        };
+        drop(self.lock.take());
+        self.context.host.spawn(&program, &[]).map(drop)
+    }
+
+    fn previous_build_executable(&self) -> Option<PathBuf> {
+        let inside_target = self
+            .state
+            .launch_executable
+            .strip_prefix(&self.journal.install_target)
+            .ok()?;
+        let previous = &self.journal.previous_build;
+        Some(if inside_target.as_os_str().is_empty() {
+            previous.clone()
+        } else {
+            previous.join(inside_target)
+        })
+    }
+
     fn finish_not_applied(
         &mut self,
         reason: ApplyFailure,
         relaunch: bool,
     ) -> Result<SupervisorOutcome, UpdateError> {
-        let staged = self.state.staged_artifact.clone();
-        #[expect(
-            clippy::let_underscore_must_use,
-            reason = "a leftover staged artifact does not change the outcome"
-        )]
-        let _ = self.retry().run(|| remove_path(&staged));
+        self.discard(std::slice::from_ref(&self.state.staged_artifact));
         record_outcome(
             self.context.data_dir,
             UpdateReport::NotApplied {
@@ -330,7 +386,25 @@ impl Supervisor<'_> {
         Ok(SupervisorOutcome::NotApplied)
     }
 
+    fn discard(&self, paths: &[PathBuf]) {
+        let retry = self.retry();
+        let leftovers: Vec<PathBuf> = paths
+            .iter()
+            .filter(|path| retry.run(|| remove_path(path)).is_err())
+            .cloned()
+            .collect();
+        if leftovers.is_empty() {
+            return;
+        }
+        #[expect(
+            clippy::let_underscore_must_use,
+            reason = "a leftover file does not change the outcome of the update"
+        )]
+        let _ = remember_leftovers(self.context.data_dir, leftovers);
+    }
+
     fn relaunch(&mut self) -> Result<(), UpdateError> {
+        drop(self.lock.take());
         self.context
             .host
             .spawn(&self.state.launch_executable, &[])

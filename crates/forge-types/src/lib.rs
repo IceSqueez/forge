@@ -8,6 +8,7 @@ mod ids;
 mod integration;
 mod latest;
 mod log_target;
+mod message;
 mod money;
 mod permission_rung;
 mod platform;
@@ -47,6 +48,11 @@ pub use latest::{
     latest_fields,
 };
 pub use log_target::SCRIPT_LOG_TARGET;
+pub use message::{
+    COMMON_MESSAGES, COMMON_NAMESPACE, FiniteFloat, MAX_UPSTREAM_DETAIL_CHARS, MESSAGE_KEY_PREFIX,
+    MessageArg, MessageCatalog, MessageCatalogError, MessageCode, MessageCodeError, MessageRef,
+    UPSTREAM_FAILURE, UpstreamDetail, UserText, VerbatimText,
+};
 pub use money::{CurrencyCode, MICROS_PER_MAJOR_UNIT, MoneyAmount, MoneyError};
 pub use permission_rung::{PermissionRung, PermissionRungError};
 pub use platform::{

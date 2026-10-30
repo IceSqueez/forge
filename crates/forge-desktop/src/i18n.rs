@@ -9,11 +9,14 @@ use unic_langid::LanguageIdentifier;
 const EN_MAIN_FTL: &str = include_str!("../locales/en/main.ftl");
 const UK_MAIN_FTL: &str = include_str!("../locales/uk/main.ftl");
 
-fn app_catalogs(lang: Language) -> [&'static str; 1] {
-    match lang {
-        Language::En => [EN_MAIN_FTL],
-        Language::Uk => [UK_MAIN_FTL],
-    }
+pub(crate) fn app_catalogs(lang: Language) -> Vec<&'static str> {
+    let desktop = match lang {
+        Language::En => EN_MAIN_FTL,
+        Language::Uk => UK_MAIN_FTL,
+    };
+    std::iter::once(desktop)
+        .chain(crate::message_catalogs::fragments(lang))
+        .collect()
 }
 
 fn negotiate_os_locale() -> Option<Language> {

@@ -215,7 +215,7 @@ struct ViewerHistoryHost {
     _dismissed: Subscription,
 }
 
-fn platform_display_name(platform: PlatformId) -> &'static str {
+pub(crate) fn platform_display_name(platform: PlatformId) -> &'static str {
     match platform {
         PlatformId::Twitch => "Twitch",
         PlatformId::YouTube => "YouTube",

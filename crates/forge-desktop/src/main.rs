@@ -94,6 +94,7 @@ mod log_archive;
 mod log_level;
 mod log_scrub;
 mod log_tail;
+mod message_catalogs;
 mod midi_mapping_modal;
 mod midi_screen;
 mod midi_signal;
@@ -208,6 +209,11 @@ mod update_launch;
 mod update_leftover;
 mod update_report;
 mod update_toast;
+#[expect(
+    dead_code,
+    reason = "the typed start error and step outcomes are its first consumers"
+)]
+mod user_text;
 mod voice_alias_form;
 mod voice_alias_store;
 mod voice_aliases;

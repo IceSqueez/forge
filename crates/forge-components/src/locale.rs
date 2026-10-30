@@ -4,7 +4,7 @@ use std::rc::Rc;
 use std::sync::{Arc, Mutex, PoisonError, RwLock};
 
 use fluent::memoizer::MemoizerKind;
-use fluent::{FluentArgs, FluentBundle, FluentResource, FluentValue};
+use fluent::{FluentArgs, FluentBundle, FluentError, FluentResource, FluentValue};
 use forge_types::NamesLanguage;
 use unic_langid::LanguageIdentifier;
 
@@ -111,7 +111,8 @@ fn assemble_bundle<M: MemoizerKind>(
     mut bundle: fluent::bundle::FluentBundle<FluentResource, M>,
     language: CatalogLanguage,
     app_sources: &[&str],
-) -> fluent::bundle::FluentBundle<FluentResource, M> {
+) -> (fluent::bundle::FluentBundle<FluentResource, M>, Vec<String>) {
+    let mut overridden = Vec::new();
     for source in app_sources
         .iter()
         .copied()
@@ -123,14 +124,28 @@ fn assemble_bundle<M: MemoizerKind>(
                 resource
             });
         if let Err(errors) = bundle.add_resource(resource) {
-            tracing::warn!(?errors, ?language, "FTL resource add errors");
+            for error in errors {
+                match error {
+                    FluentError::Overriding { id, .. } => overridden.push(id),
+                    other => tracing::warn!(error = ?other, ?language, "FTL resource add error"),
+                }
+            }
         }
     }
-    bundle
+    (bundle, overridden)
+}
+
+pub fn duplicate_message_ids(language: CatalogLanguage, app_sources: &[&str]) -> Vec<String> {
+    assemble_bundle(
+        ThreadBundle::new(vec![language.language_identifier()]),
+        language,
+        app_sources,
+    )
+    .1
 }
 
 pub fn install_process_language(language: CatalogLanguage, app_sources: &[&str]) {
-    let bundle = assemble_bundle(
+    let (bundle, _) = assemble_bundle(
         ProcessBundle::new_concurrent(vec![language.language_identifier()]),
         language,
         app_sources,
@@ -146,7 +161,7 @@ pub fn install_process_language(language: CatalogLanguage, app_sources: &[&str])
 }
 
 pub fn install_thread_language(language: CatalogLanguage, app_sources: &[&str]) {
-    let bundle = assemble_bundle(
+    let (bundle, _) = assemble_bundle(
         ThreadBundle::new(vec![language.language_identifier()]),
         language,
         app_sources,
@@ -156,7 +171,7 @@ pub fn install_thread_language(language: CatalogLanguage, app_sources: &[&str]) 
 }
 
 pub fn resolve_in_language(language: CatalogLanguage, app_sources: &[&str], key: &str) -> String {
-    let bundle = assemble_bundle(
+    let (bundle, _) = assemble_bundle(
         ThreadBundle::new(vec![language.language_identifier()]),
         language,
         app_sources,
@@ -309,14 +324,19 @@ fn group_integer(n: u64, sep: &str) -> String {
 }
 
 pub fn tr_lookup(key: &str, args: Option<&FluentArgs<'_>>) -> String {
+    tr_find_warned(key, args).unwrap_or_else(|| key.to_owned())
+}
+
+pub fn tr_find_warned(key: &str, args: Option<&FluentArgs<'_>>) -> Option<String> {
     let Some(active) = active_bundle() else {
         warn_unlocalized_once(key);
-        return key.to_owned();
+        return None;
     };
-    active.format(key, args).unwrap_or_else(|| {
+    let found = active.format(key, args);
+    if found.is_none() {
         active.warn_missing_once(key);
-        key.to_owned()
-    })
+    }
+    found
 }
 
 fn warn_unlocalized_once(key: &str) {

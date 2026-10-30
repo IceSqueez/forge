@@ -224,12 +224,13 @@ pub fn run_boot(
                     cx.set_global(crate::presentation::ActiveLanguage(
                         handles.startup_language,
                     ));
-                    forge_components::install_display_formats(
+                    forge_components::install_process_display_formats(
                         handles.startup_display_formats.resolve(),
                     );
                     cx.set_global(crate::presentation::ActiveDisplayFormats(
                         handles.startup_display_formats,
                     ));
+                    crate::message_catalogs::report_catalog_problems(cx);
                     if let Some(reason) = handles.server_unavailable.clone() {
                         cx.set_global(crate::server_unavailable::ServerUnavailable(reason.into()));
                     }

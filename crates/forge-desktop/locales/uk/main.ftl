@@ -310,6 +310,7 @@ settings_region_time_format = Формат часу
 settings_region_first_day = Перший день тижня
 settings_region_default = Як у регіоні ({ $value })
 settings_region_persist_failed = Не вдалося зберегти налаштування регіону
+message_catalog_conflict = Частину вбудованих текстів не вдалося завантажити: { $problems }
 
 ## Налаштування → бічна навігація
 

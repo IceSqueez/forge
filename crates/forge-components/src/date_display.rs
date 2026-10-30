@@ -1,4 +1,5 @@
 use std::cell::Cell;
+use std::sync::{PoisonError, RwLock};
 
 use forge_types::{NamesLanguage, PatternZone, datetime_to_text, shared_date_pattern};
 use time::{OffsetDateTime, Time};
@@ -78,18 +79,33 @@ fn time_pattern(clock: ClockStyle, shape: DateShape) -> &'static str {
     }
 }
 
+static PROCESS_FORMATS: RwLock<Option<DisplayFormats>> = RwLock::new(None);
+
 thread_local! {
-    static ACTIVE_FORMATS: Cell<DisplayFormats> = Cell::new(
-        DisplayFormatChoices::following(Region::for_language(CatalogLanguage::En)).resolve(),
-    );
+    static THREAD_FORMATS: Cell<Option<DisplayFormats>> = const { Cell::new(None) };
+}
+
+pub fn install_process_display_formats(formats: DisplayFormats) {
+    *PROCESS_FORMATS
+        .write()
+        .unwrap_or_else(PoisonError::into_inner) = Some(formats);
 }
 
 pub fn install_display_formats(formats: DisplayFormats) {
-    ACTIVE_FORMATS.with(|cell| cell.set(formats));
+    THREAD_FORMATS.set(Some(formats));
 }
 
 pub fn active_display_formats() -> DisplayFormats {
-    ACTIVE_FORMATS.with(Cell::get)
+    THREAD_FORMATS
+        .get()
+        .or_else(|| {
+            *PROCESS_FORMATS
+                .read()
+                .unwrap_or_else(PoisonError::into_inner)
+        })
+        .unwrap_or_else(|| {
+            DisplayFormatChoices::following(Region::for_language(CatalogLanguage::En)).resolve()
+        })
 }
 
 pub fn ui_names_language() -> NamesLanguage {

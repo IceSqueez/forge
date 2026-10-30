@@ -3,7 +3,7 @@ use std::sync::Arc;
 use forge_components::{
     ActivePresentation, ClockStyle, DateDisplay, DateFormatChoice, DateShape, DisplayFormatChoices,
     DisplayFormats, FirstWeekday, ForgePalette, FormatChoice, FormatOption, Region, choice_trigger,
-    drive_overlay_focus, dropdown, dropdown_list, dropdown_row, install_display_formats,
+    drive_overlay_focus, dropdown, dropdown_list, dropdown_row, install_process_display_formats,
     setting_row, setting_rows, tr, ui_names_language,
 };
 use forge_storage::{SettingsRepo, reserved_keys};
@@ -135,7 +135,7 @@ impl SettingsRegionView {
     fn pick(&mut self, pick: RegionPick, cx: &mut Context<Self>) {
         self.open = None;
         if let Some((key, code)) = self.apply_pick(pick) {
-            install_display_formats(self.choices.resolve());
+            install_process_display_formats(self.choices.resolve());
             cx.set_global(ActiveDisplayFormats(self.choices));
             let settings = Arc::clone(&self.settings);
             async_bridge::report_failure(

@@ -84,7 +84,8 @@ pub use data::{
 };
 pub use date_display::{
     DateDisplay, DateShape, active_display_formats, date_display, fmt_day_period, fmt_display,
-    fmt_display_relative, install_display_formats, ui_names_language,
+    fmt_display_relative, install_display_formats, install_process_display_formats,
+    ui_names_language,
 };
 pub use date_time_picker::{DateTimePicker, DateTimePickerEvent, DateTimePickerLabels};
 pub use display_formats::{
@@ -115,9 +116,10 @@ pub use integration_gating::{
     integration_disabled_reason, integration_inactive_badge,
 };
 pub use locale::{
-    ArgsBuilder, CatalogLanguage, catalog_source, fmt_bytes, fmt_clock, fmt_number, fmt_uptime,
-    fmt_uptime_short, install_bundle, install_process_language, install_thread_language,
-    resolve_in_language, set_locale_id, tr_find, tr_lookup,
+    ArgsBuilder, CatalogLanguage, catalog_source, duplicate_message_ids, fmt_bytes, fmt_clock,
+    fmt_number, fmt_uptime, fmt_uptime_short, install_bundle, install_process_language,
+    install_thread_language, resolve_in_language, set_locale_id, tr_find, tr_find_warned,
+    tr_lookup,
 };
 pub use menu::{
     ContextMenu, MenuButton, MenuEntry, MenuItem, MenuPlacement, context_menu, menu_button,

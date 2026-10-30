@@ -302,6 +302,7 @@ settings_region_time_format = Time format
 settings_region_first_day = First day of week
 settings_region_default = Region default ({ $value })
 settings_region_persist_failed = Could not save the region setting
+message_catalog_conflict = Some built-in text could not be loaded: { $problems }
 
 ## Settings → navigation sidebar
 

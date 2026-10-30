@@ -235,7 +235,7 @@ struct Forge {
 
 async fn forge_with_token(fake: &FakeVTube, token: &str) -> Forge {
     let credentials = Arc::new(MemoryCredentials::default());
-    forge_vtube::credentials::store(&*credentials, token, "1.0", LOCALHOST, fake.port())
+    forge_vtube::credentials::store(&*credentials, token, "1.0", LOCALHOST, fake.port(), false)
         .await
         .unwrap();
     let events = Arc::new(Captured::default());
@@ -365,7 +365,7 @@ async fn every_request_forge_sub_actions_send_is_answered_without_an_error() {
             sink.set_expression(BLUSH, true).await.map(drop),
         ),
         ("param", sink.set_param("MouthOpen", 0.5).await.map(drop)),
-        ("reset", sink.reset_params().await.map(drop)),
+        ("reset", sink.deactivate_all_expressions().await.map(drop)),
         (
             "move model",
             sink.move_model(Some(0.1), None, None, Some(-20.0), 0.5)

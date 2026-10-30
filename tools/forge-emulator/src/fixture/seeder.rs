@@ -294,6 +294,7 @@ async fn seed_vtube_connection(
         VTUBE_API_VERSION,
         VTUBE_HOST,
         vtube.port,
+        false,
     )
     .await
     .map_err(storage_error)

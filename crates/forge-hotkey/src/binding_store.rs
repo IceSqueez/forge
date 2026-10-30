@@ -103,23 +103,17 @@ async fn hotkey_instances_for_combo(
         .collect())
 }
 
-async fn drop_instance(
+async fn drop_instances(
     backend: &Arc<dyn DataProvider>,
-    instance_id: TriggerInstanceId,
+    removed: Vec<TriggerInstanceId>,
 ) -> Result<(), String> {
-    let repo = backend.trigger_instance_repo();
-    let action_ids = repo
-        .actions_using(instance_id)
+    backend
+        .trigger_instance_repo()
+        .apply_changes(&TriggerChanges {
+            removed,
+            ..TriggerChanges::default()
+        })
         .await
-        .map_err(|e| e.to_string())?;
-    for aid in action_ids {
-        repo.unlink_action(aid, instance_id)
-            .await
-            .map_err(|e| e.to_string())?;
-    }
-    repo.delete(instance_id)
-        .await
-        .map(|_| ())
         .map_err(|e| e.to_string())
 }
 
@@ -127,23 +121,30 @@ pub async fn cleanup_stale_combo_instances(
     backend: &Arc<dyn DataProvider>,
     combo_str: &str,
 ) -> Result<(), String> {
-    for instance in hotkey_instances_for_combo(backend, combo_str).await? {
-        drop_instance(backend, instance.id).await?;
-    }
-    Ok(())
+    let stale = hotkey_instances_for_combo(backend, combo_str).await?;
+    drop_instances(backend, stale.iter().map(|instance| instance.id).collect()).await
 }
 
+async fn combo_edge_ids(
+    backend: &Arc<dyn DataProvider>,
+    combo_str: &str,
+    edge: HotkeyEdge,
+) -> Result<Vec<TriggerInstanceId>, String> {
+    Ok(hotkey_instances_for_combo(backend, combo_str)
+        .await?
+        .iter()
+        .filter(|instance| instance.kind_id == edge.kind_id())
+        .map(|instance| instance.id)
+        .collect())
+}
+
+#[cfg(test)]
 async fn remove_combo_edge(
     backend: &Arc<dyn DataProvider>,
     combo_str: &str,
     edge: HotkeyEdge,
 ) -> Result<(), String> {
-    for instance in hotkey_instances_for_combo(backend, combo_str).await? {
-        if instance.kind_id == edge.kind_id() {
-            drop_instance(backend, instance.id).await?;
-        }
-    }
-    Ok(())
+    drop_instances(backend, combo_edge_ids(backend, combo_str, edge).await?).await
 }
 
 fn binding_instance(combo: String, edge: HotkeyEdge) -> TriggerInstance {
@@ -199,12 +200,17 @@ async fn store_binding(
     edge: HotkeyEdge,
     action_id: ActionId,
 ) -> Result<(), String> {
-    remove_combo_edge(backend, &combo_str, edge).await?;
-
-    let repo = backend.trigger_instance_repo();
+    let removed = combo_edge_ids(backend, &combo_str, edge).await?;
     let instance = binding_instance(combo_str, edge);
-    repo.save(&instance).await.map_err(|e| e.to_string())?;
-    repo.link_action(action_id, instance.id)
+    let linked = vec![(action_id, instance.id)];
+    backend
+        .trigger_instance_repo()
+        .apply_changes(&TriggerChanges {
+            removed,
+            saved: vec![instance],
+            linked,
+            ..TriggerChanges::default()
+        })
         .await
         .map_err(|e| e.to_string())
 }
@@ -223,7 +229,7 @@ pub async fn delete_binding_half(
     backend: Arc<dyn DataProvider>,
     instance_id: TriggerInstanceId,
 ) -> Result<(), String> {
-    drop_instance(&backend, instance_id).await
+    drop_instances(&backend, vec![instance_id]).await
 }
 
 pub async fn set_binding_enabled(
@@ -231,13 +237,11 @@ pub async fn set_binding_enabled(
     instance_ids: Vec<TriggerInstanceId>,
     enabled: bool,
 ) -> Result<(), String> {
-    let repo = backend.trigger_instance_repo();
-    for instance_id in instance_ids {
-        repo.set_enabled(instance_id, enabled)
-            .await
-            .map_err(|e| e.to_string())?;
-    }
-    Ok(())
+    backend
+        .trigger_instance_repo()
+        .set_all_enabled(&instance_ids, enabled)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 pub async fn rebind_combo(

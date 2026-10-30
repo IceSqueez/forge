@@ -55,6 +55,54 @@ pub struct OverlayDefinition {
     pub updated_at: OffsetDateTime,
 }
 
+#[derive(Debug, Clone, PartialEq)]
+pub struct NewOverlay {
+    pub id: OverlayId,
+    pub display_name: String,
+    pub kind_id: String,
+    pub enabled: bool,
+    pub position: Option<i64>,
+    pub config: OverlayConfig,
+    pub config_schema_version: u32,
+    pub source_overrides: Vec<String>,
+}
+
+pub fn overlay_slug(input: &str) -> String {
+    let mut slug = String::new();
+    let mut prev_hyphen = true;
+
+    for ch in input.chars() {
+        if ch.is_ascii_alphanumeric() {
+            slug.push(ch.to_ascii_lowercase());
+            prev_hyphen = false;
+        } else if !prev_hyphen {
+            slug.push('-');
+            prev_hyphen = true;
+        }
+    }
+
+    while slug.ends_with('-') {
+        slug.pop();
+    }
+
+    if slug.is_empty() {
+        "overlay".to_string()
+    } else {
+        slug
+    }
+}
+
+pub fn unique_overlay_id(base: &str, is_taken: impl Fn(&OverlayId) -> bool) -> OverlayId {
+    let base_slug = overlay_slug(base);
+    let mut candidate = OverlayId::new(base_slug.as_str());
+    let mut suffix: u32 = 1;
+    while is_taken(&candidate) {
+        suffix += 1;
+        candidate = OverlayId::new(format!("{base_slug}-{suffix}"));
+    }
+    candidate
+}
+
 #[cfg_attr(feature = "test-mocks", mockall::automock)]
 #[async_trait]
 pub trait OverlayRepo: Send + Sync {

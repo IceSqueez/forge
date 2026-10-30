@@ -199,6 +199,73 @@ fn decode_referrer(row: MediaReferenceRow) -> Result<MediaReferrer, SqliteStorag
     Ok(MediaReferrer::new(kind, row.referrer_id, row.slot))
 }
 
+pub(crate) async fn retain_reference(
+    conn: &mut sqlx::SqliteConnection,
+    referrer: &MediaReferrer,
+    id: &MediaBlobId,
+) -> Result<(), StorageError> {
+    let known: Option<(i64,)> = sqlx::query_as("SELECT 1 FROM media_blobs WHERE id = ?")
+        .bind(id.as_str())
+        .fetch_optional(&mut *conn)
+        .await
+        .map_err(SqliteStorageError::Sqlx)?;
+    if known.is_none() {
+        return Err(StorageError::NotFound {
+            key: id.as_str().to_owned(),
+        });
+    }
+
+    sqlx::query(
+        "INSERT INTO media_references (referrer_kind, referrer_id, slot, blob_id)
+         VALUES (?, ?, ?, ?)
+         ON CONFLICT(referrer_kind, referrer_id, slot)
+         DO UPDATE SET blob_id = excluded.blob_id",
+    )
+    .bind(referrer.kind.as_str())
+    .bind(&referrer.id)
+    .bind(&referrer.slot)
+    .bind(id.as_str())
+    .execute(&mut *conn)
+    .await
+    .map_err(SqliteStorageError::Sqlx)?;
+
+    Ok(())
+}
+
+pub(crate) async fn release_reference<'e>(
+    executor: impl sqlx::SqliteExecutor<'e>,
+    referrer: &MediaReferrer,
+) -> Result<bool, StorageError> {
+    let result = sqlx::query(
+        "DELETE FROM media_references
+         WHERE referrer_kind = ? AND referrer_id = ? AND slot = ?",
+    )
+    .bind(referrer.kind.as_str())
+    .bind(&referrer.id)
+    .bind(&referrer.slot)
+    .execute(executor)
+    .await
+    .map_err(SqliteStorageError::Sqlx)?;
+
+    Ok(result.rows_affected() > 0)
+}
+
+pub(crate) async fn release_all_references<'e>(
+    executor: impl sqlx::SqliteExecutor<'e>,
+    kind: MediaReferrerKind,
+    referrer_id: &str,
+) -> Result<u64, StorageError> {
+    let result =
+        sqlx::query("DELETE FROM media_references WHERE referrer_kind = ? AND referrer_id = ?")
+            .bind(kind.as_str())
+            .bind(referrer_id)
+            .execute(executor)
+            .await
+            .map_err(SqliteStorageError::Sqlx)?;
+
+    Ok(result.rows_affected())
+}
+
 pub struct SqliteMediaRepo {
     db: SqlitePools,
     root: PathBuf,
@@ -377,42 +444,17 @@ impl MediaRepo for SqliteMediaRepo {
     }
 
     async fn retain(&self, referrer: &MediaReferrer, id: &MediaBlobId) -> Result<(), StorageError> {
-        if self.get(id).await?.is_none() {
-            return Err(StorageError::NotFound {
-                key: id.as_str().to_owned(),
-            });
-        }
-
-        sqlx::query(
-            "INSERT INTO media_references (referrer_kind, referrer_id, slot, blob_id)
-             VALUES (?, ?, ?, ?)
-             ON CONFLICT(referrer_kind, referrer_id, slot)
-             DO UPDATE SET blob_id = excluded.blob_id",
-        )
-        .bind(referrer.kind.as_str())
-        .bind(&referrer.id)
-        .bind(&referrer.slot)
-        .bind(id.as_str())
-        .execute(self.db.writer())
-        .await
-        .map_err(SqliteStorageError::Sqlx)?;
-
-        Ok(())
+        let mut conn = self
+            .db
+            .writer()
+            .acquire()
+            .await
+            .map_err(SqliteStorageError::Sqlx)?;
+        retain_reference(&mut conn, referrer, id).await
     }
 
     async fn release(&self, referrer: &MediaReferrer) -> Result<bool, StorageError> {
-        let result = sqlx::query(
-            "DELETE FROM media_references
-             WHERE referrer_kind = ? AND referrer_id = ? AND slot = ?",
-        )
-        .bind(referrer.kind.as_str())
-        .bind(&referrer.id)
-        .bind(&referrer.slot)
-        .execute(self.db.writer())
-        .await
-        .map_err(SqliteStorageError::Sqlx)?;
-
-        Ok(result.rows_affected() > 0)
+        release_reference(self.db.writer(), referrer).await
     }
 
     async fn release_all(
@@ -420,15 +462,7 @@ impl MediaRepo for SqliteMediaRepo {
         kind: MediaReferrerKind,
         referrer_id: &str,
     ) -> Result<u64, StorageError> {
-        let result =
-            sqlx::query("DELETE FROM media_references WHERE referrer_kind = ? AND referrer_id = ?")
-                .bind(kind.as_str())
-                .bind(referrer_id)
-                .execute(self.db.writer())
-                .await
-                .map_err(SqliteStorageError::Sqlx)?;
-
-        Ok(result.rows_affected())
+        release_all_references(self.db.writer(), kind, referrer_id).await
     }
 
     async fn referrers(&self, id: &MediaBlobId) -> Result<Vec<MediaReferrer>, StorageError> {

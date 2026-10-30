@@ -13,15 +13,18 @@ use forge_storage::{
 use forge_storage::{OverlayDefinition, OverlayId};
 use forge_storage_sqlite::SqliteBackend;
 use forge_transfer::{
-    BUNDLE_FORMAT_VERSION, BundleKind, ClipDocument, ClipSourceDocument, ClosureRegistries,
-    ContentEntry, MANIFEST_ENTRY_NAME, MediaDocument, OverlayDocument, OverlayFileDocument,
-    PACK_DOCUMENTS_VERSION, PackDocuments, PackImportOutcome, PackImportPlan, PackImportRequest,
-    PackItemKey, PackItemKind, PackManifest, PackResolution, StagedPack, TransferError,
-    apply_pack_import, backups_dir, load_pack_inventory, pack_staging_root, plan_pack_import,
-    stage_pack,
+    ActionDocument, BUNDLE_FORMAT_VERSION, BundleKind, ClipDocument, ClipSourceDocument,
+    ClosureRegistries, ContentEntry, MANIFEST_ENTRY_NAME, MediaDocument, OverlayDocument,
+    OverlayFileDocument, PACK_DOCUMENTS_VERSION, PackDocuments, PackImportOutcome, PackImportPlan,
+    PackImportRequest, PackItemKey, PackItemKind, PackManifest, PackResolution, QueueDocument,
+    StagedPack, TransferError, TriggerDocument, apply_pack_import, backups_dir,
+    load_pack_inventory, pack_staging_root, plan_pack_import, stage_pack,
 };
-use forge_types::{ClipId, Variant};
+use forge_types::{
+    ActionId, ClipId, ExecutionMode, PermissionRung, QueueId, TriggerInstanceId, Variant,
+};
 use sha2::{Digest, Sha256};
+use sqlx::Connection;
 use tempfile::TempDir;
 use time::OffsetDateTime;
 
@@ -102,6 +105,22 @@ impl Store {
 
     async fn overlay(&self, id: &OverlayId) -> Option<OverlayDefinition> {
         self.provider.overlay_repo().get(id).await.unwrap()
+    }
+
+    async fn refuse_overlay_inserts(&self) {
+        let mut connection = sqlx::SqliteConnection::connect(&format!(
+            "sqlite://{}",
+            self.data_dir().join(DATABASE_FILE_NAME).display()
+        ))
+        .await
+        .unwrap();
+        sqlx::query(
+            "CREATE TRIGGER refuse_overlays BEFORE INSERT ON overlays \
+             BEGIN SELECT RAISE(ABORT, 'refused'); END",
+        )
+        .execute(&mut connection)
+        .await
+        .unwrap();
     }
 
     fn safety_snapshots(&self) -> usize {
@@ -592,4 +611,119 @@ async fn applying_an_invalid_overlay_against_a_replacing_plan_writes_nothing_and
         (store.overlay(&local.id).await, store.safety_snapshots()),
         (Some(local), 0)
     );
+}
+
+const PAYLOAD_NAME: &str = "payload.css";
+
+#[tokio::test]
+async fn a_pack_import_reaches_the_catalog_as_a_single_revision() {
+    let store = Store::open().await;
+    let queue_id = QueueId::new();
+    let trigger_id = TriggerInstanceId::new();
+    let documents = PackDocuments {
+        queues: vec![QueueDocument {
+            id: queue_id,
+            name: "Packed".to_owned(),
+            description: String::new(),
+            concurrency: 1,
+        }],
+        triggers: vec![TriggerDocument {
+            id: trigger_id,
+            kind_id: "twitch.follow".to_owned(),
+            name: "follow".to_owned(),
+            overrides: Default::default(),
+            enabled: true,
+            user_defined: true,
+            platform_scope: Default::default(),
+            cooldown_secs: 0,
+            cooldown_global: true,
+            permission_rung: PermissionRung::Everyone,
+        }],
+        actions: vec![ActionDocument {
+            id: ActionId::new(),
+            name: "alert".to_owned(),
+            group: None,
+            queue_id,
+            enabled: true,
+            concurrent: false,
+            bypass_pause: false,
+            execution_mode: ExecutionMode::Sequential,
+            description: None,
+            steps: Vec::new(),
+            trigger_ids: vec![trigger_id],
+        }],
+        ..empty_documents()
+    };
+    let path = bundle(store.data_dir(), &documents, &[]);
+    let revision = store.provider.catalog_revision();
+    let before = revision.current();
+
+    store.import(path).await.unwrap();
+
+    assert_eq!(revision.current(), before + 1);
+}
+
+#[tokio::test]
+async fn a_pack_import_whose_commit_fails_removes_the_files_and_media_it_placed() {
+    let store = Store::open().await;
+    store.refuse_overlay_inserts().await;
+    let media_id = format!("sha256-{}", sha256_hex(PACK_OGG));
+    let documents = PackDocuments {
+        media: vec![media_claiming(&media_id)],
+        clips: vec![clip_on_media(&media_id)],
+        overlays: vec![overlay_carrying(PAYLOAD_NAME)],
+        ..empty_documents()
+    };
+    let path = bundle(
+        store.data_dir(),
+        &documents,
+        &[(MEDIA_FILE, PACK_OGG), (OVERLAY_FILE, b"body {}")],
+    );
+
+    let failed = store.import(path).await;
+
+    assert!(
+        matches!(&failed, Err(e) if !matches!(e, TransferError::PackRollbackIncomplete { .. })),
+        "{failed:?}"
+    );
+    assert!(!file_named_anywhere(
+        &store.data_dir().join(OVERLAYS_DIR_NAME),
+        PAYLOAD_NAME
+    ));
+    assert_eq!(store.provider.media_repo().list().await.unwrap(), []);
+    assert_eq!(
+        store.provider.soundboard_clips_repo().list().await.unwrap(),
+        []
+    );
+}
+
+#[tokio::test]
+async fn two_new_pack_overlays_with_one_name_land_under_distinct_ids() {
+    let store = Store::open().await;
+    let twin = |id: &str| OverlayDocument {
+        id: id.to_owned(),
+        display_name: "Twin".to_owned(),
+        files: Vec::new(),
+        source_overrides: Vec::new(),
+        ..overlay_carrying(PAYLOAD_NAME)
+    };
+    let documents = PackDocuments {
+        overlays: vec![twin("first"), twin("second")],
+        ..empty_documents()
+    };
+    let path = bundle(store.data_dir(), &documents, &[]);
+
+    store.import(path).await.unwrap();
+
+    let mut ids: Vec<String> = store
+        .provider
+        .overlay_repo()
+        .list()
+        .await
+        .unwrap()
+        .iter()
+        .map(|overlay| overlay.id.as_str().to_owned())
+        .collect();
+    ids.sort();
+    assert_eq!(ids, ["twin", "twin-2"]);
 }

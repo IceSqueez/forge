@@ -4,19 +4,19 @@ use forge_overlay::image_references;
 use forge_registry::InternalNamespace;
 use forge_storage::settings::core_settings;
 use forge_storage::{
-    GlobalsRepo, MediaBlobId, MediaReferrer, MediaReferrerKind, OverlayId, ScriptRecord,
-    ScriptRepo, SettingRow, StoredClip, clip_source_referrer, remove_row, restore_row,
+    MediaBlobId, MediaReferrer, MediaReferrerKind, NewOverlay, OverlayConfig, OverlayDefinition,
+    OverlayId, ScriptRecord, SettingRow, StorageError, StoreChange, StoredClip,
+    clip_source_referrer, setting_row, unique_overlay_id,
 };
 use forge_types::{ClipId, OutputDevice};
 use time::OffsetDateTime;
 
 use crate::documents::convert::{action_of, queue_of, trigger_of};
-use crate::documents::model::ClipSourceDocument;
+use crate::documents::model::{ClipSourceDocument, OverlayDocument};
 use crate::documents::overlay_files::{place_overlay_files, rewrite_overlay_media};
 use crate::documents::undo::Undo;
 use crate::error::TransferError;
 use crate::setup::import_apply::{SetupImport, SetupLivePart, SkippedSetting};
-use crate::setup::import_undo::SetupUndo;
 
 const TTS_SETTINGS: [&str; 3] = [
     core_settings::TTS_DISABLED_ENGINES.name(),
@@ -39,8 +39,7 @@ impl SetupImport<'_, '_> {
         let bytes = tokio::fs::read(&source).await?;
         let blob = self.provider.media_repo().store(label, bytes).await?;
         if self.known_media.insert(blob.id.clone()) {
-            self.journal
-                .push_configuration(Undo::Media(blob.id.clone()));
+            self.journal.push(Undo::Media(blob.id.clone()));
         }
         self.carried_media.insert(blob.id.clone());
         Ok(blob.id)
@@ -61,28 +60,21 @@ impl SetupImport<'_, '_> {
         Ok(())
     }
 
-    pub(super) async fn write_queues(&mut self) -> Result<(), TransferError> {
-        let repo = self.provider.queue_repo();
+    pub(super) fn write_queues(&mut self) {
         let staged = self.staged;
         for document in &staged.documents().configuration.queues {
             let queue = queue_of(document);
-            let previous = self.inventory.configuration.queues.get(&queue.id).cloned();
-            repo.save(&queue).await?;
-            match &previous {
+            match self.inventory.configuration.queues.get(&queue.id) {
                 None => self.queues.added.push(queue.clone()),
                 Some(local) if *local != queue => self.queues.changed.push(queue.clone()),
                 Some(_) => {}
             }
-            self.journal.push_configuration(Undo::Queue {
-                id: queue.id,
-                previous,
-            });
+            self.changes.push(StoreChange::SaveQueue(queue));
             self.refresh.insert(SetupLivePart::Queues);
         }
-        Ok(())
     }
 
-    pub(super) async fn write_scripts(&mut self) -> Result<(), TransferError> {
+    pub(super) fn write_scripts(&mut self) {
         let staged = self.staged;
         for document in &staged.documents().configuration.scripts {
             let previous = self.inventory.configuration.stored_script(document.id);
@@ -98,21 +90,15 @@ impl SetupImport<'_, '_> {
                 created_at: previous.as_ref().map_or(now, |script| script.created_at),
                 last_modified: now,
             };
-            ScriptRepo::save(self.provider, record).await?;
-            self.journal.push_configuration(Undo::Script {
-                id: document.id,
-                previous,
-                archived,
-            });
+            self.changes.push(StoreChange::SaveScript(Box::new(record)));
             if archived {
-                self.provider.restore_script(document.id).await?;
+                self.changes.push(StoreChange::RestoreScript(document.id));
             }
             self.refresh.insert(SetupLivePart::Scripts);
         }
-        Ok(())
     }
 
-    pub(super) async fn write_globals(&mut self) -> Result<(), TransferError> {
+    pub(super) fn write_globals(&mut self) {
         let staged = self.staged;
         let documents = staged.documents();
         for document in &documents.configuration.globals {
@@ -121,23 +107,15 @@ impl SetupImport<'_, '_> {
                 .get(&document.name)
                 .cloned()
                 .unwrap_or_else(|| document.default_value.clone());
-            let previous = self.inventory.configuration.stored_global(&document.name);
-            let archived = previous.as_ref().is_some_and(|stored| stored.archived);
-            GlobalsRepo::set(self.provider, &document.name, value, document.persisted).await?;
-            self.journal.push_configuration(Undo::Global {
+            self.changes.push(StoreChange::SetGlobal {
                 name: document.name.clone(),
-                previous: previous.map(|stored| stored.row),
-                archived,
+                value,
+                persisted: document.persisted,
             });
-            if archived {
-                GlobalsRepo::restore(self.provider, &document.name).await?;
-            }
         }
-        Ok(())
     }
 
     pub(super) async fn write_clips(&mut self) -> Result<(), TransferError> {
-        let repo = self.provider.soundboard_clips_repo();
         let media = self.provider.media_repo();
         let staged = self.staged;
         let documents = staged.documents();
@@ -190,35 +168,19 @@ impl SetupImport<'_, '_> {
                 duration_secs: document.duration_secs,
                 builtin_id: document.builtin_id.clone(),
             };
-            repo.save(&clip).await?;
-            self.journal.push_configuration(Undo::Clip {
-                id: document.id,
-                previous,
-            });
+            self.changes.push(StoreChange::SaveClip(Box::new(clip)));
             if let Some(blob) = blob {
-                self.retain(clip_source_referrer(document.id), &blob)
-                    .await?;
+                self.changes.push(StoreChange::RetainMedia {
+                    referrer: clip_source_referrer(document.id),
+                    blob,
+                });
             }
             self.refresh.insert(SetupLivePart::Hotkeys);
         }
         Ok(())
     }
 
-    async fn retain(
-        &mut self,
-        referrer: MediaReferrer,
-        blob: &MediaBlobId,
-    ) -> Result<(), TransferError> {
-        let repo = self.provider.media_repo();
-        let previous = repo.blob_of(&referrer).await?;
-        repo.retain(&referrer, blob).await?;
-        self.journal
-            .push_configuration(Undo::Referrer { referrer, previous });
-        Ok(())
-    }
-
     pub(super) async fn write_overlays(&mut self) -> Result<(), TransferError> {
-        let repo = self.provider.overlay_repo();
         let staged = self.staged;
         for document in &staged.documents().configuration.overlays {
             let mut config = document.config.clone();
@@ -229,64 +191,53 @@ impl SetupImport<'_, '_> {
                 .overlays
                 .get(&OverlayId::new(document.id.as_str()))
                 .cloned();
-            let mut definition = match &local {
-                Some(local) => local.clone(),
+            let id = match local {
+                Some(local) => {
+                    let id = local.id.clone();
+                    self.changes
+                        .push(StoreChange::SaveOverlay(Box::new(replaced_overlay(
+                            local, document, &config,
+                        ))));
+                    id
+                }
                 None => {
-                    let created = repo
-                        .create(
-                            &document.display_name,
-                            &document.kind_id,
-                            document.config_schema_version,
-                        )
-                        .await?;
-                    self.journal.push_configuration(Undo::Overlay {
-                        id: created.id.clone(),
-                        previous: None,
-                    });
-                    created
+                    let id = self.mint_overlay_id(&document.display_name);
+                    self.changes
+                        .push(StoreChange::CreateOverlay(Box::new(NewOverlay {
+                            id: id.clone(),
+                            display_name: document.display_name.clone(),
+                            kind_id: document.kind_id.clone(),
+                            enabled: document.enabled,
+                            position: Some(document.position),
+                            config: config.clone(),
+                            config_schema_version: document.config_schema_version,
+                            source_overrides: document.source_overrides.clone(),
+                        })));
+                    id
                 }
             };
-            definition.display_name = document.display_name.clone();
-            definition.kind_id = document.kind_id.clone();
-            definition.enabled = document.enabled;
-            definition.position = document.position;
-            definition.config = config;
-            definition.config_schema_version = document.config_schema_version;
-            definition.source_overrides = document.source_overrides.clone();
-            repo.save(&definition).await?;
-            if local.is_some() {
-                self.journal.push_configuration(Undo::Overlay {
-                    id: definition.id.clone(),
-                    previous: local,
-                });
-            }
-            if definition.id.as_str() != document.id {
-                self.remap.insert(
-                    InternalNamespace::Overlay,
-                    document.id.clone(),
-                    definition.id.as_str(),
-                );
+            if id.as_str() != document.id {
+                self.remap
+                    .insert(InternalNamespace::Overlay, document.id.clone(), id.as_str());
             }
             let journal = &mut self.journal;
             place_overlay_files(
                 &self.overlay_root,
-                &definition.id,
+                &id,
                 &document.files,
                 |file| staged.file(file),
-                |undo| journal.push_configuration(undo),
+                |undo| journal.push(undo),
             )
             .await?;
-            for reference in image_references(&definition.config) {
+            for reference in image_references(&config) {
                 let Ok(blob) = MediaBlobId::from_stored(reference.image) else {
                     continue;
                 };
                 if self.known_media.contains(&blob) {
-                    let referrer = MediaReferrer::new(
-                        MediaReferrerKind::Overlay,
-                        definition.id.as_str(),
-                        reference.key,
-                    );
-                    self.retain(referrer, &blob).await?;
+                    let referrer =
+                        MediaReferrer::new(MediaReferrerKind::Overlay, id.as_str(), reference.key);
+                    self.changes
+                        .push(StoreChange::RetainMedia { referrer, blob });
                 }
             }
             self.refresh.insert(SetupLivePart::Overlays);
@@ -294,32 +245,32 @@ impl SetupImport<'_, '_> {
         Ok(())
     }
 
-    pub(super) async fn write_triggers(&mut self) -> Result<(), TransferError> {
-        let repo = self.provider.trigger_instance_repo();
+    fn mint_overlay_id(&mut self, display_name: &str) -> OverlayId {
+        let id = unique_overlay_id(display_name, |candidate| {
+            self.inventory
+                .configuration
+                .overlays
+                .contains_key(candidate)
+                || self.minted_overlays.contains(candidate)
+        });
+        self.minted_overlays.insert(id.clone());
+        id
+    }
+
+    pub(super) fn write_triggers(&mut self) {
         let staged = self.staged;
         for document in &staged.documents().configuration.triggers {
             let mut trigger = trigger_of(document);
             self.registries
                 .catalog()
                 .rewrite_trigger_instance(&mut trigger, &self.remap);
-            let previous = self
-                .inventory
-                .configuration
-                .stored_trigger(&trigger.id)
-                .map(|stored| stored.row);
-            repo.save(&trigger).await?;
-            self.journal.push_configuration(Undo::Trigger {
-                id: trigger.id,
-                previous,
-                archived: false,
-            });
+            self.changes
+                .push(StoreChange::SaveTrigger(Box::new(trigger)));
             self.refresh.insert(SetupLivePart::Hotkeys);
         }
-        Ok(())
     }
 
-    pub(super) async fn write_actions(&mut self) -> Result<(), TransferError> {
-        let repo = self.provider.action_repo();
+    pub(super) fn write_actions(&mut self) -> Result<(), TransferError> {
         let queues = self.setup_queue_ids();
         let staged = self.staged;
         for document in &staged.documents().configuration.actions {
@@ -334,27 +285,21 @@ impl SetupImport<'_, '_> {
                     action.name
                 )));
             }
-            let previous = self
+            let created = self
                 .inventory
                 .configuration
                 .stored_action(&action.id)
-                .map(|stored| stored.row);
-            let created = previous.is_none();
-            repo.save(&action).await?;
-            self.journal.push_configuration(Undo::Action {
-                id: action.id,
-                previous,
-                archived: false,
-            });
+                .is_none();
+            let id = action.id;
+            self.changes.push(StoreChange::SaveAction(Box::new(action)));
             if created {
-                repo.restore(action.id).await?;
+                self.changes.push(StoreChange::RestoreAction(id));
             }
         }
         Ok(())
     }
 
-    pub(super) async fn link_triggers(&mut self) -> Result<(), TransferError> {
-        let repo = self.provider.trigger_instance_repo();
+    pub(super) fn link_triggers(&mut self) {
         let carried = self.setup_trigger_ids();
         let staged = self.staged;
         for document in &staged.documents().configuration.actions {
@@ -363,54 +308,38 @@ impl SetupImport<'_, '_> {
                 .iter()
                 .filter(|trigger| carried.contains(*trigger));
             for trigger in linked {
-                repo.link_action(document.id, *trigger).await?;
-                self.journal.push_configuration(Undo::Link {
+                self.changes.push(StoreChange::LinkTrigger {
                     action: document.id,
                     trigger: *trigger,
                 });
                 self.refresh.insert(SetupLivePart::Hotkeys);
             }
         }
-        Ok(())
     }
 
-    pub(super) async fn write_tts(&mut self) -> Result<(), TransferError> {
-        let repo = self.provider.tts_filters_repo();
+    pub(super) fn write_tts(&mut self) {
         let tts = &self.staged.documents().tts;
-        repo.set_pipeline_settings(&tts.pipeline).await?;
-        self.journal
-            .push(SetupUndo::TtsPipeline(self.inventory.tts_pipeline.clone()));
-        repo.replace_rules(&tts.filter_rules).await?;
-        self.journal
-            .push(SetupUndo::FilterRules(self.inventory.filter_rules.clone()));
+        self.changes.push(StoreChange::SetPipelineSettings(Box::new(
+            tts.pipeline.clone(),
+        )));
+        self.changes
+            .push(StoreChange::ReplaceFilterRules(tts.filter_rules.clone()));
         self.refresh.insert(SetupLivePart::Tts);
-        Ok(())
     }
 
-    pub(super) async fn write_voices(&mut self) -> Result<(), TransferError> {
-        let repo = self.provider.voice_alias_repo();
+    pub(super) fn write_voices(&mut self) -> Result<(), StorageError> {
         let voices = &self.staged.documents().voices;
         for alias in &voices.aliases {
-            let previous = self
-                .inventory
-                .voice_aliases
-                .iter()
-                .find(|local| local.id == alias.id)
-                .cloned();
-            let stored = repo.upsert(alias).await?;
-            self.journal.push(SetupUndo::VoiceAlias {
-                id: stored.id,
-                previous,
-            });
+            self.changes
+                .push(StoreChange::UpsertVoiceAlias(Box::new(alias.clone())));
         }
-        repo.set_strategy(&voices.strategy).await?;
-        self.journal.push(SetupUndo::VoiceStrategy(
-            self.inventory.voice_strategy.clone(),
-        ));
-        repo.set_ignore_profile(&voices.ignore_profile).await?;
-        self.journal.push(SetupUndo::IgnoreProfile(
-            self.inventory.ignore_profile.clone(),
-        ));
+        self.changes.push(StoreChange::PutSetting(setting_row(
+            &core_settings::VOICE_ASSIGNMENT_STRATEGY,
+            &voices.strategy,
+        )?));
+        self.changes.push(StoreChange::SetIgnoreProfile(Box::new(
+            voices.ignore_profile.clone(),
+        )));
         self.refresh.insert(SetupLivePart::Tts);
         Ok(())
     }
@@ -439,23 +368,18 @@ impl SetupImport<'_, '_> {
         (admitted, skipped)
     }
 
-    pub(super) async fn write_settings(&mut self) -> Result<(), TransferError> {
+    pub(super) fn write_settings(&mut self) {
         let (incoming, skipped) = self.admit_incoming_settings();
         self.skipped_settings = skipped;
         let local = self.inventory.portable_settings.clone();
         for (key, row) in &incoming {
-            let previous = local.get(key).cloned();
-            if previous
-                .as_ref()
+            if local
+                .get(key)
                 .is_some_and(|local_row| local_row.value() == row.value())
             {
                 continue;
             }
-            restore_row(self.provider, row).await?;
-            self.journal.push(match previous {
-                Some(previous) => SetupUndo::SettingRestore(previous),
-                None => SetupUndo::SettingRemove(row.clone()),
-            });
+            self.changes.push(StoreChange::PutSetting(row.clone()));
             self.note_setting_change(key);
         }
         let carried = &self.staged.documents().settings;
@@ -463,11 +387,9 @@ impl SetupImport<'_, '_> {
             if carried.contains_key(&key) {
                 continue;
             }
-            remove_row(self.provider, &row).await?;
+            self.changes.push(StoreChange::DeleteSetting(row));
             self.note_setting_change(&key);
-            self.journal.push(SetupUndo::SettingRestore(row));
         }
-        Ok(())
     }
 
     fn note_setting_change(&mut self, key: &str) {
@@ -484,4 +406,19 @@ impl SetupImport<'_, '_> {
             self.refresh.insert(SetupLivePart::Tts);
         }
     }
+}
+
+fn replaced_overlay(
+    mut definition: OverlayDefinition,
+    document: &OverlayDocument,
+    config: &OverlayConfig,
+) -> OverlayDefinition {
+    definition.display_name = document.display_name.clone();
+    definition.kind_id = document.kind_id.clone();
+    definition.enabled = document.enabled;
+    definition.position = document.position;
+    definition.config = config.clone();
+    definition.config_schema_version = document.config_schema_version;
+    definition.source_overrides = document.source_overrides.clone();
+    definition
 }

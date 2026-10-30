@@ -2,7 +2,9 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use forge_storage::{StorageError, TriggerChanges, TriggerInstanceRepo};
+use forge_storage::{
+    ActionRepo, QueueRepo, StorageError, TriggerChanges, TriggerInstanceRepo, TriggerWiring,
+};
 use forge_types::{ActionId, TriggerInstance, TriggerInstanceId, Variant};
 
 use crate::binding::{COMBO_FIELD, HotkeyEdge};
@@ -93,6 +95,23 @@ impl TriggerInstanceRepo for HotkeySyncedTriggerRepo {
         Ok(())
     }
 
+    async fn commit_overlay_wiring(
+        &self,
+        wiring: &TriggerWiring,
+        queues: Arc<dyn QueueRepo>,
+        actions: Arc<dyn ActionRepo>,
+    ) -> Result<(), StorageError> {
+        let canonical = TriggerWiring {
+            instance: canonicalized(&wiring.instance)?,
+            ..wiring.clone()
+        };
+        self.inner
+            .commit_overlay_wiring(&canonical, queues, actions)
+            .await?;
+        self.sync().await;
+        Ok(())
+    }
+
     async fn link_action(
         &self,
         action_id: ActionId,
@@ -147,6 +166,16 @@ impl TriggerInstanceRepo for HotkeySyncedTriggerRepo {
 
     async fn set_enabled(&self, id: TriggerInstanceId, enabled: bool) -> Result<(), StorageError> {
         self.inner.set_enabled(id, enabled).await?;
+        self.sync().await;
+        Ok(())
+    }
+
+    async fn set_all_enabled(
+        &self,
+        ids: &[TriggerInstanceId],
+        enabled: bool,
+    ) -> Result<(), StorageError> {
+        self.inner.set_all_enabled(ids, enabled).await?;
         self.sync().await;
         Ok(())
     }

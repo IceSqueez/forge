@@ -7,6 +7,41 @@ use forge_storage::{
 use crate::error::SqliteStorageError;
 use crate::pool::SqlitePools;
 
+pub(crate) async fn upsert_row<'e>(
+    executor: impl sqlx::SqliteExecutor<'e>,
+    key: &str,
+    value: &str,
+    classes: RowClasses,
+) -> Result<(), StorageError> {
+    sqlx::query(
+        "INSERT INTO settings (key, value, portability, disclosure) VALUES (?, ?, ?, ?) \
+         ON CONFLICT(key) DO UPDATE SET value = excluded.value, \
+         portability = excluded.portability, disclosure = excluded.disclosure",
+    )
+    .bind(key)
+    .bind(value)
+    .bind(classes.portability.code())
+    .bind(classes.disclosure.code())
+    .execute(executor)
+    .await
+    .map_err(SqliteStorageError::Sqlx)?;
+
+    Ok(())
+}
+
+pub(crate) async fn delete_row<'e>(
+    executor: impl sqlx::SqliteExecutor<'e>,
+    key: &str,
+) -> Result<bool, StorageError> {
+    let result = sqlx::query("DELETE FROM settings WHERE key = ?")
+        .bind(key)
+        .execute(executor)
+        .await
+        .map_err(SqliteStorageError::Sqlx)?;
+
+    Ok(result.rows_affected() > 0)
+}
+
 pub struct SqliteSettingsRepo {
     db: SqlitePools,
 }
@@ -36,20 +71,7 @@ impl SettingsRepo for SqliteSettingsRepo {
         value: &str,
         classes: RowClasses,
     ) -> Result<(), StorageError> {
-        sqlx::query(
-            "INSERT INTO settings (key, value, portability, disclosure) VALUES (?, ?, ?, ?) \
-             ON CONFLICT(key) DO UPDATE SET value = excluded.value, \
-             portability = excluded.portability, disclosure = excluded.disclosure",
-        )
-        .bind(key)
-        .bind(value)
-        .bind(classes.portability.code())
-        .bind(classes.disclosure.code())
-        .execute(self.db.writer())
-        .await
-        .map_err(SqliteStorageError::Sqlx)?;
-
-        Ok(())
+        upsert_row(self.db.writer(), key, value, classes).await
     }
 
     async fn load_rows(&self, gate: RowGate) -> Result<Vec<SettingRow>, StorageError> {
@@ -98,12 +120,6 @@ impl SettingsRepo for SqliteSettingsRepo {
     }
 
     async fn delete_raw(&self, _gate: RowGate, key: &str) -> Result<bool, StorageError> {
-        let result = sqlx::query("DELETE FROM settings WHERE key = ?")
-            .bind(key)
-            .execute(self.db.writer())
-            .await
-            .map_err(SqliteStorageError::Sqlx)?;
-
-        Ok(result.rows_affected() > 0)
+        delete_row(self.db.writer(), key).await
     }
 }

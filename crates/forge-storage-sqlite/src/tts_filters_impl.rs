@@ -222,6 +222,116 @@ fn decode_settings_row(
     })
 }
 
+pub(crate) async fn write_rules(
+    conn: &mut sqlx::SqliteConnection,
+    rules: &[FilterRule],
+) -> Result<(), StorageError> {
+    sqlx::query("DELETE FROM tts_filter_rules")
+        .execute(&mut *conn)
+        .await
+        .map_err(SqliteStorageError::Sqlx)?;
+
+    for rule in rules {
+        let (kind_str, params_json) = encode_rule_kind(&rule.kind)?;
+        sqlx::query(
+            "INSERT INTO tts_filter_rules (id, name, enabled, position, kind, params)
+             VALUES (?, ?, ?, ?, ?, ?)",
+        )
+        .bind(&rule.id)
+        .bind(&rule.name)
+        .bind(rule.enabled as i64)
+        .bind(rule.position as i64)
+        .bind(kind_str)
+        .bind(&params_json)
+        .execute(&mut *conn)
+        .await
+        .map_err(SqliteStorageError::Sqlx)?;
+    }
+
+    Ok(())
+}
+
+pub(crate) async fn write_pipeline_settings<'e>(
+    executor: impl sqlx::SqliteExecutor<'e>,
+    settings: &TtsPipelineSettings,
+) -> Result<(), StorageError> {
+    let url_mode_str = serde_json::to_string(&settings.url_mode)
+        .map_err(StorageError::Serialization)?
+        .trim_matches('"')
+        .to_owned();
+    let blocklist_mode_str = serde_json::to_string(&settings.blocklist_mode)
+        .map_err(StorageError::Serialization)?
+        .trim_matches('"')
+        .to_owned();
+    let bot_accounts_json =
+        serde_json::to_string(&settings.bot_accounts).map_err(StorageError::Serialization)?;
+    let skip_custom_regexes_json = serde_json::to_string(&settings.skip_custom_regexes)
+        .map_err(StorageError::Serialization)?;
+
+    sqlx::query(
+        "INSERT INTO tts_pipeline_settings
+            (id, url_mode, max_length, blocklist_mode, strip_twitch_emotes, strip_reward_emotes,
+             skip_contains_url, skip_starts_with_bang, skip_from_bot_accounts, bot_accounts,
+             skip_longer_than, longer_than_max_chars, skip_repeat_of_recent,
+             repeat_of_recent_window, output_read_display_name_first, output_emote_to_word,
+             skip_prefix, skip_emote_only, skip_mostly_non_latin, skip_custom_regexes,
+             output_sanitize_punctuation, output_max_duration_secs, output_language_aware_voice,
+             strip_emoji)
+         VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+         ON CONFLICT(id) DO UPDATE SET
+            url_mode                       = excluded.url_mode,
+            max_length                     = excluded.max_length,
+            blocklist_mode                 = excluded.blocklist_mode,
+            strip_twitch_emotes            = excluded.strip_twitch_emotes,
+            strip_reward_emotes            = excluded.strip_reward_emotes,
+            skip_contains_url              = excluded.skip_contains_url,
+            skip_starts_with_bang          = excluded.skip_starts_with_bang,
+            skip_from_bot_accounts         = excluded.skip_from_bot_accounts,
+            bot_accounts                   = excluded.bot_accounts,
+            skip_longer_than               = excluded.skip_longer_than,
+            longer_than_max_chars          = excluded.longer_than_max_chars,
+            skip_repeat_of_recent          = excluded.skip_repeat_of_recent,
+            repeat_of_recent_window        = excluded.repeat_of_recent_window,
+            output_read_display_name_first = excluded.output_read_display_name_first,
+            output_emote_to_word           = excluded.output_emote_to_word,
+            skip_prefix                    = excluded.skip_prefix,
+            skip_emote_only                = excluded.skip_emote_only,
+            skip_mostly_non_latin          = excluded.skip_mostly_non_latin,
+            skip_custom_regexes            = excluded.skip_custom_regexes,
+            output_sanitize_punctuation    = excluded.output_sanitize_punctuation,
+            output_max_duration_secs       = excluded.output_max_duration_secs,
+            output_language_aware_voice    = excluded.output_language_aware_voice,
+            strip_emoji                    = excluded.strip_emoji",
+    )
+    .bind(&url_mode_str)
+    .bind(settings.max_length.map(|v| v as i64))
+    .bind(&blocklist_mode_str)
+    .bind(settings.strip_twitch_emotes as i64)
+    .bind(settings.strip_reward_emotes as i64)
+    .bind(settings.skip_contains_url as i64)
+    .bind(settings.skip_starts_with_bang as i64)
+    .bind(settings.skip_from_bot_accounts as i64)
+    .bind(&bot_accounts_json)
+    .bind(settings.skip_longer_than as i64)
+    .bind(settings.longer_than_max_chars as i64)
+    .bind(settings.skip_repeat_of_recent as i64)
+    .bind(settings.repeat_of_recent_window as i64)
+    .bind(settings.output_read_display_name_first as i64)
+    .bind(settings.output_emote_to_word as i64)
+    .bind(&settings.skip_prefix)
+    .bind(settings.skip_emote_only as i64)
+    .bind(settings.skip_mostly_non_latin as i64)
+    .bind(&skip_custom_regexes_json)
+    .bind(settings.output_sanitize_punctuation as i64)
+    .bind(settings.output_max_duration_secs.map(|v| v as i64))
+    .bind(settings.output_language_aware_voice.map(|v| v as i64))
+    .bind(settings.strip_emoji as i64)
+    .execute(executor)
+    .await
+    .map_err(SqliteStorageError::Sqlx)?;
+    Ok(())
+}
+
 #[async_trait]
 impl TtsFiltersRepo for SqliteTtsFiltersRepo {
     async fn list_rules(&self) -> Result<Vec<FilterRule>, StorageError> {
@@ -243,29 +353,7 @@ impl TtsFiltersRepo for SqliteTtsFiltersRepo {
             .begin()
             .await
             .map_err(SqliteStorageError::Sqlx)?;
-
-        sqlx::query("DELETE FROM tts_filter_rules")
-            .execute(&mut *tx)
-            .await
-            .map_err(SqliteStorageError::Sqlx)?;
-
-        for rule in rules {
-            let (kind_str, params_json) = encode_rule_kind(&rule.kind)?;
-            sqlx::query(
-                "INSERT INTO tts_filter_rules (id, name, enabled, position, kind, params)
-                 VALUES (?, ?, ?, ?, ?, ?)",
-            )
-            .bind(&rule.id)
-            .bind(&rule.name)
-            .bind(rule.enabled as i64)
-            .bind(rule.position as i64)
-            .bind(kind_str)
-            .bind(&params_json)
-            .execute(&mut *tx)
-            .await
-            .map_err(SqliteStorageError::Sqlx)?;
-        }
-
+        write_rules(&mut tx, rules).await?;
         tx.commit().await.map_err(SqliteStorageError::Sqlx)?;
         Ok(())
     }
@@ -305,80 +393,6 @@ impl TtsFiltersRepo for SqliteTtsFiltersRepo {
         &self,
         settings: &TtsPipelineSettings,
     ) -> Result<(), StorageError> {
-        let url_mode_str = serde_json::to_string(&settings.url_mode)
-            .map_err(StorageError::Serialization)?
-            .trim_matches('"')
-            .to_owned();
-        let blocklist_mode_str = serde_json::to_string(&settings.blocklist_mode)
-            .map_err(StorageError::Serialization)?
-            .trim_matches('"')
-            .to_owned();
-        let bot_accounts_json =
-            serde_json::to_string(&settings.bot_accounts).map_err(StorageError::Serialization)?;
-        let skip_custom_regexes_json = serde_json::to_string(&settings.skip_custom_regexes)
-            .map_err(StorageError::Serialization)?;
-
-        sqlx::query(
-            "INSERT INTO tts_pipeline_settings
-                (id, url_mode, max_length, blocklist_mode, strip_twitch_emotes, strip_reward_emotes,
-                 skip_contains_url, skip_starts_with_bang, skip_from_bot_accounts, bot_accounts,
-                 skip_longer_than, longer_than_max_chars, skip_repeat_of_recent,
-                 repeat_of_recent_window, output_read_display_name_first, output_emote_to_word,
-                 skip_prefix, skip_emote_only, skip_mostly_non_latin, skip_custom_regexes,
-                 output_sanitize_punctuation, output_max_duration_secs, output_language_aware_voice,
-                 strip_emoji)
-             VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-             ON CONFLICT(id) DO UPDATE SET
-                url_mode                       = excluded.url_mode,
-                max_length                     = excluded.max_length,
-                blocklist_mode                 = excluded.blocklist_mode,
-                strip_twitch_emotes            = excluded.strip_twitch_emotes,
-                strip_reward_emotes            = excluded.strip_reward_emotes,
-                skip_contains_url              = excluded.skip_contains_url,
-                skip_starts_with_bang          = excluded.skip_starts_with_bang,
-                skip_from_bot_accounts         = excluded.skip_from_bot_accounts,
-                bot_accounts                   = excluded.bot_accounts,
-                skip_longer_than               = excluded.skip_longer_than,
-                longer_than_max_chars          = excluded.longer_than_max_chars,
-                skip_repeat_of_recent          = excluded.skip_repeat_of_recent,
-                repeat_of_recent_window        = excluded.repeat_of_recent_window,
-                output_read_display_name_first = excluded.output_read_display_name_first,
-                output_emote_to_word           = excluded.output_emote_to_word,
-                skip_prefix                    = excluded.skip_prefix,
-                skip_emote_only                = excluded.skip_emote_only,
-                skip_mostly_non_latin          = excluded.skip_mostly_non_latin,
-                skip_custom_regexes            = excluded.skip_custom_regexes,
-                output_sanitize_punctuation    = excluded.output_sanitize_punctuation,
-                output_max_duration_secs       = excluded.output_max_duration_secs,
-                output_language_aware_voice    = excluded.output_language_aware_voice,
-                strip_emoji                    = excluded.strip_emoji",
-        )
-        .bind(&url_mode_str)
-        .bind(settings.max_length.map(|v| v as i64))
-        .bind(&blocklist_mode_str)
-        .bind(settings.strip_twitch_emotes as i64)
-        .bind(settings.strip_reward_emotes as i64)
-        .bind(settings.skip_contains_url as i64)
-        .bind(settings.skip_starts_with_bang as i64)
-        .bind(settings.skip_from_bot_accounts as i64)
-        .bind(&bot_accounts_json)
-        .bind(settings.skip_longer_than as i64)
-        .bind(settings.longer_than_max_chars as i64)
-        .bind(settings.skip_repeat_of_recent as i64)
-        .bind(settings.repeat_of_recent_window as i64)
-        .bind(settings.output_read_display_name_first as i64)
-        .bind(settings.output_emote_to_word as i64)
-        .bind(&settings.skip_prefix)
-        .bind(settings.skip_emote_only as i64)
-        .bind(settings.skip_mostly_non_latin as i64)
-        .bind(&skip_custom_regexes_json)
-        .bind(settings.output_sanitize_punctuation as i64)
-        .bind(settings.output_max_duration_secs.map(|v| v as i64))
-        .bind(settings.output_language_aware_voice.map(|v| v as i64))
-        .bind(settings.strip_emoji as i64)
-        .execute(self.db.writer())
-        .await
-        .map_err(SqliteStorageError::Sqlx)?;
-        Ok(())
+        write_pipeline_settings(self.db.writer(), settings).await
     }
 }

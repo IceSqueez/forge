@@ -1,12 +1,17 @@
 use std::path::PathBuf;
+use std::sync::Arc;
 
 use async_trait::async_trait;
-use forge_storage::{SoundboardClipsRepo, StorageError, StoredClip};
+use forge_storage::{
+    MediaBlobId, MediaReferrerKind, MediaRepo, SoundboardClipsRepo, StorageError, StoredClip,
+    clip_source_referrer,
+};
 use forge_types::{ClipId, OutputDevice};
 use time::OffsetDateTime;
 
 use crate::epoch::{NANOS_PER_MILLI, to_epoch_ms};
 use crate::error::SqliteStorageError;
+use crate::media_impl::{release_all_references, retain_reference};
 use crate::pool::SqlitePools;
 
 fn parse_clip_id(s: &str) -> Result<ClipId, StorageError> {
@@ -73,62 +78,111 @@ impl SoundboardClipsRepo for SqliteSoundboardClipsRepo {
     }
 
     async fn save(&self, clip: &StoredClip) -> Result<(), StorageError> {
-        let id_str = clip.id.to_string();
-        let path_str = clip
-            .file_path
-            .to_str()
-            .ok_or_else(|| {
-                StorageError::from(SqliteStorageError::Decode("non-utf8 clip path".to_string()))
-            })?
-            .to_string();
-        let device_json =
-            serde_json::to_string(&clip.output_device).map_err(StorageError::Serialization)?;
-        let created_ms = to_epoch_ms(clip.created_at);
-        let duration_secs = clip.duration_secs.map(f64::from);
-
-        sqlx::query(
-            "INSERT INTO soundboard_clips
-                (id, name, file_path, volume, output_device, hotkey, created_at,
-                 category, loop_playback, duration_secs, builtin_id)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-             ON CONFLICT(id) DO UPDATE SET
-                name = excluded.name,
-                file_path = excluded.file_path,
-                volume = excluded.volume,
-                output_device = excluded.output_device,
-                hotkey = excluded.hotkey,
-                category = excluded.category,
-                loop_playback = excluded.loop_playback,
-                duration_secs = excluded.duration_secs,
-                builtin_id = excluded.builtin_id",
-        )
-        .bind(&id_str)
-        .bind(&clip.name)
-        .bind(&path_str)
-        .bind(f64::from(clip.volume))
-        .bind(&device_json)
-        .bind(clip.hotkey.as_deref())
-        .bind(created_ms)
-        .bind(&clip.category)
-        .bind(clip.loop_playback)
-        .bind(duration_secs)
-        .bind(clip.builtin_id.as_deref())
-        .execute(self.db.writer())
-        .await
-        .map_err(SqliteStorageError::Sqlx)?;
-
-        Ok(())
+        upsert_clip(self.db.writer(), clip).await
     }
 
     async fn delete(&self, id: ClipId) -> Result<bool, StorageError> {
-        let id_str = id.to_string();
-        let result = sqlx::query("DELETE FROM soundboard_clips WHERE id = ?")
-            .bind(&id_str)
-            .execute(self.db.writer())
+        delete_clip(self.db.writer(), id).await
+    }
+
+    async fn save_with_source(
+        &self,
+        clip: &StoredClip,
+        source: &MediaBlobId,
+        _media: Arc<dyn MediaRepo>,
+    ) -> Result<(), StorageError> {
+        let mut tx = self
+            .db
+            .writer()
+            .begin_with("BEGIN IMMEDIATE")
             .await
             .map_err(SqliteStorageError::Sqlx)?;
-        Ok(result.rows_affected() > 0)
+        upsert_clip(&mut *tx, clip).await?;
+        retain_reference(&mut tx, &clip_source_referrer(clip.id), source).await?;
+        tx.commit().await.map_err(SqliteStorageError::Sqlx)?;
+        Ok(())
     }
+
+    async fn delete_with_sources(
+        &self,
+        id: ClipId,
+        _media: Arc<dyn MediaRepo>,
+    ) -> Result<bool, StorageError> {
+        let mut tx = self
+            .db
+            .writer()
+            .begin_with("BEGIN IMMEDIATE")
+            .await
+            .map_err(SqliteStorageError::Sqlx)?;
+        release_all_references(&mut *tx, MediaReferrerKind::SoundboardClip, &id.to_string())
+            .await?;
+        let deleted = delete_clip(&mut *tx, id).await?;
+        tx.commit().await.map_err(SqliteStorageError::Sqlx)?;
+        Ok(deleted)
+    }
+}
+
+pub(crate) async fn upsert_clip<'e>(
+    executor: impl sqlx::SqliteExecutor<'e>,
+    clip: &StoredClip,
+) -> Result<(), StorageError> {
+    let id_str = clip.id.to_string();
+    let path_str = clip
+        .file_path
+        .to_str()
+        .ok_or_else(|| {
+            StorageError::from(SqliteStorageError::Decode("non-utf8 clip path".to_string()))
+        })?
+        .to_string();
+    let device_json =
+        serde_json::to_string(&clip.output_device).map_err(StorageError::Serialization)?;
+    let created_ms = to_epoch_ms(clip.created_at);
+    let duration_secs = clip.duration_secs.map(f64::from);
+
+    sqlx::query(
+        "INSERT INTO soundboard_clips
+            (id, name, file_path, volume, output_device, hotkey, created_at,
+             category, loop_playback, duration_secs, builtin_id)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+         ON CONFLICT(id) DO UPDATE SET
+            name = excluded.name,
+            file_path = excluded.file_path,
+            volume = excluded.volume,
+            output_device = excluded.output_device,
+            hotkey = excluded.hotkey,
+            category = excluded.category,
+            loop_playback = excluded.loop_playback,
+            duration_secs = excluded.duration_secs,
+            builtin_id = excluded.builtin_id",
+    )
+    .bind(&id_str)
+    .bind(&clip.name)
+    .bind(&path_str)
+    .bind(f64::from(clip.volume))
+    .bind(&device_json)
+    .bind(clip.hotkey.as_deref())
+    .bind(created_ms)
+    .bind(&clip.category)
+    .bind(clip.loop_playback)
+    .bind(duration_secs)
+    .bind(clip.builtin_id.as_deref())
+    .execute(executor)
+    .await
+    .map_err(SqliteStorageError::Sqlx)?;
+
+    Ok(())
+}
+
+pub(crate) async fn delete_clip<'e>(
+    executor: impl sqlx::SqliteExecutor<'e>,
+    id: ClipId,
+) -> Result<bool, StorageError> {
+    let result = sqlx::query("DELETE FROM soundboard_clips WHERE id = ?")
+        .bind(id.to_string())
+        .execute(executor)
+        .await
+        .map_err(SqliteStorageError::Sqlx)?;
+    Ok(result.rows_affected() > 0)
 }
 
 fn row_to_clip(row: ClipRow) -> Result<StoredClip, StorageError> {

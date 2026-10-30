@@ -9,7 +9,7 @@ use tokio::sync::watch;
 use crate::{
     ActionExecution, ActionRepo, ActionTelemetry, ExecutionStatus, QueueRepo, ScriptRecord,
     ScriptReferences, ScriptRepo, ScriptTelemetry, StorageError, TriggerChanges,
-    TriggerInstanceRepo,
+    TriggerInstanceRepo, TriggerWiring,
 };
 
 #[derive(Debug, Clone)]
@@ -38,7 +38,7 @@ impl CatalogRevision {
         CatalogChanges(self.0.subscribe())
     }
 
-    pub(crate) async fn after<T, W>(&self, write: W) -> Result<T, StorageError>
+    pub async fn after<T, W>(&self, write: W) -> Result<T, StorageError>
     where
         T: Send + 'static,
         W: Future<Output = Result<T, StorageError>> + Send + 'static,
@@ -302,6 +302,18 @@ impl TriggerInstanceRepo for RevisingTriggerInstanceRepo {
             .await
     }
 
+    async fn commit_overlay_wiring(
+        &self,
+        wiring: &TriggerWiring,
+        queues: Arc<dyn QueueRepo>,
+        actions: Arc<dyn ActionRepo>,
+    ) -> Result<(), StorageError> {
+        let _advance_on_exit = AdvanceOnDrop::armed(self.revision.clone());
+        self.inner
+            .commit_overlay_wiring(wiring, queues, actions)
+            .await
+    }
+
     async fn link_action(
         &self,
         action_id: ActionId,
@@ -375,6 +387,18 @@ impl TriggerInstanceRepo for RevisingTriggerInstanceRepo {
             .await
     }
 
+    async fn set_all_enabled(
+        &self,
+        ids: &[TriggerInstanceId],
+        enabled: bool,
+    ) -> Result<(), StorageError> {
+        let inner = Arc::clone(&self.inner);
+        let ids = ids.to_vec();
+        self.revision
+            .after(async move { inner.set_all_enabled(&ids, enabled).await })
+            .await
+    }
+
     async fn toggle_enabled(&self, id: TriggerInstanceId) -> Result<Option<bool>, StorageError> {
         let inner = Arc::clone(&self.inner);
         self.revision
@@ -414,6 +438,13 @@ impl RevisingQueueRepo {
 
 #[async_trait]
 impl QueueRepo for RevisingQueueRepo {
+    async fn overlay_alert_queue(
+        &self,
+        adoptable_name: &str,
+    ) -> Result<Option<Queue>, StorageError> {
+        self.inner.overlay_alert_queue(adoptable_name).await
+    }
+
     async fn list(&self) -> Result<Vec<Queue>, StorageError> {
         self.inner.list().await
     }

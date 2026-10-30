@@ -4,8 +4,7 @@ use std::sync::{Arc, Mutex, PoisonError};
 
 use forge_events::{EventPublisher, EventSource, TypedEvent};
 use forge_storage::{
-    MediaBlobId, MediaFormat, MediaKind, MediaReferrerKind, MediaRepo, SoundboardClipsRepo,
-    StorageError, StoredClip,
+    MediaBlobId, MediaFormat, MediaKind, MediaRepo, SoundboardClipsRepo, StorageError, StoredClip,
 };
 use forge_types::{ClipId, Shared};
 
@@ -278,13 +277,28 @@ impl ClipLibrary {
             SourcePlan::Keep => None,
         };
 
-        self.clips.save(clip).await.map_err(storage_failed)?;
-
-        if let Some(blob) = imported {
-            self.retain(clip.id, &blob.id).await?;
-            self.clear_refusal(clip.id);
+        let Some(blob) = imported else {
+            return self.clips.save(clip).await.map_err(storage_failed);
+        };
+        if let Err(error) = self
+            .clips
+            .save_with_source(clip, &blob.id, Arc::clone(&self.media))
+            .await
+        {
+            self.discard_unreferenced(&blob.id).await;
+            return Err(storage_failed(error));
         }
+        self.clear_refusal(clip.id);
         Ok(())
+    }
+
+    async fn discard_unreferenced(&self, blob: &MediaBlobId) {
+        match self.media.delete(blob).await {
+            Ok(_) | Err(StorageError::MediaReferenced { .. }) => {}
+            Err(error) => {
+                tracing::warn!(%blob, %error, "imported clip audio left without a clip");
+            }
+        }
     }
 
     pub async fn record_probed_duration(
@@ -304,12 +318,13 @@ impl ClipLibrary {
     }
 
     pub async fn delete_clip(&self, id: ClipId) -> Result<bool, SoundboardError> {
-        self.media
-            .release_all(MediaReferrerKind::SoundboardClip, &id.to_string())
+        let deleted = self
+            .clips
+            .delete_with_sources(id, Arc::clone(&self.media))
             .await
             .map_err(storage_failed)?;
         self.clear_refusal(id);
-        self.clips.delete(id).await.map_err(storage_failed)
+        Ok(deleted)
     }
 
     pub async fn source_of(&self, clip: &StoredClip) -> ClipSource {

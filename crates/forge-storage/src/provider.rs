@@ -5,11 +5,11 @@ use async_trait::async_trait;
 use crate::{
     ActionRepo, BanLedgerRepo, CatalogRevision, ChatHistoryRepo, CredentialsRepo, DonationRepo,
     EventLogRepo, GlobalsRepo, HistoryRepo, LatestValueRepo, MediaRepo, OverlayRepo, QueueRepo,
-    ScheduledRunRepo, ScriptRepo, SettingsRepo, SoundboardClipsRepo, StorageError,
+    ScheduledRunRepo, ScriptRepo, SettingsRepo, SoundboardClipsRepo, StorageError, StoreChange,
     TriggerInstanceRepo, TtsFiltersRepo, UserGlobalsRepo, ViewerRepo, VoiceAliasRepo,
 };
 
-pub const EXPECTED_SCHEMA_VERSION: u32 = 61;
+pub const EXPECTED_SCHEMA_VERSION: u32 = 63;
 
 pub const DATABASE_FILE_NAME: &str = "forge.db";
 const WAL_SUFFIX: &str = "-wal";
@@ -50,6 +50,12 @@ pub trait DataProvider:
     fn catalog_revision(&self) -> CatalogRevision;
 
     fn scheduled_run_revision(&self) -> CatalogRevision;
+
+    async fn commit_changes(&self, _changes: &[StoreChange]) -> Result<(), StorageError> {
+        Err(StorageError::Connection {
+            reason: "this backend has no transactional writes".to_owned(),
+        })
+    }
 
     async fn export(&self, path: &std::path::Path) -> Result<(), StorageError>;
 

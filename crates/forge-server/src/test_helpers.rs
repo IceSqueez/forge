@@ -607,3 +607,17 @@ pub mod log_capture {
             .collect()
     }
 }
+
+#[tokio::test]
+async fn a_backend_without_transactional_writes_refuses_a_commit_instead_of_dropping_it() {
+    let provider = TestDataProvider::new();
+
+    let refused = provider
+        .commit_changes(&[forge_storage::StoreChange::DeleteGlobal("score".to_owned())])
+        .await;
+
+    assert!(
+        matches!(refused, Err(StorageError::Connection { .. })),
+        "{refused:?}"
+    );
+}

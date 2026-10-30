@@ -35,6 +35,7 @@ mod soundboard_impl;
 mod test_support;
 mod trigger_instance_impl;
 mod tts_filters_impl;
+mod unit_of_work;
 mod user_globals_impl;
 mod viewer_impl;
 mod voice_alias_impl;

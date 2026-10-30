@@ -9,6 +9,95 @@ use crate::error::SqliteStorageError;
 use crate::pool::SqlitePools;
 use crate::settings_impl::SqliteSettingsRepo;
 
+pub(crate) async fn upsert_alias(
+    conn: &mut sqlx::SqliteConnection,
+    alias: &VoiceAlias,
+) -> Result<VoiceAlias, StorageError> {
+    let state_str = match alias.state {
+        AliasState::Active => "Active",
+        AliasState::Blocked => "Blocked",
+    };
+
+    let viewer_holder: Option<(String,)> =
+        sqlx::query_as("SELECT id FROM voice_aliases WHERE viewer_id = ?")
+            .bind(&alias.viewer_id)
+            .fetch_optional(&mut *conn)
+            .await
+            .map_err(SqliteStorageError::Sqlx)?;
+
+    let stored_id = match viewer_holder {
+        Some((holder_id,)) if holder_id != alias.id.0 => {
+            let id_is_stored: Option<(i64,)> =
+                sqlx::query_as("SELECT 1 FROM voice_aliases WHERE id = ?")
+                    .bind(&alias.id.0)
+                    .fetch_optional(&mut *conn)
+                    .await
+                    .map_err(SqliteStorageError::Sqlx)?;
+            if id_is_stored.is_some() {
+                return Err(StorageError::AliasViewerTaken);
+            }
+            AliasId(holder_id)
+        }
+        _ => alias.id.clone(),
+    };
+
+    sqlx::query(
+        "INSERT INTO voice_aliases
+            (id, viewer_id, viewer_name, engine_id, voice_id,
+             pitch_semitones, rate_multiplier, state, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))
+         ON CONFLICT(id) DO UPDATE SET
+            viewer_id       = excluded.viewer_id,
+            viewer_name     = excluded.viewer_name,
+            engine_id       = excluded.engine_id,
+            voice_id        = excluded.voice_id,
+            pitch_semitones = excluded.pitch_semitones,
+            rate_multiplier = excluded.rate_multiplier,
+            state           = excluded.state,
+            updated_at      = excluded.updated_at",
+    )
+    .bind(&stored_id.0)
+    .bind(&alias.viewer_id)
+    .bind(&alias.viewer_name)
+    .bind(&alias.engine_id.0)
+    .bind(&alias.voice_id.0)
+    .bind(alias.pitch_semitones.map(f64::from))
+    .bind(alias.rate_multiplier.map(f64::from))
+    .bind(state_str)
+    .execute(&mut *conn)
+    .await
+    .map_err(SqliteStorageError::Sqlx)?;
+
+    Ok(VoiceAlias {
+        id: stored_id,
+        ..alias.clone()
+    })
+}
+
+pub(crate) async fn store_ignore_profile<'e>(
+    executor: impl sqlx::SqliteExecutor<'e>,
+    profile: &IgnoreProfile,
+) -> Result<(), StorageError> {
+    let voice_ids_json =
+        serde_json::to_string(&profile.excluded_voice_ids).map_err(StorageError::Serialization)?;
+    let locales_json =
+        serde_json::to_string(&profile.excluded_locales).map_err(StorageError::Serialization)?;
+    sqlx::query(
+        "INSERT INTO ignore_profile(id, excluded_voice_ids, excluded_locales, updated_at)
+         VALUES(1, ?, ?, datetime('now'))
+         ON CONFLICT(id) DO UPDATE SET
+            excluded_voice_ids = excluded.excluded_voice_ids,
+            excluded_locales   = excluded.excluded_locales,
+            updated_at         = excluded.updated_at",
+    )
+    .bind(&voice_ids_json)
+    .bind(&locales_json)
+    .execute(executor)
+    .await
+    .map_err(SqliteStorageError::Sqlx)?;
+    Ok(())
+}
+
 pub struct SqliteVoiceAliasRepo {
     db: SqlitePools,
 }
@@ -69,72 +158,15 @@ impl VoiceAliasRepo for SqliteVoiceAliasRepo {
     }
 
     async fn upsert(&self, alias: &VoiceAlias) -> Result<VoiceAlias, StorageError> {
-        let state_str = match alias.state {
-            AliasState::Active => "Active",
-            AliasState::Blocked => "Blocked",
-        };
         let mut tx = self
             .db
             .writer()
             .begin()
             .await
             .map_err(SqliteStorageError::Sqlx)?;
-
-        let viewer_holder: Option<(String,)> =
-            sqlx::query_as("SELECT id FROM voice_aliases WHERE viewer_id = ?")
-                .bind(&alias.viewer_id)
-                .fetch_optional(&mut *tx)
-                .await
-                .map_err(SqliteStorageError::Sqlx)?;
-
-        let stored_id = match viewer_holder {
-            Some((holder_id,)) if holder_id != alias.id.0 => {
-                let id_is_stored: Option<(i64,)> =
-                    sqlx::query_as("SELECT 1 FROM voice_aliases WHERE id = ?")
-                        .bind(&alias.id.0)
-                        .fetch_optional(&mut *tx)
-                        .await
-                        .map_err(SqliteStorageError::Sqlx)?;
-                if id_is_stored.is_some() {
-                    return Err(StorageError::AliasViewerTaken);
-                }
-                AliasId(holder_id)
-            }
-            _ => alias.id.clone(),
-        };
-
-        sqlx::query(
-            "INSERT INTO voice_aliases
-                (id, viewer_id, viewer_name, engine_id, voice_id,
-                 pitch_semitones, rate_multiplier, state, created_at, updated_at)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))
-             ON CONFLICT(id) DO UPDATE SET
-                viewer_id       = excluded.viewer_id,
-                viewer_name     = excluded.viewer_name,
-                engine_id       = excluded.engine_id,
-                voice_id        = excluded.voice_id,
-                pitch_semitones = excluded.pitch_semitones,
-                rate_multiplier = excluded.rate_multiplier,
-                state           = excluded.state,
-                updated_at      = excluded.updated_at",
-        )
-        .bind(&stored_id.0)
-        .bind(&alias.viewer_id)
-        .bind(&alias.viewer_name)
-        .bind(&alias.engine_id.0)
-        .bind(&alias.voice_id.0)
-        .bind(alias.pitch_semitones.map(f64::from))
-        .bind(alias.rate_multiplier.map(f64::from))
-        .bind(state_str)
-        .execute(&mut *tx)
-        .await
-        .map_err(SqliteStorageError::Sqlx)?;
-
+        let stored = upsert_alias(&mut tx, alias).await?;
         tx.commit().await.map_err(SqliteStorageError::Sqlx)?;
-        Ok(VoiceAlias {
-            id: stored_id,
-            ..alias.clone()
-        })
+        Ok(stored)
     }
 
     async fn delete(&self, id: &AliasId) -> Result<(), StorageError> {
@@ -214,24 +246,7 @@ impl VoiceAliasRepo for SqliteVoiceAliasRepo {
     }
 
     async fn set_ignore_profile(&self, profile: &IgnoreProfile) -> Result<(), StorageError> {
-        let voice_ids_json = serde_json::to_string(&profile.excluded_voice_ids)
-            .map_err(StorageError::Serialization)?;
-        let locales_json = serde_json::to_string(&profile.excluded_locales)
-            .map_err(StorageError::Serialization)?;
-        sqlx::query(
-            "INSERT INTO ignore_profile(id, excluded_voice_ids, excluded_locales, updated_at)
-             VALUES(1, ?, ?, datetime('now'))
-             ON CONFLICT(id) DO UPDATE SET
-                excluded_voice_ids = excluded.excluded_voice_ids,
-                excluded_locales   = excluded.excluded_locales,
-                updated_at         = excluded.updated_at",
-        )
-        .bind(&voice_ids_json)
-        .bind(&locales_json)
-        .execute(self.db.writer())
-        .await
-        .map_err(SqliteStorageError::Sqlx)?;
-        Ok(())
+        store_ignore_profile(self.db.writer(), profile).await
     }
 }
 

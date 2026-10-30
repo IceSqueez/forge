@@ -6,15 +6,16 @@ use std::sync::Arc;
 use forge_registry::ReferenceRemap;
 use forge_storage::{
     DataProvider, MediaBlobId, OverlayId, SettingSkip, SettingSpec, SettingsCatalog, StorageError,
+    StoreChange,
 };
 use forge_types::{Queue, QueueId};
 
 use crate::bundle::naming::fresh_pre_setup_stem;
 use crate::documents::closure::ClosureRegistries;
 use crate::documents::overlay_configs::check_overlay_configs;
+use crate::documents::undo::UndoJournal;
 use crate::error::TransferError;
 use crate::safety_copies::safety_snapshot::write_safety_snapshot;
-use crate::setup::import_undo::SetupJournal;
 use crate::setup::inventory::{SetupInventory, load_setup_inventory};
 use crate::setup::reader::StagedSetup;
 
@@ -90,7 +91,9 @@ pub async fn apply_setup_import(
         inventory,
         overlay_root,
         remap: ReferenceRemap::default(),
-        journal: SetupJournal::default(),
+        journal: UndoJournal::default(),
+        changes: Vec::new(),
+        minted_overlays: BTreeSet::new(),
         refresh: BTreeSet::new(),
         queues: SetupQueueChanges::default(),
         settings_changed: false,
@@ -134,7 +137,9 @@ pub(super) struct SetupImport<'p, 'a> {
     pub(super) known_media: BTreeSet<MediaBlobId>,
     pub(super) overlay_root: PathBuf,
     pub(super) remap: ReferenceRemap,
-    pub(super) journal: SetupJournal,
+    pub(super) journal: UndoJournal,
+    pub(super) changes: Vec<StoreChange>,
+    pub(super) minted_overlays: BTreeSet<OverlayId>,
     pub(super) refresh: BTreeSet<SetupLivePart>,
     pub(super) queues: SetupQueueChanges,
     pub(super) settings_changed: bool,
@@ -145,28 +150,30 @@ pub(super) struct SetupImport<'p, 'a> {
 
 impl SetupImport<'_, '_> {
     async fn run(&mut self) -> Result<(), TransferError> {
-        self.unarchive_local().await?;
+        self.unarchive_local();
         self.unlink_local().await?;
-        self.remove_absent_triggers().await?;
-        self.remove_absent_scripts().await?;
-        self.remove_absent_clips().await?;
-        self.remove_absent_globals().await?;
-        self.remove_absent_voice_aliases().await?;
+        self.remove_absent_triggers();
+        self.remove_absent_scripts();
+        self.remove_absent_clips();
+        self.remove_absent_globals();
+        self.remove_absent_voice_aliases();
         self.write_media().await?;
-        self.write_queues().await?;
-        self.write_scripts().await?;
-        self.write_globals().await?;
+        self.write_queues();
+        self.write_scripts();
+        self.write_globals();
         self.write_clips().await?;
         self.write_overlays().await?;
-        self.write_triggers().await?;
-        self.write_actions().await?;
-        self.link_triggers().await?;
-        self.write_tts().await?;
-        self.write_voices().await?;
-        self.write_settings().await?;
-        self.remove_absent_actions().await?;
-        self.remove_absent_queues().await?;
-        self.remove_absent_overlays().await
+        self.write_triggers();
+        self.write_actions()?;
+        self.link_triggers();
+        self.write_tts();
+        self.write_voices()?;
+        self.write_settings();
+        self.remove_absent_actions();
+        self.remove_absent_queues();
+        self.remove_absent_overlays();
+        self.provider.commit_changes(&self.changes).await?;
+        Ok(())
     }
 
     async fn clean_up(&self) -> Vec<String> {

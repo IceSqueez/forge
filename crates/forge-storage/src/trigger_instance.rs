@@ -1,9 +1,10 @@
 use std::collections::HashMap;
+use std::sync::Arc;
 
 use async_trait::async_trait;
-use forge_types::{ActionId, TriggerInstance, TriggerInstanceId};
+use forge_types::{Action, ActionId, Queue, TriggerInstance, TriggerInstanceId};
 
-use crate::StorageError;
+use crate::{ActionRepo, QueueRepo, StorageError};
 
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct TriggerChanges {
@@ -11,6 +12,13 @@ pub struct TriggerChanges {
     pub unlinked: Vec<(ActionId, TriggerInstanceId)>,
     pub saved: Vec<TriggerInstance>,
     pub linked: Vec<(ActionId, TriggerInstanceId)>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct TriggerWiring {
+    pub created_queue: Option<Queue>,
+    pub action: Action,
+    pub instance: TriggerInstance,
 }
 
 #[cfg_attr(feature = "test-mocks", mockall::automock)]
@@ -58,6 +66,20 @@ pub trait TriggerInstanceRepo: Send + Sync {
         Ok(())
     }
 
+    async fn commit_overlay_wiring(
+        &self,
+        wiring: &TriggerWiring,
+        queues: Arc<dyn QueueRepo>,
+        actions: Arc<dyn ActionRepo>,
+    ) -> Result<(), StorageError> {
+        if let Some(queue) = &wiring.created_queue {
+            queues.save(queue).await?;
+        }
+        actions.save(&wiring.action).await?;
+        self.save(&wiring.instance).await?;
+        self.link_action(wiring.action.id, wiring.instance.id).await
+    }
+
     async fn link_action(
         &self,
         action_id: ActionId,
@@ -83,6 +105,17 @@ pub trait TriggerInstanceRepo: Send + Sync {
         name: &str,
     ) -> Result<TriggerInstanceId, StorageError>;
     async fn set_enabled(&self, id: TriggerInstanceId, enabled: bool) -> Result<(), StorageError>;
+
+    async fn set_all_enabled(
+        &self,
+        ids: &[TriggerInstanceId],
+        enabled: bool,
+    ) -> Result<(), StorageError> {
+        for id in ids {
+            self.set_enabled(*id, enabled).await?;
+        }
+        Ok(())
+    }
 
     async fn toggle_enabled(&self, id: TriggerInstanceId) -> Result<Option<bool>, StorageError> {
         let Some(instance) = self.get(id).await? else {

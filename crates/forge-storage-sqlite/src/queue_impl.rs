@@ -28,6 +28,67 @@ fn decode_row(row: QueueRow) -> Result<Queue, SqliteStorageError> {
     })
 }
 
+const OVERLAY_ALERT_ROLE: &str = "overlay_alerts";
+
+pub(crate) async fn upsert_queue<'e>(
+    executor: impl sqlx::SqliteExecutor<'e>,
+    queue: &Queue,
+) -> Result<(), StorageError> {
+    let id_str = queue.id.to_string();
+    let concurrency = i64::from(queue.concurrency.max(1));
+    let blocking: i64 = if queue.is_serial() { 1 } else { 0 };
+
+    sqlx::query(
+        "INSERT INTO queues (id, name, description, blocking, concurrency)
+         VALUES (?, ?, ?, ?, ?)
+         ON CONFLICT(id) DO UPDATE SET
+             name        = excluded.name,
+             description = excluded.description,
+             blocking    = excluded.blocking,
+             concurrency = excluded.concurrency",
+    )
+    .bind(&id_str)
+    .bind(&queue.name)
+    .bind(&queue.description)
+    .bind(blocking)
+    .bind(concurrency)
+    .execute(executor)
+    .await
+    .map_err(SqliteStorageError::Sqlx)?;
+
+    Ok(())
+}
+
+pub(crate) async fn delete_queue<'e>(
+    executor: impl sqlx::SqliteExecutor<'e>,
+    id: QueueId,
+) -> Result<bool, StorageError> {
+    if id == DEFAULT_QUEUE_ID {
+        return Err(StorageError::DefaultQueueUndeletable);
+    }
+    let result = sqlx::query("DELETE FROM queues WHERE id = ?")
+        .bind(id.to_string())
+        .execute(executor)
+        .await
+        .map_err(SqliteStorageError::Sqlx)?;
+
+    Ok(result.rows_affected() > 0)
+}
+
+pub(crate) async fn mark_overlay_alert_queue<'e>(
+    executor: impl sqlx::SqliteExecutor<'e>,
+    id: QueueId,
+) -> Result<(), StorageError> {
+    sqlx::query("UPDATE queues SET role = ? WHERE id = ?")
+        .bind(OVERLAY_ALERT_ROLE)
+        .bind(id.to_string())
+        .execute(executor)
+        .await
+        .map_err(SqliteStorageError::Sqlx)?;
+
+    Ok(())
+}
+
 pub struct SqliteQueueRepo {
     db: SqlitePools,
 }
@@ -78,43 +139,33 @@ impl QueueRepo for SqliteQueueRepo {
     }
 
     async fn save(&self, queue: &Queue) -> Result<(), StorageError> {
-        let id_str = queue.id.to_string();
-        let concurrency = i64::from(queue.concurrency.max(1));
-        let blocking: i64 = if queue.is_serial() { 1 } else { 0 };
-
-        sqlx::query(
-            "INSERT INTO queues (id, name, description, blocking, concurrency)
-             VALUES (?, ?, ?, ?, ?)
-             ON CONFLICT(id) DO UPDATE SET
-                 name        = excluded.name,
-                 description = excluded.description,
-                 blocking    = excluded.blocking,
-                 concurrency = excluded.concurrency",
-        )
-        .bind(&id_str)
-        .bind(&queue.name)
-        .bind(&queue.description)
-        .bind(blocking)
-        .bind(concurrency)
-        .execute(self.db.writer())
-        .await
-        .map_err(SqliteStorageError::Sqlx)?;
-
-        Ok(())
+        upsert_queue(self.db.writer(), queue).await
     }
 
     async fn delete(&self, id: QueueId) -> Result<bool, StorageError> {
-        if id == DEFAULT_QUEUE_ID {
-            return Err(StorageError::DefaultQueueUndeletable);
-        }
-        let id_str = id.to_string();
-        let result = sqlx::query("DELETE FROM queues WHERE id = ?")
-            .bind(&id_str)
-            .execute(self.db.writer())
-            .await
-            .map_err(SqliteStorageError::Sqlx)?;
+        delete_queue(self.db.writer(), id).await
+    }
 
-        Ok(result.rows_affected() > 0)
+    async fn overlay_alert_queue(
+        &self,
+        adoptable_name: &str,
+    ) -> Result<Option<Queue>, StorageError> {
+        let row: Option<QueueRow> = sqlx::query_as(
+            "SELECT id, name, description, concurrency FROM queues
+             WHERE role = ?
+                OR (name = ? AND NOT EXISTS (SELECT 1 FROM queues WHERE role = ?))
+             ORDER BY role IS NULL, id
+             LIMIT 1",
+        )
+        .bind(OVERLAY_ALERT_ROLE)
+        .bind(adoptable_name)
+        .bind(OVERLAY_ALERT_ROLE)
+        .fetch_optional(self.db.reader())
+        .await
+        .map_err(SqliteStorageError::Sqlx)?;
+
+        row.map(|row| decode_row(row).map_err(StorageError::from))
+            .transpose()
     }
 
     async fn delete_reassigning_actions(&self, id: QueueId) -> Result<Option<u64>, StorageError> {

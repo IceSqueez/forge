@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use forge_storage::{SoundboardClipsRepo, StorageError, StoredClip};
+use forge_storage::{MediaBlobId, MediaRepo, SoundboardClipsRepo, StorageError, StoredClip};
 use forge_types::ClipId;
 
 use crate::clip_bindings::canonical_clip;
@@ -46,6 +46,30 @@ impl SoundboardClipsRepo for HotkeySyncedClipsRepo {
 
     async fn delete(&self, id: ClipId) -> Result<bool, StorageError> {
         let deleted = self.inner.delete(id).await?;
+        self.sync().await;
+        Ok(deleted)
+    }
+
+    async fn save_with_source(
+        &self,
+        clip: &StoredClip,
+        source: &MediaBlobId,
+        media: Arc<dyn MediaRepo>,
+    ) -> Result<(), StorageError> {
+        let canonical = canonical_clip(clip)?;
+        self.inner
+            .save_with_source(&canonical, source, media)
+            .await?;
+        self.sync().await;
+        Ok(())
+    }
+
+    async fn delete_with_sources(
+        &self,
+        id: ClipId,
+        media: Arc<dyn MediaRepo>,
+    ) -> Result<bool, StorageError> {
+        let deleted = self.inner.delete_with_sources(id, media).await?;
         self.sync().await;
         Ok(deleted)
     }

@@ -1,0 +1,1 @@
+ALTER TABLE credentials ADD COLUMN bound_to_id INTEGER NOT NULL DEFAULT 0;

@@ -5,7 +5,7 @@ use forge_overlay::OverlayKindDescriptor;
 use forge_registry::{SubActionRegistry, TriggerKindDescriptor};
 use forge_storage::{
     ActionRepo, ActionTelemetry, HistoryRepo, OverlayDefinition, OverlayId, QueueRepo,
-    StorageError, TriggerChanges, TriggerInstanceRepo,
+    StorageError, TriggerChanges, TriggerInstanceRepo, TriggerWiring,
 };
 use forge_types::{ActionId, ExecutionContext, TriggerInstance, TriggerInstanceId};
 use time::OffsetDateTime;
@@ -22,6 +22,7 @@ pub struct ActionsService {
     queues: Arc<dyn QueueRepo>,
     history: Arc<dyn HistoryRepo>,
     trigger_instances: Arc<dyn TriggerInstanceRepo>,
+    wiring_turn: tokio::sync::Mutex<()>,
 }
 
 impl ActionsService {
@@ -36,6 +37,7 @@ impl ActionsService {
             queues,
             history,
             trigger_instances,
+            wiring_turn: tokio::sync::Mutex::new(()),
         }
     }
 
@@ -214,6 +216,7 @@ impl ActionsService {
         sub_actions: &SubActionRegistry,
     ) -> Result<OverlayWiringOutcome, OverlayWiringError> {
         let plan = plan_overlay_wiring(overlay, kind, trigger)?;
+        let _one_wiring_at_a_time = self.wiring_turn.lock().await;
 
         match self
             .overlay_wired_to(&overlay.id, trigger.id(), sub_actions)
@@ -229,46 +232,33 @@ impl ActionsService {
             Err(source) => return Err(OverlayWiringError::NothingWritten { source }),
         };
 
-        let mut records = OverlayWiringRecords {
-            queue: Some(queue.clone()),
-            ..OverlayWiringRecords::default()
-        };
-
         let action = plan.action.on_queue(queue.id());
-        if let Err(source) = self.actions.save(&action).await {
-            return Err(OverlayWiringError::Incomplete {
-                records: Box::new(records),
-                source,
-            });
+        let wiring = TriggerWiring {
+            created_queue: queue.created().cloned(),
+            action,
+            instance: plan.trigger,
+        };
+        if let Err(source) = self
+            .trigger_instances
+            .commit_overlay_wiring(&wiring, Arc::clone(&self.queues), Arc::clone(&self.actions))
+            .await
+        {
+            return Err(OverlayWiringError::NothingWritten { source });
         }
-        records.action_id = Some(action.id);
 
-        if let Err(source) = self.trigger_instances.save(&plan.trigger).await {
-            return Err(OverlayWiringError::Incomplete {
-                records: Box::new(records),
-                source,
-            });
-        }
-        records.trigger_instance_id = Some(plan.trigger.id);
-
-        if let Err(source) = self.link_trigger_instance(action.id, plan.trigger.id).await {
-            return Err(OverlayWiringError::Incomplete {
-                records: Box::new(records),
-                source,
-            });
-        }
-        records.linked = true;
-
-        Ok(OverlayWiringOutcome::Wired(records))
+        Ok(OverlayWiringOutcome::Wired(OverlayWiringRecords {
+            queue: Some(queue),
+            action_id: Some(wiring.action.id),
+            trigger_instance_id: Some(wiring.instance.id),
+            linked: true,
+        }))
     }
 
     async fn resolve_queue(&self, placement: QueuePlacement) -> Result<WiredQueue, StorageError> {
-        if let Some(existing) = self.queues.get_by_name(placement.name).await? {
-            return Ok(WiredQueue::Existing(existing));
+        match self.queues.overlay_alert_queue(placement.name).await? {
+            Some(existing) => Ok(WiredQueue::Existing(existing)),
+            None => Ok(WiredQueue::Created(placement.into_queue())),
         }
-        let queue = placement.into_queue();
-        self.queues.save(&queue).await?;
-        Ok(WiredQueue::Created(queue))
     }
 }
 

@@ -1,11 +1,12 @@
 use std::path::PathBuf;
+use std::sync::Arc;
 
 use async_trait::async_trait;
 use forge_types::{ClipId, OutputDevice};
 use serde::{Deserialize, Serialize};
 use time::OffsetDateTime;
 
-use crate::{MediaReferrer, MediaReferrerKind, StorageError};
+use crate::{MediaBlobId, MediaReferrer, MediaReferrerKind, MediaRepo, StorageError};
 
 pub const CLIP_SOURCE_SLOT: &str = "source";
 
@@ -39,6 +40,27 @@ pub trait SoundboardClipsRepo: Send + Sync {
     async fn get(&self, id: ClipId) -> Result<Option<StoredClip>, StorageError>;
     async fn save(&self, clip: &StoredClip) -> Result<(), StorageError>;
     async fn delete(&self, id: ClipId) -> Result<bool, StorageError>;
+
+    async fn save_with_source(
+        &self,
+        clip: &StoredClip,
+        source: &MediaBlobId,
+        media: Arc<dyn MediaRepo>,
+    ) -> Result<(), StorageError> {
+        self.save(clip).await?;
+        media.retain(&clip_source_referrer(clip.id), source).await
+    }
+
+    async fn delete_with_sources(
+        &self,
+        id: ClipId,
+        media: Arc<dyn MediaRepo>,
+    ) -> Result<bool, StorageError> {
+        media
+            .release_all(MediaReferrerKind::SoundboardClip, &id.to_string())
+            .await?;
+        self.delete(id).await
+    }
 }
 
 #[cfg(test)]

@@ -7,7 +7,7 @@ use serde::de::DeserializeOwned;
 use super::decode_bool_setting;
 use super::disclosure::SettingDisclosure;
 use super::portability::SettingPortability;
-use super::row::{RowClasses, RowGate};
+use super::row::{RowClasses, RowGate, SettingRow};
 use super::spec::{SettingEncoding, SettingSpec};
 use crate::{SettingsRepo, StorageError};
 
@@ -400,6 +400,23 @@ pub(crate) async fn put_declared<R: SettingsRepo + ?Sized>(
 ) -> Result<(), StorageError> {
     repo.put_row(RowGate::open(), key, value, RowClasses::from(spec))
         .await
+}
+
+pub fn setting_row<C: SettingCodec>(
+    setting: &Setting<C>,
+    value: &C::Value,
+) -> Result<SettingRow, StorageError> {
+    let encoded = setting
+        .codec
+        .encode(value)
+        .ok_or_else(|| StorageError::UnstorableSetting {
+            key: setting.name().to_owned(),
+        })?;
+    Ok(SettingRow::new(
+        setting.name().to_owned(),
+        encoded,
+        RowClasses::from(&setting.spec),
+    ))
 }
 
 pub async fn write_setting<C: SettingCodec, R: SettingsRepo + ?Sized>(

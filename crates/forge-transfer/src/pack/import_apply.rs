@@ -5,8 +5,9 @@ use std::sync::Arc;
 use forge_overlay::image_references;
 use forge_registry::{InternalNamespace, ReferenceRemap};
 use forge_storage::{
-    DataProvider, GlobalsRepo, MediaBlobId, MediaReferrer, MediaReferrerKind, OverlayId,
-    ScriptRecord, ScriptRepo, StoredClip, clip_source_referrer,
+    DataProvider, MediaBlobId, MediaReferrer, MediaReferrerKind, NewOverlay, OverlayConfig,
+    OverlayDefinition, OverlayId, ScriptRecord, StoreChange, StoredClip, clip_source_referrer,
+    unique_overlay_id,
 };
 use forge_types::{ActionId, ClipId, OutputDevice, QueueId, ScriptId, TriggerInstanceId};
 use time::OffsetDateTime;
@@ -16,7 +17,9 @@ use crate::bundle::naming::fresh_pre_pack_stem;
 use crate::documents::closure::ClosureRegistries;
 use crate::documents::convert::{action_of, queue_of, trigger_of};
 use crate::documents::inventory::{PackInventory, load_pack_inventory};
-use crate::documents::model::{ActionDocument, ClipSourceDocument, OverlayFileDocument};
+use crate::documents::model::{
+    ActionDocument, ClipSourceDocument, OverlayDocument, OverlayFileDocument,
+};
 use crate::documents::overlay_configs::check_overlay_configs;
 use crate::documents::overlay_files::{place_overlay_files, rewrite_overlay_media};
 use crate::documents::undo::{Undo, UndoJournal};
@@ -88,6 +91,8 @@ pub async fn apply_pack_import(
         targets: BTreeMap::new(),
         remap: ReferenceRemap::default(),
         undo: UndoJournal::default(),
+        changes: Vec::new(),
+        minted_overlays: BTreeSet::new(),
         written_queues: BTreeSet::new(),
         written_triggers: BTreeSet::new(),
         written: Vec::new(),
@@ -152,6 +157,8 @@ struct PackImport<'p, 'a> {
     targets: BTreeMap<PackItemKey, Target>,
     remap: ReferenceRemap,
     undo: UndoJournal,
+    changes: Vec<StoreChange>,
+    minted_overlays: BTreeSet<OverlayId>,
     written_queues: BTreeSet<QueueId>,
     written_triggers: BTreeSet<TriggerInstanceId>,
     written: Vec<PackWrittenItem>,
@@ -349,14 +356,16 @@ impl<'a> PackImport<'_, 'a> {
 
     async fn write_all(&mut self) -> Result<(), TransferError> {
         self.write_media().await?;
-        self.write_queues().await?;
-        self.write_scripts().await?;
-        self.write_globals().await?;
+        self.write_queues()?;
+        self.write_scripts()?;
+        self.write_globals()?;
         self.write_clips().await?;
         self.write_overlays().await?;
-        self.write_triggers().await?;
-        let linkable = self.write_actions().await?;
-        self.link_triggers(linkable).await
+        self.write_triggers()?;
+        let linkable = self.write_actions()?;
+        self.link_triggers(linkable).await?;
+        self.provider.commit_changes(&self.changes).await?;
+        Ok(())
     }
 
     fn needed_media(&self) -> BTreeSet<String> {
@@ -423,8 +432,7 @@ impl<'a> PackImport<'_, 'a> {
         Ok(())
     }
 
-    async fn write_queues(&mut self) -> Result<(), TransferError> {
-        let repo = self.provider.queue_repo();
+    fn write_queues(&mut self) -> Result<(), TransferError> {
         let staged = self.staged;
         for document in &staged.documents().queues {
             let item = key(PackItemKind::Queue, document.id.to_string());
@@ -434,22 +442,14 @@ impl<'a> PackImport<'_, 'a> {
             let mut queue = queue_of(document);
             queue.id = ulid_id(target.preassigned_id()?)?;
             queue.name = target.name.clone();
-            let previous = target
-                .replaces()
-                .then(|| self.inventory.queues.get(&queue.id).cloned())
-                .flatten();
-            repo.save(&queue).await?;
-            self.undo.push(Undo::Queue {
-                id: queue.id,
-                previous,
-            });
             self.written_queues.insert(queue.id);
+            self.changes.push(StoreChange::SaveQueue(queue.clone()));
             self.record_written(item, queue.id.to_string(), &target);
         }
         Ok(())
     }
 
-    async fn write_scripts(&mut self) -> Result<(), TransferError> {
+    fn write_scripts(&mut self) -> Result<(), TransferError> {
         let staged = self.staged;
         for document in &staged.documents().scripts {
             let item = key(PackItemKind::Script, document.id.to_string());
@@ -473,43 +473,26 @@ impl<'a> PackImport<'_, 'a> {
                 created_at: previous.as_ref().map_or(now, |script| script.created_at),
                 last_modified: now,
             };
-            ScriptRepo::save(self.provider, record).await?;
-            self.undo.push(Undo::Script {
-                id,
-                previous,
-                archived,
-            });
+            self.changes.push(StoreChange::SaveScript(Box::new(record)));
             if archived {
-                self.provider.restore_script(id).await?;
+                self.changes.push(StoreChange::RestoreScript(id));
             }
             self.record_written(item, id.to_string(), &target);
         }
         Ok(())
     }
 
-    async fn write_globals(&mut self) -> Result<(), TransferError> {
+    fn write_globals(&mut self) -> Result<(), TransferError> {
         let staged = self.staged;
         for document in &staged.documents().globals {
             let item = key(PackItemKind::Global, document.name.clone());
             let Some(target) = self.writable(&item) else {
                 continue;
             };
-            let previous = target
-                .replaces()
-                .then(|| self.inventory.stored_global(&target.name))
-                .flatten();
-            let archived = previous.as_ref().is_some_and(|stored| stored.archived);
-            GlobalsRepo::set(
-                self.provider,
-                &target.name,
-                document.default_value.clone(),
-                document.persisted,
-            )
-            .await?;
-            self.undo.push(Undo::Global {
+            self.changes.push(StoreChange::SetGlobal {
                 name: target.name.clone(),
-                previous: previous.map(|stored| stored.row),
-                archived,
+                value: document.default_value.clone(),
+                persisted: document.persisted,
             });
             self.record_written(item, target.name.clone(), &target);
         }
@@ -517,7 +500,6 @@ impl<'a> PackImport<'_, 'a> {
     }
 
     async fn write_clips(&mut self) -> Result<(), TransferError> {
-        let repo = self.provider.soundboard_clips_repo();
         let media = self.provider.media_repo();
         let staged = self.staged;
         for document in &staged.documents().clips {
@@ -567,30 +549,19 @@ impl<'a> PackImport<'_, 'a> {
                 duration_secs: document.duration_secs,
                 builtin_id: document.builtin_id.clone(),
             };
-            repo.save(&clip).await?;
-            self.undo.push(Undo::Clip { id, previous });
+            self.changes.push(StoreChange::SaveClip(Box::new(clip)));
             if let Some(blob) = blob {
-                self.retain(clip_source_referrer(id), &blob).await?;
+                self.changes.push(StoreChange::RetainMedia {
+                    referrer: clip_source_referrer(id),
+                    blob,
+                });
             }
             self.record_written(item, id.to_string(), &target);
         }
         Ok(())
     }
 
-    async fn retain(
-        &mut self,
-        referrer: MediaReferrer,
-        blob: &MediaBlobId,
-    ) -> Result<(), TransferError> {
-        let repo = self.provider.media_repo();
-        let previous = repo.blob_of(&referrer).await?;
-        repo.retain(&referrer, blob).await?;
-        self.undo.push(Undo::Referrer { referrer, previous });
-        Ok(())
-    }
-
     async fn write_overlays(&mut self) -> Result<(), TransferError> {
-        let repo = self.provider.overlay_repo();
         let staged = self.staged;
         for document in &staged.documents().overlays {
             let item = key(PackItemKind::Overlay, document.id.clone());
@@ -599,66 +570,62 @@ impl<'a> PackImport<'_, 'a> {
             };
             let mut config = document.config.clone();
             rewrite_overlay_media(&mut config, &self.remap);
-            let (mut definition, previous) = if target.replaces() {
+            let id = if target.replaces() {
                 let previous = self
                     .inventory
                     .overlays
                     .get(&OverlayId::new(target.preassigned_id()?))
                     .cloned()
                     .ok_or(TransferError::PackPlanStale)?;
-                (previous.clone(), Some(previous))
+                let id = previous.id.clone();
+                self.changes
+                    .push(StoreChange::SaveOverlay(Box::new(replaced_overlay(
+                        previous, &target, document, &config,
+                    ))));
+                id
             } else {
-                let created = repo
-                    .create(
-                        &target.name,
-                        &document.kind_id,
-                        document.config_schema_version,
-                    )
-                    .await?;
-                self.undo.push(Undo::Overlay {
-                    id: created.id.clone(),
-                    previous: None,
-                });
-                (created, None)
+                let id = self.mint_overlay_id(&target.name);
+                self.changes
+                    .push(StoreChange::CreateOverlay(Box::new(NewOverlay {
+                        id: id.clone(),
+                        display_name: target.name.clone(),
+                        kind_id: document.kind_id.clone(),
+                        enabled: document.enabled,
+                        position: None,
+                        config: config.clone(),
+                        config_schema_version: document.config_schema_version,
+                        source_overrides: document.source_overrides.clone(),
+                    })));
+                id
             };
-            definition.display_name = target.name.clone();
-            definition.kind_id = document.kind_id.clone();
-            definition.enabled = document.enabled;
-            definition.config = config;
-            definition.config_schema_version = document.config_schema_version;
-            definition.source_overrides = document.source_overrides.clone();
-            repo.save(&definition).await?;
-            if previous.is_some() {
-                self.undo.push(Undo::Overlay {
-                    id: definition.id.clone(),
-                    previous,
-                });
+            if id.as_str() != document.id {
+                self.remap
+                    .insert(InternalNamespace::Overlay, document.id.clone(), id.as_str());
             }
-            if definition.id.as_str() != document.id {
-                self.remap.insert(
-                    InternalNamespace::Overlay,
-                    document.id.clone(),
-                    definition.id.as_str(),
-                );
-            }
-            self.write_overlay_files(&definition.id, &document.files)
-                .await?;
-            for reference in image_references(&definition.config) {
+            self.write_overlay_files(&id, &document.files).await?;
+            for reference in image_references(&config) {
                 let Ok(blob) = MediaBlobId::from_stored(reference.image) else {
                     continue;
                 };
                 if self.known_media.contains(&blob) {
-                    let referrer = MediaReferrer::new(
-                        MediaReferrerKind::Overlay,
-                        definition.id.as_str(),
-                        reference.key,
-                    );
-                    self.retain(referrer, &blob).await?;
+                    let referrer =
+                        MediaReferrer::new(MediaReferrerKind::Overlay, id.as_str(), reference.key);
+                    self.changes
+                        .push(StoreChange::RetainMedia { referrer, blob });
                 }
             }
-            self.record_written(item, definition.id.as_str().to_owned(), &target);
+            self.record_written(item, id.as_str().to_owned(), &target);
         }
         Ok(())
+    }
+
+    fn mint_overlay_id(&mut self, display_name: &str) -> OverlayId {
+        let id = unique_overlay_id(display_name, |candidate| {
+            self.inventory.overlays.contains_key(candidate)
+                || self.minted_overlays.contains(candidate)
+        });
+        self.minted_overlays.insert(id.clone());
+        id
     }
 
     async fn write_overlay_files(
@@ -678,8 +645,7 @@ impl<'a> PackImport<'_, 'a> {
         .await
     }
 
-    async fn write_triggers(&mut self) -> Result<(), TransferError> {
-        let repo = self.provider.trigger_instance_repo();
+    fn write_triggers(&mut self) -> Result<(), TransferError> {
         let staged = self.staged;
         for document in &staged.documents().triggers {
             let item = key(PackItemKind::Trigger, document.id.to_string());
@@ -699,26 +665,20 @@ impl<'a> PackImport<'_, 'a> {
                 .replaces()
                 .then(|| self.inventory.stored_trigger(&trigger.id))
                 .flatten();
-            let archived = previous.as_ref().is_some_and(|stored| stored.archived);
-            repo.save(&trigger).await?;
-            self.undo.push(Undo::Trigger {
-                id: trigger.id,
-                previous: previous.map(|stored| stored.row),
-                archived,
-            });
+            let archived = previous.is_some_and(|stored| stored.archived);
+            let id = trigger.id;
+            self.changes
+                .push(StoreChange::SaveTrigger(Box::new(trigger)));
             if archived {
-                repo.restore(trigger.id).await?;
+                self.changes.push(StoreChange::RestoreTrigger(id));
             }
-            self.written_triggers.insert(trigger.id);
-            self.record_written(item, trigger.id.to_string(), &target);
+            self.written_triggers.insert(id);
+            self.record_written(item, id.to_string(), &target);
         }
         Ok(())
     }
 
-    async fn write_actions(
-        &mut self,
-    ) -> Result<Vec<(ActionId, &'a ActionDocument)>, TransferError> {
-        let repo = self.provider.action_repo();
+    fn write_actions(&mut self) -> Result<Vec<(ActionId, &'a ActionDocument)>, TransferError> {
         let staged = self.staged;
         let mut linkable = Vec::new();
         for document in &staged.documents().actions {
@@ -746,17 +706,13 @@ impl<'a> PackImport<'_, 'a> {
                 .flatten();
             let archived = previous.as_ref().is_some_and(|stored| stored.archived);
             let created = previous.is_none();
-            repo.save(&action).await?;
-            self.undo.push(Undo::Action {
-                id: action.id,
-                previous: previous.map(|stored| stored.row),
-                archived,
-            });
+            let id = action.id;
+            self.changes.push(StoreChange::SaveAction(Box::new(action)));
             if created || archived {
-                repo.restore(action.id).await?;
+                self.changes.push(StoreChange::RestoreAction(id));
             }
-            linkable.push((action.id, document));
-            self.record_written(item, action.id.to_string(), &target);
+            linkable.push((id, document));
+            self.record_written(item, id.to_string(), &target);
         }
         Ok(linkable)
     }
@@ -786,10 +742,25 @@ impl<'a> PackImport<'_, 'a> {
                 if linked.contains(&trigger) || !exists {
                     continue;
                 }
-                repo.link_action(action, trigger).await?;
-                self.undo.push(Undo::Link { action, trigger });
+                self.changes
+                    .push(StoreChange::LinkTrigger { action, trigger });
             }
         }
         Ok(())
     }
+}
+
+fn replaced_overlay(
+    mut definition: OverlayDefinition,
+    target: &Target,
+    document: &OverlayDocument,
+    config: &OverlayConfig,
+) -> OverlayDefinition {
+    definition.display_name = target.name.clone();
+    definition.kind_id = document.kind_id.clone();
+    definition.enabled = document.enabled;
+    definition.config = config.clone();
+    definition.config_schema_version = document.config_schema_version;
+    definition.source_overrides = document.source_overrides.clone();
+    definition
 }

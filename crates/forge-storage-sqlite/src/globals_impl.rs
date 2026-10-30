@@ -57,7 +57,7 @@ fn decode_entries(rows: Vec<GlobalRow>) -> Result<Vec<GlobalEntry>, StorageError
     Ok(entries)
 }
 
-async fn upsert<'e, E>(
+pub(crate) async fn upsert<'e, E>(
     executor: E,
     name: &str,
     value: &Variant,

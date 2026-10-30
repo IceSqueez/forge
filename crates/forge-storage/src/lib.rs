@@ -26,6 +26,7 @@ pub mod test_support;
 mod transit;
 pub mod trigger_instance;
 pub mod tts_filters;
+mod unit_of_work;
 pub mod user_globals;
 pub mod viewer;
 pub mod voice_aliases;
@@ -71,7 +72,8 @@ pub use media::{
     MediaReferrer, MediaReferrerKind, MediaRepo, accept_media, sanitize_label, sniff,
 };
 pub use overlay::{
-    OVERLAY_TOKEN_PREFIX, OverlayConfig, OverlayDefinition, OverlayId, OverlayRepo, is_token_shaped,
+    NewOverlay, OVERLAY_TOKEN_PREFIX, OverlayConfig, OverlayDefinition, OverlayId, OverlayRepo,
+    is_token_shaped, overlay_slug, unique_overlay_id,
 };
 pub use provider::{
     DATABASE_FILE_NAME, DataProvider, EXPECTED_SCHEMA_VERSION, LAST_PRE_BASELINE_RELEASE,
@@ -100,7 +102,7 @@ pub use settings::typed::{
     Choice, Count, Flag, JsonDocument, Level, OptionalText, PlainText, Setting, SettingCodec,
     SettingFamily, Tally, Verbosity, family_members, read_family_setting, read_setting,
     read_setting_or_default, read_stored_family_setting, read_stored_setting, reset_family_setting,
-    reset_setting, write_family_setting, write_setting,
+    reset_setting, setting_row, write_family_setting, write_setting,
 };
 pub use settings::{
     CredentialsKeyLoss, DEFAULT_CHAT_HISTORY_DISPLAY_LIMIT, DEFAULT_CHAT_HISTORY_PER_VIEWER_LIMIT,
@@ -120,10 +122,11 @@ pub use settings::{
 };
 pub use soundboard::{CLIP_SOURCE_SLOT, SoundboardClipsRepo, StoredClip, clip_source_referrer};
 pub use transit::{CURRENT_FORMAT_VERSION, GlobalTransit, GlobalsExport};
-pub use trigger_instance::{TriggerChanges, TriggerInstanceRepo};
+pub use trigger_instance::{TriggerChanges, TriggerInstanceRepo, TriggerWiring};
 pub use tts_filters::{
     BlocklistMode, FilterRule, FilterRuleKind, TtsFiltersRepo, TtsPipelineSettings, UrlMode,
 };
+pub use unit_of_work::StoreChange;
 pub use user_globals::{UserGlobalEntry, UserGlobalsRepo};
 pub use viewer::{Viewer, ViewerMessage, ViewerRepo};
 pub use voice_aliases::VoiceAliasRepo;

@@ -84,6 +84,54 @@ fn decode_row(row: ActionRow) -> Result<Action, SqliteStorageError> {
     })
 }
 
+pub(crate) async fn upsert_action<'e>(
+    executor: impl sqlx::SqliteExecutor<'e>,
+    action: &Action,
+) -> Result<(), StorageError> {
+    let id_str = action.id.to_string();
+    let queue_id_str = action.queue_id.to_string();
+    let group_name = action.group.as_deref().unwrap_or("").to_string();
+    let description = action.description.as_deref().unwrap_or("").to_string();
+    let sub_actions_json =
+        serde_json::to_string(&action.sub_actions).map_err(StorageError::Serialization)?;
+    let enabled: i64 = if action.enabled { 1 } else { 0 };
+    let concurrent: i64 = if action.concurrent { 1 } else { 0 };
+    let bypass_pause: i64 = if action.bypass_pause { 1 } else { 0 };
+    let execution_mode = encode_execution_mode(action.execution_mode);
+
+    sqlx::query(
+        "INSERT INTO actions (id, name, group_name, queue_id, enabled, concurrent, bypass_pause, description, sub_actions, execution_mode, format_version)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+         ON CONFLICT(id) DO UPDATE SET
+             name           = excluded.name,
+             group_name     = excluded.group_name,
+             queue_id       = excluded.queue_id,
+             enabled        = excluded.enabled,
+             concurrent     = excluded.concurrent,
+             bypass_pause   = excluded.bypass_pause,
+             description    = excluded.description,
+             sub_actions    = excluded.sub_actions,
+             execution_mode = excluded.execution_mode,
+             format_version = excluded.format_version",
+    )
+    .bind(&id_str)
+    .bind(&action.name)
+    .bind(&group_name)
+    .bind(&queue_id_str)
+    .bind(enabled)
+    .bind(concurrent)
+    .bind(bypass_pause)
+    .bind(&description)
+    .bind(&sub_actions_json)
+    .bind(execution_mode)
+    .bind(CURRENT_ACTION_FORMAT_VERSION)
+    .execute(executor)
+    .await
+    .map_err(SqliteStorageError::Sqlx)?;
+
+    Ok(())
+}
+
 pub struct SqliteActionRepo {
     db: SqlitePools,
 }
@@ -126,48 +174,7 @@ impl ActionRepo for SqliteActionRepo {
     }
 
     async fn save(&self, action: &Action) -> Result<(), StorageError> {
-        let id_str = action.id.to_string();
-        let queue_id_str = action.queue_id.to_string();
-        let group_name = action.group.as_deref().unwrap_or("").to_string();
-        let description = action.description.as_deref().unwrap_or("").to_string();
-        let sub_actions_json =
-            serde_json::to_string(&action.sub_actions).map_err(StorageError::Serialization)?;
-        let enabled: i64 = if action.enabled { 1 } else { 0 };
-        let concurrent: i64 = if action.concurrent { 1 } else { 0 };
-        let bypass_pause: i64 = if action.bypass_pause { 1 } else { 0 };
-        let execution_mode = encode_execution_mode(action.execution_mode);
-
-        sqlx::query(
-            "INSERT INTO actions (id, name, group_name, queue_id, enabled, concurrent, bypass_pause, description, sub_actions, execution_mode, format_version)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-             ON CONFLICT(id) DO UPDATE SET
-                 name           = excluded.name,
-                 group_name     = excluded.group_name,
-                 queue_id       = excluded.queue_id,
-                 enabled        = excluded.enabled,
-                 concurrent     = excluded.concurrent,
-                 bypass_pause   = excluded.bypass_pause,
-                 description    = excluded.description,
-                 sub_actions    = excluded.sub_actions,
-                 execution_mode = excluded.execution_mode,
-                 format_version = excluded.format_version",
-        )
-        .bind(&id_str)
-        .bind(&action.name)
-        .bind(&group_name)
-        .bind(&queue_id_str)
-        .bind(enabled)
-        .bind(concurrent)
-        .bind(bypass_pause)
-        .bind(&description)
-        .bind(&sub_actions_json)
-        .bind(execution_mode)
-        .bind(CURRENT_ACTION_FORMAT_VERSION)
-        .execute(self.db.writer())
-        .await
-        .map_err(SqliteStorageError::Sqlx)?;
-
-        Ok(())
+        upsert_action(self.db.writer(), action).await
     }
 
     async fn delete(&self, id: ActionId) -> Result<bool, StorageError> {

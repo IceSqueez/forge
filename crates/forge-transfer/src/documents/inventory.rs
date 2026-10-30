@@ -41,10 +41,6 @@ impl PackInventory {
         stored(&self.triggers, &self.archived_triggers, id)
     }
 
-    pub(crate) fn stored_global(&self, name: &str) -> Option<Stored<GlobalEntry>> {
-        stored(&self.globals, &self.archived_globals, name)
-    }
-
     pub(crate) fn stored_script_named(&self, name: &str) -> Option<Stored<ScriptRecord>> {
         stored(&self.scripts, &self.archived_scripts, name)
     }

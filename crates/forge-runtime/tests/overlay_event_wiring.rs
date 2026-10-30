@@ -25,7 +25,8 @@ use forge_storage::action::MockActionRepo;
 use forge_storage::history::MockHistoryRepo;
 use forge_storage::queue::MockQueueRepo;
 use forge_storage::trigger_instance::MockTriggerInstanceRepo;
-use forge_storage::{OverlayDefinition, OverlayId, StorageError};
+use forge_storage::{DataProvider, OverlayDefinition, OverlayId, StorageError, TriggerWiring};
+use forge_storage_sqlite::SqliteBackend;
 use forge_types::OverlayCredential;
 use forge_types::{
     Action, ActionId, ExecutionMode, PermissionRung, PlatformId, PlatformScope, Queue, QueueId,
@@ -462,10 +463,7 @@ fn placing_the_planned_action_on_a_queue_keeps_the_identity_and_steps_the_plan_m
 enum Step {
     Lookup,
     QueueLookup,
-    QueueSave,
-    ActionSave,
-    TriggerSave,
-    Link,
+    Commit,
 }
 
 enum Reach {
@@ -476,17 +474,24 @@ enum Reach {
 
 #[derive(Default)]
 struct Written {
-    order: Vec<&'static str>,
     looked_up: Vec<String>,
-    queues: Vec<Queue>,
-    actions: Vec<Action>,
-    triggers: Vec<TriggerInstance>,
+    wirings: Vec<TriggerWiring>,
 }
 
 struct Harness {
     service: ActionsService,
     written: Arc<Mutex<Written>>,
     fed_action: Option<ActionId>,
+}
+
+impl Harness {
+    fn wiring(&self) -> TriggerWiring {
+        self.written
+            .lock()
+            .expect("the recorder is not poisoned")
+            .wirings[0]
+            .clone()
+    }
 }
 
 struct Wiring {
@@ -615,30 +620,13 @@ impl Wiring {
                 actions.expect_list().returning(move || Ok(listed.clone()));
             }
         }
-        match self.reach(Step::ActionSave) {
-            Reach::Runs => {
-                let log = Arc::clone(&written);
-                actions.expect_save().returning(move |action| {
-                    let mut written = log.lock().expect("the recorder is not poisoned");
-                    written.order.push("action");
-                    written.actions.push(action.clone());
-                    Ok(())
-                });
-            }
-            Reach::Fails => {
-                actions.expect_save().returning(|_| Err(fault()));
-            }
-            Reach::Never => {
-                actions.expect_save().times(0);
-            }
-        }
 
         let mut queues = MockQueueRepo::new();
         match self.reach(Step::QueueLookup) {
             Reach::Runs => {
                 let log = Arc::clone(&written);
                 let existing = self.existing_queue.clone();
-                queues.expect_get_by_name().returning(move |name| {
+                queues.expect_overlay_alert_queue().returning(move |name| {
                     log.lock()
                         .expect("the recorder is not poisoned")
                         .looked_up
@@ -647,27 +635,12 @@ impl Wiring {
                 });
             }
             Reach::Fails => {
-                queues.expect_get_by_name().returning(|_| Err(fault()));
+                queues
+                    .expect_overlay_alert_queue()
+                    .returning(|_| Err(fault()));
             }
             Reach::Never => {
-                queues.expect_get_by_name().times(0);
-            }
-        }
-        match self.reach(Step::QueueSave) {
-            Reach::Runs if self.existing_queue.is_none() => {
-                let log = Arc::clone(&written);
-                queues.expect_save().returning(move |queue| {
-                    let mut written = log.lock().expect("the recorder is not poisoned");
-                    written.order.push("queue");
-                    written.queues.push(queue.clone());
-                    Ok(())
-                });
-            }
-            Reach::Fails => {
-                queues.expect_save().returning(|_| Err(fault()));
-            }
-            _ => {
-                queues.expect_save().times(0);
+                queues.expect_overlay_alert_queue().times(0);
             }
         }
 
@@ -678,39 +651,26 @@ impl Wiring {
                 Some((fed, instance)) if *fed == id => Ok(vec![instance.clone()]),
                 _ => Ok(Vec::new()),
             });
-        match self.reach(Step::TriggerSave) {
+        match self.reach(Step::Commit) {
             Reach::Runs => {
                 let log = Arc::clone(&written);
-                triggers.expect_save().returning(move |instance| {
-                    let mut written = log.lock().expect("the recorder is not poisoned");
-                    written.order.push("trigger");
-                    written.triggers.push(instance.clone());
-                    Ok(())
-                });
+                triggers
+                    .expect_commit_overlay_wiring()
+                    .returning(move |wiring, _, _| {
+                        log.lock()
+                            .expect("the recorder is not poisoned")
+                            .wirings
+                            .push(wiring.clone());
+                        Ok(())
+                    });
             }
             Reach::Fails => {
-                triggers.expect_save().returning(|_| Err(fault()));
+                triggers
+                    .expect_commit_overlay_wiring()
+                    .returning(|_, _, _| Err(fault()));
             }
             Reach::Never => {
-                triggers.expect_save().times(0);
-            }
-        }
-        match self.reach(Step::Link) {
-            Reach::Runs => {
-                let log = Arc::clone(&written);
-                triggers.expect_link_action().returning(move |_, _| {
-                    log.lock()
-                        .expect("the recorder is not poisoned")
-                        .order
-                        .push("link");
-                    Ok(())
-                });
-            }
-            Reach::Fails => {
-                triggers.expect_link_action().returning(|_, _| Err(fault()));
-            }
-            Reach::Never => {
-                triggers.expect_link_action().times(0);
+                triggers.expect_commit_overlay_wiring().times(0);
             }
         }
 
@@ -727,15 +687,22 @@ impl Wiring {
     }
 }
 
-async fn wire(service: &ActionsService) -> Result<OverlayWiringOutcome, OverlayWiringError> {
+async fn wire_to(
+    service: &ActionsService,
+    trigger: &StubTrigger,
+) -> Result<OverlayWiringOutcome, OverlayWiringError> {
     service
         .wire_overlay_to_event(
             &definition(ALERT_KIND, OverlayConfig::new()),
             &AlertOverlayKind,
-            &follow(),
+            trigger,
             &registry(),
         )
         .await
+}
+
+async fn wire(service: &ActionsService) -> Result<OverlayWiringOutcome, OverlayWiringError> {
+    wire_to(service, &follow()).await
 }
 
 async fn records_of(service: &ActionsService) -> OverlayWiringRecords {
@@ -783,7 +750,7 @@ async fn an_overlay_fed_by_another_trigger_kind_is_wired_onto_the_queue_already_
 }
 
 #[tokio::test]
-async fn a_queue_found_by_name_is_reused_exactly_as_the_user_left_it() {
+async fn a_queue_found_for_the_wiring_is_reused_exactly_as_the_user_left_it() {
     let existing = Queue {
         id: QueueId::new(),
         name: OVERLAY_ALERT_QUEUE.name.to_owned(),
@@ -794,16 +761,10 @@ async fn a_queue_found_by_name_is_reused_exactly_as_the_user_left_it() {
 
     let records = records_of(&harness.service).await;
 
+    let wiring = harness.wiring();
     assert_eq!(records.queue, Some(WiredQueue::Existing(existing.clone())));
-    assert_eq!(
-        harness
-            .written
-            .lock()
-            .expect("the recorder is not poisoned")
-            .actions[0]
-            .queue_id,
-        existing.id,
-    );
+    assert_eq!(wiring.action.queue_id, existing.id);
+    assert_eq!(wiring.created_queue, None);
 }
 
 #[tokio::test]
@@ -818,14 +779,7 @@ async fn a_missing_queue_is_created_serial_so_two_alerts_never_overlap() {
         .and_then(WiredQueue::created)
         .expect("the queue was created here");
     assert!(created.is_serial());
-    assert_eq!(
-        harness
-            .written
-            .lock()
-            .expect("the recorder is not poisoned")
-            .queues,
-        vec![created.clone()],
-    );
+    assert_eq!(harness.wiring().created_queue.as_ref(), Some(created));
 }
 
 #[tokio::test]
@@ -850,85 +804,184 @@ async fn a_created_queue_carries_the_name_the_next_wiring_looks_up() {
 }
 
 #[tokio::test]
-async fn the_wiring_writes_the_queue_then_the_action_then_the_trigger_then_the_link() {
-    let harness = Wiring::new().build();
-
-    records_of(&harness.service).await;
-
-    assert_eq!(
-        harness
-            .written
-            .lock()
-            .expect("the recorder is not poisoned")
-            .order,
-        vec!["queue", "action", "trigger", "link"],
-    );
-}
-
-#[tokio::test]
-async fn the_action_and_the_trigger_instance_that_land_are_the_ones_the_outcome_reports() {
+async fn the_action_and_the_trigger_instance_committed_are_the_ones_the_outcome_reports() {
     let harness = Wiring::new().build();
 
     let records = records_of(&harness.service).await;
 
-    let written = harness
-        .written
-        .lock()
-        .expect("the recorder is not poisoned");
-    assert_eq!(records.action_id, Some(written.actions[0].id));
-    assert_eq!(records.trigger_instance_id, Some(written.triggers[0].id));
+    let wiring = harness.wiring();
+    assert_eq!(records.action_id, Some(wiring.action.id));
+    assert_eq!(records.trigger_instance_id, Some(wiring.instance.id));
     assert!(records.linked);
 }
 
 #[tokio::test]
-async fn a_failure_at_each_step_reports_exactly_the_records_that_landed() {
-    for (stop, expected) in [
-        (Step::Lookup, None),
-        (Step::QueueLookup, None),
-        (Step::QueueSave, None),
-        (Step::ActionSave, Some((true, false, false, false))),
-        (Step::TriggerSave, Some((true, true, false, false))),
-        (Step::Link, Some((true, true, true, false))),
-    ] {
+async fn a_failure_at_each_step_reports_that_nothing_was_written() {
+    for stop in [Step::Lookup, Step::QueueLookup, Step::Commit] {
         let harness = Wiring::new().stopping_at(stop).build();
 
-        let landed = match wire(&harness.service)
+        let error = wire(&harness.service)
             .await
-            .expect_err("the store failed mid-wiring")
-        {
-            OverlayWiringError::NothingWritten { .. } => None,
-            OverlayWiringError::Incomplete { records, .. } => Some((
-                records.queue.is_some(),
-                records.action_id.is_some(),
-                records.trigger_instance_id.is_some(),
-                records.linked,
-            )),
-            OverlayWiringError::Refused(refusal) => panic!("{refusal}"),
-        };
+            .expect_err("the store failed mid-wiring");
 
-        assert_eq!(landed, expected, "{stop:?}");
+        assert!(
+            matches!(error, OverlayWiringError::NothingWritten { .. }),
+            "{stop:?}: {error}"
+        );
+    }
+}
+
+struct Stored {
+    provider: Arc<dyn DataProvider>,
+    service: ActionsService,
+    _media_root: tempfile::TempDir,
+}
+
+async fn stored() -> Stored {
+    let media_root = tempfile::tempdir().expect("a temporary media root");
+    let backend = SqliteBackend::open_for_test(
+        "sqlite::memory:",
+        [0x24; 32],
+        media_root.path().to_owned(),
+        None,
+    )
+    .await
+    .expect("an in-memory backend");
+    let provider: Arc<dyn DataProvider> = Arc::new(backend);
+    let service = ActionsService::new(
+        provider.action_repo(),
+        provider.queue_repo(),
+        provider.history_repo(),
+        provider.trigger_instance_repo(),
+    );
+    Stored {
+        provider,
+        service,
+        _media_root: media_root,
+    }
+}
+
+impl Stored {
+    async fn wired_queue(&self, trigger: &StubTrigger) -> WiredQueue {
+        match wire_to(&self.service, trigger)
+            .await
+            .expect("the wiring completes")
+        {
+            OverlayWiringOutcome::Wired(records) => {
+                records.queue.expect("a wired overlay names its queue")
+            }
+            OverlayWiringOutcome::AlreadyWired { .. } => {
+                panic!("nothing fed this overlay from that trigger kind")
+            }
+        }
+    }
+
+    async fn seed_queue(&self, name: &str) -> Queue {
+        let queue = Queue {
+            id: QueueId::new(),
+            name: name.to_owned(),
+            description: String::new(),
+            concurrency: 1,
+        };
+        self.provider
+            .queue_repo()
+            .save(&queue)
+            .await
+            .expect("the queue is stored");
+        queue
     }
 }
 
 #[tokio::test]
-async fn an_incomplete_wiring_names_the_records_that_landed_in_its_message() {
-    let harness = Wiring::new().stopping_at(Step::Link).build();
-
-    let error = wire(&harness.service)
+async fn a_renamed_alert_queue_is_found_by_its_role_and_no_second_queue_appears() {
+    let stored = stored().await;
+    let created = stored
+        .wired_queue(&follow())
         .await
-        .expect_err("the link failed after two writes");
-
-    let OverlayWiringError::Incomplete { records, .. } = &error else {
-        panic!("the action and the trigger instance were written")
+        .created()
+        .cloned()
+        .expect("the first wiring creates the queue");
+    let renamed = Queue {
+        name: "Stream alerts".to_owned(),
+        ..created
     };
-    let message = error.to_string();
-    for id in [
-        records.action_id.expect("the action landed").to_string(),
-        records
-            .trigger_instance_id
-            .expect("the trigger instance landed")
-            .to_string(),
-    ] {
-        assert!(message.contains(&id), "{message}");
-    }
+    stored.provider.queue_repo().save(&renamed).await.unwrap();
+
+    let second = stored.wired_queue(&uncurated(Declares::APrincipal)).await;
+
+    assert_eq!(second, WiredQueue::Existing(renamed));
+}
+
+#[tokio::test]
+async fn a_queue_with_the_alert_name_is_adopted_while_no_queue_holds_the_role() {
+    let stored = stored().await;
+    let by_name = stored.seed_queue(OVERLAY_ALERT_QUEUE.name).await;
+
+    let wired = stored.wired_queue(&follow()).await;
+
+    assert_eq!(wired, WiredQueue::Existing(by_name));
+}
+
+#[tokio::test]
+async fn a_queue_with_the_alert_name_is_not_adopted_once_another_queue_holds_the_role() {
+    let stored = stored().await;
+    let owner = stored
+        .wired_queue(&follow())
+        .await
+        .created()
+        .cloned()
+        .expect("the first wiring creates the queue");
+    let renamed_owner = Queue {
+        name: "Stream alerts".to_owned(),
+        ..owner
+    };
+    stored
+        .provider
+        .queue_repo()
+        .save(&renamed_owner)
+        .await
+        .unwrap();
+    stored.seed_queue(OVERLAY_ALERT_QUEUE.name).await;
+
+    let second = stored.wired_queue(&uncurated(Declares::APrincipal)).await;
+
+    assert_eq!(second, WiredQueue::Existing(renamed_owner));
+}
+
+#[tokio::test]
+async fn wiring_the_same_event_twice_reports_the_second_as_already_wired() {
+    let stored = stored().await;
+    let first = wire(&stored.service).await.expect("the first wiring");
+    let OverlayWiringOutcome::Wired(records) = first else {
+        panic!("nothing fed this overlay yet")
+    };
+
+    let second = wire(&stored.service).await.expect("the second wiring");
+
+    assert_eq!(
+        second,
+        OverlayWiringOutcome::AlreadyWired {
+            action_id: records.action_id.expect("the action landed"),
+        },
+    );
+}
+
+#[tokio::test]
+async fn two_wirings_of_the_same_event_at_once_land_a_single_action() {
+    let stored = stored().await;
+
+    let (first, second) = tokio::join!(wire(&stored.service), wire(&stored.service));
+
+    let outcomes = [first.expect("one wiring"), second.expect("other wiring")];
+    let wired = outcomes
+        .iter()
+        .filter(|outcome| matches!(outcome, OverlayWiringOutcome::Wired(_)))
+        .count();
+    assert_eq!(
+        (
+            wired,
+            stored.provider.action_repo().list().await.unwrap().len()
+        ),
+        (1, 1)
+    );
 }

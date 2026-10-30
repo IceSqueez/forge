@@ -100,6 +100,51 @@ fn collect_live_referrer(
     Ok(())
 }
 
+pub(crate) async fn upsert_script<'e>(
+    executor: impl sqlx::SqliteExecutor<'e>,
+    record: &ScriptRecord,
+) -> Result<(), StorageError> {
+    let id_str = record.id.to_string();
+    let now_ms = epoch_ms_now();
+    let enabled_int: i64 = i64::from(record.enabled);
+    let contract_json =
+        serde_json::to_string(&record.contract).map_err(|e| StorageError::Connection {
+            reason: e.to_string(),
+        })?;
+
+    sqlx::query(
+        "INSERT INTO scripts \
+         (id, name, body, contract_json, enabled, created_at, last_modified) \
+         VALUES (?, ?, ?, ?, ?, ?, ?) \
+         ON CONFLICT(id) DO UPDATE SET \
+             name          = excluded.name, \
+             body          = excluded.body, \
+             contract_json = excluded.contract_json, \
+             enabled       = excluded.enabled, \
+             last_modified = ?",
+    )
+    .bind(&id_str)
+    .bind(&record.name)
+    .bind(&record.body)
+    .bind(&contract_json)
+    .bind(enabled_int)
+    .bind(now_ms)
+    .bind(now_ms)
+    .bind(now_ms)
+    .execute(executor)
+    .await
+    .map_err(|e| match e {
+        sqlx::Error::Database(db_err) if db_err.is_unique_violation() => {
+            StorageError::NameCollision {
+                name: record.name.clone(),
+            }
+        }
+        other => SqliteStorageError::Sqlx(other).into(),
+    })?;
+
+    Ok(())
+}
+
 pub struct SqliteScriptRepo {
     db: SqlitePools,
 }
@@ -140,45 +185,7 @@ impl ScriptRepo for SqliteScriptRepo {
     }
 
     async fn save(&self, record: ScriptRecord) -> Result<(), StorageError> {
-        let id_str = record.id.to_string();
-        let now_ms = epoch_ms_now();
-        let enabled_int: i64 = i64::from(record.enabled);
-        let contract_json =
-            serde_json::to_string(&record.contract).map_err(|e| StorageError::Connection {
-                reason: e.to_string(),
-            })?;
-
-        sqlx::query(
-            "INSERT INTO scripts \
-             (id, name, body, contract_json, enabled, created_at, last_modified) \
-             VALUES (?, ?, ?, ?, ?, ?, ?) \
-             ON CONFLICT(id) DO UPDATE SET \
-                 name          = excluded.name, \
-                 body          = excluded.body, \
-                 contract_json = excluded.contract_json, \
-                 enabled       = excluded.enabled, \
-                 last_modified = ?",
-        )
-        .bind(&id_str)
-        .bind(&record.name)
-        .bind(&record.body)
-        .bind(&contract_json)
-        .bind(enabled_int)
-        .bind(now_ms)
-        .bind(now_ms)
-        .bind(now_ms)
-        .execute(self.db.writer())
-        .await
-        .map_err(|e| match e {
-            sqlx::Error::Database(db_err) if db_err.is_unique_violation() => {
-                StorageError::NameCollision {
-                    name: record.name.clone(),
-                }
-            }
-            other => SqliteStorageError::Sqlx(other).into(),
-        })?;
-
-        Ok(())
+        upsert_script(self.db.writer(), &record).await
     }
 
     async fn delete(&self, id: ScriptId) -> Result<bool, StorageError> {

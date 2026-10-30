@@ -1,4 +1,4 @@
-use aes_gcm::aead::{Aead, KeyInit};
+use aes_gcm::aead::{Aead, KeyInit, Payload};
 use aes_gcm::{Aes256Gcm, Nonce};
 use rand::rand_core::Rng;
 
@@ -97,7 +97,16 @@ fn sync_directory(_dir: &std::path::Path) -> Result<(), SqliteStorageError> {
     Ok(())
 }
 
+#[cfg(test)]
 pub fn encrypt(key: &[u8; 32], plaintext: &str) -> Result<(Vec<u8>, Vec<u8>), SqliteStorageError> {
+    encrypt_for(key, "", plaintext)
+}
+
+pub fn encrypt_for(
+    key: &[u8; 32],
+    credential_id: &str,
+    plaintext: &str,
+) -> Result<(Vec<u8>, Vec<u8>), SqliteStorageError> {
     let cipher = Aes256Gcm::new_from_slice(key).map_err(|e| SqliteStorageError::Crypto {
         reason: e.to_string(),
     })?;
@@ -109,18 +118,32 @@ pub fn encrypt(key: &[u8; 32], plaintext: &str) -> Result<(Vec<u8>, Vec<u8>), Sq
             reason: e.to_string(),
         })?;
 
-    let ciphertext =
-        cipher
-            .encrypt(nonce, plaintext.as_bytes())
-            .map_err(|e| SqliteStorageError::Crypto {
-                reason: e.to_string(),
-            })?;
+    let ciphertext = cipher
+        .encrypt(
+            nonce,
+            Payload {
+                msg: plaintext.as_bytes(),
+                aad: credential_id.as_bytes(),
+            },
+        )
+        .map_err(|e| SqliteStorageError::Crypto {
+            reason: e.to_string(),
+        })?;
 
     Ok((ciphertext, nonce_bytes.to_vec()))
 }
 
 pub fn decrypt(
     key: &[u8; 32],
+    ciphertext: &[u8],
+    nonce: &[u8],
+) -> Result<String, SqliteStorageError> {
+    decrypt_for(key, "", ciphertext, nonce)
+}
+
+pub fn decrypt_for(
+    key: &[u8; 32],
+    credential_id: &str,
     ciphertext: &[u8],
     nonce: &[u8],
 ) -> Result<String, SqliteStorageError> {
@@ -133,7 +156,13 @@ pub fn decrypt(
     })?;
 
     let plaintext = cipher
-        .decrypt(nonce, ciphertext)
+        .decrypt(
+            nonce,
+            Payload {
+                msg: ciphertext,
+                aad: credential_id.as_bytes(),
+            },
+        )
         .map_err(|e| SqliteStorageError::Crypto {
             reason: e.to_string(),
         })?;

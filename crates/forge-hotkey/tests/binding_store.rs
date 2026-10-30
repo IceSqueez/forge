@@ -244,6 +244,24 @@ async fn set_binding_enabled_applies_to_every_instance_it_is_given() {
     assert_eq!(states, [false, false]);
 }
 
+#[tokio::test]
+async fn set_binding_enabled_on_a_list_holding_an_unknown_id_toggles_nothing() {
+    let store = store().await;
+    let backend = Arc::clone(&store.provider);
+    let known = seed_instance(&backend, event_kinds::GLOBAL_PRESSED, Some("Ctrl+F1")).await;
+
+    let failed = set_binding_enabled(
+        Arc::clone(&backend),
+        vec![known, TriggerInstanceId::new()],
+        false,
+    )
+    .await;
+
+    let stored = backend.trigger_instance_repo().get(known).await.unwrap();
+    assert!(failed.is_err());
+    assert!(stored.unwrap().enabled);
+}
+
 #[test]
 fn persisted_hotkey_combos_skips_disabled_instances() {
     let mut disabled = instance(event_kinds::GLOBAL_PRESSED, Some("Ctrl+F1"));
@@ -628,6 +646,38 @@ async fn do_bind_registers_the_combo_and_stores_the_binding() {
         )]
     );
     assert_eq!(rig.registered(), ["F3"]);
+}
+
+#[tokio::test]
+async fn do_bind_keeps_the_old_binding_when_the_new_link_cannot_land() {
+    let store = store().await;
+    let backend = Arc::clone(&store.provider);
+    let reconciled = reconciled(&backend).await;
+    let action = seed_action(&backend, "Play sound").await;
+    do_bind(
+        Arc::clone(&reconciled.reconciler),
+        Arc::clone(&backend),
+        "Ctrl+F1".to_owned(),
+        HotkeyEdge::Press,
+        action,
+    )
+    .await
+    .unwrap();
+    let repo = backend.trigger_instance_repo();
+    let bound = repo.list_for_action(action).await.unwrap();
+
+    let failed = do_bind(
+        Arc::clone(&reconciled.reconciler),
+        Arc::clone(&backend),
+        "Ctrl+F1".to_owned(),
+        HotkeyEdge::Press,
+        ActionId::new(),
+    )
+    .await;
+
+    assert!(failed.is_err());
+    assert_eq!(repo.list_for_action(action).await.unwrap(), bound);
+    assert_eq!(reconciled.registered(), ["Ctrl+F1"]);
 }
 
 #[tokio::test]

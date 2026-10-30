@@ -10,8 +10,8 @@ use forge_storage::{
     MediaRepo, OverlayRepo, QueueRepo, RevisingActionRepo, RevisingQueueRepo,
     RevisingScheduledRunRepo, RevisingScriptRepo, RevisingTriggerInstanceRepo, RowClasses, RowGate,
     ScheduledRunRepo, ScriptRecord, ScriptReferences, ScriptRepo, ScriptTelemetry, SettingRow,
-    SettingsRepo, SoundboardClipsRepo, StorageError, TriggerInstanceRepo, TtsFiltersRepo,
-    UserGlobalEntry, UserGlobalsRepo, ViewerRepo, VoiceAliasRepo,
+    SettingsRepo, SoundboardClipsRepo, StorageError, StoreChange, TriggerInstanceRepo,
+    TtsFiltersRepo, UserGlobalEntry, UserGlobalsRepo, ViewerRepo, VoiceAliasRepo,
 };
 use forge_types::{ScriptId, Variant};
 use time::OffsetDateTime;
@@ -106,6 +106,7 @@ impl SqliteBackend {
         if key.minted {
             report_stranded_credentials(&pool, &credentials).await?;
         }
+        credentials.bind_unbound_rows().await;
         Ok(Self::from_pool_and_credentials(
             pool,
             credentials,
@@ -123,6 +124,7 @@ impl SqliteBackend {
     ) -> Result<Self, SqliteStorageError> {
         let pool = Self::migrate_and_gate(url).await?;
         let credentials = SqliteCredentialsRepo::new_with_key(pool.clone(), key);
+        credentials.bind_unbound_rows().await;
         Ok(Self::from_pool_and_credentials(
             pool,
             credentials,
@@ -571,6 +573,22 @@ impl DataProvider for SqliteBackend {
         Arc::clone(&self.action)
     }
 
+    async fn commit_changes(&self, changes: &[StoreChange]) -> Result<(), StorageError> {
+        let write = crate::unit_of_work::commit(self.pool.clone(), changes.to_vec());
+        if changes.iter().any(StoreChange::touches_catalog) {
+            self.catalog_revision.after(write).await?;
+        } else {
+            write.await?;
+        }
+        if changes.iter().any(StoreChange::removes_action) {
+            self.scheduled_run_revision.advance();
+        }
+        for key in changes.iter().filter_map(StoreChange::changed_setting) {
+            self.signal_setting_changed(key);
+        }
+        Ok(())
+    }
+
     fn trigger_instance_repo(&self) -> Arc<dyn TriggerInstanceRepo> {
         Arc::clone(&self.trigger_instance)
     }
@@ -670,8 +688,8 @@ impl DataProvider for SqliteBackend {
 
 #[cfg(test)]
 mod tests {
-    use forge_storage::DataProvider;
     use forge_storage::settings::core_settings;
+    use forge_storage::{DataProvider, StoreChange};
 
     use super::SqliteBackend;
 
@@ -811,5 +829,68 @@ mod tests {
         backend.shutdown().await;
 
         assert!(std::fs::read(&without).unwrap() == std::fs::read(&with).unwrap());
+    }
+
+    async fn retention_signal_is_waiting(backend: &SqliteBackend) -> bool {
+        tokio::select! {
+            biased;
+            () = backend.retention_window_changed.notified() => true,
+            () = std::future::ready(()) => false,
+        }
+    }
+
+    #[tokio::test]
+    async fn a_committed_change_signals_the_pruner_only_for_a_retention_setting() {
+        let event_log =
+            || forge_storage::setting_row(&core_settings::EVENT_LOG_RETENTION_DAYS, &3).unwrap();
+        let action_history = || {
+            forge_storage::setting_row(&core_settings::ACTION_HISTORY_RETENTION_DAYS, &3).unwrap()
+        };
+        let unrelated =
+            || forge_storage::setting_row(&core_settings::TTS_MASTER_VOLUME, &0.5).unwrap();
+        let dir = tempfile::tempdir().unwrap();
+        let backend = backend_with_settings(&dir, &[]).await;
+
+        for (label, change, signalled) in [
+            ("event log put", StoreChange::PutSetting(event_log()), true),
+            (
+                "event log delete",
+                StoreChange::DeleteSetting(event_log()),
+                true,
+            ),
+            (
+                "action history put",
+                StoreChange::PutSetting(action_history()),
+                true,
+            ),
+            ("unrelated put", StoreChange::PutSetting(unrelated()), false),
+        ] {
+            backend.commit_changes(&[change]).await.unwrap();
+
+            assert_eq!(
+                retention_signal_is_waiting(&backend).await,
+                signalled,
+                "{label}"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn a_failed_batch_does_not_signal_the_pruner() {
+        let dir = tempfile::tempdir().unwrap();
+        let backend = backend_with_settings(&dir, &[]).await;
+
+        let failed = backend
+            .commit_changes(&[
+                StoreChange::PutSetting(
+                    forge_storage::setting_row(&core_settings::EVENT_LOG_RETENTION_DAYS, &3)
+                        .unwrap(),
+                ),
+                StoreChange::DeleteQueue(forge_types::DEFAULT_QUEUE_ID),
+            ])
+            .await;
+
+        assert!(failed.is_err());
+        assert!(!retention_signal_is_waiting(&backend).await);
     }
 }

@@ -1,13 +1,18 @@
 use std::collections::HashMap;
 use std::str::FromStr;
+use std::sync::Arc;
 
 use async_trait::async_trait;
-use forge_storage::{StorageError, TriggerChanges, TriggerInstanceRepo};
+use forge_storage::{
+    ActionRepo, QueueRepo, StorageError, TriggerChanges, TriggerInstanceRepo, TriggerWiring,
+};
 use forge_types::{ActionId, PermissionRung, PlatformScope, TriggerInstance, TriggerInstanceId};
 use time::OffsetDateTime;
 
+use crate::action_impl::upsert_action;
 use crate::error::SqliteStorageError;
 use crate::pool::SqlitePools;
+use crate::queue_impl::{mark_overlay_alert_queue, upsert_queue};
 
 const REFERENCE_BLOCK_SAMPLE_NAMES: usize = 3;
 
@@ -227,6 +232,31 @@ impl TriggerInstanceRepo for SqliteTriggerInstanceRepo {
         Ok(())
     }
 
+    async fn commit_overlay_wiring(
+        &self,
+        wiring: &TriggerWiring,
+        _queues: Arc<dyn QueueRepo>,
+        _actions: Arc<dyn ActionRepo>,
+    ) -> Result<(), StorageError> {
+        let mut tx = self
+            .db
+            .writer()
+            .begin_with("BEGIN IMMEDIATE")
+            .await
+            .map_err(SqliteStorageError::Sqlx)?;
+
+        if let Some(queue) = &wiring.created_queue {
+            upsert_queue(&mut *tx, queue).await?;
+        }
+        mark_overlay_alert_queue(&mut *tx, wiring.action.queue_id).await?;
+        upsert_action(&mut *tx, &wiring.action).await?;
+        upsert_instance(&mut *tx, &wiring.instance).await?;
+        ignore_unique_violation(append_link(&mut *tx, wiring.action.id, wiring.instance.id).await)?;
+
+        tx.commit().await.map_err(SqliteStorageError::Sqlx)?;
+        Ok(())
+    }
+
     async fn link_action(
         &self,
         action_id: ActionId,
@@ -379,19 +409,24 @@ impl TriggerInstanceRepo for SqliteTriggerInstanceRepo {
     }
 
     async fn set_enabled(&self, id: TriggerInstanceId, enabled: bool) -> Result<(), StorageError> {
-        let id_str = id.to_string();
-        let enabled_val: i64 = if enabled { 1 } else { 0 };
+        update_enabled(self.db.writer(), id, enabled).await
+    }
 
-        let result = sqlx::query("UPDATE trigger_instances SET enabled = ? WHERE id = ?")
-            .bind(enabled_val)
-            .bind(&id_str)
-            .execute(self.db.writer())
+    async fn set_all_enabled(
+        &self,
+        ids: &[TriggerInstanceId],
+        enabled: bool,
+    ) -> Result<(), StorageError> {
+        let mut tx = self
+            .db
+            .writer()
+            .begin_with("BEGIN IMMEDIATE")
             .await
             .map_err(SqliteStorageError::Sqlx)?;
-
-        if result.rows_affected() == 0 {
-            return Err(StorageError::NotFound { key: id_str });
+        for id in ids {
+            update_enabled(&mut *tx, *id, enabled).await?;
         }
+        tx.commit().await.map_err(SqliteStorageError::Sqlx)?;
         Ok(())
     }
 
@@ -437,7 +472,26 @@ impl TriggerInstanceRepo for SqliteTriggerInstanceRepo {
     }
 }
 
-async fn upsert_instance<'e>(
+async fn update_enabled<'e>(
+    executor: impl sqlx::SqliteExecutor<'e>,
+    id: TriggerInstanceId,
+    enabled: bool,
+) -> Result<(), StorageError> {
+    let id_str = id.to_string();
+    let result = sqlx::query("UPDATE trigger_instances SET enabled = ? WHERE id = ?")
+        .bind(i64::from(enabled))
+        .bind(&id_str)
+        .execute(executor)
+        .await
+        .map_err(SqliteStorageError::Sqlx)?;
+
+    if result.rows_affected() == 0 {
+        return Err(StorageError::NotFound { key: id_str });
+    }
+    Ok(())
+}
+
+pub(crate) async fn upsert_instance<'e>(
     executor: impl sqlx::SqliteExecutor<'e>,
     instance: &TriggerInstance,
 ) -> Result<(), StorageError> {
@@ -486,7 +540,7 @@ async fn upsert_instance<'e>(
     Ok(())
 }
 
-async fn append_link<'e>(
+pub(crate) async fn append_link<'e>(
     executor: impl sqlx::SqliteExecutor<'e>,
     action_id: ActionId,
     instance_id: TriggerInstanceId,
@@ -504,7 +558,7 @@ async fn append_link<'e>(
     .await
 }
 
-fn ignore_unique_violation(
+pub(crate) fn ignore_unique_violation(
     result: Result<sqlx::sqlite::SqliteQueryResult, sqlx::Error>,
 ) -> Result<(), StorageError> {
     match result {

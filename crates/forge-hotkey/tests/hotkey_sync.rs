@@ -14,19 +14,20 @@ use forge_hotkey::{
 };
 use forge_storage::soundboard::MockSoundboardClipsRepo;
 use forge_storage::{
-    MockTriggerInstanceRepo, SoundboardClipsRepo, StorageError, StoredClip, TriggerChanges,
-    TriggerInstanceRepo,
+    MediaBlobId, MockTriggerInstanceRepo, SoundboardClipsRepo, StorageError, StoredClip,
+    TriggerChanges, TriggerInstanceRepo, TriggerWiring,
 };
-use forge_types::ClipId;
+use forge_types::{ClipId, Queue, QueueId, TriggerInstanceId};
 use support::{
-    Store, clip, instance, recording_client, registered, store, stored_combo, with_combo,
+    Store, clip, instance, recording_client, registered, seed_action, store, stored_combo,
+    with_combo,
 };
 use tokio::sync::Notify;
 
 const STILL_WAITING: Duration = Duration::from_millis(50);
 
 struct Synced {
-    _store: Store,
+    store: Store,
     stored: Arc<dyn TriggerInstanceRepo>,
     stored_clips: Arc<dyn SoundboardClipsRepo>,
     repo: Arc<dyn TriggerInstanceRepo>,
@@ -50,7 +51,7 @@ async fn synced() -> Synced {
     let clips =
         HotkeySyncedClipsRepo::wrap(Arc::clone(&stored_clips), Some(Arc::clone(&reconciler)));
     Synced {
-        _store: store,
+        store,
         stored,
         stored_clips,
         repo,
@@ -682,4 +683,171 @@ async fn re_enabling_a_binding_leaves_a_stored_engine_off_choice_alone() {
     synced.repo.set_enabled(binding.id, true).await.unwrap();
 
     assert_eq!(starts.load(Ordering::SeqCst), 0);
+}
+
+fn new_queue() -> Queue {
+    Queue {
+        id: QueueId::new(),
+        name: "alerts".to_owned(),
+        description: String::new(),
+        concurrency: 1,
+    }
+}
+
+impl Synced {
+    async fn wiring(&self, combo: &str) -> TriggerWiring {
+        let backend = &self.store.provider;
+        let action_id = seed_action(backend, "Play sound").await;
+        let action = backend.action_repo().get(action_id).await.unwrap().unwrap();
+        TriggerWiring {
+            created_queue: None,
+            action,
+            instance: instance(event_kinds::GLOBAL_PRESSED, Some(combo)),
+        }
+    }
+
+    async fn commit_wiring(&self, wiring: &TriggerWiring) -> Result<(), StorageError> {
+        let backend = &self.store.provider;
+        self.repo
+            .commit_overlay_wiring(wiring, backend.queue_repo(), backend.action_repo())
+            .await
+    }
+
+    async fn stored_blob(&self) -> MediaBlobId {
+        self.store
+            .provider
+            .media_repo()
+            .store("ding.ogg", b"OggS\x00\x02\x00\x00synced clip".to_vec())
+            .await
+            .unwrap()
+            .id
+    }
+}
+
+#[tokio::test]
+async fn an_overlay_wiring_through_the_synced_repo_registers_its_combo_in_canonical_form() {
+    let synced = synced().await;
+    let wiring = synced.wiring("shift+ctrl+f5").await;
+
+    synced.commit_wiring(&wiring).await.unwrap();
+
+    assert_eq!(registered(&synced.client), ["Ctrl+Shift+F5"]);
+}
+
+#[tokio::test]
+async fn an_overlay_wiring_through_the_synced_repo_stays_one_transaction() {
+    let synced = synced().await;
+    let queue = new_queue();
+    let mut wiring = synced.wiring("F5").await;
+    wiring.action.queue_id = QueueId::new();
+    wiring.created_queue = Some(queue.clone());
+
+    let failed = synced.commit_wiring(&wiring).await;
+
+    let kept = synced.store.provider.queue_repo().get(queue.id).await;
+    assert!(failed.is_err());
+    assert_eq!(kept.unwrap(), None);
+}
+
+#[tokio::test]
+async fn disabling_a_list_through_the_synced_repo_releases_each_registration() {
+    let synced = synced().await;
+    let first = instance(event_kinds::GLOBAL_PRESSED, Some("F5"));
+    let second = instance(event_kinds::GLOBAL_PRESSED, Some("F6"));
+    synced.repo.save(&first).await.unwrap();
+    synced.repo.save(&second).await.unwrap();
+
+    synced
+        .repo
+        .set_all_enabled(&[first.id, second.id], false)
+        .await
+        .unwrap();
+
+    assert!(registered(&synced.client).is_empty());
+}
+
+#[tokio::test]
+async fn a_list_holding_an_unknown_id_through_the_synced_repo_toggles_nothing() {
+    let synced = synced().await;
+    let known = instance(event_kinds::GLOBAL_PRESSED, Some("F5"));
+    synced.repo.save(&known).await.unwrap();
+
+    let failed = synced
+        .repo
+        .set_all_enabled(&[known.id, TriggerInstanceId::new()], false)
+        .await;
+
+    assert!(failed.is_err());
+    assert_eq!(registered(&synced.client), ["F5"]);
+    assert!(synced.stored.get(known.id).await.unwrap().unwrap().enabled);
+}
+
+#[tokio::test]
+async fn saving_a_clip_with_its_source_through_the_synced_repo_registers_its_combo() {
+    let synced = synced().await;
+    let blob = synced.stored_blob().await;
+    let clip = clip(Some("shift+ctrl+f5"));
+
+    synced
+        .clips
+        .save_with_source(&clip, &blob, synced.store.provider.media_repo())
+        .await
+        .unwrap();
+
+    assert_eq!(registered(&synced.client), ["Ctrl+Shift+F5"]);
+}
+
+#[tokio::test]
+async fn saving_a_clip_with_a_missing_source_through_the_synced_repo_stays_one_transaction() {
+    let synced = synced().await;
+    let clip = clip(Some("F5"));
+    let unknown = MediaBlobId::from_stored(format!("sha256-{}", "ab".repeat(32))).unwrap();
+
+    let failed = synced
+        .clips
+        .save_with_source(&clip, &unknown, synced.store.provider.media_repo())
+        .await;
+
+    assert!(failed.is_err());
+    assert_eq!(synced.stored_clips.get(clip.id).await.unwrap(), None);
+}
+
+#[tokio::test]
+async fn deleting_a_clip_with_its_sources_through_the_synced_repo_reaches_the_inner_repo_whole() {
+    let id = ClipId::new();
+    let mut inner = MockSoundboardClipsRepo::new();
+    inner
+        .expect_delete_with_sources()
+        .times(1)
+        .returning(|_, _| Ok(true));
+    let wrapped = HotkeySyncedClipsRepo::wrap(Arc::new(inner), None);
+    let store = store().await;
+
+    let deleted = wrapped
+        .delete_with_sources(id, store.provider.media_repo())
+        .await
+        .unwrap();
+
+    assert!(deleted);
+}
+
+#[tokio::test]
+async fn deleting_a_clip_with_its_sources_through_the_synced_repo_releases_its_combo() {
+    let synced = synced().await;
+    let blob = synced.stored_blob().await;
+    let clip = clip(Some("F5"));
+    let media = synced.store.provider.media_repo();
+    synced
+        .clips
+        .save_with_source(&clip, &blob, media.clone())
+        .await
+        .unwrap();
+
+    synced
+        .clips
+        .delete_with_sources(clip.id, media)
+        .await
+        .unwrap();
+
+    assert!(registered(&synced.client).is_empty());
 }

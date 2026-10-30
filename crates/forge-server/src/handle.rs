@@ -926,7 +926,7 @@ mod tests {
         settings
             .expect_load_all()
             .returning(|| Ok(Default::default()));
-        settings.expect_set_string().returning(|_, _| {
+        settings.expect_put_row().returning(|_, _, _, _| {
             Err(forge_storage::StorageError::Connection {
                 reason: "database is locked".into(),
             })

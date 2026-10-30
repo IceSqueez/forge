@@ -87,6 +87,7 @@ impl Registries {
 pub(super) struct Store {
     dir: TempDir,
     pub(super) provider: Arc<dyn DataProvider>,
+    pub(super) sqlite: Arc<SqliteBackend>,
 }
 
 impl Store {
@@ -98,9 +99,11 @@ impl Store {
                 .await
                 .unwrap();
         std::fs::write(dir.path().join(CREDENTIALS_KEY_FILE_NAME), STORAGE_KEY).unwrap();
+        let sqlite = Arc::new(backend);
         Self {
             dir,
-            provider: Arc::new(backend),
+            provider: Arc::clone(&sqlite) as Arc<dyn DataProvider>,
+            sqlite,
         }
     }
 

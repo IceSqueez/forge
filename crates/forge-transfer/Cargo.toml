@@ -34,5 +34,6 @@ tracing = { workspace = true }
 ulid = { workspace = true }
 
 [dev-dependencies]
-forge-storage-sqlite = { path = "../forge-storage-sqlite" }
+forge-storage-sqlite = { path = "../forge-storage-sqlite", features = ["settings-test-support"] }
+sqlx = { workspace = true }
 tempfile = { workspace = true }

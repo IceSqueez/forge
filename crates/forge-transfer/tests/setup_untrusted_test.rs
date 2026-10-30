@@ -1,5 +1,5 @@
 #![allow(clippy::unwrap_used)]
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -11,20 +11,21 @@ use forge_speech_types::{AssignmentStrategy, IgnoreProfile};
 use forge_storage::settings::reserved_keys as key;
 use forge_storage::{
     DATABASE_FILE_NAME, DataProvider, EXPECTED_SCHEMA_VERSION, MediaBlobId, MediaFormat,
-    SettingDisclosure, SettingEncoding, SettingPortability, SettingSpec, SettingsCatalog,
-    SettingsRepo, TtsPipelineSettings,
+    RowClasses, SettingDisclosure, SettingEncoding, SettingPortability, SettingSkip, SettingSpec,
+    SettingsCatalog, SettingsRepo, TtsPipelineSettings,
 };
 use forge_storage_sqlite::{SqliteBackend, SqliteDatabaseFileSchema};
 use forge_transfer::{
     BUNDLE_FORMAT_VERSION, BundleKind, ClipDocument, ClipSourceDocument, ClosureRegistries,
     ContentEntry, MANIFEST_ENTRY_NAME, MediaDocument, OverlayDocument, OverlayFileDocument,
     PACK_DOCUMENTS_VERSION, PackDocuments, SETUP_DOCUMENTS_VERSION, SetupDocuments,
-    SetupImportOutcome, SetupImportRequest, SetupManifest, StageRequest, TransferError,
-    TtsDocument, VoicesDocument, apply_setup_import, backups_dir, setup_staging_root,
-    stage_full_restore, stage_pack, stage_setup,
+    SetupExportRequest, SetupImportOutcome, SetupImportRequest, SetupManifest, SkippedSetting,
+    StageRequest, TransferError, TtsDocument, VoicesDocument, apply_setup_import, backups_dir,
+    setup_staging_root, stage_full_restore, stage_pack, stage_setup, write_setup,
 };
 use forge_types::{ClipId, Variant};
 use sha2::{Digest, Sha256};
+use sqlx::Connection;
 use tempfile::TempDir;
 use time::OffsetDateTime;
 
@@ -35,6 +36,19 @@ const OVERLAY_FILE: &str = "setup/overlays/0/payload.css";
 const ESCAPE_NAME: &str = "escape.css";
 const UNCLASSIFIED_KEY: &str = "ui.last_note";
 const PORTABLE_THEME: &str = "setup-theme";
+const PORTABLE_VERBATIM: RowClasses = RowClasses {
+    portability: SettingPortability::Portable,
+    disclosure: SettingDisclosure::Verbatim,
+};
+const PORTABLE_PRESENCE: RowClasses = RowClasses {
+    portability: SettingPortability::Portable,
+    disclosure: SettingDisclosure::Presence,
+};
+const MACHINE_LOCAL_WITHHELD: RowClasses = RowClasses {
+    portability: SettingPortability::MachineLocal,
+    disclosure: SettingDisclosure::Withheld,
+};
+const ENGINE_PARAMS_PIPER: &str = "tts.engine_params.piper";
 const OWNER_PORTABLE: SettingSpec = SettingSpec::exact(
     "owner.portable_flag",
     SettingEncoding::Flag,
@@ -54,6 +68,7 @@ type Settings = BTreeMap<String, String>;
 struct Store {
     dir: TempDir,
     provider: Arc<dyn DataProvider>,
+    sqlite: Arc<SqliteBackend>,
     settings_catalog: SettingsCatalog,
 }
 
@@ -73,9 +88,11 @@ impl Store {
             SqliteBackend::open_for_test(&url, SQLITE_KEY, dir.path().join(MEDIA_DIR_NAME), None)
                 .await
                 .unwrap();
+        let sqlite = Arc::new(backend);
         Self {
             dir,
-            provider: Arc::new(backend),
+            provider: Arc::clone(&sqlite) as Arc<dyn DataProvider>,
+            sqlite,
             settings_catalog: owner_registered_catalog(),
         }
     }
@@ -90,6 +107,23 @@ impl Store {
                 .await
                 .unwrap();
         }
+    }
+
+    async fn seed(&self, key: &str, value: &str, classes: Option<RowClasses>) {
+        self.sqlite
+            .seed_foreign_setting(key, value, classes)
+            .await
+            .unwrap();
+    }
+
+    async fn stored_rows(&self) -> BTreeMap<String, (String, RowClasses)> {
+        self.sqlite
+            .stored_setting_rows()
+            .await
+            .unwrap()
+            .into_iter()
+            .map(|row| (row.key, (row.value, row.classes)))
+            .collect()
     }
 
     async fn settings(&self) -> Settings {
@@ -566,4 +600,252 @@ async fn a_setup_carrying_an_overlay_with_invalid_settings_writes_nothing_and_ta
         (store.settings().await, overlays.len(), snapshots),
         (before, 0, 0)
     );
+}
+
+fn mixed_admission_documents() -> SetupDocuments {
+    setup_carrying(&[
+        (key::AUDIO_OUTPUT_DEVICE_ID, "foreign-speakers"),
+        (key::THEME, PORTABLE_THEME),
+        (UNCLASSIFIED_KEY, "foreign-note"),
+        (OWNER_PORTABLE.key.name(), "maybe"),
+        ("tts.engine_params.has space", "{}"),
+        ("tts.engine_params.", "{}"),
+        (ENGINE_PARAMS_PIPER, "{\"speed\":1.2}"),
+        ("zz.undeclared", "tail"),
+    ])
+}
+
+#[tokio::test]
+async fn an_import_reports_every_refused_setting_with_the_reason_admission_gave() {
+    let store = Store::open().await;
+    let path = bundle(store.data_dir(), &mixed_admission_documents(), &[]);
+
+    let outcome = store.import(path).await.unwrap();
+
+    let skipped: HashMap<String, SettingSkip> = outcome
+        .skipped_settings
+        .into_iter()
+        .map(|SkippedSetting { key, reason }| (key, reason))
+        .collect();
+    let expected: HashMap<String, SettingSkip> = [
+        ("tts.engine_params.", SettingSkip::Undeclared),
+        ("tts.engine_params.has space", SettingSkip::Undeclared),
+        (UNCLASSIFIED_KEY, SettingSkip::Undeclared),
+        (key::AUDIO_OUTPUT_DEVICE_ID, SettingSkip::NotPortable),
+        (OWNER_PORTABLE.key.name(), SettingSkip::Undecodable),
+        ("zz.undeclared", SettingSkip::Undeclared),
+    ]
+    .into_iter()
+    .map(|(k, reason)| (k.to_owned(), reason))
+    .collect();
+    assert_eq!(skipped, expected);
+}
+
+#[tokio::test]
+async fn an_import_keeps_writing_the_admitted_settings_around_the_refused_ones() {
+    let store = Store::open().await;
+    let path = bundle(store.data_dir(), &mixed_admission_documents(), &[]);
+
+    store.import(path).await.unwrap();
+
+    let expected: Settings = [
+        (key::THEME.to_owned(), PORTABLE_THEME.to_owned()),
+        (ENGINE_PARAMS_PIPER.to_owned(), "{\"speed\":1.2}".to_owned()),
+    ]
+    .into();
+    let mut settings = store.settings().await;
+    settings.remove(key::VOICE_ASSIGNMENT_STRATEGY);
+    assert_eq!(settings, expected);
+}
+
+#[tokio::test]
+async fn a_bundle_value_the_declared_encoding_cannot_decode_does_not_delete_the_local_row() {
+    let store = Store::open().await;
+    store
+        .seed(OWNER_PORTABLE.key.name(), "true", Some(PORTABLE_VERBATIM))
+        .await;
+    let path = bundle(
+        store.data_dir(),
+        &setup_carrying(&[(OWNER_PORTABLE.key.name(), "maybe")]),
+        &[],
+    );
+
+    store.import(path).await.unwrap();
+
+    assert_eq!(
+        store.stored_rows().await.get(OWNER_PORTABLE.key.name()),
+        Some(&("true".to_owned(), PORTABLE_VERBATIM))
+    );
+}
+
+#[tokio::test]
+async fn a_stored_portable_row_the_bundle_does_not_carry_is_removed_and_a_machine_local_one_stays()
+{
+    let store = Store::open().await;
+    store
+        .seed(key::ACCENT, "local-accent", Some(PORTABLE_VERBATIM))
+        .await;
+    store
+        .seed(
+            key::AUDIO_OUTPUT_DEVICE_ID,
+            "local-speakers",
+            Some(MACHINE_LOCAL_WITHHELD),
+        )
+        .await;
+    let path = bundle(store.data_dir(), &empty_setup(), &[]);
+
+    store.import(path).await.unwrap();
+
+    let mut left: Vec<String> = store.stored_rows().await.into_keys().collect();
+    left.retain(|name| name != key::VOICE_ASSIGNMENT_STRATEGY);
+    assert_eq!(left, vec![key::AUDIO_OUTPUT_DEVICE_ID.to_owned()]);
+}
+
+#[tokio::test]
+async fn a_classless_legacy_row_for_a_portable_declared_key_is_not_removed_by_a_replace_import() {
+    let store = Store::open().await;
+    store.seed(key::ACCENT, "legacy-accent", None).await;
+    let path = bundle(store.data_dir(), &empty_setup(), &[]);
+
+    store.import(path).await.unwrap();
+
+    assert_eq!(
+        store.stored_rows().await.get(key::ACCENT),
+        Some(&("legacy-accent".to_owned(), MACHINE_LOCAL_WITHHELD))
+    );
+}
+
+#[tokio::test]
+async fn an_imported_setting_is_stored_with_its_declared_classes_over_a_legacy_row() {
+    let store = Store::open().await;
+    store.seed(key::THEME, "legacy-theme", None).await;
+    let path = bundle(
+        store.data_dir(),
+        &setup_carrying(&[
+            (key::THEME, PORTABLE_THEME),
+            (OWNER_PORTABLE.key.name(), "true"),
+        ]),
+        &[],
+    );
+
+    store.import(path).await.unwrap();
+
+    let rows = store.stored_rows().await;
+    assert_eq!(
+        (
+            rows.get(key::THEME).cloned(),
+            rows.get(OWNER_PORTABLE.key.name()).cloned()
+        ),
+        (
+            Some((PORTABLE_THEME.to_owned(), PORTABLE_VERBATIM)),
+            Some(("true".to_owned(), PORTABLE_VERBATIM)),
+        )
+    );
+}
+
+#[tokio::test]
+async fn an_exported_setup_carries_only_rows_stored_as_portable() {
+    let store = Store::open().await;
+    store
+        .seed(key::THEME, "stored-portable", Some(PORTABLE_VERBATIM))
+        .await;
+    store
+        .seed(
+            UNCLASSIFIED_KEY,
+            "stored-portable-note",
+            Some(PORTABLE_PRESENCE),
+        )
+        .await;
+    store.seed(key::ACCENT, "legacy-classless", None).await;
+    store
+        .seed(
+            key::AUDIO_OUTPUT_DEVICE_ID,
+            "local-speakers",
+            Some(MACHINE_LOCAL_WITHHELD),
+        )
+        .await;
+    let written = write_setup(SetupExportRequest {
+        provider: Arc::clone(&store.provider),
+        overlay_root: store.data_dir().join(OVERLAYS_DIR_NAME),
+        destination: store.data_dir().join("export.forgebundle"),
+    })
+    .await
+    .unwrap();
+
+    let staged = stage_setup(written, store.data_dir().to_path_buf())
+        .await
+        .unwrap();
+
+    let seeded = [
+        key::THEME,
+        UNCLASSIFIED_KEY,
+        key::ACCENT,
+        key::AUDIO_OUTPUT_DEVICE_ID,
+    ];
+    let carried: Settings = staged
+        .documents()
+        .settings
+        .iter()
+        .filter(|(name, _)| seeded.contains(&name.as_str()))
+        .map(|(k, v)| (k.clone(), v.clone()))
+        .collect();
+    assert_eq!(
+        carried,
+        [
+            (key::THEME.to_owned(), "stored-portable".to_owned()),
+            (
+                UNCLASSIFIED_KEY.to_owned(),
+                "stored-portable-note".to_owned()
+            ),
+        ]
+        .into()
+    );
+}
+
+#[tokio::test]
+async fn a_failed_setup_import_restores_replaced_rows_and_removes_added_ones_with_their_exact_classes()
+ {
+    let store = Store::open().await;
+    store
+        .seed(key::THEME, "local-theme", Some(PORTABLE_PRESENCE))
+        .await;
+    store
+        .seed(key::ACCENT, "local-accent", Some(PORTABLE_VERBATIM))
+        .await;
+    let blocked = forge_types::Queue {
+        id: forge_types::QueueId::new(),
+        name: "Blocked".to_owned(),
+        description: String::new(),
+        concurrency: 1,
+    };
+    store.provider.queue_repo().save(&blocked).await.unwrap();
+    let mut connection = sqlx::SqliteConnection::connect(&format!(
+        "sqlite://{}",
+        store.data_dir().join(DATABASE_FILE_NAME).display()
+    ))
+    .await
+    .unwrap();
+    sqlx::query(
+        "CREATE TRIGGER refuse_queue_delete BEFORE DELETE ON queues \
+         BEGIN SELECT RAISE(ABORT, 'queue delete refused'); END",
+    )
+    .execute(&mut connection)
+    .await
+    .unwrap();
+    let before = store.stored_rows().await;
+    let path = bundle(
+        store.data_dir(),
+        &setup_carrying(&[
+            (key::THEME, PORTABLE_THEME),
+            (OWNER_PORTABLE.key.name(), "true"),
+        ]),
+        &[],
+    );
+
+    let failed = store.import(path).await;
+
+    let mut after = store.stored_rows().await;
+    after.remove(key::VOICE_ASSIGNMENT_STRATEGY);
+    assert!(failed.is_err(), "{failed:?}");
+    assert_eq!(after, before);
 }

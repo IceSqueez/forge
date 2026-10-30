@@ -511,7 +511,6 @@ mod tests {
                 .unwrap();
             write_setup(SetupExportRequest {
                 provider: Arc::clone(rig.world.provider()),
-                settings_catalog: Arc::new(crate::settings_catalog::registered_settings_catalog()),
                 overlay_root: rig.world.overlay_root(),
                 destination: rig
                     .world
@@ -609,6 +608,7 @@ mod tests {
             queues: SetupQueueChanges::default(),
             restart_recommended,
             cleanup_failures,
+            skipped_settings: Vec::new(),
         }
     }
 
@@ -815,6 +815,62 @@ mod tests {
         });
 
         assert_eq!(toast_kinds(cx), vec![ToastKind::Success, ToastKind::Warn]);
+    }
+
+    #[gpui::test]
+    fn skipped_settings_add_one_warning_that_counts_each_reason(cx: &mut TestAppContext) {
+        let rig = rig(cx);
+        let mut imported = outcome(false, Vec::new());
+        imported.skipped_settings = [
+            ("ui.last_note", forge_storage::SettingSkip::Undeclared),
+            ("zz.undeclared", forge_storage::SettingSkip::Undeclared),
+            (
+                "audio.output_device_id",
+                forge_storage::SettingSkip::NotPortable,
+            ),
+            ("owner.flag", forge_storage::SettingSkip::Undecodable),
+        ]
+        .map(|(key, reason)| forge_transfer::SkippedSetting {
+            key: key.to_owned(),
+            reason,
+        })
+        .into();
+
+        rig.flow.update(cx, |flow, cx| {
+            flow.applied(
+                SetupApplied::Done {
+                    outcome: imported,
+                    live: LiveRefresh::Applied,
+                },
+                cx,
+            )
+        });
+
+        let warnings: Vec<String> = toasts(cx)
+            .into_iter()
+            .filter(|(kind, _, _)| *kind == ToastKind::Warn)
+            .map(|(_, message, _)| message)
+            .collect();
+        assert_eq!(warnings.len(), 1, "{warnings:?}");
+        let digits: String = warnings[0].chars().filter(char::is_ascii_digit).collect();
+        assert_eq!(digits, "4211", "{}", warnings[0]);
+    }
+
+    #[gpui::test]
+    fn an_import_that_skipped_nothing_adds_no_settings_warning(cx: &mut TestAppContext) {
+        let rig = rig(cx);
+
+        rig.flow.update(cx, |flow, cx| {
+            flow.applied(
+                SetupApplied::Done {
+                    outcome: outcome(false, Vec::new()),
+                    live: LiveRefresh::Applied,
+                },
+                cx,
+            )
+        });
+
+        assert_eq!(toast_kinds(cx), vec![ToastKind::Success]);
     }
 
     #[gpui::test]

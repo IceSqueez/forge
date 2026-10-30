@@ -243,29 +243,65 @@ mod tests {
         assert_eq!(portable, Vec::<&str>::new());
     }
 
-    #[tokio::test]
-    async fn the_diagnostic_bundle_discloses_owner_declared_settings_by_their_class() {
-        let backend = sandboxed_backend("sqlite::memory:", TEST_KEY)
-            .await
-            .map(|backend| Arc::new(backend) as Arc<dyn DataProvider>);
-        for (name, value) in [
-            (key::SERVER_PORT, "8080"),
-            (key::SERVER_OVERLAY_ROOT, "/home/nova/overlays"),
-            (key::SCRIPT_HTTP_ALLOWED_DOMAINS, r#"["nova.example"]"#),
-            ("twitch.account_login", SECRET),
-        ] {
-            backend.set_string(name, value).await.unwrap();
+    async fn diagnostic_config(
+        rows: &[(&str, &str, Option<forge_storage::RowClasses>)],
+    ) -> std::collections::BTreeMap<String, String> {
+        let sandboxed = sandboxed_backend("sqlite::memory:", TEST_KEY).await;
+        for (name, value, classes) in rows {
+            sandboxed
+                .seed_foreign_setting(name, value, *classes)
+                .await
+                .unwrap();
         }
-
-        let input = crate::diagnostic_bundle::gather_input(
+        let backend = sandboxed.map(|backend| Arc::new(backend) as Arc<dyn DataProvider>);
+        crate::diagnostic_bundle::gather_input(
             Arc::clone(&backend),
-            &registered_settings_catalog(),
             Vec::new(),
             forge_types::LogLevel::Info,
             false,
         )
         .await
-        .unwrap();
+        .unwrap()
+        .config
+    }
+
+    fn declared_classes(name: &str) -> Option<forge_storage::RowClasses> {
+        let catalog = registered_settings_catalog();
+        Some(forge_storage::RowClasses {
+            portability: catalog.portability_of(name),
+            disclosure: catalog.disclosure_of(name),
+        })
+    }
+
+    #[tokio::test]
+    async fn the_diagnostic_bundle_discloses_rows_by_their_stored_class() {
+        let config = diagnostic_config(&[
+            (key::SERVER_PORT, "8080", declared_classes(key::SERVER_PORT)),
+            (
+                key::SERVER_OVERLAY_ROOT,
+                "/home/nova/overlays",
+                declared_classes(key::SERVER_OVERLAY_ROOT),
+            ),
+            (
+                key::SCRIPT_HTTP_ALLOWED_DOMAINS,
+                r#"["nova.example"]"#,
+                declared_classes(key::SCRIPT_HTTP_ALLOWED_DOMAINS),
+            ),
+            (
+                "twitch.account_login",
+                SECRET,
+                declared_classes("twitch.account_login"),
+            ),
+            (
+                "ui.last_note",
+                "stored-verbatim",
+                Some(forge_storage::RowClasses {
+                    portability: forge_storage::SettingPortability::MachineLocal,
+                    disclosure: forge_storage::SettingDisclosure::Verbatim,
+                }),
+            ),
+        ])
+        .await;
 
         assert_eq!(
             [
@@ -273,14 +309,24 @@ mod tests {
                 key::SERVER_OVERLAY_ROOT,
                 key::SCRIPT_HTTP_ALLOWED_DOMAINS,
                 "twitch.account_login",
+                "ui.last_note",
             ]
-            .map(|name| input.config.get(name).cloned()),
+            .map(|name| config.get(name).cloned()),
             [
                 Some("8080".to_owned()),
                 Some("set".to_owned()),
                 Some("list(1)".to_owned()),
                 None,
+                Some("stored-verbatim".to_owned()),
             ]
         );
+    }
+
+    #[tokio::test]
+    async fn a_classless_legacy_row_is_withheld_from_the_diagnostic_bundle_though_its_key_is_declared_verbatim()
+     {
+        let config = diagnostic_config(&[(key::SERVER_PORT, SECRET, None)]).await;
+
+        assert_eq!(config.get(key::SERVER_PORT), None);
     }
 }

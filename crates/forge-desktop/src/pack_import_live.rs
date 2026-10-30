@@ -555,6 +555,7 @@ mod tests {
             queues,
             restart_recommended: false,
             cleanup_failures: Vec::new(),
+            skipped_settings: Vec::new(),
         }
     }
 

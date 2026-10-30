@@ -12,7 +12,7 @@ use forge_storage::{
     LatestRecord, MediaBlobId, OverlayId, ScriptRepo, SettingsRepo, StoredClip, StoredDonation,
     TtsPipelineSettings, Viewer, clip_source_referrer,
 };
-use forge_storage::{SettingPortability, SettingSpec, SettingsCatalog};
+use forge_storage::{RowClasses, SettingDisclosure, SettingPortability, SettingSkip};
 use forge_storage_sqlite::SqliteDatabaseFileSchema;
 use forge_transfer::{
     SetupExportRequest, SetupImportOutcome, SetupImportRequest, SetupLivePart, SetupQueueChanges,
@@ -51,8 +51,30 @@ fn at(seconds: i64) -> OffsetDateTime {
 }
 
 async fn set_settings(store: &Store, pairs: &[(&str, &str)]) {
+    let catalog = registered_settings_catalog();
     for (k, v) in pairs {
-        SettingsRepo::set_string(store.provider.as_ref(), k, v)
+        match catalog.admit(k, v) {
+            Ok(row) => store
+                .sqlite
+                .seed_foreign_setting(k, v, Some(row.classes()))
+                .await
+                .unwrap(),
+            Err(_) => SettingsRepo::set_string(store.provider.as_ref(), k, v)
+                .await
+                .unwrap(),
+        }
+    }
+}
+
+async fn set_settings_stored_portable(store: &Store, pairs: &[(&str, &str)]) {
+    let classes = RowClasses {
+        portability: SettingPortability::Portable,
+        disclosure: SettingDisclosure::Withheld,
+    };
+    for (k, v) in pairs {
+        store
+            .sqlite
+            .seed_foreign_setting(k, v, Some(classes))
             .await
             .unwrap();
     }
@@ -502,13 +524,8 @@ async fn config_of(store: &Store) -> ConfigView {
 }
 
 async fn export_setup(store: &Store) -> PathBuf {
-    export_setup_with(store, registered_settings_catalog()).await
-}
-
-async fn export_setup_with(store: &Store, settings_catalog: SettingsCatalog) -> PathBuf {
     write_setup(SetupExportRequest {
         provider: Arc::clone(&store.provider),
-        settings_catalog: Arc::new(settings_catalog),
         overlay_root: store.overlay_root(),
         destination: store
             .data_dir()
@@ -743,28 +760,8 @@ async fn a_setup_carries_owner_declared_portable_settings_and_withholds_owner_ma
     );
 }
 
-fn every_owner_spec_made_portable() -> SettingsCatalog {
-    let mut catalog = SettingsCatalog::core();
-    for specs in [
-        forge_server::settings::SETTING_SPECS,
-        forge_script::settings::SETTING_SPECS,
-        forge_runtime::settings::SETTING_SPECS,
-    ] {
-        let portable: Vec<SettingSpec> = specs
-            .iter()
-            .map(|spec| SettingSpec {
-                portability: SettingPortability::Portable,
-                ..*spec
-            })
-            .collect();
-        catalog.register(&portable).unwrap();
-    }
-    catalog
-}
-
 #[tokio::test]
-async fn a_setup_exported_with_every_owner_key_portable_cannot_loosen_network_exposure_or_http_trust()
- {
+async fn a_setup_carrying_network_exposure_and_http_trust_keys_imports_none_of_them() {
     let (registries, store, _f) = source_only().await;
     let guarded = [
         (key::SERVER_BIND_ADDRESS, "127.0.0.1", "0.0.0.0"),
@@ -788,15 +785,15 @@ async fn a_setup_exported_with_every_owner_key_portable_cannot_loosen_network_ex
     ];
     let loosened: Vec<(&str, &str)> = guarded.iter().map(|(k, _, loose)| (*k, *loose)).collect();
     let local: Vec<(&str, &str)> = guarded.iter().map(|(k, safe, _)| (*k, *safe)).collect();
-    set_settings(&store, &loosened).await;
-    let bundle = export_setup_with(&store, every_owner_spec_made_portable()).await;
-    set_settings(&store, &local).await;
+    set_settings_stored_portable(&store, &loosened).await;
+    let bundle = export_setup(&store).await;
+    set_settings_stored_portable(&store, &local).await;
     let staged = stage(&store, &bundle).await;
     let all_carried = guarded
         .iter()
         .all(|(k, _, _)| staged.documents().settings.contains_key(*k));
 
-    import(&store, &registries, &bundle).await.unwrap();
+    let outcome = import(&store, &registries, &bundle).await.unwrap();
 
     let settings = settings_of(&store).await;
     let changed: Vec<&str> = local
@@ -804,7 +801,20 @@ async fn a_setup_exported_with_every_owner_key_portable_cannot_loosen_network_ex
         .filter(|(k, safe)| settings.get(*k).map(String::as_str) != Some(*safe))
         .map(|(k, _)| *k)
         .collect();
-    assert_eq!((all_carried, changed), (true, Vec::<&str>::new()));
+    let refused_as_not_portable: BTreeSet<&str> = outcome
+        .skipped_settings
+        .iter()
+        .filter(|skipped| skipped.reason == SettingSkip::NotPortable)
+        .map(|skipped| skipped.key.as_str())
+        .collect();
+    assert_eq!(
+        (
+            all_carried,
+            changed,
+            refused_as_not_portable == guarded.iter().map(|(k, _, _)| *k).collect()
+        ),
+        (true, Vec::<&str>::new(), true)
+    );
 }
 
 #[tokio::test]

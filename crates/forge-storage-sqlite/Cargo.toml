@@ -30,6 +30,7 @@ time = { workspace = true }
 tracing = { workspace = true }
 
 [dev-dependencies]
+forge-storage-sqlite = { path = ".", features = ["settings-test-support"] }
 tempfile = { workspace = true }
 sha2 = { workspace = true }
 tokio = { workspace = true, features = ["test-util"] }

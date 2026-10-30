@@ -23,6 +23,9 @@ tokio = { workspace = true }
 tracing = { workspace = true }
 mockall = { workspace = true, optional = true }
 
+[dev-dependencies]
+forge-storage = { path = ".", features = ["settings-test-support"] }
+
 [features]
 test-mocks = ["dep:mockall"]
 settings-test-support = []

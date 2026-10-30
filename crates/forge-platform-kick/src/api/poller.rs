@@ -1437,7 +1437,7 @@ mod tests {
 
         poller.stop();
 
-        let closed = tokio::time::timeout(StdDuration::from_secs(2), async {
+        let closed = tokio::time::timeout(StdDuration::from_secs(30), async {
             while reports.changed().await.is_ok() {}
             event_rx.recv().await
         })

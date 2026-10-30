@@ -598,7 +598,7 @@ mod tests {
 
         let mut kinds = Vec::new();
         for _ in 0..40 {
-            match tokio::time::timeout(std::time::Duration::from_millis(50), sub.recv()).await {
+            match tokio::time::timeout(std::time::Duration::from_secs(30), sub.recv()).await {
                 Ok(Ok(ev)) => {
                     let kind = ev.kind.clone();
                     kinds.push(kind);

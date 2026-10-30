@@ -150,7 +150,7 @@ mod tests {
     use crate::test_support::test_backend;
     use forge_runtime::{IntegrationSupervisor, LifecycleState};
 
-    const SETTLE: Duration = Duration::from_secs(5);
+    const SETTLE: Duration = Duration::from_secs(30);
 
     struct FakeService {
         id: IntegrationId,

@@ -1003,6 +1003,8 @@ pub(crate) mod tests {
     }
 
     const PUSHER_CONNECT_BOUND: StdDuration = StdDuration::from_secs(10);
+    const REAL_CLOCK_WINDOW: StdDuration = StdDuration::from_millis(10);
+    const TIMER_JUMP: StdDuration = StdDuration::from_secs(1);
 
     #[tokio::test]
     async fn a_first_connect_to_a_silent_pusher_socket_fails_as_network_after_the_connect_bound() {
@@ -1031,6 +1033,21 @@ pub(crate) mod tests {
         assert_eq!(platform.connection_state(), ConnectionState::Disconnected);
     }
 
+    async fn next_accept_jumping_timers(
+        accepted: &mut tokio::sync::mpsc::UnboundedReceiver<usize>,
+    ) -> Option<usize> {
+        let started = std::time::Instant::now();
+        while started.elapsed() < BANNED_STEP_DEADLINE {
+            if let Ok(accept) = tokio::time::timeout(REAL_CLOCK_WINDOW, accepted.recv()).await {
+                return accept;
+            }
+            tokio::time::pause();
+            tokio::time::advance(TIMER_JUMP).await;
+            tokio::time::resume();
+        }
+        None
+    }
+
     #[tokio::test]
     async fn a_reconnect_that_times_out_goes_back_to_backoff_and_dials_again() {
         let (channel_info, server) = primed_channel_info().await;
@@ -1046,15 +1063,14 @@ pub(crate) mod tests {
             while accepted.recv().await.unwrap() < 2 {}
         })
         .await;
-        tokio::time::pause();
 
-        let second_redial = tokio::time::timeout(BEYOND_ANY_BACKOFF, accepted.recv()).await;
+        let second_redial = next_accept_jumping_timers(&mut accepted).await;
         let state = platform.connection_state();
         platform.disconnect().await.unwrap();
 
         assert!(first_redial.is_ok(), "the lost link was never redialled");
         assert_eq!(
-            (second_redial.ok().flatten(), state),
+            (second_redial, state),
             (Some(3), ConnectionState::Reconnecting)
         );
     }

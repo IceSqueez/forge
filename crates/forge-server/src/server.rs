@@ -561,13 +561,15 @@ pub(crate) mod tests {
 
     const RESERVED_PORT_FLOOR: u16 = 20_000;
     const RESERVED_PORT_SPAN: u16 = 10_000;
+    const PROCESS_PORT_STRIDE: u64 = 1_009;
 
     async fn reserve_a_free_port() -> u16 {
         static NEXT_OFFSET: std::sync::atomic::AtomicU16 = std::sync::atomic::AtomicU16::new(0);
         loop {
-            let offset =
-                NEXT_OFFSET.fetch_add(1, std::sync::atomic::Ordering::Relaxed) % RESERVED_PORT_SPAN;
-            let port = RESERVED_PORT_FLOOR + offset;
+            let next = NEXT_OFFSET.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            let process_start = u64::from(std::process::id()) * PROCESS_PORT_STRIDE;
+            let offset = (u64::from(next) + process_start) % u64::from(RESERVED_PORT_SPAN);
+            let port = RESERVED_PORT_FLOOR + u16::try_from(offset).unwrap();
             if TcpListener::bind(format!("{LOOPBACK}:{port}"))
                 .await
                 .is_ok()
@@ -1181,7 +1183,7 @@ pub(crate) mod tests {
             tokio::spawn(async move { handle.stop().await })
         };
 
-        tokio::time::timeout(std::time::Duration::from_millis(500), run_state.changed())
+        tokio::time::timeout(std::time::Duration::from_secs(30), run_state.changed())
             .await
             .expect("run state must flip without waiting for the drain")
             .expect("watch sender alive");

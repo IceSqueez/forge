@@ -145,7 +145,7 @@ mod tests {
     const BLANK_RECEIVER: &str = "blank-receiver";
     const ALERT_RECEIVER: &str = "alert-receiver";
 
-    const HANG_GUARD: Duration = Duration::from_secs(5);
+    const HANG_GUARD: Duration = Duration::from_secs(30);
 
     struct Gate {
         id: OverlayId,

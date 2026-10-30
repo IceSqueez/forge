@@ -257,7 +257,7 @@ mod tests {
     const ONE_WEEK_SECONDS: i64 = 604_800;
     const TWO_WEEKS_SECONDS: i64 = 1_209_600;
     const ONE_DAY_SECONDS: i64 = 86_400;
-    const QUEUE_DEADLINE: Duration = Duration::from_secs(5);
+    const QUEUE_DEADLINE: Duration = Duration::from_secs(30);
 
     fn by_id(platform: PlatformId, viewer_id: &str) -> ViewerTarget {
         ViewerTarget::new(&AuthorKey::by_viewer_id(platform, viewer_id), "alice")

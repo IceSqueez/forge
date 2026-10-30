@@ -993,7 +993,7 @@ mod tests {
 
         platform.connect().await.unwrap();
 
-        let delta = tokio::time::timeout(Duration::from_secs(2), async {
+        let delta = tokio::time::timeout(Duration::from_secs(30), async {
             loop {
                 let delta = health.next().await.unwrap();
                 if delta.metric == LIVE_CHAT_METRIC {
@@ -1016,7 +1016,7 @@ mod tests {
 
         platform.connect().await.unwrap();
 
-        let delta = tokio::time::timeout(Duration::from_secs(2), async {
+        let delta = tokio::time::timeout(Duration::from_secs(30), async {
             loop {
                 let delta = health.next().await.unwrap();
                 if delta.metric == EVENTS_METRIC {

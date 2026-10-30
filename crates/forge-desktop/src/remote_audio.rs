@@ -241,7 +241,7 @@ mod tests {
 
     const DESTINATION: &str = "stage-audio";
 
-    const HANG_GUARD: Duration = Duration::from_secs(5);
+    const HANG_GUARD: Duration = Duration::from_secs(30);
 
     struct FakePages {
         receivers: OverlayReceivers,

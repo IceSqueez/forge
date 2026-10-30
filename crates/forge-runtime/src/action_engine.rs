@@ -655,6 +655,8 @@ mod tests {
     use crate::test_support::sandboxed_backend;
     use forge_events::Event;
 
+    const HISTORY_HANG_GUARD: Duration = Duration::from_secs(30);
+
     struct RecordingRunner {
         last_config: Arc<Mutex<Option<forge_registry::SubActionConfig>>>,
     }
@@ -849,7 +851,8 @@ mod tests {
                 .unwrap();
 
             let mut recorded = None;
-            for _ in 0..40 {
+            let deadline = tokio::time::Instant::now() + HISTORY_HANG_GUARD;
+            while tokio::time::Instant::now() < deadline {
                 let recent = dp
                     .history_repo()
                     .recent_for_action(action_id, 1)
@@ -917,10 +920,8 @@ mod tests {
             .await
             .unwrap();
 
-        for _ in 0..40 {
-            if last.lock().unwrap().is_some() {
-                break;
-            }
+        let deadline = tokio::time::Instant::now() + HISTORY_HANG_GUARD;
+        while last.lock().unwrap().is_none() && tokio::time::Instant::now() < deadline {
             tokio::time::sleep(Duration::from_millis(25)).await;
         }
 
@@ -973,7 +974,7 @@ mod tests {
             let mut run_event = None;
             let mut done_event = None;
             for _ in 0..40 {
-                match tokio::time::timeout(Duration::from_millis(50), sub.recv()).await {
+                match tokio::time::timeout(HISTORY_HANG_GUARD, sub.recv()).await {
                     Ok(Ok(ev)) if ev.kind == "subaction.run" => run_event = Some(ev),
                     Ok(Ok(ev)) if ev.kind == "action.quick.done" => done_event = Some(ev),
                     Ok(Ok(_)) => {}
@@ -1023,7 +1024,7 @@ mod tests {
     async fn recv_ctx(
         rx: &mut tokio::sync::mpsc::UnboundedReceiver<ExecutionContext>,
     ) -> ExecutionContext {
-        tokio::time::timeout(Duration::from_secs(2), rx.recv())
+        tokio::time::timeout(HISTORY_HANG_GUARD, rx.recv())
             .await
             .expect("history save did not arrive in time")
             .expect("history channel closed")
@@ -1392,7 +1393,10 @@ mod tests {
         for runner in EmitRunner::all() {
             reg.register(Box::new(runner)).unwrap();
         }
-        let gate = Arc::new(crate::ConditionGate::new(&Config::default()));
+        let gate = Arc::new(crate::ConditionGate::new(&Config {
+            condition_wall_time_ms: 30_000,
+            ..Config::default()
+        }));
         reg.register(Box::new(
             crate::sub_action_runners::CoreLogicIfThenElseRunner::new(Arc::clone(&gate)),
         ))

@@ -14,7 +14,7 @@ use serde_json::Value;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader, Lines};
 use tokio::process::{Child, ChildStdout, Command};
 
-const WAIT: Duration = Duration::from_secs(10);
+const WAIT: Duration = Duration::from_secs(30);
 const JAR: &str = "jar-main";
 
 fn donate(donor: &str, amount: &str, message: Option<&str>) -> DonatelloCommand {

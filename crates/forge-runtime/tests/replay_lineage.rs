@@ -52,6 +52,13 @@ impl Harness {
                 .await
                 .unwrap(),
         );
+        SettingsRepo::set_string(
+            backend.as_ref(),
+            forge_storage::reserved_keys::SCRIPT_TIMEOUT_MS,
+            "10000",
+        )
+        .await
+        .unwrap();
         let dp: Arc<dyn DataProvider> = Arc::clone(&backend) as Arc<dyn DataProvider>;
         let queue = Queue {
             id: QueueId::new(),

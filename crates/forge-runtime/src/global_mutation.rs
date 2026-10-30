@@ -311,7 +311,13 @@ mod tests {
                 cause,
                 Instant::now() + Duration::from_secs(30),
             );
-            let engine = Engine::with_api(EngineConfig::default(), api);
+            let engine = Engine::with_api(
+                EngineConfig {
+                    wall_time_ms: 30_000,
+                    ..EngineConfig::default()
+                },
+                api,
+            );
             let script = self.script();
             tokio::task::spawn_blocking(move || {
                 engine

@@ -341,7 +341,13 @@ mod tests {
         if let Some(scheduler) = scheduler {
             api = api.with_action_scheduler(scheduler as Arc<dyn ActionScheduler>);
         }
-        let engine = Engine::with_api(EngineConfig::default(), api);
+        let engine = Engine::with_api(
+            EngineConfig {
+                wall_time_ms: 30_000,
+                ..EngineConfig::default()
+            },
+            api,
+        );
         tokio::task::spawn_blocking(move || {
             let mut scope = rhai::Scope::new();
             scope.push(DUE_BINDING, due());

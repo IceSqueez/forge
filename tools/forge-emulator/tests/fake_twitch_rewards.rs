@@ -27,7 +27,7 @@ use serde_json::{Value, json};
 use time::OffsetDateTime;
 use tokio::time::timeout;
 
-const DEADLINE: Duration = Duration::from_secs(10);
+const DEADLINE: Duration = Duration::from_secs(30);
 const REWARDS_PATH: &str = "/helix/channel_points/custom_rewards";
 const REWARD_ADD: &str = topics::CHANNEL_CHANNEL_POINTS_CUSTOM_REWARD_ADD;
 const DASHBOARD_TITLE: &str = "Dashboard hydrate";

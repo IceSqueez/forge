@@ -148,7 +148,13 @@ fn engine() -> Engine {
         EventId::new(),
         Instant::now() + Duration::from_secs(10),
     );
-    Engine::with_api(EngineConfig::default(), api)
+    Engine::with_api(
+        EngineConfig {
+            wall_time_ms: 30_000,
+            ..EngineConfig::default()
+        },
+        api,
+    )
 }
 
 #[tokio::test]

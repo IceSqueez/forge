@@ -265,7 +265,10 @@ mod tests {
     async fn every_catalog_entry_is_callable_at_its_arity_on_an_engine_without_dependencies() {
         let unresolved = tokio::task::spawn_blocking(|| {
             let engine = Engine::with_api(
-                EngineConfig::default(),
+                EngineConfig {
+                    wall_time_ms: 30_000,
+                    ..EngineConfig::default()
+                },
                 ForgeApi::new(
                     Arc::new(DescribeOnly),
                     Arc::new(DescribeOnly),

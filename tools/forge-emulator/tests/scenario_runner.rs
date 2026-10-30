@@ -45,7 +45,7 @@ use support::{QuietPublisher, TokenSource, endpoints_from, static_token_source};
 
 type Socket = WebSocketStream<MaybeTlsStream<TcpStream>>;
 
-const DEADLINE: Duration = Duration::from_secs(20);
+const DEADLINE: Duration = Duration::from_secs(30);
 const CHAT: &str = topics::CHANNEL_CHAT_MESSAGE;
 const SUBSCRIBE: &str = topics::CHANNEL_SUBSCRIBE;
 

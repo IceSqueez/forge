@@ -1620,7 +1620,7 @@ mod tests {
     }
 
     const ISSUED_TTL_SECS: u64 = 14400;
-    const DELTA_GUARD: Duration = Duration::from_secs(10);
+    const DELTA_GUARD: Duration = Duration::from_secs(30);
     const QUIET_WINDOW: Duration = Duration::from_millis(100);
 
     async fn expiry_bridge_fixture() -> ExpiryBridgeFixture {

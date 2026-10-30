@@ -32,7 +32,7 @@ use tokio::time::timeout;
 mod support;
 use support::{QuietPublisher, endpoints_from, static_token_source};
 
-const WAIT: Duration = Duration::from_secs(10);
+const WAIT: Duration = Duration::from_secs(30);
 const CLIENT_ID: &str = "emulator-youtube-client";
 const CLIENT_SECRET: &str = "emulator-youtube-client-secret";
 

@@ -184,8 +184,10 @@ mod tests {
 
     #[tokio::test(start_paused = true)]
     async fn a_run_cancelled_mid_poll_sleep_ends_within_one_cancel_poll() {
-        let runner =
-            CoreLogicWaitUntilRunner::new(Arc::new(ConditionGate::new(&Config::default())));
+        let runner = CoreLogicWaitUntilRunner::new(Arc::new(ConditionGate::new(&Config {
+            condition_wall_time_ms: 30_000,
+            ..Config::default()
+        })));
         let mut cfg = SubActionConfig::new();
         cfg.insert("condition".to_owned(), Variant::String("1 == 2".to_owned()));
         cfg.insert("poll_interval_ms".to_owned(), Variant::Int(POLL_MAX_MS));

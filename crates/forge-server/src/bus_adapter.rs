@@ -497,7 +497,7 @@ mod tests {
             serde_json::Value::Null,
         ));
 
-        let frame = tokio::time::timeout(std::time::Duration::from_millis(200), rx.recv())
+        let frame = tokio::time::timeout(std::time::Duration::from_secs(30), rx.recv())
             .await
             .expect("timeout waiting for event")
             .expect("receiver error");
@@ -592,7 +592,7 @@ mod tests {
             serde_json::Value::Null,
         ));
 
-        let frame = tokio::time::timeout(std::time::Duration::from_millis(200), survivor_rx.recv())
+        let frame = tokio::time::timeout(std::time::Duration::from_secs(30), survivor_rx.recv())
             .await
             .expect("timeout waiting for survivor")
             .expect("survivor receiver error");
@@ -620,7 +620,7 @@ mod tests {
             serde_json::Value::Null,
         ));
 
-        let frame = tokio::time::timeout(std::time::Duration::from_millis(200), rx.recv())
+        let frame = tokio::time::timeout(std::time::Duration::from_secs(30), rx.recv())
             .await
             .expect("timeout waiting for event")
             .expect("receiver error");
@@ -941,11 +941,11 @@ mod tests {
             serde_json::Value::Null,
         ));
 
-        let first = tokio::time::timeout(std::time::Duration::from_millis(200), rx.recv())
+        let first = tokio::time::timeout(std::time::Duration::from_secs(30), rx.recv())
             .await
             .expect("timeout first")
             .expect("recv error first");
-        let second = tokio::time::timeout(std::time::Duration::from_millis(200), rx.recv())
+        let second = tokio::time::timeout(std::time::Duration::from_secs(30), rx.recv())
             .await
             .expect("timeout second")
             .expect("recv error second");

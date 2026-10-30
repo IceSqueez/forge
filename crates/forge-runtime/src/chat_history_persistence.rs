@@ -1052,7 +1052,7 @@ mod tests {
         appending.notified().await;
 
         bus.shutdown();
-        let given_up = tokio::time::timeout(Duration::from_secs(5), bus.abandon_flush())
+        let given_up = tokio::time::timeout(Duration::from_secs(30), bus.abandon_flush())
             .await
             .unwrap();
 

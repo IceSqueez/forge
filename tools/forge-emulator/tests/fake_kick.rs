@@ -36,7 +36,7 @@ use support::endpoints_from;
 
 type Socket = WebSocketStream<MaybeTlsStream<TcpStream>>;
 
-const WAIT: Duration = Duration::from_secs(10);
+const WAIT: Duration = Duration::from_secs(30);
 const FOREIGN_SLUG: &str = "someone_else";
 
 struct GrantLimiter;

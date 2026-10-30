@@ -241,7 +241,7 @@ mod tests {
 
     use super::*;
 
-    const DEADLINE: Duration = Duration::from_secs(5);
+    const DEADLINE: Duration = Duration::from_secs(30);
 
     #[derive(Clone, Default)]
     struct RecordingSink {

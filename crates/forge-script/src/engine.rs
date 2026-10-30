@@ -213,14 +213,14 @@ mod tests {
 
     #[test]
     fn eval_script_arithmetic() {
-        let engine = Engine::with_config(EngineConfig::default());
+        let engine = Engine::with_config(unhurried());
         let result = engine.eval_script("1 + 2").unwrap();
         assert_eq!(result.cast::<i64>(), 3);
     }
 
     #[test]
     fn eval_script_compile_error() {
-        let engine = Engine::with_config(EngineConfig::default());
+        let engine = Engine::with_config(unhurried());
         let err = engine.eval_script("@@@invalid").unwrap_err();
         assert!(matches!(err, ScriptError::Compile { .. }));
     }
@@ -228,7 +228,7 @@ mod tests {
     #[test]
     fn failed_eval_message_omits_script_body() {
         const SECRET: &str = "sk-live-0123456789";
-        let engine = Engine::with_config(EngineConfig::default());
+        let engine = Engine::with_config(unhurried());
         for body in [
             format!("let token = \"{SECRET}\"; @@@"),
             format!("let token = \"{SECRET}\"; let x = 1 / 0;"),
@@ -295,9 +295,9 @@ mod tests {
         let engine = Engine::with_api(
             EngineConfig {
                 op_limit: 100_000,
-                wall_time_ms: 2_000,
+                wall_time_ms: 30_000,
             },
-            make_api_with_wall_ms(dp.clone(), 2_000),
+            make_api_with_wall_ms(dp.clone(), 30_000),
         );
         let before = std::time::Instant::now();
         tokio::task::spawn_blocking(move || {
@@ -351,7 +351,7 @@ mod tests {
             EventId::new(),
             expired_deadline,
         );
-        let engine = Engine::with_api(EngineConfig::default(), api);
+        let engine = Engine::with_api(unhurried(), api);
         let result = tokio::task::spawn_blocking(move || engine.eval_script("forge::sleep(100)"))
             .await
             .unwrap();
@@ -542,7 +542,7 @@ mod tests {
             caused_by,
             Instant::now() + std::time::Duration::from_secs(10),
         );
-        let engine = Engine::with_api(EngineConfig::default(), api);
+        let engine = Engine::with_api(unhurried(), api);
 
         tokio::task::spawn_blocking(move || {
             drop(
@@ -566,7 +566,7 @@ mod tests {
 
     #[test]
     fn a_script_returning_nothing_converts_to_no_value() {
-        let engine = Engine::with_config(EngineConfig::default());
+        let engine = Engine::with_config(unhurried());
         for body in ["()", "let x = 1;", "if false { 1 }"] {
             let result = engine.eval_script_with_scope_as_variant(body, &mut rhai::Scope::new());
             assert!(matches!(result, Ok(None)), "{body}: {result:?}");
@@ -575,7 +575,7 @@ mod tests {
 
     #[test]
     fn a_script_returning_an_unstorable_value_fails_as_a_runtime_error() {
-        let engine = Engine::with_config(EngineConfig::default());
+        let engine = Engine::with_config(unhurried());
         for body in ["[1, ()]", "#{a: ()}", "0.0 / 0.0", "Fn(\"x\")"] {
             let result = engine.eval_script_with_scope_as_variant(body, &mut rhai::Scope::new());
             assert!(

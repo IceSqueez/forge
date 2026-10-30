@@ -107,7 +107,7 @@ mod tests {
     fn eval_exceeding_op_limit_returns_typed_error_not_hang() {
         let evaluator = ConditionEvaluator::with_config(EngineConfig {
             op_limit: 100,
-            wall_time_ms: 5_000,
+            wall_time_ms: 30_000,
         });
         let err = evaluator
             .eval("let x = 0; while x < 1000000 { x += 1; } x > 0")

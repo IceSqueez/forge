@@ -14,9 +14,16 @@ fn args(entries: &[(&str, Variant)]) -> ArgStack {
     })
 }
 
+fn unhurried() -> EngineConfig {
+    EngineConfig {
+        wall_time_ms: 30_000,
+        ..EngineConfig::default()
+    }
+}
+
 fn condition(expr: &str, stack: &ArgStack) -> bool {
     let bound = BoundExpression::bind(expr, stack);
-    ConditionEvaluator::with_config(EngineConfig::default())
+    ConditionEvaluator::with_config(unhurried())
         .eval_bound(&bound)
         .unwrap_or_else(|e| panic!("{expr:?} -> {:?} failed: {e}", bound.source()))
 }
@@ -31,7 +38,7 @@ fn rhai_literal(value: &str) -> String {
 
 fn math(expr: &str, stack: &ArgStack) -> Variant {
     let bound = BoundExpression::bind(expr, stack);
-    MathEvaluator::with_config(EngineConfig::default())
+    MathEvaluator::with_config(unhurried())
         .eval_bound(&bound)
         .unwrap_or_else(|e| panic!("{expr:?} -> {:?} failed: {e}", bound.source()))
 }

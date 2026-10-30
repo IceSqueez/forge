@@ -31,7 +31,7 @@ use time::OffsetDateTime;
 use tokio::sync::mpsc;
 use tokio::time::timeout;
 
-const DEADLINE: Duration = Duration::from_secs(10);
+const DEADLINE: Duration = Duration::from_secs(30);
 const CHAT_MESSAGE_KIND: &str = twitch_kinds::CHANNEL_CHAT_MESSAGE;
 const CHAT_SUBSCRIPTION: &str = topics::CHANNEL_CHAT_MESSAGE;
 const FOLLOW_SUBSCRIPTION: &str = topics::CHANNEL_FOLLOW;

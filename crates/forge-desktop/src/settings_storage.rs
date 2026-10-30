@@ -690,7 +690,7 @@ mod tests {
     };
     use crate::transfer_flows::{TransferFlows, TransferRoute};
 
-    const RECV_TIMEOUT: Duration = Duration::from_secs(5);
+    const RECV_TIMEOUT: Duration = Duration::from_secs(30);
 
     #[test]
     fn per_viewer_choice_is_unlimited_for_zero_a_preset_on_match_and_custom_when_chosen() {

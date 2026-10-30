@@ -15,7 +15,7 @@ use forge_storage::{
 };
 use tokio::task::yield_now;
 
-const HANG_GUARD: Duration = Duration::from_secs(10);
+const HANG_GUARD: Duration = Duration::from_secs(30);
 const ABSENCE_PROBE: Duration = Duration::from_millis(20);
 
 fn is_injected(error: &StorageError) -> bool {

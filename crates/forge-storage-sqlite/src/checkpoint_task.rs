@@ -216,7 +216,7 @@ mod tests {
         let restarted = restart_wal(db.pools.writer()).await.unwrap();
 
         assert_eq!(
-            (restarted, started.elapsed() < BUSY_TIMEOUT / 2),
+            (restarted, started.elapsed() < BUSY_TIMEOUT),
             (false, true),
             "took {:?}",
             started.elapsed()

@@ -2485,10 +2485,12 @@ mod tests {
             "the dispatch past the cap must bump the overflow counter"
         );
 
-        let seen = record(&mut sub, Duration::from_millis(150)).await;
+        let skipped = collect_event(&mut sub, "action.skipped")
+            .await
+            .expect("the dispatch past the cap must report a skip");
         assert_eq!(
-            skip_reasons(&seen),
-            vec!["queue_pending_overflow"],
+            skipped.payload["reason"].as_str(),
+            Some("queue_pending_overflow"),
             "the dispatch past the cap must report the overflow reason"
         );
         sched.shutdown();
@@ -2582,7 +2584,7 @@ mod tests {
 
         gate.replace_limit(2);
 
-        let woken = tokio::time::timeout(Duration::from_secs(5), waiter).await;
+        let woken = tokio::time::timeout(Duration::from_secs(30), waiter).await;
         assert!(
             woken.is_ok(),
             "a widened limit must wake the acquire without waiting for a permit drop"

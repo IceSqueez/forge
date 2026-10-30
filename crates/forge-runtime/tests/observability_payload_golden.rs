@@ -228,6 +228,13 @@ async fn rig() -> Rig {
         .await
         .unwrap();
 
+    SettingsRepo::set_string(
+        dp.as_ref(),
+        forge_storage::reserved_keys::SCRIPT_TIMEOUT_MS,
+        "10000",
+    )
+    .await
+    .unwrap();
     let bus = EventBus::new(Arc::new(NullEventLogRepo));
     let sub = bus.subscribe();
     let publisher: Arc<dyn EventPublisher> = Arc::clone(&bus) as Arc<dyn EventPublisher>;

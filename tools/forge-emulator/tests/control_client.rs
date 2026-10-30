@@ -24,7 +24,7 @@ static WILDCARD: [EventFilter; 1] = [EventFilter {
     kind: None,
 }];
 
-const DEADLINE: Duration = Duration::from_secs(20);
+const DEADLINE: Duration = Duration::from_secs(30);
 const ABANDON_TIMEOUT: Duration = Duration::from_secs(3);
 
 struct FakeForge {

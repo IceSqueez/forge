@@ -972,7 +972,7 @@ mod tests {
     }
 
     async fn next_request(rx: &mut mpsc::UnboundedReceiver<PendingRequest>) -> PendingRequest {
-        tokio::time::timeout(tokio::time::Duration::from_secs(5), rx.recv())
+        tokio::time::timeout(tokio::time::Duration::from_secs(30), rx.recv())
             .await
             .expect("the sweep must reach the channel the slot currently holds")
             .expect("the request channel must stay open")

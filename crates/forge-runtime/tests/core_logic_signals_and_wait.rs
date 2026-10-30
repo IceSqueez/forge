@@ -157,7 +157,10 @@ async fn stop_runner_maps_config_to_the_control_stop_signal() {
 }
 
 fn wait_runner() -> CoreLogicWaitUntilRunner {
-    CoreLogicWaitUntilRunner::new(Arc::new(ConditionGate::new(&Config::default())))
+    CoreLogicWaitUntilRunner::new(Arc::new(ConditionGate::new(&Config {
+        condition_wall_time_ms: 30_000,
+        ..Config::default()
+    })))
 }
 
 fn wait_cfg(condition: &str, timeout_ms: i64) -> SubActionConfig {

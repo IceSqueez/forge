@@ -244,7 +244,7 @@ async fn a_retired_client_stays_silent_when_its_server_speaks_afterwards() {
     );
 }
 
-const WALL_BUDGET: Duration = Duration::from_secs(20);
+const WALL_BUDGET: Duration = Duration::from_secs(30);
 
 const VIRTUAL_STEP: Duration = Duration::from_millis(100);
 

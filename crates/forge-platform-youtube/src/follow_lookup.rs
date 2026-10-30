@@ -430,10 +430,20 @@ mod tests {
         )
         .await;
         let lookup = lookup_at(&server.uri(), &fresh_quota(), BROADCASTER);
+        let asking = lookup.status_of(VIEWER);
+        tokio::pin!(asking);
+        while request_count(&server).await == 0 {
+            assert!(
+                tokio::time::timeout(Duration::from_millis(1), asking.as_mut())
+                    .await
+                    .is_err(),
+                "the lookup ended before its request reached the server"
+            );
+        }
         tokio::time::pause();
         let started = tokio::time::Instant::now();
 
-        let status = lookup.status_of(VIEWER).await;
+        let status = asking.await;
 
         assert_eq!(
             (status, started.elapsed() < Duration::from_secs(60)),

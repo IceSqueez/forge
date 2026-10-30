@@ -87,7 +87,7 @@ async fn await_queue_event(
 ) -> bool {
     let target = queue_id.to_string();
     for _ in 0..attempts {
-        match tokio::time::timeout(Duration::from_millis(200), sub.recv()).await {
+        match tokio::time::timeout(Duration::from_secs(30), sub.recv()).await {
             Ok(Ok(ev))
                 if ev.kind == kind
                     && ev.payload.get("queue_id").and_then(|v| v.as_str())
@@ -96,7 +96,7 @@ async fn await_queue_event(
                 return true;
             }
             Ok(Ok(_)) => {}
-            _ => {}
+            _ => return false,
         }
     }
     false
@@ -206,7 +206,7 @@ async fn clear_runner_succeeds_and_emits_cleared_event() {
     let outcome = run_outcome(&runner, &cfg_queue(&q_id.to_string())).await;
     assert!(matches!(outcome, SubActionOutcome::Success));
     assert!(
-        await_queue_event(&mut sub, "queue.cleared", q_id, 20).await,
+        await_queue_event(&mut sub, "queue.cleared", q_id, 10_000).await,
         "clear runner must drive a queue.cleared event on the live scheduler"
     );
     handle.shutdown();

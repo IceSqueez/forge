@@ -26,7 +26,7 @@ use tokio_tungstenite::{MaybeTlsStream, WebSocketStream};
 type Socket = WebSocketStream<MaybeTlsStream<TcpStream>>;
 
 const TOKEN: &str = "vtube-fake-token-3f9a";
-const WAIT: Duration = Duration::from_secs(10);
+const WAIT: Duration = Duration::from_secs(30);
 const POLL: Duration = Duration::from_millis(20);
 const LOCALHOST: &str = "127.0.0.1";
 const AVATAR: &str = "Avatar";

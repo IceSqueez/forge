@@ -19,7 +19,7 @@ use tokio_tungstenite::{MaybeTlsStream, WebSocketStream};
 type Socket = WebSocketStream<MaybeTlsStream<TcpStream>>;
 
 const PASSWORD: &str = "obs-fake-secret-7c1d";
-const WAIT: Duration = Duration::from_secs(10);
+const WAIT: Duration = Duration::from_secs(30);
 const LOCALHOST: &str = "127.0.0.1";
 
 #[derive(Default)]

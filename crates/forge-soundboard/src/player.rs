@@ -903,13 +903,7 @@ mod tests {
         (library, imports)
     }
 
-    async fn settle_background_work() {
-        for _ in 0..BACKGROUND_SETTLE_POLLS {
-            tokio::task::yield_now().await;
-        }
-    }
-
-    const BACKGROUND_SETTLE_POLLS: usize = 8;
+    const BACKGROUND_HANG_GUARD: std::time::Duration = std::time::Duration::from_secs(30);
 
     struct CountingSink {
         count: Arc<Mutex<usize>>,
@@ -1344,7 +1338,13 @@ mod tests {
         );
 
         player.play(clip_id, None).await.unwrap();
-        settle_background_work().await;
+        tokio::time::timeout(BACKGROUND_HANG_GUARD, async {
+            while imports.load(Ordering::Relaxed) == 0 {
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .expect("the import was never scheduled");
 
         assert_eq!(imports.load(Ordering::Relaxed), 1);
     }

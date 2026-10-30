@@ -949,8 +949,8 @@ mod tests {
     use super::*;
     use crate::test_support::{
         ClickArea, Sandboxed, SettingWrite, click_grid, error_toasts, idle_supervisor,
-        install_presentation, link, nav_log, owned_sub_actions, owned_triggers, pump, runtime,
-        sandboxed_provider, seed_action, seed_trigger, step, test_backend,
+        install_presentation, link, nav_log, owned_sub_actions, owned_triggers, pump, pump_until,
+        runtime, sandboxed_provider, seed_action, seed_trigger, step, test_backend,
     };
     use forge_components::Toasts;
     use forge_runtime::LifecycleStates;
@@ -1352,16 +1352,20 @@ mod tests {
                 step_y: CARD_SCAN_STEP_Y,
             },
         );
-        pump(&rt);
+        let mut retried: HashSet<IntegrationId> = HashSet::new();
+        pump_until(&rt, || {
+            retried.extend(
+                std::iter::from_fn(|| writes.try_recv().ok())
+                    .filter(|(_, value)| value == "true")
+                    .filter_map(|(key, _)| {
+                        [twitch(), kick()]
+                            .into_iter()
+                            .find(|id| key == integration_enabled_key(id))
+                    }),
+            );
+            retried.len() == 2
+        });
 
-        let retried: HashSet<IntegrationId> = std::iter::from_fn(|| writes.try_recv().ok())
-            .filter(|(_, value)| value == "true")
-            .filter_map(|(key, _)| {
-                [twitch(), kick()]
-                    .into_iter()
-                    .find(|id| key == integration_enabled_key(id))
-            })
-            .collect();
         assert_eq!(retried, HashSet::from([twitch(), kick()]));
     }
 

@@ -38,6 +38,7 @@ use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender, unbounded_channel};
 pub(crate) use memory_scripts::MemoryScripts;
 
 const RUNTIME_PUMPS: usize = 8;
+const PUMP_HANG_GUARD: std::time::Duration = std::time::Duration::from_secs(30);
 const WORKER_DRAIN_DEADLINE: std::time::Duration = std::time::Duration::from_secs(30);
 const WORKER_DRAIN_POLL: std::time::Duration = std::time::Duration::from_millis(1);
 
@@ -1007,6 +1008,17 @@ pub(crate) fn pump(rt: &tokio::runtime::Runtime) {
             tokio::task::yield_now().await;
         }
     });
+}
+
+pub(crate) fn pump_until(rt: &tokio::runtime::Runtime, mut reached: impl FnMut() -> bool) {
+    let deadline = std::time::Instant::now() + PUMP_HANG_GUARD;
+    while !reached() {
+        assert!(
+            std::time::Instant::now() < deadline,
+            "the awaited state never arrived"
+        );
+        pump(rt);
+    }
 }
 
 pub(crate) async fn stopped_server_handle(backend: &Arc<TestBackend>) -> ServerHandle {

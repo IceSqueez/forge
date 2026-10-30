@@ -623,7 +623,7 @@ mod tests {
     const SKIPS: &str = "test.skips";
     const FAILURE_REASON: &str = "scene not found";
     const SKIP_REASON: &str = "not connected";
-    const ENGINE_EXIT_YIELDS: usize = 8;
+    const ENGINE_EXIT_HANG_GUARD: std::time::Duration = std::time::Duration::from_secs(30);
 
     struct FixedOutcome {
         id: &'static str,
@@ -740,10 +740,17 @@ mod tests {
         let not_accepted = rt.block_on(async {
             let engine = engine();
             engine.clone().shutdown();
-            for _ in 0..ENGINE_EXIT_YIELDS {
-                tokio::task::yield_now().await;
-            }
-            run(engine, SUCCEEDS).await
+            let exited = tokio::time::timeout(ENGINE_EXIT_HANG_GUARD, async {
+                loop {
+                    let outcome = run(engine.clone(), SUCCEEDS).await;
+                    if outcome != Err(DispatchError::NoOutcome.to_string()) {
+                        return outcome;
+                    }
+                    tokio::task::yield_now().await;
+                }
+            })
+            .await;
+            exited.expect("the stopped engine never closed its intake")
         });
         let dropped_from_intake = rt.block_on(async {
             let engine = engine();

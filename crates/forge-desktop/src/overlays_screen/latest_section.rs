@@ -8,7 +8,7 @@ use forge_components::{
     body_family, confirm_modal, ghost_button_with_icon, overlay, scaled, section_label, tr,
 };
 use forge_events::Event;
-use forge_overlay::config::{HEADLINE, PLACEHOLDER, PLATFORM, SUBLINE};
+use forge_overlay::config::{HEADLINE, PLACEHOLDER, PLATFORM, SLOT, SUBLINE};
 use forge_overlay::{
     LatestBinding, OverlayConfig, OverlayKindRegistry, latest_binding, latest_content,
 };
@@ -23,7 +23,7 @@ use super::property_panel::{
 };
 use crate::async_bridge::{self, BridgeFlow};
 use crate::config_form::ConfigField;
-use crate::latest_labels::slot_label;
+use crate::option_labels::shared_option_label;
 use crate::runtime_event::{self, RuntimeEvent};
 
 const VALUE_GAP: Pixels = px(2.0);
@@ -276,7 +276,7 @@ impl OverlayPropertyPanel {
             return None;
         }
         let slot = &self.latest.binding.as_ref()?.slot;
-        Some(slot_label(slot).unwrap_or_else(|| slot.clone()))
+        Some(shared_option_label(SLOT, slot))
     }
 
     pub(super) fn render_latest_section(

@@ -1,10 +1,8 @@
-use forge_components::tr_find;
+use forge_components::{ftl_id, tr_find};
 use forge_registry::{SubActionRunner, TriggerKindDescriptor};
 
 const NAME_PREFIX: &str = "kind_name_";
 const SUMMARY_PREFIX: &str = "kind_summary_";
-const KIND_ID_SEPARATOR: char = '.';
-const KEY_SEPARATOR: &str = "_";
 
 pub(crate) fn step_name(runner: &dyn SubActionRunner) -> String {
     kind_copy(NAME_PREFIX, runner.id(), runner.label())
@@ -33,11 +31,7 @@ pub(crate) fn trigger_instance_name(
 }
 
 fn kind_copy(prefix: &str, kind_id: &str, english: &str) -> String {
-    let key = format!(
-        "{prefix}{}",
-        kind_id.replace(KIND_ID_SEPARATOR, KEY_SEPARATOR)
-    );
-    tr_find(&key, None).unwrap_or_else(|| english.to_owned())
+    tr_find(&format!("{prefix}{}", ftl_id(kind_id)), None).unwrap_or_else(|| english.to_owned())
 }
 
 #[cfg(test)]
@@ -91,10 +85,7 @@ kind_summary_demo_chat_message = Хтось написав у чат
     }
 
     fn catalog_key(prefix: &str, kind_id: &str) -> String {
-        format!(
-            "{prefix}{}",
-            kind_id.replace(KIND_ID_SEPARATOR, KEY_SEPARATOR)
-        )
+        format!("{prefix}{}", ftl_id(kind_id))
     }
 
     #[test]

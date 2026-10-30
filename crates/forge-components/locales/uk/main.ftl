@@ -1,42 +1,6 @@
-widget_date_month_january = Січень
-
-widget_date_month_february = Лютий
-
-widget_date_month_march = Березень
-
-widget_date_month_april = Квітень
-
-widget_date_month_may = Травень
-
-widget_date_month_june = Червень
-
-widget_date_month_july = Липень
-
-widget_date_month_august = Серпень
-
-widget_date_month_september = Вересень
-
-widget_date_month_october = Жовтень
-
-widget_date_month_november = Листопад
-
-widget_date_month_december = Грудень
-
-widget_date_weekday_sunday = Нд
-
-widget_date_weekday_monday = Пн
-
-widget_date_weekday_tuesday = Вт
-
-widget_date_weekday_wednesday = Ср
-
-widget_date_weekday_thursday = Чт
-
-widget_date_weekday_friday = Пт
-
-widget_date_weekday_saturday = Сб
-
 widget_save_saving = Збереження...
+
+widget_save_all_saved = Усі зміни збережено
 
 widget_save_unsaved = Незбережені зміни
 
@@ -138,3 +102,15 @@ region_name_cz = Чехія
 region_name_kz = Казахстан
 
 region_name_au = Австралія
+
+widget_grid_picker_badge_added = додано
+
+widget_grid_picker_badge_off = вимк.
+
+fmt_bytes_b = { $value } Б
+
+fmt_bytes_kib = { $value } КіБ
+
+fmt_bytes_mib = { $value } МіБ
+
+fmt_bytes_gib = { $value } ГіБ

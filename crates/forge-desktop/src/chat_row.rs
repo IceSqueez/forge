@@ -14,7 +14,7 @@ use gpui::{
 };
 
 use forge_components::{BORDER_THIN, FONT_XS, FONT_XXS, body_family, mono_family, scaled};
-use forge_components::{ForgePalette, with_alpha};
+use forge_components::{ForgePalette, tr, with_alpha};
 use forge_components::{Icon, icon};
 
 const ROW_GAP: Pixels = px(8.0);
@@ -550,7 +550,7 @@ impl RenderOnce for ChatRowView {
                         p.warning,
                         true,
                         None,
-                        SharedString::from(format!("{m} mo")),
+                        SharedString::from(tr!("chat_row_sub_months", months = *m)),
                         density,
                     )
                     .into_any_element()
@@ -583,7 +583,7 @@ impl RenderOnce for ChatRowView {
                     p.shell,
                     false,
                     None,
-                    SharedString::from(format!("{bits} bits")),
+                    SharedString::from(tr!("chat_row_cheer_bits", bits = *bits)),
                     density,
                 )
                 .into_any_element();

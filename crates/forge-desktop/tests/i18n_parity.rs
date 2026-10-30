@@ -237,7 +237,7 @@ fn en_and_uk_define_identical_kit_message_key_sets() {
         "kit",
         &load_kit("en"),
         &load_kit("uk"),
-        "widget_date_month_january",
+        "widget_save_saving",
     );
 }
 

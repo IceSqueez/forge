@@ -282,7 +282,7 @@ pub(crate) fn fold_config_field<V: 'static>(
                 options: options
                     .iter()
                     .map(|opt| {
-                        let label = crate::motion_labels::preset_label(key, opt);
+                        let label = crate::option_labels::option_label(ctx.kind_id, key, opt);
                         ((*opt).to_owned(), label)
                     })
                     .collect(),

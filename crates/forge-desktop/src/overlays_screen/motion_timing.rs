@@ -17,7 +17,7 @@ use gpui::{AnyElement, ClickEvent, Context, Pixels, div, prelude::*, px};
 
 use super::OverlaysView;
 use super::preview_stage::HINT_GLYPH;
-use crate::motion_labels::preset_label;
+use crate::option_labels::shared_option_label;
 
 const LINE_TOP: Pixels = px(8.0);
 const LINE_GAP: Pixels = px(12.0);
@@ -170,7 +170,7 @@ pub(super) fn span_text(span: Duration) -> String {
 }
 
 fn timed_text(key: &str, timed: &TimedPreset) -> String {
-    let label = preset_label(key, &timed.preset);
+    let label = shared_option_label(key, &timed.preset);
     match timed.duration {
         Some(duration) => format!("{label} {}", span_text(duration)),
         None => label,
@@ -186,10 +186,10 @@ fn unit_text(unit: TextUnit) -> String {
 
 fn text_preset_text(text: &TextPreset) -> String {
     let Some(unit) = text.unit else {
-        return preset_label(TEXT_EFFECT, &text.preset);
+        return shared_option_label(TEXT_EFFECT, &text.preset);
     };
     let unit = unit_text(unit);
-    let effect = preset_label(TEXT_EFFECT, &text.preset);
+    let effect = shared_option_label(TEXT_EFFECT, &text.preset);
     match text.stagger {
         Some(stagger) => {
             let stagger = span_text(stagger);

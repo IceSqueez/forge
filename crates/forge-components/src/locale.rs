@@ -1,3 +1,4 @@
+use std::borrow::Cow;
 use std::cell::{Cell, RefCell};
 use std::collections::{BTreeSet, HashSet};
 use std::rc::Rc;
@@ -18,14 +19,6 @@ pub enum CatalogLanguage {
 }
 
 impl CatalogLanguage {
-    pub fn from_code(code: &str) -> Option<Self> {
-        match code {
-            "en" => Some(Self::En),
-            "uk" => Some(Self::Uk),
-            _ => None,
-        }
-    }
-
     pub fn names_language(self) -> NamesLanguage {
         match self {
             Self::En => NamesLanguage::En,
@@ -193,10 +186,8 @@ pub fn install_bundle(bundle: Rc<ThreadBundle>) {
     });
 }
 
-pub fn set_locale_id(code: &str) {
-    THREAD_LANGUAGE.set(Some(
-        CatalogLanguage::from_code(code).unwrap_or(CatalogLanguage::En),
-    ));
+pub fn set_thread_language(language: CatalogLanguage) {
+    THREAD_LANGUAGE.set(Some(language));
 }
 
 pub(crate) fn active_language() -> CatalogLanguage {
@@ -206,8 +197,10 @@ pub(crate) fn active_language() -> CatalogLanguage {
         .unwrap_or(CatalogLanguage::En)
 }
 
+const FTL_ID_FILLER: char = '_';
 const NUMBER_FUNCTION: &str = "NUMBER";
 const DEFAULT_MAXIMUM_FRACTION_DIGITS: usize = 3;
+const MAXIMUM_DECIMAL_PLACES: usize = 15;
 
 struct NumberSeparators {
     group: &'static str,
@@ -229,10 +222,11 @@ fn separators(language: CatalogLanguage) -> NumberSeparators {
 
 fn split_fixed(value: f64, decimal_places: usize, language: CatalogLanguage) -> (String, String) {
     let separators = separators(language);
-    let factor = 10f64.powi(decimal_places as i32);
+    let decimal_places = decimal_places.min(MAXIMUM_DECIMAL_PLACES);
+    let factor = (0..decimal_places).fold(1.0_f64, |factor, _| factor * 10.0);
     let scaled = (value * factor).round() / factor;
     let int_part = scaled.abs().floor() as u64;
-    let signed = if value < 0.0 { "-" } else { "" };
+    let signed = if scaled < 0.0 { "-" } else { "" };
     let int_str = format!("{signed}{}", group_integer(int_part, separators.group));
     let frac_str = if decimal_places == 0 {
         String::new()
@@ -317,13 +311,22 @@ pub fn fmt_bytes(bytes: u64) -> String {
     const MIB: u64 = 1_048_576;
     const GIB: u64 = 1_073_741_824;
     if bytes < KIB {
-        format!("{} B", fmt_number(bytes as f64, 0))
+        crate::tr!("fmt_bytes_b", value = fmt_number(bytes as f64, 0))
     } else if bytes < MIB {
-        format!("{} KB", fmt_number(bytes as f64 / KIB as f64, 1))
+        crate::tr!(
+            "fmt_bytes_kib",
+            value = fmt_number(bytes as f64 / KIB as f64, 1)
+        )
     } else if bytes < GIB {
-        format!("{} MB", fmt_number(bytes as f64 / MIB as f64, 1))
+        crate::tr!(
+            "fmt_bytes_mib",
+            value = fmt_number(bytes as f64 / MIB as f64, 1)
+        )
     } else {
-        format!("{} GB", fmt_number(bytes as f64 / GIB as f64, 2))
+        crate::tr!(
+            "fmt_bytes_gib",
+            value = fmt_number(bytes as f64 / GIB as f64, 2)
+        )
     }
 }
 
@@ -390,6 +393,28 @@ fn group_integer(n: u64, sep: &str) -> String {
     out
 }
 
+pub fn ftl_id(raw: &str) -> Cow<'_, str> {
+    if raw.chars().all(is_ftl_id_char) {
+        Cow::Borrowed(raw)
+    } else {
+        Cow::Owned(
+            raw.chars()
+                .map(|ch| {
+                    if is_ftl_id_char(ch) {
+                        ch
+                    } else {
+                        FTL_ID_FILLER
+                    }
+                })
+                .collect(),
+        )
+    }
+}
+
+fn is_ftl_id_char(ch: char) -> bool {
+    ch.is_ascii_alphanumeric() || ch == FTL_ID_FILLER
+}
+
 pub fn tr_lookup(key: &str, args: Option<&FluentArgs<'_>>) -> String {
     tr_find_warned(key, args).unwrap_or_else(|| key.to_owned())
 }
@@ -428,12 +453,7 @@ fn format_message<M: MemoizerKind>(
     key: &str,
     args: Option<&FluentArgs<'_>>,
 ) -> Option<String> {
-    let fluent_id: std::borrow::Cow<'_, str> = if key.contains('.') {
-        std::borrow::Cow::Owned(key.replace('.', "_"))
-    } else {
-        std::borrow::Cow::Borrowed(key)
-    };
-    let pattern = bundle.get_message(fluent_id.as_ref())?.value()?;
+    let pattern = bundle.get_message(key)?.value()?;
     let mut errors = vec![];
     let formatted = bundle.format_pattern(pattern, args, &mut errors);
     if !errors.is_empty() {
@@ -524,9 +544,35 @@ mod tests {
     }
 
     #[test]
-    fn tr_find_reads_a_present_key_including_the_dotted_form() {
+    fn tr_find_matches_verbatim_so_a_dotted_id_resolves_only_through_ftl_id() {
         install_source("nav_home = Home\n");
-        assert_eq!(tr_find("nav.home", None).as_deref(), Some("Home"));
+        assert_eq!(
+            (
+                tr_find("nav.home", None),
+                tr_find(&ftl_id("nav.home"), None).as_deref()
+            ),
+            (None, Some("Home"))
+        );
+    }
+
+    #[test]
+    fn ftl_id_replaces_each_non_ascii_identifier_char_with_one_filler() {
+        for (raw, expected) in [
+            ("twitch.chat.send_message", "twitch_chat_send_message"),
+            ("slide-up", "slide_up"),
+            ("Lines array", "Lines_array"),
+            ("a.b-c d", "a_b_c_d"),
+            ("файл", "____"),
+            ("easeIn2", "easeIn2"),
+            ("", ""),
+        ] {
+            assert_eq!(ftl_id(raw), expected, "{raw:?}");
+        }
+    }
+
+    #[test]
+    fn ftl_id_borrows_an_id_that_is_already_valid() {
+        assert!(matches!(ftl_id("nav_home"), Cow::Borrowed("nav_home")));
     }
 
     #[test]
@@ -560,41 +606,80 @@ mod tests {
     #[test]
     fn fmt_number_groups_and_separates_per_locale() {
         let cases = [
-            ("en", 0.0, 0, "0"),
-            ("en", 999.0, 0, "999"),
-            ("en", 1000.0, 0, "1,000"),
-            ("en", 1_234_567.0, 0, "1,234,567"),
-            ("en", 1234.5, 2, "1,234.50"),
-            ("en", -1234.5, 1, "-1,234.5"),
-            ("uk", 1_234_567.0, 0, "1 234 567"),
-            ("uk", 1234.5, 1, "1 234,5"),
+            (CatalogLanguage::En, 0.0, 0, "0"),
+            (CatalogLanguage::En, 999.0, 0, "999"),
+            (CatalogLanguage::En, 1000.0, 0, "1,000"),
+            (CatalogLanguage::En, 1_234_567.0, 0, "1,234,567"),
+            (CatalogLanguage::En, 1234.5, 2, "1,234.50"),
+            (CatalogLanguage::En, -1234.5, 1, "-1,234.5"),
+            (CatalogLanguage::Uk, 1_234_567.0, 0, "1 234 567"),
+            (CatalogLanguage::Uk, 1234.5, 1, "1 234,5"),
         ];
-        for (locale, value, dp, expected) in cases {
-            set_locale_id(locale);
+        for (language, value, dp, expected) in cases {
+            set_thread_language(language);
             assert_eq!(
                 fmt_number(value, dp),
                 expected,
-                "fmt_number({value}, {dp}) in {locale}"
+                "fmt_number({value}, {dp}) in {language:?}"
             );
+        }
+    }
+
+    #[test]
+    fn fmt_number_never_prints_a_negative_zero() {
+        for (language, value, dp, expected) in [
+            (CatalogLanguage::En, -0.0, 0, "0"),
+            (CatalogLanguage::En, -0.4, 0, "0"),
+            (CatalogLanguage::En, -0.04, 1, "0.0"),
+            (CatalogLanguage::En, -0.004, 2, "0.00"),
+            (CatalogLanguage::Uk, -0.04, 1, "0,0"),
+        ] {
+            set_thread_language(language);
+            assert_eq!(fmt_number(value, dp), expected, "{value} at {dp}");
+        }
+    }
+
+    #[test]
+    fn fmt_number_keeps_the_sign_of_a_negative_that_rounds_away_from_zero() {
+        set_thread_language(CatalogLanguage::En);
+        for (value, dp, expected) in [(-0.5, 0, "-1"), (-0.06, 1, "-0.1"), (-0.006, 2, "-0.01")] {
+            assert_eq!(fmt_number(value, dp), expected, "{value} at {dp}");
+        }
+    }
+
+    #[test]
+    fn fmt_number_caps_requested_decimal_places_at_fifteen() {
+        set_thread_language(CatalogLanguage::En);
+        for dp in [15, 16, 400] {
+            assert_eq!(fmt_number(0.5, dp), "0.500000000000000", "{dp} places");
         }
     }
 
     #[test]
     fn fmt_bytes_switches_unit_exactly_at_each_binary_boundary() {
         let cases = [
-            ("en", 0, "0 B"),
-            ("en", 1_023, "1,023 B"),
-            ("en", 1_024, "1.0 KB"),
-            ("en", 1_536, "1.5 KB"),
-            ("en", 1_048_576, "1.0 MB"),
-            ("en", 1_073_741_824, "1.00 GB"),
-            ("en", u64::MAX, "17,179,869,184.00 GB"),
-            ("uk", 1_536, "1,5 KB"),
-            ("uk", 1_073_741_824, "1,00 GB"),
+            (CatalogLanguage::En, 0, "0 B"),
+            (CatalogLanguage::En, 1_023, "1,023 B"),
+            (CatalogLanguage::En, 1_024, "1.0 KiB"),
+            (CatalogLanguage::En, 1_536, "1.5 KiB"),
+            (CatalogLanguage::En, 1_048_575, "1,024.0 KiB"),
+            (CatalogLanguage::En, 1_048_576, "1.0 MiB"),
+            (CatalogLanguage::En, 1_073_741_823, "1,024.0 MiB"),
+            (CatalogLanguage::En, 1_073_741_824, "1.00 GiB"),
+            (CatalogLanguage::En, u64::MAX, "17,179,869,184.00 GiB"),
+            (CatalogLanguage::Uk, 0, "0 Б"),
+            (CatalogLanguage::Uk, 1_023, "1 023 Б"),
+            (CatalogLanguage::Uk, 1_536, "1,5 КіБ"),
+            (CatalogLanguage::Uk, 1_048_576, "1,0 МіБ"),
+            (CatalogLanguage::Uk, 1_073_741_824, "1,00 ГіБ"),
         ];
-        for (locale, bytes, expected) in cases {
-            set_locale_id(locale);
-            assert_eq!(fmt_bytes(bytes), expected, "fmt_bytes({bytes}) in {locale}");
+        for (language, bytes, expected) in cases {
+            install_thread_language(language, &[]);
+            assert_eq!(
+                unmarked(fmt_bytes(bytes)),
+                expected,
+                "fmt_bytes({bytes}) in {language:?}"
+            );
         }
     }
 

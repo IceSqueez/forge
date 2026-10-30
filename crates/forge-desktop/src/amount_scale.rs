@@ -7,7 +7,7 @@ use forge_registry::{
 };
 use forge_types::{SubActionConfig, Variant};
 
-use crate::motion_labels::preset_label;
+use crate::option_labels::shared_option_label;
 
 const DURATION_UNIT_PICKER_SUFFIX: &str = "#unit";
 
@@ -51,7 +51,12 @@ impl AmountScale {
             Self::StoredUnit { unit_key, bounds } => bounds
                 .units
                 .iter()
-                .map(|unit| (unit.value.to_owned(), preset_label(unit_key, unit.value)))
+                .map(|unit| {
+                    (
+                        unit.value.to_owned(),
+                        shared_option_label(unit_key, unit.value),
+                    )
+                })
                 .collect(),
             Self::Duration(bounds) => bounds
                 .fitting_units()
@@ -366,5 +371,40 @@ mod tests {
                 "{millis} in {scale:?} shown as {amount:?} {unit}"
             );
         }
+    }
+
+    #[test]
+    fn stored_delay_units_read_in_ukrainian_instead_of_the_wire_value() {
+        crate::i18n::install_language(forge_storage::Language::Uk);
+        let delay = AmountScale::StoredUnit {
+            unit_key: UNIT_KEY,
+            bounds: UnitAmountBounds {
+                min: 1,
+                max_base_units: 1_440,
+                units: &[
+                    AmountUnit {
+                        value: "minutes",
+                        base_units: 1,
+                    },
+                    AmountUnit {
+                        value: "hours",
+                        base_units: 60,
+                    },
+                    AmountUnit {
+                        value: "days",
+                        base_units: 1_440,
+                    },
+                ],
+            },
+        };
+
+        assert_eq!(
+            delay.unit_options(),
+            vec![
+                pair("minutes", "Хвилини"),
+                pair("hours", "Години"),
+                pair("days", "Дні"),
+            ]
+        );
     }
 }

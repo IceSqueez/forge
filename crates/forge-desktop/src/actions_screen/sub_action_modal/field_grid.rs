@@ -3,7 +3,7 @@ use super::field_controls::{bool_row, field_wrap, hint_block, multiline_field};
 use super::rejection::with_rejection_note;
 use super::variable_insert::InsertTarget;
 use super::*;
-use crate::sender_labels::sender_field_helper;
+use crate::config_field_label::sender_field_helper;
 use forge_components::{FONT_SM, FONT_XXS, Spacing, body_family, scaled, spacing};
 use forge_registry::CodeLanguage;
 use gpui::Div;

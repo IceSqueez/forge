@@ -10,7 +10,7 @@ use forge_components::ForgePalette;
 use forge_components::{
     BORDER_THIN, FONT_SM, FONT_XXS, Radius, Spacing, body_family, mono_family, radius, spacing,
 };
-use forge_components::{Icon, icon};
+use forge_components::{Icon, icon, tr};
 use forge_components::{InputEvent, TextInput};
 
 #[derive(Debug, Clone, PartialEq)]
@@ -417,7 +417,7 @@ impl InputBar {
         )
     }
 
-    fn render_hint(&self, glyph: &'static str, label: &'static str) -> impl IntoElement {
+    fn render_hint(&self, glyph: &'static str, label: String) -> impl IntoElement {
         let color = self.palette.text_faint;
         div()
             .flex()
@@ -555,9 +555,8 @@ impl Render for InputBar {
                     .flex()
                     .items_center()
                     .gap(HINT_ROW_GAP)
-                    .child(self.render_hint("/", "commands"))
-                    .child(self.render_hint("@", "mention"))
-                    .child(self.render_hint("!", "trigger action"))
+                    .child(self.render_hint("@", tr!("chat_composer_hint_mention")))
+                    .child(self.render_hint("!", tr!("chat_composer_hint_trigger")))
                     .children(self.render_char_counter(cx)),
             );
 

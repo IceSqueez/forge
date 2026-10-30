@@ -11,7 +11,7 @@ use forge_components::{
 
 static PROCESS_STATE: Mutex<()> = Mutex::new(());
 
-const KIT_KEY: &str = "widget_date_month_january";
+const KIT_KEY: &str = "widget_save_saving";
 const DESKTOP_EN: &str = include_str!("../../forge-desktop/locales/en/main.ftl");
 const DESKTOP_UK: &str = include_str!("../../forge-desktop/locales/uk/main.ftl");
 
@@ -27,11 +27,11 @@ fn localized() -> Localized {
 }
 
 fn expected(language: CatalogLanguage) -> Localized {
-    let (month, number) = match language {
-        CatalogLanguage::En => ("January", "1,234.5"),
-        CatalogLanguage::Uk => ("Січень", "1 234,5"),
+    let (text, number) = match language {
+        CatalogLanguage::En => ("Saving...", "1,234.5"),
+        CatalogLanguage::Uk => ("Збереження...", "1 234,5"),
     };
-    (month.to_owned(), number.to_owned())
+    (text.to_owned(), number.to_owned())
 }
 
 fn on_std_thread<T: Send + 'static>(body: impl FnOnce() -> T + Send + 'static) -> T {
@@ -128,8 +128,8 @@ fn resolve_in_language_changes_neither_the_thread_nor_the_process_language() {
     assert_eq!(
         (overridden, process),
         (
-            ("January".to_owned(), expected(CatalogLanguage::Uk)),
-            ("Січень".to_owned(), expected(CatalogLanguage::En)),
+            ("Saving...".to_owned(), expected(CatalogLanguage::Uk)),
+            ("Збереження...".to_owned(), expected(CatalogLanguage::En)),
         )
     );
 }
@@ -137,12 +137,9 @@ fn resolve_in_language_changes_neither_the_thread_nor_the_process_language() {
 #[test]
 fn an_app_source_wins_over_the_kit_catalog_on_a_duplicate_message_id() {
     let _guard = serialized();
-    install_process_language(
-        CatalogLanguage::En,
-        &["widget_date_month_january = Month one\n"],
-    );
+    install_process_language(CatalogLanguage::En, &["widget_save_saving = Busy\n"]);
 
-    assert_eq!(on_tokio_worker(|| tr!(KIT_KEY)), "Month one");
+    assert_eq!(on_tokio_worker(|| tr!(KIT_KEY)), "Busy");
 }
 
 #[test]
@@ -258,10 +255,10 @@ fn duplicate_message_ids_reports_an_id_defined_twice_inside_one_fragment() {
 fn duplicate_message_ids_reports_an_app_id_that_collides_with_the_kit_catalog() {
     let ids = forge_components::duplicate_message_ids(
         CatalogLanguage::En,
-        &["widget_date_month_january = Mine\n"],
+        &["widget_save_saving = Mine\n"],
     );
 
-    assert_eq!(ids, vec!["widget_date_month_january".to_owned()]);
+    assert_eq!(ids, vec![KIT_KEY.to_owned()]);
 }
 
 #[test]
@@ -284,7 +281,7 @@ fn tr_find_warned_returns_the_text_of_a_present_key_and_none_for_a_missing_one()
             tr_find_warned(KIT_KEY, None),
             tr_find_warned("absent_for_find_warned", None)
         ),
-        (Some("January".to_owned()), None)
+        (Some("Saving...".to_owned()), None)
     );
 }
 

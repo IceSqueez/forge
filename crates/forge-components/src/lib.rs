@@ -117,8 +117,8 @@ pub use integration_gating::{
 };
 pub use locale::{
     ArgsBuilder, CatalogLanguage, catalog_source, duplicate_message_ids, fmt_bytes, fmt_clock,
-    fmt_number, fmt_uptime, fmt_uptime_short, install_bundle, install_process_language,
-    install_thread_language, resolve_in_language, set_locale_id, tr_find, tr_find_warned,
+    fmt_number, fmt_uptime, fmt_uptime_short, ftl_id, install_bundle, install_process_language,
+    install_thread_language, resolve_in_language, set_thread_language, tr_find, tr_find_warned,
     tr_lookup,
 };
 pub use menu::{

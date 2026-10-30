@@ -1,42 +1,6 @@
-widget_date_month_january = January
-
-widget_date_month_february = February
-
-widget_date_month_march = March
-
-widget_date_month_april = April
-
-widget_date_month_may = May
-
-widget_date_month_june = June
-
-widget_date_month_july = July
-
-widget_date_month_august = August
-
-widget_date_month_september = September
-
-widget_date_month_october = October
-
-widget_date_month_november = November
-
-widget_date_month_december = December
-
-widget_date_weekday_sunday = Su
-
-widget_date_weekday_monday = Mo
-
-widget_date_weekday_tuesday = Tu
-
-widget_date_weekday_wednesday = We
-
-widget_date_weekday_thursday = Th
-
-widget_date_weekday_friday = Fr
-
-widget_date_weekday_saturday = Sa
-
 widget_save_saving = Saving...
+
+widget_save_all_saved = All changes saved
 
 widget_save_unsaved = Unsaved changes
 
@@ -125,3 +89,15 @@ region_name_cz = Czechia
 region_name_kz = Kazakhstan
 
 region_name_au = Australia
+
+widget_grid_picker_badge_added = added
+
+widget_grid_picker_badge_off = off
+
+fmt_bytes_b = { $value } B
+
+fmt_bytes_kib = { $value } KiB
+
+fmt_bytes_mib = { $value } MiB
+
+fmt_bytes_gib = { $value } GiB

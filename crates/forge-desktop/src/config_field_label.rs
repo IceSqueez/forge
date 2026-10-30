@@ -1,5 +1,7 @@
-use forge_components::tr_find;
+use forge_components::{ftl_id, tr, tr_find};
+use forge_platform_core::SENDER_FIELD;
 use forge_registry::FormField;
+use forge_runtime::sub_action_runners::CHAT_SEND_KIND_ID;
 use gpui::SharedString;
 
 use crate::config_form::ConfigField;
@@ -8,6 +10,7 @@ const LABEL_PREFIX: &str = "field_label_";
 const OPTIONAL_PREFIX: &str = "field_optional_";
 const PLACEHOLDER_PREFIX: &str = "field_placeholder_";
 const KIND_NAMESPACE_SEPARATOR: char = '.';
+const PLATFORM_NEUTRAL_SENDER_STEPS: [&str; 1] = [CHAT_SEND_KIND_ID];
 
 pub(crate) fn config_field_labels(kind_id: &str, spec: &FormField, out: &mut Vec<SharedString>) {
     out.push(field_label(kind_id, spec).into());
@@ -57,7 +60,12 @@ pub(crate) fn field_placeholder(kind_id: &str, key: &str, english: &str) -> Stri
     scoped_copy(PLACEHOLDER_PREFIX, kind_id, key).unwrap_or_else(|| english.to_owned())
 }
 
-fn scoped_copy(prefix: &str, kind_id: &str, key: &str) -> Option<String> {
+pub(crate) fn sender_field_helper(kind_id: &str, key: &str) -> Option<String> {
+    (key == SENDER_FIELD && PLATFORM_NEUTRAL_SENDER_STEPS.contains(&kind_id))
+        .then(|| tr!("sender_field_twitch_only_helper"))
+}
+
+pub(crate) fn scoped_copy(prefix: &str, kind_id: &str, key: &str) -> Option<String> {
     let namespace = kind_id
         .split_once(KIND_NAMESPACE_SEPARATOR)
         .map_or(kind_id, |(namespace, _)| namespace);
@@ -67,7 +75,7 @@ fn scoped_copy(prefix: &str, kind_id: &str, key: &str) -> Option<String> {
         format!("{prefix}{key}"),
     ]
     .iter()
-    .find_map(|id| tr_find(id, None))
+    .find_map(|id| tr_find(&ftl_id(id), None))
 }
 
 fn short_label(label: &str) -> String {
@@ -602,5 +610,21 @@ field_label_k3 = Global
             })
             .collect();
         assert!(mismatched.is_empty(), "{mismatched:#?}");
+    }
+
+    #[test]
+    fn twitch_only_helper_shows_only_under_the_platform_neutral_send_step_sender() {
+        for (kind, key, shown) in [
+            (CHAT_SEND_KIND_ID, SENDER_FIELD, true),
+            (CHAT_SEND_KIND_ID, "message", false),
+            ("twitch.chat.reply", SENDER_FIELD, false),
+            ("twitch.chat.send_whisper", SENDER_FIELD, false),
+        ] {
+            assert_eq!(
+                sender_field_helper(kind, key).is_some(),
+                shown,
+                "{kind}/{key}"
+            );
+        }
     }
 }

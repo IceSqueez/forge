@@ -2,7 +2,7 @@ use std::cell::Cell;
 use std::sync::{PoisonError, RwLock};
 
 use forge_types::{NamesLanguage, PatternZone, datetime_to_text, shared_date_pattern};
-use time::{OffsetDateTime, Time};
+use time::{Date, OffsetDateTime, Time};
 
 use crate::display_formats::{ClockStyle, DisplayFormatChoices, DisplayFormats};
 use crate::locale::{CatalogLanguage, active_language, relative_within_week, tr_lookup};
@@ -10,6 +10,7 @@ use crate::region::Region;
 
 const DATE_TIME_SEPARATOR: &str = ", ";
 const MONTH_YEAR_PATTERN: &str = "LLLL yyyy";
+const WEEKDAY_SHORT_PATTERN: &str = "ccc";
 const DAY_PERIOD_PATTERN: &str = "a";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -20,6 +21,7 @@ pub enum DateShape {
     TimeWithMillis,
     DateTime,
     MonthYear,
+    WeekdayShort,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -50,6 +52,7 @@ impl DateDisplay {
                 self.format(DateShape::Time, value)
             ),
             DateShape::MonthYear => self.render(MONTH_YEAR_PATTERN, value),
+            DateShape::WeekdayShort => self.render(WEEKDAY_SHORT_PATTERN, value),
         }
     }
 
@@ -124,6 +127,15 @@ pub fn fmt_display(shape: DateShape, value: OffsetDateTime) -> String {
     date_display().format(shape, value)
 }
 
+pub(crate) fn fmt_calendar_date(shape: DateShape, date: Date) -> String {
+    DateDisplay::new(
+        active_display_formats(),
+        ui_names_language(),
+        PatternZone::Utc,
+    )
+    .format(shape, date.midnight().assume_utc())
+}
+
 pub fn fmt_display_relative(value: Option<OffsetDateTime>) -> String {
     date_display().relative(value, OffsetDateTime::now_utc())
 }
@@ -150,7 +162,7 @@ mod tests {
 
     use super::*;
     use crate::display_formats::{DateFormatChoice, FirstWeekday};
-    use crate::locale::{catalog_source, install_bundle, set_locale_id};
+    use crate::locale::{catalog_source, install_bundle, set_thread_language};
 
     fn utc(year: i32, month: Month, day: u8, hour: u8, minute: u8) -> OffsetDateTime {
         OffsetDateTime::new_utc(
@@ -175,14 +187,14 @@ mod tests {
         DateDisplay::new(formats(date_format, clock), names, PatternZone::Utc)
     }
 
-    fn install_kit_catalog(language: CatalogLanguage, code: &'static str) {
-        let id: LanguageIdentifier = code.parse().unwrap();
+    fn install_kit_catalog(language: CatalogLanguage) {
+        let id: LanguageIdentifier = "en-US".parse().unwrap();
         let resource = FluentResource::try_new(catalog_source(language).to_owned()).unwrap();
         let mut bundle = FluentBundle::new(vec![id]);
         bundle.set_use_isolating(false);
         bundle.add_resource(resource).unwrap();
         install_bundle(Rc::new(bundle));
-        set_locale_id(code);
+        set_thread_language(language);
     }
 
     #[test]
@@ -353,7 +365,7 @@ mod tests {
 
     #[test]
     fn relative_reads_never_for_a_missing_instant() {
-        install_kit_catalog(CatalogLanguage::En, "en");
+        install_kit_catalog(CatalogLanguage::En);
         let display = in_utc(
             DateFormatChoice::YearMonthDay,
             ClockStyle::TwentyFourHour,
@@ -368,7 +380,7 @@ mod tests {
 
     #[test]
     fn relative_switches_to_the_display_date_from_one_week_back() {
-        install_kit_catalog(CatalogLanguage::En, "en");
+        install_kit_catalog(CatalogLanguage::En);
         let now = utc(2026, Month::March, 15, 12, 0);
         let display = in_utc(
             DateFormatChoice::DayMonthYearDot,
@@ -421,8 +433,8 @@ mod tests {
             ClockStyle::TwentyFourHour,
         ));
         let mut rendered = Vec::new();
-        for code in ["en", "uk"] {
-            set_locale_id(code);
+        for language in [CatalogLanguage::En, CatalogLanguage::Uk] {
+            set_thread_language(language);
             rendered.push(fmt_display(DateShape::Date, value));
         }
 

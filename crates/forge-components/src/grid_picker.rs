@@ -964,13 +964,20 @@ fn render_card_el(
 
     let trailing: Option<AnyElement> = match card.state {
         GridPickerItemState::Added => Some(
-            badge(p.surface_overlay, p.success, "added", true, GRID_BADGE_FS).into_any_element(),
+            badge(
+                p.surface_overlay,
+                p.success,
+                tr!("widget_grid_picker_badge_added"),
+                true,
+                GRID_BADGE_FS,
+            )
+            .into_any_element(),
         ),
         GridPickerItemState::Disabled => Some(
             badge(
                 p.surface_overlay,
                 p.text_primary,
-                "off",
+                tr!("widget_grid_picker_badge_off"),
                 true,
                 GRID_BADGE_FS,
             )

@@ -4,10 +4,10 @@ use gpui::{
     AnyElement, App, ClickEvent, Context, ElementId, EventEmitter, Pixels, SharedString, Window,
     div, prelude::*, px,
 };
-use time::{Date, Month, OffsetDateTime, PrimitiveDateTime, Time, UtcOffset};
+use time::{Date, Duration, Month, OffsetDateTime, PrimitiveDateTime, Time, UtcOffset};
 
 use crate::buttons::{ghost_button_with_icon, primary_button, secondary_button};
-use crate::date_display::fmt_day_period;
+use crate::date_display::{DateShape, fmt_calendar_date, fmt_day_period};
 use crate::display_formats::{ClockStyle, FirstWeekday};
 use crate::display_zone::{DisplayZone, WallTime};
 use crate::icons::{Icon, icon};
@@ -16,7 +16,6 @@ use crate::tokens::{
     BORDER_THIN, Density, FONT_SM, FONT_XS, FONT_XXS, Radius, Spacing, body_family, mono_family,
     radius, spacing,
 };
-use crate::tr;
 
 const PANEL_W: Pixels = px(284.0);
 const CELL: Pixels = px(34.0);
@@ -29,16 +28,6 @@ const HOURS_PER_HALF_DAY: u8 = 12;
 const MINUTES_PER_HOUR: i32 = 60;
 
 const DAYS_PER_WEEK: u8 = 7;
-
-const WEEKDAY_KEYS: [&str; DAYS_PER_WEEK as usize] = [
-    "widget_date_weekday_sunday",
-    "widget_date_weekday_monday",
-    "widget_date_weekday_tuesday",
-    "widget_date_weekday_wednesday",
-    "widget_date_weekday_thursday",
-    "widget_date_weekday_friday",
-    "widget_date_weekday_saturday",
-];
 
 pub struct DateTimePickerLabels {
     pub now: SharedString,
@@ -199,18 +188,33 @@ impl DateTimePicker {
         }
     }
 
-    fn weekday_keys(&self) -> impl Iterator<Item = &'static str> {
-        let start = usize::from(self.first_day.days_from_monday() + 1);
-        WEEKDAY_KEYS
-            .iter()
-            .cycle()
-            .skip(start)
-            .take(WEEKDAY_KEYS.len())
-            .copied()
+    fn first_of_month(&self) -> Option<Date> {
+        Date::from_calendar_date(self.year, self.month, 1).ok()
+    }
+
+    fn month_title(&self) -> String {
+        self.first_of_month()
+            .map(|first| capitalized(fmt_calendar_date(DateShape::MonthYear, first)))
+            .unwrap_or_default()
+    }
+
+    fn weekday_titles(&self) -> Vec<String> {
+        let Some(first) = self.first_of_month() else {
+            return Vec::new();
+        };
+        let week_start = first.saturating_sub(Duration::days(i64::from(self.leading_blanks())));
+        (0..i64::from(DAYS_PER_WEEK))
+            .map(|offset| {
+                capitalized(fmt_calendar_date(
+                    DateShape::WeekdayShort,
+                    week_start.saturating_add(Duration::days(offset)),
+                ))
+            })
+            .collect()
     }
 
     fn leading_blanks(&self) -> u8 {
-        Date::from_calendar_date(self.year, self.month, 1)
+        self.first_of_month()
             .map(|d| {
                 (d.weekday().number_days_from_monday() + DAYS_PER_WEEK
                     - self.first_day.days_from_monday())
@@ -318,7 +322,7 @@ impl DateTimePicker {
                     .font_family(body_family())
                     .text_size(FONT_SM)
                     .text_color(p.text_primary)
-                    .child(format!("{} {}", month_name(self.month), self.year)),
+                    .child(self.month_title()),
             )
             .child(nav_btn(
                 "forge-dtp-next",
@@ -332,7 +336,7 @@ impl DateTimePicker {
     fn render_weekday_header(&self) -> AnyElement {
         let p = self.palette;
         let mut row = div().flex();
-        for key in self.weekday_keys() {
+        for title in self.weekday_titles() {
             row = row.child(
                 div()
                     .w(CELL)
@@ -341,7 +345,7 @@ impl DateTimePicker {
                     .font_family(mono_family())
                     .text_size(FONT_XXS)
                     .text_color(p.text_faint)
-                    .child(tr!(key)),
+                    .child(title),
             );
         }
         row.into_any_element()
@@ -655,48 +659,29 @@ fn offset_label(offset: UtcOffset) -> String {
     )
 }
 
-fn month_name(month: Month) -> String {
-    let key = match month {
-        Month::January => "widget_date_month_january",
-        Month::February => "widget_date_month_february",
-        Month::March => "widget_date_month_march",
-        Month::April => "widget_date_month_april",
-        Month::May => "widget_date_month_may",
-        Month::June => "widget_date_month_june",
-        Month::July => "widget_date_month_july",
-        Month::August => "widget_date_month_august",
-        Month::September => "widget_date_month_september",
-        Month::October => "widget_date_month_october",
-        Month::November => "widget_date_month_november",
-        Month::December => "widget_date_month_december",
-    };
-    tr!(key)
+fn capitalized(text: String) -> String {
+    let mut chars = text.chars();
+    match chars.next() {
+        Some(first) => first.to_uppercase().chain(chars).collect(),
+        None => text,
+    }
 }
 
 #[cfg(test)]
 mod tests {
-    use std::rc::Rc;
-
-    use fluent::{FluentBundle, FluentResource};
-    use unic_langid::LanguageIdentifier;
-
     use super::*;
-    use crate::locale::install_bundle;
+    use crate::date_display::fmt_display;
+    use crate::locale::{CatalogLanguage, set_thread_language};
 
-    const UK_CATALOG: &str = include_str!("../locales/uk/main.ftl");
-
-    fn install_ukrainian() {
-        let lang: LanguageIdentifier = "uk-UA".parse().unwrap_or_default();
-        let resource = FluentResource::try_new(UK_CATALOG.to_owned()).unwrap_or_else(|(r, _)| r);
-        let mut bundle = FluentBundle::new(vec![lang]);
-        assert!(bundle.add_resource(resource).is_ok());
-        install_bundle(Rc::new(bundle));
-    }
+    const WEST_OF_UTC_PROBE: &str = "FORGE_DATE_PICKER_WEST_OF_UTC_PROBE";
+    const FIVE_HOURS_WEST_OF_UTC: &str = "EST5";
+    const WEST_OF_UTC_TEST: &str =
+        "date_time_picker::tests::month_title_keeps_its_month_in_a_zone_west_of_utc";
 
     #[test]
-    fn month_names_follow_the_installed_language_in_calendar_order() {
-        install_ukrainian();
-        let months = [
+    fn month_title_is_the_capitalized_stand_alone_name_in_calendar_order() {
+        set_thread_language(CatalogLanguage::Uk);
+        let titles = [
             Month::January,
             Month::February,
             Month::March,
@@ -710,24 +695,62 @@ mod tests {
             Month::November,
             Month::December,
         ]
-        .map(month_name);
+        .map(|month| picker(2026, month, FirstWeekday::Monday).month_title());
 
         assert_eq!(
-            months,
+            titles,
             [
-                "Січень",
-                "Лютий",
-                "Березень",
-                "Квітень",
-                "Травень",
-                "Червень",
-                "Липень",
-                "Серпень",
-                "Вересень",
-                "Жовтень",
-                "Листопад",
-                "Грудень",
+                "Січень 2026",
+                "Лютий 2026",
+                "Березень 2026",
+                "Квітень 2026",
+                "Травень 2026",
+                "Червень 2026",
+                "Липень 2026",
+                "Серпень 2026",
+                "Вересень 2026",
+                "Жовтень 2026",
+                "Листопад 2026",
+                "Грудень 2026",
             ]
+        );
+    }
+
+    #[test]
+    fn month_title_keeps_its_month_in_a_zone_west_of_utc() {
+        if std::env::var_os(WEST_OF_UTC_PROBE).is_none() {
+            let probe = std::process::Command::new(std::env::current_exe().unwrap())
+                .args(["--exact", WEST_OF_UTC_TEST])
+                .env("TZ", FIVE_HOURS_WEST_OF_UTC)
+                .env(WEST_OF_UTC_PROBE, "1")
+                .output()
+                .unwrap();
+            assert!(
+                probe.status.success(),
+                "{}",
+                String::from_utf8_lossy(&probe.stdout)
+            );
+            return;
+        }
+
+        set_thread_language(CatalogLanguage::En);
+        let first = Date::from_calendar_date(2026, Month::October, 1).unwrap();
+        assert_eq!(
+            (
+                fmt_display(DateShape::MonthYear, first.midnight().assume_utc()),
+                picker(2026, Month::October, FirstWeekday::Monday).month_title(),
+            ),
+            ("September 2026".to_owned(), "October 2026".to_owned())
+        );
+    }
+
+    #[test]
+    fn a_year_outside_the_calendar_range_renders_empty_headers_instead_of_panicking() {
+        let beyond = picker(10_000, Month::January, FirstWeekday::Monday);
+
+        assert_eq!(
+            (beyond.month_title(), beyond.weekday_titles()),
+            (String::new(), Vec::<String>::new())
         );
     }
 
@@ -1059,7 +1082,7 @@ mod tests {
 
     #[test]
     fn weekday_headers_start_on_the_chosen_first_day_in_the_installed_language() {
-        install_ukrainian();
+        set_thread_language(CatalogLanguage::Uk);
         for (first_day, expected) in [
             (
                 FirstWeekday::Monday,
@@ -1074,10 +1097,7 @@ mod tests {
                 ["Сб", "Нд", "Пн", "Вт", "Ср", "Чт", "Пт"],
             ),
         ] {
-            let headers: Vec<String> = picker(2026, Month::October, first_day)
-                .weekday_keys()
-                .map(|key| tr!(key))
-                .collect();
+            let headers = picker(2026, Month::October, first_day).weekday_titles();
             assert_eq!(headers, expected, "{first_day:?}");
         }
     }

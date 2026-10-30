@@ -1,4 +1,5 @@
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+mod common;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
@@ -12,9 +13,9 @@ use forge_runtime::sub_action_runners::OverlaySendRunner;
 use forge_runtime::{
     EngineVoiceError, EventBus, NullEventLogRepo, OVERLAY_NAME_KEY, OVERLAY_SPEECH_FAILED_KIND,
     OVERLAY_TARGET_KEY, OverlayDispatch, OverlayFrameSink, OverlayReceivers, OverlayServiceCell,
-    OverlayServiceHandle, SHOW_CEILING, SHOW_SPEECH_START_WAIT, SPEECH_FAILURE_ERROR_KEY,
-    SPEECH_FAILURE_MESSAGE_KEY, ShowEnd, ShowSpeech, ShowTicket, SpeakDispatchError,
-    SpeakDispatcher, SpeakingViewer, SpeechOrigin, SpeechStartSignal,
+    OverlayServiceHandle, OverlayServiceParts, SHOW_CEILING, SHOW_SPEECH_START_WAIT,
+    SPEECH_FAILURE_ERROR_KEY, SPEECH_FAILURE_MESSAGE_KEY, ShowEnd, ShowSpeech, ShowTicket,
+    SpeakDispatchError, SpeakDispatcher, SpeakingViewer, SpeechOrigin, SpeechStartSignal,
 };
 use forge_storage::test_support::MemorySettings;
 use forge_storage::{
@@ -267,14 +268,16 @@ fn harness_checking_voice(
     });
     let bus = EventBus::new(Arc::new(NullEventLogRepo));
 
-    let service = OverlayServiceHandle::new(
-        Arc::new(repo) as Arc<dyn OverlayRepo>,
-        Arc::new(settings) as Arc<dyn SettingsRepo>,
-        Arc::new(kinds),
-        Arc::clone(&bus),
-        Some(Arc::clone(&page) as Arc<dyn OverlayFrameSink>),
-    )
-    .with_speech(Arc::clone(&speaker) as Arc<dyn SpeakDispatcher>);
+    let service = OverlayServiceHandle::new(OverlayServiceParts {
+        repo: Arc::new(repo) as Arc<dyn OverlayRepo>,
+        settings: Arc::new(settings) as Arc<dyn SettingsRepo>,
+        kinds: Arc::new(kinds),
+        bus: Arc::clone(&bus),
+        frames: Arc::clone(&page) as Arc<dyn OverlayFrameSink>,
+        media: None,
+        speaker: Some(Arc::clone(&speaker) as Arc<dyn SpeakDispatcher>),
+        latest: None,
+    });
     Harness {
         page,
         speaker,
@@ -568,7 +571,7 @@ async fn speech_text_never_reaches_the_page_for_any_look() {
         }
         let fired = harness
             .service
-            .test_fire(&OverlayId::new(STAGE))
+            .test_fire(&OverlayId::new(STAGE), &common::NeutralSamples)
             .await
             .expect("every shipped look can be test-fired");
 
@@ -674,5 +677,37 @@ async fn a_show_with_an_installed_voice_reports_no_speech_failure() {
             .iter()
             .all(|event| event.kind != OVERLAY_SPEECH_FAILED_KIND),
         "a show whose voice passed the check reported a speech failure"
+    );
+}
+
+#[tokio::test(start_paused = true)]
+async fn the_copy_the_sub_actions_reach_shares_one_show_queue_with_the_copy_the_ui_holds() {
+    let harness = harness(ALERT_KIND, plays_for(Duration::from_secs(1)));
+    let cell = OverlayServiceCell::new();
+    cell.set(harness.service.clone());
+    let runner_copy = cell.get().expect("the cell holds the service");
+    let id = OverlayId::new(STAGE);
+
+    let first = harness.queue("first").await;
+    harness.until_spoken(1).await;
+    let OverlayDispatch::Queued(second) = runner_copy
+        .send_to(&id, &spoken_show("second"), &ArgStack::new(), None, None)
+        .await
+        .expect("a stored overlay of a shipped look accepts a send")
+    else {
+        panic!("a transient show was applied at once instead of queued");
+    };
+    let waiting_seen_by_the_ui = harness.service.pending_shows(&id);
+    finished(first).await;
+    finished(second).await;
+
+    assert_eq!(
+        (
+            waiting_seen_by_the_ui,
+            harness.page.arrivals(),
+            harness.speaker.spoken().len(),
+        ),
+        (1, vec![Duration::ZERO, ALERT_WINDOW], 2),
+        "a show sent through the runner's copy did not queue behind the running show"
     );
 }

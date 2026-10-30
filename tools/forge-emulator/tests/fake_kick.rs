@@ -473,7 +473,7 @@ async fn channel_read_for_a_foreign_slug_finds_no_channel() {
         .get_channel_by_slug(&KickAccount::default().access_token, FOREIGN_SLUG)
         .await;
     assert!(
-        matches!(&read, Err(PlatformError::Http { body, .. }) if body.contains("no data")),
+        matches!(&read, Err(PlatformError::MalformedResponse { reason }) if reason.contains("no data")),
         "{:?}",
         read.as_ref().map(|snapshot| snapshot.slug.clone())
     );

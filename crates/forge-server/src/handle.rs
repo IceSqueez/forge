@@ -3,7 +3,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
 
-use forge_runtime::{OverlayConnectListener, OverlayReceivers, OverlayServiceHandle};
+use forge_runtime::{OverlaySampleSource, OverlayServiceHandle};
 use forge_storage::OverlayId;
 use forge_types::{ClipCapability, Secret};
 use tokio::net::TcpListener;
@@ -259,6 +259,7 @@ impl ServerHandle {
     pub async fn regenerate_overlay_token(
         &self,
         overlay_service: &OverlayServiceHandle,
+        samples: &dyn OverlaySampleSource,
     ) -> Result<Secret, ServerError> {
         let state = self.inner.lock().await.state.clone();
         let gate = state.auth.overlay_token();
@@ -288,7 +289,7 @@ impl ServerHandle {
             reason,
         };
         let pass = overlay_service
-            .materialize_all()
+            .materialize_all(samples)
             .await
             .map_err(|e| incomplete(e.to_string()))?;
         if pass.failed > 0 {
@@ -337,38 +338,6 @@ impl ServerHandle {
         store.release_hold(capability.expose())
     }
 
-    pub async fn deliver_overlay_content(
-        &self,
-        identity: &OverlayId,
-        content: serde_json::Value,
-        duration_ms: Option<u64>,
-    ) -> OverlayReceivers {
-        let adapter = Arc::clone(&self.inner.lock().await.state.bus_adapter);
-        adapter
-            .deliver_overlay_content(identity, &content, duration_ms)
-            .await
-    }
-
-    pub async fn overlay_receivers(&self, identity: &OverlayId) -> OverlayReceivers {
-        let adapter = Arc::clone(&self.inner.lock().await.state.bus_adapter);
-        adapter.overlay_receivers(identity).await
-    }
-
-    pub async fn set_overlay_connect_listener(&self, listener: Arc<dyn OverlayConnectListener>) {
-        let adapter = Arc::clone(&self.inner.lock().await.state.bus_adapter);
-        adapter.set_overlay_connect_listener(listener);
-    }
-
-    pub async fn deliver_overlay_reload(&self, identity: Option<&OverlayId>) {
-        let adapter = Arc::clone(&self.inner.lock().await.state.bus_adapter);
-        adapter.deliver_overlay_reload(identity).await;
-    }
-
-    pub async fn revoke_overlay(&self, identity: &OverlayId) -> usize {
-        let adapter = Arc::clone(&self.inner.lock().await.state.bus_adapter);
-        adapter.revoke_overlay(identity).await
-    }
-
     pub async fn snapshot(&self) -> crate::snapshot::ServerSnapshot {
         let state = self.inner.lock().await.state.clone();
         crate::snapshot::build_server_snapshot(&state.server_info, &state.bus_adapter).await
@@ -397,7 +366,9 @@ mod tests {
     use std::collections::HashSet;
 
     use forge_registry::SubActionRegistry;
-    use forge_runtime::{ActionCancelRegistry, EventBus, NullEventLogRepo, spawn_action_engine};
+    use forge_runtime::{
+        ActionCancelRegistry, EventBus, NullEventLogRepo, OverlayServiceParts, spawn_action_engine,
+    };
     use forge_storage::credentials::MockCredentialsRepo;
     use forge_storage::{
         CredentialsRepo, DataProvider, GlobalsRepo, SettingsRepo, UserGlobalsRepo,
@@ -406,6 +377,7 @@ mod tests {
     use super::*;
     use crate::bus_adapter::{BusAdapter, ClientFilterSet, OverlayClientClass};
     use crate::config::ServerConfig;
+    use crate::delivery_hub::DeliveryHub;
     use crate::server::stopped_server;
     use crate::test_helpers::{TestDataProvider, mem_settings};
     use forge_storage::test_support::INJECTED_FAILURE_REASON;
@@ -545,6 +517,15 @@ mod tests {
         )
     }
 
+    struct NeutralSamples;
+
+    #[async_trait::async_trait]
+    impl OverlaySampleSource for NeutralSamples {
+        async fn sample(&self, _: &OverlayId) -> forge_overlay::SampleContext {
+            forge_overlay::SampleContext::neutral()
+        }
+    }
+
     async fn empty_overlay_service(root: &std::path::Path) -> OverlayServiceHandle {
         let mut repo = forge_storage::MockOverlayRepo::new();
         repo.expect_list().returning(|| Ok(Vec::new()));
@@ -555,13 +536,17 @@ mod tests {
                 &Some(root.to_string_lossy().into_owned()),
             )
             .expect("overlay root setting");
-        OverlayServiceHandle::new(
-            Arc::new(repo),
-            settings as Arc<dyn SettingsRepo>,
-            Arc::new(forge_overlay::OverlayKindRegistry::new()),
-            EventBus::new(Arc::new(NullEventLogRepo)),
-            None,
-        )
+        let bus = EventBus::new(Arc::new(NullEventLogRepo));
+        OverlayServiceHandle::new(OverlayServiceParts {
+            repo: Arc::new(repo),
+            settings: settings as Arc<dyn SettingsRepo>,
+            kinds: Arc::new(forge_overlay::OverlayKindRegistry::new()),
+            bus: Arc::clone(&bus),
+            frames: Arc::new(DeliveryHub::new(bus)),
+            media: None,
+            speaker: None,
+            latest: None,
+        })
     }
 
     async fn live_overlay_page(
@@ -597,7 +582,7 @@ mod tests {
         let old = gate_before.overlay_token().current();
 
         let fresh = handle
-            .regenerate_overlay_token(&empty_overlay_service(root.path()).await)
+            .regenerate_overlay_token(&empty_overlay_service(root.path()).await, &NeutralSamples)
             .await
             .expect("regenerate");
 
@@ -626,7 +611,7 @@ mod tests {
         let mut page = live_overlay_page(&handle, &alerts).await;
 
         handle
-            .regenerate_overlay_token(&empty_overlay_service(root.path()).await)
+            .regenerate_overlay_token(&empty_overlay_service(root.path()).await, &NeutralSamples)
             .await
             .expect("regenerate");
 
@@ -648,7 +633,7 @@ mod tests {
         let mut page = live_overlay_page(&handle, &alerts).await;
 
         let result = handle
-            .regenerate_overlay_token(&empty_overlay_service(root.path()).await)
+            .regenerate_overlay_token(&empty_overlay_service(root.path()).await, &NeutralSamples)
             .await;
 
         assert!(
@@ -681,7 +666,10 @@ mod tests {
         let old = handle.auth_state().await.overlay_token().current();
 
         let result = handle
-            .regenerate_overlay_token(&empty_overlay_service(&not_a_directory).await)
+            .regenerate_overlay_token(
+                &empty_overlay_service(&not_a_directory).await,
+                &NeutralSamples,
+            )
             .await;
 
         let error = result.expect_err("a failed rewrite must fail the regenerate");
@@ -715,7 +703,7 @@ mod tests {
         )
         .await;
         let result = handle
-            .regenerate_overlay_token(&empty_overlay_service(root).await)
+            .regenerate_overlay_token(&empty_overlay_service(root).await, &NeutralSamples)
             .await;
         (handle, slots, result)
     }
@@ -788,34 +776,6 @@ mod tests {
 
     async fn adapter_of(handle: &ServerHandle) -> Arc<BusAdapter> {
         Arc::clone(&handle.inner.lock().await.state.bus_adapter)
-    }
-
-    #[tokio::test]
-    async fn the_handle_counts_the_pages_its_registry_holds_for_the_overlay_asked() {
-        let handle = stopped_handle().await;
-        let target = OverlayId::new("stage-audio");
-        let adapter = adapter_of(&handle).await;
-        let (client, _initial_rx) = adapter
-            .register_client(ClientFilterSet::new(HashSet::new()))
-            .await;
-        let _page = adapter
-            .promote_to_overlay(client.id, target.clone(), OverlayClientClass::BrowserSource)
-            .await
-            .expect("a just-registered client is still on the registry");
-
-        assert_eq!(
-            handle.overlay_receivers(&target).await,
-            OverlayReceivers {
-                sources: 1,
-                preview_tabs: 0
-            },
-            "the handle answered from somewhere other than the live registry"
-        );
-        assert_eq!(
-            handle.overlay_receivers(&OverlayId::new("alert-box")).await,
-            OverlayReceivers::default(),
-            "the handle credited one overlay with another overlay's pages"
-        );
     }
 
     fn credentials_with_a_write_switch() -> (
@@ -956,7 +916,7 @@ mod tests {
         );
 
         let fresh = handle
-            .regenerate_overlay_token(&empty_overlay_service(root.path()).await)
+            .regenerate_overlay_token(&empty_overlay_service(root.path()).await, &NeutralSamples)
             .await
             .expect("regenerate");
 

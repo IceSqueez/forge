@@ -117,7 +117,11 @@ async fn refresh_scripts(services: &PackServices) -> bool {
 async fn refresh_overlays(services: &PackServices, ids: &[OverlayId]) -> bool {
     let mut live = true;
     for id in ids {
-        if let Err(error) = services.overlays.materialize(id).await {
+        if let Err(error) = services
+            .overlays
+            .materialize(id, services.overlay_samples.as_ref())
+            .await
+        {
             tracing::warn!(overlay = %id, %error, "imported overlay could not be regenerated");
             live = false;
         }
@@ -220,7 +224,11 @@ async fn materialize_stored_overlays(services: &PackServices) -> bool {
     };
     let mut live = true;
     for overlay in overlays {
-        match services.overlays.materialize(&overlay.id).await {
+        match services
+            .overlays
+            .materialize(&overlay.id, services.overlay_samples.as_ref())
+            .await
+        {
             Ok(_) => {}
             Err(OverlayServiceError::UnavailableKind { id, kind_id }) => {
                 tracing::info!(overlay = %id, %kind_id, "imported overlay type is not in this build");

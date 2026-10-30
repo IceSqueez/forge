@@ -1,4 +1,5 @@
 #![allow(clippy::expect_used)]
+mod common;
 use std::collections::BTreeMap;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
@@ -9,7 +10,9 @@ use forge_overlay::{
     MaterializeReport, MediaIssue, OverlayKindRegistry, clip_reference, glyph_media,
     image_reference, register_builtin_kinds,
 };
-use forge_runtime::{EventBus, NullEventLogRepo, OverlayMediaLibrary, OverlayServiceHandle};
+use forge_runtime::{
+    EventBus, NullEventLogRepo, OverlayMediaLibrary, OverlayServiceHandle, OverlayServiceParts,
+};
 use forge_storage::settings::core_settings;
 use forge_storage::soundboard::MockSoundboardClipsRepo;
 use forge_storage::test_support::MemorySettings;
@@ -287,16 +290,16 @@ fn harness(config: OverlayConfig, library_world: Option<MediaWorld>) -> Harness 
     let wire_library = library_world.is_some();
     let world: World = Arc::new(Mutex::new(library_world.unwrap_or_default()));
 
-    let mut service = OverlayServiceHandle::new(
-        Arc::new(repo) as Arc<dyn OverlayRepo>,
-        Arc::new(settings) as Arc<dyn SettingsRepo>,
-        registry(),
-        EventBus::new(Arc::new(NullEventLogRepo)),
-        None,
-    );
-    if wire_library {
-        service = service.with_media_library(media_library(&world));
-    }
+    let service = OverlayServiceHandle::new(OverlayServiceParts {
+        repo: Arc::new(repo) as Arc<dyn OverlayRepo>,
+        settings: Arc::new(settings) as Arc<dyn SettingsRepo>,
+        kinds: registry(),
+        bus: EventBus::new(Arc::new(NullEventLogRepo)),
+        frames: common::no_pages(),
+        media: wire_library.then(|| media_library(&world)),
+        speaker: None,
+        latest: None,
+    });
 
     Harness {
         _home: home,
@@ -309,7 +312,7 @@ fn harness(config: OverlayConfig, library_world: Option<MediaWorld>) -> Harness 
 async fn pass(harness: &Harness) -> MaterializeReport {
     harness
         .service
-        .materialize(&OverlayId::new(OVERLAY))
+        .materialize(&OverlayId::new(OVERLAY), &common::NeutralSamples)
         .await
         .expect("the pass completes")
 }

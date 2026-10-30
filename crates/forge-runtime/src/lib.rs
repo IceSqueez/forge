@@ -35,6 +35,7 @@ mod notification_policy;
 mod overlay_definition_revision;
 mod overlay_lanes;
 mod overlay_media;
+mod overlay_samples;
 pub mod overlay_service;
 mod overlay_shows;
 mod own_chat_echoes;
@@ -100,11 +101,13 @@ pub use notification_policy::{
 };
 pub use overlay_definition_revision::OverlayDefinitionChanges;
 pub use overlay_media::OverlayMediaLibrary;
+pub use overlay_samples::{OverlaySampleSource, OverlaySamples};
 pub use overlay_service::{
     EnabledOverlay, MaterializePass, OVERLAY_NAME_KEY, OVERLAY_SPEECH_FAILED_KIND,
     OverlayConnectFanout, OverlayConnectListener, OverlayDelivery, OverlayDispatch,
     OverlayFrameSink, OverlayReceivers, OverlayServiceCell, OverlayServiceError,
-    OverlayServiceHandle, SPEECH_FAILURE_ERROR_KEY, SPEECH_FAILURE_MESSAGE_KEY, TestFire,
+    OverlayServiceHandle, OverlayServiceParts, SPEECH_FAILURE_ERROR_KEY,
+    SPEECH_FAILURE_MESSAGE_KEY, TestFire,
 };
 pub use overlay_shows::{
     SHOW_CEILING, SHOW_QUEUE_CAPACITY, SHOW_SPEECH_START_WAIT, ShowDepthWatch, ShowEnd, ShowTicket,

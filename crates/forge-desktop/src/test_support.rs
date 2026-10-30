@@ -12,13 +12,17 @@ use std::sync::{Arc, Mutex};
 
 use forge_audio::{AudioError, AudioSink, ControlledPlayback, PlaybackHandle};
 use forge_events::Event;
+use forge_overlay::SampleContext;
 use forge_registry::ActorRole;
 use forge_registry::{
     ActorBlock, ActorIdentity, ChatTriggerFamily, EventFilter, FormField, KindPlatformContract,
     LoginSlot, SubActionRegistry, TriggerCategory, TriggerKindDescriptor, TriggerRegistry,
     TriggerVariables,
 };
-use forge_runtime::{ActionCancelRegistry, Catalog, EventBus, spawn_action_engine};
+use forge_runtime::{
+    ActionCancelRegistry, Catalog, EventBus, OverlayFrameSink, OverlayReceivers,
+    OverlaySampleSource, spawn_action_engine,
+};
 use forge_server::{ServerConfig, ServerHandle, stopped_server};
 use forge_speech_types::PcmBuffer;
 use forge_storage::settings::core_settings::{
@@ -1071,6 +1075,33 @@ pub(crate) fn pump_until(rt: &tokio::runtime::Runtime, mut reached: impl FnMut()
         );
         pump(rt);
     }
+}
+
+pub(crate) struct NeutralOverlaySamples;
+
+#[async_trait::async_trait]
+impl OverlaySampleSource for NeutralOverlaySamples {
+    async fn sample(&self, _: &OverlayId) -> SampleContext {
+        SampleContext::neutral()
+    }
+}
+
+pub(crate) struct NoOverlayPages;
+
+#[async_trait::async_trait]
+impl OverlayFrameSink for NoOverlayPages {
+    async fn deliver_content(
+        &self,
+        _: &OverlayId,
+        _: serde_json::Value,
+        _: Option<u64>,
+    ) -> OverlayReceivers {
+        OverlayReceivers::default()
+    }
+
+    async fn deliver_reload(&self, _: &OverlayId) {}
+
+    async fn revoke(&self, _: &OverlayId) {}
 }
 
 pub(crate) async fn stopped_server_handle(backend: &Arc<TestBackend>) -> ServerHandle {

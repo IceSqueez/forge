@@ -1,4 +1,5 @@
 #![allow(clippy::unwrap_used, clippy::expect_used)]
+mod common;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -7,7 +8,7 @@ use async_trait::async_trait;
 use forge_overlay::{OverlayKindRegistry, register_builtin_kinds};
 use forge_runtime::{
     EventBus, NullEventLogRepo, OverlayConnectListener, OverlayFrameSink, OverlayReceivers,
-    OverlayServiceHandle,
+    OverlayServiceHandle, OverlayServiceParts,
 };
 use forge_storage::test_support::MemorySettings;
 use forge_storage::{
@@ -166,13 +167,16 @@ fn harness(overlays: &[(&str, &str)]) -> Harness {
         release: Notify::new(),
         frames: Mutex::default(),
     });
-    let service = OverlayServiceHandle::new(
-        Arc::new(repo) as Arc<dyn OverlayRepo>,
-        Arc::new(MemorySettings::new()) as Arc<dyn SettingsRepo>,
-        Arc::new(kinds),
-        EventBus::new(Arc::new(NullEventLogRepo)),
-        Some(Arc::clone(&sink) as Arc<dyn OverlayFrameSink>),
-    );
+    let service = OverlayServiceHandle::new(OverlayServiceParts {
+        repo: Arc::new(repo) as Arc<dyn OverlayRepo>,
+        settings: Arc::new(MemorySettings::new()) as Arc<dyn SettingsRepo>,
+        kinds: Arc::new(kinds),
+        bus: EventBus::new(Arc::new(NullEventLogRepo)),
+        frames: Arc::clone(&sink) as Arc<dyn OverlayFrameSink>,
+        media: None,
+        speaker: None,
+        latest: None,
+    });
 
     Harness {
         sink,

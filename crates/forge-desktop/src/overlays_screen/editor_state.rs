@@ -140,6 +140,7 @@ impl OverlaysView {
             overridden_files: definition.source_overrides.clone(),
             repo: Arc::clone(&self.handles.repo),
             service: self.handles.service.clone(),
+            samples: Arc::clone(&self.handles.samples),
             rt_handle: self.handles.rt_handle.clone(),
         };
 

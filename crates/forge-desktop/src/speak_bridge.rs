@@ -1090,14 +1090,17 @@ mod tests {
             pushed: std::sync::Mutex::new(Vec::new()),
             arrived: tokio::sync::Notify::new(),
         });
-        let overlays = forge_runtime::OverlayServiceHandle::new(
-            Arc::new(repo) as Arc<dyn OverlayRepo>,
-            backend as Arc<dyn SettingsRepo>,
-            Arc::new(kinds),
-            forge_runtime::EventBus::new(Arc::new(crate::test_support::StubEventLog)),
-            Some(Arc::clone(&pages) as Arc<dyn forge_runtime::OverlayFrameSink>),
-        )
-        .with_speech(Arc::new(SpeakBridge::new(handle)));
+        let overlays =
+            forge_runtime::OverlayServiceHandle::new(forge_runtime::OverlayServiceParts {
+                repo: Arc::new(repo) as Arc<dyn OverlayRepo>,
+                settings: backend as Arc<dyn SettingsRepo>,
+                kinds: Arc::new(kinds),
+                bus: forge_runtime::EventBus::new(Arc::new(crate::test_support::StubEventLog)),
+                frames: Arc::clone(&pages) as Arc<dyn forge_runtime::OverlayFrameSink>,
+                media: None,
+                speaker: Some(Arc::new(SpeakBridge::new(handle))),
+                latest: None,
+            });
         let content = OverlayConfig::from([
             (
                 "headline".to_owned(),

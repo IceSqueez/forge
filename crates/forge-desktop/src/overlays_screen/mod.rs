@@ -38,7 +38,9 @@ use forge_components::{
 use forge_overlay::OverlayKindRegistry;
 use forge_registry::{SubActionRegistry, TriggerRegistry};
 use forge_runtime::actions::ActionsService;
-use forge_runtime::{EventBus, LatestValues, OverlayServiceHandle, QueueSchedulerHandle};
+use forge_runtime::{
+    EventBus, LatestValues, OverlaySampleSource, OverlayServiceHandle, QueueSchedulerHandle,
+};
 use forge_server::ServerHandle;
 use forge_soundboard::ClipLibrary;
 use forge_speak_queue::SpeakQueueHandle;
@@ -82,6 +84,7 @@ struct OverlayHandles {
     rt_handle: tokio::runtime::Handle,
     kinds: Arc<OverlayKindRegistry>,
     service: OverlayServiceHandle,
+    samples: Arc<dyn OverlaySampleSource>,
     library: Arc<ClipLibrary>,
     media: Arc<dyn MediaRepo>,
     settings_repo: Arc<dyn SettingsRepo>,
@@ -110,6 +113,7 @@ pub struct OverlaysLaunch {
     pub rt_handle: tokio::runtime::Handle,
     pub kinds: Arc<OverlayKindRegistry>,
     pub service: OverlayServiceHandle,
+    pub samples: Arc<dyn OverlaySampleSource>,
     pub library: Arc<ClipLibrary>,
     pub media: Arc<dyn MediaRepo>,
     pub settings_repo: Arc<dyn SettingsRepo>,
@@ -164,6 +168,7 @@ impl OverlaysView {
                 rt_handle: launch.rt_handle,
                 kinds: launch.kinds,
                 service: launch.service,
+                samples: launch.samples,
                 library: launch.library,
                 media: launch.media,
                 settings_repo: launch.settings_repo,

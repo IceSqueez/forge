@@ -324,6 +324,7 @@ pub(crate) mod tests {
     use crate::server_info::ServerInfo;
     use crate::test_helpers::{log_capture, mem_settings, test_dp};
     use crate::ws_client::WsClient;
+    use forge_runtime::OverlayFrameSink;
     use forge_storage::test_support::MemorySettings;
 
     struct MemCreds(Mutex<HashMap<String, String>>);
@@ -1240,8 +1241,8 @@ pub(crate) mod tests {
             )
             .await
             .expect("a just-registered client is still on the registry");
-        let reached = handle
-            .deliver_overlay_content(&identity, serde_json::json!({ "value": 3 }), None)
+        let reached = hub
+            .deliver_content(&identity, serde_json::json!({ "value": 3 }), None)
             .await;
 
         assert_eq!(reached.sources, 1);
@@ -1494,7 +1495,8 @@ pub(crate) mod tests {
         }
     }
 
-    async fn make_server_serving_one_overlay() -> (ServerHandle, std::net::SocketAddr) {
+    async fn make_server_serving_one_overlay()
+    -> (ServerHandle, std::net::SocketAddr, Arc<BusAdapter>) {
         let creds = MemCreds::with_token(BEARER_TOKEN);
         let auth = AuthState::load(false, &*creds).await.expect("auth load");
         let creds_dyn: Arc<dyn CredentialsRepo> = creds;
@@ -1505,10 +1507,11 @@ pub(crate) mod tests {
             Ok((credential.expose() == OVERLAY_PAGE_CREDENTIAL).then(served_overlay))
         });
         state.overlays = Arc::new(overlays);
+        let adapter = Arc::clone(&state.bus_adapter);
 
         let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
         let addr = listener.local_addr().expect("local addr");
-        (serve_on(listener, state), addr)
+        (serve_on(listener, state), addr, adapter)
     }
 
     async fn next_text_frame(
@@ -1530,7 +1533,7 @@ pub(crate) mod tests {
 
     #[tokio::test]
     async fn content_delivered_to_an_overlay_page_arrives_as_a_plain_content_frame() {
-        let (handle, addr) = make_server_serving_one_overlay().await;
+        let (handle, addr, adapter) = make_server_serving_one_overlay().await;
         let (mut socket, _) = tokio_tungstenite::connect_async(format!("ws://{addr}/ws/v1/"))
             .await
             .expect("ws connect");
@@ -1556,10 +1559,10 @@ pub(crate) mod tests {
             "the page never became an overlay connection, so nothing below is proven"
         );
 
-        handle
+        adapter
             .deliver_overlay_content(
                 &forge_storage::OverlayId::new(OVERLAY_IDENTITY),
-                serde_json::json!({ "label": "Sub goal", "value": 42, "live": true }),
+                &serde_json::json!({ "label": "Sub goal", "value": 42, "live": true }),
                 None,
             )
             .await;
@@ -1768,7 +1771,7 @@ pub(crate) mod tests {
 
     #[tokio::test]
     async fn turning_reads_required_on_keeps_bearer_and_overlay_sessions_open() {
-        let (handle, addr) = make_server_serving_one_overlay().await;
+        let (handle, addr, _) = make_server_serving_one_overlay().await;
         let mut bearer = authenticated_ws(addr, BEARER_TOKEN).await;
         let mut page = open_ws(addr).await;
         let ack = ask(
@@ -2083,7 +2086,7 @@ pub(crate) mod tests {
 
     #[tokio::test]
     async fn an_overlay_session_stays_open_past_the_window_when_reads_are_required() {
-        let (handle, addr) = make_server_serving_one_overlay().await;
+        let (handle, addr, _) = make_server_serving_one_overlay().await;
         handle.auth_state().await.set_reads_required(true);
         let mut page = open_ws(addr).await;
         let ack = ask(

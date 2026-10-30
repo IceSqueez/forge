@@ -136,6 +136,35 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn the_hub_counts_the_pages_of_the_overlay_asked_and_no_other() {
+        let hub = hub();
+        let target = OverlayId::new("stage-audio");
+        let (client, _initial) = hub
+            .adapter()
+            .register_client(ClientFilterSet::new(HashSet::new()))
+            .await;
+        let _page = hub
+            .adapter()
+            .promote_to_overlay(client.id, target.clone(), OverlayClientClass::BrowserSource)
+            .await
+            .expect("a just-registered client is still on the registry");
+
+        assert_eq!(
+            (
+                hub.receivers(&target).await,
+                hub.receivers(&OverlayId::new("alert-box")).await,
+            ),
+            (
+                OverlayReceivers {
+                    sources: 1,
+                    preview_tabs: 0
+                },
+                OverlayReceivers::default(),
+            ),
+        );
+    }
+
+    #[tokio::test]
     async fn the_first_connect_listener_attached_to_a_hub_wins() {
         let hub = hub();
         let first = RecordingListener::new();

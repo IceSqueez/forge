@@ -12,16 +12,16 @@ use forge_runtime::{
     ActionCancelRegistry, ActionEngineHandle, Catalog, CatchUpSettle, Config, CoreSubActionDeps,
     DateNamesHandle, DonationIngest, DonationOverlayAudience, EventBus, EventHistory,
     FirstChatLedger, LatestValues, NotificationPreferences, OverlayConnectFanout,
-    OverlayConnectListener, OverlayFrameSink, OverlayMediaLibrary, OverlayServiceCell,
-    OverlayServiceHandle, QueueScheduler, ScheduledRunsCell, ScheduledRunsParts, SchedulerCell,
-    ScriptRegistry, ScriptScheduling, SpeakDispatcher, SystemWallClock, TwitchEmoteLexicon,
-    register_core_sub_actions, register_core_triggers, register_donation_sub_actions,
-    register_latest_sub_actions, register_scheduled_run_sub_actions, register_speech_sub_actions,
-    spawn_action_engine, spawn_chat_history_persistence, spawn_event_log_bridge,
-    spawn_latest_overlay_feed, spawn_latest_projector, spawn_live_viewer_aggregator,
-    spawn_notification_policy, spawn_scheduled_runs, spawn_stream_live_signal,
-    spawn_timer_scheduler, spawn_trigger_evaluator, spawn_twitch_emote_learning,
-    spawn_viewer_tracker,
+    OverlayConnectListener, OverlayFrameSink, OverlayMediaLibrary, OverlaySampleSource,
+    OverlaySamples, OverlayServiceCell, OverlayServiceHandle, OverlayServiceParts, QueueScheduler,
+    ScheduledRunsCell, ScheduledRunsParts, SchedulerCell, ScriptRegistry, ScriptScheduling,
+    SpeakDispatcher, SystemWallClock, TwitchEmoteLexicon, register_core_sub_actions,
+    register_core_triggers, register_donation_sub_actions, register_latest_sub_actions,
+    register_scheduled_run_sub_actions, register_speech_sub_actions, spawn_action_engine,
+    spawn_chat_history_persistence, spawn_event_log_bridge, spawn_latest_overlay_feed,
+    spawn_latest_projector, spawn_live_viewer_aggregator, spawn_notification_policy,
+    spawn_scheduled_runs, spawn_stream_live_signal, spawn_timer_scheduler, spawn_trigger_evaluator,
+    spawn_twitch_emote_learning, spawn_viewer_tracker,
 };
 use forge_server::DeliveryHub;
 use forge_soundboard::{
@@ -546,21 +546,20 @@ pub async fn build_runtime(inputs: RuntimeInputs) -> Result<RuntimeHandles, Boot
         tracing::error!(error = %e, "overlay type registration failed");
     }
     let overlay_kinds = Arc::new(overlay_kinds_mut);
-    let overlay_frames: Option<Arc<dyn OverlayFrameSink>> =
-        Some(Arc::new(delivery_hub.clone()) as Arc<dyn OverlayFrameSink>);
-    let overlays = OverlayServiceHandle::new(
-        backend.overlay_repo(),
-        Arc::clone(&backend) as Arc<dyn SettingsRepo>,
-        Arc::clone(&overlay_kinds),
-        Arc::clone(&bus),
-        overlay_frames,
-    )
-    .with_media_library(OverlayMediaLibrary::new(
-        backend.media_repo(),
-        backend.soundboard_clips_repo(),
-    ))
-    .with_latest_values(Arc::new(latest_values.clone()) as Arc<dyn LatestValueReader>)
-    .with_event_wiring(
+    let overlays = OverlayServiceHandle::new(OverlayServiceParts {
+        repo: backend.overlay_repo(),
+        settings: Arc::clone(&backend) as Arc<dyn SettingsRepo>,
+        kinds: Arc::clone(&overlay_kinds),
+        bus: Arc::clone(&bus),
+        frames: Arc::new(delivery_hub.clone()) as Arc<dyn OverlayFrameSink>,
+        media: Some(OverlayMediaLibrary::new(
+            backend.media_repo(),
+            backend.soundboard_clips_repo(),
+        )),
+        speaker: show_speaker,
+        latest: Some(Arc::new(latest_values.clone()) as Arc<dyn LatestValueReader>),
+    });
+    let overlay_samples: Arc<dyn OverlaySampleSource> = Arc::new(OverlaySamples::new(
         Arc::new(forge_runtime::actions::ActionsService::new(
             backend.action_repo(),
             backend.queue_repo(),
@@ -569,11 +568,7 @@ pub async fn build_runtime(inputs: RuntimeInputs) -> Result<RuntimeHandles, Boot
         )),
         Arc::clone(&sub_action_registry),
         Arc::clone(&trigger_registry),
-    );
-    let overlays = match show_speaker {
-        Some(speaker) => overlays.with_speech(speaker),
-        None => overlays,
-    };
+    ));
     overlay_service_cell.set(overlays.clone());
     spawn_latest_overlay_feed(&bus, overlays.clone());
     let donation_audience = DonationOverlayAudience::new(
@@ -589,7 +584,7 @@ pub async fn build_runtime(inputs: RuntimeInputs) -> Result<RuntimeHandles, Boot
     delivery_hub
         .set_overlay_connect_listener(Arc::new(OverlayConnectFanout::new(connect_listeners)));
     donations.spawn_catch_up_release(Arc::new(donation_audience));
-    let overlay_pass = overlays.materialize_all().await;
+    let overlay_pass = overlays.materialize_all(overlay_samples.as_ref()).await;
     match &overlay_pass {
         Ok(pass) => tracing::info!(
             materialized = pass.materialized,
@@ -654,6 +649,7 @@ pub async fn build_runtime(inputs: RuntimeInputs) -> Result<RuntimeHandles, Boot
         platform_credentials: integrations.platform_credentials,
         server,
         overlays,
+        overlay_samples,
         overlay_kinds,
         speak,
         speak_events,

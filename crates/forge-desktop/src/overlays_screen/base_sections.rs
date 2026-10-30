@@ -277,13 +277,14 @@ impl OverlayPropertyPanel {
         self.base.fire = ShowFire::Sending;
 
         let service = self.service.clone();
+        let samples = self.samples.clone();
         let id = self.overlay_id.clone();
         if self.base.slot_bound() {
             async_bridge::run_async(
                 &self.rt_handle,
                 async move {
                     service
-                        .test_fire(&id)
+                        .test_fire(&id, samples.as_ref())
                         .await
                         .map(|fired| Fired::Applied(fired.delivery))
                         .map_err(|error| error.to_string())
@@ -297,7 +298,7 @@ impl OverlayPropertyPanel {
         async_bridge::run_async(
             &self.rt_handle,
             async move {
-                let args = service.sample(&id).await.args();
+                let args = samples.sample(&id).await.args();
                 match service
                     .send_to(&id, &OverlayConfig::new(), &args, None, None)
                     .await

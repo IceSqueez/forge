@@ -12,7 +12,7 @@ use forge_components::{
 use forge_overlay::config::{ACCENT, RETIRED_KEYS, SOUND_OPTIONS_KEY, SPEECH_VOICE};
 use forge_overlay::{ConfigSection, MediaIssue, MediaSlot, SectionedField, media_slot};
 use forge_registry::{ENGINE_VOICE_OPTIONS_KEY, FormField};
-use forge_runtime::OverlayServiceHandle;
+use forge_runtime::{OverlaySampleSource, OverlayServiceHandle};
 use forge_storage::{OverlayConfig, OverlayId, OverlayRepo};
 use forge_types::ClipId;
 use gpui::{
@@ -89,6 +89,7 @@ pub(super) struct PanelLaunch {
     pub(super) overridden_files: Vec<String>,
     pub(super) repo: Arc<dyn OverlayRepo>,
     pub(super) service: OverlayServiceHandle,
+    pub(super) samples: Arc<dyn OverlaySampleSource>,
     pub(super) rt_handle: tokio::runtime::Handle,
 }
 
@@ -116,6 +117,7 @@ pub(super) struct OverlayPropertyPanel {
     settle_epoch: u64,
     repo: Arc<dyn OverlayRepo>,
     pub(super) service: OverlayServiceHandle,
+    pub(super) samples: Arc<dyn OverlaySampleSource>,
     pub(super) rt_handle: tokio::runtime::Handle,
     pub(super) base: BaseState,
     pub(super) latest: LatestState,
@@ -166,6 +168,7 @@ impl OverlayPropertyPanel {
             settle_epoch: 0,
             repo: launch.repo,
             service: launch.service,
+            samples: launch.samples,
             rt_handle: launch.rt_handle,
             base: BaseState::unset(),
             latest: LatestState::default(),
@@ -341,10 +344,14 @@ impl OverlayPropertyPanel {
         };
         let repo = Arc::clone(&self.repo);
         let service = self.service.clone();
+        let samples = Arc::clone(&self.samples);
         let id = self.overlay_id.clone();
         async_bridge::detached(&self.rt_handle, RELEASE_PERSIST_CONTEXT, async move {
             if store_config(repo.as_ref(), &service, &id, sparse).await? {
-                service.materialize(&id).await.map_err(|e| e.to_string())?;
+                service
+                    .materialize(&id, samples.as_ref())
+                    .await
+                    .map_err(|e| e.to_string())?;
             }
             Ok::<(), String>(())
         });
@@ -1004,13 +1011,16 @@ pub(crate) mod tests {
         let (backend, _writes) = test_backend();
         let mut kinds = OverlayKindRegistry::new();
         forge_overlay::register_builtin_kinds(&mut kinds).expect("builtin kinds register");
-        let service = OverlayServiceHandle::new(
-            Arc::clone(&repo) as Arc<dyn OverlayRepo>,
-            backend as Arc<dyn forge_storage::SettingsRepo>,
-            Arc::new(kinds),
-            EventBus::new(Arc::new(StubEventLog)),
-            None,
-        );
+        let service = OverlayServiceHandle::new(forge_runtime::OverlayServiceParts {
+            repo: Arc::clone(&repo) as Arc<dyn OverlayRepo>,
+            settings: backend as Arc<dyn forge_storage::SettingsRepo>,
+            kinds: Arc::new(kinds),
+            bus: EventBus::new(Arc::new(StubEventLog)),
+            frames: Arc::new(crate::test_support::NoOverlayPages),
+            media: None,
+            speaker: None,
+            latest: None,
+        });
         let mut effective = defaults.clone();
         for (key, value) in &stored {
             effective.insert(key.clone(), value.clone());
@@ -1026,6 +1036,7 @@ pub(crate) mod tests {
             overridden_files: Vec::new(),
             repo: Arc::clone(&repo) as Arc<dyn OverlayRepo>,
             service,
+            samples: Arc::new(crate::test_support::NeutralOverlaySamples),
             rt_handle: rt.handle().clone(),
         };
         (launch, repo, rt)

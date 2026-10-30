@@ -1,5 +1,11 @@
 #![allow(dead_code, clippy::panic, clippy::unwrap_used)]
 
+use std::sync::Arc;
+
+use async_trait::async_trait;
+use forge_overlay::SampleContext;
+use forge_runtime::{OverlayFrameSink, OverlayReceivers, OverlaySampleSource};
+use forge_storage::OverlayId;
 use forge_types::{MessageArg, MessageRef, SubActionOutcome, UserText, VerbatimText};
 
 pub fn message_of(text: &UserText) -> &MessageRef {
@@ -74,4 +80,35 @@ pub fn plain_field_problem(kind: &str, key: &str, code: &str) -> UserText {
         forge_types::MessageCode::parse(code).unwrap(),
     ));
     step_problem(kind, &forge_registry::ConfigProblem::field(key, reason))
+}
+
+pub struct NeutralSamples;
+
+#[async_trait]
+impl OverlaySampleSource for NeutralSamples {
+    async fn sample(&self, _: &OverlayId) -> SampleContext {
+        SampleContext::neutral()
+    }
+}
+
+struct NoPages;
+
+#[async_trait]
+impl OverlayFrameSink for NoPages {
+    async fn deliver_content(
+        &self,
+        _: &OverlayId,
+        _: serde_json::Value,
+        _: Option<u64>,
+    ) -> OverlayReceivers {
+        OverlayReceivers::default()
+    }
+
+    async fn deliver_reload(&self, _: &OverlayId) {}
+
+    async fn revoke(&self, _: &OverlayId) {}
+}
+
+pub fn no_pages() -> Arc<dyn OverlayFrameSink> {
+    Arc::new(NoPages)
 }

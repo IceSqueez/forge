@@ -1,4 +1,5 @@
 #![allow(clippy::unwrap_used, clippy::expect_used)]
+mod common;
 use std::collections::{BTreeMap, HashMap};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -8,7 +9,7 @@ use forge_events::{Event, EventSource, LatestChanged, TypedEvent};
 use forge_overlay::{OverlayKindRegistry, register_builtin_kinds};
 use forge_runtime::{
     Config, EventBus, NullEventLogRepo, OverlayConnectListener, OverlayFrameSink, OverlayReceivers,
-    OverlayServiceError, OverlayServiceHandle, spawn_latest_overlay_feed,
+    OverlayServiceError, OverlayServiceHandle, OverlayServiceParts, spawn_latest_overlay_feed,
 };
 use forge_storage::test_support::MemorySettings;
 use forge_storage::{
@@ -201,14 +202,16 @@ impl Harness {
 
         let sink = Arc::new(RecordingSink::default());
         let slots = Arc::new(SlotStore::default());
-        let service = OverlayServiceHandle::new(
-            Arc::new(repo) as Arc<dyn OverlayRepo>,
-            Arc::new(MemorySettings::new()) as Arc<dyn SettingsRepo>,
-            Arc::new(kinds),
+        let service = OverlayServiceHandle::new(OverlayServiceParts {
+            repo: Arc::new(repo) as Arc<dyn OverlayRepo>,
+            settings: Arc::new(MemorySettings::new()) as Arc<dyn SettingsRepo>,
+            kinds: Arc::new(kinds),
             bus,
-            Some(Arc::clone(&sink) as Arc<dyn OverlayFrameSink>),
-        )
-        .with_latest_values(Arc::clone(&slots) as Arc<dyn LatestValueReader>);
+            frames: Arc::clone(&sink) as Arc<dyn OverlayFrameSink>,
+            media: None,
+            speaker: None,
+            latest: Some(Arc::clone(&slots) as Arc<dyn LatestValueReader>),
+        });
 
         Self {
             sink,
@@ -331,9 +334,13 @@ async fn a_test_fire_on_a_latest_overlay_shows_the_sample_and_never_stores_it_as
         .slots
         .fill(LATEST_DONATION_SLOT, latest_fields::USER_NAME, LIVE_DONOR);
 
-    bounded(harness.service.test_fire(&OverlayId::new("last-donation")))
-        .await
-        .expect("a latest overlay can be test fired");
+    bounded(
+        harness
+            .service
+            .test_fire(&OverlayId::new("last-donation"), &common::NeutralSamples),
+    )
+    .await
+    .expect("a latest overlay can be test fired");
 
     assert_eq!(harness.sink.headlines_for("last-donation"), [SAMPLE_DONOR]);
     assert!(
@@ -349,9 +356,13 @@ async fn a_test_fire_on_a_latest_overlay_returns_to_the_live_value_once_the_prev
         .slots
         .fill(LATEST_DONATION_SLOT, latest_fields::USER_NAME, LIVE_DONOR);
 
-    bounded(harness.service.test_fire(&OverlayId::new("last-donation")))
-        .await
-        .expect("a latest overlay can be test fired");
+    bounded(
+        harness
+            .service
+            .test_fire(&OverlayId::new("last-donation"), &common::NeutralSamples),
+    )
+    .await
+    .expect("a latest overlay can be test fired");
     tokio::time::sleep(PREVIEW_HOLD - Duration::from_millis(1)).await;
     let during_hold = harness.sink.headlines_for("last-donation");
     tokio::time::sleep(Duration::from_millis(2)).await;

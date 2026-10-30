@@ -215,6 +215,7 @@ impl SettingsView {
                 handles.rt_handle.clone(),
                 handles.server.clone(),
                 handles.overlays.clone(),
+                Arc::clone(&handles.overlay_samples),
                 cx,
             )
         });

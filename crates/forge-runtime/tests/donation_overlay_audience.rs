@@ -1,4 +1,5 @@
 #![allow(clippy::expect_used)]
+mod common;
 use std::collections::HashMap;
 use std::sync::Arc;
 
@@ -10,7 +11,7 @@ use forge_runtime::sub_action_runners::{CoreLogicIfThenElseRunner, OverlaySendRu
 use forge_runtime::{
     Catalog, ConditionGate, Config, DonationAudience, DonationOverlayAudience, EventBus,
     NullEventLogRepo, OVERLAY_SEND_KIND_ID, OVERLAY_TARGET_KEY, OverlayFrameSink, OverlayReceivers,
-    OverlayServiceCell, OverlayServiceHandle,
+    OverlayServiceCell, OverlayServiceHandle, OverlayServiceParts,
 };
 use forge_storage::action::MockActionRepo;
 use forge_storage::test_support::MemorySettings;
@@ -267,13 +268,16 @@ fn overlays(pages: &[Page], readable: bool) -> OverlayServiceHandle {
     );
     let mut kinds = OverlayKindRegistry::new();
     register_builtin_kinds(&mut kinds).expect("the builtin overlay kinds register");
-    OverlayServiceHandle::new(
-        Arc::new(repo) as Arc<dyn OverlayRepo>,
-        Arc::new(MemorySettings::new()) as Arc<dyn SettingsRepo>,
-        Arc::new(kinds),
-        EventBus::new(Arc::new(NullEventLogRepo)),
-        Some(Arc::new(connected) as Arc<dyn OverlayFrameSink>),
-    )
+    OverlayServiceHandle::new(OverlayServiceParts {
+        repo: Arc::new(repo) as Arc<dyn OverlayRepo>,
+        settings: Arc::new(MemorySettings::new()) as Arc<dyn SettingsRepo>,
+        kinds: Arc::new(kinds),
+        bus: EventBus::new(Arc::new(NullEventLogRepo)),
+        frames: Arc::new(connected) as Arc<dyn OverlayFrameSink>,
+        media: None,
+        speaker: None,
+        latest: None,
+    })
 }
 
 fn audience(wirings: Vec<Wiring>, pages: &[Page]) -> DonationOverlayAudience {

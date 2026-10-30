@@ -181,10 +181,16 @@ impl OverlaysView {
         });
 
         let service = self.handles.service.clone();
+        let samples = self.handles.samples.clone();
         let target = id.clone();
         async_bridge::run_async(
             &self.handles.rt_handle,
-            async move { service.test_fire(&target).await.map_err(|e| e.to_string()) },
+            async move {
+                service
+                    .test_fire(&target, samples.as_ref())
+                    .await
+                    .map_err(|e| e.to_string())
+            },
             move |this, result: Result<TestFire, String>, cx| this.on_test_fired(epoch, result, cx),
             cx,
         );

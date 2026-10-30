@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use forge_components::{ToastKind, tr};
 use forge_overlay::MediaIssue;
-use forge_runtime::OverlayServiceHandle;
+use forge_runtime::{OverlaySampleSource, OverlayServiceHandle};
 use forge_storage::{OverlayConfig, OverlayDefinition, OverlayId, OverlayRepo};
 use gpui::Context;
 
@@ -31,8 +31,12 @@ pub(super) async fn store_config(
     Ok(true)
 }
 
-pub(super) async fn regenerate(service: &OverlayServiceHandle, id: &OverlayId) -> Regenerated {
-    match service.materialize(id).await {
+pub(super) async fn regenerate(
+    service: &OverlayServiceHandle,
+    samples: &dyn OverlaySampleSource,
+    id: &OverlayId,
+) -> Regenerated {
+    match service.materialize(id, samples).await {
         Ok(report) => Regenerated {
             failure: None,
             missing: report.missing_overrides,
@@ -69,6 +73,7 @@ impl OverlaysView {
     ) {
         let repo = Arc::clone(&self.handles.repo);
         let service = self.handles.service.clone();
+        let samples = Arc::clone(&self.handles.samples);
         let target = id.clone();
         async_bridge::run_async(
             &self.handles.rt_handle,
@@ -76,7 +81,7 @@ impl OverlaysView {
                 if !store_config(repo.as_ref(), &service, &id, config).await? {
                     return Ok((false, Regenerated::default()));
                 }
-                Ok((true, regenerate(&service, &id).await))
+                Ok((true, regenerate(&service, samples.as_ref(), &id).await))
             },
             move |this, result: Result<(bool, Regenerated), String>, cx| match result {
                 Ok((true, regenerated)) => {
@@ -108,6 +113,7 @@ impl OverlaysView {
 
         let repo = Arc::clone(&self.handles.repo);
         let service = self.handles.service.clone();
+        let samples = Arc::clone(&self.handles.samples);
         async_bridge::run_async(
             &self.handles.rt_handle,
             async move {
@@ -115,7 +121,7 @@ impl OverlaysView {
                     .create(&display_name, &kind_id, schema_version)
                     .await
                     .map_err(|e| e.to_string())?;
-                let regenerated = regenerate(&service, &definition.id).await;
+                let regenerated = regenerate(&service, samples.as_ref(), &definition.id).await;
                 Ok((definition, regenerated))
             },
             |this, result: Result<(OverlayDefinition, Regenerated), String>, cx| match result {
@@ -140,6 +146,7 @@ impl OverlaysView {
         self.close_form(cx);
         let repo = Arc::clone(&self.handles.repo);
         let service = self.handles.service.clone();
+        let samples = Arc::clone(&self.handles.samples);
         let target = id.clone();
         async_bridge::run_async(
             &self.handles.rt_handle,
@@ -149,7 +156,7 @@ impl OverlaysView {
                 };
                 definition.display_name = display_name;
                 repo.save(&definition).await.map_err(|e| e.to_string())?;
-                Ok((true, regenerate(&service, &id).await))
+                Ok((true, regenerate(&service, samples.as_ref(), &id).await))
             },
             move |this, result: Result<(bool, Regenerated), String>, cx| match result {
                 Ok((true, regenerated)) => {

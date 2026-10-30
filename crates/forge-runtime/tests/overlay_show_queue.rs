@@ -1,4 +1,5 @@
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+mod common;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -12,7 +13,8 @@ use forge_runtime::sub_action_runners::OverlaySendRunner;
 use forge_runtime::{
     EventBus, NullEventLogRepo, OVERLAY_TARGET_KEY, OverlayDelivery, OverlayDispatch,
     OverlayFrameSink, OverlayReceivers, OverlayServiceCell, OverlayServiceError,
-    OverlayServiceHandle, SHOW_CEILING, SHOW_QUEUE_CAPACITY, ShowDepthWatch, ShowEnd, ShowTicket,
+    OverlayServiceHandle, OverlayServiceParts, SHOW_CEILING, SHOW_QUEUE_CAPACITY, ShowDepthWatch,
+    ShowEnd, ShowTicket,
 };
 use forge_storage::test_support::MemorySettings;
 use forge_storage::{
@@ -152,13 +154,16 @@ fn harness_with(definitions: Vec<OverlayDefinition>, absent_for: usize) -> Harne
     register_builtin_kinds(&mut kinds).expect("the builtin overlay kinds register");
     let sink = Arc::new(TimedSink::new(absent_for));
 
-    let service = OverlayServiceHandle::new(
-        Arc::new(repo) as Arc<dyn OverlayRepo>,
-        Arc::new(settings) as Arc<dyn SettingsRepo>,
-        Arc::new(kinds),
-        EventBus::new(Arc::new(NullEventLogRepo)),
-        Some(Arc::clone(&sink) as Arc<dyn OverlayFrameSink>),
-    );
+    let service = OverlayServiceHandle::new(OverlayServiceParts {
+        repo: Arc::new(repo) as Arc<dyn OverlayRepo>,
+        settings: Arc::new(settings) as Arc<dyn SettingsRepo>,
+        kinds: Arc::new(kinds),
+        bus: EventBus::new(Arc::new(NullEventLogRepo)),
+        frames: Arc::clone(&sink) as Arc<dyn OverlayFrameSink>,
+        media: None,
+        speaker: None,
+        latest: None,
+    });
     Harness { sink, service }
 }
 
@@ -547,7 +552,7 @@ async fn audio_and_a_test_fire_reach_a_page_whose_show_queue_is_busy_at_once() {
         .expect("an alert can carry audio");
     let fired = harness
         .service
-        .test_fire(&id)
+        .test_fire(&id, &common::NeutralSamples)
         .await
         .expect("an alert can be test-fired");
 

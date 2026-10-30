@@ -1,4 +1,5 @@
 #![allow(clippy::unwrap_used, clippy::expect_used)]
+mod common;
 use std::collections::BTreeMap;
 use std::fs;
 use std::path::PathBuf;
@@ -13,7 +14,7 @@ use forge_runtime::overlay_service::OVERLAY_TEST_FIRE_KIND;
 use forge_runtime::{
     EventBus, MaterializePass, NullEventLogRepo, OverlayConnectFanout, OverlayConnectListener,
     OverlayDefinitionChanges, OverlayDelivery, OverlayDispatch, OverlayFrameSink, OverlayReceivers,
-    OverlayServiceError, OverlayServiceHandle,
+    OverlayServiceError, OverlayServiceHandle, OverlayServiceParts,
 };
 
 use forge_storage::settings::core_settings;
@@ -237,16 +238,22 @@ fn harness(definitions: Vec<OverlayDefinition>, attach_sink: bool) -> Harness {
 
     let bus = EventBus::new(Arc::new(NullEventLogRepo));
     let sink = Arc::new(RecordingSink::default());
-    let frames: Option<Arc<dyn OverlayFrameSink>> =
-        attach_sink.then(|| Arc::clone(&sink) as Arc<dyn OverlayFrameSink>);
+    let frames: Arc<dyn OverlayFrameSink> = if attach_sink {
+        Arc::clone(&sink) as Arc<dyn OverlayFrameSink>
+    } else {
+        common::no_pages()
+    };
 
-    let service = OverlayServiceHandle::new(
-        Arc::new(repo) as Arc<dyn OverlayRepo>,
-        Arc::new(settings) as Arc<dyn SettingsRepo>,
-        registry(),
-        Arc::clone(&bus),
+    let service = OverlayServiceHandle::new(OverlayServiceParts {
+        repo: Arc::new(repo) as Arc<dyn OverlayRepo>,
+        settings: Arc::new(settings) as Arc<dyn SettingsRepo>,
+        kinds: registry(),
+        bus: Arc::clone(&bus),
         frames,
-    );
+        media: None,
+        speaker: None,
+        latest: None,
+    });
 
     Harness {
         _home: home,
@@ -294,7 +301,7 @@ async fn a_user_owned_source_file_survives_every_regeneration_trigger() {
 
         harness
             .service
-            .materialize_all()
+            .materialize_all(&common::NeutralSamples)
             .await
             .expect("the first pass builds the page");
         let directory = harness.directory_of(&claimed.id);
@@ -305,12 +312,16 @@ async fn a_user_owned_source_file_survives_every_regeneration_trigger() {
 
         match trigger {
             Regeneration::BootPass => {
-                harness.service.materialize_all().await.expect("boot pass");
+                harness
+                    .service
+                    .materialize_all(&common::NeutralSamples)
+                    .await
+                    .expect("boot pass");
             }
             Regeneration::SingleOverlay => {
                 harness
                     .service
-                    .materialize(&claimed.id)
+                    .materialize(&claimed.id, &common::NeutralSamples)
                     .await
                     .expect("single overlay pass");
             }
@@ -337,7 +348,7 @@ async fn test_fire_records_its_origin_without_broadcasting_anything() {
 
     harness
         .service
-        .test_fire(&stored.id)
+        .test_fire(&stored.id, &common::NeutralSamples)
         .await
         .expect("a bound overlay samples its event");
 
@@ -406,7 +417,11 @@ async fn test_fire_delivers_one_frame_carrying_the_content_it_returns() {
     ]);
     let harness = harness(vec![stored.clone()], true);
 
-    let fired = harness.service.test_fire(&stored.id).await.expect("fire");
+    let fired = harness
+        .service
+        .test_fire(&stored.id, &common::NeutralSamples)
+        .await
+        .expect("fire");
 
     let frames = harness.sink.frames();
     assert_eq!(frames.len(), 1, "a single test fire delivered {frames:?}");
@@ -442,7 +457,11 @@ async fn test_fire_without_a_serving_sink_still_returns_the_sample_and_says_it_l
     ]);
     let harness = harness(vec![stored.clone()], false);
 
-    let fired = harness.service.test_fire(&stored.id).await.expect("fire");
+    let fired = harness
+        .service
+        .test_fire(&stored.id, &common::NeutralSamples)
+        .await
+        .expect("fire");
 
     assert_eq!(
         fired.delivery,
@@ -482,7 +501,7 @@ async fn test_fire_refuses_and_delivers_nothing_when_no_sample_can_be_built() {
     ] {
         let err = harness
             .service
-            .test_fire(&id)
+            .test_fire(&id, &common::NeutralSamples)
             .await
             .expect_err("a sample that cannot be built must be refused");
 
@@ -506,7 +525,11 @@ async fn a_pass_keeps_the_record_of_an_overlay_type_this_build_lacks_and_carries
     let known = definition("sub-alert");
     let harness = harness(vec![unshipped.clone(), known.clone()], false);
 
-    let pass = harness.service.materialize_all().await.expect("pass");
+    let pass = harness
+        .service
+        .materialize_all(&common::NeutralSamples)
+        .await
+        .expect("pass");
 
     assert_eq!(
         pass,
@@ -538,7 +561,11 @@ async fn a_pass_stamps_only_the_records_whose_generator_version_is_stale() {
     current.config_schema_version = current_schema(ALERT_KIND);
     let harness = harness(vec![stale.clone(), current.clone()], false);
 
-    harness.service.materialize_all().await.expect("pass");
+    harness
+        .service
+        .materialize_all(&common::NeutralSamples)
+        .await
+        .expect("pass");
 
     let saved = harness.saved();
     assert_eq!(
@@ -563,7 +590,11 @@ async fn a_pass_persists_an_older_record_upgraded_to_the_box_contract_once() {
     ]);
     let harness = harness(vec![older.clone()], false);
 
-    harness.service.materialize_all().await.expect("pass");
+    harness
+        .service
+        .materialize_all(&common::NeutralSamples)
+        .await
+        .expect("pass");
 
     let saved = harness.saved();
     assert_eq!(
@@ -595,7 +626,11 @@ async fn the_page_built_by_an_upgrading_pass_reads_the_upgraded_config() {
     older.config = OverlayConfig::from([(ELEMENT_WIDTH_KEY.to_owned(), Variant::Int(1000))]);
     let harness = harness(vec![older.clone()], false);
 
-    harness.service.materialize_all().await.expect("pass");
+    harness
+        .service
+        .materialize_all(&common::NeutralSamples)
+        .await
+        .expect("pass");
 
     let written: serde_json::Value = serde_json::from_str(
         &fs::read_to_string(harness.directory_of(&older.id).join(CONFIG_FILE)).unwrap(),
@@ -619,7 +654,11 @@ async fn an_upgrading_pass_leaves_a_source_file_the_user_owns_untouched() {
     let user_body = "body { padding: 32px; }\n";
     fs::write(directory.join(STYLE_FILE), user_body).unwrap();
 
-    harness.service.materialize_all().await.expect("pass");
+    harness
+        .service
+        .materialize_all(&common::NeutralSamples)
+        .await
+        .expect("pass");
 
     assert_eq!(
         harness.saved()[0].config_schema_version,
@@ -640,7 +679,11 @@ async fn one_failing_overlay_does_not_abort_the_rest_of_the_pass() {
     let good = definition("sub-alert");
     let harness = harness(vec![refused, good.clone()], false);
 
-    let pass = harness.service.materialize_all().await.expect("pass");
+    let pass = harness
+        .service
+        .materialize_all(&common::NeutralSamples)
+        .await
+        .expect("pass");
 
     assert_eq!(
         pass,
@@ -660,7 +703,11 @@ async fn one_failing_overlay_does_not_abort_the_rest_of_the_pass() {
 async fn removing_an_overlay_folder_is_idempotent_and_spares_the_shared_subtree() {
     let stored = definition("sub-alert");
     let harness = harness(vec![stored.clone()], false);
-    harness.service.materialize_all().await.expect("pass");
+    harness
+        .service
+        .materialize_all(&common::NeutralSamples)
+        .await
+        .expect("pass");
     let directory = harness.directory_of(&stored.id);
 
     assert!(
@@ -712,7 +759,7 @@ async fn materializing_one_overlay_reloads_the_page_it_rebuilt() {
 
     harness
         .service
-        .materialize(&stored.id)
+        .materialize(&stored.id, &common::NeutralSamples)
         .await
         .expect("materialize");
 
@@ -1082,13 +1129,16 @@ async fn an_overlay_root_setting_that_names_nowhere_falls_back_to_the_default_di
             _ => settings.fail_reads(true),
         }
 
-        let service = OverlayServiceHandle::new(
-            Arc::new(MockOverlayRepo::new()) as Arc<dyn OverlayRepo>,
-            Arc::new(settings) as Arc<dyn SettingsRepo>,
-            registry(),
-            EventBus::new(Arc::new(NullEventLogRepo)),
-            None,
-        );
+        let service = OverlayServiceHandle::new(OverlayServiceParts {
+            repo: Arc::new(MockOverlayRepo::new()) as Arc<dyn OverlayRepo>,
+            settings: Arc::new(settings) as Arc<dyn SettingsRepo>,
+            kinds: registry(),
+            bus: EventBus::new(Arc::new(NullEventLogRepo)),
+            frames: common::no_pages(),
+            media: None,
+            speaker: None,
+            latest: None,
+        });
 
         assert_eq!(
             service.root().await,
@@ -1156,13 +1206,16 @@ fn service_whose_repo_answers(removed: bool, enabled_changed: bool) -> OverlaySe
     repo.expect_delete().returning(move |_| Ok(removed));
     repo.expect_set_enabled()
         .returning(move |_, _| Ok(enabled_changed));
-    OverlayServiceHandle::new(
-        Arc::new(repo) as Arc<dyn OverlayRepo>,
-        Arc::new(MemorySettings::new()) as Arc<dyn SettingsRepo>,
-        registry(),
-        EventBus::new(Arc::new(NullEventLogRepo)),
-        None,
-    )
+    OverlayServiceHandle::new(OverlayServiceParts {
+        repo: Arc::new(repo) as Arc<dyn OverlayRepo>,
+        settings: Arc::new(MemorySettings::new()) as Arc<dyn SettingsRepo>,
+        kinds: registry(),
+        bus: EventBus::new(Arc::new(NullEventLogRepo)),
+        frames: common::no_pages(),
+        media: None,
+        speaker: None,
+        latest: None,
+    })
 }
 
 #[tokio::test]
@@ -1196,7 +1249,10 @@ async fn materializing_signals_a_definition_change_only_for_an_overlay_it_rebuil
     ] {
         let mut changes = harness.service.definition_changes();
 
-        let outcome = harness.service.materialize(&id).await;
+        let outcome = harness
+            .service
+            .materialize(&id, &common::NeutralSamples)
+            .await;
 
         assert_eq!(
             (outcome.is_ok(), fired(&mut changes)),
@@ -1264,7 +1320,11 @@ async fn a_pass_rewrites_the_stored_credential_into_the_kept_config_of_an_unavai
     let harness = harness(vec![unshipped.clone()], false);
     let directory = unshipped_with_kept_config(&harness, &unshipped);
 
-    let pass = harness.service.materialize_all().await.expect("pass");
+    let pass = harness
+        .service
+        .materialize_all(&common::NeutralSamples)
+        .await
+        .expect("pass");
 
     let config = read_config(&directory);
     assert_eq!(
@@ -1296,7 +1356,11 @@ async fn a_kept_config_that_cannot_be_refreshed_counts_as_failed_and_the_pass_ca
     fs::write(&outside, "{}").unwrap();
     std::os::unix::fs::symlink(&outside, directory.join(CONFIG_FILE)).unwrap();
 
-    let pass = harness.service.materialize_all().await.expect("pass");
+    let pass = harness
+        .service
+        .materialize_all(&common::NeutralSamples)
+        .await
+        .expect("pass");
 
     assert_eq!(
         pass,

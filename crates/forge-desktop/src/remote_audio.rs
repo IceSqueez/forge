@@ -326,13 +326,16 @@ mod tests {
         let mut kinds = OverlayKindRegistry::new();
         register_builtin_kinds(&mut kinds).expect("the builtin overlay kinds register");
 
-        let overlays = OverlayServiceHandle::new(
-            Arc::new(repo) as Arc<dyn OverlayRepo>,
-            Arc::clone(&backend) as Arc<dyn SettingsRepo>,
-            Arc::new(kinds),
-            EventBus::new(Arc::new(StubEventLog)),
-            Some(Arc::clone(&pages) as Arc<dyn OverlayFrameSink>),
-        );
+        let overlays = OverlayServiceHandle::new(forge_runtime::OverlayServiceParts {
+            repo: Arc::new(repo) as Arc<dyn OverlayRepo>,
+            settings: Arc::clone(&backend) as Arc<dyn SettingsRepo>,
+            kinds: Arc::new(kinds),
+            bus: EventBus::new(Arc::new(StubEventLog)),
+            frames: Arc::clone(&pages) as Arc<dyn OverlayFrameSink>,
+            media: None,
+            speaker: None,
+            latest: None,
+        });
 
         (OverlayAudioDestination::new(server, overlays), pages)
     }

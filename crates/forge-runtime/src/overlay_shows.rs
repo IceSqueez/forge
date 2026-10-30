@@ -91,7 +91,7 @@ struct Lane {
 }
 
 pub(crate) struct ShowSequencer {
-    frames: Option<Arc<dyn OverlayFrameSink>>,
+    frames: Arc<dyn OverlayFrameSink>,
     speaker: Option<Arc<dyn SpeakDispatcher>>,
     lanes: Mutex<HashMap<OverlayId, Lane>>,
     depths: watch::Sender<Depths>,
@@ -99,7 +99,7 @@ pub(crate) struct ShowSequencer {
 
 impl ShowSequencer {
     pub(crate) fn new(
-        frames: Option<Arc<dyn OverlayFrameSink>>,
+        frames: Arc<dyn OverlayFrameSink>,
         speaker: Option<Arc<dyn SpeakDispatcher>>,
     ) -> Self {
         Self {
@@ -247,19 +247,14 @@ impl ShowSequencer {
     }
 
     async fn show_silently(&self, id: &OverlayId, show: &str, window: Duration, ceiling: Instant) {
-        if let Some(frames) = &self.frames {
-            frames
-                .deliver_content(id, content_json(&silent_reveal_content(show)), None)
-                .await;
-        }
+        self.frames
+            .deliver_content(id, content_json(&silent_reveal_content(show)), None)
+            .await;
         tokio::time::sleep_until((Instant::now() + window).min(ceiling)).await;
     }
 
     async fn present(&self, id: &OverlayId, show: &Show) -> OverlayDelivery {
-        let Some(frames) = &self.frames else {
-            return OverlayDelivery::NoPage;
-        };
-        frames
+        self.frames
             .deliver_content(id, show.content.clone(), show.duration_ms)
             .await
             .outcome()

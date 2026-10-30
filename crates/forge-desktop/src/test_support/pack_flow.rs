@@ -76,13 +76,16 @@ pub(crate) fn pack_world(rt: &tokio::runtime::Runtime) -> PackWorld {
         register_builtin_kinds(&mut kinds).unwrap();
         let kinds = Arc::new(kinds);
         let bus = EventBus::new(Arc::new(StubEventLog));
-        let overlays = OverlayServiceHandle::new(
-            provider.overlay_repo(),
-            Arc::clone(&provider) as Arc<dyn SettingsRepo>,
-            Arc::clone(&kinds),
-            Arc::clone(&bus),
-            None,
-        );
+        let overlays = OverlayServiceHandle::new(forge_runtime::OverlayServiceParts {
+            repo: provider.overlay_repo(),
+            settings: Arc::clone(&provider) as Arc<dyn SettingsRepo>,
+            kinds: Arc::clone(&kinds),
+            bus: Arc::clone(&bus),
+            frames: Arc::new(crate::test_support::NoOverlayPages),
+            media: None,
+            speaker: None,
+            latest: None,
+        });
         let engine = spawn_action_engine(
             Arc::clone(&bus),
             stub_catalog(),
@@ -100,6 +103,7 @@ pub(crate) fn pack_world(rt: &tokio::runtime::Runtime) -> PackWorld {
                 triggers: Arc::new(TriggerRegistry::new()),
                 overlay_kinds: kinds,
                 overlays,
+                overlay_samples: Arc::new(crate::test_support::NeutralOverlaySamples),
                 scheduler,
                 scripts: Arc::new(ScriptRegistry::new()),
                 rt_handle: rt.handle().clone(),

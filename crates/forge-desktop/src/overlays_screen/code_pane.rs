@@ -352,6 +352,7 @@ impl OverlaysView {
 
         let repo = Arc::clone(&self.handles.repo);
         let service = self.handles.service.clone();
+        let samples = Arc::clone(&self.handles.samples);
         let target = id.clone();
         async_bridge::run_async(
             &self.handles.rt_handle,
@@ -361,7 +362,10 @@ impl OverlaysView {
                 };
                 definition.source_overrides.retain(|held| held != file);
                 repo.save(&definition).await.map_err(|e| e.to_string())?;
-                let report = service.materialize(&id).await.map_err(|e| e.to_string())?;
+                let report = service
+                    .materialize(&id, samples.as_ref())
+                    .await
+                    .map_err(|e| e.to_string())?;
                 Ok((true, report.missing_overrides, report.media_issues))
             },
             move |this, result: Result<(bool, Vec<String>, Vec<MediaIssue>), String>, cx| {

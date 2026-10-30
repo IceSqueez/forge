@@ -4,9 +4,9 @@ use forge_overlay::OverlayKindRegistry;
 use forge_registry::{SubActionRegistry, TriggerRegistry};
 use forge_runtime::{
     ActionEngineHandle, ChatHistoryRetentionHandle, DateNamesHandle, EventBus, LatestValues,
-    LiveViewerAggregatorHandle, NotificationPolicyHandle, OverlayServiceHandle,
-    QueueSchedulerHandle, ScheduledRunsHandle, ScriptRegistry, TimerSchedulerHandle,
-    TriggerEvaluatorHandle,
+    LiveViewerAggregatorHandle, NotificationPolicyHandle, OverlaySampleSource,
+    OverlayServiceHandle, QueueSchedulerHandle, ScheduledRunsHandle, ScriptRegistry,
+    TimerSchedulerHandle, TriggerEvaluatorHandle,
 };
 use forge_storage::{CredentialsKeyLoss, DataProvider, Language, SettingsCatalog};
 
@@ -35,6 +35,7 @@ pub struct RuntimeHandles {
     pub trigger_registry: Arc<TriggerRegistry>,
     pub overlay_kinds: Arc<OverlayKindRegistry>,
     pub overlays: OverlayServiceHandle,
+    pub overlay_samples: Arc<dyn OverlaySampleSource>,
     pub action_engine: ActionEngineHandle,
     pub scheduler: QueueSchedulerHandle,
     pub trigger_evaluator: TriggerEvaluatorHandle,

@@ -303,13 +303,16 @@ mod tests {
             let mut kinds = OverlayKindRegistry::new();
             register_builtin_kinds(&mut kinds).expect("the builtin overlay kinds register");
             let (tx, announced) = unbounded_channel();
-            let service = OverlayServiceHandle::new(
-                Arc::clone(&overlays) as Arc<dyn OverlayRepo>,
-                Arc::clone(&backend) as Arc<dyn SettingsRepo>,
-                Arc::new(kinds),
-                EventBus::new(Arc::new(StubEventLog)),
-                Some(Arc::new(Pages { announced: tx }) as Arc<dyn OverlayFrameSink>),
-            );
+            let service = OverlayServiceHandle::new(forge_runtime::OverlayServiceParts {
+                repo: Arc::clone(&overlays) as Arc<dyn OverlayRepo>,
+                settings: Arc::clone(&backend) as Arc<dyn SettingsRepo>,
+                kinds: Arc::new(kinds),
+                bus: EventBus::new(Arc::new(StubEventLog)),
+                frames: Arc::new(Pages { announced: tx }) as Arc<dyn OverlayFrameSink>,
+                media: None,
+                speaker: None,
+                latest: None,
+            });
 
             let local = RecordingSink::new();
             let player = SoundboardPlayer::with_settings(

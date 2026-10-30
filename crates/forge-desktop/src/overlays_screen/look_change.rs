@@ -88,6 +88,7 @@ impl OverlaysView {
         let schema_version = descriptor.config_schema_version();
         let repo = Arc::clone(&self.handles.repo);
         let service = self.handles.service.clone();
+        let samples = Arc::clone(&self.handles.samples);
         let target = id.clone();
         async_bridge::run_async(
             &self.handles.rt_handle,
@@ -99,7 +100,7 @@ impl OverlaysView {
                 definition.config = carried;
                 definition.config_schema_version = schema_version;
                 service.save(&definition).await.map_err(|e| e.to_string())?;
-                Ok((true, regenerate(&service, &id).await))
+                Ok((true, regenerate(&service, samples.as_ref(), &id).await))
             },
             move |this, result: Result<(bool, Regenerated), String>, cx| match result {
                 Ok((true, regenerated)) => {

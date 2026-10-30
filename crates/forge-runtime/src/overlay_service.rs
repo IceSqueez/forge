@@ -8,14 +8,11 @@ use forge_events::{Event, EventSource};
 use forge_overlay::{
     DEFAULT_DISPLAY_SECS, DeliveryDisposition, GENERATOR_VERSION, MaterializeReport,
     OverlayInstance, OverlayKindDescriptor, OverlayKindRegistry, OverlayMedia, SampleContext,
-    SampleTrigger, delivered_content, ensure_shared_directory, joined_to_show, latest_binding,
-    latest_content, materialize_overlay, read_overlay_source, refresh_config_credential,
-    remove_overlay_directory, sample_content, sample_context, show_timing, take_speech,
-    upgrade_config, write_overlay_source,
+    delivered_content, ensure_shared_directory, joined_to_show, latest_binding, latest_content,
+    materialize_overlay, read_overlay_source, refresh_config_credential, remove_overlay_directory,
+    sample_content, show_timing, take_speech, upgrade_config, write_overlay_source,
 };
-use forge_registry::{
-    CancelSignal, KindPlatformContract, SubActionRegistry, TriggerRegistry, declared_variables,
-};
+use forge_registry::CancelSignal;
 use forge_storage::{
     OverlayConfig, OverlayDefinition, OverlayId, OverlayRepo, SettingsRepo, StorageError,
     read_setting, settings::core_settings,
@@ -24,11 +21,11 @@ use forge_types::{ArgStack, EventId, LatestValueReader};
 use serde_json::json;
 use ulid::Ulid;
 
-use crate::actions::ActionsService;
 use crate::bus::EventBus;
 use crate::overlay_definition_revision::{OverlayDefinitionChanges, OverlayDefinitionRevision};
 use crate::overlay_lanes::OverlayLanes;
 use crate::overlay_media::{OverlayMediaLibrary, unresolvable};
+use crate::overlay_samples::OverlaySampleSource;
 use crate::overlay_shows::{
     QueueFull, SHOW_CEILING, SHOW_QUEUE_CAPACITY, Show, ShowDepthWatch, ShowEnd, ShowSequencer,
     ShowTicket,
@@ -171,9 +168,8 @@ struct OverlayService {
     settings: Arc<dyn SettingsRepo>,
     kinds: Arc<OverlayKindRegistry>,
     bus: Arc<EventBus>,
-    frames: Option<Arc<dyn OverlayFrameSink>>,
+    frames: Arc<dyn OverlayFrameSink>,
     media: Option<OverlayMediaLibrary>,
-    wiring: Option<EventWiring>,
     lanes: Arc<OverlayLanes>,
     shows: Arc<ShowSequencer>,
     speaker: Option<Arc<dyn SpeakDispatcher>>,
@@ -181,11 +177,15 @@ struct OverlayService {
     definitions: OverlayDefinitionRevision,
 }
 
-#[derive(Clone)]
-struct EventWiring {
-    actions: Arc<ActionsService>,
-    sub_actions: Arc<SubActionRegistry>,
-    triggers: Arc<TriggerRegistry>,
+pub struct OverlayServiceParts {
+    pub repo: Arc<dyn OverlayRepo>,
+    pub settings: Arc<dyn SettingsRepo>,
+    pub kinds: Arc<OverlayKindRegistry>,
+    pub bus: Arc<EventBus>,
+    pub frames: Arc<dyn OverlayFrameSink>,
+    pub media: Option<OverlayMediaLibrary>,
+    pub speaker: Option<Arc<dyn SpeakDispatcher>>,
+    pub latest: Option<Arc<dyn LatestValueReader>>,
 }
 
 #[derive(Clone)]
@@ -194,14 +194,18 @@ pub struct OverlayServiceHandle {
 }
 
 impl OverlayServiceHandle {
-    pub fn new(
-        repo: Arc<dyn OverlayRepo>,
-        settings: Arc<dyn SettingsRepo>,
-        kinds: Arc<OverlayKindRegistry>,
-        bus: Arc<EventBus>,
-        frames: Option<Arc<dyn OverlayFrameSink>>,
-    ) -> Self {
-        let shows = Arc::new(ShowSequencer::new(frames.clone(), None));
+    pub fn new(parts: OverlayServiceParts) -> Self {
+        let OverlayServiceParts {
+            repo,
+            settings,
+            kinds,
+            bus,
+            frames,
+            media,
+            speaker,
+            latest,
+        } = parts;
+        let shows = Arc::new(ShowSequencer::new(Arc::clone(&frames), speaker.clone()));
         Self {
             inner: Arc::new(OverlayService {
                 repo,
@@ -209,81 +213,13 @@ impl OverlayServiceHandle {
                 kinds,
                 bus,
                 frames,
-                media: None,
-                wiring: None,
+                media,
                 lanes: Arc::default(),
                 shows,
-                speaker: None,
-                latest: None,
+                speaker,
+                latest,
                 definitions: OverlayDefinitionRevision::default(),
             }),
-        }
-    }
-
-    pub fn with_latest_values(self, latest: Arc<dyn LatestValueReader>) -> Self {
-        Self {
-            inner: Arc::new(OverlayService {
-                latest: Some(latest),
-                ..self.parts()
-            }),
-        }
-    }
-
-    pub fn with_speech(self, speaker: Arc<dyn SpeakDispatcher>) -> Self {
-        let shows = Arc::new(ShowSequencer::new(
-            self.inner.frames.clone(),
-            Some(Arc::clone(&speaker)),
-        ));
-        Self {
-            inner: Arc::new(OverlayService {
-                shows,
-                speaker: Some(speaker),
-                ..self.parts()
-            }),
-        }
-    }
-
-    pub fn with_media_library(self, library: OverlayMediaLibrary) -> Self {
-        Self {
-            inner: Arc::new(OverlayService {
-                media: Some(library),
-                ..self.parts()
-            }),
-        }
-    }
-
-    pub fn with_event_wiring(
-        self,
-        actions: Arc<ActionsService>,
-        sub_actions: Arc<SubActionRegistry>,
-        triggers: Arc<TriggerRegistry>,
-    ) -> Self {
-        Self {
-            inner: Arc::new(OverlayService {
-                wiring: Some(EventWiring {
-                    actions,
-                    sub_actions,
-                    triggers,
-                }),
-                ..self.parts()
-            }),
-        }
-    }
-
-    fn parts(&self) -> OverlayService {
-        OverlayService {
-            repo: Arc::clone(&self.inner.repo),
-            settings: Arc::clone(&self.inner.settings),
-            kinds: Arc::clone(&self.inner.kinds),
-            bus: Arc::clone(&self.inner.bus),
-            frames: self.inner.frames.clone(),
-            media: self.inner.media.clone(),
-            wiring: self.inner.wiring.clone(),
-            lanes: Arc::clone(&self.inner.lanes),
-            shows: Arc::clone(&self.inner.shows),
-            speaker: self.inner.speaker.clone(),
-            latest: self.inner.latest.clone(),
-            definitions: self.inner.definitions.clone(),
         }
     }
 
@@ -327,7 +263,10 @@ impl OverlayServiceHandle {
         }
     }
 
-    pub async fn materialize_all(&self) -> Result<MaterializePass, OverlayServiceError> {
+    pub async fn materialize_all(
+        &self,
+        samples: &dyn OverlaySampleSource,
+    ) -> Result<MaterializePass, OverlayServiceError> {
         let root = self.root().await;
         blocking(move || ensure_shared_directory(&root)).await??;
 
@@ -348,7 +287,7 @@ impl OverlayServiceHandle {
                 }
                 continue;
             }
-            match self.write_files(&definition).await {
+            match self.write_files(&definition, samples).await {
                 Ok(_) => pass.materialized += 1,
                 Err(error) => {
                     tracing::error!(overlay = %definition.id, %error, "overlay materialization failed");
@@ -374,6 +313,7 @@ impl OverlayServiceHandle {
     pub async fn materialize(
         &self,
         id: &OverlayId,
+        samples: &dyn OverlaySampleSource,
     ) -> Result<MaterializeReport, OverlayServiceError> {
         let definition = self.load(id).await?;
         if self.inner.kinds.get(&definition.kind_id).is_none() {
@@ -383,7 +323,7 @@ impl OverlayServiceHandle {
             });
         }
 
-        let report = self.write_files(&definition).await?;
+        let report = self.write_files(&definition, samples).await?;
         self.inner.definitions.advance();
         self.reload_page(id).await;
         Ok(report)
@@ -430,9 +370,7 @@ impl OverlayServiceHandle {
         if removed {
             self.inner.definitions.advance();
             self.withdraw_shows(id);
-            if let Some(frames) = &self.inner.frames {
-                frames.revoke(id).await;
-            }
+            self.inner.frames.revoke(id).await;
         }
         Ok(removed)
     }
@@ -457,24 +395,17 @@ impl OverlayServiceHandle {
         }
         if changed && !enabled {
             self.withdraw_shows(id);
-            if let Some(frames) = &self.inner.frames {
-                frames.revoke(id).await;
-            }
+            self.inner.frames.revoke(id).await;
         }
         Ok(changed)
     }
 
     pub async fn reload_page(&self, id: &OverlayId) {
-        if let Some(frames) = &self.inner.frames {
-            frames.deliver_reload(id).await;
-        }
+        self.inner.frames.deliver_reload(id).await;
     }
 
     pub async fn receivers(&self, id: &OverlayId) -> OverlayReceivers {
-        match &self.inner.frames {
-            Some(frames) => frames.receivers(id).await,
-            None => OverlayReceivers::default(),
-        }
+        self.inner.frames.receivers(id).await
     }
 
     pub async fn deliver_audio(
@@ -621,7 +552,11 @@ impl OverlayServiceHandle {
         }
     }
 
-    pub async fn test_fire(&self, id: &OverlayId) -> Result<TestFire, OverlayServiceError> {
+    pub async fn test_fire(
+        &self,
+        id: &OverlayId,
+        samples: &dyn OverlaySampleSource,
+    ) -> Result<TestFire, OverlayServiceError> {
         let definition = self.load(id).await?;
         let Some(descriptor) = self.inner.kinds.get(&definition.kind_id) else {
             return Err(OverlayServiceError::UnavailableKind {
@@ -633,7 +568,7 @@ impl OverlayServiceHandle {
         let content = sample_content(
             descriptor,
             &definition.config,
-            &self.sample(&definition.id).await,
+            &samples.sample(&definition.id).await,
         );
         let disposition = descriptor.delivery_disposition();
         self.inner.bus.record(Event::new(
@@ -752,10 +687,8 @@ impl OverlayServiceHandle {
         content: &OverlayConfig,
         duration_ms: Option<u64>,
     ) -> OverlayDelivery {
-        let Some(frames) = &self.inner.frames else {
-            return OverlayDelivery::NoPage;
-        };
-        frames
+        self.inner
+            .frames
             .deliver_content(id, content_json(content), duration_ms)
             .await
             .outcome()
@@ -772,13 +705,14 @@ impl OverlayServiceHandle {
     async fn write_files(
         &self,
         stored: &OverlayDefinition,
+        samples: &dyn OverlaySampleSource,
     ) -> Result<MaterializeReport, OverlayServiceError> {
         let definition = &self.upgraded(stored);
         let root = self.root().await;
         let instance = instance_of(
             definition,
             self.media_pass(definition).await,
-            self.sample(&definition.id).await,
+            samples.sample(&definition.id).await,
         );
         let kinds = Arc::clone(&self.inner.kinds);
         let report = blocking(move || materialize_overlay(&root, &instance, &kinds)).await??;
@@ -825,26 +759,6 @@ impl OverlayServiceHandle {
             current.config_schema_version = descriptor.config_schema_version();
         }
         current
-    }
-
-    pub async fn sample(&self, id: &OverlayId) -> SampleContext {
-        let Some(wiring) = &self.inner.wiring else {
-            return SampleContext::neutral();
-        };
-        let feeds = match wiring.actions.overlay_feeds(id, &wiring.sub_actions).await {
-            Ok(feeds) => feeds,
-            Err(error) => {
-                tracing::warn!(overlay = %id, %error, "what feeds this overlay is unreadable; its sample stays neutral");
-                return SampleContext::neutral();
-            }
-        };
-
-        let feeding: Vec<SampleTrigger> = feeds
-            .iter()
-            .flat_map(|feed| feed.triggers.iter())
-            .map(|instance| feeding_trigger(&wiring.triggers, &instance.kind_id))
-            .collect();
-        sample_context(&feeding)
     }
 
     async fn media_pass(&self, definition: &OverlayDefinition) -> OverlayMedia {
@@ -902,17 +816,6 @@ pub(crate) fn content_json(content: &OverlayConfig) -> serde_json::Value {
             .map(|(key, value)| (key.clone(), value.to_plain_json()))
             .collect(),
     )
-}
-
-fn feeding_trigger(triggers: &TriggerRegistry, kind_id: &str) -> SampleTrigger {
-    let descriptor = triggers.get(kind_id);
-    SampleTrigger {
-        kind_id: kind_id.to_owned(),
-        contract: descriptor.map_or(KindPlatformContract::Universal, |held| {
-            held.platform_contract()
-        }),
-        variables: descriptor.and_then(declared_variables).unwrap_or_default(),
-    }
 }
 
 fn instance_of(
@@ -1003,14 +906,17 @@ mod tests {
         async fn revoke(&self, _: &OverlayId) {}
     }
 
-    fn handle_with(frames: Option<Arc<dyn OverlayFrameSink>>) -> OverlayServiceHandle {
-        OverlayServiceHandle::new(
-            Arc::new(MockOverlayRepo::new()),
-            Arc::new(MemorySettings::new()),
-            Arc::new(OverlayKindRegistry::new()),
-            EventBus::new(Arc::new(NullEventLogRepo)),
+    fn handle_with(frames: Arc<dyn OverlayFrameSink>) -> OverlayServiceHandle {
+        OverlayServiceHandle::new(OverlayServiceParts {
+            repo: Arc::new(MockOverlayRepo::new()),
+            settings: Arc::new(MemorySettings::new()),
+            kinds: Arc::new(OverlayKindRegistry::new()),
+            bus: EventBus::new(Arc::new(NullEventLogRepo)),
             frames,
-        )
+            media: None,
+            speaker: None,
+            latest: None,
+        })
     }
 
     #[tokio::test]
@@ -1019,10 +925,10 @@ mod tests {
             sources: 2,
             preview_tabs: 1,
         };
-        let handle = handle_with(Some(Arc::new(CountingSink {
+        let handle = handle_with(Arc::new(CountingSink {
             identity: OverlayId::new(STAGE),
             connected,
-        })));
+        }));
 
         assert_eq!(handle.receivers(&OverlayId::new(STAGE)).await, connected);
         assert_eq!(
@@ -1033,20 +939,13 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn no_pages_are_reported_when_nothing_is_counting_them() {
-        for (label, handle) in [
-            ("a runtime with no frame sink", handle_with(None)),
-            (
-                "a sink that does not count its connections",
-                handle_with(Some(Arc::new(SilentSink))),
-            ),
-        ] {
-            assert_eq!(
-                handle.receivers(&OverlayId::new(STAGE)).await,
-                OverlayReceivers::default(),
-                "{label} reported pages that cannot exist"
-            );
-        }
+    async fn no_pages_are_reported_when_the_sink_does_not_count_its_connections() {
+        let handle = handle_with(Arc::new(SilentSink));
+
+        assert_eq!(
+            handle.receivers(&OverlayId::new(STAGE)).await,
+            OverlayReceivers::default()
+        );
     }
 
     #[derive(Default)]
@@ -1084,13 +983,16 @@ mod tests {
     ) -> OverlayServiceHandle {
         let mut repo = MockOverlayRepo::new();
         repo.expect_delete().times(1).returning(move |_| outcome());
-        OverlayServiceHandle::new(
-            Arc::new(repo),
-            Arc::new(MemorySettings::new()),
-            Arc::new(OverlayKindRegistry::new()),
-            EventBus::new(Arc::new(NullEventLogRepo)),
-            Some(Arc::clone(log) as Arc<dyn OverlayFrameSink>),
-        )
+        OverlayServiceHandle::new(OverlayServiceParts {
+            repo: Arc::new(repo),
+            settings: Arc::new(MemorySettings::new()),
+            kinds: Arc::new(OverlayKindRegistry::new()),
+            bus: EventBus::new(Arc::new(NullEventLogRepo)),
+            frames: Arc::clone(log) as Arc<dyn OverlayFrameSink>,
+            media: None,
+            speaker: None,
+            latest: None,
+        })
     }
 
     #[tokio::test]

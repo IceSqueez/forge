@@ -10,7 +10,7 @@ use forge_components::{
     overlay, radio_row, radius, save_indicator, scaled, setting_block, setting_row, setting_rows,
     setting_sections, spacing, toggle, tr, type_to_confirm,
 };
-use forge_runtime::OverlayServiceHandle;
+use forge_runtime::{OverlaySampleSource, OverlayServiceHandle};
 use forge_server::{
     DEFAULT_PORT, LAN_BIND_ADDRESS, LOCALHOST_BIND_ADDRESS, ServerHandle, ServerSettings,
 };
@@ -71,6 +71,7 @@ pub struct SettingsWebSocketView {
     rt_handle: tokio::runtime::Handle,
     server: Option<ServerHandle>,
     overlays: OverlayServiceHandle,
+    overlay_samples: Arc<dyn OverlaySampleSource>,
 
     enable_server: bool,
     bind_choice: BindChoice,
@@ -110,6 +111,7 @@ impl SettingsWebSocketView {
         rt_handle: tokio::runtime::Handle,
         server: Option<ServerHandle>,
         overlays: OverlayServiceHandle,
+        overlay_samples: Arc<dyn OverlaySampleSource>,
         cx: &mut Context<Self>,
     ) -> Self {
         let palette = cx.palette();
@@ -160,6 +162,7 @@ impl SettingsWebSocketView {
             rt_handle,
             server,
             overlays,
+            overlay_samples,
             enable_server: true,
             bind_choice: BindChoice::Localhost,
             port: DEFAULT_PORT,
@@ -773,10 +776,14 @@ impl SettingsWebSocketView {
         }
         self.overlay_token_regenerating = true;
         let overlays = self.overlays.clone();
+        let samples = Arc::clone(&self.overlay_samples);
         async_bridge::run_async(
             &self.rt_handle,
             async move {
-                match handle.regenerate_overlay_token(&overlays).await {
+                match handle
+                    .regenerate_overlay_token(&overlays, samples.as_ref())
+                    .await
+                {
                     Ok(token) => Ok((token, TokenRegenerateNote::Clean)),
                     Err(forge_server::ServerError::OverlayRotationIncomplete { token, reason }) => {
                         Ok((token, TokenRegenerateNote::RewriteFailed(reason)))
@@ -866,6 +873,7 @@ impl SettingsWebSocketView {
         self.overlay_root = Some(path_str.clone());
         let repo = Arc::clone(&self.backend) as Arc<dyn SettingsRepo>;
         let overlays = self.overlays.clone();
+        let samples = Arc::clone(&self.overlay_samples);
         self.save_state = SaveState::Saving;
         async_bridge::run_async(
             &self.rt_handle,
@@ -873,7 +881,7 @@ impl SettingsWebSocketView {
                 ServerSettings::save_overlay_root(repo.as_ref(), &path_str)
                     .await
                     .map_err(|e| e.to_string())?;
-                let pass = overlays.materialize_all().await;
+                let pass = overlays.materialize_all(samples.as_ref()).await;
                 Ok(OverlayBuildFailure::from_outcome(&pass))
             },
             |this, result: Result<Option<OverlayBuildFailure>, String>, cx| {
@@ -1733,13 +1741,16 @@ mod tests {
         backend: Arc<TestBackend>,
         server: Option<ServerHandle>,
     ) -> Entity<SettingsWebSocketView> {
-        let overlays = OverlayServiceHandle::new(
-            Arc::new(StubOverlays),
-            Arc::clone(&backend) as Arc<dyn SettingsRepo>,
-            Arc::new(OverlayKindRegistry::new()),
-            EventBus::new(Arc::new(StubEventLog)),
-            None,
-        );
+        let overlays = OverlayServiceHandle::new(forge_runtime::OverlayServiceParts {
+            repo: Arc::new(StubOverlays),
+            settings: Arc::clone(&backend) as Arc<dyn SettingsRepo>,
+            kinds: Arc::new(OverlayKindRegistry::new()),
+            bus: EventBus::new(Arc::new(StubEventLog)),
+            frames: Arc::new(crate::test_support::NoOverlayPages),
+            media: None,
+            speaker: None,
+            latest: None,
+        });
         let handle = rt.handle().clone();
         cx.update(|cx| {
             cx.set_global(forge_components::Presentation::new(
@@ -1753,6 +1764,7 @@ mod tests {
                 handle,
                 server,
                 overlays,
+                Arc::new(crate::test_support::NeutralOverlaySamples),
                 cx,
             )
         })

@@ -176,7 +176,11 @@ impl SqliteBackend {
         );
 
         if let Some(checkpointer) = pool.checkpointer() {
-            spawn_checkpoint_task(checkpointer.clone(), pool.writer().clone());
+            spawn_checkpoint_task(
+                checkpointer.clone(),
+                pool.writer().clone(),
+                pool.busy_timeout(),
+            );
         }
         spawn_retention_task(
             RetentionTargets {

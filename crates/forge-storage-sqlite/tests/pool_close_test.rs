@@ -2,13 +2,16 @@
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
-use forge_storage_sqlite::{SqlitePools, apply_migrations, connect_pools};
+use forge_storage_sqlite::{
+    SqlitePools, apply_migrations, connect_pools, connect_pools_with_busy_timeout,
+};
 use sqlx::sqlite::SqliteConnectOptions;
 use sqlx::{Connection, SqliteConnection, SqlitePool};
 use tempfile::TempDir;
 
 const DEADLINE: Duration = Duration::from_secs(30);
-const UNDER_THE_BUSY_TIMEOUT: Duration = Duration::from_millis(4_500);
+const SLOW_BUSY_TIMEOUT: Duration = Duration::from_secs(60);
+const HANG_GUARD: Duration = Duration::from_secs(20);
 const ROWS: i64 = 50;
 
 fn wal_of(db: &Path) -> PathBuf {
@@ -20,11 +23,18 @@ fn wal_len(db: &Path) -> u64 {
 }
 
 async fn populated() -> (SqlitePools, PathBuf, TempDir) {
+    populated_with(None).await
+}
+
+async fn populated_with(busy_timeout: Option<Duration>) -> (SqlitePools, PathBuf, TempDir) {
     let dir = tempfile::tempdir().unwrap();
     let db = dir.path().join("forge.db");
-    let pools = connect_pools(&format!("sqlite://{}", db.display()))
-        .await
-        .unwrap();
+    let url = format!("sqlite://{}", db.display());
+    let pools = match busy_timeout {
+        Some(timeout) => connect_pools_with_busy_timeout(&url, timeout).await,
+        None => connect_pools(&url).await,
+    }
+    .unwrap();
     apply_migrations(pools.writer()).await.unwrap();
     for i in 0..ROWS {
         sqlx::query("INSERT INTO settings (key, value) VALUES (?, 'v')")
@@ -61,7 +71,7 @@ async fn close_leaves_no_wal_content_and_every_row_survives_reopen() {
 
 #[tokio::test]
 async fn close_returns_in_bounded_time_while_a_reader_holds_a_snapshot_and_data_stays_consistent() {
-    let (pools, db, _dir) = populated().await;
+    let (pools, db, _dir) = populated_with(Some(SLOW_BUSY_TIMEOUT)).await;
     let mut foreign = SqliteConnection::connect_with(&SqliteConnectOptions::new().filename(&db))
         .await
         .unwrap();
@@ -75,7 +85,7 @@ async fn close_returns_in_bounded_time_while_a_reader_holds_a_snapshot_and_data_
         .await
         .unwrap();
 
-    tokio::time::timeout(UNDER_THE_BUSY_TIMEOUT, pools.close())
+    tokio::time::timeout(HANG_GUARD, pools.close())
         .await
         .expect("close must not wait for a reader's snapshot");
 

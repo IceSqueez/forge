@@ -2,8 +2,6 @@ use std::time::Duration;
 
 use sqlx::{Sqlite, SqlitePool, pool::PoolConnection};
 
-use crate::pool::BUSY_TIMEOUT;
-
 const CHECKPOINT_INTERVAL: Duration = Duration::from_secs(1);
 const RESTART_AT_WAL_FRAMES: i64 = 4096;
 const RESTART_READER_WAIT: Duration = Duration::from_millis(50);
@@ -12,7 +10,11 @@ const RESTART_RETRY_GAP: Duration = Duration::from_millis(10);
 const ESCALATE_AFTER_FAILED_TICKS: u32 = 3;
 const ESCALATED_READER_WAIT: Duration = Duration::from_millis(500);
 
-pub(crate) fn spawn_checkpoint_task(checkpointer: SqlitePool, writer: SqlitePool) {
+pub(crate) fn spawn_checkpoint_task(
+    checkpointer: SqlitePool,
+    writer: SqlitePool,
+    busy_timeout: Duration,
+) {
     tokio::spawn(async move {
         let mut ticker = tokio::time::interval(CHECKPOINT_INTERVAL);
         ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
@@ -35,7 +37,7 @@ pub(crate) fn spawn_checkpoint_task(checkpointer: SqlitePool, writer: SqlitePool
                 continue;
             }
             let escalated = failed_ticks >= ESCALATE_AFTER_FAILED_TICKS;
-            match restart_within_tick(&writer, escalated).await {
+            match restart_within_tick(&writer, escalated, busy_timeout).await {
                 Ok(true) => {
                     if escalated {
                         tracing::info!(failed_ticks, "WAL reset after an escalated restart");
@@ -68,12 +70,16 @@ async fn passive_checkpoint(checkpointer: &SqlitePool) -> Result<i64, sqlx::Erro
     Ok(wal_frames)
 }
 
-async fn restart_within_tick(writer: &SqlitePool, escalated: bool) -> Result<bool, sqlx::Error> {
+async fn restart_within_tick(
+    writer: &SqlitePool,
+    escalated: bool,
+    busy_timeout: Duration,
+) -> Result<bool, sqlx::Error> {
     if escalated {
-        return restart_wal_waiting(writer, ESCALATED_READER_WAIT).await;
+        return restart_wal_waiting(writer, ESCALATED_READER_WAIT, busy_timeout).await;
     }
     for attempt in 1..=RESTART_ATTEMPTS_PER_TICK {
-        if restart_wal(writer).await? {
+        if restart_wal(writer, busy_timeout).await? {
             return Ok(true);
         }
         if attempt < RESTART_ATTEMPTS_PER_TICK {
@@ -83,13 +89,14 @@ async fn restart_within_tick(writer: &SqlitePool, escalated: bool) -> Result<boo
     Ok(false)
 }
 
-async fn restart_wal(writer: &SqlitePool) -> Result<bool, sqlx::Error> {
-    restart_wal_waiting(writer, RESTART_READER_WAIT).await
+async fn restart_wal(writer: &SqlitePool, busy_timeout: Duration) -> Result<bool, sqlx::Error> {
+    restart_wal_waiting(writer, RESTART_READER_WAIT, busy_timeout).await
 }
 
 async fn restart_wal_waiting(
     writer: &SqlitePool,
     reader_wait: Duration,
+    busy_timeout: Duration,
 ) -> Result<bool, sqlx::Error> {
     let mut conn = writer.acquire().await?;
     set_busy_timeout(&mut conn, reader_wait).await?;
@@ -97,7 +104,7 @@ async fn restart_wal_waiting(
         .fetch_one(&mut *conn)
         .await
         .map(|(busy, _, _)| busy == 0);
-    if let Err(e) = set_busy_timeout(&mut conn, BUSY_TIMEOUT).await {
+    if let Err(e) = set_busy_timeout(&mut conn, busy_timeout).await {
         conn.close_on_drop();
         return Err(e);
     }
@@ -127,9 +134,12 @@ mod tests {
     use tokio::time::Instant;
 
     use super::*;
-    use crate::pool::{SqlitePools, connect_pools};
+    use crate::pool::{DEFAULT_BUSY_TIMEOUT, SqlitePools, connect_pools};
 
     const RESET_DEADLINE: Duration = Duration::from_secs(60);
+    const SLOW_BUSY_TIMEOUT: Duration = Duration::from_secs(60);
+    const HANG_GUARD: Duration = Duration::from_secs(20);
+    const RESTORED_BUSY_TIMEOUT: Duration = Duration::from_millis(1_234);
     const POLL: Duration = Duration::from_millis(20);
     const SMALL_PAGE_BYTES: u32 = 512;
     const JOURNAL_SIZE_LIMIT: u64 = 64 * 1024 * 1024;
@@ -212,15 +222,15 @@ mod tests {
         insert(db.pools.writer()).await;
         let _reader = pin_old_snapshot(&db).await;
 
-        let started = Instant::now();
-        let restarted = restart_wal(db.pools.writer()).await.unwrap();
+        let restarted = tokio::time::timeout(
+            HANG_GUARD,
+            restart_wal(db.pools.writer(), SLOW_BUSY_TIMEOUT),
+        )
+        .await
+        .expect("a restart blocked by a reader must give up after the short reader wait")
+        .unwrap();
 
-        assert_eq!(
-            (restarted, started.elapsed() < BUSY_TIMEOUT),
-            (false, true),
-            "took {:?}",
-            started.elapsed()
-        );
+        assert!(!restarted);
     }
 
     #[tokio::test]
@@ -234,12 +244,14 @@ mod tests {
                 None
             };
 
-            let restarted = restart_wal(db.pools.writer()).await.unwrap();
+            let restarted = restart_wal(db.pools.writer(), RESTORED_BUSY_TIMEOUT)
+                .await
+                .unwrap();
             drop(reader);
 
             assert_eq!(
                 (restarted, writer_busy_timeout_ms(db.pools.writer()).await),
-                (!reader_in_the_way, BUSY_TIMEOUT.as_millis() as i64),
+                (!reader_in_the_way, RESTORED_BUSY_TIMEOUT.as_millis() as i64),
                 "reader in the way: {reader_in_the_way}"
             );
         }
@@ -280,6 +292,7 @@ mod tests {
         spawn_checkpoint_task(
             db.pools.checkpointer().unwrap().clone(),
             db.pools.writer().clone(),
+            DEFAULT_BUSY_TIMEOUT,
         );
 
         let deadline = Instant::now() + RESET_DEADLINE;
@@ -317,6 +330,7 @@ mod tests {
         spawn_checkpoint_task(
             db.pools.checkpointer().unwrap().clone(),
             db.pools.writer().clone(),
+            DEFAULT_BUSY_TIMEOUT,
         );
 
         let deadline = Instant::now() + RESET_DEADLINE;

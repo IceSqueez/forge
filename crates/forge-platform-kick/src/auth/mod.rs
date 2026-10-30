@@ -90,13 +90,21 @@ pub struct KickAuthFlow {
 
 impl KickAuthFlow {
     pub fn new(oauth: KickOAuthClient, api: Gateway) -> Self {
+        Self::with_callback_port(oauth, api, Some(KICK_OAUTH_CALLBACK_PORT))
+    }
+
+    pub fn with_callback_port(
+        oauth: KickOAuthClient,
+        api: Gateway,
+        preferred_port: Option<u16>,
+    ) -> Self {
         let loopback = PkceLoopback::new(PkceAuthorizeConfig {
             client_id: oauth.client_id().to_owned(),
             authorize_endpoint: oauth.authorize_endpoint().to_owned(),
             scopes: KICK_SCOPES.iter().map(|s| (*s).to_owned()).collect(),
             authorize_pre_redirect_params: vec![("redirect".to_owned(), "127.0.0.1".to_owned())],
             authorize_trailing_params: Vec::new(),
-            preferred_port: Some(KICK_OAUTH_CALLBACK_PORT),
+            preferred_port,
         });
         Self {
             oauth,
@@ -270,9 +278,10 @@ mod tests {
             (EndpointSurface::KickOAuth, &oauth.uri()),
             (EndpointSurface::KickPublicApi, &api.uri()),
         ]);
-        let mut flow = KickAuthFlow::new(
+        let mut flow = KickAuthFlow::with_callback_port(
             oauth_client_over(&endpoints, Arc::new(GrantingLimiter)),
             api_at(&api.uri()),
+            None,
         );
         let auth_url = flow.start().await.unwrap().auth_url;
         assert!(
@@ -286,7 +295,6 @@ mod tests {
     #[tokio::test]
     async fn sign_in_sends_the_authorize_page_and_token_post_to_the_oauth_host_and_users_to_the_api_host()
      {
-        let _port = CALLBACK_PORT_LOCK.lock().await;
         let oauth = MockServer::start().await;
         let api = MockServer::start().await;
         mount(
@@ -327,7 +335,6 @@ mod tests {
 
     #[tokio::test]
     async fn a_grant_without_a_refresh_token_fails_the_sign_in_before_the_user_lookup() {
-        let _port = CALLBACK_PORT_LOCK.lock().await;
         let oauth = MockServer::start().await;
         let api = MockServer::start().await;
         mount(
@@ -350,7 +357,6 @@ mod tests {
 
     #[tokio::test]
     async fn a_grant_lifetime_past_the_calendar_fails_the_sign_in_as_malformed() {
-        let _port = CALLBACK_PORT_LOCK.lock().await;
         let oauth = MockServer::start().await;
         let api = MockServer::start().await;
         mount(
@@ -611,8 +617,8 @@ mod tests {
 
     #[tokio::test]
     async fn a_sign_in_over_an_unreachable_oauth_host_maps_to_network() {
-        let _port = CALLBACK_PORT_LOCK.lock().await;
-        let mut flow = KickAuthFlow::new(unreachable_oauth_client(), unreachable_api());
+        let mut flow =
+            KickAuthFlow::with_callback_port(unreachable_oauth_client(), unreachable_api(), None);
         let auth_url = flow.start().await.unwrap().auth_url;
         deliver_callback(&auth_url, "code123");
 

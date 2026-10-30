@@ -169,6 +169,23 @@ impl TwitchSignIn {
     }
 }
 
+#[derive(Clone, Copy, Debug)]
+pub struct DeviceTiming {
+    pub poll_interval: Option<Duration>,
+    pub lifetime: Option<Duration>,
+    pub slow_down_increment: Duration,
+}
+
+impl Default for DeviceTiming {
+    fn default() -> Self {
+        Self {
+            poll_interval: None,
+            lifetime: None,
+            slow_down_increment: SLOW_DOWN_INCREMENT,
+        }
+    }
+}
+
 pub struct TwitchAuthFlow {
     oauth: TwitchOAuthClient,
     helix: Gateway,
@@ -176,6 +193,7 @@ pub struct TwitchAuthFlow {
     device_code: Option<String>,
     poll_interval: Duration,
     deadline: Option<Instant>,
+    timing: DeviceTiming,
 }
 
 impl TwitchAuthFlow {
@@ -187,7 +205,13 @@ impl TwitchAuthFlow {
             device_code: None,
             poll_interval: DEFAULT_POLL_INTERVAL,
             deadline: None,
+            timing: DeviceTiming::default(),
         }
+    }
+
+    pub fn with_timing(mut self, timing: DeviceTiming) -> Self {
+        self.timing = timing;
+        self
     }
 
     pub(crate) fn for_bot(oauth: TwitchOAuthClient, helix: Gateway) -> Self {
@@ -198,7 +222,10 @@ impl TwitchAuthFlow {
 
     pub async fn start(&mut self) -> Result<DeviceCodeInfo, PlatformError> {
         let authorization = self.oauth.request_device_code(self.scopes).await?;
-        let lifetime = Duration::from_secs(authorization.expires_in);
+        let lifetime = self
+            .timing
+            .lifetime
+            .unwrap_or_else(|| Duration::from_secs(authorization.expires_in));
         let deadline = Instant::now()
             .checked_add(lifetime)
             .ok_or_else(lifetime_out_of_range)?;
@@ -206,8 +233,9 @@ impl TwitchAuthFlow {
             .checked_add(lifetime)
             .ok_or_else(lifetime_out_of_range)?;
         self.device_code = Some(authorization.device_code);
-        self.poll_interval =
-            Duration::from_secs(authorization.interval.max(MIN_POLL_INTERVAL_SECS));
+        self.poll_interval = self.timing.poll_interval.unwrap_or_else(|| {
+            Duration::from_secs(authorization.interval.max(MIN_POLL_INTERVAL_SECS))
+        });
         self.deadline = Some(deadline);
         info!(
             scopes = self.scopes.len(),
@@ -254,7 +282,7 @@ impl TwitchAuthFlow {
                     trace!("twitch device authorization still pending");
                 }
                 DevicePoll::SlowDown => {
-                    self.poll_interval += SLOW_DOWN_INCREMENT;
+                    self.poll_interval += self.timing.slow_down_increment;
                     next_wait = self.poll_interval;
                     debug!(
                         poll_interval_secs = self.poll_interval.as_secs(),
@@ -822,11 +850,14 @@ mod tests {
         assert!(!scopes.is_empty(), "device grant must request scopes");
     }
 
-    const POLL_INTERVAL: Duration = Duration::from_secs(5);
-    const TICK: Duration = Duration::from_millis(1);
-    const SETTLE_YIELDS: usize = 16;
+    const POLL_INTERVAL: Duration = Duration::from_millis(150);
+    const FAST_POLL_INTERVAL: Duration = Duration::from_millis(20);
     const LIFETIME: Duration = Duration::from_secs(3600);
-    const CLAMP_MARGIN: Duration = Duration::from_secs(60);
+    const HANG_GUARD: Duration = Duration::from_secs(20);
+    const NEVER_WITHIN: Duration = Duration::from_millis(400);
+    const UNREACHABLE_INCREMENT: Duration = Duration::from_secs(600);
+    const ADVERTISED_LIFETIME_SECS: u64 = 3600;
+    const ADVERTISED_INTERVAL_SECS: u64 = 5;
 
     struct AnsweredPolls(Arc<Notify>);
 
@@ -836,13 +867,15 @@ mod tests {
         }
     }
 
-    struct ScriptedAnswers {
+    struct RecordedPolls {
         queued: std::sync::Mutex<std::collections::VecDeque<ResponseTemplate>>,
         then: ResponseTemplate,
+        arrivals: tokio::sync::mpsc::UnboundedSender<std::time::Instant>,
     }
 
-    impl Respond for ScriptedAnswers {
+    impl Respond for RecordedPolls {
         fn respond(&self, _: &Request) -> ResponseTemplate {
+            self.arrivals.send(std::time::Instant::now()).ok();
             self.queued
                 .lock()
                 .unwrap()
@@ -859,9 +892,11 @@ mod tests {
         ResponseTemplate::new(429).insert_header("Retry-After", retry_after_secs.to_string())
     }
 
-    async fn settle() {
-        for _ in 0..SETTLE_YIELDS {
-            tokio::task::yield_now().await;
+    fn timing(poll_interval: Duration, lifetime: Duration) -> DeviceTiming {
+        DeviceTiming {
+            poll_interval: Some(poll_interval),
+            lifetime: Some(lifetime),
+            ..DeviceTiming::default()
         }
     }
 
@@ -869,9 +904,10 @@ mod tests {
         server: MockServer,
         limiter: Arc<forge_net::test_support::RecordingRateLimiter>,
         answered: Arc<Notify>,
+        arrivals: tokio::sync::mpsc::UnboundedReceiver<std::time::Instant>,
+        started: std::time::Instant,
         cancel: CancellationToken,
         waiting: tokio::task::JoinHandle<Result<TwitchAuthBundle, PlatformError>>,
-        _frozen: std::sync::mpsc::Sender<()>,
     }
 
     impl PollRig {
@@ -879,44 +915,21 @@ mod tests {
             answers: Vec<ResponseTemplate>,
             then: ResponseTemplate,
             limiter: forge_net::test_support::RecordingRateLimiter,
-        ) -> Self {
-            Self::launch(answers, then, limiter, None).await
-        }
-
-        async fn started_by_device_grant(
-            device_lifetime_secs: u64,
-            then: ResponseTemplate,
-        ) -> Self {
-            Self::launch(
-                Vec::new(),
-                then,
-                forge_net::test_support::RecordingRateLimiter::granting(),
-                Some(device_lifetime_secs),
-            )
-            .await
-        }
-
-        async fn launch(
-            answers: Vec<ResponseTemplate>,
-            then: ResponseTemplate,
-            limiter: forge_net::test_support::RecordingRateLimiter,
-            device_lifetime_secs: Option<u64>,
+            timing: DeviceTiming,
         ) -> Self {
             let server = MockServer::start().await;
-            if let Some(secs) = device_lifetime_secs {
-                mount_device(&server, secs, POLL_INTERVAL.as_secs()).await;
-            }
+            mount_device(&server, ADVERTISED_LIFETIME_SECS, ADVERTISED_INTERVAL_SECS).await;
+            let (arrivals_tx, arrivals) = tokio::sync::mpsc::unbounded_channel();
             mount(
                 &server,
                 "/token",
-                ScriptedAnswers {
+                RecordedPolls {
                     queued: std::sync::Mutex::new(answers.into()),
                     then,
+                    arrivals: arrivals_tx,
                 },
             )
             .await;
-            let (frozen, release) = std::sync::mpsc::channel::<()>();
-            tokio::task::spawn_blocking(move || release.recv());
             let limiter = Arc::new(limiter);
             let answered = Arc::new(Notify::new());
             let gateway = Gateway::new(
@@ -929,58 +942,45 @@ mod tests {
             let mut flow = TwitchAuthFlow::new(
                 TwitchOAuthClient::new(gateway, CLIENT.to_owned()),
                 crate::sub_actions::test_support::unreachable_helix_gateway(),
-            );
-            if device_lifetime_secs.is_some() {
-                flow.start().await.unwrap();
-            } else {
-                flow.device_code = Some("DEV123".to_owned());
-                flow.deadline = Some(tokio::time::Instant::now() + LIFETIME);
-                flow.poll_interval = POLL_INTERVAL;
-            }
+            )
+            .with_timing(timing);
+            let started = std::time::Instant::now();
+            flow.start().await.unwrap();
             let cancel = CancellationToken::new();
             let waiting = tokio::spawn({
                 let cancel = cancel.clone();
                 async move { flow.wait_for_authorization(cancel).await }
             });
-            settle().await;
             Self {
                 server,
                 limiter,
                 answered,
+                arrivals,
+                started,
                 cancel,
                 waiting,
-                _frozen: frozen,
             }
         }
 
-        fn polls(&self) -> usize {
-            self.limiter.acquire_count()
+        async fn next_poll(&mut self) -> std::time::Instant {
+            tokio::time::timeout(HANG_GUARD, self.arrivals.recv())
+                .await
+                .expect("the next poll never reached the token endpoint")
+                .expect("the token endpoint must stay up")
         }
 
-        async fn advance(&self, by: Duration) {
-            tokio::time::advance(by).await;
-            settle().await;
+        async fn no_poll_arrives_for(&mut self, window: Duration) -> bool {
+            tokio::time::timeout(window, self.arrivals.recv())
+                .await
+                .is_err()
         }
 
-        async fn expect_poll_after(&self, pause: Duration) {
-            let before = self.polls();
-            self.advance(pause - TICK).await;
-            assert_eq!(
-                self.polls(),
-                before,
-                "polled before the {pause:?} pause ended"
-            );
-            self.advance(TICK * 2).await;
-            assert_eq!(
-                self.polls(),
-                before + 1,
-                "no poll once the {pause:?} pause ended"
-            );
-            self.answered.notified().await;
-        }
-
-        async fn ended_reason(self) -> String {
-            let Err(PlatformError::Auth { reason }) = self.waiting.await.unwrap() else {
+        async fn ended_reason(&mut self) -> String {
+            let ended = tokio::time::timeout(HANG_GUARD, &mut self.waiting)
+                .await
+                .expect("the wait must end on its own")
+                .unwrap();
+            let Err(PlatformError::Auth { reason }) = ended else {
                 panic!("the wait must end with an Auth error");
             };
             reason
@@ -988,122 +988,146 @@ mod tests {
 
         async fn cancelled_reason(self) -> String {
             self.cancel.cancel();
-            let Err(PlatformError::Auth { reason }) = self.waiting.await.unwrap() else {
+            let ended = tokio::time::timeout(HANG_GUARD, self.waiting)
+                .await
+                .expect("a cancelled wait must end promptly")
+                .unwrap();
+            let Err(PlatformError::Auth { reason }) = ended else {
                 panic!("a cancelled wait must end with an Auth error");
             };
             reason
         }
     }
 
-    #[tokio::test(start_paused = true)]
+    #[tokio::test]
     async fn a_throttled_poll_waits_the_longer_of_the_retry_hint_and_the_poll_interval() {
-        let rig = PollRig::start(
-            vec![throttled(30), throttled(1)],
+        const HINT: Duration = Duration::from_secs(1);
+        let mut rig = PollRig::start(
+            vec![throttled(HINT.as_secs()), throttled(0)],
             poll_answer("authorization_pending"),
             forge_net::test_support::RecordingRateLimiter::granting(),
+            timing(POLL_INTERVAL, LIFETIME),
         )
         .await;
 
-        for pause in [POLL_INTERVAL, Duration::from_secs(30), POLL_INTERVAL] {
-            rig.expect_poll_after(pause).await;
-        }
+        let first = rig.next_poll().await;
+        let after_longer_hint = rig.next_poll().await;
+        let after_shorter_hint = rig.next_poll().await;
 
-        assert_eq!(rig.server.received_requests().await.unwrap().len(), 3);
+        assert_eq!(
+            (
+                first.duration_since(rig.started) >= POLL_INTERVAL,
+                after_longer_hint.duration_since(first) >= HINT,
+                after_shorter_hint.duration_since(after_longer_hint) >= POLL_INTERVAL,
+            ),
+            (true, true, true)
+        );
         assert_eq!(rig.cancelled_reason().await, DEVICE_CANCELLED_REASON);
     }
 
-    #[tokio::test(start_paused = true)]
+    #[tokio::test]
     async fn only_slow_down_raises_the_poll_interval() {
-        let rig = PollRig::start(
-            vec![
-                throttled(1),
-                poll_answer("authorization_pending"),
-                poll_answer("slow_down"),
-            ],
-            poll_answer("authorization_pending"),
+        let mut rig = PollRig::start(
+            vec![throttled(0), poll_answer("authorization_pending")],
+            poll_answer("slow_down"),
             forge_net::test_support::RecordingRateLimiter::granting(),
-        )
-        .await;
-        let slowed = POLL_INTERVAL + SLOW_DOWN_INCREMENT;
-
-        for pause in [POLL_INTERVAL, POLL_INTERVAL, POLL_INTERVAL, slowed, slowed] {
-            rig.expect_poll_after(pause).await;
-        }
-
-        assert_eq!(rig.cancelled_reason().await, DEVICE_CANCELLED_REASON);
-    }
-
-    #[tokio::test(start_paused = true)]
-    async fn an_exhausted_local_budget_waits_one_poll_interval_and_keeps_polling() {
-        let rig = PollRig::start(
-            Vec::new(),
-            poll_answer("authorization_pending"),
-            forge_net::test_support::RecordingRateLimiter::granting().with_script([
-                Ok(forge_net::RateLimitOutcome::Exhausted),
-                Ok(forge_net::RateLimitOutcome::Exhausted),
-            ]),
+            DeviceTiming {
+                slow_down_increment: UNREACHABLE_INCREMENT,
+                ..timing(FAST_POLL_INTERVAL, LIFETIME)
+            },
         )
         .await;
 
         for _ in 0..3 {
-            rig.expect_poll_after(POLL_INTERVAL).await;
+            rig.next_poll().await;
         }
 
-        assert_eq!(
-            rig.server.received_requests().await.unwrap().len(),
-            1,
-            "only the poll with budget left may reach Twitch"
+        assert!(
+            rig.no_poll_arrives_for(NEVER_WITHIN).await,
+            "a slow_down answer must lengthen the pause before the next poll"
         );
         assert_eq!(rig.cancelled_reason().await, DEVICE_CANCELLED_REASON);
     }
 
-    #[tokio::test(start_paused = true)]
+    #[tokio::test]
+    async fn an_exhausted_local_budget_waits_one_poll_interval_and_keeps_polling() {
+        use forge_net::RateLimitOutcome::{Exhausted, Granted};
+        let mut rig = PollRig::start(
+            Vec::new(),
+            poll_answer("authorization_pending"),
+            forge_net::test_support::RecordingRateLimiter::granting().with_script([
+                Ok(Granted),
+                Ok(Exhausted),
+                Ok(Exhausted),
+            ]),
+            timing(POLL_INTERVAL, LIFETIME),
+        )
+        .await;
+
+        let reached_twitch = rig.next_poll().await;
+
+        assert_eq!(
+            (
+                reached_twitch.duration_since(rig.started) >= POLL_INTERVAL * 3,
+                rig.server.received_requests().await.unwrap().len(),
+            ),
+            (true, 2),
+            "only the device request and the poll with budget left may reach Twitch"
+        );
+        assert_eq!(rig.cancelled_reason().await, DEVICE_CANCELLED_REASON);
+    }
+
+    #[tokio::test]
     async fn a_throttle_pause_past_expiry_polls_once_at_the_deadline_then_reports_expired() {
-        let rig = PollRig::start(
+        const SHORT_LIFETIME: Duration = Duration::from_secs(6);
+        let mut rig = PollRig::start(
             Vec::new(),
             throttled(2 * LIFETIME.as_secs()),
             forge_net::test_support::RecordingRateLimiter::granting(),
+            timing(FAST_POLL_INTERVAL, SHORT_LIFETIME),
         )
         .await;
-        rig.expect_poll_after(POLL_INTERVAL).await;
+        rig.next_poll().await;
 
-        rig.advance(LIFETIME - CLAMP_MARGIN).await;
-        let polls_before_expiry = rig.polls();
-        rig.advance(CLAMP_MARGIN + TICK).await;
-        rig.answered.notified().await;
-        let polls_at_expiry = rig.polls();
+        let at_deadline = rig.next_poll().await;
+        let started = rig.started;
         let limiter = Arc::clone(&rig.limiter);
 
-        assert_eq!(polls_before_expiry, 1);
-        assert_eq!(
-            polls_at_expiry, 2,
-            "the pause must end by the code's expiry"
+        assert!(
+            at_deadline.duration_since(started) >= SHORT_LIFETIME,
+            "the pause must be cut at the code's expiry"
         );
-        assert_eq!(rig.ended_reason().await, DEVICE_EXPIRED_REASON);
-        assert_eq!(limiter.acquire_count(), 2, "no poll after the deadline");
-    }
-
-    #[tokio::test(start_paused = true)]
-    async fn a_started_device_code_expires_after_a_final_poll_at_its_lifetime() {
-        let lifetime = Duration::from_secs(12);
-        let rig = PollRig::started_by_device_grant(
-            lifetime.as_secs(),
-            poll_answer("authorization_pending"),
-        )
-        .await;
-
-        rig.expect_poll_after(POLL_INTERVAL).await;
-        rig.expect_poll_after(POLL_INTERVAL).await;
-        rig.expect_poll_after(lifetime - (POLL_INTERVAL + TICK) * 2)
-            .await;
-        let limiter = Arc::clone(&rig.limiter);
-
         assert_eq!(rig.ended_reason().await, DEVICE_EXPIRED_REASON);
         assert_eq!(
             limiter.acquire_count(),
-            4,
-            "one device request and three polls"
+            3,
+            "one device request, the first poll and the poll at the deadline; none after it"
         );
+    }
+
+    #[tokio::test]
+    async fn a_started_device_code_expires_after_a_final_poll_at_its_lifetime() {
+        const SHORT_LIFETIME: Duration = Duration::from_millis(600);
+        let mut rig = PollRig::start(
+            Vec::new(),
+            poll_answer("authorization_pending"),
+            forge_net::test_support::RecordingRateLimiter::granting(),
+            timing(POLL_INTERVAL, SHORT_LIFETIME),
+        )
+        .await;
+        let started = rig.started;
+
+        let reason = rig.ended_reason().await;
+
+        let mut last = None;
+        while let Ok(arrival) = rig.arrivals.try_recv() {
+            last = Some(arrival);
+        }
+        assert!(
+            last.is_some_and(|at| at.duration_since(started) >= SHORT_LIFETIME),
+            "the last poll must land at the lifetime, not before it"
+        );
+        assert_eq!(reason, DEVICE_EXPIRED_REASON);
     }
 
     #[tokio::test]
@@ -1120,23 +1144,27 @@ mod tests {
         assert!(flow.device_code.is_none() && flow.deadline.is_none());
     }
 
-    #[tokio::test(start_paused = true)]
+    #[tokio::test]
     async fn cancelling_during_a_throttle_pause_ends_the_wait_without_another_poll() {
-        let rig = PollRig::start(
+        let mut rig = PollRig::start(
             Vec::new(),
             throttled(LIFETIME.as_secs()),
             forge_net::test_support::RecordingRateLimiter::granting(),
+            timing(FAST_POLL_INTERVAL, LIFETIME),
         )
         .await;
-        rig.expect_poll_after(POLL_INTERVAL).await;
-        let paused_at = tokio::time::Instant::now();
+        rig.next_poll().await;
+        rig.answered.notified().await;
         let limiter = Arc::clone(&rig.limiter);
 
         let reason = rig.cancelled_reason().await;
 
         assert_eq!(reason, DEVICE_CANCELLED_REASON);
-        assert_eq!(limiter.acquire_count(), 1);
-        assert_eq!(paused_at.elapsed(), Duration::ZERO);
+        assert_eq!(
+            limiter.acquire_count(),
+            2,
+            "the device request and one poll"
+        );
     }
 
     #[tokio::test]

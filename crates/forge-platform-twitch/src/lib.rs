@@ -36,8 +36,8 @@ pub mod vocabulary;
 
 pub use account::identity::BroadcasterTier;
 pub use auth::{
-    DeviceCodeInfo, TWITCH_BOT_SCOPES, TWITCH_BROADCASTER_SCOPES, TwitchAuthBundle, TwitchAuthFlow,
-    TwitchSignIn, UserInfo, client_id, twitch_auth_flow,
+    DeviceCodeInfo, DeviceTiming, TWITCH_BOT_SCOPES, TWITCH_BROADCASTER_SCOPES, TwitchAuthBundle,
+    TwitchAuthFlow, TwitchSignIn, UserInfo, client_id, twitch_auth_flow,
 };
 pub use bot_account::{
     BotLoginError, BotModerator, BotModeratorError, BotStatus, TwitchBotAccount,
@@ -47,7 +47,7 @@ pub use chat::{
     ChatConnectionState, ChatSendError, SentMessageId, TwitchChat, TwitchChatHandle, send_chat,
 };
 pub use chat_platform::TwitchPlatform;
-pub use config::{ChatSessionConfig, HELIX_BUDGET_CAPACITY, HELIX_BUDGET_WINDOW};
+pub use config::{ChatSessionConfig, ChatTiming, HELIX_BUDGET_CAPACITY, HELIX_BUDGET_WINDOW};
 pub use credentials::{TWITCH_BOT_CREDENTIAL_ID, TWITCH_CREDENTIAL_ID};
 pub use credentials_manager::TwitchCredentialsManager;
 pub use helix::{

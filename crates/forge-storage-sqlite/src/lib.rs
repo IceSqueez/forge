@@ -52,7 +52,9 @@ pub use latest_value_impl::SqliteLatestValueRepo;
 pub use media_impl::SqliteMediaRepo;
 pub use migrations::{BASELINE_VERSION, JournalState, MIGRATIONS, apply as apply_migrations};
 pub use overlay_impl::SqliteOverlayRepo;
-pub use pool::{SqlitePools, connect, connect_pools};
+pub use pool::{
+    DEFAULT_BUSY_TIMEOUT, SqlitePools, connect, connect_pools, connect_pools_with_busy_timeout,
+};
 pub use provider::SqliteBackend;
 pub use queue_impl::SqliteQueueRepo;
 pub use scheduled_run_impl::SqliteScheduledRunRepo;

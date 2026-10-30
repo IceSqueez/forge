@@ -3,7 +3,7 @@ use crate::chat::subscriber::{
     SubscribeError, SubscribePass, TopicRetries, TopicRetryRun, mark_revoked, subscribe_all,
     subscription_display_kind,
 };
-use crate::config::ChatSessionConfig;
+use crate::config::{ChatSessionConfig, ChatTiming};
 use crate::credentials_manager::TwitchCredentialsManager;
 use crate::helix::{FixedTokenSource, HelixHttpTransport, HelixTransport};
 use crate::lifecycle::TwitchLifecycle;
@@ -74,7 +74,6 @@ use crate::vocabulary::events::support::{
 };
 use crate::vocabulary::fields::automod as automod_fields;
 
-const KEEPALIVE_TIMEOUT: Duration = Duration::from_secs(15);
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
 const SUCCESSOR_TIMEOUT: Duration = Duration::from_secs(15);
 const CLOSE_TIMEOUT: Duration = Duration::from_secs(2);
@@ -128,6 +127,7 @@ pub(crate) struct ChatSession {
     transition: ConnectionTransition,
     seen_messages: MessageIdWindow,
     backoff: Backoff,
+    keepalive_timeout: Duration,
     retries_rx: Option<oneshot::Receiver<TopicRetries>>,
 }
 
@@ -184,6 +184,7 @@ impl ChatSession {
             transition: ConnectionTransition::Unexpected,
             seen_messages: MessageIdWindow::default(),
             backoff: Backoff::default(),
+            keepalive_timeout: crate::config::KEEPALIVE_TIMEOUT,
             retries_rx: None,
         };
         (session, shutdown_tx)
@@ -191,6 +192,12 @@ impl ChatSession {
 
     pub(crate) fn with_bot(mut self, bot: Option<Arc<TwitchBotAccount>>) -> Self {
         self.config.bot = bot;
+        self
+    }
+
+    pub(crate) fn with_timing(mut self, timing: ChatTiming) -> Self {
+        self.keepalive_timeout = timing.keepalive_timeout;
+        self.backoff = Backoff::new(timing.reconnect_backoff_base, timing.reconnect_backoff_cap);
         self
     }
 
@@ -269,7 +276,7 @@ impl ChatSession {
         let mut subscription_pass: Option<SubscriptionPassRun> = None;
         let mut topic_retries: Option<TopicRetryRun> = None;
         let mut held_frames: Vec<String> = Vec::new();
-        let mut keepalive_deadline = Instant::now() + KEEPALIVE_TIMEOUT;
+        let mut keepalive_deadline = Instant::now() + self.keepalive_timeout;
 
         loop {
             tokio::select! {
@@ -367,7 +374,7 @@ impl ChatSession {
                                 "moved to the successor eventsub session"
                             );
                             live = Some(socket);
-                            keepalive_deadline = Instant::now() + KEEPALIVE_TIMEOUT;
+                            keepalive_deadline = Instant::now() + self.keepalive_timeout;
                         }
                         Err(reason) => {
                             warn!(error = %reason, "successor eventsub connection failed");
@@ -381,7 +388,7 @@ impl ChatSession {
                 msg = next_message(&mut live) => {
                     match msg {
                         Some(Ok(Message::Text(text))) => {
-                            keepalive_deadline = Instant::now() + KEEPALIVE_TIMEOUT;
+                            keepalive_deadline = Instant::now() + self.keepalive_timeout;
                             if subscription_pass.is_some() {
                                 if held_frames.len() < HELD_FRAME_LIMIT {
                                     held_frames.push(text.to_string());
@@ -3666,6 +3673,10 @@ mod tests {
     }
 
     fn spawn_session(socket_url: &str, api_url: &str) -> RunningSession {
+        spawn_session_timed(socket_url, api_url, ChatTiming::default())
+    }
+
+    fn spawn_session_timed(socket_url: &str, api_url: &str, timing: ChatTiming) -> RunningSession {
         let bus = Arc::new(EventChannel::new(EVENT_CHANNEL_CAPACITY));
         let endpoints = crate::sub_actions::test_support::endpoints_with(&[
             (EndpointSurface::TwitchApi, api_url),
@@ -3676,7 +3687,7 @@ mod tests {
         RunningSession {
             bus,
             state,
-            task: tokio::spawn(session.run()),
+            task: tokio::spawn(session.with_timing(timing).run()),
             _shutdown: shutdown,
         }
     }
@@ -4551,6 +4562,7 @@ mod tests {
         (handle, peer, events)
     }
 
+    const ABORT_GRACE: Duration = Duration::from_millis(150);
     const ABORTED_AFTER_THE_GRACE: &str = "did not stop within the grace period";
 
     #[test]
@@ -4603,49 +4615,26 @@ mod tests {
         );
     }
 
-    async fn next_state_jumping_backoffs(events: &mut EventSubscription, want: ConnectionState) {
-        const REAL_CLOCK_WINDOW: Duration = Duration::from_millis(10);
-        const BACKOFF_JUMP: Duration = Duration::from_secs(1);
-        let started = std::time::Instant::now();
-        loop {
-            assert!(
-                started.elapsed() < FAKE_WAIT,
-                "the session never reported {want:?}"
-            );
-            let Ok(event) = tokio::time::timeout(REAL_CLOCK_WINDOW, events.recv()).await else {
-                tokio::time::pause();
-                tokio::time::advance(BACKOFF_JUMP).await;
-                tokio::time::resume();
-                continue;
-            };
-            let event = event.expect("the bus must stay open");
-            if event.kind == PlatformConnectionChanged::KIND
-                && serde_json::from_value::<ConnectionState>(event.payload["state"].clone()).ok()
-                    == Some(want)
-            {
-                return;
-            }
-        }
-    }
-
     #[tokio::test]
     async fn shutting_down_during_the_reconnect_backoff_skips_the_rest_of_the_wait() {
-        const RETRIES_BEFORE_SHUTDOWN: usize = 3;
+        const LONG_BACKOFF: Duration = Duration::from_secs(3_600);
+        const HANG_GUARD: Duration = Duration::from_secs(20);
         let dead = unreachable_ws_url();
         let (chat, bus) = chat_over(&dead, &dead.replacen("ws://", "http://", 1));
+        let chat = chat.with_timing(ChatTiming {
+            reconnect_backoff_base: LONG_BACKOFF,
+            reconnect_backoff_cap: LONG_BACKOFF,
+            shutdown_grace: LONG_BACKOFF,
+            ..ChatTiming::default()
+        });
         let mut events = bus.subscribe();
         let handle = chat.start();
-        for _ in 0..RETRIES_BEFORE_SHUTDOWN {
-            next_state_jumping_backoffs(&mut events, ConnectionState::Reconnecting).await;
-        }
+        connection_states_until(&mut events, ConnectionState::Connecting).await;
 
-        tokio::time::pause();
-        let asked = tokio::time::Instant::now();
-        handle.shutdown().await;
+        let shut_down = tokio::time::timeout(HANG_GUARD, handle.shutdown()).await;
 
-        assert_eq!(
-            asked.elapsed(),
-            Duration::ZERO,
+        assert!(
+            shut_down.is_ok(),
             "a shutdown during the backoff must end the session without sleeping out the delay"
         );
     }
@@ -4761,18 +4750,17 @@ mod tests {
             SubscriptionTracker::default(),
             TwitchLifecycle::new(),
         );
-        let handle = crate::chat::TwitchChatHandle::spawn(session, state.clone(), shutdown);
+        let handle =
+            crate::chat::TwitchChatHandle::spawn(session, state.clone(), shutdown, ABORT_GRACE);
         let peer = base.accept().await;
         peer.send(welcome_frame("sess-1"));
         token_endpoint.wait_for_a_request().await;
 
-        tokio::time::pause();
-        let asked = tokio::time::Instant::now();
+        let asked = std::time::Instant::now();
         handle.shutdown().await;
         let waited = asked.elapsed();
-        tokio::time::resume();
         assert!(
-            waited >= crate::chat::SHUTDOWN_GRACE,
+            waited >= ABORT_GRACE,
             "the session must be stuck in its token fetch so shutdown has to abort it"
         );
 
@@ -4941,7 +4929,12 @@ mod tests {
                 SubscriptionTracker::default(),
                 socket_and_api(&base.url, &api.uri()),
             );
-            let handle = crate::chat::TwitchChatHandle::spawn(session, state, shutdown);
+            let handle = crate::chat::TwitchChatHandle::spawn(
+                session,
+                state,
+                shutdown,
+                crate::config::SHUTDOWN_GRACE,
+            );
             let peer = base.accept().await;
             peer.send(welcome_frame("sess-1"));
             bus.wait_until("the Connected report", |bus| {
@@ -5077,17 +5070,19 @@ mod tests {
     async fn the_keepalive_deadline_still_ends_a_session_whose_subscription_pass_hangs() {
         let mut helix = HeldHttpEndpoint::bind().await;
         let mut base = FakeEventSub::bind().await;
-        let mut session = spawn_session(&base.url, &helix.url);
+        let mut session = spawn_session_timed(
+            &base.url,
+            &helix.url,
+            ChatTiming {
+                keepalive_timeout: SHORT_KEEPALIVE,
+                ..ChatTiming::default()
+            },
+        );
         let welcomed = base.accept().await;
         welcomed.send(welcome_frame("sess-1"));
         helix.wait_for_a_request().await;
 
-        tokio::time::pause();
-        let retried = tokio::time::timeout(
-            KEEPALIVE_TIMEOUT + KEEPALIVE_TIMEOUT / 3,
-            first_retry(&mut session.state),
-        )
-        .await;
+        let retried = tokio::time::timeout(FAKE_WAIT, first_retry(&mut session.state)).await;
 
         assert!(
             retried.is_ok(),
@@ -5096,6 +5091,7 @@ mod tests {
         );
     }
 
+    const SHORT_KEEPALIVE: Duration = Duration::from_millis(200);
     const HELD_DURING_PASS: usize = 8;
 
     fn held_text(n: usize) -> String {

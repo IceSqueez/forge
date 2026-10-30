@@ -6,7 +6,7 @@ use sqlx::sqlite::{SqliteConnectOptions, SqliteJournalMode, SqlitePoolOptions, S
 
 use crate::error::SqliteStorageError;
 
-pub(crate) const BUSY_TIMEOUT: Duration = Duration::from_secs(5);
+pub const DEFAULT_BUSY_TIMEOUT: Duration = Duration::from_secs(5);
 const JOURNAL_SIZE_LIMIT_BYTES: &str = "67108864";
 const SHUTDOWN_CHECKPOINT_WAIT: Duration = Duration::from_millis(8);
 const WRITER_CONNECTIONS: u32 = 1;
@@ -19,6 +19,7 @@ pub struct SqlitePools {
     reader: SqlitePool,
     writer: SqlitePool,
     checkpointer: Option<SqlitePool>,
+    busy_timeout: Duration,
 }
 
 impl SqlitePools {
@@ -28,6 +29,10 @@ impl SqlitePools {
 
     pub fn writer(&self) -> &SqlitePool {
         &self.writer
+    }
+
+    pub fn busy_timeout(&self) -> Duration {
+        self.busy_timeout
     }
 
     pub(crate) fn checkpointer(&self) -> Option<&SqlitePool> {
@@ -82,16 +87,17 @@ impl From<SqlitePool> for SqlitePools {
             reader: pool.clone(),
             writer: pool,
             checkpointer: None,
+            busy_timeout: DEFAULT_BUSY_TIMEOUT,
         }
     }
 }
 
-fn options(url: &str) -> Result<SqliteConnectOptions, SqliteStorageError> {
+fn options(url: &str, busy_timeout: Duration) -> Result<SqliteConnectOptions, SqliteStorageError> {
     Ok(SqliteConnectOptions::from_str(url)
         .map_err(SqliteStorageError::Sqlx)?
         .journal_mode(SqliteJournalMode::Wal)
         .synchronous(SqliteSynchronous::Normal)
-        .busy_timeout(BUSY_TIMEOUT)
+        .busy_timeout(busy_timeout)
         .pragma("journal_size_limit", JOURNAL_SIZE_LIMIT_BYTES)
         .foreign_keys(true)
         .create_if_missing(true))
@@ -100,13 +106,20 @@ fn options(url: &str) -> Result<SqliteConnectOptions, SqliteStorageError> {
 pub async fn connect(url: &str) -> Result<SqlitePool, SqliteStorageError> {
     SqlitePoolOptions::new()
         .max_connections(SHARED_POOL_CONNECTIONS)
-        .connect_with(options(url)?)
+        .connect_with(options(url, DEFAULT_BUSY_TIMEOUT)?)
         .await
         .map_err(SqliteStorageError::Sqlx)
 }
 
 pub async fn connect_pools(url: &str) -> Result<SqlitePools, SqliteStorageError> {
-    let opts = options(url)?;
+    connect_pools_with_busy_timeout(url, DEFAULT_BUSY_TIMEOUT).await
+}
+
+pub async fn connect_pools_with_busy_timeout(
+    url: &str,
+    busy_timeout: Duration,
+) -> Result<SqlitePools, SqliteStorageError> {
+    let opts = options(url, busy_timeout)?;
     let writer = SqlitePoolOptions::new()
         .max_connections(WRITER_CONNECTIONS)
         .connect_with(opts.clone().pragma("wal_autocheckpoint", "0"))
@@ -129,6 +142,7 @@ pub async fn connect_pools(url: &str) -> Result<SqlitePools, SqliteStorageError>
         reader,
         writer,
         checkpointer: Some(checkpointer),
+        busy_timeout,
     })
 }
 

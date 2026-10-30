@@ -18,7 +18,9 @@ pub use address_guard::{
     HostRejection, PublicAddressResolver, ensure_public_ip_literal, host_rejection_cause,
     is_loopback_host, is_private_or_special,
 };
-pub use backoff::Backoff;
+pub use backoff::{
+    Backoff, DEFAULT_BASE as DEFAULT_BACKOFF_BASE, DEFAULT_CAP as DEFAULT_BACKOFF_CAP,
+};
 pub use body_read::{
     BodyProgress, BodySink, BodySource, CappedReadError, StreamReadError, TruncatedBody,
     read_capped, read_streaming, read_truncated,

@@ -1,6 +1,9 @@
 use tokio::sync::mpsc;
 
+use std::time::Duration;
+
 const MAIN_THREAD_QUEUE: usize = 16;
+pub const MAIN_THREAD_TIMEOUT: Duration = Duration::from_secs(2);
 
 trait MainThreadJob: Send {
     fn is_cancelled(&self) -> bool;
@@ -52,11 +55,26 @@ pub struct MainThreadLink {
         )
     )]
     jobs: mpsc::Sender<Box<dyn MainThreadJob>>,
+    #[cfg_attr(
+        not(any(target_os = "windows", target_os = "macos")),
+        expect(
+            dead_code,
+            reason = "jobs run on the main thread only on windows and macos"
+        )
+    )]
+    timeout: Duration,
 }
 
 pub fn main_thread_channel() -> (MainThreadHost, MainThreadLink) {
+    main_thread_channel_with_timeout(MAIN_THREAD_TIMEOUT)
+}
+
+pub fn main_thread_channel_with_timeout(timeout: Duration) -> (MainThreadHost, MainThreadLink) {
     let (tx, rx) = mpsc::channel(MAIN_THREAD_QUEUE);
-    (MainThreadHost { jobs: rx }, MainThreadLink { jobs: tx })
+    (
+        MainThreadHost { jobs: rx },
+        MainThreadLink { jobs: tx, timeout },
+    )
 }
 
 impl MainThreadHost {
@@ -77,8 +95,6 @@ impl MainThreadLink {
     ) -> Result<T, crate::error::HotkeyError> {
         use crate::error::HotkeyError;
 
-        const MAIN_THREAD_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(2);
-
         let (reply_tx, reply_rx) = tokio::sync::oneshot::channel();
         let boxed: Box<dyn MainThreadJob> = Box::new(PendingJob { reply_tx, job });
         let round_trip = async {
@@ -90,7 +106,7 @@ impl MainThreadLink {
                 .await
                 .map_err(|_| HotkeyError::MainThreadUnavailable)
         };
-        tokio::time::timeout(MAIN_THREAD_TIMEOUT, round_trip)
+        tokio::time::timeout(self.timeout, round_trip)
             .await
             .map_err(|_| HotkeyError::MainThreadUnavailable)?
     }
@@ -100,6 +116,8 @@ impl MainThreadLink {
 mod tests {
     use super::*;
     use crate::error::HotkeyError;
+
+    const SHORT_DEADLINE: Duration = Duration::from_millis(20);
 
     #[test]
     fn a_job_sent_through_the_link_runs_on_the_thread_that_drives_the_host() {
@@ -136,18 +154,18 @@ mod tests {
         assert!(matches!(outcome, Err(HotkeyError::MainThreadUnavailable)));
     }
 
-    #[tokio::test(start_paused = true)]
+    #[tokio::test]
     async fn a_host_that_never_runs_the_job_fails_it_at_the_deadline() {
-        let (_host, link) = main_thread_channel();
+        let (_host, link) = main_thread_channel_with_timeout(SHORT_DEADLINE);
 
         let outcome = link.run(|| ()).await;
 
         assert!(matches!(outcome, Err(HotkeyError::MainThreadUnavailable)));
     }
 
-    #[tokio::test(start_paused = true)]
+    #[tokio::test]
     async fn a_job_that_timed_out_never_runs_once_the_host_catches_up() {
-        let (host, link) = main_thread_channel();
+        let (host, link) = main_thread_channel_with_timeout(SHORT_DEADLINE);
         let ran = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
 
         let outcome = link

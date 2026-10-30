@@ -60,7 +60,10 @@ pub use hold_ceiling::{
     HOLD_CEILING, HOTKEY_HOLD_CEILING_KEY, SETTING_SPECS, load_hold_ceiling, save_hold_ceiling,
 };
 pub use integration::HOTKEY_INTEGRATION;
-pub use main_thread::{MainThreadHost, MainThreadLink, main_thread_channel};
+pub use main_thread::{
+    MAIN_THREAD_TIMEOUT, MainThreadHost, MainThreadLink, main_thread_channel,
+    main_thread_channel_with_timeout,
+};
 pub use reconciler::HotkeyReconciler;
 pub use synced_clips::HotkeySyncedClipsRepo;
 pub use synced_triggers::HotkeySyncedTriggerRepo;

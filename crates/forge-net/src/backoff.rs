@@ -2,8 +2,8 @@ use std::time::Duration;
 
 use rand::RngExt;
 
-const DEFAULT_BASE: Duration = Duration::from_millis(250);
-const DEFAULT_CAP: Duration = Duration::from_secs(60);
+pub const DEFAULT_BASE: Duration = Duration::from_millis(250);
+pub const DEFAULT_CAP: Duration = Duration::from_secs(60);
 
 pub struct Backoff {
     base_ms: u64,

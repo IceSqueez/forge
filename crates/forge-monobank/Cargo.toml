@@ -18,7 +18,6 @@ forge-storage = { path = "../forge-storage" }
 forge-types = { path = "../forge-types" }
 
 async-trait = { workspace = true }
-jiff = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }

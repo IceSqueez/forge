@@ -19,7 +19,8 @@ use crate::decode::decode_midi_bytes;
 use crate::events::{MidiEvent, MidiPortInfo, PortDirection};
 use crate::health::{
     EVENTS_PER_MINUTE_METRIC, INPUT_PORTS_METRIC, LAST_NOTE_ON_METRIC, MidiHealthSnapshot,
-    OUTPUT_PORTS_METRIC, events_per_minute, input_port_health_value,
+    OUTPUT_PORTS_METRIC, events_per_minute, events_per_minute_health_value,
+    input_port_health_value, last_note_health_value, output_port_health_value,
 };
 use crate::monitor::{bus_payload, to_monitor_event};
 use crate::vocabulary::event_kinds;
@@ -373,10 +374,7 @@ fn build_port_count_deltas(
         snap.output_count = output_count;
         deltas.push(HealthDelta {
             metric: OUTPUT_PORTS_METRIC,
-            new_value: forge_platform_core::HealthValue::Text {
-                primary: forge_platform_core::HealthText::unlocalized(output_count.to_string()),
-                secondary: Some(forge_platform_core::HealthText::unlocalized("available")),
-            },
+            new_value: output_port_health_value(output_count),
         });
     }
     deltas
@@ -385,29 +383,17 @@ fn build_port_count_deltas(
 fn build_event_deltas(snap: &mut MidiHealthSnapshot, is_note_on: bool) -> Vec<HealthDelta> {
     let mut deltas = Vec::new();
 
-    if is_note_on && let Some(t) = snap.last_note_on_at {
-        let formatted = t
-            .format(
-                &time::format_description::parse_borrowed::<2>("[hour]:[minute]:[second]")
-                    .unwrap_or_default(),
-            )
-            .unwrap_or_else(|_| "--:--:--".to_owned());
+    if is_note_on && snap.last_note_on_at.is_some() {
         deltas.push(HealthDelta {
             metric: LAST_NOTE_ON_METRIC,
-            new_value: forge_platform_core::HealthValue::Text {
-                primary: forge_platform_core::HealthText::unlocalized(formatted),
-                secondary: None,
-            },
+            new_value: last_note_health_value(snap.last_note_on_at),
         });
     }
 
     let epm = events_per_minute(&mut snap.event_timestamps);
     deltas.push(HealthDelta {
         metric: EVENTS_PER_MINUTE_METRIC,
-        new_value: forge_platform_core::HealthValue::Text {
-            primary: forge_platform_core::HealthText::unlocalized(epm.to_string()),
-            secondary: Some(forge_platform_core::HealthText::unlocalized("last 60 s")),
-        },
+        new_value: events_per_minute_health_value(epm),
     });
 
     deltas
@@ -847,7 +833,7 @@ mod tests {
             matches!(
                 &delta.new_value,
                 HealthValue::Text { secondary, .. }
-                    if *secondary == Some(forge_platform_core::HealthText::unlocalized("disabled"))
+                    if *secondary == Some(crate::vocabulary::messages::health_disabled().into())
             ),
             "delta carried {:?}",
             delta.new_value

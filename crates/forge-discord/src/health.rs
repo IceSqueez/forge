@@ -28,7 +28,7 @@ pub(crate) struct DiscordHealthSnapshot {
     pub latencies_ms: VecDeque<u64>,
     pub rate_limit_remaining: u64,
     pub rate_limit_total: u64,
-    pub rate_limit_reset_hint: Option<String>,
+    pub rate_limit_reset_hint: Option<Duration>,
     pub last_send_ok: Option<bool>,
     pub error_timestamps: VecDeque<Instant>,
 }
@@ -47,7 +47,7 @@ pub(crate) fn update_on_send(
     ok: bool,
     rate_remaining: u64,
     rate_total: u64,
-    rate_reset_hint: Option<String>,
+    rate_reset_hint: Option<Duration>,
 ) -> Vec<HealthDelta> {
     let mut deltas = Vec::new();
 
@@ -56,54 +56,29 @@ pub(crate) fn update_on_send(
         snap.latencies_ms.pop_front();
     }
 
-    let p50 = compute_p50(&snap.latencies_ms);
     deltas.push(HealthDelta {
         metric: LATENCY_METRIC,
-        new_value: HealthValue::Text {
-            primary: HealthText::unlocalized(
-                p50.map(|v| format!("{v}ms"))
-                    .unwrap_or_else(|| "-".to_owned()),
-            ),
-            secondary: Some(HealthText::unlocalized(format!(
-                "p50 / last {}",
-                snap.latencies_ms.len()
-            ))),
-        },
+        new_value: latency_value(&snap.latencies_ms),
     });
 
     let prev_remaining = snap.rate_limit_remaining;
     let prev_total = snap.rate_limit_total;
     snap.rate_limit_remaining = rate_remaining;
     snap.rate_limit_total = rate_total;
-    snap.rate_limit_reset_hint = rate_reset_hint.clone();
+    snap.rate_limit_reset_hint = rate_reset_hint;
     if prev_remaining != rate_remaining || prev_total != rate_total {
         deltas.push(HealthDelta {
             metric: RATE_LIMIT_METRIC,
-            new_value: HealthValue::Ratio {
-                used: rate_total.saturating_sub(rate_remaining),
-                total: rate_total,
-                reset_hint: rate_reset_hint
-                    .map(|s| format!("resets in {s}s"))
-                    .map(HealthText::unlocalized),
-            },
+            new_value: budget_value(rate_remaining, rate_total, rate_reset_hint),
         });
     }
 
     let prev_ok = snap.last_send_ok;
     snap.last_send_ok = Some(ok);
     if prev_ok != Some(ok) {
-        let label = if ok {
-            "OK".to_owned()
-        } else {
-            "Failed".to_owned()
-        };
         deltas.push(HealthDelta {
             metric: LAST_SEND_METRIC,
-            new_value: HealthValue::Status {
-                label: HealthText::unlocalized(label),
-                active: ok,
-                detail: None,
-            },
+            new_value: last_send_value(Some(ok)),
         });
     }
 
@@ -113,13 +88,46 @@ pub(crate) fn update_on_send(
     let count = age_out_errors(&mut snap.error_timestamps);
     deltas.push(HealthDelta {
         metric: ERRORS_METRIC,
-        new_value: HealthValue::Text {
-            primary: HealthText::unlocalized(count.to_string()),
-            secondary: Some(HealthText::unlocalized("last 60 min")),
-        },
+        new_value: errors_value(count),
     });
 
     deltas
+}
+
+fn latency_value(latencies_ms: &VecDeque<u64>) -> HealthValue {
+    match compute_p50(latencies_ms) {
+        Some(p50) => HealthValue::Text {
+            primary: messages::health_latency_millis(p50).into(),
+            secondary: Some(messages::health_latency_samples(latencies_ms.len()).into()),
+        },
+        None => HealthValue::Text {
+            primary: HealthText::placeholder(),
+            secondary: None,
+        },
+    }
+}
+
+fn budget_value(remaining: u64, total: u64, reset_hint: Option<Duration>) -> HealthValue {
+    HealthValue::Ratio {
+        used: total.saturating_sub(remaining),
+        total,
+        reset_hint: reset_hint.map(|span| messages::health_reset_in(span).into()),
+    }
+}
+
+fn last_send_value(last_send_ok: Option<bool>) -> HealthValue {
+    HealthValue::Status {
+        label: messages::health_send(last_send_ok).into(),
+        active: last_send_ok == Some(true),
+        detail: None,
+    }
+}
+
+fn errors_value(count: usize) -> HealthValue {
+    HealthValue::Text {
+        primary: HealthText::Count(count as u64),
+        secondary: Some(messages::health_errors_window().into()),
+    }
 }
 
 pub(crate) fn record_missing_webhook(snap: &mut DiscordHealthSnapshot) -> Vec<HealthDelta> {
@@ -130,11 +138,7 @@ pub(crate) fn record_missing_webhook(snap: &mut DiscordHealthSnapshot) -> Vec<He
     if prev_ok != Some(false) {
         deltas.push(HealthDelta {
             metric: LAST_SEND_METRIC,
-            new_value: HealthValue::Status {
-                label: HealthText::unlocalized("Failed"),
-                active: false,
-                detail: None,
-            },
+            new_value: last_send_value(Some(false)),
         });
     }
 
@@ -142,10 +146,7 @@ pub(crate) fn record_missing_webhook(snap: &mut DiscordHealthSnapshot) -> Vec<He
     let count = age_out_errors(&mut snap.error_timestamps);
     deltas.push(HealthDelta {
         metric: ERRORS_METRIC,
-        new_value: HealthValue::Text {
-            primary: HealthText::unlocalized(count.to_string()),
-            secondary: Some(HealthText::unlocalized("last 60 min")),
-        },
+        new_value: errors_value(count),
     });
 
     deltas
@@ -199,70 +200,31 @@ impl BuiltinHealth for DiscordClient {
     fn metrics(&self) -> [HealthMetric; 4] {
         let mut snap = self.health_state.lock().unwrap_or_else(|p| p.into_inner());
 
-        let p50 = compute_p50(&snap.latencies_ms);
-        let latency_value = HealthValue::Text {
-            primary: HealthText::unlocalized(
-                p50.map(|v| format!("{v}ms"))
-                    .unwrap_or_else(|| "-".to_owned()),
-            ),
-            secondary: (!snap.latencies_ms.is_empty())
-                .then(|| format!("p50 / last {}", snap.latencies_ms.len()))
-                .map(HealthText::unlocalized),
-        };
-
-        let budget_used = snap
-            .rate_limit_total
-            .saturating_sub(snap.rate_limit_remaining);
-        let budget_value = HealthValue::Ratio {
-            used: budget_used,
-            total: snap.rate_limit_total,
-            reset_hint: snap
-                .rate_limit_reset_hint
-                .as_deref()
-                .map(|s| format!("resets in {s}"))
-                .map(HealthText::unlocalized),
-        };
-
-        let last_send_value = match snap.last_send_ok {
-            None => HealthValue::Status {
-                label: HealthText::unlocalized("No sends yet"),
-                active: false,
-                detail: None,
-            },
-            Some(true) => HealthValue::Status {
-                label: HealthText::unlocalized("OK"),
-                active: true,
-                detail: None,
-            },
-            Some(false) => HealthValue::Status {
-                label: HealthText::unlocalized("Failed"),
-                active: false,
-                detail: None,
-            },
-        };
-
-        let error_count = age_out_errors(&mut snap.error_timestamps);
-        let errors_value = HealthValue::Text {
-            primary: HealthText::unlocalized(error_count.to_string()),
-            secondary: Some(HealthText::unlocalized("last 60 min")),
-        };
+        let latency = latency_value(&snap.latencies_ms);
+        let budget = budget_value(
+            snap.rate_limit_remaining,
+            snap.rate_limit_total,
+            snap.rate_limit_reset_hint,
+        );
+        let last_send = last_send_value(snap.last_send_ok);
+        let errors = errors_value(age_out_errors(&mut snap.error_timestamps));
 
         [
             HealthMetric {
                 id: LATENCY_METRIC,
-                value: latency_value,
+                value: latency,
             },
             HealthMetric {
                 id: RATE_LIMIT_METRIC,
-                value: budget_value,
+                value: budget,
             },
             HealthMetric {
                 id: LAST_SEND_METRIC,
-                value: last_send_value,
+                value: last_send,
             },
             HealthMetric {
                 id: ERRORS_METRIC,
-                value: errors_value,
+                value: errors,
             },
         ]
     }
@@ -338,7 +300,7 @@ mod tests {
             false,
             3,
             5,
-            Some("9".to_owned()),
+            Some(Duration::from_secs(9)),
         ));
         deltas.extend(record_missing_webhook(&mut DiscordHealthSnapshot::default()));
 
@@ -351,32 +313,87 @@ mod tests {
         }
     }
 
-    #[test]
-    fn update_on_send_rate_limit_delta_carries_the_reset_hint_seconds() {
-        let (_tx, snap) = make_health_state();
+    fn value_of(deltas: &[HealthDelta], metric: HealthMetricId) -> HealthValue {
+        deltas
+            .iter()
+            .find(|delta| delta.metric == metric)
+            .unwrap_or_else(|| panic!("no delta for {metric}"))
+            .new_value
+            .clone()
+    }
 
-        let deltas = update_on_send(
-            &mut snap.lock().unwrap(),
-            10,
-            true,
-            3,
-            5,
-            Some("12".to_owned()),
+    #[test]
+    fn update_on_send_rate_limit_delta_carries_the_reset_hint_as_a_span() {
+        let (_tx, snap) = make_health_state();
+        let span = Duration::from_secs(12);
+
+        let deltas = update_on_send(&mut snap.lock().unwrap(), 10, true, 3, 5, Some(span));
+
+        assert_eq!(
+            value_of(&deltas, RATE_LIMIT_METRIC),
+            HealthValue::Ratio {
+                used: 2,
+                total: 5,
+                reset_hint: Some(messages::health_reset_in(span).into()),
+            }
+        );
+    }
+
+    #[test]
+    fn the_latency_tile_reads_a_placeholder_until_the_first_send_then_the_p50_of_its_samples() {
+        let mut samples = VecDeque::new();
+        assert_eq!(
+            latency_value(&samples),
+            HealthValue::Text {
+                primary: HealthText::placeholder(),
+                secondary: None,
+            }
         );
 
-        let hint = deltas
-            .iter()
-            .find_map(|d| match &d.new_value {
-                HealthValue::Ratio { reset_hint, .. } => reset_hint.clone(),
-                _ => None,
-            })
-            .expect("the rate-limit delta must carry a reset hint");
-        let HealthText::Text(hint) = hint else {
-            panic!("the reset hint must be text: {hint:?}");
-        };
-        assert!(
-            hint.code_or_text().contains("12"),
-            "reset hint lost the seconds: {hint:?}"
+        samples.extend([10, 30, 20]);
+        assert_eq!(
+            latency_value(&samples),
+            HealthValue::Text {
+                primary: messages::health_latency_millis(20).into(),
+                secondary: Some(messages::health_latency_samples(3).into()),
+            }
+        );
+    }
+
+    #[test]
+    fn the_last_send_tile_lights_only_after_a_successful_send() {
+        for (last_send_ok, active) in [(None, false), (Some(false), false), (Some(true), true)] {
+            assert_eq!(
+                last_send_value(last_send_ok),
+                HealthValue::Status {
+                    label: messages::health_send(last_send_ok).into(),
+                    active,
+                    detail: None,
+                },
+                "{last_send_ok:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_missing_webhook_fails_the_last_send_tile_and_counts_as_an_error() {
+        let deltas = record_missing_webhook(&mut DiscordHealthSnapshot::default());
+
+        assert_eq!(
+            value_of(&deltas, LAST_SEND_METRIC),
+            last_send_value(Some(false))
+        );
+        assert_eq!(value_of(&deltas, ERRORS_METRIC), errors_value(1));
+    }
+
+    #[test]
+    fn the_errors_tile_is_a_count_over_the_last_hour() {
+        assert_eq!(
+            errors_value(4),
+            HealthValue::Text {
+                primary: HealthText::Count(4),
+                secondary: Some(messages::health_errors_window().into()),
+            }
         );
     }
 

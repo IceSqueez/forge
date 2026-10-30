@@ -3,13 +3,14 @@ use std::time::Duration;
 
 use tokio::sync::{broadcast, mpsc};
 
-use forge_platform_core::{
-    BuiltinContent, DetailSection, HealthDelta, HealthText, HealthValue, SectionIcon,
-};
+use forge_platform_core::{BuiltinContent, DetailSection, HealthDelta, SectionIcon};
 
 use crate::client::VTubeClient;
 use crate::error::VTubeError;
-use crate::health::{EXPRESSIONS_METRIC, HealthSnapshot, ITEMS_METRIC, MODEL_METRIC};
+use crate::health::{
+    EXPRESSIONS_METRIC, HealthSnapshot, ITEMS_METRIC, MODEL_METRIC, expressions_value, items_value,
+    model_value,
+};
 use crate::vts::message_type::{
     API_STATE_REQUEST, AVAILABLE_MODELS_REQUEST, CURRENT_MODEL_REQUEST, EXPRESSION_STATE_REQUEST,
     HOTKEYS_IN_CURRENT_MODEL_REQUEST, ITEM_LIST_REQUEST,
@@ -172,10 +173,7 @@ async fn report_expressions(
         )]
         let _ = health_tx.send(HealthDelta {
             metric: EXPRESSIONS_METRIC,
-            new_value: HealthValue::Text {
-                primary: HealthText::unlocalized(after.to_string()),
-                secondary: Some(HealthText::unlocalized("hotkey-bound")),
-            },
+            new_value: expressions_value(after),
         });
     }
 }
@@ -195,10 +193,7 @@ async fn report_items(
         )]
         let _ = health_tx.send(HealthDelta {
             metric: ITEMS_METRIC,
-            new_value: HealthValue::Text {
-                primary: HealthText::unlocalized(after.unwrap_or(0).to_string()),
-                secondary: Some(HealthText::unlocalized("throwable / pinned")),
-            },
+            new_value: items_value(after.map_or(0, u64::from)),
         });
     }
 }
@@ -233,12 +228,7 @@ fn report_model_secondary(
     )]
     let _ = health_tx.send(HealthDelta {
         metric: MODEL_METRIC,
-        new_value: HealthValue::Text {
-            primary: HealthText::unlocalized(primary),
-            secondary: param_count
-                .map(|n| format!("{n} parameters"))
-                .map(HealthText::unlocalized),
-        },
+        new_value: model_value(&primary, param_count.map(u64::from)),
     });
 }
 
@@ -440,7 +430,7 @@ mod tests {
     use tokio::sync::mpsc;
 
     use forge_platform_core::{
-        BuiltinContent, BuiltinHealth, DetailSection, HealthMetricId, HealthValue,
+        BuiltinContent, BuiltinHealth, DetailSection, HealthMetricId, HealthText, HealthValue,
     };
 
     use super::*;
@@ -714,10 +704,14 @@ mod tests {
                 c.metrics().iter().any(|metric| metric.id == delta.metric),
                 "the delta must target a declared metric"
             );
-            let HealthValue::Text { primary, .. } = delta.new_value else {
-                panic!("{} must be published as a text metric", delta.metric);
+            let HealthValue::Text {
+                primary: HealthText::Count(count),
+                ..
+            } = delta.new_value
+            else {
+                panic!("{} must be published as a count", delta.metric);
             };
-            reported.push((delta.metric.to_string(), plain(&primary)));
+            reported.push((delta.metric.to_string(), count));
         }
         handle.abort();
 
@@ -725,8 +719,8 @@ mod tests {
         assert_eq!(
             reported,
             vec![
-                (EXPRESSIONS_METRIC.to_string(), "2".to_owned()),
-                (ITEMS_METRIC.to_string(), "3".to_owned()),
+                (EXPRESSIONS_METRIC.to_string(), 2),
+                (ITEMS_METRIC.to_string(), 3),
             ]
         );
     }
@@ -755,12 +749,7 @@ mod tests {
             .try_recv()
             .expect("a freshly landed parameter count must be published");
         assert_eq!(delta.metric, MODEL_METRIC);
-        assert!(matches!(
-            delta.new_value,
-            HealthValue::Text { ref primary, ref secondary }
-                if *primary == HealthText::unlocalized("NewAvatar")
-                    && *secondary == Some(HealthText::unlocalized("55 parameters"))
-        ));
+        assert_eq!(delta.new_value, model_value("NewAvatar", Some(55)));
     }
 
     #[test]
@@ -864,17 +853,10 @@ mod tests {
         assert_eq!(version.get().map(String::as_str), Some("1.29.0"));
     }
 
-    fn plain(text: &HealthText) -> String {
-        match text {
-            HealthText::Text(text) => text.code_or_text(),
-            other => panic!("expected text, got {other:?}"),
-        }
-    }
-
     async fn next_text_delta(
         rx: &mut broadcast::Receiver<HealthDelta>,
         c: &VTubeClient,
-    ) -> (HealthMetricId, String, Option<String>) {
+    ) -> (HealthMetricId, HealthValue) {
         let delta = tokio::time::timeout(tokio::time::Duration::from_secs(30), rx.recv())
             .await
             .expect("the catalog sweep must publish a health delta")
@@ -883,10 +865,7 @@ mod tests {
             c.metrics().iter().any(|metric| metric.id == delta.metric),
             "the delta must target a declared metric"
         );
-        let HealthValue::Text { primary, secondary } = delta.new_value else {
-            panic!("{} must be published as a text metric", delta.metric);
-        };
-        (delta.metric, plain(&primary), secondary.as_ref().map(plain))
+        (delta.metric, delta.new_value)
     }
 
     #[tokio::test(start_paused = true)]
@@ -913,11 +892,7 @@ mod tests {
 
         assert_eq!(
             next_text_delta(&mut health_rx, &c).await,
-            (
-                MODEL_METRIC,
-                "Avatar A".to_owned(),
-                Some("42 parameters".to_owned())
-            )
+            (MODEL_METRIC, model_value("Avatar A", Some(42)))
         );
 
         if let Ok(mut s) = c.health_state.write() {
@@ -930,14 +905,7 @@ mod tests {
 
         let healed = next_text_delta(&mut health_rx, &c).await;
         handle.abort();
-        assert_eq!(
-            healed,
-            (
-                MODEL_METRIC,
-                "Avatar B".to_owned(),
-                Some("42 parameters".to_owned())
-            )
-        );
+        assert_eq!(healed, (MODEL_METRIC, model_value("Avatar B", Some(42))));
     }
 
     #[tokio::test]

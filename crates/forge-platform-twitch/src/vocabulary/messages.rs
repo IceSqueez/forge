@@ -6,6 +6,17 @@ pub const HEALTH_CHAT: MessageCode = MessageCode::from_static(PLATFORM_ID, "heal
 pub const HEALTH_EVENTSUB: MessageCode = MessageCode::from_static(PLATFORM_ID, "health_eventsub");
 pub const HEALTH_API_CALLS: MessageCode = MessageCode::from_static(PLATFORM_ID, "health_api_calls");
 
+pub const HEALTH_CHAT_JOINED: MessageCode =
+    MessageCode::from_static(PLATFORM_ID, "health_chat_joined");
+pub const HEALTH_EVENTSUB_SUBS: MessageCode =
+    MessageCode::from_static(PLATFORM_ID, "health_eventsub_subs");
+pub const HEALTH_VIEWERS_LIVE: MessageCode =
+    MessageCode::from_static(PLATFORM_ID, "health_viewers_live");
+pub const HEALTH_VIEWERS_OFFLINE: MessageCode =
+    MessageCode::from_static(PLATFORM_ID, "health_viewers_offline");
+pub const HEALTH_RESETS_IN: MessageCode = MessageCode::from_static(PLATFORM_ID, "health_resets_in");
+pub const HEALTH_NO_USAGE: MessageCode = MessageCode::from_static(PLATFORM_ID, "health_no_usage");
+
 const RATE_LIMITED: MessageCode = MessageCode::from_static(PLATFORM_ID, "rate_limited");
 const REAUTH_REQUIRED: MessageCode = MessageCode::from_static(PLATFORM_ID, "reauth_required");
 const CREDENTIALS_UNAVAILABLE: MessageCode =
@@ -48,6 +59,12 @@ pub const TWITCH_MESSAGES: MessageCatalog = MessageCatalog {
         HEALTH_CHAT,
         HEALTH_EVENTSUB,
         HEALTH_API_CALLS,
+        HEALTH_CHAT_JOINED,
+        HEALTH_EVENTSUB_SUBS,
+        HEALTH_VIEWERS_LIVE,
+        HEALTH_VIEWERS_OFFLINE,
+        HEALTH_RESETS_IN,
+        HEALTH_NO_USAGE,
         RATE_LIMITED,
         REAUTH_REQUIRED,
         CREDENTIALS_UNAVAILABLE,
@@ -84,6 +101,8 @@ const STATUS_ARG: &str = "status";
 const FIELD_ARG: &str = "field";
 const LIMIT_ARG: &str = "limit";
 const CODE_ARG: &str = "code";
+const COUNT_ARG: &str = "count";
+const SECONDS_ARG: &str = "seconds";
 
 fn detailed(code: MessageCode, detail: &str) -> MessageRef {
     MessageRef::new(code).with_detail(UpstreamDetail::from_redacted(detail))
@@ -91,6 +110,30 @@ fn detailed(code: MessageCode, detail: &str) -> MessageRef {
 
 fn field(code: MessageCode, name: &str) -> MessageRef {
     MessageRef::new(code).with_arg(FIELD_ARG, VerbatimText::new(name))
+}
+
+pub(crate) fn health_chat_joined() -> MessageRef {
+    MessageRef::new(HEALTH_CHAT_JOINED)
+}
+
+pub(crate) fn health_eventsub_subs(count: usize) -> MessageRef {
+    MessageRef::new(HEALTH_EVENTSUB_SUBS).with_arg(COUNT_ARG, count)
+}
+
+pub(crate) fn health_viewers_live() -> MessageRef {
+    MessageRef::new(HEALTH_VIEWERS_LIVE)
+}
+
+pub(crate) fn health_viewers_offline() -> MessageRef {
+    MessageRef::new(HEALTH_VIEWERS_OFFLINE)
+}
+
+pub(crate) fn health_resets_in(seconds: u64) -> MessageRef {
+    MessageRef::new(HEALTH_RESETS_IN).with_arg(SECONDS_ARG, seconds)
+}
+
+pub(crate) fn health_no_usage() -> MessageRef {
+    MessageRef::new(HEALTH_NO_USAGE)
 }
 
 pub(crate) fn rate_limited() -> MessageRef {
@@ -260,6 +303,12 @@ mod tests {
             recipient_empty(),
             recipient_rejects_whispers(),
             shoutout_cooldown(30),
+            health_chat_joined(),
+            health_eventsub_subs(3),
+            health_viewers_live(),
+            health_viewers_offline(),
+            health_resets_in(9),
+            health_no_usage(),
         ]
     }
 

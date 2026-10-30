@@ -1,4 +1,7 @@
-use forge_types::{MessageCatalog, MessageCode, MessageRef, UpstreamDetail, VerbatimText};
+use forge_types::{
+    MessageArg, MessageCatalog, MessageCode, MessageRef, UpstreamDetail, VerbatimText,
+};
+use time::OffsetDateTime;
 
 use crate::vocabulary::INTEGRATION_ID;
 
@@ -21,6 +24,16 @@ const SUPERVISOR_UNAVAILABLE: MessageCode =
 
 const PORT_ARG: &str = "port";
 const BYTE_ARG: &str = "byte";
+const TIME_ARG: &str = "time";
+
+const HEALTH_INPUT_CONNECTED: MessageCode =
+    MessageCode::from_static(INTEGRATION_ID, "health_input_connected");
+const HEALTH_DISABLED: MessageCode = MessageCode::from_static(INTEGRATION_ID, "health_disabled");
+const HEALTH_OUTPUT_AVAILABLE: MessageCode =
+    MessageCode::from_static(INTEGRATION_ID, "health_output_available");
+const HEALTH_NOTE_TIME: MessageCode = MessageCode::from_static(INTEGRATION_ID, "health_note_time");
+const HEALTH_LAST_MINUTE: MessageCode =
+    MessageCode::from_static(INTEGRATION_ID, "health_last_minute");
 
 pub const HEALTH_INPUT_PORTS: MessageCode =
     MessageCode::from_static(INTEGRATION_ID, "health_input_ports");
@@ -38,6 +51,11 @@ pub const MIDI_MESSAGES: MessageCatalog = MessageCatalog {
         HEALTH_OUTPUT_PORTS,
         HEALTH_LAST_NOTE_ON,
         HEALTH_EVENTS_PER_MINUTE,
+        HEALTH_INPUT_CONNECTED,
+        HEALTH_DISABLED,
+        HEALTH_OUTPUT_AVAILABLE,
+        HEALTH_NOTE_TIME,
+        HEALTH_LAST_MINUTE,
         BACKEND_UNAVAILABLE,
         RAW_BYTES_SHAPE,
         PORT_NOT_FOUND,
@@ -50,6 +68,26 @@ pub const MIDI_MESSAGES: MessageCatalog = MessageCatalog {
     en_ftl: include_str!("../../locales/en/messages.ftl"),
     uk_ftl: include_str!("../../locales/uk/messages.ftl"),
 };
+
+pub(crate) fn health_input_connected() -> MessageRef {
+    MessageRef::new(HEALTH_INPUT_CONNECTED)
+}
+
+pub(crate) fn health_disabled() -> MessageRef {
+    MessageRef::new(HEALTH_DISABLED)
+}
+
+pub(crate) fn health_output_available() -> MessageRef {
+    MessageRef::new(HEALTH_OUTPUT_AVAILABLE)
+}
+
+pub(crate) fn health_note_time(at: OffsetDateTime) -> MessageRef {
+    MessageRef::new(HEALTH_NOTE_TIME).with_arg(TIME_ARG, MessageArg::TimeOfDay(at))
+}
+
+pub(crate) fn health_last_minute() -> MessageRef {
+    MessageRef::new(HEALTH_LAST_MINUTE)
+}
 
 pub(crate) fn backend_unavailable_with(detail: &str) -> MessageRef {
     MessageRef::new(BACKEND_UNAVAILABLE).with_detail(UpstreamDetail::from_redacted(detail))
@@ -112,6 +150,11 @@ mod tests {
             MessageRef::new(HEALTH_OUTPUT_PORTS),
             MessageRef::new(HEALTH_LAST_NOTE_ON),
             MessageRef::new(HEALTH_EVENTS_PER_MINUTE),
+            health_input_connected(),
+            health_disabled(),
+            health_output_available(),
+            health_note_time(OffsetDateTime::UNIX_EPOCH),
+            health_last_minute(),
             MessageRef::new(BACKEND_UNAVAILABLE),
             MessageRef::new(RAW_BYTES_SHAPE),
             backend_unavailable_with("c"),

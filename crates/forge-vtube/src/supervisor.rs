@@ -1166,9 +1166,7 @@ mod tests {
         use std::sync::atomic::Ordering;
         use std::time::Duration;
 
-        use forge_platform_core::{
-            BuiltinControl, BuiltinHealth, HealthMetricId, HealthText, HealthValue,
-        };
+        use forge_platform_core::{BuiltinControl, BuiltinHealth, HealthMetricId, HealthValue};
         use serde_json::json;
 
         use super::super::{
@@ -1471,10 +1469,7 @@ mod tests {
                 .map(|d| d.new_value);
             assert_eq!(
                 model_delta,
-                Some(HealthValue::Text {
-                    primary: HealthText::unlocalized("MyAvatar"),
-                    secondary: Some(HealthText::unlocalized("42 parameters")),
-                })
+                Some(crate::health::model_value("MyAvatar", Some(42)))
             );
         }
 
@@ -1507,12 +1502,9 @@ mod tests {
                     metric(&client, &crate::health::TRACKING_METRIC)
                 ),
                 (
-                    HealthValue::Text {
-                        primary: HealthText::unlocalized("-"),
-                        secondary: Some(HealthText::unlocalized("not loaded")),
-                    },
+                    crate::health::model_value("", None),
                     HealthValue::Status {
-                        label: HealthText::unlocalized("Off"),
+                        label: crate::vocabulary::messages::health_tracking(false).into(),
                         active: false,
                         detail: None,
                     },

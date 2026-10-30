@@ -8,13 +8,13 @@ use forge_platform_core::{
     HealthStream, HealthText, HealthValue, HeroBadge, HeroBadgeTone, ViewerReport,
 };
 use forge_registry::{RegistryError, TriggerRegistry};
-use forge_types::IntegrationId;
+use forge_types::{IntegrationId, MessageRef, VerbatimText};
 use tokio::sync::{broadcast, watch};
 use tokio_stream::StreamExt;
 use tokio_stream::wrappers::BroadcastStream;
 use tokio_util::sync::CancellationToken;
 
-use crate::api::poller::PollerAuth;
+use crate::api::poller::{CHANNEL_POLL_INTERVAL, PollerAuth, REDEMPTION_POLL_INTERVAL};
 use crate::auth::credentials_manager::KickCredentialsManager;
 use crate::capabilities::KICK_COMMUNITY_NOTE;
 use crate::platform::KickPlatform;
@@ -107,7 +107,9 @@ impl KickIntegrationBundle {
         HealthValue::Status {
             label: HealthText::Connection(state),
             active: state.is_connected(),
-            detail: Some(HealthText::unlocalized(chatroom_channel(&self.slug))),
+            detail: Some(HealthText::Text(
+                VerbatimText::new(chatroom_channel(&self.slug)).into(),
+            )),
         }
     }
 
@@ -119,11 +121,10 @@ impl KickIntegrationBundle {
                 total: u64::from(capacity),
                 reset_hint: usage
                     .resets_in
-                    .map(|d| format!("resets in {}s", d.as_secs()))
-                    .map(HealthText::unlocalized),
+                    .map(|d| message_text(messages::health_resets_in(d.as_secs()))),
             },
             _ => HealthValue::Text {
-                primary: HealthText::unlocalized("-"),
+                primary: message_text(messages::health_no_usage()),
                 secondary: None,
             },
         }
@@ -270,17 +271,24 @@ impl KickIntegrationBundle {
     }
 }
 
+fn message_text(message: MessageRef) -> HealthText {
+    HealthText::Text(message.into())
+}
+
 fn events_health_value(auth: PollerAuth) -> HealthValue {
     match auth {
         PollerAuth::Authorized => HealthValue::Status {
-            label: HealthText::unlocalized("Active"),
+            label: message_text(messages::health_poller_active()),
             active: true,
-            detail: Some(HealthText::unlocalized("channels 30s / redemptions 12s")),
+            detail: Some(message_text(messages::health_poller_intervals(
+                CHANNEL_POLL_INTERVAL.as_secs(),
+                REDEMPTION_POLL_INTERVAL.as_secs(),
+            ))),
         },
         PollerAuth::AuthRequired => HealthValue::Status {
-            label: HealthText::unlocalized("Auth required"),
+            label: message_text(messages::health_poller_auth_required()),
             active: false,
-            detail: Some(HealthText::unlocalized("sign in to Kick again")),
+            detail: Some(message_text(messages::health_poller_sign_in_again())),
         },
     }
 }
@@ -288,11 +296,11 @@ fn events_health_value(auth: PollerAuth) -> HealthValue {
 fn viewers_health_value(report: ViewerReport) -> HealthValue {
     match report {
         ViewerReport::Live { count } => HealthValue::Text {
-            primary: HealthText::unlocalized(count.to_string()),
-            secondary: Some(HealthText::unlocalized("live")),
+            primary: HealthText::Count(count),
+            secondary: Some(message_text(messages::health_viewers_live())),
         },
         ViewerReport::Absent => HealthValue::Text {
-            primary: HealthText::unlocalized("0"),
+            primary: HealthText::Count(0),
             secondary: None,
         },
     }
@@ -549,7 +557,9 @@ mod tests {
                 HealthValue::Status {
                     label: HealthText::Connection(ConnectionState::Disconnected),
                     active: false,
-                    detail: Some(HealthText::unlocalized("chatrooms.test_channel.v2")),
+                    detail: Some(HealthText::Text(
+                        VerbatimText::new("chatrooms.test_channel.v2").into()
+                    )),
                 }
             );
         }
@@ -674,8 +684,8 @@ mod tests {
             assert_eq!(
                 delta.new_value,
                 HealthValue::Text {
-                    primary: HealthText::unlocalized("5"),
-                    secondary: Some(HealthText::unlocalized("live")),
+                    primary: HealthText::Count(5),
+                    secondary: Some(message_text(messages::health_viewers_live())),
                 }
             );
         }
@@ -686,8 +696,16 @@ mod tests {
             let mut health = bundle.stream();
 
             for (auth, active, label) in [
-                (PollerAuth::AuthRequired, false, "Auth required"),
-                (PollerAuth::Authorized, true, "Active"),
+                (
+                    PollerAuth::AuthRequired,
+                    false,
+                    messages::health_poller_auth_required(),
+                ),
+                (
+                    PollerAuth::Authorized,
+                    true,
+                    messages::health_poller_active(),
+                ),
             ] {
                 auth_tx.send(auth).unwrap();
 
@@ -704,7 +722,7 @@ mod tests {
                     matches!(
                         &slot.value,
                         HealthValue::Status { label: shown, active: lit, .. }
-                            if *shown == HealthText::unlocalized(label) && *lit == active
+                            if *shown == message_text(label.clone()) && *lit == active
                     ),
                     "{auth:?}: {:?}",
                     slot.value

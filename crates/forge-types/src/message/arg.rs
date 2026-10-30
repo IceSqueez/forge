@@ -40,6 +40,8 @@ pub enum MessageArg {
     Float(FiniteFloat),
     #[serde(with = "time::serde::rfc3339")]
     Datetime(OffsetDateTime),
+    #[serde(with = "time::serde::rfc3339")]
+    TimeOfDay(OffsetDateTime),
     Duration(Duration),
     Verbatim(VerbatimText),
     Integration(IntegrationId),

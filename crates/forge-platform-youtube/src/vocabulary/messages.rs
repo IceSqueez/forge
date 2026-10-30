@@ -11,6 +11,15 @@ pub const HEALTH_EVENTS: MessageCode = MessageCode::from_static(INTEGRATION_ID, 
 pub const HEALTH_API_CALLS: MessageCode =
     MessageCode::from_static(INTEGRATION_ID, "health_api_calls");
 
+pub const HEALTH_QUOTA_RESETS_DAILY: MessageCode =
+    MessageCode::from_static(INTEGRATION_ID, "health_quota_resets_daily");
+pub const HEALTH_UNAVAILABLE: MessageCode =
+    MessageCode::from_static(INTEGRATION_ID, "health_unavailable");
+pub const HEALTH_SHARED_CHAT_FEED: MessageCode =
+    MessageCode::from_static(INTEGRATION_ID, "health_shared_chat_feed");
+pub const HEALTH_VIEWERS_LIVE: MessageCode =
+    MessageCode::from_static(INTEGRATION_ID, "health_viewers_live");
+
 const RATE_LIMITED: MessageCode = MessageCode::from_static(INTEGRATION_ID, "rate_limited");
 const RATE_BUDGET_EXHAUSTED: MessageCode =
     MessageCode::from_static(INTEGRATION_ID, "rate_budget_exhausted");
@@ -30,6 +39,10 @@ pub const YOUTUBE_MESSAGES: MessageCatalog = MessageCatalog {
         HEALTH_LIVE_CHAT,
         HEALTH_EVENTS,
         HEALTH_API_CALLS,
+        HEALTH_QUOTA_RESETS_DAILY,
+        HEALTH_UNAVAILABLE,
+        HEALTH_SHARED_CHAT_FEED,
+        HEALTH_VIEWERS_LIVE,
         STORED_SIGN_IN_UNREADABLE,
         RATE_LIMITED,
         RATE_BUDGET_EXHAUSTED,
@@ -51,6 +64,22 @@ const FIELD_ARG: &str = "field";
 
 fn detailed(code: MessageCode, detail: &str) -> MessageRef {
     MessageRef::new(code).with_detail(UpstreamDetail::from_redacted(detail))
+}
+
+pub(crate) fn health_quota_resets_daily() -> MessageRef {
+    MessageRef::new(HEALTH_QUOTA_RESETS_DAILY)
+}
+
+pub(crate) fn health_unavailable() -> MessageRef {
+    MessageRef::new(HEALTH_UNAVAILABLE)
+}
+
+pub(crate) fn health_shared_chat_feed() -> MessageRef {
+    MessageRef::new(HEALTH_SHARED_CHAT_FEED)
+}
+
+pub(crate) fn health_viewers_live() -> MessageRef {
+    MessageRef::new(HEALTH_VIEWERS_LIVE)
 }
 
 pub(crate) fn rate_limited(retry_after_secs: u32) -> MessageRef {
@@ -121,6 +150,10 @@ mod tests {
             MessageRef::new(HEALTH_LIVE_CHAT),
             MessageRef::new(HEALTH_EVENTS),
             MessageRef::new(HEALTH_API_CALLS),
+            health_quota_resets_daily(),
+            health_unavailable(),
+            health_shared_chat_feed(),
+            health_viewers_live(),
             MessageRef::new(STORED_SIGN_IN_UNREADABLE),
             rate_limited(7),
             rate_budget_exhausted(),

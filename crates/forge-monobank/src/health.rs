@@ -1,18 +1,14 @@
 use forge_platform_core::{
     BuiltinHealth, HealthDelta, HealthMetric, HealthMetricId, HealthStream, HealthText, HealthValue,
 };
-use jiff::Timestamp;
-use jiff::tz::TimeZone;
+use forge_types::{MessageArg, MessageRef, VerbatimText};
 use time::OffsetDateTime;
 use tokio_stream::StreamExt;
 use tokio_stream::wrappers::BroadcastStream;
 
 use crate::messages;
 use crate::provider::MonobankProvider;
-use crate::status::PollStatus;
-
-const LOCAL_TIME_FORMAT: &str = "%H:%M:%S";
-const NOT_YET: &str = "-";
+use crate::status::{PollFailure, PollStatus};
 
 const LAST_POLL_METRIC: HealthMetricId = HealthMetricId::new(messages::HEALTH_LAST_POLL);
 const LAST_ERROR_METRIC: HealthMetricId = HealthMetricId::new(messages::HEALTH_LAST_ERROR);
@@ -25,44 +21,42 @@ pub(crate) fn metrics(status: &PollStatus) -> [HealthMetric; 4] {
         HealthMetric {
             id: LAST_POLL_METRIC,
             value: HealthValue::Text {
-                primary: HealthText::unlocalized(local_time(status.last_poll_at)),
-                secondary: Some(HealthText::unlocalized(status.phase_label().to_owned())),
+                primary: time_text(status.last_poll_at),
+                secondary: Some(status.phase.message().into()),
             },
         },
         HealthMetric {
             id: LAST_ERROR_METRIC,
             value: HealthValue::Status {
-                label: HealthText::unlocalized(
-                    status
-                        .last_error
-                        .map_or("None", |failure| failure.label())
-                        .to_owned(),
-                ),
-                active: status.last_error.is_none(),
-                detail: status
+                label: status
                     .last_error
-                    .map(|_| local_time(status.last_error_at))
-                    .map(HealthText::unlocalized),
+                    .map_or_else(
+                        || MessageRef::new(messages::FAILURE_NONE),
+                        PollFailure::message,
+                    )
+                    .into(),
+                active: status.last_error.is_none(),
+                detail: status.last_error.map(|_| time_text(status.last_error_at)),
             },
         },
         HealthMetric {
             id: LAST_DONATION_METRIC,
             value: HealthValue::Text {
-                primary: HealthText::unlocalized(local_time(status.last_donation_at)),
+                primary: time_text(status.last_donation_at),
                 secondary: None,
             },
         },
         HealthMetric {
             id: JAR_METRIC,
             value: HealthValue::Text {
-                primary: HealthText::unlocalized(
-                    jar.and_then(|jar| jar.title.clone())
-                        .unwrap_or_else(|| NOT_YET.to_owned()),
-                ),
+                primary: jar
+                    .and_then(|jar| jar.title.clone())
+                    .map_or_else(HealthText::placeholder, |title| {
+                        VerbatimText::new(title).into()
+                    }),
                 secondary: jar
                     .and_then(|jar| jar.currency.as_ref())
-                    .map(ToString::to_string)
-                    .map(HealthText::unlocalized),
+                    .map(|currency| VerbatimText::new(currency.to_string()).into()),
             },
         },
     ]
@@ -75,18 +69,12 @@ pub(crate) fn deltas(status: &PollStatus) -> impl Iterator<Item = HealthDelta> {
     })
 }
 
-fn local_time(instant: Option<OffsetDateTime>) -> String {
-    instant
-        .and_then(|instant| Timestamp::from_second(instant.unix_timestamp()).ok())
-        .map_or_else(
-            || NOT_YET.to_owned(),
-            |timestamp| {
-                timestamp
-                    .to_zoned(TimeZone::system())
-                    .strftime(LOCAL_TIME_FORMAT)
-                    .to_string()
-            },
-        )
+fn time_text(instant: Option<OffsetDateTime>) -> HealthText {
+    instant.map_or_else(HealthText::placeholder, |at| {
+        MessageRef::new(messages::HEALTH_TIME)
+            .with_arg("time", MessageArg::TimeOfDay(at))
+            .into()
+    })
 }
 
 impl BuiltinHealth for MonobankProvider {

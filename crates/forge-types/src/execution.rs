@@ -36,13 +36,6 @@ pub fn integration_disabled_message(integration: &IntegrationId) -> MessageRef {
 }
 
 impl SubActionOutcome {
-    pub fn from_result<T, E: core::fmt::Display>(result: &Result<T, E>) -> Self {
-        match result {
-            Ok(_) => Self::Success,
-            Err(e) => Self::Failed(UserText::unlocalized(e.to_string())),
-        }
-    }
-
     pub fn failure_reason(&self) -> Option<UserText> {
         match self {
             Self::Failed(reason) => Some(reason.clone()),
@@ -482,27 +475,6 @@ mod tests {
             let back: ExecutionOutcome = serde_json::from_str(&json).unwrap();
             assert_eq!(o, back);
         }
-    }
-
-    #[test]
-    fn from_result_maps_ok_to_success_and_err_to_failed_with_display_text() {
-        let ok: Result<(), std::io::Error> = Ok(());
-        assert_eq!(
-            SubActionOutcome::from_result(&ok),
-            SubActionOutcome::Success
-        );
-
-        struct DisplayErr;
-        impl core::fmt::Display for DisplayErr {
-            fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-                f.write_str("disk full")
-            }
-        }
-        let err: Result<(), DisplayErr> = Err(DisplayErr);
-        assert_eq!(
-            SubActionOutcome::from_result(&err),
-            SubActionOutcome::Failed(UserText::unlocalized("disk full"))
-        );
     }
 
     #[test]

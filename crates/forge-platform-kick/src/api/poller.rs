@@ -15,8 +15,8 @@ use crate::api::rewards::{KickRewards, RedemptionRecord};
 use crate::vocabulary::event_kinds;
 use crate::vocabulary::fields::{reward as reward_fields, stream as stream_fields};
 
-const CHANNEL_POLL_INTERVAL: Duration = Duration::from_secs(30);
-const REDEMPTION_POLL_INTERVAL: Duration = Duration::from_secs(12);
+pub(crate) const CHANNEL_POLL_INTERVAL: Duration = Duration::from_secs(30);
+pub(crate) const REDEMPTION_POLL_INTERVAL: Duration = Duration::from_secs(12);
 
 pub(crate) type TokenSource =
     Arc<dyn Fn() -> BoxFuture<'static, Result<String, PlatformError>> + Send + Sync>;

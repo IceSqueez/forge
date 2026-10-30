@@ -19,3 +19,12 @@ msg-vtube-request_rejected = VTube Studio rejected the request (error { $error_i
 msg-vtube-request_timed_out = VTube Studio did not answer in time.
 msg-vtube-payload_invalid = The request data could not be encoded for VTube Studio.
 msg-vtube-item_instance_missing = VTube Studio did not return the id of the loaded item.
+msg-vtube-health_model_not_loaded = Not loaded
+msg-vtube-health_model_parameters = { $count ->
+    [one] { $count } parameter
+   *[other] { $count } parameters
+}
+msg-vtube-health_expressions_hint = hotkey-bound
+msg-vtube-health_items_hint = throwable / pinned
+msg-vtube-health_tracking_face = Face
+msg-vtube-health_tracking_off = Off

@@ -19,3 +19,14 @@ msg-discord-webhook_name_empty = Назва вебхука порожня.
 msg-discord-body_encoding_failed = Не вдалося закодувати тіло запиту для Discord.
 msg-discord-file_name_unavailable = Не вдалося взяти назву файлу з { $path }.
 msg-discord-file_unreadable = Не вдалося прочитати файл { $path }.
+msg-discord-health_latency_millis = { $millis } мс
+msg-discord-health_latency_samples = { $count ->
+    [one] p50 останньої { $count } відправки
+    [few] p50 останніх { $count } відправок
+   *[other] p50 останніх { $count } відправок
+}
+msg-discord-health_reset_in = скидання через { $span }
+msg-discord-health_send_ok = OK
+msg-discord-health_send_failed = Помилка
+msg-discord-health_send_none = Ще не надсилалось
+msg-discord-health_errors_window = за останню годину

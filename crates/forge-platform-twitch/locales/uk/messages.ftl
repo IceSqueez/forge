@@ -1,6 +1,17 @@
 msg-twitch-health_chat = Чат IRC
 msg-twitch-health_eventsub = EventSub
 msg-twitch-health_api_calls = Виклики API
+msg-twitch-health_chat_joined = Приєднано
+msg-twitch-health_eventsub_subs = { $count ->
+    [one] { $count } підписка
+    [few] { $count } підписки
+    [many] { $count } підписок
+   *[other] { $count } підписки
+}
+msg-twitch-health_viewers_live = в ефірі
+msg-twitch-health_viewers_offline = офлайн
+msg-twitch-health_resets_in = скидається за { $seconds } с
+msg-twitch-health_no_usage = ще немає даних
 msg-twitch-rate_limited = Ліміт запитів Twitch вичерпано, спробуйте трохи згодом
 msg-twitch-reauth_required = Вхід у Twitch застарів, увійдіть знову
 msg-twitch-credentials_unavailable = Не вдалося прочитати облікові дані Twitch

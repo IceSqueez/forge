@@ -16,7 +16,7 @@ use forge_platform_core::{
     HealthText, HealthValue, HeroBadge, HeroBadgeTone, LiveViewerSource, SectionIcon,
     SubscriptionRow, SubscriptionStatus, ViewerReport, ViewerReportStream,
 };
-use forge_types::IntegrationId;
+use forge_types::{IntegrationId, MessageRef, VerbatimText};
 
 use forge_events::EventPublisher;
 use forge_storage::CredentialsRepo;
@@ -473,7 +473,7 @@ impl TwitchIntegrationBundle {
     fn chat_status(&self) -> HealthText {
         let state = self.chat_connection_state();
         if state == ChatConnectionState::Connected {
-            return HealthText::unlocalized("Joined");
+            return message_text(messages::health_chat_joined());
         }
         HealthText::Connection(state.to_connection_state())
     }
@@ -493,17 +493,18 @@ impl TwitchIntegrationBundle {
             detail: self
                 .login
                 .as_ref()
-                .map(|l| format!("#{l}"))
-                .map(HealthText::unlocalized),
+                .map(|l| HealthText::Text(VerbatimText::new(format!("#{l}")).into())),
         }
     }
 
     fn eventsub_health_value(&self) -> HealthValue {
         let count = self.active_sub_count();
         HealthValue::Status {
-            label: HealthText::unlocalized(format!("{count} subs")),
+            label: message_text(messages::health_eventsub_subs(count)),
             active: count > 0,
-            detail: Some(HealthText::unlocalized("WebSocket")),
+            detail: Some(HealthText::Text(
+                VerbatimText::new(EVENTSUB_TRANSPORT).into(),
+            )),
         }
     }
 
@@ -511,16 +512,16 @@ impl TwitchIntegrationBundle {
         let state = *self.viewer_state.read().unwrap_or_else(|p| p.into_inner());
         match state {
             ViewerPollState::Unknown => HealthValue::Text {
-                primary: HealthText::unlocalized("0"),
+                primary: HealthText::Count(0),
                 secondary: None,
             },
             ViewerPollState::Offline => HealthValue::Text {
-                primary: HealthText::unlocalized("0"),
-                secondary: Some(HealthText::unlocalized("offline")),
+                primary: HealthText::Count(0),
+                secondary: Some(message_text(messages::health_viewers_offline())),
             },
             ViewerPollState::Live(count) => HealthValue::Text {
-                primary: HealthText::unlocalized(count.to_string()),
-                secondary: Some(HealthText::unlocalized("live")),
+                primary: HealthText::Count(count),
+                secondary: Some(message_text(messages::health_viewers_live())),
             },
         }
     }
@@ -533,15 +534,20 @@ impl TwitchIntegrationBundle {
                 total: u64::from(capacity),
                 reset_hint: usage
                     .resets_in
-                    .map(|d| format!("resets in {}s", d.as_secs()))
-                    .map(HealthText::unlocalized),
+                    .map(|d| message_text(messages::health_resets_in(d.as_secs()))),
             },
             _ => HealthValue::Text {
-                primary: HealthText::unlocalized("-"),
+                primary: message_text(messages::health_no_usage()),
                 secondary: None,
             },
         }
     }
+}
+
+const EVENTSUB_TRANSPORT: &str = "WebSocket";
+
+fn message_text(message: MessageRef) -> HealthText {
+    HealthText::Text(message.into())
 }
 
 fn extract_viewer_count(body: &serde_json::Value) -> Option<u64> {
@@ -857,8 +863,11 @@ mod tests {
             panic!("expected Status variant");
         };
         assert!(*active);
-        assert_eq!(*label, HealthText::unlocalized("Joined"));
-        assert_eq!(*detail, Some(HealthText::unlocalized("#streamer")));
+        assert_eq!(*label, message_text(messages::health_chat_joined()));
+        assert_eq!(
+            *detail,
+            Some(HealthText::Text(VerbatimText::new("#streamer").into()))
+        );
     }
 
     #[test]
@@ -905,9 +914,14 @@ mod tests {
         else {
             panic!("expected Status variant for EventSub metric");
         };
-        assert_eq!(*label, HealthText::unlocalized("1 subs"));
+        assert_eq!(*label, message_text(messages::health_eventsub_subs(1)));
         assert!(*active, "one active subscription must light EventSub green");
-        assert_eq!(*detail, Some(HealthText::unlocalized("WebSocket")));
+        assert_eq!(
+            *detail,
+            Some(HealthText::Text(
+                VerbatimText::new(EVENTSUB_TRANSPORT).into()
+            ))
+        );
     }
 
     #[test]
@@ -929,7 +943,7 @@ mod tests {
         else {
             panic!("expected Status variant for EventSub metric");
         };
-        assert_eq!(*label, HealthText::unlocalized("0 subs"));
+        assert_eq!(*label, message_text(messages::health_eventsub_subs(0)));
         assert!(
             !*active,
             "no active subscription must leave EventSub inactive"

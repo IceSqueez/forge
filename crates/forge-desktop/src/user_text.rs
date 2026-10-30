@@ -68,6 +68,7 @@ fn with_fluent_arg<'a>(
         MessageArg::Int(number) => args.set(name, *number),
         MessageArg::Float(number) => args.set(name, number.get()),
         MessageArg::Datetime(at) => args.set(name, fmt_display(DateShape::DateTime, *at)),
+        MessageArg::TimeOfDay(at) => args.set(name, fmt_display(DateShape::TimeWithSeconds, *at)),
         MessageArg::Duration(span) => args.set(name, fmt_uptime(span.as_secs())),
         MessageArg::Verbatim(text) => args.set(name, text.as_str().to_owned()),
         MessageArg::Integration(id) => args.set(name, integration_name(id).to_string()),

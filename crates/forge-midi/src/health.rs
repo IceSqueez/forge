@@ -44,14 +44,37 @@ pub(crate) fn make_health_state() -> (HealthTx, Arc<Mutex<MidiHealthSnapshot>>) 
 pub(crate) fn input_port_health_value(enabled: bool, input_count: usize) -> HealthValue {
     if enabled {
         HealthValue::Text {
-            primary: HealthText::unlocalized(input_count.to_string()),
-            secondary: Some(HealthText::unlocalized("connected")),
+            primary: HealthText::Count(input_count as u64),
+            secondary: Some(messages::health_input_connected().into()),
         }
     } else {
         HealthValue::Text {
-            primary: HealthText::unlocalized("0"),
-            secondary: Some(HealthText::unlocalized("disabled")),
+            primary: HealthText::Count(0),
+            secondary: Some(messages::health_disabled().into()),
         }
+    }
+}
+
+pub(crate) fn output_port_health_value(output_count: usize) -> HealthValue {
+    HealthValue::Text {
+        primary: HealthText::Count(output_count as u64),
+        secondary: Some(messages::health_output_available().into()),
+    }
+}
+
+pub(crate) fn last_note_health_value(at: Option<OffsetDateTime>) -> HealthValue {
+    HealthValue::Text {
+        primary: at.map_or_else(HealthText::placeholder, |at| {
+            messages::health_note_time(at).into()
+        }),
+        secondary: None,
+    }
+}
+
+pub(crate) fn events_per_minute_health_value(events: usize) -> HealthValue {
+    HealthValue::Text {
+        primary: HealthText::Count(events as u64),
+        secondary: Some(messages::health_last_minute().into()),
     }
 }
 
@@ -71,35 +94,10 @@ impl BuiltinHealth for MidiClient {
 
         let input_value =
             input_port_health_value(self.enabled.load(Ordering::Relaxed), snap.input_count);
-        let output_value = HealthValue::Text {
-            primary: HealthText::unlocalized(snap.output_count.to_string()),
-            secondary: Some(HealthText::unlocalized("available")),
-        };
-
-        let last_note_value = match snap.last_note_on_at {
-            None => HealthValue::Text {
-                primary: HealthText::unlocalized("\u{2014}"),
-                secondary: None,
-            },
-            Some(t) => {
-                let formatted = t
-                    .format(
-                        &time::format_description::parse_borrowed::<2>("[hour]:[minute]:[second]")
-                            .unwrap_or_default(),
-                    )
-                    .unwrap_or_else(|_| "--:--:--".to_owned());
-                HealthValue::Text {
-                    primary: HealthText::unlocalized(formatted),
-                    secondary: None,
-                }
-            }
-        };
-
-        let epm = events_per_minute(&mut snap.event_timestamps);
-        let events_value = HealthValue::Text {
-            primary: HealthText::unlocalized(epm.to_string()),
-            secondary: Some(HealthText::unlocalized("last 60 s")),
-        };
+        let output_value = output_port_health_value(snap.output_count);
+        let last_note_value = last_note_health_value(snap.last_note_on_at);
+        let events_value =
+            events_per_minute_health_value(events_per_minute(&mut snap.event_timestamps));
 
         [
             HealthMetric {
@@ -154,19 +152,17 @@ mod tests {
 
     #[test]
     fn input_port_health_value_masks_the_port_count_while_disabled() {
-        for (enabled, count, expected_primary, expected_secondary) in [
-            (true, 3usize, "3", "connected"),
-            (false, 3, "0", "disabled"),
+        for (enabled, count, shown, hint) in [
+            (true, 3usize, 3, messages::health_input_connected()),
+            (false, 3, 0, messages::health_disabled()),
         ] {
-            let value = input_port_health_value(enabled, count);
-            assert!(
-                matches!(
-                    &value,
-                    HealthValue::Text { primary, secondary }
-                        if *primary == HealthText::unlocalized(expected_primary)
-                            && *secondary == Some(HealthText::unlocalized(expected_secondary))
-                ),
-                "enabled={enabled} count={count} produced {value:?}"
+            assert_eq!(
+                input_port_health_value(enabled, count),
+                HealthValue::Text {
+                    primary: HealthText::Count(shown),
+                    secondary: Some(hint.into()),
+                },
+                "enabled={enabled} count={count}"
             );
         }
     }
@@ -190,10 +186,47 @@ mod tests {
             matches!(
                 &input_metric.value,
                 HealthValue::Text { secondary, .. }
-                    if *secondary == Some(HealthText::unlocalized("disabled"))
+                    if *secondary == Some(messages::health_disabled().into())
             ),
             "input metric was {:?}",
             input_metric.value
+        );
+    }
+
+    #[test]
+    fn the_last_note_tile_reads_a_placeholder_until_a_note_arrives() {
+        let at = OffsetDateTime::UNIX_EPOCH;
+
+        for (seen, primary) in [
+            (None, HealthText::placeholder()),
+            (Some(at), messages::health_note_time(at).into()),
+        ] {
+            assert_eq!(
+                last_note_health_value(seen),
+                HealthValue::Text {
+                    primary,
+                    secondary: None,
+                },
+                "{seen:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn the_port_and_event_tiles_carry_their_counts_with_a_hint() {
+        assert_eq!(
+            output_port_health_value(2),
+            HealthValue::Text {
+                primary: HealthText::Count(2),
+                secondary: Some(messages::health_output_available().into()),
+            }
+        );
+        assert_eq!(
+            events_per_minute_health_value(120),
+            HealthValue::Text {
+                primary: HealthText::Count(120),
+                secondary: Some(messages::health_last_minute().into()),
+            }
         );
     }
 }

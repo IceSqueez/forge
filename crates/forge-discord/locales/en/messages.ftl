@@ -19,3 +19,13 @@ msg-discord-webhook_name_empty = The webhook name is empty.
 msg-discord-body_encoding_failed = The request body could not be encoded for Discord.
 msg-discord-file_name_unavailable = The file name could not be taken from { $path }.
 msg-discord-file_unreadable = The file { $path } could not be read.
+msg-discord-health_latency_millis = { $millis } ms
+msg-discord-health_latency_samples = { $count ->
+    [one] p50 of the last { $count } send
+   *[other] p50 of the last { $count } sends
+}
+msg-discord-health_reset_in = resets in { $span }
+msg-discord-health_send_ok = OK
+msg-discord-health_send_failed = Failed
+msg-discord-health_send_none = No sends yet
+msg-discord-health_errors_window = last hour

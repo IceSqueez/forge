@@ -18,7 +18,24 @@ const PAYLOAD_INVALID: MessageCode = MessageCode::from_static(INTEGRATION_ID, "p
 const STUDIO_MODE_INACTIVE: MessageCode =
     MessageCode::from_static(INTEGRATION_ID, "studio_mode_inactive");
 
+const HEALTH_LIVE: MessageCode = MessageCode::from_static(INTEGRATION_ID, "health_live");
+const HEALTH_OFF: MessageCode = MessageCode::from_static(INTEGRATION_ID, "health_off");
+const HEALTH_PAUSED: MessageCode = MessageCode::from_static(INTEGRATION_ID, "health_paused");
+const HEALTH_ACTIVE: MessageCode = MessageCode::from_static(INTEGRATION_ID, "health_active");
+const HEALTH_LAGGING: MessageCode = MessageCode::from_static(INTEGRATION_ID, "health_lagging");
+const HEALTH_SMOOTH: MessageCode = MessageCode::from_static(INTEGRATION_ID, "health_smooth");
+const HEALTH_CPU_FPS_VALUE: MessageCode =
+    MessageCode::from_static(INTEGRATION_ID, "health_cpu_fps_value");
+const HEALTH_DROPPED_COUNT: MessageCode =
+    MessageCode::from_static(INTEGRATION_ID, "health_dropped_count");
+const HEALTH_DROPPED_SHARE: MessageCode =
+    MessageCode::from_static(INTEGRATION_ID, "health_dropped_share");
+
 const REQUEST_ARG: &str = "request";
+const CPU_ARG: &str = "cpu";
+const FPS_ARG: &str = "fps";
+const COUNT_ARG: &str = "count";
+const PERCENT_ARG: &str = "percent";
 
 pub const HEALTH_STREAM: MessageCode = MessageCode::from_static(INTEGRATION_ID, "health_stream");
 pub const HEALTH_RECORDING: MessageCode =
@@ -34,6 +51,15 @@ pub const OBS_MESSAGES: MessageCatalog = MessageCatalog {
         HEALTH_RECORDING,
         HEALTH_CPU_FPS,
         HEALTH_DROPPED_FRAMES,
+        HEALTH_LIVE,
+        HEALTH_OFF,
+        HEALTH_PAUSED,
+        HEALTH_ACTIVE,
+        HEALTH_LAGGING,
+        HEALTH_SMOOTH,
+        HEALTH_CPU_FPS_VALUE,
+        HEALTH_DROPPED_COUNT,
+        HEALTH_DROPPED_SHARE,
         CONNECT_REFUSED,
         UNREACHABLE,
         PASSWORD_REJECTED,
@@ -50,6 +76,44 @@ pub const OBS_MESSAGES: MessageCatalog = MessageCatalog {
     en_ftl: include_str!("../../locales/en/messages.ftl"),
     uk_ftl: include_str!("../../locales/uk/messages.ftl"),
 };
+
+pub(crate) fn health_live() -> MessageRef {
+    MessageRef::new(HEALTH_LIVE)
+}
+
+pub(crate) fn health_off() -> MessageRef {
+    MessageRef::new(HEALTH_OFF)
+}
+
+pub(crate) fn health_paused() -> MessageRef {
+    MessageRef::new(HEALTH_PAUSED)
+}
+
+pub(crate) fn health_active() -> MessageRef {
+    MessageRef::new(HEALTH_ACTIVE)
+}
+
+pub(crate) fn health_lagging() -> MessageRef {
+    MessageRef::new(HEALTH_LAGGING)
+}
+
+pub(crate) fn health_smooth() -> MessageRef {
+    MessageRef::new(HEALTH_SMOOTH)
+}
+
+pub(crate) fn health_cpu_fps_value(cpu_percent: f64, fps: f64) -> MessageRef {
+    MessageRef::new(HEALTH_CPU_FPS_VALUE)
+        .with_arg(CPU_ARG, cpu_percent)
+        .with_arg(FPS_ARG, fps)
+}
+
+pub(crate) fn health_dropped_count(dropped: u64) -> MessageRef {
+    MessageRef::new(HEALTH_DROPPED_COUNT).with_arg(COUNT_ARG, dropped)
+}
+
+pub(crate) fn health_dropped_share(percent: f64) -> MessageRef {
+    MessageRef::new(HEALTH_DROPPED_SHARE).with_arg(PERCENT_ARG, percent)
+}
 
 pub(crate) fn connect_refused() -> MessageRef {
     MessageRef::new(CONNECT_REFUSED)
@@ -147,6 +211,15 @@ mod tests {
             protocol_error("c"),
             payload_invalid("c"),
             studio_mode_inactive(),
+            health_live(),
+            health_off(),
+            health_paused(),
+            health_active(),
+            health_lagging(),
+            health_smooth(),
+            health_cpu_fps_value(1.0, 2.0),
+            health_dropped_count(1),
+            health_dropped_share(0.5),
             MessageRef::new(HEALTH_STREAM),
             MessageRef::new(HEALTH_RECORDING),
             MessageRef::new(HEALTH_CPU_FPS),

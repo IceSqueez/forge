@@ -22,7 +22,6 @@ pub mod vocabulary;
 
 pub use client::{ObsClient, parse_endpoint};
 pub use error::ObsError;
-pub use health::HealthSnapshot;
 pub use integration::OBS_INTEGRATION;
 pub use probe::{ObsProbeResult, probe_connection};
 pub use runners::register_obs_sub_actions;

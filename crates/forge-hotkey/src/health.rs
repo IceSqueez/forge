@@ -68,36 +68,32 @@ pub(crate) fn make_health_state() -> (HealthTx, Arc<Mutex<HotkeyHealthSnapshot>>
 pub(crate) fn registered_count_health_value(enabled: bool, count: usize) -> HealthValue {
     if enabled {
         HealthValue::Text {
-            primary: HealthText::unlocalized(count.to_string()),
-            secondary: Some(HealthText::unlocalized("hotkeys")),
+            primary: HealthText::Count(count as u64),
+            secondary: Some(messages::health_registered_hint().into()),
         }
     } else {
         HealthValue::Text {
-            primary: HealthText::unlocalized("0"),
-            secondary: Some(HealthText::unlocalized("disabled")),
+            primary: HealthText::Count(0),
+            secondary: Some(messages::health_disabled().into()),
         }
     }
 }
 
-pub(crate) fn build_trigger_delta(snap: &HotkeyHealthSnapshot) -> HealthDelta {
-    let primary = match (&snap.last_triggered_at, &snap.last_triggered_combo) {
-        (Some(t), Some(c)) => {
-            let formatted = t
-                .format(
-                    &time::format_description::parse_borrowed::<2>("[hour]:[minute]:[second]")
-                        .unwrap_or_default(),
-                )
-                .unwrap_or_else(|_| "--:--:--".to_owned());
-            format!("{formatted} {c}")
-        }
-        _ => "\u{2014}".to_owned(),
+fn last_triggered_value(snap: &HotkeyHealthSnapshot) -> HealthValue {
+    let primary = match (snap.last_triggered_at, &snap.last_triggered_combo) {
+        (Some(at), Some(combo)) => messages::health_last_triggered_at(at, combo).into(),
+        _ => HealthText::placeholder(),
     };
+    HealthValue::Text {
+        primary,
+        secondary: None,
+    }
+}
+
+pub(crate) fn build_trigger_delta(snap: &HotkeyHealthSnapshot) -> HealthDelta {
     HealthDelta {
         metric: LAST_TRIGGERED_METRIC,
-        new_value: HealthValue::Text {
-            primary: HealthText::unlocalized(primary),
-            secondary: None,
-        },
+        new_value: last_triggered_value(snap),
     }
 }
 
@@ -110,28 +106,9 @@ impl BuiltinHealth for HotkeyClient {
             snap.registered_count,
         );
 
-        let last_triggered_value = match (&snap.last_triggered_at, &snap.last_triggered_combo) {
-            (Some(t), Some(c)) => {
-                let formatted = t
-                    .format(
-                        &time::format_description::parse_borrowed::<2>("[hour]:[minute]:[second]")
-                            .unwrap_or_default(),
-                    )
-                    .unwrap_or_else(|_| "--:--:--".to_owned());
-                HealthValue::Text {
-                    primary: HealthText::unlocalized(format!("{formatted} {c}")),
-                    secondary: None,
-                }
-            }
-            _ => HealthValue::Text {
-                primary: HealthText::unlocalized("\u{2014}"),
-                secondary: None,
-            },
-        };
-
         let conflicts_value = HealthValue::Text {
-            primary: HealthText::unlocalized(snap.conflict_count.to_string()),
-            secondary: Some(HealthText::unlocalized("since startup")),
+            primary: HealthText::Count(snap.conflict_count as u64),
+            secondary: Some(messages::health_conflicts_hint().into()),
         };
 
         let portal_value =
@@ -144,7 +121,7 @@ impl BuiltinHealth for HotkeyClient {
             },
             HealthMetric {
                 id: LAST_TRIGGERED_METRIC,
-                value: last_triggered_value,
+                value: last_triggered_value(&snap),
             },
             HealthMetric {
                 id: CONFLICTS_METRIC,
@@ -170,22 +147,24 @@ pub(crate) fn backend_health_value(
 ) -> HealthValue {
     match (portal_available, session_lost) {
         (Some(true), Some(detail)) => HealthValue::Status {
-            label: HealthText::unlocalized("Portal session lost - hotkeys will not fire"),
+            label: messages::health_portal_session_lost().into(),
             active: false,
-            detail: Some(HealthText::unlocalized(detail)),
+            detail: Some(HealthText::Text(
+                forge_types::VerbatimText::new(detail).into(),
+            )),
         },
         (Some(true), None) => HealthValue::Status {
-            label: HealthText::unlocalized("Portal active"),
+            label: messages::health_portal_active().into(),
             active: true,
             detail: None,
         },
         (Some(false), _) => HealthValue::Status {
-            label: HealthText::unlocalized("Portal unavailable - evdev fallback"),
+            label: messages::health_portal_evdev_fallback().into(),
             active: false,
             detail: None,
         },
         (None, _) => HealthValue::Status {
-            label: HealthText::unlocalized("Permission denied - add user to 'input' group"),
+            label: messages::health_portal_permission_denied().into(),
             active: false,
             detail: None,
         },
@@ -198,7 +177,7 @@ pub(crate) fn backend_health_value(
     _session_lost: Option<&str>,
 ) -> HealthValue {
     HealthValue::Text {
-        primary: HealthText::unlocalized("N/A"),
+        primary: messages::health_backend_not_applicable().into(),
         secondary: None,
     }
 }
@@ -212,33 +191,27 @@ mod tests {
     use crate::client::tests::{noop_publisher, start_supervised};
     use crate::combo::HotkeyCombo;
 
-    fn plain(text: &HealthText) -> String {
-        match text {
-            HealthText::Text(text) => text.code_or_text(),
-            other => panic!("expected text, got {other:?}"),
-        }
-    }
-
-    fn text_metric(client: &HotkeyClient, id: &HealthMetricId) -> Option<(String, Option<String>)> {
-        match client
+    fn metric_value(client: &HotkeyClient, id: &HealthMetricId) -> Option<HealthValue> {
+        client
             .metrics()
             .into_iter()
-            .find(|metric| &metric.id == id)?
-            .value
-        {
-            HealthValue::Text { primary, secondary } => {
-                Some((plain(&primary), secondary.as_ref().map(plain)))
-            }
-            _ => None,
-        }
+            .find(|metric| &metric.id == id)
+            .map(|metric| metric.value)
     }
 
-    fn registered_metric(client: &HotkeyClient) -> Option<(String, Option<String>)> {
-        text_metric(client, &REGISTERED_METRIC)
+    fn registered_metric(client: &HotkeyClient) -> Option<HealthValue> {
+        metric_value(client, &REGISTERED_METRIC)
     }
 
-    fn conflicts_metric(client: &HotkeyClient) -> Option<(String, Option<String>)> {
-        text_metric(client, &CONFLICTS_METRIC)
+    fn conflicts_metric(client: &HotkeyClient) -> Option<HealthValue> {
+        metric_value(client, &CONFLICTS_METRIC)
+    }
+
+    fn conflicts(count: u64) -> Option<HealthValue> {
+        Some(HealthValue::Text {
+            primary: HealthText::Count(count),
+            secondary: Some(messages::health_conflicts_hint().into()),
+        })
     }
 
     #[tokio::test]
@@ -299,13 +272,19 @@ mod tests {
             .register(HotkeyCombo::parse("Ctrl+F1").unwrap())
             .await
             .unwrap();
-        let counted = Some(("1".to_owned(), Some("hotkeys".to_owned())));
+        let counted = Some(HealthValue::Text {
+            primary: HealthText::Count(1),
+            secondary: Some(messages::health_registered_hint().into()),
+        });
         assert_eq!(registered_metric(&client), counted);
 
         client.disable().await.unwrap();
         assert_eq!(
             registered_metric(&client),
-            Some(("0".to_owned(), Some("disabled".to_owned())))
+            Some(HealthValue::Text {
+                primary: HealthText::Count(0),
+                secondary: Some(messages::health_disabled().into()),
+            })
         );
 
         client.enable().await.unwrap();
@@ -321,19 +300,13 @@ mod tests {
             .register(HotkeyCombo::parse("Alt+X").unwrap())
             .await
             .unwrap();
-        assert_eq!(
-            conflicts_metric(&client),
-            Some(("0".to_owned(), Some("since startup".to_owned())))
-        );
+        assert_eq!(conflicts_metric(&client), conflicts(0));
 
         client.disable().await.unwrap();
         refuse.lock().unwrap().insert("Alt+X".to_owned());
         client.enable().await.unwrap();
 
-        assert_eq!(
-            conflicts_metric(&client),
-            Some(("1".to_owned(), Some("since startup".to_owned())))
-        );
+        assert_eq!(conflicts_metric(&client), conflicts(1));
     }
 
     #[tokio::test]
@@ -346,22 +319,91 @@ mod tests {
 
         client.register(combo).await.unwrap_err();
 
-        assert_eq!(
-            conflicts_metric(&client),
-            Some(("1".to_owned(), Some("since startup".to_owned())))
-        );
+        assert_eq!(conflicts_metric(&client), conflicts(1));
         assert_eq!(os_registered.lock().unwrap().len(), 1);
     }
 
     #[test]
-    fn build_trigger_delta_with_values() {
+    fn the_last_triggered_tile_carries_the_instant_and_the_combo_verbatim() {
         let mut snap = HotkeyHealthSnapshot::default();
         snap.record_trigger("Ctrl+A".to_owned());
+        let at = snap.last_triggered_at.unwrap();
+
         let delta = build_trigger_delta(&snap);
+
         assert_eq!(delta.metric, LAST_TRIGGERED_METRIC);
-        assert!(matches!(
+        assert_eq!(
             delta.new_value,
-            HealthValue::Text { ref primary, .. } if plain(primary).contains("Ctrl+A")
-        ));
+            HealthValue::Text {
+                primary: messages::health_last_triggered_at(at, "Ctrl+A").into(),
+                secondary: None,
+            }
+        );
+    }
+
+    #[test]
+    fn the_last_triggered_tile_reads_a_placeholder_before_any_trigger() {
+        assert_eq!(
+            build_trigger_delta(&HotkeyHealthSnapshot::default()).new_value,
+            HealthValue::Text {
+                primary: HealthText::placeholder(),
+                secondary: None,
+            }
+        );
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn the_portal_tile_names_each_backend_condition_and_lights_only_when_active() {
+        let lost = "bind failed";
+        for (available, session_lost, label, active, detail) in [
+            (
+                Some(true),
+                None,
+                messages::health_portal_active(),
+                true,
+                None,
+            ),
+            (
+                Some(true),
+                Some(lost),
+                messages::health_portal_session_lost(),
+                false,
+                Some(HealthText::Text(
+                    forge_types::VerbatimText::new(lost).into(),
+                )),
+            ),
+            (
+                Some(false),
+                None,
+                messages::health_portal_evdev_fallback(),
+                false,
+                None,
+            ),
+            (
+                Some(false),
+                Some(lost),
+                messages::health_portal_evdev_fallback(),
+                false,
+                None,
+            ),
+            (
+                None,
+                None,
+                messages::health_portal_permission_denied(),
+                false,
+                None,
+            ),
+        ] {
+            assert_eq!(
+                backend_health_value(available, session_lost),
+                HealthValue::Status {
+                    label: label.into(),
+                    active,
+                    detail,
+                },
+                "{available:?} {session_lost:?}"
+            );
+        }
     }
 }

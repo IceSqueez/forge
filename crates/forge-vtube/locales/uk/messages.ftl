@@ -19,3 +19,13 @@ msg-vtube-request_rejected = VTube Studio відхилив запит (поми�
 msg-vtube-request_timed_out = VTube Studio не відповів вчасно.
 msg-vtube-payload_invalid = Не вдалося закодувати дані запиту для VTube Studio.
 msg-vtube-item_instance_missing = VTube Studio не повернув ідентифікатор завантаженого предмета.
+msg-vtube-health_model_not_loaded = Не завантажено
+msg-vtube-health_model_parameters = { $count ->
+    [one] { $count } параметр
+    [few] { $count } параметри
+   *[other] { $count } параметрів
+}
+msg-vtube-health_expressions_hint = з гарячими клавішами
+msg-vtube-health_items_hint = кидані / закріплені
+msg-vtube-health_tracking_face = Обличчя
+msg-vtube-health_tracking_off = Вимкнено

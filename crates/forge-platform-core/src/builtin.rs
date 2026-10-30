@@ -8,6 +8,7 @@ use serde::{Deserialize, Serialize};
 
 use forge_types::{
     HEALTH_VIEWERS, IntegrationId, MessageCode, MessageRef, SubActionStep, UserText, Variant,
+    VerbatimText,
 };
 
 use crate::ConnectionState;
@@ -40,6 +41,24 @@ pub enum HealthText {
 impl HealthText {
     pub fn unlocalized(text: impl Into<String>) -> Self {
         Self::Text(UserText::unlocalized(text))
+    }
+}
+
+impl HealthText {
+    pub fn placeholder() -> Self {
+        Self::Text(UserText::Verbatim(VerbatimText::new("-")))
+    }
+}
+
+impl From<MessageRef> for HealthText {
+    fn from(message: MessageRef) -> Self {
+        Self::Text(UserText::Message(message))
+    }
+}
+
+impl From<VerbatimText> for HealthText {
+    fn from(text: VerbatimText) -> Self {
+        Self::Text(UserText::Verbatim(text))
     }
 }
 

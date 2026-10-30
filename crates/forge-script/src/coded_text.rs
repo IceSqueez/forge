@@ -19,7 +19,7 @@ fn arg_text(value: &MessageArg) -> String {
     match value {
         MessageArg::Int(number) => number.to_string(),
         MessageArg::Float(number) => number.get().to_string(),
-        MessageArg::Datetime(at) => at.to_string(),
+        MessageArg::Datetime(at) | MessageArg::TimeOfDay(at) => at.to_string(),
         MessageArg::Duration(span) => format!("{}s", span.as_secs()),
         MessageArg::Verbatim(text) => text.as_str().to_owned(),
         MessageArg::Integration(integration) => integration.to_string(),

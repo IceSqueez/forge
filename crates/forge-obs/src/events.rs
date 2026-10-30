@@ -519,24 +519,16 @@ pub(crate) fn apply_health_update(
                 return vec![];
             }
             snapshot.stream_active = *active;
-            vec![HealthDelta {
-                metric: STREAM_METRIC,
-                new_value: crate::health::stream_health_value(*active, snapshot.stream_duration),
-            }]
+            vec![crate::health::delta(STREAM_METRIC, snapshot)]
         }
-        obws::events::Event::RecordStateChanged { active, .. } => {
-            if snapshot.record_active == *active {
+        obws::events::Event::RecordStateChanged { active, state, .. } => {
+            let paused = *state == obws::events::OutputState::Paused;
+            if snapshot.record_active == *active && snapshot.record_paused == paused {
                 return vec![];
             }
             snapshot.record_active = *active;
-            vec![HealthDelta {
-                metric: RECORDING_METRIC,
-                new_value: crate::health::record_health_value(
-                    *active,
-                    snapshot.record_paused,
-                    snapshot.record_duration,
-                ),
-            }]
+            snapshot.record_paused = paused;
+            vec![crate::health::delta(RECORDING_METRIC, snapshot)]
         }
         _ => vec![],
     }
@@ -592,14 +584,7 @@ pub(crate) fn apply_stats_update(
     snapshot.cpu_percent = stats.cpu_usage;
     snapshot.fps = stats.active_fps;
     snapshot.render_lag = render_lag;
-    vec![HealthDelta {
-        metric: CPU_FPS_METRIC,
-        new_value: crate::health::cpu_fps_value(
-            snapshot.cpu_percent,
-            snapshot.fps,
-            snapshot.render_lag,
-        ),
-    }]
+    vec![crate::health::delta(CPU_FPS_METRIC, snapshot)]
 }
 
 pub(crate) fn apply_stream_status_update(
@@ -614,19 +599,13 @@ pub(crate) fn apply_stream_status_update(
     if snapshot.stream_active != status.active || snapshot.stream_duration != duration {
         snapshot.stream_active = status.active;
         snapshot.stream_duration = duration;
-        deltas.push(HealthDelta {
-            metric: STREAM_METRIC,
-            new_value: crate::health::stream_health_value(status.active, duration),
-        });
+        deltas.push(crate::health::delta(STREAM_METRIC, snapshot));
     }
 
     if snapshot.dropped_frames != dropped || snapshot.total_frames != total {
         snapshot.dropped_frames = dropped;
         snapshot.total_frames = total;
-        deltas.push(HealthDelta {
-            metric: DROPPED_METRIC,
-            new_value: crate::health::dropped_value(dropped, total),
-        });
+        deltas.push(crate::health::delta(DROPPED_METRIC, snapshot));
     }
 
     deltas
@@ -646,10 +625,7 @@ pub(crate) fn apply_record_status_update(
     snapshot.record_active = status.active;
     snapshot.record_paused = status.paused;
     snapshot.record_duration = duration;
-    vec![HealthDelta {
-        metric: RECORDING_METRIC,
-        new_value: crate::health::record_health_value(status.active, status.paused, duration),
-    }]
+    vec![crate::health::delta(RECORDING_METRIC, snapshot)]
 }
 
 #[cfg(test)]
@@ -936,8 +912,95 @@ mod tests {
         let HealthValue::Status { label, active, .. } = &deltas[0].new_value else {
             panic!("expected a Status value");
         };
-        assert_eq!(label, &HealthText::unlocalized("Paused"));
+        assert_eq!(
+            label,
+            &HealthText::from(crate::vocabulary::messages::health_paused())
+        );
         assert!(active);
+    }
+
+    fn record_state_changed(active: bool, state: obws::events::OutputState) -> obws::events::Event {
+        obws::events::Event::RecordStateChanged {
+            active,
+            state,
+            path: None,
+        }
+    }
+
+    fn recording_label(deltas: &[HealthDelta]) -> &HealthText {
+        match deltas {
+            [
+                HealthDelta {
+                    metric,
+                    new_value: HealthValue::Status { label, .. },
+                },
+            ] if *metric == RECORDING_METRIC => label,
+            other => panic!("expected one recording delta, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn pausing_and_resuming_a_recording_each_repaint_the_tile_without_a_status_poll() {
+        use crate::vocabulary::messages::{health_active, health_paused};
+        use obws::events::OutputState;
+
+        let mut snapshot = HealthSnapshot {
+            record_active: true,
+            ..HealthSnapshot::default()
+        };
+
+        let paused = apply_health_update(
+            &record_state_changed(true, OutputState::Paused),
+            &mut snapshot,
+        );
+        assert_eq!(recording_label(&paused), &health_paused().into());
+        assert!(snapshot.record_paused);
+
+        let resumed = apply_health_update(
+            &record_state_changed(true, OutputState::Resumed),
+            &mut snapshot,
+        );
+        assert_eq!(recording_label(&resumed), &health_active().into());
+        assert!(!snapshot.record_paused);
+    }
+
+    #[test]
+    fn stopping_a_paused_recording_clears_the_paused_flag() {
+        use crate::vocabulary::messages::health_off;
+        use obws::events::OutputState;
+
+        let mut snapshot = HealthSnapshot {
+            record_active: true,
+            record_paused: true,
+            ..HealthSnapshot::default()
+        };
+
+        let stopped = apply_health_update(
+            &record_state_changed(false, OutputState::Stopped),
+            &mut snapshot,
+        );
+
+        assert_eq!(recording_label(&stopped), &health_off().into());
+        assert!(!snapshot.record_paused);
+    }
+
+    #[test]
+    fn a_repeated_record_state_emits_no_delta() {
+        use obws::events::OutputState;
+
+        let mut snapshot = HealthSnapshot {
+            record_active: true,
+            record_paused: true,
+            ..HealthSnapshot::default()
+        };
+
+        assert!(
+            apply_health_update(
+                &record_state_changed(true, OutputState::Paused),
+                &mut snapshot
+            )
+            .is_empty()
+        );
     }
 
     type FrameCounters = (u32, u32);

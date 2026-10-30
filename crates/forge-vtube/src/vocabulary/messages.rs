@@ -22,7 +22,21 @@ const PAYLOAD_INVALID: MessageCode = MessageCode::from_static(INTEGRATION_ID, "p
 const ITEM_INSTANCE_MISSING: MessageCode =
     MessageCode::from_static(INTEGRATION_ID, "item_instance_missing");
 
+const HEALTH_MODEL_NOT_LOADED: MessageCode =
+    MessageCode::from_static(INTEGRATION_ID, "health_model_not_loaded");
+const HEALTH_MODEL_PARAMETERS: MessageCode =
+    MessageCode::from_static(INTEGRATION_ID, "health_model_parameters");
+const HEALTH_EXPRESSIONS_HINT: MessageCode =
+    MessageCode::from_static(INTEGRATION_ID, "health_expressions_hint");
+const HEALTH_ITEMS_HINT: MessageCode =
+    MessageCode::from_static(INTEGRATION_ID, "health_items_hint");
+const HEALTH_TRACKING_FACE: MessageCode =
+    MessageCode::from_static(INTEGRATION_ID, "health_tracking_face");
+const HEALTH_TRACKING_OFF: MessageCode =
+    MessageCode::from_static(INTEGRATION_ID, "health_tracking_off");
+
 const ERROR_ID_ARG: &str = "error_id";
+const COUNT_ARG: &str = "count";
 
 pub const HEALTH_MODEL: MessageCode = MessageCode::from_static(INTEGRATION_ID, "health_model");
 pub const HEALTH_EXPRESSIONS: MessageCode =
@@ -38,6 +52,12 @@ pub const VTUBE_MESSAGES: MessageCatalog = MessageCatalog {
         HEALTH_EXPRESSIONS,
         HEALTH_ITEMS,
         HEALTH_TRACKING,
+        HEALTH_MODEL_NOT_LOADED,
+        HEALTH_MODEL_PARAMETERS,
+        HEALTH_EXPRESSIONS_HINT,
+        HEALTH_ITEMS_HINT,
+        HEALTH_TRACKING_FACE,
+        HEALTH_TRACKING_OFF,
         CONNECT_REFUSED,
         UNREACHABLE,
         CONNECT_FAILED,
@@ -59,6 +79,30 @@ pub const VTUBE_MESSAGES: MessageCatalog = MessageCatalog {
     en_ftl: include_str!("../../locales/en/messages.ftl"),
     uk_ftl: include_str!("../../locales/uk/messages.ftl"),
 };
+
+pub(crate) fn health_model_not_loaded() -> MessageRef {
+    MessageRef::new(HEALTH_MODEL_NOT_LOADED)
+}
+
+pub(crate) fn health_model_parameters(count: u64) -> MessageRef {
+    MessageRef::new(HEALTH_MODEL_PARAMETERS).with_arg(COUNT_ARG, count)
+}
+
+pub(crate) fn health_expressions_hint() -> MessageRef {
+    MessageRef::new(HEALTH_EXPRESSIONS_HINT)
+}
+
+pub(crate) fn health_items_hint() -> MessageRef {
+    MessageRef::new(HEALTH_ITEMS_HINT)
+}
+
+pub(crate) fn health_tracking(face_found: bool) -> MessageRef {
+    MessageRef::new(if face_found {
+        HEALTH_TRACKING_FACE
+    } else {
+        HEALTH_TRACKING_OFF
+    })
+}
 
 pub(crate) fn connect_refused() -> MessageRef {
     MessageRef::new(CONNECT_REFUSED)
@@ -221,6 +265,12 @@ mod tests {
             request_timed_out(),
             payload_invalid("c"),
             item_instance_missing(),
+            health_model_not_loaded(),
+            health_model_parameters(2),
+            health_expressions_hint(),
+            health_items_hint(),
+            health_tracking(true),
+            health_tracking(false),
             MessageRef::new(HEALTH_MODEL),
             MessageRef::new(HEALTH_EXPRESSIONS),
             MessageRef::new(HEALTH_ITEMS),

@@ -1059,7 +1059,12 @@ pub(crate) mod tests {
             .unwrap();
         wait_for_backend_tile(
             &client,
-            (false, Some(HealthText::unlocalized("bind failed"))),
+            (
+                false,
+                Some(HealthText::Text(
+                    forge_types::VerbatimText::new("bind failed").into(),
+                )),
+            ),
         )
         .await;
 
@@ -1092,7 +1097,8 @@ pub(crate) mod tests {
         assert_eq!(delta.metric, crate::health::BACKEND_METRIC);
         assert!(matches!(
             delta.new_value,
-            HealthValue::Status { active: false, detail: Some(ref d), .. } if *d == HealthText::unlocalized("bind failed")
+            HealthValue::Status { active: false, detail: Some(ref d), .. }
+                if *d == HealthText::Text(forge_types::VerbatimText::new("bind failed").into())
         ));
     }
 

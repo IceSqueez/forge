@@ -30,7 +30,9 @@ mod tests {
     use std::time::Duration;
 
     use forge_storage::Language;
-    use forge_types::{HEALTH_VIEWERS, MessageCode, MessageRef, UpstreamDetail, UserText};
+    use forge_types::{
+        HEALTH_VIEWERS, MessageCode, MessageRef, UpstreamDetail, UserText, VerbatimText,
+    };
 
     use super::*;
     use crate::i18n::install_language;
@@ -107,7 +109,7 @@ mod tests {
             install_language(language);
 
             assert_eq!(
-                health_text(&HealthText::unlocalized("#streamer")),
+                health_text(&HealthText::Text(VerbatimText::new("#streamer").into())),
                 "#streamer"
             );
         }
@@ -141,6 +143,114 @@ mod tests {
             install_language(language);
 
             assert_eq!(health_metric_label(&HealthMetricId::VIEWERS), expected);
+        }
+    }
+
+    fn coded(raw_code: &str) -> MessageRef {
+        MessageRef::new(MessageCode::parse(raw_code).unwrap())
+    }
+
+    fn rendered(message: MessageRef) -> String {
+        plain(health_text(&HealthText::from(UserText::from(message))))
+    }
+
+    #[test]
+    fn the_cpu_tile_pads_both_figures_to_one_decimal_in_each_language() {
+        for (language, point) in [(Language::En, "."), (Language::Uk, ",")] {
+            install_language(language);
+            for (cpu, fps, expected) in [
+                (12.3, 59.9, "12.3% \u{b7} 59.9"),
+                (0.0, 60.0, "0.0% \u{b7} 60.0"),
+            ] {
+                let message = coded("obs.health_cpu_fps_value")
+                    .with_arg("cpu", cpu)
+                    .with_arg("fps", fps);
+
+                assert_eq!(
+                    rendered(message),
+                    expected.replace('.', point),
+                    "{language:?}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn the_dropped_share_pads_to_two_decimals_in_each_language() {
+        for (language, point) in [(Language::En, "."), (Language::Uk, ",")] {
+            install_language(language);
+            for (percent, expected) in [(0.0, "0.00%"), (0.5, "0.50%"), (100.0, "100.00%")] {
+                let message = coded("obs.health_dropped_share").with_arg("percent", percent);
+
+                assert_eq!(
+                    rendered(message),
+                    expected.replace('.', point),
+                    "{language:?}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn a_figure_with_more_digits_than_the_tile_declares_is_cut_to_the_declared_digits() {
+        install_language(Language::En);
+        let cpu = coded("obs.health_cpu_fps_value")
+            .with_arg("cpu", 12.3456)
+            .with_arg("fps", 59.94);
+        let share = coded("obs.health_dropped_share").with_arg("percent", 100.0 / 3.0);
+
+        assert_eq!(
+            (rendered(cpu), rendered(share)),
+            ("12.3% \u{b7} 59.9".to_owned(), "33.33%".to_owned())
+        );
+    }
+
+    #[test]
+    fn the_dropped_count_follows_each_languages_plural_rules() {
+        for (language, count, expected) in [
+            (Language::En, 1, "1 frame"),
+            (Language::En, 0, "0 frames"),
+            (Language::En, 21, "21 frames"),
+            (Language::Uk, 1, "1 кадр"),
+            (Language::Uk, 3, "3 кадри"),
+            (Language::Uk, 5, "5 кадрів"),
+            (Language::Uk, 11, "11 кадрів"),
+            (Language::Uk, 22, "22 кадри"),
+        ] {
+            install_language(language);
+            let message = coded("obs.health_dropped_count").with_arg("count", count);
+
+            assert_eq!(rendered(message), expected, "{language:?}");
+        }
+    }
+
+    #[test]
+    fn the_eventsub_tile_follows_each_languages_plural_rules() {
+        for (language, count, expected) in [
+            (Language::En, 1, "1 subscription"),
+            (Language::En, 2, "2 subscriptions"),
+            (Language::En, 0, "0 subscriptions"),
+            (Language::Uk, 1, "1 підписка"),
+            (Language::Uk, 21, "21 підписка"),
+            (Language::Uk, 3, "3 підписки"),
+            (Language::Uk, 24, "24 підписки"),
+            (Language::Uk, 5, "5 підписок"),
+            (Language::Uk, 11, "11 підписок"),
+            (Language::Uk, 0, "0 підписок"),
+        ] {
+            install_language(language);
+            let message = coded("twitch.health_eventsub_subs").with_arg("count", count);
+
+            assert_eq!(rendered(message), expected, "{language:?}");
+        }
+    }
+
+    #[test]
+    fn the_placeholder_slot_reads_the_same_dash_in_every_language() {
+        for language in [Language::En, Language::Uk] {
+            install_language(language);
+
+            assert_eq!(health_text(&HealthText::placeholder()), "-");
         }
     }
 

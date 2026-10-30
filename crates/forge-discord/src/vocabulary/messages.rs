@@ -1,3 +1,5 @@
+use std::time::Duration;
+
 use forge_types::{MessageCatalog, MessageCode, MessageRef, UpstreamDetail, VerbatimText};
 
 use crate::vocabulary::INTEGRATION_ID;
@@ -42,6 +44,20 @@ const FILE_NAME_UNAVAILABLE: MessageCode =
 const FILE_UNREADABLE: MessageCode = MessageCode::from_static(INTEGRATION_ID, "file_unreadable");
 
 const SECONDS_ARG: &str = "seconds";
+const MILLIS_ARG: &str = "millis";
+const SPAN_ARG: &str = "span";
+
+const HEALTH_LATENCY_MILLIS: MessageCode =
+    MessageCode::from_static(INTEGRATION_ID, "health_latency_millis");
+const HEALTH_LATENCY_SAMPLES: MessageCode =
+    MessageCode::from_static(INTEGRATION_ID, "health_latency_samples");
+const HEALTH_RESET_IN: MessageCode = MessageCode::from_static(INTEGRATION_ID, "health_reset_in");
+const HEALTH_SEND_OK: MessageCode = MessageCode::from_static(INTEGRATION_ID, "health_send_ok");
+const HEALTH_SEND_FAILED: MessageCode =
+    MessageCode::from_static(INTEGRATION_ID, "health_send_failed");
+const HEALTH_SEND_NONE: MessageCode = MessageCode::from_static(INTEGRATION_ID, "health_send_none");
+const HEALTH_ERRORS_WINDOW: MessageCode =
+    MessageCode::from_static(INTEGRATION_ID, "health_errors_window");
 const WEBHOOK_ARG: &str = "webhook";
 const STATUS_ARG: &str = "status";
 const COLOR_ARG: &str = "color";
@@ -59,6 +75,13 @@ pub const DISCORD_MESSAGES: MessageCatalog = MessageCatalog {
         HEALTH_RATE_LIMIT,
         HEALTH_LAST_SEND,
         HEALTH_ERRORS,
+        HEALTH_LATENCY_MILLIS,
+        HEALTH_LATENCY_SAMPLES,
+        HEALTH_RESET_IN,
+        HEALTH_SEND_OK,
+        HEALTH_SEND_FAILED,
+        HEALTH_SEND_NONE,
+        HEALTH_ERRORS_WINDOW,
         NETWORK_FAILED,
         RATE_LIMITED,
         WEBHOOK_NOT_FOUND,
@@ -83,6 +106,30 @@ pub const DISCORD_MESSAGES: MessageCatalog = MessageCatalog {
 
 fn detail(text: &str) -> UpstreamDetail {
     UpstreamDetail::from_redacted(text)
+}
+
+pub(crate) fn health_latency_millis(millis: u64) -> MessageRef {
+    MessageRef::new(HEALTH_LATENCY_MILLIS).with_arg(MILLIS_ARG, millis)
+}
+
+pub(crate) fn health_latency_samples(count: usize) -> MessageRef {
+    MessageRef::new(HEALTH_LATENCY_SAMPLES).with_arg(COUNT_ARG, count)
+}
+
+pub(crate) fn health_reset_in(span: Duration) -> MessageRef {
+    MessageRef::new(HEALTH_RESET_IN).with_arg(SPAN_ARG, span)
+}
+
+pub(crate) fn health_send(last_send_ok: Option<bool>) -> MessageRef {
+    MessageRef::new(match last_send_ok {
+        Some(true) => HEALTH_SEND_OK,
+        Some(false) => HEALTH_SEND_FAILED,
+        None => HEALTH_SEND_NONE,
+    })
+}
+
+pub(crate) fn health_errors_window() -> MessageRef {
+    MessageRef::new(HEALTH_ERRORS_WINDOW)
 }
 
 pub(crate) fn network_failed(text: &str) -> MessageRef {
@@ -202,6 +249,13 @@ mod tests {
             MessageRef::new(HEALTH_RATE_LIMIT),
             MessageRef::new(HEALTH_LAST_SEND),
             MessageRef::new(HEALTH_ERRORS),
+            health_latency_millis(12),
+            health_latency_samples(3),
+            health_reset_in(Duration::from_secs(9)),
+            health_send(Some(true)),
+            health_send(Some(false)),
+            health_send(None),
+            health_errors_window(),
             network_failed("c"),
             rate_limited(1.5),
             webhook_not_found("alerts"),

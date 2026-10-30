@@ -503,7 +503,7 @@ impl DiscordClient {
         let reset_hint = {
             let rl = self.rate_limiter.lock().unwrap_or_else(|p| p.into_inner());
             rl.reset_hint_secs(Instant::now(), webhook_name)
-                .map(|s| format!("{s:.0}"))
+                .and_then(|secs| Duration::try_from_secs_f64(secs.round()).ok())
         };
 
         let deltas = {

@@ -112,6 +112,11 @@ fn assemble_bundle<M: MemoizerKind>(
     language: CatalogLanguage,
     app_sources: &[&str],
 ) -> (fluent::bundle::FluentBundle<FluentResource, M>, Vec<String>) {
+    if let Err(error) = bundle.add_function(NUMBER_FUNCTION, move |positional, named| {
+        number_function(language, positional, named)
+    }) {
+        tracing::warn!(?error, ?language, "FTL number function unavailable");
+    }
     let mut overridden = Vec::new();
     for source in app_sources
         .iter()
@@ -201,25 +206,87 @@ pub(crate) fn active_language() -> CatalogLanguage {
         .unwrap_or(CatalogLanguage::En)
 }
 
-pub fn fmt_number(value: f64, decimal_places: usize) -> String {
-    let (group_sep, decimal_sep) = match active_language() {
-        CatalogLanguage::Uk => (" ", ","),
-        CatalogLanguage::En => (",", "."),
-    };
-    let scaled =
-        (value * 10f64.powi(decimal_places as i32)).round() / 10f64.powi(decimal_places as i32);
-    let int_part = scaled.abs().floor() as u64;
-    let int_str = group_integer(int_part, group_sep);
-    let signed = if value < 0.0 { "-" } else { "" };
-    if decimal_places == 0 {
-        format!("{signed}{int_str}")
-    } else {
-        let frac = (scaled.abs().fract() * 10f64.powi(decimal_places as i32)).round() as u64;
-        format!(
-            "{signed}{int_str}{decimal_sep}{frac:0>width$}",
-            width = decimal_places
-        )
+const NUMBER_FUNCTION: &str = "NUMBER";
+const DEFAULT_MAXIMUM_FRACTION_DIGITS: usize = 3;
+
+struct NumberSeparators {
+    group: &'static str,
+    decimal: &'static str,
+}
+
+fn separators(language: CatalogLanguage) -> NumberSeparators {
+    match language {
+        CatalogLanguage::Uk => NumberSeparators {
+            group: " ",
+            decimal: ",",
+        },
+        CatalogLanguage::En => NumberSeparators {
+            group: ",",
+            decimal: ".",
+        },
     }
+}
+
+fn split_fixed(value: f64, decimal_places: usize, language: CatalogLanguage) -> (String, String) {
+    let separators = separators(language);
+    let factor = 10f64.powi(decimal_places as i32);
+    let scaled = (value * factor).round() / factor;
+    let int_part = scaled.abs().floor() as u64;
+    let signed = if value < 0.0 { "-" } else { "" };
+    let int_str = format!("{signed}{}", group_integer(int_part, separators.group));
+    let frac_str = if decimal_places == 0 {
+        String::new()
+    } else {
+        let frac = (scaled.abs().fract() * factor).round() as u64;
+        format!("{frac:0>decimal_places$}")
+    };
+    (int_str, frac_str)
+}
+
+fn join_decimal(int_str: String, frac_str: &str, language: CatalogLanguage) -> String {
+    if frac_str.is_empty() {
+        int_str
+    } else {
+        format!("{int_str}{}{frac_str}", separators(language).decimal)
+    }
+}
+
+fn format_with_fraction_range(
+    value: f64,
+    minimum_fraction_digits: usize,
+    maximum_fraction_digits: usize,
+    language: CatalogLanguage,
+) -> String {
+    let maximum = maximum_fraction_digits.max(minimum_fraction_digits);
+    let (int_str, frac_str) = split_fixed(value, maximum, language);
+    let mut kept = frac_str.len();
+    while kept > minimum_fraction_digits && frac_str.as_bytes()[kept - 1] == b'0' {
+        kept -= 1;
+    }
+    join_decimal(int_str, &frac_str[..kept], language)
+}
+
+fn number_function<'a>(
+    language: CatalogLanguage,
+    positional: &[FluentValue<'a>],
+    named: &FluentArgs<'_>,
+) -> FluentValue<'a> {
+    let Some(FluentValue::Number(number)) = positional.first() else {
+        return FluentValue::Error;
+    };
+    let mut options = number.options.clone();
+    options.merge(named);
+    let minimum = options.minimum_fraction_digits.unwrap_or(0);
+    let maximum = options
+        .maximum_fraction_digits
+        .unwrap_or(DEFAULT_MAXIMUM_FRACTION_DIGITS);
+    FluentValue::String(format_with_fraction_range(number.value, minimum, maximum, language).into())
+}
+
+pub fn fmt_number(value: f64, decimal_places: usize) -> String {
+    let language = active_language();
+    let (int_str, frac_str) = split_fixed(value, decimal_places, language);
+    join_decimal(int_str, &frac_str, language)
 }
 
 pub(crate) fn relative_within_week(elapsed: time::Duration) -> Option<String> {

@@ -6,12 +6,14 @@ use forge_events::EventPublisher;
 use forge_platform_core::{
     ConnectionAnnouncer, ConnectionState, ConnectionTransition, HealthDelta,
 };
+use forge_types::MessageRef;
 use time::OffsetDateTime;
 use tokio::sync::broadcast;
 
 use crate::error::MonobankError;
 use crate::integration::MONOBANK_INTEGRATION;
 use crate::jar::MonobankJar;
+use crate::messages;
 
 const HEALTH_CHANNEL_CAPACITY: usize = 16;
 
@@ -35,6 +37,17 @@ impl PollPhase {
             Self::Polling => ConnectionState::Connected,
             Self::Retrying => ConnectionState::Reconnecting,
         }
+    }
+
+    pub fn message(self) -> MessageRef {
+        MessageRef::new(match self {
+            Self::Paused => messages::PHASE_PAUSED,
+            Self::AwaitingToken => messages::PHASE_AWAITING_TOKEN,
+            Self::Starting => messages::PHASE_STARTING,
+            Self::Polling => messages::PHASE_POLLING,
+            Self::Retrying => messages::PHASE_RETRYING,
+            Self::ActionRequired => messages::PHASE_ACTION_REQUIRED,
+        })
     }
 }
 
@@ -70,6 +83,21 @@ impl PollFailure {
             | MonobankError::ClientInit { .. }
             | MonobankError::NoRuntime => Self::Local,
         }
+    }
+
+    pub fn message(self) -> MessageRef {
+        MessageRef::new(match self {
+            Self::MissingToken => messages::FAILURE_MISSING_TOKEN,
+            Self::TokenRejected => messages::FAILURE_TOKEN_REJECTED,
+            Self::JarNotSelected => messages::FAILURE_JAR_NOT_SELECTED,
+            Self::JarMissing => messages::FAILURE_JAR_MISSING,
+            Self::RateLimited => messages::FAILURE_RATE_LIMITED,
+            Self::Network => messages::FAILURE_NETWORK,
+            Self::ServerError => messages::FAILURE_SERVER_ERROR,
+            Self::MalformedResponse => messages::FAILURE_MALFORMED_RESPONSE,
+            Self::InvalidDonation => messages::FAILURE_INVALID_DONATION,
+            Self::Local => messages::FAILURE_LOCAL,
+        })
     }
 
     pub const fn label(self) -> &'static str {

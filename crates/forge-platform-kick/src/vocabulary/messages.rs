@@ -11,6 +11,21 @@ pub const HEALTH_EVENTS: MessageCode = MessageCode::from_static(INTEGRATION_ID, 
 pub const HEALTH_API_CALLS: MessageCode =
     MessageCode::from_static(INTEGRATION_ID, "health_api_calls");
 
+pub const HEALTH_POLLER_ACTIVE: MessageCode =
+    MessageCode::from_static(INTEGRATION_ID, "health_poller_active");
+pub const HEALTH_POLLER_INTERVALS: MessageCode =
+    MessageCode::from_static(INTEGRATION_ID, "health_poller_intervals");
+pub const HEALTH_POLLER_AUTH_REQUIRED: MessageCode =
+    MessageCode::from_static(INTEGRATION_ID, "health_poller_auth_required");
+pub const HEALTH_POLLER_SIGN_IN_AGAIN: MessageCode =
+    MessageCode::from_static(INTEGRATION_ID, "health_poller_sign_in_again");
+pub const HEALTH_VIEWERS_LIVE: MessageCode =
+    MessageCode::from_static(INTEGRATION_ID, "health_viewers_live");
+pub const HEALTH_RESETS_IN: MessageCode =
+    MessageCode::from_static(INTEGRATION_ID, "health_resets_in");
+pub const HEALTH_NO_USAGE: MessageCode =
+    MessageCode::from_static(INTEGRATION_ID, "health_no_usage");
+
 const RATE_LIMITED: MessageCode = MessageCode::from_static(INTEGRATION_ID, "rate_limited");
 const RATE_BUDGET_EXHAUSTED: MessageCode =
     MessageCode::from_static(INTEGRATION_ID, "rate_budget_exhausted");
@@ -35,6 +50,13 @@ pub const KICK_MESSAGES: MessageCatalog = MessageCatalog {
         HEALTH_LIVE_CHAT,
         HEALTH_EVENTS,
         HEALTH_API_CALLS,
+        HEALTH_POLLER_ACTIVE,
+        HEALTH_POLLER_INTERVALS,
+        HEALTH_POLLER_AUTH_REQUIRED,
+        HEALTH_POLLER_SIGN_IN_AGAIN,
+        HEALTH_VIEWERS_LIVE,
+        HEALTH_RESETS_IN,
+        HEALTH_NO_USAGE,
         STORED_SIGN_IN_UNREADABLE,
         RATE_LIMITED,
         RATE_BUDGET_EXHAUSTED,
@@ -55,6 +77,8 @@ pub const KICK_MESSAGES: MessageCatalog = MessageCatalog {
 const STATUS_ARG: &str = "status";
 const SECONDS_ARG: &str = "seconds";
 const FIELD_ARG: &str = "field";
+const CHANNELS_ARG: &str = "channels";
+const REDEMPTIONS_ARG: &str = "redemptions";
 
 fn detailed(code: MessageCode, detail: &str) -> MessageRef {
     MessageRef::new(code).with_detail(UpstreamDetail::from_redacted(detail))
@@ -62,6 +86,36 @@ fn detailed(code: MessageCode, detail: &str) -> MessageRef {
 
 fn field(code: MessageCode, name: &str) -> MessageRef {
     MessageRef::new(code).with_arg(FIELD_ARG, VerbatimText::new(name))
+}
+
+pub(crate) fn health_poller_active() -> MessageRef {
+    MessageRef::new(HEALTH_POLLER_ACTIVE)
+}
+
+pub(crate) fn health_poller_intervals(channels_secs: u64, redemptions_secs: u64) -> MessageRef {
+    MessageRef::new(HEALTH_POLLER_INTERVALS)
+        .with_arg(CHANNELS_ARG, channels_secs)
+        .with_arg(REDEMPTIONS_ARG, redemptions_secs)
+}
+
+pub(crate) fn health_poller_auth_required() -> MessageRef {
+    MessageRef::new(HEALTH_POLLER_AUTH_REQUIRED)
+}
+
+pub(crate) fn health_poller_sign_in_again() -> MessageRef {
+    MessageRef::new(HEALTH_POLLER_SIGN_IN_AGAIN)
+}
+
+pub(crate) fn health_viewers_live() -> MessageRef {
+    MessageRef::new(HEALTH_VIEWERS_LIVE)
+}
+
+pub(crate) fn health_resets_in(seconds: u64) -> MessageRef {
+    MessageRef::new(HEALTH_RESETS_IN).with_arg(SECONDS_ARG, seconds)
+}
+
+pub(crate) fn health_no_usage() -> MessageRef {
+    MessageRef::new(HEALTH_NO_USAGE)
 }
 
 pub(crate) fn rate_limited(retry_after_secs: u32) -> MessageRef {
@@ -141,6 +195,13 @@ mod tests {
             MessageRef::new(HEALTH_LIVE_CHAT),
             MessageRef::new(HEALTH_EVENTS),
             MessageRef::new(HEALTH_API_CALLS),
+            health_poller_active(),
+            health_poller_intervals(30, 12),
+            health_poller_auth_required(),
+            health_poller_sign_in_again(),
+            health_viewers_live(),
+            health_resets_in(9),
+            health_no_usage(),
             rate_limited(3),
             rate_budget_exhausted(),
             reauth_required(),

@@ -7,7 +7,7 @@ use forge_platform_core::{
     HealthText, HealthValue, HeroBadge, HeroBadgeTone, LiveViewerSource, ViewerReport,
 };
 use forge_registry::{RegistryError, TriggerRegistry};
-use forge_types::IntegrationId;
+use forge_types::{IntegrationId, MessageRef, VerbatimText};
 use tokio::sync::{broadcast, watch};
 use tokio_stream::StreamExt;
 use tokio_stream::wrappers::BroadcastStream;
@@ -270,10 +270,10 @@ impl YoutubeIntegrationBundle {
             Ok(guard) => HealthValue::Ratio {
                 used: u64::from(guard.used_on(today_pacific())),
                 total: u64::from(QUOTA_DAILY_LIMIT),
-                reset_hint: Some(HealthText::unlocalized("resets daily (Pacific)")),
+                reset_hint: Some(message_text(messages::health_quota_resets_daily())),
             },
             Err(_) => HealthValue::Text {
-                primary: HealthText::unlocalized("unavailable"),
+                primary: message_text(messages::health_unavailable()),
                 secondary: None,
             },
         };
@@ -284,11 +284,19 @@ impl YoutubeIntegrationBundle {
     }
 }
 
+const LIVE_CHAT_ENDPOINT: &str = "liveChatMessages.list";
+
+fn message_text(message: MessageRef) -> HealthText {
+    HealthText::Text(message.into())
+}
+
 fn chat_poller_health_value(state: ConnectionState) -> HealthValue {
     HealthValue::Status {
         label: HealthText::Connection(state),
         active: state.is_connected(),
-        detail: Some(HealthText::unlocalized("liveChatMessages.list")),
+        detail: Some(HealthText::Text(
+            VerbatimText::new(LIVE_CHAT_ENDPOINT).into(),
+        )),
     }
 }
 
@@ -296,18 +304,18 @@ fn events_health_value(state: ConnectionState) -> HealthValue {
     HealthValue::Status {
         label: HealthText::Connection(state),
         active: state.is_connected(),
-        detail: Some(HealthText::unlocalized("shared chat feed")),
+        detail: Some(message_text(messages::health_shared_chat_feed())),
     }
 }
 
 fn viewers_health_value(report: ViewerReport) -> HealthValue {
     match report {
         ViewerReport::Live { count } => HealthValue::Text {
-            primary: HealthText::unlocalized(count.to_string()),
-            secondary: Some(HealthText::unlocalized("live")),
+            primary: HealthText::Count(count),
+            secondary: Some(message_text(messages::health_viewers_live())),
         },
         ViewerReport::Absent => HealthValue::Text {
-            primary: HealthText::unlocalized("0"),
+            primary: HealthText::Count(0),
             secondary: None,
         },
     }
@@ -661,7 +669,9 @@ mod tests {
                 HealthValue::Status {
                     label: HealthText::Connection(state),
                     active,
-                    detail: Some(HealthText::unlocalized("liveChatMessages.list")),
+                    detail: Some(HealthText::Text(
+                        VerbatimText::new(LIVE_CHAT_ENDPOINT).into()
+                    )),
                 },
                 "unexpected health value for {state:?}"
             );
@@ -670,16 +680,17 @@ mod tests {
 
     #[test]
     fn viewers_health_value_shows_count_when_live_and_zero_when_absent() {
+        let live = || message_text(messages::health_viewers_live());
         for (report, primary, secondary) in [
-            (ViewerReport::Live { count: 0 }, "0", Some("live")),
-            (ViewerReport::Live { count: 1234 }, "1234", Some("live")),
-            (ViewerReport::Absent, "0", None),
+            (ViewerReport::Live { count: 0 }, 0, Some(live())),
+            (ViewerReport::Live { count: 1234 }, 1234, Some(live())),
+            (ViewerReport::Absent, 0, None),
         ] {
             assert_eq!(
                 viewers_health_value(report),
                 HealthValue::Text {
-                    primary: HealthText::unlocalized(primary),
-                    secondary: secondary.map(HealthText::unlocalized),
+                    primary: HealthText::Count(primary),
+                    secondary,
                 },
                 "unexpected viewers value for {report:?}"
             );

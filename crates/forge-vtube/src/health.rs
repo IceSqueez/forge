@@ -4,6 +4,8 @@ use tokio::sync::broadcast;
 use tokio_stream::StreamExt;
 use tokio_stream::wrappers::BroadcastStream;
 
+use forge_types::VerbatimText;
+
 use forge_platform_core::{
     BuiltinHealth, HealthDelta, HealthMetric, HealthMetricId, HealthStream, HealthText, HealthValue,
 };
@@ -95,21 +97,13 @@ pub(crate) fn apply_model(
         changed = true;
     }
     if changed {
-        let (primary, secondary) = if loaded && !new_name.is_empty() {
-            (new_name, param_count.map(|n| format!("{n} parameters")))
-        } else {
-            ("-".to_owned(), Some("not loaded".to_owned()))
-        };
         #[expect(
             clippy::let_underscore_must_use,
             reason = "having no subscribers is a normal state"
         )]
         let _ = tx.send(HealthDelta {
             metric: MODEL_METRIC,
-            new_value: HealthValue::Text {
-                primary: HealthText::unlocalized(primary),
-                secondary: secondary.map(HealthText::unlocalized),
-            },
+            new_value: model_value(&new_name, param_count),
         });
     }
 }
@@ -122,16 +116,40 @@ pub(crate) fn clear_session_state(
     apply_tracking(false, snap, tx);
 }
 
-fn tracking_value(face_found: bool) -> HealthValue {
-    HealthValue::Status {
-        label: HealthText::unlocalized(tracking_label(face_found)),
-        active: face_found,
-        detail: None,
+pub(crate) fn model_value(name: &str, param_count: Option<u64>) -> HealthValue {
+    if name.is_empty() {
+        HealthValue::Text {
+            primary: HealthText::placeholder(),
+            secondary: Some(messages::health_model_not_loaded().into()),
+        }
+    } else {
+        HealthValue::Text {
+            primary: HealthText::Text(VerbatimText::new(name).into()),
+            secondary: param_count.map(|n| messages::health_model_parameters(n).into()),
+        }
     }
 }
 
-fn tracking_label(face_found: bool) -> &'static str {
-    if face_found { "Face" } else { "Off" }
+pub(crate) fn expressions_value(count: usize) -> HealthValue {
+    HealthValue::Text {
+        primary: HealthText::Count(count as u64),
+        secondary: Some(messages::health_expressions_hint().into()),
+    }
+}
+
+pub(crate) fn items_value(count: u64) -> HealthValue {
+    HealthValue::Text {
+        primary: HealthText::Count(count),
+        secondary: Some(messages::health_items_hint().into()),
+    }
+}
+
+fn tracking_value(face_found: bool) -> HealthValue {
+    HealthValue::Status {
+        label: messages::health_tracking(face_found).into(),
+        active: face_found,
+        detail: None,
+    }
 }
 
 impl BuiltinHealth for VTubeClient {
@@ -147,39 +165,24 @@ impl BuiltinHealth for VTubeClient {
             .unwrap_or_else(|p| p.into_inner())
             .clone();
 
-        let model_loaded = snap.model_loaded && !snap.model_name.is_empty();
-        let (model_primary, model_secondary) = if model_loaded {
-            (
-                snap.model_name.clone(),
-                content
-                    .current_model_param_count
-                    .map(|n| format!("{n} parameters")),
-            )
+        let model_name = if snap.model_loaded {
+            snap.model_name.as_str()
         } else {
-            ("-".to_owned(), Some("not loaded".to_owned()))
+            ""
         };
 
         [
             HealthMetric {
                 id: MODEL_METRIC,
-                value: HealthValue::Text {
-                    primary: HealthText::unlocalized(model_primary),
-                    secondary: model_secondary.map(HealthText::unlocalized),
-                },
+                value: model_value(model_name, content.current_model_param_count.map(u64::from)),
             },
             HealthMetric {
                 id: EXPRESSIONS_METRIC,
-                value: HealthValue::Text {
-                    primary: HealthText::unlocalized(content.expressions.len().to_string()),
-                    secondary: Some(HealthText::unlocalized("hotkey-bound")),
-                },
+                value: expressions_value(content.expressions.len()),
             },
             HealthMetric {
                 id: ITEMS_METRIC,
-                value: HealthValue::Text {
-                    primary: HealthText::unlocalized(content.item_count.unwrap_or(0).to_string()),
-                    secondary: Some(HealthText::unlocalized("throwable / pinned")),
-                },
+                value: items_value(content.item_count.map_or(0, u64::from)),
             },
             HealthMetric {
                 id: TRACKING_METRIC,
@@ -202,6 +205,17 @@ mod tests {
     use super::*;
     use crate::client::VTubeClient;
     use crate::content::ExpressionItem;
+
+    fn model_name(name: &str) -> HealthText {
+        HealthText::Text(VerbatimText::new(name).into())
+    }
+
+    fn no_model() -> HealthValue {
+        HealthValue::Text {
+            primary: HealthText::placeholder(),
+            secondary: Some(messages::health_model_not_loaded().into()),
+        }
+    }
 
     fn model_loaded(model_name: &str) -> VtsEvent {
         VtsEvent::ModelLoaded {
@@ -239,7 +253,7 @@ mod tests {
         assert_eq!(delta.metric, MODEL_METRIC);
         assert!(matches!(
             delta.new_value,
-            HealthValue::Text { ref primary, .. } if *primary == HealthText::unlocalized("MyAvatar")
+            HealthValue::Text { ref primary, .. } if *primary == model_name("MyAvatar")
         ));
     }
 
@@ -306,23 +320,19 @@ mod tests {
         );
     }
 
-    fn plain(text: &HealthText) -> String {
-        match text {
-            HealthText::Text(text) => text.code_or_text(),
-            other => panic!("expected text, got {other:?}"),
-        }
-    }
-
-    fn text_metric(metrics: &[HealthMetric], id: &HealthMetricId) -> (String, Option<String>) {
-        let metric = metrics
+    fn metric_value(metrics: &[HealthMetric], id: &HealthMetricId) -> HealthValue {
+        metrics
             .iter()
             .find(|m| &m.id == id)
-            .unwrap_or_else(|| panic!("no metric {id}"));
-        match &metric.value {
-            HealthValue::Text { primary, secondary } => {
-                (plain(primary), secondary.as_ref().map(plain))
-            }
-            _ => panic!("metric {id} is not a text value"),
+            .unwrap_or_else(|| panic!("no metric {id}"))
+            .value
+            .clone()
+    }
+
+    fn primary(value: HealthValue) -> HealthText {
+        match value {
+            HealthValue::Text { primary, .. } => primary,
+            other => panic!("not a text value: {other:?}"),
         }
     }
 
@@ -335,8 +345,14 @@ mod tests {
         }
 
         let metrics = c.metrics();
-        assert_eq!(text_metric(&metrics, &EXPRESSIONS_METRIC).0, "3");
-        assert_eq!(text_metric(&metrics, &ITEMS_METRIC).0, "7");
+        assert_eq!(
+            primary(metric_value(&metrics, &EXPRESSIONS_METRIC)),
+            HealthText::Count(3)
+        );
+        assert_eq!(
+            primary(metric_value(&metrics, &ITEMS_METRIC)),
+            HealthText::Count(7)
+        );
     }
 
     #[test]
@@ -351,8 +367,22 @@ mod tests {
         }
 
         assert_eq!(
-            text_metric(&c.metrics(), &MODEL_METRIC),
-            ("MyAvatar".to_owned(), Some("42 parameters".to_owned()))
+            metric_value(&c.metrics(), &MODEL_METRIC),
+            HealthValue::Text {
+                primary: model_name("MyAvatar"),
+                secondary: Some(messages::health_model_parameters(42).into()),
+            }
+        );
+    }
+
+    #[test]
+    fn a_loaded_model_without_a_known_parameter_count_shows_the_name_alone() {
+        assert_eq!(
+            model_value("MyAvatar", None),
+            HealthValue::Text {
+                primary: model_name("MyAvatar"),
+                secondary: None,
+            }
         );
     }
 
@@ -361,11 +391,44 @@ mod tests {
         let c = VTubeClient::new_for_test("ws://127.0.0.1:8001/");
         let metrics = c.metrics();
 
+        assert_eq!(metric_value(&metrics, &MODEL_METRIC), no_model());
         assert_eq!(
-            text_metric(&metrics, &MODEL_METRIC),
-            ("-".to_owned(), Some("not loaded".to_owned()))
+            primary(metric_value(&metrics, &ITEMS_METRIC)),
+            HealthText::Count(0)
         );
-        assert_eq!(text_metric(&metrics, &ITEMS_METRIC).0, "0");
+    }
+
+    #[test]
+    fn a_stale_name_of_an_unloaded_model_is_not_shown_on_the_tile() {
+        let c = VTubeClient::new_for_test("ws://127.0.0.1:8001/");
+        if let Ok(mut s) = c.health_state.write() {
+            s.model_loaded = false;
+            s.model_name = "GoneAvatar".to_owned();
+        }
+
+        assert_eq!(metric_value(&c.metrics(), &MODEL_METRIC), no_model());
+    }
+
+    #[test]
+    fn a_loaded_model_without_a_name_reads_as_not_loaded() {
+        let c = VTubeClient::new_for_test("ws://127.0.0.1:8001/");
+        if let Ok(mut s) = c.health_state.write() {
+            s.model_loaded = true;
+            s.model_name = String::new();
+        }
+
+        assert_eq!(metric_value(&c.metrics(), &MODEL_METRIC), no_model());
+    }
+
+    #[test]
+    fn unloading_a_model_publishes_the_not_loaded_tile() {
+        let (tx, snap) = make_health_channel();
+        apply_model(true, "MyAvatar", Some(42), &snap, &tx);
+        let mut rx = tx.subscribe();
+
+        apply_model(false, "MyAvatar", Some(42), &snap, &tx);
+
+        assert_eq!(rx.try_recv().unwrap().new_value, no_model());
     }
 
     #[tokio::test]

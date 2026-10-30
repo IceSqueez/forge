@@ -15,17 +15,19 @@ use crate::vocabulary::messages;
 pub(crate) const STREAM_METRIC: HealthMetricId = HealthMetricId::new(messages::HEALTH_STREAM);
 pub(crate) const RECORDING_METRIC: HealthMetricId = HealthMetricId::new(messages::HEALTH_RECORDING);
 pub(crate) const CPU_FPS_METRIC: HealthMetricId = HealthMetricId::new(messages::HEALTH_CPU_FPS);
+const PERCENT_SCALE: f64 = 100.0;
+
 pub(crate) const DROPPED_METRIC: HealthMetricId =
     HealthMetricId::new(messages::HEALTH_DROPPED_FRAMES);
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
-pub struct FrameCounterSample {
+pub(crate) struct FrameCounterSample {
     pub skipped: u32,
     pub total: u32,
 }
 
 #[derive(Debug, Clone, Default)]
-pub struct HealthSnapshot {
+pub(crate) struct HealthSnapshot {
     pub stream_active: bool,
     pub stream_duration: Option<Duration>,
     pub record_active: bool,
@@ -57,65 +59,72 @@ pub(crate) fn format_duration_hm(d: Duration) -> String {
     }
 }
 
-pub(crate) fn stream_health_value(active: bool, duration: Option<Duration>) -> HealthValue {
-    HealthValue::Status {
-        label: HealthText::unlocalized(if active {
-            "Live".to_owned()
-        } else {
-            "Off".to_owned()
-        }),
-        active,
-        detail: Some(HealthText::unlocalized(
-            duration
-                .map(format_duration_hm)
-                .unwrap_or_else(|| "-".to_owned()),
-        )),
-    }
+pub(crate) fn delta(metric: HealthMetricId, snapshot: &HealthSnapshot) -> HealthDelta {
+    let new_value = if metric == STREAM_METRIC {
+        stream_value(snapshot)
+    } else if metric == RECORDING_METRIC {
+        record_value(snapshot)
+    } else if metric == CPU_FPS_METRIC {
+        cpu_fps_value(snapshot)
+    } else {
+        dropped_value(snapshot)
+    };
+    HealthDelta { metric, new_value }
 }
 
-pub(crate) fn record_health_value(
-    active: bool,
-    paused: bool,
-    duration: Option<Duration>,
-) -> HealthValue {
-    let label = if !active {
-        "Off".to_owned()
-    } else if paused {
-        "Paused".to_owned()
+fn duration_detail(duration: Option<Duration>) -> HealthText {
+    duration.map_or_else(HealthText::placeholder, HealthText::Span)
+}
+
+fn stream_value(snapshot: &HealthSnapshot) -> HealthValue {
+    let label = if snapshot.stream_active {
+        messages::health_live()
     } else {
-        "Active".to_owned()
+        messages::health_off()
     };
     HealthValue::Status {
-        label: HealthText::unlocalized(label),
-        active,
-        detail: Some(HealthText::unlocalized(
-            duration
-                .map(format_duration_hm)
-                .unwrap_or_else(|| "-".to_owned()),
-        )),
+        label: label.into(),
+        active: snapshot.stream_active,
+        detail: Some(duration_detail(snapshot.stream_duration)),
     }
 }
 
-pub(crate) fn cpu_fps_value(cpu_percent: f64, fps: f64, render_lag: bool) -> HealthValue {
+fn record_value(snapshot: &HealthSnapshot) -> HealthValue {
+    let label = if !snapshot.record_active {
+        messages::health_off()
+    } else if snapshot.record_paused {
+        messages::health_paused()
+    } else {
+        messages::health_active()
+    };
+    HealthValue::Status {
+        label: label.into(),
+        active: snapshot.record_active,
+        detail: Some(duration_detail(snapshot.record_duration)),
+    }
+}
+
+fn cpu_fps_value(snapshot: &HealthSnapshot) -> HealthValue {
+    let lag = if snapshot.render_lag {
+        messages::health_lagging()
+    } else {
+        messages::health_smooth()
+    };
     HealthValue::Text {
-        primary: HealthText::unlocalized(format!("{cpu_percent:.1}% \u{00b7} {fps:.1}")),
-        secondary: Some(HealthText::unlocalized(if render_lag {
-            "lagging".to_owned()
-        } else {
-            "smooth".to_owned()
-        })),
+        primary: messages::health_cpu_fps_value(snapshot.cpu_percent, snapshot.fps).into(),
+        secondary: Some(lag.into()),
     }
 }
 
-pub(crate) fn dropped_value(dropped: u64, total: u64) -> HealthValue {
-    let pct = if total > 0 {
-        dropped as f64 / total as f64 * 100.0
+fn dropped_value(snapshot: &HealthSnapshot) -> HealthValue {
+    let percent = if snapshot.total_frames > 0 {
+        snapshot.dropped_frames as f64 / snapshot.total_frames as f64 * PERCENT_SCALE
     } else {
         0.0
     };
     HealthValue::Text {
-        primary: HealthText::unlocalized(format!("{dropped} frames")),
-        secondary: Some(HealthText::unlocalized(format!("{pct:.2}%"))),
+        primary: messages::health_dropped_count(snapshot.dropped_frames).into(),
+        secondary: Some(messages::health_dropped_share(percent).into()),
     }
 }
 
@@ -130,23 +139,19 @@ impl BuiltinHealth for ObsClient {
         [
             HealthMetric {
                 id: STREAM_METRIC,
-                value: stream_health_value(snap.stream_active, snap.stream_duration),
+                value: stream_value(&snap),
             },
             HealthMetric {
                 id: RECORDING_METRIC,
-                value: record_health_value(
-                    snap.record_active,
-                    snap.record_paused,
-                    snap.record_duration,
-                ),
+                value: record_value(&snap),
             },
             HealthMetric {
                 id: CPU_FPS_METRIC,
-                value: cpu_fps_value(snap.cpu_percent, snap.fps, snap.render_lag),
+                value: cpu_fps_value(&snap),
             },
             HealthMetric {
                 id: DROPPED_METRIC,
-                value: dropped_value(snap.dropped_frames, snap.total_frames),
+                value: dropped_value(&snap),
             },
         ]
     }
@@ -160,34 +165,23 @@ impl BuiltinHealth for ObsClient {
 #[cfg(test)]
 mod tests {
     use forge_platform_core::BuiltinHealth;
+    use forge_types::MessageRef;
 
     use super::*;
     use crate::client::ObsClient;
 
-    fn plain(text: &HealthText) -> String {
-        match text {
-            HealthText::Text(text) => text.code_or_text(),
-            other => panic!("expected text, got {other:?}"),
+    fn status(label: MessageRef, active: bool, detail: HealthText) -> HealthValue {
+        HealthValue::Status {
+            label: label.into(),
+            active,
+            detail: Some(detail),
         }
     }
 
-    fn text_parts(value: &HealthValue) -> (String, Option<String>) {
-        match value {
-            HealthValue::Text { primary, secondary } => {
-                (plain(primary), secondary.as_ref().map(plain))
-            }
-            other => panic!("expected Text, got {other:?}"),
-        }
-    }
-
-    fn status_parts(value: &HealthValue) -> (String, bool, Option<String>) {
-        match value {
-            HealthValue::Status {
-                label,
-                active,
-                detail,
-            } => (plain(label), *active, detail.as_ref().map(plain)),
-            other => panic!("expected Status, got {other:?}"),
+    fn text(primary: MessageRef, secondary: MessageRef) -> HealthValue {
+        HealthValue::Text {
+            primary: primary.into(),
+            secondary: Some(secondary.into()),
         }
     }
 
@@ -211,61 +205,92 @@ mod tests {
     }
 
     #[test]
-    fn stream_health_value_reports_live_or_off_with_a_duration_detail() {
-        let live = stream_health_value(true, Some(Duration::from_secs(3_720)));
-        assert_eq!(
-            status_parts(&live),
-            ("Live".to_owned(), true, Some("1h 2m".to_owned())),
-        );
-
-        let off = stream_health_value(false, None);
-        assert_eq!(
-            status_parts(&off),
-            ("Off".to_owned(), false, Some("-".to_owned())),
-        );
-    }
-
-    #[test]
-    fn record_health_value_distinguishes_paused_from_active_and_off() {
-        for (active, paused, expected_label) in [
-            (true, false, "Active"),
-            (true, true, "Paused"),
-            (false, false, "Off"),
-            (false, true, "Off"),
+    fn the_stream_tile_reads_live_with_its_span_or_off_with_a_placeholder() {
+        let span = Duration::from_secs(3_720);
+        for (snapshot, expected) in [
+            (
+                HealthSnapshot {
+                    stream_active: true,
+                    stream_duration: Some(span),
+                    ..HealthSnapshot::default()
+                },
+                status(messages::health_live(), true, HealthText::Span(span)),
+            ),
+            (
+                HealthSnapshot::default(),
+                status(messages::health_off(), false, HealthText::placeholder()),
+            ),
         ] {
-            let (label, is_active, _) = status_parts(&record_health_value(active, paused, None));
-            assert_eq!(label, expected_label, "active={active} paused={paused}");
-            assert_eq!(is_active, active);
+            let delta = delta(STREAM_METRIC, &snapshot);
+
+            assert_eq!(delta.metric, STREAM_METRIC);
+            assert_eq!(delta.new_value, expected);
         }
     }
 
     #[test]
-    fn cpu_fps_value_pairs_one_decimal_figures_with_a_render_lag_word() {
-        let lagging = cpu_fps_value(12.34, 59.94, true);
-        assert_eq!(
-            text_parts(&lagging),
-            ("12.3% \u{00b7} 59.9".to_owned(), Some("lagging".to_owned())),
-        );
+    fn the_recording_tile_tells_paused_from_active_and_stopped_wins_over_paused() {
+        let span = Duration::from_secs(45);
+        for (active, paused, label) in [
+            (true, false, messages::health_active()),
+            (true, true, messages::health_paused()),
+            (false, false, messages::health_off()),
+            (false, true, messages::health_off()),
+        ] {
+            let snapshot = HealthSnapshot {
+                record_active: active,
+                record_paused: paused,
+                record_duration: Some(span),
+                ..HealthSnapshot::default()
+            };
 
-        let smooth = cpu_fps_value(0.0, 60.0, false);
-        assert_eq!(
-            text_parts(&smooth),
-            ("0.0% \u{00b7} 60.0".to_owned(), Some("smooth".to_owned())),
-        );
+            assert_eq!(
+                delta(RECORDING_METRIC, &snapshot).new_value,
+                status(label, active, HealthText::Span(span)),
+                "active={active} paused={paused}"
+            );
+        }
     }
 
     #[test]
-    fn dropped_value_reports_the_frame_count_with_a_percentage_of_the_total() {
-        let (primary, secondary) = text_parts(&dropped_value(3, 1_000));
-        assert_eq!(primary, "3 frames");
-        assert_eq!(secondary.as_deref(), Some("0.30%"));
+    fn the_cpu_tile_carries_the_figures_as_numbers_with_a_render_lag_word() {
+        for (render_lag, word) in [
+            (true, messages::health_lagging()),
+            (false, messages::health_smooth()),
+        ] {
+            let snapshot = HealthSnapshot {
+                cpu_percent: 12.34,
+                fps: 59.94,
+                render_lag,
+                ..HealthSnapshot::default()
+            };
+
+            assert_eq!(
+                delta(CPU_FPS_METRIC, &snapshot).new_value,
+                text(messages::health_cpu_fps_value(12.34, 59.94), word),
+            );
+        }
     }
 
     #[test]
-    fn dropped_value_reports_zero_percent_when_no_frames_were_rendered_yet() {
-        let (primary, secondary) = text_parts(&dropped_value(0, 0));
-        assert_eq!(primary, "0 frames");
-        assert_eq!(secondary.as_deref(), Some("0.00%"));
+    fn the_dropped_tile_shares_the_count_against_the_total_and_reads_zero_before_any_frame() {
+        for (dropped_frames, total_frames, percent) in [(3, 1_000, 0.3), (0, 0, 0.0), (7, 7, 100.0)]
+        {
+            let snapshot = HealthSnapshot {
+                dropped_frames,
+                total_frames,
+                ..HealthSnapshot::default()
+            };
+
+            assert_eq!(
+                delta(DROPPED_METRIC, &snapshot).new_value,
+                text(
+                    messages::health_dropped_count(dropped_frames),
+                    messages::health_dropped_share(percent),
+                ),
+                "{dropped_frames}/{total_frames}"
+            );
+        }
     }
 
     #[test]

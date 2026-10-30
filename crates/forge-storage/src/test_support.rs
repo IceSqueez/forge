@@ -2,12 +2,9 @@ mod memory;
 
 pub use memory::MemorySettings;
 
-use crate::{RowClasses, SettingDisclosure, SettingPortability};
+use crate::RowClasses;
 
-pub const FAIL_CLOSED_CLASSES: RowClasses = RowClasses {
-    portability: SettingPortability::MachineLocal,
-    disclosure: SettingDisclosure::Withheld,
-};
+pub const FAIL_CLOSED_CLASSES: RowClasses = RowClasses::FAIL_CLOSED;
 
 pub const INJECTED_FAILURE_REASON: &str = "injected settings failure";
 

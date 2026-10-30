@@ -1,7 +1,10 @@
 use std::collections::BTreeMap;
 
 use forge_speech_types::{AssignmentStrategy, IgnoreProfile, VoiceAlias};
-use forge_storage::{DataProvider, FilterRule, SettingsCatalog, SettingsRepo, TtsPipelineSettings};
+use forge_storage::{
+    DataProvider, FilterRule, SettingPortability, SettingRow, TtsPipelineSettings,
+    load_setting_rows,
+};
 
 use crate::documents::inventory::{PackInventory, load_pack_inventory};
 use crate::error::TransferError;
@@ -14,20 +17,20 @@ pub(crate) struct SetupInventory {
     pub(crate) voice_aliases: Vec<VoiceAlias>,
     pub(crate) voice_strategy: AssignmentStrategy,
     pub(crate) ignore_profile: IgnoreProfile,
-    pub(crate) portable_settings: BTreeMap<String, String>,
+    pub(crate) portable_settings: BTreeMap<String, SettingRow>,
 }
 
 pub(crate) async fn load_setup_inventory(
     provider: &dyn DataProvider,
-    settings_catalog: &SettingsCatalog,
 ) -> Result<SetupInventory, TransferError> {
     let configuration = load_pack_inventory(provider).await?;
     let tts = provider.tts_filters_repo();
     let voices = provider.voice_alias_repo();
-    let portable_settings = SettingsRepo::load_all(provider)
+    let portable_settings = load_setting_rows(provider)
         .await?
         .into_iter()
-        .filter(|(key, _)| settings_catalog.is_portable(key))
+        .filter(|row| row.classes().portability == SettingPortability::Portable)
+        .map(|row| (row.key().to_owned(), row))
         .collect();
     Ok(SetupInventory {
         configuration,

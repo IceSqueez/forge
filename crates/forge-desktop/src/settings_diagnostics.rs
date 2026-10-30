@@ -8,8 +8,8 @@ use forge_components::{
     setting_row, spacing, tr,
 };
 use forge_storage::{
-    DEFAULT_DIAGNOSTIC_LOG_LEVEL, DataProvider, SettingsCatalog, SettingsRepo,
-    diagnostic_log_level, set_diagnostic_log_level,
+    DEFAULT_DIAGNOSTIC_LOG_LEVEL, DataProvider, SettingsRepo, diagnostic_log_level,
+    set_diagnostic_log_level,
 };
 use forge_types::LogLevel;
 use gpui::{
@@ -43,7 +43,6 @@ const PREVIEW_WIDTH: Pixels = px(600.0);
 pub struct SettingsDiagnosticsView {
     tail: LogTail,
     backend: Arc<dyn DataProvider>,
-    settings_catalog: Arc<SettingsCatalog>,
     builtins: BuiltinRegistry,
     rt_handle: tokio::runtime::Handle,
     lines: Vec<LogLine>,
@@ -63,7 +62,6 @@ impl SettingsDiagnosticsView {
     pub fn new(
         tail: LogTail,
         backend: Arc<dyn DataProvider>,
-        settings_catalog: Arc<SettingsCatalog>,
         builtins: BuiltinRegistry,
         rt_handle: tokio::runtime::Handle,
         initial_active: bool,
@@ -73,7 +71,6 @@ impl SettingsDiagnosticsView {
         let mut view = Self {
             tail,
             backend,
-            settings_catalog,
             builtins,
             rt_handle,
             lines: Vec::new(),
@@ -204,7 +201,6 @@ impl SettingsDiagnosticsView {
         self.preparing_export = true;
 
         let backend = Arc::clone(&self.backend);
-        let settings_catalog = Arc::clone(&self.settings_catalog);
         let integrations = diagnostic_bundle::integration_facts(&self.builtins);
         let level = self.level.clone();
         let env_overridden = self.env_overridden;
@@ -212,14 +208,9 @@ impl SettingsDiagnosticsView {
         async_bridge::run_async(
             &self.rt_handle,
             async move {
-                let input = diagnostic_bundle::gather_input(
-                    backend,
-                    &settings_catalog,
-                    integrations,
-                    level,
-                    env_overridden,
-                )
-                .await?;
+                let input =
+                    diagnostic_bundle::gather_input(backend, integrations, level, env_overridden)
+                        .await?;
                 tokio::task::spawn_blocking(move || diagnostic_bundle::assemble(&input))
                     .await
                     .map_err(|e| e.to_string())?

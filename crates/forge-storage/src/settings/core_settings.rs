@@ -127,6 +127,9 @@ pub const THEME: Setting<OptionalText> = Setting::new(key::THEME, OptionalText, 
 pub const ACCENT: Setting<OptionalText> =
     Setting::new(key::ACCENT, OptionalText, Portable, Verbatim);
 
+pub const AUDIO_OVERLAY_ID: Setting<OptionalText> =
+    Setting::new(key::AUDIO_OVERLAY_ID, OptionalText, Portable, Presence);
+
 pub const FONT_BODY: Setting<OptionalText> =
     Setting::new(key::FONT_BODY, OptionalText, Portable, Presence);
 
@@ -218,7 +221,7 @@ pub const CORE_SETTINGS: &[SettingSpec] = &[
     AUDIO_VOICE_GATE_INPUT_DEVICE_ID.spec(),
     AUDIO_VOICE_GATE_THRESHOLD.spec(),
     AUDIO_VOICE_GATE_HOLD_MS.spec(),
-    SettingSpec::exact(key::AUDIO_OVERLAY_ID, Text, Portable, Presence),
+    AUDIO_OVERLAY_ID.spec(),
     CHAT_HISTORY_PER_VIEWER_LIMIT.spec(),
     CHAT_HISTORY_DISPLAY_LIMIT.spec(),
     SettingSpec::exact(key::PICKER_FAVORITES_SUB_ACTIONS, Json, Portable, Kind),

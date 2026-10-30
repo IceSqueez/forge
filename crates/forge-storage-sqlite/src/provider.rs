@@ -9,9 +9,9 @@ use forge_storage::{
     ExecutionStatus, GlobalEntry, GlobalTransit, GlobalsRepo, HistoryRepo, LatestValueRepo,
     MediaRepo, OverlayRepo, QueueRepo, RevisingActionRepo, RevisingQueueRepo,
     RevisingScheduledRunRepo, RevisingScriptRepo, RevisingTriggerInstanceRepo, RowClasses, RowGate,
-    ScheduledRunRepo, ScriptRecord, ScriptReferences, ScriptRepo, ScriptTelemetry, SettingsRepo,
-    SoundboardClipsRepo, StorageError, TriggerInstanceRepo, TtsFiltersRepo, UserGlobalEntry,
-    UserGlobalsRepo, ViewerRepo, VoiceAliasRepo, reserved_keys,
+    ScheduledRunRepo, ScriptRecord, ScriptReferences, ScriptRepo, ScriptTelemetry, SettingRow,
+    SettingsRepo, SoundboardClipsRepo, StorageError, TriggerInstanceRepo, TtsFiltersRepo,
+    UserGlobalEntry, UserGlobalsRepo, ViewerRepo, VoiceAliasRepo, reserved_keys,
 };
 use forge_types::{ScriptId, Variant};
 use time::OffsetDateTime;
@@ -448,6 +448,10 @@ impl SettingsRepo for SqliteBackend {
         self.settings.put_row(gate, key, value, classes).await?;
         self.signal_setting_changed(key);
         Ok(())
+    }
+
+    async fn load_rows(&self, gate: RowGate) -> Result<Vec<SettingRow>, StorageError> {
+        self.settings.load_rows(gate).await
     }
 
     async fn delete(&self, key: &str) -> Result<bool, StorageError> {

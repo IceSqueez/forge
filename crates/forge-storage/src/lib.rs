@@ -89,11 +89,13 @@ pub use script::{
     SCRIPT_NAME_KEY, SCRIPT_RUN_NAMED_KIND, ScriptRecord, ScriptReferences, ScriptReferrer,
     ScriptRepo, ScriptTelemetry,
 };
-pub use settings::catalog::{SettingsCatalog, report_undeclared_settings};
-pub use settings::disclosure::SettingDisclosure;
+pub use settings::catalog::{SettingSkip, SettingsCatalog, report_undeclared_settings};
+pub use settings::disclosure::{SettingDisclosure, disclose_rows};
 pub use settings::favorites::rename_favorite_ids;
 pub use settings::portability::SettingPortability;
-pub use settings::row::{RowClasses, RowGate};
+pub use settings::row::{
+    RowClasses, RowGate, SettingRow, load_setting_rows, remove_row, restore_row,
+};
 pub use settings::spec::{SettingEncoding, SettingKey, SettingSpec};
 pub use settings::typed::{
     Choice, Count, Flag, JsonDocument, Level, OptionalText, PlainText, Setting, SettingCodec,

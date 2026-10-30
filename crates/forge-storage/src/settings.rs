@@ -8,7 +8,7 @@ use forge_types::LogLevel;
 use serde::{Deserialize, Serialize};
 
 use crate::StorageError;
-use row::{RowClasses, RowGate};
+use row::{RowClasses, RowGate, SettingRow};
 pub use typed::log_level_as_str;
 use typed::{read_setting, write_family_setting, write_setting};
 
@@ -187,6 +187,17 @@ pub trait SettingsRepo: Send + Sync {
     async fn set_string(&self, key: &str, value: &str) -> Result<(), StorageError>;
     async fn delete(&self, key: &str) -> Result<bool, StorageError>;
     async fn load_all(&self) -> Result<HashMap<String, String>, StorageError>;
+
+    async fn load_rows(&self, _gate: RowGate) -> Result<Vec<SettingRow>, StorageError> {
+        let mut rows: Vec<SettingRow> = self
+            .load_all()
+            .await?
+            .into_iter()
+            .map(|(key, value)| SettingRow::new(key, value, RowClasses::FAIL_CLOSED))
+            .collect();
+        rows.sort_by(|a, b| a.key().cmp(b.key()));
+        Ok(rows)
+    }
 
     async fn put_row(
         &self,

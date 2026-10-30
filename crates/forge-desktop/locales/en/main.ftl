@@ -153,6 +153,7 @@ setup_import_done = Setup imported
 setup_import_done_restart = Setup imported. Restart forge to apply all of it
 setup_import_restart = Restart
 setup_import_cleanup_failed = Setup imported, but { $count } leftover files could not be removed. See the log for details
+setup_import_settings_skipped = { $count } settings were not imported: { $undeclared } unknown, { $machine_local } kept on this machine, { $undecodable } with an unreadable value. See the log for details
 setup_import_rollback_incomplete = The setup import failed and could not be fully undone: { $error }. Restore the safety backup { $snapshot }
 home_import_dialog_filter = forge files
 home_hero_new_action = New action

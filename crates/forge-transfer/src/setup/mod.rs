@@ -12,7 +12,8 @@ pub use documents::{
     ClipHotkeyDocument, SETUP_DOCUMENTS_VERSION, SetupDocuments, TtsDocument, VoicesDocument,
 };
 pub use import_apply::{
-    SetupImportOutcome, SetupImportRequest, SetupLivePart, SetupQueueChanges, apply_setup_import,
+    SetupImportOutcome, SetupImportRequest, SetupLivePart, SetupQueueChanges, SkippedSetting,
+    apply_setup_import,
 };
 pub use manifest::SetupManifest;
 pub use reader::{

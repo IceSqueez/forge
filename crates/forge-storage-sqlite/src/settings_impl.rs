@@ -1,7 +1,10 @@
 use std::collections::HashMap;
 
 use async_trait::async_trait;
-use forge_storage::{RowClasses, RowGate, SettingsRepo, StorageError};
+use forge_storage::{
+    RowClasses, RowGate, SettingDisclosure, SettingPortability, SettingRow, SettingsRepo,
+    StorageError,
+};
 
 use crate::error::SqliteStorageError;
 use crate::pool::SqlitePools;
@@ -63,6 +66,51 @@ impl SettingsRepo for SqliteSettingsRepo {
         .map_err(SqliteStorageError::Sqlx)?;
 
         Ok(())
+    }
+
+    async fn load_rows(&self, gate: RowGate) -> Result<Vec<SettingRow>, StorageError> {
+        #[derive(sqlx::FromRow)]
+        struct ClassedRow {
+            key: String,
+            value: String,
+            portability: String,
+            disclosure: String,
+        }
+
+        let rows: Vec<ClassedRow> =
+            sqlx::query_as("SELECT key, value, portability, disclosure FROM settings ORDER BY key")
+                .fetch_all(self.db.reader())
+                .await
+                .map_err(SqliteStorageError::Sqlx)?;
+
+        rows.into_iter()
+            .map(|row| {
+                let portability =
+                    SettingPortability::from_code(&row.portability).ok_or_else(|| {
+                        SqliteStorageError::Decode(format!(
+                            "unknown portability '{}'",
+                            row.portability
+                        ))
+                    })?;
+                let disclosure =
+                    SettingDisclosure::from_code(&row.disclosure).ok_or_else(|| {
+                        SqliteStorageError::Decode(format!(
+                            "unknown disclosure '{}'",
+                            row.disclosure
+                        ))
+                    })?;
+                Ok(SettingRow::from_storage(
+                    gate,
+                    row.key,
+                    row.value,
+                    RowClasses {
+                        portability,
+                        disclosure,
+                    },
+                ))
+            })
+            .collect::<Result<Vec<_>, SqliteStorageError>>()
+            .map_err(StorageError::from)
     }
 
     async fn delete(&self, key: &str) -> Result<bool, StorageError> {

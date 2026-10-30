@@ -153,6 +153,7 @@ setup_import_done = Конфігурацію імпортовано
 setup_import_done_restart = Конфігурацію імпортовано. Перезапустіть forge, щоб застосувати все
 setup_import_restart = Перезапустити
 setup_import_cleanup_failed = Конфігурацію імпортовано, але { $count } залишкових файлів не вдалося видалити. Подробиці в журналі
+setup_import_settings_skipped = Не імпортовано налаштувань: { $count } (невідомих: { $undeclared }, локальних для цього пристрою: { $machine_local }, з нечитабельним значенням: { $undecodable }). Подробиці в журналі
 setup_import_rollback_incomplete = Імпорт конфігурації не вдався, і його не вдалося повністю скасувати: { $error }. Відновіть страхувальну резервну копію { $snapshot }
 home_import_dialog_filter = Файли forge
 home_hero_new_action = Нова дія

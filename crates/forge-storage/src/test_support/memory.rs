@@ -7,7 +7,8 @@ use tokio::sync::{Semaphore, watch};
 
 use super::{FAIL_CLOSED_CLASSES, INJECTED_FAILURE_REASON, SettingsWrite, StoredSettingRow};
 use crate::{
-    RowClasses, RowGate, Setting, SettingCodec, SettingFamily, SettingsRepo, StorageError,
+    RowClasses, RowGate, Setting, SettingCodec, SettingFamily, SettingRow, SettingsRepo,
+    StorageError,
 };
 
 #[derive(Clone)]
@@ -271,6 +272,16 @@ impl SettingsRepo for MemorySettings {
         Ok(locked(&self.shared.rows)
             .values()
             .map(|row| (row.key.clone(), row.value.clone()))
+            .collect())
+    }
+
+    async fn load_rows(&self, gate: RowGate) -> Result<Vec<SettingRow>, StorageError> {
+        self.begin_read().await?;
+        Ok(locked(&self.shared.rows)
+            .values()
+            .map(|row| {
+                SettingRow::from_storage(gate, row.key.clone(), row.value.clone(), row.classes)
+            })
             .collect())
     }
 

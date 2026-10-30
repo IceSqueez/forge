@@ -442,9 +442,7 @@ impl<C: SettingCodec> SettingFamily<C> {
     }
 
     pub fn member_key(&self, member: &str) -> Result<String, StorageError> {
-        let valid =
-            !member.is_empty() && !member.chars().any(|c| c.is_whitespace() || c.is_control());
-        if !valid {
+        if !is_valid_member(member) {
             return Err(StorageError::InvalidSettingMember {
                 family: self.prefix().to_owned(),
                 member: member.to_owned(),
@@ -462,6 +460,10 @@ impl<C: SettingCodec> SettingFamily<C> {
             self.codec.default_value()
         })
     }
+}
+
+pub(crate) fn is_valid_member(member: &str) -> bool {
+    !member.is_empty() && !member.chars().any(|c| c.is_whitespace() || c.is_control())
 }
 
 pub async fn read_family_setting<C: SettingCodec, R: SettingsRepo + ?Sized>(

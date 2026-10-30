@@ -1,4 +1,8 @@
+use std::collections::BTreeMap;
+
 use forge_types::redaction::STAMP;
+
+use super::row::SettingRow;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum SettingDisclosure {
@@ -32,6 +36,17 @@ impl SettingDisclosure {
             Self::Withheld => None,
         }
     }
+}
+
+pub fn disclose_rows(rows: &[SettingRow]) -> BTreeMap<String, String> {
+    rows.iter()
+        .filter_map(|row| {
+            row.classes()
+                .disclosure
+                .render(row.value())
+                .map(|shown| (row.key().to_owned(), shown))
+        })
+        .collect()
 }
 
 fn shape_of(value: &str) -> String {

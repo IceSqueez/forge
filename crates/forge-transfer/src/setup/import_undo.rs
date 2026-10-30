@@ -1,6 +1,7 @@
 use forge_speech_types::{AliasId, AssignmentStrategy, IgnoreProfile, VoiceAlias};
 use forge_storage::{
-    DataProvider, FilterRule, OverlayId, SettingsRepo, StorageError, TtsPipelineSettings,
+    DataProvider, FilterRule, OverlayId, SettingRow, StorageError, TtsPipelineSettings, remove_row,
+    restore_row,
 };
 use forge_types::{ActionId, TriggerInstanceId};
 
@@ -13,10 +14,8 @@ pub(crate) enum SetupUndo {
         trigger: TriggerInstanceId,
         position: i64,
     },
-    Setting {
-        key: String,
-        previous: Option<String>,
-    },
+    SettingRestore(SettingRow),
+    SettingRemove(SettingRow),
     TtsPipeline(TtsPipelineSettings),
     FilterRules(Vec<FilterRule>),
     VoiceAlias {
@@ -70,15 +69,10 @@ async fn revert_setup(provider: &dyn DataProvider, undo: SetupUndo) -> Result<()
             .link_action_at(action, trigger, position)
             .await
             .map_err(storage),
-        SetupUndo::Setting { key, previous } => match previous {
-            Some(value) => SettingsRepo::set_string(provider, &key, &value)
-                .await
-                .map_err(storage),
-            None => SettingsRepo::delete(provider, &key)
-                .await
-                .map(drop)
-                .map_err(storage),
-        },
+        SetupUndo::SettingRestore(row) => restore_row(provider, &row).await.map_err(storage),
+        SetupUndo::SettingRemove(row) => {
+            remove_row(provider, &row).await.map(drop).map_err(storage)
+        }
         SetupUndo::TtsPipeline(previous) => provider
             .tts_filters_repo()
             .set_pipeline_settings(&previous)

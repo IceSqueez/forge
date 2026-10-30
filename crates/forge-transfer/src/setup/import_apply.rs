@@ -4,7 +4,9 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use forge_registry::ReferenceRemap;
-use forge_storage::{DataProvider, MediaBlobId, OverlayId, SettingsCatalog, StorageError};
+use forge_storage::{
+    DataProvider, MediaBlobId, OverlayId, SettingSkip, SettingsCatalog, StorageError,
+};
 use forge_types::{Queue, QueueId};
 
 use crate::bundle::naming::fresh_pre_setup_stem;
@@ -42,12 +44,19 @@ pub struct SetupQueueChanges {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SkippedSetting {
+    pub key: String,
+    pub reason: SettingSkip,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SetupImportOutcome {
     pub safety_snapshot: PathBuf,
     pub refresh: BTreeSet<SetupLivePart>,
     pub queues: SetupQueueChanges,
     pub restart_recommended: bool,
     pub cleanup_failures: Vec<String>,
+    pub skipped_settings: Vec<SkippedSetting>,
 }
 
 pub async fn apply_setup_import(
@@ -65,7 +74,7 @@ pub async fn apply_setup_import(
         &staged.documents().configuration.overlays,
         registries.overlays,
     )?;
-    let inventory = load_setup_inventory(provider.as_ref(), settings_catalog).await?;
+    let inventory = load_setup_inventory(provider.as_ref()).await?;
     let safety_snapshot =
         write_safety_snapshot(&provider, &data_dir, fresh_pre_setup_stem()).await?;
 
@@ -82,6 +91,7 @@ pub async fn apply_setup_import(
         refresh: BTreeSet::new(),
         queues: SetupQueueChanges::default(),
         settings_changed: false,
+        skipped_settings: Vec::new(),
         removed_overlays: Vec::new(),
         carried_media: BTreeSet::new(),
     };
@@ -94,6 +104,7 @@ pub async fn apply_setup_import(
                 queues: import.queues,
                 restart_recommended: import.settings_changed,
                 cleanup_failures,
+                skipped_settings: import.skipped_settings,
             })
         }
         Err(cause) => {
@@ -123,6 +134,7 @@ pub(super) struct SetupImport<'p, 'a> {
     pub(super) refresh: BTreeSet<SetupLivePart>,
     pub(super) queues: SetupQueueChanges,
     pub(super) settings_changed: bool,
+    pub(super) skipped_settings: Vec<SkippedSetting>,
     pub(super) removed_overlays: Vec<OverlayId>,
     pub(super) carried_media: BTreeSet<MediaBlobId>,
 }

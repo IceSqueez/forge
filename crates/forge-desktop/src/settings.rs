@@ -276,7 +276,6 @@ impl SettingsView {
             SettingsDiagnosticsView::new(
                 handles.log_tail.clone(),
                 Arc::clone(&handles.backend),
-                Arc::clone(&handles.settings_catalog),
                 handles.builtins.clone(),
                 handles.rt_handle.clone(),
                 section == SettingsSection::Diagnostics,

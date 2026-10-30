@@ -1,7 +1,7 @@
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use forge_storage::{DataProvider, MediaBlob, SettingsCatalog};
+use forge_storage::{DataProvider, MediaBlob};
 use time::OffsetDateTime;
 
 use crate::bundle::blocking::run_blocking;
@@ -23,7 +23,6 @@ use crate::setup::manifest::SetupManifest;
 
 pub struct SetupExportRequest {
     pub provider: Arc<dyn DataProvider>,
-    pub settings_catalog: Arc<SettingsCatalog>,
     pub overlay_root: PathBuf,
     pub destination: PathBuf,
 }
@@ -31,11 +30,10 @@ pub struct SetupExportRequest {
 pub async fn write_setup(request: SetupExportRequest) -> Result<PathBuf, TransferError> {
     let SetupExportRequest {
         provider,
-        settings_catalog,
         overlay_root,
         destination,
     } = request;
-    let inventory = load_setup_inventory(provider.as_ref(), &settings_catalog).await?;
+    let inventory = load_setup_inventory(provider.as_ref()).await?;
     let mut selection = everything_in(&inventory.configuration);
     let media = resolve_media(provider.as_ref(), &inventory.configuration, &mut selection).await?;
     let schema_version = provider.schema_version().await?;
@@ -157,7 +155,10 @@ impl SetupAssembly {
                 strategy: voice_strategy,
                 ignore_profile,
             },
-            settings: portable_settings,
+            settings: portable_settings
+                .into_iter()
+                .map(|(key, row)| (key, row.value().to_owned()))
+                .collect(),
         }
     }
 }

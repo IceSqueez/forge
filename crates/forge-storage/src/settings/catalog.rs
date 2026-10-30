@@ -3,8 +3,17 @@ use std::collections::{BTreeMap, HashMap};
 use super::core_settings::CORE_SETTINGS;
 use super::disclosure::SettingDisclosure;
 use super::portability::SettingPortability;
+use super::row::{RowClasses, SettingRow};
 use super::spec::{SettingKey, SettingSpec};
+use super::typed::is_valid_member;
 use crate::{SettingsRepo, StorageError};
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum SettingSkip {
+    Undeclared,
+    NotPortable,
+    Undecodable,
+}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SettingsCatalog {
@@ -49,6 +58,26 @@ impl SettingsCatalog {
                     .filter(|spec| spec.key.matches(stored_key))
                     .max_by_key(|spec| spec.key.name().len())
             })
+    }
+
+    pub fn admit(&self, key: &str, value: &str) -> Result<SettingRow, SettingSkip> {
+        let spec = self.spec_of(key).ok_or(SettingSkip::Undeclared)?;
+        if let SettingKey::Prefix(prefix) = spec.key
+            && !key.strip_prefix(prefix).is_some_and(is_valid_member)
+        {
+            return Err(SettingSkip::Undeclared);
+        }
+        if spec.portability != SettingPortability::Portable {
+            return Err(SettingSkip::NotPortable);
+        }
+        if !spec.encoding.accepts(value) {
+            return Err(SettingSkip::Undecodable);
+        }
+        Ok(SettingRow::new(
+            key.to_owned(),
+            value.to_owned(),
+            RowClasses::from(spec),
+        ))
     }
 
     pub fn portability_of(&self, stored_key: &str) -> SettingPortability {

@@ -54,7 +54,7 @@ pub use scheduled::{
 pub use setup::{
     ClipHotkeyDocument, SETUP_DOCUMENTS_VERSION, SETUP_STAGING_DIR_NAME, SetupDocuments,
     SetupExportRequest, SetupImportOutcome, SetupImportRequest, SetupLivePart, SetupManifest,
-    SetupQueueChanges, StagedSetup, TtsDocument, VoicesDocument, apply_setup_import,
-    discard_staged_setup, setup_staging_root, stage_setup, write_setup,
+    SetupQueueChanges, SkippedSetting, StagedSetup, TtsDocument, VoicesDocument,
+    apply_setup_import, discard_staged_setup, setup_staging_root, stage_setup, write_setup,
 };
 pub use staging_sweep::sweep_import_staging;

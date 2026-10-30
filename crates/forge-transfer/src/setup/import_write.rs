@@ -2,10 +2,11 @@ use std::collections::BTreeMap;
 
 use forge_overlay::image_references;
 use forge_registry::InternalNamespace;
+use forge_storage::settings::core_settings;
 use forge_storage::settings::reserved_keys;
 use forge_storage::{
     GlobalsRepo, MediaBlobId, MediaReferrer, MediaReferrerKind, OverlayId, ScriptRecord,
-    ScriptRepo, SettingsRepo, StoredClip, clip_source_referrer,
+    ScriptRepo, SettingRow, StoredClip, clip_source_referrer, remove_row, restore_row,
 };
 use forge_types::{ClipId, OutputDevice};
 use time::OffsetDateTime;
@@ -15,7 +16,7 @@ use crate::documents::model::ClipSourceDocument;
 use crate::documents::overlay_files::{place_overlay_files, rewrite_overlay_media};
 use crate::documents::undo::Undo;
 use crate::error::TransferError;
-use crate::setup::import_apply::{SetupImport, SetupLivePart};
+use crate::setup::import_apply::{SetupImport, SetupLivePart, SkippedSetting};
 use crate::setup::import_undo::SetupUndo;
 
 const HOTKEY_SETTINGS: [&str; 2] = [
@@ -419,50 +420,57 @@ impl SetupImport<'_, '_> {
         Ok(())
     }
 
-    fn incoming_settings(&self) -> BTreeMap<String, String> {
-        self.staged
-            .documents()
-            .settings
-            .iter()
-            .filter(|(key, _)| self.settings_catalog.is_portable(key))
-            .map(|(key, value)| {
-                let value = match key.as_str() {
-                    reserved_keys::AUDIO_OVERLAY_ID => self
-                        .remap
-                        .get(InternalNamespace::Overlay, value)
-                        .unwrap_or(value),
-                    _ => value.as_str(),
-                };
-                (key.clone(), value.to_owned())
-            })
-            .collect()
+    fn admit_incoming_settings(&self) -> (BTreeMap<String, SettingRow>, Vec<SkippedSetting>) {
+        let mut admitted = BTreeMap::new();
+        let mut skipped = Vec::new();
+        for (key, value) in &self.staged.documents().settings {
+            let value = if key == core_settings::AUDIO_OVERLAY_ID.name() {
+                self.remap
+                    .get(InternalNamespace::Overlay, value)
+                    .unwrap_or(value)
+            } else {
+                value.as_str()
+            };
+            match self.settings_catalog.admit(key, value) {
+                Ok(row) => {
+                    admitted.insert(key.clone(), row);
+                }
+                Err(reason) => skipped.push(SkippedSetting {
+                    key: key.clone(),
+                    reason,
+                }),
+            }
+        }
+        (admitted, skipped)
     }
 
     pub(super) async fn write_settings(&mut self) -> Result<(), TransferError> {
-        let incoming = self.incoming_settings();
+        let (incoming, skipped) = self.admit_incoming_settings();
+        self.skipped_settings = skipped;
         let local = self.inventory.portable_settings.clone();
-        for (key, value) in &incoming {
+        for (key, row) in &incoming {
             let previous = local.get(key).cloned();
-            if previous.as_ref() == Some(value) {
+            if previous
+                .as_ref()
+                .is_some_and(|local_row| local_row.value() == row.value())
+            {
                 continue;
             }
-            SettingsRepo::set_string(self.provider, key, value).await?;
-            self.journal.push(SetupUndo::Setting {
-                key: key.clone(),
-                previous,
+            restore_row(self.provider, row).await?;
+            self.journal.push(match previous {
+                Some(previous) => SetupUndo::SettingRestore(previous),
+                None => SetupUndo::SettingRemove(row.clone()),
             });
             self.note_setting_change(key);
         }
-        for (key, value) in local {
-            if incoming.contains_key(&key) {
+        let carried = &self.staged.documents().settings;
+        for (key, row) in local {
+            if carried.contains_key(&key) {
                 continue;
             }
-            SettingsRepo::delete(self.provider, &key).await?;
+            remove_row(self.provider, &row).await?;
             self.note_setting_change(&key);
-            self.journal.push(SetupUndo::Setting {
-                key,
-                previous: Some(value),
-            });
+            self.journal.push(SetupUndo::SettingRestore(row));
         }
         Ok(())
     }

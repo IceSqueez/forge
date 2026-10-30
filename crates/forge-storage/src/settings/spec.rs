@@ -1,3 +1,4 @@
+use super::decode_bool_setting;
 use super::disclosure::SettingDisclosure;
 use super::portability::SettingPortability;
 
@@ -29,6 +30,21 @@ pub enum SettingEncoding {
     Integer,
     Decimal,
     Json,
+}
+
+impl SettingEncoding {
+    pub fn accepts(self, raw: &str) -> bool {
+        match self {
+            Self::Text => true,
+            Self::Flag => decode_bool_setting(raw).is_some(),
+            Self::Integer => {
+                let trimmed = raw.trim();
+                trimmed.parse::<i64>().is_ok() || trimmed.parse::<u64>().is_ok()
+            }
+            Self::Decimal => raw.trim().parse::<f64>().is_ok_and(f64::is_finite),
+            Self::Json => serde_json::from_str::<serde_json::Value>(raw).is_ok(),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]

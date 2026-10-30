@@ -5,9 +5,10 @@ use std::time::Duration;
 use forge_components::{
     ActivePresentation, OverlayPosition, PushToast, ToastAction, ToastKind, overlay, tr,
 };
+use forge_storage::SettingSkip;
 use forge_transfer::{
-    ClosureRegistries, SetupImportOutcome, SetupImportRequest, StagedSetup, TransferError,
-    apply_setup_import, discard_staged_setup, stage_setup,
+    ClosureRegistries, SetupImportOutcome, SetupImportRequest, SkippedSetting, StagedSetup,
+    TransferError, apply_setup_import, discard_staged_setup, stage_setup,
 };
 use gpui::{App, ClickEvent, Context, EventEmitter, Window, div, prelude::*};
 
@@ -258,7 +259,39 @@ impl SetupImportFlow {
                 tr!("setup_import_cleanup_failed", count = count.as_str()),
             );
         }
+        report_skipped_settings(&outcome.skipped_settings, cx);
     }
+}
+
+fn skipped_count(skipped: &[SkippedSetting], reason: SettingSkip) -> String {
+    skipped
+        .iter()
+        .filter(|setting| setting.reason == reason)
+        .count()
+        .to_string()
+}
+
+fn report_skipped_settings(skipped: &[SkippedSetting], cx: &mut Context<SetupImportFlow>) {
+    if skipped.is_empty() {
+        return;
+    }
+    for setting in skipped {
+        tracing::warn!(key = %setting.key, reason = ?setting.reason, "setup import skipped a setting");
+    }
+    let count = skipped.len().to_string();
+    let undeclared = skipped_count(skipped, SettingSkip::Undeclared);
+    let machine_local = skipped_count(skipped, SettingSkip::NotPortable);
+    let undecodable = skipped_count(skipped, SettingSkip::Undecodable);
+    cx.push_toast(
+        ToastKind::Warn,
+        tr!(
+            "setup_import_settings_skipped",
+            count = count.as_str(),
+            undeclared = undeclared.as_str(),
+            machine_local = machine_local.as_str(),
+            undecodable = undecodable.as_str()
+        ),
+    );
 }
 
 fn request_restart(app: &mut App) {

@@ -9,6 +9,8 @@ mod donation_impl;
 mod epoch;
 mod error;
 mod event_log_impl;
+#[cfg(feature = "settings-test-support")]
+mod foreign_settings;
 mod globals_impl;
 mod history_impl;
 pub mod kind_id_rename;

@@ -25,4 +25,5 @@ mockall = { workspace = true, optional = true }
 
 [features]
 test-mocks = ["dep:mockall"]
+settings-test-support = []
 

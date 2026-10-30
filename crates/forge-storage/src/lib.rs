@@ -21,6 +21,8 @@ mod schema_file;
 pub mod script;
 pub mod settings;
 pub mod soundboard;
+#[cfg(feature = "settings-test-support")]
+pub mod test_support;
 mod transit;
 pub mod trigger_instance;
 pub mod tts_filters;

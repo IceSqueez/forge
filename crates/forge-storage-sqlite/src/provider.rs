@@ -64,7 +64,7 @@ async fn report_stranded_credentials(
 }
 
 pub struct SqliteBackend {
-    pool: SqlitePools,
+    pub(crate) pool: SqlitePools,
     globals: SqliteGlobalsRepo,
     user_globals: SqliteUserGlobalsRepo,
     settings: SqliteSettingsRepo,

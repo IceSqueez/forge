@@ -34,3 +34,6 @@ tempfile = { workspace = true }
 sha2 = { workspace = true }
 tokio = { workspace = true, features = ["test-util"] }
 ulid = { workspace = true }
+
+[features]
+settings-test-support = ["forge-storage/settings-test-support"]

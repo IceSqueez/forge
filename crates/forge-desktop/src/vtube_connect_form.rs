@@ -6,7 +6,7 @@ use forge_components::{
 };
 use forge_events::{Event, EventPublisher};
 use forge_runtime::EventBus;
-use forge_storage::{CredentialsRepo, SettingsRepo};
+use forge_storage::{CredentialsRepo, Flag, Setting, SettingsRepo};
 use forge_vtube::{PLUGIN_NAME, VTubeClient, VTubeConfig, VTubeProbeResult};
 use gpui::{
     AnyElement, Context, Entity, EventEmitter, Focusable, Pixels, Rgba, Subscription, Window, div,
@@ -23,10 +23,19 @@ use crate::connect_scaffold::{
 use crate::integrations::VTubeInstallSeed;
 use crate::runtime_event::{self, RuntimeEvent, VTubeConnection, VTubeDisconnect};
 
-pub const VTUBE_AUTO_RECONNECT_KEY: &str =
-    forge_storage::settings::reserved_keys::VTUBE_AUTO_RECONNECT;
-pub const VTUBE_CONNECT_ON_LAUNCH_KEY: &str =
-    forge_storage::settings::reserved_keys::VTUBE_CONNECT_ON_LAUNCH;
+pub const VTUBE_AUTO_RECONNECT: Setting<Flag> = Setting::new(
+    "vtube.auto_reconnect",
+    Flag { default: true },
+    forge_storage::SettingPortability::Portable,
+    forge_storage::SettingDisclosure::Withheld,
+);
+
+pub const VTUBE_CONNECT_ON_LAUNCH: Setting<Flag> = Setting::new(
+    "vtube.connect_on_launch",
+    Flag { default: true },
+    forge_storage::SettingPortability::Portable,
+    forge_storage::SettingDisclosure::Withheld,
+);
 
 pub(crate) const DEFAULT_HOST: &str = "localhost";
 pub(crate) const DEFAULT_PORT: u16 = 8001;
@@ -46,8 +55,8 @@ const ACTIVE_LOOK: StripLook = StripLook {
 };
 
 const FLAGS: ConnectFlagSpec = ConnectFlagSpec {
-    auto_reconnect_key: VTUBE_AUTO_RECONNECT_KEY,
-    connect_on_launch_key: VTUBE_CONNECT_ON_LAUNCH_KEY,
+    auto_reconnect: &VTUBE_AUTO_RECONNECT,
+    connect_on_launch: &VTUBE_CONNECT_ON_LAUNCH,
     auto_reconnect_id: "vtube-connect-auto-reconnect",
     connect_on_launch_id: "vtube-connect-on-launch",
     auto_reconnect_label_key: "vtube_connect_auto_reconnect_label",

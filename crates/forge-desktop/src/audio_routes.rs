@@ -7,7 +7,19 @@ use forge_audio::{
     TargetedSinkFactory,
 };
 use forge_soundboard::ClipRoute;
-use forge_storage::{OverlayId, OverlayRepo, SettingsRepo, StorageError, reserved_keys};
+use forge_storage::SettingDisclosure::Verbatim;
+use forge_storage::SettingPortability::Portable;
+use forge_storage::settings::core_settings::AUDIO_OVERLAY_ID;
+use forge_storage::{
+    OptionalText, OverlayId, OverlayRepo, Setting, SettingsRepo, StorageError, read_setting,
+    write_setting,
+};
+
+pub const SPEECH_ROUTE: Setting<OptionalText> =
+    Setting::new("audio.speech_route", OptionalText, Portable, Verbatim);
+
+pub const CLIPS_ROUTE: Setting<OptionalText> =
+    Setting::new("audio.clips_route", OptionalText, Portable, Verbatim);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AudioDomain {
@@ -16,10 +28,10 @@ pub enum AudioDomain {
 }
 
 impl AudioDomain {
-    fn key(self) -> &'static str {
+    fn declaration(self) -> &'static Setting<OptionalText> {
         match self {
-            Self::Speech => reserved_keys::AUDIO_SPEECH_ROUTE,
-            Self::Clips => reserved_keys::AUDIO_CLIPS_ROUTE,
+            Self::Speech => &SPEECH_ROUTE,
+            Self::Clips => &CLIPS_ROUTE,
         }
     }
 
@@ -51,25 +63,25 @@ pub async fn set_route(
     domain: AudioDomain,
     route: AudioRoute,
 ) -> Result<(), StorageError> {
-    repo.set_string(domain.key(), route.as_str()).await
+    write_setting(repo, domain.declaration(), &Some(route.as_str().to_owned())).await
 }
 
 pub async fn set_destination(
     repo: &dyn SettingsRepo,
     destination: Option<&OverlayId>,
 ) -> Result<(), StorageError> {
-    match destination.map(OverlayId::as_str).map(str::trim) {
-        Some(id) if !id.is_empty() => repo.set_string(reserved_keys::AUDIO_OVERLAY_ID, id).await,
-        _ => repo
-            .delete(reserved_keys::AUDIO_OVERLAY_ID)
-            .await
-            .map(|_| ()),
-    }
+    let id = destination
+        .map(OverlayId::as_str)
+        .map(str::trim)
+        .filter(|id| !id.is_empty())
+        .map(str::to_owned);
+    write_setting(repo, &AUDIO_OVERLAY_ID, &id).await
 }
 
 async fn stored_route(repo: &dyn SettingsRepo, domain: AudioDomain) -> AudioRoute {
-    let key = domain.key();
-    let raw = match repo.get_string(key).await {
+    let setting = domain.declaration();
+    let key = setting.name();
+    let raw = match read_setting(repo, setting).await {
         Ok(Some(raw)) => raw,
         Ok(None) => return AudioRoute::default(),
         Err(e) => {
@@ -84,7 +96,7 @@ async fn stored_route(repo: &dyn SettingsRepo, domain: AudioDomain) -> AudioRout
 }
 
 async fn stored_destination(repo: &dyn SettingsRepo) -> Option<OverlayId> {
-    match repo.get_string(reserved_keys::AUDIO_OVERLAY_ID).await {
+    match read_setting(repo, &AUDIO_OVERLAY_ID).await {
         Ok(raw) => raw
             .map(|value| value.trim().to_owned())
             .filter(|value| !value.is_empty())

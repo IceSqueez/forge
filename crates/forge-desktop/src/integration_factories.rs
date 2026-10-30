@@ -12,7 +12,7 @@ use forge_runtime::{
 };
 use forge_storage::{
     BanLedgerRepo, CredentialsRepo, DataProvider, SettingsRepo, SoundboardClipsRepo, StorageError,
-    TriggerInstanceRepo, get_bool_setting, has_credentials_for,
+    TriggerInstanceRepo, has_credentials_for, read_setting_or_default,
 };
 use forge_types::{IntegrationId, PlatformId};
 use futures_util::future::BoxFuture;
@@ -25,8 +25,8 @@ use crate::integrations::{
     BuiltinObject, ObsInstallSeed, VTubeInstallSeed, creds_of, kick_builtin_object, publisher,
     spawn_connect, spawn_event_bridge, twitch_builtin_object, youtube_builtin_object,
 };
-use crate::obs_credentials_form::{OBS_AUTO_RECONNECT_KEY, OBS_CONNECT_ON_LAUNCH_KEY};
-use crate::vtube_connect_form::{VTUBE_AUTO_RECONNECT_KEY, VTUBE_CONNECT_ON_LAUNCH_KEY};
+use crate::obs_credentials_form::{OBS_AUTO_RECONNECT, OBS_CONNECT_ON_LAUNCH};
+use crate::vtube_connect_form::{VTUBE_AUTO_RECONNECT, VTUBE_CONNECT_ON_LAUNCH};
 use forge_hotkey::HotkeyReconciler;
 use forge_hotkey::clip_bindings_of;
 use forge_hotkey::persisted_hotkey_combos;
@@ -672,7 +672,7 @@ impl IntegrationFactory<BuiltinObject> for ObsFactory {
             async move { seed.disconnect_live().await }
         }));
         if seed.live().is_some()
-            || !get_bool_setting(self.settings.as_ref(), OBS_CONNECT_ON_LAUNCH_KEY, true).await
+            || !read_setting_or_default(self.settings.as_ref(), &OBS_CONNECT_ON_LAUNCH).await
         {
             return Ok(running);
         }
@@ -681,7 +681,7 @@ impl IntegrationFactory<BuiltinObject> for ObsFactory {
         match tokio::time::timeout(CONNECT_GUARD, connect).await {
             Ok(Ok(client)) => {
                 client.set_auto_reconnect(
-                    get_bool_setting(self.settings.as_ref(), OBS_AUTO_RECONNECT_KEY, true).await,
+                    read_setting_or_default(self.settings.as_ref(), &OBS_AUTO_RECONNECT).await,
                 );
                 seed.install(client);
             }
@@ -746,7 +746,7 @@ impl IntegrationFactory<BuiltinObject> for VTubeFactory {
             async move { seed.disconnect_live().await }
         }));
         if seed.live().is_some()
-            || !get_bool_setting(self.settings.as_ref(), VTUBE_CONNECT_ON_LAUNCH_KEY, true).await
+            || !read_setting_or_default(self.settings.as_ref(), &VTUBE_CONNECT_ON_LAUNCH).await
         {
             return Ok(running);
         }
@@ -758,7 +758,7 @@ impl IntegrationFactory<BuiltinObject> for VTubeFactory {
         match tokio::time::timeout(CONNECT_GUARD, connect).await {
             Ok(Ok(client)) => {
                 client.set_auto_reconnect(
-                    get_bool_setting(self.settings.as_ref(), VTUBE_AUTO_RECONNECT_KEY, true).await,
+                    read_setting_or_default(self.settings.as_ref(), &VTUBE_AUTO_RECONNECT).await,
                 );
                 seed.install(client);
             }

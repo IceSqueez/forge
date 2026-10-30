@@ -2,7 +2,10 @@ use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
 use forge_components::{FavoritesStatus, GridPicker, GridPickerEvent, PushToast, ToastKind, tr};
-use forge_storage::{SettingsRepo, reserved_keys, set_json_setting, stored_json_setting};
+use forge_storage::settings::core_settings::{
+    PICKER_FAVORITES_SUB_ACTIONS, PICKER_FAVORITES_TRIGGERS,
+};
+use forge_storage::{JsonDocument, Setting, SettingsRepo, read_stored_setting, write_setting};
 use gpui::{App, AppContext, Context, Entity, Global, SharedString, Subscription};
 use tokio::runtime::Handle;
 
@@ -10,17 +13,17 @@ use crate::async_bridge::{self, Loadable, SnapshotWriter, WriteOutcome};
 
 #[derive(Clone, Copy)]
 pub struct FavoritesList {
-    pub key: &'static str,
+    pub setting: &'static Setting<JsonDocument<Vec<String>>>,
     pub from_stored: fn(Vec<String>) -> HashSet<SharedString>,
 }
 
 pub const SUB_ACTION_FAVORITES: FavoritesList = FavoritesList {
-    key: reserved_keys::PICKER_FAVORITES_SUB_ACTIONS,
+    setting: &PICKER_FAVORITES_SUB_ACTIONS,
     from_stored: to_set,
 };
 
 pub const TRIGGER_FAVORITES: FavoritesList = FavoritesList {
-    key: reserved_keys::PICKER_FAVORITES_TRIGGERS,
+    setting: &PICKER_FAVORITES_TRIGGERS,
     from_stored: to_set,
 };
 
@@ -54,7 +57,7 @@ impl StoredFavorites {
     ) -> Entity<Self> {
         let existing = cx
             .try_global::<SharedFavorites>()
-            .and_then(|shared| shared.0.get(list.key))
+            .and_then(|shared| shared.0.get(list.setting.name()))
             .cloned();
         if let Some(store) = existing {
             store.update(cx, |store, cx| {
@@ -77,7 +80,7 @@ impl StoredFavorites {
         });
         cx.default_global::<SharedFavorites>()
             .0
-            .insert(list.key, store.clone());
+            .insert(list.setting.name(), store.clone());
         store
     }
 
@@ -88,13 +91,13 @@ impl StoredFavorites {
         async_bridge::run_async(
             &self.rt_handle,
             async move {
-                stored_json_setting::<Vec<String>>(repo.as_ref(), list.key)
+                read_stored_setting(repo.as_ref(), list.setting)
                     .await
                     .map(|ids| (list.from_stored)(ids.unwrap_or_default()))
             },
             move |this, result, cx| {
                 if let Err(error) = &result {
-                    tracing::warn!(%error, key = list.key, "failed to load picker favorites");
+                    tracing::warn!(%error, key = list.setting.name(), "failed to load picker favorites");
                 }
                 this.ids = Loadable::settled(result);
                 cx.notify();
@@ -127,9 +130,9 @@ impl StoredFavorites {
         }
         let stored = to_ids(ids);
         let repo = Arc::clone(&self.repo);
-        let key = self.list.key;
+        let setting = self.list.setting;
         self.writer.write(
-            async move { set_json_setting(repo.as_ref(), key, &stored).await },
+            async move { write_setting(repo.as_ref(), setting, &stored).await },
             Self::write_settled,
             cx,
         );

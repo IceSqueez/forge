@@ -21,8 +21,8 @@ use forge_midi::vocabulary::event_kinds::INPUT_PREFIX;
 use forge_midi::{MidiClient, MidiMonitorEvent, MidiSignalKind, SwitchableMidiSink};
 use forge_runtime::EventBus;
 use forge_storage::{
-    ActionRepo, SettingsRepo, StorageError, TriggerInstanceRepo, set_json_setting,
-    stored_json_setting,
+    ActionRepo, JsonDocument, Setting, SettingsRepo, StorageError, TriggerInstanceRepo,
+    read_stored_setting, write_setting,
 };
 use forge_types::{ActionId, PermissionRung, PlatformScope, TriggerInstance, TriggerInstanceId};
 use futures_util::StreamExt;
@@ -47,7 +47,12 @@ use forge_components::PushToast;
 use forge_components::grow_cell;
 use forge_runtime::{IntegrationSlot, LifecycleState};
 
-pub const MIDI_KNOWN_DEVICES_KEY: &str = forge_storage::settings::reserved_keys::MIDI_KNOWN_DEVICES;
+pub const MIDI_KNOWN_DEVICES: Setting<JsonDocument<Vec<String>>> = Setting::new(
+    "midi.known_devices",
+    JsonDocument::new(),
+    forge_storage::SettingPortability::MachineLocal,
+    forge_storage::SettingDisclosure::Withheld,
+);
 
 const UNKNOWN_VALUE: &str = "-";
 
@@ -464,7 +469,7 @@ impl MidiScreenView {
         async_bridge::run_async(
             &self.rt_handle,
             async move {
-                stored_json_setting::<Vec<String>>(settings.as_ref(), MIDI_KNOWN_DEVICES_KEY)
+                read_stored_setting(settings.as_ref(), &MIDI_KNOWN_DEVICES)
                     .await
                     .map(Option::unwrap_or_default)
             },
@@ -705,7 +710,7 @@ impl MidiScreenView {
         self.ensure_device_selection();
         let repo = Arc::clone(&self.settings_repo);
         self.device_writer.write(
-            async move { set_json_setting(repo.as_ref(), MIDI_KNOWN_DEVICES_KEY, &devices).await },
+            async move { write_setting(repo.as_ref(), &MIDI_KNOWN_DEVICES, &devices).await },
             Self::device_write_settled,
             cx,
         );

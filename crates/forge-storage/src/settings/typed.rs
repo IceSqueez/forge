@@ -358,6 +358,23 @@ pub async fn read_setting<C: SettingCodec, R: SettingsRepo + ?Sized>(
     Ok(setting.decode_or_default(raw.as_deref()))
 }
 
+pub async fn read_stored_setting<C: SettingCodec, R: SettingsRepo + ?Sized>(
+    repo: &R,
+    setting: &Setting<C>,
+) -> Result<Option<C::Value>, StorageError> {
+    repo.get_string(setting.name())
+        .await?
+        .map(|raw| {
+            setting
+                .codec
+                .decode(&raw)
+                .ok_or_else(|| StorageError::UndecodableSetting {
+                    key: setting.name().to_owned(),
+                })
+        })
+        .transpose()
+}
+
 pub async fn read_setting_or_default<C: SettingCodec>(
     repo: &dyn SettingsRepo,
     setting: &Setting<C>,

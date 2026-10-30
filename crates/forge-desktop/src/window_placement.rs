@@ -2,7 +2,9 @@ use std::future::Future;
 use std::sync::Arc;
 use std::time::Duration;
 
-use forge_storage::{SettingsRepo, reserved_keys, set_json_setting};
+use forge_storage::SettingDisclosure::Kind;
+use forge_storage::SettingPortability::MachineLocal;
+use forge_storage::{JsonDocument, Setting, SettingsRepo, write_setting};
 use gpui::{
     App, AppContext, Bounds, Context, DisplayId, Entity, Global, Pixels, PlatformDisplay,
     Subscription, Task, Window, WindowBounds, point, px, size,
@@ -12,6 +14,13 @@ use tokio::runtime::Handle;
 use tokio::task::JoinHandle;
 
 const SAVE_DEBOUNCE: Duration = Duration::from_millis(250);
+pub const WINDOW_PLACEMENT: Setting<JsonDocument<Option<WindowPlacement>>> = Setting::new(
+    "app.window_placement",
+    JsonDocument::new(),
+    MachineLocal,
+    Kind,
+);
+
 const WAYLAND_COMPOSITOR: &str = "Wayland";
 const FIRST_LAUNCH_SIZE: gpui::Size<Pixels> = size(px(1080.0), px(720.0));
 
@@ -252,7 +261,7 @@ impl WindowPlacementRecorder {
         let settings = Arc::clone(&self.settings);
         Some(self.rt_handle.spawn(async move {
             if let Err(err) =
-                set_json_setting(settings.as_ref(), reserved_keys::WINDOW_PLACEMENT, &latest).await
+                write_setting(settings.as_ref(), &WINDOW_PLACEMENT, &Some(latest)).await
             {
                 tracing::warn!(error = %err, "failed to persist window placement");
             }

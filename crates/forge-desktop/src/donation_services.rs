@@ -4,7 +4,9 @@ use std::time::Duration;
 use forge_donatello::DonatelloProvider;
 use forge_monobank::MonobankProvider;
 use forge_platform_core::{BuiltinHealth, BuiltinStatus, ConnectionState, IntegrationCategory};
-use forge_storage::SettingsRepo;
+use forge_storage::SettingDisclosure::Withheld;
+use forge_storage::SettingPortability::Portable;
+use forge_storage::{Setting, SettingsRepo, Tally, read_stored_setting};
 use forge_types::IntegrationId;
 use futures_util::StreamExt as _;
 use gpui::{App, Entity};
@@ -12,8 +14,12 @@ use gpui::{App, Entity};
 use crate::integration_catalog::declarations;
 use crate::platforms::PlatformConnectivity;
 
-pub const DONATELLO_POLL_INTERVAL_KEY: &str =
-    forge_storage::settings::reserved_keys::DONATELLO_POLL_INTERVAL_SECS;
+pub const DONATELLO_POLL_INTERVAL_SECS: Setting<Tally> = Setting::new(
+    "donations.donatello.poll_interval_secs",
+    Tally { default: 0 },
+    Portable,
+    Withheld,
+);
 
 #[derive(Clone, Default)]
 pub struct DonationServices {
@@ -63,15 +69,8 @@ impl DonationServices {
 }
 
 pub async fn stored_donatello_poll_interval(settings: &dyn SettingsRepo) -> Option<Duration> {
-    match settings.get_string(DONATELLO_POLL_INTERVAL_KEY).await {
-        Ok(Some(stored)) => match stored.trim().parse::<u64>() {
-            Ok(secs) => Some(Duration::from_secs(secs)),
-            Err(_) => {
-                tracing::warn!(stored = %stored, "ignoring an unreadable Donatello poll interval");
-                None
-            }
-        },
-        Ok(None) => None,
+    match read_stored_setting(settings, &DONATELLO_POLL_INTERVAL_SECS).await {
+        Ok(stored) => stored.map(Duration::from_secs),
         Err(error) => {
             tracing::warn!(error = %error, "could not read the Donatello poll interval");
             None

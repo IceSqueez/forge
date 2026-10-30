@@ -10,8 +10,9 @@ use forge_components::{
     PushToast, Spacing, ToastAction, ToastKind, body_family, card, ghost_button, modal,
     mono_family, overlay, primary_button, spacing, tr,
 };
+use forge_storage::settings::core_settings::AUDIO_OUTPUT_DEVICE_ID;
 use forge_storage::{
-    DEFAULT_DIAGNOSTIC_LOG_LEVEL, DataProvider, SettingsRepo, diagnostic_log_level,
+    DEFAULT_DIAGNOSTIC_LOG_LEVEL, DataProvider, SettingsRepo, diagnostic_log_level, read_setting,
 };
 use forge_types::LogLevel;
 use gpui::{
@@ -395,8 +396,7 @@ async fn gather(
     let level = diagnostic_log_level(settings.as_ref())
         .await
         .unwrap_or(DEFAULT_DIAGNOSTIC_LOG_LEVEL);
-    let speech_preference = settings
-        .audio_output_device_id()
+    let speech_preference = read_setting(settings.as_ref(), &AUDIO_OUTPUT_DEVICE_ID)
         .await
         .ok()
         .map(stored_output_device);

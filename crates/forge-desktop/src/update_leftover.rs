@@ -3,8 +3,10 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use forge_components::{ToastAction, ToastKind, tr};
+use forge_storage::SettingDisclosure::Verbatim;
+use forge_storage::SettingPortability::MachineLocal;
 use forge_storage::{
-    DataProvider, SettingsRepo, get_bool_setting, reserved_keys, set_bool_setting,
+    DataProvider, Flag, Setting, SettingsRepo, read_setting_or_default, write_setting,
 };
 use forge_update::{InstallEnvironment, leftover_machine_install};
 use gpui::{App, AsyncApp};
@@ -14,6 +16,13 @@ use crate::async_bridge::{detached, open_path};
 use forge_components::PushToast;
 
 pub const INSTALLED_APPS_SETTINGS: &str = "ms-settings:appsfeatures";
+
+pub const LEFTOVER_INSTALL_NOTICED: Setting<Flag> = Setting::new(
+    "updates.leftover_install_noticed",
+    Flag { default: false },
+    MachineLocal,
+    Verbatim,
+);
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LeftoverNotice {
@@ -33,20 +42,9 @@ async fn unnoticed_leftover(backend: Arc<dyn DataProvider>) -> Option<LeftoverNo
     .ok()
     .flatten()?;
     let repo = backend as Arc<dyn SettingsRepo>;
-    let noticed = get_bool_setting(
-        repo.as_ref(),
-        reserved_keys::UPDATES_LEFTOVER_INSTALL_NOTICED,
-        false,
-    )
-    .await;
+    let noticed = read_setting_or_default(repo.as_ref(), &LEFTOVER_INSTALL_NOTICED).await;
     let notice = leftover_notice(Some(leftover), noticed)?;
-    if let Err(error) = set_bool_setting(
-        repo.as_ref(),
-        reserved_keys::UPDATES_LEFTOVER_INSTALL_NOTICED,
-        true,
-    )
-    .await
-    {
+    if let Err(error) = write_setting(repo.as_ref(), &LEFTOVER_INSTALL_NOTICED, &true).await {
         tracing::warn!(error = %error, "leftover install notice could not be remembered");
     }
     Some(notice)

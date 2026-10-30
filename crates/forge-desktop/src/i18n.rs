@@ -2,7 +2,10 @@ use std::sync::Arc;
 
 use fluent_langneg::{NegotiationStrategy, negotiate_languages};
 use forge_components::{CatalogLanguage, DisplayFormatChoices, Region};
-use forge_storage::{Language, SettingsRepo, reserved_keys, stored_display_formats};
+use forge_storage::settings::core_settings::{LANGUAGE, REGION};
+use forge_storage::{
+    Language, SettingsRepo, read_stored_setting, stored_display_formats, write_setting,
+};
 use forge_types::NamesLanguage;
 use unic_langid::LanguageIdentifier;
 
@@ -46,10 +49,7 @@ fn negotiate_os_locale() -> Option<Language> {
 pub async fn resolve_startup_language(
     settings: Arc<dyn SettingsRepo>,
 ) -> (Language, Option<Language>) {
-    match settings
-        .get_string(forge_storage::reserved_keys::LANGUAGE)
-        .await
-    {
+    match read_stored_setting(settings.as_ref(), &LANGUAGE).await {
         Ok(Some(s)) => {
             let lang = s.parse::<Language>().unwrap_or(Language::En);
             (lang, None)
@@ -94,9 +94,8 @@ pub async fn resolve_startup_display_formats(
         Some(code) => Region::from_code(code).unwrap_or(language_region),
         None => {
             let detected = startup_region(sys_locale::get_locale().as_deref(), lang);
-            if let Err(e) = settings
-                .set_string(reserved_keys::REGION, detected.code())
-                .await
+            if let Err(e) =
+                write_setting(settings, &REGION, &Some(detected.code().to_owned())).await
             {
                 tracing::warn!(error = %e, "failed to persist the detected region");
             }

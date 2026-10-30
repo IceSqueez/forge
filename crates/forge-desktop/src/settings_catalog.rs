@@ -1,13 +1,19 @@
-use forge_storage::SettingDisclosure::{Kind, Verbatim, Withheld};
-use forge_storage::SettingEncoding::{Flag as FlagEncoding, Integer, Json, Text};
-use forge_storage::SettingPortability::{MachineLocal, Portable};
+use forge_storage::SettingDisclosure::{Verbatim, Withheld};
+use forge_storage::SettingPortability::Portable;
 use forge_storage::settings::DEFAULT_NOTIFICATIONS_SCHEDULED_BACKUP_FAILURE_OS_NOTICE;
-use forge_storage::{
-    Flag, OptionalText, Setting, SettingSpec, SettingsCatalog, reserved_keys as key,
-};
+use forge_storage::{Flag, OptionalText, Setting, SettingSpec, SettingsCatalog};
 
-use crate::first_run::FIRST_RUN_COMPLETED_KEY;
+use crate::audio_routes::{CLIPS_ROUTE, SPEECH_ROUTE};
+use crate::donation_services::DONATELLO_POLL_INTERVAL_SECS;
+use crate::first_run::FIRST_RUN_COMPLETED;
+use crate::midi_screen::MIDI_KNOWN_DEVICES;
+use crate::obs_credentials_form::{OBS_AUTO_RECONNECT, OBS_CONNECT_ON_LAUNCH};
 use crate::shortcut_overrides::KEYBOARD_SHORTCUTS;
+use crate::stay_awake::STAY_AWAKE;
+use crate::update_leftover::LEFTOVER_INSTALL_NOTICED;
+use crate::update_report::ROLLED_BACK_VERSION;
+use crate::vtube_connect_form::{VTUBE_AUTO_RECONNECT, VTUBE_CONNECT_ON_LAUNCH};
+use crate::window_placement::WINDOW_PLACEMENT;
 
 pub const DENSITY: Setting<OptionalText> =
     Setting::new("density", OptionalText, Portable, Verbatim);
@@ -24,44 +30,19 @@ pub const SCHEDULED_BACKUP_FAILURE_OS_NOTICE: Setting<Flag> = Setting::new(
 pub const SETTING_SPECS: &[SettingSpec] = &[
     DENSITY.spec(),
     KEYBOARD_SHORTCUTS.spec(),
-    SettingSpec::exact(key::AUDIO_SPEECH_ROUTE, Text, Portable, Verbatim),
-    SettingSpec::exact(key::AUDIO_CLIPS_ROUTE, Text, Portable, Verbatim),
-    SettingSpec::exact(
-        FIRST_RUN_COMPLETED_KEY,
-        FlagEncoding,
-        MachineLocal,
-        Verbatim,
-    ),
-    SettingSpec::exact(key::STAY_AWAKE, FlagEncoding, MachineLocal, Verbatim),
-    SettingSpec::exact(key::WINDOW_PLACEMENT, Json, MachineLocal, Kind),
-    SettingSpec::exact(
-        key::UPDATES_ROLLED_BACK_VERSION,
-        Text,
-        MachineLocal,
-        Verbatim,
-    ),
-    SettingSpec::exact(
-        key::UPDATES_LEFTOVER_INSTALL_NOTICED,
-        FlagEncoding,
-        MachineLocal,
-        Verbatim,
-    ),
-    SettingSpec::exact(key::OBS_AUTO_RECONNECT, FlagEncoding, Portable, Withheld),
-    SettingSpec::exact(key::OBS_CONNECT_ON_LAUNCH, FlagEncoding, Portable, Withheld),
-    SettingSpec::exact(key::VTUBE_AUTO_RECONNECT, FlagEncoding, Portable, Withheld),
-    SettingSpec::exact(
-        key::VTUBE_CONNECT_ON_LAUNCH,
-        FlagEncoding,
-        Portable,
-        Withheld,
-    ),
-    SettingSpec::exact(key::MIDI_KNOWN_DEVICES, Json, MachineLocal, Withheld),
-    SettingSpec::exact(
-        key::DONATELLO_POLL_INTERVAL_SECS,
-        Integer,
-        Portable,
-        Withheld,
-    ),
+    SPEECH_ROUTE.spec(),
+    CLIPS_ROUTE.spec(),
+    FIRST_RUN_COMPLETED.spec(),
+    STAY_AWAKE.spec(),
+    WINDOW_PLACEMENT.spec(),
+    ROLLED_BACK_VERSION.spec(),
+    LEFTOVER_INSTALL_NOTICED.spec(),
+    OBS_AUTO_RECONNECT.spec(),
+    OBS_CONNECT_ON_LAUNCH.spec(),
+    VTUBE_AUTO_RECONNECT.spec(),
+    VTUBE_CONNECT_ON_LAUNCH.spec(),
+    MIDI_KNOWN_DEVICES.spec(),
+    DONATELLO_POLL_INTERVAL_SECS.spec(),
     SCHEDULED_BACKUP_FAILURE_OS_NOTICE.spec(),
 ];
 

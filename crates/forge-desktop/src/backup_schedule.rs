@@ -10,6 +10,12 @@ use forge_components::{
     ghost_button, ghost_button_with_icon, mono_family, radius, setting_row, setting_rows, spacing,
     toggle, tr,
 };
+use forge_storage::settings::core_settings::{
+    BACKUP_SCHEDULE_DESTINATION, BACKUP_SCHEDULE_ENABLED, BACKUP_SCHEDULE_INCLUDE_ASSETS,
+    BACKUP_SCHEDULE_INCLUDE_MEDIA, BACKUP_SCHEDULE_INCLUDE_OVERLAYS,
+    BACKUP_SCHEDULE_INCLUDE_VOICES, BACKUP_SCHEDULE_INTERVAL_MINUTES,
+    BACKUP_SCHEDULE_KEEP_DAILY_DAYS, BACKUP_SCHEDULE_KEEP_NEWEST, BACKUP_SCHEDULE_KEY,
+};
 use forge_storage::settings::{
     DEFAULT_BACKUP_SCHEDULE_ENABLED, DEFAULT_BACKUP_SCHEDULE_INCLUDE_CATEGORY,
     DEFAULT_BACKUP_SCHEDULE_INTERVAL_MINUTES, DEFAULT_BACKUP_SCHEDULE_KEEP_DAILY_DAYS,
@@ -19,7 +25,8 @@ use forge_storage::settings::{
     MIN_BACKUP_SCHEDULE_KEEP_NEWEST,
 };
 use forge_storage::{
-    DataProvider, SettingsRepo, StorageError, reserved_keys, set_bool_setting, stored_bool_setting,
+    Count, DataProvider, Flag, OptionalText, Setting, SettingsRepo, StorageError, read_setting,
+    read_stored_setting, write_setting,
 };
 use forge_transfer::{
     BackupCategory, FailureCategory, Passphrase, ScheduleKey, ScheduleState, ScheduledBackupHandle,
@@ -53,12 +60,16 @@ pub(crate) enum ScheduleNumber {
 impl ScheduleNumber {
     pub(crate) const ALL: [Self; 3] = [Self::Interval, Self::KeepNewest, Self::KeepDailyDays];
 
-    pub(crate) fn storage_key(self) -> &'static str {
+    fn declaration(self) -> &'static Setting<Count> {
         match self {
-            Self::Interval => reserved_keys::BACKUP_SCHEDULE_INTERVAL_MINUTES,
-            Self::KeepNewest => reserved_keys::BACKUP_SCHEDULE_KEEP_NEWEST,
-            Self::KeepDailyDays => reserved_keys::BACKUP_SCHEDULE_KEEP_DAILY_DAYS,
+            Self::Interval => &BACKUP_SCHEDULE_INTERVAL_MINUTES,
+            Self::KeepNewest => &BACKUP_SCHEDULE_KEEP_NEWEST,
+            Self::KeepDailyDays => &BACKUP_SCHEDULE_KEEP_DAILY_DAYS,
         }
+    }
+
+    pub(crate) fn storage_key(self) -> &'static str {
+        self.declaration().name()
     }
 
     pub(crate) fn range(self) -> RangeInclusive<u32> {
@@ -86,18 +97,6 @@ impl ScheduleNumber {
             .parse::<u32>()
             .ok()
             .filter(|value| self.range().contains(value))
-    }
-
-    pub(crate) fn value_from_stored(self, stored: Option<&str>) -> Result<u32, StorageError> {
-        let range = self.range();
-        let Some(raw) = stored else {
-            return Ok(self.default_value());
-        };
-        let value = raw
-            .trim()
-            .parse::<u32>()
-            .map_err(|error| StorageError::Parse(format!("{}: {error}", self.storage_key())))?;
-        Ok(value.clamp(*range.start(), *range.end()))
     }
 
     fn label(self) -> String {
@@ -143,13 +142,13 @@ pub(crate) const OPTIONAL_CATEGORIES: [BackupCategory; 4] = [
     BackupCategory::Assets,
 ];
 
-pub(crate) fn include_key(category: BackupCategory) -> Option<&'static str> {
+pub(crate) fn include_setting(category: BackupCategory) -> Option<&'static Setting<Flag>> {
     match category {
         BackupCategory::Database => None,
-        BackupCategory::Media => Some(reserved_keys::BACKUP_SCHEDULE_INCLUDE_MEDIA),
-        BackupCategory::Voices => Some(reserved_keys::BACKUP_SCHEDULE_INCLUDE_VOICES),
-        BackupCategory::Overlays => Some(reserved_keys::BACKUP_SCHEDULE_INCLUDE_OVERLAYS),
-        BackupCategory::Assets => Some(reserved_keys::BACKUP_SCHEDULE_INCLUDE_ASSETS),
+        BackupCategory::Media => Some(&BACKUP_SCHEDULE_INCLUDE_MEDIA),
+        BackupCategory::Voices => Some(&BACKUP_SCHEDULE_INCLUDE_VOICES),
+        BackupCategory::Overlays => Some(&BACKUP_SCHEDULE_INCLUDE_OVERLAYS),
+        BackupCategory::Assets => Some(&BACKUP_SCHEDULE_INCLUDE_ASSETS),
     }
 }
 
@@ -315,9 +314,11 @@ pub(crate) struct ScheduleSnapshot {
     pub numbers: Vec<(ScheduleNumber, u32)>,
 }
 
-async fn stored_text(repo: &dyn SettingsRepo, key: &str) -> Result<Option<String>, StorageError> {
-    Ok(repo
-        .get_string(key)
+async fn stored_text(
+    repo: &dyn SettingsRepo,
+    setting: &Setting<OptionalText>,
+) -> Result<Option<String>, StorageError> {
+    Ok(read_setting(repo, setting)
         .await?
         .filter(|value| !value.trim().is_empty()))
 }
@@ -328,23 +329,23 @@ pub(crate) async fn load_schedule(
     let repo = repo.as_ref();
     let mut numbers = Vec::with_capacity(ScheduleNumber::ALL.len());
     for number in ScheduleNumber::ALL {
-        let stored = stored_text(repo, number.storage_key()).await?;
-        numbers.push((number, number.value_from_stored(stored.as_deref())?));
+        let stored = read_stored_setting(repo, number.declaration()).await?;
+        numbers.push((number, stored.unwrap_or_else(|| number.default_value())));
     }
     let mut included = Vec::with_capacity(OPTIONAL_CATEGORIES.len());
     for category in OPTIONAL_CATEGORIES {
-        if let Some(key) = include_key(category)
-            && stored_bool_setting(repo, key)
+        if let Some(setting) = include_setting(category)
+            && read_stored_setting(repo, setting)
                 .await?
                 .unwrap_or(DEFAULT_BACKUP_SCHEDULE_INCLUDE_CATEGORY)
         {
             included.push(category);
         }
     }
-    let key = stored_text(repo, reserved_keys::BACKUP_SCHEDULE_KEY)
+    let key = stored_text(repo, &BACKUP_SCHEDULE_KEY)
         .await?
         .and_then(|stored| ScheduleKey::decode(&stored).ok());
-    let enabled = stored_bool_setting(repo, reserved_keys::BACKUP_SCHEDULE_ENABLED)
+    let enabled = read_stored_setting(repo, &BACKUP_SCHEDULE_ENABLED)
         .await?
         .unwrap_or(DEFAULT_BACKUP_SCHEDULE_ENABLED);
     Ok(ScheduleSnapshot {
@@ -352,7 +353,7 @@ pub(crate) async fn load_schedule(
             enabled,
             key,
             included,
-            destination: stored_text(repo, reserved_keys::BACKUP_SCHEDULE_DESTINATION).await?,
+            destination: stored_text(repo, &BACKUP_SCHEDULE_DESTINATION).await?,
         },
         numbers,
     })
@@ -384,10 +385,9 @@ async fn store_key(
     key: &ScheduleKey,
     enable: bool,
 ) -> Result<(), KeyFailure> {
-    repo.set_string(reserved_keys::BACKUP_SCHEDULE_KEY, &key.encode()?)
-        .await?;
+    write_setting(repo, &BACKUP_SCHEDULE_KEY, &Some(key.encode()?)).await?;
     if enable {
-        set_bool_setting(repo, reserved_keys::BACKUP_SCHEDULE_ENABLED, true).await?;
+        write_setting(repo, &BACKUP_SCHEDULE_ENABLED, &true).await?;
     }
     Ok(())
 }
@@ -693,11 +693,11 @@ impl BackupScheduleView {
         if !field.pending_save.is_current(ticket) || field.invalid {
             return;
         }
-        let value = field.value.to_string();
+        let value = field.value;
         let repo = self.settings_repo();
         self.persist(
             number.storage_key(),
-            async move { repo.set_string(number.storage_key(), &value).await },
+            async move { write_setting(repo.as_ref(), number.declaration(), &value).await },
             cx,
         );
     }
@@ -723,21 +723,14 @@ impl BackupScheduleView {
         settings.enabled = enabled;
         let repo = self.settings_repo();
         self.persist(
-            reserved_keys::BACKUP_SCHEDULE_ENABLED,
-            async move {
-                set_bool_setting(
-                    repo.as_ref(),
-                    reserved_keys::BACKUP_SCHEDULE_ENABLED,
-                    enabled,
-                )
-                .await
-            },
+            BACKUP_SCHEDULE_ENABLED.name(),
+            async move { write_setting(repo.as_ref(), &BACKUP_SCHEDULE_ENABLED, &enabled).await },
             cx,
         );
     }
 
     pub(crate) fn toggle_category(&mut self, category: BackupCategory, cx: &mut Context<Self>) {
-        let Some(key) = include_key(category) else {
+        let Some(setting) = include_setting(category) else {
             return;
         };
         let Some(settings) = self.settings.loaded_mut() else {
@@ -751,8 +744,8 @@ impl BackupScheduleView {
         }
         let repo = self.settings_repo();
         self.persist(
-            key,
-            async move { set_bool_setting(repo.as_ref(), key, include).await },
+            setting.name(),
+            async move { write_setting(repo.as_ref(), setting, &include).await },
             cx,
         );
         cx.notify();
@@ -784,9 +777,9 @@ impl BackupScheduleView {
                 settings.destination = Some(shown.clone());
                 let repo = self.settings_repo();
                 self.persist(
-                    reserved_keys::BACKUP_SCHEDULE_DESTINATION,
+                    BACKUP_SCHEDULE_DESTINATION.name(),
                     async move {
-                        repo.set_string(reserved_keys::BACKUP_SCHEDULE_DESTINATION, &shown)
+                        write_setting(repo.as_ref(), &BACKUP_SCHEDULE_DESTINATION, &Some(shown))
                             .await
                     },
                     cx,
@@ -811,12 +804,8 @@ impl BackupScheduleView {
         settings.destination = None;
         let repo = self.settings_repo();
         self.persist(
-            reserved_keys::BACKUP_SCHEDULE_DESTINATION,
-            async move {
-                repo.delete(reserved_keys::BACKUP_SCHEDULE_DESTINATION)
-                    .await
-                    .map(|_| ())
-            },
+            BACKUP_SCHEDULE_DESTINATION.name(),
+            async move { write_setting(repo.as_ref(), &BACKUP_SCHEDULE_DESTINATION, &None).await },
             cx,
         );
         cx.notify();
@@ -1035,7 +1024,7 @@ impl BackupScheduleView {
         density: Density,
         cx: &mut Context<Self>,
     ) -> impl IntoElement {
-        let fixed = include_key(category).is_none();
+        let fixed = include_setting(category).is_none();
         let settings = self.settings.loaded();
         let checked = fixed || settings.is_some_and(|s| s.included.contains(&category));
         let label_color = if fixed {

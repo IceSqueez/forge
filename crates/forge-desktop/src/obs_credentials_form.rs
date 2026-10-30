@@ -2,7 +2,9 @@ use std::sync::Arc;
 
 use forge_components::{ActivePresentation, Icon, TextInput, icon, scaled, tr};
 use forge_events::EventPublisher;
-use forge_storage::{CredentialsRepo, SettingsRepo, set_bool_setting};
+use forge_storage::SettingDisclosure::Withheld;
+use forge_storage::SettingPortability::Portable;
+use forge_storage::{CredentialsRepo, Flag, Setting, SettingsRepo, write_setting};
 use gpui::{
     AnyElement, ClickEvent, Context, Entity, EventEmitter, Focusable, Pixels, Subscription, Window,
     div, prelude::*, px,
@@ -16,9 +18,19 @@ use crate::connect_scaffold::{
 };
 use crate::integrations::ObsInstallSeed;
 
-pub const OBS_AUTO_RECONNECT_KEY: &str = forge_storage::settings::reserved_keys::OBS_AUTO_RECONNECT;
-pub const OBS_CONNECT_ON_LAUNCH_KEY: &str =
-    forge_storage::settings::reserved_keys::OBS_CONNECT_ON_LAUNCH;
+pub const OBS_AUTO_RECONNECT: Setting<Flag> = Setting::new(
+    "obs.auto_reconnect",
+    Flag { default: true },
+    Portable,
+    Withheld,
+);
+
+pub const OBS_CONNECT_ON_LAUNCH: Setting<Flag> = Setting::new(
+    "obs.connect_on_launch",
+    Flag { default: true },
+    Portable,
+    Withheld,
+);
 
 pub(crate) const DEFAULT_HOST: &str = "localhost";
 pub(crate) const DEFAULT_PORT: u16 = 4455;
@@ -32,8 +44,8 @@ const BANNER_LOOK: StripLook = StripLook {
 };
 
 const FLAGS: ConnectFlagSpec = ConnectFlagSpec {
-    auto_reconnect_key: OBS_AUTO_RECONNECT_KEY,
-    connect_on_launch_key: OBS_CONNECT_ON_LAUNCH_KEY,
+    auto_reconnect: &OBS_AUTO_RECONNECT,
+    connect_on_launch: &OBS_CONNECT_ON_LAUNCH,
     auto_reconnect_id: "obs-connect-auto-reconnect",
     connect_on_launch_id: "obs-connect-on-launch",
     auto_reconnect_label_key: "obs_connect_auto_reconnect_label",
@@ -460,16 +472,12 @@ async fn connect_obs(
     forge_obs::credentials::store(&*credentials, &form.host, form.port, &form.password)
         .await
         .map_err(|e| AttemptError::Other(e.to_string()))?;
-    set_bool_setting(&*settings, OBS_AUTO_RECONNECT_KEY, flags.auto_reconnect)
+    write_setting(&*settings, &OBS_AUTO_RECONNECT, &flags.auto_reconnect)
         .await
         .map_err(|e| AttemptError::Other(e.to_string()))?;
-    set_bool_setting(
-        &*settings,
-        OBS_CONNECT_ON_LAUNCH_KEY,
-        flags.connect_on_launch,
-    )
-    .await
-    .map_err(|e| AttemptError::Other(e.to_string()))?;
+    write_setting(&*settings, &OBS_CONNECT_ON_LAUNCH, &flags.connect_on_launch)
+        .await
+        .map_err(|e| AttemptError::Other(e.to_string()))?;
 
     seed.disconnect_live().await;
 

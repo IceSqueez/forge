@@ -1,12 +1,24 @@
 use std::sync::Arc;
 
 use forge_awake::{StatusWatch, StayAwake, StayAwakeConfig};
-use forge_storage::{SettingsRepo, get_bool_setting, reserved_keys, set_bool_setting};
+use forge_storage::SettingDisclosure::Verbatim;
+use forge_storage::SettingPortability::MachineLocal;
+use forge_storage::{Flag, Setting, SettingsRepo, read_setting_or_default, write_setting};
 use gpui::Context;
 
 use crate::async_bridge::{SnapshotWriter, WriteOutcome};
 
 pub(crate) const ENABLED_BY_DEFAULT: bool = true;
+
+pub const STAY_AWAKE: Setting<Flag> = Setting::new(
+    "app.stay_awake",
+    Flag {
+        default: ENABLED_BY_DEFAULT,
+    },
+    MachineLocal,
+    Verbatim,
+);
+
 const HOLD_REASON: &str = "forge keeps the system and display awake while it runs";
 
 #[derive(Clone)]
@@ -35,7 +47,7 @@ impl StayAwakeSetting {
         let service = self.service.clone();
         self.writer.write(
             async move {
-                set_bool_setting(settings.as_ref(), reserved_keys::STAY_AWAKE, enabled)
+                write_setting(settings.as_ref(), &STAY_AWAKE, &enabled)
                     .await
                     .map_err(|e| e.to_string())?;
                 service.set_enabled(enabled).map_err(|e| e.to_string())
@@ -47,12 +59,7 @@ impl StayAwakeSetting {
 }
 
 pub async fn start_stay_awake(settings: Arc<dyn SettingsRepo>) -> StayAwakeSetting {
-    let enabled = get_bool_setting(
-        settings.as_ref(),
-        reserved_keys::STAY_AWAKE,
-        ENABLED_BY_DEFAULT,
-    )
-    .await;
+    let enabled = read_setting_or_default(settings.as_ref(), &STAY_AWAKE).await;
     let service = StayAwake::spawn(StayAwakeConfig {
         enabled,
         reason: HOLD_REASON.to_owned(),

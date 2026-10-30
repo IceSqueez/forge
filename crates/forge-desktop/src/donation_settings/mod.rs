@@ -3,12 +3,12 @@ use std::time::Duration;
 
 use forge_components::{InputEvent, TextInput, tr};
 use forge_monobank::MonobankJar;
-use forge_storage::{CredentialsRepo, SettingsRepo, has_credentials_for};
+use forge_storage::{CredentialsRepo, SettingsRepo, has_credentials_for, write_setting};
 use gpui::{AppContext as _, Context, Entity, Subscription, Window, px};
 
 use crate::async_bridge::{self, ErrorSink};
 use crate::donation_services::{
-    DONATELLO_POLL_INTERVAL_KEY, DonationService, stored_donatello_poll_interval,
+    DONATELLO_POLL_INTERVAL_SECS, DonationService, stored_donatello_poll_interval,
 };
 use forge_components::ActivePresentation;
 
@@ -466,11 +466,10 @@ impl DonationSettingsView {
         let applied = provider.set_poll_interval(requested);
         self.poll_interval = Some(applied);
         let settings = Arc::clone(&self.launch.settings);
-        let secs = applied.as_secs().to_string();
+        let secs = applied.as_secs();
         self.launch.rt_handle.spawn(async move {
-            if let Err(error) = settings
-                .set_string(DONATELLO_POLL_INTERVAL_KEY, &secs)
-                .await
+            if let Err(error) =
+                write_setting(settings.as_ref(), &DONATELLO_POLL_INTERVAL_SECS, &secs).await
             {
                 tracing::warn!(error = %error, "could not keep the Donatello poll interval");
             }

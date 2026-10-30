@@ -3,7 +3,9 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use forge_components::{Icon, ToastAction, ToastKind, tr};
-use forge_storage::{DataProvider, SettingsRepo, reserved_keys};
+use forge_storage::SettingDisclosure::Verbatim;
+use forge_storage::SettingPortability::MachineLocal;
+use forge_storage::{DataProvider, OptionalText, Setting, SettingsRepo, write_setting};
 use forge_update::{
     ApplyFailure, DatabaseRestore, GithubRepo, RollbackReason, UpdateError, UpdateReport,
     take_update_report, write_health_marker,
@@ -94,11 +96,17 @@ pub fn rolled_back_version(report: &UpdateReport) -> Option<&str> {
     }
 }
 
+pub const ROLLED_BACK_VERSION: Setting<OptionalText> = Setting::new(
+    "updates.rolled_back_version",
+    OptionalText,
+    MachineLocal,
+    Verbatim,
+);
+
 fn remember_rolled_back(version: String, backend: Arc<dyn DataProvider>, rt_handle: &Handle) {
     detached(rt_handle, "remember the rolled back version", async move {
         let repo = backend as Arc<dyn SettingsRepo>;
-        repo.set_string(reserved_keys::UPDATES_ROLLED_BACK_VERSION, &version)
-            .await
+        write_setting(repo.as_ref(), &ROLLED_BACK_VERSION, &Some(version)).await
     });
 }
 

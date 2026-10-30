@@ -12,7 +12,8 @@ use forge_speak_queue::{
 };
 use forge_speech_types::EngineId;
 use forge_speech_types::{AssignmentStrategy, IgnoreProfile, SynthesisDefaults};
-use forge_storage::{CredentialsRepo, DataProvider, FilterRule, TtsPipelineSettings};
+use forge_storage::settings::core_settings::AUDIO_OUTPUT_DEVICE_ID;
+use forge_storage::{CredentialsRepo, DataProvider, FilterRule, TtsPipelineSettings, read_setting};
 use forge_tts_cloud::CloudGateways;
 use forge_tts_core::{TtsEngineFactory, TtsRegistry, build_engine};
 use forge_tts_espeak::EspeakEngineFactory;
@@ -177,7 +178,7 @@ async fn load_filters(backend: &Arc<dyn DataProvider>) -> (Vec<FilterRule>, TtsP
 }
 
 pub async fn build_speech_output(backend: &Arc<dyn DataProvider>) -> Arc<DeviceSink> {
-    let stored_device_id = match backend.audio_output_device_id().await {
+    let stored_device_id = match read_setting(backend.as_ref(), &AUDIO_OUTPUT_DEVICE_ID).await {
         Ok(id) => id,
         Err(e) => {
             tracing::warn!(error = %e, "failed to read the stored audio output device preference");

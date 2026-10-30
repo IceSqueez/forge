@@ -322,10 +322,10 @@ pub async fn stored_display_formats(
     repo: &dyn SettingsRepo,
 ) -> Result<StoredDisplayFormats, StorageError> {
     Ok(StoredDisplayFormats {
-        region: repo.get_string(reserved_keys::REGION).await?,
-        date_format: repo.get_string(reserved_keys::DATE_FORMAT).await?,
-        time_format: repo.get_string(reserved_keys::TIME_FORMAT).await?,
-        first_day_of_week: repo.get_string(reserved_keys::FIRST_DAY_OF_WEEK).await?,
+        region: read_setting(repo, &core_settings::REGION).await?,
+        date_format: read_setting(repo, &core_settings::DATE_FORMAT).await?,
+        time_format: read_setting(repo, &core_settings::TIME_FORMAT).await?,
+        first_day_of_week: read_setting(repo, &core_settings::FIRST_DAY_OF_WEEK).await?,
     })
 }
 

@@ -3,12 +3,14 @@ use std::sync::Arc;
 use forge_components::{ToastAction, ToastData, ToastKind, Toasts, tr};
 use forge_runtime::sub_action_runners::NotifyPort;
 use forge_storage::settings::DEFAULT_NOTIFICATIONS_SCHEDULED_BACKUP_FAILURE_OS_NOTICE;
-use forge_storage::{SettingsRepo, get_bool_setting, reserved_keys};
+use forge_storage::{SettingsRepo, read_setting_or_default};
 use forge_transfer::{FailureStreak, ScheduledBackupHandle, ScheduledBackupStatus};
 use gpui::{App, AsyncApp, Global};
 use time::OffsetDateTime;
 use tokio::runtime::Handle;
 use tokio::sync::watch;
+
+use crate::settings_catalog::SCHEDULED_BACKUP_FAILURE_OS_NOTICE;
 
 use crate::backup_schedule::failure_reason;
 use crate::navigation::{Navigator, Screen, SettingsSection};
@@ -87,12 +89,8 @@ pub fn start_scheduled_backup_notices(
 async fn load_preference(rt: &Handle, settings: Arc<dyn SettingsRepo>) -> bool {
     let (tx, rx) = tokio::sync::oneshot::channel();
     rt.spawn(async move {
-        let enabled = get_bool_setting(
-            settings.as_ref(),
-            reserved_keys::NOTIFICATIONS_SCHEDULED_BACKUP_FAILURE_OS_NOTICE,
-            DEFAULT_NOTIFICATIONS_SCHEDULED_BACKUP_FAILURE_OS_NOTICE,
-        )
-        .await;
+        let enabled =
+            read_setting_or_default(settings.as_ref(), &SCHEDULED_BACKUP_FAILURE_OS_NOTICE).await;
         #[expect(
             clippy::let_underscore_must_use,
             reason = "the view may close before the result arrives"

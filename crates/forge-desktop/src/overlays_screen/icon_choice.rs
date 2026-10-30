@@ -14,8 +14,9 @@ use forge_overlay::{
     CURATED_ICONS, CuratedIcon, IconCategory, IconValue, curated_icon, effective_overlay_config,
     image_reference, read_icon_value,
 };
+use forge_storage::settings::core_settings::PICKER_FAVORITES_ICONS;
 use forge_storage::{
-    MediaBlob, MediaBlobId, MediaFormat, MediaKind, OverlayDefinition, StorageError, reserved_keys,
+    MediaBlob, MediaBlobId, MediaFormat, MediaKind, OverlayDefinition, StorageError,
 };
 use gpui::{
     AnyElement, Context, Div, Entity, Pixels, Rgba, SharedString, Subscription, Window, div,
@@ -94,7 +95,7 @@ pub(super) enum IconPick {
 }
 
 pub(super) const ICON_FAVORITES: FavoritesList = FavoritesList {
-    key: reserved_keys::PICKER_FAVORITES_ICONS,
+    setting: &PICKER_FAVORITES_ICONS,
     from_stored: known_icon_favorites,
 };
 

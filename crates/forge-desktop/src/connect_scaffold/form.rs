@@ -12,7 +12,7 @@ use forge_components::{
     BORDER_THIN, FONT_XS, FONT_XXS, ForgePalette, Icon, Radius, TextInput, body_family, grow_cell,
     icon, mono_family, radius, scaled, spinner, toggle, tr, with_alpha,
 };
-use forge_storage::{SettingsRepo, get_bool_setting, set_bool_setting};
+use forge_storage::{Flag, Setting, SettingsRepo, read_setting_or_default, write_setting};
 use gpui::{
     AnyElement, ClickEvent, Context, Entity, FontWeight, Pixels, Rgba, SharedString, div,
     prelude::*, px,
@@ -54,8 +54,8 @@ pub(crate) enum ConnectFlag {
 }
 
 pub(crate) struct ConnectFlagSpec {
-    pub auto_reconnect_key: &'static str,
-    pub connect_on_launch_key: &'static str,
+    pub auto_reconnect: &'static Setting<Flag>,
+    pub connect_on_launch: &'static Setting<Flag>,
     pub auto_reconnect_id: &'static str,
     pub connect_on_launch_id: &'static str,
     pub auto_reconnect_label_key: &'static str,
@@ -66,10 +66,10 @@ pub(crate) struct ConnectFlagSpec {
 }
 
 impl ConnectFlagSpec {
-    pub fn key(&self, flag: ConnectFlag) -> &'static str {
+    pub fn declaration(&self, flag: ConnectFlag) -> &'static Setting<Flag> {
         match flag {
-            ConnectFlag::AutoReconnect => self.auto_reconnect_key,
-            ConnectFlag::ConnectOnLaunch => self.connect_on_launch_key,
+            ConnectFlag::AutoReconnect => self.auto_reconnect,
+            ConnectFlag::ConnectOnLaunch => self.connect_on_launch,
         }
     }
 
@@ -99,8 +99,8 @@ impl Default for ConnectFlags {
 impl ConnectFlags {
     pub async fn load(settings: &dyn SettingsRepo, spec: &ConnectFlagSpec) -> Self {
         Self {
-            auto_reconnect: get_bool_setting(settings, spec.auto_reconnect_key, true).await,
-            connect_on_launch: get_bool_setting(settings, spec.connect_on_launch_key, true).await,
+            auto_reconnect: read_setting_or_default(settings, spec.auto_reconnect).await,
+            connect_on_launch: read_setting_or_default(settings, spec.connect_on_launch).await,
         }
     }
 
@@ -130,10 +130,10 @@ pub(crate) fn persist_flag<V: 'static>(
     cx: &mut Context<V>,
 ) {
     let settings = Arc::clone(settings);
-    let key = spec.key(flag);
+    let setting = spec.declaration(flag);
     async_bridge::report_failure(
         rt_handle,
-        async move { set_bool_setting(&*settings, key, value).await },
+        async move { write_setting(&*settings, setting, &value).await },
         ErrorSink::Toast,
         tr!(spec.save_failed_key),
         cx,

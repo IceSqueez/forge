@@ -1,13 +1,21 @@
 use std::sync::Arc;
 
-use forge_storage::{SettingsRepo, StorageError};
+use forge_storage::SettingDisclosure::Verbatim;
+use forge_storage::SettingPortability::MachineLocal;
+use forge_storage::{
+    Flag, Setting, SettingsRepo, StorageError, read_stored_setting, write_setting,
+};
 
 use crate::integration_lifecycle::is_desired_on;
 use crate::navigation::Screen;
 use forge_runtime::LifecycleStates;
 
-pub const FIRST_RUN_COMPLETED_KEY: &str = "integrations.first_run_completed";
-const COMPLETED: &str = "true";
+pub const FIRST_RUN_COMPLETED: Setting<Flag> = Setting::new(
+    "integrations.first_run_completed",
+    Flag { default: false },
+    MachineLocal,
+    Verbatim,
+);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FirstRun {
@@ -37,7 +45,7 @@ pub fn any_enabled(states: &LifecycleStates) -> bool {
 }
 
 pub async fn resolve_first_run(settings: &dyn SettingsRepo, states: &LifecycleStates) -> FirstRun {
-    let completed = match settings.get_string(FIRST_RUN_COMPLETED_KEY).await {
+    let completed = match read_stored_setting(settings, &FIRST_RUN_COMPLETED).await {
         Ok(stored) => stored.is_some(),
         Err(e) => {
             tracing::warn!(error = %e, "could not read whether first run was completed");
@@ -52,9 +60,7 @@ pub async fn resolve_first_run(settings: &dyn SettingsRepo, states: &LifecycleSt
 }
 
 pub async fn record_completed(settings: &dyn SettingsRepo) -> Result<(), StorageError> {
-    settings
-        .set_string(FIRST_RUN_COMPLETED_KEY, COMPLETED)
-        .await
+    write_setting(settings, &FIRST_RUN_COMPLETED, &true).await
 }
 
 pub fn spawn_record_completed(settings: Arc<dyn SettingsRepo>, rt_handle: &tokio::runtime::Handle) {

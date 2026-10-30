@@ -100,8 +100,8 @@ pub use settings::spec::{SettingEncoding, SettingKey, SettingSpec};
 pub use settings::typed::{
     Choice, Count, Flag, JsonDocument, Level, OptionalText, PlainText, Setting, SettingCodec,
     SettingFamily, Tally, Verbosity, family_members, read_family_setting, read_setting,
-    read_setting_or_default, reset_family_setting, reset_setting, write_family_setting,
-    write_setting,
+    read_setting_or_default, read_stored_setting, reset_family_setting, reset_setting,
+    write_family_setting, write_setting,
 };
 pub use settings::{
     CredentialsKeyLoss, DEFAULT_CHAT_HISTORY_DISPLAY_LIMIT, DEFAULT_CHAT_HISTORY_PER_VIEWER_LIMIT,

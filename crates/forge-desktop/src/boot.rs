@@ -27,9 +27,10 @@ use forge_soundboard::{
     BusAudioEventSink, ClipLibrary, CpalSinkFactory, SoundboardControl, SoundboardPlayer,
     SoundboardSettingsHandle, load_soundboard_settings, register_soundboard_sub_actions,
 };
+use forge_storage::settings::core_settings::{ACCENT, FONT_BODY, FONT_MONO, LANGUAGE, THEME};
 use forge_storage::{
     CredentialsRepo, DataProvider, GlobalsRepo, ScriptRepo, SettingsRepo, StorageError,
-    UserGlobalsRepo, get_json_setting, reserved_keys,
+    UserGlobalsRepo, read_setting, read_setting_or_default, write_setting,
 };
 use forge_storage_sqlite::SqliteBackend;
 use forge_types::{LatestValueReader, PlatformId, Shared};
@@ -41,10 +42,11 @@ use crate::overlay_build_failure::OverlayBuildFailure;
 use crate::overlay_frame_sink::ServerOverlayFrameSink;
 use crate::routed_sink::RoutedSink;
 use crate::runtime_handles::RuntimeHandles;
+use crate::settings_catalog::DENSITY;
 use crate::speak_boot::{build_speak_queue, build_speech_output};
 use crate::speak_bridge::SpeakBridge;
 use crate::voice_gate::{VoiceGateOwner, config_from_settings};
-use crate::window_placement::WindowPlacement;
+use crate::window_placement::{WINDOW_PLACEMENT, WindowPlacement};
 use forge_hotkey::HotkeySyncedClipsRepo;
 use forge_runtime::IntegrationSupervisor;
 use forge_soundboard::spawn_clip_hotkey_dispatcher;
@@ -83,7 +85,7 @@ pub fn open_boot_storage(rt_handle: &tokio::runtime::Handle) -> BootStorage {
             Ok(backend) => {
                 let appearance = load_appearance(backend.as_ref()).await;
                 let window_placement =
-                    get_json_setting(backend.as_ref(), reserved_keys::WINDOW_PLACEMENT).await;
+                    read_setting_or_default(backend.as_ref(), &WINDOW_PLACEMENT).await;
                 (appearance, window_placement, Some(backend))
             }
             Err(_) => (PersistedAppearance::default(), None, None),
@@ -110,15 +112,15 @@ pub fn open_boot_storage(rt_handle: &tokio::runtime::Handle) -> BootStorage {
 }
 
 async fn load_appearance(settings: &dyn SettingsRepo) -> PersistedAppearance {
-    let theme = match settings.get_theme().await {
+    let theme = match read_setting(settings, &THEME).await {
         Ok(Some(key)) => ThemeId::from_storage_key(&key).unwrap_or_default(),
         _ => ThemeId::default(),
     };
-    let accent = match settings.get_accent().await {
+    let accent = match read_setting(settings, &ACCENT).await {
         Ok(Some(key)) => AccentColor::from_storage_key(&key).unwrap_or_default(),
         _ => AccentColor::default(),
     };
-    let density = match settings.get_string(reserved_keys::DENSITY).await {
+    let density = match read_setting(settings, &DENSITY).await {
         Ok(Some(key)) => Density::from_storage_key(&key).unwrap_or_default(),
         _ => Density::default(),
     };
@@ -126,8 +128,8 @@ async fn load_appearance(settings: &dyn SettingsRepo) -> PersistedAppearance {
         theme,
         accent,
         density,
-        body_font: settings.font_body().await.ok().flatten(),
-        mono_font: settings.font_mono().await.ok().flatten(),
+        body_font: read_setting(settings, &FONT_BODY).await.ok().flatten(),
+        mono_font: read_setting(settings, &FONT_MONO).await.ok().flatten(),
     }
 }
 
@@ -196,17 +198,13 @@ pub async fn build_runtime(
         };
     apply_persisted_log_level(settings_repo.as_ref()).await;
     let settings_catalog = Arc::new(crate::settings_catalog::registered_settings_catalog());
-    if let Err(e) =
-        forge_storage::report_undeclared_settings(settings_repo.as_ref(), &settings_catalog).await
-    {
-        tracing::warn!(error = %e, "could not check stored settings against their specs");
-    }
     let stay_awake = crate::stay_awake::start_stay_awake(Arc::clone(&settings_repo)).await;
 
     let (startup_language, persist) =
         crate::i18n::resolve_startup_language(Arc::clone(&settings_repo)).await;
     if let Some(detected) = persist
-        && let Err(e) = settings_repo.set_language(detected).await
+        && let Err(e) =
+            write_setting(settings_repo.as_ref(), &LANGUAGE, &detected.to_string()).await
     {
         tracing::warn!(error = %e, "failed to persist detected locale");
     }

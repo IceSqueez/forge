@@ -1,16 +1,22 @@
 use super::disclosure::SettingDisclosure::{Kind, Presence, Verbatim, Withheld};
 use super::portability::SettingPortability::{MachineLocal, Portable, RepositoryOwned};
 use super::reserved_keys as key;
-use super::spec::SettingEncoding::{Flag as FlagEncoding, Integer, Json, Text};
+use super::spec::SettingEncoding::{Flag as FlagEncoding, Integer, Text};
 use super::spec::SettingSpec;
 use super::typed::{
     Choice, Count, Flag, JsonDocument, Level, OptionalText, Setting, SettingFamily, Tally,
     Verbosity,
 };
 use super::{
-    DEFAULT_CHAT_HISTORY_DISPLAY_LIMIT, DEFAULT_CHAT_HISTORY_PER_VIEWER_LIMIT,
-    DEFAULT_DIAGNOSTIC_LOG_LEVEL, EngineParams, FULL_LEVEL, MAX_CHAT_HISTORY_DISPLAY_LIMIT,
-    MAX_CHAT_HISTORY_PER_VIEWER_LIMIT, MAX_VOICE_GATE_HOLD_MS, MIN_CHAT_HISTORY_DISPLAY_LIMIT,
+    DEFAULT_BACKUP_SCHEDULE_ENABLED, DEFAULT_BACKUP_SCHEDULE_INCLUDE_CATEGORY,
+    DEFAULT_BACKUP_SCHEDULE_INTERVAL_MINUTES, DEFAULT_BACKUP_SCHEDULE_KEEP_DAILY_DAYS,
+    DEFAULT_BACKUP_SCHEDULE_KEEP_NEWEST, DEFAULT_CHAT_HISTORY_DISPLAY_LIMIT,
+    DEFAULT_CHAT_HISTORY_PER_VIEWER_LIMIT, DEFAULT_DIAGNOSTIC_LOG_LEVEL, EngineParams, FULL_LEVEL,
+    MAX_BACKUP_SCHEDULE_INTERVAL_MINUTES, MAX_BACKUP_SCHEDULE_KEEP_DAILY_DAYS,
+    MAX_BACKUP_SCHEDULE_KEEP_NEWEST, MAX_CHAT_HISTORY_DISPLAY_LIMIT,
+    MAX_CHAT_HISTORY_PER_VIEWER_LIMIT, MAX_VOICE_GATE_HOLD_MS,
+    MIN_BACKUP_SCHEDULE_INTERVAL_MINUTES, MIN_BACKUP_SCHEDULE_KEEP_DAILY_DAYS,
+    MIN_BACKUP_SCHEDULE_KEEP_NEWEST, MIN_CHAT_HISTORY_DISPLAY_LIMIT,
     MIN_CHAT_HISTORY_PER_VIEWER_LIMIT, MIN_VOICE_GATE_HOLD_MS, SILENT_LEVEL,
     UNLIMITED_CHAT_HISTORY_PER_VIEWER_LIMIT, VOICE_GATE_DEFAULT_HOLD_MS,
     VOICE_GATE_DEFAULT_THRESHOLD,
@@ -224,6 +230,118 @@ pub const INTEGRATION_ENABLED: SettingFamily<Flag> = SettingFamily::new(
     Verbatim,
 );
 
+pub const PICKER_FAVORITES_SUB_ACTIONS: Setting<JsonDocument<Vec<String>>> = Setting::new(
+    key::PICKER_FAVORITES_SUB_ACTIONS,
+    JsonDocument::new(),
+    Portable,
+    Kind,
+);
+
+pub const PICKER_FAVORITES_TRIGGERS: Setting<JsonDocument<Vec<String>>> = Setting::new(
+    key::PICKER_FAVORITES_TRIGGERS,
+    JsonDocument::new(),
+    Portable,
+    Kind,
+);
+
+pub const PICKER_FAVORITES_ICONS: Setting<JsonDocument<Vec<String>>> = Setting::new(
+    key::PICKER_FAVORITES_ICONS,
+    JsonDocument::new(),
+    Portable,
+    Kind,
+);
+
+pub const BACKUP_SCHEDULE_ENABLED: Setting<Flag> = Setting::new(
+    key::BACKUP_SCHEDULE_ENABLED,
+    Flag {
+        default: DEFAULT_BACKUP_SCHEDULE_ENABLED,
+    },
+    MachineLocal,
+    Withheld,
+);
+
+pub const BACKUP_SCHEDULE_INTERVAL_MINUTES: Setting<Count> = Setting::new(
+    key::BACKUP_SCHEDULE_INTERVAL_MINUTES,
+    Count {
+        default: DEFAULT_BACKUP_SCHEDULE_INTERVAL_MINUTES,
+        min: MIN_BACKUP_SCHEDULE_INTERVAL_MINUTES,
+        max: MAX_BACKUP_SCHEDULE_INTERVAL_MINUTES,
+        unclamped: None,
+    },
+    Portable,
+    Withheld,
+);
+
+pub const BACKUP_SCHEDULE_KEEP_NEWEST: Setting<Count> = Setting::new(
+    key::BACKUP_SCHEDULE_KEEP_NEWEST,
+    Count {
+        default: DEFAULT_BACKUP_SCHEDULE_KEEP_NEWEST,
+        min: MIN_BACKUP_SCHEDULE_KEEP_NEWEST,
+        max: MAX_BACKUP_SCHEDULE_KEEP_NEWEST,
+        unclamped: None,
+    },
+    Portable,
+    Withheld,
+);
+
+pub const BACKUP_SCHEDULE_KEEP_DAILY_DAYS: Setting<Count> = Setting::new(
+    key::BACKUP_SCHEDULE_KEEP_DAILY_DAYS,
+    Count {
+        default: DEFAULT_BACKUP_SCHEDULE_KEEP_DAILY_DAYS,
+        min: MIN_BACKUP_SCHEDULE_KEEP_DAILY_DAYS,
+        max: MAX_BACKUP_SCHEDULE_KEEP_DAILY_DAYS,
+        unclamped: None,
+    },
+    Portable,
+    Withheld,
+);
+
+const INCLUDED_BY_DEFAULT: Flag = Flag {
+    default: DEFAULT_BACKUP_SCHEDULE_INCLUDE_CATEGORY,
+};
+
+pub const BACKUP_SCHEDULE_INCLUDE_MEDIA: Setting<Flag> = Setting::new(
+    key::BACKUP_SCHEDULE_INCLUDE_MEDIA,
+    INCLUDED_BY_DEFAULT,
+    Portable,
+    Withheld,
+);
+
+pub const BACKUP_SCHEDULE_INCLUDE_VOICES: Setting<Flag> = Setting::new(
+    key::BACKUP_SCHEDULE_INCLUDE_VOICES,
+    INCLUDED_BY_DEFAULT,
+    Portable,
+    Withheld,
+);
+
+pub const BACKUP_SCHEDULE_INCLUDE_OVERLAYS: Setting<Flag> = Setting::new(
+    key::BACKUP_SCHEDULE_INCLUDE_OVERLAYS,
+    INCLUDED_BY_DEFAULT,
+    Portable,
+    Withheld,
+);
+
+pub const BACKUP_SCHEDULE_INCLUDE_ASSETS: Setting<Flag> = Setting::new(
+    key::BACKUP_SCHEDULE_INCLUDE_ASSETS,
+    INCLUDED_BY_DEFAULT,
+    Portable,
+    Withheld,
+);
+
+pub const BACKUP_SCHEDULE_DESTINATION: Setting<OptionalText> = Setting::new(
+    key::BACKUP_SCHEDULE_DESTINATION,
+    OptionalText,
+    MachineLocal,
+    Withheld,
+);
+
+pub const BACKUP_SCHEDULE_KEY: Setting<OptionalText> = Setting::new(
+    key::BACKUP_SCHEDULE_KEY,
+    OptionalText,
+    MachineLocal,
+    Withheld,
+);
+
 pub const CORE_SETTINGS: &[SettingSpec] = &[
     THEME.spec(),
     ACCENT.spec(),
@@ -244,9 +362,9 @@ pub const CORE_SETTINGS: &[SettingSpec] = &[
     AUDIO_OVERLAY_ID.spec(),
     CHAT_HISTORY_PER_VIEWER_LIMIT.spec(),
     CHAT_HISTORY_DISPLAY_LIMIT.spec(),
-    SettingSpec::exact(key::PICKER_FAVORITES_SUB_ACTIONS, Json, Portable, Kind),
-    SettingSpec::exact(key::PICKER_FAVORITES_TRIGGERS, Json, Portable, Kind),
-    SettingSpec::exact(key::PICKER_FAVORITES_ICONS, Json, Portable, Kind),
+    PICKER_FAVORITES_SUB_ACTIONS.spec(),
+    PICKER_FAVORITES_TRIGGERS.spec(),
+    PICKER_FAVORITES_ICONS.spec(),
     TTS_DISABLED_ENGINES.spec(),
     TTS_SYNTHESIS_DEFAULTS.spec(),
     TTS_MASTER_VOLUME.spec(),
@@ -268,61 +386,16 @@ pub const CORE_SETTINGS: &[SettingSpec] = &[
         Verbatim,
     ),
     VOICE_ASSIGNMENT_STRATEGY.spec(),
-    SettingSpec::exact(
-        key::BACKUP_SCHEDULE_ENABLED,
-        FlagEncoding,
-        MachineLocal,
-        Withheld,
-    ),
-    SettingSpec::exact(
-        key::BACKUP_SCHEDULE_INTERVAL_MINUTES,
-        Integer,
-        Portable,
-        Withheld,
-    ),
-    SettingSpec::exact(
-        key::BACKUP_SCHEDULE_KEEP_NEWEST,
-        Integer,
-        Portable,
-        Withheld,
-    ),
-    SettingSpec::exact(
-        key::BACKUP_SCHEDULE_KEEP_DAILY_DAYS,
-        Integer,
-        Portable,
-        Withheld,
-    ),
-    SettingSpec::exact(
-        key::BACKUP_SCHEDULE_INCLUDE_MEDIA,
-        FlagEncoding,
-        Portable,
-        Withheld,
-    ),
-    SettingSpec::exact(
-        key::BACKUP_SCHEDULE_INCLUDE_VOICES,
-        FlagEncoding,
-        Portable,
-        Withheld,
-    ),
-    SettingSpec::exact(
-        key::BACKUP_SCHEDULE_INCLUDE_OVERLAYS,
-        FlagEncoding,
-        Portable,
-        Withheld,
-    ),
-    SettingSpec::exact(
-        key::BACKUP_SCHEDULE_INCLUDE_ASSETS,
-        FlagEncoding,
-        Portable,
-        Withheld,
-    ),
-    SettingSpec::exact(
-        key::BACKUP_SCHEDULE_DESTINATION,
-        Text,
-        MachineLocal,
-        Withheld,
-    ),
-    SettingSpec::exact(key::BACKUP_SCHEDULE_KEY, Json, MachineLocal, Withheld),
+    BACKUP_SCHEDULE_ENABLED.spec(),
+    BACKUP_SCHEDULE_INTERVAL_MINUTES.spec(),
+    BACKUP_SCHEDULE_KEEP_NEWEST.spec(),
+    BACKUP_SCHEDULE_KEEP_DAILY_DAYS.spec(),
+    BACKUP_SCHEDULE_INCLUDE_MEDIA.spec(),
+    BACKUP_SCHEDULE_INCLUDE_VOICES.spec(),
+    BACKUP_SCHEDULE_INCLUDE_OVERLAYS.spec(),
+    BACKUP_SCHEDULE_INCLUDE_ASSETS.spec(),
+    BACKUP_SCHEDULE_DESTINATION.spec(),
+    BACKUP_SCHEDULE_KEY.spec(),
     SettingSpec::exact(
         key::BACKUP_SCHEDULE_LAST_SUCCESS_AT,
         Text,

@@ -209,4 +209,44 @@ mod tests {
         connectivity.set_connected(Integration::Twitch, true);
         assert!(connectivity.is_integration_connected(&twitch));
     }
+
+    fn connection_event(platform_id: &str, state: ConnectionState) -> RuntimeEvent {
+        RuntimeEvent::PlatformConnection(forge_events::PlatformConnectionChanged {
+            platform_id: platform_id.to_owned(),
+            state,
+            expected: false,
+        })
+    }
+
+    #[test]
+    fn a_roster_connection_event_always_reports_a_change_so_a_new_failure_reason_repaints() {
+        let mut connectivity = PlatformConnectivity::new();
+
+        for (state, connected, case) in [
+            (ConnectionState::Disconnected, false, "unchanged offline"),
+            (ConnectionState::Reconnecting, false, "offline to retrying"),
+            (ConnectionState::Connected, true, "coming online"),
+            (ConnectionState::Connected, true, "unchanged online"),
+        ] {
+            let changed = connectivity.apply_runtime_event(&connection_event("obs", state));
+
+            assert!(changed, "{case}");
+            assert_eq!(
+                connectivity.is_connected(Integration::Obs),
+                connected,
+                "{case}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_connection_event_for_a_platform_outside_the_roster_changes_nothing() {
+        let mut connectivity = PlatformConnectivity::new();
+
+        let changed = connectivity
+            .apply_runtime_event(&connection_event("donatello", ConnectionState::Connected));
+
+        assert!(!changed);
+        assert!(!connectivity.is_integration_connected(&donatello()));
+    }
 }

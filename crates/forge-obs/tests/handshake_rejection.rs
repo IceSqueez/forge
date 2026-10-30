@@ -266,3 +266,113 @@ async fn the_connection_state_is_already_settled_when_the_auth_failure_is_publis
         );
     }
 }
+async fn serve_a_second_hello_instead_of_identified(listener: TcpListener) {
+    let Ok((stream, _)) = listener.accept().await else {
+        return;
+    };
+    let Ok(mut socket) = tokio_tungstenite::accept_async(stream).await else {
+        return;
+    };
+    let hello = r#"{"op":0,"d":{"obsWebSocketVersion":"5.5.0","rpcVersion":1}}"#;
+    if socket.send(Message::text(hello)).await.is_err() {
+        return;
+    }
+    while let Some(Ok(message)) = socket.next().await {
+        if matches!(message, Message::Text(_)) {
+            #[expect(
+                clippy::let_underscore_must_use,
+                reason = "the client may already be gone"
+            )]
+            let _ = socket.send(Message::text(hello)).await;
+            return;
+        }
+    }
+}
+
+async fn serve_plain_http_answer(listener: TcpListener) {
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    let Ok((mut stream, _)) = listener.accept().await else {
+        return;
+    };
+    let mut request = [0_u8; 1024];
+    if stream.read(&mut request).await.is_err() {
+        return;
+    }
+    let answer = "HTTP/1.1 200 OK\r\nContent-Length: 0\r\nConnection: close\r\n\r\n";
+    #[expect(
+        clippy::let_underscore_must_use,
+        reason = "the client may already be gone"
+    )]
+    let _ = stream.write_all(answer.as_bytes()).await;
+}
+
+async fn serve_accept_then_reset(listener: TcpListener) {
+    let Ok((stream, _)) = listener.accept().await else {
+        return;
+    };
+    drop(stream);
+}
+
+struct Quiet;
+
+impl EventPublisher for Quiet {
+    fn publish(&self, _event: Event) {}
+}
+
+async fn recorded_failure_code(port: u16) -> String {
+    use forge_platform_core::BuiltinStatus;
+    let client = ObsClient::connect(
+        &format!("127.0.0.1:{port}"),
+        Some("wrong-password"),
+        Arc::new(Quiet),
+    )
+    .await
+    .unwrap();
+    client.set_auto_reconnect(false);
+    let started = std::time::Instant::now();
+    loop {
+        if let Some(failure) = client.connect_failure() {
+            return failure.code().name().to_owned();
+        }
+        assert!(
+            started.elapsed() < SUPERVISOR_BUDGET,
+            "no connect failure was recorded"
+        );
+        tokio::time::sleep(Duration::from_millis(5)).await;
+    }
+}
+
+#[tokio::test]
+async fn each_way_a_connect_can_fail_records_its_own_user_facing_code() {
+    for (label, expected) in [
+        ("auth close code", "password_rejected"),
+        ("other close code", "connect_failed"),
+        ("hello where identified belongs", "password_rejected"),
+        ("plain http answer", "connect_failed"),
+        ("accept then reset", "unreachable"),
+    ] {
+        let (listener, port) = bind_loopback().await;
+        let server = match label {
+            "auth close code" => tokio::spawn(serve_one_close_frame(
+                listener,
+                AUTHENTICATION_FAILED,
+                "authentication failed",
+            )),
+            "other close code" => tokio::spawn(serve_one_close_frame(
+                listener,
+                SESSION_INVALIDATED,
+                "closed by the test peer",
+            )),
+            "hello where identified belongs" => {
+                tokio::spawn(serve_a_second_hello_instead_of_identified(listener))
+            }
+            "plain http answer" => tokio::spawn(serve_plain_http_answer(listener)),
+            _ => tokio::spawn(serve_accept_then_reset(listener)),
+        };
+
+        let code = recorded_failure_code(port).await;
+        server.abort();
+
+        assert_eq!(code, expected, "{label}");
+    }
+}

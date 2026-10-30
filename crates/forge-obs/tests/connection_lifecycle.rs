@@ -7,9 +7,7 @@ use std::time::{Duration, Instant};
 use forge_events::{Event, EventPublisher};
 use forge_events::{PlatformConnectionChanged, TypedEvent};
 use forge_obs::{ObsClient, ObsError, ObsSink, ObsSource};
-use forge_platform_core::{
-    BannerLevel, BuiltinContent, BuiltinControl, ConnectionState, DetailSection,
-};
+use forge_platform_core::{BuiltinControl, BuiltinStatus, ConnectionState};
 use futures_util::{SinkExt, StreamExt};
 use serde_json::{Value, json};
 use tokio::net::{TcpListener, TcpStream};
@@ -1133,14 +1131,10 @@ async fn parked_after_one_refusal(fake: &RefusingObs, password: Option<&str>) ->
     client
 }
 
-fn failure_banner(client: &ObsClient) -> Option<(BannerLevel, String)> {
+fn failure_code(client: &ObsClient) -> Option<String> {
     client
-        .sections()
-        .into_iter()
-        .find_map(|section| match section {
-            DetailSection::WarningBanner { level, body, .. } => Some((level, body)),
-            _ => None,
-        })
+        .connect_failure()
+        .map(|failure| failure.code().name().to_owned())
 }
 
 #[tokio::test]
@@ -1214,37 +1208,142 @@ async fn disconnecting_ends_a_parked_supervisor_so_turning_auto_reconnect_on_dia
 }
 
 #[tokio::test]
-async fn a_parked_client_shows_why_it_could_not_connect_without_the_password() {
+async fn a_dropped_handshake_is_recorded_as_a_failure_that_never_carries_the_password() {
     let _clock = freeze_clock();
     let fake = RefusingObs::spawn().await;
     let client = parked_after_one_refusal(&fake, Some(PROBE_PASSWORD)).await;
 
-    let banner = failure_banner(&client);
+    let failure = client.connect_failure().expect("no failure was recorded");
 
-    let Some((level, body)) = banner else {
-        panic!("a parked client rendered no failure banner");
-    };
-    assert_eq!(level, BannerLevel::Error);
-    assert!(!body.is_empty(), "the banner gave no reason");
     assert!(
-        !body.contains(PROBE_PASSWORD),
-        "the banner leaked the password: {body}"
+        !format!("{failure:?}").contains(PROBE_PASSWORD),
+        "the recorded failure leaked the password"
     );
 }
 
 #[tokio::test]
-async fn disconnecting_clears_the_could_not_connect_banner() {
+async fn a_connect_to_a_closed_port_records_connect_refused() {
+    let _clock = freeze_clock();
+    let (listener, port) = bind_loopback().await;
+    drop(listener);
+    let client = ObsClient::connect(
+        &format!("127.0.0.1:{port}"),
+        None,
+        Arc::new(Recorder::default()),
+    )
+    .await
+    .unwrap();
+    client.set_auto_reconnect(false);
+    disconnected(&client).await;
+
+    assert_eq!(failure_code(&client).as_deref(), Some("connect_refused"));
+}
+
+#[tokio::test]
+async fn disconnecting_clears_the_recorded_connect_failure() {
     let _clock = freeze_clock();
     let fake = RefusingObs::spawn().await;
     let client = parked_after_one_refusal(&fake, None).await;
     assert!(
-        failure_banner(&client).is_some(),
-        "precondition: banner shown"
+        failure_code(&client).is_some(),
+        "precondition: a failure is recorded"
     );
 
     client.disconnect().await.unwrap();
 
-    assert!(failure_banner(&client).is_none());
+    assert_eq!(failure_code(&client), None);
+}
+
+#[tokio::test]
+async fn a_manual_reconnect_clears_the_previous_failure_while_the_new_attempt_is_pending() {
+    let _clock = freeze_clock();
+    let (listener, port) = bind_loopback().await;
+    let hold = Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let accepted = Arc::new(AtomicUsize::new(0));
+    let server = {
+        let hold = Arc::clone(&hold);
+        let accepted = Arc::clone(&accepted);
+        tokio::spawn(async move {
+            let mut held = Vec::new();
+            while let Ok((stream, _)) = listener.accept().await {
+                accepted.fetch_add(1, Ordering::SeqCst);
+                if hold.load(Ordering::SeqCst) {
+                    held.push(stream);
+                }
+            }
+        })
+    };
+    let client = ObsClient::connect(
+        &format!("127.0.0.1:{port}"),
+        None,
+        Arc::new(Recorder::default()),
+    )
+    .await
+    .unwrap();
+    client.set_auto_reconnect(false);
+    disconnected(&client).await;
+    assert!(
+        failure_code(&client).is_some(),
+        "precondition: a failure is recorded"
+    );
+    hold.store(true, Ordering::SeqCst);
+
+    client.reconnect().await.unwrap();
+    settle_until("the second attempt reached the server", || {
+        accepted.load(Ordering::SeqCst) == 2
+    })
+    .await;
+
+    assert_eq!(failure_code(&client), None);
+    server.abort();
+}
+
+#[tokio::test]
+async fn a_successful_reconnect_clears_the_connection_lost_failure() {
+    let _clock = freeze_clock();
+    let fake = spawn_fake_obs(
+        the_first_two_handshakes_complete,
+        Arc::new(|seen: Seen<'_>| match (seen.conn, seen.request_type) {
+            (0, "SetCurrentProgramScene") => Reply::DropSocket,
+            (_, other) => standard_reply(other),
+        }),
+    )
+    .await;
+    let recorder = Recorder::default();
+    let client = connect_to(&fake, &recorder).await;
+    connected(&client).await;
+    let lost = client.set_scene(SCENE).await;
+    assert!(matches!(lost, Err(ObsError::Disconnected)), "got {lost:?}");
+    settle_until("the lost session was recorded", || {
+        failure_code(&client).as_deref() == Some("connection_lost")
+    })
+    .await;
+
+    advance_until("the second session connected", || {
+        fake.log.accepted() == 2 && client.connection_state() == ConnectionState::Connected
+    })
+    .await;
+
+    assert_eq!(failure_code(&client), None);
+}
+#[tokio::test]
+async fn a_stalled_handshake_records_the_generic_connect_failure() {
+    let _clock = freeze_clock();
+    let fake = spawn_fake_obs(
+        |_| Handshake::Stall,
+        Arc::new(|seen: Seen<'_>| standard_reply(seen.request_type)),
+    )
+    .await;
+    let recorder = Recorder::default();
+    let client = connect_to(&fake, &recorder).await;
+    client.set_auto_reconnect(false);
+
+    advance_until("the stalled handshake gave up", || {
+        failure_code(&client).is_some()
+    })
+    .await;
+
+    assert_eq!(failure_code(&client).as_deref(), Some("connect_failed"));
 }
 
 #[tokio::test]
@@ -1269,10 +1368,7 @@ async fn a_live_session_lost_with_auto_reconnect_off_shows_why_and_is_not_redial
     let_every_backoff_window_pass().await;
 
     assert_eq!(fake.log.accepted(), 1, "the lost session was redialled");
-    assert!(
-        failure_banner(&client).is_some(),
-        "the lost session left no failure banner"
-    );
+    assert_eq!(failure_code(&client).as_deref(), Some("connection_lost"));
 }
 
 #[derive(Debug, Clone, Copy)]

@@ -57,3 +57,52 @@ pub(crate) fn for_disconnect_reason(reason: VTubeDisconnectReason) -> Option<Mes
     };
     Some(MessageRef::new(code))
 }
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const REASON_CODES: [(VTubeDisconnectReason, Option<&str>); 9] = [
+        (VTubeDisconnectReason::AwaitingApproval, None),
+        (VTubeDisconnectReason::ConnectFailed, Some("connect_failed")),
+        (VTubeDisconnectReason::AuthRequired, Some("token_rejected")),
+        (VTubeDisconnectReason::AuthDenied, Some("access_denied")),
+        (VTubeDisconnectReason::AuthTimeout, Some("approval_timeout")),
+        (VTubeDisconnectReason::AuthFailed, Some("auth_failed")),
+        (
+            VTubeDisconnectReason::SubscribeFailed,
+            Some("subscribe_failed"),
+        ),
+        (VTubeDisconnectReason::SocketClosed, Some("connection_lost")),
+        (VTubeDisconnectReason::Unresponsive, Some("unresponsive")),
+    ];
+
+    #[test]
+    fn each_disconnect_reason_maps_to_its_own_catalogued_code_and_awaiting_approval_to_none() {
+        for (reason, expected) in REASON_CODES {
+            let mapped = for_disconnect_reason(reason);
+
+            assert_eq!(
+                mapped.as_ref().map(|message| message.code().name()),
+                expected,
+                "{reason:?}"
+            );
+            if let Some(message) = mapped {
+                assert!(
+                    VTUBE_MESSAGES.codes.contains(message.code()),
+                    "{reason:?} maps to an uncatalogued code"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn every_dial_failure_code_is_listed_in_the_catalog() {
+        for emitted in [connect_refused(), unreachable(), connect_failed()] {
+            assert!(
+                VTUBE_MESSAGES.codes.contains(emitted.code()),
+                "{} is emitted but not catalogued",
+                emitted.code()
+            );
+        }
+    }
+}

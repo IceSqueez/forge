@@ -117,3 +117,38 @@ pub const SETTING_SPECS: &[SettingSpec] = &[
     OP_LIMIT.spec(),
     TIMEOUT_MS.spec(),
 ];
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn allowed_domains_decode_json_then_legacy_csv_and_never_yield_blank_entries() {
+        for (raw, expected) in [
+            (r#"["a.com","b.com"]"#, vec!["a.com", "b.com"]),
+            ("[]", vec![]),
+            ("a.com, b.com ,c.com,", vec!["a.com", "b.com", "c.com"]),
+            ("solo.com", vec!["solo.com"]),
+            ("", vec![]),
+            (" , ,, ", vec![]),
+            (r#"["a.com""#, vec![r#"["a.com""#]),
+            (r#"{"a":1}"#, vec![r#"{"a":1}"#]),
+            ("42", vec!["42"]),
+        ] {
+            assert_eq!(
+                AllowedDomains.decode(raw),
+                Some(expected.iter().map(|d| (*d).to_owned()).collect()),
+                "{raw:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn allowed_domains_survive_an_encode_decode_round_trip() {
+        let domains = vec!["a.com".to_owned(), "with,comma.example".to_owned()];
+
+        let encoded = AllowedDomains.encode(&domains).unwrap();
+
+        assert_eq!(AllowedDomains.decode(&encoded), Some(domains));
+    }
+}

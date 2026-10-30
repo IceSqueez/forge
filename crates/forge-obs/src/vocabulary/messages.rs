@@ -47,3 +47,25 @@ pub(crate) fn connection_lost() -> MessageRef {
 pub(crate) fn unresponsive() -> MessageRef {
     MessageRef::new(UNRESPONSIVE)
 }
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn every_code_the_crate_emits_is_listed_in_the_catalog() {
+        for emitted in [
+            connect_refused(),
+            unreachable(),
+            password_rejected(),
+            connect_failed(),
+            connection_lost(),
+            unresponsive(),
+        ] {
+            assert!(
+                OBS_MESSAGES.codes.contains(emitted.code()),
+                "{} is emitted but not catalogued",
+                emitted.code()
+            );
+        }
+    }
+}

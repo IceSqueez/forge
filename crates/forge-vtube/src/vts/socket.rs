@@ -153,4 +153,43 @@ mod tests {
             assert!(matches!(decode_inbound(frame), Inbound::Closed));
         }
     }
+
+    #[test]
+    fn a_dial_error_maps_to_the_code_for_its_cause() {
+        for (label, error, expected) in [
+            (
+                "connection refused",
+                WsError::Io(std::io::Error::from(ErrorKind::ConnectionRefused)),
+                "connect_refused",
+            ),
+            (
+                "any other io failure",
+                WsError::Io(std::io::Error::from(ErrorKind::TimedOut)),
+                "unreachable",
+            ),
+            (
+                "a non-io failure",
+                WsError::ConnectionClosed,
+                "connect_failed",
+            ),
+        ] {
+            let failure = DialFailure::of(&error);
+
+            assert_eq!(failure.message.code().name(), expected, "{label}");
+        }
+    }
+
+    #[tokio::test]
+    async fn dialing_a_closed_port_fails_as_connect_refused_with_the_transport_detail() {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        drop(listener);
+
+        let Err(failure) = dial(&format!("ws://{addr}")).await else {
+            panic!("dialing a closed port succeeded");
+        };
+
+        assert_eq!(failure.message.code().name(), "connect_refused");
+        assert!(!failure.detail.is_empty());
+    }
 }

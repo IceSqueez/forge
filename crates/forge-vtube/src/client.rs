@@ -255,7 +255,7 @@ pub(crate) mod tests {
     use super::*;
     use forge_events::{Event, EventPublisher};
     use forge_events::{PlatformConnectionChanged, TypedEvent};
-    use forge_platform_core::{BannerLevel, BuiltinContent, BuiltinControl, DetailSection};
+    use forge_platform_core::{BuiltinControl, BuiltinStatus};
 
     pub(crate) struct MockPublisher {
         pub events: Arc<std::sync::Mutex<Vec<Event>>>,
@@ -1262,14 +1262,10 @@ pub(crate) mod tests {
         None
     }
 
-    fn failure_banner(client: &VTubeClient) -> Option<(BannerLevel, String)> {
+    fn failure_code(client: &VTubeClient) -> Option<String> {
         client
-            .sections()
-            .into_iter()
-            .find_map(|section| match section {
-                DetailSection::WarningBanner { level, body, .. } => Some((level, body)),
-                _ => None,
-            })
+            .connect_failure()
+            .map(|failure| failure.code().name().to_owned())
     }
 
     fn is_disconnected(client: &VTubeClient) -> bool {
@@ -1309,6 +1305,11 @@ pub(crate) mod tests {
             "precondition: the refused connect never settled disconnected"
         );
         client
+    }
+
+    async fn closed_port() -> std::net::SocketAddr {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        listener.local_addr().unwrap()
     }
 
     async fn refusing_vts() -> (std::net::SocketAddr, mpsc::UnboundedReceiver<()>) {
@@ -1386,35 +1387,97 @@ pub(crate) mod tests {
     }
 
     #[tokio::test]
-    async fn a_refused_connect_with_auto_reconnect_off_shows_why_in_an_error_banner() {
-        let (addr, _accepted) = refusing_vts().await;
-        let client = parked_after_a_refused_connect(addr).await;
+    async fn a_connect_to_a_closed_port_records_connect_refused() {
+        let client = parked_after_a_refused_connect(closed_port().await).await;
 
-        let banner = failure_banner(&client);
-
-        let Some((level, body)) = banner else {
-            panic!("a parked client rendered no failure banner");
-        };
-        assert_eq!(level, BannerLevel::Error);
-        assert!(!body.is_empty(), "the banner gave no reason");
+        assert_eq!(failure_code(&client).as_deref(), Some("connect_refused"));
     }
 
     #[tokio::test]
-    async fn disconnecting_clears_the_could_not_connect_banner() {
-        let (addr, _accepted) = refusing_vts().await;
-        let client = parked_after_a_refused_connect(addr).await;
+    async fn a_socket_closed_by_vtube_studio_records_connection_lost() {
+        let mut vts = FakeVts::bind().await;
+        let publisher = MockPublisher::new();
+        let client = parked_after_a_socket_close(&mut vts, &publisher).await;
+
+        assert_eq!(failure_code(&client).as_deref(), Some("connection_lost"));
+    }
+
+    #[tokio::test]
+    async fn disconnecting_clears_the_recorded_connect_failure() {
+        let client = parked_after_a_refused_connect(closed_port().await).await;
         assert!(
-            failure_banner(&client).is_some(),
-            "precondition: banner shown"
+            failure_code(&client).is_some(),
+            "precondition: a failure is recorded"
         );
 
         client.disconnect().await.unwrap();
 
-        assert!(failure_banner(&client).is_none());
+        assert_eq!(failure_code(&client), None);
     }
 
     #[tokio::test]
-    async fn a_rejected_token_banner_never_echoes_the_stored_token() {
+    async fn a_successful_reconnect_clears_the_connection_lost_failure() {
+        let mut vts = FakeVts::bind().await;
+        let publisher = MockPublisher::new();
+        let client = parked_after_a_socket_close(&mut vts, &publisher).await;
+        assert_eq!(
+            failure_code(&client).as_deref(),
+            Some("connection_lost"),
+            "precondition: the lost session is recorded"
+        );
+
+        client.set_auto_reconnect(true);
+        let _conn = vts.logged_in_conn().await;
+
+        assert!(
+            wait_until(SETTLE, || client.connection_state().is_connected()
+                && failure_code(&client).is_none())
+            .await,
+            "the failure outlived the successful reconnect"
+        );
+    }
+
+    #[tokio::test]
+    async fn a_manual_reconnect_clears_the_previous_failure_while_the_new_attempt_is_pending() {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let hold = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let accepted = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let server = {
+            let hold = Arc::clone(&hold);
+            let accepted = Arc::clone(&accepted);
+            tokio::spawn(async move {
+                let mut held = Vec::new();
+                while let Ok((stream, _)) = listener.accept().await {
+                    accepted.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                    if hold.load(std::sync::atomic::Ordering::SeqCst) {
+                        held.push(stream);
+                    }
+                }
+            })
+        };
+        let client = parked_after_a_refused_connect(addr).await;
+        assert!(
+            failure_code(&client).is_some(),
+            "precondition: a failure is recorded"
+        );
+        hold.store(true, std::sync::atomic::Ordering::SeqCst);
+
+        client.reconnect().await.unwrap();
+        assert!(
+            wait_until(SETTLE, || accepted
+                .load(std::sync::atomic::Ordering::SeqCst)
+                == 2)
+            .await,
+            "the second attempt never reached the server"
+        );
+
+        assert_eq!(failure_code(&client), None);
+        server.abort();
+    }
+
+    #[tokio::test]
+    async fn a_rejected_token_records_token_rejected_without_echoing_the_stored_token() {
         let mut vts = FakeVts::bind().await;
         let publisher = MockPublisher::new();
         let client = vts.connect(&publisher, &stored_token_creds());
@@ -1429,31 +1492,16 @@ pub(crate) mod tests {
             "precondition: the rejected token never settled disconnected"
         );
 
-        let banner = failure_banner(&client);
+        let failure = client.connect_failure();
 
-        let Some((_, body)) = banner else {
-            panic!("a rejected token rendered no failure banner");
+        let Some(failure) = failure else {
+            panic!("a rejected token recorded no failure");
         };
+        assert_eq!(failure.code().name(), "token_rejected");
         assert!(
-            !body.contains("stored-token"),
-            "the banner leaked the token: {body}"
+            !format!("{failure:?}").contains("stored-token"),
+            "the failure leaked the token"
         );
-    }
-
-    #[test]
-    fn the_failure_banner_shows_only_while_the_client_is_disconnected() {
-        let client = VTubeClient::new_for_test("ws://127.0.0.1:8001");
-        crate::supervisor::record_failure(&client.last_failure, Some("refused".to_owned()));
-        for (state, shown) in [
-            (ConnectionState::Disconnected, true),
-            (ConnectionState::Connecting, false),
-            (ConnectionState::Connected, false),
-            (ConnectionState::Reconnecting, false),
-        ] {
-            client.state.store(state);
-
-            assert_eq!(failure_banner(&client).is_some(), shown, "state {state:?}");
-        }
     }
 
     #[tokio::test]

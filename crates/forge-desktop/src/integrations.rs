@@ -504,6 +504,82 @@ pub(crate) mod tests {
         );
     }
 
+    async fn closed_port() -> u16 {
+        let (listener, port) = listening_but_silent_port().await;
+        drop(listener);
+        port
+    }
+
+    async fn until_true(what: &str, mut done: impl FnMut() -> bool) {
+        let deadline = std::time::Instant::now() + Duration::from_secs(30);
+        while !done() {
+            assert!(
+                std::time::Instant::now() < deadline,
+                "never happened: {what}"
+            );
+            tokio::time::sleep(Duration::from_millis(2)).await;
+        }
+    }
+
+    #[tokio::test]
+    async fn an_obs_seed_reports_the_live_clients_connect_failure_until_cleared() {
+        let seed = ObsInstallSeed::new(forge_obs::SwitchableObsSink::new());
+        assert!(seed.connect_failure().is_none());
+        let port = closed_port().await;
+        let client = Arc::new(
+            forge_obs::ObsClient::connect(
+                &format!("127.0.0.1:{port}"),
+                None,
+                Arc::new(SilentPublisher),
+            )
+            .await
+            .unwrap(),
+        );
+        client.set_auto_reconnect(false);
+        seed.install(Arc::clone(&client));
+
+        until_true("the refused connect was recorded", || {
+            seed.connect_failure().is_some()
+        })
+        .await;
+        let code = seed
+            .connect_failure()
+            .map(|failure| failure.code().name().to_owned());
+        seed.clear();
+
+        assert_eq!(code.as_deref(), Some("connect_refused"));
+        assert!(seed.connect_failure().is_none());
+    }
+
+    #[tokio::test]
+    async fn a_vtube_seed_reports_the_live_clients_connect_failure_until_cleared() {
+        let seed = VTubeInstallSeed::new(forge_vtube::SwitchableVTubeSink::new());
+        assert!(seed.connect_failure().is_none());
+        let port = closed_port().await;
+        let (backend, _writes) = crate::test_support::test_backend();
+        let client = Arc::new(forge_vtube::VTubeClient::connect(
+            forge_vtube::VTubeConfig {
+                endpoint: format!("ws://127.0.0.1:{port}/"),
+            },
+            Arc::new(SilentPublisher),
+            backend as Arc<dyn forge_storage::CredentialsRepo>,
+        ));
+        client.set_auto_reconnect(false);
+        seed.install(Arc::clone(&client));
+
+        until_true("the refused connect was recorded", || {
+            seed.connect_failure().is_some()
+        })
+        .await;
+        let code = seed
+            .connect_failure()
+            .map(|failure| failure.code().name().to_owned());
+        seed.clear();
+
+        assert_eq!(code.as_deref(), Some("connect_refused"));
+        assert!(seed.connect_failure().is_none());
+    }
+
     mod detail_lifetime {
         use std::sync::Mutex;
 

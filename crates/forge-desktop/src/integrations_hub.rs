@@ -1045,6 +1045,8 @@ mod tests {
             sub_actions: Arc::new(owned_sub_actions(&[(OBS_SCENE, "obs")])),
             triggers: Arc::new(owned_triggers(&[(TWITCH_CHAT, "twitch")])),
             rt_handle: rt.handle().clone(),
+            obs_install_seed: ObsInstallSeed::new(forge_obs::SwitchableObsSink::new()),
+            vtube_install_seed: VTubeInstallSeed::new(forge_vtube::SwitchableVTubeSink::new()),
         };
         let view = cx.update(|cx| {
             let lifecycle = cx.new(|_| IntegrationLifecycle::new(LifecycleStates::new()));
@@ -1313,6 +1315,8 @@ mod tests {
             sub_actions: Arc::new(owned_sub_actions(&[])),
             triggers: Arc::new(owned_triggers(&[])),
             rt_handle: rt.handle().clone(),
+            obs_install_seed: ObsInstallSeed::new(forge_obs::SwitchableObsSink::new()),
+            vtube_install_seed: VTubeInstallSeed::new(forge_vtube::SwitchableVTubeSink::new()),
         };
         let focus = declaration_of(&kick()).map(|declaration| declaration.category);
         assert_eq!(
@@ -1359,5 +1363,80 @@ mod tests {
             })
             .collect();
         assert_eq!(retried, HashSet::from([twitch(), kick()]));
+    }
+
+    struct SilentPublisher;
+
+    impl forge_events::EventPublisher for SilentPublisher {
+        fn publish(&self, _event: forge_events::Event) {}
+    }
+
+    fn refused_obs_seed(rt: &tokio::runtime::Runtime) -> ObsInstallSeed {
+        let seed = ObsInstallSeed::new(forge_obs::SwitchableObsSink::new());
+        rt.block_on(async {
+            let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+            let port = listener.local_addr().unwrap().port();
+            drop(listener);
+            let client = Arc::new(
+                forge_obs::ObsClient::connect(
+                    &format!("127.0.0.1:{port}"),
+                    None,
+                    Arc::new(SilentPublisher),
+                )
+                .await
+                .unwrap(),
+            );
+            client.set_auto_reconnect(false);
+            seed.install(client);
+            let recorded = loop_until(|| seed.connect_failure().is_some()).await;
+            assert!(recorded, "the refused connect was never recorded");
+        });
+        seed
+    }
+
+    async fn loop_until(mut done: impl FnMut() -> bool) -> bool {
+        for () in until_the_settle_deadline() {
+            if done() {
+                return true;
+            }
+            tokio::time::sleep(Duration::from_millis(1)).await;
+        }
+        done()
+    }
+
+    #[gpui::test]
+    fn the_hub_reads_each_integrations_connect_failure_from_its_own_seed(cx: &mut TestAppContext) {
+        let rt = runtime();
+        let storage = rt.block_on(sandboxed_provider());
+        let (settings, _writes) = test_backend();
+        let supervisor =
+            idle_supervisor(&rt, settings as Arc<dyn SettingsRepo>, &[twitch(), obs()]);
+        let launch = HubLaunch {
+            supervisor,
+            builtins: BuiltinRegistry::default(),
+            backend: Arc::clone(&storage),
+            sub_actions: Arc::new(owned_sub_actions(&[])),
+            triggers: Arc::new(owned_triggers(&[])),
+            rt_handle: rt.handle().clone(),
+            obs_install_seed: refused_obs_seed(&rt),
+            vtube_install_seed: VTubeInstallSeed::new(forge_vtube::SwitchableVTubeSink::new()),
+        };
+        let view = cx.update(|cx| {
+            let lifecycle = cx.new(|_| IntegrationLifecycle::new(LifecycleStates::new()));
+            let connectivity = cx.new(|_| PlatformConnectivity::new());
+            cx.new(|cx| IntegrationsHubView::new(None, lifecycle, connectivity, launch, cx))
+        });
+
+        let codes: Vec<Option<String>> = [obs(), IntegrationId::new("vtube"), twitch()]
+            .iter()
+            .map(|id| {
+                view.read_with(cx, |view, _| {
+                    view.connect_failure_of(id)
+                        .map(|failure| failure.code().name().to_owned())
+                })
+            })
+            .collect();
+
+        assert_eq!(codes, vec![Some("connect_refused".to_owned()), None, None]);
     }
 }

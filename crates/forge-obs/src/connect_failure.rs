@@ -37,3 +37,38 @@ fn io_error_kind(error: &(dyn Error + 'static)) -> Option<ErrorKind> {
     }
     None
 }
+#[cfg(test)]
+mod tests {
+    use obws::client::HandshakeError;
+    use obws::error::Error;
+
+    use super::connect_failure_message;
+
+    #[test]
+    fn errors_that_carry_no_connect_cause_map_to_their_user_facing_code() {
+        for (label, error, expected) in [
+            ("connect timeout", Error::Timeout, "unreachable"),
+            (
+                "no Identified reply",
+                Error::Handshake(HandshakeError::NoIdentified),
+                "password_rejected",
+            ),
+            (
+                "closed without details",
+                Error::Handshake(HandshakeError::ConnectionClosed(None)),
+                "connect_failed",
+            ),
+            (
+                "no Hello",
+                Error::Handshake(HandshakeError::NoHello),
+                "connect_failed",
+            ),
+        ] {
+            assert_eq!(
+                connect_failure_message(&error).code().name(),
+                expected,
+                "{label}"
+            );
+        }
+    }
+}

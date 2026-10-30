@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::ops::ControlFlow;
-use std::sync::Arc;
 use std::sync::atomic::Ordering;
+use std::sync::{Arc, Weak};
 use std::time::{Duration, Instant};
 
 const DEVICE_POLL_INTERVAL: Duration = Duration::from_secs(2);
@@ -36,7 +36,7 @@ pub(crate) enum SupervisorCommand {
 }
 
 pub(crate) async fn run_supervisor(
-    client: Arc<MidiClient>,
+    client: Weak<MidiClient>,
     merged_tx: mpsc::Sender<RawEvent>,
     mut merged_rx: mpsc::Receiver<RawEvent>,
     mut control_rx: mpsc::Receiver<SupervisorCommand>,
@@ -45,13 +45,18 @@ pub(crate) async fn run_supervisor(
     let mut output_snap: Vec<MidiPortInfo> = Vec::new();
     let mut handles: HashMap<String, Box<dyn InputHandle>> = HashMap::new();
 
+    let Some(first) = client.upgrade() else {
+        return;
+    };
     do_port_discovery(
-        &client,
+        &first,
         &merged_tx,
         &mut input_snap,
         &mut output_snap,
         &mut handles,
-    );
+    )
+    .await;
+    drop(first);
 
     let start = tokio::time::Instant::now() + DEVICE_POLL_INTERVAL;
     let mut poll = tokio::time::interval_at(start, DEVICE_POLL_INTERVAL);
@@ -60,10 +65,12 @@ pub(crate) async fn run_supervisor(
         tokio::select! {
             maybe_raw = merged_rx.recv() => {
                 let Some((ts, data, port_name)) = maybe_raw else { break };
+                let Some(client) = client.upgrade() else { break };
                 handle_raw_event(&client, ts, &data, &port_name);
             }
             maybe_cmd = control_rx.recv() => {
                 let Some(cmd) = maybe_cmd else { break };
+                let Some(client) = client.upgrade() else { break };
                 if handle_supervisor_command(
                     &client,
                     cmd,
@@ -72,25 +79,29 @@ pub(crate) async fn run_supervisor(
                     &mut output_snap,
                     &mut handles,
                 )
+                .await
                 .is_break()
                 {
                     break;
                 }
             }
             _ = poll.tick() => {
+                let Some(client) = client.upgrade() else { break };
                 do_port_discovery(
                     &client,
                     &merged_tx,
                     &mut input_snap,
                     &mut output_snap,
                     &mut handles,
-                );
+                )
+                .await;
+                decay_events_per_minute(&client);
             }
         }
     }
 }
 
-fn handle_supervisor_command(
+async fn handle_supervisor_command(
     client: &Arc<MidiClient>,
     cmd: SupervisorCommand,
     merged_tx: &mpsc::Sender<RawEvent>,
@@ -100,7 +111,7 @@ fn handle_supervisor_command(
 ) -> ControlFlow<()> {
     match cmd {
         SupervisorCommand::Rescan => {
-            do_port_discovery(client, merged_tx, input_snap, output_snap, handles);
+            do_port_discovery(client, merged_tx, input_snap, output_snap, handles).await;
         }
         SupervisorCommand::Shutdown => {
             handles.clear();
@@ -108,6 +119,7 @@ fn handle_supervisor_command(
         }
         SupervisorCommand::Disable => {
             handles.clear();
+            sync_subscribed_inputs(client, handles);
             client.enabled.store(false, Ordering::Relaxed);
             emit_engine_state_change(client, false);
         }
@@ -118,6 +130,7 @@ fn handle_supervisor_command(
                     open_input_port(client, merged_tx, handles, port);
                 }
             }
+            sync_subscribed_inputs(client, handles);
             emit_engine_state_change(client, true);
         }
     }
@@ -152,18 +165,58 @@ fn emit_engine_state_change(client: &Arc<MidiClient>, enabled: bool) {
     let _ = client.health_tx.send(delta);
 }
 
-fn do_port_discovery(
+fn sync_subscribed_inputs(
+    client: &Arc<MidiClient>,
+    handles: &HashMap<String, Box<dyn InputHandle>>,
+) {
+    let mut content = client
+        .content_state
+        .lock()
+        .unwrap_or_else(|p| p.into_inner());
+    content.subscribed_inputs = handles.keys().cloned().collect();
+}
+
+fn decay_events_per_minute(client: &Arc<MidiClient>) {
+    let delta = {
+        let mut snap = client
+            .health_state
+            .lock()
+            .unwrap_or_else(|p| p.into_inner());
+        let before = snap.event_timestamps.len();
+        let epm = events_per_minute(&mut snap.event_timestamps);
+        (snap.event_timestamps.len() != before).then(|| HealthDelta {
+            metric: EVENTS_PER_MINUTE_METRIC,
+            new_value: events_per_minute_health_value(epm),
+        })
+    };
+    if let Some(delta) = delta {
+        #[expect(
+            clippy::let_underscore_must_use,
+            reason = "having no subscribers is a normal state"
+        )]
+        let _ = client.health_tx.send(delta);
+    }
+}
+
+async fn list_ports(client: &Arc<MidiClient>) -> (Vec<MidiPortInfo>, Vec<MidiPortInfo>) {
+    let backend = Arc::clone(&client.backend);
+    tokio::task::spawn_blocking(move || (backend.list_input_ports(), backend.list_output_ports()))
+        .await
+        .unwrap_or_default()
+}
+
+async fn do_port_discovery(
     client: &Arc<MidiClient>,
     merged_tx: &mpsc::Sender<RawEvent>,
     input_snap: &mut Vec<MidiPortInfo>,
     output_snap: &mut Vec<MidiPortInfo>,
     handles: &mut HashMap<String, Box<dyn InputHandle>>,
 ) {
-    let new_inputs = client.backend.list_input_ports();
-    let new_outputs = client.backend.list_output_ports();
+    let (new_inputs, new_outputs) = list_ports(client).await;
 
     diff_input_ports(client, merged_tx, input_snap, handles, &new_inputs);
     diff_output_ports(client, output_snap, &new_outputs);
+    sync_subscribed_inputs(client, handles);
 
     *input_snap = new_inputs.clone();
     *output_snap = new_outputs.clone();
@@ -207,10 +260,10 @@ fn diff_input_ports(
     let new_names: std::collections::HashSet<&str> = new.iter().map(|p| p.name.as_str()).collect();
 
     for port in new {
+        if client.enabled.load(Ordering::Relaxed) && !handles.contains_key(&port.name) {
+            open_input_port(client, merged_tx, handles, port);
+        }
         if !old_names.contains(port.name.as_str()) {
-            if client.enabled.load(Ordering::Relaxed) {
-                open_input_port(client, merged_tx, handles, port);
-            }
             emit_port_event(client, &port.name, PortDirection::Input, true);
             let mut content = client
                 .content_state
@@ -402,7 +455,7 @@ fn build_event_deltas(snap: &mut MidiHealthSnapshot, is_note_on: bool) -> Vec<He
 #[cfg(test)]
 mod tests {
     use std::sync::Arc;
-    use std::time::Duration;
+    use std::time::{Duration, Instant};
 
     use tokio::sync::mpsc;
     use tokio_stream::StreamExt;
@@ -471,38 +524,63 @@ mod tests {
         }
     }
 
+    const HANG_GUARD: Duration = Duration::from_secs(30);
+
+    async fn wait_until(what: &str, done: impl Fn() -> bool) {
+        let waited = tokio::time::timeout(HANG_GUARD, async {
+            while !done() {
+                tokio::task::yield_now().await;
+            }
+        })
+        .await;
+        assert!(waited.is_ok(), "{what} never happened");
+    }
+
+    fn open_ports(backend: &MockMidiBackend) -> usize {
+        backend.state.lock().unwrap().senders.len()
+    }
+
+    fn launch_client(
+        backend: &Arc<MockMidiBackend>,
+        publisher: &Arc<RecordingPublisher>,
+    ) -> Arc<MidiClient> {
+        MidiClient::start(
+            MidiConfig::default(),
+            Arc::clone(publisher) as Arc<dyn EventPublisher>,
+            Arc::clone(backend) as Arc<dyn MidiBackend>,
+        )
+    }
+
     async fn start_client(
         backend: Arc<MockMidiBackend>,
         publisher: Arc<RecordingPublisher>,
     ) -> Arc<MidiClient> {
-        let client = MidiClient::start(
-            MidiConfig::default(),
-            Arc::clone(&publisher) as Arc<dyn EventPublisher>,
-            Arc::clone(&backend) as Arc<dyn MidiBackend>,
-        );
-        for _ in 0..4 {
-            tokio::task::yield_now().await;
-        }
+        let client = launch_client(&backend, &publisher);
+        let expected = backend.state.lock().unwrap().input_ports.len();
+        wait_until("the first discovery", || open_ports(&backend) == expected).await;
         client
     }
 
-    #[tokio::test(start_paused = true)]
-    async fn hot_plug_add_emits_port_added_event() {
+    async fn wait_for_port_event(publisher: &RecordingPublisher, kind: &str, port: &str) {
+        wait_until(kind, || {
+            publisher
+                .find_all_kind(kind)
+                .iter()
+                .any(|e| e.payload["port_name"] == port)
+        })
+        .await;
+    }
+
+    #[tokio::test]
+    async fn the_poll_tick_reports_a_hot_plugged_port_without_a_rescan() {
         let backend = Arc::new(MockMidiBackend::new(vec![input_port("A")], vec![]));
         let publisher = RecordingPublisher::new();
         let _client = start_client(Arc::clone(&backend), Arc::clone(&publisher)).await;
 
         backend.set_input_ports(vec![input_port("A"), input_port("B")]);
-        tokio::time::advance(Duration::from_secs(2)).await;
-        for _ in 0..4 {
-            tokio::task::yield_now().await;
-        }
+        wait_for_port_event(&publisher, "midi.port.added", "B").await;
 
         let added = publisher.find_all_kind("midi.port.added");
-        assert!(
-            added.iter().any(|e| e.payload["port_name"] == "B"),
-            "expected midi.port.added for port B"
-        );
         let b_ev = added
             .iter()
             .find(|e| e.payload["port_name"] == "B")
@@ -510,26 +588,19 @@ mod tests {
         assert_eq!(b_ev.payload["direction"], "input");
     }
 
-    #[tokio::test(start_paused = true)]
-    async fn hot_plug_remove_emits_port_removed_event() {
+    #[tokio::test]
+    async fn discovery_reports_an_unplugged_port() {
         let backend = Arc::new(MockMidiBackend::new(
             vec![input_port("A"), input_port("B")],
             vec![],
         ));
         let publisher = RecordingPublisher::new();
-        let _client = start_client(Arc::clone(&backend), Arc::clone(&publisher)).await;
+        let client = start_client(Arc::clone(&backend), Arc::clone(&publisher)).await;
 
         backend.set_input_ports(vec![input_port("A")]);
-        tokio::time::advance(Duration::from_secs(2)).await;
-        for _ in 0..4 {
-            tokio::task::yield_now().await;
-        }
+        client.rescan_ports().await.unwrap();
 
-        let removed = publisher.find_all_kind("midi.port.removed");
-        assert!(
-            removed.iter().any(|e| e.payload["port_name"] == "B"),
-            "expected midi.port.removed for port B"
-        );
+        wait_for_port_event(&publisher, "midi.port.removed", "B").await;
     }
 
     #[tokio::test]
@@ -623,24 +694,23 @@ mod tests {
         assert_eq!(ev.payload["note"], 60);
     }
 
-    #[tokio::test(start_paused = true)]
+    #[tokio::test]
     async fn every_port_bearing_event_uses_unified_port_name_key() {
         let backend = Arc::new(MockMidiBackend::new(vec![input_port("Deck")], vec![]));
         let publisher = RecordingPublisher::new();
-        let _client = start_client(Arc::clone(&backend), Arc::clone(&publisher)).await;
+        let client = start_client(Arc::clone(&backend), Arc::clone(&publisher)).await;
 
         backend.inject_all(0, vec![0x90, 60, 100]).await;
         backend.inject_all(0, vec![0xB0, 7, 64]).await;
         backend.inject_all(0, vec![0xE0, 0, 64]).await;
-        for _ in 0..4 {
-            tokio::task::yield_now().await;
-        }
+        wait_until("the injected events", || {
+            publisher.has_kind("midi.input.pitch_bend")
+        })
+        .await;
 
         backend.set_input_ports(vec![input_port("Deck"), input_port("New")]);
-        tokio::time::advance(Duration::from_secs(2)).await;
-        for _ in 0..4 {
-            tokio::task::yield_now().await;
-        }
+        client.rescan_ports().await.unwrap();
+        wait_for_port_event(&publisher, "midi.port.added", "New").await;
 
         for kind in [
             "midi.input.note_on",
@@ -686,56 +756,180 @@ mod tests {
             .collect()
     }
 
-    #[tokio::test(start_paused = true)]
+    #[tokio::test]
     async fn disabled_engine_keeps_discovering_ports_but_leaves_them_unsubscribed() {
         let backend = Arc::new(MockMidiBackend::new(vec![input_port("A")], vec![]));
         let publisher = RecordingPublisher::new();
         let client = start_client(Arc::clone(&backend), Arc::clone(&publisher)).await;
 
         client.disable_input().await.unwrap();
-        settle().await;
-        assert!(!client.is_enabled());
+        wait_until("the disable", || !client.is_enabled()).await;
 
         backend.set_input_ports(vec![input_port("A"), input_port("B")]);
-        tokio::time::advance(Duration::from_secs(2)).await;
-        settle().await;
+        client.rescan_ports().await.unwrap();
+        wait_for_port_event(&publisher, "midi.port.added", "B").await;
 
-        assert!(
-            publisher
-                .find_all_kind("midi.port.added")
-                .iter()
-                .any(|e| e.payload["port_name"] == "B"),
-            "discovery must keep running while input is disabled"
-        );
-
-        backend.inject_all(0, vec![0x90, 60, 100]).await;
-        settle().await;
-        assert!(
-            !note_on_ports(&publisher).contains(&"B".to_owned()),
-            "disabled engine must not subscribe to a newly discovered port"
+        assert_eq!(
+            open_ports(&backend),
+            0,
+            "a disabled engine must not subscribe to a newly discovered port"
         );
     }
 
-    #[tokio::test(start_paused = true)]
+    #[tokio::test]
     async fn enable_subscribes_ports_discovered_while_disabled() {
         let backend = Arc::new(MockMidiBackend::new(vec![input_port("A")], vec![]));
         let publisher = RecordingPublisher::new();
         let client = start_client(Arc::clone(&backend), Arc::clone(&publisher)).await;
 
         client.disable_input().await.unwrap();
-        settle().await;
+        wait_until("the disable", || !client.is_enabled()).await;
         backend.set_input_ports(vec![input_port("A"), input_port("B")]);
-        tokio::time::advance(Duration::from_secs(2)).await;
-        settle().await;
+        client.rescan_ports().await.unwrap();
+        wait_for_port_event(&publisher, "midi.port.added", "B").await;
 
         client.enable_input().await.unwrap();
-        settle().await;
+        wait_until("both ports opening", || open_ports(&backend) == 2).await;
         backend.inject_all(0, vec![0x90, 60, 100]).await;
-        settle().await;
 
+        wait_until("a note from the new port", || {
+            note_on_ports(&publisher).contains(&"B".to_owned())
+        })
+        .await;
+    }
+
+    fn input_status(client: &MidiClient, port: &str) -> (Option<String>, bool) {
+        use forge_platform_core::{BuiltinContent, DetailSection};
+
+        let sections = client.sections();
+        let Some(DetailSection::TwoColumnLists { left, .. }) = sections.into_iter().next() else {
+            panic!("the first MIDI section lists the ports");
+        };
+        let row = left
+            .items
+            .iter()
+            .find(|item| item.name == port)
+            .expect("the port is listed");
+        (row.active_label.clone(), row.active)
+    }
+
+    #[tokio::test]
+    async fn a_port_that_failed_to_open_shows_it_and_is_retried_by_the_next_discovery() {
+        let backend = Arc::new(MockMidiBackend::new(vec![input_port("A")], vec![]));
+        backend
+            .state
+            .lock()
+            .unwrap()
+            .refused_opens
+            .insert("A".to_owned());
+        let publisher = RecordingPublisher::new();
+        let client = launch_client(&backend, &publisher);
+        wait_for_port_event(&publisher, "midi.port.added", "A").await;
+
+        assert_eq!(
+            input_status(&client, "A"),
+            (Some("OPEN FAILED".to_owned()), false)
+        );
+
+        backend.state.lock().unwrap().refused_opens.clear();
+        client.rescan_ports().await.unwrap();
+        wait_until("the retried open", || open_ports(&backend) == 1).await;
+        wait_until("the subscribed status", || {
+            input_status(&client, "A") == (Some("SUBSCRIBED".to_owned()), true)
+        })
+        .await;
+    }
+
+    #[tokio::test]
+    async fn a_disabled_engine_lists_its_ports_as_disabled_not_failed() {
+        let backend = Arc::new(MockMidiBackend::new(vec![input_port("A")], vec![]));
+        let client = start_client(Arc::clone(&backend), RecordingPublisher::new()).await;
+
+        client.disable_input().await.unwrap();
+        wait_until("the disable", || !client.is_enabled()).await;
+
+        assert_eq!(
+            input_status(&client, "A"),
+            (Some("DISABLED".to_owned()), false)
+        );
+    }
+
+    #[tokio::test]
+    async fn dropping_the_client_ends_the_supervisor_and_closes_its_ports() {
+        let backend = Arc::new(MockMidiBackend::new(vec![input_port("A")], vec![]));
+        let client = start_client(Arc::clone(&backend), RecordingPublisher::new()).await;
+        assert_eq!(open_ports(&backend), 1);
+
+        drop(client);
+
+        wait_until("the supervisor releasing its ports", || {
+            open_ports(&backend) == 0
+        })
+        .await;
+    }
+
+    fn seed_note_timestamp(client: &MidiClient, at: Instant) {
+        client
+            .health_state
+            .lock()
+            .unwrap()
+            .event_timestamps
+            .push_back(at);
+    }
+
+    #[tokio::test]
+    async fn a_note_leaving_the_rate_window_pushes_a_lower_events_per_minute() {
+        use forge_platform_core::{BuiltinHealth, HealthText, HealthValue};
+
+        let client = MidiClient::new_for_test();
+        let Some(stale) = Instant::now().checked_sub(Duration::from_secs(120)) else {
+            return;
+        };
+        seed_note_timestamp(&client, stale);
+        seed_note_timestamp(&client, Instant::now());
+        let health: &dyn BuiltinHealth = &*client;
+        let mut stream = health.stream();
+
+        super::decay_events_per_minute(&client);
+
+        let delta = stream.next().await.unwrap();
+        assert_eq!(delta.metric, crate::health::EVENTS_PER_MINUTE_METRIC);
         assert!(
-            note_on_ports(&publisher).contains(&"B".to_owned()),
-            "enable must subscribe the port discovered while disabled"
+            matches!(
+                delta.new_value,
+                HealthValue::Text {
+                    primary: HealthText::Count(1),
+                    ..
+                }
+            ),
+            "{:?}",
+            delta.new_value
+        );
+    }
+
+    #[tokio::test]
+    async fn a_rate_window_with_no_expired_note_pushes_nothing() {
+        use forge_platform_core::{BuiltinHealth, HealthDelta};
+
+        let client = MidiClient::new_for_test();
+        seed_note_timestamp(&client, Instant::now());
+        let health: &dyn BuiltinHealth = &*client;
+        let mut stream = health.stream();
+
+        super::decay_events_per_minute(&client);
+        client
+            .health_tx
+            .send(HealthDelta {
+                metric: crate::health::INPUT_PORTS_METRIC,
+                new_value: crate::health::input_port_health_value(true, 0),
+            })
+            .unwrap();
+
+        let first = stream.next().await.unwrap();
+        assert_eq!(
+            first.metric,
+            crate::health::INPUT_PORTS_METRIC,
+            "a delta arrived ahead of the marker although nothing aged out"
         );
     }
 
@@ -770,7 +964,12 @@ mod tests {
         let client = MidiClient::new_for_test();
         let (merged_tx, merged_rx) = mpsc::channel(8);
         let (control_tx, control_rx) = mpsc::channel(8);
-        let task = tokio::spawn(run_supervisor(client, merged_tx, merged_rx, control_rx));
+        let task = tokio::spawn(run_supervisor(
+            Arc::downgrade(&client),
+            merged_tx,
+            merged_rx,
+            control_rx,
+        ));
 
         drop(control_tx);
 
@@ -876,15 +1075,8 @@ mod tests {
 
         backend.set_input_ports(vec![input_port("Late")]);
         client.rescan_ports().await.unwrap();
-        settle().await;
 
-        assert!(
-            publisher
-                .find_all_kind("midi.port.added")
-                .iter()
-                .any(|e| e.payload["port_name"] == "Late"),
-            "rescan must run discovery immediately"
-        );
+        wait_for_port_event(&publisher, "midi.port.added", "Late").await;
     }
 
     #[tokio::test]
@@ -901,17 +1093,15 @@ mod tests {
         assert_eq!(event.port_name, "Pad");
     }
 
-    #[tokio::test(start_paused = true)]
+    #[tokio::test]
     async fn output_port_added_emits_event_with_output_direction() {
         let backend = Arc::new(MockMidiBackend::new(vec![], vec![]));
         let publisher = RecordingPublisher::new();
-        let _client = start_client(Arc::clone(&backend), Arc::clone(&publisher)).await;
+        let client = start_client(Arc::clone(&backend), Arc::clone(&publisher)).await;
 
         backend.set_output_ports(vec![output_port("Synth")]);
-        tokio::time::advance(Duration::from_secs(2)).await;
-        for _ in 0..4 {
-            tokio::task::yield_now().await;
-        }
+        client.rescan_ports().await.unwrap();
+        wait_for_port_event(&publisher, "midi.port.added", "Synth").await;
 
         let added = publisher.find_all_kind("midi.port.added");
         assert!(
@@ -927,7 +1117,7 @@ mod tests {
             vec![],
         ));
         let client = start_client(Arc::clone(&backend), RecordingPublisher::new()).await;
-        let open_ports = || backend.state.lock().unwrap().senders.len();
+        let open_ports = || open_ports(&backend);
         assert_eq!(open_ports(), 2, "both inputs open while running");
 
         client.shutdown().await.unwrap();

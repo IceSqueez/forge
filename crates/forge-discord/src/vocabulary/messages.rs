@@ -42,6 +42,10 @@ const BODY_ENCODING_FAILED: MessageCode =
 const FILE_NAME_UNAVAILABLE: MessageCode =
     MessageCode::from_static(INTEGRATION_ID, "file_name_unavailable");
 const FILE_UNREADABLE: MessageCode = MessageCode::from_static(INTEGRATION_ID, "file_unreadable");
+const CONTENT_TOO_LONG: MessageCode = MessageCode::from_static(INTEGRATION_ID, "content_too_long");
+const NOTHING_TO_EDIT: MessageCode = MessageCode::from_static(INTEGRATION_ID, "nothing_to_edit");
+const FILE_NOT_UPLOADABLE: MessageCode =
+    MessageCode::from_static(INTEGRATION_ID, "file_not_uploadable");
 
 const SECONDS_ARG: &str = "seconds";
 const MILLIS_ARG: &str = "millis";
@@ -99,6 +103,9 @@ pub const DISCORD_MESSAGES: MessageCatalog = MessageCatalog {
         BODY_ENCODING_FAILED,
         FILE_NAME_UNAVAILABLE,
         FILE_UNREADABLE,
+        FILE_NOT_UPLOADABLE,
+        CONTENT_TOO_LONG,
+        NOTHING_TO_EDIT,
     ],
     en_ftl: include_str!("../../locales/en/messages.ftl"),
     uk_ftl: include_str!("../../locales/uk/messages.ftl"),
@@ -204,6 +211,20 @@ pub(crate) fn file_name_unavailable(path: &str) -> MessageRef {
     MessageRef::new(FILE_NAME_UNAVAILABLE).with_arg(PATH_ARG, VerbatimText::new(path))
 }
 
+pub(crate) fn content_too_long(length: usize, max: usize) -> MessageRef {
+    MessageRef::new(CONTENT_TOO_LONG)
+        .with_arg(LENGTH_ARG, length)
+        .with_arg(MAX_ARG, max)
+}
+
+pub(crate) fn nothing_to_edit() -> MessageRef {
+    MessageRef::new(NOTHING_TO_EDIT)
+}
+
+pub(crate) fn file_not_uploadable(path: &str) -> MessageRef {
+    MessageRef::new(FILE_NOT_UPLOADABLE).with_arg(PATH_ARG, VerbatimText::new(path))
+}
+
 pub(crate) fn file_unreadable(path: &str, text: &str) -> MessageRef {
     MessageRef::new(FILE_UNREADABLE)
         .with_arg(PATH_ARG, VerbatimText::new(path))
@@ -268,6 +289,9 @@ mod tests {
             body_encoding_failed("c"),
             file_name_unavailable("/tmp/x"),
             file_unreadable("/tmp/x", "c"),
+            file_not_uploadable("/tmp/x"),
+            content_too_long(2001, 2000),
+            nothing_to_edit(),
         ]
     }
 

@@ -157,9 +157,11 @@ struct ServedFile {
 
 async fn resolve_and_open(state: &AppState, url_path: &str) -> Result<ServedFile, StatusCode> {
     let requested = crate::sandbox::request_relative_path(url_path).ok_or(StatusCode::NOT_FOUND)?;
-    let root = state.overlay_root.as_ref();
+    let canon_root = tokio::fs::canonicalize(state.overlay_root.as_ref())
+        .await
+        .map_err(|_| StatusCode::NOT_FOUND)?;
 
-    let canon_target = crate::sandbox::confine(root, &requested)
+    let canon_target = crate::sandbox::confine_within(&canon_root, &requested)
         .await
         .ok_or(StatusCode::NOT_FOUND)?;
 
@@ -169,7 +171,7 @@ async fn resolve_and_open(state: &AppState, url_path: &str) -> Result<ServedFile
 
     let canon_file = if meta.is_dir() {
         let entry_relative = requested.join(OVERLAY_ENTRY_DOCUMENT);
-        let canon_entry = crate::sandbox::confine(root, &entry_relative)
+        let canon_entry = crate::sandbox::confine_within(&canon_root, &entry_relative)
             .await
             .ok_or(StatusCode::NOT_FOUND)?;
         let entry_meta = tokio::fs::metadata(&canon_entry)
@@ -183,7 +185,7 @@ async fn resolve_and_open(state: &AppState, url_path: &str) -> Result<ServedFile
         canon_target
     };
 
-    if !overlay_serving_enabled(state, root, &canon_file).await {
+    if !overlay_serving_enabled(state, &canon_root, &canon_file).await {
         return Err(StatusCode::NOT_FOUND);
     }
 
@@ -202,29 +204,22 @@ async fn resolve_and_open(state: &AppState, url_path: &str) -> Result<ServedFile
     })
 }
 
-async fn overlay_serving_enabled(
-    state: &AppState,
-    root: &std::path::Path,
-    canon_file: &std::path::Path,
-) -> bool {
-    let Ok(canon_root) = tokio::fs::canonicalize(root).await else {
-        return true;
-    };
+async fn overlay_serving_enabled(state: &AppState, canon_root: &Path, canon_file: &Path) -> bool {
     let Some(identity) = canon_file
-        .strip_prefix(&canon_root)
+        .strip_prefix(canon_root)
         .ok()
         .and_then(|relative| relative.components().next())
         .and_then(|first| first.as_os_str().to_str())
     else {
-        return true;
+        return false;
     };
 
     match state.overlays.get(&OverlayId::new(identity)).await {
         Ok(Some(definition)) => definition.enabled,
         Ok(None) => true,
         Err(error) => {
-            tracing::warn!(%identity, %error, "overlay enabled lookup failed; serving anyway");
-            true
+            tracing::warn!(%identity, %error, "overlay enabled lookup failed; refusing to serve");
+            false
         }
     }
 }
@@ -1023,6 +1018,24 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn serve_overlay_refuses_a_page_whose_enabled_state_the_store_cannot_report() {
+        let dir = qa_tempdir();
+        let root = gated_overlay_root(dir.path()).await;
+        let (handle, addr) = make_overlay_server_with_overlays(
+            root,
+            true,
+            MemCreds::new(),
+            Some(gated_overlay_repo()),
+        )
+        .await;
+
+        let (status, _) = get_status_and_body(addr, "/overlays/fgo_fixture/boom/index.html").await;
+
+        assert_eq!(status, 404);
+        handle.stop().await.expect("stop");
+    }
+
+    #[tokio::test]
     async fn serve_overlay_serves_unless_the_store_reports_the_identity_disabled() {
         let dir = qa_tempdir();
         let root = gated_overlay_root(dir.path()).await;
@@ -1041,7 +1054,6 @@ mod tests {
                 "/overlays/fgo_fixture/stranger/index.html",
                 "<p>stranger</p>",
             ),
-            ("/overlays/fgo_fixture/boom/index.html", "<p>boom</p>"),
             (
                 "/overlays/fgo_fixture/forge-shared/runtime-v1.js",
                 "export const runtime = 1;",

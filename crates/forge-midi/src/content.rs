@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Mutex};
 
 use forge_platform_core::{
@@ -14,6 +14,7 @@ pub(crate) struct MidiContentSnapshot {
     pub input_ports: Vec<MidiPortInfo>,
     pub output_ports: Vec<MidiPortInfo>,
     pub events_per_input: HashMap<String, u64>,
+    pub subscribed_inputs: HashSet<String>,
     pub total_events: u64,
 }
 
@@ -26,19 +27,26 @@ impl BuiltinContent for MidiClient {
         let snap = self.content_state.lock().unwrap_or_else(|p| p.into_inner());
         let client_name = self.config.client_name.clone();
         let total = snap.total_events;
+        let engine_enabled = self.is_enabled();
 
         let input_items: Vec<ContentListItem> = snap
             .input_ports
             .iter()
             .map(|p| {
                 let count = snap.events_per_input.get(&p.name).copied().unwrap_or(0);
+                let subscribed = snap.subscribed_inputs.contains(&p.name);
+                let status_label = match (subscribed, engine_enabled) {
+                    (true, _) => "SUBSCRIBED",
+                    (false, true) => "OPEN FAILED",
+                    (false, false) => "DISABLED",
+                };
                 ContentListItem {
                     icon: SectionIcon::new("plug"),
                     icon_tint: None,
                     name: p.name.clone(),
                     monospace_name: true,
-                    active: true,
-                    active_label: Some("SUBSCRIBED".to_owned()),
+                    active: subscribed,
+                    active_label: Some(status_label.to_owned()),
                     trailing: vec![TrailingToken::Label(count.to_string())],
                     enabled: true,
                     on_click: None,

@@ -23,11 +23,13 @@ pub(crate) fn request_relative_path(url_path: &str) -> Option<PathBuf> {
 
 pub(crate) async fn confine(root: &Path, requested: &Path) -> Option<PathBuf> {
     let canon_root = tokio::fs::canonicalize(root).await.ok()?;
+    confine_within(&canon_root, requested).await
+}
+
+pub(crate) async fn confine_within(canon_root: &Path, requested: &Path) -> Option<PathBuf> {
     let joined = canon_root.join(requested);
     let canon_target = tokio::fs::canonicalize(&joined).await.ok()?;
-    canon_target
-        .starts_with(&canon_root)
-        .then_some(canon_target)
+    canon_target.starts_with(canon_root).then_some(canon_target)
 }
 
 #[cfg(test)]

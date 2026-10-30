@@ -99,13 +99,15 @@ fn rejected_endpoint() -> DiscordError {
 }
 
 fn is_webhook_host(host: &str) -> bool {
-    WEBHOOK_HOSTS.iter().any(|allowed| {
-        host == *allowed
-            || host
-                .strip_suffix(allowed)
-                .and_then(|prefix| prefix.strip_suffix(SUBDOMAIN_SEPARATOR))
-                .is_some_and(|label| !label.is_empty() && !label.ends_with(SUBDOMAIN_SEPARATOR))
-    })
+    host.bytes()
+        .all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'.')
+        && WEBHOOK_HOSTS.iter().any(|allowed| {
+            host == *allowed
+                || host
+                    .strip_suffix(allowed)
+                    .and_then(|prefix| prefix.strip_suffix(SUBDOMAIN_SEPARATOR))
+                    .is_some_and(|label| !label.is_empty() && !label.ends_with(SUBDOMAIN_SEPARATOR))
+        })
 }
 
 fn is_snowflake(id: &str) -> bool {

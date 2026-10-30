@@ -274,6 +274,46 @@ async fn a_combo_the_os_refuses_is_still_stored_but_left_unregistered() {
 }
 
 #[tokio::test]
+async fn the_test_client_answers_a_disable_enable_cycle_with_real_backend_calls() {
+    let (client, backend) = recording_client();
+    let combo = HotkeyCombo::parse("F7").unwrap();
+    let id = client.register(combo.clone()).await.unwrap();
+
+    client.disable().await.unwrap();
+    client.enable().await.unwrap();
+
+    assert_eq!(
+        backend.calls(),
+        [
+            RecordedCall::Register(id, combo.clone()),
+            RecordedCall::Unregister(id),
+            RecordedCall::Register(id, combo),
+        ]
+    );
+}
+
+#[tokio::test]
+async fn a_combo_refused_on_enable_is_registered_again_by_the_next_reconcile() {
+    let synced = synced().await;
+    let combo = HotkeyCombo::parse("F7").unwrap();
+    synced
+        .repo
+        .save(&instance(event_kinds::GLOBAL_PRESSED, Some("F7")))
+        .await
+        .unwrap();
+    synced.client.disable().await.unwrap();
+
+    synced.backend.fail_next_register(&combo);
+    let failures = synced.client.enable().await.unwrap();
+    let after_refusal = registered(&synced.client);
+    synced.reconciler.reconcile().await;
+
+    assert_eq!(failures.len(), 1);
+    assert!(after_refusal.is_empty(), "got {after_refusal:?}");
+    assert_eq!(registered(&synced.client), ["F7"]);
+}
+
+#[tokio::test]
 async fn a_combo_the_os_refused_is_registered_by_the_next_trigger_write() {
     let synced = synced().await;
     synced

@@ -29,6 +29,7 @@ struct HandleInner {
 #[derive(Clone)]
 pub struct ServerHandle {
     inner: Arc<Mutex<HandleInner>>,
+    lifecycle: Arc<Mutex<()>>,
     run_state: RunState,
 }
 
@@ -41,6 +42,7 @@ impl ServerHandle {
         run_state_tx: watch::Sender<bool>,
     ) -> Self {
         Self {
+            lifecycle: Arc::new(Mutex::new(())),
             inner: Arc::new(Mutex::new(HandleInner {
                 join: Some(join),
                 shutdown_tx: Some(shutdown_tx),
@@ -54,6 +56,7 @@ impl ServerHandle {
     pub(crate) fn stopped(state: AppState, bind_addr: SocketAddr) -> Self {
         let (run_state_tx, _run_state_rx) = watch::channel(false);
         Self {
+            lifecycle: Arc::new(Mutex::new(())),
             inner: Arc::new(Mutex::new(HandleInner {
                 join: None,
                 shutdown_tx: None,
@@ -83,6 +86,11 @@ impl ServerHandle {
     }
 
     pub async fn stop(&self) -> Result<(), ServerError> {
+        let _lifecycle = self.lifecycle.lock().await;
+        self.stop_serving().await
+    }
+
+    async fn stop_serving(&self) -> Result<(), ServerError> {
         let (shutdown_tx, join, bus_adapter) = {
             let mut guard = self.inner.lock().await;
 
@@ -129,6 +137,7 @@ impl ServerHandle {
     }
 
     pub async fn restart(&self) -> Result<(), ServerError> {
+        let _lifecycle = self.lifecycle.lock().await;
         let state = {
             let guard = self.inner.lock().await;
             guard.state.clone()
@@ -139,7 +148,7 @@ impl ServerHandle {
             .map_err(|e| ServerError::Storage(e.to_string()))?;
 
         if !settings.enabled {
-            self.stop().await?;
+            self.stop_serving().await?;
             return Err(ServerError::Disabled);
         }
 
@@ -157,17 +166,13 @@ impl ServerHandle {
             .map(PathBuf::from)
             .unwrap_or_else(forge_paths::overlays_dir);
 
-        server::validate_lan_bind(
-            &bind_addr,
-            settings.lan_bind_enabled,
-            state.credentials.as_ref(),
-        )
-        .await?;
+        server::validate_lan_bind(&bind_addr, settings.lan_bind_enabled)?;
 
-        self.stop().await?;
+        self.stop_serving().await?;
         state
             .auth
             .set_reads_required(settings.auth_required_for_reads);
+        state.auth.set_lan_exposed(bind_addr.ip().is_unspecified());
         state
             .auth
             .overlay_token()

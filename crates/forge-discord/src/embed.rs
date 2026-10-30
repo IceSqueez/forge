@@ -5,6 +5,7 @@ use crate::error::{DiscordError, ValidationFault};
 
 const MAX_FIELDS: usize = 25;
 const MAX_TOTAL_TEXT: usize = 6000;
+pub(crate) const MAX_CONTENT_CHARS: usize = 2000;
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct DiscordEmbedField {
@@ -61,13 +62,29 @@ impl DiscordEmbed {
 
     fn total_text_len(&self) -> usize {
         let mut n = 0usize;
-        n += self.title.as_deref().map(str::len).unwrap_or(0);
-        n += self.description.as_deref().map(str::len).unwrap_or(0);
-        n += self.footer_text.as_deref().map(str::len).unwrap_or(0);
-        n += self.author_name.as_deref().map(str::len).unwrap_or(0);
+        n += self
+            .title
+            .as_deref()
+            .map(|s| s.chars().count())
+            .unwrap_or(0);
+        n += self
+            .description
+            .as_deref()
+            .map(|s| s.chars().count())
+            .unwrap_or(0);
+        n += self
+            .footer_text
+            .as_deref()
+            .map(|s| s.chars().count())
+            .unwrap_or(0);
+        n += self
+            .author_name
+            .as_deref()
+            .map(|s| s.chars().count())
+            .unwrap_or(0);
         for f in &self.fields {
-            n += f.name.len();
-            n += f.value.len();
+            n += f.name.chars().count();
+            n += f.value.chars().count();
         }
         n
     }
@@ -78,10 +95,11 @@ fn check_len(field: &'static str, value: Option<&str>, max: usize) -> Result<(),
         return Ok(());
     };
     check_no_nul(field, s)?;
-    if s.len() > max {
+    let length = s.chars().count();
+    if length > max {
         return Err(DiscordError::Validation(ValidationFault::PartTooLong {
             part: field,
-            length: s.len(),
+            length,
             max,
         }));
     }
@@ -185,6 +203,56 @@ mod tests {
             ..Default::default()
         };
         assert!(matches!(e.validate(), Err(DiscordError::Validation(_))));
+    }
+
+    fn cyrillic_fields(fields: usize, chars_per_field: usize) -> Vec<DiscordEmbedField> {
+        vec![
+            DiscordEmbedField {
+                name: String::new(),
+                value: "я".repeat(chars_per_field),
+                inline: false,
+            };
+            fields
+        ]
+    }
+
+    #[test]
+    fn the_total_text_limit_counts_cyrillic_in_characters_not_bytes() {
+        let at_limit = DiscordEmbed {
+            fields: cyrillic_fields(12, 500),
+            ..Default::default()
+        };
+        let over_limit = DiscordEmbed {
+            title: Some("я".to_owned()),
+            ..at_limit.clone()
+        };
+
+        assert!(at_limit.validate().is_ok(), "6000 characters must pass");
+        assert!(matches!(
+            over_limit.validate(),
+            Err(DiscordError::Validation(ValidationFault::TotalTooLong {
+                total: 6001,
+                max: 6000,
+            }))
+        ));
+    }
+
+    #[test]
+    fn a_title_is_measured_in_characters_not_bytes() {
+        let title_of = |length: usize| DiscordEmbed {
+            title: Some("я".repeat(length)),
+            ..Default::default()
+        };
+
+        assert!(title_of(256).validate().is_ok());
+        assert!(matches!(
+            title_of(257).validate(),
+            Err(DiscordError::Validation(ValidationFault::PartTooLong {
+                part: "title",
+                length: 257,
+                max: 256,
+            }))
+        ));
     }
 
     #[test]

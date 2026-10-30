@@ -14,11 +14,6 @@ pub enum ServerError {
     #[error("refusing to bind to {addr}: server.lan_bind_enabled is false")]
     LanBindNotEnabled { addr: String },
 
-    #[error(
-        "refusing to bind to {addr}: bearer token missing - generate one before exposing the server"
-    )]
-    NoTokenForLanBind { addr: String },
-
     #[error("overlay pages could not be rewritten with the new credentials: {reason}")]
     OverlayRematerialization { reason: String },
 

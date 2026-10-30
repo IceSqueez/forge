@@ -284,6 +284,15 @@ pub async fn set_binding_edge(
     if source.kind_id == edge.kind_id() {
         return Ok(());
     }
+    if let Some(combo) = canonical_combo_of(&source) {
+        let taken = hotkey_instances_for_combo(&backend, &combo)
+            .await?
+            .iter()
+            .any(|sibling| sibling.id != source.id && sibling.kind_id == edge.kind_id());
+        if taken {
+            return Err(format!("{combo} already has a binding on that edge"));
+        }
+    }
     let updated = TriggerInstance {
         kind_id: edge.kind_id().to_owned(),
         ..source

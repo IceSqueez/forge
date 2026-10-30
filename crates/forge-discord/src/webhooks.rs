@@ -91,10 +91,7 @@ impl DiscordClient {
     ) -> Result<String, DiscordError> {
         let route = WebhookRoute::parse(url)?;
         let body = serde_json::json!({ "content": content });
-        let record = SendRecord {
-            embed_count: 0,
-            register_name: false,
-        };
+        let record = SendRecord { embed_count: 0 };
         self.execute_post(&route, &body, webhook_name, record).await
     }
 }
@@ -133,7 +130,7 @@ mod tests {
         "a.b.discord.com",
     ];
 
-    const REFUSED_URLS: [&str; 29] = [
+    const REFUSED_URLS: [&str; 35] = [
         "http://discord.com/api/webhooks/1/tok",
         "ftp://discord.com/api/webhooks/1/tok",
         "discord.com/api/webhooks/1/tok",
@@ -145,6 +142,12 @@ mod tests {
         "https://discord.com@attacker.io/api/webhooks/1/tok",
         "https://discord.com:8443/api/webhooks/1/tok",
         "https://attacker.io/api/webhooks/1/tok",
+        "https://x.io\\.discord.com/api/webhooks/1/tok",
+        "https://x.io%2f.discord.com/api/webhooks/1/tok",
+        "https://x.io#.discord.com/api/webhooks/1/tok",
+        "https://x.io?.discord.com/api/webhooks/1/tok",
+        "https://discord.com#/api/webhooks/1/tok",
+        "https://discord.com?/api/webhooks/1/tok",
         "https://discord.com",
         "https://discord.com/api/webhooks/1",
         "https://discord.com/api/webhooks/1/",

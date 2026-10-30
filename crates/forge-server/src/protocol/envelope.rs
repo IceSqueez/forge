@@ -83,7 +83,7 @@ pub enum WsResponse {
 
 #[derive(Debug)]
 pub struct WsEnvelope<T> {
-    pub id: Option<String>,
+    pub id: Option<serde_json::Value>,
     pub inner: T,
 }
 
@@ -93,7 +93,9 @@ impl<'de> Deserialize<'de> for WsEnvelope<WsRequest> {
         let mut map: serde_json::Map<String, serde_json::Value> =
             Deserialize::deserialize(deserializer)?;
         let id = match map.remove("id") {
-            Some(serde_json::Value::String(s)) => Some(s),
+            Some(scalar @ (serde_json::Value::String(_) | serde_json::Value::Number(_))) => {
+                Some(scalar)
+            }
             _ => None,
         };
         let inner =
@@ -102,24 +104,31 @@ impl<'de> Deserialize<'de> for WsEnvelope<WsRequest> {
     }
 }
 
-pub fn serialize_response_frame(envelope: &WsEnvelope<WsResponse>) -> serde_json::Value {
-    let mut map = serde_json::Map::new();
-    match &envelope.id {
-        Some(id) => {
-            map.insert("id".into(), serde_json::Value::String(id.clone()));
-        }
-        None => {
-            map.insert("id".into(), serde_json::Value::Null);
+const ENVELOPE_KEYS: [&str; 3] = ["id", "status", "error"];
+
+pub(crate) fn merge_payload(
+    frame: &mut serde_json::Map<String, serde_json::Value>,
+    data: &serde_json::Value,
+) {
+    if let serde_json::Value::Object(fields) = data {
+        for (key, value) in fields {
+            if !ENVELOPE_KEYS.contains(&key.as_str()) {
+                frame.insert(key.clone(), value.clone());
+            }
         }
     }
+}
+
+pub fn serialize_response_frame(envelope: &WsEnvelope<WsResponse>) -> serde_json::Value {
+    let mut map = serde_json::Map::new();
+    map.insert(
+        "id".into(),
+        envelope.id.clone().unwrap_or(serde_json::Value::Null),
+    );
     match &envelope.inner {
         WsResponse::Ok(data) => {
             map.insert("status".into(), "ok".into());
-            if let serde_json::Value::Object(fields) = data {
-                for (k, v) in fields {
-                    map.insert(k.clone(), v.clone());
-                }
-            }
+            merge_payload(&mut map, data);
         }
         WsResponse::Error { code, message } => {
             map.insert("status".into(), "error".into());
@@ -138,7 +147,49 @@ pub fn serialize_response_frame(envelope: &WsEnvelope<WsResponse>) -> serde_json
 mod tests {
     use forge_overlay::PREVIEW_CONNECTION_FIELD;
 
-    use super::{WsEnvelope, WsRequest};
+    use super::{WsEnvelope, WsRequest, WsResponse, serialize_response_frame};
+
+    fn envelope_of(id: serde_json::Value) -> WsEnvelope<WsRequest> {
+        serde_json::from_value(serde_json::json!({ "id": id, "request": "getInfo" }))
+            .expect("a getInfo frame")
+    }
+
+    #[test]
+    fn a_response_echoes_a_string_or_numeric_request_id_and_nulls_any_other_shape() {
+        for (sent, echoed) in [
+            (serde_json::json!("abc"), serde_json::json!("abc")),
+            (serde_json::json!(7), serde_json::json!(7)),
+            (serde_json::json!(1.5), serde_json::json!(1.5)),
+            (serde_json::json!(true), serde_json::Value::Null),
+            (serde_json::json!({ "a": 1 }), serde_json::Value::Null),
+            (serde_json::Value::Null, serde_json::Value::Null),
+        ] {
+            let frame = serialize_response_frame(&WsEnvelope {
+                id: envelope_of(sent.clone()).id,
+                inner: WsResponse::Ok(serde_json::json!({})),
+            });
+
+            assert_eq!(frame["id"], echoed, "sent {sent}");
+        }
+    }
+
+    #[test]
+    fn payload_keys_named_like_the_envelope_never_replace_the_envelope_fields() {
+        let frame = serialize_response_frame(&WsEnvelope {
+            id: Some(serde_json::json!(7)),
+            inner: WsResponse::Ok(serde_json::json!({
+                "id": "from-the-payload",
+                "status": "error",
+                "error": "from-the-payload",
+                "value": 1,
+            })),
+        });
+
+        assert_eq!(
+            frame,
+            serde_json::json!({ "id": 7, "status": "ok", "value": 1 })
+        );
+    }
 
     #[test]
     fn an_auth_frame_reads_its_preview_claim_from_the_field_an_overlay_page_sends() {

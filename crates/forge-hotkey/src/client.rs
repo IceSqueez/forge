@@ -40,6 +40,7 @@ pub struct HotkeyClient {
     pub(crate) holds: Mutex<HoldMap>,
     hold_ceiling_secs: AtomicU64,
     control_tx: mpsc::Sender<SupervisorCommand>,
+    registration_serial: tokio::sync::Mutex<()>,
 }
 
 impl HotkeyClient {
@@ -68,17 +69,16 @@ impl HotkeyClient {
             holds: Mutex::new(HoldMap::new()),
             hold_ceiling_secs,
             control_tx,
+            registration_serial: tokio::sync::Mutex::new(()),
         });
 
         let fired_rx = client.backend.fired_rx();
-        if let Some(rx) = fired_rx {
-            let restart_rx = client.backend.restart_rx();
-            let session_rx = client.backend.session_events_rx();
-            let c = Arc::clone(&client);
-            tokio::spawn(async move {
-                supervisor::run_supervisor(c, rx, restart_rx, session_rx, control_rx).await;
-            });
-        }
+        let restart_rx = client.backend.restart_rx();
+        let session_rx = client.backend.session_events_rx();
+        let c = Arc::clone(&client);
+        tokio::spawn(async move {
+            supervisor::run_supervisor(c, fired_rx, restart_rx, session_rx, control_rx).await;
+        });
 
         client
     }
@@ -92,6 +92,7 @@ impl HotkeyClient {
     }
 
     pub async fn register(&self, combo: HotkeyCombo) -> Result<HotkeyId, HotkeyError> {
+        let _serial = self.registration_serial.lock().await;
         let combo_str = combo.as_str().to_owned();
 
         {
@@ -130,6 +131,7 @@ impl HotkeyClient {
     }
 
     pub async fn unregister(&self, id: HotkeyId) -> Result<(), HotkeyError> {
+        let _serial = self.registration_serial.lock().await;
         let combo = {
             let guard = self.id_to_combo.read().unwrap_or_else(|p| p.into_inner());
             guard.get(&id).cloned()
@@ -161,6 +163,23 @@ impl HotkeyClient {
         Ok(())
     }
 
+    pub(crate) fn forget_registration(&self, id: HotkeyId) {
+        let combo = self
+            .id_to_combo
+            .write()
+            .unwrap_or_else(|p| p.into_inner())
+            .remove(&id);
+        let Some(combo) = combo else {
+            return;
+        };
+        self.registry
+            .write()
+            .unwrap_or_else(|p| p.into_inner())
+            .remove(combo.as_str());
+        hold::close_synthesized(self, id);
+        supervisor::emit_unregistered(self, combo.as_str(), id.0);
+    }
+
     pub async fn disable(&self) -> Result<(), HotkeyError> {
         let (reply_tx, reply_rx) = oneshot::channel();
         self.send_command(SupervisorCommand::Disable(reply_tx))
@@ -175,7 +194,17 @@ impl HotkeyClient {
         let (reply_tx, reply_rx) = oneshot::channel();
         self.send_command(SupervisorCommand::Enable(reply_tx))
             .await?;
-        tokio::time::timeout(COMMAND_TIMEOUT, reply_rx)
+        let registrations = self
+            .id_to_combo
+            .read()
+            .unwrap_or_else(|p| p.into_inner())
+            .len();
+        let budget = COMMAND_TIMEOUT.saturating_mul(
+            u32::try_from(registrations)
+                .unwrap_or(u32::MAX)
+                .saturating_add(1),
+        );
+        tokio::time::timeout(budget, reply_rx)
             .await
             .map_err(|_| HotkeyError::SupervisorUnavailable)?
             .map_err(|_| HotkeyError::SupervisorUnavailable)
@@ -262,6 +291,7 @@ impl HotkeyClient {
                 HotkeyConfig::default().hold_ceiling_secs.unwrap_or(0),
             ),
             control_tx,
+            registration_serial: tokio::sync::Mutex::new(()),
         })
     }
 }
@@ -321,6 +351,14 @@ async fn select_and_start(
             }
             Err(e) => {
                 tracing::error!(error = %e, "GlobalHotkeyBackend unavailable");
+                let client = HotkeyClient::start(
+                    config,
+                    Arc::clone(&publisher),
+                    Arc::new(NullBackend::new()),
+                    None,
+                );
+                supervisor::emit_portal_unavailable(&client, &e.to_string());
+                return client;
             }
         }
     }
@@ -554,6 +592,74 @@ pub(crate) mod tests {
     }
 
     #[tokio::test]
+    async fn the_no_backend_fallback_reports_a_backend_failure_not_denied_permission() {
+        let client = HotkeyClient::start(
+            HotkeyConfig::default(),
+            noop_publisher(),
+            Arc::new(NullBackend::new()),
+            None,
+        );
+
+        let err = client.register(combo("Ctrl+D")).await.unwrap_err();
+
+        assert!(matches!(err, HotkeyError::Backend(_)), "{err:?}");
+    }
+
+    #[tokio::test]
+    async fn the_no_backend_fallback_still_answers_engine_commands() {
+        let client = HotkeyClient::start(
+            HotkeyConfig::default(),
+            noop_publisher(),
+            Arc::new(NullBackend::new()),
+            None,
+        );
+
+        client.disable().await.unwrap();
+        assert!(!client.is_enabled());
+        client.enable().await.unwrap();
+        assert!(client.is_enabled());
+    }
+
+    struct SuspendingBackend;
+
+    #[async_trait::async_trait]
+    impl HotkeyBackend for SuspendingBackend {
+        async fn register(&self, _id: HotkeyId, _combo: &HotkeyCombo) -> Result<(), HotkeyError> {
+            tokio::task::yield_now().await;
+            Ok(())
+        }
+
+        async fn unregister(&self, _id: HotkeyId) -> Result<(), HotkeyError> {
+            tokio::task::yield_now().await;
+            Ok(())
+        }
+
+        fn fired_rx(&self) -> Option<mpsc::Receiver<crate::backend::HotkeyFiredEvent>> {
+            None
+        }
+    }
+
+    #[tokio::test]
+    async fn parallel_registrations_of_one_combo_leave_one_success() {
+        let client = HotkeyClient::start(
+            HotkeyConfig::default(),
+            noop_publisher(),
+            Arc::new(SuspendingBackend),
+            None,
+        );
+        let c = combo("Ctrl+F1");
+
+        let (first, second) = tokio::join!(client.register(c.clone()), client.register(c.clone()));
+
+        let refused = [&first, &second].into_iter().find(|r| r.is_err());
+        assert!(
+            matches!(refused, Some(Err(HotkeyError::AlreadyRegistered { .. }))),
+            "{first:?} / {second:?}"
+        );
+        assert_eq!(client.registered_combos().len(), 1);
+    }
+
+    #[tokio::test]
     async fn a_fired_press_publishes_the_pressed_payload() {
         let publisher = RecordingPublisher::new();
         let (backend, inject_tx) = MockPortalBackend::new();
@@ -663,6 +769,30 @@ pub(crate) mod tests {
             HotkeyError::AlreadyRegistered { .. }
         ));
         assert!(os_registered.lock().unwrap().contains_key(&free.0));
+    }
+
+    #[tokio::test]
+    async fn a_combo_refused_on_enable_leaves_the_registry_so_it_can_be_claimed_again() {
+        let publisher = RecordingPublisher::new();
+        let (backend, _tx) = MockPortalBackend::new();
+        let refuse = Arc::clone(&backend.fail_on);
+        let client = start_supervised(backend, Arc::clone(&publisher) as Arc<dyn EventPublisher>);
+        client.register(combo("Alt+X")).await.unwrap();
+        let free = client.register(combo("Ctrl+F1")).await.unwrap();
+
+        client.disable().await.unwrap();
+        refuse.lock().unwrap().insert("Alt+X".to_owned());
+        client.enable().await.unwrap();
+
+        assert_eq!(
+            client.registered_combos(),
+            vec![(free, combo("Ctrl+F1"))],
+            "a combo the OS refused must not read as registered"
+        );
+        assert!(publisher.has_kind("hotkey.unregistered"));
+
+        refuse.lock().unwrap().clear();
+        client.register(combo("Alt+X")).await.unwrap();
     }
 
     #[tokio::test]
@@ -1108,7 +1238,7 @@ pub(crate) mod tests {
     }
 
     #[tokio::test]
-    async fn supervisor_teardown_closes_an_open_hold_with_a_synthesized_release() {
+    async fn a_closed_fired_channel_closes_an_open_hold_with_a_synthesized_release() {
         let publisher = RecordingPublisher::new();
         let (backend, inject_tx) = MockPortalBackend::new();
         let client = start_supervised(backend, Arc::clone(&publisher) as Arc<dyn EventPublisher>);

@@ -354,31 +354,32 @@ pub(crate) async fn handle_get_active_viewers(ctx: &DispatchContext) -> WsRespon
     WsResponse::Ok(serde_json::json!({ "viewers": wire }))
 }
 
+const MAX_OVERLAY_FILE_ENTRIES: usize = 5_000;
+
 pub(crate) async fn handle_get_overlay_files(recursive: bool, ctx: &DispatchContext) -> WsResponse {
     use std::path::{Path, PathBuf};
 
     let root: &Path = ctx.overlay_root.as_path();
-    let root_path_str = root.to_string_lossy().into_owned();
 
     let canon_root = match tokio::fs::canonicalize(root).await {
         Ok(p) => p,
         Err(_) => {
-            return WsResponse::Ok(serde_json::json!({
-                "root_path": root_path_str,
-                "files": [],
-            }));
+            return WsResponse::Ok(serde_json::json!({ "files": [] }));
         }
     };
 
     let mut files: Vec<serde_json::Value> = Vec::new();
     let mut dirs_to_visit: Vec<PathBuf> = vec![canon_root.clone()];
 
-    while let Some(dir) = dirs_to_visit.pop() {
+    'walk: while let Some(dir) = dirs_to_visit.pop() {
         let mut read_dir = match tokio::fs::read_dir(&dir).await {
             Ok(rd) => rd,
             Err(_) => continue,
         };
         while let Ok(Some(entry)) = read_dir.next_entry().await {
+            if files.len() >= MAX_OVERLAY_FILE_ENTRIES {
+                break 'walk;
+            }
             let canon_entry = match crate::sandbox::confine(root, &entry.path()).await {
                 Some(p) => p,
                 None => continue,
@@ -413,10 +414,7 @@ pub(crate) async fn handle_get_overlay_files(recursive: bool, ctx: &DispatchCont
         }
     }
 
-    WsResponse::Ok(serde_json::json!({
-        "root_path": root_path_str,
-        "files": files,
-    }))
+    WsResponse::Ok(serde_json::json!({ "files": files }))
 }
 
 pub(crate) async fn handle_replay_event(event_id: String, ctx: &DispatchContext) -> WsResponse {

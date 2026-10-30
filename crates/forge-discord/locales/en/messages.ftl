@@ -29,3 +29,6 @@ msg-discord-health_send_ok = OK
 msg-discord-health_send_failed = Failed
 msg-discord-health_send_none = No sends yet
 msg-discord-health_errors_window = last hour
+msg-discord-file_not_uploadable = The file { $path } is not a regular file within the upload size limit.
+msg-discord-content_too_long = The message is { $length } characters long, the limit is { $max }.
+msg-discord-nothing_to_edit = An edit needs message content or an embed.

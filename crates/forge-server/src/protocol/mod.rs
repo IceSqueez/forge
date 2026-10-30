@@ -4,11 +4,10 @@ mod handlers;
 mod helpers;
 mod introspect;
 
-use std::collections::HashSet;
-
-use crate::bus_adapter::{ClientFilterSet, EventFilter};
+use crate::bus_adapter::ClientFilterSet;
 
 pub use context::DispatchContext;
+pub(crate) use envelope::merge_payload;
 pub use envelope::{WireEventFilter, WsEnvelope, WsRequest, WsResponse, serialize_response_frame};
 pub(crate) use handlers::{
     handle_do_action, handle_get_actions, handle_get_active_viewers, handle_get_events,
@@ -18,7 +17,7 @@ pub(crate) use handlers::{
 };
 
 use context::{handle_authenticate, is_authenticated, read_refused, unauthenticated};
-use helpers::parse_wire_filter;
+use helpers::parse_wire_filters;
 
 const MAX_SUBSCRIPTIONS_PER_CLIENT: usize = 256;
 
@@ -26,6 +25,13 @@ fn too_many_subscriptions() -> WsResponse {
     WsResponse::Error {
         code: Some("TOO_MANY_SUBSCRIPTIONS".to_owned()),
         message: format!("a connection holds at most {MAX_SUBSCRIPTIONS_PER_CLIENT} event filters"),
+    }
+}
+
+fn invalid_filter(message: String) -> WsResponse {
+    WsResponse::Error {
+        code: Some("INVALID_PAYLOAD".to_owned()),
+        message,
     }
 }
 
@@ -47,7 +53,10 @@ async fn route(req: WsRequest, ctx: &DispatchContext) -> WsResponse {
             if read_refused(ctx) {
                 return unauthenticated();
             }
-            let new_filters: HashSet<EventFilter> = events.iter().map(parse_wire_filter).collect();
+            let new_filters = match parse_wire_filters(&events) {
+                Ok(filters) => filters,
+                Err(message) => return invalid_filter(message),
+            };
             let mut current = ctx.bus_adapter.current_subscriptions(ctx.client.id).await;
             current.extend(new_filters);
             if current.len() > MAX_SUBSCRIPTIONS_PER_CLIENT {
@@ -63,7 +72,10 @@ async fn route(req: WsRequest, ctx: &DispatchContext) -> WsResponse {
             if read_refused(ctx) {
                 return unauthenticated();
             }
-            let to_remove: HashSet<EventFilter> = events.iter().map(parse_wire_filter).collect();
+            let to_remove = match parse_wire_filters(&events) {
+                Ok(filters) => filters,
+                Err(message) => return invalid_filter(message),
+            };
             let mut current = ctx.bus_adapter.current_subscriptions(ctx.client.id).await;
             current.retain(|f| !to_remove.contains(f));
             ctx.bus_adapter
@@ -369,7 +381,7 @@ mod tests {
     fn parse_request_envelope_get_info() {
         let json = r#"{"id":"1","request":"getInfo"}"#;
         let env: WsEnvelope<WsRequest> = serde_json::from_str(json).unwrap();
-        assert_eq!(env.id, Some("1".to_owned()));
+        assert_eq!(env.id, Some("1".into()));
         assert!(matches!(env.inner, WsRequest::GetInfo));
     }
 
@@ -377,7 +389,7 @@ mod tests {
     fn parse_request_envelope_do_action_camel_case_fields() {
         let json = r#"{"id":"5","request":"doAction","actionId":"abc","args":{"user":"Alice"}}"#;
         let env: WsEnvelope<WsRequest> = serde_json::from_str(json).unwrap();
-        assert_eq!(env.id, Some("5".to_owned()));
+        assert_eq!(env.id, Some("5".into()));
         match env.inner {
             WsRequest::DoAction { action_id, args } => {
                 assert_eq!(action_id, "abc");
@@ -398,7 +410,7 @@ mod tests {
     #[test]
     fn serialize_response_ok_data_flattened() {
         let env = WsEnvelope {
-            id: Some("1".to_owned()),
+            id: Some("1".into()),
             inner: WsResponse::Ok(serde_json::json!({"version": "0.1.0-alpha.9"})),
         };
         let json = serialize_response_frame(&env);
@@ -411,7 +423,7 @@ mod tests {
     #[test]
     fn serialize_response_error_shape() {
         let env = WsEnvelope {
-            id: Some("2".to_owned()),
+            id: Some("2".into()),
             inner: WsResponse::Error {
                 code: Some("NOT_FOUND".to_owned()),
                 message: "action not found".to_owned(),
@@ -454,7 +466,7 @@ mod tests {
         ];
         for inner in requests {
             let req = WsEnvelope {
-                id: Some("x".to_owned()),
+                id: Some("x".into()),
                 inner,
             };
             let label = format!("{:?}", req.inner);
@@ -472,11 +484,11 @@ mod tests {
     async fn get_actions_returns_empty_list_for_null_dp() {
         let ctx = make_ctx(false, false);
         let req = WsEnvelope {
-            id: Some("5".to_owned()),
+            id: Some("5".into()),
             inner: WsRequest::GetActions,
         };
         let resp = dispatch(req, &ctx).await;
-        assert_eq!(resp.id, Some("5".to_owned()));
+        assert_eq!(resp.id, Some("5".into()));
         let json = serialize_response_frame(&resp);
         assert_eq!(json["status"], "ok");
         assert!(json["actions"].is_array());
@@ -495,7 +507,7 @@ mod tests {
         let dp: Arc<dyn DataProvider> = Arc::new(tdp);
         let ctx = make_ctx_with_dp(false, dp);
         let req = WsEnvelope {
-            id: Some("5".to_owned()),
+            id: Some("5".into()),
             inner: WsRequest::GetActions,
         };
         let resp = dispatch(req, &ctx).await;
@@ -526,14 +538,14 @@ mod tests {
         let dp: Arc<dyn DataProvider> = Arc::new(tdp);
         let ctx = make_ctx_with_dp(true, dp);
         let req = WsEnvelope {
-            id: Some("6".to_owned()),
+            id: Some("6".into()),
             inner: WsRequest::DoAction {
                 action_id: action_id_str,
                 args: serde_json::json!({ "user": "Alice", "count": 3 }),
             },
         };
         let resp = dispatch(req, &ctx).await;
-        assert_eq!(resp.id, Some("6".to_owned()));
+        assert_eq!(resp.id, Some("6".into()));
         let json = serialize_response_frame(&resp);
         assert_eq!(json["status"], "ok");
         assert_eq!(json["ok"], true);
@@ -546,14 +558,14 @@ mod tests {
         let ctx = make_ctx(true, false);
         let nonexistent = ActionId::new().to_string();
         let req = WsEnvelope {
-            id: Some("7".to_owned()),
+            id: Some("7".into()),
             inner: WsRequest::DoAction {
                 action_id: nonexistent,
                 args: serde_json::Value::Null,
             },
         };
         let resp = dispatch(req, &ctx).await;
-        assert_eq!(resp.id, Some("7".to_owned()));
+        assert_eq!(resp.id, Some("7".into()));
         match &resp.inner {
             WsResponse::Error {
                 code: Some(code),
@@ -588,7 +600,7 @@ mod tests {
         let mut sub = ctx.bus.observe("ws_dispatch_test");
 
         let req = WsEnvelope {
-            id: Some("9".to_owned()),
+            id: Some("9".into()),
             inner: WsRequest::DoAction {
                 action_id: action_id_str,
                 args: serde_json::Value::Null,
@@ -625,7 +637,7 @@ mod tests {
     async fn get_info_succeeds_without_auth_by_default() {
         let ctx = make_ctx(false, false);
         let req = WsEnvelope {
-            id: Some("8".to_owned()),
+            id: Some("8".into()),
             inner: WsRequest::GetInfo,
         };
         let resp = dispatch(req, &ctx).await;
@@ -641,7 +653,7 @@ mod tests {
     async fn read_only_blocked_when_auth_required_for_reads() {
         let ctx = make_ctx(false, true);
         let req = WsEnvelope {
-            id: Some("9".to_owned()),
+            id: Some("9".into()),
             inner: WsRequest::GetInfo,
         };
         let resp = dispatch(req, &ctx).await;
@@ -657,7 +669,7 @@ mod tests {
     async fn get_events_empty_bus_returns_empty_list() {
         let ctx = make_ctx(false, false);
         let req = WsEnvelope {
-            id: Some("13".to_owned()),
+            id: Some("13".into()),
             inner: WsRequest::GetEvents {
                 limit: None,
                 since: None,
@@ -681,7 +693,7 @@ mod tests {
             ));
         }
         let req = WsEnvelope {
-            id: Some("13".to_owned()),
+            id: Some("13".into()),
             inner: WsRequest::GetEvents {
                 limit: None,
                 since: None,
@@ -756,7 +768,7 @@ mod tests {
 
     fn get_events(limit: Option<u32>, since: Option<String>) -> WsEnvelope<WsRequest> {
         WsEnvelope {
-            id: Some("13".to_owned()),
+            id: Some("13".into()),
             inner: WsRequest::GetEvents { limit, since },
         }
     }
@@ -822,7 +834,7 @@ mod tests {
         for (event_id, failure, expected) in cases {
             let ctx = ctx_over(ScriptedHistory::failing_replay_with(failure));
             let req = WsEnvelope {
-                id: Some("14".to_owned()),
+                id: Some("14".into()),
                 inner: WsRequest::ReplayEvent {
                     event_id: event_id.clone(),
                 },
@@ -844,7 +856,7 @@ mod tests {
         let mut bus_sub = ctx.bus.observe("ws_dispatch_test");
 
         let req = WsEnvelope {
-            id: Some("14".to_owned()),
+            id: Some("14".into()),
             inner: WsRequest::ReplayEvent {
                 event_id: original_id,
             },
@@ -863,7 +875,7 @@ mod tests {
     async fn subscribe_registers_filter_for_client() {
         let ctx = make_registered_ctx(false, false).await;
         let req = WsEnvelope {
-            id: Some("2".to_owned()),
+            id: Some("2".into()),
             inner: WsRequest::Subscribe {
                 events: vec![WireEventFilter {
                     source: Some("twitch".to_owned()),
@@ -872,7 +884,7 @@ mod tests {
             },
         };
         let resp = dispatch(req, &ctx).await;
-        assert_eq!(resp.id, Some("2".to_owned()));
+        assert_eq!(resp.id, Some("2".into()));
         let json = serialize_response_frame(&resp);
         assert_eq!(json["status"], "ok");
         assert!(json["subscribed"].is_array());
@@ -896,7 +908,7 @@ mod tests {
             .await;
 
         let req = WsEnvelope {
-            id: Some("3".to_owned()),
+            id: Some("3".into()),
             inner: WsRequest::Unsubscribe {
                 events: vec![WireEventFilter {
                     source: Some("twitch".to_owned()),
@@ -905,7 +917,7 @@ mod tests {
             },
         };
         let resp = dispatch(req, &ctx).await;
-        assert_eq!(resp.id, Some("3".to_owned()));
+        assert_eq!(resp.id, Some("3".into()));
         let json = serialize_response_frame(&resp);
         assert_eq!(json["status"], "ok");
         assert!(json["unsubscribed"].is_array());
@@ -918,7 +930,7 @@ mod tests {
     async fn subscribe_is_additive_across_calls() {
         let ctx = make_registered_ctx(false, false).await;
         let req1 = WsEnvelope {
-            id: Some("2".to_owned()),
+            id: Some("2".into()),
             inner: WsRequest::Subscribe {
                 events: vec![WireEventFilter {
                     source: Some("twitch".to_owned()),
@@ -929,7 +941,7 @@ mod tests {
         dispatch(req1, &ctx).await;
 
         let req2 = WsEnvelope {
-            id: Some("3".to_owned()),
+            id: Some("3".into()),
             inner: WsRequest::Subscribe {
                 events: vec![WireEventFilter {
                     source: Some("obs".to_owned()),
@@ -944,10 +956,57 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn a_filter_naming_an_unknown_source_is_refused_and_changes_no_subscription() {
+        let ctx = make_registered_ctx(false, false).await;
+        let known_and_unknown = || {
+            vec![
+                WireEventFilter {
+                    source: Some("twitch".to_owned()),
+                    kind: None,
+                },
+                WireEventFilter {
+                    source: Some("not-a-source".to_owned()),
+                    kind: None,
+                },
+            ]
+        };
+
+        for request in [
+            WsRequest::Subscribe {
+                events: known_and_unknown(),
+            },
+            WsRequest::Unsubscribe {
+                events: known_and_unknown(),
+            },
+        ] {
+            let resp = dispatch(
+                WsEnvelope {
+                    id: Some(1.into()),
+                    inner: request,
+                },
+                &ctx,
+            )
+            .await;
+            let json = serialize_response_frame(&resp);
+
+            assert_eq!(json["status"], "error");
+            assert_eq!(json["error"]["code"], "INVALID_PAYLOAD");
+            assert!(
+                json["error"]["message"]
+                    .as_str()
+                    .is_some_and(|message| message.contains("not-a-source")),
+                "{json}"
+            );
+        }
+        let subs = ctx.bus_adapter.current_subscriptions(ctx.client.id).await;
+        assert!(subs.is_empty(), "the refused frame left {subs:?}");
+    }
+
+    #[tokio::test]
     async fn subscribe_wildcard_type_registers_kind_wildcard() {
         let ctx = make_registered_ctx(false, false).await;
         let req = WsEnvelope {
-            id: Some("4".to_owned()),
+            id: Some("4".into()),
             inner: WsRequest::Subscribe {
                 events: vec![WireEventFilter {
                     source: Some("twitch".to_owned()),
@@ -967,7 +1026,7 @@ mod tests {
     async fn get_info_no_clients_returns_empty_connected_clients() {
         let ctx = make_ctx(false, false);
         let req = WsEnvelope {
-            id: Some("1".to_owned()),
+            id: Some("1".into()),
             inner: WsRequest::GetInfo,
         };
         let resp = dispatch(req, &ctx).await;
@@ -990,7 +1049,7 @@ mod tests {
             .await;
 
         let req = WsEnvelope {
-            id: Some("1".to_owned()),
+            id: Some("1".into()),
             inner: WsRequest::GetInfo,
         };
         let resp = dispatch(req, &ctx).await;
@@ -1028,7 +1087,7 @@ mod tests {
         let dp: Arc<dyn DataProvider> = Arc::new(tdp);
         let ctx = make_ctx_with_dp(false, dp);
         let req = WsEnvelope {
-            id: Some("8".to_owned()),
+            id: Some("8".into()),
             inner: WsRequest::GetGlobals,
         };
         let resp = dispatch(req, &ctx).await;
@@ -1056,7 +1115,7 @@ mod tests {
         let dp: Arc<dyn DataProvider> = Arc::new(tdp);
         let ctx = make_ctx_with_dp(false, dp);
         let req = WsEnvelope {
-            id: Some("9".to_owned()),
+            id: Some("9".into()),
             inner: WsRequest::GetGlobal {
                 name: "counter".to_owned(),
             },
@@ -1073,7 +1132,7 @@ mod tests {
     async fn get_global_nonexistent_returns_not_found() {
         let ctx = make_ctx(false, false);
         let req = WsEnvelope {
-            id: Some("9".to_owned()),
+            id: Some("9".into()),
             inner: WsRequest::GetGlobal {
                 name: "missing".to_owned(),
             },
@@ -1091,7 +1150,7 @@ mod tests {
     async fn set_global_with_auth_returns_ok() {
         let ctx = make_ctx(true, false);
         let req = WsEnvelope {
-            id: Some("10".to_owned()),
+            id: Some("10".into()),
             inner: WsRequest::SetGlobal {
                 name: "counter".to_owned(),
                 value: serde_json::json!(99),
@@ -1121,7 +1180,7 @@ mod tests {
             (serde_json::json!("ninety"), true),
         ] {
             let req = WsEnvelope {
-                id: Some("10".to_owned()),
+                id: Some("10".into()),
                 inner: WsRequest::SetGlobal {
                     name: "counter".to_owned(),
                     value,
@@ -1145,7 +1204,7 @@ mod tests {
     async fn set_global_null_value_returns_invalid_payload() {
         let ctx = make_ctx(true, false);
         let req = WsEnvelope {
-            id: Some("10".to_owned()),
+            id: Some("10".into()),
             inner: WsRequest::SetGlobal {
                 name: "counter".to_owned(),
                 value: serde_json::Value::Null,
@@ -1175,7 +1234,7 @@ mod tests {
     async fn get_user_globals_empty_for_null_dp() {
         let ctx = make_ctx(false, false);
         let req = WsEnvelope {
-            id: Some("11".to_owned()),
+            id: Some("11".into()),
             inner: WsRequest::GetUserGlobals {
                 broadcaster_id: "12345678".to_owned(),
                 user_id: None,
@@ -1206,7 +1265,7 @@ mod tests {
         let dp: Arc<dyn DataProvider> = Arc::new(tdp);
         let ctx = make_ctx_with_dp(false, dp);
         let req = WsEnvelope {
-            id: Some("11".to_owned()),
+            id: Some("11".into()),
             inner: WsRequest::GetUserGlobals {
                 broadcaster_id: "12345678".to_owned(),
                 user_id: Some("87654321".to_owned()),
@@ -1242,7 +1301,7 @@ mod tests {
         let dp: Arc<dyn DataProvider> = Arc::new(tdp);
         let ctx = make_ctx_with_dp(false, dp);
         let req = WsEnvelope {
-            id: Some("11".to_owned()),
+            id: Some("11".into()),
             inner: WsRequest::GetUserGlobals {
                 broadcaster_id: "12345678".to_owned(),
                 user_id: None,
@@ -1260,7 +1319,7 @@ mod tests {
         let ctx = make_ctx(true, false);
         let mut bus_sub = ctx.bus.observe("ws_dispatch_test");
         let req = WsEnvelope {
-            id: Some("12".to_owned()),
+            id: Some("12".into()),
             inner: WsRequest::TriggerCodeEvent {
                 name: "my_event".to_owned(),
                 args: serde_json::json!({ "scene": "Gameplay" }),
@@ -1281,7 +1340,7 @@ mod tests {
     async fn trigger_code_event_invalid_name_returns_invalid_payload() {
         let ctx = make_ctx(true, false);
         let req = WsEnvelope {
-            id: Some("12".to_owned()),
+            id: Some("12".into()),
             inner: WsRequest::TriggerCodeEvent {
                 name: "Invalid-Name!".to_owned(),
                 args: serde_json::json!({}),
@@ -1300,7 +1359,7 @@ mod tests {
     async fn trigger_code_event_empty_name_returns_invalid_payload() {
         let ctx = make_ctx(true, false);
         let req = WsEnvelope {
-            id: Some("12".to_owned()),
+            id: Some("12".into()),
             inner: WsRequest::TriggerCodeEvent {
                 name: String::new(),
                 args: serde_json::json!({}),
@@ -1319,7 +1378,7 @@ mod tests {
     async fn authenticate_correct_token_marks_session_authenticated() {
         let ctx = make_ctx(false, true);
         let req = WsEnvelope {
-            id: Some("a1".to_owned()),
+            id: Some("a1".into()),
             inner: WsRequest::Auth {
                 token: Some(Secret::new("test-token")),
                 overlay_credential: None,
@@ -1344,7 +1403,7 @@ mod tests {
     async fn authenticate_wrong_token_returns_auth_failed() {
         let ctx = make_ctx(false, true);
         let req = WsEnvelope {
-            id: Some("a2".to_owned()),
+            id: Some("a2".into()),
             inner: WsRequest::Auth {
                 token: Some(Secret::new("wrong-token")),
                 overlay_credential: None,
@@ -1365,7 +1424,7 @@ mod tests {
     async fn get_active_viewers_empty_bus_returns_empty_list() {
         let ctx = make_ctx(false, false);
         let req = WsEnvelope {
-            id: Some("av1".to_owned()),
+            id: Some("av1".into()),
             inner: WsRequest::GetActiveViewers,
         };
         let resp = dispatch(req, &ctx).await;
@@ -1392,7 +1451,7 @@ mod tests {
 
     async fn active_viewers(ctx: &DispatchContext) -> Vec<serde_json::Value> {
         let req = WsEnvelope {
-            id: Some("av".to_owned()),
+            id: Some("av".into()),
             inner: WsRequest::GetActiveViewers,
         };
         let json = serialize_response_frame(&dispatch(req, ctx).await);
@@ -1566,7 +1625,7 @@ mod tests {
             forge_types::PlatformId::Twitch,
         ]));
         let req = WsEnvelope {
-            id: Some("ap".to_owned()),
+            id: Some("ap".into()),
             inner: WsRequest::GetInfo,
         };
 
@@ -1582,7 +1641,7 @@ mod tests {
     async fn get_info_reports_no_platforms_when_none_are_configured() {
         let ctx = make_ctx(false, false);
         let req = WsEnvelope {
-            id: Some("ap0".to_owned()),
+            id: Some("ap0".into()),
             inner: WsRequest::GetInfo,
         };
 
@@ -1605,7 +1664,7 @@ mod tests {
             serde_json::json!({}),
         ));
         let req = WsEnvelope {
-            id: Some("av3".to_owned()),
+            id: Some("av3".into()),
             inner: WsRequest::GetActiveViewers,
         };
         let resp = dispatch(req, &ctx).await;
@@ -1679,7 +1738,7 @@ mod tests {
         preview_connection: bool,
     ) -> WsEnvelope<WsRequest> {
         WsEnvelope {
-            id: Some("auth".to_owned()),
+            id: Some("auth".into()),
             inner: WsRequest::Auth {
                 token: token.map(forge_types::Secret::new),
                 overlay_credential: overlay_credential.map(forge_types::OverlayCredential::new),
@@ -1811,7 +1870,7 @@ mod tests {
     async fn authenticate_empty_token_returns_auth_failed() {
         let ctx = make_ctx(false, true);
         let req = WsEnvelope {
-            id: Some("a3".to_owned()),
+            id: Some("a3".into()),
             inner: WsRequest::Auth {
                 token: Some(Secret::new("")),
                 overlay_credential: None,
@@ -1839,13 +1898,16 @@ mod tests {
         let tmp = tempfile::tempdir().expect("tempdir");
         let ctx = make_ctx_with_overlay_root(tmp.path().to_path_buf());
         let req = WsEnvelope {
-            id: Some("of1".to_owned()),
+            id: Some("of1".into()),
             inner: WsRequest::GetOverlayFiles { recursive: false },
         };
         let resp = dispatch(req, &ctx).await;
         let json = serialize_response_frame(&resp);
         assert_eq!(json["status"], "ok");
-        assert!(json["root_path"].is_string());
+        assert!(
+            json.get("root_path").is_none(),
+            "the overlay directory path must not reach a client"
+        );
         assert_eq!(json["files"].as_array().unwrap().len(), 0);
     }
 
@@ -1859,7 +1921,7 @@ mod tests {
 
         let ctx = make_ctx_with_overlay_root(root.to_path_buf());
         let req = WsEnvelope {
-            id: Some("of2".to_owned()),
+            id: Some("of2".into()),
             inner: WsRequest::GetOverlayFiles { recursive: false },
         };
         let resp = dispatch(req, &ctx).await;
@@ -1885,7 +1947,7 @@ mod tests {
 
         let ctx = make_ctx_with_overlay_root(root.path().to_path_buf());
         let req = WsEnvelope {
-            id: Some("of3".to_owned()),
+            id: Some("of3".into()),
             inner: WsRequest::GetOverlayFiles { recursive: true },
         };
         let resp = dispatch(req, &ctx).await;
@@ -1900,7 +1962,7 @@ mod tests {
 
     fn subscribe_to(kinds: impl IntoIterator<Item = String>) -> WsEnvelope<WsRequest> {
         WsEnvelope {
-            id: Some("sub".to_owned()),
+            id: Some("sub".into()),
             inner: WsRequest::Subscribe {
                 events: kinds
                     .into_iter()
@@ -1958,7 +2020,7 @@ mod tests {
         let ctx = make_ctx(false, false);
         let auth = dispatch(
             WsEnvelope {
-                id: Some("a".to_owned()),
+                id: Some("a".into()),
                 inner: WsRequest::Auth {
                     token: Some(Secret::new("test-token")),
                     overlay_credential: None,
@@ -1975,7 +2037,7 @@ mod tests {
 
         let resp = dispatch(
             WsEnvelope {
-                id: Some("m".to_owned()),
+                id: Some("m".into()),
                 inner: WsRequest::TriggerCodeEvent {
                     name: "my_event".to_owned(),
                     args: serde_json::json!({}),

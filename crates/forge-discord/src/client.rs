@@ -12,9 +12,9 @@ use forge_storage::{CredentialId, CredentialsRepo};
 use forge_types::{IntegrationId, Secret};
 use tokio::sync::broadcast;
 
-use crate::content::{DiscordContentSnapshot, make_content_state, record_send, record_test_send};
+use crate::content::{DiscordContentSnapshot, make_content_state, record_send};
 use crate::credentials::{DISCORD_CRED_PREFIX, WebhookCredential};
-use crate::embed::DiscordEmbed;
+use crate::embed::{DiscordEmbed, MAX_CONTENT_CHARS};
 use crate::error::{DiscordError, ValidationFault};
 use crate::events::{publish_failed, publish_posted, publish_rate_limited};
 use crate::health::{
@@ -47,13 +47,9 @@ const UPLOAD_CONTENT_TYPE: &str = "application/octet-stream";
 #[derive(Clone, Copy)]
 pub(crate) struct SendRecord {
     pub(crate) embed_count: u8,
-    pub(crate) register_name: bool,
 }
 
-const PLAIN_SEND: SendRecord = SendRecord {
-    embed_count: 0,
-    register_name: true,
-};
+const PLAIN_SEND: SendRecord = SendRecord { embed_count: 0 };
 
 struct Delivered {
     response: GatewayResponse,
@@ -175,7 +171,7 @@ impl DiscordClient {
         }
         {
             let mut snap = self.content_state.lock().unwrap_or_else(|p| p.into_inner());
-            record_test_send(&mut snap, webhook_name, None, false, false);
+            record_send(&mut snap, webhook_name, None, false, false);
         }
         publish_failed(self.publisher.as_ref(), webhook_name, err);
     }
@@ -195,6 +191,7 @@ impl DiscordClient {
         content: &str,
         mentions: MentionPolicy,
     ) -> Result<String, DiscordError> {
+        check_content(content)?;
         let route = self.load_route(webhook_name).await?;
         let body = serde_json::json!({
             "content": content,
@@ -212,10 +209,7 @@ impl DiscordClient {
         embed.validate()?;
         let route = self.load_route(webhook_name).await?;
         let body = serde_json::json!({ "embeds": [embed_to_wire(&embed)] });
-        let record = SendRecord {
-            embed_count: 1,
-            register_name: true,
-        };
+        let record = SendRecord { embed_count: 1 };
         self.execute_post(&route, &body, webhook_name, record).await
     }
 
@@ -244,6 +238,12 @@ impl DiscordClient {
         embed: Option<DiscordEmbed>,
         mentions: MentionPolicy,
     ) -> Result<(), DiscordError> {
+        if content.is_none() && embed.is_none() {
+            return Err(DiscordError::Validation(ValidationFault::NothingToEdit));
+        }
+        if let Some(c) = content {
+            check_content(c)?;
+        }
         if let Some(e) = &embed {
             e.validate()?;
         }
@@ -274,6 +274,9 @@ impl DiscordClient {
         file_bytes: &[u8],
         mentions: MentionPolicy,
     ) -> Result<String, DiscordError> {
+        if let Some(c) = content {
+            check_content(c)?;
+        }
         let route = self.load_route(webhook_name).await?;
 
         let mut payload = serde_json::Map::new();
@@ -354,8 +357,10 @@ impl DiscordClient {
         webhook_name: &str,
         record: SendRecord,
     ) -> Result<Delivered, DiscordError> {
-        self.check_pre_send(webhook_name)?;
         let start = Instant::now();
+        if let Err(err) = self.check_pre_send(webhook_name) {
+            return Err(self.record_failure(webhook_name, start, err, record));
+        }
         let (retry_after, scope) = match self.gateway.send(request.clone()).await {
             Ok(response) => return Ok(self.delivered(webhook_name, response, start)),
             Err(GatewayFailure::RateLimited {
@@ -418,12 +423,14 @@ impl DiscordClient {
                 .unwrap_or_else(|p| p.into_inner())
                 .global_wait_duration(Instant::now())
                 .unwrap_or_default();
-            return DiscordError::RateLimited {
+            let err = DiscordError::RateLimited {
                 retry_after_secs: global_wait.as_secs_f64(),
             };
+            return self.record_failure(webhook_name, start, err, record);
         }
         let Some(status) = failure.status() else {
-            return DiscordError::Connect(failure.to_string());
+            let err = DiscordError::Connect(failure.to_string());
+            return self.record_failure(webhook_name, start, err, record);
         };
         let err = DiscordError::BadResponse {
             status,
@@ -465,6 +472,7 @@ impl DiscordClient {
         let now = Instant::now();
         if let Some(wait) = rl.global_wait_duration(now) {
             let ra = wait.as_secs_f64();
+            publish_rate_limited(self.publisher.as_ref(), webhook_name, ra);
             return Err(DiscordError::RateLimited {
                 retry_after_secs: ra,
             });
@@ -527,11 +535,7 @@ impl DiscordClient {
         {
             let has_embed = record.embed_count > 0;
             let mut snap = self.content_state.lock().unwrap_or_else(|p| p.into_inner());
-            if record.register_name {
-                record_send(&mut snap, webhook_name, message_id, has_embed, ok);
-            } else {
-                record_test_send(&mut snap, webhook_name, message_id, has_embed, ok);
-            }
+            record_send(&mut snap, webhook_name, message_id, has_embed, ok);
         }
     }
 }
@@ -649,6 +653,17 @@ fn bucket_headers(response: &impl HeaderLookup) -> Option<(u32, u32, f64)> {
 
 fn header_number<T: std::str::FromStr>(response: &impl HeaderLookup, name: &str) -> Option<T> {
     response.header_value(name)?.trim().parse().ok()
+}
+
+fn check_content(content: &str) -> Result<(), DiscordError> {
+    let length = content.chars().count();
+    if length > MAX_CONTENT_CHARS {
+        return Err(DiscordError::Validation(ValidationFault::ContentTooLong {
+            length,
+            max: MAX_CONTENT_CHARS,
+        }));
+    }
+    Ok(())
 }
 
 fn elapsed_ms(start: Instant) -> u64 {
@@ -1634,7 +1649,7 @@ pub(crate) mod tests {
     }
 
     #[tokio::test]
-    async fn a_transport_failure_writes_no_health_and_publishes_no_failed_event() {
+    async fn a_transport_failure_reaches_health_recent_posts_and_the_failed_event() {
         let creds = MockCreds::new();
         creds.store_hook("alerts", &hook_url("discord.com", ""));
         let publisher = MockPublisher::new();
@@ -1642,11 +1657,107 @@ pub(crate) mod tests {
 
         client.post_text("alerts", "hi").await.unwrap_err();
 
-        let health = client.send_health();
-        assert_eq!(health.latency_samples, 0);
-        assert_eq!(health.last_send_ok, None);
-        assert!(!publisher.has_kind("discord.webhook.failed"));
-        assert!(!publisher.has_kind("request.fail"));
+        assert_eq!(client.send_health().last_send_ok, Some(false));
+        let post = client.recent_posts().remove(0);
+        assert_eq!(post.webhook_name, "alerts");
+        assert!(!post.ok);
+        let failed = publisher.find_kind("discord.webhook.failed").unwrap();
+        assert!(!failed.payload.to_string().contains(HOOK_TOKEN));
+    }
+
+    #[tokio::test]
+    async fn a_global_throttle_refuses_the_send_and_reports_it_everywhere_without_a_request() {
+        let server = MockServer::start().await;
+        let publisher = MockPublisher::new();
+        let client = make_client(&server, Arc::clone(&publisher), MockCreds::new()).await;
+        client
+            .rate_limiter
+            .lock()
+            .unwrap()
+            .observe_global_throttle(Instant::now(), Duration::from_secs(30));
+
+        let err = client.post_text("alerts", "hi").await.unwrap_err();
+
+        assert!(matches!(err, DiscordError::RateLimited { .. }), "{err:?}");
+        let throttled = publisher.find_kind("discord.webhook.rate_limited").unwrap();
+        assert_eq!(throttled.payload["webhook_name"], "alerts");
+        assert!(publisher.has_kind("discord.webhook.failed"));
+        assert!(!client.recent_posts().remove(0).ok);
+        assert_eq!(received_count(&server).await, 0);
+    }
+
+    #[tokio::test]
+    async fn an_edit_with_neither_content_nor_an_embed_is_refused_before_any_request() {
+        let server = MockServer::start().await;
+        let client = make_client(&server, MockPublisher::new(), MockCreds::new()).await;
+
+        let err = client
+            .edit_message_with_mentions("alerts", MESSAGE_ID, None, None, MentionPolicy::default())
+            .await
+            .unwrap_err();
+
+        assert!(
+            matches!(
+                err,
+                DiscordError::Validation(ValidationFault::NothingToEdit)
+            ),
+            "{err:?}"
+        );
+        assert_eq!(received_count(&server).await, 0);
+    }
+
+    #[tokio::test]
+    async fn message_content_is_limited_in_characters_on_every_send_path() {
+        let server = MockServer::start().await;
+        let client = make_client(&server, MockPublisher::new(), MockCreds::new()).await;
+        let at_limit = "я".repeat(MAX_CONTENT_CHARS);
+        let over_limit = "я".repeat(MAX_CONTENT_CHARS + 1);
+        mount_accepting(&server, "POST").await;
+        mount_accepting(&server, "PATCH").await;
+        let policy = MentionPolicy::default;
+
+        client
+            .post_text_with_mentions("alerts", &at_limit, policy())
+            .await
+            .expect("post at the limit");
+        client
+            .edit_message_with_mentions("alerts", MESSAGE_ID, Some(&at_limit), None, policy())
+            .await
+            .expect("edit at the limit");
+        client
+            .send_file("alerts", Some(&at_limit), "a.png", &[1], policy())
+            .await
+            .expect("caption at the limit");
+        let accepted = received_count(&server).await;
+
+        let refusals = [
+            client
+                .post_text_with_mentions("alerts", &over_limit, policy())
+                .await
+                .unwrap_err(),
+            client
+                .edit_message_with_mentions("alerts", MESSAGE_ID, Some(&over_limit), None, policy())
+                .await
+                .unwrap_err(),
+            client
+                .send_file("alerts", Some(&over_limit), "a.png", &[1], policy())
+                .await
+                .unwrap_err(),
+        ];
+
+        for err in refusals {
+            assert!(
+                matches!(
+                    err,
+                    DiscordError::Validation(ValidationFault::ContentTooLong {
+                        length,
+                        max: MAX_CONTENT_CHARS,
+                    }) if length == MAX_CONTENT_CHARS + 1
+                ),
+                "{err:?}"
+            );
+        }
+        assert_eq!(received_count(&server).await, accepted);
     }
 
     fn mention_cases() -> [(MentionPolicy, serde_json::Value); 4] {

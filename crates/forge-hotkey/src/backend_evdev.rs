@@ -32,17 +32,11 @@ const KEY_LEFTMETA: u16 = 125;
 const KEY_RIGHTMETA: u16 = 126;
 const INPUT_EVENT_SIZE: usize = 24;
 const READ_CHUNK_EVENTS: usize = 64;
-const COMMAND_QUEUE_CAPACITY: usize = 64;
 const FIRED_QUEUE_CAPACITY: usize = 64;
 
 pub(crate) struct EvdevBackend {
-    cmd_tx: mpsc::Sender<EvdevCmd>,
+    registered: Registered,
     fired_rx_slot: Mutex<Option<mpsc::Receiver<HotkeyFiredEvent>>>,
-}
-
-enum EvdevCmd {
-    Register(HotkeyId, HotkeyCombo),
-    Unregister(HotkeyId),
 }
 
 type HeldKeys = Arc<Mutex<HashMap<u16, (HotkeyId, HotkeyCombo)>>>;
@@ -57,7 +51,6 @@ impl EvdevBackend {
         }
 
         let registered: Registered = Arc::new(RwLock::new(HashMap::new()));
-        let (cmd_tx, cmd_rx) = mpsc::channel::<EvdevCmd>(COMMAND_QUEUE_CAPACITY);
         let (fired_tx, fired_rx) = mpsc::channel::<HotkeyFiredEvent>(FIRED_QUEUE_CAPACITY);
 
         let watcher = match InputDirWatcher::new(input_dir) {
@@ -74,10 +67,9 @@ impl EvdevBackend {
             fired_tx,
         };
         tokio::spawn(pool.run(devices, watcher));
-        tokio::spawn(handle_evdev_commands(cmd_rx, registered));
 
         Ok(Self {
-            cmd_tx,
+            registered,
             fired_rx_slot: Mutex::new(Some(fired_rx)),
         })
     }
@@ -86,15 +78,19 @@ impl EvdevBackend {
 #[async_trait::async_trait]
 impl HotkeyBackend for EvdevBackend {
     async fn register(&self, id: HotkeyId, combo: &HotkeyCombo) -> Result<(), HotkeyError> {
-        self.cmd_tx
-            .try_send(EvdevCmd::Register(id, combo.clone()))
-            .map_err(|e| HotkeyError::Backend(e.to_string()))
+        self.registered
+            .write()
+            .unwrap_or_else(|p| p.into_inner())
+            .insert(id, combo.clone());
+        Ok(())
     }
 
     async fn unregister(&self, id: HotkeyId) -> Result<(), HotkeyError> {
-        self.cmd_tx
-            .try_send(EvdevCmd::Unregister(id))
-            .map_err(|e| HotkeyError::Backend(e.to_string()))
+        self.registered
+            .write()
+            .unwrap_or_else(|p| p.into_inner())
+            .remove(&id);
+        Ok(())
     }
 
     fn fired_rx(&self) -> Option<mpsc::Receiver<HotkeyFiredEvent>> {
@@ -102,23 +98,6 @@ impl HotkeyBackend for EvdevBackend {
             .lock()
             .unwrap_or_else(|p| p.into_inner())
             .take()
-    }
-}
-
-async fn handle_evdev_commands(mut cmd_rx: mpsc::Receiver<EvdevCmd>, registered: Registered) {
-    while let Some(cmd) = cmd_rx.recv().await {
-        match cmd {
-            EvdevCmd::Register(id, combo) => {
-                if let Ok(mut guard) = registered.write() {
-                    guard.insert(id, combo);
-                }
-            }
-            EvdevCmd::Unregister(id) => {
-                if let Ok(mut guard) = registered.write() {
-                    guard.remove(&id);
-                }
-            }
-        }
     }
 }
 

@@ -30,6 +30,12 @@ pub enum ValidationFault {
     #[error("webhook name is empty")]
     WebhookNameEmpty,
 
+    #[error("message content length {length} exceeds {max}")]
+    ContentTooLong { length: usize, max: usize },
+
+    #[error("an edit needs content or an embed")]
+    NothingToEdit,
+
     #[error("{0}")]
     BodyEncoding(String),
 }

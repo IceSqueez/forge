@@ -60,7 +60,7 @@ impl DiscordClient {
     }
 }
 
-fn push_send_record(
+pub(crate) fn record_send(
     snap: &mut DiscordContentSnapshot,
     webhook_name: &str,
     message_id: Option<String>,
@@ -78,29 +78,6 @@ fn push_send_record(
     if snap.recent_posts.len() > RECENT_POSTS_CAP {
         snap.recent_posts.pop_back();
     }
-}
-
-pub(crate) fn record_send(
-    snap: &mut DiscordContentSnapshot,
-    webhook_name: &str,
-    message_id: Option<String>,
-    had_embed: bool,
-    ok: bool,
-) {
-    if !snap.webhook_names.contains(&webhook_name.to_owned()) {
-        snap.webhook_names.push(webhook_name.to_owned());
-    }
-    push_send_record(snap, webhook_name, message_id, had_embed, ok);
-}
-
-pub(crate) fn record_test_send(
-    snap: &mut DiscordContentSnapshot,
-    webhook_name: &str,
-    message_id: Option<String>,
-    had_embed: bool,
-    ok: bool,
-) {
-    push_send_record(snap, webhook_name, message_id, had_embed, ok);
 }
 
 impl BuiltinContent for DiscordClient {
@@ -233,14 +210,14 @@ mod tests {
     }
 
     #[test]
-    fn record_send_populates_webhooks_and_recent_posts() {
+    fn record_send_adds_a_recent_post_and_leaves_the_webhook_list_to_the_store() {
         let snap_arc = make_content_state();
         {
             let mut snap = snap_arc.lock().unwrap();
             record_send(&mut snap, "alerts", Some("msg123".to_owned()), false, true);
         }
         let snap = snap_arc.lock().unwrap();
-        assert_eq!(snap.webhook_names, vec!["alerts"]);
+        assert!(snap.webhook_names.is_empty());
         assert_eq!(snap.recent_posts.len(), 1);
         assert_eq!(snap.recent_posts[0].webhook_name, "alerts");
         assert_eq!(snap.recent_posts[0].message_id.as_deref(), Some("msg123"));

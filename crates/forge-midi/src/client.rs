@@ -56,7 +56,7 @@ impl MidiClient {
         });
 
         let (merged_tx, merged_rx) = mpsc::channel::<crate::supervisor::RawEvent>(256);
-        let client_ref = Arc::clone(&client);
+        let client_ref = Arc::downgrade(&client);
         tokio::spawn(async move {
             run_supervisor(client_ref, merged_tx, merged_rx, control_rx).await;
         });
@@ -78,7 +78,11 @@ impl MidiClient {
         message: &MidiOutMessage,
     ) -> Result<(), MidiError> {
         let bytes = message_to_bytes(message)?;
-        self.backend.send_output(port_name, &bytes)
+        let backend = Arc::clone(&self.backend);
+        let port = port_name.to_owned();
+        tokio::task::spawn_blocking(move || backend.send_output(&port, &bytes))
+            .await
+            .map_err(|e| MidiError::OutputSend(e.to_string()))?
     }
 
     pub async fn disable_input(&self) -> Result<(), MidiError> {

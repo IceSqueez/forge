@@ -100,7 +100,6 @@ mod tests {
 
     use super::*;
     use crate::client::DiscordClient;
-    use crate::content::record_send;
 
     #[test]
     fn all_actions_disabled_when_no_webhooks() {
@@ -120,7 +119,7 @@ mod tests {
         let c = DiscordClient::new_for_test();
         {
             let mut snap = c.content_state.lock().unwrap();
-            record_send(&mut snap, "alerts", Some("msg1".to_owned()), false, true);
+            snap.webhook_names.push("alerts".to_owned());
         }
         let actions = c.actions();
         for action in &actions {
@@ -139,7 +138,7 @@ mod tests {
         let c = DiscordClient::new_for_test();
         {
             let mut snap = c.content_state.lock().unwrap();
-            record_send(&mut snap, "alerts", None, false, true);
+            snap.webhook_names.push("alerts".to_owned());
         }
         let actions = c.actions();
         let template = &actions

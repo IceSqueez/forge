@@ -22,7 +22,6 @@ const OUTCOME_ALREADY_RUNNING: &str = "already_running";
 
 const CAUSE_ADDRESS_UNAVAILABLE: &str = "address_unavailable";
 const CAUSE_LAN_BIND_DISABLED: &str = "lan_bind_disabled";
-const CAUSE_LAN_BIND_UNAUTHENTICATED: &str = "lan_bind_unauthenticated";
 const CAUSE_OTHER: &str = "other";
 
 const FAILURE_UPGRADE_REQUIRED: &str = "upgrade_required";
@@ -127,7 +126,6 @@ fn bind_failure_cause(error: &ServerError) -> &'static str {
     match error {
         ServerError::Bind { .. } => CAUSE_ADDRESS_UNAVAILABLE,
         ServerError::LanBindNotEnabled { .. } => CAUSE_LAN_BIND_DISABLED,
-        ServerError::NoTokenForLanBind { .. } => CAUSE_LAN_BIND_UNAUTHENTICATED,
         _ => CAUSE_OTHER,
     }
 }
@@ -220,12 +218,6 @@ mod tests {
                     addr: "0.0.0.0:40000".to_owned(),
                 },
                 "lan_bind_disabled",
-            ),
-            (
-                ServerError::NoTokenForLanBind {
-                    addr: "0.0.0.0:40000".to_owned(),
-                },
-                "lan_bind_unauthenticated",
             ),
             (
                 ServerError::Storage("database is locked".to_owned()),

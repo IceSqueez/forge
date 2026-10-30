@@ -27,11 +27,12 @@ pub(crate) enum SupervisorCommand {
 
 pub(crate) async fn run_supervisor(
     client: Arc<HotkeyClient>,
-    mut fired_rx: mpsc::Receiver<HotkeyFiredEvent>,
+    fired_rx: Option<mpsc::Receiver<HotkeyFiredEvent>>,
     restart_rx: Option<mpsc::Receiver<()>>,
     session_rx: Option<mpsc::Receiver<BackendSessionEvent>>,
     mut control_rx: mpsc::Receiver<SupervisorCommand>,
 ) {
+    let mut fired_rx = fired_rx;
     let mut restart_rx = restart_rx;
     let mut session_rx = session_rx;
     let mut ceiling_sweep = tokio::time::interval(CEILING_SWEEP_INTERVAL);
@@ -40,9 +41,14 @@ pub(crate) async fn run_supervisor(
     loop {
         tokio::select! {
             biased;
-            maybe_event = fired_rx.recv() => {
-                let Some(event) = maybe_event else { break };
-                handle_fired_event(&client, event);
+            maybe_event = maybe_recv(fired_rx.as_mut()) => {
+                match maybe_event {
+                    Some(event) => handle_fired_event(&client, event),
+                    None => {
+                        hold::close_all_synthesized(&client);
+                        fired_rx = None;
+                    }
+                }
             }
             maybe_cmd = control_rx.recv() => {
                 let Some(cmd) = maybe_cmd else { break };
@@ -65,8 +71,6 @@ pub(crate) async fn run_supervisor(
             }
         }
     }
-
-    hold::close_all_synthesized(&client);
 }
 
 async fn maybe_restart(restart_rx: Option<&mut mpsc::Receiver<()>>) -> Option<()> {
@@ -190,6 +194,9 @@ async fn handle_supervisor_command(client: &Arc<HotkeyClient>, cmd: SupervisorCo
                         failures.push(EnableFailure { id, combo, error });
                     }
                 }
+            }
+            for failure in &failures {
+                client.forget_registration(failure.id);
             }
             client.enabled.store(true, Ordering::Relaxed);
             emit_engine_state_change(client, true);
@@ -322,7 +329,6 @@ pub(crate) fn emit_unregistered(client: &HotkeyClient, combo_str: &str, id_u32: 
     let _ = client.health_tx.send(delta);
 }
 
-#[cfg(target_os = "linux")]
 pub(crate) fn emit_portal_unavailable(client: &HotkeyClient, detail: &str) {
     emit_portal_event(client, fields::portal::reason::NO_BACKEND_AVAILABLE, detail);
 }

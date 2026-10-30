@@ -7,7 +7,7 @@ use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
 use serde::Deserialize;
 
-use crate::audio_clips::ClipOutcome;
+use crate::audio_clips::PageVerdict;
 use crate::routes::overlays::{NOSNIFF, cors_header_value};
 use crate::server::AppState;
 
@@ -78,14 +78,14 @@ async fn accept_report(
     Path(capability): Path<String>,
     Json(body): Json<VerdictBody>,
 ) -> Response {
-    let outcome = match body {
-        VerdictBody::Played => ClipOutcome::Played,
-        VerdictBody::Refused { reason } => ClipOutcome::Refused {
+    let verdict = match body {
+        VerdictBody::Played => PageVerdict::Played,
+        VerdictBody::Refused { reason } => PageVerdict::Refused {
             reason: reason.chars().take(MAX_REASON_CHARS).collect(),
         },
     };
 
-    if !state.audio_clips.record_verdict(&capability, outcome) {
+    if !state.audio_clips.record_verdict(&capability, verdict) {
         return StatusCode::NOT_FOUND.into_response();
     }
 
@@ -123,7 +123,9 @@ mod tests {
 
     use super::*;
     use crate::ServerHandle;
-    use crate::audio_clips::{ClipMediaType, ClipOffer, ClipOutcomeHandle, ClipTicket};
+    use crate::audio_clips::{
+        ClipMediaType, ClipOffer, ClipOutcome, ClipOutcomeHandle, ClipTicket,
+    };
     use crate::auth::AuthState;
     use crate::bus_adapter::BusAdapter;
     use crate::origin::build_allowed_origins;

@@ -1,19 +1,30 @@
+use std::collections::HashSet;
+
 use forge_types::{ArgStack, Variant};
 
 use crate::bus_adapter::EventFilter;
 
 use super::envelope::WireEventFilter;
 
-pub(crate) fn parse_wire_filter(wf: &WireEventFilter) -> EventFilter {
+pub(crate) fn parse_wire_filters(
+    filters: &[WireEventFilter],
+) -> Result<HashSet<EventFilter>, String> {
+    filters.iter().map(parse_wire_filter).collect()
+}
+
+fn parse_wire_filter(wf: &WireEventFilter) -> Result<EventFilter, String> {
     let source = match wf.source.as_deref() {
         None | Some("*") => None,
-        Some(s) => serde_json::from_value(serde_json::Value::String(s.to_owned())).ok(),
+        Some(s) => Some(
+            serde_json::from_value(serde_json::Value::String(s.to_owned()))
+                .map_err(|_| format!("unknown event source: {s}"))?,
+        ),
     };
     let kind = match wf.kind.as_deref() {
         None | Some("*") => None,
         Some(k) => Some(k.to_owned()),
     };
-    EventFilter::new(source, kind)
+    Ok(EventFilter::new(source, kind))
 }
 
 pub(crate) fn variant_to_wire_value(v: &Variant) -> serde_json::Value {

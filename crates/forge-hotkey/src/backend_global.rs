@@ -16,7 +16,6 @@ use crate::main_thread::MainThreadLink;
 use crate::vocabulary::keys::{Key, Modifier};
 
 const FIRED_QUEUE: usize = 64;
-const EVENT_POLL_INTERVAL: std::time::Duration = std::time::Duration::from_millis(5);
 
 thread_local! {
     static MANAGER: RefCell<Option<GlobalHotKeyManager>> = const { RefCell::new(None) };
@@ -39,15 +38,15 @@ pub(crate) struct GlobalHotkeyBackend {
 
 impl GlobalHotkeyBackend {
     pub(crate) async fn new(main_thread: MainThreadLink) -> Result<Self, HotkeyError> {
-        main_thread.run(install_manager).await??;
-
         let (fired_tx, fired_rx) = mpsc::channel::<HotkeyFiredEvent>(FIRED_QUEUE);
 
         let registrations: RegistrationMap = Arc::new(Mutex::new(HashMap::new()));
-        tokio::spawn(poll_global_hotkey_events(
-            fired_tx,
-            Arc::clone(&registrations),
-        ));
+        let handler_registrations = Arc::clone(&registrations);
+        GlobalHotKeyEvent::set_event_handler(Some(move |event: GlobalHotKeyEvent| {
+            forward_global_hotkey_event(event, &fired_tx, &handler_registrations);
+        }));
+
+        main_thread.run(install_manager).await??;
 
         Ok(Self {
             main_thread,
@@ -142,43 +141,40 @@ impl HotkeyBackend for GlobalHotkeyBackend {
     }
 }
 
-async fn poll_global_hotkey_events(
-    fired_tx: mpsc::Sender<HotkeyFiredEvent>,
-    registrations: RegistrationMap,
+fn forward_global_hotkey_event(
+    event: GlobalHotKeyEvent,
+    fired_tx: &mpsc::Sender<HotkeyFiredEvent>,
+    registrations: &RegistrationMap,
 ) {
-    loop {
-        if let Ok(event) = GlobalHotKeyEvent::receiver().try_recv() {
-            let pressed = event.state == HotKeyState::Pressed;
+    let pressed = event.state == HotKeyState::Pressed;
 
-            let transition = {
-                let mut guard = registrations.lock().unwrap_or_else(|p| p.into_inner());
-                guard.get_mut(&event.id).and_then(|reg| {
-                    let changed = reg.held != pressed;
-                    reg.held = pressed;
-                    changed.then(|| (reg.caller_id, reg.combo.clone()))
-                })
-            };
+    let transition = {
+        let mut guard = registrations.lock().unwrap_or_else(|p| p.into_inner());
+        guard.get_mut(&event.id).and_then(|reg| {
+            let changed = reg.held != pressed;
+            reg.held = pressed;
+            changed.then(|| (reg.caller_id, reg.combo.clone()))
+        })
+    };
 
-            if let Some((caller_id, combo)) = transition {
-                let ev = HotkeyFiredEvent {
-                    id: caller_id,
-                    combo,
-                    timestamp_us: std::time::SystemTime::now()
-                        .duration_since(std::time::UNIX_EPOCH)
-                        .unwrap_or_default()
-                        .as_micros() as u64,
-                    edge: if pressed {
-                        HotkeyEdge::Press
-                    } else {
-                        HotkeyEdge::Release
-                    },
-                };
-                if fired_tx.send(ev).await.is_err() {
-                    break;
-                }
-            }
-        }
-        tokio::time::sleep(EVENT_POLL_INTERVAL).await;
+    let Some((caller_id, combo)) = transition else {
+        return;
+    };
+    let fired = HotkeyFiredEvent {
+        id: caller_id,
+        combo,
+        timestamp_us: std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_micros() as u64,
+        edge: if pressed {
+            HotkeyEdge::Press
+        } else {
+            HotkeyEdge::Release
+        },
+    };
+    if let Err(error) = fired_tx.try_send(fired) {
+        tracing::warn!(%error, "a global hotkey edge was dropped");
     }
 }
 

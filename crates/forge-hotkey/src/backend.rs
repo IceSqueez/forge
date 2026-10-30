@@ -1,5 +1,3 @@
-use std::sync::Mutex;
-
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use tokio::sync::mpsc;
@@ -29,16 +27,17 @@ pub(crate) enum BackendSessionEvent {
     Restored,
 }
 
-pub(crate) struct NullBackend {
-    fired_rx_slot: Mutex<Option<mpsc::Receiver<HotkeyFiredEvent>>>,
+pub(crate) struct NullBackend;
+
+const NO_BACKEND: &str = "no global hotkey backend is available on this system";
+
+fn no_backend() -> HotkeyError {
+    HotkeyError::Backend(NO_BACKEND.to_owned())
 }
 
 impl NullBackend {
     pub(crate) fn new() -> Self {
-        let (_tx, rx) = mpsc::channel::<HotkeyFiredEvent>(1);
-        Self {
-            fired_rx_slot: Mutex::new(Some(rx)),
-        }
+        Self
     }
 }
 
@@ -46,18 +45,15 @@ impl NullBackend {
 impl HotkeyBackend for NullBackend {
     async fn register(&self, _id: HotkeyId, combo: &HotkeyCombo) -> Result<(), HotkeyError> {
         let _ = combo;
-        Err(HotkeyError::PermissionDenied)
+        Err(no_backend())
     }
 
     async fn unregister(&self, _id: HotkeyId) -> Result<(), HotkeyError> {
-        Err(HotkeyError::PermissionDenied)
+        Err(no_backend())
     }
 
     fn fired_rx(&self) -> Option<mpsc::Receiver<HotkeyFiredEvent>> {
-        self.fired_rx_slot
-            .lock()
-            .unwrap_or_else(|p| p.into_inner())
-            .take()
+        None
     }
 }
 
@@ -83,8 +79,8 @@ pub(crate) trait HotkeyBackend: Send + Sync {
 #[cfg(test)]
 pub(crate) mod tests {
     use std::collections::{HashMap, HashSet};
-    use std::sync::Arc;
     use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+    use std::sync::{Arc, Mutex};
 
     use super::*;
 

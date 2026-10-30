@@ -53,6 +53,7 @@ impl PlayLegs {
 #[derive(Default)]
 struct PlayControl {
     legs: Mutex<PlayLegs>,
+    stop_signal: tokio::sync::Notify,
 }
 
 fn stop_handles(handles: &[PlaybackHandle]) {
@@ -68,6 +69,7 @@ impl PlayControl {
             legs.stopped = true;
             (std::mem::take(&mut legs.handles), legs.claim_finish())
         };
+        self.stop_signal.notify_one();
         stop_handles(&handles);
         owed
     }
@@ -89,7 +91,14 @@ impl PlayControl {
             legs.finish_claimed = true;
             std::mem::take(&mut legs.handles)
         };
+        self.stop_signal.notify_one();
         stop_handles(&handles);
+    }
+
+    async fn stopped(&self) {
+        while !self.is_stopped() {
+            self.stop_signal.notified().await;
+        }
     }
 
     fn is_stopped(&self) -> bool {
@@ -363,7 +372,7 @@ impl SoundboardPlayer {
         &self,
         clip_id: ClipId,
     ) -> Result<Option<f32>, SoundboardError> {
-        let mut clip = self
+        let clip = self
             .library
             .get(clip_id)
             .await?
@@ -387,8 +396,9 @@ impl SoundboardPlayer {
                 .await
                 .map_err(|e| SoundboardError::JoinError(e.to_string()))??;
 
-        clip.duration_secs = Some(probed);
-        self.library.save_clip(&clip).await?;
+        self.library
+            .record_probed_duration(clip_id, &clip.file_path, probed)
+            .await?;
 
         Ok(Some(probed))
     }
@@ -623,6 +633,7 @@ async fn watch_single(
         () = tokio::time::sleep(Duration::from_millis(duration_ms + PLAYBACK_TAIL_MS)) => {
             reporter.finish(&play);
         }
+        () = play.control.stopped() => {}
     }
 }
 
@@ -1757,6 +1768,160 @@ mod tests {
             SoundboardSettingsHandle::default(),
         );
         (player, events)
+    }
+
+    struct EditedDuringProbe {
+        before: StoredClip,
+        after: Option<StoredClip>,
+        reads: std::sync::atomic::AtomicUsize,
+        saved: Mutex<Vec<StoredClip>>,
+    }
+
+    #[async_trait]
+    impl SoundboardClipsRepo for EditedDuringProbe {
+        async fn list(&self) -> Result<Vec<StoredClip>, StorageError> {
+            Ok(vec![])
+        }
+
+        async fn get(&self, _id: ClipId) -> Result<Option<StoredClip>, StorageError> {
+            Ok(if self.reads.fetch_add(1, Ordering::SeqCst) == 0 {
+                Some(self.before.clone())
+            } else {
+                self.after.clone()
+            })
+        }
+
+        async fn save(&self, clip: &StoredClip) -> Result<(), StorageError> {
+            self.saved.lock().unwrap().push(clip.clone());
+            Ok(())
+        }
+
+        async fn delete(&self, _id: ClipId) -> Result<bool, StorageError> {
+            Ok(false)
+        }
+    }
+
+    async fn probe_with_an_edit_landing(
+        before: StoredClip,
+        after: Option<StoredClip>,
+    ) -> (Option<f32>, Vec<StoredClip>) {
+        let clip_id = before.id;
+        let repo = Arc::new(EditedDuringProbe {
+            before,
+            after,
+            reads: std::sync::atomic::AtomicUsize::new(0),
+            saved: Mutex::new(Vec::new()),
+        });
+        let library = Arc::new(ClipLibrary::new(
+            Arc::clone(&repo) as Arc<dyn SoundboardClipsRepo>,
+            Arc::new(NoManagedMedia {
+                imports: Arc::new(std::sync::atomic::AtomicUsize::new(0)),
+            }),
+        ));
+        let (factory, _, _) = CountingFactory::new();
+        let (event_sink, _) = RecordingEventSink::new();
+        let player = SoundboardPlayer::with_settings(
+            Arc::new(factory),
+            Arc::new(event_sink),
+            library,
+            SoundboardSettingsHandle::default(),
+        );
+
+        let probed = player.ensure_clip_duration(clip_id).await.unwrap();
+        let saved = repo.saved.lock().unwrap().clone();
+        (probed, saved)
+    }
+
+    #[tokio::test]
+    async fn the_probed_duration_is_written_onto_an_edit_made_during_the_probe() {
+        let tmp = make_wav_tempfile(22_050, 1, ONE_SECOND_OF_FRAMES);
+        let before = make_stored_clip(ClipId::new(), tmp.path().to_path_buf());
+        let edited = StoredClip {
+            name: "renamed while probing".to_owned(),
+            volume: 0.25,
+            ..before.clone()
+        };
+
+        let (probed, saved) = probe_with_an_edit_landing(before, Some(edited)).await;
+
+        assert_eq!(saved.len(), 1);
+        assert_eq!(saved[0].name, "renamed while probing");
+        assert!((saved[0].volume - 0.25).abs() < f32::EPSILON);
+        assert_eq!(saved[0].duration_secs, probed);
+        assert!(probed.is_some());
+    }
+
+    #[tokio::test]
+    async fn a_probed_duration_never_lands_on_a_clip_that_changed_underneath_it() {
+        let tmp = make_wav_tempfile(22_050, 1, ONE_SECOND_OF_FRAMES);
+        let before = make_stored_clip(ClipId::new(), tmp.path().to_path_buf());
+
+        for (case, after) in [
+            ("the clip was deleted", None),
+            (
+                "the clip now points at another file",
+                Some(StoredClip {
+                    file_path: PathBuf::from("/elsewhere/other.wav"),
+                    ..before.clone()
+                }),
+            ),
+            (
+                "a duration was recorded meanwhile",
+                Some(StoredClip {
+                    duration_secs: Some(9.0),
+                    ..before.clone()
+                }),
+            ),
+        ] {
+            let (_, saved) = probe_with_an_edit_landing(before.clone(), after).await;
+
+            assert!(saved.is_empty(), "{case}: wrote {saved:?}");
+        }
+    }
+
+    const FAR_LONGER_THAN_THE_HANG_GUARD_MS: u64 = 3_600_000;
+
+    #[tokio::test]
+    async fn ending_a_play_ends_its_watcher_instead_of_waiting_out_the_clip() {
+        let stop: fn(&PlayControl) = |control| {
+            control.claim_finish_on_stop();
+        };
+        let abandon: fn(&PlayControl) = PlayControl::abandon;
+
+        for (end_play, watcher_parks_first) in [
+            (stop, true),
+            (stop, false),
+            (abandon, true),
+            (abandon, false),
+        ] {
+            let control = Arc::new(PlayControl::default());
+            let (event_sink, _) = RecordingEventSink::new();
+            let watcher = tokio::spawn(watch_single(
+                Reservation {
+                    clip_id: ClipId::new(),
+                    play_id: 1,
+                    label: "long clip".to_owned(),
+                    control: Arc::clone(&control),
+                },
+                PlayReporter {
+                    active: ActiveRegistry::default(),
+                    event_sink: Arc::new(event_sink),
+                },
+                ControlledPlayback::from_future(std::future::pending()),
+                FAR_LONGER_THAN_THE_HANG_GUARD_MS,
+            ));
+            if watcher_parks_first {
+                tokio::task::yield_now().await;
+            }
+
+            end_play(&control);
+
+            let ended = tokio::time::timeout(BACKGROUND_HANG_GUARD, watcher).await;
+            assert!(
+                matches!(ended, Ok(Ok(()))),
+                "parked first: {watcher_parks_first}"
+            );
+        }
     }
 
     #[tokio::test]

@@ -82,6 +82,11 @@ pub enum ClipOutcome {
     ServerStopped,
 }
 
+pub(crate) enum PageVerdict {
+    Played,
+    Refused { reason: String },
+}
+
 pub struct ClipOutcomeHandle(oneshot::Receiver<ClipOutcome>);
 
 impl ClipOutcomeHandle {
@@ -252,10 +257,10 @@ impl AudioClipStore {
         true
     }
 
-    pub(crate) fn record_verdict(&self, capability: &str, outcome: ClipOutcome) -> bool {
+    pub(crate) fn record_verdict(&self, capability: &str, verdict: PageVerdict) -> bool {
         let mut inner = self.lock();
         sweep_locked(&mut inner, Instant::now());
-        let ClipOutcome::Refused { reason } = outcome else {
+        let PageVerdict::Refused { reason } = verdict else {
             let fetched = inner
                 .entries
                 .get(capability)
@@ -264,7 +269,7 @@ impl AudioClipStore {
                 tracing::debug!("audio clip verdict ignored: the clip was never fetched");
                 return false;
             }
-            return finish_locked(&mut inner, capability, outcome);
+            return finish_locked(&mut inner, capability, ClipOutcome::Played);
         };
         let Some(entry) = inner.entries.get_mut(capability) else {
             return false;
@@ -733,14 +738,9 @@ mod tests {
         let capability = ticket.capability().expose();
         store.take_clip(capability).expect("fetch");
 
-        assert!(store.record_verdict(capability, ClipOutcome::Played));
+        assert!(store.record_verdict(capability, PageVerdict::Played));
         assert!(
-            !store.record_verdict(
-                capability,
-                ClipOutcome::Refused {
-                    reason: LATE_REASON.to_owned()
-                }
-            ),
+            !store.record_verdict(capability, refused_verdict(LATE_REASON)),
             "a spent capability must not accept a second verdict"
         );
 
@@ -748,30 +748,19 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn a_verdict_other_than_a_refusal_is_ignored_for_a_clip_whose_bytes_were_never_fetched() {
-        for verdict in [
-            ClipOutcome::Played,
-            ClipOutcome::NeverFetched,
-            ClipOutcome::NoVerdict,
-            ClipOutcome::Revoked,
-            ClipOutcome::ServerStopped,
-        ] {
-            let store = AudioClipStore::new();
-            let (ticket, _outcome) = store
-                .offer(&owner(), sized_offer(SAMPLE_CLIP_BYTES))
-                .expect("offer");
-            let capability = ticket.capability().expose();
+    async fn a_played_verdict_is_ignored_for_a_clip_whose_bytes_were_never_fetched() {
+        let store = AudioClipStore::new();
+        let (ticket, _outcome) = store
+            .offer(&owner(), sized_offer(SAMPLE_CLIP_BYTES))
+            .expect("offer");
+        let capability = ticket.capability().expose();
 
-            assert!(
-                !store.record_verdict(capability, verdict.clone()),
-                "{verdict:?} was taken for a clip the page never fetched"
-            );
-            assert_eq!(held_bytes(&store), SAMPLE_CLIP_BYTES, "{verdict:?}");
-            assert!(
-                store.take_clip(capability).is_some(),
-                "{verdict:?} cost the page its fetch"
-            );
-        }
+        assert!(!store.record_verdict(capability, PageVerdict::Played));
+        assert_eq!(held_bytes(&store), SAMPLE_CLIP_BYTES);
+        assert!(
+            store.take_clip(capability).is_some(),
+            "the ignored verdict cost the page its fetch"
+        );
     }
 
     #[tokio::test]
@@ -781,7 +770,7 @@ mod tests {
             .offer(&owner(), sized_offer(SAMPLE_CLIP_BYTES))
             .expect("offer");
 
-        assert!(store.record_verdict(ticket.capability().expose(), refused(FIRST_REFUSAL)));
+        assert!(store.record_verdict(ticket.capability().expose(), refused_verdict(FIRST_REFUSAL)));
 
         assert_eq!(outcome.recv().await, refused(FIRST_REFUSAL));
         assert_eq!(held_bytes(&store), 0);
@@ -888,6 +877,12 @@ mod tests {
         }
     }
 
+    fn refused_verdict(reason: &str) -> PageVerdict {
+        PageVerdict::Refused {
+            reason: reason.to_owned(),
+        }
+    }
+
     fn still_waiting(store: &AudioClipStore, capability: &str) -> bool {
         store.lock().entries.contains_key(capability)
     }
@@ -937,25 +932,28 @@ mod tests {
             (
                 "a refusal from one page does not undo another page playing",
                 2,
-                vec![refused(FIRST_REFUSAL), ClipOutcome::Played],
+                vec![refused_verdict(FIRST_REFUSAL), PageVerdict::Played],
                 ClipOutcome::Played,
             ),
             (
                 "every page refused, first reason kept",
                 2,
-                vec![refused(FIRST_REFUSAL), refused(SECOND_REFUSAL)],
+                vec![
+                    refused_verdict(FIRST_REFUSAL),
+                    refused_verdict(SECOND_REFUSAL),
+                ],
                 refused(FIRST_REFUSAL),
             ),
             (
                 "one page refused and the other went quiet",
                 2,
-                vec![refused(FIRST_REFUSAL)],
+                vec![refused_verdict(FIRST_REFUSAL)],
                 ClipOutcome::NoVerdict,
             ),
             (
                 "the only page refused",
                 1,
-                vec![refused(FIRST_REFUSAL)],
+                vec![refused_verdict(FIRST_REFUSAL)],
                 refused(FIRST_REFUSAL),
             ),
         ] {
@@ -986,9 +984,9 @@ mod tests {
         store.take_clip(capability).expect("second fetch");
 
         store.admit_players(capability, 1);
-        store.record_verdict(capability, refused(FIRST_REFUSAL));
+        store.record_verdict(capability, refused_verdict(FIRST_REFUSAL));
         let waiting_after_one_refusal = still_waiting(&store, capability);
-        store.record_verdict(capability, refused(SECOND_REFUSAL));
+        store.record_verdict(capability, refused_verdict(SECOND_REFUSAL));
 
         assert!(
             waiting_after_one_refusal,
@@ -1005,8 +1003,8 @@ mod tests {
         store.admit_players(capability, 3);
         store.take_clip(capability).expect("first fetch");
         store.take_clip(capability).expect("second fetch");
-        store.record_verdict(capability, refused(FIRST_REFUSAL));
-        store.record_verdict(capability, refused(SECOND_REFUSAL));
+        store.record_verdict(capability, refused_verdict(FIRST_REFUSAL));
+        store.record_verdict(capability, refused_verdict(SECOND_REFUSAL));
 
         store.admit_players(capability, 2);
 
@@ -1030,7 +1028,7 @@ mod tests {
             Instant::now() + verdict_window(CLIP_DURATION_MS) + ONE_SECOND,
         );
         assert!(store.release_hold(capability));
-        store.record_verdict(capability, refused(FIRST_REFUSAL));
+        store.record_verdict(capability, refused_verdict(FIRST_REFUSAL));
 
         assert_eq!(
             outcome.recv().await,
@@ -1116,7 +1114,7 @@ mod tests {
             store
                 .take_clip(played.capability().expose())
                 .expect("fetch");
-            store.record_verdict(played.capability().expose(), ClipOutcome::Played);
+            store.record_verdict(played.capability().expose(), PageVerdict::Played);
 
             let (revoked, _revoked_outcome) = store.offer(&owner(), clip_offer()).expect("offer");
             secrets.extend(secrets_of(&revoked));

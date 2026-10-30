@@ -38,6 +38,7 @@ const CREATE_SESSION_TIMEOUT: Duration = Duration::from_secs(10);
 const BIND_RESPONSE_TIMEOUT: Duration = Duration::from_secs(120);
 const SESSION_RECREATE_ATTEMPTS: u32 = 3;
 const SESSION_RECREATE_FIRST_BACKOFF: Duration = Duration::from_secs(1);
+const RESUBSCRIBE_DELAY: Duration = Duration::from_secs(5);
 
 const COMMAND_QUEUE_CAPACITY: usize = 64;
 const FIRED_QUEUE_CAPACITY: usize = 64;
@@ -657,19 +658,38 @@ async fn signal_listener_task(
     edge_tx: mpsc::Sender<ShortcutEdge>,
     owner_restart_tx: mpsc::Sender<()>,
 ) {
-    let shortcuts_proxy = match global_shortcuts_proxy(&conn).await {
+    if listen_for_signals(&conn, &edge_tx, &owner_restart_tx).await == ListenerExit::SignalsLost {
+        tokio::time::sleep(RESUBSCRIBE_DELAY).await;
+        if owner_restart_tx.send(()).await.is_err() {
+            tracing::debug!("portal backend stopped; resubscribe request dropped");
+        }
+    }
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum ListenerExit {
+    OwnerRestarted,
+    SignalsLost,
+}
+
+async fn listen_for_signals(
+    conn: &Connection,
+    edge_tx: &mpsc::Sender<ShortcutEdge>,
+    owner_restart_tx: &mpsc::Sender<()>,
+) -> ListenerExit {
+    let shortcuts_proxy = match global_shortcuts_proxy(conn).await {
         Ok(p) => p,
         Err(e) => {
             tracing::error!(error = %e, "failed to create portal proxy for signals");
-            return;
+            return ListenerExit::SignalsLost;
         }
     };
 
-    let dbus_proxy = match zbus::fdo::DBusProxy::new(&conn).await {
+    let dbus_proxy = match zbus::fdo::DBusProxy::new(conn).await {
         Ok(p) => p,
         Err(e) => {
             tracing::error!(error = %e, "failed to create DBus proxy");
-            return;
+            return ListenerExit::SignalsLost;
         }
     };
 
@@ -677,7 +697,7 @@ async fn signal_listener_task(
         Ok(s) => s,
         Err(e) => {
             tracing::error!(error = %e, "failed to subscribe to Activated signal");
-            return;
+            return ListenerExit::SignalsLost;
         }
     };
 
@@ -685,7 +705,7 @@ async fn signal_listener_task(
         Ok(s) => s,
         Err(e) => {
             tracing::error!(error = %e, "failed to subscribe to Deactivated signal");
-            return;
+            return ListenerExit::SignalsLost;
         }
     };
 
@@ -693,7 +713,7 @@ async fn signal_listener_task(
         Ok(s) => s,
         Err(e) => {
             tracing::error!(error = %e, "failed to subscribe to NameOwnerChanged");
-            return;
+            return ListenerExit::SignalsLost;
         }
     };
 
@@ -704,7 +724,7 @@ async fn signal_listener_task(
     loop {
         tokio::select! {
             maybe_msg = activated_stream.next() => {
-                let Some(msg) = maybe_msg else { break };
+                let Some(msg) = maybe_msg else { return ListenerExit::SignalsLost };
                 if let Some(shortcut) = parse_shortcut_signal(&msg, HotkeyEdge::Press)
                     && edge_tx.send(shortcut).await.is_err()
                 {
@@ -712,7 +732,7 @@ async fn signal_listener_task(
                 }
             }
             maybe_msg = deactivated_stream.next() => {
-                let Some(msg) = maybe_msg else { break };
+                let Some(msg) = maybe_msg else { return ListenerExit::SignalsLost };
                 if let Some(shortcut) = parse_shortcut_signal(&msg, HotkeyEdge::Release)
                     && edge_tx.send(shortcut).await.is_err()
                 {
@@ -720,7 +740,7 @@ async fn signal_listener_task(
                 }
             }
             maybe_change = name_owner_stream.next() => {
-                let Some(change) = maybe_change else { break };
+                let Some(change) = maybe_change else { return ListenerExit::SignalsLost };
                 if let Ok(args) = change.args()
                     && args.name() == PORTAL_DESTINATION
                     && !args.new_owner().as_deref().unwrap_or("").is_empty()
@@ -728,7 +748,7 @@ async fn signal_listener_task(
                     if owner_restart_tx.send(()).await.is_err() {
                         tracing::debug!("portal backend stopped; owner restart dropped");
                     }
-                    return;
+                    return ListenerExit::OwnerRestarted;
                 }
             }
         }

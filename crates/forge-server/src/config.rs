@@ -55,7 +55,7 @@ impl ServerConfig {
         action_engine: Arc<ActionEngineHandle>,
     ) -> Self {
         Self {
-            bind_addr: SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 9515),
+            bind_addr: SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), DEFAULT_PORT),
             overlay_root: forge_paths::overlays_dir(),
             auth_required_for_reads: false,
             overlay_cors_any_origin: true,

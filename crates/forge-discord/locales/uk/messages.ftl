@@ -30,3 +30,6 @@ msg-discord-health_send_ok = OK
 msg-discord-health_send_failed = Помилка
 msg-discord-health_send_none = Ще не надсилалось
 msg-discord-health_errors_window = за останню годину
+msg-discord-file_not_uploadable = Файл { $path } не є звичайним файлом у межах ліміту розміру завантаження.
+msg-discord-content_too_long = Повідомлення має { $length } символів, ліміт { $max }.
+msg-discord-nothing_to_edit = Для редагування потрібен текст повідомлення або embed.

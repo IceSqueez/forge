@@ -15,7 +15,6 @@ use tokio::time::Instant;
 use crate::bus_adapter::ClientId;
 
 const EVENTS_WINDOW_SECS: u64 = 10;
-const RECENT_EVENTS_CAP: usize = 100;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ClientType {
@@ -112,7 +111,10 @@ impl WsClient {
             return 0.0;
         };
         guard.push_back(now);
-        while guard.len() > RECENT_EVENTS_CAP {
+        let cutoff = now
+            .checked_sub(Duration::from_secs(EVENTS_WINDOW_SECS))
+            .unwrap_or(now);
+        while guard.front().is_some_and(|&oldest| oldest < cutoff) {
             guard.pop_front();
         }
         Self::compute_eps(&guard)
@@ -211,13 +213,34 @@ mod tests {
         assert_eq!(detect_from_user_agent(None), ClientType::Unknown);
     }
 
-    #[test]
-    fn record_event_trims_to_100() {
+    #[tokio::test]
+    async fn a_burst_above_ten_events_per_second_is_reported_in_full() {
+        tokio::time::pause();
         let client = make_client();
-        for _ in 0..101 {
+
+        let mut reported = 0.0;
+        for _ in 0..EVENTS_WINDOW_SECS * 25 {
+            reported = client.record_event();
+        }
+
+        assert!(
+            (reported - 25.0).abs() < 0.001,
+            "expected 25 ev/s, got {reported}"
+        );
+    }
+
+    #[tokio::test]
+    async fn record_event_forgets_events_that_left_the_window() {
+        tokio::time::pause();
+        let client = make_client();
+        for _ in 0..10 {
             client.record_event();
         }
-        let len = client.recent_events.lock().unwrap().len();
-        assert_eq!(len, 100);
+        tokio::time::advance(Duration::from_secs(EVENTS_WINDOW_SECS) + Duration::from_millis(1))
+            .await;
+
+        client.record_event();
+
+        assert_eq!(client.recent_events.lock().unwrap().len(), 1);
     }
 }

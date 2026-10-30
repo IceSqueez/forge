@@ -31,6 +31,10 @@ fn validation_message(fault: &ValidationFault) -> MessageRef {
         ValidationFault::MessageIdNotSnowflake => messages::message_id_invalid(),
         ValidationFault::NotWebhookEndpoint => messages::not_webhook_endpoint(),
         ValidationFault::WebhookNameEmpty => messages::webhook_name_empty(),
+        ValidationFault::ContentTooLong { length, max } => {
+            messages::content_too_long(*length, *max)
+        }
+        ValidationFault::NothingToEdit => messages::nothing_to_edit(),
         ValidationFault::BodyEncoding(text) => messages::body_encoding_failed(text),
     }
 }
@@ -176,6 +180,22 @@ mod tests {
             (
                 ValidationFault::WebhookNameEmpty,
                 "msg-discord-webhook_name_empty",
+                vec![],
+            ),
+            (
+                ValidationFault::ContentTooLong {
+                    length: 2001,
+                    max: 2000,
+                },
+                "msg-discord-content_too_long",
+                vec![
+                    ("length", MessageArg::Int(2001)),
+                    ("max", MessageArg::Int(2000)),
+                ],
+            ),
+            (
+                ValidationFault::NothingToEdit,
+                "msg-discord-nothing_to_edit",
                 vec![],
             ),
         ];

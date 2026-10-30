@@ -287,6 +287,22 @@ impl ClipLibrary {
         Ok(())
     }
 
+    pub async fn record_probed_duration(
+        &self,
+        id: ClipId,
+        probed_file: &Path,
+        duration_secs: f32,
+    ) -> Result<(), SoundboardError> {
+        let Some(mut current) = self.clips.get(id).await.map_err(storage_failed)? else {
+            return Ok(());
+        };
+        if current.file_path != probed_file || current.duration_secs.is_some() {
+            return Ok(());
+        }
+        current.duration_secs = Some(duration_secs);
+        self.clips.save(&current).await.map_err(storage_failed)
+    }
+
     pub async fn delete_clip(&self, id: ClipId) -> Result<bool, SoundboardError> {
         self.media
             .release_all(MediaReferrerKind::SoundboardClip, &id.to_string())

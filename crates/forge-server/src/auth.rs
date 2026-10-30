@@ -19,6 +19,7 @@ pub(crate) struct AuthState {
     bearer_token: Arc<RwLock<Secret>>,
     token_generation: AtomicU64,
     reads_required: AtomicBool,
+    lan_exposed: AtomicBool,
     policy_changed: watch::Sender<()>,
     overlay_token: OverlayTokenState,
 }
@@ -66,6 +67,7 @@ impl AuthState {
             bearer_token: Arc::new(RwLock::new(Secret::new(token))),
             token_generation: AtomicU64::new(0),
             reads_required: AtomicBool::new(auth_required_for_reads),
+            lan_exposed: AtomicBool::new(false),
             policy_changed,
             overlay_token,
         }
@@ -107,12 +109,21 @@ impl AuthState {
     }
 
     pub fn reads_required(&self) -> bool {
-        self.reads_required.load(Ordering::SeqCst)
+        self.reads_required.load(Ordering::SeqCst) || self.lan_exposed.load(Ordering::SeqCst)
     }
 
     pub fn set_reads_required(&self, required: bool) {
-        let previous = self.reads_required.swap(required, Ordering::SeqCst);
-        if previous != required {
+        let before = self.reads_required();
+        self.reads_required.store(required, Ordering::SeqCst);
+        if before != self.reads_required() {
+            self.policy_changed.send_replace(());
+        }
+    }
+
+    pub(crate) fn set_lan_exposed(&self, exposed: bool) {
+        let before = self.reads_required();
+        self.lan_exposed.store(exposed, Ordering::SeqCst);
+        if before != self.reads_required() {
             self.policy_changed.send_replace(());
         }
     }

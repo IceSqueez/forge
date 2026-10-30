@@ -55,12 +55,7 @@ pub struct Server {
 impl Server {
     pub async fn start(self) -> Result<ServerHandle, ServerError> {
         let addr = self.config.bind_addr;
-        validate_lan_bind(
-            &addr,
-            self.config.lan_bind_enabled,
-            self.config.credentials.as_ref(),
-        )
-        .await?;
+        validate_lan_bind(&addr, self.config.lan_bind_enabled)?;
         let listener = TcpListener::bind(addr)
             .await
             .map_err(|e| ServerError::Bind {
@@ -81,6 +76,7 @@ impl Server {
 
 async fn build_state(config: ServerConfig, bind_addr: SocketAddr) -> Result<AppState, ServerError> {
     let auth = AuthState::load(config.auth_required_for_reads, config.credentials.as_ref()).await?;
+    auth.set_lan_exposed(bind_addr.ip().is_unspecified());
     auth.overlay_token().set_required(
         read_setting_or_default(
             config.settings.as_ref(),
@@ -123,28 +119,12 @@ pub async fn stopped_server(config: ServerConfig) -> Result<ServerHandle, Server
     Server { config }.stopped().await
 }
 
-pub(crate) async fn validate_lan_bind(
+pub(crate) fn validate_lan_bind(
     addr: &SocketAddr,
     lan_bind_enabled: bool,
-    credentials: &dyn CredentialsRepo,
 ) -> Result<(), ServerError> {
-    if !addr.ip().is_unspecified() {
-        return Ok(());
-    }
-    if !lan_bind_enabled {
+    if addr.ip().is_unspecified() && !lan_bind_enabled {
         return Err(ServerError::LanBindNotEnabled {
-            addr: addr.to_string(),
-        });
-    }
-    let token_present = credentials
-        .load(&forge_storage::CredentialId::new(
-            forge_storage::SERVER_BEARER_CREDENTIAL_ID,
-        ))
-        .await
-        .map_err(|e| ServerError::Storage(e.to_string()))?
-        .is_some();
-    if !token_present {
-        return Err(ServerError::NoTokenForLanBind {
             addr: addr.to_string(),
         });
     }
@@ -1454,24 +1434,22 @@ pub(crate) mod tests {
         handle.stop().await.expect("stop after restart");
     }
 
-    #[tokio::test]
-    async fn validate_lan_bind_rejects_unspecified_without_flag() {
-        let creds = MemCreds::with_token("tok");
-        let addr: std::net::SocketAddr = "0.0.0.0:9595".parse().expect("addr");
-        let err = validate_lan_bind(&addr, false, &*creds)
-            .await
-            .expect_err("must refuse");
-        assert!(matches!(err, ServerError::LanBindNotEnabled { .. }));
-    }
-
-    #[tokio::test]
-    async fn validate_lan_bind_rejects_unspecified_without_token() {
-        let creds = MemCreds::new();
-        let addr: std::net::SocketAddr = "0.0.0.0:9595".parse().expect("addr");
-        let err = validate_lan_bind(&addr, true, &*creds)
-            .await
-            .expect_err("must refuse");
-        assert!(matches!(err, ServerError::NoTokenForLanBind { .. }));
+    #[test]
+    fn validate_lan_bind_refuses_only_an_all_interfaces_bind_without_the_flag() {
+        for (addr, enabled, refused) in [
+            ("0.0.0.0:9595", false, true),
+            ("[::]:9595", false, true),
+            ("0.0.0.0:9595", true, false),
+            ("127.0.0.1:9595", false, false),
+        ] {
+            let parsed: std::net::SocketAddr = addr.parse().expect("addr");
+            let result = validate_lan_bind(&parsed, enabled);
+            assert_eq!(
+                matches!(result, Err(ServerError::LanBindNotEnabled { .. })),
+                refused,
+                "{addr} with the flag {enabled}"
+            );
+        }
     }
 
     const OVERLAY_IDENTITY: &str = "goal-box";
@@ -1579,6 +1557,269 @@ pub(crate) mod tests {
         );
 
         handle.stop().await.expect("stop");
+    }
+
+    const WILDCARD_EPHEMERAL_BIND: &str = "0.0.0.0:0";
+    const OVERLAY_PAGE_BODY: &str = "<p>goal box</p>";
+    const OVERLAY_RUNTIME_BODY: &str = "export const runtime = 1;";
+
+    struct LanOverlayServer {
+        handle: ServerHandle,
+        port: u16,
+        hub: crate::DeliveryHub,
+        overlay_token: String,
+        _overlay_root: tempfile::TempDir,
+    }
+
+    impl LanOverlayServer {
+        async fn start() -> Self {
+            let overlay_root = tempfile::tempdir().expect("tempdir");
+            let page = overlay_root.path().join(OVERLAY_IDENTITY);
+            let shared = overlay_root.path().join("forge-shared");
+            std::fs::create_dir_all(&page).expect("page dir");
+            std::fs::create_dir_all(&shared).expect("shared dir");
+            std::fs::write(page.join("index.html"), OVERLAY_PAGE_BODY).expect("page");
+            std::fs::write(
+                page.join("config.json"),
+                serde_json::json!({ "credential": OVERLAY_PAGE_CREDENTIAL }).to_string(),
+            )
+            .expect("config");
+            std::fs::write(shared.join("runtime-v1.js"), OVERLAY_RUNTIME_BODY).expect("runtime");
+
+            let mut overlays = forge_storage::overlay::MockOverlayRepo::new();
+            overlays
+                .expect_get()
+                .returning(|id| Ok((id.as_str() == OVERLAY_IDENTITY).then(served_overlay)));
+            overlays.expect_get_by_credential().returning(|credential| {
+                Ok((credential.expose() == OVERLAY_PAGE_CREDENTIAL).then(served_overlay))
+            });
+            let hub = crate::DeliveryHub::new(EventBus::new(Arc::new(NullEventLogRepo)));
+
+            let mut config = loopback_config(mem_settings(), EPHEMERAL_PORT, Vec::new());
+            config.bind_addr = WILDCARD_EPHEMERAL_BIND.parse().expect("addr");
+            config.lan_bind_enabled = true;
+            config.overlay_root = overlay_root.path().to_path_buf();
+            config.overlays = Arc::new(overlays);
+            config.delivery_hub = Some(hub.clone());
+
+            let handle = start_server(config).await.expect("start on all interfaces");
+            let port = handle.bind_addr().await.port();
+            let overlay_token = handle.overlay_token().await.expose().to_owned();
+            Self {
+                handle,
+                port,
+                hub,
+                overlay_token,
+                _overlay_root: overlay_root,
+            }
+        }
+
+        fn link(&self, file: &str) -> String {
+            format!(
+                "http://127.0.0.1:{}/overlays/{}/{file}",
+                self.port, self.overlay_token
+            )
+        }
+
+        async fn lan_get(&self, url: String) -> (u16, String) {
+            let response = reqwest::Client::new()
+                .get(url)
+                .header(reqwest::header::HOST, LAN_AUTHORITY)
+                .send()
+                .await
+                .expect("HTTP request");
+            let status = response.status().as_u16();
+            (status, response.text().await.expect("body"))
+        }
+
+        async fn lan_socket(
+            &self,
+        ) -> tokio_tungstenite::WebSocketStream<
+            tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>,
+        > {
+            use tokio_tungstenite::tungstenite::client::IntoClientRequest;
+
+            let mut request = format!("ws://127.0.0.1:{}/ws/v1/", self.port)
+                .into_client_request()
+                .expect("client request");
+            let headers = request.headers_mut();
+            headers.insert(
+                axum::http::header::HOST,
+                LAN_AUTHORITY.parse().expect("host header value"),
+            );
+            headers.insert(
+                axum::http::header::ORIGIN,
+                format!("http://{LAN_AUTHORITY}")
+                    .parse()
+                    .expect("origin header value"),
+            );
+            tokio_tungstenite::connect_async(request)
+                .await
+                .expect("the page's websocket must upgrade")
+                .0
+        }
+    }
+
+    async fn request_frame(
+        socket: &mut tokio_tungstenite::WebSocketStream<
+            tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>,
+        >,
+        frame: serde_json::Value,
+    ) -> serde_json::Value {
+        futures_util::SinkExt::send(
+            socket,
+            tokio_tungstenite::tungstenite::Message::Text(frame.to_string().into()),
+        )
+        .await
+        .expect("send frame");
+        serde_json::from_str(&next_text_frame(socket).await).expect("json response")
+    }
+
+    #[tokio::test]
+    async fn an_overlay_link_loads_every_page_file_on_a_lan_bind_without_a_bearer_token() {
+        let server = LanOverlayServer::start().await;
+
+        for (file, expected_body) in [
+            (format!("{OVERLAY_IDENTITY}/"), OVERLAY_PAGE_BODY.to_owned()),
+            (
+                format!("{OVERLAY_IDENTITY}/config.json"),
+                serde_json::json!({ "credential": OVERLAY_PAGE_CREDENTIAL }).to_string(),
+            ),
+            (
+                "forge-shared/runtime-v1.js".to_owned(),
+                OVERLAY_RUNTIME_BODY.to_owned(),
+            ),
+        ] {
+            let (status, body) = server.lan_get(server.link(&file)).await;
+            assert_eq!(status, 200, "{file} must load for the browser source");
+            assert_eq!(body, expected_body, "{file}");
+        }
+
+        server.handle.stop().await.expect("stop");
+    }
+
+    #[tokio::test]
+    async fn an_overlay_page_connects_and_receives_content_on_a_lan_bind_without_a_bearer_token() {
+        let server = LanOverlayServer::start().await;
+        let mut socket = server.lan_socket().await;
+
+        let ack = request_frame(
+            &mut socket,
+            serde_json::json!({
+                "id": "1",
+                "request": "auth",
+                "overlayCredential": OVERLAY_PAGE_CREDENTIAL,
+            }),
+        )
+        .await;
+        assert_eq!(ack["status"], "ok", "the page was refused: {ack}");
+
+        let reached = server
+            .hub
+            .deliver_content(
+                &forge_storage::OverlayId::new(OVERLAY_IDENTITY),
+                serde_json::json!({ "value": 42 }),
+                None,
+            )
+            .await;
+        assert_eq!(reached.sources, 1);
+        let delivered: serde_json::Value =
+            serde_json::from_str(&next_text_frame(&mut socket).await).expect("json frame");
+        assert_eq!(
+            delivered,
+            serde_json::json!({ "frame": "content", "content": { "value": 42 } })
+        );
+
+        server.handle.stop().await.expect("stop");
+    }
+
+    #[tokio::test]
+    async fn a_lan_bind_refuses_anonymous_api_reads_even_with_the_reads_switch_off() {
+        let server = LanOverlayServer::start().await;
+        let url = format!("http://127.0.0.1:{}/api/v1/info", server.port);
+
+        let (anonymous, _) = server.lan_get(url.clone()).await;
+        let bearer = server.handle.bearer_token().await;
+        let authorized = reqwest::Client::new()
+            .get(url)
+            .bearer_auth(bearer.expose())
+            .send()
+            .await
+            .expect("HTTP request")
+            .status();
+
+        assert_eq!(anonymous, 401);
+        assert_eq!(authorized, reqwest::StatusCode::OK);
+        server.handle.stop().await.expect("stop");
+    }
+
+    #[tokio::test]
+    async fn a_lan_bind_refuses_anonymous_socket_reads_until_the_bearer_is_presented() {
+        let server = LanOverlayServer::start().await;
+        let mut socket = server.lan_socket().await;
+        let info = serde_json::json!({ "id": "1", "request": "getInfo" });
+
+        let refused = request_frame(&mut socket, info.clone()).await;
+        let auth = request_frame(
+            &mut socket,
+            serde_json::json!({
+                "id": "2",
+                "request": "auth",
+                "token": server.handle.bearer_token().await.expose(),
+            }),
+        )
+        .await;
+        let allowed = request_frame(&mut socket, info).await;
+
+        assert_eq!(refused["error"]["code"], "UNAUTHENTICATED");
+        assert_eq!(auth["status"], "ok");
+        assert_eq!(allowed["status"], "ok");
+        server.handle.stop().await.expect("stop");
+    }
+
+    #[tokio::test]
+    async fn a_restart_applies_the_lan_read_gate_of_the_address_it_binds() {
+        let settings = mem_settings();
+        let (handle, port) = handle_awaiting_a_port(Arc::clone(&settings), true).await;
+        assert_eq!(info_status(port).await, reqwest::StatusCode::OK);
+
+        crate::config::ServerSettings::save_lan_bind_enabled(&*settings, true)
+            .await
+            .expect("save flag");
+        crate::config::ServerSettings::save_bind_address(&*settings, "0.0.0.0")
+            .await
+            .expect("save addr");
+        handle.restart().await.expect("restart onto the LAN");
+        let on_the_lan = info_status(port).await;
+
+        crate::config::ServerSettings::save_bind_address(&*settings, LOOPBACK)
+            .await
+            .expect("save addr");
+        handle.restart().await.expect("restart back to loopback");
+        let back_on_loopback = info_status(port).await;
+
+        assert_eq!(on_the_lan, reqwest::StatusCode::UNAUTHORIZED);
+        assert_eq!(back_on_loopback, reqwest::StatusCode::OK);
+        handle.stop().await.expect("stop");
+    }
+
+    #[tokio::test]
+    async fn concurrent_restarts_both_finish_and_leave_one_serve_task_a_stop_can_end() {
+        let (handle, new_port) = make_server_targeting_a_free_port().await;
+
+        let (first, second) = tokio::join!(handle.restart(), handle.restart());
+
+        first.expect("first restart");
+        second.expect("second restart");
+        assert!(
+            accepts_on(new_port).await,
+            "a restart must leave a listener"
+        );
+        handle.stop().await.expect("stop");
+        assert!(
+            !accepts_on(new_port).await,
+            "a serve task survived the stop, so a restart orphaned it"
+        );
     }
 
     #[test]

@@ -19,6 +19,10 @@ use crate::vocabulary::{config_keys, messages, sub_action_ids};
 
 const KIND_ID: &str = sub_action_ids::WEBHOOK_SEND_FILE;
 
+const BYTES_PER_MEBIBYTE: u64 = 1024 * 1024;
+const UPLOAD_LIMIT_MEBIBYTES: u64 = 25;
+const DISCORD_UPLOAD_LIMIT_BYTES: u64 = UPLOAD_LIMIT_MEBIBYTES * BYTES_PER_MEBIBYTE;
+
 const CAPTION: TextField = optional_text(config_keys::CONTENT, "Caption", TextEditor::Area);
 
 const FILE_PATH: TextField = filled_text(
@@ -118,6 +122,24 @@ impl SubActionRunner for SendFileRunner {
                 None,
             );
         };
+
+        match tokio::fs::metadata(&upload.file_path).await {
+            Ok(meta) if meta.is_file() && meta.len() <= DISCORD_UPLOAD_LIMIT_BYTES => {}
+            Ok(_) => {
+                return (
+                    timer.failed(messages::file_not_uploadable(&upload.file_path).into()),
+                    None,
+                );
+            }
+            Err(e) => {
+                return (
+                    timer.failed(
+                        messages::file_unreadable(&upload.file_path, &e.to_string()).into(),
+                    ),
+                    None,
+                );
+            }
+        }
 
         let file_bytes = match tokio::fs::read(&upload.file_path).await {
             Ok(bytes) => bytes,
@@ -301,6 +323,64 @@ mod tests {
         assert!(
             sink.captured().is_none(),
             "sink must not run on unreadable file"
+        );
+    }
+
+    fn sized_file(dir: &tempfile::TempDir, len: u64) -> std::path::PathBuf {
+        let path = dir.path().join(format!("sized-{len}.bin"));
+        std::fs::File::create(&path).unwrap().set_len(len).unwrap();
+        path
+    }
+
+    async fn upload_of(path: &str) -> (SubActionOutcome, Arc<CapturingSink>) {
+        let sink = CapturingSink::ok();
+        let runner = SendFileRunner::new(Arc::clone(&sink) as Arc<dyn DiscordSink>);
+        let stack = ArgStack::new();
+        let publisher = NoopPublisher;
+        let (telemetry, _) = runner
+            .execute(&config(path, "cap"), &ctx(&stack, &publisher))
+            .await;
+        (telemetry.outcome, sink)
+    }
+
+    #[tokio::test]
+    async fn a_path_that_is_not_an_uploadable_regular_file_fails_without_reading_it() {
+        let dir = tempfile::tempdir().unwrap();
+        let oversize = sized_file(&dir, DISCORD_UPLOAD_LIMIT_BYTES + 1);
+        let mut refused = vec![
+            dir.path().to_str().unwrap().to_owned(),
+            oversize.to_str().unwrap().to_owned(),
+        ];
+        if cfg!(unix) {
+            refused.push("/dev/zero".to_owned());
+        }
+
+        for path in refused {
+            let (outcome, sink) = upload_of(&path).await;
+
+            assert_eq!(
+                outcome,
+                SubActionOutcome::Failed(messages::file_not_uploadable(&path).into()),
+                "{path}"
+            );
+            assert!(sink.captured().is_none(), "{path} reached the sink");
+        }
+    }
+
+    #[tokio::test]
+    async fn a_file_of_exactly_the_upload_limit_is_sent() {
+        let dir = tempfile::tempdir().unwrap();
+        let at_limit = sized_file(&dir, DISCORD_UPLOAD_LIMIT_BYTES);
+
+        let (outcome, sink) = upload_of(at_limit.to_str().unwrap()).await;
+
+        assert_eq!(outcome, SubActionOutcome::Success);
+        assert_eq!(
+            sink.captured()
+                .expect("sink must be called")
+                .file_bytes
+                .len() as u64,
+            DISCORD_UPLOAD_LIMIT_BYTES
         );
     }
 

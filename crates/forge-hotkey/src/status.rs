@@ -24,7 +24,7 @@ impl BuiltinStatus for HotkeyClient {
             return ConnectionState::Disconnected;
         }
         let snap = self.health_state.lock().unwrap_or_else(|p| p.into_inner());
-        if snap.registered_count > 0 {
+        if snap.backend_session_lost.is_none() && snap.registered_count > 0 {
             ConnectionState::Connected
         } else {
             ConnectionState::Disconnected
@@ -93,6 +93,26 @@ mod tests {
         assert_eq!(status.connection(), ConnectionState::Disconnected);
 
         client.enable().await.unwrap();
+        assert_eq!(status.connection(), ConnectionState::Connected);
+    }
+
+    #[tokio::test]
+    async fn connection_reports_disconnected_while_the_backend_session_is_lost() {
+        let (backend, _tx) = MockPortalBackend::new();
+        let client = start_supervised(backend, noop_publisher());
+        client
+            .register(HotkeyCombo::parse("Ctrl+G").unwrap())
+            .await
+            .unwrap();
+        let status: &dyn BuiltinStatus = &*client;
+        let set_lost = |lost: Option<String>| {
+            client.health_state.lock().unwrap().backend_session_lost = lost;
+        };
+
+        set_lost(Some("portal gone".to_owned()));
+        assert_eq!(status.connection(), ConnectionState::Disconnected);
+
+        set_lost(None);
         assert_eq!(status.connection(), ConnectionState::Connected);
     }
 

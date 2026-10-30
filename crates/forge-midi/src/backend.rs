@@ -123,7 +123,7 @@ impl MidiBackend for MidirBackend {
 
 #[cfg(test)]
 pub(crate) mod tests {
-    use std::collections::VecDeque;
+    use std::collections::{HashSet, VecDeque};
     use std::sync::{Arc, Mutex};
 
     use super::*;
@@ -153,6 +153,7 @@ pub(crate) mod tests {
         pub input_ports: Vec<MidiPortInfo>,
         pub output_ports: Vec<MidiPortInfo>,
         pub senders: Vec<(u64, PortSender)>,
+        pub refused_opens: HashSet<String>,
         pub next_token: u64,
         pub sent_outputs: VecDeque<(String, Vec<u8>)>,
     }
@@ -168,6 +169,7 @@ pub(crate) mod tests {
                     input_ports,
                     output_ports,
                     senders: Vec::new(),
+                    refused_opens: HashSet::new(),
                     next_token: 0,
                     sent_outputs: VecDeque::new(),
                 })),
@@ -242,7 +244,9 @@ pub(crate) mod tests {
             event_tx: mpsc::Sender<(u64, Vec<u8>)>,
         ) -> Result<Box<dyn InputHandle>, MidiError> {
             let mut state = self.state.lock().unwrap_or_else(|p| p.into_inner());
-            if !state.input_ports.iter().any(|p| p.name == port_name) {
+            if state.refused_opens.contains(port_name)
+                || !state.input_ports.iter().any(|p| p.name == port_name)
+            {
                 return Err(MidiError::PortNotFound {
                     name: port_name.to_owned(),
                 });

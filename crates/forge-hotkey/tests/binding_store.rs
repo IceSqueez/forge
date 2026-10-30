@@ -347,6 +347,37 @@ async fn set_binding_edge_rewrites_the_kind_and_keeps_the_combo_override() {
 }
 
 #[tokio::test]
+async fn set_binding_edge_refuses_an_edge_the_same_combo_already_binds() {
+    let store = store().await;
+    let backend = Arc::clone(&store.provider);
+    let press = seed_instance(&backend, event_kinds::GLOBAL_PRESSED, Some("Ctrl+F1")).await;
+    seed_instance(&backend, event_kinds::GLOBAL_RELEASED, Some("Ctrl+F1")).await;
+
+    let result = set_binding_edge(Arc::clone(&backend), press, HotkeyEdge::Release).await;
+
+    assert!(result.is_err());
+    let stored = backend
+        .trigger_instance_repo()
+        .get(press)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(stored.kind_id, event_kinds::GLOBAL_PRESSED);
+}
+
+#[tokio::test]
+async fn set_binding_edge_moves_onto_an_edge_only_another_combo_binds() {
+    let store = store().await;
+    let backend = Arc::clone(&store.provider);
+    let press = seed_instance(&backend, event_kinds::GLOBAL_PRESSED, Some("Ctrl+F1")).await;
+    seed_instance(&backend, event_kinds::GLOBAL_RELEASED, Some("Ctrl+F2")).await;
+
+    let result = set_binding_edge(Arc::clone(&backend), press, HotkeyEdge::Release).await;
+
+    assert!(result.is_ok(), "got {result:?}");
+}
+
+#[tokio::test]
 async fn set_binding_edge_reports_an_instance_that_no_longer_exists() {
     let store = store().await;
     let backend = Arc::clone(&store.provider);

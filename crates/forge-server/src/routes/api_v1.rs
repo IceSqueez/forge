@@ -14,7 +14,7 @@ use crate::protocol::{
     DispatchContext, WsResponse, handle_do_action, handle_get_actions, handle_get_active_viewers,
     handle_get_events, handle_get_global, handle_get_globals, handle_get_info,
     handle_get_overlay_files, handle_get_user_globals, handle_replay_event, handle_set_global,
-    handle_trigger_code_event,
+    handle_trigger_code_event, merge_payload,
 };
 use crate::server::AppState;
 use crate::ws_client::WsClient;
@@ -45,16 +45,22 @@ fn ephemeral_ctx(state: &AppState) -> DispatchContext {
     }
 }
 
+const ACTION_VERB_SUFFIX: &str = ":do";
+const REPLAY_VERB_SUFFIX: &str = ":replay";
+
+fn not_found() -> Response {
+    ws_response_to_http(WsResponse::Error {
+        code: Some("NOT_FOUND".to_owned()),
+        message: "no such route".to_owned(),
+    })
+}
+
 fn ws_response_to_http(resp: WsResponse) -> Response {
     match resp {
         WsResponse::Ok(data) => {
             let mut body = serde_json::Map::new();
             body.insert("status".into(), "ok".into());
-            if let serde_json::Value::Object(fields) = data {
-                for (k, v) in fields {
-                    body.insert(k, v);
-                }
-            }
+            merge_payload(&mut body, &data);
             (StatusCode::OK, Json(serde_json::Value::Object(body))).into_response()
         }
         WsResponse::Error { code, message } => {
@@ -65,6 +71,7 @@ fn ws_response_to_http(resp: WsResponse) -> Response {
                 _ => StatusCode::INTERNAL_SERVER_ERROR,
             };
             let body = serde_json::json!({
+                "status": "error",
                 "error": {
                     "code": code.unwrap_or_else(|| "RUNTIME_ERROR".to_owned()),
                     "message": message,
@@ -96,7 +103,9 @@ async fn do_action_wildcard(
     Path(id_do): Path<String>,
     body: Option<Json<DoActionBody>>,
 ) -> Response {
-    let id = id_do.strip_suffix(":do").unwrap_or(&id_do).to_owned();
+    let Some(id) = id_do.strip_suffix(ACTION_VERB_SUFFIX).map(str::to_owned) else {
+        return not_found();
+    };
     let ctx = ephemeral_ctx(&state);
     let args = body.map(|b| b.0.args).unwrap_or(serde_json::Value::Null);
     ws_response_to_http(handle_do_action(id, args, &ctx).await)
@@ -175,10 +184,12 @@ async fn replay_event_wildcard(
     State(state): State<AppState>,
     Path(id_replay): Path<String>,
 ) -> Response {
-    let id = id_replay
-        .strip_suffix(":replay")
-        .unwrap_or(&id_replay)
-        .to_owned();
+    let Some(id) = id_replay
+        .strip_suffix(REPLAY_VERB_SUFFIX)
+        .map(str::to_owned)
+    else {
+        return not_found();
+    };
     let ctx = ephemeral_ctx(&state);
     ws_response_to_http(handle_replay_event(id, &ctx).await)
 }
@@ -358,6 +369,39 @@ mod tests {
             crate::ServerHandle::new(join, shutdown_tx, state, bind_addr, run_state_tx),
             addr,
         )
+    }
+
+    #[tokio::test]
+    async fn a_post_without_the_verb_suffix_is_404_instead_of_running_the_target() {
+        let (handle, addr) = make_test_server(false, "fg_tok").await;
+
+        for path in ["actions/some-action", "events/some-event"] {
+            let resp = reqwest::Client::new()
+                .post(format!("http://{addr}/api/v1/{path}"))
+                .header("Authorization", "Bearer fg_tok")
+                .send()
+                .await
+                .expect("request");
+            assert_eq!(resp.status().as_u16(), 404, "{path}");
+            let body: serde_json::Value = resp.json().await.expect("json");
+            assert_eq!(body["error"]["code"], "NOT_FOUND", "{path}");
+            assert_eq!(body["status"], "error", "{path}");
+        }
+
+        handle.stop().await.expect("stop");
+    }
+
+    #[tokio::test]
+    async fn an_http_body_keeps_its_status_when_the_payload_has_a_status_key() {
+        let response = super::ws_response_to_http(crate::protocol::WsResponse::Ok(
+            serde_json::json!({ "status": "error", "value": 1 }),
+        ));
+
+        let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .expect("body");
+        let body: serde_json::Value = serde_json::from_slice(&bytes).expect("json");
+        assert_eq!(body, serde_json::json!({ "status": "ok", "value": 1 }));
     }
 
     #[tokio::test]

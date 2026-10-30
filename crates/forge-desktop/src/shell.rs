@@ -885,12 +885,10 @@ impl AppShell {
         let credentials = Arc::clone(&handles.backend) as Arc<dyn CredentialsRepo>;
         let settings = Arc::clone(&handles.backend) as Arc<dyn SettingsRepo>;
         let bus = Arc::clone(&handles.bus) as Arc<dyn EventPublisher>;
-        let event_bus = Arc::clone(&handles.bus);
         let rt_handle = handles.rt_handle.clone();
         let seed = handles.vtube_install_seed.clone();
-        let connect = cx.new(|cx| {
-            VTubeConnectView::new(rt_handle, credentials, settings, bus, event_bus, seed, cx)
-        });
+        let connect =
+            cx.new(|cx| VTubeConnectView::new(rt_handle, credentials, settings, bus, seed, cx));
         Self::follow_nav(&connect, cx);
         cx.subscribe(&connect, |this, _view, _: &VTubeConnected, cx| {
             this.enable_integration(&forge_vtube::VTUBE_INTEGRATION.id);

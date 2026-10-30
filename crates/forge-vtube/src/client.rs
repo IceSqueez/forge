@@ -61,6 +61,15 @@ impl VTubeClient {
         publisher: Arc<dyn EventPublisher>,
         creds: Arc<dyn CredentialsRepo>,
     ) -> Self {
+        Self::connect_with_auto_reconnect(cfg, publisher, creds, true)
+    }
+
+    pub(crate) fn connect_with_auto_reconnect(
+        cfg: VTubeConfig,
+        publisher: Arc<dyn EventPublisher>,
+        creds: Arc<dyn CredentialsRepo>,
+        auto_reconnect: bool,
+    ) -> Self {
         let state = Arc::new(AtomicConnectionState::new(ConnectionState::Connecting));
         let auth_state = Arc::new(RwLock::new(AuthState::Cold));
         let notify = Arc::new(Notify::new());
@@ -78,7 +87,7 @@ impl VTubeClient {
         let (content_notifier, content_changed_rx, items_changed_rx) =
             crate::content::ContentNotifier::new();
         let (connected_tx, connected_rx) = mpsc::unbounded_channel::<()>();
-        let auto_reconnect = Arc::new(watch::Sender::new(true));
+        let auto_reconnect = Arc::new(watch::Sender::new(auto_reconnect));
         let last_failure = Arc::new(RwLock::new(None::<MessageRef>));
 
         let content_handle = crate::content::spawn_content_task(

@@ -488,7 +488,8 @@ pub(crate) struct FormButtons {
     pub test_label: String,
     pub submit_glyph: Icon,
     pub submit_label: String,
-    pub disabled: bool,
+    pub test_disabled: bool,
+    pub submit_disabled: bool,
 }
 
 pub(crate) fn form_buttons<V: 'static>(
@@ -499,7 +500,8 @@ pub(crate) fn form_buttons<V: 'static>(
     cx: &mut Context<V>,
 ) -> AnyElement {
     let density = cx.density();
-    let disabled = buttons.disabled;
+    let test_disabled = buttons.test_disabled;
+    let submit_disabled = buttons.submit_disabled;
 
     let test = div()
         .id(buttons.test_id)
@@ -513,12 +515,12 @@ pub(crate) fn form_buttons<V: 'static>(
         .rounded(radius(Radius::Sm))
         .border(BORDER_THIN)
         .border_color(palette.border_regular)
-        .when(!disabled, |el| {
+        .when(!test_disabled, |el| {
             el.cursor_pointer()
                 .hover(|s| s.border_color(palette.border_input))
                 .on_click(cx.listener(move |this, _: &ClickEvent, _, cx| on_test(this, cx)))
         })
-        .when(disabled, |el| el.opacity(BUSY_OPACITY))
+        .when(test_disabled, |el| el.opacity(BUSY_OPACITY))
         .child(icon(
             Icon::PlugConnected,
             BUTTON_GLYPH,
@@ -543,12 +545,12 @@ pub(crate) fn form_buttons<V: 'static>(
         .px(spacing(Spacing::Md, density))
         .rounded(radius(Radius::Sm))
         .bg(palette.brand)
-        .when(!disabled, |el| {
+        .when(!submit_disabled, |el| {
             el.cursor_pointer()
                 .hover(|s| s.bg(with_alpha(palette.brand, CTA_HOVER_ALPHA)))
                 .on_click(cx.listener(move |this, _: &ClickEvent, _, cx| on_submit(this, cx)))
         })
-        .when(disabled, |el| el.opacity(BUSY_OPACITY))
+        .when(submit_disabled, |el| el.opacity(BUSY_OPACITY))
         .child(icon(buttons.submit_glyph, BUTTON_GLYPH, palette.shell))
         .child(
             div()

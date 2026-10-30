@@ -2,7 +2,6 @@ use std::sync::Arc;
 
 use forge_components::{ActivePresentation, ForgePalette, Icon, tr};
 use forge_events::EventPublisher;
-use forge_runtime::EventBus;
 use forge_storage::{CredentialsRepo, SettingsRepo};
 use gpui::{Context, Entity, EventEmitter, SharedString, Subscription, Window, prelude::*};
 
@@ -25,13 +24,11 @@ impl VTubeConnectView {
         credentials: Arc<dyn CredentialsRepo>,
         settings: Arc<dyn SettingsRepo>,
         bus: Arc<dyn EventPublisher>,
-        event_bus: Arc<EventBus>,
         seed: VTubeInstallSeed,
         cx: &mut Context<Self>,
     ) -> Self {
-        let form = cx.new(|cx| {
-            VTubeConnectForm::new(rt_handle, credentials, settings, bus, event_bus, seed, cx)
-        });
+        let form =
+            cx.new(|cx| VTubeConnectForm::new(rt_handle, credentials, settings, bus, seed, cx));
         let form_sub = cx.subscribe(&form, |_, _, _: &VTubeConnected, cx| {
             cx.emit(VTubeConnected)
         });

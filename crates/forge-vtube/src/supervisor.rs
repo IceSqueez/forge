@@ -43,8 +43,8 @@ const EXPRESSION_POLL_TIMEOUT: Duration = Duration::from_secs(5);
 const UNANSWERED_POLLS_BEFORE_SUSPECT: u32 = 2;
 const REQUEST_SWEEP_INTERVAL: Duration = Duration::from_secs(1);
 const UNRESPONSIVE_THRESHOLD: Duration = REQUEST_TIMEOUT.saturating_add(REQUEST_SWEEP_INTERVAL);
-const TOKEN_APPROVAL_TIMEOUT: Duration = Duration::from_secs(30);
-const HANDSHAKE_REPLY_TIMEOUT: Duration = Duration::from_secs(10);
+pub(crate) const TOKEN_APPROVAL_TIMEOUT: Duration = Duration::from_secs(30);
+pub(crate) const HANDSHAKE_REPLY_TIMEOUT: Duration = Duration::from_secs(10);
 
 struct InFlight {
     respond_to: oneshot::Sender<serde_json::Value>,

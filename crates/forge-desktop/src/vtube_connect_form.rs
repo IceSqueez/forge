@@ -4,16 +4,17 @@ use std::sync::Arc;
 use forge_components::{
     ActivePresentation, Density, ForgePalette, Icon, TextInput, body_family, pulse_dot, scaled, tr,
 };
-use forge_events::{Event, EventPublisher};
-use forge_runtime::EventBus;
+use forge_events::EventPublisher;
 use forge_storage::{CredentialsRepo, Flag, Setting, SettingsRepo};
-use forge_vtube::{PLUGIN_NAME, VTubeClient, VTubeConfig, VTubeProbeResult};
+use forge_vtube::{
+    PLUGIN_NAME, VTubeAttemptPhase, VTubeClient, VTubeConfig, VTubeConnectAttempt, VTubeProbeResult,
+};
 use gpui::{
-    AnyElement, Context, Entity, EventEmitter, Focusable, Pixels, Rgba, Subscription, Window, div,
-    prelude::*, px,
+    AnyElement, AsyncApp, Context, Entity, EventEmitter, Focusable, Pixels, Rgba, Subscription,
+    Task, WeakEntity, Window, div, prelude::*, px,
 };
 
-use crate::async_bridge::{self, EventBatch};
+use crate::async_bridge;
 use crate::connect_scaffold::{
     AttemptStatus, ConnectFlag, ConnectFlagSpec, ConnectFlags, EndpointFields, FIELD_BLOCK_GAP,
     FormButtons, StripContent, StripLook, box_frame, endpoint_input, endpoint_row, field_label,
@@ -21,7 +22,7 @@ use crate::connect_scaffold::{
     strip_frame, strip_icon,
 };
 use crate::integrations::VTubeInstallSeed;
-use crate::runtime_event::{self, RuntimeEvent, VTubeConnection, VTubeDisconnect};
+use crate::runtime_event::VTubeDisconnect;
 
 pub const VTUBE_AUTO_RECONNECT: Setting<Flag> = Setting::new(
     "vtube.auto_reconnect",
@@ -85,25 +86,18 @@ enum Status {
     Attempt(AttemptStatus),
 }
 
-enum ConnectOutcome {
-    AwaitingApproval,
-    Connected,
-    Failed(VTubeDisconnect),
-}
-
 pub struct VTubeConnectForm {
     rt_handle: tokio::runtime::Handle,
     credentials: Arc<dyn CredentialsRepo>,
     settings: Arc<dyn SettingsRepo>,
     bus: Arc<dyn EventPublisher>,
-    event_bus: Arc<EventBus>,
     seed: VTubeInstallSeed,
     host: Entity<TextInput>,
     port: Entity<TextInput>,
     flags: ConnectFlags,
     status: Status,
     testing: bool,
-    connecting: bool,
+    attempt: Option<Task<gpui::Result<()>>>,
     _subs: Vec<Subscription>,
 }
 
@@ -115,7 +109,6 @@ impl VTubeConnectForm {
         credentials: Arc<dyn CredentialsRepo>,
         settings: Arc<dyn SettingsRepo>,
         bus: Arc<dyn EventPublisher>,
-        event_bus: Arc<EventBus>,
         seed: VTubeInstallSeed,
         cx: &mut Context<Self>,
     ) -> Self {
@@ -133,14 +126,13 @@ impl VTubeConnectForm {
             credentials,
             settings,
             bus,
-            event_bus,
             seed,
             host,
             port,
             flags: ConnectFlags::default(),
             status: Status::Idle,
             testing: false,
-            connecting: false,
+            attempt: None,
             _subs: subs,
         };
         form.load_prefill(cx);
@@ -148,7 +140,7 @@ impl VTubeConnectForm {
     }
 
     fn busy(&self) -> bool {
-        self.testing || self.connecting
+        self.testing || self.attempt.is_some()
     }
 
     fn load_prefill(&mut self, cx: &mut Context<Self>) {
@@ -254,6 +246,20 @@ impl VTubeConnectForm {
         cx.notify();
     }
 
+    fn on_submit(&mut self, cx: &mut Context<Self>) {
+        if self.attempt.is_some() {
+            self.cancel_attempt(cx);
+        } else {
+            self.on_connect(cx);
+        }
+    }
+
+    fn cancel_attempt(&mut self, cx: &mut Context<Self>) {
+        self.attempt = None;
+        self.status = Status::Idle;
+        cx.notify();
+    }
+
     fn on_connect(&mut self, cx: &mut Context<Self>) {
         if self.busy() {
             return;
@@ -261,93 +267,57 @@ impl VTubeConnectForm {
         let Some(form) = self.read_form(cx) else {
             return;
         };
-        self.connecting = true;
         self.status = Status::Attempt(AttemptStatus::Busy(tr!("vtube_connect_connecting")));
 
         let config = VTubeConfig {
             endpoint: format!("ws://{}:{}/", form.host, form.port),
         };
-        let bus = Arc::clone(&self.bus);
-        let credentials = Arc::clone(&self.credentials);
-        let mut sub = self.event_bus.subscribe();
-        let (tx, rx) = tokio::sync::oneshot::channel();
-        self.rt_handle.spawn(async move {
-            let client = Arc::new(VTubeClient::connect(config, bus, credentials));
-            client.set_auto_reconnect(false);
-            #[expect(
-                clippy::let_underscore_must_use,
-                reason = "the view may close before the result arrives"
-            )]
-            let _ = tx.send(client);
-        });
-
-        cx.spawn(async move |this, cx| {
-            let Ok(client) = rx.await else {
-                return;
-            };
-            while let EventBatch::Ready(batch) = async_bridge::recv_event_batch(&mut sub).await {
-                let Some(outcome) = batch.iter().find_map(connect_outcome) else {
-                    continue;
-                };
-                let settled = this.update(cx, |this, cx| {
-                    this.apply_outcome(outcome, Arc::clone(&client), cx)
-                });
-                if !matches!(settled, Ok(false)) {
-                    break;
-                }
-            }
-        })
-        .detach();
+        let attempt = {
+            let _runtime = self.rt_handle.enter();
+            VTubeConnectAttempt::begin(config, Arc::clone(&self.bus), Arc::clone(&self.credentials))
+        };
+        self.attempt =
+            Some(cx.spawn(async move |this, cx| follow_attempt(attempt, this, cx).await));
         cx.notify();
     }
 
-    fn apply_outcome(
-        &mut self,
-        outcome: ConnectOutcome,
-        client: Arc<VTubeClient>,
-        cx: &mut Context<Self>,
-    ) -> bool {
-        let settled = match outcome {
-            ConnectOutcome::AwaitingApproval => {
-                self.status = Status::AwaitingApproval;
-                false
-            }
-            ConnectOutcome::Connected => {
-                client.set_auto_reconnect(self.flags.auto_reconnect);
-                self.seed.install(client);
-                self.connecting = false;
-                self.status = Status::Idle;
-                persist_flag(
-                    &self.rt_handle,
-                    &self.settings,
-                    &FLAGS,
-                    ConnectFlag::AutoReconnect,
-                    self.flags.auto_reconnect,
-                    cx,
-                );
-                persist_flag(
-                    &self.rt_handle,
-                    &self.settings,
-                    &FLAGS,
-                    ConnectFlag::ConnectOnLaunch,
-                    self.flags.connect_on_launch,
-                    cx,
-                );
-                cx.emit(VTubeConnected);
-                true
-            }
-            ConnectOutcome::Failed(reason) => {
-                self.rt_handle.spawn(async move { client.shutdown().await });
-                self.connecting = false;
-                self.status = Status::Attempt(AttemptStatus::Failure {
-                    title: tr!("vtube_connect_failed"),
-                    detail: failure_detail(reason),
-                });
-                true
-            }
-        };
+    fn show_awaiting_approval(&mut self, cx: &mut Context<Self>) {
+        self.status = Status::AwaitingApproval;
         cx.notify();
-        settled
+    }
+
+    fn adopt_client(&mut self, client: Arc<VTubeClient>, cx: &mut Context<Self>) {
+        client.set_auto_reconnect(self.flags.auto_reconnect);
+        self.seed.install(client);
+        self.attempt = None;
+        self.status = Status::Idle;
+        persist_flag(
+            &self.rt_handle,
+            &self.settings,
+            &FLAGS,
+            ConnectFlag::AutoReconnect,
+            self.flags.auto_reconnect,
+            cx,
+        );
+        persist_flag(
+            &self.rt_handle,
+            &self.settings,
+            &FLAGS,
+            ConnectFlag::ConnectOnLaunch,
+            self.flags.connect_on_launch,
+            cx,
+        );
+        cx.emit(VTubeConnected);
+        cx.notify();
+    }
+
+    fn show_failure(&mut self, reason: VTubeDisconnect, cx: &mut Context<Self>) {
+        self.attempt = None;
+        self.status = Status::Attempt(AttemptStatus::Failure {
+            title: tr!("vtube_connect_failed"),
+            detail: failure_detail(reason),
+        });
+        cx.notify();
     }
 
     fn status_strip(&self, palette: &ForgePalette, density: Density) -> AnyElement {
@@ -407,23 +377,24 @@ impl Render for VTubeConnectForm {
             );
 
         let flag_rows = flag_rows(&FLAGS, self.flags, &palette, Self::on_toggle_flag, cx);
-        let submit_label = if self.connecting {
-            tr!("vtube_connect_btn_authorizing")
+        let (submit_glyph, submit_label) = if self.attempt.is_some() {
+            (Icon::X, tr!("common_cancel"))
         } else {
-            tr!("vtube_connect_btn_connect")
+            (Icon::Plug, tr!("vtube_connect_btn_connect"))
         };
         let buttons = form_buttons(
             FormButtons {
                 test_id: "vtube-connect-test",
                 submit_id: "vtube-connect-submit",
                 test_label: tr!("vtube_connect_btn_test"),
-                submit_glyph: Icon::Plug,
+                submit_glyph,
                 submit_label,
-                disabled: self.busy(),
+                test_disabled: self.busy(),
+                submit_disabled: self.testing,
             },
             &palette,
             Self::on_test,
-            Self::on_connect,
+            Self::on_submit,
             cx,
         );
 
@@ -465,16 +436,29 @@ fn authorization_label(already_authenticated: bool) -> String {
     }
 }
 
-fn connect_outcome(event: &Event) -> Option<ConnectOutcome> {
-    let Some(RuntimeEvent::VTubeConnection(changed)) = runtime_event::decode(event) else {
-        return None;
-    };
-    match VTubeConnection::of(&changed)? {
-        VTubeConnection::Connected => Some(ConnectOutcome::Connected),
-        VTubeConnection::Disconnected(VTubeDisconnect::AwaitingApproval) => {
-            Some(ConnectOutcome::AwaitingApproval)
+async fn follow_attempt(
+    mut attempt: VTubeConnectAttempt,
+    this: WeakEntity<VTubeConnectForm>,
+    cx: &mut AsyncApp,
+) -> gpui::Result<()> {
+    loop {
+        match attempt.next_phase().await {
+            VTubeAttemptPhase::Connecting => {}
+            VTubeAttemptPhase::AwaitingApproval => {
+                this.update(cx, |form, cx| form.show_awaiting_approval(cx))?;
+            }
+            VTubeAttemptPhase::Connected => {
+                return this.update(cx, |form, cx| form.adopt_client(attempt.into_client(), cx));
+            }
+            VTubeAttemptPhase::Failed(reason) => {
+                return this.update(cx, |form, cx| form.show_failure(reason.into(), cx));
+            }
+            VTubeAttemptPhase::TimedOut => {
+                return this.update(cx, |form, cx| {
+                    form.show_failure(VTubeDisconnect::NoAnswer, cx);
+                });
+            }
         }
-        VTubeConnection::Disconnected(reason) => Some(ConnectOutcome::Failed(reason)),
     }
 }
 
@@ -488,6 +472,7 @@ fn failure_detail(reason: VTubeDisconnect) -> String {
         VTubeDisconnect::SubscribeFailed => tr!("vtube_connect_error_subscribe"),
         VTubeDisconnect::SocketClosed => tr!("vtube_connect_error_socket_closed"),
         VTubeDisconnect::Unresponsive => tr!("vtube_connect_error_unresponsive"),
+        VTubeDisconnect::NoAnswer => tr!("vtube_connect_error_no_answer"),
         VTubeDisconnect::AwaitingApproval | VTubeDisconnect::Unknown => {
             tr!("vtube_connect_error_unknown")
         }
@@ -516,65 +501,131 @@ async fn load_prefill(
         flags: ConnectFlags::load(&*settings, &FLAGS).await,
     }
 }
+
 #[cfg(test)]
 mod tests {
-    use forge_events::{EventSource, TypedEvent};
+    use std::sync::Mutex;
+
+    use forge_events::{Event, TypedEvent};
+    use forge_vtube::VTubeError;
     use forge_vtube::vocabulary::{VTubeConnectionChanged, VTubeDisconnectReason};
+    use gpui::TestAppContext;
 
     use super::*;
+    use crate::test_support::{install_presentation, pump, pump_until, runtime, test_backend};
 
-    fn outcome_tag(outcome: Option<ConnectOutcome>) -> (&'static str, Option<VTubeDisconnect>) {
-        match outcome {
-            None => ("ignored", None),
-            Some(ConnectOutcome::Connected) => ("connected", None),
-            Some(ConnectOutcome::AwaitingApproval) => ("awaiting", None),
-            Some(ConnectOutcome::Failed(reason)) => ("failed", Some(reason)),
+    #[derive(Default)]
+    struct RecordingBus(Mutex<Vec<Event>>);
+
+    impl RecordingBus {
+        fn saw_client_stop(&self) -> bool {
+            self.0.lock().unwrap().iter().any(|event| {
+                VTubeConnectionChanged::from_event(event)
+                    .is_some_and(|changed| !changed.is_connected && changed.reason.is_none())
+            })
         }
     }
 
-    fn connection_event(is_connected: bool, reason: Option<VTubeDisconnectReason>) -> Event {
-        VTubeConnectionChanged {
-            is_connected,
-            endpoint: "ws://localhost:8001".to_owned(),
-            reason,
-            detail: None,
+    impl EventPublisher for RecordingBus {
+        fn publish(&self, event: Event) {
+            self.0.lock().unwrap().push(event);
         }
-        .into_event(EventSource::VTube, None)
+    }
+
+    struct Mounted {
+        form: Entity<VTubeConnectForm>,
+        bus: Arc<RecordingBus>,
+        rt: tokio::runtime::Runtime,
+        _silent_vts: std::net::TcpListener,
+    }
+
+    fn mounted_form(cx: &mut TestAppContext) -> Mounted {
+        install_presentation(cx);
+        let rt = runtime();
+        let silent_vts = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = silent_vts.local_addr().unwrap().port();
+        let (backend, _writes) = test_backend();
+        let bus = Arc::new(RecordingBus::default());
+        let form = cx.new(|cx| {
+            VTubeConnectForm::new(
+                rt.handle().clone(),
+                Arc::clone(&backend) as Arc<dyn CredentialsRepo>,
+                backend as Arc<dyn SettingsRepo>,
+                Arc::clone(&bus) as Arc<dyn EventPublisher>,
+                VTubeInstallSeed::new(forge_vtube::SwitchableVTubeSink::new()),
+                cx,
+            )
+        });
+        pump(&rt);
+        cx.run_until_parked();
+        form.update(cx, |form, cx| {
+            form.port
+                .update(cx, |input, cx| input.set_content(port.to_string(), cx));
+        });
+        Mounted {
+            form,
+            bus,
+            rt,
+            _silent_vts: silent_vts,
+        }
+    }
+
+    fn running_attempt(mounted: &Mounted, cx: &mut TestAppContext) {
+        mounted.form.update(cx, |form, cx| form.on_submit(cx));
+        assert!(mounted.form.read_with(cx, |form, _| form.attempt.is_some()));
+        pump(&mounted.rt);
+    }
+
+    #[gpui::test]
+    fn cancel_returns_the_form_to_idle_and_stops_the_attempt(cx: &mut TestAppContext) {
+        let mounted = mounted_form(cx);
+        running_attempt(&mounted, cx);
+        assert!(!mounted.bus.saw_client_stop());
+
+        mounted.form.update(cx, |form, cx| form.on_submit(cx));
+        cx.run_until_parked();
+
+        mounted.form.read_with(cx, |form, _| {
+            assert!(form.attempt.is_none());
+            assert!(matches!(form.status, Status::Idle));
+        });
+        pump_until(&mounted.rt, || mounted.bus.saw_client_stop());
+    }
+
+    #[gpui::test]
+    fn closing_the_form_stops_the_running_attempt(cx: &mut TestAppContext) {
+        let mounted = mounted_form(cx);
+        running_attempt(&mounted, cx);
+        assert!(!mounted.bus.saw_client_stop());
+        let Mounted {
+            form,
+            bus,
+            rt,
+            _silent_vts,
+        } = mounted;
+
+        drop(form);
+        cx.update(|_| {});
+        cx.run_until_parked();
+
+        pump_until(&rt, || bus.saw_client_stop());
+    }
+
+    #[gpui::test]
+    fn submitting_while_a_test_runs_starts_no_attempt(cx: &mut TestAppContext) {
+        let mounted = mounted_form(cx);
+        mounted.form.update(cx, |form, cx| form.on_test(cx));
+
+        mounted.form.update(cx, |form, cx| form.on_submit(cx));
+
+        mounted.form.read_with(cx, |form, _| {
+            assert!(form.testing);
+            assert!(form.attempt.is_none());
+        });
     }
 
     #[test]
-    fn each_connection_change_resolves_to_a_phase_the_connect_screen_can_show() {
-        for (is_connected, reason, expected) in [
-            (true, None, ("connected", None)),
-            (
-                false,
-                Some(VTubeDisconnectReason::AwaitingApproval),
-                ("awaiting", None),
-            ),
-            (
-                false,
-                Some(VTubeDisconnectReason::AuthDenied),
-                ("failed", Some(VTubeDisconnect::Denied)),
-            ),
-            (
-                false,
-                Some(VTubeDisconnectReason::ConnectFailed),
-                ("failed", Some(VTubeDisconnect::Unreachable)),
-            ),
-            (false, None, ("ignored", None)),
-        ] {
-            let event = connection_event(is_connected, reason);
-
-            assert_eq!(
-                outcome_tag(connect_outcome(&event)),
-                expected,
-                "{is_connected} {reason:?}"
-            );
-        }
-    }
-
-    #[test]
-    fn every_failure_reason_the_vtube_client_reports_gets_its_own_translated_message() {
+    fn every_failure_the_connect_screen_reports_gets_its_own_translated_message() {
         const REASONS: [VTubeDisconnectReason; 8] = [
             VTubeDisconnectReason::ConnectFailed,
             VTubeDisconnectReason::AuthRequired,
@@ -585,23 +636,32 @@ mod tests {
             VTubeDisconnectReason::SocketClosed,
             VTubeDisconnectReason::Unresponsive,
         ];
-        let reported = |reason| match connect_outcome(&connection_event(false, Some(reason))) {
-            Some(ConnectOutcome::Failed(disconnect)) => disconnect,
-            _ => VTubeDisconnect::Unknown,
-        };
+        let failures: Vec<VTubeDisconnect> = REASONS
+            .into_iter()
+            .map(VTubeDisconnect::from)
+            .chain([VTubeDisconnect::NoAnswer])
+            .collect();
         for lang in [forge_storage::Language::En, forge_storage::Language::Uk] {
             crate::i18n::install_language(lang);
             let unknown = failure_detail(VTubeDisconnect::Unknown);
-            let details = REASONS.map(|reason| failure_detail(reported(reason)));
+            let details: Vec<String> = failures.iter().copied().map(failure_detail).collect();
 
-            for (reason, detail) in REASONS.iter().zip(&details) {
+            for (failure, detail) in failures.iter().zip(&details) {
                 assert!(
                     *detail != unknown && !detail.starts_with("vtube_connect_error_"),
-                    "{lang:?} {reason:?} falls back to {detail:?}"
+                    "{lang:?} {failure:?} falls back to {detail:?}"
                 );
             }
             let distinct: std::collections::HashSet<&String> = details.iter().collect();
-            assert_eq!(distinct.len(), REASONS.len(), "{lang:?} {details:?}");
+            assert_eq!(distinct.len(), failures.len(), "{lang:?} {details:?}");
         }
+    }
+
+    #[test]
+    fn a_test_that_times_out_reports_no_answer() {
+        assert_eq!(
+            VTubeDisconnect::from(&VTubeError::Timeout),
+            VTubeDisconnect::NoAnswer
+        );
     }
 }

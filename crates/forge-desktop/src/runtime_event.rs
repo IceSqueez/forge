@@ -316,6 +316,7 @@ pub(crate) enum VTubeDisconnect {
     SubscribeFailed,
     SocketClosed,
     Unresponsive,
+    NoAnswer,
     Unknown,
 }
 
@@ -342,25 +343,9 @@ impl From<&VTubeError> for VTubeDisconnect {
             VTubeError::TokenRejected => Self::TokenRejected,
             VTubeError::TokenDenied => Self::Denied,
             VTubeError::TokenTimeout => Self::TimedOut,
+            VTubeError::Timeout => Self::NoAnswer,
             _ => Self::Unknown,
         }
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum VTubeConnection {
-    Connected,
-    Disconnected(VTubeDisconnect),
-}
-
-impl VTubeConnection {
-    pub(crate) fn of(changed: &VTubeConnectionChanged) -> Option<Self> {
-        if changed.is_connected {
-            return Some(Self::Connected);
-        }
-        changed
-            .reason
-            .map(|reason| Self::Disconnected(VTubeDisconnect::from(reason)))
     }
 }
 
@@ -1190,36 +1175,6 @@ mod tests {
             );
 
             assert_eq!(decode(&event), None, "{reason:?}");
-        }
-    }
-
-    #[test]
-    fn vtube_connection_is_connected_regardless_of_reason_and_silent_without_one() {
-        for (is_connected, reason, expected) in [
-            (true, None, Some(VTubeConnection::Connected)),
-            (
-                true,
-                Some(VTubeDisconnectReason::AuthDenied),
-                Some(VTubeConnection::Connected),
-            ),
-            (
-                false,
-                Some(VTubeDisconnectReason::AuthDenied),
-                Some(VTubeConnection::Disconnected(VTubeDisconnect::Denied)),
-            ),
-            (false, None, None),
-        ] {
-            let changed = VTubeConnectionChanged {
-                is_connected,
-                reason,
-                ..vtube_changed()
-            };
-
-            assert_eq!(
-                VTubeConnection::of(&changed),
-                expected,
-                "{is_connected} {reason:?}"
-            );
         }
     }
 }

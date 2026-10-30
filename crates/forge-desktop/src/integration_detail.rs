@@ -1934,6 +1934,7 @@ mod tests {
         use forge_runtime::{
             ActionCancelRegistry, spawn_action_engine, spawn_live_viewer_aggregator,
         };
+        use forge_types::MessageCode;
         use gpui::TestAppContext;
 
         use super::super::*;
@@ -2030,19 +2031,18 @@ mod tests {
         }
 
         const STUB_METRIC_IDS: [HealthMetricId; 4] = [
-            HealthMetricId::new("metric0"),
-            HealthMetricId::new("metric1"),
-            HealthMetricId::new("metric2"),
-            HealthMetricId::new("metric3"),
+            HealthMetricId::new(MessageCode::from_static("stub", "metric0")),
+            HealthMetricId::new(MessageCode::from_static("stub", "metric1")),
+            HealthMetricId::new(MessageCode::from_static("stub", "metric2")),
+            HealthMetricId::new(MessageCode::from_static("stub", "metric3")),
         ];
 
         impl BuiltinHealth for ShiftingActions {
             fn metrics(&self) -> [HealthMetric; 4] {
                 std::array::from_fn(|i| HealthMetric {
                     id: STUB_METRIC_IDS[i].clone(),
-                    label: format!("metric{i}"),
                     value: HealthValue::Text {
-                        primary: String::new(),
+                        primary: HealthText::unlocalized(""),
                         secondary: None,
                     },
                 })
@@ -2173,7 +2173,7 @@ mod tests {
 
         fn live_value() -> HealthValue {
             HealthValue::Text {
-                primary: "42".to_owned(),
+                primary: HealthText::unlocalized("42"),
                 secondary: None,
             }
         }
@@ -2211,7 +2211,10 @@ mod tests {
             view.update(cx, |detail, cx| {
                 detail.apply_health_delta(
                     HealthDelta {
-                        metric: HealthMetricId::new("not_declared"),
+                        metric: HealthMetricId::new(MessageCode::from_static(
+                            "stub",
+                            "not_declared",
+                        )),
                         new_value: live_value(),
                     },
                     cx,
@@ -2222,16 +2225,13 @@ mod tests {
         }
 
         #[gpui::test]
-        fn the_viewer_trend_lands_on_the_metric_declared_as_viewers_whatever_its_label(
-            cx: &mut TestAppContext,
-        ) {
+        fn the_viewer_trend_lands_on_the_metric_declared_as_viewers(cx: &mut TestAppContext) {
             let rt = runtime();
             let _enter = rt.enter();
             let view = open_detail(cx, &rt, ShiftingActions::labelled("idle").object());
 
             let augmented = view.update(cx, |detail, _| {
                 detail.health_metrics[1].id = HealthMetricId::VIEWERS;
-                detail.health_metrics[1].label = "Zuschauer".to_owned();
                 detail.augmented_health()
             });
 

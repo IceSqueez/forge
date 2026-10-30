@@ -171,12 +171,11 @@ mod tests {
     use forge_platform_core::{
         BuiltinContent, BuiltinHealth, BuiltinStatus, CapabilityFlags, ConnectionState,
         DetailSection, FollowLookup, FollowStatus, HeaderAction, HealthMetric, HealthMetricId,
-        HealthStream, HealthValue, QuickAction, QuickActions, SectionIcon,
+        HealthStream, HealthText, HealthValue, QuickAction, QuickActions, SectionIcon,
     };
     use forge_storage::chat_history::MockChatHistoryRepo;
     use forge_storage::voice_aliases::MockVoiceAliasRepo;
-    use forge_types::IntegrationId;
-    use forge_types::PlatformId;
+    use forge_types::{IntegrationId, MessageCode, PlatformId};
     use gpui::{AppContext as _, Entity, TestAppContext};
     use time::OffsetDateTime;
 
@@ -226,19 +225,18 @@ mod tests {
     }
 
     const STUB_METRIC_IDS: [HealthMetricId; 4] = [
-        HealthMetricId::new("metric0"),
-        HealthMetricId::new("metric1"),
-        HealthMetricId::new("metric2"),
-        HealthMetricId::new("metric3"),
+        HealthMetricId::new(MessageCode::from_static("stub", "metric0")),
+        HealthMetricId::new(MessageCode::from_static("stub", "metric1")),
+        HealthMetricId::new(MessageCode::from_static("stub", "metric2")),
+        HealthMetricId::new(MessageCode::from_static("stub", "metric3")),
     ];
 
     impl BuiltinHealth for StubBuiltin {
         fn metrics(&self) -> [HealthMetric; 4] {
             std::array::from_fn(|i| HealthMetric {
                 id: STUB_METRIC_IDS[i].clone(),
-                label: format!("metric{i}"),
                 value: HealthValue::Text {
-                    primary: String::new(),
+                    primary: HealthText::unlocalized(""),
                     secondary: None,
                 },
             })

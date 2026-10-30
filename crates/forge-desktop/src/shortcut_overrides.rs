@@ -273,6 +273,8 @@ mod tests {
 
     use super::*;
     use crate::test_support::stored_shortcut_overrides;
+    use forge_storage::RowClasses;
+    use forge_storage::test_support::MemorySettings;
 
     const HOME: &str = "nav.home";
     const HOME_DEFAULT: &str = "ctrl-1";
@@ -542,7 +544,10 @@ mod tests {
     #[test]
     fn load_overrides_passes_a_store_failure_through() {
         let (backend, _writes) = crate::test_support::test_backend();
-        backend.fault_reads(KEYBOARD_SHORTCUTS, crate::test_support::ReadFault::Fails);
+        backend.fault_reads(
+            KEYBOARD_SHORTCUTS.name(),
+            crate::test_support::ReadFault::Fails,
+        );
 
         let loaded = crate::test_support::runtime().block_on(load_overrides(backend));
 
@@ -562,11 +567,73 @@ mod tests {
             assert!(
                 matches!(
                     stored_shortcut_overrides(Some(raw)),
-                    Err(StorageError::UndecodableSetting { key }) if key == KEYBOARD_SHORTCUTS
+                    Err(StorageError::UndecodableSetting { key }) if key == KEYBOARD_SHORTCUTS.name()
                 ),
                 "expected an undecodable-setting error for {raw:?}"
             );
         }
+    }
+
+    #[test]
+    fn the_codec_flags_a_corrupt_value_unreadable_instead_of_rejecting_it() {
+        for raw in ["", "not json", "[]", r#"{"nav.home":7}"#] {
+            let decoded = ShortcutsCodec
+                .decode(raw)
+                .expect("a rejected value would read as an empty map");
+
+            assert!(
+                decoded.unreadable && decoded.entries.is_empty(),
+                "{raw:?} decoded as readable"
+            );
+        }
+    }
+
+    #[test]
+    fn the_codec_reads_a_stored_map_as_readable() {
+        let decoded = ShortcutsCodec
+            .decode(r#"{"nav.home":"ctrl-9"}"#)
+            .expect("a well-formed map decodes");
+
+        assert!(!decoded.unreadable && decoded.entries.contains_key(HOME));
+    }
+
+    #[test]
+    fn a_failed_load_of_a_corrupt_value_leaves_the_stored_row_untouched() {
+        let memory = Arc::new(MemorySettings::new());
+        memory.seed_raw(&KEYBOARD_SHORTCUTS, "not json");
+
+        let loaded = crate::test_support::runtime().block_on(load_overrides(memory.clone()));
+
+        assert!(matches!(
+            loaded,
+            Err(StorageError::UndecodableSetting { .. })
+        ));
+        assert_eq!(
+            (
+                memory.write_log(),
+                memory.row(KEYBOARD_SHORTCUTS.name()).map(|row| row.value)
+            ),
+            (Vec::new(), Some("not json".to_owned()))
+        );
+    }
+
+    #[test]
+    fn saving_overrides_stamps_the_declared_row_classes() {
+        let memory = Arc::new(MemorySettings::new());
+        let mut overrides = ShortcutOverrides::default();
+        overrides.bind(HOME, "ctrl-9".to_owned());
+
+        crate::test_support::runtime()
+            .block_on(save_overrides(memory.clone(), overrides.map))
+            .unwrap();
+
+        assert_eq!(
+            memory.row(KEYBOARD_SHORTCUTS.name()).map(|row| row.classes),
+            Some(RowClasses {
+                portability: Portable,
+                disclosure: Kind,
+            })
+        );
     }
 
     #[test]

@@ -212,6 +212,13 @@ mod tests {
     use crate::client::tests::{noop_publisher, start_supervised};
     use crate::combo::HotkeyCombo;
 
+    fn plain(text: &HealthText) -> String {
+        match text {
+            HealthText::Text(text) => text.code_or_text(),
+            other => panic!("expected text, got {other:?}"),
+        }
+    }
+
     fn text_metric(client: &HotkeyClient, id: &HealthMetricId) -> Option<(String, Option<String>)> {
         match client
             .metrics()
@@ -219,7 +226,9 @@ mod tests {
             .find(|metric| &metric.id == id)?
             .value
         {
-            HealthValue::Text { primary, secondary } => Some((primary, secondary)),
+            HealthValue::Text { primary, secondary } => {
+                Some((plain(&primary), secondary.as_ref().map(plain)))
+            }
             _ => None,
         }
     }
@@ -233,7 +242,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn metrics_declare_unique_ids() {
+    async fn metrics_declare_unique_catalogued_ids() {
         let (backend, _tx) = MockPortalBackend::new();
         let client = start_supervised(backend, noop_publisher());
 
@@ -244,6 +253,14 @@ mod tests {
             .collect();
 
         assert_eq!(ids.len(), 4);
+        for id in &ids {
+            assert!(
+                crate::vocabulary::messages::HOTKEY_MESSAGES
+                    .codes
+                    .contains(id.label().code()),
+                "{id} is not catalogued"
+            );
+        }
     }
 
     #[tokio::test]
@@ -344,7 +361,7 @@ mod tests {
         assert_eq!(delta.metric, LAST_TRIGGERED_METRIC);
         assert!(matches!(
             delta.new_value,
-            HealthValue::Text { ref primary, .. } if primary.contains("Ctrl+A")
+            HealthValue::Text { ref primary, .. } if plain(primary).contains("Ctrl+A")
         ));
     }
 }

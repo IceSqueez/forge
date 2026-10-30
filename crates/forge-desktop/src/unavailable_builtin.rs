@@ -143,3 +143,30 @@ pub fn unavailable_builtin(id: &IntegrationId) -> BuiltinObject {
         ban_list: None,
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use forge_storage::Language;
+
+    use super::*;
+    use crate::health_text::health_metric_label;
+    use crate::i18n::install_language;
+
+    #[test]
+    fn the_placeholder_metric_labels_exist_in_both_languages() {
+        for (language, expected) in [
+            (Language::En, ["Status", "Uptime", "Endpoint", "Version"]),
+            (Language::Uk, ["Статус", "Час роботи", "Адреса", "Версія"]),
+        ] {
+            install_language(language);
+
+            assert_eq!(
+                UnavailableHealth
+                    .metrics()
+                    .map(|metric| health_metric_label(&metric.id)),
+                expected,
+                "{language:?}"
+            );
+        }
+    }
+}

@@ -547,15 +547,15 @@ mod tests {
             assert_eq!(
                 ws.value,
                 HealthValue::Status {
-                    label: "Disconnected".to_owned(),
+                    label: HealthText::Connection(ConnectionState::Disconnected),
                     active: false,
-                    detail: Some("chatrooms.test_channel.v2".to_owned()),
+                    detail: Some(HealthText::unlocalized("chatrooms.test_channel.v2")),
                 }
             );
         }
 
         #[test]
-        fn metrics_declare_unique_ids() {
+        fn metrics_declare_unique_catalogued_ids() {
             let ids: std::collections::HashSet<_> = disconnected_bundle()
                 .metrics()
                 .into_iter()
@@ -563,6 +563,15 @@ mod tests {
                 .collect();
 
             assert_eq!(ids.len(), 4);
+            for id in &ids {
+                assert!(
+                    *id == HealthMetricId::VIEWERS
+                        || crate::vocabulary::messages::KICK_MESSAGES
+                            .codes
+                            .contains(id.label().code()),
+                    "{id} is not catalogued"
+                );
+            }
         }
 
         fn labels_with_enabled(bundle: &KickIntegrationBundle, enabled: bool) -> Vec<String> {
@@ -665,8 +674,8 @@ mod tests {
             assert_eq!(
                 delta.new_value,
                 HealthValue::Text {
-                    primary: "5".to_owned(),
-                    secondary: Some("live".to_owned()),
+                    primary: HealthText::unlocalized("5"),
+                    secondary: Some(HealthText::unlocalized("live")),
                 }
             );
         }
@@ -695,7 +704,7 @@ mod tests {
                     matches!(
                         &slot.value,
                         HealthValue::Status { label: shown, active: lit, .. }
-                            if shown == label && *lit == active
+                            if *shown == HealthText::unlocalized(label) && *lit == active
                     ),
                     "{auth:?}: {:?}",
                     slot.value

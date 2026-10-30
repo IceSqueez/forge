@@ -239,7 +239,7 @@ mod tests {
         assert_eq!(delta.metric, MODEL_METRIC);
         assert!(matches!(
             delta.new_value,
-            HealthValue::Text { ref primary, .. } if primary == "MyAvatar"
+            HealthValue::Text { ref primary, .. } if *primary == HealthText::unlocalized("MyAvatar")
         ));
     }
 
@@ -260,13 +260,21 @@ mod tests {
     }
 
     #[test]
-    fn metrics_declare_unique_ids() {
+    fn metrics_declare_unique_catalogued_ids() {
         let c = VTubeClient::new_for_test("ws://127.0.0.1:8001/");
 
         let ids: std::collections::HashSet<_> =
             c.metrics().into_iter().map(|metric| metric.id).collect();
 
         assert_eq!(ids.len(), 4);
+        for id in &ids {
+            assert!(
+                crate::vocabulary::messages::VTUBE_MESSAGES
+                    .codes
+                    .contains(id.label().code()),
+                "{id} is not catalogued"
+            );
+        }
     }
 
     #[test]
@@ -298,13 +306,22 @@ mod tests {
         );
     }
 
+    fn plain(text: &HealthText) -> String {
+        match text {
+            HealthText::Text(text) => text.code_or_text(),
+            other => panic!("expected text, got {other:?}"),
+        }
+    }
+
     fn text_metric(metrics: &[HealthMetric], id: &HealthMetricId) -> (String, Option<String>) {
         let metric = metrics
             .iter()
             .find(|m| &m.id == id)
             .unwrap_or_else(|| panic!("no metric {id}"));
         match &metric.value {
-            HealthValue::Text { primary, secondary } => (primary.clone(), secondary.clone()),
+            HealthValue::Text { primary, secondary } => {
+                (plain(primary), secondary.as_ref().map(plain))
+            }
             _ => panic!("metric {id} is not a text value"),
         }
     }

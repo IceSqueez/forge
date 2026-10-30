@@ -823,7 +823,7 @@ mod tests {
     }
 
     #[test]
-    fn metrics_declare_unique_ids() {
+    fn metrics_declare_unique_catalogued_ids() {
         let b = make_bundle(ChatConnectionState::Connected);
 
         let ids: std::collections::HashSet<_> = BuiltinHealth::metrics(b.as_ref())
@@ -832,6 +832,15 @@ mod tests {
             .collect();
 
         assert_eq!(ids.len(), 4);
+        for id in &ids {
+            assert!(
+                *id == HealthMetricId::VIEWERS
+                    || crate::vocabulary::messages::TWITCH_MESSAGES
+                        .codes
+                        .contains(id.label().code()),
+                "{id} is not catalogued"
+            );
+        }
     }
 
     #[test]
@@ -848,8 +857,8 @@ mod tests {
             panic!("expected Status variant");
         };
         assert!(*active);
-        assert_eq!(label, "Joined");
-        assert_eq!(detail.as_deref(), Some("#streamer"));
+        assert_eq!(*label, HealthText::unlocalized("Joined"));
+        assert_eq!(*detail, Some(HealthText::unlocalized("#streamer")));
     }
 
     #[test]
@@ -861,7 +870,10 @@ mod tests {
             panic!("expected Status variant");
         };
         assert!(!*active);
-        assert_eq!(label, "Disconnected");
+        assert_eq!(
+            *label,
+            HealthText::Connection(ConnectionState::Disconnected)
+        );
     }
 
     #[test]
@@ -893,9 +905,9 @@ mod tests {
         else {
             panic!("expected Status variant for EventSub metric");
         };
-        assert_eq!(label, "1 subs");
+        assert_eq!(*label, HealthText::unlocalized("1 subs"));
         assert!(*active, "one active subscription must light EventSub green");
-        assert_eq!(detail.as_deref(), Some("WebSocket"));
+        assert_eq!(*detail, Some(HealthText::unlocalized("WebSocket")));
     }
 
     #[test]
@@ -917,7 +929,7 @@ mod tests {
         else {
             panic!("expected Status variant for EventSub metric");
         };
-        assert_eq!(label, "0 subs");
+        assert_eq!(*label, HealthText::unlocalized("0 subs"));
         assert!(
             !*active,
             "no active subscription must leave EventSub inactive"

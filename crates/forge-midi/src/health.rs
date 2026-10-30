@@ -135,13 +135,21 @@ mod tests {
     use crate::client::MidiClient;
 
     #[test]
-    fn metrics_declare_unique_ids() {
+    fn metrics_declare_unique_catalogued_ids() {
         let c = MidiClient::new_for_test();
 
         let ids: std::collections::HashSet<_> =
             c.metrics().into_iter().map(|metric| metric.id).collect();
 
         assert_eq!(ids.len(), 4);
+        for id in &ids {
+            assert!(
+                crate::vocabulary::messages::MIDI_MESSAGES
+                    .codes
+                    .contains(id.label().code()),
+                "{id} is not catalogued"
+            );
+        }
     }
 
     #[test]
@@ -155,8 +163,8 @@ mod tests {
                 matches!(
                     &value,
                     HealthValue::Text { primary, secondary }
-                        if primary == expected_primary
-                            && secondary.as_deref() == Some(expected_secondary)
+                        if *primary == HealthText::unlocalized(expected_primary)
+                            && *secondary == Some(HealthText::unlocalized(expected_secondary))
                 ),
                 "enabled={enabled} count={count} produced {value:?}"
             );
@@ -181,7 +189,8 @@ mod tests {
         assert!(
             matches!(
                 &input_metric.value,
-                HealthValue::Text { secondary, .. } if secondary.as_deref() == Some("disabled")
+                HealthValue::Text { secondary, .. }
+                    if *secondary == Some(HealthText::unlocalized("disabled"))
             ),
             "input metric was {:?}",
             input_metric.value

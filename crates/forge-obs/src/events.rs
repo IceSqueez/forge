@@ -656,7 +656,7 @@ pub(crate) fn apply_record_status_update(
 mod tests {
     use std::time::Duration;
 
-    use forge_platform_core::{BuiltinHealth, HealthMetricId, HealthValue};
+    use forge_platform_core::{BuiltinHealth, HealthMetricId, HealthText, HealthValue};
     use obws::responses::general::Stats;
     use obws::responses::recording::RecordStatus;
     use obws::responses::streaming::StreamStatus;
@@ -936,7 +936,7 @@ mod tests {
         let HealthValue::Status { label, active, .. } = &deltas[0].new_value else {
             panic!("expected a Status value");
         };
-        assert_eq!(label, "Paused");
+        assert_eq!(label, &HealthText::unlocalized("Paused"));
         assert!(active);
     }
 

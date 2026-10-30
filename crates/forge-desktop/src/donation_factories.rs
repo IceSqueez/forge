@@ -139,10 +139,11 @@ mod tests {
     use forge_events::{Event, EventPublisher};
     use forge_platform_core::{
         CapabilityFlags, ConnectionState, ControlOutcome, DetailSection, DonationStream,
-        HeaderAction, HealthMetric, HealthMetricId, HealthStream, HealthValue, QuickAction,
+        HeaderAction, HealthMetric, HealthMetricId, HealthStream, HealthText, HealthValue,
+        QuickAction,
     };
     use forge_storage::{MockDonationRepo, SettingsRepo};
-    use forge_types::{Donation, Shared};
+    use forge_types::{Donation, MessageCode, Shared};
     use tokio::sync::mpsc;
 
     use super::*;
@@ -220,19 +221,18 @@ mod tests {
     }
 
     const STUB_METRIC_IDS: [HealthMetricId; 4] = [
-        HealthMetricId::new("metric0"),
-        HealthMetricId::new("metric1"),
-        HealthMetricId::new("metric2"),
-        HealthMetricId::new("metric3"),
+        HealthMetricId::new(MessageCode::from_static("stub", "metric0")),
+        HealthMetricId::new(MessageCode::from_static("stub", "metric1")),
+        HealthMetricId::new(MessageCode::from_static("stub", "metric2")),
+        HealthMetricId::new(MessageCode::from_static("stub", "metric3")),
     ];
 
     impl BuiltinHealth for FakeService {
         fn metrics(&self) -> [HealthMetric; 4] {
             std::array::from_fn(|i| HealthMetric {
                 id: STUB_METRIC_IDS[i].clone(),
-                label: String::new(),
                 value: HealthValue::Text {
-                    primary: String::new(),
+                    primary: HealthText::unlocalized(""),
                     secondary: None,
                 },
             })

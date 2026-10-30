@@ -846,7 +846,8 @@ mod tests {
         assert!(
             matches!(
                 &delta.new_value,
-                HealthValue::Text { secondary, .. } if secondary.as_deref() == Some("disabled")
+                HealthValue::Text { secondary, .. }
+                    if *secondary == Some(forge_platform_core::HealthText::unlocalized("disabled"))
             ),
             "delta carried {:?}",
             delta.new_value

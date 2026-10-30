@@ -619,10 +619,9 @@ mod tests {
     #[test]
     fn health_metric_serde_roundtrip() {
         let metric = HealthMetric {
-            id: HealthMetricId::new("chat"),
-            label: "Chat".to_owned(),
+            id: HealthMetricId::VIEWERS,
             value: HealthValue::Status {
-                label: "Connected".to_owned(),
+                label: HealthText::unlocalized("Connected"),
                 active: true,
                 detail: None,
             },
@@ -636,26 +635,26 @@ mod tests {
     fn health_value_serde_roundtrip_each_variant() {
         for v in [
             HealthValue::Status {
-                label: "Connected".to_owned(),
+                label: HealthText::unlocalized("Connected"),
                 active: true,
                 detail: None,
             },
             HealthValue::Text {
-                primary: "42 msg/s".to_owned(),
-                secondary: Some("peak: 150".to_owned()),
+                primary: HealthText::unlocalized("42 msg/s"),
+                secondary: Some(HealthText::unlocalized("peak: 150")),
             },
             HealthValue::Text {
-                primary: "idle".to_owned(),
+                primary: HealthText::unlocalized("idle"),
                 secondary: None,
             },
             HealthValue::Pair {
-                left: "60 fps".to_owned(),
-                right: "2.4%".to_owned(),
+                left: HealthText::unlocalized("60 fps"),
+                right: HealthText::unlocalized("2.4%"),
             },
             HealthValue::Ratio {
                 used: 800,
                 total: 1000,
-                reset_hint: Some("resets hourly".to_owned()),
+                reset_hint: Some(HealthText::unlocalized("resets hourly")),
             },
             HealthValue::Ratio {
                 used: 0,
@@ -680,7 +679,7 @@ mod tests {
             },
         };
         let json = serde_json::to_value(&delta).unwrap();
-        assert_eq!(json["metric"], serde_json::json!("viewers"));
+        assert_eq!(json["metric"], serde_json::json!("common.health_viewers"));
         let back: HealthDelta = serde_json::from_value(json).unwrap();
         assert_eq!(back.metric, HealthMetricId::VIEWERS);
         assert_eq!(back.new_value, delta.new_value);

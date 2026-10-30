@@ -1166,7 +1166,9 @@ mod tests {
         use std::sync::atomic::Ordering;
         use std::time::Duration;
 
-        use forge_platform_core::{BuiltinControl, BuiltinHealth, HealthMetricId, HealthValue};
+        use forge_platform_core::{
+            BuiltinControl, BuiltinHealth, HealthMetricId, HealthText, HealthValue,
+        };
         use serde_json::json;
 
         use super::super::{
@@ -1470,8 +1472,8 @@ mod tests {
             assert_eq!(
                 model_delta,
                 Some(HealthValue::Text {
-                    primary: "MyAvatar".to_owned(),
-                    secondary: Some("42 parameters".to_owned()),
+                    primary: HealthText::unlocalized("MyAvatar"),
+                    secondary: Some(HealthText::unlocalized("42 parameters")),
                 })
             );
         }
@@ -1506,11 +1508,11 @@ mod tests {
                 ),
                 (
                     HealthValue::Text {
-                        primary: "\u{2014}".to_owned(),
-                        secondary: Some("not loaded".to_owned()),
+                        primary: HealthText::unlocalized("\u{2014}"),
+                        secondary: Some(HealthText::unlocalized("not loaded")),
                     },
                     HealthValue::Status {
-                        label: "Off".to_owned(),
+                        label: HealthText::unlocalized("Off"),
                         active: false,
                         detail: None,
                     },

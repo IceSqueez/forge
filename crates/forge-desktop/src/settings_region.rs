@@ -338,13 +338,24 @@ impl Render for SettingsRegionView {
 #[cfg(test)]
 mod tests {
     use forge_components::{FOLLOW_REGION_CODE, active_display_formats};
-    use forge_storage::Language;
+    use forge_storage::SettingDisclosure::Verbatim;
+    use forge_storage::SettingPortability::Portable;
+    use forge_storage::test_support::{MemorySettings, StoredSettingRow};
+    use forge_storage::{Language, RowClasses, reserved_keys};
     use gpui::{Entity, TestAppContext};
     use time::{Date, Month, Time};
 
     use super::*;
     use crate::i18n::install_language;
     use crate::test_support::{install_presentation, pump, runtime, test_backend};
+
+    static PROCESS_FORMATS_TESTS: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+    fn process_formats_turn() -> std::sync::MutexGuard<'static, ()> {
+        PROCESS_FORMATS_TESTS
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+    }
 
     fn noon() -> OffsetDateTime {
         OffsetDateTime::new_utc(
@@ -393,6 +404,7 @@ mod tests {
 
     #[gpui::test]
     fn picking_a_format_persists_its_code_and_applies_it_live(cx: &mut TestAppContext) {
+        let _turn = process_formats_turn();
         let rt = runtime();
         let (view, mut writes) = mount(cx, &rt, DisplayFormatChoices::following(Region::Ukraine));
 
@@ -422,6 +434,7 @@ mod tests {
     fn picking_a_region_persists_its_code_and_moves_region_default_rows_live(
         cx: &mut TestAppContext,
     ) {
+        let _turn = process_formats_turn();
         let rt = runtime();
         let (view, mut writes) = mount(cx, &rt, DisplayFormatChoices::following(Region::Ukraine));
 
@@ -437,6 +450,63 @@ mod tests {
                 DisplayFormatChoices::following(Region::UnitedStates).resolve(),
             )
         );
+    }
+
+    #[gpui::test]
+    fn each_regional_pick_stamps_the_declared_row_classes(cx: &mut TestAppContext) {
+        let _turn = process_formats_turn();
+        let rt = runtime();
+        install_presentation(cx);
+        install_language(Language::En);
+        let memory = Arc::new(MemorySettings::new());
+        let repo: Arc<dyn SettingsRepo> = memory.clone();
+        let view = cx.update(|cx| {
+            cx.new(|cx| {
+                SettingsRegionView::new(
+                    repo,
+                    rt.handle().clone(),
+                    DisplayFormatChoices::following(Region::Ukraine),
+                    cx,
+                )
+            })
+        });
+
+        view.update(cx, |view, cx| {
+            view.pick(RegionPick::Region(Region::UnitedStates), cx);
+            view.pick(
+                RegionPick::DateFormat(FormatChoice::Fixed(DateFormatChoice::YearMonthDay)),
+                cx,
+            );
+            view.pick(
+                RegionPick::TimeFormat(FormatChoice::Fixed(ClockStyle::TwelveHour)),
+                cx,
+            );
+            view.pick(
+                RegionPick::FirstDay(FormatChoice::Fixed(FirstWeekday::Saturday)),
+                cx,
+            );
+        });
+        pump(&rt);
+
+        let portable_verbatim = RowClasses {
+            portability: Portable,
+            disclosure: Verbatim,
+        };
+        for (key, value) in [
+            (reserved_keys::REGION, "US"),
+            (reserved_keys::DATE_FORMAT, "ymd"),
+            (reserved_keys::TIME_FORMAT, "12h"),
+            (reserved_keys::FIRST_DAY_OF_WEEK, "sat"),
+        ] {
+            assert_eq!(
+                memory.row(key),
+                Some(StoredSettingRow {
+                    key: key.to_owned(),
+                    value: value.to_owned(),
+                    classes: portable_verbatim,
+                })
+            );
+        }
     }
 
     #[gpui::test]
@@ -477,7 +547,7 @@ mod tests {
         });
 
         assert_eq!(
-            writes,
+            writes.map(|write| write.map(|(setting, code)| (setting.name(), code))),
             [
                 Some((reserved_keys::TIME_FORMAT, FOLLOW_REGION_CODE)),
                 Some((reserved_keys::FIRST_DAY_OF_WEEK, FOLLOW_REGION_CODE)),

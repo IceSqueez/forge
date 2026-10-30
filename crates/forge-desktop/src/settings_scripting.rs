@@ -685,6 +685,7 @@ async fn load_allowed_domains(repo: Arc<dyn SettingsRepo>) -> Result<Vec<String>
 
 #[cfg(test)]
 mod tests {
+    use forge_storage::reserved_keys;
     use gpui::TestAppContext;
 
     use super::*;
@@ -822,7 +823,7 @@ mod tests {
                     .stored_value_from_text(&typed.to_string())
                     .expect("in-range value");
                 backend
-                    .set_string(setting.storage_key(), &stored.to_string())
+                    .set_string(setting.declaration().name(), &stored.to_string())
                     .await
                     .unwrap();
                 typed_by_setting.push((setting, typed));
@@ -845,7 +846,8 @@ mod tests {
     #[tokio::test]
     async fn loaded_snapshot_carries_the_core_allow_local_switch() {
         let (backend, _writes) = test_backend();
-        set_bool_setting(backend.as_ref(), reserved_keys::CORE_HTTP_ALLOW_LOCAL, true)
+        backend
+            .set_string(reserved_keys::CORE_HTTP_ALLOW_LOCAL, "true")
             .await
             .unwrap();
 

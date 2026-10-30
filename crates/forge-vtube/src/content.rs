@@ -439,7 +439,9 @@ mod tests {
 
     use tokio::sync::mpsc;
 
-    use forge_platform_core::{BuiltinContent, BuiltinHealth, DetailSection, HealthValue};
+    use forge_platform_core::{
+        BuiltinContent, BuiltinHealth, DetailSection, HealthMetricId, HealthValue,
+    };
 
     use super::*;
     use crate::client::VTubeClient;
@@ -708,16 +710,14 @@ mod tests {
                 .await
                 .expect("the first catalog sweep must run at startup, not one interval later")
                 .expect("the health channel must stay open");
-            let label = c
-                .metrics()
-                .into_iter()
-                .find(|metric| metric.id == delta.metric)
-                .expect("the delta must target a declared metric")
-                .label;
+            assert!(
+                c.metrics().iter().any(|metric| metric.id == delta.metric),
+                "the delta must target a declared metric"
+            );
             let HealthValue::Text { primary, .. } = delta.new_value else {
-                panic!("{label} must be published as a text metric");
+                panic!("{} must be published as a text metric", delta.metric);
             };
-            reported.push((label, primary));
+            reported.push((delta.metric.to_string(), plain(&primary)));
         }
         handle.abort();
 
@@ -725,8 +725,8 @@ mod tests {
         assert_eq!(
             reported,
             vec![
-                ("EXPRESSIONS".to_owned(), "2".to_owned()),
-                ("ITEMS".to_owned(), "3".to_owned()),
+                (EXPRESSIONS_METRIC.to_string(), "2".to_owned()),
+                (ITEMS_METRIC.to_string(), "3".to_owned()),
             ]
         );
     }
@@ -758,7 +758,8 @@ mod tests {
         assert!(matches!(
             delta.new_value,
             HealthValue::Text { ref primary, ref secondary }
-                if primary == "NewAvatar" && secondary.as_deref() == Some("55 parameters")
+                if *primary == HealthText::unlocalized("NewAvatar")
+                    && *secondary == Some(HealthText::unlocalized("55 parameters"))
         ));
     }
 
@@ -863,24 +864,29 @@ mod tests {
         assert_eq!(version.get().map(String::as_str), Some("1.29.0"));
     }
 
+    fn plain(text: &HealthText) -> String {
+        match text {
+            HealthText::Text(text) => text.code_or_text(),
+            other => panic!("expected text, got {other:?}"),
+        }
+    }
+
     async fn next_text_delta(
         rx: &mut broadcast::Receiver<HealthDelta>,
         c: &VTubeClient,
-    ) -> (String, String, Option<String>) {
+    ) -> (HealthMetricId, String, Option<String>) {
         let delta = tokio::time::timeout(tokio::time::Duration::from_secs(30), rx.recv())
             .await
             .expect("the catalog sweep must publish a health delta")
             .expect("the health channel must stay open");
-        let label = c
-            .metrics()
-            .into_iter()
-            .find(|metric| metric.id == delta.metric)
-            .expect("the delta must target a declared metric")
-            .label;
+        assert!(
+            c.metrics().iter().any(|metric| metric.id == delta.metric),
+            "the delta must target a declared metric"
+        );
         let HealthValue::Text { primary, secondary } = delta.new_value else {
-            panic!("{label} must be published as a text metric");
+            panic!("{} must be published as a text metric", delta.metric);
         };
-        (label, primary, secondary)
+        (delta.metric, plain(&primary), secondary.as_ref().map(plain))
     }
 
     #[tokio::test(start_paused = true)]
@@ -908,7 +914,7 @@ mod tests {
         assert_eq!(
             next_text_delta(&mut health_rx, &c).await,
             (
-                "MODEL".to_owned(),
+                MODEL_METRIC,
                 "Avatar A".to_owned(),
                 Some("42 parameters".to_owned())
             )
@@ -927,7 +933,7 @@ mod tests {
         assert_eq!(
             healed,
             (
-                "MODEL".to_owned(),
+                MODEL_METRIC,
                 "Avatar B".to_owned(),
                 Some("42 parameters".to_owned())
             )
@@ -955,7 +961,7 @@ mod tests {
             c.health_tx.clone(),
         );
 
-        assert_eq!(next_text_delta(&mut health_rx, &c).await.0, "MODEL");
+        assert_eq!(next_text_delta(&mut health_rx, &c).await.0, MODEL_METRIC);
         let queued = req_rx.try_recv();
         handle.abort();
 

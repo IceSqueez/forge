@@ -70,13 +70,39 @@ mod tests {
     use std::collections::BTreeSet;
     use std::sync::Arc;
 
+    use forge_storage::test_support::{MemorySettings, StoredSettingRow};
     use forge_storage::{
-        DataProvider, SettingDisclosure, SettingKey, SettingPortability, SettingSpec, SettingsRepo,
-        report_undeclared_settings, reserved_keys as key,
+        DataProvider, RowClasses, SettingDisclosure, SettingKey, SettingPortability, SettingSpec,
+        SettingsRepo, report_undeclared_settings, reserved_keys as key, write_setting,
     };
 
-    use super::registered_settings_catalog;
+    use super::{DENSITY, registered_settings_catalog};
     use crate::test_support::sandboxed_backend;
+
+    #[test]
+    fn a_density_write_stamps_the_declared_row_classes() {
+        let memory = MemorySettings::new();
+
+        crate::test_support::runtime()
+            .block_on(write_setting(
+                &memory,
+                &DENSITY,
+                &Some("compact".to_owned()),
+            ))
+            .unwrap();
+
+        assert_eq!(
+            memory.row(key::DENSITY),
+            Some(StoredSettingRow {
+                key: key::DENSITY.to_owned(),
+                value: "compact".to_owned(),
+                classes: RowClasses {
+                    portability: SettingPortability::Portable,
+                    disclosure: SettingDisclosure::Verbatim,
+                },
+            })
+        );
+    }
 
     const KEY_CATALOG_GOLDEN: &str = include_str!("../tests/fixtures/settings/key_catalog.tsv");
     const TEST_KEY: [u8; 32] = [0x5e; 32];

@@ -343,6 +343,8 @@ async fn select_and_start(
 #[cfg(test)]
 pub(crate) mod tests {
     use forge_events::EventPublisher;
+    #[cfg(target_os = "linux")]
+    use forge_platform_core::HealthText;
 
     use super::*;
     use crate::backend::tests::{MockFailAllBackend, MockPortalBackend};
@@ -988,7 +990,7 @@ pub(crate) mod tests {
     }
 
     #[cfg(target_os = "linux")]
-    fn backend_tile(client: &HotkeyClient) -> Option<(bool, Option<String>)> {
+    fn backend_tile(client: &HotkeyClient) -> Option<(bool, Option<HealthText>)> {
         use forge_platform_core::{BuiltinHealth, HealthValue};
         match client
             .metrics()
@@ -1002,7 +1004,7 @@ pub(crate) mod tests {
     }
 
     #[cfg(target_os = "linux")]
-    async fn wait_for_backend_tile(client: &HotkeyClient, expected: (bool, Option<String>)) {
+    async fn wait_for_backend_tile(client: &HotkeyClient, expected: (bool, Option<HealthText>)) {
         for _ in 0..10_000 {
             if backend_tile(client).as_ref() == Some(&expected) {
                 return;
@@ -1055,7 +1057,11 @@ pub(crate) mod tests {
             ))
             .await
             .unwrap();
-        wait_for_backend_tile(&client, (false, Some("bind failed".to_owned()))).await;
+        wait_for_backend_tile(
+            &client,
+            (false, Some(HealthText::unlocalized("bind failed"))),
+        )
+        .await;
 
         session_tx
             .send(crate::backend::BackendSessionEvent::Restored)
@@ -1086,7 +1092,7 @@ pub(crate) mod tests {
         assert_eq!(delta.metric, crate::health::BACKEND_METRIC);
         assert!(matches!(
             delta.new_value,
-            HealthValue::Status { active: false, detail: Some(ref d), .. } if d == "bind failed"
+            HealthValue::Status { active: false, detail: Some(ref d), .. } if *d == HealthText::unlocalized("bind failed")
         ));
     }
 

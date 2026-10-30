@@ -106,7 +106,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn metrics_declare_unique_ids() {
+    fn metrics_declare_unique_catalogued_ids() {
         let status = crate::status::StatusBoard::new().snapshot();
 
         let ids: HashSet<_> = metrics(&status)
@@ -115,5 +115,13 @@ mod tests {
             .collect();
 
         assert_eq!(ids.len(), 4);
+        for id in &ids {
+            assert!(
+                crate::messages::MONOBANK_MESSAGES
+                    .codes
+                    .contains(id.label().code()),
+                "{id} is not catalogued"
+            );
+        }
     }
 }

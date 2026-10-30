@@ -459,10 +459,10 @@ mod tests {
 
     use forge_platform_core::{
         BuiltinContent, BuiltinHealth, BuiltinStatus, CapabilityFlags, ConnectionState,
-        DetailSection, HeaderAction, HealthMetric, HealthMetricId, HealthStream, QuickAction,
-        QuickActions,
+        DetailSection, HeaderAction, HealthMetric, HealthMetricId, HealthStream, HealthText,
+        QuickAction, QuickActions,
     };
-    use forge_types::IntegrationId;
+    use forge_types::{IntegrationId, MessageCode};
 
     use super::*;
     use crate::integrations::BuiltinObject;
@@ -558,23 +558,23 @@ mod tests {
         for (value, expected) in [
             (
                 HealthValue::Status {
-                    label: SECRET.to_owned(),
+                    label: HealthText::unlocalized(SECRET),
                     active: true,
-                    detail: Some(SECRET.to_owned()),
+                    detail: Some(HealthText::unlocalized(SECRET)),
                 },
                 "status(active=true)",
             ),
             (
                 HealthValue::Text {
-                    primary: SECRET.to_owned(),
-                    secondary: Some(SECRET.to_owned()),
+                    primary: HealthText::unlocalized(SECRET),
+                    secondary: Some(HealthText::unlocalized(SECRET)),
                 },
                 "text",
             ),
             (
                 HealthValue::Pair {
-                    left: SECRET.to_owned(),
-                    right: SECRET.to_owned(),
+                    left: HealthText::unlocalized(SECRET),
+                    right: HealthText::unlocalized(SECRET),
                 },
                 "pair",
             ),
@@ -582,7 +582,7 @@ mod tests {
                 HealthValue::Ratio {
                     used: 3,
                     total: 800,
-                    reset_hint: Some(SECRET.to_owned()),
+                    reset_hint: Some(HealthText::unlocalized(SECRET)),
                 },
                 "ratio(3/800)",
             ),
@@ -651,19 +651,18 @@ mod tests {
     }
 
     const STUB_METRIC_IDS: [HealthMetricId; 4] = [
-        HealthMetricId::new("metric0"),
-        HealthMetricId::new("metric1"),
-        HealthMetricId::new("metric2"),
-        HealthMetricId::new("metric3"),
+        HealthMetricId::new(MessageCode::from_static("stub", "metric0")),
+        HealthMetricId::new(MessageCode::from_static("stub", "metric1")),
+        HealthMetricId::new(MessageCode::from_static("stub", "metric2")),
+        HealthMetricId::new(MessageCode::from_static("stub", "metric3")),
     ];
 
     impl BuiltinHealth for ProbeBuiltin {
         fn metrics(&self) -> [HealthMetric; 4] {
             std::array::from_fn(|i| HealthMetric {
                 id: STUB_METRIC_IDS[i].clone(),
-                label: format!("Shown label {i}"),
                 value: HealthValue::Text {
-                    primary: SECRET.to_owned(),
+                    primary: HealthText::unlocalized(SECRET),
                     secondary: None,
                 },
             })
@@ -695,7 +694,7 @@ mod tests {
         let fact = facts.first().expect("one installed builtin");
         assert!(fact.endpoint_present, "presence itself is disclosed");
         assert_eq!(fact.id, "probe");
-        assert_eq!(fact.connection, "Connected");
+        assert_eq!(fact.connection, "connected");
         assert_eq!(fact.uptime_secs, Some(90));
         for (label, shape) in &fact.health {
             assert!(
@@ -706,7 +705,7 @@ mod tests {
     }
 
     #[test]
-    fn integration_facts_key_health_by_the_stable_metric_id_not_the_shown_label() {
+    fn integration_facts_key_health_by_the_stable_metric_id() {
         let registry = BuiltinRegistry::default();
         registry.install(ProbeBuiltin::object("probe"));
 
@@ -717,7 +716,15 @@ mod tests {
             .map(|(key, _)| key)
             .collect();
 
-        assert_eq!(keys, ["metric0", "metric1", "metric2", "metric3"]);
+        assert_eq!(
+            keys,
+            [
+                "stub.metric0",
+                "stub.metric1",
+                "stub.metric2",
+                "stub.metric3"
+            ]
+        );
     }
 
     #[test]

@@ -650,18 +650,18 @@ mod tests {
 
     #[test]
     fn chat_poller_health_value_maps_each_connection_state() {
-        for (state, label, active) in [
-            (ConnectionState::Connected, "Connected", true),
-            (ConnectionState::Connecting, "Connecting", false),
-            (ConnectionState::Reconnecting, "Reconnecting", false),
-            (ConnectionState::Disconnected, "Disconnected", false),
+        for (state, active) in [
+            (ConnectionState::Connected, true),
+            (ConnectionState::Connecting, false),
+            (ConnectionState::Reconnecting, false),
+            (ConnectionState::Disconnected, false),
         ] {
             assert_eq!(
                 chat_poller_health_value(state),
                 HealthValue::Status {
-                    label: label.to_owned(),
+                    label: HealthText::Connection(state),
                     active,
-                    detail: Some("liveChatMessages.list".to_owned()),
+                    detail: Some(HealthText::unlocalized("liveChatMessages.list")),
                 },
                 "unexpected health value for {state:?}"
             );
@@ -678,8 +678,8 @@ mod tests {
             assert_eq!(
                 viewers_health_value(report),
                 HealthValue::Text {
-                    primary: primary.to_owned(),
-                    secondary: secondary.map(str::to_owned),
+                    primary: HealthText::unlocalized(primary),
+                    secondary: secondary.map(HealthText::unlocalized),
                 },
                 "unexpected viewers value for {report:?}"
             );
@@ -900,7 +900,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn metrics_declare_unique_ids() {
+    async fn metrics_declare_unique_catalogued_ids() {
         let (bundle, _platform) = make_bundle(Arc::new(EmptyRepo));
 
         let ids: std::collections::HashSet<_> = BuiltinHealth::metrics(bundle.as_ref())
@@ -909,6 +909,15 @@ mod tests {
             .collect();
 
         assert_eq!(ids.len(), 4);
+        for id in &ids {
+            assert!(
+                *id == HealthMetricId::VIEWERS
+                    || crate::vocabulary::messages::YOUTUBE_MESSAGES
+                        .codes
+                        .contains(id.label().code()),
+                "{id} is not catalogued"
+            );
+        }
     }
 
     #[tokio::test]

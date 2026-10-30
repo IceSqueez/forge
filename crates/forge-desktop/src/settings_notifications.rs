@@ -304,7 +304,8 @@ mod tests {
     use forge_components::{Density, Presentation, ThemeId, Toasts};
     use forge_runtime::spawn_notification_policy;
     use forge_storage::Language;
-    use forge_storage::settings::MockSettingsRepo;
+    use forge_storage::reserved_keys;
+    use forge_storage::test_support::MemorySettings;
     use gpui::{AppContext, Entity, TestAppContext};
 
     use super::*;
@@ -364,12 +365,8 @@ mod tests {
     }
 
     fn failing_settings() -> Arc<dyn SettingsRepo> {
-        let mut repo = MockSettingsRepo::new();
-        repo.expect_set_string().returning(|key, _| {
-            Err(StorageError::NotFound {
-                key: key.to_owned(),
-            })
-        });
+        let repo = MemorySettings::new();
+        repo.fail_writes(true);
         Arc::new(repo)
     }
 

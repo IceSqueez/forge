@@ -301,7 +301,7 @@ mod tests {
     }
 
     #[test]
-    fn metrics_declare_unique_ids() {
+    fn metrics_declare_unique_catalogued_ids() {
         let client = DiscordClient::new_for_test_with_creds(MockCreds::new().creds());
 
         let ids: std::collections::HashSet<_> = client
@@ -311,6 +311,14 @@ mod tests {
             .collect();
 
         assert_eq!(ids.len(), 4);
+        for id in &ids {
+            assert!(
+                crate::vocabulary::messages::DISCORD_MESSAGES
+                    .codes
+                    .contains(id.label().code()),
+                "{id} is not catalogued"
+            );
+        }
     }
 
     #[test]
@@ -362,8 +370,14 @@ mod tests {
                 HealthValue::Ratio { reset_hint, .. } => reset_hint.clone(),
                 _ => None,
             })
-            .unwrap_or_default();
-        assert!(hint.contains("12"), "reset hint lost the seconds: {hint:?}");
+            .expect("the rate-limit delta must carry a reset hint");
+        let HealthText::Text(hint) = hint else {
+            panic!("the reset hint must be text: {hint:?}");
+        };
+        assert!(
+            hint.code_or_text().contains("12"),
+            "reset hint lost the seconds: {hint:?}"
+        );
     }
 
     #[test]

@@ -6,10 +6,11 @@ use forge_registry::runner::SubActionConfig;
 use forge_registry::{
     ConfigSpec, RunContext, StepTimer, SubActionCategory, SubActionRunner, TypedField,
 };
-use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, UserText};
+use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry};
 use futures::future::BoxFuture;
 
 use super::fields::REDEMPTION_IDS;
+use super::step_failure;
 use crate::api::rewards::KickRewards;
 use crate::vocabulary::sub_action_ids;
 
@@ -78,10 +79,8 @@ impl SubActionRunner for AcceptRedemptionRunner {
         };
 
         let outcome = match (self.token_source)().await {
-            Err(e) => SubActionOutcome::Failed(UserText::unlocalized(format!("token error: {e}"))),
-            Ok(token) => {
-                SubActionOutcome::from_result(&self.client.accept_redemptions(&ids, &token).await)
-            }
+            Err(e) => SubActionOutcome::Failed(step_failure::token_failed(&e)),
+            Ok(token) => step_failure::outcome(&self.client.accept_redemptions(&ids, &token).await),
         };
         (timer.finish(outcome), None)
     }

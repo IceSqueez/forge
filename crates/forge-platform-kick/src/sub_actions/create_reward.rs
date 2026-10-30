@@ -7,10 +7,11 @@ use forge_registry::{
     ConfigProblem, ConfigSpec, RunContext, StepTimer, SubActionCategory, SubActionIo,
     SubActionRunner, TextEditor, TextField, TypedField, ValueBounds,
 };
-use forge_types::{ArgStack, SubActionTelemetry, UserText, Variant};
+use forge_types::{ArgStack, SubActionTelemetry, Variant};
 use futures::future::BoxFuture;
 
 use super::field_kinds::{WholeNumberField, non_empty};
+use super::step_failure;
 use crate::api::rewards::{CreateRewardParams, KickRewards};
 use crate::vocabulary::variables::created_reward;
 use crate::vocabulary::{config_keys, sub_action_ids};
@@ -133,7 +134,7 @@ impl SubActionRunner for CreateRewardRunner {
         };
         if params.title.is_empty() {
             return (
-                timer.failed(UserText::unlocalized("title is empty after interpolation")),
+                timer.failed(step_failure::empty_after_interpolation(config_keys::TITLE)),
                 None,
             );
         }
@@ -141,10 +142,7 @@ impl SubActionRunner for CreateRewardRunner {
         let token = match (self.token_source)().await {
             Ok(token) => token,
             Err(e) => {
-                return (
-                    timer.failed(UserText::unlocalized(format!("token error: {e}"))),
-                    None,
-                );
+                return (timer.failed(step_failure::token_failed(&e)), None);
             }
         };
         match self.client.create(params, &token).await {
@@ -156,7 +154,7 @@ impl SubActionRunner for CreateRewardRunner {
                 (timer.success(), Some(stack))
             }
             Ok(None) => (timer.success(), None),
-            Err(e) => (timer.failed(UserText::unlocalized(e.to_string())), None),
+            Err(e) => (timer.failed(step_failure::failed(&e)), None),
         }
     }
 }

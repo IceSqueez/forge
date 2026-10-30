@@ -7,12 +7,14 @@ use forge_registry::{
     ConfigProblem, ConfigReason, ConfigSpec, Interpolation, RunContext, StepTimer,
     SubActionCategory, SubActionRunner, TextEditor, TextField, TypedField, ValueBounds,
 };
-use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, UserText};
+use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry};
 use futures::future::BoxFuture;
 
 use super::field_kinds::{Blankable, WholeNumberField, non_empty, stores_blank};
 use super::fields::REWARD_ID;
+use super::step_failure;
 use crate::api::rewards::{KickRewards, UpdateRewardParams};
+use crate::vocabulary::messages;
 use crate::vocabulary::{config_keys, sub_action_ids};
 
 const KIND_ID: &str = sub_action_ids::REWARD_UPDATE;
@@ -151,24 +153,19 @@ impl SubActionRunner for UpdateRewardRunner {
         };
         if update.reward_id.is_empty() {
             return (
-                timer.failed(UserText::unlocalized(
-                    "reward_id is empty after interpolation",
+                timer.failed(step_failure::empty_after_interpolation(
+                    config_keys::REWARD_ID,
                 )),
                 None,
             );
         }
         if update.changes_nothing() {
-            return (
-                timer.failed(UserText::unlocalized(
-                    "all updatable fields are empty after interpolation; nothing to update",
-                )),
-                None,
-            );
+            return (timer.failed(messages::nothing_to_update().into()), None);
         }
 
         let outcome = match (self.token_source)().await {
-            Err(e) => SubActionOutcome::Failed(UserText::unlocalized(format!("token error: {e}"))),
-            Ok(token) => SubActionOutcome::from_result(
+            Err(e) => SubActionOutcome::Failed(step_failure::token_failed(&e)),
+            Ok(token) => step_failure::outcome(
                 &self
                     .client
                     .update(
@@ -317,7 +314,10 @@ mod tests {
             .execute(&config("rw_1", "%e%", "%e%", "%e%"), &make_ctx(&stack))
             .await;
 
-        assert!(matches!(telemetry.outcome, SubActionOutcome::Failed(_)));
+        assert!(
+            matches!(&telemetry.outcome, SubActionOutcome::Failed(reason)
+                if reason.code_or_text() == "kick.nothing_to_update")
+        );
         assert!(
             server.received_requests().await.unwrap().is_empty(),
             "an all-empty resolved update must not reach the transport"

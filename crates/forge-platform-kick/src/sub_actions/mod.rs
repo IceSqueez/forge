@@ -12,6 +12,7 @@ mod lookup_stream_stats;
 mod lookup_user;
 mod reject_redemption;
 mod send_message;
+mod step_failure;
 #[cfg(test)]
 mod test_support;
 mod timeout_user;

@@ -8,9 +8,10 @@ use forge_registry::{
     ConfigSpec, RunContext, StepTimer, SubActionCategory, SubActionRunner, TextEditor, TextField,
     TypedField,
 };
-use forge_types::{ArgStack, SubActionTelemetry, UserText, Variant};
+use forge_types::{ArgStack, SubActionTelemetry, Variant};
 use futures::future::BoxFuture;
 
+use super::step_failure;
 use crate::api::categories::KickCategories;
 use crate::vocabulary::variables;
 use crate::vocabulary::{config_keys, sub_action_ids};
@@ -90,7 +91,7 @@ impl SubActionRunner for LookupCategoryRunner {
         };
         if query.is_empty() {
             return (
-                timer.failed(UserText::unlocalized("query is empty after interpolation")),
+                timer.failed(step_failure::empty_after_interpolation(config_keys::QUERY)),
                 None,
             );
         }
@@ -98,10 +99,7 @@ impl SubActionRunner for LookupCategoryRunner {
         let token = match (self.token_source)().await {
             Ok(token) => token,
             Err(e) => {
-                return (
-                    timer.failed(UserText::unlocalized(format!("token error: {e}"))),
-                    None,
-                );
+                return (timer.failed(step_failure::token_failed(&e)), None);
             }
         };
         match self.client.search(&token, &query).await {
@@ -127,7 +125,7 @@ impl SubActionRunner for LookupCategoryRunner {
                 );
                 (timer.success(), Some(stack))
             }
-            Err(e) => (timer.failed(UserText::unlocalized(e.to_string())), None),
+            Err(e) => (timer.failed(step_failure::failed(&e)), None),
         }
     }
 }

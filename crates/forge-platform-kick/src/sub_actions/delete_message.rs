@@ -7,10 +7,12 @@ use forge_registry::{
     ConfigSpec, RunContext, StepTimer, SubActionCategory, SubActionRunner, TextEditor, TextField,
     TypedField,
 };
-use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, UserText};
+use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry};
 use futures::future::BoxFuture;
 
+use super::step_failure;
 use crate::api::chat_messages::KickSendChat;
+use crate::vocabulary::messages;
 use crate::vocabulary::variables::references;
 use crate::vocabulary::{config_keys, sub_action_ids};
 
@@ -90,26 +92,22 @@ impl SubActionRunner for DeleteMessageRunner {
         };
         if message_id.is_empty() {
             return (
-                timer.failed(UserText::unlocalized(
-                    "message_id is empty after interpolation",
+                timer.failed(step_failure::empty_after_interpolation(
+                    config_keys::MESSAGE_ID,
                 )),
                 None,
             );
         }
         if message_id.contains(UNRESOLVED_REFERENCE_MARKER) {
             return (
-                timer.failed(UserText::unlocalized(
-                    "message_id has an unresolved variable reference",
-                )),
+                timer.failed(messages::unresolved_reference(config_keys::MESSAGE_ID).into()),
                 None,
             );
         }
 
         let outcome = match (self.token_source)().await {
-            Err(e) => SubActionOutcome::Failed(UserText::unlocalized(format!("token error: {e}"))),
-            Ok(token) => {
-                SubActionOutcome::from_result(&self.client.delete(&message_id, &token).await)
-            }
+            Err(e) => SubActionOutcome::Failed(step_failure::token_failed(&e)),
+            Ok(token) => step_failure::outcome(&self.client.delete(&message_id, &token).await),
         };
         (timer.finish(outcome), None)
     }
@@ -184,22 +182,30 @@ mod tests {
 
     #[tokio::test]
     async fn a_message_id_that_does_not_resolve_to_an_id_fails_without_request() {
-        for (case, step_config, stack) in [
-            ("empty id", config("%message_id%"), chat_trigger_args("")),
+        for (case, step_config, stack, expected_code) in [
+            (
+                "empty id",
+                config("%message_id%"),
+                chat_trigger_args(""),
+                "invalid step config",
+            ),
             (
                 "no chat trigger in scope",
                 config("%message_id%"),
                 ArgStack::new(),
+                "kick.unresolved_reference",
             ),
             (
                 "missing key and no chat trigger in scope",
                 BTreeMap::new(),
                 ArgStack::new(),
+                "kick.unresolved_reference",
             ),
             (
                 "unresolved reference beside a resolved one",
                 config("%message_id%-%typo_id%"),
                 chat_trigger_args("abc-123"),
+                "kick.unresolved_reference",
             ),
         ] {
             let server = MockServer::start().await;
@@ -208,8 +214,10 @@ mod tests {
             let (telemetry, _) = runner.execute(&step_config, &make_ctx(&stack)).await;
 
             assert!(
-                matches!(telemetry.outcome, SubActionOutcome::Failed(_)),
-                "{case}"
+                matches!(&telemetry.outcome, SubActionOutcome::Failed(reason)
+                    if reason.code_or_text().starts_with(expected_code)),
+                "{case}: {:?}",
+                telemetry.outcome
             );
             assert!(
                 server.received_requests().await.unwrap().is_empty(),

@@ -6,10 +6,11 @@ use forge_registry::runner::SubActionConfig;
 use forge_registry::{
     ConfigSpec, RunContext, StepTimer, SubActionCategory, SubActionRunner, TypedField,
 };
-use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, UserText};
+use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry};
 use futures::future::BoxFuture;
 
 use super::fields::USER_ID;
+use super::step_failure;
 use crate::api::moderation::KickModeration;
 use crate::vocabulary::sub_action_ids;
 
@@ -84,12 +85,10 @@ impl SubActionRunner for UnbanUserRunner {
         };
 
         let outcome = match (self.token_source)().await {
-            Err(e) => SubActionOutcome::Failed(UserText::unlocalized(format!("token error: {e}"))),
+            Err(e) => SubActionOutcome::Failed(step_failure::token_failed(&e)),
             Ok(token) => match (self.broadcaster_id_source)().await {
-                Err(e) => SubActionOutcome::Failed(UserText::unlocalized(format!(
-                    "broadcaster id error: {e}"
-                ))),
-                Ok(broadcaster_user_id) => SubActionOutcome::from_result(
+                Err(e) => SubActionOutcome::Failed(step_failure::broadcaster_failed(&e)),
+                Ok(broadcaster_user_id) => step_failure::outcome(
                     &self
                         .client
                         .unban(target_id, broadcaster_user_id, &token)

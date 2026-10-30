@@ -7,11 +7,13 @@ use forge_registry::{
     ConfigProblem, ConfigReason, ConfigSpec, Interpolation, RunContext, StepTimer,
     SubActionCategory, SubActionRunner, TextEditor, TextField, TypedField, ValueBounds,
 };
-use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, UserText};
+use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry};
 use futures::future::BoxFuture;
 
 use super::field_kinds::{Blankable, CommaListField, WholeNumberField, non_empty, stores_blank};
+use super::step_failure;
 use crate::api::channel::KickChannel;
+use crate::vocabulary::messages;
 use crate::vocabulary::{config_keys, sub_action_ids};
 
 const KIND_ID: &str = sub_action_ids::CHANNEL_UPDATE_INFO;
@@ -144,17 +146,12 @@ impl SubActionRunner for UpdateInfoRunner {
             Err(problem) => return (timer.invalid_config(&problem), None),
         };
         if update.is_empty() {
-            return (
-                timer.failed(UserText::unlocalized(
-                    "all fields are empty after interpolation; nothing to update",
-                )),
-                None,
-            );
+            return (timer.failed(messages::nothing_to_update().into()), None);
         }
 
         let outcome = match (self.token_source)().await {
-            Err(e) => SubActionOutcome::Failed(UserText::unlocalized(format!("token error: {e}"))),
-            Ok(token) => SubActionOutcome::from_result(
+            Err(e) => SubActionOutcome::Failed(step_failure::token_failed(&e)),
+            Ok(token) => step_failure::outcome(
                 &self
                     .client
                     .update_info(&token, update.title, update.category_id, update.tags)
@@ -291,7 +288,10 @@ mod tests {
             .execute(&config("%x%", "%x%", "%x%"), &make_ctx(&stack))
             .await;
 
-        assert!(matches!(telemetry.outcome, SubActionOutcome::Failed(_)));
+        assert!(
+            matches!(&telemetry.outcome, SubActionOutcome::Failed(reason)
+                if reason.code_or_text() == "kick.nothing_to_update")
+        );
         assert!(
             server.received_requests().await.unwrap().is_empty(),
             "an all-empty resolved config must not reach the transport"

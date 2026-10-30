@@ -4,9 +4,10 @@ use async_trait::async_trait;
 use forge_platform_core::PlatformError;
 use forge_registry::runner::SubActionConfig;
 use forge_registry::{RunContext, StepTimer, SubActionCategory, SubActionRunner};
-use forge_types::{ArgStack, SubActionTelemetry, UserText, Variant};
+use forge_types::{ArgStack, SubActionTelemetry, Variant};
 use futures::future::BoxFuture;
 
+use super::step_failure;
 use crate::api::channel::KickChannel;
 use crate::vocabulary::sub_action_ids;
 use crate::vocabulary::variables;
@@ -67,10 +68,7 @@ impl SubActionRunner for LookupStreamStatsRunner {
         let token = match (self.token_source)().await {
             Ok(token) => token,
             Err(e) => {
-                return (
-                    timer.failed(UserText::unlocalized(format!("token error: {e}"))),
-                    None,
-                );
+                return (timer.failed(step_failure::token_failed(&e)), None);
             }
         };
         match self.client.get_channel(&token).await {
@@ -104,7 +102,7 @@ impl SubActionRunner for LookupStreamStatsRunner {
                     );
                 (timer.success(), Some(stack))
             }
-            Err(e) => (timer.failed(UserText::unlocalized(e.to_string())), None),
+            Err(e) => (timer.failed(step_failure::failed(&e)), None),
         }
     }
 }

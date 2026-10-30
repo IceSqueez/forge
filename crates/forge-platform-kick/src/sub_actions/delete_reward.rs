@@ -6,12 +6,13 @@ use forge_registry::runner::SubActionConfig;
 use forge_registry::{
     ConfigSpec, RunContext, StepTimer, SubActionCategory, SubActionRunner, TypedField,
 };
-use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, UserText};
+use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry};
 use futures::future::BoxFuture;
 
 use super::fields::REWARD_ID;
+use super::step_failure;
 use crate::api::rewards::KickRewards;
-use crate::vocabulary::sub_action_ids;
+use crate::vocabulary::{config_keys, sub_action_ids};
 
 const KIND_ID: &str = sub_action_ids::REWARD_DELETE;
 
@@ -78,18 +79,16 @@ impl SubActionRunner for DeleteRewardRunner {
         };
         if reward_id.is_empty() {
             return (
-                timer.failed(UserText::unlocalized(
-                    "reward_id is empty after interpolation",
+                timer.failed(step_failure::empty_after_interpolation(
+                    config_keys::REWARD_ID,
                 )),
                 None,
             );
         }
 
         let outcome = match (self.token_source)().await {
-            Err(e) => SubActionOutcome::Failed(UserText::unlocalized(format!("token error: {e}"))),
-            Ok(token) => {
-                SubActionOutcome::from_result(&self.client.delete(&reward_id, &token).await)
-            }
+            Err(e) => SubActionOutcome::Failed(step_failure::token_failed(&e)),
+            Ok(token) => step_failure::outcome(&self.client.delete(&reward_id, &token).await),
         };
         (timer.finish(outcome), None)
     }

@@ -8,9 +8,10 @@ use forge_registry::{
     ConfigProblem, ConfigSpec, RunContext, StepTimer, SubActionCategory, SubActionRunner,
     TextEditor, TextField, ToggleField, TypedField,
 };
-use forge_types::{ArgStack, PlatformId, SubActionOutcome, SubActionTelemetry, UserText};
+use forge_types::{ArgStack, PlatformId, SubActionOutcome, SubActionTelemetry};
 use futures::future::BoxFuture;
 
+use super::step_failure;
 use crate::api::chat_messages::KickSendChat;
 use crate::vocabulary::{config_keys, sub_action_ids};
 
@@ -65,9 +66,7 @@ impl SendMessageRunner {
         let token = match (self.token_source)().await {
             Ok(token) => token,
             Err(e) => {
-                return SubActionOutcome::Failed(UserText::unlocalized(format!(
-                    "token error: {e}"
-                )));
+                return SubActionOutcome::Failed(step_failure::token_failed(&e));
             }
         };
         let broadcaster_user_id = if as_bot {
@@ -76,13 +75,11 @@ impl SendMessageRunner {
             match (self.broadcaster_id_source)().await {
                 Ok(id) => id,
                 Err(e) => {
-                    return SubActionOutcome::Failed(UserText::unlocalized(format!(
-                        "broadcaster id error: {e}"
-                    )));
+                    return SubActionOutcome::Failed(step_failure::broadcaster_failed(&e));
                 }
             }
         };
-        SubActionOutcome::from_result(
+        step_failure::outcome(
             &self
                 .client
                 .send(message, &token, broadcaster_user_id, as_bot)
@@ -133,8 +130,8 @@ impl SubActionRunner for SendMessageRunner {
         };
         if message.is_empty() {
             return (
-                timer.failed(UserText::unlocalized(
-                    "message is empty after interpolation",
+                timer.failed(step_failure::empty_after_interpolation(
+                    config_keys::MESSAGE,
                 )),
                 None,
             );
@@ -207,8 +204,8 @@ mod tests {
     -> Arc<dyn Fn() -> BoxFuture<'static, Result<u64, PlatformError>> + Send + Sync> {
         Arc::new(|| {
             Box::pin(async {
-                Err(PlatformError::ReauthRequired {
-                    platform: "kick".to_owned(),
+                Err(PlatformError::Network {
+                    reason: "channel lookup failed".to_owned(),
                 })
             })
         })
@@ -256,7 +253,10 @@ mod tests {
 
         let (telemetry, _) = runner.execute(&config("%u%"), &make_ctx(&stack)).await;
 
-        assert!(matches!(telemetry.outcome, SubActionOutcome::Failed(_)));
+        assert!(
+            matches!(&telemetry.outcome, SubActionOutcome::Failed(reason)
+                if reason.code_or_text().starts_with("invalid step config"))
+        );
         assert!(
             server.received_requests().await.unwrap().is_empty(),
             "empty message must not reach the send transport"
@@ -301,8 +301,9 @@ mod tests {
 
         match telemetry.outcome {
             SubActionOutcome::Failed(reason) => {
-                assert!(
-                    reason.code_or_text().contains("broadcaster id error"),
+                assert_eq!(
+                    reason.code_or_text(),
+                    "kick.broadcaster_unavailable",
                     "unresolved identity must be attributed to the broadcaster id, got: {reason:?}"
                 );
             }

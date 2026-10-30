@@ -73,8 +73,8 @@ pub(crate) fn auth_refused(detail: &str) -> MessageRef {
     detailed(AUTH_REFUSED, detail)
 }
 
-pub(crate) fn request_refused(status: u16, detail: &str) -> MessageRef {
-    detailed(REQUEST_REFUSED, detail).with_arg(STATUS_ARG, i64::from(status))
+pub(crate) fn request_refused(status: u16) -> MessageRef {
+    MessageRef::new(REQUEST_REFUSED).with_arg(STATUS_ARG, i64::from(status))
 }
 
 pub(crate) fn request_failed(detail: &str) -> MessageRef {
@@ -127,7 +127,7 @@ mod tests {
             quota_exhausted(),
             reauth_required(),
             auth_refused("c"),
-            request_refused(500, "c"),
+            request_refused(500),
             request_failed("c"),
             response_unreadable("c"),
             unresolved_reference("title"),
@@ -175,7 +175,7 @@ mod tests {
 
     #[test]
     fn upstream_cause_text_is_carried_as_detail_and_never_as_an_argument() {
-        let failure = request_refused(403, "quotaExceeded: daily limit");
+        let failure = request_failed("quotaExceeded: daily limit");
 
         assert_eq!(
             failure.detail().map(|d| d.as_str()),
@@ -191,7 +191,7 @@ mod tests {
     #[test]
     fn request_refused_status_is_an_integer_argument() {
         assert_eq!(
-            request_refused(404, "c").arg("status"),
+            request_refused(404).arg("status"),
             Some(&forge_types::MessageArg::Int(404))
         );
     }

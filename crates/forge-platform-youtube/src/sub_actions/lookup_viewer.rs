@@ -286,15 +286,17 @@ mod tests {
             panic!("expected Failed, got {:?}", telemetry.outcome);
         };
         assert!(
-            !format!("{msg:?}").contains(TOKEN_SENTINEL),
+            !serde_json::to_string(&msg)
+                .unwrap()
+                .contains(TOKEN_SENTINEL),
             "leaked token: {msg:?}"
         );
         assert!(
-            !format!("{msg:?}").contains(&server.uri()),
+            !serde_json::to_string(&msg).unwrap().contains(&server.uri()),
             "leaked url: {msg:?}"
         );
         assert!(
-            !format!("{msg:?}").contains(BODY_SENTINEL),
+            !serde_json::to_string(&msg).unwrap().contains(BODY_SENTINEL),
             "leaked response body: {msg:?}"
         );
         let forge_types::UserText::Message(message) = &msg else {

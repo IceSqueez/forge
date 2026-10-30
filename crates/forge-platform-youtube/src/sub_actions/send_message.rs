@@ -243,15 +243,20 @@ mod tests {
             Some(&forge_types::MessageArg::Int(403))
         );
         assert!(
-            !format!("{msg:?}").contains(TOKEN_SENTINEL),
+            !serde_json::to_string(&msg)
+                .unwrap()
+                .contains(TOKEN_SENTINEL),
             "outcome must not leak the bearer token: {msg:?}"
         );
         assert!(
-            !format!("{msg:?}").contains(&server.uri()),
+            !serde_json::to_string(&msg).unwrap().contains(&server.uri()),
             "outcome must not leak the request URL: {msg:?}"
         );
         assert!(
-            !format!("{msg:?}").to_lowercase().contains("googleapis"),
+            !serde_json::to_string(&msg)
+                .unwrap()
+                .to_lowercase()
+                .contains("googleapis"),
             "outcome must not leak the API host: {msg:?}"
         );
     }

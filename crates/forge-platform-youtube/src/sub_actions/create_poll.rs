@@ -322,10 +322,10 @@ mod tests {
 
             assert_eq!(
                 telemetry.outcome,
-                SubActionOutcome::Failed(format!(
+                SubActionOutcome::Failed(forge_types::UserText::unlocalized(format!(
                     "invalid step config: {}",
                     ConfigProblem::field("options", reason)
-                )),
+                ))),
                 "{template}"
             );
             assert!(

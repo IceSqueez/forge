@@ -288,7 +288,10 @@ mod tests {
     use forge_runtime::LifecycleStates;
 
     fn failed(id: &IntegrationId) -> LifecycleStates {
-        LifecycleStates::from([(id.clone(), LifecycleState::Failed("boom".to_owned()))])
+        LifecycleStates::from([(
+            id.clone(),
+            LifecycleState::Failed(crate::test_support::start_failure("boom")),
+        )])
     }
 
     fn open(
@@ -332,7 +335,7 @@ mod tests {
         let view = open(cx, &rt, forge_obs::OBS_INTEGRATION.id);
 
         view.update(cx, |view, cx| {
-            view.apply_retry_outcome(Err("port in use".to_owned()), cx)
+            view.apply_retry_outcome(Err(crate::test_support::start_failure("port in use")), cx)
         });
 
         assert_eq!(cx.update(|cx| error_toasts(cx)), 1);

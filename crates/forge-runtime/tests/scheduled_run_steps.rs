@@ -76,9 +76,9 @@ fn step(kind_id: &str, config: SubActionConfig) -> SubActionStep {
     }
 }
 
-fn failure(outcome: &SubActionOutcome) -> Option<&str> {
+fn failure(outcome: &SubActionOutcome) -> Option<String> {
     match outcome {
-        SubActionOutcome::Failed(reason) => Some(reason.as_str()),
+        SubActionOutcome::Failed(reason) => Some(reason.code_or_text()),
         _ => None,
     }
 }
@@ -479,7 +479,11 @@ async fn schedule_step_refuses_a_due_time_that_is_not_ahead_of_now() {
         let mut pairs = due_at(Variant::Datetime(due)).to_vec();
         pairs.push(("action_id", text(&target.to_string())));
         let (outcome, _) = harness.schedule(&ArgStack::new(), &pairs).await;
-        assert_eq!(failure(&outcome), Some(too_short.as_str()), "{due}");
+        assert_eq!(
+            failure(&outcome).as_deref(),
+            Some(too_short.as_str()),
+            "{due}"
+        );
     }
 }
 
@@ -502,7 +506,11 @@ async fn schedule_step_without_a_known_action_fails_without_placing_a_run() {
         let (outcome, _) = harness
             .schedule(&ArgStack::new(), &[("action_id", text(&action_id))])
             .await;
-        assert_eq!(failure(&outcome), Some(expected), "{action_id:?}");
+        assert_eq!(
+            failure(&outcome).as_deref(),
+            Some(expected),
+            "{action_id:?}"
+        );
     }
     assert!(harness.pending().await.is_empty());
 }
@@ -729,7 +737,7 @@ async fn schedule_and_cancel_steps_fail_while_the_scheduler_is_not_running() {
     ] {
         let (telemetry, produced) = runner.execute(&config(runner, &pairs), &ctx).await;
         assert_eq!(
-            (failure(&telemetry.outcome), produced.is_none()),
+            (failure(&telemetry.outcome).as_deref(), produced.is_none()),
             (Some(stopped.as_str()), true),
             "{}",
             runner.id()

@@ -512,6 +512,35 @@ mod tests {
 
     const FAKE_GRACE: Duration = Duration::from_secs(3);
 
+    fn token_rejected() -> IntegrationStartError {
+        IntegrationStartError::new(
+            StartFailureCategory::Credentials,
+            MessageRef::upstream_failure(forge_types::UpstreamDetail::from_redacted(
+                "token rejected",
+            )),
+        )
+    }
+
+    struct UnwritableSettings;
+
+    #[async_trait]
+    impl SettingsRepo for UnwritableSettings {
+        async fn get_string(&self, _key: &str) -> Result<Option<String>, StorageError> {
+            Ok(None)
+        }
+        async fn set_string(&self, _key: &str, _value: &str) -> Result<(), StorageError> {
+            Err(StorageError::Connection {
+                reason: "disk full".to_owned(),
+            })
+        }
+        async fn delete(&self, _key: &str) -> Result<bool, StorageError> {
+            Ok(false)
+        }
+        async fn load_all(&self) -> Result<HashMap<String, String>, StorageError> {
+            Ok(HashMap::new())
+        }
+    }
+
     #[derive(Default)]
     struct MemorySettings(Mutex<HashMap<String, String>>);
 
@@ -566,7 +595,7 @@ mod tests {
     struct Behaviour {
         configured: bool,
         hold_start: Option<oneshot::Receiver<()>>,
-        fail_once: Option<String>,
+        fail_once: Option<IntegrationStartError>,
         teardown_hangs: bool,
         teardown_delay: Option<Duration>,
         installs_object: bool,
@@ -638,7 +667,7 @@ mod tests {
             Ok(self.configured)
         }
 
-        async fn start(&self) -> Result<RunningIntegration<FakeObject>, String> {
+        async fn start(&self) -> Result<RunningIntegration<FakeObject>, IntegrationStartError> {
             let generation = self.starts.fetch_add(1, Ordering::SeqCst) + 1;
             let (hold, failure) = {
                 let mut behaviour = self.behaviour.lock().unwrap();
@@ -1128,6 +1157,61 @@ mod tests {
     }
 
     #[tokio::test(start_paused = true)]
+    async fn a_start_past_the_start_bound_reports_an_unreachable_timeout_naming_the_integration() {
+        let (_never_released, hold) = oneshot::channel();
+        let factory = FakeFactory::new(
+            "twitch",
+            Behaviour {
+                hold_start: Some(hold),
+                ..Behaviour::default()
+            },
+        );
+        let harness = Harness::launch(&factory);
+
+        let state = harness.slot(&factory).set_enabled(true).await.unwrap();
+
+        let LifecycleState::Failed(error) = state else {
+            panic!("expected a failed start, got {state:?}");
+        };
+        assert_eq!(
+            (
+                error.category(),
+                error.message().code(),
+                error.message().arg(INTEGRATION_ARG),
+                error.message().arg(SECONDS_ARG),
+            ),
+            (
+                StartFailureCategory::Unreachable,
+                &START_TIMED_OUT,
+                Some(&forge_types::MessageArg::Integration(factory.id.clone())),
+                Some(&forge_types::MessageArg::Int(
+                    i64::try_from(START_BOUND.as_secs()).unwrap()
+                )),
+            )
+        );
+    }
+
+    #[tokio::test]
+    async fn an_enable_that_cannot_save_its_state_fails_without_starting_the_integration() {
+        let factory = FakeFactory::new("twitch", Behaviour::default());
+        let supervisor = IntegrationSupervisor::launch(
+            vec![Arc::clone(&factory) as Arc<dyn IntegrationFactory<FakeObject>>],
+            Arc::new(UnwritableSettings) as Arc<dyn SettingsRepo>,
+            IntegrationGate::new(),
+            Arc::new(FakeObjects::default()) as Arc<dyn IntegrationObjects<FakeObject>>,
+            spawn_live_viewer_aggregator(),
+        );
+        let slot = supervisor.slot(&factory.id).expect("declared slot");
+
+        let error = slot.set_enabled(true).await.unwrap_err();
+
+        assert_eq!(
+            (error.category(), error.message().code(), factory.starts()),
+            (StartFailureCategory::Internal, &STATE_NOT_SAVED, 0)
+        );
+    }
+
+    #[tokio::test(start_paused = true)]
     async fn a_disable_requested_during_a_hung_start_applies_once_the_start_bound_passes() {
         let (_never_released, hold) = oneshot::channel();
         let factory = FakeFactory::new(
@@ -1181,7 +1265,7 @@ mod tests {
         let factory = FakeFactory::new(
             "twitch",
             Behaviour {
-                fail_once: Some("token rejected".to_owned()),
+                fail_once: Some(token_rejected()),
                 ..Behaviour::default()
             },
         );
@@ -1190,7 +1274,7 @@ mod tests {
 
         let failed = slot.set_enabled(true).await.unwrap();
 
-        assert_eq!(failed, LifecycleState::Failed("token rejected".to_owned()));
+        assert_eq!(failed, LifecycleState::Failed(token_rejected()));
         assert!(harness.gate.is_disabled(&factory.id));
 
         let retried = slot.set_enabled(true).await.unwrap();
@@ -1239,7 +1323,7 @@ mod tests {
         let factory = FakeFactory::new(
             "discord",
             Behaviour {
-                fail_once: Some("token rejected".to_owned()),
+                fail_once: Some(token_rejected()),
                 installs_object: true,
                 ..Behaviour::default()
             },
@@ -1248,6 +1332,6 @@ mod tests {
 
         let result = harness.slot(&factory).activate().await;
 
-        assert_eq!(result, Err("token rejected".to_owned()));
+        assert_eq!(result, Err(token_rejected()));
     }
 }

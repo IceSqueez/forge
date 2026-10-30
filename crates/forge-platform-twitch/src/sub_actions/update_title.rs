@@ -209,7 +209,7 @@ mod tests {
 
         assert!(matches!(
             telemetry.outcome,
-            SubActionOutcome::Failed(msg) if msg.contains("401") && !msg.contains(TOKEN_SENTINEL)
+            SubActionOutcome::Failed(msg) if msg.code_or_text().contains("401") && !msg.code_or_text().contains(TOKEN_SENTINEL)
         ));
     }
 

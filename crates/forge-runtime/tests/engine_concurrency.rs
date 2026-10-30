@@ -183,7 +183,12 @@ impl SubActionRunner for ScriptedRunner {
             }
             Behavior::Instant => {}
             Behavior::Panic => panic!("scripted runner panic"),
-            Behavior::Fail => return (timer.failed(FAILURE_REASON), None),
+            Behavior::Fail => {
+                return (
+                    timer.failed(forge_types::UserText::unlocalized(FAILURE_REASON)),
+                    None,
+                );
+            }
         }
         (timer.success(), None)
     }
@@ -679,7 +684,7 @@ async fn a_quick_action_reports_how_its_step_ended() {
         (INSTANT_KIND_ID, |o| matches!(o, SubActionOutcome::Success)),
         (
             FAILING_KIND_ID,
-            |o| matches!(o, SubActionOutcome::Failed(reason) if reason == FAILURE_REASON),
+            |o| matches!(o, SubActionOutcome::Failed(reason) if reason.code_or_text() == FAILURE_REASON),
         ),
         (UNREGISTERED_KIND_ID, |o| {
             matches!(o, SubActionOutcome::Skipped(_))

@@ -289,10 +289,10 @@ mod tests {
     }
 
     fn invalid(field: &str, reason: ConfigReason) -> SubActionOutcome {
-        SubActionOutcome::Failed(format!(
+        SubActionOutcome::Failed(forge_types::UserText::unlocalized(format!(
             "invalid step config: {}",
             ConfigProblem::field(field, reason)
-        ))
+        )))
     }
 
     async fn run_recorded(

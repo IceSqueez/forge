@@ -836,8 +836,12 @@ mod tests {
             (
                 vec![
                     SubActionOutcome::Success,
-                    SubActionOutcome::Failed("integration disabled: obs".to_owned()),
-                    SubActionOutcome::Skipped("condition false".to_owned()),
+                    SubActionOutcome::Failed(forge_types::UserText::unlocalized(
+                        "integration disabled: obs",
+                    )),
+                    SubActionOutcome::Skipped(forge_types::UserText::unlocalized(
+                        "condition false",
+                    )),
                 ],
                 "failed, skipped and successful steps",
             ),

@@ -180,9 +180,9 @@ mod tests {
 
         assert_eq!(
             telemetry.outcome,
-            SubActionOutcome::Failed(
-                "invalid step config: 'redemption_ids' is required".to_owned()
-            )
+            SubActionOutcome::Failed(forge_types::UserText::unlocalized(
+                "invalid step config: 'redemption_ids' is required"
+            ))
         );
         assert!(
             server.received_requests().await.unwrap().is_empty(),

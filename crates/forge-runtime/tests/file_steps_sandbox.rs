@@ -119,7 +119,7 @@ async fn failure_with(
         produced.is_none(),
         "{step:?} {path:?}: a failed step must not bind variables"
     );
-    msg
+    msg.code_or_text()
 }
 
 async fn failure(step: Step, path: &str) -> String {
@@ -473,7 +473,7 @@ async fn absent_read_as_defaults_to_lines_array() {
 async fn unrecognised_read_as_fails_without_producing_a_value() {
     let (outcome, value) = read_fixture(Some("something-else"), "out", "out", "x\ny").await;
     assert!(
-        matches!(&outcome, SubActionOutcome::Failed(m) if m.contains("'read_as'")),
+        matches!(&outcome, SubActionOutcome::Failed(m) if m.code_or_text().contains("'read_as'")),
         "{outcome:?}"
     );
     assert_eq!(value, None);
@@ -506,7 +506,7 @@ async fn json_mode_failures_report_typed_message_and_produce_no_binding() {
     ] {
         let (outcome, value) = read_fixture(Some("JSON"), "out", "out", contents).await;
         assert!(
-            matches!(&outcome, SubActionOutcome::Failed(m) if m.contains(needle)),
+            matches!(&outcome, SubActionOutcome::Failed(m) if m.code_or_text().contains(needle)),
             "contents {contents:?} expected {needle:?}, got {outcome:?}",
         );
         assert!(value.is_none());

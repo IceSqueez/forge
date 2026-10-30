@@ -323,8 +323,8 @@ async fn play_and_stop_reject_an_invalid_clip_id_without_touching_the_player_or_
                 );
             };
             assert!(
-                !message.contains(bad),
-                "{} echoed {bad:?}: {message}",
+                !message.code_or_text().contains(bad),
+                "{} echoed {bad:?}: {message:?}",
                 runner.id()
             );
         }
@@ -420,7 +420,7 @@ async fn every_sound_runner_fails_with_the_control_error_text() {
         let (telemetry, _) = runner.execute(&cfg, &make_ctx(&stack)).await;
 
         assert!(
-            matches!(&telemetry.outcome, SubActionOutcome::Failed(message) if *message == expected),
+            matches!(&telemetry.outcome, SubActionOutcome::Failed(message) if message.code_or_text() == expected),
             "{}: {:?}",
             runner.id(),
             telemetry.outcome
@@ -591,7 +591,9 @@ async fn master_volume_rejects_an_invalid_volume_without_touching_the_player() {
 
         assert_eq!(
             telemetry.outcome,
-            SubActionOutcome::Failed(format!("invalid step config: {problem}")),
+            SubActionOutcome::Failed(forge_types::UserText::unlocalized(format!(
+                "invalid step config: {problem}"
+            ))),
             "{case}"
         );
         assert!(control.calls().is_empty(), "{case}: {:?}", control.calls());

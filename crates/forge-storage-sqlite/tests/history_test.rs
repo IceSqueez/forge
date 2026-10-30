@@ -415,7 +415,7 @@ async fn save_failed_outcome_roundtrips() {
     let backend = setup().await;
     let action_id = ActionId::new();
     let mut ctx = make_ctx(action_id, EventId::new());
-    ctx.outcome = ExecutionOutcome::Failed("rhai error".to_owned());
+    ctx.outcome = ExecutionOutcome::Failed(forge_types::UserText::unlocalized("rhai error"));
 
     backend.history_repo().save(&ctx).await.expect("save");
 
@@ -425,7 +425,9 @@ async fn save_failed_outcome_roundtrips() {
         .await
         .expect("recent_for_action");
     assert_eq!(records.len(), 1);
-    assert!(matches!(&records[0].outcome, ExecutionOutcome::Failed(msg) if msg == "rhai error"));
+    assert!(
+        matches!(&records[0].outcome, ExecutionOutcome::Failed(msg) if msg.code_or_text() == "rhai error")
+    );
 }
 
 #[tokio::test]

@@ -109,11 +109,11 @@ async fn rig() -> Rig {
         (SUCCESS_KIND_ID, SubActionOutcome::Success),
         (
             SKIPPED_KIND_ID,
-            SubActionOutcome::Skipped("condition false".to_owned()),
+            SubActionOutcome::Skipped(forge_types::UserText::unlocalized("condition false")),
         ),
         (
             FAILING_KIND_ID,
-            SubActionOutcome::Failed(FAILURE_REASON.to_owned()),
+            SubActionOutcome::Failed(forge_types::UserText::unlocalized(FAILURE_REASON)),
         ),
     ] {
         registry

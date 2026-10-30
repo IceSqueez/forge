@@ -315,7 +315,9 @@ mod tests {
 
             assert_eq!(
                 telemetry.outcome,
-                SubActionOutcome::Failed(format!("invalid step config: {out_of_range}")),
+                SubActionOutcome::Failed(forge_types::UserText::unlocalized(format!(
+                    "invalid step config: {out_of_range}"
+                ))),
                 "{template}"
             );
             assert!(

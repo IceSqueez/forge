@@ -199,7 +199,7 @@ mod tests {
 
             assert!(
                 matches!(&tel.outcome, SubActionOutcome::Failed(reason)
-                    if reason.starts_with(&format!("invalid step config: '{key}' "))),
+                    if reason.code_or_text().starts_with(&format!("invalid step config: '{key}' "))),
                 "{key} = {value:?} ran as {:?}",
                 tel.outcome,
             );

@@ -298,12 +298,21 @@ mod tests {
         let SubActionOutcome::Failed(msg) = telemetry.outcome else {
             panic!("expected Failed, got {:?}", telemetry.outcome);
         };
-        assert!(!msg.contains(TOKEN_SENTINEL), "leaked token: {msg}");
-        assert!(!msg.contains(&server.uri()), "leaked url: {msg}");
-        assert!(!msg.contains(BODY_SENTINEL), "leaked response body: {msg}");
         assert!(
-            msg.contains("500"),
-            "the status must survive so the failure stays diagnosable: {msg}"
+            !msg.code_or_text().contains(TOKEN_SENTINEL),
+            "leaked token: {msg:?}"
+        );
+        assert!(
+            !msg.code_or_text().contains(&server.uri()),
+            "leaked url: {msg:?}"
+        );
+        assert!(
+            !msg.code_or_text().contains(BODY_SENTINEL),
+            "leaked response body: {msg:?}"
+        );
+        assert!(
+            msg.code_or_text().contains("500"),
+            "the status must survive so the failure stays diagnosable: {msg:?}"
         );
     }
 }

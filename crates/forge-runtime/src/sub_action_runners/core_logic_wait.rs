@@ -132,7 +132,7 @@ mod tests {
         for configured_ms in [-5, MAX_DELAY_MS + 1] {
             let (outcome, held) = run_wait(configured_ms).await;
             assert!(
-                matches!(&outcome, SubActionOutcome::Failed(m) if m.contains(WAIT_MS_KEY)),
+                matches!(&outcome, SubActionOutcome::Failed(m) if m.code_or_text().contains(WAIT_MS_KEY)),
                 "{configured_ms}: {outcome:?}"
             );
             assert!(held < TIMER_GRANULARITY, "{configured_ms} held {held:?}");

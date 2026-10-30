@@ -165,7 +165,7 @@ mod tests {
 
     use forge_events::EventPublisher;
     use forge_registry::{CancelSignal, ControlCell, TelemetrySink};
-    use forge_types::{EventId, SubActionOutcome, unknown_chat_target_reason};
+    use forge_types::{EventId, SubActionOutcome, unknown_chat_target_message};
 
     use super::*;
     use crate::integration_gate::{GatedLeafExecutor, IntegrationGate};
@@ -291,7 +291,7 @@ mod tests {
 
         assert_eq!(
             outcome,
-            SubActionOutcome::Failed(NO_CHAT_PLATFORM_ENABLED_REASON.to_owned())
+            SubActionOutcome::Failed(MessageRef::new(NO_CHAT_PLATFORM_ENABLED).into())
         );
         assert!(sent.is_empty(), "published {sent:?}");
     }
@@ -311,7 +311,7 @@ mod tests {
 
         assert_eq!(
             outcome,
-            SubActionOutcome::Failed(unknown_chat_target_reason("myspace"))
+            SubActionOutcome::Failed(unknown_chat_target_message("myspace").into())
         );
         assert!(sent.is_empty(), "published {sent:?}");
     }

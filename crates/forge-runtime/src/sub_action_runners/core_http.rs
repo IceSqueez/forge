@@ -651,11 +651,17 @@ mod tests {
         };
         assert!(stack.is_none());
         assert!(
-            !msg.contains("SECRET-TOKEN-XYZ"),
-            "leaked auth header: {msg}"
+            !msg.code_or_text().contains("SECRET-TOKEN-XYZ"),
+            "leaked auth header: {msg:?}"
         );
-        assert!(!msg.contains("QUERY-SECRET"), "leaked query token: {msg}");
-        assert!(!msg.contains("192.0.2.1"), "leaked target host: {msg}");
+        assert!(
+            !msg.code_or_text().contains("QUERY-SECRET"),
+            "leaked query token: {msg:?}"
+        );
+        assert!(
+            !msg.code_or_text().contains("192.0.2.1"),
+            "leaked target host: {msg:?}"
+        );
     }
 
     async fn local_backend() -> Sandboxed<Arc<SqliteBackend>> {
@@ -720,7 +726,7 @@ mod tests {
             cfg.insert(key.to_owned(), Variant::String(value.to_owned()));
             let (tel, stack) = run(&runner(HttpMethod::Get, &dp), &cfg).await;
             assert!(
-                matches!(&tel.outcome, SubActionOutcome::Failed(m) if m.contains(&format!("'{key}'"))),
+                matches!(&tel.outcome, SubActionOutcome::Failed(m) if m.code_or_text().contains(&format!("'{key}'"))),
                 "{key}={value}: {:?}",
                 tel.outcome
             );
@@ -744,7 +750,7 @@ mod tests {
             let (tel, _) = run(&runner(HttpMethod::Get, &dp), &cfg).await;
 
             assert!(
-                matches!(&tel.outcome, SubActionOutcome::Failed(m) if m.contains(&format!("'{key}'"))),
+                matches!(&tel.outcome, SubActionOutcome::Failed(m) if m.code_or_text().contains(&format!("'{key}'"))),
                 "{key}: {:?}",
                 tel.outcome
             );

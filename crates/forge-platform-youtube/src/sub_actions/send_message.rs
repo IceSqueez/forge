@@ -233,16 +233,16 @@ mod tests {
             panic!("expected Failed, got {:?}", telemetry.outcome);
         };
         assert!(
-            !msg.contains(TOKEN_SENTINEL),
-            "outcome must not leak the bearer token: {msg}"
+            !msg.code_or_text().contains(TOKEN_SENTINEL),
+            "outcome must not leak the bearer token: {msg:?}"
         );
         assert!(
-            !msg.contains(&server.uri()),
-            "outcome must not leak the request URL: {msg}"
+            !msg.code_or_text().contains(&server.uri()),
+            "outcome must not leak the request URL: {msg:?}"
         );
         assert!(
-            !msg.to_lowercase().contains("googleapis"),
-            "outcome must not leak the API host: {msg}"
+            !msg.code_or_text().to_lowercase().contains("googleapis"),
+            "outcome must not leak the API host: {msg:?}"
         );
     }
 

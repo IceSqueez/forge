@@ -788,7 +788,7 @@ mod tests {
         .unwrap();
         reg.register(Box::new(FixedOutcomeRunner {
             id: "map.failure".to_owned(),
-            outcome: SubActionOutcome::Failed("kaboom".to_owned()),
+            outcome: SubActionOutcome::Failed(forge_types::UserText::unlocalized("kaboom")),
         }))
         .unwrap();
         let engine = spawn_action_engine(
@@ -806,7 +806,10 @@ mod tests {
 
         let cases = [
             ("map.success", ExecutionOutcome::Success),
-            ("map.failure", ExecutionOutcome::Failed("kaboom".to_owned())),
+            (
+                "map.failure",
+                ExecutionOutcome::Failed(forge_types::UserText::unlocalized("kaboom")),
+            ),
         ];
 
         let default_queue: forge_types::QueueId =
@@ -1054,12 +1057,12 @@ mod tests {
         .unwrap();
         reg.register(Box::new(FixedOutcomeRunner {
             id: "quick.fail".to_owned(),
-            outcome: SubActionOutcome::Failed("boom".to_owned()),
+            outcome: SubActionOutcome::Failed(forge_types::UserText::unlocalized("boom")),
         }))
         .unwrap();
         reg.register(Box::new(FixedOutcomeRunner {
             id: "quick.skip".to_owned(),
-            outcome: SubActionOutcome::Skipped("nope".to_owned()),
+            outcome: SubActionOutcome::Skipped(forge_types::UserText::unlocalized("nope")),
         }))
         .unwrap();
 
@@ -1078,7 +1081,10 @@ mod tests {
 
         let cases = [
             ("quick.ok", ExecutionOutcome::Success),
-            ("quick.fail", ExecutionOutcome::Failed("boom".to_owned())),
+            (
+                "quick.fail",
+                ExecutionOutcome::Failed(forge_types::UserText::unlocalized("boom")),
+            ),
             ("quick.skip", ExecutionOutcome::Success),
         ];
         for (kind, expected) in cases {

@@ -103,6 +103,7 @@ mod tests {
             total_ms: 12,
             manual_test: true,
             reason: Some("boom".to_owned()),
+            reason_text: Some(forge_types::UserText::unlocalized("boom")),
         });
         decodes_back(ActionSkipped {
             action_id: ActionId::new(),
@@ -124,7 +125,10 @@ mod tests {
             kind: "core.globals.set".to_owned(),
             outcome: RunOutcome::Skipped,
             duration_ms: 4,
-            message: Some("skipped".to_owned()),
+            message: Some("common.integration_disabled".to_owned()),
+            message_text: Some(forge_types::UserText::from(
+                forge_types::integration_disabled_message(&forge_types::IntegrationId::new("obs")),
+            )),
             integration: Some("obs".to_owned()),
         });
         decodes_back(GlobalSet {

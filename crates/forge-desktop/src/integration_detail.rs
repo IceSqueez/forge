@@ -2546,7 +2546,10 @@ mod tests {
             }
             async fn start(
                 &self,
-            ) -> Result<forge_runtime::RunningIntegration<BuiltinObject>, String> {
+            ) -> Result<
+                forge_runtime::RunningIntegration<BuiltinObject>,
+                forge_runtime::IntegrationStartError,
+            > {
                 self.journal.lock().unwrap().push("start");
                 let journal = Arc::clone(&self.journal);
                 Ok(

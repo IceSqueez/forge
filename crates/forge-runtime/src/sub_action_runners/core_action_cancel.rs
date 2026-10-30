@@ -168,10 +168,13 @@ mod tests {
             panic!("expected a Failed outcome, got {outcome:?}");
         };
         assert!(
-            msg.contains("'action_id' is invalid"),
-            "the failure must name the field it could not parse: {msg}"
+            msg.code_or_text().contains("'action_id' is invalid"),
+            "the failure must name the field it could not parse: {msg:?}"
         );
-        assert!(!msg.contains(SENTINEL), "echoed the unparsed value: {msg}");
+        assert!(
+            !msg.code_or_text().contains(SENTINEL),
+            "echoed the unparsed value: {msg:?}"
+        );
         assert!(
             !untouched.is_cancelled(),
             "a parse failure must bail before cancelling anything"

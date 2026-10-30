@@ -274,7 +274,7 @@ mod tests {
         let runner = CoreRandomPickRunner;
         let (outcome, produced) = run(&runner, &cfg(str_array(&["only"]), "")).await;
         assert!(
-            matches!(&outcome, SubActionOutcome::Failed(m) if m.contains("'into_var' is required")),
+            matches!(&outcome, SubActionOutcome::Failed(m) if m.code_or_text().contains("'into_var' is required")),
             "{outcome:?}"
         );
         assert!(produced.is_none());
@@ -334,7 +334,7 @@ mod tests {
             let (outcome, produced) = run(&runner, &cfg).await;
             assert!(
                 matches!(&outcome, SubActionOutcome::Failed(reason)
-                    if reason.contains("'weights' is invalid: weight 2 is not a number")),
+                    if reason.code_or_text().contains("'weights' is invalid: weight 2 is not a number")),
                 "{label}: {outcome:?}"
             );
             assert!(produced.is_none(), "{label}");

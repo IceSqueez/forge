@@ -284,16 +284,16 @@ mod tests {
             panic!("expected Failed, got {:?}", telemetry.outcome);
         };
         assert!(
-            msg.contains("403"),
-            "status must surface for diagnosis: {msg}"
+            msg.code_or_text().contains("403"),
+            "status must surface for diagnosis: {msg:?}"
         );
         assert!(
-            !msg.contains(TOKEN_SENTINEL),
-            "outcome must not leak the token: {msg}"
+            !msg.code_or_text().contains(TOKEN_SENTINEL),
+            "outcome must not leak the token: {msg:?}"
         );
         assert!(
-            !msg.contains("api.twitch.tv"),
-            "outcome must not leak the request URL: {msg}"
+            !msg.code_or_text().contains("api.twitch.tv"),
+            "outcome must not leak the request URL: {msg:?}"
         );
     }
 
@@ -359,7 +359,7 @@ mod tests {
 
         assert!(matches!(
             telemetry.outcome,
-            SubActionOutcome::Failed(msg) if msg.contains("no twitch credentials")
+            SubActionOutcome::Failed(msg) if msg.code_or_text().contains("no twitch credentials")
         ));
         assert_eq!(transport.call_count(), 0, "no identity, no request");
     }
@@ -375,7 +375,7 @@ mod tests {
             .await;
 
         assert!(
-            matches!(&telemetry.outcome, SubActionOutcome::Failed(msg) if msg.contains("color")),
+            matches!(&telemetry.outcome, SubActionOutcome::Failed(msg) if msg.code_or_text().contains("color")),
             "{:?}",
             telemetry.outcome
         );

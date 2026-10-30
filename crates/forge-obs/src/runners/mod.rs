@@ -451,7 +451,9 @@ mod tests {
             let (telemetry, extra) = runner.execute(&config, &make_ctx(&stack)).await;
             assert_eq!(
                 telemetry.outcome,
-                SubActionOutcome::Failed(ObsError::Disconnected.to_string()),
+                SubActionOutcome::Failed(forge_types::UserText::unlocalized(
+                    ObsError::Disconnected.to_string()
+                )),
                 "{id} dropped the reason OBS gave for the failure",
             );
             assert_eq!(telemetry.kind, id);
@@ -640,7 +642,7 @@ mod tests {
                     matches!(
                         &telemetry.outcome,
                         SubActionOutcome::Failed(reason)
-                            if reason.starts_with(&format!("invalid step config: '{flag_key}' "))
+                            if reason.code_or_text().starts_with(&format!("invalid step config: '{flag_key}' "))
                     ),
                     "{id} with {flag_key} = {value:?} ran as {:?}",
                     telemetry.outcome,

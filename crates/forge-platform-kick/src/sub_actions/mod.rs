@@ -376,7 +376,9 @@ mod tests {
 
         assert_eq!(
             telemetry.outcome,
-            SubActionOutcome::Failed("invalid step config: 'user_id' must be a number".to_owned())
+            SubActionOutcome::Failed(forge_types::UserText::unlocalized(
+                "invalid step config: 'user_id' must be a number"
+            ))
         );
         assert!(produced.is_none());
     }

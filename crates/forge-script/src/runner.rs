@@ -136,7 +136,10 @@ mod tests {
 
         match result {
             Err(ScriptError::Runtime { reason, .. }) => assert!(
-                reason.contains("integration disabled: twitch"),
+                reason.contains(&format!(
+                    "{} (integration=twitch)",
+                    forge_types::INTEGRATION_DISABLED
+                )),
                 "the run must fail naming the disabled integration, got: {reason}"
             ),
             other => panic!("expected a runtime error, got {other:?}"),

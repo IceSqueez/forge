@@ -302,8 +302,8 @@ mod tests {
         match telemetry.outcome {
             SubActionOutcome::Failed(reason) => {
                 assert!(
-                    reason.contains("broadcaster id error"),
-                    "unresolved identity must be attributed to the broadcaster id, got: {reason}"
+                    reason.code_or_text().contains("broadcaster id error"),
+                    "unresolved identity must be attributed to the broadcaster id, got: {reason:?}"
                 );
             }
             other => panic!("expected Failed, got {other:?}"),

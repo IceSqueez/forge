@@ -1034,7 +1034,7 @@ impl ScreenActionsView {
 #[cfg(test)]
 mod tests {
     use forge_runtime::{ActionCancelRegistry, Catalog, QueueScheduler, spawn_action_engine};
-    use forge_types::{IntegrationId, integration_disabled_reason};
+    use forge_types::{IntegrationId, UserText, integration_disabled_message};
 
     use super::*;
     use crate::test_support::{
@@ -1132,7 +1132,15 @@ mod tests {
         });
         assert_eq!(
             (halted_at, reason),
-            (Some(0), Some(integration_disabled_reason(&obs)))
+            (
+                Some(0),
+                Some(
+                    crate::user_text::resolve_user_text(&UserText::from(
+                        integration_disabled_message(&obs)
+                    ))
+                    .inline()
+                )
+            )
         );
     }
 }

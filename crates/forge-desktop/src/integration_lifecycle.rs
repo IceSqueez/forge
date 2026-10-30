@@ -107,7 +107,7 @@ mod tests {
     const FAILURE: &str = "the token was revoked";
 
     fn failed() -> LifecycleState {
-        LifecycleState::Failed(FAILURE.to_owned())
+        LifecycleState::Failed(crate::test_support::start_failure(FAILURE))
     }
 
     #[test]
@@ -148,7 +148,10 @@ mod tests {
             (LifecycleState::Disabled, CardStatus::Disabled),
             (LifecycleState::Starting, CardStatus::Starting),
             (LifecycleState::Stopping, CardStatus::Stopping),
-            (failed(), CardStatus::Failed(FAILURE.to_owned())),
+            (
+                failed(),
+                CardStatus::Failed(crate::test_support::start_failure(FAILURE)),
+            ),
         ] {
             assert_eq!(
                 CardStatus::resolve(&state, ConnectionAffordance::Connectable, true),

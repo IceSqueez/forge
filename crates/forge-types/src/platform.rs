@@ -142,9 +142,18 @@ mod tests {
     fn resolve_chat_target_rejects_unknown_names_listing_every_valid_target() {
         let reason = resolve_chat_target(" myspace ").unwrap_err();
 
-        assert!(reason.contains("\"myspace\""), "{reason}");
+        assert_eq!(
+            (reason.code(), reason.arg("target")),
+            (
+                &UNKNOWN_CHAT_TARGET,
+                Some(&crate::MessageArg::Verbatim(VerbatimText::new("myspace")))
+            )
+        );
+        let Some(crate::MessageArg::Verbatim(listed)) = reason.arg("valid") else {
+            panic!("expected a verbatim list of valid targets: {reason:?}");
+        };
         for valid in ["twitch", "youtube", "kick"] {
-            assert!(reason.contains(valid), "{reason}");
+            assert!(listed.as_str().contains(valid), "{}", listed.as_str());
         }
     }
 

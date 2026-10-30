@@ -39,7 +39,7 @@ mod tests {
             ("stopping", LifecycleState::Stopping, DetailRoute::Disabled),
             (
                 "failed",
-                LifecycleState::Failed("token revoked".to_owned()),
+                LifecycleState::Failed(crate::test_support::start_failure("token revoked")),
                 DetailRoute::Failed,
             ),
             ("starting", LifecycleState::Starting, DetailRoute::Live),

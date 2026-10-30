@@ -395,6 +395,7 @@ mod tests {
             total_ms: 12,
             manual_test: false,
             reason: None,
+            reason_text: None,
         }
     }
 
@@ -405,6 +406,7 @@ mod tests {
             outcome,
             duration_ms: 3,
             message: None,
+            message_text: None,
             integration: None,
         }
     }

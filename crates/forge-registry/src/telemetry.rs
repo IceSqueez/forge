@@ -95,15 +95,15 @@ mod tests {
         );
         assert_eq!(
             StepTimer::start(&ctx(&stack, 0), "k")
-                .failed("boom")
+                .failed(forge_types::UserText::unlocalized("boom"))
                 .outcome,
-            SubActionOutcome::Failed("boom".to_owned())
+            SubActionOutcome::Failed(forge_types::UserText::unlocalized("boom"))
         );
         assert_eq!(
             StepTimer::start(&ctx(&stack, 0), "k")
-                .skipped("off")
+                .skipped(forge_types::UserText::unlocalized("off"))
                 .outcome,
-            SubActionOutcome::Skipped("off".to_owned())
+            SubActionOutcome::Skipped(forge_types::UserText::unlocalized("off"))
         );
     }
 

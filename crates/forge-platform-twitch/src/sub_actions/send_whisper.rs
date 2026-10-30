@@ -243,9 +243,18 @@ mod tests {
         let SubActionOutcome::Failed(msg) = telemetry.outcome else {
             panic!("expected Failed, got {:?}", telemetry.outcome);
         };
-        assert!(msg.contains("403"), "status must surface: {msg}");
-        assert!(!msg.contains(TOKEN_SENTINEL), "token leaked: {msg}");
-        assert!(!msg.contains("api.twitch.tv"), "URL leaked: {msg}");
+        assert!(
+            msg.code_or_text().contains("403"),
+            "status must surface: {msg:?}"
+        );
+        assert!(
+            !msg.code_or_text().contains(TOKEN_SENTINEL),
+            "token leaked: {msg:?}"
+        );
+        assert!(
+            !msg.code_or_text().contains("api.twitch.tv"),
+            "URL leaked: {msg:?}"
+        );
     }
 
     #[tokio::test]

@@ -288,8 +288,8 @@ mod tests {
             panic!("expected Failed, got {outcome:?}");
         };
         assert!(
-            msg.contains("domain not allowed"),
-            "expected domain-not-allowed error from wired http module, got: {msg}"
+            msg.code_or_text().contains("domain not allowed"),
+            "expected domain-not-allowed error from wired http module, got: {msg:?}"
         );
     }
 
@@ -375,10 +375,10 @@ mod tests {
                 .payload;
             assert_eq!(payload["error_type"].as_str(), Some(error_type));
             assert!(
-                message.starts_with("inline script failed:")
-                    && !message.contains(SECRET)
+                message.code_or_text().starts_with("inline script failed:")
+                    && !message.code_or_text().contains(SECRET)
                     && !payload.to_string().contains(SECRET),
-                "{error_type}: {message} / {payload}"
+                "{error_type}: {message:?} / {payload}"
             );
         }
     }

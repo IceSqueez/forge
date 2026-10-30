@@ -354,7 +354,7 @@ mod tests {
             let repo = MapRepo::empty();
             ServerSettings::save_port(&repo, 9000).await.unwrap();
             if let Some(raw) = stored {
-                repo.set_string(settings::ADDITIONAL_ORIGINS.key.name(), raw)
+                repo.set_string(settings::ADDITIONAL_ORIGINS.name(), raw)
                     .await
                     .unwrap();
             }
@@ -381,14 +381,14 @@ mod tests {
     async fn load_fails_when_any_stored_setting_cannot_be_read_from_the_store() {
         for key in [
             settings::ENABLED.name(),
-            settings::BIND_ADDRESS.key.name(),
-            settings::PORT.key.name(),
+            settings::BIND_ADDRESS.name(),
+            settings::PORT.name(),
             settings::LAN_BIND_ENABLED.name(),
             settings::AUTH_REQUIRED_FOR_READS.name(),
             settings::HTTP_OVERLAY_REQUIRE_TOKEN.name(),
             settings::OVERLAY_CORS_ANY_ORIGIN.name(),
             core_settings::SERVER_OVERLAY_ROOT.name(),
-            settings::ADDITIONAL_ORIGINS.key.name(),
+            settings::ADDITIONAL_ORIGINS.name(),
         ] {
             let repo = UnreachableKey(key, MapRepo::empty());
 
@@ -398,6 +398,24 @@ mod tests {
                 matches!(loaded, Err(StorageError::Connection { .. })),
                 "{key}"
             );
+        }
+    }
+
+    #[tokio::test]
+    async fn load_clamps_a_stored_port_above_the_port_range_to_the_highest_port() {
+        for (stored, expected) in [
+            ("65535", u16::MAX),
+            ("65536", u16::MAX),
+            ("70000", u16::MAX),
+        ] {
+            let repo = MapRepo::empty();
+            repo.set_string(settings::PORT.name(), stored)
+                .await
+                .unwrap();
+
+            let s = ServerSettings::load(&repo).await.unwrap();
+
+            assert_eq!(s.port, expected, "{stored:?}");
         }
     }
 

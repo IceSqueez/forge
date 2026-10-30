@@ -191,7 +191,7 @@ mod tests {
             let stack = ArgStack::new();
             let (tel, _) = runner.execute(&config, &make_ctx(&stack)).await;
             assert!(
-                matches!(&tel.outcome, SubActionOutcome::Failed(reason) if reason.starts_with("invalid step config: 'settings_json' ")),
+                matches!(&tel.outcome, SubActionOutcome::Failed(reason) if reason.code_or_text().starts_with("invalid step config: 'settings_json' ")),
                 "{label}: execute must fail with a settings_json reason, got {:?}",
                 tel.outcome,
             );

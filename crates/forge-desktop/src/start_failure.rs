@@ -54,3 +54,34 @@ pub fn start_failure_tooltip(error: &IntegrationStartError) -> String {
         None => text.primary,
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use forge_types::{MessageRef, UPSTREAM_FAILURE};
+
+    use super::*;
+
+    #[test]
+    fn credential_and_configuration_failures_open_the_detail_while_the_rest_offer_a_retry() {
+        for (category, remedy, opens_detail) in [
+            (StartFailureCategory::Credentials, StartRemedy::SignIn, true),
+            (
+                StartFailureCategory::NotConfigured,
+                StartRemedy::OpenSettings,
+                true,
+            ),
+            (StartFailureCategory::Unreachable, StartRemedy::Retry, false),
+            (StartFailureCategory::RateLimited, StartRemedy::Retry, false),
+            (StartFailureCategory::Refused, StartRemedy::Retry, false),
+            (StartFailureCategory::Internal, StartRemedy::Retry, false),
+        ] {
+            let error = IntegrationStartError::new(category, MessageRef::new(UPSTREAM_FAILURE));
+            let chosen = StartRemedy::of(&error);
+            assert_eq!(
+                (chosen, chosen.opens_detail()),
+                (remedy, opens_detail),
+                "{category:?}"
+            );
+        }
+    }
+}

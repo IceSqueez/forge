@@ -571,7 +571,8 @@ mod tests {
 
             match telemetry.outcome {
                 SubActionOutcome::Failed(reason) => assert!(
-                    reason.contains(names) && reason.ends_with("pick a voice again"),
+                    reason.code_or_text().contains(names)
+                        && reason.code_or_text().ends_with("pick a voice again"),
                     "{stored:?} failed with {reason:?}"
                 ),
                 other => panic!("{stored:?} must fail the step, got {other:?}"),

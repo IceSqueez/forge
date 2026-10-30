@@ -273,7 +273,9 @@ fn a_failed_last_run_marks_only_its_step_broken() {
         &[],
         &[
             Some(SubActionOutcome::Success),
-            Some(SubActionOutcome::Failed("timed out".to_owned())),
+            Some(SubActionOutcome::Failed(
+                forge_types::UserText::unlocalized("timed out"),
+            )),
         ],
         &flow_registry(),
         &triggers(&[]),
@@ -284,7 +286,9 @@ fn a_failed_last_run_marks_only_its_step_broken() {
         vec![
             StepHealth::default(),
             StepHealth {
-                findings: vec![Finding::LastRunFailed("timed out".to_owned())],
+                findings: vec![Finding::LastRunFailed(forge_types::UserText::unlocalized(
+                    "timed out"
+                ))],
             },
         ],
     );

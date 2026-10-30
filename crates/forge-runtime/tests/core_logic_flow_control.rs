@@ -67,7 +67,7 @@ impl SubActionRunner for AlwaysFailRunner {
                 kind: "test.always_fail".to_owned(),
                 started_at: OffsetDateTime::now_utc(),
                 duration_ms: 0,
-                outcome: SubActionOutcome::Failed("boom".to_owned()),
+                outcome: SubActionOutcome::Failed(forge_types::UserText::unlocalized("boom")),
             },
             None,
         )
@@ -234,7 +234,7 @@ async fn if_branch_with_non_array_body_fails_the_step_without_taking_a_branch() 
     let run = run_top(&eng, vec![step("core.logic.if_then_else", cfg)]).await;
 
     assert!(
-        matches!(&run.signal, ChainSignal::Error(m) if m.contains("'then_chain'")),
+        matches!(&run.signal, ChainSignal::Error(m) if m.code_or_text().contains("'then_chain'")),
         "{:?}",
         run.signal
     );
@@ -288,7 +288,7 @@ async fn if_undefined_variable_fails_when_not_treating_undefined_as_false() {
     let run = run_top(&eng, vec![step("core.logic.if_then_else", cfg)]).await;
 
     assert!(
-        matches!(&run.signal, ChainSignal::Error(m) if m.contains("if_then_else") && m.contains("missing")),
+        matches!(&run.signal, ChainSignal::Error(m) if m.code_or_text().contains("if_then_else") && m.code_or_text().contains("missing")),
         "an unresolved variable must fail the chain naming it, got {:?}",
         run.signal,
     );
@@ -304,7 +304,7 @@ async fn if_non_undefined_condition_errors_fail_even_when_treating_undefined_as_
         )
         .await;
         assert!(
-            matches!(&run.signal, ChainSignal::Error(m) if m.contains("if_then_else")),
+            matches!(&run.signal, ChainSignal::Error(m) if m.code_or_text().contains("if_then_else")),
             "{condition}: must fail the step, got {:?}",
             run.signal,
         );
@@ -377,7 +377,7 @@ async fn loop_while_condition_error_fails_the_loop_step_with_a_reason() {
     for condition in ["1 +", "%missing% > 5"] {
         let run = run_top(&eng, vec![step("core.logic.loop", while_cfg(condition, 5))]).await;
         assert!(
-            matches!(&run.signal, ChainSignal::Error(m) if m.contains("core.logic.loop")),
+            matches!(&run.signal, ChainSignal::Error(m) if m.code_or_text().contains("core.logic.loop")),
             "{condition}: must fail the loop, got {:?}",
             run.signal,
         );
@@ -528,7 +528,10 @@ async fn child_chain_error_propagates_through_the_loop_to_the_action_root() {
     let body = inline(vec![chain_step("test.always_fail", SubActionConfig::new())]);
     let run = run_top(&eng, vec![step("core.logic.loop", loop_cfg(5, body))]).await;
 
-    assert_eq!(run.signal, ChainSignal::Error("boom".to_owned()));
+    assert_eq!(
+        run.signal,
+        ChainSignal::Error(forge_types::UserText::unlocalized("boom"))
+    );
 }
 
 #[tokio::test]

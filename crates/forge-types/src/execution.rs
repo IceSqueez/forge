@@ -253,6 +253,7 @@ pub struct ExecutionContext {
 mod tests {
     use super::*;
     use crate::ids::{ActionId, EventId};
+    use crate::message::MessageArg;
     use crate::variant::Variant;
     use time::OffsetDateTime;
 
@@ -473,7 +474,7 @@ mod tests {
     fn execution_outcome_variants_serde_roundtrip() {
         let outcomes = [
             ExecutionOutcome::Success,
-            ExecutionOutcome::Failed("rhai panic".to_string()),
+            ExecutionOutcome::Failed(UserText::unlocalized("rhai panic")),
             ExecutionOutcome::Cancelled,
         ];
         for o in outcomes {
@@ -500,7 +501,7 @@ mod tests {
         let err: Result<(), DisplayErr> = Err(DisplayErr);
         assert_eq!(
             SubActionOutcome::from_result(&err),
-            SubActionOutcome::Failed("disk full".to_owned())
+            SubActionOutcome::Failed(UserText::unlocalized("disk full"))
         );
     }
 
@@ -510,23 +511,25 @@ mod tests {
         let cases = [
             (SubActionOutcome::Success, None),
             (
-                SubActionOutcome::Failed("timeout".to_owned()),
-                Some("timeout".to_owned()),
+                SubActionOutcome::Failed(UserText::unlocalized("timeout")),
+                Some(UserText::unlocalized("timeout")),
             ),
-            (SubActionOutcome::Skipped("disabled".to_owned()), None),
+            (
+                SubActionOutcome::Skipped(UserText::unlocalized("disabled")),
+                None,
+            ),
             (
                 SubActionOutcome::IntegrationDisabled(twitch.clone()),
-                Some(integration_disabled_reason(&twitch)),
+                Some(UserText::from(integration_disabled_message(&twitch))),
             ),
         ];
         for (outcome, expected) in cases {
             assert_eq!(outcome.failure_reason(), expected, "{outcome:?}");
             assert_eq!(outcome.is_failure(), expected.is_some(), "{outcome:?}");
         }
-        assert!(integration_disabled_reason(&twitch).contains("twitch"));
-        assert_ne!(
-            integration_disabled_reason(&twitch),
-            integration_disabled_reason(&IntegrationId::from_static("kick")),
+        assert_eq!(
+            integration_disabled_message(&twitch).arg("integration"),
+            Some(&MessageArg::Integration(twitch.clone()))
         );
     }
 
@@ -534,8 +537,8 @@ mod tests {
     fn sub_action_outcome_variants_serde_roundtrip() {
         let outcomes = [
             SubActionOutcome::Success,
-            SubActionOutcome::Failed("timeout".to_string()),
-            SubActionOutcome::Skipped("disabled".to_string()),
+            SubActionOutcome::Failed(UserText::unlocalized("timeout")),
+            SubActionOutcome::Skipped(MessageRef::new(WHISPERS_UNSUPPORTED).into()),
             SubActionOutcome::IntegrationDisabled(IntegrationId::from_static("twitch")),
         ];
         for o in outcomes {

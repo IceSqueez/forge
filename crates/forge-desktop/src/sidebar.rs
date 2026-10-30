@@ -643,7 +643,10 @@ mod tests {
             states(&[
                 ("twitch", LifecycleState::Running),
                 ("youtube", LifecycleState::Disabled),
-                ("kick", LifecycleState::Failed("offline".to_owned())),
+                (
+                    "kick",
+                    LifecycleState::Failed(crate::test_support::start_failure("offline")),
+                ),
                 ("obs", LifecycleState::Stopping),
                 ("midi", LifecycleState::Starting),
             ]),
@@ -730,7 +733,10 @@ mod tests {
             cx,
             states(&[
                 ("twitch", LifecycleState::Running),
-                ("kick", LifecycleState::Failed("offline".to_owned())),
+                (
+                    "kick",
+                    LifecycleState::Failed(crate::test_support::start_failure("offline")),
+                ),
                 ("obs", LifecycleState::Disabled),
             ]),
         );

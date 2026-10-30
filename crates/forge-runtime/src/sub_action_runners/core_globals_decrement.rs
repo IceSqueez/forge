@@ -253,7 +253,7 @@ mod tests {
         let globals = Arc::new(MapGlobals::with([("counter", Variant::Int(5))]));
         let outcome = run(globals.clone(), &cfg("counter", i64::MIN)).await;
         assert!(
-            matches!(&outcome, SubActionOutcome::Failed(reason) if reason.contains("negated")),
+            matches!(&outcome, SubActionOutcome::Failed(reason) if reason.code_or_text().contains("negated")),
             "got {outcome:?}"
         );
         assert_eq!(globals.snapshot("counter"), Some(Variant::Int(5)));

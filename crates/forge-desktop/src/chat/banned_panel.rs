@@ -1398,7 +1398,7 @@ pub(super) mod tests {
                 (Integration::Twitch, LifecycleState::Running),
                 (
                     Integration::YouTube,
-                    LifecycleState::Failed("quota".to_owned()),
+                    LifecycleState::Failed(crate::test_support::start_failure("quota")),
                 ),
                 (Integration::Kick, LifecycleState::Running),
             ]))
@@ -1761,7 +1761,7 @@ pub(super) mod tests {
                 entry("1001", UnbanAbility::Allowed),
                 entry("1002", UnbanAbility::Allowed),
             ],
-            SubActionOutcome::Failed("missing scope".to_owned()),
+            SubActionOutcome::Failed(forge_types::UserText::unlocalized("missing scope")),
         );
 
         unban(cx, &panel, "1001");
@@ -1782,7 +1782,7 @@ pub(super) mod tests {
             cx,
             &rt,
             vec![entry("1001", UnbanAbility::Allowed)],
-            SubActionOutcome::Failed("busy".to_owned()),
+            SubActionOutcome::Failed(forge_types::UserText::unlocalized("busy")),
         );
 
         unban(cx, &panel, "1001");

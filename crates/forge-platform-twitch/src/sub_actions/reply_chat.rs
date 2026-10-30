@@ -298,16 +298,16 @@ mod tests {
             panic!("expected Failed, got {:?}", telemetry.outcome);
         };
         assert!(
-            msg.contains("400"),
-            "status must surface for diagnosis: {msg}"
+            msg.code_or_text().contains("400"),
+            "status must surface for diagnosis: {msg:?}"
         );
         assert!(
-            !msg.contains(TOKEN_SENTINEL),
-            "outcome must not leak the token: {msg}"
+            !msg.code_or_text().contains(TOKEN_SENTINEL),
+            "outcome must not leak the token: {msg:?}"
         );
         assert!(
-            !msg.contains("api.twitch.tv"),
-            "outcome must not leak the request URL: {msg}"
+            !msg.code_or_text().contains("api.twitch.tv"),
+            "outcome must not leak the request URL: {msg:?}"
         );
     }
 

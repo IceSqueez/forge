@@ -675,8 +675,14 @@ mod tests {
         let mut registry = SubActionRegistry::new();
         for (id, outcome) in [
             (SUCCEEDS, SubActionOutcome::Success),
-            (FAILS, SubActionOutcome::Failed(FAILURE_REASON.to_owned())),
-            (SKIPS, SubActionOutcome::Skipped(SKIP_REASON.to_owned())),
+            (
+                FAILS,
+                SubActionOutcome::Failed(forge_types::UserText::unlocalized(FAILURE_REASON)),
+            ),
+            (
+                SKIPS,
+                SubActionOutcome::Skipped(forge_types::UserText::unlocalized(SKIP_REASON)),
+            ),
         ] {
             registry
                 .register(Box::new(FixedOutcome { id, outcome }))

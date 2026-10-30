@@ -225,7 +225,7 @@ mod tests {
             )
             .await;
             assert!(
-                matches!(&outcome, SubActionOutcome::Failed(m) if m.contains("'payload'")),
+                matches!(&outcome, SubActionOutcome::Failed(m) if m.code_or_text().contains("'payload'")),
                 "{payload}: {outcome:?}"
             );
             assert!(recorder.captured().is_empty(), "{payload}");

@@ -164,8 +164,8 @@ mod tests {
                 panic!("expected reject for {url}, got {outcome:?}");
             };
             assert!(
-                !msg.contains(url.trim()),
-                "the rejection echoed {url}: {msg}"
+                !msg.code_or_text().contains(url.trim()),
+                "the rejection echoed {url}: {msg:?}"
             );
             assert_eq!(port.call_count(), 0, "opener MUST NOT be called for {url}");
         }

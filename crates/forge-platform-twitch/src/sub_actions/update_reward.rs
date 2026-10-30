@@ -546,7 +546,7 @@ mod tests {
             let (telemetry, _) = runner.execute(&cfg, &make_ctx(&stack)).await;
 
             assert!(
-                matches!(&telemetry.outcome, SubActionOutcome::Failed(msg) if msg.contains("background_color_hex")),
+                matches!(&telemetry.outcome, SubActionOutcome::Failed(msg) if msg.code_or_text().contains("background_color_hex")),
                 "{hex}: {:?}",
                 telemetry.outcome
             );
@@ -670,7 +670,7 @@ mod tests {
         assert!(out.is_none());
         assert!(matches!(
             telemetry.outcome,
-            SubActionOutcome::Failed(msg) if msg.contains("400") && !msg.contains(TOKEN_SENTINEL)
+            SubActionOutcome::Failed(msg) if msg.code_or_text().contains("400") && !msg.code_or_text().contains(TOKEN_SENTINEL)
         ));
     }
 }

@@ -487,8 +487,8 @@ mod tests {
 
         match telemetry.outcome {
             SubActionOutcome::Failed(msg) => assert!(
-                !msg.contains(TOKEN_SENTINEL),
-                "failure message must not leak the token: {msg}"
+                !msg.code_or_text().contains(TOKEN_SENTINEL),
+                "failure message must not leak the token: {msg:?}"
             ),
             other => panic!("expected Failed, got {other:?}"),
         }

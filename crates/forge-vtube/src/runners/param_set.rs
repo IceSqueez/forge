@@ -380,7 +380,7 @@ mod tests {
 
             assert!(
                 matches!(&outcome, SubActionOutcome::Failed(reason)
-                    if reason.starts_with("invalid step config: 'hold_secs' ")),
+                    if reason.code_or_text().starts_with("invalid step config: 'hold_secs' ")),
                 "{hold:?} ran as {outcome:?}",
             );
             assert!(log.sent().is_empty(), "{hold:?} sent a value");

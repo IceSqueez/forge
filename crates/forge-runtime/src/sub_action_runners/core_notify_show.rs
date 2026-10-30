@@ -247,7 +247,7 @@ mod tests {
             let cfg = cfg_with("x", "", "normal", timeout);
             let outcome = run(Arc::clone(&port), ArgStack::new(), cfg).await;
             assert!(
-                matches!(&outcome, SubActionOutcome::Failed(m) if m.contains("'timeout_ms'")),
+                matches!(&outcome, SubActionOutcome::Failed(m) if m.code_or_text().contains("'timeout_ms'")),
                 "{timeout}: {outcome:?}"
             );
             assert!(port.shown().is_empty(), "{timeout}");

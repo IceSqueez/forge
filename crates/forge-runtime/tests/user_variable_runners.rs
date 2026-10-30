@@ -407,8 +407,8 @@ async fn increment_non_numeric_variable_fails_and_leaves_value_unchanged() {
     match outcome {
         SubActionOutcome::Failed(msg) => {
             assert!(
-                msg.contains("numeric"),
-                "message should name the cause: {msg}"
+                msg.code_or_text().contains("numeric"),
+                "message should name the cause: {msg:?}"
             )
         }
         other => panic!("expected Failed, got {other:?}"),

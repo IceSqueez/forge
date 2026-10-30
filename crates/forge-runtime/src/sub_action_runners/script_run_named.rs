@@ -429,10 +429,12 @@ mod tests {
             .expect("failing named run must emit script.error")
             .payload;
         assert!(
-            message.starts_with("script 'greet' failed: runtime error:")
-                && !message.contains(SECRET)
+            message
+                .code_or_text()
+                .starts_with("script 'greet' failed: runtime error:")
+                && !message.code_or_text().contains(SECRET)
                 && !payload.to_string().contains(SECRET),
-            "{message} / {payload}"
+            "{message:?} / {payload}"
         );
     }
 
@@ -467,7 +469,7 @@ mod tests {
         let NamedRun { outcome, stack, .. } = run_named_into("[1, ()]", "result").await;
 
         assert!(
-            matches!(&outcome, SubActionOutcome::Failed(m) if m.starts_with("script 'greet' failed:")),
+            matches!(&outcome, SubActionOutcome::Failed(m) if m.code_or_text().starts_with("script 'greet' failed:")),
             "{outcome:?}"
         );
         assert!(stack.is_none());

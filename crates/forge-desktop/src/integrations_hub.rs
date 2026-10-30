@@ -1304,8 +1304,14 @@ mod tests {
         );
         install_presentation(cx);
         let failed = LifecycleStates::from([
-            (twitch(), LifecycleState::Failed("boom".to_owned())),
-            (kick(), LifecycleState::Failed("boom".to_owned())),
+            (
+                twitch(),
+                LifecycleState::Failed(crate::test_support::start_failure("boom")),
+            ),
+            (
+                kick(),
+                LifecycleState::Failed(crate::test_support::start_failure("boom")),
+            ),
         ]);
         let (_view, vcx) = cx.add_window_view(|_, cx| {
             let lifecycle = cx.new(|_| IntegrationLifecycle::new(failed));

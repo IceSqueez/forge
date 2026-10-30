@@ -203,7 +203,7 @@ mod tests {
 
         assert!(matches!(
             telemetry.outcome,
-            SubActionOutcome::Failed(msg) if msg.contains("403") && !msg.contains(TOKEN_SENTINEL)
+            SubActionOutcome::Failed(msg) if msg.code_or_text().contains("403") && !msg.code_or_text().contains(TOKEN_SENTINEL)
         ));
     }
 }

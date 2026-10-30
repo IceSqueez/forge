@@ -630,7 +630,7 @@ mod tests {
             IntegrationLifecycle::new(chat_states(&[
                 (
                     Integration::Twitch,
-                    LifecycleState::Failed("down".to_owned()),
+                    LifecycleState::Failed(crate::test_support::start_failure("down")),
                 ),
                 (Integration::YouTube, LifecycleState::Running),
             ]))

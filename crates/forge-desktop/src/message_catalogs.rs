@@ -128,8 +128,44 @@ mod tests {
             .collect()
     }
 
+    fn produced_codes() -> Vec<MessageCode> {
+        let mut codes = vec![
+            forge_types::UPSTREAM_FAILURE,
+            forge_types::INTEGRATION_DISABLED,
+            forge_types::NO_CHAT_PLATFORM_ENABLED,
+            forge_types::NO_WHISPER_PLATFORM_ENABLED,
+            forge_types::WHISPERS_UNSUPPORTED,
+            forge_types::UNKNOWN_CHAT_TARGET,
+            forge_platform_youtube::vocabulary::messages::STORED_SIGN_IN_UNREADABLE,
+            forge_platform_kick::vocabulary::messages::STORED_SIGN_IN_UNREADABLE,
+            forge_midi::vocabulary::messages::BACKEND_UNAVAILABLE,
+            forge_hotkey::vocabulary::messages::PORTAL_UNAVAILABLE,
+            forge_hotkey::vocabulary::messages::PERMISSION_DENIED,
+            forge_hotkey::vocabulary::messages::COMBO_REJECTED,
+            forge_hotkey::vocabulary::messages::ENGINE_STOPPED,
+            forge_hotkey::vocabulary::messages::BACKEND_FAILED,
+        ];
+        codes.extend(
+            [
+                "lifecycle.start_timed_out",
+                "lifecycle.state_not_saved",
+                "lifecycle.signed_out",
+                "lifecycle.start_interrupted",
+            ]
+            .map(|raw| MessageCode::parse(raw).unwrap()),
+        );
+        codes
+    }
+
     #[test]
     fn every_registered_catalog_declares_in_both_languages_exactly_its_codes() {
+        for code in produced_codes() {
+            let catalog = REGISTERED_CATALOGS
+                .iter()
+                .find(|catalog| catalog.namespace == code.namespace())
+                .unwrap_or_else(|| panic!("no registered catalog for {code}"));
+            assert!(catalog.codes.contains(&code), "{code} is not catalogued");
+        }
         for catalog in REGISTERED_CATALOGS {
             let expected: BTreeSet<String> = catalog.ftl_keys().collect();
             assert_eq!(

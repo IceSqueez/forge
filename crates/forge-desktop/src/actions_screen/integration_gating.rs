@@ -316,7 +316,7 @@ pub(super) mod tests {
     }
 
     fn failed() -> LifecycleState {
-        LifecycleState::Failed("token revoked".to_owned())
+        LifecycleState::Failed(crate::test_support::start_failure("token revoked"))
     }
 
     #[gpui::test]

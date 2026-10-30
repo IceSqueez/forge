@@ -323,7 +323,7 @@ mod tests {
             (ExecutionOutcome::Success, DisclosedOutcome::Success),
             (ExecutionOutcome::Cancelled, DisclosedOutcome::Cancelled),
             (
-                ExecutionOutcome::Failed("Привіт".to_owned()),
+                ExecutionOutcome::Failed(forge_types::UserText::unlocalized("Привіт")),
                 DisclosedOutcome::Failed { reason_chars: 6 },
             ),
         ] {
@@ -336,11 +336,11 @@ mod tests {
         for (outcome, expected) in [
             (SubActionOutcome::Success, DisclosedStepOutcome::Success),
             (
-                SubActionOutcome::Failed("Привіт".to_owned()),
+                SubActionOutcome::Failed(forge_types::UserText::unlocalized("Привіт")),
                 DisclosedStepOutcome::Failed { reason_chars: 6 },
             ),
             (
-                SubActionOutcome::Skipped("ab".to_owned()),
+                SubActionOutcome::Skipped(forge_types::UserText::unlocalized("ab")),
                 DisclosedStepOutcome::Skipped { reason_chars: 2 },
             ),
         ] {
@@ -410,10 +410,10 @@ mod tests {
                 step(
                     SubActionTelemetry::NESTED,
                     "core.branch/0/core.log",
-                    SubActionOutcome::Failed(SENTINEL.to_owned()),
+                    SubActionOutcome::Failed(forge_types::UserText::unlocalized(SENTINEL)),
                 ),
             ],
-            outcome: ExecutionOutcome::Failed(SENTINEL.to_owned()),
+            outcome: ExecutionOutcome::Failed(forge_types::UserText::unlocalized(SENTINEL)),
         }
     }
 

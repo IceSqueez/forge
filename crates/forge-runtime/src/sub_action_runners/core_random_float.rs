@@ -194,7 +194,7 @@ mod tests {
             let (outcome, produced) = run(&cfg).await;
             assert!(produced.is_none(), "{key}: must not produce a scope stack");
             assert!(
-                matches!(&outcome, SubActionOutcome::Failed(m) if m.contains(&format!("'{key}' must be a number"))),
+                matches!(&outcome, SubActionOutcome::Failed(m) if m.code_or_text().contains(&format!("'{key}' must be a number"))),
                 "{key}: got {outcome:?}"
             );
         }

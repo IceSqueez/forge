@@ -495,10 +495,13 @@ async fn unparseable_id_fails_with_shape_only_text_and_persists_nothing() {
             panic!("{kind} accepted an unparseable id: {outcome:?}");
         };
         assert!(
-            msg.contains(expected_field),
-            "{kind} must name the field it could not parse: {msg}"
+            msg.code_or_text().contains(expected_field),
+            "{kind} must name the field it could not parse: {msg:?}"
         );
-        assert!(!msg.contains(SENTINEL), "{kind} echoed the value: {msg}");
+        assert!(
+            !msg.code_or_text().contains(SENTINEL),
+            "{kind} echoed the value: {msg:?}"
+        );
         assert_eq!(writes(), 0, "{kind} persisted after a parse failure");
     }
 }

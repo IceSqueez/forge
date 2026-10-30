@@ -515,7 +515,7 @@ mod tests {
         let (telemetry, _) = runner.execute(&cfg, &ctx).await;
 
         assert!(
-            matches!(&telemetry.outcome, SubActionOutcome::Failed(msg) if msg == "boom"),
+            matches!(&telemetry.outcome, SubActionOutcome::Failed(msg) if msg.code_or_text() == "boom"),
             "expected Failed(\"boom\"), got {:?}",
             telemetry.outcome
         );

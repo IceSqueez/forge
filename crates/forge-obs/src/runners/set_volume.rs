@@ -164,7 +164,7 @@ mod tests {
 
         assert!(
             matches!(&tel.outcome, SubActionOutcome::Failed(reason)
-                if reason.starts_with("invalid step config: 'volume_db' ")),
+                if reason.code_or_text().starts_with("invalid step config: 'volume_db' ")),
             "{:?}",
             tel.outcome,
         );

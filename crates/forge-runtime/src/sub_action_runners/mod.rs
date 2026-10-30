@@ -687,7 +687,7 @@ mod tests {
             let ctx = RunContext::leaf(&stack, 0, EventId::new(), &NullPublisher);
             let (telemetry, produced) = runner.execute(&config, &ctx).await;
             assert!(
-                matches!(&telemetry.outcome, SubActionOutcome::Failed(reason) if reason.contains(key)),
+                matches!(&telemetry.outcome, SubActionOutcome::Failed(reason) if reason.code_or_text().contains(key)),
                 "{id} must fail {key} = {bad} at run time, got {:?}",
                 telemetry.outcome
             );

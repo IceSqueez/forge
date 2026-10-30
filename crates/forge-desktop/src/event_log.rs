@@ -300,6 +300,7 @@ mod tests {
             total_ms: 40,
             manual_test: false,
             reason: None,
+            reason_text: None,
         }
         .into_event(EventSource::Core, None)
     }
@@ -311,6 +312,7 @@ mod tests {
             outcome,
             duration_ms: 2,
             message: None,
+            message_text: None,
             integration: None,
         }
         .into_event(EventSource::Core, None)

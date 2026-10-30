@@ -446,7 +446,16 @@ fn common_catalog_locales_define_every_key_with_identical_keysets() {
     let uk = ftl_message_ids(COMMON_MESSAGES.uk_ftl);
     assert_eq!(en, expected);
     assert_eq!(uk, expected);
-    assert!(expected.contains(&UPSTREAM_FAILURE.ftl_key()));
+    for code in [
+        UPSTREAM_FAILURE,
+        forge_types::INTEGRATION_DISABLED,
+        forge_types::NO_CHAT_PLATFORM_ENABLED,
+        forge_types::NO_WHISPER_PLATFORM_ENABLED,
+        forge_types::WHISPERS_UNSUPPORTED,
+        forge_types::UNKNOWN_CHAT_TARGET,
+    ] {
+        assert!(expected.contains(&code.ftl_key()), "{code}");
+    }
 }
 
 #[test]

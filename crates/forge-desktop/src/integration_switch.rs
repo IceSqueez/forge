@@ -343,7 +343,7 @@ mod tests {
     }
 
     fn failed() -> LifecycleState {
-        LifecycleState::Failed("token revoked".to_owned())
+        LifecycleState::Failed(crate::test_support::start_failure("token revoked"))
     }
 
     fn failed_set(host: &Entity<Host>, cx: &mut TestAppContext) -> HashSet<IntegrationId> {

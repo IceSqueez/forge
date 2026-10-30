@@ -6,6 +6,9 @@
       "manual_test": false,
       "outcome": "failed",
       "reason": "inline script failed: runtime error: Runtime error: golden boom (line 1, position 1)",
+      "reason_text": {
+        "verbatim": "inline script failed: runtime error: Runtime error: golden boom (line 1, position 1)"
+      },
       "total_ms": 0
     },
     "source": "core"

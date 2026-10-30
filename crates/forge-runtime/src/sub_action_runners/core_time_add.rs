@@ -371,7 +371,7 @@ mod tests {
         ] {
             let (outcome, out) = run(&cfg(base.clone(), amount, unit)).await;
             assert!(
-                matches!(&outcome, SubActionOutcome::Failed(reason) if reason.contains("range")),
+                matches!(&outcome, SubActionOutcome::Failed(reason) if reason.code_or_text().contains("range")),
                 "{amount} {unit} must fail with a range reason, got {outcome:?}"
             );
             assert!(

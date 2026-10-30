@@ -227,7 +227,7 @@ mod tests {
         ] {
             let (tel, stack) = run(&cfg("hello", start, end)).await;
             assert!(
-                matches!(&tel.outcome, SubActionOutcome::Failed(reason) if reason.contains(named)),
+                matches!(&tel.outcome, SubActionOutcome::Failed(reason) if reason.code_or_text().contains(named)),
                 "start={start} end={end}: {:?}",
                 tel.outcome
             );

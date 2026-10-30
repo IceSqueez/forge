@@ -543,7 +543,10 @@ mod tests {
         );
         let states: LifecycleStates = [
             (twitch, LifecycleState::Running),
-            (youtube, LifecycleState::Failed("boom".to_owned())),
+            (
+                youtube,
+                LifecycleState::Failed(crate::test_support::start_failure("boom")),
+            ),
             (kick, LifecycleState::Starting),
         ]
         .into_iter()
@@ -575,7 +578,7 @@ mod tests {
             (Integration::Twitch.builtin_id(), LifecycleState::Starting),
             (
                 Integration::YouTube.builtin_id(),
-                LifecycleState::Failed("boom".to_owned()),
+                LifecycleState::Failed(crate::test_support::start_failure("boom")),
             ),
         ]
         .into_iter()

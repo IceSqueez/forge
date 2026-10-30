@@ -149,7 +149,7 @@ mod tests {
             let ctx = RunContext::leaf(&stack, 0, EventId::new(), &publisher);
             let (telemetry, _) = runner.execute(&config, &ctx).await;
             assert!(
-                matches!(&telemetry.outcome, SubActionOutcome::Failed(message) if message.contains(config_keys::ALLOW_ROLE_PINGS)),
+                matches!(&telemetry.outcome, SubActionOutcome::Failed(message) if message.code_or_text().contains(config_keys::ALLOW_ROLE_PINGS)),
                 "{}: {:?}",
                 runner.id(),
                 telemetry.outcome

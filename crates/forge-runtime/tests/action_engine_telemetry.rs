@@ -21,7 +21,7 @@ use forge_storage::{
 use forge_types::{
     Action, ActionId, ArgStack, EventId, ExecutionContext, ExecutionMode, ExecutionOutcome,
     IntegrationId, QueueId, SubActionConfig, SubActionOutcome, SubActionStep, SubActionTelemetry,
-    Variant, integration_disabled_reason,
+    Variant, integration_disabled_message,
 };
 use time::OffsetDateTime;
 use tokio::sync::Notify;
@@ -188,7 +188,7 @@ impl SubActionRunner for FailRunner {
                 kind: "test.fail".to_owned(),
                 started_at: OffsetDateTime::now_utc(),
                 duration_ms: 42,
-                outcome: SubActionOutcome::Failed("boom".to_owned()),
+                outcome: SubActionOutcome::Failed(forge_types::UserText::unlocalized("boom")),
             },
             None,
         )
@@ -495,7 +495,7 @@ fn twitch() -> IntegrationId {
 }
 
 fn disabled_twitch_reason() -> ExecutionOutcome {
-    ExecutionOutcome::Failed(integration_disabled_reason(&twitch()))
+    ExecutionOutcome::Failed(integration_disabled_message(&twitch()).into())
 }
 
 fn spawn_with(
@@ -624,7 +624,8 @@ async fn a_chat_send_targeted_at_a_disabled_platform_fails_the_run_visibly() {
         "the run was never saved to history",
     );
     assert!(
-        matches!(&history.saved()[0].1, ExecutionOutcome::Failed(reason) if reason.contains("twitch")),
+        history.saved()[0].1
+            == ExecutionOutcome::Failed(integration_disabled_message(&twitch()).into()),
         "a send targeted at a disabled platform must fail naming it, got {:?}",
         history.saved()[0].1,
     );
@@ -746,8 +747,11 @@ fn inline_script_step(body: &str) -> SubActionStep {
     step
 }
 
-fn names_disabled_twitch(reason: &str) -> bool {
-    reason.contains(&integration_disabled_reason(&twitch()))
+fn names_disabled_twitch(reason: &forge_types::UserText) -> bool {
+    reason.code_or_text().contains(&format!(
+        "{} (integration=twitch)",
+        forge_types::INTEGRATION_DISABLED
+    ))
 }
 
 #[tokio::test]

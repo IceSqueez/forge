@@ -426,7 +426,9 @@ mod tests {
     }
 
     fn invalid_config(problem: forge_registry::ConfigProblem) -> forge_types::SubActionOutcome {
-        forge_types::SubActionOutcome::Failed(format!("invalid step config: {problem}"))
+        forge_types::SubActionOutcome::Failed(forge_types::UserText::unlocalized(format!(
+            "invalid step config: {problem}"
+        )))
     }
 
     #[tokio::test]

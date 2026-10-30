@@ -323,7 +323,7 @@ async fn child_signal_maps_to_the_sub_action_outcome() {
         (ChainSignal::Break, Expect::Success),
         (ChainSignal::Continue, Expect::Success),
         (
-            ChainSignal::Error("boom".to_owned()),
+            ChainSignal::Error(forge_types::UserText::unlocalized("boom")),
             Expect::FailedExact("boom"),
         ),
         (ChainSignal::Aborted, Expect::FailedContains("cancelled")),
@@ -338,11 +338,11 @@ async fn child_signal_maps_to_the_sub_action_outcome() {
                 "{signal:?} should map to Success, got {outcome:?}",
             ),
             Expect::FailedExact(msg) => assert!(
-                matches!(&outcome, SubActionOutcome::Failed(m) if m == msg),
+                matches!(&outcome, SubActionOutcome::Failed(m) if m.code_or_text() == msg),
                 "{signal:?} should map to Failed({msg:?}), got {outcome:?}",
             ),
             Expect::FailedContains(needle) => assert!(
-                matches!(&outcome, SubActionOutcome::Failed(m) if m.contains(needle)),
+                matches!(&outcome, SubActionOutcome::Failed(m) if m.code_or_text().contains(needle)),
                 "{signal:?} should map to Failed containing {needle:?}, got {outcome:?}",
             ),
         }
@@ -361,7 +361,7 @@ async fn depth_exceeded_error_maps_to_failed_with_nesting_message() {
     let outcome = run(&runner, &cfg(&id.to_string()), &ArgStack::new(), &executor).await;
 
     assert!(
-        matches!(&outcome, SubActionOutcome::Failed(m) if m.contains("max nesting depth exceeded")),
+        matches!(&outcome, SubActionOutcome::Failed(m) if m.code_or_text().contains("max nesting depth exceeded")),
         "got {outcome:?}",
     );
 }
@@ -402,10 +402,13 @@ async fn unparseable_action_id_fails_without_running_a_child_chain() {
         panic!("an unparseable action_id must fail, got {outcome:?}");
     };
     assert!(
-        msg.contains("'action_id' is invalid"),
-        "the failure must name the field it could not parse: {msg}"
+        msg.code_or_text().contains("'action_id' is invalid"),
+        "the failure must name the field it could not parse: {msg:?}"
     );
-    assert!(!msg.contains(SENTINEL), "echoed the unparsed value: {msg}");
+    assert!(
+        !msg.code_or_text().contains(SENTINEL),
+        "echoed the unparsed value: {msg:?}"
+    );
     assert_eq!(executor.call_count(), 0);
 }
 

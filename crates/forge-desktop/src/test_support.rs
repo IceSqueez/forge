@@ -1486,7 +1486,10 @@ impl forge_runtime::IntegrationFactory<crate::integrations::BuiltinObject> for I
 
     async fn start(
         &self,
-    ) -> Result<forge_runtime::RunningIntegration<crate::integrations::BuiltinObject>, String> {
+    ) -> Result<
+        forge_runtime::RunningIntegration<crate::integrations::BuiltinObject>,
+        forge_runtime::IntegrationStartError,
+    > {
         Ok(forge_runtime::RunningIntegration::idle())
     }
 }
@@ -1905,4 +1908,13 @@ pub(crate) fn staged_restore_in(
         },
     ))
     .unwrap()
+}
+
+pub(crate) fn start_failure(detail: &str) -> forge_runtime::IntegrationStartError {
+    forge_runtime::IntegrationStartError::new(
+        forge_runtime::StartFailureCategory::Internal,
+        forge_types::MessageRef::upstream_failure(forge_types::UpstreamDetail::from_redacted(
+            detail,
+        )),
+    )
 }

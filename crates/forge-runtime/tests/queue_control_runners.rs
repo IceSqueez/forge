@@ -123,7 +123,7 @@ async fn pause_runner_with_empty_cell_reports_scheduler_not_ready() {
     let runner = CoreQueuePauseRunner::new(SchedulerCell::new());
     let outcome = run_outcome(&runner, &cfg_queue(&QueueId::new().to_string())).await;
     assert!(
-        matches!(&outcome, SubActionOutcome::Failed(m) if m.contains("queue scheduler not ready")),
+        matches!(&outcome, SubActionOutcome::Failed(m) if m.code_or_text().contains("queue scheduler not ready")),
         "empty cell must fail with the not-ready message, got {outcome:?}"
     );
 }
@@ -135,7 +135,7 @@ async fn pause_runner_with_unparseable_queue_id_fails() {
 
     let outcome = run_outcome(&runner, &cfg_queue("not-a-queue-id")).await;
     assert!(
-        matches!(&outcome, SubActionOutcome::Failed(m) if m.contains("'queue_id' is invalid")),
+        matches!(&outcome, SubActionOutcome::Failed(m) if m.code_or_text().contains("'queue_id' is invalid")),
         "unparseable queue_id must fail, got {outcome:?}"
     );
     handle.shutdown();
@@ -148,7 +148,7 @@ async fn pause_runner_with_unregistered_queue_propagates_not_found() {
 
     let outcome = run_outcome(&runner, &cfg_queue(&QueueId::new().to_string())).await;
     assert!(
-        matches!(&outcome, SubActionOutcome::Failed(m) if m.contains("queue not found")),
+        matches!(&outcome, SubActionOutcome::Failed(m) if m.code_or_text().contains("queue not found")),
         "unregistered queue must surface QueueNotFound, got {outcome:?}"
     );
     handle.shutdown();
@@ -178,7 +178,7 @@ async fn resume_runner_with_empty_cell_reports_scheduler_not_ready() {
     let runner = CoreQueueResumeRunner::new(SchedulerCell::new());
     let outcome = run_outcome(&runner, &cfg_queue(&QueueId::new().to_string())).await;
     assert!(
-        matches!(&outcome, SubActionOutcome::Failed(m) if m.contains("queue scheduler not ready")),
+        matches!(&outcome, SubActionOutcome::Failed(m) if m.code_or_text().contains("queue scheduler not ready")),
         "empty cell must fail with the not-ready message, got {outcome:?}"
     );
 }
@@ -190,7 +190,7 @@ async fn resume_runner_with_unregistered_queue_propagates_not_found() {
 
     let outcome = run_outcome(&runner, &cfg_queue(&QueueId::new().to_string())).await;
     assert!(
-        matches!(&outcome, SubActionOutcome::Failed(m) if m.contains("queue not found")),
+        matches!(&outcome, SubActionOutcome::Failed(m) if m.code_or_text().contains("queue not found")),
         "unregistered queue must surface QueueNotFound, got {outcome:?}"
     );
     handle.shutdown();
@@ -217,7 +217,7 @@ async fn clear_runner_with_empty_cell_reports_scheduler_not_ready() {
     let runner = CoreQueueClearRunner::new(SchedulerCell::new());
     let outcome = run_outcome(&runner, &cfg_queue(&QueueId::new().to_string())).await;
     assert!(
-        matches!(&outcome, SubActionOutcome::Failed(m) if m.contains("queue scheduler not ready")),
+        matches!(&outcome, SubActionOutcome::Failed(m) if m.code_or_text().contains("queue scheduler not ready")),
         "empty cell must fail with the not-ready message, got {outcome:?}"
     );
 }
@@ -229,7 +229,7 @@ async fn clear_runner_with_unregistered_queue_propagates_not_found() {
 
     let outcome = run_outcome(&runner, &cfg_queue(&QueueId::new().to_string())).await;
     assert!(
-        matches!(&outcome, SubActionOutcome::Failed(m) if m.contains("queue not found")),
+        matches!(&outcome, SubActionOutcome::Failed(m) if m.code_or_text().contains("queue not found")),
         "unregistered queue must surface QueueNotFound, got {outcome:?}"
     );
     handle.shutdown();

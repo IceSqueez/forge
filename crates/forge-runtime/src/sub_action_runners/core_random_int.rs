@@ -209,7 +209,7 @@ mod tests {
             let (outcome, produced) = run(&config).await;
 
             assert!(
-                matches!(&outcome, SubActionOutcome::Failed(message) if message.contains("'max'")),
+                matches!(&outcome, SubActionOutcome::Failed(message) if message.code_or_text().contains("'max'")),
                 "{config:?}: {outcome:?}"
             );
             assert!(produced.is_none(), "{config:?}");

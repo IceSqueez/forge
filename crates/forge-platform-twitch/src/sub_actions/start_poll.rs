@@ -426,7 +426,7 @@ mod tests {
         let SubActionOutcome::Failed(msg) = telemetry.outcome else {
             unreachable!("expected Failed outcome on HTTP error");
         };
-        assert!(!msg.contains(TOKEN_SENTINEL));
+        assert!(!msg.code_or_text().contains(TOKEN_SENTINEL));
     }
 
     #[test]

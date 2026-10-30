@@ -223,7 +223,7 @@ async fn math_with_undefined_variables_fails_naming_them() {
     )
     .await;
     assert!(
-        matches!(&outcome, SubActionOutcome::Failed(m) if m.contains("missing") && m.contains("gone") && !m.contains("known")),
+        matches!(&outcome, SubActionOutcome::Failed(m) if m.code_or_text().contains("missing") && m.code_or_text().contains("gone") && !m.code_or_text().contains("known")),
         "got {outcome:?}"
     );
     assert!(out.is_none());

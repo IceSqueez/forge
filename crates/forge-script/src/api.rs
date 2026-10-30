@@ -937,7 +937,9 @@ mod tests {
 
     use crate::globals_port::ScriptGlobals;
     use crate::test_support::{RepoGlobals, Sandboxed, repo_globals, sandboxed_backend};
-    use forge_types::{EventId, Variant, unknown_chat_target_reason};
+    use forge_types::{
+        EventId, INTEGRATION_DISABLED, UNKNOWN_CHAT_TARGET, Variant, WHISPERS_UNSUPPORTED,
+    };
     use std::sync::{Arc, Mutex};
     use std::time::Instant;
 
@@ -1621,7 +1623,7 @@ mod tests {
 
             match result {
                 Err(crate::ScriptError::Runtime { reason, .. }) => assert!(
-                    reason.contains("integration disabled: twitch"),
+                    reason.contains(&format!("{INTEGRATION_DISABLED} (integration=twitch)")),
                     "{call} must fail naming the disabled integration, got: {reason}"
                 ),
                 other => panic!("{call} must fail as a runtime error, got {other:?}"),
@@ -1726,7 +1728,7 @@ mod tests {
 
             match result {
                 Err(crate::ScriptError::Runtime { reason, .. }) => assert!(
-                    reason.contains(NO_CHAT_PLATFORM_ENABLED_REASON),
+                    reason.contains(&NO_CHAT_PLATFORM_ENABLED.to_string()),
                     "{call} failed for the wrong reason: {reason}"
                 ),
                 other => panic!("{call} must fail as a runtime error, got {other:?}"),
@@ -1781,7 +1783,7 @@ mod tests {
         for call in UNTARGETED_WHISPER_CALLS {
             let (result, sent) = eval_gated(availability_disabling(&["twitch"]), call).await;
 
-            assert_runtime_error_mentions(call, result, NO_WHISPER_PLATFORM_ENABLED_REASON);
+            assert_runtime_error_mentions(call, result, &NO_WHISPER_PLATFORM_ENABLED.to_string());
             assert!(sent.is_empty(), "{call} published {sent:?}");
         }
     }
@@ -1827,7 +1829,11 @@ mod tests {
         ] {
             let (result, sent) = eval_gated(SwitchableAvailability::default(), call).await;
 
-            assert_runtime_error_mentions(call, result, &whispers_unsupported_reason(target));
+            assert_runtime_error_mentions(
+                call,
+                result,
+                &format!("{WHISPERS_UNSUPPORTED} (target={target})"),
+            );
             assert!(sent.is_empty(), "{call} published {sent:?}");
         }
     }
@@ -1856,7 +1862,11 @@ mod tests {
         ] {
             let (result, sent) = eval_gated(SwitchableAvailability::default(), call).await;
 
-            assert_runtime_error_mentions(call, result, &unknown_chat_target_reason("typo"));
+            assert_runtime_error_mentions(
+                call,
+                result,
+                &format!("{UNKNOWN_CHAT_TARGET} (target=typo, valid=twitch, youtube, kick)"),
+            );
             assert!(sent.is_empty(), "{call} published {sent:?}");
         }
     }
@@ -1884,7 +1894,7 @@ mod tests {
 
         match result {
             Err(crate::ScriptError::Runtime { reason, .. }) => assert!(
-                reason.contains("integration disabled: twitch"),
+                reason.contains(&format!("{INTEGRATION_DISABLED} (integration=twitch)")),
                 "failed for the wrong reason: {reason}"
             ),
             other => panic!("must fail as a runtime error, got {other:?}"),

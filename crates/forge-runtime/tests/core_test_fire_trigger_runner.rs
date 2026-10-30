@@ -289,7 +289,7 @@ async fn invalid_override_outputs_fail_naming_the_field_and_dispatch_nothing() {
     for outputs in ["object{0}", "[1]", "null"] {
         let mut fired = fire_bound_action(Variant::String(outputs.to_owned())).await;
         assert!(
-            matches!(&fired.outcome, SubActionOutcome::Failed(m) if m.contains("override_outputs")),
+            matches!(&fired.outcome, SubActionOutcome::Failed(m) if m.code_or_text().contains("override_outputs")),
             "{outputs}: {:?}",
             fired.outcome
         );
@@ -362,7 +362,7 @@ async fn unknown_trigger_instance_id_fails() {
     let outcome = run_outcome(&runner, &fire_cfg(&missing.to_string(), no_outputs())).await;
 
     assert!(
-        matches!(&outcome, SubActionOutcome::Failed(m) if m.contains("unknown trigger instance")),
+        matches!(&outcome, SubActionOutcome::Failed(m) if m.code_or_text().contains("unknown trigger instance")),
         "an unknown instance id must fail without dispatching, got {outcome:?}"
     );
     h.handle.shutdown();
@@ -385,7 +385,7 @@ async fn fire_with_empty_scheduler_cell_reports_scheduler_not_ready() {
     let outcome = run_outcome(&runner, &fire_cfg(&instance_id.to_string(), no_outputs())).await;
 
     assert!(
-        matches!(&outcome, SubActionOutcome::Failed(m) if m.contains("queue scheduler not ready")),
+        matches!(&outcome, SubActionOutcome::Failed(m) if m.code_or_text().contains("queue scheduler not ready")),
         "an empty scheduler cell must fail with the not-ready message, got {outcome:?}"
     );
 }
@@ -406,10 +406,14 @@ async fn unparseable_trigger_instance_id_fails() {
         panic!("an unparseable trigger_instance_id must fail before any lookup, got {outcome:?}");
     };
     assert!(
-        msg.contains("'trigger_instance_id' is invalid"),
-        "the failure must name the field it could not parse: {msg}"
+        msg.code_or_text()
+            .contains("'trigger_instance_id' is invalid"),
+        "the failure must name the field it could not parse: {msg:?}"
     );
-    assert!(!msg.contains(SENTINEL), "echoed the unparsed value: {msg}");
+    assert!(
+        !msg.code_or_text().contains(SENTINEL),
+        "echoed the unparsed value: {msg:?}"
+    );
 }
 
 #[tokio::test]

@@ -277,7 +277,7 @@ async fn stop_runner_with_an_unknown_mark_fails_without_signalling() {
         let (tel, _) = CoreLogicStopRunner.execute(&cfg, &ctx).await;
 
         assert!(
-            matches!(&tel.outcome, SubActionOutcome::Failed(m) if m.contains("'mark_as'")),
+            matches!(&tel.outcome, SubActionOutcome::Failed(m) if m.code_or_text().contains("'mark_as'")),
             "{mark_as}: {:?}",
             tel.outcome
         );

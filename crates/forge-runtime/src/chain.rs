@@ -439,7 +439,7 @@ mod tests {
         ConfigSpec, IntegerEditor, IntegerField, SubActionCategory, SubActionConfig,
         SubActionRunner, ValueBounds,
     };
-    use forge_types::{IntegrationId, Variant, integration_disabled_reason};
+    use forge_types::{IntegrationId, UserText, Variant, integration_disabled_message};
     use time::OffsetDateTime;
 
     use super::*;
@@ -702,7 +702,10 @@ mod tests {
     #[tokio::test]
     async fn sequential_step_failure_halts_chain_with_error_signal() {
         let downstream_runs = Arc::new(AtomicUsize::new(0));
-        let first = scripted("seq.fail", SubActionOutcome::Failed("boom".to_owned()));
+        let first = scripted(
+            "seq.fail",
+            SubActionOutcome::Failed(forge_types::UserText::unlocalized("boom")),
+        );
         let mut second = scripted("seq.after", SubActionOutcome::Success);
         second.runs = Arc::clone(&downstream_runs);
 
@@ -716,10 +719,13 @@ mod tests {
             )
             .await;
 
-        assert_eq!(run.signal, ChainSignal::Error("boom".to_owned()));
+        assert_eq!(
+            run.signal,
+            ChainSignal::Error(forge_types::UserText::unlocalized("boom"))
+        );
         assert_eq!(run.telemetry.len(), 1);
         assert!(
-            matches!(&run.telemetry[0].outcome, SubActionOutcome::Failed(m) if m == "boom"),
+            matches!(&run.telemetry[0].outcome, SubActionOutcome::Failed(m) if m.code_or_text() == "boom"),
             "failed step must be recorded in telemetry"
         );
         assert_eq!(downstream_runs.load(Ordering::Relaxed), 0);
@@ -809,7 +815,7 @@ mod tests {
         assert_eq!(run.telemetry[1].index, 1);
         assert_eq!(run.telemetry[1].kind, "seq.disabled");
         assert!(
-            matches!(&run.telemetry[1].outcome, SubActionOutcome::Skipped(m) if m == "disabled"),
+            matches!(&run.telemetry[1].outcome, SubActionOutcome::Skipped(m) if m.code_or_text() == "disabled"),
         );
         assert_eq!(run.telemetry[2].kind, "seq.after");
         assert_eq!(runs.load(Ordering::Relaxed), 0);
@@ -818,7 +824,10 @@ mod tests {
     #[tokio::test]
     async fn sequential_flagged_step_failure_lets_later_steps_run_and_chain_completes() {
         let downstream_runs = Arc::new(AtomicUsize::new(0));
-        let first = scripted("seq.flagfail", SubActionOutcome::Failed("boom".to_owned()));
+        let first = scripted(
+            "seq.flagfail",
+            SubActionOutcome::Failed(forge_types::UserText::unlocalized("boom")),
+        );
         let mut second = scripted("seq.after", SubActionOutcome::Success);
         second.runs = Arc::clone(&downstream_runs);
 
@@ -835,7 +844,7 @@ mod tests {
         assert_eq!(run.signal, ChainSignal::Completed);
         assert_eq!(run.telemetry.len(), 2);
         assert!(
-            matches!(&run.telemetry[0].outcome, SubActionOutcome::Failed(m) if m == "boom"),
+            matches!(&run.telemetry[0].outcome, SubActionOutcome::Failed(m) if m.code_or_text() == "boom"),
             "flagged failure is still recorded as a Failed row",
         );
         assert_eq!(run.telemetry[1].outcome, SubActionOutcome::Success);
@@ -903,8 +912,10 @@ mod tests {
                 after_runs.load(Ordering::Relaxed),
             ),
             (
-                ChainSignal::Error(INVALID_LIMIT_FAILURE.to_owned()),
-                vec![SubActionOutcome::Failed(INVALID_LIMIT_FAILURE.to_owned())],
+                ChainSignal::Error(forge_types::UserText::unlocalized(INVALID_LIMIT_FAILURE)),
+                vec![SubActionOutcome::Failed(
+                    forge_types::UserText::unlocalized(INVALID_LIMIT_FAILURE)
+                )],
                 0,
                 0,
             )
@@ -944,7 +955,9 @@ mod tests {
             (
                 ChainSignal::Completed,
                 vec![
-                    SubActionOutcome::Failed(INVALID_LIMIT_FAILURE.to_owned()),
+                    SubActionOutcome::Failed(forge_types::UserText::unlocalized(
+                        INVALID_LIMIT_FAILURE
+                    )),
                     SubActionOutcome::Success,
                 ],
                 0,
@@ -959,7 +972,7 @@ mod tests {
             (3, SubActionOutcome::Success, 1),
             (
                 6,
-                SubActionOutcome::Failed(INVALID_LIMIT_FAILURE.to_owned()),
+                SubActionOutcome::Failed(forge_types::UserText::unlocalized(INVALID_LIMIT_FAILURE)),
                 0,
             ),
         ] {
@@ -999,11 +1012,11 @@ mod tests {
             registry(vec![
                 Box::new(scripted(
                     "seq.flagfail",
-                    SubActionOutcome::Failed("tolerated".to_owned()),
+                    SubActionOutcome::Failed(forge_types::UserText::unlocalized("tolerated")),
                 )),
                 Box::new(scripted(
                     "seq.hardfail",
-                    SubActionOutcome::Failed("halt".to_owned()),
+                    SubActionOutcome::Failed(forge_types::UserText::unlocalized("halt")),
                 )),
                 Box::new(third),
             ]),
@@ -1022,7 +1035,10 @@ mod tests {
             )
             .await;
 
-        assert_eq!(run.signal, ChainSignal::Error("halt".to_owned()));
+        assert_eq!(
+            run.signal,
+            ChainSignal::Error(forge_types::UserText::unlocalized("halt"))
+        );
         assert_eq!(run.telemetry.len(), 2);
         assert_eq!(third_runs.load(Ordering::Relaxed), 0);
     }
@@ -1033,7 +1049,7 @@ mod tests {
             Box::new(scripted("d.ok", SubActionOutcome::Success)),
             Box::new(scripted(
                 "d.fail",
-                SubActionOutcome::Failed("nope".to_owned()),
+                SubActionOutcome::Failed(forge_types::UserText::unlocalized("nope")),
             )),
             Box::new(scripted("d.off", SubActionOutcome::Success)),
         ]);
@@ -1143,7 +1159,7 @@ mod tests {
                 assert_eq!(run.telemetry[0].outcome, SubActionOutcome::Success);
             } else {
                 assert!(
-                    matches!(&run.telemetry[0].outcome, SubActionOutcome::Skipped(m) if m == "condition"),
+                    matches!(&run.telemetry[0].outcome, SubActionOutcome::Skipped(m) if m.code_or_text() == "condition"),
                     "false condition skips with \"condition\" reason, got {:?}",
                     run.telemetry[0].outcome,
                 );
@@ -1185,7 +1201,7 @@ mod tests {
         assert_eq!(run.telemetry[1].index, 1);
         assert_eq!(run.telemetry[1].kind, "c.gated");
         assert!(
-            matches!(&run.telemetry[1].outcome, SubActionOutcome::Skipped(m) if m == "condition"),
+            matches!(&run.telemetry[1].outcome, SubActionOutcome::Skipped(m) if m.code_or_text() == "condition"),
         );
         assert_eq!(gated_runs.load(Ordering::Relaxed), 0);
         assert_eq!(
@@ -1222,7 +1238,7 @@ mod tests {
                 .await;
 
             assert!(
-                matches!(&run.telemetry[0].outcome, SubActionOutcome::Failed(m) if m.contains("condition evaluation failed")),
+                matches!(&run.telemetry[0].outcome, SubActionOutcome::Failed(m) if m.code_or_text().contains("condition evaluation failed")),
                 "flagged={flagged}: gated row must be a condition-eval failure, got {:?}",
                 run.telemetry[0].outcome,
             );
@@ -1240,7 +1256,7 @@ mod tests {
                 assert_eq!(run.signal, ChainSignal::Completed, "flagged={flagged}");
             } else {
                 assert!(
-                    matches!(&run.signal, ChainSignal::Error(m) if m.contains("condition evaluation failed")),
+                    matches!(&run.signal, ChainSignal::Error(m) if m.code_or_text().contains("condition evaluation failed")),
                     "flagged={flagged}: {:?}",
                     run.signal,
                 );
@@ -1310,8 +1326,8 @@ mod tests {
 
         assert_eq!(
             run.signal,
-            ChainSignal::Error(integration_disabled_reason(&IntegrationId::from_static(
-                "twitch"
+            ChainSignal::Error(UserText::from(integration_disabled_message(
+                &IntegrationId::from_static("twitch")
             )))
         );
         assert_eq!(twitch_runs.load(Ordering::Relaxed), 0);
@@ -1325,6 +1341,44 @@ mod tests {
             .expect("the disabled step must still report subaction.done");
         assert_eq!(done.payload["outcome"], "failed");
         assert_eq!(done.payload["integration"], "twitch");
+    }
+
+    #[tokio::test]
+    async fn a_coded_step_failure_publishes_its_code_as_the_message_and_the_coded_text_beside_it() {
+        let twitch = IntegrationId::from_static("twitch");
+        let (eng, events) = capturing_engine(
+            twitch_owned_registry(
+                &Arc::new(AtomicUsize::new(0)),
+                &Arc::new(AtomicUsize::new(0)),
+            ),
+            8,
+        );
+        eng.integration_gate().disable(twitch.clone());
+
+        eng.run_sequential(
+            &[step("twitch.step")],
+            &ArgStack::new(),
+            EventId::new(),
+            &CancelSignal::new(),
+        )
+        .await;
+
+        let done = events
+            .lock()
+            .unwrap()
+            .iter()
+            .find(|e| e.kind == "subaction.done")
+            .cloned()
+            .expect("the disabled step reports subaction.done");
+        let text: UserText =
+            serde_json::from_value(done.payload["message_text"].clone()).expect("coded text");
+        assert_eq!(
+            (done.payload["message"].as_str(), text),
+            (
+                Some("common.integration_disabled"),
+                UserText::from(integration_disabled_message(&twitch))
+            )
+        );
     }
 
     #[tokio::test]
@@ -1441,7 +1495,9 @@ mod tests {
 
         assert_eq!(
             run.telemetry[0].outcome,
-            SubActionOutcome::Failed(forge_types::NO_CHAT_PLATFORM_ENABLED_REASON.to_owned())
+            SubActionOutcome::Failed(
+                forge_types::MessageRef::new(forge_types::NO_CHAT_PLATFORM_ENABLED).into()
+            )
         );
         assert_eq!(send_requests(&events), 0);
     }

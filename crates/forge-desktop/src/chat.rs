@@ -2501,7 +2501,7 @@ mod tests {
                 (Integration::Twitch, LifecycleState::Running),
                 (
                     Integration::YouTube,
-                    LifecycleState::Failed("quota".to_owned()),
+                    LifecycleState::Failed(crate::test_support::start_failure("quota")),
                 ),
                 (Integration::Kick, LifecycleState::Disabled),
             ]))

@@ -203,7 +203,7 @@ mod tests {
 
     fn failure(outcome: SubActionOutcome) -> String {
         match outcome {
-            SubActionOutcome::Failed(reason) => reason,
+            SubActionOutcome::Failed(reason) => reason.code_or_text(),
             other => panic!("expected a failed outcome, got {other:?}"),
         }
     }

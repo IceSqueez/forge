@@ -231,8 +231,8 @@ mod tests {
         let outcome = run(globals.clone(), &cfg("flag")).await;
         match outcome {
             SubActionOutcome::Failed(msg) => assert!(
-                msg.contains("INT"),
-                "type-mismatch message should name the found type, got: {msg}"
+                msg.code_or_text().contains("INT"),
+                "type-mismatch message should name the found type, got: {msg:?}"
             ),
             other => panic!("expected Failed, got {other:?}"),
         }

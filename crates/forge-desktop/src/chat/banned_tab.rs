@@ -372,7 +372,11 @@ mod tests {
     #[gpui::test]
     fn a_failed_card_ban_does_not_relist(cx: &mut TestAppContext) {
         let rt = runtime();
-        let m = moderated_view(cx, &rt, SubActionOutcome::Failed("denied".to_owned()));
+        let m = moderated_view(
+            cx,
+            &rt,
+            SubActionOutcome::Failed(forge_types::UserText::unlocalized("denied")),
+        );
         show(cx, &m.view, ChatTab::Banned);
         settle(cx, &rt);
 

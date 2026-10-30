@@ -29,7 +29,7 @@ async fn set_alias_inserts_alias_that_subsequent_speak_resolves_through() {
         .await
         .unwrap();
 
-    let (voice, engine) = wait_for_resolved_voice(&mut stream, 2_000).await;
+    let (voice, engine) = wait_for_resolved_voice(&mut stream).await;
     assert_eq!((voice.as_str(), engine.as_str()), ("beta-1", "beta"));
 }
 
@@ -53,7 +53,7 @@ async fn set_alias_replaces_existing_alias_for_same_viewer_id() {
         .await
         .unwrap();
 
-    let (voice, engine) = wait_for_resolved_voice(&mut stream, 2_000).await;
+    let (voice, engine) = wait_for_resolved_voice(&mut stream).await;
     assert_eq!((voice.as_str(), engine.as_str()), ("beta-1", "beta"));
 }
 
@@ -81,7 +81,7 @@ async fn switch_alias_repoints_existing_viewer_alias() {
         .await
         .unwrap();
 
-    let (voice, engine) = wait_for_resolved_voice(&mut stream, 2_000).await;
+    let (voice, engine) = wait_for_resolved_voice(&mut stream).await;
     assert_eq!((voice.as_str(), engine.as_str()), ("beta-1", "beta"));
 }
 
@@ -112,7 +112,7 @@ async fn switch_alias_is_noop_when_viewer_has_no_alias() {
         .await
         .unwrap();
 
-    let (voice, engine) = wait_for_resolved_voice(&mut stream, 2_000).await;
+    let (voice, engine) = wait_for_resolved_voice(&mut stream).await;
     assert_eq!(
         (voice.as_str(), engine.as_str()),
         ("alpha-1", "alpha"),
@@ -146,7 +146,7 @@ async fn set_strategy_repoints_live_fallback_for_aliasless_viewers() {
         .await
         .unwrap();
 
-    let (voice, engine) = wait_for_resolved_voice(&mut stream, 2_000).await;
+    let (voice, engine) = wait_for_resolved_voice(&mut stream).await;
     assert_eq!(
         (voice.as_str(), engine.as_str()),
         ("beta-1", "beta"),
@@ -179,7 +179,7 @@ async fn remove_alias_drops_matching_alias_so_fallback_resolves() {
         .await
         .unwrap();
 
-    let (voice, engine) = wait_for_resolved_voice(&mut stream, 2_000).await;
+    let (voice, engine) = wait_for_resolved_voice(&mut stream).await;
     assert_eq!(
         (voice.as_str(), engine.as_str()),
         ("alpha-1", "alpha"),
@@ -210,7 +210,7 @@ async fn remove_alias_with_absent_id_leaves_existing_alias_intact() {
         .await
         .unwrap();
 
-    let (voice, engine) = wait_for_resolved_voice(&mut stream, 2_000).await;
+    let (voice, engine) = wait_for_resolved_voice(&mut stream).await;
     assert_eq!(
         (voice.as_str(), engine.as_str()),
         ("beta-1", "beta"),
@@ -253,7 +253,7 @@ async fn voice_after_switch(
         .unwrap();
     handle.send(SpeakCommand::Enqueue(speaker)).await.unwrap();
 
-    wait_for_resolved_voice(&mut stream, 2_000).await
+    wait_for_resolved_voice(&mut stream).await
 }
 
 #[tokio::test]

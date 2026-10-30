@@ -157,12 +157,11 @@ fn make_deps_recording(sink: Arc<dyn AudioSink>) -> (QueueDeps, Arc<std::sync::M
     (deps, events)
 }
 
-async fn drain_until<F>(stream: &mut forge_speak_queue::SpeakEventStream, predicate: F, max_ms: u64)
+async fn drain_until<F>(stream: &mut forge_speak_queue::SpeakEventStream, predicate: F)
 where
     F: Fn(&SpeakEvent) -> bool,
 {
-    let deadline =
-        std::time::Instant::now() + std::time::Duration::from_millis(max_ms.max(HANG_GUARD_MS));
+    let deadline = std::time::Instant::now() + std::time::Duration::from_millis(HANG_GUARD_MS);
     loop {
         let remaining = deadline.saturating_duration_since(std::time::Instant::now());
         if remaining.is_zero() {
@@ -186,12 +185,7 @@ async fn enqueue_and_finish() {
     let req = make_request("viewer1", "hello world", Priority::Normal);
     handle.send(SpeakCommand::Enqueue(req)).await.unwrap();
 
-    drain_until(
-        &mut stream,
-        |e| matches!(e, SpeakEvent::Finished { .. }),
-        2_000,
-    )
-    .await;
+    drain_until(&mut stream, |e| matches!(e, SpeakEvent::Finished { .. })).await;
 
     assert_eq!(*play_count.lock().unwrap(), 1);
 }
@@ -203,7 +197,7 @@ async fn pause_holds_synthesis() {
         forge_speak_queue::spawn(QueueConfig::default(), make_deps(Arc::new(sink)));
 
     handle.send(SpeakCommand::Pause).await.unwrap();
-    drain_until(&mut stream, |e| matches!(e, SpeakEvent::Paused), 500).await;
+    drain_until(&mut stream, |e| matches!(e, SpeakEvent::Paused)).await;
 
     let req = make_request("viewer1", "paused message", Priority::Normal);
     handle.send(SpeakCommand::Enqueue(req)).await.unwrap();
@@ -216,12 +210,7 @@ async fn pause_holds_synthesis() {
     );
 
     handle.send(SpeakCommand::Resume).await.unwrap();
-    drain_until(
-        &mut stream,
-        |e| matches!(e, SpeakEvent::Finished { .. }),
-        2_000,
-    )
-    .await;
+    drain_until(&mut stream, |e| matches!(e, SpeakEvent::Finished { .. })).await;
     assert_eq!(*play_count.lock().unwrap(), 1);
 }
 
@@ -236,7 +225,7 @@ async fn clear_empties_queue() {
     let (handle, mut stream) = forge_speak_queue::spawn(config, make_deps(Arc::new(sink)));
 
     handle.send(SpeakCommand::Pause).await.unwrap();
-    drain_until(&mut stream, |e| matches!(e, SpeakEvent::Paused), 500).await;
+    drain_until(&mut stream, |e| matches!(e, SpeakEvent::Paused)).await;
 
     for i in 0..5 {
         let req = make_request("viewer1", &format!("message {i}"), Priority::Normal);
@@ -244,7 +233,7 @@ async fn clear_empties_queue() {
     }
 
     handle.send(SpeakCommand::Clear).await.unwrap();
-    drain_until(&mut stream, |e| matches!(e, SpeakEvent::Cleared), 500).await;
+    drain_until(&mut stream, |e| matches!(e, SpeakEvent::Cleared)).await;
 
     tokio::time::sleep(std::time::Duration::from_millis(100)).await;
     assert_eq!(*play_count.lock().unwrap(), 0);
@@ -261,19 +250,14 @@ async fn per_user_limit_rejects_excess() {
     let (handle, mut stream) = forge_speak_queue::spawn(config, make_deps(Arc::new(sink)));
 
     handle.send(SpeakCommand::Pause).await.unwrap();
-    drain_until(&mut stream, |e| matches!(e, SpeakEvent::Paused), 500).await;
+    drain_until(&mut stream, |e| matches!(e, SpeakEvent::Paused)).await;
 
     for _ in 0..3 {
         let req = make_request("same_user", "test", Priority::Normal);
         handle.send(SpeakCommand::Enqueue(req)).await.unwrap();
     }
 
-    drain_until(
-        &mut stream,
-        |e| matches!(e, SpeakEvent::Rejected { .. }),
-        500,
-    )
-    .await;
+    drain_until(&mut stream, |e| matches!(e, SpeakEvent::Rejected { .. })).await;
 }
 
 #[tokio::test]
@@ -287,19 +271,14 @@ async fn queue_full_rejects_when_at_capacity() {
     let (handle, mut stream) = forge_speak_queue::spawn(config, make_deps(Arc::new(sink)));
 
     handle.send(SpeakCommand::Pause).await.unwrap();
-    drain_until(&mut stream, |e| matches!(e, SpeakEvent::Paused), 500).await;
+    drain_until(&mut stream, |e| matches!(e, SpeakEvent::Paused)).await;
 
     for i in 0..3 {
         let req = make_request(&format!("user{i}"), "test", Priority::Normal);
         handle.send(SpeakCommand::Enqueue(req)).await.unwrap();
     }
 
-    drain_until(
-        &mut stream,
-        |e| matches!(e, SpeakEvent::Rejected { .. }),
-        500,
-    )
-    .await;
+    drain_until(&mut stream, |e| matches!(e, SpeakEvent::Rejected { .. })).await;
 }
 
 #[tokio::test]
@@ -313,7 +292,7 @@ async fn high_priority_enqueued_first() {
     let (handle, mut stream) = forge_speak_queue::spawn(config, make_deps(Arc::new(sink)));
 
     handle.send(SpeakCommand::Pause).await.unwrap();
-    drain_until(&mut stream, |e| matches!(e, SpeakEvent::Paused), 500).await;
+    drain_until(&mut stream, |e| matches!(e, SpeakEvent::Paused)).await;
 
     let normal = make_request("user1", "normal", Priority::Normal);
     let high = make_request("user2", "high priority", Priority::High);
@@ -321,11 +300,9 @@ async fn high_priority_enqueued_first() {
     handle.send(SpeakCommand::Enqueue(high)).await.unwrap();
 
     handle.send(SpeakCommand::Resume).await.unwrap();
-    drain_until(
-        &mut stream,
-        |e| *play_count.lock().unwrap() >= 2 || matches!(e, SpeakEvent::Finished { .. }),
-        3_000,
-    )
+    drain_until(&mut stream, |e| {
+        *play_count.lock().unwrap() >= 2 || matches!(e, SpeakEvent::Finished { .. })
+    })
     .await;
     assert!(*play_count.lock().unwrap() >= 1);
 }
@@ -341,12 +318,7 @@ async fn started_bus_event_emitted_at_dequeue_and_after_synth_with_superset_sche
     req.source_event_id = Some(src);
     handle.send(SpeakCommand::Enqueue(req)).await.unwrap();
 
-    drain_until(
-        &mut stream,
-        |e| matches!(e, SpeakEvent::Finished { .. }),
-        2_000,
-    )
-    .await;
+    drain_until(&mut stream, |e| matches!(e, SpeakEvent::Finished { .. })).await;
 
     let started: Vec<Event> = bus
         .lock()

@@ -25,12 +25,7 @@ pub(crate) async fn observe_overlay_content(
     clock: RunClock,
 ) -> (Verdict, Evidence) {
     page.wait_until(deadline, |frames| {
-        frames
-            .get(from..)
-            .unwrap_or_default()
-            .iter()
-            .filter_map(content_of)
-            .any(|content| satisfies(content, &expected.values.0))
+        has_passing_frame(frames.get(from..).unwrap_or_default(), &expected.values.0)
     })
     .await;
 
@@ -43,9 +38,7 @@ pub(crate) fn verdict_for(
     frames: Vec<ReceivedContent>,
     expected: &BTreeMap<String, String>,
 ) -> (Verdict, Evidence) {
-    let matched = frames.iter().find(|frame| {
-        satisfies(&frame.content, expected) && tagged_pointers(&frame.content).is_empty()
-    });
+    let matched = frames.iter().find(|frame| passes(&frame.content, expected));
     let evidence = |mismatched: Vec<String>, tagged: Vec<String>, frames: Vec<ReceivedContent>| {
         Evidence::Overlay(OverlayEvidence {
             overlay: overlay.to_owned(),
@@ -111,8 +104,15 @@ fn content_of(frame: &ReceivedFrame) -> Option<&Value> {
         .flatten()
 }
 
-fn satisfies(content: &Value, expected: &BTreeMap<String, String>) -> bool {
-    mismatched_keys(content, expected).is_empty()
+fn has_passing_frame(frames: &[ReceivedFrame], expected: &BTreeMap<String, String>) -> bool {
+    frames
+        .iter()
+        .filter_map(content_of)
+        .any(|content| passes(content, expected))
+}
+
+fn passes(content: &Value, expected: &BTreeMap<String, String>) -> bool {
+    mismatched_keys(content, expected).is_empty() && tagged_pointers(content).is_empty()
 }
 
 pub(crate) fn mismatched_keys(content: &Value, expected: &BTreeMap<String, String>) -> Vec<String> {
@@ -244,6 +244,23 @@ mod tests {
                 if pointers == &["/value".to_owned()]),
             "a key the scenario does not name still renders on the page; got {verdict:?}"
         );
+    }
+
+    #[test]
+    fn the_wait_outlasts_a_tagged_frame_and_settles_on_the_clean_one_after_it() {
+        let received = |content: Value| ReceivedFrame {
+            arrived: Instant::now(),
+            raw: json!({ "frame": "content", "content": content }),
+        };
+        let wanted = expected(&[("label", "Sub goal")]);
+        let tagged = received(json!({
+            "label": "Sub goal",
+            "value": { "type": "int", "value": 42 },
+        }));
+        let clean = received(json!({ "label": "Sub goal", "value": 42 }));
+
+        assert!(!has_passing_frame(std::slice::from_ref(&tagged), &wanted));
+        assert!(has_passing_frame(&[tagged, clean], &wanted));
     }
 
     #[test]

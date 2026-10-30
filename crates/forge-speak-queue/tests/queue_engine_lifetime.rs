@@ -337,12 +337,7 @@ async fn an_engine_disabled_at_boot_releases_its_probe_instance() {
     let (handle, mut stream) = start(deps);
 
     handle.send(SpeakCommand::Pause).await.unwrap();
-    common::wait_for(
-        &mut stream,
-        |e| matches!(e, SpeakEvent::Paused),
-        HANG_GUARD_MS,
-    )
-    .await;
+    common::wait_for(&mut stream, |e| matches!(e, SpeakEvent::Paused)).await;
 
     assert!(
         released.upgrade().is_none(),

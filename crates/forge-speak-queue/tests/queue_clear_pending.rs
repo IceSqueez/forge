@@ -79,28 +79,16 @@ async fn clear_pending_lets_the_in_flight_item_finish() {
         .send(SpeakCommand::Enqueue(request("v1", "in flight")))
         .await
         .unwrap();
-    wait_for(
-        &mut stream,
-        |e| matches!(e, SpeakEvent::Started { .. }),
-        2_000,
-    )
-    .await;
+    wait_for(&mut stream, |e| matches!(e, SpeakEvent::Started { .. })).await;
 
     handle.send(SpeakCommand::ClearPending).await.unwrap();
-    wait_for(
-        &mut stream,
-        |e| matches!(e, SpeakEvent::QueueChanged { queue_len: 0, .. }),
-        2_000,
-    )
+    wait_for(&mut stream, |e| {
+        matches!(e, SpeakEvent::QueueChanged { queue_len: 0, .. })
+    })
     .await;
 
     gate.notify_one();
-    wait_for(
-        &mut stream,
-        |e| matches!(e, SpeakEvent::Finished { .. }),
-        2_000,
-    )
-    .await;
+    wait_for(&mut stream, |e| matches!(e, SpeakEvent::Finished { .. })).await;
     assert_eq!(*plays.lock().unwrap(), 1, "in-flight item must still play");
 }
 
@@ -120,15 +108,10 @@ async fn clear_abandons_the_in_flight_item() {
         .send(SpeakCommand::Enqueue(request("v1", "in flight")))
         .await
         .unwrap();
-    wait_for(
-        &mut stream,
-        |e| matches!(e, SpeakEvent::Started { .. }),
-        2_000,
-    )
-    .await;
+    wait_for(&mut stream, |e| matches!(e, SpeakEvent::Started { .. })).await;
 
     handle.send(SpeakCommand::Clear).await.unwrap();
-    wait_for(&mut stream, |e| matches!(e, SpeakEvent::Cleared), 2_000).await;
+    wait_for(&mut stream, |e| matches!(e, SpeakEvent::Cleared)).await;
 
     gate.notify_one();
     assert_no_event(

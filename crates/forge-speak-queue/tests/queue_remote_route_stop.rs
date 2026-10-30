@@ -16,7 +16,6 @@ use tokio::sync::{Notify, mpsc};
 use common::{make_deps, request, standard_registry, wait_for};
 
 const DESTINATION: &str = "stage-audio";
-const EVENT_WAIT_MS: u64 = 2_000;
 const COMMAND_WAIT: Duration = Duration::from_secs(30);
 const SECOND_STOP_WINDOW: Duration = Duration::from_millis(100);
 
@@ -86,12 +85,7 @@ async fn skipping_an_utterance_on_the_overlay_route_stops_it_on_the_page_exactly
         .unwrap();
     page.delivered.notified().await;
     handle.send(SpeakCommand::Skip).await.unwrap();
-    wait_for(
-        &mut stream,
-        |e| matches!(e, SpeakEvent::Skipped { .. }),
-        EVENT_WAIT_MS,
-    )
-    .await;
+    wait_for(&mut stream, |e| matches!(e, SpeakEvent::Skipped { .. })).await;
 
     let first = tokio::time::timeout(COMMAND_WAIT, pushed.recv()).await;
     assert!(

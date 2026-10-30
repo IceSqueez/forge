@@ -89,6 +89,25 @@ async fn port_race_lost_on_every_attempt_stops_at_the_attempt_bound() {
 }
 
 #[tokio::test]
+async fn a_run_root_inside_the_live_data_directory_is_refused_before_anything_is_created() {
+    let root = tempfile::tempdir().unwrap();
+    let live_data = root.path().join("live");
+    std::fs::create_dir_all(&live_data).unwrap();
+    let mut options = options(&root, "exit 0", 1);
+    options.run_root = live_data.join("run");
+    options.live.data_dir = live_data;
+
+    let failure = launch_forge(&options).await;
+
+    assert!(
+        matches!(failure, Err(EmulatorError::LiveDataDir { .. })),
+        "got {:?}",
+        failure.map(|launched| launched.attempts)
+    );
+    assert!(!options.run_root.exists());
+}
+
+#[tokio::test]
 async fn zero_launch_attempts_is_refused_before_anything_is_seeded() {
     let root = tempfile::tempdir().unwrap();
     let options = options(&root, "exit 0", 0);

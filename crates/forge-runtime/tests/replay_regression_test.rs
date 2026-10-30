@@ -70,10 +70,11 @@ async fn recv_next_event(sub: &mut EventSubscription, timeout_ms: u64) -> Option
 
 struct PipelineFixture {
     bus: Arc<EventBus>,
+    _media: TempDir,
 }
 
 async fn spawn_pipeline() -> PipelineFixture {
-    let (dp, _media) = make_dp().await;
+    let (dp, media) = make_dp().await;
 
     let queue = dp
         .queue_repo()
@@ -152,7 +153,7 @@ async fn spawn_pipeline() -> PipelineFixture {
 
     tokio::time::sleep(Duration::from_millis(10)).await;
 
-    PipelineFixture { bus }
+    PipelineFixture { bus, _media: media }
 }
 
 fn make_chat_event(msg: &str) -> Event {

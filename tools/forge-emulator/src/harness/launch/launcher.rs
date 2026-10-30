@@ -42,11 +42,11 @@ pub async fn launch_forge(options: &LaunchOptions) -> Result<LaunchedForge, Emul
         let attempt_dir = options.run_root.join(format!("attempt-{attempt}"));
         let data = attempt_dir.join("data");
         let home = attempt_dir.join("home");
+        options.live.refuse_overlap(&data, &home)?;
         std::fs::create_dir_all(&data).map_err(|e| EmulatorError::DataDir {
             path: data.clone(),
             reason: e.to_string(),
         })?;
-        options.live.refuse_overlap(&data, &home)?;
         let data_dir = ForgeDataDir::fresh(&data)?;
         let seed_report = seed(&options.emulator, &data, &options.fixture).await?;
 

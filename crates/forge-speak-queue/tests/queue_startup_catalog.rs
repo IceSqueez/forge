@@ -247,7 +247,7 @@ async fn control_commands_take_effect_while_the_first_catalog_is_still_building(
     for (command, expected) in cases {
         let mut q = start(&[("alpha", Listing::GatedOnce(gate()))]);
         q.handle.send(command).await.unwrap();
-        wait_for(&mut q.stream, expected, 1_000).await;
+        wait_for(&mut q.stream, expected).await;
     }
 }
 
@@ -275,7 +275,7 @@ async fn an_early_enqueue_waits_for_the_first_catalog_then_plays() {
     assert_eq!(*q.plays.lock().unwrap(), 0);
 
     gate.add_permits(1);
-    wait_for(&mut q.stream, finished(&id), 2_000).await;
+    wait_for(&mut q.stream, finished(&id)).await;
     assert_eq!(*q.plays.lock().unwrap(), 1);
 }
 
@@ -291,7 +291,7 @@ async fn skip_before_the_first_catalog_leaves_waiting_requests_queued() {
     assert_eq!(q.handle.queue_depth(), 1);
 
     gate.add_permits(1);
-    wait_for(&mut q.stream, finished(&id), 2_000).await;
+    wait_for(&mut q.stream, finished(&id)).await;
 }
 
 #[tokio::test]
@@ -305,7 +305,7 @@ async fn clear_before_the_first_catalog_drops_waiting_requests() {
             .unwrap();
     }
     q.handle.send(SpeakCommand::Clear).await.unwrap();
-    wait_for(&mut q.stream, |e| matches!(e, SpeakEvent::Cleared), 1_000).await;
+    wait_for(&mut q.stream, |e| matches!(e, SpeakEvent::Cleared)).await;
     gate.add_permits(1);
 
     let later = request("viewer", "after");
@@ -337,7 +337,7 @@ async fn a_failing_engine_still_lets_the_first_catalog_complete() {
         let req = request("viewer", "hello");
         let id = req.request_id.clone();
         q.handle.send(SpeakCommand::Enqueue(req)).await.unwrap();
-        wait_for(&mut q.stream, finished(&id), 2_000).await;
+        wait_for(&mut q.stream, finished(&id)).await;
         assert_eq!(voice_ids(&q.handle), vec!["alpha-1".to_owned()]);
     }
 }

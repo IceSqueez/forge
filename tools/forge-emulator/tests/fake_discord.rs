@@ -349,9 +349,40 @@ async fn forge_retries_once_after_the_fake_rate_limits_its_post() {
 }
 
 #[tokio::test]
+async fn a_body_that_does_not_decode_is_refused_and_recorded_as_malformed() {
+    let multipart = "--edge\r\nContent-Disposition: form-data; name=\"payload_json\"\r\n\r\n{broken\r\n--edge--\r\n";
+    for (content_type, body) in [
+        ("application/json", "{broken"),
+        ("multipart/form-data; boundary=edge", multipart),
+    ] {
+        let (fake, url) = fake().await;
+
+        let response = http()
+            .post(&url)
+            .header(reqwest::header::CONTENT_TYPE, content_type)
+            .body(body)
+            .send()
+            .await
+            .unwrap();
+
+        assert_eq!(
+            response.status(),
+            reqwest::StatusCode::BAD_REQUEST,
+            "{content_type}"
+        );
+        let posts = fake.posts();
+        assert_eq!(posts.len(), 1, "{content_type}");
+        assert!(posts[0].body_error.is_some(), "{content_type}");
+    }
+}
+
+#[tokio::test]
 async fn forge_post_to_a_revoked_webhook_surfaces_the_404_without_the_token() {
     let (fake, _) = fake().await;
-    let revoked = format!("{}-revoked", saved_url(&fake));
+    let saved = saved_url(&fake);
+    let (_, token) = saved.rsplit_once('/').unwrap();
+    assert!(!token.is_empty());
+    let revoked = format!("{saved}-revoked");
     let client = forge_client(&fake, &revoked);
 
     let err = client
@@ -363,5 +394,6 @@ async fn forge_post_to_a_revoked_webhook_surfaces_the_404_without_the_token() {
         err,
         forge_discord::DiscordError::BadResponse { status: 404, .. }
     ));
-    assert!(!err.to_string().contains("fake-discord-token"), "{err}");
+    assert!(!err.to_string().contains(token), "{err}");
+    assert!(!format!("{err:?}").contains(token), "{err:?}");
 }

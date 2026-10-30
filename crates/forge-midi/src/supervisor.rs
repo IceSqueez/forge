@@ -660,19 +660,33 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn unsupported_status_byte_emits_no_event() {
+    async fn messages_without_a_decoded_kind_publish_nothing() {
+        const CHANNEL_PRESSURE: [u8; 2] = [0xD0, 64];
+        const POLY_AFTERTOUCH: [u8; 3] = [0xA0, 60, 64];
+        const TIMING_CLOCK: [u8; 1] = [0xF8];
+        const NOTE_ON_MARKER: [u8; 3] = [0x90, 60, 100];
         let backend = Arc::new(MockMidiBackend::new(vec![input_port("Piano")], vec![]));
         let publisher = RecordingPublisher::new();
         let _client = start_client(Arc::clone(&backend), Arc::clone(&publisher)).await;
 
-        backend.inject_all(0, vec![0xC0, 10]).await;
-        for _ in 0..4 {
-            tokio::task::yield_now().await;
-        }
+        backend.inject_all(0, CHANNEL_PRESSURE.to_vec()).await;
+        backend.inject_all(0, POLY_AFTERTOUCH.to_vec()).await;
+        backend.inject_all(0, TIMING_CLOCK.to_vec()).await;
+        backend.inject_all(0, NOTE_ON_MARKER.to_vec()).await;
+        wait_until("the marker note", || {
+            publisher.has_kind("midi.input.note_on")
+        })
+        .await;
 
-        assert!(!publisher.has_kind("midi.input.note_on"));
-        assert!(!publisher.has_kind("midi.input.note_off"));
-        assert!(!publisher.has_kind("midi.input.control_change"));
+        let kinds: Vec<String> = publisher
+            .events
+            .lock()
+            .unwrap()
+            .iter()
+            .map(|event| event.kind.to_string())
+            .filter(|kind| kind.starts_with("midi.input."))
+            .collect();
+        assert_eq!(kinds, ["midi.input.note_on"]);
     }
 
     #[tokio::test]

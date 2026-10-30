@@ -21,14 +21,9 @@ fn spawn_standard() -> (forge_speak_queue::SpeakQueueHandle, SpeakEventStream) {
     forge_speak_queue::spawn(QueueConfig::default(), deps)
 }
 
-async fn first_started_ids(
-    stream: &mut SpeakEventStream,
-    count: usize,
-    max_ms: u64,
-) -> Vec<RequestId> {
+async fn first_started_ids(stream: &mut SpeakEventStream, count: usize) -> Vec<RequestId> {
     let mut seen: Vec<RequestId> = Vec::new();
-    let deadline =
-        std::time::Instant::now() + std::time::Duration::from_millis(max_ms.max(HANG_GUARD_MS));
+    let deadline = std::time::Instant::now() + std::time::Duration::from_millis(HANG_GUARD_MS);
     while seen.len() < count {
         let remaining = deadline.saturating_duration_since(std::time::Instant::now());
         if remaining.is_zero() {
@@ -69,7 +64,7 @@ async fn reordering_ahead_of_an_earlier_item_changes_playback_order() {
         .unwrap();
     handle.send(SpeakCommand::Resume).await.unwrap();
 
-    let played = first_started_ids(&mut stream, 3, 5_000).await;
+    let played = first_started_ids(&mut stream, 3).await;
     assert_eq!(
         played,
         vec![ids[2].clone(), ids[0].clone(), ids[1].clone()],
@@ -114,11 +109,9 @@ async fn reordering_without_an_anchor_moves_a_normal_item_to_the_back() {
         .await
         .unwrap();
 
-    wait_for(
-        &mut stream,
-        |e| order_is(e, &[(&ids[1], false), (&ids[2], false), (&ids[0], false)]),
-        5_000,
-    )
+    wait_for(&mut stream, |e| {
+        order_is(e, &[(&ids[1], false), (&ids[2], false), (&ids[0], false)])
+    })
     .await;
 }
 
@@ -144,19 +137,15 @@ async fn reordering_a_high_priority_item_without_an_anchor_keeps_it_in_the_high_
         .await
         .unwrap();
 
-    wait_for(
-        &mut stream,
-        |e| {
-            order_is(
-                e,
-                &[
-                    (&second_high.request_id, true),
-                    (&first_high.request_id, true),
-                    (&normal.request_id, false),
-                ],
-            )
-        },
-        5_000,
-    )
+    wait_for(&mut stream, |e| {
+        order_is(
+            e,
+            &[
+                (&second_high.request_id, true),
+                (&first_high.request_id, true),
+                (&normal.request_id, false),
+            ],
+        )
+    })
     .await;
 }

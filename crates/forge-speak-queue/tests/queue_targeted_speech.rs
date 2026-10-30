@@ -280,7 +280,6 @@ async fn held_queue() -> (SpeakQueueHandle, SpeakEventStream, Arc<Notify>, Reque
     wait_for(
         &mut stream,
         |e| matches!(e, SpeakEvent::Started { request_id, .. } if *request_id == head_id),
-        WAIT_MS,
     )
     .await;
     (handle, stream, gate, head_id)

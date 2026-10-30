@@ -28,10 +28,9 @@ pub fn write_stress_report(
         .map_err(|e| failed(&markdown, e))?;
     let mut lines = String::new();
     for sample in &outcome.samples {
-        if let Ok(line) = serde_json::to_string(sample) {
-            lines.push_str(&line);
-            lines.push('\n');
-        }
+        let line = serde_json::to_string(sample).map_err(|e| failed(&samples, e.into()))?;
+        lines.push_str(&line);
+        lines.push('\n');
     }
     std::fs::write(&samples, lines).map_err(|e| failed(&samples, e))?;
     Ok(StressFiles { markdown, samples })
@@ -45,14 +44,19 @@ fn render(profile: &StressProfile, outcome: &StressOutcome, forge_binary: &Path)
         out,
         "- forge: `{}` ({})\n- data dir: `{}`\n- senders: {}\n- forge exited during run: {}\n- shutdown: {}\n",
         forge_binary.display(),
-        outcome.version.as_deref().unwrap_or("version unknown"),
+        match &outcome.version {
+            Ok(version) => version.clone(),
+            Err(why) => format!("version unknown: {why}"),
+        },
         outcome.data_dir.display(),
         profile.senders,
         outcome.forge_exited,
-        match (outcome.shutdown_ms, outcome.shutdown_forced) {
-            (Some(ms), Some(true)) => format!("{ms} ms, killed after the grace period"),
-            (Some(ms), _) => format!("{ms} ms, clean"),
-            _ => "failed".to_owned(),
+        match &outcome.shutdown {
+            Ok(shutdown) if shutdown.forced => {
+                format!("{} ms, killed after the grace period", shutdown.ms)
+            }
+            Ok(shutdown) => format!("{} ms, clean", shutdown.ms),
+            Err(why) => format!("failed: {why}"),
         }
     );
 
@@ -80,7 +84,7 @@ fn render(profile: &StressProfile, outcome: &StressOutcome, forge_binary: &Path)
             result.sent,
             result.owed,
             result.observer_dropped,
-            result.degraded.as_deref().unwrap_or("ok"),
+            result.verdict,
             mib(stats.peak_rss_kib.map(|k| k * 1024)),
             mib(stats.peak_anon_kib.map(|k| k * 1024)),
             pair(stats.cpu_avg, stats.cpu_max),
@@ -162,6 +166,10 @@ fn render(profile: &StressProfile, outcome: &StressOutcome, forge_binary: &Path)
 
     let _ = writeln!(out, "\n## Table rows at the end of each phase\n");
     for (index, result) in outcome.phases.iter().enumerate() {
+        if let Some(why) = &result.tables_error {
+            let _ = writeln!(out, "- {index} {}: unreadable: {why}", result.phase.label);
+            continue;
+        }
         let busy: Vec<String> = result
             .tables
             .iter()

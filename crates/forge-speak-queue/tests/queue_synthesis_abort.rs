@@ -100,12 +100,7 @@ async fn with_synthesis_in_flight() -> Harness {
     let request_id = req.request_id.clone();
     handle.send(SpeakCommand::Enqueue(req)).await.unwrap();
     wait_for_entered(&entered).await;
-    wait_for(
-        &mut stream,
-        |e| matches!(e, SpeakEvent::Enqueued { .. }),
-        HANG_GUARD_MS,
-    )
-    .await;
+    wait_for(&mut stream, |e| matches!(e, SpeakEvent::Enqueued { .. })).await;
     Harness {
         handle,
         stream,
@@ -139,12 +134,7 @@ async fn skipping_aborts_the_in_flight_synthesis() {
     h.handle.send(SpeakCommand::Skip).await.unwrap();
 
     assert_synthesis_future_dropped(&h.dropped).await;
-    wait_for(
-        &mut h.stream,
-        |e| matches!(e, SpeakEvent::Skipped { .. }),
-        HANG_GUARD_MS,
-    )
-    .await;
+    wait_for(&mut h.stream, |e| matches!(e, SpeakEvent::Skipped { .. })).await;
 }
 
 #[tokio::test]

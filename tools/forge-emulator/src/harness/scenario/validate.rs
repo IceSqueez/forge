@@ -25,6 +25,10 @@ pub const MAX_CHATTER_PER_VIEWER: u32 = 20;
 pub const MAX_CROWD_MESSAGES: u64 = 1_000_000;
 pub const MAX_CROWD_SPACING_MS: u64 = 1_000;
 
+const PAYLOAD_FIELD: &str = "payload";
+const BODY_FIELD: &str = "body";
+const REQUEST_DATA_FIELD: &str = "request_data";
+const DATA_FIELD: &str = "data";
 const CHAT_SUBSCRIPTION: &str = topics::CHANNEL_CHAT_MESSAGE;
 const COMMAND_MATCHED: &str = CommandMatched::KIND;
 const COMMAND_POINTER: &str = "/command";
@@ -435,6 +439,7 @@ impl<'a> Validator<'a> {
             1,
             MAX_WAIT_MS,
         );
+        self.check_payload(location, BODY_FIELD, &request.body);
     }
 
     fn require_fake_youtube(&mut self, location: &str) {
@@ -546,6 +551,7 @@ impl<'a> Validator<'a> {
             1,
             MAX_WAIT_MS,
         );
+        self.check_payload(location, BODY_FIELD, &request.body);
     }
 
     fn require_fake_obs(&mut self, location: &str) {
@@ -1039,6 +1045,7 @@ impl<'a> Validator<'a> {
             Expectation::DiscordPost(post) => self.check_discord_post(location, post),
             Expectation::ObsRequest(request) => {
                 self.not_blank(format!("{location}.request_type"), &request.request_type);
+                self.check_payload(location, REQUEST_DATA_FIELD, &request.request_data);
                 self.in_range(
                     format!("{location}.within_ms"),
                     request.within_ms,
@@ -1056,6 +1063,7 @@ impl<'a> Validator<'a> {
             }
             Expectation::VtubeRequest(request) => {
                 self.not_blank(format!("{location}.message_type"), &request.message_type);
+                self.check_payload(location, DATA_FIELD, &request.data);
                 if request.succeeded == Some(true) && request.error_id.is_some() {
                     self.report(
                         format!("{location}.error_id"),
@@ -1080,17 +1088,17 @@ impl<'a> Validator<'a> {
         }
     }
 
-    fn check_payload(&mut self, location: &str, payload: &PayloadMatchers) {
-        for (pointer, matcher) in &payload.0 {
+    fn check_payload(&mut self, location: &str, field: &str, matchers: &PayloadMatchers) {
+        for (pointer, matcher) in &matchers.0 {
             if !pointer.is_empty() && !pointer.starts_with('/') {
                 self.report(
-                    format!("{location}.payload"),
+                    format!("{location}.{field}"),
                     format!("key `{pointer}` is not a JSON pointer; write `/{pointer}`"),
                 );
             }
             if matches!(matcher, ValueMatcher::Contains(needle) if needle.is_empty()) {
                 self.report(
-                    format!("{location}.payload[{pointer}].contains"),
+                    format!("{location}.{field}[{pointer}].contains"),
                     "must not be empty: it would match every string",
                 );
             }
@@ -1105,7 +1113,7 @@ impl<'a> Validator<'a> {
             1,
             MAX_WAIT_MS,
         );
-        self.check_payload(location, &event.payload);
+        self.check_payload(location, PAYLOAD_FIELD, &event.payload);
         if event.count.minimum() == 0 {
             self.report(
                 format!("{location}.count"),
@@ -1183,7 +1191,7 @@ impl<'a> Validator<'a> {
             1,
             MAX_WAIT_MS,
         );
-        self.check_payload(location, &absent.payload);
+        self.check_payload(location, PAYLOAD_FIELD, &absent.payload);
     }
 
     fn check_causation(&mut self, location: &str, causation: &Causation) {

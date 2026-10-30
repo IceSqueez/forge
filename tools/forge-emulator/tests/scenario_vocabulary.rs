@@ -1,4 +1,6 @@
 #![allow(clippy::unwrap_used)]
+use std::collections::BTreeSet;
+
 use forge_emulator::fakes::twitch::ViewerBadge;
 use forge_emulator::harness::scenario::{
     ChatViewer, Crowd, CrowdLine, EventPattern, ObservedEvent, PayloadMatchers,
@@ -180,14 +182,14 @@ fn crowd_command_senders_are_distinct_viewers_at_every_share() {
         }))
         .unwrap();
         let plan = crowd.plan();
-        let mut senders_seen: Vec<String> = plan
+        let command_senders: Vec<String> = plan
             .iter()
             .filter(|message| matches!(message.line, CrowdLine::Command(_)))
             .map(|message| message.viewer.user_id.clone())
             .collect();
-        assert_eq!(senders_seen.len(), senders as usize, "{viewers} viewers");
-        senders_seen.dedup();
-        assert_eq!(senders_seen.len(), senders as usize, "{viewers} viewers");
+        assert_eq!(command_senders.len(), senders as usize, "{viewers} viewers");
+        let distinct: BTreeSet<&String> = command_senders.iter().collect();
+        assert_eq!(distinct.len(), senders as usize, "{viewers} viewers");
         assert_eq!(
             plan.len() as u64,
             crowd.message_count(),

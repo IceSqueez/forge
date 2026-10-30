@@ -55,12 +55,15 @@ impl EventStream {
 struct Ledger {
     closed: bool,
     pending: VecDeque<PendingRequest>,
+    abandoned: usize,
 }
 
 struct PendingRequest {
     id: String,
-    reply: Option<oneshot::Sender<ResponseOutcome>>,
+    reply: oneshot::Sender<ResponseOutcome>,
 }
+
+const UNATTRIBUTABLE_RESPONSE: &str = "a response without an id cannot be attributed to a request";
 
 impl ControlClient {
     pub async fn connect(
@@ -80,7 +83,7 @@ impl ControlClient {
         let ledger = Arc::new(Mutex::new(Ledger::default()));
         let (outbound, outbound_rx) = mpsc::unbounded_channel();
         let (observations_tx, observations) = mpsc::unbounded_channel();
-        let writer = tokio::spawn(write_frames(sink, outbound_rx));
+        let writer = tokio::spawn(write_frames(sink, outbound_rx, Arc::clone(&ledger)));
         let reader = tokio::spawn(read_frames(stream, Arc::clone(&ledger), observations_tx));
         let client = Self {
             ledger,
@@ -199,19 +202,17 @@ impl ControlClient {
             }
             ledger.pending.push_back(PendingRequest {
                 id: id.clone(),
-                reply: Some(reply),
+                reply,
             });
         }
         match tokio::time::timeout(self.request_timeout, response).await {
             Ok(Ok(outcome)) => Ok(outcome),
             Ok(Err(_)) => Err(EmulatorError::ConnectionClosed),
             Err(_) => {
-                if let Some(entry) = lock(&self.ledger)
-                    .pending
-                    .iter_mut()
-                    .find(|entry| entry.id == id)
-                {
-                    entry.reply = None;
+                let mut ledger = lock(&self.ledger);
+                if let Some(index) = ledger.pending.iter().position(|entry| entry.id == id) {
+                    ledger.pending.remove(index);
+                    ledger.abandoned += 1;
                 }
                 Err(EmulatorError::RequestTimeout { request: method })
             }
@@ -230,8 +231,11 @@ fn lock(ledger: &Mutex<Ledger>) -> MutexGuard<'_, Ledger> {
     ledger.lock().unwrap_or_else(PoisonError::into_inner)
 }
 
-async fn write_frames<S>(mut sink: S, mut outbound: mpsc::UnboundedReceiver<Message>)
-where
+async fn write_frames<S>(
+    mut sink: S,
+    mut outbound: mpsc::UnboundedReceiver<Message>,
+    ledger: Arc<Mutex<Ledger>>,
+) where
     S: Sink<Message> + Unpin,
 {
     while let Some(message) = outbound.recv().await {
@@ -239,6 +243,7 @@ where
             break;
         }
     }
+    close(&ledger);
 }
 
 async fn read_frames<S>(
@@ -249,38 +254,92 @@ async fn read_frames<S>(
     S: Stream<Item = Result<Message, tungstenite::Error>> + Unpin,
 {
     while let Some(Ok(message)) = stream.next().await {
-        let inbound = match message {
-            Message::Text(text) => classify(text.as_str()),
+        let text = match message {
+            Message::Text(text) => text,
             Message::Close(_) => break,
-            Message::Binary(bytes) => InboundFrame::Observation(Observation::Undecodable {
-                frame: format!("<{} binary bytes>", bytes.len()),
-                reason: "binary frame".to_owned(),
-            }),
+            Message::Binary(bytes) => {
+                let _ = observations.send(Observation::Undecodable {
+                    frame: format!("<{} binary bytes>", bytes.len()),
+                    reason: "binary frame".to_owned(),
+                });
+                continue;
+            }
             Message::Ping(_) | Message::Pong(_) | Message::Frame(_) => continue,
         };
-        match inbound {
-            InboundFrame::Response { id, outcome } => route_response(&ledger, id, outcome),
-            InboundFrame::Observation(observation) => {
-                let _ = observations.send(observation);
-            }
-        }
+        let observation = match classify(text.as_str()) {
+            InboundFrame::Response { id, outcome } => match route_response(&ledger, id, outcome) {
+                Routing::Settled => continue,
+                Routing::Unattributable => Observation::Undecodable {
+                    frame: text.as_str().to_owned(),
+                    reason: UNATTRIBUTABLE_RESPONSE.to_owned(),
+                },
+            },
+            InboundFrame::Observation(observation) => observation,
+        };
+        let _ = observations.send(observation);
     }
-    let mut ledger = lock(&ledger);
+    close(&ledger);
+}
+
+fn close(ledger: &Mutex<Ledger>) {
+    let mut ledger = lock(ledger);
     ledger.closed = true;
     ledger.pending.clear();
 }
 
-fn route_response(ledger: &Mutex<Ledger>, id: Option<String>, outcome: ResponseOutcome) {
+enum Routing {
+    Settled,
+    Unattributable,
+}
+
+fn route_response(ledger: &Mutex<Ledger>, id: Option<String>, outcome: ResponseOutcome) -> Routing {
     let mut ledger = lock(ledger);
     let entry = match id {
-        Some(id) => ledger
-            .pending
-            .iter()
-            .position(|entry| entry.id == id)
-            .and_then(|index| ledger.pending.remove(index)),
-        None => ledger.pending.pop_front(),
+        Some(id) => {
+            let position = ledger.pending.iter().position(|entry| entry.id == id);
+            match position {
+                Some(index) => ledger.pending.remove(index),
+                None => {
+                    ledger.abandoned = ledger.abandoned.saturating_sub(1);
+                    None
+                }
+            }
+        }
+        None if ledger.abandoned == 0 && ledger.pending.len() == 1 => ledger.pending.pop_front(),
+        None => {
+            ledger.abandoned = ledger.abandoned.saturating_sub(1);
+            return Routing::Unattributable;
+        }
     };
-    if let Some(reply) = entry.and_then(|entry| entry.reply) {
-        let _ = reply.send(outcome);
+    if let Some(entry) = entry {
+        let _ = entry.reply.send(outcome);
+    }
+    Routing::Settled
+}
+
+#[cfg(test)]
+mod tests {
+    use futures_util::sink;
+
+    use super::*;
+
+    #[tokio::test]
+    async fn a_failed_write_closes_the_ledger_and_releases_waiting_requests() {
+        let ledger = Arc::new(Mutex::new(Ledger::default()));
+        let (reply, response) = oneshot::channel();
+        lock(&ledger).pending.push_back(PendingRequest {
+            id: "emu-1".to_owned(),
+            reply,
+        });
+        let (outbound, outbound_rx) = mpsc::unbounded_channel();
+        let failing = Box::pin(sink::unfold((), |(), _: Message| async {
+            Err::<(), ()>(())
+        }));
+
+        outbound.send(Message::Text("frame".into())).unwrap();
+        write_frames(failing, outbound_rx, Arc::clone(&ledger)).await;
+
+        assert!(lock(&ledger).closed);
+        assert!(response.await.is_err());
     }
 }

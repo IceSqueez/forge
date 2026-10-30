@@ -137,12 +137,11 @@ fn speak_req(text: &str) -> SpeakRequest {
     }
 }
 
-async fn wait_for<F>(stream: &mut forge_speak_queue::SpeakEventStream, pred: F, max_ms: u64)
+async fn wait_for<F>(stream: &mut forge_speak_queue::SpeakEventStream, pred: F)
 where
     F: Fn(&SpeakEvent) -> bool,
 {
-    let deadline =
-        std::time::Instant::now() + std::time::Duration::from_millis(max_ms.max(HANG_GUARD_MS));
+    let deadline = std::time::Instant::now() + std::time::Duration::from_millis(HANG_GUARD_MS);
     loop {
         let remaining = deadline.saturating_duration_since(std::time::Instant::now());
         if remaining.is_zero() {
@@ -168,7 +167,7 @@ async fn pause_prevents_synthesis_until_resume() {
     let (handle, mut stream) = forge_speak_queue::spawn(config, make_deps(Arc::new(sink)));
 
     handle.send(SpeakCommand::Pause).await.unwrap();
-    wait_for(&mut stream, |e| matches!(e, SpeakEvent::Paused), 500).await;
+    wait_for(&mut stream, |e| matches!(e, SpeakEvent::Paused)).await;
 
     handle
         .send(SpeakCommand::Enqueue(speak_req("paused message")))
@@ -183,12 +182,7 @@ async fn pause_prevents_synthesis_until_resume() {
     );
 
     handle.send(SpeakCommand::Resume).await.unwrap();
-    wait_for(
-        &mut stream,
-        |e| matches!(e, SpeakEvent::Finished { .. }),
-        2_000,
-    )
-    .await;
+    wait_for(&mut stream, |e| matches!(e, SpeakEvent::Finished { .. })).await;
 
     assert_eq!(
         *play_count.lock().unwrap(),
@@ -208,14 +202,14 @@ async fn manual_resume_does_not_release_a_voice_gate_hold() {
     let (handle, mut stream) = forge_speak_queue::spawn(config, make_deps(Arc::new(sink)));
 
     handle.send(SpeakCommand::VoiceGateActivated).await.unwrap();
-    wait_for(&mut stream, |e| matches!(e, SpeakEvent::VoiceGateHeld), 500).await;
+    wait_for(&mut stream, |e| matches!(e, SpeakEvent::VoiceGateHeld)).await;
 
     handle
         .send(SpeakCommand::Enqueue(speak_req("mic is hot")))
         .await
         .unwrap();
     handle.send(SpeakCommand::Resume).await.unwrap();
-    wait_for(&mut stream, |e| matches!(e, SpeakEvent::Resumed), 500).await;
+    wait_for(&mut stream, |e| matches!(e, SpeakEvent::Resumed)).await;
 
     tokio::time::sleep(std::time::Duration::from_millis(150)).await;
     assert_eq!(
@@ -228,12 +222,7 @@ async fn manual_resume_does_not_release_a_voice_gate_hold() {
         .send(SpeakCommand::VoiceGateDeactivated)
         .await
         .unwrap();
-    wait_for(
-        &mut stream,
-        |e| matches!(e, SpeakEvent::Finished { .. }),
-        2_000,
-    )
-    .await;
+    wait_for(&mut stream, |e| matches!(e, SpeakEvent::Finished { .. })).await;
     assert_eq!(
         *play_count.lock().unwrap(),
         1,
@@ -252,9 +241,9 @@ async fn voice_gate_release_does_not_clear_a_manual_pause() {
     let (handle, mut stream) = forge_speak_queue::spawn(config, make_deps(Arc::new(sink)));
 
     handle.send(SpeakCommand::Pause).await.unwrap();
-    wait_for(&mut stream, |e| matches!(e, SpeakEvent::Paused), 500).await;
+    wait_for(&mut stream, |e| matches!(e, SpeakEvent::Paused)).await;
     handle.send(SpeakCommand::VoiceGateActivated).await.unwrap();
-    wait_for(&mut stream, |e| matches!(e, SpeakEvent::VoiceGateHeld), 500).await;
+    wait_for(&mut stream, |e| matches!(e, SpeakEvent::VoiceGateHeld)).await;
 
     handle
         .send(SpeakCommand::Enqueue(speak_req("still paused")))
@@ -264,12 +253,7 @@ async fn voice_gate_release_does_not_clear_a_manual_pause() {
         .send(SpeakCommand::VoiceGateDeactivated)
         .await
         .unwrap();
-    wait_for(
-        &mut stream,
-        |e| matches!(e, SpeakEvent::VoiceGateReleased),
-        500,
-    )
-    .await;
+    wait_for(&mut stream, |e| matches!(e, SpeakEvent::VoiceGateReleased)).await;
 
     tokio::time::sleep(std::time::Duration::from_millis(150)).await;
     assert_eq!(
@@ -279,12 +263,7 @@ async fn voice_gate_release_does_not_clear_a_manual_pause() {
     );
 
     handle.send(SpeakCommand::Resume).await.unwrap();
-    wait_for(
-        &mut stream,
-        |e| matches!(e, SpeakEvent::Finished { .. }),
-        2_000,
-    )
-    .await;
+    wait_for(&mut stream, |e| matches!(e, SpeakEvent::Finished { .. })).await;
     assert_eq!(
         *play_count.lock().unwrap(),
         1,

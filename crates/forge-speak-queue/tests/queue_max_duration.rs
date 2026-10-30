@@ -101,9 +101,8 @@ fn spawn_with_cap(
     forge_speak_queue::spawn(QueueConfig::default(), deps)
 }
 
-async fn resolved_duration_secs(stream: &mut SpeakEventStream, max_ms: u64) -> u32 {
-    let deadline =
-        std::time::Instant::now() + std::time::Duration::from_millis(max_ms.max(HANG_GUARD_MS));
+async fn resolved_duration_secs(stream: &mut SpeakEventStream) -> u32 {
+    let deadline = std::time::Instant::now() + std::time::Duration::from_millis(HANG_GUARD_MS);
     loop {
         let remaining = deadline.saturating_duration_since(std::time::Instant::now());
         if remaining.is_zero() {
@@ -136,7 +135,7 @@ async fn started_reports_the_capped_duration_not_the_synthesised_one() {
             .await
             .unwrap();
 
-        let secs = resolved_duration_secs(&mut stream, 5_000).await;
+        let secs = resolved_duration_secs(&mut stream).await;
         assert_eq!(
             secs, expected,
             "cap {cap:?} applied to a {CLIP_SECS}s clip must be reflected in the Started duration"

@@ -120,17 +120,13 @@ fn spawn_queue(
 
 async fn first_failure(stream: &mut SpeakEventStream) -> MessageRef {
     let failure = Mutex::new(None);
-    wait_for(
-        stream,
-        |event| {
-            if let SpeakEvent::Failed { message, .. } = event {
-                *failure.lock().unwrap() = Some(message.clone());
-                return true;
-            }
-            false
-        },
-        2_000,
-    )
+    wait_for(stream, |event| {
+        if let SpeakEvent::Failed { message, .. } = event {
+            *failure.lock().unwrap() = Some(message.clone());
+            return true;
+        }
+        false
+    })
     .await;
     failure.into_inner().unwrap().unwrap()
 }
@@ -147,11 +143,9 @@ async fn the_spoken_name_prefix_and_link_word_follow_the_language_of_the_chosen_
             )))
             .await
             .unwrap();
-        wait_for(
-            &mut stream,
-            |event| matches!(event, SpeakEvent::Finished { .. }),
-            2_000,
-        )
+        wait_for(&mut stream, |event| {
+            matches!(event, SpeakEvent::Finished { .. })
+        })
         .await;
         spoken_by_locale.push(spoken.lock().unwrap().clone());
     }

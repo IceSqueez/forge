@@ -6,11 +6,11 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use forge_audio::{AudioError, AudioSink, ControlledPlayback};
-use forge_speak_queue::{QueueConfig, SpeakCommand, SpeakEvent};
+use forge_speak_queue::{QueueConfig, SpeakCommand, SpeakEvent, SpeakEventStream};
 use forge_speech_types::AssignmentStrategy;
 use forge_speech_types::PcmBuffer;
 
-use common::{make_deps, request, standard_registry, wait_for};
+use common::{make_deps, request, standard_registry};
 
 const DEVICE_REFUSAL: &str = "device 'hw:9,9' not found";
 const SETTLE_BUDGET: Duration = Duration::from_secs(30);
@@ -74,7 +74,23 @@ async fn a_device_that_refuses_the_stream_fails_the_utterance_with_the_device_re
     }
 }
 
-const HUNG_START_WAIT_MS: u64 = 3_600_000;
+const HUNG_START_WAIT: Duration = Duration::from_secs(3_600);
+
+async fn wait_past_the_start_timeout<F>(stream: &mut SpeakEventStream, settled: F)
+where
+    F: Fn(&SpeakEvent) -> bool,
+{
+    let settled_in_time = tokio::time::timeout(HUNG_START_WAIT, async {
+        while let Ok(event) = stream.recv().await {
+            if settled(&event) {
+                return true;
+            }
+        }
+        false
+    })
+    .await;
+    assert_eq!(settled_in_time, Ok(true), "the hung start never settled");
+}
 
 struct MarkOnDrop(Arc<AtomicBool>);
 
@@ -130,24 +146,19 @@ async fn a_start_that_never_returns_fails_the_utterance_and_the_next_one_still_p
     let next_id = next.request_id.clone();
 
     handle.send(SpeakCommand::Enqueue(hung)).await.unwrap();
-    wait_for(
-        &mut stream,
-        |event| {
-            matches!(
-                event,
-                SpeakEvent::Failed { request_id, message, .. }
-                    if *request_id == hung_id
-                        && message.code().to_string() == "speak.audio_start_timed_out"
-            )
-        },
-        HUNG_START_WAIT_MS,
-    )
+    wait_past_the_start_timeout(&mut stream, |event| {
+        matches!(
+            event,
+            SpeakEvent::Failed { request_id, message, .. }
+                if *request_id == hung_id
+                    && message.code().to_string() == "speak.audio_start_timed_out"
+        )
+    })
     .await;
     handle.send(SpeakCommand::Enqueue(next)).await.unwrap();
-    wait_for(
+    wait_past_the_start_timeout(
         &mut stream,
         |event| matches!(event, SpeakEvent::Finished { request_id, .. } if *request_id == next_id),
-        HUNG_START_WAIT_MS,
     )
     .await;
 

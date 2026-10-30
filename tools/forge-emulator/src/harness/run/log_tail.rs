@@ -12,21 +12,30 @@ const TAIL_WINDOW_BYTES: u64 = 64 * 1024;
 pub(crate) struct LogTail {
     dir: PathBuf,
     consumed: BTreeMap<PathBuf, u64>,
+    start_failure: Option<String>,
 }
 
 impl LogTail {
     pub(crate) fn from_now(dir: &Path) -> Self {
-        let consumed = log_files(dir)
-            .unwrap_or_default()
-            .into_iter()
-            .filter_map(|file| {
-                let complete = complete_prefix_len(&file).ok()?;
-                Some((file, complete))
-            })
-            .collect();
+        let mut consumed = BTreeMap::new();
+        let mut start_failure = None;
+        match log_files(dir) {
+            Ok(files) => {
+                for file in files {
+                    match start_offset(&file) {
+                        Ok(offset) => {
+                            consumed.insert(file, offset);
+                        }
+                        Err(e) => start_failure = Some(format!("{}: {e}", file.display())),
+                    }
+                }
+            }
+            Err(e) => start_failure = Some(format!("{}: {e}", dir.display())),
+        }
         Self {
             dir: dir.to_owned(),
             consumed,
+            start_failure,
         }
     }
 
@@ -34,6 +43,7 @@ impl LogTail {
         Self {
             dir: dir.to_owned(),
             consumed: BTreeMap::new(),
+            start_failure: None,
         }
     }
 
@@ -42,6 +52,9 @@ impl LogTail {
     }
 
     pub(crate) fn poll(&mut self) -> io::Result<Vec<LogRecord>> {
+        if let Some(failure) = self.start_failure.take() {
+            return Err(io::Error::other(failure));
+        }
         let mut records = Vec::new();
         for file in log_files(&self.dir)? {
             let offset = self.consumed.get(&file).copied().unwrap_or(0);
@@ -97,6 +110,10 @@ fn log_files(dir: &Path) -> io::Result<Vec<PathBuf>> {
     }
     files.sort();
     Ok(files)
+}
+
+fn start_offset(file: &Path) -> io::Result<u64> {
+    complete_prefix_len(file).or_else(|_| std::fs::metadata(file).map(|meta| meta.len()))
 }
 
 fn complete_prefix_len(file: &Path) -> io::Result<u64> {
@@ -197,6 +214,20 @@ mod tests {
         append(dir.path(), "unrelated.txt", &line("ignored"));
 
         assert_eq!(reasons(&tail.poll().unwrap()), ["rotated"]);
+    }
+
+    #[test]
+    fn a_tail_that_could_not_read_its_start_fails_instead_of_counting_older_lines() {
+        let root = tempfile::tempdir().unwrap();
+        let logs = root.path().join(forge_paths::LOGS_DIR_NAME);
+        std::fs::write(&logs, "a file where the directory belongs").unwrap();
+        let mut tail = LogTail::from_now(&logs);
+        std::fs::remove_file(&logs).unwrap();
+        std::fs::create_dir(&logs).unwrap();
+        append(&logs, TODAY, &line("before"));
+
+        assert!(tail.poll().is_err());
+        assert_eq!(reasons(&tail.poll().unwrap()), ["before"]);
     }
 
     #[test]

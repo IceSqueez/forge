@@ -1,4 +1,5 @@
 use std::collections::BTreeMap;
+use std::fmt;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::time::Duration;
@@ -9,12 +10,14 @@ use forge_events::{
 };
 use forge_storage::DATABASE_FILE_NAME;
 use serde::Serialize;
+use sqlx::sqlite::SqliteConnectOptions;
+use sqlx::{ConnectOptions as _, Connection as _};
 use tokio::task::JoinHandle;
 use tokio::time::Instant;
 
 use super::load::{Delivery, FloodMix, delivery, due};
 use super::probe::{ProcessProbe, ProcessReading, database_bytes, load_average};
-use super::profile::StressProfile;
+use super::profile::{KneeRule, StressProfile};
 use super::tracker::Tracker;
 use crate::EmulatorError;
 use crate::fakes::twitch::FakeTwitch;
@@ -67,9 +70,36 @@ pub struct PhaseResult {
     pub ended_ms: u64,
     pub sent: u64,
     pub owed: u64,
-    pub degraded: Option<String>,
+    pub verdict: PhaseVerdict,
     pub tables: BTreeMap<String, u64>,
+    pub tables_error: Option<String>,
     pub observer_dropped: u64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub enum PhaseVerdict {
+    Ok,
+    Degraded(String),
+    Unjudged(String),
+}
+
+impl fmt::Display for PhaseVerdict {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Ok => f.write_str("ok"),
+            Self::Degraded(why) => f.write_str(why),
+            Self::Unjudged(why) => write!(f, "unjudged: {why}"),
+        }
+    }
+}
+
+impl PhaseResult {
+    async fn read_tables(&mut self, data_dir: &std::path::Path) {
+        match table_rows(data_dir).await {
+            Ok(tables) => self.tables = tables,
+            Err(e) => self.tables_error = Some(e.to_string()),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -91,6 +121,13 @@ pub struct Sample {
     pub other_kinds: BTreeMap<String, u64>,
     pub actions: BTreeMap<String, [u64; 5]>,
     pub warnings: BTreeMap<String, u64>,
+    pub log_error: Option<String>,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct ShutdownReport {
+    pub ms: u64,
+    pub forced: bool,
 }
 
 pub struct StressOutcome {
@@ -100,11 +137,10 @@ pub struct StressOutcome {
     pub actions: Vec<String>,
     pub pages: Vec<String>,
     pub forge_exited: bool,
-    pub shutdown_ms: Option<u64>,
-    pub shutdown_forced: Option<bool>,
+    pub shutdown: Result<ShutdownReport, String>,
     pub warnings_total: BTreeMap<String, u64>,
     pub data_dir: PathBuf,
-    pub version: Option<String>,
+    pub version: Result<String, String>,
 }
 
 type Shared<T> = Arc<Mutex<T>>;
@@ -168,7 +204,7 @@ async fn drive(
     let data_dir = process.data_dir().to_owned();
     let log_dir = process.log_dir();
     let pid = process.pid();
-    let version = client.forge_version().await.ok();
+    let version = client.forge_version().await.map_err(|e| e.to_string());
 
     let mut filters = vec![EventFilter {
         source: Some(EventSource::Twitch),
@@ -291,13 +327,14 @@ async fn drive(
     let forge_exited = !process.is_running();
     drop(client);
     let shutdown_started = Instant::now();
-    let (shutdown_ms, shutdown_forced) = match process.shutdown(shutdown_grace).await {
-        Ok(exit) => (
-            Some(u64::try_from(shutdown_started.elapsed().as_millis()).unwrap_or(u64::MAX)),
-            Some(exit.forced),
-        ),
-        Err(_) => (None, None),
-    };
+    let shutdown = process
+        .shutdown(shutdown_grace)
+        .await
+        .map(|exit| ShutdownReport {
+            ms: u64::try_from(shutdown_started.elapsed().as_millis()).unwrap_or(u64::MAX),
+            forced: exit.forced,
+        })
+        .map_err(|e| e.to_string());
 
     let tracker = Arc::try_unwrap(tracker)
         .map(|mutex| mutex.into_inner().unwrap_or_else(PoisonError::into_inner))
@@ -313,8 +350,7 @@ async fn drive(
         actions,
         pages: profile.pages.clone(),
         forge_exited,
-        shutdown_ms,
-        shutdown_forced,
+        shutdown,
         warnings_total,
         data_dir,
         version,
@@ -381,26 +417,22 @@ impl Generator<'_> {
             let index = results.len();
             let mut result = self.run_phase(index, phase, phase_now).await?;
             self.settle().await;
-            result.degraded = self.judge(index, &result);
-            result.tables = table_rows(data_dir).await;
+            result.verdict = self.judge(index, &result);
+            result.read_tables(data_dir).await;
             eprintln!(
-                "forge-emulator: {} sent {} of {} owed{}",
-                result.phase.label,
-                result.sent,
-                result.owed,
-                result
-                    .degraded
-                    .as_deref()
-                    .map(|why| format!(" - DEGRADED: {why}"))
-                    .unwrap_or_default()
+                "forge-emulator: {} sent {} of {} owed - {}",
+                result.phase.label, result.sent, result.owed, result.verdict
             );
-            let degraded = result.degraded.is_some();
+            let verdict = result.verdict.clone();
             results.push(result);
-            if degraded {
-                knee_found = true;
-                break;
+            match verdict {
+                PhaseVerdict::Ok => last_stable = Some(f64::from(*rate)),
+                PhaseVerdict::Degraded(_) => {
+                    knee_found = true;
+                    break;
+                }
+                PhaseVerdict::Unjudged(_) => {}
             }
-            last_stable = Some(f64::from(*rate));
         }
         let recovery = |label: &str| Phase {
             label: label.to_owned(),
@@ -411,7 +443,7 @@ impl Generator<'_> {
         let mut result = self
             .run_phase(results.len(), recovery("recovery after ramp"), phase_now)
             .await?;
-        result.tables = table_rows(data_dir).await;
+        result.read_tables(data_dir).await;
         results.push(result);
 
         let base = last_stable
@@ -430,13 +462,13 @@ impl Generator<'_> {
         let index = results.len();
         let mut result = self.run_phase(index, burst, phase_now).await?;
         self.settle().await;
-        result.degraded = self.judge(index, &result);
-        result.tables = table_rows(data_dir).await;
+        result.verdict = self.judge(index, &result);
+        result.read_tables(data_dir).await;
         results.push(result);
         let mut result = self
             .run_phase(results.len(), recovery("recovery after burst"), phase_now)
             .await?;
-        result.tables = table_rows(data_dir).await;
+        result.read_tables(data_dir).await;
         results.push(result);
         if !knee_found {
             eprintln!("forge-emulator: the ramp ended without reaching a knee");
@@ -498,8 +530,9 @@ impl Generator<'_> {
             ended_ms: elapsed_ms(self.clock),
             sent,
             owed: owed.max(sent),
-            degraded: None,
+            verdict: PhaseVerdict::Ok,
             tables: BTreeMap::new(),
+            tables_error: None,
             observer_dropped: lock(self.tracker).observer_dropped - dropped_before,
         })
     }
@@ -537,58 +570,77 @@ impl Generator<'_> {
         Ok(())
     }
 
-    fn judge(&self, index: usize, result: &PhaseResult) -> Option<String> {
-        let knee = &self.profile.knee;
-        let achieved = if result.owed == 0 {
-            1.0
-        } else {
-            result.sent as f64 / result.owed as f64
+    fn judge(&self, index: usize, result: &PhaseResult) -> PhaseVerdict {
+        judge_phase(
+            &self.profile.knee,
+            &lock(self.samples),
+            &lock(self.tracker),
+            index,
+            result,
+        )
+    }
+}
+
+fn judge_phase(
+    knee: &KneeRule,
+    samples: &[Sample],
+    tracker: &Tracker,
+    index: usize,
+    result: &PhaseResult,
+) -> PhaseVerdict {
+    let achieved = if result.owed == 0 {
+        1.0
+    } else {
+        result.sent as f64 / result.owed as f64
+    };
+    if achieved < knee.min_achieved_share {
+        return PhaseVerdict::Degraded(format!(
+            "the generator delivered only {:.0}% of the target rate: forge stopped reading its EventSub socket fast enough",
+            achieved * 100.0
+        ));
+    }
+    let phase_samples = || samples.iter().filter(|sample| sample.phase == index);
+    let lost: BTreeMap<String, u64> = phase_samples()
+        .flat_map(|sample| sample.warnings.iter())
+        .filter(|(key, _)| {
+            knee.fatal_warnings
+                .iter()
+                .any(|fatal| key.contains(fatal.as_str()))
+        })
+        .fold(BTreeMap::new(), |mut acc, (key, count)| {
+            *acc.entry(key.clone()).or_default() += count;
+            acc
+        });
+    if let Some((key, count)) = lost.iter().next() {
+        return PhaseVerdict::Degraded(format!("forge logged `{key}` {count} times"));
+    }
+    if let Some(why) = phase_samples().find_map(|sample| sample.log_error.as_ref()) {
+        return PhaseVerdict::Unjudged(format!("the forge log could not be read: {why}"));
+    }
+    if result.observer_dropped > 0 {
+        return PhaseVerdict::Unjudged(format!(
+            "the observer dropped {} events, so the backlog cannot be trusted",
+            result.observer_dropped
+        ));
+    }
+    let allowed = result.phase.flood_per_sec * knee.max_backlog_secs;
+    for name in &knee.watch {
+        let Some(action) = tracker.action_position(name) else {
+            continue;
         };
-        if achieved < knee.min_achieved_share {
-            return Some(format!(
-                "the generator delivered only {:.0}% of the target rate: forge stopped reading its EventSub socket fast enough",
-                achieved * 100.0
+        let backlog = tracker.unstarted(action) + tracker.in_flight(action);
+        if backlog as f64 > allowed {
+            return PhaseVerdict::Degraded(format!(
+                "`{name}` has {backlog} events unfinished at step end, more than {:.0} ({}s of this rate)",
+                allowed, knee.max_backlog_secs
             ));
         }
-        let lost: BTreeMap<String, u64> = lock(self.samples)
-            .iter()
-            .filter(|sample| sample.phase == index)
-            .flat_map(|sample| sample.warnings.iter())
-            .filter(|(key, _)| {
-                knee.fatal_warnings
-                    .iter()
-                    .any(|fatal| key.contains(fatal.as_str()))
-            })
-            .fold(BTreeMap::new(), |mut acc, (key, count)| {
-                *acc.entry(key.clone()).or_default() += count;
-                acc
-            });
-        if let Some((key, count)) = lost.iter().next() {
-            return Some(format!("forge logged `{key}` {count} times"));
+        let skipped = tracker.counts(action).skipped_total();
+        if skipped > 0 {
+            return PhaseVerdict::Degraded(format!("`{name}` had {skipped} executions skipped"));
         }
-        if result.observer_dropped > 0 {
-            return None;
-        }
-        let tracker = lock(self.tracker);
-        let allowed = result.phase.flood_per_sec * knee.max_backlog_secs;
-        for name in &knee.watch {
-            let Some(action) = tracker.action_position(name) else {
-                continue;
-            };
-            let backlog = tracker.unstarted(action) + tracker.in_flight(action);
-            if backlog as f64 > allowed {
-                return Some(format!(
-                    "`{name}` has {backlog} events unfinished at step end, more than {:.0} ({}s of this rate)",
-                    allowed, knee.max_backlog_secs
-                ));
-            }
-            let skipped = tracker.counts(action).skipped_total();
-            if skipped > 0 {
-                return Some(format!("`{name}` had {skipped} executions skipped"));
-            }
-        }
-        None
     }
+    PhaseVerdict::Ok
 }
 
 fn elapsed_ms(since: Instant) -> u64 {
@@ -599,46 +651,28 @@ fn millis_since(origin: Instant, at: Instant) -> u64 {
     u64::try_from(at.saturating_duration_since(origin).as_millis()).unwrap_or(u64::MAX)
 }
 
-async fn table_rows(data_dir: &std::path::Path) -> BTreeMap<String, u64> {
-    let database = data_dir.join(DATABASE_FILE_NAME);
-    let run = |sql: String| {
-        let database = database.clone();
-        async move {
-            tokio::process::Command::new("sqlite3")
-                .arg("-readonly")
-                .arg(&database)
-                .arg(sql)
-                .output()
-                .await
-                .ok()
-                .filter(|output| output.status.success())
-                .map(|output| String::from_utf8_lossy(&output.stdout).into_owned())
-        }
-    };
-    let Some(names) = run(
-        "SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' AND name NOT LIKE '_sqlx%'"
-            .to_owned(),
+async fn table_rows(data_dir: &std::path::Path) -> Result<BTreeMap<String, u64>, sqlx::Error> {
+    let options = SqliteConnectOptions::new()
+        .filename(data_dir.join(DATABASE_FILE_NAME))
+        .read_only(true);
+    let mut connection = options.connect().await?;
+    let names: Vec<String> = sqlx::query_scalar(
+        "SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' AND name NOT LIKE '_sqlx%'",
     )
-    .await
-    else {
-        return BTreeMap::new();
-    };
-    let names: Vec<&str> = names.lines().filter(|name| !name.is_empty()).collect();
-    let query = names
-        .iter()
-        .map(|name| format!("SELECT '{name}', count(*) FROM \"{name}\""))
-        .collect::<Vec<_>>()
-        .join(" UNION ALL ");
-    let Some(counts) = run(query).await else {
-        return BTreeMap::new();
-    };
-    counts
-        .lines()
-        .filter_map(|line| {
-            let (name, count) = line.split_once('|')?;
-            Some((name.to_owned(), count.trim().parse().ok()?))
-        })
-        .collect()
+    .fetch_all(&mut connection)
+    .await?;
+    let mut rows = BTreeMap::new();
+    for name in names {
+        let quoted = name.replace('"', "\"\"");
+        let count: i64 = sqlx::query_scalar(sqlx::AssertSqlSafe(format!(
+            "SELECT count(*) FROM \"{quoted}\""
+        )))
+        .fetch_one(&mut connection)
+        .await?;
+        rows.insert(name, u64::try_from(count).unwrap_or_default());
+    }
+    connection.close().await?;
+    Ok(rows)
 }
 
 struct SampleLoop {
@@ -676,14 +710,18 @@ async fn sample_loop(mut state: SampleLoop) {
         };
         previous = Some((now, reading));
         let mut warnings: BTreeMap<String, u64> = BTreeMap::new();
-        if let Ok(records) = state.log.poll() {
-            for record in records {
-                if record.level == "WARN" || record.level == "ERROR" {
-                    *warnings
-                        .entry(warning_key(&record.target, &record.line))
-                        .or_default() += 1;
+        let mut log_error = None;
+        match state.log.poll() {
+            Ok(records) => {
+                for record in records {
+                    if record.level == "WARN" || record.level == "ERROR" {
+                        *warnings
+                            .entry(warning_key(&record.target, &record.line))
+                            .or_default() += 1;
+                    }
                 }
             }
+            Err(e) => log_error = Some(e.to_string()),
         }
         {
             let mut total = lock(&state.warnings_total);
@@ -728,6 +766,7 @@ async fn sample_loop(mut state: SampleLoop) {
                     })
                     .collect(),
                 warnings,
+                log_error,
             }
         };
         lock(&state.samples).push(sample);
@@ -757,6 +796,140 @@ pub fn warning_key(target: &str, line: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn knee() -> KneeRule {
+        KneeRule {
+            watch: Vec::new(),
+            max_backlog_secs: 1.0,
+            min_achieved_share: 0.5,
+            fatal_warnings: vec!["lagged".to_owned()],
+        }
+    }
+
+    fn phase_result(sent: u64, owed: u64, observer_dropped: u64) -> PhaseResult {
+        PhaseResult {
+            phase: Phase {
+                label: "ramp".to_owned(),
+                flood_per_sec: 1.0,
+                secs: 1,
+                loaded: true,
+            },
+            started_ms: 0,
+            ended_ms: 0,
+            sent,
+            owed,
+            verdict: PhaseVerdict::Ok,
+            tables: BTreeMap::new(),
+            tables_error: None,
+            observer_dropped,
+        }
+    }
+
+    fn sample(warnings: &[&str], log_error: Option<&str>) -> Sample {
+        Sample {
+            at_ms: 0,
+            phase: 0,
+            injected: 0,
+            process: ProcessReading::default(),
+            cpu_percent: None,
+            main_thread_percent: None,
+            database_bytes: None,
+            load_average: None,
+            twitch_events: 0,
+            observer_dropped: 0,
+            uncorrelated: 0,
+            frames: Vec::new(),
+            page_dropped: Vec::new(),
+            replies: 0,
+            other_kinds: BTreeMap::new(),
+            actions: BTreeMap::new(),
+            warnings: warnings.iter().map(|key| ((*key).to_owned(), 1)).collect(),
+            log_error: log_error.map(str::to_owned),
+        }
+    }
+
+    fn judged(samples: &[Sample], result: &PhaseResult) -> PhaseVerdict {
+        judge_phase(
+            &knee(),
+            samples,
+            &Tracker::new(Vec::new(), Vec::new(), 0),
+            0,
+            result,
+        )
+    }
+
+    #[test]
+    fn a_phase_the_observer_lost_events_in_is_unjudged_not_ok() {
+        let verdict = judged(&[], &phase_result(10, 10, 3));
+
+        assert!(
+            matches!(&verdict, PhaseVerdict::Unjudged(why) if why.contains('3')),
+            "{verdict:?}"
+        );
+        assert!(verdict.to_string().starts_with("unjudged"));
+    }
+
+    #[test]
+    fn a_phase_whose_log_could_not_be_read_is_unjudged() {
+        let verdict = judged(&[sample(&[], Some("denied"))], &phase_result(10, 10, 0));
+
+        assert!(
+            matches!(&verdict, PhaseVerdict::Unjudged(why) if why.contains("denied")),
+            "{verdict:?}"
+        );
+    }
+
+    #[test]
+    fn a_fatal_warning_outranks_an_unjudged_phase() {
+        let verdict = judged(
+            &[sample(&["forge: bus lagged"], Some("denied"))],
+            &phase_result(10, 10, 3),
+        );
+
+        assert!(matches!(verdict, PhaseVerdict::Degraded(_)), "{verdict:?}");
+    }
+
+    #[test]
+    fn a_clean_phase_is_ok() {
+        assert_eq!(
+            judged(&[sample(&[], None)], &phase_result(10, 10, 0)),
+            PhaseVerdict::Ok
+        );
+    }
+
+    #[tokio::test]
+    async fn table_rows_counts_every_table_and_quotes_awkward_names() {
+        let dir = tempfile::tempdir().unwrap();
+        let options = SqliteConnectOptions::new()
+            .filename(dir.path().join(DATABASE_FILE_NAME))
+            .create_if_missing(true);
+        let mut connection = options.connect().await.unwrap();
+        for statement in [
+            "CREATE TABLE plain (id INTEGER)",
+            "CREATE TABLE \"odd\"\"name\" (id INTEGER)",
+            "INSERT INTO \"odd\"\"name\" VALUES (1), (2)",
+        ] {
+            sqlx::query(statement)
+                .execute(&mut connection)
+                .await
+                .unwrap();
+        }
+        connection.close().await.unwrap();
+
+        let rows = table_rows(dir.path()).await.unwrap();
+
+        assert_eq!(
+            rows,
+            BTreeMap::from([("odd\"name".to_owned(), 2), ("plain".to_owned(), 0)])
+        );
+    }
+
+    #[tokio::test]
+    async fn table_rows_reports_a_database_it_cannot_open() {
+        let dir = tempfile::tempdir().unwrap();
+
+        assert!(table_rows(dir.path()).await.is_err());
+    }
 
     #[test]
     fn log_lines_group_by_target_and_message_without_their_fields() {

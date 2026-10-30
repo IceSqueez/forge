@@ -20,6 +20,7 @@ pub use profile::{
 };
 pub use report::{StressFiles, write_stress_report};
 pub use runner::{
-    Phase, PhaseResult, Sample, StressOptions, StressOutcome, run_stress, warning_key,
+    Phase, PhaseResult, PhaseVerdict, Sample, ShutdownReport, StressOptions, StressOutcome,
+    run_stress, warning_key,
 };
 pub use tracker::{ActionCounts, Leg, Tracker, percentile};

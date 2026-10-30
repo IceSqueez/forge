@@ -440,7 +440,7 @@ async fn responses_answered_out_of_order_reach_their_own_callers() {
 }
 
 #[tokio::test]
-async fn an_uncorrelatable_error_answers_the_oldest_pending_request() {
+async fn an_uncorrelatable_error_answers_the_only_pending_request() {
     let mut forge = FakeForge::start().await;
     let (client, _events) = forge.connect(DEADLINE).await;
 
@@ -460,6 +460,34 @@ async fn an_uncorrelatable_error_answers_the_oldest_pending_request() {
         ),
         "{outcome:?}"
     );
+}
+
+#[tokio::test]
+async fn an_uncorrelatable_error_with_two_requests_pending_answers_neither() {
+    let mut forge = FakeForge::start().await;
+    let (client, mut events) = forge.connect(DEADLINE).await;
+
+    let (subscribed, version, ()) =
+        tokio::join!(client.subscribe(&WILDCARD), client.forge_version(), async {
+            let first = forge.next_request().await;
+            let second = forge.next_request().await;
+            forge.send(error_response(
+                Value::Null,
+                "INVALID_PAYLOAD",
+                "unknown variant",
+            ));
+            let observation = next_observation(&mut events).await;
+            assert!(
+                matches!(observation, Observation::Undecodable { .. }),
+                "{observation:?}"
+            );
+            for request in [first, second] {
+                forge.send(ok_response(&request, json!({ "version": "1.2.3" })));
+            }
+        });
+
+    subscribed.unwrap();
+    assert_eq!(version.unwrap(), "1.2.3");
 }
 
 #[tokio::test]

@@ -250,7 +250,11 @@ pub(crate) fn step_short(action: &StepAction) -> String {
             "{} the OBS stream",
             if *active { "starting" } else { "stopping" }
         ),
-        StepAction::ObsInputMute { input, .. } => format!("muting {} in OBS", code(input)),
+        StepAction::ObsInputMute { input, muted } => format!(
+            "{} {} in OBS",
+            if *muted { "muting" } else { "unmuting" },
+            code(input)
+        ),
         StepAction::VtubeOnline {} => "starting VTube Studio".to_owned(),
         StepAction::VtubeAuthenticated { .. } => "connecting to VTube Studio".to_owned(),
         StepAction::VtubeHotkey { hotkey } => format!("pressing hotkey {}", code(hotkey)),
@@ -493,4 +497,20 @@ fn crowd_story(crowd: &Crowd) -> String {
         text.push_str(&format!(", {} apart", span_ms(crowd.spacing_ms)));
     }
     text
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_short_mute_label_names_the_direction_of_the_change() {
+        for (muted, expected) in [(true, "muting"), (false, "unmuting")] {
+            let action = StepAction::ObsInputMute {
+                input: "Mic".to_owned(),
+                muted,
+            };
+            assert!(step_short(&action).starts_with(expected), "muted={muted}");
+        }
+    }
 }

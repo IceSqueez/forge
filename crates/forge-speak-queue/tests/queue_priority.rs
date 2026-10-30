@@ -138,12 +138,11 @@ fn req(viewer: &str, text: &str, priority: Priority) -> SpeakRequest {
     }
 }
 
-async fn wait_for<F>(stream: &mut forge_speak_queue::SpeakEventStream, pred: F, max_ms: u64)
+async fn wait_for<F>(stream: &mut forge_speak_queue::SpeakEventStream, pred: F)
 where
     F: Fn(&SpeakEvent) -> bool,
 {
-    let deadline =
-        std::time::Instant::now() + std::time::Duration::from_millis(max_ms.max(HANG_GUARD_MS));
+    let deadline = std::time::Instant::now() + std::time::Duration::from_millis(HANG_GUARD_MS);
     loop {
         let remaining = deadline.saturating_duration_since(std::time::Instant::now());
         if remaining.is_zero() {
@@ -169,7 +168,7 @@ async fn high_priority_dispatched_before_normal_when_enqueued_after() {
     let (handle, mut stream) = forge_speak_queue::spawn(config, make_deps(Arc::new(sink)));
 
     handle.send(SpeakCommand::Pause).await.unwrap();
-    wait_for(&mut stream, |e| matches!(e, SpeakEvent::Paused), 500).await;
+    wait_for(&mut stream, |e| matches!(e, SpeakEvent::Paused)).await;
 
     let normal_id = {
         let r = req("user-n", "normal message", Priority::Normal);
@@ -218,18 +217,8 @@ async fn high_priority_dispatched_before_normal_when_enqueued_after() {
     }
 
     let _ = notify;
-    wait_for(
-        &mut stream,
-        |e| matches!(e, SpeakEvent::Finished { .. }),
-        3_000,
-    )
-    .await;
-    wait_for(
-        &mut stream,
-        |e| matches!(e, SpeakEvent::Finished { .. }),
-        3_000,
-    )
-    .await;
+    wait_for(&mut stream, |e| matches!(e, SpeakEvent::Finished { .. })).await;
+    wait_for(&mut stream, |e| matches!(e, SpeakEvent::Finished { .. })).await;
 
     assert_ne!(normal_id, high_id);
 
@@ -252,7 +241,7 @@ async fn multiple_high_priority_items_dispatched_before_normals() {
     let (handle, mut stream) = forge_speak_queue::spawn(config, make_deps(Arc::new(sink)));
 
     handle.send(SpeakCommand::Pause).await.unwrap();
-    wait_for(&mut stream, |e| matches!(e, SpeakEvent::Paused), 500).await;
+    wait_for(&mut stream, |e| matches!(e, SpeakEvent::Paused)).await;
 
     for i in 0..3 {
         handle
@@ -278,11 +267,6 @@ async fn multiple_high_priority_items_dispatched_before_normals() {
     handle.send(SpeakCommand::Resume).await.unwrap();
 
     for _ in 0..5 {
-        wait_for(
-            &mut stream,
-            |e| matches!(e, SpeakEvent::Finished { .. }),
-            5_000,
-        )
-        .await;
+        wait_for(&mut stream, |e| matches!(e, SpeakEvent::Finished { .. })).await;
     }
 }

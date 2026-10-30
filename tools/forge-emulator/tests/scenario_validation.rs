@@ -1968,3 +1968,55 @@ fn youtube_fake_step_and_expectation_problems_are_located() {
         ),
     ]);
 }
+
+#[test]
+fn request_body_matchers_are_held_to_the_payload_rules() {
+    let bad_matchers = json!({ "content": { "present": false }, "/text": { "contains": "" } });
+    let expected = |field: &'static str| -> Vec<(String, String)> {
+        vec![
+            (
+                format!("steps[2].expect[0].{field}[/text].contains"),
+                "must not be empty: it would match every string".to_owned(),
+            ),
+            (
+                format!("steps[2].expect[0].{field}"),
+                "key `content` is not a JSON pointer; write `/content`".to_owned(),
+            ),
+        ]
+    };
+    for (field, scenario) in [
+        (
+            "kick_request.body",
+            with_kick(with_steps([expecting(
+                pause(),
+                json!([{ "kick_request": { "path": "/public/v1/chat", "body": bad_matchers, "within_ms": 100 } }]),
+            )])),
+        ),
+        (
+            "youtube_request.body",
+            with_youtube(
+                with_steps([expecting(
+                    pause(),
+                    json!([{ "youtube_request": { "path": "/youtube/v3/liveChat/messages", "body": bad_matchers, "within_ms": 100 } }]),
+                )]),
+                true,
+            ),
+        ),
+        (
+            "obs_request.request_data",
+            with_obs(with_steps([expecting(
+                pause(),
+                json!([{ "obs_request": { "request_type": "SetCurrentProgramScene", "request_data": bad_matchers, "within_ms": 100 } }]),
+            )])),
+        ),
+        (
+            "vtube_request.data",
+            with_vtube(with_steps([expecting(
+                pause(),
+                json!([{ "vtube_request": { "message_type": "HotkeyTriggerRequest", "data": bad_matchers, "within_ms": 100 } }]),
+            )])),
+        ),
+    ] {
+        assert_eq!(problems(scenario), expected(field), "{field}");
+    }
+}

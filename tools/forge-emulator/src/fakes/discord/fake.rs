@@ -33,6 +33,7 @@ const BUCKET_LIMIT: &str = "5";
 const BUCKET_REMAINING: &str = "4";
 const BUCKET_RESET_AFTER: &str = "1.0";
 const SHUTDOWN_GRACE: Duration = Duration::from_secs(2);
+const INVALID_JSON_CODE: u32 = 50_109;
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct RecordedPost {
@@ -44,6 +45,7 @@ pub struct RecordedPost {
     pub embeds: Vec<Value>,
     pub allowed_mentions: Option<Value>,
     pub files: Vec<String>,
+    pub body_error: Option<String>,
     pub status: u16,
 }
 
@@ -270,6 +272,7 @@ struct Payload {
     embeds: Vec<Value>,
     allowed_mentions: Option<Value>,
     files: Vec<String>,
+    body_error: Option<String>,
 }
 
 impl Payload {
@@ -286,7 +289,18 @@ impl Payload {
                 .unwrap_or_default(),
             allowed_mentions: json.get("allowed_mentions").cloned(),
             files: Vec::new(),
+            body_error: None,
         }
+    }
+
+    fn from_bytes(json: &[u8]) -> Self {
+        serde_json::from_slice::<Value>(json).map_or_else(
+            |e| Self {
+                body_error: Some(e.to_string()),
+                ..Self::default()
+            },
+            |json| Self::from_json(&json),
+        )
     }
 
     fn decode(headers: &HeaderMap, body: &[u8]) -> Self {
@@ -295,16 +309,17 @@ impl Payload {
             .and_then(|value| value.to_str().ok())
             .unwrap_or_default();
         let Some(boundary) = boundary(content_type) else {
-            return serde_json::from_slice::<Value>(body)
-                .map(|json| Self::from_json(&json))
-                .unwrap_or_default();
+            return if body.is_empty() {
+                Self::default()
+            } else {
+                Self::from_bytes(body)
+            };
         };
         let parts = form_parts(boundary, body);
         let mut payload = parts
             .iter()
             .find(|part| part.name.as_deref() == Some(PAYLOAD_JSON_FIELD))
-            .and_then(|part| serde_json::from_slice::<Value>(&part.data).ok())
-            .map(|json| Self::from_json(&json))
+            .map(|part| Self::from_bytes(&part.data))
             .unwrap_or_default();
         payload.files = parts
             .iter()
@@ -377,6 +392,7 @@ async fn handle(
             embeds: payload.embeds.clone(),
             allowed_mentions: payload.allowed_mentions.clone(),
             files: payload.files.clone(),
+            body_error: payload.body_error.clone(),
             status: answer.status.as_u16(),
         });
         answer
@@ -410,6 +426,15 @@ fn answer(
                 }),
             )
         };
+    }
+    if payload.body_error.is_some() {
+        return Answer::json(
+            StatusCode::BAD_REQUEST,
+            json!({
+                "message": "The request body contains invalid JSON.",
+                "code": INVALID_JSON_CODE
+            }),
+        );
     }
     let message = |id: &str| {
         json!({

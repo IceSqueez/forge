@@ -41,7 +41,16 @@ impl LivePaths {
 }
 
 fn resolved(path: &Path) -> PathBuf {
-    path.canonicalize().unwrap_or_else(|_| path.to_owned())
+    let absolute = std::path::absolute(path).unwrap_or_else(|_| path.to_owned());
+    for ancestor in absolute.ancestors() {
+        if let Ok(real) = ancestor.canonicalize() {
+            return match absolute.strip_prefix(ancestor) {
+                Ok(missing) if !missing.as_os_str().is_empty() => real.join(missing),
+                _ => real,
+            };
+        }
+    }
+    absolute
 }
 
 #[cfg(test)]
@@ -97,6 +106,26 @@ mod tests {
                 "{home}: got {refusal:?}"
             );
         }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_path_not_created_yet_under_a_symlink_to_the_live_directory_is_refused() {
+        let root = tempfile::tempdir().unwrap();
+        let real = root.path().join("share/forge");
+        std::fs::create_dir_all(&real).unwrap();
+        let alias = root.path().join("alias");
+        std::os::unix::fs::symlink(&real, &alias).unwrap();
+        let live = LivePaths {
+            data_dir: real,
+            home: PathBuf::from("/nonexistent-user"),
+        };
+        let refusal =
+            live.refuse_overlap(&alias.join("attempt-1/data"), Path::new("/scratch/home"));
+        assert!(
+            matches!(refusal, Err(EmulatorError::LiveDataDir { .. })),
+            "got {refusal:?}"
+        );
     }
 
     #[cfg(unix)]

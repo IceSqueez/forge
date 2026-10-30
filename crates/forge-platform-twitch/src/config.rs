@@ -15,6 +15,7 @@ pub struct ChatSessionConfig {
 }
 
 pub const KEEPALIVE_TIMEOUT: Duration = Duration::from_secs(15);
+pub const KEEPALIVE_GRACE: Duration = Duration::from_secs(5);
 pub const SHUTDOWN_GRACE: Duration = Duration::from_secs(5);
 
 #[derive(Clone, Copy, Debug)]

@@ -5,7 +5,7 @@ use forge_events::{EventChannel, EventPublisher, EventSubscription};
 use forge_net::Gateway;
 use forge_platform_core::{
     ActingSender, ChatPlatform, ConnectionState, PlatformCapabilities, PlatformError,
-    SenderPreference,
+    SenderPreference, credential_storage_error,
 };
 use forge_storage::CredentialsRepo;
 use tokio::sync::{Mutex, OnceCell, watch};
@@ -168,9 +168,7 @@ impl ChatPlatform for TwitchPlatform {
     async fn connect(&self) -> Result<(), PlatformError> {
         load(self.creds.as_ref())
             .await
-            .map_err(|e| PlatformError::Network {
-                reason: e.to_string(),
-            })?
+            .map_err(|e| credential_storage_error(PLATFORM_ID, e.stored_secret_unrecoverable(), e))?
             .ok_or_else(|| PlatformError::ReauthRequired {
                 platform: PLATFORM_ID.to_owned(),
             })?;

@@ -10,6 +10,12 @@ use forge_types::{PlatformId, TriggerConfig, UserText, Variant};
 use super::chat_arg_stack::base_chat_variables;
 use crate::vocabulary::fields::chat as fields;
 
+const NO_MAXIMUM: i64 = 0;
+
+fn ordered_bounds(min: i64, max: i64) -> (i64, i64) {
+    (min.min(max), min.max(max))
+}
+
 pub(crate) struct ChatCheerMessageDescriptor;
 
 impl TriggerKindDescriptor for ChatCheerMessageDescriptor {
@@ -44,7 +50,7 @@ impl TriggerKindDescriptor for ChatCheerMessageDescriptor {
     fn default_config(&self) -> TriggerConfig {
         let mut cfg = TriggerConfig::new();
         cfg.insert("min_bits".to_owned(), Variant::Int(1));
-        cfg.insert("max_bits".to_owned(), Variant::Int(-1));
+        cfg.insert("max_bits".to_owned(), Variant::Int(NO_MAXIMUM));
         cfg
     }
 
@@ -58,8 +64,8 @@ impl TriggerKindDescriptor for ChatCheerMessageDescriptor {
             },
             FormField::Integer {
                 key: "max_bits",
-                label: "Maximum bits (-1 = unlimited)",
-                min: -1,
+                label: "Maximum bits (0 = no maximum)",
+                min: 0,
                 max: i64::MAX,
             },
         ]
@@ -72,7 +78,10 @@ impl TriggerKindDescriptor for ChatCheerMessageDescriptor {
         };
         let min = int_of("min_bits").unwrap_or(1);
         match int_of("max_bits") {
-            Some(max) if max >= 0 => messages::condition_bits_between(min, max).into(),
+            Some(max) if max > NO_MAXIMUM => {
+                let (low, high) = ordered_bounds(min, max);
+                messages::condition_bits_between(low, high).into()
+            }
             _ => messages::condition_bits_at_least(min).into(),
         }
     }
@@ -114,17 +123,13 @@ impl TriggerKindDescriptor for ChatCheerMessageDescriptor {
                     None
                 }
             })
-            .unwrap_or(-1);
+            .unwrap_or(NO_MAXIMUM);
 
-        if bits < min {
-            return false;
+        if max <= NO_MAXIMUM {
+            return bits >= min;
         }
-
-        if max >= 0 && bits > max {
-            return false;
-        }
-
-        true
+        let (low, high) = ordered_bounds(min, max);
+        (low..=high).contains(&bits)
     }
 
     fn variables(&self) -> Option<TriggerVariables> {
@@ -188,6 +193,23 @@ mod tests {
             ("bits at max boundary", Some(500), (1, 500), true),
             ("bits one above max", Some(501), (1, 500), false),
             ("max -1 lifts upper bound", Some(1_000_000), (1, -1), true),
+            ("max 0 lifts upper bound", Some(1_000_000), (1, 0), true),
+            ("max 0 still honours min", Some(99), (100, 0), false),
+            ("swapped bounds accept inside", Some(300), (500, 100), true),
+            (
+                "swapped bounds accept the low end",
+                Some(100),
+                (500, 100),
+                true,
+            ),
+            (
+                "swapped bounds accept the high end",
+                Some(500),
+                (500, 100),
+                true,
+            ),
+            ("swapped bounds reject below", Some(99), (500, 100), false),
+            ("swapped bounds reject above", Some(501), (500, 100), false),
         ];
         for (name, cheer, (min, max), expected) in cases {
             let cfg = cheer_config(min, max);

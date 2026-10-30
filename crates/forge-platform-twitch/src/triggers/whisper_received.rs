@@ -8,12 +8,40 @@ use forge_types::{
     DeclaredVariable, MessageRef, PlatformId, TriggerConfig, UserText, Variant, VariantKind,
 };
 use regex::Regex;
+use std::collections::HashMap;
+use std::sync::{Mutex, OnceLock};
+use tracing::warn;
 
 use super::payload_read::{self, twitch_actor};
 use crate::vocabulary::fields::whisper as whisper_fields;
 use crate::vocabulary::{event_kinds, messages, trigger_ids};
 
+const COMPILED_PATTERN_CACHE_LIMIT: usize = 64;
+
 pub(crate) struct WhisperReceivedDescriptor;
+
+fn compiled_pattern(pattern: &str) -> Option<Regex> {
+    static CACHE: OnceLock<Mutex<HashMap<String, Option<Regex>>>> = OnceLock::new();
+    let mut cache = CACHE
+        .get_or_init(Default::default)
+        .lock()
+        .unwrap_or_else(|p| p.into_inner());
+    if let Some(compiled) = cache.get(pattern) {
+        return compiled.clone();
+    }
+    if cache.len() >= COMPILED_PATTERN_CACHE_LIMIT {
+        cache.clear();
+    }
+    let compiled = match Regex::new(pattern) {
+        Ok(compiled) => Some(compiled),
+        Err(e) => {
+            warn!(error = %e, "whisper trigger pattern does not compile; the trigger never matches");
+            None
+        }
+    };
+    cache.insert(pattern.to_owned(), compiled.clone());
+    compiled
+}
 
 impl TriggerKindDescriptor for WhisperReceivedDescriptor {
     fn id(&self) -> &str {
@@ -138,9 +166,7 @@ impl TriggerKindDescriptor for WhisperReceivedDescriptor {
             .unwrap_or(false);
 
         if is_regex {
-            Regex::new(match_text)
-                .map(|re| re.is_match(whisper_text))
-                .unwrap_or(false)
+            compiled_pattern(match_text).is_some_and(|re| re.is_match(whisper_text))
         } else {
             whisper_text.contains(match_text)
         }
@@ -317,6 +343,45 @@ mod tests {
         assert!(
             !WhisperReceivedDescriptor.matches_trigger(&cfg, &whisper_event("bobx", "[bracket"))
         );
+    }
+
+    fn regex_config(pattern: &str) -> TriggerConfig {
+        config(&[
+            ("match_text", Variant::String(pattern.to_owned())),
+            ("match_is_regex", Variant::Bool(true)),
+        ])
+    }
+
+    #[test]
+    fn an_invalid_pattern_warns_once_across_repeated_matches() {
+        let cfg = regex_config("(unclosed-group-only-this-test-uses");
+        let event = whisper_event("bobx", "anything");
+
+        let (matches, lines) = crate::log_capture::capture_blocking(tracing::Level::WARN, async {
+            [
+                WhisperReceivedDescriptor.matches_trigger(&cfg, &event),
+                WhisperReceivedDescriptor.matches_trigger(&cfg, &event),
+            ]
+        });
+
+        let warnings = lines
+            .iter()
+            .filter(|line| line.message().contains("does not compile"))
+            .count();
+        assert_eq!(matches, [false, false]);
+        assert_eq!(warnings, 1);
+    }
+
+    #[test]
+    fn repeated_patterns_keep_their_own_verdicts() {
+        let event = whisper_event("bobx", "hello");
+        let hits = regex_config("^hel+o$");
+        let misses = regex_config("^bye$");
+
+        let verdicts = [&hits, &misses, &hits, &misses]
+            .map(|cfg| WhisperReceivedDescriptor.matches_trigger(cfg, &event));
+
+        assert_eq!(verdicts, [true, false, true, false]);
     }
 
     #[test]

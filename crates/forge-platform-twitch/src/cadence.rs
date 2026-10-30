@@ -82,34 +82,87 @@ impl CadenceLedger {
         }
     }
 
-    pub(crate) fn shoutout_cooldown(&self, target_keys: &[&str]) -> Option<Duration> {
+    pub(crate) fn reserve_shoutout(
+        &self,
+        target_keys: &[&str],
+    ) -> Result<ShoutoutReservation<'_>, Duration> {
+        let mut reservation = ShoutoutReservation {
+            ledger: self,
+            undo: Vec::new(),
+            settled: false,
+        };
+        reservation.extend(target_keys)?;
+        Ok(reservation)
+    }
+}
+
+pub(crate) struct ShoutoutReservation<'a> {
+    ledger: &'a CadenceLedger,
+    undo: Vec<(CadenceKey, Option<Instant>)>,
+    settled: bool,
+}
+
+impl ShoutoutReservation<'_> {
+    pub(crate) fn extend(&mut self, target_keys: &[&str]) -> Result<(), Duration> {
         let now = Instant::now();
-        let last = self.last.lock().unwrap_or_else(|p| p.into_inner());
-        let remaining = |key: CadenceKey, interval: Duration| {
+        let mut last = self.ledger.last.lock().unwrap_or_else(|p| p.into_inner());
+        let held = |key: &CadenceKey| self.undo.iter().any(|(reserved, _)| reserved == key);
+        let remaining = |last: &HashMap<CadenceKey, Instant>, key: CadenceKey, interval| {
+            if held(&key) {
+                return None;
+            }
             last.get(&key)
                 .and_then(|previous| (*previous + interval).checked_duration_since(now))
                 .filter(|remaining| !remaining.is_zero())
         };
-        let channel = remaining(CadenceKey::ShoutoutChannel, SHOUTOUT_CHANNEL_INTERVAL);
+        let channel = remaining(
+            &last,
+            CadenceKey::ShoutoutChannel,
+            SHOUTOUT_CHANNEL_INTERVAL,
+        );
         let targets = target_keys.iter().filter_map(|key| {
             remaining(
+                &last,
                 CadenceKey::ShoutoutTarget((*key).to_owned()),
                 SHOUTOUT_TARGET_INTERVAL,
             )
         });
-        channel.into_iter().chain(targets).max()
-    }
-
-    pub(crate) fn record_shoutout(&self, target_keys: &[&str]) {
-        let now = Instant::now();
-        let mut last = self.last.lock().unwrap_or_else(|p| p.into_inner());
+        if let Some(blocked) = channel.into_iter().chain(targets).max() {
+            return Err(blocked);
+        }
         last.retain(|key, at| match key {
             CadenceKey::ShoutoutTarget(..) => at.elapsed() < SHOUTOUT_TARGET_INTERVAL,
             _ => true,
         });
-        last.insert(CadenceKey::ShoutoutChannel, now);
-        for key in target_keys {
-            last.insert(CadenceKey::ShoutoutTarget((*key).to_owned()), now);
+        let keys = std::iter::once(CadenceKey::ShoutoutChannel).chain(
+            target_keys
+                .iter()
+                .map(|key| CadenceKey::ShoutoutTarget((*key).to_owned())),
+        );
+        let fresh: Vec<CadenceKey> = keys.filter(|key| !held(key)).collect();
+        for key in fresh {
+            let previous = last.insert(key.clone(), now);
+            self.undo.push((key, previous));
+        }
+        Ok(())
+    }
+
+    pub(crate) fn commit(mut self) {
+        self.settled = true;
+    }
+}
+
+impl Drop for ShoutoutReservation<'_> {
+    fn drop(&mut self) {
+        if self.settled {
+            return;
+        }
+        let mut last = self.ledger.last.lock().unwrap_or_else(|p| p.into_inner());
+        for (key, previous) in self.undo.drain(..).rev() {
+            match previous {
+                Some(at) => last.insert(key, at),
+                None => last.remove(&key),
+            };
         }
     }
 }
@@ -119,6 +172,17 @@ mod tests {
     use super::*;
 
     const SECOND: Duration = Duration::from_secs(1);
+
+    fn record_shoutout(ledger: &CadenceLedger, target_keys: &[&str]) {
+        match ledger.reserve_shoutout(target_keys) {
+            Ok(reservation) => reservation.commit(),
+            Err(remaining) => panic!("expected a free slot, {remaining:?} left"),
+        }
+    }
+
+    fn shoutout_cooldown(ledger: &CadenceLedger, target_keys: &[&str]) -> Option<Duration> {
+        ledger.reserve_shoutout(target_keys).err()
+    }
 
     #[tokio::test(start_paused = true)]
     async fn committed_announcements_are_spaced_exactly_by_the_interval() {
@@ -180,13 +244,13 @@ mod tests {
     #[tokio::test(start_paused = true)]
     async fn the_channel_cooldown_blocks_every_target_for_two_minutes() {
         let ledger = CadenceLedger::default();
-        ledger.record_shoutout(&["id:1"]);
+        record_shoutout(&ledger, &["id:1"]);
 
-        let at_start = ledger.shoutout_cooldown(&["id:2"]);
+        let at_start = shoutout_cooldown(&ledger, &["id:2"]);
         tokio::time::advance(SHOUTOUT_CHANNEL_INTERVAL - SECOND).await;
-        let one_second_left = ledger.shoutout_cooldown(&["id:2"]);
+        let one_second_left = shoutout_cooldown(&ledger, &["id:2"]);
         tokio::time::advance(2 * SECOND).await;
-        let after_window = ledger.shoutout_cooldown(&["id:2"]);
+        let after_window = shoutout_cooldown(&ledger, &["id:2"]);
 
         assert_eq!(at_start, Some(SHOUTOUT_CHANNEL_INTERVAL));
         assert_eq!(one_second_left, Some(SECOND));
@@ -196,12 +260,12 @@ mod tests {
     #[tokio::test(start_paused = true)]
     async fn the_target_cooldown_blocks_the_same_target_for_an_hour() {
         let ledger = CadenceLedger::default();
-        ledger.record_shoutout(&["id:1"]);
+        record_shoutout(&ledger, &["id:1"]);
         tokio::time::advance(SHOUTOUT_CHANNEL_INTERVAL + SECOND).await;
 
-        let same_target = ledger.shoutout_cooldown(&["id:1"]);
+        let same_target = shoutout_cooldown(&ledger, &["id:1"]);
         tokio::time::advance(SHOUTOUT_TARGET_INTERVAL - SHOUTOUT_CHANNEL_INTERVAL).await;
-        let after_window = ledger.shoutout_cooldown(&["id:1"]);
+        let after_window = shoutout_cooldown(&ledger, &["id:1"]);
 
         assert_eq!(
             same_target,
@@ -213,16 +277,12 @@ mod tests {
     #[tokio::test(start_paused = true)]
     async fn every_recorded_key_of_a_target_blocks_it() {
         let ledger = CadenceLedger::default();
-        ledger.record_shoutout(&["login:target", "id:555"]);
+        record_shoutout(&ledger, &["login:target", "id:555"]);
         tokio::time::advance(SHOUTOUT_CHANNEL_INTERVAL + SECOND).await;
 
-        assert!(ledger.shoutout_cooldown(&["login:target"]).is_some());
-        assert!(ledger.shoutout_cooldown(&["id:555"]).is_some());
-        assert!(
-            ledger
-                .shoutout_cooldown(&["id:777", "login:other"])
-                .is_none()
-        );
+        assert!(shoutout_cooldown(&ledger, &["login:target"]).is_some());
+        assert!(shoutout_cooldown(&ledger, &["id:555"]).is_some());
+        assert!(shoutout_cooldown(&ledger, &["id:777", "login:other"]).is_none());
     }
 
     #[tokio::test(start_paused = true)]
@@ -269,14 +329,72 @@ mod tests {
     #[tokio::test(start_paused = true)]
     async fn shoutout_cooldowns_end_exactly_at_their_window() {
         let ledger = CadenceLedger::default();
-        ledger.record_shoutout(&["id:1"]);
+        record_shoutout(&ledger, &["id:1"]);
 
         tokio::time::advance(SHOUTOUT_CHANNEL_INTERVAL).await;
-        let channel_at_boundary = ledger.shoutout_cooldown(&["id:2"]);
+        let channel_at_boundary = shoutout_cooldown(&ledger, &["id:2"]);
         tokio::time::advance(SHOUTOUT_TARGET_INTERVAL - SHOUTOUT_CHANNEL_INTERVAL).await;
-        let target_at_boundary = ledger.shoutout_cooldown(&["id:1"]);
+        let target_at_boundary = shoutout_cooldown(&ledger, &["id:1"]);
 
         assert_eq!(channel_at_boundary, None);
         assert_eq!(target_at_boundary, None);
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_held_reservation_extends_to_the_resolved_id_of_its_own_target() {
+        let ledger = CadenceLedger::default();
+        let Ok(mut reservation) = ledger.reserve_shoutout(&["login:target"]) else {
+            panic!("the first reservation must find the channel free");
+        };
+
+        assert_eq!(reservation.extend(&["id:555"]), Ok(()));
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_held_reservation_blocks_a_concurrent_shoutout() {
+        let ledger = CadenceLedger::default();
+        let Ok(_held) = ledger.reserve_shoutout(&["id:1"]) else {
+            panic!("the first reservation must find the channel free");
+        };
+
+        assert_eq!(
+            shoutout_cooldown(&ledger, &["id:2"]),
+            Some(SHOUTOUT_CHANNEL_INTERVAL)
+        );
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_dropped_reservation_gives_back_every_key_it_took() {
+        let ledger = CadenceLedger::default();
+        let Ok(mut reservation) = ledger.reserve_shoutout(&["login:target"]) else {
+            panic!("the first reservation must find the channel free");
+        };
+        assert_eq!(reservation.extend(&["id:555"]), Ok(()));
+
+        drop(reservation);
+
+        assert_eq!(
+            shoutout_cooldown(&ledger, &["login:target", "id:555"]),
+            None
+        );
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_refused_extension_releases_the_channel_once_the_reservation_drops() {
+        let ledger = CadenceLedger::default();
+        record_shoutout(&ledger, &["id:1"]);
+        tokio::time::advance(SHOUTOUT_CHANNEL_INTERVAL).await;
+        let Ok(mut reservation) = ledger.reserve_shoutout(&["login:alias"]) else {
+            panic!("the channel window has passed");
+        };
+
+        let extended = reservation.extend(&["id:1"]);
+        drop(reservation);
+
+        assert_eq!(
+            extended,
+            Err(SHOUTOUT_TARGET_INTERVAL - SHOUTOUT_CHANNEL_INTERVAL)
+        );
+        assert_eq!(shoutout_cooldown(&ledger, &["id:2"]), None);
     }
 }

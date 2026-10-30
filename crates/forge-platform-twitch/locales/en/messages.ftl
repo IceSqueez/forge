@@ -19,6 +19,7 @@ msg-twitch-response_unreadable = Twitch sent a response forge could not read
 msg-twitch-field_required = { $field } is required
 msg-twitch-target_empty = Both { $login } and { $id } are empty after variable substitution
 msg-twitch-category_empty = Both category_id and category_name are empty after variable substitution
+msg-twitch-category_not_found = Category not found: { $category }
 msg-twitch-empty_response = Twitch returned an empty response
 msg-twitch-response_field_missing = The Twitch response has no { $field }
 msg-twitch-message_empty = The message is empty after variable substitution

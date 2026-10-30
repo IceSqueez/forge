@@ -203,9 +203,10 @@ impl TwitchIntegrationBundle {
                     changed = expiry_rx.changed() => if changed.is_err() { break },
                 }
                 let expiry = *expiry_rx.borrow_and_update();
-                if let Ok(mut guard) = bundle.token_expires_at.write() {
-                    *guard = expiry;
-                }
+                *bundle
+                    .token_expires_at
+                    .write()
+                    .unwrap_or_else(|p| p.into_inner()) = expiry;
                 let delta = HealthDelta {
                     metric: API_CALLS_METRIC,
                     new_value: bundle.api_calls_health_value(),
@@ -226,9 +227,10 @@ impl TwitchIntegrationBundle {
                 .read()
                 .unwrap_or_else(|p| p.into_inner())
                 .is_some();
-            if let Ok(mut guard) = self.connected_at.write() {
-                guard.get_or_insert_with(OffsetDateTime::now_utc);
-            }
+            self.connected_at
+                .write()
+                .unwrap_or_else(|p| p.into_inner())
+                .get_or_insert_with(OffsetDateTime::now_utc);
             if !already_connected {
                 Self::spawn_identity_refresh(self);
                 Self::spawn_lifecycle_seed(self);
@@ -237,9 +239,7 @@ impl TwitchIntegrationBundle {
             }
         } else {
             self.lifecycle.forget_phases();
-            if let Ok(mut guard) = self.connected_at.write() {
-                *guard = None;
-            }
+            *self.connected_at.write().unwrap_or_else(|p| p.into_inner()) = None;
         }
     }
 
@@ -275,7 +275,7 @@ impl TwitchIntegrationBundle {
             .await
             {
                 Ok(synced) => debug!(synced, "creator goals synced"),
-                Err(_) => debug!("creator goal sync failed"),
+                Err(e) => debug!(error = %e, "creator goal sync failed"),
             }
         });
     }
@@ -284,13 +284,12 @@ impl TwitchIntegrationBundle {
         let Ok(Some(stored)) = credentials::load(self.creds.as_ref()).await else {
             return;
         };
-        if let Ok(mut guard) = self.token_expires_at.write() {
-            *guard = stored.expires_at;
-        }
-        if let Ok(tier) = resolve_broadcaster_tier(self.transport.as_ref(), &stored.user_id).await
-            && let Ok(mut guard) = self.tier.write()
-        {
-            *guard = tier;
+        *self
+            .token_expires_at
+            .write()
+            .unwrap_or_else(|p| p.into_inner()) = stored.expires_at;
+        if let Ok(tier) = resolve_broadcaster_tier(self.transport.as_ref(), &stored.user_id).await {
+            *self.tier.write().unwrap_or_else(|p| p.into_inner()) = tier;
         }
     }
 
@@ -330,9 +329,10 @@ impl TwitchIntegrationBundle {
                     Some(count) => ViewerPollState::Live(count),
                     None => ViewerPollState::Offline,
                 };
-                if let Ok(mut guard) = bundle.viewer_state.write() {
-                    *guard = new_state;
-                }
+                *bundle
+                    .viewer_state
+                    .write()
+                    .unwrap_or_else(|p| p.into_inner()) = new_state;
                 bundle.viewer_report_tx.send_replace(new_state.as_report());
                 let delta = HealthDelta {
                     metric: HealthMetricId::VIEWERS,
@@ -1335,7 +1335,7 @@ mod tests {
     }
 
     #[test]
-    fn exactly_six_actions_are_marked_destructive() {
+    fn only_the_actions_that_take_something_away_are_marked_destructive() {
         let b = make_bundle_with_tier(ChatConnectionState::Connected, BroadcasterTier::Affiliate);
         let mut destructive: Vec<String> = b
             .actions()
@@ -1351,9 +1351,96 @@ mod tests {
             "Cancel raid".to_owned(),
             "Clear chat".to_owned(),
             "Reject & refund".to_owned(),
+            "Remove Mod".to_owned(),
+            "Remove VIP".to_owned(),
         ];
         expected.sort();
         assert_eq!(destructive, expected);
+    }
+
+    #[test]
+    fn vip_and_mod_quick_actions_each_run_their_own_sub_action() {
+        let b = make_bundle(ChatConnectionState::Connected);
+        let actions = b.actions();
+
+        for (label, kind_id) in [
+            (
+                "Add VIP",
+                crate::vocabulary::sub_action_ids::MODERATION_ADD_VIP,
+            ),
+            (
+                "Remove VIP",
+                crate::vocabulary::sub_action_ids::MODERATION_REMOVE_VIP,
+            ),
+            (
+                "Add Mod",
+                crate::vocabulary::sub_action_ids::MODERATION_ADD_MODERATOR,
+            ),
+            (
+                "Remove Mod",
+                crate::vocabulary::sub_action_ids::MODERATION_REMOVE_MODERATOR,
+            ),
+        ] {
+            let action = actions.iter().find(|a| a.label == label);
+            assert_eq!(
+                action.map(|a| a.subaction_template.kind_id.as_str()),
+                Some(kind_id),
+                "{label}"
+            );
+        }
+    }
+
+    fn poison<T: Send + Sync>(lock: &std::sync::RwLock<T>) {
+        std::thread::scope(|scope| {
+            let holder = scope.spawn(|| {
+                let _guard = lock.write().unwrap();
+                panic!("poisoning the lock on purpose");
+            });
+            assert!(holder.join().is_err());
+        });
+    }
+
+    #[tokio::test]
+    async fn a_poisoned_connected_at_lock_still_records_both_connection_transitions() {
+        let b = make_bundle(ChatConnectionState::Disconnected);
+        poison(&b.connected_at);
+        let read = || {
+            b.connected_at
+                .read()
+                .unwrap_or_else(|p| p.into_inner())
+                .is_some()
+        };
+
+        b.on_chat_state_changed(ChatConnectionState::Connected);
+        let after_connect = read();
+        b.on_chat_state_changed(ChatConnectionState::Disconnected);
+
+        assert_eq!((after_connect, read()), (true, false));
+    }
+
+    #[tokio::test]
+    async fn a_poisoned_token_expiry_lock_still_takes_the_stored_expiry() {
+        let expiry = std::time::SystemTime::now() + std::time::Duration::from_secs(3600);
+        let (_tx, rx) = watch::channel(ChatConnectionState::Connected);
+        let b = TwitchIntegrationBundle::for_test(
+            Some("streamer".to_owned()),
+            rx,
+            SubscriptionTracker::default(),
+            crate::credentials_manager::tests::InMemRepo::seeded(
+                &crate::credentials_manager::tests::stub_cred(expiry),
+            ),
+            BroadcasterTier::Standard,
+        );
+        poison(&b.token_expires_at);
+
+        b.refresh_identity().await;
+
+        assert!(
+            b.token_expires_at
+                .read()
+                .unwrap_or_else(|p| p.into_inner())
+                .is_some()
+        );
     }
 
     #[test]

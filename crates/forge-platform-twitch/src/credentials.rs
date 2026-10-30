@@ -94,13 +94,11 @@ pub(crate) async fn load_at(
         .ok_or_else(|| StorageError::Parse("missing user_id in twitch credential".into()))?
         .to_owned();
     let login = bundle["login"].as_str().unwrap_or_default().to_owned();
-    let expires_at = bundle["expires_at_unix"].as_i64().and_then(|secs| {
-        if secs <= 0 {
-            None
-        } else {
-            Some(std::time::UNIX_EPOCH + std::time::Duration::from_secs(secs as u64))
-        }
-    });
+    let expires_at = bundle["expires_at_unix"]
+        .as_i64()
+        .and_then(|secs| u64::try_from(secs).ok())
+        .filter(|secs| *secs > 0)
+        .and_then(|secs| std::time::UNIX_EPOCH.checked_add(std::time::Duration::from_secs(secs)));
     Ok(Some(StoredCredential {
         access_token,
         refresh_token,
@@ -282,15 +280,28 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn blob_with_zero_expires_at_loads_as_none() {
-        let json = r#"{"access_token":"at","user_id":"u1","login":"x","expires_at_unix":0}"#;
-        let repo = InMemRepo::with_raw(TWITCH_CREDENTIAL_ID, json);
+    async fn an_expiry_that_is_no_real_instant_loads_as_none() {
+        for expires in ["0", "-1", "18446744073709551615", "1.5"] {
+            let json = format!(
+                r#"{{"access_token":"at","user_id":"u1","login":"x","expires_at_unix":{expires}}}"#
+            );
+            let repo = InMemRepo::with_raw(TWITCH_CREDENTIAL_ID, &json);
 
-        let loaded = load(&repo).await.unwrap().unwrap();
-        assert!(
-            loaded.expires_at.is_none(),
-            "expires_at_unix = 0 must decode to None (no expiry)"
+            let loaded = load(&repo).await.unwrap().unwrap();
+
+            assert!(loaded.expires_at.is_none(), "expires_at_unix = {expires}");
+        }
+    }
+
+    #[tokio::test]
+    async fn the_largest_stored_expiry_loads_without_a_panic() {
+        let json = format!(
+            r#"{{"access_token":"at","user_id":"u1","login":"x","expires_at_unix":{}}}"#,
+            i64::MAX
         );
+        let repo = InMemRepo::with_raw(TWITCH_CREDENTIAL_ID, &json);
+
+        assert!(load(&repo).await.unwrap().is_some());
     }
 
     #[tokio::test]

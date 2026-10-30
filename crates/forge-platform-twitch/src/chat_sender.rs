@@ -276,13 +276,16 @@ impl ChatSenders {
             }
             ChatDelivery::Shoutout { target } => {
                 let requested_key = target_key(target);
-                self.refuse_during_shoutout_cooldown(&[&requested_key])?;
+                let mut reservation = self
+                    .cadence
+                    .reserve_shoutout(&[&requested_key])
+                    .map_err(shoutout_cooldown)?;
                 let target_id = target
                     .user_id(transport)
                     .await
                     .map_err(moderation_failure)?;
                 let id_key = target_key(UserTarget::Id(&target_id));
-                self.refuse_during_shoutout_cooldown(&[&id_key])?;
+                reservation.extend(&[&id_key]).map_err(shoutout_cooldown)?;
                 let request = HelixRequest::new(HelixMethod::Post, SHOUTOUTS_PATH)
                     .query("from_broadcaster_id", broadcaster_id)
                     .query("to_broadcaster_id", target_id.as_str())
@@ -291,8 +294,7 @@ impl ChatSenders {
                     .execute(request)
                     .await
                     .map_err(moderation_failure)?;
-                self.cadence
-                    .record_shoutout(&[requested_key.as_str(), id_key.as_str()]);
+                reservation.commit();
             }
             ChatDelivery::WhisperToLogin { login, text } => {
                 send_whisper(transport, &actor.user_id, login, text)
@@ -316,14 +318,9 @@ fn target_key(target: UserTarget<'_>) -> String {
     }
 }
 
-impl ChatSenders {
-    fn refuse_during_shoutout_cooldown(&self, target_keys: &[&str]) -> Result<(), SendFailure> {
-        match self.cadence.shoutout_cooldown(target_keys) {
-            Some(remaining) => Err(SendFailure::ShoutoutCooldown {
-                retry_after_secs: remaining.as_secs().max(1),
-            }),
-            None => Ok(()),
-        }
+fn shoutout_cooldown(remaining: std::time::Duration) -> SendFailure {
+    SendFailure::ShoutoutCooldown {
+        retry_after_secs: remaining.as_secs().max(1),
     }
 }
 
@@ -474,6 +471,19 @@ mod tests {
         text: "psst",
     };
 
+    fn streamer_senders(transport: Arc<dyn HelixTransport>) -> ChatSenders {
+        use crate::bot_account::test_support::{KeyedRepo, credential_json};
+        use crate::credentials::TWITCH_CREDENTIAL_ID;
+        use crate::sub_actions::test_support::TOKEN_SENTINEL;
+
+        let repo = Arc::new(KeyedRepo::default());
+        repo.put(
+            TWITCH_CREDENTIAL_ID,
+            credential_json(TOKEN_SENTINEL, "streamer_refresh", SELF_USER_ID, "streamer"),
+        );
+        ChatSenders::new(transport, Arc::new(SelfIdentity::new(repo as _)))
+    }
+
     struct StreamerRig {
         streamer: Arc<MockTransport>,
         senders: ChatSenders,
@@ -482,23 +492,10 @@ mod tests {
 
     impl StreamerRig {
         fn over(streamer_responses: Vec<Result<Value, HelixError>>) -> Self {
-            use crate::bot_account::test_support::{KeyedRepo, credential_json};
-            use crate::credentials::TWITCH_CREDENTIAL_ID;
-            use crate::sub_actions::test_support::TOKEN_SENTINEL;
-
-            let repo = Arc::new(KeyedRepo::default());
-            repo.put(
-                TWITCH_CREDENTIAL_ID,
-                credential_json(TOKEN_SENTINEL, "streamer_refresh", SELF_USER_ID, "streamer"),
-            );
             let streamer = Arc::new(MockTransport::returning_sequence(streamer_responses));
-            let senders = ChatSenders::new(
-                Arc::clone(&streamer) as Arc<dyn HelixTransport>,
-                Arc::new(SelfIdentity::new(repo as _)),
-            );
             Self {
+                senders: streamer_senders(Arc::clone(&streamer) as Arc<dyn HelixTransport>),
                 streamer,
-                senders,
                 bus: Default::default(),
             }
         }
@@ -1193,6 +1190,75 @@ mod tests {
         assert!(matches!(refused, Err(SendFailure::Refused(_))));
         assert_eq!(retried.unwrap(), as_streamer());
         assert_eq!(rig.streamer.call_count(), 2);
+    }
+
+    #[derive(Default)]
+    struct HeldUserLookup {
+        entered: tokio::sync::Notify,
+        release: tokio::sync::Notify,
+        shoutouts: std::sync::atomic::AtomicUsize,
+    }
+
+    #[async_trait::async_trait]
+    impl HelixTransport for HeldUserLookup {
+        async fn execute(&self, request: HelixRequest) -> Result<Value, HelixError> {
+            if request.path == SHOUTOUT_PATH {
+                self.shoutouts
+                    .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                return Ok(Value::Null);
+            }
+            self.entered.notify_one();
+            self.release.notified().await;
+            users_fixture("555")
+        }
+    }
+
+    #[tokio::test]
+    async fn two_shoutouts_racing_through_the_user_lookup_let_exactly_one_through() {
+        let transport = Arc::new(HeldUserLookup::default());
+        let senders = streamer_senders(Arc::clone(&transport) as Arc<dyn HelixTransport>);
+        let bus = crate::bot_account::test_support::RecordingBus::default();
+        let by_login = |login| ChatDelivery::Shoutout {
+            target: UserTarget::Login(login),
+        };
+
+        let first = senders.deliver(by_login("first"), SenderPreference::Streamer, &bus);
+        let second = async {
+            transport.entered.notified().await;
+            let refused = senders
+                .deliver(by_login("second"), SenderPreference::Streamer, &bus)
+                .await;
+            transport.release.notify_one();
+            refused
+        };
+        let (first, second) = tokio::join!(first, second);
+
+        assert_eq!(first.unwrap(), as_streamer());
+        assert!(matches!(second, Err(SendFailure::ShoutoutCooldown { .. })));
+        assert_eq!(
+            transport
+                .shoutouts
+                .load(std::sync::atomic::Ordering::SeqCst),
+            1
+        );
+    }
+
+    #[tokio::test]
+    async fn a_failed_user_lookup_releases_the_shoutout_slot() {
+        let rig = StreamerRig::over(vec![
+            Err(HelixError::Transport("connection reset".to_owned())),
+            users_fixture("555"),
+            Ok(Value::Null),
+        ]);
+        let by_login = ChatDelivery::Shoutout {
+            target: UserTarget::Login("target"),
+        };
+
+        let failed = rig.send(by_login, SenderPreference::Streamer).await;
+        let retried = rig.send(by_login, SenderPreference::Streamer).await;
+
+        assert!(failed.is_err());
+        assert_eq!(retried.unwrap(), as_streamer());
     }
 
     #[tokio::test(start_paused = true)]

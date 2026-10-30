@@ -9,7 +9,7 @@ use forge_registry::{
 use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry};
 
 use crate::account::identity::SelfIdentity;
-use crate::helix::{HelixError, HelixMethod, HelixRequest, HelixTransport};
+use crate::helix::{HelixMethod, HelixRequest, HelixTransport};
 use crate::step_failure;
 use crate::vocabulary::{config_keys, messages, sub_action_ids};
 
@@ -60,18 +60,21 @@ impl UpdateCategoryRunner {
         }
     }
 
-    async fn resolve_category_id(&self, category_name: &str) -> Result<String, HelixError> {
+    async fn resolve_category_id(&self, category_name: &str) -> Result<String, SubActionOutcome> {
         let request =
             HelixRequest::new(HelixMethod::Get, "/helix/games").query("name", category_name);
-        let resp = self.transport.execute(request).await?;
+        let resp = self
+            .transport
+            .execute(request)
+            .await
+            .map_err(|e| step_failure::failed(&e))?;
         resp["data"]
             .as_array()
             .and_then(|arr| arr.first())
             .and_then(|game| game["id"].as_str())
             .map(str::to_owned)
-            .ok_or_else(|| HelixError::Http {
-                status: forge_net::status::NOT_FOUND,
-                body: format!("category not found: {category_name}"),
+            .ok_or_else(|| {
+                SubActionOutcome::Failed(messages::category_not_found(category_name).into())
             })
     }
 
@@ -88,7 +91,7 @@ impl UpdateCategoryRunner {
         let category_id = if category_id.is_empty() {
             match self.resolve_category_id(category_name).await {
                 Ok(id) => id,
-                Err(e) => return step_failure::failed(&e),
+                Err(outcome) => return outcome,
             }
         } else {
             category_id.to_owned()
@@ -168,7 +171,8 @@ mod tests {
     use super::*;
     use crate::helix::HelixError;
     use crate::sub_actions::test_support::{
-        MockCreds, MockTransport, SELF_USER_ID, assert_request_refused, make_ctx,
+        MockCreds, MockTransport, SELF_USER_ID, assert_failed_with_code, assert_request_refused,
+        make_ctx,
     };
     use forge_types::Variant;
     use std::collections::BTreeMap;
@@ -304,7 +308,7 @@ mod tests {
             )
             .await;
 
-        assert_request_refused(&telemetry.outcome, 404);
+        assert_failed_with_code(&telemetry.outcome, "twitch.category_not_found");
         assert_eq!(transport.call_count(), 1);
     }
 

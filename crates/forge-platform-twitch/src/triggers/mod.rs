@@ -73,6 +73,8 @@ mod whisper_received;
 
 use forge_registry::{RegistryError, TriggerRegistry};
 
+const HYPE_TRAIN_LEVEL_MAX: i64 = 20;
+
 use ad_break_started::AdBreakStartedDescriptor;
 use automatic_reward_redeemed::AutomaticRewardRedeemedDescriptor;
 use automod_message_held::AutomodMessageHeldDescriptor;
@@ -226,6 +228,33 @@ mod tests {
     use forge_registry::{
         ActorRole, ActorSlot, CanonicalCount, CanonicalVariable, TriggerKindDescriptor,
     };
+
+    #[test]
+    fn the_hype_level_form_accepts_every_level_the_variable_hints_can_produce() {
+        let form_max = match HypeTrainProgressDescriptor.config_fields().as_slice() {
+            [forge_registry::FormField::Integer { max, .. }] => *max,
+            other => panic!("expected one integer field, got {} fields", other.len()),
+        };
+        let descriptors: [&dyn TriggerKindDescriptor; 3] = [
+            &HypeTrainStartedDescriptor,
+            &HypeTrainProgressDescriptor,
+            &HypeTrainEndedDescriptor,
+        ];
+
+        for descriptor in descriptors {
+            let schema = descriptor.output_schema().unwrap();
+            let level = schema.variables.iter().find(|v| v.name == "hype.level");
+            assert_eq!(
+                level.and_then(|v| v.synthesis.clone()),
+                Some(forge_types::SynthesisHint::BoundedInt {
+                    min: 1,
+                    max: form_max
+                }),
+                "{}",
+                descriptor.id()
+            );
+        }
+    }
 
     fn twitch_registry() -> TriggerRegistry {
         let mut registry = TriggerRegistry::new();

@@ -397,7 +397,9 @@ impl ChatSession {
                                 }
                                 continue;
                             }
-                            match self.handle_frame(&text, &mut session_id).await {
+                            let action = self.handle_frame(&text, &mut session_id).await;
+                            keepalive_deadline = Instant::now() + self.keepalive_timeout;
+                            match action {
                                 FrameAction::Continue => {}
                                 FrameAction::Reconnect(new_url) => {
                                     arm_successor(&mut successor, new_url);
@@ -479,29 +481,15 @@ impl ChatSession {
                 };
                 debug!("session_welcome received, subscribing topics");
                 *session_id = Some(id.clone());
-
-                let manager = Arc::clone(&self.config.manager);
-                let token_fetch =
-                    tokio::spawn(async move { manager.get_valid_access_token().await });
-                let fetched = match token_fetch.await {
-                    Ok(fetched) => fetched,
-                    Err(e) => {
-                        warn!(error = %e, "chat token fetch task failed");
-                        return FrameAction::Disconnect;
-                    }
-                };
-                let token = match fetched {
-                    Ok(token) => token,
-                    Err(PlatformError::ReauthRequired { .. }) => {
-                        warn!("chat token refresh rejected: reauth required");
-                        self.publish_reauth_required();
-                        return FrameAction::ReauthRequired;
-                    }
-                    Err(e) => {
-                        warn_token_failure(&e);
-                        return FrameAction::Disconnect;
-                    }
-                };
+                if let Some(seconds) = frame
+                    .payload
+                    .as_ref()
+                    .and_then(|p| p.session.as_ref())
+                    .and_then(|s| s.keepalive_timeout_seconds)
+                {
+                    self.keepalive_timeout =
+                        Duration::from_secs(seconds) + crate::config::KEEPALIVE_GRACE;
+                }
 
                 let (retries_tx, retries_rx) = oneshot::channel();
                 self.retries_rx = Some(retries_rx);
@@ -516,7 +504,7 @@ impl ChatSession {
                     tracker: self.config.tracker.clone(),
                     retries_tx,
                 };
-                return FrameAction::Subscribe(Box::pin(pass.run(token)));
+                return FrameAction::Subscribe(Box::pin(pass.run()));
             }
 
             "session_keepalive" => {
@@ -2290,7 +2278,18 @@ struct SubscriptionPassContext {
 }
 
 impl SubscriptionPassContext {
-    async fn run(self, token: OAuthToken) -> PassVerdict {
+    async fn run(self) -> PassVerdict {
+        let token = match self.manager.get_valid_access_token().await {
+            Ok(token) => token,
+            Err(PlatformError::ReauthRequired { .. }) => {
+                warn!("chat token refresh rejected: reauth required");
+                return PassVerdict::ReauthRequired;
+            }
+            Err(e) => {
+                warn_token_failure(&e);
+                return PassVerdict::TokenUnavailable;
+            }
+        };
         let result = match self.subscribe(&token).await {
             Err(SubscribeError::Unauthorized) => {
                 debug!("eventsub subscription rejected the access token; refreshing once");
@@ -2430,6 +2429,7 @@ struct RevokedSubscription {
 struct SessionInfo {
     id: String,
     reconnect_url: Option<String>,
+    keepalive_timeout_seconds: Option<u64>,
 }
 
 #[cfg(test)]
@@ -3334,8 +3334,15 @@ mod tests {
         }
     }
 
+    async fn welcome_verdict(session: &mut ChatSession) -> Verdict {
+        match session.handle_frame(SESSION_WELCOME_FRAME, &mut None).await {
+            FrameAction::Subscribe(pass) => Verdict::from(pass.await),
+            _ => panic!("a welcome must start a subscription pass"),
+        }
+    }
+
     fn session_welcome_over_failing_token_endpoint()
-    -> (FrameAction, Vec<crate::log_capture::CapturedLine>) {
+    -> (Verdict, Vec<crate::log_capture::CapturedLine>) {
         crate::log_capture::capture_blocking(tracing::Level::TRACE, async {
             let server = wiremock::MockServer::builder().start().await;
             wiremock::Mock::given(wiremock::matchers::method("POST"))
@@ -3373,20 +3380,14 @@ mod tests {
                 TwitchLifecycle::new(),
             );
 
-            let mut session_id = None;
-            session
-                .handle_frame(SESSION_WELCOME_FRAME, &mut session_id)
-                .await
+            welcome_verdict(&mut session).await
         })
     }
 
     #[test]
     fn session_welcome_token_failure_never_logs_the_endpoint_response_body() {
-        let (action, lines) = session_welcome_over_failing_token_endpoint();
-        assert!(
-            matches!(action, FrameAction::Disconnect),
-            "a non-reauth token error must disconnect for backoff retry"
-        );
+        let (verdict, lines) = session_welcome_over_failing_token_endpoint();
+        assert_eq!(verdict, Verdict::TokenUnavailable);
 
         let forge_lines = crate::log_capture::forge_lines(&lines);
         assert!(
@@ -3425,43 +3426,54 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn session_welcome_routes_to_reauth_when_token_refresh_reports_reauth_required() {
+    async fn the_welcome_pass_asks_for_reauth_when_no_credential_is_left() {
         let bus = Arc::new(EventChannel::new(EVENT_CHANNEL_CAPACITY));
         let mut session = session_over_creds(&bus, Arc::new(MockCreds::empty()));
-        let mut sub = bus.subscribe();
 
-        let mut session_id = None;
-        let action = session
-            .handle_frame(SESSION_WELCOME_FRAME, &mut session_id)
-            .await;
-
-        assert!(
-            matches!(action, FrameAction::ReauthRequired),
-            "missing credential at session_welcome must route to reauth, not disconnect"
-        );
-
-        let ev = tokio::time::timeout(Duration::from_millis(100), sub.recv())
-            .await
-            .expect("a reauth event must be published")
-            .expect("recv error");
-        assert_eq!(ev.kind, "platform.reauth_required");
-        assert_eq!(ev.payload["platform_id"].as_str(), Some("twitch"));
+        assert_eq!(welcome_verdict(&mut session).await, Verdict::ReauthRequired);
     }
 
     #[tokio::test]
-    async fn session_welcome_disconnects_when_token_fetch_fails_without_reauth() {
+    async fn the_welcome_pass_reports_an_unavailable_token_on_a_storage_failure() {
         let bus = Arc::new(EventChannel::new(EVENT_CHANNEL_CAPACITY));
         let mut session = session_over_creds(&bus, Arc::new(FailingCreds));
 
-        let mut session_id = None;
-        let action = session
-            .handle_frame(SESSION_WELCOME_FRAME, &mut session_id)
-            .await;
-
-        assert!(
-            matches!(action, FrameAction::Disconnect),
-            "a non-reauth token error must disconnect for backoff retry, not route to reauth"
+        assert_eq!(
+            welcome_verdict(&mut session).await,
+            Verdict::TokenUnavailable
         );
+    }
+
+    #[tokio::test]
+    async fn a_welcome_sets_the_keepalive_timeout_to_its_value_plus_the_grace() {
+        let cases = [
+            (
+                serde_json::json!({ "id": "s", "keepalive_timeout_seconds": 30 }),
+                Duration::from_secs(30) + crate::config::KEEPALIVE_GRACE,
+            ),
+            (
+                serde_json::json!({ "id": "s" }),
+                crate::config::KEEPALIVE_TIMEOUT,
+            ),
+            (
+                serde_json::json!({ "id": "s", "keepalive_timeout_seconds": null }),
+                crate::config::KEEPALIVE_TIMEOUT,
+            ),
+        ];
+        for (welcome_session, expected) in cases {
+            let frame = serde_json::json!({
+                "metadata": { "message_type": "session_welcome", "message_id": "w" },
+                "payload": { "session": welcome_session },
+            })
+            .to_string();
+            let bus = Arc::new(EventChannel::new(EVENT_CHANNEL_CAPACITY));
+            let mut session = session_over_creds(&bus, Arc::new(MockCreds::with_identity()));
+
+            let action = session.handle_frame(&frame, &mut None).await;
+
+            assert!(matches!(action, FrameAction::Subscribe(_)));
+            assert_eq!(session.keepalive_timeout, expected);
+        }
     }
 
     #[tokio::test]
@@ -4571,7 +4583,6 @@ mod tests {
         (handle, peer, events)
     }
 
-    const ABORT_GRACE: Duration = Duration::from_millis(150);
     const ABORTED_AFTER_THE_GRACE: &str = "did not stop within the grace period";
 
     #[test]
@@ -4715,8 +4726,9 @@ mod tests {
     }
 
     const ROTATED_ACCESS_TOKEN: &str = "access_rotated_during_shutdown";
+    const NEVER_REACHED_GRACE: Duration = Duration::from_secs(3600);
 
-    struct AbortedMidRefresh {
+    struct ShutDownMidRefresh {
         bus: Arc<RecordingBus>,
         state: watch::Receiver<ChatConnectionState>,
         manager: Arc<TwitchCredentialsManager>,
@@ -4725,8 +4737,8 @@ mod tests {
         _peer: Peer,
     }
 
-    async fn shut_down_while_refreshing_the_token() -> AbortedMidRefresh {
-        let mut token_endpoint = HeldHttpEndpoint::bind_answering(
+    async fn held_rotating_token_endpoint() -> HeldHttpEndpoint {
+        HeldHttpEndpoint::bind_answering(
             reqwest::StatusCode::OK,
             serde_json::json!({
                 "access_token": ROTATED_ACCESS_TOKEN,
@@ -4735,8 +4747,12 @@ mod tests {
             })
             .to_string(),
         )
-        .await;
-        let mut base = FakeEventSub::bind().await;
+        .await
+    }
+
+    fn near_expiry_manager(
+        token_url: &str,
+    ) -> (Arc<TwitchCredentialsManager>, Arc<StoreSignallingRepo>) {
         let near_expiry = std::time::SystemTime::now() + Duration::from_secs(60);
         let repo = Arc::new(StoreSignallingRepo {
             inner: crate::credentials_manager::tests::InMemRepo::seeded(
@@ -4745,9 +4761,16 @@ mod tests {
             stored: tokio::sync::Notify::new(),
         });
         let manager = Arc::new(TwitchCredentialsManager::new(
-            crate::sub_actions::test_support::oauth_client_at(&token_endpoint.url, "client"),
+            crate::sub_actions::test_support::oauth_client_at(token_url, "client"),
             repo.clone(),
         ));
+        (manager, repo)
+    }
+
+    async fn shut_down_while_refreshing_the_token() -> ShutDownMidRefresh {
+        let mut token_endpoint = held_rotating_token_endpoint().await;
+        let mut base = FakeEventSub::bind().await;
+        let (manager, repo) = near_expiry_manager(&token_endpoint.url);
         let bus = Arc::new(RecordingBus::default());
         let publisher: Arc<dyn EventPublisher> = bus.clone();
         let endpoints = socket_and_api(&base.url, &token_endpoint.url);
@@ -4759,21 +4782,23 @@ mod tests {
             SubscriptionTracker::default(),
             TwitchLifecycle::new(),
         );
-        let handle =
-            crate::chat::TwitchChatHandle::spawn(session, state.clone(), shutdown, ABORT_GRACE);
+        let handle = crate::chat::TwitchChatHandle::spawn(
+            session,
+            state.clone(),
+            shutdown,
+            NEVER_REACHED_GRACE,
+        );
         let peer = base.accept().await;
         peer.send(welcome_frame("sess-1"));
         token_endpoint.wait_for_a_request().await;
 
-        let asked = std::time::Instant::now();
-        handle.shutdown().await;
-        let waited = asked.elapsed();
+        let stopped = within_real_time(FAKE_WAIT, handle.shutdown()).await;
         assert!(
-            waited >= ABORT_GRACE,
-            "the session must be stuck in its token fetch so shutdown has to abort it"
+            stopped.is_ok(),
+            "the held token fetch must not keep the session from stopping on request"
         );
 
-        AbortedMidRefresh {
+        ShutDownMidRefresh {
             bus,
             state,
             manager,
@@ -4784,7 +4809,7 @@ mod tests {
     }
 
     impl RecordingBus {
-        fn disconnected_reports(&self) -> usize {
+        fn disconnect_flags(&self) -> Vec<Option<bool>> {
             let disconnected = serde_json::json!(ConnectionState::Disconnected);
             self.events
                 .lock()
@@ -4794,54 +4819,35 @@ mod tests {
                     event.kind == PlatformConnectionChanged::KIND
                         && event.payload["state"] == disconnected
                 })
-                .count()
+                .map(|event| event.payload["expected"].as_bool())
+                .collect()
         }
     }
 
     #[tokio::test]
-    async fn a_session_aborted_after_the_grace_period_ends_in_the_disconnected_state() {
-        let aborted = shut_down_while_refreshing_the_token().await;
+    async fn a_shutdown_during_the_welcome_token_fetch_stops_the_session_gracefully() {
+        let stopped = shut_down_while_refreshing_the_token().await;
 
-        assert_eq!(
-            *aborted.state.borrow(),
-            ChatConnectionState::Disconnected,
-            "a session cut off mid token fetch must not leave its last reported state behind"
-        );
+        assert_eq!(*stopped.state.borrow(), ChatConnectionState::Disconnected);
+        assert_eq!(stopped.bus.disconnect_flags(), [Some(true)]);
     }
 
     #[tokio::test]
-    async fn a_session_aborted_after_the_grace_period_reports_disconnected_exactly_once() {
-        let aborted = shut_down_while_refreshing_the_token().await;
-
-        assert_eq!(
-            aborted.bus.disconnected_reports(),
-            1,
-            "listeners on the bus must learn the session stopped, and only once"
+    async fn a_session_dropped_after_a_shutdown_request_reports_an_expected_disconnect() {
+        let bus = Arc::new(RecordingBus::default());
+        let (session, state, shutdown) = session_over(
+            bus.clone(),
+            Arc::new(MockCreds::with_identity()),
+            None,
+            SubscriptionTracker::default(),
+            crate::sub_actions::test_support::unreachable_twitch_endpoints(),
         );
-    }
+        assert!(shutdown.send(()).is_ok());
 
-    #[tokio::test]
-    async fn a_session_aborted_after_the_grace_period_flags_its_disconnect_expected() {
-        let aborted = shut_down_while_refreshing_the_token().await;
+        drop(session);
 
-        let disconnected = serde_json::json!(ConnectionState::Disconnected);
-        let flags: Vec<Option<bool>> = aborted
-            .bus
-            .events
-            .lock()
-            .unwrap()
-            .iter()
-            .filter(|event| {
-                event.kind == PlatformConnectionChanged::KIND
-                    && event.payload["state"] == disconnected
-            })
-            .map(|event| event.payload["expected"].as_bool())
-            .collect();
-        assert_eq!(
-            flags,
-            [Some(true)],
-            "the abort only happens because a shutdown was requested"
-        );
+        assert_eq!(*state.borrow(), ChatConnectionState::Disconnected);
+        assert_eq!(bus.disconnect_flags(), [Some(true)]);
     }
 
     async fn next_link_announcement(
@@ -4910,18 +4916,37 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn a_token_refresh_in_flight_when_the_session_is_aborted_still_stores_the_rotated_token()
-    {
-        let aborted = shut_down_while_refreshing_the_token().await;
+    async fn a_token_refresh_in_flight_at_shutdown_still_stores_the_rotated_token() {
+        let stopped = shut_down_while_refreshing_the_token().await;
 
-        aborted.token_endpoint.release();
-        let stored = within_real_time(FAKE_WAIT, aborted.repo.stored.notified()).await;
+        stopped.token_endpoint.release();
+        let stored = within_real_time(FAKE_WAIT, stopped.repo.stored.notified()).await;
 
         assert!(
             stored.is_ok(),
-            "Twitch already rotated the refresh token, so the abort must not drop the save"
+            "Twitch already rotated the refresh token, so the shutdown must not drop the save"
         );
-        let saved = aborted.manager.load().await.unwrap().unwrap();
+        let saved = stopped.manager.load().await.unwrap().unwrap();
+        assert_eq!(saved.access_token.expose(), ROTATED_ACCESS_TOKEN);
+    }
+
+    #[tokio::test]
+    async fn an_aborted_token_caller_still_stores_the_rotated_token() {
+        let mut token_endpoint = held_rotating_token_endpoint().await;
+        let (manager, repo) = near_expiry_manager(&token_endpoint.url);
+        let caller = tokio::spawn({
+            let manager = Arc::clone(&manager);
+            async move { manager.get_valid_access_token().await.is_ok() }
+        });
+        token_endpoint.wait_for_a_request().await;
+
+        caller.abort();
+        assert!(caller.await.is_err_and(|e| e.is_cancelled()));
+        token_endpoint.release();
+        let stored = within_real_time(FAKE_WAIT, repo.stored.notified()).await;
+
+        assert!(stored.is_ok(), "the rotated pair must survive its caller");
+        let saved = manager.load().await.unwrap().unwrap();
         assert_eq!(saved.access_token.expose(), ROTATED_ACCESS_TOKEN);
     }
 
@@ -4956,7 +4981,7 @@ mod tests {
             handle.shutdown().await;
 
             assert_eq!(
-                bus.disconnected_reports(),
+                bus.disconnect_flags().len(),
                 1,
                 "a session that stops on request must report Disconnected once, not once per path"
             );

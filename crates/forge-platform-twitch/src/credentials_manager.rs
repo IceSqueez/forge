@@ -20,7 +20,7 @@ pub struct TwitchCredentialsManager {
     repo: Arc<dyn CredentialsRepo>,
     credential_id: &'static str,
     oauth: TwitchOAuthClient,
-    refresh_guard: tokio::sync::Mutex<()>,
+    refresh_guard: Arc<tokio::sync::Mutex<()>>,
     expiry_tx: tokio::sync::watch::Sender<Option<SystemTime>>,
 }
 
@@ -42,7 +42,7 @@ impl TwitchCredentialsManager {
             repo,
             credential_id,
             oauth,
-            refresh_guard: tokio::sync::Mutex::new(()),
+            refresh_guard: Arc::new(tokio::sync::Mutex::new(())),
             expiry_tx: tokio::sync::watch::channel(None).0,
         }
     }
@@ -69,7 +69,7 @@ impl TwitchCredentialsManager {
             buffer_secs = REFRESH_BUFFER_SECS,
             "twitch access token inside the refresh buffer; renewing"
         );
-        let _guard = self.refresh_guard.lock().await;
+        let guard = self.refresh_guard.clone().lock_owned().await;
         let cred = self
             .load()
             .await?
@@ -82,7 +82,7 @@ impl TwitchCredentialsManager {
             .refresh_token
             .clone()
             .ok_or_else(|| reauth_required(PLATFORM_ID))?;
-        let renewed = self.perform_refresh(&refresh_token, cred).await?;
+        let renewed = self.perform_refresh(refresh_token, cred, guard).await?;
         Ok(renewed.access_token)
     }
 
@@ -90,7 +90,7 @@ impl TwitchCredentialsManager {
         &self,
         failed_access_token: &OAuthToken,
     ) -> Result<StoredCredential, PlatformError> {
-        let _guard = self.refresh_guard.lock().await;
+        let guard = self.refresh_guard.clone().lock_owned().await;
         let existing = self
             .load()
             .await?
@@ -103,7 +103,7 @@ impl TwitchCredentialsManager {
             .refresh_token
             .clone()
             .ok_or_else(|| reauth_required(PLATFORM_ID))?;
-        self.perform_refresh(&refresh_token, existing).await
+        self.perform_refresh(refresh_token, existing, guard).await
     }
 
     pub async fn clear(&self) -> Result<(), PlatformError> {
@@ -139,55 +139,83 @@ impl TwitchCredentialsManager {
 
     async fn perform_refresh(
         &self,
-        refresh_token: &OAuthToken,
+        refresh_token: OAuthToken,
         existing: StoredCredential,
+        guard: tokio::sync::OwnedMutexGuard<()>,
     ) -> Result<StoredCredential, PlatformError> {
-        let parsed = match self.oauth.refresh(refresh_token).await {
-            Ok(parsed) => parsed,
-            Err(e) => {
-                match &e {
-                    PlatformError::ReauthRequired { .. } => {
-                        warn!("twitch token refresh rejected; re-authorization required");
-                    }
-                    PlatformError::Http { status, .. } => {
-                        warn!(status = *status, "twitch token refresh failed");
-                    }
-                    PlatformError::Network { reason } => {
-                        warn!(error = %reason, "twitch token refresh failed");
-                    }
-                    _ => warn!("twitch token refresh failed"),
-                }
-                return Err(e);
-            }
-        };
-        info!(
-            expires_in_secs = ?parsed.expires_in,
-            rotated_refresh_token = parsed.refresh_token.is_some(),
-            "twitch access token refreshed"
-        );
-
-        let renewed = StoredCredential {
-            access_token: parsed.access_token,
-            refresh_token: Some(
-                parsed
-                    .refresh_token
-                    .unwrap_or_else(|| refresh_token.clone()),
-            ),
-            user_id: existing.user_id,
-            login: existing.login,
-            expires_at: parsed
-                .expires_in
-                .filter(|secs| *secs > 0)
-                .map(|secs| SystemTime::now() + Duration::from_secs(secs)),
-        };
-        store_credential_at(self.repo.as_ref(), self.credential_id, &renewed)
-            .await
-            .map_err(|e| {
-                credential_storage_error(PLATFORM_ID, e.stored_secret_unrecoverable(), e)
-            })?;
-        self.expiry_tx.send_replace(renewed.expires_at);
-        Ok(renewed)
+        let oauth = self.oauth.clone();
+        let repo = self.repo.clone();
+        let credential_id = self.credential_id;
+        let expiry_tx = self.expiry_tx.clone();
+        tokio::spawn(async move {
+            let _guard = guard;
+            let renewed = rotate_credential(
+                &oauth,
+                repo.as_ref(),
+                credential_id,
+                &refresh_token,
+                existing,
+            )
+            .await?;
+            expiry_tx.send_replace(renewed.expires_at);
+            Ok(renewed)
+        })
+        .await
+        .map_err(|e| PlatformError::Network {
+            reason: format!("token refresh task ended: {e}"),
+        })?
     }
+}
+
+async fn rotate_credential(
+    oauth: &TwitchOAuthClient,
+    repo: &dyn CredentialsRepo,
+    credential_id: &'static str,
+    refresh_token: &OAuthToken,
+    existing: StoredCredential,
+) -> Result<StoredCredential, PlatformError> {
+    let parsed = match oauth.refresh(refresh_token).await {
+        Ok(parsed) => parsed,
+        Err(e) => {
+            match &e {
+                PlatformError::ReauthRequired { .. } => {
+                    warn!("twitch token refresh rejected; re-authorization required");
+                }
+                PlatformError::Http { status, .. } => {
+                    warn!(status = *status, "twitch token refresh failed");
+                }
+                PlatformError::Network { reason } => {
+                    warn!(error = %reason, "twitch token refresh failed");
+                }
+                _ => warn!("twitch token refresh failed"),
+            }
+            return Err(e);
+        }
+    };
+    info!(
+        expires_in_secs = ?parsed.expires_in,
+        rotated_refresh_token = parsed.refresh_token.is_some(),
+        "twitch access token refreshed"
+    );
+
+    let renewed = StoredCredential {
+        access_token: parsed.access_token,
+        refresh_token: Some(
+            parsed
+                .refresh_token
+                .unwrap_or_else(|| refresh_token.clone()),
+        ),
+        user_id: existing.user_id,
+        login: existing.login,
+        expires_at: parsed
+            .expires_in
+            .filter(|secs| *secs > 0)
+            .and_then(|secs| SystemTime::now().checked_add(Duration::from_secs(secs))),
+    };
+    store_credential_at(repo, credential_id, &renewed)
+        .await
+        .map_err(|e| credential_storage_error(PLATFORM_ID, e.stored_secret_unrecoverable(), e))?;
+    Ok(renewed)
 }
 
 fn near_expiry(cred: &StoredCredential) -> bool {
@@ -818,6 +846,29 @@ pub(crate) mod tests {
 
         assert!(expiry_rx.has_changed().unwrap());
         assert_eq!(*expiry_rx.borrow_and_update(), None);
+    }
+
+    #[tokio::test]
+    async fn a_lifetime_past_the_end_of_time_refreshes_with_an_unknown_expiry() {
+        let server = MockServer::start().await;
+        mount_token_endpoint(
+            &server,
+            ResponseTemplate::new(reqwest::StatusCode::OK.as_u16()).set_body_json(json!({
+                "access_token": "new_access",
+                "expires_in": u64::MAX,
+            })),
+        )
+        .await;
+        let cred = stub_cred(SystemTime::now() + std::time::Duration::from_secs(10));
+        let mgr = manager_with_server(InMemRepo::seeded(&cred), &server);
+
+        let renewed = mgr
+            .refresh(&OAuthToken::new("existing_access"))
+            .await
+            .unwrap();
+
+        assert_eq!(renewed.access_token.expose(), "new_access");
+        assert_eq!(renewed.expires_at, None);
     }
 
     #[tokio::test]

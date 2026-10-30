@@ -31,6 +31,7 @@ const UNRESOLVED_REFERENCE: MessageCode =
 const INVALID_HEX_COLOR: MessageCode = MessageCode::from_static(PLATFORM_ID, "invalid_hex_color");
 const TARGET_EMPTY: MessageCode = MessageCode::from_static(PLATFORM_ID, "target_empty");
 const CATEGORY_EMPTY: MessageCode = MessageCode::from_static(PLATFORM_ID, "category_empty");
+const CATEGORY_NOT_FOUND: MessageCode = MessageCode::from_static(PLATFORM_ID, "category_not_found");
 const EMPTY_RESPONSE: MessageCode = MessageCode::from_static(PLATFORM_ID, "empty_response");
 const RESPONSE_FIELD_MISSING: MessageCode =
     MessageCode::from_static(PLATFORM_ID, "response_field_missing");
@@ -117,6 +118,7 @@ pub const TWITCH_MESSAGES: MessageCatalog = MessageCatalog {
         INVALID_HEX_COLOR,
         TARGET_EMPTY,
         CATEGORY_EMPTY,
+        CATEGORY_NOT_FOUND,
         EMPTY_RESPONSE,
         RESPONSE_FIELD_MISSING,
         MESSAGE_EMPTY,
@@ -159,6 +161,7 @@ const STATUS_ARG: &str = "status";
 const FIELD_ARG: &str = "field";
 const LIMIT_ARG: &str = "limit";
 const CODE_ARG: &str = "code";
+const CATEGORY_ARG: &str = "category";
 const COUNT_ARG: &str = "count";
 const SECONDS_ARG: &str = "seconds";
 
@@ -204,6 +207,10 @@ pub(crate) fn reauth_required() -> MessageRef {
 
 pub(crate) fn credentials_unavailable(detail: &str) -> MessageRef {
     detailed(CREDENTIALS_UNAVAILABLE, detail)
+}
+
+pub(crate) fn category_not_found(name: &str) -> MessageRef {
+    MessageRef::new(CATEGORY_NOT_FOUND).with_arg(CATEGORY_ARG, VerbatimText::new(name))
 }
 
 pub(crate) fn request_refused(status: u16) -> MessageRef {
@@ -388,6 +395,7 @@ mod tests {
             invalid_hex_color(),
             target_empty("l", "i"),
             category_empty(),
+            category_not_found("c"),
             empty_response(),
             response_field_missing("f"),
             message_empty(),

@@ -11,11 +11,11 @@ use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry};
 use crate::account::identity::SelfIdentity;
 use crate::helix::{HelixError, HelixMethod, HelixRequest, HelixTransport};
 use crate::step_failure;
-use crate::vocabulary::{config_keys, sub_action_ids};
+use crate::vocabulary::{config_keys, messages, sub_action_ids};
 
 const KIND_ID: &str = sub_action_ids::AUTOMOD_UPDATE_SETTINGS;
 const PATH: &str = "/helix/moderation/automod/settings";
-const FALLBACK_LEVEL: u8 = 0;
+const MAX_LEVEL: u8 = 4;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum AutomodLevel {
@@ -157,9 +157,9 @@ impl UpdateAutomodSettingsRunner {
             };
             let mut map = serde_json::Map::new();
             for (key, override_level) in &update.categories {
-                let level = override_level
-                    .or_else(|| current_level(&current, key))
-                    .unwrap_or(FALLBACK_LEVEL);
+                let Some(level) = override_level.or_else(|| current_level(&current, key)) else {
+                    return SubActionOutcome::Failed(messages::response_field_missing(key).into());
+                };
                 map.insert((*key).to_owned(), level.into());
             }
             serde_json::Value::Object(map)
@@ -184,7 +184,8 @@ fn current_level(current: &serde_json::Value, key: &str) -> Option<u8> {
         .as_array()
         .and_then(|arr| arr.first())
         .and_then(|s| s[key].as_u64())
-        .map(|n| n as u8)
+        .and_then(|n| u8::try_from(n).ok())
+        .filter(|n| *n <= MAX_LEVEL)
 }
 
 #[async_trait]
@@ -238,7 +239,8 @@ mod tests {
     use super::*;
     use crate::helix::HelixError;
     use crate::sub_actions::test_support::{
-        MockCreds, MockTransport, SELF_USER_ID, assert_request_refused, make_ctx,
+        MockCreds, MockTransport, SELF_USER_ID, assert_failed_with_code, assert_request_refused,
+        make_ctx,
     };
     use forge_types::Variant;
 
@@ -411,6 +413,38 @@ mod tests {
             body.get("overall_level").is_none(),
             "individual-mode PUT must omit overall_level"
         );
+    }
+
+    #[tokio::test]
+    async fn an_unusable_current_level_fails_without_issuing_put() {
+        for bullying in [
+            None,
+            Some(serde_json::Value::Null),
+            Some(serde_json::json!(5)),
+            Some(serde_json::json!(260)),
+            Some(serde_json::json!(-1)),
+            Some(serde_json::json!("2")),
+        ] {
+            let mut current = serde_json::Map::new();
+            for key in CATEGORY_KEYS {
+                current.insert((*key).to_owned(), serde_json::json!(0));
+            }
+            current.remove("bullying");
+            if let Some(level) = &bullying {
+                current.insert("bullying".to_owned(), level.clone());
+            }
+            let transport = Arc::new(MockTransport::returning_sequence(vec![Ok(
+                serde_json::json!({ "data": [current] }),
+            )]));
+            let runner = runner(Arc::clone(&transport));
+            let config = config_with(&[("aggression", "3")]);
+            let stack = ArgStack::new();
+
+            let (telemetry, _) = runner.execute(&config, &make_ctx(&stack)).await;
+
+            assert_failed_with_code(&telemetry.outcome, "twitch.response_field_missing");
+            assert_eq!(transport.call_count(), 1, "{bullying:?}");
+        }
     }
 
     #[tokio::test]

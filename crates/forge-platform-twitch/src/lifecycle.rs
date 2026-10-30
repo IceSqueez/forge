@@ -54,6 +54,12 @@ struct ChannelEntities {
     raid_until: Option<Instant>,
 }
 
+impl ChannelEntities {
+    fn liveness(&self) -> (PollPhase, PredictionPhase, bool) {
+        (self.poll, self.prediction, self.raid_until.is_some())
+    }
+}
+
 #[derive(Clone, Default)]
 pub struct TwitchLifecycle {
     entities: Arc<RwLock<ChannelEntities>>,
@@ -92,7 +98,23 @@ impl TwitchLifecycle {
             topics::CHANNEL_SHIELD_MODE_END => return self.set_shield(ShieldPhase::Inactive),
             _ => {}
         }
-        let mut entities = self.entities.write().unwrap_or_else(|p| p.into_inner());
+        let changed = {
+            let mut entities = self.entities.write().unwrap_or_else(|p| p.into_inner());
+            let before = entities.liveness();
+            Self::apply_phase_change(&mut entities, subscription_type, event, self_broadcaster_id);
+            before != entities.liveness()
+        };
+        if changed {
+            self.quick_actions.bump();
+        }
+    }
+
+    fn apply_phase_change(
+        entities: &mut ChannelEntities,
+        subscription_type: &str,
+        event: &serde_json::Value,
+        self_broadcaster_id: &str,
+    ) {
         match subscription_type {
             topics::CHANNEL_POLL_BEGIN | topics::CHANNEL_POLL_PROGRESS => {
                 entities.poll = PollPhase::Active
@@ -146,13 +168,26 @@ impl TwitchLifecycle {
     }
 
     pub(crate) fn raid_started(&self) {
-        let mut entities = self.entities.write().unwrap_or_else(|p| p.into_inner());
-        entities.raid_until = Some(Instant::now() + RAID_COUNTDOWN);
+        {
+            let mut entities = self.entities.write().unwrap_or_else(|p| p.into_inner());
+            entities.raid_until = Some(Instant::now() + RAID_COUNTDOWN);
+        }
+        self.quick_actions.bump();
+        if let Ok(runtime) = tokio::runtime::Handle::try_current() {
+            let quick_actions = Arc::clone(&self.quick_actions);
+            runtime.spawn(async move {
+                tokio::time::sleep(RAID_COUNTDOWN).await;
+                quick_actions.bump();
+            });
+        }
     }
 
     pub(crate) fn raid_canceled(&self) {
-        let mut entities = self.entities.write().unwrap_or_else(|p| p.into_inner());
-        entities.raid_until = None;
+        {
+            let mut entities = self.entities.write().unwrap_or_else(|p| p.into_inner());
+            entities.raid_until = None;
+        }
+        self.quick_actions.bump();
     }
 
     pub(crate) fn forget_phases(&self) {
@@ -182,6 +217,8 @@ impl TwitchLifecycle {
             };
             let mut entities = self.entities.write().unwrap_or_else(|p| p.into_inner());
             entities.poll = phase;
+            drop(entities);
+            self.quick_actions.bump();
         }
 
         let predictions = HelixRequest::new(HelixMethod::Get, PREDICTIONS_PATH)
@@ -198,6 +235,8 @@ impl TwitchLifecycle {
             };
             let mut entities = self.entities.write().unwrap_or_else(|p| p.into_inner());
             entities.prediction = phase;
+            drop(entities);
+            self.quick_actions.bump();
         }
     }
 
@@ -888,5 +927,86 @@ mod tests {
         lifecycle.seed_shield_from_helix(&transport, SELF_ID).await;
 
         assert!(revision_moved(&mut revisions));
+    }
+
+    #[test]
+    fn a_liveness_change_bumps_the_quick_action_revision_and_a_repeat_does_not() {
+        let cases = [
+            ("channel.poll.begin", true),
+            ("channel.poll.progress", false),
+            ("channel.poll.end", true),
+            ("channel.prediction.begin", true),
+            ("channel.prediction.progress", false),
+            ("channel.prediction.lock", true),
+            ("channel.prediction.progress", false),
+            ("channel.prediction.end", true),
+            ("channel.chat.message", false),
+        ];
+        let lifecycle = TwitchLifecycle::new();
+        let mut revisions = lifecycle.quick_action_revisions();
+
+        for (topic, bumps) in cases {
+            lifecycle.apply_notification(topic, &Value::Null, SELF_ID);
+            assert_eq!(revision_moved(&mut revisions), bumps, "{topic}");
+        }
+    }
+
+    #[test]
+    fn every_raid_transition_bumps_the_quick_action_revision() {
+        let lifecycle = TwitchLifecycle::new();
+        let mut revisions = lifecycle.quick_action_revisions();
+        let ours = json!({ "from_broadcaster_user_id": SELF_ID });
+
+        lifecycle.raid_started();
+        let started = revision_moved(&mut revisions);
+        lifecycle.apply_notification("channel.raid", &ours, SELF_ID);
+        let landed = revision_moved(&mut revisions);
+        lifecycle.raid_started();
+        assert!(revision_moved(&mut revisions));
+        lifecycle.raid_canceled();
+        let canceled = revision_moved(&mut revisions);
+
+        assert_eq!((started, landed, canceled), (true, true, true));
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn the_end_of_the_raid_countdown_bumps_the_quick_action_revision() {
+        let lifecycle = TwitchLifecycle::new();
+        let mut revisions = lifecycle.quick_action_revisions();
+        let started = tokio::time::Instant::now();
+        lifecycle.raid_started();
+        assert!(revision_moved(&mut revisions));
+
+        let wait = revisions.changed().await;
+
+        assert!(matches!(wait, forge_platform_core::RevisionWait::Changed));
+        assert_eq!(started.elapsed(), RAID_COUNTDOWN);
+    }
+
+    #[tokio::test]
+    async fn each_seeded_phase_bumps_the_quick_action_revision() {
+        let cases = [
+            (
+                vec![Ok(rows(&["ACTIVE"])), Err(HelixError::RateLimited)],
+                true,
+            ),
+            (
+                vec![Err(HelixError::RateLimited), Ok(rows(&["LOCKED"]))],
+                true,
+            ),
+            (
+                vec![Err(HelixError::RateLimited), Err(HelixError::RateLimited)],
+                false,
+            ),
+        ];
+        for (responses, bumps) in cases {
+            let transport = MockTransport::returning_sequence(responses);
+            let lifecycle = TwitchLifecycle::new();
+            let mut revisions = lifecycle.quick_action_revisions();
+
+            lifecycle.seed_from_helix(&transport, SELF_ID).await;
+
+            assert_eq!(revision_moved(&mut revisions), bumps);
+        }
     }
 }

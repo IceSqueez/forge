@@ -112,7 +112,10 @@ impl TriggerKindDescriptor for HypeTrainEndedDescriptor {
                         name: "hype.level".to_owned(),
                         kind: VariantKind::Int,
                         label: "Hype Train level".to_owned(),
-                        synthesis: Some(SynthesisHint::BoundedInt { min: 1, max: 20 }),
+                        synthesis: Some(SynthesisHint::BoundedInt {
+                            min: 1,
+                            max: super::HYPE_TRAIN_LEVEL_MAX,
+                        }),
                     },
                     DeclaredVariable {
                         name: "hype.total".to_owned(),

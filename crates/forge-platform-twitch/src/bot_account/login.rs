@@ -72,18 +72,25 @@ impl TwitchBotAccount {
         &self,
         bundle: TwitchAuthBundle,
     ) -> Result<BotStatus, BotLoginError> {
-        let broadcaster = load(self.repo.as_ref())
-            .await
-            .map_err(|e| BotLoginError::Storage(e.to_string()))?;
+        let broadcaster = match load(self.repo.as_ref()).await {
+            Ok(broadcaster) => broadcaster,
+            Err(e) => {
+                self.revoke_pair(&bundle.access_token, bundle.refresh_token.as_ref())
+                    .await;
+                return Err(BotLoginError::Storage(e.to_string()));
+            }
+        };
         if broadcaster.is_some_and(|stored| stored.user_id == bundle.user_info.id) {
             self.revoke_pair(&bundle.access_token, bundle.refresh_token.as_ref())
                 .await;
             return Err(BotLoginError::SameAsBroadcaster);
         }
 
-        store_at(self.repo.as_ref(), TWITCH_BOT_CREDENTIAL_ID, &bundle)
-            .await
-            .map_err(|e| BotLoginError::Storage(e.to_string()))?;
+        if let Err(e) = store_at(self.repo.as_ref(), TWITCH_BOT_CREDENTIAL_ID, &bundle).await {
+            self.revoke_pair(&bundle.access_token, bundle.refresh_token.as_ref())
+                .await;
+            return Err(BotLoginError::Storage(e.to_string()));
+        }
         let status = BotStatus::Connected {
             login: bundle.user_info.login,
         };
@@ -135,7 +142,7 @@ mod tests {
 
     use super::*;
     use crate::bot_account::test_support::{
-        BOT_ACCESS, BOT_LOGIN, BOT_REFRESH, BOT_USER_ID, BotHarness,
+        BOT_ACCESS, BOT_LOGIN, BOT_REFRESH, BOT_USER_ID, BotHarness, KeyedRepo,
     };
     use crate::credentials::TWITCH_CREDENTIAL_ID;
     use crate::sub_actions::test_support::{SELF_USER_ID, TOKEN_SENTINEL};
@@ -303,6 +310,49 @@ mod tests {
                 .iter()
                 .any(|body| body.contains("GRANT_REFRESH_SENTINEL_p3"))
         );
+    }
+
+    type FailStage = fn(&KeyedRepo, fn() -> forge_storage::StorageError);
+
+    fn offline_store() -> forge_storage::StorageError {
+        forge_storage::StorageError::Connection {
+            reason: "offline".to_owned(),
+        }
+    }
+
+    #[tokio::test]
+    async fn a_storage_failure_while_adopting_revokes_the_grant_and_stores_nothing() {
+        let stages: [FailStage; 2] = [KeyedRepo::fail_loads_with, KeyedRepo::fail_stores_with];
+        for fail_stage in stages {
+            let harness = BotHarness::without_bot_row().await;
+            harness
+                .mount("POST", "/revoke", ResponseTemplate::new(200))
+                .await;
+            fail_stage(&harness.repo, offline_store);
+
+            let result = harness
+                .bot
+                .adopt_grant(grant_for("9001", "other_account"))
+                .await;
+
+            assert!(
+                matches!(result, Err(BotLoginError::Storage(_))),
+                "{result:?}"
+            );
+            assert!(harness.repo.raw(TWITCH_BOT_CREDENTIAL_ID).is_none());
+            let revoked = revoked_tokens(&harness).await;
+            assert_eq!(revoked.len(), 2, "{revoked:?}");
+            assert!(
+                revoked
+                    .iter()
+                    .any(|body| body.contains("GRANT_ACCESS_SENTINEL_p3"))
+            );
+            assert!(
+                revoked
+                    .iter()
+                    .any(|body| body.contains("GRANT_REFRESH_SENTINEL_p3"))
+            );
+        }
     }
 
     #[tokio::test]

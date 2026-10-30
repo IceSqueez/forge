@@ -9,6 +9,8 @@ pub(crate) const MAX_MESSAGE_LEN: usize = 500;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SentMessageId(pub String);
 
+const EMPTY_SEND_RESPONSE: &str = "empty send response";
+
 #[derive(Debug, Error)]
 pub enum ChatSendError {
     #[error("rate limited")]
@@ -38,9 +40,8 @@ impl From<HelixError> for ChatSendError {
             HelixError::Http { status, body } => {
                 Self::Http(format!("HTTP {status}: {}", refusal_text(&body)))
             }
-            HelixError::Credentials(msg)
-            | HelixError::Transport(msg)
-            | HelixError::UndecodableResponse(msg) => Self::Http(msg),
+            HelixError::Credentials(_) => Self::NotConnected,
+            HelixError::Transport(msg) | HelixError::UndecodableResponse(msg) => Self::Http(msg),
         }
     }
 }
@@ -143,11 +144,11 @@ async fn post_chat_message(
     let parsed: SendChatResponse =
         serde_json::from_value(response).map_err(|e| ChatSendError::Http(e.to_string()))?;
 
-    let sent = parsed.data.into_iter().next().unwrap_or(SentData {
-        message_id: String::new(),
-        is_sent: true,
-        drop_reason: None,
-    });
+    let sent = parsed
+        .data
+        .into_iter()
+        .next()
+        .ok_or_else(|| ChatSendError::Http(EMPTY_SEND_RESPONSE.to_owned()))?;
 
     if !sent.is_sent {
         let drop_reason = sent.drop_reason.unwrap_or(DropReason {
@@ -337,6 +338,10 @@ mod tests {
                 },
                 |e| matches!(e, ChatSendError::Http(msg) if msg.contains("400")),
             ),
+            (
+                HelixError::Credentials("token store offline".to_owned()),
+                |e| matches!(e, ChatSendError::NotConnected),
+            ),
         ];
 
         for (input, is_expected) in cases {
@@ -345,6 +350,15 @@ mod tests {
             let err = send_chat(&transport, "100", "100", "hi").await.unwrap_err();
             assert!(is_expected(&err), "{label} mapped to unexpected {err:?}");
         }
+    }
+
+    #[tokio::test]
+    async fn an_empty_data_array_is_a_failed_send_not_a_delivered_one() {
+        let transport = MockTransport::returning(Ok(serde_json::json!({"data": []})));
+
+        let err = send_chat(&transport, "100", "100", "hi").await.unwrap_err();
+
+        assert!(matches!(err, ChatSendError::Http(msg) if msg == EMPTY_SEND_RESPONSE));
     }
 
     #[tokio::test]

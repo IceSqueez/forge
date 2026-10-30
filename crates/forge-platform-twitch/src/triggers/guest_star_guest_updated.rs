@@ -12,6 +12,8 @@ use forge_types::{
 use super::payload_read::{self, twitch_actor};
 use crate::vocabulary::fields::guest_star as guest_star_fields;
 
+const ANY_STATE: &str = "any";
+
 pub(crate) struct GuestStarGuestUpdatedDescriptor;
 
 impl TriggerKindDescriptor for GuestStarGuestUpdatedDescriptor {
@@ -44,20 +46,33 @@ impl TriggerKindDescriptor for GuestStarGuestUpdatedDescriptor {
     }
 
     fn default_config(&self) -> TriggerConfig {
-        TriggerConfig::new()
+        let mut cfg = TriggerConfig::new();
+        cfg.insert(
+            "state_filter".to_owned(),
+            Variant::String(ANY_STATE.to_owned()),
+        );
+        cfg
     }
 
     fn config_fields(&self) -> Vec<FormField> {
-        vec![FormField::Text {
+        vec![FormField::Select {
             key: "state_filter",
-            label: "Guest state (empty = any)",
-            placeholder: "e.g. live",
+            label: "Guest state",
+            options: &[
+                ANY_STATE,
+                "invited",
+                "accepted",
+                "ready",
+                "backstage",
+                "live",
+                "removed",
+            ],
         }]
     }
 
     fn condition_display(&self, config: &TriggerConfig) -> UserText {
         match config.get("state_filter").and_then(Variant::as_str) {
-            None | Some("") => messages::CONDITION_ANY_STATE.into(),
+            None | Some("") | Some(ANY_STATE) => messages::CONDITION_ANY_STATE.into(),
             Some(state) => messages::condition_state(state).into(),
         }
     }
@@ -81,7 +96,7 @@ impl TriggerKindDescriptor for GuestStarGuestUpdatedDescriptor {
             })
             .unwrap_or("");
 
-        if filter.is_empty() {
+        if filter.is_empty() || filter == ANY_STATE {
             return true;
         }
 
@@ -91,7 +106,7 @@ impl TriggerKindDescriptor for GuestStarGuestUpdatedDescriptor {
             .and_then(|v| v.as_str())
             .unwrap_or("");
 
-        event_state == filter
+        event_state.eq_ignore_ascii_case(filter.trim())
     }
 
     fn variables(&self) -> Option<TriggerVariables> {
@@ -250,9 +265,17 @@ mod tests {
     }
 
     #[test]
-    fn state_filter_fires_only_on_exact_state_match_empty_meaning_any() {
+    fn state_filter_ignores_case_and_outer_whitespace_with_empty_and_any_meaning_any() {
         let event = update_event("live");
-        for (filter, expected) in [("", true), ("live", true), ("removed", false)] {
+        for (filter, expected) in [
+            ("", true),
+            ("any", true),
+            ("live", true),
+            ("LIVE", true),
+            (" live\t", true),
+            ("removed", false),
+            ("liv", false),
+        ] {
             let cfg = config_with_filter(filter);
             assert_eq!(
                 GuestStarGuestUpdatedDescriptor.matches_trigger(&cfg, &event),

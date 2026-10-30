@@ -377,7 +377,11 @@ pub(crate) mod test_support {
     }
 
     #[derive(Default)]
-    pub(crate) struct KeyedRepo(Mutex<HashMap<String, String>>);
+    pub(crate) struct KeyedRepo(
+        Mutex<HashMap<String, String>>,
+        Mutex<Option<fn() -> StorageError>>,
+        Mutex<Option<fn() -> StorageError>>,
+    );
 
     impl KeyedRepo {
         pub(crate) fn raw(&self, id: &str) -> Option<String> {
@@ -387,16 +391,30 @@ pub(crate) mod test_support {
         pub(crate) fn put(&self, id: &str, json: String) {
             self.0.lock().unwrap().insert(id.to_owned(), json);
         }
+
+        pub(crate) fn fail_loads_with(&self, error: fn() -> StorageError) {
+            *self.1.lock().unwrap() = Some(error);
+        }
+
+        pub(crate) fn fail_stores_with(&self, error: fn() -> StorageError) {
+            *self.2.lock().unwrap() = Some(error);
+        }
     }
 
     #[async_trait]
     impl CredentialsRepo for KeyedRepo {
         async fn store(&self, id: &CredentialId, plaintext: &str) -> Result<(), StorageError> {
+            if let Some(error) = *self.2.lock().unwrap() {
+                return Err(error());
+            }
             self.put(id.as_str(), plaintext.to_owned());
             Ok(())
         }
 
         async fn load(&self, id: &CredentialId) -> Result<Option<String>, StorageError> {
+            if let Some(error) = *self.1.lock().unwrap() {
+                return Err(error());
+            }
             Ok(self.raw(id.as_str()))
         }
 

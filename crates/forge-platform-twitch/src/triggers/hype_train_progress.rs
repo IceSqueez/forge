@@ -52,9 +52,9 @@ impl TriggerKindDescriptor for HypeTrainProgressDescriptor {
     fn config_fields(&self) -> Vec<FormField> {
         vec![FormField::Integer {
             key: "min_level",
-            label: "Minimum level (1-5)",
+            label: "Minimum level",
             min: 1,
-            max: 5,
+            max: super::HYPE_TRAIN_LEVEL_MAX,
         }]
     }
 
@@ -145,7 +145,10 @@ impl TriggerKindDescriptor for HypeTrainProgressDescriptor {
                         name: "hype.level".to_owned(),
                         kind: VariantKind::Int,
                         label: "Hype Train level".to_owned(),
-                        synthesis: Some(SynthesisHint::BoundedInt { min: 1, max: 20 }),
+                        synthesis: Some(SynthesisHint::BoundedInt {
+                            min: 1,
+                            max: super::HYPE_TRAIN_LEVEL_MAX,
+                        }),
                     },
                     DeclaredVariable {
                         name: "hype.goal".to_owned(),

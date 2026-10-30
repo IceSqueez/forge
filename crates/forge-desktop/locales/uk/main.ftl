@@ -3737,13 +3737,13 @@ field_label_twitch__color = Колір
 field_label_twitch__from_user = Від кого (логін)
 field_label_twitch__match_is_regex = Регулярний вираз
 field_label_twitch__match_text = Текст для збігу
-field_label_twitch__max_bits = Макс. бітсів (-1 = без меж)
+field_label_twitch__max_bits = Макс. бітсів (0 = без меж)
 field_label_twitch__min_amount_cents = Мін. донат (центи)
 field_label_twitch__min_bits = Мін. бітсів
-field_label_twitch__min_level = Мін. рівень (1-5)
+field_label_twitch__min_level = Мін. рівень
 field_label_twitch__reward_title = Назва нагороди (якщо нагороду не вибрано)
 field_label_twitch__sender = Від імені
-field_label_twitch__state_filter = Стан гостя (порожнє = усі)
+field_label_twitch__state_filter = Стан гостя
 field_label_twitch_automod_message_updated__status_filter = Статус рішення
 field_label_twitch_channel_points_redemption__reward_id = Нагорода (порожнє = усі)
 field_label_twitch_channel_points_redemption_updated__status_filter = Статус отримання нагороди
@@ -3975,7 +3975,13 @@ field_placeholder_core_string_replace__source = Привіт, світе
 field_placeholder_core_string_substring__source = Привіт, світе
 field_placeholder_core_string_titlecase__source = привіт, світе
 field_placeholder_core_string_uppercase__source = Привіт, світе
-field_placeholder_twitch_guest_star_guest_updated__state_filter = напр. live
+opt_twitch_guest_star_guest_updated__state_filter__any = Будь-який стан
+opt_twitch_guest_star_guest_updated__state_filter__invited = Запрошено
+opt_twitch_guest_star_guest_updated__state_filter__accepted = Прийнято
+opt_twitch_guest_star_guest_updated__state_filter__ready = Готово
+opt_twitch_guest_star_guest_updated__state_filter__backstage = За лаштунками
+opt_twitch_guest_star_guest_updated__state_filter__live = В ефірі
+opt_twitch_guest_star_guest_updated__state_filter__removed = Вилучено
 field_placeholder_twitch_chat_whisper__from_user = будь-хто
 field_placeholder_twitch_chat_whisper__match_text = залиште порожнім, щоб збігалося все
 field_placeholder_twitch_poll_start__title = У що пограємо далі?

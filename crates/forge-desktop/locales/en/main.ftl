@@ -3649,13 +3649,13 @@ field_label_twitch__color = Color
 field_label_twitch__from_user = From user (login)
 field_label_twitch__match_is_regex = Use regex
 field_label_twitch__match_text = Match text
-field_label_twitch__max_bits = Max bits (-1 = no limit)
+field_label_twitch__max_bits = Max bits (0 = no limit)
 field_label_twitch__min_amount_cents = Min donation (cents)
 field_label_twitch__min_bits = Min bits
-field_label_twitch__min_level = Min level (1-5)
+field_label_twitch__min_level = Min level
 field_label_twitch__reward_title = Reward title (if no reward chosen)
 field_label_twitch__sender = Send as
-field_label_twitch__state_filter = Guest state (empty = any)
+field_label_twitch__state_filter = Guest state
 field_label_twitch_automod_message_updated__status_filter = Decision status
 field_label_twitch_channel_points_redemption__reward_id = Reward (empty = any)
 field_label_twitch_channel_points_redemption_updated__status_filter = Redemption status
@@ -3887,7 +3887,13 @@ field_placeholder_core_string_replace__source = Hello World
 field_placeholder_core_string_substring__source = Hello World
 field_placeholder_core_string_titlecase__source = hello world
 field_placeholder_core_string_uppercase__source = Hello World
-field_placeholder_twitch_guest_star_guest_updated__state_filter = e.g. live
+opt_twitch_guest_star_guest_updated__state_filter__any = Any state
+opt_twitch_guest_star_guest_updated__state_filter__invited = Invited
+opt_twitch_guest_star_guest_updated__state_filter__accepted = Accepted
+opt_twitch_guest_star_guest_updated__state_filter__ready = Ready
+opt_twitch_guest_star_guest_updated__state_filter__backstage = Backstage
+opt_twitch_guest_star_guest_updated__state_filter__live = Live
+opt_twitch_guest_star_guest_updated__state_filter__removed = Removed
 field_placeholder_twitch_chat_whisper__from_user = any
 field_placeholder_twitch_chat_whisper__match_text = leave empty to match all
 field_placeholder_twitch_poll_start__title = What should we play next?

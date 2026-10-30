@@ -212,12 +212,12 @@ mod tests {
         ),
         (
             "twitch",
-            "Maximum bits (-1 = unlimited)",
-            "Max bits (-1 = no limit)",
+            "Maximum bits (0 = no maximum)",
+            "Max bits (0 = no limit)",
         ),
         ("twitch", "Minimum bits", "Min bits"),
         ("twitch", "Minimum donation (cents)", "Min donation (cents)"),
-        ("twitch", "Minimum level (1-5)", "Min level (1-5)"),
+        ("twitch", "Minimum level", "Min level"),
         ("twitch", "Reward ID", "Reward"),
         (
             "twitch",

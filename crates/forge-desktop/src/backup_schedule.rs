@@ -1284,7 +1284,9 @@ pub(crate) mod tests {
 
     use forge_components::{DateShape, Toasts, fmt_display, fmt_display_relative, tr};
     use forge_storage::SettingPortability;
-    use forge_storage::{DataProvider, Language, SettingsRepo, reserved_keys};
+    use forge_storage::{
+        DataProvider, Language, SettingsRepo, StorageError, read_stored_setting, reserved_keys,
+    };
     use forge_transfer::{
         BackupCategory, FailureCategory, FailureStreak, Passphrase, ScheduleKey, ScheduleState,
         ScheduledBackupHandle, ScheduledBackupParts, ScheduledBackupStatus, SystemBackupClock,
@@ -1538,6 +1540,7 @@ pub(crate) mod tests {
 
     #[test]
     fn stored_number_defaults_when_absent_clamps_when_out_of_range_and_rejects_non_numbers() {
+        let rt = crate::test_support::runtime();
         for number in ScheduleNumber::ALL {
             let (min, max) = (*number.range().start(), *number.range().end());
             let mut cases = vec![
@@ -1554,10 +1557,35 @@ pub(crate) mod tests {
                 cases.push((Some((min - 1).to_string()), Some(min)));
             }
             for (stored, expected) in cases {
-                assert_eq!(
-                    number.value_from_stored(stored.as_deref()).ok(),
-                    expected,
-                    "{number:?} stored {stored:?}"
+                let (backend, _writes) = crate::test_support::test_backend();
+                if let Some(raw) = &stored {
+                    backend.seed(number.storage_key(), raw);
+                }
+                let loaded = rt
+                    .block_on(read_stored_setting(backend.as_ref(), number.declaration()))
+                    .ok()
+                    .map(|value| value.unwrap_or_else(|| number.default_value()));
+                assert_eq!(loaded, expected, "{number:?} stored {stored:?}");
+            }
+        }
+    }
+
+    #[test]
+    fn a_blank_stored_number_is_a_load_failure_not_the_default() {
+        let rt = crate::test_support::runtime();
+        for number in ScheduleNumber::ALL {
+            for blank in ["", "   "] {
+                let (backend, _writes) = crate::test_support::test_backend();
+                backend.seed(number.storage_key(), blank);
+
+                let loaded = rt.block_on(load_schedule(backend));
+
+                assert!(
+                    matches!(
+                        loaded,
+                        Err(StorageError::UndecodableSetting { ref key }) if key == number.storage_key()
+                    ),
+                    "{number:?} blank {blank:?} loaded as a value"
                 );
             }
         }
@@ -2480,10 +2508,10 @@ pub(crate) mod tests {
             reason: crate::test_support::SETTINGS_READ_FAILED.to_owned(),
         }
         .to_string();
-        let bad_number = ScheduleNumber::Interval
-            .value_from_stored(Some("abc"))
-            .unwrap_err()
-            .to_string();
+        let bad_number = forge_storage::StorageError::UndecodableSetting {
+            key: ScheduleNumber::Interval.storage_key().to_owned(),
+        }
+        .to_string();
         let faults: [(&str, &str, Option<&str>); 4] = [
             (
                 "unreachable store",

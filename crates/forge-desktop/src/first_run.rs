@@ -154,7 +154,7 @@ mod tests {
     #[test]
     fn resolving_records_completion_only_for_an_install_that_already_uses_integrations() {
         let rt = runtime();
-        let flag = (FIRST_RUN_COMPLETED_KEY.to_owned(), "true".to_owned());
+        let flag = (FIRST_RUN_COMPLETED.name().to_owned(), "true".to_owned());
         for (stored, state, expected, writes, case) in [
             (
                 None,
@@ -180,7 +180,7 @@ mod tests {
         ] {
             let (settings, mut rx) = test_backend();
             if let Some(value) = stored {
-                rt.block_on(settings.set_string(FIRST_RUN_COMPLETED_KEY, value))
+                rt.block_on(settings.set_string(FIRST_RUN_COMPLETED.name(), value))
                     .unwrap();
                 rx.try_recv().unwrap();
             }

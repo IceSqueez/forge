@@ -287,6 +287,26 @@ mod tests {
         );
     }
 
+    #[tokio::test]
+    async fn only_the_exact_stored_mode_names_select_a_mode() {
+        for (stored, expected) in [
+            ("keep_newest", SafetyCopyMode::KeepNewest),
+            ("delete_after_days", SafetyCopyMode::DeleteAfterDays),
+            ("never", SafetyCopyMode::Never),
+            (" never ", SafetyCopyMode::KeepNewest),
+            ("NEVER", SafetyCopyMode::KeepNewest),
+            ("delete_after_days\n", SafetyCopyMode::KeepNewest),
+            ("", SafetyCopyMode::KeepNewest),
+        ] {
+            let (_dir, repo) = backend().await;
+            store(&repo, &[(reserved_keys::SAFETY_COPIES_MODE, stored)]).await;
+
+            let loaded = SafetyCopySettings::load(&repo).await.unwrap();
+
+            assert_eq!(loaded.mode, expected, "stored {stored:?}");
+        }
+    }
+
     #[test]
     fn each_mode_retains_by_its_own_number_clamped_into_bounds() {
         for (mode, expected) in [

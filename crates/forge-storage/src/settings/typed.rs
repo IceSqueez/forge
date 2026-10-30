@@ -764,6 +764,48 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn read_stored_setting_reports_an_absent_row_as_none_not_the_default() {
+        let repo = MapRepo::default();
+
+        assert_eq!(read_stored_setting(&repo, &LIMIT).await.unwrap(), None);
+    }
+
+    #[tokio::test]
+    async fn read_stored_setting_decodes_a_present_row_through_the_codec() {
+        let repo = MapRepo::default();
+        repo.set_string(LIMIT.name(), "250").await.unwrap();
+
+        assert_eq!(
+            read_stored_setting(&repo, &LIMIT).await.unwrap(),
+            Some(BOUNDED.max)
+        );
+    }
+
+    #[tokio::test]
+    async fn read_stored_setting_fails_on_an_undecodable_row_naming_the_key_not_its_text() {
+        let repo = MapRepo::default();
+        repo.set_string(LIMIT.name(), SECRET_RAW).await.unwrap();
+
+        let result = read_stored_setting(&repo, &LIMIT).await;
+
+        assert!(
+            matches!(&result, Err(StorageError::UndecodableSetting { key }) if key == LIMIT.name()),
+            "{result:?}"
+        );
+        assert!(!result.unwrap_err().to_string().contains(SECRET_RAW));
+    }
+
+    #[tokio::test]
+    async fn read_stored_setting_passes_a_connection_error_through_unchanged() {
+        let result = read_stored_setting(&UnreachableRepo, &LIMIT).await;
+
+        assert!(
+            matches!(&result, Err(StorageError::Connection { reason }) if reason == "settings store unreachable"),
+            "{result:?}"
+        );
+    }
+
+    #[tokio::test]
     async fn write_setting_refuses_a_non_finite_level_naming_the_key_and_stores_nothing() {
         for value in [f32::NAN, f32::INFINITY, f32::NEG_INFINITY] {
             let repo = MapRepo::default();

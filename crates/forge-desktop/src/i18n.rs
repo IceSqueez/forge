@@ -142,7 +142,7 @@ mod tests {
     use forge_components::{
         ClockStyle, DateFormatChoice, FirstWeekday, FormatChoice, FormatOption,
     };
-    use forge_storage::StorageError;
+    use forge_storage::{RowClasses, RowGate, SettingDisclosure, SettingPortability, StorageError};
 
     use super::*;
     use crate::test_support::test_backend;
@@ -236,9 +236,15 @@ mod tests {
     async fn stored_display_choices_are_read_back_without_rewriting_the_region() {
         let (settings, mut writes) = test_backend();
         for (key, value) in [
-            (reserved_keys::REGION, "gb"),
-            (reserved_keys::DATE_FORMAT, "ymd"),
-            (reserved_keys::TIME_FORMAT, "bogus"),
+            (REGION.name(), "gb"),
+            (
+                forge_storage::settings::core_settings::DATE_FORMAT.name(),
+                "ymd",
+            ),
+            (
+                forge_storage::settings::core_settings::TIME_FORMAT.name(),
+                "bogus",
+            ),
         ] {
             settings.set_string(key, value).await.unwrap();
         }
@@ -263,10 +269,7 @@ mod tests {
     #[tokio::test]
     async fn an_unknown_stored_region_follows_the_ui_language_region() {
         let (settings, _writes) = test_backend();
-        settings
-            .set_string(reserved_keys::REGION, "ZZ")
-            .await
-            .unwrap();
+        settings.set_string(REGION.name(), "ZZ").await.unwrap();
 
         let choices = resolve_startup_display_formats(settings.as_ref(), Language::Uk).await;
 
@@ -284,13 +287,68 @@ mod tests {
         assert_eq!(
             (stored, second, writes.try_recv().ok()),
             (
-                Some((
-                    reserved_keys::REGION.to_owned(),
-                    first.region.code().to_owned()
-                )),
+                Some((REGION.name().to_owned(), first.region.code().to_owned())),
                 first,
                 None,
             )
+        );
+    }
+
+    #[derive(Default)]
+    struct ClassRecordingSettings {
+        rows: std::sync::Mutex<Vec<(String, String, RowClasses)>>,
+    }
+
+    #[async_trait::async_trait]
+    impl SettingsRepo for ClassRecordingSettings {
+        async fn get_string(&self, _: &str) -> Result<Option<String>, StorageError> {
+            Ok(None)
+        }
+        async fn set_string(&self, key: &str, value: &str) -> Result<(), StorageError> {
+            self.rows.lock().unwrap().push((
+                key.to_owned(),
+                value.to_owned(),
+                RowClasses::FAIL_CLOSED,
+            ));
+            Ok(())
+        }
+        async fn delete(&self, _: &str) -> Result<bool, StorageError> {
+            Ok(false)
+        }
+        async fn load_all(&self) -> Result<HashMap<String, String>, StorageError> {
+            Ok(HashMap::new())
+        }
+        async fn put_row(
+            &self,
+            _: RowGate,
+            key: &str,
+            value: &str,
+            classes: RowClasses,
+        ) -> Result<(), StorageError> {
+            self.rows
+                .lock()
+                .unwrap()
+                .push((key.to_owned(), value.to_owned(), classes));
+            Ok(())
+        }
+    }
+
+    #[tokio::test]
+    async fn the_first_run_region_is_stamped_portable_and_verbatim() {
+        let settings = ClassRecordingSettings::default();
+
+        let choices = resolve_startup_display_formats(&settings, Language::En).await;
+
+        assert_eq!(
+            *settings.rows.lock().unwrap(),
+            vec![(
+                REGION.name().to_owned(),
+                choices.region.code().to_owned(),
+                RowClasses {
+                    portability: SettingPortability::Portable,
+                    disclosure: SettingDisclosure::Verbatim,
+                },
+            )]
         );
     }
 

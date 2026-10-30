@@ -143,6 +143,7 @@ impl Store {
         apply_setup_import(SetupImportRequest {
             provider: Arc::clone(&self.provider),
             settings_catalog: &self.settings_catalog,
+            hotkey_settings: &[],
             registries: ClosureRegistries {
                 sub_actions: &sub_actions,
                 triggers: &triggers,

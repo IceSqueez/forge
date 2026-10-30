@@ -2227,7 +2227,7 @@ mod tests {
             crate::test_support::install_presentation(cx);
             cx.update(|cx| cx.set_global(forge_components::Toasts::new()));
             let (backend, writes) = crate::test_support::test_backend();
-            backend.seed(MIDI_KNOWN_DEVICES_KEY, stored);
+            backend.seed(MIDI_KNOWN_DEVICES.name(), stored);
             Self {
                 rt: crate::test_support::runtime(),
                 backend,
@@ -2265,7 +2265,7 @@ mod tests {
         }
 
         fn device_writes(&mut self) -> Vec<Vec<String>> {
-            crate::test_support::writes_to(&mut self.writes, MIDI_KNOWN_DEVICES_KEY)
+            crate::test_support::writes_to(&mut self.writes, MIDI_KNOWN_DEVICES.name())
                 .iter()
                 .map(|raw| serde_json::from_str(raw).unwrap())
                 .collect()
@@ -2300,7 +2300,10 @@ mod tests {
             reason: crate::test_support::SETTINGS_READ_FAILED.to_owned(),
         }
         .to_string();
-        let undecodable = format!("stored setting '{MIDI_KNOWN_DEVICES_KEY}' cannot be decoded");
+        let undecodable = format!(
+            "stored setting '{}' cannot be decoded",
+            MIDI_KNOWN_DEVICES.name()
+        );
         for (fault, stored, failing_read, reason) in [
             ("unreachable store", STORED_DEVICES, true, unreachable),
             ("undecodable value", "not json", false, undecodable),
@@ -2308,7 +2311,7 @@ mod tests {
             let mut harness = DeviceHarness::new(stored, cx);
             if failing_read {
                 harness.backend.fault_reads(
-                    MIDI_KNOWN_DEVICES_KEY,
+                    MIDI_KNOWN_DEVICES.name(),
                     crate::test_support::ReadFault::Fails,
                 );
             }
@@ -2332,7 +2335,7 @@ mod tests {
         let mut harness = DeviceHarness::new(STORED_DEVICES, cx);
         let gate = Arc::new(tokio::sync::Notify::new());
         harness.backend.fault_reads(
-            MIDI_KNOWN_DEVICES_KEY,
+            MIDI_KNOWN_DEVICES.name(),
             crate::test_support::ReadFault::Held(Arc::clone(&gate)),
         );
         let view = harness.open(cx);
@@ -2340,7 +2343,7 @@ mod tests {
         plug_in(&view, cx);
         harness.settle(cx);
         let while_pending = harness.device_writes();
-        harness.backend.heal_reads(MIDI_KNOWN_DEVICES_KEY);
+        harness.backend.heal_reads(MIDI_KNOWN_DEVICES.name());
         gate.notify_one();
         harness.settle(cx);
 
@@ -2356,11 +2359,11 @@ mod tests {
     ) {
         let mut harness = DeviceHarness::new(STORED_DEVICES, cx);
         harness.backend.fault_reads(
-            MIDI_KNOWN_DEVICES_KEY,
+            MIDI_KNOWN_DEVICES.name(),
             crate::test_support::ReadFault::Fails,
         );
         let view = harness.open(cx);
-        harness.backend.heal_reads(MIDI_KNOWN_DEVICES_KEY);
+        harness.backend.heal_reads(MIDI_KNOWN_DEVICES.name());
 
         view.update(cx, |view, cx| view.load_known_devices(cx));
         harness.settle(cx);
@@ -2375,11 +2378,11 @@ mod tests {
         cx: &mut gpui::TestAppContext,
     ) {
         let harness = DeviceHarness::new(STORED_DEVICES, cx);
-        harness.backend.fail_writes(MIDI_KNOWN_DEVICES_KEY);
+        harness.backend.fail_writes(MIDI_KNOWN_DEVICES.name());
         let view = harness.open(cx);
         let reload_gate = Arc::new(tokio::sync::Notify::new());
         harness.backend.fault_reads(
-            MIDI_KNOWN_DEVICES_KEY,
+            MIDI_KNOWN_DEVICES.name(),
             crate::test_support::ReadFault::Held(reload_gate),
         );
 

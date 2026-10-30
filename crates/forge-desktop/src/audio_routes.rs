@@ -363,7 +363,7 @@ mod tests {
         for stored in ["", "   ", "remote", "obs", "local overlay"] {
             let (backend, _writes) = test_backend();
             backend
-                .set_string(reserved_keys::AUDIO_SPEECH_ROUTE, stored)
+                .set_string(SPEECH_ROUTE.name(), stored)
                 .await
                 .expect("the raw value is stored");
 
@@ -388,7 +388,7 @@ mod tests {
         for blank in ["", "   ", "\t\n"] {
             let (backend, _writes) = test_backend();
             backend
-                .set_string(reserved_keys::AUDIO_OVERLAY_ID, blank)
+                .set_string(AUDIO_OVERLAY_ID.name(), blank)
                 .await
                 .expect("the raw value is stored");
 
@@ -414,7 +414,7 @@ mod tests {
 
             assert_eq!(
                 backend
-                    .get_string(reserved_keys::AUDIO_OVERLAY_ID)
+                    .get_string(AUDIO_OVERLAY_ID.name())
                     .await
                     .expect("the key is readable"),
                 None,

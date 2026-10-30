@@ -149,7 +149,7 @@ mod tests {
         let (backend, _writes) = test_backend();
         if let Some(stored) = stored {
             backend
-                .set_string(DONATELLO_POLL_INTERVAL_KEY, stored)
+                .set_string(DONATELLO_POLL_INTERVAL_SECS.name(), stored)
                 .await
                 .expect("the test backend stores");
         }

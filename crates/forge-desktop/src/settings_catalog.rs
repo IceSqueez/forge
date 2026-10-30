@@ -257,7 +257,7 @@ mod tests {
             key::UPDATES_LEFTOVER_INSTALL_NOTICED,
             key::CREDENTIALS_KEY_LOSS,
             key::STAY_AWAKE,
-            crate::first_run::FIRST_RUN_COMPLETED_KEY,
+            crate::first_run::FIRST_RUN_COMPLETED.name(),
             key::BACKUP_SCHEDULE_KEY,
             key::BACKUP_SCHEDULE_ENABLED,
             key::BACKUP_SCHEDULE_DESTINATION,

@@ -12,7 +12,7 @@ use forge_storage::{
     LatestRecord, MediaBlobId, OverlayId, ScriptRepo, SettingsRepo, StoredClip, StoredDonation,
     TtsPipelineSettings, Viewer, clip_source_referrer,
 };
-use forge_storage::{RowClasses, SettingDisclosure, SettingPortability, SettingSkip};
+use forge_storage::{RowClasses, SettingDisclosure, SettingPortability, SettingSkip, SettingSpec};
 use forge_storage_sqlite::SqliteDatabaseFileSchema;
 use forge_transfer::{
     SetupExportRequest, SetupImportOutcome, SetupImportRequest, SetupLivePart, SetupQueueChanges,
@@ -547,10 +547,21 @@ async fn import_into(
     bundle: &Path,
     overlay_root: PathBuf,
 ) -> Result<SetupImportOutcome, TransferError> {
+    import_declaring_hotkeys(store, registries, bundle, overlay_root, &[]).await
+}
+
+async fn import_declaring_hotkeys(
+    store: &Store,
+    registries: &Registries,
+    bundle: &Path,
+    overlay_root: PathBuf,
+    hotkey_settings: &[SettingSpec],
+) -> Result<SetupImportOutcome, TransferError> {
     let staged = stage(store, bundle).await;
     apply_setup_import(SetupImportRequest {
         provider: Arc::clone(&store.provider),
         settings_catalog: &registered_settings_catalog(),
+        hotkey_settings,
         registries: registries.closure(),
         staged: &staged,
         data_dir: store.data_dir().to_path_buf(),
@@ -931,6 +942,55 @@ async fn reimporting_an_installs_own_setup_changes_no_queue_and_recommends_no_re
         (outcome.queues, outcome.restart_recommended),
         (SetupQueueChanges::default(), false)
     );
+}
+
+#[tokio::test]
+async fn only_a_changed_setting_the_hotkey_layer_declares_refreshes_the_hotkeys() {
+    const SHORTCUT_OVERRIDE: &str = r#"{"palette.open":{"chord":"Ctrl+K","enabled":true}}"#;
+    let ceiling = [(key::HOTKEY_HOLD_CEILING_SECS, "9")];
+    let shortcuts = [(
+        crate::shortcut_overrides::KEYBOARD_SHORTCUTS.name(),
+        SHORTCUT_OVERRIDE,
+    )];
+    let density = [(key::DENSITY, "compact")];
+    let both_specs = [
+        crate::shortcut_overrides::KEYBOARD_SHORTCUTS.spec(),
+        forge_hotkey::HOLD_CEILING.spec(),
+    ];
+    for (carried, declared, refreshes, case) in [
+        (&ceiling[..], &both_specs[..], true, "hold ceiling"),
+        (&shortcuts[..], &both_specs[..], true, "keyboard shortcuts"),
+        (&density[..], &both_specs[..], false, "unrelated setting"),
+        (
+            &ceiling[..],
+            &both_specs[..1],
+            false,
+            "setting not declared",
+        ),
+        (&ceiling[..], &[][..], false, "nothing declared"),
+    ] {
+        let registries = Registries::real().await;
+        let source = Store::open().await;
+        set_settings(&source, carried).await;
+        let bundle = export_setup(&source).await;
+        let target = Store::open().await;
+
+        let outcome = import_declaring_hotkeys(
+            &target,
+            &registries,
+            &bundle,
+            target.overlay_root(),
+            declared,
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(
+            outcome.refresh.contains(&SetupLivePart::Hotkeys),
+            refreshes,
+            "{case}"
+        );
+    }
 }
 
 #[tokio::test]

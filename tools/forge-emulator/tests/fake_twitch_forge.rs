@@ -21,10 +21,11 @@ use forge_platform_twitch::credentials::{StoredCredential, store_credential};
 use forge_platform_twitch::{
     ChatSessionConfig, HELIX_BUDGET_CAPACITY, HELIX_BUDGET_WINDOW, HelixError, HelixHttpTransport,
     HelixTokenSource, SubscriptionTracker, TWITCH_OAUTH_BUDGET_CAPACITY,
-    TWITCH_OAUTH_BUDGET_WINDOW, TwitchChat, TwitchChatHandle, TwitchCredentialsManager,
-    TwitchIntegrationBundle, TwitchLifecycle, TwitchOAuthClient, TwitchPlatform, helix_gateway,
-    send_chat, twitch_oauth_gateway,
+    TWITCH_OAUTH_BUDGET_WINDOW, TwitchAssembly, TwitchChat, TwitchChatHandle,
+    TwitchCredentialsManager, TwitchIntegrationBundle, TwitchLifecycle, TwitchOAuthClient,
+    helix_gateway, send_chat, twitch_oauth_gateway,
 };
+use forge_registry::SubActionRegistry;
 use forge_storage::{CredentialId, CredentialsRepo, StorageError};
 use forge_types::{ChatPayload, OAuthToken, PermissionRung};
 use time::OffsetDateTime;
@@ -90,6 +91,7 @@ impl EventPublisher for Bus {
 }
 
 struct Forge {
+    assembly: TwitchAssembly,
     creds: Arc<dyn CredentialsRepo>,
     config: ChatSessionConfig,
     bus: Arc<dyn EventPublisher>,
@@ -116,7 +118,17 @@ impl Forge {
             PlatformEndpoints::resolve(|variable| overrides.get(variable).map(OsString::from))
                 .unwrap();
         let (tx, events) = mpsc::unbounded_channel();
+        let bus: Arc<dyn EventPublisher> = Arc::new(Bus(tx));
+        let assembly = TwitchAssembly::new(
+            &mut SubActionRegistry::new(),
+            Arc::clone(&creds),
+            &bus,
+            &endpoints,
+            account.client_id.clone(),
+        )
+        .expect("the assembly builds");
         Self {
+            assembly,
             creds,
             config: ChatSessionConfig {
                 client_id: account.client_id.clone(),
@@ -124,7 +136,7 @@ impl Forge {
                 user_id: account.user_id.clone(),
                 endpoints,
             },
-            bus: Arc::new(Bus(tx)),
+            bus,
             events,
         }
     }
@@ -149,19 +161,13 @@ impl Forge {
         .start()
     }
 
-    fn platform(&self) -> Arc<TwitchPlatform> {
-        let manager = Arc::new(TwitchCredentialsManager::new(
-            twitch_oauth(&self.config.endpoints, &self.config.client_id),
-            Arc::clone(&self.creds),
-        ));
-        Arc::new(TwitchPlatform::new(
-            self.config.clone(),
-            Arc::clone(&self.creds),
-            manager,
-            SubscriptionTracker::default(),
-            self.helix(),
-            TwitchLifecycle::new(),
-        ))
+    async fn open(&self) -> (Arc<dyn ChatPlatform>, Arc<TwitchIntegrationBundle>) {
+        let session = self.assembly.open_session().await;
+        let platform = session.chat_platform();
+        let bundle = session
+            .into_bundle()
+            .expect("the stored credentials yield a bundle");
+        (platform, bundle)
     }
 
     fn helix(&self) -> Gateway {
@@ -337,8 +343,7 @@ async fn forge_twitch_boot_calls_only_modeled_helix_endpoints() {
         .await
         .unwrap();
     let forge = Forge::against(&fake, &account, &account.access_token).await;
-    let platform = forge.platform();
-    let _bundle = TwitchIntegrationBundle::new(Some(account.login.clone()), Arc::clone(&platform));
+    let (platform, _bundle) = forge.open().await;
     platform.connect().await.unwrap();
 
     let boot_paths = [
@@ -410,7 +415,7 @@ async fn next_platform_event(events: &mut EventSubscription) -> Event {
         .expect("the platform event stream must stay open")
 }
 
-async fn platform_reaches_connected(platform: &TwitchPlatform) {
+async fn platform_reaches_connected(platform: &dyn ChatPlatform) {
     timeout(DEADLINE, async {
         while platform.connection_state() != ConnectionState::Connected {
             tokio::time::sleep(STATE_POLL).await;
@@ -463,8 +468,7 @@ async fn boot_connect_racing_a_reconnect_leaves_one_eventsub_session_delivering_
         .await
         .unwrap();
     let forge = Forge::against(&fake, &account, &account.access_token).await;
-    let platform = forge.platform();
-    let bundle = TwitchIntegrationBundle::new(Some(account.login.clone()), Arc::clone(&platform));
+    let (platform, bundle) = forge.open().await;
     let mut events = platform.events();
 
     let boot = tokio::spawn({
@@ -477,7 +481,7 @@ async fn boot_connect_racing_a_reconnect_leaves_one_eventsub_session_delivering_
     });
     boot.await.unwrap().unwrap();
     assert_eq!(reconnect.await.unwrap(), Ok(()));
-    platform_reaches_connected(&platform).await;
+    platform_reaches_connected(platform.as_ref()).await;
     sole_live_session_subscribed_to(&fake, &[CHAT_SUBSCRIPTION, FOLLOW_SUBSCRIPTION]).await;
 
     let alice = Viewer::new("200000042", "alice");
@@ -512,11 +516,10 @@ async fn bundle_shutdown_publishes_a_final_disconnected_change_and_closes_the_ev
         .await
         .unwrap();
     let forge = Forge::against(&fake, &account, &account.access_token).await;
-    let platform = forge.platform();
-    let bundle = TwitchIntegrationBundle::new(Some(account.login.clone()), Arc::clone(&platform));
+    let (platform, bundle) = forge.open().await;
     let mut events = platform.events();
     platform.connect().await.unwrap();
-    platform_reaches_connected(&platform).await;
+    platform_reaches_connected(platform.as_ref()).await;
     sole_live_session_subscribed_to(&fake, &[CHAT_SUBSCRIPTION]).await;
 
     bundle.shutdown().await;
@@ -543,7 +546,7 @@ async fn a_refused_chat_send_through_the_platform_publishes_request_fail_without
         .await
         .unwrap();
     let mut forge = Forge::against(&fake, &account, NEVER_ISSUED).await;
-    let platform = forge.platform();
+    let platform = forge.assembly.open_session().await.chat_platform();
 
     platform
         .send_message(&account.login, "pong")

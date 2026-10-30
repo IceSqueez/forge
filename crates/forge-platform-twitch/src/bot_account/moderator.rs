@@ -37,9 +37,7 @@ pub enum BotModeratorError {
 
 impl TwitchBotAccount {
     pub async fn refresh_moderator_status(&self) {
-        let Some(transport) = self.broadcaster_transport.get() else {
-            return;
-        };
+        let transport = &self.broadcaster_transport;
         let Some(bot_id) = self.connected_user_id() else {
             return;
         };
@@ -63,9 +61,7 @@ impl TwitchBotAccount {
     }
 
     pub async fn make_moderator(&self) -> Result<(), BotModeratorError> {
-        let transport = self.broadcaster_transport.get().ok_or_else(|| {
-            BotModeratorError::Unavailable("the streamer connection is not ready".to_owned())
-        })?;
+        let transport = &self.broadcaster_transport;
         let bot_id = self
             .connected_user_id()
             .ok_or(BotModeratorError::BotNotConnected)?;
@@ -138,9 +134,7 @@ mod tests {
     ) -> (BotHarness, Arc<MockTransport>) {
         let harness = BotHarness::connected().await;
         let broadcaster = Arc::new(MockTransport::returning_sequence(broadcaster_responses));
-        harness
-            .bot
-            .attach_broadcaster_transport(Arc::clone(&broadcaster) as _);
+        harness.broadcaster.route_to(Arc::clone(&broadcaster) as _);
         (harness, broadcaster)
     }
 
@@ -185,9 +179,7 @@ mod tests {
         for (validate_status, expected_lookups) in [(200, 1), (401, 0)] {
             let harness = BotHarness::with_bot_row().await;
             let broadcaster = Arc::new(MockTransport::returning(listed()));
-            harness
-                .bot
-                .attach_broadcaster_transport(Arc::clone(&broadcaster) as _);
+            harness.broadcaster.route_to(Arc::clone(&broadcaster) as _);
             harness
                 .mount_validate(
                     validate_status,
@@ -232,8 +224,8 @@ mod tests {
     async fn a_fresh_grant_looks_up_the_moderator_status() {
         let harness = BotHarness::without_bot_row().await;
         harness
-            .bot
-            .attach_broadcaster_transport(Arc::new(MockTransport::returning(listed())));
+            .broadcaster
+            .route_to(Arc::new(MockTransport::returning(listed())));
         let bundle = crate::auth::TwitchAuthBundle {
             access_token: forge_types::OAuthToken::new("grant_access"),
             refresh_token: None,
@@ -343,20 +335,13 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn make_moderator_needs_a_signed_in_bot_and_a_streamer_connection() {
+    async fn make_moderator_needs_a_signed_in_bot() {
         let harness = BotHarness::without_bot_row().await;
-        let without_streamer = harness.bot.make_moderator().await;
         let broadcaster = Arc::new(MockTransport::returning(Ok(serde_json::Value::Null)));
-        harness
-            .bot
-            .attach_broadcaster_transport(Arc::clone(&broadcaster) as _);
+        harness.broadcaster.route_to(Arc::clone(&broadcaster) as _);
 
         let without_bot = harness.bot.make_moderator().await;
 
-        assert!(matches!(
-            without_streamer,
-            Err(BotModeratorError::Unavailable(_))
-        ));
         assert!(matches!(
             without_bot,
             Err(BotModeratorError::BotNotConnected)
@@ -402,7 +387,7 @@ mod tests {
             let harness = BotHarness::connected().await;
             harness.mount("POST", MODERATORS_PATH, reply).await;
             let (transport, bus) = observed_helix_at(&harness.server.uri());
-            harness.bot.attach_broadcaster_transport(transport);
+            harness.broadcaster.route_to(transport);
 
             let result = harness.bot.make_moderator().await;
 

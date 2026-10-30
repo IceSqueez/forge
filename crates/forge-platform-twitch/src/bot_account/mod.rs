@@ -2,7 +2,7 @@ mod login;
 mod moderator;
 mod validate;
 
-use std::sync::{Arc, OnceLock, RwLock};
+use std::sync::{Arc, RwLock};
 
 use forge_events::{EventPublisher, EventSource, TypedEvent};
 use forge_net::Gateway;
@@ -76,7 +76,7 @@ pub struct TwitchBotAccount {
     helix: Gateway,
     bus: Arc<dyn EventPublisher>,
     state: RwLock<BotState>,
-    broadcaster_transport: OnceLock<Arc<dyn HelixTransport>>,
+    broadcaster_transport: Arc<dyn HelixTransport>,
     pending_flow: tokio::sync::Mutex<Option<TwitchAuthFlow>>,
     login_cancel: std::sync::Mutex<CancellationToken>,
 }
@@ -87,6 +87,7 @@ impl TwitchBotAccount {
         oauth: TwitchOAuthClient,
         bus: Arc<dyn EventPublisher>,
         helix: Gateway,
+        broadcaster_transport: Arc<dyn HelixTransport>,
     ) -> Arc<Self> {
         let client_id = oauth.client_id().to_owned();
         let manager = Arc::new(TwitchCredentialsManager::for_bot(
@@ -115,18 +116,10 @@ impl TwitchBotAccount {
                 token_rejected: false,
                 moderator: BotModerator::Unknown,
             }),
-            broadcaster_transport: OnceLock::new(),
+            broadcaster_transport,
             pending_flow: tokio::sync::Mutex::new(None),
             login_cancel: std::sync::Mutex::new(CancellationToken::new()),
         })
-    }
-
-    pub fn attach_broadcaster_transport(&self, transport: Arc<dyn HelixTransport>) {
-        #[expect(
-            clippy::let_underscore_must_use,
-            reason = "the first attached transport wins"
-        )]
-        let _ = self.broadcaster_transport.set(transport);
     }
 
     pub fn moderator_status(&self) -> BotModerator {
@@ -295,6 +288,7 @@ pub(crate) mod test_support {
     use super::TwitchBotAccount;
     use crate::auth::TWITCH_BOT_SCOPES;
     use crate::credentials::{TWITCH_BOT_CREDENTIAL_ID, TWITCH_CREDENTIAL_ID};
+    use crate::helix::HelixTransport;
     use crate::sub_actions::test_support::{SELF_USER_ID, TOKEN_SENTINEL, endpoints_with};
 
     pub(crate) const CLIENT_ID: &str = "test-client";
@@ -484,6 +478,42 @@ pub(crate) mod test_support {
         pub(crate) repo: Arc<KeyedRepo>,
         pub(crate) bus: Arc<RecordingBus>,
         pub(crate) bot: Arc<TwitchBotAccount>,
+        pub(crate) broadcaster: Arc<RoutedTransport>,
+    }
+
+    pub(crate) struct RoutedTransport(Mutex<Arc<dyn HelixTransport>>);
+
+    impl RoutedTransport {
+        fn unreachable() -> Arc<Self> {
+            Arc::new(Self(Mutex::new(Arc::new(UnreachableTransport))))
+        }
+
+        pub(crate) fn route_to(&self, transport: Arc<dyn HelixTransport>) {
+            *self.0.lock().unwrap() = transport;
+        }
+    }
+
+    #[async_trait]
+    impl HelixTransport for RoutedTransport {
+        async fn execute(
+            &self,
+            request: crate::helix::HelixRequest,
+        ) -> Result<serde_json::Value, crate::helix::HelixError> {
+            let transport = Arc::clone(&self.0.lock().unwrap());
+            transport.execute(request).await
+        }
+    }
+
+    struct UnreachableTransport;
+
+    #[async_trait]
+    impl HelixTransport for UnreachableTransport {
+        async fn execute(
+            &self,
+            _: crate::helix::HelixRequest,
+        ) -> Result<serde_json::Value, crate::helix::HelixError> {
+            Err(crate::helix::HelixError::Transport("offline".to_owned()))
+        }
     }
 
     impl BotHarness {
@@ -525,6 +555,7 @@ pub(crate) mod test_support {
                 (EndpointSurface::TwitchApi, server.uri().as_str()),
                 (EndpointSurface::TwitchOAuth, server.uri().as_str()),
             ]);
+            let broadcaster = RoutedTransport::unreachable();
             let bot = TwitchBotAccount::new(
                 bot_repo,
                 crate::sub_actions::test_support::oauth_client_at(&server.uri(), CLIENT_ID),
@@ -538,12 +569,14 @@ pub(crate) mod test_support {
                     Arc::clone(&bus) as Arc<dyn EventPublisher>,
                 )
                 .unwrap(),
+                Arc::clone(&broadcaster) as Arc<dyn HelixTransport>,
             );
             Self {
                 server,
                 repo,
                 bus,
                 bot,
+                broadcaster,
             }
         }
 

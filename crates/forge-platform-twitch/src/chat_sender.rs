@@ -914,8 +914,8 @@ mod tests {
             json!({"data": []})
         };
         rig.harness
-            .bot
-            .attach_broadcaster_transport(Arc::new(MockTransport::returning_sequence(vec![
+            .broadcaster
+            .route_to(Arc::new(MockTransport::returning_sequence(vec![
                 Ok(data),
                 Ok(json!({"data": []})),
             ])));

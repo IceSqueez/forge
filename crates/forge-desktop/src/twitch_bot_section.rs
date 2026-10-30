@@ -824,7 +824,7 @@ mod tests {
 
     use forge_events::EventPublisher;
     use forge_platform_twitch::{
-        BotLoginError, BotModerator, BotModeratorError, BotStatus, DeviceCodeInfo, TwitchBotAccount,
+        BotLoginError, BotModerator, BotModeratorError, BotStatus, DeviceCodeInfo,
     };
     use forge_runtime::{EventBus, NullEventLogRepo};
     use forge_storage::CredentialsRepo;
@@ -850,11 +850,9 @@ mod tests {
         let rt = runtime();
         let (backend, _writes) = test_backend();
         let bus = EventBus::new(Arc::new(NullEventLogRepo));
-        let bot = TwitchBotAccount::new(
+        let bot = crate::test_support::default_twitch_bot(
             backend as Arc<dyn CredentialsRepo>,
-            crate::test_support::default_twitch_oauth_client(),
-            Arc::clone(&bus) as Arc<dyn EventPublisher>,
-            crate::test_support::default_twitch_helix_gateway(bus as Arc<dyn EventPublisher>),
+            bus as Arc<dyn EventPublisher>,
         );
         let handle = rt.handle().clone();
         let presence = cx.new(|_| TwitchBotPresence::new());

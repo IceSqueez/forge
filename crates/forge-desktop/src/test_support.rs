@@ -988,6 +988,33 @@ pub(crate) fn default_twitch_oauth_client() -> forge_platform_twitch::TwitchOAut
     )
 }
 
+struct OfflineHelixTransport;
+
+#[async_trait::async_trait]
+impl forge_platform_twitch::HelixTransport for OfflineHelixTransport {
+    async fn execute(
+        &self,
+        _: forge_platform_twitch::HelixRequest,
+    ) -> Result<serde_json::Value, forge_platform_twitch::HelixError> {
+        Err(forge_platform_twitch::HelixError::Transport(
+            "offline".to_owned(),
+        ))
+    }
+}
+
+pub(crate) fn default_twitch_bot(
+    creds: Arc<dyn CredentialsRepo>,
+    bus: Arc<dyn forge_events::EventPublisher>,
+) -> Arc<forge_platform_twitch::TwitchBotAccount> {
+    forge_platform_twitch::TwitchBotAccount::new(
+        creds,
+        default_twitch_oauth_client(),
+        Arc::clone(&bus),
+        default_twitch_helix_gateway(bus),
+        Arc::new(OfflineHelixTransport),
+    )
+}
+
 pub(crate) fn runtime() -> tokio::runtime::Runtime {
     tokio::runtime::Builder::new_current_thread()
         .enable_all()

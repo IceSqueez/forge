@@ -40,14 +40,7 @@ fn idle_with_tasks(tasks: TaskGroup) -> RunningIntegration<BuiltinObject> {
 
 pub(crate) struct TwitchFactory {
     bus: Arc<EventBus>,
-    endpoints: PlatformEndpoints,
-    client_id: String,
-    creds: Arc<dyn CredentialsRepo>,
-    manager: Arc<forge_platform_twitch::TwitchCredentialsManager>,
-    lifecycle: forge_platform_twitch::TwitchLifecycle,
-    helix: Gateway,
-    bot: Arc<forge_platform_twitch::TwitchBotAccount>,
-    sign_in: forge_platform_twitch::TwitchSignIn,
+    assembly: forge_platform_twitch::TwitchAssembly,
 }
 
 pub(crate) fn wire_twitch(
@@ -57,98 +50,39 @@ pub(crate) fn wire_twitch(
     endpoints: &PlatformEndpoints,
     client_id: String,
 ) -> Option<TwitchFactory> {
-    let creds = creds_of(backend);
-    let lifecycle = forge_platform_twitch::TwitchLifecycle::new();
-    let oauth = forge_platform_twitch::TwitchOAuthClient::new(
-        twitch_oauth_gateway(endpoints)?,
-        client_id.clone(),
-    );
-    let manager = Arc::new(forge_platform_twitch::TwitchCredentialsManager::new(
-        oauth.clone(),
-        Arc::clone(&creds),
-    ));
-    let helix = twitch_helix_gateway(endpoints, bus)?;
-    let bot = forge_platform_twitch::TwitchBotAccount::new(
-        Arc::clone(&creds),
-        oauth.clone(),
-        publisher(bus),
-        twitch_helix_gateway(endpoints, bus)?,
-    );
-    let sign_in = forge_platform_twitch::TwitchSignIn::new(oauth, helix.clone());
-    let transport: Arc<dyn forge_platform_twitch::HelixTransport> =
-        Arc::new(
-            forge_platform_twitch::HelixHttpTransport::new(
-                helix.clone(),
-                client_id.clone(),
-                Arc::clone(&manager) as Arc<dyn forge_platform_twitch::HelixTokenSource>,
-            )
-            .with_refresher(
-                Arc::clone(&manager) as Arc<dyn forge_platform_twitch::HelixTokenRefresher>
-            ),
-        );
-    bot.attach_broadcaster_transport(Arc::clone(&transport));
-    if let Err(e) = forge_platform_twitch::register_twitch_sub_actions(
+    let assembly = forge_platform_twitch::TwitchAssembly::new(
         sub_actions,
-        transport,
-        Arc::clone(&creds),
-        lifecycle.clone(),
-        Some(Arc::clone(&bot)),
-    ) {
-        tracing::error!(error = %e, "twitch sub-action registration failed");
-    }
+        creds_of(backend),
+        &publisher(bus),
+        endpoints,
+        client_id,
+    )?;
     Some(TwitchFactory {
         bus: Arc::clone(bus),
-        endpoints: endpoints.clone(),
-        client_id,
-        creds,
-        manager,
-        lifecycle,
-        helix,
-        bot,
-        sign_in,
+        assembly,
     })
-}
-
-fn twitch_oauth_gateway(endpoints: &PlatformEndpoints) -> Option<Gateway> {
-    let limiter: Arc<dyn RateLimiter> = Arc::new(TokenBucketRateLimiter::new(
-        forge_platform_twitch::TWITCH_OAUTH_BUDGET_CAPACITY,
-        forge_platform_twitch::TWITCH_OAUTH_BUDGET_WINDOW,
-    ));
-    forge_platform_twitch::twitch_oauth_gateway(endpoints, limiter)
-        .inspect_err(|e| tracing::error!(error = %e, "twitch oauth gateway build failed"))
-        .ok()
-}
-
-fn twitch_helix_gateway(endpoints: &PlatformEndpoints, bus: &Arc<EventBus>) -> Option<Gateway> {
-    let limiter: Arc<dyn RateLimiter> = Arc::new(TokenBucketRateLimiter::new(
-        forge_platform_twitch::HELIX_BUDGET_CAPACITY,
-        forge_platform_twitch::HELIX_BUDGET_WINDOW,
-    ));
-    forge_platform_twitch::helix_gateway(endpoints, limiter, publisher(bus))
-        .inspect_err(|e| tracing::error!(error = %e, "twitch helix gateway build failed"))
-        .ok()
 }
 
 impl TwitchFactory {
     pub(crate) fn bot(&self) -> Arc<forge_platform_twitch::TwitchBotAccount> {
-        Arc::clone(&self.bot)
+        self.assembly.bot()
     }
 
     pub(crate) fn sign_in(&self) -> forge_platform_twitch::TwitchSignIn {
-        self.sign_in.clone()
+        self.assembly.sign_in()
     }
 
     pub(crate) fn credentials_manager(
         &self,
     ) -> Arc<forge_platform_twitch::TwitchCredentialsManager> {
-        Arc::clone(&self.manager)
+        self.assembly.credentials_manager()
     }
 }
 
 #[async_trait]
 impl IntegrationFactory<BuiltinObject> for TwitchFactory {
     fn id(&self) -> IntegrationId {
-        forge_platform_twitch::TWITCH_INTEGRATION.id
+        self.assembly.id()
     }
 
     fn teardown_grace(&self) -> Duration {
@@ -156,48 +90,23 @@ impl IntegrationFactory<BuiltinObject> for TwitchFactory {
     }
 
     async fn is_configured(&self) -> Result<bool, StorageError> {
-        has_credentials_for(self.creds.as_ref(), &self.id()).await
+        self.assembly.is_configured().await
     }
 
     async fn start(&self) -> Result<RunningIntegration<BuiltinObject>, IntegrationStartError> {
-        let stored = forge_platform_twitch::credentials::load(self.creds.as_ref())
-            .await
-            .ok()
-            .flatten();
-        let user_id = stored
-            .as_ref()
-            .map(|stored| stored.user_id.clone())
-            .unwrap_or_default();
-        let platform = Arc::new(
-            forge_platform_twitch::TwitchPlatform::new(
-                forge_platform_twitch::ChatSessionConfig {
-                    client_id: self.client_id.clone(),
-                    broadcaster_id: user_id.clone(),
-                    user_id,
-                    endpoints: self.endpoints.clone(),
-                },
-                Arc::clone(&self.creds),
-                Arc::clone(&self.manager),
-                forge_platform_twitch::SubscriptionTracker::default(),
-                self.helix.clone(),
-                self.lifecycle.clone(),
-            )
-            .with_bot(Arc::clone(&self.bot)),
-        );
-        let chat_platform: Arc<dyn ChatPlatform> = Arc::clone(&platform) as _;
+        let session = self.assembly.open_session().await;
+        let chat_platform = session.chat_platform();
         spawn_event_bridge(publisher(&self.bus), chat_platform.events(), "twitch");
         let mut tasks = spawn_chat_send_router(
             Arc::clone(&self.bus),
             Arc::clone(&chat_platform),
             PlatformId::Twitch,
         );
-        let bot = Arc::clone(&self.bot);
+        let bot = self.assembly.bot();
         tasks.track(tokio::spawn(async move { bot.sync_status().await }));
-        let Some(stored) = stored else {
+        let Some(bundle) = session.into_bundle() else {
             return Ok(idle_with_tasks(tasks));
         };
-        let login = (!stored.login.is_empty()).then_some(stored.login);
-        let bundle = forge_platform_twitch::TwitchIntegrationBundle::new(login, platform);
         tasks.track(spawn_connect(chat_platform, "twitch"));
         let viewers = bundle.viewer_source();
         let object = twitch_builtin_object(Arc::clone(&bundle));

@@ -1,4 +1,5 @@
 mod account;
+mod assembly;
 mod auth;
 mod ban_list;
 mod bot_account;
@@ -35,6 +36,7 @@ mod triggers;
 pub mod vocabulary;
 
 pub use account::identity::BroadcasterTier;
+pub use assembly::{TwitchAssembly, TwitchSession};
 pub use auth::{
     DeviceCodeInfo, DeviceTiming, TWITCH_BOT_SCOPES, TWITCH_BROADCASTER_SCOPES, TwitchAuthBundle,
     TwitchAuthFlow, TwitchSignIn, UserInfo, client_id, twitch_auth_flow,

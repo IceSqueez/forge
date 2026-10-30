@@ -1423,6 +1423,7 @@ name = "forge-server"
 version = "0.6.3"
 dependencies = [
  "arc-swap",
+ "async-trait",
  "axum",
  "base64 0.23.1",
  "forge-events",

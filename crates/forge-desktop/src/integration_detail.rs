@@ -2281,11 +2281,9 @@ mod tests {
             let view = open_detail(cx, &rt, object);
             let (backend, _writes) = test_backend();
             let bus = EventBus::new(Arc::new(StubEventLog));
-            let bot = TwitchBotAccount::new(
+            let bot = crate::test_support::default_twitch_bot(
                 backend as Arc<dyn CredentialsRepo>,
-                crate::test_support::default_twitch_oauth_client(),
-                Arc::clone(&bus) as Arc<dyn EventPublisher>,
-                crate::test_support::default_twitch_helix_gateway(bus as Arc<dyn EventPublisher>),
+                bus as Arc<dyn EventPublisher>,
             );
             let presence = cx.new(|_| TwitchBotPresence::new());
             view.update(cx, |detail, cx| detail.attach_twitch_bot(bot, presence, cx));

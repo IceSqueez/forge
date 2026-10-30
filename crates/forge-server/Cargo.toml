@@ -29,11 +29,11 @@ base64 = { workspace = true }
 subtle = { workspace = true }
 time = { workspace = true }
 arc-swap = { workspace = true }
+async-trait = { workspace = true }
 
 [dev-dependencies]
 forge-registry = { path = "../forge-registry" }
 tokio-tungstenite = { workspace = true }
-async-trait = { workspace = true }
 forge-storage = { path = "../forge-storage", features = ["test-mocks", "settings-test-support"] }
 futures-util = { workspace = true }
 mockall = { workspace = true }

@@ -4,7 +4,7 @@ use std::time::Duration;
 
 use forge_audio::{AudioSink, AudioSinkFactory};
 use forge_components::{AccentColor, Density, ThemeId};
-use forge_events::EventPublisher;
+use forge_events::{EventObserver, EventPublisher};
 use forge_overlay::{OverlayKindRegistry, register_builtin_kinds};
 use forge_platform_core::PlatformEndpoints;
 use forge_registry::{SubActionRegistry, TriggerRegistry};
@@ -23,6 +23,7 @@ use forge_runtime::{
     spawn_timer_scheduler, spawn_trigger_evaluator, spawn_twitch_emote_learning,
     spawn_viewer_tracker,
 };
+use forge_server::DeliveryHub;
 use forge_soundboard::{
     BusAudioEventSink, ClipLibrary, SoundboardControl, SoundboardPlayer, SoundboardSettingsHandle,
     load_soundboard_settings, register_soundboard_sub_actions,
@@ -39,7 +40,6 @@ use crate::audio_router::{AudioRouter, AudioRouterParts};
 use crate::integrations::{IntegrationInputs, build_integrations};
 use crate::log_tail::LogTail;
 use crate::overlay_build_failure::OverlayBuildFailure;
-use crate::overlay_frame_sink::ServerOverlayFrameSink;
 use crate::platform_identities::PlatformIdentities;
 use crate::routed_sink::RoutedSink;
 use crate::runtime_handles::RuntimeHandles;
@@ -528,19 +528,26 @@ pub async fn build_runtime(inputs: RuntimeInputs) -> Result<RuntimeHandles, Boot
     });
     scheduled_runs_cell.set(scheduled_runs.clone());
 
+    let delivery_hub = DeliveryHub::new(Arc::clone(&bus) as Arc<dyn EventObserver>);
     let ServerBoot {
         handle: server,
         unavailable_reason: server_unavailable,
-    } = build_server(&backend, &bus, &action_engine, trigger_registry.platforms()).await;
+    } = build_server(
+        &backend,
+        &bus,
+        &action_engine,
+        trigger_registry.platforms(),
+        &delivery_hub,
+    )
+    .await;
 
     let mut overlay_kinds_mut = OverlayKindRegistry::new();
     if let Err(e) = register_builtin_kinds(&mut overlay_kinds_mut) {
         tracing::error!(error = %e, "overlay type registration failed");
     }
     let overlay_kinds = Arc::new(overlay_kinds_mut);
-    let overlay_frames: Option<Arc<dyn OverlayFrameSink>> = server
-        .clone()
-        .map(|handle| Arc::new(ServerOverlayFrameSink::new(handle)) as Arc<dyn OverlayFrameSink>);
+    let overlay_frames: Option<Arc<dyn OverlayFrameSink>> =
+        Some(Arc::new(delivery_hub.clone()) as Arc<dyn OverlayFrameSink>);
     let overlays = OverlayServiceHandle::new(
         backend.overlay_repo(),
         Arc::clone(&backend) as Arc<dyn SettingsRepo>,
@@ -579,11 +586,8 @@ pub async fn build_runtime(inputs: RuntimeInputs) -> Result<RuntimeHandles, Boot
         donation_audience.forward_changes_to(&waker);
         connect_listeners.push(Arc::new(waker) as Arc<dyn OverlayConnectListener>);
     }
-    if let Some(handle) = server.clone() {
-        handle
-            .set_overlay_connect_listener(Arc::new(OverlayConnectFanout::new(connect_listeners)))
-            .await;
-    }
+    delivery_hub
+        .set_overlay_connect_listener(Arc::new(OverlayConnectFanout::new(connect_listeners)));
     donations.spawn_catch_up_release(Arc::new(donation_audience));
     let overlay_pass = overlays.materialize_all().await;
     match &overlay_pass {
@@ -721,6 +725,7 @@ async fn build_server(
     bus: &Arc<EventBus>,
     action_engine: &ActionEngineHandle,
     available_platforms: std::collections::BTreeSet<PlatformId>,
+    delivery_hub: &DeliveryHub,
 ) -> ServerBoot {
     let settings = match forge_server::ServerSettings::load(backend.as_ref()).await {
         Ok(settings) => settings,
@@ -766,6 +771,7 @@ async fn build_server(
         config.overlay_cors_any_origin = settings.overlay_cors_any_origin;
         config.additional_origins = settings.additional_origins.clone();
         config.available_platforms = available_platforms.clone();
+        config.delivery_hub = Some(delivery_hub.clone());
         if let Some(root) = settings
             .overlay_root
             .as_ref()

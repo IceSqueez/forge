@@ -10,6 +10,7 @@ use forge_storage::{
 };
 use forge_types::PlatformId;
 
+use crate::DeliveryHub;
 use crate::settings::{self, StoredOrigins};
 use forge_storage::settings::core_settings;
 
@@ -35,6 +36,7 @@ pub struct ServerConfig {
     pub user_globals: Arc<dyn UserGlobalsRepo>,
     pub overlays: Arc<dyn OverlayRepo>,
     pub action_engine: Arc<ActionEngineHandle>,
+    pub delivery_hub: Option<DeliveryHub>,
 }
 
 impl ServerConfig {
@@ -68,6 +70,7 @@ impl ServerConfig {
             user_globals,
             overlays,
             action_engine,
+            delivery_hub: None,
         }
     }
 }

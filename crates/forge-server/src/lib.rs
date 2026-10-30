@@ -7,6 +7,7 @@ mod auth;
 mod bandwidth;
 mod bus_adapter;
 mod config;
+mod delivery_hub;
 mod error;
 mod handle;
 mod listener;
@@ -35,6 +36,7 @@ pub use bus_adapter::{BusAdapter, ClientId, EventFilter};
 pub use config::{
     DEFAULT_PORT, LAN_BIND_ADDRESS, LOCALHOST_BIND_ADDRESS, ServerConfig, ServerSettings,
 };
+pub use delivery_hub::DeliveryHub;
 pub use error::{SecretToken, ServerError};
 pub use handle::ServerHandle;
 pub use overlay_token::{OverlayTokenState, masked_overlay_token};

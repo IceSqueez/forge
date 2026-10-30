@@ -20,6 +20,7 @@ use forge_storage::{
 use crate::audio_clips::AudioClipStore;
 use crate::auth::AuthState;
 use crate::bus_adapter::BusAdapter;
+use crate::delivery_hub::DeliveryHub;
 use crate::listener::{GuardedListener, PeerInfo};
 use crate::origin::{accepts_host, build_allowed_origins};
 use crate::routes::{api_v1, audio, overlays, ws};
@@ -89,8 +90,10 @@ async fn build_state(config: ServerConfig, bind_addr: SocketAddr) -> Result<AppS
     );
     let bus = Arc::clone(&config.event_bus);
     let observer: Arc<dyn EventObserver> = bus.clone();
-    let bus_adapter = BusAdapter::new(observer);
-    bus_adapter.spawn();
+    let bus_adapter = config
+        .delivery_hub
+        .unwrap_or_else(|| DeliveryHub::new(observer))
+        .adapter();
     let allowed_origins = Arc::new(build_allowed_origins(bind_addr, &config.additional_origins));
     Ok(AppState {
         auth,
@@ -1185,6 +1188,102 @@ pub(crate) mod tests {
         );
 
         handle.stop().await.expect("stop after restart");
+    }
+
+    struct RecordingListener(Mutex<Vec<forge_storage::OverlayId>>);
+
+    #[async_trait]
+    impl forge_runtime::OverlayConnectListener for RecordingListener {
+        async fn overlay_connected(&self, identity: &forge_storage::OverlayId) {
+            self.0.lock().expect("mutex").push(identity.clone());
+        }
+    }
+
+    async fn hub_backed_server_on_a_persisted_port(
+        hub: &crate::DeliveryHub,
+    ) -> (ServerHandle, u16) {
+        let settings = mem_settings();
+        let port = reserve_a_free_port().await;
+        crate::config::ServerSettings::save_bind_address(&*settings, LOOPBACK)
+            .await
+            .expect("save addr");
+        crate::config::ServerSettings::save_port(&*settings, port)
+            .await
+            .expect("save port");
+        let mut config = loopback_config(settings, port, Vec::new());
+        let mut overlays = forge_storage::overlay::MockOverlayRepo::new();
+        overlays.expect_get_by_credential().returning(|credential| {
+            Ok((credential.as_str() == OVERLAY_PAGE_CREDENTIAL).then(served_overlay))
+        });
+        config.overlays = Arc::new(overlays);
+        config.delivery_hub = Some(hub.clone());
+        (start_server(config).await.expect("start"), port)
+    }
+
+    #[tokio::test]
+    async fn a_page_registered_on_the_hub_still_receives_content_after_a_server_restart() {
+        let hub = crate::DeliveryHub::new(EventBus::new(Arc::new(NullEventLogRepo)));
+        let (handle, _port) = hub_backed_server_on_a_persisted_port(&hub).await;
+        let identity = forge_storage::OverlayId::new(OVERLAY_IDENTITY);
+
+        handle.restart().await.expect("restart");
+        let (client, _initial) = hub
+            .adapter()
+            .register_client(ClientFilterSet::new(std::collections::HashSet::new()))
+            .await;
+        let mut page = hub
+            .adapter()
+            .promote_to_overlay(
+                client.id,
+                identity.clone(),
+                crate::bus_adapter::OverlayClientClass::BrowserSource,
+            )
+            .await
+            .expect("a just-registered client is still on the registry");
+        let reached = handle
+            .deliver_overlay_content(&identity, serde_json::json!({ "value": 3 }), None)
+            .await;
+
+        assert_eq!(reached.sources, 1);
+        assert!(matches!(page.try_recv(), Ok(WsFrame::Text(_))));
+        handle.stop().await.expect("stop");
+    }
+
+    #[tokio::test]
+    async fn the_connect_listener_on_the_hub_hears_an_overlay_page_connecting_after_a_restart() {
+        let hub = crate::DeliveryHub::new(EventBus::new(Arc::new(NullEventLogRepo)));
+        let listener = Arc::new(RecordingListener(Mutex::new(Vec::new())));
+        hub.set_overlay_connect_listener(listener.clone());
+        let (handle, port) = hub_backed_server_on_a_persisted_port(&hub).await;
+        handle.restart().await.expect("restart");
+
+        let (mut socket, _) =
+            tokio_tungstenite::connect_async(format!("ws://{LOOPBACK}:{port}/ws/v1/"))
+                .await
+                .expect("ws connect");
+        futures_util::SinkExt::send(
+            &mut socket,
+            tokio_tungstenite::tungstenite::Message::Text(
+                serde_json::json!({
+                    "id": "1",
+                    "request": "auth",
+                    "overlayCredential": OVERLAY_PAGE_CREDENTIAL,
+                })
+                .to_string()
+                .into(),
+            ),
+        )
+        .await
+        .expect("the page sends its credential");
+        let ack: serde_json::Value =
+            serde_json::from_str(&next_text_frame(&mut socket).await).expect("json response");
+
+        assert_eq!(ack["status"], "ok");
+        assert_eq!(
+            *listener.0.lock().expect("mutex"),
+            vec![forge_storage::OverlayId::new(OVERLAY_IDENTITY)]
+        );
+        handle.stop().await.expect("stop");
     }
 
     #[tokio::test]

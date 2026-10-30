@@ -1,0 +1,9 @@
+msg-condition-any = any
+msg-condition-first_time_chatters = first-time chatters
+msg-condition-command_phrase = "{ $phrase }"
+msg-condition-joined = { $first } · { $next }
+msg-condition-date_pattern_empty = the date pattern is empty
+msg-condition-date_pattern_unterminated_quote = quoted text starting at position { $position } is never closed with '
+msg-condition-date_pattern_unsupported_letter = '{ $letter }' at position { $position } is not a date pattern letter; put literal text in single quotes
+msg-condition-date_pattern_unsupported_length = '{ $spelling }' at position { $position } is not a supported length for '{ $letter }'
+msg-condition-date_pattern_replaced_spelling = '{ $spelling }' at position { $position } is not supported; use '{ $replacement }'

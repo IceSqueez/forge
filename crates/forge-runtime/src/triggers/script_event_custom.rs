@@ -2,7 +2,9 @@ use forge_events::{Event, EventSource};
 use forge_registry::{
     EventFilter, FormField, KindPlatformContract, TriggerCategory, TriggerKindDescriptor,
 };
-use forge_types::{ArgStack, TriggerConfig, Variant};
+use forge_types::{ArgStack, TriggerConfig, UserText, Variant};
+
+use crate::core_messages;
 
 pub struct ScriptEventCustomDescriptor;
 
@@ -49,13 +51,15 @@ impl TriggerKindDescriptor for ScriptEventCustomDescriptor {
         }]
     }
 
-    fn condition_display(&self, config: &TriggerConfig) -> String {
+    fn condition_display(&self, config: &TriggerConfig) -> UserText {
         config
             .get("event_name")
             .and_then(|v| v.as_str())
             .filter(|s| !s.is_empty())
-            .map(|s| format!("event = {s}"))
-            .unwrap_or_else(|| "any event".to_owned())
+            .map_or_else(
+                || core_messages::CONDITION_ANY_EVENT.into(),
+                |event| core_messages::condition_event(event).into(),
+            )
     }
 
     fn event_filter(&self) -> EventFilter {

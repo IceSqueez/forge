@@ -5,14 +5,14 @@ use forge_registry::{
     EventFilter, FormField, KindPlatformContract, TriggerCategory, TriggerKindDescriptor,
 };
 use forge_types::{
-    ArgStack, DeclaredVariable, TriggerConfig, VariableSchema, Variant, VariantKind,
+    ArgStack, DeclaredVariable, TriggerConfig, UserText, VariableSchema, Variant, VariantKind,
 };
 use serde_json::Value;
 
 use super::config_read::config_filter_text;
 use crate::vocabulary::fields::port as fields;
 use crate::vocabulary::variables::device as variables;
-use crate::vocabulary::{config_keys, event_kinds};
+use crate::vocabulary::{config_keys, event_kinds, messages};
 
 pub(crate) struct MidiPortTrigger {
     pub(crate) id: &'static str,
@@ -73,10 +73,10 @@ impl TriggerKindDescriptor for MidiPortTrigger {
         }]
     }
 
-    fn condition_display(&self, config: &TriggerConfig) -> String {
+    fn condition_display(&self, config: &TriggerConfig) -> UserText {
         match config_filter_text(config, config_keys::DIRECTION) {
-            Some(direction) => format!("direction={direction}"),
-            None => "any direction".to_owned(),
+            Some(direction) => messages::condition_direction(direction).into(),
+            None => messages::CONDITION_ANY_DIRECTION.into(),
         }
     }
 

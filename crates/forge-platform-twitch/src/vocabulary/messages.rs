@@ -53,6 +53,47 @@ const RECIPIENT_EMPTY: MessageCode = MessageCode::from_static(PLATFORM_ID, "reci
 const RECIPIENT_REJECTS_WHISPERS: MessageCode =
     MessageCode::from_static(PLATFORM_ID, "recipient_rejects_whispers");
 
+pub(crate) const CONDITION_ANY_SHARED_CHAT_MESSAGE: MessageCode =
+    MessageCode::from_static(PLATFORM_ID, "condition_any_shared_chat_message");
+pub(crate) const CONDITION_ANY_PROFILE_CHANGE: MessageCode =
+    MessageCode::from_static(PLATFORM_ID, "condition_any_profile_change");
+pub(crate) const CONDITION_ANY_REWARD: MessageCode =
+    MessageCode::from_static(PLATFORM_ID, "condition_any_reward");
+pub(crate) const CONDITION_ANY_AMOUNT: MessageCode =
+    MessageCode::from_static(PLATFORM_ID, "condition_any_amount");
+pub(crate) const CONDITION_ANY_STATE: MessageCode =
+    MessageCode::from_static(PLATFORM_ID, "condition_any_state");
+pub(crate) const CONDITION_ANY_WHISPER: MessageCode =
+    MessageCode::from_static(PLATFORM_ID, "condition_any_whisper");
+pub(crate) const CONDITION_ANY_STATUS: MessageCode =
+    MessageCode::from_static(PLATFORM_ID, "condition_any_status");
+const CONDITION_REWARD_ID: MessageCode =
+    MessageCode::from_static(PLATFORM_ID, "condition_reward_id");
+const CONDITION_REWARD: MessageCode = MessageCode::from_static(PLATFORM_ID, "condition_reward");
+const CONDITION_STATE: MessageCode = MessageCode::from_static(PLATFORM_ID, "condition_state");
+const CONDITION_STATUS: MessageCode = MessageCode::from_static(PLATFORM_ID, "condition_status");
+const CONDITION_WHISPER_FROM: MessageCode =
+    MessageCode::from_static(PLATFORM_ID, "condition_whisper_from");
+const CONDITION_WHISPER_TEXT: MessageCode =
+    MessageCode::from_static(PLATFORM_ID, "condition_whisper_text");
+const CONDITION_AMOUNT_AT_LEAST: MessageCode =
+    MessageCode::from_static(PLATFORM_ID, "condition_amount_at_least");
+const CONDITION_BITS_AT_LEAST: MessageCode =
+    MessageCode::from_static(PLATFORM_ID, "condition_bits_at_least");
+const CONDITION_LEVEL_AT_LEAST: MessageCode =
+    MessageCode::from_static(PLATFORM_ID, "condition_level_at_least");
+const REWARD_CONDITION_ARG: &str = "reward";
+const STATE_CONDITION_ARG: &str = "state";
+const STATUS_CONDITION_ARG: &str = "status";
+const SENDER_CONDITION_ARG: &str = "sender";
+const TEXT_CONDITION_ARG: &str = "text";
+const MIN_CONDITION_ARG: &str = "min";
+const LEVEL_CONDITION_ARG: &str = "level";
+
+const CONDITION_BITS_BETWEEN: MessageCode =
+    MessageCode::from_static(PLATFORM_ID, "condition_bits_between");
+const MAX_CONDITION_ARG: &str = "max";
+
 pub const TWITCH_MESSAGES: MessageCatalog = MessageCatalog {
     namespace: PLATFORM_ID,
     codes: &[
@@ -92,6 +133,23 @@ pub const TWITCH_MESSAGES: MessageCatalog = MessageCatalog {
         SHOUTOUT_COOLDOWN,
         RECIPIENT_EMPTY,
         RECIPIENT_REJECTS_WHISPERS,
+        CONDITION_ANY_SHARED_CHAT_MESSAGE,
+        CONDITION_BITS_BETWEEN,
+        CONDITION_ANY_PROFILE_CHANGE,
+        CONDITION_ANY_REWARD,
+        CONDITION_ANY_AMOUNT,
+        CONDITION_ANY_STATE,
+        CONDITION_ANY_WHISPER,
+        CONDITION_ANY_STATUS,
+        CONDITION_REWARD_ID,
+        CONDITION_REWARD,
+        CONDITION_STATE,
+        CONDITION_STATUS,
+        CONDITION_WHISPER_FROM,
+        CONDITION_WHISPER_TEXT,
+        CONDITION_AMOUNT_AT_LEAST,
+        CONDITION_BITS_AT_LEAST,
+        CONDITION_LEVEL_AT_LEAST,
     ],
     en_ftl: include_str!("../../locales/en/messages.ftl"),
     uk_ftl: include_str!("../../locales/uk/messages.ftl"),
@@ -246,6 +304,49 @@ pub(crate) fn shoutout_cooldown(retry_after_secs: u64) -> MessageRef {
     MessageRef::new(SHOUTOUT_COOLDOWN).with_arg("seconds", retry_after_secs)
 }
 
+pub(crate) fn condition_reward_id(reward: &str) -> MessageRef {
+    MessageRef::new(CONDITION_REWARD_ID).with_arg(REWARD_CONDITION_ARG, VerbatimText::new(reward))
+}
+
+pub(crate) fn condition_reward(reward: &str) -> MessageRef {
+    MessageRef::new(CONDITION_REWARD).with_arg(REWARD_CONDITION_ARG, VerbatimText::new(reward))
+}
+
+pub(crate) fn condition_state(state: &str) -> MessageRef {
+    MessageRef::new(CONDITION_STATE).with_arg(STATE_CONDITION_ARG, VerbatimText::new(state))
+}
+
+pub(crate) fn condition_status(status: &str) -> MessageRef {
+    MessageRef::new(CONDITION_STATUS).with_arg(STATUS_CONDITION_ARG, VerbatimText::new(status))
+}
+
+pub(crate) fn condition_whisper_from(sender: &str) -> MessageRef {
+    MessageRef::new(CONDITION_WHISPER_FROM)
+        .with_arg(SENDER_CONDITION_ARG, VerbatimText::new(sender))
+}
+
+pub(crate) fn condition_whisper_text(text: &str) -> MessageRef {
+    MessageRef::new(CONDITION_WHISPER_TEXT).with_arg(TEXT_CONDITION_ARG, VerbatimText::new(text))
+}
+
+pub(crate) fn condition_amount_at_least(min: i64) -> MessageRef {
+    MessageRef::new(CONDITION_AMOUNT_AT_LEAST).with_arg(MIN_CONDITION_ARG, min)
+}
+
+pub(crate) fn condition_bits_between(min: i64, max: i64) -> MessageRef {
+    MessageRef::new(CONDITION_BITS_BETWEEN)
+        .with_arg(MIN_CONDITION_ARG, min)
+        .with_arg(MAX_CONDITION_ARG, max)
+}
+
+pub(crate) fn condition_bits_at_least(min: i64) -> MessageRef {
+    MessageRef::new(CONDITION_BITS_AT_LEAST).with_arg(MIN_CONDITION_ARG, min)
+}
+
+pub(crate) fn condition_level_at_least(level: i64) -> MessageRef {
+    MessageRef::new(CONDITION_LEVEL_AT_LEAST).with_arg(LEVEL_CONDITION_ARG, level)
+}
+
 #[cfg(test)]
 mod tests {
     use std::collections::{BTreeMap, BTreeSet};
@@ -309,6 +410,23 @@ mod tests {
             health_viewers_offline(),
             health_resets_in(9),
             health_no_usage(),
+            MessageRef::new(CONDITION_ANY_SHARED_CHAT_MESSAGE),
+            MessageRef::new(CONDITION_ANY_PROFILE_CHANGE),
+            MessageRef::new(CONDITION_ANY_REWARD),
+            MessageRef::new(CONDITION_ANY_AMOUNT),
+            MessageRef::new(CONDITION_ANY_STATE),
+            MessageRef::new(CONDITION_ANY_WHISPER),
+            MessageRef::new(CONDITION_ANY_STATUS),
+            condition_reward_id("r"),
+            condition_reward("r"),
+            condition_state("s"),
+            condition_status("fulfilled"),
+            condition_whisper_from("u"),
+            condition_whisper_text("t"),
+            condition_amount_at_least(1),
+            condition_bits_between(1, 2),
+            condition_bits_at_least(1),
+            condition_level_at_least(1),
         ]
     }
 

@@ -33,6 +33,13 @@ const RESPONSE_UNREADABLE: MessageCode =
 const UNRESOLVED_REFERENCE: MessageCode =
     MessageCode::from_static(INTEGRATION_ID, "unresolved_reference");
 
+pub(crate) const CONDITION_PERMANENT_BAN_ONLY: MessageCode =
+    MessageCode::from_static(INTEGRATION_ID, "condition_permanent_ban_only");
+pub(crate) const CONDITION_TEMPORARY_TIMEOUT_ONLY: MessageCode =
+    MessageCode::from_static(INTEGRATION_ID, "condition_temporary_timeout_only");
+pub(crate) const CONDITION_ANY_BAN_TYPE: MessageCode =
+    MessageCode::from_static(INTEGRATION_ID, "condition_any_ban_type");
+
 pub const YOUTUBE_MESSAGES: MessageCatalog = MessageCatalog {
     namespace: INTEGRATION_ID,
     codes: &[
@@ -53,6 +60,9 @@ pub const YOUTUBE_MESSAGES: MessageCatalog = MessageCatalog {
         REQUEST_FAILED,
         RESPONSE_UNREADABLE,
         UNRESOLVED_REFERENCE,
+        CONDITION_PERMANENT_BAN_ONLY,
+        CONDITION_TEMPORARY_TIMEOUT_ONLY,
+        CONDITION_ANY_BAN_TYPE,
     ],
     en_ftl: include_str!("../../locales/en/messages.ftl"),
     uk_ftl: include_str!("../../locales/uk/messages.ftl"),
@@ -117,6 +127,7 @@ pub(crate) fn response_unreadable(detail: &str) -> MessageRef {
 pub(crate) fn unresolved_reference(name: &str) -> MessageRef {
     MessageRef::new(UNRESOLVED_REFERENCE).with_arg(FIELD_ARG, VerbatimText::new(name))
 }
+
 #[cfg(test)]
 mod tests {
     use std::collections::{BTreeMap, BTreeSet};
@@ -164,6 +175,9 @@ mod tests {
             request_failed("c"),
             response_unreadable("c"),
             unresolved_reference("title"),
+            MessageRef::new(CONDITION_PERMANENT_BAN_ONLY),
+            MessageRef::new(CONDITION_TEMPORARY_TIMEOUT_ONLY),
+            MessageRef::new(CONDITION_ANY_BAN_TYPE),
         ]
     }
 

@@ -1,12 +1,12 @@
-use crate::vocabulary::event_kinds;
 use crate::vocabulary::trigger_ids;
+use crate::vocabulary::{event_kinds, messages};
 use forge_events::{Event, EventSource};
 use forge_registry::{
     ActorDeclaration, ActorIdentity, ActorRole, ActorSlot, CanonicalVariable, EventFilter,
     FormField, KindPlatformContract, TriggerCategory, TriggerKindDescriptor, TriggerVariables,
 };
 use forge_types::{
-    DeclaredVariable, PlatformId, SynthesisHint, TriggerConfig, Variant, VariantKind,
+    DeclaredVariable, PlatformId, SynthesisHint, TriggerConfig, UserText, Variant, VariantKind,
 };
 
 use super::payload_read::{self, twitch_actor};
@@ -58,7 +58,7 @@ impl TriggerKindDescriptor for CharityDonationDescriptor {
         }]
     }
 
-    fn condition_display(&self, config: &TriggerConfig) -> String {
+    fn condition_display(&self, config: &TriggerConfig) -> UserText {
         let min = config
             .get("min_amount_cents")
             .and_then(|v| {
@@ -70,9 +70,9 @@ impl TriggerKindDescriptor for CharityDonationDescriptor {
             })
             .unwrap_or(0);
         if min == 0 {
-            "any amount".to_owned()
+            messages::CONDITION_ANY_AMOUNT.into()
         } else {
-            format!("amount >= {min} cents")
+            messages::condition_amount_at_least(min).into()
         }
     }
 

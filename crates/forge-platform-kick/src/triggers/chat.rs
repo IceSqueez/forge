@@ -5,7 +5,7 @@ use forge_registry::{
     TriggerKindDescriptor, TriggerVariables, admits_chatter, chat_message_condition,
     first_chatters_only_field,
 };
-use forge_types::{DeclaredVariable, PlatformId, TriggerConfig, Variant, VariantKind};
+use forge_types::{DeclaredVariable, PlatformId, TriggerConfig, UserText, Variant, VariantKind};
 
 use super::payload_read::{self, kick_actor};
 use crate::vocabulary::fields::chat as fields;
@@ -50,7 +50,7 @@ impl TriggerKindDescriptor for ChatDescriptor {
         vec![first_chatters_only_field()]
     }
 
-    fn condition_display(&self, config: &TriggerConfig) -> String {
+    fn condition_display(&self, config: &TriggerConfig) -> UserText {
         chat_message_condition(config)
     }
 

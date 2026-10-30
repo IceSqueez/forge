@@ -11,8 +11,9 @@ use forge_registry::{
 };
 use forge_registry::{ActorRole, ActorSlot, CanonicalVariable};
 use forge_types::{
-    Action, DatePattern, DeclaredVariable, ExecutionMode, IntegrationId, PlatformId,
+    Action, DeclaredVariable, ExecutionMode, IntegrationId, MessageCode, MessageRef, PlatformId,
     SubActionConfig, SubActionOutcome, SubActionStep, TriggerInstance, Variant, VariantKind,
+    VerbatimText,
 };
 
 use fakes::{FakeTrigger, action, encode_chain, runner, step, trigger_of};
@@ -802,13 +803,39 @@ fn not_datetime() -> StepHealth {
     findings(vec![Finding::DateFormatOnNonDatetime(STAMP.to_owned())])
 }
 
+fn date_reason(name: &'static str) -> MessageRef {
+    MessageRef::new(MessageCode::from_static("condition", name))
+}
+
+fn replaced_spelling(spelling: &str, replacement: &str) -> MessageRef {
+    date_reason("date_pattern_replaced_spelling")
+        .with_arg("spelling", VerbatimText::new(spelling))
+        .with_arg("replacement", VerbatimText::new(replacement))
+        .with_arg("position", 0_usize)
+}
+
+fn pattern_reason(pattern: &str) -> MessageRef {
+    match pattern {
+        "qq" => date_reason("date_pattern_unsupported_letter")
+            .with_arg("letter", VerbatimText::new("q"))
+            .with_arg("position", 0_usize),
+        "'HH" => date_reason("date_pattern_unterminated_quote").with_arg("position", 0_usize),
+        "HHH" => date_reason("date_pattern_unsupported_length")
+            .with_arg("letter", VerbatimText::new("H"))
+            .with_arg("spelling", VerbatimText::new("HHH"))
+            .with_arg("position", 0_usize),
+        "dddd" => replaced_spelling("dddd", "EEEE"),
+        "ddd" => replaced_spelling("ddd", "EEE"),
+        "tt" => replaced_spelling("tt", "a"),
+        _ => date_reason("date_pattern_empty"),
+    }
+}
+
 fn invalid_pattern(pattern: &str) -> Finding {
     Finding::InvalidDatePattern {
         name: STAMP.to_owned(),
         pattern: pattern.to_owned(),
-        reason: DatePattern::parse(pattern)
-            .expect_err("the fixture pattern is invalid")
-            .to_string(),
+        reason: pattern_reason(pattern),
     }
 }
 

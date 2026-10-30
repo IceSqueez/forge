@@ -15,3 +15,18 @@ msg-midi-health_disabled = вимкнено
 msg-midi-health_output_available = доступно
 msg-midi-health_note_time = { $time }
 msg-midi-health_last_minute = за останню хвилину
+msg-midi-condition_any_note = будь-яка нота
+msg-midi-condition_any_controller = будь-який контролер
+msg-midi-condition_any_program = будь-яка програма
+msg-midi-condition_any_channel = будь-який канал
+msg-midi-condition_any_direction = будь-який напрямок
+msg-midi-condition_device = пристрій={ $device }
+msg-midi-condition_direction = напрямок={ $direction ->
+    [input] вхід
+    [output] вихід
+   *[other] { $direction }
+}
+msg-midi-condition_note = нота={ $number }
+msg-midi-condition_controller = cc={ $number }
+msg-midi-condition_program = програма={ $number }
+msg-midi-condition_channel = канал={ $channel }

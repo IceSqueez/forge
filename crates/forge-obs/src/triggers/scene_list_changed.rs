@@ -5,10 +5,11 @@ use forge_registry::{
     EventFilter, FormField, KindPlatformContract, TriggerCategory, TriggerKindDescriptor,
 };
 use forge_types::{
-    ArgStack, DeclaredVariable, TriggerConfig, VariableSchema, Variant, VariantKind,
+    ArgStack, DeclaredVariable, TriggerConfig, UserText, VariableSchema, Variant, VariantKind,
 };
 
 use crate::vocabulary::fields::scene as fields;
+use crate::vocabulary::messages;
 use crate::vocabulary::{event_kinds, trigger_ids, variables};
 
 pub struct SceneListChangedDescriptor;
@@ -50,8 +51,8 @@ impl TriggerKindDescriptor for SceneListChangedDescriptor {
         vec![]
     }
 
-    fn condition_display(&self, _config: &TriggerConfig) -> String {
-        "any scene list change".to_owned()
+    fn condition_display(&self, _: &TriggerConfig) -> UserText {
+        messages::CONDITION_ANY_SCENE_LIST_CHANGE.into()
     }
 
     fn event_filter(&self) -> EventFilter {

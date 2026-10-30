@@ -1,5 +1,6 @@
 use serde::{Deserialize, Serialize};
 
+use crate::message::code::MessageCode;
 use crate::message::reference::MessageRef;
 use crate::message::verbatim::VerbatimText;
 
@@ -20,6 +21,12 @@ impl UserText {
             Self::Message(message) => message.code().to_string(),
             Self::Verbatim(text) => text.as_str().to_owned(),
         }
+    }
+}
+
+impl From<MessageCode> for UserText {
+    fn from(code: MessageCode) -> Self {
+        Self::Message(MessageRef::new(code))
     }
 }
 

@@ -39,3 +39,39 @@ msg-twitch-recipient_rejects_whispers = Одержувач не приймає �
 msg-twitch-shoutout_cooldown = Шаутаут на перезарядці, спробуйте знову за { $seconds } с
 msg-twitch-unresolved_reference = Містить непідставлену змінну
 msg-twitch-invalid_hex_color = Має бути кольором у форматі #RRGGBB
+msg-twitch-condition_any_shared_chat_message = будь-яке повідомлення спільного чату
+msg-twitch-condition_any_profile_change = будь-яка зміна профілю
+msg-twitch-condition_any_reward = будь-яка нагорода
+msg-twitch-condition_any_amount = будь-яка сума
+msg-twitch-condition_any_state = будь-який стан
+msg-twitch-condition_any_whisper = будь-який шепіт
+msg-twitch-condition_any_status = будь-який статус
+msg-twitch-condition_reward_id = id нагороди = { $reward }
+msg-twitch-condition_reward = нагорода = { $reward }
+msg-twitch-condition_state = стан = { $state }
+msg-twitch-condition_status = статус = { $status ->
+    [fulfilled] виконано
+    [canceled] скасовано
+    [approved] схвалено
+    [denied] відхилено
+    [expired] прострочено
+   *[other] { $status }
+}
+msg-twitch-condition_whisper_from = від { $sender }
+msg-twitch-condition_whisper_text = текст збігається з "{ $text }"
+msg-twitch-condition_amount_at_least = сума >= { $min } { $min ->
+    [one] цент
+    [few] центи
+   *[many] центів
+}
+msg-twitch-condition_bits_at_least = >= { $min } { $min ->
+    [one] біт
+    [few] біти
+   *[many] бітів
+}
+msg-twitch-condition_level_at_least = рівень >= { $level }
+msg-twitch-condition_bits_between = { $min }-{ $max } { $max ->
+    [one] біт
+    [few] біти
+   *[many] бітів
+}

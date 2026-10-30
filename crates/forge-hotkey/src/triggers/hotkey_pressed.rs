@@ -5,10 +5,11 @@ use forge_registry::{
     EventFilter, FormField, KindPlatformContract, TriggerCategory, TriggerKindDescriptor,
 };
 use forge_types::{
-    ArgStack, DeclaredVariable, TriggerConfig, VariableSchema, Variant, VariantKind,
+    ArgStack, DeclaredVariable, TriggerConfig, UserText, VariableSchema, Variant, VariantKind,
+    VerbatimText,
 };
 
-use crate::vocabulary::{event_kinds, fields, trigger_ids, variables};
+use crate::vocabulary::{event_kinds, fields, messages, trigger_ids, variables};
 
 pub struct HotkeyPressedDescriptor;
 
@@ -53,17 +54,11 @@ impl TriggerKindDescriptor for HotkeyPressedDescriptor {
         }]
     }
 
-    fn condition_display(&self, config: &TriggerConfig) -> String {
-        config
-            .get(crate::COMBO_FIELD)
-            .and_then(|v| {
-                if let Variant::String(s) = v {
-                    Some(s.clone())
-                } else {
-                    None
-                }
-            })
-            .unwrap_or_else(|| "any hotkey".to_owned())
+    fn condition_display(&self, config: &TriggerConfig) -> UserText {
+        match config.get(crate::COMBO_FIELD) {
+            Some(Variant::String(combo)) => VerbatimText::new(combo.as_str()).into(),
+            _ => messages::CONDITION_ANY_HOTKEY.into(),
+        }
     }
 
     fn event_filter(&self) -> EventFilter {
@@ -230,8 +225,11 @@ mod tests {
     #[test]
     fn condition_display_falls_back_to_any_hotkey_when_no_combo_is_configured() {
         for (config, expected) in [
-            (combo_config("Ctrl+Shift+A"), "Ctrl+Shift+A"),
-            (BTreeMap::new(), "any hotkey"),
+            (
+                combo_config("Ctrl+Shift+A"),
+                UserText::from(VerbatimText::new("Ctrl+Shift+A")),
+            ),
+            (BTreeMap::new(), messages::CONDITION_ANY_HOTKEY.into()),
         ] {
             assert_eq!(HotkeyPressedDescriptor.condition_display(&config), expected);
         }

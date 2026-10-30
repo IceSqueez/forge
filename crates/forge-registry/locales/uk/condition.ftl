@@ -1,0 +1,9 @@
+msg-condition-any = будь-який
+msg-condition-first_time_chatters = нові глядачі чату
+msg-condition-command_phrase = "{ $phrase }"
+msg-condition-joined = { $first } · { $next }
+msg-condition-date_pattern_empty = шаблон дати порожній
+msg-condition-date_pattern_unterminated_quote = текст у лапках, що починається на позиції { $position }, не закрито символом '
+msg-condition-date_pattern_unsupported_letter = '{ $letter }' на позиції { $position } не є літерою шаблону дати; візьміть звичайний текст в одинарні лапки
+msg-condition-date_pattern_unsupported_length = '{ $spelling }' на позиції { $position } має непідтримувану довжину для '{ $letter }'
+msg-condition-date_pattern_replaced_spelling = '{ $spelling }' на позиції { $position } не підтримується; використайте '{ $replacement }'

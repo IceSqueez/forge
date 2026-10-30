@@ -84,3 +84,15 @@ msg-core-weights_unusable = Ці ваги неможливо використа�
 msg-core-output_not_convertible = Це значення неможливо зберегти як змінну
 msg-core-currency_invalid = Має бути трилітерним кодом валюти
 msg-core-amount_invalid = Має бути невід'ємною сумою
+msg-core-condition_any_donation_service = будь-який сервіс донатів
+msg-core-condition_any_event = будь-яка подія
+msg-core-condition_timer_live_only = лише під час ефіру
+msg-core-condition_donation_service = сервіс = { $service }
+msg-core-condition_event = подія = { $event }
+msg-core-condition_timer_every = кожні { $minutes } хв
+msg-core-condition_timer_min_messages = ≥{ $count } { $count ->
+    [one] повідомлення
+    [few] повідомлення
+    [many] повідомлень
+   *[other] повідомлення
+}

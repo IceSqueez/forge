@@ -5,10 +5,11 @@ use forge_registry::{
     EventFilter, FormField, KindPlatformContract, TriggerCategory, TriggerKindDescriptor,
 };
 use forge_types::{
-    ArgStack, DeclaredVariable, TriggerConfig, VariableSchema, Variant, VariantKind,
+    ArgStack, DeclaredVariable, TriggerConfig, UserText, VariableSchema, Variant, VariantKind,
 };
 
 use crate::vocabulary::fields::profile as fields;
+use crate::vocabulary::messages;
 use crate::vocabulary::{event_kinds, trigger_ids, variables};
 
 pub struct ProfileListChangedDescriptor;
@@ -50,8 +51,8 @@ impl TriggerKindDescriptor for ProfileListChangedDescriptor {
         vec![]
     }
 
-    fn condition_display(&self, _config: &TriggerConfig) -> String {
-        "any profile list change".to_owned()
+    fn condition_display(&self, _: &TriggerConfig) -> UserText {
+        messages::CONDITION_ANY_PROFILE_LIST_CHANGE.into()
     }
 
     fn event_filter(&self) -> EventFilter {

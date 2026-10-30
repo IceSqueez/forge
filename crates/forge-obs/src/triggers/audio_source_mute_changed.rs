@@ -5,10 +5,11 @@ use forge_registry::{
     EventFilter, FormField, KindPlatformContract, TriggerCategory, TriggerKindDescriptor,
 };
 use forge_types::{
-    ArgStack, DeclaredVariable, TriggerConfig, VariableSchema, Variant, VariantKind,
+    ArgStack, DeclaredVariable, TriggerConfig, UserText, VariableSchema, Variant, VariantKind,
 };
 
 use crate::vocabulary::fields::audio as fields;
+use crate::vocabulary::messages;
 use crate::vocabulary::{event_kinds, picker_keys, trigger_ids, variables};
 
 pub struct AudioSourceMuteChangedDescriptor;
@@ -58,10 +59,10 @@ impl TriggerKindDescriptor for AudioSourceMuteChangedDescriptor {
         }]
     }
 
-    fn condition_display(&self, config: &TriggerConfig) -> String {
+    fn condition_display(&self, config: &TriggerConfig) -> UserText {
         match config.get("source_name") {
-            Some(Variant::String(s)) if !s.is_empty() => format!("source = {s}"),
-            _ => "any source".to_owned(),
+            Some(Variant::String(s)) if !s.is_empty() => messages::condition_source(s).into(),
+            _ => messages::CONDITION_ANY_SOURCE.into(),
         }
     }
 

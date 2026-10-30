@@ -1,15 +1,17 @@
-use crate::vocabulary::event_kinds;
-use crate::vocabulary::trigger_ids;
 use forge_events::{Event, EventSource};
 use forge_registry::{
     ActorDeclaration, ActorIdentity, ActorRole, ActorSlot, CanonicalVariable, EventFilter,
     FormField, KindPlatformContract, TriggerCategory, TriggerKindDescriptor, TriggerVariables,
+    joined_condition,
 };
-use forge_types::{DeclaredVariable, PlatformId, TriggerConfig, Variant, VariantKind};
+use forge_types::{
+    DeclaredVariable, MessageRef, PlatformId, TriggerConfig, UserText, Variant, VariantKind,
+};
 use regex::Regex;
 
 use super::payload_read::{self, twitch_actor};
 use crate::vocabulary::fields::whisper as whisper_fields;
+use crate::vocabulary::{event_kinds, messages, trigger_ids};
 
 pub(crate) struct WhisperReceivedDescriptor;
 
@@ -65,23 +67,23 @@ impl TriggerKindDescriptor for WhisperReceivedDescriptor {
         ]
     }
 
-    fn condition_display(&self, config: &TriggerConfig) -> String {
-        let from = config
-            .get("from_user")
-            .and_then(|v| v.as_str())
-            .unwrap_or("")
-            .trim();
-        let text = config
-            .get("match_text")
-            .and_then(|v| v.as_str())
-            .unwrap_or("")
-            .trim();
-
-        match (from.is_empty(), text.is_empty()) {
-            (true, true) => "any whisper".to_owned(),
-            (false, true) => format!("from {from}"),
-            (true, false) => format!("text matches \"{text}\""),
-            (false, false) => format!("from {from}, text matches \"{text}\""),
+    fn condition_display(&self, config: &TriggerConfig) -> UserText {
+        let filter_text = |key: &str| {
+            config
+                .get(key)
+                .and_then(Variant::as_str)
+                .map(str::trim)
+                .filter(|text| !text.is_empty())
+        };
+        let parts: Vec<MessageRef> = filter_text("from_user")
+            .map(messages::condition_whisper_from)
+            .into_iter()
+            .chain(filter_text("match_text").map(messages::condition_whisper_text))
+            .collect();
+        if parts.is_empty() {
+            messages::CONDITION_ANY_WHISPER.into()
+        } else {
+            joined_condition(parts)
         }
     }
 

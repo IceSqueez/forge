@@ -95,10 +95,6 @@ impl TriggerKindDescriptor for HandStacked {
         Vec::new()
     }
 
-    fn condition_display(&self, _: &TriggerConfig) -> String {
-        String::new()
-    }
-
     fn event_filter(&self) -> EventFilter {
         EventFilter {
             source: None,

@@ -1,11 +1,11 @@
-use crate::vocabulary::event_kinds;
 use crate::vocabulary::trigger_ids;
+use crate::vocabulary::{event_kinds, messages};
 use forge_events::{Event, EventSource};
 use forge_registry::{
     ActorDeclaration, ActorIdentity, ActorRole, CanonicalCount, CanonicalVariable, EventFilter,
     FormField, KindPlatformContract, TriggerCategory, TriggerKindDescriptor, TriggerVariables,
 };
-use forge_types::{DeclaredVariable, PlatformId, TriggerConfig, Variant, VariantKind};
+use forge_types::{DeclaredVariable, PlatformId, TriggerConfig, UserText, Variant, VariantKind};
 
 use super::payload_read::{self, twitch_actor};
 use crate::vocabulary::fields::support as fields;
@@ -56,18 +56,12 @@ impl TriggerKindDescriptor for SupportCheerDescriptor {
         }]
     }
 
-    fn condition_display(&self, config: &TriggerConfig) -> String {
-        let min_bits = config
-            .get("min_bits")
-            .and_then(|v| {
-                if let Variant::Int(n) = v {
-                    Some(*n)
-                } else {
-                    None
-                }
-            })
-            .unwrap_or(0);
-        format!(">= {} bits", min_bits)
+    fn condition_display(&self, config: &TriggerConfig) -> UserText {
+        let min_bits = match config.get("min_bits") {
+            Some(Variant::Int(n)) => *n,
+            _ => 0,
+        };
+        messages::condition_bits_at_least(min_bits).into()
     }
 
     fn event_filter(&self) -> EventFilter {
@@ -170,7 +164,7 @@ mod tests {
         cfg.insert("min_bits".to_owned(), Variant::Int(100));
         assert_eq!(
             SupportCheerDescriptor.condition_display(&cfg),
-            ">= 100 bits"
+            messages::condition_bits_at_least(100).into()
         );
     }
 

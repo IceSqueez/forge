@@ -4,11 +4,11 @@ use forge_events::{Event, EventSource};
 use forge_registry::{
     EventFilter, FormField, KindPlatformContract, TriggerCategory, TriggerKindDescriptor,
 };
-use forge_types::{ArgStack, TriggerConfig, VariableSchema};
+use forge_types::{ArgStack, TriggerConfig, UserText, VariableSchema};
 
 use super::record_starting::{build_record_arg_stack, record_variables};
 
-use crate::vocabulary::{event_kinds, trigger_ids};
+use crate::vocabulary::{event_kinds, messages, trigger_ids};
 
 pub struct RecordPausedDescriptor;
 
@@ -49,8 +49,8 @@ impl TriggerKindDescriptor for RecordPausedDescriptor {
         vec![]
     }
 
-    fn condition_display(&self, _config: &TriggerConfig) -> String {
-        "recording paused".to_owned()
+    fn condition_display(&self, _: &TriggerConfig) -> UserText {
+        messages::CONDITION_RECORDING_PAUSED.into()
     }
 
     fn event_filter(&self) -> EventFilter {

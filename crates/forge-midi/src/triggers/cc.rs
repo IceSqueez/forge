@@ -1,7 +1,7 @@
 use super::input::{MidiInputTrigger, SignalNumber, SignalValue};
 use crate::vocabulary::limits::DATA_BYTE_MAX;
 use crate::vocabulary::variables::input as variables;
-use crate::vocabulary::{MidiSignalKind, config_keys, trigger_ids};
+use crate::vocabulary::{MidiSignalKind, config_keys, messages, trigger_ids};
 
 pub(crate) const CONTROL_CHANGE_TRIGGER: MidiInputTrigger = MidiInputTrigger {
     id: trigger_ids::CONTROL_CHANGE,
@@ -14,8 +14,8 @@ pub(crate) const CONTROL_CHANGE_TRIGGER: MidiInputTrigger = MidiInputTrigger {
         config_key: config_keys::CONTROLLER,
         optional_label: "Controller (leave empty for any)",
         label: "Controller",
-        display_name: "cc",
-        any_display: "any controller",
+        filter_condition: messages::CONDITION_CONTROLLER,
+        any_condition: messages::CONDITION_ANY_CONTROLLER,
         variable: variables::CONTROLLER,
         variable_label: "Controller number",
     }),

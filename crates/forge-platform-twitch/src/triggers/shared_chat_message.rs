@@ -1,12 +1,12 @@
-use crate::vocabulary::event_kinds;
 use crate::vocabulary::trigger_ids;
+use crate::vocabulary::{event_kinds, messages};
 use forge_events::{Event, EventSource};
 use forge_registry::{
     ActorDeclaration, EventFilter, FormField, KindPlatformContract, TriggerCategory,
     TriggerKindDescriptor, TriggerVariables,
 };
 use forge_types::{
-    DeclaredVariable, PlatformId, SynthesisHint, TriggerConfig, Variant, VariantKind,
+    DeclaredVariable, PlatformId, SynthesisHint, TriggerConfig, UserText, Variant, VariantKind,
 };
 
 use super::chat_arg_stack::base_chat_variables;
@@ -51,8 +51,8 @@ impl TriggerKindDescriptor for SharedChatMessageDescriptor {
         vec![]
     }
 
-    fn condition_display(&self, _config: &TriggerConfig) -> String {
-        "any shared chat message".to_owned()
+    fn condition_display(&self, _: &TriggerConfig) -> UserText {
+        messages::CONDITION_ANY_SHARED_CHAT_MESSAGE.into()
     }
 
     fn event_filter(&self) -> EventFilter {

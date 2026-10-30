@@ -29,10 +29,11 @@ mod tests {
     use std::collections::BTreeMap;
 
     use forge_events::{Event, EventSource};
-    use forge_registry::FormField;
-    use forge_types::{TriggerConfig, Variant};
+    use forge_registry::{FormField, joined_condition};
+    use forge_types::{MessageArg, MessageCode, MessageRef, TriggerConfig, UserText, Variant};
 
     use super::*;
+    use crate::vocabulary::messages;
 
     const INPUT_TRIGGER_IDS: [&str; 5] = [
         "midi.input.note_on",
@@ -46,6 +47,18 @@ mod tests {
         let mut reg = TriggerRegistry::new();
         register_midi_triggers(&mut reg).unwrap();
         reg
+    }
+
+    fn message_mentions(message: &MessageRef, part: &MessageRef) -> bool {
+        message == part
+            || message.args().any(|(_, value)| match value {
+                MessageArg::Message(nested) => message_mentions(nested, part),
+                _ => false,
+            })
+    }
+
+    fn mentions(text: &UserText, part: &MessageRef) -> bool {
+        matches!(text, UserText::Message(message) if message_mentions(message, part))
     }
 
     fn input_event(kind: &str, port_name: &str) -> Event {
@@ -106,7 +119,7 @@ mod tests {
         for id in INPUT_TRIGGER_IDS {
             let display = reg.get(id).unwrap().condition_display(&config);
             assert!(
-                display.ends_with(", device=Launchkey"),
+                mentions(&display, &messages::condition_device("Launchkey")),
                 "{id} rendered {display:?}"
             );
         }
@@ -134,7 +147,7 @@ mod tests {
         for id in INPUT_TRIGGER_IDS {
             let display = reg.get(id).unwrap().condition_display(&config);
             assert!(
-                !display.contains("device="),
+                !mentions(&display, &messages::condition_device("")),
                 "{id} rendered an empty device filter as {display:?}"
             );
         }
@@ -161,7 +174,7 @@ mod tests {
         id: &'static str,
         number_key: Option<&'static str>,
         number: i64,
-        display: &'static str,
+        any_number: Option<MessageCode>,
         stack: &'static [(&'static str, i64)],
     }
 
@@ -170,7 +183,7 @@ mod tests {
             id: "midi.input.note_on",
             number_key: Some("note"),
             number: 60,
-            display: "any note, any channel",
+            any_number: Some(messages::CONDITION_ANY_NOTE),
             stack: &[
                 ("midi.note", 60),
                 ("midi.velocity", 100),
@@ -181,7 +194,7 @@ mod tests {
             id: "midi.input.note_off",
             number_key: Some("note"),
             number: 60,
-            display: "any note, any channel",
+            any_number: Some(messages::CONDITION_ANY_NOTE),
             stack: &[
                 ("midi.note", 60),
                 ("midi.velocity", 100),
@@ -192,7 +205,7 @@ mod tests {
             id: "midi.input.control_change",
             number_key: Some("controller"),
             number: 7,
-            display: "any controller, any channel",
+            any_number: Some(messages::CONDITION_ANY_CONTROLLER),
             stack: &[
                 ("midi.controller", 7),
                 ("midi.value", 64),
@@ -203,14 +216,14 @@ mod tests {
             id: "midi.input.pitch_bend",
             number_key: None,
             number: 0,
-            display: "any channel",
+            any_number: None,
             stack: &[("midi.value", 64), ("midi.channel", 1)],
         },
         InputCase {
             id: "midi.input.program_change",
             number_key: Some("program"),
             number: 10,
-            display: "any program, any channel",
+            any_number: Some(messages::CONDITION_ANY_PROGRAM),
             stack: &[("midi.program", 10), ("midi.channel", 1)],
         },
     ];
@@ -407,14 +420,24 @@ mod tests {
         let reg = registry();
         for case in &INPUT_CASES {
             let d = reg.get(case.id).unwrap();
+            let unfiltered = case
+                .any_number
+                .clone()
+                .map(MessageRef::new)
+                .into_iter()
+                .chain([messages::CONDITION_ANY_CHANNEL.into()]);
             assert_eq!(
                 d.condition_display(&BTreeMap::new()),
-                case.display,
+                joined_condition(unfiltered),
                 "{}",
                 case.id
             );
             let with_channel = d.condition_display(&int_config("channel", 2));
-            assert!(with_channel.contains("ch=2"), "{}", case.id);
+            assert!(
+                mentions(&with_channel, &messages::condition_channel(2)),
+                "{}",
+                case.id
+            );
         }
     }
 

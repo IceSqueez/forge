@@ -1,12 +1,11 @@
 use forge_components::{Density, ForgePalette, Spacing, body_family, spacing, tr};
 use forge_registry::{TriggerCategory, TriggerKindDescriptor};
-use forge_runtime::triggers::{TIMER_TICK_KIND, TimerSchedule};
+use forge_runtime::triggers::TIMER_TICK_KIND;
 use forge_types::TriggerConfig;
 use gpui::{AnyElement, div, prelude::*};
 
 use crate::config_form::FILL_VAL_FS;
-
-const SUMMARY_SEPARATOR: &str = " \u{b7} ";
+use crate::user_text::resolve_user_text;
 
 pub(crate) fn is_timer_kind(kind_id: &str) -> bool {
     kind_id == TIMER_TICK_KIND
@@ -16,36 +15,13 @@ pub(crate) fn cooldown_applies(descriptor: Option<&dyn TriggerKindDescriptor>) -
     descriptor.is_none_or(|d| d.category() != TriggerCategory::Timer)
 }
 
-pub(crate) fn timer_condition_summary(config: &TriggerConfig) -> String {
-    let schedule = TimerSchedule::from_config(config);
-    let mut parts = vec![tr!(
-        "triggers_timer_every",
-        minutes = i64::from(schedule.interval_minutes)
-    )];
-    if schedule.only_while_live {
-        parts.push(tr!("triggers_timer_live_only"));
-    }
-    if schedule.min_chat_messages > 0 {
-        parts.push(tr!(
-            "triggers_timer_min_messages",
-            count = i64::from(schedule.min_chat_messages)
-        ));
-    }
-    parts.join(SUMMARY_SEPARATOR)
-}
-
 pub(crate) fn condition_display(
     descriptor: Option<&dyn TriggerKindDescriptor>,
-    kind_id: &str,
     config: &TriggerConfig,
 ) -> String {
-    if is_timer_kind(kind_id) {
-        timer_condition_summary(config)
-    } else {
-        descriptor
-            .map(|d| d.condition_display(config))
-            .unwrap_or_default()
-    }
+    descriptor
+        .map(|d| resolve_user_text(&d.condition_display(config)).primary)
+        .unwrap_or_default()
 }
 
 pub(crate) fn timer_field_hints(
@@ -100,9 +76,10 @@ mod tests {
     fn assert_summaries(language: Language, cases: &[(i64, bool, i64, &str)]) {
         install_language(language);
         for &(interval, live, messages, expected) in cases {
-            let summary = plain(timer_condition_summary(&timer_config(
-                interval, live, messages,
-            )));
+            let summary = plain(condition_display(
+                Some(&TimerTickDescriptor),
+                &timer_config(interval, live, messages),
+            ));
             assert_eq!(
                 summary, expected,
                 "{language:?} interval={interval} live={live} messages={messages}"
@@ -172,19 +149,7 @@ mod tests {
     }
 
     #[test]
-    fn condition_display_uses_the_localized_summary_for_the_timer_kind() {
-        install_language(Language::En);
-        let config = timer_config(15, true, 0);
-        let shown = plain(condition_display(
-            Some(&TimerTickDescriptor),
-            TIMER_TICK_KIND,
-            &config,
-        ));
-        assert_eq!(shown, "every 15 min \u{b7} only while live");
-    }
-
-    #[test]
-    fn condition_display_defers_to_the_descriptor_for_other_kinds() {
+    fn condition_display_resolves_the_descriptor_text_and_is_empty_without_a_descriptor() {
         install_language(Language::En);
         let config = timer_config(15, true, 0);
         let chat = StubTrigger::new(
@@ -193,8 +158,11 @@ mod tests {
             TriggerCategory::Chat,
             Declares::Nothing,
         );
-        for descriptor in [Some(&chat as &dyn TriggerKindDescriptor), None] {
-            assert_eq!(condition_display(descriptor, "twitch.chat", &config), "");
+        for (descriptor, expected) in [
+            (Some(&chat as &dyn TriggerKindDescriptor), "any"),
+            (None, ""),
+        ] {
+            assert_eq!(condition_display(descriptor, &config), expected);
         }
     }
 

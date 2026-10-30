@@ -1,13 +1,13 @@
-use crate::vocabulary::event_kinds;
 use crate::vocabulary::trigger_ids;
+use crate::vocabulary::{event_kinds, messages};
 use forge_events::{Event, EventSource};
 use forge_registry::{
     ActorDeclaration, EventFilter, FormField, KindPlatformContract, TriggerCategory,
     TriggerKindDescriptor,
 };
 use forge_types::{
-    ArgStack, DeclaredVariable, PlatformId, SynthesisHint, TriggerConfig, VariableSchema, Variant,
-    VariantKind,
+    ArgStack, DeclaredVariable, PlatformId, SynthesisHint, TriggerConfig, UserText, VariableSchema,
+    Variant, VariantKind,
 };
 
 use crate::vocabulary::fields::hype_train as fields;
@@ -58,18 +58,12 @@ impl TriggerKindDescriptor for HypeTrainProgressDescriptor {
         }]
     }
 
-    fn condition_display(&self, config: &TriggerConfig) -> String {
-        let min = config
-            .get("min_level")
-            .and_then(|v| {
-                if let Variant::Int(n) = v {
-                    Some(*n)
-                } else {
-                    None
-                }
-            })
-            .unwrap_or(1);
-        format!("level >= {}", min)
+    fn condition_display(&self, config: &TriggerConfig) -> UserText {
+        let min = match config.get("min_level") {
+            Some(Variant::Int(n)) => *n,
+            _ => 1,
+        };
+        messages::condition_level_at_least(min).into()
     }
 
     fn event_filter(&self) -> EventFilter {

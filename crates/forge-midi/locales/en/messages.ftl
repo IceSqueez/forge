@@ -15,3 +15,14 @@ msg-midi-health_disabled = disabled
 msg-midi-health_output_available = available
 msg-midi-health_note_time = { $time }
 msg-midi-health_last_minute = last minute
+msg-midi-condition_any_note = any note
+msg-midi-condition_any_controller = any controller
+msg-midi-condition_any_program = any program
+msg-midi-condition_any_channel = any channel
+msg-midi-condition_any_direction = any direction
+msg-midi-condition_device = device={ $device }
+msg-midi-condition_direction = direction={ $direction }
+msg-midi-condition_note = note={ $number }
+msg-midi-condition_controller = cc={ $number }
+msg-midi-condition_program = program={ $number }
+msg-midi-condition_channel = ch={ $channel }

@@ -27,3 +27,51 @@ msg-obs-health_dropped_count = { $count ->
    *[other] { $count } кадрів
 }
 msg-obs-health_dropped_share = { NUMBER($percent, minimumFractionDigits: 2, maximumFractionDigits: 2) }%
+msg-obs-condition_any_collection_list_change = будь-яка зміна списку колекцій
+msg-obs-condition_authentication_failed = автентифікацію не пройдено
+msg-obs-condition_connected = підключено
+msg-obs-condition_disconnected = відключено
+msg-obs-condition_any_filter_created = створено будь-який фільтр
+msg-obs-condition_any_filter_enable_state_changed = змінено стан будь-якого фільтра
+msg-obs-condition_any_filter_removed = видалено будь-який фільтр
+msg-obs-condition_any_profile = будь-який профіль
+msg-obs-condition_any_profile_list_change = будь-яка зміна списку профілів
+msg-obs-condition_recording_file_changed = змінено файл запису
+msg-obs-condition_recording_paused = запис призупинено
+msg-obs-condition_recording_resumed = запис відновлено
+msg-obs-condition_recording_started = запис розпочато
+msg-obs-condition_recording_starting = запис запускається
+msg-obs-condition_any_recording_status_change = будь-яка зміна стану запису
+msg-obs-condition_recording_stopped = запис зупинено
+msg-obs-condition_recording_stopping = запис зупиняється
+msg-obs-condition_any_scene_created = створено будь-яку сцену
+msg-obs-condition_any_scene_list_change = будь-яка зміна списку сцен
+msg-obs-condition_any_scene_removed = видалено будь-яку сцену
+msg-obs-condition_any_scene_renamed = перейменовано будь-яку сцену
+msg-obs-condition_any_input_created = створено будь-яке джерело
+msg-obs-condition_any_input_removed = видалено будь-яке джерело
+msg-obs-condition_any_input_renamed = перейменовано будь-яке джерело
+msg-obs-condition_any_scene_item_added = додано будь-який елемент сцени
+msg-obs-condition_any_scene_item_lock_change = будь-яка зміна блокування елемента сцени
+msg-obs-condition_any_scene_item_removed = видалено будь-який елемент сцени
+msg-obs-condition_any_scene_item_visibility_change = будь-яка зміна видимості елемента сцени
+msg-obs-condition_stream_started = трансляцію розпочато
+msg-obs-condition_stream_starting = трансляція запускається
+msg-obs-condition_any_stream_status_change = будь-яка зміна стану трансляції
+msg-obs-condition_stream_stopped = трансляцію зупинено
+msg-obs-condition_stream_stopping = трансляція зупиняється
+msg-obs-condition_studio_mode_disabled = студійний режим вимкнено
+msg-obs-condition_studio_mode_enabled = студійний режим увімкнено
+msg-obs-condition_any_transition_ended = будь-який перехід завершено
+msg-obs-condition_any_transition_started = будь-який перехід розпочато
+msg-obs-condition_any_transition_video_ended = відео будь-якого переходу завершено
+msg-obs-condition_virtual_camera_started = віртуальну камеру запущено
+msg-obs-condition_any_virtual_camera_state_change = будь-яка зміна стану віртуальної камери
+msg-obs-condition_virtual_camera_stopped = віртуальну камеру зупинено
+msg-obs-condition_any_scene_collection = будь-яка колекція сцен
+msg-obs-condition_any_source = будь-яке джерело
+msg-obs-condition_any_scene = будь-яка сцена
+msg-obs-condition_any_preview_scene = будь-яка сцена попереднього перегляду
+msg-obs-condition_source = джерело = { $source }
+msg-obs-condition_scene = сцена = { $scene }
+msg-obs-condition_preview = попередній перегляд = { $scene }

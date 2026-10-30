@@ -6,7 +6,7 @@ use forge_registry::{
     KindPlatformContract, TriggerCategory, TriggerKindDescriptor, TriggerVariables, admits_chatter,
     chat_message_condition, first_chatters_only_field,
 };
-use forge_types::{PlatformId, TriggerConfig, Variant};
+use forge_types::{PlatformId, TriggerConfig, UserText, Variant};
 
 use super::chat_arg_stack::base_chat_variables;
 
@@ -49,7 +49,7 @@ impl TriggerKindDescriptor for ChatMessageDescriptor {
         vec![first_chatters_only_field()]
     }
 
-    fn condition_display(&self, config: &TriggerConfig) -> String {
+    fn condition_display(&self, config: &TriggerConfig) -> UserText {
         chat_message_condition(config)
     }
 

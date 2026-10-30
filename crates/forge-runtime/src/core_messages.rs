@@ -166,6 +166,24 @@ pub const CURRENCY_INVALID: MessageCode =
     MessageCode::from_static(CORE_NAMESPACE, "currency_invalid");
 pub const AMOUNT_INVALID: MessageCode = MessageCode::from_static(CORE_NAMESPACE, "amount_invalid");
 
+pub(crate) const CONDITION_ANY_DONATION_SERVICE: MessageCode =
+    MessageCode::from_static(CORE_NAMESPACE, "condition_any_donation_service");
+pub(crate) const CONDITION_ANY_EVENT: MessageCode =
+    MessageCode::from_static(CORE_NAMESPACE, "condition_any_event");
+pub(crate) const CONDITION_TIMER_LIVE_ONLY: MessageCode =
+    MessageCode::from_static(CORE_NAMESPACE, "condition_timer_live_only");
+const CONDITION_DONATION_SERVICE: MessageCode =
+    MessageCode::from_static(CORE_NAMESPACE, "condition_donation_service");
+const CONDITION_EVENT: MessageCode = MessageCode::from_static(CORE_NAMESPACE, "condition_event");
+const CONDITION_TIMER_EVERY: MessageCode =
+    MessageCode::from_static(CORE_NAMESPACE, "condition_timer_every");
+const CONDITION_TIMER_MIN_MESSAGES: MessageCode =
+    MessageCode::from_static(CORE_NAMESPACE, "condition_timer_min_messages");
+const SERVICE_CONDITION_ARG: &str = "service";
+const EVENT_CONDITION_ARG: &str = "event";
+const MINUTES_CONDITION_ARG: &str = "minutes";
+const COUNT_CONDITION_ARG: &str = "count";
+
 pub const CORE_MESSAGES: MessageCatalog = MessageCatalog {
     namespace: CORE_NAMESPACE,
     codes: &[
@@ -243,6 +261,13 @@ pub const CORE_MESSAGES: MessageCatalog = MessageCatalog {
         OUTPUT_NOT_CONVERTIBLE,
         CURRENCY_INVALID,
         AMOUNT_INVALID,
+        CONDITION_ANY_DONATION_SERVICE,
+        CONDITION_ANY_EVENT,
+        CONDITION_TIMER_LIVE_ONLY,
+        CONDITION_DONATION_SERVICE,
+        CONDITION_EVENT,
+        CONDITION_TIMER_EVERY,
+        CONDITION_TIMER_MIN_MESSAGES,
     ],
     en_ftl: include_str!("../locales/en/core.ftl"),
     uk_ftl: include_str!("../locales/uk/core.ftl"),
@@ -575,6 +600,23 @@ pub(crate) fn voice_not_installed(voice: &str) -> MessageRef {
     MessageRef::new(VOICE_NOT_INSTALLED).with_arg(VOICE_ARG, verbatim(voice))
 }
 
+pub(crate) fn condition_donation_service(service: &str) -> MessageRef {
+    MessageRef::new(CONDITION_DONATION_SERVICE)
+        .with_arg(SERVICE_CONDITION_ARG, VerbatimText::new(service))
+}
+
+pub(crate) fn condition_event(event: &str) -> MessageRef {
+    MessageRef::new(CONDITION_EVENT).with_arg(EVENT_CONDITION_ARG, VerbatimText::new(event))
+}
+
+pub(crate) fn condition_timer_every(minutes: i64) -> MessageRef {
+    MessageRef::new(CONDITION_TIMER_EVERY).with_arg(MINUTES_CONDITION_ARG, minutes)
+}
+
+pub(crate) fn condition_timer_min_messages(count: i64) -> MessageRef {
+    MessageRef::new(CONDITION_TIMER_MIN_MESSAGES).with_arg(COUNT_CONDITION_ARG, count)
+}
+
 #[cfg(test)]
 mod tests {
     use std::collections::{BTreeMap, BTreeSet};
@@ -679,6 +721,13 @@ mod tests {
             output_not_convertible("c"),
             currency_invalid(),
             amount_invalid(),
+            MessageRef::new(CONDITION_ANY_DONATION_SERVICE),
+            MessageRef::new(CONDITION_ANY_EVENT),
+            MessageRef::new(CONDITION_TIMER_LIVE_ONLY),
+            condition_donation_service("s"),
+            condition_event("e"),
+            condition_timer_every(1),
+            condition_timer_min_messages(1),
         ]
     }
 

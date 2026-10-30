@@ -37,3 +37,20 @@ msg-twitch-recipient_rejects_whispers = The recipient does not accept whispers
 msg-twitch-shoutout_cooldown = A shoutout is on cooldown, try again in { $seconds } s
 msg-twitch-unresolved_reference = Has an unresolved variable reference
 msg-twitch-invalid_hex_color = Must be a #RRGGBB color
+msg-twitch-condition_any_shared_chat_message = any shared chat message
+msg-twitch-condition_any_profile_change = any profile change
+msg-twitch-condition_any_reward = any reward
+msg-twitch-condition_any_amount = any amount
+msg-twitch-condition_any_state = any state
+msg-twitch-condition_any_whisper = any whisper
+msg-twitch-condition_any_status = any status
+msg-twitch-condition_reward_id = reward id = { $reward }
+msg-twitch-condition_reward = reward = { $reward }
+msg-twitch-condition_state = state = { $state }
+msg-twitch-condition_status = status = { $status }
+msg-twitch-condition_whisper_from = from { $sender }
+msg-twitch-condition_whisper_text = text matches "{ $text }"
+msg-twitch-condition_amount_at_least = amount >= { $min } cents
+msg-twitch-condition_bits_at_least = >= { $min } bits
+msg-twitch-condition_level_at_least = level >= { $level }
+msg-twitch-condition_bits_between = { $min }-{ $max } bits

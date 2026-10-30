@@ -4,7 +4,7 @@ use forge_registry::{
     EventFilter, FormField, KindPlatformContract, TriggerCategory, TriggerKindDescriptor,
     TriggerVariables,
 };
-use forge_types::{DeclaredVariable, PlatformId, TriggerConfig, Variant, VariantKind};
+use forge_types::{DeclaredVariable, PlatformId, TriggerConfig, UserText, Variant, VariantKind};
 
 use super::payload_read::{self, youtube_actor};
 use crate::vocabulary::fields::chat as fields;
@@ -62,19 +62,8 @@ impl TriggerKindDescriptor for ChatCommandDescriptor {
         ]
     }
 
-    fn condition_display(&self, config: &TriggerConfig) -> String {
-        config
-            .get("phrase")
-            .and_then(|v| {
-                if let Variant::String(s) = v {
-                    Some(s.as_str())
-                } else {
-                    None
-                }
-            })
-            .filter(|s| !s.is_empty())
-            .map(|p| format!("\"{}\"", p))
-            .unwrap_or_else(|| "any".to_owned())
+    fn condition_display(&self, config: &TriggerConfig) -> UserText {
+        forge_registry::chat_command_condition(config)
     }
 
     fn event_filter(&self) -> EventFilter {

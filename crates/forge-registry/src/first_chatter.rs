@@ -1,13 +1,11 @@
 use forge_events::Event;
-use forge_types::{ChatViewer, DeclaredVariable, TriggerConfig, Variant, VariantKind};
+use forge_types::{ChatViewer, DeclaredVariable, TriggerConfig, UserText, Variant, VariantKind};
 
+use crate::condition_messages::{any_condition, first_time_chatters_condition};
 use crate::form::FormField;
 
 pub const FIRST_CHATTERS_ONLY: &str = "first_chatters_only";
 pub const FIRST_MESSAGE_VARIABLE: &str = "first_message";
-
-const ANY_MESSAGE_CONDITION: &str = "any";
-const FIRST_CHATTERS_CONDITION: &str = "first-time chatters";
 
 pub fn first_chatters_only_field() -> FormField {
     FormField::Toggle {
@@ -40,11 +38,11 @@ pub fn admits_chatter(config: &TriggerConfig, event: &Event) -> bool {
     !first_chatters_only(config) || is_first_chat_message(event)
 }
 
-pub fn chat_message_condition(config: &TriggerConfig) -> String {
+pub fn chat_message_condition(config: &TriggerConfig) -> UserText {
     if first_chatters_only(config) {
-        FIRST_CHATTERS_CONDITION.to_owned()
+        first_time_chatters_condition()
     } else {
-        ANY_MESSAGE_CONDITION.to_owned()
+        any_condition()
     }
 }
 
@@ -101,9 +99,12 @@ mod tests {
     #[test]
     fn the_condition_reads_first_time_chatters_only_while_the_filter_is_on() {
         for (config, expected) in [
-            (filter(Some(Variant::Bool(true))), FIRST_CHATTERS_CONDITION),
-            (filter(Some(Variant::Bool(false))), ANY_MESSAGE_CONDITION),
-            (filter(None), ANY_MESSAGE_CONDITION),
+            (
+                filter(Some(Variant::Bool(true))),
+                first_time_chatters_condition(),
+            ),
+            (filter(Some(Variant::Bool(false))), any_condition()),
+            (filter(None), any_condition()),
         ] {
             assert_eq!(chat_message_condition(&config), expected, "{config:?}");
         }

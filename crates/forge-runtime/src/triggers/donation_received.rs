@@ -3,7 +3,9 @@ use forge_registry::{
     ActorDeclaration, ActorIdentity, ActorRole, EventFilter, FormField, KindPlatformContract,
     LoginSlot, SourcedActor, TriggerCategory, TriggerKindDescriptor, TriggerVariables,
 };
-use forge_types::{DeclaredVariable, TriggerConfig, Variant, VariantKind};
+use forge_types::{DeclaredVariable, TriggerConfig, UserText, Variant, VariantKind};
+
+use crate::core_messages;
 
 pub const DONATION_PROVIDER_OPTIONS_KEY: &str = "donations.provider_ids";
 
@@ -56,10 +58,10 @@ impl TriggerKindDescriptor for DonationReceivedDescriptor {
         }]
     }
 
-    fn condition_display(&self, config: &TriggerConfig) -> String {
+    fn condition_display(&self, config: &TriggerConfig) -> UserText {
         configured_provider(config).map_or_else(
-            || "any donation service".to_owned(),
-            |provider| format!("service = {provider}"),
+            || core_messages::CONDITION_ANY_DONATION_SERVICE.into(),
+            |provider| core_messages::condition_donation_service(provider).into(),
         )
     }
 

@@ -5,7 +5,7 @@ use forge_registry::{
     ActorDeclaration, ChatTriggerFamily, EventFilter, FormField, KindPlatformContract,
     TriggerCategory, TriggerKindDescriptor, TriggerVariables,
 };
-use forge_types::{PlatformId, TriggerConfig, Variant};
+use forge_types::{PlatformId, TriggerConfig, UserText, Variant};
 
 use super::chat_arg_stack::base_chat_variables;
 use crate::vocabulary::fields::chat as fields;
@@ -62,19 +62,8 @@ impl TriggerKindDescriptor for ChatCommandDescriptor {
         ]
     }
 
-    fn condition_display(&self, config: &TriggerConfig) -> String {
-        config
-            .get("phrase")
-            .and_then(|v| {
-                if let Variant::String(s) = v {
-                    Some(s.as_str())
-                } else {
-                    None
-                }
-            })
-            .filter(|s| !s.is_empty())
-            .map(|p| format!("\"{}\"", p))
-            .unwrap_or_else(|| "any".to_owned())
+    fn condition_display(&self, config: &TriggerConfig) -> UserText {
+        forge_registry::chat_command_condition(config)
     }
 
     fn event_filter(&self) -> EventFilter {
@@ -163,17 +152,13 @@ mod tests {
     }
 
     #[test]
-    fn condition_display_uses_phrase() {
+    fn condition_display_names_the_configured_phrase() {
         let mut cfg = TriggerConfig::new();
         cfg.insert("phrase".to_owned(), Variant::String("!quote".to_owned()));
-        assert_eq!(ChatCommandDescriptor.condition_display(&cfg), "\"!quote\"");
-    }
-
-    #[test]
-    fn condition_display_empty_phrase_returns_any() {
-        let mut cfg = TriggerConfig::new();
-        cfg.insert("phrase".to_owned(), Variant::String(String::new()));
-        assert_eq!(ChatCommandDescriptor.condition_display(&cfg), "any");
+        assert_ne!(
+            ChatCommandDescriptor.condition_display(&cfg),
+            forge_registry::any_condition()
+        );
     }
 
     #[test]

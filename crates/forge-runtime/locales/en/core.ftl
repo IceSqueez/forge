@@ -75,3 +75,13 @@ msg-core-weights_unusable = These weights cannot be used
 msg-core-output_not_convertible = This value cannot be stored as a variable
 msg-core-currency_invalid = Must be a three-letter currency code
 msg-core-amount_invalid = Must be a non-negative amount
+msg-core-condition_any_donation_service = any donation service
+msg-core-condition_any_event = any event
+msg-core-condition_timer_live_only = only while live
+msg-core-condition_donation_service = service = { $service }
+msg-core-condition_event = event = { $event }
+msg-core-condition_timer_every = every { $minutes } min
+msg-core-condition_timer_min_messages = ≥{ $count } { $count ->
+    [one] message
+   *[other] messages
+}

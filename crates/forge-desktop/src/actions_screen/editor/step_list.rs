@@ -67,7 +67,7 @@ fn analyzer_finding_message(
                 "action_editor_health_invalid_date_pattern",
                 name = name.clone(),
                 pattern = pattern.clone(),
-                reason = reason.clone()
+                reason = crate::user_text::resolve_message(reason).primary
             )
         }
         Finding::InvalidStepConfig(problem) => {
@@ -442,6 +442,16 @@ mod tests {
     const NAME: &str = "NAME-7";
     const PATTERN: &str = "PATTERN-7";
     const REASON: &str = "REASON-7";
+    const REASON_LETTER: &str = "Q-7";
+
+    fn date_reason() -> forge_types::MessageRef {
+        forge_types::MessageRef::new(forge_types::MessageCode::from_static(
+            "condition",
+            "date_pattern_unsupported_letter",
+        ))
+        .with_arg("letter", forge_types::VerbatimText::new(REASON_LETTER))
+        .with_arg("position", 3_usize)
+    }
 
     #[test]
     fn date_findings_render_their_arguments_in_both_locales() {
@@ -456,9 +466,9 @@ mod tests {
                     Finding::InvalidDatePattern {
                         name: NAME.to_owned(),
                         pattern: PATTERN.to_owned(),
-                        reason: REASON.to_owned(),
+                        reason: date_reason(),
                     },
-                    vec![NAME, PATTERN, REASON],
+                    vec![NAME, PATTERN, REASON_LETTER],
                 ),
                 (
                     Finding::InvalidStepConfig(forge_registry::ConfigProblem::whole(

@@ -748,7 +748,7 @@ impl TriggersRegistryView {
         let gate = if cooldown_applies(descriptor) {
             cooldown_suffix(instance.cooldown_secs, instance.cooldown_global)
         } else {
-            let summary = condition_display(descriptor, &instance.kind_id, &instance.overrides);
+            let summary = condition_display(descriptor, &instance.overrides);
             format!(" \u{b7} {summary}")
         };
         kind = kind.child(

@@ -5,10 +5,10 @@ use forge_registry::{
     EventFilter, FormField, KindPlatformContract, TriggerCategory, TriggerKindDescriptor,
 };
 use forge_types::{
-    ArgStack, DeclaredVariable, TriggerConfig, VariableSchema, Variant, VariantKind,
+    ArgStack, DeclaredVariable, TriggerConfig, UserText, VariableSchema, Variant, VariantKind,
 };
 
-use crate::vocabulary::{event_kinds, trigger_ids, variables};
+use crate::vocabulary::{event_kinds, messages, trigger_ids, variables};
 
 pub struct StudioEnabledDescriptor;
 
@@ -49,8 +49,8 @@ impl TriggerKindDescriptor for StudioEnabledDescriptor {
         vec![]
     }
 
-    fn condition_display(&self, _config: &TriggerConfig) -> String {
-        "studio mode enabled".to_owned()
+    fn condition_display(&self, _: &TriggerConfig) -> UserText {
+        messages::CONDITION_STUDIO_MODE_ENABLED.into()
     }
 
     fn event_filter(&self) -> EventFilter {

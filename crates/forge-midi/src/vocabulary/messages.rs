@@ -44,6 +44,32 @@ pub const HEALTH_LAST_NOTE_ON: MessageCode =
 pub const HEALTH_EVENTS_PER_MINUTE: MessageCode =
     MessageCode::from_static(INTEGRATION_ID, "health_events_per_minute");
 
+pub(crate) const CONDITION_ANY_NOTE: MessageCode =
+    MessageCode::from_static(INTEGRATION_ID, "condition_any_note");
+pub(crate) const CONDITION_ANY_CONTROLLER: MessageCode =
+    MessageCode::from_static(INTEGRATION_ID, "condition_any_controller");
+pub(crate) const CONDITION_ANY_PROGRAM: MessageCode =
+    MessageCode::from_static(INTEGRATION_ID, "condition_any_program");
+pub(crate) const CONDITION_ANY_CHANNEL: MessageCode =
+    MessageCode::from_static(INTEGRATION_ID, "condition_any_channel");
+pub(crate) const CONDITION_ANY_DIRECTION: MessageCode =
+    MessageCode::from_static(INTEGRATION_ID, "condition_any_direction");
+const CONDITION_DEVICE: MessageCode = MessageCode::from_static(INTEGRATION_ID, "condition_device");
+const CONDITION_DIRECTION: MessageCode =
+    MessageCode::from_static(INTEGRATION_ID, "condition_direction");
+pub(crate) const CONDITION_NOTE: MessageCode =
+    MessageCode::from_static(INTEGRATION_ID, "condition_note");
+pub(crate) const CONDITION_CONTROLLER: MessageCode =
+    MessageCode::from_static(INTEGRATION_ID, "condition_controller");
+pub(crate) const CONDITION_PROGRAM: MessageCode =
+    MessageCode::from_static(INTEGRATION_ID, "condition_program");
+const CONDITION_CHANNEL: MessageCode =
+    MessageCode::from_static(INTEGRATION_ID, "condition_channel");
+const DEVICE_CONDITION_ARG: &str = "device";
+const DIRECTION_CONDITION_ARG: &str = "direction";
+pub(crate) const NUMBER_CONDITION_ARG: &str = "number";
+const CHANNEL_CONDITION_ARG: &str = "channel";
+
 pub const MIDI_MESSAGES: MessageCatalog = MessageCatalog {
     namespace: INTEGRATION_ID,
     codes: &[
@@ -64,6 +90,17 @@ pub const MIDI_MESSAGES: MessageCatalog = MessageCatalog {
         PORT_CONNECT_FAILED,
         SEND_FAILED,
         SUPERVISOR_UNAVAILABLE,
+        CONDITION_ANY_NOTE,
+        CONDITION_ANY_CONTROLLER,
+        CONDITION_ANY_PROGRAM,
+        CONDITION_ANY_CHANNEL,
+        CONDITION_ANY_DIRECTION,
+        CONDITION_DEVICE,
+        CONDITION_DIRECTION,
+        CONDITION_NOTE,
+        CONDITION_CONTROLLER,
+        CONDITION_PROGRAM,
+        CONDITION_CHANNEL,
     ],
     en_ftl: include_str!("../../locales/en/messages.ftl"),
     uk_ftl: include_str!("../../locales/uk/messages.ftl"),
@@ -116,6 +153,20 @@ pub(crate) fn send_failed(detail: &str) -> MessageRef {
 pub(crate) fn supervisor_unavailable() -> MessageRef {
     MessageRef::new(SUPERVISOR_UNAVAILABLE)
 }
+
+pub(crate) fn condition_device(device: &str) -> MessageRef {
+    MessageRef::new(CONDITION_DEVICE).with_arg(DEVICE_CONDITION_ARG, VerbatimText::new(device))
+}
+
+pub(crate) fn condition_direction(direction: &str) -> MessageRef {
+    MessageRef::new(CONDITION_DIRECTION)
+        .with_arg(DIRECTION_CONDITION_ARG, VerbatimText::new(direction))
+}
+
+pub(crate) fn condition_channel(channel: i64) -> MessageRef {
+    MessageRef::new(CONDITION_CHANNEL).with_arg(CHANNEL_CONDITION_ARG, channel)
+}
+
 #[cfg(test)]
 mod tests {
     use std::collections::{BTreeMap, BTreeSet};
@@ -164,6 +215,17 @@ mod tests {
             port_connect_failed("c"),
             send_failed("c"),
             supervisor_unavailable(),
+            MessageRef::new(CONDITION_ANY_NOTE),
+            MessageRef::new(CONDITION_ANY_CONTROLLER),
+            MessageRef::new(CONDITION_ANY_PROGRAM),
+            MessageRef::new(CONDITION_ANY_CHANNEL),
+            MessageRef::new(CONDITION_ANY_DIRECTION),
+            MessageRef::new(CONDITION_NOTE).with_arg(NUMBER_CONDITION_ARG, 1),
+            MessageRef::new(CONDITION_CONTROLLER).with_arg(NUMBER_CONDITION_ARG, 1),
+            MessageRef::new(CONDITION_PROGRAM).with_arg(NUMBER_CONDITION_ARG, 1),
+            condition_device("d"),
+            condition_direction("input"),
+            condition_channel(1),
         ]
     }
 

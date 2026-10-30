@@ -110,10 +110,6 @@ impl TriggerKindDescriptor for StubTrigger {
         Vec::new()
     }
 
-    fn condition_display(&self, _config: &TriggerConfig) -> String {
-        String::new()
-    }
-
     fn event_filter(&self) -> EventFilter {
         EventFilter {
             source: None,

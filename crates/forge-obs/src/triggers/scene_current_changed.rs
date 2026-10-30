@@ -5,10 +5,11 @@ use forge_registry::{
     EventFilter, FormField, KindPlatformContract, TriggerCategory, TriggerKindDescriptor,
 };
 use forge_types::{
-    ArgStack, DeclaredVariable, TriggerConfig, VariableSchema, Variant, VariantKind,
+    ArgStack, DeclaredVariable, TriggerConfig, UserText, VariableSchema, Variant, VariantKind,
 };
 
 use crate::vocabulary::fields::scene as fields;
+use crate::vocabulary::messages;
 use crate::vocabulary::{event_kinds, picker_keys, trigger_ids, variables};
 
 pub struct SceneCurrentChangedDescriptor;
@@ -58,10 +59,10 @@ impl TriggerKindDescriptor for SceneCurrentChangedDescriptor {
         }]
     }
 
-    fn condition_display(&self, config: &TriggerConfig) -> String {
+    fn condition_display(&self, config: &TriggerConfig) -> UserText {
         match config.get("scene") {
-            Some(Variant::String(s)) if !s.is_empty() => format!("scene = {s}"),
-            _ => "any scene".to_owned(),
+            Some(Variant::String(s)) if !s.is_empty() => messages::condition_scene(s).into(),
+            _ => messages::CONDITION_ANY_SCENE.into(),
         }
     }
 
@@ -196,13 +197,19 @@ mod tests {
     #[test]
     fn condition_display_any_scene_when_no_config() {
         let d = SceneCurrentChangedDescriptor;
-        assert_eq!(d.condition_display(&BTreeMap::new()), "any scene");
+        assert_eq!(
+            d.condition_display(&BTreeMap::new()),
+            messages::CONDITION_ANY_SCENE.into()
+        );
     }
 
     #[test]
     fn condition_display_shows_scene_name() {
         let d = SceneCurrentChangedDescriptor;
         let config = BTreeMap::from([("scene".to_owned(), Variant::String("Gameplay".to_owned()))]);
-        assert_eq!(d.condition_display(&config), "scene = Gameplay");
+        assert_eq!(
+            d.condition_display(&config),
+            messages::condition_scene("Gameplay").into()
+        );
     }
 }

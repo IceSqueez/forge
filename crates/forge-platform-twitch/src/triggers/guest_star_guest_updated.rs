@@ -1,12 +1,12 @@
-use crate::vocabulary::event_kinds;
 use crate::vocabulary::trigger_ids;
+use crate::vocabulary::{event_kinds, messages};
 use forge_events::{Event, EventSource};
 use forge_registry::{
     ActorDeclaration, ActorIdentity, ActorRole, ActorSlot, CanonicalVariable, EventFilter,
     FormField, KindPlatformContract, TriggerCategory, TriggerKindDescriptor, TriggerVariables,
 };
 use forge_types::{
-    DeclaredVariable, PlatformId, SynthesisHint, TriggerConfig, Variant, VariantKind,
+    DeclaredVariable, PlatformId, SynthesisHint, TriggerConfig, UserText, Variant, VariantKind,
 };
 
 use super::payload_read::{self, twitch_actor};
@@ -55,21 +55,10 @@ impl TriggerKindDescriptor for GuestStarGuestUpdatedDescriptor {
         }]
     }
 
-    fn condition_display(&self, config: &TriggerConfig) -> String {
-        let state = config
-            .get("state_filter")
-            .and_then(|v| {
-                if let Variant::String(s) = v {
-                    Some(s.as_str())
-                } else {
-                    None
-                }
-            })
-            .unwrap_or("");
-        if state.is_empty() {
-            "any state".to_owned()
-        } else {
-            format!("state = {}", state)
+    fn condition_display(&self, config: &TriggerConfig) -> UserText {
+        match config.get("state_filter").and_then(Variant::as_str) {
+            None | Some("") => messages::CONDITION_ANY_STATE.into(),
+            Some(state) => messages::condition_state(state).into(),
         }
     }
 

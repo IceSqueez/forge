@@ -17,6 +17,12 @@ pub struct MessageRef {
     detail: Option<UpstreamDetail>,
 }
 
+impl From<MessageCode> for MessageRef {
+    fn from(code: MessageCode) -> Self {
+        Self::new(code)
+    }
+}
+
 impl MessageRef {
     pub fn new(code: MessageCode) -> Self {
         Self {

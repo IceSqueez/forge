@@ -1,11 +1,11 @@
-use crate::vocabulary::event_kinds;
 use crate::vocabulary::trigger_ids;
+use crate::vocabulary::{event_kinds, messages};
 use forge_events::{Event, EventSource};
 use forge_registry::{
     ActorDeclaration, CanonicalCount, CanonicalVariable, EventFilter, FormField,
     KindPlatformContract, TriggerCategory, TriggerKindDescriptor, TriggerVariables,
 };
-use forge_types::{PlatformId, TriggerConfig, Variant};
+use forge_types::{PlatformId, TriggerConfig, UserText, Variant};
 
 use super::chat_arg_stack::base_chat_variables;
 use crate::vocabulary::fields::chat as fields;
@@ -65,31 +65,15 @@ impl TriggerKindDescriptor for ChatCheerMessageDescriptor {
         ]
     }
 
-    fn condition_display(&self, config: &TriggerConfig) -> String {
-        let min = config
-            .get("min_bits")
-            .and_then(|v| {
-                if let Variant::Int(n) = v {
-                    Some(*n)
-                } else {
-                    None
-                }
-            })
-            .unwrap_or(1);
-        let max = config
-            .get("max_bits")
-            .and_then(|v| {
-                if let Variant::Int(n) = v {
-                    Some(*n)
-                } else {
-                    None
-                }
-            })
-            .unwrap_or(-1);
-        if max < 0 {
-            format!(">= {} bits", min)
-        } else {
-            format!("{}-{} bits", min, max)
+    fn condition_display(&self, config: &TriggerConfig) -> UserText {
+        let int_of = |key: &str| match config.get(key) {
+            Some(Variant::Int(n)) => Some(*n),
+            _ => None,
+        };
+        let min = int_of("min_bits").unwrap_or(1);
+        match int_of("max_bits") {
+            Some(max) if max >= 0 => messages::condition_bits_between(min, max).into(),
+            _ => messages::condition_bits_at_least(min).into(),
         }
     }
 

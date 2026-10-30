@@ -45,6 +45,19 @@ pub const HEALTH_ITEMS: MessageCode = MessageCode::from_static(INTEGRATION_ID, "
 pub const HEALTH_TRACKING: MessageCode =
     MessageCode::from_static(INTEGRATION_ID, "health_tracking");
 
+pub(crate) const CONDITION_ANY_MODEL: MessageCode =
+    MessageCode::from_static(INTEGRATION_ID, "condition_any_model");
+pub(crate) const CONDITION_ANY_ITEM: MessageCode =
+    MessageCode::from_static(INTEGRATION_ID, "condition_any_item");
+pub(crate) const CONDITION_ANY_EXPRESSION: MessageCode =
+    MessageCode::from_static(INTEGRATION_ID, "condition_any_expression");
+pub(crate) const CONDITION_FACE_FOUND: MessageCode =
+    MessageCode::from_static(INTEGRATION_ID, "condition_face_found");
+pub(crate) const CONDITION_FACE_LOST: MessageCode =
+    MessageCode::from_static(INTEGRATION_ID, "condition_face_lost");
+pub(crate) const CONDITION_ANY_HOTKEY: MessageCode =
+    MessageCode::from_static(INTEGRATION_ID, "condition_any_hotkey");
+
 pub const VTUBE_MESSAGES: MessageCatalog = MessageCatalog {
     namespace: INTEGRATION_ID,
     codes: &[
@@ -75,6 +88,12 @@ pub const VTUBE_MESSAGES: MessageCatalog = MessageCatalog {
         REQUEST_TIMED_OUT,
         PAYLOAD_INVALID,
         ITEM_INSTANCE_MISSING,
+        CONDITION_ANY_MODEL,
+        CONDITION_ANY_ITEM,
+        CONDITION_ANY_EXPRESSION,
+        CONDITION_FACE_FOUND,
+        CONDITION_FACE_LOST,
+        CONDITION_ANY_HOTKEY,
     ],
     en_ftl: include_str!("../../locales/en/messages.ftl"),
     uk_ftl: include_str!("../../locales/uk/messages.ftl"),
@@ -176,6 +195,7 @@ pub(crate) fn for_disconnect_reason(reason: VTubeDisconnectReason) -> Option<Mes
     };
     Some(MessageRef::new(code))
 }
+
 #[cfg(test)]
 mod tests {
     use std::collections::{BTreeMap, BTreeSet};
@@ -275,6 +295,12 @@ mod tests {
             MessageRef::new(HEALTH_EXPRESSIONS),
             MessageRef::new(HEALTH_ITEMS),
             MessageRef::new(HEALTH_TRACKING),
+            MessageRef::new(CONDITION_ANY_MODEL),
+            MessageRef::new(CONDITION_ANY_ITEM),
+            MessageRef::new(CONDITION_ANY_EXPRESSION),
+            MessageRef::new(CONDITION_FACE_FOUND),
+            MessageRef::new(CONDITION_FACE_LOST),
+            MessageRef::new(CONDITION_ANY_HOTKEY),
         ];
         all.extend(
             REASON_CODES

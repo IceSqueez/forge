@@ -233,9 +233,6 @@ mod tests {
         fn config_fields(&self) -> Vec<FormField> {
             vec![]
         }
-        fn condition_display(&self, _config: &TriggerConfig) -> String {
-            String::new()
-        }
         fn event_filter(&self) -> EventFilter {
             EventFilter {
                 source: None,
@@ -282,9 +279,6 @@ mod tests {
         }
         fn config_fields(&self) -> Vec<FormField> {
             vec![]
-        }
-        fn condition_display(&self, _config: &TriggerConfig) -> String {
-            String::new()
         }
         fn event_filter(&self) -> EventFilter {
             EventFilter {

@@ -15,3 +15,6 @@ msg-youtube-request_refused = YouTube відхилив запит (HTTP { $statu
 msg-youtube-request_failed = Не вдалося виконати запит до YouTube
 msg-youtube-response_unreadable = YouTube повернув відповідь, яку forge не зміг прочитати
 msg-youtube-unresolved_reference = Поле { $field } досі містить нерозкриту змінну
+msg-youtube-condition_permanent_ban_only = лише постійне блокування
+msg-youtube-condition_temporary_timeout_only = лише тимчасове обмеження
+msg-youtube-condition_any_ban_type = будь-який тип блокування

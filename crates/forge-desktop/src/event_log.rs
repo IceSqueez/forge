@@ -1,8 +1,8 @@
 use std::collections::VecDeque;
 
-use forge_components::tr;
 use forge_events::{Event, EventSource};
 use forge_registry::TriggerCategory;
+use forge_runtime::triggers::timer_every_message;
 use forge_types::{ChatPayload, ChatSegment};
 use gpui::SharedString;
 use serde::Serialize;
@@ -10,6 +10,7 @@ use time::OffsetDateTime;
 
 use crate::event_categories::EventCategories;
 use crate::runtime_event::{self, RuntimeEvent};
+use crate::user_text::resolve_message;
 
 const RING_CAP: usize = 500;
 
@@ -190,10 +191,9 @@ impl EventLog {
                 Some(chat) => format!("{}: {}", chat.author, Self::chat_text(&chat.segments)),
                 None => String::new(),
             },
-            Some(RuntimeEvent::TimerTick(tick)) => tr!(
-                "triggers_timer_every",
-                minutes = i64::from(tick.interval_minutes)
-            ),
+            Some(RuntimeEvent::TimerTick(tick)) => {
+                resolve_message(&timer_every_message(tick.interval_minutes)).primary
+            }
             Some(RuntimeEvent::ActionStarted(started)) => started.action_name.clone(),
             Some(RuntimeEvent::ActionDone(done)) => serde_json::to_value(done.outcome)
                 .ok()

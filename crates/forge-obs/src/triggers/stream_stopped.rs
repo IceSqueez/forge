@@ -4,11 +4,11 @@ use forge_events::{Event, EventSource};
 use forge_registry::{
     EventFilter, FormField, KindPlatformContract, TriggerCategory, TriggerKindDescriptor,
 };
-use forge_types::{ArgStack, TriggerConfig, VariableSchema};
+use forge_types::{ArgStack, TriggerConfig, UserText, VariableSchema};
 
 use super::stream_starting::{build_stream_arg_stack, stream_variables};
 
-use crate::vocabulary::{event_kinds, trigger_ids};
+use crate::vocabulary::{event_kinds, messages, trigger_ids};
 
 pub struct StreamStoppedDescriptor;
 
@@ -49,8 +49,8 @@ impl TriggerKindDescriptor for StreamStoppedDescriptor {
         vec![]
     }
 
-    fn condition_display(&self, _config: &TriggerConfig) -> String {
-        "stream stopped".to_owned()
+    fn condition_display(&self, _: &TriggerConfig) -> UserText {
+        messages::CONDITION_STREAM_STOPPED.into()
     }
 
     fn event_filter(&self) -> EventFilter {

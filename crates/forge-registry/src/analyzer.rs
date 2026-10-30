@@ -1,11 +1,12 @@
 use std::collections::{BTreeSet, HashMap, HashSet};
 
 use forge_types::{
-    Action, ExecutionMode, IntegrationId, SubActionOutcome, SubActionStep, TemplatePiece,
-    TemplatePieces, TriggerInstance, UserText, Variant, VariantKind, normalize_var_name,
-    shared_date_pattern,
+    Action, ExecutionMode, IntegrationId, MessageRef, SubActionOutcome, SubActionStep,
+    TemplatePiece, TemplatePieces, TriggerInstance, UserText, Variant, VariantKind,
+    normalize_var_name, shared_date_pattern,
 };
 
+use crate::condition_messages::date_pattern_message;
 use crate::config_problem::ConfigProblem;
 use crate::form::FormField;
 use crate::registry::{SubActionRegistry, TriggerRegistry};
@@ -33,7 +34,7 @@ pub enum Finding {
     InvalidDatePattern {
         name: String,
         pattern: String,
-        reason: String,
+        reason: MessageRef,
     },
     InvalidStepConfig(ConfigProblem),
     UndecodableStep {
@@ -417,7 +418,7 @@ fn step_pattern_findings(
             out.push(Finding::InvalidDatePattern {
                 name,
                 pattern,
-                reason: error.to_string(),
+                reason: date_pattern_message(error),
             });
         }
     }

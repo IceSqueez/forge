@@ -44,6 +44,103 @@ pub const HEALTH_CPU_FPS: MessageCode = MessageCode::from_static(INTEGRATION_ID,
 pub const HEALTH_DROPPED_FRAMES: MessageCode =
     MessageCode::from_static(INTEGRATION_ID, "health_dropped_frames");
 
+pub(crate) const CONDITION_ANY_COLLECTION_LIST_CHANGE: MessageCode =
+    MessageCode::from_static(INTEGRATION_ID, "condition_any_collection_list_change");
+pub(crate) const CONDITION_AUTHENTICATION_FAILED: MessageCode =
+    MessageCode::from_static(INTEGRATION_ID, "condition_authentication_failed");
+pub(crate) const CONDITION_CONNECTED: MessageCode =
+    MessageCode::from_static(INTEGRATION_ID, "condition_connected");
+pub(crate) const CONDITION_DISCONNECTED: MessageCode =
+    MessageCode::from_static(INTEGRATION_ID, "condition_disconnected");
+pub(crate) const CONDITION_ANY_FILTER_CREATED: MessageCode =
+    MessageCode::from_static(INTEGRATION_ID, "condition_any_filter_created");
+pub(crate) const CONDITION_ANY_FILTER_ENABLE_STATE_CHANGED: MessageCode =
+    MessageCode::from_static(INTEGRATION_ID, "condition_any_filter_enable_state_changed");
+pub(crate) const CONDITION_ANY_FILTER_REMOVED: MessageCode =
+    MessageCode::from_static(INTEGRATION_ID, "condition_any_filter_removed");
+pub(crate) const CONDITION_ANY_PROFILE: MessageCode =
+    MessageCode::from_static(INTEGRATION_ID, "condition_any_profile");
+pub(crate) const CONDITION_ANY_PROFILE_LIST_CHANGE: MessageCode =
+    MessageCode::from_static(INTEGRATION_ID, "condition_any_profile_list_change");
+pub(crate) const CONDITION_RECORDING_FILE_CHANGED: MessageCode =
+    MessageCode::from_static(INTEGRATION_ID, "condition_recording_file_changed");
+pub(crate) const CONDITION_RECORDING_PAUSED: MessageCode =
+    MessageCode::from_static(INTEGRATION_ID, "condition_recording_paused");
+pub(crate) const CONDITION_RECORDING_RESUMED: MessageCode =
+    MessageCode::from_static(INTEGRATION_ID, "condition_recording_resumed");
+pub(crate) const CONDITION_RECORDING_STARTED: MessageCode =
+    MessageCode::from_static(INTEGRATION_ID, "condition_recording_started");
+pub(crate) const CONDITION_RECORDING_STARTING: MessageCode =
+    MessageCode::from_static(INTEGRATION_ID, "condition_recording_starting");
+pub(crate) const CONDITION_ANY_RECORDING_STATUS_CHANGE: MessageCode =
+    MessageCode::from_static(INTEGRATION_ID, "condition_any_recording_status_change");
+pub(crate) const CONDITION_RECORDING_STOPPED: MessageCode =
+    MessageCode::from_static(INTEGRATION_ID, "condition_recording_stopped");
+pub(crate) const CONDITION_RECORDING_STOPPING: MessageCode =
+    MessageCode::from_static(INTEGRATION_ID, "condition_recording_stopping");
+pub(crate) const CONDITION_ANY_SCENE_CREATED: MessageCode =
+    MessageCode::from_static(INTEGRATION_ID, "condition_any_scene_created");
+pub(crate) const CONDITION_ANY_SCENE_LIST_CHANGE: MessageCode =
+    MessageCode::from_static(INTEGRATION_ID, "condition_any_scene_list_change");
+pub(crate) const CONDITION_ANY_SCENE_REMOVED: MessageCode =
+    MessageCode::from_static(INTEGRATION_ID, "condition_any_scene_removed");
+pub(crate) const CONDITION_ANY_SCENE_RENAMED: MessageCode =
+    MessageCode::from_static(INTEGRATION_ID, "condition_any_scene_renamed");
+pub(crate) const CONDITION_ANY_INPUT_CREATED: MessageCode =
+    MessageCode::from_static(INTEGRATION_ID, "condition_any_input_created");
+pub(crate) const CONDITION_ANY_INPUT_REMOVED: MessageCode =
+    MessageCode::from_static(INTEGRATION_ID, "condition_any_input_removed");
+pub(crate) const CONDITION_ANY_INPUT_RENAMED: MessageCode =
+    MessageCode::from_static(INTEGRATION_ID, "condition_any_input_renamed");
+pub(crate) const CONDITION_ANY_SCENE_ITEM_ADDED: MessageCode =
+    MessageCode::from_static(INTEGRATION_ID, "condition_any_scene_item_added");
+pub(crate) const CONDITION_ANY_SCENE_ITEM_LOCK_CHANGE: MessageCode =
+    MessageCode::from_static(INTEGRATION_ID, "condition_any_scene_item_lock_change");
+pub(crate) const CONDITION_ANY_SCENE_ITEM_REMOVED: MessageCode =
+    MessageCode::from_static(INTEGRATION_ID, "condition_any_scene_item_removed");
+pub(crate) const CONDITION_ANY_SCENE_ITEM_VISIBILITY_CHANGE: MessageCode =
+    MessageCode::from_static(INTEGRATION_ID, "condition_any_scene_item_visibility_change");
+pub(crate) const CONDITION_STREAM_STARTED: MessageCode =
+    MessageCode::from_static(INTEGRATION_ID, "condition_stream_started");
+pub(crate) const CONDITION_STREAM_STARTING: MessageCode =
+    MessageCode::from_static(INTEGRATION_ID, "condition_stream_starting");
+pub(crate) const CONDITION_ANY_STREAM_STATUS_CHANGE: MessageCode =
+    MessageCode::from_static(INTEGRATION_ID, "condition_any_stream_status_change");
+pub(crate) const CONDITION_STREAM_STOPPED: MessageCode =
+    MessageCode::from_static(INTEGRATION_ID, "condition_stream_stopped");
+pub(crate) const CONDITION_STREAM_STOPPING: MessageCode =
+    MessageCode::from_static(INTEGRATION_ID, "condition_stream_stopping");
+pub(crate) const CONDITION_STUDIO_MODE_DISABLED: MessageCode =
+    MessageCode::from_static(INTEGRATION_ID, "condition_studio_mode_disabled");
+pub(crate) const CONDITION_STUDIO_MODE_ENABLED: MessageCode =
+    MessageCode::from_static(INTEGRATION_ID, "condition_studio_mode_enabled");
+pub(crate) const CONDITION_ANY_TRANSITION_ENDED: MessageCode =
+    MessageCode::from_static(INTEGRATION_ID, "condition_any_transition_ended");
+pub(crate) const CONDITION_ANY_TRANSITION_STARTED: MessageCode =
+    MessageCode::from_static(INTEGRATION_ID, "condition_any_transition_started");
+pub(crate) const CONDITION_ANY_TRANSITION_VIDEO_ENDED: MessageCode =
+    MessageCode::from_static(INTEGRATION_ID, "condition_any_transition_video_ended");
+pub(crate) const CONDITION_VIRTUAL_CAMERA_STARTED: MessageCode =
+    MessageCode::from_static(INTEGRATION_ID, "condition_virtual_camera_started");
+pub(crate) const CONDITION_ANY_VIRTUAL_CAMERA_STATE_CHANGE: MessageCode =
+    MessageCode::from_static(INTEGRATION_ID, "condition_any_virtual_camera_state_change");
+pub(crate) const CONDITION_VIRTUAL_CAMERA_STOPPED: MessageCode =
+    MessageCode::from_static(INTEGRATION_ID, "condition_virtual_camera_stopped");
+pub(crate) const CONDITION_ANY_SCENE_COLLECTION: MessageCode =
+    MessageCode::from_static(INTEGRATION_ID, "condition_any_scene_collection");
+pub(crate) const CONDITION_ANY_SOURCE: MessageCode =
+    MessageCode::from_static(INTEGRATION_ID, "condition_any_source");
+pub(crate) const CONDITION_ANY_SCENE: MessageCode =
+    MessageCode::from_static(INTEGRATION_ID, "condition_any_scene");
+pub(crate) const CONDITION_ANY_PREVIEW_SCENE: MessageCode =
+    MessageCode::from_static(INTEGRATION_ID, "condition_any_preview_scene");
+const CONDITION_SOURCE: MessageCode = MessageCode::from_static(INTEGRATION_ID, "condition_source");
+const CONDITION_SCENE: MessageCode = MessageCode::from_static(INTEGRATION_ID, "condition_scene");
+const CONDITION_PREVIEW: MessageCode =
+    MessageCode::from_static(INTEGRATION_ID, "condition_preview");
+const SOURCE_CONDITION_ARG: &str = "source";
+const SCENE_CONDITION_ARG: &str = "scene";
+
 pub const OBS_MESSAGES: MessageCatalog = MessageCatalog {
     namespace: INTEGRATION_ID,
     codes: &[
@@ -72,6 +169,54 @@ pub const OBS_MESSAGES: MessageCatalog = MessageCatalog {
         PROTOCOL_ERROR,
         PAYLOAD_INVALID,
         STUDIO_MODE_INACTIVE,
+        CONDITION_ANY_COLLECTION_LIST_CHANGE,
+        CONDITION_AUTHENTICATION_FAILED,
+        CONDITION_CONNECTED,
+        CONDITION_DISCONNECTED,
+        CONDITION_ANY_FILTER_CREATED,
+        CONDITION_ANY_FILTER_ENABLE_STATE_CHANGED,
+        CONDITION_ANY_FILTER_REMOVED,
+        CONDITION_ANY_PROFILE,
+        CONDITION_ANY_PROFILE_LIST_CHANGE,
+        CONDITION_RECORDING_FILE_CHANGED,
+        CONDITION_RECORDING_PAUSED,
+        CONDITION_RECORDING_RESUMED,
+        CONDITION_RECORDING_STARTED,
+        CONDITION_RECORDING_STARTING,
+        CONDITION_ANY_RECORDING_STATUS_CHANGE,
+        CONDITION_RECORDING_STOPPED,
+        CONDITION_RECORDING_STOPPING,
+        CONDITION_ANY_SCENE_CREATED,
+        CONDITION_ANY_SCENE_LIST_CHANGE,
+        CONDITION_ANY_SCENE_REMOVED,
+        CONDITION_ANY_SCENE_RENAMED,
+        CONDITION_ANY_INPUT_CREATED,
+        CONDITION_ANY_INPUT_REMOVED,
+        CONDITION_ANY_INPUT_RENAMED,
+        CONDITION_ANY_SCENE_ITEM_ADDED,
+        CONDITION_ANY_SCENE_ITEM_LOCK_CHANGE,
+        CONDITION_ANY_SCENE_ITEM_REMOVED,
+        CONDITION_ANY_SCENE_ITEM_VISIBILITY_CHANGE,
+        CONDITION_STREAM_STARTED,
+        CONDITION_STREAM_STARTING,
+        CONDITION_ANY_STREAM_STATUS_CHANGE,
+        CONDITION_STREAM_STOPPED,
+        CONDITION_STREAM_STOPPING,
+        CONDITION_STUDIO_MODE_DISABLED,
+        CONDITION_STUDIO_MODE_ENABLED,
+        CONDITION_ANY_TRANSITION_ENDED,
+        CONDITION_ANY_TRANSITION_STARTED,
+        CONDITION_ANY_TRANSITION_VIDEO_ENDED,
+        CONDITION_VIRTUAL_CAMERA_STARTED,
+        CONDITION_ANY_VIRTUAL_CAMERA_STATE_CHANGE,
+        CONDITION_VIRTUAL_CAMERA_STOPPED,
+        CONDITION_ANY_SCENE_COLLECTION,
+        CONDITION_ANY_SOURCE,
+        CONDITION_ANY_SCENE,
+        CONDITION_ANY_PREVIEW_SCENE,
+        CONDITION_SOURCE,
+        CONDITION_SCENE,
+        CONDITION_PREVIEW,
     ],
     en_ftl: include_str!("../../locales/en/messages.ftl"),
     uk_ftl: include_str!("../../locales/uk/messages.ftl"),
@@ -168,6 +313,19 @@ pub(crate) fn connection_lost() -> MessageRef {
 pub(crate) fn unresponsive() -> MessageRef {
     MessageRef::new(UNRESPONSIVE)
 }
+
+pub(crate) fn condition_source(source: &str) -> MessageRef {
+    MessageRef::new(CONDITION_SOURCE).with_arg(SOURCE_CONDITION_ARG, VerbatimText::new(source))
+}
+
+pub(crate) fn condition_scene(scene: &str) -> MessageRef {
+    MessageRef::new(CONDITION_SCENE).with_arg(SCENE_CONDITION_ARG, VerbatimText::new(scene))
+}
+
+pub(crate) fn condition_preview(scene: &str) -> MessageRef {
+    MessageRef::new(CONDITION_PREVIEW).with_arg(SCENE_CONDITION_ARG, VerbatimText::new(scene))
+}
+
 #[cfg(test)]
 mod tests {
     use std::collections::{BTreeMap, BTreeSet};
@@ -224,6 +382,54 @@ mod tests {
             MessageRef::new(HEALTH_RECORDING),
             MessageRef::new(HEALTH_CPU_FPS),
             MessageRef::new(HEALTH_DROPPED_FRAMES),
+            MessageRef::new(CONDITION_ANY_COLLECTION_LIST_CHANGE),
+            MessageRef::new(CONDITION_AUTHENTICATION_FAILED),
+            MessageRef::new(CONDITION_CONNECTED),
+            MessageRef::new(CONDITION_DISCONNECTED),
+            MessageRef::new(CONDITION_ANY_FILTER_CREATED),
+            MessageRef::new(CONDITION_ANY_FILTER_ENABLE_STATE_CHANGED),
+            MessageRef::new(CONDITION_ANY_FILTER_REMOVED),
+            MessageRef::new(CONDITION_ANY_PROFILE),
+            MessageRef::new(CONDITION_ANY_PROFILE_LIST_CHANGE),
+            MessageRef::new(CONDITION_RECORDING_FILE_CHANGED),
+            MessageRef::new(CONDITION_RECORDING_PAUSED),
+            MessageRef::new(CONDITION_RECORDING_RESUMED),
+            MessageRef::new(CONDITION_RECORDING_STARTED),
+            MessageRef::new(CONDITION_RECORDING_STARTING),
+            MessageRef::new(CONDITION_ANY_RECORDING_STATUS_CHANGE),
+            MessageRef::new(CONDITION_RECORDING_STOPPED),
+            MessageRef::new(CONDITION_RECORDING_STOPPING),
+            MessageRef::new(CONDITION_ANY_SCENE_CREATED),
+            MessageRef::new(CONDITION_ANY_SCENE_LIST_CHANGE),
+            MessageRef::new(CONDITION_ANY_SCENE_REMOVED),
+            MessageRef::new(CONDITION_ANY_SCENE_RENAMED),
+            MessageRef::new(CONDITION_ANY_INPUT_CREATED),
+            MessageRef::new(CONDITION_ANY_INPUT_REMOVED),
+            MessageRef::new(CONDITION_ANY_INPUT_RENAMED),
+            MessageRef::new(CONDITION_ANY_SCENE_ITEM_ADDED),
+            MessageRef::new(CONDITION_ANY_SCENE_ITEM_LOCK_CHANGE),
+            MessageRef::new(CONDITION_ANY_SCENE_ITEM_REMOVED),
+            MessageRef::new(CONDITION_ANY_SCENE_ITEM_VISIBILITY_CHANGE),
+            MessageRef::new(CONDITION_STREAM_STARTED),
+            MessageRef::new(CONDITION_STREAM_STARTING),
+            MessageRef::new(CONDITION_ANY_STREAM_STATUS_CHANGE),
+            MessageRef::new(CONDITION_STREAM_STOPPED),
+            MessageRef::new(CONDITION_STREAM_STOPPING),
+            MessageRef::new(CONDITION_STUDIO_MODE_DISABLED),
+            MessageRef::new(CONDITION_STUDIO_MODE_ENABLED),
+            MessageRef::new(CONDITION_ANY_TRANSITION_ENDED),
+            MessageRef::new(CONDITION_ANY_TRANSITION_STARTED),
+            MessageRef::new(CONDITION_ANY_TRANSITION_VIDEO_ENDED),
+            MessageRef::new(CONDITION_VIRTUAL_CAMERA_STARTED),
+            MessageRef::new(CONDITION_ANY_VIRTUAL_CAMERA_STATE_CHANGE),
+            MessageRef::new(CONDITION_VIRTUAL_CAMERA_STOPPED),
+            MessageRef::new(CONDITION_ANY_SCENE_COLLECTION),
+            MessageRef::new(CONDITION_ANY_SOURCE),
+            MessageRef::new(CONDITION_ANY_SCENE),
+            MessageRef::new(CONDITION_ANY_PREVIEW_SCENE),
+            condition_source("s"),
+            condition_scene("s"),
+            condition_preview("s"),
         ]
     }
 

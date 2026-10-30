@@ -51,10 +51,6 @@ impl TriggerKindDescriptor for RewardRemovedDescriptor {
         vec![]
     }
 
-    fn condition_display(&self, _config: &TriggerConfig) -> String {
-        "any".to_owned()
-    }
-
     fn event_filter(&self) -> EventFilter {
         EventFilter {
             source: Some(EventSource::Twitch),

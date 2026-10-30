@@ -2,7 +2,7 @@ use std::collections::BTreeSet;
 use std::time::Duration;
 
 use forge_components::{PushToast, ToastKind, duplicate_message_ids, tr};
-use forge_registry::CONFIG_MESSAGES;
+use forge_registry::{CONDITION_MESSAGES, CONFIG_MESSAGES};
 use forge_runtime::{CORE_MESSAGES, LIFECYCLE_MESSAGES};
 use forge_storage::Language;
 use forge_types::{COMMON_MESSAGES, MessageCatalog, MessageCatalogError};
@@ -12,6 +12,7 @@ use crate::i18n::{app_catalogs, catalog_language};
 
 pub const REGISTERED_CATALOGS: &[MessageCatalog] = &[
     COMMON_MESSAGES,
+    CONDITION_MESSAGES,
     CONFIG_MESSAGES,
     CORE_MESSAGES,
     LIFECYCLE_MESSAGES,
@@ -111,9 +112,14 @@ pub fn report_catalog_problems<T: 'static>(cx: &mut Context<T>) {
 }
 #[cfg(test)]
 mod tests {
-    use forge_types::MessageCode;
+    use fluent::FluentResource;
+    use forge_registry::TriggerRegistry;
+    use forge_runtime::triggers::TIMER_TICK_KIND;
+    use forge_types::{DatePattern, MessageCode, MessageRef, TriggerConfig, Variant, VerbatimText};
 
     use super::*;
+    use crate::i18n::install_language;
+    use crate::user_text::{resolve_message, resolve_user_text};
 
     const GOOD_CODES: &[MessageCode] = &[MessageCode::from_static("alpha", "one")];
     const OTHER_CODES: &[MessageCode] = &[MessageCode::from_static("beta", "one")];
@@ -291,5 +297,273 @@ mod tests {
                 REGISTERED_CATALOGS.iter().map(|c| c.uk_ftl).collect(),
             )
         );
+    }
+
+    #[test]
+    fn every_registered_catalog_parses_without_syntax_errors_in_both_languages() {
+        for catalog in REGISTERED_CATALOGS {
+            for (language, source) in [("en", catalog.en_ftl), ("uk", catalog.uk_ftl)] {
+                assert!(
+                    FluentResource::try_new(source.to_owned()).is_ok(),
+                    "{} {language} has a syntax error",
+                    catalog.namespace
+                );
+            }
+        }
+    }
+
+    fn plain(text: String) -> String {
+        text.replace(['\u{2068}', '\u{2069}'], "")
+    }
+
+    fn every_trigger() -> TriggerRegistry {
+        let mut registry = TriggerRegistry::new();
+        forge_runtime::register_core_triggers(&mut registry).unwrap();
+        forge_platform_twitch::register_twitch_triggers(&mut registry).unwrap();
+        forge_platform_kick::register_kick_triggers(&mut registry).unwrap();
+        forge_platform_youtube::register_youtube_triggers(&mut registry).unwrap();
+        forge_obs::register_obs_triggers(&mut registry).unwrap();
+        forge_vtube::register_vtube_triggers(&mut registry).unwrap();
+        forge_midi::register_midi_triggers(&mut registry).unwrap();
+        forge_hotkey::register_hotkey_triggers(&mut registry).unwrap();
+        registry
+    }
+
+    fn config<const N: usize>(entries: [(&str, Variant); N]) -> TriggerConfig {
+        entries
+            .into_iter()
+            .map(|(key, value)| (key.to_owned(), value))
+            .collect()
+    }
+
+    fn text(value: &str) -> Variant {
+        Variant::String(value.to_owned())
+    }
+
+    fn assert_ukrainian_conditions(cases: Vec<(&str, TriggerConfig, &str)>) {
+        install_language(Language::Uk);
+        let registry = every_trigger();
+        for (kind, config, expected) in cases {
+            let descriptor = registry
+                .get(kind)
+                .unwrap_or_else(|| panic!("unknown trigger {kind}"));
+            let shown = plain(resolve_user_text(&descriptor.condition_display(&config)).primary);
+            assert_eq!(shown, expected, "{kind} {config:?}");
+        }
+    }
+
+    #[test]
+    fn shared_chat_conditions_render_in_ukrainian() {
+        assert_ukrainian_conditions(vec![
+            ("twitch.chat.message", config([]), "будь-який"),
+            (
+                "twitch.chat.message",
+                config([("first_chatters_only", Variant::Bool(true))]),
+                "нові глядачі чату",
+            ),
+            (
+                "kick.chat.command",
+                config([("phrase", text("!hi"))]),
+                "\"!hi\"",
+            ),
+            ("youtube.chat.command", config([]), "будь-який"),
+        ]);
+    }
+
+    #[test]
+    fn core_conditions_render_in_ukrainian() {
+        assert_ukrainian_conditions(vec![
+            ("donation.received", config([]), "будь-який сервіс донатів"),
+            (
+                "donation.received",
+                config([("provider", text("monobank"))]),
+                "сервіс = monobank",
+            ),
+            ("script.event.custom", config([]), "будь-яка подія"),
+            (
+                "script.event.custom",
+                config([("event_name", text("boss"))]),
+                "подія = boss",
+            ),
+            (
+                TIMER_TICK_KIND,
+                config([("interval_minutes", Variant::Int(5))]),
+                "кожні 5 хв",
+            ),
+        ]);
+    }
+
+    #[test]
+    fn twitch_conditions_render_in_ukrainian_with_plural_and_status_branches() {
+        assert_ukrainian_conditions(vec![
+            (
+                "twitch.support.cheer",
+                config([("min_bits", Variant::Int(1))]),
+                ">= 1 біт",
+            ),
+            (
+                "twitch.support.cheer",
+                config([("min_bits", Variant::Int(3))]),
+                ">= 3 біти",
+            ),
+            (
+                "twitch.support.cheer",
+                config([("min_bits", Variant::Int(5))]),
+                ">= 5 бітів",
+            ),
+            (
+                "twitch.chat.cheer_message",
+                config([
+                    ("min_bits", Variant::Int(5)),
+                    ("max_bits", Variant::Int(21)),
+                ]),
+                "5-21 біт",
+            ),
+            (
+                "twitch.support.charity_donation",
+                config([("min_amount_cents", Variant::Int(11))]),
+                "сума >= 11 центів",
+            ),
+            (
+                "twitch.support.hype_train_progress",
+                config([("min_level", Variant::Int(2))]),
+                "рівень >= 2",
+            ),
+            (
+                "twitch.channel_points.redemption_updated",
+                config([("status_filter", text("fulfilled"))]),
+                "статус = виконано",
+            ),
+            (
+                "twitch.channel_points.redemption_updated",
+                config([("status_filter", text("custom"))]),
+                "статус = custom",
+            ),
+            (
+                "twitch.chat.whisper",
+                config([("from_user", text("ann")), ("match_text", text("hi"))]),
+                "від ann · текст збігається з \"hi\"",
+            ),
+        ]);
+    }
+
+    #[test]
+    fn integration_conditions_render_in_ukrainian() {
+        assert_ukrainian_conditions(vec![
+            (
+                "youtube.channel.user_banned",
+                config([("ban_type_filter", text("permanent"))]),
+                "лише постійне блокування",
+            ),
+            (
+                forge_obs::vocabulary::trigger_ids::SCENE_CHANGED,
+                config([("scene", text("Gameplay"))]),
+                "сцена = Gameplay",
+            ),
+            (
+                forge_obs::vocabulary::trigger_ids::RECORDING_STARTED,
+                config([]),
+                "запис розпочато",
+            ),
+            ("vtube.model.loaded", config([]), "будь-яка модель"),
+            (
+                "hotkey.global.pressed",
+                config([]),
+                "будь-яка гаряча клавіша",
+            ),
+        ]);
+    }
+
+    #[test]
+    fn midi_conditions_render_in_ukrainian_with_joined_parts_and_direction_branches() {
+        assert_ukrainian_conditions(vec![
+            (
+                "midi.input.note_on",
+                config([]),
+                "будь-яка нота · будь-який канал",
+            ),
+            (
+                "midi.input.note_on",
+                config([
+                    ("note", Variant::Int(60)),
+                    ("channel", Variant::Int(2)),
+                    ("device", text("Pad")),
+                ]),
+                "нота=60 · канал=2 · пристрій=Pad",
+            ),
+            (
+                "midi.device.connected",
+                config([("direction", text("input"))]),
+                "напрямок=вхід",
+            ),
+            (
+                "midi.device.connected",
+                config([("direction", text("thru"))]),
+                "напрямок=thru",
+            ),
+        ]);
+    }
+
+    fn date_reason(name: &'static str) -> MessageRef {
+        MessageRef::new(MessageCode::from_static("condition", name))
+    }
+
+    fn date_reasons() -> [(&'static str, MessageRef, &'static str); 5] {
+        [
+            (
+                "",
+                date_reason("date_pattern_empty"),
+                "шаблон дати порожній",
+            ),
+            (
+                "'HH",
+                date_reason("date_pattern_unterminated_quote").with_arg("position", 0_usize),
+                "текст у лапках, що починається на позиції 0, не закрито символом '",
+            ),
+            (
+                "qq",
+                date_reason("date_pattern_unsupported_letter")
+                    .with_arg("letter", VerbatimText::new("q"))
+                    .with_arg("position", 0_usize),
+                "'q' на позиції 0 не є літерою шаблону дати; візьміть звичайний текст в одинарні лапки",
+            ),
+            (
+                "HHH",
+                date_reason("date_pattern_unsupported_length")
+                    .with_arg("letter", VerbatimText::new("H"))
+                    .with_arg("spelling", VerbatimText::new("HHH"))
+                    .with_arg("position", 0_usize),
+                "'HHH' на позиції 0 має непідтримувану довжину для 'H'",
+            ),
+            (
+                "tt",
+                date_reason("date_pattern_replaced_spelling")
+                    .with_arg("spelling", VerbatimText::new("tt"))
+                    .with_arg("replacement", VerbatimText::new("a"))
+                    .with_arg("position", 0_usize),
+                "'tt' на позиції 0 не підтримується; використайте 'a'",
+            ),
+        ]
+    }
+
+    #[test]
+    fn date_pattern_reasons_read_like_the_parser_error_in_english() {
+        install_language(Language::En);
+        for (pattern, reason, _) in date_reasons() {
+            let parser_error = DatePattern::parse(pattern).unwrap_err().to_string();
+            assert_eq!(plain(resolve_message(&reason).primary), parser_error);
+        }
+    }
+
+    #[test]
+    fn date_pattern_reasons_render_in_ukrainian() {
+        install_language(Language::Uk);
+        for (pattern, reason, expected) in date_reasons() {
+            assert_eq!(
+                plain(resolve_message(&reason).primary),
+                expected,
+                "{pattern:?}"
+            );
+        }
     }
 }

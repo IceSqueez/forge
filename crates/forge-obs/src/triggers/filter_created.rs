@@ -5,11 +5,12 @@ use forge_registry::{
     EventFilter, FormField, KindPlatformContract, TriggerCategory, TriggerKindDescriptor,
 };
 use forge_types::{
-    ArgStack, DeclaredVariable, TriggerConfig, VariableSchema, Variant, VariantKind,
+    ArgStack, DeclaredVariable, TriggerConfig, UserText, VariableSchema, Variant, VariantKind,
 };
 
 use super::filter_removed::{build_filter_source_arg_stack, filter_source_variables};
 use crate::vocabulary::fields::filter as fields;
+use crate::vocabulary::messages;
 use crate::vocabulary::{event_kinds, trigger_ids, variables};
 
 pub struct FilterCreatedDescriptor;
@@ -51,8 +52,8 @@ impl TriggerKindDescriptor for FilterCreatedDescriptor {
         vec![]
     }
 
-    fn condition_display(&self, _config: &TriggerConfig) -> String {
-        "any filter created".to_owned()
+    fn condition_display(&self, _: &TriggerConfig) -> UserText {
+        messages::CONDITION_ANY_FILTER_CREATED.into()
     }
 
     fn event_filter(&self) -> EventFilter {

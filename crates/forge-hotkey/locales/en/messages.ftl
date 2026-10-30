@@ -17,3 +17,4 @@ msg-hotkey-health_portal_active = Portal active
 msg-hotkey-health_portal_evdev_fallback = Portal unavailable, using evdev fallback
 msg-hotkey-health_portal_permission_denied = Permission denied, add your user to the 'input' group
 msg-hotkey-health_backend_not_applicable = N/A
+msg-hotkey-condition_any_hotkey = any hotkey

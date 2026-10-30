@@ -3,9 +3,11 @@ use std::collections::BTreeMap;
 use forge_events::{Event, EventSource};
 use forge_registry::{
     EventFilter, FormField, KindPlatformContract, TriggerCategory, TriggerKindDescriptor,
+    joined_condition,
 };
 use forge_types::{
-    ArgStack, DeclaredVariable, SynthesisHint, TriggerConfig, VariableSchema, Variant, VariantKind,
+    ArgStack, DeclaredVariable, MessageCode, MessageRef, SynthesisHint, TriggerConfig, UserText,
+    VariableSchema, Variant, VariantKind,
 };
 use serde_json::Value;
 
@@ -13,14 +15,14 @@ use super::config_read::{config_filter_text, config_int};
 use crate::vocabulary::fields::input as fields;
 use crate::vocabulary::limits::{CHANNEL_MAX, DATA_BYTE_MAX};
 use crate::vocabulary::variables::input as variables;
-use crate::vocabulary::{MidiSignalKind, config_keys, event_kinds};
+use crate::vocabulary::{MidiSignalKind, config_keys, event_kinds, messages};
 
 pub(crate) struct SignalNumber {
     pub(crate) config_key: &'static str,
     pub(crate) optional_label: &'static str,
     pub(crate) label: &'static str,
-    pub(crate) display_name: &'static str,
-    pub(crate) any_display: &'static str,
+    pub(crate) filter_condition: MessageCode,
+    pub(crate) any_condition: MessageCode,
     pub(crate) variable: &'static str,
     pub(crate) variable_label: &'static str,
 }
@@ -133,28 +135,25 @@ impl TriggerKindDescriptor for MidiInputTrigger {
         form
     }
 
-    fn condition_display(&self, config: &TriggerConfig) -> String {
-        let mut parts = Vec::new();
-        if let Some(number) = &self.number
-            && let Some(n) = config_int(config, number.config_key)
-        {
-            parts.push(format!("{}={n}", number.display_name));
+    fn condition_display(&self, config: &TriggerConfig) -> UserText {
+        let number = self.number.as_ref();
+        let number_filter = number.and_then(|number| {
+            config_int(config, number.config_key).map(|value| {
+                MessageRef::new(number.filter_condition.clone())
+                    .with_arg(messages::NUMBER_CONDITION_ARG, value)
+            })
+        });
+        let channel_filter =
+            config_int(config, config_keys::CHANNEL).map(messages::condition_channel);
+        let mut parts: Vec<MessageRef> = number_filter.into_iter().chain(channel_filter).collect();
+        if parts.is_empty() {
+            parts.extend(number.map(|number| MessageRef::new(number.any_condition.clone())));
+            parts.push(messages::CONDITION_ANY_CHANNEL.into());
         }
-        if let Some(channel) = config_int(config, config_keys::CHANNEL) {
-            parts.push(format!("ch={channel}"));
-        }
-        let mut display = if parts.is_empty() {
-            match &self.number {
-                Some(number) => format!("{}, any channel", number.any_display),
-                None => "any channel".to_owned(),
-            }
-        } else {
-            parts.join(", ")
-        };
-        if let Some(device) = config_filter_text(config, config_keys::DEVICE) {
-            display.push_str(&format!(", device={device}"));
-        }
-        display
+        parts.extend(
+            config_filter_text(config, config_keys::DEVICE).map(messages::condition_device),
+        );
+        joined_condition(parts)
     }
 
     fn event_filter(&self) -> EventFilter {

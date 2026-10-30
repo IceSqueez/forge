@@ -3,11 +3,14 @@ use std::time::Duration;
 use forge_events::{Event, EventSource, TimerTick, TypedEvent};
 use forge_registry::{
     ActorDeclaration, DurationBounds, EventFilter, FormField, KindPlatformContract,
-    SubActionConfigExt, TriggerCategory, TriggerKindDescriptor, TriggerVariables,
+    SubActionConfigExt, TriggerCategory, TriggerKindDescriptor, TriggerVariables, joined_condition,
 };
 use forge_types::{
-    DeclaredVariable, SynthesisHint, TriggerConfig, TriggerInstanceId, Variant, VariantKind,
+    DeclaredVariable, MessageRef, SynthesisHint, TriggerConfig, TriggerInstanceId, UserText,
+    Variant, VariantKind,
 };
+
+use crate::core_messages;
 
 pub const TIMER_TICK_KIND: &str = TimerTick::KIND;
 
@@ -25,6 +28,10 @@ const DEFAULT_INTERVAL_MINUTES: i64 = 30;
 const MAX_MIN_CHAT_MESSAGES: i64 = 1000;
 const SYNTHESIZED_MESSAGE_COUNT_CEILING: i64 = 50;
 const SECONDS_PER_MINUTE: u64 = 60;
+
+pub fn timer_every_message(interval_minutes: u32) -> MessageRef {
+    core_messages::condition_timer_every(i64::from(interval_minutes))
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct TimerSchedule {
@@ -126,16 +133,18 @@ impl TriggerKindDescriptor for TimerTickDescriptor {
         ]
     }
 
-    fn condition_display(&self, config: &TriggerConfig) -> String {
+    fn condition_display(&self, config: &TriggerConfig) -> UserText {
         let schedule = TimerSchedule::from_config(config);
-        let mut display = format!("every {} min", schedule.interval_minutes);
+        let mut parts = vec![timer_every_message(schedule.interval_minutes)];
         if schedule.only_while_live {
-            display.push_str(", live only");
+            parts.push(core_messages::CONDITION_TIMER_LIVE_ONLY.into());
         }
         if schedule.min_chat_messages > 0 {
-            display.push_str(&format!(", {}+ msgs", schedule.min_chat_messages));
+            parts.push(core_messages::condition_timer_min_messages(i64::from(
+                schedule.min_chat_messages,
+            )));
         }
-        display
+        joined_condition(parts)
     }
 
     fn event_filter(&self) -> EventFilter {

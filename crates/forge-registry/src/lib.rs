@@ -1,6 +1,7 @@
 mod analyzer;
 mod category;
 mod chain;
+mod condition_messages;
 mod config_choice;
 mod config_ext;
 mod config_messages;
@@ -41,6 +42,9 @@ pub use category::{SubActionCategory, TriggerCategory};
 pub use chain::{
     CancelSignal, ChainExecutor, ChainSignal, ChildChainOutcome, ControlCell, ControlSignal,
     RunningAction, StopMark, TelemetrySink,
+};
+pub use condition_messages::{
+    CONDITION_MESSAGES, any_condition, chat_command_condition, joined_condition,
 };
 pub use config_choice::ConfigChoice;
 pub use config_ext::SubActionConfigExt;

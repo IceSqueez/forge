@@ -26,3 +26,51 @@ msg-obs-health_dropped_count = { $count ->
    *[other] { $count } frames
 }
 msg-obs-health_dropped_share = { NUMBER($percent, minimumFractionDigits: 2, maximumFractionDigits: 2) }%
+msg-obs-condition_any_collection_list_change = any collection list change
+msg-obs-condition_authentication_failed = authentication failed
+msg-obs-condition_connected = connected
+msg-obs-condition_disconnected = disconnected
+msg-obs-condition_any_filter_created = any filter created
+msg-obs-condition_any_filter_enable_state_changed = any filter enable state changed
+msg-obs-condition_any_filter_removed = any filter removed
+msg-obs-condition_any_profile = any profile
+msg-obs-condition_any_profile_list_change = any profile list change
+msg-obs-condition_recording_file_changed = recording file changed
+msg-obs-condition_recording_paused = recording paused
+msg-obs-condition_recording_resumed = recording resumed
+msg-obs-condition_recording_started = recording started
+msg-obs-condition_recording_starting = recording starting
+msg-obs-condition_any_recording_status_change = any recording status change
+msg-obs-condition_recording_stopped = recording stopped
+msg-obs-condition_recording_stopping = recording stopping
+msg-obs-condition_any_scene_created = any scene created
+msg-obs-condition_any_scene_list_change = any scene list change
+msg-obs-condition_any_scene_removed = any scene removed
+msg-obs-condition_any_scene_renamed = any scene renamed
+msg-obs-condition_any_input_created = any input created
+msg-obs-condition_any_input_removed = any input removed
+msg-obs-condition_any_input_renamed = any input renamed
+msg-obs-condition_any_scene_item_added = any scene item added
+msg-obs-condition_any_scene_item_lock_change = any scene item lock change
+msg-obs-condition_any_scene_item_removed = any scene item removed
+msg-obs-condition_any_scene_item_visibility_change = any scene item visibility change
+msg-obs-condition_stream_started = stream started
+msg-obs-condition_stream_starting = stream starting
+msg-obs-condition_any_stream_status_change = any stream status change
+msg-obs-condition_stream_stopped = stream stopped
+msg-obs-condition_stream_stopping = stream stopping
+msg-obs-condition_studio_mode_disabled = studio mode disabled
+msg-obs-condition_studio_mode_enabled = studio mode enabled
+msg-obs-condition_any_transition_ended = any transition ended
+msg-obs-condition_any_transition_started = any transition started
+msg-obs-condition_any_transition_video_ended = any transition video ended
+msg-obs-condition_virtual_camera_started = virtual camera started
+msg-obs-condition_any_virtual_camera_state_change = any virtual camera state change
+msg-obs-condition_virtual_camera_stopped = virtual camera stopped
+msg-obs-condition_any_scene_collection = any scene collection
+msg-obs-condition_any_source = any source
+msg-obs-condition_any_scene = any scene
+msg-obs-condition_any_preview_scene = any preview scene
+msg-obs-condition_source = source = { $source }
+msg-obs-condition_scene = scene = { $scene }
+msg-obs-condition_preview = preview = { $scene }

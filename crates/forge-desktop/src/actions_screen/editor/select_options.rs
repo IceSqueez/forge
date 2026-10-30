@@ -217,10 +217,9 @@ mod tests {
 
     use super::super::tests::view_with;
     use super::*;
-    use crate::test_support::{StubActions, pump, runtime};
+    use crate::test_support::{StubActions, pump_until, runtime};
 
     const MISSING: &str = "file missing";
-    const CLIP_PROBE_ROUNDS: usize = 1_000;
 
     fn options(entries: &[(&str, &str)]) -> Vec<(String, String)> {
         entries
@@ -306,16 +305,13 @@ mod tests {
 
         view.update(cx, |view, cx| view.fetch_select_options(cx));
         let mut listed = None;
-        for _ in 0..CLIP_PROBE_ROUNDS {
-            pump(&rt);
+        pump_until(&rt, || {
             cx.run_until_parked();
             listed = view.read_with(cx, |view, _| {
                 view.select_options.get(CLIP_OPTIONS_KEY).cloned()
             });
-            if listed.is_some() {
-                break;
-            }
-        }
+            listed.is_some()
+        });
 
         assert_eq!(listed, Some(expected));
     }
@@ -346,8 +342,7 @@ mod tests {
         let view = view_over(cx, &rt, vec![clip], media);
 
         let mut details = None;
-        for _ in 0..CLIP_PROBE_ROUNDS {
-            pump(&rt);
+        pump_until(&rt, || {
             cx.run_until_parked();
             details = view.read_with(cx, |view, _| {
                 view.select_options.contains_key(CLIP_OPTIONS_KEY).then(|| {
@@ -357,10 +352,8 @@ mod tests {
                     )
                 })
             });
-            if details.is_some() {
-                break;
-            }
-        }
+            details.is_some()
+        });
 
         assert_eq!(
             details,

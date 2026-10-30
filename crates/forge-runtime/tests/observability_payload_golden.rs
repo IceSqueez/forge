@@ -89,9 +89,6 @@ impl TriggerKindDescriptor for CommandDescriptor {
     fn config_fields(&self) -> Vec<FormField> {
         Vec::new()
     }
-    fn condition_display(&self, _: &TriggerConfig) -> String {
-        String::new()
-    }
     fn event_filter(&self) -> EventFilter {
         EventFilter {
             source: Some(EventSource::Twitch),

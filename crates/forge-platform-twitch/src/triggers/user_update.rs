@@ -1,11 +1,11 @@
-use crate::vocabulary::event_kinds;
 use crate::vocabulary::trigger_ids;
+use crate::vocabulary::{event_kinds, messages};
 use forge_events::{Event, EventSource};
 use forge_registry::{
     ActorDeclaration, ActorIdentity, ActorRole, ActorSlot, CanonicalVariable, EventFilter,
     FormField, KindPlatformContract, TriggerCategory, TriggerKindDescriptor, TriggerVariables,
 };
-use forge_types::{DeclaredVariable, PlatformId, TriggerConfig, Variant, VariantKind};
+use forge_types::{DeclaredVariable, PlatformId, TriggerConfig, UserText, Variant, VariantKind};
 
 use super::payload_read::{self, twitch_actor};
 use crate::vocabulary::fields::user as user_fields;
@@ -49,8 +49,8 @@ impl TriggerKindDescriptor for UserUpdateDescriptor {
         vec![]
     }
 
-    fn condition_display(&self, _config: &TriggerConfig) -> String {
-        "any profile change".to_owned()
+    fn condition_display(&self, _: &TriggerConfig) -> UserText {
+        messages::CONDITION_ANY_PROFILE_CHANGE.into()
     }
 
     fn event_filter(&self) -> EventFilter {

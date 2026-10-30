@@ -4,9 +4,9 @@ use forge_events::{Event, EventSource};
 use forge_registry::{
     EventFilter, FormField, KindPlatformContract, TriggerCategory, TriggerKindDescriptor,
 };
-use forge_types::{ArgStack, TriggerConfig, VariableSchema};
+use forge_types::{ArgStack, TriggerConfig, UserText, VariableSchema};
 
-use crate::vocabulary::{event_kinds, trigger_ids};
+use crate::vocabulary::{event_kinds, messages, trigger_ids};
 
 pub struct ConnectionConnectedDescriptor;
 
@@ -47,8 +47,8 @@ impl TriggerKindDescriptor for ConnectionConnectedDescriptor {
         vec![]
     }
 
-    fn condition_display(&self, _config: &TriggerConfig) -> String {
-        "connected".to_owned()
+    fn condition_display(&self, _: &TriggerConfig) -> UserText {
+        messages::CONDITION_CONNECTED.into()
     }
 
     fn event_filter(&self) -> EventFilter {

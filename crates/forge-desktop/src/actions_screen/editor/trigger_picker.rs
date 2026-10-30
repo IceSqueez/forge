@@ -39,11 +39,7 @@ fn build_recent_group(
         let kind_label = descriptor
             .map(crate::kind_copy::trigger_name)
             .unwrap_or_else(|| instance.kind_id.clone());
-        let condition = crate::triggers_screen::condition_display(
-            descriptor,
-            &instance.kind_id,
-            &instance.overrides,
-        );
+        let condition = crate::triggers_screen::condition_display(descriptor, &instance.overrides);
         let desc = if condition.is_empty() {
             kind_label
         } else {

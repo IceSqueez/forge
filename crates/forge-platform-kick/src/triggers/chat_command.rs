@@ -4,7 +4,7 @@ use forge_registry::{
     FormField, KindPlatformContract, TriggerCategory, TriggerKindDescriptor, TriggerVariables,
 };
 use forge_types::{
-    DeclaredVariable, PlatformId, SynthesisHint, TriggerConfig, Variant, VariantKind,
+    DeclaredVariable, PlatformId, SynthesisHint, TriggerConfig, UserText, Variant, VariantKind,
 };
 
 use super::chat::{sender_color, sender_identity};
@@ -64,19 +64,8 @@ impl TriggerKindDescriptor for ChatCommandDescriptor {
         ]
     }
 
-    fn condition_display(&self, config: &TriggerConfig) -> String {
-        config
-            .get("phrase")
-            .and_then(|v| {
-                if let Variant::String(s) = v {
-                    Some(s.as_str())
-                } else {
-                    None
-                }
-            })
-            .filter(|s| !s.is_empty())
-            .map(|p| format!("\"{}\"", p))
-            .unwrap_or_else(|| "any".to_owned())
+    fn condition_display(&self, config: &TriggerConfig) -> UserText {
+        forge_registry::chat_command_condition(config)
     }
 
     fn event_filter(&self) -> EventFilter {

@@ -41,6 +41,9 @@ const HEALTH_PORTAL_PERMISSION_DENIED: MessageCode =
 const HEALTH_BACKEND_NOT_APPLICABLE: MessageCode =
     MessageCode::from_static(INTEGRATION_ID, "health_backend_not_applicable");
 
+pub(crate) const CONDITION_ANY_HOTKEY: MessageCode =
+    MessageCode::from_static(INTEGRATION_ID, "condition_any_hotkey");
+
 pub const HOTKEY_MESSAGES: MessageCatalog = MessageCatalog {
     namespace: INTEGRATION_ID,
     codes: &[
@@ -63,6 +66,7 @@ pub const HOTKEY_MESSAGES: MessageCatalog = MessageCatalog {
         COMBO_REJECTED,
         ENGINE_STOPPED,
         BACKEND_FAILED,
+        CONDITION_ANY_HOTKEY,
     ],
     en_ftl: include_str!("../../locales/en/messages.ftl"),
     uk_ftl: include_str!("../../locales/uk/messages.ftl"),
@@ -139,8 +143,9 @@ mod tests {
         found
     }
 
-    fn health_constructors() -> Vec<MessageRef> {
+    fn every_constructor() -> Vec<MessageRef> {
         let mut all = vec![
+            MessageRef::new(CONDITION_ANY_HOTKEY),
             health_registered_hint(),
             health_disabled(),
             health_last_triggered_at(OffsetDateTime::UNIX_EPOCH, "Ctrl+A"),
@@ -159,10 +164,10 @@ mod tests {
     }
 
     #[test]
-    fn every_health_constructor_is_catalogued_and_localized_with_the_variables_it_passes() {
+    fn every_constructor_is_catalogued_and_localized_with_the_variables_it_passes() {
         let en = ftl_variables(HOTKEY_MESSAGES.en_ftl);
         let uk = ftl_variables(HOTKEY_MESSAGES.uk_ftl);
-        for message in health_constructors() {
+        for message in every_constructor() {
             let code = message.code();
             assert!(
                 HOTKEY_MESSAGES.codes.contains(code),

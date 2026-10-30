@@ -1,7 +1,8 @@
 use forge_events::{DeliveryLane, Event};
-use forge_types::{ArgStack, TriggerConfig, VariableSchema};
+use forge_types::{ArgStack, TriggerConfig, UserText, VariableSchema};
 
 use crate::category::TriggerCategory;
+use crate::condition_messages::any_condition;
 use crate::evaluator::EventFilter;
 use crate::form::FormField;
 use crate::kind_platform_contract::KindPlatformContract;
@@ -40,7 +41,9 @@ pub trait TriggerKindDescriptor: Send + Sync {
     fn declared_references(&self) -> Vec<ReferenceField> {
         Vec::new()
     }
-    fn condition_display(&self, config: &TriggerConfig) -> String;
+    fn condition_display(&self, _: &TriggerConfig) -> UserText {
+        any_condition()
+    }
     fn event_filter(&self) -> EventFilter;
     fn targeted_instance_field(&self) -> Option<&'static str> {
         None

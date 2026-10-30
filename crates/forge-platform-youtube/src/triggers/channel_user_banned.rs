@@ -4,12 +4,12 @@ use forge_registry::{
     FormField, KindPlatformContract, TriggerCategory, TriggerKindDescriptor, TriggerVariables,
 };
 use forge_types::{
-    DeclaredVariable, PlatformId, SynthesisHint, TriggerConfig, Variant, VariantKind,
+    DeclaredVariable, PlatformId, SynthesisHint, TriggerConfig, UserText, Variant, VariantKind,
 };
 
 use super::payload_read::{self, youtube_actor};
 use crate::vocabulary::fields::ban as fields;
-use crate::vocabulary::{event_kinds, trigger_ids, variables};
+use crate::vocabulary::{event_kinds, messages, trigger_ids, variables};
 
 const ANY_BAN: &str = "any";
 const PERMANENT_BAN: &str = "permanent";
@@ -63,22 +63,11 @@ impl TriggerKindDescriptor for ChannelUserBannedDescriptor {
         }]
     }
 
-    fn condition_display(&self, config: &TriggerConfig) -> String {
-        let filter = config
-            .get("ban_type_filter")
-            .and_then(|v| {
-                if let Variant::String(s) = v {
-                    Some(s.as_str())
-                } else {
-                    None
-                }
-            })
-            .unwrap_or(ANY_BAN);
-
-        match filter {
-            PERMANENT_BAN => "permanent ban only".to_owned(),
-            TEMPORARY_BAN => "temporary timeout only".to_owned(),
-            _ => "any ban type".to_owned(),
+    fn condition_display(&self, config: &TriggerConfig) -> UserText {
+        match config.get("ban_type_filter").and_then(Variant::as_str) {
+            Some(PERMANENT_BAN) => messages::CONDITION_PERMANENT_BAN_ONLY.into(),
+            Some(TEMPORARY_BAN) => messages::CONDITION_TEMPORARY_TIMEOUT_ONLY.into(),
+            _ => messages::CONDITION_ANY_BAN_TYPE.into(),
         }
     }
 

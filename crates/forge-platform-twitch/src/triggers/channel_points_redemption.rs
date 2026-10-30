@@ -1,12 +1,12 @@
-use crate::vocabulary::event_kinds;
 use crate::vocabulary::trigger_ids;
+use crate::vocabulary::{event_kinds, messages};
 use forge_events::{Event, EventSource};
 use forge_registry::{
     ActorDeclaration, ActorIdentity, ActorRole, CanonicalVariable, EventFilter, FormField,
     KindPlatformContract, TriggerCategory, TriggerKindDescriptor, TriggerVariables,
 };
 use forge_types::{
-    DeclaredVariable, PlatformId, SynthesisHint, TriggerConfig, Variant, VariantKind,
+    DeclaredVariable, PlatformId, SynthesisHint, TriggerConfig, UserText, Variant, VariantKind,
 };
 
 use super::payload_read::{self, twitch_actor};
@@ -66,34 +66,20 @@ impl TriggerKindDescriptor for ChannelPointsRedemptionDescriptor {
         ]
     }
 
-    fn condition_display(&self, config: &TriggerConfig) -> String {
-        let reward_id = config
-            .get("reward_id")
-            .and_then(|v| {
-                if let Variant::String(s) = v {
-                    Some(s.as_str())
-                } else {
-                    None
-                }
-            })
-            .unwrap_or_default();
-        if !reward_id.is_empty() {
-            return format!("reward id = {}", reward_id);
+    fn condition_display(&self, config: &TriggerConfig) -> UserText {
+        let text_of = |key: &str| {
+            config
+                .get(key)
+                .and_then(Variant::as_str)
+                .filter(|text| !text.is_empty())
+        };
+        if let Some(reward_id) = text_of("reward_id") {
+            return messages::condition_reward_id(reward_id).into();
         }
-        let reward_title = config
-            .get("reward_title")
-            .and_then(|v| {
-                if let Variant::String(s) = v {
-                    Some(s.as_str())
-                } else {
-                    None
-                }
-            })
-            .unwrap_or_default();
-        if !reward_title.is_empty() {
-            return format!("reward = {}", reward_title);
+        if let Some(reward_title) = text_of("reward_title") {
+            return messages::condition_reward(reward_title).into();
         }
-        "any reward".to_owned()
+        messages::CONDITION_ANY_REWARD.into()
     }
 
     fn event_filter(&self) -> EventFilter {

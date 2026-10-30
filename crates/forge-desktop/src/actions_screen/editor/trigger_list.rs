@@ -128,11 +128,8 @@ impl ScreenActionsView {
         let kind_label = descriptor
             .map(crate::kind_copy::trigger_name)
             .unwrap_or_else(|| instance.kind_id.clone());
-        let mut condition = crate::triggers_screen::condition_display(
-            descriptor,
-            &instance.kind_id,
-            &instance.overrides,
-        );
+        let mut condition =
+            crate::triggers_screen::condition_display(descriptor, &instance.overrides);
         if crate::triggers_screen::cooldown_applies(descriptor) {
             condition.push_str(&crate::triggers_screen::cooldown_suffix(
                 instance.cooldown_secs,

@@ -15,3 +15,6 @@ msg-youtube-request_refused = YouTube rejected the request (HTTP { $status })
 msg-youtube-request_failed = The request to YouTube failed
 msg-youtube-response_unreadable = YouTube returned a response forge could not read
 msg-youtube-unresolved_reference = The field { $field } still contains an unresolved variable
+msg-youtube-condition_permanent_ban_only = permanent ban only
+msg-youtube-condition_temporary_timeout_only = temporary timeout only
+msg-youtube-condition_any_ban_type = any ban type

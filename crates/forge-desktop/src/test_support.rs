@@ -890,10 +890,6 @@ impl TriggerKindDescriptor for StubTrigger {
         self.chat_family
     }
 
-    fn condition_display(&self, _: &TriggerConfig) -> String {
-        String::new()
-    }
-
     fn event_filter(&self) -> EventFilter {
         EventFilter {
             source: self.filter_source,

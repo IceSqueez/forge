@@ -24,7 +24,6 @@ use crate::{Config, EventBus};
 
 const EXECUTION_INTAKE_CAPACITY: usize = 256;
 const QUICK_ACTION_INTAKE_CAPACITY: usize = 64;
-pub const MANUAL_TEST_RUN_KIND: &str = "test.run";
 const MAX_CAUSATION_DEPTH: usize = 16;
 const CAUSATION_DEPTH_SKIP_REASON: &str = "causation_depth_exceeded";
 

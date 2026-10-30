@@ -1,6 +1,5 @@
-use forge_events::{ActionStarted, TypedEvent};
+use forge_events::{ActionStarted, CommandMatched, TypedEvent};
 use forge_platform_twitch::vocabulary::topics;
-use forge_runtime::COMMAND_MATCHED_KIND;
 use std::collections::{HashMap, HashSet};
 use std::fmt;
 
@@ -27,7 +26,7 @@ pub const MAX_CROWD_MESSAGES: u64 = 1_000_000;
 pub const MAX_CROWD_SPACING_MS: u64 = 1_000;
 
 const CHAT_SUBSCRIPTION: &str = topics::CHANNEL_CHAT_MESSAGE;
-const COMMAND_MATCHED: &str = COMMAND_MATCHED_KIND;
+const COMMAND_MATCHED: &str = CommandMatched::KIND;
 const COMMAND_POINTER: &str = "/command";
 const ACTION_START: &str = ActionStarted::KIND;
 const ACTION_NAME_POINTER: &str = "/action_name";

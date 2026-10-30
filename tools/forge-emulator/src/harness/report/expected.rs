@@ -1,5 +1,4 @@
-use forge_events::{ActionDone, ActionStarted, EventSource, TypedEvent};
-use forge_runtime::COMMAND_MATCHED_KIND;
+use forge_events::{ActionDone, ActionStarted, CommandMatched, EventSource, TypedEvent};
 use serde_json::Value;
 
 use super::text::{clip, code, compact, quoted, span_ms};
@@ -12,7 +11,7 @@ const VALUE_CHARS: usize = 120;
 const SUBJECT_POINTERS: [(&str, &str, &str); 3] = [
     (ActionStarted::KIND, "/action_name", "starts"),
     (ActionDone::KIND, "/action_name", "finishes"),
-    (COMMAND_MATCHED_KIND, "/command", "matches"),
+    (CommandMatched::KIND, "/command", "matches"),
 ];
 
 pub(crate) fn expected(expectation: &Expectation, action: &StepAction) -> String {
@@ -278,7 +277,7 @@ fn take_subject(kind: &str, payload: &mut PayloadMatchers) -> Option<String> {
         .find_map(|(_, pointer, verb)| {
             let name = pinned_string(payload, pointer)?.to_owned();
             payload.0.remove(*pointer);
-            let noun = if kind == COMMAND_MATCHED_KIND {
+            let noun = if kind == CommandMatched::KIND {
                 "command"
             } else {
                 "action"

@@ -84,8 +84,8 @@ impl EventItem {
                     RuntimeEvent::ChatMessage
                         | RuntimeEvent::ChatSent(_)
                         | RuntimeEvent::ChatSendFailed(_)
-                        | RuntimeEvent::WhisperSent { .. }
-                        | RuntimeEvent::CommandMatched { .. }
+                        | RuntimeEvent::WhisperSent(_)
+                        | RuntimeEvent::CommandMatched(_)
                         | RuntimeEvent::SenderFallback(_)
                 )
             )

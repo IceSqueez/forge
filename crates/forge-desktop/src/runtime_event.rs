@@ -1,11 +1,11 @@
 use forge_discord::vocabulary::event_kinds as discord_kinds;
 use forge_events::{
-    ActingSender, ActionDone, ActionSkipped, ActionStarted, ChatSendFailed, ChatSent, Event,
+    ActionDone, ActionSkipped, ActionStarted, ChatSendFailed, ChatSent, CommandMatched, Event,
     EventSource, GlobalArrayAppended, GlobalArrayRemoved, GlobalDecremented, GlobalDeleted,
     GlobalIncremented, GlobalSet, GlobalToggled, LatestChanged, PlatformConnectionChanged,
-    QuickActionDone, RequestFailed, RunOutcome, SENT_AS_FIELD, ScriptFailed, ScriptHttpCall,
-    ScriptLogLevel, ScriptLogged, ScriptReloaded, ScriptStarted, SubActionDone, SubActionRun,
-    TimerTick, TypedEvent,
+    QuickActionDone, RequestFailed, RunOutcome, ScriptFailed, ScriptHttpCall, ScriptLogLevel,
+    ScriptLogged, ScriptReloaded, ScriptStarted, SubActionDone, SubActionRun, TimerTick,
+    TypedEvent, WhisperSent,
 };
 use forge_hotkey::vocabulary::{HotkeyEnableFailed, HotkeyPressed, event_kinds as hotkey_kinds};
 use forge_midi::vocabulary::event_kinds as midi_kinds;
@@ -15,7 +15,7 @@ use forge_platform_twitch::vocabulary::{
     BotStatusChanged, PlatformReauthRequired, SenderFallback, event_kinds as twitch_kinds,
 };
 use forge_platform_youtube::vocabulary::event_kinds as youtube_kinds;
-use forge_runtime::{COMMAND_MATCHED_KIND, OVERLAY_SPEECH_FAILED_KIND};
+use forge_runtime::OVERLAY_SPEECH_FAILED_KIND;
 use forge_soundboard::vocabulary::{
     ClipAdoptionSettled, PlaybackFailed, PlaybackFinished, PlaybackStarted,
 };
@@ -24,9 +24,6 @@ use forge_types::{ClipId, PlatformId};
 use forge_vtube::VTubeError;
 use forge_vtube::vocabulary::{VTubeConnectionChanged, VTubeDisconnectReason};
 
-use crate::integrations::WHISPER_SENT_KIND;
-
-const COMMAND_FIELD: &str = "command";
 const TWITCH_KIND_PREFIX: &str = "twitch.";
 
 const CHAT_MESSAGE_KINDS: [&str; 3] = [
@@ -95,10 +92,10 @@ pub(crate) enum RuntimeEvent {
     ObsSceneChanged,
     VTubeConnection(VTubeConnectionChanged),
     ChatMessage,
-    CommandMatched { command: Option<String> },
+    CommandMatched(CommandMatched),
     ChatSent(ChatSent),
     ChatSendFailed(ChatSendFailed),
-    WhisperSent { sent_as: Option<ActingSender> },
+    WhisperSent(WhisperSent),
     ActionStarted(ActionStarted),
     ActionDone(ActionDone),
     ActionSkipped(ActionSkipped),
@@ -149,23 +146,14 @@ pub(crate) fn decode(event: &Event) -> Option<RuntimeEvent> {
             VTubeConnectionChanged::from_event(event).map(RuntimeEvent::VTubeConnection)
         }
         (_, kind) if CHAT_MESSAGE_KINDS.contains(&kind) => Some(RuntimeEvent::ChatMessage),
-        (_, COMMAND_MATCHED_KIND) => Some(RuntimeEvent::CommandMatched {
-            command: event
-                .payload
-                .get(COMMAND_FIELD)
-                .and_then(serde_json::Value::as_str)
-                .map(str::to_owned),
-        }),
+        (_, CommandMatched::KIND) => {
+            CommandMatched::from_event(event).map(RuntimeEvent::CommandMatched)
+        }
         (_, ChatSent::KIND) => ChatSent::from_event(event).map(RuntimeEvent::ChatSent),
         (_, ChatSendFailed::KIND) => {
             ChatSendFailed::from_event(event).map(RuntimeEvent::ChatSendFailed)
         }
-        (_, WHISPER_SENT_KIND) => Some(RuntimeEvent::WhisperSent {
-            sent_as: event
-                .payload
-                .get(SENT_AS_FIELD)
-                .and_then(|sent_as| serde_json::from_value(sent_as.clone()).ok()),
-        }),
+        (_, WhisperSent::KIND) => WhisperSent::from_event(event).map(RuntimeEvent::WhisperSent),
         (_, ActionStarted::KIND) => {
             ActionStarted::from_event(event).map(RuntimeEvent::ActionStarted)
         }
@@ -268,7 +256,7 @@ pub(crate) fn viewer_ban_platform(event: &Event) -> Option<PlatformId> {
 pub(crate) fn marks_chat_run(event: &Event) -> bool {
     matches!(
         event.kind.as_str(),
-        COMMAND_MATCHED_KIND | ActionStarted::KIND
+        CommandMatched::KIND | ActionStarted::KIND
     )
 }
 

@@ -2,15 +2,15 @@ use std::sync::Arc;
 
 use arc_swap::ArcSwap;
 use forge_events::{
-    ActionDone, ActionSkipped, ActionStarted, DeliveryLane, Event, EventSource, SubActionDone,
-    SubActionRun, TypedEvent,
+    ActionDone, ActionSkipped, ActionStarted, CommandMatched, DeliveryLane, Event, EventSource,
+    SubActionDone, SubActionRun, TypedEvent,
 };
 use forge_registry::{TriggerRegistry, kind_matches_prefix};
 use tokio::sync::mpsc::{self, error::TrySendError};
 
 use crate::delivery_loss::ConsumerLossCounters;
 use crate::event_ring::EventRing;
-use crate::trigger_evaluator::{COMMAND_MATCHED_KIND, TRIGGER_BLOCKED_KIND};
+use crate::trigger_evaluator::TRIGGER_BLOCKED_KIND;
 
 const RECOVERY_HEADROOM_DIVISOR: usize = 2;
 
@@ -32,7 +32,7 @@ const CORE_BULK_KINDS: &[&str] = &[
     ActionSkipped::KIND,
     SubActionRun::KIND,
     SubActionDone::KIND,
-    COMMAND_MATCHED_KIND,
+    CommandMatched::KIND,
     TRIGGER_BLOCKED_KIND,
 ];
 

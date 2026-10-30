@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
 
-use forge_events::{Event, EventSource};
+use forge_events::{CommandMatched, Event, EventSource, TypedEvent};
 use forge_registry::{
     ChatTriggerFamily, TriggerKindDescriptor, TriggerRegistry, effective_config,
     ignores_bot_messages, kind_matches_prefix,
@@ -25,7 +25,6 @@ use crate::{Config, EventBus, QueueAdmission, QueueSchedulerHandle, SchedulerReq
 const DECISION_TARGET: &str = "forge::trigger";
 
 pub const COMMAND_LINE_TARGET: &str = "forge::command";
-pub const COMMAND_MATCHED_KIND: &str = "command.matched";
 pub const TRIGGER_BLOCKED_KIND: &str = "trigger.blocked";
 
 const MAX_RESOLVED_EVENT_SHAPES: usize = 4096;
@@ -232,15 +231,13 @@ impl TriggerEvaluator {
         let args = self.registry.arg_stack(&instance.kind_id, event);
 
         if is_command {
-            self.bus.publish(Event::caused_by(
-                EventSource::Core,
-                COMMAND_MATCHED_KIND,
-                json!({
-                    "command": command_phrase(&effective),
-                    "kind_id": instance.kind_id,
-                }),
-                event.id,
-            ));
+            self.bus.publish(
+                CommandMatched {
+                    command: command_phrase(&effective),
+                    kind_id: instance.kind_id.clone(),
+                }
+                .into_event(EventSource::Core, Some(event.id)),
+            );
             log_command_match(instance, event, descriptor, &effective, &args);
         }
 

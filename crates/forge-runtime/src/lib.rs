@@ -6,6 +6,7 @@ pub mod bus;
 mod catalog;
 mod chain;
 mod chat_history_persistence;
+mod chat_send_router;
 mod chat_stream;
 mod condition;
 mod config;
@@ -55,14 +56,14 @@ mod viewer_tracker;
 
 pub use action_cancel::ActionCancelRegistry;
 pub use action_engine::{
-    ActionEngineHandle, DispatchError, ExecutionRequest, MANUAL_TEST_RUN_KIND, PendingQuickAction,
-    spawn_action_engine,
+    ActionEngineHandle, DispatchError, ExecutionRequest, PendingQuickAction, spawn_action_engine,
 };
 pub use audio_runners::register_speech_sub_actions;
 pub use bus::{BusError, EventBus, EventHistory, NullEventLogRepo};
 pub use catalog::{Catalog, CatalogBinding, CatalogSnapshot};
 pub use chain::{ChainEngine, ChainRun, ChainScope};
 pub use chat_history_persistence::{ChatHistoryRetentionHandle, spawn_chat_history_persistence};
+pub use chat_send_router::spawn_chat_send_router;
 pub use condition::{ConditionError, ConditionGate};
 pub use config::Config;
 pub use date_names::DateNamesHandle;
@@ -129,8 +130,7 @@ pub use sub_action_runners::{
 pub use task_stop::TaskStop;
 pub use timer_scheduler::{TimerSchedulerHandle, spawn_timer_scheduler};
 pub use trigger_evaluator::{
-    COMMAND_LINE_TARGET, COMMAND_MATCHED_KIND, TRIGGER_BLOCKED_KIND, TriggerEvaluatorHandle,
-    spawn_trigger_evaluator,
+    COMMAND_LINE_TARGET, TRIGGER_BLOCKED_KIND, TriggerEvaluatorHandle, spawn_trigger_evaluator,
 };
 pub use triggers::register_core_triggers;
 pub use twitch_emote_lexicon::{TwitchEmoteLexicon, spawn_twitch_emote_learning};

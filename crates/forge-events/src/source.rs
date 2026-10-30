@@ -34,6 +34,16 @@ impl EventSource {
     }
 }
 
+impl From<PlatformId> for EventSource {
+    fn from(platform: PlatformId) -> Self {
+        match platform {
+            PlatformId::Twitch => Self::Twitch,
+            PlatformId::YouTube => Self::YouTube,
+            PlatformId::Kick => Self::Kick,
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

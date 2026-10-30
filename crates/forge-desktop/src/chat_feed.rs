@@ -315,9 +315,9 @@ impl ChatFeed {
             return false;
         };
         match runtime_event::decode(event) {
-            Some(RuntimeEvent::CommandMatched {
-                command: Some(command),
-            }) => self.mark_command(caused_by, &command),
+            Some(RuntimeEvent::CommandMatched(matched)) => {
+                self.mark_command(caused_by, &matched.command)
+            }
             Some(RuntimeEvent::ActionStarted(started)) => {
                 self.set_triggered(caused_by, &started.action_name)
             }

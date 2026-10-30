@@ -1,23 +1,16 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use forge_events::{
-    ActingSender, ChatSendFailed, ChatSendRequest, ChatSent, Event, EventPublisher, EventSource,
-    EventSubscription, EventsError, TypedEvent,
-};
+use forge_events::{EventPublisher, EventSubscription, EventsError};
 use forge_platform_core::{
     BanListSource, BuiltinCollections, BuiltinContent, BuiltinControl, BuiltinHealth,
     BuiltinOptionSource, BuiltinStatus, ChatPlatform, FollowLookup, PlatformEndpoints,
-    QuickActions, SectionIcon, SenderPreference,
+    QuickActions, SectionIcon,
 };
 use forge_registry::{SubActionRegistry, TriggerRegistry};
 use forge_runtime::{DonationIngest, EventBus};
 use forge_storage::{CredentialsRepo, DataProvider};
-use forge_types::{
-    EventId, IntegrationId, PlatformId, REPLY_PARENT_FIELD, WHISPER_RECIPIENT_FIELD,
-    requested_chat_target, whispers_unsupported_reason,
-};
-use tokio::sync::mpsc;
+use forge_types::IntegrationId;
 use tokio::task::JoinHandle;
 
 use crate::donation_factories::{wire_donatello, wire_monobank};
@@ -28,10 +21,7 @@ use crate::integration_factories::{
 };
 use crate::platform_credentials::PlatformCredentialManagers;
 use forge_hotkey::HotkeyReconciler;
-use forge_runtime::{IntegrationFactory, IntegrationObjects, TaskGroup};
-
-const CHAT_SEND_QUEUE_CAPACITY: usize = 64;
-pub(crate) const WHISPER_SENT_KIND: &str = "chat.whisper.sent";
+use forge_runtime::{IntegrationFactory, IntegrationObjects};
 
 #[derive(Clone)]
 pub struct BuiltinObject {
@@ -429,233 +419,6 @@ pub(crate) fn spawn_event_bridge(
             }
         }
     })
-}
-
-enum ChatSendIntent {
-    Plain,
-    Reply { parent_message_id: String },
-    Whisper { recipient_login: String },
-}
-
-impl ChatSendIntent {
-    fn of(payload: &serde_json::Value) -> Self {
-        if let Some(recipient) = payload.get(WHISPER_RECIPIENT_FIELD) {
-            return Self::Whisper {
-                recipient_login: recipient.as_str().unwrap_or_default().trim().to_owned(),
-            };
-        }
-        match payload
-            .get(REPLY_PARENT_FIELD)
-            .and_then(|v| v.as_str())
-            .map(str::trim)
-            .filter(|parent| !parent.is_empty())
-        {
-            Some(parent) => Self::Reply {
-                parent_message_id: parent.to_owned(),
-            },
-            None => Self::Plain,
-        }
-    }
-}
-
-struct QueuedChatSend {
-    message: String,
-    intent: ChatSendIntent,
-    sender: SenderPreference,
-    caused_by: EventId,
-}
-
-fn whisper_sent(
-    source: EventSource,
-    target: &str,
-    recipient_login: String,
-    acting: Option<ActingSender>,
-    caused_by: EventId,
-) -> Event {
-    let mut payload = serde_json::json!({
-        "channel": target,
-        (WHISPER_RECIPIENT_FIELD): recipient_login,
-    });
-    if let Some(acting) = acting {
-        acting.insert_into(&mut payload);
-    }
-    Event::caused_by(source, WHISPER_SENT_KIND, payload, caused_by)
-}
-
-fn chat_send_failed(source: EventSource, target: &str, error: String, caused_by: EventId) -> Event {
-    ChatSendFailed {
-        channel: target.to_owned(),
-        error,
-    }
-    .into_event(source, Some(caused_by))
-}
-
-fn spawn_chat_send_worker(
-    bus: Arc<EventBus>,
-    platform: Arc<dyn ChatPlatform>,
-    target: &'static str,
-    source: EventSource,
-    mut requests: mpsc::Receiver<QueuedChatSend>,
-) -> JoinHandle<()> {
-    tokio::spawn(async move {
-        while let Some(request) = requests.recv().await {
-            let QueuedChatSend {
-                message,
-                intent,
-                sender,
-                caused_by,
-            } = request;
-            let delivered = match intent {
-                ChatSendIntent::Plain => platform
-                    .send_message_as(target, &message, sender)
-                    .await
-                    .map(|sent_as| {
-                        ChatSent {
-                            channel: target.to_owned(),
-                            message,
-                            reply_to_message_id: None,
-                            sent_as,
-                        }
-                        .into_event(source, Some(caused_by))
-                    }),
-                ChatSendIntent::Reply { parent_message_id } => platform
-                    .send_reply_as(target, &parent_message_id, &message, sender)
-                    .await
-                    .map(|sent_as| {
-                        ChatSent {
-                            channel: target.to_owned(),
-                            message,
-                            reply_to_message_id: Some(parent_message_id),
-                            sent_as,
-                        }
-                        .into_event(source, Some(caused_by))
-                    }),
-                ChatSendIntent::Whisper { recipient_login } => platform
-                    .send_whisper_as(&recipient_login, &message, sender)
-                    .await
-                    .map(|acting| whisper_sent(source, target, recipient_login, acting, caused_by)),
-            };
-            match delivered {
-                Ok(event) => bus.publish(event),
-                Err(e) => bus.publish(chat_send_failed(source, target, e.to_string(), caused_by)),
-            }
-        }
-    })
-}
-
-pub(crate) fn spawn_chat_send_bridge(
-    bus: Arc<EventBus>,
-    platform: Arc<dyn ChatPlatform>,
-    target: &'static str,
-    source: EventSource,
-) -> TaskGroup {
-    let (tx, rx) = mpsc::channel(CHAT_SEND_QUEUE_CAPACITY);
-    let mut tasks = TaskGroup::default();
-    tasks.track(spawn_chat_send_worker(
-        Arc::clone(&bus),
-        platform,
-        target,
-        source,
-        rx,
-    ));
-
-    let whispers_supported =
-        PlatformId::from_wire(target).is_some_and(PlatformId::supports_whispers);
-    tasks.track(tokio::spawn(async move {
-        let mut sub = bus.subscribe();
-        let mut lag_count: u64 = 0;
-        let mut lagging = false;
-        loop {
-            let event = match sub.recv().await {
-                Ok(e) => {
-                    lagging = false;
-                    e
-                }
-                Err(EventsError::BusClosed) => break,
-                Err(EventsError::LaggingReceiver) if lagging => continue,
-                Err(EventsError::LaggingReceiver) => {
-                    lagging = true;
-                    lag_count += 1;
-                    tracing::warn!(
-                        channel = target,
-                        lag_count,
-                        "chat send bridge lagging"
-                    );
-                    bus.publish(
-                        ChatSendFailed {
-                            channel: target.to_owned(),
-                            error: format!(
-                                "event bus receiver lagging ({lag_count} lag event(s) observed); {} events may have been dropped",
-                                ChatSendRequest::KIND
-                            ),
-                        }
-                        .into_event(source, None),
-                    );
-                    continue;
-                }
-                Err(_) => continue,
-            };
-            if event.kind != ChatSendRequest::KIND {
-                continue;
-            }
-            if !matches!(event.source, EventSource::Core | EventSource::Rhai) {
-                continue;
-            }
-            let requested = event
-                .payload
-                .get("target")
-                .and_then(|v| v.as_str())
-                .and_then(requested_chat_target);
-            if requested.is_some_and(|requested| {
-                PlatformId::from_wire(requested).is_none_or(|platform| platform.as_str() != target)
-            }) {
-                continue;
-            }
-            let Some(message) = event
-                .payload
-                .get("message")
-                .and_then(|v| v.as_str())
-                .map(ToOwned::to_owned)
-            else {
-                continue;
-            };
-            let caused_by = event.id;
-            let sender = match SenderPreference::from_payload(&event.payload) {
-                Ok(sender) => sender,
-                Err(reason) => {
-                    bus.publish(chat_send_failed(source, target, reason, caused_by));
-                    continue;
-                }
-            };
-            let intent = ChatSendIntent::of(&event.payload);
-            if matches!(intent, ChatSendIntent::Whisper { .. }) && !whispers_supported {
-                if requested.is_some() {
-                    bus.publish(chat_send_failed(
-                        source,
-                        target,
-                        whispers_unsupported_reason(target),
-                        caused_by,
-                    ));
-                }
-                continue;
-            }
-            let request = QueuedChatSend {
-                message,
-                intent,
-                sender,
-                caused_by,
-            };
-            if tx.try_send(request).is_err() {
-                bus.publish(chat_send_failed(
-                    source,
-                    target,
-                    "chat send queue full or worker unavailable; request dropped".to_owned(),
-                    caused_by,
-                ));
-            }
-        }
-    }));
-    tasks
 }
 
 pub(crate) fn spawn_connect(

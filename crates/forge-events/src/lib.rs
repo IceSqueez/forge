@@ -12,12 +12,13 @@ mod run;
 mod script;
 mod source;
 mod timer;
+mod trigger;
 mod typed;
 
 pub use bus::EventsError;
 pub use channel::{Delivery, EventChannel, EventObserver, EventSubscription, LagRecorder};
 pub use chat_send::{
-    ActingSender, ChatSendFailed, ChatSendRequest, ChatSent, SENT_AS_FIELD, SenderRole,
+    ActingSender, ChatSendFailed, ChatSendRequest, ChatSent, SENT_AS_FIELD, SenderRole, WhisperSent,
 };
 pub use connection::{ConnectionState, PlatformConnectionChanged};
 pub use donation::{DONATION_RECEIVED_KIND, DonationReceived};
@@ -30,8 +31,8 @@ pub use latest::{LATEST_CHANGED_KIND, LatestChanged, NOW_PLAYING_KIND, NowPlayin
 pub use publisher::EventPublisher;
 pub use request::RequestFailed;
 pub use run::{
-    ActionDone, ActionSkipped, ActionStarted, QuickActionDone, RunOutcome, SubActionDone,
-    SubActionRun,
+    ActionDone, ActionSkipped, ActionStarted, ManualTestRun, QuickActionDone, RunOutcome,
+    SubActionDone, SubActionRun,
 };
 pub use script::{
     ScriptFailed, ScriptHttpCall, ScriptHttpMethod, ScriptLogLevel, ScriptLogged, ScriptReloaded,
@@ -39,6 +40,7 @@ pub use script::{
 };
 pub use source::EventSource;
 pub use timer::TimerTick;
+pub use trigger::CommandMatched;
 pub use typed::TypedEvent;
 
 use forge_types::EventId;

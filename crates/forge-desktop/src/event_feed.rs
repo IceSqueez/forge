@@ -145,7 +145,7 @@ fn compute_projection(
                     *downstream.entry(cb.clone()).or_default() += 1;
                 }
             }
-            Some(RuntimeEvent::CommandMatched { .. }) => {
+            Some(RuntimeEvent::CommandMatched(_)) => {
                 if let Some(cb) = &item.caused_by {
                     matched.insert(cb.clone());
                 }
@@ -528,10 +528,8 @@ impl EventFeedView {
             |n: u32| -> gpui::SharedString { tr!("event_feed_outcome_actions", count = n).into() };
         match &item.typed {
             Some(RuntimeEvent::ChatSent(sent)) => Some(sent_tag(sent.sent_as.as_ref())),
-            Some(RuntimeEvent::WhisperSent { sent_as }) => Some(sent_tag(sent_as.as_ref())),
-            Some(RuntimeEvent::CommandMatched { .. }) => {
-                Some(tr!("event_feed_outcome_trigger").into())
-            }
+            Some(RuntimeEvent::WhisperSent(sent)) => Some(sent_tag(sent.sent_as.as_ref())),
+            Some(RuntimeEvent::CommandMatched(_)) => Some(tr!("event_feed_outcome_trigger").into()),
             Some(RuntimeEvent::ActionStarted(_)) => item
                 .sub_action_count
                 .map(|n| tr!("event_feed_step_count", count = n).into()),
@@ -1280,7 +1278,7 @@ fn type_color(item: &EventItem, palette: &ForgePalette) -> Rgba {
     }
     match &item.typed {
         Some(RuntimeEvent::ChatMessage | RuntimeEvent::ChatSent(_)) => palette.info,
-        Some(RuntimeEvent::CommandMatched { .. }) => palette.theme_brand,
+        Some(RuntimeEvent::CommandMatched(_)) => palette.theme_brand,
         Some(RuntimeEvent::ActionDone(_) | RuntimeEvent::ObsSceneChanged) => palette.success,
         Some(
             RuntimeEvent::ActionStarted(_)
@@ -1303,7 +1301,7 @@ fn result_color(item: &EventItem, palette: &ForgePalette) -> Rgba {
     match &item.typed {
         Some(
             RuntimeEvent::ActionDone(_)
-            | RuntimeEvent::CommandMatched { .. }
+            | RuntimeEvent::CommandMatched(_)
             | RuntimeEvent::ChatSent(_)
             | RuntimeEvent::ChatMessage,
         ) => palette.success,

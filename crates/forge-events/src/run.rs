@@ -22,6 +22,15 @@ impl From<&SubActionOutcome> for RunOutcome {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ManualTestRun {
+    pub action_id: ActionId,
+}
+
+impl TypedEvent for ManualTestRun {
+    const KIND: &'static str = "test.run";
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ActionStarted {
     pub action_id: ActionId,
     pub action_name: String,

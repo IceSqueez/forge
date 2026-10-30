@@ -65,3 +65,15 @@ pub struct ChatSendFailed {
 impl TypedEvent for ChatSendFailed {
     const KIND: &'static str = "chat.send.failed";
 }
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct WhisperSent {
+    pub channel: String,
+    pub whisper_to_login: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sent_as: Option<ActingSender>,
+}
+
+impl TypedEvent for WhisperSent {
+    const KIND: &'static str = "chat.whisper.sent";
+}

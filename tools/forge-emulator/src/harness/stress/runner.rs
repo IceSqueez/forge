@@ -4,9 +4,9 @@ use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::time::Duration;
 
 use forge_events::{
-    ActionDone, ActionSkipped, ActionStarted, ChatSendFailed, EventSource, TypedEvent,
+    ActionDone, ActionSkipped, ActionStarted, ChatSendFailed, CommandMatched, EventSource,
+    TypedEvent,
 };
-use forge_runtime::COMMAND_MATCHED_KIND;
 use forge_storage::DATABASE_FILE_NAME;
 use serde::Serialize;
 use tokio::task::JoinHandle;
@@ -37,7 +37,7 @@ const OBSERVED_KINDS: [&str; 5] = [
     ActionStarted::KIND,
     ActionDone::KIND,
     ActionSkipped::KIND,
-    COMMAND_MATCHED_KIND,
+    CommandMatched::KIND,
     ChatSendFailed::KIND,
 ];
 

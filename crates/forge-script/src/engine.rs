@@ -136,7 +136,7 @@ impl Engine {
 
 pub fn validate_syntax(body: &str) -> Result<(), ScriptError> {
     let mut engine = rhai::Engine::new_raw();
-    engine.register_global_module(CorePackage::new().as_shared_module());
+    register_sandbox_base(&mut engine, &EngineConfig::default());
     engine
         .compile(body)
         .map(|_| ())
@@ -244,6 +244,34 @@ mod tests {
     fn validate_syntax_error_omits_script_body() {
         let err = validate_syntax("let token = \"sk-live-0123456789\"; @@@").unwrap_err();
         assert!(!format!("{err} {err:?}").contains("sk-live"), "{err:?}");
+    }
+
+    fn nested_parens(depth: usize) -> String {
+        format!("{}1{}", "(".repeat(depth), ")".repeat(depth))
+    }
+
+    #[test]
+    fn validation_refuses_what_the_sandbox_refuses_to_compile() {
+        let far_past_the_depth_limit = nested_parens(200);
+        for body in [r#"eval("1 + 1")"#, far_past_the_depth_limit.as_str()] {
+            assert!(
+                matches!(validate_syntax(body), Err(ScriptError::Compile { .. })),
+                "validation accepted {body}"
+            );
+        }
+    }
+
+    #[test]
+    fn validation_agrees_with_the_sandbox_at_every_nesting_depth() {
+        let sandbox = Engine::with_config(EngineConfig::default());
+        for depth in 0..=80 {
+            let body = nested_parens(depth);
+            assert_eq!(
+                validate_syntax(&body).is_ok(),
+                sandbox.eval_script(&body).is_ok(),
+                "{depth} nested parentheses"
+            );
+        }
     }
 
     #[test]

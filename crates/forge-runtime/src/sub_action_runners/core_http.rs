@@ -24,27 +24,21 @@ const CONTENT_TYPE_HEADER: &str = "content-type";
 const HTTP_STATUS_CODE_VAR: &str = "http.status_code";
 const HTTP_HEADERS_VAR: &str = "http.headers";
 const HTTP_BODY_VAR: &str = "http.body";
+const HTTP_TRUNCATED_VAR: &str = "http.truncated";
 
 #[derive(Clone, Copy)]
 enum ContentType {
     Json,
     FormUrlEncoded,
     PlainText,
-    Multipart,
 }
 
 impl ConfigChoice for ContentType {
-    const ALL: &'static [Self] = &[
-        Self::Json,
-        Self::FormUrlEncoded,
-        Self::PlainText,
-        Self::Multipart,
-    ];
+    const ALL: &'static [Self] = &[Self::Json, Self::FormUrlEncoded, Self::PlainText];
     const WIRE_NAMES: &'static [&'static str] = &[
         "application/json",
         "application/x-www-form-urlencoded",
         "text/plain",
-        "multipart/form-data",
     ];
 
     fn wire_name(self) -> &'static str {
@@ -52,7 +46,6 @@ impl ConfigChoice for ContentType {
             Self::Json => "application/json",
             Self::FormUrlEncoded => "application/x-www-form-urlencoded",
             Self::PlainText => "text/plain",
-            Self::Multipart => "multipart/form-data",
         }
     }
 }
@@ -331,6 +324,7 @@ impl SubActionRunner for CoreHttpRunner {
                 HTTP_STATUS_CODE_VAR.to_owned(),
                 HTTP_HEADERS_VAR.to_owned(),
                 HTTP_BODY_VAR.to_owned(),
+                HTTP_TRUNCATED_VAR.to_owned(),
             ],
             ..SubActionIo::default()
         }
@@ -404,14 +398,18 @@ fn apply_response(
             HTTP_STATUS_CODE_VAR.to_owned(),
             Variant::Int(i64::from(response.status)),
         )
-        .set(HTTP_HEADERS_VAR.to_owned(), Variant::Object(header_map));
+        .set(HTTP_HEADERS_VAR.to_owned(), Variant::Object(header_map))
+        .set(
+            HTTP_TRUNCATED_VAR.to_owned(),
+            Variant::Bool(response.truncated),
+        );
 
     match parse_as {
         ParseResponseAs::Ignore => stack,
         ParseResponseAs::Json => {
             let parsed = serde_json::from_str::<serde_json::Value>(&response.body)
                 .ok()
-                .and_then(|v| Variant::from_json(v).ok());
+                .and_then(|v| Variant::from_plain_json(v).ok());
             let body = parsed.unwrap_or(Variant::String(response.body));
             stack.set(HTTP_BODY_VAR.to_owned(), body)
         }
@@ -459,6 +457,83 @@ mod tests {
         let stack = ArgStack::new();
         let ctx = RunContext::leaf(&stack, 0, EventId::new(), &NullPublisher);
         runner.execute(cfg, &ctx).await
+    }
+
+    fn response(body: &str, truncated: bool) -> EgressResponse {
+        EgressResponse {
+            status: 200,
+            body: body.to_owned(),
+            headers: std::collections::BTreeMap::new(),
+            truncated,
+        }
+    }
+
+    #[test]
+    fn http_truncated_says_whether_the_body_was_cut_for_every_parse_mode() {
+        for parse_as in [
+            ParseResponseAs::Ignore,
+            ParseResponseAs::Text,
+            ParseResponseAs::Json,
+        ] {
+            for truncated in [false, true] {
+                let stack = apply_response(&ArgStack::new(), response("{}", truncated), parse_as);
+
+                assert_eq!(
+                    stack.get(HTTP_TRUNCATED_VAR),
+                    Some(&Variant::Bool(truncated))
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn a_json_body_shaped_like_a_type_value_pair_stays_a_plain_object() {
+        let stack = apply_response(
+            &ArgStack::new(),
+            response(r#"{"type": "int", "value": 3}"#, false),
+            ParseResponseAs::Json,
+        );
+
+        assert_eq!(
+            stack.get(HTTP_BODY_VAR),
+            Some(&Variant::Object(std::collections::BTreeMap::from([
+                ("type".to_owned(), Variant::String("int".to_owned())),
+                ("value".to_owned(), Variant::Int(3)),
+            ])))
+        );
+    }
+
+    #[test]
+    fn a_json_body_cut_by_the_size_limit_is_kept_as_text() {
+        let stack = apply_response(
+            &ArgStack::new(),
+            response(r#"{"cut": "of"#, true),
+            ParseResponseAs::Json,
+        );
+
+        assert_eq!(
+            stack.get(HTTP_BODY_VAR).and_then(Variant::as_str),
+            Some(r#"{"cut": "of"#)
+        );
+    }
+
+    #[tokio::test]
+    async fn a_stored_multipart_content_type_fails_without_sending_a_request() {
+        let dp = backend().await;
+        let mut cfg = url_cfg("https://192.0.2.1/".to_owned());
+        cfg.insert(
+            "content_type".to_owned(),
+            Variant::String("multipart/form-data".to_owned()),
+        );
+
+        let (tel, stack) = run(&runner(HttpMethod::Post, &dp), &cfg).await;
+
+        assert!(
+            matches!(&tel.outcome, SubActionOutcome::Failed(reason) if crate::test_support::failure::rejected_field(reason) == Some("content_type")),
+            "{:?}",
+            tel.outcome
+        );
+        assert!(stack.is_none());
     }
 
     #[tokio::test]

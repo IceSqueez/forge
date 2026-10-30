@@ -1,5 +1,6 @@
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 mod common;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
@@ -100,6 +101,15 @@ impl OverlayFrameSink for TimedPage {
 enum Speaks {
     Starts { after: Duration, lasts: Duration },
     FailsAtOnce,
+    IgnoresCancel { starts: bool },
+}
+
+struct CountsDrops(Arc<AtomicUsize>);
+
+impl Drop for CountsDrops {
+    fn drop(&mut self) {
+        self.0.fetch_add(1, Ordering::SeqCst);
+    }
 }
 
 fn plays_for(lasts: Duration) -> Speaks {
@@ -126,6 +136,7 @@ struct ScriptedSpeaker {
     speaks: Speaks,
     voice_check: Option<EngineVoiceError>,
     spoken: Mutex<Vec<Spoken>>,
+    abandoned: Arc<AtomicUsize>,
 }
 
 impl ScriptedSpeaker {
@@ -169,6 +180,14 @@ impl SpeakDispatcher for ScriptedSpeaker {
                 return Err(SpeakDispatchError::Dispatch(MessageRef::new(
                     MessageCode::from_static("speak", "skipped_word_filter"),
                 )));
+            }
+            Speaks::IgnoresCancel { starts } => {
+                let _abandoned = CountsDrops(Arc::clone(&self.abandoned));
+                if starts {
+                    started.mark_started();
+                }
+                std::future::pending::<()>().await;
+                return Ok(());
             }
             Speaks::Starts { after, lasts } => (after, lasts),
         };
@@ -265,6 +284,7 @@ fn harness_checking_voice(
         speaks,
         voice_check,
         spoken: Mutex::new(Vec::new()),
+        abandoned: Arc::default(),
     });
     let bus = EventBus::new(Arc::new(NullEventLogRepo));
 
@@ -439,6 +459,33 @@ async fn speech_still_playing_at_the_ceiling_is_cancelled_and_the_show_ends_ther
         "the ceiling was not counted from the head of the show, or the speech was not cut there"
     );
     drop(next);
+}
+
+#[tokio::test(start_paused = true)]
+async fn speech_that_ignores_its_cancel_at_the_ceiling_is_aborted_and_frees_the_lane() {
+    let harness = harness(ALERT_KIND, Speaks::IgnoresCancel { starts: true });
+
+    let head = harness.queue("head").await;
+    let next = harness.queue("next").await;
+    finished(head).await;
+    harness.until_spoken(2).await;
+
+    assert!(
+        harness.page.arrivals()[1] >= SHOW_CEILING,
+        "the next show arrived before the ceiling ended the first"
+    );
+    assert_eq!(harness.speaker.abandoned.load(Ordering::SeqCst), 1);
+    drop(next);
+}
+
+#[tokio::test(start_paused = true)]
+async fn speech_that_never_starts_and_ignores_its_cancel_is_aborted_and_the_show_goes_on() {
+    let harness = harness(ALERT_KIND, Speaks::IgnoresCancel { starts: false });
+
+    let ticket = harness.queue("head").await;
+    finished(ticket).await;
+
+    assert_eq!(harness.speaker.abandoned.load(Ordering::SeqCst), 1);
 }
 
 #[tokio::test(start_paused = true)]

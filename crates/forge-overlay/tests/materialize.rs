@@ -446,10 +446,7 @@ fn a_symbolic_link_on_the_staging_path_is_not_written_through() {
         "victim content",
         "the staging write followed a link out of the overlay root"
     );
-    assert!(
-        matches!(&result, Err(OverlayError::SymlinkedPath { .. })),
-        "a linked staging path must be refused exactly like a linked target: {result:?}"
-    );
+    assert!(result.is_ok(), "{result:?}");
 }
 
 #[test]
@@ -1006,9 +1003,6 @@ fn refreshing_never_writes_through_a_link_on_the_config_staging_path() {
 
     let result = refresh_config_credential(&root, IDENTITY, FRESH_CREDENTIAL);
 
-    assert!(
-        matches!(&result, Err(OverlayError::SymlinkedPath { .. })),
-        "{result:?}"
-    );
+    assert!(result.is_ok(), "{result:?}");
     assert_eq!(fs::read_to_string(&outside).unwrap(), "victim content");
 }

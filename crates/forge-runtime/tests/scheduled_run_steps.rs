@@ -490,7 +490,7 @@ async fn schedule_step_fails_on_a_due_time_it_cannot_read() {
 async fn schedule_step_refuses_a_due_time_that_is_not_ahead_of_now() {
     let harness = Harness::new().await;
     let target = harness.target().await;
-    let too_short = ScheduleError::DelayTooShort.to_string();
+    let too_soon = ScheduleError::DueTooSoon.to_string();
 
     for due in [base() - DAY, base()] {
         let mut pairs = due_at(Variant::Datetime(due)).to_vec();
@@ -498,7 +498,7 @@ async fn schedule_step_refuses_a_due_time_that_is_not_ahead_of_now() {
         let (outcome, _) = harness.schedule(&ArgStack::new(), &pairs).await;
         assert_eq!(
             (failure(&outcome).as_deref(), failure_detail(&outcome)),
-            (Some("core.schedule_failed"), Some(too_short.clone())),
+            (Some("core.schedule_failed"), Some(too_soon.clone())),
             "{due}"
         );
     }

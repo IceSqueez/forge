@@ -235,6 +235,26 @@ mod tests {
         cfg
     }
 
+    #[tokio::test]
+    async fn a_message_that_fills_in_blank_fails_and_sends_nothing() {
+        let args = ArgStack::new().set("reply".to_owned(), Variant::String(" \t ".to_owned()));
+        for template in ["%reply%", "  %reply%  "] {
+            let publisher = CapturingPublisher::default();
+            let ctx = RunContext::leaf(&args, 0, EventId::new(), &publisher);
+            let mut cfg = SubActionConfig::new();
+            cfg.insert("message".to_owned(), Variant::String(template.to_owned()));
+
+            let (telemetry, _) = TwitchChatSendMessageRunner.execute(&cfg, &ctx).await;
+
+            assert!(
+                matches!(&telemetry.outcome, SubActionOutcome::Failed(reason) if crate::test_support::failure::is_field_problem(reason, CHAT_SEND_MESSAGE_KEY, "config.required")),
+                "{template:?}: {:?}",
+                telemetry.outcome
+            );
+            assert!(publisher.sent_requests().is_empty(), "{template:?}");
+        }
+    }
+
     #[test]
     fn the_gated_integration_is_the_resolved_send_target() {
         let args = ArgStack::new().set("platform".to_owned(), Variant::String("kick".to_owned()));

@@ -6,10 +6,11 @@ use forge_registry::{
     BlankableSelectField, ConfigSpec, RunContext, StepTimer, SubActionCategory, SubActionRunner,
     TypedField,
 };
-use forge_types::{ActionId, ArgStack, SubActionConfig, SubActionTelemetry};
+use forge_types::{ActionId, ArgStack, SubActionConfig, SubActionTelemetry, Variant};
 
 use super::core_action_shared::ACTION_ID_KEY;
 use crate::action_cancel::ActionCancelRegistry;
+use crate::core_messages;
 
 const ACTION: BlankableSelectField<ActionId> =
     BlankableSelectField::new(ACTION_ID_KEY, "Action", ACTION_OPTIONS_KEY);
@@ -35,6 +36,13 @@ impl CoreActionCancelRunner {
             }
         }
     }
+}
+
+fn names_an_action(config: &SubActionConfig) -> bool {
+    config
+        .get(ACTION_ID_KEY)
+        .and_then(Variant::as_str)
+        .is_some_and(|template| !template.trim().is_empty())
 }
 
 #[async_trait]
@@ -74,6 +82,10 @@ impl SubActionRunner for CoreActionCancelRunner {
     ) -> (SubActionTelemetry, Option<ArgStack>) {
         let timer = StepTimer::start(ctx, self.id());
         match ACTION.read(config, ctx.arg_stack) {
+            Ok(None) if names_an_action(config) => (
+                timer.failed(core_messages::field_required(ACTION_ID_KEY).into()),
+                None,
+            ),
             Ok(action_id) => {
                 self.cancel(action_id);
                 (timer.success(), None)
@@ -153,6 +165,22 @@ mod tests {
         assert!(matches!(outcome, SubActionOutcome::Success));
         assert!(one.is_cancelled());
         assert!(two.is_cancelled());
+    }
+
+    #[tokio::test]
+    async fn a_template_that_fills_in_blank_fails_and_cancels_nothing() {
+        let registry = Arc::new(ActionCancelRegistry::new());
+        let untouched = CancelSignal::new();
+        registry.register(ActionId::new(), untouched.clone());
+        let stack = ArgStack::new().set("target".to_owned(), Variant::String("  ".to_owned()));
+
+        let outcome = run_with(Arc::clone(&registry), &cfg("%target%"), &stack).await;
+
+        assert_eq!(
+            crate::test_support::failure::failure_message(&outcome).code(),
+            &core_messages::FIELD_REQUIRED
+        );
+        assert!(!untouched.is_cancelled());
     }
 
     #[tokio::test]

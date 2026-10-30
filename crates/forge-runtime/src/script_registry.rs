@@ -3,7 +3,7 @@ use std::sync::Arc;
 
 use forge_events::{EventSource, ScriptReloaded, TypedEvent};
 use forge_script::{ActionScheduler, SpeakRequester};
-use forge_storage::{ScriptRecord, ScriptRepo};
+use forge_storage::{ScriptRecord, ScriptRepo, StorageError};
 use forge_types::{LatestValueReader, ScriptId};
 use tokio::sync::RwLock;
 use tracing::warn;
@@ -76,13 +76,7 @@ impl ScriptRegistry {
 
         let mut new_map = HashMap::new();
         for record in records {
-            if let Err(e) = forge_script::validate_syntax(&record.body) {
-                warn!(
-                    script_id = %record.id,
-                    script_name = %record.name,
-                    error = ?e,
-                    "script has invalid syntax, skipping"
-                );
+            if !has_valid_syntax(&record) {
                 continue;
             }
             new_map.insert(record.id, Arc::new(CompiledScript { record }));
@@ -106,7 +100,11 @@ impl ScriptRegistry {
 
         {
             let mut guard = self.inner.write().await;
-            guard.insert(script_id, Arc::new(CompiledScript { record }));
+            if record.enabled {
+                guard.insert(script_id, Arc::new(CompiledScript { record }));
+            } else {
+                guard.remove(&script_id);
+            }
         }
 
         bus.publish(
@@ -124,9 +122,42 @@ impl ScriptRegistry {
         self.inner.write().await.remove(&id).is_some()
     }
 
+    pub async fn current(
+        &self,
+        name: &str,
+        repo: &dyn ScriptRepo,
+    ) -> Result<Option<Arc<CompiledScript>>, StorageError> {
+        let runnable = repo
+            .get_by_name(name)
+            .await?
+            .filter(|record| record.enabled && has_valid_syntax(record));
+        let mut guard = self.inner.write().await;
+        guard.retain(|_, compiled| compiled.record.name != name);
+        Ok(runnable.map(|record| {
+            let compiled = Arc::new(CompiledScript { record });
+            guard.insert(compiled.record.id, Arc::clone(&compiled));
+            compiled
+        }))
+    }
+
     pub async fn get_by_name(&self, name: &str) -> Option<Arc<CompiledScript>> {
         let guard = self.inner.read().await;
         guard.values().find(|c| c.record.name == name).cloned()
+    }
+}
+
+fn has_valid_syntax(record: &ScriptRecord) -> bool {
+    match forge_script::validate_syntax(&record.body) {
+        Ok(()) => true,
+        Err(error) => {
+            warn!(
+                script_id = %record.id,
+                script_name = %record.name,
+                error = ?error,
+                "script has invalid syntax, skipping"
+            );
+            false
+        }
     }
 }
 
@@ -382,5 +413,26 @@ mod tests {
             event_result.is_err(),
             "no event should be published on compile failure"
         );
+    }
+
+    #[tokio::test]
+    async fn reload_of_a_disabled_script_takes_it_out_of_reach() {
+        let registry = ScriptRegistry::new();
+        let bus = EventBus::new(Arc::new(NullEventLogRepo));
+        let enabled = make_record("greet", "1", true);
+        registry.reload(enabled.clone(), &bus).await.unwrap();
+
+        registry
+            .reload(
+                ScriptRecord {
+                    enabled: false,
+                    ..enabled
+                },
+                &bus,
+            )
+            .await
+            .unwrap();
+
+        assert!(registry.get_by_name("greet").await.is_none());
     }
 }

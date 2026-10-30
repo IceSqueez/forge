@@ -4,7 +4,8 @@ use forge_runtime::scheduled_runs::{
     QUEUES_CLOSED_REASON, UNREADABLE_REASON,
 };
 use forge_runtime::{
-    QUEUE_DRAINING_REASON, QUEUE_NOT_FOUND_REASON, QUEUE_OVERFLOW_REASON, QUEUE_PAUSED_REASON,
+    ENGINE_STOPPED_REASON, QUEUE_DELETED_REASON, QUEUE_DRAINING_REASON, QUEUE_NOT_FOUND_REASON,
+    QUEUE_OVERFLOW_REASON, QUEUE_PAUSED_REASON,
 };
 use forge_storage::{
     ACTION_REMOVED_REASON, CANCELLED_REASON, SUPERSEDED_REASON, ScheduledRunState,
@@ -121,6 +122,8 @@ pub(crate) fn reason_key(reason: &str) -> Option<&'static str> {
         QUEUE_DRAINING_REASON => Some("queues_scheduled_reason_queue_draining"),
         QUEUE_OVERFLOW_REASON => Some("queues_scheduled_reason_queue_overflow"),
         QUEUE_NOT_FOUND_REASON => Some("queues_scheduled_reason_queue_not_found"),
+        QUEUE_DELETED_REASON => Some("queues_scheduled_reason_queue_deleted"),
+        ENGINE_STOPPED_REASON => Some("queues_scheduled_reason_engine_stopped"),
         _ => None,
     }
 }

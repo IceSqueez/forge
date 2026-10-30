@@ -92,7 +92,13 @@ impl SubActionRunner for CoreUsersSetVarRunner {
         };
         let value = super::variant_text::parse_variant(&raw_value);
 
-        let broadcaster_id = resolve_broadcaster_id(ctx.arg_stack, self.globals.as_ref()).await;
+        let broadcaster_id =
+            match resolve_broadcaster_id(ctx.arg_stack, self.globals.as_ref()).await {
+                Ok(broadcaster_id) => broadcaster_id,
+                Err(e) => {
+                    return (timer.failed(core_messages::storage_failed(e).into()), None);
+                }
+            };
 
         let outcome = match self
             .user_globals

@@ -34,6 +34,25 @@ async fn get_missing_key_returns_none() {
 }
 
 #[tokio::test]
+async fn peek_reads_the_value_without_counting_a_read() {
+    let repo = setup().await;
+    repo.set("x", Variant::Int(3), true).await.expect("set");
+
+    let seen = repo.peek("x").await.expect("peek");
+
+    let entries = repo.list().await.expect("list");
+    let entry = entries.iter().find(|e| e.name == "x").expect("entry");
+    assert_eq!((seen, entry.reads), (Some(Variant::Int(3)), 0));
+}
+
+#[tokio::test]
+async fn peek_of_a_missing_key_returns_none() {
+    let repo = setup().await;
+
+    assert_eq!(repo.peek("absent").await.expect("peek"), None);
+}
+
+#[tokio::test]
 async fn set_increments_writes_on_update() {
     let repo = setup().await;
     repo.set("x", Variant::Bool(false), false)

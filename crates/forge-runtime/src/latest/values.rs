@@ -6,6 +6,7 @@ use forge_events::{Event, EventPublisher, EventSource, LatestChanged, TypedEvent
 use forge_storage::{LatestRecord, LatestValueRepo, StorageError};
 use forge_types::{EventId, LatestScope, LatestValue, LatestValueReader, Shared, Variant};
 use time::OffsetDateTime;
+use tokio::sync::Mutex as AsyncMutex;
 
 use crate::latest::slots::{
     FeedContext, LATEST_SLOTS, LatestSlotDeclaration, SlotReading, SlotRetention, slot_declaration,
@@ -24,6 +25,7 @@ pub struct LatestValues {
     repo: Arc<dyn LatestValueRepo>,
     publisher: Arc<dyn EventPublisher>,
     anonymous_name: Shared<String>,
+    store_writes: Arc<AsyncMutex<()>>,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -54,6 +56,7 @@ impl LatestValues {
             repo,
             publisher,
             anonymous_name,
+            store_writes: Arc::default(),
         }
     }
 
@@ -69,6 +72,7 @@ impl LatestValues {
     pub async fn reset(&self, slot: &str) -> Result<(), LatestResetError> {
         let declaration =
             slot_declaration(slot).ok_or_else(|| LatestResetError::UnknownSlot(slot.to_owned()))?;
+        let _store_write = self.store_writes.lock().await;
         if declaration.retention == SlotRetention::SurvivesRestart {
             with_timeout(self.repo.reset_slot(declaration.slot)).await?;
         }
@@ -135,6 +139,7 @@ impl LatestValues {
         value: LatestValue,
         cause: EventId,
     ) {
+        let _store_write = self.store_writes.lock().await;
         if !self.is_newer(declaration.slot, &value) {
             return;
         }
@@ -305,6 +310,7 @@ mod tests {
         latest_fields,
     };
     use serde_json::json;
+    use tokio::sync::Notify;
     use tracing::Level;
 
     use super::*;
@@ -322,6 +328,21 @@ mod tests {
         resets: Mutex<Vec<String>>,
         list_fails: bool,
         reset_fails: bool,
+        held_save: Option<Arc<HeldCall>>,
+        held_reset: Option<Arc<HeldCall>>,
+    }
+
+    #[derive(Default)]
+    struct HeldCall {
+        entered: Notify,
+        release: Notify,
+    }
+
+    impl HeldCall {
+        async fn hold(&self) {
+            self.entered.notify_one();
+            self.release.notified().await;
+        }
     }
 
     fn storage_failure() -> StorageError {
@@ -353,6 +374,9 @@ mod tests {
     #[async_trait]
     impl LatestValueRepo for Store {
         async fn upsert_if_newer(&self, record: &LatestRecord) -> Result<bool, StorageError> {
+            if let Some(held) = &self.held_save {
+                held.hold().await;
+            }
             self.upserts.lock().unwrap().push(record.clone());
             self.upsert_replies
                 .lock()
@@ -378,6 +402,9 @@ mod tests {
         async fn reset_slot(&self, slot: &str) -> Result<u64, StorageError> {
             if self.reset_fails {
                 return Err(storage_failure());
+            }
+            if let Some(held) = &self.held_reset {
+                held.hold().await;
             }
             self.resets.lock().unwrap().push(slot.to_owned());
             Ok(1)
@@ -831,6 +858,62 @@ mod tests {
                 cleared: true,
             })
         );
+    }
+
+    #[tokio::test]
+    async fn a_reset_arriving_during_a_save_clears_the_value_that_save_was_writing() {
+        let held = Arc::new(HeldCall::default());
+        let (values, _store, _recorder) = rig(Store {
+            held_save: Some(Arc::clone(&held)),
+            ..Store::default()
+        })
+        .await;
+        let event = donation("donatello", "Olena", 10, false);
+
+        tokio::join!(values.project(&event), async {
+            held.entered.notified().await;
+            let reset = values.reset(LATEST_DONATION_SLOT);
+            tokio::pin!(reset);
+            tokio::select! {
+                biased;
+                _ = &mut reset => panic!("a reset must wait for the save in flight"),
+                () = std::future::ready(()) => {}
+            }
+            held.release.notify_one();
+            reset.await.unwrap();
+        });
+
+        assert_eq!(merged_donor(&values), None);
+    }
+
+    #[tokio::test]
+    async fn a_value_arriving_during_a_reset_survives_it() {
+        let held = Arc::new(HeldCall::default());
+        let (values, store, _recorder) = rig(Store {
+            held_reset: Some(Arc::clone(&held)),
+            ..Store::default()
+        })
+        .await;
+        let event = donation("donatello", "Olena", 10, false);
+
+        tokio::join!(
+            async { values.reset(LATEST_DONATION_SLOT).await.unwrap() },
+            async {
+                held.entered.notified().await;
+                let project = values.project(&event);
+                tokio::pin!(project);
+                tokio::select! {
+                    biased;
+                    () = &mut project => panic!("a save must wait for the reset in flight"),
+                    () = std::future::ready(()) => {}
+                }
+                held.release.notify_one();
+                project.await;
+            }
+        );
+
+        assert_eq!(merged_donor(&values).as_deref(), Some("Olena"));
+        assert_eq!(store.upsert_count(), 1);
     }
 
     #[tokio::test]

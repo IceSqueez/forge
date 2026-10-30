@@ -280,10 +280,12 @@ impl OverlayServiceHandle {
                     kind_id = %definition.kind_id,
                     "overlay type is not in this build; record kept, page not regenerated"
                 );
-                pass.unavailable += 1;
-                if let Err(error) = self.refresh_credential(&definition).await {
-                    tracing::error!(overlay = %definition.id, %error, "credential in the kept overlay config could not be refreshed");
-                    pass.failed += 1;
+                match self.refresh_credential(&definition).await {
+                    Ok(_) => pass.unavailable += 1,
+                    Err(error) => {
+                        tracing::error!(overlay = %definition.id, %error, "credential in the kept overlay config could not be refreshed");
+                        pass.failed += 1;
+                    }
                 }
                 continue;
             }

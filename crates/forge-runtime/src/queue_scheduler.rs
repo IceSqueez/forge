@@ -22,6 +22,8 @@ pub const QUEUE_OVERFLOW_REASON: &str = "queue_pending_overflow";
 const QUEUE_CLEARED_KIND: &str = "queue.cleared";
 pub const QUEUE_PAUSED_REASON: &str = "queue_paused";
 pub const QUEUE_DRAINING_REASON: &str = "queue_draining";
+pub const QUEUE_DELETED_REASON: &str = "queue_deleted";
+pub const ENGINE_STOPPED_REASON: &str = "engine_stopped";
 
 #[derive(Clone, Default)]
 pub struct SchedulerCell {
@@ -391,9 +393,14 @@ impl PendingBuffer {
     }
 
     fn clear(&self) {
+        self.take_all();
+    }
+
+    fn take_all(&self) -> VecDeque<QueueTask> {
         let mut tasks = self.lock();
-        tasks.clear();
+        let taken = std::mem::take(&mut *tasks);
         self.publish(0);
+        taken
     }
 
     fn publish(&self, pending: usize) {
@@ -614,13 +621,73 @@ impl QueueSchedulerStart {
         let mut slots: HashMap<QueueId, QueueSlot> = HashMap::with_capacity(initial_queues.len());
         for queue in initial_queues {
             let id = queue.id;
-            let slot = QueueScheduler::make_queue_slot(queue, Arc::clone(&engine), &depths);
+            let slot = QueueScheduler::make_queue_slot(queue, Arc::clone(&engine), &depths, &bus);
             slots.insert(id, slot);
         }
 
         tokio::spawn(QueueScheduler::run_scheduler(
             commands, slots, bus, engine, depths, intake_tx,
         ));
+    }
+}
+
+#[derive(Clone)]
+struct Launcher {
+    queue_id: QueueId,
+    engine: Arc<ActionEngineHandle>,
+    inflight: InflightTracker,
+    bus: Arc<EventBus>,
+}
+
+impl Launcher {
+    fn launch(&self, task: QueueTask, permit: Option<GatePermit>) {
+        let action_id = task.action_id;
+        let trigger_event_id = task.trigger_event_id;
+        let req = ExecutionRequest {
+            action_id,
+            trigger_event_id,
+            trigger_kind: task.trigger_kind,
+            manual_test: task.manual_test,
+            initial_args: task.initial_args,
+        };
+        let origin = task.origin;
+
+        let cancel = CancelSignal::new();
+        let id = self.inflight.register(cancel.clone());
+        let launcher = self.clone();
+        tokio::spawn(async move {
+            let (done_tx, done_rx) = oneshot::channel::<()>();
+            let dispatched = match origin {
+                Some(origin) => {
+                    launcher
+                        .engine
+                        .dispatch_scheduled_tracked(req, origin, cancel, done_tx)
+                        .await
+                }
+                None => launcher.engine.dispatch_tracked(req, cancel, done_tx).await,
+            };
+            match dispatched {
+                Ok(()) => {
+                    #[expect(
+                        clippy::let_underscore_must_use,
+                        reason = "a dropped completion signal also means the run ended"
+                    )]
+                    let _ = done_rx.await;
+                }
+                Err(error) => {
+                    warn!(action = %action_id, %error, "queued run could not reach the engine");
+                    QueueScheduler::publish_skip(
+                        &launcher.bus,
+                        launcher.queue_id,
+                        action_id,
+                        trigger_event_id,
+                        ENGINE_STOPPED_REASON,
+                    );
+                }
+            }
+            launcher.inflight.complete(id);
+            drop(permit);
+        });
     }
 }
 
@@ -656,6 +723,7 @@ impl QueueScheduler {
         queue: Queue,
         engine: Arc<ActionEngineHandle>,
         depths: &DepthBoard,
+        bus: &Arc<EventBus>,
     ) -> QueueSlot {
         let mode = QueueMode::default();
         let (processing_tx, processing_rx) = watch::channel(mode.processing);
@@ -664,18 +732,22 @@ impl QueueScheduler {
         let pending = PendingBuffer::new(depth.clone());
         let gate = ConcurrencyGate::new(queue.concurrency.max(1) as usize);
 
+        let launcher = Launcher {
+            queue_id: queue.id,
+            engine,
+            inflight: inflight.clone(),
+            bus: Arc::clone(bus),
+        };
         tokio::spawn(Self::run_alongside(
             pending.clone(),
             processing_tx.subscribe(),
-            Arc::clone(&engine),
-            inflight.clone(),
+            launcher.clone(),
         ));
         tokio::spawn(Self::run_bounded(
             pending.clone(),
             processing_rx,
-            engine,
+            launcher,
             gate.clone(),
-            inflight.clone(),
         ));
 
         QueueSlot {
@@ -693,14 +765,13 @@ impl QueueScheduler {
     async fn run_bounded(
         pending: PendingBuffer,
         mut processing: watch::Receiver<QueueProcessing>,
-        engine: Arc<ActionEngineHandle>,
+        launcher: Launcher,
         gate: ConcurrencyGate,
-        inflight: InflightTracker,
     ) {
         loop {
             let permit = gate.acquire().await;
             match Self::next_task(&pending, &mut processing, Lane::Gated, Some(&permit)).await {
-                NextTask::Ready(task) => Self::launch(task, &engine, &inflight, Some(permit)),
+                NextTask::Ready(task) => launcher.launch(task, Some(permit)),
                 NextTask::Overcommitted => continue,
                 NextTask::Closed => return,
             }
@@ -710,12 +781,11 @@ impl QueueScheduler {
     async fn run_alongside(
         pending: PendingBuffer,
         mut processing: watch::Receiver<QueueProcessing>,
-        engine: Arc<ActionEngineHandle>,
-        inflight: InflightTracker,
+        launcher: Launcher,
     ) {
         loop {
             match Self::next_task(&pending, &mut processing, Lane::Alongside, None).await {
-                NextTask::Ready(task) => Self::launch(task, &engine, &inflight, None),
+                NextTask::Ready(task) => launcher.launch(task, None),
                 NextTask::Overcommitted => continue,
                 NextTask::Closed => return,
             }
@@ -748,47 +818,6 @@ impl QueueScheduler {
                 _ = arrived => {}
             }
         }
-    }
-
-    fn launch(
-        task: QueueTask,
-        engine: &Arc<ActionEngineHandle>,
-        inflight: &InflightTracker,
-        permit: Option<GatePermit>,
-    ) {
-        let req = ExecutionRequest {
-            action_id: task.action_id,
-            trigger_event_id: task.trigger_event_id,
-            trigger_kind: task.trigger_kind,
-            manual_test: task.manual_test,
-            initial_args: task.initial_args,
-        };
-        let origin = task.origin;
-
-        let cancel = CancelSignal::new();
-        let id = inflight.register(cancel.clone());
-        let engine_ref = Arc::clone(engine);
-        let inflight_ref = inflight.clone();
-        tokio::spawn(async move {
-            let (done_tx, done_rx) = oneshot::channel::<()>();
-            let dispatched = match origin {
-                Some(origin) => {
-                    engine_ref
-                        .dispatch_scheduled_tracked(req, origin, cancel, done_tx)
-                        .await
-                }
-                None => engine_ref.dispatch_tracked(req, cancel, done_tx).await,
-            };
-            if dispatched.is_ok() {
-                #[expect(
-                    clippy::let_underscore_must_use,
-                    reason = "a dropped completion signal also means the run ended"
-                )]
-                let _ = done_rx.await;
-            }
-            inflight_ref.complete(id);
-            drop(permit);
-        });
     }
 
     async fn run_scheduler(
@@ -851,7 +880,7 @@ impl QueueScheduler {
                         MembershipOutcome::AlreadyRegistered
                     } else {
                         let id = queue.id;
-                        let slot = Self::make_queue_slot(queue, Arc::clone(&engine), &depths);
+                        let slot = Self::make_queue_slot(queue, Arc::clone(&engine), &depths, &bus);
                         slots.insert(id, slot);
                         intake_changed.send_replace(());
                         MembershipOutcome::Applied
@@ -864,7 +893,16 @@ impl QueueScheduler {
                 }
                 SchedulerCommand::Deregister(queue_id, reply) => {
                     let outcome = match slots.remove(&queue_id) {
-                        Some(_) => {
+                        Some(slot) => {
+                            for task in slot.pending.take_all() {
+                                Self::publish_skip(
+                                    &bus,
+                                    queue_id,
+                                    task.action_id,
+                                    task.trigger_event_id,
+                                    QUEUE_DELETED_REASON,
+                                );
+                            }
                             depths.deregister(&queue_id);
                             intake_changed.send_replace(());
                             MembershipOutcome::Applied
@@ -1870,6 +1908,43 @@ mod tests {
             "dispatch after deregister must emit action.skipped"
         );
         sched.shutdown();
+    }
+
+    #[tokio::test]
+    async fn deregistering_a_queue_skips_its_buffered_work_in_any_mode_and_lets_the_running_task_end()
+     {
+        for mode in [QueueMode::default(), QueueMode::HOLDING] {
+            let q_id = QueueId::new();
+            let (running, waiting) = (ActionId::new(), ActionId::new());
+            let (_dp, bus, sched, held) =
+                serial_queue_with_held(&[(running, true), (waiting, false)], q_id).await;
+            let mut sub = bus.subscribe();
+            sched.dispatch(req(q_id, running)).await.unwrap();
+            assert!(await_action_start(&mut sub, running).await, "{mode:?}");
+            sched.dispatch(req(q_id, waiting)).await.unwrap();
+            sched.set_mode(q_id, mode).await.unwrap();
+
+            assert_eq!(
+                sched.deregister(q_id).await.unwrap(),
+                MembershipOutcome::Applied,
+                "{mode:?}"
+            );
+            held.release_one();
+
+            let seen = events_until_done(&mut sub, running)
+                .await
+                .expect("the task already in flight still finishes");
+            assert_eq!(
+                (
+                    skip_reasons(&seen),
+                    ids_of(&seen, "action.skipped"),
+                    has(&seen, "action.start", waiting),
+                ),
+                (vec![QUEUE_DELETED_REASON], vec![waiting.to_string()], false),
+                "{mode:?}"
+            );
+            sched.shutdown();
+        }
     }
 
     #[tokio::test]

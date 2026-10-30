@@ -114,10 +114,11 @@ pub use overlay_shows::{
 };
 pub use queue_depth::{QueueDepth, QueueDepthWatch, QueueDepths};
 pub use queue_scheduler::{
-    MAX_PENDING_PER_QUEUE, MembershipOutcome, QUEUE_DRAINING_REASON, QUEUE_NOT_FOUND_REASON,
-    QUEUE_OVERFLOW_REASON, QUEUE_PAUSED_REASON, QueueAdmission, QueueIntake, QueueMode,
-    QueueModeChanged, QueueProcessing, QueueRuntimeState, QueueScheduler, QueueSchedulerHandle,
-    QueueSchedulerStart, SchedulerCell, SchedulerError, SchedulerRequest,
+    ENGINE_STOPPED_REASON, MAX_PENDING_PER_QUEUE, MembershipOutcome, QUEUE_DELETED_REASON,
+    QUEUE_DRAINING_REASON, QUEUE_NOT_FOUND_REASON, QUEUE_OVERFLOW_REASON, QUEUE_PAUSED_REASON,
+    QueueAdmission, QueueIntake, QueueMode, QueueModeChanged, QueueProcessing, QueueRuntimeState,
+    QueueScheduler, QueueSchedulerHandle, QueueSchedulerStart, SchedulerCell, SchedulerError,
+    SchedulerRequest,
 };
 pub use scheduled_runs::{
     CatchUpSettle, HandOff, ScheduleDue, ScheduleError, ScheduleIntent, ScheduleRequest,

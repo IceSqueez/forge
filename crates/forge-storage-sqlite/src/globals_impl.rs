@@ -157,6 +157,10 @@ impl GlobalsRepo for SqliteGlobalsRepo {
         Ok(Some(variant))
     }
 
+    async fn peek(&self, name: &str) -> Result<Option<Variant>, StorageError> {
+        live_value(self.db.reader(), name).await
+    }
+
     async fn set(&self, name: &str, value: Variant, persisted: bool) -> Result<(), StorageError> {
         upsert(self.db.writer(), name, &value, persisted).await
     }

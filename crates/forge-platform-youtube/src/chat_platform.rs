@@ -20,7 +20,7 @@ use crate::poll_health::{PollHealthReporter, PollLinkHealth};
 use crate::send_chat::YoutubeSendChat;
 
 const PLATFORM_ID: &str = "youtube";
-pub(crate) const EVENT_CHANNEL_CAPACITY: usize = 256;
+pub(crate) const EVENT_CHANNEL_CAPACITY: usize = forge_events::PLATFORM_EVENT_CHANNEL_CAPACITY;
 
 type TokenSource = Arc<dyn Fn() -> BoxFuture<'static, Result<String, PlatformError>> + Send + Sync>;
 

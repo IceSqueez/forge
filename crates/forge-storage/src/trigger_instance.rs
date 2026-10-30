@@ -42,6 +42,14 @@ pub trait TriggerInstanceRepo: Send + Sync {
     ) -> Result<TriggerInstanceId, StorageError>;
     async fn set_enabled(&self, id: TriggerInstanceId, enabled: bool) -> Result<(), StorageError>;
 
+    async fn toggle_enabled(&self, id: TriggerInstanceId) -> Result<Option<bool>, StorageError> {
+        let Some(instance) = self.get(id).await? else {
+            return Ok(None);
+        };
+        self.set_enabled(id, !instance.enabled).await?;
+        Ok(Some(!instance.enabled))
+    }
+
     async fn archive(&self, _id: TriggerInstanceId) -> Result<bool, StorageError> {
         Err(StorageError::NotReady)
     }

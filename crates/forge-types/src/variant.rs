@@ -332,29 +332,51 @@ fn from_json_inner(
             Ok(Variant::Array(items))
         }
 
-        serde_json::Value::Object(map) => {
-            if map.len() > MAX_COLLECTION_LEN {
-                return Err(VariantError::JsonConversion(
-                    "object key count limit exceeded".to_owned(),
-                ));
-            }
-
+        serde_json::Value::Object(mut map) => {
             let is_tagged_pair =
                 map.len() == 2 && map.contains_key("type") && map.contains_key("value");
 
             if form == JsonForm::Tagged && is_tagged_pair {
-                let json_obj = serde_json::Value::Object(map);
-                return serde_json::from_value::<Variant>(json_obj)
-                    .map_err(|e| VariantError::JsonConversion(e.to_string()));
+                let tag = map.get("type").and_then(serde_json::Value::as_str);
+                return match (tag, map.get("value")) {
+                    (Some("array"), Some(serde_json::Value::Array(_))) => map
+                        .remove("value")
+                        .map_or(Err(VariantError::NullNotSupported), |items| {
+                            from_json_inner(items, depth, form)
+                        }),
+                    (Some("object"), Some(serde_json::Value::Object(_))) => {
+                        match map.remove("value") {
+                            Some(serde_json::Value::Object(entries)) => {
+                                object_entries(entries, depth, form)
+                            }
+                            _ => Err(VariantError::NullNotSupported),
+                        }
+                    }
+                    _ => serde_json::from_value::<Variant>(serde_json::Value::Object(map))
+                        .map_err(|e| VariantError::JsonConversion(e.to_string())),
+                };
             }
 
-            let entries = map
-                .into_iter()
-                .map(|(k, v)| from_json_inner(v, depth + 1, form).map(|vv| (k, vv)))
-                .collect::<Result<BTreeMap<_, _>, _>>()?;
-            Ok(Variant::Object(entries))
+            object_entries(map, depth, form)
         }
     }
+}
+
+fn object_entries(
+    map: serde_json::Map<String, serde_json::Value>,
+    depth: u8,
+    form: JsonForm,
+) -> Result<Variant, VariantError> {
+    if map.len() > MAX_COLLECTION_LEN {
+        return Err(VariantError::JsonConversion(
+            "object key count limit exceeded".to_owned(),
+        ));
+    }
+    let entries = map
+        .into_iter()
+        .map(|(k, v)| from_json_inner(v, depth + 1, form).map(|vv| (k, vv)))
+        .collect::<Result<BTreeMap<_, _>, _>>()?;
+    Ok(Variant::Object(entries))
 }
 
 #[cfg(test)]
@@ -518,6 +540,100 @@ mod tests {
                     Err(VariantError::JsonConversion(_))
                 ),
                 "{label} over the limit must fail in the plain form too"
+            );
+        }
+    }
+
+    fn tagged_array(len: usize) -> serde_json::Value {
+        json!({ "type": "array", "value": vec![json!({ "type": "int", "value": 1 }); len] })
+    }
+
+    fn tagged_object(len: usize) -> serde_json::Value {
+        let entries: serde_json::Map<String, serde_json::Value> = (0..len)
+            .map(|i| (format!("k{i}"), json!({ "type": "int", "value": 1 })))
+            .collect();
+        json!({ "type": "object", "value": entries })
+    }
+
+    fn nested_tagged_arrays(depth: u8) -> serde_json::Value {
+        let mut value = json!({ "type": "int", "value": 1 });
+        for _ in 0..depth {
+            value = json!({ "type": "array", "value": [value] });
+        }
+        value
+    }
+
+    fn nested_variant_arrays(depth: u8) -> Variant {
+        let mut value = Variant::Int(1);
+        for _ in 0..depth {
+            value = Variant::Array(vec![value]);
+        }
+        value
+    }
+
+    #[test]
+    fn tagged_collections_obey_the_same_size_limit_as_plain_ones() {
+        for (name, at_limit, over_limit) in [
+            (
+                "array",
+                tagged_array(MAX_COLLECTION_LEN),
+                tagged_array(MAX_COLLECTION_LEN + 1),
+            ),
+            (
+                "object",
+                tagged_object(MAX_COLLECTION_LEN),
+                tagged_object(MAX_COLLECTION_LEN + 1),
+            ),
+        ] {
+            assert!(Variant::from_json(at_limit).is_ok(), "{name} at the limit");
+            assert!(
+                matches!(
+                    Variant::from_json(over_limit),
+                    Err(VariantError::JsonConversion(_))
+                ),
+                "{name} over the limit"
+            );
+        }
+    }
+
+    #[test]
+    fn tagged_nesting_past_the_depth_limit_is_refused() {
+        assert!(matches!(
+            Variant::from_json(nested_tagged_arrays(MAX_DEPTH + 1)),
+            Err(VariantError::JsonConversion(_))
+        ));
+    }
+
+    #[test]
+    fn a_value_on_the_depth_limit_survives_a_tagged_round_trip() {
+        let value = nested_variant_arrays(MAX_DEPTH);
+
+        assert_eq!(Variant::from_json(value.to_json()).unwrap(), value);
+    }
+
+    #[test]
+    fn an_object_with_type_and_value_keys_survives_a_tagged_round_trip() {
+        let value = Variant::Object(BTreeMap::from([
+            ("type".to_owned(), Variant::String("array".to_owned())),
+            ("value".to_owned(), Variant::Int(7)),
+        ]));
+
+        assert_eq!(Variant::from_json(value.to_json()).unwrap(), value);
+    }
+
+    #[test]
+    fn a_malformed_tagged_pair_is_refused() {
+        for bad in [
+            json!({ "type": "array", "value": 1 }),
+            json!({ "type": "object", "value": [] }),
+            json!({ "type": "unheard_of", "value": 1 }),
+        ] {
+            assert!(
+                matches!(
+                    Variant::from_json(bad.clone()),
+                    Err(VariantError::JsonConversion(_))
+                ),
+                "{bad}"
             );
         }
     }

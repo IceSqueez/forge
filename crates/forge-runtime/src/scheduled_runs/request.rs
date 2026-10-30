@@ -43,6 +43,8 @@ pub enum ScheduleError {
     UnknownAction,
     #[error("the delay must be at least {} s", MIN_SCHEDULE_DELAY.as_secs())]
     DelayTooShort,
+    #[error("the date-time must be at least {} s from now", MIN_SCHEDULE_DELAY.as_secs())]
+    DueTooSoon,
     #[error("the delay must be at most {} days", MAX_SCHEDULE_DELAY.as_secs() / SECONDS_PER_DAY)]
     DelayTooLong,
     #[error("the late tolerance must be between {} s and {} days", MIN_LATE_TOLERANCE.as_secs(), MAX_LATE_TOLERANCE.as_secs() / SECONDS_PER_DAY)]
@@ -88,7 +90,10 @@ impl ScheduleRequest {
                 now + delay
             }
             ScheduleDue::At(instant) => {
-                check_delay(Duration::try_from(instant - now).unwrap_or(Duration::ZERO))?;
+                match check_delay(Duration::try_from(instant - now).unwrap_or(Duration::ZERO)) {
+                    Err(ScheduleError::DelayTooShort) => return Err(ScheduleError::DueTooSoon),
+                    checked => checked?,
+                }
                 instant
             }
         };

@@ -1,4 +1,3 @@
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard};
 
 use async_trait::async_trait;
@@ -6,6 +5,7 @@ use forge_types::{
     ActionId, ArgStack, EventId, IntegrationAvailability, SubActionStep, SubActionTelemetry,
     UserText,
 };
+use tokio::sync::watch;
 
 use crate::error::RegistryError;
 
@@ -84,20 +84,35 @@ impl TelemetrySink {
     }
 }
 
-#[derive(Clone, Default)]
-pub struct CancelSignal(Arc<AtomicBool>);
+#[derive(Clone)]
+pub struct CancelSignal(Arc<watch::Sender<bool>>);
+
+impl Default for CancelSignal {
+    fn default() -> Self {
+        Self(Arc::new(watch::Sender::new(false)))
+    }
+}
 
 impl CancelSignal {
     pub fn new() -> Self {
-        Self(Arc::new(AtomicBool::new(false)))
+        Self::default()
     }
 
     pub fn cancel(&self) {
-        self.0.store(true, Ordering::Relaxed);
+        self.0.send_replace(true);
     }
 
     pub fn is_cancelled(&self) -> bool {
-        self.0.load(Ordering::Relaxed)
+        *self.0.borrow()
+    }
+
+    pub async fn cancelled(&self) {
+        let mut cancelled = self.0.subscribe();
+        #[expect(
+            clippy::let_underscore_must_use,
+            reason = "the sender lives in self, so the wait only ends once cancelled"
+        )]
+        let _ = cancelled.wait_for(|cancelled| *cancelled).await;
     }
 }
 
@@ -125,5 +140,52 @@ pub trait ChainExecutor: Send + Sync {
 
     fn running_action(&self) -> Option<RunningAction> {
         None
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::time::Duration;
+
+    use super::*;
+
+    const HANG_GUARD: Duration = Duration::from_secs(30);
+
+    #[tokio::test]
+    async fn cancelled_stays_pending_until_a_cancel_lands() {
+        let signal = CancelSignal::new();
+
+        tokio::select! {
+            biased;
+            () = signal.cancelled() => panic!("nothing cancelled this signal"),
+            () = std::future::ready(()) => {}
+        }
+    }
+
+    #[tokio::test]
+    async fn cancelled_resolves_at_once_for_an_already_cancelled_signal() {
+        let signal = CancelSignal::new();
+        signal.cancel();
+
+        tokio::select! {
+            biased;
+            () = signal.cancelled() => {}
+            () = std::future::ready(()) => panic!("a cancelled signal must not wait"),
+        }
+    }
+
+    #[tokio::test]
+    async fn cancelling_a_clone_wakes_a_parked_waiter_on_the_original() {
+        let signal = CancelSignal::new();
+        let clone = signal.clone();
+        let waiter = tokio::spawn(async move { signal.cancelled().await });
+        tokio::task::yield_now().await;
+
+        clone.cancel();
+
+        tokio::time::timeout(HANG_GUARD, waiter)
+            .await
+            .expect("the waiter was never woken")
+            .unwrap();
     }
 }

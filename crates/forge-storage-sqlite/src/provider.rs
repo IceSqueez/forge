@@ -292,6 +292,10 @@ impl GlobalsRepo for SqliteBackend {
         self.globals.get(name).await
     }
 
+    async fn peek(&self, name: &str) -> Result<Option<Variant>, StorageError> {
+        self.globals.peek(name).await
+    }
+
     async fn set(&self, name: &str, value: Variant, persisted: bool) -> Result<(), StorageError> {
         self.globals.set(name, value, persisted).await
     }

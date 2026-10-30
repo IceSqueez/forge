@@ -1,3 +1,6 @@
+use std::io::ErrorKind;
+use std::sync::atomic::{AtomicU64, Ordering};
+
 use crate::core_messages;
 use async_trait::async_trait;
 use base64::Engine as _;
@@ -9,6 +12,8 @@ use forge_types::{
     ArgStack, MessageRef, SubActionConfig, SubActionOutcome, SubActionTelemetry, Variant,
 };
 use tokio::io::AsyncWriteExt as _;
+
+static STAGED_WRITES: AtomicU64 = AtomicU64::new(0);
 
 const FILE_BYTES_WRITTEN_VAR: &str = "file.bytes_written";
 
@@ -203,9 +208,7 @@ async fn do_write(abs_path: &std::path::Path, request: &WriteRequest) -> Result<
 
     let mut opts = tokio::fs::OpenOptions::new();
     match request.mode {
-        WriteMode::Overwrite => {
-            opts.write(true).create(true).truncate(true);
-        }
+        WriteMode::Overwrite => return replace_file(abs_path, &bytes).await,
         WriteMode::Append => {
             opts.append(true).create(true);
         }
@@ -225,6 +228,43 @@ async fn do_write(abs_path: &std::path::Path, request: &WriteRequest) -> Result<
     file.flush().await.map_err(core_messages::file_io_failed)?;
 
     Ok(bytes.len())
+}
+
+async fn replace_file(abs_path: &std::path::Path, bytes: &[u8]) -> Result<usize, MessageRef> {
+    let staged = staged_sibling(abs_path);
+    let written = write_synced(&staged, bytes).await;
+    let replaced = match written {
+        Ok(()) => tokio::fs::rename(&staged, abs_path).await,
+        Err(error) => Err(error),
+    };
+    if let Err(error) = replaced {
+        if let Err(cleanup) = tokio::fs::remove_file(&staged).await
+            && cleanup.kind() != ErrorKind::NotFound
+        {
+            tracing::warn!(error = %cleanup, "staged file write could not be removed");
+        }
+        return Err(core_messages::file_io_failed(error));
+    }
+    Ok(bytes.len())
+}
+
+async fn write_synced(path: &std::path::Path, bytes: &[u8]) -> std::io::Result<()> {
+    let mut file = tokio::fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(path)
+        .await?;
+    file.write_all(bytes).await?;
+    file.sync_all().await
+}
+
+fn staged_sibling(abs_path: &std::path::Path) -> std::path::PathBuf {
+    let writer = STAGED_WRITES.fetch_add(1, Ordering::Relaxed);
+    let name = abs_path
+        .file_name()
+        .map(|name| name.to_string_lossy())
+        .unwrap_or_default();
+    abs_path.with_file_name(format!(".{name}.{}.{writer}.tmp", std::process::id()))
 }
 
 #[cfg(test)]

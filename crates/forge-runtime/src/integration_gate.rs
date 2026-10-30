@@ -13,6 +13,8 @@ use forge_types::{
 };
 use tokio::sync::Notify;
 
+use crate::core_messages;
+
 #[derive(Clone, Default)]
 pub struct IntegrationGate {
     state: Arc<Mutex<GateState>>,
@@ -112,7 +114,7 @@ impl ChainExecutor for GatedLeafExecutor {
         _parent_event_id: EventId,
     ) -> Result<ChildChainOutcome, RegistryError> {
         Ok(ChildChainOutcome {
-            signal: ChainSignal::Completed,
+            signal: ChainSignal::Error(core_messages::nested_steps_unavailable().into()),
             arg_stack: arg_stack.clone(),
             telemetry: Vec::new(),
         })
@@ -443,7 +445,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn the_quick_action_executor_completes_child_chains_without_running_them() {
+    async fn the_quick_action_executor_refuses_child_chains_without_running_them() {
         let executor = GatedLeafExecutor::new(IntegrationGate::new(), CancelSignal::new());
         let stack = ArgStack::new().set("user".to_owned(), forge_types::Variant::Int(7));
         let steps = [SubActionStep {
@@ -460,7 +462,10 @@ mod tests {
             .await
             .unwrap();
 
-        assert_eq!(outcome.signal, ChainSignal::Completed);
+        assert_eq!(
+            outcome.signal,
+            ChainSignal::Error(core_messages::nested_steps_unavailable().into())
+        );
         assert!(outcome.telemetry.is_empty(), "no child step may run");
         assert_eq!(outcome.arg_stack.snapshot(), stack.snapshot());
     }

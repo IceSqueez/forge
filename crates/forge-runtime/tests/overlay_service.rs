@@ -1366,9 +1366,10 @@ async fn a_kept_config_that_cannot_be_refreshed_counts_as_failed_and_the_pass_ca
         pass,
         MaterializePass {
             materialized: 1,
-            unavailable: 1,
+            unavailable: 0,
             failed: 1,
-        }
+        },
+        "one overlay is counted once, as failed, not also as unavailable"
     );
     assert_eq!(fs::read_to_string(&outside).unwrap(), "{}");
 }

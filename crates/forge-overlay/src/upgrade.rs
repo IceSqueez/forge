@@ -101,7 +101,7 @@ const LEGACY_PRESETS: [LegacyPreset; 6] = [
 struct MotionStep {
     kind_id: &'static str,
     schema_version: u32,
-    legacy_entrance_ms: i64,
+    legacy_transition_ms: i64,
     rows_enter: bool,
 }
 
@@ -109,31 +109,31 @@ const MOTION_STEPS: &[MotionStep] = &[
     MotionStep {
         kind_id: alert::KIND_ID,
         schema_version: alert::MOTION_SCHEMA_VERSION,
-        legacy_entrance_ms: LEGACY_TRANSITION_MS,
+        legacy_transition_ms: LEGACY_TRANSITION_MS,
         rows_enter: false,
     },
     MotionStep {
         kind_id: chat::KIND_ID,
         schema_version: chat::MOTION_SCHEMA_VERSION,
-        legacy_entrance_ms: LEGACY_ROW_ENTRANCE_MS,
+        legacy_transition_ms: LEGACY_ROW_ENTRANCE_MS,
         rows_enter: true,
     },
     MotionStep {
         kind_id: frame::KIND_ID,
         schema_version: frame::MOTION_SCHEMA_VERSION,
-        legacy_entrance_ms: LEGACY_TRANSITION_MS,
+        legacy_transition_ms: LEGACY_TRANSITION_MS,
         rows_enter: false,
     },
     MotionStep {
         kind_id: goal::KIND_ID,
         schema_version: goal::MOTION_SCHEMA_VERSION,
-        legacy_entrance_ms: LEGACY_TRANSITION_MS,
+        legacy_transition_ms: LEGACY_TRANSITION_MS,
         rows_enter: false,
     },
     MotionStep {
         kind_id: ticker::KIND_ID,
         schema_version: ticker::MOTION_SCHEMA_VERSION,
-        legacy_entrance_ms: LEGACY_TRANSITION_MS,
+        legacy_transition_ms: LEGACY_TRANSITION_MS,
         rows_enter: false,
     },
 ];
@@ -222,7 +222,7 @@ fn adopt_motion_presets(
         }
         config
             .entry(ENTRANCE_MS.to_owned())
-            .or_insert(Variant::Int(step.legacy_entrance_ms));
+            .or_insert(Variant::Int(step.legacy_transition_ms));
     }
     if axes.text_effect {
         config
@@ -237,7 +237,7 @@ fn adopt_motion_presets(
         }
         config
             .entry(EXIT_MS.to_owned())
-            .or_insert(Variant::Int(step.legacy_entrance_ms));
+            .or_insert(Variant::Int(step.legacy_transition_ms));
     }
 }
 

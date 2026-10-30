@@ -1,5 +1,5 @@
 use std::sync::Arc;
-use std::time::{Duration, Instant};
+use std::time::Instant;
 
 use async_trait::async_trait;
 use forge_events::{EventPublisher, EventSource, ScriptFailed, ScriptStarted, TypedEvent};
@@ -8,8 +8,7 @@ use forge_registry::{
     SubActionRunner, TypedField,
 };
 use forge_script::{
-    Engine, EngineConfig, ForgeApi, ScriptError, ScriptGlobals, ScriptHttpClient, ScriptHttpConfig,
-    build_scope_for_contract,
+    ScriptCapabilities, ScriptError, ScriptGlobals, ScriptSession, build_scope_for_contract,
 };
 use forge_storage::{GlobalsRepo, SettingsRepo};
 use forge_types::{ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetry};
@@ -103,18 +102,23 @@ impl SubActionRunner for ScriptRunInlineRunner {
         let started_at = OffsetDateTime::now_utc();
         let wall_start = Instant::now();
 
-        let publisher_arc = Arc::clone(&self.publisher);
-        let globals_arc = Arc::clone(&self.globals);
-        let speak_requester = self.registry.speak_requester();
-        let latest_values = self.registry.latest_values();
-        let scheduler = self
-            .registry
-            .action_scheduler(SchedulingContext::of_run(ctx));
         let parent_event_id = ctx.parent_event_id;
-        let integrations = ctx.executor.integration_availability();
+        let session = ScriptSession::open(
+            self.settings.as_ref(),
+            Arc::clone(&self.publisher),
+            Arc::clone(&self.globals),
+            parent_event_id,
+            ScriptCapabilities {
+                speak: self.registry.speak_requester(),
+                integrations: ctx.executor.integration_availability(),
+                latest_values: self.registry.latest_values(),
+                scheduler: self
+                    .registry
+                    .action_scheduler(SchedulingContext::of_run(ctx)),
+            },
+        )
+        .await;
         let arg_stack_clone = ctx.arg_stack.clone();
-        let http_cfg = Arc::new(ScriptHttpConfig::read(self.settings.as_ref()).await);
-        let engine_cfg = EngineConfig::read(self.settings.as_ref()).await;
 
         let exec_event = ScriptStarted {
             script_id: None,
@@ -127,33 +131,12 @@ impl SubActionRunner for ScriptRunInlineRunner {
 
         let exec_result = tokio::task::spawn_blocking(move || {
             let contract = forge_types::ScriptContract::default();
-            let scope = build_scope_for_contract(&contract, &arg_stack_clone).map_err(|e| {
+            let mut scope = build_scope_for_contract(&contract, &arg_stack_clone).map_err(|e| {
                 ScriptError::Runtime {
                     reason: e.to_string(),
                 }
             })?;
-            let cfg = engine_cfg;
-            let deadline = Instant::now() + Duration::from_millis(cfg.wall_time_ms);
-            let http_client =
-                ScriptHttpClient::new(http_cfg).map_err(|e| ScriptError::Runtime {
-                    reason: e.to_string(),
-                })?;
-            let mut api = ForgeApi::new(publisher_arc, globals_arc, parent_event_id, deadline)
-                .with_http(Arc::new(http_client));
-            if let Some(req) = speak_requester {
-                api = api.with_speak_requester(req);
-            }
-            if let Some(integrations) = integrations {
-                api = api.with_integration_availability(integrations);
-            }
-            if let Some(latest) = latest_values {
-                api = api.with_latest_values(latest);
-            }
-            if let Some(scheduler) = scheduler {
-                api = api.with_action_scheduler(scheduler);
-            }
-            let engine = Engine::with_api(cfg, api);
-            let mut scope = scope;
+            let engine = session.into_engine()?;
             engine.eval_script_with_scope(&body, &mut scope)
         })
         .await;

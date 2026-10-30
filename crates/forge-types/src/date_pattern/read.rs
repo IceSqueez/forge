@@ -36,6 +36,8 @@ pub enum DateTextError {
     HourWithoutPeriod,
     #[error("the text names a date or time that does not exist")]
     OutOfRange,
+    #[error("the weekday does not match the date")]
+    WeekdayMismatch,
 }
 
 #[derive(Default)]
@@ -43,6 +45,7 @@ struct ReadFields {
     year: Option<i32>,
     month: Option<u8>,
     day: Option<u8>,
+    days_from_monday: Option<u8>,
     hour24: Option<u8>,
     hour12: Option<u8>,
     after_noon: Option<bool>,
@@ -268,7 +271,8 @@ fn read_field(
         }
         DateField::Day(padding) => fields.day = Some(cursor.padded(padding, DAY)?),
         DateField::WeekdayName(..) => {
-            cursor.longest_name(&weekday_candidates(language), "a weekday name")?;
+            fields.days_from_monday =
+                Some(cursor.longest_name(&weekday_candidates(language), "a weekday name")?);
         }
         DateField::Hour24(padding) => fields.hour24 = Some(cursor.padded(padding, HOUR)?),
         DateField::Hour12(padding) => fields.hour12 = Some(cursor.padded(padding, HOUR)?),
@@ -321,6 +325,12 @@ fn assemble(fields: &ReadFields, zone: PatternZone) -> Result<OffsetDateTime, Da
     let month_of_year = Month::try_from(month).map_err(|_| DateTextError::OutOfRange)?;
     let date = Date::from_calendar_date(year, month_of_year, day)
         .map_err(|_| DateTextError::OutOfRange)?;
+    if fields
+        .days_from_monday
+        .is_some_and(|named| named != date.weekday().number_days_from_monday())
+    {
+        return Err(DateTextError::WeekdayMismatch);
+    }
     let time = Time::from_hms_nano(hour, fields.minute, fields.second, fields.nanosecond)
         .map_err(|_| DateTextError::OutOfRange)?;
     let civil_time = PrimitiveDateTime::new(date, time);
@@ -554,6 +564,29 @@ mod tests {
                 }
             }
         }
+    }
+
+    #[test]
+    fn a_weekday_that_contradicts_the_date_is_refused_in_every_language() {
+        for (text, language) in [
+            ("Mon, 03.03.2026", NamesLanguage::En),
+            ("Wed, 03.03.2026", NamesLanguage::En),
+            ("пн, 03.03.2026", NamesLanguage::Uk),
+        ] {
+            assert_eq!(
+                read_in("EEE, dd.MM.yyyy", text, language),
+                Err(DateTextError::WeekdayMismatch),
+                "{text:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_weekday_is_compared_only_after_the_date_is_known_to_exist() {
+        assert_eq!(
+            read("EEE, dd.MM.yyyy", "Mon, 31.02.2026"),
+            Err(DateTextError::OutOfRange)
+        );
     }
 
     #[test]

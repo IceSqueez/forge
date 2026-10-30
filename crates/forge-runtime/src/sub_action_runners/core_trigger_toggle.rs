@@ -22,23 +22,11 @@ impl CoreTriggerToggleRunner {
     }
 
     async fn run(&self, instance_id: TriggerInstanceId) -> SubActionOutcome {
-        let current_enabled = match self.trigger_instances.get(instance_id).await {
-            Ok(Some(instance)) => instance.enabled,
-            Ok(None) => {
-                return SubActionOutcome::Failed(
-                    core_messages::unknown_trigger_instance(instance_id).into(),
-                );
-            }
-            Err(e) => {
-                return SubActionOutcome::Failed(core_messages::storage_failed(e).into());
-            }
-        };
-        match self
-            .trigger_instances
-            .set_enabled(instance_id, !current_enabled)
-            .await
-        {
-            Ok(()) => SubActionOutcome::Success,
+        match self.trigger_instances.toggle_enabled(instance_id).await {
+            Ok(Some(_)) => SubActionOutcome::Success,
+            Ok(None) => SubActionOutcome::Failed(
+                core_messages::unknown_trigger_instance(instance_id).into(),
+            ),
             Err(e) => SubActionOutcome::Failed(core_messages::storage_failed(e).into()),
         }
     }

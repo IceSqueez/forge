@@ -134,6 +134,11 @@ async fn every_catalog_write_through_the_provider_advances_its_revision() {
     );
     advances!(
         revision,
+        "instance toggle_enabled",
+        instances.toggle_enabled(i.id)
+    );
+    advances!(
+        revision,
         "instance unlink",
         instances.unlink_action(a.id, i.id)
     );

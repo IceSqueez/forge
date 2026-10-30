@@ -19,8 +19,8 @@ use forge_components::{DateShape, fmt_display};
 use forge_events::{EventPublisher, ScriptLogLevel, ScriptLogged};
 use forge_runtime::{EventBus, RuntimeScriptGlobals, SchedulingContext, ScriptRegistry};
 use forge_script::{
-    EngineConfig, MethodDescriptor, RunResult, ScriptError, ScriptHost, format_script,
-    inert_annotation_lines, is_engine_bound_name, run_inline, validate_syntax,
+    EngineConfig, MethodDescriptor, RunResult, ScriptCapabilities, ScriptError, ScriptHost,
+    format_script, inert_annotation_lines, is_engine_bound_name, run_inline, validate_syntax,
 };
 use forge_storage::{
     DataProvider, ExecutionStatus, GlobalsRepo, SCRIPT_NAME_KEY, SCRIPT_RUN_NAMED_KIND,
@@ -1312,11 +1312,14 @@ impl ScriptEditorView {
             )),
             settings: Arc::clone(&self.backend) as Arc<dyn SettingsRepo>,
             bus: Arc::clone(&self.bus) as Arc<dyn EventPublisher>,
-            integrations: Arc::clone(&self.integrations),
-            latest_values: self.script_registry.latest_values(),
-            scheduler: self
-                .script_registry
-                .action_scheduler(SchedulingContext::outside_any_run(args.clone())),
+            capabilities: ScriptCapabilities {
+                speak: self.script_registry.speak_requester(),
+                integrations: Some(Arc::clone(&self.integrations)),
+                latest_values: self.script_registry.latest_values(),
+                scheduler: self
+                    .script_registry
+                    .action_scheduler(SchedulingContext::outside_any_run(args.clone())),
+            },
         };
         let scripts = Arc::clone(&self.backend) as Arc<dyn ScriptRepo>;
         async_bridge::run_async(

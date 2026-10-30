@@ -18,6 +18,8 @@ pub const SHOW_CEILING: Duration = Duration::from_secs(120);
 
 pub const SHOW_SPEECH_START_WAIT: Duration = Duration::from_secs(10);
 
+const SHOW_SPEECH_CANCEL_GRACE: Duration = Duration::from_secs(2);
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ShowEnd {
     Shown(OverlayDelivery),
@@ -71,6 +73,22 @@ impl ShowDepthWatch {
 
 fn depth_in(depths: &Depths, id: &OverlayId) -> usize {
     depths.get(id).copied().unwrap_or(0)
+}
+
+async fn release_cancelled_speech(
+    id: &OverlayId,
+    mut spoken: JoinHandle<Result<(), SpeakDispatchError>>,
+) {
+    match tokio::time::timeout(SHOW_SPEECH_CANCEL_GRACE, &mut spoken).await {
+        Ok(Ok(_)) => {}
+        Ok(Err(error)) => {
+            tracing::warn!(overlay = %id, %error, "show speech task ended abnormally");
+        }
+        Err(_) => {
+            spoken.abort();
+            tracing::warn!(overlay = %id, "show speech ignored its cancel and was aborted");
+        }
+    }
 }
 
 enum SpeechOpening {
@@ -233,9 +251,7 @@ impl ShowSequencer {
             }
             SpeechOpening::TooLate => {
                 cancel.cancel();
-                if let Err(error) = spoken.await {
-                    tracing::warn!(overlay = %id, %error, "show speech task ended abnormally");
-                }
+                release_cancelled_speech(id, spoken).await;
                 tracing::info!(
                     overlay = %id,
                     wait_secs = SHOW_SPEECH_START_WAIT.as_secs(),
@@ -296,9 +312,7 @@ async fn hold_with_speech(
         }
         Err(_) => {
             cancel.cancel();
-            if let Err(error) = spoken.await {
-                tracing::warn!(overlay = %id, %error, "show speech task ended abnormally");
-            }
+            release_cancelled_speech(id, spoken).await;
             tracing::info!(
                 overlay = %id,
                 ceiling_secs = SHOW_CEILING.as_secs(),

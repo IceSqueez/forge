@@ -55,6 +55,7 @@ impl TriggerKindDescriptor for ScriptEventCustomDescriptor {
         config
             .get("event_name")
             .and_then(|v| v.as_str())
+            .map(str::trim)
             .filter(|s| !s.is_empty())
             .map_or_else(
                 || core_messages::CONDITION_ANY_EVENT.into(),
@@ -77,8 +78,9 @@ impl TriggerKindDescriptor for ScriptEventCustomDescriptor {
         let configured_name = config
             .get("event_name")
             .and_then(|v| v.as_str())
-            .unwrap_or_default();
-        configured_name == event_name
+            .unwrap_or_default()
+            .trim();
+        configured_name.is_empty() || configured_name == event_name
     }
 
     fn build_arg_stack(&self, event: &Event) -> ArgStack {
@@ -88,5 +90,77 @@ impl TriggerKindDescriptor for ScriptEventCustomDescriptor {
         obj.iter()
             .filter_map(|(k, v)| Variant::from_json(v.clone()).ok().map(|vv| (k.clone(), vv)))
             .fold(ArgStack::new(), |stack, (k, v)| stack.set(k, v))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn custom_event(kind: &str) -> Event {
+        Event::new(EventSource::Server, kind, serde_json::Value::Null)
+    }
+
+    fn named(event_name: &str) -> TriggerConfig {
+        TriggerConfig::from([(
+            "event_name".to_owned(),
+            Variant::String(event_name.to_owned()),
+        )])
+    }
+
+    #[test]
+    fn a_blank_event_name_fires_on_every_custom_event() {
+        for configured in ["", "   ", "\t\n"] {
+            assert!(
+                ScriptEventCustomDescriptor
+                    .matches_trigger(&named(configured), &custom_event("custom.raid")),
+                "{configured:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn an_absent_event_name_fires_on_every_custom_event() {
+        assert!(
+            ScriptEventCustomDescriptor
+                .matches_trigger(&TriggerConfig::new(), &custom_event("custom.raid"))
+        );
+    }
+
+    #[test]
+    fn a_padded_event_name_fires_only_on_that_name() {
+        for (kind, fires) in [
+            ("custom.raid", true),
+            ("custom.raids", false),
+            ("custom.", false),
+        ] {
+            assert_eq!(
+                ScriptEventCustomDescriptor.matches_trigger(&named("  raid "), &custom_event(kind)),
+                fires,
+                "{kind}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_blank_event_name_still_ignores_events_outside_the_custom_namespace() {
+        assert!(!ScriptEventCustomDescriptor.matches_trigger(&named(""), &custom_event("raid")));
+    }
+
+    #[test]
+    fn the_condition_shows_the_trimmed_name_or_any_event() {
+        for (configured, expected) in [
+            (
+                "  raid ",
+                UserText::from(core_messages::condition_event("raid")),
+            ),
+            ("   ", core_messages::CONDITION_ANY_EVENT.into()),
+        ] {
+            assert_eq!(
+                ScriptEventCustomDescriptor.condition_display(&named(configured)),
+                expected,
+                "{configured:?}"
+            );
+        }
     }
 }

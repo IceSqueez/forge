@@ -39,7 +39,7 @@ impl ChatPayload {
 
     pub fn parse_color(s: &str) -> Option<[u8; 3]> {
         let hex = s.strip_prefix('#').unwrap_or(s);
-        if hex.len() != 6 {
+        if !hex.is_ascii() || hex.len() != 6 {
             return None;
         }
         let r = u8::from_str_radix(&hex[0..2], 16).ok()?;
@@ -482,7 +482,9 @@ mod tests {
                 "should accept {valid}"
             );
         }
-        for invalid in ["FFF", "#XXYYZZ", ""] {
+        for invalid in [
+            "FFF", "#XXYYZZ", "", "#FF00A", "#FF00AA0", "é00AA", "#ab€d", "😀ab",
+        ] {
             assert_eq!(
                 ChatPayload::parse_color(invalid),
                 None,

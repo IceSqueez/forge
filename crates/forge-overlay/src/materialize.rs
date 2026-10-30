@@ -1,6 +1,8 @@
 use std::collections::BTreeSet;
 use std::fs;
+use std::io::Write as _;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use crate::assets::{
     CONFIG_FILE, MOTION_ASSET, MOTION_SOURCE, RESERVED_DIRECTORY, RUNTIME_ASSET, RUNTIME_SOURCE,
@@ -265,28 +267,36 @@ fn ensure_root(root: &Path) -> Result<PathBuf, OverlayError> {
     canonicalize(root)
 }
 
+static STAGED_WRITES: AtomicU64 = AtomicU64::new(0);
+
 pub(crate) fn write_atomic(directory: &Path, name: &str, body: &[u8]) -> Result<(), OverlayError> {
     let target = directory.join(name);
     reject_symlink(&target)?;
 
-    let staged = directory.join(format!(".{name}.tmp"));
-    reject_symlink(&staged)?;
-    fs::write(&staged, body).map_err(|source| OverlayError::Io {
-        path: display(&staged),
-        source,
-    })?;
+    let writer = STAGED_WRITES.fetch_add(1, Ordering::Relaxed);
+    let staged = directory.join(format!(".{name}.{}.{writer}.tmp", std::process::id()));
+    write_synced(&staged, body)
+        .and_then(|()| fs::rename(&staged, &target))
+        .map_err(|source| {
+            #[expect(
+                clippy::let_underscore_must_use,
+                reason = "the write failure is the error returned"
+            )]
+            let _ = fs::remove_file(&staged);
+            OverlayError::Io {
+                path: display(&target),
+                source,
+            }
+        })
+}
 
-    fs::rename(&staged, &target).map_err(|source| {
-        #[expect(
-            clippy::let_underscore_must_use,
-            reason = "the rename failure is the error returned"
-        )]
-        let _ = fs::remove_file(&staged);
-        OverlayError::Io {
-            path: display(&target),
-            source,
-        }
-    })
+fn write_synced(path: &Path, body: &[u8]) -> std::io::Result<()> {
+    let mut file = fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(path)?;
+    file.write_all(body)?;
+    file.sync_all()
 }
 
 pub(crate) fn reject_symlink(path: &Path) -> Result<(), OverlayError> {
@@ -330,4 +340,78 @@ fn canonicalize(path: &Path) -> Result<PathBuf, OverlayError> {
 
 pub(crate) fn display(path: &Path) -> String {
     path.display().to_string()
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::{Arc, Barrier};
+
+    use tempfile::TempDir;
+
+    use super::*;
+
+    const WRITERS: usize = 8;
+    const BODY_LEN: usize = 64 * 1024;
+
+    fn entries(directory: &Path) -> Vec<String> {
+        fs::read_dir(directory)
+            .unwrap()
+            .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
+            .collect()
+    }
+
+    #[test]
+    fn concurrent_writers_leave_one_whole_body_and_no_staged_file() {
+        let directory = TempDir::new().unwrap();
+        let barrier = Arc::new(Barrier::new(WRITERS));
+        let writers: Vec<_> = (0..WRITERS)
+            .map(|writer| {
+                let directory = directory.path().to_owned();
+                let barrier = Arc::clone(&barrier);
+                std::thread::spawn(move || {
+                    let body = vec![u8::try_from(writer).unwrap(); BODY_LEN];
+                    barrier.wait();
+                    write_atomic(&directory, "config.json", &body)
+                })
+            })
+            .collect();
+
+        for writer in writers {
+            assert!(writer.join().unwrap().is_ok());
+        }
+
+        let written = fs::read(directory.path().join("config.json")).unwrap();
+        assert_eq!(written.len(), BODY_LEN);
+        assert!(written.iter().all(|byte| *byte == written[0]));
+        assert_eq!(entries(directory.path()), ["config.json"]);
+    }
+
+    #[test]
+    fn a_failed_replace_reports_the_target_and_leaves_no_staged_file() {
+        let directory = TempDir::new().unwrap();
+        fs::create_dir(directory.path().join("occupied")).unwrap();
+
+        let result = write_atomic(directory.path(), "occupied", b"body");
+
+        assert!(
+            matches!(&result, Err(OverlayError::Io { path, .. }) if path.ends_with("occupied")),
+            "{result:?}"
+        );
+        assert_eq!(entries(directory.path()), ["occupied"]);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn staging_never_opens_a_path_that_already_exists_so_it_cannot_follow_a_link() {
+        let directory = TempDir::new().unwrap();
+        let outside = directory.path().join("victim");
+        fs::write(&outside, "victim content").unwrap();
+        let staged = directory.path().join(".config.json.tmp");
+        std::os::unix::fs::symlink(&outside, &staged).unwrap();
+
+        let refused = write_synced(&staged, b"body").unwrap_err();
+
+        assert_eq!(refused.kind(), std::io::ErrorKind::AlreadyExists);
+        assert_eq!(fs::read_to_string(&outside).unwrap(), "victim content");
+    }
 }

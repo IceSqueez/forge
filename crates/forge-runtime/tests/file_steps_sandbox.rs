@@ -10,7 +10,8 @@ use forge_runtime::sub_action_runners::{
     CoreFileDeleteRunner, CoreFileListRunner, CoreFileReadRunner, CoreFileWriteRunner,
 };
 use forge_types::{
-    ArgStack, EventId, MessageArg, SubActionConfig, SubActionOutcome, UserText, Variant,
+    ArgStack, EventId, MessageArg, SubActionConfig, SubActionOutcome, UserText,
+    VARIANT_MAX_COLLECTION_LEN, Variant,
 };
 
 fn code(text: &UserText) -> String {
@@ -247,6 +248,116 @@ async fn write_then_list_read_and_delete_share_the_files_folder() {
     let (deleted, _) = run(Step::Delete, &file).await;
     assert_eq!(deleted, SubActionOutcome::Success);
     assert!(!abs.join("notes").join("today.txt").exists());
+}
+
+fn names_in(directory: &Path) -> Vec<String> {
+    let mut names: Vec<String> = std::fs::read_dir(directory)
+        .unwrap()
+        .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
+        .collect();
+    names.sort_unstable();
+    names
+}
+
+#[tokio::test]
+async fn overwriting_replaces_the_content_and_leaves_only_the_target_file() {
+    let (abs, rel) = case_dir("overwrite");
+    let file = format!("{rel}/note.txt");
+
+    for content in ["a longer first version", "second"] {
+        let (written, _) = run_with(
+            Step::Write,
+            &file,
+            &ArgStack::new(),
+            &[("content", text(content))],
+        )
+        .await;
+        assert_eq!(written, SubActionOutcome::Success, "{content}");
+    }
+
+    assert_eq!(
+        std::fs::read_to_string(abs.join("note.txt")).unwrap(),
+        "second"
+    );
+    assert_eq!(names_in(&abs), ["note.txt"]);
+}
+
+#[tokio::test]
+async fn an_overwrite_that_fails_leaves_no_staged_file_and_the_target_untouched() {
+    let (abs, rel) = case_dir("blocked-overwrite");
+    let occupied = abs.join("occupied");
+    std::fs::create_dir(&occupied).unwrap();
+    std::fs::write(occupied.join("kept.txt"), SENTINEL).unwrap();
+
+    let reason = failure(Step::Write, &format!("{rel}/occupied")).await;
+
+    assert_eq!(code(&reason), "core.file_io_failed");
+    assert_eq!(names_in(&abs), ["occupied"]);
+    assert_eq!(
+        std::fs::read_to_string(occupied.join("kept.txt")).unwrap(),
+        SENTINEL
+    );
+}
+
+#[tokio::test]
+async fn list_returns_entries_sorted_whatever_order_the_folder_yields() {
+    let (abs, rel) = case_dir("sorted");
+    std::fs::create_dir(abs.join("m")).unwrap();
+    for file in ["z.txt", "a.txt", "m/b.txt", "m/a.txt"] {
+        std::fs::write(abs.join(file), SENTINEL).unwrap();
+    }
+
+    let (_, listed) = run_with(
+        Step::List,
+        &rel,
+        &ArgStack::new(),
+        &[("recursive", Variant::Bool(true))],
+    )
+    .await;
+
+    assert_eq!(
+        listed.unwrap().get("file.entries").cloned(),
+        Some(Variant::Array(vec![
+            text("a.txt"),
+            text("m/a.txt"),
+            text("m/b.txt"),
+            text("z.txt"),
+        ]))
+    );
+}
+
+#[tokio::test]
+async fn list_accepts_a_folder_at_the_entry_cap_and_refuses_one_entry_more() {
+    let (abs, rel) = case_dir("capped");
+    for index in 0..VARIANT_MAX_COLLECTION_LEN {
+        std::fs::File::create(abs.join(index.to_string())).unwrap();
+    }
+
+    let (at_cap, listed) = run(Step::List, &rel).await;
+    assert_eq!(at_cap, SubActionOutcome::Success);
+    assert_eq!(
+        listed
+            .unwrap()
+            .get("file.entries")
+            .and_then(Variant::as_array)
+            .map(<[Variant]>::len),
+        Some(VARIANT_MAX_COLLECTION_LEN)
+    );
+
+    std::fs::File::create(abs.join("one-more")).unwrap();
+    let reason = failure(Step::List, &rel).await;
+    assert_eq!(code(&reason), "core.directory_too_large");
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn listing_through_a_file_is_an_io_failure_not_a_missing_folder() {
+    let (abs, rel) = case_dir("through-a-file");
+    std::fs::write(abs.join("plain.txt"), SENTINEL).unwrap();
+
+    let reason = failure(Step::List, &format!("{rel}/plain.txt/inner")).await;
+
+    assert_eq!(code(&reason), "core.file_io_failed");
 }
 
 #[tokio::test]

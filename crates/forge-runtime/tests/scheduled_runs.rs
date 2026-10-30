@@ -96,6 +96,7 @@ fn error_kind(error: &ScheduleError) -> &'static str {
     match error {
         ScheduleError::UnknownAction => "unknown_action",
         ScheduleError::DelayTooShort => "delay_too_short",
+        ScheduleError::DueTooSoon => "due_too_soon",
         ScheduleError::DelayTooLong => "delay_too_long",
         ScheduleError::LateToleranceOutOfRange => "late_tolerance_out_of_range",
         ScheduleError::KeyTooLong => "key_too_long",
@@ -777,10 +778,10 @@ async fn schedule_places_the_run_only_for_delays_within_the_bounds() {
             ScheduleDue::After(MAX_SCHEDULE_DELAY + ONE_SECOND),
             Err("delay_too_long"),
         ),
-        (ScheduleDue::At(base() - ONE_SECOND), Err("delay_too_short")),
+        (ScheduleDue::At(base() - ONE_SECOND), Err("due_too_soon")),
         (
             ScheduleDue::At(base() + MIN_SCHEDULE_DELAY - ONE_SECOND),
-            Err("delay_too_short"),
+            Err("due_too_soon"),
         ),
         (
             ScheduleDue::At(base() + MIN_SCHEDULE_DELAY),

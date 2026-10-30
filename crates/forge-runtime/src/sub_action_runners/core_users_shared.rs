@@ -1,11 +1,12 @@
 use forge_registry::{TemplateField, TextEditor, TextField};
-use forge_storage::GlobalsRepo;
+use forge_storage::{GlobalsRepo, StorageError};
 use forge_types::{ArgStack, MessageRef, variable_references};
 
 use crate::core_messages;
 
 const SINGLE_BROADCASTER_NAMESPACE: &str = "local";
 const USER_LOGIN_TEMPLATE: &str = "%user_login%";
+const BROADCASTER_ID_KEY: &str = "broadcaster_id";
 
 pub(super) const USER_LOGIN: TemplateField = TemplateField {
     key: "user_login",
@@ -28,21 +29,17 @@ pub(super) const VAR_NAME: TextField = TextField {
 pub(super) async fn resolve_broadcaster_id(
     arg_stack: &ArgStack,
     globals: &dyn GlobalsRepo,
-) -> String {
-    let from_scope = arg_stack.interpolate("%broadcaster_id%");
-    let resolved = if from_scope == "%broadcaster_id%" {
-        match globals.get("broadcaster_id").await {
-            Ok(Some(value)) => value.to_string(),
-            _ => from_scope,
-        }
-    } else {
-        from_scope
+) -> Result<String, StorageError> {
+    let resolved = match arg_stack.get(BROADCASTER_ID_KEY) {
+        Some(value) => Some(value.to_string()),
+        None => globals
+            .peek(BROADCASTER_ID_KEY)
+            .await?
+            .map(|value| value.to_string()),
     };
-    if resolved.is_empty() || resolved == "%broadcaster_id%" {
-        SINGLE_BROADCASTER_NAMESPACE.to_owned()
-    } else {
-        resolved
-    }
+    Ok(resolved
+        .filter(|id| !id.is_empty())
+        .unwrap_or_else(|| SINGLE_BROADCASTER_NAMESPACE.to_owned()))
 }
 
 pub(super) fn resolve_user_login(
@@ -79,6 +76,35 @@ mod tests {
     struct FakeGlobals {
         broadcaster: Option<Variant>,
         forbid_get: bool,
+    }
+
+    struct UnreadableGlobals;
+
+    #[async_trait]
+    impl GlobalsRepo for UnreadableGlobals {
+        async fn get(&self, _name: &str) -> Result<Option<Variant>, StorageError> {
+            Err(StorageError::Connection {
+                reason: "disk gone".to_owned(),
+            })
+        }
+        async fn set(&self, _name: &str, _value: Variant, _p: bool) -> Result<(), StorageError> {
+            Ok(())
+        }
+        async fn delete(&self, _name: &str) -> Result<bool, StorageError> {
+            Ok(false)
+        }
+        async fn list(&self) -> Result<Vec<GlobalEntry>, StorageError> {
+            Ok(vec![])
+        }
+        async fn storage_bytes(&self) -> Result<u64, StorageError> {
+            Ok(0)
+        }
+        async fn last_save_at(&self) -> Result<Option<OffsetDateTime>, StorageError> {
+            Ok(None)
+        }
+        async fn incr(&self, _name: &str, _amount: i64) -> Result<Variant, StorageError> {
+            Ok(Variant::Int(0))
+        }
     }
 
     #[async_trait]
@@ -124,7 +150,10 @@ mod tests {
             broadcaster: Some(Variant::String("other".to_owned())),
             forbid_get: true,
         };
-        assert_eq!(resolve_broadcaster_id(&stack, &globals).await, "chan-42");
+        assert_eq!(
+            resolve_broadcaster_id(&stack, &globals).await.unwrap(),
+            "chan-42"
+        );
     }
 
     #[tokio::test]
@@ -134,7 +163,9 @@ mod tests {
             forbid_get: false,
         };
         assert_eq!(
-            resolve_broadcaster_id(&ArgStack::new(), &globals).await,
+            resolve_broadcaster_id(&ArgStack::new(), &globals)
+                .await
+                .unwrap(),
             "chan-from-global"
         );
     }
@@ -146,7 +177,34 @@ mod tests {
             forbid_get: false,
         };
         assert_eq!(
-            resolve_broadcaster_id(&ArgStack::new(), &globals).await,
+            resolve_broadcaster_id(&ArgStack::new(), &globals)
+                .await
+                .unwrap(),
+            "local"
+        );
+    }
+
+    #[tokio::test]
+    async fn unreadable_globals_are_an_error_not_the_local_namespace() {
+        let resolved = resolve_broadcaster_id(&ArgStack::new(), &UnreadableGlobals).await;
+
+        assert!(
+            matches!(resolved, Err(StorageError::Connection { .. })),
+            "{resolved:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn an_empty_broadcaster_in_scope_uses_the_local_namespace() {
+        let stack =
+            ArgStack::new().set("broadcaster_id".to_owned(), Variant::String(String::new()));
+        let globals = FakeGlobals {
+            broadcaster: Some(Variant::String("unused".to_owned())),
+            forbid_get: true,
+        };
+
+        assert_eq!(
+            resolve_broadcaster_id(&stack, &globals).await.unwrap(),
             "local"
         );
     }

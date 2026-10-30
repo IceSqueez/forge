@@ -22,7 +22,7 @@ impl GlobalMutation<'_> {
         value: Variant,
         persisted: bool,
     ) -> Result<Option<Variant>, StorageError> {
-        let previous = self.globals.get(key).await.ok().flatten();
+        let previous = self.previous(key).await;
         let new_value_json = value.to_plain_json();
         let prev_value_json = previous
             .as_ref()
@@ -40,7 +40,7 @@ impl GlobalMutation<'_> {
     }
 
     pub async fn increment(&self, key: &str, delta: i64) -> Result<GlobalIncrement, StorageError> {
-        let previous = self.globals.get(key).await.ok().flatten();
+        let previous = self.previous(key).await;
         let current = self.globals.incr(key, delta).await?;
         let new_value_json = match &current {
             Variant::Int(i) => serde_json::Value::from(*i),
@@ -55,7 +55,7 @@ impl GlobalMutation<'_> {
     }
 
     pub async fn delete(&self, key: &str) -> Result<GlobalDeletion, StorageError> {
-        let previous = self.globals.get(key).await.ok().flatten();
+        let previous = self.previous(key).await;
         if !self.globals.delete(key).await? {
             return Ok(GlobalDeletion::Missing);
         }
@@ -63,6 +63,16 @@ impl GlobalMutation<'_> {
             key: key.to_owned(),
         });
         Ok(GlobalDeletion::Deleted { previous })
+    }
+
+    async fn previous(&self, key: &str) -> Option<Variant> {
+        match self.globals.peek(key).await {
+            Ok(previous) => previous,
+            Err(error) => {
+                tracing::warn!(key, %error, "previous global value could not be read");
+                None
+            }
+        }
     }
 
     fn publish(&self, payload: impl TypedEvent) {

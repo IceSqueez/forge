@@ -27,12 +27,12 @@ pub(super) async fn resolve_sandboxed(rel: &str) -> Result<PathBuf, MessageRef> 
     }
 
     let root = forge_paths::assets_dir();
-    if let Err(error) = tokio::fs::create_dir_all(&root).await {
-        tracing::debug!(%error, path = %root.display(), "assets directory could not be created");
-    }
-    let Ok(canon_root) = tokio::fs::canonicalize(&root).await else {
-        return Ok(root.join(candidate));
-    };
+    tokio::fs::create_dir_all(&root)
+        .await
+        .map_err(core_messages::file_io_failed)?;
+    let canon_root = tokio::fs::canonicalize(&root)
+        .await
+        .map_err(core_messages::file_io_failed)?;
 
     let mut canon_prefix = canon_root.clone();
     let mut remaining = candidate.components().peekable();

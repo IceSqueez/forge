@@ -359,6 +359,13 @@ impl TriggerInstanceRepo for RevisingTriggerInstanceRepo {
             .await
     }
 
+    async fn toggle_enabled(&self, id: TriggerInstanceId) -> Result<Option<bool>, StorageError> {
+        let inner = Arc::clone(&self.inner);
+        self.revision
+            .after(async move { inner.toggle_enabled(id).await })
+            .await
+    }
+
     async fn archive(&self, id: TriggerInstanceId) -> Result<bool, StorageError> {
         let inner = Arc::clone(&self.inner);
         self.revision

@@ -248,6 +248,7 @@ impl SubActionRunner for CoreLogicLoopRunner {
 
         loop {
             if ctx.cancel.is_cancelled() {
+                exit_reason = "cancelled";
                 break;
             }
 
@@ -288,6 +289,7 @@ impl SubActionRunner for CoreLogicLoopRunner {
                         Ok(true) => {}
                         Ok(false) => break,
                         Err(e) => {
+                            exit_reason = "failed";
                             failure = Some(core_messages::condition_failed(e).into());
                             break;
                         }
@@ -334,14 +336,17 @@ impl SubActionRunner for CoreLogicLoopRunner {
                     current = stack;
                     iterations += 1;
                     ctx.control.set(ControlSignal::Stop(mark));
+                    exit_reason = "stopped";
                     break;
                 }
                 IterOutcome::Fail(msg) => {
+                    exit_reason = "failed";
                     failure = Some(msg);
                     break;
                 }
                 IterOutcome::Abort(stack) => {
                     current = stack;
+                    exit_reason = "cancelled";
                     break;
                 }
             }

@@ -1,5 +1,5 @@
 use std::sync::Arc;
-use std::time::{Duration, Instant};
+use std::time::Instant;
 
 use async_trait::async_trait;
 use forge_events::{EventPublisher, EventSource, ScriptFailed, ScriptStarted, TypedEvent};
@@ -9,8 +9,7 @@ use forge_registry::{
     SubActionCategory, SubActionIo, SubActionRunner, TextEditor, TextField, TypedField,
 };
 use forge_script::{
-    Engine, EngineConfig, ForgeApi, ScriptError, ScriptGlobals, ScriptHttpClient, ScriptHttpConfig,
-    build_scope_for_contract,
+    ScriptCapabilities, ScriptError, ScriptGlobals, ScriptSession, build_scope_for_contract,
 };
 use forge_storage::{
     ExecutionStatus, GlobalsRepo, SCRIPT_NAME_KEY, SCRIPT_RUN_NAMED_KIND, ScriptRepo, SettingsRepo,
@@ -137,39 +136,50 @@ impl SubActionRunner for ScriptRunNamedRunner {
         let started_at = OffsetDateTime::now_utc();
         let wall_start = Instant::now();
 
-        let Some(compiled) = self.registry.get_by_name(&name).await else {
-            let duration_ms = wall_start.elapsed().as_millis() as u64;
-            return (
-                SubActionTelemetry {
-                    args_in: ::std::collections::BTreeMap::new(),
-                    produced: ::std::collections::BTreeMap::new(),
-                    kind: SCRIPT_RUN_NAMED_KIND.to_owned(),
-                    started_at,
-                    duration_ms,
-                    outcome: SubActionOutcome::Failed(
-                        core_messages::script_not_found(name.as_str()).into(),
-                    ),
-                    index: ctx.index,
-                },
-                None,
-            );
+        let lookup = self.registry.current(&name, self.scripts.as_ref()).await;
+        let compiled = match lookup {
+            Ok(Some(compiled)) => compiled,
+            unavailable => {
+                let failure = match unavailable {
+                    Err(e) => core_messages::storage_failed(e),
+                    _ => core_messages::script_not_found(name.as_str()),
+                };
+                let duration_ms = wall_start.elapsed().as_millis() as u64;
+                return (
+                    SubActionTelemetry {
+                        args_in: ::std::collections::BTreeMap::new(),
+                        produced: ::std::collections::BTreeMap::new(),
+                        kind: SCRIPT_RUN_NAMED_KIND.to_owned(),
+                        started_at,
+                        duration_ms,
+                        outcome: SubActionOutcome::Failed(failure.into()),
+                        index: ctx.index,
+                    },
+                    None,
+                );
+            }
         };
 
         let script_id = compiled.record.id;
         let body = compiled.record.body.clone();
         let contract = compiled.record.contract.clone();
         let arg_stack_clone = ctx.arg_stack.clone();
-        let publisher_arc = Arc::clone(&self.publisher);
-        let globals_arc = Arc::clone(&self.globals);
-        let speak_requester = self.registry.speak_requester();
-        let latest_values = self.registry.latest_values();
-        let scheduler = self
-            .registry
-            .action_scheduler(SchedulingContext::of_run(ctx));
         let parent_event_id = ctx.parent_event_id;
-        let integrations = ctx.executor.integration_availability();
-        let http_cfg = Arc::new(ScriptHttpConfig::read(self.settings.as_ref()).await);
-        let engine_cfg = EngineConfig::read(self.settings.as_ref()).await;
+        let session = ScriptSession::open(
+            self.settings.as_ref(),
+            Arc::clone(&self.publisher),
+            Arc::clone(&self.globals),
+            parent_event_id,
+            ScriptCapabilities {
+                speak: self.registry.speak_requester(),
+                integrations: ctx.executor.integration_availability(),
+                latest_values: self.registry.latest_values(),
+                scheduler: self
+                    .registry
+                    .action_scheduler(SchedulingContext::of_run(ctx)),
+            },
+        )
+        .await;
 
         let exec_event = ScriptStarted {
             script_id: Some(script_id),
@@ -181,33 +191,12 @@ impl SubActionRunner for ScriptRunNamedRunner {
         self.publisher.publish(exec_event);
 
         let exec_result = tokio::task::spawn_blocking(move || {
-            let scope = build_scope_for_contract(&contract, &arg_stack_clone).map_err(|e| {
+            let mut scope = build_scope_for_contract(&contract, &arg_stack_clone).map_err(|e| {
                 ScriptError::Runtime {
                     reason: e.to_string(),
                 }
             })?;
-            let cfg = engine_cfg;
-            let deadline = Instant::now() + Duration::from_millis(cfg.wall_time_ms);
-            let http_client =
-                ScriptHttpClient::new(http_cfg).map_err(|e| ScriptError::Runtime {
-                    reason: e.to_string(),
-                })?;
-            let mut api = ForgeApi::new(publisher_arc, globals_arc, parent_event_id, deadline)
-                .with_http(Arc::new(http_client));
-            if let Some(req) = speak_requester {
-                api = api.with_speak_requester(req);
-            }
-            if let Some(integrations) = integrations {
-                api = api.with_integration_availability(integrations);
-            }
-            if let Some(latest) = latest_values {
-                api = api.with_latest_values(latest);
-            }
-            if let Some(scheduler) = scheduler {
-                api = api.with_action_scheduler(scheduler);
-            }
-            let engine = Engine::with_api(cfg, api);
-            let mut scope = scope;
+            let engine = session.into_engine()?;
             engine.eval_script_with_scope_as_variant(&body, &mut scope)
         })
         .await;
@@ -295,12 +284,14 @@ impl SubActionRunner for ScriptRunNamedRunner {
 mod tests {
     use super::*;
     use crate::test_support::failure::{detail_of, failure_message, verbatim_arg};
-    use crate::test_support::sandboxed_backend;
+    use crate::test_support::{Sandboxed, sandboxed_backend};
     use crate::{EventBus, NullEventLogRepo};
     use forge_events::Event;
     use forge_storage::ScriptRecord;
+    use forge_storage_sqlite::SqliteBackend;
     use forge_types::Variant;
     use forge_types::{EventId, ScriptContract, ScriptId};
+    use std::time::Duration;
     use time::OffsetDateTime;
 
     const SECRET: &str = "sk-live-0123456789";
@@ -333,11 +324,10 @@ mod tests {
             created_at: ts,
             last_modified: ts,
         };
-        let registry = Arc::new(ScriptRegistry::new());
-        registry.reload(record, &bus).await.unwrap();
+        backend.save(record).await.unwrap();
 
         let runner = ScriptRunNamedRunner::new(
-            registry,
+            Arc::new(ScriptRegistry::new()),
             Arc::clone(&backend) as Arc<dyn GlobalsRepo>,
             publisher,
             Arc::clone(&backend) as Arc<dyn SettingsRepo>,
@@ -472,5 +462,187 @@ mod tests {
         assert_eq!(message.code(), &core_messages::SCRIPT_FAILED);
         assert_eq!(verbatim_arg(message, "name"), Some("greet"));
         assert!(stack.is_none());
+    }
+
+    struct NamedScript {
+        backend: Sandboxed<Arc<SqliteBackend>>,
+        registry: Arc<ScriptRegistry>,
+        runner: ScriptRunNamedRunner,
+        config: SubActionConfig,
+        record: ScriptRecord,
+    }
+
+    impl NamedScript {
+        async fn saved(body: &str) -> Self {
+            let backend = sandboxed_backend([0xab; 32]).await.map(Arc::new);
+            let bus = EventBus::new(Arc::new(NullEventLogRepo));
+            let registry = Arc::new(ScriptRegistry::new());
+            let runner = ScriptRunNamedRunner::new(
+                Arc::clone(&registry),
+                Arc::clone(&backend) as Arc<dyn GlobalsRepo>,
+                Arc::clone(&bus) as Arc<dyn EventPublisher>,
+                Arc::clone(&backend) as Arc<dyn SettingsRepo>,
+                Arc::clone(&backend) as Arc<dyn ScriptRepo>,
+            );
+            let mut config = runner.default_config();
+            config.insert(
+                "script_name".to_owned(),
+                Variant::String("greet".to_owned()),
+            );
+            config.insert(TARGET_VAR_KEY.to_owned(), Variant::String("out".to_owned()));
+            let now = OffsetDateTime::now_utc();
+            let record = ScriptRecord {
+                id: ScriptId::new(),
+                name: "greet".to_owned(),
+                body: body.to_owned(),
+                contract: ScriptContract::default(),
+                enabled: true,
+                created_at: now,
+                last_modified: now,
+            };
+            backend.save(record.clone()).await.unwrap();
+            Self {
+                backend,
+                registry,
+                runner,
+                config,
+                record,
+            }
+        }
+
+        async fn run(&self) -> (SubActionOutcome, Option<ArgStack>) {
+            let stack = ArgStack::default();
+            let ctx = RunContext::leaf(&stack, 0, EventId::new(), &NullPublisher);
+            let (telemetry, produced) = self.runner.execute(&self.config, &ctx).await;
+            (telemetry.outcome, produced)
+        }
+
+        async fn output(&self) -> Option<Variant> {
+            let (outcome, produced) = self.run().await;
+            assert!(matches!(outcome, SubActionOutcome::Success), "{outcome:?}");
+            produced.and_then(|stack| stack.get("out").cloned())
+        }
+
+        async fn stored_with(&self, change: impl FnOnce(&mut ScriptRecord)) {
+            let mut record = self.record.clone();
+            change(&mut record);
+            self.backend.save(record).await.unwrap();
+        }
+
+        async fn assert_gone(&self) {
+            let (outcome, produced) = self.run().await;
+            assert_eq!(
+                failure_message(&outcome).code(),
+                &core_messages::SCRIPT_NOT_FOUND
+            );
+            assert!(produced.is_none());
+            assert!(self.registry.get_by_name("greet").await.is_none());
+        }
+    }
+
+    struct NullPublisher;
+
+    impl EventPublisher for NullPublisher {
+        fn publish(&self, _event: Event) {}
+    }
+
+    #[tokio::test]
+    async fn a_script_saved_after_boot_runs_by_name_without_a_reload() {
+        let script = NamedScript::saved("41 + 1").await;
+
+        assert_eq!(script.output().await, Some(Variant::Int(42)));
+    }
+
+    #[tokio::test]
+    async fn an_edit_saved_after_the_first_run_is_what_runs_next() {
+        let script = NamedScript::saved("1").await;
+        script.output().await;
+
+        script
+            .stored_with(|record| record.body = "2".to_owned())
+            .await;
+
+        assert_eq!(script.output().await, Some(Variant::Int(2)));
+    }
+
+    #[tokio::test]
+    async fn a_script_disabled_after_its_first_run_stops_resolving_by_name() {
+        let script = NamedScript::saved("1").await;
+        script.output().await;
+
+        script.stored_with(|record| record.enabled = false).await;
+
+        script.assert_gone().await;
+    }
+
+    #[tokio::test]
+    async fn a_script_deleted_after_its_first_run_stops_resolving_by_name() {
+        let script = NamedScript::saved("1").await;
+        script.output().await;
+
+        ScriptRepo::delete(&**script.backend, script.record.id)
+            .await
+            .unwrap();
+
+        script.assert_gone().await;
+    }
+
+    #[tokio::test]
+    async fn a_script_archived_after_its_first_run_stops_resolving_by_name() {
+        let script = NamedScript::saved("1").await;
+        script.output().await;
+
+        script
+            .backend
+            .archive_script(script.record.id)
+            .await
+            .unwrap();
+
+        script.assert_gone().await;
+    }
+
+    #[tokio::test]
+    async fn a_saved_body_that_does_not_compile_stops_resolving_by_name() {
+        let script = NamedScript::saved("1").await;
+        script.output().await;
+
+        script
+            .stored_with(|record| record.body = "let = ;".to_owned())
+            .await;
+
+        script.assert_gone().await;
+    }
+
+    #[tokio::test]
+    async fn unreadable_script_storage_fails_as_a_storage_error_not_as_a_missing_script() {
+        let mut repo = forge_storage::script::MockScriptRepo::new();
+        repo.expect_get_by_name().returning(|_| {
+            Err(forge_storage::StorageError::Connection {
+                reason: "disk gone".to_owned(),
+            })
+        });
+        let backend = sandboxed_backend([0xab; 32]).await.map(Arc::new);
+        let bus = EventBus::new(Arc::new(NullEventLogRepo));
+        let runner = ScriptRunNamedRunner::new(
+            Arc::new(ScriptRegistry::new()),
+            Arc::clone(&backend) as Arc<dyn GlobalsRepo>,
+            bus,
+            Arc::clone(&backend) as Arc<dyn SettingsRepo>,
+            Arc::new(repo),
+        );
+        let mut config = runner.default_config();
+        config.insert(
+            "script_name".to_owned(),
+            Variant::String("greet".to_owned()),
+        );
+        let stack = ArgStack::default();
+        let ctx = RunContext::leaf(&stack, 0, EventId::new(), &NullPublisher);
+
+        let (telemetry, _) = runner.execute(&config, &ctx).await;
+
+        assert_eq!(
+            failure_message(&telemetry.outcome).code(),
+            &core_messages::STORAGE_FAILED
+        );
     }
 }

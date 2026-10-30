@@ -49,6 +49,7 @@ pub struct LiveViewerAggregatorHandle {
 
 impl LiveViewerAggregatorHandle {
     pub fn register(&self, platform: PlatformId, source: Box<dyn LiveViewerSource>) {
+        let mut forwarders = self.lock_forwarders();
         let generation = self.next_generation.fetch_add(1, Ordering::Relaxed);
         let commands = self.commands.clone();
         let forwarder = self.runtime.spawn(async move {
@@ -87,10 +88,7 @@ impl LiveViewerAggregatorHandle {
                 })
                 .await;
         });
-        let replaced = self
-            .lock_forwarders()
-            .insert(platform, forwarder.abort_handle());
-        if let Some(previous) = replaced {
+        if let Some(previous) = forwarders.insert(platform, forwarder.abort_handle()) {
             previous.abort();
         }
     }
@@ -496,6 +494,53 @@ mod tests {
         second_tx.send(ViewerReport::Live { count: 2 }).unwrap();
 
         settle_to(&mut sub, LiveViewerCount::Reporting(3)).await;
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn simultaneous_registrations_leave_a_source_whose_reports_still_count() {
+        const ROUNDS: usize = 64;
+        const COUNTS: [u64; 2] = [10, 20];
+        for _ in 0..ROUNDS {
+            let handle = spawn_live_viewer_aggregator();
+            let barrier = Arc::new(std::sync::Barrier::new(COUNTS.len()));
+            let mut reports = Vec::new();
+            let mut registrars = Vec::new();
+            for count in COUNTS {
+                let (source, tx) = channel_source();
+                reports.push((count, tx));
+                let handle = handle.clone();
+                let barrier = Arc::clone(&barrier);
+                registrars.push(std::thread::spawn(move || {
+                    barrier.wait();
+                    handle.register(PlatformId::Twitch, source);
+                }));
+            }
+            for registrar in registrars {
+                registrar.join().unwrap();
+            }
+
+            let delivered = reports
+                .iter()
+                .filter(|(count, tx)| tx.send(ViewerReport::Live { count: *count }).is_ok())
+                .count();
+            assert!(delivered >= 1, "both sources were aborted");
+
+            let mut sub = Box::pin(handle.subscribe());
+            let reached = tokio::time::timeout(Duration::from_secs(30), async {
+                while let Some(value) = sub.next().await {
+                    if matches!(value, LiveViewerCount::Reporting(_)) {
+                        return value;
+                    }
+                }
+                panic!("the aggregate stream ended");
+            })
+            .await
+            .expect("no surviving source reached the aggregate");
+            assert!(
+                COUNTS.map(LiveViewerCount::Reporting).contains(&reached),
+                "{reached:?}"
+            );
+        }
     }
 
     #[tokio::test]

@@ -345,6 +345,61 @@ async fn set_enabled_on_a_missing_instance_returns_not_found() {
 }
 
 #[tokio::test]
+async fn toggle_flips_the_flag_and_reports_the_new_state() {
+    let backend = setup().await;
+    let repo = backend.trigger_instance_repo();
+    let inst = make_instance("twitch.chat.command", "Toggle Me", true);
+    repo.save(&inst).await.expect("save");
+
+    let first = repo.toggle_enabled(inst.id).await.expect("toggle off");
+    let second = repo.toggle_enabled(inst.id).await.expect("toggle on");
+
+    assert_eq!((first, second), (Some(false), Some(true)));
+}
+
+#[tokio::test]
+async fn toggle_of_a_missing_or_archived_instance_changes_nothing() {
+    let backend = setup().await;
+    let repo = backend.trigger_instance_repo();
+    let archived = make_instance("twitch.chat.command", "Gone", true);
+    repo.save(&archived).await.expect("save");
+    repo.archive(archived.id).await.expect("archive");
+
+    for id in [TriggerInstanceId::new(), archived.id] {
+        assert_eq!(repo.toggle_enabled(id).await.expect("toggle"), None);
+    }
+}
+
+#[tokio::test]
+async fn parallel_toggles_each_flip_the_flag_exactly_once() {
+    const TOGGLES: usize = 40;
+    let backend = setup().await;
+    let repo = backend.trigger_instance_repo();
+    let inst = make_instance("twitch.chat.command", "Busy", true);
+    repo.save(&inst).await.expect("save");
+
+    let toggles: Vec<_> = (0..TOGGLES)
+        .map(|_| {
+            let repo = std::sync::Arc::clone(&repo);
+            tokio::spawn(async move { repo.toggle_enabled(inst.id).await })
+        })
+        .collect();
+    let mut turned_on = 0;
+    for toggle in toggles {
+        if toggle.await.expect("join").expect("toggle") == Some(true) {
+            turned_on += 1;
+        }
+    }
+
+    assert_eq!(turned_on, TOGGLES / 2);
+    let stored = repo.get(inst.id).await.expect("get").expect("instance");
+    assert!(
+        stored.enabled,
+        "an even number of toggles ends where it began"
+    );
+}
+
+#[tokio::test]
 async fn upsert_default_inserts_on_first_call() {
     let backend = setup().await;
     let repo = backend.trigger_instance_repo();

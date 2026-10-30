@@ -7,8 +7,9 @@ use forge_events::{
 use forge_registry::{CancelSignal, ChainSignal, RunContext, RunningAction, SubActionRegistry};
 use forge_storage::{ActionExecution, ActionRepo, ExecutionStatus, HistoryRepo};
 use forge_types::{
-    Action, ActionId, ArgStack, EventId, ExecutionContext, ExecutionMetadata, ExecutionOutcome,
-    SubActionOutcome, SubActionStep, SubActionTelemetry, UserText, VerbatimText,
+    Action, ActionId, ArgStack, DEFAULT_QUEUE_ID, EventId, ExecutionContext, ExecutionMetadata,
+    ExecutionOutcome, MessageRef, QueueId, SubActionOutcome, SubActionStep, SubActionTelemetry,
+    UserText, VerbatimText,
 };
 use time::OffsetDateTime;
 use tokio::sync::{mpsc, oneshot, watch};
@@ -20,7 +21,9 @@ use crate::chain::ChainEngine;
 use crate::core_messages;
 use crate::integration_gate::{GatedLeafExecutor, IntegrationGate};
 use crate::run_history::RunHistoryWriter;
-use crate::scheduled_runs::ScheduledOrigin;
+use crate::scheduled_runs::{
+    ACTION_DISABLED_REASON, ACTION_NOT_FOUND_REASON, ACTIONS_UNAVAILABLE_REASON, ScheduledOrigin,
+};
 use crate::{Config, EventBus};
 
 const EXECUTION_INTAKE_CAPACITY: usize = 256;
@@ -159,6 +162,7 @@ impl ActionEngineHandle {
 struct ActionEngine {
     bus: Arc<EventBus>,
     catalog: Arc<Catalog>,
+    actions: Arc<dyn ActionRepo>,
     history: RunHistoryWriter,
     chain_engine: Arc<ChainEngine>,
     cancel_registry: Arc<ActionCancelRegistry>,
@@ -185,10 +189,11 @@ impl ActionEngine {
             config,
         ));
         let integrations = chain_engine.integration_gate().clone();
-        let history = RunHistoryWriter::spawn(&bus, history, actions);
+        let history = RunHistoryWriter::spawn(&bus, history, Arc::clone(&actions));
         let engine = Arc::new(Self {
             bus: Arc::clone(&bus),
             catalog,
+            actions,
             history: history.clone(),
             chain_engine,
             cancel_registry,
@@ -259,6 +264,57 @@ impl ActionEngine {
         });
     }
 
+    async fn refuse_unrunnable(&self, req: ExecutionRequest, origin: Option<ScheduledOrigin>) {
+        let (reason, queue_id, failure) = match self.actions.get(req.action_id).await {
+            Ok(Some(action)) => (
+                ACTION_DISABLED_REASON,
+                action.queue_id,
+                core_messages::action_disabled(),
+            ),
+            Ok(None) => (
+                ACTION_NOT_FOUND_REASON,
+                DEFAULT_QUEUE_ID,
+                core_messages::unknown_action(req.action_id),
+            ),
+            Err(e) => (
+                ACTIONS_UNAVAILABLE_REASON,
+                DEFAULT_QUEUE_ID,
+                core_messages::storage_failed(e),
+            ),
+        };
+        self.refuse(req, origin, reason, queue_id, failure);
+    }
+
+    fn refuse(
+        &self,
+        req: ExecutionRequest,
+        origin: Option<ScheduledOrigin>,
+        reason: &str,
+        queue_id: QueueId,
+        failure: MessageRef,
+    ) {
+        warn!(action = %req.action_id, reason, "action run refused");
+        self.bus.publish(
+            ActionSkipped {
+                action_id: req.action_id,
+                reason: reason.to_owned(),
+                queue_id,
+            }
+            .into_event(EventSource::Core, Some(req.trigger_event_id)),
+        );
+        let started_at = OffsetDateTime::now_utc();
+        let ctx = ExecutionContext {
+            action_id: req.action_id,
+            metadata: run_metadata(origin, req.trigger_event_id, req.trigger_kind),
+            arg_stack_snapshot: req.initial_args.snapshot(),
+            started_at,
+            completed_at: Some(started_at),
+            telemetry: Vec::new(),
+            outcome: ExecutionOutcome::Failed(failure.into()),
+        };
+        self.history.record(ctx, None);
+    }
+
     fn refuse_too_deep(
         &self,
         action: &Action,
@@ -305,22 +361,26 @@ impl ActionEngine {
         let action = match self.catalog.current().await {
             Ok(catalog) => match catalog.action(req.action_id) {
                 Some(action) => Arc::clone(action),
-                None => return,
+                None => {
+                    self.refuse_unrunnable(req, origin).await;
+                    return;
+                }
             },
             Err(e) => {
                 warn!("action catalog rebuild failed: {e}");
+                self.refuse(
+                    req,
+                    origin,
+                    ACTIONS_UNAVAILABLE_REASON,
+                    DEFAULT_QUEUE_ID,
+                    core_messages::storage_failed(e),
+                );
                 return;
             }
         };
 
         let arg_stack = req.initial_args;
-        let metadata = match origin {
-            Some(origin) => origin.into_metadata(req.trigger_event_id),
-            None => ExecutionMetadata::Trigger {
-                event_id: req.trigger_event_id,
-                trigger_kind: req.trigger_kind,
-            },
-        };
+        let metadata = run_metadata(origin, req.trigger_event_id, req.trigger_kind);
         let started_at = OffsetDateTime::now_utc();
         let manual_test = req.manual_test;
 
@@ -440,6 +500,20 @@ impl ActionEngine {
     }
 }
 
+fn run_metadata(
+    origin: Option<ScheduledOrigin>,
+    event_id: EventId,
+    trigger_kind: Option<String>,
+) -> ExecutionMetadata {
+    match origin {
+        Some(origin) => origin.into_metadata(event_id),
+        None => ExecutionMetadata::Trigger {
+            event_id,
+            trigger_kind,
+        },
+    }
+}
+
 struct CancelGuard {
     registry: Arc<ActionCancelRegistry>,
     action_id: ActionId,
@@ -460,14 +534,19 @@ async fn run_quick_action_loop(
     sub_action_registry: Arc<SubActionRegistry>,
     integrations: IntegrationGate,
 ) {
+    let cancel = CancelSignal::new();
     loop {
         tokio::select! {
             biased;
-            Ok(_) = stop.wait_for(|stopped| *stopped) => return,
+            Ok(_) = stop.wait_for(|stopped| *stopped) => {
+                cancel.cancel();
+                return;
+            }
             req = rx.recv() => match req {
                 Some(req) => {
                     tokio::spawn(run_quick_action(
                         req,
+                        cancel.clone(),
                         Arc::clone(&bus),
                         history.clone(),
                         Arc::clone(&sub_action_registry),
@@ -482,6 +561,7 @@ async fn run_quick_action_loop(
 
 async fn run_quick_action(
     req: QuickActionRequest,
+    cancel: CancelSignal,
     bus: Arc<EventBus>,
     history: RunHistoryWriter,
     sub_action_registry: Arc<SubActionRegistry>,
@@ -498,9 +578,10 @@ async fn run_quick_action(
 
     let stack = ArgStack::new();
     let leaf_ctx = RunContext::leaf(&stack, 0, run_event_id, publisher.as_ref());
-    let executor = GatedLeafExecutor::new(integrations.clone(), leaf_ctx.cancel.clone());
+    let executor = GatedLeafExecutor::new(integrations.clone(), cancel.clone());
     let run_ctx = RunContext {
         executor: &executor,
+        cancel,
         ..leaf_ctx
     };
 

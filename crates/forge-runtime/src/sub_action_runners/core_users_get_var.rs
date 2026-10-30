@@ -127,7 +127,13 @@ impl SubActionRunner for CoreUsersGetVarRunner {
             Err(reason) => return (timer.failed(reason.into()), None),
         };
 
-        let broadcaster_id = resolve_broadcaster_id(ctx.arg_stack, self.globals.as_ref()).await;
+        let broadcaster_id =
+            match resolve_broadcaster_id(ctx.arg_stack, self.globals.as_ref()).await {
+                Ok(broadcaster_id) => broadcaster_id,
+                Err(e) => {
+                    return (timer.failed(core_messages::storage_failed(e).into()), None);
+                }
+            };
 
         let (outcome, updated_stack) = match self
             .user_globals

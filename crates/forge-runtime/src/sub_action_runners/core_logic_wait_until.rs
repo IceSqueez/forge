@@ -3,14 +3,14 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use forge_registry::{
-    CancelSignal, CodeField, CodeKind, CodeLanguage, ConfigProblem, ConfigSpec, DurationBounds,
-    DurationField, RunContext, StepTimer, SubActionCategory, SubActionIo, SubActionRunner,
-    TypedField,
+    CodeField, CodeKind, CodeLanguage, ConfigProblem, ConfigSpec, DurationBounds, DurationField,
+    RunContext, StepTimer, SubActionCategory, SubActionIo, SubActionRunner, TypedField,
 };
 use forge_types::{ArgStack, SubActionConfig, SubActionTelemetry, Variant};
 use tokio::time::Instant;
 
 use crate::ConditionGate;
+use crate::core_messages;
 
 const POLL_MIN_MS: i64 = 100;
 const POLL_MAX_MS: i64 = 30_000;
@@ -18,7 +18,6 @@ const DEFAULT_POLL_MS: i64 = 500;
 const TIMEOUT_MIN_MS: i64 = 100;
 const TIMEOUT_MAX_MS: i64 = 600_000;
 const DEFAULT_TIMEOUT_MS: i64 = 30_000;
-const CANCEL_POLL_MS: u64 = 50;
 
 const WAIT_ELAPSED_MS_VAR: &str = "wait.elapsed_ms";
 const WAIT_TIMED_OUT_VAR: &str = "wait.timed_out";
@@ -128,12 +127,19 @@ impl SubActionRunner for CoreLogicWaitUntilRunner {
                 break;
             }
 
-            if let Ok(true) = self
+            match self
                 .gate
                 .evaluate_with_args(&condition, ctx.arg_stack)
                 .await
             {
-                break;
+                Ok(true) => break,
+                Ok(false) => {}
+                Err(e) => {
+                    return (
+                        timer.failed(core_messages::condition_failed(e).into()),
+                        None,
+                    );
+                }
             }
 
             let now = Instant::now();
@@ -143,7 +149,7 @@ impl SubActionRunner for CoreLogicWaitUntilRunner {
             }
             tokio::select! {
                 _ = tokio::time::sleep(poll_interval.min(deadline - now)) => {}
-                _ = wait_for_cancel(&ctx.cancel) => {}
+                _ = ctx.cancel.cancelled() => {}
             }
         }
 
@@ -158,21 +164,12 @@ impl SubActionRunner for CoreLogicWaitUntilRunner {
     }
 }
 
-async fn wait_for_cancel(cancel: &CancelSignal) {
-    let mut poll = tokio::time::interval(Duration::from_millis(CANCEL_POLL_MS));
-    loop {
-        poll.tick().await;
-        if cancel.is_cancelled() {
-            return;
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::Config;
     use forge_events::{Event, EventPublisher};
+    use forge_registry::CancelSignal;
     use forge_types::EventId;
 
     const TIMER_GRANULARITY: Duration = Duration::from_millis(2);
@@ -183,7 +180,7 @@ mod tests {
     }
 
     #[tokio::test(start_paused = true)]
-    async fn a_run_cancelled_mid_poll_sleep_ends_within_one_cancel_poll() {
+    async fn a_run_cancelled_mid_poll_sleep_ends_at_the_moment_of_the_cancel() {
         let runner = CoreLogicWaitUntilRunner::new(Arc::new(ConditionGate::new(&Config {
             condition_wall_time_ms: 30_000,
             ..Config::default()
@@ -207,8 +204,7 @@ mod tests {
         let held = before.elapsed();
 
         assert!(
-            held >= cancel_after
-                && held <= cancel_after + Duration::from_millis(CANCEL_POLL_MS) + TIMER_GRANULARITY,
+            held >= cancel_after && held < cancel_after + TIMER_GRANULARITY,
             "a wait_until cancelled at {cancel_after:?} held {held:?}",
         );
         assert_eq!(
@@ -216,5 +212,27 @@ mod tests {
             Some(&Variant::Bool(false)),
             "a cancelled wait_until is not a timeout",
         );
+    }
+
+    #[tokio::test]
+    async fn a_condition_that_errors_fails_the_step_instead_of_polling_to_the_timeout() {
+        let runner =
+            CoreLogicWaitUntilRunner::new(Arc::new(ConditionGate::new(&Config::default())));
+        let mut cfg = SubActionConfig::new();
+        cfg.insert(
+            "condition".to_owned(),
+            Variant::String("no_such_function()".to_owned()),
+        );
+        cfg.insert("timeout_ms".to_owned(), Variant::Int(TIMEOUT_MAX_MS));
+        let stack = ArgStack::new();
+        let ctx = RunContext::leaf(&stack, 0, EventId::new(), &NullPublisher);
+
+        let (telemetry, out) = runner.execute(&cfg, &ctx).await;
+
+        assert_eq!(
+            *crate::test_support::failure::failure_message(&telemetry.outcome).code(),
+            core_messages::CONDITION_FAILED,
+        );
+        assert!(out.is_none(), "a failed wait produces no arguments");
     }
 }

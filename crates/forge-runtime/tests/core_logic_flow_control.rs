@@ -6,7 +6,7 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use forge_events::{Event, EventPublisher};
 use forge_registry::{
-    CancelSignal, ChainSignal, FormField, RegistryError, RunContext, SubActionCategory,
+    CancelSignal, ChainSignal, FormField, RegistryError, RunContext, StepTimer, SubActionCategory,
     SubActionRegistry, SubActionRunner,
 };
 use forge_runtime::sub_action_runners::{
@@ -76,6 +76,50 @@ impl SubActionRunner for AlwaysFailRunner {
     }
 }
 
+struct CancelsItsRunRunner;
+
+#[async_trait]
+impl SubActionRunner for CancelsItsRunRunner {
+    fn id(&self) -> &str {
+        "test.cancels_its_run"
+    }
+    fn category(&self) -> SubActionCategory {
+        SubActionCategory::Util
+    }
+    fn label(&self) -> &str {
+        ""
+    }
+    fn summary(&self) -> &str {
+        ""
+    }
+    fn search_text(&self) -> &str {
+        ""
+    }
+    fn icon_name(&self) -> &str {
+        ""
+    }
+    fn default_config(&self) -> SubActionConfig {
+        SubActionConfig::new()
+    }
+    fn config_fields(&self) -> Vec<FormField> {
+        Vec::new()
+    }
+    fn validate_config(&self, _config: &SubActionConfig) -> Result<(), RegistryError> {
+        Ok(())
+    }
+    async fn execute(
+        &self,
+        _config: &SubActionConfig,
+        ctx: &RunContext<'_>,
+    ) -> (SubActionTelemetry, Option<ArgStack>) {
+        ctx.cancel.cancel();
+        (
+            StepTimer::start(ctx, "test.cancels_its_run").success(),
+            None,
+        )
+    }
+}
+
 fn engine() -> Arc<ChainEngine> {
     let config = Config {
         condition_wall_time_ms: 30_000,
@@ -93,6 +137,7 @@ fn engine() -> Arc<ChainEngine> {
     reg.register(Box::new(CoreLogicLoopRunner::new(Arc::clone(&gate))))
         .unwrap();
     reg.register(Box::new(AlwaysFailRunner)).unwrap();
+    reg.register(Box::new(CancelsItsRunRunner)).unwrap();
     Arc::new(ChainEngine::new(
         Arc::new(reg),
         Arc::new(NullPublisher),
@@ -517,6 +562,60 @@ async fn switch_case_re_propagates_break_to_the_enclosing_loop() {
     assert_eq!(
         run.arg_stack.get("loop.iterations_completed"),
         Some(&Variant::Int(1)),
+    );
+}
+
+#[tokio::test]
+async fn loop_names_why_it_ended_for_every_early_exit() {
+    let eng = engine();
+    for (loop_config, expected) in [
+        (
+            loop_cfg(
+                5,
+                inline(vec![chain_step("core.logic.stop", SubActionConfig::new())]),
+            ),
+            "stopped",
+        ),
+        (
+            loop_cfg(
+                5,
+                inline(vec![chain_step("test.always_fail", SubActionConfig::new())]),
+            ),
+            "failed",
+        ),
+        (while_cfg("1 +", 5), "failed"),
+        (
+            loop_cfg(
+                5,
+                inline(vec![
+                    chain_step("test.cancels_its_run", SubActionConfig::new()),
+                    chain_step("core.logic.stop", SubActionConfig::new()),
+                ]),
+            ),
+            "cancelled",
+        ),
+    ] {
+        let run = run_top(&eng, vec![step("core.logic.loop", loop_config)]).await;
+
+        assert_eq!(run.arg_stack.get("loop.exit_reason"), Some(&s(expected)));
+    }
+}
+
+#[tokio::test]
+async fn a_loop_entered_after_the_run_was_cancelled_exits_as_cancelled_without_iterating() {
+    let config = Config::default();
+    let runner = CoreLogicLoopRunner::new(Arc::new(ConditionGate::new(&config)));
+    let stack = ArgStack::new();
+    let ctx = RunContext::leaf(&stack, 0, EventId::new(), &NullPublisher);
+    ctx.cancel.cancel();
+
+    let (_, produced) = runner.execute(&loop_cfg(5, inline(vec![])), &ctx).await;
+
+    let produced = produced.unwrap();
+    assert_eq!(produced.get("loop.exit_reason"), Some(&s("cancelled")));
+    assert_eq!(
+        produced.get("loop.iterations_completed"),
+        Some(&Variant::Int(0))
     );
 }
 

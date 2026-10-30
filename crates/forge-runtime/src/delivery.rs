@@ -141,7 +141,7 @@ impl CriticalSink {
         self
     }
 
-    pub(crate) fn offer(&self, event: &Arc<Event>, lane: DeliveryLane) -> bool {
+    pub(crate) fn offer(&self, event: &Arc<Event>, lane: DeliveryLane) -> Offered {
         let sender = match lane {
             DeliveryLane::Priority => &self.priority,
             DeliveryLane::Bulk => &self.bulk,
@@ -153,19 +153,26 @@ impl CriticalSink {
                 {
                     self.loss.lane_recovered(lane);
                 }
-                true
+                Offered::Queued
             }
             Err(TrySendError::Full(_)) => {
                 self.loss.lane_dropped(lane);
-                true
+                Offered::Dropped
             }
-            Err(TrySendError::Closed(_)) => false,
+            Err(TrySendError::Closed(_)) => Offered::Closed,
         }
     }
 
     pub(crate) fn is_closed(&self) -> bool {
         self.priority.is_closed()
     }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Offered {
+    Queued,
+    Dropped,
+    Closed,
 }
 
 pub(crate) struct CriticalSinks(ArcSwap<Vec<Arc<CriticalSink>>>);
@@ -196,7 +203,7 @@ impl CriticalSinks {
                 any_closed |= sink.is_closed();
                 continue;
             }
-            any_closed |= !sink.offer(event, lane);
+            any_closed |= sink.offer(event, lane) == Offered::Closed;
         }
         if any_closed {
             self.0.rcu(|sinks| {

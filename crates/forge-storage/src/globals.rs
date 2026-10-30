@@ -26,6 +26,10 @@ pub trait GlobalsRepo: Send + Sync {
     async fn set(&self, name: &str, value: Variant, persisted: bool) -> Result<(), StorageError>;
     async fn delete(&self, name: &str) -> Result<bool, StorageError>;
 
+    async fn peek(&self, name: &str) -> Result<Option<Variant>, StorageError> {
+        self.get(name).await
+    }
+
     async fn persisted(&self, name: &str) -> Result<Option<bool>, StorageError> {
         Ok(self
             .list()

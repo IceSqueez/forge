@@ -7,13 +7,15 @@ use forge_registry::{
 };
 use forge_script::{BoundExpression, EngineConfig, MathEvaluator};
 use forge_types::{
-    ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetry, Variant, VariantKind,
+    ArgStack, MessageRef, SubActionConfig, SubActionOutcome, SubActionTelemetry, Variant,
+    VariantKind,
 };
 
 const INTO_VAR_KEY: &str = "into_var";
 const RESULT_VARIABLE: &str = "result";
 const EXPRESSION_OP_LIMIT: u64 = 50_000;
 const EXPRESSION_WALL_TIME_MS: u64 = 100;
+const I64_RANGE: std::ops::Range<f64> = -(i64::MAX as f64)..(i64::MAX as f64);
 
 #[derive(Clone, Copy)]
 enum ResultType {
@@ -31,11 +33,12 @@ impl ResultType {
         }
     }
 
-    fn coerce(self, value: Variant) -> Variant {
+    fn coerce(self, value: Variant) -> Result<Variant, MessageRef> {
         match (self, value) {
-            (Self::Int, Variant::Float(f)) => Variant::Int(f as i64),
-            (Self::Float, Variant::Int(n)) => Variant::Float(n as f64),
-            (_, other) => other,
+            (Self::Int, Variant::Float(f)) if I64_RANGE.contains(&f) => Ok(Variant::Int(f as i64)),
+            (Self::Int, Variant::Float(f)) => Err(core_messages::output_not_convertible(f)),
+            (Self::Float, Variant::Int(n)) => Ok(Variant::Float(n as f64)),
+            (_, other) => Ok(other),
         }
     }
 }
@@ -175,12 +178,9 @@ impl SubActionRunner for CoreMathEvaluateRunner {
         .await
         .unwrap_or_else(|e| Err(core_messages::task_failed(e)));
 
-        let (outcome, updated_stack) = match evaluated {
+        let (outcome, updated_stack) = match evaluated.and_then(|v| result_type.coerce(v)) {
             Ok(variant) => {
-                let new_stack = ctx
-                    .arg_stack
-                    .clone()
-                    .set(into_var, result_type.coerce(variant));
+                let new_stack = ctx.arg_stack.clone().set(into_var, variant);
                 (SubActionOutcome::Success, Some(new_stack))
             }
             Err(reason) => (SubActionOutcome::Failed(reason.into()), None),
@@ -252,6 +252,54 @@ mod tests {
     async fn evaluate_failed_expression_yields_failed_and_no_stack() {
         let (outcome, out) = run(&cfg("\"not a number\"", "x", "auto")).await;
         assert!(matches!(outcome, SubActionOutcome::Failed(_)));
+        assert!(out.is_none());
+    }
+
+    const TWO_TO_THE_63: f64 = 9_223_372_036_854_775_808.0;
+    const NEXT_FLOAT_BELOW_TWO_TO_THE_63: f64 = 9_223_372_036_854_774_784.0;
+    const NEXT_FLOAT_BELOW_MINUS_TWO_TO_THE_63: f64 = -9_223_372_036_854_777_856.0;
+
+    #[test]
+    fn int_coercion_keeps_every_float_that_fits_i64() {
+        for (float, expected) in [
+            (-TWO_TO_THE_63, i64::MIN),
+            (NEXT_FLOAT_BELOW_TWO_TO_THE_63, 9_223_372_036_854_774_784),
+            (-0.5, 0),
+        ] {
+            assert_eq!(
+                ResultType::Int.coerce(Variant::Float(float)).unwrap(),
+                Variant::Int(expected),
+                "{float}"
+            );
+        }
+    }
+
+    #[test]
+    fn int_coercion_refuses_a_float_that_does_not_fit_i64() {
+        for float in [
+            TWO_TO_THE_63,
+            NEXT_FLOAT_BELOW_MINUS_TWO_TO_THE_63,
+            f64::NAN,
+            f64::INFINITY,
+            f64::NEG_INFINITY,
+        ] {
+            let refusal = ResultType::Int.coerce(Variant::Float(float)).unwrap_err();
+            assert_eq!(
+                refusal.code(),
+                &core_messages::OUTPUT_NOT_CONVERTIBLE,
+                "{float}"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn evaluate_result_type_int_fails_the_step_when_the_value_does_not_fit() {
+        let (outcome, out) = run(&cfg("1e300", "x", "int")).await;
+
+        assert!(
+            matches!(outcome, SubActionOutcome::Failed(_)),
+            "{outcome:?}"
+        );
         assert!(out.is_none());
     }
 }

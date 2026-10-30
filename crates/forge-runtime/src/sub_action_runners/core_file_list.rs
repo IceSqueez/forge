@@ -1,3 +1,4 @@
+use std::io::ErrorKind;
 use std::path::Path;
 
 use crate::core_messages;
@@ -7,8 +8,8 @@ use forge_registry::{
     SubActionIo, SubActionRunner, TextEditor, TextField, ToggleField, TypedField, VariableField,
 };
 use forge_types::{
-    ArgStack, MessageRef, SubActionConfig, SubActionOutcome, SubActionTelemetry, Variant,
-    VariantKind,
+    ArgStack, MessageRef, SubActionConfig, SubActionOutcome, SubActionTelemetry,
+    VARIANT_MAX_COLLECTION_LEN, Variant, VariantKind,
 };
 
 const INTO_VAR_KEY: &str = "into_var";
@@ -130,8 +131,12 @@ impl SubActionRunner for CoreFileListRunner {
         {
             Err(reason) => (SubActionOutcome::Failed(reason.into()), None),
             Ok(abs_path) => match tokio::fs::metadata(&abs_path).await {
-                Err(_) => (
+                Err(error) if error.kind() == ErrorKind::NotFound => (
                     SubActionOutcome::Failed(core_messages::directory_not_found().into()),
+                    None,
+                ),
+                Err(error) => (
+                    SubActionOutcome::Failed(core_messages::file_io_failed(error).into()),
                     None,
                 ),
                 Ok(meta) if !meta.is_dir() => (
@@ -192,8 +197,14 @@ async fn collect_entries(root: &Path, request: &ListRequest) -> Result<Vec<Strin
             } else if super::file_sandbox::glob_matches(&request.pattern, &name) {
                 result.push(rel);
             }
+            if result.len() > VARIANT_MAX_COLLECTION_LEN {
+                return Err(core_messages::directory_too_large(
+                    VARIANT_MAX_COLLECTION_LEN,
+                ));
+            }
         }
     }
 
+    result.sort_unstable();
     Ok(result)
 }

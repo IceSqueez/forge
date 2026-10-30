@@ -21,6 +21,9 @@ pub const PLACEMENT_DUE_AT_FIELD: &str = "due_at";
 pub const SCHEDULING_UNAVAILABLE_REASON: &str =
     "scheduled runs are not available where this script runs";
 
+const NEGATIVE_DELAY_REASON: &str = "the delay in seconds cannot be negative";
+const NEGATIVE_LATE_WINDOW_REASON: &str = "skip_if_late_minutes cannot be negative";
+
 const OPTIONS_DOC: &str = "Options: key, inherit_args, skip_if_late_minutes.";
 
 type Scheduler = Option<Arc<dyn ActionScheduler>>;
@@ -199,6 +202,9 @@ fn schedule_request(
     due: ScriptScheduleDue,
     options: Map,
 ) -> Scripted<ScriptScheduleRequest> {
+    if matches!(due, ScriptScheduleDue::AfterSeconds(seconds) if seconds < 0) {
+        return Err(NEGATIVE_DELAY_REASON.into());
+    }
     let mut request = ScriptScheduleRequest {
         action_id_or_name: action.to_owned(),
         due,
@@ -213,7 +219,11 @@ fn schedule_request(
                 request.inherit_args = typed_option(&name, value, "a bool")?
             }
             SCHEDULE_SKIP_IF_LATE_MINUTES_OPTION => {
-                request.skip_if_late_minutes = Some(typed_option(&name, value, "an int")?)
+                let minutes: INT = typed_option(&name, value, "an int")?;
+                if minutes < 0 {
+                    return Err(NEGATIVE_LATE_WINDOW_REASON.into());
+                }
+                request.skip_if_late_minutes = Some(minutes);
             }
             other => return Err(format!("unknown schedule option '{other}'").into()),
         }
@@ -411,11 +421,11 @@ mod tests {
                 },
             ),
             (
-                r#"#{key: "k", inherit_args: false, skip_if_late_minutes: -1}"#,
+                r#"#{key: "k", inherit_args: false, skip_if_late_minutes: 0}"#,
                 ScriptScheduleRequest {
                     key: Some("k".to_owned()),
                     inherit_args: false,
-                    skip_if_late_minutes: Some(-1),
+                    skip_if_late_minutes: Some(0),
                     ..base.clone()
                 },
             ),
@@ -625,6 +635,28 @@ mod tests {
                 failure.contains(SCHEDULING_UNAVAILABLE_REASON),
                 "{script}: {failure}"
             );
+        }
+    }
+
+    #[tokio::test]
+    async fn a_negative_delay_or_late_window_is_refused_before_reaching_the_scheduler() {
+        for (script, expected) in [
+            (
+                r#"forge::schedule::after("Greet", -1)"#,
+                NEGATIVE_DELAY_REASON,
+            ),
+            (
+                r#"forge::schedule::after("Greet", 90, #{skip_if_late_minutes: -1})"#,
+                NEGATIVE_LATE_WINDOW_REASON,
+            ),
+        ] {
+            let scheduler = RecordingScheduler::placing();
+
+            let reason =
+                runtime_reason(eval(Some(Arc::clone(&scheduler)), script.to_owned()).await);
+
+            assert!(reason.contains(expected), "{script}: {reason}");
+            assert!(scheduler.requests().is_empty(), "{script}");
         }
     }
 }

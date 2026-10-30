@@ -26,6 +26,14 @@ pub struct DonationIngest {
     catch_up: Option<Arc<CatchUpHold>>,
 }
 
+impl Drop for DonationIngest {
+    fn drop(&mut self) {
+        if let Some(waker) = self.catch_up_waker() {
+            waker.wake();
+        }
+    }
+}
+
 impl DonationIngest {
     pub fn new(
         ledger: Arc<dyn DonationRepo>,
@@ -41,11 +49,9 @@ impl DonationIngest {
         }
     }
 
-    pub fn holding_catch_up(self) -> Self {
-        Self {
-            catch_up: Some(Arc::default()),
-            ..self
-        }
+    pub fn holding_catch_up(mut self) -> Self {
+        self.catch_up = Some(Arc::default());
+        self
     }
 
     pub fn catch_up_waker(&self) -> Option<CatchUpWaker> {
@@ -56,9 +62,9 @@ impl DonationIngest {
         let Some(hold) = self.catch_up.clone() else {
             return;
         };
-        let ingest = Arc::clone(self);
+        let ingest = Arc::downgrade(self);
         tokio::spawn(async move {
-            loop {
+            while let Some(ingest) = ingest.upgrade() {
                 if !hold.is_empty() && audience.is_listening().await {
                     for donation in hold.take_in_order() {
                         ingest
@@ -66,6 +72,7 @@ impl DonationIngest {
                             .await;
                     }
                 }
+                drop(ingest);
                 hold.woken().await;
             }
         });
@@ -99,11 +106,19 @@ impl DonationIngest {
                 true
             }
         };
+        let mut failing = false;
         while let Some(item) = stream.next().await {
             match item {
-                Ok(donation) => self.ingest(donation, &mut baseline).await,
-                Err(error) => {
+                Ok(donation) => {
+                    failing = false;
+                    self.ingest(donation, &mut baseline).await;
+                }
+                Err(error) if failing => {
                     debug!(provider = %provider, error = %error, "donation provider attempt failed");
+                }
+                Err(error) => {
+                    failing = true;
+                    warn!(provider = %provider, error = %error, "donation provider attempt failed");
                 }
             }
         }
@@ -723,6 +738,41 @@ mod tests {
             ingest,
             waker,
         }
+    }
+
+    struct DeafAudience;
+
+    #[async_trait]
+    impl DonationAudience for DeafAudience {
+        async fn is_listening(&self) -> bool {
+            false
+        }
+    }
+
+    #[tokio::test]
+    async fn dropping_the_ingest_ends_the_catch_up_release_task() {
+        let audience = Arc::new(DeafAudience);
+        let task_holds = Arc::downgrade(&audience);
+        let ingest = Arc::new(
+            DonationIngest::new(
+                Arc::new(Ledger::default()) as Arc<dyn DonationRepo>,
+                Arc::new(Recorder::default()) as Arc<dyn EventPublisher>,
+                Shared::new(PLACEHOLDER.to_owned()),
+            )
+            .holding_catch_up(),
+        );
+        ingest.spawn_catch_up_release(audience);
+        tokio::task::yield_now().await;
+
+        drop(ingest);
+
+        tokio::time::timeout(RELEASE_BOUND, async {
+            while task_holds.strong_count() > 0 {
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .expect("the release task outlived its ingest");
     }
 
     async fn until_marked(ledger: &Ledger, ids: &[&str]) {

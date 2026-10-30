@@ -384,6 +384,19 @@ impl TriggerInstanceRepo for SqliteTriggerInstanceRepo {
         Ok(())
     }
 
+    async fn toggle_enabled(&self, id: TriggerInstanceId) -> Result<Option<bool>, StorageError> {
+        let row: Option<(i64,)> = sqlx::query_as(
+            "UPDATE trigger_instances SET enabled = CASE enabled WHEN 0 THEN 1 ELSE 0 END \
+             WHERE id = ? AND archived_at IS NULL RETURNING enabled",
+        )
+        .bind(id.to_string())
+        .fetch_optional(self.db.writer())
+        .await
+        .map_err(SqliteStorageError::Sqlx)?;
+
+        Ok(row.map(|(enabled,)| enabled != 0))
+    }
+
     async fn archive(&self, id: TriggerInstanceId) -> Result<bool, StorageError> {
         let id_str = id.to_string();
         let now_ms = OffsetDateTime::now_utc().unix_timestamp() * 1000;

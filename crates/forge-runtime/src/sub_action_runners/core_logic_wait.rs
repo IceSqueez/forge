@@ -1,15 +1,12 @@
-use std::time::Duration;
-
 use async_trait::async_trait;
 use forge_registry::{
-    CancelSignal, ConfigSpec, DurationBounds, DurationField, RunContext, StepTimer,
-    SubActionCategory, SubActionRunner, TypedField,
+    ConfigSpec, DurationBounds, DurationField, RunContext, StepTimer, SubActionCategory,
+    SubActionRunner, TypedField,
 };
 use forge_types::{ArgStack, SubActionConfig, SubActionTelemetry};
 
 const MAX_DELAY_MS: i64 = 60_000;
 const DEFAULT_DELAY_MS: i64 = 1_000;
-const CANCEL_POLL_MS: u64 = 50;
 
 pub const WAIT_KIND_ID: &str = "core.logic.wait";
 pub const WAIT_MS_KEY: &str = "ms";
@@ -68,20 +65,10 @@ impl SubActionRunner for CoreLogicWaitRunner {
 
         tokio::select! {
             _ = tokio::time::sleep(delay) => {}
-            _ = wait_for_cancel(&ctx.cancel) => {}
+            _ = ctx.cancel.cancelled() => {}
         }
 
         (timer.success(), None)
-    }
-}
-
-async fn wait_for_cancel(cancel: &CancelSignal) {
-    let mut poll = tokio::time::interval(Duration::from_millis(CANCEL_POLL_MS));
-    loop {
-        poll.tick().await;
-        if cancel.is_cancelled() {
-            return;
-        }
     }
 }
 
@@ -89,8 +76,10 @@ async fn wait_for_cancel(cancel: &CancelSignal) {
 mod tests {
     use super::*;
     use forge_events::{Event, EventPublisher};
+    use forge_registry::CancelSignal;
     use forge_types::Variant;
     use forge_types::{EventId, SubActionOutcome};
+    use std::time::Duration;
 
     const TIMER_GRANULARITY: Duration = Duration::from_millis(2);
 
@@ -140,7 +129,7 @@ mod tests {
     }
 
     #[tokio::test(start_paused = true)]
-    async fn a_cancelled_run_leaves_a_long_wait_within_one_cancel_poll() {
+    async fn a_cancelled_run_leaves_a_long_wait_at_the_moment_of_the_cancel() {
         let mut cfg = SubActionConfig::new();
         cfg.insert(WAIT_MS_KEY.to_owned(), Variant::Int(MAX_DELAY_MS));
         let stack = ArgStack::new();
@@ -158,9 +147,28 @@ mod tests {
         let held = before.elapsed();
 
         assert!(
-            held >= cancel_after
-                && held <= cancel_after + Duration::from_millis(CANCEL_POLL_MS) + TIMER_GRANULARITY,
+            held >= cancel_after && held < cancel_after + TIMER_GRANULARITY,
             "a wait cancelled at {cancel_after:?} held {held:?}",
+        );
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_run_cancelled_before_the_wait_does_not_hold_at_all() {
+        let mut cfg = SubActionConfig::new();
+        cfg.insert(WAIT_MS_KEY.to_owned(), Variant::Int(MAX_DELAY_MS));
+        let stack = ArgStack::new();
+        let mut ctx = make_ctx(&stack);
+        let cancel = CancelSignal::new();
+        cancel.cancel();
+        ctx.cancel = cancel;
+
+        let before = tokio::time::Instant::now();
+        CoreLogicWaitRunner.execute(&cfg, &ctx).await;
+
+        assert!(
+            before.elapsed() < TIMER_GRANULARITY,
+            "a run cancelled up front held {:?}",
+            before.elapsed(),
         );
     }
 }

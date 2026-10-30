@@ -19,6 +19,12 @@ msg-core-file_path_parent = ".." is not allowed. The path must stay inside the f
 msg-core-file_path_escapes = The path goes through a link that is broken or leads outside the files folder
 msg-core-file_not_found = The file was not found in the files folder
 msg-core-directory_not_found = The folder was not found in the files folder
+msg-core-directory_too_large = The folder holds more than { $limit ->
+    [one] { $limit } entry
+   *[other] { $limit } entries
+}
+msg-core-nested_steps_unavailable = Nested steps cannot run in a quick action
+msg-core-action_disabled = The action is disabled
 msg-core-path_not_directory = The path is not a folder
 msg-core-path_not_file = The path is not a file
 msg-core-file_too_large = The file is larger than { $limit ->

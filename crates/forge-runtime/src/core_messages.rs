@@ -68,6 +68,12 @@ pub const FILE_PATH_PARENT: MessageCode =
 pub const FILE_PATH_ESCAPES: MessageCode =
     MessageCode::from_static(CORE_NAMESPACE, "file_path_escapes");
 pub const FILE_NOT_FOUND: MessageCode = MessageCode::from_static(CORE_NAMESPACE, "file_not_found");
+pub const DIRECTORY_TOO_LARGE: MessageCode =
+    MessageCode::from_static(CORE_NAMESPACE, "directory_too_large");
+pub const ACTION_DISABLED: MessageCode =
+    MessageCode::from_static(CORE_NAMESPACE, "action_disabled");
+pub const NESTED_STEPS_UNAVAILABLE: MessageCode =
+    MessageCode::from_static(CORE_NAMESPACE, "nested_steps_unavailable");
 pub const DIRECTORY_NOT_FOUND: MessageCode =
     MessageCode::from_static(CORE_NAMESPACE, "directory_not_found");
 pub const PATH_NOT_DIRECTORY: MessageCode =
@@ -202,6 +208,9 @@ pub const CORE_MESSAGES: MessageCatalog = MessageCatalog {
         HTTP_FAILED,
         CONDITION_FAILED,
         FIELD_REQUIRED,
+        DIRECTORY_TOO_LARGE,
+        ACTION_DISABLED,
+        NESTED_STEPS_UNAVAILABLE,
         FILE_PATH_EMPTY,
         FILE_PATH_ABSOLUTE,
         FILE_PATH_PARENT,
@@ -448,6 +457,18 @@ pub(crate) fn file_too_large(limit: u64) -> MessageRef {
     MessageRef::new(FILE_TOO_LARGE).with_arg(LIMIT_ARG, limit)
 }
 
+pub(crate) fn directory_too_large(limit: usize) -> MessageRef {
+    MessageRef::new(DIRECTORY_TOO_LARGE).with_arg(LIMIT_ARG, limit)
+}
+
+pub(crate) fn nested_steps_unavailable() -> MessageRef {
+    MessageRef::new(NESTED_STEPS_UNAVAILABLE)
+}
+
+pub(crate) fn action_disabled() -> MessageRef {
+    MessageRef::new(ACTION_DISABLED)
+}
+
 pub(crate) fn file_io_failed(cause: impl Display) -> MessageRef {
     with_cause(FILE_IO_FAILED, cause)
 }
@@ -671,6 +692,9 @@ mod tests {
             path_not_directory(),
             path_not_file(),
             file_too_large(1),
+            directory_too_large(1),
+            nested_steps_unavailable(),
+            action_disabled(),
             file_io_failed("c"),
             file_not_json("c"),
             file_not_base64("c"),

@@ -19,6 +19,13 @@ msg-core-file_path_parent = ".." заборонено. Шлях має зали�
 msg-core-file_path_escapes = Шлях проходить через посилання, яке зламане або веде за межі теки файлів
 msg-core-file_not_found = Файл не знайдено в теці файлів
 msg-core-directory_not_found = Теку не знайдено в теці файлів
+msg-core-directory_too_large = Тека містить більше ніж { $limit } { $limit ->
+    [one] запис
+    [few] записи
+   *[other] записів
+}
+msg-core-nested_steps_unavailable = Вкладені кроки не можуть виконуватися у швидкій дії
+msg-core-action_disabled = Дію вимкнено
 msg-core-path_not_directory = Шлях не веде до теки
 msg-core-path_not_file = Шлях не веде до файлу
 msg-core-file_too_large = Файл більший за { $limit } { $limit ->

@@ -16,7 +16,10 @@ mod trigger;
 mod typed;
 
 pub use bus::EventsError;
-pub use channel::{Delivery, EventChannel, EventObserver, EventSubscription, LagRecorder};
+pub use channel::{
+    Delivery, EventChannel, EventObserver, EventSubscription, LagRecorder,
+    PLATFORM_EVENT_CHANNEL_CAPACITY,
+};
 pub use chat_send::{
     ActingSender, ChatSendFailed, ChatSendRequest, ChatSent, SENT_AS_FIELD, SenderRole, WhisperSent,
 };
@@ -43,11 +46,13 @@ pub use timer::TimerTick;
 pub use trigger::CommandMatched;
 pub use typed::TypedEvent;
 
+use std::fmt;
+
 use forge_types::EventId;
 use serde::{Deserialize, Serialize};
 use time::OffsetDateTime;
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct Event {
     pub id: EventId,
     pub source: EventSource,
@@ -60,6 +65,20 @@ pub struct Event {
     pub replay: bool,
     #[serde(default)]
     pub causation_depth: u16,
+}
+
+impl fmt::Debug for Event {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("Event")
+            .field("id", &self.id)
+            .field("source", &self.source)
+            .field("kind", &self.kind)
+            .field("timestamp", &self.timestamp)
+            .field("caused_by", &self.caused_by)
+            .field("replay", &self.replay)
+            .field("causation_depth", &self.causation_depth)
+            .finish_non_exhaustive()
+    }
 }
 
 impl Event {
@@ -92,6 +111,20 @@ impl Event {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn debug_of_an_event_never_prints_its_payload() {
+        let event = Event::new(
+            EventSource::Twitch,
+            "chat.message",
+            serde_json::json!({ "message": "viewer-private-text" }),
+        );
+
+        let printed = format!("{event:?}");
+
+        assert!(printed.contains("chat.message"), "{printed}");
+        assert!(!printed.contains("viewer-private-text"), "{printed}");
+    }
 
     #[test]
     fn event_has_unique_id_per_construction() {

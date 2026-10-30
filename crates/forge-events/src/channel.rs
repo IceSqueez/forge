@@ -4,6 +4,8 @@ use tokio::sync::broadcast;
 
 use crate::{Event, EventPublisher, EventsError};
 
+pub const PLATFORM_EVENT_CHANNEL_CAPACITY: usize = 4096;
+
 pub enum Delivery {
     Event(Arc<Event>),
     Skipped(u64),

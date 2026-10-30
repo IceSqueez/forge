@@ -1,5 +1,6 @@
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 use std::collections::HashMap;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
@@ -10,12 +11,15 @@ use forge_registry::{
     FormField, RegistryError, RunContext, StepTimer, SubActionCategory, SubActionRegistry,
     SubActionRunner,
 };
+use forge_runtime::scheduled_runs::{
+    ACTION_DISABLED_REASON, ACTION_NOT_FOUND_REASON, ACTIONS_UNAVAILABLE_REASON,
+};
 use forge_runtime::sub_action_runners::{CoreLogicWaitRunner, WAIT_KIND_ID, WAIT_MS_KEY};
 use forge_runtime::{
-    ActionCancelRegistry, ActionEngineHandle, Catalog, DispatchError, EventBus,
-    MAX_PENDING_PER_QUEUE, NullEventLogRepo, PendingQuickAction, QUEUE_DRAINING_REASON,
-    QUEUE_PAUSED_REASON, QueueAdmission, QueueMode, QueueRuntimeState, QueueScheduler,
-    QueueSchedulerHandle, SchedulerRequest, spawn_action_engine,
+    ActionCancelRegistry, ActionEngineHandle, Catalog, DispatchError, ENGINE_STOPPED_REASON,
+    EventBus, ExecutionRequest, MAX_PENDING_PER_QUEUE, NullEventLogRepo, PendingQuickAction,
+    QUEUE_DRAINING_REASON, QUEUE_PAUSED_REASON, QueueAdmission, QueueMode, QueueRuntimeState,
+    QueueScheduler, QueueSchedulerHandle, SchedulerRequest, spawn_action_engine,
 };
 use forge_storage::trigger_instance::MockTriggerInstanceRepo;
 use forge_storage::{
@@ -23,19 +27,21 @@ use forge_storage::{
     StorageError,
 };
 use forge_types::{
-    Action, ActionId, ArgStack, EventId, ExecutionContext, ExecutionMetadata, ExecutionMode,
-    ExecutionOutcome, Queue, QueueId, SubActionConfig, SubActionOutcome, SubActionStep,
-    SubActionTelemetry, Variant,
+    Action, ActionId, ArgStack, DEFAULT_QUEUE_ID, EventId, ExecutionContext, ExecutionMetadata,
+    ExecutionMode, ExecutionOutcome, Queue, QueueId, SubActionConfig, SubActionOutcome,
+    SubActionStep, SubActionTelemetry, Variant,
 };
 use time::OffsetDateTime;
-use tokio::sync::{mpsc, watch};
+use tokio::sync::{Notify, mpsc, watch};
 
 const SLOW_KIND_ID: &str = "test.slow";
 const INSTANT_KIND_ID: &str = "test.instant";
 const PANIC_KIND_ID: &str = "test.panic";
+const UNTIL_CANCELLED_KIND_ID: &str = "test.until_cancelled";
 const FAILING_KIND_ID: &str = "test.fail";
 const UNREGISTERED_KIND_ID: &str = "test.unregistered";
 const FAILURE_REASON: &str = "scene not found";
+const CANCELLED_REASON: &str = "saw the cancel";
 const LONG_WAIT_MS: i64 = 60_000;
 const SETTLE_ROUNDS: usize = 200;
 const QUIET_STEP: Duration = Duration::from_secs(5);
@@ -45,14 +51,33 @@ const SAVE_DEADLINE: Duration = Duration::from_secs(2);
 #[derive(Default)]
 struct MemoryActionRepo {
     actions: Mutex<HashMap<ActionId, Action>>,
+    unreadable: ActionsUnreadable,
+}
+
+#[derive(Clone, Default)]
+struct ActionsUnreadable {
+    list: Arc<AtomicBool>,
+    get: Arc<AtomicBool>,
+}
+
+fn storage_gone() -> StorageError {
+    StorageError::Connection {
+        reason: "disk gone".to_owned(),
+    }
 }
 
 #[async_trait]
 impl ActionRepo for MemoryActionRepo {
     async fn list(&self) -> Result<Vec<Action>, StorageError> {
+        if self.unreadable.list.load(Ordering::SeqCst) {
+            return Err(storage_gone());
+        }
         Ok(self.actions.lock().unwrap().values().cloned().collect())
     }
     async fn get(&self, id: ActionId) -> Result<Option<Action>, StorageError> {
+        if self.unreadable.get.load(Ordering::SeqCst) {
+            return Err(storage_gone());
+        }
         Ok(self.actions.lock().unwrap().get(&id).cloned())
     }
     async fn save(&self, action: &Action) -> Result<(), StorageError> {
@@ -127,6 +152,7 @@ impl HistoryRepo for CapturingHistoryRepo {
 
 enum Behavior {
     Gate(watch::Receiver<bool>),
+    UntilCancelled(Arc<Notify>),
     Instant,
     Panic,
     Fail,
@@ -181,6 +207,14 @@ impl SubActionRunner for ScriptedRunner {
                     }
                 }
             }
+            Behavior::UntilCancelled(running) => {
+                running.notify_one();
+                ctx.cancel.cancelled().await;
+                return (
+                    timer.failed(forge_types::UserText::unlocalized(CANCELLED_REASON)),
+                    None,
+                );
+            }
             Behavior::Instant => {}
             Behavior::Panic => panic!("scripted runner panic"),
             Behavior::Fail => {
@@ -201,6 +235,8 @@ struct Rig {
     slow_gate: watch::Sender<bool>,
     save_gate: watch::Sender<bool>,
     saved: mpsc::UnboundedReceiver<ExecutionContext>,
+    unreadable: ActionsUnreadable,
+    until_cancelled_running: Arc<Notify>,
 }
 
 impl Rig {
@@ -269,16 +305,22 @@ fn long_wait_then_instant(queue_id: QueueId) -> Action {
 
 async fn rig(queues: Vec<Queue>, actions: &[&Action]) -> Rig {
     let repo = MemoryActionRepo::default();
+    let unreadable = repo.unreadable.clone();
     for a in actions {
         repo.save(a).await.unwrap();
     }
 
+    let until_cancelled_running = Arc::new(Notify::new());
     let (slow_gate, slow_open) = watch::channel(false);
     let mut registry = SubActionRegistry::new();
     for runner in [
         ScriptedRunner {
             id: SLOW_KIND_ID,
             behavior: Behavior::Gate(slow_open),
+        },
+        ScriptedRunner {
+            id: UNTIL_CANCELLED_KIND_ID,
+            behavior: Behavior::UntilCancelled(Arc::clone(&until_cancelled_running)),
         },
         ScriptedRunner {
             id: INSTANT_KIND_ID,
@@ -328,6 +370,8 @@ async fn rig(queues: Vec<Queue>, actions: &[&Action]) -> Rig {
         slow_gate,
         save_gate,
         saved,
+        unreadable,
+        until_cancelled_running,
     }
 }
 
@@ -714,6 +758,24 @@ async fn a_quick_action_still_in_the_intake_at_shutdown_reports_no_outcome() {
 }
 
 #[tokio::test(start_paused = true)]
+async fn shutdown_cancels_a_running_quick_action() {
+    let r = rig(Vec::new(), &[]).await;
+    let pending = quick(&r.engine, UNTIL_CANCELLED_KIND_ID).await;
+    r.until_cancelled_running.notified().await;
+
+    r.engine.clone().shutdown();
+
+    let outcome = tokio::time::timeout(QUIET_STEP, pending.outcome())
+        .await
+        .expect("the running quick action never saw the shutdown")
+        .expect("a step that ran reports its outcome");
+    assert!(
+        matches!(&outcome, SubActionOutcome::Failed(reason) if reason.code_or_text() == CANCELLED_REASON),
+        "{outcome:?}"
+    );
+}
+
+#[tokio::test(start_paused = true)]
 async fn a_quick_action_whose_outcome_nobody_awaits_still_runs_and_is_saved() {
     let mut r = rig(Vec::new(), &[]).await;
 
@@ -751,6 +813,140 @@ async fn a_quick_action_reports_its_outcome_without_waiting_for_its_run_to_be_sa
         saved.metadata,
         ExecutionMetadata::QuickAction { .. }
     ));
+}
+
+fn reason_of(ev: &Event) -> Option<&str> {
+    ev.payload.get("reason").and_then(|v| v.as_str())
+}
+
+fn queue_of(ev: &Event) -> Option<&str> {
+    ev.payload.get("queue_id").and_then(|v| v.as_str())
+}
+
+async fn refused_run(
+    r: &mut Rig,
+    a: &Action,
+    sub: &mut EventSubscription,
+) -> (Event, ExecutionContext) {
+    r.sched.dispatch(req(a)).await.unwrap();
+    let skipped = events_until(sub, |ev| ev.kind == "action.skipped")
+        .await
+        .pop()
+        .unwrap();
+    (skipped, r.next_saved().await)
+}
+
+fn failure_code(saved: &ExecutionContext) -> String {
+    match &saved.outcome {
+        ExecutionOutcome::Failed(reason) => reason.code_or_text(),
+        other => panic!("a refused run is saved as failed, got {other:?}"),
+    }
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_run_of_a_disabled_action_is_skipped_and_saved_as_failed_on_its_own_queue() {
+    let q = QueueId::new();
+    let disabled = Action {
+        enabled: false,
+        ..single(q, INSTANT_KIND_ID)
+    };
+    let mut r = rig(vec![queue(q, 1)], &[&disabled]).await;
+    let mut sub = r.bus.subscribe();
+
+    let (skipped, saved) = refused_run(&mut r, &disabled, &mut sub).await;
+
+    assert_eq!(reason_of(&skipped), Some(ACTION_DISABLED_REASON));
+    assert_eq!(queue_of(&skipped), Some(q.to_string().as_str()));
+    assert_eq!(failure_code(&saved), "core.action_disabled");
+    assert!(saved.telemetry.is_empty(), "no step of a refused run runs");
+    r.sched.shutdown();
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_run_of_a_deleted_action_is_skipped_and_saved_as_failed() {
+    let q = QueueId::new();
+    let deleted = single(q, INSTANT_KIND_ID);
+    let mut r = rig(vec![queue(q, 1)], &[]).await;
+    let mut sub = r.bus.subscribe();
+
+    let (skipped, saved) = refused_run(&mut r, &deleted, &mut sub).await;
+
+    assert_eq!(reason_of(&skipped), Some(ACTION_NOT_FOUND_REASON));
+    assert_eq!(
+        queue_of(&skipped),
+        Some(DEFAULT_QUEUE_ID.to_string().as_str())
+    );
+    assert_eq!(failure_code(&saved), "core.unknown_action");
+    r.sched.shutdown();
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_run_is_skipped_and_saved_as_failed_when_actions_cannot_be_read() {
+    let q = QueueId::new();
+    let wanted = single(q, INSTANT_KIND_ID);
+    let mut r = rig(vec![queue(q, 1)], &[&wanted]).await;
+    r.unreadable.list.store(true, Ordering::SeqCst);
+    let mut sub = r.bus.subscribe();
+
+    let (skipped, saved) = refused_run(&mut r, &wanted, &mut sub).await;
+
+    assert_eq!(reason_of(&skipped), Some(ACTIONS_UNAVAILABLE_REASON));
+    assert_eq!(failure_code(&saved), "core.storage_failed");
+    r.sched.shutdown();
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_lookup_failure_for_an_action_outside_the_catalog_is_saved_as_a_storage_failure() {
+    let q = QueueId::new();
+    let disabled = Action {
+        enabled: false,
+        ..single(q, INSTANT_KIND_ID)
+    };
+    let mut r = rig(vec![queue(q, 1)], &[&disabled]).await;
+    r.unreadable.get.store(true, Ordering::SeqCst);
+    let mut sub = r.bus.subscribe();
+
+    let (skipped, saved) = refused_run(&mut r, &disabled, &mut sub).await;
+
+    assert_eq!(reason_of(&skipped), Some(ACTIONS_UNAVAILABLE_REASON));
+    assert_eq!(failure_code(&saved), "core.storage_failed");
+    r.sched.shutdown();
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_queued_run_that_cannot_reach_a_stopped_engine_is_skipped_and_frees_its_slot() {
+    let q = QueueId::new();
+    let a = single(q, INSTANT_KIND_ID);
+    let r = rig(vec![queue(q, 1)], &[&a]).await;
+    let mut sub = r.bus.subscribe();
+    r.engine.clone().shutdown();
+    while r
+        .engine
+        .dispatch(ExecutionRequest {
+            action_id: a.id,
+            trigger_event_id: EventId::new(),
+            trigger_kind: None,
+            manual_test: false,
+            initial_args: ArgStack::new(),
+        })
+        .await
+        .is_ok()
+    {
+        tokio::task::yield_now().await;
+    }
+
+    r.sched.dispatch(req(&a)).await.unwrap();
+
+    let skipped = events_until(&mut sub, |ev| ev.kind == "action.skipped")
+        .await
+        .pop()
+        .unwrap();
+    assert_eq!(reason_of(&skipped), Some(ENGINE_STOPPED_REASON));
+    settle(&r.sched, q, "the undelivered run's slot released", |s| {
+        s.in_flight == 0
+    })
+    .await;
+    r.sched.shutdown();
 }
 
 fn concurrent(action: Action) -> Action {

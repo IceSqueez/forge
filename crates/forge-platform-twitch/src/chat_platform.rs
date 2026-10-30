@@ -22,7 +22,7 @@ use crate::lifecycle::TwitchLifecycle;
 use crate::subscriptions::SubscriptionTracker;
 use crate::vocabulary::PLATFORM_ID;
 
-pub(crate) const EVENT_CHANNEL_CAPACITY: usize = 4096;
+pub(crate) const EVENT_CHANNEL_CAPACITY: usize = forge_events::PLATFORM_EVENT_CHANNEL_CAPACITY;
 
 pub struct TwitchPlatform {
     capabilities: PlatformCapabilities,

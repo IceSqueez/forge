@@ -22,7 +22,7 @@ use crate::pusher::error::KickError;
 use crate::vocabulary::event_kinds;
 
 const CHAT_FORWARD_CAPACITY: usize = 256;
-pub(crate) const EVENT_CHANNEL_CAPACITY: usize = 256;
+pub(crate) const EVENT_CHANNEL_CAPACITY: usize = forge_events::PLATFORM_EVENT_CHANNEL_CAPACITY;
 
 pub struct KickPlatform {
     capabilities: PlatformCapabilities,

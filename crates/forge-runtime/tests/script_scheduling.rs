@@ -397,7 +397,7 @@ async fn an_unreadable_due_time_is_refused_naming_the_due_date_time() {
 }
 
 #[tokio::test]
-async fn a_due_time_not_ahead_of_now_is_too_short() {
+async fn a_due_time_not_ahead_of_now_is_too_soon() {
     let harness = Harness::new().await;
     harness.action_named("Greet").await;
 
@@ -409,7 +409,7 @@ async fn a_due_time_not_ahead_of_now_is_too_short() {
             ))
             .await;
 
-        assert_eq!(result, Err(rejected(ScheduleError::DelayTooShort)), "{due}");
+        assert_eq!(result, Err(rejected(ScheduleError::DueTooSoon)), "{due}");
     }
 }
 

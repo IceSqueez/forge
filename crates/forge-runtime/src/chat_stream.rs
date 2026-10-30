@@ -5,6 +5,7 @@ use forge_types::{
     ChatModerationAction, ChatModerationPayload, ChatPayload, ChatViewer, PlatformId,
     UnifiedChatRow,
 };
+use serde::Deserialize;
 use time::OffsetDateTime;
 
 const DEDUP_WINDOW: usize = 500;
@@ -36,10 +37,20 @@ impl ChatRecordMapper {
     }
 }
 
+fn read_payload<'v, T: Deserialize<'v>>(ev: &Event, value: &'v serde_json::Value) -> Option<T> {
+    match T::deserialize(value) {
+        Ok(payload) => Some(payload),
+        Err(error) => {
+            tracing::warn!(kind = %ev.kind, %error, "chat payload could not be read; row dropped");
+            None
+        }
+    }
+}
+
 fn try_map_moderation_event(ev: &Event) -> Option<(PlatformId, ChatModerationAction)> {
     let source = ev.source.to_platform_id()?;
     let value = ev.payload.get(ChatModerationPayload::KEY)?;
-    let payload: ChatModerationPayload = serde_json::from_value(value.clone()).ok()?;
+    let payload = read_payload::<ChatModerationPayload>(ev, value)?;
     Some((source, payload.action))
 }
 
@@ -49,7 +60,7 @@ fn try_map_chat_event(
 ) -> Option<UnifiedChatRow> {
     let source = ev.source.to_platform_id()?;
     let chat_value = ev.payload.get(ChatPayload::KEY)?;
-    let payload: ChatPayload = serde_json::from_value(chat_value.clone()).ok()?;
+    let payload = read_payload::<ChatPayload>(ev, chat_value)?;
 
     let window = dedup.entry(source).or_default();
     if window.contains(&payload.platform_msg_id) {

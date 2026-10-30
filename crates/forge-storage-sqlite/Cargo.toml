@@ -18,7 +18,7 @@ forge-events = { path = "../forge-events" }
 forge-registry = { path = "../forge-registry" }
 forge-speech-types = { path = "../forge-speech-types" }
 serde = { workspace = true }
-serde_json = { workspace = true, features = ["preserve_order"] }
+serde_json = { workspace = true }
 thiserror = { workspace = true }
 async-trait = { workspace = true }
 tokio = { workspace = true }
@@ -31,6 +31,7 @@ tracing = { workspace = true }
 
 [dev-dependencies]
 forge-storage-sqlite = { path = ".", features = ["settings-test-support"] }
+serde_json = { workspace = true, features = ["preserve_order"] }
 tempfile = { workspace = true }
 sha2 = { workspace = true }
 tokio = { workspace = true, features = ["test-util"] }

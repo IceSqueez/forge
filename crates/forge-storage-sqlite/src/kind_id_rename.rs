@@ -3,7 +3,8 @@ use std::time::Instant;
 
 use forge_registry::rename_step_kinds;
 use forge_storage::{rename_favorite_ids, reserved_keys};
-use forge_types::{ExecutionContext, ExecutionMetadata, SubActionStep};
+use forge_types::SubActionStep;
+use serde_json::Value;
 use sqlx::SqliteConnection;
 use sqlx::migrate::Migration;
 
@@ -14,6 +15,9 @@ pub const KIND_ID_RENAME_VERSION: i64 = 58;
 
 const TRIGGER_STORE: &str = "trigger";
 const SUB_ACTION_STORE: &str = "sub_action";
+const TRIGGER_KIND_POINTER: &str = "/metadata/trigger_kind";
+const TELEMETRY_FIELD: &str = "telemetry";
+const STEP_KIND_FIELD: &str = "kind";
 
 #[derive(Default)]
 struct KindRenames {
@@ -157,7 +161,7 @@ async fn rename_history(
             .await
             .map_err(|e| failed(e.to_string()))?;
     for (id, stored) in rows {
-        let Ok(mut context) = serde_json::from_str::<ExecutionContext>(&stored) else {
+        let Ok(mut context) = serde_json::from_str::<Value>(&stored) else {
             counts.skipped += 1;
             continue;
         };
@@ -176,24 +180,30 @@ async fn rename_history(
     Ok(())
 }
 
-fn rename_context(context: &mut ExecutionContext, renames: &KindRenames) -> bool {
+fn rename_context(context: &mut Value, renames: &KindRenames) -> bool {
     let mut changed = false;
-    if let ExecutionMetadata::Trigger {
-        trigger_kind: Some(kind),
-        ..
-    } = &mut context.metadata
-        && let Some(current) = renames.current_trigger(kind)
-    {
-        *kind = current;
-        changed = true;
+    if let Some(slot) = context.pointer_mut(TRIGGER_KIND_POINTER) {
+        changed |= rename_kind_slot(slot, |kind| renames.current_trigger(kind));
     }
-    for step in &mut context.telemetry {
-        if let Some(current) = renames.current_sub_action(&step.kind) {
-            step.kind = current;
-            changed = true;
+    if let Some(steps) = context
+        .get_mut(TELEMETRY_FIELD)
+        .and_then(Value::as_array_mut)
+    {
+        for step in steps {
+            if let Some(slot) = step.get_mut(STEP_KIND_FIELD) {
+                changed |= rename_kind_slot(slot, |kind| renames.current_sub_action(kind));
+            }
         }
     }
     changed
+}
+
+fn rename_kind_slot(slot: &mut Value, current_of: impl Fn(&str) -> Option<String>) -> bool {
+    let Some(current) = slot.as_str().and_then(current_of) else {
+        return false;
+    };
+    *slot = Value::String(current);
+    true
 }
 
 async fn rename_favorites(

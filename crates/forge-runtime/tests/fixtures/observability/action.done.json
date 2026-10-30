@@ -5,9 +5,12 @@
       "action_name": "Golden run",
       "manual_test": false,
       "outcome": "failed",
-      "reason": "inline script failed: runtime error: Runtime error: golden boom (line 1, position 1)",
+      "reason": "core.inline_script_failed",
       "reason_text": {
-        "verbatim": "inline script failed: runtime error: Runtime error: golden boom (line 1, position 1)"
+        "message": {
+          "code": "core.inline_script_failed",
+          "detail": "runtime error: Runtime error: golden boom (line 1, position 1)"
+        }
       },
       "total_ms": 0
     },

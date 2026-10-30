@@ -213,6 +213,8 @@ impl SubActionRunner for ScriptRunInlineRunner {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::core_messages;
+    use crate::test_support::failure::{detail_of, failure_message};
     use crate::test_support::{Sandboxed, sandboxed_backend};
     use crate::{EventBus, NullEventLogRepo, ScriptRegistry};
     use forge_events::Event;
@@ -283,11 +285,10 @@ mod tests {
     async fn http_module_wired_denied_domain_returns_failed() {
         let (outcome, _, _) = run_inline(r#"forge::http::get("https://nope.invalid")"#).await;
 
-        let SubActionOutcome::Failed(msg) = outcome else {
-            panic!("expected Failed, got {outcome:?}");
-        };
+        let msg = failure_message(&outcome);
+        assert_eq!(msg.code(), &core_messages::INLINE_SCRIPT_FAILED);
         assert!(
-            msg.code_or_text().contains("domain not allowed"),
+            detail_of(msg).is_some_and(|d| d.contains("domain not allowed")),
             "expected domain-not-allowed error from wired http module, got: {msg:?}"
         );
     }
@@ -366,16 +367,18 @@ mod tests {
             ),
         ] {
             let (outcome, _, error) = run_inline(&body).await;
-            let SubActionOutcome::Failed(message) = outcome else {
-                panic!("expected Failed for {error_type}, got {outcome:?}");
-            };
+            let message = failure_message(&outcome);
             let payload = error
                 .expect("failing inline run must emit script.error")
                 .payload;
             assert_eq!(payload["error_type"].as_str(), Some(error_type));
+            assert_eq!(
+                message.code(),
+                &core_messages::INLINE_SCRIPT_FAILED,
+                "{error_type}"
+            );
             assert!(
-                message.code_or_text().starts_with("inline script failed:")
-                    && !message.code_or_text().contains(SECRET)
+                !serde_json::to_string(message).unwrap().contains(SECRET)
                     && !payload.to_string().contains(SECRET),
                 "{error_type}: {message:?} / {payload}"
             );

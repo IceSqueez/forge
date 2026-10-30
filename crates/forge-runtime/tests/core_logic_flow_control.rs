@@ -1,4 +1,6 @@
 #![allow(clippy::unwrap_used)]
+mod common;
+use common::{code_of, detail_of, message_of};
 use std::sync::Arc;
 
 use async_trait::async_trait;
@@ -287,10 +289,17 @@ async fn if_undefined_variable_fails_when_not_treating_undefined_as_false() {
     cfg.insert("treat_undefined_as_false".to_owned(), Variant::Bool(false));
     let run = run_top(&eng, vec![step("core.logic.if_then_else", cfg)]).await;
 
+    let ChainSignal::Error(reason) = &run.signal else {
+        panic!(
+            "an unresolved variable must fail the chain, got {:?}",
+            run.signal
+        );
+    };
+    let reason = message_of(reason);
+    assert_eq!(code_of(reason), "core.condition_failed");
     assert!(
-        matches!(&run.signal, ChainSignal::Error(m) if m.code_or_text().contains("if_then_else") && m.code_or_text().contains("missing")),
-        "an unresolved variable must fail the chain naming it, got {:?}",
-        run.signal,
+        detail_of(reason).is_some_and(|d| d.contains("missing")),
+        "{reason:?}"
     );
 }
 
@@ -303,10 +312,13 @@ async fn if_non_undefined_condition_errors_fail_even_when_treating_undefined_as_
             vec![step("core.logic.if_then_else", marker_branches(condition))],
         )
         .await;
-        assert!(
-            matches!(&run.signal, ChainSignal::Error(m) if m.code_or_text().contains("if_then_else")),
-            "{condition}: must fail the step, got {:?}",
-            run.signal,
+        let ChainSignal::Error(reason) = &run.signal else {
+            panic!("{condition}: must fail the step, got {:?}", run.signal);
+        };
+        assert_eq!(
+            code_of(message_of(reason)),
+            "core.condition_failed",
+            "{condition}"
         );
         assert!(run.arg_stack.get("marker").is_none(), "{condition}");
     }
@@ -376,10 +388,13 @@ async fn loop_while_condition_error_fails_the_loop_step_with_a_reason() {
     let eng = engine();
     for condition in ["1 +", "%missing% > 5"] {
         let run = run_top(&eng, vec![step("core.logic.loop", while_cfg(condition, 5))]).await;
-        assert!(
-            matches!(&run.signal, ChainSignal::Error(m) if m.code_or_text().contains("core.logic.loop")),
-            "{condition}: must fail the loop, got {:?}",
-            run.signal,
+        let ChainSignal::Error(reason) = &run.signal else {
+            panic!("{condition}: must fail the loop, got {:?}", run.signal);
+        };
+        assert_eq!(
+            code_of(message_of(reason)),
+            "core.condition_failed",
+            "{condition}"
         );
     }
 }

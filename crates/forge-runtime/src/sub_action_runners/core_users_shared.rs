@@ -174,7 +174,13 @@ mod tests {
     #[test]
     fn user_login_fails_naming_the_variable_when_it_is_not_in_scope() {
         let reason = resolve_user_login("%user_login%", &ArgStack::new()).unwrap_err();
-        assert!(reason.contains("%user_login%"), "{reason}");
+        assert_eq!(reason.code(), &crate::core_messages::USER_LOGIN_UNSET);
+        assert_eq!(
+            reason.arg("variable"),
+            Some(&forge_types::MessageArg::Verbatim(
+                forge_types::VerbatimText::new("user_login")
+            ))
+        );
     }
 
     #[test]
@@ -186,9 +192,10 @@ mod tests {
             ("%user_login%", login_stack("")),
             ("%user_login%", login_stack("  @  ")),
         ] {
+            let reason = resolve_user_login(template, &stack).unwrap_err();
             assert_eq!(
-                resolve_user_login(template, &stack),
-                Err("user login is empty".to_owned()),
+                reason.code(),
+                &crate::core_messages::USER_LOGIN_EMPTY,
                 "{template:?}"
             );
         }

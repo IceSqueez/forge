@@ -252,7 +252,13 @@ mod tests {
             vec![0xFF]
         );
         let err = encode_content("\u{0100}", Encoding::Latin1).unwrap_err();
-        assert!(err.contains("Latin-1"), "{err}");
+        assert_eq!(err.code(), &crate::core_messages::FILE_CHAR_NOT_LATIN1);
+        assert_eq!(
+            err.arg("char"),
+            Some(&forge_types::MessageArg::Verbatim(
+                forge_types::VerbatimText::new("\u{0100}")
+            ))
+        );
     }
 
     #[test]
@@ -267,6 +273,7 @@ mod tests {
     #[test]
     fn encode_content_base64_rejects_invalid_payload() {
         let err = encode_content("not base64!", Encoding::RawBase64).unwrap_err();
-        assert!(err.contains("base64 decode failed"), "{err}");
+        assert_eq!(err.code(), &crate::core_messages::FILE_NOT_BASE64);
+        assert!(err.detail().is_some());
     }
 }

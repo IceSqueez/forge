@@ -8,12 +8,22 @@ use forge_registry::{RunContext, SubActionRunner};
 use forge_runtime::sub_action_runners::{
     CoreFileDeleteRunner, CoreFileListRunner, CoreFileReadRunner, CoreFileWriteRunner,
 };
-use forge_types::{ArgStack, EventId, SubActionConfig, SubActionOutcome, Variant};
+use forge_types::{
+    ArgStack, EventId, MessageArg, SubActionConfig, SubActionOutcome, UserText, Variant,
+};
 
-const TRAVERSAL: &str = "\"..\" is not allowed";
-const ABSOLUTE: &str = "absolute paths are not allowed";
+fn code(text: &UserText) -> String {
+    text.code_or_text()
+}
+
+fn wire(text: &UserText) -> String {
+    serde_json::to_string(text).unwrap()
+}
+
+const TRAVERSAL: &str = "core.file_path_parent";
+const ABSOLUTE: &str = "core.file_path_absolute";
 #[cfg(unix)]
-const ESCAPE: &str = "leads outside the files folder";
+const ESCAPE: &str = "core.file_path_escapes";
 const PATH_REQUIRED: &str = "'path' is required";
 const READ_CAP_BYTES: usize = 1024 * 1024;
 const SENTINEL: &str = "qa-sentinel";
@@ -110,7 +120,7 @@ async fn failure_with(
     path: &str,
     stack: &ArgStack,
     extra: &[(&str, Variant)],
-) -> String {
+) -> UserText {
     let (outcome, produced) = run_with(step, path, stack, extra).await;
     let SubActionOutcome::Failed(msg) = outcome else {
         panic!("{step:?} {path:?}: expected a failure, got {outcome:?}");
@@ -119,10 +129,10 @@ async fn failure_with(
         produced.is_none(),
         "{step:?} {path:?}: a failed step must not bind variables"
     );
-    msg.code_or_text()
+    msg
 }
 
-async fn failure(step: Step, path: &str) -> String {
+async fn failure(step: Step, path: &str) -> UserText {
     failure_with(step, path, &ArgStack::new(), &[]).await
 }
 
@@ -131,7 +141,7 @@ async fn every_file_step_refuses_parent_traversal() {
     for path in ["..", "../escape.txt", "a/../b", "sub/../../x", "./.."] {
         for step in ALL_STEPS {
             let msg = failure(step, path).await;
-            assert!(msg.contains(TRAVERSAL), "{step:?} {path:?}: {msg}");
+            assert_eq!(code(&msg), TRAVERSAL, "{step:?} {path:?}");
         }
     }
     let data_dir = assets_root().parent().unwrap();
@@ -154,7 +164,7 @@ async fn every_file_step_refuses_absolute_paths_in_any_os_syntax() {
     ] {
         for step in ALL_STEPS {
             let msg = failure(step, path).await;
-            assert!(msg.contains(ABSOLUTE), "{step:?} {path:?}: {msg}");
+            assert_eq!(code(&msg), ABSOLUTE, "{step:?} {path:?}");
         }
     }
 }
@@ -164,7 +174,10 @@ async fn every_file_step_refuses_an_empty_or_whitespace_path() {
     for path in ["", " ", "\t\n"] {
         for step in ALL_STEPS {
             let msg = failure(step, path).await;
-            assert!(msg.contains(PATH_REQUIRED), "{step:?} {path:?}: {msg}");
+            assert!(
+                code(&msg).contains(PATH_REQUIRED),
+                "{step:?} {path:?}: {msg:?}"
+            );
         }
     }
 }
@@ -181,7 +194,7 @@ async fn interpolated_segments_go_through_the_same_checks() {
         let stack = ArgStack::new().set("dir".to_owned(), text(value));
         for step in ALL_STEPS {
             let msg = failure_with(step, "%dir%/x.txt", &stack, &[]).await;
-            assert!(msg.contains(expected), "{step:?} dir={value:?}: {msg}");
+            assert_eq!(code(&msg), expected, "{step:?} dir={value:?}");
         }
     }
 }
@@ -271,7 +284,7 @@ async fn symlink_to_an_outside_file_is_refused_by_every_step() {
         (Step::Write, vec![("mode", text("append"))]),
     ] {
         let msg = failure_with(step, &path, &ArgStack::new(), &extra).await;
-        assert!(msg.contains(ESCAPE), "{step:?} {extra:?}: {msg}");
+        assert_eq!(code(&msg), ESCAPE, "{step:?} {extra:?}");
     }
     assert_eq!(std::fs::read_to_string(&secret).unwrap(), "outside-secret");
 }
@@ -291,7 +304,7 @@ async fn symlink_to_an_outside_directory_is_refused_by_every_step() {
         (Step::Delete, format!("{rel}/to_dir/secret.txt")),
     ] {
         let msg = failure(step, &path).await;
-        assert!(msg.contains(ESCAPE), "{step:?} {path:?}: {msg}");
+        assert_eq!(code(&msg), ESCAPE, "{step:?} {path:?}");
     }
     assert!(outside.join("secret.txt").exists());
     assert!(!outside.join("new.txt").exists());
@@ -315,7 +328,7 @@ async fn broken_symlink_is_refused_and_writes_create_nothing_outside() {
         (Step::Write, vec![("mode", text("create_new"))]),
     ] {
         let msg = failure_with(step, &path, &ArgStack::new(), &extra).await;
-        assert!(msg.contains(ESCAPE), "{step:?} {extra:?}: {msg}");
+        assert_eq!(code(&msg), ESCAPE, "{step:?} {extra:?}");
     }
     assert!(!target.exists());
 }
@@ -359,7 +372,14 @@ async fn read_accepts_exactly_the_size_cap_and_refuses_one_byte_more() {
     ));
 
     let msg = failure(Step::Read, &format!("{rel}/over_cap.txt")).await;
-    assert!(msg.contains("byte cap"), "{msg}");
+    assert_eq!(code(&msg), "core.file_too_large");
+    let UserText::Message(refusal) = &msg else {
+        panic!("expected a coded refusal, got {msg:?}");
+    };
+    assert_eq!(
+        refusal.arg("limit"),
+        Some(&MessageArg::Int(READ_CAP_BYTES as i64))
+    );
 }
 
 #[tokio::test]
@@ -368,7 +388,7 @@ async fn read_of_a_directory_fails_as_not_a_file() {
 
     for path in [rel.clone(), ".".to_owned()] {
         let msg = failure(Step::Read, &path).await;
-        assert!(msg.contains("path is not a file"), "{path:?}: {msg}");
+        assert_eq!(code(&msg), "core.path_not_file", "{path:?}");
     }
 }
 
@@ -376,7 +396,7 @@ async fn read_of_a_directory_fails_as_not_a_file() {
 async fn read_of_a_missing_file_names_the_files_folder() {
     let msg = failure(Step::Read, "never-written.txt").await;
 
-    assert!(msg.contains("file not found in the files folder"), "{msg}");
+    assert_eq!(code(&msg), "core.file_not_found");
 }
 
 #[tokio::test]
@@ -386,7 +406,11 @@ async fn read_of_non_utf8_content_fails_as_a_read_error() {
 
     let msg = failure(Step::Read, &format!("{rel}/blob.bin")).await;
 
-    assert!(msg.starts_with("read failed"), "{msg}");
+    assert_eq!(code(&msg), "core.file_io_failed");
+    let UserText::Message(refusal) = &msg else {
+        panic!("expected a coded refusal, got {msg:?}");
+    };
+    assert!(refusal.detail().is_some());
 }
 
 #[tokio::test]
@@ -423,8 +447,9 @@ async fn failure_messages_never_contain_the_path_or_the_files_folder() {
     let root = assets_root().to_string_lossy().into_owned();
     for (step, path, extra) in rows {
         let msg = failure_with(step, &path, &ArgStack::new(), &extra).await;
-        assert!(!msg.contains(SENTINEL), "{step:?} {path:?} leaked: {msg}");
-        assert!(!msg.contains(&root), "{step:?} {path:?} leaked: {msg}");
+        let wire = wire(&msg);
+        assert!(!wire.contains(SENTINEL), "{step:?} {path:?} leaked: {wire}");
+        assert!(!wire.contains(&root), "{step:?} {path:?} leaked: {wire}");
     }
 }
 
@@ -500,14 +525,20 @@ async fn json_mode_parses_object_root_into_variant_object() {
 
 #[tokio::test]
 async fn json_mode_failures_report_typed_message_and_produce_no_binding() {
-    for (contents, needle) in [
-        ("{not valid json", "invalid JSON"),
-        ("null", "unsupported JSON value"),
+    for (contents, detail_fragment) in [
+        ("{not valid json", "key must be a string"),
+        ("null", "null is not a supported"),
     ] {
         let (outcome, value) = read_fixture(Some("JSON"), "out", "out", contents).await;
+        let SubActionOutcome::Failed(UserText::Message(refusal)) = &outcome else {
+            panic!("contents {contents:?}: expected a coded failure, got {outcome:?}");
+        };
+        assert_eq!(refusal.code().to_string(), "core.file_not_json");
         assert!(
-            matches!(&outcome, SubActionOutcome::Failed(m) if m.code_or_text().contains(needle)),
-            "contents {contents:?} expected {needle:?}, got {outcome:?}",
+            refusal
+                .detail()
+                .is_some_and(|d| d.as_str().contains(detail_fragment)),
+            "contents {contents:?}: {refusal:?}",
         );
         assert!(value.is_none());
     }

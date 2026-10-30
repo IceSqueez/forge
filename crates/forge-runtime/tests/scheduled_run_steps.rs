@@ -83,6 +83,15 @@ fn failure(outcome: &SubActionOutcome) -> Option<String> {
     }
 }
 
+fn failure_detail(outcome: &SubActionOutcome) -> Option<String> {
+    match outcome {
+        SubActionOutcome::Failed(forge_types::UserText::Message(message)) => {
+            message.detail().map(|detail| detail.as_str().to_owned())
+        }
+        _ => None,
+    }
+}
+
 struct Harness {
     dp: Arc<dyn DataProvider>,
     _media: TempDir,
@@ -480,8 +489,8 @@ async fn schedule_step_refuses_a_due_time_that_is_not_ahead_of_now() {
         pairs.push(("action_id", text(&target.to_string())));
         let (outcome, _) = harness.schedule(&ArgStack::new(), &pairs).await;
         assert_eq!(
-            failure(&outcome).as_deref(),
-            Some(too_short.as_str()),
+            (failure(&outcome).as_deref(), failure_detail(&outcome)),
+            (Some("core.schedule_failed"), Some(too_short.clone())),
             "{due}"
         );
     }
@@ -492,23 +501,29 @@ async fn schedule_step_without_a_known_action_fails_without_placing_a_run() {
     let harness = Harness::new().await;
     let unknown = ScheduleError::UnknownAction.to_string();
 
-    for (action_id, expected) in [
+    for (action_id, expected, expected_detail) in [
         (
             String::new(),
             "invalid step config: 'action_id' is required",
+            None,
         ),
         (
             "not-an-action".to_owned(),
             "invalid step config: 'action_id' is invalid: not a known entry",
+            None,
         ),
-        (ActionId::new().to_string(), unknown.as_str()),
+        (
+            ActionId::new().to_string(),
+            "core.schedule_failed",
+            Some(unknown.clone()),
+        ),
     ] {
         let (outcome, _) = harness
             .schedule(&ArgStack::new(), &[("action_id", text(&action_id))])
             .await;
         assert_eq!(
-            failure(&outcome).as_deref(),
-            Some(expected),
+            (failure(&outcome).as_deref(), failure_detail(&outcome)),
+            (Some(expected), expected_detail),
             "{action_id:?}"
         );
     }
@@ -592,7 +607,7 @@ async fn schedule_step_refuses_oversized_variables_unless_it_does_not_inherit_th
             )
             .await;
         assert_eq!(
-            failure(&outcome)
+            failure_detail(&outcome)
                 .is_some_and(|reason| reason.starts_with("the captured variables take")),
             refused,
             "inherit {inherit}: {outcome:?}"
@@ -726,7 +741,6 @@ async fn schedule_and_cancel_steps_fail_while_the_scheduler_is_not_running() {
     let cancel = CoreActionCancelScheduledRunner::new(ScheduledRunsCell::new());
     let stack = ArgStack::new();
     let ctx = RunContext::leaf(&stack, 0, EventId::new(), &NullPublisher);
-    let stopped = ScheduleError::SchedulerStopped.to_string();
 
     for (runner, pairs) in [
         (
@@ -738,7 +752,7 @@ async fn schedule_and_cancel_steps_fail_while_the_scheduler_is_not_running() {
         let (telemetry, produced) = runner.execute(&config(runner, &pairs), &ctx).await;
         assert_eq!(
             (failure(&telemetry.outcome).as_deref(), produced.is_none()),
-            (Some(stopped.as_str()), true),
+            (Some("core.scheduler_stopped"), true),
             "{}",
             runner.id()
         );

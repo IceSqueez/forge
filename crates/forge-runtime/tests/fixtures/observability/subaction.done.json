@@ -30,9 +30,12 @@
     "payload": {
       "duration_ms": 0,
       "kind": "script.run.inline",
-      "message": "inline script failed: runtime error: Runtime error: golden boom (line 1, position 1)",
+      "message": "core.inline_script_failed",
       "message_text": {
-        "verbatim": "inline script failed: runtime error: Runtime error: golden boom (line 1, position 1)"
+        "message": {
+          "code": "core.inline_script_failed",
+          "detail": "runtime error: Runtime error: golden boom (line 1, position 1)"
+        }
       },
       "outcome": "failed",
       "step_index": 3

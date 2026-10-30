@@ -1,4 +1,6 @@
 #![allow(clippy::unwrap_used)]
+mod common;
+use common::{code_of, failure_message, verbatim_arg};
 use std::collections::BTreeMap;
 use std::sync::Arc;
 use std::time::Duration;
@@ -361,9 +363,11 @@ async fn unknown_trigger_instance_id_fails() {
     let missing = TriggerInstanceId::new();
     let outcome = run_outcome(&runner, &fire_cfg(&missing.to_string(), no_outputs())).await;
 
-    assert!(
-        matches!(&outcome, SubActionOutcome::Failed(m) if m.code_or_text().contains("unknown trigger instance")),
-        "an unknown instance id must fail without dispatching, got {outcome:?}"
+    let refusal = failure_message(&outcome);
+    assert_eq!(code_of(refusal), "core.unknown_trigger_instance");
+    assert_eq!(
+        verbatim_arg(refusal, "instance"),
+        Some(missing.to_string().as_str())
     );
     h.handle.shutdown();
 }
@@ -384,9 +388,9 @@ async fn fire_with_empty_scheduler_cell_reports_scheduler_not_ready() {
     );
     let outcome = run_outcome(&runner, &fire_cfg(&instance_id.to_string(), no_outputs())).await;
 
-    assert!(
-        matches!(&outcome, SubActionOutcome::Failed(m) if m.code_or_text().contains("queue scheduler not ready")),
-        "an empty scheduler cell must fail with the not-ready message, got {outcome:?}"
+    assert_eq!(
+        code_of(failure_message(&outcome)),
+        "core.scheduler_not_ready"
     );
 }
 

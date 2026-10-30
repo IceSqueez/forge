@@ -107,6 +107,7 @@ impl SubActionRunner for CoreGlobalsDecrementRunner {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_support::failure::failure_message;
     use forge_events::Event;
     use forge_events::EventPublisher;
     use forge_storage::{GlobalEntry, StorageError};
@@ -249,9 +250,11 @@ mod tests {
     async fn decrement_by_i64_min_fails_and_leaves_the_global_untouched() {
         let globals = Arc::new(MapGlobals::with([("counter", Variant::Int(5))]));
         let outcome = run(globals.clone(), &cfg("counter", i64::MIN)).await;
-        assert!(
-            matches!(&outcome, SubActionOutcome::Failed(reason) if reason.code_or_text().contains("negated")),
-            "got {outcome:?}"
+        let reason = failure_message(&outcome);
+        assert_eq!(reason.code(), &core_messages::AMOUNT_NOT_NEGATABLE);
+        assert_eq!(
+            reason.arg("amount"),
+            Some(&forge_types::MessageArg::Int(i64::MIN))
         );
         assert_eq!(globals.snapshot("counter"), Some(Variant::Int(5)));
     }

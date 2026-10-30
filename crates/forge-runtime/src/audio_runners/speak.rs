@@ -175,6 +175,7 @@ mod tests {
 
     use super::*;
     use crate::speak_dispatcher::{SpeakDispatchError, SpeakDispatcher, SpeakingViewer};
+    use crate::test_support::failure::{failure_message, verbatim_arg};
     use forge_events::{Event, EventPublisher};
     use forge_types::Variant;
 
@@ -558,16 +559,14 @@ mod tests {
 
     #[tokio::test]
     async fn an_unusable_voice_fails_the_step_naming_it_and_speaks_nothing() {
-        for (stored, names) in [
-            ("amy", "\"amy\" is not an engine voice"),
+        for (stored, code, named_voice) in [
+            ("amy", &core_messages::VOICE_NOT_ENGINE_VOICE, "amy"),
             (
                 "piper/ghost",
-                "voice \"ghost\" of engine \"piper\" is not installed",
+                &core_messages::VOICE_NOT_INSTALLED,
+                "piper/ghost",
             ),
-            (
-                "sapi/amy",
-                "voice \"amy\" of engine \"sapi\" is not installed",
-            ),
+            ("sapi/amy", &core_messages::VOICE_NOT_INSTALLED, "sapi/amy"),
         ] {
             let speaker = Arc::new(VoicedSpeaker::with_installed("piper", "amy"));
             let runner = SpeakRunner::new(speaker.clone());
@@ -577,14 +576,13 @@ mod tests {
                 .execute(&voiced("hello", false, stored), &make_ctx(&stack))
                 .await;
 
-            match telemetry.outcome {
-                SubActionOutcome::Failed(reason) => assert!(
-                    reason.code_or_text().contains(names)
-                        && reason.code_or_text().ends_with("pick a voice again"),
-                    "{stored:?} failed with {reason:?}"
-                ),
-                other => panic!("{stored:?} must fail the step, got {other:?}"),
-            }
+            let reason = failure_message(&telemetry.outcome);
+            assert_eq!(reason.code(), code, "{stored:?}");
+            assert_eq!(
+                verbatim_arg(reason, "voice"),
+                Some(named_voice),
+                "{stored:?}"
+            );
             assert!(speaker.dispatched().is_empty(), "{stored:?} was spoken");
         }
     }

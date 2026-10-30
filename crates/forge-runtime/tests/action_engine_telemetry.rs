@@ -748,10 +748,16 @@ fn inline_script_step(body: &str) -> SubActionStep {
 }
 
 fn names_disabled_twitch(reason: &forge_types::UserText) -> bool {
-    reason.code_or_text().contains(&format!(
-        "{} (integration=twitch)",
-        forge_types::INTEGRATION_DISABLED
-    ))
+    let forge_types::UserText::Message(message) = reason else {
+        return false;
+    };
+    message.code().to_string() == "core.inline_script_failed"
+        && message.detail().is_some_and(|detail| {
+            detail.as_str().contains(&format!(
+                "{} (integration=twitch)",
+                forge_types::INTEGRATION_DISABLED
+            ))
+        })
 }
 
 #[tokio::test]

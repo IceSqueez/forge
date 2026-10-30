@@ -1,4 +1,6 @@
 #![allow(clippy::unwrap_used)]
+mod common;
+use common::{code_of, detail_of, failure_message};
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -122,9 +124,9 @@ async fn pause_runner_flips_registered_queue_to_paused() {
 async fn pause_runner_with_empty_cell_reports_scheduler_not_ready() {
     let runner = CoreQueuePauseRunner::new(SchedulerCell::new());
     let outcome = run_outcome(&runner, &cfg_queue(&QueueId::new().to_string())).await;
-    assert!(
-        matches!(&outcome, SubActionOutcome::Failed(m) if m.code_or_text().contains("queue scheduler not ready")),
-        "empty cell must fail with the not-ready message, got {outcome:?}"
+    assert_eq!(
+        code_of(failure_message(&outcome)),
+        "core.scheduler_not_ready"
     );
 }
 
@@ -147,10 +149,9 @@ async fn pause_runner_with_unregistered_queue_propagates_not_found() {
     let runner = CoreQueuePauseRunner::new(cell);
 
     let outcome = run_outcome(&runner, &cfg_queue(&QueueId::new().to_string())).await;
-    assert!(
-        matches!(&outcome, SubActionOutcome::Failed(m) if m.code_or_text().contains("queue not found")),
-        "unregistered queue must surface QueueNotFound, got {outcome:?}"
-    );
+    let refusal = failure_message(&outcome);
+    assert_eq!(code_of(refusal), "core.scheduler_failed");
+    assert!(detail_of(refusal).is_some_and(|d| d.contains("queue not found")));
     handle.shutdown();
 }
 
@@ -177,9 +178,9 @@ async fn resume_runner_clears_paused_state_on_registered_queue() {
 async fn resume_runner_with_empty_cell_reports_scheduler_not_ready() {
     let runner = CoreQueueResumeRunner::new(SchedulerCell::new());
     let outcome = run_outcome(&runner, &cfg_queue(&QueueId::new().to_string())).await;
-    assert!(
-        matches!(&outcome, SubActionOutcome::Failed(m) if m.code_or_text().contains("queue scheduler not ready")),
-        "empty cell must fail with the not-ready message, got {outcome:?}"
+    assert_eq!(
+        code_of(failure_message(&outcome)),
+        "core.scheduler_not_ready"
     );
 }
 
@@ -189,10 +190,9 @@ async fn resume_runner_with_unregistered_queue_propagates_not_found() {
     let runner = CoreQueueResumeRunner::new(cell);
 
     let outcome = run_outcome(&runner, &cfg_queue(&QueueId::new().to_string())).await;
-    assert!(
-        matches!(&outcome, SubActionOutcome::Failed(m) if m.code_or_text().contains("queue not found")),
-        "unregistered queue must surface QueueNotFound, got {outcome:?}"
-    );
+    let refusal = failure_message(&outcome);
+    assert_eq!(code_of(refusal), "core.scheduler_failed");
+    assert!(detail_of(refusal).is_some_and(|d| d.contains("queue not found")));
     handle.shutdown();
 }
 
@@ -216,9 +216,9 @@ async fn clear_runner_succeeds_and_emits_cleared_event() {
 async fn clear_runner_with_empty_cell_reports_scheduler_not_ready() {
     let runner = CoreQueueClearRunner::new(SchedulerCell::new());
     let outcome = run_outcome(&runner, &cfg_queue(&QueueId::new().to_string())).await;
-    assert!(
-        matches!(&outcome, SubActionOutcome::Failed(m) if m.code_or_text().contains("queue scheduler not ready")),
-        "empty cell must fail with the not-ready message, got {outcome:?}"
+    assert_eq!(
+        code_of(failure_message(&outcome)),
+        "core.scheduler_not_ready"
     );
 }
 
@@ -228,9 +228,8 @@ async fn clear_runner_with_unregistered_queue_propagates_not_found() {
     let runner = CoreQueueClearRunner::new(cell);
 
     let outcome = run_outcome(&runner, &cfg_queue(&QueueId::new().to_string())).await;
-    assert!(
-        matches!(&outcome, SubActionOutcome::Failed(m) if m.code_or_text().contains("queue not found")),
-        "unregistered queue must surface QueueNotFound, got {outcome:?}"
-    );
+    let refusal = failure_message(&outcome);
+    assert_eq!(code_of(refusal), "core.scheduler_failed");
+    assert!(detail_of(refusal).is_some_and(|d| d.contains("queue not found")));
     handle.shutdown();
 }

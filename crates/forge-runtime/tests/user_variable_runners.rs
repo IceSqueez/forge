@@ -406,10 +406,7 @@ async fn increment_non_numeric_variable_fails_and_leaves_value_unchanged() {
     let (outcome, _) = run(&runner, &config, &ArgStack::new()).await;
     match outcome {
         SubActionOutcome::Failed(msg) => {
-            assert!(
-                msg.code_or_text().contains("numeric"),
-                "message should name the cause: {msg:?}"
-            )
+            assert_eq!(msg.code_or_text(), "core.user_variable_not_numeric")
         }
         other => panic!("expected Failed, got {other:?}"),
     }

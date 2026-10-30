@@ -294,6 +294,7 @@ impl SubActionRunner for ScriptRunNamedRunner {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_support::failure::{detail_of, failure_message, verbatim_arg};
     use crate::test_support::sandboxed_backend;
     use crate::{EventBus, NullEventLogRepo};
     use forge_events::Event;
@@ -423,17 +424,15 @@ mod tests {
         let NamedRun { outcome, error, .. } =
             run_named(&format!("let token = \"{SECRET}\"; let x = 1 / 0;")).await;
 
-        let SubActionOutcome::Failed(message) = outcome else {
-            panic!("expected Failed, got {outcome:?}");
-        };
+        let message = failure_message(&outcome);
         let payload = error
             .expect("failing named run must emit script.error")
             .payload;
+        assert_eq!(message.code(), &core_messages::SCRIPT_FAILED);
+        assert_eq!(verbatim_arg(message, "name"), Some("greet"));
+        assert!(detail_of(message).is_some_and(|d| d.starts_with("runtime error:")));
         assert!(
-            message
-                .code_or_text()
-                .starts_with("script 'greet' failed: runtime error:")
-                && !message.code_or_text().contains(SECRET)
+            !serde_json::to_string(message).unwrap().contains(SECRET)
                 && !payload.to_string().contains(SECRET),
             "{message:?} / {payload}"
         );
@@ -469,10 +468,9 @@ mod tests {
     async fn a_named_script_returning_an_unstorable_value_fails_the_step() {
         let NamedRun { outcome, stack, .. } = run_named_into("[1, ()]", "result").await;
 
-        assert!(
-            matches!(&outcome, SubActionOutcome::Failed(m) if m.code_or_text().starts_with("script 'greet' failed:")),
-            "{outcome:?}"
-        );
+        let message = failure_message(&outcome);
+        assert_eq!(message.code(), &core_messages::SCRIPT_FAILED);
+        assert_eq!(verbatim_arg(message, "name"), Some("greet"));
         assert!(stack.is_none());
     }
 }

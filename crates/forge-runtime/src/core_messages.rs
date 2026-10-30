@@ -455,3 +455,146 @@ pub(crate) fn voice_not_engine_voice(voice: &str) -> MessageRef {
 pub(crate) fn voice_not_installed(voice: &str) -> MessageRef {
     MessageRef::new(VOICE_NOT_INSTALLED).with_arg(VOICE_ARG, verbatim(voice))
 }
+
+#[cfg(test)]
+mod tests {
+    use std::collections::{BTreeMap, BTreeSet};
+
+    use super::*;
+
+    fn ftl_variables(source: &str) -> BTreeMap<String, BTreeSet<String>> {
+        let mut found: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
+        let mut current = None;
+        for line in source.lines() {
+            if let Some((id, _)) = line.split_once(" = ").filter(|_| line.starts_with("msg-")) {
+                current = Some(id.trim().to_owned());
+                found.entry(id.trim().to_owned()).or_default();
+            }
+            let Some(id) = &current else { continue };
+            let mut rest = line;
+            while let Some(at) = rest.find('$') {
+                rest = &rest[at + 1..];
+                let name: String = rest
+                    .chars()
+                    .take_while(|c| c.is_ascii_alphanumeric() || *c == '_' || *c == '-')
+                    .collect();
+                found.get_mut(id).unwrap().insert(name);
+            }
+        }
+        found
+    }
+
+    fn every_constructor() -> Vec<MessageRef> {
+        vec![
+            unknown_action(ActionId::new()),
+            unknown_trigger_instance(TriggerInstanceId::new()),
+            action_nesting_too_deep(),
+            action_run_cancelled(),
+            action_run_failed("c"),
+            scheduler_not_ready(),
+            scheduler_stopped(),
+            scheduler_failed("c"),
+            schedule_failed("c"),
+            storage_failed("c"),
+            system_service_failed("c"),
+            task_failed("c"),
+            http_failed("c"),
+            condition_failed("c"),
+            field_required("f"),
+            file_path_empty(),
+            file_path_absolute(),
+            file_path_parent(),
+            file_path_escapes(),
+            file_not_found(),
+            directory_not_found(),
+            path_not_directory(),
+            path_not_file(),
+            file_too_large(1),
+            file_io_failed("c"),
+            file_not_json("c"),
+            file_not_base64("c"),
+            file_char_not_latin1('x'),
+            global_missing("g"),
+            global_not_array("INT"),
+            global_not_bool("INT"),
+            amount_not_negatable(1),
+            user_variable_not_numeric(),
+            user_login_unset("v"),
+            user_login_empty(),
+            loop_iteration_limit(1, 2),
+            loop_iterations_unrecorded(1, 2),
+            substring_start_out_of_range(1, 2),
+            substring_end_out_of_range(1, 2),
+            substring_start_after_end(1, 2),
+            time_out_of_range(1, "day", OffsetDateTime::UNIX_EPOCH),
+            time_pattern_invalid("p", "c"),
+            time_text_unreadable("t", "p", "c"),
+            search_pattern_invalid("c"),
+            expression_undefined_variables(&["a".to_owned()]),
+            expression_failed("c"),
+            url_not_http(),
+            overlay_service_not_running(),
+            overlay_show_cleared(),
+            overlay_show_withdrawn(),
+            overlay_send_failed("c"),
+            script_not_found("s"),
+            script_failed("s", "c"),
+            inline_script_failed("c"),
+            script_panicked("c"),
+            test_donation_not_announced(),
+            voice_not_engine_voice("v"),
+            voice_not_installed("v"),
+        ]
+    }
+
+    #[test]
+    fn every_constructor_code_is_catalogued_and_localized_in_both_languages_with_matching_variables()
+     {
+        let en = ftl_variables(CORE_MESSAGES.en_ftl);
+        let uk = ftl_variables(CORE_MESSAGES.uk_ftl);
+        for message in every_constructor() {
+            let code = message.code();
+            assert!(CORE_MESSAGES.codes.contains(code), "{code} not catalogued");
+            let passed: BTreeSet<String> = message.args().map(|(n, _)| n.to_owned()).collect();
+            for (language, ftl) in [("en", &en), ("uk", &uk)] {
+                let used = ftl
+                    .get(&code.ftl_key())
+                    .unwrap_or_else(|| panic!("{code} missing in {language}"));
+                assert_eq!(used, &passed, "{code} variables in {language}");
+            }
+        }
+    }
+
+    #[test]
+    fn every_catalogued_code_has_a_constructor_in_the_table() {
+        let produced: BTreeSet<MessageCode> = every_constructor()
+            .iter()
+            .map(|m| m.code().clone())
+            .collect();
+        let catalogued: BTreeSet<MessageCode> = CORE_MESSAGES.codes.iter().cloned().collect();
+        assert_eq!(produced, catalogued);
+    }
+
+    #[test]
+    fn english_and_ukrainian_declare_the_same_messages_with_the_same_variables() {
+        assert_eq!(
+            ftl_variables(CORE_MESSAGES.en_ftl),
+            ftl_variables(CORE_MESSAGES.uk_ftl)
+        );
+    }
+
+    #[test]
+    fn upstream_cause_text_is_carried_as_detail_and_never_as_an_argument() {
+        let failure = script_failed("greet", "runtime error: boom");
+
+        assert_eq!(
+            failure.detail().map(|d| d.as_str()),
+            Some("runtime error: boom")
+        );
+        assert!(
+            failure
+                .args()
+                .all(|(_, v)| !format!("{v:?}").contains("boom"))
+        );
+    }
+}

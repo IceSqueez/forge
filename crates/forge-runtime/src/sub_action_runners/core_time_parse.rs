@@ -165,6 +165,7 @@ impl SubActionRunner for CoreTimeParseRunner {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_support::failure::{failure_message, verbatim_arg};
     use forge_events::{Event, EventPublisher};
     use forge_registry::ConfigReason;
     use forge_registry::RegistryError;
@@ -271,11 +272,11 @@ mod tests {
     #[tokio::test]
     async fn parse_unreadable_source_fails_naming_the_source_and_pattern() {
         let (outcome, out) = run(&utc_cfg("not-a-date", "yyyy-MM-dd")).await;
-        let reason = failure(outcome);
-        assert!(
-            reason.contains("'not-a-date'") && reason.contains("'yyyy-MM-dd'"),
-            "{reason}"
-        );
+        let reason = failure_message(&outcome);
+        assert_eq!(reason.code(), &core_messages::TIME_TEXT_UNREADABLE);
+        assert_eq!(verbatim_arg(reason, "text"), Some("not-a-date"));
+        assert_eq!(verbatim_arg(reason, "pattern"), Some("yyyy-MM-dd"));
+        assert!(reason.detail().is_some());
         assert!(out.is_none());
     }
 

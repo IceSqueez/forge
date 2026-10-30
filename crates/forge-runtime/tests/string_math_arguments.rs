@@ -1,4 +1,6 @@
 #![allow(clippy::panic)]
+mod common;
+use common::{code_of, failure_message, verbatim_arg};
 use forge_events::{Event, EventPublisher};
 use forge_registry::{RunContext, SubActionRunner};
 use forge_runtime::sub_action_runners::{
@@ -222,9 +224,9 @@ async fn math_with_undefined_variables_fails_naming_them() {
         &stack,
     )
     .await;
-    assert!(
-        matches!(&outcome, SubActionOutcome::Failed(m) if m.code_or_text().contains("missing") && m.code_or_text().contains("gone") && !m.code_or_text().contains("known")),
-        "got {outcome:?}"
-    );
+    let refusal = failure_message(&outcome);
+    assert_eq!(code_of(refusal), "core.expression_undefined_variables");
+    let named = verbatim_arg(refusal, "variables").unwrap();
+    assert!(named.contains("missing") && named.contains("gone") && !named.contains("known"));
     assert!(out.is_none());
 }

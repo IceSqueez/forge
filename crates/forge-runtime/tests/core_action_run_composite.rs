@@ -1,4 +1,6 @@
 #![allow(clippy::unwrap_used, clippy::expect_used)]
+mod common;
+use common::{code_of, failure_message, verbatim_arg};
 use std::collections::{BTreeMap, HashMap};
 use std::sync::Mutex;
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -306,7 +308,6 @@ async fn inherit_args_false_starts_the_child_with_a_fresh_stack() {
 enum Expect {
     Success,
     FailedExact(&'static str),
-    FailedContains(&'static str),
 }
 
 #[tokio::test]
@@ -326,7 +327,10 @@ async fn child_signal_maps_to_the_sub_action_outcome() {
             ChainSignal::Error(forge_types::UserText::unlocalized("boom")),
             Expect::FailedExact("boom"),
         ),
-        (ChainSignal::Aborted, Expect::FailedContains("cancelled")),
+        (
+            ChainSignal::Aborted,
+            Expect::FailedExact("core.action_run_cancelled"),
+        ),
     ];
 
     for (signal, expect) in cases {
@@ -340,10 +344,6 @@ async fn child_signal_maps_to_the_sub_action_outcome() {
             Expect::FailedExact(msg) => assert!(
                 matches!(&outcome, SubActionOutcome::Failed(m) if m.code_or_text() == msg),
                 "{signal:?} should map to Failed({msg:?}), got {outcome:?}",
-            ),
-            Expect::FailedContains(needle) => assert!(
-                matches!(&outcome, SubActionOutcome::Failed(m) if m.code_or_text().contains(needle)),
-                "{signal:?} should map to Failed containing {needle:?}, got {outcome:?}",
             ),
         }
     }
@@ -360,9 +360,9 @@ async fn depth_exceeded_error_maps_to_failed_with_nesting_message() {
     let executor = MockChainExecutor::depth_exceeded();
     let outcome = run(&runner, &cfg(&id.to_string()), &ArgStack::new(), &executor).await;
 
-    assert!(
-        matches!(&outcome, SubActionOutcome::Failed(m) if m.code_or_text().contains("max nesting depth exceeded")),
-        "got {outcome:?}",
+    assert_eq!(
+        code_of(failure_message(&outcome)),
+        "core.action_nesting_too_deep"
     );
 }
 
@@ -381,7 +381,12 @@ async fn unknown_action_id_fails_without_running_a_child_chain() {
     )
     .await;
 
-    assert!(matches!(outcome, SubActionOutcome::Failed(_)));
+    let refusal = failure_message(&outcome);
+    assert_eq!(code_of(refusal), "core.unknown_action");
+    assert_eq!(
+        verbatim_arg(refusal, "action"),
+        Some(missing.to_string().as_str())
+    );
     assert_eq!(
         executor.call_count(),
         0,
@@ -421,7 +426,9 @@ async fn repo_lookup_error_fails_without_running_a_child_chain() {
     let executor = MockChainExecutor::completing();
     let outcome = run(&runner, &cfg(&id.to_string()), &ArgStack::new(), &executor).await;
 
-    assert!(matches!(outcome, SubActionOutcome::Failed(_)));
+    let refusal = failure_message(&outcome);
+    assert_eq!(code_of(refusal), "core.storage_failed");
+    assert!(refusal.detail().is_some());
     assert_eq!(executor.call_count(), 0);
 }
 

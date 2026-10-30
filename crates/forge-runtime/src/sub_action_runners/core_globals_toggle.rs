@@ -96,6 +96,7 @@ impl SubActionRunner for CoreGlobalsToggleRunner {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_support::failure::{failure_message, verbatim_arg};
     use forge_events::Event;
     use forge_events::EventPublisher;
     use forge_storage::{GlobalEntry, StorageError};
@@ -225,13 +226,9 @@ mod tests {
     async fn toggle_non_bool_global_reports_failed_naming_the_type() {
         let globals = Arc::new(MapGlobals::with([("flag", Variant::Int(7))]));
         let outcome = run(globals.clone(), &cfg("flag")).await;
-        match outcome {
-            SubActionOutcome::Failed(msg) => assert!(
-                msg.code_or_text().contains("INT"),
-                "type-mismatch message should name the found type, got: {msg:?}"
-            ),
-            other => panic!("expected Failed, got {other:?}"),
-        }
+        let reason = failure_message(&outcome);
+        assert_eq!(reason.code(), &core_messages::GLOBAL_NOT_BOOL);
+        assert_eq!(verbatim_arg(reason, "actual"), Some("INT"));
         assert_eq!(
             globals.snapshot("flag"),
             Some(Variant::Int(7)),

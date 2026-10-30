@@ -240,9 +240,7 @@ fn terminal_id(event: &SpeakEvent) -> Option<&RequestId> {
 async fn control_commands_take_effect_while_the_first_catalog_is_still_building() {
     type Expect = fn(&SpeakEvent) -> bool;
     let cases: [(SpeakCommand, Expect); 3] = [
-        (SpeakCommand::Pause, |e| {
-            matches!(e, SpeakEvent::Paused { .. })
-        }),
+        (SpeakCommand::Pause, |e| matches!(e, SpeakEvent::Paused)),
         (SpeakCommand::Resume, |e| matches!(e, SpeakEvent::Resumed)),
         (SpeakCommand::Clear, |e| matches!(e, SpeakEvent::Cleared)),
     ];

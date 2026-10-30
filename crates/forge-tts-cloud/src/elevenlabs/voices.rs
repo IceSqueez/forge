@@ -7,7 +7,7 @@ use serde::Deserialize;
 
 use crate::elevenlabs::SAMPLE_RATE_HZ;
 use crate::elevenlabs::error::ElevenLabsError;
-use crate::elevenlabs::synth::{API_KEY_HEADER, INVALID_API_KEY};
+use crate::elevenlabs::synth::{API_KEY_HEADER, classify_with};
 use crate::gateway_failure::failure_detail;
 use crate::network::ProviderLink;
 
@@ -35,15 +35,7 @@ fn gender_from_labels(labels: &HashMap<String, String>) -> VoiceGender {
 }
 
 fn classify_error(failure: &GatewayFailure, link: &ProviderLink) -> ElevenLabsError {
-    if let Some(retry_after_secs) = link.throttle_secs(failure) {
-        return ElevenLabsError::RateLimited { retry_after_secs };
-    }
-    match failure {
-        GatewayFailure::Unauthorized { .. } | GatewayFailure::Forbidden { .. } => {
-            ElevenLabsError::Unauthorized(INVALID_API_KEY.into())
-        }
-        other => ElevenLabsError::Http(failure_detail(other)),
-    }
+    classify_with(failure, link, None, failure_detail)
 }
 
 pub(super) async fn fetch_voices(
@@ -60,7 +52,7 @@ pub(super) async fn fetch_voices(
 
     let list: VoiceList = response
         .json()
-        .map_err(|e| ElevenLabsError::Http(e.to_string()))?;
+        .map_err(|e| ElevenLabsError::Decode(e.to_string()))?;
 
     let engine_id = EngineId(ENGINE_ID_ELEVENLABS.into());
     Ok(list
@@ -160,11 +152,11 @@ mod tests {
             ),
             (
                 ResponseTemplate::new(200).set_body_string(r#"{"voices":"#),
-                "Http".to_owned(),
+                "Decode".to_owned(),
             ),
             (
                 ResponseTemplate::new(200).set_body_bytes(over_catalog_cap()),
-                format!("Http({cap})"),
+                format!("Rejected({cap})"),
             ),
         ] {
             let server = serving(template).await;
@@ -174,8 +166,11 @@ mod tests {
                 ElevenLabsError::RateLimited { retry_after_secs } => {
                     format!("RateLimited({retry_after_secs})")
                 }
-                ElevenLabsError::Http(detail) if detail.contains(&cap) => format!("Http({cap})"),
+                ElevenLabsError::Rejected(detail) if detail.contains(&cap) => {
+                    format!("Rejected({cap})")
+                }
                 ElevenLabsError::Http(_) => "Http".to_owned(),
+                ElevenLabsError::Decode(_) => "Decode".to_owned(),
                 other => format!("{other:?}"),
             };
             assert_eq!(got, expected, "{error}");

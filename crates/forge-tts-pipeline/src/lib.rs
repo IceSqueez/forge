@@ -23,9 +23,36 @@ pub enum PipelineResult {
     Skip { reason: SkipReason },
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SkipRule {
+    ContainsUrl,
+    StartsWithPrefix,
+    FromBotAccount,
+    ExceedsMaxLength,
+    RepeatsRecentMessage,
+    EmoteOnly,
+    MostlyNonLatin,
+    CustomRegex,
+}
+
+impl SkipRule {
+    pub const fn token(self) -> &'static str {
+        match self {
+            Self::ContainsUrl => "contains_url",
+            Self::StartsWithPrefix => "starts_with_prefix",
+            Self::FromBotAccount => "from_bot_account",
+            Self::ExceedsMaxLength => "exceeds_max_length",
+            Self::RepeatsRecentMessage => "repeats_recent_message",
+            Self::EmoteOnly => "emote_only",
+            Self::MostlyNonLatin => "mostly_non_latin",
+            Self::CustomRegex => "custom_regex",
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SkipReason {
-    MatchedSkipRule(&'static str),
+    MatchedSkipRule(SkipRule),
     BlockedByWordFilter,
     EmptyAfterProcessing,
 }
@@ -299,40 +326,34 @@ fn stage_skip_rules(
 ) -> Option<SkipReason> {
     let skip_rules = &config.skip_rules;
     if skip_rules.contains_url && URL_RE.is_match(text) {
-        return Some(SkipReason::MatchedSkipRule("message contains a url"));
+        return Some(SkipReason::MatchedSkipRule(SkipRule::ContainsUrl));
     }
     if let Some(prefix) = skip_rules.skip_prefix.as_deref()
         && !prefix.is_empty()
         && text.starts_with(prefix)
     {
-        return Some(SkipReason::MatchedSkipRule("message starts with a prefix"));
+        return Some(SkipReason::MatchedSkipRule(SkipRule::StartsWithPrefix));
     }
     if skip_rules.from_bot_accounts && is_bot_account(context.viewer_name, &skip_rules.bot_accounts)
     {
-        return Some(SkipReason::MatchedSkipRule("message is from a bot account"));
+        return Some(SkipReason::MatchedSkipRule(SkipRule::FromBotAccount));
     }
     if let Some(max_chars) = skip_rules.max_chars
         && text.chars().count() > max_chars
     {
-        return Some(SkipReason::MatchedSkipRule("message exceeds max length"));
+        return Some(SkipReason::MatchedSkipRule(SkipRule::ExceedsMaxLength));
     }
     if skip_rules.repeat_of_recent && is_repeat_of_recent(text, context.recent_messages) {
-        return Some(SkipReason::MatchedSkipRule(
-            "message repeats a recent message",
-        ));
+        return Some(SkipReason::MatchedSkipRule(SkipRule::RepeatsRecentMessage));
     }
     if skip_rules.emote_only && is_emote_only(text, &config.emote_tokens) {
-        return Some(SkipReason::MatchedSkipRule("message is emote-only"));
+        return Some(SkipReason::MatchedSkipRule(SkipRule::EmoteOnly));
     }
     if skip_rules.mostly_non_latin && is_mostly_non_latin(text) {
-        return Some(SkipReason::MatchedSkipRule(
-            "message is mostly non-latin script",
-        ));
+        return Some(SkipReason::MatchedSkipRule(SkipRule::MostlyNonLatin));
     }
     if skip_rules.custom_regexes.iter().any(|re| re.is_match(text)) {
-        return Some(SkipReason::MatchedSkipRule(
-            "message matches a custom skip regex",
-        ));
+        return Some(SkipReason::MatchedSkipRule(SkipRule::CustomRegex));
     }
     None
 }
@@ -826,6 +847,139 @@ mod tests {
     }
 
     #[test]
+    fn each_skip_rule_reports_its_own_rule_when_it_is_the_one_that_matched() {
+        let recent = vec!["same again".to_owned()];
+        let mut emote_config = neutral_config();
+        emote_config.emote_tokens.tokens.insert("LUL".into());
+        let cases: Vec<(&str, SkipRulesConfig, &str, &str, SkipRule)> = vec![
+            (
+                "url",
+                SkipRulesConfig {
+                    contains_url: true,
+                    ..SkipRulesConfig::default()
+                },
+                "see https://a.example",
+                "viewer",
+                SkipRule::ContainsUrl,
+            ),
+            (
+                "prefix",
+                SkipRulesConfig {
+                    skip_prefix: Some("!".into()),
+                    ..SkipRulesConfig::default()
+                },
+                "!command",
+                "viewer",
+                SkipRule::StartsWithPrefix,
+            ),
+            (
+                "bot",
+                SkipRulesConfig {
+                    from_bot_accounts: true,
+                    bot_accounts: vec!["relaybot".into()],
+                    ..SkipRulesConfig::default()
+                },
+                "hello",
+                "relaybot",
+                SkipRule::FromBotAccount,
+            ),
+            (
+                "length",
+                SkipRulesConfig {
+                    max_chars: Some(3),
+                    ..SkipRulesConfig::default()
+                },
+                "hello",
+                "viewer",
+                SkipRule::ExceedsMaxLength,
+            ),
+            (
+                "repeat",
+                SkipRulesConfig {
+                    repeat_of_recent: true,
+                    ..SkipRulesConfig::default()
+                },
+                "same again",
+                "viewer",
+                SkipRule::RepeatsRecentMessage,
+            ),
+            (
+                "emote",
+                SkipRulesConfig {
+                    emote_only: true,
+                    ..SkipRulesConfig::default()
+                },
+                "LUL LUL",
+                "viewer",
+                SkipRule::EmoteOnly,
+            ),
+            (
+                "script",
+                SkipRulesConfig {
+                    mostly_non_latin: true,
+                    ..SkipRulesConfig::default()
+                },
+                "привіт світ",
+                "viewer",
+                SkipRule::MostlyNonLatin,
+            ),
+            (
+                "regex",
+                SkipRulesConfig {
+                    custom_regexes: vec![regex::Regex::new("spam+").unwrap()],
+                    ..SkipRulesConfig::default()
+                },
+                "so spamm",
+                "viewer",
+                SkipRule::CustomRegex,
+            ),
+        ];
+        for (label, skip_rules, text, viewer, rule) in cases {
+            let config = PipelineConfig {
+                skip_rules,
+                ..emote_config.clone()
+            };
+            let context = PipelineContext {
+                viewer_name: viewer,
+                recent_messages: &recent,
+                speech_language: None,
+            };
+            assert_eq!(
+                process(text, &config, &context),
+                PipelineResult::Skip {
+                    reason: SkipReason::MatchedSkipRule(rule)
+                },
+                "{label}"
+            );
+        }
+    }
+
+    #[test]
+    fn skip_rule_tokens_are_distinct_snake_case_identifiers() {
+        let tokens: Vec<&str> = [
+            SkipRule::ContainsUrl,
+            SkipRule::StartsWithPrefix,
+            SkipRule::FromBotAccount,
+            SkipRule::ExceedsMaxLength,
+            SkipRule::RepeatsRecentMessage,
+            SkipRule::EmoteOnly,
+            SkipRule::MostlyNonLatin,
+            SkipRule::CustomRegex,
+        ]
+        .into_iter()
+        .map(SkipRule::token)
+        .collect();
+        let distinct: std::collections::BTreeSet<&str> = tokens.iter().copied().collect();
+        assert_eq!(distinct.len(), tokens.len());
+        assert!(
+            tokens
+                .iter()
+                .all(|t| t.chars().all(|c| c.is_ascii_lowercase() || c == '_')),
+            "{tokens:?}"
+        );
+    }
+
+    #[test]
     fn skip_rules_contains_url() {
         let config = PipelineConfig {
             skip_rules: SkipRulesConfig {
@@ -838,7 +992,7 @@ mod tests {
         assert_eq!(
             result,
             PipelineResult::Skip {
-                reason: SkipReason::MatchedSkipRule("message contains a url")
+                reason: SkipReason::MatchedSkipRule(SkipRule::ContainsUrl)
             }
         );
     }
@@ -910,7 +1064,7 @@ mod tests {
         assert_eq!(
             result,
             PipelineResult::Skip {
-                reason: SkipReason::MatchedSkipRule("message exceeds max length")
+                reason: SkipReason::MatchedSkipRule(SkipRule::ExceedsMaxLength)
             }
         );
         let fits = process("hello", &config, &ctx());
@@ -928,7 +1082,7 @@ mod tests {
         };
         for (text, skipped) in [("приві", false), ("привіт", true), ("", false)] {
             assert_eq!(
-                matches!(process(text, &config, &ctx()), PipelineResult::Skip { reason } if reason == SkipReason::MatchedSkipRule("message exceeds max length")),
+                matches!(process(text, &config, &ctx()), PipelineResult::Skip { reason } if reason == SkipReason::MatchedSkipRule(SkipRule::ExceedsMaxLength)),
                 skipped,
                 "{text:?}"
             );

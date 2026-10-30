@@ -15,6 +15,8 @@ pub enum AzureError {
     VoiceNotFound(VoiceId),
     #[error("decode error: {0}")]
     Decode(String),
+    #[error("request rejected: {0}")]
+    Rejected(String),
     #[error("I/O: {0}")]
     Io(#[from] std::io::Error),
 }

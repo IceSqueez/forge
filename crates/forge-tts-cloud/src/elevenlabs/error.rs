@@ -13,6 +13,10 @@ pub enum ElevenLabsError {
     RateLimited { retry_after_secs: u64 },
     #[error("voice not found: {0:?}")]
     VoiceNotFound(VoiceId),
+    #[error("request rejected: {0}")]
+    Rejected(String),
+    #[error("response could not be decoded: {0}")]
+    Decode(String),
     #[error("I/O: {0}")]
     Io(#[from] std::io::Error),
 }

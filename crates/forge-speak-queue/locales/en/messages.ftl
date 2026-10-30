@@ -27,7 +27,17 @@ msg-speak-audio_route_unknown = The audio route { $route } does not exist.
 msg-speak-audio_routes_failed = Every audio route for speech failed.
 msg-speak-audio_remote_failed = The remote audio destination failed.
 msg-speak-no_overlay_listener = No open page is listening on the audio overlay { $destination }.
-msg-speak-skipped_rule_matched = Skipped: the message matched a skip rule.
+msg-speak-skipped_rule_matched = Skipped: { $rule ->
+    [contains_url] the message contains a link.
+    [starts_with_prefix] the message starts with a skipped prefix.
+    [from_bot_account] the message is from a bot account.
+    [exceeds_max_length] the message is too long.
+    [repeats_recent_message] the message repeats a recent one.
+    [emote_only] the message has only emotes.
+    [mostly_non_latin] the message is mostly non-Latin script.
+    [custom_regex] the message matched a custom skip pattern.
+   *[other] the message matched a skip rule.
+}
 msg-speak-skipped_word_filter = Skipped: the message was blocked by the word filter.
 msg-speak-skipped_empty = Skipped: nothing was left to say after filtering.
 msg-speak-skipped_alias = Skipped: the viewer is blocked by a voice alias.

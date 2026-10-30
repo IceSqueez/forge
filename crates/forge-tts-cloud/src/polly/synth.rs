@@ -5,7 +5,7 @@ use forge_tts_core::{SynthesisRequest, xml_escape};
 use serde_json::json;
 
 use crate::gateway_failure::{
-    failure_detail, probe_failure_detail, quota_excerpt, rejected_excerpt,
+    Classified, ProviderPolicy, VoiceSignal, classify, failure_detail, probe_failure_detail,
 };
 use crate::network::ProviderLink;
 use crate::polly::SAMPLE_RATE_HZ;
@@ -15,7 +15,6 @@ use crate::polly::signer::{PollySigner, SignedCall};
 pub(crate) const VOICES_PATH: &str = "/v1/voices";
 pub(crate) const INVALID_CREDENTIALS: &str = "invalid credentials";
 const SPEECH_PATH: &str = "/v1/speech";
-const BAD_REQUEST: u16 = 400;
 const QUOTA_MARKERS: &[&str] = &["quota", "characters"];
 
 fn format_signed_percent(val: i32) -> String {
@@ -82,24 +81,30 @@ pub(super) fn build_polly_body(req: &SynthesisRequest) -> String {
     }
 }
 
+const POLICY: ProviderPolicy = ProviderPolicy {
+    quota_markers: QUOTA_MARKERS,
+    payment_required_is_quota: false,
+    voice_signal: VoiceSignal::BadRequestNamingVoice,
+};
+
+pub(super) fn classify_with(
+    failure: &GatewayFailure,
+    link: &ProviderLink,
+    voice: Option<&VoiceId>,
+    detail: fn(&GatewayFailure) -> String,
+) -> PollyError {
+    match classify(failure, link, POLICY, voice, detail) {
+        Classified::Quota(excerpt) => PollyError::QuotaExceeded(excerpt),
+        Classified::Throttled(retry_after_secs) => PollyError::RateLimited { retry_after_secs },
+        Classified::Auth => PollyError::Unauthorized(INVALID_CREDENTIALS.into()),
+        Classified::VoiceMissing(voice) => PollyError::VoiceNotFound(voice.0),
+        Classified::Rejected(detail) => PollyError::Rejected(detail),
+        Classified::Transient(detail) => PollyError::Http(detail),
+    }
+}
+
 fn classify_error(failure: &GatewayFailure, link: &ProviderLink, voice_id: &VoiceId) -> PollyError {
-    if let Some(excerpt) = quota_excerpt(failure, QUOTA_MARKERS) {
-        return PollyError::QuotaExceeded(excerpt.to_owned());
-    }
-    if let Some(retry_after_secs) = link.throttle_secs(failure) {
-        return PollyError::RateLimited { retry_after_secs };
-    }
-    if rejected_excerpt(failure, BAD_REQUEST)
-        .is_some_and(|excerpt| excerpt.to_ascii_lowercase().contains("voice"))
-    {
-        return PollyError::VoiceNotFound(voice_id.0.clone());
-    }
-    match failure {
-        GatewayFailure::Unauthorized { .. } | GatewayFailure::Forbidden { .. } => {
-            PollyError::Unauthorized(INVALID_CREDENTIALS.into())
-        }
-        other => PollyError::Http(failure_detail(other)),
-    }
+    classify_with(failure, link, Some(voice_id), failure_detail)
 }
 
 pub(super) async fn synthesize(
@@ -143,13 +148,7 @@ pub(super) async fn probe_connection(
         .class(CallClass::Catalog);
     match link.send(request).await {
         Ok(_) => Ok(()),
-        Err(GatewayFailure::Unauthorized { .. } | GatewayFailure::Forbidden { .. }) => {
-            Err(PollyError::Unauthorized(INVALID_CREDENTIALS.into()))
-        }
-        Err(failure) => match link.throttle_secs(&failure) {
-            Some(retry_after_secs) => Err(PollyError::RateLimited { retry_after_secs }),
-            None => Err(PollyError::Http(probe_failure_detail(&failure))),
-        },
+        Err(failure) => Err(classify_with(&failure, link, None, probe_failure_detail)),
     }
 }
 
@@ -293,7 +292,7 @@ mod tests {
                 None,
                 "VoiceNotFound".to_owned(),
             ),
-            (400, "malformed request", None, "Http".to_owned()),
+            (400, "malformed request", None, "Rejected".to_owned()),
             (429, "slow down", None, no_hint.clone()),
             (429, "slow down", Some(7), "RateLimited(7)".to_owned()),
             (429, "quota exceeded", None, "QuotaExceeded".to_owned()),
@@ -343,6 +342,71 @@ mod tests {
             assert_eq!(
                 (requests[0].method.as_str(), requests[0].url.path()),
                 ("GET", VOICES_PATH)
+            );
+        }
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn every_gateway_failure_without_a_body_is_classified_by_the_provider_table() {
+        let link = crate::network::CloudGateways::new()
+            .provider("p")
+            .link("https://api.example.com")
+            .unwrap();
+        let voice = VoiceId("v".into());
+
+        let got: Vec<(&str, String)> = crate::network::test_support::every_failure_without_a_body()
+            .iter()
+            .map(|(label, failure)| {
+                (
+                    *label,
+                    outcome(&classify_with(failure, &link, Some(&voice), failure_detail)),
+                )
+            })
+            .collect();
+
+        let want: Vec<(&str, String)> = [
+            ("401", "Unauthorized"),
+            ("403", "Unauthorized"),
+            ("404", "Rejected"),
+            ("429", "RateLimited(3)"),
+            ("400", "Rejected"),
+            ("402", "Rejected"),
+            ("408", "Http"),
+            ("418", "Rejected"),
+            ("500", "Http"),
+            ("302", "Rejected"),
+            ("budget", "RateLimited(0)"),
+            ("too-large", "Rejected"),
+            ("cancelled", "Rejected"),
+            ("address", "Rejected"),
+            ("invalid", "Rejected"),
+        ]
+        .into_iter()
+        .map(|(label, class)| (label, class.to_owned()))
+        .collect();
+        assert_eq!(got, want);
+    }
+
+    #[tokio::test]
+    async fn probe_and_synthesis_give_the_same_class_for_auth_and_throttle_statuses() {
+        let no_hint = format!("RateLimited({NO_HINT_WAIT_SECS})");
+        for (status, retry, expected) in [
+            (401, None, "Unauthorized".to_owned()),
+            (403, None, "Unauthorized".to_owned()),
+            (429, None, no_hint),
+            (429, Some(9), "RateLimited(9)".to_owned()),
+        ] {
+            let server = echo_server(echoing(status, "reply", retry)).await;
+            let synthesized = synthesize(&link_to(&server), &signer(), plain_req("hello"))
+                .await
+                .unwrap_err();
+            let probed = probe_connection(&link_to(&server), &signer())
+                .await
+                .unwrap_err();
+            assert_eq!(
+                (outcome(&synthesized), outcome(&probed)),
+                (expected.clone(), expected),
+                "{status} {retry:?}"
             );
         }
     }

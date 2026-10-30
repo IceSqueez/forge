@@ -339,7 +339,7 @@ async fn an_engine_disabled_at_boot_releases_its_probe_instance() {
     handle.send(SpeakCommand::Pause).await.unwrap();
     common::wait_for(
         &mut stream,
-        |e| matches!(e, SpeakEvent::Paused { .. }),
+        |e| matches!(e, SpeakEvent::Paused),
         HANG_GUARD_MS,
     )
     .await;

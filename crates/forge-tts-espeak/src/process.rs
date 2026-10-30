@@ -70,7 +70,10 @@ pub(crate) async fn list_voices_via(
         .map_err(|_| timeout_error(timeout))?
         .map_err(EspeakError::Io)?;
     if !output.status.success() {
-        return Err(EspeakError::BinaryNotFound);
+        return Err(EspeakError::VoiceListingFailed(format!(
+            "espeak-ng --voices exited with {}",
+            output.status
+        )));
     }
     Ok(String::from_utf8_lossy(&output.stdout).into_owned())
 }
@@ -425,14 +428,14 @@ mod tests {
 
     #[cfg(unix)]
     #[tokio::test]
-    async fn a_voice_listing_that_exits_with_failure_reports_the_binary_as_missing() {
+    async fn a_voice_listing_that_exits_with_failure_reports_the_listing_as_failed() {
         let dir = tempfile::tempdir().expect("tmpdir");
         let binary = fake_espeak(dir.path(), "echo partial; exit 1");
 
         let result = list_voices_via(&binary, GENEROUS_TIMEOUT).await;
 
         assert!(
-            matches!(result, Err(EspeakError::BinaryNotFound)),
+            matches!(&result, Err(EspeakError::VoiceListingFailed(detail)) if detail.contains("--voices")),
             "{result:?}"
         );
     }

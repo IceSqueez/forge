@@ -158,7 +158,10 @@ pub(crate) mod test_support {
     use std::sync::mpsc;
     use std::time::Duration;
 
-    use forge_net::{CallClass, Gateway, TokenBucketRateLimiter};
+    use forge_net::{
+        BodyExcerpt, CallClass, Gateway, GatewayFailure, HostRejection, InvalidRequest,
+        ThrottleScope, TokenBucketRateLimiter,
+    };
     use wiremock::matchers::any;
     use wiremock::{Mock, MockServer, ResponseTemplate};
 
@@ -215,6 +218,80 @@ pub(crate) mod test_support {
 
     pub(crate) async fn request_count(server: &MockServer) -> usize {
         server.received_requests().await.unwrap().len()
+    }
+
+    pub(crate) fn every_failure_without_a_body() -> Vec<(&'static str, GatewayFailure)> {
+        let excerpt = BodyExcerpt::default;
+        vec![
+            ("401", GatewayFailure::Unauthorized { excerpt: excerpt() }),
+            ("403", GatewayFailure::Forbidden { excerpt: excerpt() }),
+            ("404", GatewayFailure::NotFound { excerpt: excerpt() }),
+            (
+                "429",
+                GatewayFailure::RateLimited {
+                    status: 429,
+                    retry_after: Duration::from_secs(3),
+                    scope: ThrottleScope::Bucket,
+                    excerpt: excerpt(),
+                },
+            ),
+            (
+                "400",
+                GatewayFailure::ClientRejected {
+                    status: 400,
+                    excerpt: excerpt(),
+                },
+            ),
+            (
+                "402",
+                GatewayFailure::ClientRejected {
+                    status: 402,
+                    excerpt: excerpt(),
+                },
+            ),
+            (
+                "408",
+                GatewayFailure::ClientRejected {
+                    status: 408,
+                    excerpt: excerpt(),
+                },
+            ),
+            (
+                "418",
+                GatewayFailure::ClientRejected {
+                    status: 418,
+                    excerpt: excerpt(),
+                },
+            ),
+            (
+                "500",
+                GatewayFailure::ServerError {
+                    status: 500,
+                    excerpt: excerpt(),
+                },
+            ),
+            (
+                "302",
+                GatewayFailure::UnexpectedStatus {
+                    status: 302,
+                    excerpt: excerpt(),
+                },
+            ),
+            (
+                "budget",
+                GatewayFailure::BudgetExhausted { retry_after: None },
+            ),
+            ("too-large", GatewayFailure::ResponseTooLarge { cap: 1 }),
+            ("cancelled", GatewayFailure::Cancelled),
+            (
+                "address",
+                GatewayFailure::AddressRefused(HostRejection::PrivateOrSpecial),
+            ),
+            (
+                "invalid",
+                GatewayFailure::InvalidRequest(InvalidRequest::MalformedUrl),
+            ),
+        ]
     }
 
     pub(crate) fn throttled(retry_after_secs: u64) -> ResponseTemplate {

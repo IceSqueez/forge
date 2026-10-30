@@ -3,7 +3,7 @@ mod common;
 use common::neutral_config;
 use forge_tts_pipeline::{
     BlocklistMode, EmoteTokenSet, EmoteTreatment, PipelineConfig, PipelineContext, PipelineResult,
-    ReplacementRule, SkipReason, SkipRulesConfig, process,
+    ReplacementRule, SkipReason, SkipRule, SkipRulesConfig, process,
 };
 
 fn ctx() -> PipelineContext<'static> {
@@ -79,10 +79,7 @@ fn skip_rules_evaluate_original_message_unaffected_by_output_settings() {
 
     match process("check LUL https://example.com out", &config, &ctx()) {
         PipelineResult::Skip { reason } => {
-            assert_eq!(
-                reason,
-                SkipReason::MatchedSkipRule("message contains a url")
-            );
+            assert_eq!(reason, SkipReason::MatchedSkipRule(SkipRule::ContainsUrl));
         }
         PipelineResult::Speak(_) => panic!("expected Skip due to URL"),
     }
@@ -131,7 +128,7 @@ fn url_skip_rule_prevents_downstream_processing() {
         PipelineResult::Skip { reason } => {
             assert_eq!(
                 reason,
-                SkipReason::MatchedSkipRule("message contains a url"),
+                SkipReason::MatchedSkipRule(SkipRule::ContainsUrl),
                 "wrong skip reason"
             );
         }

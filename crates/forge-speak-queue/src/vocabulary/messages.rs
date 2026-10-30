@@ -14,6 +14,8 @@ const ROUTE_ARG: &str = "route";
 const DESTINATION_ARG: &str = "destination";
 
 const LIMIT_ARG: &str = "limit";
+const RULE_ARG: &str = "rule";
+const UNKNOWN_RULE: &str = "other";
 
 const MILLIS_PER_SECOND: u64 = 1000;
 
@@ -212,9 +214,12 @@ pub fn skip_message(reason: SkipReason, detail: Option<&str>) -> MessageRef {
         SkipReason::Cleared => SKIPPED_CLEARED,
     };
     let message = MessageRef::new(code);
-    match detail {
-        Some(detail) => with_detail(message, detail),
-        None => message,
+    match (reason, detail) {
+        (SkipReason::SkipRuleMatched, rule) => {
+            message.with_arg(RULE_ARG, VerbatimText::new(rule.unwrap_or(UNKNOWN_RULE)))
+        }
+        (_, Some(detail)) => with_detail(message, detail),
+        (_, None) => message,
     }
 }
 
@@ -272,6 +277,17 @@ mod tests {
         SkipReason::Promoted,
         SkipReason::Cancelled,
         SkipReason::Cleared,
+    ];
+
+    const ALL_SKIP_RULES: [forge_tts_pipeline::SkipRule; 8] = [
+        forge_tts_pipeline::SkipRule::ContainsUrl,
+        forge_tts_pipeline::SkipRule::StartsWithPrefix,
+        forge_tts_pipeline::SkipRule::FromBotAccount,
+        forge_tts_pipeline::SkipRule::ExceedsMaxLength,
+        forge_tts_pipeline::SkipRule::RepeatsRecentMessage,
+        forge_tts_pipeline::SkipRule::EmoteOnly,
+        forge_tts_pipeline::SkipRule::MostlyNonLatin,
+        forge_tts_pipeline::SkipRule::CustomRegex,
     ];
 
     type Shape = (String, Vec<(String, MessageArg)>, Option<String>);
@@ -452,7 +468,7 @@ mod tests {
             }),
             tts_failure(&TtsError::NetworkFailed("token abc rejected".into())),
             audio_failure(&AudioError::Host("token abc rejected".into())),
-            skip_message(SkipReason::SkipRuleMatched, Some("token abc rejected")),
+            skip_message(SkipReason::BlockedByAlias, Some("token abc rejected")),
         ];
         for message in causes {
             assert_eq!(
@@ -632,7 +648,10 @@ mod tests {
             .map(|reason| skip_message(reason, None).code().to_string())
             .collect();
         assert_eq!(codes.len(), ALL_SKIP_REASONS.len());
-        for reason in ALL_SKIP_REASONS {
+        for reason in ALL_SKIP_REASONS
+            .into_iter()
+            .filter(|reason| *reason != SkipReason::SkipRuleMatched)
+        {
             let bare = skip_message(reason, None);
             let detailed = skip_message(reason, Some("no urls"));
             assert_eq!(
@@ -650,6 +669,40 @@ mod tests {
                 ),
                 "{reason:?}"
             );
+        }
+    }
+
+    #[test]
+    fn a_skip_rule_message_carries_the_rule_token_as_argument_and_never_as_detail() {
+        for (detail, rule) in [
+            (Some("contains_url"), "contains_url"),
+            (Some("custom_regex"), "custom_regex"),
+            (None, UNKNOWN_RULE),
+        ] {
+            assert_eq!(
+                shape(&skip_message(SkipReason::SkipRuleMatched, detail)),
+                expected(
+                    "speak.skipped_rule_matched",
+                    &[("rule", verbatim(rule))],
+                    None
+                ),
+                "{detail:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn every_skip_rule_token_has_its_own_branch_in_both_languages() {
+        for (language, ftl) in [("en", SPEAK_MESSAGES.en_ftl), ("uk", SPEAK_MESSAGES.uk_ftl)] {
+            let entry = ftl
+                .split("msg-speak-skipped_rule_matched")
+                .nth(1)
+                .and_then(|rest| rest.split("\nmsg-").next())
+                .unwrap_or_else(|| panic!("skipped_rule_matched missing in {language}"));
+            for rule in ALL_SKIP_RULES {
+                let key = format!("[{}]", rule.token());
+                assert!(entry.contains(&key), "{language}: no branch for {key}");
+            }
         }
     }
 

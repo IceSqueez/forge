@@ -103,8 +103,8 @@ impl SpeakState {
                 self.now_speaking = Some(NowSpeaking {
                     request_id,
                     viewer_name,
-                    engine_id: engine_id.0,
-                    voice_id: voice_id.0,
+                    engine_id: engine_id.map(|id| id.0).unwrap_or_default(),
+                    voice_id: voice_id.map(|id| id.0).unwrap_or_default(),
                     text,
                     elapsed_secs: 0,
                     total_secs: duration_secs,
@@ -143,7 +143,7 @@ impl SpeakState {
                 true
             }
             SpeakEvent::QueueChanged { order, .. } => self.reseat_queue(&order),
-            SpeakEvent::Paused { .. } => {
+            SpeakEvent::Paused => {
                 let changed = !self.manual_paused;
                 self.manual_paused = true;
                 changed
@@ -229,9 +229,7 @@ mod tests {
     use super::*;
 
     fn manual_pause() -> SpeakEvent {
-        SpeakEvent::Paused {
-            reason: "user paused".into(),
-        }
+        SpeakEvent::Paused
     }
 
     fn rid(id: &str) -> RequestId {
@@ -270,12 +268,29 @@ mod tests {
     fn started(id: &str) -> SpeakEvent {
         SpeakEvent::Started {
             request_id: rid(id),
-            voice_id: forge_speech_types::VoiceId("amy".into()),
-            engine_id: forge_speech_types::EngineId("piper".into()),
+            voice_id: Some(forge_speech_types::VoiceId("amy".into())),
+            engine_id: Some(forge_speech_types::EngineId("piper".into())),
             viewer_name: format!("viewer-{id}"),
             text: "hello".into(),
             duration_secs: 3,
         }
+    }
+
+    #[test]
+    fn a_started_event_without_a_resolved_voice_shows_empty_engine_and_voice() {
+        let mut state = SpeakState::new();
+
+        state.apply_event(SpeakEvent::Started {
+            request_id: rid("a"),
+            voice_id: None,
+            engine_id: None,
+            viewer_name: "viewer-a".into(),
+            text: "hello".into(),
+            duration_secs: 0,
+        });
+
+        let now = state.now_speaking_snapshot().expect("now speaking");
+        assert_eq!((now.engine_id.as_str(), now.voice_id.as_str()), ("", ""));
     }
 
     fn queue_ids(state: &SpeakState) -> Vec<String> {

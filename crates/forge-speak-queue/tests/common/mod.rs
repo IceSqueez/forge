@@ -221,10 +221,10 @@ pub async fn wait_for_resolved_voice(
         }
         match tokio::time::timeout(remaining, stream.recv()).await {
             Ok(Ok(SpeakEvent::Started {
-                voice_id,
-                engine_id,
+                voice_id: Some(voice_id),
+                engine_id: Some(engine_id),
                 ..
-            })) if !voice_id.0.is_empty() => return (voice_id.0, engine_id.0),
+            })) => return (voice_id.0, engine_id.0),
             Ok(Ok(_)) => continue,
             Ok(Err(_)) => panic!("stream closed"),
             Err(_) => panic!("timeout waiting for resolved Started event"),

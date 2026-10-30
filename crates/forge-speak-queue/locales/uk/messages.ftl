@@ -29,7 +29,17 @@ msg-speak-audio_route_unknown = Звукового маршруту { $route } �
 msg-speak-audio_routes_failed = Усі звукові маршрути для озвучення не спрацювали.
 msg-speak-audio_remote_failed = Віддалене місце призначення звуку не спрацювало.
 msg-speak-no_overlay_listener = Жодна відкрита сторінка не слухає звуковий оверлей { $destination }.
-msg-speak-skipped_rule_matched = Пропущено: повідомлення підпало під правило пропуску.
+msg-speak-skipped_rule_matched = Пропущено: { $rule ->
+    [contains_url] повідомлення містить посилання.
+    [starts_with_prefix] повідомлення починається з пропущеного префікса.
+    [from_bot_account] повідомлення від бот-акаунта.
+    [exceeds_max_length] повідомлення занадто довге.
+    [repeats_recent_message] повідомлення повторює недавнє.
+    [emote_only] повідомлення лише з емоцій.
+    [mostly_non_latin] повідомлення переважно не латиницею.
+    [custom_regex] повідомлення підпало під власний шаблон пропуску.
+   *[other] повідомлення підпало під правило пропуску.
+}
 msg-speak-skipped_word_filter = Пропущено: повідомлення заблоковано фільтром слів.
 msg-speak-skipped_empty = Пропущено: після фільтрації нічого озвучувати.
 msg-speak-skipped_alias = Пропущено: глядача заблоковано голосовим псевдонімом.

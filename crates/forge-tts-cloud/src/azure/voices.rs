@@ -5,7 +5,7 @@ use serde::Deserialize;
 
 use crate::azure::SAMPLE_RATE_HZ;
 use crate::azure::error::AzureError;
-use crate::azure::synth::{INVALID_API_KEY, SUBSCRIPTION_KEY_HEADER, VOICES_LIST_PATH};
+use crate::azure::synth::{SUBSCRIPTION_KEY_HEADER, VOICES_LIST_PATH, classify_with};
 use crate::gateway_failure::failure_detail;
 use crate::network::ProviderLink;
 
@@ -30,15 +30,7 @@ fn gender_from_str(s: &str) -> VoiceGender {
 }
 
 fn classify_error(failure: &GatewayFailure, link: &ProviderLink) -> AzureError {
-    if let Some(retry_after_secs) = link.throttle_secs(failure) {
-        return AzureError::RateLimited { retry_after_secs };
-    }
-    match failure {
-        GatewayFailure::Unauthorized { .. } | GatewayFailure::Forbidden { .. } => {
-            AzureError::Unauthorized(INVALID_API_KEY.into())
-        }
-        other => AzureError::Http(failure_detail(other)),
-    }
+    classify_with(failure, link, None, failure_detail)
 }
 
 pub(super) async fn fetch_voices(
@@ -154,7 +146,7 @@ mod tests {
             ),
             (
                 ResponseTemplate::new(200).set_body_bytes(over_catalog_cap()),
-                format!("Http({cap})"),
+                format!("Rejected({cap})"),
             ),
         ] {
             let server = serving(template).await;
@@ -164,7 +156,7 @@ mod tests {
                 AzureError::RateLimited { retry_after_secs } => {
                     format!("RateLimited({retry_after_secs})")
                 }
-                AzureError::Http(detail) if detail.contains(&cap) => format!("Http({cap})"),
+                AzureError::Rejected(detail) if detail.contains(&cap) => format!("Rejected({cap})"),
                 AzureError::Http(_) => "Http".to_owned(),
                 AzureError::Decode(_) => "Decode".to_owned(),
                 other => format!("{other:?}"),

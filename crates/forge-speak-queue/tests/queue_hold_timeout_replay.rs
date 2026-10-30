@@ -206,7 +206,7 @@ where
 }
 
 fn is_started_with_a_voice(ev: &SpeakEvent) -> bool {
-    matches!(ev, SpeakEvent::Started { voice_id, .. } if !voice_id.0.is_empty())
+    matches!(ev, SpeakEvent::Started { voice_id, .. } if voice_id.is_some())
 }
 
 fn is_finished(ev: &SpeakEvent, id: &RequestId) -> bool {
@@ -239,7 +239,7 @@ async fn paused_mid_synthesis(q: &mut Harness, gate: &Gate, text: &str) -> Reque
     q.handle.send(SpeakCommand::Enqueue(req)).await.unwrap();
     gate.entered.notified().await;
     q.handle.send(SpeakCommand::Pause).await.unwrap();
-    wait_for(&mut q.stream, |e| matches!(e, SpeakEvent::Paused { .. })).await;
+    wait_for(&mut q.stream, |e| matches!(e, SpeakEvent::Paused)).await;
     gate.release.notify_one();
     id
 }
@@ -334,7 +334,7 @@ async fn speak_once(q: &mut Harness, viewer: &str) {
     q.handle.send(SpeakCommand::Enqueue(req)).await.unwrap();
     wait_for(&mut q.stream, |e| is_finished(e, &id)).await;
     q.handle.send(SpeakCommand::Pause).await.unwrap();
-    wait_for(&mut q.stream, |e| matches!(e, SpeakEvent::Paused { .. })).await;
+    wait_for(&mut q.stream, |e| matches!(e, SpeakEvent::Paused)).await;
 }
 
 async fn enqueue_admitted(q: &mut Harness, viewer: &str) {

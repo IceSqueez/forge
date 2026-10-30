@@ -247,7 +247,7 @@ impl TtsEngine for PiperEngine {
             } else {
                 format!("piper exited with {}: {stderr}", output.status)
             };
-            return Err(TtsError::EngineUnavailable {
+            return Err(TtsError::SynthesisFailed {
                 id: piper_engine_id(),
                 detail,
             });

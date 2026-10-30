@@ -2027,8 +2027,8 @@ mod tests {
         use forge_tts_pipeline::SkipReason as PipelineSkip;
         for (pipeline, expected) in [
             (
-                PipelineSkip::MatchedSkipRule("no urls"),
-                (SkipReason::SkipRuleMatched, Some("no urls".to_owned())),
+                PipelineSkip::MatchedSkipRule(forge_tts_pipeline::SkipRule::ContainsUrl),
+                (SkipReason::SkipRuleMatched, Some("contains_url".to_owned())),
             ),
             (
                 PipelineSkip::BlockedByWordFilter,

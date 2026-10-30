@@ -203,7 +203,7 @@ async fn pause_holds_synthesis() {
         forge_speak_queue::spawn(QueueConfig::default(), make_deps(Arc::new(sink)));
 
     handle.send(SpeakCommand::Pause).await.unwrap();
-    drain_until(&mut stream, |e| matches!(e, SpeakEvent::Paused { .. }), 500).await;
+    drain_until(&mut stream, |e| matches!(e, SpeakEvent::Paused), 500).await;
 
     let req = make_request("viewer1", "paused message", Priority::Normal);
     handle.send(SpeakCommand::Enqueue(req)).await.unwrap();
@@ -236,7 +236,7 @@ async fn clear_empties_queue() {
     let (handle, mut stream) = forge_speak_queue::spawn(config, make_deps(Arc::new(sink)));
 
     handle.send(SpeakCommand::Pause).await.unwrap();
-    drain_until(&mut stream, |e| matches!(e, SpeakEvent::Paused { .. }), 500).await;
+    drain_until(&mut stream, |e| matches!(e, SpeakEvent::Paused), 500).await;
 
     for i in 0..5 {
         let req = make_request("viewer1", &format!("message {i}"), Priority::Normal);
@@ -261,7 +261,7 @@ async fn per_user_limit_rejects_excess() {
     let (handle, mut stream) = forge_speak_queue::spawn(config, make_deps(Arc::new(sink)));
 
     handle.send(SpeakCommand::Pause).await.unwrap();
-    drain_until(&mut stream, |e| matches!(e, SpeakEvent::Paused { .. }), 500).await;
+    drain_until(&mut stream, |e| matches!(e, SpeakEvent::Paused), 500).await;
 
     for _ in 0..3 {
         let req = make_request("same_user", "test", Priority::Normal);
@@ -287,7 +287,7 @@ async fn queue_full_rejects_when_at_capacity() {
     let (handle, mut stream) = forge_speak_queue::spawn(config, make_deps(Arc::new(sink)));
 
     handle.send(SpeakCommand::Pause).await.unwrap();
-    drain_until(&mut stream, |e| matches!(e, SpeakEvent::Paused { .. }), 500).await;
+    drain_until(&mut stream, |e| matches!(e, SpeakEvent::Paused), 500).await;
 
     for i in 0..3 {
         let req = make_request(&format!("user{i}"), "test", Priority::Normal);
@@ -313,7 +313,7 @@ async fn high_priority_enqueued_first() {
     let (handle, mut stream) = forge_speak_queue::spawn(config, make_deps(Arc::new(sink)));
 
     handle.send(SpeakCommand::Pause).await.unwrap();
-    drain_until(&mut stream, |e| matches!(e, SpeakEvent::Paused { .. }), 500).await;
+    drain_until(&mut stream, |e| matches!(e, SpeakEvent::Paused), 500).await;
 
     let normal = make_request("user1", "normal", Priority::Normal);
     let high = make_request("user2", "high priority", Priority::High);

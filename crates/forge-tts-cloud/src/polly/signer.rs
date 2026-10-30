@@ -458,6 +458,8 @@ pub(crate) mod test_support {
             }
             PollyError::SignatureError(_) => "SignatureError".into(),
             PollyError::VoiceNotFound(_) => "VoiceNotFound".into(),
+            PollyError::Rejected(_) => "Rejected".into(),
+            PollyError::Decode(_) => "Decode".into(),
             PollyError::Io(_) => "Io".into(),
         }
     }

@@ -140,7 +140,7 @@ async fn wait_marking_start(
                 event = events.recv() => {
                     match event {
                         Ok(SpeakEvent::Started { request_id: rid, voice_id, .. })
-                            if &rid == request_id && !voice_id.0.is_empty() =>
+                            if &rid == request_id && voice_id.is_some() =>
                         {
                             if let Some(started) = started {
                                 started.mark_started();
@@ -894,9 +894,20 @@ mod tests {
         assert_eq!(
             (
                 reason.code().to_string(),
-                reason.detail().is_some_and(|d| d.as_str().contains("bot")),
+                reason
+                    .args()
+                    .map(|(name, value)| (name.to_owned(), value.clone()))
+                    .collect::<Vec<_>>(),
             ),
-            ("speak.skipped_rule_matched".to_owned(), true),
+            (
+                "speak.skipped_rule_matched".to_owned(),
+                vec![(
+                    "rule".to_owned(),
+                    forge_types::MessageArg::Verbatim(forge_types::VerbatimText::new(
+                        "from_bot_account"
+                    ))
+                )]
+            ),
             "skipped for {reason:?}"
         );
     }

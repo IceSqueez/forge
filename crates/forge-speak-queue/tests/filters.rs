@@ -8,7 +8,7 @@ mod filters {
         UrlMode as StorageUrlMode,
     };
     use forge_tts_pipeline::{
-        PipelineConfig, PipelineContext, PipelineResult, SkipReason, process,
+        PipelineConfig, PipelineContext, PipelineResult, SkipReason, SkipRule, process,
     };
 
     fn ctx() -> PipelineContext<'static> {
@@ -384,7 +384,7 @@ mod filters {
         assert_eq!(
             result,
             PipelineResult::Skip {
-                reason: SkipReason::MatchedSkipRule("message exceeds max length")
+                reason: SkipReason::MatchedSkipRule(SkipRule::ExceedsMaxLength)
             },
             "text longer than the migrated max_length must now be Skipped, not truncated"
         );
@@ -437,7 +437,7 @@ mod filters {
         assert_eq!(
             result,
             PipelineResult::Skip {
-                reason: SkipReason::MatchedSkipRule("message exceeds max length")
+                reason: SkipReason::MatchedSkipRule(SkipRule::ExceedsMaxLength)
             },
             "loaded config must carry the seeded max_length=7"
         );
@@ -603,7 +603,7 @@ mod filters {
             (
                 PipelineResult::Speak("hi earth".into()),
                 PipelineResult::Skip {
-                    reason: SkipReason::MatchedSkipRule("message matches a custom skip regex"),
+                    reason: SkipReason::MatchedSkipRule(SkipRule::CustomRegex),
                 },
             )
         );

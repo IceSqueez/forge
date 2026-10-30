@@ -28,6 +28,12 @@ impl From<ElevenLabsError> for TtsError {
                 TtsError::RateLimited { retry_after_secs }
             }
             ElevenLabsError::VoiceNotFound(id) => TtsError::InvalidVoice { id },
+            ElevenLabsError::Rejected(detail) | ElevenLabsError::Decode(detail) => {
+                TtsError::SynthesisFailed {
+                    id: engine_id,
+                    detail,
+                }
+            }
             ElevenLabsError::Io(io_err) => TtsError::Io(io_err),
         }
     }
@@ -202,6 +208,17 @@ mod tests {
                 "{base}"
             );
         }
+    }
+
+    #[tokio::test]
+    async fn a_rejected_request_fails_at_once_without_a_retry() {
+        let server = serving(ResponseTemplate::new(400).set_body_string("malformed")).await;
+        let result = engine_at(&server.uri()).synthesize(request(false)).await;
+        assert!(
+            matches!(result, Err(TtsError::SynthesisFailed { .. })),
+            "{result:?}"
+        );
+        assert_eq!(request_count(&server).await, 1);
     }
 
     #[tokio::test]

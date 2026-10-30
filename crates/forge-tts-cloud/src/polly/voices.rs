@@ -9,7 +9,7 @@ use crate::network::ProviderLink;
 use crate::polly::SAMPLE_RATE_HZ;
 use crate::polly::error::PollyError;
 use crate::polly::signer::{PollySigner, SignedCall};
-use crate::polly::synth::{INVALID_CREDENTIALS, VOICES_PATH};
+use crate::polly::synth::{VOICES_PATH, classify_with};
 
 const NEXT_TOKEN_PARAM: &str = "NextToken";
 const MAX_VOICE_PAGES: usize = 32;
@@ -45,15 +45,7 @@ fn gender_from_str(s: &str) -> VoiceGender {
 }
 
 fn classify_error(failure: &GatewayFailure, link: &ProviderLink) -> PollyError {
-    if let Some(retry_after_secs) = link.throttle_secs(failure) {
-        return PollyError::RateLimited { retry_after_secs };
-    }
-    match failure {
-        GatewayFailure::Unauthorized { .. } | GatewayFailure::Forbidden { .. } => {
-            PollyError::Unauthorized(INVALID_CREDENTIALS.into())
-        }
-        other => PollyError::Http(failure_detail(other)),
-    }
+    classify_with(failure, link, None, failure_detail)
 }
 
 pub(super) async fn fetch_voices(
@@ -122,7 +114,7 @@ async fn fetch_page(
         .map_err(|failure| classify_error(&failure, link))?;
     let list: PollyVoiceList = response
         .json()
-        .map_err(|e| PollyError::Http(e.to_string()))?;
+        .map_err(|e| PollyError::Decode(e.to_string()))?;
     Ok(VoicePage {
         list,
         body_len: u64::try_from(response.body().len()).unwrap_or(u64::MAX),
@@ -315,10 +307,10 @@ mod tests {
                 "Unauthorized".to_owned(),
             ),
             (429, "slow down", None, no_hint.clone()),
-            (429, "quota exceeded", None, no_hint.clone()),
+            (429, "quota exceeded", None, "QuotaExceeded".to_owned()),
             (429, "slow down", Some(7), "RateLimited(7)".to_owned()),
             (500, "internal", None, "Http".to_owned()),
-            (200, "not json", None, "Http".to_owned()),
+            (200, "not json", None, "Decode".to_owned()),
         ] {
             let server = echo_server(echoing(status, text, retry_after)).await;
             let error = fetch_voices(&link_to(&server), &signer())
@@ -432,7 +424,7 @@ mod tests {
             (ResponseTemplate::new(429), no_hint.clone()),
             (
                 ResponseTemplate::new(200).set_body_string("{"),
-                "Http".to_owned(),
+                "Decode".to_owned(),
             ),
         ] {
             let server = serving(chain(

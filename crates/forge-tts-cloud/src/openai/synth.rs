@@ -5,7 +5,7 @@ use forge_tts_core::SynthesisRequest;
 use serde_json::json;
 
 use crate::gateway_failure::{
-    PAYMENT_REQUIRED, failure_detail, probe_failure_detail, quota_excerpt, rejected_excerpt,
+    Classified, ProviderPolicy, VoiceSignal, classify, failure_detail, probe_failure_detail,
 };
 use crate::network::ProviderLink;
 use crate::openai::error::OpenAiError;
@@ -28,20 +28,30 @@ fn map_speed(rate_multiplier: f32) -> f64 {
     f64::from(rate_multiplier.clamp(0.25, 4.0))
 }
 
+const POLICY: ProviderPolicy = ProviderPolicy {
+    quota_markers: QUOTA_MARKERS,
+    payment_required_is_quota: true,
+    voice_signal: VoiceSignal::Unreported,
+};
+
+pub(super) fn classify_with(
+    failure: &GatewayFailure,
+    link: &ProviderLink,
+    voice: Option<&VoiceId>,
+    detail: fn(&GatewayFailure) -> String,
+) -> OpenAiError {
+    match classify(failure, link, POLICY, voice, detail) {
+        Classified::Quota(excerpt) => OpenAiError::QuotaExceeded(excerpt),
+        Classified::Throttled(retry_after_secs) => OpenAiError::RateLimited { retry_after_secs },
+        Classified::Auth => OpenAiError::Unauthorized(INVALID_API_KEY.into()),
+        Classified::VoiceMissing(voice) => OpenAiError::VoiceNotFound(voice),
+        Classified::Rejected(detail) => OpenAiError::Rejected(detail),
+        Classified::Transient(detail) => OpenAiError::Http(detail),
+    }
+}
+
 fn classify_error(failure: &GatewayFailure, link: &ProviderLink) -> OpenAiError {
-    if let Some(excerpt) = quota_excerpt(failure, QUOTA_MARKERS) {
-        return OpenAiError::QuotaExceeded(excerpt.to_owned());
-    }
-    if let Some(retry_after_secs) = link.throttle_secs(failure) {
-        return OpenAiError::RateLimited { retry_after_secs };
-    }
-    if let Some(excerpt) = rejected_excerpt(failure, PAYMENT_REQUIRED) {
-        return OpenAiError::QuotaExceeded(excerpt.to_owned());
-    }
-    match failure {
-        GatewayFailure::Unauthorized { .. } => OpenAiError::Unauthorized(INVALID_API_KEY.into()),
-        other => OpenAiError::Http(failure_detail(other)),
-    }
+    classify_with(failure, link, None, failure_detail)
 }
 
 pub(super) async fn synthesize(
@@ -66,7 +76,7 @@ pub(super) async fn synthesize(
         "response_format": "wav",
         "speed": speed,
     }))
-    .map_err(|e| OpenAiError::Http(e.to_string()))?;
+    .map_err(|e| OpenAiError::Rejected(e.to_string()))?;
 
     let request = GatewayRequest::post(SPEECH_PATH)
         .bearer(Secret::new(api_key))
@@ -88,13 +98,7 @@ pub(super) async fn probe_connection(
         .class(CallClass::Catalog);
     match link.send(request).await {
         Ok(_) => Ok(()),
-        Err(GatewayFailure::Unauthorized { .. }) => {
-            Err(OpenAiError::Unauthorized(INVALID_API_KEY.into()))
-        }
-        Err(failure) => match link.throttle_secs(&failure) {
-            Some(retry_after_secs) => Err(OpenAiError::RateLimited { retry_after_secs }),
-            None => Err(OpenAiError::Http(probe_failure_detail(&failure))),
-        },
+        Err(failure) => Err(classify_with(&failure, link, None, probe_failure_detail)),
     }
 }
 
@@ -164,6 +168,7 @@ mod tests {
             }
             OpenAiError::VoiceNotFound(_) => "VoiceNotFound".into(),
             OpenAiError::Decode(_) => "Decode".into(),
+            OpenAiError::Rejected(_) => "Rejected".into(),
             OpenAiError::Io(_) => "Io".into(),
         }
     }
@@ -288,7 +293,7 @@ mod tests {
             (ResponseTemplate::new(401), "Unauthorized".to_owned()),
             (ResponseTemplate::new(429), no_hint),
             (throttled(9), "RateLimited(9)".to_owned()),
-            (ResponseTemplate::new(403), "Http".to_owned()),
+            (ResponseTemplate::new(403), "Unauthorized".to_owned()),
             (ResponseTemplate::new(500), "Http".to_owned()),
         ] {
             let server = MockServer::start().await;
@@ -327,8 +332,77 @@ mod tests {
             .await
             .unwrap_err();
         assert!(
-            matches!(&error, OpenAiError::Http(detail) if detail.contains(&catalog_cap_text())),
+            matches!(&error, OpenAiError::Rejected(detail) if detail.contains(&catalog_cap_text())),
             "{error}"
         );
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn every_gateway_failure_without_a_body_is_classified_by_the_provider_table() {
+        let link = crate::network::CloudGateways::new()
+            .provider("p")
+            .link("https://api.example.com")
+            .unwrap();
+        let voice = VoiceId("v".into());
+
+        let got: Vec<(&str, String)> = crate::network::test_support::every_failure_without_a_body()
+            .iter()
+            .map(|(label, failure)| {
+                (
+                    *label,
+                    outcome(&classify_with(failure, &link, Some(&voice), failure_detail)),
+                )
+            })
+            .collect();
+
+        let want: Vec<(&str, String)> = [
+            ("401", "Unauthorized"),
+            ("403", "Unauthorized"),
+            ("404", "Rejected"),
+            ("429", "RateLimited(3)"),
+            ("400", "Rejected"),
+            ("402", "QuotaExceeded"),
+            ("408", "Http"),
+            ("418", "Rejected"),
+            ("500", "Http"),
+            ("302", "Rejected"),
+            ("budget", "RateLimited(0)"),
+            ("too-large", "Rejected"),
+            ("cancelled", "Rejected"),
+            ("address", "Rejected"),
+            ("invalid", "Rejected"),
+        ]
+        .into_iter()
+        .map(|(label, class)| (label, class.to_owned()))
+        .collect();
+        assert_eq!(got, want);
+    }
+
+    #[tokio::test]
+    async fn probe_and_synthesis_give_the_same_class_for_auth_and_throttle_statuses() {
+        let no_hint = format!("RateLimited({NO_HINT_WAIT_SECS})");
+        for (status, retry, expected) in [
+            (401, None, "Unauthorized".to_owned()),
+            (403, None, "Unauthorized".to_owned()),
+            (429, None, no_hint),
+            (429, Some(9), "RateLimited(9)".to_owned()),
+        ] {
+            let template = match retry {
+                Some(secs) => throttled(secs),
+                None => ResponseTemplate::new(status),
+            };
+            let server = serving(template).await;
+            let synthesized = synthesize(&link_to(&server), API_KEY, request_for("alloy"))
+                .await
+                .unwrap_err();
+            let probed = probe_connection(&link_to(&server), API_KEY)
+                .await
+                .unwrap_err();
+            assert_eq!(
+                (outcome(&synthesized), outcome(&probed)),
+                (expected.clone(), expected),
+                "{status} {retry:?}"
+            );
+        }
     }
 }

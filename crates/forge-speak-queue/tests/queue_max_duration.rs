@@ -114,7 +114,7 @@ async fn resolved_duration_secs(stream: &mut SpeakEventStream, max_ms: u64) -> u
                 voice_id,
                 duration_secs,
                 ..
-            })) if !voice_id.0.is_empty() => return duration_secs,
+            })) if voice_id.is_some() => return duration_secs,
             Ok(Ok(_)) => continue,
             Ok(Err(_)) => panic!("stream closed"),
             Err(_) => panic!("timeout waiting for a resolved Started event"),

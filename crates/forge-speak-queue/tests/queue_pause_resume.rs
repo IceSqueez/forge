@@ -168,7 +168,7 @@ async fn pause_prevents_synthesis_until_resume() {
     let (handle, mut stream) = forge_speak_queue::spawn(config, make_deps(Arc::new(sink)));
 
     handle.send(SpeakCommand::Pause).await.unwrap();
-    wait_for(&mut stream, |e| matches!(e, SpeakEvent::Paused { .. }), 500).await;
+    wait_for(&mut stream, |e| matches!(e, SpeakEvent::Paused), 500).await;
 
     handle
         .send(SpeakCommand::Enqueue(speak_req("paused message")))
@@ -252,7 +252,7 @@ async fn voice_gate_release_does_not_clear_a_manual_pause() {
     let (handle, mut stream) = forge_speak_queue::spawn(config, make_deps(Arc::new(sink)));
 
     handle.send(SpeakCommand::Pause).await.unwrap();
-    wait_for(&mut stream, |e| matches!(e, SpeakEvent::Paused { .. }), 500).await;
+    wait_for(&mut stream, |e| matches!(e, SpeakEvent::Paused), 500).await;
     handle.send(SpeakCommand::VoiceGateActivated).await.unwrap();
     wait_for(&mut stream, |e| matches!(e, SpeakEvent::VoiceGateHeld), 500).await;
 

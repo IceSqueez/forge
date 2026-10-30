@@ -7,7 +7,7 @@ use serde_json::json;
 use crate::elevenlabs::SAMPLE_RATE_HZ;
 use crate::elevenlabs::error::ElevenLabsError;
 use crate::gateway_failure::{
-    PAYMENT_REQUIRED, failure_detail, probe_failure_detail, quota_excerpt, rejected_excerpt,
+    Classified, ProviderPolicy, VoiceSignal, classify, failure_detail, probe_failure_detail,
 };
 use crate::network::{ProviderLink, is_plain_path_segment};
 
@@ -18,27 +18,36 @@ const USER_PATH: &str = "/v1/user";
 const OUTPUT_FORMAT_QUERY: &str = "output_format";
 const QUOTA_MARKERS: &[&str] = &["quota", "characters"];
 
+const POLICY: ProviderPolicy = ProviderPolicy {
+    quota_markers: QUOTA_MARKERS,
+    payment_required_is_quota: true,
+    voice_signal: VoiceSignal::NotFoundStatus,
+};
+
+pub(super) fn classify_with(
+    failure: &GatewayFailure,
+    link: &ProviderLink,
+    voice: Option<&VoiceId>,
+    detail: fn(&GatewayFailure) -> String,
+) -> ElevenLabsError {
+    match classify(failure, link, POLICY, voice, detail) {
+        Classified::Quota(excerpt) => ElevenLabsError::QuotaExceeded(excerpt),
+        Classified::Throttled(retry_after_secs) => {
+            ElevenLabsError::RateLimited { retry_after_secs }
+        }
+        Classified::Auth => ElevenLabsError::Unauthorized(INVALID_API_KEY.into()),
+        Classified::VoiceMissing(voice) => ElevenLabsError::VoiceNotFound(voice),
+        Classified::Rejected(detail) => ElevenLabsError::Rejected(detail),
+        Classified::Transient(detail) => ElevenLabsError::Http(detail),
+    }
+}
+
 fn classify_error(
     failure: &GatewayFailure,
     link: &ProviderLink,
     voice_id: &VoiceId,
 ) -> ElevenLabsError {
-    if let Some(excerpt) = quota_excerpt(failure, QUOTA_MARKERS) {
-        return ElevenLabsError::QuotaExceeded(excerpt.to_owned());
-    }
-    if let Some(retry_after_secs) = link.throttle_secs(failure) {
-        return ElevenLabsError::RateLimited { retry_after_secs };
-    }
-    if let Some(excerpt) = rejected_excerpt(failure, PAYMENT_REQUIRED) {
-        return ElevenLabsError::QuotaExceeded(excerpt.to_owned());
-    }
-    match failure {
-        GatewayFailure::Unauthorized { .. } | GatewayFailure::Forbidden { .. } => {
-            ElevenLabsError::Unauthorized(INVALID_API_KEY.into())
-        }
-        GatewayFailure::NotFound { .. } => ElevenLabsError::VoiceNotFound(voice_id.clone()),
-        other => ElevenLabsError::Http(failure_detail(other)),
-    }
+    classify_with(failure, link, Some(voice_id), failure_detail)
 }
 
 pub(super) async fn synthesize(
@@ -70,7 +79,7 @@ pub(super) async fn synthesize(
             "similarity_boost": 0.75
         }
     }))
-    .map_err(|e| ElevenLabsError::Http(e.to_string()))?;
+    .map_err(|e| ElevenLabsError::Rejected(e.to_string()))?;
 
     let request = GatewayRequest::post(format!("{SPEECH_PATH}/{}", req.voice_id.0))
         .query(OUTPUT_FORMAT_QUERY, format!("pcm_{SAMPLE_RATE_HZ}"))
@@ -95,13 +104,7 @@ pub(super) async fn probe_connection(
         .class(CallClass::Catalog);
     match link.send(request).await {
         Ok(_) => Ok(()),
-        Err(GatewayFailure::Unauthorized { .. }) => {
-            Err(ElevenLabsError::Unauthorized(INVALID_API_KEY.into()))
-        }
-        Err(failure) => match link.throttle_secs(&failure) {
-            Some(retry_after_secs) => Err(ElevenLabsError::RateLimited { retry_after_secs }),
-            None => Err(ElevenLabsError::Http(probe_failure_detail(&failure))),
-        },
+        Err(failure) => Err(classify_with(&failure, link, None, probe_failure_detail)),
     }
 }
 
@@ -139,6 +142,8 @@ mod tests {
                 format!("RateLimited({retry_after_secs})")
             }
             ElevenLabsError::VoiceNotFound(_) => "VoiceNotFound".into(),
+            ElevenLabsError::Rejected(_) => "Rejected".into(),
+            ElevenLabsError::Decode(_) => "Decode".into(),
             ElevenLabsError::Io(_) => "Io".into(),
         }
     }
@@ -306,7 +311,7 @@ mod tests {
             (ResponseTemplate::new(401), "Unauthorized".to_owned()),
             (ResponseTemplate::new(429), no_hint),
             (throttled(9), "RateLimited(9)".to_owned()),
-            (ResponseTemplate::new(403), "Http".to_owned()),
+            (ResponseTemplate::new(403), "Unauthorized".to_owned()),
             (ResponseTemplate::new(500), "Http".to_owned()),
         ] {
             let server = MockServer::start().await;
@@ -342,8 +347,77 @@ mod tests {
             .await
             .unwrap_err();
         assert!(
-            matches!(&error, ElevenLabsError::Http(detail) if detail.contains(&catalog_cap_text())),
+            matches!(&error, ElevenLabsError::Rejected(detail) if detail.contains(&catalog_cap_text())),
             "{error}"
         );
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn every_gateway_failure_without_a_body_is_classified_by_the_provider_table() {
+        let link = crate::network::CloudGateways::new()
+            .provider("p")
+            .link("https://api.example.com")
+            .unwrap();
+        let voice = VoiceId("v".into());
+
+        let got: Vec<(&str, String)> = crate::network::test_support::every_failure_without_a_body()
+            .iter()
+            .map(|(label, failure)| {
+                (
+                    *label,
+                    outcome(&classify_with(failure, &link, Some(&voice), failure_detail)),
+                )
+            })
+            .collect();
+
+        let want: Vec<(&str, String)> = [
+            ("401", "Unauthorized"),
+            ("403", "Unauthorized"),
+            ("404", "VoiceNotFound"),
+            ("429", "RateLimited(3)"),
+            ("400", "Rejected"),
+            ("402", "QuotaExceeded"),
+            ("408", "Http"),
+            ("418", "Rejected"),
+            ("500", "Http"),
+            ("302", "Rejected"),
+            ("budget", "RateLimited(0)"),
+            ("too-large", "Rejected"),
+            ("cancelled", "Rejected"),
+            ("address", "Rejected"),
+            ("invalid", "Rejected"),
+        ]
+        .into_iter()
+        .map(|(label, class)| (label, class.to_owned()))
+        .collect();
+        assert_eq!(got, want);
+    }
+
+    #[tokio::test]
+    async fn probe_and_synthesis_give_the_same_class_for_auth_and_throttle_statuses() {
+        let no_hint = format!("RateLimited({NO_HINT_WAIT_SECS})");
+        for (status, retry, expected) in [
+            (401, None, "Unauthorized".to_owned()),
+            (403, None, "Unauthorized".to_owned()),
+            (429, None, no_hint),
+            (429, Some(9), "RateLimited(9)".to_owned()),
+        ] {
+            let template = match retry {
+                Some(secs) => throttled(secs),
+                None => ResponseTemplate::new(status),
+            };
+            let server = serving(template).await;
+            let synthesized = synthesize(&link_to(&server), API_KEY, request_for("voice-123"))
+                .await
+                .unwrap_err();
+            let probed = probe_connection(&link_to(&server), API_KEY)
+                .await
+                .unwrap_err();
+            assert_eq!(
+                (outcome(&synthesized), outcome(&probed)),
+                (expected.clone(), expected),
+                "{status} {retry:?}"
+            );
+        }
     }
 }

@@ -115,8 +115,8 @@ pub enum SpeakEvent {
     },
     Started {
         request_id: RequestId,
-        voice_id: VoiceId,
-        engine_id: EngineId,
+        voice_id: Option<VoiceId>,
+        engine_id: Option<EngineId>,
         viewer_name: String,
         text: String,
         duration_secs: u32,
@@ -147,9 +147,7 @@ pub enum SpeakEvent {
         queue_len: usize,
         order: Vec<QueuedOrderEntry>,
     },
-    Paused {
-        reason: String,
-    },
+    Paused,
     Resumed,
     VoiceGateHeld,
     VoiceGateReleased,

@@ -12,8 +12,6 @@ use crate::vocabulary::{
 use crate::voice::VoiceSkip;
 use crate::{Priority, RequestId, SpeakEvent, SpeakRequest};
 
-const USER_PAUSED: &str = "user paused";
-
 pub(crate) struct DetectedLanguage {
     pub(crate) code: LanguageCode,
     pub(crate) confidence: f64,
@@ -220,12 +218,8 @@ impl<'a> SpeakEmitter<'a> {
         let language = playback.as_ref().and_then(|p| p.language);
         self.feed(SpeakEvent::Started {
             request_id: request.request_id.clone(),
-            voice_id: playback
-                .as_ref()
-                .map_or_else(|| VoiceId(String::new()), |p| p.voice_id.clone()),
-            engine_id: playback
-                .as_ref()
-                .map_or_else(|| EngineId(String::new()), |p| p.engine_id.clone()),
+            voice_id: playback.as_ref().map(|p| p.voice_id.clone()),
+            engine_id: playback.as_ref().map(|p| p.engine_id.clone()),
             viewer_name: request.viewer_name.clone(),
             text: request.text.clone(),
             duration_secs: playback.as_ref().map_or(0, |p| p.duration_secs),
@@ -266,9 +260,7 @@ impl<'a> SpeakEmitter<'a> {
 
     pub(crate) fn paused(&self, reason: HoldReason) {
         self.feed(match reason {
-            HoldReason::User => SpeakEvent::Paused {
-                reason: USER_PAUSED.to_owned(),
-            },
+            HoldReason::User => SpeakEvent::Paused,
             HoldReason::VoiceGate => SpeakEvent::VoiceGateHeld,
         });
         self.publish(SpeakPaused { reason }, None);
@@ -288,8 +280,8 @@ pub(crate) fn pipeline_skip(
 ) -> (SkipReason, Option<String>) {
     use forge_tts_pipeline::SkipReason as PipelineSkip;
     match reason {
-        PipelineSkip::MatchedSkipRule(name) => {
-            (SkipReason::SkipRuleMatched, Some((*name).to_owned()))
+        PipelineSkip::MatchedSkipRule(rule) => {
+            (SkipReason::SkipRuleMatched, Some(rule.token().to_owned()))
         }
         PipelineSkip::BlockedByWordFilter => (SkipReason::BlockedByWordFilter, None),
         PipelineSkip::EmptyAfterProcessing => (SkipReason::EmptyAfterProcessing, None),
@@ -618,9 +610,9 @@ mod tests {
     fn feed_skip_message_carries_the_detail_as_detail_only_when_present() {
         for (reason, detail, code) in [
             (
-                SkipReason::SkipRuleMatched,
-                Some("no urls"),
-                "speak.skipped_rule_matched",
+                SkipReason::BlockedByAlias,
+                Some("alias detail"),
+                "speak.skipped_alias",
             ),
             (SkipReason::UserSkip, None, "speak.skipped_by_user"),
         ] {
@@ -646,6 +638,33 @@ mod tests {
                 (code.to_owned(), detail.map(str::to_owned), 0),
             );
         }
+    }
+
+    #[test]
+    fn feed_skip_rule_message_carries_the_rule_token_as_an_argument_and_no_detail() {
+        let req = request(None);
+        let (_, feed) = emitted(|e| {
+            e.outcome(
+                &req,
+                Outcome::Skipped {
+                    reason: SkipReason::SkipRuleMatched,
+                    detail: Some("contains_url".to_owned()),
+                },
+            )
+        });
+        let [SpeakEvent::Skipped { message, .. }] = feed.as_slice() else {
+            panic!("expected one Skipped event, got {feed:?}");
+        };
+        assert_eq!(
+            (
+                message
+                    .args()
+                    .map(|(name, _)| name.to_owned())
+                    .collect::<Vec<_>>(),
+                message.detail().map(|d| d.as_str().to_owned()),
+            ),
+            (vec!["rule".to_owned()], None),
+        );
     }
 
     #[test]

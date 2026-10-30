@@ -29,7 +29,12 @@ impl From<AzureError> for TtsError {
                 TtsError::RateLimited { retry_after_secs }
             }
             AzureError::VoiceNotFound(id) => TtsError::InvalidVoice { id },
-            AzureError::Decode(msg) => TtsError::NetworkFailed(msg),
+            AzureError::Rejected(detail) | AzureError::Decode(detail) => {
+                TtsError::SynthesisFailed {
+                    id: engine_id,
+                    detail,
+                }
+            }
             AzureError::Io(io_err) => TtsError::Io(io_err),
         }
     }
@@ -226,6 +231,17 @@ mod tests {
                 );
             }
         }
+    }
+
+    #[tokio::test]
+    async fn a_rejected_request_fails_at_once_without_a_retry() {
+        let server = serving(ResponseTemplate::new(400).set_body_string("malformed")).await;
+        let result = engine_at(&server.uri()).synthesize(request()).await;
+        assert!(
+            matches!(result, Err(TtsError::SynthesisFailed { .. })),
+            "{result:?}"
+        );
+        assert_eq!(request_count(&server).await, 1);
     }
 
     #[tokio::test]

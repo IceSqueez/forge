@@ -7,7 +7,7 @@
 use std::sync::mpsc;
 
 #[cfg(target_os = "macos")]
-const SYNTHESIS_WAIT_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(30);
+pub(crate) const SYNTHESIS_WAIT_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(30);
 
 #[cfg(target_os = "macos")]
 use forge_speech_types::PcmBuffer;

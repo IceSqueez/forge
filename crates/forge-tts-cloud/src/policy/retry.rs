@@ -92,7 +92,7 @@ where
         match result {
             Err(_elapsed) => {
                 return Err(TtsError::Timeout {
-                    ms: cfg.timeout.as_millis() as u64,
+                    ms: u64::try_from(cfg.timeout.as_millis()).unwrap_or(u64::MAX),
                 });
             }
             Ok(Ok(buf)) => return Ok(buf),

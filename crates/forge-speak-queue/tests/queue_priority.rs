@@ -169,7 +169,7 @@ async fn high_priority_dispatched_before_normal_when_enqueued_after() {
     let (handle, mut stream) = forge_speak_queue::spawn(config, make_deps(Arc::new(sink)));
 
     handle.send(SpeakCommand::Pause).await.unwrap();
-    wait_for(&mut stream, |e| matches!(e, SpeakEvent::Paused { .. }), 500).await;
+    wait_for(&mut stream, |e| matches!(e, SpeakEvent::Paused), 500).await;
 
     let normal_id = {
         let r = req("user-n", "normal message", Priority::Normal);
@@ -252,7 +252,7 @@ async fn multiple_high_priority_items_dispatched_before_normals() {
     let (handle, mut stream) = forge_speak_queue::spawn(config, make_deps(Arc::new(sink)));
 
     handle.send(SpeakCommand::Pause).await.unwrap();
-    wait_for(&mut stream, |e| matches!(e, SpeakEvent::Paused { .. }), 500).await;
+    wait_for(&mut stream, |e| matches!(e, SpeakEvent::Paused), 500).await;
 
     for i in 0..3 {
         handle

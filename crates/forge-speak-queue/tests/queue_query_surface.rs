@@ -52,12 +52,7 @@ async fn queue_depth_rises_with_pending_and_falls_to_zero_on_drain() {
     let (handle, mut stream) = spawn_standard();
 
     handle.send(SpeakCommand::Pause).await.unwrap();
-    wait_for(
-        &mut stream,
-        |e| matches!(e, SpeakEvent::Paused { .. }),
-        1_000,
-    )
-    .await;
+    wait_for(&mut stream, |e| matches!(e, SpeakEvent::Paused), 1_000).await;
     assert_eq!(handle.queue_depth(), 0, "empty queue reports zero depth");
 
     for i in 0..3 {
@@ -104,7 +99,7 @@ async fn quiesce_after(
     stream: &mut forge_speak_queue::SpeakEventStream,
 ) {
     handle.send(SpeakCommand::Pause).await.unwrap();
-    wait_for(stream, |e| matches!(e, SpeakEvent::Paused { .. }), 1_000).await;
+    wait_for(stream, |e| matches!(e, SpeakEvent::Paused), 1_000).await;
 }
 
 #[tokio::test]

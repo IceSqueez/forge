@@ -90,3 +90,120 @@ pub fn report_catalog_problems<T: 'static>(cx: &mut Context<T>) {
     })
     .detach();
 }
+#[cfg(test)]
+mod tests {
+    use forge_types::MessageCode;
+
+    use super::*;
+
+    const GOOD_CODES: &[MessageCode] = &[MessageCode::from_static("alpha", "one")];
+    const OTHER_CODES: &[MessageCode] = &[MessageCode::from_static("beta", "one")];
+    const DUPLICATE_CODES: &[MessageCode] = &[
+        MessageCode::from_static("alpha", "one"),
+        MessageCode::from_static("alpha", "one"),
+    ];
+
+    const fn catalog(namespace: &'static str, codes: &'static [MessageCode]) -> MessageCatalog {
+        MessageCatalog {
+            namespace,
+            codes,
+            en_ftl: "",
+            uk_ftl: "",
+        }
+    }
+
+    fn ftl_ids(source: &str) -> BTreeSet<String> {
+        source
+            .lines()
+            .filter(|line| !line.starts_with([' ', '#']))
+            .filter_map(|line| line.split_once(" = ").map(|(id, _)| id.trim().to_owned()))
+            .collect()
+    }
+
+    #[test]
+    fn every_registered_catalog_declares_in_both_languages_exactly_its_codes() {
+        for catalog in REGISTERED_CATALOGS {
+            let expected: BTreeSet<String> = catalog.ftl_keys().collect();
+            assert_eq!(
+                ftl_ids(catalog.en_ftl),
+                expected,
+                "{} en",
+                catalog.namespace
+            );
+            assert_eq!(
+                ftl_ids(catalog.uk_ftl),
+                expected,
+                "{} uk",
+                catalog.namespace
+            );
+        }
+    }
+
+    #[test]
+    fn the_registered_catalogs_have_no_problems() {
+        assert_eq!(registered_catalog_problems(), Vec::new());
+    }
+
+    #[test]
+    fn a_malformed_namespace_is_reported() {
+        assert_eq!(
+            catalog_problems(&[catalog("Bad-Space", GOOD_CODES)]),
+            vec![CatalogProblem::Malformed(
+                MessageCatalogError::MalformedNamespace("Bad-Space")
+            )]
+        );
+    }
+
+    #[test]
+    fn a_code_from_another_namespace_is_reported() {
+        assert_eq!(
+            catalog_problems(&[catalog("alpha", OTHER_CODES)]),
+            vec![CatalogProblem::Malformed(
+                MessageCatalogError::ForeignCode {
+                    namespace: "alpha",
+                    code: MessageCode::from_static("beta", "one"),
+                }
+            )]
+        );
+    }
+
+    #[test]
+    fn a_code_listed_twice_is_reported() {
+        assert_eq!(
+            catalog_problems(&[catalog("alpha", DUPLICATE_CODES)]),
+            vec![CatalogProblem::Malformed(
+                MessageCatalogError::DuplicateCode(MessageCode::from_static("alpha", "one"))
+            )]
+        );
+    }
+
+    #[test]
+    fn a_namespace_registered_twice_is_reported_for_the_second_registration() {
+        assert_eq!(
+            catalog_problems(&[catalog("alpha", GOOD_CODES), catalog("alpha", GOOD_CODES)]),
+            vec![CatalogProblem::DuplicateNamespace("alpha")]
+        );
+    }
+
+    #[test]
+    fn distinct_well_formed_catalogs_have_no_problems() {
+        assert_eq!(
+            catalog_problems(&[catalog("alpha", GOOD_CODES), catalog("beta", OTHER_CODES)]),
+            Vec::new()
+        );
+    }
+
+    #[test]
+    fn fragments_yield_each_registered_catalog_source_for_the_language() {
+        let en: Vec<&str> = fragments(Language::En).collect();
+        let uk: Vec<&str> = fragments(Language::Uk).collect();
+
+        assert_eq!(
+            (en, uk),
+            (
+                REGISTERED_CATALOGS.iter().map(|c| c.en_ftl).collect(),
+                REGISTERED_CATALOGS.iter().map(|c| c.uk_ftl).collect(),
+            )
+        );
+    }
+}

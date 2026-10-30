@@ -4,8 +4,9 @@ use std::sync::mpsc;
 use std::sync::{Mutex, MutexGuard, PoisonError};
 
 use forge_components::{
-    CatalogLanguage, fmt_number, install_process_language, install_thread_language,
-    resolve_in_language, tr,
+    CatalogLanguage, ClockStyle, DateFormatChoice, DisplayFormats, FirstWeekday,
+    active_display_formats, fmt_number, install_display_formats, install_process_display_formats,
+    install_process_language, install_thread_language, resolve_in_language, tr, tr_find_warned,
 };
 
 static PROCESS_STATE: Mutex<()> = Mutex::new(());
@@ -165,6 +166,128 @@ fn discord_test_post_body_resolves_on_a_tokio_worker_instead_of_the_raw_key() {
     );
 }
 
+fn formats(date_format: DateFormatChoice, clock: ClockStyle) -> DisplayFormats {
+    DisplayFormats {
+        date_format,
+        clock,
+        first_day: FirstWeekday::Monday,
+    }
+}
+
+#[test]
+fn process_display_formats_are_seen_on_tokio_workers_and_std_threads() {
+    let _guard = serialized();
+    let installed = formats(DateFormatChoice::YearMonthDay, ClockStyle::TwelveHour);
+    install_process_display_formats(installed);
+
+    assert_eq!(
+        (
+            on_tokio_worker(active_display_formats),
+            on_std_thread(active_display_formats)
+        ),
+        (installed, installed)
+    );
+}
+
+#[test]
+fn reinstalling_process_display_formats_reaches_a_thread_that_was_already_running() {
+    let _guard = serialized();
+    let first = formats(
+        DateFormatChoice::DayMonthYearDot,
+        ClockStyle::TwentyFourHour,
+    );
+    let second = formats(DateFormatChoice::MonthDayYearSlash, ClockStyle::TwelveHour);
+    let (ask, asked) = mpsc::channel::<()>();
+    let (answer, answers) = mpsc::channel::<DisplayFormats>();
+    let worker = std::thread::spawn(move || {
+        while asked.recv().is_ok() {
+            answer.send(active_display_formats()).unwrap();
+        }
+    });
+
+    let mut seen = Vec::new();
+    for installed in [first, second] {
+        install_process_display_formats(installed);
+        ask.send(()).unwrap();
+        seen.push(answers.recv().unwrap());
+    }
+    drop(ask);
+    worker.join().unwrap();
+
+    assert_eq!(seen, vec![first, second]);
+}
+
+#[test]
+fn a_thread_display_format_override_shadows_only_the_thread_that_installed_it() {
+    let _guard = serialized();
+    let process = formats(
+        DateFormatChoice::DayMonthYearSlash,
+        ClockStyle::TwentyFourHour,
+    );
+    let thread = formats(DateFormatChoice::NamedMonth, ClockStyle::TwelveHour);
+    install_process_display_formats(process);
+
+    let overridden = on_std_thread(move || {
+        install_display_formats(thread);
+        active_display_formats()
+    });
+    let other = on_tokio_worker(active_display_formats);
+
+    assert_eq!((overridden, other), (thread, process));
+}
+
+#[test]
+fn duplicate_message_ids_reports_each_id_defined_twice_across_app_fragments() {
+    let ids = forge_components::duplicate_message_ids(
+        CatalogLanguage::En,
+        &["same_id = A\nonly_a = A\n", "same_id = B\nonly_b = B\n"],
+    );
+
+    assert_eq!(ids, vec!["same_id".to_owned()]);
+}
+
+#[test]
+fn duplicate_message_ids_reports_an_id_defined_twice_inside_one_fragment() {
+    let ids =
+        forge_components::duplicate_message_ids(CatalogLanguage::Uk, &["twice = A\ntwice = B\n"]);
+
+    assert_eq!(ids, vec!["twice".to_owned()]);
+}
+
+#[test]
+fn duplicate_message_ids_reports_an_app_id_that_collides_with_the_kit_catalog() {
+    let ids = forge_components::duplicate_message_ids(
+        CatalogLanguage::En,
+        &["widget_date_month_january = Mine\n"],
+    );
+
+    assert_eq!(ids, vec!["widget_date_month_january".to_owned()]);
+}
+
+#[test]
+fn duplicate_message_ids_is_empty_when_every_id_is_unique() {
+    let ids = forge_components::duplicate_message_ids(
+        CatalogLanguage::En,
+        &["unique_one = A\n", "unique_two = B\n"],
+    );
+
+    assert!(ids.is_empty());
+}
+
+#[test]
+fn tr_find_warned_returns_the_text_of_a_present_key_and_none_for_a_missing_one() {
+    let _guard = serialized();
+    install_process_language(CatalogLanguage::En, &[]);
+
+    assert_eq!(
+        (
+            tr_find_warned(KIT_KEY, None),
+            tr_find_warned("absent_for_find_warned", None)
+        ),
+        (Some("January".to_owned()), None)
+    );
+}
+
 #[cfg(debug_assertions)]
 mod missing_key_warnings {
     use std::rc::Rc;
@@ -319,6 +442,31 @@ mod missing_key_warnings {
                 vec![not_found("absent_per_scope")],
                 vec![not_found("absent_per_scope"), not_found("absent_per_scope")],
             )
+        );
+    }
+
+    #[test]
+    fn tr_find_warned_warns_once_per_missing_key_and_never_returns_the_raw_key() {
+        let _guard = serialized();
+        install_process_language(CatalogLanguage::En, &[]);
+
+        let (found, warnings) = on_std_thread(|| {
+            let lines = Arc::new(Mutex::new(Vec::new()));
+            let capture = WarnCapture(Arc::clone(&lines));
+            let found = tracing::subscriber::with_default(capture, || {
+                tracing::callsite::rebuild_interest_cache();
+                vec![
+                    tr_find_warned("absent_find_warned_once", None),
+                    tr_find_warned("absent_find_warned_once", None),
+                ]
+            });
+            let warnings = lines.lock().unwrap_or_else(PoisonError::into_inner).clone();
+            (found, warnings)
+        });
+
+        assert_eq!(
+            (found, warnings),
+            (vec![None, None], vec![not_found("absent_find_warned_once")])
         );
     }
 }

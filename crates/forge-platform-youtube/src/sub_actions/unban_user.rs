@@ -5,9 +5,10 @@ use forge_registry::runner::SubActionConfig;
 use forge_registry::{
     ConfigSpec, RunContext, StepTimer, SubActionCategory, SubActionRunner, TypedField,
 };
-use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, UserText};
+use forge_types::{ArgStack, SubActionTelemetry};
 
 use super::fields::CHANNEL_ID;
+use super::step_failure;
 use crate::moderation::YoutubeModeration;
 use crate::vocabulary::sub_action_ids;
 
@@ -65,16 +66,8 @@ impl SubActionRunner for UnbanUserRunner {
             Ok(channel_id) => channel_id,
             Err(problem) => return (timer.invalid_config(&problem), None),
         };
-        if channel_id.is_empty() {
-            return (
-                timer.failed(UserText::unlocalized(
-                    "channel_id is empty after interpolation",
-                )),
-                None,
-            );
-        }
 
-        let outcome = SubActionOutcome::from_result(&self.moderation.unban(&channel_id).await);
+        let outcome = step_failure::outcome(&self.moderation.unban(&channel_id).await);
         (timer.finish(outcome), None)
     }
 }

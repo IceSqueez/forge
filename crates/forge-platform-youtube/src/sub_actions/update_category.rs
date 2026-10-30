@@ -6,8 +6,9 @@ use forge_registry::{
     ConfigSpec, RunContext, StepTimer, SubActionCategory, SubActionRunner, TextEditor, TextField,
     TypedField,
 };
-use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, UserText};
+use forge_types::{ArgStack, SubActionTelemetry};
 
+use super::step_failure;
 use crate::stream_metadata::YoutubeStreamMetadata;
 use crate::vocabulary::{config_keys, sub_action_ids};
 
@@ -75,17 +76,8 @@ impl SubActionRunner for UpdateCategoryRunner {
             Ok(category_id) => category_id,
             Err(problem) => return (timer.invalid_config(&problem), None),
         };
-        if category_id.is_empty() {
-            return (
-                timer.failed(UserText::unlocalized(
-                    "category_id is empty after interpolation",
-                )),
-                None,
-            );
-        }
 
-        let outcome =
-            SubActionOutcome::from_result(&self.metadata.set_category(&category_id).await);
+        let outcome = step_failure::outcome(&self.metadata.set_category(&category_id).await);
         (timer.finish(outcome), None)
     }
 }
@@ -103,6 +95,7 @@ mod tests {
 
     use super::*;
     use crate::active_broadcast_id::ActiveBroadcastIdHandle;
+    use forge_types::SubActionOutcome;
     use forge_types::Variant;
     use std::collections::BTreeMap;
 
@@ -174,7 +167,16 @@ mod tests {
 
         let (telemetry, _) = runner.execute(&config("%x%"), &make_ctx(&stack)).await;
 
-        assert!(matches!(telemetry.outcome, SubActionOutcome::Failed(_)));
+        assert_eq!(
+            telemetry.outcome,
+            SubActionOutcome::Failed(forge_types::UserText::unlocalized(format!(
+                "invalid step config: {}",
+                forge_registry::ConfigProblem::field(
+                    crate::vocabulary::config_keys::CATEGORY_ID,
+                    forge_registry::ConfigReason::Required
+                )
+            )))
+        );
         assert!(
             server.received_requests().await.unwrap().is_empty(),
             "empty category must not reach the transport"

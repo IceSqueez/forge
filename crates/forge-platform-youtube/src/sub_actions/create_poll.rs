@@ -6,8 +6,9 @@ use forge_registry::{
     ConfigProblem, ConfigReason, ConfigSpec, FieldLiteral, FormField, RunContext, StepTimer,
     SubActionCategory, SubActionRunner, TextEditor, TextField, TypedField, ValueBounds,
 };
-use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, UserText, Variant};
+use forge_types::{ArgStack, SubActionTelemetry, Variant};
 
+use super::step_failure;
 use crate::send_chat::YoutubeSendChat;
 use crate::vocabulary::{config_keys, sub_action_ids};
 
@@ -144,17 +145,8 @@ impl SubActionRunner for CreatePollRunner {
             Ok(values) => values,
             Err(problem) => return (timer.invalid_config(&problem), None),
         };
-        if question.is_empty() {
-            return (
-                timer.failed(UserText::unlocalized(
-                    "question is empty after interpolation",
-                )),
-                None,
-            );
-        }
 
-        let outcome =
-            SubActionOutcome::from_result(&self.sender.create_poll(&question, &options).await);
+        let outcome = step_failure::outcome(&self.sender.create_poll(&question, &options).await);
         (timer.finish(outcome), None)
     }
 }
@@ -173,6 +165,7 @@ mod tests {
     use super::*;
     use crate::live_chat_id::LiveChatIdHandle;
     use forge_registry::RegistryError;
+    use forge_types::SubActionOutcome;
     use std::collections::BTreeMap;
 
     struct NoopPublisher;
@@ -345,7 +338,16 @@ mod tests {
             .execute(&config("%q%", "A,B"), &make_ctx(&stack))
             .await;
 
-        assert!(matches!(telemetry.outcome, SubActionOutcome::Failed(_)));
+        assert_eq!(
+            telemetry.outcome,
+            SubActionOutcome::Failed(forge_types::UserText::unlocalized(format!(
+                "invalid step config: {}",
+                forge_registry::ConfigProblem::field(
+                    crate::vocabulary::config_keys::QUESTION,
+                    forge_registry::ConfigReason::Required
+                )
+            )))
+        );
         assert!(server.received_requests().await.unwrap().is_empty());
     }
 

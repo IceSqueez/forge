@@ -10,6 +10,7 @@ mod lookup_viewer;
 mod remove_moderator;
 mod send_message;
 mod set_thumbnail;
+mod step_failure;
 mod timeout_user;
 mod unban_user;
 mod update_category;

@@ -6,8 +6,9 @@ use forge_registry::{
     ConfigSpec, RunContext, StepTimer, SubActionCategory, SubActionRunner, TextEditor, TextField,
     TypedField,
 };
-use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, UserText};
+use forge_types::{ArgStack, SubActionTelemetry};
 
+use super::step_failure;
 use crate::thumbnail::YoutubeThumbnail;
 use crate::vocabulary::{config_keys, sub_action_ids};
 
@@ -75,16 +76,8 @@ impl SubActionRunner for SetThumbnailRunner {
             Ok(image_path) => image_path,
             Err(problem) => return (timer.invalid_config(&problem), None),
         };
-        if image_path.is_empty() {
-            return (
-                timer.failed(UserText::unlocalized(
-                    "image_path is empty after interpolation",
-                )),
-                None,
-            );
-        }
 
-        let outcome = SubActionOutcome::from_result(&self.thumbnail.set(&image_path).await);
+        let outcome = step_failure::outcome(&self.thumbnail.set(&image_path).await);
         (timer.finish(outcome), None)
     }
 }
@@ -102,6 +95,7 @@ mod tests {
 
     use super::*;
     use crate::active_broadcast_id::ActiveBroadcastIdHandle;
+    use forge_types::SubActionOutcome;
     use forge_types::Variant;
     use std::collections::BTreeMap;
 
@@ -195,7 +189,16 @@ mod tests {
 
         let (telemetry, _) = runner.execute(&config("%p%"), &make_ctx(&stack)).await;
 
-        assert!(matches!(telemetry.outcome, SubActionOutcome::Failed(_)));
+        assert_eq!(
+            telemetry.outcome,
+            SubActionOutcome::Failed(forge_types::UserText::unlocalized(format!(
+                "invalid step config: {}",
+                forge_registry::ConfigProblem::field(
+                    crate::vocabulary::config_keys::IMAGE_PATH,
+                    forge_registry::ConfigReason::Required
+                )
+            )))
+        );
         assert!(
             server.received_requests().await.unwrap().is_empty(),
             "empty path must not reach the upload transport"

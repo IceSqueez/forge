@@ -6,10 +6,11 @@ use forge_registry::{
     ConfigProblem, ConfigReason, ConfigSpec, DurationBounds, DurationField, RunContext, StepTimer,
     SubActionCategory, SubActionRunner, TypedField, ValueBounds,
 };
-use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, UserText};
+use forge_types::{ArgStack, SubActionTelemetry};
 
 use super::display_name;
 use super::fields::CHANNEL_ID;
+use super::step_failure;
 use crate::moderation::YoutubeModeration;
 use crate::vocabulary::{config_keys, sub_action_ids};
 
@@ -90,17 +91,9 @@ impl SubActionRunner for TimeoutUserRunner {
             Ok(values) => values,
             Err(problem) => return (timer.invalid_config(&problem), None),
         };
-        if channel_id.is_empty() {
-            return (
-                timer.failed(UserText::unlocalized(
-                    "channel_id is empty after interpolation",
-                )),
-                None,
-            );
-        }
 
         let display_name = display_name::resolve(config, ctx);
-        let outcome = SubActionOutcome::from_result(
+        let outcome = step_failure::outcome(
             &self
                 .moderation
                 .timeout(&channel_id, seconds, display_name.as_deref())
@@ -124,6 +117,7 @@ mod tests {
         MemoryBanLedger, TEST_BROADCASTER_CHANNEL_ID, broadcaster_source,
     };
     use crate::live_chat_id::LiveChatIdHandle;
+    use forge_types::SubActionOutcome;
     use forge_types::Variant;
     use std::collections::BTreeMap;
 

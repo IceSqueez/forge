@@ -7,8 +7,9 @@ use forge_registry::{
     ConfigSpec, RunContext, StepTimer, SubActionCategory, SubActionRunner, TextEditor, TextField,
     TypedField,
 };
-use forge_types::{ArgStack, PlatformId, SubActionOutcome, SubActionTelemetry, UserText};
+use forge_types::{ArgStack, PlatformId, SubActionOutcome, SubActionTelemetry};
 
+use super::step_failure;
 use crate::send_chat::YoutubeSendChat;
 use crate::vocabulary::{config_keys, sub_action_ids};
 
@@ -74,16 +75,8 @@ impl SubActionRunner for SendMessageRunner {
             Ok(message) => message,
             Err(problem) => return (timer.invalid_config(&problem), None),
         };
-        if message.is_empty() {
-            return (
-                timer.failed(UserText::unlocalized(
-                    "message is empty after interpolation",
-                )),
-                None,
-            );
-        }
 
-        let outcome = SubActionOutcome::from_result(&self.sender.send(&message).await);
+        let outcome = step_failure::outcome(&self.sender.send(&message).await);
         if matches!(outcome, SubActionOutcome::Success) {
             ChatSent {
                 channel: PlatformId::YouTube.as_str().to_owned(),
@@ -206,7 +199,16 @@ mod tests {
             .execute(&config("%greeting%"), &make_ctx(&stack))
             .await;
 
-        assert!(matches!(telemetry.outcome, SubActionOutcome::Failed(_)));
+        assert_eq!(
+            telemetry.outcome,
+            SubActionOutcome::Failed(forge_types::UserText::unlocalized(format!(
+                "invalid step config: {}",
+                forge_registry::ConfigProblem::field(
+                    crate::vocabulary::config_keys::MESSAGE,
+                    forge_registry::ConfigReason::Required
+                )
+            )))
+        );
         assert!(
             server.received_requests().await.unwrap().is_empty(),
             "empty message must not reach the send transport"
@@ -232,16 +234,24 @@ mod tests {
         let SubActionOutcome::Failed(msg) = telemetry.outcome else {
             panic!("expected Failed, got {:?}", telemetry.outcome);
         };
+        let forge_types::UserText::Message(message) = &msg else {
+            panic!("expected a catalogued message, got {msg:?}");
+        };
+        assert_eq!(message.code().to_string(), "youtube.request_refused");
+        assert_eq!(
+            message.arg("status"),
+            Some(&forge_types::MessageArg::Int(403))
+        );
         assert!(
-            !msg.code_or_text().contains(TOKEN_SENTINEL),
+            !format!("{msg:?}").contains(TOKEN_SENTINEL),
             "outcome must not leak the bearer token: {msg:?}"
         );
         assert!(
-            !msg.code_or_text().contains(&server.uri()),
+            !format!("{msg:?}").contains(&server.uri()),
             "outcome must not leak the request URL: {msg:?}"
         );
         assert!(
-            !msg.code_or_text().to_lowercase().contains("googleapis"),
+            !format!("{msg:?}").to_lowercase().contains("googleapis"),
             "outcome must not leak the API host: {msg:?}"
         );
     }

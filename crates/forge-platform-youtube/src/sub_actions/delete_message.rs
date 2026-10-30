@@ -6,10 +6,11 @@ use forge_registry::{
     ConfigSpec, RunContext, StepTimer, SubActionCategory, SubActionRunner, TextEditor, TextField,
     TypedField,
 };
-use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, UserText};
+use forge_types::{ArgStack, SubActionTelemetry};
 
+use super::step_failure;
 use crate::send_chat::YoutubeSendChat;
-use crate::vocabulary::{config_keys, sub_action_ids};
+use crate::vocabulary::{config_keys, messages, sub_action_ids};
 
 const KIND_ID: &str = sub_action_ids::CHAT_DELETE_MESSAGE;
 const MESSAGE_ID_VARIABLE: &str = "%message_id%";
@@ -77,24 +78,14 @@ impl SubActionRunner for DeleteMessageRunner {
             Ok(message_id) => message_id,
             Err(problem) => return (timer.invalid_config(&problem), None),
         };
-        if message_id.is_empty() {
-            return (
-                timer.failed(UserText::unlocalized(
-                    "message_id is empty after interpolation",
-                )),
-                None,
-            );
-        }
         if message_id.contains(UNRESOLVED_REFERENCE_MARKER) {
             return (
-                timer.failed(UserText::unlocalized(
-                    "message_id has an unresolved variable reference",
-                )),
+                timer.failed(messages::unresolved_reference(config_keys::MESSAGE_ID).into()),
                 None,
             );
         }
 
-        let outcome = SubActionOutcome::from_result(&self.sender.delete(&message_id).await);
+        let outcome = step_failure::outcome(&self.sender.delete(&message_id).await);
         (timer.finish(outcome), None)
     }
 }
@@ -111,6 +102,7 @@ mod tests {
 
     use super::*;
     use crate::live_chat_id::LiveChatIdHandle;
+    use forge_types::SubActionOutcome;
     use forge_types::Variant;
     use std::collections::BTreeMap;
 
@@ -206,17 +198,27 @@ mod tests {
         let server = MockServer::start().await;
         let runner = runner_on(&server);
         let blank = ArgStack::new().set("mid".to_owned(), Variant::String(String::new()));
-        for (template, stack) in [
-            ("%mid%", blank),
-            ("%message_id%", ArgStack::new()),
-            ("prefix-%missing%", ArgStack::new()),
+        let required = SubActionOutcome::Failed(forge_types::UserText::unlocalized(format!(
+            "invalid step config: {}",
+            forge_registry::ConfigProblem::field(
+                crate::vocabulary::config_keys::MESSAGE_ID,
+                forge_registry::ConfigReason::Required
+            )
+        )));
+        let unresolved = SubActionOutcome::Failed(
+            crate::vocabulary::messages::unresolved_reference(
+                crate::vocabulary::config_keys::MESSAGE_ID,
+            )
+            .into(),
+        );
+        for (template, stack, expected) in [
+            ("%mid%", blank, required),
+            ("%message_id%", ArgStack::new(), unresolved.clone()),
+            ("prefix-%missing%", ArgStack::new(), unresolved),
         ] {
             let (telemetry, _) = runner.execute(&config(template), &make_ctx(&stack)).await;
 
-            assert!(
-                matches!(telemetry.outcome, SubActionOutcome::Failed(_)),
-                "template {template:?}"
-            );
+            assert_eq!(telemetry.outcome, expected, "template {template:?}");
         }
         assert!(
             server.received_requests().await.unwrap().is_empty(),

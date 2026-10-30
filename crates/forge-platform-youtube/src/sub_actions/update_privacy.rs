@@ -6,8 +6,9 @@ use forge_registry::{
     ConfigChoice, ConfigReason, ConfigSpec, FieldLiteral, FormField, RunContext, StepTimer,
     SubActionCategory, SubActionRunner, TypedField,
 };
-use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, Variant};
+use forge_types::{ArgStack, SubActionTelemetry, Variant};
 
+use super::step_failure;
 use crate::stream_metadata::YoutubeStreamMetadata;
 use crate::vocabulary::{config_keys, sub_action_ids};
 
@@ -140,9 +141,8 @@ impl SubActionRunner for UpdatePrivacyRunner {
             Ok(privacy_status) => privacy_status,
             Err(problem) => return (timer.invalid_config(&problem), None),
         };
-        let outcome = SubActionOutcome::from_result(
-            &self.metadata.set_privacy(privacy_status.wire_name()).await,
-        );
+        let outcome =
+            step_failure::outcome(&self.metadata.set_privacy(privacy_status.wire_name()).await);
         (timer.finish(outcome), None)
     }
 }
@@ -161,6 +161,7 @@ mod tests {
     use super::*;
     use crate::active_broadcast_id::ActiveBroadcastIdHandle;
     use forge_registry::RegistryError;
+    use forge_types::SubActionOutcome;
     use std::collections::BTreeMap;
 
     struct NoopPublisher;
@@ -261,7 +262,16 @@ mod tests {
 
         let (telemetry, _) = runner.execute(&config("%x%"), &make_ctx(&stack)).await;
 
-        assert!(matches!(telemetry.outcome, SubActionOutcome::Failed(_)));
+        assert_eq!(
+            telemetry.outcome,
+            SubActionOutcome::Failed(forge_types::UserText::unlocalized(format!(
+                "invalid step config: {}",
+                forge_registry::ConfigProblem::field(
+                    crate::vocabulary::config_keys::PRIVACY_STATUS,
+                    unknown_privacy()
+                )
+            )))
+        );
         assert!(
             server.received_requests().await.unwrap().is_empty(),
             "empty privacy status must not reach the transport"

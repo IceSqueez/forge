@@ -6,8 +6,9 @@ use forge_registry::{
     ConfigSpec, RunContext, StepTimer, SubActionCategory, SubActionRunner, TextEditor, TextField,
     TypedField,
 };
-use forge_types::{ArgStack, SubActionTelemetry, UserText, Variant};
+use forge_types::{ArgStack, SubActionTelemetry, Variant};
 
+use super::step_failure;
 use crate::channel_lookup::YoutubeChannelLookup;
 use crate::vocabulary::variables::viewer as variables;
 use crate::vocabulary::{config_keys, sub_action_ids};
@@ -76,14 +77,6 @@ impl SubActionRunner for LookupViewerRunner {
             Ok(identifier) => identifier,
             Err(problem) => return (timer.invalid_config(&problem), None),
         };
-        if identifier.is_empty() {
-            return (
-                timer.failed(UserText::unlocalized(
-                    "identifier is empty after interpolation",
-                )),
-                None,
-            );
-        }
 
         match self.lookup.lookup(&identifier).await {
             Ok(profile) => {
@@ -105,13 +98,7 @@ impl SubActionRunner for LookupViewerRunner {
                     );
                 (timer.success(), Some(stack))
             }
-            Err(e) => (
-                timer.failed(UserText::unlocalized(format!(
-                    "channel lookup failed: {}",
-                    crate::error_shape::redact_platform_error(&e)
-                ))),
-                None,
-            ),
+            Err(e) => (timer.failed(step_failure::failed(&e)), None),
         }
     }
 }
@@ -299,20 +286,24 @@ mod tests {
             panic!("expected Failed, got {:?}", telemetry.outcome);
         };
         assert!(
-            !msg.code_or_text().contains(TOKEN_SENTINEL),
+            !format!("{msg:?}").contains(TOKEN_SENTINEL),
             "leaked token: {msg:?}"
         );
         assert!(
-            !msg.code_or_text().contains(&server.uri()),
+            !format!("{msg:?}").contains(&server.uri()),
             "leaked url: {msg:?}"
         );
         assert!(
-            !msg.code_or_text().contains(BODY_SENTINEL),
+            !format!("{msg:?}").contains(BODY_SENTINEL),
             "leaked response body: {msg:?}"
         );
-        assert!(
-            msg.code_or_text().contains("500"),
-            "the status must survive so the failure stays diagnosable: {msg:?}"
+        let forge_types::UserText::Message(message) = &msg else {
+            panic!("expected a catalogued message, got {msg:?}");
+        };
+        assert_eq!(message.code().to_string(), "youtube.request_refused");
+        assert_eq!(
+            message.arg("status"),
+            Some(&forge_types::MessageArg::Int(500))
         );
     }
 }

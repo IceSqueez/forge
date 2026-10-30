@@ -6,8 +6,9 @@ use forge_registry::{
     ConfigProblem, ConfigReason, ConfigSpec, DurationBounds, DurationField, RunContext, StepTimer,
     SubActionCategory, SubActionRunner, TypedField, ValueBounds,
 };
-use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry};
+use forge_types::{ArgStack, SubActionTelemetry};
 
+use super::step_failure;
 use crate::ad_break::YoutubeAdBreak;
 use crate::vocabulary::{config_keys, sub_action_ids};
 
@@ -84,8 +85,7 @@ impl SubActionRunner for InsertAdBreakRunner {
             Ok(duration_secs) => duration_secs,
             Err(problem) => return (timer.invalid_config(&problem), None),
         };
-        let outcome =
-            SubActionOutcome::from_result(&self.ad_break.insert_cuepoint(duration_secs).await);
+        let outcome = step_failure::outcome(&self.ad_break.insert_cuepoint(duration_secs).await);
         (timer.finish(outcome), None)
     }
 }
@@ -103,6 +103,7 @@ mod tests {
 
     use super::*;
     use crate::active_broadcast_id::ActiveBroadcastIdHandle;
+    use forge_types::SubActionOutcome;
     use forge_types::Variant;
     use std::collections::BTreeMap;
 

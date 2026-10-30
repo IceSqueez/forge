@@ -11,7 +11,8 @@ use forge_components::{
     tr,
 };
 use forge_speech_types::PcmBuffer;
-use forge_storage::{DataProvider, SettingsRepo};
+use forge_storage::settings::core_settings;
+use forge_storage::{DataProvider, SettingsRepo, read_setting, write_setting};
 use gpui::{AnyElement, ClickEvent, Context, Entity, FocusHandle, Window, div, prelude::*, px};
 
 use crate::async_bridge;
@@ -180,10 +181,13 @@ impl SettingsAudioView {
         async_bridge::run_async(
             &self.rt_handle,
             async move {
-                settings
-                    .set_audio_output_device_id(device_id)
-                    .await
-                    .map_err(|e| e.to_string())
+                write_setting(
+                    settings.as_ref(),
+                    &core_settings::AUDIO_OUTPUT_DEVICE_ID,
+                    &device_id,
+                )
+                .await
+                .map_err(|e| e.to_string())
             },
             |this, result, cx| this.apply_persist_result(result, cx),
             cx,
@@ -466,8 +470,7 @@ async fn enumerate_devices_and_preference(
     uncached: bool,
 ) -> Result<(Vec<DeviceRow>, Option<String>), String> {
     let devices = enumerate_devices(uncached).await?;
-    let preference = settings
-        .audio_output_device_id()
+    let preference = read_setting(settings.as_ref(), &core_settings::AUDIO_OUTPUT_DEVICE_ID)
         .await
         .map_err(|e| e.to_string())?;
     Ok((devices, preference))

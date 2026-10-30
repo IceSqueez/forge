@@ -20,6 +20,7 @@ use forge_speech_types::{AssignmentStrategy, SynthesisDefaults};
 use crate::event_log::{
     DEFAULT_EVENT_LOG_RETENTION_DAYS, MAX_EVENT_LOG_RETENTION_DAYS, MIN_EVENT_LOG_RETENTION_DAYS,
 };
+use crate::history::{MAX_ACTION_HISTORY_RETENTION_DAYS, MIN_ACTION_HISTORY_RETENTION_DAYS};
 
 const FULL_SCALE_VOLUME: Level = Level {
     default: FULL_LEVEL,
@@ -33,6 +34,18 @@ pub const EVENT_LOG_RETENTION_DAYS: Setting<Count> = Setting::new(
         default: DEFAULT_EVENT_LOG_RETENTION_DAYS,
         min: MIN_EVENT_LOG_RETENTION_DAYS,
         max: MAX_EVENT_LOG_RETENTION_DAYS,
+        unclamped: None,
+    },
+    Portable,
+    Verbatim,
+);
+
+pub const ACTION_HISTORY_RETENTION_DAYS: Setting<Count> = Setting::new(
+    key::ACTION_HISTORY_RETENTION_DAYS,
+    Count {
+        default: DEFAULT_EVENT_LOG_RETENTION_DAYS,
+        min: MIN_ACTION_HISTORY_RETENTION_DAYS,
+        max: MAX_ACTION_HISTORY_RETENTION_DAYS,
         unclamped: None,
     },
     Portable,
@@ -122,6 +135,18 @@ pub const LANGUAGE: Setting<Choice> = Setting::new(
     Verbatim,
 );
 
+pub const REGION: Setting<OptionalText> =
+    Setting::new(key::REGION, OptionalText, Portable, Verbatim);
+
+pub const DATE_FORMAT: Setting<OptionalText> =
+    Setting::new(key::DATE_FORMAT, OptionalText, Portable, Verbatim);
+
+pub const TIME_FORMAT: Setting<OptionalText> =
+    Setting::new(key::TIME_FORMAT, OptionalText, Portable, Verbatim);
+
+pub const FIRST_DAY_OF_WEEK: Setting<OptionalText> =
+    Setting::new(key::FIRST_DAY_OF_WEEK, OptionalText, Portable, Verbatim);
+
 pub const THEME: Setting<OptionalText> = Setting::new(key::THEME, OptionalText, Portable, Verbatim);
 
 pub const ACCENT: Setting<OptionalText> =
@@ -205,17 +230,12 @@ pub const CORE_SETTINGS: &[SettingSpec] = &[
     FONT_BODY.spec(),
     FONT_MONO.spec(),
     EVENT_LOG_RETENTION_DAYS.spec(),
-    SettingSpec::exact(
-        key::ACTION_HISTORY_RETENTION_DAYS,
-        Integer,
-        Portable,
-        Verbatim,
-    ),
+    ACTION_HISTORY_RETENTION_DAYS.spec(),
     LANGUAGE.spec(),
-    SettingSpec::exact(key::REGION, Text, Portable, Verbatim),
-    SettingSpec::exact(key::DATE_FORMAT, Text, Portable, Verbatim),
-    SettingSpec::exact(key::TIME_FORMAT, Text, Portable, Verbatim),
-    SettingSpec::exact(key::FIRST_DAY_OF_WEEK, Text, Portable, Verbatim),
+    REGION.spec(),
+    DATE_FORMAT.spec(),
+    TIME_FORMAT.spec(),
+    FIRST_DAY_OF_WEEK.spec(),
     AUDIO_OUTPUT_DEVICE_ID.spec(),
     AUDIO_VOICE_GATE_ENABLED.spec(),
     AUDIO_VOICE_GATE_INPUT_DEVICE_ID.spec(),

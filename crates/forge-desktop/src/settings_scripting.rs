@@ -9,8 +9,8 @@ use forge_components::{
 };
 use forge_script::{EngineConfig, ScriptHttpConfig, stored_script_http_allowed_domains};
 use forge_storage::{
-    DataProvider, SettingsRepo, StorageError, get_bool_setting, reserved_keys, set_bool_setting,
-    set_json_setting,
+    Count, DataProvider, Flag, Setting, SettingsRepo, StorageError, read_setting_or_default,
+    write_setting,
 };
 use gpui::{
     AnyElement, ClickEvent, Context, Entity, Pixels, SharedString, Subscription, Window, div,
@@ -62,13 +62,13 @@ impl NumericSetting {
         }
     }
 
-    pub fn storage_key(self) -> &'static str {
+    pub fn declaration(self) -> &'static Setting<Count> {
         match self {
-            NumericSetting::OpLimit => reserved_keys::SCRIPT_OP_LIMIT,
-            NumericSetting::EngineTimeoutMs => reserved_keys::SCRIPT_TIMEOUT_MS,
-            NumericSetting::MaxCalls => reserved_keys::SCRIPT_HTTP_MAX_CALLS,
-            NumericSetting::HttpTimeoutMs => reserved_keys::SCRIPT_HTTP_TIMEOUT_MS,
-            NumericSetting::MaxResponseKib => reserved_keys::SCRIPT_HTTP_MAX_RESPONSE_BYTES,
+            NumericSetting::OpLimit => &forge_script::settings::OP_LIMIT,
+            NumericSetting::EngineTimeoutMs => &forge_script::settings::TIMEOUT_MS,
+            NumericSetting::MaxCalls => &forge_script::settings::HTTP_MAX_CALLS,
+            NumericSetting::HttpTimeoutMs => &forge_script::settings::HTTP_TIMEOUT_MS,
+            NumericSetting::MaxResponseKib => &forge_script::settings::HTTP_MAX_RESPONSE_BYTES,
         }
     }
 
@@ -264,7 +264,9 @@ impl SettingsScriptingView {
     }
 
     fn commit_numeric(&mut self, setting: NumericSetting, text: &str, cx: &mut Context<Self>) {
-        let parsed = setting.stored_value_from_text(text);
+        let parsed = setting
+            .stored_value_from_text(text)
+            .and_then(|stored| u32::try_from(stored).ok());
         let repo = self.settings_repo();
         let handle = self.rt_handle.clone();
         let Some(field) = self.numeric.iter_mut().find(|f| f.setting == setting) else {
@@ -279,10 +281,7 @@ impl SettingsScriptingView {
             field.debounce.schedule_reporting(
                 &handle,
                 tr!("settings_scripting_persist_failed"),
-                async move {
-                    repo.set_string(setting.storage_key(), &stored.to_string())
-                        .await
-                },
+                async move { write_setting(repo.as_ref(), setting.declaration(), &stored).await },
                 ErrorSink::Toast,
                 cx,
             );
@@ -294,9 +293,9 @@ impl SettingsScriptingView {
         let repo = self.settings_repo();
         self.domains_writer.write(
             async move {
-                set_json_setting(
+                write_setting(
                     repo.as_ref(),
-                    reserved_keys::SCRIPT_HTTP_ALLOWED_DOMAINS,
+                    &forge_script::settings::HTTP_ALLOWED_DOMAINS,
                     &domains,
                 )
                 .await
@@ -319,11 +318,11 @@ impl SettingsScriptingView {
         }
     }
 
-    fn persist_bool(&self, key: &'static str, value: bool, cx: &mut Context<Self>) {
+    fn persist_flag(&self, setting: &'static Setting<Flag>, value: bool, cx: &mut Context<Self>) {
         let repo = self.settings_repo();
         async_bridge::report_failure(
             &self.rt_handle,
-            async move { set_bool_setting(repo.as_ref(), key, value).await },
+            async move { write_setting(repo.as_ref(), setting, &value).await },
             ErrorSink::Toast,
             tr!("settings_scripting_persist_failed"),
             cx,
@@ -358,14 +357,18 @@ impl SettingsScriptingView {
 
     fn toggle_allow_local(&mut self, cx: &mut Context<Self>) {
         self.allow_local = !self.allow_local;
-        self.persist_bool(reserved_keys::SCRIPT_HTTP_ALLOW_LOCAL, self.allow_local, cx);
+        self.persist_flag(
+            &forge_script::settings::HTTP_ALLOW_LOCAL,
+            self.allow_local,
+            cx,
+        );
         cx.notify();
     }
 
     fn toggle_core_allow_local(&mut self, cx: &mut Context<Self>) {
         self.core_allow_local = !self.core_allow_local;
-        self.persist_bool(
-            reserved_keys::CORE_HTTP_ALLOW_LOCAL,
+        self.persist_flag(
+            &forge_runtime::settings::CORE_HTTP_ALLOW_LOCAL,
             self.core_allow_local,
             cx,
         );
@@ -668,8 +671,11 @@ fn snapshot_defaults() -> ScriptingSnapshot {
 async fn load_scripting_settings(repo: Arc<dyn SettingsRepo>) -> ScriptingSnapshot {
     let http = ScriptHttpConfig::read(repo.as_ref()).await;
     let engine = EngineConfig::read(repo.as_ref()).await;
-    let core_allow_local =
-        get_bool_setting(repo.as_ref(), reserved_keys::CORE_HTTP_ALLOW_LOCAL, false).await;
+    let core_allow_local = read_setting_or_default(
+        repo.as_ref(),
+        &forge_runtime::settings::CORE_HTTP_ALLOW_LOCAL,
+    )
+    .await;
     snapshot_from(http, engine, core_allow_local)
 }
 

@@ -1,8 +1,11 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use forge_storage::settings::reserved_keys::KEYBOARD_SHORTCUTS;
-use forge_storage::{SettingsRepo, StorageError, set_json_setting, stored_json_setting};
+use forge_storage::SettingDisclosure::Kind;
+use forge_storage::SettingPortability::Portable;
+use forge_storage::{
+    Setting, SettingCodec, SettingEncoding, SettingsRepo, StorageError, read_setting, write_setting,
+};
 use gpui::{App, Keystroke};
 use serde::{Deserialize, Serialize};
 
@@ -79,14 +82,55 @@ impl StoredOverrides {
     }
 }
 
+#[derive(Default)]
+pub struct StoredShortcuts {
+    entries: HashMap<String, OverrideEntry>,
+    unreadable: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ShortcutsCodec;
+
+impl SettingCodec for ShortcutsCodec {
+    type Value = StoredShortcuts;
+    const ENCODING: SettingEncoding = SettingEncoding::Json;
+
+    fn default_value(&self) -> StoredShortcuts {
+        StoredShortcuts::default()
+    }
+
+    fn decode(&self, raw: &str) -> Option<StoredShortcuts> {
+        Some(match serde_json::from_str::<StoredOverrides>(raw) {
+            Ok(stored) => StoredShortcuts {
+                entries: stored.into_known_entries(),
+                unreadable: false,
+            },
+            Err(_) => StoredShortcuts {
+                entries: HashMap::new(),
+                unreadable: true,
+            },
+        })
+    }
+
+    fn encode(&self, value: &StoredShortcuts) -> Option<String> {
+        serde_json::to_string(&value.entries).ok()
+    }
+}
+
+pub const KEYBOARD_SHORTCUTS: Setting<ShortcutsCodec> =
+    Setting::new("app.keyboard_shortcuts", ShortcutsCodec, Portable, Kind);
+
 pub async fn load_overrides(
     repo: Arc<dyn SettingsRepo>,
 ) -> Result<ShortcutOverrides, StorageError> {
-    let stored = stored_json_setting::<StoredOverrides>(repo.as_ref(), KEYBOARD_SHORTCUTS).await?;
+    let stored = read_setting(repo.as_ref(), &KEYBOARD_SHORTCUTS).await?;
+    if stored.unreadable {
+        return Err(StorageError::UndecodableSetting {
+            key: KEYBOARD_SHORTCUTS.name().to_owned(),
+        });
+    }
     Ok(ShortcutOverrides {
-        map: stored
-            .map(StoredOverrides::into_known_entries)
-            .unwrap_or_default(),
+        map: stored.entries,
     })
 }
 
@@ -214,7 +258,11 @@ pub async fn save_overrides(
     repo: Arc<dyn SettingsRepo>,
     map: HashMap<String, OverrideEntry>,
 ) -> Result<(), String> {
-    set_json_setting(repo.as_ref(), KEYBOARD_SHORTCUTS, &map)
+    let stored = StoredShortcuts {
+        entries: map,
+        unreadable: false,
+    };
+    write_setting(repo.as_ref(), &KEYBOARD_SHORTCUTS, &stored)
         .await
         .map_err(|e| e.to_string())
 }

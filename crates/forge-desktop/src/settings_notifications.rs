@@ -4,13 +4,14 @@ use forge_components::{
     ActivePresentation, Icon, PushToast, ToastKind, setting_row, setting_rows, toggle, tr,
 };
 use forge_runtime::{NotificationPolicyHandle, NotificationPreferences};
-use forge_storage::{SettingsRepo, StorageError, reserved_keys, set_bool_setting};
+use forge_storage::{Flag, Setting, SettingsRepo, StorageError, write_setting};
 use gpui::{App, ClickEvent, Context, IntoElement, ParentElement, Render, Styled, Window, div};
 use tokio::runtime::Handle;
 
 use crate::async_bridge;
 use crate::navigation::SettingsSection;
 use crate::scheduled_backup_notices::BackupFailureNoticePreference;
+use crate::settings_catalog::SCHEDULED_BACKUP_FAILURE_OS_NOTICE;
 use crate::settings_pane_header::SettingsPaneHeader;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -25,13 +26,13 @@ impl NotificationToggle {
         NotificationToggle::ConnectionLossCue,
     ];
 
-    pub fn storage_key(self) -> &'static str {
+    pub fn declaration(self) -> &'static Setting<Flag> {
         match self {
             NotificationToggle::ActionFailureNotice => {
-                reserved_keys::NOTIFICATIONS_ACTION_FAILURE_OS_NOTICE
+                &forge_runtime::settings::ACTION_FAILURE_OS_NOTICE
             }
             NotificationToggle::ConnectionLossCue => {
-                reserved_keys::NOTIFICATIONS_CONNECTION_LOSS_SOUND
+                &forge_runtime::settings::CONNECTION_LOSS_SOUND
             }
         }
     }
@@ -71,11 +72,11 @@ impl NotificationSetting {
             .chain([NotificationSetting::ScheduledBackupFailureNotice])
     }
 
-    pub fn storage_key(self) -> &'static str {
+    pub fn declaration(self) -> &'static Setting<Flag> {
         match self {
-            NotificationSetting::Policy(toggle) => toggle.storage_key(),
+            NotificationSetting::Policy(toggle) => toggle.declaration(),
             NotificationSetting::ScheduledBackupFailureNotice => {
-                reserved_keys::NOTIFICATIONS_SCHEDULED_BACKUP_FAILURE_OS_NOTICE
+                &SCHEDULED_BACKUP_FAILURE_OS_NOTICE
             }
         }
     }
@@ -221,10 +222,10 @@ impl SettingsNotificationsView {
     fn start_write(&mut self, setting: NotificationSetting, value: bool, cx: &mut Context<Self>) {
         self.writing.push(setting);
         let repo = Arc::clone(&self.settings);
-        let key = setting.storage_key();
+        let declaration = setting.declaration();
         async_bridge::run_async(
             &self.rt_handle,
-            async move { set_bool_setting(repo.as_ref(), key, value).await },
+            async move { write_setting(repo.as_ref(), declaration, &value).await },
             move |this, result, cx| this.finish_write(setting, value, result, cx),
             cx,
         );
@@ -247,7 +248,7 @@ impl SettingsNotificationsView {
                 }
             }
             Err(error) => {
-                tracing::warn!(error = %error, key = setting.storage_key(), "notification preference not saved");
+                tracing::warn!(error = %error, key = setting.declaration().name(), "notification preference not saved");
                 self.show(setting, self.stored_value(setting));
                 cx.push_toast(
                     ToastKind::Error,

@@ -6,7 +6,8 @@ use forge_components::{
     drive_overlay_focus, dropdown, dropdown_list, dropdown_row, install_process_display_formats,
     setting_row, setting_rows, tr, ui_names_language,
 };
-use forge_storage::{SettingsRepo, reserved_keys};
+use forge_storage::settings::core_settings;
+use forge_storage::{OptionalText, Setting, SettingsRepo, write_setting};
 use forge_types::PatternZone;
 use gpui::{
     AnyElement, ClickEvent, Context, FocusHandle, Pixels, SharedString, Window, div, prelude::*, px,
@@ -109,24 +110,27 @@ impl SettingsRegionView {
         }
     }
 
-    pub fn apply_pick(&mut self, pick: RegionPick) -> Option<(&'static str, &'static str)> {
+    pub fn apply_pick(
+        &mut self,
+        pick: RegionPick,
+    ) -> Option<(&'static Setting<OptionalText>, &'static str)> {
         let before = self.choices;
         let write = match pick {
             RegionPick::Region(region) => {
                 self.choices.region = region;
-                (reserved_keys::REGION, region.code())
+                (&core_settings::REGION, region.code())
             }
             RegionPick::DateFormat(choice) => {
                 self.choices.date_format = choice;
-                (reserved_keys::DATE_FORMAT, choice.code())
+                (&core_settings::DATE_FORMAT, choice.code())
             }
             RegionPick::TimeFormat(choice) => {
                 self.choices.clock = choice;
-                (reserved_keys::TIME_FORMAT, choice.code())
+                (&core_settings::TIME_FORMAT, choice.code())
             }
             RegionPick::FirstDay(choice) => {
                 self.choices.first_day = choice;
-                (reserved_keys::FIRST_DAY_OF_WEEK, choice.code())
+                (&core_settings::FIRST_DAY_OF_WEEK, choice.code())
             }
         };
         (self.choices != before).then_some(write)
@@ -134,13 +138,13 @@ impl SettingsRegionView {
 
     fn pick(&mut self, pick: RegionPick, cx: &mut Context<Self>) {
         self.open = None;
-        if let Some((key, code)) = self.apply_pick(pick) {
+        if let Some((setting, code)) = self.apply_pick(pick) {
             install_process_display_formats(self.choices.resolve());
             cx.set_global(ActiveDisplayFormats(self.choices));
             let settings = Arc::clone(&self.settings);
             async_bridge::report_failure(
                 &self.rt_handle,
-                async move { settings.set_string(key, code).await },
+                async move { write_setting(settings.as_ref(), setting, &Some(code.to_owned())).await },
                 ErrorSink::Toast,
                 tr!("settings_region_persist_failed"),
                 cx,

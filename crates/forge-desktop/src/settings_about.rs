@@ -5,7 +5,8 @@ use forge_components::{
     ActivePresentation, FONT_XS, ForgePalette, Icon, SectionLabel, Spacing, body_family, card,
     field_hint, ghost_button_with_icon, setting_rows, setting_value_row, spacing, spinner, tr,
 };
-use forge_storage::{DataProvider, SettingsRepo};
+use forge_storage::settings::core_settings;
+use forge_storage::{DataProvider, SettingsRepo, read_setting};
 use gpui::{ClickEvent, Context, Entity, Window, div, prelude::*};
 use tokio::runtime::Handle;
 
@@ -59,7 +60,8 @@ impl SettingsAboutView {
         async_bridge::run_async(
             &self.rt_handle,
             async move {
-                match settings.audio_output_device_id().await {
+                match read_setting(settings.as_ref(), &core_settings::AUDIO_OUTPUT_DEVICE_ID).await
+                {
                     Ok(stored_id) => Some(stored_output_device(stored_id)),
                     Err(e) => {
                         tracing::warn!(error = %e, "failed to read audio output device for system info");

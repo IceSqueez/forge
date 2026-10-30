@@ -10,7 +10,8 @@ use forge_components::{
     mono_family, page_frame, radius, scaled, set_body_family, set_mono_family, setting_block,
     setting_groups, setting_row, setting_rows, setting_sections, spacing, toggle, tr, with_alpha,
 };
-use forge_storage::{Language, SettingsRepo, reserved_keys};
+use forge_storage::settings::core_settings;
+use forge_storage::{Language, SettingsRepo, write_setting};
 use gpui::{
     AnyElement, App, ClickEvent, Context, Entity, FontWeight, Pixels, Rgba, SharedString,
     Subscription, Window, div, prelude::*, px,
@@ -26,6 +27,7 @@ use crate::runtime_handles::RuntimeHandles;
 use crate::safety_copies::SafetyCopiesView;
 use crate::settings_about::SettingsAboutView;
 use crate::settings_audio::SettingsAudioView;
+use crate::settings_catalog::DENSITY;
 use crate::settings_diagnostics::SettingsDiagnosticsView;
 use crate::settings_notifications::SettingsNotificationsView;
 use crate::settings_pane_header::SettingsPaneHeader;
@@ -441,10 +443,11 @@ impl SettingsView {
         async_bridge::report_failure(
             &self.handles.rt_handle,
             async move {
-                match target {
-                    FontTarget::Body => backend.set_font_body(persisted).await,
-                    FontTarget::Mono => backend.set_font_mono(persisted).await,
-                }
+                let setting = match target {
+                    FontTarget::Body => &core_settings::FONT_BODY,
+                    FontTarget::Mono => &core_settings::FONT_MONO,
+                };
+                write_setting(backend.as_ref(), setting, &persisted).await
             },
             ErrorSink::Toast,
             tr!("settings_appearance_font_persist_failed"),
@@ -524,7 +527,7 @@ impl SettingsView {
         let key = theme.storage_key().to_owned();
         async_bridge::report_failure(
             &self.handles.rt_handle,
-            async move { backend.set_theme(&key).await },
+            async move { write_setting(backend.as_ref(), &core_settings::THEME, &Some(key)).await },
             ErrorSink::Toast,
             tr!("settings_theme_persist_failed"),
             cx,
@@ -545,7 +548,7 @@ impl SettingsView {
         let key = accent.storage_key().to_owned();
         async_bridge::report_failure(
             &self.handles.rt_handle,
-            async move { backend.set_accent(&key).await },
+            async move { write_setting(backend.as_ref(), &core_settings::ACCENT, &Some(key)).await },
             ErrorSink::Toast,
             tr!("settings_accent_persist_failed"),
             cx,
@@ -570,7 +573,13 @@ impl SettingsView {
 
         let backend = Arc::clone(&self.handles.backend) as Arc<dyn SettingsRepo>;
         self.handles.rt_handle.spawn(async move {
-            if let Err(e) = backend.set_language(lang).await {
+            if let Err(e) = write_setting(
+                backend.as_ref(),
+                &core_settings::LANGUAGE,
+                &lang.to_string(),
+            )
+            .await
+            {
                 tracing::warn!(error = %e, "failed to persist language selection");
             }
         });
@@ -588,7 +597,7 @@ impl SettingsView {
         let key = density.storage_key().to_owned();
         async_bridge::report_failure(
             &self.handles.rt_handle,
-            async move { backend.set_string(reserved_keys::DENSITY, &key).await },
+            async move { write_setting(backend.as_ref(), &DENSITY, &Some(key)).await },
             ErrorSink::Toast,
             tr!("settings_density_persist_failed"),
             cx,

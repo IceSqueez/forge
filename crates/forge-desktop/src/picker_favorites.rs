@@ -301,7 +301,7 @@ pub(crate) mod tests {
                 let mut harness = Harness::new(cx);
                 harness
                     .backend
-                    .seed(SUB_ACTION_FAVORITES.setting.name(), stored);
+                    .seed_raw(SUB_ACTION_FAVORITES.setting, stored);
                 if failing_read {
                     harness
                         .backend
@@ -334,7 +334,7 @@ pub(crate) mod tests {
             let mut harness = Harness::new(cx);
             harness
                 .backend
-                .seed(SUB_ACTION_FAVORITES.setting.name(), STORED);
+                .seed_raw(SUB_ACTION_FAVORITES.setting, STORED);
             let gate = Arc::new(tokio::sync::Notify::new());
             harness.backend.fault_reads(
                 SUB_ACTION_FAVORITES.setting.name(),
@@ -372,7 +372,7 @@ pub(crate) mod tests {
         let mut harness = Harness::new(cx);
         harness
             .backend
-            .seed(SUB_ACTION_FAVORITES.setting.name(), STORED);
+            .seed_raw(SUB_ACTION_FAVORITES.setting, STORED);
         harness
             .backend
             .fault_reads(SUB_ACTION_FAVORITES.setting.name(), ReadFault::Fails);
@@ -397,9 +397,7 @@ pub(crate) mod tests {
         cx: &mut gpui::TestAppContext,
     ) {
         let harness = Harness::new(cx);
-        harness
-            .backend
-            .seed(TRIGGER_FAVORITES.setting.name(), STORED);
+        harness.backend.seed_raw(TRIGGER_FAVORITES.setting, STORED);
         harness
             .backend
             .fault_reads(TRIGGER_FAVORITES.setting.name(), ReadFault::Fails);
@@ -418,7 +416,7 @@ pub(crate) mod tests {
         let harness = Harness::new(cx);
         harness
             .backend
-            .seed(SUB_ACTION_FAVORITES.setting.name(), STORED);
+            .seed_raw(SUB_ACTION_FAVORITES.setting, STORED);
         harness
             .backend
             .fail_writes(SUB_ACTION_FAVORITES.setting.name());
@@ -438,9 +436,7 @@ pub(crate) mod tests {
         cx: &mut gpui::TestAppContext,
     ) {
         let mut harness = Harness::new(cx);
-        harness
-            .backend
-            .seed(TRIGGER_FAVORITES.setting.name(), STORED);
+        harness.backend.seed_raw(TRIGGER_FAVORITES.setting, STORED);
         let actions_copy = harness.shared(TRIGGER_FAVORITES, cx);
         let triggers_copy = harness.shared(TRIGGER_FAVORITES, cx);
 
@@ -459,12 +455,10 @@ pub(crate) mod tests {
     #[gpui::test]
     fn each_favorites_list_keeps_its_own_copy(cx: &mut gpui::TestAppContext) {
         let harness = Harness::new(cx);
+        harness.backend.seed_raw(TRIGGER_FAVORITES.setting, STORED);
         harness
             .backend
-            .seed(TRIGGER_FAVORITES.setting.name(), STORED);
-        harness
-            .backend
-            .seed(SUB_ACTION_FAVORITES.setting.name(), STORED);
+            .seed_raw(SUB_ACTION_FAVORITES.setting, STORED);
         let triggers = harness.shared(TRIGGER_FAVORITES, cx);
         let sub_actions = harness.shared(SUB_ACTION_FAVORITES, cx);
 

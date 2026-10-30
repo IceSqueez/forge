@@ -5,18 +5,35 @@ use forge_storage::settings::core_settings::{
     CREDENTIALS_KEY_LOSS, INTEGRATION_ENABLED, LANGUAGE, THEME, TTS_DISABLED_ENGINES,
     TTS_ENGINE_PARAMS,
 };
-use forge_storage::test_support::{
-    FAIL_CLOSED_CLASSES, INJECTED_FAILURE_REASON, MemorySettings, SettingsWrite,
-};
+use forge_storage::test_support::{INJECTED_FAILURE_REASON, MemorySettings, SettingsWrite};
 use forge_storage::{
-    PlainText, RowClasses, Setting, SettingDisclosure, SettingPortability, SettingsRepo,
-    StorageError, read_family_setting, read_setting, reset_family_setting, write_family_setting,
-    write_setting,
+    PlainText, RowClasses, Setting, SettingDisclosure, SettingPortability, StorageError,
+    load_setting_rows, read_family_setting, read_setting, read_stored_setting,
+    reset_family_setting, reset_setting, write_family_setting, write_setting,
 };
 use tokio::task::yield_now;
 
 const HANG_GUARD: Duration = Duration::from_secs(30);
 const ABSENCE_PROBE: Duration = Duration::from_millis(20);
+
+const fn note(name: &'static str) -> Setting<PlainText> {
+    Setting::new(
+        name,
+        PlainText { default: "none" },
+        SettingPortability::Portable,
+        SettingDisclosure::Verbatim,
+    )
+}
+
+const NOTE: Setting<PlainText> = note("test.note");
+const NOTE_B: Setting<PlainText> = note("test.note_b");
+const NOTE_C: Setting<PlainText> = note("test.note_c");
+
+async fn put(store: &MemorySettings, setting: &Setting<PlainText>, value: &str) {
+    write_setting(store, setting, &value.to_owned())
+        .await
+        .unwrap();
+}
 
 fn is_injected(error: &StorageError) -> bool {
     matches!(error, StorageError::Connection { reason } if reason == INJECTED_FAILURE_REASON)
@@ -200,38 +217,43 @@ async fn seeding_bypasses_faults_and_the_write_log_and_stamps_declared_classes()
 #[tokio::test]
 async fn fail_reads_fails_every_read_but_not_writes_and_recovers_when_cleared() {
     let store = MemorySettings::new();
-    store.seed_foreign("k", "v", None);
+    store.seed_raw(&NOTE, "v");
     store.fail_reads(true);
 
-    let get = store.get_string("k").await.unwrap_err();
-    let all = store.load_all().await.unwrap_err();
-    let write = store.set_string("k2", "v2").await;
+    let get = read_stored_setting(&store, &NOTE).await.unwrap_err();
+    let all = load_setting_rows(&store).await.unwrap_err();
+    let write = write_setting(&store, &NOTE_B, &"v2".to_owned()).await;
 
     assert!(is_injected(&get) && is_injected(&all) && write.is_ok());
 
     store.fail_reads(false);
-    assert_eq!(store.get_string("k").await.unwrap().as_deref(), Some("v"));
+    assert_eq!(
+        read_stored_setting(&store, &NOTE).await.unwrap().as_deref(),
+        Some("v")
+    );
 }
 
 #[tokio::test]
 async fn fail_writes_rejects_every_write_kind_and_leaves_state_and_log_unchanged() {
     let store = MemorySettings::new();
-    store.seed_foreign("keep", "1", None);
+    store.seed_raw(&NOTE, "1");
     store.fail_writes(true);
 
-    let raw = store.set_string("keep", "2").await.unwrap_err();
-    let delete = store.delete("keep").await.unwrap_err();
-    let typed = write_setting(&store, &THEME, &Some("x".to_owned()))
+    let overwrite = write_setting(&store, &NOTE, &"2".to_owned())
+        .await
+        .unwrap_err();
+    let delete = reset_setting(&store, &NOTE).await.unwrap_err();
+    let fresh = write_setting(&store, &THEME, &Some("x".to_owned()))
         .await
         .unwrap_err();
 
-    assert!(is_injected(&raw) && is_injected(&delete) && is_injected(&typed));
-    assert_eq!(store.row("keep").unwrap().value, "1");
+    assert!(is_injected(&overwrite) && is_injected(&delete) && is_injected(&fresh));
+    assert_eq!(store.row(NOTE.name()).unwrap().value, "1");
     assert!(store.row("theme").is_none());
     assert!(store.write_log().is_empty());
 
     store.fail_writes(false);
-    store.set_string("keep", "3").await.unwrap();
+    put(&store, &NOTE, "3").await;
     assert_eq!(store.write_log().len(), 1);
 }
 
@@ -239,22 +261,24 @@ async fn fail_writes_rejects_every_write_kind_and_leaves_state_and_log_unchanged
 async fn write_log_records_successful_writes_in_call_order_with_their_classes() {
     let store = MemorySettings::new();
     store.fail_writes(true);
-    store.set_string("dropped", "x").await.unwrap_err();
+    write_setting(&store, &NOTE_B, &"x".to_owned())
+        .await
+        .unwrap_err();
     store.fail_writes(false);
 
-    store.set_string("a", "1").await.unwrap();
+    put(&store, &NOTE, "1").await;
     write_setting(&store, &THEME, &Some("mocha".to_owned()))
         .await
         .unwrap();
-    store.delete("a").await.unwrap();
+    reset_setting(&store, &NOTE).await.unwrap();
 
     assert_eq!(
         store.write_log(),
         vec![
             SettingsWrite::Put {
-                key: "a".to_owned(),
+                key: NOTE.name().to_owned(),
                 value: "1".to_owned(),
-                classes: FAIL_CLOSED_CLASSES,
+                classes: RowClasses::from(&NOTE.spec()),
             },
             SettingsWrite::Put {
                 key: "theme".to_owned(),
@@ -262,7 +286,7 @@ async fn write_log_records_successful_writes_in_call_order_with_their_classes() 
                 classes: RowClasses::from(&THEME.spec()),
             },
             SettingsWrite::Delete {
-                key: "a".to_owned()
+                key: NOTE.name().to_owned()
             },
         ]
     );
@@ -274,33 +298,35 @@ async fn held_writes_stay_invisible_until_released() {
     store.hold_writes();
     let writer = tokio::spawn({
         let store = store.clone();
-        async move { store.set_string("k", "v").await }
+        async move { write_setting(&store, &NOTE, &"v".to_owned()).await }
     });
     until(|| store.peak_concurrent_writes() == 1).await;
     yield_now().await;
 
-    assert!(!writer.is_finished() && store.row("k").is_none() && store.write_log().is_empty());
+    assert!(
+        !writer.is_finished() && store.row(NOTE.name()).is_none() && store.write_log().is_empty()
+    );
 
     store.release_writes();
     writer.await.unwrap().unwrap();
-    assert_eq!(store.row("k").unwrap().value, "v");
+    assert_eq!(store.row(NOTE.name()).unwrap().value, "v");
     assert_eq!(store.write_log().len(), 1);
 }
 
 #[tokio::test]
 async fn peak_concurrent_writes_counts_simultaneously_pending_writes_only() {
     let sequential = MemorySettings::new();
-    for key in ["a", "b", "c"] {
-        sequential.set_string(key, "x").await.unwrap();
+    for setting in [&NOTE, &NOTE_B, &NOTE_C] {
+        put(&sequential, setting, "x").await;
     }
 
     let overlapping = MemorySettings::new();
     overlapping.hold_writes();
-    let writers: Vec<_> = ["a", "b", "c"]
+    let writers: Vec<_> = [NOTE, NOTE_B, NOTE_C]
         .into_iter()
-        .map(|key| {
+        .map(|setting| {
             let store = overlapping.clone();
-            tokio::spawn(async move { store.set_string(key, "x").await })
+            tokio::spawn(async move { write_setting(&store, &setting, &"x".to_owned()).await })
         })
         .collect();
     until(|| overlapping.peak_concurrent_writes() == 3).await;
@@ -322,9 +348,11 @@ async fn peak_concurrent_writes_counts_simultaneously_pending_writes_only() {
 async fn failed_writes_do_not_leave_the_in_flight_counter_raised() {
     let store = MemorySettings::new();
     store.fail_writes(true);
-    store.set_string("a", "x").await.unwrap_err();
+    write_setting(&store, &NOTE, &"x".to_owned())
+        .await
+        .unwrap_err();
     store.fail_writes(false);
-    store.set_string("b", "x").await.unwrap();
+    put(&store, &NOTE_B, "x").await;
 
     assert_eq!(store.peak_concurrent_writes(), 1);
 }
@@ -332,11 +360,11 @@ async fn failed_writes_do_not_leave_the_in_flight_counter_raised() {
 #[tokio::test]
 async fn held_reads_signal_their_start_and_complete_only_after_release() {
     let store = MemorySettings::new();
-    store.seed_foreign("k", "v", None);
+    store.seed_raw(&NOTE, "v");
     store.hold_reads();
     let reader = tokio::spawn({
         let store = store.clone();
-        async move { store.get_string("k").await }
+        async move { read_stored_setting(&store, &NOTE).await }
     });
 
     tokio::time::timeout(HANG_GUARD, store.wait_for_read_start())
@@ -352,8 +380,8 @@ async fn held_reads_signal_their_start_and_complete_only_after_release() {
 #[tokio::test]
 async fn wait_for_read_start_stays_pending_when_no_read_was_issued() {
     let store = MemorySettings::new();
-    store.seed_foreign("k", "v", None);
-    store.set_string("k", "w").await.unwrap();
+    store.seed_raw(&NOTE, "v");
+    put(&store, &NOTE, "w").await;
 
     let outcome = tokio::time::timeout(ABSENCE_PROBE, store.wait_for_read_start()).await;
 
@@ -363,8 +391,8 @@ async fn wait_for_read_start_stays_pending_when_no_read_was_issued() {
 #[tokio::test]
 async fn each_read_releases_exactly_one_start_wait() {
     let store = MemorySettings::new();
-    store.get_string("a").await.unwrap();
-    store.get_string("b").await.unwrap();
+    read_setting(&store, &NOTE).await.unwrap();
+    read_setting(&store, &NOTE_B).await.unwrap();
 
     store.wait_for_read_start().await;
     store.wait_for_read_start().await;
@@ -372,13 +400,6 @@ async fn each_read_releases_exactly_one_start_wait() {
 
     assert!(third.is_err());
 }
-
-const NOTE: Setting<PlainText> = Setting::new(
-    "test.note",
-    PlainText { default: "none" },
-    SettingPortability::Portable,
-    SettingDisclosure::Verbatim,
-);
 
 #[tokio::test]
 async fn tally_round_trips_the_u64_extremes_and_defaults_on_non_counts() {

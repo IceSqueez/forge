@@ -70,10 +70,11 @@ mod tests {
     use std::collections::BTreeSet;
     use std::sync::Arc;
 
+    use forge_storage::settings::core_settings;
     use forge_storage::test_support::{MemorySettings, StoredSettingRow};
     use forge_storage::{
-        DataProvider, RowClasses, SettingDisclosure, SettingKey, SettingPortability, SettingSpec,
-        SettingsRepo, report_undeclared_settings, reserved_keys as key, write_setting,
+        DataProvider, RowClasses, SettingDisclosure, SettingKey, SettingPortability, SettingSkip,
+        SettingSpec, SettingsRepo, load_setting_rows, write_setting,
     };
 
     use super::{DENSITY, registered_settings_catalog};
@@ -92,9 +93,9 @@ mod tests {
             .unwrap();
 
         assert_eq!(
-            memory.row(key::DENSITY),
+            memory.row(DENSITY.name()),
             Some(StoredSettingRow {
-                key: key::DENSITY.to_owned(),
+                key: DENSITY.name().to_owned(),
                 value: "compact".to_owned(),
                 classes: RowClasses {
                     portability: SettingPortability::Portable,
@@ -197,10 +198,20 @@ mod tests {
         let backend = sandboxed_backend("sqlite::memory:", TEST_KEY).await;
         let settings: &dyn SettingsRepo = &*backend;
         crate::first_run::record_completed(settings).await.unwrap();
+        let catalog = registered_settings_catalog();
 
-        let undeclared = report_undeclared_settings(settings, &registered_settings_catalog())
+        let undeclared: Vec<String> = load_setting_rows(settings)
             .await
-            .unwrap();
+            .unwrap()
+            .into_iter()
+            .filter(|row| {
+                matches!(
+                    catalog.admit(row.key(), row.value()),
+                    Err(SettingSkip::Undeclared)
+                )
+            })
+            .map(|row| row.key().to_owned())
+            .collect();
 
         assert_eq!(undeclared, Vec::<String>::new());
     }
@@ -209,20 +220,20 @@ mod tests {
     fn keys_that_can_name_a_host_a_path_a_device_or_an_import_are_never_disclosed_verbatim() {
         let catalog = registered_settings_catalog();
         for name in [
-            key::SERVER_OVERLAY_ROOT,
-            key::SERVER_BIND_ADDRESS,
-            key::SERVER_ADDITIONAL_ORIGINS,
-            key::AUDIO_OUTPUT_DEVICE_ID,
-            key::AUDIO_VOICE_GATE_INPUT_DEVICE_ID,
+            core_settings::SERVER_OVERLAY_ROOT.name(),
+            forge_server::settings::BIND_ADDRESS.name(),
+            forge_server::settings::ADDITIONAL_ORIGINS.name(),
+            core_settings::AUDIO_OUTPUT_DEVICE_ID.name(),
+            core_settings::AUDIO_VOICE_GATE_INPUT_DEVICE_ID.name(),
             forge_soundboard::settings::OUTPUT_DEVICE.name(),
-            key::FONT_BODY,
-            key::FONT_MONO,
-            key::SCRIPT_HTTP_ALLOWED_DOMAINS,
-            key::PICKER_FAVORITES_SUB_ACTIONS,
-            key::PICKER_FAVORITES_TRIGGERS,
-            key::PICKER_FAVORITES_ICONS,
-            key::MIDI_KNOWN_DEVICES,
-            key::WINDOW_PLACEMENT,
+            core_settings::FONT_BODY.name(),
+            core_settings::FONT_MONO.name(),
+            forge_script::settings::HTTP_ALLOWED_DOMAINS.name(),
+            core_settings::PICKER_FAVORITES_SUB_ACTIONS.name(),
+            core_settings::PICKER_FAVORITES_TRIGGERS.name(),
+            core_settings::PICKER_FAVORITES_ICONS.name(),
+            crate::midi_screen::MIDI_KNOWN_DEVICES.name(),
+            crate::window_placement::WINDOW_PLACEMENT.name(),
         ] {
             let shown = catalog.disclosure_of(name).render(SECRET);
 
@@ -238,31 +249,31 @@ mod tests {
         let catalog = registered_settings_catalog();
 
         let portable: Vec<&str> = [
-            key::SERVER_BIND_ADDRESS,
-            key::SERVER_LAN_BIND_ENABLED,
-            key::SERVER_AUTH_REQUIRED_FOR_READS,
-            key::SERVER_HTTP_OVERLAY_REQUIRE_TOKEN,
-            key::SERVER_OVERLAY_CORS_ANY_ORIGIN,
-            key::SERVER_ADDITIONAL_ORIGINS,
-            key::SERVER_OVERLAY_ROOT,
-            key::SCRIPT_HTTP_ALLOWED_DOMAINS,
-            key::SCRIPT_HTTP_ALLOW_LOCAL,
-            key::CORE_HTTP_ALLOW_LOCAL,
-            key::WINDOW_PLACEMENT,
-            key::AUDIO_OUTPUT_DEVICE_ID,
-            key::AUDIO_VOICE_GATE_INPUT_DEVICE_ID,
+            forge_server::settings::BIND_ADDRESS.name(),
+            forge_server::settings::LAN_BIND_ENABLED.name(),
+            forge_server::settings::AUTH_REQUIRED_FOR_READS.name(),
+            forge_server::settings::HTTP_OVERLAY_REQUIRE_TOKEN.name(),
+            forge_server::settings::OVERLAY_CORS_ANY_ORIGIN.name(),
+            forge_server::settings::ADDITIONAL_ORIGINS.name(),
+            core_settings::SERVER_OVERLAY_ROOT.name(),
+            forge_script::settings::HTTP_ALLOWED_DOMAINS.name(),
+            forge_script::settings::HTTP_ALLOW_LOCAL.name(),
+            forge_runtime::settings::CORE_HTTP_ALLOW_LOCAL.name(),
+            crate::window_placement::WINDOW_PLACEMENT.name(),
+            core_settings::AUDIO_OUTPUT_DEVICE_ID.name(),
+            core_settings::AUDIO_VOICE_GATE_INPUT_DEVICE_ID.name(),
             forge_soundboard::settings::OUTPUT_DEVICE.name(),
-            key::MIDI_KNOWN_DEVICES,
-            key::UPDATES_ROLLED_BACK_VERSION,
-            key::UPDATES_LEFTOVER_INSTALL_NOTICED,
-            key::CREDENTIALS_KEY_LOSS,
-            key::STAY_AWAKE,
+            crate::midi_screen::MIDI_KNOWN_DEVICES.name(),
+            crate::update_report::ROLLED_BACK_VERSION.name(),
+            crate::update_leftover::LEFTOVER_INSTALL_NOTICED.name(),
+            core_settings::CREDENTIALS_KEY_LOSS.name(),
+            crate::stay_awake::STAY_AWAKE.name(),
             crate::first_run::FIRST_RUN_COMPLETED.name(),
-            key::BACKUP_SCHEDULE_KEY,
-            key::BACKUP_SCHEDULE_ENABLED,
-            key::BACKUP_SCHEDULE_DESTINATION,
-            key::BACKUP_SCHEDULE_LAST_SUCCESS_AT,
-            key::BACKUP_SCHEDULE_CONTENT_FINGERPRINT,
+            core_settings::BACKUP_SCHEDULE_KEY.name(),
+            core_settings::BACKUP_SCHEDULE_ENABLED.name(),
+            core_settings::BACKUP_SCHEDULE_DESTINATION.name(),
+            core_settings::BACKUP_SCHEDULE_LAST_SUCCESS_AT.name(),
+            core_settings::BACKUP_SCHEDULE_CONTENT_FINGERPRINT.name(),
         ]
         .into_iter()
         .filter(|name| catalog.is_portable(name))
@@ -293,33 +304,29 @@ mod tests {
         .config
     }
 
-    fn declared_classes(name: &str) -> Option<forge_storage::RowClasses> {
-        let catalog = registered_settings_catalog();
-        Some(forge_storage::RowClasses {
-            portability: catalog.portability_of(name),
-            disclosure: catalog.disclosure_of(name),
-        })
+    fn declared_classes(spec: &SettingSpec) -> Option<forge_storage::RowClasses> {
+        Some(RowClasses::from(spec))
     }
 
     #[tokio::test]
     async fn the_diagnostic_bundle_discloses_rows_by_their_stored_class() {
         let config = diagnostic_config(&[
-            (key::SERVER_PORT, "8080", declared_classes(key::SERVER_PORT)),
             (
-                key::SERVER_OVERLAY_ROOT,
+                forge_server::settings::PORT.name(),
+                "8080",
+                declared_classes(&forge_server::settings::PORT.spec()),
+            ),
+            (
+                core_settings::SERVER_OVERLAY_ROOT.name(),
                 "/home/nova/overlays",
-                declared_classes(key::SERVER_OVERLAY_ROOT),
+                declared_classes(&core_settings::SERVER_OVERLAY_ROOT.spec()),
             ),
             (
-                key::SCRIPT_HTTP_ALLOWED_DOMAINS,
+                forge_script::settings::HTTP_ALLOWED_DOMAINS.name(),
                 r#"["nova.example"]"#,
-                declared_classes(key::SCRIPT_HTTP_ALLOWED_DOMAINS),
+                declared_classes(&forge_script::settings::HTTP_ALLOWED_DOMAINS.spec()),
             ),
-            (
-                "twitch.account_login",
-                SECRET,
-                declared_classes("twitch.account_login"),
-            ),
+            ("twitch.account_login", SECRET, None),
             (
                 "ui.last_note",
                 "stored-verbatim",
@@ -333,9 +340,9 @@ mod tests {
 
         assert_eq!(
             [
-                key::SERVER_PORT,
-                key::SERVER_OVERLAY_ROOT,
-                key::SCRIPT_HTTP_ALLOWED_DOMAINS,
+                forge_server::settings::PORT.name(),
+                core_settings::SERVER_OVERLAY_ROOT.name(),
+                forge_script::settings::HTTP_ALLOWED_DOMAINS.name(),
                 "twitch.account_login",
                 "ui.last_note",
             ]
@@ -353,8 +360,9 @@ mod tests {
     #[tokio::test]
     async fn a_classless_legacy_row_is_withheld_from_the_diagnostic_bundle_though_its_key_is_declared_verbatim()
      {
-        let config = diagnostic_config(&[(key::SERVER_PORT, SECRET, None)]).await;
+        let port = forge_server::settings::PORT.name();
+        let config = diagnostic_config(&[(port, SECRET, None)]).await;
 
-        assert_eq!(config.get(key::SERVER_PORT), None);
+        assert_eq!(config.get(port), None);
     }
 }

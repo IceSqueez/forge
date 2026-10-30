@@ -1705,7 +1705,10 @@ mod tests {
     use forge_components::ThemeId;
     use forge_overlay::OverlayKindRegistry;
     use forge_runtime::EventBus;
-    use forge_storage::reserved_keys;
+    use forge_server::settings::{
+        ADDITIONAL_ORIGINS, AUTH_REQUIRED_FOR_READS, HTTP_OVERLAY_REQUIRE_TOKEN, PORT,
+    };
+    use forge_storage::settings::core_settings::SERVER_OVERLAY_ROOT;
     use gpui::TestAppContext;
 
     use super::*;
@@ -1802,8 +1805,8 @@ mod tests {
         ] {
             let rt = runtime();
             let (backend, mut writes) = test_backend();
-            backend.seed(
-                reserved_keys::SERVER_ADDITIONAL_ORIGINS,
+            backend.seed_raw(
+                &ADDITIONAL_ORIGINS,
                 &serde_json::to_string(&[STORED_ORIGIN]).unwrap(),
             );
             let view = settings_view(cx, &rt, backend);
@@ -1820,7 +1823,7 @@ mod tests {
     fn origin_writes(
         writes: &mut tokio::sync::mpsc::UnboundedReceiver<crate::test_support::SettingWrite>,
     ) -> Vec<String> {
-        crate::test_support::writes_to(writes, reserved_keys::SERVER_ADDITIONAL_ORIGINS)
+        crate::test_support::writes_to(writes, ADDITIONAL_ORIGINS.name())
     }
 
     fn commit_and_leave(
@@ -1842,7 +1845,7 @@ mod tests {
     ) {
         let rt = runtime();
         let (backend, mut writes) = test_backend();
-        backend.seed(reserved_keys::SERVER_ADDITIONAL_ORIGINS, "not json");
+        backend.seed_raw(&ADDITIONAL_ORIGINS, "not json");
         let view = settings_view(cx, &rt, Arc::clone(&backend));
         settle(cx, &rt);
 
@@ -1862,10 +1865,9 @@ mod tests {
         assert_eq!(
             (
                 flagged,
-                written_to(reserved_keys::SERVER_AUTH_REQUIRED_FOR_READS),
-                written_to(reserved_keys::SERVER_ADDITIONAL_ORIGINS),
-                rt.block_on(backend.get_string(reserved_keys::SERVER_ADDITIONAL_ORIGINS))
-                    .unwrap(),
+                written_to(AUTH_REQUIRED_FOR_READS.name()),
+                written_to(ADDITIONAL_ORIGINS.name()),
+                backend.row(ADDITIONAL_ORIGINS.name()).map(|row| row.value),
             ),
             (
                 true,
@@ -1881,7 +1883,7 @@ mod tests {
         let rt = runtime();
         let (backend, mut writes) = test_backend();
         backend.fault_reads(
-            reserved_keys::SERVER_ADDITIONAL_ORIGINS,
+            ADDITIONAL_ORIGINS.name(),
             crate::test_support::ReadFault::Held(Arc::new(tokio::sync::Notify::new())),
         );
         let view = settings_view(cx, &rt, backend);
@@ -1897,7 +1899,7 @@ mod tests {
         let rt = runtime();
         let (backend, mut writes) = test_backend();
         backend.fault_reads(
-            reserved_keys::SERVER_ADDITIONAL_ORIGINS,
+            ADDITIONAL_ORIGINS.name(),
             crate::test_support::ReadFault::Fails,
         );
         let view = settings_view(cx, &rt, backend);
@@ -2077,11 +2079,8 @@ mod tests {
         overlay_root: &std::path::Path,
     ) -> ServerHandle {
         std::fs::write(overlay_root.join(OVERLAY_PAGE), b"<html></html>").expect("overlay page");
-        backend.seed(reserved_keys::SERVER_PORT, EPHEMERAL_PORT);
-        backend.seed(
-            reserved_keys::SERVER_OVERLAY_ROOT,
-            &overlay_root.to_string_lossy(),
-        );
+        backend.seed_raw(&PORT, EPHEMERAL_PORT);
+        backend.seed_raw(&SERVER_OVERLAY_ROOT, &overlay_root.to_string_lossy());
         let server = stopped_handle(rt, backend);
         rt.block_on(server.restart()).expect("server starts");
         server
@@ -2100,10 +2099,7 @@ mod tests {
         settle(cx, &rt);
 
         assert_eq!(
-            crate::test_support::writes_to(
-                &mut writes,
-                reserved_keys::SERVER_HTTP_OVERLAY_REQUIRE_TOKEN
-            ),
+            crate::test_support::writes_to(&mut writes, HTTP_OVERLAY_REQUIRE_TOKEN.name()),
             vec!["false".to_owned()]
         );
     }
@@ -2147,10 +2143,7 @@ mod tests {
             (
                 before,
                 rt.block_on(server.reads_require_auth()),
-                crate::test_support::writes_to(
-                    &mut writes,
-                    reserved_keys::SERVER_AUTH_REQUIRED_FOR_READS
-                ),
+                crate::test_support::writes_to(&mut writes, AUTH_REQUIRED_FOR_READS.name()),
             ),
             (false, true, vec!["true".to_owned()])
         );
@@ -2191,11 +2184,7 @@ mod tests {
         let rt = runtime();
         let overlay_root = tempfile::tempdir().expect("tempdir");
         let (backend, _writes) = test_backend();
-        rt.block_on(backend.set_string(
-            reserved_keys::SERVER_OVERLAY_ROOT,
-            &overlay_root.path().to_string_lossy(),
-        ))
-        .expect("overlay root setting");
+        backend.seed_raw(&SERVER_OVERLAY_ROOT, &overlay_root.path().to_string_lossy());
         let server = stopped_handle(&rt, &backend);
         let before = live_overlay_token(&rt, &server);
         let view = settings_view_with_server(cx, &rt, backend, Some(server.clone()));
@@ -2228,11 +2217,7 @@ mod tests {
         let not_a_directory = scratch.path().join("overlays-file");
         std::fs::write(&not_a_directory, b"x").expect("write file");
         let (backend, _writes) = test_backend();
-        rt.block_on(backend.set_string(
-            reserved_keys::SERVER_OVERLAY_ROOT,
-            &not_a_directory.to_string_lossy(),
-        ))
-        .expect("overlay root setting");
+        backend.seed_raw(&SERVER_OVERLAY_ROOT, &not_a_directory.to_string_lossy());
         let server = stopped_handle(&rt, &backend);
         let before = live_overlay_token(&rt, &server);
         cx.update(|cx| cx.set_global(forge_components::Toasts::new()));

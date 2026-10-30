@@ -48,7 +48,8 @@ mod tests {
     use std::path::Path;
     use std::time::{Duration, Instant};
 
-    use forge_storage::reserved_keys;
+    use forge_storage::settings::core_settings::SAFETY_COPIES_KEEP_NEWEST;
+    use forge_storage::write_setting;
     use forge_transfer::{backup_file_stem, backups_dir};
     use time::OffsetDateTime;
 
@@ -71,11 +72,11 @@ mod tests {
     fn boot_keeping_one(copies: usize) -> Boot {
         let rt = runtime();
         let world = pack_world(&rt);
-        rt.block_on(
-            world
-                .provider()
-                .set_string(reserved_keys::SAFETY_COPIES_KEEP_NEWEST, "1"),
-        )
+        rt.block_on(write_setting(
+            world.provider().as_ref(),
+            &SAFETY_COPIES_KEEP_NEWEST,
+            &1,
+        ))
         .unwrap();
         let boot = Boot {
             rt,

@@ -1114,10 +1114,10 @@ mod tests {
 
     #[gpui::test]
     fn boot_with_an_undecodable_stored_shortcut_value_leaves_it_unwritten(cx: &mut TestAppContext) {
-        let key = forge_storage::reserved_keys::KEYBOARD_SHORTCUTS;
+        let key = crate::shortcut_overrides::KEYBOARD_SHORTCUTS.name();
         let rt = runtime();
         let (backend, mut writes) = test_backend();
-        backend.seed(key, "not json");
+        backend.seed_raw(&crate::shortcut_overrides::KEYBOARD_SHORTCUTS, "not json");
 
         apply_persisted_shortcuts(
             &mut cx.to_async(),

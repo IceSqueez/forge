@@ -701,7 +701,10 @@ mod tests {
     use std::time::{Duration, Instant};
 
     use forge_components::Toasts;
-    use forge_storage::{Language, reserved_keys};
+    use forge_storage::settings::core_settings::{
+        SAFETY_COPIES_DELETE_AFTER_DAYS, SAFETY_COPIES_KEEP_NEWEST, SAFETY_COPIES_MODE,
+    };
+    use forge_storage::{Language, Setting, SettingCodec, read_stored_setting, write_setting};
     use forge_transfer::{
         SafetyCopyFailure, ScheduledBackupParts, SystemBackupClock, backup_file_stem, backups_dir,
         spawn_scheduled_backups,
@@ -731,7 +734,30 @@ mod tests {
         view: Entity<SafetyCopiesView>,
     }
 
-    fn rig(cx: &mut TestAppContext, seeds: &[(&str, &str)], copies: usize) -> Rig {
+    enum PolicySeed {
+        Mode(&'static str),
+        KeepNewest(u32),
+        DeleteAfterDays(u32),
+    }
+
+    impl PolicySeed {
+        async fn apply(&self, provider: &dyn forge_storage::DataProvider) {
+            match self {
+                Self::Mode(mode) => {
+                    write_setting(provider, &SAFETY_COPIES_MODE, &(*mode).to_owned()).await
+                }
+                Self::KeepNewest(count) => {
+                    write_setting(provider, &SAFETY_COPIES_KEEP_NEWEST, count).await
+                }
+                Self::DeleteAfterDays(days) => {
+                    write_setting(provider, &SAFETY_COPIES_DELETE_AFTER_DAYS, days).await
+                }
+            }
+            .unwrap();
+        }
+    }
+
+    fn rig(cx: &mut TestAppContext, seeds: &[PolicySeed], copies: usize) -> Rig {
         install_language(Language::En);
         install_presentation(cx);
         cx.update(|cx| cx.set_global(Toasts::new()));
@@ -751,8 +777,8 @@ mod tests {
             std::fs::write(backups.join(name), vec![0_u8; COPY_BYTES]).unwrap();
         }
         let scheduled = rt.block_on(async {
-            for (key, value) in seeds {
-                provider.set_string(key, value).await.unwrap();
+            for seed in seeds {
+                seed.apply(provider.as_ref()).await;
             }
             spawn_scheduled_backups(ScheduledBackupParts {
                 provider: Arc::clone(&provider),
@@ -811,9 +837,9 @@ mod tests {
             self.view.read_with(cx, |view, _| view.usage)
         }
 
-        fn stored(&self, key: &str) -> Option<String> {
+        fn stored<C: SettingCodec>(&self, setting: &Setting<C>) -> Option<C::Value> {
             self.rt
-                .block_on(self.world.provider().get_string(key))
+                .block_on(read_stored_setting(self.world.provider().as_ref(), setting))
                 .unwrap()
         }
 
@@ -860,8 +886,7 @@ mod tests {
             self.view
                 .update(cx, |view, cx| view.pick_mode(SafetyCopyMode::Never, cx));
             assert!(self.settle(cx, |cx| {
-                self.stored(reserved_keys::SAFETY_COPIES_MODE) == Some("never".to_owned())
-                    && self.toasts(cx) > 0
+                self.stored(&SAFETY_COPIES_MODE) == Some("never".to_owned()) && self.toasts(cx) > 0
             }));
             self.toasts(cx)
         }
@@ -1019,9 +1044,9 @@ mod tests {
         let r = rig(
             cx,
             &[
-                (reserved_keys::SAFETY_COPIES_MODE, "delete_after_days"),
-                (reserved_keys::SAFETY_COPIES_KEEP_NEWEST, "7"),
-                (reserved_keys::SAFETY_COPIES_DELETE_AFTER_DAYS, "45"),
+                PolicySeed::Mode("delete_after_days"),
+                PolicySeed::KeepNewest(7),
+                PolicySeed::DeleteAfterDays(45),
             ],
             0,
         );
@@ -1041,10 +1066,7 @@ mod tests {
     fn picking_a_mode_saves_it_and_prunes_under_it(cx: &mut TestAppContext) {
         let r = rig(
             cx,
-            &[
-                (reserved_keys::SAFETY_COPIES_MODE, "never"),
-                (reserved_keys::SAFETY_COPIES_KEEP_NEWEST, "1"),
-            ],
+            &[PolicySeed::Mode("never"), PolicySeed::KeepNewest(1)],
             3,
         );
         assert!(r.settle(cx, |cx| r.settings(cx).mode == SafetyCopyMode::Never));
@@ -1055,10 +1077,7 @@ mod tests {
 
         assert!(r.settle(cx, |cx| r.usage(cx).is_some_and(|u| u.count == 1)));
         assert_eq!(
-            (
-                r.stored(reserved_keys::SAFETY_COPIES_MODE),
-                r.copies_on_disk()
-            ),
+            (r.stored(&SAFETY_COPIES_MODE), r.copies_on_disk()),
             (Some("keep_newest".to_owned()), 1)
         );
     }
@@ -1078,23 +1097,20 @@ mod tests {
     fn switching_mode_keeps_the_other_number_as_typed(cx: &mut TestAppContext) {
         let r = rig(cx, &[], 0);
         r.type_and_commit(cx, SafetyCopyNumber::KeepNewest, "7");
-        assert!(
-            r.settle(cx, |_| r.stored(reserved_keys::SAFETY_COPIES_KEEP_NEWEST)
-                == Some("7".to_owned()))
-        );
+        assert!(r.settle(cx, |_| r.stored(&SAFETY_COPIES_KEEP_NEWEST) == Some(7)));
 
         r.view.update(cx, |view, cx| {
             view.pick_mode(SafetyCopyMode::DeleteAfterDays, cx);
         });
 
-        assert!(r.settle(cx, |_| r.stored(reserved_keys::SAFETY_COPIES_MODE)
+        assert!(r.settle(cx, |_| r.stored(&SAFETY_COPIES_MODE)
             == Some("delete_after_days".to_owned())));
         assert_eq!(
             (
-                r.stored(reserved_keys::SAFETY_COPIES_KEEP_NEWEST),
+                r.stored(&SAFETY_COPIES_KEEP_NEWEST),
                 r.settings(cx).keep_newest
             ),
-            (Some("7".to_owned()), 7)
+            (Some(7), 7)
         );
     }
 
@@ -1108,9 +1124,9 @@ mod tests {
         assert_eq!(
             (
                 r.shown(cx, SafetyCopyNumber::KeepNewest),
-                r.stored(reserved_keys::SAFETY_COPIES_KEEP_NEWEST)
+                r.stored(&SAFETY_COPIES_KEEP_NEWEST)
             ),
-            (("1".to_owned(), false), Some("1".to_owned()))
+            (("1".to_owned(), false), Some(1))
         );
     }
 
@@ -1136,10 +1152,10 @@ mod tests {
         assert_eq!(
             (
                 toasts,
-                r.stored(reserved_keys::SAFETY_COPIES_KEEP_NEWEST),
+                r.stored(&SAFETY_COPIES_KEEP_NEWEST),
                 r.copies_on_disk()
             ),
-            (1, Some(before.keep_newest.to_string()), 3)
+            (1, Some(before.keep_newest), 3)
         );
     }
 
@@ -1269,15 +1285,8 @@ mod tests {
     fn a_late_settings_load_does_not_overwrite_a_change_made_on_the_card(cx: &mut TestAppContext) {
         let r = rig(cx, &[], 0);
         r.type_and_commit(cx, SafetyCopyNumber::KeepNewest, "3");
-        assert!(r.settle(cx, |_| {
-            r.stored(reserved_keys::SAFETY_COPIES_KEEP_NEWEST) == Some("3".to_owned())
-        }));
-        r.rt.block_on(
-            r.world
-                .provider()
-                .set_string(reserved_keys::SAFETY_COPIES_KEEP_NEWEST, "7"),
-        )
-        .unwrap();
+        assert!(r.settle(cx, |_| { r.stored(&SAFETY_COPIES_KEEP_NEWEST) == Some(3) }));
+        r.rt.block_on(PolicySeed::KeepNewest(7).apply(r.world.provider().as_ref()));
 
         r.view.update(cx, |view, cx| view.load(cx));
         r.settle(cx, |_| true);
@@ -1315,11 +1324,8 @@ mod tests {
 
         assert!(r.settle(cx, deferred_shown));
         assert_eq!(
-            (
-                r.stored(reserved_keys::SAFETY_COPIES_KEEP_NEWEST),
-                r.copies_on_disk()
-            ),
-            (Some("1".to_owned()), 3)
+            (r.stored(&SAFETY_COPIES_KEEP_NEWEST), r.copies_on_disk()),
+            (Some(1), 3)
         );
     }
 }

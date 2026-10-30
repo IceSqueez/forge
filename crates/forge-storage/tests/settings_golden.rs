@@ -1,47 +1,39 @@
 #![allow(clippy::unwrap_used, clippy::expect_used)]
-use std::collections::{BTreeMap, HashMap};
-use std::sync::Mutex;
+use std::collections::BTreeMap;
 
-use async_trait::async_trait;
+use forge_storage::settings::core_settings::{
+    ACCENT, AUDIO_OUTPUT_DEVICE_ID, FONT_BODY, FONT_MONO, LANGUAGE, THEME,
+};
+use forge_storage::test_support::MemorySettings;
 use forge_storage::{
-    CredentialsKeyLoss, EngineParams, Language, SettingsRepo, StorageError, VoiceGateSettings,
-    chat_history_display_limit, chat_history_per_viewer_limit, diagnostic_log_level,
-    disabled_tts_engines, engine_params, get_bool_setting, get_json_setting, master_volume,
-    record_credentials_key_loss, reserved_keys as key, set_bool_setting,
+    CredentialsKeyLoss, EngineParams, Flag, JsonDocument, Setting, SettingDisclosure,
+    SettingPortability, VoiceGateSettings, chat_history_display_limit,
+    chat_history_per_viewer_limit, diagnostic_log_level, disabled_tts_engines, engine_params,
+    master_volume, read_setting, read_stored_setting, record_credentials_key_loss,
     set_chat_history_display_limit, set_chat_history_per_viewer_limit, set_diagnostic_log_level,
-    set_disabled_tts_engines, set_engine_params, set_json_setting, set_master_volume,
-    set_voice_gate_enabled, set_voice_gate_hold_ms, set_voice_gate_input_device_id,
-    set_voice_gate_threshold, take_credentials_key_loss, voice_gate_settings,
+    set_disabled_tts_engines, set_engine_params, set_master_volume, set_voice_gate_enabled,
+    set_voice_gate_hold_ms, set_voice_gate_input_device_id, set_voice_gate_threshold,
+    take_credentials_key_loss, voice_gate_settings, write_setting,
 };
 use forge_types::LogLevel;
+
+use forge_storage::Language;
 
 const STORED_ENCODING_GOLDEN: &str = include_str!("fixtures/settings/stored_encoding.json");
 const PIPER: &str = "piper";
 
-#[derive(Default)]
-struct MapRepo {
-    map: Mutex<HashMap<String, String>>,
-}
-
-#[async_trait]
-impl SettingsRepo for MapRepo {
-    async fn get_string(&self, key: &str) -> Result<Option<String>, StorageError> {
-        Ok(self.map.lock().unwrap().get(key).cloned())
-    }
-    async fn set_string(&self, key: &str, value: &str) -> Result<(), StorageError> {
-        self.map
-            .lock()
-            .unwrap()
-            .insert(key.to_owned(), value.to_owned());
-        Ok(())
-    }
-    async fn delete(&self, key: &str) -> Result<bool, StorageError> {
-        Ok(self.map.lock().unwrap().remove(key).is_some())
-    }
-    async fn load_all(&self) -> Result<HashMap<String, String>, StorageError> {
-        Ok(self.map.lock().unwrap().clone())
-    }
-}
+const OBS_AUTO_RECONNECT: Setting<Flag> = Setting::new(
+    "obs.auto_reconnect",
+    Flag { default: true },
+    SettingPortability::MachineLocal,
+    SettingDisclosure::Verbatim,
+);
+const ALLOWED_DOMAINS: Setting<JsonDocument<Vec<String>>> = Setting::new(
+    "script.http_allowed_domains",
+    JsonDocument::new(),
+    SettingPortability::MachineLocal,
+    SettingDisclosure::Kind,
+);
 
 fn piper_params() -> EngineParams {
     EngineParams {
@@ -51,24 +43,32 @@ fn piper_params() -> EngineParams {
     }
 }
 
-async fn written_by_every_typed_writer() -> MapRepo {
-    let repo = MapRepo::default();
-    repo.set_language(Language::Uk).await.unwrap();
-    repo.set_theme("catppuccin-mocha").await.unwrap();
-    repo.set_accent("blue").await.unwrap();
-    repo.set_font_body(Some("Inter".to_owned())).await.unwrap();
-    repo.set_font_mono(Some("JetBrains Mono".to_owned()))
+async fn written_by_every_typed_writer() -> MemorySettings {
+    let repo = MemorySettings::new();
+    write_setting(&repo, &LANGUAGE, &Language::Uk.to_string())
         .await
         .unwrap();
-    repo.set_audio_output_device_id(Some("hw:1,0".to_owned()))
+    write_setting(&repo, &THEME, &Some("catppuccin-mocha".to_owned()))
         .await
         .unwrap();
-    set_bool_setting(&repo, key::OBS_AUTO_RECONNECT, false)
+    write_setting(&repo, &ACCENT, &Some("blue".to_owned()))
         .await
         .unwrap();
-    set_json_setting(
+    write_setting(&repo, &FONT_BODY, &Some("Inter".to_owned()))
+        .await
+        .unwrap();
+    write_setting(&repo, &FONT_MONO, &Some("JetBrains Mono".to_owned()))
+        .await
+        .unwrap();
+    write_setting(&repo, &AUDIO_OUTPUT_DEVICE_ID, &Some("hw:1,0".to_owned()))
+        .await
+        .unwrap();
+    write_setting(&repo, &OBS_AUTO_RECONNECT, &false)
+        .await
+        .unwrap();
+    write_setting(
         &repo,
-        key::SCRIPT_HTTP_ALLOWED_DOMAINS,
+        &ALLOWED_DOMAINS,
         &vec!["example.com".to_owned(), "api.example.org".to_owned()],
     )
     .await
@@ -99,11 +99,11 @@ async fn written_by_every_typed_writer() -> MapRepo {
     repo
 }
 
-async fn seeded_from_golden() -> MapRepo {
+fn seeded_from_golden() -> MemorySettings {
     let stored: BTreeMap<String, String> = serde_json::from_str(STORED_ENCODING_GOLDEN).unwrap();
-    let repo = MapRepo::default();
+    let repo = MemorySettings::new();
     for (stored_key, value) in &stored {
-        repo.set_string(stored_key, value).await.unwrap();
+        repo.seed_foreign(stored_key, value, None);
     }
     repo
 }
@@ -112,7 +112,11 @@ async fn seeded_from_golden() -> MapRepo {
 async fn typed_writers_store_the_golden_string_encoding() {
     let repo = written_by_every_typed_writer().await;
 
-    let stored: BTreeMap<String, String> = repo.load_all().await.unwrap().into_iter().collect();
+    let stored: BTreeMap<String, String> = repo
+        .rows()
+        .into_iter()
+        .map(|row| (row.key, row.value))
+        .collect();
     let rendered = format!("{}\n", serde_json::to_string_pretty(&stored).unwrap());
 
     assert_eq!(rendered, STORED_ENCODING_GOLDEN);
@@ -120,16 +124,16 @@ async fn typed_writers_store_the_golden_string_encoding() {
 
 #[tokio::test]
 async fn typed_readers_decode_the_golden_encoding_into_the_written_values() {
-    let repo = seeded_from_golden().await;
+    let repo = seeded_from_golden();
 
-    assert_eq!(repo.language().await.unwrap(), Language::Uk);
+    assert_eq!(read_setting(&repo, &LANGUAGE).await.unwrap(), "uk");
     assert_eq!(
         (
-            repo.get_theme().await.unwrap(),
-            repo.get_accent().await.unwrap(),
-            repo.font_body().await.unwrap(),
-            repo.font_mono().await.unwrap(),
-            repo.audio_output_device_id().await.unwrap(),
+            read_setting(&repo, &THEME).await.unwrap(),
+            read_setting(&repo, &ACCENT).await.unwrap(),
+            read_setting(&repo, &FONT_BODY).await.unwrap(),
+            read_setting(&repo, &FONT_MONO).await.unwrap(),
+            read_setting(&repo, &AUDIO_OUTPUT_DEVICE_ID).await.unwrap(),
         ),
         (
             Some("catppuccin-mocha".to_owned()),
@@ -139,9 +143,9 @@ async fn typed_readers_decode_the_golden_encoding_into_the_written_values() {
             Some("hw:1,0".to_owned()),
         )
     );
-    assert!(!get_bool_setting(&repo, key::OBS_AUTO_RECONNECT, true).await);
+    assert!(!read_setting(&repo, &OBS_AUTO_RECONNECT).await.unwrap());
     assert_eq!(
-        get_json_setting::<Vec<String>>(&repo, key::SCRIPT_HTTP_ALLOWED_DOMAINS).await,
+        read_stored_setting(&repo, &ALLOWED_DOMAINS).await.unwrap(),
         Some(vec!["example.com".to_owned(), "api.example.org".to_owned()])
     );
     assert_eq!(

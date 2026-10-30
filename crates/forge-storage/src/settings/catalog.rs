@@ -140,10 +140,13 @@ pub async fn report_undeclared_settings(
 
 #[cfg(test)]
 mod tests {
-    use super::super::reserved_keys as key;
+    use super::super::core_settings::{
+        ACCENT, AUDIO_OUTPUT_DEVICE_ID, BACKUP_SCHEDULE_DESTINATION, PICKER_FAVORITES_ICONS, THEME,
+        TTS_ENGINE_PARAMS,
+    };
     use super::super::spec::SettingEncoding::{Flag, Json, Text};
     use super::*;
-    use crate::event_log::tests::MapRepo;
+    use crate::test_support::MemorySettings;
 
     const EXTENSION_FLAG: SettingSpec = SettingSpec::exact(
         "extension.flag",
@@ -169,19 +172,19 @@ mod tests {
     fn register_rejects_a_name_the_core_catalog_already_declares() {
         for spec in [
             SettingSpec::exact(
-                key::THEME,
+                THEME.name(),
                 Text,
                 SettingPortability::MachineLocal,
                 SettingDisclosure::Withheld,
             ),
             SettingSpec::prefix(
-                key::THEME,
+                THEME.name(),
                 Text,
                 SettingPortability::Portable,
                 SettingDisclosure::Verbatim,
             ),
             SettingSpec::exact(
-                key::TTS_ENGINE_PARAMS_PREFIX,
+                TTS_ENGINE_PARAMS.prefix(),
                 Json,
                 SettingPortability::Portable,
                 SettingDisclosure::Verbatim,
@@ -303,7 +306,7 @@ mod tests {
 
         let undeclared = catalog.undeclared_keys([
             "zeta.unknown",
-            key::THEME,
+            THEME.name(),
             "tts.engine_params.piper",
             "alpha.unknown",
             "tts.engine_params",
@@ -318,10 +321,10 @@ mod tests {
     #[test]
     fn disclose_all_drops_withheld_keys_and_renders_the_rest_by_their_class() {
         let stored: HashMap<String, String> = [
-            (key::ACCENT, "blue"),
-            (key::AUDIO_OUTPUT_DEVICE_ID, "nova-speakers"),
-            (key::PICKER_FAVORITES_ICONS, r#"["nova","star"]"#),
-            (key::BACKUP_SCHEDULE_DESTINATION, "/home/nova/backups"),
+            (ACCENT.name(), "blue"),
+            (AUDIO_OUTPUT_DEVICE_ID.name(), "nova-speakers"),
+            (PICKER_FAVORITES_ICONS.name(), r#"["nova","star"]"#),
+            (BACKUP_SCHEDULE_DESTINATION.name(), "/home/nova/backups"),
             ("twitch.account_login", "nova"),
         ]
         .into_iter()
@@ -333,9 +336,12 @@ mod tests {
         assert_eq!(
             shown,
             BTreeMap::from([
-                (key::ACCENT.to_owned(), "blue".to_owned()),
-                (key::AUDIO_OUTPUT_DEVICE_ID.to_owned(), "set".to_owned()),
-                (key::PICKER_FAVORITES_ICONS.to_owned(), "list(2)".to_owned()),
+                (ACCENT.name().to_owned(), "blue".to_owned()),
+                (AUDIO_OUTPUT_DEVICE_ID.name().to_owned(), "set".to_owned()),
+                (
+                    PICKER_FAVORITES_ICONS.name().to_owned(),
+                    "list(2)".to_owned()
+                ),
             ])
         );
     }
@@ -343,23 +349,23 @@ mod tests {
     #[tokio::test]
     async fn report_undeclared_settings_returns_the_undeclared_keys_and_leaves_the_store_untouched()
     {
-        let repo = MapRepo::default();
+        let repo = MemorySettings::new();
         for (stored_key, value) in [
-            (key::THEME, "catppuccin-mocha"),
+            (THEME.name(), "catppuccin-mocha"),
             ("legacy.retired_toggle", "true"),
             ("integration.enabled.twitch", "false"),
             ("another.stray", "{}"),
         ] {
-            repo.set_string(stored_key, value).await.unwrap();
+            repo.seed_foreign(stored_key, value, None);
         }
-        let stored_before = repo.load_all().await.unwrap();
+        let stored_before = repo.rows();
 
         let reported = report_undeclared_settings(&repo, &SettingsCatalog::core())
             .await
             .unwrap();
 
         assert_eq!(
-            (reported, repo.load_all().await.unwrap()),
+            (reported, repo.rows()),
             (
                 vec![
                     "another.stray".to_owned(),

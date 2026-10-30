@@ -685,7 +685,8 @@ async fn load_allowed_domains(repo: Arc<dyn SettingsRepo>) -> Result<Vec<String>
 
 #[cfg(test)]
 mod tests {
-    use forge_storage::reserved_keys;
+    use forge_runtime::settings::CORE_HTTP_ALLOW_LOCAL;
+    use forge_script::settings::{HTTP_ALLOWED_DOMAINS, HTTP_MAX_RESPONSE_BYTES};
     use gpui::TestAppContext;
 
     use super::*;
@@ -822,10 +823,7 @@ mod tests {
                 let stored = setting
                     .stored_value_from_text(&typed.to_string())
                     .expect("in-range value");
-                backend
-                    .set_string(setting.declaration().name(), &stored.to_string())
-                    .await
-                    .unwrap();
+                backend.seed_raw(setting.declaration(), &stored.to_string());
                 typed_by_setting.push((setting, typed));
             }
 
@@ -846,10 +844,7 @@ mod tests {
     #[tokio::test]
     async fn loaded_snapshot_carries_the_core_allow_local_switch() {
         let (backend, _writes) = test_backend();
-        backend
-            .set_string(reserved_keys::CORE_HTTP_ALLOW_LOCAL, "true")
-            .await
-            .unwrap();
+        backend.seed_raw(&CORE_HTTP_ALLOW_LOCAL, "true");
 
         let snapshot = load_scripting_settings(backend as Arc<dyn SettingsRepo>).await;
 
@@ -930,7 +925,7 @@ mod tests {
         assert_eq!(
             writes.try_recv().expect("debounced write"),
             (
-                reserved_keys::SCRIPT_HTTP_MAX_RESPONSE_BYTES.to_owned(),
+                HTTP_MAX_RESPONSE_BYTES.name().to_owned(),
                 "2097152".to_owned()
             )
         );
@@ -975,8 +970,8 @@ mod tests {
         cx.update(|cx| cx.set_global(forge_components::Toasts::new()));
         let rt = paused_runtime();
         let (backend, writes) = test_backend();
-        backend.seed(
-            reserved_keys::SCRIPT_HTTP_ALLOWED_DOMAINS,
+        backend.seed_raw(
+            &HTTP_ALLOWED_DOMAINS,
             &serde_json::to_string(&[STORED_DOMAIN]).unwrap(),
         );
         (rt, backend, writes)
@@ -990,7 +985,7 @@ mod tests {
     }
 
     fn domain_writes(writes: &mut UnboundedReceiver<SettingWrite>) -> Vec<Vec<String>> {
-        writes_to(writes, reserved_keys::SCRIPT_HTTP_ALLOWED_DOMAINS)
+        writes_to(writes, HTTP_ALLOWED_DOMAINS.name())
             .iter()
             .map(|raw| serde_json::from_str(raw).unwrap())
             .collect()
@@ -1019,7 +1014,7 @@ mod tests {
         ] {
             for (case, edit) in domain_edits() {
                 let (rt, backend, mut writes) = domains_rig(cx);
-                backend.fault_reads(reserved_keys::SCRIPT_HTTP_ALLOWED_DOMAINS, fault.clone());
+                backend.fault_reads(HTTP_ALLOWED_DOMAINS.name(), fault.clone());
                 let view = mounted_view(cx, &rt, backend);
                 settle(cx, &rt);
 
@@ -1049,10 +1044,10 @@ mod tests {
             (domain_edits()[1].0, domain_edits()[1].1, Vec::new()),
         ] {
             let (rt, backend, mut writes) = domains_rig(cx);
-            backend.fault_reads(reserved_keys::SCRIPT_HTTP_ALLOWED_DOMAINS, ReadFault::Fails);
+            backend.fault_reads(HTTP_ALLOWED_DOMAINS.name(), ReadFault::Fails);
             let view = mounted_view(cx, &rt, Arc::clone(&backend));
             settle(cx, &rt);
-            backend.heal_reads(reserved_keys::SCRIPT_HTTP_ALLOWED_DOMAINS);
+            backend.heal_reads(HTTP_ALLOWED_DOMAINS.name());
 
             view.update(cx, |this, cx| this.load_domains(cx));
             settle(cx, &rt);
@@ -1067,7 +1062,7 @@ mod tests {
     fn a_failed_allowlist_write_toasts_and_reloads_the_stored_domains(cx: &mut TestAppContext) {
         for (case, edit) in domain_edits() {
             let (rt, backend, _writes) = domains_rig(cx);
-            backend.fail_writes(reserved_keys::SCRIPT_HTTP_ALLOWED_DOMAINS);
+            backend.fail_writes(HTTP_ALLOWED_DOMAINS.name());
             let view = mounted_view(cx, &rt, backend);
             settle(cx, &rt);
 

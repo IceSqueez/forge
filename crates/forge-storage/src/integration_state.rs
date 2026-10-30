@@ -95,8 +95,6 @@ pub async fn has_credentials_for(
 
 #[cfg(test)]
 mod tests {
-    use std::collections::HashMap;
-    use std::sync::Mutex;
     use std::sync::atomic::{AtomicUsize, Ordering};
 
     use async_trait::async_trait;
@@ -104,43 +102,18 @@ mod tests {
 
     use super::*;
     use crate::CredentialId;
+    use crate::test_support::MemorySettings;
 
-    #[derive(Default)]
-    struct MemorySettings(Mutex<HashMap<String, String>>);
-
-    impl MemorySettings {
-        fn with(entries: &[(&str, &str)]) -> Self {
-            Self(Mutex::new(
-                entries
-                    .iter()
-                    .map(|(k, v)| ((*k).to_owned(), (*v).to_owned()))
-                    .collect(),
-            ))
+    fn settings_with(entries: &[(&str, &str)]) -> MemorySettings {
+        let settings = MemorySettings::new();
+        for (key, value) in entries {
+            settings.seed_foreign(key, value, None);
         }
-
-        fn value(&self, key: &str) -> Option<String> {
-            self.0.lock().unwrap().get(key).cloned()
-        }
+        settings
     }
 
-    #[async_trait]
-    impl SettingsRepo for MemorySettings {
-        async fn get_string(&self, key: &str) -> Result<Option<String>, StorageError> {
-            Ok(self.value(key))
-        }
-        async fn set_string(&self, key: &str, value: &str) -> Result<(), StorageError> {
-            self.0
-                .lock()
-                .unwrap()
-                .insert(key.to_owned(), value.to_owned());
-            Ok(())
-        }
-        async fn delete(&self, key: &str) -> Result<bool, StorageError> {
-            Ok(self.0.lock().unwrap().remove(key).is_some())
-        }
-        async fn load_all(&self) -> Result<HashMap<String, String>, StorageError> {
-            Ok(self.0.lock().unwrap().clone())
-        }
+    fn value_of(settings: &MemorySettings, key: &str) -> Option<String> {
+        settings.row(key).map(|row| row.value)
     }
 
     struct StoredIds(Vec<&'static str>);
@@ -186,7 +159,7 @@ mod tests {
     #[tokio::test]
     async fn an_unresolved_integration_seeds_from_the_probe_and_persists_the_answer() {
         for configured in [true, false] {
-            let settings = MemorySettings::default();
+            let settings = MemorySettings::new();
             let calls = AtomicUsize::new(0);
 
             let enabled =
@@ -196,7 +169,7 @@ mod tests {
 
             assert_eq!(enabled, configured);
             assert_eq!(
-                settings.value(NEW_TWITCH).as_deref(),
+                value_of(&settings, NEW_TWITCH).as_deref(),
                 Some(if configured { "true" } else { "false" })
             );
         }
@@ -205,7 +178,7 @@ mod tests {
     #[tokio::test]
     async fn an_explicit_stored_choice_wins_over_the_probe() {
         for (stored, probed) in [("false", true), ("true", false)] {
-            let settings = MemorySettings::with(&[(NEW_TWITCH, stored)]);
+            let settings = settings_with(&[(NEW_TWITCH, stored)]);
             let calls = AtomicUsize::new(0);
 
             let enabled =
@@ -224,7 +197,7 @@ mod tests {
             ("midi", "midi.enabled", NEW_MIDI, "false", false),
             ("hotkey", "hotkey.enabled", NEW_HOTKEY, "true", true),
         ] {
-            let settings = MemorySettings::with(&[(legacy, legacy_value)]);
+            let settings = settings_with(&[(legacy, legacy_value)]);
             let calls = AtomicUsize::new(0);
 
             let enabled =
@@ -234,9 +207,9 @@ mod tests {
 
             assert_eq!(enabled, expected, "{integration}");
             assert_eq!(calls.load(Ordering::SeqCst), 0, "{integration}: probe ran");
-            assert_eq!(settings.value(new_key), Some(expected.to_string()));
+            assert_eq!(value_of(&settings, new_key), Some(expected.to_string()));
             assert_eq!(
-                settings.value(legacy),
+                value_of(&settings, legacy),
                 None,
                 "{integration}: legacy key kept"
             );
@@ -245,7 +218,7 @@ mod tests {
 
     #[tokio::test]
     async fn a_legacy_switch_left_beside_a_stored_choice_is_deleted_without_overriding_it() {
-        let settings = MemorySettings::with(&[(NEW_MIDI, "true"), ("midi.enabled", "false")]);
+        let settings = settings_with(&[(NEW_MIDI, "true"), ("midi.enabled", "false")]);
         let calls = AtomicUsize::new(0);
 
         let enabled = resolve_integration_enabled(&settings, &id("midi"), probe(false, &calls))
@@ -253,12 +226,12 @@ mod tests {
             .unwrap();
 
         assert!(enabled);
-        assert_eq!(settings.value("midi.enabled"), None);
+        assert_eq!(value_of(&settings, "midi.enabled"), None);
     }
 
     #[tokio::test]
     async fn a_legacy_key_of_another_integration_is_neither_read_nor_deleted() {
-        let settings = MemorySettings::with(&[("midi.enabled", "true")]);
+        let settings = settings_with(&[("midi.enabled", "true")]);
         let calls = AtomicUsize::new(0);
 
         let enabled = resolve_integration_enabled(&settings, &id("twitch"), probe(false, &calls))
@@ -266,30 +239,30 @@ mod tests {
             .unwrap();
 
         assert!(!enabled);
-        assert_eq!(settings.value("midi.enabled").as_deref(), Some("true"));
+        assert_eq!(value_of(&settings, "midi.enabled").as_deref(), Some("true"));
     }
 
     #[tokio::test]
     async fn resolving_again_reuses_the_seeded_answer_without_probing() {
-        let settings = MemorySettings::with(&[("hotkey.enabled", "false")]);
+        let settings = settings_with(&[("hotkey.enabled", "false")]);
         let calls = AtomicUsize::new(0);
 
         let first = resolve_integration_enabled(&settings, &id("hotkey"), probe(true, &calls))
             .await
             .unwrap();
-        let snapshot = settings.load_all().await.unwrap();
+        let snapshot = settings.rows();
         let second = resolve_integration_enabled(&settings, &id("hotkey"), probe(true, &calls))
             .await
             .unwrap();
 
         assert_eq!((first, second), (false, false));
         assert_eq!(calls.load(Ordering::SeqCst), 0);
-        assert_eq!(settings.load_all().await.unwrap(), snapshot);
+        assert_eq!(settings.rows(), snapshot);
     }
 
     #[tokio::test]
     async fn an_unreadable_stored_value_is_reseeded_from_the_probe() {
-        let settings = MemorySettings::with(&[(NEW_TWITCH, "maybe")]);
+        let settings = settings_with(&[(NEW_TWITCH, "maybe")]);
         let calls = AtomicUsize::new(0);
 
         let enabled = resolve_integration_enabled(&settings, &id("twitch"), probe(true, &calls))
@@ -297,12 +270,12 @@ mod tests {
             .unwrap();
 
         assert!(enabled);
-        assert_eq!(settings.value(NEW_TWITCH).as_deref(), Some("true"));
+        assert_eq!(value_of(&settings, NEW_TWITCH).as_deref(), Some("true"));
     }
 
     #[tokio::test]
     async fn a_failing_probe_persists_nothing_so_the_next_boot_retries() {
-        let settings = MemorySettings::default();
+        let settings = MemorySettings::new();
 
         let result = resolve_integration_enabled(&settings, &id("twitch"), async {
             Err(StorageError::NotReady)
@@ -310,7 +283,7 @@ mod tests {
         .await;
 
         assert!(result.is_err());
-        assert_eq!(settings.value(NEW_TWITCH), None);
+        assert_eq!(value_of(&settings, NEW_TWITCH), None);
     }
 
     #[tokio::test]

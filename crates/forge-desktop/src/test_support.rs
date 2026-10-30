@@ -19,15 +19,20 @@ use forge_registry::{
 use forge_runtime::{ActionCancelRegistry, Catalog, EventBus, spawn_action_engine};
 use forge_server::{ServerConfig, ServerHandle, stopped_server};
 use forge_speech_types::PcmBuffer;
+use forge_storage::settings::core_settings::{
+    BACKUP_SCHEDULE_ENABLED, BACKUP_SCHEDULE_KEY, BACKUP_SCHEDULE_LAST_SUCCESS_AT,
+};
+use forge_storage::test_support::{MemorySettings, StoredSettingRow};
 use forge_storage::trigger_instance::MockTriggerInstanceRepo;
 use forge_storage::{
     ActionRepo, ActionStats, ActionTelemetry, BanLedgerRepo, CatalogRevision, ChatHistoryRepo,
     CredentialId, CredentialsRepo, DataProvider, DonationRepo, EventLogRepo, ExecutionStatus,
     GlobalEntry, GlobalsRepo, HistoryRepo, LatestValueRepo, MediaBlob, MediaBlobId, MediaReferrer,
     MediaReferrerKind, MediaRepo, OverlayConfig, OverlayCredential, OverlayDefinition, OverlayId,
-    OverlayRepo, QueueRepo, ScheduledRunRepo, ScriptRecord, ScriptReferences, ScriptRepo,
-    ScriptTelemetry, SettingsRepo, SoundboardClipsRepo, StorageError, TriggerInstanceRepo,
-    TtsFiltersRepo, UserGlobalEntry, UserGlobalsRepo, ViewerRepo, VoiceAliasRepo,
+    OverlayRepo, QueueRepo, RowClasses, RowGate, ScheduledRunRepo, ScriptRecord, ScriptReferences,
+    ScriptRepo, ScriptTelemetry, Setting, SettingCodec, SettingFamily, SettingRow, SettingsRepo,
+    SoundboardClipsRepo, StorageError, TriggerInstanceRepo, TtsFiltersRepo, UserGlobalEntry,
+    UserGlobalsRepo, ViewerRepo, VoiceAliasRepo,
 };
 use forge_types::{
     Action, ActionId, EventId, ExecutionContext, PlatformId, ScriptId, TriggerConfig, Variant,
@@ -54,7 +59,7 @@ pub(crate) const SETTINGS_READ_FAILED: &str = "settings store unreachable";
 pub(crate) const SETTINGS_WRITE_FAILED: &str = "settings store is read-only";
 
 pub(crate) struct TestBackend {
-    values: Mutex<HashMap<String, String>>,
+    settings: MemorySettings,
     writes: UnboundedSender<SettingWrite>,
     read_faults: Mutex<HashMap<String, ReadFault>>,
     write_faults: Mutex<std::collections::HashSet<String>>,
@@ -100,7 +105,7 @@ fn backend_over(
     let (writes, rx) = unbounded_channel();
     (
         Arc::new(TestBackend {
-            values: Mutex::new(HashMap::new()),
+            settings: MemorySettings::new(),
             writes,
             read_faults: Mutex::default(),
             write_faults: Mutex::default(),
@@ -157,24 +162,16 @@ fn enabled_schedule_over_test_backend(
     let last_success = OffsetDateTime::now_utc()
         .format(&time::format_description::well_known::Rfc3339)
         .unwrap();
-    let mut values = HashMap::from([
-        (
-            forge_storage::reserved_keys::BACKUP_SCHEDULE_ENABLED.to_owned(),
-            "true".to_owned(),
-        ),
-        (
-            forge_storage::reserved_keys::BACKUP_SCHEDULE_LAST_SUCCESS_AT.to_owned(),
-            last_success,
-        ),
-    ]);
+    let settings = MemorySettings::new();
+    settings.seed(&BACKUP_SCHEDULE_ENABLED, &true).unwrap();
+    settings
+        .seed(&BACKUP_SCHEDULE_LAST_SUCCESS_AT, &Some(last_success))
+        .unwrap();
     if let Some(encoded) = encoded_key {
-        values.insert(
-            forge_storage::reserved_keys::BACKUP_SCHEDULE_KEY.to_owned(),
-            encoded,
-        );
+        settings.seed(&BACKUP_SCHEDULE_KEY, &Some(encoded)).unwrap();
     }
     let backend = Arc::new(TestBackend {
-        values: Mutex::new(values),
+        settings,
         writes,
         read_faults: Mutex::default(),
         write_faults: Mutex::default(),
@@ -209,11 +206,29 @@ pub(crate) fn writes_to(writes: &mut UnboundedReceiver<SettingWrite>, key: &str)
 }
 
 impl TestBackend {
-    pub(crate) fn seed(&self, key: &str, value: &str) {
-        self.values
-            .lock()
-            .unwrap()
-            .insert(key.to_owned(), value.to_owned());
+    pub(crate) fn seed<C: SettingCodec>(&self, setting: &Setting<C>, value: &C::Value) {
+        self.settings.seed(setting, value).unwrap();
+    }
+
+    pub(crate) fn seed_raw<C: SettingCodec>(&self, setting: &Setting<C>, raw: &str) {
+        self.settings.seed_raw(setting, raw);
+    }
+
+    pub(crate) fn seed_raw_family<C: SettingCodec>(
+        &self,
+        family: &SettingFamily<C>,
+        member: &str,
+        raw: &str,
+    ) {
+        self.settings.seed_raw_family(family, member, raw).unwrap();
+    }
+
+    pub(crate) fn all_rows(&self) -> Vec<StoredSettingRow> {
+        self.settings.rows()
+    }
+
+    pub(crate) fn row(&self, key: &str) -> Option<StoredSettingRow> {
+        self.settings.row(key)
     }
 
     pub(crate) fn fault_reads(&self, key: &str, fault: ReadFault) {
@@ -230,6 +245,23 @@ impl TestBackend {
     pub(crate) fn fail_writes(&self, key: &str) {
         self.write_faults.lock().unwrap().insert(key.to_owned());
     }
+
+    fn guard_write(&self, key: &str) -> Result<(), StorageError> {
+        if self.write_faults.lock().unwrap().contains(key) {
+            return Err(StorageError::Connection {
+                reason: SETTINGS_WRITE_FAILED.to_owned(),
+            });
+        }
+        Ok(())
+    }
+
+    fn record_write(&self, key: &str, value: &str) {
+        #[expect(
+            clippy::let_underscore_must_use,
+            reason = "the receiver may already be gone"
+        )]
+        let _ = self.writes.send((key.to_owned(), value.to_owned()));
+    }
 }
 
 #[async_trait::async_trait]
@@ -245,33 +277,39 @@ impl SettingsRepo for TestBackend {
             Some(ReadFault::Held(gate)) => gate.notified().await,
             None => {}
         }
-        Ok(self.values.lock().unwrap().get(key).cloned())
+        self.settings.get_string(key).await
     }
 
     async fn set_string(&self, key: &str, value: &str) -> Result<(), StorageError> {
-        if self.write_faults.lock().unwrap().contains(key) {
-            return Err(StorageError::Connection {
-                reason: SETTINGS_WRITE_FAILED.to_owned(),
-            });
-        }
-        self.values
-            .lock()
-            .unwrap()
-            .insert(key.to_owned(), value.to_owned());
-        #[expect(
-            clippy::let_underscore_must_use,
-            reason = "the receiver may already be gone"
-        )]
-        let _ = self.writes.send((key.to_owned(), value.to_owned()));
+        self.guard_write(key)?;
+        self.settings.set_string(key, value).await?;
+        self.record_write(key, value);
         Ok(())
     }
 
     async fn delete(&self, key: &str) -> Result<bool, StorageError> {
-        Ok(self.values.lock().unwrap().remove(key).is_some())
+        self.settings.delete(key).await
     }
 
     async fn load_all(&self) -> Result<HashMap<String, String>, StorageError> {
-        Ok(self.values.lock().unwrap().clone())
+        self.settings.load_all().await
+    }
+
+    async fn load_rows(&self, gate: RowGate) -> Result<Vec<SettingRow>, StorageError> {
+        self.settings.load_rows(gate).await
+    }
+
+    async fn put_row(
+        &self,
+        gate: RowGate,
+        key: &str,
+        value: &str,
+        classes: RowClasses,
+    ) -> Result<(), StorageError> {
+        self.guard_write(key)?;
+        self.settings.put_row(gate, key, value, classes).await?;
+        self.record_write(key, value);
+        Ok(())
     }
 }
 
@@ -997,7 +1035,7 @@ pub(crate) fn stored_shortcut_overrides(
 ) -> Result<crate::shortcut_overrides::ShortcutOverrides, StorageError> {
     let (backend, _writes) = test_backend();
     if let Some(raw) = raw {
-        backend.seed(forge_storage::reserved_keys::KEYBOARD_SHORTCUTS, raw);
+        backend.seed_raw(&crate::shortcut_overrides::KEYBOARD_SHORTCUTS, raw);
     }
     runtime().block_on(crate::shortcut_overrides::load_overrides(backend))
 }

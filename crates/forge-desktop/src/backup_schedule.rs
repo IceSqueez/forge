@@ -1283,9 +1283,15 @@ pub(crate) mod tests {
     use std::time::{Duration, Instant};
 
     use forge_components::{DateShape, Toasts, fmt_display, fmt_display_relative, tr};
-    use forge_storage::SettingPortability;
+    use forge_storage::settings::core_settings::{
+        BACKUP_SCHEDULE_DESTINATION, BACKUP_SCHEDULE_ENABLED, BACKUP_SCHEDULE_INCLUDE_MEDIA,
+        BACKUP_SCHEDULE_INCLUDE_VOICES, BACKUP_SCHEDULE_INTERVAL_MINUTES,
+        BACKUP_SCHEDULE_KEEP_NEWEST, BACKUP_SCHEDULE_KEY, BACKUP_SCHEDULE_LAST_SUCCESS_AT,
+    };
+    use forge_storage::test_support::StoredSettingRow;
     use forge_storage::{
-        DataProvider, Language, SettingsRepo, StorageError, read_stored_setting, reserved_keys,
+        DataProvider, Language, Setting, SettingCodec, SettingPortability, StorageError,
+        load_setting_rows, read_stored_setting, write_setting,
     };
     use forge_transfer::{
         BackupCategory, FailureCategory, FailureStreak, Passphrase, ScheduleKey, ScheduleState,
@@ -1325,14 +1331,40 @@ pub(crate) mod tests {
         create_schedule_key(&Passphrase::new(passphrase.to_owned())).unwrap()
     }
 
-    pub(crate) fn unattended_seeds(key: &ScheduleKey) -> Vec<(&'static str, String)> {
+    #[derive(Clone)]
+    pub(crate) enum ScheduleSeed {
+        Enabled(bool),
+        Key(String),
+        LastSuccessAt(String),
+    }
+
+    impl ScheduleSeed {
+        async fn apply(&self, provider: &dyn DataProvider) {
+            match self {
+                Self::Enabled(enabled) => {
+                    write_setting(provider, &BACKUP_SCHEDULE_ENABLED, enabled).await
+                }
+                Self::Key(encoded) => {
+                    write_setting(provider, &BACKUP_SCHEDULE_KEY, &Some(encoded.clone())).await
+                }
+                Self::LastSuccessAt(at) => {
+                    write_setting(
+                        provider,
+                        &BACKUP_SCHEDULE_LAST_SUCCESS_AT,
+                        &Some(at.clone()),
+                    )
+                    .await
+                }
+            }
+            .unwrap();
+        }
+    }
+
+    pub(crate) fn unattended_seeds(key: &ScheduleKey) -> Vec<ScheduleSeed> {
         vec![
-            (reserved_keys::BACKUP_SCHEDULE_ENABLED, "true".to_owned()),
-            (reserved_keys::BACKUP_SCHEDULE_KEY, key.encode().unwrap()),
-            (
-                reserved_keys::BACKUP_SCHEDULE_LAST_SUCCESS_AT,
-                just_now().format(&Rfc3339).unwrap(),
-            ),
+            ScheduleSeed::Enabled(true),
+            ScheduleSeed::Key(key.encode().unwrap()),
+            ScheduleSeed::LastSuccessAt(just_now().format(&Rfc3339).unwrap()),
         ]
     }
 
@@ -1340,10 +1372,7 @@ pub(crate) mod tests {
         OffsetDateTime::now_utc().replace_nanosecond(0).unwrap()
     }
 
-    pub(crate) fn schedule_rig(
-        cx: &mut TestAppContext,
-        seeds: &[(&'static str, String)],
-    ) -> ScheduleRig {
+    pub(crate) fn schedule_rig(cx: &mut TestAppContext, seeds: &[ScheduleSeed]) -> ScheduleRig {
         install_language(Language::En);
         install_presentation(cx);
         cx.update(|cx| cx.set_global(Toasts::new()));
@@ -1354,15 +1383,15 @@ pub(crate) mod tests {
         let exclusivity = TransferExclusivity::new();
         let provider = Arc::clone(world.provider());
         let service = rt.block_on(async {
-            provider
-                .set_string(
-                    reserved_keys::BACKUP_SCHEDULE_DESTINATION,
-                    &shown_destination,
-                )
-                .await
-                .unwrap();
-            for (key, value) in seeds {
-                provider.set_string(key, value).await.unwrap();
+            write_setting(
+                provider.as_ref(),
+                &BACKUP_SCHEDULE_DESTINATION,
+                &Some(shown_destination.clone()),
+            )
+            .await
+            .unwrap();
+            for seed in seeds {
+                seed.apply(provider.as_ref()).await;
             }
             spawn_scheduled_backups(ScheduledBackupParts {
                 provider: Arc::clone(&provider),
@@ -1425,14 +1454,24 @@ pub(crate) mod tests {
             }
         }
 
-        pub(crate) fn stored(&self, key: &str) -> Option<String> {
+        pub(crate) fn stored<C: SettingCodec>(&self, setting: &Setting<C>) -> Option<C::Value> {
             self.rt
-                .block_on(self.world.provider().get_string(key))
+                .block_on(read_stored_setting(self.world.provider().as_ref(), setting))
                 .unwrap()
         }
 
+        fn stored_portability(&self, key: &str) -> Option<SettingPortability> {
+            self.rt
+                .block_on(load_setting_rows(self.world.provider().as_ref()))
+                .unwrap()
+                .into_iter()
+                .find(|row| row.key() == key)
+                .map(|row| row.classes().portability)
+        }
+
         fn stored_key(&self) -> Option<ScheduleKey> {
-            self.stored(reserved_keys::BACKUP_SCHEDULE_KEY)
+            self.stored(&BACKUP_SCHEDULE_KEY)
+                .flatten()
                 .map(|stored| ScheduleKey::decode(&stored).unwrap())
         }
 
@@ -1559,7 +1598,7 @@ pub(crate) mod tests {
             for (stored, expected) in cases {
                 let (backend, _writes) = crate::test_support::test_backend();
                 if let Some(raw) = &stored {
-                    backend.seed(number.storage_key(), raw);
+                    backend.seed_raw(number.declaration(), raw);
                 }
                 let loaded = rt
                     .block_on(read_stored_setting(backend.as_ref(), number.declaration()))
@@ -1576,7 +1615,7 @@ pub(crate) mod tests {
         for number in ScheduleNumber::ALL {
             for blank in ["", "   "] {
                 let (backend, _writes) = crate::test_support::test_backend();
-                backend.seed(number.storage_key(), blank);
+                backend.seed_raw(number.declaration(), blank);
 
                 let loaded = rt.block_on(load_schedule(backend));
 
@@ -1798,7 +1837,7 @@ pub(crate) mod tests {
             (
                 rig.prompt_purpose(cx),
                 enabled,
-                rig.stored(reserved_keys::BACKUP_SCHEDULE_ENABLED)
+                rig.stored(&BACKUP_SCHEDULE_ENABLED)
             ),
             (Some(PassphrasePurpose::ScheduleSetup), false, None)
         );
@@ -1843,16 +1882,15 @@ pub(crate) mod tests {
         assert_eq!(
             (
                 rig.stored_key(),
-                rig.stored(reserved_keys::BACKUP_SCHEDULE_ENABLED),
+                rig.stored(&BACKUP_SCHEDULE_ENABLED),
                 enabled,
-                crate::settings_catalog::registered_settings_catalog()
-                    .portability_of(reserved_keys::BACKUP_SCHEDULE_KEY),
+                rig.stored_portability(BACKUP_SCHEDULE_KEY.name()),
             ),
             (
                 Some(key),
-                Some("true".to_owned()),
+                Some(true),
                 true,
-                SettingPortability::MachineLocal,
+                Some(SettingPortability::MachineLocal),
             )
         );
     }
@@ -1885,11 +1923,7 @@ pub(crate) mod tests {
         let rig = schedule_rig(cx, &unattended_seeds(&key));
 
         rig.view.update(cx, |view, cx| view.toggle_enabled(cx));
-        let persisted = rig.settle(cx, |_| {
-            rig.stored(reserved_keys::BACKUP_SCHEDULE_ENABLED)
-                .as_deref()
-                == Some("false")
-        });
+        let persisted = rig.settle(cx, |_| rig.stored(&BACKUP_SCHEDULE_ENABLED) == Some(false));
 
         assert_eq!(
             (persisted, rig.view_key(cx), rig.stored_key()),
@@ -1901,28 +1935,18 @@ pub(crate) mod tests {
     fn turning_back_on_with_a_stored_key_skips_the_passphrase_prompt(cx: &mut TestAppContext) {
         let key = key_for(OLD_PASSPHRASE);
         let mut seeds = unattended_seeds(&key);
-        seeds[0].1 = "false".to_owned();
+        seeds[0] = ScheduleSeed::Enabled(false);
         let rig = schedule_rig(cx, &seeds);
 
         rig.view.update(cx, |view, cx| view.toggle_enabled(cx));
-        let persisted = rig.settle(cx, |_| {
-            rig.stored(reserved_keys::BACKUP_SCHEDULE_ENABLED)
-                .as_deref()
-                == Some("true")
-        });
+        let persisted = rig.settle(cx, |_| rig.stored(&BACKUP_SCHEDULE_ENABLED) == Some(true));
 
         assert_eq!((persisted, rig.prompt_purpose(cx)), (true, None));
     }
 
     #[gpui::test]
     fn an_unreadable_stored_key_asks_for_a_new_passphrase_when_turned_on(cx: &mut TestAppContext) {
-        let rig = schedule_rig(
-            cx,
-            &[(
-                reserved_keys::BACKUP_SCHEDULE_KEY,
-                "{\"recipient\":".to_owned(),
-            )],
-        );
+        let rig = schedule_rig(cx, &[ScheduleSeed::Key("{\"recipient\":".to_owned())]);
 
         rig.view.update(cx, |view, cx| view.toggle_enabled(cx));
         cx.run_until_parked();
@@ -2017,18 +2041,14 @@ pub(crate) mod tests {
             view.commit_number(ScheduleNumber::KeepNewest, "30", cx);
             flagged
         });
-        let later_saved = rig.settle(cx, |_| {
-            rig.stored(reserved_keys::BACKUP_SCHEDULE_KEEP_NEWEST)
-                .as_deref()
-                == Some("30")
-        });
+        let later_saved = rig.settle(cx, |_| rig.stored(&BACKUP_SCHEDULE_KEEP_NEWEST) == Some(30));
 
         let default = ScheduleNumber::Interval.default_value();
         assert_eq!(
             (
                 flagged,
                 later_saved,
-                rig.stored(reserved_keys::BACKUP_SCHEDULE_INTERVAL_MINUTES)
+                rig.stored(&BACKUP_SCHEDULE_INTERVAL_MINUTES)
             ),
             (vec![(true, default); 3], true, None)
         );
@@ -2053,9 +2073,9 @@ pub(crate) mod tests {
             accepted
         });
         let saved = rig.settle(cx, |_| {
-            ScheduleNumber::ALL.iter().all(|number| {
-                rig.stored(number.storage_key()) == Some(number.range().end().to_string())
-            })
+            ScheduleNumber::ALL
+                .iter()
+                .all(|number| rig.stored(number.declaration()) == Some(*number.range().end()))
         });
 
         assert_eq!(
@@ -2068,9 +2088,12 @@ pub(crate) mod tests {
     fn saving_a_new_interval_moves_the_shown_next_due_time(cx: &mut TestAppContext) {
         let key = key_for(OLD_PASSPHRASE);
         let seeds = unattended_seeds(&key);
-        let (_, stored_last) = seeds
+        let stored_last = seeds
             .iter()
-            .find(|(key, _)| *key == reserved_keys::BACKUP_SCHEDULE_LAST_SUCCESS_AT)
+            .find_map(|seed| match seed {
+                ScheduleSeed::LastSuccessAt(at) => Some(at.as_str()),
+                _ => None,
+            })
             .unwrap();
         let last = OffsetDateTime::parse(stored_last, &Rfc3339).unwrap();
         let rig = schedule_rig(cx, &seeds);
@@ -2096,9 +2119,7 @@ pub(crate) mod tests {
             view.toggle_category(BackupCategory::Media, cx)
         });
         let persisted = rig.settle(cx, |_| {
-            rig.stored(reserved_keys::BACKUP_SCHEDULE_INCLUDE_MEDIA)
-                .as_deref()
-                == Some("false")
+            rig.stored(&BACKUP_SCHEDULE_INCLUDE_MEDIA) == Some(false)
         });
         let reloaded = rig
             .rt
@@ -2129,9 +2150,7 @@ pub(crate) mod tests {
             view.toggle_category(BackupCategory::Voices, cx);
         });
         let persisted = rig.settle(cx, |_| {
-            rig.stored(reserved_keys::BACKUP_SCHEDULE_INCLUDE_VOICES)
-                .as_deref()
-                == Some("true")
+            rig.stored(&BACKUP_SCHEDULE_INCLUDE_VOICES) == Some(true)
         });
 
         let included = rig.view_included(cx);
@@ -2326,7 +2345,7 @@ pub(crate) mod tests {
     fn an_automatic_run_saves_a_backup_without_a_success_toast(cx: &mut TestAppContext) {
         let overdue = just_now() - time::Duration::days(2);
         let mut seeds = unattended_seeds(&key_for(OLD_PASSPHRASE));
-        seeds[2].1 = overdue.format(&Rfc3339).unwrap();
+        seeds[2] = ScheduleSeed::LastSuccessAt(overdue.format(&Rfc3339).unwrap());
         let rig = schedule_rig(cx, &seeds);
 
         let saved = rig.settle(cx, |cx| {
@@ -2370,24 +2389,14 @@ pub(crate) mod tests {
                 .unwrap();
             let service_rt = runtime();
             let (backend, writes) = crate::test_support::test_backend();
-            for (stored_key, value) in [
-                (reserved_keys::BACKUP_SCHEDULE_ENABLED, "true".to_owned()),
-                (reserved_keys::BACKUP_SCHEDULE_KEY, key.encode().unwrap()),
-                (
-                    reserved_keys::BACKUP_SCHEDULE_INTERVAL_MINUTES,
-                    STORED_INTERVAL.to_owned(),
-                ),
-                (
-                    reserved_keys::BACKUP_SCHEDULE_INCLUDE_MEDIA,
-                    "false".to_owned(),
-                ),
-                (
-                    reserved_keys::BACKUP_SCHEDULE_DESTINATION,
-                    STORED_DESTINATION.to_owned(),
-                ),
-            ] {
-                backend.seed(stored_key, &value);
-            }
+            backend.seed(&BACKUP_SCHEDULE_ENABLED, &true);
+            backend.seed(&BACKUP_SCHEDULE_KEY, &Some(key.encode().unwrap()));
+            backend.seed_raw(&BACKUP_SCHEDULE_INTERVAL_MINUTES, STORED_INTERVAL);
+            backend.seed(&BACKUP_SCHEDULE_INCLUDE_MEDIA, &false);
+            backend.seed(
+                &BACKUP_SCHEDULE_DESTINATION,
+                &Some(STORED_DESTINATION.to_owned()),
+            );
             let (service_backend, _) = crate::test_support::test_backend();
             let data_dir = tempfile::tempdir().unwrap();
             let service = {
@@ -2444,17 +2453,17 @@ pub(crate) mod tests {
             self.settle(cx);
         }
 
-        fn stored(&self) -> std::collections::HashMap<String, String> {
-            self.rt.block_on(self.backend.load_all()).unwrap()
+        fn stored(&self) -> Vec<StoredSettingRow> {
+            self.backend.all_rows()
         }
 
-        fn untouched_since(&self, before: &std::collections::HashMap<String, String>) -> bool {
+        fn untouched_since(&self, before: &[StoredSettingRow]) -> bool {
             let mut writes = self.writes.borrow_mut();
             let mut written = Vec::new();
             while let Ok(write) = writes.try_recv() {
                 written.push(write);
             }
-            written.is_empty() && self.stored() == *before
+            written.is_empty() && self.stored() == before
         }
     }
 
@@ -2512,35 +2521,36 @@ pub(crate) mod tests {
             key: ScheduleNumber::Interval.storage_key().to_owned(),
         }
         .to_string();
-        let faults: [(&str, &str, Option<&str>); 4] = [
+        type Corrupt = fn(&crate::test_support::TestBackend);
+        let faults: [(&str, &str, Option<Corrupt>); 4] = [
             (
                 "unreachable store",
-                reserved_keys::BACKUP_SCHEDULE_INTERVAL_MINUTES,
+                BACKUP_SCHEDULE_INTERVAL_MINUTES.name(),
                 None,
             ),
             (
                 "undecodable number",
-                reserved_keys::BACKUP_SCHEDULE_INTERVAL_MINUTES,
-                Some("abc"),
+                BACKUP_SCHEDULE_INTERVAL_MINUTES.name(),
+                Some(|backend| backend.seed_raw(&BACKUP_SCHEDULE_INTERVAL_MINUTES, "abc")),
             ),
             (
                 "undecodable flag",
-                reserved_keys::BACKUP_SCHEDULE_INCLUDE_MEDIA,
-                Some("maybe"),
+                BACKUP_SCHEDULE_INCLUDE_MEDIA.name(),
+                Some(|backend| backend.seed_raw(&BACKUP_SCHEDULE_INCLUDE_MEDIA, "maybe")),
             ),
             (
                 "blank flag",
-                reserved_keys::BACKUP_SCHEDULE_ENABLED,
-                Some(""),
+                BACKUP_SCHEDULE_ENABLED.name(),
+                Some(|backend| backend.seed_raw(&BACKUP_SCHEDULE_ENABLED, "")),
             ),
         ];
-        for (fault, faulty_key, stored) in faults {
+        for (fault, faulty_key, corrupt) in faults {
             for (case, edit) in edit_paths() {
                 let schedule = FakeSchedule::new(cx, &key);
-                let reason = match stored {
-                    Some(raw) => {
-                        schedule.backend.seed(faulty_key, raw);
-                        if faulty_key == reserved_keys::BACKUP_SCHEDULE_INTERVAL_MINUTES {
+                let reason = match corrupt {
+                    Some(corrupt) => {
+                        corrupt(&schedule.backend);
+                        if faulty_key == BACKUP_SCHEDULE_INTERVAL_MINUTES.name() {
                             bad_number.clone()
                         } else {
                             format!("stored setting '{faulty_key}' cannot be decoded")
@@ -2581,7 +2591,7 @@ pub(crate) mod tests {
             let schedule = FakeSchedule::new(cx, &key);
             let gate = Arc::new(tokio::sync::Notify::new());
             schedule.backend.fault_reads(
-                reserved_keys::BACKUP_SCHEDULE_DESTINATION,
+                BACKUP_SCHEDULE_DESTINATION.name(),
                 crate::test_support::ReadFault::Held(Arc::clone(&gate)),
             );
             let before = schedule.stored();
@@ -2592,7 +2602,7 @@ pub(crate) mod tests {
             let untouched_while_pending = schedule.untouched_since(&before);
             schedule
                 .backend
-                .heal_reads(reserved_keys::BACKUP_SCHEDULE_DESTINATION);
+                .heal_reads(BACKUP_SCHEDULE_DESTINATION.name());
             gate.notify_one();
             schedule.settle(cx);
 
@@ -2621,13 +2631,13 @@ pub(crate) mod tests {
         let schedule = FakeSchedule::new(cx, &key_for(OLD_PASSPHRASE));
         let _runtime = schedule.rt.enter();
         schedule.backend.fault_reads(
-            reserved_keys::BACKUP_SCHEDULE_INTERVAL_MINUTES,
+            BACKUP_SCHEDULE_INTERVAL_MINUTES.name(),
             crate::test_support::ReadFault::Fails,
         );
         let view = schedule.open(cx);
         schedule
             .backend
-            .heal_reads(reserved_keys::BACKUP_SCHEDULE_INTERVAL_MINUTES);
+            .heal_reads(BACKUP_SCHEDULE_INTERVAL_MINUTES.name());
 
         view.update(cx, |view, cx| view.load(cx));
         schedule.settle(cx);
@@ -2637,14 +2647,13 @@ pub(crate) mod tests {
         });
         schedule.past_the_save_debounce(cx);
 
-        let stored = schedule.stored();
-        let read = |key: &str| stored.get(key).cloned();
+        let read = |key: &str| schedule.backend.row(key).map(|row| row.value);
         assert_eq!(
             (
-                read(reserved_keys::BACKUP_SCHEDULE_INCLUDE_MEDIA),
-                read(reserved_keys::BACKUP_SCHEDULE_KEEP_NEWEST),
-                read(reserved_keys::BACKUP_SCHEDULE_INTERVAL_MINUTES),
-                read(reserved_keys::BACKUP_SCHEDULE_DESTINATION),
+                read(BACKUP_SCHEDULE_INCLUDE_MEDIA.name()),
+                read(BACKUP_SCHEDULE_KEEP_NEWEST.name()),
+                read(BACKUP_SCHEDULE_INTERVAL_MINUTES.name()),
+                read(BACKUP_SCHEDULE_DESTINATION.name()),
             ),
             (
                 Some("true".to_owned()),
@@ -2661,17 +2670,17 @@ pub(crate) mod tests {
         let cases: [(&str, &str, Edit); 3] = [
             (
                 "flip media",
-                reserved_keys::BACKUP_SCHEDULE_INCLUDE_MEDIA,
+                BACKUP_SCHEDULE_INCLUDE_MEDIA.name(),
                 |v, cx| v.toggle_category(BackupCategory::Media, cx),
             ),
             (
                 "flip the schedule switch",
-                reserved_keys::BACKUP_SCHEDULE_ENABLED,
+                BACKUP_SCHEDULE_ENABLED.name(),
                 |v, cx| v.toggle_enabled(cx),
             ),
             (
                 "choose a folder",
-                reserved_keys::BACKUP_SCHEDULE_DESTINATION,
+                BACKUP_SCHEDULE_DESTINATION.name(),
                 |v, cx| v.folder_chosen(Ok(std::path::PathBuf::from(CHOSEN_DESTINATION)), cx),
             ),
         ];
@@ -2708,7 +2717,7 @@ pub(crate) mod tests {
         let _runtime = schedule.rt.enter();
         schedule
             .backend
-            .fail_writes(reserved_keys::BACKUP_SCHEDULE_INTERVAL_MINUTES);
+            .fail_writes(BACKUP_SCHEDULE_INTERVAL_MINUTES.name());
         let view = schedule.open(cx);
 
         view.update(cx, |view, cx| {

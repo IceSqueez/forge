@@ -1,52 +1,22 @@
 #![allow(clippy::unwrap_used, clippy::expect_used)]
-use std::collections::HashMap;
-use std::sync::Mutex;
-
-use async_trait::async_trait;
 use forge_storage::settings::core_settings::{
     AUDIO_VOICE_GATE_ENABLED, AUDIO_VOICE_GATE_HOLD_MS, AUDIO_VOICE_GATE_THRESHOLD,
     CHAT_HISTORY_DISPLAY_LIMIT, CHAT_HISTORY_PER_VIEWER_LIMIT, DIAGNOSTICS_LOG_LEVEL,
     EVENT_LOG_RETENTION_DAYS, TTS_MASTER_VOLUME,
 };
-use forge_storage::{
-    Count, Level, Setting, SettingCodec, SettingsRepo, StorageError, read_setting, write_setting,
-};
+use forge_storage::test_support::MemorySettings;
+use forge_storage::{Count, Level, Setting, SettingCodec, read_setting, write_setting};
 use forge_types::LogLevel;
 
-#[derive(Default)]
-struct MapRepo {
-    map: Mutex<HashMap<String, String>>,
-}
-
-#[async_trait]
-impl SettingsRepo for MapRepo {
-    async fn get_string(&self, key: &str) -> Result<Option<String>, StorageError> {
-        Ok(self.map.lock().unwrap().get(key).cloned())
-    }
-    async fn set_string(&self, key: &str, value: &str) -> Result<(), StorageError> {
-        self.map
-            .lock()
-            .unwrap()
-            .insert(key.to_owned(), value.to_owned());
-        Ok(())
-    }
-    async fn delete(&self, key: &str) -> Result<bool, StorageError> {
-        Ok(self.map.lock().unwrap().remove(key).is_some())
-    }
-    async fn load_all(&self) -> Result<HashMap<String, String>, StorageError> {
-        Ok(self.map.lock().unwrap().clone())
-    }
-}
-
 async fn stored_after_write<C: SettingCodec>(setting: &Setting<C>, value: &C::Value) -> String {
-    let repo = MapRepo::default();
+    let repo = MemorySettings::new();
     write_setting(&repo, setting, value).await.unwrap();
-    repo.get_string(setting.name()).await.unwrap().unwrap()
+    repo.row(setting.name()).unwrap().value
 }
 
 async fn read_back<C: SettingCodec>(setting: &Setting<C>, raw: &str) -> C::Value {
-    let repo = MapRepo::default();
-    repo.set_string(setting.name(), raw).await.unwrap();
+    let repo = MemorySettings::new();
+    repo.seed_raw(setting, raw);
     read_setting(&repo, setting).await.unwrap()
 }
 

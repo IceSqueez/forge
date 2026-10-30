@@ -732,7 +732,10 @@ mod tests {
 
     use forge_overlay::kinds::alert::KIND_ID as ALERT_OVERLAY_KIND;
     use forge_overlay::kinds::blank::KIND_ID as BLANK_OVERLAY_KIND;
-    use forge_storage::{Language, MockOverlayRepo, StorageError, reserved_keys};
+    use forge_storage::settings::core_settings::AUDIO_OVERLAY_ID;
+    use forge_storage::{Language, MockOverlayRepo, StorageError};
+
+    use crate::audio_routes::SPEECH_ROUTE;
 
     use super::*;
     use crate::i18n::install_language;
@@ -977,17 +980,8 @@ mod tests {
     #[tokio::test]
     async fn the_stored_choice_stays_visible_while_the_plan_it_produced_falls_back() {
         let (backend, _writes) = test_backend();
-        backend
-            .set_string(
-                reserved_keys::AUDIO_SPEECH_ROUTE,
-                AudioRoute::Overlay.as_str(),
-            )
-            .await
-            .expect("the stored route is written");
-        backend
-            .set_string(reserved_keys::AUDIO_OVERLAY_ID, CHOSEN)
-            .await
-            .expect("the stored destination is written");
+        backend.seed_raw(&SPEECH_ROUTE, AudioRoute::Overlay.as_str());
+        backend.seed_raw(&AUDIO_OVERLAY_ID, CHOSEN);
         let overlays = catalog(vec![overlay_named(CHOSEN, BLANK_OVERLAY_KIND)]);
 
         let loaded = load_routing(backend as Arc<dyn SettingsRepo>, overlays, false)

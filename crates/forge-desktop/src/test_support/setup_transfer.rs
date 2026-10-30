@@ -6,11 +6,11 @@ use std::sync::Arc;
 use forge_events::{Event, EventSource};
 use forge_speech_types::{AliasId, AssignmentStrategy, IgnoreProfile, VoiceAlias};
 use forge_speech_types::{AliasState, EngineId, VoiceId};
-use forge_storage::settings::reserved_keys as key;
+use forge_storage::settings::core_settings;
 use forge_storage::{
     BanLedgerEntry, BanLedgerKey, BanOrigin, CredentialId, FilterRule, FilterRuleKind, GlobalsRepo,
-    LatestRecord, MediaBlobId, OverlayId, ScriptRepo, SettingsRepo, StoredClip, StoredDonation,
-    TtsPipelineSettings, Viewer, clip_source_referrer,
+    LatestRecord, MediaBlobId, OverlayId, ScriptRepo, StoredClip, StoredDonation,
+    TtsPipelineSettings, Viewer, clip_source_referrer, load_setting_rows,
 };
 use forge_storage::{RowClasses, SettingDisclosure, SettingPortability, SettingSkip, SettingSpec};
 use forge_storage_sqlite::SqliteDatabaseFileSchema;
@@ -59,9 +59,7 @@ async fn set_settings(store: &Store, pairs: &[(&str, &str)]) {
                 .seed_foreign_setting(k, v, Some(row.classes()))
                 .await
                 .unwrap(),
-            Err(_) => SettingsRepo::set_string(store.provider.as_ref(), k, v)
-                .await
-                .unwrap(),
+            Err(_) => store.sqlite.seed_foreign_setting(k, v, None).await.unwrap(),
         }
     }
 }
@@ -81,10 +79,21 @@ async fn set_settings_stored_portable(store: &Store, pairs: &[(&str, &str)]) {
 }
 
 async fn settings_of(store: &Store) -> Settings {
-    SettingsRepo::load_all(store.provider.as_ref())
+    load_setting_rows(store.provider.as_ref())
         .await
         .unwrap()
         .into_iter()
+        .map(|row| (row.key().to_owned(), row.value().to_owned()))
+        .collect()
+}
+
+async fn stored_portable_settings_of(store: &Store) -> Settings {
+    load_setting_rows(store.provider.as_ref())
+        .await
+        .unwrap()
+        .into_iter()
+        .filter(|row| row.classes().portability == SettingPortability::Portable)
+        .map(|row| (row.key().to_owned(), row.value().to_owned()))
         .collect()
 }
 
@@ -162,11 +171,17 @@ async fn seed_source_extras(store: &Store, f: &Fixture) {
     set_settings(
         store,
         &[
-            (key::THEME, SOURCE_THEME),
+            (core_settings::THEME.name(), SOURCE_THEME),
             (ENGINE_PARAMS_KEY, "{\"speed\":1.2}"),
-            (key::HOTKEY_HOLD_CEILING_SECS, "9"),
-            (key::WINDOW_PLACEMENT, "source-window"),
-            (key::AUDIO_OUTPUT_DEVICE_ID, "source-speakers"),
+            (forge_hotkey::HOLD_CEILING.name(), "9"),
+            (
+                crate::window_placement::WINDOW_PLACEMENT.name(),
+                "source-window",
+            ),
+            (
+                core_settings::AUDIO_OUTPUT_DEVICE_ID.name(),
+                "source-speakers",
+            ),
         ],
     )
     .await;
@@ -205,11 +220,17 @@ async fn seed_target_extras(store: &Store, f: &Fixture) -> TargetExtras {
     set_settings(
         store,
         &[
-            (key::THEME, TARGET_THEME),
-            (key::DENSITY, "compact"),
-            (key::WINDOW_PLACEMENT, "target-window"),
-            (key::AUDIO_OUTPUT_DEVICE_ID, "target-speakers"),
-            (key::STAY_AWAKE, "true"),
+            (core_settings::THEME.name(), TARGET_THEME),
+            (crate::settings_catalog::DENSITY.name(), "compact"),
+            (
+                crate::window_placement::WINDOW_PLACEMENT.name(),
+                "target-window",
+            ),
+            (
+                core_settings::AUDIO_OUTPUT_DEVICE_ID.name(),
+                "target-speakers",
+            ),
+            (crate::stay_awake::STAY_AWAKE.name(), "true"),
             (UNCLASSIFIED_KEY, "target-note"),
         ],
     )
@@ -515,11 +536,7 @@ async fn config_of(store: &Store) -> ConfigView {
         voice_aliases: serde_json::to_value(aliases).unwrap(),
         voice_strategy: voices.get_strategy().await.unwrap(),
         ignore_profile: serde_json::to_value(voices.get_ignore_profile().await.unwrap()).unwrap(),
-        portable_settings: settings_of(store)
-            .await
-            .into_iter()
-            .filter(|(k, _)| registered_settings_catalog().is_portable(k))
-            .collect(),
+        portable_settings: stored_portable_settings_of(store).await,
     }
 }
 
@@ -712,19 +729,28 @@ async fn importing_a_setup_leaves_credentials_and_every_history_kind_untouched()
 #[tokio::test]
 async fn importing_a_setup_leaves_the_targets_machine_local_settings_untouched() {
     let m = source_and_target().await;
-    let machine_local = |settings: Settings| -> Settings {
+    let machine_local = |settings: Settings, portable: &Settings| -> Settings {
         settings
             .into_iter()
             .filter(|(k, _)| {
-                !registered_settings_catalog().is_portable(k) && k != key::VOICE_ASSIGNMENT_STRATEGY
+                !portable.contains_key(k) && k != core_settings::VOICE_ASSIGNMENT_STRATEGY.name()
             })
             .collect()
     };
-    let before = machine_local(settings_of(&m.target).await);
+    let before = machine_local(
+        settings_of(&m.target).await,
+        &stored_portable_settings_of(&m.target).await,
+    );
 
     m.import().await.unwrap();
 
-    assert_eq!(machine_local(settings_of(&m.target).await), before);
+    assert_eq!(
+        machine_local(
+            settings_of(&m.target).await,
+            &stored_portable_settings_of(&m.target).await
+        ),
+        before
+    );
 }
 
 #[tokio::test]
@@ -764,8 +790,8 @@ async fn a_setup_carries_owner_declared_portable_settings_and_withholds_owner_ma
     let carried = &staged.documents().settings;
     assert_eq!(
         (
-            carried.get(key::HOTKEY_HOLD_CEILING_SECS).cloned(),
-            carried.contains_key(key::WINDOW_PLACEMENT),
+            carried.get(forge_hotkey::HOLD_CEILING.name()).cloned(),
+            carried.contains_key(crate::window_placement::WINDOW_PLACEMENT.name()),
         ),
         (Some("9".to_owned()), false)
     );
@@ -775,24 +801,56 @@ async fn a_setup_carries_owner_declared_portable_settings_and_withholds_owner_ma
 async fn a_setup_carrying_network_exposure_and_http_trust_keys_imports_none_of_them() {
     let (registries, store, _f) = source_only().await;
     let guarded = [
-        (key::SERVER_BIND_ADDRESS, "127.0.0.1", "0.0.0.0"),
-        (key::SERVER_LAN_BIND_ENABLED, "false", "true"),
-        (key::SERVER_AUTH_REQUIRED_FOR_READS, "true", "false"),
-        (key::SERVER_HTTP_OVERLAY_REQUIRE_TOKEN, "true", "false"),
-        (key::SERVER_OVERLAY_CORS_ANY_ORIGIN, "false", "true"),
         (
-            key::SERVER_ADDITIONAL_ORIGINS,
+            forge_server::settings::BIND_ADDRESS.name(),
+            "127.0.0.1",
+            "0.0.0.0",
+        ),
+        (
+            forge_server::settings::LAN_BIND_ENABLED.name(),
+            "false",
+            "true",
+        ),
+        (
+            forge_server::settings::AUTH_REQUIRED_FOR_READS.name(),
+            "true",
+            "false",
+        ),
+        (
+            forge_server::settings::HTTP_OVERLAY_REQUIRE_TOKEN.name(),
+            "true",
+            "false",
+        ),
+        (
+            forge_server::settings::OVERLAY_CORS_ANY_ORIGIN.name(),
+            "false",
+            "true",
+        ),
+        (
+            forge_server::settings::ADDITIONAL_ORIGINS.name(),
             "[]",
             "[\"https://attacker.example\"]",
         ),
-        (key::SERVER_OVERLAY_ROOT, "/home/local/overlays", "/etc"),
         (
-            key::SCRIPT_HTTP_ALLOWED_DOMAINS,
+            core_settings::SERVER_OVERLAY_ROOT.name(),
+            "/home/local/overlays",
+            "/etc",
+        ),
+        (
+            forge_script::settings::HTTP_ALLOWED_DOMAINS.name(),
             "[\"api.example.com\"]",
             "[\"*\"]",
         ),
-        (key::SCRIPT_HTTP_ALLOW_LOCAL, "false", "true"),
-        (key::CORE_HTTP_ALLOW_LOCAL, "false", "true"),
+        (
+            forge_script::settings::HTTP_ALLOW_LOCAL.name(),
+            "false",
+            "true",
+        ),
+        (
+            forge_runtime::settings::CORE_HTTP_ALLOW_LOCAL.name(),
+            "false",
+            "true",
+        ),
     ];
     let loosened: Vec<(&str, &str)> = guarded.iter().map(|(k, _, loose)| (*k, *loose)).collect();
     let local: Vec<(&str, &str)> = guarded.iter().map(|(k, safe, _)| (*k, *safe)).collect();
@@ -947,12 +1005,12 @@ async fn reimporting_an_installs_own_setup_changes_no_queue_and_recommends_no_re
 #[tokio::test]
 async fn only_a_changed_setting_the_hotkey_layer_declares_refreshes_the_hotkeys() {
     const SHORTCUT_OVERRIDE: &str = r#"{"palette.open":{"chord":"Ctrl+K","enabled":true}}"#;
-    let ceiling = [(key::HOTKEY_HOLD_CEILING_SECS, "9")];
+    let ceiling = [(forge_hotkey::HOLD_CEILING.name(), "9")];
     let shortcuts = [(
         crate::shortcut_overrides::KEYBOARD_SHORTCUTS.name(),
         SHORTCUT_OVERRIDE,
     )];
-    let density = [(key::DENSITY, "compact")];
+    let density = [(crate::settings_catalog::DENSITY.name(), "compact")];
     let both_specs = [
         crate::shortcut_overrides::KEYBOARD_SHORTCUTS.spec(),
         forge_hotkey::HOLD_CEILING.spec(),
@@ -1029,14 +1087,21 @@ async fn a_queue_edited_since_the_export_is_reported_changed_back_to_the_setup_v
 async fn a_portable_setting_only_the_target_holds_is_removed_and_recommends_a_restart() {
     let (registries, store, _f) = source_only().await;
     let bundle = export_setup(&store).await;
-    set_settings(&store, &[(key::DENSITY, "compact")]).await;
+    set_settings(
+        &store,
+        &[(crate::settings_catalog::DENSITY.name(), "compact")],
+    )
+    .await;
 
     let outcome = import(&store, &registries, &bundle).await.unwrap();
 
     assert_eq!(
         (
             outcome.restart_recommended,
-            settings_of(&store).await.get(key::DENSITY).cloned()
+            settings_of(&store)
+                .await
+                .get(crate::settings_catalog::DENSITY.name())
+                .cloned()
         ),
         (true, None)
     );

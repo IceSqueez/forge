@@ -50,42 +50,15 @@ pub fn clamp_event_log_retention_days(days: u32) -> u32 {
 }
 
 #[cfg(test)]
-pub(crate) mod tests {
-    use std::collections::HashMap;
-    use std::sync::Mutex;
-
+mod tests {
     use super::*;
-    use crate::settings::reserved_keys;
-
-    #[derive(Default)]
-    pub(crate) struct MapRepo(Mutex<HashMap<String, String>>);
-
-    #[async_trait]
-    impl SettingsRepo for MapRepo {
-        async fn get_string(&self, key: &str) -> Result<Option<String>, StorageError> {
-            Ok(self.0.lock().unwrap().get(key).cloned())
-        }
-        async fn set_string(&self, key: &str, value: &str) -> Result<(), StorageError> {
-            self.0
-                .lock()
-                .unwrap()
-                .insert(key.to_owned(), value.to_owned());
-            Ok(())
-        }
-        async fn delete(&self, key: &str) -> Result<bool, StorageError> {
-            Ok(self.0.lock().unwrap().remove(key).is_some())
-        }
-        async fn load_all(&self) -> Result<HashMap<String, String>, StorageError> {
-            Ok(self.0.lock().unwrap().clone())
-        }
-    }
+    use crate::settings::core_settings::EVENT_LOG_RETENTION_DAYS;
+    use crate::test_support::MemorySettings;
 
     async fn stored_raw(raw: Option<&str>) -> u32 {
-        let repo = MapRepo::default();
+        let repo = MemorySettings::new();
         if let Some(raw) = raw {
-            repo.set_string(reserved_keys::EVENT_LOG_RETENTION_DAYS, raw)
-                .await
-                .unwrap();
+            repo.seed_raw(&EVENT_LOG_RETENTION_DAYS, raw);
         }
         event_log_retention_days(&repo).await.unwrap()
     }
@@ -117,12 +90,11 @@ pub(crate) mod tests {
     async fn setting_the_retention_stores_the_clamped_value() {
         let mut stored = Vec::new();
         for days in [0, 1, 365, 366] {
-            let repo = MapRepo::default();
+            let repo = MemorySettings::new();
             set_event_log_retention_days(&repo, days).await.unwrap();
             stored.push(
-                repo.get_string(reserved_keys::EVENT_LOG_RETENTION_DAYS)
-                    .await
-                    .unwrap(),
+                repo.row(EVENT_LOG_RETENTION_DAYS.name())
+                    .map(|row| row.value),
             );
         }
 

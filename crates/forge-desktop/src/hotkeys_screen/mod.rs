@@ -400,6 +400,7 @@ mod tests {
 
     use super::*;
     use crate::navigation::Screen;
+    use crate::shortcut_overrides::KEYBOARD_SHORTCUTS as SHORTCUTS_SETTING;
     use crate::test_support::{
         ReadFault, SETTINGS_READ_FAILED, Sandboxed, SettingWrite, TestBackend, hub_crumb_targets,
         install_presentation, pump, quiet_bus, runtime, sandboxed_provider, test_backend,
@@ -407,7 +408,8 @@ mod tests {
     };
     use capture::Capture;
     use forge_components::Toasts;
-    use forge_storage::settings::reserved_keys::KEYBOARD_SHORTCUTS;
+
+    const KEYBOARD_SHORTCUTS: &str = SHORTCUTS_SETTING.name();
     use tokio::sync::mpsc::UnboundedReceiver;
 
     #[gpui::test]
@@ -471,7 +473,7 @@ mod tests {
             let rt = runtime();
             let storage = rt.block_on(sandboxed_provider());
             let (settings, writes) = test_backend();
-            settings.seed(KEYBOARD_SHORTCUTS, stored);
+            settings.seed_raw(&SHORTCUTS_SETTING, stored);
             Self {
                 rt,
                 settings,

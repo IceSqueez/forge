@@ -512,7 +512,11 @@ pub(super) async fn seed(store: &Store) -> Fixture {
     p.store(&CredentialId::new("twitch:broadcaster"), SECRET_TOKEN)
         .await
         .unwrap();
-    p.set_string("ui.last_note", SECRET_SETTING).await.unwrap();
+    store
+        .sqlite
+        .seed_foreign_setting("ui.last_note", SECRET_SETTING, None)
+        .await
+        .unwrap();
 
     Fixture {
         root: root.id,

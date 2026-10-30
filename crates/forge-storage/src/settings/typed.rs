@@ -547,7 +547,7 @@ mod tests {
     use tracing::{Event, Metadata, Subscriber};
 
     use super::*;
-    use crate::event_log::tests::MapRepo;
+    use crate::test_support::MemorySettings;
 
     const BOUNDED: Count = Count {
         default: 50,
@@ -727,53 +727,37 @@ mod tests {
 
     #[tokio::test]
     async fn read_setting_decodes_the_stored_text_through_the_codec() {
-        let repo = MapRepo::default();
-        repo.set_string(LIMIT.name(), "250").await.unwrap();
+        let repo = MemorySettings::new();
+        repo.seed_raw(&LIMIT, "250");
 
         assert_eq!(read_setting(&repo, &LIMIT).await.unwrap(), 100);
     }
 
-    struct UnreachableRepo;
-
-    #[async_trait::async_trait]
-    impl SettingsRepo for UnreachableRepo {
-        async fn get_string(&self, _: &str) -> Result<Option<String>, StorageError> {
-            Err(StorageError::Connection {
-                reason: "settings store unreachable".to_owned(),
-            })
-        }
-        async fn set_string(&self, _: &str, _: &str) -> Result<(), StorageError> {
-            unreachable!("reading never writes")
-        }
-        async fn delete(&self, _: &str) -> Result<bool, StorageError> {
-            unreachable!("reading never deletes")
-        }
-        async fn load_all(
-            &self,
-        ) -> Result<std::collections::HashMap<String, String>, StorageError> {
-            unreachable!("reading loads a single key")
-        }
+    fn unreachable_repo() -> MemorySettings {
+        let repo = MemorySettings::new();
+        repo.fail_reads(true);
+        repo
     }
 
     #[tokio::test]
     async fn read_setting_or_default_serves_the_default_when_the_store_cannot_be_read() {
         assert_eq!(
-            read_setting_or_default(&UnreachableRepo, &LIMIT).await,
+            read_setting_or_default(&unreachable_repo(), &LIMIT).await,
             BOUNDED.default
         );
     }
 
     #[tokio::test]
     async fn read_stored_setting_reports_an_absent_row_as_none_not_the_default() {
-        let repo = MapRepo::default();
+        let repo = MemorySettings::new();
 
         assert_eq!(read_stored_setting(&repo, &LIMIT).await.unwrap(), None);
     }
 
     #[tokio::test]
     async fn read_stored_setting_decodes_a_present_row_through_the_codec() {
-        let repo = MapRepo::default();
-        repo.set_string(LIMIT.name(), "250").await.unwrap();
+        let repo = MemorySettings::new();
+        repo.seed_raw(&LIMIT, "250");
 
         assert_eq!(
             read_stored_setting(&repo, &LIMIT).await.unwrap(),
@@ -783,8 +767,8 @@ mod tests {
 
     #[tokio::test]
     async fn read_stored_setting_fails_on_an_undecodable_row_naming_the_key_not_its_text() {
-        let repo = MapRepo::default();
-        repo.set_string(LIMIT.name(), SECRET_RAW).await.unwrap();
+        let repo = MemorySettings::new();
+        repo.seed_raw(&LIMIT, SECRET_RAW);
 
         let result = read_stored_setting(&repo, &LIMIT).await;
 
@@ -797,10 +781,10 @@ mod tests {
 
     #[tokio::test]
     async fn read_stored_setting_passes_a_connection_error_through_unchanged() {
-        let result = read_stored_setting(&UnreachableRepo, &LIMIT).await;
+        let result = read_stored_setting(&unreachable_repo(), &LIMIT).await;
 
         assert!(
-            matches!(&result, Err(StorageError::Connection { reason }) if reason == "settings store unreachable"),
+            matches!(&result, Err(StorageError::Connection { reason }) if reason == crate::test_support::INJECTED_FAILURE_REASON),
             "{result:?}"
         );
     }
@@ -808,7 +792,7 @@ mod tests {
     #[tokio::test]
     async fn write_setting_refuses_a_non_finite_level_naming_the_key_and_stores_nothing() {
         for value in [f32::NAN, f32::INFINITY, f32::NEG_INFINITY] {
-            let repo = MapRepo::default();
+            let repo = MemorySettings::new();
 
             let result = write_setting(&repo, &VOLUME, &value).await;
 
@@ -816,7 +800,7 @@ mod tests {
                 matches!(&result, Err(StorageError::UnstorableSetting { key }) if key == VOLUME.name()),
                 "value {value}: {result:?}",
             );
-            assert_eq!(repo.load_all().await.unwrap().len(), 0, "value {value}");
+            assert_eq!(repo.rows().len(), 0, "value {value}");
         }
     }
 }

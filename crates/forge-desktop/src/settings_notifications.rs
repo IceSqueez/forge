@@ -301,10 +301,11 @@ impl Render for SettingsNotificationsView {
 
 #[cfg(test)]
 mod tests {
+    use crate::settings_catalog::SCHEDULED_BACKUP_FAILURE_OS_NOTICE;
     use forge_components::{Density, Presentation, ThemeId, Toasts};
+    use forge_runtime::settings::{ACTION_FAILURE_OS_NOTICE, CONNECTION_LOSS_SOUND};
     use forge_runtime::spawn_notification_policy;
     use forge_storage::Language;
-    use forge_storage::reserved_keys;
     use forge_storage::test_support::MemorySettings;
     use gpui::{AppContext, Entity, TestAppContext};
 
@@ -402,12 +403,12 @@ mod tests {
         for (setting, key, value) in [
             (
                 NotificationToggle::ActionFailureNotice,
-                reserved_keys::NOTIFICATIONS_ACTION_FAILURE_OS_NOTICE,
+                ACTION_FAILURE_OS_NOTICE.name(),
                 "true",
             ),
             (
                 NotificationToggle::ConnectionLossCue,
-                reserved_keys::NOTIFICATIONS_CONNECTION_LOSS_SOUND,
+                CONNECTION_LOSS_SOUND.name(),
                 "false",
             ),
         ] {
@@ -547,7 +548,7 @@ mod tests {
             ),
             (
                 Some((
-                    reserved_keys::NOTIFICATIONS_SCHEDULED_BACKUP_FAILURE_OS_NOTICE.to_owned(),
+                    SCHEDULED_BACKUP_FAILURE_OS_NOTICE.name().to_owned(),
                     "false".to_owned()
                 )),
                 None,

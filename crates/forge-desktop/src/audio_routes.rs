@@ -270,7 +270,7 @@ mod tests {
     use forge_overlay::kinds::alert::KIND_ID as ALERT_OVERLAY_KIND;
     use forge_overlay::kinds::blank::KIND_ID as BLANK_OVERLAY_KIND;
     use forge_storage::MockOverlayRepo;
-    use forge_storage::settings::MockSettingsRepo;
+    use forge_storage::test_support::MemorySettings;
 
     use super::*;
     use crate::test_support::{RecordingSink, overlay_named, test_backend, tone};
@@ -298,13 +298,9 @@ mod tests {
         Arc::new(repo)
     }
 
-    fn unreadable_settings() -> MockSettingsRepo {
-        let mut repo = MockSettingsRepo::new();
-        repo.expect_get_string().returning(|key| {
-            Err(StorageError::NotFound {
-                key: key.to_owned(),
-            })
-        });
+    fn unreadable_settings() -> MemorySettings {
+        let repo = MemorySettings::new();
+        repo.fail_reads(true);
         repo
     }
 
@@ -362,10 +358,7 @@ mod tests {
     async fn a_stored_route_that_cannot_be_parsed_falls_back_to_the_local_device() {
         for stored in ["", "   ", "remote", "obs", "local overlay"] {
             let (backend, _writes) = test_backend();
-            backend
-                .set_string(SPEECH_ROUTE.name(), stored)
-                .await
-                .expect("the raw value is stored");
+            backend.seed_raw(&SPEECH_ROUTE, stored);
 
             assert_eq!(
                 load_audio_routes(backend.as_ref()).await.speech,
@@ -387,10 +380,7 @@ mod tests {
     async fn a_stored_destination_that_names_nothing_is_read_as_no_destination() {
         for blank in ["", "   ", "\t\n"] {
             let (backend, _writes) = test_backend();
-            backend
-                .set_string(AUDIO_OVERLAY_ID.name(), blank)
-                .await
-                .expect("the raw value is stored");
+            backend.seed_raw(&AUDIO_OVERLAY_ID, blank);
 
             assert_eq!(
                 load_audio_routes(backend.as_ref()).await.destination,
@@ -413,10 +403,7 @@ mod tests {
                 .expect("the destination is cleared");
 
             assert_eq!(
-                backend
-                    .get_string(AUDIO_OVERLAY_ID.name())
-                    .await
-                    .expect("the key is readable"),
+                backend.row(AUDIO_OVERLAY_ID.name()),
                 None,
                 "{cleared:?} was stored instead of clearing the key"
             );

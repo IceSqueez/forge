@@ -77,8 +77,8 @@ pub trait HistoryRepo: Send + Sync {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::event_log::tests::MapRepo;
     use crate::set_event_log_retention_days;
+    use crate::test_support::MemorySettings;
 
     struct MinimalRepo;
 
@@ -123,11 +123,9 @@ mod tests {
     }
 
     async fn read_back(history_raw: Option<&str>, event_log_days: Option<u32>) -> u32 {
-        let repo = MapRepo::default();
+        let repo = MemorySettings::new();
         if let Some(raw) = history_raw {
-            repo.set_string(reserved_keys::ACTION_HISTORY_RETENTION_DAYS, raw)
-                .await
-                .unwrap();
+            repo.seed_raw(&core_settings::ACTION_HISTORY_RETENTION_DAYS, raw);
         }
         if let Some(days) = event_log_days {
             set_event_log_retention_days(&repo, days).await.unwrap();
@@ -181,14 +179,13 @@ mod tests {
     async fn setting_the_action_history_retention_stores_the_clamped_value() {
         let mut stored = Vec::new();
         for days in [0, 6, 7, 365, 366] {
-            let repo = MapRepo::default();
+            let repo = MemorySettings::new();
             set_action_history_retention_days(&repo, days)
                 .await
                 .unwrap();
             stored.push(
-                repo.get_string(reserved_keys::ACTION_HISTORY_RETENTION_DAYS)
-                    .await
-                    .unwrap(),
+                repo.row(core_settings::ACTION_HISTORY_RETENTION_DAYS.name())
+                    .map(|row| row.value),
             );
         }
 

@@ -73,9 +73,7 @@ pub fn spawn_record_completed(settings: Arc<dyn SettingsRepo>, rt_handle: &tokio
 
 #[cfg(test)]
 mod tests {
-    use std::collections::HashMap;
-
-    use async_trait::async_trait;
+    use forge_storage::test_support::MemorySettings;
     use forge_types::IntegrationId;
 
     use super::*;
@@ -87,29 +85,6 @@ mod tests {
             (IntegrationId::new("twitch"), LifecycleState::Disabled),
             (IntegrationId::new("obs"), state),
         ])
-    }
-
-    struct UnreadableSettings;
-
-    #[async_trait]
-    impl SettingsRepo for UnreadableSettings {
-        async fn get_string(&self, key: &str) -> Result<Option<String>, StorageError> {
-            Err(StorageError::NotFound {
-                key: key.to_owned(),
-            })
-        }
-
-        async fn set_string(&self, key: &str, _: &str) -> Result<(), StorageError> {
-            panic!("an unreadable flag must not be written, got {key}");
-        }
-
-        async fn delete(&self, _: &str) -> Result<bool, StorageError> {
-            Ok(false)
-        }
-
-        async fn load_all(&self) -> Result<HashMap<String, String>, StorageError> {
-            Ok(HashMap::new())
-        }
     }
 
     #[test]
@@ -180,9 +155,7 @@ mod tests {
         ] {
             let (settings, mut rx) = test_backend();
             if let Some(value) = stored {
-                rt.block_on(settings.set_string(FIRST_RUN_COMPLETED.name(), value))
-                    .unwrap();
-                rx.try_recv().unwrap();
+                settings.seed_raw(&FIRST_RUN_COMPLETED, value);
             }
 
             let resolved = rt.block_on(resolve_first_run(settings.as_ref(), &states(state)));
@@ -195,12 +168,17 @@ mod tests {
     #[test]
     fn an_unreadable_first_run_flag_skips_the_welcome_without_writing() {
         let rt = runtime();
+        let settings = MemorySettings::new();
+        settings.fail_reads(true);
 
         let resolved = rt.block_on(resolve_first_run(
-            &UnreadableSettings,
+            &settings,
             &states(LifecycleState::Disabled),
         ));
 
-        assert_eq!(resolved, FirstRun::Completed);
+        assert_eq!(
+            (resolved, settings.write_log()),
+            (FirstRun::Completed, Vec::new())
+        );
     }
 }

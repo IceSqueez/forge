@@ -2227,7 +2227,7 @@ mod tests {
             crate::test_support::install_presentation(cx);
             cx.update(|cx| cx.set_global(forge_components::Toasts::new()));
             let (backend, writes) = crate::test_support::test_backend();
-            backend.seed(MIDI_KNOWN_DEVICES.name(), stored);
+            backend.seed_raw(&MIDI_KNOWN_DEVICES, stored);
             Self {
                 rt: crate::test_support::runtime(),
                 backend,

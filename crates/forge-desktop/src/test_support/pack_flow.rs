@@ -8,9 +8,10 @@ use forge_runtime::{
     ActionCancelRegistry, EventBus, OverlayServiceHandle, QueueScheduler, ScriptRegistry,
     spawn_action_engine,
 };
+use forge_storage::settings::core_settings::SERVER_OVERLAY_ROOT;
 use forge_storage::{
     DATABASE_FILE_NAME, DataProvider, OverlayConfig, OverlayDefinition, OverlayId, SettingsRepo,
-    reserved_keys,
+    write_setting,
 };
 use forge_storage_sqlite::SqliteBackend;
 use forge_transfer::{
@@ -64,13 +65,13 @@ pub(crate) fn pack_world(rt: &tokio::runtime::Runtime) -> PackWorld {
         std::fs::write(dir.path().join(CREDENTIALS_KEY_FILE_NAME), STORAGE_KEY).unwrap();
         let provider: Arc<dyn DataProvider> = Arc::new(backend);
         let overlay_root = dir.path().join(OVERLAYS_DIR_NAME);
-        provider
-            .set_string(
-                reserved_keys::SERVER_OVERLAY_ROOT,
-                &overlay_root.display().to_string(),
-            )
-            .await
-            .unwrap();
+        write_setting(
+            provider.as_ref(),
+            &SERVER_OVERLAY_ROOT,
+            &Some(overlay_root.display().to_string()),
+        )
+        .await
+        .unwrap();
         let mut kinds = OverlayKindRegistry::new();
         register_builtin_kinds(&mut kinds).unwrap();
         let kinds = Arc::new(kinds);

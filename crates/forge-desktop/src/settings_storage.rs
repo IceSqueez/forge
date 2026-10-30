@@ -671,7 +671,7 @@ mod tests {
     use forge_runtime::{EventBus, spawn_chat_history_persistence};
     use forge_storage::chat_history::MockChatHistoryRepo;
     use forge_storage::{
-        DataProvider, SettingsRepo, chat_history_per_viewer_limit, reserved_keys,
+        DataProvider, SettingsRepo, chat_history_per_viewer_limit,
         set_action_history_retention_days,
     };
     use forge_types::{ChatPayload, ModerationMarks};
@@ -979,7 +979,9 @@ mod tests {
                 (
                     shown.to_owned(),
                     written.map(|value| (
-                        reserved_keys::ACTION_HISTORY_RETENTION_DAYS.to_owned(),
+                        forge_storage::settings::core_settings::ACTION_HISTORY_RETENTION_DAYS
+                            .name()
+                            .to_owned(),
                         value.to_owned()
                     ))
                 ),

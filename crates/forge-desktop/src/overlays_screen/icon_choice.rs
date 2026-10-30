@@ -983,8 +983,8 @@ mod tests {
         cx: &mut gpui::TestAppContext,
     ) {
         let harness = crate::picker_favorites::tests::Harness::new(cx);
-        harness.backend.seed(
-            ICON_FAVORITES.setting.name(),
+        harness.backend.seed_raw(
+            ICON_FAVORITES.setting,
             &serde_json::to_string(&[GLYPH, NOT_A_GLYPH]).expect("fixture ids encode"),
         );
 
@@ -999,9 +999,7 @@ mod tests {
     #[gpui::test]
     fn a_star_on_undecodable_icon_favorites_writes_nothing(cx: &mut gpui::TestAppContext) {
         let mut harness = crate::picker_favorites::tests::Harness::new(cx);
-        harness
-            .backend
-            .seed(ICON_FAVORITES.setting.name(), "not json");
+        harness.backend.seed_raw(ICON_FAVORITES.setting, "not json");
         let store = harness.shared(ICON_FAVORITES, cx);
 
         crate::picker_favorites::tests::star(&store, GLYPH, cx);

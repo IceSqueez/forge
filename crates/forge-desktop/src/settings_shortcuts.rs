@@ -648,11 +648,13 @@ mod tests {
     use tokio::sync::mpsc::UnboundedReceiver;
 
     use super::*;
+    use crate::shortcut_overrides::KEYBOARD_SHORTCUTS as SHORTCUTS_SETTING;
     use crate::test_support::{
         ReadFault, SETTINGS_READ_FAILED, SETTINGS_WRITE_FAILED, SettingWrite, TestBackend,
         install_presentation, pump, runtime, test_backend, writes_to,
     };
-    use forge_storage::settings::reserved_keys::KEYBOARD_SHORTCUTS;
+
+    const KEYBOARD_SHORTCUTS: &str = SHORTCUTS_SETTING.name();
 
     const HOME: &str = "nav.home";
     const HOME_DEFAULT: &str = "ctrl-1";
@@ -670,7 +672,7 @@ mod tests {
     impl Harness {
         fn new(stored: &str) -> Self {
             let (backend, writes) = test_backend();
-            backend.seed(KEYBOARD_SHORTCUTS, stored);
+            backend.seed_raw(&SHORTCUTS_SETTING, stored);
             Self {
                 rt: runtime(),
                 backend,

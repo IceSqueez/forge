@@ -83,7 +83,7 @@ flate2 = { workspace = true }
 fluent = { workspace = true }
 forge-hotkey = { path = "../forge-hotkey", features = ["testing"] }
 forge-storage-sqlite = { path = "../forge-storage-sqlite", features = ["settings-test-support"] }
-forge-storage = { path = "../forge-storage", features = ["test-mocks"] }
+forge-storage = { path = "../forge-storage", features = ["test-mocks", "settings-test-support"] }
 gpui = { workspace = true, features = ["test-support"] }
 tar = { workspace = true }
 tempfile = { workspace = true }

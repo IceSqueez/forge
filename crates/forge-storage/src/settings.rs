@@ -576,74 +576,54 @@ pub async fn take_credentials_key_loss(
 
 #[cfg(test)]
 mod tests {
-    use std::collections::HashMap;
-    use std::sync::Mutex;
-
-    use async_trait::async_trait;
     use forge_types::LogLevel;
     use serde::{Deserialize, Serialize};
 
+    use super::core_settings::{
+        CHAT_HISTORY_PER_VIEWER_LIMIT, CREDENTIALS_KEY_LOSS, DIAGNOSTICS_LOG_LEVEL,
+        FIRST_DAY_OF_WEEK, REGION, TIME_FORMAT, TTS_DISABLED_ENGINES, TTS_ENGINE_PARAMS,
+    };
     use super::{
-        CredentialsKeyLoss, DEFAULT_DIAGNOSTIC_LOG_LEVEL, EngineParams, Language, SettingsRepo,
-        StorageError, StoredDisplayFormats, chat_history_per_viewer_limit, diagnostic_log_level,
-        disabled_tts_engines, engine_params, get_bool_setting, get_json_setting,
-        record_credentials_key_loss, reserved_keys, set_chat_history_per_viewer_limit,
-        set_diagnostic_log_level, set_json_setting, stored_bool_setting, stored_display_formats,
-        stored_json_setting, take_credentials_key_loss,
+        CredentialsKeyLoss, DEFAULT_DIAGNOSTIC_LOG_LEVEL, EngineParams, Language,
+        StoredDisplayFormats, chat_history_per_viewer_limit, diagnostic_log_level,
+        disabled_tts_engines, engine_params, record_credentials_key_loss,
+        set_chat_history_per_viewer_limit, set_diagnostic_log_level, stored_display_formats,
+        take_credentials_key_loss,
+    };
+    use crate::test_support::{INJECTED_FAILURE_REASON, MemorySettings};
+    use crate::{
+        Flag, JsonDocument, Setting, SettingDisclosure, SettingPortability, StorageError,
+        read_setting, read_stored_setting,
     };
 
-    #[derive(Default)]
-    struct MapRepo {
-        map: Mutex<HashMap<String, String>>,
+    #[derive(Debug, Default, PartialEq, Serialize, Deserialize)]
+    struct Sample {
+        name: String,
+        count: u32,
     }
 
-    #[async_trait]
-    impl SettingsRepo for MapRepo {
-        async fn get_string(&self, key: &str) -> Result<Option<String>, StorageError> {
-            Ok(self.map.lock().unwrap().get(key).cloned())
-        }
-        async fn set_string(&self, key: &str, value: &str) -> Result<(), StorageError> {
-            self.map
-                .lock()
-                .unwrap()
-                .insert(key.to_owned(), value.to_owned());
-            Ok(())
-        }
-        async fn delete(&self, key: &str) -> Result<bool, StorageError> {
-            Ok(self.map.lock().unwrap().remove(key).is_some())
-        }
-        async fn load_all(&self) -> Result<HashMap<String, String>, StorageError> {
-            Ok(self.map.lock().unwrap().clone())
-        }
-    }
+    const SAMPLE: Setting<JsonDocument<Sample>> = Setting::new(
+        "test.sample",
+        JsonDocument::new(),
+        SettingPortability::Portable,
+        SettingDisclosure::Verbatim,
+    );
+    const FLAG_DEFAULT_ON: Setting<Flag> = Setting::new(
+        "test.flag_on",
+        Flag { default: true },
+        SettingPortability::Portable,
+        SettingDisclosure::Verbatim,
+    );
+    const FLAG_DEFAULT_OFF: Setting<Flag> = Setting::new(
+        "test.flag_off",
+        Flag { default: false },
+        SettingPortability::Portable,
+        SettingDisclosure::Verbatim,
+    );
 
-    struct UnreachableRepo;
-
-    const UNREACHABLE: &str = "settings store unreachable";
-
-    #[async_trait]
-    impl SettingsRepo for UnreachableRepo {
-        async fn get_string(&self, _: &str) -> Result<Option<String>, StorageError> {
-            Err(StorageError::Connection {
-                reason: UNREACHABLE.to_owned(),
-            })
-        }
-        async fn set_string(&self, _: &str, _: &str) -> Result<(), StorageError> {
-            unreachable!("the strict getters never write")
-        }
-        async fn delete(&self, _: &str) -> Result<bool, StorageError> {
-            unreachable!("the strict getters never delete")
-        }
-        async fn load_all(&self) -> Result<HashMap<String, String>, StorageError> {
-            unreachable!("the strict getters read one key")
-        }
-    }
-
-    async fn seeded(key: &str, raw: Option<&str>) -> MapRepo {
-        let repo = MapRepo::default();
-        if let Some(raw) = raw {
-            repo.set_string(key, raw).await.unwrap();
-        }
+    fn unreachable_repo() -> MemorySettings {
+        let repo = MemorySettings::new();
+        repo.fail_reads(true);
         repo
     }
 
@@ -652,49 +632,12 @@ mod tests {
             && (raw.is_empty() || !error.to_string().contains(raw))
     }
 
-    #[derive(Debug, PartialEq, Serialize, Deserialize)]
-    struct Sample {
-        name: String,
-        count: u32,
+    fn stored_value(repo: &MemorySettings, name: &str) -> Option<String> {
+        repo.row(name).map(|row| row.value)
     }
 
     #[tokio::test]
-    async fn get_json_setting_yields_none_for_absent_malformed_and_wrong_shape() {
-        let repo = MapRepo::default();
-        repo.set_string("malformed", "{not json").await.unwrap();
-        repo.set_string("wrong_shape", "42").await.unwrap();
-
-        for key in ["absent", "malformed", "wrong_shape"] {
-            let decoded: Option<Vec<String>> = get_json_setting(&repo, key).await;
-            assert!(decoded.is_none(), "expected None for {key:?}");
-        }
-    }
-
-    #[tokio::test]
-    async fn json_setting_round_trips_a_vec_and_a_struct() {
-        let repo = MapRepo::default();
-
-        let list = vec!["a.com".to_owned(), "b.com".to_owned()];
-        set_json_setting(&repo, "list", &list).await.unwrap();
-        assert_eq!(
-            get_json_setting::<Vec<String>>(&repo, "list").await,
-            Some(list)
-        );
-
-        let sample = Sample {
-            name: "nova".into(),
-            count: 3,
-        };
-        set_json_setting(&repo, "sample", &sample).await.unwrap();
-        assert_eq!(
-            get_json_setting::<Sample>(&repo, "sample").await,
-            Some(sample)
-        );
-    }
-
-    #[tokio::test]
-    async fn stored_json_setting_separates_absent_valid_and_undecodable_values() {
-        let key = "sample";
+    async fn reading_a_stored_json_setting_separates_absent_valid_and_undecodable_values() {
         for (raw, expected) in [
             (None, Ok(None)),
             (
@@ -709,19 +652,21 @@ mod tests {
             (Some(r#"{"name":"secret-raw-value","count":-1}"#), Err(true)),
             (Some(""), Err(true)),
         ] {
-            let repo = seeded(key, raw).await;
+            let repo = MemorySettings::new();
+            if let Some(raw) = raw {
+                repo.seed_raw(&SAMPLE, raw);
+            }
 
-            let decoded = stored_json_setting::<Sample>(&repo, key)
+            let decoded = read_stored_setting(&repo, &SAMPLE)
                 .await
-                .map_err(|error| names_only_the_key(&error, key, "secret-raw-value"));
+                .map_err(|error| names_only_the_key(&error, SAMPLE.name(), "secret-raw-value"));
 
             assert_eq!(decoded, expected, "{raw:?}");
         }
     }
 
     #[tokio::test]
-    async fn stored_bool_setting_trims_and_rejects_blank_or_unknown_spellings() {
-        let key = "flag";
+    async fn reading_a_stored_flag_trims_and_rejects_blank_or_unknown_spellings() {
         for (raw, expected) in [
             (None, Ok(None)),
             (Some("true"), Ok(Some(true))),
@@ -737,37 +682,45 @@ mod tests {
             (Some("2"), Err(true)),
             (Some("yes"), Err(true)),
         ] {
-            let repo = seeded(key, raw).await;
+            let repo = MemorySettings::new();
+            if let Some(raw) = raw {
+                repo.seed_raw(&FLAG_DEFAULT_ON, raw);
+            }
 
-            let decoded = stored_bool_setting(&repo, key)
+            let decoded = read_stored_setting(&repo, &FLAG_DEFAULT_ON)
                 .await
-                .map_err(|error| names_only_the_key(&error, key, raw.unwrap_or_default().trim()));
+                .map_err(|error| {
+                    names_only_the_key(
+                        &error,
+                        FLAG_DEFAULT_ON.name(),
+                        raw.unwrap_or_default().trim(),
+                    )
+                });
 
             assert_eq!(decoded, expected, "{raw:?}");
         }
     }
 
     #[tokio::test]
-    async fn strict_getters_pass_a_store_failure_through_instead_of_reporting_it_undecodable() {
+    async fn strict_readers_pass_a_store_failure_through_instead_of_reporting_it_undecodable() {
+        let repo = unreachable_repo();
         let failures = [
-            stored_bool_setting(&UnreachableRepo, "flag").await.err(),
-            stored_json_setting::<Sample>(&UnreachableRepo, "sample")
-                .await
-                .err(),
-            disabled_tts_engines(&UnreachableRepo).await.err(),
-            engine_params(&UnreachableRepo, "piper").await.err(),
+            read_stored_setting(&repo, &FLAG_DEFAULT_ON).await.err(),
+            read_stored_setting(&repo, &SAMPLE).await.err(),
+            disabled_tts_engines(&repo).await.err(),
+            engine_params(&repo, "piper").await.err(),
         ];
 
         for failure in failures {
             assert!(
-                matches!(&failure, Some(StorageError::Connection { reason }) if reason == UNREACHABLE),
+                matches!(&failure, Some(StorageError::Connection { reason }) if reason == INJECTED_FAILURE_REASON),
                 "{failure:?}"
             );
         }
     }
 
     #[tokio::test]
-    async fn get_bool_setting_falls_back_to_the_default_only_for_absent_or_undecodable_values() {
+    async fn a_flag_reads_as_its_default_only_for_absent_or_undecodable_values() {
         for (raw, default, expected) in [
             (None, true, true),
             (None, false, false),
@@ -776,10 +729,18 @@ mod tests {
             (Some(" false "), true, false),
             (Some(" 1 "), false, true),
         ] {
-            let repo = seeded("flag", raw).await;
+            let setting = if default {
+                &FLAG_DEFAULT_ON
+            } else {
+                &FLAG_DEFAULT_OFF
+            };
+            let repo = MemorySettings::new();
+            if let Some(raw) = raw {
+                repo.seed_raw(setting, raw);
+            }
 
             assert_eq!(
-                get_bool_setting(&repo, "flag", default).await,
+                read_setting(&repo, setting).await.unwrap(),
                 expected,
                 "{raw:?} with default {default}"
             );
@@ -788,14 +749,14 @@ mod tests {
 
     #[tokio::test]
     async fn disabled_tts_engines_reports_an_undecodable_list_instead_of_enabling_every_engine() {
-        let key = reserved_keys::TTS_DISABLED_ENGINES;
-        let absent = disabled_tts_engines(&MapRepo::default()).await.unwrap();
-        let stored = disabled_tts_engines(&seeded(key, Some(r#"["piper","espeak"]"#)).await)
-            .await
-            .unwrap();
-        let undecodable = disabled_tts_engines(&seeded(key, Some(r#"{"piper":true}"#)).await)
-            .await
-            .unwrap_err();
+        let key = TTS_DISABLED_ENGINES.name();
+        let absent = disabled_tts_engines(&MemorySettings::new()).await.unwrap();
+        let stored_repo = MemorySettings::new();
+        stored_repo.seed_raw(&TTS_DISABLED_ENGINES, r#"["piper","espeak"]"#);
+        let stored = disabled_tts_engines(&stored_repo).await.unwrap();
+        let undecodable_repo = MemorySettings::new();
+        undecodable_repo.seed_raw(&TTS_DISABLED_ENGINES, r#"{"piper":true}"#);
+        let undecodable = disabled_tts_engines(&undecodable_repo).await.unwrap_err();
 
         assert_eq!(
             (
@@ -813,22 +774,29 @@ mod tests {
 
     #[tokio::test]
     async fn engine_params_reports_undecodable_params_under_the_engine_key_instead_of_defaults() {
-        let key = format!("{}piper", reserved_keys::TTS_ENGINE_PARAMS_PREFIX);
+        let key = TTS_ENGINE_PARAMS.member_key("piper").unwrap();
         let custom = EngineParams {
             pitch_semitones: 3.0,
             rate_multiplier: 1.5,
             gain: 0.25,
         };
-        let absent = engine_params(&MapRepo::default(), "piper").await.unwrap();
-        let stored = engine_params(
-            &seeded(&key, Some(&serde_json::to_string(&custom).unwrap())).await,
-            "piper",
-        )
-        .await
-        .unwrap();
-        let undecodable = engine_params(&seeded(&key, Some(r#"{"gain":"loud"}"#)).await, "piper")
+        let absent = engine_params(&MemorySettings::new(), "piper")
             .await
-            .unwrap_err();
+            .unwrap();
+        let stored_repo = MemorySettings::new();
+        stored_repo
+            .seed_raw_family(
+                &TTS_ENGINE_PARAMS,
+                "piper",
+                &serde_json::to_string(&custom).unwrap(),
+            )
+            .unwrap();
+        let stored = engine_params(&stored_repo, "piper").await.unwrap();
+        let undecodable_repo = MemorySettings::new();
+        undecodable_repo
+            .seed_raw_family(&TTS_ENGINE_PARAMS, "piper", r#"{"gain":"loud"}"#)
+            .unwrap();
+        let undecodable = engine_params(&undecodable_repo, "piper").await.unwrap_err();
 
         assert_eq!(
             (
@@ -859,7 +827,7 @@ mod tests {
 
     #[tokio::test]
     async fn diagnostic_log_level_persists_each_level_under_its_canonical_lowercase_spelling() {
-        let repo = MapRepo::default();
+        let repo = MemorySettings::new();
         for (level, spelling) in [
             (LogLevel::Trace, "trace"),
             (LogLevel::Debug, "debug"),
@@ -868,10 +836,7 @@ mod tests {
             (LogLevel::Error, "error"),
         ] {
             set_diagnostic_log_level(&repo, &level).await.unwrap();
-            let stored = repo
-                .get_string(reserved_keys::DIAGNOSTICS_LOG_LEVEL)
-                .await
-                .unwrap();
+            let stored = stored_value(&repo, DIAGNOSTICS_LOG_LEVEL.name());
             assert_eq!(stored.as_deref(), Some(spelling));
             assert_eq!(diagnostic_log_level(&repo).await.unwrap(), level);
         }
@@ -879,16 +844,14 @@ mod tests {
 
     #[tokio::test]
     async fn diagnostic_log_level_yields_the_default_when_absent_or_undecodable() {
-        let repo = MapRepo::default();
+        let repo = MemorySettings::new();
         assert_eq!(
             diagnostic_log_level(&repo).await.unwrap(),
             DEFAULT_DIAGNOSTIC_LOG_LEVEL,
         );
 
         for stored in ["", "   ", "verbose", "warning", "traces", "5", "info,debug"] {
-            repo.set_string(reserved_keys::DIAGNOSTICS_LOG_LEVEL, stored)
-                .await
-                .unwrap();
+            repo.seed_raw(&DIAGNOSTICS_LOG_LEVEL, stored);
             assert_eq!(
                 diagnostic_log_level(&repo).await.unwrap(),
                 DEFAULT_DIAGNOSTIC_LOG_LEVEL,
@@ -899,16 +862,14 @@ mod tests {
 
     #[tokio::test]
     async fn diagnostic_log_level_decodes_padded_and_mixed_case_spellings() {
-        let repo = MapRepo::default();
+        let repo = MemorySettings::new();
         for (stored, expected) in [
             (" trace ", LogLevel::Trace),
             ("DEBUG", LogLevel::Debug),
             ("\twarn\n", LogLevel::Warn),
             ("eRrOr", LogLevel::Error),
         ] {
-            repo.set_string(reserved_keys::DIAGNOSTICS_LOG_LEVEL, stored)
-                .await
-                .unwrap();
+            repo.seed_raw(&DIAGNOSTICS_LOG_LEVEL, stored);
             assert_eq!(
                 diagnostic_log_level(&repo).await.unwrap(),
                 expected,
@@ -919,7 +880,7 @@ mod tests {
 
     #[tokio::test]
     async fn credentials_key_loss_is_reported_once_then_reads_as_absent() {
-        let repo = MapRepo::default();
+        let repo = MemorySettings::new();
         assert_eq!(take_credentials_key_loss(&repo).await.unwrap(), None);
 
         record_credentials_key_loss(&repo, CredentialsKeyLoss { stranded: 3 })
@@ -939,16 +900,12 @@ mod tests {
 
     #[tokio::test]
     async fn credentials_key_loss_reads_a_non_numeric_stored_value_as_absent_and_clears_it() {
-        let repo = MapRepo::default();
-        repo.set_string(reserved_keys::CREDENTIALS_KEY_LOSS, "not-a-count")
-            .await
-            .unwrap();
+        let repo = MemorySettings::new();
+        repo.seed_raw(&CREDENTIALS_KEY_LOSS, "not-a-count");
 
         assert_eq!(take_credentials_key_loss(&repo).await.unwrap(), None);
         assert_eq!(
-            repo.get_string(reserved_keys::CREDENTIALS_KEY_LOSS)
-                .await
-                .unwrap(),
+            stored_value(&repo, CREDENTIALS_KEY_LOSS.name()),
             None,
             "the unreadable record must still be cleared",
         );
@@ -957,11 +914,9 @@ mod tests {
     #[tokio::test]
     async fn chat_history_per_viewer_limit_falls_back_to_fifty_when_absent_or_unparseable() {
         for stored in [None, Some(""), Some("many"), Some("-5"), Some("12.5")] {
-            let repo = MapRepo::default();
+            let repo = MemorySettings::new();
             if let Some(raw) = stored {
-                repo.set_string(reserved_keys::CHAT_HISTORY_PER_VIEWER_LIMIT, raw)
-                    .await
-                    .unwrap();
+                repo.seed_raw(&CHAT_HISTORY_PER_VIEWER_LIMIT, raw);
             }
 
             let limit = chat_history_per_viewer_limit(&repo).await.unwrap();
@@ -980,10 +935,8 @@ mod tests {
             ("10000", 10000),
             ("10001", 10000),
         ] {
-            let repo = MapRepo::default();
-            repo.set_string(reserved_keys::CHAT_HISTORY_PER_VIEWER_LIMIT, stored)
-                .await
-                .unwrap();
+            let repo = MemorySettings::new();
+            repo.seed_raw(&CHAT_HISTORY_PER_VIEWER_LIMIT, stored);
 
             let limit = chat_history_per_viewer_limit(&repo).await.unwrap();
 
@@ -1000,17 +953,14 @@ mod tests {
             (10001, "10000"),
             (u32::MAX, "10000"),
         ] {
-            let repo = MapRepo::default();
+            let repo = MemorySettings::new();
 
             set_chat_history_per_viewer_limit(&repo, requested)
                 .await
                 .unwrap();
 
             assert_eq!(
-                repo.get_string(reserved_keys::CHAT_HISTORY_PER_VIEWER_LIMIT)
-                    .await
-                    .unwrap()
-                    .as_deref(),
+                stored_value(&repo, CHAT_HISTORY_PER_VIEWER_LIMIT.name()).as_deref(),
                 Some(persisted),
                 "requested={requested}"
             );
@@ -1019,14 +969,10 @@ mod tests {
 
     #[tokio::test]
     async fn stored_display_formats_reads_each_key_and_leaves_absent_ones_empty() {
-        let repo = MapRepo::default();
-        for (key, value) in [
-            (reserved_keys::REGION, "GB"),
-            (reserved_keys::TIME_FORMAT, "12h"),
-            (reserved_keys::FIRST_DAY_OF_WEEK, "sat"),
-        ] {
-            repo.set_string(key, value).await.unwrap();
-        }
+        let repo = MemorySettings::new();
+        repo.seed_raw(&REGION, "GB");
+        repo.seed_raw(&TIME_FORMAT, "12h");
+        repo.seed_raw(&FIRST_DAY_OF_WEEK, "sat");
 
         assert_eq!(
             stored_display_formats(&repo).await.unwrap(),

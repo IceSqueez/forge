@@ -1250,7 +1250,8 @@ mod tests {
     use std::cell::RefCell;
 
     use forge_components::Toasts;
-    use forge_storage::{Language, reserved_keys};
+    use forge_storage::Language;
+    use forge_storage::settings::core_settings::{TTS_DISABLED_ENGINES, TTS_ENGINE_PARAMS};
     use forge_tts_core::{
         ENGINE_ID_ESPEAK_NG, ENGINE_ID_PIPER, TtsEngine, TtsEngineFactory, TtsError,
     };
@@ -1293,7 +1294,7 @@ mod tests {
     }
 
     fn params_key(engine_id: &str) -> String {
-        format!("{}{engine_id}", reserved_keys::TTS_ENGINE_PARAMS_PREFIX)
+        TTS_ENGINE_PARAMS.member_key(engine_id).unwrap()
     }
 
     fn undecodable(key: &str) -> String {
@@ -1324,12 +1325,14 @@ mod tests {
                 .build()
                 .unwrap();
             let (backend, writes) = test_backend();
-            backend.seed(
-                &params_key(ENGINE_ID_PIPER),
+            backend.seed_raw_family(
+                &TTS_ENGINE_PARAMS,
+                ENGINE_ID_PIPER,
                 &serde_json::to_string(&STORED_PIPER).unwrap(),
             );
-            backend.seed(
-                &params_key(ENGINE_ID_ESPEAK_NG),
+            backend.seed_raw_family(
+                &TTS_ENGINE_PARAMS,
+                ENGINE_ID_ESPEAK_NG,
                 &serde_json::to_string(&STORED_ESPEAK).unwrap(),
             );
             Self {
@@ -1399,7 +1402,7 @@ mod tests {
             let mut disabled = Vec::new();
             let mut params = Vec::new();
             while let Ok((written, value)) = self.writes.borrow_mut().try_recv() {
-                if written == reserved_keys::TTS_DISABLED_ENGINES {
+                if written == TTS_DISABLED_ENGINES.name() {
                     disabled.push(value);
                 } else if written == key {
                     params.push(serde_json::from_str(&value).unwrap());
@@ -1455,14 +1458,31 @@ mod tests {
         Pending,
     }
 
-    fn apply_fault(rig: &EnginesRig, key: &str, fault: &Fault) -> Option<String> {
+    enum FaultTarget {
+        DisabledEngines,
+        Params(&'static str),
+    }
+
+    fn apply_fault(rig: &EnginesRig, target: &FaultTarget, fault: &Fault) -> Option<String> {
+        let key = &match target {
+            FaultTarget::DisabledEngines => TTS_DISABLED_ENGINES.name().to_owned(),
+            FaultTarget::Params(engine_id) => params_key(engine_id),
+        };
         match fault {
             Fault::Unreachable => {
                 rig.backend.fault_reads(key, ReadFault::Fails);
                 Some(unreachable())
             }
             Fault::Undecodable => {
-                rig.backend.seed(key, "not json");
+                match target {
+                    FaultTarget::DisabledEngines => {
+                        rig.backend.seed_raw(&TTS_DISABLED_ENGINES, "not json")
+                    }
+                    FaultTarget::Params(engine_id) => {
+                        rig.backend
+                            .seed_raw_family(&TTS_ENGINE_PARAMS, engine_id, "not json")
+                    }
+                }
                 Some(undecodable(key))
             }
             Fault::Pending => {
@@ -1570,7 +1590,7 @@ mod tests {
     fn no_engine_toggle_writes_until_the_disabled_engines_load(cx: &mut TestAppContext) {
         for fault in [Fault::Unreachable, Fault::Undecodable, Fault::Pending] {
             let rig = EnginesRig::new(cx);
-            let reason = apply_fault(&rig, reserved_keys::TTS_DISABLED_ENGINES, &fault);
+            let reason = apply_fault(&rig, &FaultTarget::DisabledEngines, &fault);
             let view = rig.open(None, cx);
 
             view.update(cx, |v, cx| v.toggle_engine(ENGINE_ID_PIPER.to_owned(), cx));
@@ -1578,7 +1598,7 @@ mod tests {
 
             let failure = view.read_with(cx, |v, _| v.disabled.failure().map(str::to_owned));
             assert_eq!(
-                (rig.writes_to(reserved_keys::TTS_DISABLED_ENGINES), failure),
+                (rig.writes_to(TTS_DISABLED_ENGINES.name()), failure),
                 (Vec::<String>::new(), reason.clone()),
                 "{reason:?}"
             );
@@ -1587,12 +1607,12 @@ mod tests {
 
     #[gpui::test]
     fn no_slider_drag_writes_until_the_selected_engine_params_load(cx: &mut TestAppContext) {
-        let key = params_key(ENGINE_ID_PIPER);
+        let target = FaultTarget::Params(ENGINE_ID_PIPER);
         for fault in [Fault::Unreachable, Fault::Undecodable, Fault::Pending] {
             for (case, edit) in slider_edits() {
                 let rig = EnginesRig::new(cx);
                 let _runtime = rig.rt.enter();
-                let reason = apply_fault(&rig, &key, &fault);
+                let reason = apply_fault(&rig, &target, &fault);
                 let view = rig.open(None, cx);
                 select(&view, PIPER, &rig, cx);
 
@@ -1615,11 +1635,11 @@ mod tests {
         let _runtime = rig.rt.enter();
         let key = params_key(ENGINE_ID_PIPER);
         rig.backend
-            .fault_reads(reserved_keys::TTS_DISABLED_ENGINES, ReadFault::Fails);
+            .fault_reads(TTS_DISABLED_ENGINES.name(), ReadFault::Fails);
         rig.backend.fault_reads(&key, ReadFault::Fails);
         let view = rig.open(None, cx);
         select(&view, PIPER, &rig, cx);
-        rig.backend.heal_reads(reserved_keys::TTS_DISABLED_ENGINES);
+        rig.backend.heal_reads(TTS_DISABLED_ENGINES.name());
         rig.backend.heal_reads(&key);
 
         view.update(cx, |v, cx| {
@@ -1690,7 +1710,7 @@ mod tests {
             let _runtime = rig.rt.enter();
             spawn_speak_queue(Vec::new())
         };
-        rig.backend.fail_writes(reserved_keys::TTS_DISABLED_ENGINES);
+        rig.backend.fail_writes(TTS_DISABLED_ENGINES.name());
         let view = rig.open(Some(speak.clone()), cx);
 
         view.update(cx, |v, cx| v.toggle_engine(ENGINE_ID_PIPER.to_owned(), cx));

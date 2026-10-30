@@ -781,7 +781,10 @@ async fn build_server(
 #[cfg(test)]
 mod tests {
     use forge_components::{AccentColor, Density, ThemeId};
-    use forge_storage::{SettingsRepo, reserved_keys};
+    use forge_storage::settings::core_settings::{ACCENT, FONT_BODY, FONT_MONO, THEME};
+    use forge_storage::write_setting;
+
+    use crate::settings_catalog::DENSITY;
 
     use super::load_appearance;
     use crate::test_support::test_backend;
@@ -789,24 +792,31 @@ mod tests {
     #[tokio::test]
     async fn the_stored_theme_accent_density_and_both_fonts_come_back_in_their_own_slots() {
         let (backend, _writes) = test_backend();
-        backend
-            .set_theme(ThemeId::TokyoNight.storage_key())
+        write_setting(
+            backend.as_ref(),
+            &THEME,
+            &Some(ThemeId::TokyoNight.storage_key().to_owned()),
+        )
+        .await
+        .unwrap();
+        write_setting(
+            backend.as_ref(),
+            &ACCENT,
+            &Some(AccentColor::Green.storage_key().to_owned()),
+        )
+        .await
+        .unwrap();
+        write_setting(
+            backend.as_ref(),
+            &DENSITY,
+            &Some(Density::Spacious.storage_key().to_owned()),
+        )
+        .await
+        .unwrap();
+        write_setting(backend.as_ref(), &FONT_BODY, &Some("Inter".to_owned()))
             .await
             .unwrap();
-        backend
-            .set_accent(AccentColor::Green.storage_key())
-            .await
-            .unwrap();
-        backend
-            .set_string(reserved_keys::DENSITY, Density::Spacious.storage_key())
-            .await
-            .unwrap();
-        backend
-            .set_font_body(Some("Inter".to_owned()))
-            .await
-            .unwrap();
-        backend
-            .set_font_mono(Some("Iosevka".to_owned()))
+        write_setting(backend.as_ref(), &FONT_MONO, &Some("Iosevka".to_owned()))
             .await
             .unwrap();
 
@@ -833,12 +843,9 @@ mod tests {
     #[tokio::test]
     async fn unrecognised_or_missing_appearance_settings_fall_back_to_the_defaults() {
         let (backend, _writes) = test_backend();
-        backend.set_theme("solarized").await.unwrap();
-        backend.set_accent("teal").await.unwrap();
-        backend
-            .set_string(reserved_keys::DENSITY, "roomy")
-            .await
-            .unwrap();
+        backend.seed_raw(&THEME, "solarized");
+        backend.seed_raw(&ACCENT, "teal");
+        backend.seed_raw(&DENSITY, "roomy");
 
         let appearance = load_appearance(backend.as_ref()).await;
 

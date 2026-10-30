@@ -136,13 +136,13 @@ pub fn install_language(lang: Language) {
 
 #[cfg(test)]
 mod tests {
-    use std::collections::HashMap;
-
     use forge_components::locale::{ArgsBuilder, tr_lookup};
     use forge_components::{
         ClockStyle, DateFormatChoice, FirstWeekday, FormatChoice, FormatOption,
     };
-    use forge_storage::{RowClasses, RowGate, SettingDisclosure, SettingPortability, StorageError};
+    use forge_storage::settings::core_settings::{DATE_FORMAT, TIME_FORMAT};
+    use forge_storage::test_support::{MemorySettings, StoredSettingRow};
+    use forge_storage::{RowClasses, SettingDisclosure, SettingPortability};
 
     use super::*;
     use crate::test_support::test_backend;
@@ -191,28 +191,6 @@ mod tests {
         }
     }
 
-    struct UnreadableSettings;
-
-    #[async_trait::async_trait]
-    impl SettingsRepo for UnreadableSettings {
-        async fn get_string(&self, _: &str) -> Result<Option<String>, StorageError> {
-            Err(StorageError::Connection {
-                reason: "unreadable".to_owned(),
-            })
-        }
-        async fn set_string(&self, _: &str, _: &str) -> Result<(), StorageError> {
-            Err(StorageError::Connection {
-                reason: "unreadable".to_owned(),
-            })
-        }
-        async fn delete(&self, _: &str) -> Result<bool, StorageError> {
-            Ok(false)
-        }
-        async fn load_all(&self) -> Result<HashMap<String, String>, StorageError> {
-            Ok(HashMap::new())
-        }
-    }
-
     #[test]
     fn startup_region_prefers_a_known_os_locale_region_over_the_ui_language() {
         for (os_locale, lang, expected) in [
@@ -235,20 +213,9 @@ mod tests {
     #[tokio::test]
     async fn stored_display_choices_are_read_back_without_rewriting_the_region() {
         let (settings, mut writes) = test_backend();
-        for (key, value) in [
-            (REGION.name(), "gb"),
-            (
-                forge_storage::settings::core_settings::DATE_FORMAT.name(),
-                "ymd",
-            ),
-            (
-                forge_storage::settings::core_settings::TIME_FORMAT.name(),
-                "bogus",
-            ),
-        ] {
-            settings.set_string(key, value).await.unwrap();
-        }
-        while writes.try_recv().is_ok() {}
+        settings.seed_raw(&REGION, "gb");
+        settings.seed_raw(&DATE_FORMAT, "ymd");
+        settings.seed_raw(&TIME_FORMAT, "bogus");
 
         let choices = resolve_startup_display_formats(settings.as_ref(), Language::Uk).await;
 
@@ -269,7 +236,7 @@ mod tests {
     #[tokio::test]
     async fn an_unknown_stored_region_follows_the_ui_language_region() {
         let (settings, _writes) = test_backend();
-        settings.set_string(REGION.name(), "ZZ").await.unwrap();
+        settings.seed_raw(&REGION, "ZZ");
 
         let choices = resolve_startup_display_formats(settings.as_ref(), Language::Uk).await;
 
@@ -294,67 +261,32 @@ mod tests {
         );
     }
 
-    #[derive(Default)]
-    struct ClassRecordingSettings {
-        rows: std::sync::Mutex<Vec<(String, String, RowClasses)>>,
-    }
-
-    #[async_trait::async_trait]
-    impl SettingsRepo for ClassRecordingSettings {
-        async fn get_string(&self, _: &str) -> Result<Option<String>, StorageError> {
-            Ok(None)
-        }
-        async fn set_string(&self, key: &str, value: &str) -> Result<(), StorageError> {
-            self.rows.lock().unwrap().push((
-                key.to_owned(),
-                value.to_owned(),
-                RowClasses::FAIL_CLOSED,
-            ));
-            Ok(())
-        }
-        async fn delete(&self, _: &str) -> Result<bool, StorageError> {
-            Ok(false)
-        }
-        async fn load_all(&self) -> Result<HashMap<String, String>, StorageError> {
-            Ok(HashMap::new())
-        }
-        async fn put_row(
-            &self,
-            _: RowGate,
-            key: &str,
-            value: &str,
-            classes: RowClasses,
-        ) -> Result<(), StorageError> {
-            self.rows
-                .lock()
-                .unwrap()
-                .push((key.to_owned(), value.to_owned(), classes));
-            Ok(())
-        }
-    }
-
     #[tokio::test]
     async fn the_first_run_region_is_stamped_portable_and_verbatim() {
-        let settings = ClassRecordingSettings::default();
+        let settings = MemorySettings::new();
 
         let choices = resolve_startup_display_formats(&settings, Language::En).await;
 
         assert_eq!(
-            *settings.rows.lock().unwrap(),
-            vec![(
-                REGION.name().to_owned(),
-                choices.region.code().to_owned(),
-                RowClasses {
+            settings.rows(),
+            vec![StoredSettingRow {
+                key: REGION.name().to_owned(),
+                value: choices.region.code().to_owned(),
+                classes: RowClasses {
                     portability: SettingPortability::Portable,
                     disclosure: SettingDisclosure::Verbatim,
                 },
-            )]
+            }]
         );
     }
 
     #[tokio::test]
     async fn unreadable_settings_follow_the_ui_language_region() {
-        let choices = resolve_startup_display_formats(&UnreadableSettings, Language::Uk).await;
+        let settings = MemorySettings::new();
+        settings.fail_reads(true);
+        settings.fail_writes(true);
+
+        let choices = resolve_startup_display_formats(&settings, Language::Uk).await;
 
         assert_eq!(choices, DisplayFormatChoices::following(Region::Ukraine));
     }

@@ -148,10 +148,7 @@ mod tests {
     async fn interval_after_restoring(stored: Option<&str>) -> Duration {
         let (backend, _writes) = test_backend();
         if let Some(stored) = stored {
-            backend
-                .set_string(DONATELLO_POLL_INTERVAL_SECS.name(), stored)
-                .await
-                .expect("the test backend stores");
+            backend.seed_raw(&DONATELLO_POLL_INTERVAL_SECS, stored);
         }
         let config = DonatelloConfig::new(&PlatformEndpoints::default());
         let gateway =

@@ -73,64 +73,20 @@ pub async fn start_stay_awake(settings: Arc<dyn SettingsRepo>) -> StayAwakeSetti
 
 #[cfg(test)]
 mod tests {
-    use std::collections::HashMap;
-    use std::sync::atomic::{AtomicUsize, Ordering};
-    use std::sync::{Arc, Mutex};
+    use std::sync::Arc;
 
     use forge_awake::{AwakeError, StayAwake, StayAwakeConfig};
-    use forge_storage::{SettingsRepo, StorageError, get_bool_setting, reserved_keys};
+    use forge_storage::test_support::{MemorySettings, SettingsWrite};
+    use forge_storage::{SettingsRepo, read_setting};
     use gpui::{AppContext, Entity, TestAppContext};
     use tokio::runtime::Runtime;
-    use tokio::sync::Semaphore;
 
-    use super::{ENABLED_BY_DEFAULT, HOLD_REASON, StayAwakeSetting};
+    use super::{ENABLED_BY_DEFAULT, HOLD_REASON, STAY_AWAKE, StayAwakeSetting};
     use crate::async_bridge::{SnapshotWriter, WriteOutcome};
     use crate::test_support::{SETTINGS_WRITE_FAILED, pump, runtime, test_backend, writes_to};
 
     #[derive(Default)]
     struct Settled(Vec<WriteOutcome>);
-
-    struct GatedSettings {
-        gate: Semaphore,
-        stored: Mutex<Vec<String>>,
-        in_flight: AtomicUsize,
-        most_in_flight: AtomicUsize,
-    }
-
-    impl GatedSettings {
-        fn closed() -> Self {
-            Self {
-                gate: Semaphore::new(0),
-                stored: Mutex::new(Vec::new()),
-                in_flight: AtomicUsize::new(0),
-                most_in_flight: AtomicUsize::new(0),
-            }
-        }
-    }
-
-    #[async_trait::async_trait]
-    impl SettingsRepo for GatedSettings {
-        async fn get_string(&self, _: &str) -> Result<Option<String>, StorageError> {
-            Ok(self.stored.lock().unwrap().last().cloned())
-        }
-
-        async fn set_string(&self, _: &str, value: &str) -> Result<(), StorageError> {
-            let running = self.in_flight.fetch_add(1, Ordering::SeqCst) + 1;
-            self.most_in_flight.fetch_max(running, Ordering::SeqCst);
-            self.gate.acquire().await.unwrap().forget();
-            self.stored.lock().unwrap().push(value.to_owned());
-            self.in_flight.fetch_sub(1, Ordering::SeqCst);
-            Ok(())
-        }
-
-        async fn delete(&self, _: &str) -> Result<bool, StorageError> {
-            Ok(false)
-        }
-
-        async fn load_all(&self) -> Result<HashMap<String, String>, StorageError> {
-            Ok(HashMap::new())
-        }
-    }
 
     fn parked_service(parked: &Runtime) -> StayAwake {
         let _entered = parked.enter();
@@ -187,11 +143,9 @@ mod tests {
         pump(&rt);
         cx.run_until_parked();
 
-        let next_start = rt.block_on(get_bool_setting(
-            settings.as_ref(),
-            reserved_keys::STAY_AWAKE,
-            ENABLED_BY_DEFAULT,
-        ));
+        let next_start = rt
+            .block_on(read_setting(settings.as_ref(), &STAY_AWAKE))
+            .unwrap();
         assert_eq!(
             (outcomes(&settled, cx), next_start),
             (vec![WriteOutcome::Written], false)
@@ -202,7 +156,7 @@ mod tests {
     fn a_failed_store_settles_failed_without_reaching_the_service(cx: &mut TestAppContext) {
         let rt = runtime();
         let (settings, _writes) = test_backend();
-        settings.fail_writes(reserved_keys::STAY_AWAKE);
+        settings.fail_writes(STAY_AWAKE.name());
         let setting = setting(stopped_service(), settings as _, &rt);
         let settled = cx.new(|_| Settled::default());
 
@@ -234,7 +188,7 @@ mod tests {
         assert_eq!(
             (
                 outcomes(&settled, cx),
-                writes_to(&mut writes, reserved_keys::STAY_AWAKE)
+                writes_to(&mut writes, STAY_AWAKE.name())
             ),
             (
                 vec![WriteOutcome::Failed(AwakeError::Stopped.to_string())],
@@ -247,8 +201,9 @@ mod tests {
     fn rapid_toggles_store_one_at_a_time_and_end_on_the_last_choice(cx: &mut TestAppContext) {
         let rt = runtime();
         let parked = runtime();
-        let settings = Arc::new(GatedSettings::closed());
-        let setting = setting(parked_service(&parked), Arc::clone(&settings) as _, &rt);
+        let settings = MemorySettings::new();
+        settings.hold_writes();
+        let setting = setting(parked_service(&parked), Arc::new(settings.clone()), &rt);
         let settled = cx.new(|_| Settled::default());
 
         toggle(&setting, &settled, false, cx);
@@ -256,14 +211,22 @@ mod tests {
         for enabled in [true, false, true] {
             toggle(&setting, &settled, enabled, cx);
         }
-        settings.gate.add_permits(4);
+        settings.release_writes();
         pump(&rt);
         cx.run_until_parked();
 
+        let stored: Vec<String> = settings
+            .write_log()
+            .into_iter()
+            .filter_map(|write| match write {
+                SettingsWrite::Put { value, .. } => Some(value),
+                SettingsWrite::Delete { .. } => None,
+            })
+            .collect();
         assert_eq!(
             (
-                settings.stored.lock().unwrap().clone(),
-                settings.most_in_flight.load(Ordering::SeqCst),
+                stored,
+                settings.peak_concurrent_writes(),
                 outcomes(&settled, cx).last().cloned()
             ),
             (

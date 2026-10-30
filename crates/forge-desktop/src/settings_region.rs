@@ -340,8 +340,11 @@ mod tests {
     use forge_components::{FOLLOW_REGION_CODE, active_display_formats};
     use forge_storage::SettingDisclosure::Verbatim;
     use forge_storage::SettingPortability::Portable;
+    use forge_storage::settings::core_settings::{
+        DATE_FORMAT, FIRST_DAY_OF_WEEK, REGION, TIME_FORMAT,
+    };
     use forge_storage::test_support::{MemorySettings, StoredSettingRow};
-    use forge_storage::{Language, RowClasses, reserved_keys};
+    use forge_storage::{Language, RowClasses};
     use gpui::{Entity, TestAppContext};
     use time::{Date, Month, Time};
 
@@ -423,7 +426,7 @@ mod tests {
                 cx.update(|cx| cx.global::<ActiveDisplayFormats>().0.date_format),
             ),
             (
-                Some((reserved_keys::DATE_FORMAT.to_owned(), "ymd".to_owned())),
+                Some((DATE_FORMAT.name().to_owned(), "ymd".to_owned())),
                 DateFormatChoice::YearMonthDay,
                 FormatChoice::Fixed(DateFormatChoice::YearMonthDay),
             )
@@ -446,7 +449,7 @@ mod tests {
         assert_eq!(
             (writes.try_recv().ok(), active_display_formats()),
             (
-                Some((reserved_keys::REGION.to_owned(), "US".to_owned())),
+                Some((REGION.name().to_owned(), "US".to_owned())),
                 DisplayFormatChoices::following(Region::UnitedStates).resolve(),
             )
         );
@@ -493,10 +496,10 @@ mod tests {
             disclosure: Verbatim,
         };
         for (key, value) in [
-            (reserved_keys::REGION, "US"),
-            (reserved_keys::DATE_FORMAT, "ymd"),
-            (reserved_keys::TIME_FORMAT, "12h"),
-            (reserved_keys::FIRST_DAY_OF_WEEK, "sat"),
+            (REGION.name(), "US"),
+            (DATE_FORMAT.name(), "ymd"),
+            (TIME_FORMAT.name(), "12h"),
+            (FIRST_DAY_OF_WEEK.name(), "sat"),
         ] {
             assert_eq!(
                 memory.row(key),
@@ -549,8 +552,8 @@ mod tests {
         assert_eq!(
             writes.map(|write| write.map(|(setting, code)| (setting.name(), code))),
             [
-                Some((reserved_keys::TIME_FORMAT, FOLLOW_REGION_CODE)),
-                Some((reserved_keys::FIRST_DAY_OF_WEEK, FOLLOW_REGION_CODE)),
+                Some((TIME_FORMAT.name(), FOLLOW_REGION_CODE)),
+                Some((FIRST_DAY_OF_WEEK.name(), FOLLOW_REGION_CODE)),
             ]
         );
     }

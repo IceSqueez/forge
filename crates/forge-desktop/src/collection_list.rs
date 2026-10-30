@@ -9,8 +9,8 @@ use gpui::{
     AnyElement, ClickEvent, Context, EventEmitter, SharedString, Window, div, prelude::*, px,
 };
 
-use crate::collection_text::localized_collection_text;
 use crate::toasts::copy_to_clipboard;
+use crate::user_text::user_text_string;
 use forge_components::ActivePresentation;
 use forge_components::{FONT_FIELD, failure_note, failure_with_retry, field_frame};
 
@@ -61,10 +61,7 @@ impl CollectionList {
         Self {
             toggles: toggles
                 .into_iter()
-                .map(|(key, label)| ToggleColumn {
-                    key,
-                    label: localized_collection_text(&label),
-                })
+                .map(|(key, label)| ToggleColumn { key, label })
                 .collect(),
             items: Vec::new(),
             load: ListLoad::Loading,
@@ -211,7 +208,7 @@ impl CollectionList {
                                 .font_family(body_family())
                                 .text_size(REASON_FONT)
                                 .text_color(palette.text_faint)
-                                .child(localized_collection_text(reason)),
+                                .child(user_text_string(reason)),
                         ),
                 );
                 badge(
@@ -381,6 +378,7 @@ mod tests {
     use gpui::{Entity, Subscription, TestAppContext};
 
     use super::*;
+    use forge_types::UserText;
 
     const ENABLED: &str = "enabled";
 
@@ -416,7 +414,7 @@ mod tests {
             id,
             true,
             CollectionItemAccess::ReadOnly {
-                reason: "elsewhere".to_owned(),
+                reason: UserText::unlocalized("elsewhere"),
             },
         )
     }

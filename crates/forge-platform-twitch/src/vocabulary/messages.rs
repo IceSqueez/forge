@@ -1,6 +1,10 @@
 use forge_types::{MessageCatalog, MessageCode, MessageRef, UpstreamDetail, VerbatimText};
 
 use crate::vocabulary::PLATFORM_ID;
+use crate::vocabulary::labels;
+
+pub const STORED_SIGN_IN_UNREADABLE: MessageCode =
+    MessageCode::from_static(PLATFORM_ID, "stored_sign_in_unreadable");
 
 pub const HEALTH_CHAT: MessageCode = MessageCode::from_static(PLATFORM_ID, "health_chat");
 pub const HEALTH_EVENTSUB: MessageCode = MessageCode::from_static(PLATFORM_ID, "health_eventsub");
@@ -98,6 +102,7 @@ const MAX_CONDITION_ARG: &str = "max";
 pub const TWITCH_MESSAGES: MessageCatalog = MessageCatalog {
     namespace: PLATFORM_ID,
     codes: &[
+        STORED_SIGN_IN_UNREADABLE,
         HEALTH_CHAT,
         HEALTH_EVENTSUB,
         HEALTH_API_CALLS,
@@ -152,6 +157,113 @@ pub const TWITCH_MESSAGES: MessageCatalog = MessageCatalog {
         CONDITION_AMOUNT_AT_LEAST,
         CONDITION_BITS_AT_LEAST,
         CONDITION_LEVEL_AT_LEAST,
+        labels::AD_120_SECONDS,
+        labels::AD_150_SECONDS,
+        labels::AD_180_SECONDS,
+        labels::AD_30_SECONDS,
+        labels::AD_60_SECONDS,
+        labels::AD_90_SECONDS,
+        labels::AD_COOLDOWN_HINT,
+        labels::ADD_MOD,
+        labels::ADD_VIP,
+        labels::AFFILIATE,
+        labels::ANNOUNCEMENT,
+        labels::ANNOUNCEMENT_TEXT,
+        labels::BACKGROUND_COLOR,
+        labels::BAN_USER,
+        labels::BLUE,
+        labels::CANCEL_POLL,
+        labels::CANCEL_RAID,
+        labels::CANCEL_REFUND,
+        labels::CATEGORY,
+        labels::CATEGORY_EXAMPLE,
+        labels::CHANNEL,
+        labels::CHANNEL_NAME,
+        labels::CHANNEL_POINT_REWARDS,
+        labels::CHANNEL_POINTS,
+        labels::CHANNEL_POINTS_VOTING,
+        labels::CHAT,
+        labels::CHOICES_ONE_PER_LINE,
+        labels::CLEAR_CHAT,
+        labels::COLOR,
+        labels::CREATE_STREAM_MARKER,
+        labels::CREATED_OUTSIDE_FORGE,
+        labels::DURATION,
+        labels::DURATION_SECONDS,
+        labels::EMOTE_ONLY_MODE,
+        labels::ENABLED,
+        labels::END_POLL_NOW,
+        labels::END_SHIELD_MODE,
+        labels::EVENTSUB_SUBSCRIPTIONS,
+        labels::FOLLOWERS_ONLY_MODE,
+        labels::FULFILL_REDEMPTION,
+        labels::GLOBAL_COOLDOWN,
+        labels::GREEN,
+        labels::LOCK_PREDICTION,
+        labels::MANAGE_REWARDS,
+        labels::MARKER_NOTE,
+        labels::MAX_PER_STREAM,
+        labels::MAX_PER_VIEWER,
+        labels::MESSAGE,
+        labels::MIN_ACCOUNT_AGE,
+        labels::MODERATION,
+        labels::OAUTH_SCOPES,
+        labels::OFF,
+        labels::ON,
+        labels::ONE_CHOICE_PER_LINE,
+        labels::ONE_OUTCOME_PER_LINE,
+        labels::OPTIONAL,
+        labels::ORANGE,
+        labels::OUTCOMES_ONE_PER_LINE,
+        labels::PARTNER,
+        labels::PAUSED,
+        labels::POLL_QUESTION,
+        labels::POLLS,
+        labels::PREDICTION_QUESTION,
+        labels::PREDICTIONS,
+        labels::PRIMARY,
+        labels::PROMPT,
+        labels::PURPLE,
+        labels::QUESTION,
+        labels::RAID_TARGET,
+        labels::RAIDS_ADS,
+        labels::REASON,
+        labels::REJECT_REFUND,
+        labels::REMOVE_MOD,
+        labels::REMOVE_VIP,
+        labels::REQUIRE_VIEWER_INPUT,
+        labels::RESOLVE_PAY_OUT,
+        labels::RETRY_PENDING,
+        labels::REWARD_COST,
+        labels::REWARD_TITLE_PLACEHOLDER,
+        labels::RUN_COMMERCIAL,
+        labels::SEND_MESSAGE,
+        labels::SEND_SHOUTOUT,
+        labels::SET_CATEGORY_GAME,
+        labels::SHIELD_SCOPE_MISSING,
+        labels::SLOW_MODE,
+        labels::SNOOZE_NEXT_AD,
+        labels::STANDARD,
+        labels::START_POLL,
+        labels::START_PREDICTION,
+        labels::START_RAID,
+        labels::START_SHIELD_MODE,
+        labels::STREAM_INFO,
+        labels::STREAM_TITLE,
+        labels::TAGS_COMMA_SEP,
+        labels::TAGS_EXAMPLE,
+        labels::TIER_LOCKED,
+        labels::TIMEOUT_USER,
+        labels::TITLE,
+        labels::UNBAN_USER,
+        labels::UNCHANGED,
+        labels::UPDATE_TAGS,
+        labels::UPDATE_TITLE,
+        labels::USERNAME,
+        labels::USERNAME_PLACEHOLDER,
+        labels::WAIT_TIME_SECONDS,
+        labels::WINDOW_SECONDS,
+        labels::SUBSCRIPTION_DROPPED,
     ],
     en_ftl: include_str!("../../locales/en/messages.ftl"),
     uk_ftl: include_str!("../../locales/uk/messages.ftl"),
@@ -459,15 +571,22 @@ mod tests {
     }
 
     #[test]
-    fn every_catalogued_code_is_produced_by_a_constructor_or_is_a_health_label() {
+    fn every_catalogued_code_is_produced_by_a_constructor_or_is_a_plain_label() {
         let produced: Vec<MessageCode> = every_constructor()
             .iter()
             .map(|m| m.code().clone())
             .collect();
-        let health = [HEALTH_CHAT, HEALTH_EVENTSUB, HEALTH_API_CALLS];
+        let unconstructed = [
+            HEALTH_CHAT,
+            HEALTH_EVENTSUB,
+            HEALTH_API_CALLS,
+            STORED_SIGN_IN_UNREADABLE,
+        ];
         for code in TWITCH_MESSAGES.codes {
             assert!(
-                produced.contains(code) || health.contains(code),
+                produced.contains(code)
+                    || unconstructed.contains(code)
+                    || code.name().starts_with("label_"),
                 "{code} has no constructor in the table"
             );
         }

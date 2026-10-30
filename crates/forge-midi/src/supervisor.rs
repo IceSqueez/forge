@@ -798,7 +798,7 @@ mod tests {
         .await;
     }
 
-    fn input_status(client: &MidiClient, port: &str) -> (Option<String>, bool) {
+    fn input_status(client: &MidiClient, port: &str) -> (Option<forge_types::UserText>, bool) {
         use forge_platform_core::{BuiltinContent, DetailSection};
 
         let sections = client.sections();
@@ -828,14 +828,14 @@ mod tests {
 
         assert_eq!(
             input_status(&client, "A"),
-            (Some("OPEN FAILED".to_owned()), false)
+            (Some(crate::vocabulary::labels::OPEN_FAILED.into()), false)
         );
 
         backend.state.lock().unwrap().refused_opens.clear();
         client.rescan_ports().await.unwrap();
         wait_until("the retried open", || open_ports(&backend) == 1).await;
         wait_until("the subscribed status", || {
-            input_status(&client, "A") == (Some("SUBSCRIBED".to_owned()), true)
+            input_status(&client, "A") == (Some(crate::vocabulary::labels::SUBSCRIBED.into()), true)
         })
         .await;
     }
@@ -850,7 +850,7 @@ mod tests {
 
         assert_eq!(
             input_status(&client, "A"),
-            (Some("DISABLED".to_owned()), false)
+            (Some(crate::vocabulary::labels::DISABLED.into()), false)
         );
     }
 

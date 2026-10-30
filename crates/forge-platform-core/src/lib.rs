@@ -10,6 +10,9 @@ mod connection_announcer;
 mod credential_errors;
 mod donation;
 pub mod donation_test;
+#[cfg(test)]
+#[path = "../test_support/emitted_codes.rs"]
+mod emitted_codes;
 mod endpoints;
 mod error;
 mod follow_lookup;
@@ -29,8 +32,8 @@ pub use builtin::{
     HealthMetricId, HealthStream, HealthText, HealthValue, HeroBadge, HeroBadgeTone, InfoField,
     KeyValueRow, ListFooter, QuickAction, QuickActionAccent, QuickActionChoiceOption,
     QuickActionChoiceSource, QuickActionField, QuickActionFieldKind, QuickActionFieldValue,
-    QuickActionLiveness, QuickActions, RowAction, SectionIcon, StatColumn, SubscriptionRow,
-    SubscriptionStatus, TokenColor, TrailingToken,
+    QuickActionGroup, QuickActionLiveness, QuickActions, RowAction, SectionIcon, StatColumn,
+    SubscriptionRow, SubscriptionStatus, TokenColor, TrailingToken,
 };
 pub use capabilities::PlatformCapabilities;
 pub use chat::{

@@ -3,45 +3,65 @@ use std::collections::BTreeMap;
 use forge_platform_core::{
     BuiltinStatus, QuickAction, QuickActionAccent, QuickActionChoiceOption,
     QuickActionChoiceSource, QuickActionField, QuickActionFieldKind, QuickActionFieldValue,
-    QuickActionLiveness, QuickActions, SectionIcon,
+    QuickActionGroup, QuickActionLiveness, QuickActions, SectionIcon,
 };
 use forge_registry::ConfigChoice;
-use forge_types::SubActionStep;
+use forge_types::{MessageCode, SubActionStep, UserText, VerbatimText};
 
 use crate::builtin::YoutubeIntegrationBundle;
 use crate::sub_actions::PrivacyStatus;
-use crate::vocabulary::{config_keys, sub_action_ids};
+use crate::vocabulary::{config_keys, labels, sub_action_ids};
 
 const GAMING_CATEGORY_ID: &str = "20";
-const BROADCAST: &str = "Broadcast";
-const POLLS: &str = "Polls";
-const CHAT: &str = "Chat";
-const CONTENT: &str = "Content";
-const CHANNEL_ID_PLACEHOLDER: &str = "Channel ID (UC...)";
 
-fn group_badge(group: &str) -> (SectionIcon, QuickActionAccent) {
-    match group {
-        BROADCAST => (SectionIcon::new("broadcast"), QuickActionAccent::Danger),
-        POLLS => (SectionIcon::new("chart-bar"), QuickActionAccent::Brand),
-        CHAT => (SectionIcon::new("message-2"), QuickActionAccent::Brand),
-        CONTENT => (SectionIcon::new("video"), QuickActionAccent::Bits),
-        _ => (SectionIcon::new("dot"), QuickActionAccent::Brand),
+#[derive(Clone, Copy)]
+enum Group {
+    Broadcast,
+    Polls,
+    Chat,
+    Content,
+}
+
+impl Group {
+    fn badge(self) -> QuickActionGroup {
+        let (label, icon, accent) = match self {
+            Self::Broadcast => (labels::BROADCAST, "broadcast", QuickActionAccent::Danger),
+            Self::Polls => (labels::POLLS, "chart-bar", QuickActionAccent::Brand),
+            Self::Chat => (labels::CHAT, "message-2", QuickActionAccent::Brand),
+            Self::Content => (labels::CONTENT, "video", QuickActionAccent::Bits),
+        };
+        QuickActionGroup {
+            label: label.into(),
+            icon: SectionIcon::new(icon),
+            accent,
+        }
     }
 }
 
-fn text_field(key: &str, label: &str, placeholder: &str) -> QuickActionField {
+fn bare_text_field(key: &str, label: MessageCode) -> QuickActionField {
     QuickActionField {
         key: key.to_owned(),
-        label: label.to_owned(),
+        label: label.into(),
         kind: QuickActionFieldKind::Text,
         default: None,
-        placeholder: Some(placeholder.to_owned()),
+        placeholder: None,
         hint: None,
         required: false,
     }
 }
 
-fn multiline_field(key: &str, label: &str, placeholder: &str) -> QuickActionField {
+fn text_field(key: &str, label: MessageCode, placeholder: impl Into<UserText>) -> QuickActionField {
+    QuickActionField {
+        placeholder: Some(placeholder.into()),
+        ..bare_text_field(key, label)
+    }
+}
+
+fn multiline_field(
+    key: &str,
+    label: MessageCode,
+    placeholder: impl Into<UserText>,
+) -> QuickActionField {
     QuickActionField {
         kind: QuickActionFieldKind::Multiline,
         ..text_field(key, label, placeholder)
@@ -53,7 +73,7 @@ fn privacy_field() -> QuickActionField {
         .iter()
         .map(|status| QuickActionChoiceOption {
             value: status.wire_name().to_owned(),
-            label: status.label().to_owned(),
+            label: status.label().into(),
         })
         .collect();
     QuickActionField {
@@ -61,29 +81,25 @@ fn privacy_field() -> QuickActionField {
         default: Some(QuickActionFieldValue::Text(
             PrivacyStatus::Public.wire_name().to_owned(),
         )),
-        placeholder: None,
-        ..text_field(config_keys::PRIVACY_STATUS, "Visibility", "")
+        ..bare_text_field(config_keys::PRIVACY_STATUS, labels::VISIBILITY)
     }
 }
 
 fn quick_action(
-    label: &str,
+    label: MessageCode,
     icon: &str,
     accent: QuickActionAccent,
-    group: &str,
+    group: Group,
     kind_id: &str,
     fields: Vec<QuickActionField>,
 ) -> QuickAction {
-    let (group_icon, group_accent) = group_badge(group);
     QuickAction {
-        label: label.to_owned(),
+        label: label.into(),
         icon: SectionIcon::new(icon),
         enabled: false,
         locked_reason: None,
         liveness: QuickActionLiveness::Unknown,
-        group: Some(group.to_owned()),
-        group_icon: Some(group_icon),
-        group_accent: Some(group_accent),
+        group: Some(group.badge()),
         destructive: false,
         accent,
         subaction_template: SubActionStep {
@@ -109,138 +125,175 @@ fn destructive(action: QuickAction) -> QuickAction {
 fn catalog() -> Vec<QuickAction> {
     vec![
         quick_action(
-            "Update title",
+            labels::UPDATE_TITLE,
             "edit",
             QuickActionAccent::Info,
-            BROADCAST,
+            Group::Broadcast,
             sub_action_ids::STREAM_UPDATE_TITLE,
-            vec![text_field(config_keys::TITLE, "Title", "New stream title").required()],
+            vec![
+                text_field(config_keys::TITLE, labels::TITLE, labels::NEW_STREAM_TITLE).required(),
+            ],
         ),
         quick_action(
-            "Update description",
+            labels::UPDATE_DESCRIPTION,
             "file-text",
             QuickActionAccent::Brand,
-            BROADCAST,
+            Group::Broadcast,
             sub_action_ids::STREAM_UPDATE_DESCRIPTION,
             vec![
                 multiline_field(
                     config_keys::DESCRIPTION,
-                    "Description",
-                    "Stream description",
+                    labels::DESCRIPTION,
+                    labels::STREAM_DESCRIPTION,
                 )
                 .required(),
             ],
         ),
         quick_action(
-            "Set category",
+            labels::SET_CATEGORY,
             "category",
             QuickActionAccent::Success,
-            BROADCAST,
+            Group::Broadcast,
             sub_action_ids::STREAM_UPDATE_CATEGORY,
             vec![
                 QuickActionField {
                     default: Some(QuickActionFieldValue::Text(GAMING_CATEGORY_ID.to_owned())),
                     ..text_field(
                         config_keys::CATEGORY_ID,
-                        "Category ID",
-                        "20 (Gaming), 24 (Entertainment)...",
+                        labels::CATEGORY_ID,
+                        labels::CATEGORY_ID_EXAMPLES,
                     )
                 }
                 .required(),
             ],
         ),
         quick_action(
-            "Change privacy",
+            labels::CHANGE_PRIVACY,
             "eye",
             QuickActionAccent::Warning,
-            BROADCAST,
+            Group::Broadcast,
             sub_action_ids::STREAM_UPDATE_PRIVACY,
             vec![privacy_field().required()],
         ),
         quick_action(
-            "Set thumbnail",
+            labels::SET_THUMBNAIL,
             "photo",
             QuickActionAccent::Bits,
-            BROADCAST,
+            Group::Broadcast,
             sub_action_ids::STREAM_SET_THUMBNAIL,
             vec![
                 text_field(
                     config_keys::IMAGE_PATH,
-                    "Image path",
-                    "/full/path/to/thumbnail.png",
+                    labels::IMAGE_PATH,
+                    VerbatimText::new("/full/path/to/thumbnail.png"),
                 )
                 .required(),
             ],
         ),
         quick_action(
-            "Insert ad break (cuepoint)",
+            labels::INSERT_AD_BREAK,
             "player-skip-forward",
             QuickActionAccent::Info,
-            BROADCAST,
+            Group::Broadcast,
             sub_action_ids::STREAM_INSERT_AD_BREAK,
             Vec::new(),
         ),
         quick_action(
-            "Create live poll",
+            labels::CREATE_LIVE_POLL,
             "chart-bar",
             QuickActionAccent::Brand,
-            POLLS,
+            Group::Polls,
             sub_action_ids::CHAT_CREATE_POLL,
             vec![
-                text_field(config_keys::QUESTION, "Question", "Poll question").required(),
+                text_field(
+                    config_keys::QUESTION,
+                    labels::QUESTION,
+                    labels::POLL_QUESTION,
+                )
+                .required(),
                 multiline_field(
                     config_keys::OPTIONS,
-                    "Choices (one per line)",
-                    "One choice per line",
+                    labels::CHOICES_ONE_PER_LINE,
+                    labels::ONE_CHOICE_PER_LINE,
                 )
                 .required(),
             ],
         ),
         quick_action(
-            "Send message",
+            labels::SEND_MESSAGE,
             "send",
             QuickActionAccent::Brand,
-            CHAT,
+            Group::Chat,
             sub_action_ids::CHAT_SEND_MESSAGE,
-            vec![multiline_field(config_keys::MESSAGE, "Message", "Message").required()],
+            vec![
+                multiline_field(config_keys::MESSAGE, labels::MESSAGE, labels::MESSAGE).required(),
+            ],
         ),
         destructive(quick_action(
-            "Delete message",
+            labels::DELETE_MESSAGE,
             "trash",
             QuickActionAccent::Danger,
-            CHAT,
+            Group::Chat,
             sub_action_ids::CHAT_DELETE_MESSAGE,
-            vec![text_field(config_keys::MESSAGE_ID, "Message ID", "message id").required()],
+            vec![
+                text_field(
+                    config_keys::MESSAGE_ID,
+                    labels::MESSAGE_ID_FIELD,
+                    labels::MESSAGE_ID_HINT,
+                )
+                .required(),
+            ],
         )),
         quick_action(
-            "Timeout user",
+            labels::TIMEOUT_USER,
             "clock-pause",
             QuickActionAccent::Warning,
-            CHAT,
+            Group::Chat,
             sub_action_ids::MODERATION_TIMEOUT_USER,
-            vec![text_field(config_keys::CHANNEL_ID, "User", CHANNEL_ID_PLACEHOLDER).required()],
+            vec![
+                text_field(
+                    config_keys::CHANNEL_ID,
+                    labels::USER,
+                    labels::CHANNEL_ID_PLACEHOLDER,
+                )
+                .required(),
+            ],
         ),
         destructive(quick_action(
-            "Ban user",
+            labels::BAN_USER,
             "ban",
             QuickActionAccent::Danger,
-            CHAT,
+            Group::Chat,
             sub_action_ids::MODERATION_BAN_USER,
-            vec![text_field(config_keys::CHANNEL_ID, "User", CHANNEL_ID_PLACEHOLDER).required()],
+            vec![
+                text_field(
+                    config_keys::CHANNEL_ID,
+                    labels::USER,
+                    labels::CHANNEL_ID_PLACEHOLDER,
+                )
+                .required(),
+            ],
         )),
         quick_action(
-            "Lookup viewer",
+            labels::LOOKUP_VIEWER,
             "user",
             QuickActionAccent::Success,
-            CONTENT,
+            Group::Content,
             sub_action_ids::LOOKUP_VIEWER,
-            vec![text_field(config_keys::IDENTIFIER, "Username", "@handle or UC...").required()],
+            vec![
+                text_field(
+                    config_keys::IDENTIFIER,
+                    labels::USERNAME,
+                    labels::VIEWER_IDENTIFIER_EXAMPLE,
+                )
+                .required(),
+            ],
         ),
         quick_action(
-            "Stream stats",
+            labels::STREAM_STATS,
             "chart-line",
             QuickActionAccent::Info,
-            CONTENT,
+            Group::Content,
             sub_action_ids::LOOKUP_STREAM_STATS,
             Vec::new(),
         ),

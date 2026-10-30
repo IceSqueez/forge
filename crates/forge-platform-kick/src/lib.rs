@@ -8,6 +8,9 @@ mod builtin;
 pub mod capabilities;
 pub(crate) mod control;
 #[cfg(test)]
+#[path = "../../forge-platform-core/test_support/emitted_codes.rs"]
+mod emitted_codes;
+#[cfg(test)]
 mod endpoints_test_support;
 mod gateway;
 mod integration;

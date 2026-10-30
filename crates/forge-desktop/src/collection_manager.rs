@@ -18,6 +18,7 @@ use crate::async_bridge;
 use crate::collection_form::{CollectionForm, CollectionFormEvent};
 use crate::collection_list::{CollectionList, CollectionListEvent, ListLoad};
 use crate::collection_text::{collection_failure_message, localized_collection_text};
+use crate::user_text::user_text_string;
 use forge_components::ActivePresentation;
 use forge_components::PushToast;
 
@@ -64,7 +65,7 @@ impl CollectionManager {
         let toggles = metadata
             .toggles
             .iter()
-            .map(|toggle| (toggle.key.clone(), toggle.label.clone()));
+            .map(|toggle| (toggle.key.clone(), user_text_string(&toggle.label)));
         let list = cx.new(|_| CollectionList::new(toggles));
         let list_sub = cx.subscribe(&list, Self::on_list_event);
         let mut revisions = capability.revisions();
@@ -76,7 +77,7 @@ impl CollectionManager {
             }
         });
         let mut manager = Self {
-            title: localized_collection_text(&metadata.label),
+            title: user_text_string(&metadata.label),
             capability,
             metadata,
             accent,

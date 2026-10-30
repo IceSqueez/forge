@@ -138,17 +138,6 @@ impl PollStatus {
         }
     }
 
-    pub const fn phase_label(&self) -> &'static str {
-        match self.phase {
-            PollPhase::Paused => "Paused",
-            PollPhase::AwaitingToken => "Waiting for a token",
-            PollPhase::Starting => "Starting",
-            PollPhase::Polling => "Polling",
-            PollPhase::Retrying => "Retrying",
-            PollPhase::ActionRequired => "Action required",
-        }
-    }
-
     pub fn uptime(&self) -> Option<Duration> {
         self.polling_since.map(|since| since.elapsed())
     }

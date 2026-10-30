@@ -1,3 +1,5 @@
+use crate::vocabulary::labels;
+use forge_types::UserText;
 use std::sync::Arc;
 use std::time::{Duration, SystemTime};
 
@@ -609,13 +611,13 @@ impl BuiltinStatus for TwitchIntegrationBundle {
 
     fn name_badges(&self) -> Vec<HeroBadge> {
         let mut badges = vec![HeroBadge {
-            label: format!("user_id {}", self.config.user_id),
+            label: UserText::unlocalized(format!("user_id {}", self.config.user_id)),
             tone: HeroBadgeTone::Neutral,
             monospace: true,
         }];
         let tier = self.tier();
         badges.push(HeroBadge {
-            label: tier.label().to_owned(),
+            label: tier.label().into(),
             tone: if tier == BroadcasterTier::Standard {
                 HeroBadgeTone::Neutral
             } else {
@@ -658,7 +660,7 @@ impl BuiltinHealth for TwitchIntegrationBundle {
 impl BuiltinContent for TwitchIntegrationBundle {
     fn sections(&self) -> Vec<DetailSection> {
         let scopes_list = DetailSection::ScopesList {
-            title: "OAuth scopes".to_owned(),
+            title: labels::OAUTH_SCOPES.into(),
             icon: SectionIcon::new("key"),
             scopes: TWITCH_BROADCASTER_SCOPES
                 .iter()
@@ -679,10 +681,14 @@ impl BuiltinContent for TwitchIntegrationBundle {
                 let (status, error_label) = match &r.status {
                     SubStatus::Active => (SubscriptionStatus::Active, None),
                     SubStatus::Pending => (SubscriptionStatus::Degraded, None),
-                    SubStatus::Retrying(_) => {
-                        (SubscriptionStatus::Error, Some("retry pending".to_owned()))
-                    }
-                    SubStatus::Failed(reason) => (SubscriptionStatus::Error, Some(reason.clone())),
+                    SubStatus::Retrying(_) => (
+                        SubscriptionStatus::Error,
+                        Some(labels::RETRY_PENDING.into()),
+                    ),
+                    SubStatus::Failed(reason) => (
+                        SubscriptionStatus::Error,
+                        Some(UserText::unlocalized(reason.clone())),
+                    ),
                 };
                 SubscriptionRow {
                     name: r.label(),
@@ -695,11 +701,15 @@ impl BuiltinContent for TwitchIntegrationBundle {
             .collect();
 
         let eventsub_list = DetailSection::SubscriptionList {
-            title: "EventSub subscriptions".to_owned(),
+            title: labels::EVENTSUB_SUBSCRIPTIONS.into(),
             icon: SectionIcon::new("rss"),
             items: sub_items,
             footer: None,
-            banner: dropped_kind.map(|kind| format!("{kind} subscription dropped")),
+            banner: dropped_kind.map(|kind| {
+                MessageRef::new(labels::SUBSCRIPTION_DROPPED)
+                    .with_arg("kind", VerbatimText::new(kind))
+                    .into()
+            }),
         };
 
         vec![DetailSection::TwoColumn {
@@ -1110,11 +1120,11 @@ mod tests {
             let b = make_bundle_with_tier(ChatConnectionState::Connected, tier);
             let status: &dyn BuiltinStatus = b.as_ref();
             let badges = status.name_badges();
-            assert_eq!(badges[0].label, "user_id 1");
+            assert_eq!(badges[0].label, UserText::unlocalized("user_id 1"));
             assert!(badges[0].monospace);
             let tier_badge = badges
                 .iter()
-                .find(|badge| badge.label == tier.label())
+                .find(|badge| badge.label == UserText::from(tier.label()))
                 .unwrap_or_else(|| panic!("tier {tier:?} badge missing"));
             assert_eq!(tier_badge.tone, tone, "tier {tier:?}");
         }
@@ -1144,7 +1154,7 @@ mod tests {
         let DetailSection::ScopesList { title, scopes, .. } = left.as_ref() else {
             panic!("expected ScopesList on the left");
         };
-        assert_eq!(title, "OAuth scopes");
+        assert_eq!(*title, UserText::from(labels::OAUTH_SCOPES));
         assert!(
             scopes
                 .iter()
@@ -1154,12 +1164,18 @@ mod tests {
         let DetailSection::SubscriptionList { title, .. } = right.as_ref() else {
             panic!("expected SubscriptionList on the right");
         };
-        assert_eq!(title, "EventSub subscriptions");
+        assert_eq!(*title, UserText::from(labels::EVENTSUB_SUBSCRIPTIONS));
+    }
+
+    fn dropped_banner(kind: &str) -> UserText {
+        MessageRef::new(labels::SUBSCRIPTION_DROPPED)
+            .with_arg("kind", VerbatimText::new(kind))
+            .into()
     }
 
     fn subscription_list(
         bundle: &TwitchIntegrationBundle,
-    ) -> (Vec<SubscriptionRow>, Option<String>) {
+    ) -> (Vec<SubscriptionRow>, Option<UserText>) {
         let content: &dyn BuiltinContent = bundle;
         let sections = content.sections();
         let DetailSection::TwoColumn { right, .. } = sections.into_iter().next().unwrap() else {
@@ -1224,23 +1240,20 @@ mod tests {
                 &items[2],
                 "channel.cheer",
                 SubscriptionStatus::Error,
-                Some("retry pending"),
+                Some(UserText::from(labels::RETRY_PENDING)),
             ),
             (
                 &items[3],
                 "channel.follow",
                 SubscriptionStatus::Error,
-                Some("missing scope"),
+                Some(UserText::unlocalized("missing scope")),
             ),
         ] {
             assert_eq!(row.name, name);
             assert_eq!(row.status, expected_status);
-            assert_eq!(row.error_label.as_deref(), expected_error);
+            assert_eq!(row.error_label, expected_error);
         }
-        assert_eq!(
-            banner.as_deref(),
-            Some("channel.cheer subscription dropped")
-        );
+        assert_eq!(banner, Some(dropped_banner("channel.cheer")));
     }
 
     #[test]
@@ -1266,7 +1279,7 @@ mod tests {
 
         let (_, banner) = subscription_list(&b);
 
-        assert_eq!(banner.as_deref(), Some("channel.ban subscription dropped"));
+        assert_eq!(banner, Some(dropped_banner("channel.ban")));
     }
 
     #[test]
@@ -1284,10 +1297,10 @@ mod tests {
         let (items, banner) = subscription_list(&b);
 
         assert_eq!(
-            (items[0].name.as_str(), banner.as_deref()),
+            (items[0].name.as_str(), banner),
             (
                 "channel.raid (outgoing)",
-                Some("channel.raid (outgoing) subscription dropped")
+                Some(dropped_banner("channel.raid (outgoing)"))
             )
         );
     }
@@ -1312,24 +1325,24 @@ mod tests {
         let by_label: BTreeMap<String, QuickActionLiveness> = b
             .actions()
             .into_iter()
-            .map(|a| (a.label, a.liveness))
+            .map(|a| (a.label.code_or_text(), a.liveness))
             .collect();
 
-        for (label, expected) in [
-            ("Start poll", QuickActionLiveness::Absent),
-            ("End poll (finish now)", QuickActionLiveness::Live),
-            ("Cancel poll", QuickActionLiveness::Live),
-            ("Start prediction", QuickActionLiveness::Absent),
-            ("Lock prediction", QuickActionLiveness::Absent),
-            ("Resolve / pay out", QuickActionLiveness::Live),
-            ("Cancel & refund", QuickActionLiveness::Live),
-            ("Start raid", QuickActionLiveness::Absent),
-            ("Cancel raid", QuickActionLiveness::Live),
+        for (code, expected) in [
+            (labels::START_POLL, QuickActionLiveness::Absent),
+            (labels::END_POLL_NOW, QuickActionLiveness::Live),
+            (labels::CANCEL_POLL, QuickActionLiveness::Live),
+            (labels::START_PREDICTION, QuickActionLiveness::Absent),
+            (labels::LOCK_PREDICTION, QuickActionLiveness::Absent),
+            (labels::RESOLVE_PAY_OUT, QuickActionLiveness::Live),
+            (labels::CANCEL_REFUND, QuickActionLiveness::Live),
+            (labels::START_RAID, QuickActionLiveness::Absent),
+            (labels::CANCEL_RAID, QuickActionLiveness::Live),
         ] {
             assert_eq!(
-                by_label.get(label),
+                by_label.get(&code.to_string()),
                 Some(&expected),
-                "{label} with an open poll, a locked prediction and a pending raid"
+                "{code} with an open poll, a locked prediction and a pending raid"
             );
         }
     }
@@ -1341,18 +1354,18 @@ mod tests {
             .actions()
             .into_iter()
             .filter(|a| a.destructive)
-            .map(|a| a.label)
+            .map(|a| a.label.code_or_text())
             .collect();
         destructive.sort();
         let mut expected = vec![
-            "Ban user".to_owned(),
-            "Cancel & refund".to_owned(),
-            "Cancel poll".to_owned(),
-            "Cancel raid".to_owned(),
-            "Clear chat".to_owned(),
-            "Reject & refund".to_owned(),
-            "Remove Mod".to_owned(),
-            "Remove VIP".to_owned(),
+            labels::BAN_USER.to_string(),
+            labels::CANCEL_REFUND.to_string(),
+            labels::CANCEL_POLL.to_string(),
+            labels::CANCEL_RAID.to_string(),
+            labels::CLEAR_CHAT.to_string(),
+            labels::REJECT_REFUND.to_string(),
+            labels::REMOVE_MOD.to_string(),
+            labels::REMOVE_VIP.to_string(),
         ];
         expected.sort();
         assert_eq!(destructive, expected);
@@ -1365,27 +1378,29 @@ mod tests {
 
         for (label, kind_id) in [
             (
-                "Add VIP",
+                labels::ADD_VIP,
                 crate::vocabulary::sub_action_ids::MODERATION_ADD_VIP,
             ),
             (
-                "Remove VIP",
+                labels::REMOVE_VIP,
                 crate::vocabulary::sub_action_ids::MODERATION_REMOVE_VIP,
             ),
             (
-                "Add Mod",
+                labels::ADD_MOD,
                 crate::vocabulary::sub_action_ids::MODERATION_ADD_MODERATOR,
             ),
             (
-                "Remove Mod",
+                labels::REMOVE_MOD,
                 crate::vocabulary::sub_action_ids::MODERATION_REMOVE_MODERATOR,
             ),
         ] {
-            let action = actions.iter().find(|a| a.label == label);
+            let action = actions
+                .iter()
+                .find(|a| a.label == UserText::from(label.clone()));
             assert_eq!(
                 action.map(|a| a.subaction_template.kind_id.as_str()),
                 Some(kind_id),
-                "{label}"
+                "{label:?}"
             );
         }
     }
@@ -1446,26 +1461,26 @@ mod tests {
     #[test]
     fn action_groups_appear_in_the_expected_order() {
         let b = make_bundle_with_tier(ChatConnectionState::Connected, BroadcasterTier::Affiliate);
-        let mut groups: Vec<String> = Vec::new();
+        let mut groups: Vec<UserText> = Vec::new();
         for a in b.actions() {
             if let Some(group) = a.group
-                && !groups.contains(&group)
+                && !groups.contains(&group.label)
             {
-                groups.push(group);
+                groups.push(group.label);
             }
         }
         assert_eq!(
             groups,
             [
-                "Stream info",
-                "Polls",
-                "Predictions",
-                "Chat",
-                "Moderation",
-                "Raids & ads",
-                "Channel Points",
+                labels::STREAM_INFO,
+                labels::POLLS,
+                labels::PREDICTIONS,
+                labels::CHAT,
+                labels::MODERATION,
+                labels::RAIDS_ADS,
+                labels::CHANNEL_POINTS,
             ]
-            .map(str::to_owned)
+            .map(UserText::from)
         );
     }
 
@@ -1624,7 +1639,7 @@ mod tests {
                 let step = action.merge_config(&typed);
                 let runner = reg.get(&step.kind_id)?;
                 let error = runner.validate_config(&step.config).err()?;
-                Some((action.label, error.to_string()))
+                Some((action.label.code_or_text(), error.to_string()))
             })
             .collect();
 
@@ -1867,7 +1882,7 @@ mod tests {
                     .kind_id
                     .starts_with("twitch.moderation.shield_mode")
             })
-            .map(|a| a.label)
+            .map(|a| a.label.code_or_text())
             .collect()
     }
 
@@ -1882,8 +1897,8 @@ mod tests {
         assert_eq!(
             (before, shield_labels(&b)),
             (
-                vec!["Start Shield mode".to_owned()],
-                vec!["End Shield mode".to_owned()]
+                vec![labels::START_SHIELD_MODE.to_string()],
+                vec![labels::END_SHIELD_MODE.to_string()]
             )
         );
     }
@@ -1921,5 +1936,71 @@ mod tests {
             })
             .count();
         assert_eq!(shield_queries, 1);
+    }
+
+    #[test]
+    fn every_code_shown_in_any_tier_and_connection_state_is_catalogued_in_both_languages() {
+        use crate::emitted_codes::{emitted_codes, uncatalogued};
+        use crate::vocabulary::messages::TWITCH_MESSAGES;
+
+        let dropped = SubscriptionTracker::default();
+        dropped.reset(vec![
+            SubscriptionRecord {
+                kind: "channel.cheer".to_owned(),
+                direction: None,
+                version: "1".to_owned(),
+                status: SubStatus::Retrying("HTTP 503".to_owned()),
+                subscription_id: None,
+            },
+            SubscriptionRecord {
+                kind: "channel.ban".to_owned(),
+                direction: None,
+                version: "1".to_owned(),
+                status: SubStatus::Failed("revoked".to_owned()),
+                subscription_id: None,
+            },
+        ]);
+        let shielded = make_bundle(ChatConnectionState::Connected);
+        shielded.lifecycle.apply_notification(
+            "channel.shield_mode.begin",
+            &serde_json::Value::Null,
+            "1",
+        );
+        for (case, bundle) in [
+            (
+                "standard",
+                make_bundle_with_tier(ChatConnectionState::Connected, BroadcasterTier::Standard),
+            ),
+            (
+                "affiliate",
+                make_bundle_with_tier(ChatConnectionState::Connected, BroadcasterTier::Affiliate),
+            ),
+            (
+                "partner",
+                make_bundle_with_tier(ChatConnectionState::Connected, BroadcasterTier::Partner),
+            ),
+            (
+                "disconnected",
+                make_bundle(ChatConnectionState::Disconnected),
+            ),
+            (
+                "dropped subscriptions",
+                make_bundle_with_tracker(ChatConnectionState::Connected, dropped),
+            ),
+            ("shield active", shielded),
+        ] {
+            let emitted = emitted_codes(&serde_json::json!((
+                bundle.actions(),
+                bundle.sections(),
+                bundle.name_badges()
+            )));
+
+            assert!(!emitted.is_empty(), "{case}");
+            assert_eq!(
+                uncatalogued(&emitted, &[TWITCH_MESSAGES, forge_types::COMMON_MESSAGES]),
+                Vec::<String>::new(),
+                "{case}"
+            );
+        }
     }
 }

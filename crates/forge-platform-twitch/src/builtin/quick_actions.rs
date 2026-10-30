@@ -2,10 +2,10 @@ use std::collections::BTreeMap;
 
 use forge_platform_core::{
     CollectionId, CollectionRevisions, QuickAction, QuickActionAccent, QuickActionField,
-    QuickActionLiveness, QuickActions, SectionIcon,
+    QuickActionGroup, QuickActionLiveness, QuickActions, SectionIcon,
 };
 use forge_registry::{ChoiceField, ConfigChoice, DurationField};
-use forge_types::{SubActionStep, Variant};
+use forge_types::{MessageCode, SubActionStep, UserText, Variant};
 
 use super::TwitchIntegrationBundle;
 use crate::account::identity::BroadcasterTier;
@@ -18,10 +18,8 @@ use crate::sub_actions::{
     AD_LENGTH, ANNOUNCEMENT_COLOR, AdLength, AnnouncementColor, EMOTE_ONLY, FOLLOWER_MODE_MIN_AGE,
     ModeToggle, POLL_DURATION, PREDICTION_WINDOW, PollEndStatus, SLOW_MODE_WAIT, TIMEOUT_DURATION,
 };
-use crate::vocabulary::{self, config_keys, sub_action_ids};
+use crate::vocabulary::{self, config_keys, labels, sub_action_ids};
 
-const TIER_LOCKED_REASON: &str = "Requires Twitch Affiliate or Partner";
-const SHIELD_SCOPE_MISSING_REASON: &str = "Sign in to Twitch again to grant Shield mode access";
 const QUICK_AD_LENGTH: AdLength = AdLength::Seconds90;
 const QUICK_SLOW_MODE_WAIT_SECONDS: i64 = 10;
 const QUICK_FOLLOWER_MIN_MINUTES: i64 = 10;
@@ -41,15 +39,15 @@ fn config(pairs: impl IntoIterator<Item = (&'static str, Variant)>) -> BTreeMap<
 }
 
 fn choice_options<T: ConfigChoice>(
-    label: fn(T) -> &'static str,
-) -> Vec<(&'static str, &'static str)> {
+    label: fn(T) -> MessageCode,
+) -> Vec<(&'static str, MessageCode)> {
     T::ALL
         .iter()
         .map(|choice| (choice.wire_name(), label(*choice)))
         .collect()
 }
 
-fn duration_field(field: &DurationField, label: &str, default: i64) -> QuickActionField {
+fn duration_field(field: &DurationField, label: MessageCode, default: i64) -> QuickActionField {
     int_field(
         field.key,
         label,
@@ -63,22 +61,41 @@ fn default_choice<T: ConfigChoice>(field: &ChoiceField<T>) -> &'static str {
     field.default.wire_name()
 }
 
-fn group_badge(group: &str) -> (SectionIcon, QuickActionAccent) {
-    match group {
-        "Stream info" => (SectionIcon::new("edit"), QuickActionAccent::Info),
-        "Polls" => (SectionIcon::new("chart-bar"), QuickActionAccent::Brand),
-        "Predictions" => (
-            SectionIcon::new("crystal-ball"),
-            QuickActionAccent::AccentPinkLight,
-        ),
-        "Chat" => (SectionIcon::new("message-2"), QuickActionAccent::Brand),
-        "Moderation" => (SectionIcon::new("shield"), QuickActionAccent::Danger),
-        "Raids & ads" => (SectionIcon::new("businessplan"), QuickActionAccent::Bits),
-        "Channel Points" => (
-            SectionIcon::new("diamond"),
-            QuickActionAccent::AccentPinkLight,
-        ),
-        _ => (SectionIcon::new("dot"), QuickActionAccent::Brand),
+#[derive(Clone, Copy)]
+enum Group {
+    StreamInfo,
+    Polls,
+    Predictions,
+    Chat,
+    Moderation,
+    RaidsAds,
+    ChannelPoints,
+}
+
+impl Group {
+    fn badge(self) -> QuickActionGroup {
+        let (label, icon, accent) = match self {
+            Self::StreamInfo => (labels::STREAM_INFO, "edit", QuickActionAccent::Info),
+            Self::Polls => (labels::POLLS, "chart-bar", QuickActionAccent::Brand),
+            Self::Predictions => (
+                labels::PREDICTIONS,
+                "crystal-ball",
+                QuickActionAccent::AccentPinkLight,
+            ),
+            Self::Chat => (labels::CHAT, "message-2", QuickActionAccent::Brand),
+            Self::Moderation => (labels::MODERATION, "shield", QuickActionAccent::Danger),
+            Self::RaidsAds => (labels::RAIDS_ADS, "businessplan", QuickActionAccent::Bits),
+            Self::ChannelPoints => (
+                labels::CHANNEL_POINTS,
+                "diamond",
+                QuickActionAccent::AccentPinkLight,
+            ),
+        };
+        QuickActionGroup {
+            label: label.into(),
+            icon: SectionIcon::new(icon),
+            accent,
+        }
     }
 }
 
@@ -87,27 +104,24 @@ fn group_badge(group: &str) -> (SectionIcon, QuickActionAccent) {
     reason = "each argument is one field of the quick-action template"
 )]
 fn quick_action(
-    label: &str,
+    label: MessageCode,
     icon: &str,
     accent: QuickActionAccent,
     enabled: bool,
-    locked_reason: Option<String>,
-    group: &str,
+    locked_reason: Option<UserText>,
+    group: Group,
     destructive: bool,
     kind_id: &str,
     config: BTreeMap<String, Variant>,
     fields: Vec<QuickActionField>,
 ) -> QuickAction {
-    let (group_icon, group_accent) = group_badge(group);
     QuickAction {
-        label: label.to_owned(),
+        label: label.into(),
         icon: SectionIcon::new(icon),
         enabled,
         locked_reason,
         liveness: QuickActionLiveness::Unknown,
-        group: Some(group.to_owned()),
-        group_icon: Some(group_icon),
-        group_accent: Some(group_accent),
+        group: Some(group.badge()),
         destructive,
         accent,
         subaction_template: SubActionStep {
@@ -124,11 +138,11 @@ fn quick_action(
 }
 
 fn manage_collection_action(
-    label: &str,
+    label: MessageCode,
     icon: &str,
     accent: QuickActionAccent,
     enabled: bool,
-    group: &str,
+    group: Group,
     collection: CollectionId,
 ) -> QuickAction {
     QuickAction {
@@ -155,13 +169,13 @@ fn gated_on(action: QuickAction, liveness: QuickActionLiveness) -> QuickAction {
 fn shield_mode_toggle(connected: bool, phase: ShieldPhase) -> QuickAction {
     let (label, icon, kind_id, liveness) = match phase {
         ShieldPhase::Active => (
-            "End Shield mode",
+            labels::END_SHIELD_MODE,
             "shield-off",
             sub_action_ids::MODERATION_SHIELD_MODE_OFF,
             QuickActionLiveness::Live,
         ),
         ShieldPhase::Inactive | ShieldPhase::Unknown | ShieldPhase::Unauthorized => (
-            "Start Shield mode",
+            labels::START_SHIELD_MODE,
             "shield",
             sub_action_ids::MODERATION_SHIELD_MODE_ON,
             QuickActionLiveness::Unknown,
@@ -174,8 +188,8 @@ fn shield_mode_toggle(connected: bool, phase: ShieldPhase) -> QuickAction {
             icon,
             QuickActionAccent::Brand,
             connected && !unauthorized,
-            unauthorized.then(|| SHIELD_SCOPE_MISSING_REASON.to_owned()),
-            "Moderation",
+            unauthorized.then(|| labels::SHIELD_SCOPE_MISSING.into()),
+            Group::Moderation,
             false,
             kind_id,
             BTreeMap::new(),
@@ -193,107 +207,123 @@ impl QuickActions for TwitchIntegrationBundle {
     fn actions(&self) -> Vec<QuickAction> {
         let connected = self.is_chat_connected();
         let tier_locked = self.tier() == BroadcasterTier::Standard;
-        let locked_reason = tier_locked.then(|| TIER_LOCKED_REASON.to_owned());
+        let locked_reason = tier_locked.then(|| labels::TIER_LOCKED.into());
         let gated = connected && !tier_locked;
         let live: LifecycleSnapshot = self.lifecycle.snapshot();
 
         vec![
             quick_action(
-                "Update title",
+                labels::UPDATE_TITLE,
                 "edit",
                 QuickActionAccent::Info,
                 connected,
                 None,
-                "Stream info",
+                Group::StreamInfo,
                 false,
                 sub_action_ids::CHANNEL_UPDATE_TITLE,
                 BTreeMap::new(),
-                vec![text_field(config_keys::TITLE, "Stream title", "Stream title").required()],
+                vec![
+                    text_field(
+                        config_keys::TITLE,
+                        labels::STREAM_TITLE,
+                        labels::STREAM_TITLE,
+                    )
+                    .required(),
+                ],
             ),
             quick_action(
-                "Set category / game",
+                labels::SET_CATEGORY_GAME,
                 "device-gamepad-2",
                 QuickActionAccent::Brand,
                 connected,
                 None,
-                "Stream info",
+                Group::StreamInfo,
                 false,
                 sub_action_ids::CHANNEL_UPDATE_CATEGORY,
                 BTreeMap::new(),
                 vec![
-                    text_field(config_keys::CATEGORY_NAME, "Category", "e.g. Just Chatting")
-                        .required(),
+                    text_field(
+                        config_keys::CATEGORY_NAME,
+                        labels::CATEGORY,
+                        labels::CATEGORY_EXAMPLE,
+                    )
+                    .required(),
                 ],
             ),
             quick_action(
-                "Update tags",
+                labels::UPDATE_TAGS,
                 "tags",
                 QuickActionAccent::Success,
                 connected,
                 None,
-                "Stream info",
+                Group::StreamInfo,
                 false,
                 sub_action_ids::CHANNEL_UPDATE_TAGS,
                 BTreeMap::new(),
                 vec![text_field(
                     config_keys::TAGS,
-                    "Tags (comma-sep)",
-                    "e.g. English, Chill",
+                    labels::TAGS_COMMA_SEP,
+                    labels::TAGS_EXAMPLE,
                 )],
             ),
             quick_action(
-                "Create stream marker",
+                labels::CREATE_STREAM_MARKER,
                 "bookmark",
                 QuickActionAccent::Bits,
                 connected,
                 None,
-                "Stream info",
+                Group::StreamInfo,
                 false,
                 sub_action_ids::CHANNEL_CREATE_MARKER,
                 BTreeMap::new(),
                 vec![text_field(
                     config_keys::DESCRIPTION,
-                    "Marker note",
-                    "optional",
+                    labels::MARKER_NOTE,
+                    labels::OPTIONAL,
                 )],
             ),
             gated_on(
                 quick_action(
-                    "Start poll",
+                    labels::START_POLL,
                     "chart-bar",
                     QuickActionAccent::Brand,
                     gated,
                     locked_reason.clone(),
-                    "Polls",
+                    Group::Polls,
                     false,
                     sub_action_ids::POLL_START,
                     BTreeMap::new(),
                     vec![
-                        text_field(config_keys::TITLE, "Question", "Poll question").required(),
+                        text_field(config_keys::TITLE, labels::QUESTION, labels::POLL_QUESTION)
+                            .required(),
                         multiline_field(
                             config_keys::CHOICES,
-                            "Choices (one per line)",
-                            "One choice per line",
+                            labels::CHOICES_ONE_PER_LINE,
+                            labels::ONE_CHOICE_PER_LINE,
                         )
                         .required(),
                         toggle_field(
                             config_keys::CHANNEL_POINTS_VOTING_ENABLED,
-                            "Channel Points voting",
+                            labels::CHANNEL_POINTS_VOTING,
                             false,
                         ),
-                        duration_field(&POLL_DURATION, "Duration (seconds)", POLL_DURATION.default),
+                        duration_field(
+                            &POLL_DURATION,
+                            labels::DURATION_SECONDS,
+                            POLL_DURATION.default,
+                        ),
                     ],
                 ),
                 live.poll_slot_free(),
             ),
             gated_on(
                 quick_action(
-                    "End poll (finish now)",
+                    labels::END_POLL_NOW,
                     "player-stop",
                     QuickActionAccent::Warning,
                     gated,
                     locked_reason.clone(),
-                    "Polls",
+                    Group::Polls,
                     false,
                     sub_action_ids::POLL_END,
                     config([(config_keys::POLL_ID, blank())]),
@@ -303,12 +333,12 @@ impl QuickActions for TwitchIntegrationBundle {
             ),
             gated_on(
                 quick_action(
-                    "Cancel poll",
+                    labels::CANCEL_POLL,
                     "x",
                     QuickActionAccent::Danger,
                     gated,
                     locked_reason.clone(),
-                    "Polls",
+                    Group::Polls,
                     true,
                     sub_action_ids::POLL_END,
                     config([
@@ -321,26 +351,31 @@ impl QuickActions for TwitchIntegrationBundle {
             ),
             gated_on(
                 quick_action(
-                    "Start prediction",
+                    labels::START_PREDICTION,
                     "crystal-ball",
                     QuickActionAccent::AccentPinkLight,
                     gated,
                     locked_reason.clone(),
-                    "Predictions",
+                    Group::Predictions,
                     false,
                     sub_action_ids::PREDICTION_START,
                     BTreeMap::new(),
                     vec![
-                        text_field(config_keys::TITLE, "Title", "Prediction question").required(),
+                        text_field(
+                            config_keys::TITLE,
+                            labels::TITLE,
+                            labels::PREDICTION_QUESTION,
+                        )
+                        .required(),
                         multiline_field(
                             config_keys::OUTCOMES,
-                            "Outcomes (one per line)",
-                            "One outcome per line",
+                            labels::OUTCOMES_ONE_PER_LINE,
+                            labels::ONE_OUTCOME_PER_LINE,
                         )
                         .required(),
                         duration_field(
                             &PREDICTION_WINDOW,
-                            "Window (seconds)",
+                            labels::WINDOW_SECONDS,
                             PREDICTION_WINDOW.default,
                         ),
                     ],
@@ -349,12 +384,12 @@ impl QuickActions for TwitchIntegrationBundle {
             ),
             gated_on(
                 quick_action(
-                    "Lock prediction",
+                    labels::LOCK_PREDICTION,
                     "lock",
                     QuickActionAccent::Warning,
                     gated,
                     locked_reason.clone(),
-                    "Predictions",
+                    Group::Predictions,
                     false,
                     sub_action_ids::PREDICTION_LOCK,
                     config([(config_keys::PREDICTION_ID, blank())]),
@@ -364,12 +399,12 @@ impl QuickActions for TwitchIntegrationBundle {
             ),
             gated_on(
                 quick_action(
-                    "Resolve / pay out",
+                    labels::RESOLVE_PAY_OUT,
                     "trophy",
                     QuickActionAccent::Success,
                     gated,
                     locked_reason.clone(),
-                    "Predictions",
+                    Group::Predictions,
                     false,
                     sub_action_ids::PREDICTION_RESOLVE,
                     config([(config_keys::PREDICTION_ID, blank())]),
@@ -379,12 +414,12 @@ impl QuickActions for TwitchIntegrationBundle {
             ),
             gated_on(
                 quick_action(
-                    "Cancel & refund",
+                    labels::CANCEL_REFUND,
                     "x",
                     QuickActionAccent::Danger,
                     gated,
                     locked_reason.clone(),
-                    "Predictions",
+                    Group::Predictions,
                     true,
                     sub_action_ids::PREDICTION_CANCEL,
                     config([(config_keys::PREDICTION_ID, blank())]),
@@ -393,12 +428,12 @@ impl QuickActions for TwitchIntegrationBundle {
                 live.prediction_settleable(),
             ),
             quick_action(
-                "Send message",
+                labels::SEND_MESSAGE,
                 "send",
                 QuickActionAccent::Brand,
                 connected,
                 None,
-                "Chat",
+                Group::Chat,
                 false,
                 SEND_MESSAGE_KIND_ID,
                 config([
@@ -408,202 +443,254 @@ impl QuickActions for TwitchIntegrationBundle {
                         Variant::String(vocabulary::PLATFORM_ID.to_owned()),
                     ),
                 ]),
-                vec![multiline_field(config_keys::MESSAGE, "Message", "Message").required()],
+                vec![
+                    multiline_field(config_keys::MESSAGE, labels::MESSAGE, labels::MESSAGE)
+                        .required(),
+                ],
             ),
             quick_action(
-                "Announcement",
+                labels::ANNOUNCEMENT,
                 "speakerphone",
                 QuickActionAccent::Warning,
                 connected,
                 None,
-                "Chat",
+                Group::Chat,
                 false,
                 sub_action_ids::CHAT_SEND_ANNOUNCEMENT,
                 BTreeMap::new(),
                 vec![
-                    multiline_field(config_keys::MESSAGE, "Announcement", "Announcement text")
-                        .required(),
+                    multiline_field(
+                        config_keys::MESSAGE,
+                        labels::ANNOUNCEMENT,
+                        labels::ANNOUNCEMENT_TEXT,
+                    )
+                    .required(),
                     choice_field(
                         ANNOUNCEMENT_COLOR.key,
-                        "Color",
+                        labels::COLOR,
                         default_choice(&ANNOUNCEMENT_COLOR),
                         &choice_options(AnnouncementColor::label),
                     ),
                 ],
             ),
             quick_action(
-                "Clear chat",
+                labels::CLEAR_CHAT,
                 "message-off",
                 QuickActionAccent::Danger,
                 connected,
                 None,
-                "Chat",
+                Group::Chat,
                 true,
                 sub_action_ids::CHAT_CLEAR,
                 BTreeMap::new(),
                 Vec::new(),
             ),
             quick_action(
-                "Slow mode",
+                labels::SLOW_MODE,
                 "clock-hour-4",
                 QuickActionAccent::Info,
                 connected,
                 None,
-                "Chat",
+                Group::Chat,
                 false,
                 sub_action_ids::CHAT_SET_MODE,
                 config([(config_keys::SLOW_MODE, choice(ModeToggle::On))]),
                 vec![duration_field(
                     &SLOW_MODE_WAIT,
-                    "Wait time (seconds)",
+                    labels::WAIT_TIME_SECONDS,
                     QUICK_SLOW_MODE_WAIT_SECONDS,
                 )],
             ),
             quick_action(
-                "Followers-only mode",
+                labels::FOLLOWERS_ONLY_MODE,
                 "user-check",
                 QuickActionAccent::Success,
                 connected,
                 None,
-                "Chat",
+                Group::Chat,
                 false,
                 sub_action_ids::CHAT_SET_MODE,
                 config([(config_keys::FOLLOWER_MODE, choice(ModeToggle::On))]),
                 vec![duration_field(
                     &FOLLOWER_MODE_MIN_AGE,
-                    "Min. account age (minutes)",
+                    labels::MIN_ACCOUNT_AGE,
                     QUICK_FOLLOWER_MIN_MINUTES,
                 )],
             ),
             quick_action(
-                "Emote-only mode",
+                labels::EMOTE_ONLY_MODE,
                 "mood-smile",
                 QuickActionAccent::Bits,
                 connected,
                 None,
-                "Chat",
+                Group::Chat,
                 false,
                 sub_action_ids::CHAT_SET_MODE,
                 BTreeMap::new(),
                 vec![choice_field(
                     EMOTE_ONLY.key,
-                    "Emote-only mode",
+                    labels::EMOTE_ONLY_MODE,
                     ModeToggle::On.wire_name(),
                     &choice_options(ModeToggle::label),
                 )],
             ),
             quick_action(
-                "Timeout user",
+                labels::TIMEOUT_USER,
                 "clock-pause",
                 QuickActionAccent::Warning,
                 connected,
                 None,
-                "Moderation",
+                Group::Moderation,
                 false,
                 sub_action_ids::MODERATION_TIMEOUT_USER,
                 BTreeMap::new(),
                 vec![
-                    text_field(config_keys::TARGET_USER_LOGIN, "Username", "username").required(),
+                    text_field(
+                        config_keys::TARGET_USER_LOGIN,
+                        labels::USERNAME,
+                        labels::USERNAME_PLACEHOLDER,
+                    )
+                    .required(),
                     duration_field(
                         &TIMEOUT_DURATION,
-                        "Duration (seconds)",
+                        labels::DURATION_SECONDS,
                         TIMEOUT_DURATION.default,
                     ),
-                    text_field(config_keys::REASON, "Reason", "optional"),
+                    text_field(config_keys::REASON, labels::REASON, labels::OPTIONAL),
                 ],
             ),
             quick_action(
-                "Ban user",
+                labels::BAN_USER,
                 "ban",
                 QuickActionAccent::Danger,
                 connected,
                 None,
-                "Moderation",
+                Group::Moderation,
                 true,
                 sub_action_ids::MODERATION_BAN_USER,
                 BTreeMap::new(),
                 vec![
-                    text_field(config_keys::TARGET_USER_LOGIN, "Username", "username").required(),
-                    text_field(config_keys::REASON, "Reason", "optional"),
+                    text_field(
+                        config_keys::TARGET_USER_LOGIN,
+                        labels::USERNAME,
+                        labels::USERNAME_PLACEHOLDER,
+                    )
+                    .required(),
+                    text_field(config_keys::REASON, labels::REASON, labels::OPTIONAL),
                 ],
             ),
             quick_action(
-                "Unban user",
+                labels::UNBAN_USER,
                 "lock-open",
                 QuickActionAccent::Success,
                 connected,
                 None,
-                "Moderation",
+                Group::Moderation,
                 false,
                 sub_action_ids::MODERATION_UNBAN_USER,
                 BTreeMap::new(),
-                vec![text_field(config_keys::TARGET_USER_LOGIN, "Username", "username").required()],
+                vec![
+                    text_field(
+                        config_keys::TARGET_USER_LOGIN,
+                        labels::USERNAME,
+                        labels::USERNAME_PLACEHOLDER,
+                    )
+                    .required(),
+                ],
             ),
             shield_mode_toggle(connected, self.lifecycle.shield_phase()),
             quick_action(
-                "Add VIP",
+                labels::ADD_VIP,
                 "star",
                 QuickActionAccent::Warning,
                 connected,
                 None,
-                "Moderation",
+                Group::Moderation,
                 false,
                 sub_action_ids::MODERATION_ADD_VIP,
                 BTreeMap::new(),
-                vec![text_field(config_keys::TARGET_USER_LOGIN, "Username", "username").required()],
+                vec![
+                    text_field(
+                        config_keys::TARGET_USER_LOGIN,
+                        labels::USERNAME,
+                        labels::USERNAME_PLACEHOLDER,
+                    )
+                    .required(),
+                ],
             ),
             quick_action(
-                "Remove VIP",
+                labels::REMOVE_VIP,
                 "star",
                 QuickActionAccent::Danger,
                 connected,
                 None,
-                "Moderation",
+                Group::Moderation,
                 true,
                 sub_action_ids::MODERATION_REMOVE_VIP,
                 BTreeMap::new(),
-                vec![text_field(config_keys::TARGET_USER_LOGIN, "Username", "username").required()],
+                vec![
+                    text_field(
+                        config_keys::TARGET_USER_LOGIN,
+                        labels::USERNAME,
+                        labels::USERNAME_PLACEHOLDER,
+                    )
+                    .required(),
+                ],
             ),
             quick_action(
-                "Add Mod",
+                labels::ADD_MOD,
                 "sword",
                 QuickActionAccent::Info,
                 connected,
                 None,
-                "Moderation",
+                Group::Moderation,
                 false,
                 sub_action_ids::MODERATION_ADD_MODERATOR,
                 BTreeMap::new(),
-                vec![text_field(config_keys::TARGET_USER_LOGIN, "Username", "username").required()],
+                vec![
+                    text_field(
+                        config_keys::TARGET_USER_LOGIN,
+                        labels::USERNAME,
+                        labels::USERNAME_PLACEHOLDER,
+                    )
+                    .required(),
+                ],
             ),
             quick_action(
-                "Remove Mod",
+                labels::REMOVE_MOD,
                 "sword",
                 QuickActionAccent::Danger,
                 connected,
                 None,
-                "Moderation",
+                Group::Moderation,
                 true,
                 sub_action_ids::MODERATION_REMOVE_MODERATOR,
                 BTreeMap::new(),
-                vec![text_field(config_keys::TARGET_USER_LOGIN, "Username", "username").required()],
+                vec![
+                    text_field(
+                        config_keys::TARGET_USER_LOGIN,
+                        labels::USERNAME,
+                        labels::USERNAME_PLACEHOLDER,
+                    )
+                    .required(),
+                ],
             ),
             gated_on(
                 quick_action(
-                    "Start raid",
+                    labels::START_RAID,
                     "flag",
                     QuickActionAccent::Bits,
                     connected,
                     None,
-                    "Raids & ads",
+                    Group::RaidsAds,
                     false,
                     sub_action_ids::CHANNEL_START_RAID,
                     BTreeMap::new(),
                     vec![
                         text_field(
                             config_keys::TO_BROADCASTER_LOGIN,
-                            "Raid target",
-                            "channel name",
+                            labels::RAID_TARGET,
+                            labels::CHANNEL_NAME,
                         )
                         .required(),
                     ],
@@ -612,12 +699,12 @@ impl QuickActions for TwitchIntegrationBundle {
             ),
             gated_on(
                 quick_action(
-                    "Cancel raid",
+                    labels::CANCEL_RAID,
                     "flag-off",
                     QuickActionAccent::Danger,
                     connected,
                     None,
-                    "Raids & ads",
+                    Group::RaidsAds,
                     true,
                     sub_action_ids::CHANNEL_CANCEL_RAID,
                     BTreeMap::new(),
@@ -626,68 +713,72 @@ impl QuickActions for TwitchIntegrationBundle {
                 live.raid_in_flight(),
             ),
             quick_action(
-                "Send shoutout",
+                labels::SEND_SHOUTOUT,
                 "speakerphone",
                 QuickActionAccent::Warning,
                 connected,
                 None,
-                "Raids & ads",
+                Group::RaidsAds,
                 false,
                 sub_action_ids::CHANNEL_SEND_SHOUTOUT,
                 BTreeMap::new(),
                 vec![
-                    text_field(config_keys::TO_BROADCASTER_LOGIN, "Channel", "channel name")
-                        .required(),
+                    text_field(
+                        config_keys::TO_BROADCASTER_LOGIN,
+                        labels::CHANNEL,
+                        labels::CHANNEL_NAME,
+                    )
+                    .required(),
                 ],
             ),
             quick_action(
-                "Run commercial",
+                labels::RUN_COMMERCIAL,
                 "clock",
                 QuickActionAccent::Info,
                 connected && !tier_locked,
                 locked_reason.clone(),
-                "Raids & ads",
+                Group::RaidsAds,
                 false,
                 sub_action_ids::CHANNEL_RUN_AD,
                 BTreeMap::new(),
                 vec![
                     choice_field_hint(
                         AD_LENGTH.key,
-                        "Duration",
+                        labels::DURATION,
                         QUICK_AD_LENGTH.wire_name(),
                         &choice_options(AdLength::label),
-                        "8+ min cooldown between ads",
+                        labels::AD_COOLDOWN_HINT,
                     )
                     .required(),
                 ],
             ),
             quick_action(
-                "Snooze next ad",
+                labels::SNOOZE_NEXT_AD,
                 "player-skip-forward",
                 QuickActionAccent::Success,
                 connected,
                 None,
-                "Raids & ads",
+                Group::RaidsAds,
                 false,
                 sub_action_ids::CHANNEL_SNOOZE_AD,
                 BTreeMap::new(),
                 Vec::new(),
             ),
             manage_collection_action(
-                "Manage rewards",
+                labels::MANAGE_REWARDS,
                 "adjustments",
                 QuickActionAccent::AccentPinkLight,
                 connected,
-                "Channel Points",
+                Group::ChannelPoints,
                 CollectionId::new(REWARDS_COLLECTION),
             ),
             quick_action(
-                "Fulfill redemption",
+                labels::FULFILL_REDEMPTION,
                 "check",
                 QuickActionAccent::Success,
                 connected,
                 None,
-                "Channel Points",
+                Group::ChannelPoints,
                 false,
                 sub_action_ids::CHANNEL_POINTS_FULFILL_REDEMPTION,
                 config([
@@ -697,12 +788,12 @@ impl QuickActions for TwitchIntegrationBundle {
                 Vec::new(),
             ),
             quick_action(
-                "Reject & refund",
+                labels::REJECT_REFUND,
                 "x",
                 QuickActionAccent::Danger,
                 connected,
                 None,
-                "Channel Points",
+                Group::ChannelPoints,
                 true,
                 sub_action_ids::CHANNEL_POINTS_CANCEL_REDEMPTION,
                 config([
@@ -737,7 +828,7 @@ mod tests {
         };
 
         let locked = find_commercial(&standard);
-        assert_eq!(locked.locked_reason.as_deref(), Some(TIER_LOCKED_REASON));
+        assert_eq!(locked.locked_reason, Some(labels::TIER_LOCKED.into()));
         assert!(
             !locked.enabled,
             "commercial must be disabled under standard"
@@ -763,8 +854,9 @@ mod tests {
             make_bundle_with_tier(ChatConnectionState::Connected, BroadcasterTier::Standard);
         let affiliate =
             make_bundle_with_tier(ChatConnectionState::Connected, BroadcasterTier::Affiliate);
-        let is_gated =
-            |a: &QuickAction| matches!(a.group.as_deref(), Some("Polls" | "Predictions"));
+        let is_gated = |a: &QuickAction| {
+            a.group == Some(Group::Polls.badge()) || a.group == Some(Group::Predictions.badge())
+        };
 
         let standard_actions = standard.actions();
         let gated: Vec<&QuickAction> = standard_actions.iter().filter(|a| is_gated(a)).collect();
@@ -775,15 +867,15 @@ mod tests {
         );
         for a in gated {
             assert_eq!(
-                a.locked_reason.as_deref(),
-                Some(TIER_LOCKED_REASON),
+                a.locked_reason,
+                Some(labels::TIER_LOCKED.into()),
                 "{} must lock under standard tier",
-                a.label
+                a.label.code_or_text()
             );
             assert!(
                 !a.enabled,
                 "{} must be disabled under standard tier",
-                a.label
+                a.label.code_or_text()
             );
         }
 
@@ -791,15 +883,19 @@ mod tests {
             assert!(
                 a.locked_reason.is_none(),
                 "{} must unlock at affiliate tier",
-                a.label
+                a.label.code_or_text()
             );
-            assert!(a.enabled, "{} must be enabled at affiliate tier", a.label);
+            assert!(
+                a.enabled,
+                "{} must be enabled at affiliate tier",
+                a.label.code_or_text()
+            );
         }
     }
 
-    fn shield_face(action: &QuickAction) -> (&str, &str, QuickActionLiveness) {
+    fn shield_face(action: &QuickAction) -> (UserText, &str, QuickActionLiveness) {
         (
-            action.label.as_str(),
+            action.label.clone(),
             action.subaction_template.kind_id.as_str(),
             action.liveness,
         )
@@ -808,29 +904,29 @@ mod tests {
     #[test]
     fn the_shield_toggle_offers_to_end_only_an_active_shield() {
         let end = (
-            "End Shield mode",
+            UserText::from(labels::END_SHIELD_MODE),
             "twitch.moderation.shield_mode_off",
             QuickActionLiveness::Live,
         );
         let start = (
-            "Start Shield mode",
+            UserText::from(labels::START_SHIELD_MODE),
             "twitch.moderation.shield_mode_on",
             QuickActionLiveness::Unknown,
         );
         for (phase, expected) in [
             (ShieldPhase::Active, end),
-            (ShieldPhase::Inactive, start),
-            (ShieldPhase::Unknown, start),
+            (ShieldPhase::Inactive, start.clone()),
+            (ShieldPhase::Unknown, start.clone()),
             (ShieldPhase::Unauthorized, start),
         ] {
             let toggle = shield_mode_toggle(true, phase);
-            assert_eq!(shield_face(&toggle), expected, "{phase:?}");
+            assert_eq!(shield_face(&toggle), expected.clone(), "{phase:?}");
         }
     }
 
     #[test]
     fn the_shield_toggle_is_usable_only_while_connected_and_authorized() {
-        let reason = Some(SHIELD_SCOPE_MISSING_REASON.to_owned());
+        let reason = Some(UserText::from(labels::SHIELD_SCOPE_MISSING));
         for (connected, phase, enabled, locked_reason) in [
             (true, ShieldPhase::Active, true, None),
             (true, ShieldPhase::Inactive, true, None),

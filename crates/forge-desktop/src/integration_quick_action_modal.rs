@@ -24,7 +24,7 @@ use tokio::runtime::Handle;
 use crate::async_bridge::{self, Generation};
 use crate::integration_quick_actions::accent_color;
 use crate::option_list_text::{option_failure_message, option_hint_text};
-use crate::quick_action_text::quick_action_text;
+use crate::user_text::user_text_string;
 use forge_components::ActivePresentation;
 use forge_components::{
     FONT_FIELD, choice_trigger, failure_with_retry, field_column, field_frame, int_entry_invalid,
@@ -118,7 +118,7 @@ impl QuickActionModal {
         let palette = cx.palette();
         let accent = accent_color(action.accent, &palette);
         let glyph = Icon::from_name(action.icon.as_str());
-        let label = quick_action_text(&action.label);
+        let label = user_text_string(&action.label);
         let destructive = action.destructive;
 
         let specs = action.fields.clone();
@@ -137,7 +137,11 @@ impl QuickActionModal {
             let control = match &spec.kind {
                 QuickActionFieldKind::Text => {
                     let content = default_text(&spec.default);
-                    let placeholder = spec.placeholder.clone().unwrap_or_default();
+                    let placeholder = spec
+                        .placeholder
+                        .as_ref()
+                        .map(user_text_string)
+                        .unwrap_or_default();
                     let blank = spec.required && content.trim().is_empty();
                     let input = cx.new(|cx| {
                         let mut ti = TextInput::new(placeholder, cx).with_palette(palette);
@@ -154,7 +158,11 @@ impl QuickActionModal {
                 }
                 QuickActionFieldKind::Multiline | QuickActionFieldKind::MultilineList => {
                     let content = default_text(&spec.default);
-                    let placeholder = spec.placeholder.clone().unwrap_or_default();
+                    let placeholder = spec
+                        .placeholder
+                        .as_ref()
+                        .map(user_text_string)
+                        .unwrap_or_default();
                     let blank = spec.required && content.trim().is_empty();
                     let area = cx.new(|cx| {
                         let mut ta = TextArea::new(placeholder, cx)
@@ -174,7 +182,11 @@ impl QuickActionModal {
                 QuickActionFieldKind::Toggle => FieldControl::Toggle(default_toggle(&spec.default)),
                 QuickActionFieldKind::Int { min, max } => {
                     let fallback = default_int(&spec.default).max(*min).min(*max);
-                    let placeholder = spec.placeholder.clone().unwrap_or_default();
+                    let placeholder = spec
+                        .placeholder
+                        .as_ref()
+                        .map(user_text_string)
+                        .unwrap_or_default();
                     let input = cx.new(|cx| {
                         let mut ti = TextInput::new(placeholder, cx).with_palette(palette);
                         ti.set_content(fallback.to_string(), cx);
@@ -223,8 +235,8 @@ impl QuickActionModal {
             };
             fields.push(ModalField {
                 key: spec.key,
-                label: quick_action_text(&spec.label),
-                hint: spec.hint.or(range_hint),
+                label: user_text_string(&spec.label),
+                hint: spec.hint.as_ref().map(user_text_string).or(range_hint),
                 required: spec.required,
                 control,
             });
@@ -874,7 +886,7 @@ impl ModalField {
 fn static_item(opt: &QuickActionChoiceOption) -> PickerItem {
     PickerItem {
         id: opt.value.clone().into(),
-        label: opt.label.clone().into(),
+        label: user_text_string(&opt.label).into(),
         sublabel: None,
         icon: None,
     }
@@ -974,6 +986,7 @@ mod tests {
     use super::*;
     use crate::i18n::{install_language, message_in};
     use crate::test_support::{pump, runtime};
+    use forge_types::UserText;
 
     const SETTLE_ROUNDS: usize = 4;
 
@@ -1183,7 +1196,7 @@ mod tests {
     fn text_field(key: &str) -> QuickActionField {
         QuickActionField {
             key: key.to_owned(),
-            label: key.to_owned(),
+            label: UserText::unlocalized(key),
             kind: QuickActionFieldKind::Text,
             default: None,
             placeholder: None,
@@ -1211,14 +1224,12 @@ mod tests {
 
     fn option_action(fields: Vec<QuickActionField>) -> QuickAction {
         QuickAction {
-            label: "Switch scene".to_owned(),
+            label: UserText::unlocalized("Switch scene"),
             icon: SectionIcon::new("arrows-shuffle"),
             enabled: true,
             locked_reason: None,
             liveness: QuickActionLiveness::Unknown,
             group: None,
-            group_icon: None,
-            group_accent: None,
             destructive: false,
             accent: QuickActionAccent::Brand,
             subaction_template: SubActionStep {
@@ -1237,7 +1248,7 @@ mod tests {
     fn option_field(key: &str, list: &str, default: Option<&str>) -> QuickActionField {
         QuickActionField {
             key: key.to_owned(),
-            label: key.to_owned(),
+            label: UserText::unlocalized(key),
             kind: QuickActionFieldKind::Choice(QuickActionChoiceSource::OptionList(
                 OptionListId::new(list),
             )),

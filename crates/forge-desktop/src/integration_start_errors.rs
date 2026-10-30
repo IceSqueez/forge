@@ -3,11 +3,19 @@ use forge_hotkey::vocabulary::messages as hotkey_messages;
 use forge_midi::MidiError;
 use forge_platform_core::PlatformError;
 use forge_runtime::{IntegrationStartError, StartFailureCategory};
+use forge_storage::StorageError;
 use forge_types::{MessageCode, MessageRef, UpstreamDetail, VerbatimText};
 
 pub(crate) fn youtube_start_error(error: &PlatformError) -> IntegrationStartError {
     stored_sign_in_unreadable(
         forge_platform_youtube::vocabulary::messages::STORED_SIGN_IN_UNREADABLE,
+        error,
+    )
+}
+
+pub(crate) fn twitch_start_error(error: &StorageError) -> IntegrationStartError {
+    stored_sign_in_unreadable(
+        forge_platform_twitch::vocabulary::messages::STORED_SIGN_IN_UNREADABLE,
         error,
     )
 }
@@ -19,7 +27,10 @@ pub(crate) fn kick_start_error(error: &PlatformError) -> IntegrationStartError {
     )
 }
 
-fn stored_sign_in_unreadable(code: MessageCode, error: &PlatformError) -> IntegrationStartError {
+fn stored_sign_in_unreadable(
+    code: MessageCode,
+    error: &dyn std::error::Error,
+) -> IntegrationStartError {
     tracing::warn!(code = %code, error = %error, "stored sign-in could not be loaded");
     IntegrationStartError::new(StartFailureCategory::Credentials, MessageRef::new(code))
 }

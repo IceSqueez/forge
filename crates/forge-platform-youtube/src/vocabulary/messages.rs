@@ -1,6 +1,7 @@
 use forge_types::{MessageCatalog, MessageCode, MessageRef, UpstreamDetail, VerbatimText};
 
 use crate::vocabulary::INTEGRATION_ID;
+use crate::vocabulary::labels;
 
 pub const STORED_SIGN_IN_UNREADABLE: MessageCode =
     MessageCode::from_static(INTEGRATION_ID, "stored_sign_in_unreadable");
@@ -63,6 +64,45 @@ pub const YOUTUBE_MESSAGES: MessageCatalog = MessageCatalog {
         CONDITION_PERMANENT_BAN_ONLY,
         CONDITION_TEMPORARY_TIMEOUT_ONLY,
         CONDITION_ANY_BAN_TYPE,
+        labels::BAN_USER,
+        labels::BROADCAST,
+        labels::CATEGORY_ID,
+        labels::CATEGORY_ID_EXAMPLES,
+        labels::CHANGE_PRIVACY,
+        labels::CHANNEL_ID_PLACEHOLDER,
+        labels::CHAT,
+        labels::CHOICES_ONE_PER_LINE,
+        labels::CONTENT,
+        labels::CREATE_LIVE_POLL,
+        labels::DELETE_MESSAGE,
+        labels::DESCRIPTION,
+        labels::IMAGE_PATH,
+        labels::INSERT_AD_BREAK,
+        labels::LOOKUP_VIEWER,
+        labels::MESSAGE,
+        labels::MESSAGE_ID_FIELD,
+        labels::MESSAGE_ID_HINT,
+        labels::NEW_STREAM_TITLE,
+        labels::ONE_CHOICE_PER_LINE,
+        labels::POLL_QUESTION,
+        labels::POLLS,
+        labels::PRIVATE,
+        labels::PUBLIC,
+        labels::QUESTION,
+        labels::SEND_MESSAGE,
+        labels::SET_CATEGORY,
+        labels::SET_THUMBNAIL,
+        labels::STREAM_DESCRIPTION,
+        labels::STREAM_STATS,
+        labels::TIMEOUT_USER,
+        labels::TITLE,
+        labels::UNLISTED,
+        labels::UPDATE_DESCRIPTION,
+        labels::UPDATE_TITLE,
+        labels::USER,
+        labels::USERNAME,
+        labels::VIEWER_IDENTIFIER_EXAMPLE,
+        labels::VISIBILITY,
     ],
     en_ftl: include_str!("../../locales/en/messages.ftl"),
     uk_ftl: include_str!("../../locales/uk/messages.ftl"),
@@ -208,7 +248,12 @@ mod tests {
             .iter()
             .map(|m| m.code().clone())
             .collect();
-        let catalogued: BTreeSet<MessageCode> = YOUTUBE_MESSAGES.codes.iter().cloned().collect();
+        let catalogued: BTreeSet<MessageCode> = YOUTUBE_MESSAGES
+            .codes
+            .iter()
+            .filter(|code| !code.name().starts_with("label_"))
+            .cloned()
+            .collect();
         assert_eq!(produced, catalogued);
     }
 

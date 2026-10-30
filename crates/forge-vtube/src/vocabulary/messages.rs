@@ -1,5 +1,6 @@
 use forge_types::{MessageCatalog, MessageCode, MessageRef, UpstreamDetail};
 
+use crate::vocabulary::labels;
 use crate::vocabulary::{INTEGRATION_ID, VTubeDisconnectReason};
 
 const CONNECT_REFUSED: MessageCode = MessageCode::from_static(INTEGRATION_ID, "connect_refused");
@@ -94,6 +95,30 @@ pub const VTUBE_MESSAGES: MessageCatalog = MessageCatalog {
         CONDITION_FACE_FOUND,
         CONDITION_FACE_LOST,
         CONDITION_ANY_HOTKEY,
+        labels::AVAILABLE_EXPRESSIONS,
+        labels::COLOR_TINT_OVERLAY,
+        labels::ENABLED,
+        labels::EXPRESSION,
+        labels::EXPRESSIONS,
+        labels::HOTKEY,
+        labels::HOTKEYS_ANIMATION,
+        labels::ITEM,
+        labels::ITEM_FILE,
+        labels::ITEMS,
+        labels::LOAD_ITEM,
+        labels::LOAD_MODEL,
+        labels::MODEL,
+        labels::MODEL_SCENE,
+        labels::MOVE_SCALE_MODEL,
+        labels::PIN_ITEM_TO_MODEL,
+        labels::PLAY_ANIMATION,
+        labels::REMOVE_ALL_ITEMS,
+        labels::RESET_TO_IDLE,
+        labels::SET_EXPRESSION,
+        labels::THROW_ITEM,
+        labels::TOGGLE_EXPRESSION,
+        labels::TOGGLE_PHYSICS,
+        labels::TRIGGER_HOTKEY,
     ],
     en_ftl: include_str!("../../locales/en/messages.ftl"),
     uk_ftl: include_str!("../../locales/uk/messages.ftl"),
@@ -334,7 +359,12 @@ mod tests {
             .iter()
             .map(|m| m.code().clone())
             .collect();
-        let catalogued: BTreeSet<MessageCode> = VTUBE_MESSAGES.codes.iter().cloned().collect();
+        let catalogued: BTreeSet<MessageCode> = VTUBE_MESSAGES
+            .codes
+            .iter()
+            .filter(|code| !code.name().starts_with("label_"))
+            .cloned()
+            .collect();
         assert_eq!(produced, catalogued);
     }
 

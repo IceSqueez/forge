@@ -3,6 +3,7 @@ use std::time::Duration;
 use forge_types::{MessageCatalog, MessageCode, MessageRef, UpstreamDetail, VerbatimText};
 
 use crate::vocabulary::INTEGRATION_ID;
+use crate::vocabulary::labels;
 
 pub const HEALTH_WEBHOOK_LATENCY: MessageCode =
     MessageCode::from_static(INTEGRATION_ID, "health_webhook_latency");
@@ -106,6 +107,16 @@ pub const DISCORD_MESSAGES: MessageCatalog = MessageCatalog {
         FILE_NOT_UPLOADABLE,
         CONTENT_TOO_LONG,
         NOTHING_TO_EDIT,
+        labels::EDIT_MESSAGE,
+        labels::EMBED,
+        labels::ERROR,
+        labels::OK,
+        labels::POST_EMBED,
+        labels::POST_TEXT,
+        labels::READY,
+        labels::RECENT_POSTS,
+        labels::TEST_WEBHOOK,
+        labels::WEBHOOKS,
     ],
     en_ftl: include_str!("../../locales/en/messages.ftl"),
     uk_ftl: include_str!("../../locales/uk/messages.ftl"),
@@ -322,7 +333,12 @@ mod tests {
             .iter()
             .map(|m| m.code().clone())
             .collect();
-        let catalogued: BTreeSet<MessageCode> = DISCORD_MESSAGES.codes.iter().cloned().collect();
+        let catalogued: BTreeSet<MessageCode> = DISCORD_MESSAGES
+            .codes
+            .iter()
+            .filter(|code| !code.name().starts_with("label_"))
+            .cloned()
+            .collect();
         assert_eq!(produced, catalogued);
     }
 

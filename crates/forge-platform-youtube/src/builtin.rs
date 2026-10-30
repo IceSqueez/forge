@@ -1,3 +1,4 @@
+use forge_types::UserText;
 use std::sync::{Arc, OnceLock, RwLock};
 use std::time::{Duration, SystemTime};
 
@@ -407,7 +408,7 @@ impl BuiltinStatus for YoutubeIntegrationBundle {
 
     fn name_badges(&self) -> Vec<HeroBadge> {
         vec![HeroBadge {
-            label: format!("channel_id {}", self.channel_id),
+            label: UserText::unlocalized(format!("channel_id {}", self.channel_id)),
             tone: HeroBadgeTone::Neutral,
             monospace: true,
         }]
@@ -466,6 +467,7 @@ mod tests {
     use crate::send_chat::YoutubeSendChat;
     use crate::stream_metadata::YoutubeStreamMetadata;
     use crate::sub_actions::register_youtube_sub_actions;
+    use crate::vocabulary::labels;
     use forge_platform_core::{
         PlatformError, QuickActionChoiceSource, QuickActionFieldKind, QuickActionFieldValue,
         QuickActions,
@@ -895,6 +897,7 @@ mod tests {
         let groups: Vec<String> = QuickActions::actions(bundle.as_ref())
             .into_iter()
             .filter_map(|a| a.group)
+            .map(|group| group.label.code_or_text())
             .collect();
 
         let mut order = Vec::new();
@@ -906,10 +909,10 @@ mod tests {
         assert_eq!(
             order,
             vec![
-                "Broadcast".to_owned(),
-                "Polls".to_owned(),
-                "Chat".to_owned(),
-                "Content".to_owned(),
+                labels::BROADCAST.to_string(),
+                labels::POLLS.to_string(),
+                labels::CHAT.to_string(),
+                labels::CONTENT.to_string(),
             ]
         );
 
@@ -932,12 +935,15 @@ mod tests {
         let destructive: BTreeSet<String> = QuickActions::actions(bundle.as_ref())
             .into_iter()
             .filter(|a| a.destructive)
-            .map(|a| a.label)
+            .map(|a| a.label.code_or_text())
             .collect();
 
         assert_eq!(
             destructive,
-            BTreeSet::from(["Delete message".to_owned(), "Ban user".to_owned()])
+            BTreeSet::from([
+                labels::DELETE_MESSAGE.to_string(),
+                labels::BAN_USER.to_string()
+            ])
         );
     }
 
@@ -995,7 +1001,7 @@ mod tests {
         assert_eq!(
             BuiltinStatus::name_badges(bundle.as_ref()),
             vec![HeroBadge {
-                label: "channel_id UCabc123".to_owned(),
+                label: UserText::unlocalized("channel_id UCabc123"),
                 tone: HeroBadgeTone::Neutral,
                 monospace: true,
             }]
@@ -1222,5 +1228,23 @@ mod tests {
                 "{id}"
             );
         }
+    }
+
+    #[tokio::test]
+    async fn every_code_the_bundle_shows_is_catalogued_in_both_languages() {
+        use crate::emitted_codes::{emitted_codes, uncatalogued};
+        use crate::vocabulary::messages::YOUTUBE_MESSAGES;
+
+        let (bundle, _platform) = make_bundle(Arc::new(EmptyRepo));
+        let emitted = emitted_codes(&serde_json::json!((
+            QuickActions::actions(bundle.as_ref()),
+            BuiltinContent::sections(bundle.as_ref()),
+        )));
+
+        assert!(!emitted.is_empty());
+        assert_eq!(
+            uncatalogued(&emitted, &[YOUTUBE_MESSAGES, forge_types::COMMON_MESSAGES]),
+            Vec::<String>::new()
+        );
     }
 }

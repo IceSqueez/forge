@@ -1,3 +1,5 @@
+use crate::vocabulary::labels;
+use forge_types::MessageCode;
 use std::sync::Arc;
 
 use async_trait::async_trait;
@@ -37,14 +39,14 @@ impl AdLength {
         }
     }
 
-    pub(crate) fn label(self) -> &'static str {
+    pub(crate) fn label(self) -> MessageCode {
         match self {
-            Self::Seconds30 => "30 seconds",
-            Self::Seconds60 => "60 seconds",
-            Self::Seconds90 => "90 seconds",
-            Self::Seconds120 => "120 seconds",
-            Self::Seconds150 => "150 seconds",
-            Self::Seconds180 => "180 seconds",
+            Self::Seconds30 => labels::AD_30_SECONDS,
+            Self::Seconds60 => labels::AD_60_SECONDS,
+            Self::Seconds90 => labels::AD_90_SECONDS,
+            Self::Seconds120 => labels::AD_120_SECONDS,
+            Self::Seconds150 => labels::AD_150_SECONDS,
+            Self::Seconds180 => labels::AD_180_SECONDS,
         }
     }
 }

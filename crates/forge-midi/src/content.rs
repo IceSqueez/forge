@@ -6,8 +6,11 @@ use forge_platform_core::{
     TrailingToken,
 };
 
+use forge_types::UserText;
+
 use crate::client::MidiClient;
 use crate::events::{MidiPortInfo, PortDirection};
+use crate::vocabulary::labels;
 
 #[derive(Default)]
 pub(crate) struct MidiContentSnapshot {
@@ -36,9 +39,9 @@ impl BuiltinContent for MidiClient {
                 let count = snap.events_per_input.get(&p.name).copied().unwrap_or(0);
                 let subscribed = snap.subscribed_inputs.contains(&p.name);
                 let status_label = match (subscribed, engine_enabled) {
-                    (true, _) => "SUBSCRIBED",
-                    (false, true) => "OPEN FAILED",
-                    (false, false) => "DISABLED",
+                    (true, _) => labels::SUBSCRIBED,
+                    (false, true) => labels::OPEN_FAILED,
+                    (false, false) => labels::DISABLED,
                 };
                 ContentListItem {
                     icon: SectionIcon::new("plug"),
@@ -46,8 +49,10 @@ impl BuiltinContent for MidiClient {
                     name: p.name.clone(),
                     monospace_name: true,
                     active: subscribed,
-                    active_label: Some(status_label.to_owned()),
-                    trailing: vec![TrailingToken::Label(count.to_string())],
+                    active_label: Some(status_label.into()),
+                    trailing: vec![TrailingToken::Label(UserText::unlocalized(
+                        count.to_string(),
+                    ))],
                     enabled: true,
                     on_click: None,
                 }
@@ -70,13 +75,13 @@ impl BuiltinContent for MidiClient {
             })
             .collect();
 
-        let input_count = input_items.len().to_string();
-        let output_count = output_items.len().to_string();
+        let input_count = UserText::unlocalized(input_items.len().to_string());
+        let output_count = UserText::unlocalized(output_items.len().to_string());
 
         vec![
             DetailSection::TwoColumnLists {
                 left: Box::new(ContentList {
-                    title: "Input Ports".to_owned(),
+                    title: labels::INPUT_PORTS.into(),
                     icon: SectionIcon::new("plug"),
                     inline_label: None,
                     count_label: Some(input_count),
@@ -87,7 +92,7 @@ impl BuiltinContent for MidiClient {
                     footer: None,
                 }),
                 right: Box::new(ContentList {
-                    title: "Output Ports".to_owned(),
+                    title: labels::OUTPUT_PORTS.into(),
                     icon: SectionIcon::new("plug"),
                     inline_label: None,
                     count_label: Some(output_count),
@@ -99,25 +104,25 @@ impl BuiltinContent for MidiClient {
                 }),
             },
             DetailSection::KeyValueList {
-                title: "Status".to_owned(),
+                title: labels::STATUS.into(),
                 icon: SectionIcon::new("info"),
                 items: vec![
                     KeyValueRow {
                         icon: SectionIcon::new("tag"),
-                        name: "Client name".to_owned(),
-                        tag: Some(client_name),
+                        name: labels::CLIENT_NAME.into(),
+                        tag: Some(UserText::unlocalized(client_name)),
                         action: None,
                     },
                     KeyValueRow {
                         icon: SectionIcon::new("clock"),
-                        name: "Poll interval".to_owned(),
-                        tag: Some("2 s".to_owned()),
+                        name: labels::POLL_INTERVAL.into(),
+                        tag: Some(labels::POLL_INTERVAL_VALUE.into()),
                         action: None,
                     },
                     KeyValueRow {
                         icon: SectionIcon::new("bolt"),
-                        name: "Events received".to_owned(),
-                        tag: Some(total.to_string()),
+                        name: labels::EVENTS_RECEIVED.into(),
+                        tag: Some(UserText::unlocalized(total.to_string())),
                         action: None,
                     },
                 ],

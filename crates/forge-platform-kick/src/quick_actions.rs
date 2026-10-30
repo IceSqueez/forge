@@ -2,62 +2,81 @@ use std::collections::BTreeMap;
 
 use forge_platform_core::{
     BuiltinStatus, QuickAction, QuickActionAccent, QuickActionField, QuickActionFieldKind,
-    QuickActionFieldValue, QuickActionLiveness, QuickActions, SectionIcon,
+    QuickActionFieldValue, QuickActionGroup, QuickActionLiveness, QuickActions, SectionIcon,
 };
-use forge_types::SubActionStep;
+use forge_types::{MessageCode, SubActionStep, UserText};
 
 use crate::builtin::KickIntegrationBundle;
 use crate::vocabulary::variables::references;
-use crate::vocabulary::{config_keys, sub_action_ids};
+use crate::vocabulary::{config_keys, labels, sub_action_ids};
 
-const STREAM_INFO: &str = "Stream info";
-const CHAT: &str = "Chat";
-const MODERATION: &str = "Moderation";
-const REWARDS: &str = "Rewards";
-const LOOKUPS: &str = "Lookups";
+#[derive(Clone, Copy)]
+enum Group {
+    StreamInfo,
+    Chat,
+    Moderation,
+    Rewards,
+    Lookups,
+}
 
-fn group_badge(group: &str) -> (SectionIcon, QuickActionAccent) {
-    match group {
-        STREAM_INFO => (SectionIcon::new("edit"), QuickActionAccent::Info),
-        CHAT => (SectionIcon::new("message-2"), QuickActionAccent::Brand),
-        MODERATION => (SectionIcon::new("shield"), QuickActionAccent::Danger),
-        REWARDS => (SectionIcon::new("gift"), QuickActionAccent::Bits),
-        LOOKUPS => (SectionIcon::new("search"), QuickActionAccent::Info),
-        _ => (SectionIcon::new("dot"), QuickActionAccent::Brand),
+impl Group {
+    fn badge(self) -> QuickActionGroup {
+        let (label, icon, accent) = match self {
+            Self::StreamInfo => (labels::STREAM_INFO, "edit", QuickActionAccent::Info),
+            Self::Chat => (labels::CHAT, "message-2", QuickActionAccent::Brand),
+            Self::Moderation => (labels::MODERATION, "shield", QuickActionAccent::Danger),
+            Self::Rewards => (labels::REWARDS, "gift", QuickActionAccent::Bits),
+            Self::Lookups => (labels::LOOKUPS, "search", QuickActionAccent::Info),
+        };
+        QuickActionGroup {
+            label: label.into(),
+            icon: SectionIcon::new(icon),
+            accent,
+        }
     }
 }
 
-fn text_field(key: &str, label: &str, placeholder: &str) -> QuickActionField {
+fn bare_text_field(key: &str, label: MessageCode) -> QuickActionField {
     QuickActionField {
         key: key.to_owned(),
-        label: label.to_owned(),
+        label: label.into(),
         kind: QuickActionFieldKind::Text,
         default: None,
-        placeholder: Some(placeholder.to_owned()),
+        placeholder: None,
         hint: None,
         required: false,
     }
 }
 
-fn text_field_hint(key: &str, label: &str, hint: &str) -> QuickActionField {
+fn text_field(key: &str, label: MessageCode, placeholder: impl Into<UserText>) -> QuickActionField {
     QuickActionField {
-        placeholder: None,
-        hint: Some(hint.to_owned()),
-        ..text_field(key, label, "")
+        placeholder: Some(placeholder.into()),
+        ..bare_text_field(key, label)
     }
 }
 
-fn multiline_field(key: &str, label: &str, placeholder: &str) -> QuickActionField {
+fn text_field_hint(key: &str, label: MessageCode, hint: impl Into<UserText>) -> QuickActionField {
+    QuickActionField {
+        hint: Some(hint.into()),
+        ..bare_text_field(key, label)
+    }
+}
+
+fn multiline_field(
+    key: &str,
+    label: MessageCode,
+    placeholder: impl Into<UserText>,
+) -> QuickActionField {
     QuickActionField {
         kind: QuickActionFieldKind::Multiline,
         ..text_field(key, label, placeholder)
     }
 }
 
-fn toggle_field(key: &str, label: &str, default: bool) -> QuickActionField {
+fn toggle_field(key: &str, label: MessageCode, default: bool) -> QuickActionField {
     QuickActionField {
         key: key.to_owned(),
-        label: label.to_owned(),
+        label: label.into(),
         kind: QuickActionFieldKind::Toggle,
         default: Some(QuickActionFieldValue::Toggle(default)),
         placeholder: None,
@@ -67,23 +86,20 @@ fn toggle_field(key: &str, label: &str, default: bool) -> QuickActionField {
 }
 
 fn quick_action(
-    label: &str,
+    label: MessageCode,
     icon: &str,
     accent: QuickActionAccent,
-    group: &str,
+    group: Group,
     kind_id: &str,
     fields: Vec<QuickActionField>,
 ) -> QuickAction {
-    let (group_icon, group_accent) = group_badge(group);
     QuickAction {
-        label: label.to_owned(),
+        label: label.into(),
         icon: SectionIcon::new(icon),
         enabled: false,
         locked_reason: None,
         liveness: QuickActionLiveness::Unknown,
-        group: Some(group.to_owned()),
-        group_icon: Some(group_icon),
-        group_accent: Some(group_accent),
+        group: Some(group.badge()),
         destructive: false,
         accent,
         subaction_template: SubActionStep {
@@ -109,191 +125,249 @@ fn destructive(action: QuickAction) -> QuickAction {
 fn catalog() -> Vec<QuickAction> {
     vec![
         quick_action(
-            "Update title",
+            labels::UPDATE_TITLE,
             "edit",
             QuickActionAccent::Info,
-            STREAM_INFO,
+            Group::StreamInfo,
             sub_action_ids::CHANNEL_UPDATE_INFO,
-            vec![text_field(config_keys::TITLE, "Stream Title", "Stream title").required()],
+            vec![
+                text_field(
+                    config_keys::TITLE,
+                    labels::STREAM_TITLE_FIELD,
+                    labels::STREAM_TITLE,
+                )
+                .required(),
+            ],
         ),
         quick_action(
-            "Set category",
+            labels::SET_CATEGORY,
             "category",
             QuickActionAccent::Success,
-            STREAM_INFO,
+            Group::StreamInfo,
             sub_action_ids::CHANNEL_UPDATE_INFO,
             vec![
                 text_field_hint(
                     config_keys::CATEGORY_ID,
-                    "Category ID",
-                    "Use Find category (Lookups) to get the numeric id",
+                    labels::CATEGORY_ID,
+                    labels::CATEGORY_ID_HINT,
                 )
                 .required(),
             ],
         ),
         quick_action(
-            "Set custom tags",
+            labels::SET_CUSTOM_TAGS,
             "hash",
             QuickActionAccent::Brand,
-            STREAM_INFO,
+            Group::StreamInfo,
             sub_action_ids::CHANNEL_UPDATE_INFO,
             vec![
                 text_field(
                     config_keys::TAGS,
-                    "Tags (comma-separated, max 10)",
-                    "gaming, chill, speedrun",
+                    labels::TAGS_COMMA_SEPARATED,
+                    labels::TAGS_PLACEHOLDER,
                 )
                 .required(),
             ],
         ),
         quick_action(
-            "Send message",
+            labels::SEND_MESSAGE,
             "send",
             QuickActionAccent::Brand,
-            CHAT,
+            Group::Chat,
             sub_action_ids::CHAT_SEND_MESSAGE,
             vec![
-                multiline_field(config_keys::MESSAGE, "Message", "Message").required(),
-                toggle_field(config_keys::AS_BOT, "Send as bot", false),
+                multiline_field(config_keys::MESSAGE, labels::MESSAGE, labels::MESSAGE).required(),
+                toggle_field(config_keys::AS_BOT, labels::SEND_AS_BOT, false),
             ],
         ),
         destructive(quick_action(
-            "Delete message",
+            labels::DELETE_MESSAGE,
             "trash",
             QuickActionAccent::Danger,
-            CHAT,
+            Group::Chat,
             sub_action_ids::CHAT_DELETE_MESSAGE,
             vec![
                 text_field(
                     config_keys::MESSAGE_ID,
-                    "Message ID",
-                    references::MESSAGE_ID,
+                    labels::MESSAGE_ID_FIELD,
+                    UserText::unlocalized(references::MESSAGE_ID),
                 )
                 .required(),
             ],
         )),
         quick_action(
-            "Timeout user",
+            labels::TIMEOUT_USER,
             "clock-pause",
             QuickActionAccent::Warning,
-            MODERATION,
+            Group::Moderation,
             sub_action_ids::MODERATION_TIMEOUT,
             vec![
-                text_field(config_keys::USER_ID, "Target User ID", references::USER_ID).required(),
+                text_field(
+                    config_keys::USER_ID,
+                    labels::TARGET_USER_ID,
+                    UserText::unlocalized(references::USER_ID),
+                )
+                .required(),
             ],
         ),
         destructive(quick_action(
-            "Ban user",
+            labels::BAN_USER,
             "ban",
             QuickActionAccent::Danger,
-            MODERATION,
+            Group::Moderation,
             sub_action_ids::MODERATION_BAN,
             vec![
-                text_field(config_keys::USER_ID, "Target User ID", references::USER_ID).required(),
+                text_field(
+                    config_keys::USER_ID,
+                    labels::TARGET_USER_ID,
+                    UserText::unlocalized(references::USER_ID),
+                )
+                .required(),
             ],
         )),
         quick_action(
-            "Unban user",
+            labels::UNBAN_USER,
             "unban",
             QuickActionAccent::Success,
-            MODERATION,
+            Group::Moderation,
             sub_action_ids::MODERATION_UNBAN,
             vec![
-                text_field(config_keys::USER_ID, "Target User ID", references::USER_ID).required(),
+                text_field(
+                    config_keys::USER_ID,
+                    labels::TARGET_USER_ID,
+                    UserText::unlocalized(references::USER_ID),
+                )
+                .required(),
             ],
         ),
         quick_action(
-            "Create reward",
+            labels::CREATE_REWARD,
             "gift",
             QuickActionAccent::Success,
-            REWARDS,
+            Group::Rewards,
             sub_action_ids::REWARD_CREATE,
             vec![
-                text_field(config_keys::TITLE, "Reward Title", "e.g. Hydrate").required(),
-                text_field(config_keys::COST, "Cost (channel points)", "e.g. 500").required(),
+                text_field(
+                    config_keys::TITLE,
+                    labels::REWARD_TITLE,
+                    labels::REWARD_TITLE_EXAMPLE,
+                )
+                .required(),
+                text_field(
+                    config_keys::COST,
+                    labels::COST_CHANNEL_POINTS,
+                    labels::COST_EXAMPLE,
+                )
+                .required(),
             ],
         ),
         quick_action(
-            "Update reward",
+            labels::UPDATE_REWARD,
             "edit",
             QuickActionAccent::Info,
-            REWARDS,
+            Group::Rewards,
             sub_action_ids::REWARD_UPDATE,
             vec![
-                text_field(config_keys::REWARD_ID, "Reward ID", references::REWARD_ID).required(),
+                text_field(
+                    config_keys::REWARD_ID,
+                    labels::REWARD_ID,
+                    UserText::unlocalized(references::REWARD_ID),
+                )
+                .required(),
                 text_field(
                     config_keys::TITLE,
-                    "New Title (optional)",
-                    "Leave empty to keep current",
+                    labels::NEW_TITLE_OPTIONAL,
+                    labels::LEAVE_EMPTY_TO_KEEP_CURRENT,
                 ),
                 text_field(
                     config_keys::COST,
-                    "New Cost (optional)",
-                    "Leave empty to keep current",
+                    labels::NEW_COST_OPTIONAL,
+                    labels::LEAVE_EMPTY_TO_KEEP_CURRENT,
                 ),
             ],
         ),
         destructive(quick_action(
-            "Delete reward",
+            labels::DELETE_REWARD,
             "trash",
             QuickActionAccent::Danger,
-            REWARDS,
+            Group::Rewards,
             sub_action_ids::REWARD_DELETE,
-            vec![text_field(config_keys::REWARD_ID, "Reward ID", references::REWARD_ID).required()],
+            vec![
+                text_field(
+                    config_keys::REWARD_ID,
+                    labels::REWARD_ID,
+                    UserText::unlocalized(references::REWARD_ID),
+                )
+                .required(),
+            ],
         )),
         quick_action(
-            "Accept redemption",
+            labels::ACCEPT_REDEMPTION,
             "check",
             QuickActionAccent::Success,
-            REWARDS,
+            Group::Rewards,
             sub_action_ids::REWARD_REDEMPTION_ACCEPT,
             vec![
                 text_field(
                     config_keys::REDEMPTION_IDS,
-                    "Redemption ID(s)",
-                    references::REDEMPTION_IDS_HINT,
+                    labels::REDEMPTION_ID_S,
+                    UserText::unlocalized(references::REDEMPTION_IDS_HINT),
                 )
                 .required(),
             ],
         ),
         quick_action(
-            "Reject redemption",
+            labels::REJECT_REDEMPTION,
             "x-circle",
             QuickActionAccent::Warning,
-            REWARDS,
+            Group::Rewards,
             sub_action_ids::REWARD_REDEMPTION_REJECT,
             vec![
                 text_field(
                     config_keys::REDEMPTION_IDS,
-                    "Redemption ID(s)",
-                    references::REDEMPTION_IDS_HINT,
+                    labels::REDEMPTION_ID_S,
+                    UserText::unlocalized(references::REDEMPTION_IDS_HINT),
                 )
                 .required(),
             ],
         ),
         quick_action(
-            "Lookup user",
+            labels::LOOKUP_USER,
             "user",
             QuickActionAccent::Success,
-            LOOKUPS,
+            Group::Lookups,
             sub_action_ids::LOOKUP_USER,
-            vec![text_field(config_keys::SLUG, "Channel Slug", "channel-slug").required()],
+            vec![
+                text_field(
+                    config_keys::SLUG,
+                    labels::CHANNEL_SLUG,
+                    labels::CHANNEL_SLUG_PLACEHOLDER,
+                )
+                .required(),
+            ],
         ),
         quick_action(
-            "Stream stats",
+            labels::STREAM_STATS,
             "chart-line",
             QuickActionAccent::Info,
-            LOOKUPS,
+            Group::Lookups,
             sub_action_ids::LOOKUP_STREAM_STATS,
             Vec::new(),
         ),
         quick_action(
-            "Find category",
+            labels::FIND_CATEGORY,
             "search",
             QuickActionAccent::Brand,
-            LOOKUPS,
+            Group::Lookups,
             sub_action_ids::LOOKUP_CATEGORY,
-            vec![text_field(config_keys::QUERY, "Search Query", "just chatting").required()],
+            vec![
+                text_field(
+                    config_keys::QUERY,
+                    labels::SEARCH_QUERY,
+                    labels::CATEGORY_SEARCH_PLACEHOLDER,
+                )
+                .required(),
+            ],
         ),
     ]
 }

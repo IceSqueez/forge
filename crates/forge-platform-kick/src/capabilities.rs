@@ -1,7 +1,6 @@
 use forge_platform_core::PlatformCapabilities;
 
-pub const KICK_COMMUNITY_NOTE: &str = "Chat receive uses the unofficial Pusher WebSocket - Kick exposes no official chat:read \
-     scope. Chat send uses the official OAuth API. Not affiliated with Kick.com.";
+pub use crate::vocabulary::messages::KICK_COMMUNITY_NOTE;
 
 pub fn kick_capabilities() -> PlatformCapabilities {
     PlatformCapabilities {

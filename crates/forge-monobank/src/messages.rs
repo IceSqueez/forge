@@ -39,6 +39,25 @@ pub const FAILURE_JAR_NOT_SELECTED: MessageCode =
 pub const FAILURE_JAR_MISSING: MessageCode =
     MessageCode::from_static(INTEGRATION_ID, "failure_jar_missing");
 
+pub const LABEL_JAR_TITLE: MessageCode =
+    MessageCode::from_static(INTEGRATION_ID, "label_jar_title");
+pub const LABEL_JAR: MessageCode = MessageCode::from_static(INTEGRATION_ID, "label_jar");
+pub const LABEL_CURRENCY: MessageCode = MessageCode::from_static(INTEGRATION_ID, "label_currency");
+pub const LABEL_GOAL: MessageCode = MessageCode::from_static(INTEGRATION_ID, "label_goal");
+pub const LABEL_STATUS: MessageCode = MessageCode::from_static(INTEGRATION_ID, "label_status");
+pub const LABEL_TOKEN_ACCESS_TITLE: MessageCode =
+    MessageCode::from_static(INTEGRATION_ID, "label_token_access_title");
+pub const LABEL_TOKEN_ACCESS_BODY: MessageCode =
+    MessageCode::from_static(INTEGRATION_ID, "label_token_access_body");
+pub const LABEL_BANNER_TOKEN_REJECTED: MessageCode =
+    MessageCode::from_static(INTEGRATION_ID, "label_banner_token_rejected");
+pub const LABEL_BANNER_JAR_NOT_SELECTED: MessageCode =
+    MessageCode::from_static(INTEGRATION_ID, "label_banner_jar_not_selected");
+pub const LABEL_BANNER_JAR_MISSING: MessageCode =
+    MessageCode::from_static(INTEGRATION_ID, "label_banner_jar_missing");
+pub const LABEL_BANNER_TOKEN_MISSING: MessageCode =
+    MessageCode::from_static(INTEGRATION_ID, "label_banner_token_missing");
+
 pub const MONOBANK_MESSAGES: MessageCatalog = MessageCatalog {
     namespace: INTEGRATION_ID,
     codes: &[
@@ -64,6 +83,17 @@ pub const MONOBANK_MESSAGES: MessageCatalog = MessageCatalog {
         FAILURE_LOCAL,
         FAILURE_JAR_NOT_SELECTED,
         FAILURE_JAR_MISSING,
+        LABEL_JAR_TITLE,
+        LABEL_JAR,
+        LABEL_CURRENCY,
+        LABEL_GOAL,
+        LABEL_STATUS,
+        LABEL_TOKEN_ACCESS_TITLE,
+        LABEL_TOKEN_ACCESS_BODY,
+        LABEL_BANNER_TOKEN_REJECTED,
+        LABEL_BANNER_JAR_NOT_SELECTED,
+        LABEL_BANNER_JAR_MISSING,
+        LABEL_BANNER_TOKEN_MISSING,
     ],
     en_ftl: include_str!("../locales/en/messages.ftl"),
     uk_ftl: include_str!("../locales/uk/messages.ftl"),

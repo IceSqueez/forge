@@ -2,29 +2,27 @@ use forge_platform_core::{
     ConnectionState, QuickAction, QuickActionAccent, QuickActionLiveness, QuickActions, SectionIcon,
 };
 use forge_registry::SubActionConfig;
-use forge_types::{SubActionStep, Variant};
+use forge_types::{MessageCode, SubActionStep, Variant};
 
 use crate::client::DiscordClient;
-use crate::vocabulary::{config_keys, sub_action_ids};
+use crate::vocabulary::{config_keys, labels, sub_action_ids};
 
 const TEST_POST_CONTENT: &str = "forge test post";
 
 fn webhook_action(
-    label: &str,
+    label: MessageCode,
     icon: &str,
     enabled: bool,
     kind_id: &str,
     config: SubActionConfig,
 ) -> QuickAction {
     QuickAction {
-        label: label.to_owned(),
+        label: label.into(),
         icon: SectionIcon::new(icon),
         enabled,
         locked_reason: None,
         liveness: QuickActionLiveness::Unknown,
         group: None,
-        group_icon: None,
-        group_accent: None,
         destructive: false,
         accent: QuickActionAccent::Brand,
         subaction_template: SubActionStep {
@@ -60,28 +58,28 @@ impl QuickActions for DiscordClient {
 
         vec![
             webhook_action(
-                "Post Text",
+                labels::POST_TEXT,
                 "message",
                 enabled,
                 sub_action_ids::WEBHOOK_SEND_MESSAGE,
                 preset(Vec::new()),
             ),
             webhook_action(
-                "Post Embed",
+                labels::POST_EMBED,
                 "layout-cards",
                 enabled,
                 sub_action_ids::WEBHOOK_SEND_EMBED,
                 preset(Vec::new()),
             ),
             webhook_action(
-                "Edit Message",
+                labels::EDIT_MESSAGE,
                 "pencil",
                 enabled,
                 sub_action_ids::WEBHOOK_UPDATE_MESSAGE,
                 preset(Vec::new()),
             ),
             webhook_action(
-                "Test Webhook",
+                labels::TEST_WEBHOOK,
                 "send",
                 enabled,
                 sub_action_ids::WEBHOOK_SEND_MESSAGE,
@@ -100,6 +98,7 @@ mod tests {
 
     use super::*;
     use crate::client::DiscordClient;
+    use forge_types::UserText;
 
     #[test]
     fn all_actions_disabled_when_no_webhooks() {
@@ -109,7 +108,7 @@ mod tests {
             assert!(
                 !action.enabled,
                 "{} must be disabled with no webhooks",
-                action.label
+                action.label.code_or_text()
             );
         }
     }
@@ -126,7 +125,7 @@ mod tests {
             assert!(
                 action.enabled,
                 "{} must be enabled with webhooks",
-                action.label
+                action.label.code_or_text()
             );
         }
     }
@@ -143,7 +142,7 @@ mod tests {
         let actions = c.actions();
         let template = &actions
             .iter()
-            .find(|a| a.label == "Test Webhook")
+            .find(|a| a.label == UserText::from(labels::TEST_WEBHOOK))
             .unwrap()
             .subaction_template;
         let runner = crate::runners::PostTextRunner::new(c.clone());
@@ -154,5 +153,30 @@ mod tests {
             Some(&Variant::String("alerts".to_owned()))
         );
         assert!(runner.validate_config(&template.config).is_ok());
+    }
+
+    #[test]
+    fn every_code_shown_with_and_without_webhooks_is_catalogued_in_both_languages() {
+        use crate::emitted_codes::{emitted_codes, uncatalogued};
+        use crate::vocabulary::messages::DISCORD_MESSAGES;
+        use forge_platform_core::BuiltinContent;
+
+        let bare = DiscordClient::new_for_test();
+        let configured = DiscordClient::new_for_test();
+        configured
+            .content_state
+            .lock()
+            .unwrap()
+            .webhook_names
+            .push("alerts".to_owned());
+        for client in [bare, configured] {
+            let emitted = emitted_codes(&serde_json::json!((client.actions(), client.sections())));
+
+            assert!(!emitted.is_empty());
+            assert_eq!(
+                uncatalogued(&emitted, &[DISCORD_MESSAGES, forge_types::COMMON_MESSAGES]),
+                Vec::<String>::new()
+            );
+        }
     }
 }

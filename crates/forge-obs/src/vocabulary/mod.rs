@@ -1,6 +1,7 @@
 pub(crate) mod config_keys;
 pub mod event_kinds;
 pub(crate) mod fields;
+pub(crate) mod labels;
 pub mod messages;
 pub(crate) mod option_lists;
 pub mod picker_keys;

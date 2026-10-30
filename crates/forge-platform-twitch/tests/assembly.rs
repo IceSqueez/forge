@@ -1,6 +1,6 @@
 #![allow(clippy::unwrap_used)]
 use std::collections::BTreeMap;
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 
 use async_trait::async_trait;
@@ -17,6 +17,7 @@ use time::OffsetDateTime;
 struct CountingRepo {
     rows: Mutex<BTreeMap<String, String>>,
     streamer_loads: AtomicUsize,
+    load_fails: AtomicBool,
 }
 
 #[async_trait]
@@ -32,6 +33,9 @@ impl CredentialsRepo for CountingRepo {
     async fn load(&self, id: &CredentialId) -> Result<Option<String>, StorageError> {
         if id.to_string() == TWITCH_CREDENTIAL_ID {
             self.streamer_loads.fetch_add(1, Ordering::SeqCst);
+            if self.load_fails.load(Ordering::SeqCst) {
+                return Err(StorageError::Decryption);
+            }
         }
         Ok(self.rows.lock().unwrap().get(&id.to_string()).cloned())
     }
@@ -99,7 +103,7 @@ async fn opening_a_session_reads_the_stored_identity_exactly_once() {
     let assembly = assembly_over(&repo);
     let before = repo.streamer_loads.load(Ordering::SeqCst);
 
-    let session = assembly.open_session().await;
+    let session = assembly.open_session().await.unwrap();
 
     assert_eq!(repo.streamer_loads.load(Ordering::SeqCst) - before, 1);
     assert!(session.into_bundle().is_some());
@@ -110,9 +114,18 @@ async fn a_session_without_stored_credentials_yields_no_bundle() {
     let repo = Arc::new(CountingRepo::default());
     let assembly = assembly_over(&repo);
 
-    let session = assembly.open_session().await;
+    let session = assembly.open_session().await.unwrap();
 
     assert!(session.into_bundle().is_none());
+}
+
+#[tokio::test]
+async fn an_unreadable_credential_store_fails_the_session_instead_of_reading_as_signed_out() {
+    let repo = Arc::new(CountingRepo::default());
+    let assembly = assembly_over(&repo);
+    repo.load_fails.store(true, Ordering::SeqCst);
+
+    assert!(assembly.open_session().await.is_err());
 }
 
 #[tokio::test]
@@ -121,7 +134,7 @@ async fn a_stored_identity_without_a_login_still_yields_a_bundle() {
     store_streamer(&repo, "").await;
     let assembly = assembly_over(&repo);
 
-    let session = assembly.open_session().await;
+    let session = assembly.open_session().await.unwrap();
 
     assert!(session.into_bundle().is_some());
 }

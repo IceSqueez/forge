@@ -1,8 +1,10 @@
+use crate::vocabulary::labels;
 use forge_platform_core::{SENDER_FIELD, SenderPreference};
 use forge_registry::{
     BoundedTextField, ChoiceField, ConfigChoice, ConfigReason, FieldLiteral, FormField, TextEditor,
     TextField, TypedField, ValueBounds,
 };
+use forge_types::MessageCode;
 use forge_types::Variant;
 
 use crate::account::user_target::TargetFields;
@@ -87,11 +89,11 @@ impl ModeToggle {
         }
     }
 
-    pub(crate) fn label(self) -> &'static str {
+    pub(crate) fn label(self) -> MessageCode {
         match self {
-            Self::Unchanged => "Unchanged",
-            Self::On => "On",
-            Self::Off => "Off",
+            Self::Unchanged => labels::UNCHANGED,
+            Self::On => labels::ON,
+            Self::Off => labels::OFF,
         }
     }
 }

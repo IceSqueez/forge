@@ -1,6 +1,7 @@
 use forge_types::{MessageCatalog, MessageCode, MessageRef, UpstreamDetail, VerbatimText};
 
 use crate::vocabulary::INTEGRATION_ID;
+use crate::vocabulary::labels;
 
 const CONNECT_REFUSED: MessageCode = MessageCode::from_static(INTEGRATION_ID, "connect_refused");
 const UNREACHABLE: MessageCode = MessageCode::from_static(INTEGRATION_ID, "unreachable");
@@ -223,6 +224,55 @@ pub const OBS_MESSAGES: MessageCatalog = MessageCatalog {
         CONDITION_SOURCE,
         CONDITION_SCENE,
         CONDITION_PREVIEW,
+        labels::APPLY_FILTER,
+        labels::AUDIO_SOURCE,
+        labels::COLLECTION,
+        labels::ENABLED,
+        labels::FILTER,
+        labels::FOLDER,
+        labels::GAIN_DB,
+        labels::LIVE,
+        labels::MUTED,
+        labels::PROFILE,
+        labels::PROFILES,
+        labels::RECORDING,
+        labels::REFRESH_BROWSER_SOURCE,
+        labels::REPLAY_CAPTURE,
+        labels::RESTART_MEDIA,
+        labels::SAVE_REPLAY_BUFFER,
+        labels::SAVE_TO,
+        labels::SCENE,
+        labels::SCENES,
+        labels::SCREENSHOT_SOURCE,
+        labels::SET_MUTE,
+        labels::SET_PREVIEW_SCENE,
+        labels::SET_RECORDING_FOLDER,
+        labels::SET_VOLUME,
+        labels::SOURCE,
+        labels::SOURCES,
+        labels::SOURCES_AUDIO,
+        labels::STREAM_RECORD,
+        labels::STREAMING,
+        labels::SWITCH_PROFILE,
+        labels::SWITCH_SCENE,
+        labels::SWITCH_SCENE_COLLECTION,
+        labels::TOGGLE_RECORDING,
+        labels::TOGGLE_RECORDING_PAUSE,
+        labels::TOGGLE_REPLAY_BUFFER,
+        labels::TOGGLE_SOURCE,
+        labels::TOGGLE_STREAM,
+        labels::TOGGLE_STUDIO_MODE,
+        labels::TOGGLE_VIRTUAL_CAMERA,
+        labels::TRANSITION,
+        labels::TRIGGER_TRANSITION,
+        labels::VISIBLE,
+        labels::VOLUME_EXAMPLE,
+        labels::SCENE_SOURCE_COUNT,
+        labels::AUDIO_DB,
+        labels::SOURCES_IN_SCENE,
+        labels::SOURCE_TOTAL,
+        labels::WS_BADGE,
+        labels::WS_BADGE_UPTIME,
     ],
     en_ftl: include_str!("../../locales/en/messages.ftl"),
     uk_ftl: include_str!("../../locales/uk/messages.ftl"),
@@ -473,7 +523,12 @@ mod tests {
             .iter()
             .map(|m| m.code().clone())
             .collect();
-        let catalogued: BTreeSet<MessageCode> = OBS_MESSAGES.codes.iter().cloned().collect();
+        let catalogued: BTreeSet<MessageCode> = OBS_MESSAGES
+            .codes
+            .iter()
+            .filter(|code| !code.name().starts_with("label_"))
+            .cloned()
+            .collect();
         assert_eq!(produced, catalogued);
     }
 

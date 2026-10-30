@@ -3,21 +3,6 @@ use forge_platform_core::CollectionFailure;
 
 pub(crate) fn localized_collection_text(english: &str) -> String {
     match english {
-        "Channel point rewards" => tr!("collection_text_channel_point_rewards"),
-        "Title" => tr!("collection_text_title"),
-        "Cost (Channel Points)" => tr!("collection_text_cost"),
-        "Prompt" => tr!("collection_text_prompt"),
-        "optional" => tr!("collection_text_optional"),
-        "Require viewer input" => tr!("collection_text_require_input"),
-        "Background color (#RRGGBB)" => tr!("collection_text_background_color"),
-        "Max per stream (0 = unlimited)" => tr!("collection_text_max_per_stream"),
-        "Max per viewer per stream (0 = unlimited)" => tr!("collection_text_max_per_viewer"),
-        "Global cooldown seconds (0 = off)" => tr!("collection_text_global_cooldown"),
-        "Enabled" => tr!("collection_text_enabled"),
-        "Paused" => tr!("collection_text_paused"),
-        "Created outside forge - edit it in the Twitch dashboard" => {
-            tr!("collection_text_created_outside")
-        }
         "Title is required" => tr!("collection_text_title_required"),
         "Background color must be empty or #RRGGBB" => tr!("collection_text_color_format"),
         "Must be 0 or more" => tr!("collection_text_zero_or_more"),

@@ -2,6 +2,7 @@ use forge_types::{MessageArg, MessageCatalog, MessageCode, MessageRef};
 use time::OffsetDateTime;
 
 use crate::vocabulary::INTEGRATION_ID;
+use crate::vocabulary::labels;
 
 pub const COMBO_ARG: &str = "combo";
 const TIME_ARG: &str = "time";
@@ -67,6 +68,9 @@ pub const HOTKEY_MESSAGES: MessageCatalog = MessageCatalog {
         ENGINE_STOPPED,
         BACKEND_FAILED,
         CONDITION_ANY_HOTKEY,
+        labels::ACTIVE,
+        labels::RECENT_TRIGGERS,
+        labels::REGISTERED_HOTKEYS,
     ],
     en_ftl: include_str!("../../locales/en/messages.ftl"),
     uk_ftl: include_str!("../../locales/uk/messages.ftl"),

@@ -2,6 +2,9 @@ mod catalog;
 mod client;
 mod connect_failure;
 pub mod credentials;
+#[cfg(test)]
+#[path = "../../forge-platform-core/test_support/emitted_codes.rs"]
+mod emitted_codes;
 mod error;
 mod events;
 mod health;

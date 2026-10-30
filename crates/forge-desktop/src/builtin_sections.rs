@@ -16,6 +16,7 @@ use forge_platform_core::{
 use forge_types::SubActionStep;
 
 use crate::health_text::{health_metric_label, health_text};
+use crate::user_text::user_text_string;
 use gpui::{
     AnyElement, App, ClickEvent, Div, FontWeight, ListSizingBehavior, Pixels, Rgba, SharedString,
     Window, div, prelude::*, px, relative, svg, uniform_list,
@@ -127,17 +128,24 @@ fn dispatch_section(
             render_two_column_lists(left, right, hooks, palette, density)
         }
         DetailSection::KeyValueList { title, icon, items } => {
-            render_key_value_list(title, icon, items, palette, density)
+            render_key_value_list(&user_text_string(title), icon, items, palette, density)
         }
         DetailSection::ActiveItemList { title, icon, items } => {
-            render_active_item_list(title, icon, items, palette, density)
+            render_active_item_list(&user_text_string(title), icon, items, palette, density)
         }
         DetailSection::WarningBanner {
             level,
             title,
             body,
             cta,
-        } => render_warning_banner(level, title, body, cta.as_deref(), palette, density),
+        } => render_warning_banner(
+            level,
+            &user_text_string(title),
+            &user_text_string(body),
+            cta.as_ref().map(user_text_string).as_deref(),
+            palette,
+            density,
+        ),
         DetailSection::SubscriptionList {
             title,
             icon,
@@ -145,11 +153,11 @@ fn dispatch_section(
             footer,
             banner,
         } => render_subscription_list(
-            title,
+            &user_text_string(title),
             icon,
             items,
             footer.as_ref(),
-            banner.as_deref(),
+            banner.as_ref().map(user_text_string).as_deref(),
             palette,
             density,
         ),
@@ -158,7 +166,14 @@ fn dispatch_section(
             icon,
             scopes,
             footer,
-        } => render_scopes_list(title, icon, scopes, footer.as_ref(), palette, density),
+        } => render_scopes_list(
+            &user_text_string(title),
+            icon,
+            scopes,
+            footer.as_ref(),
+            palette,
+            density,
+        ),
         DetailSection::TwoColumn { left, right } => {
             render_two_column(left, right, hooks, palette, density)
         }
@@ -167,18 +182,32 @@ fn dispatch_section(
             live,
             fields,
             health_bar,
-        } => render_info_card(title, *live, fields, health_bar.as_ref(), palette, density),
+        } => render_info_card(
+            &user_text_string(title),
+            *live,
+            fields,
+            health_bar.as_ref(),
+            palette,
+            density,
+        ),
         DetailSection::StatsGrid {
             title,
             icon,
             columns,
-        } => render_stats_grid(title, icon, columns, palette, density),
+        } => render_stats_grid(&user_text_string(title), icon, columns, palette, density),
         DetailSection::ChipGrid {
             title,
             icon,
             chip_icon,
             items,
-        } => render_chip_grid(title, icon, chip_icon, items, palette, density),
+        } => render_chip_grid(
+            &user_text_string(title),
+            icon,
+            chip_icon,
+            items,
+            palette,
+            density,
+        ),
     }
 }
 
@@ -638,7 +667,7 @@ fn content_list_panel(
 ) -> AnyElement {
     let row_h = content_list_row_h(list);
     let rows = RowHooks {
-        scope: SharedString::from(format!("content-list-{}", list.title)),
+        scope: SharedString::from(format!("content-list-{}", list.title.code_or_text())),
         pad_y: f32::from(list.row_padding_y_px),
         run_step: hooks.run_step.clone(),
     };
@@ -681,9 +710,9 @@ fn content_list_panel(
     let mut card = card_shell(palette)
         .child(panel_header_row(
             list.icon.as_str(),
-            &list.title,
-            list.inline_label.as_deref(),
-            list.count_label.as_deref(),
+            &user_text_string(&list.title),
+            list.inline_label.as_ref().map(user_text_string).as_deref(),
+            list.count_label.as_ref().map(user_text_string).as_deref(),
             refresh,
             palette,
             density,
@@ -746,7 +775,7 @@ fn content_list_item_row(
     if item.active
         && let Some(label) = &item.active_label
     {
-        trailing = trailing.child(active_badge(label, palette, density));
+        trailing = trailing.child(active_badge(&user_text_string(label), palette, density));
     }
     for (index, token) in item.trailing.iter().enumerate() {
         let site = TokenSite {
@@ -801,7 +830,7 @@ fn key_value_row_elem(item: &KeyValueRow, palette: &ForgePalette, density: Densi
         .font_family(mono_family())
         .text_size(FONT_SM)
         .text_color(palette.text_primary)
-        .child(item.name.clone());
+        .child(user_text_string(&item.name));
 
     let mut row = div()
         .w_full()
@@ -815,7 +844,7 @@ fn key_value_row_elem(item: &KeyValueRow, palette: &ForgePalette, density: Densi
         ))
         .child(name_el);
     if let Some(tag) = &item.tag {
-        row = row.child(mono(tag.clone(), FONT_XS, palette.text_faint));
+        row = row.child(mono(user_text_string(tag), FONT_XS, palette.text_faint));
     }
     if let Some(action) = &item.action {
         let ic = match action {
@@ -853,7 +882,7 @@ fn active_item_row_elem(item: &ActiveRow, palette: &ForgePalette, density: Densi
             density,
         ));
     } else if let Some(mode) = &item.mode_label {
-        row = row.child(body(mode.clone(), FONT_XS, palette.text_faint));
+        row = row.child(body(user_text_string(mode), FONT_XS, palette.text_faint));
     }
 
     if item.active {
@@ -892,7 +921,7 @@ fn subscription_row_elem(
         row = row.child(mono(ver.clone(), FONT_XXS, palette.text_faint));
     }
     let trailing: AnyElement = if let Some(err) = &item.error_label {
-        body(err.clone(), FONT_XXS, palette.danger).into_any_element()
+        body(user_text_string(err), FONT_XXS, palette.danger).into_any_element()
     } else if let Some(count) = item.event_count {
         body(
             tr!("widget_builtin_event_count", count = count as i64),
@@ -939,7 +968,7 @@ fn info_field_cell(field: &InfoField, palette: &ForgePalette, density: Density) 
         .flex_col()
         .gap(spacing(Spacing::Xs, density))
         .child(mono(
-            field.label.to_uppercase(),
+            user_text_string(&field.label).to_uppercase(),
             FONT_XS,
             palette.text_muted,
         ))
@@ -948,7 +977,7 @@ fn info_field_cell(field: &InfoField, palette: &ForgePalette, density: Density) 
                 .font_family(value_family)
                 .text_size(FONT_SM)
                 .text_color(palette.text_primary)
-                .child(field.value.clone()),
+                .child(user_text_string(&field.value)),
         )
         .into_any_element()
 }
@@ -977,7 +1006,7 @@ fn health_bar_section(bar: &HealthBar, palette: &ForgePalette, density: Density)
         .items_center()
         .gap(spacing(Spacing::Sm, density))
         .child(track)
-        .child(mono(bar.label.clone(), FONT_XS, level_color));
+        .child(mono(user_text_string(&bar.label), FONT_XS, level_color));
 
     div()
         .flex()
@@ -1001,9 +1030,21 @@ fn stat_column_cell(col: &StatColumn, palette: &ForgePalette, density: Density) 
         .gap(spacing(Spacing::Xs, density))
         .py(spacing(Spacing::Sm, density))
         .px(spacing(Spacing::Md, density))
-        .child(mono(col.label.to_uppercase(), FONT_XS, palette.text_muted))
-        .child(mono(col.value.clone(), FONT_LG, palette.text_primary))
-        .child(mono(col.subtitle.clone(), FONT_XS, palette.success))
+        .child(mono(
+            user_text_string(&col.label).to_uppercase(),
+            FONT_XS,
+            palette.text_muted,
+        ))
+        .child(mono(
+            user_text_string(&col.value),
+            FONT_LG,
+            palette.text_primary,
+        ))
+        .child(mono(
+            user_text_string(&col.subtitle),
+            FONT_XS,
+            palette.success,
+        ))
         .into_any_element()
 }
 
@@ -1121,12 +1162,12 @@ fn list_footer_bar(footer: &ListFooter, palette: &ForgePalette, density: Density
 
     let lead = div().flex_1().min_w(px(0.0));
     if let Some(cta) = &footer.cta_label {
-        row = row.child(lead.child(body(cta.clone(), FONT_XS, palette.brand)));
+        row = row.child(lead.child(body(user_text_string(cta), FONT_XS, palette.brand)));
     } else {
         row = row.child(lead);
     }
     if let Some(trail) = &footer.trailing_label {
-        row = row.child(mono(trail.clone(), FONT_XS, palette.text_faint));
+        row = row.child(mono(user_text_string(trail), FONT_XS, palette.text_faint));
     }
     row.into_any_element()
 }
@@ -1202,18 +1243,21 @@ fn trailing_token_elem(
                 .px(spacing(Spacing::Xs, density))
                 .rounded(radius(Radius::Md))
                 .bg(palette.surface_overlay)
-                .child(body(label.clone(), PANEL_BADGE_FONT, tc))
+                .child(body(user_text_string(label), PANEL_BADGE_FONT, tc))
                 .into_any_element()
         }
         TrailingToken::Icon(ic, color) => {
             let tc = with_alpha(token_color_value(color, palette), dim);
             icon(Icon::from_name(ic.as_str()), ROW_TRAILING_GLYPH, tc).into_any_element()
         }
-        TrailingToken::Label(label) => {
-            mono(label.clone(), FONT_XXS, with_alpha(palette.text_faint, dim)).into_any_element()
-        }
+        TrailingToken::Label(label) => mono(
+            user_text_string(label),
+            FONT_XXS,
+            with_alpha(palette.text_faint, dim),
+        )
+        .into_any_element(),
         TrailingToken::TintedLabel(label, color) => mono(
-            label.clone(),
+            user_text_string(label),
             ROW_TINTED_LABEL_FONT,
             with_alpha(token_color_value(color, palette), dim),
         )
@@ -1417,6 +1461,7 @@ mod tests {
     use gpui::{Modifiers, TestAppContext, VisualTestContext, point, size};
 
     use super::*;
+    use forge_types::UserText;
 
     type Fired = Rc<RefCell<Vec<Vec<(String, String)>>>>;
 
@@ -1460,7 +1505,7 @@ mod tests {
 
     fn list(title: &str, items: Vec<ContentListItem>) -> ContentList {
         ContentList {
-            title: title.to_owned(),
+            title: UserText::unlocalized(title),
             icon: SectionIcon::new("film"),
             inline_label: None,
             count_label: None,

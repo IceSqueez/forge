@@ -4,6 +4,9 @@ mod config;
 pub(crate) mod content;
 pub(crate) mod control;
 pub(crate) mod decode;
+#[cfg(test)]
+#[path = "../../forge-platform-core/test_support/emitted_codes.rs"]
+mod emitted_codes;
 mod error;
 mod events;
 pub(crate) mod health;

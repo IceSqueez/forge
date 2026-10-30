@@ -2408,19 +2408,6 @@ collection_failure_capacity = The limit is reached - delete an item first
 collection_failure_not_eligible = This channel isn't eligible for this feature - Twitch channel point rewards need Affiliate or Partner status
 collection_failure_rate_limited = Rate limited - try again shortly
 collection_failure_transport = Connection error - try again
-collection_text_channel_point_rewards = Channel point rewards
-collection_text_title = Title
-collection_text_cost = Cost (Channel Points)
-collection_text_prompt = Prompt
-collection_text_optional = optional
-collection_text_require_input = Require viewer input
-collection_text_background_color = Background color (#RRGGBB)
-collection_text_max_per_stream = Max per stream (0 = unlimited)
-collection_text_max_per_viewer = Max per viewer per stream (0 = unlimited)
-collection_text_global_cooldown = Global cooldown seconds (0 = off)
-collection_text_enabled = Enabled
-collection_text_paused = Paused
-collection_text_created_outside = Created outside forge - edit it in the Twitch dashboard
 collection_text_title_required = Title is required
 collection_text_color_format = Background color must be empty or #RRGGBB
 collection_text_zero_or_more = Must be 0 or more

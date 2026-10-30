@@ -2,15 +2,16 @@ use std::collections::BTreeMap;
 
 use forge_platform_core::{
     OptionListId, QuickAction, QuickActionAccent, QuickActionChoiceSource, QuickActionField,
-    QuickActionFieldKind, QuickActionFieldValue, QuickActionLiveness, QuickActions, SectionIcon,
+    QuickActionFieldKind, QuickActionFieldValue, QuickActionGroup, QuickActionLiveness,
+    QuickActions, SectionIcon,
 };
-use forge_types::{SubActionStep, Variant};
+use forge_types::{MessageCode, SubActionStep, Variant};
 
 use crate::client::VTubeClient;
 use crate::vocabulary::option_lists::{
     EXPRESSION_LIST, HOTKEY_LIST, ITEM_FILE_LIST, ITEM_INSTANCE_LIST, MODEL_LIST,
 };
-use crate::vocabulary::{config_keys, sub_action_ids};
+use crate::vocabulary::{config_keys, labels, sub_action_ids};
 
 const EXPRESSION_FIELD: &str = config_keys::EXPRESSION_FILE;
 const HOTKEY_FIELD: &str = config_keys::HOTKEY_ID;
@@ -22,23 +23,42 @@ fn config(pairs: impl IntoIterator<Item = (&'static str, Variant)>) -> BTreeMap<
     pairs.into_iter().map(|(k, v)| (k.to_owned(), v)).collect()
 }
 
-fn group_badge(group: &str) -> (SectionIcon, QuickActionAccent) {
-    match group {
-        "Expressions" => (
-            SectionIcon::new("mood-smile"),
-            QuickActionAccent::AccentPinkLight,
-        ),
-        "Hotkeys & animation" => (SectionIcon::new("keyboard"), QuickActionAccent::Brand),
-        "Items" => (SectionIcon::new("confetti"), QuickActionAccent::Info),
-        "Model & scene" => (SectionIcon::new("user-square"), QuickActionAccent::Bits),
-        _ => (SectionIcon::new("dot"), QuickActionAccent::Brand),
+#[derive(Clone, Copy)]
+enum Group {
+    Expressions,
+    HotkeysAnimation,
+    Items,
+    ModelScene,
+}
+
+impl Group {
+    fn badge(self) -> QuickActionGroup {
+        let (label, icon, accent) = match self {
+            Self::Expressions => (
+                labels::EXPRESSIONS,
+                "mood-smile",
+                QuickActionAccent::AccentPinkLight,
+            ),
+            Self::HotkeysAnimation => (
+                labels::HOTKEYS_ANIMATION,
+                "keyboard",
+                QuickActionAccent::Brand,
+            ),
+            Self::Items => (labels::ITEMS, "confetti", QuickActionAccent::Info),
+            Self::ModelScene => (labels::MODEL_SCENE, "user-square", QuickActionAccent::Bits),
+        };
+        QuickActionGroup {
+            label: label.into(),
+            icon: SectionIcon::new(icon),
+            accent,
+        }
     }
 }
 
-fn toggle_field(key: &str, label: &str, default: bool) -> QuickActionField {
+fn toggle_field(key: &str, label: MessageCode, default: bool) -> QuickActionField {
     QuickActionField {
         key: key.to_owned(),
-        label: label.to_owned(),
+        label: label.into(),
         kind: QuickActionFieldKind::Toggle,
         default: Some(QuickActionFieldValue::Toggle(default)),
         placeholder: None,
@@ -47,10 +67,10 @@ fn toggle_field(key: &str, label: &str, default: bool) -> QuickActionField {
     }
 }
 
-fn choice_field(key: &str, label: &str, list: &str) -> QuickActionField {
+fn choice_field(key: &str, label: MessageCode, list: &str) -> QuickActionField {
     QuickActionField {
         key: key.to_owned(),
-        label: label.to_owned(),
+        label: label.into(),
         kind: QuickActionFieldKind::Choice(QuickActionChoiceSource::OptionList(OptionListId::new(
             list,
         ))),
@@ -66,26 +86,23 @@ fn choice_field(key: &str, label: &str, list: &str) -> QuickActionField {
     reason = "each argument is one field of the quick-action template"
 )]
 fn quick_action(
-    label: &str,
+    label: MessageCode,
     icon: &str,
     accent: QuickActionAccent,
     enabled: bool,
-    group: &str,
+    group: Group,
     destructive: bool,
     kind_id: &str,
     config: BTreeMap<String, Variant>,
     fields: Vec<QuickActionField>,
 ) -> QuickAction {
-    let (group_icon, group_accent) = group_badge(group);
     QuickAction {
-        label: label.to_owned(),
+        label: label.into(),
         icon: SectionIcon::new(icon),
         enabled,
         locked_reason: None,
         liveness: QuickActionLiveness::Unknown,
-        group: Some(group.to_owned()),
-        group_icon: Some(group_icon),
-        group_accent: Some(group_accent),
+        group: Some(group.badge()),
         destructive,
         accent,
         subaction_template: SubActionStep {
@@ -107,133 +124,141 @@ impl QuickActions for VTubeClient {
 
         vec![
             quick_action(
-                "Set expression",
+                labels::SET_EXPRESSION,
                 "mood-smile",
                 QuickActionAccent::AccentPinkLight,
                 connected,
-                "Expressions",
+                Group::Expressions,
                 false,
                 sub_action_ids::EXPRESSION_SET,
                 BTreeMap::new(),
                 vec![choice_field(
                     EXPRESSION_FIELD,
-                    "Expression",
+                    labels::EXPRESSION,
                     EXPRESSION_LIST,
                 )],
             ),
             quick_action(
-                "Toggle expression",
+                labels::TOGGLE_EXPRESSION,
                 "toggle-left",
                 QuickActionAccent::Warning,
                 connected,
-                "Expressions",
+                Group::Expressions,
                 false,
                 sub_action_ids::EXPRESSION_SET,
                 config([(config_keys::ACTIVE, Variant::Bool(false))]),
                 vec![choice_field(
                     EXPRESSION_FIELD,
-                    "Expression",
+                    labels::EXPRESSION,
                     EXPRESSION_LIST,
                 )],
             ),
             quick_action(
-                "Reset to idle",
+                labels::RESET_TO_IDLE,
                 "refresh",
                 QuickActionAccent::Info,
                 connected,
-                "Expressions",
+                Group::Expressions,
                 false,
                 sub_action_ids::RESET_TO_IDLE,
                 BTreeMap::new(),
                 Vec::new(),
             ),
             quick_action(
-                "Trigger hotkey",
+                labels::TRIGGER_HOTKEY,
                 "keyboard",
                 QuickActionAccent::Brand,
                 connected,
-                "Hotkeys & animation",
+                Group::HotkeysAnimation,
                 false,
                 sub_action_ids::HOTKEY_TRIGGER,
                 BTreeMap::new(),
-                vec![choice_field(HOTKEY_FIELD, "Hotkey", HOTKEY_LIST)],
+                vec![choice_field(HOTKEY_FIELD, labels::HOTKEY, HOTKEY_LIST)],
             ),
             quick_action(
-                "Play animation",
+                labels::PLAY_ANIMATION,
                 "run",
                 QuickActionAccent::Success,
                 connected,
-                "Hotkeys & animation",
+                Group::HotkeysAnimation,
                 false,
                 sub_action_ids::HOTKEY_TRIGGER,
                 BTreeMap::new(),
-                vec![choice_field(HOTKEY_FIELD, "Hotkey", HOTKEY_LIST)],
+                vec![choice_field(HOTKEY_FIELD, labels::HOTKEY, HOTKEY_LIST)],
             ),
             quick_action(
-                "Throw item",
+                labels::THROW_ITEM,
                 "photo",
                 QuickActionAccent::Info,
                 connected,
-                "Items",
+                Group::Items,
                 false,
                 sub_action_ids::ITEM_THROW,
                 BTreeMap::new(),
-                vec![choice_field(ITEM_FILE_FIELD, "Item file", ITEM_FILE_LIST)],
+                vec![choice_field(
+                    ITEM_FILE_FIELD,
+                    labels::ITEM_FILE,
+                    ITEM_FILE_LIST,
+                )],
             ),
             quick_action(
-                "Pin item to model",
+                labels::PIN_ITEM_TO_MODEL,
                 "pin",
                 QuickActionAccent::Warning,
                 connected,
-                "Items",
+                Group::Items,
                 false,
                 sub_action_ids::ITEM_PIN,
                 BTreeMap::new(),
                 vec![choice_field(
                     ITEM_INSTANCE_FIELD,
-                    "Item",
+                    labels::ITEM,
                     ITEM_INSTANCE_LIST,
                 )],
             ),
             quick_action(
-                "Load item",
+                labels::LOAD_ITEM,
                 "plus",
                 QuickActionAccent::Success,
                 connected,
-                "Items",
+                Group::Items,
                 false,
                 sub_action_ids::ITEM_LOAD,
                 BTreeMap::new(),
-                vec![choice_field(ITEM_FILE_FIELD, "Item file", ITEM_FILE_LIST)],
+                vec![choice_field(
+                    ITEM_FILE_FIELD,
+                    labels::ITEM_FILE,
+                    ITEM_FILE_LIST,
+                )],
             ),
             quick_action(
-                "Remove all items",
+                labels::REMOVE_ALL_ITEMS,
                 "trash",
                 QuickActionAccent::Danger,
                 connected,
-                "Items",
+                Group::Items,
                 true,
                 sub_action_ids::ITEM_UNLOAD_ALL,
                 BTreeMap::new(),
                 Vec::new(),
             ),
             quick_action(
-                "Load model",
+                labels::LOAD_MODEL,
                 "user-square",
                 QuickActionAccent::Bits,
                 connected,
-                "Model & scene",
+                Group::ModelScene,
                 false,
                 sub_action_ids::MODEL_LOAD,
                 BTreeMap::new(),
-                vec![choice_field(MODEL_FIELD, "Model", MODEL_LIST)],
+                vec![choice_field(MODEL_FIELD, labels::MODEL, MODEL_LIST)],
             ),
             quick_action(
-                "Move / scale model",
+                labels::MOVE_SCALE_MODEL,
                 "arrows-move",
                 QuickActionAccent::Info,
                 connected,
-                "Model & scene",
+                Group::ModelScene,
                 false,
                 sub_action_ids::MODEL_MOVE,
                 config([
@@ -246,11 +271,11 @@ impl QuickActions for VTubeClient {
                 Vec::new(),
             ),
             quick_action(
-                "Color tint overlay",
+                labels::COLOR_TINT_OVERLAY,
                 "color-swatch",
                 QuickActionAccent::Warning,
                 connected,
-                "Model & scene",
+                Group::ModelScene,
                 false,
                 sub_action_ids::MODEL_TINT,
                 config([
@@ -261,15 +286,15 @@ impl QuickActions for VTubeClient {
                 Vec::new(),
             ),
             quick_action(
-                "Toggle physics",
+                labels::TOGGLE_PHYSICS,
                 "wind",
                 QuickActionAccent::Success,
                 connected,
-                "Model & scene",
+                Group::ModelScene,
                 false,
                 sub_action_ids::MODEL_SET_PHYSICS,
                 BTreeMap::new(),
-                vec![toggle_field(config_keys::ENABLED, "Enabled", true)],
+                vec![toggle_field(config_keys::ENABLED, labels::ENABLED, true)],
             ),
         ]
     }
@@ -287,22 +312,23 @@ mod tests {
     use crate::runners::register_vtube_sub_actions;
     use crate::runners::test_support::MockSink;
     use crate::sink::VTubeSink;
+    use forge_types::UserText;
 
     fn roster() -> Vec<QuickAction> {
         VTubeClient::new_for_test("ws://127.0.0.1:8001/").actions()
     }
 
-    fn row(label: &str) -> QuickAction {
+    fn row(label: MessageCode) -> QuickAction {
         roster()
             .into_iter()
-            .find(|a| a.label == label)
+            .find(|a| a.label == UserText::from(label.clone()))
             .unwrap_or_else(|| panic!("roster is missing the '{label}' row"))
     }
 
     #[test]
     fn only_the_toggle_expression_row_presets_the_active_flag_and_presets_it_off() {
-        let set = row("Set expression");
-        let toggle = row("Toggle expression");
+        let set = row(labels::SET_EXPRESSION);
+        let toggle = row(labels::TOGGLE_EXPRESSION);
 
         assert_eq!(
             set.subaction_template.kind_id,
@@ -347,7 +373,7 @@ mod tests {
             assert!(
                 verdict.is_ok(),
                 "{} merges a config its runner rejects: {verdict:?}",
-                action.label,
+                action.label.code_or_text(),
             );
         }
     }
@@ -372,7 +398,7 @@ mod tests {
                     rejected.as_deref(),
                     Some(field.key.as_str()),
                     "{}: blank {:?} was not rejected",
-                    action.label,
+                    action.label.code_or_text(),
                     field.key,
                 );
             }
@@ -395,25 +421,33 @@ mod tests {
     #[test]
     fn picker_rows_read_the_option_list_that_matches_the_runner_key() {
         let expected = [
-            ("Set expression", "expression_file", EXPRESSION_LIST),
-            ("Toggle expression", "expression_file", EXPRESSION_LIST),
-            ("Trigger hotkey", "hotkey_id", HOTKEY_LIST),
-            ("Play animation", "hotkey_id", HOTKEY_LIST),
-            ("Throw item", "file_name", ITEM_FILE_LIST),
-            ("Pin item to model", "item_instance_id", ITEM_INSTANCE_LIST),
-            ("Load item", "file_name", ITEM_FILE_LIST),
-            ("Load model", "model_id", MODEL_LIST),
+            (labels::SET_EXPRESSION, "expression_file", EXPRESSION_LIST),
+            (
+                labels::TOGGLE_EXPRESSION,
+                "expression_file",
+                EXPRESSION_LIST,
+            ),
+            (labels::TRIGGER_HOTKEY, "hotkey_id", HOTKEY_LIST),
+            (labels::PLAY_ANIMATION, "hotkey_id", HOTKEY_LIST),
+            (labels::THROW_ITEM, "file_name", ITEM_FILE_LIST),
+            (
+                labels::PIN_ITEM_TO_MODEL,
+                "item_instance_id",
+                ITEM_INSTANCE_LIST,
+            ),
+            (labels::LOAD_ITEM, "file_name", ITEM_FILE_LIST),
+            (labels::LOAD_MODEL, "model_id", MODEL_LIST),
         ];
         let actual: BTreeMap<String, Vec<(String, String, bool)>> = roster()
             .iter()
-            .map(|a| (a.label.clone(), option_list_fields(a)))
+            .map(|a| (a.label.code_or_text(), option_list_fields(a)))
             .filter(|(_, fields)| !fields.is_empty())
             .collect();
         let expected: BTreeMap<String, Vec<(String, String, bool)>> = expected
             .into_iter()
             .map(|(label, key, list)| {
                 (
-                    label.to_owned(),
+                    label.to_string(),
                     vec![(key.to_owned(), list.to_owned(), true)],
                 )
             })
@@ -433,9 +467,12 @@ mod tests {
         let reg = registry();
         for action in &roster() {
             let kind_id = &action.subaction_template.kind_id;
-            let runner = reg
-                .get(kind_id)
-                .unwrap_or_else(|| panic!("{} targets unregistered {kind_id}", action.label));
+            let runner = reg.get(kind_id).unwrap_or_else(|| {
+                panic!(
+                    "{} targets unregistered {kind_id}",
+                    action.label.code_or_text()
+                )
+            });
             let known: BTreeSet<String> = runner
                 .default_config()
                 .into_keys()
@@ -450,7 +487,7 @@ mod tests {
                 assert!(
                     known.contains(key),
                     "{}: key {key:?} is not read by {kind_id}",
-                    action.label,
+                    action.label.code_or_text(),
                 );
             }
         }
@@ -469,7 +506,7 @@ mod tests {
                 assert!(
                     declared.contains(&list),
                     "{}: field {key:?} reads undeclared list {list:?}",
-                    action.label,
+                    action.label.code_or_text(),
                 );
             }
         }
@@ -480,10 +517,13 @@ mod tests {
         let destructive: BTreeSet<String> = roster()
             .into_iter()
             .filter(|a| a.destructive)
-            .map(|a| a.label)
+            .map(|a| a.label.code_or_text())
             .collect();
 
-        assert_eq!(destructive, BTreeSet::from(["Remove all items".to_owned()]));
+        assert_eq!(
+            destructive,
+            BTreeSet::from([labels::REMOVE_ALL_ITEMS.to_string()])
+        );
     }
 
     #[test]
@@ -492,8 +532,24 @@ mod tests {
             assert!(
                 !action.enabled,
                 "{} must be disabled when disconnected",
-                action.label
+                action.label.code_or_text()
             );
         }
+    }
+
+    #[test]
+    fn every_code_the_client_shows_is_catalogued_in_both_languages() {
+        use crate::emitted_codes::{emitted_codes, uncatalogued};
+        use crate::vocabulary::messages::VTUBE_MESSAGES;
+        use forge_platform_core::BuiltinContent;
+
+        let client = VTubeClient::new_for_test("ws://127.0.0.1:8001/");
+        let emitted = emitted_codes(&serde_json::json!((client.actions(), client.sections())));
+
+        assert!(!emitted.is_empty());
+        assert_eq!(
+            uncatalogued(&emitted, &[VTUBE_MESSAGES, forge_types::COMMON_MESSAGES]),
+            Vec::<String>::new()
+        );
     }
 }

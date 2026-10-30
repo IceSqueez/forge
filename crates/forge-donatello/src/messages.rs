@@ -38,6 +38,22 @@ pub const FAILURE_LOCAL: MessageCode = MessageCode::from_static(INTEGRATION_ID, 
 pub const FAILURE_PROFILE_INCOMPLETE: MessageCode =
     MessageCode::from_static(INTEGRATION_ID, "failure_profile_incomplete");
 
+pub const LABEL_ACCOUNT_TITLE: MessageCode =
+    MessageCode::from_static(INTEGRATION_ID, "label_account_title");
+pub const LABEL_NICKNAME: MessageCode = MessageCode::from_static(INTEGRATION_ID, "label_nickname");
+pub const LABEL_PAGE: MessageCode = MessageCode::from_static(INTEGRATION_ID, "label_page");
+pub const LABEL_STATUS: MessageCode = MessageCode::from_static(INTEGRATION_ID, "label_status");
+pub const LABEL_POLL_INTERVAL: MessageCode =
+    MessageCode::from_static(INTEGRATION_ID, "label_poll_interval");
+pub const LABEL_POLL_INTERVAL_VALUE: MessageCode =
+    MessageCode::from_static(INTEGRATION_ID, "label_poll_interval_value");
+pub const LABEL_BANNER_PROFILE_INCOMPLETE: MessageCode =
+    MessageCode::from_static(INTEGRATION_ID, "label_banner_profile_incomplete");
+pub const LABEL_BANNER_TOKEN_REJECTED: MessageCode =
+    MessageCode::from_static(INTEGRATION_ID, "label_banner_token_rejected");
+pub const LABEL_BANNER_TOKEN_MISSING: MessageCode =
+    MessageCode::from_static(INTEGRATION_ID, "label_banner_token_missing");
+
 pub const DONATELLO_MESSAGES: MessageCatalog = MessageCatalog {
     namespace: INTEGRATION_ID,
     codes: &[
@@ -62,6 +78,15 @@ pub const DONATELLO_MESSAGES: MessageCatalog = MessageCatalog {
         FAILURE_INVALID_DONATION,
         FAILURE_LOCAL,
         FAILURE_PROFILE_INCOMPLETE,
+        LABEL_ACCOUNT_TITLE,
+        LABEL_NICKNAME,
+        LABEL_PAGE,
+        LABEL_STATUS,
+        LABEL_POLL_INTERVAL,
+        LABEL_POLL_INTERVAL_VALUE,
+        LABEL_BANNER_PROFILE_INCOMPLETE,
+        LABEL_BANNER_TOKEN_REJECTED,
+        LABEL_BANNER_TOKEN_MISSING,
     ],
     en_ftl: include_str!("../locales/en/messages.ftl"),
     uk_ftl: include_str!("../locales/uk/messages.ftl"),

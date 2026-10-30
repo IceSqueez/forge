@@ -4,6 +4,7 @@ use forge_types::{
 use time::OffsetDateTime;
 
 use crate::vocabulary::INTEGRATION_ID;
+use crate::vocabulary::labels;
 
 pub const BACKEND_UNAVAILABLE: MessageCode =
     MessageCode::from_static(INTEGRATION_ID, "backend_unavailable");
@@ -101,6 +102,20 @@ pub const MIDI_MESSAGES: MessageCatalog = MessageCatalog {
         CONDITION_CONTROLLER,
         CONDITION_PROGRAM,
         CONDITION_CHANNEL,
+        labels::CLIENT_NAME,
+        labels::DISABLED,
+        labels::EVENTS_RECEIVED,
+        labels::INPUT_PORTS,
+        labels::OPEN_FAILED,
+        labels::OUTPUT_PORTS,
+        labels::POLL_INTERVAL,
+        labels::POLL_INTERVAL_VALUE,
+        labels::SEND_CC,
+        labels::SEND_NOTE_OFF,
+        labels::SEND_NOTE_ON,
+        labels::SEND_RAW,
+        labels::STATUS,
+        labels::SUBSCRIBED,
     ],
     en_ftl: include_str!("../../locales/en/messages.ftl"),
     uk_ftl: include_str!("../../locales/uk/messages.ftl"),
@@ -253,7 +268,12 @@ mod tests {
             .iter()
             .map(|m| m.code().clone())
             .collect();
-        let catalogued: BTreeSet<MessageCode> = MIDI_MESSAGES.codes.iter().cloned().collect();
+        let catalogued: BTreeSet<MessageCode> = MIDI_MESSAGES
+            .codes
+            .iter()
+            .filter(|code| !code.name().starts_with("label_"))
+            .cloned()
+            .collect();
         assert_eq!(produced, catalogued);
     }
 

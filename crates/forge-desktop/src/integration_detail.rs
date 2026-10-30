@@ -55,7 +55,7 @@ use crate::run_history_modal::{RunHistoryDismissed, RunHistoryModal, RunHistoryO
 use crate::runtime_event::{self, RuntimeEvent};
 use crate::twitch_bot_presence::TwitchBotPresence;
 use crate::twitch_bot_section::{StreamerSignInRequested, TwitchBotSection};
-use crate::user_text::resolve_message;
+use crate::user_text::{resolve_message, user_text_string};
 use crate::window_presence::PresenceGate;
 use forge_components::ActivePresentation;
 use forge_components::PushToast;
@@ -1304,8 +1304,8 @@ impl IntegrationDetail {
             let label = self
                 .capability_flags
                 .label
-                .clone()
-                .unwrap_or_else(|| tr!("widget_header_capability_limited"));
+                .as_ref()
+                .map_or_else(|| tr!("widget_header_capability_limited"), user_text_string);
             right = right.child(pill(label.to_uppercase(), palette.warning, palette));
         }
         for (i, action) in self.header_actions.iter().enumerate() {
@@ -1741,7 +1741,7 @@ fn hero_badge_elem(badge_spec: &HeroBadge, palette: &ForgePalette) -> impl IntoE
     badge(
         palette.surface_overlay,
         text_color,
-        badge_spec.label.clone(),
+        user_text_string(&badge_spec.label),
         badge_spec.monospace,
         FONT_XS,
     )
@@ -1813,7 +1813,7 @@ mod tests {
                 .iter()
                 .map(|id| forge_platform_core::CollectionMetadata {
                     id: CollectionId::new(*id),
-                    label: (*id).to_owned(),
+                    label: UserText::unlocalized(*id),
                     icon: SectionIcon::new("diamond"),
                     capacity: None,
                     fields: Vec::new(),
@@ -1872,14 +1872,12 @@ mod tests {
 
     fn action(label: &str, collection: Option<&str>) -> QuickAction {
         QuickAction {
-            label: label.to_owned(),
+            label: UserText::unlocalized(label),
             icon: SectionIcon::new("play"),
             enabled: true,
             locked_reason: None,
             liveness: forge_platform_core::QuickActionLiveness::Unknown,
             group: None,
-            group_icon: None,
-            group_accent: None,
             destructive: false,
             accent: forge_platform_core::QuickActionAccent::Brand,
             subaction_template: forge_types::SubActionStep {
@@ -1903,7 +1901,7 @@ mod tests {
         ]);
         reachable_quick_actions(&quick, collections.map(|c| c as &dyn BuiltinCollections))
             .into_iter()
-            .map(|action| action.label)
+            .map(|action| action.label.code_or_text())
             .collect()
     }
 
@@ -2140,7 +2138,7 @@ mod tests {
                 detail
                     .quick_actions
                     .iter()
-                    .map(|action| action.label.clone())
+                    .map(|action| action.label.code_or_text())
                     .collect()
             })
         }

@@ -2,6 +2,7 @@ pub mod event_kinds;
 mod events;
 pub mod fields;
 pub mod keys;
+pub(crate) mod labels;
 pub mod messages;
 pub mod trigger_ids;
 pub(crate) mod variables;

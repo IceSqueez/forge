@@ -2,32 +2,56 @@ use std::collections::BTreeMap;
 
 use forge_platform_core::{
     OptionListId, QuickAction, QuickActionAccent, QuickActionChoiceSource, QuickActionField,
-    QuickActionFieldKind, QuickActionFieldValue, QuickActionLiveness, QuickActions, SectionIcon,
+    QuickActionFieldKind, QuickActionFieldValue, QuickActionGroup, QuickActionLiveness,
+    QuickActions, SectionIcon,
 };
-use forge_types::SubActionStep;
+use forge_types::{MessageCode, SubActionStep, UserText, VerbatimText};
 
 use crate::client::ObsClient;
 use crate::option_source::SCENE_FIELD;
 use crate::vocabulary::option_lists::{
     INPUT_LIST, PROFILE_LIST, SCENE_COLLECTION_LIST, SCENE_LIST, SOURCE_LIST, TRANSITION_LIST,
 };
-use crate::vocabulary::{config_keys, sub_action_ids};
+use crate::vocabulary::{config_keys, labels, sub_action_ids};
 
-fn group_badge(group: &str) -> (SectionIcon, QuickActionAccent) {
-    match group {
-        "Scenes" => (SectionIcon::new("layout-grid"), QuickActionAccent::Brand),
-        "Sources & audio" => (SectionIcon::new("stack-2"), QuickActionAccent::Info),
-        "Stream & record" => (SectionIcon::new("broadcast"), QuickActionAccent::Danger),
-        "Replay & capture" => (SectionIcon::new("device-floppy"), QuickActionAccent::Bits),
-        "Profiles" => (SectionIcon::new("settings"), QuickActionAccent::Success),
-        _ => (SectionIcon::new("dot"), QuickActionAccent::Brand),
+#[derive(Clone, Copy)]
+enum Group {
+    Scenes,
+    SourcesAudio,
+    StreamRecord,
+    ReplayCapture,
+    Profiles,
+}
+
+impl Group {
+    fn badge(self) -> QuickActionGroup {
+        let (label, icon, accent) = match self {
+            Self::Scenes => (labels::SCENES, "layout-grid", QuickActionAccent::Brand),
+            Self::SourcesAudio => (labels::SOURCES_AUDIO, "stack-2", QuickActionAccent::Info),
+            Self::StreamRecord => (
+                labels::STREAM_RECORD,
+                "broadcast",
+                QuickActionAccent::Danger,
+            ),
+            Self::ReplayCapture => (
+                labels::REPLAY_CAPTURE,
+                "device-floppy",
+                QuickActionAccent::Bits,
+            ),
+            Self::Profiles => (labels::PROFILES, "settings", QuickActionAccent::Success),
+        };
+        QuickActionGroup {
+            label: label.into(),
+            icon: SectionIcon::new(icon),
+            accent,
+        }
     }
 }
 
-fn text_field(key: &str, label: &str, default: &str) -> QuickActionField {
+fn text_field(key: &str, label: MessageCode, default: &str) -> QuickActionField {
     QuickActionField {
         key: key.to_owned(),
-        label: label.to_owned(),
+        label: label.into(),
         kind: QuickActionFieldKind::Text,
         default: Some(QuickActionFieldValue::Text(default.to_owned())),
         placeholder: None,
@@ -38,20 +62,20 @@ fn text_field(key: &str, label: &str, default: &str) -> QuickActionField {
 
 fn text_field_placeholder(
     key: &str,
-    label: &str,
+    label: MessageCode,
     default: &str,
-    placeholder: &str,
+    placeholder: impl Into<UserText>,
 ) -> QuickActionField {
     QuickActionField {
-        placeholder: Some(placeholder.to_owned()),
+        placeholder: Some(placeholder.into()),
         ..text_field(key, label, default)
     }
 }
 
-fn toggle_field(key: &str, label: &str, default: bool) -> QuickActionField {
+fn toggle_field(key: &str, label: MessageCode, default: bool) -> QuickActionField {
     QuickActionField {
         key: key.to_owned(),
-        label: label.to_owned(),
+        label: label.into(),
         kind: QuickActionFieldKind::Toggle,
         default: Some(QuickActionFieldValue::Toggle(default)),
         placeholder: None,
@@ -60,10 +84,10 @@ fn toggle_field(key: &str, label: &str, default: bool) -> QuickActionField {
     }
 }
 
-fn choice_field(key: &str, label: &str, list: &str) -> QuickActionField {
+fn choice_field(key: &str, label: MessageCode, list: &str) -> QuickActionField {
     QuickActionField {
         key: key.to_owned(),
-        label: label.to_owned(),
+        label: label.into(),
         kind: QuickActionFieldKind::Choice(QuickActionChoiceSource::OptionList(OptionListId::new(
             list,
         ))),
@@ -79,25 +103,22 @@ fn choice_field(key: &str, label: &str, list: &str) -> QuickActionField {
     reason = "each argument is one field of the quick-action template"
 )]
 fn quick_action(
-    label: &str,
+    label: MessageCode,
     icon: &str,
     accent: QuickActionAccent,
     enabled: bool,
-    group: &str,
+    group: Group,
     destructive: bool,
     kind_id: &str,
     fields: Vec<QuickActionField>,
 ) -> QuickAction {
-    let (group_icon, group_accent) = group_badge(group);
     QuickAction {
-        label: label.to_owned(),
+        label: label.into(),
         icon: SectionIcon::new(icon),
         enabled,
         locked_reason: None,
         liveness: QuickActionLiveness::Unknown,
-        group: Some(group.to_owned()),
-        group_icon: Some(group_icon),
-        group_accent: Some(group_accent),
+        group: Some(group.badge()),
         destructive,
         accent,
         subaction_template: SubActionStep {
@@ -119,234 +140,246 @@ impl QuickActions for ObsClient {
 
         vec![
             quick_action(
-                "Switch scene",
+                labels::SWITCH_SCENE,
                 "arrows-shuffle",
                 QuickActionAccent::Brand,
                 connected,
-                "Scenes",
+                Group::Scenes,
                 false,
                 sub_action_ids::SCENE_SWITCH_CURRENT,
-                vec![choice_field(SCENE_FIELD, "Scene", SCENE_LIST).required()],
+                vec![choice_field(SCENE_FIELD, labels::SCENE, SCENE_LIST).required()],
             ),
             quick_action(
-                "Set preview scene",
+                labels::SET_PREVIEW_SCENE,
                 "layout",
                 QuickActionAccent::Info,
                 connected,
-                "Scenes",
+                Group::Scenes,
                 false,
                 sub_action_ids::SCENE_SET_PREVIEW,
-                vec![choice_field(SCENE_FIELD, "Scene", SCENE_LIST).required()],
+                vec![choice_field(SCENE_FIELD, labels::SCENE, SCENE_LIST).required()],
             ),
             quick_action(
-                "Trigger transition",
+                labels::TRIGGER_TRANSITION,
                 "transition-right",
                 QuickActionAccent::Warning,
                 connected,
-                "Scenes",
+                Group::Scenes,
                 false,
                 sub_action_ids::SCENE_SET_TRANSITION,
                 vec![
-                    choice_field(config_keys::TRANSITION, "Transition", TRANSITION_LIST).required(),
-                ],
-            ),
-            quick_action(
-                "Toggle studio mode",
-                "aspect-ratio",
-                QuickActionAccent::Success,
-                connected,
-                "Scenes",
-                false,
-                sub_action_ids::STUDIO_SET_ENABLED,
-                vec![toggle_field(config_keys::ON, "Enabled", true)],
-            ),
-            quick_action(
-                "Toggle source",
-                "eye",
-                QuickActionAccent::Success,
-                connected,
-                "Sources & audio",
-                false,
-                sub_action_ids::SOURCE_SET_VISIBLE,
-                vec![
-                    choice_field(SCENE_FIELD, "Scene", SCENE_LIST).required(),
-                    choice_field(config_keys::SOURCE, "Source", SOURCE_LIST).required(),
-                    toggle_field(config_keys::VISIBLE, "Visible", true),
-                ],
-            ),
-            quick_action(
-                "Set mute",
-                "volume",
-                QuickActionAccent::Info,
-                connected,
-                "Sources & audio",
-                false,
-                sub_action_ids::AUDIO_SET_MUTE,
-                vec![
-                    choice_field(config_keys::SOURCE, "Audio source", INPUT_LIST).required(),
-                    toggle_field(config_keys::MUTED, "Muted", false),
-                ],
-            ),
-            quick_action(
-                "Set volume",
-                "adjustments",
-                QuickActionAccent::Brand,
-                connected,
-                "Sources & audio",
-                false,
-                sub_action_ids::AUDIO_SET_VOLUME,
-                vec![
-                    choice_field(config_keys::SOURCE, "Source", INPUT_LIST).required(),
-                    text_field_placeholder(config_keys::VOLUME_DB, "Gain (dB)", "-18", "e.g. -6.0")
+                    choice_field(config_keys::TRANSITION, labels::TRANSITION, TRANSITION_LIST)
                         .required(),
                 ],
             ),
             quick_action(
-                "Apply filter",
-                "filter",
-                QuickActionAccent::Danger,
+                labels::TOGGLE_STUDIO_MODE,
+                "aspect-ratio",
+                QuickActionAccent::Success,
                 connected,
-                "Sources & audio",
+                Group::Scenes,
                 false,
-                sub_action_ids::FILTER_SET_ENABLED,
+                sub_action_ids::STUDIO_SET_ENABLED,
+                vec![toggle_field(config_keys::ON, labels::ENABLED, true)],
+            ),
+            quick_action(
+                labels::TOGGLE_SOURCE,
+                "eye",
+                QuickActionAccent::Success,
+                connected,
+                Group::SourcesAudio,
+                false,
+                sub_action_ids::SOURCE_SET_VISIBLE,
                 vec![
-                    choice_field(config_keys::SOURCE, "Source", SOURCE_LIST).required(),
-                    text_field(config_keys::FILTER, "Filter", "Chroma Key").required(),
-                    toggle_field(config_keys::ENABLED, "Enabled", true),
+                    choice_field(SCENE_FIELD, labels::SCENE, SCENE_LIST).required(),
+                    choice_field(config_keys::SOURCE, labels::SOURCE, SOURCE_LIST).required(),
+                    toggle_field(config_keys::VISIBLE, labels::VISIBLE, true),
                 ],
             ),
             quick_action(
-                "Refresh browser source",
-                "refresh",
-                QuickActionAccent::Warning,
-                connected,
-                "Sources & audio",
-                false,
-                sub_action_ids::BROWSER_REFRESH,
-                vec![choice_field(config_keys::SOURCE, "Source", SOURCE_LIST).required()],
-            ),
-            quick_action(
-                "Restart media",
-                "player-track-next",
-                QuickActionAccent::Bits,
-                connected,
-                "Sources & audio",
-                false,
-                sub_action_ids::MEDIA_RESTART,
-                vec![choice_field(config_keys::SOURCE, "Source", SOURCE_LIST).required()],
-            ),
-            quick_action(
-                "Start / stop stream",
-                "player-play",
-                QuickActionAccent::Success,
-                connected,
-                "Stream & record",
-                true,
-                sub_action_ids::STREAMING_SET_ACTIVE,
-                vec![toggle_field(config_keys::ON, "Streaming", true)],
-            ),
-            quick_action(
-                "Start / stop recording",
-                "circle-dot",
-                QuickActionAccent::Danger,
-                connected,
-                "Stream & record",
-                false,
-                sub_action_ids::RECORDING_SET_ACTIVE,
-                vec![toggle_field(config_keys::ON, "Recording", false)],
-            ),
-            quick_action(
-                "Pause / resume recording",
-                "player-pause",
-                QuickActionAccent::Warning,
-                connected,
-                "Stream & record",
-                false,
-                sub_action_ids::RECORDING_TOGGLE_PAUSE,
-                Vec::new(),
-            ),
-            quick_action(
-                "Toggle virtual camera",
-                "device-tv",
+                labels::SET_MUTE,
+                "volume",
                 QuickActionAccent::Info,
                 connected,
-                "Stream & record",
+                Group::SourcesAudio,
                 false,
-                sub_action_ids::VIRTUALCAM_SET_ACTIVE,
-                vec![toggle_field(config_keys::ON, "Enabled", false)],
+                sub_action_ids::AUDIO_SET_MUTE,
+                vec![
+                    choice_field(config_keys::SOURCE, labels::AUDIO_SOURCE, INPUT_LIST).required(),
+                    toggle_field(config_keys::MUTED, labels::MUTED, false),
+                ],
             ),
             quick_action(
-                "Toggle replay buffer",
-                "player-record",
+                labels::SET_VOLUME,
+                "adjustments",
                 QuickActionAccent::Brand,
                 connected,
-                "Replay & capture",
+                Group::SourcesAudio,
                 false,
-                sub_action_ids::REPLAY_SET_ACTIVE,
-                vec![toggle_field(config_keys::ON, "Enabled", true)],
-            ),
-            quick_action(
-                "Save replay buffer",
-                "device-floppy",
-                QuickActionAccent::Success,
-                connected,
-                "Replay & capture",
-                false,
-                sub_action_ids::REPLAY_SAVE,
-                Vec::new(),
-            ),
-            quick_action(
-                "Screenshot source",
-                "camera",
-                QuickActionAccent::Info,
-                connected,
-                "Replay & capture",
-                false,
-                sub_action_ids::CAPTURE_SCREENSHOT,
+                sub_action_ids::AUDIO_SET_VOLUME,
                 vec![
-                    choice_field(config_keys::SOURCE, "Source", SOURCE_LIST).required(),
+                    choice_field(config_keys::SOURCE, labels::SOURCE, INPUT_LIST).required(),
                     text_field_placeholder(
-                        config_keys::PATH,
-                        "Save To",
-                        "",
-                        "D:/Pictures/screenshot.png",
+                        config_keys::VOLUME_DB,
+                        labels::GAIN_DB,
+                        "-18",
+                        labels::VOLUME_EXAMPLE,
                     )
                     .required(),
                 ],
             ),
             quick_action(
-                "Set recording folder",
-                "folder",
-                QuickActionAccent::Warning,
+                labels::APPLY_FILTER,
+                "filter",
+                QuickActionAccent::Danger,
                 connected,
-                "Replay & capture",
+                Group::SourcesAudio,
                 false,
-                sub_action_ids::RECORDING_SET_DIRECTORY,
+                sub_action_ids::FILTER_SET_ENABLED,
                 vec![
-                    text_field_placeholder(config_keys::PATH, "Folder", "", "D:/Recordings")
-                        .required(),
+                    choice_field(config_keys::SOURCE, labels::SOURCE, SOURCE_LIST).required(),
+                    text_field(config_keys::FILTER, labels::FILTER, "Chroma Key").required(),
+                    toggle_field(config_keys::ENABLED, labels::ENABLED, true),
                 ],
             ),
             quick_action(
-                "Switch profile",
+                labels::REFRESH_BROWSER_SOURCE,
+                "refresh",
+                QuickActionAccent::Warning,
+                connected,
+                Group::SourcesAudio,
+                false,
+                sub_action_ids::BROWSER_REFRESH,
+                vec![choice_field(config_keys::SOURCE, labels::SOURCE, SOURCE_LIST).required()],
+            ),
+            quick_action(
+                labels::RESTART_MEDIA,
+                "player-track-next",
+                QuickActionAccent::Bits,
+                connected,
+                Group::SourcesAudio,
+                false,
+                sub_action_ids::MEDIA_RESTART,
+                vec![choice_field(config_keys::SOURCE, labels::SOURCE, SOURCE_LIST).required()],
+            ),
+            quick_action(
+                labels::TOGGLE_STREAM,
+                "player-play",
+                QuickActionAccent::Success,
+                connected,
+                Group::StreamRecord,
+                true,
+                sub_action_ids::STREAMING_SET_ACTIVE,
+                vec![toggle_field(config_keys::ON, labels::STREAMING, true)],
+            ),
+            quick_action(
+                labels::TOGGLE_RECORDING,
+                "circle-dot",
+                QuickActionAccent::Danger,
+                connected,
+                Group::StreamRecord,
+                false,
+                sub_action_ids::RECORDING_SET_ACTIVE,
+                vec![toggle_field(config_keys::ON, labels::RECORDING, false)],
+            ),
+            quick_action(
+                labels::TOGGLE_RECORDING_PAUSE,
+                "player-pause",
+                QuickActionAccent::Warning,
+                connected,
+                Group::StreamRecord,
+                false,
+                sub_action_ids::RECORDING_TOGGLE_PAUSE,
+                Vec::new(),
+            ),
+            quick_action(
+                labels::TOGGLE_VIRTUAL_CAMERA,
+                "device-tv",
+                QuickActionAccent::Info,
+                connected,
+                Group::StreamRecord,
+                false,
+                sub_action_ids::VIRTUALCAM_SET_ACTIVE,
+                vec![toggle_field(config_keys::ON, labels::ENABLED, false)],
+            ),
+            quick_action(
+                labels::TOGGLE_REPLAY_BUFFER,
+                "player-record",
+                QuickActionAccent::Brand,
+                connected,
+                Group::ReplayCapture,
+                false,
+                sub_action_ids::REPLAY_SET_ACTIVE,
+                vec![toggle_field(config_keys::ON, labels::ENABLED, true)],
+            ),
+            quick_action(
+                labels::SAVE_REPLAY_BUFFER,
+                "device-floppy",
+                QuickActionAccent::Success,
+                connected,
+                Group::ReplayCapture,
+                false,
+                sub_action_ids::REPLAY_SAVE,
+                Vec::new(),
+            ),
+            quick_action(
+                labels::SCREENSHOT_SOURCE,
+                "camera",
+                QuickActionAccent::Info,
+                connected,
+                Group::ReplayCapture,
+                false,
+                sub_action_ids::CAPTURE_SCREENSHOT,
+                vec![
+                    choice_field(config_keys::SOURCE, labels::SOURCE, SOURCE_LIST).required(),
+                    text_field_placeholder(
+                        config_keys::PATH,
+                        labels::SAVE_TO,
+                        "",
+                        VerbatimText::new("D:/Pictures/screenshot.png"),
+                    )
+                    .required(),
+                ],
+            ),
+            quick_action(
+                labels::SET_RECORDING_FOLDER,
+                "folder",
+                QuickActionAccent::Warning,
+                connected,
+                Group::ReplayCapture,
+                false,
+                sub_action_ids::RECORDING_SET_DIRECTORY,
+                vec![
+                    text_field_placeholder(
+                        config_keys::PATH,
+                        labels::FOLDER,
+                        "",
+                        VerbatimText::new("D:/Recordings"),
+                    )
+                    .required(),
+                ],
+            ),
+            quick_action(
+                labels::SWITCH_PROFILE,
                 "user-cog",
                 QuickActionAccent::Info,
                 connected,
-                "Profiles",
+                Group::Profiles,
                 false,
                 sub_action_ids::PROFILE_SWITCH,
-                vec![choice_field(config_keys::NAME, "Profile", PROFILE_LIST).required()],
+                vec![choice_field(config_keys::NAME, labels::PROFILE, PROFILE_LIST).required()],
             ),
             quick_action(
-                "Switch scene collection",
+                labels::SWITCH_SCENE_COLLECTION,
                 "layout-2",
                 QuickActionAccent::Brand,
                 connected,
-                "Profiles",
+                Group::Profiles,
                 false,
                 sub_action_ids::COLLECTION_SWITCH,
                 vec![
-                    choice_field(config_keys::NAME, "Collection", SCENE_COLLECTION_LIST).required(),
+                    choice_field(config_keys::NAME, labels::COLLECTION, SCENE_COLLECTION_LIST)
+                        .required(),
                 ],
             ),
         ]
@@ -380,7 +413,11 @@ mod tests {
     #[test]
     fn all_actions_disabled_when_disconnected() {
         for action in &roster() {
-            assert!(!action.enabled, "expected {} to be disabled", action.label);
+            assert!(
+                !action.enabled,
+                "expected {} to be disabled",
+                action.label.code_or_text()
+            );
         }
     }
 
@@ -411,15 +448,18 @@ mod tests {
         let reg = registry();
         for action in &roster() {
             let kind_id = &action.subaction_template.kind_id;
-            let runner = reg
-                .get(kind_id)
-                .unwrap_or_else(|| panic!("{} targets unregistered {kind_id}", action.label));
+            let runner = reg.get(kind_id).unwrap_or_else(|| {
+                panic!(
+                    "{} targets unregistered {kind_id}",
+                    action.label.code_or_text()
+                )
+            });
             let step = action.merge_config(&supplied_values(action));
             let verdict = runner.validate_config(&step.config);
             assert!(
                 verdict.is_ok(),
                 "{} merges a config its runner rejects: {verdict:?}",
-                action.label,
+                action.label.code_or_text(),
             );
         }
     }
@@ -444,7 +484,7 @@ mod tests {
                     rejected.as_deref(),
                     Some(field.key.as_str()),
                     "{}: unchosen {:?} was not rejected",
-                    action.label,
+                    action.label.code_or_text(),
                     field.key,
                 );
             }
@@ -463,14 +503,14 @@ mod tests {
                 assert!(
                     known.contains(key),
                     "{}: template key {key:?} is not read by {kind_id}",
-                    action.label,
+                    action.label.code_or_text(),
                 );
             }
             for field in &action.fields {
                 assert!(
                     known.contains(&field.key),
                     "{}: field key {:?} is not read by {kind_id}",
-                    action.label,
+                    action.label.code_or_text(),
                     field.key,
                 );
             }
@@ -490,32 +530,23 @@ mod tests {
     #[test]
     fn every_action_belongs_to_one_of_the_five_screen_groups() {
         let expected = BTreeSet::from([
-            "Profiles",
-            "Replay & capture",
-            "Scenes",
-            "Sources & audio",
-            "Stream & record",
+            labels::PROFILES.to_string(),
+            labels::REPLAY_CAPTURE.to_string(),
+            labels::SCENES.to_string(),
+            labels::SOURCES_AUDIO.to_string(),
+            labels::STREAM_RECORD.to_string(),
         ]);
         let actions = roster();
-        let groups: BTreeSet<&str> = actions.iter().filter_map(|a| a.group.as_deref()).collect();
+        let groups: BTreeSet<String> = actions
+            .iter()
+            .filter_map(|a| a.group.as_ref())
+            .map(|group| group.label.code_or_text())
+            .collect();
         assert_eq!(groups, expected);
         assert!(
             actions.iter().all(|a| a.group.is_some()),
             "every action must carry a group",
         );
-    }
-
-    #[test]
-    fn every_group_resolves_to_its_own_badge_rather_than_the_fallback() {
-        for action in &roster() {
-            let group = action.group.as_deref().unwrap_or_default();
-            let (icon, _) = group_badge(group);
-            assert_ne!(
-                icon.as_str(),
-                "dot",
-                "group {group:?} fell back to the default badge"
-            );
-        }
     }
 
     fn option_list_fields(action: &QuickAction) -> Vec<(String, String)> {
@@ -589,7 +620,7 @@ mod tests {
                 assert!(
                     declared.contains(&list),
                     "{}: field {key:?} reads undeclared list {list:?}",
-                    action.label,
+                    action.label.code_or_text(),
                 );
             }
         }
@@ -616,7 +647,7 @@ mod tests {
                     assert!(
                         action.fields.iter().any(|f| &f.key == dependency),
                         "{}: {key:?} depends on {dependency:?} which the runner reads but no field sets",
-                        action.label,
+                        action.label.code_or_text(),
                     );
                 }
             }

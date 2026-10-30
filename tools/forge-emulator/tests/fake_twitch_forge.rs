@@ -162,7 +162,7 @@ impl Forge {
     }
 
     async fn open(&self) -> (Arc<dyn ChatPlatform>, Arc<TwitchIntegrationBundle>) {
-        let session = self.assembly.open_session().await;
+        let session = self.assembly.open_session().await.unwrap();
         let platform = session.chat_platform();
         let bundle = session
             .into_bundle()
@@ -546,7 +546,7 @@ async fn a_refused_chat_send_through_the_platform_publishes_request_fail_without
         .await
         .unwrap();
     let mut forge = Forge::against(&fake, &account, NEVER_ISSUED).await;
-    let platform = forge.assembly.open_session().await.chat_platform();
+    let platform = forge.assembly.open_session().await.unwrap().chat_platform();
 
     platform
         .send_message(&account.login, "pong")

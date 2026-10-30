@@ -2460,19 +2460,6 @@ collection_failure_capacity = Ліміт вичерпано - спершу ви�
 collection_failure_not_eligible = Цей канал не відповідає вимогам для цієї функції - нагороди за бали каналу Twitch доступні лише партнерам і компаньйонам (Affiliate / Partner)
 collection_failure_rate_limited = Забагато запитів - спробуйте трохи згодом
 collection_failure_transport = Помилка з'єднання - спробуйте ще раз
-collection_text_channel_point_rewards = Нагороди за бали каналу
-collection_text_title = Назва
-collection_text_cost = Вартість (бали каналу)
-collection_text_prompt = Підказка
-collection_text_optional = необов'язково
-collection_text_require_input = Вимагати введення від глядача
-collection_text_background_color = Колір фону (#RRGGBB)
-collection_text_max_per_stream = Максимум за стрім (0 = без обмежень)
-collection_text_max_per_viewer = Максимум на глядача за стрім (0 = без обмежень)
-collection_text_global_cooldown = Загальна затримка, секунди (0 = вимк.)
-collection_text_enabled = Увімкнено
-collection_text_paused = Призупинено
-collection_text_created_outside = Створено поза forge - редагуйте в панелі Twitch
 collection_text_title_required = Назва обов'язкова
 collection_text_color_format = Колір фону має бути порожнім або #RRGGBB
 collection_text_zero_or_more = Має бути 0 або більше

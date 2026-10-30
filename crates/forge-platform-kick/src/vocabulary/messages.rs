@@ -1,7 +1,10 @@
 use forge_types::{MessageCatalog, MessageCode, MessageRef, UpstreamDetail, VerbatimText};
 
 use crate::vocabulary::INTEGRATION_ID;
+use crate::vocabulary::labels;
 
+pub const KICK_COMMUNITY_NOTE: MessageCode =
+    MessageCode::from_static(INTEGRATION_ID, "community_note");
 pub const STORED_SIGN_IN_UNREADABLE: MessageCode =
     MessageCode::from_static(INTEGRATION_ID, "stored_sign_in_unreadable");
 
@@ -69,6 +72,52 @@ pub const KICK_MESSAGES: MessageCatalog = MessageCatalog {
         BROADCASTER_UNAVAILABLE,
         UNRESOLVED_REFERENCE,
         NOTHING_TO_UPDATE,
+        labels::ACCEPT_REDEMPTION,
+        labels::BAN_USER,
+        labels::CATEGORY_ID,
+        labels::CATEGORY_ID_HINT,
+        labels::CATEGORY_SEARCH_PLACEHOLDER,
+        labels::CHANNEL_SLUG,
+        labels::CHANNEL_SLUG_PLACEHOLDER,
+        labels::CHAT,
+        labels::COST_CHANNEL_POINTS,
+        labels::COST_EXAMPLE,
+        labels::CREATE_REWARD,
+        labels::DELETE_MESSAGE,
+        labels::DELETE_REWARD,
+        labels::FIND_CATEGORY,
+        labels::HYBRID_CHAT_TRANSPORT,
+        labels::LEAVE_EMPTY_TO_KEEP_CURRENT,
+        labels::LOOKUP_USER,
+        labels::LOOKUPS,
+        labels::MESSAGE,
+        labels::MESSAGE_ID_FIELD,
+        labels::MODERATION,
+        labels::NEW_COST_OPTIONAL,
+        labels::NEW_TITLE_OPTIONAL,
+        labels::REDEMPTION_ID_S,
+        labels::REJECT_REDEMPTION,
+        labels::REWARD_ID,
+        labels::REWARD_TITLE,
+        labels::REWARD_TITLE_EXAMPLE,
+        labels::REWARDS,
+        labels::SEARCH_QUERY,
+        labels::SEND_AS_BOT,
+        labels::SEND_MESSAGE,
+        labels::SET_CATEGORY,
+        labels::SET_CUSTOM_TAGS,
+        labels::STREAM_INFO,
+        labels::STREAM_STATS,
+        labels::STREAM_TITLE,
+        labels::STREAM_TITLE_FIELD,
+        labels::TAGS_COMMA_SEPARATED,
+        labels::TAGS_PLACEHOLDER,
+        labels::TARGET_USER_ID,
+        labels::TIMEOUT_USER,
+        labels::UNBAN_USER,
+        labels::UPDATE_REWARD,
+        labels::UPDATE_TITLE,
+        KICK_COMMUNITY_NOTE,
     ],
     en_ftl: include_str!("../../locales/en/messages.ftl"),
     uk_ftl: include_str!("../../locales/uk/messages.ftl"),
@@ -240,7 +289,12 @@ mod tests {
             .iter()
             .map(|m| m.code().clone())
             .collect();
-        let catalogued: BTreeSet<MessageCode> = KICK_MESSAGES.codes.iter().cloned().collect();
+        let catalogued: BTreeSet<MessageCode> = KICK_MESSAGES
+            .codes
+            .iter()
+            .filter(|code| !code.name().starts_with("label_") && **code != KICK_COMMUNITY_NOTE)
+            .cloned()
+            .collect();
         assert_eq!(produced, catalogued);
     }
 

@@ -1,3 +1,5 @@
+use crate::vocabulary::labels;
+use forge_types::UserText;
 use std::sync::{Arc, RwLock};
 use std::time::{Duration, SystemTime};
 
@@ -378,7 +380,7 @@ impl BuiltinStatus for KickIntegrationBundle {
 
     fn name_badges(&self) -> Vec<HeroBadge> {
         vec![HeroBadge {
-            label: format!("user_id {}", self.user_id),
+            label: UserText::unlocalized(format!("user_id {}", self.user_id)),
             tone: HeroBadgeTone::Neutral,
             monospace: true,
         }]
@@ -417,8 +419,8 @@ impl BuiltinContent for KickIntegrationBundle {
     fn sections(&self) -> Vec<DetailSection> {
         vec![DetailSection::WarningBanner {
             level: BannerLevel::Warning,
-            title: "Hybrid chat transport".to_owned(),
-            body: KICK_COMMUNITY_NOTE.to_owned(),
+            title: labels::HYBRID_CHAT_TRANSPORT.into(),
+            body: KICK_COMMUNITY_NOTE.into(),
             cta: None,
         }]
     }
@@ -610,7 +612,7 @@ mod tests {
                 .actions()
                 .into_iter()
                 .filter(|a| a.enabled == enabled)
-                .map(|a| a.label)
+                .map(|a| a.label.code_or_text())
                 .collect()
         }
 
@@ -851,7 +853,7 @@ mod tests {
                 let runner = registry.get(kind_id).unwrap_or_else(|| {
                     panic!(
                         "quick action '{}' targets unknown runner '{kind_id}'",
-                        action.label
+                        action.label.code_or_text()
                     )
                 });
                 let accepted: BTreeSet<String> = runner.default_config().into_keys().collect();
@@ -866,7 +868,7 @@ mod tests {
                     assert!(
                         accepted.contains(&key),
                         "quick action '{}' sets '{key}', which runner '{kind_id}' does not read",
-                        action.label,
+                        action.label.code_or_text(),
                     );
                 }
             }
@@ -942,7 +944,7 @@ mod tests {
                 assert!(
                     verdict.is_ok(),
                     "quick action '{}' merges a config its runner rejects: {verdict:?}",
-                    action.label
+                    action.label.code_or_text()
                 );
             }
         }
@@ -953,16 +955,31 @@ mod tests {
                 .actions()
                 .into_iter()
                 .filter(|a| a.destructive)
-                .map(|a| a.label)
+                .map(|a| a.label.code_or_text())
                 .collect();
 
             assert_eq!(
                 destructive,
                 BTreeSet::from([
-                    "Ban user".to_owned(),
-                    "Delete message".to_owned(),
-                    "Delete reward".to_owned(),
+                    labels::BAN_USER.to_string(),
+                    labels::DELETE_MESSAGE.to_string(),
+                    labels::DELETE_REWARD.to_string(),
                 ])
+            );
+        }
+
+        #[test]
+        fn every_code_a_disconnected_bundle_shows_is_catalogued_in_both_languages() {
+            use crate::emitted_codes::{emitted_codes, uncatalogued};
+            use crate::vocabulary::messages::KICK_MESSAGES;
+
+            let bundle = disconnected_bundle();
+            let emitted = emitted_codes(&serde_json::json!((bundle.actions(), bundle.sections())));
+
+            assert!(!emitted.is_empty());
+            assert_eq!(
+                uncatalogued(&emitted, &[KICK_MESSAGES, forge_types::COMMON_MESSAGES]),
+                Vec::<String>::new()
             );
         }
     }

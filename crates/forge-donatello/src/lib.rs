@@ -3,6 +3,9 @@ mod config;
 mod content;
 mod control;
 mod credentials;
+#[cfg(test)]
+#[path = "../../forge-platform-core/test_support/emitted_codes.rs"]
+mod emitted_codes;
 mod error;
 mod health;
 mod hub_status;

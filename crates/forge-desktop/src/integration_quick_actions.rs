@@ -4,11 +4,11 @@ use forge_components::{
     Radius, Spacing, body_family, icon, mono_family, pulse_dot, radius, scaled, spacing,
     tooltip_builder, tr, with_alpha,
 };
-use forge_platform_core::{QuickAction, QuickActionAccent, QuickActionLiveness};
+use forge_platform_core::{QuickAction, QuickActionAccent, QuickActionGroup, QuickActionLiveness};
 use gpui::{AnyElement, ClickEvent, Context, Pixels, Rgba, div, prelude::*, px};
 
 use crate::integration_detail::IntegrationDetail;
-use crate::quick_action_text::quick_action_text;
+use crate::user_text::user_text_string;
 
 const GRID_COLUMNS: u16 = 3;
 const LIVE_DOT: Pixels = px(5.0);
@@ -57,7 +57,7 @@ impl IntegrationDetail {
             .quick_actions
             .iter()
             .enumerate()
-            .filter(|(_, a)| self.qa_search.matches(&quick_action_text(&a.label)))
+            .filter(|(_, a)| self.qa_search.matches(&user_text_string(&a.label)))
             .collect();
 
         let mut body = div()
@@ -136,7 +136,7 @@ impl IntegrationDetail {
 
     fn qa_group(
         &self,
-        group: Option<&str>,
+        group: Option<&QuickActionGroup>,
         matches: &[(usize, &QuickAction)],
         palette: &ForgePalette,
         density: Density,
@@ -144,7 +144,7 @@ impl IntegrationDetail {
     ) -> AnyElement {
         let members: Vec<(usize, &QuickAction)> = matches
             .iter()
-            .filter(|(_, a)| a.group.as_deref() == group)
+            .filter(|(_, a)| a.group.as_ref() == group)
             .map(|(i, a)| (*i, *a))
             .collect();
 
@@ -153,31 +153,24 @@ impl IntegrationDetail {
             .flex()
             .flex_col()
             .gap(scaled(px(7.0), density));
-        if let Some(label) = group {
-            let group_badge = members.first().and_then(|(_, a)| {
-                a.group_icon
-                    .as_ref()
-                    .map(|icon| (icon.clone(), a.group_accent.unwrap_or_default()))
-            });
+        if let Some(group) = group {
             let mut label_row = div()
                 .flex_1()
                 .min_w(px(0.0))
                 .flex()
                 .items_center()
                 .gap(spacing(Spacing::Xs, density));
-            if let Some((group_icon, group_accent)) = group_badge {
-                label_row = label_row.child(icon(
-                    Icon::from_name(group_icon.as_str()),
-                    FONT_XXS,
-                    accent_color(group_accent, palette),
-                ));
-            }
+            label_row = label_row.child(icon(
+                Icon::from_name(group.icon.as_str()),
+                FONT_XXS,
+                accent_color(group.accent, palette),
+            ));
             label_row = label_row.child(
                 div()
                     .font_family(mono_family())
                     .text_size(FONT_XXS)
                     .text_color(palette.text_muted)
-                    .child(label.to_uppercase()),
+                    .child(user_text_string(&group.label).to_uppercase()),
             );
             section = section.child(
                 div()
@@ -216,7 +209,7 @@ impl IntegrationDetail {
         density: Density,
         cx: &mut Context<Self>,
     ) -> AnyElement {
-        let locked = action.locked_reason.clone();
+        let locked = action.locked_reason.as_ref().map(user_text_string);
         let disabled = !action.is_runnable();
         let destructive = action.destructive;
         let live = action.liveness == QuickActionLiveness::Live;
@@ -259,7 +252,7 @@ impl IntegrationDetail {
                     .text_size(FONT_LABEL)
                     .line_height(px(14.0))
                     .text_color(label_color)
-                    .child(quick_action_text(&action.label)),
+                    .child(user_text_string(&action.label)),
             );
         if locked.is_some() {
             content = content.child(icon(Icon::Lock, FONT_XXS, icon_color));
@@ -309,10 +302,10 @@ impl IntegrationDetail {
     }
 }
 
-fn group_order<'a>(matches: &[(usize, &'a QuickAction)]) -> Vec<Option<&'a str>> {
-    let mut order: Vec<Option<&str>> = Vec::new();
+fn group_order<'a>(matches: &[(usize, &'a QuickAction)]) -> Vec<Option<&'a QuickActionGroup>> {
+    let mut order: Vec<Option<&QuickActionGroup>> = Vec::new();
     for (_, action) in matches {
-        let key = action.group.as_deref();
+        let key = action.group.as_ref();
         if key.is_some() && !order.contains(&key) {
             order.push(key);
         }
@@ -332,5 +325,70 @@ pub(crate) fn accent_color(accent: QuickActionAccent, palette: &ForgePalette) ->
         QuickActionAccent::Bits => palette.accent_peach,
         QuickActionAccent::AccentPinkLight => palette.accent_pink_light,
         QuickActionAccent::Danger => palette.danger,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use forge_platform_core::{QuickActionGroup, QuickActionLiveness, SectionIcon};
+    use forge_types::{SubActionStep, UserText};
+
+    use super::*;
+
+    fn group(name: &str) -> QuickActionGroup {
+        QuickActionGroup {
+            label: UserText::unlocalized(name),
+            icon: SectionIcon::new("dot"),
+            accent: QuickActionAccent::Brand,
+        }
+    }
+
+    fn action(group: Option<QuickActionGroup>) -> QuickAction {
+        QuickAction {
+            label: UserText::unlocalized("action"),
+            icon: SectionIcon::new("dot"),
+            enabled: true,
+            locked_reason: None,
+            liveness: QuickActionLiveness::Unknown,
+            group,
+            destructive: false,
+            accent: QuickActionAccent::Brand,
+            subaction_template: SubActionStep {
+                kind_id: "test.kind".to_owned(),
+                config: Default::default(),
+                enabled: true,
+                continue_on_error: false,
+                condition: None,
+                label: None,
+            },
+            fields: Vec::new(),
+            collection: None,
+        }
+    }
+
+    #[test]
+    fn actions_of_one_group_fold_into_one_section_in_first_seen_order_with_ungrouped_last() {
+        let actions = [
+            action(None),
+            action(Some(group("Polls"))),
+            action(Some(group("Chat"))),
+            action(Some(group("Polls"))),
+            action(None),
+            action(Some(group("Chat"))),
+        ];
+        let matches: Vec<(usize, &QuickAction)> = actions.iter().enumerate().collect();
+
+        assert_eq!(
+            group_order(&matches),
+            vec![Some(&group("Polls")), Some(&group("Chat")), None]
+        );
+    }
+
+    #[test]
+    fn a_list_without_groups_has_a_single_ungrouped_section() {
+        let actions = [action(None), action(None)];
+        let matches: Vec<(usize, &QuickAction)> = actions.iter().enumerate().collect();
+
+        assert_eq!(group_order(&matches), vec![None]);
     }
 }

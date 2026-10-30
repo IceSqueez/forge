@@ -5,6 +5,8 @@ use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use tokio::sync::watch;
 
+use forge_types::UserText;
+
 use crate::builtin::{QuickActionField, QuickActionFieldValue, SectionIcon};
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
@@ -56,13 +58,13 @@ pub struct CollectionField {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CollectionToggle {
     pub key: String,
-    pub label: String,
+    pub label: UserText,
 }
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct CollectionMetadata {
     pub id: CollectionId,
-    pub label: String,
+    pub label: UserText,
     pub icon: SectionIcon,
     pub capacity: Option<usize>,
     pub fields: Vec<CollectionField>,
@@ -72,7 +74,7 @@ pub struct CollectionMetadata {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum CollectionItemAccess {
     Manageable,
-    ReadOnly { reason: String },
+    ReadOnly { reason: UserText },
 }
 
 #[derive(Debug, Clone, PartialEq)]

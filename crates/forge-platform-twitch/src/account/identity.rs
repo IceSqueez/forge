@@ -1,3 +1,5 @@
+use crate::vocabulary::labels;
+use forge_types::MessageCode;
 use std::sync::Arc;
 
 use forge_storage::CredentialsRepo;
@@ -63,11 +65,11 @@ pub enum BroadcasterTier {
 }
 
 impl BroadcasterTier {
-    pub fn label(self) -> &'static str {
+    pub fn label(self) -> MessageCode {
         match self {
-            Self::Standard => "Standard",
-            Self::Affiliate => "Affiliate",
-            Self::Partner => "Partner",
+            Self::Standard => labels::STANDARD,
+            Self::Affiliate => labels::AFFILIATE,
+            Self::Partner => labels::PARTNER,
         }
     }
 

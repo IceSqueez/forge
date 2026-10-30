@@ -2,15 +2,15 @@ use forge_platform_core::{
     QuickAction, QuickActionAccent, QuickActionLiveness, QuickActions, SectionIcon,
 };
 use forge_registry::{ConfigChoice, SubActionConfig};
-use forge_types::{SubActionStep, Variant};
+use forge_types::{MessageCode, SubActionStep, Variant};
 
 use crate::client::MidiClient;
 use crate::decode::NOTE_ON_STATUS;
 use crate::runners::{NOTE, VELOCITY};
-use crate::vocabulary::OutMessageKind;
 use crate::vocabulary::config_keys::send;
 use crate::vocabulary::limits::DATA_BYTE_MAX;
 use crate::vocabulary::sub_action_ids;
+use crate::vocabulary::{OutMessageKind, labels};
 
 const CHANNEL_VOLUME_CONTROLLER: i64 = 7;
 const RELEASE_VELOCITY: i64 = 0;
@@ -23,16 +23,19 @@ fn raw_note_on() -> Variant {
     ])
 }
 
-fn send_action(label: &str, icon: &str, enabled: bool, config: SubActionConfig) -> QuickAction {
+fn send_action(
+    label: MessageCode,
+    icon: &str,
+    enabled: bool,
+    config: SubActionConfig,
+) -> QuickAction {
     QuickAction {
-        label: label.to_owned(),
+        label: label.into(),
         icon: SectionIcon::new(icon),
         enabled,
         locked_reason: None,
         liveness: QuickActionLiveness::Unknown,
         group: None,
-        group_icon: None,
-        group_accent: None,
         destructive: false,
         accent: QuickActionAccent::Brand,
         subaction_template: SubActionStep {
@@ -72,13 +75,13 @@ impl QuickActions for MidiClient {
 
         vec![
             send_action(
-                "Send Note On",
+                labels::SEND_NOTE_ON,
                 "music",
                 enabled,
                 preset(OutMessageKind::NoteOn, Vec::new()),
             ),
             send_action(
-                "Send Note Off",
+                labels::SEND_NOTE_OFF,
                 "music-off",
                 enabled,
                 preset(
@@ -87,7 +90,7 @@ impl QuickActions for MidiClient {
                 ),
             ),
             send_action(
-                "Send CC",
+                labels::SEND_CC,
                 "sliders",
                 enabled,
                 preset(
@@ -99,7 +102,7 @@ impl QuickActions for MidiClient {
                 ),
             ),
             send_action(
-                "Send Raw",
+                labels::SEND_RAW,
                 "code",
                 enabled,
                 preset(OutMessageKind::Raw, vec![(send::RAW_BYTES, raw_note_on())]),
@@ -125,22 +128,23 @@ mod tests {
     use crate::events::{MidiOutMessage, MidiPortInfo, PortDirection};
     use crate::runners::MidiSendRunner;
     use crate::sink::MidiSink;
+    use forge_types::UserText;
 
-    const FULL_STORED_TEMPLATES: [(&str, &str); 4] = [
+    const FULL_STORED_TEMPLATES: [(MessageCode, &str); 4] = [
         (
-            "Send Note On",
+            labels::SEND_NOTE_ON,
             r#"{"channel":{"type":"int","value":0},"message_kind":{"type":"string","value":"note_on"},"note":{"type":"int","value":60},"port":{"type":"string","value":"Synth"},"velocity":{"type":"int","value":127}}"#,
         ),
         (
-            "Send Note Off",
+            labels::SEND_NOTE_OFF,
             r#"{"channel":{"type":"int","value":0},"message_kind":{"type":"string","value":"note_off"},"note":{"type":"int","value":60},"port":{"type":"string","value":"Synth"},"velocity":{"type":"int","value":0}}"#,
         ),
         (
-            "Send CC",
+            labels::SEND_CC,
             r#"{"channel":{"type":"int","value":0},"controller":{"type":"int","value":7},"message_kind":{"type":"string","value":"cc"},"port":{"type":"string","value":"Synth"},"value":{"type":"int","value":127}}"#,
         ),
         (
-            "Send Raw",
+            labels::SEND_RAW,
             r#"{"message_kind":{"type":"string","value":"raw"},"port":{"type":"string","value":"Synth"},"raw_bytes":{"type":"array","value":[{"type":"int","value":144},{"type":"int","value":60},{"type":"int","value":127}]}}"#,
         ),
     ];
@@ -202,7 +206,7 @@ mod tests {
             assert!(
                 !action.enabled,
                 "{} must be disabled with no output ports",
-                action.label
+                action.label.code_or_text()
             );
         }
     }
@@ -210,19 +214,23 @@ mod tests {
     #[test]
     fn actions_enabled_after_output_port_registered() {
         for action in client_with_output_port().actions() {
-            assert!(action.enabled, "{} must be enabled", action.label);
+            assert!(
+                action.enabled,
+                "{} must be enabled",
+                action.label.code_or_text()
+            );
         }
     }
 
     #[tokio::test]
     async fn every_action_sends_what_its_full_stored_template_sent() {
         let actions = client_with_output_port().actions();
-        let labels: Vec<&str> = actions.iter().map(|a| a.label.as_str()).collect();
+        let shown: Vec<UserText> = actions.iter().map(|a| a.label.clone()).collect();
         assert_eq!(
-            labels,
+            shown,
             FULL_STORED_TEMPLATES
                 .iter()
-                .map(|(label, _)| *label)
+                .map(|(label, _)| UserText::from(label.clone()))
                 .collect::<Vec<_>>()
         );
 
@@ -249,10 +257,27 @@ mod tests {
                 let error = runner
                     .validate_config(&action.subaction_template.config)
                     .err()?;
-                Some((action.label, error.to_string()))
+                Some((action.label.code_or_text(), error.to_string()))
             })
             .collect();
 
         assert!(problems.is_empty(), "{problems:?}");
+    }
+
+    #[test]
+    fn every_code_shown_with_and_without_ports_is_catalogued_in_both_languages() {
+        use crate::emitted_codes::{emitted_codes, uncatalogued};
+        use crate::vocabulary::messages::MIDI_MESSAGES;
+        use forge_platform_core::BuiltinContent;
+
+        for client in [MidiClient::new_for_test(), client_with_output_port()] {
+            let emitted = emitted_codes(&serde_json::json!((client.actions(), client.sections())));
+
+            assert!(!emitted.is_empty());
+            assert_eq!(
+                uncatalogued(&emitted, &[MIDI_MESSAGES, forge_types::COMMON_MESSAGES]),
+                Vec::<String>::new()
+            );
+        }
     }
 }

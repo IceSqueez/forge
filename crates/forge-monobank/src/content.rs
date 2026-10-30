@@ -3,6 +3,9 @@ use forge_platform_core::{
     test_donation_quick_action,
 };
 
+use forge_types::{MessageCode, UserText};
+
+use crate::messages;
 use crate::provider::MonobankProvider;
 use crate::status::{PollFailure, PollPhase, PollStatus};
 
@@ -26,27 +29,31 @@ impl QuickActions for MonobankProvider {
 
 fn jar_card(status: &PollStatus) -> DetailSection {
     let jar = status.jar.as_ref();
-    let field = |label: &str, value: Option<String>| InfoField {
-        label: label.to_owned(),
-        value: value.unwrap_or_else(|| NOT_SET.to_owned()),
+    let field = |label: MessageCode, value: Option<UserText>| InfoField {
+        label: label.into(),
+        value: value.unwrap_or_else(|| UserText::unlocalized(NOT_SET)),
         monospace_value: false,
     };
     DetailSection::InfoCard {
-        title: "monobank jar".to_owned(),
+        title: messages::LABEL_JAR_TITLE.into(),
         live: status.phase == PollPhase::Polling,
         fields: vec![
-            field("Jar", jar.and_then(|jar| jar.title.clone())),
             field(
-                "Currency",
+                messages::LABEL_JAR,
+                jar.and_then(|jar| jar.title.clone())
+                    .map(UserText::unlocalized),
+            ),
+            field(
+                messages::LABEL_CURRENCY,
                 jar.and_then(|jar| jar.currency.as_ref())
-                    .map(ToString::to_string),
+                    .map(|currency| UserText::unlocalized(currency.to_string())),
             ),
             field(
-                "Goal",
+                messages::LABEL_GOAL,
                 jar.and_then(|jar| jar.goal.as_ref())
-                    .map(ToString::to_string),
+                    .map(|goal| UserText::unlocalized(goal.to_string())),
             ),
-            field("Status", Some(status.phase_label().to_owned())),
+            field(messages::LABEL_STATUS, Some(status.phase.message().into())),
         ],
         health_bar: None,
     }
@@ -55,11 +62,8 @@ fn jar_card(status: &PollStatus) -> DetailSection {
 fn token_scope_notice() -> DetailSection {
     DetailSection::WarningBanner {
         level: BannerLevel::Info,
-        title: "Token access".to_owned(),
-        body: "A monobank personal token can read every account and jar you hold. \
-               forge only reads the statement of the jar you select, and the token is sent \
-               only to monobank."
-            .to_owned(),
+        title: messages::LABEL_TOKEN_ACCESS_TITLE.into(),
+        body: messages::LABEL_TOKEN_ACCESS_BODY.into(),
         cta: None,
     }
 }
@@ -72,24 +76,65 @@ fn action_banner(status: &PollStatus) -> Option<DetailSection> {
         return None;
     }
     let body = match status.last_error {
-        Some(PollFailure::TokenRejected) => {
-            "monobank rejected the token. Create a new token at api.monobank.ua and paste it here."
-        }
-        Some(PollFailure::JarNotSelected) => "Pick the jar that receives donations.",
-        Some(PollFailure::JarMissing) => {
-            "The selected jar no longer exists for this token. Pick another jar."
-        }
-        _ => {
-            "Paste a personal token from api.monobank.ua and pick a jar to start receiving donations."
-        }
+        Some(PollFailure::TokenRejected) => messages::LABEL_BANNER_TOKEN_REJECTED,
+        Some(PollFailure::JarNotSelected) => messages::LABEL_BANNER_JAR_NOT_SELECTED,
+        Some(PollFailure::JarMissing) => messages::LABEL_BANNER_JAR_MISSING,
+        _ => messages::LABEL_BANNER_TOKEN_MISSING,
     };
     Some(DetailSection::WarningBanner {
         level: BannerLevel::Warning,
         title: status
             .last_error
-            .map_or(PollFailure::MissingToken.label(), PollFailure::label)
-            .to_owned(),
-        body: body.to_owned(),
+            .map_or(PollFailure::MissingToken.message(), PollFailure::message)
+            .into(),
+        body: body.into(),
         cta: None,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use forge_types::COMMON_MESSAGES;
+
+    use super::*;
+    use crate::emitted_codes::{emitted_codes, uncatalogued};
+    use crate::messages::MONOBANK_MESSAGES;
+
+    #[test]
+    fn every_banner_and_card_code_is_catalogued_in_both_languages() {
+        for phase in [
+            PollPhase::AwaitingToken,
+            PollPhase::ActionRequired,
+            PollPhase::Polling,
+        ] {
+            for failure in [
+                None,
+                Some(PollFailure::MissingToken),
+                Some(PollFailure::TokenRejected),
+                Some(PollFailure::JarNotSelected),
+                Some(PollFailure::JarMissing),
+            ] {
+                let status = PollStatus {
+                    phase,
+                    jar: None,
+                    last_poll_at: None,
+                    last_donation_at: None,
+                    last_error: failure,
+                    last_error_at: None,
+                    polling_since: None,
+                };
+                let emitted = emitted_codes(&serde_json::json!((
+                    action_banner(&status),
+                    jar_card(&status)
+                )));
+
+                assert!(!emitted.is_empty(), "{phase:?} {failure:?}");
+                assert_eq!(
+                    uncatalogued(&emitted, &[MONOBANK_MESSAGES, COMMON_MESSAGES]),
+                    Vec::<String>::new(),
+                    "{phase:?} {failure:?}"
+                );
+            }
+        }
+    }
 }

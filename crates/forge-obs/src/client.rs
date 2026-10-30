@@ -1,3 +1,5 @@
+use crate::vocabulary::labels;
+use forge_types::VerbatimText;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex, OnceLock, PoisonError, RwLock};
 use std::time::Duration;
@@ -293,15 +295,18 @@ impl BuiltinStatus for ObsClient {
         let Some(ws_version) = read_lock(&self.obs_ws_version).clone() else {
             return Vec::new();
         };
+        let version = VerbatimText::new(ws_version);
         let label = match self.uptime() {
-            Some(uptime) => format!(
-                "obs-websocket v{ws_version} - uptime {}",
-                crate::health::format_duration_hm(uptime)
-            ),
-            None => format!("obs-websocket v{ws_version}"),
+            Some(uptime) => MessageRef::new(labels::WS_BADGE_UPTIME)
+                .with_arg("version", version)
+                .with_arg(
+                    "uptime",
+                    VerbatimText::new(crate::health::format_duration_hm(uptime)),
+                ),
+            None => MessageRef::new(labels::WS_BADGE).with_arg("version", version),
         };
         vec![HeroBadge {
-            label,
+            label: label.into(),
             tone: HeroBadgeTone::Neutral,
             monospace: true,
         }]

@@ -462,7 +462,7 @@ mod tests {
         DetailSection, HeaderAction, HealthMetric, HealthMetricId, HealthStream, HealthText,
         QuickAction, QuickActions,
     };
-    use forge_types::{IntegrationId, MessageCode};
+    use forge_types::{IntegrationId, MessageCode, UserText};
 
     use super::*;
     use crate::integrations::BuiltinObject;
@@ -639,7 +639,7 @@ mod tests {
         fn capability_flags(&self) -> CapabilityFlags {
             CapabilityFlags {
                 limited: false,
-                label: Some(SECRET.to_owned()),
+                label: Some(UserText::unlocalized(SECRET)),
             }
         }
         fn header_actions(&self) -> Vec<HeaderAction> {

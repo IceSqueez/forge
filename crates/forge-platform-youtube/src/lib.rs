@@ -15,6 +15,9 @@ mod credentials;
 mod credentials_manager;
 mod data_api;
 #[cfg(test)]
+#[path = "../../forge-platform-core/test_support/emitted_codes.rs"]
+mod emitted_codes;
+#[cfg(test)]
 mod endpoints_test_support;
 pub(crate) mod error_shape;
 mod follow_lookup;

@@ -113,12 +113,8 @@ impl TwitchAssembly {
         has_credentials_for(self.creds.as_ref(), &self.id()).await
     }
 
-    pub async fn open_session(&self) -> TwitchSession {
-        let stored = credentials::load(self.creds.as_ref())
-            .await
-            .inspect_err(|error| tracing::warn!(%error, "twitch credentials could not be read"))
-            .ok()
-            .flatten();
+    pub async fn open_session(&self) -> Result<TwitchSession, StorageError> {
+        let stored = credentials::load(self.creds.as_ref()).await?;
         let user_id = stored
             .as_ref()
             .map(|stored| stored.user_id.clone())
@@ -140,7 +136,7 @@ impl TwitchAssembly {
             .with_bot(Arc::clone(&self.bot)),
         );
         let login = stored.map(|stored| (!stored.login.is_empty()).then_some(stored.login));
-        TwitchSession { platform, login }
+        Ok(TwitchSession { platform, login })
     }
 }
 

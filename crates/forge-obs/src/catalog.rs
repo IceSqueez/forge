@@ -7,11 +7,11 @@ use forge_platform_core::{
     BuiltinContent, ContentList, ContentListItem, DetailSection, SectionIcon, TokenColor,
     TrailingToken,
 };
-use forge_types::{SubActionStep, Variant};
+use forge_types::{MessageRef, SubActionStep, UserText, Variant, VerbatimText};
 
 use crate::client::ObsClient;
 use crate::source::SourceInfo;
-use crate::vocabulary::{config_keys, sub_action_ids};
+use crate::vocabulary::{config_keys, labels, sub_action_ids};
 
 const PANEL_VISIBLE_ROWS: u16 = 8;
 const SCENE_ROW_PADDING_Y_PX: u8 = 8;
@@ -78,7 +78,11 @@ fn scene_to_item(
     let is_current = current_scene == Some(name);
     let mut trailing = Vec::new();
     if !is_current && let Some(count) = source_count {
-        trailing.push(TrailingToken::Label(format!("{count} src")));
+        trailing.push(TrailingToken::Label(
+            MessageRef::new(labels::SCENE_SOURCE_COUNT)
+                .with_arg("count", count)
+                .into(),
+        ));
     }
     ContentListItem {
         icon: if is_current {
@@ -91,7 +95,7 @@ fn scene_to_item(
         monospace_name: false,
         active: is_current,
         active_label: if is_current {
-            Some("LIVE".to_owned())
+            Some(labels::LIVE.into())
         } else {
             None
         },
@@ -199,7 +203,9 @@ fn source_to_item(scene: &str, info: &SourceInfo, actionable: bool) -> ContentLi
     ));
     if let Some(db) = info.audio_db {
         trailing.push(TrailingToken::TintedLabel(
-            format!("{db:.1} dB"),
+            MessageRef::new(labels::AUDIO_DB)
+                .with_arg("db", VerbatimText::new(format!("{db:.1}")))
+                .into(),
             TokenColor::Subtle,
         ));
     }
@@ -242,7 +248,7 @@ impl BuiltinContent for ObsClient {
                 )
             })
             .collect();
-        let scene_count = format!("{}", catalog.scenes.len());
+        let scene_count = UserText::unlocalized(catalog.scenes.len().to_string());
 
         let source_items: Vec<ContentListItem> = catalog
             .current_scene
@@ -255,14 +261,17 @@ impl BuiltinContent for ObsClient {
                     .collect()
             })
             .unwrap_or_default();
-        let source_scene_label = catalog
-            .current_scene
-            .as_deref()
-            .map(|scene| format!("in {scene}"));
-        let source_count_label = format!("{} total", source_items.len());
+        let source_scene_label = catalog.current_scene.as_deref().map(|scene| {
+            MessageRef::new(labels::SOURCES_IN_SCENE)
+                .with_arg("scene", VerbatimText::new(scene))
+                .into()
+        });
+        let source_count_label = MessageRef::new(labels::SOURCE_TOTAL)
+            .with_arg("count", source_items.len())
+            .into();
 
         let left = ContentList {
-            title: "Scenes".to_owned(),
+            title: labels::SCENES.into(),
             icon: SectionIcon::new("layout-grid"),
             inline_label: Some(scene_count),
             count_label: None,
@@ -274,7 +283,7 @@ impl BuiltinContent for ObsClient {
         };
 
         let right = ContentList {
-            title: "Sources".to_owned(),
+            title: labels::SOURCES.into(),
             icon: SectionIcon::new("stack-2"),
             inline_label: source_scene_label,
             count_label: Some(source_count_label),
@@ -337,7 +346,7 @@ mod tests {
         assert_eq!(left.items.len(), 2);
         assert!(left.items[0].active);
         assert_eq!(left.items[0].name, "Gameplay");
-        assert_eq!(left.items[0].active_label.as_deref(), Some("LIVE"));
+        assert_eq!(left.items[0].active_label, Some(labels::LIVE.into()));
         assert!(!left.items[1].active);
         assert_eq!(right.items.len(), 1);
         assert_eq!(right.items[0].name, "Game Capture");
@@ -397,7 +406,7 @@ mod tests {
     #[test]
     fn active_scene_row_carries_the_live_label_instead_of_a_source_count() {
         let item = scene_to_item("Gameplay", Some("Gameplay"), Some(4), false);
-        assert_eq!(item.active_label.as_deref(), Some("LIVE"));
+        assert_eq!(item.active_label, Some(labels::LIVE.into()));
         assert!(item.trailing.is_empty());
     }
 
@@ -407,7 +416,11 @@ mod tests {
         assert!(item.active_label.is_none());
         assert_eq!(
             item.trailing,
-            vec![TrailingToken::Label("4 src".to_owned())]
+            vec![TrailingToken::Label(
+                MessageRef::new(labels::SCENE_SOURCE_COUNT)
+                    .with_arg("count", 4_usize)
+                    .into()
+            )]
         );
     }
 
@@ -463,7 +476,9 @@ mod tests {
         assert_eq!(
             with_level.trailing.last(),
             Some(&TrailingToken::TintedLabel(
-                "-12.3 dB".to_owned(),
+                MessageRef::new(labels::AUDIO_DB)
+                    .with_arg("db", VerbatimText::new("-12.3"))
+                    .into(),
                 TokenColor::Subtle,
             )),
         );
@@ -675,6 +690,40 @@ mod tests {
         let baseline = topology().option_fingerprint();
         for _ in 0..32 {
             assert_eq!(topology().option_fingerprint(), baseline);
+        }
+    }
+
+    #[test]
+    fn every_code_shown_empty_and_populated_is_catalogued_in_both_languages() {
+        use crate::emitted_codes::{emitted_codes, uncatalogued};
+        use crate::vocabulary::messages::OBS_MESSAGES;
+        use forge_platform_core::QuickActions;
+
+        let empty = ObsClient::new_for_test("localhost:4455".to_owned());
+        let populated = ObsClient::new_for_test("localhost:4455".to_owned());
+        {
+            let mut catalog = populated.catalog_state.write().unwrap();
+            catalog.scenes = vec!["Gameplay".to_owned(), "BRB".to_owned()];
+            catalog.current_scene = Some("Gameplay".to_owned());
+            catalog.sources.insert(
+                "Gameplay".to_owned(),
+                vec![SourceInfo {
+                    name: "Mic".to_owned(),
+                    visible: true,
+                    locked: false,
+                    audio_db: Some(-12.5),
+                    kind: Some("wasapi_input_capture".to_owned()),
+                }],
+            );
+        }
+        for client in [&empty, &populated] {
+            let emitted = emitted_codes(&serde_json::json!((client.actions(), client.sections())));
+
+            assert!(!emitted.is_empty());
+            assert_eq!(
+                uncatalogued(&emitted, &[OBS_MESSAGES, forge_types::COMMON_MESSAGES]),
+                Vec::<String>::new()
+            );
         }
     }
 }

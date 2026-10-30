@@ -8,7 +8,10 @@ use forge_platform_core::{
     TrailingToken,
 };
 
+use forge_types::UserText;
+
 use crate::client::DiscordClient;
+use crate::vocabulary::labels;
 
 pub(crate) const RECENT_POSTS_CAP: usize = 20;
 
@@ -95,11 +98,15 @@ impl BuiltinContent for DiscordClient {
                     name: name.clone(),
                     monospace_name: true,
                     active: last_ok,
-                    active_label: if last_ok { Some("OK".to_owned()) } else { None },
-                    trailing: vec![if last_ok {
-                        TrailingToken::Badge("READY".to_owned(), TokenColor::Green)
+                    active_label: if last_ok {
+                        Some(labels::OK.into())
                     } else {
-                        TrailingToken::Badge("ERROR".to_owned(), TokenColor::Red)
+                        None
+                    },
+                    trailing: vec![if last_ok {
+                        TrailingToken::Badge(labels::READY.into(), TokenColor::Green)
+                    } else {
+                        TrailingToken::Badge(labels::ERROR.into(), TokenColor::Red)
                     }],
                     enabled: true,
                     on_click: None,
@@ -130,23 +137,23 @@ impl BuiltinContent for DiscordClient {
                     monospace_name: true,
                     active: r.ok,
                     active_label: if r.had_embed {
-                        Some("embed".to_owned())
+                        Some(labels::EMBED.into())
                     } else {
                         None
                     },
-                    trailing: vec![TrailingToken::Label(ts)],
+                    trailing: vec![TrailingToken::Label(UserText::unlocalized(ts))],
                     enabled: true,
                     on_click: None,
                 }
             })
             .collect();
 
-        let webhook_count = webhook_items.len().to_string();
-        let post_count = post_items.len().to_string();
+        let webhook_count = UserText::unlocalized(webhook_items.len().to_string());
+        let post_count = UserText::unlocalized(post_items.len().to_string());
 
         vec![DetailSection::TwoColumnLists {
             left: Box::new(ContentList {
-                title: "Webhooks".to_owned(),
+                title: labels::WEBHOOKS.into(),
                 icon: SectionIcon::new("webhook"),
                 inline_label: None,
                 count_label: Some(webhook_count),
@@ -157,7 +164,7 @@ impl BuiltinContent for DiscordClient {
                 footer: None,
             }),
             right: Box::new(ContentList {
-                title: "Recent Posts".to_owned(),
+                title: labels::RECENT_POSTS.into(),
                 icon: SectionIcon::new("message"),
                 inline_label: None,
                 count_label: Some(post_count),

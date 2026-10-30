@@ -32,6 +32,10 @@ pub fn resolve_user_text(text: &UserText) -> ResolvedText {
     }
 }
 
+pub fn user_text_string(text: &UserText) -> String {
+    resolve_user_text(text).inline()
+}
+
 pub fn resolve_message(message: &MessageRef) -> ResolvedText {
     let detail = message.detail().map(|detail| detail.as_str().to_owned());
     let args = message
@@ -450,5 +454,21 @@ mod tests {
         let text = UserText::Message(MessageRef::new(PROBE_PLAIN));
 
         assert_eq!(resolve_user_text(&text).primary, "Plain");
+    }
+
+    #[test]
+    fn the_test_donation_label_resolves_in_the_active_language() {
+        let label =
+            forge_platform_core::test_donation_quick_action(&IntegrationId::new("donatello")).label;
+
+        crate::i18n::install_language(Language::En);
+        let english = user_text_string(&label);
+        crate::i18n::install_language(Language::Uk);
+        let ukrainian = user_text_string(&label);
+
+        assert_eq!(
+            (english.as_str(), ukrainian.as_str()),
+            ("Send test donation", "Надіслати тестовий донат")
+        );
     }
 }

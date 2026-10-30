@@ -1,3 +1,5 @@
+use crate::vocabulary::labels;
+use forge_types::MessageCode;
 use std::sync::Arc;
 
 use async_trait::async_trait;
@@ -31,13 +33,13 @@ pub(crate) enum AnnouncementColor {
 }
 
 impl AnnouncementColor {
-    pub(crate) fn label(self) -> &'static str {
+    pub(crate) fn label(self) -> MessageCode {
         match self {
-            Self::Primary => "Primary",
-            Self::Blue => "Blue",
-            Self::Green => "Green",
-            Self::Orange => "Orange",
-            Self::Purple => "Purple",
+            Self::Primary => labels::PRIMARY,
+            Self::Blue => labels::BLUE,
+            Self::Green => labels::GREEN,
+            Self::Orange => labels::ORANGE,
+            Self::Purple => labels::PURPLE,
         }
     }
 }

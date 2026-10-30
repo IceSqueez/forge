@@ -18,3 +18,6 @@ msg-hotkey-health_portal_evdev_fallback = Портал недоступний, �
 msg-hotkey-health_portal_permission_denied = Доступ заборонено, додайте користувача до групи 'input'
 msg-hotkey-health_backend_not_applicable = н/д
 msg-hotkey-condition_any_hotkey = будь-яка гаряча клавіша
+msg-hotkey-label_active = АКТИВНО
+msg-hotkey-label_recent_triggers = Останні спрацювання
+msg-hotkey-label_registered_hotkeys = Зареєстровані гарячі клавіші

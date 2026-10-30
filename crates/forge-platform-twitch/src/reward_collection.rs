@@ -20,7 +20,9 @@ use crate::custom_rewards::{
 use crate::helix::{HelixError, HelixRequest};
 use crate::helix_envelope::{first_row, rows};
 use crate::quick_action_fields::{int_field, text_field, toggle_field};
+use crate::vocabulary::labels;
 use forge_net::status::NOT_FOUND;
+use forge_types::VerbatimText;
 
 const ENABLED_TOGGLE: &str = "enabled";
 const PAUSED_TOGGLE: &str = "paused";
@@ -33,8 +35,6 @@ const MAX_PER_USER_PER_STREAM_SETTING_KEY: &str = "max_per_user_per_stream_setti
 const GLOBAL_COOLDOWN_SETTING_KEY: &str = "global_cooldown_setting";
 const SETTING_ENABLED_KEY: &str = "is_enabled";
 const ERROR_MESSAGE_KEY: &str = "message";
-
-const NOT_OWNED_REASON: &str = "Created outside forge - edit it in the Twitch dashboard";
 
 const CAPACITY_NEEDLES: &[&str] = &["too many", "maximum number", "max number", "reward limit"];
 const AUTOMOD_NEEDLE: &str = "automod";
@@ -256,7 +256,7 @@ fn item_from_row(row: &serde_json::Value, manageable: bool) -> Option<Collection
         CollectionItemAccess::Manageable
     } else {
         CollectionItemAccess::ReadOnly {
-            reason: NOT_OWNED_REASON.to_owned(),
+            reason: labels::CREATED_OUTSIDE_FORGE.into(),
         }
     };
     Some(CollectionItem {
@@ -346,18 +346,19 @@ fn reward_gone() -> CollectionFailure {
 fn rewards_metadata() -> CollectionMetadata {
     CollectionMetadata {
         id: CollectionId::new(REWARDS_COLLECTION),
-        label: "Channel point rewards".to_owned(),
+        label: labels::CHANNEL_POINT_REWARDS.into(),
         icon: SectionIcon::new("diamond"),
         capacity: Some(MAX_CUSTOM_REWARDS),
         fields: vec![
             CollectionField {
-                field: text_field(TITLE_KEY, "Title", "Hydrate!").required(),
+                field: text_field(TITLE_KEY, labels::TITLE, labels::REWARD_TITLE_PLACEHOLDER)
+                    .required(),
                 max_chars: Some(MAX_TITLE_CHARS),
             },
             CollectionField {
                 field: int_field(
                     COST_KEY,
-                    "Cost (Channel Points)",
+                    labels::REWARD_COST,
                     DEFAULT_REWARD_COST,
                     MIN_COST,
                     i64::MAX,
@@ -366,25 +367,29 @@ fn rewards_metadata() -> CollectionMetadata {
                 max_chars: None,
             },
             CollectionField {
-                field: text_field(PROMPT_KEY, "Prompt", "optional"),
+                field: text_field(PROMPT_KEY, labels::PROMPT, labels::OPTIONAL),
                 max_chars: Some(MAX_PROMPT_CHARS),
             },
             CollectionField {
-                field: toggle_field(IS_USER_INPUT_REQUIRED_KEY, "Require viewer input", false),
+                field: toggle_field(
+                    IS_USER_INPUT_REQUIRED_KEY,
+                    labels::REQUIRE_VIEWER_INPUT,
+                    false,
+                ),
                 max_chars: None,
             },
             CollectionField {
                 field: text_field(
                     BACKGROUND_COLOR_KEY,
-                    "Background color (#RRGGBB)",
-                    "#9147FF",
+                    labels::BACKGROUND_COLOR,
+                    VerbatimText::new("#9147FF"),
                 ),
                 max_chars: Some(HEX_COLOR_LEN),
             },
             CollectionField {
                 field: int_field(
                     MAX_PER_STREAM_KEY,
-                    "Max per stream (0 = unlimited)",
+                    labels::MAX_PER_STREAM,
                     UNLIMITED,
                     UNLIMITED,
                     i64::MAX,
@@ -394,7 +399,7 @@ fn rewards_metadata() -> CollectionMetadata {
             CollectionField {
                 field: int_field(
                     MAX_PER_USER_PER_STREAM_KEY,
-                    "Max per viewer per stream (0 = unlimited)",
+                    labels::MAX_PER_VIEWER,
                     UNLIMITED,
                     UNLIMITED,
                     i64::MAX,
@@ -404,7 +409,7 @@ fn rewards_metadata() -> CollectionMetadata {
             CollectionField {
                 field: int_field(
                     GLOBAL_COOLDOWN_SECONDS_KEY,
-                    "Global cooldown seconds (0 = off)",
+                    labels::GLOBAL_COOLDOWN,
                     UNLIMITED,
                     UNLIMITED,
                     i64::MAX,
@@ -415,11 +420,11 @@ fn rewards_metadata() -> CollectionMetadata {
         toggles: vec![
             CollectionToggle {
                 key: ENABLED_TOGGLE.to_owned(),
-                label: "Enabled".to_owned(),
+                label: labels::ENABLED.into(),
             },
             CollectionToggle {
                 key: PAUSED_TOGGLE.to_owned(),
-                label: "Paused".to_owned(),
+                label: labels::PAUSED.into(),
             },
         ],
     }
@@ -732,7 +737,7 @@ mod tests {
                 (
                     "dash",
                     &CollectionItemAccess::ReadOnly {
-                        reason: NOT_OWNED_REASON.to_owned()
+                        reason: labels::CREATED_OUTSIDE_FORGE.into()
                     }
                 ),
             ]
@@ -1504,5 +1509,26 @@ mod tests {
             );
             assert_eq!(bus.of_kind(REQUEST_FAIL_KIND).len(), 1, "{name}");
         }
+    }
+
+    #[test]
+    fn every_code_the_reward_form_shows_is_catalogued_in_both_languages() {
+        use crate::emitted_codes::{emitted_codes, uncatalogued};
+        use crate::vocabulary::messages::TWITCH_MESSAGES;
+
+        let metadata = rewards_metadata();
+        let fields: Vec<_> = metadata.fields.iter().map(|field| &field.field).collect();
+        let toggles: Vec<_> = metadata
+            .toggles
+            .iter()
+            .map(|toggle| &toggle.label)
+            .collect();
+        let emitted = emitted_codes(&serde_json::json!((&metadata.label, fields, toggles)));
+
+        assert!(emitted.contains(&labels::REWARD_TITLE_PLACEHOLDER.to_string()));
+        assert_eq!(
+            uncatalogued(&emitted, &[TWITCH_MESSAGES]),
+            Vec::<String>::new()
+        );
     }
 }

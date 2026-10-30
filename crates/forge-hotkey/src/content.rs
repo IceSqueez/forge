@@ -2,7 +2,10 @@ use forge_platform_core::{
     BuiltinContent, ContentList, ContentListItem, DetailSection, SectionIcon, TrailingToken,
 };
 
+use forge_types::UserText;
+
 use crate::client::HotkeyClient;
+use crate::vocabulary::labels;
 
 impl BuiltinContent for HotkeyClient {
     fn sections(&self) -> Vec<DetailSection> {
@@ -26,14 +29,14 @@ impl BuiltinContent for HotkeyClient {
                 name: combo.as_str().to_owned(),
                 monospace_name: true,
                 active: true,
-                active_label: Some("ACTIVE".to_owned()),
+                active_label: Some(labels::ACTIVE.into()),
                 trailing: vec![],
                 enabled: true,
                 on_click: None,
             })
             .collect();
 
-        let hotkey_count = hotkey_items.len().to_string();
+        let hotkey_count = UserText::unlocalized(hotkey_items.len().to_string());
 
         let trigger_items: Vec<ContentListItem> = recent_triggers
             .iter()
@@ -52,18 +55,18 @@ impl BuiltinContent for HotkeyClient {
                     monospace_name: true,
                     active: true,
                     active_label: None,
-                    trailing: vec![TrailingToken::Label(time_str)],
+                    trailing: vec![TrailingToken::Label(UserText::unlocalized(time_str))],
                     enabled: true,
                     on_click: None,
                 }
             })
             .collect();
 
-        let trigger_count = trigger_items.len().to_string();
+        let trigger_count = UserText::unlocalized(trigger_items.len().to_string());
 
         vec![DetailSection::TwoColumnLists {
             left: Box::new(ContentList {
-                title: "Registered Hotkeys".to_owned(),
+                title: labels::REGISTERED_HOTKEYS.into(),
                 icon: SectionIcon::new("keyboard"),
                 inline_label: None,
                 count_label: Some(hotkey_count),
@@ -74,7 +77,7 @@ impl BuiltinContent for HotkeyClient {
                 footer: None,
             }),
             right: Box::new(ContentList {
-                title: "Recent Triggers".to_owned(),
+                title: labels::RECENT_TRIGGERS.into(),
                 icon: SectionIcon::new("bolt"),
                 inline_label: None,
                 count_label: Some(trigger_count),
@@ -139,5 +142,21 @@ mod tests {
         for item in &left.items {
             assert!(item.monospace_name);
         }
+    }
+
+    #[test]
+    fn every_code_the_client_shows_is_catalogued_in_both_languages() {
+        use crate::emitted_codes::{emitted_codes, uncatalogued};
+        use crate::vocabulary::messages::HOTKEY_MESSAGES;
+        use forge_platform_core::QuickActions;
+
+        let client = HotkeyClient::new_for_test(None);
+        let emitted = emitted_codes(&serde_json::json!((client.actions(), client.sections())));
+
+        assert!(!emitted.is_empty());
+        assert_eq!(
+            uncatalogued(&emitted, &[HOTKEY_MESSAGES, forge_types::COMMON_MESSAGES]),
+            Vec::<String>::new()
+        );
     }
 }

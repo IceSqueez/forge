@@ -12,7 +12,7 @@ use gpui::{
     div, prelude::*, px,
 };
 
-use crate::collection_text::localized_collection_text;
+use crate::user_text::user_text_string;
 use forge_components::ActivePresentation;
 use forge_components::{
     choice_trigger, failure_note, field_column, int_entry_invalid, int_range_hint,
@@ -91,8 +91,8 @@ impl CollectionForm {
                 .or(spec.default.as_ref());
             let placeholder = spec
                 .placeholder
-                .as_deref()
-                .map(localized_collection_text)
+                .as_ref()
+                .map(user_text_string)
                 .unwrap_or_default();
             let control = match &spec.kind {
                 QuickActionFieldKind::Text => {
@@ -161,7 +161,7 @@ impl CollectionForm {
                         .iter()
                         .map(|option| PickerItem {
                             id: option.value.clone().into(),
-                            label: localized_collection_text(&option.label).into(),
+                            label: user_text_string(&option.label).into(),
                             sublabel: None,
                             icon: None,
                         })
@@ -178,7 +178,7 @@ impl CollectionForm {
             };
             fields.push(FormField {
                 key: spec.key.clone(),
-                label: localized_collection_text(&spec.label),
+                label: user_text_string(&spec.label),
                 hint: field_hint(spec, declared.max_chars),
                 required: spec.required,
                 control,
@@ -445,7 +445,7 @@ impl Render for CollectionForm {
 
 fn field_hint(spec: &QuickActionField, max_chars: Option<usize>) -> Option<String> {
     if let Some(hint) = &spec.hint {
-        return Some(localized_collection_text(hint));
+        return Some(user_text_string(hint));
     }
     match (&spec.kind, max_chars) {
         (QuickActionFieldKind::Int { min, max }, _) => Some(int_range_hint(*min, *max)),
@@ -544,6 +544,7 @@ mod tests {
 
     use super::*;
     use forge_components::Presentation;
+    use forge_types::UserText;
 
     const TITLE: &str = "title";
     const COST: &str = "cost";
@@ -553,7 +554,7 @@ mod tests {
     fn field(key: &str, kind: QuickActionFieldKind, required: bool) -> QuickActionField {
         QuickActionField {
             key: key.to_owned(),
-            label: key.to_owned(),
+            label: UserText::unlocalized(key),
             kind,
             default: None,
             placeholder: None,
@@ -692,5 +693,39 @@ mod tests {
         cx.update(|cx| form.update(cx, |form, cx| form.set_submitting(true, cx)));
 
         assert!(!can_submit(cx, &form));
+    }
+
+    #[gpui::test]
+    fn typed_reward_labels_render_in_ukrainian(cx: &mut TestAppContext) {
+        crate::i18n::install_language(forge_storage::Language::Uk);
+        let code = |name| forge_types::MessageCode::from_static("twitch", name);
+        let schema = vec![
+            CollectionField {
+                field: QuickActionField {
+                    label: code("label_title").into(),
+                    ..field(TITLE, QuickActionFieldKind::Text, true)
+                },
+                max_chars: None,
+            },
+            CollectionField {
+                field: QuickActionField {
+                    label: code("label_require_viewer_input").into(),
+                    ..field(INPUT, QuickActionFieldKind::Toggle, false)
+                },
+                max_chars: None,
+            },
+        ];
+        cx.update(|cx| cx.set_global(Presentation::new(ThemeId::ForgeDefault, Density::Cozy)));
+        let form = cx.update(|cx| cx.new(|cx| CollectionForm::new(&schema, None, cx)));
+
+        let labels = cx.update(|cx| {
+            form.read(cx)
+                .fields
+                .iter()
+                .map(|field| field.label.clone())
+                .collect::<Vec<_>>()
+        });
+
+        assert_eq!(labels, ["Назва", "Вимагати введення від глядача"]);
     }
 }

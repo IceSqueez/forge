@@ -18,7 +18,7 @@ use forge_types::{IntegrationId, PlatformId};
 use tokio::sync::mpsc;
 
 use crate::integration_start_errors::{
-    hotkey_start_error, kick_start_error, midi_start_error, youtube_start_error,
+    hotkey_start_error, kick_start_error, midi_start_error, twitch_start_error, youtube_start_error,
 };
 use crate::integrations::{
     BuiltinObject, ObsInstallSeed, VTubeInstallSeed, creds_of, kick_builtin_object, publisher,
@@ -94,7 +94,11 @@ impl IntegrationFactory<BuiltinObject> for TwitchFactory {
     }
 
     async fn start(&self) -> Result<RunningIntegration<BuiltinObject>, IntegrationStartError> {
-        let session = self.assembly.open_session().await;
+        let session = self
+            .assembly
+            .open_session()
+            .await
+            .map_err(|e| twitch_start_error(&e))?;
         let chat_platform = session.chat_platform();
         let event_bridge =
             spawn_event_bridge(publisher(&self.bus), chat_platform.events(), "twitch");
@@ -835,6 +839,7 @@ mod tests {
     use forge_types::{PermissionRung, PlatformScope, TriggerInstance, TriggerInstanceId, Variant};
 
     use super::*;
+    use crate::start_failure::StartRemedy;
 
     struct SilentPublisher;
 
@@ -887,5 +892,35 @@ mod tests {
         let factory = hotkey_factory(Vec::new());
 
         assert!(!factory.is_configured().await.unwrap());
+    }
+
+    #[tokio::test]
+    async fn an_unreadable_twitch_sign_in_fails_the_start_and_asks_to_sign_in_again() {
+        let mut creds = forge_storage::credentials::MockCredentialsRepo::new();
+        creds
+            .expect_load()
+            .returning(|_| Err(StorageError::Decryption));
+        let bus = EventBus::new(Arc::new(crate::test_support::StubEventLog));
+        let assembly = forge_platform_twitch::TwitchAssembly::new(
+            &mut SubActionRegistry::new(),
+            Arc::new(creds),
+            &publisher(&bus),
+            &PlatformEndpoints::default(),
+            "factory-test-client".to_owned(),
+        )
+        .unwrap();
+        let factory = TwitchFactory { bus, assembly };
+
+        let Err(error) = factory.start().await else {
+            panic!("an unreadable sign-in must not start as signed out");
+        };
+
+        assert_eq!(
+            (error.message().code().clone(), StartRemedy::of(&error)),
+            (
+                forge_platform_twitch::vocabulary::messages::STORED_SIGN_IN_UNREADABLE,
+                StartRemedy::SignIn
+            )
+        );
     }
 }

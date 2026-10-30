@@ -135,7 +135,7 @@ mod tests {
             let runner = reg.get(kind_id).unwrap_or_else(|| {
                 panic!(
                     "quick action '{}' targets unknown runner '{kind_id}'",
-                    action.label
+                    action.label.code_or_text()
                 )
             });
 
@@ -153,7 +153,7 @@ mod tests {
                 assert!(
                     read.contains(&key),
                     "quick action '{}' sets '{key}', which runner '{kind_id}' never reads",
-                    action.label,
+                    action.label.code_or_text(),
                 );
             }
         }

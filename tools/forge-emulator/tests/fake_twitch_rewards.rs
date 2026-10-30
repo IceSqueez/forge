@@ -101,7 +101,7 @@ impl Forge {
             account.client_id.clone(),
         )
         .unwrap();
-        let session = assembly.open_session().await;
+        let session = assembly.open_session().await.unwrap();
         let platform = session.chat_platform();
         let bundle = session.into_bundle().unwrap();
         Self { bundle, platform }

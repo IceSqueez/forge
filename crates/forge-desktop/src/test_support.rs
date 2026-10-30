@@ -5,7 +5,7 @@ pub(crate) mod pack_flow;
 mod pack_transfer;
 mod setup_transfer;
 
-use forge_types::OverlayCredential;
+use forge_types::{OverlayCredential, UserText};
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
@@ -1342,7 +1342,7 @@ impl FakeCollections {
     pub(crate) fn metadata() -> forge_platform_core::CollectionMetadata {
         forge_platform_core::CollectionMetadata {
             id: forge_platform_core::CollectionId::new(REWARDS),
-            label: "Channel point rewards".to_owned(),
+            label: UserText::unlocalized("Channel point rewards"),
             icon: forge_platform_core::SectionIcon::new("diamond"),
             capacity: None,
             fields: Vec::new(),
@@ -1392,7 +1392,7 @@ pub(crate) fn foreign_reward(id: &str, title: &str) -> forge_platform_core::Coll
         id,
         title,
         forge_platform_core::CollectionItemAccess::ReadOnly {
-            reason: "created elsewhere".to_owned(),
+            reason: UserText::unlocalized("created elsewhere"),
         },
     )
 }

@@ -2,6 +2,9 @@ mod client;
 pub(crate) mod content;
 pub(crate) mod credentials;
 mod embed;
+#[cfg(test)]
+#[path = "../../forge-platform-core/test_support/emitted_codes.rs"]
+mod emitted_codes;
 mod error;
 pub(crate) mod events;
 mod health;

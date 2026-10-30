@@ -1,3 +1,5 @@
+use crate::vocabulary::labels;
+use forge_types::MessageCode;
 use std::sync::Arc;
 
 use async_trait::async_trait;
@@ -22,11 +24,11 @@ pub(crate) enum PrivacyStatus {
 }
 
 impl PrivacyStatus {
-    pub(crate) fn label(self) -> &'static str {
+    pub(crate) fn label(self) -> MessageCode {
         match self {
-            Self::Public => "Public",
-            Self::Unlisted => "Unlisted",
-            Self::Private => "Private",
+            Self::Public => labels::PUBLIC,
+            Self::Unlisted => labels::UNLISTED,
+            Self::Private => labels::PRIVATE,
         }
     }
 }

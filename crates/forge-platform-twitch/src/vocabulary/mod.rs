@@ -3,6 +3,7 @@ pub mod event_kinds;
 pub mod events;
 mod eventsub_topics;
 pub(crate) mod fields;
+pub(crate) mod labels;
 pub mod messages;
 pub mod sub_action_ids;
 pub mod topics;

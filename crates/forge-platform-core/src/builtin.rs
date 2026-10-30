@@ -142,10 +142,10 @@ pub enum TokenColor {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum TrailingToken {
-    Badge(String, TokenColor),
+    Badge(UserText, TokenColor),
     Icon(SectionIcon, TokenColor),
-    Label(String),
-    TintedLabel(String, TokenColor),
+    Label(UserText),
+    TintedLabel(UserText, TokenColor),
     ActionIcon {
         icon: SectionIcon,
         tint: TokenColor,
@@ -167,7 +167,7 @@ pub struct ContentListItem {
     pub name: String,
     pub monospace_name: bool,
     pub active: bool,
-    pub active_label: Option<String>,
+    pub active_label: Option<UserText>,
     pub trailing: Vec<TrailingToken>,
     pub enabled: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -180,11 +180,11 @@ fn default_row_padding_y_px() -> u8 {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ContentList {
-    pub title: String,
+    pub title: UserText,
     pub icon: SectionIcon,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub inline_label: Option<String>,
-    pub count_label: Option<String>,
+    pub inline_label: Option<UserText>,
+    pub count_label: Option<UserText>,
     pub visible_rows: Option<u16>,
     #[serde(default = "default_row_padding_y_px")]
     pub row_padding_y_px: u8,
@@ -197,8 +197,8 @@ pub struct ContentList {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct KeyValueRow {
     pub icon: SectionIcon,
-    pub name: String,
-    pub tag: Option<String>,
+    pub name: UserText,
+    pub tag: Option<UserText>,
     pub action: Option<RowAction>,
 }
 
@@ -206,7 +206,7 @@ pub struct KeyValueRow {
 pub struct ActiveRow {
     pub name: String,
     pub active: bool,
-    pub mode_label: Option<String>,
+    pub mode_label: Option<UserText>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -231,7 +231,7 @@ pub struct SubscriptionRow {
     pub status: SubscriptionStatus,
     pub version: Option<String>,
     pub event_count: Option<u64>,
-    pub error_label: Option<String>,
+    pub error_label: Option<UserText>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -243,21 +243,21 @@ pub enum HeroBadgeTone {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct HeroBadge {
-    pub label: String,
+    pub label: UserText,
     pub tone: HeroBadgeTone,
     pub monospace: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ListFooter {
-    pub cta_label: Option<String>,
-    pub trailing_label: Option<String>,
+    pub cta_label: Option<UserText>,
+    pub trailing_label: Option<UserText>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct InfoField {
-    pub label: String,
-    pub value: String,
+    pub label: UserText,
+    pub value: UserText,
     pub monospace_value: bool,
 }
 
@@ -273,15 +273,15 @@ pub enum HealthLevel {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct HealthBar {
     pub fraction: f32,
-    pub label: String,
+    pub label: UserText,
     pub level: HealthLevel,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct StatColumn {
-    pub label: String,
-    pub value: String,
-    pub subtitle: String,
+    pub label: UserText,
+    pub value: UserText,
+    pub subtitle: UserText,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -292,43 +292,43 @@ pub enum DetailSection {
         right: Box<ContentList>,
     },
     KeyValueList {
-        title: String,
+        title: UserText,
         icon: SectionIcon,
         items: Vec<KeyValueRow>,
     },
     ActiveItemList {
-        title: String,
+        title: UserText,
         icon: SectionIcon,
         items: Vec<ActiveRow>,
     },
     WarningBanner {
         level: BannerLevel,
-        title: String,
-        body: String,
-        cta: Option<String>,
+        title: UserText,
+        body: UserText,
+        cta: Option<UserText>,
     },
     SubscriptionList {
-        title: String,
+        title: UserText,
         icon: SectionIcon,
         items: Vec<SubscriptionRow>,
         footer: Option<ListFooter>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
-        banner: Option<String>,
+        banner: Option<UserText>,
     },
     ScopesList {
-        title: String,
+        title: UserText,
         icon: SectionIcon,
         scopes: Vec<String>,
         footer: Option<ListFooter>,
     },
     InfoCard {
-        title: String,
+        title: UserText,
         live: bool,
         fields: Vec<InfoField>,
         health_bar: Option<HealthBar>,
     },
     StatsGrid {
-        title: String,
+        title: UserText,
         icon: SectionIcon,
         columns: Vec<StatColumn>,
     },
@@ -337,7 +337,7 @@ pub enum DetailSection {
         right: Box<DetailSection>,
     },
     ChipGrid {
-        title: String,
+        title: UserText,
         icon: SectionIcon,
         chip_icon: SectionIcon,
         items: Vec<String>,
@@ -360,7 +360,7 @@ pub enum QuickActionAccent {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct QuickActionChoiceOption {
     pub value: String,
-    pub label: String,
+    pub label: UserText,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -407,14 +407,14 @@ pub enum QuickActionFieldValue {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct QuickActionField {
     pub key: String,
-    pub label: String,
+    pub label: UserText,
     pub kind: QuickActionFieldKind,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub default: Option<QuickActionFieldValue>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub placeholder: Option<String>,
+    pub placeholder: Option<UserText>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub hint: Option<String>,
+    pub hint: Option<UserText>,
     #[serde(default)]
     pub required: bool,
 }
@@ -437,21 +437,25 @@ pub enum QuickActionLiveness {
     Absent,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct QuickActionGroup {
+    pub label: UserText,
+    pub icon: SectionIcon,
+    #[serde(default)]
+    pub accent: QuickActionAccent,
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct QuickAction {
-    pub label: String,
+    pub label: UserText,
     pub icon: SectionIcon,
     pub enabled: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub locked_reason: Option<String>,
+    pub locked_reason: Option<UserText>,
     #[serde(default)]
     pub liveness: QuickActionLiveness,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub group: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub group_icon: Option<SectionIcon>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub group_accent: Option<QuickActionAccent>,
+    pub group: Option<QuickActionGroup>,
     #[serde(default)]
     pub destructive: bool,
     #[serde(default)]
@@ -483,7 +487,7 @@ impl QuickAction {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct CapabilityFlags {
     pub limited: bool,
-    pub label: Option<String>,
+    pub label: Option<UserText>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -709,7 +713,7 @@ mod tests {
         for flags in [
             CapabilityFlags {
                 limited: true,
-                label: Some("read-only".to_owned()),
+                label: Some(UserText::unlocalized("read-only")),
             },
             CapabilityFlags {
                 limited: false,
@@ -742,9 +746,9 @@ mod tests {
     fn detail_section_warning_banner_roundtrip() {
         let section = DetailSection::WarningBanner {
             level: BannerLevel::Warning,
-            title: "Limited API".to_owned(),
-            body: "Kick has no public OAuth API.".to_owned(),
-            cta: Some("Learn more".to_owned()),
+            title: UserText::unlocalized("Limited API"),
+            body: UserText::unlocalized("Kick has no public OAuth API."),
+            cta: Some(UserText::unlocalized("Learn more")),
         };
         let json = serde_json::to_string(&section).unwrap();
         let back: DetailSection = serde_json::from_str(&json).unwrap();
@@ -753,10 +757,10 @@ mod tests {
 
     fn content_list_fixture(title: &str) -> ContentList {
         ContentList {
-            title: title.to_owned(),
+            title: UserText::unlocalized(title),
             icon: SectionIcon::new("list"),
             inline_label: None,
-            count_label: Some("3".to_owned()),
+            count_label: Some(UserText::unlocalized("3")),
             visible_rows: Some(8),
             row_padding_y_px: 7,
             refreshable: false,
@@ -766,10 +770,13 @@ mod tests {
                 name: "Main Scene".to_owned(),
                 monospace_name: false,
                 active: true,
-                active_label: Some("LIVE".to_owned()),
+                active_label: Some(UserText::unlocalized("LIVE")),
                 trailing: vec![
-                    TrailingToken::Badge("HD".to_owned(), TokenColor::Green),
-                    TrailingToken::TintedLabel("-12.3 dB".to_owned(), TokenColor::Subtle),
+                    TrailingToken::Badge(UserText::unlocalized("HD"), TokenColor::Green),
+                    TrailingToken::TintedLabel(
+                        UserText::unlocalized("-12.3 dB"),
+                        TokenColor::Subtle,
+                    ),
                 ],
                 enabled: true,
                 on_click: None,
@@ -782,7 +789,7 @@ mod tests {
     fn detail_section_two_column_lists_roundtrip_preserves_per_side_header_options() {
         let section = DetailSection::TwoColumnLists {
             left: Box::new(ContentList {
-                inline_label: Some("in Gameplay".to_owned()),
+                inline_label: Some(UserText::unlocalized("in Gameplay")),
                 row_padding_y_px: 8,
                 refreshable: true,
                 ..content_list_fixture("Sources")
@@ -803,7 +810,7 @@ mod tests {
     #[test]
     fn content_list_without_header_options_deserializes_to_compact_row_defaults() {
         let json = r#"{
-            "title": "Scenes",
+            "title": { "verbatim": "Scenes" },
             "icon": "list",
             "count_label": null,
             "visible_rows": null,
@@ -819,16 +826,16 @@ mod tests {
     #[test]
     fn detail_section_info_card_roundtrip() {
         let section = DetailSection::InfoCard {
-            title: "Live Broadcast".to_owned(),
+            title: UserText::unlocalized("Live Broadcast"),
             live: true,
             fields: vec![InfoField {
-                label: "Viewers".to_owned(),
-                value: "1 234".to_owned(),
+                label: UserText::unlocalized("Viewers"),
+                value: UserText::unlocalized("1 234"),
                 monospace_value: false,
             }],
             health_bar: Some(HealthBar {
                 fraction: 0.72,
-                label: "72%".to_owned(),
+                label: UserText::unlocalized("72%"),
                 level: HealthLevel::Good,
             }),
         };
@@ -840,14 +847,18 @@ mod tests {
     #[test]
     fn quick_action_serde_roundtrip() {
         let action = QuickAction {
-            label: "Switch to Main".to_owned(),
+            label: UserText::unlocalized("Switch to Main"),
             icon: SectionIcon::new("play"),
             enabled: false,
-            locked_reason: Some("Requires Twitch Affiliate or Partner".to_owned()),
+            locked_reason: Some(UserText::unlocalized(
+                "Requires Twitch Affiliate or Partner",
+            )),
             liveness: QuickActionLiveness::Unknown,
-            group: Some("Raids & ads".to_owned()),
-            group_icon: None,
-            group_accent: None,
+            group: Some(QuickActionGroup {
+                label: UserText::unlocalized("Raids & ads"),
+                icon: SectionIcon::new("businessplan"),
+                accent: QuickActionAccent::Bits,
+            }),
             destructive: true,
             accent: QuickActionAccent::Danger,
             subaction_template: SubActionStep {
@@ -863,7 +874,7 @@ mod tests {
             },
             fields: vec![QuickActionField {
                 key: "scene".to_owned(),
-                label: "Scene".to_owned(),
+                label: UserText::unlocalized("Scene"),
                 kind: QuickActionFieldKind::Choice(QuickActionChoiceSource::OptionList(
                     crate::OptionListId::new("obs.scenes"),
                 )),
@@ -890,7 +901,7 @@ mod tests {
             label: None,
         };
         let legacy = serde_json::json!({
-            "label": "Switch to Main",
+            "label": { "verbatim": "Switch to Main" },
             "icon": "play",
             "enabled": true,
             "subaction_template": serde_json::to_value(&template).unwrap(),
@@ -921,7 +932,7 @@ mod tests {
     ) -> QuickActionField {
         QuickActionField {
             key: key.to_owned(),
-            label: key.to_owned(),
+            label: UserText::unlocalized(key),
             kind,
             default,
             placeholder: None,
@@ -932,14 +943,12 @@ mod tests {
 
     fn qa_with(template: SubActionStep, fields: Vec<QuickActionField>) -> QuickAction {
         QuickAction {
-            label: "A".to_owned(),
+            label: UserText::unlocalized("A"),
             icon: SectionIcon::new("x"),
             enabled: true,
             locked_reason: None,
             liveness: QuickActionLiveness::Unknown,
             group: None,
-            group_icon: None,
-            group_accent: None,
             destructive: false,
             accent: QuickActionAccent::default(),
             subaction_template: template,
@@ -1049,7 +1058,7 @@ mod tests {
         let choice = QuickActionFieldKind::Choice(QuickActionChoiceSource::Static(vec![
             QuickActionChoiceOption {
                 value: "primary".to_owned(),
-                label: "Primary".to_owned(),
+                label: UserText::unlocalized("Primary"),
             },
         ]));
         let cases = [
@@ -1129,5 +1138,32 @@ mod tests {
         _: &dyn BuiltinContent,
         _: &dyn QuickActions,
     ) {
+    }
+
+    #[test]
+    fn a_code_missing_from_the_catalog_or_one_language_is_reported() {
+        use crate::emitted_codes::{emitted_codes, uncatalogued};
+        use forge_types::{MessageCatalog, MessageCode};
+
+        const KNOWN: MessageCode = MessageCode::from_static("demo", "known");
+        const UNTRANSLATED: MessageCode = MessageCode::from_static("demo", "untranslated");
+        const STRANGER: MessageCode = MessageCode::from_static("demo", "stranger");
+        const CATALOG: MessageCatalog = MessageCatalog {
+            namespace: "demo",
+            codes: &[KNOWN, UNTRANSLATED],
+            en_ftl: "msg-demo-known = Known\nmsg-demo-untranslated = Untranslated\n",
+            uk_ftl: "msg-demo-known = Vidomo\n",
+        };
+        let emitted = emitted_codes(&serde_json::json!(vec![
+            UserText::from(KNOWN),
+            UserText::from(UNTRANSLATED),
+            UserText::from(STRANGER),
+            UserText::unlocalized("demo.verbatim"),
+        ]));
+
+        assert_eq!(
+            uncatalogued(&emitted, &[CATALOG]),
+            ["demo.stranger", "demo.untranslated"]
+        );
     }
 }

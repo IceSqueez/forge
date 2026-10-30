@@ -13,6 +13,7 @@ use crate::health::{
     EXPRESSIONS_METRIC, HealthSnapshot, ITEMS_METRIC, MODEL_METRIC, expressions_value, items_value,
     model_value,
 };
+use crate::vocabulary::labels;
 use crate::vts::message_type::{
     API_STATE_REQUEST, AVAILABLE_MODELS_REQUEST, CURRENT_MODEL_REQUEST, EXPRESSION_STATE_REQUEST,
     HOTKEYS_IN_CURRENT_MODEL_REQUEST, ITEM_LIST_REQUEST,
@@ -447,7 +448,7 @@ impl BuiltinContent for VTubeClient {
             .collect();
 
         let expressions = DetailSection::ChipGrid {
-            title: "Available Expressions".to_owned(),
+            title: labels::AVAILABLE_EXPRESSIONS.into(),
             icon: SectionIcon::new("mood-smile"),
             chip_icon: SectionIcon::new("mood-smile"),
             items: expression_names,

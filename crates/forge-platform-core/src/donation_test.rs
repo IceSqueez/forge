@@ -83,7 +83,7 @@ pub fn test_donation_quick_action(provider: &IntegrationId) -> QuickAction {
     let field = |key: &str, label: MessageCode, kind: QuickActionFieldKind, default: &str| {
         QuickActionField {
             key: key.to_owned(),
-            label: label.to_string(),
+            label: label.into(),
             kind,
             default: Some(QuickActionFieldValue::Text(default.to_owned())),
             placeholder: None,
@@ -92,14 +92,12 @@ pub fn test_donation_quick_action(provider: &IntegrationId) -> QuickAction {
         }
     };
     QuickAction {
-        label: SEND_TEST_DONATION_LABEL.to_string(),
+        label: SEND_TEST_DONATION_LABEL.into(),
         icon: SectionIcon::new("coin"),
         enabled: true,
         locked_reason: None,
         liveness: QuickActionLiveness::Unknown,
         group: None,
-        group_icon: None,
-        group_accent: None,
         destructive: false,
         accent: QuickActionAccent::Bits,
         subaction_template: test_donation_step(provider),

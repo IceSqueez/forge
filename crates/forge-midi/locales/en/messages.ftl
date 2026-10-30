@@ -26,3 +26,17 @@ msg-midi-condition_note = note={ $number }
 msg-midi-condition_controller = cc={ $number }
 msg-midi-condition_program = program={ $number }
 msg-midi-condition_channel = ch={ $channel }
+msg-midi-label_client_name = Client name
+msg-midi-label_disabled = DISABLED
+msg-midi-label_events_received = Events received
+msg-midi-label_input_ports = Input Ports
+msg-midi-label_open_failed = OPEN FAILED
+msg-midi-label_output_ports = Output Ports
+msg-midi-label_poll_interval = Poll interval
+msg-midi-label_poll_interval_value = 2 s
+msg-midi-label_send_cc = Send CC
+msg-midi-label_send_note_off = Send Note Off
+msg-midi-label_send_note_on = Send Note On
+msg-midi-label_send_raw = Send Raw
+msg-midi-label_status = Status
+msg-midi-label_subscribed = SUBSCRIBED

@@ -76,7 +76,7 @@ impl YoutubeIntegrationBundle {
         channel_id: String,
         platform: Arc<YoutubePlatform>,
         credentials_manager: Arc<YoutubeCredentialsManager>,
-    ) -> (Arc<Self>, broadcast::Sender<HealthDelta>) {
+    ) -> Arc<Self> {
         let (health_tx, _) = broadcast::channel(forge_platform_core::HEALTH_CHANNEL_CAPACITY);
         let (viewer_report_tx, _) = watch::channel(ViewerReport::Absent);
         let viewer_report_rx = viewer_report_tx.subscribe();
@@ -117,7 +117,7 @@ impl YoutubeIntegrationBundle {
             channel_id,
             display_name: OnceLock::new(),
             token_expires_at: RwLock::new(None),
-            health_tx: health_tx.clone(),
+            health_tx,
             platform,
             credentials_manager,
             quota,
@@ -130,7 +130,7 @@ impl YoutubeIntegrationBundle {
         Self::spawn_health_bridge(&bundle);
         Self::spawn_viewer_health_bridge(&bundle);
         Self::spawn_identity_refresh(&bundle);
-        (bundle, health_tx)
+        bundle
     }
 
     pub fn viewer_source(&self) -> Box<dyn LiveViewerSource> {
@@ -520,7 +520,7 @@ mod tests {
             ActiveBroadcastIdHandle::new(),
             crate::ban_ledger_test_support::MemoryBanLedger::shared(),
         ));
-        let (bundle, _health_tx) =
+        let bundle =
             YoutubeIntegrationBundle::new("UCabc123".to_owned(), Arc::clone(&platform), manager);
         (bundle, platform)
     }

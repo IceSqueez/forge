@@ -11,11 +11,10 @@ use forge_runtime::{
     RunningIntegration, TaskGroup, spawn_chat_send_router,
 };
 use forge_storage::{
-    BanLedgerRepo, CredentialsRepo, DataProvider, SettingsRepo, SoundboardClipsRepo, StorageError,
+    CredentialsRepo, DataProvider, SettingsRepo, SoundboardClipsRepo, StorageError,
     TriggerInstanceRepo, has_credentials_for, read_setting_or_default,
 };
 use forge_types::{IntegrationId, PlatformId};
-use futures_util::future::BoxFuture;
 use tokio::sync::mpsc;
 
 use crate::integration_start_errors::{
@@ -213,14 +212,9 @@ impl IntegrationFactory<BuiltinObject> for TwitchFactory {
 }
 
 pub(crate) struct YoutubeFactory {
-    api: forge_platform_youtube::YoutubeDataApi,
+    assembly: forge_platform_youtube::YoutubeAssembly,
     bus: Arc<EventBus>,
     creds: Arc<dyn CredentialsRepo>,
-    manager: Arc<forge_platform_youtube::YoutubeCredentialsManager>,
-    live_chat_id: forge_platform_youtube::LiveChatIdHandle,
-    active_broadcast: forge_platform_youtube::ActiveBroadcastIdHandle,
-    ban_ledger: Arc<dyn BanLedgerRepo>,
-    sign_in: forge_platform_youtube::YoutubeSignIn,
 }
 
 pub(crate) fn wire_youtube(
@@ -229,123 +223,30 @@ pub(crate) fn wire_youtube(
     bus: &Arc<EventBus>,
     endpoints: &PlatformEndpoints,
 ) -> Option<YoutubeFactory> {
-    let (client_id, client_secret) = forge_platform_youtube::client_credentials()?;
-    let oauth = forge_platform_youtube::GoogleOAuthClient::new(
-        google_oauth_gateway(endpoints)?,
-        client_id,
-        client_secret,
-    );
-    let api = forge_platform_youtube::YoutubeDataApi::new(
-        endpoints,
-        forge_platform_youtube::SharedQuota::default(),
-        publisher(bus),
-    )
-    .inspect_err(|e| tracing::error!(error = %e, "youtube data api gateway build failed"))
-    .ok()?;
     let creds = creds_of(backend);
-    let manager = Arc::new(forge_platform_youtube::YoutubeCredentialsManager::new(
+    let assembly = forge_platform_youtube::YoutubeAssembly::new(
+        endpoints,
+        publisher(bus),
         Arc::clone(&creds),
-        oauth,
-        api.clone(),
-    ));
-    let sign_in = forge_platform_youtube::YoutubeSignIn::new(Arc::clone(&manager));
-    let live_chat_id = forge_platform_youtube::LiveChatIdHandle::new();
-    let active_broadcast = forge_platform_youtube::ActiveBroadcastIdHandle::new();
-    let ban_ledger = backend.ban_ledger_repo();
-
-    let token_source = || {
-        let manager = Arc::clone(&manager);
-        Arc::new(move || {
-            let manager = Arc::clone(&manager);
-            Box::pin(async move { manager.get_valid_access_token().await }) as BoxFuture<'static, _>
-        })
-    };
-    let send = Arc::new(forge_platform_youtube::YoutubeSendChat::new(
-        api.clone(),
-        token_source(),
-        live_chat_id.clone(),
-    ));
-    let broadcaster_source = {
-        let manager = Arc::clone(&manager);
-        Arc::new(move || {
-            let manager = Arc::clone(&manager);
-            Box::pin(async move { manager.broadcaster().await }) as BoxFuture<'static, _>
-        })
-    };
-    let moderation = Arc::new(forge_platform_youtube::YoutubeModeration::new(
-        api.clone(),
-        token_source(),
-        broadcaster_source,
-        live_chat_id.clone(),
-        Arc::clone(&ban_ledger),
-    ));
-    let metadata = Arc::new(forge_platform_youtube::YoutubeStreamMetadata::new(
-        api.clone(),
-        token_source(),
-        active_broadcast.clone(),
-    ));
-    let stream_stats = Arc::new(forge_platform_youtube::YoutubeStreamStats::new(
-        api.clone(),
-        token_source(),
-        active_broadcast.clone(),
-    ));
-    let ad_break = Arc::new(forge_platform_youtube::YoutubeAdBreak::new(
-        api.clone(),
-        token_source(),
-        active_broadcast.clone(),
-    ));
-    let thumbnail = Arc::new(forge_platform_youtube::YoutubeThumbnail::new(
-        api.clone(),
-        token_source(),
-        active_broadcast.clone(),
-    ));
-    let channel_lookup = Arc::new(forge_platform_youtube::YoutubeChannelLookup::new(
-        api.clone(),
-        token_source(),
-    ));
-    if let Err(e) = forge_platform_youtube::register_youtube_sub_actions(
-        sub_actions,
-        send,
-        moderation,
-        metadata,
-        stream_stats,
-        ad_break,
-        thumbnail,
-        channel_lookup,
-    ) {
-        tracing::error!(error = %e, "youtube sub-action registration failed");
-    }
+        backend.ban_ledger_repo(),
+    )?;
+    assembly.register_sub_actions(sub_actions);
     Some(YoutubeFactory {
-        api,
+        assembly,
         bus: Arc::clone(bus),
         creds,
-        manager,
-        live_chat_id,
-        active_broadcast,
-        ban_ledger,
-        sign_in,
     })
-}
-
-fn google_oauth_gateway(endpoints: &PlatformEndpoints) -> Option<Gateway> {
-    let limiter: Arc<dyn RateLimiter> = Arc::new(TokenBucketRateLimiter::new(
-        forge_platform_youtube::GOOGLE_OAUTH_BUDGET_CAPACITY,
-        forge_platform_youtube::GOOGLE_OAUTH_BUDGET_WINDOW,
-    ));
-    forge_platform_youtube::google_oauth_gateway(endpoints, limiter)
-        .inspect_err(|e| tracing::error!(error = %e, "youtube oauth gateway build failed"))
-        .ok()
 }
 
 impl YoutubeFactory {
     pub(crate) fn sign_in(&self) -> forge_platform_youtube::YoutubeSignIn {
-        self.sign_in.clone()
+        self.assembly.sign_in()
     }
 
     pub(crate) fn credentials_manager(
         &self,
     ) -> Arc<forge_platform_youtube::YoutubeCredentialsManager> {
-        Arc::clone(&self.manager)
+        self.assembly.credentials_manager()
     }
 }
 
@@ -364,28 +265,16 @@ impl IntegrationFactory<BuiltinObject> for YoutubeFactory {
     }
 
     async fn start(&self) -> Result<RunningIntegration<BuiltinObject>, IntegrationStartError> {
-        let Some(stored) = self
-            .manager
-            .load()
+        let Some(session) = self
+            .assembly
+            .start()
             .await
             .map_err(|e| youtube_start_error(&e))?
         else {
             return Ok(RunningIntegration::idle());
         };
-        let platform = Arc::new(forge_platform_youtube::YoutubePlatform::new(
-            self.api.clone(),
-            stored.channel_id.clone(),
-            Arc::clone(&self.manager),
-            self.live_chat_id.clone(),
-            self.active_broadcast.clone(),
-            Arc::clone(&self.ban_ledger),
-        ));
-        let chat_platform: Arc<dyn ChatPlatform> = Arc::clone(&platform) as _;
-        let (bundle, _health_tx) = forge_platform_youtube::YoutubeIntegrationBundle::new(
-            stored.channel_id,
-            platform,
-            Arc::clone(&self.manager),
-        );
+        let bundle = session.bundle;
+        let chat_platform: Arc<dyn ChatPlatform> = session.platform;
 
         let mut tasks = TaskGroup::default();
         tasks.track(spawn_event_bridge(

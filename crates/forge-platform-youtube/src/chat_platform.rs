@@ -201,7 +201,7 @@ impl ChatPlatform for YoutubePlatform {
     }
 }
 
-fn token_source(manager: Arc<YoutubeCredentialsManager>) -> TokenSource {
+pub(crate) fn token_source(manager: Arc<YoutubeCredentialsManager>) -> TokenSource {
     Arc::new(move || {
         let manager = Arc::clone(&manager);
         Box::pin(async move { manager.get_valid_access_token().await })

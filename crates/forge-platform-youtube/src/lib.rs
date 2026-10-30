@@ -1,5 +1,6 @@
 mod active_broadcast_id;
 mod ad_break;
+mod assembly;
 mod auth;
 mod ban_ledger;
 #[cfg(test)]
@@ -38,6 +39,7 @@ pub mod vocabulary;
 
 pub use active_broadcast_id::ActiveBroadcastIdHandle;
 pub use ad_break::YoutubeAdBreak;
+pub use assembly::{YoutubeAssembly, YoutubeSession};
 pub use auth::{
     GOOGLE_AUTHORIZE_ENDPOINT, GoogleAuthFlow, LoopbackCode, YOUTUBE_BROADCASTER_SCOPES,
     YoutubeAuthBundle, YoutubeSignIn, client_credentials,

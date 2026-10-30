@@ -1,3 +1,4 @@
+mod boot_smoke;
 mod config_references;
 mod memory_scripts;
 pub(crate) mod pack_flow;

@@ -5,12 +5,14 @@ use forge_registry::runner::SubActionConfig;
 use forge_registry::{
     ConfigSpec, RunContext, StepTimer, SubActionCategory, SubActionRunner, TypedField,
 };
-use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, UserText};
+use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry};
 
 use super::enable_reward::{REWARD_CONFIG, REWARD_ID};
 use crate::account::identity::SelfIdentity;
 use crate::custom_rewards::delete_request;
 use crate::helix::HelixTransport;
+use crate::step_failure;
+use crate::vocabulary::messages;
 use crate::vocabulary::sub_action_ids;
 
 const KIND_ID: &str = sub_action_ids::CHANNEL_POINTS_DELETE_REWARD;
@@ -30,14 +32,14 @@ impl DeleteRewardRunner {
 
     async fn apply(&self, reward_id: &str) -> SubActionOutcome {
         if reward_id.is_empty() {
-            return SubActionOutcome::Failed(UserText::unlocalized("reward_id is required"));
+            return SubActionOutcome::Failed(messages::field_required("reward_id").into());
         }
         let user_id = match self.identity.user_id().await {
             Ok(id) => id,
-            Err(e) => return SubActionOutcome::Failed(UserText::unlocalized(e.to_string())),
+            Err(e) => return step_failure::failed(&e),
         };
         let request = delete_request(user_id, reward_id);
-        SubActionOutcome::from_result(&self.transport.execute(request).await)
+        step_failure::outcome(&self.transport.execute(request).await)
     }
 }
 

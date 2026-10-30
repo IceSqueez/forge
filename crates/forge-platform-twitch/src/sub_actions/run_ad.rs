@@ -6,10 +6,11 @@ use forge_registry::{
     ChoiceField, ConfigChoice, ConfigSpec, RunContext, StepTimer, SubActionCategory,
     SubActionRunner, TypedField,
 };
-use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, UserText};
+use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry};
 
 use crate::account::identity::SelfIdentity;
 use crate::helix::{HelixMethod, HelixRequest, HelixTransport};
+use crate::step_failure;
 use crate::vocabulary::{config_keys, sub_action_ids};
 
 const KIND_ID: &str = sub_action_ids::CHANNEL_RUN_AD;
@@ -95,11 +96,11 @@ impl RunAdRunner {
     async fn run(&self, length: AdLength) -> SubActionOutcome {
         let user_id = match self.identity.user_id().await {
             Ok(id) => id,
-            Err(e) => return SubActionOutcome::Failed(UserText::unlocalized(e.to_string())),
+            Err(e) => return step_failure::failed(&e),
         };
         let request = HelixRequest::new(HelixMethod::Post, "/helix/channels/commercial")
             .body(serde_json::json!({ "broadcaster_id": user_id, "length": length.seconds() }));
-        SubActionOutcome::from_result(&self.transport.execute(request).await)
+        step_failure::outcome(&self.transport.execute(request).await)
     }
 }
 

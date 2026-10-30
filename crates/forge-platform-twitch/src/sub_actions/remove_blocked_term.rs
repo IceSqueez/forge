@@ -6,11 +6,12 @@ use forge_registry::{
     ConfigSpec, RunContext, StepTimer, SubActionCategory, SubActionRunner, TextEditor, TextField,
     TypedField,
 };
-use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, UserText};
+use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry};
 
 use crate::account::identity::SelfIdentity;
 use crate::helix::{HelixMethod, HelixRequest, HelixTransport};
-use crate::vocabulary::{config_keys, sub_action_ids};
+use crate::step_failure;
+use crate::vocabulary::{config_keys, messages, sub_action_ids};
 
 const KIND_ID: &str = sub_action_ids::AUTOMOD_REMOVE_BLOCKED_TERM;
 const TERM_ID_TEMPLATE: &str = "%blocked_term.id%";
@@ -83,11 +84,11 @@ impl SubActionRunner for RemoveBlockedTermRunner {
         };
         if term_id.is_empty() {
             return (
-                timer.failed(UserText::unlocalized("term_id is required")),
+                timer.failed(messages::field_required("term_id").into()),
                 None,
             );
         }
-        let outcome = delete_blocked_term(&self.transport, &self.identity, KIND_ID, &term_id).await;
+        let outcome = delete_blocked_term(&self.transport, &self.identity, &term_id).await;
         (timer.finish(outcome), None)
     }
 }
@@ -95,12 +96,11 @@ impl SubActionRunner for RemoveBlockedTermRunner {
 async fn delete_blocked_term(
     transport: &Arc<dyn HelixTransport>,
     identity: &Arc<SelfIdentity>,
-    kind_id: &str,
     term_id: &str,
 ) -> SubActionOutcome {
     let user_id = match identity.user_id().await {
         Ok(id) => id,
-        Err(e) => return SubActionOutcome::Failed(UserText::unlocalized(e.to_string())),
+        Err(e) => return step_failure::failed(&e),
     };
     let request = HelixRequest::new(HelixMethod::Delete, "/helix/moderation/blocked_terms")
         .query("broadcaster_id", user_id.clone())
@@ -108,7 +108,7 @@ async fn delete_blocked_term(
         .query("id", term_id.to_owned());
     match transport.execute(request).await {
         Ok(_) => SubActionOutcome::Success,
-        Err(e) => SubActionOutcome::Failed(UserText::unlocalized(format!("{kind_id}: {e}"))),
+        Err(e) => step_failure::failed(&e),
     }
 }
 

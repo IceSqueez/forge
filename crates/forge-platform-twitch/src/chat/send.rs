@@ -4,7 +4,7 @@ use thiserror::Error;
 use tracing::debug;
 
 const SEND_CHAT_PATH: &str = "/helix/chat/messages";
-const MAX_MESSAGE_LEN: usize = 500;
+pub(crate) const MAX_MESSAGE_LEN: usize = 500;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SentMessageId(pub String);

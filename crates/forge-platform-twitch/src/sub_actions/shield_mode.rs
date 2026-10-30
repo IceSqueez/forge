@@ -1,3 +1,4 @@
+use crate::step_failure;
 use crate::vocabulary::sub_action_ids;
 use std::sync::Arc;
 use std::time::Instant;
@@ -5,7 +6,7 @@ use std::time::Instant;
 use async_trait::async_trait;
 use forge_registry::runner::SubActionConfig;
 use forge_registry::{RunContext, SubActionCategory, SubActionRunner};
-use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, UserText};
+use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry};
 use time::OffsetDateTime;
 
 use crate::account::identity::SelfIdentity;
@@ -18,13 +19,13 @@ async fn set_shield(
 ) -> SubActionOutcome {
     let self_id = match identity.user_id().await {
         Ok(id) => id,
-        Err(e) => return SubActionOutcome::Failed(UserText::unlocalized(e.to_string())),
+        Err(e) => return step_failure::failed(&e),
     };
     let request = HelixRequest::new(HelixMethod::Put, "/helix/moderation/shield_mode")
         .query("broadcaster_id", self_id.clone())
         .query("moderator_id", self_id)
         .body(serde_json::json!({ "is_active": is_active }));
-    SubActionOutcome::from_result(&transport.execute(request).await)
+    step_failure::outcome(&transport.execute(request).await)
 }
 
 const ON_KIND_ID: &str = sub_action_ids::MODERATION_SHIELD_MODE_ON;

@@ -6,11 +6,12 @@ use forge_registry::{
     BoundedTextField, ConfigSpec, RunContext, StepTimer, SubActionCategory, SubActionRunner,
     TextEditor, TypedField, ValueBounds,
 };
-use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, UserText, Variant};
+use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, Variant};
 
 use crate::account::identity::SelfIdentity;
 use crate::helix::{HelixMethod, HelixRequest, HelixTransport};
-use crate::vocabulary::{config_keys, sub_action_ids};
+use crate::step_failure;
+use crate::vocabulary::{config_keys, messages, sub_action_ids};
 
 const KIND_ID: &str = sub_action_ids::AUTOMOD_ADD_BLOCKED_TERM;
 const MIN_TERM_CHARS: i64 = 2;
@@ -86,7 +87,7 @@ impl SubActionRunner for AddBlockedTermRunner {
             Ok(text) => text,
             Err(problem) => return (timer.invalid_config(&problem), None),
         };
-        match post_blocked_term(&self.transport, &self.identity, KIND_ID, &text).await {
+        match post_blocked_term(&self.transport, &self.identity, &text).await {
             Ok(term_id) => {
                 let output_stack = ctx
                     .arg_stack
@@ -102,13 +103,12 @@ impl SubActionRunner for AddBlockedTermRunner {
 async fn post_blocked_term(
     transport: &Arc<dyn HelixTransport>,
     identity: &Arc<SelfIdentity>,
-    kind_id: &str,
     text: &str,
 ) -> Result<String, SubActionOutcome> {
     let user_id = identity
         .user_id()
         .await
-        .map_err(|e| SubActionOutcome::Failed(UserText::unlocalized(e.to_string())))?;
+        .map_err(|e| step_failure::failed(&e))?;
     let request = HelixRequest::new(HelixMethod::Post, "/helix/moderation/blocked_terms")
         .query("broadcaster_id", user_id.clone())
         .query("moderator_id", user_id)
@@ -116,17 +116,13 @@ async fn post_blocked_term(
     let resp = transport
         .execute(request)
         .await
-        .map_err(|e| SubActionOutcome::Failed(UserText::unlocalized(format!("{kind_id}: {e}"))))?;
+        .map_err(|e| step_failure::failed(&e))?;
     resp["data"]
         .as_array()
         .and_then(|arr| arr.first())
         .and_then(|r| r["id"].as_str())
         .map(|s| s.to_owned())
-        .ok_or_else(|| {
-            SubActionOutcome::Failed(UserText::unlocalized(format!(
-                "{kind_id}: unexpected empty response from add_blocked_term"
-            )))
-        })
+        .ok_or_else(|| SubActionOutcome::Failed(messages::empty_response().into()))
 }
 
 #[cfg(test)]

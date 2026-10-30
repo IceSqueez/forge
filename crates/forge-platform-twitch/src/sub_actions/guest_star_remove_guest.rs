@@ -3,12 +3,13 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use forge_registry::runner::SubActionConfig;
 use forge_registry::{ConfigSpec, RunContext, StepTimer, SubActionCategory, SubActionRunner};
-use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, UserText};
+use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry};
 
 use super::guest_star::GuestStarContext;
 use super::guest_star_assign_slot::{GUEST_SLOT_CONFIG, GuestSlot};
 use crate::account::identity::SelfIdentity;
 use crate::helix::{HelixMethod, HelixRequest, HelixTransport};
+use crate::step_failure;
 use crate::vocabulary::sub_action_ids;
 
 const KIND_ID: &str = sub_action_ids::GUEST_STAR_REMOVE_GUEST;
@@ -28,7 +29,7 @@ impl GuestStarRemoveGuestRunner {
 
     async fn remove(&self, slot: &GuestSlot) -> SubActionOutcome {
         if let Some(missing) = slot.first_missing() {
-            return SubActionOutcome::Failed(UserText::unlocalized(missing));
+            return SubActionOutcome::Failed(missing.into());
         }
         let ctx = match GuestStarContext::resolve(
             self.transport.as_ref(),
@@ -39,7 +40,7 @@ impl GuestStarRemoveGuestRunner {
         {
             Ok(c) => c,
             Err(e) => {
-                return SubActionOutcome::Failed(UserText::unlocalized(format!("{KIND_ID}: {e}")));
+                return step_failure::failed(&e);
             }
         };
         let request = HelixRequest::new(HelixMethod::Delete, "/helix/guest_star/slot")
@@ -50,7 +51,7 @@ impl GuestStarRemoveGuestRunner {
             .query("slot_id", slot.slot_id.clone());
         match self.transport.execute(request).await {
             Ok(_) => SubActionOutcome::Success,
-            Err(e) => SubActionOutcome::Failed(UserText::unlocalized(format!("{KIND_ID}: {e}"))),
+            Err(e) => step_failure::failed(&e),
         }
     }
 }

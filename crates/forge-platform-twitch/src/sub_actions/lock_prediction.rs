@@ -6,11 +6,12 @@ use forge_registry::{
     ConfigProblem, ConfigSpec, RunContext, StepTimer, SubActionCategory, SubActionRunner,
     TextEditor, TextField, TypedField,
 };
-use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, UserText};
+use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry};
 
 use crate::account::identity::SelfIdentity;
 use crate::helix::{HelixMethod, HelixRequest, HelixTransport};
-use crate::vocabulary::{config_keys, sub_action_ids};
+use crate::step_failure;
+use crate::vocabulary::{config_keys, messages, sub_action_ids};
 
 const KIND_ID: &str = sub_action_ids::PREDICTION_LOCK;
 const PREDICTION_ID_TEMPLATE: &str = "%prediction.id%";
@@ -74,20 +75,18 @@ impl PredictionUpdate<'_> {
         resolved: ResolvedUpdate,
     ) -> SubActionOutcome {
         if resolved.prediction_id.is_empty() {
-            return SubActionOutcome::Failed(UserText::unlocalized("prediction_id is required"));
+            return SubActionOutcome::Failed(messages::field_required("prediction_id").into());
         }
         if resolved
             .winning_outcome_id
             .as_ref()
             .is_some_and(String::is_empty)
         {
-            return SubActionOutcome::Failed(UserText::unlocalized(
-                "winning_outcome_id is required",
-            ));
+            return SubActionOutcome::Failed(messages::field_required("winning_outcome_id").into());
         }
         let user_id = match identity.user_id().await {
             Ok(id) => id,
-            Err(e) => return SubActionOutcome::Failed(UserText::unlocalized(e.to_string())),
+            Err(e) => return step_failure::failed(&e),
         };
         let mut body = serde_json::Map::new();
         body.insert("id".to_owned(), resolved.prediction_id.into());
@@ -100,9 +99,7 @@ impl PredictionUpdate<'_> {
             .body(serde_json::Value::Object(body));
         match transport.execute(request).await {
             Ok(_) => SubActionOutcome::Success,
-            Err(e) => {
-                SubActionOutcome::Failed(UserText::unlocalized(format!("{}: {e}", self.kind_id)))
-            }
+            Err(e) => step_failure::failed(&e),
         }
     }
 

@@ -6,11 +6,12 @@ use forge_registry::{
     ChoiceField, ConfigProblem, ConfigSpec, DurationBounds, DurationField, RunContext, StepTimer,
     SubActionCategory, SubActionRunner, TypedField,
 };
-use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, UserText};
+use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry};
 
 use super::fields::{ModeToggle, mode_toggle};
 use crate::account::identity::SelfIdentity;
 use crate::helix::{HelixMethod, HelixRequest, HelixTransport};
+use crate::step_failure;
 use crate::vocabulary::{config_keys, sub_action_ids};
 
 const KIND_ID: &str = sub_action_ids::CHAT_SET_MODE;
@@ -125,7 +126,7 @@ impl SetModeRunner {
     async fn apply(&self, modes: &ChatModes) -> SubActionOutcome {
         let user_id = match self.identity.user_id().await {
             Ok(id) => id,
-            Err(e) => return SubActionOutcome::Failed(UserText::unlocalized(e.to_string())),
+            Err(e) => return step_failure::failed(&e),
         };
         let body = modes.body();
         if body.is_empty() {
@@ -135,7 +136,7 @@ impl SetModeRunner {
             .query("broadcaster_id", user_id.clone())
             .query("moderator_id", user_id)
             .body(serde_json::Value::Object(body));
-        SubActionOutcome::from_result(&self.transport.execute(request).await)
+        step_failure::outcome(&self.transport.execute(request).await)
     }
 }
 

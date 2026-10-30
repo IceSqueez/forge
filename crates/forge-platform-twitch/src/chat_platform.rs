@@ -294,7 +294,10 @@ fn map_send_failure(failure: SendFailure) -> PlatformError {
             status: NON_HTTP_STATUS,
             body: failure.to_string(),
         },
-        SendFailure::PermissionDenied(_) | SendFailure::Refused(_) => PlatformError::Http {
+        SendFailure::PermissionDenied(_)
+        | SendFailure::Refused(_)
+        | SendFailure::ShoutoutCooldown { .. }
+        | SendFailure::ModerationThrottled => PlatformError::Http {
             status: NON_HTTP_STATUS,
             body: failure.to_string(),
         },

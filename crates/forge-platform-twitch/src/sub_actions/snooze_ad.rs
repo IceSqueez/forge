@@ -1,3 +1,4 @@
+use crate::step_failure;
 use crate::vocabulary::sub_action_ids;
 use std::sync::Arc;
 use std::time::Instant;
@@ -5,7 +6,7 @@ use std::time::Instant;
 use async_trait::async_trait;
 use forge_registry::runner::SubActionConfig;
 use forge_registry::{RunContext, SubActionCategory, SubActionRunner};
-use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, UserText};
+use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry};
 use time::OffsetDateTime;
 
 use crate::account::identity::SelfIdentity;
@@ -29,11 +30,11 @@ impl SnoozeAdRunner {
     async fn snooze(&self) -> SubActionOutcome {
         let user_id = match self.identity.user_id().await {
             Ok(id) => id,
-            Err(e) => return SubActionOutcome::Failed(UserText::unlocalized(e.to_string())),
+            Err(e) => return step_failure::failed(&e),
         };
         let request = HelixRequest::new(HelixMethod::Post, "/helix/channels/ads/schedule/snooze")
             .query("broadcaster_id", user_id);
-        SubActionOutcome::from_result(&self.transport.execute(request).await)
+        step_failure::outcome(&self.transport.execute(request).await)
     }
 }
 

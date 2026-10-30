@@ -5,11 +5,13 @@ use forge_registry::runner::SubActionConfig;
 use forge_registry::{
     ConfigSpec, RunContext, StepTimer, SubActionCategory, SubActionRunner, TypedField,
 };
-use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, UserText};
+use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry};
 
 use super::fields::TARGET_LOGIN;
 use crate::account::identity::{SelfIdentity, resolve_user_id};
 use crate::helix::{HelixMethod, HelixRequest, HelixTransport};
+use crate::step_failure;
+use crate::vocabulary::messages;
 use crate::vocabulary::sub_action_ids;
 
 const KIND_ID: &str = sub_action_ids::MODERATION_REMOVE_VIP;
@@ -31,22 +33,22 @@ impl RemoveVipRunner {
 
     async fn apply(&self, target_login: &str) -> SubActionOutcome {
         if target_login.is_empty() {
-            return SubActionOutcome::Failed(UserText::unlocalized(
-                "target_user_login is empty after interpolation",
-            ));
+            return SubActionOutcome::Failed(
+                messages::empty_after_interpolation("target_user_login").into(),
+            );
         }
         let broadcaster_id = match self.identity.user_id().await {
             Ok(id) => id,
-            Err(e) => return SubActionOutcome::Failed(UserText::unlocalized(e.to_string())),
+            Err(e) => return step_failure::failed(&e),
         };
         let user_id = match resolve_user_id(self.transport.as_ref(), target_login).await {
             Ok(id) => id,
-            Err(e) => return SubActionOutcome::Failed(UserText::unlocalized(e.to_string())),
+            Err(e) => return step_failure::failed(&e),
         };
         let request = HelixRequest::new(HelixMethod::Delete, "/helix/channels/vips")
             .query("broadcaster_id", broadcaster_id)
             .query("user_id", user_id);
-        SubActionOutcome::from_result(&self.transport.execute(request).await)
+        step_failure::outcome(&self.transport.execute(request).await)
     }
 }
 

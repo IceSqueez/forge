@@ -1,3 +1,5 @@
+use crate::step_failure;
+use crate::vocabulary::messages;
 use crate::vocabulary::sub_action_ids;
 use std::sync::Arc;
 use std::time::Instant;
@@ -5,7 +7,7 @@ use std::time::Instant;
 use async_trait::async_trait;
 use forge_registry::runner::SubActionConfig;
 use forge_registry::{RunContext, SubActionCategory, SubActionRunner};
-use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, UserText, Variant};
+use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, Variant};
 use time::OffsetDateTime;
 
 use crate::account::identity::SelfIdentity;
@@ -30,9 +32,7 @@ impl GetCurrentGoalRunner {
         let user_id = match self.identity.user_id().await {
             Ok(id) => id,
             Err(e) => {
-                return Err(SubActionOutcome::Failed(UserText::unlocalized(
-                    e.to_string(),
-                )));
+                return Err(step_failure::failed(&e));
             }
         };
 
@@ -43,7 +43,7 @@ impl GetCurrentGoalRunner {
             .transport
             .execute(request)
             .await
-            .map_err(|e| SubActionOutcome::Failed(UserText::unlocalized(e.to_string())))?;
+            .map_err(|e| step_failure::failed(&e))?;
 
         let Some(first) = resp["data"].as_array().and_then(|arr| arr.first()) else {
             return Ok(None);
@@ -51,28 +51,22 @@ impl GetCurrentGoalRunner {
 
         let id = first["id"]
             .as_str()
-            .ok_or_else(|| {
-                SubActionOutcome::Failed(UserText::unlocalized("goal id missing in response"))
-            })?
+            .ok_or_else(|| SubActionOutcome::Failed(messages::response_field_missing("id").into()))?
             .to_owned();
 
         let goal_type = first["type"]
             .as_str()
             .ok_or_else(|| {
-                SubActionOutcome::Failed(UserText::unlocalized("goal type missing in response"))
+                SubActionOutcome::Failed(messages::response_field_missing("type").into())
             })?
             .to_owned();
 
         let current_amount = first["current_amount"].as_i64().ok_or_else(|| {
-            SubActionOutcome::Failed(UserText::unlocalized(
-                "goal current_amount missing in response",
-            ))
+            SubActionOutcome::Failed(messages::response_field_missing("current_amount").into())
         })?;
 
         let target_amount = first["target_amount"].as_i64().ok_or_else(|| {
-            SubActionOutcome::Failed(UserText::unlocalized(
-                "goal target_amount missing in response",
-            ))
+            SubActionOutcome::Failed(messages::response_field_missing("target_amount").into())
         })?;
 
         let is_achieved = current_amount >= target_amount;

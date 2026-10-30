@@ -6,12 +6,13 @@ use forge_registry::{
     ConfigProblem, ConfigSpec, Interpolation, RunContext, StepTimer, SubActionCategory,
     SubActionRunner, TypedField,
 };
-use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, UserText};
+use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry};
 
 use super::fields::{MODERATION_TARGET, OPTIONAL_REASON};
 use crate::account::identity::SelfIdentity;
 use crate::account::user_target::{InterpolatedTarget, UserTarget};
 use crate::helix::{HelixMethod, HelixRequest, HelixTransport};
+use crate::step_failure;
 use crate::vocabulary::sub_action_ids;
 
 const KIND_ID: &str = sub_action_ids::MODERATION_BAN_USER;
@@ -43,17 +44,15 @@ impl BanUserRunner {
 
     async fn ban(&self, target: Option<UserTarget<'_>>, reason: &str) -> SubActionOutcome {
         let Some(target) = target else {
-            return SubActionOutcome::Failed(UserText::unlocalized(
-                MODERATION_TARGET.empty_after_interpolation(),
-            ));
+            return SubActionOutcome::Failed(MODERATION_TARGET.empty_after_interpolation().into());
         };
         let user_id = match self.identity.user_id().await {
             Ok(id) => id,
-            Err(e) => return SubActionOutcome::Failed(UserText::unlocalized(e.to_string())),
+            Err(e) => return step_failure::failed(&e),
         };
         let target_user_id = match target.user_id(self.transport.as_ref()).await {
             Ok(id) => id,
-            Err(e) => return SubActionOutcome::Failed(UserText::unlocalized(e.to_string())),
+            Err(e) => return step_failure::failed(&e),
         };
         let mut data = serde_json::json!({ "user_id": target_user_id });
         if !reason.is_empty() {
@@ -63,7 +62,7 @@ impl BanUserRunner {
             .query("broadcaster_id", user_id.clone())
             .query("moderator_id", user_id)
             .body(serde_json::json!({ "data": data }));
-        SubActionOutcome::from_result(&self.transport.execute(request).await)
+        step_failure::outcome(&self.transport.execute(request).await)
     }
 }
 

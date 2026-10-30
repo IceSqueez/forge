@@ -6,13 +6,14 @@ use forge_registry::{
     ConfigSpec, PickedTextField, RunContext, StepTimer, SubActionCategory, SubActionRunner,
     TextPicker, TypedField,
 };
-use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, UserText};
+use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry};
 
 use crate::account::identity::SelfIdentity;
 use crate::collection_keys::MANAGEABLE_REWARD_OPTIONS_KEY;
 use crate::custom_rewards::{RewardBody, update_request};
 use crate::helix::HelixTransport;
-use crate::vocabulary::{config_keys, sub_action_ids};
+use crate::step_failure;
+use crate::vocabulary::{config_keys, messages, sub_action_ids};
 
 const KIND_ID: &str = sub_action_ids::CHANNEL_POINTS_ENABLE_REWARD;
 
@@ -50,10 +51,10 @@ async fn patch_reward_bool(
 ) -> SubActionOutcome {
     let user_id = match identity.user_id().await {
         Ok(id) => id,
-        Err(e) => return SubActionOutcome::Failed(UserText::unlocalized(e.to_string())),
+        Err(e) => return step_failure::failed(&e),
     };
     let request = update_request(user_id, reward_id, body);
-    SubActionOutcome::from_result(&transport.execute(request).await)
+    step_failure::outcome(&transport.execute(request).await)
 }
 
 pub(crate) async fn execute_bool_runner(
@@ -70,7 +71,7 @@ pub(crate) async fn execute_bool_runner(
         Err(problem) => return (timer.invalid_config(&problem), None),
     };
     let outcome = if reward_id.is_empty() {
-        SubActionOutcome::Failed(UserText::unlocalized("reward_id is required"))
+        SubActionOutcome::Failed(messages::field_required("reward_id").into())
     } else {
         patch_reward_bool(transport, identity, &reward_id, body).await
     };

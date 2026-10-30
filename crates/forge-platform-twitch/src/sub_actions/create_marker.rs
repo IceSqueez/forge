@@ -6,11 +6,12 @@ use forge_registry::{
     BoundedTextField, ConfigSpec, RunContext, StepTimer, SubActionCategory, SubActionRunner,
     TextEditor, TypedField, ValueBounds,
 };
-use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, UserText, Variant};
+use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, Variant};
 
 use crate::account::identity::SelfIdentity;
 use crate::helix::{HelixMethod, HelixRequest, HelixTransport};
-use crate::vocabulary::{config_keys, sub_action_ids};
+use crate::step_failure;
+use crate::vocabulary::{config_keys, messages, sub_action_ids};
 
 const KIND_ID: &str = sub_action_ids::CHANNEL_CREATE_MARKER;
 const MAX_DESCRIPTION_CHARS: i64 = 140;
@@ -52,9 +53,7 @@ impl CreateMarkerRunner {
         let user_id = match self.identity.user_id().await {
             Ok(id) => id,
             Err(e) => {
-                return Err(SubActionOutcome::Failed(UserText::unlocalized(
-                    e.to_string(),
-                )));
+                return Err(step_failure::failed(&e));
             }
         };
         let mut body = serde_json::Map::new();
@@ -68,25 +67,17 @@ impl CreateMarkerRunner {
             .transport
             .execute(request)
             .await
-            .map_err(|e| SubActionOutcome::Failed(UserText::unlocalized(e.to_string())))?;
+            .map_err(|e| step_failure::failed(&e))?;
         let marker = resp["data"]
             .as_array()
             .and_then(|arr| arr.first())
-            .ok_or_else(|| {
-                SubActionOutcome::Failed(UserText::unlocalized(
-                    "empty response from stream markers",
-                ))
-            })?;
+            .ok_or_else(|| SubActionOutcome::Failed(messages::empty_response().into()))?;
         let id = marker["id"]
             .as_str()
-            .ok_or_else(|| {
-                SubActionOutcome::Failed(UserText::unlocalized("marker id missing in response"))
-            })?
+            .ok_or_else(|| SubActionOutcome::Failed(messages::response_field_missing("id").into()))?
             .to_owned();
         let position_seconds = marker["position_seconds"].as_i64().ok_or_else(|| {
-            SubActionOutcome::Failed(UserText::unlocalized(
-                "marker position_seconds missing in response",
-            ))
+            SubActionOutcome::Failed(messages::response_field_missing("position_seconds").into())
         })?;
         let created_at = marker["created_at"]
             .as_str()

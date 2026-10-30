@@ -7,7 +7,7 @@ use forge_registry::{
     IntegerField, RunContext, StepTimer, SubActionCategory, SubActionRunner, TextEditor,
     ToggleField, TypedField, ValueBounds,
 };
-use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, UserText, Variant};
+use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, Variant};
 
 use super::fields::HexColorField;
 use crate::account::identity::SelfIdentity;
@@ -16,7 +16,8 @@ use crate::custom_rewards::{
 };
 use crate::helix::HelixTransport;
 use crate::helix_envelope::first_row;
-use crate::vocabulary::{config_keys, sub_action_ids};
+use crate::step_failure;
+use crate::vocabulary::{config_keys, messages, sub_action_ids};
 
 const KIND_ID: &str = sub_action_ids::CHANNEL_POINTS_CREATE_REWARD;
 const UNLIMITED: i64 = 0;
@@ -184,16 +185,14 @@ impl CreateRewardRunner {
 
     async fn create(&self, cfg: &ResolvedConfig) -> Result<String, SubActionOutcome> {
         if cfg.title.is_empty() {
-            return Err(SubActionOutcome::Failed(UserText::unlocalized(
-                "title is required",
-            )));
+            return Err(SubActionOutcome::Failed(
+                messages::field_required("title").into(),
+            ));
         }
         let user_id = match self.identity.user_id().await {
             Ok(id) => id,
             Err(e) => {
-                return Err(SubActionOutcome::Failed(UserText::unlocalized(
-                    e.to_string(),
-                )));
+                return Err(step_failure::failed(&e));
             }
         };
         let request = create_request(user_id, cfg.body());
@@ -201,13 +200,11 @@ impl CreateRewardRunner {
             .transport
             .execute(request)
             .await
-            .map_err(|e| SubActionOutcome::Failed(UserText::unlocalized(e.to_string())))?;
+            .map_err(|e| step_failure::failed(&e))?;
         first_row(&resp)
             .and_then(|r| r["id"].as_str())
             .map(|s| s.to_owned())
-            .ok_or_else(|| {
-                SubActionOutcome::Failed(UserText::unlocalized("empty response from create_reward"))
-            })
+            .ok_or_else(|| SubActionOutcome::Failed(messages::empty_response().into()))
     }
 }
 

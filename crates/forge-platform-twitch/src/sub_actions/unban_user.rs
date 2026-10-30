@@ -7,12 +7,13 @@ use forge_registry::{
     ConfigProblem, ConfigSpec, Interpolation, RunContext, StepTimer, SubActionCategory,
     SubActionRunner,
 };
-use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, UserText};
+use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry};
 
 use super::fields::MODERATION_TARGET;
 use crate::account::identity::SelfIdentity;
 use crate::account::user_target::UserTarget;
 use crate::helix::{HelixError, HelixMethod, HelixRequest, HelixTransport};
+use crate::step_failure;
 use crate::vocabulary::sub_action_ids;
 
 const KIND_ID: &str = sub_action_ids::MODERATION_UNBAN_USER;
@@ -44,17 +45,15 @@ impl UnbanUserRunner {
 
     async fn unban(&self, target: Option<UserTarget<'_>>) -> SubActionOutcome {
         let Some(target) = target else {
-            return SubActionOutcome::Failed(UserText::unlocalized(
-                MODERATION_TARGET.empty_after_interpolation(),
-            ));
+            return SubActionOutcome::Failed(MODERATION_TARGET.empty_after_interpolation().into());
         };
         let user_id = match self.identity.user_id().await {
             Ok(id) => id,
-            Err(e) => return SubActionOutcome::Failed(UserText::unlocalized(e.to_string())),
+            Err(e) => return step_failure::failed(&e),
         };
         let target_user_id = match target.user_id(self.transport.as_ref()).await {
             Ok(id) => id,
-            Err(e) => return SubActionOutcome::Failed(UserText::unlocalized(e.to_string())),
+            Err(e) => return step_failure::failed(&e),
         };
         let request = HelixRequest::new(HelixMethod::Delete, "/helix/moderation/bans")
             .query("broadcaster_id", user_id.clone())
@@ -63,7 +62,7 @@ impl UnbanUserRunner {
             .expect_status_with_excerpt(BAD_REQUEST, NOT_BANNED_MARKER);
         match self.transport.execute(request).await {
             Err(error) if already_unbanned(&error) => SubActionOutcome::Success,
-            result => SubActionOutcome::from_result(&result),
+            result => step_failure::outcome(&result),
         }
     }
 }

@@ -7,11 +7,12 @@ use forge_registry::{
     SeparatedListField, StepTimer, SubActionCategory, SubActionRunner, TextEditor, TypedField,
     ValueBounds,
 };
-use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, UserText, Variant};
+use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, Variant};
 
 use crate::account::identity::SelfIdentity;
 use crate::helix::{HelixMethod, HelixRequest, HelixTransport};
-use crate::vocabulary::{config_keys, sub_action_ids};
+use crate::step_failure;
+use crate::vocabulary::{config_keys, messages, sub_action_ids};
 
 const KIND_ID: &str = sub_action_ids::PREDICTION_START;
 const MAX_TITLE_CHARS: i64 = 45;
@@ -90,16 +91,14 @@ impl StartPredictionRunner {
 
     async fn start(&self, cfg: &ResolvedConfig) -> Result<String, SubActionOutcome> {
         if cfg.title.is_empty() {
-            return Err(SubActionOutcome::Failed(UserText::unlocalized(
-                "title is required",
-            )));
+            return Err(SubActionOutcome::Failed(
+                messages::field_required("title").into(),
+            ));
         }
         let user_id = match self.identity.user_id().await {
             Ok(id) => id,
             Err(e) => {
-                return Err(SubActionOutcome::Failed(UserText::unlocalized(
-                    e.to_string(),
-                )));
+                return Err(step_failure::failed(&e));
             }
         };
         let outcomes: Vec<serde_json::Value> = cfg
@@ -121,17 +120,13 @@ impl StartPredictionRunner {
             .transport
             .execute(request)
             .await
-            .map_err(|e| SubActionOutcome::Failed(UserText::unlocalized(e.to_string())))?;
+            .map_err(|e| step_failure::failed(&e))?;
         resp["data"]
             .as_array()
             .and_then(|arr| arr.first())
             .and_then(|r| r["id"].as_str())
             .map(|s| s.to_owned())
-            .ok_or_else(|| {
-                SubActionOutcome::Failed(UserText::unlocalized(
-                    "empty response from start_prediction",
-                ))
-            })
+            .ok_or_else(|| SubActionOutcome::Failed(messages::empty_response().into()))
     }
 }
 

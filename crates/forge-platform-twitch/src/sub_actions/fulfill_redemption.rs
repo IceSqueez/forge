@@ -6,12 +6,13 @@ use forge_registry::{
     ConfigProblem, ConfigSpec, PickedTextField, RunContext, StepTimer, SubActionCategory,
     SubActionRunner, TextEditor, TextField, TextPicker, TypedField,
 };
-use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, UserText};
+use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry};
 
 use crate::account::identity::SelfIdentity;
 use crate::collection_keys::REWARD_OPTIONS_KEY;
 use crate::helix::{HelixMethod, HelixRequest, HelixTransport};
-use crate::vocabulary::{config_keys, sub_action_ids};
+use crate::step_failure;
+use crate::vocabulary::{config_keys, messages, sub_action_ids};
 
 const KIND_ID: &str = sub_action_ids::CHANNEL_POINTS_FULFILL_REDEMPTION;
 const REDEMPTION_ID_TEMPLATE: &str = "%redemption.id%";
@@ -65,20 +66,19 @@ impl FulfillRedemptionRunner {
 async fn patch_redemption_status(
     transport: &Arc<dyn HelixTransport>,
     identity: &Arc<SelfIdentity>,
-    kind_id: &str,
     redemption_id: &str,
     reward_id: &str,
     status: &str,
 ) -> SubActionOutcome {
     if redemption_id.is_empty() {
-        return SubActionOutcome::Failed(UserText::unlocalized("redemption_id is required"));
+        return SubActionOutcome::Failed(messages::field_required("redemption_id").into());
     }
     if reward_id.is_empty() {
-        return SubActionOutcome::Failed(UserText::unlocalized("reward_id is required"));
+        return SubActionOutcome::Failed(messages::field_required("reward_id").into());
     }
     let user_id = match identity.user_id().await {
         Ok(id) => id,
-        Err(e) => return SubActionOutcome::Failed(UserText::unlocalized(e.to_string())),
+        Err(e) => return step_failure::failed(&e),
     };
     let mut body = serde_json::Map::new();
     body.insert("status".to_owned(), status.into());
@@ -92,7 +92,7 @@ async fn patch_redemption_status(
     .body(serde_json::Value::Object(body));
     match transport.execute(request).await {
         Ok(_) => SubActionOutcome::Success,
-        Err(e) => SubActionOutcome::Failed(UserText::unlocalized(format!("{kind_id}: {e}"))),
+        Err(e) => step_failure::failed(&e),
     }
 }
 
@@ -109,15 +109,8 @@ pub(crate) async fn execute_redemption_runner(
         Ok(values) => values,
         Err(problem) => return (timer.invalid_config(&problem), None),
     };
-    let outcome = patch_redemption_status(
-        transport,
-        identity,
-        kind_id,
-        &redemption_id,
-        &reward_id,
-        status,
-    )
-    .await;
+    let outcome =
+        patch_redemption_status(transport, identity, &redemption_id, &reward_id, status).await;
     (timer.finish(outcome), None)
 }
 

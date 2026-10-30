@@ -6,11 +6,12 @@ use forge_registry::{
     ConfigProblem, ConfigReason, ConfigSpec, Interpolation, RunContext, StepTimer,
     SubActionCategory, SubActionConfigExt, SubActionRunner, TextEditor, TextField, TypedField,
 };
-use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, UserText};
+use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry};
 
 use crate::account::identity::SelfIdentity;
 use crate::helix::{HelixError, HelixMethod, HelixRequest, HelixTransport};
-use crate::vocabulary::{config_keys, sub_action_ids};
+use crate::step_failure;
+use crate::vocabulary::{config_keys, messages, sub_action_ids};
 
 const KIND_ID: &str = sub_action_ids::CHANNEL_UPDATE_CATEGORY;
 
@@ -78,18 +79,16 @@ impl UpdateCategoryRunner {
         let category_id = category_id.trim();
         let category_name = category_name.trim();
         if category_id.is_empty() && category_name.is_empty() {
-            return SubActionOutcome::Failed(UserText::unlocalized(
-                "category_id and category_name are empty after interpolation",
-            ));
+            return SubActionOutcome::Failed(messages::category_empty().into());
         }
         let user_id = match self.identity.user_id().await {
             Ok(id) => id,
-            Err(e) => return SubActionOutcome::Failed(UserText::unlocalized(e.to_string())),
+            Err(e) => return step_failure::failed(&e),
         };
         let category_id = if category_id.is_empty() {
             match self.resolve_category_id(category_name).await {
                 Ok(id) => id,
-                Err(e) => return SubActionOutcome::Failed(UserText::unlocalized(e.to_string())),
+                Err(e) => return step_failure::failed(&e),
             }
         } else {
             category_id.to_owned()
@@ -97,7 +96,7 @@ impl UpdateCategoryRunner {
         let request = HelixRequest::new(HelixMethod::Patch, "/helix/channels")
             .query("broadcaster_id", user_id)
             .body(serde_json::json!({ "game_id": category_id }));
-        SubActionOutcome::from_result(&self.transport.execute(request).await)
+        step_failure::outcome(&self.transport.execute(request).await)
     }
 }
 

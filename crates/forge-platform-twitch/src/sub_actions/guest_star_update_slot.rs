@@ -6,12 +6,13 @@ use forge_registry::{
     ChoiceField, ConfigProblem, ConfigSpec, IntegerEditor, IntegerField, OptionalField, RunContext,
     StepTimer, SubActionCategory, SubActionRunner, TypedField, ValueBounds,
 };
-use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, UserText};
+use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry};
 
 use super::fields::{ModeToggle, mode_toggle};
 use super::guest_star::{SESSION_ID, SLOT_ID, first_missing};
 use crate::account::identity::SelfIdentity;
 use crate::helix::{HelixMethod, HelixRequest, HelixTransport};
+use crate::step_failure;
 use crate::vocabulary::{config_keys, sub_action_ids};
 
 const KIND_ID: &str = sub_action_ids::GUEST_STAR_UPDATE_SLOT;
@@ -93,12 +94,12 @@ impl GuestStarUpdateSlotRunner {
             (&SESSION_ID, &settings.session_id),
             (&SLOT_ID, &settings.slot_id),
         ]) {
-            return SubActionOutcome::Failed(UserText::unlocalized(missing));
+            return SubActionOutcome::Failed(missing.into());
         }
         let user_id = match self.identity.user_id().await {
             Ok(id) => id,
             Err(e) => {
-                return SubActionOutcome::Failed(UserText::unlocalized(format!("{KIND_ID}: {e}")));
+                return step_failure::failed(&e);
             }
         };
         let body = settings.body();
@@ -113,7 +114,7 @@ impl GuestStarUpdateSlotRunner {
             .body(serde_json::Value::Object(body));
         match self.transport.execute(request).await {
             Ok(_) => SubActionOutcome::Success,
-            Err(e) => SubActionOutcome::Failed(UserText::unlocalized(format!("{KIND_ID}: {e}"))),
+            Err(e) => step_failure::failed(&e),
         }
     }
 }

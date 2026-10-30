@@ -3,6 +3,8 @@ use forge_registry::{TextEditor, TextField};
 use crate::account::identity::{SelfIdentity, resolve_user_id};
 use crate::helix::{HelixError, HelixTransport};
 use crate::vocabulary::config_keys;
+use crate::vocabulary::messages;
+use forge_types::MessageRef;
 
 const SESSION_ID_TEMPLATE: &str = "%guest_star.session_id%";
 
@@ -34,11 +36,11 @@ pub(crate) const SLOT_ID: TextField = TextField {
     required: true,
 };
 
-pub(crate) fn first_missing(values: &[(&TextField, &str)]) -> Option<String> {
+pub(crate) fn first_missing(values: &[(&TextField, &str)]) -> Option<MessageRef> {
     values
         .iter()
         .find(|(_, value)| value.is_empty())
-        .map(|(field, _)| format!("{} is required", field.key))
+        .map(|(field, _)| messages::field_required(field.key))
 }
 
 pub(crate) struct GuestStarContext {

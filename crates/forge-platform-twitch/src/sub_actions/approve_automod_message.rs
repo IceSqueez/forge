@@ -6,11 +6,12 @@ use forge_registry::{
     ConfigSpec, RunContext, StepTimer, SubActionCategory, SubActionRunner, TextEditor, TextField,
     TypedField,
 };
-use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, UserText};
+use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry};
 
 use crate::account::identity::SelfIdentity;
 use crate::helix::{HelixMethod, HelixRequest, HelixTransport};
-use crate::vocabulary::{config_keys, sub_action_ids};
+use crate::step_failure;
+use crate::vocabulary::{config_keys, messages, sub_action_ids};
 
 const KIND_ID: &str = sub_action_ids::AUTOMOD_APPROVE_MESSAGE;
 const MESSAGE_ID_TEMPLATE: &str = "%automod.message_id%";
@@ -44,16 +45,15 @@ impl ApproveAutomodMessageRunner {
 async fn manage_automod_message(
     transport: &Arc<dyn HelixTransport>,
     identity: &Arc<SelfIdentity>,
-    kind_id: &str,
     message_id: &str,
     action: &str,
 ) -> SubActionOutcome {
     if message_id.is_empty() {
-        return SubActionOutcome::Failed(UserText::unlocalized("message_id is required"));
+        return SubActionOutcome::Failed(messages::field_required("message_id").into());
     }
     let user_id = match identity.user_id().await {
         Ok(id) => id,
-        Err(e) => return SubActionOutcome::Failed(UserText::unlocalized(e.to_string())),
+        Err(e) => return step_failure::failed(&e),
     };
     let body = serde_json::json!({
         "user_id": user_id,
@@ -64,7 +64,7 @@ async fn manage_automod_message(
         HelixRequest::new(HelixMethod::Post, "/helix/moderation/automod/message").body(body);
     match transport.execute(request).await {
         Ok(_) => SubActionOutcome::Success,
-        Err(e) => SubActionOutcome::Failed(UserText::unlocalized(format!("{kind_id}: {e}"))),
+        Err(e) => step_failure::failed(&e),
     }
 }
 
@@ -81,7 +81,7 @@ pub(crate) async fn execute_automod_runner(
         Ok(message_id) => message_id,
         Err(problem) => return (timer.invalid_config(&problem), None),
     };
-    let outcome = manage_automod_message(transport, identity, kind_id, &message_id, action).await;
+    let outcome = manage_automod_message(transport, identity, &message_id, action).await;
     (timer.finish(outcome), None)
 }
 

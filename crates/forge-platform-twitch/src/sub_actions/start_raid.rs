@@ -5,13 +5,14 @@ use forge_registry::runner::SubActionConfig;
 use forge_registry::{
     ConfigSpec, RunContext, StepTimer, SubActionCategory, SubActionRunner, TextField, TypedField,
 };
-use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, UserText};
+use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry};
 
 use super::fields::TARGET_LOGIN;
 use crate::account::identity::{SelfIdentity, resolve_user_id};
 use crate::helix::{HelixMethod, HelixRequest, HelixTransport};
 use crate::lifecycle::TwitchLifecycle;
-use crate::vocabulary::{config_keys, sub_action_ids};
+use crate::step_failure;
+use crate::vocabulary::{config_keys, messages, sub_action_ids};
 
 const KIND_ID: &str = sub_action_ids::CHANNEL_START_RAID;
 
@@ -44,23 +45,23 @@ impl StartRaidRunner {
 
     async fn start_raid(&self, to_broadcaster_login: &str) -> SubActionOutcome {
         if to_broadcaster_login.is_empty() {
-            return SubActionOutcome::Failed(UserText::unlocalized(
-                "to_broadcaster_login is empty after interpolation",
-            ));
+            return SubActionOutcome::Failed(
+                messages::empty_after_interpolation("to_broadcaster_login").into(),
+            );
         }
         let self_id = match self.identity.user_id().await {
             Ok(id) => id,
-            Err(e) => return SubActionOutcome::Failed(UserText::unlocalized(e.to_string())),
+            Err(e) => return step_failure::failed(&e),
         };
         let to_broadcaster_id =
             match resolve_user_id(self.transport.as_ref(), to_broadcaster_login).await {
                 Ok(id) => id,
-                Err(e) => return SubActionOutcome::Failed(UserText::unlocalized(e.to_string())),
+                Err(e) => return step_failure::failed(&e),
             };
         let request = HelixRequest::new(HelixMethod::Post, "/helix/raids")
             .query("from_broadcaster_id", self_id)
             .query("to_broadcaster_id", to_broadcaster_id);
-        let outcome = SubActionOutcome::from_result(&self.transport.execute(request).await);
+        let outcome = step_failure::outcome(&self.transport.execute(request).await);
         if outcome == SubActionOutcome::Success {
             self.lifecycle.raid_started();
         }

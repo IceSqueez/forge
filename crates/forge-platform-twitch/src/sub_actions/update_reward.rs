@@ -7,7 +7,7 @@ use forge_registry::{
     IntegerEditor, IntegerField, OptionalField, OptionalSwitch, RunContext, StepTimer,
     SubActionCategory, SubActionRunner, TextEditor, TypedField, ValueBounds,
 };
-use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, UserText};
+use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry};
 
 use super::enable_reward::REWARD_ID;
 use super::fields::{HexColorField, ModeToggle, mode_toggle};
@@ -16,7 +16,8 @@ use crate::custom_rewards::{
     MAX_PROMPT_CHARS, MAX_TITLE_CHARS, MIN_COST, RewardBody, update_request,
 };
 use crate::helix::HelixTransport;
-use crate::vocabulary::{config_keys, sub_action_ids};
+use crate::step_failure;
+use crate::vocabulary::{config_keys, messages, sub_action_ids};
 
 const KIND_ID: &str = sub_action_ids::CHANNEL_POINTS_UPDATE_REWARD;
 const MIN_TITLE_CHARS: i64 = 1;
@@ -224,7 +225,7 @@ impl UpdateRewardRunner {
 
     async fn apply(&self, update: RewardUpdate) -> SubActionOutcome {
         if update.reward_id.is_empty() {
-            return SubActionOutcome::Failed(UserText::unlocalized("reward_id is required"));
+            return SubActionOutcome::Failed(messages::field_required("reward_id").into());
         }
         let reward_id = update.reward_id.clone();
         let body = update.body();
@@ -233,10 +234,10 @@ impl UpdateRewardRunner {
         }
         let user_id = match self.identity.user_id().await {
             Ok(id) => id,
-            Err(e) => return SubActionOutcome::Failed(UserText::unlocalized(e.to_string())),
+            Err(e) => return step_failure::failed(&e),
         };
         let request = update_request(user_id, &reward_id, body);
-        SubActionOutcome::from_result(&self.transport.execute(request).await)
+        step_failure::outcome(&self.transport.execute(request).await)
     }
 }
 

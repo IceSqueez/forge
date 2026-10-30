@@ -7,7 +7,7 @@ use crate::helix::{HelixError, HelixMethod, HelixRequest, HelixTransport};
 use forge_net::status::BAD_REQUEST;
 
 const WHISPERS_PATH: &str = "/helix/whispers";
-const MAX_WHISPER_CHARS: usize = 500;
+pub(crate) const MAX_WHISPER_CHARS: usize = 500;
 const WHISPER_BLOCK_MARKERS: [&str; 3] = ["stranger", "block", "doesn't allow"];
 
 #[derive(Debug, Error)]

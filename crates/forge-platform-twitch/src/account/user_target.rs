@@ -6,6 +6,8 @@ use forge_types::ArgStack;
 
 use super::identity::{login_handle, resolve_user_id};
 use crate::helix::{HelixError, HelixTransport};
+use crate::vocabulary::messages;
+use forge_types::MessageRef;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum UserTarget<'a> {
@@ -67,11 +69,8 @@ impl TargetFields {
         })
     }
 
-    pub(crate) fn empty_after_interpolation(&self) -> String {
-        format!(
-            "{} and {} are empty after interpolation",
-            self.login.key, self.id.key
-        )
+    pub(crate) fn empty_after_interpolation(&self) -> MessageRef {
+        messages::target_empty(self.login.key, self.id.key)
     }
 }
 

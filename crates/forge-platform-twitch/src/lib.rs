@@ -27,6 +27,7 @@ mod log_capture;
 mod oauth_client;
 mod quick_action_fields;
 mod reward_collection;
+mod step_failure;
 mod sub_actions;
 mod subscriptions;
 mod timestamp;

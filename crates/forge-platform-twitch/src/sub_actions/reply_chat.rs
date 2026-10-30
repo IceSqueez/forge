@@ -15,7 +15,7 @@ use crate::account::identity::SelfIdentity;
 use crate::bot_account::TwitchBotAccount;
 use crate::chat_sender::{ChatDelivery, ChatSenders, StepResult, failed_step, step_result};
 use crate::helix::HelixTransport;
-use crate::vocabulary::{config_keys, sub_action_ids};
+use crate::vocabulary::{config_keys, messages, sub_action_ids};
 
 const KIND_ID: &str = sub_action_ids::CHAT_REPLY;
 const MAX_MESSAGE_CHARS: usize = 500;
@@ -74,10 +74,10 @@ impl ReplyChatRunner {
         events: &dyn EventPublisher,
     ) -> StepResult {
         if message.is_empty() {
-            return failed_step("message is empty after interpolation");
+            return failed_step(messages::message_empty());
         }
         if message.chars().count() > MAX_MESSAGE_CHARS {
-            return failed_step("message exceeds 500-character limit");
+            return failed_step(messages::message_too_long(MAX_MESSAGE_CHARS));
         }
         let delivery = ChatDelivery::Reply {
             text: message,

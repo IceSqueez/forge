@@ -6,12 +6,13 @@ use forge_registry::{
     BoundedTextField, ConfigProblem, ConfigSpec, RunContext, StepTimer, SubActionCategory,
     SubActionRunner, TextEditor, TypedField, ValueBounds,
 };
-use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, UserText};
+use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry};
 
 use super::fields::{MAX_REASON_CHARS, TARGET_LOGIN};
 use crate::account::identity::{SelfIdentity, resolve_user_id};
 use crate::helix::{HelixMethod, HelixRequest, HelixTransport};
-use crate::vocabulary::{config_keys, sub_action_ids};
+use crate::step_failure;
+use crate::vocabulary::{config_keys, messages, sub_action_ids};
 
 const KIND_ID: &str = sub_action_ids::MODERATION_WARN_USER;
 
@@ -51,22 +52,20 @@ impl WarnUserRunner {
 
     async fn warn(&self, target_login: &str, reason: &str) -> SubActionOutcome {
         if target_login.is_empty() {
-            return SubActionOutcome::Failed(UserText::unlocalized(
-                "target_user_login is empty after interpolation",
-            ));
+            return SubActionOutcome::Failed(
+                messages::empty_after_interpolation("target_user_login").into(),
+            );
         }
         if reason.is_empty() {
-            return SubActionOutcome::Failed(UserText::unlocalized(
-                "reason is required and must not be empty",
-            ));
+            return SubActionOutcome::Failed(messages::field_required("reason").into());
         }
         let user_id = match self.identity.user_id().await {
             Ok(id) => id,
-            Err(e) => return SubActionOutcome::Failed(UserText::unlocalized(e.to_string())),
+            Err(e) => return step_failure::failed(&e),
         };
         let target_user_id = match resolve_user_id(self.transport.as_ref(), target_login).await {
             Ok(id) => id,
-            Err(e) => return SubActionOutcome::Failed(UserText::unlocalized(e.to_string())),
+            Err(e) => return step_failure::failed(&e),
         };
         let request = HelixRequest::new(HelixMethod::Post, "/helix/moderation/warnings")
             .query("broadcaster_id", user_id.clone())
@@ -77,7 +76,7 @@ impl WarnUserRunner {
                     "reason": reason,
                 }
             }));
-        SubActionOutcome::from_result(&self.transport.execute(request).await)
+        step_failure::outcome(&self.transport.execute(request).await)
     }
 }
 

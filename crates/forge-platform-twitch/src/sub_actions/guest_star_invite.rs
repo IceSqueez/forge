@@ -6,11 +6,12 @@ use forge_registry::{
     ConfigProblem, ConfigSpec, RunContext, StepTimer, SubActionCategory, SubActionRunner,
     TypedField,
 };
-use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, UserText};
+use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry};
 
 use super::guest_star::{GUEST_LOGIN, GuestStarContext, SESSION_ID, first_missing};
 use crate::account::identity::SelfIdentity;
 use crate::helix::{HelixMethod, HelixRequest, HelixTransport};
+use crate::step_failure;
 use crate::vocabulary::sub_action_ids;
 
 const KIND_ID: &str = sub_action_ids::GUEST_STAR_INVITE;
@@ -44,7 +45,7 @@ impl GuestStarInviteRunner {
         if let Some(missing) =
             first_missing(&[(&SESSION_ID, session_id), (&GUEST_LOGIN, target_login)])
         {
-            return SubActionOutcome::Failed(UserText::unlocalized(missing));
+            return SubActionOutcome::Failed(missing.into());
         }
         let ctx =
             match GuestStarContext::resolve(self.transport.as_ref(), &self.identity, target_login)
@@ -52,9 +53,7 @@ impl GuestStarInviteRunner {
             {
                 Ok(c) => c,
                 Err(e) => {
-                    return SubActionOutcome::Failed(UserText::unlocalized(format!(
-                        "{KIND_ID}: {e}"
-                    )));
+                    return step_failure::failed(&e);
                 }
             };
         let request = HelixRequest::new(HelixMethod::Post, "/helix/guest_star/invites")
@@ -64,7 +63,7 @@ impl GuestStarInviteRunner {
             .query("guest_id", ctx.guest_id);
         match self.transport.execute(request).await {
             Ok(_) => SubActionOutcome::Success,
-            Err(e) => SubActionOutcome::Failed(UserText::unlocalized(format!("{KIND_ID}: {e}"))),
+            Err(e) => step_failure::failed(&e),
         }
     }
 }

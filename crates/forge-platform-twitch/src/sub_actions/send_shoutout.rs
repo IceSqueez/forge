@@ -74,7 +74,7 @@ impl SendShoutoutRunner {
         events: &dyn EventPublisher,
     ) -> StepResult {
         let Some(target) = target else {
-            return failed_step(&TARGET.empty_after_interpolation());
+            return failed_step(TARGET.empty_after_interpolation());
         };
         step_result(
             self.senders

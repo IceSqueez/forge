@@ -1,3 +1,4 @@
+use crate::step_failure;
 use crate::vocabulary::sub_action_ids;
 use std::sync::Arc;
 use std::time::Instant;
@@ -5,7 +6,7 @@ use std::time::Instant;
 use async_trait::async_trait;
 use forge_registry::runner::SubActionConfig;
 use forge_registry::{RunContext, SubActionCategory, SubActionRunner};
-use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, UserText};
+use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry};
 use time::OffsetDateTime;
 
 use crate::account::identity::SelfIdentity;
@@ -36,11 +37,11 @@ impl CancelRaidRunner {
     async fn cancel_raid(&self) -> SubActionOutcome {
         let self_id = match self.identity.user_id().await {
             Ok(id) => id,
-            Err(e) => return SubActionOutcome::Failed(UserText::unlocalized(e.to_string())),
+            Err(e) => return step_failure::failed(&e),
         };
         let request =
             HelixRequest::new(HelixMethod::Delete, "/helix/raids").query("broadcaster_id", self_id);
-        let outcome = SubActionOutcome::from_result(&self.transport.execute(request).await);
+        let outcome = step_failure::outcome(&self.transport.execute(request).await);
         if outcome == SubActionOutcome::Success {
             self.lifecycle.raid_canceled();
         }

@@ -3,7 +3,7 @@ use std::sync::Arc;
 
 use forge_events::{EventPublisher, EventSource, TypedEvent};
 use forge_platform_core::{ActingSender, SENT_AS_FIELD, SenderPreference, SenderRole};
-use forge_types::{SubActionOutcome, UserText};
+use forge_types::SubActionOutcome;
 use thiserror::Error;
 use tracing::warn;
 
@@ -16,7 +16,9 @@ use crate::chat::{
     ChatSendError, WhisperError, send_chat, send_chat_reply, send_whisper, send_whisper_to,
 };
 use crate::helix::{HelixError, HelixMethod, HelixRequest, HelixTransport};
+use crate::step_failure;
 use crate::vocabulary::{FallbackLevel, SenderFallback};
+use forge_types::MessageRef;
 
 const ANNOUNCEMENTS_PATH: &str = "/helix/chat/announcements";
 const SHOUTOUTS_PATH: &str = "/helix/chat/shoutouts";
@@ -37,6 +39,10 @@ pub(crate) enum SendFailure {
     PermissionDenied(String),
     #[error("{0}")]
     Refused(String),
+    #[error("shoutout cooldown: try again in {retry_after_secs}s")]
+    ShoutoutCooldown { retry_after_secs: u64 },
+    #[error("Twitch rate limit or cooldown reached; try again later")]
+    ModerationThrottled,
     #[error(transparent)]
     Helix(HelixError),
     #[error("{0}")]
@@ -313,10 +319,9 @@ fn target_key(target: UserTarget<'_>) -> String {
 impl ChatSenders {
     fn refuse_during_shoutout_cooldown(&self, target_keys: &[&str]) -> Result<(), SendFailure> {
         match self.cadence.shoutout_cooldown(target_keys) {
-            Some(remaining) => Err(SendFailure::Refused(format!(
-                "shoutout cooldown: try again in {}s",
-                remaining.as_secs().max(1)
-            ))),
+            Some(remaining) => Err(SendFailure::ShoutoutCooldown {
+                retry_after_secs: remaining.as_secs().max(1),
+            }),
             None => Ok(()),
         }
     }
@@ -325,9 +330,7 @@ impl ChatSenders {
 fn moderation_failure(error: HelixError) -> SendFailure {
     match error {
         HelixError::ReauthRequired => SendFailure::Helix(HelixError::ReauthRequired),
-        HelixError::RateLimited => SendFailure::Refused(
-            "Twitch rate limit or cooldown reached; try again later".to_owned(),
-        ),
+        HelixError::RateLimited => SendFailure::ModerationThrottled,
         HelixError::Http { status, body } if status == forge_net::status::FORBIDDEN => {
             SendFailure::PermissionDenied(format!("HTTP {status}: {}", refusal_text(&body)))
         }
@@ -367,17 +370,14 @@ pub(crate) fn step_result(result: Result<ActingSender, SendFailure>) -> StepResu
             (SubActionOutcome::Success, produced)
         }
         Err(failure) => (
-            SubActionOutcome::Failed(UserText::unlocalized(failure.to_string())),
+            SubActionOutcome::Failed(step_failure::send_failure(&failure).into()),
             BTreeMap::new(),
         ),
     }
 }
 
-pub(crate) fn failed_step(reason: &str) -> StepResult {
-    (
-        SubActionOutcome::Failed(UserText::unlocalized(reason.to_owned())),
-        BTreeMap::new(),
-    )
+pub(crate) fn failed_step(reason: MessageRef) -> StepResult {
+    (SubActionOutcome::Failed(reason.into()), BTreeMap::new())
 }
 
 #[cfg(test)]

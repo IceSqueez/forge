@@ -98,7 +98,7 @@ mod tests {
     use super::*;
     use crate::helix::HelixError;
     use crate::sub_actions::test_support::{
-        MockCreds, MockTransport, SELF_USER_ID, TOKEN_SENTINEL, chat_trigger_args, make_ctx,
+        MockCreds, MockTransport, SELF_USER_ID, assert_request_refused, chat_trigger_args, make_ctx,
     };
     use forge_types::Variant;
     use std::collections::BTreeMap;
@@ -196,20 +196,6 @@ mod tests {
 
         let (telemetry, _) = runner.execute(&config("abc-123"), &make_ctx(&stack)).await;
 
-        let SubActionOutcome::Failed(msg) = telemetry.outcome else {
-            panic!("expected Failed, got {:?}", telemetry.outcome);
-        };
-        assert!(
-            msg.code_or_text().contains("403"),
-            "status must surface for diagnosis: {msg:?}"
-        );
-        assert!(
-            !msg.code_or_text().contains(TOKEN_SENTINEL),
-            "outcome must not leak the token: {msg:?}"
-        );
-        assert!(
-            !msg.code_or_text().contains("api.twitch.tv"),
-            "outcome must not leak the request URL: {msg:?}"
-        );
+        assert_request_refused(&telemetry.outcome, 403);
     }
 }

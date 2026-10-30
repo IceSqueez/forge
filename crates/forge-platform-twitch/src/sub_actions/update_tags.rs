@@ -107,7 +107,7 @@ mod tests {
     use super::*;
     use crate::helix::HelixError;
     use crate::sub_actions::test_support::{
-        MockCreds, MockTransport, SELF_USER_ID, TOKEN_SENTINEL, make_ctx,
+        MockCreds, MockTransport, SELF_USER_ID, assert_request_refused, make_ctx,
     };
     use forge_types::Variant;
     use std::collections::BTreeMap;
@@ -202,9 +202,6 @@ mod tests {
 
         let (telemetry, _) = runner.execute(&cfg("Chill"), &make_ctx(&stack)).await;
 
-        assert!(matches!(
-            telemetry.outcome,
-            SubActionOutcome::Failed(msg) if msg.code_or_text().contains("403") && !msg.code_or_text().contains(TOKEN_SENTINEL)
-        ));
+        assert_request_refused(&telemetry.outcome, 403);
     }
 }

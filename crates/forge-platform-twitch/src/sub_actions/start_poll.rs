@@ -223,7 +223,7 @@ mod tests {
     use super::*;
     use crate::helix::HelixError;
     use crate::sub_actions::test_support::{
-        MockCreds, MockTransport, SELF_USER_ID, TOKEN_SENTINEL, make_ctx,
+        MockCreds, MockTransport, SELF_USER_ID, assert_request_refused, make_ctx,
     };
     use std::collections::BTreeMap;
 
@@ -420,10 +420,7 @@ mod tests {
         }));
         let stack = ArgStack::new();
         let (telemetry, _) = runner.execute(&full_cfg(), &make_ctx(&stack)).await;
-        let SubActionOutcome::Failed(msg) = telemetry.outcome else {
-            unreachable!("expected Failed outcome on HTTP error");
-        };
-        assert!(!msg.code_or_text().contains(TOKEN_SENTINEL));
+        assert_request_refused(&telemetry.outcome, 400);
     }
 
     #[test]

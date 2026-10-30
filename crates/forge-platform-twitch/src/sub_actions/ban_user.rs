@@ -123,7 +123,7 @@ mod tests {
     use super::*;
     use crate::helix::HelixError;
     use crate::sub_actions::test_support::{
-        MockCreds, MockTransport, SELF_USER_ID, TOKEN_SENTINEL, make_ctx, users_fixture,
+        MockCreds, MockTransport, SELF_USER_ID, assert_request_refused, make_ctx, users_fixture,
     };
     use forge_types::Variant;
     use std::collections::BTreeMap;
@@ -221,20 +221,6 @@ mod tests {
             2,
             "failure must come from the ban call, not the resolve"
         );
-        let SubActionOutcome::Failed(msg) = telemetry.outcome else {
-            panic!("expected Failed, got {:?}", telemetry.outcome);
-        };
-        assert!(
-            msg.code_or_text().contains("403"),
-            "status must surface: {msg:?}"
-        );
-        assert!(
-            !msg.code_or_text().contains(TOKEN_SENTINEL),
-            "token leaked: {msg:?}"
-        );
-        assert!(
-            !msg.code_or_text().contains("api.twitch.tv"),
-            "URL leaked: {msg:?}"
-        );
+        assert_request_refused(&telemetry.outcome, 403);
     }
 }

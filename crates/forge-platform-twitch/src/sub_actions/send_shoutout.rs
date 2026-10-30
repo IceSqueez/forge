@@ -146,7 +146,7 @@ mod tests {
     use super::*;
     use crate::helix::{HelixError, HelixMethod};
     use crate::sub_actions::test_support::{
-        MockCreds, MockTransport, SELF_USER_ID, TOKEN_SENTINEL, make_ctx, users_fixture,
+        MockCreds, MockTransport, SELF_USER_ID, assert_failed_with_detail, make_ctx, users_fixture,
     };
     use forge_platform_core::SENDER_FIELD;
     use forge_types::SubActionOutcome;
@@ -258,21 +258,7 @@ mod tests {
             2,
             "failure must come from the shoutout call, not the resolve"
         );
-        let SubActionOutcome::Failed(msg) = telemetry.outcome else {
-            panic!("expected Failed, got {:?}", telemetry.outcome);
-        };
-        assert!(
-            msg.code_or_text().contains("429"),
-            "status must surface: {msg:?}"
-        );
-        assert!(
-            !msg.code_or_text().contains(TOKEN_SENTINEL),
-            "token leaked: {msg:?}"
-        );
-        assert!(
-            !msg.code_or_text().contains("api.twitch.tv"),
-            "URL leaked: {msg:?}"
-        );
+        assert_failed_with_detail(&telemetry.outcome, "twitch.request_failed", "HTTP 429");
     }
 
     #[tokio::test]

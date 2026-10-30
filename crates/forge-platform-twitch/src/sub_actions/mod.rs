@@ -367,6 +367,54 @@ pub(crate) mod test_support {
     pub(crate) const TOKEN_SENTINEL: &str = "FAKE_TWITCH_TOKEN_SENTINEL_qq123";
     pub(crate) const SELF_USER_ID: &str = "9876";
 
+    pub(crate) fn failed_message(
+        outcome: &forge_types::SubActionOutcome,
+    ) -> &forge_types::MessageRef {
+        match outcome {
+            forge_types::SubActionOutcome::Failed(forge_types::UserText::Message(message)) => {
+                message
+            }
+            other => panic!("expected a coded Failed outcome, got {other:?}"),
+        }
+    }
+
+    pub(crate) fn assert_failed_with_code(outcome: &forge_types::SubActionOutcome, code: &str) {
+        let message = failed_message(outcome);
+        assert_eq!(message.code().to_string(), code);
+        assert_no_secret_in(message);
+    }
+
+    pub(crate) fn assert_failed_with_detail(
+        outcome: &forge_types::SubActionOutcome,
+        code: &str,
+        detail_fragment: &str,
+    ) {
+        let message = failed_message(outcome);
+        assert_eq!(message.code().to_string(), code);
+        let detail = message
+            .detail()
+            .expect("detail carries the upstream reason");
+        assert!(detail.as_str().contains(detail_fragment), "{detail:?}");
+        assert_no_secret_in(message);
+    }
+
+    pub(crate) fn assert_no_secret_in(message: &forge_types::MessageRef) {
+        let wire = serde_json::to_string(message).unwrap();
+        assert!(!wire.contains(TOKEN_SENTINEL), "token leaked: {wire}");
+        assert!(!wire.contains("api.twitch.tv"), "URL leaked: {wire}");
+    }
+
+    pub(crate) fn assert_request_refused(outcome: &forge_types::SubActionOutcome, status: i64) {
+        let message = failed_message(outcome);
+        assert_eq!(message.code().to_string(), "twitch.request_refused");
+        assert_eq!(
+            message.arg("status"),
+            Some(&forge_types::MessageArg::Int(status))
+        );
+        assert!(message.detail().is_some());
+        assert_no_secret_in(message);
+    }
+
     pub(crate) struct MockTransport {
         calls: Mutex<Vec<HelixRequest>>,
         responses: Mutex<VecDeque<Result<serde_json::Value, HelixError>>>,

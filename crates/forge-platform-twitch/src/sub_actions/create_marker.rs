@@ -154,7 +154,7 @@ mod tests {
     use super::*;
     use crate::helix::HelixError;
     use crate::sub_actions::test_support::{
-        MockCreds, MockTransport, SELF_USER_ID, TOKEN_SENTINEL, make_ctx,
+        MockCreds, MockTransport, SELF_USER_ID, assert_request_refused, make_ctx,
     };
     use crate::timestamp::tests::instant;
     use std::collections::BTreeMap;
@@ -323,10 +323,7 @@ mod tests {
         let (telemetry, output) = runner.execute(&cfg("x"), &make_ctx(&stack)).await;
 
         assert!(output.is_none());
-        assert!(matches!(
-            telemetry.outcome,
-            SubActionOutcome::Failed(msg) if msg.code_or_text().contains("404") && !msg.code_or_text().contains(TOKEN_SENTINEL)
-        ));
+        assert_request_refused(&telemetry.outcome, 404);
     }
 
     #[test]

@@ -238,7 +238,7 @@ mod tests {
     use super::*;
     use crate::helix::HelixError;
     use crate::sub_actions::test_support::{
-        MockCreds, MockTransport, SELF_USER_ID, TOKEN_SENTINEL, make_ctx,
+        MockCreds, MockTransport, SELF_USER_ID, assert_request_refused, make_ctx,
     };
     use forge_types::Variant;
 
@@ -486,12 +486,6 @@ mod tests {
 
         let (telemetry, _) = runner.execute(&config, &ctx).await;
 
-        match telemetry.outcome {
-            SubActionOutcome::Failed(msg) => assert!(
-                !msg.code_or_text().contains(TOKEN_SENTINEL),
-                "failure message must not leak the token: {msg:?}"
-            ),
-            other => panic!("expected Failed, got {other:?}"),
-        }
+        assert_request_refused(&telemetry.outcome, 500);
     }
 }

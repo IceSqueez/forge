@@ -1003,10 +1003,11 @@ mod tests {
                     .unwrap_err();
 
                 let label = format!("{} {status}", delivery.operation());
-                assert!(
-                    matches!(failure, SendFailure::Refused(_)),
-                    "{label}: {failure:?}"
-                );
+                let expected_failure = match status {
+                    429 => matches!(failure, SendFailure::ModerationThrottled),
+                    _ => matches!(failure, SendFailure::Refused(_)),
+                };
+                assert!(expected_failure, "{label}: {failure:?}");
                 assert_eq!(rig.streamer.call_count(), 0, "{label}");
                 assert_eq!(
                     rig.harness.requests_to(path_of(&delivery)).await.len(),
@@ -1039,8 +1040,8 @@ mod tests {
         );
     }
 
-    fn cooldown_refusal(result: &Result<ActingSender, SendFailure>) -> bool {
-        matches!(result, Err(SendFailure::Refused(m)) if m.starts_with("shoutout cooldown"))
+    fn cooldown_refusal(result: &Result<ActingSender, SendFailure>, seconds: u64) -> bool {
+        matches!(result, Err(SendFailure::ShoutoutCooldown { retry_after_secs }) if *retry_after_secs == seconds)
     }
 
     #[tokio::test]
@@ -1072,8 +1073,17 @@ mod tests {
             )
             .await;
 
-        assert!(cooldown_refusal(&as_bot), "{as_bot:?}");
-        assert!(cooldown_refusal(&other_target), "{other_target:?}");
+        assert!(
+            cooldown_refusal(&as_bot, crate::cadence::SHOUTOUT_TARGET_INTERVAL.as_secs()),
+            "{as_bot:?}"
+        );
+        assert!(
+            cooldown_refusal(
+                &other_target,
+                crate::cadence::SHOUTOUT_CHANNEL_INTERVAL.as_secs()
+            ),
+            "{other_target:?}"
+        );
         assert_eq!(rig.streamer.call_count(), 2);
         assert!(rig.harness.requests_to(SHOUTOUT_PATH).await.is_empty());
         assert!(rig.harness.requests_to("/helix/users").await.is_empty());
@@ -1114,7 +1124,13 @@ mod tests {
             )
             .await;
 
-        assert!(cooldown_refusal(&same_by_id), "{same_by_id:?}");
+        let target_window_left = crate::cadence::SHOUTOUT_TARGET_INTERVAL
+            - crate::cadence::SHOUTOUT_CHANNEL_INTERVAL
+            - std::time::Duration::from_secs(1);
+        assert!(
+            cooldown_refusal(&same_by_id, target_window_left.as_secs()),
+            "{same_by_id:?}"
+        );
         assert_eq!(calls_after_blocked, 2);
         assert_eq!(other.unwrap(), as_streamer());
         assert_eq!(rig.streamer.call_count(), 4);

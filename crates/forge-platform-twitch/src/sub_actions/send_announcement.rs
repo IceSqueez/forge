@@ -192,7 +192,8 @@ mod tests {
     use super::*;
     use crate::helix::{HelixError, HelixMethod};
     use crate::sub_actions::test_support::{
-        MockCreds, MockTransport, SELF_USER_ID, TOKEN_SENTINEL, make_ctx,
+        MockCreds, MockTransport, SELF_USER_ID, assert_failed_with_code, assert_failed_with_detail,
+        make_ctx,
     };
     use forge_platform_core::SENDER_FIELD;
     use forge_types::SubActionOutcome;
@@ -280,21 +281,7 @@ mod tests {
             .execute(&config("big news", None), &make_ctx(&stack))
             .await;
 
-        let SubActionOutcome::Failed(msg) = telemetry.outcome else {
-            panic!("expected Failed, got {:?}", telemetry.outcome);
-        };
-        assert!(
-            msg.code_or_text().contains("403"),
-            "status must surface for diagnosis: {msg:?}"
-        );
-        assert!(
-            !msg.code_or_text().contains(TOKEN_SENTINEL),
-            "outcome must not leak the token: {msg:?}"
-        );
-        assert!(
-            !msg.code_or_text().contains("api.twitch.tv"),
-            "outcome must not leak the request URL: {msg:?}"
-        );
+        assert_failed_with_detail(&telemetry.outcome, "twitch.permission_denied", "HTTP 403");
     }
 
     #[tokio::test]
@@ -357,10 +344,7 @@ mod tests {
             .execute(&config("big news", None), &make_ctx(&stack))
             .await;
 
-        assert!(matches!(
-            telemetry.outcome,
-            SubActionOutcome::Failed(msg) if msg.code_or_text().contains("no twitch credentials")
-        ));
+        assert_failed_with_code(&telemetry.outcome, "twitch.credentials_unavailable");
         assert_eq!(transport.call_count(), 0, "no identity, no request");
     }
 

@@ -196,3 +196,122 @@ pub(crate) fn recipient_rejects_whispers() -> MessageRef {
 pub(crate) fn shoutout_cooldown(retry_after_secs: u64) -> MessageRef {
     MessageRef::new(SHOUTOUT_COOLDOWN).with_arg("seconds", retry_after_secs)
 }
+
+#[cfg(test)]
+mod tests {
+    use std::collections::{BTreeMap, BTreeSet};
+
+    use super::*;
+
+    fn entries(source: &str) -> BTreeMap<String, BTreeSet<String>> {
+        let mut found: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
+        let mut current = None;
+        for line in source.lines() {
+            if let Some((id, _)) = line.split_once(" = ").filter(|_| line.starts_with("msg-")) {
+                current = Some(id.trim().to_owned());
+                found.entry(id.trim().to_owned()).or_default();
+            }
+            let Some(id) = &current else { continue };
+            let mut rest = line;
+            while let Some(at) = rest.find('$') {
+                rest = &rest[at + 1..];
+                let name: String = rest
+                    .chars()
+                    .take_while(|c| c.is_ascii_alphanumeric() || *c == '_' || *c == '-')
+                    .collect();
+                found.get_mut(id).unwrap().insert(name);
+            }
+        }
+        found
+    }
+
+    fn every_constructor() -> Vec<MessageRef> {
+        vec![
+            rate_limited(),
+            reauth_required(),
+            credentials_unavailable("d"),
+            request_refused(403, "d"),
+            request_failed("d"),
+            response_unreadable("d"),
+            field_required("f"),
+            empty_after_interpolation("f"),
+            target_empty("l", "i"),
+            category_empty(),
+            empty_response(),
+            response_field_missing("f"),
+            message_empty(),
+            message_too_long(500),
+            chat_not_connected(),
+            bot_not_signed_in(),
+            bot_reauth_required(),
+            bot_credentials_unreadable(),
+            bot_phone_unverified(),
+            bot_not_moderator(),
+            permission_denied("d"),
+            message_forbidden("d"),
+            message_dropped("c", "d"),
+            recipient_empty(),
+            recipient_rejects_whispers(),
+            shoutout_cooldown(30),
+        ]
+    }
+
+    #[test]
+    fn every_constructor_code_is_catalogued_and_localized_with_the_variables_it_passes() {
+        let en = entries(TWITCH_MESSAGES.en_ftl);
+        let uk = entries(TWITCH_MESSAGES.uk_ftl);
+        for message in every_constructor() {
+            let code = message.code();
+            assert!(
+                TWITCH_MESSAGES.codes.contains(code),
+                "{code} not catalogued"
+            );
+            let passed: BTreeSet<String> = message.args().map(|(n, _)| n.to_owned()).collect();
+            for (language, ftl) in [("en", &en), ("uk", &uk)] {
+                let used = ftl
+                    .get(&code.ftl_key())
+                    .unwrap_or_else(|| panic!("{code} missing in {language}"));
+                assert_eq!(used, &passed, "{code} variables in {language}");
+            }
+        }
+    }
+
+    #[test]
+    fn every_catalogued_code_is_produced_by_a_constructor_or_is_a_health_label() {
+        let produced: Vec<MessageCode> = every_constructor()
+            .iter()
+            .map(|m| m.code().clone())
+            .collect();
+        let health = [HEALTH_CHAT, HEALTH_EVENTSUB, HEALTH_API_CALLS];
+        for code in TWITCH_MESSAGES.codes {
+            assert!(
+                produced.contains(code) || health.contains(code),
+                "{code} has no constructor in the table"
+            );
+        }
+    }
+
+    #[test]
+    fn english_and_ukrainian_declare_the_same_messages_with_the_same_variables() {
+        assert_eq!(
+            entries(TWITCH_MESSAGES.en_ftl),
+            entries(TWITCH_MESSAGES.uk_ftl)
+        );
+    }
+
+    #[test]
+    fn upstream_detail_is_carried_as_detail_and_never_as_an_argument() {
+        let refused = request_refused(429, "slow down");
+
+        assert_eq!(refused.detail().unwrap().as_str(), "slow down");
+        assert_eq!(
+            refused.arg("status"),
+            Some(&forge_types::MessageArg::Int(429))
+        );
+        assert!(
+            refused
+                .args()
+                .all(|(_, v)| !format!("{v:?}").contains("slow down"))
+        );
+    }
+}

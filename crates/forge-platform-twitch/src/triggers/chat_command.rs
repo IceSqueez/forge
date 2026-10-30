@@ -7,7 +7,7 @@ use forge_registry::{
 };
 use forge_types::{PlatformId, TriggerConfig, UserText, Variant};
 
-use super::chat_arg_stack::base_chat_variables;
+use super::chat_arg_stack::{base_chat_variables, chat_message_text};
 use crate::vocabulary::fields::chat as fields;
 
 pub(crate) struct ChatCommandDescriptor;
@@ -110,7 +110,7 @@ impl TriggerKindDescriptor for ChatCommandDescriptor {
     }
 
     fn variables(&self) -> Option<TriggerVariables> {
-        Some(base_chat_variables())
+        Some(base_chat_variables().command_line(chat_message_text))
     }
 
     fn actors(&self) -> ActorDeclaration {

@@ -1,7 +1,7 @@
 use std::collections::{BTreeSet, HashMap};
 
 use forge_events::Event;
-use forge_types::{ArgStack, IntegrationId, PlatformId};
+use forge_types::{ArgStack, IntegrationId, PlatformId, TriggerConfig};
 
 use crate::descriptor::TriggerKindDescriptor;
 use crate::error::RegistryError;
@@ -65,12 +65,12 @@ impl TriggerRegistry {
         self.descriptors.get(kind_id)?.declaration.listed()
     }
 
-    pub fn arg_stack(&self, kind_id: &str, event: &Event) -> ArgStack {
+    pub fn arg_stack(&self, kind_id: &str, event: &Event, matched: &TriggerConfig) -> ArgStack {
         let Some(registered) = self.descriptors.get(kind_id) else {
             return ArgStack::new();
         };
         match registered.declaration.variables() {
-            Some(variables) => variables.arg_stack(event),
+            Some(variables) => variables.arg_stack_of_match(event, matched),
             None => registered.descriptor.build_arg_stack(event),
         }
     }
@@ -198,7 +198,7 @@ mod tests {
     use crate::runner::SubActionConfig;
     use async_trait::async_trait;
     use forge_events::Event;
-    use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, TriggerConfig};
+    use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry};
     use time::OffsetDateTime;
 
     struct StubDescriptor {

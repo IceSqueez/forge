@@ -1,13 +1,107 @@
+use forge_types::{
+    COMMAND_ARGS_VARIABLE, COMMAND_NAME_VARIABLE, COMMAND_TAIL_VARIABLE, DeclaredVariable,
+    SynthesisHint, TriggerConfig, Variant, VariantKind,
+};
+
+const PHRASE_KEY: &str = "phrase";
+const CASE_SENSITIVE_KEY: &str = "case_sensitive";
+
 const SIGMA: char = '\u{3c3}';
 const FINAL_SIGMA: char = '\u{3c2}';
 
+pub(crate) fn command_name_declaration() -> DeclaredVariable {
+    DeclaredVariable {
+        name: COMMAND_NAME_VARIABLE.to_owned(),
+        kind: VariantKind::String,
+        label: "Command name".to_owned(),
+        synthesis: None,
+    }
+}
+
+pub(crate) fn command_args_declaration() -> DeclaredVariable {
+    DeclaredVariable {
+        name: COMMAND_ARGS_VARIABLE.to_owned(),
+        kind: VariantKind::Array,
+        label: "Command arguments".to_owned(),
+        synthesis: None,
+    }
+}
+
+pub(crate) fn command_tail_declaration() -> DeclaredVariable {
+    DeclaredVariable {
+        name: COMMAND_TAIL_VARIABLE.to_owned(),
+        kind: VariantKind::String,
+        label: "Command arguments as one text".to_owned(),
+        synthesis: Some(SynthesisHint::Message),
+    }
+}
+
+pub(crate) struct MatchedCommand<'m> {
+    name: String,
+    tail: &'m str,
+}
+
+impl<'m> MatchedCommand<'m> {
+    pub(crate) fn read(message: &'m str, config: &TriggerConfig) -> Self {
+        let phrase = configured_phrase(config);
+        let case_sensitive = matches!(config.get(CASE_SENSITIVE_KEY), Some(Variant::Bool(true)));
+        match rest_after_phrase(message, phrase, case_sensitive) {
+            Some(rest) => Self {
+                name: command_name_of(phrase),
+                tail: rest.trim(),
+            },
+            None => {
+                let line = message.trim();
+                let (word, rest) = line.split_once(char::is_whitespace).unwrap_or((line, ""));
+                Self {
+                    name: command_name_of(word),
+                    tail: rest.trim(),
+                }
+            }
+        }
+    }
+
+    pub(crate) fn name(&self) -> Variant {
+        Variant::String(self.name.clone())
+    }
+
+    pub(crate) fn tail(&self) -> Variant {
+        Variant::String(self.tail.to_owned())
+    }
+
+    pub(crate) fn args(&self) -> Variant {
+        Variant::Array(
+            self.tail
+                .split_whitespace()
+                .map(|argument| Variant::String(argument.to_owned()))
+                .collect(),
+        )
+    }
+}
+
+fn configured_phrase(config: &TriggerConfig) -> &str {
+    match config.get(PHRASE_KEY) {
+        Some(Variant::String(phrase)) => phrase.trim_end(),
+        _ => "",
+    }
+}
+
+pub fn command_name_of(phrase: &str) -> String {
+    let word = phrase.split_whitespace().next().unwrap_or_default();
+    let bare = word.trim_start_matches(|character: char| !character.is_alphanumeric());
+    if bare.is_empty() { word } else { bare }.to_owned()
+}
+
 pub fn command_phrase_matches(message: &str, phrase: &str, case_sensitive: bool) -> bool {
-    let phrase = phrase.trim_end();
+    rest_after_phrase(message, phrase.trim_end(), case_sensitive).is_some()
+}
+
+fn rest_after_phrase<'m>(message: &'m str, phrase: &str, case_sensitive: bool) -> Option<&'m str> {
     if phrase.is_empty() {
-        return false;
+        return None;
     }
     strip_phrase(message, phrase, case_sensitive)
-        .is_some_and(|rest| rest.is_empty() || rest.starts_with(char::is_whitespace))
+        .filter(|rest| rest.is_empty() || rest.starts_with(char::is_whitespace))
 }
 
 fn folded(character: char) -> impl Iterator<Item = char> {
@@ -169,6 +263,160 @@ mod tests {
                     "{message:?} vs {phrase:?}"
                 );
             }
+        }
+    }
+
+    fn trigger_config(phrase: Option<Variant>, case_sensitive: bool) -> TriggerConfig {
+        let mut config = TriggerConfig::new();
+        if let Some(phrase) = phrase {
+            config.insert(PHRASE_KEY.to_owned(), phrase);
+        }
+        config.insert(CASE_SENSITIVE_KEY.to_owned(), Variant::Bool(case_sensitive));
+        config
+    }
+
+    fn phrase_config(phrase: &str, case_sensitive: bool) -> TriggerConfig {
+        trigger_config(Some(Variant::String(phrase.to_owned())), case_sensitive)
+    }
+
+    fn assert_command(
+        matched: &MatchedCommand<'_>,
+        (name, tail, arguments): (&str, &str, &[&str]),
+        case: &str,
+    ) {
+        assert_eq!(
+            matched.name(),
+            Variant::String(name.to_owned()),
+            "name of {case}"
+        );
+        assert_eq!(
+            matched.tail(),
+            Variant::String(tail.to_owned()),
+            "tail of {case}"
+        );
+        assert_eq!(
+            matched.args(),
+            Variant::Array(
+                arguments
+                    .iter()
+                    .map(|argument| Variant::String((*argument).to_owned()))
+                    .collect()
+            ),
+            "args of {case}"
+        );
+    }
+
+    #[test]
+    fn a_matched_phrase_is_removed_whole_and_only_its_first_word_names_the_command() {
+        for (message, phrase, expected) in [
+            (
+                "!shout out alice bob",
+                "!shout out",
+                ("shout", "alice bob", &["alice", "bob"][..]),
+            ),
+            ("!shout out", "!shout out", ("shout", "", &[][..])),
+            ("!so viewer", "!so", ("so", "viewer", &["viewer"][..])),
+            ("!so\u{a0}viewer", "!so", ("so", "viewer", &["viewer"][..])),
+            ("!so   a  b  ", "!so", ("so", "a  b", &["a", "b"][..])),
+        ] {
+            assert_command(
+                &MatchedCommand::read(message, &phrase_config(phrase, SENSITIVE)),
+                expected,
+                message,
+            );
+        }
+    }
+
+    #[test]
+    fn the_configured_spelling_names_the_command_whatever_case_the_chatter_typed() {
+        for (message, phrase, expected) in [
+            (
+                "!SHOUT OUT Alice",
+                "!shout out",
+                ("shout", "Alice", &["Alice"][..]),
+            ),
+            ("!sO x", "!So", ("So", "x", &["x"][..])),
+            (
+                "!ПРИВІТ  світ   друже",
+                "!привіт",
+                ("привіт", "світ   друже", &["світ", "друже"][..]),
+            ),
+        ] {
+            assert_command(
+                &MatchedCommand::read(message, &phrase_config(phrase, INSENSITIVE)),
+                expected,
+                message,
+            );
+        }
+    }
+
+    #[test]
+    fn every_leading_marker_is_dropped_from_the_name_and_a_markerless_phrase_keeps_its_word() {
+        for (message, phrase, name) in [
+            ("!lurk now", "!lurk", "lurk"),
+            ("~lurk now", "~lurk", "lurk"),
+            ("lurk now", "lurk", "lurk"),
+            ("!!lurk now", "!!lurk", "lurk"),
+        ] {
+            assert_command(
+                &MatchedCommand::read(message, &phrase_config(phrase, INSENSITIVE)),
+                (name, "now", &["now"]),
+                message,
+            );
+        }
+    }
+
+    #[test]
+    fn trailing_space_in_the_phrase_is_ignored_when_the_tail_is_cut() {
+        for phrase in ["!shout out ", "!shout out\t  "] {
+            assert_command(
+                &MatchedCommand::read("!shout out alice", &phrase_config(phrase, INSENSITIVE)),
+                ("shout", "alice", &["alice"]),
+                phrase,
+            );
+        }
+    }
+
+    #[test]
+    fn a_line_the_phrase_does_not_cover_splits_at_its_first_word() {
+        let missing = trigger_config(None, INSENSITIVE);
+        let blank = phrase_config("   ", INSENSITIVE);
+        let not_text = trigger_config(Some(Variant::Int(1)), INSENSITIVE);
+        let other_case = phrase_config("!shout out", SENSITIVE);
+        let longer_word = phrase_config("!shout", INSENSITIVE);
+        for (message, config, expected) in [
+            (
+                "!SHOUT OUT alice",
+                &missing,
+                ("SHOUT", "OUT alice", &["OUT", "alice"][..]),
+            ),
+            (
+                "!shout out alice",
+                &blank,
+                ("shout", "out alice", &["out", "alice"][..]),
+            ),
+            (
+                "!shout out alice",
+                &not_text,
+                ("shout", "out alice", &["out", "alice"][..]),
+            ),
+            (
+                "!SHOUT OUT alice",
+                &other_case,
+                ("SHOUT", "OUT alice", &["OUT", "alice"][..]),
+            ),
+            (
+                "!shoutout alice",
+                &longer_word,
+                ("shoutout", "alice", &["alice"][..]),
+            ),
+            ("  !go now  ", &missing, ("go", "now", &["now"][..])),
+            ("!", &missing, ("!", "", &[][..])),
+            ("!!! now", &missing, ("!!!", "now", &["now"][..])),
+            ("", &missing, ("", "", &[][..])),
+            ("   ", &missing, ("", "", &[][..])),
+        ] {
+            assert_command(&MatchedCommand::read(message, config), expected, message);
         }
     }
 }

@@ -45,7 +45,7 @@ fn chatter_identity(event: &Event) -> ActorIdentity {
     }
 }
 
-fn chat_message_text(event: &Event) -> String {
+pub(super) fn chat_message_text(event: &Event) -> String {
     text_field(event, fields::MESSAGE)
 }
 

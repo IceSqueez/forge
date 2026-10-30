@@ -1,8 +1,3 @@
-pub(crate) mod chat {
-    pub(crate) const COMMAND_NAME: &str = "command_name";
-    pub(crate) const COMMAND_ARGS: &str = "args";
-}
-
 pub(crate) mod sender {
     pub(crate) const DISPLAY_NAME: &str = "user_display_name";
     pub(crate) const CHANNEL_ID: &str = "channel_id";

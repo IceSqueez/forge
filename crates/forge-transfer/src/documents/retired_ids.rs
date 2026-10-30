@@ -7,6 +7,7 @@ use forge_storage::settings::core_settings::{
 };
 
 use crate::documents::closure::ClosureRegistries;
+use crate::documents::command_arguments::upgrade_command_arguments;
 use crate::documents::model::PackDocuments;
 
 pub(crate) fn upgrade_pack_documents(
@@ -24,6 +25,7 @@ pub(crate) fn upgrade_pack_documents(
             rename_step_kinds(&mut step.kind_id, &mut step.config, &current_of);
         }
     }
+    upgrade_command_arguments(documents);
 }
 
 pub(crate) fn upgrade_favorite_settings(

@@ -186,6 +186,37 @@ fn a_legacy_name_a_step_consumes_is_never_reported_as_unknown() {
     );
 }
 
+fn command_line_only() -> TriggerVariables {
+    TriggerVariables::new().command_line(|_| String::new())
+}
+
+#[test]
+fn a_path_below_a_declared_array_is_known_and_any_other_dotted_name_is_unknown() {
+    for (reference, findings) in [
+        ("%command.args.0%", vec![]),
+        ("%command.args%", vec![]),
+        ("%command.tail%", vec![]),
+        (
+            "%command.other.0%",
+            vec![Finding::UnknownVariable("command.other.0".to_owned())],
+        ),
+        (
+            "%command%",
+            vec![Finding::UnknownVariable("command".to_owned())],
+        ),
+    ] {
+        let health = analyze(
+            &action_consuming(&[reference]),
+            &[trigger_of(CANONICAL_TRIGGER)],
+            &[None],
+            &flow_registry(),
+            &triggers(&[(CANONICAL_TRIGGER, command_line_only)]),
+        );
+
+        assert_eq!(health, vec![StepHealth { findings }], "{reference}");
+    }
+}
+
 #[test]
 fn a_legacy_name_only_one_of_two_triggers_declares_is_reported_as_some_triggers_only() {
     let health = analyze(

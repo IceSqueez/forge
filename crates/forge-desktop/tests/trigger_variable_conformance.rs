@@ -4,7 +4,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use forge_events::{Event, EventSource};
 use forge_registry::{ActorDeclaration, KindPlatformContract, TriggerRegistry};
 use forge_registry::{ActorRole, ActorSlot, CanonicalVariable, SlotPresence};
-use forge_types::VariantKind;
+use forge_types::{TriggerConfig, Variant, VariantKind};
 
 const VOCABULARY_HAS_NOT_REACHED: &[&str] = &[];
 
@@ -52,6 +52,89 @@ fn canonical_by_name() -> BTreeMap<&'static str, CanonicalVariable> {
         .chain(std::iter::once(CanonicalVariable::SubTier))
         .map(|canonical| (canonical.name(), canonical))
         .collect()
+}
+
+const COMMAND_VARIABLES: [&str; 3] = ["command_name", "command.args", "command.tail"];
+
+fn command_triggers() -> [(&'static str, Event); 3] {
+    [
+        (
+            "twitch.chat.command",
+            command_line_event(EventSource::Twitch, "message"),
+        ),
+        (
+            "kick.chat.command",
+            command_line_event(EventSource::Kick, "content"),
+        ),
+        (
+            "youtube.chat.command",
+            command_line_event(EventSource::YouTube, "message_text"),
+        ),
+    ]
+}
+
+fn command_line_event(source: EventSource, text_field: &str) -> Event {
+    Event::new(
+        source,
+        "chat",
+        serde_json::json!({ text_field: "!SHOUT OUT  alice   bob " }),
+    )
+}
+
+fn shout_out_config() -> TriggerConfig {
+    TriggerConfig::from([
+        (
+            "phrase".to_owned(),
+            Variant::String("!shout out".to_owned()),
+        ),
+        ("case_sensitive".to_owned(), Variant::Bool(false)),
+    ])
+}
+
+#[test]
+fn every_chat_command_trigger_publishes_the_same_command_from_the_same_line() {
+    let registry = every_registered_trigger();
+    let expected = [
+        Variant::String("shout".to_owned()),
+        Variant::Array(vec![
+            Variant::String("alice".to_owned()),
+            Variant::String("bob".to_owned()),
+        ]),
+        Variant::String("alice   bob".to_owned()),
+    ];
+
+    for (trigger_id, event) in command_triggers() {
+        let stack = registry.arg_stack(trigger_id, &event, &shout_out_config());
+
+        for (name, value) in COMMAND_VARIABLES.into_iter().zip(&expected) {
+            assert_eq!(stack.get(name), Some(value), "{trigger_id} {name}");
+        }
+    }
+}
+
+#[test]
+fn every_chat_command_trigger_declares_the_command_variables_with_the_same_kinds() {
+    let registry = every_registered_trigger();
+
+    for (trigger_id, _) in command_triggers() {
+        let schema = registry.get(trigger_id).unwrap().output_schema().unwrap();
+        let kinds: Vec<(&str, VariantKind)> = schema
+            .variables
+            .iter()
+            .filter(|variable| COMMAND_VARIABLES.contains(&variable.name.as_str()))
+            .map(|variable| (variable.name.as_str(), variable.kind))
+            .collect();
+
+        assert_eq!(
+            kinds,
+            [
+                ("command_name", VariantKind::String),
+                ("command.args", VariantKind::Array),
+                ("command.tail", VariantKind::String),
+            ],
+            "{trigger_id}"
+        );
+    }
 }
 
 #[test]

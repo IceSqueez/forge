@@ -1,0 +1,65 @@
+{
+  "name": "a multi-word Kick command publishes its arguments after the whole phrase",
+  "purpose": "The trigger phrase is two words and the viewer types it in another case with extra spacing. The action's reply must show that forge cut the configured phrase off as a unit: command_name is the bare first word of the phrase, command.args holds only the words after the phrase and is reachable by position, and command.tail keeps their inner spacing.",
+  "fixture": {
+    "kick": {},
+    "event_triggers": [
+      {
+        "trigger_kind": "kick.chat.command",
+        "action_name": "Kick Shout Out",
+        "config": {
+          "phrase": { "type": "string", "value": "!shout out" },
+          "case_sensitive": { "type": "bool", "value": false }
+        },
+        "steps": [
+          {
+            "kind_id": "kick.chat.send_message",
+            "config": {
+              "message": { "type": "string", "value": "%command_name%|%command.args.0%|%command.args.1%|%command.tail%" },
+              "as_bot": { "type": "bool", "value": false }
+            },
+            "enabled": true
+          }
+        ]
+      }
+    ]
+  },
+  "fakes": {
+    "kick": {}
+  },
+  "steps": [
+    { "do": { "forge_ready": { "within_ms": 60000 } } },
+    { "do": { "kick_chat_joined": { "within_ms": 30000 } } },
+    {
+      "do": {
+        "kick_chat": {
+          "sender": { "user_id": 200000042, "username": "alice_kick" },
+          "text": "!SHOUT OUT  alice   bob"
+        }
+      },
+      "expect": [
+        {
+          "kick_request": {
+            "method": "POST",
+            "path": "/public/v1/chat",
+            "body": {
+              "/content": { "equals": "shout|alice|bob|alice   bob" }
+            },
+            "status": 200,
+            "within_ms": 5000
+          }
+        },
+        {
+          "event": {
+            "source": "core",
+            "kind": "action.done",
+            "payload": { "/outcome": { "equals": "success" } },
+            "within_ms": 5000
+          }
+        },
+        { "kick_request_count": { "method": "POST", "path": "/public/v1/chat", "min": 1, "max": 1 } },
+        { "kick_no_unexpected_requests": {} }
+      ]
+    }
+  ]
+}

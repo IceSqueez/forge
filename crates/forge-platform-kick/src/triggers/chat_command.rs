@@ -4,9 +4,7 @@ use forge_registry::{
     FormField, KindPlatformContract, TriggerCategory, TriggerKindDescriptor, TriggerVariables,
     command_phrase_matches,
 };
-use forge_types::{
-    DeclaredVariable, PlatformId, SynthesisHint, TriggerConfig, UserText, Variant, VariantKind,
-};
+use forge_types::{DeclaredVariable, PlatformId, TriggerConfig, UserText, Variant, VariantKind};
 
 use super::chat::{sender_color, sender_identity};
 use super::payload_read::{self, kick_actor};
@@ -133,24 +131,7 @@ impl TriggerKindDescriptor for ChatCommandDescriptor {
                     },
                     |event| Variant::String(payload_read::text(event, fields::REPLY_TO_MESSAGE_ID)),
                 )
-                .event_specific(
-                    DeclaredVariable {
-                        name: variables::chat::COMMAND_NAME.to_owned(),
-                        kind: VariantKind::String,
-                        label: "Command name".to_owned(),
-                        synthesis: None,
-                    },
-                    |event| Variant::String(command_name(event)),
-                )
-                .event_specific(
-                    DeclaredVariable {
-                        name: variables::chat::COMMAND_ARGS.to_owned(),
-                        kind: VariantKind::String,
-                        label: "Command arguments".to_owned(),
-                        synthesis: Some(SynthesisHint::Message),
-                    },
-                    |event| Variant::String(command_args(event)),
-                )
+                .command_line(|event| payload_read::text(event, fields::CONTENT))
                 .legacy(
                     variables::legacy::SENDER_ID,
                     "Sender user ID",
@@ -183,26 +164,11 @@ impl TriggerKindDescriptor for ChatCommandDescriptor {
     }
 }
 
-fn command_name(event: &Event) -> String {
-    payload_read::text(event, fields::CONTENT)
-        .split_whitespace()
-        .next()
-        .unwrap_or_default()
-        .to_owned()
-}
-
-fn command_args(event: &Event) -> String {
-    let content = payload_read::text(event, fields::CONTENT);
-    content
-        .trim_start_matches(command_name(event).as_str())
-        .trim_start()
-        .to_owned()
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
 
+    use forge_types::SynthesisHint;
     use serde_json::json;
 
     use crate::triggers::chat::ChatDescriptor;
@@ -266,13 +232,13 @@ mod tests {
     }
 
     #[test]
-    fn the_command_name_and_the_args_split_at_the_first_whitespace() {
-        for (content, name, args) in [
-            ("!so @someone hello", "!so", "@someone hello"),
-            ("!ping", "!ping", ""),
-            ("!ping   ", "!ping", ""),
-            ("!ping\tone\ttwo", "!ping", "one\ttwo"),
-            ("!привіт світ", "!привіт", "світ"),
+    fn the_command_name_and_the_tail_split_at_the_first_whitespace() {
+        for (content, name, tail) in [
+            ("!so @someone hello", "so", "@someone hello"),
+            ("!ping", "ping", ""),
+            ("!ping   ", "ping", ""),
+            ("!ping\tone\ttwo", "ping", "one\ttwo"),
+            ("!привіт світ", "привіт", "світ"),
             ("", "", ""),
         ] {
             let stack = ChatCommandDescriptor.build_arg_stack(&command_event(content));
@@ -282,8 +248,8 @@ mod tests {
                 "content {content:?}"
             );
             assert_eq!(
-                stack.get("args"),
-                Some(&Variant::String(args.to_owned())),
+                stack.get("command.tail"),
+                Some(&Variant::String(tail.to_owned())),
                 "content {content:?}"
             );
         }

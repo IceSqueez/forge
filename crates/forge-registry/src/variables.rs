@@ -1,8 +1,13 @@
 use std::sync::Arc;
 
 use forge_events::Event;
-use forge_types::{ArgStack, DeclaredVariable, MoneyAmount, PlatformId, VariableSchema, Variant};
+use forge_types::{
+    ArgStack, DeclaredVariable, MoneyAmount, PlatformId, TriggerConfig, VariableSchema, Variant,
+};
 
+use crate::command_phrase::{
+    MatchedCommand, command_args_declaration, command_name_declaration, command_tail_declaration,
+};
 use crate::descriptor::TriggerKindDescriptor;
 use crate::first_chatter::{first_message_declaration, is_first_chat_message};
 use crate::message_emotes::{chat_emote_codes, message_emotes_declaration};
@@ -119,7 +124,7 @@ fn event_specific_listing(schema: VariableSchema) -> Vec<TriggerVariable> {
         .collect()
 }
 
-type ValueReader = Arc<dyn Fn(&Event) -> Option<Variant> + Send + Sync>;
+type ValueReader = Arc<dyn Fn(&Event, &TriggerConfig) -> Option<Variant> + Send + Sync>;
 
 struct VariableEntry {
     declared: DeclaredVariable,
@@ -158,7 +163,7 @@ impl TriggerVariables {
             self.entries.push(VariableEntry {
                 declared: canonical_declaration(canonical),
                 standing: VariableStanding::Canonical(canonical),
-                read: Arc::new(move |event| Some(actor_value(slot, platform, &identity(event)))),
+                read: Arc::new(move |event, _| Some(actor_value(slot, platform, &identity(event)))),
             });
         }
         self
@@ -178,7 +183,7 @@ impl TriggerVariables {
             self.entries.push(VariableEntry {
                 declared: canonical_declaration(canonical),
                 standing: VariableStanding::Canonical(canonical),
-                read: Arc::new(move |event| {
+                read: Arc::new(move |event, _| {
                     let actor = actor(event);
                     Some(match slot {
                         ActorSlot::Platform => Variant::String(actor.source),
@@ -246,6 +251,42 @@ impl TriggerVariables {
         })
     }
 
+    pub fn command_line<F>(self, read_message: F) -> Self
+    where
+        F: Fn(&Event) -> String + Send + Sync + 'static,
+    {
+        let read_message = Arc::new(read_message);
+        self.matched_command(command_name_declaration(), &read_message, |line| {
+            line.name()
+        })
+        .matched_command(command_args_declaration(), &read_message, |line| {
+            line.args()
+        })
+        .matched_command(command_tail_declaration(), &read_message, |line| {
+            line.tail()
+        })
+    }
+
+    fn matched_command<F>(
+        mut self,
+        declared: DeclaredVariable,
+        read_message: &Arc<F>,
+        value: fn(&MatchedCommand<'_>) -> Variant,
+    ) -> Self
+    where
+        F: Fn(&Event) -> String + Send + Sync + 'static,
+    {
+        let read_message = Arc::clone(read_message);
+        self.entries.push(VariableEntry {
+            declared,
+            standing: VariableStanding::EventSpecific,
+            read: Arc::new(move |event, config| {
+                Some(value(&MatchedCommand::read(&read_message(event), config)))
+            }),
+        });
+        self
+    }
+
     pub fn count<F>(self, count: CanonicalCount, read: F) -> Self
     where
         F: Fn(&Event) -> i64 + Send + Sync + 'static,
@@ -278,7 +319,7 @@ impl TriggerVariables {
         self.entries.push(VariableEntry {
             declared,
             standing: VariableStanding::EventSpecific,
-            read: Arc::new(read),
+            read: Arc::new(move |event, _| read(event)),
         });
         self
     }
@@ -323,14 +364,18 @@ impl TriggerVariables {
     }
 
     pub fn arg_stack(&self, event: &Event) -> ArgStack {
+        self.arg_stack_of_match(event, &TriggerConfig::new())
+    }
+
+    pub fn arg_stack_of_match(&self, event: &Event, matched: &TriggerConfig) -> ArgStack {
         let read_directly = self
             .entries
             .iter()
-            .map(|entry| (&entry.declared.name, (entry.read)(event)));
+            .map(|entry| (&entry.declared.name, (entry.read)(event, matched)));
         let legacy = self.legacy.iter().map(|entry| {
             (
                 &entry.declared.name,
-                self.canonical_value(entry.superseded_by, event),
+                self.canonical_value(entry.superseded_by, event, matched),
             )
         });
         read_directly
@@ -341,11 +386,16 @@ impl TriggerVariables {
             })
     }
 
-    fn canonical_value(&self, canonical: CanonicalVariable, event: &Event) -> Option<Variant> {
+    fn canonical_value(
+        &self,
+        canonical: CanonicalVariable,
+        event: &Event,
+        matched: &TriggerConfig,
+    ) -> Option<Variant> {
         self.entries
             .iter()
             .find(|entry| entry.standing == VariableStanding::Canonical(canonical))
-            .and_then(|entry| (entry.read)(event))
+            .and_then(|entry| (entry.read)(event, matched))
     }
 
     fn canonical<F>(mut self, canonical: CanonicalVariable, read: F) -> Self
@@ -355,7 +405,7 @@ impl TriggerVariables {
         self.entries.push(VariableEntry {
             declared: canonical_declaration(canonical),
             standing: VariableStanding::Canonical(canonical),
-            read: Arc::new(move |event| Some(read(event))),
+            read: Arc::new(move |event, _| Some(read(event))),
         });
         self
     }

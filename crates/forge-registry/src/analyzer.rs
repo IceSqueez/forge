@@ -310,7 +310,8 @@ fn analyze_step(
         }
     }
 
-    for var in consumed.names {
+    for reference in consumed.names {
+        let var = reference_root(reference, resolvable);
         if scope.contains(&var) {
             if ctx.some_only.contains(&var) && !produced_before.contains(&var) {
                 findings.push(Finding::SomeTriggersOnly(var));
@@ -339,6 +340,17 @@ fn analyze_step(
     }
 
     (findings, produced_by_step)
+}
+
+fn reference_root(reference: String, known: impl Fn(&str) -> bool) -> String {
+    if known(&reference) {
+        return reference;
+    }
+    reference
+        .match_indices('.')
+        .map(|(dot, _)| &reference[..dot])
+        .find(|root| known(root))
+        .map_or_else(|| reference.clone(), str::to_owned)
 }
 
 fn walk_chain_seq<'s>(

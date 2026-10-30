@@ -283,7 +283,8 @@ fn the_registry_builds_the_same_arg_stack_as_the_descriptor() {
     for kind in [WIDE, HAND_STACKED] {
         let descriptor = reg.get(kind).expect("registered");
         assert_eq!(
-            reg.arg_stack(kind, &event).snapshot(),
+            reg.arg_stack(kind, &event, &TriggerConfig::new())
+                .snapshot(),
             descriptor.build_arg_stack(&event).snapshot(),
             "{kind}"
         );
@@ -294,7 +295,7 @@ fn the_registry_builds_the_same_arg_stack_as_the_descriptor() {
 fn the_registry_arg_stack_of_an_unknown_kind_is_empty() {
     assert!(
         registry()
-            .arg_stack(MISSING, &event())
+            .arg_stack(MISSING, &event(), &TriggerConfig::new())
             .snapshot()
             .is_empty()
     );

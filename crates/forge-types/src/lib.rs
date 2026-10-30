@@ -36,9 +36,10 @@ pub use date_pattern::{
 pub use datetime_text::{datetime_from_text, datetime_to_text};
 pub use donation::{Donation, DonationOrigin, Donor, DonorVisibility};
 pub use execution::{
-    ArgStack, ExecutionContext, ExecutionMetadata, ExecutionOutcome, SubActionOutcome,
-    SubActionTelemetry, integration_disabled_message, normalize_var_name, strip_var_decoration,
-    variant_preview, whispers_unsupported_message,
+    ArgStack, COMMAND_ARGS_VARIABLE, COMMAND_NAME_VARIABLE, COMMAND_TAIL_VARIABLE,
+    ExecutionContext, ExecutionMetadata, ExecutionOutcome, SubActionOutcome, SubActionTelemetry,
+    integration_disabled_message, normalize_var_name, strip_var_decoration, variant_preview,
+    whispers_unsupported_message,
 };
 pub use ids::{ActionId, ClipId, DEFAULT_QUEUE_ID, EventId, QueueId, ScriptId, TriggerInstanceId};
 pub use integration::{IntegrationAvailability, IntegrationId};

@@ -271,6 +271,32 @@ async fn a_staged_pack_upgrade_renames_retired_trigger_and_step_kinds_at_every_d
 }
 
 #[tokio::test]
+async fn a_staged_pack_upgrade_moves_a_kick_command_action_to_the_command_variables() {
+    const KICK_COMMAND: &str = "kick.chat.command";
+    const TRIGGER_ID: &str = "01JZ8Y2P0Q6T3N4M5K7H9G1F2E";
+    let message = |text: &str| BTreeMap::from([("message".to_owned(), s(text))]);
+    let pack_reading = |text: &str| {
+        let mut documents = configuration(&CURRENT);
+        documents.triggers = vec![trigger(TRIGGER_ID, KICK_COMMAND)];
+        documents.actions.truncate(1);
+        documents.actions[0].trigger_ids = vec![TRIGGER_ID.parse().unwrap()];
+        documents.actions[0].steps = vec![step(UNRELATED_KIND, message(text))];
+        documents
+    };
+    let dir = TempDir::new().unwrap();
+    let path = pack_bundle(dir.path(), &pack_reading("%args% then %args.0%"));
+    let registries = Registries::declaring_renames();
+    let mut staged = stage_pack(path, dir.path().to_path_buf()).await.unwrap();
+
+    staged.upgrade_retired_ids(registries.closure());
+
+    assert_eq!(
+        staged.documents(),
+        &pack_reading("%command.tail% then %command.args.0%")
+    );
+}
+
+#[tokio::test]
 async fn a_staged_setup_upgrade_renames_its_configuration_and_both_favorite_lists_only() {
     let dir = TempDir::new().unwrap();
     let path = setup_bundle(dir.path(), &setup(&RETIRED));

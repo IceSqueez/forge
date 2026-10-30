@@ -164,6 +164,10 @@ pub enum ExecutionMetadata {
     },
 }
 
+pub const COMMAND_NAME_VARIABLE: &str = "command_name";
+pub const COMMAND_ARGS_VARIABLE: &str = "command.args";
+pub const COMMAND_TAIL_VARIABLE: &str = "command.tail";
+
 #[derive(Clone)]
 pub struct ArgStack(BTreeMap<String, Variant>);
 
@@ -189,16 +193,8 @@ impl ArgStack {
         if let Some(exact) = self.0.get(key) {
             return Some(exact);
         }
-        let (root, path) = key.split_once('.')?;
-        let mut current = self.0.get(root)?;
-        for segment in path.split('.') {
-            current = match current {
-                Variant::Object(fields) => fields.get(segment)?,
-                Variant::Array(items) => items.get(segment.parse::<usize>().ok()?)?,
-                _ => return None,
-            };
-        }
-        Some(current)
+        key.match_indices('.')
+            .find_map(|(dot, _)| walk_path(self.0.get(&key[..dot])?, &key[dot + 1..]))
     }
 
     pub fn interpolate(&self, template: &str) -> String {
@@ -214,6 +210,18 @@ impl ArgStack {
         }
         result
     }
+}
+
+fn walk_path<'v>(root: &'v Variant, path: &str) -> Option<&'v Variant> {
+    let mut current = root;
+    for segment in path.split('.') {
+        current = match current {
+            Variant::Object(fields) => fields.get(segment)?,
+            Variant::Array(items) => items.get(segment.parse::<usize>().ok()?)?,
+            _ => return None,
+        };
+    }
+    Some(current)
 }
 
 fn render_reference(value: &Variant, format: Option<&str>) -> String {
@@ -256,6 +264,85 @@ mod tests {
             s = s.set(k.to_string(), v.clone());
         }
         s
+    }
+
+    fn text(value: &str) -> Variant {
+        Variant::String(value.to_string())
+    }
+
+    fn object(fields: &[(&str, Variant)]) -> Variant {
+        Variant::Object(
+            fields
+                .iter()
+                .map(|(key, value)| ((*key).to_string(), value.clone()))
+                .collect(),
+        )
+    }
+
+    #[test]
+    fn a_dotted_flat_key_holding_an_array_answers_positional_references() {
+        let stack = stack_with(&[
+            (
+                "command.args",
+                Variant::Array(vec![text("alice"), text("bob")]),
+            ),
+            ("command.tail", text("alice bob")),
+        ]);
+
+        for (template, expected) in [
+            ("%command.args.0%", "alice"),
+            ("%command.args.1%", "bob"),
+            ("%command.tail%", "alice bob"),
+            ("%command.args.2%", "%command.args.2%"),
+            ("%command.args.-1%", "%command.args.-1%"),
+            ("%command.args.first%", "%command.args.first%"),
+            ("%command.tail.0%", "%command.tail.0%"),
+            ("%command.args.%", "%command.args.%"),
+        ] {
+            assert_eq!(
+                stack.interpolate(template),
+                expected,
+                "template {template:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_path_walks_nested_values_below_a_dotted_flat_key() {
+        let stack = stack_with(&[(
+            "command.args",
+            Variant::Array(vec![object(&[("name", text("alice"))])]),
+        )]);
+
+        assert_eq!(stack.resolve("command.args.0.name"), Some(&text("alice")));
+        assert_eq!(stack.resolve("command.args.0.age"), None);
+    }
+
+    #[test]
+    fn the_shortest_prefix_that_resolves_the_whole_path_answers_a_reference() {
+        let shorter = object(&[("b", object(&[("c", text("from a"))]))]);
+        let longer = object(&[("c", text("from a.b"))]);
+        let dead_end = object(&[("other", text("unused"))]);
+
+        for (label, stack, expected) in [
+            (
+                "both roots resolve",
+                stack_with(&[("a", shorter.clone()), ("a.b", longer.clone())]),
+                "from a",
+            ),
+            (
+                "the shorter root dead-ends",
+                stack_with(&[("a", dead_end), ("a.b", longer.clone())]),
+                "from a.b",
+            ),
+            (
+                "an exact flat key outranks every path",
+                stack_with(&[("a", shorter), ("a.b", longer), ("a.b.c", text("exact"))]),
+                "exact",
+            ),
+        ] {
+            assert_eq!(stack.resolve("a.b.c"), Some(&text(expected)), "{label}");
+        }
     }
 
     #[test]

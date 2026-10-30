@@ -4,7 +4,7 @@ use forge_registry::{
     EventFilter, FormField, KindPlatformContract, TriggerCategory, TriggerKindDescriptor,
     TriggerVariables, command_phrase_matches,
 };
-use forge_types::{DeclaredVariable, PlatformId, TriggerConfig, UserText, Variant, VariantKind};
+use forge_types::{PlatformId, TriggerConfig, UserText, Variant};
 
 use super::payload_read::{self, youtube_actor};
 use crate::vocabulary::fields::chat as fields;
@@ -116,24 +116,7 @@ impl TriggerKindDescriptor for ChatCommandDescriptor {
                 .message_text(|event| payload_read::text(event, fields::MESSAGE_TEXT))
                 .first_chat_message()
                 .chat_message_id(|event| payload_read::text(event, fields::MESSAGE_ID))
-                .event_specific(
-                    DeclaredVariable {
-                        name: variables::chat::COMMAND_NAME.to_owned(),
-                        kind: VariantKind::String,
-                        label: "Command name".to_owned(),
-                        synthesis: None,
-                    },
-                    |event| Variant::String(command_name(event)),
-                )
-                .event_specific(
-                    DeclaredVariable {
-                        name: variables::chat::COMMAND_ARGS.to_owned(),
-                        kind: VariantKind::Array,
-                        label: "Command arguments".to_owned(),
-                        synthesis: None,
-                    },
-                    |event| Variant::Array(command_args(event).map(Variant::String).collect()),
-                )
+                .command_line(|event| payload_read::text(event, fields::MESSAGE_TEXT))
                 .legacy(
                     variables::sender::DISPLAY_NAME,
                     "Sender display name",
@@ -154,26 +137,6 @@ impl TriggerKindDescriptor for ChatCommandDescriptor {
     fn chat_trigger_family(&self) -> Option<ChatTriggerFamily> {
         Some(ChatTriggerFamily::Command)
     }
-}
-
-fn command_words(event: &Event) -> impl Iterator<Item = String> + '_ {
-    let text = event
-        .payload
-        .get(fields::MESSAGE_TEXT)
-        .and_then(|v| v.as_str())
-        .unwrap_or("");
-    text.strip_prefix('!')
-        .unwrap_or(text)
-        .split_whitespace()
-        .map(ToOwned::to_owned)
-}
-
-fn command_name(event: &Event) -> String {
-    command_words(event).next().unwrap_or_default()
-}
-
-fn command_args(event: &Event) -> impl Iterator<Item = String> + '_ {
-    command_words(event).skip(1)
 }
 
 fn author_identity(event: &Event) -> ActorIdentity {
@@ -262,7 +225,7 @@ mod tests {
             ("!roll   1d6 \t adv  ", "roll", vec!["1d6", "adv"]),
             ("!Roll 1D6", "Roll", vec!["1D6"]),
             ("!roll", "roll", vec![]),
-            ("!", "", vec![]),
+            ("!", "!", vec![]),
             ("hello there", "hello", vec!["there"]),
         ] {
             let stack = ChatCommandDescriptor.build_arg_stack(&chat_line(message));
@@ -272,13 +235,13 @@ mod tests {
                 "command_name for {message:?}"
             );
             assert_eq!(
-                stack.get("args"),
+                stack.get("command.args"),
                 Some(&Variant::Array(
                     args.into_iter()
                         .map(|arg| Variant::String(arg.to_owned()))
                         .collect()
                 )),
-                "args for {message:?}"
+                "command.args for {message:?}"
             );
         }
     }

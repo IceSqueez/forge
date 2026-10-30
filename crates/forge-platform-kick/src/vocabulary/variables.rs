@@ -1,8 +1,6 @@
 pub(crate) mod chat {
     pub(crate) const COLOR: &str = "color";
     pub(crate) const REPLY_TO_ID: &str = "reply_to_id";
-    pub(crate) const COMMAND_NAME: &str = "command_name";
-    pub(crate) const COMMAND_ARGS: &str = "args";
 }
 
 pub(crate) mod gift {

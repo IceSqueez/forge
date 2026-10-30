@@ -8,8 +8,8 @@ use forge_registry::{
     ignores_bot_messages, kind_matches_prefix,
 };
 use forge_types::{
-    ArgStack, ChatPayload, EventId, PermissionRung, SynthesisHint, TriggerConfig, TriggerInstance,
-    TriggerInstanceId, Variant, authored_by_connected_bot,
+    ArgStack, COMMAND_TAIL_VARIABLE, ChatPayload, EventId, PermissionRung, SynthesisHint,
+    TriggerConfig, TriggerInstance, TriggerInstanceId, Variant, authored_by_connected_bot,
 };
 use serde::Deserialize;
 use serde_json::json;
@@ -259,7 +259,9 @@ impl TriggerEvaluator {
             return None;
         }
 
-        let args = self.registry.arg_stack(&instance.kind_id, event);
+        let args = self
+            .registry
+            .arg_stack(&instance.kind_id, event, &effective);
 
         if is_command {
             self.bus.publish(
@@ -378,11 +380,12 @@ fn log_command_match(
         return;
     }
 
-    let phrase = command_phrase(effective);
-    let line = matched_line(descriptor, args);
-
     if debug_wanted {
-        let tail = argument_tail(&line, &phrase);
+        let phrase = command_phrase(effective);
+        let tail = match args.get(COMMAND_TAIL_VARIABLE) {
+            Some(Variant::String(tail)) => tail.as_str(),
+            _ => "",
+        };
         let viewer = viewer_digest(event);
         debug!(
             target: DECISION_TARGET,
@@ -398,6 +401,7 @@ fn log_command_match(
     }
 
     if line_wanted {
+        let line = matched_line(descriptor, args);
         trace!(
             target: COMMAND_LINE_TARGET,
             event = %event.id,
@@ -419,14 +423,6 @@ fn matched_line(descriptor: &dyn TriggerKindDescriptor, args: &ArgStack) -> Stri
             _ => None,
         })
         .unwrap_or_default()
-}
-
-fn argument_tail<'a>(line: &'a str, phrase: &str) -> &'a str {
-    let offset = line
-        .char_indices()
-        .nth(phrase.chars().count())
-        .map_or(line.len(), |(index, _)| index);
-    line[offset..].trim_start()
 }
 
 fn viewer_digest(event: &Event) -> Option<String> {
@@ -902,6 +898,7 @@ mod tests {
         family: Option<ChatTriggerFamily>,
         matches: bool,
         schema: Option<VariableSchema>,
+        reads_the_command_line: bool,
     }
 
     impl CommandDescriptor {
@@ -912,6 +909,7 @@ mod tests {
                 schema: Some(VariableSchema {
                     variables: vec![message_variable("message_text")],
                 }),
+                reads_the_command_line: false,
             }
         }
     }
@@ -964,9 +962,25 @@ mod tests {
             ArgStack::new()
                 .set("message_text".to_owned(), Variant::String(line.to_owned()))
                 .set("user".to_owned(), Variant::String("alice".to_owned()))
+                .set(
+                    COMMAND_TAIL_VARIABLE.to_owned(),
+                    Variant::String(line.strip_prefix(PHRASE).unwrap_or(line).trim().to_owned()),
+                )
         }
         fn output_schema(&self) -> Option<VariableSchema> {
             self.schema.clone()
+        }
+        fn variables(&self) -> Option<forge_registry::TriggerVariables> {
+            self.reads_the_command_line.then(|| {
+                forge_registry::TriggerVariables::new().command_line(|event| {
+                    event
+                        .payload
+                        .get("line")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or_default()
+                        .to_owned()
+                })
+            })
         }
         fn chat_trigger_family(&self) -> Option<ChatTriggerFamily> {
             self.family
@@ -1040,6 +1054,34 @@ mod tests {
             resolved: ResolvedBindings::default(),
         };
         (fixture, evaluator)
+    }
+
+    #[tokio::test]
+    async fn the_published_command_comes_from_the_phrase_the_instance_overrides() {
+        let (_fixture, mut evaluator) = decide_harness(CommandDescriptor {
+            reads_the_command_line: true,
+            ..CommandDescriptor::command()
+        })
+        .await;
+        let mut instance = command_instance(PlatformScope::Any, PermissionRung::Everyone, 0);
+        instance.overrides.insert(
+            "phrase".to_owned(),
+            Variant::String("!shout out".to_owned()),
+        );
+        let event = command_event("!shout out alice", "alice", vec![]);
+
+        let args = evaluator
+            .decide(&instance, &event)
+            .expect("the stub admits the line");
+
+        assert_eq!(
+            args.get("command_name"),
+            Some(&Variant::String("shout".to_owned()))
+        );
+        assert_eq!(
+            args.get("command.tail"),
+            Some(&Variant::String("alice".to_owned()))
+        );
     }
 
     #[tokio::test]
@@ -1372,30 +1414,6 @@ mod tests {
             };
             assert_eq!(matched_line(&descriptor, &args), "", "{label}");
         }
-    }
-
-    #[test]
-    fn argument_tail_drops_a_phrase_length_prefix_then_the_leading_space() {
-        for (line, phrase, expected) in [
-            ("!go now", "!go", "now"),
-            ("!go   two  words", "!go", "two  words"),
-            ("!go", "!go", ""),
-            ("!go", "!go-longer-than-the-line", ""),
-            ("!go now", "", "!go now"),
-            ("", "!go", ""),
-        ] {
-            assert_eq!(
-                argument_tail(line, phrase),
-                expected,
-                "{line:?} / {phrase:?}"
-            );
-        }
-    }
-
-    #[test]
-    fn argument_tail_cuts_a_multibyte_phrase_on_a_character_boundary() {
-        assert_eq!(argument_tail("!привіт світ", "!привіт"), "світ");
-        assert_eq!(argument_tail("!привіт", "!привіт"), "");
     }
 
     #[test]

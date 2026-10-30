@@ -13,7 +13,8 @@ use forge_soundboard::{
     StopAllSoundsRunner, StopSoundRunner, register_soundboard_sub_actions,
 };
 use forge_types::{
-    ArgStack, ClipId, EventId, OutputDevice, SubActionConfig, SubActionOutcome, Variant,
+    ArgStack, ClipId, EventId, MessageCode, MessageRef, OutputDevice, SubActionConfig,
+    SubActionOutcome, UpstreamDetail, Variant,
 };
 
 const PLAY: &str = "soundboard.sound.play";
@@ -413,14 +414,18 @@ async fn every_sound_runner_fails_with_the_control_error_text() {
             volume_config(Variant::Int(-6)),
         ),
     ];
-    let expected = SoundboardError::Storage(CONTROL_FAILURE.to_owned()).to_string();
+    let expected = SubActionOutcome::Failed(
+        MessageRef::new(MessageCode::from_static("soundboard", "storage_failed"))
+            .with_detail(UpstreamDetail::from_redacted(CONTROL_FAILURE))
+            .into(),
+    );
 
     let stack = ArgStack::new();
     for (runner, cfg) in runners {
         let (telemetry, _) = runner.execute(&cfg, &make_ctx(&stack)).await;
 
         assert!(
-            matches!(&telemetry.outcome, SubActionOutcome::Failed(message) if message.code_or_text() == expected),
+            telemetry.outcome == expected,
             "{}: {:?}",
             runner.id(),
             telemetry.outcome

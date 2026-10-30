@@ -4,7 +4,7 @@ use async_trait::async_trait;
 use forge_registry::{
     ConfigSpec, RunContext, StepTimer, SubActionCategory, SubActionRunner, TypedField,
 };
-use forge_types::{ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetry};
+use forge_types::{ArgStack, SubActionConfig, SubActionTelemetry};
 
 use super::clip_field::ClipField;
 use crate::control::SoundboardControl;
@@ -67,6 +67,6 @@ impl SubActionRunner for StopSoundRunner {
             Ok(None) => self.control.stop_all().await,
             Err(problem) => return (timer.invalid_config(&problem), None),
         };
-        (timer.finish(SubActionOutcome::from_result(&stopped)), None)
+        (timer.finish(super::step_failure::outcome(&stopped)), None)
     }
 }

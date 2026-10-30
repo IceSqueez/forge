@@ -8,14 +8,15 @@ use forge_events::{
 };
 use forge_platform_core::{SenderPreference, unknown_sender_reason};
 use forge_types::{
-    EventId, IntegrationAvailability, IntegrationId, LatestScope, LatestValueReader, MessageArg,
-    MessageRef, NO_CHAT_PLATFORM_ENABLED, NO_WHISPER_PLATFORM_ENABLED, SCRIPT_LOG_TARGET, ScriptId,
+    EventId, IntegrationAvailability, IntegrationId, LatestScope, LatestValueReader, MessageRef,
+    NO_CHAT_PLATFORM_ENABLED, NO_WHISPER_PLATFORM_ENABLED, SCRIPT_LOG_TARGET, ScriptId,
     integration_disabled_message, resolve_chat_target, whispers_unsupported_message,
 };
 use rhai::{EvalAltResult, ImmutableString, Module, Position};
 use tokio::runtime::Handle;
 
 use crate::catalog::MethodDescriptor;
+use crate::coded_text::coded_text;
 use crate::convert::{dynamic_to_variant, variant_to_dynamic};
 use crate::globals_port::{GlobalDeletion, ScriptGlobals};
 use crate::http_client::{HttpError, HttpResponse, ScriptHttpClient};
@@ -25,9 +26,8 @@ use crate::schedule_api::build_schedule_module;
 
 const SENDER_DOC: &str =
     "sender is \"default\", \"streamer\" or \"bot\"; any other value is a script error.";
-const TARGET_DOC: &str =
-    "target is a platform name; an empty target sends to every enabled platform.";
-const SENDER_TARGET_DOC: &str = "sender is \"default\", \"streamer\" or \"bot\"; target is a platform name or empty for every enabled platform.";
+const TARGET_DOC: &str = "target is a platform name; an empty target sends to every enabled platform. A refused send fails with a stable error code followed by its arguments, such as \"common.whispers_unsupported (target=kick)\".";
+const SENDER_TARGET_DOC: &str = "sender is \"default\", \"streamer\" or \"bot\"; target is a platform name or empty for every enabled platform. A refused send fails with a stable error code followed by its arguments, such as \"common.whispers_unsupported (target=kick)\".";
 
 const SPEAK_UNAVAILABLE_REASON: &str = "text-to-speech is not available where this script runs";
 const HTTP_UNAVAILABLE_REASON: &str = "HTTP requests are not available where this script runs";
@@ -35,10 +35,10 @@ const LATEST_UNAVAILABLE_REASON: &str = "latest values are not available where t
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum ScriptSpeakError {
-    #[error("{0}")]
-    UnknownVoice(String),
-    #[error("the speak queue is unavailable: {0}")]
-    QueueUnavailable(String),
+    #[error("{}", coded_text(.0))]
+    UnknownVoice(MessageRef),
+    #[error("the speak queue is unavailable: {}", coded_text(.0))]
+    QueueUnavailable(MessageRef),
 }
 
 #[async_trait::async_trait]
@@ -506,30 +506,7 @@ fn build_tts_module(requester: Option<Arc<dyn SpeakRequester>>) -> ApiModule {
 }
 
 fn coded_error(message: &MessageRef) -> Box<EvalAltResult> {
-    let args: Vec<String> = message
-        .args()
-        .map(|(name, value)| format!("{name}={}", script_arg_text(value)))
-        .collect();
-    if args.is_empty() {
-        message.code().to_string().into()
-    } else {
-        format!("{} ({})", message.code(), args.join(", ")).into()
-    }
-}
-
-fn script_arg_text(value: &MessageArg) -> String {
-    match value {
-        MessageArg::Int(number) => number.to_string(),
-        MessageArg::Float(number) => number.get().to_string(),
-        MessageArg::Datetime(at) => at.to_string(),
-        MessageArg::Duration(span) => format!("{}s", span.as_secs()),
-        MessageArg::Verbatim(text) => text.as_str().to_owned(),
-        MessageArg::Integration(integration) => integration.to_string(),
-        MessageArg::Platform(platform) => platform.as_str().to_owned(),
-        MessageArg::ValueKind(kind) => kind.contract_name().to_owned(),
-        MessageArg::StepFields { keys, .. } => keys.join(", "),
-        MessageArg::Message(message) => message.code().to_string(),
-    }
+    coded_text(message).into()
 }
 
 fn admit_broadcast(
@@ -941,7 +918,8 @@ mod tests {
     use crate::globals_port::ScriptGlobals;
     use crate::test_support::{RepoGlobals, Sandboxed, repo_globals, sandboxed_backend};
     use forge_types::{
-        EventId, INTEGRATION_DISABLED, UNKNOWN_CHAT_TARGET, Variant, WHISPERS_UNSUPPORTED,
+        EventId, INTEGRATION_DISABLED, MessageCode, UNKNOWN_CHAT_TARGET, Variant, VerbatimText,
+        WHISPERS_UNSUPPORTED,
     };
     use std::sync::{Arc, Mutex};
     use std::time::Instant;
@@ -2061,18 +2039,25 @@ mod tests {
             (
                 r#"forge::tts::speak_as("piper/ghost", "hi")"#,
                 ScriptSpeakError::UnknownVoice(
-                    "voice \"ghost\" of engine \"piper\" is not installed".to_owned(),
+                    MessageRef::new(MessageCode::from_static("core", "voice_not_installed"))
+                        .with_arg("voice", VerbatimText::new("piper/ghost")),
                 ),
-                "tts::speak_as: voice \"ghost\" of engine \"piper\" is not installed",
+                "tts::speak_as: core.voice_not_installed (voice=piper/ghost)",
             ),
             (
                 r#"forge::tts::speak("hi")"#,
-                ScriptSpeakError::QueueUnavailable("the queue actor is gone".to_owned()),
-                "tts::speak: the speak queue is unavailable: the queue actor is gone",
+                ScriptSpeakError::QueueUnavailable(MessageRef::new(MessageCode::from_static(
+                    "speak",
+                    "queue_gone",
+                ))),
+                "tts::speak: the speak queue is unavailable: speak.queue_gone",
             ),
             (
                 r#"forge::tts::speak_as("piper/amy", "hi")"#,
-                ScriptSpeakError::QueueUnavailable("the queue actor is gone".to_owned()),
+                ScriptSpeakError::QueueUnavailable(MessageRef::new(MessageCode::from_static(
+                    "speak",
+                    "queue_gone",
+                ))),
                 "tts::speak_as: the speak queue is unavailable",
             ),
         ] {

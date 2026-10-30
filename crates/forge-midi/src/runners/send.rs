@@ -6,9 +6,10 @@ use forge_registry::{
     ChoiceField, ConfigProblem, ConfigReason, ConfigSpec, Interpolation, RunContext, StepTimer,
     SubActionCategory, SubActionRunner, TextEditor, TextField, TypedField, ValueBounds,
 };
-use forge_types::{ArgStack, MessageRef, SubActionOutcome, SubActionTelemetry, Variant};
+use forge_types::{ArgStack, MessageRef, SubActionTelemetry, Variant};
 
 use super::byte_field::ByteField;
+use super::step_failure;
 use crate::events::MidiOutMessage;
 use crate::sink::MidiSink;
 use crate::vocabulary::OutMessageKind;
@@ -200,7 +201,7 @@ impl SubActionRunner for MidiSendRunner {
             Ok(values) => values,
             Err(problem) => return (timer.invalid_config(&problem), None),
         };
-        let outcome = SubActionOutcome::from_result(&self.sink.send_output(&port, &message).await);
+        let outcome = step_failure::outcome(&self.sink.send_output(&port, &message).await);
         (timer.finish(outcome), None)
     }
 }
@@ -352,6 +353,30 @@ mod tests {
             backend.sent_outputs(),
             vec![("Out".to_owned(), vec![0xB1u8, 7, 100])]
         );
+    }
+
+    #[tokio::test]
+    async fn sending_to_an_unknown_port_fails_with_the_port_not_found_message() {
+        let (client, backend) = make_sink_with_output_port("Out");
+        let runner = MidiSendRunner::new(client as Arc<dyn MidiSink>);
+        let mut config = step("raw", &[("raw_bytes", bytes(&[0x90, 60, 100]))]);
+        config.insert("port".to_owned(), Variant::String("Ghost".to_owned()));
+
+        let stack = ArgStack::new();
+        let (telem, _) = runner.execute(&config, &make_run_context(&stack)).await;
+
+        assert_eq!(
+            telem.outcome,
+            SubActionOutcome::Failed(
+                forge_types::MessageRef::new(forge_types::MessageCode::from_static(
+                    "midi",
+                    "port_not_found"
+                ))
+                .with_arg("port", forge_types::VerbatimText::new("Ghost"))
+                .into()
+            )
+        );
+        assert!(backend.sent_outputs().is_empty());
     }
 
     #[tokio::test]

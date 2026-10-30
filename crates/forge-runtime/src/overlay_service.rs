@@ -33,7 +33,9 @@ use crate::overlay_shows::{
     QueueFull, SHOW_CEILING, SHOW_QUEUE_CAPACITY, Show, ShowDepthWatch, ShowEnd, ShowSequencer,
     ShowTicket,
 };
-use crate::speak_dispatcher::{ShowSpeech, SpeakDispatcher, SpeechOrigin, SpeechStartSignal};
+use crate::speak_dispatcher::{
+    ShowSpeech, SpeakDispatchError, SpeakDispatcher, SpeechOrigin, SpeechStartSignal,
+};
 
 pub const OVERLAY_TEST_FIRE_KIND: &str = "overlay.test_fire";
 
@@ -42,6 +44,8 @@ pub const OVERLAY_SPEECH_FAILED_KIND: &str = "overlay.speech.failed";
 pub const OVERLAY_NAME_KEY: &str = "overlayName";
 
 pub const SPEECH_FAILURE_ERROR_KEY: &str = "error";
+
+pub const SPEECH_FAILURE_MESSAGE_KEY: &str = "errorMessage";
 
 const SPEECH_FAILURE_VOICE_KEY: &str = "voice";
 
@@ -562,11 +566,13 @@ impl OverlayServiceHandle {
             reason = %error,
             "show speech skipped; the show is shown without it"
         );
+        let failure = SpeakDispatchError::from(error);
         let payload = json!({
             OVERLAY_ID_KEY: definition.id.as_str(),
             OVERLAY_NAME_KEY: definition.display_name,
             SPEECH_FAILURE_VOICE_KEY: voice,
-            SPEECH_FAILURE_ERROR_KEY: error.to_string(),
+            SPEECH_FAILURE_ERROR_KEY: failure.message().code().to_string(),
+            SPEECH_FAILURE_MESSAGE_KEY: failure.message(),
         });
         let event = match caused_by {
             Some(parent) => Event::caused_by(

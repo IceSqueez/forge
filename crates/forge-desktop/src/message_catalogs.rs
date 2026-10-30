@@ -22,6 +22,7 @@ pub const REGISTERED_CATALOGS: &[MessageCatalog] = &[
     forge_vtube::vocabulary::messages::VTUBE_MESSAGES,
     forge_midi::vocabulary::messages::MIDI_MESSAGES,
     forge_hotkey::vocabulary::messages::HOTKEY_MESSAGES,
+    forge_soundboard::vocabulary::messages::SOUNDBOARD_MESSAGES,
     forge_discord::vocabulary::messages::DISCORD_MESSAGES,
     forge_donatello::DONATELLO_MESSAGES,
     forge_monobank::MONOBANK_MESSAGES,

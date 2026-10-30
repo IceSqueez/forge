@@ -358,11 +358,13 @@ impl SpeakRequester for SpeakBridge {
     async fn speak(&self, text: String, voice: Option<String>) -> Result<(), ScriptSpeakError> {
         let (engine, voice) = self
             .installed_voice_overrides(voice.as_deref())
-            .map_err(|e| ScriptSpeakError::UnknownVoice(e.to_string()))?;
+            .map_err(|e| {
+                ScriptSpeakError::UnknownVoice(SpeakDispatchError::from(e).message().clone())
+            })?;
         self.enqueue(text, engine, voice, false, None, SpeechOrigin::default())
             .await
             .map(|_| ())
-            .map_err(|e| ScriptSpeakError::QueueUnavailable(e.to_string()))
+            .map_err(|e| ScriptSpeakError::QueueUnavailable(e.message().clone()))
     }
 
     async fn skip(&self) {
@@ -1323,7 +1325,8 @@ mod tests {
         assert!(
             matches!(
                 &script,
-                Err(ScriptSpeakError::UnknownVoice(reason)) if reason.contains("is not an engine voice")
+                Err(ScriptSpeakError::UnknownVoice(reason))
+                    if reason.code().name() == "voice_not_engine_voice"
             ),
             "a script with a bare voice id got {script:?}"
         );

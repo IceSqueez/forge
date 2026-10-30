@@ -12,9 +12,9 @@ use forge_runtime::sub_action_runners::OverlaySendRunner;
 use forge_runtime::{
     EngineVoiceError, EventBus, NullEventLogRepo, OVERLAY_NAME_KEY, OVERLAY_SPEECH_FAILED_KIND,
     OVERLAY_TARGET_KEY, OverlayDispatch, OverlayFrameSink, OverlayReceivers, OverlayServiceCell,
-    OverlayServiceHandle, SHOW_CEILING, SHOW_SPEECH_START_WAIT, SPEECH_FAILURE_ERROR_KEY, ShowEnd,
-    ShowSpeech, ShowTicket, SpeakDispatchError, SpeakDispatcher, SpeakingViewer, SpeechOrigin,
-    SpeechStartSignal,
+    OverlayServiceHandle, SHOW_CEILING, SHOW_SPEECH_START_WAIT, SPEECH_FAILURE_ERROR_KEY,
+    SPEECH_FAILURE_MESSAGE_KEY, ShowEnd, ShowSpeech, ShowTicket, SpeakDispatchError,
+    SpeakDispatcher, SpeakingViewer, SpeechOrigin, SpeechStartSignal,
 };
 use forge_storage::settings::MockSettingsRepo;
 use forge_storage::{
@@ -23,6 +23,7 @@ use forge_storage::{
 };
 use forge_types::{
     ArgStack, EventId, MessageCode, MessageRef, SubActionConfig, SubActionOutcome, Variant,
+    VerbatimText,
 };
 use time::OffsetDateTime;
 use tokio::time::Instant;
@@ -650,7 +651,12 @@ async fn a_show_whose_voice_is_not_installed_is_shown_silently_and_its_failure_i
                 && failures[0].source == forge_events::EventSource::Core
                 && failures[0].caused_by == Some(trigger)
                 && failures[0].payload[OVERLAY_NAME_KEY] == STAGE
-                && failures[0].payload[SPEECH_FAILURE_ERROR_KEY] == missing.to_string(),
+                && failures[0].payload[SPEECH_FAILURE_ERROR_KEY] == "core.voice_not_installed"
+                && failures[0].payload[SPEECH_FAILURE_MESSAGE_KEY]
+                    == serde_json::json!(
+                        MessageRef::new(MessageCode::from_static("core", "voice_not_installed"))
+                            .with_arg("voice", VerbatimText::new("piper/amy"))
+                    ),
             "a {kind} show reported its missing voice as {failures:?}"
         );
     }

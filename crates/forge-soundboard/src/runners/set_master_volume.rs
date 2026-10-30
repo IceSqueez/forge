@@ -5,7 +5,7 @@ use forge_registry::{
     ConfigSpec, IntegerEditor, IntegerField, RunContext, StepTimer, SubActionCategory,
     SubActionRunner, TypedField, ValueBounds,
 };
-use forge_types::{ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetry};
+use forge_types::{ArgStack, SubActionConfig, SubActionTelemetry};
 
 use super::volume_field::VolumeField;
 use crate::control::SoundboardControl;
@@ -87,7 +87,7 @@ impl SubActionRunner for SetMasterVolumeRunner {
             Ok(volume_db) => volume_db,
             Err(problem) => return (timer.invalid_config(&problem), None),
         };
-        let outcome = SubActionOutcome::from_result(
+        let outcome = super::step_failure::outcome(
             &self.control.set_master_volume(linear_gain(volume_db)).await,
         );
         (timer.finish(outcome), None)

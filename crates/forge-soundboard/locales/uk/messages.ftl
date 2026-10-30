@@ -1,0 +1,17 @@
+msg-soundboard-clip_not_found = Кліп { $clip } не існує.
+msg-soundboard-source_missing = Відсутній аудіофайл кліпу { $clip }.
+msg-soundboard-import_refused = Не вдалося імпортувати кліп.
+msg-soundboard-master_volume_not_saved = Загальну гучність змінено, але не вдалося зберегти.
+msg-soundboard-storage_failed = Саундборд не зміг прочитати чи записати свої дані.
+msg-soundboard-playback_task_failed = Завдання відтворення кліпу завершилося помилкою.
+msg-soundboard-no_output_device = Немає жодного пристрою виведення звуку.
+msg-soundboard-audio_host_failed = Звукова система повідомила про помилку.
+msg-soundboard-audio_device_lost = Пристрій виведення звуку зупинився під час відтворення.
+msg-soundboard-audio_conversion_failed = Не вдалося перетворити звук кліпу для пристрою виведення.
+msg-soundboard-audio_decode_failed = Не вдалося розкодувати звук кліпу.
+msg-soundboard-audio_io_failed = Не вдалося прочитати звук кліпу.
+msg-soundboard-no_audio_route = Для саундборду не налаштовано жодного звукового маршруту.
+msg-soundboard-audio_route_unknown = Звукового маршруту { $route } не існує.
+msg-soundboard-audio_routes_failed = Усі звукові маршрути для кліпу не спрацювали.
+msg-soundboard-audio_remote_failed = Віддалене місце призначення звуку не спрацювало.
+msg-soundboard-no_overlay_listener = Жодна відкрита сторінка не слухає аудіооверлей { $destination }.

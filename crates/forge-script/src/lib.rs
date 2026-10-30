@@ -3,6 +3,7 @@
 mod api;
 mod arg_binding;
 pub mod catalog;
+mod coded_text;
 mod condition;
 mod contract;
 mod convert;

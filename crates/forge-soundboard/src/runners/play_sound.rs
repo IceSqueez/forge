@@ -5,7 +5,7 @@ use forge_registry::{
     ConfigProblem, ConfigReason, ConfigSpec, RunContext, StepTimer, SubActionCategory,
     SubActionRunner, TypedField,
 };
-use forge_types::{ArgStack, ClipId, SubActionConfig, SubActionOutcome, SubActionTelemetry};
+use forge_types::{ArgStack, ClipId, SubActionConfig, SubActionTelemetry};
 
 use super::clip_field::ClipField;
 use crate::control::SoundboardControl;
@@ -72,7 +72,7 @@ impl SubActionRunner for PlaySoundRunner {
             Ok(clip_id) => clip_id,
             Err(problem) => return (timer.invalid_config(&problem), None),
         };
-        let outcome = SubActionOutcome::from_result(&self.control.play(clip_id, None).await);
+        let outcome = super::step_failure::outcome(&self.control.play(clip_id, None).await);
         (timer.finish(outcome), None)
     }
 }

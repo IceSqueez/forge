@@ -1,0 +1,17 @@
+msg-soundboard-clip_not_found = The clip { $clip } does not exist.
+msg-soundboard-source_missing = The audio file for the clip { $clip } is missing.
+msg-soundboard-import_refused = The clip could not be imported.
+msg-soundboard-master_volume_not_saved = The master volume changed but could not be saved.
+msg-soundboard-storage_failed = The soundboard could not read or write its data.
+msg-soundboard-playback_task_failed = The clip playback task failed.
+msg-soundboard-no_output_device = No audio output device is available.
+msg-soundboard-audio_host_failed = The audio system reported an error.
+msg-soundboard-audio_device_lost = The audio output device stopped during playback.
+msg-soundboard-audio_conversion_failed = The clip audio could not be converted for the output device.
+msg-soundboard-audio_decode_failed = The clip audio could not be decoded.
+msg-soundboard-audio_io_failed = The clip audio could not be read.
+msg-soundboard-no_audio_route = No audio route is set up for the soundboard.
+msg-soundboard-audio_route_unknown = The audio route { $route } does not exist.
+msg-soundboard-audio_routes_failed = Every audio route for the clip failed.
+msg-soundboard-audio_remote_failed = The remote audio destination failed.
+msg-soundboard-no_overlay_listener = No open page is listening on the audio overlay { $destination }.

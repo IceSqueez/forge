@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use forge_registry::{RunContext, StepTimer, SubActionCategory, SubActionRunner};
-use forge_types::{ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetry};
+use forge_types::{ArgStack, SubActionConfig, SubActionTelemetry};
 
 use crate::control::SoundboardControl;
 use crate::vocabulary::sub_action_ids;
@@ -51,7 +51,7 @@ impl SubActionRunner for StopAllSoundsRunner {
         ctx: &RunContext<'_>,
     ) -> (SubActionTelemetry, Option<ArgStack>) {
         let timer = StepTimer::start(ctx, KIND_ID);
-        let outcome = SubActionOutcome::from_result(&self.control.stop_all().await);
+        let outcome = super::step_failure::outcome(&self.control.stop_all().await);
         (timer.finish(outcome), None)
     }
 }

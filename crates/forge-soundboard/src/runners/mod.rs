@@ -1,6 +1,7 @@
 mod clip_field;
 mod play_sound;
 mod set_master_volume;
+mod step_failure;
 mod stop_all_sounds;
 mod stop_sound;
 mod volume_field;

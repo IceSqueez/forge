@@ -1,6 +1,6 @@
 use forge_platform_core::{
-    QuickActionChoiceOption, QuickActionChoiceSource, QuickActionField, QuickActionFieldKind,
-    QuickActionFieldValue,
+    OptionListId, QuickActionChoiceOption, QuickActionChoiceSource, QuickActionField,
+    QuickActionFieldKind, QuickActionFieldValue,
 };
 use forge_types::{MessageCode, UserText};
 
@@ -58,6 +58,20 @@ pub(crate) fn int_field(
         placeholder: None,
         hint: None,
         required: false,
+    }
+}
+
+pub(crate) fn live_item_field(key: &str, label: MessageCode, list: &str) -> QuickActionField {
+    QuickActionField {
+        key: key.to_owned(),
+        label: label.into(),
+        kind: QuickActionFieldKind::Choice(QuickActionChoiceSource::OptionList(OptionListId::new(
+            list,
+        ))),
+        default: None,
+        placeholder: None,
+        hint: None,
+        required: true,
     }
 }
 

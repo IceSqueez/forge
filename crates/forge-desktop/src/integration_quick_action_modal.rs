@@ -415,8 +415,12 @@ impl QuickActionModal {
                     option_preselect(&entries, previous.as_ref(), binding.default.as_ref());
                 let items: Vec<PickerItem> = entries.iter().map(option_item).collect();
                 if let Some(picker) = open_picker {
-                    let refreshed = items.clone();
-                    picker.update(cx, |picker, cx| picker.set_items(refreshed, cx));
+                    if items.is_empty() {
+                        self.open_choice = None;
+                    } else {
+                        let refreshed = items.clone();
+                        picker.update(cx, |picker, cx| picker.set_items(refreshed, cx));
+                    }
                 }
                 choice.state = ChoiceState::Ready(items);
             }
@@ -671,6 +675,16 @@ impl QuickActionModal {
         )
     }
 
+    fn awaits_parent_choice(&self, choice: &ChoiceControl) -> bool {
+        choice.option_list.as_ref().is_some_and(|binding| {
+            self.fields.iter().any(|field| {
+                binding.depends_on.contains(&field.key)
+                    && field.option_list().is_some()
+                    && field.selected_choice().is_none()
+            })
+        })
+    }
+
     fn render_choice(
         &self,
         index: usize,
@@ -703,6 +717,22 @@ impl QuickActionModal {
                 cx.listener(move |this, _: &ClickEvent, _, cx| this.retry_option_list(index, cx)),
                 density,
             ),
+            ChoiceState::Ready(items) if items.is_empty() => {
+                let note = if self.awaits_parent_choice(choice) {
+                    tr!("integration_qa_field_awaits_parent")
+                } else {
+                    tr!("integration_qa_field_empty")
+                };
+                field_frame(palette, density)
+                    .child(
+                        div()
+                            .font_family(body_family())
+                            .text_size(FONT_FIELD)
+                            .text_color(palette.text_muted)
+                            .child(note),
+                    )
+                    .into_any_element()
+            }
             ChoiceState::Ready(items) => {
                 let selected = selected_label(items, &choice.selected);
                 let popover = self
@@ -1151,6 +1181,14 @@ mod tests {
             self.modal.update(cx, |modal, cx| modal.can_run(cx))
         }
 
+        fn awaits_parent(&self, cx: &mut TestAppContext, index: usize) -> bool {
+            self.modal
+                .read_with(cx, |modal, _| match &modal.fields[index].control {
+                    FieldControl::Choice(choice) => modal.awaits_parent_choice(choice),
+                    _ => panic!("field {index} is not a choice"),
+                })
+        }
+
         fn pick(&self, cx: &mut TestAppContext, index: usize, value: &str) {
             let event = PickerEvent::Selected(SharedString::from(value.to_owned()));
             self.modal
@@ -1361,6 +1399,132 @@ mod tests {
                 Seen::Ready(vec!["Main".to_owned(), "BRB".to_owned()]),
                 false
             )
+        );
+    }
+
+    #[gpui::test]
+    fn an_empty_list_with_no_parent_reads_as_empty_and_blocks_run(cx: &mut TestAppContext) {
+        let fake =
+            FakeOptionSource::answering(vec![list("polls")], vec![("polls", Ok(Vec::new()))]);
+        let harness = Harness::open(cx, Some(fake), vec![option_field("poll", "polls", None)]);
+
+        assert_eq!(
+            (
+                harness.seen(cx, 0),
+                harness.awaits_parent(cx, 0),
+                harness.can_run(cx)
+            ),
+            (Seen::Ready(Vec::new()), false, false)
+        );
+    }
+
+    #[gpui::test]
+    fn a_dependent_list_awaits_its_unset_parent_and_blocks_run(cx: &mut TestAppContext) {
+        let fake = FakeOptionSource::answering(
+            vec![list("rewards"), list("redemptions").depending_on("reward")],
+            vec![("rewards", Ok(vec![entry("Hydrate"), entry("Stretch")]))],
+        );
+        let harness = Harness::open(
+            cx,
+            Some(fake),
+            vec![
+                option_field("reward", "rewards", None),
+                option_field("redemption", "redemptions", None),
+            ],
+        );
+
+        assert_eq!(
+            (
+                harness.seen(cx, 1),
+                harness.awaits_parent(cx, 1),
+                harness.can_run(cx)
+            ),
+            (Seen::Ready(Vec::new()), true, false)
+        );
+    }
+
+    #[gpui::test]
+    fn choosing_the_parent_turns_an_awaiting_list_into_an_empty_one_that_still_blocks_run(
+        cx: &mut TestAppContext,
+    ) {
+        let fake = FakeOptionSource::answering(
+            vec![list("rewards"), list("redemptions").depending_on("reward")],
+            vec![("rewards", Ok(vec![entry("Hydrate"), entry("Stretch")]))],
+        );
+        let harness = Harness::open(
+            cx,
+            Some(fake),
+            vec![
+                option_field("reward", "rewards", None),
+                option_field("redemption", "redemptions", None),
+            ],
+        );
+
+        harness.pick(cx, 0, "Hydrate");
+
+        assert_eq!(
+            (
+                harness.seen(cx, 1),
+                harness.awaits_parent(cx, 1),
+                harness.can_run(cx)
+            ),
+            (Seen::Ready(Vec::new()), false, false)
+        );
+    }
+
+    #[gpui::test]
+    fn only_a_choice_parent_can_hold_a_list_back_not_a_blank_text_field(cx: &mut TestAppContext) {
+        let fake = FakeOptionSource::answering(
+            vec![list("sources").depending_on("filter")],
+            vec![("sources", Ok(Vec::new()))],
+        );
+        let harness = Harness::open(
+            cx,
+            Some(fake),
+            vec![
+                text_field("filter"),
+                option_field("source", "sources", None),
+            ],
+        );
+
+        assert!(!harness.awaits_parent(cx, 1));
+    }
+
+    #[gpui::test]
+    fn a_list_that_empties_under_an_open_picker_closes_the_picker(cx: &mut TestAppContext) {
+        let fake = FakeOptionSource::answering(
+            vec![list("redemptions")],
+            vec![("redemptions", Ok(vec![entry("Nova"), entry("Mira")]))],
+        );
+        let harness = Harness::open(
+            cx,
+            Some(Arc::clone(&fake)),
+            vec![option_field("redemption", "redemptions", None)],
+        );
+        harness.modal.update(cx, |modal, cx| {
+            let palette = cx.palette();
+            let labels = PickerLabels {
+                placeholder: "".into(),
+                empty: "".into(),
+                loading: "".into(),
+            };
+            let picker = cx.new(|cx| Picker::new(labels, Vec::new(), palette, cx));
+            let sub = cx.subscribe(&picker, |_, _, _: &PickerEvent, _| {});
+            modal.open_choice = Some(OpenChoice {
+                index: 0,
+                picker,
+                _sub: sub,
+            });
+        });
+        fake.answer("redemptions", Ok(Vec::new()));
+
+        fake.signal.bump();
+        harness.settle(cx);
+
+        assert!(
+            harness
+                .modal
+                .read_with(cx, |modal, _| modal.open_choice.is_none())
         );
     }
 

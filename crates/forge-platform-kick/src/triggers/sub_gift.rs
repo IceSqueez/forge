@@ -4,9 +4,10 @@ use forge_registry::{
     EventFilter, FormField, KindPlatformContract, TriggerCategory, TriggerKindDescriptor,
     TriggerVariables,
 };
-use forge_types::{PlatformId, TriggerConfig};
+use forge_types::{DeclaredVariable, PlatformId, TriggerConfig, Variant, VariantKind};
 
 use super::payload_read::{self, kick_actor};
+use crate::vocabulary::fields::entity as entity_fields;
 use crate::vocabulary::fields::subscription_gift as fields;
 use crate::vocabulary::{event_kinds, trigger_ids, variables};
 
@@ -70,6 +71,15 @@ impl TriggerKindDescriptor for SubGiftDescriptor {
                     payload_read::number(event, fields::COUNT)
                 })
                 .sub_tier(|event| payload_read::text(event, fields::TIER))
+                .event_specific(
+                    DeclaredVariable {
+                        name: variables::gift::RECIPIENTS.to_owned(),
+                        kind: VariantKind::Array,
+                        label: "Gift recipient logins".to_owned(),
+                        synthesis: None,
+                    },
+                    recipient_logins,
+                )
                 .legacy(
                     variables::legacy::GIFTER_USERNAME,
                     "Gifter username",
@@ -97,20 +107,32 @@ fn gifter_identity(event: &Event) -> ActorIdentity {
     payload_read::identity(event.payload.get(fields::GIFTER))
 }
 
+fn giftees(event: &Event) -> &[serde_json::Value] {
+    event
+        .payload
+        .get(fields::GIFTEES)
+        .and_then(serde_json::Value::as_array)
+        .map_or(&[], Vec::as_slice)
+}
+
 fn first_giftee_identity(event: &Event) -> ActorIdentity {
-    payload_read::identity(
-        event
-            .payload
-            .get(fields::GIFTEES)
-            .and_then(serde_json::Value::as_array)
-            .and_then(|giftees| giftees.first()),
+    payload_read::identity(giftees(event).first())
+}
+
+fn recipient_logins(event: &Event) -> Variant {
+    Variant::Array(
+        giftees(event)
+            .iter()
+            .filter_map(|giftee| giftee.get(entity_fields::USERNAME))
+            .filter_map(serde_json::Value::as_str)
+            .map(|login| Variant::String(login.to_owned()))
+            .collect(),
     )
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use forge_types::Variant;
 
     use serde_json::json;
 
@@ -186,6 +208,61 @@ mod tests {
                 );
             }
         }
+    }
+
+    fn recipient_logins_of(giftees: serde_json::Value) -> Option<Variant> {
+        SubGiftDescriptor
+            .build_arg_stack(&gift_event(json!({ "giftees": giftees })))
+            .get("recipients")
+            .cloned()
+    }
+
+    fn logins(names: &[&str]) -> Option<Variant> {
+        Some(Variant::Array(
+            names
+                .iter()
+                .map(|name| Variant::String((*name).to_owned()))
+                .collect(),
+        ))
+    }
+
+    #[test]
+    fn every_giftee_of_a_batch_is_listed_in_wire_order_and_reachable_by_index() {
+        let stack = SubGiftDescriptor.build_arg_stack(&a_batch_of_three());
+
+        assert_eq!(
+            stack.get("recipients").cloned(),
+            logins(&["user_a", "user_b", "user_c"])
+        );
+        assert_eq!(stack.interpolate("%recipients.2%"), "user_c");
+    }
+
+    #[test]
+    fn a_batch_without_a_giftee_list_lists_no_recipients() {
+        for giftees in [json!([]), json!(null), json!({}), json!("user_a")] {
+            assert_eq!(
+                recipient_logins_of(giftees.clone()),
+                logins(&[]),
+                "{giftees}"
+            );
+        }
+    }
+
+    #[test]
+    fn hostile_giftee_entries_are_skipped_and_hostile_logins_stay_inert_text() {
+        assert_eq!(
+            recipient_logins_of(json!([
+                null,
+                42,
+                "bare_string",
+                [],
+                { "id": 1 },
+                { "username": null },
+                { "username": 7 },
+                { "username": "%gifter_login%<script>" }
+            ])),
+            logins(&["%gifter_login%<script>"])
+        );
     }
 
     #[test]

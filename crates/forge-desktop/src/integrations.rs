@@ -246,7 +246,7 @@ pub fn twitch_builtin_object(
         quick: bundle.clone(),
         control: Some(Arc::clone(&bundle) as Arc<dyn BuiltinControl>),
         collections: Some(Arc::clone(&bundle) as Arc<dyn BuiltinCollections>),
-        option_source: None,
+        option_source: Some(Arc::clone(&bundle) as Arc<dyn BuiltinOptionSource>),
         obs_client: None,
         vtube_client: None,
         follow: Some(Arc::clone(&bundle) as Arc<dyn FollowLookup>),

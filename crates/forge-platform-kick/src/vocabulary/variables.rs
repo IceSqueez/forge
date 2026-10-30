@@ -5,6 +5,10 @@ pub(crate) mod chat {
     pub(crate) const COMMAND_ARGS: &str = "args";
 }
 
+pub(crate) mod gift {
+    pub(crate) const RECIPIENTS: &str = "recipients";
+}
+
 pub(crate) mod legacy {
     pub(crate) const SENDER_ID: &str = "sender_id";
     pub(crate) const USERNAME: &str = "username";

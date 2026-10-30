@@ -1,6 +1,9 @@
 use crate::helix::{HelixMethod, HelixRequest};
 
 pub(crate) const CUSTOM_REWARDS_PATH: &str = "/helix/channel_points/custom_rewards";
+pub(crate) const CUSTOM_REWARD_REDEMPTIONS_PATH: &str =
+    "/helix/channel_points/custom_rewards/redemptions";
+const REDEMPTIONS_PAGE_SIZE: usize = 50;
 pub(crate) const MAX_CUSTOM_REWARDS: usize = 50;
 pub(crate) const MAX_TITLE_CHARS: usize = 45;
 pub(crate) const MAX_PROMPT_CHARS: usize = 200;
@@ -11,6 +14,10 @@ const HEX_COLOR_PREFIX: char = '#';
 const BROADCASTER_ID_PARAM: &str = "broadcaster_id";
 const REWARD_ID_PARAM: &str = "id";
 const ONLY_MANAGEABLE_PARAM: &str = "only_manageable_rewards";
+const REDEEMED_REWARD_ID_PARAM: &str = "reward_id";
+const STATUS_PARAM: &str = "status";
+const STATUS_UNFULFILLED: &str = "UNFULFILLED";
+const FIRST_PARAM: &str = "first";
 
 pub(crate) const TITLE_KEY: &str = "title";
 pub(crate) const COST_KEY: &str = "cost";
@@ -130,6 +137,17 @@ pub(crate) fn list_request(
     }
 }
 
+pub(crate) fn unfulfilled_redemptions_request(
+    broadcaster_id: impl Into<String>,
+    reward_id: impl Into<String>,
+) -> HelixRequest {
+    HelixRequest::new(HelixMethod::Get, CUSTOM_REWARD_REDEMPTIONS_PATH)
+        .query(BROADCASTER_ID_PARAM, broadcaster_id)
+        .query(REDEEMED_REWARD_ID_PARAM, reward_id)
+        .query(STATUS_PARAM, STATUS_UNFULFILLED)
+        .query(FIRST_PARAM, REDEMPTIONS_PAGE_SIZE.to_string())
+}
+
 pub(crate) fn create_request(broadcaster_id: impl Into<String>, body: RewardBody) -> HelixRequest {
     HelixRequest::new(HelixMethod::Post, CUSTOM_REWARDS_PATH)
         .query(BROADCASTER_ID_PARAM, broadcaster_id)
@@ -154,4 +172,34 @@ pub(crate) fn delete_request(
     HelixRequest::new(HelixMethod::Delete, CUSTOM_REWARDS_PATH)
         .query(BROADCASTER_ID_PARAM, broadcaster_id)
         .query(REWARD_ID_PARAM, reward_id)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn unfulfilled_redemptions_are_read_for_one_reward_a_full_page_at_a_time() {
+        let request = unfulfilled_redemptions_request("4242", "reward-7");
+
+        let mut query: Vec<(&str, &str)> = request
+            .query
+            .iter()
+            .map(|(key, value)| (key.as_str(), value.as_str()))
+            .collect();
+        query.sort_unstable();
+        assert_eq!(
+            (request.method, request.path, query),
+            (
+                HelixMethod::Get,
+                "/helix/channel_points/custom_rewards/redemptions",
+                vec![
+                    ("broadcaster_id", "4242"),
+                    ("first", "50"),
+                    ("reward_id", "reward-7"),
+                    ("status", "UNFULFILLED"),
+                ],
+            )
+        );
+    }
 }

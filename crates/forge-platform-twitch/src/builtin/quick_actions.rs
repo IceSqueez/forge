@@ -12,11 +12,16 @@ use crate::account::identity::BroadcasterTier;
 use crate::collection_keys::REWARDS_COLLECTION;
 use crate::lifecycle::{LifecycleSnapshot, ShieldPhase};
 use crate::quick_action_fields::{
-    choice_field, choice_field_hint, int_field, multiline_field, text_field, toggle_field,
+    choice_field, choice_field_hint, int_field, live_item_field, multiline_field, text_field,
+    toggle_field,
 };
 use crate::sub_actions::{
     AD_LENGTH, ANNOUNCEMENT_COLOR, AdLength, AnnouncementColor, EMOTE_ONLY, FOLLOWER_MODE_MIN_AGE,
     ModeToggle, POLL_DURATION, PREDICTION_WINDOW, PollEndStatus, SLOW_MODE_WAIT, TIMEOUT_DURATION,
+};
+use crate::vocabulary::option_lists::{
+    ACTIVE_POLL_LIST, LOCKABLE_PREDICTION_LIST, OPEN_PREDICTION_LIST, PREDICTION_OUTCOME_LIST,
+    QUEUED_REWARD_LIST, UNFULFILLED_REDEMPTION_LIST,
 };
 use crate::vocabulary::{self, config_keys, labels, sub_action_ids};
 
@@ -160,6 +165,36 @@ fn manage_collection_action(
             Vec::new(),
         )
     }
+}
+
+fn active_poll_field() -> QuickActionField {
+    live_item_field(config_keys::POLL_ID, labels::POLL, ACTIVE_POLL_LIST)
+}
+
+fn prediction_field(list: &str) -> QuickActionField {
+    live_item_field(config_keys::PREDICTION_ID, labels::PREDICTION, list)
+}
+
+fn winning_outcome_field() -> QuickActionField {
+    live_item_field(
+        config_keys::WINNING_OUTCOME_ID,
+        labels::WINNING_OUTCOME,
+        PREDICTION_OUTCOME_LIST,
+    )
+}
+
+fn redemption_fields() -> Vec<QuickActionField> {
+    vec![
+        QuickActionField {
+            hint: Some(labels::QUEUED_REWARD_HINT.into()),
+            ..live_item_field(config_keys::REWARD_ID, labels::REWARD, QUEUED_REWARD_LIST)
+        },
+        live_item_field(
+            config_keys::REDEMPTION_ID,
+            labels::REDEMPTION,
+            UNFULFILLED_REDEMPTION_LIST,
+        ),
+    ]
 }
 
 fn gated_on(action: QuickAction, liveness: QuickActionLiveness) -> QuickAction {
@@ -326,8 +361,8 @@ impl QuickActions for TwitchIntegrationBundle {
                     Group::Polls,
                     false,
                     sub_action_ids::POLL_END,
-                    config([(config_keys::POLL_ID, blank())]),
-                    Vec::new(),
+                    BTreeMap::new(),
+                    vec![active_poll_field()],
                 ),
                 live.poll_in_flight(),
             ),
@@ -341,11 +376,8 @@ impl QuickActions for TwitchIntegrationBundle {
                     Group::Polls,
                     true,
                     sub_action_ids::POLL_END,
-                    config([
-                        (config_keys::POLL_ID, blank()),
-                        (config_keys::STATUS, choice(PollEndStatus::Archived)),
-                    ]),
-                    Vec::new(),
+                    config([(config_keys::STATUS, choice(PollEndStatus::Archived))]),
+                    vec![active_poll_field()],
                 ),
                 live.poll_in_flight(),
             ),
@@ -392,8 +424,8 @@ impl QuickActions for TwitchIntegrationBundle {
                     Group::Predictions,
                     false,
                     sub_action_ids::PREDICTION_LOCK,
-                    config([(config_keys::PREDICTION_ID, blank())]),
-                    Vec::new(),
+                    BTreeMap::new(),
+                    vec![prediction_field(LOCKABLE_PREDICTION_LIST)],
                 ),
                 live.prediction_lockable(),
             ),
@@ -407,8 +439,11 @@ impl QuickActions for TwitchIntegrationBundle {
                     Group::Predictions,
                     false,
                     sub_action_ids::PREDICTION_RESOLVE,
-                    config([(config_keys::PREDICTION_ID, blank())]),
-                    Vec::new(),
+                    BTreeMap::new(),
+                    vec![
+                        prediction_field(OPEN_PREDICTION_LIST),
+                        winning_outcome_field(),
+                    ],
                 ),
                 live.prediction_settleable(),
             ),
@@ -422,8 +457,8 @@ impl QuickActions for TwitchIntegrationBundle {
                     Group::Predictions,
                     true,
                     sub_action_ids::PREDICTION_CANCEL,
-                    config([(config_keys::PREDICTION_ID, blank())]),
-                    Vec::new(),
+                    BTreeMap::new(),
+                    vec![prediction_field(OPEN_PREDICTION_LIST)],
                 ),
                 live.prediction_settleable(),
             ),
@@ -781,11 +816,8 @@ impl QuickActions for TwitchIntegrationBundle {
                 Group::ChannelPoints,
                 false,
                 sub_action_ids::CHANNEL_POINTS_FULFILL_REDEMPTION,
-                config([
-                    (config_keys::REDEMPTION_ID, blank()),
-                    (config_keys::REWARD_ID, blank()),
-                ]),
-                Vec::new(),
+                BTreeMap::new(),
+                redemption_fields(),
             ),
             quick_action(
                 labels::REJECT_REFUND,
@@ -796,11 +828,8 @@ impl QuickActions for TwitchIntegrationBundle {
                 Group::ChannelPoints,
                 true,
                 sub_action_ids::CHANNEL_POINTS_CANCEL_REDEMPTION,
-                config([
-                    (config_keys::REDEMPTION_ID, blank()),
-                    (config_keys::REWARD_ID, blank()),
-                ]),
-                Vec::new(),
+                BTreeMap::new(),
+                redemption_fields(),
             ),
         ]
     }
@@ -808,6 +837,10 @@ impl QuickActions for TwitchIntegrationBundle {
 
 #[cfg(test)]
 mod tests {
+    use forge_platform_core::{
+        BuiltinOptionSource, OptionListId, QuickActionChoiceSource, QuickActionFieldKind,
+    };
+
     use super::*;
     use crate::builtin::tests::make_bundle_with_tier;
     use crate::chat::ChatConnectionState;
@@ -891,6 +924,112 @@ mod tests {
                 a.label.code_or_text()
             );
         }
+    }
+
+    fn option_list_of(field: &QuickActionField) -> Option<&OptionListId> {
+        match &field.kind {
+            QuickActionFieldKind::Choice(QuickActionChoiceSource::OptionList(list)) => Some(list),
+            _ => None,
+        }
+    }
+
+    #[test]
+    fn every_action_on_a_live_item_picks_it_from_a_list_the_source_declares() {
+        let bundle =
+            make_bundle_with_tier(ChatConnectionState::Connected, BroadcasterTier::Affiliate);
+        let declared: Vec<OptionListId> = bundle
+            .option_lists()
+            .into_iter()
+            .map(|list| list.id)
+            .collect();
+        let redemption_pick = [
+            (config_keys::REWARD_ID, QUEUED_REWARD_LIST),
+            (config_keys::REDEMPTION_ID, UNFULFILLED_REDEMPTION_LIST),
+        ];
+        let settle_pick = [
+            (config_keys::PREDICTION_ID, OPEN_PREDICTION_LIST),
+            (config_keys::WINNING_OUTCOME_ID, PREDICTION_OUTCOME_LIST),
+        ];
+        let actions = bundle.actions();
+        for (kind, picks) in [
+            (
+                sub_action_ids::POLL_END,
+                &[(config_keys::POLL_ID, ACTIVE_POLL_LIST)][..],
+            ),
+            (
+                sub_action_ids::PREDICTION_LOCK,
+                &[(config_keys::PREDICTION_ID, LOCKABLE_PREDICTION_LIST)][..],
+            ),
+            (sub_action_ids::PREDICTION_RESOLVE, &settle_pick[..]),
+            (
+                sub_action_ids::PREDICTION_CANCEL,
+                &[(config_keys::PREDICTION_ID, OPEN_PREDICTION_LIST)][..],
+            ),
+            (
+                sub_action_ids::CHANNEL_POINTS_FULFILL_REDEMPTION,
+                &redemption_pick[..],
+            ),
+            (
+                sub_action_ids::CHANNEL_POINTS_CANCEL_REDEMPTION,
+                &redemption_pick[..],
+            ),
+        ] {
+            let matching: Vec<&QuickAction> = actions
+                .iter()
+                .filter(|action| action.subaction_template.kind_id == kind)
+                .collect();
+            assert!(!matching.is_empty(), "no quick action runs {kind}");
+            for action in matching {
+                let offered: Vec<(&str, &str)> = action
+                    .fields
+                    .iter()
+                    .filter_map(|field| {
+                        option_list_of(field).map(|list| (field.key.as_str(), list.as_str()))
+                    })
+                    .collect();
+                assert_eq!(offered, picks, "{kind}");
+                assert!(
+                    offered
+                        .iter()
+                        .all(|(_, list)| declared.contains(&OptionListId::new(*list))),
+                    "{kind}: {offered:?}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn a_dependent_live_item_field_follows_the_field_it_depends_on() {
+        let bundle =
+            make_bundle_with_tier(ChatConnectionState::Connected, BroadcasterTier::Affiliate);
+        let lists = bundle.option_lists();
+
+        let mut checked = 0;
+        for action in bundle.actions() {
+            for (position, field) in action.fields.iter().enumerate() {
+                let Some(list) = option_list_of(field) else {
+                    continue;
+                };
+                let metadata = lists.iter().find(|candidate| &candidate.id == list);
+                for parent in metadata.into_iter().flat_map(|found| &found.depends_on) {
+                    let parent_position = action
+                        .fields
+                        .iter()
+                        .position(|candidate| &candidate.key == parent);
+                    assert!(
+                        parent_position.is_some_and(|found| found < position),
+                        "{}: {} needs {parent} before it",
+                        action.label.code_or_text(),
+                        field.key
+                    );
+                    checked += 1;
+                }
+            }
+        }
+        assert!(
+            checked >= 3,
+            "expected the settle and refund pairs, got {checked}"
+        );
     }
 
     fn shield_face(action: &QuickAction) -> (UserText, &str, QuickActionLiveness) {

@@ -1,6 +1,6 @@
 {
   "name": "Kick gifted subscriptions run the gift trigger with the gifter and the count",
-  "purpose": "Kick pushes GiftedSubscriptionsEvent on the chatroom channel when a viewer gifts subscriptions. forge must publish kick.channel.subscription.gifts with the gifter and every giftee, run the action bound to the gift trigger, and expose the gifter login and the gift count as variables, which the action's Send Message step posts back to Kick chat.",
+  "purpose": "Kick pushes GiftedSubscriptionsEvent on the chatroom channel when a viewer gifts subscriptions. forge must publish kick.channel.subscription.gifts with the gifter and every giftee, run the action bound to the gift trigger, and expose the gifter login, the gift count and every recipient login as variables, which the action's Send Message step posts back to Kick chat.",
   "fixture": {
     "kick": {},
     "event_triggers": [
@@ -11,7 +11,7 @@
           {
             "kind_id": "kick.chat.send_message",
             "config": {
-              "message": { "type": "string", "value": "thanks %gifter_login% for %gift_count% subs" },
+              "message": { "type": "string", "value": "thanks %gifter_login% for %gift_count% subs, last to %recipients.2%" },
               "as_bot": { "type": "bool", "value": false }
             },
             "enabled": true
@@ -67,7 +67,7 @@
           "kick_request": {
             "method": "POST",
             "path": "/public/v1/chat",
-            "body": { "/content": { "equals": "thanks big_gifter for 3 subs" } },
+            "body": { "/content": { "equals": "thanks big_gifter for 3 subs, last to giftee_three" } },
             "status": 200,
             "within_ms": 5000
           }

@@ -442,6 +442,13 @@ impl TwitchIntegrationBundle {
         Ok(broadcaster_id.to_owned())
     }
 
+    pub(crate) async fn listing_call(
+        &self,
+        request: HelixRequest,
+    ) -> CollectionOutcome<serde_json::Value> {
+        self.reward_call(request, RewardCall::List).await
+    }
+
     async fn reward_call(
         &self,
         request: HelixRequest,

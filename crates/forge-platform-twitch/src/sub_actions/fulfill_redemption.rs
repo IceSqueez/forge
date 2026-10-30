@@ -10,6 +10,7 @@ use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry};
 
 use crate::account::identity::SelfIdentity;
 use crate::collection_keys::REWARD_OPTIONS_KEY;
+use crate::custom_rewards::CUSTOM_REWARD_REDEMPTIONS_PATH;
 use crate::helix::{HelixMethod, HelixRequest, HelixTransport};
 use crate::step_failure;
 use crate::vocabulary::{config_keys, sub_action_ids};
@@ -76,14 +77,11 @@ async fn patch_redemption_status(
     };
     let mut body = serde_json::Map::new();
     body.insert("status".to_owned(), status.into());
-    let request = HelixRequest::new(
-        HelixMethod::Patch,
-        "/helix/channel_points/custom_rewards/redemptions",
-    )
-    .query("broadcaster_id", user_id)
-    .query("reward_id", reward_id.to_owned())
-    .query("id", redemption_id.to_owned())
-    .body(serde_json::Value::Object(body));
+    let request = HelixRequest::new(HelixMethod::Patch, CUSTOM_REWARD_REDEMPTIONS_PATH)
+        .query("broadcaster_id", user_id)
+        .query("reward_id", reward_id.to_owned())
+        .query("id", redemption_id.to_owned())
+        .body(serde_json::Value::Object(body));
     match transport.execute(request).await {
         Ok(_) => SubActionOutcome::Success,
         Err(e) => step_failure::failed(&e),

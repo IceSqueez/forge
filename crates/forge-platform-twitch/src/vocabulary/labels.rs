@@ -103,9 +103,14 @@ pub(crate) const OUTCOMES_ONE_PER_LINE: MessageCode =
     MessageCode::from_static(PLATFORM_ID, "label_outcomes_one_per_line");
 pub(crate) const PARTNER: MessageCode = MessageCode::from_static(PLATFORM_ID, "label_partner");
 pub(crate) const PAUSED: MessageCode = MessageCode::from_static(PLATFORM_ID, "label_paused");
+pub(crate) const QUEUED_REWARD_HINT: MessageCode =
+    MessageCode::from_static(PLATFORM_ID, "label_queued_reward_hint");
+pub(crate) const POLL: MessageCode = MessageCode::from_static(PLATFORM_ID, "label_poll");
 pub(crate) const POLL_QUESTION: MessageCode =
     MessageCode::from_static(PLATFORM_ID, "label_poll_question");
 pub(crate) const POLLS: MessageCode = MessageCode::from_static(PLATFORM_ID, "label_polls");
+pub(crate) const PREDICTION: MessageCode =
+    MessageCode::from_static(PLATFORM_ID, "label_prediction");
 pub(crate) const PREDICTION_QUESTION: MessageCode =
     MessageCode::from_static(PLATFORM_ID, "label_prediction_question");
 pub(crate) const PREDICTIONS: MessageCode =
@@ -118,6 +123,8 @@ pub(crate) const RAID_TARGET: MessageCode =
     MessageCode::from_static(PLATFORM_ID, "label_raid_target");
 pub(crate) const RAIDS_ADS: MessageCode = MessageCode::from_static(PLATFORM_ID, "label_raids_ads");
 pub(crate) const REASON: MessageCode = MessageCode::from_static(PLATFORM_ID, "label_reason");
+pub(crate) const REDEMPTION: MessageCode =
+    MessageCode::from_static(PLATFORM_ID, "label_redemption");
 pub(crate) const REJECT_REFUND: MessageCode =
     MessageCode::from_static(PLATFORM_ID, "label_reject_refund");
 pub(crate) const REMOVE_MOD: MessageCode =
@@ -130,6 +137,7 @@ pub(crate) const RESOLVE_PAY_OUT: MessageCode =
     MessageCode::from_static(PLATFORM_ID, "label_resolve_pay_out");
 pub(crate) const RETRY_PENDING: MessageCode =
     MessageCode::from_static(PLATFORM_ID, "label_retry_pending");
+pub(crate) const REWARD: MessageCode = MessageCode::from_static(PLATFORM_ID, "label_reward");
 pub(crate) const REWARD_COST: MessageCode =
     MessageCode::from_static(PLATFORM_ID, "label_reward_cost");
 pub(crate) const REWARD_TITLE_PLACEHOLDER: MessageCode =
@@ -185,3 +193,5 @@ pub(crate) const WINDOW_SECONDS: MessageCode =
     MessageCode::from_static(PLATFORM_ID, "label_window_seconds");
 pub(crate) const SUBSCRIPTION_DROPPED: MessageCode =
     MessageCode::from_static(PLATFORM_ID, "label_subscription_dropped");
+pub(crate) const WINNING_OUTCOME: MessageCode =
+    MessageCode::from_static(PLATFORM_ID, "label_winning_outcome");

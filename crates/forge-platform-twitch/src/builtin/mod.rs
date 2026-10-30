@@ -1613,6 +1613,12 @@ mod tests {
                             field.key.clone(),
                             QuickActionFieldValue::Text("Yes\nNo".to_owned()),
                         )),
+                        QuickActionFieldKind::Choice(QuickActionChoiceSource::OptionList(_)) => {
+                            Some((
+                                field.key.clone(),
+                                QuickActionFieldValue::Text("live-item-1".to_owned()),
+                            ))
+                        }
                         _ => None,
                     })
                     .collect();

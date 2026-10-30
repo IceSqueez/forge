@@ -5,6 +5,7 @@ mod eventsub_topics;
 pub(crate) mod fields;
 pub(crate) mod labels;
 pub mod messages;
+pub(crate) mod option_lists;
 pub mod sub_action_ids;
 pub mod topics;
 pub mod trigger_ids;

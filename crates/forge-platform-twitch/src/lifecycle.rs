@@ -11,9 +11,18 @@ const RAID_COUNTDOWN: Duration = Duration::from_secs(90);
 
 const POLLS_PATH: &str = "/helix/polls";
 const PREDICTIONS_PATH: &str = "/helix/predictions";
-const STATUS_ACTIVE: &str = "ACTIVE";
-const STATUS_LOCKED: &str = "LOCKED";
+pub(crate) const STATUS_ACTIVE: &str = "ACTIVE";
+pub(crate) const STATUS_LOCKED: &str = "LOCKED";
 const SHIELD_MODE_PATH: &str = "/helix/moderation/shield_mode";
+const LIVE_ITEM_TOPICS: &[&str] = &[
+    topics::CHANNEL_POLL_BEGIN,
+    topics::CHANNEL_POLL_END,
+    topics::CHANNEL_PREDICTION_BEGIN,
+    topics::CHANNEL_PREDICTION_LOCK,
+    topics::CHANNEL_PREDICTION_END,
+    topics::CHANNEL_CHANNEL_POINTS_CUSTOM_REWARD_REDEMPTION_ADD,
+    topics::CHANNEL_CHANNEL_POINTS_CUSTOM_REWARD_REDEMPTION_UPDATE,
+];
 const REWARD_COLLECTION_TOPICS: &[&str] = &[
     topics::CHANNEL_CHANNEL_POINTS_CUSTOM_REWARD_ADD,
     topics::CHANNEL_CHANNEL_POINTS_CUSTOM_REWARD_UPDATE,
@@ -65,6 +74,7 @@ pub struct TwitchLifecycle {
     entities: Arc<RwLock<ChannelEntities>>,
     rewards: Arc<CollectionRevisionSignal>,
     quick_actions: Arc<CollectionRevisionSignal>,
+    live_items: Arc<CollectionRevisionSignal>,
 }
 
 impl TwitchLifecycle {
@@ -89,6 +99,9 @@ impl TwitchLifecycle {
         event: &serde_json::Value,
         self_broadcaster_id: &str,
     ) {
+        if LIVE_ITEM_TOPICS.contains(&subscription_type) {
+            self.live_items.bump();
+        }
         if REWARD_COLLECTION_TOPICS.contains(&subscription_type) {
             self.rewards_changed();
             return;
@@ -161,6 +174,11 @@ impl TwitchLifecycle {
 
     pub(crate) fn rewards_changed(&self) {
         self.rewards.bump();
+        self.live_items.bump();
+    }
+
+    pub(crate) fn live_item_revisions(&self) -> CollectionRevisions {
+        self.live_items.subscribe()
     }
 
     pub(crate) fn reward_revisions(&self) -> CollectionRevisions {
@@ -198,6 +216,7 @@ impl TwitchLifecycle {
             entities.shield = ShieldPhase::Unknown;
         }
         self.quick_actions.bump();
+        self.live_items.bump();
     }
 
     pub(crate) async fn seed_from_helix(
@@ -205,9 +224,7 @@ impl TwitchLifecycle {
         transport: &dyn HelixTransport,
         broadcaster_id: &str,
     ) {
-        let polls = HelixRequest::new(HelixMethod::Get, POLLS_PATH)
-            .query("broadcaster_id", broadcaster_id.to_owned());
-        if let Ok(body) = transport.execute(polls).await
+        if let Ok(body) = transport.execute(polls_request(broadcaster_id)).await
             && let Some(rows) = entity_rows(&body)
         {
             let phase = if rows_have_status(rows, STATUS_ACTIVE) {
@@ -221,9 +238,7 @@ impl TwitchLifecycle {
             self.quick_actions.bump();
         }
 
-        let predictions = HelixRequest::new(HelixMethod::Get, PREDICTIONS_PATH)
-            .query("broadcaster_id", broadcaster_id.to_owned());
-        if let Ok(body) = transport.execute(predictions).await
+        if let Ok(body) = transport.execute(predictions_request(broadcaster_id)).await
             && let Some(rows) = entity_rows(&body)
         {
             let phase = if rows_have_status(rows, STATUS_ACTIVE) {
@@ -238,6 +253,7 @@ impl TwitchLifecycle {
             drop(entities);
             self.quick_actions.bump();
         }
+        self.live_items.bump();
     }
 
     pub(crate) async fn seed_shield_from_helix(
@@ -268,6 +284,16 @@ impl TwitchLifecycle {
             self.set_shield(phase);
         }
     }
+}
+
+pub(crate) fn polls_request(broadcaster_id: &str) -> HelixRequest {
+    HelixRequest::new(HelixMethod::Get, POLLS_PATH)
+        .query("broadcaster_id", broadcaster_id.to_owned())
+}
+
+pub(crate) fn predictions_request(broadcaster_id: &str) -> HelixRequest {
+    HelixRequest::new(HelixMethod::Get, PREDICTIONS_PATH)
+        .query("broadcaster_id", broadcaster_id.to_owned())
 }
 
 fn raid_is_outgoing(event: &serde_json::Value, self_broadcaster_id: &str) -> bool {
@@ -730,6 +756,67 @@ mod tests {
 
             assert!(!revision_moved(&mut revisions), "{topic}");
         }
+    }
+
+    #[test]
+    fn every_topic_that_changes_a_pickable_item_bumps_the_live_item_revision() {
+        for topic in [
+            "channel.poll.begin",
+            "channel.poll.end",
+            "channel.prediction.begin",
+            "channel.prediction.lock",
+            "channel.prediction.end",
+            "channel.channel_points_custom_reward.add",
+            "channel.channel_points_custom_reward.update",
+            "channel.channel_points_custom_reward.remove",
+            "channel.channel_points_custom_reward_redemption.add",
+            "channel.channel_points_custom_reward_redemption.update",
+        ] {
+            let lifecycle = TwitchLifecycle::new();
+            let mut revisions = lifecycle.live_item_revisions();
+
+            lifecycle.apply_notification(topic, &Value::Null, SELF_ID);
+
+            assert!(revision_moved(&mut revisions), "{topic}");
+        }
+    }
+
+    #[test]
+    fn progress_and_unrelated_topics_leave_the_live_item_revision_alone() {
+        for topic in [
+            "channel.poll.progress",
+            "channel.prediction.progress",
+            "channel.chat.message",
+            "channel.raid",
+        ] {
+            let lifecycle = TwitchLifecycle::new();
+            let mut revisions = lifecycle.live_item_revisions();
+
+            lifecycle.apply_notification(topic, &Value::Null, SELF_ID);
+
+            assert!(!revision_moved(&mut revisions), "{topic}");
+        }
+    }
+
+    #[test]
+    fn forgetting_phases_bumps_the_live_item_revision() {
+        let lifecycle = TwitchLifecycle::new();
+        let mut revisions = lifecycle.live_item_revisions();
+
+        lifecycle.forget_phases();
+
+        assert!(revision_moved(&mut revisions));
+    }
+
+    #[tokio::test]
+    async fn seeding_bumps_the_live_item_revision() {
+        let transport = MockTransport::returning_sequence(vec![Ok(rows(&[])), Ok(rows(&[]))]);
+        let lifecycle = TwitchLifecycle::new();
+        let mut revisions = lifecycle.live_item_revisions();
+
+        lifecycle.seed_from_helix(&transport, SELF_ID).await;
+
+        assert!(revision_moved(&mut revisions));
     }
 
     fn shield_row(is_active: Value) -> Value {

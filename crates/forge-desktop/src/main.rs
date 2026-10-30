@@ -209,9 +209,12 @@ mod update_launch;
 mod update_leftover;
 mod update_report;
 mod update_toast;
-#[expect(
-    dead_code,
-    reason = "the typed start error and step outcomes are its first consumers"
+#[cfg_attr(
+    not(test),
+    expect(
+        dead_code,
+        reason = "the typed start error and step outcomes are its first consumers"
+    )
 )]
 mod user_text;
 mod voice_alias_form;

@@ -413,7 +413,10 @@ mod tests {
 
     #[tokio::test]
     async fn a_schedule_that_never_backed_up_runs_its_first_backup_on_a_moving_clock() {
-        use forge_storage::{SettingsRepo, reserved_keys};
+        use forge_storage::settings::core_settings::{
+            BACKUP_SCHEDULE_ENABLED, BACKUP_SCHEDULE_KEY,
+        };
+        use forge_storage::write_setting;
         let dir = tempfile::tempdir().unwrap();
         let url = format!("sqlite://{}", dir.path().join(DATABASE_FILE_NAME).display());
         let backend = SqliteBackend::open_for_test(&url, [7; 32], dir.path().join("media"), None)
@@ -421,12 +424,10 @@ mod tests {
             .unwrap();
         let key = create_schedule_key(&Passphrase::new("correct horse battery staple".to_owned()))
             .unwrap();
-        backend
-            .set_string(reserved_keys::BACKUP_SCHEDULE_ENABLED, "true")
+        write_setting(&backend, &BACKUP_SCHEDULE_ENABLED, &true)
             .await
             .unwrap();
-        backend
-            .set_string(reserved_keys::BACKUP_SCHEDULE_KEY, &key.encode().unwrap())
+        write_setting(&backend, &BACKUP_SCHEDULE_KEY, &Some(key.encode().unwrap()))
             .await
             .unwrap();
         let handle = super::spawn_scheduled_backups(ScheduledBackupParts {

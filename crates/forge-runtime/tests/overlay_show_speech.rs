@@ -16,7 +16,7 @@ use forge_runtime::{
     SPEECH_FAILURE_MESSAGE_KEY, ShowEnd, ShowSpeech, ShowTicket, SpeakDispatchError,
     SpeakDispatcher, SpeakingViewer, SpeechOrigin, SpeechStartSignal,
 };
-use forge_storage::settings::MockSettingsRepo;
+use forge_storage::test_support::MemorySettings;
 use forge_storage::{
     MockOverlayRepo, OverlayConfig, OverlayCredential, OverlayDefinition, OverlayId, OverlayRepo,
     SettingsRepo,
@@ -251,8 +251,7 @@ fn harness_checking_voice(
         .returning(move |id| Ok((id == &stored.id).then(|| stored.clone())));
     repo.expect_set_retained_content().returning(|_, _| Ok(()));
     repo.expect_get_retained_content().returning(|_| Ok(None));
-    let mut settings = MockSettingsRepo::new();
-    settings.expect_get_string().returning(|_| Ok(None));
+    let settings = MemorySettings::new();
 
     let mut kinds = OverlayKindRegistry::new();
     register_builtin_kinds(&mut kinds).expect("the builtin overlay kinds register");

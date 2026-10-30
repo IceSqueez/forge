@@ -14,10 +14,9 @@ use forge_emulator::fixture::{
 use forge_events::{Event, EventSource};
 use forge_platform_twitch::TwitchCredentialsManager;
 use forge_registry::TriggerRegistry;
-use forge_server::ServerSettings;
+use forge_server::{ServerSettings, settings as server_settings};
 use forge_storage::{
-    CredentialId, CredentialsRepo, DataProvider, SERVER_BEARER_CREDENTIAL_ID, SettingsRepo,
-    reserved_keys,
+    CredentialId, CredentialsRepo, DataProvider, SERVER_BEARER_CREDENTIAL_ID,
 };
 use forge_storage_sqlite::SqliteBackend;
 use forge_types::{SubActionStep, Variant};
@@ -87,19 +86,19 @@ async fn seeded_server_is_explicitly_enabled_on_the_reported_loopback_port() {
     let (dir, report) = seed_fresh(&Fixture::default()).await;
     let backend = reopen(dir.path()).await;
     let loaded = ServerSettings::load(&backend).await.unwrap();
-    let stored = backend.load_all().await.unwrap();
+    let stored = backend.stored_setting_rows().await.unwrap();
     backend.shutdown().await;
 
     assert!(loaded.enabled);
     assert_eq!(loaded.bind_address, "127.0.0.1");
     assert_eq!(loaded.port, report.server.port);
     for key in [
-        reserved_keys::SERVER_ENABLED,
-        reserved_keys::SERVER_BIND_ADDRESS,
-        reserved_keys::SERVER_PORT,
+        server_settings::ENABLED.name(),
+        server_settings::BIND_ADDRESS.name(),
+        server_settings::PORT.name(),
     ] {
         assert!(
-            stored.contains_key(key),
+            stored.iter().any(|row| row.key == key),
             "{key} rides on forge's default instead of the fixture"
         );
     }

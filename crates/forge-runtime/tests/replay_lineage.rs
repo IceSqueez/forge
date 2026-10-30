@@ -52,10 +52,10 @@ impl Harness {
                 .await
                 .unwrap(),
         );
-        SettingsRepo::set_string(
+        forge_storage::write_setting(
             backend.as_ref(),
-            forge_storage::reserved_keys::SCRIPT_TIMEOUT_MS,
-            "10000",
+            &forge_script::settings::TIMEOUT_MS,
+            &10_000,
         )
         .await
         .unwrap();

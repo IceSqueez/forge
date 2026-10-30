@@ -14,7 +14,7 @@ use forge_runtime::{
     OverlayFrameSink, OverlayReceivers, OverlayServiceCell, OverlayServiceError,
     OverlayServiceHandle, SHOW_CEILING, SHOW_QUEUE_CAPACITY, ShowDepthWatch, ShowEnd, ShowTicket,
 };
-use forge_storage::settings::MockSettingsRepo;
+use forge_storage::test_support::MemorySettings;
 use forge_storage::{
     MockOverlayRepo, OverlayConfig, OverlayCredential, OverlayDefinition, OverlayId, OverlayRepo,
     SettingsRepo,
@@ -146,8 +146,7 @@ fn harness_with(definitions: Vec<OverlayDefinition>, absent_for: usize) -> Harne
     repo.expect_set_enabled().returning(|_, _| Ok(true));
     repo.expect_set_retained_content().returning(|_, _| Ok(()));
     repo.expect_get_retained_content().returning(|_| Ok(None));
-    let mut settings = MockSettingsRepo::new();
-    settings.expect_get_string().returning(|_| Ok(None));
+    let settings = MemorySettings::new();
 
     let mut kinds = OverlayKindRegistry::new();
     register_builtin_kinds(&mut kinds).expect("the builtin overlay kinds register");

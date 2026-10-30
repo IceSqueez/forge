@@ -219,19 +219,17 @@ mod tests {
     use crate::{EventBus, NullEventLogRepo, ScriptRegistry};
     use forge_events::Event;
     use forge_events::EventPublisher;
-    use forge_storage::{GlobalsRepo, SettingsRepo};
+    use forge_storage::{GlobalsRepo, write_setting};
     use forge_storage_sqlite::SqliteBackend;
     use forge_types::EventId;
     use forge_types::Variant;
 
     async fn make_backend() -> Sandboxed<Arc<SqliteBackend>> {
         let backend = sandboxed_backend([0xab; 32]).await.map(Arc::new);
-        backend
-            .set_string(forge_storage::reserved_keys::SCRIPT_TIMEOUT_MS, "30000")
+        write_setting(&**backend, &forge_script::settings::TIMEOUT_MS, &10_000)
             .await
             .unwrap();
-        backend
-            .set_string(forge_storage::reserved_keys::SCRIPT_OP_LIMIT, "500")
+        write_setting(&**backend, &forge_script::settings::OP_LIMIT, &1_000)
             .await
             .unwrap();
         backend
@@ -301,18 +299,14 @@ mod tests {
             .mount(&server)
             .await;
         let backend = make_backend().await;
-        backend
-            .set_string(
-                forge_storage::reserved_keys::SCRIPT_HTTP_ALLOWED_DOMAINS,
-                &format!(r#"["{}"]"#, server.address().ip()),
-            )
-            .await
-            .unwrap();
-        backend
-            .set_string(
-                forge_storage::reserved_keys::SCRIPT_HTTP_ALLOW_LOCAL,
-                "true",
-            )
+        write_setting(
+            &**backend,
+            &forge_script::settings::HTTP_ALLOWED_DOMAINS,
+            &vec![server.address().ip().to_string()],
+        )
+        .await
+        .unwrap();
+        write_setting(&**backend, &forge_script::settings::HTTP_ALLOW_LOCAL, &true)
             .await
             .unwrap();
         let body = format!(

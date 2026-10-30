@@ -18,8 +18,8 @@ use forge_storage::overlay::{MockOverlayRepo, OverlayRepo};
 use forge_storage::queue::MockQueueRepo;
 use forge_storage::scheduled_run::MockScheduledRunRepo;
 use forge_storage::script::MockScriptRepo;
-use forge_storage::settings::MockSettingsRepo;
 use forge_storage::soundboard::MockSoundboardClipsRepo;
+use forge_storage::test_support::MemorySettings;
 use forge_storage::trigger_instance::MockTriggerInstanceRepo;
 use forge_storage::tts_filters::MockTtsFiltersRepo;
 use forge_storage::user_globals::MockUserGlobalsRepo;
@@ -56,7 +56,7 @@ pub struct TestDataProvider {
     pub scheduled_run_revision: CatalogRevision,
     pub globals_repo: Arc<MockGlobalsRepo>,
     pub user_globals_repo: Arc<MockUserGlobalsRepo>,
-    pub settings_repo: Arc<MockSettingsRepo>,
+    pub settings_repo: MemorySettings,
     pub script_repo: Arc<MockScriptRepo>,
     pub credentials_repo: Arc<MockCredentialsRepo>,
     pub catalog_revision: CatalogRevision,
@@ -88,7 +88,7 @@ impl TestDataProvider {
             chat_history_repo: Arc::new(MockChatHistoryRepo::new()),
             globals_repo: Arc::new(MockGlobalsRepo::new()),
             user_globals_repo: Arc::new(MockUserGlobalsRepo::new()),
-            settings_repo: Arc::new(MockSettingsRepo::new()),
+            settings_repo: MemorySettings::new(),
             script_repo: Arc::new(MockScriptRepo::new()),
             credentials_repo: Arc::new(MockCredentialsRepo::new()),
         }
@@ -136,10 +136,6 @@ impl TestDataProvider {
 
     pub fn user_globals(&mut self) -> &mut MockUserGlobalsRepo {
         Arc::get_mut(&mut self.user_globals_repo).expect("user_globals_repo already shared")
-    }
-
-    pub fn settings(&mut self) -> &mut MockSettingsRepo {
-        Arc::get_mut(&mut self.settings_repo).expect("settings_repo already shared")
     }
 
     pub fn script(&mut self) -> &mut MockScriptRepo {
@@ -457,35 +453,8 @@ pub fn test_creds() -> Arc<dyn CredentialsRepo> {
     Arc::new(TestDataProvider::new())
 }
 
-pub struct MemSettings(std::sync::Mutex<HashMap<String, String>>);
-
-impl MemSettings {
-    pub fn new() -> Arc<Self> {
-        Arc::new(Self(std::sync::Mutex::new(HashMap::new())))
-    }
-}
-
-#[async_trait]
-impl SettingsRepo for MemSettings {
-    async fn get_string(&self, key: &str) -> Result<Option<String>, StorageError> {
-        Ok(self.0.lock().expect("mutex").get(key).cloned())
-    }
-
-    async fn set_string(&self, key: &str, value: &str) -> Result<(), StorageError> {
-        self.0
-            .lock()
-            .expect("mutex")
-            .insert(key.to_owned(), value.to_owned());
-        Ok(())
-    }
-
-    async fn delete(&self, key: &str) -> Result<bool, StorageError> {
-        Ok(self.0.lock().expect("mutex").remove(key).is_some())
-    }
-
-    async fn load_all(&self) -> Result<HashMap<String, String>, StorageError> {
-        Ok(self.0.lock().expect("mutex").clone())
-    }
+pub fn mem_settings() -> Arc<MemorySettings> {
+    Arc::new(MemorySettings::new())
 }
 
 pub mod log_capture {

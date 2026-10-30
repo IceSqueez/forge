@@ -13,7 +13,7 @@ use forge_runtime::{
     OverlayServiceCell, OverlayServiceHandle,
 };
 use forge_storage::action::MockActionRepo;
-use forge_storage::settings::MockSettingsRepo;
+use forge_storage::test_support::MemorySettings;
 use forge_storage::trigger_instance::MockTriggerInstanceRepo;
 use forge_storage::{
     CatalogRevision, MockOverlayRepo, OverlayConfig, OverlayCredential, OverlayDefinition,
@@ -268,7 +268,7 @@ fn overlays(pages: &[Page], readable: bool) -> OverlayServiceHandle {
     register_builtin_kinds(&mut kinds).expect("the builtin overlay kinds register");
     OverlayServiceHandle::new(
         Arc::new(repo) as Arc<dyn OverlayRepo>,
-        Arc::new(MockSettingsRepo::new()) as Arc<dyn SettingsRepo>,
+        Arc::new(MemorySettings::new()) as Arc<dyn SettingsRepo>,
         Arc::new(kinds),
         EventBus::new(Arc::new(NullEventLogRepo)),
         Some(Arc::new(connected) as Arc<dyn OverlayFrameSink>),

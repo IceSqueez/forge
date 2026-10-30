@@ -429,7 +429,7 @@ mod tests {
     use forge_registry::ConfigProblem;
     use forge_registry::ConfigReason;
     use forge_registry::RegistryError;
-    use forge_storage::{SettingsRepo, reserved_keys};
+    use forge_storage::write_setting;
     use forge_storage_sqlite::SqliteBackend;
     use forge_types::EventId;
     use wiremock::matchers::{body_string, header, method, query_param};
@@ -473,7 +473,7 @@ mod tests {
             .mount(&server)
             .await;
         let dp = backend().await;
-        dp.set_string(reserved_keys::CORE_HTTP_ALLOW_LOCAL, "true")
+        write_setting(&**dp, &crate::settings::CORE_HTTP_ALLOW_LOCAL, &true)
             .await
             .unwrap();
 
@@ -512,7 +512,7 @@ mod tests {
             .mount(&server)
             .await;
         let dp = backend().await;
-        dp.set_string(reserved_keys::CORE_HTTP_ALLOW_LOCAL, "true")
+        write_setting(&**dp, &crate::settings::CORE_HTTP_ALLOW_LOCAL, &true)
             .await
             .unwrap();
 
@@ -665,7 +665,7 @@ mod tests {
 
     async fn local_backend() -> Sandboxed<Arc<SqliteBackend>> {
         let dp = backend().await;
-        dp.set_string(reserved_keys::CORE_HTTP_ALLOW_LOCAL, "true")
+        write_setting(&**dp, &crate::settings::CORE_HTTP_ALLOW_LOCAL, &true)
             .await
             .unwrap();
         dp

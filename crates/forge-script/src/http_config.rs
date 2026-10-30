@@ -55,13 +55,7 @@ pub async fn stored_script_http_allowed_domains(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use forge_storage_sqlite::SqliteBackend;
-
-    use crate::test_support::{Sandboxed, sandboxed_backend};
-
-    async fn backend() -> Sandboxed<SqliteBackend> {
-        sandboxed_backend([0xab; 32]).await
-    }
+    use forge_storage::test_support::MemorySettings;
 
     #[test]
     fn default_is_deny_by_default() {
@@ -72,8 +66,7 @@ mod tests {
 
     #[tokio::test]
     async fn read_returns_defaults_when_keys_absent() {
-        let backend = backend().await;
-        let cfg = ScriptHttpConfig::read(&*backend).await;
+        let cfg = ScriptHttpConfig::read(&MemorySettings::new()).await;
         let defaults = ScriptHttpConfig::default();
         assert_eq!(cfg.allowed_domains, defaults.allowed_domains);
         assert_eq!(cfg.max_calls_per_script, defaults.max_calls_per_script);
@@ -82,26 +75,10 @@ mod tests {
         assert_eq!(cfg.max_response_bytes, defaults.max_response_bytes);
     }
 
-    struct UnreachableStore;
-
-    #[async_trait::async_trait]
-    impl SettingsRepo for UnreachableStore {
-        async fn get_string(&self, _: &str) -> Result<Option<String>, StorageError> {
-            Err(StorageError::Connection {
-                reason: "settings store unreachable".to_owned(),
-            })
-        }
-        async fn set_string(&self, _: &str, _: &str) -> Result<(), StorageError> {
-            unreachable!("loading the allowlist never writes")
-        }
-        async fn delete(&self, _: &str) -> Result<bool, StorageError> {
-            unreachable!("loading the allowlist never deletes")
-        }
-        async fn load_all(
-            &self,
-        ) -> Result<std::collections::HashMap<String, String>, StorageError> {
-            unreachable!("loading the allowlist reads single keys")
-        }
+    fn unreachable_store() -> MemorySettings {
+        let store = MemorySettings::new();
+        store.fail_reads(true);
+        store
     }
 
     #[tokio::test]
@@ -121,15 +98,12 @@ mod tests {
             (Some(",,"), Vec::new()),
             (Some(" , , "), Vec::new()),
         ] {
-            let backend = backend().await;
+            let store = MemorySettings::new();
             if let Some(raw) = stored {
-                backend
-                    .set_string(settings::HTTP_ALLOWED_DOMAINS.name(), raw)
-                    .await
-                    .unwrap();
+                store.seed_raw(&settings::HTTP_ALLOWED_DOMAINS, raw);
             }
 
-            let domains = stored_script_http_allowed_domains(&*backend).await.unwrap();
+            let domains = stored_script_http_allowed_domains(&store).await.unwrap();
 
             assert_eq!(domains, expected, "{stored:?}");
         }
@@ -137,14 +111,14 @@ mod tests {
 
     #[tokio::test]
     async fn stored_allowlist_reports_a_store_failure_instead_of_an_empty_list() {
-        let loaded = stored_script_http_allowed_domains(&UnreachableStore).await;
+        let loaded = stored_script_http_allowed_domains(&unreachable_store()).await;
 
         assert!(matches!(loaded, Err(StorageError::Connection { .. })));
     }
 
     #[tokio::test]
     async fn script_http_config_stays_deny_by_default_when_the_allowlist_cannot_be_read() {
-        let cfg = ScriptHttpConfig::read(&UnreachableStore).await;
+        let cfg = ScriptHttpConfig::read(&unreachable_store()).await;
 
         assert!(cfg.allowed_domains.is_empty());
     }
@@ -168,16 +142,16 @@ mod tests {
             ("10485760", 100, 30_000, 10_485_760),
             ("10485761", 100, 30_000, 10_485_760),
         ] {
-            let backend = backend().await;
+            let store = MemorySettings::new();
             for setting in [
                 &settings::HTTP_MAX_CALLS,
                 &settings::HTTP_TIMEOUT_MS,
                 &settings::HTTP_MAX_RESPONSE_BYTES,
             ] {
-                backend.set_string(setting.name(), stored).await.unwrap();
+                store.seed_raw(setting, stored);
             }
 
-            let cfg = ScriptHttpConfig::read(&*backend).await;
+            let cfg = ScriptHttpConfig::read(&store).await;
 
             assert_eq!(
                 (

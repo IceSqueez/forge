@@ -10,12 +10,13 @@ use forge_overlay::{
     image_reference, register_builtin_kinds,
 };
 use forge_runtime::{EventBus, NullEventLogRepo, OverlayMediaLibrary, OverlayServiceHandle};
-use forge_storage::settings::MockSettingsRepo;
+use forge_storage::settings::core_settings;
 use forge_storage::soundboard::MockSoundboardClipsRepo;
+use forge_storage::test_support::MemorySettings;
 use forge_storage::{
     MediaBlob, MediaBlobId, MediaFormat, MediaReferrerKind, MediaRepo, MockMediaRepo,
     MockOverlayRepo, OverlayConfig, OverlayCredential, OverlayDefinition, OverlayId, OverlayRepo,
-    SettingsRepo, SoundboardClipsRepo, StorageError, StoredClip, reserved_keys,
+    SettingsRepo, SoundboardClipsRepo, StorageError, StoredClip,
 };
 use forge_types::{ClipId, OutputDevice, Variant};
 use tempfile::TempDir;
@@ -274,14 +275,13 @@ fn harness(config: OverlayConfig, library_world: Option<MediaWorld>) -> Harness 
         .returning(move |id| Ok((&one.id == id).then(|| one.clone())));
     repo.expect_save().returning(|_| Ok(()));
 
-    let mut settings = MockSettingsRepo::new();
-    let configured = root.to_string_lossy().into_owned();
+    let settings = MemorySettings::new();
     settings
-        .expect_get_string()
-        .returning(move |key| match key {
-            reserved_keys::SERVER_OVERLAY_ROOT => Ok(Some(configured.clone())),
-            _ => Ok(None),
-        });
+        .seed(
+            &core_settings::SERVER_OVERLAY_ROOT,
+            &Some(root.to_string_lossy().into_owned()),
+        )
+        .expect("overlay root setting");
 
     let wire_library = library_world.is_some();
     let world: World = Arc::new(Mutex::new(library_world.unwrap_or_default()));

@@ -129,7 +129,8 @@ mod tests {
     use crate::origin::build_allowed_origins;
     use crate::server::{AppState, serve_on_with_shutdown};
     use crate::server_info::ServerInfo;
-    use crate::test_helpers::{MemSettings, log_capture, test_creds, test_dp};
+    use crate::test_helpers::{log_capture, mem_settings, test_creds, test_dp};
+    use forge_storage::test_support::MemorySettings;
 
     const OWNER: &str = "audio-player";
     const CLIP_BYTES: &[u8] = b"RIFF\0\0\0\0WAVEfmt ";
@@ -255,7 +256,7 @@ mod tests {
             false,
             CORS_MIRRORS_ANY_ORIGIN,
             PathBuf::new(),
-            MemSettings::new(),
+            mem_settings(),
         )
         .await
     }
@@ -264,7 +265,7 @@ mod tests {
         auth_required_for_reads: bool,
         overlay_cors_any_origin: bool,
         overlay_root: PathBuf,
-        settings: Arc<MemSettings>,
+        settings: Arc<MemorySettings>,
     ) -> Fixture {
         let bus = EventBus::new(Arc::new(NullEventLogRepo));
         let bus_adapter = BusAdapter::new(bus.clone());
@@ -584,7 +585,7 @@ mod tests {
             AUTH_REQUIRED_FOR_READS,
             CORS_MIRRORS_ANY_ORIGIN,
             PathBuf::new(),
-            MemSettings::new(),
+            mem_settings(),
         )
         .await;
         let (ticket, _outcome) = fixture.offer().await;
@@ -606,7 +607,7 @@ mod tests {
 
     #[tokio::test]
     async fn a_cross_site_report_is_served_and_no_foreign_origin_is_echoed_back() {
-        let fixture = serve(false, false, PathBuf::new(), MemSettings::new()).await;
+        let fixture = serve(false, false, PathBuf::new(), mem_settings()).await;
         let (ticket, outcome) = fixture.offer().await;
         fixture.fetch(ticket.clip_path()).await;
 
@@ -636,7 +637,7 @@ mod tests {
             false,
             CORS_MIRRORS_ANY_ORIGIN,
             root.path().to_path_buf(),
-            MemSettings::new(),
+            mem_settings(),
         )
         .await;
         let (ticket, _outcome) = fixture.offer().await;
@@ -667,13 +668,7 @@ mod tests {
         ] {
             let root = tempfile::tempdir().expect("tempdir");
             overlay_root_with_an_asset(root.path()).await;
-            let fixture = serve(
-                false,
-                any_origin,
-                root.path().to_path_buf(),
-                MemSettings::new(),
-            )
-            .await;
+            let fixture = serve(false, any_origin, root.path().to_path_buf(), mem_settings()).await;
             let own_origin = fixture.own_origin();
 
             for (case, origin) in [
@@ -754,7 +749,7 @@ mod tests {
 
     #[tokio::test]
     async fn a_restart_discards_the_clips_it_held_and_keeps_serving_new_ones() {
-        let settings = MemSettings::new();
+        let settings = mem_settings();
         let fixture = serve(
             false,
             CORS_MIRRORS_ANY_ORIGIN,

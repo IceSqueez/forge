@@ -6,7 +6,9 @@ use std::path::{Path, PathBuf};
 use forge_overlay::OverlayKindRegistry;
 use forge_registry::{IdSuccession, SubActionRegistry, TriggerRegistry};
 use forge_speech_types::{AssignmentStrategy, IgnoreProfile};
-use forge_storage::settings::reserved_keys as key;
+use forge_storage::settings::core_settings::{
+    PICKER_FAVORITES_SUB_ACTIONS, PICKER_FAVORITES_TRIGGERS,
+};
 use forge_storage::{EXPECTED_SCHEMA_VERSION, TtsPipelineSettings};
 use forge_transfer::{
     ActionDocument, BUNDLE_FORMAT_VERSION, BundleKind, ClosureRegistries, ContentEntry,
@@ -179,11 +181,11 @@ fn setup(spelling: &Spelling) -> SetupDocuments {
         },
         settings: BTreeMap::from([
             (
-                key::PICKER_FAVORITES_SUB_ACTIONS.to_owned(),
+                PICKER_FAVORITES_SUB_ACTIONS.name().to_owned(),
                 favorites(&[UNRELATED_KIND, spelling.step, RETIRED_TRIGGER]),
             ),
             (
-                key::PICKER_FAVORITES_TRIGGERS.to_owned(),
+                PICKER_FAVORITES_TRIGGERS.name().to_owned(),
                 favorites(&[spelling.trigger, RETIRED_STEP]),
             ),
             ("ui.note".to_owned(), favorites(&[RETIRED_STEP])),

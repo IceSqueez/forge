@@ -9,11 +9,11 @@ use forge_overlay::OverlayKindRegistry;
 use forge_paths::{MEDIA_DIR_NAME, OVERLAYS_DIR_NAME};
 use forge_registry::{SubActionRegistry, TriggerRegistry};
 use forge_storage::{
-    ActionRepo, DATABASE_FILE_NAME, DataProvider, GlobalsRepo, QueueRepo, SettingsRepo,
+    ActionRepo, DATABASE_FILE_NAME, DataProvider, GlobalsRepo, QueueRepo, load_setting_rows,
 };
 use forge_storage_sqlite::{
     MIGRATIONS, SqliteActionRepo, SqliteBackend, SqliteDatabaseFileSchema, SqliteGlobalsRepo,
-    SqliteQueueRepo, SqliteSettingsRepo, connect,
+    SqliteQueueRepo, connect,
 };
 use forge_transfer::{
     BUNDLE_FORMAT_VERSION, BackupCategory, BundleKind, BundleOrigin, ClosureRegistries,
@@ -271,9 +271,16 @@ async fn older_database(path: &Path, seed: &BackupSeed) -> Vec<u8> {
         .save(&seed.action)
         .await
         .unwrap();
-    let settings = SqliteSettingsRepo::new(pool.clone());
     for (key, value) in &seed.settings {
-        settings.set_string(key, value).await.unwrap();
+        sqlx::query(
+            "INSERT INTO settings (key, value) VALUES (?, ?) \
+             ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+        )
+        .bind(key)
+        .bind(value)
+        .execute(&pool)
+        .await
+        .unwrap();
     }
     let globals = SqliteGlobalsRepo::new(pool.clone());
     for (name, value) in &seed.globals {
@@ -325,16 +332,17 @@ async fn an_older_full_backup_restores_with_its_data_intact_and_retired_ids_rena
     restored_into(&data_dir, bundle).await;
     let provider = open_current(&data_dir).await;
 
-    let mut settings = BTreeMap::new();
-    for key in seed.settings.keys() {
-        settings.insert(
-            key.clone(),
-            SettingsRepo::get_string(provider.as_ref(), key)
-                .await
-                .unwrap()
-                .unwrap_or_default(),
-        );
-    }
+    let stored: BTreeMap<String, String> = load_setting_rows(provider.as_ref())
+        .await
+        .unwrap()
+        .into_iter()
+        .map(|row| (row.key().to_owned(), row.value().to_owned()))
+        .collect();
+    let settings: BTreeMap<String, String> = seed
+        .settings
+        .keys()
+        .map(|key| (key.clone(), stored.get(key).cloned().unwrap_or_default()))
+        .collect();
     let mut expected_settings = seed.settings.clone();
     expected_settings.insert(
         FAVORITE_STEPS_KEY.to_owned(),

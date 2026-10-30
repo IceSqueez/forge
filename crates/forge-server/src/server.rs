@@ -319,8 +319,9 @@ pub(crate) mod tests {
     use crate::ServerError;
     use crate::bus_adapter::{ClientFilterSet, EventFilter, WsFrame};
     use crate::server_info::ServerInfo;
-    use crate::test_helpers::{log_capture, test_dp};
+    use crate::test_helpers::{log_capture, mem_settings, test_dp};
     use crate::ws_client::WsClient;
+    use forge_storage::test_support::MemorySettings;
 
     struct MemCreds(Mutex<HashMap<String, String>>);
 
@@ -382,39 +383,8 @@ pub(crate) mod tests {
         }
     }
 
-    struct MapSettings(Mutex<HashMap<String, String>>);
-
-    impl MapSettings {
-        fn new() -> Arc<Self> {
-            Arc::new(Self(Mutex::new(HashMap::new())))
-        }
-    }
-
-    #[async_trait]
-    impl SettingsRepo for MapSettings {
-        async fn get_string(&self, key: &str) -> Result<Option<String>, StorageError> {
-            Ok(self.0.lock().expect("mutex").get(key).cloned())
-        }
-
-        async fn set_string(&self, key: &str, value: &str) -> Result<(), StorageError> {
-            self.0
-                .lock()
-                .expect("mutex")
-                .insert(key.to_owned(), value.to_owned());
-            Ok(())
-        }
-
-        async fn delete(&self, key: &str) -> Result<bool, StorageError> {
-            Ok(self.0.lock().expect("mutex").remove(key).is_some())
-        }
-
-        async fn load_all(&self) -> Result<HashMap<String, String>, StorageError> {
-            Ok(self.0.lock().expect("mutex").clone())
-        }
-    }
-
     fn make_app_state(auth: Arc<AuthState>, creds: Arc<dyn CredentialsRepo>) -> AppState {
-        make_app_state_with_settings(auth, creds, MapSettings::new())
+        make_app_state_with_settings(auth, creds, mem_settings())
     }
 
     fn make_app_state_with_settings(
@@ -528,7 +498,7 @@ pub(crate) mod tests {
     }
 
     async fn make_server_targeting_a_free_port() -> (ServerHandle, u16) {
-        let settings = MapSettings::new();
+        let settings = mem_settings();
         let creds = MemCreds::with_token("my-token");
         let auth = AuthState::load(false, &*creds).await.expect("auth load");
         let creds_dyn: Arc<dyn CredentialsRepo> = creds;
@@ -580,7 +550,7 @@ pub(crate) mod tests {
     }
 
     fn loopback_config(
-        settings: Arc<MapSettings>,
+        settings: Arc<MemorySettings>,
         port: u16,
         additional_origins: Vec<String>,
     ) -> ServerConfig {
@@ -615,7 +585,7 @@ pub(crate) mod tests {
     }
 
     async fn start_on_an_ephemeral_port(
-        settings: Arc<MapSettings>,
+        settings: Arc<MemorySettings>,
         additional_origins: Vec<String>,
     ) -> (ServerHandle, std::net::SocketAddr) {
         let config = loopback_config(settings, EPHEMERAL_PORT, additional_origins);
@@ -625,7 +595,7 @@ pub(crate) mod tests {
     }
 
     async fn handle_awaiting_a_port(
-        settings: Arc<MapSettings>,
+        settings: Arc<MemorySettings>,
         listening: bool,
     ) -> (ServerHandle, u16) {
         let port = reserve_a_free_port().await;
@@ -644,7 +614,7 @@ pub(crate) mod tests {
         (handle, port)
     }
 
-    async fn stopped_awaiting_a_port(settings: Arc<MapSettings>) -> (ServerHandle, u16) {
+    async fn stopped_awaiting_a_port(settings: Arc<MemorySettings>) -> (ServerHandle, u16) {
         handle_awaiting_a_port(settings, false).await
     }
 
@@ -752,7 +722,7 @@ pub(crate) mod tests {
 
     #[tokio::test]
     async fn ws_handshake_without_an_origin_header_is_accepted() {
-        let (handle, addr) = start_on_an_ephemeral_port(MapSettings::new(), Vec::new()).await;
+        let (handle, addr) = start_on_an_ephemeral_port(mem_settings(), Vec::new()).await;
 
         assert!(
             ws_handshake(addr, None).await.is_ok(),
@@ -764,7 +734,7 @@ pub(crate) mod tests {
 
     #[tokio::test]
     async fn ws_handshake_with_a_derived_loopback_origin_is_accepted() {
-        let (handle, addr) = start_on_an_ephemeral_port(MapSettings::new(), Vec::new()).await;
+        let (handle, addr) = start_on_an_ephemeral_port(mem_settings(), Vec::new()).await;
         let port = addr.port();
 
         for origin in [
@@ -784,7 +754,7 @@ pub(crate) mod tests {
     #[tokio::test]
     async fn ws_handshake_with_a_configured_additional_origin_is_accepted() {
         let (handle, addr) = start_on_an_ephemeral_port(
-            MapSettings::new(),
+            mem_settings(),
             vec!["https://overlay.example.com".to_owned()],
         )
         .await;
@@ -800,7 +770,7 @@ pub(crate) mod tests {
 
     #[tokio::test]
     async fn ws_handshake_with_a_foreign_origin_is_refused_with_the_origin_not_allowed_code() {
-        let (handle, addr) = start_on_an_ephemeral_port(MapSettings::new(), Vec::new()).await;
+        let (handle, addr) = start_on_an_ephemeral_port(mem_settings(), Vec::new()).await;
 
         let response = refused_ws_handshake(addr, "https://evil.example.com").await;
 
@@ -812,7 +782,7 @@ pub(crate) mod tests {
 
     #[tokio::test]
     async fn ws_handshake_from_a_page_served_at_the_requested_lan_address_is_accepted() {
-        let (handle, addr) = start_on_an_ephemeral_port(MapSettings::new(), Vec::new()).await;
+        let (handle, addr) = start_on_an_ephemeral_port(mem_settings(), Vec::new()).await;
 
         assert!(
             ws_handshake_presenting_host(addr, &format!("http://{LAN_AUTHORITY}"), LAN_AUTHORITY)
@@ -826,7 +796,7 @@ pub(crate) mod tests {
 
     #[tokio::test]
     async fn ws_handshake_from_a_self_consistent_name_authority_is_refused_as_rebinding() {
-        let (handle, addr) = start_on_an_ephemeral_port(MapSettings::new(), Vec::new()).await;
+        let (handle, addr) = start_on_an_ephemeral_port(mem_settings(), Vec::new()).await;
 
         let response = as_http_refusal(
             ws_handshake_presenting_host(
@@ -846,7 +816,7 @@ pub(crate) mod tests {
 
     #[tokio::test]
     async fn a_refused_ws_handshake_never_echoes_the_offending_origin() {
-        let (handle, addr) = start_on_an_ephemeral_port(MapSettings::new(), Vec::new()).await;
+        let (handle, addr) = start_on_an_ephemeral_port(mem_settings(), Vec::new()).await;
         let foreign = "https://evil.example.com";
 
         let response = refused_ws_handshake(addr, foreign).await;
@@ -869,7 +839,7 @@ pub(crate) mod tests {
 
     #[tokio::test]
     async fn a_refused_ws_handshake_never_registers_a_client() {
-        let (handle, addr) = start_on_an_ephemeral_port(MapSettings::new(), Vec::new()).await;
+        let (handle, addr) = start_on_an_ephemeral_port(mem_settings(), Vec::new()).await;
 
         refused_ws_handshake(addr, "https://evil.example.com").await;
 
@@ -883,7 +853,7 @@ pub(crate) mod tests {
 
     #[tokio::test]
     async fn the_derived_allowlist_uses_the_live_port_not_the_requested_zero() {
-        let (handle, addr) = start_on_an_ephemeral_port(MapSettings::new(), Vec::new()).await;
+        let (handle, addr) = start_on_an_ephemeral_port(mem_settings(), Vec::new()).await;
 
         assert!(
             ws_handshake(addr, Some(&format!("http://127.0.0.1:{}", addr.port())))
@@ -899,7 +869,7 @@ pub(crate) mod tests {
 
     #[tokio::test]
     async fn restart_rebuilds_the_allowlist_from_the_new_bind() {
-        let settings = MapSettings::new();
+        let settings = mem_settings();
         let (handle, boot_addr) =
             start_on_an_ephemeral_port(Arc::clone(&settings), Vec::new()).await;
         let new_port = reserve_a_free_port().await;
@@ -932,7 +902,7 @@ pub(crate) mod tests {
 
     #[tokio::test]
     async fn restart_picks_up_additional_origins_saved_since_boot() {
-        let settings = MapSettings::new();
+        let settings = mem_settings();
         let (handle, _boot_addr) =
             start_on_an_ephemeral_port(Arc::clone(&settings), Vec::new()).await;
         let new_port = reserve_a_free_port().await;
@@ -1223,7 +1193,7 @@ pub(crate) mod tests {
 
         let mut outlasted_the_drain = None;
         for _ in 0..SETUP_ATTEMPTS {
-            let settings = MapSettings::new();
+            let settings = mem_settings();
             let (handle, boot_addr) =
                 start_on_an_ephemeral_port(Arc::clone(&settings), Vec::new()).await;
             let new_port = reserve_a_free_port().await;
@@ -1281,7 +1251,7 @@ pub(crate) mod tests {
 
     #[tokio::test]
     async fn a_stopped_handle_serves_nothing_until_a_restart_brings_it_up() {
-        let (handle, port) = stopped_awaiting_a_port(MapSettings::new()).await;
+        let (handle, port) = stopped_awaiting_a_port(mem_settings()).await;
         let mut run_state = handle.run_state();
 
         assert!(
@@ -1304,7 +1274,7 @@ pub(crate) mod tests {
 
     #[tokio::test]
     async fn stopping_a_handle_that_never_listened_is_an_ok_no_op() {
-        let (handle, _port) = stopped_awaiting_a_port(MapSettings::new()).await;
+        let (handle, _port) = stopped_awaiting_a_port(mem_settings()).await;
 
         handle
             .stop()
@@ -1316,7 +1286,7 @@ pub(crate) mod tests {
 
     #[tokio::test]
     async fn a_restart_onto_a_taken_port_reports_bind_and_stays_stopped() {
-        let settings = MapSettings::new();
+        let settings = mem_settings();
         let (handle, port) = stopped_awaiting_a_port(Arc::clone(&settings)).await;
         let squatter = TcpListener::bind(format!("{LOOPBACK}:{port}"))
             .await
@@ -1341,7 +1311,7 @@ pub(crate) mod tests {
             (true, "a server that was serving when the switch went off"),
             (false, "a handle that never listened"),
         ] {
-            let settings = MapSettings::new();
+            let settings = mem_settings();
             let (handle, port) = handle_awaiting_a_port(Arc::clone(&settings), listening).await;
             crate::config::ServerSettings::save_enabled(&*settings, false)
                 .await
@@ -1363,7 +1333,7 @@ pub(crate) mod tests {
 
     #[tokio::test]
     async fn a_restart_binds_again_once_the_settings_switch_goes_back_on() {
-        let settings = MapSettings::new();
+        let settings = mem_settings();
         let (handle, port) = handle_awaiting_a_port(Arc::clone(&settings), true).await;
         crate::config::ServerSettings::save_enabled(&*settings, false)
             .await
@@ -1528,8 +1498,7 @@ pub(crate) mod tests {
             ("a scheme the rule never allows", "ws://evil.example", false),
         ] {
             let (port, lines) = log_capture::capture_blocking(Level::WARN, async move {
-                let (handle, addr) =
-                    start_on_an_ephemeral_port(MapSettings::new(), Vec::new()).await;
+                let (handle, addr) = start_on_an_ephemeral_port(mem_settings(), Vec::new()).await;
                 refused_ws_handshake(addr, origin).await;
                 handle.stop().await.expect("stop");
                 addr.port()
@@ -1733,7 +1702,7 @@ pub(crate) mod tests {
 
     #[tokio::test]
     async fn a_restart_applies_a_saved_reads_required_setting() {
-        let settings = MapSettings::new();
+        let settings = mem_settings();
         let (handle, port) = handle_awaiting_a_port(Arc::clone(&settings), true).await;
         assert_eq!(info_status(port).await, reqwest::StatusCode::OK);
         crate::config::ServerSettings::save_auth_required_for_reads(&*settings, true)
@@ -1808,7 +1777,7 @@ pub(crate) mod tests {
 
     #[tokio::test]
     async fn a_request_naming_a_foreign_host_is_misdirected_on_every_host_guarded_route() {
-        let (handle, addr) = start_on_an_ephemeral_port(MapSettings::new(), Vec::new()).await;
+        let (handle, addr) = start_on_an_ephemeral_port(mem_settings(), Vec::new()).await;
         let foreign = format!("{FOREIGN_HOST}:{}", addr.port());
 
         for target in [
@@ -1831,7 +1800,7 @@ pub(crate) mod tests {
     #[tokio::test]
     async fn requests_naming_an_address_localhost_an_allowed_origin_or_no_host_are_served() {
         let (handle, addr) = start_on_an_ephemeral_port(
-            MapSettings::new(),
+            mem_settings(),
             vec![format!("https://{ADDED_ORIGIN_HOST}")],
         )
         .await;
@@ -2098,7 +2067,7 @@ pub(crate) mod tests {
             (Some(true), 404, "setting on"),
             (Some(false), 200, "setting off"),
         ] {
-            let settings = MapSettings::new();
+            let settings = mem_settings();
             if let Some(required) = stored {
                 crate::config::ServerSettings::save_http_overlay_require_token(
                     &*settings, required,

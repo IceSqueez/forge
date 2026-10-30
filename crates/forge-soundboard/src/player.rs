@@ -796,17 +796,17 @@ mod tests {
     use std::path::PathBuf;
     use std::sync::{Arc, Mutex};
 
-    use time::OffsetDateTime;
-
     use crate::{AudioEvent, AudioEventSink};
     use async_trait::async_trait;
     use forge_audio::{AudioError, AudioSink};
     use forge_speech_types::PcmBuffer;
+    use forge_storage::test_support::{INJECTED_FAILURE_REASON, MemorySettings};
     use forge_storage::{
         MediaBlob, MediaBlobId, MediaReferrer, MediaReferrerKind, MediaRepo, SoundboardClipsRepo,
         StorageError, StoredClip,
     };
     use forge_types::{ClipId, OutputDevice};
+    use time::OffsetDateTime;
 
     use super::*;
     use crate::sink_factory::AudioSinkFactory;
@@ -2127,32 +2127,6 @@ mod tests {
         wait_for_stop_of(&mut commands, "clip-2").await;
     }
 
-    #[derive(Default)]
-    struct MemorySettings(Mutex<HashMap<String, String>>);
-
-    #[async_trait]
-    impl SettingsRepo for MemorySettings {
-        async fn get_string(&self, key: &str) -> Result<Option<String>, StorageError> {
-            Ok(self.0.lock().unwrap().get(key).cloned())
-        }
-
-        async fn set_string(&self, key: &str, value: &str) -> Result<(), StorageError> {
-            self.0
-                .lock()
-                .unwrap()
-                .insert(key.to_owned(), value.to_owned());
-            Ok(())
-        }
-
-        async fn delete(&self, key: &str) -> Result<bool, StorageError> {
-            Ok(self.0.lock().unwrap().remove(key).is_some())
-        }
-
-        async fn load_all(&self) -> Result<HashMap<String, String>, StorageError> {
-            Ok(self.0.lock().unwrap().clone())
-        }
-    }
-
     const SUB_ACTION_VOLUME: f32 = 0.25;
 
     fn idle_player() -> SoundboardPlayer {
@@ -2166,7 +2140,7 @@ mod tests {
 
     #[tokio::test]
     async fn the_set_master_volume_sub_action_persists_through_the_installed_settings_store() {
-        let store = Arc::new(MemorySettings::default());
+        let store = Arc::new(MemorySettings::new());
         let player = idle_player();
         player.install_settings_store(Arc::clone(&store) as Arc<dyn SettingsRepo>);
 
@@ -2186,7 +2160,7 @@ mod tests {
 
     #[tokio::test]
     async fn a_master_volume_above_ceiling_persists_the_same_clamped_gain_the_live_setting_holds() {
-        let store = Arc::new(MemorySettings::default());
+        let store = Arc::new(MemorySettings::new());
         let player = idle_player();
         player.install_settings_store(Arc::clone(&store) as Arc<dyn SettingsRepo>);
 
@@ -2222,37 +2196,12 @@ mod tests {
         );
     }
 
-    struct UnwritableSettings;
-
-    fn read_only_store() -> StorageError {
-        StorageError::Connection {
-            reason: "database is read-only".to_owned(),
-        }
-    }
-
-    #[async_trait]
-    impl SettingsRepo for UnwritableSettings {
-        async fn get_string(&self, _key: &str) -> Result<Option<String>, StorageError> {
-            Ok(None)
-        }
-
-        async fn set_string(&self, _key: &str, _value: &str) -> Result<(), StorageError> {
-            Err(read_only_store())
-        }
-
-        async fn delete(&self, _key: &str) -> Result<bool, StorageError> {
-            Ok(false)
-        }
-
-        async fn load_all(&self) -> Result<HashMap<String, String>, StorageError> {
-            Ok(HashMap::new())
-        }
-    }
-
     #[tokio::test]
     async fn an_unsaved_master_volume_reports_the_storage_reason_verbatim() {
         let player = idle_player();
-        player.install_settings_store(Arc::new(UnwritableSettings) as Arc<dyn SettingsRepo>);
+        let store = MemorySettings::new();
+        store.fail_writes(true);
+        player.install_settings_store(Arc::new(store) as Arc<dyn SettingsRepo>);
 
         let error = SoundboardControl::set_master_volume(&player, SUB_ACTION_VOLUME)
             .await
@@ -2262,7 +2211,13 @@ mod tests {
             matches!(error, SoundboardError::MasterVolumeNotSaved(_)),
             "{error:?}"
         );
-        assert_eq!(error.to_string(), read_only_store().to_string());
+        assert_eq!(
+            error.to_string(),
+            StorageError::Connection {
+                reason: INJECTED_FAILURE_REASON.to_owned()
+            }
+            .to_string()
+        );
     }
     struct GatedToggle {
         player: Arc<SoundboardPlayer>,

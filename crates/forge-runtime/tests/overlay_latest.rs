@@ -10,7 +10,7 @@ use forge_runtime::{
     Config, EventBus, NullEventLogRepo, OverlayConnectListener, OverlayFrameSink, OverlayReceivers,
     OverlayServiceError, OverlayServiceHandle, spawn_latest_overlay_feed,
 };
-use forge_storage::settings::MockSettingsRepo;
+use forge_storage::test_support::MemorySettings;
 use forge_storage::{
     MockOverlayRepo, OverlayConfig, OverlayCredential, OverlayDefinition, OverlayId, OverlayRepo,
     SettingsRepo,
@@ -203,7 +203,7 @@ impl Harness {
         let slots = Arc::new(SlotStore::default());
         let service = OverlayServiceHandle::new(
             Arc::new(repo) as Arc<dyn OverlayRepo>,
-            Arc::new(MockSettingsRepo::new()) as Arc<dyn SettingsRepo>,
+            Arc::new(MemorySettings::new()) as Arc<dyn SettingsRepo>,
             Arc::new(kinds),
             bus,
             Some(Arc::clone(&sink) as Arc<dyn OverlayFrameSink>),

@@ -18,11 +18,12 @@ use forge_runtime::{
 use forge_storage::action::MockActionRepo;
 use forge_storage::history::MockHistoryRepo;
 use forge_storage::queue::MockQueueRepo;
-use forge_storage::settings::MockSettingsRepo;
+use forge_storage::settings::core_settings;
+use forge_storage::test_support::MemorySettings;
 use forge_storage::trigger_instance::MockTriggerInstanceRepo;
 use forge_storage::{
     MockOverlayRepo, OverlayConfig, OverlayCredential, OverlayDefinition, OverlayId, OverlayRepo,
-    SettingsRepo, reserved_keys,
+    SettingsRepo,
 };
 use forge_types::{
     Action, ActionId, ExecutionMode, PermissionRung, PlatformScope, QueueId, SubActionConfig,
@@ -233,14 +234,13 @@ fn wired(with_event_wiring: bool) -> Wired {
     repo.expect_get_retained_content().returning(|_| Ok(None));
     repo.expect_set_retained_content().returning(|_, _| Ok(()));
 
-    let mut settings = MockSettingsRepo::new();
-    let configured = root.to_string_lossy().into_owned();
+    let settings = MemorySettings::new();
     settings
-        .expect_get_string()
-        .returning(move |key| match key {
-            reserved_keys::SERVER_OVERLAY_ROOT => Ok(Some(configured.clone())),
-            _ => Ok(None),
-        });
+        .seed(
+            &core_settings::SERVER_OVERLAY_ROOT,
+            &Some(root.to_string_lossy().into_owned()),
+        )
+        .expect("overlay root setting");
 
     let service = OverlayServiceHandle::new(
         Arc::new(repo) as Arc<dyn OverlayRepo>,

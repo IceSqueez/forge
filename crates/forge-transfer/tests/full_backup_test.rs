@@ -1178,26 +1178,31 @@ async fn bundle_written_before_categories_restores_every_folder() {
     assert_eq!(staged_files, expected);
 }
 
+use forge_storage::settings::core_settings::{
+    BACKUP_SCHEDULE_CONTENT_FINGERPRINT, BACKUP_SCHEDULE_ENABLED, BACKUP_SCHEDULE_LAST_SUCCESS_AT,
+};
+
 #[tokio::test]
 async fn a_full_backup_restores_its_settings_without_the_schedule_progress() {
     let live = LiveData::new().await;
     let repo: &dyn forge_storage::SettingsRepo = live.provider.as_ref();
-    for (key, value) in [
-        (
-            forge_storage::reserved_keys::BACKUP_SCHEDULE_LAST_SUCCESS_AT,
-            "2026-10-21T12:00:00Z",
-        ),
-        (
-            forge_storage::reserved_keys::BACKUP_SCHEDULE_CONTENT_FINGERPRINT,
-            "abc123",
-        ),
-        (
-            forge_storage::reserved_keys::BACKUP_SCHEDULE_ENABLED,
-            "true",
-        ),
-    ] {
-        repo.set_string(key, value).await.unwrap();
-    }
+    forge_storage::write_setting(
+        repo,
+        &BACKUP_SCHEDULE_LAST_SUCCESS_AT,
+        &Some("2026-10-21T12:00:00Z".to_owned()),
+    )
+    .await
+    .unwrap();
+    forge_storage::write_setting(
+        repo,
+        &BACKUP_SCHEDULE_CONTENT_FINGERPRINT,
+        &Some("abc123".to_owned()),
+    )
+    .await
+    .unwrap();
+    forge_storage::write_setting(repo, &BACKUP_SCHEDULE_ENABLED, &true)
+        .await
+        .unwrap();
     let bundle = write_full_backup(FullBackupRequest {
         provider: live.provider.clone(),
         data_dir: live.data_dir(),
@@ -1221,15 +1226,19 @@ async fn a_full_backup_restores_its_settings_without_the_schedule_progress() {
     )
     .await
     .unwrap();
-    let mut found = Vec::new();
-    for key in [
-        forge_storage::reserved_keys::BACKUP_SCHEDULE_LAST_SUCCESS_AT,
-        forge_storage::reserved_keys::BACKUP_SCHEDULE_CONTENT_FINGERPRINT,
-        forge_storage::reserved_keys::BACKUP_SCHEDULE_ENABLED,
-    ] {
-        let repo: &dyn forge_storage::SettingsRepo = &restored;
-        found.push(repo.get_string(key).await.unwrap());
-    }
+    let stored = restored.stored_setting_rows().await.unwrap();
     restored.shutdown().await;
+    let found: Vec<Option<String>> = [
+        BACKUP_SCHEDULE_LAST_SUCCESS_AT.name(),
+        BACKUP_SCHEDULE_CONTENT_FINGERPRINT.name(),
+        BACKUP_SCHEDULE_ENABLED.name(),
+    ]
+    .map(|key| {
+        stored
+            .iter()
+            .find(|row| row.key == key)
+            .map(|row| row.value.clone())
+    })
+    .into();
     assert_eq!(found, [None, None, Some("true".to_owned())]);
 }

@@ -8,11 +8,11 @@ use forge_overlay::{OverlayKindRegistry, register_builtin_kinds};
 use forge_paths::{MEDIA_DIR_NAME, OVERLAYS_DIR_NAME};
 use forge_registry::{SubActionRegistry, TriggerRegistry};
 use forge_speech_types::{AssignmentStrategy, IgnoreProfile};
-use forge_storage::settings::reserved_keys as key;
+use forge_storage::settings::core_settings;
 use forge_storage::{
     DATABASE_FILE_NAME, DataProvider, EXPECTED_SCHEMA_VERSION, MediaBlobId, MediaFormat,
     RowClasses, SettingDisclosure, SettingEncoding, SettingPortability, SettingSkip, SettingSpec,
-    SettingsCatalog, SettingsRepo, TtsPipelineSettings,
+    SettingsCatalog, TtsPipelineSettings,
 };
 use forge_storage_sqlite::{SqliteBackend, SqliteDatabaseFileSchema};
 use forge_transfer::{
@@ -103,9 +103,7 @@ impl Store {
 
     async fn set(&self, pairs: &[(&str, &str)]) {
         for (k, v) in pairs {
-            SettingsRepo::set_string(self.provider.as_ref(), k, v)
-                .await
-                .unwrap();
+            self.seed(k, v, None).await;
         }
     }
 
@@ -127,10 +125,10 @@ impl Store {
     }
 
     async fn settings(&self) -> Settings {
-        SettingsRepo::load_all(self.provider.as_ref())
+        self.stored_rows()
             .await
-            .unwrap()
             .into_iter()
+            .map(|(key, (value, _))| (key, value))
             .collect()
     }
 
@@ -486,21 +484,39 @@ async fn a_setup_bundle_is_refused_by_restore_and_by_pack_import_as_the_wrong_ki
 async fn a_crafted_setup_writes_only_the_settings_the_catalog_declares_portable() {
     let store = Store::open().await;
     let local = [
-        (key::AUDIO_OUTPUT_DEVICE_ID, "local-speakers"),
+        (
+            core_settings::AUDIO_OUTPUT_DEVICE_ID.name(),
+            "local-speakers",
+        ),
         (OWNER_MACHINE_LOCAL.key.name(), "/home/local/owner"),
-        (key::BACKUP_SCHEDULE_KEY, "local-schedule-key"),
+        (
+            core_settings::BACKUP_SCHEDULE_KEY.name(),
+            "local-schedule-key",
+        ),
     ];
     store.set(&local).await;
     let path = bundle(
         store.data_dir(),
         &setup_carrying(&[
-            (key::AUDIO_OUTPUT_DEVICE_ID, "foreign-speakers"),
-            (key::AUDIO_VOICE_GATE_INPUT_DEVICE_ID, "foreign-mic"),
+            (
+                core_settings::AUDIO_OUTPUT_DEVICE_ID.name(),
+                "foreign-speakers",
+            ),
+            (
+                core_settings::AUDIO_VOICE_GATE_INPUT_DEVICE_ID.name(),
+                "foreign-mic",
+            ),
             (OWNER_MACHINE_LOCAL.key.name(), "/etc"),
-            (key::BACKUP_SCHEDULE_KEY, "foreign-schedule-key"),
-            (key::VOICE_ASSIGNMENT_STRATEGY, "\"Random\""),
+            (
+                core_settings::BACKUP_SCHEDULE_KEY.name(),
+                "foreign-schedule-key",
+            ),
+            (
+                core_settings::VOICE_ASSIGNMENT_STRATEGY.name(),
+                "\"Random\"",
+            ),
             (UNCLASSIFIED_KEY, "foreign-note"),
-            (key::THEME, PORTABLE_THEME),
+            (core_settings::THEME.name(), PORTABLE_THEME),
             (OWNER_PORTABLE.key.name(), "true"),
         ]),
         &[],
@@ -512,10 +528,13 @@ async fn a_crafted_setup_writes_only_the_settings_the_catalog_declares_portable(
         .iter()
         .map(|(k, v)| ((*k).to_owned(), (*v).to_owned()))
         .collect();
-    expected.insert(key::THEME.to_owned(), PORTABLE_THEME.to_owned());
+    expected.insert(
+        core_settings::THEME.name().to_owned(),
+        PORTABLE_THEME.to_owned(),
+    );
     expected.insert(OWNER_PORTABLE.key.name().to_owned(), "true".to_owned());
     let mut settings = store.settings().await;
-    settings.remove(key::VOICE_ASSIGNMENT_STRATEGY);
+    settings.remove(core_settings::VOICE_ASSIGNMENT_STRATEGY.name());
     assert_eq!(settings, expected);
 }
 
@@ -524,8 +543,8 @@ async fn a_setup_import_trims_older_pre_setup_copies_to_the_kept_count() {
     let store = Store::open().await;
     store
         .set(&[
-            (key::SAFETY_COPIES_MODE, "keep_newest"),
-            (key::SAFETY_COPIES_KEEP_NEWEST, "1"),
+            (core_settings::SAFETY_COPIES_MODE.name(), "keep_newest"),
+            (core_settings::SAFETY_COPIES_KEEP_NEWEST.name(), "1"),
         ])
         .await;
     let backups = forge_transfer::backups_dir(store.data_dir());
@@ -576,9 +595,11 @@ async fn a_setup_carrying_no_queues_removes_the_local_ones_but_keeps_the_default
 #[tokio::test]
 async fn a_setup_carrying_an_overlay_with_invalid_settings_writes_nothing_and_takes_no_snapshot() {
     let store = Store::open().await;
-    store.set(&[(key::THEME, "local-theme")]).await;
+    store
+        .set(&[(core_settings::THEME.name(), "local-theme")])
+        .await;
     let before = store.settings().await;
-    let mut documents = setup_carrying(&[(key::THEME, PORTABLE_THEME)]);
+    let mut documents = setup_carrying(&[(core_settings::THEME.name(), PORTABLE_THEME)]);
     documents.configuration.overlays = vec![OverlayDocument {
         config: [("margin_top".to_owned(), Variant::String("wide".to_owned()))].into(),
         files: Vec::new(),
@@ -605,8 +626,11 @@ async fn a_setup_carrying_an_overlay_with_invalid_settings_writes_nothing_and_ta
 
 fn mixed_admission_documents() -> SetupDocuments {
     setup_carrying(&[
-        (key::AUDIO_OUTPUT_DEVICE_ID, "foreign-speakers"),
-        (key::THEME, PORTABLE_THEME),
+        (
+            core_settings::AUDIO_OUTPUT_DEVICE_ID.name(),
+            "foreign-speakers",
+        ),
+        (core_settings::THEME.name(), PORTABLE_THEME),
         (UNCLASSIFIED_KEY, "foreign-note"),
         (OWNER_PORTABLE.key.name(), "maybe"),
         ("tts.engine_params.has space", "{}"),
@@ -632,7 +656,10 @@ async fn an_import_reports_every_refused_setting_with_the_reason_admission_gave(
         ("tts.engine_params.", SettingSkip::Undeclared),
         ("tts.engine_params.has space", SettingSkip::Undeclared),
         (UNCLASSIFIED_KEY, SettingSkip::Undeclared),
-        (key::AUDIO_OUTPUT_DEVICE_ID, SettingSkip::NotPortable),
+        (
+            core_settings::AUDIO_OUTPUT_DEVICE_ID.name(),
+            SettingSkip::NotPortable,
+        ),
         (OWNER_PORTABLE.key.name(), SettingSkip::Undecodable),
         ("zz.undeclared", SettingSkip::Undeclared),
     ]
@@ -650,12 +677,15 @@ async fn an_import_keeps_writing_the_admitted_settings_around_the_refused_ones()
     store.import(path).await.unwrap();
 
     let expected: Settings = [
-        (key::THEME.to_owned(), PORTABLE_THEME.to_owned()),
+        (
+            core_settings::THEME.name().to_owned(),
+            PORTABLE_THEME.to_owned(),
+        ),
         (ENGINE_PARAMS_PIPER.to_owned(), "{\"speed\":1.2}".to_owned()),
     ]
     .into();
     let mut settings = store.settings().await;
-    settings.remove(key::VOICE_ASSIGNMENT_STRATEGY);
+    settings.remove(core_settings::VOICE_ASSIGNMENT_STRATEGY.name());
     assert_eq!(settings, expected);
 }
 
@@ -684,11 +714,15 @@ async fn a_stored_portable_row_the_bundle_does_not_carry_is_removed_and_a_machin
 {
     let store = Store::open().await;
     store
-        .seed(key::ACCENT, "local-accent", Some(PORTABLE_VERBATIM))
+        .seed(
+            core_settings::ACCENT.name(),
+            "local-accent",
+            Some(PORTABLE_VERBATIM),
+        )
         .await;
     store
         .seed(
-            key::AUDIO_OUTPUT_DEVICE_ID,
+            core_settings::AUDIO_OUTPUT_DEVICE_ID.name(),
             "local-speakers",
             Some(MACHINE_LOCAL_WITHHELD),
         )
@@ -698,20 +732,25 @@ async fn a_stored_portable_row_the_bundle_does_not_carry_is_removed_and_a_machin
     store.import(path).await.unwrap();
 
     let mut left: Vec<String> = store.stored_rows().await.into_keys().collect();
-    left.retain(|name| name != key::VOICE_ASSIGNMENT_STRATEGY);
-    assert_eq!(left, vec![key::AUDIO_OUTPUT_DEVICE_ID.to_owned()]);
+    left.retain(|name| name != core_settings::VOICE_ASSIGNMENT_STRATEGY.name());
+    assert_eq!(
+        left,
+        vec![core_settings::AUDIO_OUTPUT_DEVICE_ID.name().to_owned()]
+    );
 }
 
 #[tokio::test]
 async fn a_classless_legacy_row_for_a_portable_declared_key_is_not_removed_by_a_replace_import() {
     let store = Store::open().await;
-    store.seed(key::ACCENT, "legacy-accent", None).await;
+    store
+        .seed(core_settings::ACCENT.name(), "legacy-accent", None)
+        .await;
     let path = bundle(store.data_dir(), &empty_setup(), &[]);
 
     store.import(path).await.unwrap();
 
     assert_eq!(
-        store.stored_rows().await.get(key::ACCENT),
+        store.stored_rows().await.get(core_settings::ACCENT.name()),
         Some(&("legacy-accent".to_owned(), MACHINE_LOCAL_WITHHELD))
     );
 }
@@ -719,11 +758,13 @@ async fn a_classless_legacy_row_for_a_portable_declared_key_is_not_removed_by_a_
 #[tokio::test]
 async fn an_imported_setting_is_stored_with_its_declared_classes_over_a_legacy_row() {
     let store = Store::open().await;
-    store.seed(key::THEME, "legacy-theme", None).await;
+    store
+        .seed(core_settings::THEME.name(), "legacy-theme", None)
+        .await;
     let path = bundle(
         store.data_dir(),
         &setup_carrying(&[
-            (key::THEME, PORTABLE_THEME),
+            (core_settings::THEME.name(), PORTABLE_THEME),
             (OWNER_PORTABLE.key.name(), "true"),
         ]),
         &[],
@@ -734,7 +775,7 @@ async fn an_imported_setting_is_stored_with_its_declared_classes_over_a_legacy_r
     let rows = store.stored_rows().await;
     assert_eq!(
         (
-            rows.get(key::THEME).cloned(),
+            rows.get(core_settings::THEME.name()).cloned(),
             rows.get(OWNER_PORTABLE.key.name()).cloned()
         ),
         (
@@ -748,7 +789,11 @@ async fn an_imported_setting_is_stored_with_its_declared_classes_over_a_legacy_r
 async fn an_exported_setup_carries_only_rows_stored_as_portable() {
     let store = Store::open().await;
     store
-        .seed(key::THEME, "stored-portable", Some(PORTABLE_VERBATIM))
+        .seed(
+            core_settings::THEME.name(),
+            "stored-portable",
+            Some(PORTABLE_VERBATIM),
+        )
         .await;
     store
         .seed(
@@ -757,10 +802,12 @@ async fn an_exported_setup_carries_only_rows_stored_as_portable() {
             Some(PORTABLE_PRESENCE),
         )
         .await;
-    store.seed(key::ACCENT, "legacy-classless", None).await;
+    store
+        .seed(core_settings::ACCENT.name(), "legacy-classless", None)
+        .await;
     store
         .seed(
-            key::AUDIO_OUTPUT_DEVICE_ID,
+            core_settings::AUDIO_OUTPUT_DEVICE_ID.name(),
             "local-speakers",
             Some(MACHINE_LOCAL_WITHHELD),
         )
@@ -778,10 +825,10 @@ async fn an_exported_setup_carries_only_rows_stored_as_portable() {
         .unwrap();
 
     let seeded = [
-        key::THEME,
+        core_settings::THEME.name(),
         UNCLASSIFIED_KEY,
-        key::ACCENT,
-        key::AUDIO_OUTPUT_DEVICE_ID,
+        core_settings::ACCENT.name(),
+        core_settings::AUDIO_OUTPUT_DEVICE_ID.name(),
     ];
     let carried: Settings = staged
         .documents()
@@ -793,7 +840,10 @@ async fn an_exported_setup_carries_only_rows_stored_as_portable() {
     assert_eq!(
         carried,
         [
-            (key::THEME.to_owned(), "stored-portable".to_owned()),
+            (
+                core_settings::THEME.name().to_owned(),
+                "stored-portable".to_owned()
+            ),
             (
                 UNCLASSIFIED_KEY.to_owned(),
                 "stored-portable-note".to_owned()
@@ -808,10 +858,18 @@ async fn a_failed_setup_import_restores_replaced_rows_and_removes_added_ones_wit
  {
     let store = Store::open().await;
     store
-        .seed(key::THEME, "local-theme", Some(PORTABLE_PRESENCE))
+        .seed(
+            core_settings::THEME.name(),
+            "local-theme",
+            Some(PORTABLE_PRESENCE),
+        )
         .await;
     store
-        .seed(key::ACCENT, "local-accent", Some(PORTABLE_VERBATIM))
+        .seed(
+            core_settings::ACCENT.name(),
+            "local-accent",
+            Some(PORTABLE_VERBATIM),
+        )
         .await;
     let blocked = forge_types::Queue {
         id: forge_types::QueueId::new(),
@@ -837,7 +895,7 @@ async fn a_failed_setup_import_restores_replaced_rows_and_removes_added_ones_wit
     let path = bundle(
         store.data_dir(),
         &setup_carrying(&[
-            (key::THEME, PORTABLE_THEME),
+            (core_settings::THEME.name(), PORTABLE_THEME),
             (OWNER_PORTABLE.key.name(), "true"),
         ]),
         &[],
@@ -846,7 +904,7 @@ async fn a_failed_setup_import_restores_replaced_rows_and_removes_added_ones_wit
     let failed = store.import(path).await;
 
     let mut after = store.stored_rows().await;
-    after.remove(key::VOICE_ASSIGNMENT_STRATEGY);
+    after.remove(core_settings::VOICE_ASSIGNMENT_STRATEGY.name());
     assert!(failed.is_err(), "{failed:?}");
     assert_eq!(after, before);
 }

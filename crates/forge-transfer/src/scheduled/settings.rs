@@ -124,30 +124,24 @@ impl Progress {
 
 #[cfg(test)]
 mod tests {
+    use forge_storage::settings::core_settings::{
+        BACKUP_SCHEDULE_INCLUDE_ASSETS, BACKUP_SCHEDULE_INCLUDE_MEDIA,
+        BACKUP_SCHEDULE_INCLUDE_OVERLAYS, BACKUP_SCHEDULE_INCLUDE_VOICES,
+        BACKUP_SCHEDULE_INTERVAL_MINUTES, BACKUP_SCHEDULE_KEY, BACKUP_SCHEDULE_LAST_SUCCESS_AT,
+    };
     use forge_storage::settings::{
         DEFAULT_BACKUP_SCHEDULE_INTERVAL_MINUTES, MAX_BACKUP_SCHEDULE_INTERVAL_MINUTES,
         MIN_BACKUP_SCHEDULE_INTERVAL_MINUTES,
     };
-    use forge_storage::{DATABASE_FILE_NAME, DataProvider, SettingsRepo, reserved_keys};
-    use forge_storage_sqlite::SqliteBackend;
-    use tempfile::TempDir;
+    use forge_storage::test_support::MemorySettings;
     use time::{Date, Month};
 
     use super::{Progress, ScheduleSettings};
     use crate::bundle::category::BackupCategory;
 
-    async fn backend() -> (TempDir, SqliteBackend) {
-        let dir = tempfile::tempdir().unwrap();
-        let url = format!("sqlite://{}", dir.path().join(DATABASE_FILE_NAME).display());
-        let backend = SqliteBackend::open_for_test(&url, [7; 32], dir.path().join("media"), None)
-            .await
-            .unwrap();
-        (dir, backend)
-    }
-
     #[tokio::test]
     async fn interval_outside_the_bounds_is_clamped_and_garbage_falls_back_to_the_default() {
-        let (_dir, repo) = backend().await;
+        let repo = MemorySettings::new();
         for (stored, expected) in [
             (
                 (MIN_BACKUP_SCHEDULE_INTERVAL_MINUTES - 1).to_string(),
@@ -168,38 +162,34 @@ mod tests {
             ),
             (" 90 ".to_owned(), 90),
         ] {
-            repo.set_string(reserved_keys::BACKUP_SCHEDULE_INTERVAL_MINUTES, &stored)
-                .await
-                .unwrap();
+            repo.seed_raw(&BACKUP_SCHEDULE_INTERVAL_MINUTES, &stored);
 
             let loaded = ScheduleSettings::load(&repo).await.unwrap();
 
             assert_eq!(loaded.interval_minutes, expected, "{stored:?}");
         }
-        repo.shutdown().await;
     }
 
     #[tokio::test]
     async fn database_stays_included_when_every_optional_category_is_off() {
-        let (_dir, repo) = backend().await;
-        for key in [
-            reserved_keys::BACKUP_SCHEDULE_INCLUDE_MEDIA,
-            reserved_keys::BACKUP_SCHEDULE_INCLUDE_VOICES,
-            reserved_keys::BACKUP_SCHEDULE_INCLUDE_OVERLAYS,
-            reserved_keys::BACKUP_SCHEDULE_INCLUDE_ASSETS,
+        let repo = MemorySettings::new();
+        for setting in [
+            &BACKUP_SCHEDULE_INCLUDE_MEDIA,
+            &BACKUP_SCHEDULE_INCLUDE_VOICES,
+            &BACKUP_SCHEDULE_INCLUDE_OVERLAYS,
+            &BACKUP_SCHEDULE_INCLUDE_ASSETS,
         ] {
-            repo.set_string(key, "false").await.unwrap();
+            repo.seed(setting, &false).unwrap();
         }
 
         let loaded = ScheduleSettings::load(&repo).await.unwrap();
 
         assert_eq!(loaded.categories, [BackupCategory::Database]);
-        repo.shutdown().await;
     }
 
     #[tokio::test]
     async fn a_stored_key_loads_and_an_undecodable_one_is_flagged_unreadable() {
-        let (_dir, repo) = backend().await;
+        let repo = MemorySettings::new();
         let key = crate::bundle::schedule_key::ScheduleKey {
             recipient: "age1recipient".to_owned(),
             wrapped_identity: "wrapped".to_owned(),
@@ -210,17 +200,7 @@ mod tests {
             Some(key.encode().unwrap()),
             Some("{not json".to_owned()),
         ] {
-            match &stored {
-                Some(value) => repo
-                    .set_string(reserved_keys::BACKUP_SCHEDULE_KEY, value)
-                    .await
-                    .unwrap(),
-                None => {
-                    repo.delete(reserved_keys::BACKUP_SCHEDULE_KEY)
-                        .await
-                        .unwrap();
-                }
-            }
+            repo.seed(&BACKUP_SCHEDULE_KEY, &stored).unwrap();
             let settings = ScheduleSettings::load(&repo).await.unwrap();
             loaded.push((settings.key, settings.key_unreadable));
         }
@@ -229,12 +209,11 @@ mod tests {
             loaded,
             vec![(None, false), (Some(key), false), (None, true)]
         );
-        repo.shutdown().await;
     }
 
     #[tokio::test]
     async fn progress_round_trips_through_machine_local_settings() {
-        let (_dir, repo) = backend().await;
+        let repo = MemorySettings::new();
         let progress = Progress {
             last_success_at: Some(
                 Date::from_calendar_date(2026, Month::October, 21)
@@ -249,19 +228,15 @@ mod tests {
         progress.save(&repo).await.unwrap();
 
         assert_eq!(Progress::load(&repo).await.unwrap(), progress);
-        repo.shutdown().await;
     }
 
     #[tokio::test]
     async fn an_unparseable_last_success_time_reads_as_never_ran() {
-        let (_dir, repo) = backend().await;
-        repo.set_string(reserved_keys::BACKUP_SCHEDULE_LAST_SUCCESS_AT, "yesterday")
-            .await
-            .unwrap();
+        let repo = MemorySettings::new();
+        repo.seed_raw(&BACKUP_SCHEDULE_LAST_SUCCESS_AT, "yesterday");
 
         let loaded = Progress::load(&repo).await.unwrap();
 
         assert_eq!(loaded.last_success_at, None);
-        repo.shutdown().await;
     }
 }

@@ -115,37 +115,23 @@ impl SafetyCopySettings {
 
 #[cfg(test)]
 mod tests {
+    use forge_storage::settings::core_settings::{
+        SAFETY_COPIES_DELETE_AFTER_DAYS, SAFETY_COPIES_KEEP_NEWEST, SAFETY_COPIES_MODE,
+    };
     use forge_storage::settings::{
         MAX_SAFETY_COPIES_DELETE_AFTER_DAYS, MAX_SAFETY_COPIES_KEEP_NEWEST,
         MIN_SAFETY_COPIES_DELETE_AFTER_DAYS, MIN_SAFETY_COPIES_KEEP_NEWEST,
     };
-    use forge_storage::{DATABASE_FILE_NAME, SettingsRepo, reserved_keys};
-    use forge_storage_sqlite::SqliteBackend;
-    use tempfile::TempDir;
+    use forge_storage::test_support::MemorySettings;
 
     use super::{SafetyCopyMode, SafetyCopySettings, SafetyRetention};
 
     const KEEP: u32 = 7;
     const DAYS: u32 = 45;
 
-    async fn backend() -> (TempDir, SqliteBackend) {
-        let dir = tempfile::tempdir().unwrap();
-        let url = format!("sqlite://{}", dir.path().join(DATABASE_FILE_NAME).display());
-        let backend = SqliteBackend::open_for_test(&url, [7; 32], dir.path().join("media"), None)
-            .await
-            .unwrap();
-        (dir, backend)
-    }
-
-    async fn store(repo: &SqliteBackend, pairs: &[(&str, &str)]) {
-        for (key, value) in pairs {
-            repo.set_string(key, value).await.unwrap();
-        }
-    }
-
     #[tokio::test]
     async fn an_untouched_store_loads_the_default_policy() {
-        let (_dir, repo) = backend().await;
+        let repo = MemorySettings::new();
 
         let loaded = SafetyCopySettings::load(&repo).await.unwrap();
 
@@ -154,7 +140,7 @@ mod tests {
 
     #[tokio::test]
     async fn switching_modes_keeps_both_numbers_through_every_save() {
-        let (_dir, repo) = backend().await;
+        let repo = MemorySettings::new();
         let mut seen = Vec::new();
         for mode in [
             SafetyCopyMode::DeleteAfterDays,
@@ -175,7 +161,7 @@ mod tests {
 
     #[tokio::test]
     async fn stored_numbers_outside_the_bounds_load_clamped_to_the_nearest_bound() {
-        let (_dir, repo) = backend().await;
+        let repo = MemorySettings::new();
         for (keep, days, expected) in [
             (
                 (MIN_SAFETY_COPIES_KEEP_NEWEST - 1).to_string(),
@@ -210,14 +196,8 @@ mod tests {
                 ),
             ),
         ] {
-            store(
-                &repo,
-                &[
-                    (reserved_keys::SAFETY_COPIES_KEEP_NEWEST, &keep),
-                    (reserved_keys::SAFETY_COPIES_DELETE_AFTER_DAYS, &days),
-                ],
-            )
-            .await;
+            repo.seed_raw(&SAFETY_COPIES_KEEP_NEWEST, &keep);
+            repo.seed_raw(&SAFETY_COPIES_DELETE_AFTER_DAYS, &days);
 
             let loaded = SafetyCopySettings::load(&repo).await.unwrap();
 
@@ -231,7 +211,7 @@ mod tests {
 
     #[tokio::test]
     async fn saving_numbers_outside_the_bounds_stores_them_clamped() {
-        let (_dir, repo) = backend().await;
+        let repo = MemorySettings::new();
         SafetyCopySettings {
             mode: SafetyCopyMode::KeepNewest,
             keep_newest: 0,
@@ -242,12 +222,10 @@ mod tests {
         .unwrap();
 
         let stored = (
-            repo.get_string(reserved_keys::SAFETY_COPIES_KEEP_NEWEST)
-                .await
-                .unwrap(),
-            repo.get_string(reserved_keys::SAFETY_COPIES_DELETE_AFTER_DAYS)
-                .await
-                .unwrap(),
+            repo.row(SAFETY_COPIES_KEEP_NEWEST.name())
+                .map(|row| row.value),
+            repo.row(SAFETY_COPIES_DELETE_AFTER_DAYS.name())
+                .map(|row| row.value),
         );
 
         assert_eq!(
@@ -261,19 +239,10 @@ mod tests {
 
     #[tokio::test]
     async fn an_unknown_mode_falls_back_to_keep_newest_and_keeps_the_stored_numbers() {
-        let (_dir, repo) = backend().await;
-        store(
-            &repo,
-            &[
-                (reserved_keys::SAFETY_COPIES_MODE, "keep_forever"),
-                (reserved_keys::SAFETY_COPIES_KEEP_NEWEST, &KEEP.to_string()),
-                (
-                    reserved_keys::SAFETY_COPIES_DELETE_AFTER_DAYS,
-                    &DAYS.to_string(),
-                ),
-            ],
-        )
-        .await;
+        let repo = MemorySettings::new();
+        repo.seed_raw(&SAFETY_COPIES_MODE, "keep_forever");
+        repo.seed_raw(&SAFETY_COPIES_KEEP_NEWEST, &KEEP.to_string());
+        repo.seed_raw(&SAFETY_COPIES_DELETE_AFTER_DAYS, &DAYS.to_string());
 
         let loaded = SafetyCopySettings::load(&repo).await.unwrap();
 
@@ -298,8 +267,8 @@ mod tests {
             ("delete_after_days\n", SafetyCopyMode::KeepNewest),
             ("", SafetyCopyMode::KeepNewest),
         ] {
-            let (_dir, repo) = backend().await;
-            store(&repo, &[(reserved_keys::SAFETY_COPIES_MODE, stored)]).await;
+            let repo = MemorySettings::new();
+            repo.seed_raw(&SAFETY_COPIES_MODE, stored);
 
             let loaded = SafetyCopySettings::load(&repo).await.unwrap();
 

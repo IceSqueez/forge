@@ -16,10 +16,11 @@ use forge_runtime::{
     OverlayServiceError, OverlayServiceHandle,
 };
 
-use forge_storage::settings::MockSettingsRepo;
+use forge_storage::settings::core_settings;
+use forge_storage::test_support::MemorySettings;
 use forge_storage::{
     MockOverlayRepo, OverlayConfig, OverlayCredential, OverlayDefinition, OverlayId, OverlayRepo,
-    SettingsRepo, StorageError, reserved_keys,
+    SettingsRepo,
 };
 use forge_types::{ArgStack, Variant};
 use futures_util::FutureExt;
@@ -226,14 +227,13 @@ fn harness(definitions: Vec<OverlayDefinition>, attach_sink: bool) -> Harness {
             .map(|(_, content)| content.clone()))
     });
 
-    let mut settings = MockSettingsRepo::new();
-    let configured = root.to_string_lossy().into_owned();
+    let settings = MemorySettings::new();
     settings
-        .expect_get_string()
-        .returning(move |key| match key {
-            reserved_keys::SERVER_OVERLAY_ROOT => Ok(Some(configured.clone())),
-            _ => Ok(None),
-        });
+        .seed(
+            &core_settings::SERVER_OVERLAY_ROOT,
+            &Some(root.to_string_lossy().into_owned()),
+        )
+        .expect("overlay root setting");
 
     let bus = EventBus::new(Arc::new(NullEventLogRepo));
     let sink = Arc::new(RecordingSink::default());
@@ -1075,14 +1075,12 @@ async fn an_overlay_root_setting_that_names_nowhere_falls_back_to_the_default_di
         (1, "a setting holding an empty string"),
         (2, "a setting storage cannot read"),
     ] {
-        let mut settings = MockSettingsRepo::new();
-        settings.expect_get_string().returning(move |_| match case {
-            0 => Ok(None),
-            1 => Ok(Some(String::new())),
-            _ => Err(StorageError::Connection {
-                reason: "unreadable".to_owned(),
-            }),
-        });
+        let settings = MemorySettings::new();
+        match case {
+            0 => {}
+            1 => settings.seed_raw(&core_settings::SERVER_OVERLAY_ROOT, ""),
+            _ => settings.fail_reads(true),
+        }
 
         let service = OverlayServiceHandle::new(
             Arc::new(MockOverlayRepo::new()) as Arc<dyn OverlayRepo>,
@@ -1160,7 +1158,7 @@ fn service_whose_repo_answers(removed: bool, enabled_changed: bool) -> OverlaySe
         .returning(move |_, _| Ok(enabled_changed));
     OverlayServiceHandle::new(
         Arc::new(repo) as Arc<dyn OverlayRepo>,
-        Arc::new(MockSettingsRepo::new()) as Arc<dyn SettingsRepo>,
+        Arc::new(MemorySettings::new()) as Arc<dyn SettingsRepo>,
         registry(),
         EventBus::new(Arc::new(NullEventLogRepo)),
         None,

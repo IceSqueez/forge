@@ -26,5 +26,6 @@ time = { workspace = true }
 
 [dev-dependencies]
 forge-storage-sqlite = { path = "../forge-storage-sqlite" }
+forge-storage = { path = "../forge-storage", features = ["settings-test-support"] }
 tempfile = { workspace = true }
 wiremock = { workspace = true }

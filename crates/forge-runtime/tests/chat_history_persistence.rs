@@ -5,7 +5,8 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use forge_events::{Event, EventSource};
 use forge_runtime::{EventBus, NullEventLogRepo, spawn_chat_history_persistence};
 use forge_storage::chat_history::MockChatHistoryRepo;
-use forge_storage::settings::MockSettingsRepo;
+use forge_storage::settings::core_settings::CHAT_HISTORY_PER_VIEWER_LIMIT;
+use forge_storage::test_support::MemorySettings;
 use forge_storage::{
     ChatHistoryRepo, ChatModerationTarget, DEFAULT_CHAT_HISTORY_PER_VIEWER_LIMIT,
     MAX_CHAT_HISTORY_PER_VIEWER_LIMIT, SettingsRepo, StorageError,
@@ -15,7 +16,7 @@ use forge_types::{
     ChatModerationAction, ChatModerationPayload, ChatPayload, ModerationMarks, PlatformId,
     UserRemoval,
 };
-use tokio::sync::{Notify, mpsc};
+use tokio::sync::mpsc;
 use tokio::time::{Duration, timeout};
 
 const RECV_TIMEOUT: Duration = Duration::from_secs(30);
@@ -52,9 +53,7 @@ fn mod_event(source: EventSource, action: ChatModerationAction) -> Event {
 }
 
 fn no_settings() -> Arc<dyn SettingsRepo> {
-    let mut settings = MockSettingsRepo::new();
-    settings.expect_get_string().returning(|_| Ok(None));
-    Arc::new(settings)
+    Arc::new(MemorySettings::new())
 }
 
 #[tokio::test]
@@ -117,10 +116,10 @@ async fn retention_runs_after_a_written_batch_with_the_stored_per_viewer_limit()
             Ok(0)
         });
 
-    let mut settings = MockSettingsRepo::new();
+    let settings = MemorySettings::new();
     settings
-        .expect_get_string()
-        .returning(|_| Ok(Some("1234".to_string())));
+        .seed(&CHAT_HISTORY_PER_VIEWER_LIMIT, &1234)
+        .unwrap();
 
     spawn_chat_history_persistence(Arc::clone(&bus), Arc::new(repo), Arc::new(settings));
 
@@ -170,65 +169,22 @@ async fn a_limit_set_on_the_handle_drives_later_retention_clamped_into_range() {
     }
 }
 
-enum StartRead {
-    Stored(&'static str),
-    Fails,
-}
-
-struct ScriptedSettings {
-    reading: Notify,
-    release: Notify,
-    answer: StartRead,
-}
-
-impl ScriptedSettings {
-    fn new(answer: StartRead) -> Arc<Self> {
-        Arc::new(Self {
-            reading: Notify::new(),
-            release: Notify::new(),
-            answer,
-        })
-    }
-}
-
-#[async_trait::async_trait]
-impl SettingsRepo for ScriptedSettings {
-    async fn get_string(&self, _: &str) -> Result<Option<String>, StorageError> {
-        self.reading.notify_one();
-        self.release.notified().await;
-        match self.answer {
-            StartRead::Stored(value) => Ok(Some(value.to_string())),
-            StartRead::Fails => Err(StorageError::Connection {
-                reason: "settings unreadable".to_string(),
-            }),
-        }
-    }
-
-    async fn set_string(&self, _: &str, _: &str) -> Result<(), StorageError> {
-        Ok(())
-    }
-
-    async fn delete(&self, _: &str) -> Result<bool, StorageError> {
-        Ok(false)
-    }
-
-    async fn load_all(&self) -> Result<std::collections::HashMap<String, String>, StorageError> {
-        Ok(std::collections::HashMap::new())
-    }
-}
-
 #[tokio::test]
 async fn a_limit_set_while_the_start_read_is_in_flight_wins_over_the_stored_value() {
     let bus = bus();
     let (repo, mut limits) = retention_limits();
-    let settings = ScriptedSettings::new(StartRead::Stored("1234"));
-    let handle = spawn_chat_history_persistence(Arc::clone(&bus), repo, settings.clone());
-    timeout(RECV_TIMEOUT, settings.reading.notified())
+    let settings = MemorySettings::new();
+    settings
+        .seed(&CHAT_HISTORY_PER_VIEWER_LIMIT, &1234)
+        .unwrap();
+    settings.hold_reads();
+    let handle = spawn_chat_history_persistence(Arc::clone(&bus), repo, Arc::new(settings.clone()));
+    timeout(RECV_TIMEOUT, settings.wait_for_read_start())
         .await
         .unwrap();
 
     handle.set_per_viewer_limit(7);
-    settings.release.notify_one();
+    settings.release_reads();
     bus.publish(chat_event("msg"));
 
     let per_viewer = timeout(RECV_TIMEOUT, limits.recv()).await.unwrap().unwrap();
@@ -240,11 +196,12 @@ async fn retention_uses_the_default_limit_when_the_start_read_fails_or_stalls() 
     for released in [true, false] {
         let bus = bus();
         let (repo, mut limits) = retention_limits();
-        let settings = ScriptedSettings::new(StartRead::Fails);
-        if released {
-            settings.release.notify_one();
+        let settings = MemorySettings::new();
+        settings.fail_reads(true);
+        if !released {
+            settings.hold_reads();
         }
-        spawn_chat_history_persistence(Arc::clone(&bus), repo, settings);
+        spawn_chat_history_persistence(Arc::clone(&bus), repo, Arc::new(settings));
 
         bus.publish(chat_event("msg"));
 

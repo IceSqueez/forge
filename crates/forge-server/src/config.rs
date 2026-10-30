@@ -211,47 +211,16 @@ impl ServerSettings {
 #[cfg(test)]
 mod tests {
     use std::collections::HashMap;
-    use std::sync::Mutex;
 
     use async_trait::async_trait;
     use forge_storage::StorageError;
+    use forge_storage::test_support::MemorySettings;
 
     use super::*;
 
-    struct MapRepo(Mutex<HashMap<String, String>>);
-
-    impl MapRepo {
-        fn empty() -> Self {
-            Self(Mutex::new(HashMap::new()))
-        }
-    }
-
-    #[async_trait]
-    impl SettingsRepo for MapRepo {
-        async fn get_string(&self, key: &str) -> Result<Option<String>, StorageError> {
-            Ok(self.0.lock().unwrap().get(key).cloned())
-        }
-
-        async fn set_string(&self, key: &str, value: &str) -> Result<(), StorageError> {
-            self.0
-                .lock()
-                .unwrap()
-                .insert(key.to_owned(), value.to_owned());
-            Ok(())
-        }
-
-        async fn delete(&self, key: &str) -> Result<bool, StorageError> {
-            Ok(self.0.lock().unwrap().remove(key).is_some())
-        }
-
-        async fn load_all(&self) -> Result<HashMap<String, String>, StorageError> {
-            Ok(self.0.lock().unwrap().clone())
-        }
-    }
-
     #[tokio::test]
     async fn defaults_when_no_keys_stored() {
-        let repo = MapRepo::empty();
+        let repo = MemorySettings::new();
         let s = ServerSettings::load(&repo).await.unwrap();
         assert_eq!(s.bind_address, "127.0.0.1");
         assert_eq!(s.port, 8081);
@@ -268,7 +237,7 @@ mod tests {
 
     #[tokio::test]
     async fn load_roundtrip_all_fields() {
-        let repo = MapRepo::empty();
+        let repo = MemorySettings::new();
         ServerSettings::save_bind_address(&repo, "0.0.0.0")
             .await
             .unwrap();
@@ -309,7 +278,7 @@ mod tests {
         );
     }
 
-    struct UnreachableKey(&'static str, MapRepo);
+    struct UnreachableKey(&'static str, MemorySettings);
 
     #[async_trait]
     impl SettingsRepo for UnreachableKey {
@@ -351,12 +320,10 @@ mod tests {
                 true,
             ),
         ] {
-            let repo = MapRepo::empty();
+            let repo = MemorySettings::new();
             ServerSettings::save_port(&repo, 9000).await.unwrap();
             if let Some(raw) = stored {
-                repo.set_string(settings::ADDITIONAL_ORIGINS.name(), raw)
-                    .await
-                    .unwrap();
+                repo.seed_raw(&settings::ADDITIONAL_ORIGINS, raw);
             }
 
             let s = ServerSettings::load(&repo).await.unwrap();
@@ -390,7 +357,7 @@ mod tests {
             core_settings::SERVER_OVERLAY_ROOT.name(),
             settings::ADDITIONAL_ORIGINS.name(),
         ] {
-            let repo = UnreachableKey(key, MapRepo::empty());
+            let repo = UnreachableKey(key, MemorySettings::new());
 
             let loaded = ServerSettings::load(&repo).await;
 
@@ -408,10 +375,8 @@ mod tests {
             ("65536", u16::MAX),
             ("70000", u16::MAX),
         ] {
-            let repo = MapRepo::empty();
-            repo.set_string(settings::PORT.name(), stored)
-                .await
-                .unwrap();
+            let repo = MemorySettings::new();
+            repo.seed_raw(&settings::PORT, stored);
 
             let s = ServerSettings::load(&repo).await.unwrap();
 
@@ -421,10 +386,8 @@ mod tests {
 
     #[tokio::test]
     async fn load_keeps_a_flag_default_when_its_stored_text_is_not_a_flag() {
-        let repo = MapRepo::empty();
-        repo.set_string(settings::HTTP_OVERLAY_REQUIRE_TOKEN.name(), "sometimes")
-            .await
-            .unwrap();
+        let repo = MemorySettings::new();
+        repo.seed_raw(&settings::HTTP_OVERLAY_REQUIRE_TOKEN, "sometimes");
 
         let s = ServerSettings::load(&repo).await.unwrap();
 
@@ -433,7 +396,7 @@ mod tests {
 
     #[tokio::test]
     async fn save_bind_address_rejects_non_allowlisted() {
-        let repo = MapRepo::empty();
+        let repo = MemorySettings::new();
         let err = ServerSettings::save_bind_address(&repo, "192.168.1.100")
             .await
             .unwrap_err();
@@ -442,7 +405,7 @@ mod tests {
 
     #[tokio::test]
     async fn save_bind_address_accepts_all_valid_values() {
-        let repo = MapRepo::empty();
+        let repo = MemorySettings::new();
         for addr in ["127.0.0.1", "0.0.0.0", "::1", "::"] {
             ServerSettings::save_bind_address(&repo, addr)
                 .await

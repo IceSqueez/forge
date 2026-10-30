@@ -945,7 +945,7 @@ where
 #[cfg(test)]
 mod tests {
     use forge_storage::overlay::MockOverlayRepo;
-    use forge_storage::settings::MockSettingsRepo;
+    use forge_storage::test_support::MemorySettings;
 
     use super::*;
     use crate::bus::NullEventLogRepo;
@@ -1006,7 +1006,7 @@ mod tests {
     fn handle_with(frames: Option<Arc<dyn OverlayFrameSink>>) -> OverlayServiceHandle {
         OverlayServiceHandle::new(
             Arc::new(MockOverlayRepo::new()),
-            Arc::new(MockSettingsRepo::new()),
+            Arc::new(MemorySettings::new()),
             Arc::new(OverlayKindRegistry::new()),
             EventBus::new(Arc::new(NullEventLogRepo)),
             frames,
@@ -1086,7 +1086,7 @@ mod tests {
         repo.expect_delete().times(1).returning(move |_| outcome());
         OverlayServiceHandle::new(
             Arc::new(repo),
-            Arc::new(MockSettingsRepo::new()),
+            Arc::new(MemorySettings::new()),
             Arc::new(OverlayKindRegistry::new()),
             EventBus::new(Arc::new(NullEventLogRepo)),
             Some(Arc::clone(log) as Arc<dyn OverlayFrameSink>),

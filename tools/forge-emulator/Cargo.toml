@@ -71,6 +71,7 @@ axum = { version = "0.8", features = ["ws"] }
 forge-discord = { path = "../../crates/forge-discord" }
 forge-registry = { path = "../../crates/forge-registry" }
 forge-storage = { path = "../../crates/forge-storage", features = ["test-mocks"] }
+forge-storage-sqlite = { path = "../../crates/forge-storage-sqlite", features = ["settings-test-support"] }
 tempfile = { version = "3.27" }
 time = { version = "0.3", features = ["macros"] }
 tokio = { version = "1.54", features = ["test-util"] }

@@ -170,6 +170,7 @@ mod tests {
     use crate::api::ForgeApi;
     use forge_events::{Event, EventPublisher};
     use forge_storage::GlobalsRepo;
+    use forge_storage::test_support::MemorySettings;
     use forge_storage_sqlite::SqliteBackend;
 
     use crate::test_support::{Sandboxed, repo_globals, sandboxed_backend};
@@ -363,21 +364,16 @@ mod tests {
 
     #[tokio::test]
     async fn read_config_falls_back_to_defaults_when_settings_absent() {
-        let dp = open_test_dp().await;
-        let cfg = EngineConfig::read(dp.as_ref()).await;
+        let cfg = EngineConfig::read(&MemorySettings::new()).await;
         assert_eq!(cfg, EngineConfig::default());
     }
 
     #[tokio::test]
     async fn read_config_reads_persisted_op_limit_and_timeout() {
-        let dp = open_test_dp().await;
-        dp.set_string(settings::OP_LIMIT.name(), "7777")
-            .await
-            .unwrap();
-        dp.set_string(settings::TIMEOUT_MS.name(), "1234")
-            .await
-            .unwrap();
-        let cfg = EngineConfig::read(dp.as_ref()).await;
+        let store = MemorySettings::new();
+        store.seed_raw(&settings::OP_LIMIT, "7777");
+        store.seed_raw(&settings::TIMEOUT_MS, "1234");
+        let cfg = EngineConfig::read(&store).await;
         assert_eq!(
             cfg,
             EngineConfig {
@@ -391,12 +387,10 @@ mod tests {
     async fn read_config_falls_back_to_defaults_for_unparseable_values() {
         let defaults = EngineConfig::default();
         for bad in ["", "abc", "-5", "3.5", "99999999999999999999999999"] {
-            let dp = open_test_dp().await;
-            dp.set_string(settings::OP_LIMIT.name(), bad).await.unwrap();
-            dp.set_string(settings::TIMEOUT_MS.name(), bad)
-                .await
-                .unwrap();
-            let cfg = EngineConfig::read(dp.as_ref()).await;
+            let store = MemorySettings::new();
+            store.seed_raw(&settings::OP_LIMIT, bad);
+            store.seed_raw(&settings::TIMEOUT_MS, bad);
+            let cfg = EngineConfig::read(&store).await;
             assert_eq!(
                 cfg, defaults,
                 "unparseable {bad:?} must fall back to defaults"
@@ -416,15 +410,11 @@ mod tests {
             ("10000001", "10001", 10_000_000, 10_000),
             ("4294967295", "4294967295", 10_000_000, 10_000),
         ] {
-            let dp = open_test_dp().await;
-            dp.set_string(settings::OP_LIMIT.name(), stored_ops)
-                .await
-                .unwrap();
-            dp.set_string(settings::TIMEOUT_MS.name(), stored_ms)
-                .await
-                .unwrap();
+            let store = MemorySettings::new();
+            store.seed_raw(&settings::OP_LIMIT, stored_ops);
+            store.seed_raw(&settings::TIMEOUT_MS, stored_ms);
 
-            let cfg = EngineConfig::read(dp.as_ref()).await;
+            let cfg = EngineConfig::read(&store).await;
 
             assert_eq!(
                 cfg,
@@ -439,11 +429,9 @@ mod tests {
 
     #[tokio::test]
     async fn persisted_op_limit_below_the_minimum_aborts_runaway_script_at_the_minimum() {
-        let dp = open_test_dp().await;
-        dp.set_string(settings::OP_LIMIT.name(), "500")
-            .await
-            .unwrap();
-        let cfg = EngineConfig::read(dp.as_ref()).await;
+        let store = MemorySettings::new();
+        store.seed_raw(&settings::OP_LIMIT, "500");
+        let cfg = EngineConfig::read(&store).await;
         let engine = Engine::with_config(cfg);
         let err = tokio::task::spawn_blocking(move || engine.eval_script("loop {}"))
             .await

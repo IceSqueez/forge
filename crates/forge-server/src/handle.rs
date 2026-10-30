@@ -407,13 +407,14 @@ mod tests {
     use crate::bus_adapter::{BusAdapter, ClientFilterSet, OverlayClientClass};
     use crate::config::ServerConfig;
     use crate::server::stopped_server;
-    use crate::test_helpers::{MemSettings, TestDataProvider};
+    use crate::test_helpers::{TestDataProvider, mem_settings};
+    use forge_storage::test_support::INJECTED_FAILURE_REASON;
 
     async fn stopped_handle() -> ServerHandle {
         let mut credentials = MockCredentialsRepo::new();
         credentials.expect_load().returning(|_| Ok(None));
         credentials.expect_store().returning(|_, _| Ok(()));
-        stopped_handle_over(MemSettings::new() as Arc<dyn SettingsRepo>, credentials).await
+        stopped_handle_over(mem_settings() as Arc<dyn SettingsRepo>, credentials).await
     }
 
     async fn stopped_handle_over(
@@ -529,7 +530,7 @@ mod tests {
             Arc::new(ActionCancelRegistry::new()),
         ));
         let config = ServerConfig::new(
-            MemSettings::new() as Arc<dyn SettingsRepo>,
+            mem_settings() as Arc<dyn SettingsRepo>,
             Arc::new(credentials) as Arc<dyn CredentialsRepo>,
             bus,
             dp.action_repo(),
@@ -547,13 +548,12 @@ mod tests {
     async fn empty_overlay_service(root: &std::path::Path) -> OverlayServiceHandle {
         let mut repo = forge_storage::MockOverlayRepo::new();
         repo.expect_list().returning(|| Ok(Vec::new()));
-        let settings = MemSettings::new();
+        let settings = mem_settings();
         settings
-            .set_string(
-                forge_storage::reserved_keys::SERVER_OVERLAY_ROOT,
-                &root.to_string_lossy(),
+            .seed(
+                &forge_storage::settings::core_settings::SERVER_OVERLAY_ROOT,
+                &Some(root.to_string_lossy().into_owned()),
             )
-            .await
             .expect("overlay root setting");
         OverlayServiceHandle::new(
             Arc::new(repo),
@@ -854,7 +854,7 @@ mod tests {
      {
         let (credentials, slots, _refuse) = credentials_with_a_write_switch();
         let handle =
-            stopped_handle_over(MemSettings::new() as Arc<dyn SettingsRepo>, credentials).await;
+            stopped_handle_over(mem_settings() as Arc<dyn SettingsRepo>, credentials).await;
         let old = handle.bearer_token().await;
 
         let fresh = handle.regenerate_bearer_token().await.expect("regenerate");
@@ -878,7 +878,7 @@ mod tests {
     async fn a_bearer_regenerate_the_store_refuses_keeps_the_old_token_live() {
         let (credentials, slots, refuse) = credentials_with_a_write_switch();
         let handle =
-            stopped_handle_over(MemSettings::new() as Arc<dyn SettingsRepo>, credentials).await;
+            stopped_handle_over(mem_settings() as Arc<dyn SettingsRepo>, credentials).await;
         let old = handle.bearer_token().await;
         refuse.store(true, std::sync::atomic::Ordering::SeqCst);
 
@@ -895,7 +895,7 @@ mod tests {
 
     #[tokio::test]
     async fn the_reads_switch_is_stored_and_applied_live_in_both_directions() {
-        let settings = MemSettings::new();
+        let settings = mem_settings();
         let handle = stopped_handle_over(
             Arc::clone(&settings) as Arc<dyn SettingsRepo>,
             slot_credentials().0,
@@ -921,27 +921,16 @@ mod tests {
 
     #[tokio::test]
     async fn a_reads_switch_the_settings_store_refuses_leaves_the_live_switch_unchanged() {
-        let mut settings = forge_storage::settings::MockSettingsRepo::new();
-        settings.expect_get_string().returning(|_| Ok(None));
-        settings
-            .expect_load_all()
-            .returning(|| Ok(Default::default()));
-        settings.expect_put_row().returning(|_, _, _, _| {
-            Err(forge_storage::StorageError::Connection {
-                reason: "database is locked".into(),
-            })
-        });
-        let handle = stopped_handle_over(
-            Arc::new(settings) as Arc<dyn SettingsRepo>,
-            slot_credentials().0,
-        )
-        .await;
+        let settings = mem_settings();
+        settings.fail_writes(true);
+        let handle =
+            stopped_handle_over(settings as Arc<dyn SettingsRepo>, slot_credentials().0).await;
         let before = handle.reads_require_auth().await;
 
         let result = handle.set_reads_require_auth(!before).await;
 
         assert!(
-            matches!(&result, Err(ServerError::Storage(reason)) if reason.contains("database is locked")),
+            matches!(&result, Err(ServerError::Storage(reason)) if reason.contains(INJECTED_FAILURE_REASON)),
             "{result:?}"
         );
         assert_eq!(handle.reads_require_auth().await, before);

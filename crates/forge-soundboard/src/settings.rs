@@ -141,84 +141,23 @@ pub async fn save_output_device(
 
 #[cfg(test)]
 mod tests {
-    use std::collections::{BTreeMap, HashMap};
-    use std::sync::Mutex;
+    use std::collections::BTreeMap;
 
-    use async_trait::async_trait;
+    use forge_storage::test_support::MemorySettings;
 
     use super::*;
 
-    #[derive(Default)]
-    struct MapStore(Mutex<HashMap<String, String>>);
-
-    impl MapStore {
-        fn rows(&self) -> BTreeMap<String, String> {
-            self.0
-                .lock()
-                .unwrap_or_else(PoisonError::into_inner)
-                .clone()
-                .into_iter()
-                .collect()
-        }
-    }
-
-    #[async_trait]
-    impl SettingsRepo for MapStore {
-        async fn get_string(&self, key: &str) -> Result<Option<String>, StorageError> {
-            Ok(self
-                .0
-                .lock()
-                .unwrap_or_else(PoisonError::into_inner)
-                .get(key)
-                .cloned())
-        }
-        async fn set_string(&self, key: &str, value: &str) -> Result<(), StorageError> {
-            self.0
-                .lock()
-                .unwrap_or_else(PoisonError::into_inner)
-                .insert(key.to_owned(), value.to_owned());
-            Ok(())
-        }
-        async fn delete(&self, key: &str) -> Result<bool, StorageError> {
-            Ok(self
-                .0
-                .lock()
-                .unwrap_or_else(PoisonError::into_inner)
-                .remove(key)
-                .is_some())
-        }
-        async fn load_all(&self) -> Result<HashMap<String, String>, StorageError> {
-            Ok(self
-                .0
-                .lock()
-                .unwrap_or_else(PoisonError::into_inner)
-                .clone())
-        }
-    }
-
-    struct UnreachableStore;
-
-    #[async_trait]
-    impl SettingsRepo for UnreachableStore {
-        async fn get_string(&self, _: &str) -> Result<Option<String>, StorageError> {
-            Err(StorageError::Connection {
-                reason: "settings store unreachable".to_owned(),
-            })
-        }
-        async fn set_string(&self, _: &str, _: &str) -> Result<(), StorageError> {
-            unreachable!("loading never writes")
-        }
-        async fn delete(&self, _: &str) -> Result<bool, StorageError> {
-            unreachable!("loading never deletes")
-        }
-        async fn load_all(&self) -> Result<HashMap<String, String>, StorageError> {
-            unreachable!("loading reads single keys")
-        }
+    fn golden_rows(store: &MemorySettings) -> BTreeMap<String, String> {
+        store
+            .rows()
+            .into_iter()
+            .map(|row| (row.key, row.value))
+            .collect()
     }
 
     #[tokio::test]
     async fn saved_soundboard_settings_store_their_golden_strings_and_load_back() {
-        let store = MapStore::default();
+        let store = MemorySettings::new();
         save_enabled(&store, false).await.unwrap();
         save_output_device(&store, Some("hw:2,0".to_owned()))
             .await
@@ -229,7 +168,7 @@ mod tests {
         let loaded = load_soundboard_settings(&store).await;
 
         assert_eq!(
-            (store.rows(), loaded),
+            (golden_rows(&store), loaded),
             (
                 BTreeMap::from(
                     [
@@ -252,7 +191,7 @@ mod tests {
 
     #[tokio::test]
     async fn clearing_the_output_device_deletes_its_row_and_loads_the_default_device() {
-        let store = MapStore::default();
+        let store = MemorySettings::new();
         save_output_device(&store, Some("hw:2,0".to_owned()))
             .await
             .unwrap();
@@ -261,7 +200,7 @@ mod tests {
 
         assert_eq!(
             (
-                store.rows(),
+                golden_rows(&store),
                 load_soundboard_settings(&store).await.output_device()
             ),
             (BTreeMap::new(), OutputDevice::Default)
@@ -270,7 +209,10 @@ mod tests {
 
     #[tokio::test]
     async fn an_unreadable_store_loads_the_default_settings() {
-        let loaded = load_soundboard_settings(&UnreachableStore).await;
+        let store = MemorySettings::new();
+        store.fail_reads(true);
+
+        let loaded = load_soundboard_settings(&store).await;
 
         assert_eq!(loaded, SoundboardSettings::default());
     }

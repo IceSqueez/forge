@@ -3,7 +3,15 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
 use forge_paths::{BACKUPS_DIR_NAME, MEDIA_DIR_NAME};
-use forge_storage::{DATABASE_FILE_NAME, DataProvider, SettingsRepo, reserved_keys};
+use forge_storage::settings::core_settings::{
+    BACKUP_SCHEDULE_DESTINATION, BACKUP_SCHEDULE_ENABLED, BACKUP_SCHEDULE_INTERVAL_MINUTES,
+    BACKUP_SCHEDULE_KEEP_DAILY_DAYS, BACKUP_SCHEDULE_KEEP_NEWEST, BACKUP_SCHEDULE_KEY,
+    BACKUP_SCHEDULE_LAST_SUCCESS_AT,
+};
+use forge_storage::{
+    DATABASE_FILE_NAME, DataProvider, RowClasses, Setting, SettingCodec, SettingsRepo,
+    write_setting,
+};
 use forge_storage_sqlite::SqliteBackend;
 use forge_transfer::{
     BUNDLE_EXTENSION, BackupClock, FailureCategory, Passphrase, ScheduleKey, ScheduleState,
@@ -49,6 +57,7 @@ impl BackupClock for FakeClock {
 
 struct Fixture {
     dir: TempDir,
+    backend: Arc<SqliteBackend>,
     provider: Arc<dyn DataProvider>,
     clock: Arc<FakeClock>,
     exclusivity: TransferExclusivity,
@@ -66,9 +75,11 @@ impl Fixture {
             SqliteBackend::open_for_test(&url, SQLITE_KEY, data.join(MEDIA_DIR_NAME), None)
                 .await
                 .unwrap();
+        let backend = Arc::new(backend);
         Self {
             dir,
-            provider: Arc::new(backend),
+            provider: Arc::clone(&backend) as Arc<dyn DataProvider>,
+            backend,
             clock: FakeClock::starting_now(),
             exclusivity: TransferExclusivity::new(),
         }
@@ -82,37 +93,43 @@ impl Fixture {
         self.dir.path().join("out")
     }
 
-    async fn set(&self, key: &str, value: &str) {
+    async fn write<C: SettingCodec>(&self, setting: &Setting<C>, value: &C::Value) {
         let repo: &dyn SettingsRepo = self.provider.as_ref();
-        repo.set_string(key, value).await.unwrap();
+        write_setting(repo, setting, value).await.unwrap();
+    }
+
+    async fn seed_raw<C: SettingCodec>(&self, setting: &Setting<C>, raw: &str) {
+        self.backend
+            .seed_foreign_setting(setting.name(), raw, Some(RowClasses::from(&setting.spec())))
+            .await
+            .unwrap();
     }
 
     async fn enable_into(&self, folder: &Path) {
         let key = create_schedule_key(&Passphrase::new(PASSPHRASE.to_owned())).unwrap();
         self.store_key(&key).await;
-        self.set(reserved_keys::BACKUP_SCHEDULE_ENABLED, "true")
-            .await;
-        self.set(
-            reserved_keys::BACKUP_SCHEDULE_INTERVAL_MINUTES,
-            &INTERVAL_MINUTES.to_string(),
+        self.write(&BACKUP_SCHEDULE_ENABLED, &true).await;
+        self.write(
+            &BACKUP_SCHEDULE_INTERVAL_MINUTES,
+            &u32::try_from(INTERVAL_MINUTES).unwrap(),
         )
         .await;
-        self.set(
-            reserved_keys::BACKUP_SCHEDULE_DESTINATION,
-            &folder.to_string_lossy(),
+        self.write(
+            &BACKUP_SCHEDULE_DESTINATION,
+            &Some(folder.to_string_lossy().into_owned()),
         )
         .await;
     }
 
     async fn store_key(&self, key: &ScheduleKey) {
-        self.set(reserved_keys::BACKUP_SCHEDULE_KEY, &key.encode().unwrap())
+        self.write(&BACKUP_SCHEDULE_KEY, &Some(key.encode().unwrap()))
             .await;
     }
 
     async fn last_succeeded_at(&self, at: OffsetDateTime) {
-        self.set(
-            reserved_keys::BACKUP_SCHEDULE_LAST_SUCCESS_AT,
-            &at.format(&Rfc3339).unwrap(),
+        self.write(
+            &BACKUP_SCHEDULE_LAST_SUCCESS_AT,
+            &Some(at.format(&Rfc3339).unwrap()),
         )
         .await;
     }
@@ -327,9 +344,7 @@ async fn a_read_only_destination_fails_as_not_writable_and_leaves_no_file() {
 #[tokio::test]
 async fn an_enabled_schedule_without_a_key_fails_as_key_missing() {
     let fixture = Fixture::new().await;
-    fixture
-        .set(reserved_keys::BACKUP_SCHEDULE_ENABLED, "true")
-        .await;
+    fixture.write(&BACKUP_SCHEDULE_ENABLED, &true).await;
     let handle = fixture.spawn();
 
     let streak = failed_attempts(&handle, 1).await.failure.unwrap();
@@ -343,7 +358,7 @@ async fn a_corrupted_stored_key_fails_as_key_unreadable_and_writes_no_bundle() {
     let fixture = Fixture::new().await;
     fixture.enable_into(&fixture.folder()).await;
     fixture
-        .set(reserved_keys::BACKUP_SCHEDULE_KEY, "{\"recipient\":")
+        .seed_raw(&BACKUP_SCHEDULE_KEY, "{\"recipient\":")
         .await;
     let handle = fixture.spawn();
 
@@ -360,12 +375,8 @@ async fn a_corrupted_stored_key_fails_as_key_unreadable_and_writes_no_bundle() {
 async fn a_successful_write_prunes_older_scheduled_bundles_beyond_retention() {
     let fixture = Fixture::new().await;
     fixture.enable_into(&fixture.folder()).await;
-    fixture
-        .set(reserved_keys::BACKUP_SCHEDULE_KEEP_NEWEST, "1")
-        .await;
-    fixture
-        .set(reserved_keys::BACKUP_SCHEDULE_KEEP_DAILY_DAYS, "0")
-        .await;
+    fixture.write(&BACKUP_SCHEDULE_KEEP_NEWEST, &1).await;
+    fixture.write(&BACKUP_SCHEDULE_KEEP_DAILY_DAYS, &0).await;
     let handle = fixture.spawn();
     succeeded_at(&handle, fixture.clock.now()).await;
     let first = bundles_in(&fixture.folder());

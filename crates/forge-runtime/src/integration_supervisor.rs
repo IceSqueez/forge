@@ -505,7 +505,8 @@ mod tests {
     use std::sync::Mutex;
     use std::sync::atomic::{AtomicUsize, Ordering};
 
-    use forge_storage::integration_enabled_key;
+    use forge_storage::settings::core_settings::INTEGRATION_ENABLED;
+    use forge_storage::test_support::MemorySettings;
 
     use super::*;
     use crate::spawn_live_viewer_aggregator;
@@ -521,53 +522,12 @@ mod tests {
         )
     }
 
-    struct UnwritableSettings;
-
-    #[async_trait]
-    impl SettingsRepo for UnwritableSettings {
-        async fn get_string(&self, _key: &str) -> Result<Option<String>, StorageError> {
-            Ok(None)
-        }
-        async fn set_string(&self, _key: &str, _value: &str) -> Result<(), StorageError> {
-            Err(StorageError::Connection {
-                reason: "disk full".to_owned(),
-            })
-        }
-        async fn delete(&self, _key: &str) -> Result<bool, StorageError> {
-            Ok(false)
-        }
-        async fn load_all(&self) -> Result<HashMap<String, String>, StorageError> {
-            Ok(HashMap::new())
-        }
+    fn enabled_key(id: &IntegrationId) -> String {
+        INTEGRATION_ENABLED.member_key(id.as_str()).unwrap()
     }
 
-    #[derive(Default)]
-    struct MemorySettings(Mutex<HashMap<String, String>>);
-
-    impl MemorySettings {
-        fn value(&self, key: &str) -> Option<String> {
-            self.0.lock().unwrap().get(key).cloned()
-        }
-    }
-
-    #[async_trait]
-    impl SettingsRepo for MemorySettings {
-        async fn get_string(&self, key: &str) -> Result<Option<String>, StorageError> {
-            Ok(self.value(key))
-        }
-        async fn set_string(&self, key: &str, value: &str) -> Result<(), StorageError> {
-            self.0
-                .lock()
-                .unwrap()
-                .insert(key.to_owned(), value.to_owned());
-            Ok(())
-        }
-        async fn delete(&self, key: &str) -> Result<bool, StorageError> {
-            Ok(self.0.lock().unwrap().remove(key).is_some())
-        }
-        async fn load_all(&self) -> Result<HashMap<String, String>, StorageError> {
-            Ok(self.0.lock().unwrap().clone())
-        }
+    fn stored_value(settings: &MemorySettings, id: &IntegrationId) -> Option<String> {
+        settings.row(&enabled_key(id)).map(|row| row.value)
     }
 
     #[derive(Debug, Clone, PartialEq, Eq)]
@@ -725,7 +685,7 @@ mod tests {
 
     impl Harness {
         fn launch(factory: &Arc<FakeFactory>) -> Self {
-            let settings = Arc::new(MemorySettings::default());
+            let settings = Arc::new(MemorySettings::new());
             let gate = IntegrationGate::new();
             let objects = Arc::new(FakeObjects::default());
             let supervisor = IntegrationSupervisor::launch(
@@ -790,8 +750,8 @@ mod tests {
         for (stored, configured, expect_running) in [
             (None, true, true),
             (None, false, false),
-            (Some("false"), true, false),
-            (Some("true"), false, true),
+            (Some(false), true, false),
+            (Some(true), false, true),
         ] {
             let factory = FakeFactory::new(
                 "twitch",
@@ -804,8 +764,7 @@ mod tests {
             if let Some(value) = stored {
                 harness
                     .settings
-                    .set_string(&integration_enabled_key(&factory.id), value)
-                    .await
+                    .seed_family(&INTEGRATION_ENABLED, factory.id.as_str(), &value)
                     .unwrap();
             }
 
@@ -819,10 +778,7 @@ mod tests {
             );
             assert_eq!(factory.starts(), usize::from(expect_running), "{case}");
             assert_eq!(
-                harness
-                    .settings
-                    .value(&integration_enabled_key(&factory.id))
-                    .as_deref(),
+                stored_value(&harness.settings, &factory.id).as_deref(),
                 Some(if expect_running { "true" } else { "false" }),
                 "{case}"
             );
@@ -847,10 +803,7 @@ mod tests {
         assert!(!harness.gate.is_disabled(&factory.id));
         assert!(harness.objects.get(&factory.id).is_some());
         assert_eq!(
-            harness
-                .settings
-                .value(&integration_enabled_key(&factory.id))
-                .as_deref(),
+            stored_value(&harness.settings, &factory.id).as_deref(),
             Some("true")
         );
 
@@ -861,10 +814,7 @@ mod tests {
         assert!(harness.objects.get(&factory.id).is_none());
         assert_eq!(factory.teardowns(), 1);
         assert_eq!(
-            harness
-                .settings
-                .value(&integration_enabled_key(&factory.id))
-                .as_deref(),
+            stored_value(&harness.settings, &factory.id).as_deref(),
             Some("false")
         );
     }
@@ -1194,9 +1144,11 @@ mod tests {
     #[tokio::test]
     async fn an_enable_that_cannot_save_its_state_fails_without_starting_the_integration() {
         let factory = FakeFactory::new("twitch", Behaviour::default());
+        let settings = MemorySettings::new();
+        settings.fail_writes(true);
         let supervisor = IntegrationSupervisor::launch(
             vec![Arc::clone(&factory) as Arc<dyn IntegrationFactory<FakeObject>>],
-            Arc::new(UnwritableSettings) as Arc<dyn SettingsRepo>,
+            Arc::new(settings) as Arc<dyn SettingsRepo>,
             IntegrationGate::new(),
             Arc::new(FakeObjects::default()) as Arc<dyn IntegrationObjects<FakeObject>>,
             spawn_live_viewer_aggregator(),

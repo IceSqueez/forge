@@ -34,7 +34,7 @@ arc-swap = { workspace = true }
 forge-registry = { path = "../forge-registry" }
 tokio-tungstenite = { workspace = true }
 async-trait = { workspace = true }
-forge-storage = { path = "../forge-storage", features = ["test-mocks"] }
+forge-storage = { path = "../forge-storage", features = ["test-mocks", "settings-test-support"] }
 futures-util = { workspace = true }
 mockall = { workspace = true }
 reqwest = { workspace = true }

@@ -29,6 +29,6 @@ tracing = { workspace = true }
 
 [dev-dependencies]
 forge-hotkey = { path = "../forge-hotkey", features = ["testing"] }
-forge-storage = { path = "../forge-storage", features = ["test-mocks"] }
+forge-storage = { path = "../forge-storage", features = ["test-mocks", "settings-test-support"] }
 forge-storage-sqlite = { path = "../forge-storage-sqlite" }
 tempfile = { workspace = true }

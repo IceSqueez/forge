@@ -174,9 +174,8 @@ async fn fetch_user_info(api: &Gateway, access_token: &str) -> Result<UserRecord
         .data
         .into_iter()
         .next()
-        .ok_or_else(|| PlatformError::Http {
-            status: response.status(),
-            body: EMPTY_USERS.to_owned(),
+        .ok_or_else(|| PlatformError::MalformedResponse {
+            reason: EMPTY_USERS.to_owned(),
         })
 }
 
@@ -536,13 +535,7 @@ mod tests {
             (
                 "empty data on 200",
                 ResponseTemplate::new(StatusCode::OK.as_u16()).set_body_json(json!({ "data": [] })),
-                Lookup::Http(StatusCode::OK.as_u16()),
-            ),
-            (
-                "empty data on 203 carries 203",
-                ResponseTemplate::new(StatusCode::NON_AUTHORITATIVE_INFORMATION.as_u16())
-                    .set_body_json(json!({ "data": [] })),
-                Lookup::Http(StatusCode::NON_AUTHORITATIVE_INFORMATION.as_u16()),
+                Lookup::Malformed,
             ),
             (
                 "undecodable 200",

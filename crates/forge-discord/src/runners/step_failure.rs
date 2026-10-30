@@ -11,7 +11,7 @@ pub(crate) fn message(error: &DiscordError) -> MessageRef {
         DiscordError::Validation(fault) => validation_message(fault),
         DiscordError::Serde(source) => messages::serialization_failed(&source.to_string()),
         DiscordError::Credential(text) => messages::credential_failed(text),
-        DiscordError::BadResponse { status, body } => messages::http_rejected(*status, body),
+        DiscordError::BadResponse { status, .. } => messages::http_rejected(*status),
     }
 }
 
@@ -104,7 +104,7 @@ mod tests {
                     body: "Invalid Form Body".to_owned(),
                 },
                 "msg-discord-http_rejected",
-                Some("Invalid Form Body".to_owned()),
+                None,
             ),
         ];
 
@@ -213,10 +213,10 @@ mod tests {
     }
 
     #[test]
-    fn a_bad_response_with_a_blank_body_has_no_detail_but_keeps_the_status() {
+    fn a_bad_response_keeps_the_status_and_drops_the_upstream_body() {
         let mapped = message(&DiscordError::BadResponse {
             status: 502,
-            body: "   ".to_owned(),
+            body: "Invalid Form Body: secret-name".to_owned(),
         });
 
         assert!(mapped.detail().is_none());

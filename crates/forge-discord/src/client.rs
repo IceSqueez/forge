@@ -1286,7 +1286,7 @@ pub(crate) mod tests {
     }
 
     #[tokio::test]
-    async fn failed_event_payload_carries_reason_status_and_detail() {
+    async fn failed_event_payload_carries_reason_status_and_status_only_detail() {
         let server = MockServer::start().await;
         let publisher = MockPublisher::new();
         let creds = MockCreds::new();
@@ -1303,7 +1303,7 @@ pub(crate) mod tests {
         let ev = publisher.find_kind("discord.webhook.failed").unwrap();
         assert_eq!(ev.payload["reason"], "http_status");
         assert_eq!(ev.payload["status_code"], 404);
-        assert_eq!(ev.payload["detail"], "Unknown Webhook");
+        assert_eq!(ev.payload["detail"], "HTTP 404");
     }
 
     #[tokio::test]

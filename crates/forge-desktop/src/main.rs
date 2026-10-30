@@ -126,6 +126,7 @@ mod presentation;
 mod problem_report;
 mod queue_health;
 mod queues;
+mod quick_action_text;
 mod remote_audio;
 mod restore_close;
 mod restore_confirm;

@@ -2,6 +2,7 @@ mod bundle;
 mod documents;
 mod error;
 mod full;
+mod messages;
 mod pack;
 mod safety_copies;
 mod scheduled;
@@ -34,6 +35,7 @@ pub use full::{
     write_full_backup, write_scheduled_backup, write_scheduled_backup_cancellable,
     write_scheduled_backup_unless_unchanged,
 };
+pub use messages::TRANSFER_MESSAGES;
 pub use pack::{
     ExecutableContent, PACK_STAGING_DIR_NAME, PackConflict, PackExportRequest, PackImportLimit,
     PackImportOutcome, PackImportPlan, PackImportRequest, PackItemKey, PackItemKind, PackManifest,

@@ -1,0 +1,16 @@
+msg-transfer-empty_pack = У паку немає дій для експорту
+msg-transfer-pack_name_required = Паку потрібна назва
+msg-transfer-unknown_pack_item = У паку немає елемента { $item }
+msg-transfer-pack_resolution_not_allowed = { $item } не має конфлікту, тому імпортується завжди
+msg-transfer-pack_plan_stale = Дані forge змінилися після створення попереднього перегляду паку; перегляньте його ще раз
+msg-transfer-invalid_overlay_config = Оверлей "{ $overlay }" має налаштування, які цей forge не приймає
+msg-transfer-pack_action_without_queue = Дії "{ $action }" потрібна черга, якої немає ні в паку, ні в цьому forge
+msg-transfer-data_changed_during_backup = "{ $path }" змінився під час запису резервної копії; спробуйте ще раз
+msg-transfer-unsupported_file_name = "{ $path }" має назву, яку не можна зберегти в резервній копії
+msg-transfer-encryption_failed = Не вдалося зашифрувати
+msg-transfer-interrupted = Операцію перервано
+msg-transfer-foreign_staging = Підготовлене відновлення лежить поза цією текою даних
+msg-transfer-malformed_record = Службовий файл відновлення не читається
+msg-transfer-restore_unsettled = Перерване відновлення можна завершити лише з блокуванням єдиного екземпляра
+msg-transfer-restore_blocked = "{ $path }" заважає відновленню
+msg-transfer-operation_failed = Операція не вдалася

@@ -1126,7 +1126,10 @@ mod tests {
         });
 
         assert!(result.is_ok(), "a failed poll must not stop the loop");
-        let forge_lines = crate::log_capture::forge_lines(&lines);
+        let forge_lines: Vec<_> = crate::log_capture::forge_lines(&lines)
+            .into_iter()
+            .filter(|line| !line.target.starts_with("forge_net"))
+            .collect();
         assert!(
             forge_lines
                 .iter()

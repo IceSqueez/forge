@@ -42,7 +42,7 @@ pub use rate_limit::{
     RateLimitOutcome, RateLimitUsage, RateLimiter, TokenBucketRateLimiter, acquire_or_wait,
     acquire_or_wait_within,
 };
-pub use status_reason::canonical_status_reason;
+pub use status_reason::{canonical_status_reason, status_class};
 pub use throttle_hint::{
     ThrottleHint, ThrottleHintFamily, ThrottleScope, parse_retry_after, parse_throttle_hint,
 };

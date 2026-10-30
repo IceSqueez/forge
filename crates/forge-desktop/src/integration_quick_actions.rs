@@ -8,6 +8,7 @@ use forge_platform_core::{QuickAction, QuickActionAccent, QuickActionLiveness};
 use gpui::{AnyElement, ClickEvent, Context, Pixels, Rgba, div, prelude::*, px};
 
 use crate::integration_detail::IntegrationDetail;
+use crate::quick_action_text::quick_action_text;
 
 const GRID_COLUMNS: u16 = 3;
 const LIVE_DOT: Pixels = px(5.0);
@@ -56,7 +57,7 @@ impl IntegrationDetail {
             .quick_actions
             .iter()
             .enumerate()
-            .filter(|(_, a)| self.qa_search.matches(&a.label))
+            .filter(|(_, a)| self.qa_search.matches(&quick_action_text(&a.label)))
             .collect();
 
         let mut body = div()
@@ -258,7 +259,7 @@ impl IntegrationDetail {
                     .text_size(FONT_LABEL)
                     .line_height(px(14.0))
                     .text_color(label_color)
-                    .child(action.label.clone()),
+                    .child(quick_action_text(&action.label)),
             );
         if locked.is_some() {
             content = content.child(icon(Icon::Lock, FONT_XXS, icon_color));

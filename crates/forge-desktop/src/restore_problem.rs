@@ -1,6 +1,8 @@
 use forge_components::tr;
 use forge_transfer::{BundleKind, TransferError};
 
+use crate::user_text::resolve_message;
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum RestoreProblem {
     NotABundle,
@@ -85,7 +87,14 @@ impl RestoreProblem {
             TransferError::MissingCredentialsKey => Self::MissingCredentialsKey,
             TransferError::UpdateInProgress => Self::UpdateInProgress,
             TransferError::RestoreAlreadyPending => Self::RestoreAlreadyPending,
-            other => Self::Failed(other.to_string()),
+            other => Self::Failed(resolve_message(&other.user_message()).inline()),
+        }
+    }
+
+    pub(crate) fn plain_text(&self) -> String {
+        match self {
+            Self::Failed(text) => text.clone(),
+            other => other.message(),
         }
     }
 
@@ -334,7 +343,7 @@ mod tests {
     }
 
     #[test]
-    fn unclassified_errors_surface_their_own_description() {
+    fn unclassified_errors_surface_their_localized_description_with_the_offending_path() {
         install_language(Language::En);
         let error = TransferError::RestoreBlocked {
             path: "media-in-the-way".to_owned(),
@@ -342,11 +351,23 @@ mod tests {
 
         let problem = RestoreProblem::of(&error);
 
-        assert!(
-            matches!(&problem, RestoreProblem::Failed(text) if text == &error.to_string())
-                && problem.message().contains("media-in-the-way"),
-            "{problem:?}"
+        let RestoreProblem::Failed(text) = &problem else {
+            panic!("expected Failed, got {problem:?}");
+        };
+        assert_eq!(
+            text.replace(['\u{2068}', '\u{2069}'], ""),
+            "\"media-in-the-way\" is in the way of the restore"
         );
+    }
+
+    #[test]
+    fn plain_text_is_the_stored_text_for_failures_and_the_message_for_classified_problems() {
+        install_language(Language::En);
+        let failed = RestoreProblem::Failed("disk on fire".to_owned());
+        let classified = RestoreProblem::NotABundle;
+
+        assert_eq!(failed.plain_text(), "disk on fire");
+        assert_eq!(classified.plain_text(), classified.message());
     }
 
     #[test]

@@ -379,17 +379,20 @@ async fn apply_staged(
             Applied::Done { outcome, live }
         }
         Err(TransferError::PackPlanStale) => replan(&services, staged, &plan).await,
-        Err(error @ TransferError::PackRollbackIncomplete { .. }) => {
+        Err(TransferError::PackRollbackIncomplete { cause, failure, .. }) => {
             discard_quietly(staged).await;
             Applied::RollbackIncomplete {
-                message: error.to_string(),
+                message: format!("{cause}; {failure}"),
                 snapshot_taken,
             }
         }
-        Err(error) => Applied::Failed {
-            staged,
-            message: error.to_string(),
-        },
+        Err(error) => {
+            tracing::warn!(%error, "pack import failed");
+            Applied::Failed {
+                staged,
+                message: RestoreProblem::of(&error).plain_text(),
+            }
+        }
     }
 }
 
@@ -401,10 +404,13 @@ async fn replan(services: &PackServices, staged: StagedPack, previous: &PackImpo
                     carry_choices(previous, &mut plan);
                     Applied::Stale { staged, plan }
                 }
-                Err(error) => Applied::Failed {
-                    staged,
-                    message: error.to_string(),
-                },
+                Err(error) => {
+                    tracing::warn!(%error, "pack replan failed");
+                    Applied::Failed {
+                        staged,
+                        message: RestoreProblem::of(&error).plain_text(),
+                    }
+                }
             }
         }
         Err(message) => Applied::Failed { staged, message },

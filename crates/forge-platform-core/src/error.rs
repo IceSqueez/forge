@@ -3,7 +3,6 @@ use thiserror::Error;
 
 use crate::endpoints::EndpointRefusal;
 
-pub const NON_HTTP_STATUS: u16 = 0;
 pub const HTTP_UNAUTHORIZED: u16 = forge_net::status::UNAUTHORIZED;
 
 #[derive(Debug, Error)]
@@ -11,8 +10,11 @@ pub enum PlatformError {
     #[error("network failure: {reason}")]
     Network { reason: String },
 
-    #[error("HTTP {status}: {body}")]
+    #[error("HTTP {status} ({})", forge_net::status_class(*status))]
     Http { status: u16, body: String },
+
+    #[error("{reason}")]
+    Refused { reason: String },
 
     #[error("authentication failure: {reason}")]
     Auth { reason: String },
@@ -29,7 +31,7 @@ pub enum PlatformError {
     #[error("client-side rate limit exhausted; no budget remaining")]
     RateLimitExhausted,
 
-    #[error("daily API quota exhausted; next reset at platform midnight")]
+    #[error("daily API quota exhausted")]
     QuotaExhausted,
 
     #[error("feature '{feature}' is not supported by this platform")]
@@ -70,5 +72,28 @@ mod tests {
         };
         let msg = e.to_string();
         assert!(msg.contains("twitch"), "expected platform name in: {msg}");
+    }
+
+    #[test]
+    fn http_error_display_names_status_and_class_and_never_the_body() {
+        for (status, rendered) in [
+            (401, "HTTP 401 (client error)"),
+            (503, "HTTP 503 (server error)"),
+            (0, "HTTP 0 (unexpected status)"),
+        ] {
+            let e = PlatformError::Http {
+                status,
+                body: "token=abc123".into(),
+            };
+            assert_eq!(e.to_string(), rendered);
+        }
+    }
+
+    #[test]
+    fn refused_error_display_is_its_reason_without_a_status_prefix() {
+        let e = PlatformError::Refused {
+            reason: "ids list is empty".into(),
+        };
+        assert_eq!(e.to_string(), "ids list is empty");
     }
 }

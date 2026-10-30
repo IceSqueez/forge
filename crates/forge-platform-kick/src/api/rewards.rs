@@ -1,5 +1,5 @@
 use forge_net::{Gateway, GatewayRequest, GatewayResponse};
-use forge_platform_core::{NON_HTTP_STATUS, PlatformError};
+use forge_platform_core::PlatformError;
 use serde::{Deserialize, Serialize};
 
 use crate::gateway::{RefusalReasons, authorized, json_body, malformed, platform_error};
@@ -276,15 +276,13 @@ fn reward_path(reward_id: &str) -> String {
 
 fn check_redemption_batch(operation: &str, ids: &[String]) -> Result<(), PlatformError> {
     if ids.is_empty() {
-        return Err(PlatformError::Http {
-            status: NON_HTTP_STATUS,
-            body: format!("{operation}: ids list is empty"),
+        return Err(PlatformError::Refused {
+            reason: format!("{operation}: ids list is empty"),
         });
     }
     if ids.len() > MAX_REDEMPTION_BATCH {
-        return Err(PlatformError::Http {
-            status: NON_HTTP_STATUS,
-            body: format!(
+        return Err(PlatformError::Refused {
+            reason: format!(
                 "{operation}: {} ids exceeds the maximum of {MAX_REDEMPTION_BATCH}",
                 ids.len()
             ),
@@ -495,7 +493,7 @@ mod tests {
             .await
             .unwrap_err();
 
-        assert!(matches!(err, PlatformError::Http { status: 0, .. }));
+        assert!(matches!(err, PlatformError::Refused { .. }));
         assert!(
             server.received_requests().await.unwrap().is_empty(),
             "the client-side empty guard must short-circuit before any HTTP call"
@@ -531,7 +529,7 @@ mod tests {
             .await
             .unwrap_err();
 
-        assert!(matches!(err, PlatformError::Http { status: 0, .. }));
+        assert!(matches!(err, PlatformError::Refused { .. }));
         assert!(
             server.received_requests().await.unwrap().is_empty(),
             "the oversize-batch guard must short-circuit before any HTTP call"

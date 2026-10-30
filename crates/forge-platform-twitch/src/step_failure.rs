@@ -11,7 +11,7 @@ pub(crate) fn helix_message(error: &HelixError) -> MessageRef {
         HelixError::RateLimited => messages::rate_limited(),
         HelixError::ReauthRequired => messages::reauth_required(),
         HelixError::Credentials(detail) => messages::credentials_unavailable(detail),
-        HelixError::Http { status, body } => messages::request_refused(*status, body),
+        HelixError::Http { status, .. } => messages::request_refused(*status),
         HelixError::Transport(detail) => messages::request_failed(detail),
         HelixError::UndecodableResponse(detail) => messages::response_unreadable(detail),
     }
@@ -113,7 +113,7 @@ mod tests {
                 },
                 "twitch.request_refused",
                 Some(418),
-                Some("teapot"),
+                None,
             ),
             (
                 HelixError::Transport("connection reset".into()),

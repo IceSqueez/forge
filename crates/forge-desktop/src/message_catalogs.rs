@@ -25,6 +25,8 @@ pub const REGISTERED_CATALOGS: &[MessageCatalog] = &[
     forge_hotkey::vocabulary::messages::HOTKEY_MESSAGES,
     forge_soundboard::vocabulary::messages::SOUNDBOARD_MESSAGES,
     forge_discord::vocabulary::messages::DISCORD_MESSAGES,
+    forge_platform_core::TEST_DONATION_MESSAGES,
+    forge_transfer::TRANSFER_MESSAGES,
     forge_donatello::DONATELLO_MESSAGES,
     forge_monobank::MONOBANK_MESSAGES,
     forge_speak_queue::vocabulary::messages::SPEAK_MESSAGES,

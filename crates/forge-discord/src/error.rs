@@ -54,7 +54,7 @@ pub enum DiscordError {
     #[error("credential error: {0}")]
     Credential(String),
 
-    #[error("HTTP {status}: {body}")]
+    #[error("HTTP {status} ({})", forge_net::status_class(*status))]
     BadResponse { status: u16, body: String },
 }
 
@@ -88,7 +88,7 @@ impl DiscordError {
             DiscordError::Validation(fault) => fault.to_string(),
             DiscordError::Serde(err) => err.to_string(),
             DiscordError::Credential(msg) => msg.clone(),
-            DiscordError::BadResponse { body, .. } => body.clone(),
+            DiscordError::BadResponse { status, .. } => format!("HTTP {status}"),
         }
     }
 }
@@ -106,14 +106,13 @@ mod tests {
     }
 
     #[test]
-    fn bad_response_display() {
+    fn bad_response_display_names_status_and_class_but_not_the_body() {
         let e = DiscordError::BadResponse {
             status: 404,
             body: "unknown webhook".to_owned(),
         };
-        let s = e.to_string();
-        assert!(s.contains("404"));
-        assert!(s.contains("unknown webhook"));
+        assert_eq!(e.to_string(), "HTTP 404 (client error)");
+        assert_eq!(e.detail(), "HTTP 404");
     }
 
     #[test]

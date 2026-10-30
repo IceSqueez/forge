@@ -206,8 +206,8 @@ pub(crate) fn credentials_unavailable(detail: &str) -> MessageRef {
     detailed(CREDENTIALS_UNAVAILABLE, detail)
 }
 
-pub(crate) fn request_refused(status: u16, detail: &str) -> MessageRef {
-    detailed(REQUEST_REFUSED, detail).with_arg(STATUS_ARG, i64::from(status))
+pub(crate) fn request_refused(status: u16) -> MessageRef {
+    MessageRef::new(REQUEST_REFUSED).with_arg(STATUS_ARG, i64::from(status))
 }
 
 pub(crate) fn request_failed(detail: &str) -> MessageRef {
@@ -380,7 +380,7 @@ mod tests {
             rate_limited(),
             reauth_required(),
             credentials_unavailable("d"),
-            request_refused(403, "d"),
+            request_refused(403),
             request_failed("d"),
             response_unreadable("d"),
             field_required("f"),
@@ -474,18 +474,13 @@ mod tests {
     }
 
     #[test]
-    fn upstream_detail_is_carried_as_detail_and_never_as_an_argument() {
-        let refused = request_refused(429, "slow down");
+    fn refused_request_carries_the_status_and_no_upstream_detail() {
+        let refused = request_refused(429);
 
-        assert_eq!(refused.detail().unwrap().as_str(), "slow down");
         assert_eq!(
             refused.arg("status"),
             Some(&forge_types::MessageArg::Int(429))
         );
-        assert!(
-            refused
-                .args()
-                .all(|(_, v)| !format!("{v:?}").contains("slow down"))
-        );
+        assert!(refused.detail().is_none());
     }
 }

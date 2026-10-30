@@ -134,8 +134,8 @@ pub(crate) fn auth_refused(detail: &str) -> MessageRef {
     detailed(AUTH_REFUSED, detail)
 }
 
-pub(crate) fn request_refused(status: u16, detail: &str) -> MessageRef {
-    detailed(REQUEST_REFUSED, detail).with_arg(STATUS_ARG, i64::from(status))
+pub(crate) fn request_refused(status: u16) -> MessageRef {
+    MessageRef::new(REQUEST_REFUSED).with_arg(STATUS_ARG, i64::from(status))
 }
 
 pub(crate) fn request_failed(detail: &str) -> MessageRef {
@@ -206,7 +206,7 @@ mod tests {
             rate_budget_exhausted(),
             reauth_required(),
             auth_refused("c"),
-            request_refused(500, "c"),
+            request_refused(500),
             request_failed("c"),
             response_unreadable("c"),
             token_unavailable("c"),
@@ -253,17 +253,13 @@ mod tests {
     }
 
     #[test]
-    fn upstream_cause_text_is_carried_as_detail_and_never_as_an_argument() {
-        let failure = request_refused(403, "Forbidden: missing scope");
+    fn refused_request_carries_the_status_and_no_upstream_detail() {
+        let failure = request_refused(403);
 
         assert_eq!(
-            failure.detail().map(|d| d.as_str()),
-            Some("Forbidden: missing scope")
+            failure.arg("status"),
+            Some(&forge_types::MessageArg::Int(403))
         );
-        assert!(
-            failure
-                .args()
-                .all(|(_, v)| !format!("{v:?}").contains("missing scope"))
-        );
+        assert!(failure.detail().is_none());
     }
 }

@@ -13,7 +13,8 @@ pub(crate) fn platform_message(error: &PlatformError) -> MessageRef {
         }
         PlatformError::ReauthRequired { .. } => messages::reauth_required(),
         PlatformError::Auth { reason } => messages::auth_refused(reason),
-        PlatformError::Http { status, body } => messages::request_refused(*status, body),
+        PlatformError::Http { status, .. } => messages::request_refused(*status),
+        PlatformError::Refused { reason } => messages::request_failed(reason),
         PlatformError::MalformedResponse { reason } => messages::response_unreadable(reason),
         PlatformError::Serialization(error) => messages::response_unreadable(&error.to_string()),
         PlatformError::Network { reason } => messages::request_failed(reason),
@@ -135,6 +136,13 @@ mod tests {
                 },
                 "kick.request_failed",
             ),
+            (
+                "refused",
+                PlatformError::Refused {
+                    reason: UPSTREAM.into(),
+                },
+                "kick.request_failed",
+            ),
             ("io", io_error(), "kick.request_failed"),
             (
                 "loopback",
@@ -168,14 +176,13 @@ mod tests {
             PlatformError::Auth {
                 reason: UPSTREAM.into(),
             },
-            PlatformError::Http {
-                status: 500,
-                body: UPSTREAM.into(),
-            },
             PlatformError::MalformedResponse {
                 reason: UPSTREAM.into(),
             },
             PlatformError::Network {
+                reason: UPSTREAM.into(),
+            },
+            PlatformError::Refused {
                 reason: UPSTREAM.into(),
             },
             io_error(),
@@ -197,6 +204,22 @@ mod tests {
             );
             assert!(!message.code().to_string().contains(UPSTREAM));
         }
+    }
+
+    #[test]
+    fn http_refusal_drops_the_upstream_body_entirely() {
+        let text = failed(&PlatformError::Http {
+            status: 500,
+            body: UPSTREAM.into(),
+        });
+        let message = message(&text);
+
+        assert!(message.detail().is_none());
+        assert!(
+            message
+                .args()
+                .all(|(_, v)| !format!("{v:?}").contains(UPSTREAM))
+        );
     }
 
     #[test]

@@ -13,6 +13,7 @@ pub(super) fn platform_message(error: &PlatformError) -> MessageRef {
         PlatformError::ReauthRequired { .. } => messages::reauth_required(),
         PlatformError::Auth { reason } => messages::auth_refused(reason),
         PlatformError::Http { status, .. } => messages::request_refused(*status),
+        PlatformError::Refused { reason } => messages::request_failed(reason),
         PlatformError::MalformedResponse { reason } => messages::response_unreadable(reason),
         PlatformError::Serialization(error) => messages::response_unreadable(&error.to_string()),
         PlatformError::Network { reason } => messages::request_failed(reason),
@@ -100,6 +101,14 @@ mod tests {
                 "youtube.request_refused",
                 Some(MessageArg::Int(503)),
                 false,
+            ),
+            (
+                PlatformError::Refused {
+                    reason: UPSTREAM_TEXT.into(),
+                },
+                "youtube.request_failed",
+                None,
+                true,
             ),
             (
                 PlatformError::MalformedResponse {

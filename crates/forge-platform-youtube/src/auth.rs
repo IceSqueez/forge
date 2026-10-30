@@ -17,7 +17,6 @@ const YOUTUBE_CHANNELS_PATH: &str = "/channels";
 const OWN_CHANNEL_COST: u32 = 1;
 const OWN_CHANNEL_MISSING_SCOPE: &str = "channel identity scope missing";
 const NO_CHANNEL_FOUND: &str = "no channel found";
-const NO_CHANNEL_STATUS: u16 = forge_net::status::OK;
 
 pub const YOUTUBE_BROADCASTER_SCOPES: &[&str] =
     &["https://www.googleapis.com/auth/youtube.force-ssl"];
@@ -128,9 +127,8 @@ impl GoogleAuthFlow {
 
         let channel = fetch_own_channel(&self.api, &grant.access_token)
             .await?
-            .ok_or_else(|| PlatformError::Http {
-                status: NO_CHANNEL_STATUS,
-                body: NO_CHANNEL_FOUND.to_owned(),
+            .ok_or_else(|| PlatformError::Refused {
+                reason: NO_CHANNEL_FOUND.to_owned(),
             })?;
 
         Ok(YoutubeAuthBundle {
@@ -487,7 +485,7 @@ mod tests {
             let err = sign_in(flow).await.unwrap_err();
 
             assert!(
-                matches!(&err, PlatformError::Http { status, body } if *status == StatusCode::OK.as_u16() && body == NO_CHANNEL_FOUND),
+                matches!(&err, PlatformError::Refused { reason } if reason == NO_CHANNEL_FOUND),
                 "{body}: {err:?}"
             );
         }

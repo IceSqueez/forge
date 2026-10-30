@@ -1,0 +1,16 @@
+msg-transfer-empty_pack = The pack has no actions to export
+msg-transfer-pack_name_required = The pack needs a name
+msg-transfer-unknown_pack_item = The pack has no item { $item }
+msg-transfer-pack_resolution_not_allowed = { $item } has no conflict, so it is always imported
+msg-transfer-pack_plan_stale = forge data changed since the pack preview was built; review the preview again
+msg-transfer-invalid_overlay_config = Overlay "{ $overlay }" has settings this forge does not accept
+msg-transfer-pack_action_without_queue = Action "{ $action }" needs a queue that neither the pack nor this forge has
+msg-transfer-data_changed_during_backup = "{ $path }" changed while the backup was being written; try again
+msg-transfer-unsupported_file_name = "{ $path }" has a name that cannot be stored in a backup
+msg-transfer-encryption_failed = Encryption failed
+msg-transfer-interrupted = The operation was interrupted
+msg-transfer-foreign_staging = The staged restore is not inside this data folder
+msg-transfer-malformed_record = A restore bookkeeping file is unreadable
+msg-transfer-restore_unsettled = An interrupted restore can only be finished while holding the single-instance lock
+msg-transfer-restore_blocked = "{ $path }" is in the way of the restore
+msg-transfer-operation_failed = The operation failed

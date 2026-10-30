@@ -15,7 +15,11 @@ pub const CALLBACK_PATH: &str = "/oauth/callback";
 const VERIFIER_BYTES: usize = 32;
 const STATE_BYTES: usize = 32;
 const READ_BUFFER: usize = 8192;
-const SUCCESS_HTML: &str = "<!doctype html><html><head><meta charset=\"utf-8\"><title>forge</title></head><body style=\"font-family:system-ui;text-align:center;padding:3rem\"><h2>Authentication successful</h2><p>You may close this tab and return to forge.</p></body></html>";
+const STATUS_LINE_OK: &str = "200 OK";
+const STATUS_LINE_BAD_REQUEST: &str = "400 Bad Request";
+const SUCCESS_HEADING: &str = "Authentication successful";
+const SUCCESS_DETAIL: &str = "You may close this tab and return to forge.";
+const FAILURE_HEADING: &str = "Authentication failed";
 
 pub struct LocalCallbackDriver {
     listener: TcpListener,
@@ -86,13 +90,13 @@ impl LocalCallbackDriver {
         let result = process_request(&request, &self.state);
 
         let (status, body) = match &result {
-            Ok(_) => ("200 OK", SUCCESS_HTML.to_owned()),
+            Ok(_) => (
+                STATUS_LINE_OK,
+                callback_page(SUCCESS_HEADING, SUCCESS_DETAIL),
+            ),
             Err(err) => (
-                "400 Bad Request",
-                format!(
-                    "<!doctype html><html><body style=\"font-family:system-ui;text-align:center;padding:3rem\"><h2>Authentication failed</h2><p>{}</p></body></html>",
-                    err
-                ),
+                STATUS_LINE_BAD_REQUEST,
+                callback_page(FAILURE_HEADING, &err.to_string()),
             ),
         };
         if let Err(error) = write_response(&mut socket, status, &body).await {
@@ -101,6 +105,21 @@ impl LocalCallbackDriver {
 
         result.map(|code| CallbackCode { code })
     }
+}
+
+fn callback_page(heading: &str, detail: &str) -> String {
+    let heading = escape_html(heading);
+    let detail = escape_html(detail);
+    format!(
+        "<!doctype html><html><head><meta charset=\"utf-8\"><title>forge</title></head><body style=\"font-family:system-ui;text-align:center;padding:3rem\"><h2>{heading}</h2><p>{detail}</p></body></html>"
+    )
+}
+
+fn escape_html(text: &str) -> String {
+    text.replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+        .replace('"', "&quot;")
 }
 
 async fn read_request(socket: &mut TcpStream) -> Result<String, PlatformError> {
@@ -421,5 +440,67 @@ mod tests {
             .await
             .unwrap_err();
         assert!(matches!(err, PlatformError::Auth { ref reason } if reason.contains("timeout")));
+    }
+    async fn browser_visit(query_without_state: &str) -> (String, String) {
+        let driver = LocalCallbackDriver::bind(None).await.unwrap();
+        let state = driver.state().to_owned();
+        let port: u16 = driver
+            .redirect_uri()
+            .trim_start_matches("http://127.0.0.1:")
+            .trim_end_matches(CALLBACK_PATH)
+            .parse()
+            .unwrap();
+        let callback = tokio::spawn(driver.await_callback(Duration::from_secs(5)));
+
+        let mut socket = TcpStream::connect(("127.0.0.1", port)).await.unwrap();
+        let request = format!(
+            "GET {CALLBACK_PATH}?{query_without_state}&state={state} HTTP/1.1\r\nConnection: close\r\n\r\n"
+        );
+        socket.write_all(request.as_bytes()).await.unwrap();
+        let mut response = String::new();
+        socket.read_to_string(&mut response).await.unwrap();
+        callback.await.unwrap().ok();
+
+        let (head, body) = response.split_once("\r\n\r\n").unwrap();
+        (head.to_owned(), body.to_owned())
+    }
+
+    #[test]
+    fn escape_html_neutralizes_every_markup_significant_character() {
+        assert_eq!(
+            escape_html("<a href=\"x\">&</a>"),
+            "&lt;a href=&quot;x&quot;&gt;&amp;&lt;/a&gt;"
+        );
+    }
+
+    #[test]
+    fn callback_page_escapes_both_heading_and_detail() {
+        let page = callback_page("<b>h</b>", "<i>d</i>");
+
+        assert!(page.contains("<h2>&lt;b&gt;h&lt;/b&gt;</h2>"), "{page}");
+        assert!(page.contains("<p>&lt;i&gt;d&lt;/i&gt;</p>"), "{page}");
+    }
+
+    #[tokio::test]
+    async fn a_denied_callback_page_never_reflects_the_error_parameter_as_markup() {
+        let (head, body) = browser_visit("error=%3Cscript%3Ealert(1)%3C%2Fscript%3E").await;
+
+        assert!(head.starts_with("HTTP/1.1 400 Bad Request"), "{head}");
+        assert!(!body.contains("<script>"), "{body}");
+        assert!(
+            body.contains("&lt;script&gt;alert(1)&lt;/script&gt;"),
+            "{body}"
+        );
+    }
+
+    #[tokio::test]
+    async fn a_successful_callback_serves_the_success_page_with_status_200() {
+        let (head, body) = browser_visit("code=abc").await;
+
+        assert!(head.starts_with("HTTP/1.1 200 OK"), "{head}");
+        assert!(
+            body.contains("<h2>Authentication successful</h2>"),
+            "{body}"
+        );
     }
 }

@@ -14,6 +14,7 @@ use tokio::runtime::Handle;
 
 use crate::async_bridge::{self, DIALOG_CANCELLED, DialogFilter};
 use crate::backup_passphrase_modal::{BackupPassphraseEvent, BackupPassphraseModal};
+use crate::restore_problem::RestoreProblem;
 
 const BACKUP_TOAST_DURATION: Duration = Duration::from_secs(10);
 
@@ -147,7 +148,12 @@ impl BackupFlow {
         });
         async_bridge::run_async(
             &self.rt_handle,
-            async move { backup.await.map_err(|e| e.to_string()) },
+            async move {
+                backup.await.map_err(|error| {
+                    tracing::warn!(%error, "data backup failed");
+                    RestoreProblem::of(&error).plain_text()
+                })
+            },
             |this, result, cx| this.written(result, cx),
             cx,
         );

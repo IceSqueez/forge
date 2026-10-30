@@ -16,6 +16,7 @@ use gpui::{
 use crate::async_bridge::{self, Generation};
 use crate::integration_switch::integration_name;
 use crate::pack_services::{PackServices, PackSource};
+use crate::restore_problem::RestoreProblem;
 
 const ACTION_LIST_H: Pixels = px(320.0);
 const COUNT_COLUMNS: usize = 2;
@@ -231,7 +232,7 @@ impl PackExportModal {
             &self.services.rt_handle,
             move || {
                 resolve_pack_closure(&source.inventory, services.registries(&source), &roots)
-                    .map_err(|error| error.to_string())
+                    .map_err(|error| RestoreProblem::of(&error).plain_text())
             },
             move |this, result, cx| this.resolved(ticket, result, cx),
             cx,

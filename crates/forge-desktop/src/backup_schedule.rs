@@ -46,6 +46,7 @@ use crate::async_bridge::{
 use crate::backup_passphrase_modal::{
     BackupPassphraseEvent, BackupPassphraseModal, PassphrasePurpose,
 };
+use crate::restore_problem::RestoreProblem;
 
 const NUMBER_INPUT_W: Pixels = px(120.0);
 const UNKNOWN_VALUE: &str = "-";
@@ -369,7 +370,7 @@ impl From<TransferError> for KeyFailure {
     fn from(error: TransferError) -> Self {
         match error {
             TransferError::WrongPassphrase => Self::WrongCurrent,
-            other => Self::Other(other.to_string()),
+            other => Self::Other(RestoreProblem::of(&other).plain_text()),
         }
     }
 }

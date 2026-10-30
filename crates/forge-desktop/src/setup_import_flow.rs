@@ -369,10 +369,13 @@ async fn apply_staged(
                 snapshot,
             }
         }
-        Err(error) => SetupApplied::Failed {
-            staged: Box::new(staged),
-            message: error.to_string(),
-        },
+        Err(error) => {
+            tracing::warn!(%error, "setup import failed");
+            SetupApplied::Failed {
+                staged: Box::new(staged),
+                message: RestoreProblem::of(&error).plain_text(),
+            }
+        }
     }
 }
 

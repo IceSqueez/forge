@@ -168,7 +168,7 @@ mod tests {
     use super::*;
     use crate::helix::HelixError;
     use crate::sub_actions::test_support::{
-        MockCreds, MockTransport, SELF_USER_ID, assert_request_refused, failed_message, make_ctx,
+        MockCreds, MockTransport, SELF_USER_ID, assert_request_refused, make_ctx,
     };
     use forge_types::Variant;
     use std::collections::BTreeMap;
@@ -305,13 +305,6 @@ mod tests {
             .await;
 
         assert_request_refused(&telemetry.outcome, 404);
-        assert!(
-            failed_message(&telemetry.outcome)
-                .detail()
-                .unwrap()
-                .as_str()
-                .contains("No Such Game")
-        );
         assert_eq!(transport.call_count(), 1);
     }
 

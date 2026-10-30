@@ -10,6 +10,7 @@ use gpui::{Context, Entity, Subscription, Window, div, prelude::*};
 use crate::async_bridge::{self, DIALOG_CANCELLED, DialogFilter};
 use crate::pack_export_modal::{PackDraft, PackExportModal, PackExportModalEvent};
 use crate::pack_services::PackServices;
+use crate::restore_problem::RestoreProblem;
 
 const PACK_TOAST_DURATION: Duration = Duration::from_secs(10);
 const FALLBACK_FILE_STEM: &str = "pack";
@@ -136,7 +137,10 @@ impl PackExportFlow {
                     destination,
                 })
                 .await
-                .map_err(|error| error.to_string())
+                .map_err(|error| {
+                    tracing::warn!(%error, "pack export failed");
+                    RestoreProblem::of(&error).plain_text()
+                })
             },
             |this, result, cx| this.written(result, cx),
             cx,

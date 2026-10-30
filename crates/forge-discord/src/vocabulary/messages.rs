@@ -152,13 +152,8 @@ pub(crate) fn credential_failed(text: &str) -> MessageRef {
     MessageRef::new(CREDENTIAL_FAILED).with_detail(detail(text))
 }
 
-pub(crate) fn http_rejected(status: u16, body: &str) -> MessageRef {
-    let message = MessageRef::new(HTTP_REJECTED).with_arg(STATUS_ARG, u32::from(status));
-    if body.trim().is_empty() {
-        message
-    } else {
-        message.with_detail(detail(body))
-    }
+pub(crate) fn http_rejected(status: u16) -> MessageRef {
+    MessageRef::new(HTTP_REJECTED).with_arg(STATUS_ARG, u32::from(status))
 }
 
 pub(crate) fn embed_color_out_of_range(color: u32) -> MessageRef {
@@ -261,7 +256,7 @@ mod tests {
             webhook_not_found("alerts"),
             serialization_failed("c"),
             credential_failed("c"),
-            http_rejected(400, "c"),
+            http_rejected(400),
             embed_color_out_of_range(0x1000000),
             embed_too_many_fields(26, 25),
             embed_part_too_long("title", 300, 256),
@@ -316,22 +311,13 @@ mod tests {
     }
 
     #[test]
-    fn upstream_body_text_is_carried_as_detail_and_never_as_an_argument() {
-        let failure = http_rejected(400, "Invalid Form Body: secret-name");
+    fn rejected_request_carries_the_status_and_no_upstream_detail() {
+        let failure = http_rejected(400);
 
         assert_eq!(
-            failure.detail().map(|d| d.as_str()),
-            Some("Invalid Form Body: secret-name")
+            failure.arg("status"),
+            Some(&forge_types::MessageArg::Int(400))
         );
-        assert!(
-            failure
-                .args()
-                .all(|(_, v)| !format!("{v:?}").contains("secret-name"))
-        );
-    }
-
-    #[test]
-    fn an_empty_upstream_body_yields_no_detail() {
-        assert!(http_rejected(502, "  \n").detail().is_none());
+        assert!(failure.detail().is_none());
     }
 }

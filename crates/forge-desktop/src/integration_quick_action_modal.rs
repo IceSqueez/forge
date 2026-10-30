@@ -24,6 +24,7 @@ use tokio::runtime::Handle;
 use crate::async_bridge::{self, Generation};
 use crate::integration_quick_actions::accent_color;
 use crate::option_list_text::{option_failure_message, option_hint_text};
+use crate::quick_action_text::quick_action_text;
 use forge_components::ActivePresentation;
 use forge_components::{
     FONT_FIELD, choice_trigger, failure_with_retry, field_column, field_frame, int_entry_invalid,
@@ -117,7 +118,7 @@ impl QuickActionModal {
         let palette = cx.palette();
         let accent = accent_color(action.accent, &palette);
         let glyph = Icon::from_name(action.icon.as_str());
-        let label = action.label.clone();
+        let label = quick_action_text(&action.label);
         let destructive = action.destructive;
 
         let specs = action.fields.clone();
@@ -222,7 +223,7 @@ impl QuickActionModal {
             };
             fields.push(ModalField {
                 key: spec.key,
-                label: spec.label,
+                label: quick_action_text(&spec.label),
                 hint: spec.hint.or(range_hint),
                 required: spec.required,
                 control,

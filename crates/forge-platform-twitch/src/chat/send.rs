@@ -35,7 +35,9 @@ impl From<HelixError> for ChatSendError {
             HelixError::Http { status, body } if status == forge_net::status::FORBIDDEN => {
                 Self::Forbidden(refusal_text(&body))
             }
-            HelixError::Http { status, body } => Self::Http(format!("HTTP {status}: {body}")),
+            HelixError::Http { status, body } => {
+                Self::Http(format!("HTTP {status}: {}", refusal_text(&body)))
+            }
             HelixError::Credentials(msg)
             | HelixError::Transport(msg)
             | HelixError::UndecodableResponse(msg) => Self::Http(msg),

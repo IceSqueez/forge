@@ -329,6 +329,13 @@ impl Gateway {
             .await
             .unwrap_or_default();
         let excerpt = excerpt_of(&body, &request.secrets());
+        if request.class.unwrap_or(self.inner.profile.default_class) != CallClass::OAuth {
+            tracing::debug!(
+                status = status.as_u16(),
+                body = excerpt.as_str(),
+                "upstream refused the request"
+            );
+        }
         match throttle {
             Some(throttle) => GatewayFailure::RateLimited {
                 status: status.as_u16(),

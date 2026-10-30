@@ -423,7 +423,7 @@ pub(crate) mod test_support {
             message.arg("status"),
             Some(&forge_types::MessageArg::Int(status))
         );
-        assert!(message.detail().is_some());
+        assert!(message.detail().is_none());
         assert_no_secret_in(message);
     }
 

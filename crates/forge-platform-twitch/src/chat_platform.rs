@@ -4,8 +4,8 @@ use async_trait::async_trait;
 use forge_events::{EventChannel, EventPublisher, EventSubscription};
 use forge_net::Gateway;
 use forge_platform_core::{
-    ActingSender, ChatPlatform, ConnectionState, NON_HTTP_STATUS, PlatformCapabilities,
-    PlatformError, SenderPreference,
+    ActingSender, ChatPlatform, ConnectionState, PlatformCapabilities, PlatformError,
+    SenderPreference,
 };
 use forge_storage::CredentialsRepo;
 use tokio::sync::{Mutex, OnceCell, watch};
@@ -286,20 +286,13 @@ fn map_send_failure(failure: SendFailure) -> PlatformError {
         SendFailure::BotNotConnected(_) => PlatformError::Auth {
             reason: failure.to_string(),
         },
-        SendFailure::BotPhoneUnverified => PlatformError::Http {
-            status: NON_HTTP_STATUS,
-            body: failure.to_string(),
-        },
-        SendFailure::BotNotModerator => PlatformError::Http {
-            status: NON_HTTP_STATUS,
-            body: failure.to_string(),
-        },
-        SendFailure::PermissionDenied(_)
+        SendFailure::BotPhoneUnverified
+        | SendFailure::BotNotModerator
+        | SendFailure::PermissionDenied(_)
         | SendFailure::Refused(_)
         | SendFailure::ShoutoutCooldown { .. }
-        | SendFailure::ModerationThrottled => PlatformError::Http {
-            status: NON_HTTP_STATUS,
-            body: failure.to_string(),
+        | SendFailure::ModerationThrottled => PlatformError::Refused {
+            reason: failure.to_string(),
         },
         SendFailure::Helix(err) => map_send_error(ChatSendError::from(err)),
         SendFailure::Chat(err) => map_send_error(err),
@@ -311,9 +304,8 @@ fn map_send_failure(failure: SendFailure) -> PlatformError {
 fn map_whisper_error(err: WhisperError) -> PlatformError {
     match err {
         WhisperError::Helix(helix) => map_send_error(ChatSendError::from(helix)),
-        rejected => PlatformError::Http {
-            status: NON_HTTP_STATUS,
-            body: rejected.to_string(),
+        rejected => PlatformError::Refused {
+            reason: rejected.to_string(),
         },
     }
 }
@@ -331,13 +323,9 @@ fn map_send_error(err: ChatSendError) -> PlatformError {
             status: 413,
             body: err.to_string(),
         },
-        ChatSendError::Http(body) => PlatformError::Http {
-            status: NON_HTTP_STATUS,
-            body,
-        },
-        ChatSendError::Dropped { code, message } => PlatformError::Http {
-            status: NON_HTTP_STATUS,
-            body: format!("{code}: {message}"),
+        ChatSendError::Http(reason) => PlatformError::Refused { reason },
+        ChatSendError::Dropped { code, message } => PlatformError::Refused {
+            reason: format!("{code}: {message}"),
         },
         ChatSendError::Forbidden(reason) => PlatformError::Http {
             status: forge_net::status::FORBIDDEN,
@@ -431,14 +419,14 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn rejected_whisper_maps_to_a_non_http_platform_error_without_a_helix_call() {
+    async fn rejected_whisper_maps_to_a_refused_platform_error_without_a_helix_call() {
         let transport = Arc::new(MockTransport::returning(users_fixture("555")));
         let platform = platform_over(&transport);
 
         let err = platform.send_whisper("", "psst").await.unwrap_err();
 
         assert!(
-            matches!(&err, PlatformError::Http { status: NON_HTTP_STATUS, body } if body.contains("recipient")),
+            matches!(&err, PlatformError::Refused { reason } if reason.contains("recipient")),
             "got {err:?}"
         );
         assert_eq!(transport.call_count(), 0);
@@ -493,8 +481,8 @@ mod tests {
         assert!(
             matches!(
                 &err,
-                PlatformError::Http { status: NON_HTTP_STATUS, body }
-                    if body == "channel_settings: Followers-only mode is on."
+                PlatformError::Refused { reason }
+                    if reason == "channel_settings: Followers-only mode is on."
             ),
             "got {err:?}"
         );
@@ -512,7 +500,7 @@ mod tests {
             ),
             (
                 SendFailure::BotPhoneUnverified,
-                |e| matches!(e, PlatformError::Http { status: NON_HTTP_STATUS, body } if body.contains("verified phone")),
+                |e| matches!(e, PlatformError::Refused { reason } if reason.contains("verified phone")),
             ),
             (
                 SendFailure::Chat(ChatSendError::Forbidden("banned".to_owned())),

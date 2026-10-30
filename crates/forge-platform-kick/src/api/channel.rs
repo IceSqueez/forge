@@ -1,5 +1,5 @@
 use forge_net::{Gateway, GatewayRequest};
-use forge_platform_core::{NON_HTTP_STATUS, PlatformError};
+use forge_platform_core::PlatformError;
 use serde::{Deserialize, Serialize};
 use time::OffsetDateTime;
 
@@ -129,14 +129,14 @@ impl KickChannel {
             .map_err(|failure| platform_error(failure, CHANNEL_REFUSALS))?;
         let envelope: ChannelsEnvelope = response.json().map_err(malformed)?;
 
-        let channel = envelope
-            .data
-            .into_iter()
-            .next()
-            .ok_or_else(|| PlatformError::Http {
-                status: NON_HTTP_STATUS,
-                body: "channels GET returned no data".to_owned(),
-            })?;
+        let channel =
+            envelope
+                .data
+                .into_iter()
+                .next()
+                .ok_or_else(|| PlatformError::MalformedResponse {
+                    reason: "channels GET returned no data".to_owned(),
+                })?;
 
         Ok(ChannelSnapshot {
             broadcaster_user_id: channel.broadcaster_user_id,
@@ -310,7 +310,10 @@ mod tests {
             .await;
 
         let result = channel_on(&server).get_channel("tok").await;
-        assert!(matches!(result, Err(PlatformError::Http { status: 0, .. })));
+        assert!(matches!(
+            result,
+            Err(PlatformError::MalformedResponse { .. })
+        ));
     }
 
     #[tokio::test]

@@ -12,7 +12,7 @@ use crate::elevenlabs::synth::{API_KEY_HEADER, classify_with};
 use crate::gateway_failure::failure_detail;
 use crate::network::ProviderLink;
 
-const VOICES_PATH: &str = "/v1/voices";
+pub(super) const VOICES_PATH: &str = "/v1/voices";
 
 #[derive(Deserialize)]
 struct VoiceList {

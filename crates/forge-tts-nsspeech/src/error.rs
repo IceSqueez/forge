@@ -8,11 +8,14 @@ pub(crate) enum NsSpeechError {
     #[error("no AVSpeech voices installed")]
     NoCatalog,
 
-    #[error("synthesis timed out after 30s without audio")]
+    #[error("synthesis timed out without audio")]
     Timeout,
 
     #[error("AVFoundation synth produced no audio")]
     NoAudio,
+
+    #[error("voice {0:?} is not installed")]
+    InvalidVoice(forge_speech_types::VoiceId),
 
     #[error("{0}")]
     Io(#[from] std::io::Error),
@@ -32,6 +35,7 @@ impl From<NsSpeechError> for TtsError {
                 id: EngineId(ENGINE_ID_NSSPEECH.into()),
                 detail: e.to_string(),
             },
+            NsSpeechError::InvalidVoice(id) => TtsError::InvalidVoice { id },
             NsSpeechError::Io(io_err) => TtsError::Io(io_err),
         }
     }

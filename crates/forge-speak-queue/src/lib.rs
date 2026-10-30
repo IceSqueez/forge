@@ -174,7 +174,9 @@ pub struct QueueConfig {
 const DEFAULT_MAX_QUEUE_LEN: usize = 100;
 const DEFAULT_PER_USER_LIMIT: usize = 5;
 const DEFAULT_MASTER_VOLUME: f32 = 1.0;
-const DEFAULT_SYNTHESIS_TIMEOUT: Duration = Duration::from_secs(30);
+const QUEUE_TIMEOUT_MARGIN: Duration = Duration::from_secs(5);
+const DEFAULT_SYNTHESIS_TIMEOUT: Duration =
+    forge_tts_core::ENGINE_SYNTHESIS_BUDGET.saturating_add(QUEUE_TIMEOUT_MARGIN);
 
 impl Default for QueueConfig {
     fn default() -> Self {

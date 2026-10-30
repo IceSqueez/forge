@@ -17,68 +17,53 @@ pub(crate) const INVALID_CREDENTIALS: &str = "invalid credentials";
 const SPEECH_PATH: &str = "/v1/speech";
 const QUOTA_MARKERS: &[&str] = &["quota", "characters"];
 
-fn format_signed_percent(val: i32) -> String {
-    if val >= 0 {
-        format!("+{val}%")
-    } else {
-        format!("{val}%")
-    }
+pub(crate) const NEURAL_ENGINE: &str = "neural";
+const RATE_MIN_PERCENT: f32 = 20.0;
+const RATE_MAX_PERCENT: f32 = 200.0;
+const PERCENT_PER_UNIT: f32 = 100.0;
+
+fn speech_body(text: &str, text_type: &str, voice_id: &str) -> String {
+    json!({
+        "Text": text,
+        "TextType": text_type,
+        "VoiceId": voice_id,
+        "OutputFormat": "pcm",
+        "SampleRate": SAMPLE_RATE_HZ.to_string(),
+        "Engine": NEURAL_ENGINE
+    })
+    .to_string()
 }
 
 pub(super) fn build_polly_body(req: &SynthesisRequest) -> String {
     if req.ssml {
-        let body = json!({
-            "Text": req.text,
-            "TextType": "ssml",
-            "VoiceId": req.voice_id.0,
-            "OutputFormat": "pcm",
-            "SampleRate": SAMPLE_RATE_HZ.to_string(),
-            "Engine": "neural"
-        });
-        return body.to_string();
+        if req.rate_multiplier != 1.0 || req.pitch_semitones.abs() > f32::EPSILON {
+            tracing::debug!(
+                rate_multiplier = req.rate_multiplier,
+                pitch_semitones = req.pitch_semitones,
+                "Polly SSML is sent as written; rate and pitch are ignored"
+            );
+        }
+        return speech_body(&req.text, "ssml", &req.voice_id.0);
     }
 
-    let rate_pct = ((req.rate_multiplier - 1.0) * 100.0).clamp(-80.0, 200.0);
-    let pitch_pct = ((2f32.powf(req.pitch_semitones / 12.0) - 1.0) * 100.0).clamp(-33.3, 50.0);
-    let rate_rounded = rate_pct.round() as i32;
-    let pitch_rounded = pitch_pct.round() as i32;
-
-    if rate_rounded != 0 || pitch_rounded != 0 {
-        let escaped = xml_escape(&req.text);
-        let mut attrs = String::new();
-        if rate_rounded != 0 {
-            attrs.push_str(&format!(
-                " rate=\"{}\"",
-                format_signed_percent(rate_rounded)
-            ));
-        }
-        if pitch_rounded != 0 {
-            attrs.push_str(&format!(
-                " pitch=\"{}\"",
-                format_signed_percent(pitch_rounded)
-            ));
-        }
-        let text = format!("<speak><prosody{attrs}>{escaped}</prosody></speak>");
-        let body = json!({
-            "Text": text,
-            "TextType": "ssml",
-            "VoiceId": req.voice_id.0,
-            "OutputFormat": "pcm",
-            "SampleRate": SAMPLE_RATE_HZ.to_string(),
-            "Engine": "neural"
-        });
-        body.to_string()
-    } else {
-        let body = json!({
-            "Text": req.text,
-            "TextType": "text",
-            "VoiceId": req.voice_id.0,
-            "OutputFormat": "pcm",
-            "SampleRate": SAMPLE_RATE_HZ.to_string(),
-            "Engine": "neural"
-        });
-        body.to_string()
+    if req.pitch_semitones.abs() > f32::EPSILON {
+        tracing::debug!(
+            pitch_semitones = req.pitch_semitones,
+            "Polly neural voices have no pitch control; pitch_semitones ignored"
+        );
     }
+
+    let rate_percent = (req.rate_multiplier * PERCENT_PER_UNIT)
+        .clamp(RATE_MIN_PERCENT, RATE_MAX_PERCENT)
+        .round() as i32;
+    if rate_percent == PERCENT_PER_UNIT as i32 {
+        return speech_body(&req.text, "text", &req.voice_id.0);
+    }
+    let text = format!(
+        "<speak><prosody rate=\"{rate_percent}%\">{}</prosody></speak>",
+        xml_escape(&req.text)
+    );
+    speech_body(&text, "ssml", &req.voice_id.0)
 }
 
 const POLICY: ProviderPolicy = ProviderPolicy {
@@ -219,8 +204,11 @@ mod tests {
         let parsed: serde_json::Value = serde_json::from_str(&body).unwrap();
         assert_eq!(parsed["TextType"], "ssml");
         let text = parsed["Text"].as_str().unwrap();
-        assert!(text.contains("<prosody"));
-        assert!(text.contains("+50%"));
+        assert_eq!(
+            text,
+            r#"<speak><prosody rate="150%">hello</prosody></speak>"#
+        );
+        assert!(!text.contains("pitch"));
     }
 
     #[test]
@@ -233,22 +221,86 @@ mod tests {
         let parsed: serde_json::Value = serde_json::from_str(&body).unwrap();
         assert_eq!(
             parsed["Text"],
-            r#"<speak><prosody rate="+50%">&lt;/prosody&gt;&lt;break time=&quot;10s&quot;/&gt; &amp; &apos;q&apos;</prosody></speak>"#
+            r#"<speak><prosody rate="150%">&lt;/prosody&gt;&lt;break time=&quot;10s&quot;/&gt; &amp; &apos;q&apos;</prosody></speak>"#
         );
     }
 
     #[test]
-    fn synthesize_wraps_when_only_pitch_differs() {
+    fn pitch_alone_leaves_the_text_plain_because_neural_voices_have_no_pitch_control() {
         let req = SynthesisRequest {
-            text: "test".into(),
-            voice_id: VoiceId("Joanna".into()),
             pitch_semitones: 2.0,
-            rate_multiplier: 1.0,
-            ssml: false,
+            ..plain_req("test")
         };
-        let body = build_polly_body(&req);
-        let parsed: serde_json::Value = serde_json::from_str(&body).unwrap();
-        assert_eq!(parsed["TextType"], "ssml");
+        let parsed: serde_json::Value = serde_json::from_str(&build_polly_body(&req)).unwrap();
+        assert_eq!(parsed["TextType"], "text");
+        assert_eq!(parsed["Text"], "test");
+    }
+
+    #[test]
+    fn rate_and_pitch_together_emit_only_a_rate_attribute() {
+        let req = SynthesisRequest {
+            pitch_semitones: -4.0,
+            rate_multiplier: 0.5,
+            ..plain_req("test")
+        };
+        let parsed: serde_json::Value = serde_json::from_str(&build_polly_body(&req)).unwrap();
+        assert_eq!(
+            parsed["Text"],
+            r#"<speak><prosody rate="50%">test</prosody></speak>"#
+        );
+    }
+
+    #[test]
+    fn the_rate_percentage_is_clamped_to_the_range_neural_voices_accept() {
+        for (multiplier, percent) in [
+            (0.19, "20%"),
+            (0.2, "20%"),
+            (0.21, "21%"),
+            (1.99, "199%"),
+            (2.0, "200%"),
+            (2.01, "200%"),
+            (50.0, "200%"),
+            (0.0, "20%"),
+            (-1.0, "20%"),
+        ] {
+            let req = SynthesisRequest {
+                rate_multiplier: multiplier,
+                ..plain_req("x")
+            };
+            let parsed: serde_json::Value = serde_json::from_str(&build_polly_body(&req)).unwrap();
+            assert_eq!(
+                parsed["Text"],
+                format!(r#"<speak><prosody rate="{percent}">x</prosody></speak>"#),
+                "{multiplier}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_rate_that_rounds_to_one_hundred_percent_stays_plain_text() {
+        let req = SynthesisRequest {
+            rate_multiplier: 1.004,
+            ..plain_req("x")
+        };
+        let parsed: serde_json::Value = serde_json::from_str(&build_polly_body(&req)).unwrap();
+        assert_eq!(parsed["TextType"], "text");
+    }
+
+    #[test]
+    fn every_body_requests_the_neural_engine_and_ssml_input_ignores_rate_and_pitch() {
+        let ssml = SynthesisRequest {
+            text: "<speak>hi</speak>".into(),
+            ssml: true,
+            rate_multiplier: 1.8,
+            pitch_semitones: 3.0,
+            ..plain_req("")
+        };
+        for req in [plain_req("a"), ssml.clone()] {
+            let parsed: serde_json::Value = serde_json::from_str(&build_polly_body(&req)).unwrap();
+            assert_eq!(parsed["Engine"], "neural");
+        }
+        let parsed: serde_json::Value = serde_json::from_str(&build_polly_body(&ssml)).unwrap();
+        assert_eq!(parsed["Text"], "<speak>hi</speak>");
     }
 
     #[tokio::test]

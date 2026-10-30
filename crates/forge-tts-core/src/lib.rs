@@ -9,6 +9,8 @@ mod ssml;
 
 pub use ssml::xml_escape;
 
+pub const ENGINE_SYNTHESIS_BUDGET: std::time::Duration = std::time::Duration::from_secs(25);
+
 pub const ENGINE_ID_PIPER: &str = "piper";
 pub const ENGINE_ID_ESPEAK_NG: &str = "espeak-ng";
 pub const ENGINE_ID_SAPI: &str = "sapi";

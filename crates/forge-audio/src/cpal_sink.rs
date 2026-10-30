@@ -116,6 +116,7 @@ struct PlaybackRequest {
 
 struct StartedStream {
     stream: cpal::Stream,
+    drained: crossbeam_channel::Receiver<i16>,
     duration_ms: u64,
     device_name: String,
 }
@@ -177,7 +178,13 @@ fn run_playback(request: PlaybackRequest) -> Result<(), AudioError> {
         reason = "the requester may stop waiting for the reply"
     )]
     let _ = started.send(());
-    wait_for_completion(started_stream.duration_ms, &stop, &paused, &failure);
+    wait_for_completion(
+        started_stream.duration_ms,
+        &started_stream.drained,
+        &stop,
+        &paused,
+        &failure,
+    );
     drop(started_stream.stream);
 
     if let Some(reason) = failure.get() {
@@ -256,6 +263,7 @@ fn try_start_stream(
         .map(|d| d.name().to_owned())
         .unwrap_or_default();
 
+    let drained = rx.clone();
     let feed = PlaybackFeed {
         samples: rx,
         stop: Arc::clone(stop),
@@ -271,6 +279,7 @@ fn try_start_stream(
 
     Ok(StartedStream {
         stream,
+        drained,
         duration_ms,
         device_name,
     })
@@ -348,26 +357,36 @@ fn typed_output_stream<T: SizedSample + FromSample<i16>>(
     )
 }
 
+const COMPLETION_POLL_MS: u64 = 20;
+const OUTPUT_TAIL_MS: u64 = 150;
+const STALL_GRACE_MS: u64 = 2_000;
+
 fn wait_for_completion(
     duration_ms: u64,
+    drained: &crossbeam_channel::Receiver<i16>,
     stop: &Arc<AtomicBool>,
     paused: &Arc<AtomicBool>,
     failure: &StreamFailure,
 ) {
-    let total_ms = duration_ms + 50;
+    let stall_limit_ms = duration_ms + STALL_GRACE_MS;
     let mut elapsed_ms = 0u64;
-    while elapsed_ms < total_ms || paused.load(Ordering::Relaxed) {
+    let mut tail_ms = 0u64;
+    loop {
         if stop.load(Ordering::Relaxed) || failure.get().is_some() {
             break;
         }
-        let step = if elapsed_ms < total_ms {
-            (total_ms - elapsed_ms).min(20)
-        } else {
-            20
-        };
-        std::thread::sleep(Duration::from_millis(step));
-        if !paused.load(Ordering::Relaxed) {
-            elapsed_ms += step;
+        std::thread::sleep(Duration::from_millis(COMPLETION_POLL_MS));
+        if paused.load(Ordering::Relaxed) {
+            continue;
+        }
+        elapsed_ms += COMPLETION_POLL_MS;
+        if drained.is_empty() {
+            tail_ms += COMPLETION_POLL_MS;
+            if tail_ms >= OUTPUT_TAIL_MS {
+                break;
+            }
+        } else if elapsed_ms >= stall_limit_ms {
+            break;
         }
     }
 }
@@ -397,7 +416,7 @@ fn stream_error_callback(failure: StreamFailure) -> impl FnMut(cpal::Error) + Se
     }
 }
 
-fn ends_playback(kind: cpal::ErrorKind) -> bool {
+pub(crate) fn ends_playback(kind: cpal::ErrorKind) -> bool {
     !matches!(
         kind,
         cpal::ErrorKind::Xrun | cpal::ErrorKind::DeviceChanged | cpal::ErrorKind::RealtimeDenied
@@ -535,22 +554,87 @@ mod tests {
         }
     }
 
+    fn idle_flags() -> (Arc<AtomicBool>, Arc<AtomicBool>) {
+        (
+            Arc::new(AtomicBool::new(false)),
+            Arc::new(AtomicBool::new(false)),
+        )
+    }
+
+    fn wait_on_thread(
+        duration_ms: u64,
+        drained: crossbeam_channel::Receiver<i16>,
+        failure: StreamFailure,
+    ) -> std::sync::mpsc::Receiver<bool> {
+        let (done_tx, done_rx) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            let (stop, paused) = idle_flags();
+            wait_for_completion(duration_ms, &drained, &stop, &paused, &failure);
+            done_tx.send(drained.is_empty()).unwrap();
+        });
+        done_rx
+    }
+
     #[test]
     fn the_playback_wait_ends_as_soon_as_the_stream_reports_a_failure() {
         let failure: StreamFailure = Arc::new(OnceLock::new());
         failure.set("device unplugged".to_owned()).unwrap();
+        let (_tx, drained) = crossbeam_channel::unbounded::<i16>();
+        let (stop, paused) = idle_flags();
         let started = std::time::Instant::now();
 
-        wait_for_completion(
-            LONG_CLIP_MS,
-            &Arc::new(AtomicBool::new(false)),
-            &Arc::new(AtomicBool::new(false)),
-            &failure,
-        );
+        wait_for_completion(LONG_CLIP_MS, &drained, &stop, &paused, &failure);
 
         assert!(
             started.elapsed() < EARLY_EXIT_BUDGET,
             "a failed stream kept the playback thread waiting for the whole clip"
         );
+    }
+
+    #[test]
+    fn the_playback_wait_ends_shortly_after_the_queue_drains_not_after_the_nominal_duration() {
+        let (tx, drained) = crossbeam_channel::unbounded::<i16>();
+        for _ in 0..64 {
+            tx.send(1).unwrap();
+        }
+        let failure: StreamFailure = Arc::new(OnceLock::new());
+        let done = wait_on_thread(LONG_CLIP_MS, drained.clone(), failure);
+
+        while drained.try_recv().is_ok() {}
+
+        let queue_was_empty_on_return = done
+            .recv_timeout(EARLY_EXIT_BUDGET)
+            .expect("the wait never ended after the queue drained");
+        assert!(queue_was_empty_on_return);
+    }
+
+    #[test]
+    fn the_playback_wait_gives_up_on_a_queue_that_never_drains() {
+        let (tx, drained) = crossbeam_channel::unbounded::<i16>();
+        tx.send(1).unwrap();
+        let failure: StreamFailure = Arc::new(OnceLock::new());
+
+        let done = wait_on_thread(0, drained, failure);
+
+        let queue_was_empty_on_return = done
+            .recv_timeout(EARLY_EXIT_BUDGET)
+            .expect("the stall cap never ended the wait");
+        assert!(!queue_was_empty_on_return);
+        drop(tx);
+    }
+
+    #[test]
+    fn the_playback_wait_ends_when_stop_is_requested_with_audio_still_queued() {
+        let (tx, drained) = crossbeam_channel::unbounded::<i16>();
+        tx.send(1).unwrap();
+        let (stop, paused) = idle_flags();
+        stop.store(true, Ordering::Relaxed);
+        let failure: StreamFailure = Arc::new(OnceLock::new());
+        let started = std::time::Instant::now();
+
+        wait_for_completion(LONG_CLIP_MS, &drained, &stop, &paused, &failure);
+
+        assert!(started.elapsed() < EARLY_EXIT_BUDGET);
+        assert_eq!(drained.len(), 1);
     }
 }

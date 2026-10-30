@@ -12,6 +12,9 @@ pub(crate) enum EspeakError {
     #[error("espeak-ng could not list voices: {0}")]
     VoiceListingFailed(String),
 
+    #[error("espeak-ng produced audio that is not 16-bit PCM WAV")]
+    UnsupportedAudio,
+
     #[error("espeak-ng did not finish within {ms} ms")]
     Timeout { ms: u64 },
 
@@ -33,6 +36,10 @@ impl From<EspeakError> for TtsError {
             EspeakError::VoiceListingFailed(detail) => TtsError::EngineUnavailable {
                 id: EngineId(ENGINE_ID_ESPEAK_NG.into()),
                 detail,
+            },
+            EspeakError::UnsupportedAudio => TtsError::SynthesisFailed {
+                id: EngineId(ENGINE_ID_ESPEAK_NG.into()),
+                detail: "espeak-ng produced audio that is not 16-bit PCM WAV".into(),
             },
             EspeakError::Timeout { ms } => TtsError::Timeout { ms },
             EspeakError::Io(io_err) => TtsError::Io(io_err),
@@ -56,6 +63,7 @@ mod tests {
                 EspeakError::SubprocessFailed("unknown voice".into()),
                 "SynthesisFailed",
             ),
+            (EspeakError::UnsupportedAudio, "SynthesisFailed"),
             (EspeakError::Timeout { ms: 5_000 }, "Timeout"),
             (EspeakError::Io(std::io::Error::other("pipe")), "Io"),
         ] {

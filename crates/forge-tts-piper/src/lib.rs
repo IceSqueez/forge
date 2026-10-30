@@ -12,10 +12,13 @@ mod locate;
 mod subprocess;
 
 const MODEL_FLAG: &str = "--model";
+const MIN_RATE: f32 = 0.25;
+const MAX_RATE: f32 = 4.0;
+const NEUTRAL_RATE: f32 = 1.0;
 
 static CAPABILITIES: EngineCapabilities = EngineCapabilities {
     ssml: false,
-    neural_voices: false,
+    neural_voices: true,
     streaming: false,
     custom_lexicons: false,
 };
@@ -29,7 +32,7 @@ pub struct PiperEngine {
     piper_binary: PathBuf,
     voices_dir: PathBuf,
     timeout: Duration,
-    voice_cache: Mutex<Option<Vec<TtsVoice>>>,
+    voice_cache: Mutex<Option<Vec<PiperEntry>>>,
 }
 
 impl PiperEngine {
@@ -56,6 +59,13 @@ impl PiperEngine {
     pub fn voices_dir(data_dir: &std::path::Path) -> PathBuf {
         data_dir.join("tts").join("piper-voices")
     }
+}
+
+#[derive(Clone)]
+struct PiperEntry {
+    voice: TtsVoice,
+    model_path: PathBuf,
+    speaker: Option<u32>,
 }
 
 #[derive(serde::Deserialize)]
@@ -89,13 +99,19 @@ fn bcp47_locale(piper_code: &str) -> String {
 fn scan_voices_dir(
     voices_dir: &PathBuf,
     engine_id: &EngineId,
-) -> Result<Vec<TtsVoice>, std::io::Error> {
+) -> Result<Vec<PiperEntry>, std::io::Error> {
     if !voices_dir.exists() {
         return Ok(vec![]);
     }
     let mut voices = Vec::new();
     for entry in std::fs::read_dir(voices_dir)? {
-        let entry = entry?;
+        let entry = match entry {
+            Ok(entry) => entry,
+            Err(e) => {
+                tracing::warn!(dir = %voices_dir.display(), "unreadable voice directory entry: {e}");
+                continue;
+            }
+        };
         let path = entry.path();
         if path.extension().map(|e| e == "onnx").unwrap_or(false) {
             let sidecar = path.with_extension("onnx.json");
@@ -103,7 +119,13 @@ fn scan_voices_dir(
                 tracing::debug!(sidecar = %sidecar.display(), "no sidecar, skipping voice");
                 continue;
             }
-            let raw = std::fs::read_to_string(&sidecar)?;
+            let raw = match std::fs::read_to_string(&sidecar) {
+                Ok(raw) => raw,
+                Err(e) => {
+                    tracing::warn!(sidecar = %sidecar.display(), "unreadable sidecar: {e}");
+                    continue;
+                }
+            };
             let meta: VoiceSidecar = match serde_json::from_str(&raw) {
                 Ok(m) => m,
                 Err(e) => {
@@ -129,19 +151,28 @@ fn scan_voices_dir(
                     .find(|(_, idx)| **idx == speaker)
                     .map(|(speaker_name, _)| capitalize(speaker_name))
                     .unwrap_or_else(|| voice_id.clone());
-                voices.push(TtsVoice {
-                    id: VoiceId(voice_id.clone()),
-                    name,
-                    locale: locale.clone(),
-                    gender: VoiceGender::Neutral,
-                    engine_id: engine_id.clone(),
-                    is_neural: false,
-                    sample_rate_hint: meta.audio.sample_rate,
+                voices.push(PiperEntry {
+                    voice: TtsVoice {
+                        id: VoiceId(voice_id.clone()),
+                        name,
+                        locale: locale.clone(),
+                        gender: VoiceGender::Neutral,
+                        engine_id: engine_id.clone(),
+                        is_neural: true,
+                        sample_rate_hint: meta.audio.sample_rate,
+                    },
+                    model_path: path.clone(),
+                    speaker: (num > 1).then_some(speaker),
                 });
             }
         }
     }
-    voices.sort_by(|a, b| a.locale.cmp(&b.locale).then(a.name.cmp(&b.name)));
+    voices.sort_by(|a, b| {
+        a.voice
+            .locale
+            .cmp(&b.voice.locale)
+            .then(a.voice.name.cmp(&b.voice.name))
+    });
     Ok(voices)
 }
 
@@ -153,13 +184,32 @@ fn capitalize(name: &str) -> String {
     }
 }
 
-fn parse_voice_id(voice_id: &str) -> (&str, Option<u32>) {
-    if let Some(idx) = voice_id.rfind('#') {
-        let stem = &voice_id[..idx];
-        let speaker = voice_id[idx + 1..].parse().ok();
-        (stem, speaker)
+fn bounded_rate(rate_multiplier: f32) -> f32 {
+    if rate_multiplier.is_finite() {
+        rate_multiplier.clamp(MIN_RATE, MAX_RATE)
     } else {
-        (voice_id, None)
+        NEUTRAL_RATE
+    }
+}
+
+impl PiperEngine {
+    async fn catalog(&self) -> Result<Vec<PiperEntry>, TtsError> {
+        {
+            let cache = self.voice_cache.lock().unwrap_or_else(|e| e.into_inner());
+            if let Some(entries) = cache.as_ref() {
+                return Ok(entries.clone());
+            }
+        }
+        let voices_dir = self.voices_dir.clone();
+        let engine_id = self.id.clone();
+        let entries = tokio::task::spawn_blocking(move || scan_voices_dir(&voices_dir, &engine_id))
+            .await
+            .map_err(|e| TtsError::Io(std::io::Error::other(e.to_string())))??;
+        {
+            let mut cache = self.voice_cache.lock().unwrap_or_else(|e| e.into_inner());
+            *cache = Some(entries.clone());
+        }
+        Ok(entries)
     }
 }
 
@@ -174,22 +224,12 @@ impl TtsEngine for PiperEngine {
     }
 
     async fn list_voices(&self) -> Result<Vec<TtsVoice>, TtsError> {
-        {
-            let cache = self.voice_cache.lock().unwrap_or_else(|e| e.into_inner());
-            if let Some(voices) = cache.as_ref() {
-                return Ok(voices.clone());
-            }
-        }
-        let voices_dir = self.voices_dir.clone();
-        let engine_id = self.id.clone();
-        let voices = tokio::task::spawn_blocking(move || scan_voices_dir(&voices_dir, &engine_id))
-            .await
-            .map_err(|e| TtsError::Io(std::io::Error::other(e.to_string())))??;
-        {
-            let mut cache = self.voice_cache.lock().unwrap_or_else(|e| e.into_inner());
-            *cache = Some(voices.clone());
-        }
-        Ok(voices)
+        Ok(self
+            .catalog()
+            .await?
+            .into_iter()
+            .map(|entry| entry.voice)
+            .collect())
     }
 
     async fn synthesize(&self, request: SynthesisRequest) -> Result<PcmBuffer, TtsError> {
@@ -198,29 +238,24 @@ impl TtsEngine for PiperEngine {
                 id: piper_engine_id(),
             });
         }
-        let voices = self.list_voices().await?;
-        let sample_rate = voices
-            .iter()
-            .find(|v| v.id == request.voice_id)
-            .map(|v| v.sample_rate_hint)
+        let entry = self
+            .catalog()
+            .await?
+            .into_iter()
+            .find(|entry| entry.voice.id == request.voice_id)
             .ok_or_else(|| TtsError::InvalidVoice {
                 id: request.voice_id.clone(),
             })?;
-
-        let (stem, speaker_idx) = parse_voice_id(&request.voice_id.0);
-        let model_path = self.voices_dir.join(format!("{}.onnx", stem));
-
-        if !model_path.exists() {
-            return Err(TtsError::InvalidVoice {
-                id: request.voice_id.clone(),
-            });
-        }
+        let sample_rate = entry.voice.sample_rate_hint;
+        let speaker_idx = entry.speaker;
+        let model_path = entry.model_path;
 
         let mut args: Vec<std::ffi::OsString> =
             vec![MODEL_FLAG.into(), model_path.into(), "--output_raw".into()];
 
-        if (request.rate_multiplier - 1.0_f32).abs() > f32::EPSILON {
-            let length_scale = 1.0_f32 / request.rate_multiplier;
+        let rate = bounded_rate(request.rate_multiplier);
+        if (rate - NEUTRAL_RATE).abs() > f32::EPSILON {
+            let length_scale = NEUTRAL_RATE / rate;
             args.push("--length_scale".into());
             args.push(format!("{length_scale:.3}").into());
         }
@@ -311,52 +346,100 @@ mod tests {
         assert!(voices.is_empty());
     }
 
+    fn write_voice(dir: &std::path::Path, stem: &str, sidecar: &str) {
+        std::fs::write(dir.join(format!("{stem}.onnx")), b"fake model").expect("write onnx");
+        std::fs::write(dir.join(format!("{stem}.onnx.json")), sidecar).expect("write sidecar");
+    }
+
+    fn scan(dir: &std::path::Path) -> Vec<PiperEntry> {
+        scan_voices_dir(&dir.to_path_buf(), &EngineId("piper".into())).expect("scan")
+    }
+
     #[test]
     fn scan_parses_sidecar_single_speaker() {
         let tmp = tempfile::tempdir().expect("tmpdir");
-        let onnx = tmp.path().join("uk_UA-test-medium.onnx");
-        std::fs::write(&onnx, b"fake model").expect("write onnx");
-        let sidecar = tmp.path().join("uk_UA-test-medium.onnx.json");
-        std::fs::write(
-            &sidecar,
-            r#"{"language":{"code":"uk_UA","family":"uk","name_native":"Українська"},"audio":{"sample_rate":22050},"num_speakers":1}"#,
-        )
-        .expect("write sidecar");
-
-        let engine_id = EngineId("piper".into());
-        let voices = scan_voices_dir(&tmp.path().to_path_buf(), &engine_id).expect("scan");
+        write_voice(
+            tmp.path(),
+            "uk_UA-test-medium",
+            r#"{"language":{"code":"uk_UA"},"audio":{"sample_rate":22050},"num_speakers":1}"#,
+        );
+        let voices = scan(tmp.path());
         assert_eq!(voices.len(), 1);
-        assert_eq!(voices[0].id.0, "uk_UA-test-medium");
-        assert_eq!(voices[0].locale, "uk-UA");
-        assert_eq!(voices[0].sample_rate_hint, 22_050);
+        assert_eq!(voices[0].voice.id.0, "uk_UA-test-medium");
+        assert_eq!(voices[0].voice.locale, "uk-UA");
+        assert_eq!(voices[0].voice.sample_rate_hint, 22_050);
+        assert_eq!(voices[0].speaker, None);
     }
 
     #[test]
-    fn scan_parses_multi_speaker_model() {
+    fn scan_expands_multi_speaker_model_with_speaker_indices() {
         let tmp = tempfile::tempdir().expect("tmpdir");
-        let onnx = tmp.path().join("en_US-multi.onnx");
-        std::fs::write(&onnx, b"fake model").expect("write onnx");
-        let sidecar = tmp.path().join("en_US-multi.onnx.json");
-        std::fs::write(
-            &sidecar,
+        write_voice(
+            tmp.path(),
+            "en_US-multi",
             r#"{"language":{"code":"en_US"},"audio":{"sample_rate":16000},"num_speakers":2}"#,
-        )
-        .expect("write sidecar");
-
-        let engine_id = EngineId("piper".into());
-        let voices = scan_voices_dir(&tmp.path().to_path_buf(), &engine_id).expect("scan");
+        );
+        let voices = scan(tmp.path());
         assert_eq!(voices.len(), 2);
-        assert_eq!(voices[0].id.0, "en_US-multi#0");
-        assert_eq!(voices[1].id.0, "en_US-multi#1");
+        assert_eq!(voices[0].voice.id.0, "en_US-multi#0");
+        assert_eq!(voices[1].voice.id.0, "en_US-multi#1");
+        assert_eq!(voices[0].speaker, Some(0));
+        assert_eq!(voices[1].speaker, Some(1));
     }
 
     #[test]
-    fn parse_voice_id_splits_the_speaker_suffix_only_when_present() {
-        for (voice_id, stem, speaker) in [
-            ("uk_UA-test-medium", "uk_UA-test-medium", None),
-            ("en_US-multi#1", "en_US-multi", Some(1_u32)),
+    fn scan_keeps_hash_in_file_stem_of_single_speaker_model() {
+        let tmp = tempfile::tempdir().expect("tmpdir");
+        write_voice(
+            tmp.path(),
+            "en_US-a#7",
+            r#"{"language":{"code":"en_US"},"audio":{"sample_rate":22050}}"#,
+        );
+        let voices = scan(tmp.path());
+        assert_eq!(voices.len(), 1);
+        assert_eq!(voices[0].voice.id.0, "en_US-a#7");
+        assert_eq!(voices[0].speaker, None);
+        assert_eq!(voices[0].model_path, tmp.path().join("en_US-a#7.onnx"));
+    }
+
+    #[test]
+    fn scan_skips_unreadable_sidecar_and_keeps_other_voices() {
+        let tmp = tempfile::tempdir().expect("tmpdir");
+        std::fs::write(tmp.path().join("broken.onnx"), b"m").expect("onnx");
+        std::fs::create_dir(tmp.path().join("broken.onnx.json")).expect("dir as sidecar");
+        write_voice(
+            tmp.path(),
+            "ok",
+            r#"{"language":{"code":"en_US"},"audio":{"sample_rate":22050}}"#,
+        );
+        let voices = scan(tmp.path());
+        assert_eq!(voices.len(), 1);
+        assert_eq!(voices[0].voice.id.0, "ok");
+    }
+
+    #[test]
+    fn scan_skips_malformed_sidecar() {
+        let tmp = tempfile::tempdir().expect("tmpdir");
+        write_voice(tmp.path(), "bad", "{not json");
+        assert!(scan(tmp.path()).is_empty());
+    }
+
+    #[test]
+    fn bounded_rate_clamps_to_range_and_neutralises_non_finite() {
+        for (input, expected) in [
+            (MIN_RATE, MIN_RATE),
+            (MIN_RATE - 0.01, MIN_RATE),
+            (0.0, MIN_RATE),
+            (-3.0, MIN_RATE),
+            (MAX_RATE, MAX_RATE),
+            (MAX_RATE + 0.01, MAX_RATE),
+            (100.0, MAX_RATE),
+            (1.5, 1.5),
+            (f32::NAN, NEUTRAL_RATE),
+            (f32::INFINITY, NEUTRAL_RATE),
+            (f32::NEG_INFINITY, NEUTRAL_RATE),
         ] {
-            assert_eq!(parse_voice_id(voice_id), (stem, speaker), "{voice_id}");
+            assert_eq!(bounded_rate(input), expected, "{input}");
         }
     }
 }

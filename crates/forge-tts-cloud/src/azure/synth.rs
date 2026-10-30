@@ -15,6 +15,9 @@ pub(crate) const SUBSCRIPTION_KEY_HEADER: &str = "Ocp-Apim-Subscription-Key";
 pub(crate) const VOICES_LIST_PATH: &str = "/cognitiveservices/voices/list";
 pub(crate) const INVALID_API_KEY: &str = "invalid API key";
 const QUOTA_MARKERS: &[&str] = &["quota", "characters"];
+const SPEAK_ELEMENT_OPEN: &str = "<speak";
+const FALLBACK_LOCALE: &str = "en-US";
+const LOCALE_PARTS: usize = 2;
 const SYNTHESIS_PATH: &str = "/cognitiveservices/v1";
 const SSML_CONTENT_TYPE: &str = "application/ssml+xml";
 const OUTPUT_FORMAT_HEADER: &str = "X-Microsoft-OutputFormat";
@@ -30,7 +33,17 @@ fn format_signed_percent(val: i32) -> String {
 
 fn build_ssml(req: &SynthesisRequest) -> String {
     if req.ssml {
-        return req.text.clone();
+        if req.rate_multiplier != 1.0 || req.pitch_semitones.abs() > f32::EPSILON {
+            tracing::debug!(
+                rate_multiplier = req.rate_multiplier,
+                pitch_semitones = req.pitch_semitones,
+                "Azure SSML is sent as written; rate and pitch are ignored"
+            );
+        }
+        if req.text.contains(SPEAK_ELEMENT_OPEN) {
+            return req.text.clone();
+        }
+        return speak_document(&req.voice_id.0, &req.text);
     }
 
     let escaped = xml_escape(&req.text);
@@ -59,10 +72,26 @@ fn build_ssml(req: &SynthesisRequest) -> String {
         format!("<prosody{attrs}>{escaped}</prosody>")
     };
 
+    speak_document(&req.voice_id.0, &inner)
+}
+
+fn speak_document(voice_id: &str, inner: &str) -> String {
     format!(
-        r#"<speak version="1.0" xml:lang="en-US"><voice name="{}">{inner}</voice></speak>"#,
-        xml_escape(&req.voice_id.0)
+        r#"<speak version="1.0" xml:lang="{}"><voice name="{}">{inner}</voice></speak>"#,
+        xml_escape(voice_locale(voice_id)),
+        xml_escape(voice_id)
     )
+}
+
+fn voice_locale(voice_id: &str) -> &str {
+    let mut parts = voice_id.splitn(LOCALE_PARTS + 1, '-');
+    let language = parts.next().unwrap_or_default();
+    let region = parts.next().unwrap_or_default();
+    if parts.next().is_some() && !language.is_empty() && !region.is_empty() {
+        &voice_id[..language.len() + 1 + region.len()]
+    } else {
+        FALLBACK_LOCALE
+    }
 }
 
 const POLICY: ProviderPolicy = ProviderPolicy {
@@ -190,6 +219,54 @@ mod tests {
             build_ssml(&req),
             r#"<speak version="1.0" xml:lang="en-US"><voice name="en-US-AriaNeural&quot;&gt;&lt;audio src=&quot;x">&lt;&amp;&gt; &quot;it&apos;s&quot;</voice></speak>"#
         );
+    }
+
+    #[test]
+    fn the_ssml_language_follows_the_voice_locale() {
+        for (voice, lang) in [
+            ("en-US-AriaNeural", "en-US"),
+            ("uk-UA-OstapNeural", "uk-UA"),
+            ("zh-CN-liaoning-XiaobeiNeural", "zh-CN"),
+            ("de-DE-Seraphina:DragonHDLatestNeural", "de-DE"),
+            ("Aria", "en-US"),
+            ("en-US", "en-US"),
+            ("-US-Aria", "en-US"),
+            ("en--Aria", "en-US"),
+            ("", "en-US"),
+        ] {
+            let req = SynthesisRequest {
+                voice_id: VoiceId(voice.into()),
+                ..plain_req("x")
+            };
+            let expected = format!(r#"<speak version="1.0" xml:lang="{lang}">"#);
+            assert!(build_ssml(&req).starts_with(&expected), "{voice}");
+        }
+    }
+
+    #[test]
+    fn ssml_input_without_a_speak_element_is_wrapped_in_the_voice_document() {
+        let req = SynthesisRequest {
+            text: "hello <break time=\"1s\"/> world".into(),
+            ssml: true,
+            ..plain_req("")
+        };
+        assert_eq!(
+            build_ssml(&req),
+            r#"<speak version="1.0" xml:lang="en-US"><voice name="en-US-AriaNeural">hello <break time="1s"/> world</voice></speak>"#
+        );
+    }
+
+    #[test]
+    fn ssml_input_ignores_rate_and_pitch() {
+        let input = r#"<speak version="1.0"><voice name="Aria">test</voice></speak>"#;
+        let req = SynthesisRequest {
+            text: input.into(),
+            ssml: true,
+            rate_multiplier: 2.0,
+            pitch_semitones: 5.0,
+            ..plain_req("")
+        };
+        assert_eq!(build_ssml(&req), input);
     }
 
     fn outcome(error: &AzureError) -> String {

@@ -52,10 +52,29 @@ pub struct IgnoreProfile {
     pub excluded_locales: Vec<String>,
 }
 
+fn normalized_locale(locale: &str) -> String {
+    locale.trim().replace('_', "-").to_lowercase()
+}
+
+fn primary_subtag(normalized: &str) -> &str {
+    normalized.split('-').next().unwrap_or(normalized)
+}
+
+fn locales_overlap(excluded: &str, voice: &str) -> bool {
+    let excluded = normalized_locale(excluded);
+    let voice = normalized_locale(voice);
+    excluded == voice
+        || ((!excluded.contains('-') || !voice.contains('-'))
+            && primary_subtag(&excluded) == primary_subtag(&voice))
+}
+
 impl IgnoreProfile {
     pub fn is_eligible(&self, voice: &TtsVoice) -> bool {
         !self.excluded_voice_ids.contains(&voice.id)
-            && !self.excluded_locales.contains(&voice.locale)
+            && !self
+                .excluded_locales
+                .iter()
+                .any(|excluded| locales_overlap(excluded, &voice.locale))
     }
 }
 
@@ -148,41 +167,80 @@ mod tests {
         );
     }
 
-    #[test]
-    fn ignore_profile_is_eligible() {
-        let profile = IgnoreProfile {
-            excluded_voice_ids: vec![VoiceId("boring".into())],
-            excluded_locales: vec!["de-DE".into()],
-        };
-        let eligible = TtsVoice {
-            id: VoiceId("uk_UA-medium".into()),
-            name: "Ukrainian".into(),
-            locale: "uk-UA".into(),
+    fn voice(id: &str, locale: &str) -> TtsVoice {
+        TtsVoice {
+            id: VoiceId(id.into()),
+            name: id.into(),
+            locale: locale.into(),
             gender: VoiceGender::Neutral,
             engine_id: EngineId("piper".into()),
             is_neural: false,
             sample_rate_hint: 22_050,
+        }
+    }
+
+    fn excluding_locale(locale: &str) -> IgnoreProfile {
+        IgnoreProfile {
+            excluded_voice_ids: Vec::new(),
+            excluded_locales: vec![locale.into()],
+        }
+    }
+
+    #[test]
+    fn ignore_profile_excludes_a_voice_by_id_regardless_of_locale() {
+        let profile = IgnoreProfile {
+            excluded_voice_ids: vec![VoiceId("boring".into())],
+            excluded_locales: Vec::new(),
         };
-        let excluded_by_id = TtsVoice {
-            id: VoiceId("boring".into()),
-            name: "Boring".into(),
-            locale: "en-US".into(),
-            gender: VoiceGender::Male,
-            engine_id: EngineId("piper".into()),
-            is_neural: false,
-            sample_rate_hint: 22_050,
-        };
-        let excluded_by_locale = TtsVoice {
-            id: VoiceId("german".into()),
-            name: "German".into(),
-            locale: "de-DE".into(),
-            gender: VoiceGender::Female,
-            engine_id: EngineId("piper".into()),
-            is_neural: false,
-            sample_rate_hint: 22_050,
-        };
-        assert!(profile.is_eligible(&eligible));
-        assert!(!profile.is_eligible(&excluded_by_id));
-        assert!(!profile.is_eligible(&excluded_by_locale));
+        assert!(!profile.is_eligible(&voice("boring", "en-US")));
+        assert!(profile.is_eligible(&voice("lively", "en-US")));
+    }
+
+    #[test]
+    fn a_region_exclusion_matches_the_same_region_in_any_spelling_and_case() {
+        let profile = excluding_locale("de-DE");
+        for locale in ["de-DE", "de_DE", "DE-de", "de-de", " de-DE "] {
+            assert!(!profile.is_eligible(&voice("v", locale)), "{locale:?}");
+        }
+    }
+
+    #[test]
+    fn a_region_exclusion_also_matches_a_voice_reporting_only_the_language() {
+        let profile = excluding_locale("de-DE");
+        for locale in ["de", "DE"] {
+            assert!(!profile.is_eligible(&voice("v", locale)), "{locale:?}");
+        }
+    }
+
+    #[test]
+    fn a_region_exclusion_spares_other_regions_and_other_languages() {
+        let profile = excluding_locale("de-DE");
+        for locale in ["de-AT", "de_CH", "uk-UA", "den-DE", "d", ""] {
+            assert!(profile.is_eligible(&voice("v", locale)), "{locale:?}");
+        }
+    }
+
+    #[test]
+    fn a_language_only_exclusion_matches_every_region_of_that_language() {
+        for excluded in ["de", "DE"] {
+            let profile = excluding_locale(excluded);
+            for locale in ["de", "de-DE", "de_AT", "DE-ch"] {
+                assert!(
+                    !profile.is_eligible(&voice("v", locale)),
+                    "{excluded:?} vs {locale:?}"
+                );
+            }
+            for locale in ["deu-DE", "dev", "en-US"] {
+                assert!(
+                    profile.is_eligible(&voice("v", locale)),
+                    "{excluded:?} vs {locale:?}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn an_empty_locale_exclusion_excludes_nothing() {
+        assert!(excluding_locale("").is_eligible(&voice("v", "en-US")));
     }
 }

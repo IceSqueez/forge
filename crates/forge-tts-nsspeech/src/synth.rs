@@ -7,7 +7,8 @@
 use std::sync::mpsc;
 
 #[cfg(target_os = "macos")]
-pub(crate) const SYNTHESIS_WAIT_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(30);
+pub(crate) const SYNTHESIS_WAIT_TIMEOUT: std::time::Duration =
+    forge_tts_core::ENGINE_SYNTHESIS_BUDGET;
 
 #[cfg(target_os = "macos")]
 use forge_speech_types::PcmBuffer;
@@ -64,7 +65,8 @@ fn run_synthesis(
 
     use core::ptr::NonNull;
     use objc2_avf_audio::{
-        AVAudioBuffer, AVAudioPCMBuffer, AVSpeechSynthesisVoice, AVSpeechUtterance,
+        AVAudioBuffer, AVAudioPCMBuffer, AVSpeechBoundary, AVSpeechSynthesisVoice,
+        AVSpeechUtterance,
     };
     use objc2_foundation::NSString;
 
@@ -110,31 +112,49 @@ fn run_synthesis(
                 state.sample_rate = sr as u32;
                 state.channels = ch;
 
-                // SAFETY: non-null and valid for `frameLength` samples since frame_count > 0
-                let channel_ptrs = unsafe { pcm.floatChannelData() };
-                if channel_ptrs.is_null() {
+                let channel_count = ch as usize;
+                // SAFETY: each channel pointer is valid for `frameLength` samples while the buffer is alive.
+                let float_channels = unsafe { pcm.floatChannelData() };
+                if !float_channels.is_null() {
+                    for frame in 0..frame_count {
+                        for channel in 0..channel_count {
+                            let sample =
+                                unsafe { *(*float_channels.add(channel)).as_ptr().add(frame) };
+                            state.samples.push(
+                                (sample * i16::MAX as f32).clamp(i16::MIN as f32, i16::MAX as f32)
+                                    as i16,
+                            );
+                        }
+                    }
+                    return;
+                }
+                // SAFETY: each channel pointer is valid for `frameLength` samples while the buffer is alive.
+                let int_channels = unsafe { pcm.int16ChannelData() };
+                if int_channels.is_null() {
                     state.done = true;
                     cvar.notify_one();
                     return;
                 }
-                let first_channel = unsafe { (*channel_ptrs).as_ptr() };
-                let float_slice = unsafe { std::slice::from_raw_parts(first_channel, frame_count) };
-                state.samples.extend(float_slice.iter().map(|&s| {
-                    (s * i16::MAX as f32).clamp(i16::MIN as f32, i16::MAX as f32) as i16
-                }));
+                for frame in 0..frame_count {
+                    for channel in 0..channel_count {
+                        let sample = unsafe { *(*int_channels.add(channel)).as_ptr().add(frame) };
+                        state.samples.push(sample);
+                    }
+                }
             });
         });
 
-    objc2::rc::autoreleasepool(|_| {
+    let prepared: Result<(), NsSpeechError> = objc2::rc::autoreleasepool(|_| {
         let ns_text = NSString::from_str(&req.text);
         let utterance = unsafe { AVSpeechUtterance::speechUtteranceWithString(&ns_text) };
 
         let ns_voice_id = NSString::from_str(&req.voice_id.0);
         let voice_opt = unsafe { AVSpeechSynthesisVoice::voiceWithIdentifier(&ns_voice_id) };
-        if let Some(voice) = voice_opt {
-            // SAFETY: voice is a valid Retained value alive within this autoreleasepool.
-            unsafe { utterance.setVoice(Some(&voice)) };
-        }
+        let Some(voice) = voice_opt else {
+            return Err(NsSpeechError::InvalidVoice(req.voice_id.clone()));
+        };
+        // SAFETY: voice is a valid Retained value alive within this autoreleasepool.
+        unsafe { utterance.setVoice(Some(&voice)) };
 
         let apple_rate = crate::synth::rate_apple_from_multiplier(req.rate_multiplier);
         let pitch_mult = crate::synth::pitch_mult_from_semitones(req.pitch_semitones);
@@ -146,7 +166,9 @@ fn run_synthesis(
         unsafe {
             synth.writeUtterance_toBufferCallback(&utterance, block2::RcBlock::as_ptr(&block));
         }
+        Ok(())
     });
+    prepared?;
 
     let (mutex, cvar) = &*shared;
     let guard = mutex.lock().unwrap_or_else(|e| e.into_inner());
@@ -155,6 +177,8 @@ fn run_synthesis(
         .unwrap_or_else(|e| e.into_inner());
 
     if timeout_result.timed_out() {
+        // SAFETY: plain message send on the synthesizer owned by this worker thread.
+        unsafe { synth.stopSpeakingAtBoundary(AVSpeechBoundary::Immediate) };
         return Err(NsSpeechError::Timeout);
     }
     if final_state.samples.is_empty() {

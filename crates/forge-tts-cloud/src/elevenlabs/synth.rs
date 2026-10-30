@@ -7,6 +7,7 @@ use serde_json::json;
 
 use crate::elevenlabs::SAMPLE_RATE_HZ;
 use crate::elevenlabs::error::ElevenLabsError;
+use crate::elevenlabs::voices::VOICES_PATH;
 use crate::gateway_failure::{
     Classified, ProviderPolicy, VoiceSignal, classify, failure_detail, probe_failure_detail,
 };
@@ -15,7 +16,6 @@ use crate::network::{ProviderLink, is_plain_path_segment};
 pub(crate) const API_KEY_HEADER: &str = "xi-api-key";
 pub(crate) const INVALID_API_KEY: &str = "invalid API key";
 const SPEECH_PATH: &str = "/v1/text-to-speech";
-const USER_PATH: &str = "/v1/user";
 const OUTPUT_FORMAT_QUERY: &str = "output_format";
 const QUOTA_MARKERS: &[&str] = &["quota", "characters"];
 
@@ -100,7 +100,7 @@ pub(super) async fn probe_connection(
     link: &ProviderLink,
     api_key: &str,
 ) -> Result<(), ElevenLabsError> {
-    let request = GatewayRequest::get(USER_PATH)
+    let request = GatewayRequest::get(VOICES_PATH)
         .api_key(API_KEY_HEADER, Secret::new(api_key))
         .class(CallClass::Catalog);
     match link.send(request).await {
@@ -302,7 +302,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn probe_outcomes_follow_the_user_endpoint_status() {
+    async fn probe_outcomes_follow_the_voice_catalog_status() {
         let no_hint = format!("RateLimited({NO_HINT_WAIT_SECS})");
         for (template, expected) in [
             (
@@ -317,7 +317,7 @@ mod tests {
         ] {
             let server = MockServer::start().await;
             Mock::given(method("GET"))
-                .and(path("/v1/user"))
+                .and(path("/v1/voices"))
                 .and(header("xi-api-key", API_KEY))
                 .respond_with(template)
                 .mount(&server)

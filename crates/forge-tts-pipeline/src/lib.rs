@@ -1,5 +1,5 @@
 use std::collections::HashSet;
-use std::ops::Range;
+use std::ops::{Range, RangeInclusive};
 use std::sync::LazyLock;
 
 use forge_speech_types::LanguageCode;
@@ -188,16 +188,48 @@ impl PipelineConfig {
     }
 }
 
+const MISC_SYMBOLS_AND_DINGBATS: RangeInclusive<u32> = 0x2600..=0x27BF;
+const PICTOGRAPH_PLANES: RangeInclusive<u32> = 0x1F000..=0x1FAFF;
+const VARIATION_SELECTORS: RangeInclusive<u32> = 0xFE00..=0xFE0F;
+const ZERO_WIDTH_JOINER: u32 = 0x200D;
+const COMBINING_KEYCAP: u32 = 0x20E3;
+const TAG_CHARACTERS: RangeInclusive<u32> = 0xE0020..=0xE007F;
+const WATCH_AND_HOURGLASS: RangeInclusive<u32> = 0x231A..=0x231B;
+const MEDIA_CONTROLS: RangeInclusive<u32> = 0x23E9..=0x23FA;
+const DOUBLE_EXCLAMATION: u32 = 0x203C;
+const EXCLAMATION_QUESTION: u32 = 0x2049;
+const DIAGONAL_ARROWS: RangeInclusive<u32> = 0x2194..=0x2199;
+const HOOKED_ARROWS: RangeInclusive<u32> = 0x21A9..=0x21AA;
+const CURVED_ARROWS: RangeInclusive<u32> = 0x2934..=0x2935;
+const ARROW_SHAPES: RangeInclusive<u32> = 0x2B05..=0x2B07;
+const LARGE_SQUARES: RangeInclusive<u32> = 0x2B1B..=0x2B1C;
+const STAR_AND_CIRCLE: [u32; 2] = [0x2B50, 0x2B55];
+const WAVY_DASH_AND_ALTERNATION_MARK: [u32; 2] = [0x3030, 0x303D];
+const CIRCLED_IDEOGRAPHS: [u32; 2] = [0x3297, 0x3299];
+
 fn is_emoji_char(c: char) -> bool {
     let cp = c as u32;
-    matches!(
-        cp,
-        0x2600..=0x27BF
-        | 0x1F000..=0x1FAFF
-        | 0xFE00..=0xFE0F
-        | 0x200D
-        | 0x20E3
-    )
+    MISC_SYMBOLS_AND_DINGBATS.contains(&cp)
+        || PICTOGRAPH_PLANES.contains(&cp)
+        || VARIATION_SELECTORS.contains(&cp)
+        || TAG_CHARACTERS.contains(&cp)
+        || WATCH_AND_HOURGLASS.contains(&cp)
+        || MEDIA_CONTROLS.contains(&cp)
+        || DIAGONAL_ARROWS.contains(&cp)
+        || HOOKED_ARROWS.contains(&cp)
+        || CURVED_ARROWS.contains(&cp)
+        || ARROW_SHAPES.contains(&cp)
+        || LARGE_SQUARES.contains(&cp)
+        || [
+            ZERO_WIDTH_JOINER,
+            COMBINING_KEYCAP,
+            DOUBLE_EXCLAMATION,
+            EXCLAMATION_QUESTION,
+        ]
+        .contains(&cp)
+        || STAR_AND_CIRCLE.contains(&cp)
+        || WAVY_DASH_AND_ALTERNATION_MARK.contains(&cp)
+        || CIRCLED_IDEOGRAPHS.contains(&cp)
 }
 
 pub fn strip_emote_tokens(text: &str, tokens: &EmoteTokenSet) -> String {
@@ -302,8 +334,14 @@ fn is_emote_only(text: &str, tokens: &EmoteTokenSet) -> bool {
     saw_token
 }
 
+const LATIN_SUPPLEMENT_THROUGH_EXTENDED_B: RangeInclusive<u32> = 0x00C0..=0x024F;
+const LATIN_EXTENDED_ADDITIONAL: RangeInclusive<u32> = 0x1E00..=0x1EFF;
+
 fn is_latin_alpha(c: char) -> bool {
-    c.is_ascii_alphabetic() || matches!(c as u32, 0x00C0..=0x024F | 0x1E00..=0x1EFF)
+    let cp = c as u32;
+    c.is_ascii_alphabetic()
+        || LATIN_SUPPLEMENT_THROUGH_EXTENDED_B.contains(&cp)
+        || LATIN_EXTENDED_ADDITIONAL.contains(&cp)
 }
 
 fn is_mostly_non_latin(text: &str) -> bool {
@@ -505,16 +543,11 @@ fn stage_word_blocklist_logged(
         .filter(|entry| !entry.is_empty())
         .collect();
     let mut result = String::with_capacity(text.len());
-    for (position, word) in text.split_whitespace().enumerate() {
-        if position > 0 {
-            result.push(' ');
-        }
-        censor_blocked_in_word(word, &blocked, mode, &mut result, log)?;
-    }
+    censor_blocked_text(text, &blocked, mode, &mut result, log)?;
     Ok(result)
 }
 
-fn censor_blocked_in_word(
+fn censor_blocked_text(
     word: &str,
     blocked: &[Vec<char>],
     mode: &BlocklistMode,
@@ -1151,6 +1184,77 @@ mod tests {
     }
 
     #[test]
+    fn strip_emoji_removes_symbols_outside_the_main_pictograph_blocks() {
+        let mut config = neutral_config();
+        config.output.strip_emoji = true;
+        let emoji = [
+            '\u{231A}',
+            '\u{23E9}',
+            '\u{23FA}',
+            '\u{203C}',
+            '\u{2049}',
+            '\u{2194}',
+            '\u{2199}',
+            '\u{21A9}',
+            '\u{21AA}',
+            '\u{2934}',
+            '\u{2935}',
+            '\u{2B05}',
+            '\u{2B07}',
+            '\u{2B1B}',
+            '\u{2B1C}',
+            '\u{2B50}',
+            '\u{2B55}',
+            '\u{3030}',
+            '\u{303D}',
+            '\u{3297}',
+            '\u{3299}',
+            '\u{E0067}',
+        ];
+        for c in emoji {
+            let input = format!("a{c}b");
+            assert_eq!(
+                process(&input, &config, &ctx()),
+                PipelineResult::Speak("ab".into()),
+                "U+{:04X}",
+                c as u32
+            );
+        }
+    }
+
+    #[test]
+    fn strip_emoji_keeps_the_neighbours_of_each_emoji_range_boundary() {
+        let mut config = neutral_config();
+        config.output.strip_emoji = true;
+        for c in [
+            '\u{2193}', '\u{219A}', '\u{23E8}', '\u{23FB}', '\u{2933}', '\u{2936}', '\u{2B04}',
+            '\u{2B08}', '\u{2B1A}', '\u{2B1D}', '\u{2B4F}', '\u{2B51}', '\u{2192}', '\u{00A9}',
+            '!', '?',
+        ] {
+            let input = format!("a{c}b");
+            assert_eq!(
+                process(&input, &config, &ctx()),
+                PipelineResult::Speak(input.clone()),
+                "U+{:04X}",
+                c as u32
+            );
+        }
+    }
+
+    #[test]
+    fn strip_emoji_removes_a_zwj_family_sequence_and_a_keycap_entirely() {
+        let mut config = neutral_config();
+        config.output.strip_emoji = true;
+        let family = "\u{1F468}\u{200D}\u{1F469}\u{200D}\u{1F467}";
+        let keycap = "1\u{FE0F}\u{20E3}";
+        let input = format!("x {family} y {keycap} z");
+        assert_eq!(
+            process(&input, &config, &ctx()),
+            PipelineResult::Speak("x  y 1 z".into())
+        );
+    }
+
+    #[test]
     fn output_emote_to_word_converts_colon_tokens_and_keeps_known_tokens() {
         let mut config = PipelineConfig {
             output: OutputConfig {
@@ -1449,6 +1553,81 @@ mod tests {
         assert_eq!(
             process("go-away now", &config, &ctx()),
             PipelineResult::Speak("[beep] now".into())
+        );
+    }
+
+    #[test]
+    fn censor_replaces_a_multi_word_entry_as_one_phrase_and_keeps_the_spacing_around_it() {
+        let config = blocklist(&["bad word", "Go Away"], BlocklistMode::Censor);
+        for (input, expected) in [
+            ("a bad word here", "a [beep] here"),
+            ("BAD WORD!", "[beep]!"),
+            ("say go away now", "say [beep] now"),
+            ("bad word bad word", "[beep] [beep]"),
+            ("bad  word", "bad  word"),
+            ("bad words", "bad words"),
+            ("a bad", "a bad"),
+            ("word bad", "word bad"),
+            ("abad word", "abad word"),
+        ] {
+            assert_eq!(
+                process(input, &config, &ctx()),
+                PipelineResult::Speak(expected.into()),
+                "input {input:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn skip_message_mode_skips_on_a_multi_word_phrase_but_not_on_its_parts() {
+        let config = blocklist(&["bad word"], BlocklistMode::SkipMessage);
+        for (input, skipped) in [
+            ("this is a bad word indeed", true),
+            ("Bad Word", true),
+            ("bad", false),
+            ("word", false),
+            ("bad then word", false),
+        ] {
+            let result = process(input, &config, &ctx());
+            assert_eq!(
+                matches!(
+                    result,
+                    PipelineResult::Skip {
+                        reason: SkipReason::BlockedByWordFilter
+                    }
+                ),
+                skipped,
+                "input {input:?} gave {result:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn the_blocklist_stage_preserves_whitespace_it_does_not_censor() {
+        for mode in [BlocklistMode::Censor, BlocklistMode::SkipMessage] {
+            let config = blocklist(&["gtfo"], mode);
+            for input in [
+                "a   b",
+                "line one\nline two",
+                "tab\tseparated",
+                "  padded  ",
+                "trail ",
+            ] {
+                assert_eq!(
+                    process(input, &config, &ctx()),
+                    PipelineResult::Speak(input.into()),
+                    "input {input:?}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn censoring_keeps_the_whitespace_around_the_blocked_word() {
+        let config = blocklist(&["gtfo"], BlocklistMode::Censor);
+        assert_eq!(
+            process("  a   gtfo\n\tb  ", &config, &ctx()),
+            PipelineResult::Speak("  a   [beep]\n\tb  ".into())
         );
     }
 

@@ -9,7 +9,7 @@ use crate::network::ProviderLink;
 use crate::polly::SAMPLE_RATE_HZ;
 use crate::polly::error::PollyError;
 use crate::polly::signer::{PollySigner, SignedCall};
-use crate::polly::synth::{VOICES_PATH, classify_with};
+use crate::polly::synth::{NEURAL_ENGINE, VOICES_PATH, classify_with};
 
 const NEXT_TOKEN_PARAM: &str = "NextToken";
 const MAX_VOICE_PAGES: usize = 32;
@@ -34,6 +34,18 @@ struct PollyVoice {
     language_code: String,
     #[serde(rename = "Gender")]
     gender: String,
+    #[serde(rename = "SupportedEngines", default)]
+    supported_engines: Vec<String>,
+}
+
+impl PollyVoice {
+    fn speaks_neural(&self) -> bool {
+        self.supported_engines.is_empty()
+            || self
+                .supported_engines
+                .iter()
+                .any(|engine| engine == NEURAL_ENGINE)
+    }
 }
 
 fn gender_from_str(s: &str) -> VoiceGender {
@@ -125,6 +137,7 @@ fn into_tts_voices(voices: Vec<PollyVoice>) -> Vec<TtsVoice> {
     let engine_id = EngineId(ENGINE_ID_POLLY.into());
     voices
         .into_iter()
+        .filter(PollyVoice::speaks_neural)
         .map(|v| TtsVoice {
             id: VoiceId(v.id),
             name: v.name,
@@ -293,6 +306,29 @@ mod tests {
                 ),
             ]
         );
+    }
+
+    #[test]
+    fn voices_without_neural_support_are_filtered_out_of_the_catalog() {
+        let listing: serde_json::Value = serde_json::json!([
+            {"Id": "Neural", "Name": "n", "LanguageCode": "en-US", "Gender": "Female",
+             "SupportedEngines": ["neural", "standard"]},
+            {"Id": "StandardOnly", "Name": "s", "LanguageCode": "en-US", "Gender": "Female",
+             "SupportedEngines": ["standard"]},
+            {"Id": "NeuralOnly", "Name": "n2", "LanguageCode": "en-US", "Gender": "Male",
+             "SupportedEngines": ["neural"]},
+            {"Id": "Unreported", "Name": "u", "LanguageCode": "en-US", "Gender": "Male"},
+            {"Id": "EmptyList", "Name": "e", "LanguageCode": "en-US", "Gender": "Male",
+             "SupportedEngines": []}
+        ]);
+        let parsed: Vec<PollyVoice> = serde_json::from_value(listing).unwrap();
+
+        let ids: Vec<String> = into_tts_voices(parsed)
+            .into_iter()
+            .map(|v| v.id.0)
+            .collect();
+
+        assert_eq!(ids, vec!["Neural", "NeuralOnly", "Unreported", "EmptyList"]);
     }
 
     #[tokio::test]

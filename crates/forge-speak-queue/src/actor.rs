@@ -372,12 +372,13 @@ pub(crate) async fn run_actor(
     let mut current_playback: Option<CurrentPlayback> = None;
     let mut progress_ticker: Option<tokio::time::Interval> = None;
     let mut recent_messages: VecDeque<String> = VecDeque::new();
+    let mut synthesis_task: Option<(RequestId, tokio::task::AbortHandle)> = None;
 
     let (synth_tx, mut synth_rx) = tokio::sync::mpsc::channel::<SynthTaskResult>(8);
     let (catalog_tx, mut catalog_rx) =
         tokio::sync::mpsc::channel::<CatalogUpdate>(CATALOG_UPDATE_CAPACITY);
-    let (detector_tx, mut detector_rx) =
-        tokio::sync::mpsc::channel::<Option<Arc<LanguageDetector>>>(1);
+    let (detector_tx, mut detector_rx) = tokio::sync::mpsc::channel::<DetectorBuild>(1);
+    let mut detector_builds = DetectorBuilds::new(detector_tx);
 
     {
         let mut registry = deps.registry.write().unwrap_or_else(|e| e.into_inner());
@@ -403,12 +404,20 @@ pub(crate) async fn run_actor(
     loop {
         depth.store(high_queue.len() + normal_queue.len(), Ordering::Relaxed);
 
+        if let Some((request_id, task)) = &synthesis_task
+            && active_request_id.as_ref() != Some(request_id)
+        {
+            task.abort();
+            synthesis_task = None;
+        }
+
         let language_aware_now = deps.pipeline.load().output.language_aware_voice;
         if language_aware_now != language_aware {
             language_aware = language_aware_now;
             if language_aware {
-                spawn_detector_rebuild(&task_deps.voice_catalog, detector_tx.clone());
+                detector_builds.rebuild(&task_deps.voice_catalog);
             } else {
+                detector_builds.invalidate();
                 task_deps.detector = None;
             }
         }
@@ -467,13 +476,15 @@ pub(crate) async fn run_actor(
             }
             recent_messages.push_back(req.text.clone());
             let timeout = config.timeout_per_item;
-            tokio::spawn(async move {
+            let request_id = req.request_id.clone();
+            let task = tokio::spawn(async move {
                 let result =
                     run_synthesis_bounded(req, task_deps_clone, recent_snapshot, timeout).await;
                 if tx.send(result).await.is_err() {
                     tracing::debug!("speak queue stopped before the synthesis result arrived");
                 }
             });
+            synthesis_task = Some((request_id, task.abort_handle()));
         }
 
         tokio::select! {
@@ -495,7 +506,7 @@ pub(crate) async fn run_actor(
                             &voices,
                             &mut task_deps,
                             language_aware,
-                            &detector_tx,
+                            &mut detector_builds,
                         );
                     }
                     Some(SpeakCommand::SetEngineEnabled(engine_id, enabled)) => {
@@ -518,7 +529,7 @@ pub(crate) async fn run_actor(
                             &voices,
                             &mut task_deps,
                             language_aware,
-                            &detector_tx,
+                            &mut detector_builds,
                         );
                     }
                     Some(SpeakCommand::SetVolume(volume)) => {
@@ -592,13 +603,15 @@ pub(crate) async fn run_actor(
                         &voices,
                         &mut task_deps,
                         language_aware,
-                        &detector_tx,
+                        &mut detector_builds,
                     );
                 }
             }
             result = detector_rx.recv() => {
-                if let Some(detector) = result {
-                    task_deps.detector = detector.filter(|_| language_aware);
+                if let Some(build) = result
+                    && detector_builds.is_current(build.generation)
+                {
+                    task_deps.detector = build.detector.filter(|_| language_aware);
                 }
             }
             _ = tick_progress(&mut progress_ticker), if progress_ticker.is_some() => {
@@ -1037,12 +1050,14 @@ fn handle_command(
                 }
                 None => false,
             };
+            let was_high = high_queue.iter().any(|r| r.request_id == request_id);
             let Some(req) = take_from_queues(high_queue, normal_queue, &request_id) else {
                 return;
             };
             let emit = SpeakEmitter::new(event_tx, deps.event_bus.as_ref());
             emit.reordered(&req, before.clone());
             match &before {
+                None if was_high => high_queue.push_back(req),
                 None => normal_queue.push_back(req),
                 Some(anchor_id) => {
                     let queue = if anchor_in_high {
@@ -1225,26 +1240,58 @@ fn pop_next(
     req
 }
 
-fn spawn_detector_rebuild(
-    catalog: &[TtsVoice],
-    tx: tokio::sync::mpsc::Sender<Option<Arc<LanguageDetector>>>,
-) {
-    let candidates = candidate_languages(catalog);
-    tokio::spawn(async move {
-        let built =
-            tokio::task::spawn_blocking(move || LanguageDetector::new(&candidates).map(Arc::new))
-                .await;
-        let detector = match built {
-            Ok(detector) => detector,
-            Err(e) => {
-                tracing::warn!(error = %e, "language detector build failed");
-                None
+struct DetectorBuild {
+    generation: u64,
+    detector: Option<Arc<LanguageDetector>>,
+}
+
+struct DetectorBuilds {
+    generation: u64,
+    tx: tokio::sync::mpsc::Sender<DetectorBuild>,
+}
+
+impl DetectorBuilds {
+    fn new(tx: tokio::sync::mpsc::Sender<DetectorBuild>) -> Self {
+        Self { generation: 0, tx }
+    }
+
+    fn invalidate(&mut self) {
+        self.generation = self.generation.wrapping_add(1);
+    }
+
+    fn is_current(&self, generation: u64) -> bool {
+        self.generation == generation
+    }
+
+    fn rebuild(&mut self, catalog: &[TtsVoice]) {
+        self.invalidate();
+        let generation = self.generation;
+        let candidates = candidate_languages(catalog);
+        let tx = self.tx.clone();
+        tokio::spawn(async move {
+            let built = tokio::task::spawn_blocking(move || {
+                LanguageDetector::new(&candidates).map(Arc::new)
+            })
+            .await;
+            let detector = match built {
+                Ok(detector) => detector,
+                Err(e) => {
+                    tracing::warn!(error = %e, "language detector build failed");
+                    None
+                }
+            };
+            if tx
+                .send(DetectorBuild {
+                    generation,
+                    detector,
+                })
+                .await
+                .is_err()
+            {
+                tracing::debug!("speak queue stopped before the language detector was rebuilt");
             }
-        };
-        if tx.send(detector).await.is_err() {
-            tracing::debug!("speak queue stopped before the language detector was rebuilt");
-        }
-    });
+        });
+    }
 }
 
 fn publish_catalog(
@@ -1252,11 +1299,11 @@ fn publish_catalog(
     voices: &Shared<Vec<TtsVoice>>,
     task_deps: &mut SynthTaskDeps,
     language_aware: bool,
-    detector_tx: &tokio::sync::mpsc::Sender<Option<Arc<LanguageDetector>>>,
+    detector_builds: &mut DetectorBuilds,
 ) {
     voices.store_arc(merged.clone());
     if language_aware {
-        spawn_detector_rebuild(&merged, detector_tx.clone());
+        detector_builds.rebuild(&merged);
     }
     task_deps.voice_catalog = merged;
 }
@@ -2263,5 +2310,41 @@ mod tests {
             LanguageCode::from_locale("uk"),
         );
         assert!(matches!(result, PipelineResult::Skip { .. }), "{result:?}");
+    }
+
+    #[tokio::test]
+    async fn a_detector_build_is_current_until_a_newer_build_or_invalidation_supersedes_it() {
+        let (tx, mut rx) = tokio::sync::mpsc::channel::<DetectorBuild>(4);
+        let mut builds = DetectorBuilds::new(tx);
+
+        builds.rebuild(&[]);
+        let first = rx.recv().await.expect("first build result");
+        assert!(builds.is_current(first.generation));
+
+        builds.rebuild(&[]);
+        assert!(!builds.is_current(first.generation));
+        let second = rx.recv().await.expect("second build result");
+        assert!(builds.is_current(second.generation));
+        assert_ne!(first.generation, second.generation);
+
+        builds.invalidate();
+        assert!(!builds.is_current(second.generation));
+    }
+
+    #[tokio::test]
+    async fn a_build_finished_after_a_newer_rebuild_was_started_is_reported_stale() {
+        let (tx, mut rx) = tokio::sync::mpsc::channel::<DetectorBuild>(4);
+        let mut builds = DetectorBuilds::new(tx);
+
+        builds.rebuild(&[]);
+        builds.rebuild(&[]);
+
+        let mut generations = Vec::new();
+        for _ in 0..2 {
+            generations.push(rx.recv().await.expect("build result").generation);
+        }
+        let current: Vec<bool> = generations.iter().map(|g| builds.is_current(*g)).collect();
+        assert_eq!(current.iter().filter(|c| **c).count(), 1);
+        assert!(builds.is_current(builds.generation));
     }
 }

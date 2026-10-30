@@ -23,8 +23,11 @@ pub enum VoiceGateState {
 
 enum GateControl {
     SetDevice(Option<DeviceId>),
+    StreamFailed,
     Stop,
 }
+
+const REOPEN_INTERVAL: Duration = Duration::from_secs(5);
 
 struct GateShared {
     level_bits: AtomicU32,
@@ -49,7 +52,8 @@ impl VoiceGateMonitor {
         let (state_tx, state_rx) = watch::channel(VoiceGateState::Inactive);
 
         let thread_shared = Arc::clone(&shared);
-        std::thread::spawn(move || run(config, control_rx, state_tx, thread_shared));
+        let failure_tx = control_tx.clone();
+        std::thread::spawn(move || run(config, control_rx, failure_tx, state_tx, thread_shared));
 
         Self {
             control_tx,
@@ -109,12 +113,18 @@ impl Drop for VoiceGateMonitor {
 fn run(
     initial: VoiceGateConfig,
     control_rx: crossbeam_channel::Receiver<GateControl>,
+    failure_tx: crossbeam_channel::Sender<GateControl>,
     state_tx: watch::Sender<VoiceGateState>,
     shared: Arc<GateShared>,
 ) {
     let mut device = initial.device;
     loop {
-        match open_and_start(device.clone(), &shared, state_tx.clone()) {
+        match open_and_start(
+            device.clone(),
+            &shared,
+            state_tx.clone(),
+            failure_tx.clone(),
+        ) {
             Ok(_stream) => {
                 state_tx.send_replace(VoiceGateState::Inactive);
                 loop {
@@ -127,14 +137,20 @@ fn run(
                             device = next;
                             break;
                         }
+                        Ok(GateControl::StreamFailed) => break,
                     }
                 }
             }
             Err(err) => {
                 state_tx.send_replace(VoiceGateState::Unavailable(err.to_string()));
-                match control_rx.recv() {
-                    Ok(GateControl::Stop) | Err(_) => return,
+                match control_rx.recv_timeout(REOPEN_INTERVAL) {
+                    Ok(GateControl::Stop)
+                    | Err(crossbeam_channel::RecvTimeoutError::Disconnected) => {
+                        return;
+                    }
                     Ok(GateControl::SetDevice(next)) => device = next,
+                    Ok(GateControl::StreamFailed)
+                    | Err(crossbeam_channel::RecvTimeoutError::Timeout) => {}
                 }
             }
         }
@@ -173,6 +189,7 @@ fn open_and_start(
     device_id: Option<DeviceId>,
     shared: &Arc<GateShared>,
     state_tx: watch::Sender<VoiceGateState>,
+    failure_tx: crossbeam_channel::Sender<GateControl>,
 ) -> Result<cpal::Stream, AudioError> {
     use cpal::traits::{DeviceTrait, StreamTrait};
 
@@ -192,6 +209,7 @@ fn open_and_start(
         is_active: Arc::new(AtomicBool::new(false)),
         last_active_nanos: Arc::new(AtomicU64::new(0)),
         state_tx,
+        failure_tx,
     };
 
     let stream = build_input_stream(&device, stream_config, sample_format, ctx)?;
@@ -206,6 +224,7 @@ struct CallbackContext {
     is_active: Arc<AtomicBool>,
     last_active_nanos: Arc<AtomicU64>,
     state_tx: watch::Sender<VoiceGateState>,
+    failure_tx: crossbeam_channel::Sender<GateControl>,
 }
 
 fn build_input_stream(
@@ -223,11 +242,13 @@ fn build_input_stream(
         is_active,
         last_active_nanos,
         state_tx,
+        failure_tx,
     } = ctx;
 
     let stream = match sample_format {
         SampleFormat::F32 => {
             let error_tx = state_tx.clone();
+            let error_control = failure_tx.clone();
             device.build_input_stream(
                 stream_config,
                 move |data: &[f32], _: &cpal::InputCallbackInfo| {
@@ -241,12 +262,13 @@ fn build_input_stream(
                         &state_tx,
                     );
                 },
-                move |err| input_stream_error_fn(err, &error_tx),
+                move |err| input_stream_error_fn(err, &error_tx, &error_control),
                 None,
             )
         }
         SampleFormat::I16 => {
             let error_tx = state_tx.clone();
+            let error_control = failure_tx.clone();
             device.build_input_stream(
                 stream_config,
                 move |data: &[i16], _: &cpal::InputCallbackInfo| {
@@ -262,12 +284,13 @@ fn build_input_stream(
                         &state_tx,
                     );
                 },
-                move |err| input_stream_error_fn(err, &error_tx),
+                move |err| input_stream_error_fn(err, &error_tx, &error_control),
                 None,
             )
         }
         SampleFormat::I32 => {
             let error_tx = state_tx.clone();
+            let error_control = failure_tx.clone();
             device.build_input_stream(
                 stream_config,
                 move |data: &[i32], _: &cpal::InputCallbackInfo| {
@@ -283,7 +306,7 @@ fn build_input_stream(
                         &state_tx,
                     );
                 },
-                move |err| input_stream_error_fn(err, &error_tx),
+                move |err| input_stream_error_fn(err, &error_tx, &error_control),
                 None,
             )
         }
@@ -316,7 +339,18 @@ fn find_input_device(host: &cpal::Host, id: Option<&DeviceId>) -> Option<cpal::D
     }
 }
 
-fn input_stream_error_fn(err: cpal::Error, state_tx: &watch::Sender<VoiceGateState>) {
+fn input_stream_error_fn(
+    err: cpal::Error,
+    state_tx: &watch::Sender<VoiceGateState>,
+    control_tx: &crossbeam_channel::Sender<GateControl>,
+) {
+    if !crate::cpal_sink::ends_playback(err.kind()) {
+        tracing::debug!("cpal input stream hiccup: {}", err);
+        return;
+    }
     tracing::error!("cpal input stream error: {}", err);
     state_tx.send_replace(VoiceGateState::Unavailable(err.to_string()));
+    if control_tx.send(GateControl::StreamFailed).is_err() {
+        tracing::debug!("voice gate monitor stopped; stream failure dropped");
+    }
 }

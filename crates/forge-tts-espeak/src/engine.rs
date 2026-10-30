@@ -5,13 +5,13 @@ use forge_tts_core::{
     TtsError,
 };
 
-use crate::{process, voices};
+use crate::{process, voices, wav};
 
 static CAPABILITIES: EngineCapabilities = EngineCapabilities {
     ssml: true,
     neural_voices: false,
     streaming: false,
-    custom_lexicons: true,
+    custom_lexicons: false,
 };
 
 fn espeak_engine_id() -> EngineId {
@@ -44,39 +44,41 @@ impl TtsEngine for EspeakEngine {
     }
 
     async fn list_voices(&self) -> Result<Vec<TtsVoice>, TtsError> {
-        {
-            let cache = self.voice_cache.lock().await;
-            if let Some(cached) = cache.as_ref() {
-                return Ok(cached.clone());
-            }
+        let mut cache = self.voice_cache.lock().await;
+        if let Some(cached) = cache.as_ref() {
+            return Ok(cached.clone());
         }
-
         let raw = process::list_voices_from_binary()
             .await
             .map_err(TtsError::from)?;
         let result = voices::parse_voices_output(&raw, &self.id);
-
-        {
-            let mut cache = self.voice_cache.lock().await;
-            *cache = Some(result.clone());
-        }
-
+        *cache = Some(result.clone());
         Ok(result)
     }
 
     async fn synthesize(&self, request: SynthesisRequest) -> Result<PcmBuffer, TtsError> {
-        let voices = self.list_voices().await?;
-
-        if !voices.iter().any(|v| v.id == request.voice_id) {
-            return Err(TtsError::InvalidVoice {
-                id: request.voice_id,
-            });
+        {
+            let mut cache = self.voice_cache.lock().await;
+            if cache.is_none() {
+                let raw = process::list_voices_from_binary()
+                    .await
+                    .map_err(TtsError::from)?;
+                *cache = Some(voices::parse_voices_output(&raw, &self.id));
+            }
+            let known = cache
+                .as_ref()
+                .is_some_and(|voices| voices.iter().any(|v| v.id == request.voice_id));
+            if !known {
+                return Err(TtsError::InvalidVoice {
+                    id: request.voice_id,
+                });
+            }
         }
 
         let rate_wpm = process::rate_wpm_from_multiplier(request.rate_multiplier);
         let pitch_0_99 = process::pitch_from_semitones(request.pitch_semitones);
 
-        let raw_bytes = process::run_synthesis(&process::SynthesisInvocation {
+        let wav_bytes = process::run_synthesis(&process::SynthesisInvocation {
             voice_id: &request.voice_id.0,
             text: &request.text,
             rate_wpm,
@@ -86,10 +88,8 @@ impl TtsEngine for EspeakEngine {
         .await
         .map_err(TtsError::from)?;
 
-        let (pairs, _) = raw_bytes.as_chunks::<2>();
-        let samples: Vec<i16> = pairs.iter().map(|pair| i16::from_le_bytes(*pair)).collect();
-
-        Ok(PcmBuffer::new(samples, 22_050, 1))
+        let wav = wav::parse(&wav_bytes).map_err(TtsError::from)?;
+        Ok(PcmBuffer::new(wav.samples, wav.sample_rate, wav.channels))
     }
 }
 

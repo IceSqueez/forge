@@ -3,9 +3,11 @@ use std::future::Future;
 use std::sync::Arc;
 use std::time::Duration;
 
+use tokio::time::Instant;
+
 use forge_speech_types::EngineId;
 use forge_speech_types::PcmBuffer;
-use forge_tts_core::TtsError;
+use forge_tts_core::{ENGINE_SYNTHESIS_BUDGET, TtsError};
 
 use crate::network::ceil_secs;
 use crate::policy::rate_limit::{EXHAUSTED_THRESHOLD, SynthesisRateLimiter};
@@ -21,6 +23,7 @@ const BACKOFF: [Duration; 3] = [
 #[derive(Clone)]
 pub struct RetryConfig {
     pub timeout: Duration,
+    pub total_budget: Duration,
     pub max_retries: u32,
     pub cooldown: Option<Arc<SynthesisRateLimiter>>,
 }
@@ -38,6 +41,7 @@ impl Default for RetryConfig {
     fn default() -> Self {
         Self {
             timeout: DEFAULT_REQUEST_TIMEOUT,
+            total_budget: ENGINE_SYNTHESIS_BUDGET,
             max_retries: DEFAULT_MAX_RETRIES,
             cooldown: None,
         }
@@ -48,6 +52,7 @@ impl fmt::Debug for RetryConfig {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("RetryConfig")
             .field("timeout", &self.timeout)
+            .field("total_budget", &self.total_budget)
             .field("max_retries", &self.max_retries)
             .field("paced", &self.cooldown.is_some())
             .finish()
@@ -58,12 +63,13 @@ fn is_retryable(err: &TtsError) -> bool {
     matches!(err, TtsError::NetworkFailed(_) | TtsError::Io(_))
 }
 
-async fn sit_out_cooldown(cfg: &RetryConfig) -> Result<(), TtsError> {
+async fn sit_out_cooldown(cfg: &RetryConfig, deadline: Instant) -> Result<(), TtsError> {
     let Some(limiter) = &cfg.cooldown else {
         return Ok(());
     };
     let remaining = limiter.cooldown_remaining();
-    if remaining > EXHAUSTED_THRESHOLD {
+    let budget_left = deadline.saturating_duration_since(Instant::now());
+    if remaining > EXHAUSTED_THRESHOLD || (!remaining.is_zero() && remaining >= budget_left) {
         return Err(TtsError::RateLimited {
             retry_after_secs: ceil_secs(remaining),
         });
@@ -84,16 +90,20 @@ where
     Fut: Future<Output = Result<PcmBuffer, TtsError>> + Send + 'static,
 {
     let mut retry_count: u32 = 0;
+    let deadline = Instant::now() + cfg.total_budget;
 
     loop {
-        sit_out_cooldown(&cfg).await?;
-        let result = tokio::time::timeout(cfg.timeout, call()).await;
+        sit_out_cooldown(&cfg, deadline).await?;
+        let remaining = deadline.saturating_duration_since(Instant::now());
+        let attempt_timeout = cfg.timeout.min(remaining);
+        if attempt_timeout.is_zero() {
+            return Err(budget_exhausted(cfg.total_budget));
+        }
+        let result = tokio::time::timeout(attempt_timeout, call()).await;
 
         match result {
             Err(_elapsed) => {
-                return Err(TtsError::Timeout {
-                    ms: u64::try_from(cfg.timeout.as_millis()).unwrap_or(u64::MAX),
-                });
+                return Err(budget_exhausted(attempt_timeout));
             }
             Ok(Ok(buf)) => return Ok(buf),
             Ok(Err(TtsError::RateLimited { retry_after_secs })) => {
@@ -114,6 +124,9 @@ where
                         retry_after_secs,
                         "rate limit wait is longer than the synthesis path waits"
                     );
+                    return Err(TtsError::RateLimited { retry_after_secs });
+                }
+                if wait >= deadline.saturating_duration_since(Instant::now()) {
                     return Err(TtsError::RateLimited { retry_after_secs });
                 }
                 tokio::time::sleep(wait).await;
@@ -138,9 +151,18 @@ where
                     backoff_ms = BACKOFF[idx].as_millis(),
                     "transient synthesis failure; retrying"
                 );
+                if BACKOFF[idx] >= deadline.saturating_duration_since(Instant::now()) {
+                    return Err(e);
+                }
                 tokio::time::sleep(BACKOFF[idx]).await;
             }
         }
+    }
+}
+
+fn budget_exhausted(spent: Duration) -> TtsError {
+    TtsError::Timeout {
+        ms: u64::try_from(spent.as_millis()).unwrap_or(u64::MAX),
     }
 }
 
@@ -209,6 +231,8 @@ mod tests {
         })
         .await
     }
+
+    const LONG_BUDGET: Duration = Duration::from_secs(600);
 
     fn rate_limited(retry_after_secs: u64) -> Result<PcmBuffer, TtsError> {
         Err(TtsError::RateLimited { retry_after_secs })
@@ -286,7 +310,11 @@ mod tests {
             (vec![60], vec![secs(60)]),
         ] {
             let script = Script::new(hints.iter().map(|&h| rate_limited(h)).collect());
-            let result = run(&script, RetryConfig::default()).await;
+            let cfg = RetryConfig {
+                total_budget: LONG_BUDGET,
+                ..RetryConfig::default()
+            };
+            let result = run(&script, cfg).await;
             assert!(result.is_ok(), "hints {hints:?}: {result:?}");
             assert_eq!(script.gaps(), gaps, "hints {hints:?}");
         }
@@ -373,6 +401,10 @@ mod tests {
             (EXHAUSTED_THRESHOLD, EXHAUSTED_THRESHOLD),
         ] {
             let (cfg, _limiter) = paced(floor);
+            let cfg = RetryConfig {
+                total_budget: LONG_BUDGET,
+                ..cfg
+            };
             let script = Script::new(vec![]);
             let started = Instant::now();
             let result = run(&script, cfg).await;
@@ -460,5 +492,88 @@ mod tests {
             "{result:?}"
         );
         assert_eq!(script.call_count(), 1);
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn retries_share_one_total_budget_and_the_last_attempt_gets_only_what_is_left() {
+        let cfg = RetryConfig {
+            total_budget: Duration::from_secs(25),
+            ..RetryConfig::default()
+        };
+        let calls = Arc::new(Mutex::new(0_usize));
+        let counted = Arc::clone(&calls);
+        let started = Instant::now();
+        let result = retry_synthesize(engine(), cfg, move || {
+            let counted = Arc::clone(&counted);
+            async move {
+                *counted.lock().unwrap() += 1;
+                tokio::time::sleep(Duration::from_secs(9)).await;
+                Err::<PcmBuffer, _>(TtsError::NetworkFailed("reset".into()))
+            }
+        })
+        .await;
+
+        assert!(
+            matches!(result, Err(TtsError::Timeout { ms: 5_750 })),
+            "{result:?}"
+        );
+        assert_eq!(*calls.lock().unwrap(), 3);
+        assert_eq!(started.elapsed(), Duration::from_secs(25));
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_rate_limit_wait_past_the_budget_fails_at_once_without_sleeping() {
+        let cfg = RetryConfig {
+            total_budget: Duration::from_secs(25),
+            ..RetryConfig::default()
+        };
+        let started = Instant::now();
+
+        let result = retry_synthesize(EngineId("t".into()), cfg, || async {
+            Err(TtsError::RateLimited {
+                retry_after_secs: 40,
+            })
+        })
+        .await;
+
+        assert!(matches!(
+            result,
+            Err(TtsError::RateLimited {
+                retry_after_secs: 40
+            })
+        ));
+        assert_eq!(started.elapsed(), Duration::ZERO);
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn an_empty_total_budget_fails_without_calling_the_engine() {
+        let cfg = RetryConfig {
+            total_budget: Duration::ZERO,
+            ..RetryConfig::default()
+        };
+        let script = Script::new(vec![]);
+        let result = run(&script, cfg).await;
+        assert!(
+            matches!(result, Err(TtsError::Timeout { ms: 0 })),
+            "{result:?}"
+        );
+        assert_eq!(script.call_count(), 0);
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_budget_larger_than_the_attempt_timeout_does_not_extend_the_attempt() {
+        let cfg = RetryConfig {
+            total_budget: Duration::from_secs(25),
+            timeout: Duration::from_secs(4),
+            ..RetryConfig::default()
+        };
+        let result = retry_synthesize(engine(), cfg, || {
+            std::future::pending::<Result<PcmBuffer, TtsError>>()
+        })
+        .await;
+        assert!(
+            matches!(result, Err(TtsError::Timeout { ms: 4_000 })),
+            "{result:?}"
+        );
     }
 }

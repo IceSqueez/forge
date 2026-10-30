@@ -4,5 +4,6 @@ crates/forge-storage-sqlite/migrations/*.sql text eol=lf
 *.js text eol=lf
 *.json text eol=lf
 *.svg text eol=lf
+*.tsv text eol=lf
 *.ftl text eol=lf
 *.ttf binary

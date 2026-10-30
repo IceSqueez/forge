@@ -4,9 +4,10 @@ use std::time::Instant;
 use async_trait::async_trait;
 use forge_registry::runner::SubActionConfig;
 use forge_registry::{RunContext, SubActionCategory, SubActionRunner};
-use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry};
+use forge_types::{ArgStack, SubActionTelemetry};
 use time::OffsetDateTime;
 
+use crate::runners::step_failure;
 use crate::sink::VTubeSink;
 use crate::vocabulary::sub_action_ids;
 
@@ -54,7 +55,7 @@ impl SubActionRunner for ItemUnloadAllRunner {
         let started_at = OffsetDateTime::now_utc();
         let start = Instant::now();
 
-        let outcome = SubActionOutcome::from_result(&self.sink.unload_all_items().await);
+        let outcome = step_failure::outcome(&self.sink.unload_all_items().await);
 
         (
             SubActionTelemetry {
@@ -75,6 +76,7 @@ impl SubActionRunner for ItemUnloadAllRunner {
 mod tests {
     use super::*;
     use crate::runners::test_support::{MockSink, make_ctx};
+    use forge_types::SubActionOutcome;
     use std::collections::BTreeMap;
 
     #[tokio::test]

@@ -1508,7 +1508,7 @@ mod tests {
                 ),
                 (
                     HealthValue::Text {
-                        primary: HealthText::unlocalized("\u{2014}"),
+                        primary: HealthText::unlocalized("-"),
                         secondary: Some(HealthText::unlocalized("not loaded")),
                     },
                     HealthValue::Status {

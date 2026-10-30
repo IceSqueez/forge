@@ -6,16 +6,16 @@ use forge_registry::{
     ConfigProblem, ConfigSpec, NumberField, OptionalField, RunContext, StepTimer,
     SubActionCategory, SubActionRunner, TypedField,
 };
-use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, UserText, Variant};
+use forge_types::{ArgStack, SubActionTelemetry, Variant};
 
 use crate::runners::fields::{ITEM_FILE_NAME, ITEM_SIZE, optional_number, read_non_empty};
+use crate::runners::step_failure;
 use crate::sink::{VTubeSink, result_keys};
-use crate::vocabulary::{config_keys, sub_action_ids, variables};
+use crate::vocabulary::{config_keys, messages, sub_action_ids, variables};
 
 const DEFAULT_THROW_SECONDS: f64 = 0.4;
 const SPAWN_FADE_SECONDS: f64 = 0.0;
 const LINEAR_FADE: &str = "linear";
-const MISSING_INSTANCE_ID: &str = "VTS did not return an item instance id";
 
 const FROM_X: OptionalField<NumberField> =
     optional_number(config_keys::FROM_X, "From X", "-1.0 to 1.0");
@@ -131,19 +131,13 @@ impl SubActionRunner for ItemThrowRunner {
             Ok(Variant::Object(ref map)) => match map.get(result_keys::INSTANCE_ID) {
                 Some(Variant::String(id)) if !id.is_empty() => id.clone(),
                 _ => {
-                    return (
-                        timer.failed(UserText::unlocalized(MISSING_INSTANCE_ID)),
-                        None,
-                    );
+                    return (timer.failed(messages::item_instance_missing().into()), None);
                 }
             },
             Ok(_) => {
-                return (
-                    timer.failed(UserText::unlocalized(MISSING_INSTANCE_ID)),
-                    None,
-                );
+                return (timer.failed(messages::item_instance_missing().into()), None);
             }
-            Err(e) => return (timer.failed(UserText::unlocalized(e.to_string())), None),
+            Err(e) => return (timer.finish(step_failure::failed(&e)), None),
         };
 
         let moved = self
@@ -165,10 +159,7 @@ impl SubActionRunner for ItemThrowRunner {
             Variant::String(instance_id),
         );
 
-        (
-            timer.finish(SubActionOutcome::from_result(&moved)),
-            Some(stack),
-        )
+        (timer.finish(step_failure::outcome(&moved)), Some(stack))
     }
 }
 
@@ -176,6 +167,7 @@ impl SubActionRunner for ItemThrowRunner {
 mod tests {
     use super::*;
     use crate::runners::test_support::{MockSink, make_ctx};
+    use forge_types::SubActionOutcome;
     use std::collections::BTreeMap;
 
     #[tokio::test]

@@ -6,8 +6,9 @@ use forge_registry::{
     ConfigSpec, PickedTextField, RunContext, StepTimer, SubActionCategory, SubActionRunner,
     TextPicker, TypedField,
 };
-use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry};
+use forge_types::{ArgStack, SubActionTelemetry};
 
+use crate::runners::step_failure;
 use crate::sink::VTubeSink;
 use crate::vocabulary::{config_keys, picker_keys, sub_action_ids};
 
@@ -73,7 +74,7 @@ impl SubActionRunner for HotkeyTriggerRunner {
             Ok(hotkey_id) => hotkey_id,
             Err(problem) => return (timer.invalid_config(&problem), None),
         };
-        let outcome = SubActionOutcome::from_result(&self.sink.trigger_hotkey(&hotkey_id).await);
+        let outcome = step_failure::outcome(&self.sink.trigger_hotkey(&hotkey_id).await);
         (timer.finish(outcome), None)
     }
 }
@@ -83,6 +84,7 @@ mod tests {
     use super::*;
     use crate::error::VTubeError;
     use crate::runners::test_support::{MockSink, make_ctx};
+    use forge_types::SubActionOutcome;
     use forge_types::Variant;
     use std::collections::BTreeMap;
 

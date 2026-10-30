@@ -19,7 +19,7 @@ mod webhooks;
 pub use client::DiscordClient;
 pub use content::WebhookPost;
 pub use embed::{DiscordEmbed, DiscordEmbedField};
-pub use error::DiscordError;
+pub use error::{DiscordError, ValidationFault};
 pub use health::DiscordSendHealth;
 pub use integration::DISCORD_INTEGRATION;
 pub use mention::MentionPolicy;

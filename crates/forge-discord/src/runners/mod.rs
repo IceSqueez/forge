@@ -5,6 +5,7 @@ mod mention_fields;
 mod post_embed;
 mod post_text;
 mod send_file;
+mod step_failure;
 
 use std::sync::Arc;
 

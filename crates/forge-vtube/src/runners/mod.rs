@@ -19,6 +19,7 @@ mod model_set_physics;
 mod model_tint;
 mod param_set;
 mod params_reset;
+mod step_failure;
 #[cfg(test)]
 pub(crate) mod test_support;
 

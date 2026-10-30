@@ -7,9 +7,10 @@ use forge_registry::{
     RunContext, StepTimer, SubActionCategory, SubActionIo, SubActionRunner, TextEditor, TextField,
     TypedField,
 };
-use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, UserText};
+use forge_types::{ArgStack, SubActionTelemetry};
 
 use super::fields::{WEBHOOK, optional_text, present, unlisted_text};
+use super::step_failure;
 use super::{message_id_scope_io, message_id_stack};
 use crate::embed::DiscordEmbed;
 use crate::sink::DiscordSink;
@@ -150,13 +151,10 @@ impl SubActionRunner for PostEmbedRunner {
             Err(problem) => return (timer.invalid_config(&problem), None),
         };
         if let Err(error) = post.embed.validate() {
-            return (timer.failed(UserText::unlocalized(error.to_string())), None);
+            return (timer.finish(step_failure::failed(&error)), None);
         }
         let posted = self.sink.post_embed(&post.webhook, post.embed).await;
         let produced = message_id_stack(ctx.arg_stack, &posted);
-        (
-            timer.finish(SubActionOutcome::from_result(&posted)),
-            produced,
-        )
+        (timer.finish(step_failure::outcome(&posted)), produced)
     }
 }

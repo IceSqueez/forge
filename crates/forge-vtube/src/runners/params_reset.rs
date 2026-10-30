@@ -4,10 +4,11 @@ use std::time::Instant;
 use async_trait::async_trait;
 use forge_registry::runner::SubActionConfig;
 use forge_registry::{RunContext, SubActionCategory, SubActionRunner};
-use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry};
+use forge_types::{ArgStack, SubActionTelemetry};
 use time::OffsetDateTime;
 
 use crate::runners::hold_registry::HoldRegistry;
+use crate::runners::step_failure;
 use crate::sink::VTubeSink;
 use crate::vocabulary::sub_action_ids;
 
@@ -57,7 +58,7 @@ impl SubActionRunner for ParamsResetRunner {
         let start = Instant::now();
 
         self.holds.abort_all();
-        let outcome = SubActionOutcome::from_result(&self.sink.reset_params().await);
+        let outcome = step_failure::outcome(&self.sink.reset_params().await);
 
         (
             SubActionTelemetry {
@@ -78,6 +79,7 @@ impl SubActionRunner for ParamsResetRunner {
 mod tests {
     use super::*;
     use crate::runners::test_support::{MockSink, make_ctx};
+    use forge_types::SubActionOutcome;
     use std::collections::BTreeMap;
 
     #[tokio::test]

@@ -6,10 +6,11 @@ use forge_registry::{
     ConfigProblem, ConfigReason, ConfigSpec, Interpolation, OptionalField, RunContext, StepTimer,
     SubActionCategory, SubActionRunner, TextEditor, TextField, TypedField,
 };
-use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry};
+use forge_types::{ArgStack, SubActionTelemetry};
 
 use super::fields::{MESSAGE_ID, WEBHOOK, optional_text, present, unlisted_text};
 use super::mention_fields::{ALLOW_EVERYONE_PINGS, ALLOW_ROLE_PINGS, read_mention_policy};
+use super::step_failure;
 use crate::embed::DiscordEmbed;
 use crate::mention::MentionPolicy;
 use crate::sink::DiscordSink;
@@ -139,6 +140,6 @@ impl SubActionRunner for EditMessageRunner {
                 edit.mentions,
             )
             .await;
-        (timer.finish(SubActionOutcome::from_result(&edited)), None)
+        (timer.finish(step_failure::outcome(&edited)), None)
     }
 }

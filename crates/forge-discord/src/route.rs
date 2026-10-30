@@ -1,6 +1,6 @@
 use forge_net::{GatewayRequest, Method, Secret};
 
-use crate::error::DiscordError;
+use crate::error::{DiscordError, ValidationFault};
 
 const HTTPS_PREFIX: &str = "https://";
 const WEBHOOK_HOSTS: [&str; 2] = ["discord.com", "discordapp.com"];
@@ -70,7 +70,7 @@ impl WebhookRoute {
     ) -> Result<GatewayRequest, DiscordError> {
         if !is_snowflake(message_id) {
             return Err(DiscordError::Validation(
-                "message id is not a discord snowflake".to_owned(),
+                ValidationFault::MessageIdNotSnowflake,
             ));
         }
         Ok(self.prepared(GatewayRequest::new(
@@ -94,7 +94,7 @@ impl WebhookRoute {
 }
 
 fn rejected_endpoint() -> DiscordError {
-    DiscordError::Validation("not a discord webhook endpoint".to_owned())
+    DiscordError::Validation(ValidationFault::NotWebhookEndpoint)
 }
 
 fn is_webhook_host(host: &str) -> bool {

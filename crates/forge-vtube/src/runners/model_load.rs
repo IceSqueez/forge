@@ -6,8 +6,9 @@ use forge_registry::{
     ConfigSpec, PickedTextField, RunContext, StepTimer, SubActionCategory, SubActionRunner,
     TextPicker, TypedField,
 };
-use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry};
+use forge_types::{ArgStack, SubActionTelemetry};
 
+use crate::runners::step_failure;
 use crate::sink::VTubeSink;
 use crate::vocabulary::{config_keys, picker_keys, sub_action_ids};
 
@@ -73,7 +74,7 @@ impl SubActionRunner for ModelLoadRunner {
             Ok(model_id) => model_id,
             Err(problem) => return (timer.invalid_config(&problem), None),
         };
-        let outcome = SubActionOutcome::from_result(&self.sink.load_model(&model_id).await);
+        let outcome = step_failure::outcome(&self.sink.load_model(&model_id).await);
         (timer.finish(outcome), None)
     }
 }
@@ -82,6 +83,7 @@ impl SubActionRunner for ModelLoadRunner {
 mod tests {
     use super::*;
     use crate::runners::test_support::{MockSink, make_ctx};
+    use forge_types::SubActionOutcome;
     use forge_types::Variant;
     use std::collections::BTreeMap;
 

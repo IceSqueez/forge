@@ -6,13 +6,14 @@ use forge_registry::{
     ChoiceField, ConfigChoice, ConfigProblem, ConfigSpec, IntegerField, OptionalField, RunContext,
     StepTimer, SubActionCategory, SubActionRunner, TypedField, ValueBounds,
 };
-use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry};
+use forge_types::{ArgStack, SubActionTelemetry};
 
 use crate::runners::choices::FadeMode;
 use crate::runners::fields::{
     DURATION, IMMEDIATE_SECONDS, ITEM_INSTANCE_ID, ITEM_SIZE, ROTATION, X, Y,
     optional_whole_number, read_non_empty,
 };
+use crate::runners::step_failure;
 use crate::sink::VTubeSink;
 use crate::vocabulary::{config_keys, sub_action_ids};
 
@@ -129,7 +130,7 @@ impl SubActionRunner for ItemMoveRunner {
         if target.is_empty() {
             return (timer.success(), None);
         }
-        let outcome = SubActionOutcome::from_result(
+        let outcome = step_failure::outcome(
             &self
                 .sink
                 .move_item(
@@ -153,6 +154,7 @@ mod tests {
     use super::*;
     use crate::error::VTubeError;
     use crate::runners::test_support::{MockSink, make_ctx};
+    use forge_types::SubActionOutcome;
     use forge_types::Variant;
     use std::collections::BTreeMap;
 

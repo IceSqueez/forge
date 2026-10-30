@@ -1,6 +1,40 @@
 use thiserror::Error;
 
 #[derive(Debug, Error)]
+pub enum ValidationFault {
+    #[error("color 0x{color:06X} exceeds 0xFFFFFF")]
+    ColorOutOfRange { color: u32 },
+
+    #[error("fields length {count} exceeds {max}")]
+    TooManyFields { count: usize, max: usize },
+
+    #[error("{part} length {length} exceeds {max}")]
+    PartTooLong {
+        part: &'static str,
+        length: usize,
+        max: usize,
+    },
+
+    #[error("total embed text {total} chars exceeds {max}")]
+    TotalTooLong { total: usize, max: usize },
+
+    #[error("{part} contains invalid control character")]
+    ControlCharacter { part: &'static str },
+
+    #[error("message id is not a discord snowflake")]
+    MessageIdNotSnowflake,
+
+    #[error("not a discord webhook endpoint")]
+    NotWebhookEndpoint,
+
+    #[error("webhook name is empty")]
+    WebhookNameEmpty,
+
+    #[error("{0}")]
+    BodyEncoding(String),
+}
+
+#[derive(Debug, Error)]
 pub enum DiscordError {
     #[error("transport error: {0}")]
     Connect(String),
@@ -12,7 +46,7 @@ pub enum DiscordError {
     WebhookNotFound { name: String },
 
     #[error("validation failed: {0}")]
-    Validation(String),
+    Validation(ValidationFault),
 
     #[error("serialization error: {0}")]
     Serde(#[from] serde_json::Error),
@@ -51,7 +85,7 @@ impl DiscordError {
                 format!("retry after {retry_after_secs:.2}s")
             }
             DiscordError::WebhookNotFound { name } => format!("webhook {name:?} not configured"),
-            DiscordError::Validation(msg) => msg.clone(),
+            DiscordError::Validation(fault) => fault.to_string(),
             DiscordError::Serde(err) => err.to_string(),
             DiscordError::Credential(msg) => msg.clone(),
             DiscordError::BadResponse { body, .. } => body.clone(),
@@ -112,7 +146,7 @@ mod tests {
                 None,
             ),
             (
-                DiscordError::Validation("v".to_owned()),
+                DiscordError::Validation(ValidationFault::WebhookNameEmpty),
                 "validation_failed",
                 None,
             ),

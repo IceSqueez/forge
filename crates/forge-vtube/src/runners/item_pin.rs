@@ -6,12 +6,13 @@ use forge_registry::{
     ChoiceField, ConfigChoice, ConfigProblem, ConfigSpec, NumberField, OptionalField, RunContext,
     StepTimer, SubActionCategory, SubActionRunner, TextField, ToggleField, TypedField,
 };
-use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry};
+use forge_types::{ArgStack, SubActionTelemetry};
 
 use crate::runners::choices::{AngleRelativeTo, SizeRelativeTo, VertexPinType};
 use crate::runners::fields::{
     ITEM_INSTANCE_ID, ITEM_SIZE, optional_number, optional_text, read_non_empty,
 };
+use crate::runners::step_failure;
 use crate::sink::VTubeSink;
 use crate::vocabulary::{config_keys, sub_action_ids};
 
@@ -141,7 +142,7 @@ impl SubActionRunner for ItemPinRunner {
             Ok(request) => request,
             Err(problem) => return (timer.invalid_config(&problem), None),
         };
-        let outcome = SubActionOutcome::from_result(
+        let outcome = step_failure::outcome(
             &self
                 .sink
                 .pin_item(
@@ -165,6 +166,7 @@ impl SubActionRunner for ItemPinRunner {
 mod tests {
     use super::*;
     use crate::runners::test_support::{MockSink, RecordingSink, make_ctx};
+    use forge_types::SubActionOutcome;
     use forge_types::Variant;
     use std::collections::BTreeMap;
 

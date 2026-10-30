@@ -6,9 +6,10 @@ use forge_registry::{
     ConfigProblem, ConfigSpec, NumberField, OptionalField, RunContext, StepTimer,
     SubActionCategory, SubActionRunner, TypedField,
 };
-use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry};
+use forge_types::{ArgStack, SubActionTelemetry};
 
 use crate::runners::fields::{DURATION, IMMEDIATE_SECONDS, ROTATION, X, Y, optional_number};
+use crate::runners::step_failure;
 use crate::sink::VTubeSink;
 use crate::vocabulary::{config_keys, sub_action_ids};
 
@@ -93,7 +94,7 @@ impl SubActionRunner for ModelMoveRunner {
         if target.is_empty() {
             return (timer.success(), None);
         }
-        let outcome = SubActionOutcome::from_result(
+        let outcome = step_failure::outcome(
             &self
                 .sink
                 .move_model(
@@ -115,6 +116,7 @@ mod tests {
     use super::*;
     use crate::error::VTubeError;
     use crate::runners::test_support::{MockSink, make_ctx};
+    use forge_types::SubActionOutcome;
     use forge_types::Variant;
     use std::collections::BTreeMap;
 

@@ -98,7 +98,7 @@ pub(crate) fn apply_model(
         let (primary, secondary) = if loaded && !new_name.is_empty() {
             (new_name, param_count.map(|n| format!("{n} parameters")))
         } else {
-            ("\u{2014}".to_owned(), Some("not loaded".to_owned()))
+            ("-".to_owned(), Some("not loaded".to_owned()))
         };
         #[expect(
             clippy::let_underscore_must_use,
@@ -156,7 +156,7 @@ impl BuiltinHealth for VTubeClient {
                     .map(|n| format!("{n} parameters")),
             )
         } else {
-            ("\u{2014}".to_owned(), Some("not loaded".to_owned()))
+            ("-".to_owned(), Some("not loaded".to_owned()))
         };
 
         [
@@ -363,7 +363,7 @@ mod tests {
 
         assert_eq!(
             text_metric(&metrics, &MODEL_METRIC),
-            ("\u{2014}".to_owned(), Some("not loaded".to_owned()))
+            ("-".to_owned(), Some("not loaded".to_owned()))
         );
         assert_eq!(text_metric(&metrics, &ITEMS_METRIC).0, "0");
     }

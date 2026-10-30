@@ -1,4 +1,4 @@
-use forge_types::{MessageCatalog, MessageCode, MessageRef};
+use forge_types::{MessageCatalog, MessageCode, MessageRef, UpstreamDetail};
 
 use crate::vocabulary::{INTEGRATION_ID, VTubeDisconnectReason};
 
@@ -12,6 +12,17 @@ const AUTH_FAILED: MessageCode = MessageCode::from_static(INTEGRATION_ID, "auth_
 const SUBSCRIBE_FAILED: MessageCode = MessageCode::from_static(INTEGRATION_ID, "subscribe_failed");
 const CONNECTION_LOST: MessageCode = MessageCode::from_static(INTEGRATION_ID, "connection_lost");
 const UNRESPONSIVE: MessageCode = MessageCode::from_static(INTEGRATION_ID, "unresponsive");
+const NOT_CONNECTED: MessageCode = MessageCode::from_static(INTEGRATION_ID, "not_connected");
+const API_DISABLED: MessageCode = MessageCode::from_static(INTEGRATION_ID, "api_disabled");
+const REQUEST_FAILED: MessageCode = MessageCode::from_static(INTEGRATION_ID, "request_failed");
+const REQUEST_REJECTED: MessageCode = MessageCode::from_static(INTEGRATION_ID, "request_rejected");
+const REQUEST_TIMED_OUT: MessageCode =
+    MessageCode::from_static(INTEGRATION_ID, "request_timed_out");
+const PAYLOAD_INVALID: MessageCode = MessageCode::from_static(INTEGRATION_ID, "payload_invalid");
+const ITEM_INSTANCE_MISSING: MessageCode =
+    MessageCode::from_static(INTEGRATION_ID, "item_instance_missing");
+
+const ERROR_ID_ARG: &str = "error_id";
 
 pub const HEALTH_MODEL: MessageCode = MessageCode::from_static(INTEGRATION_ID, "health_model");
 pub const HEALTH_EXPRESSIONS: MessageCode =
@@ -37,6 +48,13 @@ pub const VTUBE_MESSAGES: MessageCatalog = MessageCatalog {
         SUBSCRIBE_FAILED,
         CONNECTION_LOST,
         UNRESPONSIVE,
+        NOT_CONNECTED,
+        API_DISABLED,
+        REQUEST_FAILED,
+        REQUEST_REJECTED,
+        REQUEST_TIMED_OUT,
+        PAYLOAD_INVALID,
+        ITEM_INSTANCE_MISSING,
     ],
     en_ftl: include_str!("../../locales/en/messages.ftl"),
     uk_ftl: include_str!("../../locales/uk/messages.ftl"),
@@ -52,6 +70,52 @@ pub(crate) fn unreachable() -> MessageRef {
 
 pub(crate) fn connect_failed() -> MessageRef {
     MessageRef::new(CONNECT_FAILED)
+}
+
+pub(crate) fn connect_failed_with(detail: &str) -> MessageRef {
+    connect_failed().with_detail(UpstreamDetail::from_redacted(detail))
+}
+
+pub(crate) fn token_rejected() -> MessageRef {
+    MessageRef::new(TOKEN_REJECTED)
+}
+
+pub(crate) fn access_denied() -> MessageRef {
+    MessageRef::new(ACCESS_DENIED)
+}
+
+pub(crate) fn approval_timeout() -> MessageRef {
+    MessageRef::new(APPROVAL_TIMEOUT)
+}
+
+pub(crate) fn not_connected() -> MessageRef {
+    MessageRef::new(NOT_CONNECTED)
+}
+
+pub(crate) fn api_disabled() -> MessageRef {
+    MessageRef::new(API_DISABLED)
+}
+
+pub(crate) fn request_failed(detail: &str) -> MessageRef {
+    MessageRef::new(REQUEST_FAILED).with_detail(UpstreamDetail::from_redacted(detail))
+}
+
+pub(crate) fn request_rejected(error_id: i64, detail: &str) -> MessageRef {
+    MessageRef::new(REQUEST_REJECTED)
+        .with_arg(ERROR_ID_ARG, error_id)
+        .with_detail(UpstreamDetail::from_redacted(detail))
+}
+
+pub(crate) fn request_timed_out() -> MessageRef {
+    MessageRef::new(REQUEST_TIMED_OUT)
+}
+
+pub(crate) fn payload_invalid(detail: &str) -> MessageRef {
+    MessageRef::new(PAYLOAD_INVALID).with_detail(UpstreamDetail::from_redacted(detail))
+}
+
+pub(crate) fn item_instance_missing() -> MessageRef {
+    MessageRef::new(ITEM_INSTANCE_MISSING)
 }
 
 pub(crate) fn for_disconnect_reason(reason: VTubeDisconnectReason) -> Option<MessageRef> {
@@ -70,6 +134,8 @@ pub(crate) fn for_disconnect_reason(reason: VTubeDisconnectReason) -> Option<Mes
 }
 #[cfg(test)]
 mod tests {
+    use std::collections::{BTreeMap, BTreeSet};
+
     use super::*;
 
     const REASON_CODES: [(VTubeDisconnectReason, Option<&str>); 9] = [
@@ -115,5 +181,107 @@ mod tests {
                 emitted.code()
             );
         }
+    }
+
+    fn ftl_variables(source: &str) -> BTreeMap<String, BTreeSet<String>> {
+        let mut found: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
+        let mut current = None;
+        for line in source.lines() {
+            if let Some((id, _)) = line.split_once(" = ").filter(|_| line.starts_with("msg-")) {
+                current = Some(id.trim().to_owned());
+                found.entry(id.trim().to_owned()).or_default();
+            }
+            let Some(id) = &current else { continue };
+            let mut rest = line;
+            while let Some(at) = rest.find('$') {
+                rest = &rest[at + 1..];
+                let name: String = rest
+                    .chars()
+                    .take_while(|c| c.is_ascii_alphanumeric() || *c == '_' || *c == '-')
+                    .collect();
+                found.get_mut(id).unwrap().insert(name);
+            }
+        }
+        found
+    }
+
+    fn every_constructor() -> Vec<MessageRef> {
+        let mut all = vec![
+            connect_refused(),
+            unreachable(),
+            connect_failed(),
+            connect_failed_with("c"),
+            token_rejected(),
+            access_denied(),
+            approval_timeout(),
+            not_connected(),
+            api_disabled(),
+            request_failed("c"),
+            request_rejected(7, "c"),
+            request_timed_out(),
+            payload_invalid("c"),
+            item_instance_missing(),
+            MessageRef::new(HEALTH_MODEL),
+            MessageRef::new(HEALTH_EXPRESSIONS),
+            MessageRef::new(HEALTH_ITEMS),
+            MessageRef::new(HEALTH_TRACKING),
+        ];
+        all.extend(
+            REASON_CODES
+                .iter()
+                .filter_map(|(r, _)| for_disconnect_reason(*r)),
+        );
+        all
+    }
+
+    #[test]
+    fn every_constructor_code_is_catalogued_and_localized_in_both_languages_with_matching_variables()
+     {
+        let en = ftl_variables(VTUBE_MESSAGES.en_ftl);
+        let uk = ftl_variables(VTUBE_MESSAGES.uk_ftl);
+        for message in every_constructor() {
+            let code = message.code();
+            assert!(VTUBE_MESSAGES.codes.contains(code), "{code} not catalogued");
+            let passed: BTreeSet<String> = message.args().map(|(n, _)| n.to_owned()).collect();
+            for (language, ftl) in [("en", &en), ("uk", &uk)] {
+                let used = ftl
+                    .get(&code.ftl_key())
+                    .unwrap_or_else(|| panic!("{code} missing in {language}"));
+                assert_eq!(used, &passed, "{code} variables in {language}");
+            }
+        }
+    }
+
+    #[test]
+    fn every_catalogued_code_has_a_constructor_in_the_table() {
+        let produced: BTreeSet<MessageCode> = every_constructor()
+            .iter()
+            .map(|m| m.code().clone())
+            .collect();
+        let catalogued: BTreeSet<MessageCode> = VTUBE_MESSAGES.codes.iter().cloned().collect();
+        assert_eq!(produced, catalogued);
+    }
+
+    #[test]
+    fn english_and_ukrainian_declare_the_same_messages_with_the_same_variables() {
+        assert_eq!(
+            ftl_variables(VTUBE_MESSAGES.en_ftl),
+            ftl_variables(VTUBE_MESSAGES.uk_ftl)
+        );
+    }
+
+    #[test]
+    fn upstream_cause_text_is_carried_as_detail_and_never_as_an_argument() {
+        let failure = request_rejected(3, "No such hotkey: secret-name");
+
+        assert_eq!(
+            failure.detail().map(|d| d.as_str()),
+            Some("No such hotkey: secret-name")
+        );
+        assert!(
+            failure
+                .args()
+                .all(|(_, v)| !format!("{v:?}").contains("secret-name"))
+        );
     }
 }

@@ -62,7 +62,7 @@ pub(crate) fn update_on_send(
         new_value: HealthValue::Text {
             primary: HealthText::unlocalized(
                 p50.map(|v| format!("{v}ms"))
-                    .unwrap_or_else(|| "\u{2014}".to_owned()),
+                    .unwrap_or_else(|| "-".to_owned()),
             ),
             secondary: Some(HealthText::unlocalized(format!(
                 "p50 / last {}",
@@ -203,7 +203,7 @@ impl BuiltinHealth for DiscordClient {
         let latency_value = HealthValue::Text {
             primary: HealthText::unlocalized(
                 p50.map(|v| format!("{v}ms"))
-                    .unwrap_or_else(|| "\u{2014}".to_owned()),
+                    .unwrap_or_else(|| "-".to_owned()),
             ),
             secondary: (!snap.latencies_ms.is_empty())
                 .then(|| format!("p50 / last {}", snap.latencies_ms.len()))

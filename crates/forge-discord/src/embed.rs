@@ -1,7 +1,10 @@
 use serde::{Deserialize, Serialize};
 use time::OffsetDateTime;
 
-use crate::error::DiscordError;
+use crate::error::{DiscordError, ValidationFault};
+
+const MAX_FIELDS: usize = 25;
+const MAX_TOTAL_TEXT: usize = 6000;
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct DiscordEmbedField {
@@ -26,19 +29,19 @@ pub struct DiscordEmbed {
 impl DiscordEmbed {
     pub fn validate(&self) -> Result<(), DiscordError> {
         if let Some(c) = self.color.filter(|&c| c > 0x00FF_FFFF) {
-            return Err(DiscordError::Validation(format!(
-                "color 0x{c:06X} exceeds 0xFFFFFF"
-            )));
+            return Err(DiscordError::Validation(ValidationFault::ColorOutOfRange {
+                color: c,
+            }));
         }
         check_len("title", self.title.as_deref(), 256)?;
         check_len("description", self.description.as_deref(), 4096)?;
         check_len("footer_text", self.footer_text.as_deref(), 2048)?;
         check_len("author_name", self.author_name.as_deref(), 256)?;
-        if self.fields.len() > 25 {
-            return Err(DiscordError::Validation(format!(
-                "fields length {} exceeds 25",
-                self.fields.len()
-            )));
+        if self.fields.len() > MAX_FIELDS {
+            return Err(DiscordError::Validation(ValidationFault::TooManyFields {
+                count: self.fields.len(),
+                max: MAX_FIELDS,
+            }));
         }
         for field in &self.fields {
             check_no_nul("field.name", &field.name)?;
@@ -47,10 +50,11 @@ impl DiscordEmbed {
             check_len("field.value", Some(&field.value), 1024)?;
         }
         let total = self.total_text_len();
-        if total > 6000 {
-            return Err(DiscordError::Validation(format!(
-                "total embed text {total} chars exceeds 6000"
-            )));
+        if total > MAX_TOTAL_TEXT {
+            return Err(DiscordError::Validation(ValidationFault::TotalTooLong {
+                total,
+                max: MAX_TOTAL_TEXT,
+            }));
         }
         Ok(())
     }
@@ -69,26 +73,27 @@ impl DiscordEmbed {
     }
 }
 
-fn check_len(field: &str, value: Option<&str>, max: usize) -> Result<(), DiscordError> {
+fn check_len(field: &'static str, value: Option<&str>, max: usize) -> Result<(), DiscordError> {
     let Some(s) = value else {
         return Ok(());
     };
     check_no_nul(field, s)?;
     if s.len() > max {
-        return Err(DiscordError::Validation(format!(
-            "{field} length {} exceeds {max}",
-            s.len()
-        )));
+        return Err(DiscordError::Validation(ValidationFault::PartTooLong {
+            part: field,
+            length: s.len(),
+            max,
+        }));
     }
     Ok(())
 }
 
-fn check_no_nul(field: &str, s: &str) -> Result<(), DiscordError> {
+fn check_no_nul(field: &'static str, s: &str) -> Result<(), DiscordError> {
     for c in s.chars() {
         if (c < '\x20' && c != '\n' && c != '\t') || c == '\x7f' {
-            return Err(DiscordError::Validation(format!(
-                "{field} contains invalid control character"
-            )));
+            return Err(DiscordError::Validation(
+                ValidationFault::ControlCharacter { part: field },
+            ));
         }
     }
     Ok(())

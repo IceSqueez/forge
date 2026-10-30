@@ -6,9 +6,10 @@ use forge_registry::{
     ConfigProblem, ConfigSpec, IntegerEditor, IntegerField, NumberField, OptionalField, RunContext,
     StepTimer, SubActionCategory, SubActionRunner, TypedField, ValueBounds,
 };
-use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry};
+use forge_types::{ArgStack, SubActionTelemetry};
 
 use crate::runners::fields::optional_number;
+use crate::runners::step_failure;
 use crate::sink::VTubeSink;
 use crate::vocabulary::{config_keys, sub_action_ids};
 
@@ -133,7 +134,7 @@ impl SubActionRunner for ModelTintRunner {
             Ok(tint) => tint,
             Err(problem) => return (timer.invalid_config(&problem), None),
         };
-        let outcome = SubActionOutcome::from_result(
+        let outcome = step_failure::outcome(
             &self
                 .sink
                 .tint_all_art_meshes(tint.r, tint.g, tint.b, tint.a, tint.mix_with_scene_lighting)
@@ -147,6 +148,7 @@ impl SubActionRunner for ModelTintRunner {
 mod tests {
     use super::*;
     use crate::runners::test_support::{MockSink, RecordingSink, make_ctx};
+    use forge_types::SubActionOutcome;
     use forge_types::Variant;
     use std::collections::BTreeMap;
 

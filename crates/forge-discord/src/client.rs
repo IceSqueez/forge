@@ -15,7 +15,7 @@ use tokio::sync::broadcast;
 use crate::content::{DiscordContentSnapshot, make_content_state, record_send, record_test_send};
 use crate::credentials::{DISCORD_CRED_PREFIX, WebhookCredential};
 use crate::embed::DiscordEmbed;
-use crate::error::DiscordError;
+use crate::error::{DiscordError, ValidationFault};
 use crate::events::{publish_failed, publish_posted, publish_rate_limited};
 use crate::health::{
     DiscordHealthSnapshot, make_health_state, record_missing_webhook, update_on_send,
@@ -637,7 +637,8 @@ fn embed_to_wire(embed: &DiscordEmbed) -> serde_json::Value {
 }
 
 fn json_body(body: &serde_json::Value) -> Result<RequestBody, DiscordError> {
-    RequestBody::json(body).map_err(|e| DiscordError::Validation(e.to_string()))
+    RequestBody::json(body)
+        .map_err(|e| DiscordError::Validation(ValidationFault::BodyEncoding(e.to_string())))
 }
 
 fn bucket_headers(response: &impl HeaderLookup) -> Option<(u32, u32, f64)> {

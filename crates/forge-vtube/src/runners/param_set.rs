@@ -7,9 +7,10 @@ use forge_registry::{
     ConfigProblem, ConfigSpec, NumberField, RunContext, StepTimer, StoredNumber, SubActionCategory,
     SubActionRunner, TextEditor, TextField, TypedField, ValueBounds,
 };
-use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry};
+use forge_types::{ArgStack, SubActionTelemetry};
 
 use crate::runners::hold_registry::HoldRegistry;
+use crate::runners::step_failure;
 use crate::sink::VTubeSink;
 use crate::vocabulary::{config_keys, sub_action_ids};
 
@@ -129,7 +130,7 @@ impl SubActionRunner for ParamSetRunner {
         if result.is_ok() && hold_secs > 0.0 {
             self.start_hold(param_id, value, hold_secs);
         }
-        (timer.finish(SubActionOutcome::from_result(&result)), None)
+        (timer.finish(step_failure::outcome(&result)), None)
     }
 }
 
@@ -140,6 +141,7 @@ mod tests {
     use super::*;
     use crate::error::VTubeError;
     use crate::runners::test_support::{MockSink, make_ctx};
+    use forge_types::SubActionOutcome;
     use forge_types::Variant;
     use std::collections::BTreeMap;
 

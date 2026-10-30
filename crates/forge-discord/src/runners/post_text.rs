@@ -6,10 +6,11 @@ use forge_registry::{
     ConfigProblem, ConfigSpec, RunContext, StepTimer, SubActionCategory, SubActionIo,
     SubActionRunner, TextEditor, TextField, TypedField,
 };
-use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry};
+use forge_types::{ArgStack, SubActionTelemetry};
 
 use super::fields::{WEBHOOK, filled_text};
 use super::mention_fields::{ALLOW_EVERYONE_PINGS, ALLOW_ROLE_PINGS, read_mention_policy};
+use super::step_failure;
 use super::{message_id_scope_io, message_id_stack};
 use crate::mention::MentionPolicy;
 use crate::sink::DiscordSink;
@@ -95,9 +96,6 @@ impl SubActionRunner for PostTextRunner {
             .post_text(&post.webhook, &post.content, post.mentions)
             .await;
         let produced = message_id_stack(ctx.arg_stack, &posted);
-        (
-            timer.finish(SubActionOutcome::from_result(&posted)),
-            produced,
-        )
+        (timer.finish(step_failure::outcome(&posted)), produced)
     }
 }

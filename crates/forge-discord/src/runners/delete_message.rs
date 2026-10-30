@@ -6,9 +6,10 @@ use forge_registry::{
     ConfigProblem, ConfigSpec, RunContext, StepTimer, SubActionCategory, SubActionRunner,
     TypedField,
 };
-use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry};
+use forge_types::{ArgStack, SubActionTelemetry};
 
 use super::fields::{MESSAGE_ID, WEBHOOK};
+use super::step_failure;
 use crate::sink::DiscordSink;
 use crate::vocabulary::sub_action_ids;
 
@@ -73,8 +74,7 @@ impl SubActionRunner for DeleteMessageRunner {
             Ok(values) => values,
             Err(problem) => return (timer.invalid_config(&problem), None),
         };
-        let outcome =
-            SubActionOutcome::from_result(&self.sink.delete_message(&webhook, &message_id).await);
+        let outcome = step_failure::outcome(&self.sink.delete_message(&webhook, &message_id).await);
         (timer.finish(outcome), None)
     }
 }
@@ -84,6 +84,8 @@ mod tests {
     use std::collections::BTreeMap;
 
     use forge_types::Variant;
+
+    use forge_types::SubActionOutcome;
 
     use super::*;
     use crate::embed::DiscordEmbed;

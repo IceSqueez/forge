@@ -7,14 +7,15 @@ use forge_registry::{
     ConfigProblem, ConfigSpec, RunContext, StepTimer, SubActionCategory, SubActionIo,
     SubActionRunner, TextEditor, TextField, TypedField,
 };
-use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, UserText};
+use forge_types::{ArgStack, SubActionTelemetry};
 
 use super::fields::{WEBHOOK, filled_text, optional_text};
 use super::mention_fields::{ALLOW_EVERYONE_PINGS, ALLOW_ROLE_PINGS, read_mention_policy};
+use super::step_failure;
 use super::{message_id_scope_io, message_id_stack};
 use crate::mention::MentionPolicy;
 use crate::sink::DiscordSink;
-use crate::vocabulary::{config_keys, sub_action_ids};
+use crate::vocabulary::{config_keys, messages, sub_action_ids};
 
 const KIND_ID: &str = sub_action_ids::WEBHOOK_SEND_FILE;
 
@@ -113,10 +114,7 @@ impl SubActionRunner for SendFileRunner {
             .map(str::to_owned)
         else {
             return (
-                timer.failed(UserText::unlocalized(format!(
-                    "cannot derive file name from {}",
-                    upload.file_path
-                ))),
+                timer.failed(messages::file_name_unavailable(&upload.file_path).into()),
                 None,
             );
         };
@@ -125,7 +123,9 @@ impl SubActionRunner for SendFileRunner {
             Ok(bytes) => bytes,
             Err(e) => {
                 return (
-                    timer.failed(UserText::unlocalized(format!("cannot read file: {e}"))),
+                    timer.failed(
+                        messages::file_unreadable(&upload.file_path, &e.to_string()).into(),
+                    ),
                     None,
                 );
             }
@@ -142,10 +142,7 @@ impl SubActionRunner for SendFileRunner {
             )
             .await;
         let produced = message_id_stack(ctx.arg_stack, &posted);
-        (
-            timer.finish(SubActionOutcome::from_result(&posted)),
-            produced,
-        )
+        (timer.finish(step_failure::outcome(&posted)), produced)
     }
 }
 
@@ -154,6 +151,8 @@ mod tests {
     use std::collections::BTreeMap;
 
     use forge_types::Variant;
+
+    use forge_types::SubActionOutcome;
 
     use super::*;
     use crate::embed::DiscordEmbed;

@@ -2,7 +2,7 @@ use forge_storage::CredentialId;
 
 use crate::client::{DiscordClient, SendRecord};
 use crate::credentials::{DISCORD_CRED_PREFIX, WebhookCredential};
-use crate::error::DiscordError;
+use crate::error::{DiscordError, ValidationFault};
 use crate::route::WebhookRoute;
 
 pub fn validate_webhook_url(url: &str) -> Result<(), DiscordError> {
@@ -39,7 +39,7 @@ impl DiscordClient {
     pub async fn save_webhook(&self, name: &str, url: &str) -> Result<(), DiscordError> {
         let name = name.trim();
         if name.is_empty() {
-            return Err(DiscordError::Validation("webhook name is empty".to_owned()));
+            return Err(DiscordError::Validation(ValidationFault::WebhookNameEmpty));
         }
         let url = url.trim();
         validate_webhook_url(url)?;

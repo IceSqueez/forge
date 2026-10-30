@@ -1,5 +1,6 @@
 use async_trait::async_trait;
 
+use crate::catalog::read_lock;
 use crate::client::ObsClient;
 use crate::error::ObsError;
 use crate::source::{ObsSource, SourceInfo};
@@ -7,26 +8,17 @@ use crate::source::{ObsSource, SourceInfo};
 #[async_trait]
 impl ObsSource for ObsClient {
     async fn scenes(&self) -> Result<Vec<String>, ObsError> {
-        let catalog = self
-            .catalog_state
-            .try_read()
-            .map_err(|_| ObsError::Protocol("catalog lock poisoned".to_owned()))?;
+        let catalog = read_lock(&self.catalog_state);
         Ok(catalog.scenes.clone())
     }
 
     async fn current_scene(&self) -> Result<Option<String>, ObsError> {
-        let catalog = self
-            .catalog_state
-            .try_read()
-            .map_err(|_| ObsError::Protocol("catalog lock poisoned".to_owned()))?;
+        let catalog = read_lock(&self.catalog_state);
         Ok(catalog.current_scene.clone())
     }
 
     async fn sources(&self, scene: &str) -> Result<Vec<SourceInfo>, ObsError> {
-        let catalog = self
-            .catalog_state
-            .try_read()
-            .map_err(|_| ObsError::Protocol("catalog lock poisoned".to_owned()))?;
+        let catalog = read_lock(&self.catalog_state);
         Ok(catalog
             .sources
             .get(scene)
@@ -45,10 +37,7 @@ impl ObsSource for ObsClient {
     }
 
     async fn audio_inputs(&self) -> Result<Vec<String>, ObsError> {
-        let catalog = self
-            .catalog_state
-            .try_read()
-            .map_err(|_| ObsError::Protocol("catalog lock poisoned".to_owned()))?;
+        let catalog = read_lock(&self.catalog_state);
         Ok(catalog.audio_inputs.clone())
     }
 

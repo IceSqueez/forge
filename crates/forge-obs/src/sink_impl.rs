@@ -1,5 +1,6 @@
 use std::collections::BTreeMap;
 use std::path::Path;
+use std::sync::PoisonError;
 
 use async_trait::async_trait;
 use forge_types::Variant;
@@ -10,6 +11,7 @@ use obws::requests::scene_items::{Id, SetEnabled, SetLocked};
 use obws::requests::scenes::SceneId;
 use obws::requests::sources::{SaveScreenshot, SourceId};
 
+use crate::catalog::write_lock;
 use crate::client::ObsClient;
 use crate::error::ObsError;
 use crate::session::{CONFIG_SWITCH_TIMEOUT, LiveSession};
@@ -45,9 +47,8 @@ impl ObsClient {
         let cached_id = self
             .scene_item_id_cache
             .lock()
-            .map_err(|_| ObsError::Protocol("scene item cache poisoned".to_owned()))?
-            .get(&(scene.to_owned(), source.to_owned()))
-            .copied();
+            .unwrap_or_else(PoisonError::into_inner)
+            .item_id(scene, source);
 
         if let Some(id) = cached_id {
             return Ok(id);
@@ -65,15 +66,16 @@ impl ObsClient {
             .await?;
         self.scene_item_id_cache
             .lock()
-            .map_err(|_| ObsError::Protocol("scene item cache poisoned".to_owned()))?
-            .insert((scene.to_owned(), source.to_owned()), id);
+            .unwrap_or_else(PoisonError::into_inner)
+            .insert(scene, id, source);
         Ok(id)
     }
 
     fn forget_scene_item_ids(&self) {
-        if let Ok(mut cache) = self.scene_item_id_cache.lock() {
-            cache.clear();
-        }
+        self.scene_item_id_cache
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clear();
     }
 }
 
@@ -208,15 +210,15 @@ impl ObsSink for ObsClient {
             )
             .await?;
 
-        if let Ok(mut catalog) = self.catalog_state.write() {
-            for sources in catalog.sources.values_mut() {
-                for info in sources.iter_mut() {
-                    if info.name == input {
-                        info.audio_db = Some(db as f32);
-                    }
+        let mut catalog = write_lock(&self.catalog_state);
+        for sources in catalog.sources.values_mut() {
+            for info in sources.iter_mut() {
+                if info.name == input {
+                    info.audio_db = Some(db as f32);
                 }
             }
         }
+        catalog.revision = catalog.revision.wrapping_add(1);
 
         Ok(())
     }

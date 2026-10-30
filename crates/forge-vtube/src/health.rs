@@ -19,7 +19,6 @@ pub(crate) struct HealthSnapshot {
     pub model_name: String,
     pub model_loaded: bool,
     pub tracking_active: bool,
-    pub dialing: bool,
 }
 
 pub(crate) fn make_health_channel() -> (broadcast::Sender<HealthDelta>, Arc<RwLock<HealthSnapshot>>)

@@ -36,6 +36,7 @@ pub struct VTubeClient {
     pub(crate) state: Arc<AtomicConnectionState>,
     pub(crate) auth_state: Arc<RwLock<AuthState>>,
     pub(crate) shutdown: Arc<tokio::sync::Mutex<Arc<Notify>>>,
+    pub(crate) lifecycle: tokio::sync::Mutex<()>,
     pub(crate) supervisor: Arc<std::sync::Mutex<Option<JoinHandle<()>>>>,
     pub(crate) connected_at: Arc<RwLock<Option<OffsetDateTime>>>,
     pub(crate) vtube_version: Arc<OnceLock<String>>,
@@ -74,7 +75,8 @@ impl VTubeClient {
             signal: catalog_signal.clone(),
             ..crate::content::ContentSnapshot::default()
         }));
-        let (content_notifier, content_changed_rx) = crate::content::ContentNotifier::new();
+        let (content_notifier, content_changed_rx, items_changed_rx) =
+            crate::content::ContentNotifier::new();
         let (connected_tx, connected_rx) = mpsc::unbounded_channel::<()>();
         let auto_reconnect = Arc::new(watch::Sender::new(true));
         let last_failure = Arc::new(RwLock::new(None::<MessageRef>));
@@ -87,8 +89,10 @@ impl VTubeClient {
         let catalog_metrics_handle = crate::content::spawn_catalog_metrics_task(
             Arc::clone(&content_state),
             Arc::clone(&health_state),
+            Arc::clone(&state),
             Arc::clone(&req_tx_slot),
             health_tx.clone(),
+            items_changed_rx,
         );
         let version_handle = crate::content::spawn_version_fetch(
             Arc::clone(&req_tx_slot),
@@ -121,6 +125,7 @@ impl VTubeClient {
             state,
             auth_state,
             shutdown,
+            lifecycle: tokio::sync::Mutex::new(()),
             supervisor: Arc::new(std::sync::Mutex::new(Some(handle))),
             connected_at,
             vtube_version,
@@ -169,6 +174,7 @@ impl VTubeClient {
     }
 
     pub async fn shutdown(&self) {
+        let _lifecycle = self.lifecycle.lock().await;
         for task in [
             &self.content_task,
             &self.catalog_metrics_task,
@@ -203,6 +209,7 @@ impl VTubeClient {
             state: Arc::new(AtomicConnectionState::new(ConnectionState::Disconnected)),
             auth_state: Arc::new(RwLock::new(AuthState::Cold)),
             shutdown: Arc::new(tokio::sync::Mutex::new(Arc::new(Notify::new()))),
+            lifecycle: tokio::sync::Mutex::new(()),
             supervisor: Arc::new(std::sync::Mutex::new(None)),
             connected_at: Arc::new(RwLock::new(None)),
             vtube_version: Arc::new(OnceLock::new()),
@@ -238,6 +245,11 @@ impl Drop for VTubeClient {
         }
         if let Ok(notify) = self.shutdown.try_lock() {
             notify.notify_one();
+        }
+        if let Ok(mut supervisor) = self.supervisor.lock()
+            && let Some(handle) = supervisor.take()
+        {
+            handle.abort();
         }
     }
 }
@@ -482,9 +494,12 @@ pub(crate) mod tests {
         creds
     }
 
+    const LARGE_FRAME_BYTES: usize = 32 * 1024;
+
     enum PeerCmd {
         Send(serde_json::Value),
         Close,
+        AbandonAtLargeFrame(tokio::sync::oneshot::Sender<()>),
     }
 
     #[derive(Clone)]
@@ -539,6 +554,14 @@ pub(crate) mod tests {
                 reason = "the receiver may already be gone"
             )]
             let _ = self.0.send(PeerCmd::Close);
+        }
+
+        pub(crate) async fn abandon_at_large_frame(&self) {
+            let (armed_tx, armed_rx) = tokio::sync::oneshot::channel();
+            self.0
+                .send(PeerCmd::AbandonAtLargeFrame(armed_tx))
+                .expect("the peer must still be pumping");
+            armed_rx.await.expect("the peer must arm itself");
         }
     }
 
@@ -724,6 +747,15 @@ pub(crate) mod tests {
                     Some(PeerCmd::Close) | None => {
                         #[expect(clippy::let_underscore_must_use, reason = "a failed close does not affect the scenario")]
                         let _ = ws.close(None).await;
+                        return;
+                    }
+                    Some(PeerCmd::AbandonAtLargeFrame(armed)) => {
+                        #[expect(clippy::let_underscore_must_use, reason = "the receiver may already be gone")]
+                        let _ = armed.send(());
+                        let mut unread = vec![0; LARGE_FRAME_BYTES];
+                        while ws.get_ref().peek(&mut unread).await.is_ok_and(|n| n < LARGE_FRAME_BYTES) {
+                            tokio::task::yield_now().await;
+                        }
                         return;
                     }
                 },

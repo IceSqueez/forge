@@ -53,7 +53,7 @@ impl VTubeSink for VTubeClient {
         Ok(())
     }
 
-    async fn reset_params(&self) -> Result<(), VTubeError> {
+    async fn deactivate_all_expressions(&self) -> Result<(), VTubeError> {
         let resp = self
             .send_json_request(EXPRESSION_STATE_REQUEST, json!({}))
             .await?;
@@ -551,7 +551,7 @@ mod tests {
         conn: &mut PeerConn,
         script: ExpressionScript,
     ) -> (Result<(), VTubeError>, Vec<(String, serde_json::Value)>) {
-        let reset = client.reset_params();
+        let reset = client.deactivate_all_expressions();
         tokio::pin!(reset);
         let mut activations = Vec::new();
         let outcome = loop {

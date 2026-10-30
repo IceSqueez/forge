@@ -143,7 +143,7 @@ impl QuickActions for VTubeClient {
                 connected,
                 "Expressions",
                 false,
-                sub_action_ids::PARAMS_RESET,
+                sub_action_ids::RESET_TO_IDLE,
                 BTreeMap::new(),
                 Vec::new(),
             ),

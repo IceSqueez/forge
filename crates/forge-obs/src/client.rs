@@ -1,5 +1,5 @@
 use std::collections::HashMap;
-use std::sync::{Arc, Mutex, OnceLock, RwLock};
+use std::sync::{Arc, Mutex, OnceLock, PoisonError, RwLock};
 use std::time::Duration;
 
 use async_trait::async_trait;
@@ -18,10 +18,11 @@ use forge_platform_core::{
 };
 use forge_types::{IntegrationId, MessageRef};
 
-use crate::catalog::ObsCatalog;
+use crate::catalog::{ObsCatalog, read_lock, write_lock};
 use crate::connect_failure::connect_failure_message;
 use crate::error::ObsError;
 use crate::health::{HealthSnapshot, make_health_channel};
+use crate::item_ids::SceneItemIds;
 use crate::session::{LiveSession, with_deadline};
 use crate::source::SourceInfo;
 use crate::stream_output::StreamOutputFeed;
@@ -52,11 +53,25 @@ fn settle_connection_state(
     }
 }
 
+struct AbortOnDrop(JoinHandle<()>);
+
+impl AbortOnDrop {
+    fn abort(&self) {
+        self.0.abort();
+    }
+}
+
+impl Drop for AbortOnDrop {
+    fn drop(&mut self) {
+        self.0.abort();
+    }
+}
+
 type SessionSlot = Arc<tokio::sync::RwLock<Option<LiveSession>>>;
 
 pub struct ObsClient {
     pub(crate) inner: SessionSlot,
-    pub(crate) scene_item_id_cache: Arc<Mutex<HashMap<(String, String), i64>>>,
+    pub(crate) scene_item_id_cache: Arc<Mutex<SceneItemIds>>,
     endpoint: String,
     state: Arc<AtomicConnectionState>,
     shutdown: Arc<tokio::sync::Mutex<Arc<Notify>>>,
@@ -64,7 +79,7 @@ pub struct ObsClient {
     connected_at: Arc<RwLock<Option<OffsetDateTime>>>,
     obs_id: IntegrationId,
     obs_version: Arc<OnceLock<String>>,
-    obs_ws_version: Arc<OnceLock<String>>,
+    obs_ws_version: Arc<RwLock<Option<String>>>,
     pub(crate) health_state: Arc<RwLock<HealthSnapshot>>,
     pub(crate) health_tx: broadcast::Sender<HealthDelta>,
     pub(crate) catalog_state: Arc<RwLock<ObsCatalog>>,
@@ -93,8 +108,8 @@ impl ObsClient {
         let shutdown = Arc::new(tokio::sync::Mutex::new(Arc::clone(&notify)));
         let connected_at = Arc::new(RwLock::new(None::<OffsetDateTime>));
         let obs_version = Arc::new(OnceLock::new());
-        let obs_ws_version = Arc::new(OnceLock::new());
-        let item_cache = Arc::new(Mutex::new(HashMap::<(String, String), i64>::new()));
+        let obs_ws_version = Arc::new(RwLock::new(None::<String>));
+        let item_cache = Arc::new(Mutex::new(SceneItemIds::default()));
 
         let (health_tx, health_state) = make_health_channel();
         let catalog_state = Arc::new(RwLock::new(ObsCatalog::default()));
@@ -180,7 +195,8 @@ impl ObsClient {
 
     #[cfg(test)]
     pub fn new_for_test(endpoint: String) -> Self {
-        let (host, port) = parse_endpoint(&endpoint).unwrap_or(("localhost".to_owned(), 4455));
+        let (host, port) =
+            parse_endpoint(&endpoint).unwrap_or(("localhost".to_owned(), DEFAULT_OBS_PORT));
         let (health_tx, health_state) = make_health_channel();
         let state = Arc::new(AtomicConnectionState::new(ConnectionState::Disconnected));
         let stream_output = StreamOutputFeed::new(Arc::clone(&state), Arc::clone(&health_state));
@@ -193,12 +209,12 @@ impl ObsClient {
             connected_at: Arc::new(RwLock::new(None)),
             obs_id: IntegrationId::new(OBS_PLATFORM_ID),
             obs_version: Arc::new(OnceLock::new()),
-            obs_ws_version: Arc::new(OnceLock::new()),
+            obs_ws_version: Arc::new(RwLock::new(None)),
             health_state,
             health_tx,
             catalog_state: Arc::new(RwLock::new(ObsCatalog::default())),
             option_revisions: Arc::new(CollectionRevisionSignal::new()),
-            scene_item_id_cache: Arc::new(Mutex::new(HashMap::new())),
+            scene_item_id_cache: Arc::new(Mutex::new(SceneItemIds::default())),
             reconnect_host: host,
             reconnect_port: port,
             reconnect_password: Arc::new(None),
@@ -207,6 +223,19 @@ impl ObsClient {
             last_failure: Arc::new(RwLock::new(None)),
             resync_nudge: Arc::new(Notify::new()),
             stream_output,
+        }
+    }
+}
+
+impl Drop for ObsClient {
+    fn drop(&mut self) {
+        if let Ok(shutdown) = self.shutdown.try_lock() {
+            shutdown.notify_one();
+        }
+        if let Ok(mut supervisor) = self.supervisor.lock()
+            && let Some(handle) = supervisor.take()
+        {
+            handle.abort();
         }
     }
 }
@@ -261,7 +290,7 @@ impl BuiltinStatus for ObsClient {
     }
 
     fn name_badges(&self) -> Vec<HeroBadge> {
-        let Some(ws_version) = self.obs_ws_version.get() else {
+        let Some(ws_version) = read_lock(&self.obs_ws_version).clone() else {
             return Vec::new();
         };
         let label = match self.uptime() {
@@ -371,13 +400,13 @@ struct SupervisorContext {
     shutdown: Arc<Notify>,
     connected_at: Arc<RwLock<Option<OffsetDateTime>>>,
     obs_version: Arc<OnceLock<String>>,
-    obs_ws_version: Arc<OnceLock<String>>,
+    obs_ws_version: Arc<RwLock<Option<String>>>,
     catalog_state: Arc<RwLock<ObsCatalog>>,
     option_revisions: Arc<CollectionRevisionSignal>,
     health_state: Arc<RwLock<HealthSnapshot>>,
     health_tx: broadcast::Sender<HealthDelta>,
     publisher: Arc<dyn EventPublisher>,
-    item_cache: Arc<Mutex<HashMap<(String, String), i64>>>,
+    item_cache: Arc<Mutex<SceneItemIds>>,
     auto_reconnect: watch::Receiver<bool>,
     last_failure: Arc<RwLock<Option<MessageRef>>>,
     resync_nudge: Arc<Notify>,
@@ -623,20 +652,22 @@ async fn run_supervisor(host: String, port: u16, password: Option<String>, ctx: 
             item_cache: Arc::clone(&item_cache),
             stream_output: stream_output.clone(),
         };
-        let stats_handle =
-            spawn_stats_poll(Arc::clone(&inner), Arc::clone(&resync_nudge), feeds.clone());
+        let stats_handle = AbortOnDrop(spawn_stats_poll(
+            Arc::clone(&inner),
+            Arc::clone(&resync_nudge),
+            feeds.clone(),
+        ));
 
-        let mut pending_resync: Option<JoinHandle<()>> = None;
+        let mut pending_resync: Option<AbortOnDrop> = None;
 
         loop {
             tokio::select! {
                 () = shutdown.notified() => {
-                    if let Some(handle) = pending_resync.take() {
-                        handle.abort();
-                    }
+                    pending_resync.take();
                     stats_handle.abort();
                     inner.write().await.take();
                     clear_connected_at(&connected_at);
+                    *write_lock(&obs_ws_version) = None;
                     settle_connection_state(&state, &*publisher, &stream_output, ConnectionState::Disconnected, ConnectionTransition::Expected);
                     option_revisions.bump();
                     tracing::info!("OBS supervisor shutting down");
@@ -678,12 +709,11 @@ async fn run_supervisor(host: String, port: u16, password: Option<String>, ctx: 
             }
         }
 
-        if let Some(handle) = pending_resync.take() {
-            handle.abort();
-        }
+        pending_resync.take();
         stats_handle.abort();
         inner.write().await.take();
         clear_connected_at(&connected_at);
+        *write_lock(&obs_ws_version) = None;
         option_revisions.bump();
         let retry = *auto_reconnect.borrow_and_update();
         settle_connection_state(
@@ -709,11 +739,11 @@ async fn run_supervisor(host: String, port: u16, password: Option<String>, ctx: 
 async fn prime_session(
     session: &LiveSession,
     obs_version: &OnceLock<String>,
-    obs_ws_version: &OnceLock<String>,
+    obs_ws_version: &RwLock<Option<String>>,
     catalog_state: &RwLock<ObsCatalog>,
     health_state: &RwLock<HealthSnapshot>,
     health_tx: &broadcast::Sender<HealthDelta>,
-    item_cache: &Mutex<HashMap<(String, String), i64>>,
+    item_cache: &Mutex<SceneItemIds>,
 ) -> Result<(), ObsError> {
     match session
         .request("GetVersion", session.obs().general().version())
@@ -725,11 +755,7 @@ async fn prime_session(
                 reason = "the version reported on the first connect is kept"
             )]
             let _ = obs_version.set(v.obs_studio_version.to_string());
-            #[expect(
-                clippy::let_underscore_must_use,
-                reason = "the version reported on the first connect is kept"
-            )]
-            let _ = obs_ws_version.set(v.obs_web_socket_version.to_string());
+            *write_lock(obs_ws_version) = Some(v.obs_web_socket_version.to_string());
         }
         Err(e) if e.is_connection_loss() => return Err(e),
         Err(e) => tracing::warn!(error = %e, "failed to fetch OBS version"),
@@ -743,18 +769,16 @@ struct CatalogFeeds {
     option_revisions: Arc<CollectionRevisionSignal>,
     health_state: Arc<RwLock<HealthSnapshot>>,
     health_tx: broadcast::Sender<HealthDelta>,
-    item_cache: Arc<Mutex<HashMap<(String, String), i64>>>,
+    item_cache: Arc<Mutex<SceneItemIds>>,
     stream_output: StreamOutputFeed,
 }
 
 fn respawn_full_resync(
-    pending: &mut Option<JoinHandle<()>>,
+    pending: &mut Option<AbortOnDrop>,
     session: &LiveSession,
     feeds: &CatalogFeeds,
 ) {
-    if let Some(handle) = pending.take() {
-        handle.abort();
-    }
+    pending.take();
     let session = session.clone();
     let CatalogFeeds {
         catalog_state,
@@ -764,7 +788,7 @@ fn respawn_full_resync(
         item_cache,
         stream_output,
     } = feeds.clone();
-    *pending = Some(tokio::spawn(async move {
+    *pending = Some(AbortOnDrop(tokio::spawn(async move {
         if let Err(e) = snapshot_catalog(
             &session,
             &catalog_state,
@@ -778,7 +802,7 @@ fn respawn_full_resync(
         }
         option_revisions.bump();
         stream_output.refresh();
-    }));
+    })));
 }
 
 fn changes_option_lists(ev: &obws::events::Event) -> bool {
@@ -816,29 +840,91 @@ fn handle_obs_event(
     catalog_state: &RwLock<ObsCatalog>,
     health_state: &RwLock<HealthSnapshot>,
     health_tx: &broadcast::Sender<HealthDelta>,
-    item_cache: &Mutex<HashMap<(String, String), i64>>,
+    item_cache: &Mutex<SceneItemIds>,
     publisher: &dyn EventPublisher,
 ) {
-    let is_scene_change = matches!(ev, obws::events::Event::CurrentProgramSceneChanged { .. });
-    let is_preview_change = matches!(ev, obws::events::Event::CurrentPreviewSceneChanged { .. });
+    let (from_scene, visibility, lock) = {
+        let mut catalog = write_lock(catalog_state);
+        let mut ids = item_cache.lock().unwrap_or_else(PoisonError::into_inner);
 
-    let from_scene = if is_scene_change {
-        catalog_state
-            .read()
-            .ok()
-            .and_then(|g| g.current_scene.clone())
-    } else if is_preview_change {
-        catalog_state
-            .read()
-            .ok()
-            .and_then(|g| g.current_preview_scene.clone())
-    } else {
-        None
-    };
+        let from_scene = match ev {
+            obws::events::Event::CurrentProgramSceneChanged { .. } => catalog.current_scene.clone(),
+            obws::events::Event::CurrentPreviewSceneChanged { .. } => {
+                catalog.current_preview_scene.clone()
+            }
+            _ => None,
+        };
+        let mut visibility = None;
+        let mut lock = None;
 
-    if let Ok(mut catalog) = catalog_state.write() {
         crate::events::apply_catalog_update(ev, &mut catalog);
-    }
+        crate::events::apply_item_id_update(ev, &mut ids);
+
+        match ev {
+            obws::events::Event::SceneItemEnableStateChanged {
+                scene,
+                item_id,
+                enabled,
+                ..
+            } => {
+                if let Some(name) = ids.source_name(&scene.name, *item_id) {
+                    if let Some(info) = catalog
+                        .sources
+                        .get_mut(&scene.name)
+                        .and_then(|sources| sources.iter_mut().find(|s| s.name == name))
+                    {
+                        info.visible = *enabled;
+                    }
+                    catalog.revision = catalog.revision.wrapping_add(1);
+                    visibility = Some(crate::events::map_scene_item_visibility(
+                        &scene.name,
+                        &name,
+                        *enabled,
+                    ));
+                }
+            }
+            obws::events::Event::SceneItemLockStateChanged {
+                scene,
+                item_id,
+                locked,
+                ..
+            } => {
+                if let Some(name) = ids.source_name(&scene.name, *item_id) {
+                    if let Some(info) = catalog
+                        .sources
+                        .get_mut(&scene.name)
+                        .and_then(|sources| sources.iter_mut().find(|s| s.name == name))
+                    {
+                        info.locked = *locked;
+                    }
+                    catalog.revision = catalog.revision.wrapping_add(1);
+                    lock = Some(crate::events::map_scene_item_lock(
+                        &scene.name,
+                        &name,
+                        *locked,
+                    ));
+                }
+            }
+            obws::events::Event::SceneItemCreated { scene, source, .. } => {
+                let known_kind = catalog
+                    .sources
+                    .values()
+                    .flatten()
+                    .find(|s| s.name == source.name && s.kind.is_some())
+                    .and_then(|s| s.kind.clone());
+                if let Some(kind) = known_kind
+                    && let Some(info) = catalog
+                        .sources
+                        .get_mut(&scene.name)
+                        .and_then(|items| items.iter_mut().find(|s| s.name == source.name))
+                {
+                    info.kind = Some(kind);
+                }
+            }
+            _ => {}
+        }
+        (from_scene, visibility, lock)
+    };
 
     let deltas = if let Ok(mut health) = health_state.write() {
         crate::events::apply_health_update(ev, &mut health)
@@ -856,125 +942,8 @@ fn handle_obs_event(
     if let Some(bus_event) = crate::events::map_obs_event(ev, from_scene.as_deref()) {
         publisher.publish(bus_event);
     }
-
-    if let obws::events::Event::SceneItemEnableStateChanged {
-        scene,
-        item_id,
-        enabled,
-        ..
-    } = ev
-    {
-        let source_name = item_cache
-            .lock()
-            .ok()
-            .and_then(|guard| crate::events::resolve_source_name(&guard, &scene.name, *item_id));
-
-        if let Some(name) = source_name {
-            if let Ok(mut catalog) = catalog_state.write()
-                && let Some(sources) = catalog.sources.get_mut(&scene.name)
-                && let Some(info) = sources.iter_mut().find(|s| s.name == name)
-            {
-                info.visible = *enabled;
-            }
-            publisher.publish(crate::events::map_scene_item_visibility(
-                &scene.name,
-                &name,
-                *enabled,
-            ));
-        }
-    }
-
-    if let obws::events::Event::SceneItemLockStateChanged {
-        scene,
-        item_id,
-        locked,
-        ..
-    } = ev
-    {
-        let source_name = item_cache
-            .lock()
-            .ok()
-            .and_then(|guard| crate::events::resolve_source_name(&guard, &scene.name, *item_id));
-
-        if let Some(name) = source_name {
-            if let Ok(mut catalog) = catalog_state.write()
-                && let Some(sources) = catalog.sources.get_mut(&scene.name)
-                && let Some(info) = sources.iter_mut().find(|s| s.name == name)
-            {
-                info.locked = *locked;
-            }
-            publisher.publish(crate::events::map_scene_item_lock(
-                &scene.name,
-                &name,
-                *locked,
-            ));
-        }
-    }
-
-    if let obws::events::Event::SceneItemCreated {
-        scene,
-        source,
-        item_id,
-        ..
-    } = ev
-        && let Ok(mut cache) = item_cache.lock()
-    {
-        cache.insert((scene.name.clone(), source.name.clone()), *item_id as i64);
-    }
-
-    if let obws::events::Event::SceneItemCreated { scene, source, .. } = ev {
-        let known_kind = catalog_state.read().ok().and_then(|guard| {
-            guard
-                .sources
-                .values()
-                .flatten()
-                .find(|s| s.name == source.name && s.kind.is_some())
-                .and_then(|s| s.kind.clone())
-        });
-        if let Some(kind) = known_kind
-            && let Ok(mut catalog) = catalog_state.write()
-            && let Some(items) = catalog.sources.get_mut(&scene.name)
-            && let Some(info) = items.iter_mut().find(|s| s.name == source.name)
-        {
-            info.kind = Some(kind);
-        }
-    }
-
-    if matches!(
-        ev,
-        obws::events::Event::CurrentSceneCollectionChanging { .. }
-            | obws::events::Event::CurrentSceneCollectionChanged { .. }
-    ) && let Ok(mut cache) = item_cache.lock()
-    {
-        cache.clear();
-    }
-
-    if let obws::events::Event::SceneItemRemoved { scene, source, .. } = ev
-        && let Ok(mut cache) = item_cache.lock()
-    {
-        cache.remove(&(scene.name.clone(), source.name.clone()));
-    }
-
-    if let obws::events::Event::InputRemoved { id } = ev
-        && let Ok(mut cache) = item_cache.lock()
-    {
-        cache.retain(|(_, name), _| name != &id.name);
-    }
-
-    if let obws::events::Event::InputNameChanged {
-        old_name, new_name, ..
-    } = ev
-        && let Ok(mut cache) = item_cache.lock()
-    {
-        let renamed: Vec<(String, i64)> = cache
-            .iter()
-            .filter(|((_, name), _)| name == old_name)
-            .map(|((scene, _), id)| (scene.clone(), *id))
-            .collect();
-        for (scene, id) in renamed {
-            cache.remove(&(scene.clone(), old_name.clone()));
-            cache.insert((scene, new_name.clone()), id);
-        }
+    for event in visibility.into_iter().chain(lock) {
+        publisher.publish(event);
     }
 }
 
@@ -991,12 +960,33 @@ async fn snapshot_catalog(
     catalog_state: &RwLock<ObsCatalog>,
     health_state: &RwLock<HealthSnapshot>,
     health_tx: &broadcast::Sender<HealthDelta>,
-    item_cache: &Mutex<HashMap<(String, String), i64>>,
+    item_cache: &Mutex<SceneItemIds>,
 ) -> Result<(), ObsError> {
+    for _ in 0..TOPOLOGY_FETCH_ATTEMPTS {
+        if snapshot_catalog_once(session, catalog_state, health_state, health_tx, item_cache)
+            .await?
+        {
+            return Ok(());
+        }
+    }
+    tracing::warn!(
+        "OBS catalog kept changing during every resync attempt; keeping the live mirror"
+    );
+    Ok(())
+}
+
+async fn snapshot_catalog_once(
+    session: &LiveSession,
+    catalog_state: &RwLock<ObsCatalog>,
+    health_state: &RwLock<HealthSnapshot>,
+    health_tx: &broadcast::Sender<HealthDelta>,
+    item_cache: &Mutex<SceneItemIds>,
+) -> Result<bool, ObsError> {
     use obws::requests::inputs::InputId;
     use obws::requests::scenes::SceneId;
 
     let obs = session.obs();
+    let started_at = read_lock(catalog_state).revision;
 
     let scenes: Vec<String> =
         tolerate_rejection(session.request("GetSceneList", obs.scenes().list()).await)?
@@ -1025,7 +1015,7 @@ async fn snapshot_catalog(
 
     let mut sources_by_scene: HashMap<String, Vec<SourceInfo>> = HashMap::new();
     let mut db_cache: HashMap<String, f32> = HashMap::new();
-    let mut fresh_item_cache: HashMap<(String, String), i64> = HashMap::new();
+    let mut fresh_item_cache = SceneItemIds::default();
     for scene in &scenes {
         let Some(items) = tolerate_rejection(
             session
@@ -1040,7 +1030,7 @@ async fn snapshot_catalog(
         };
         let mut infos = Vec::with_capacity(items.len());
         for item in items {
-            fresh_item_cache.insert((scene.clone(), item.source_name.clone()), item.id);
+            fresh_item_cache.insert(scene, item.id, &item.source_name);
 
             let visible = tolerate_rejection(
                 session
@@ -1114,15 +1104,17 @@ async fn snapshot_catalog(
             .await,
     )?;
 
-    if let Ok(mut catalog) = catalog_state.write() {
+    {
+        let mut catalog = write_lock(catalog_state);
+        if catalog.revision != started_at {
+            return Ok(false);
+        }
         catalog.scenes = scenes;
         catalog.audio_inputs = audio_inputs;
         catalog.sources = sources_by_scene;
         catalog.current_scene = current_scene;
         catalog.current_preview_scene = current_preview_scene;
-    }
-    if let Ok(mut cache) = item_cache.lock() {
-        *cache = fresh_item_cache;
+        *item_cache.lock().unwrap_or_else(PoisonError::into_inner) = fresh_item_cache;
     }
 
     if let Some(status) = stream_status
@@ -1147,27 +1139,34 @@ async fn snapshot_catalog(
             let _ = health_tx.send(delta);
         }
     }
-    Ok(())
+    Ok(true)
 }
 
 async fn reconcile_catalog_topology(
     session: &LiveSession,
     catalog_state: &RwLock<ObsCatalog>,
-    item_cache: &Mutex<HashMap<(String, String), i64>>,
+    item_cache: &Mutex<SceneItemIds>,
 ) -> Result<(), ObsError> {
+    for _ in 0..TOPOLOGY_FETCH_ATTEMPTS {
+        if reconcile_catalog_topology_once(session, catalog_state, item_cache).await? {
+            return Ok(());
+        }
+    }
+    tracing::warn!(
+        "OBS catalog kept changing during every reconcile attempt; keeping the live mirror"
+    );
+    Ok(())
+}
+
+async fn reconcile_catalog_topology_once(
+    session: &LiveSession,
+    catalog_state: &RwLock<ObsCatalog>,
+    item_cache: &Mutex<SceneItemIds>,
+) -> Result<bool, ObsError> {
     use obws::requests::scenes::SceneId;
 
     let obs = session.obs();
-
-    let (pre_fetch_current_scene, pre_fetch_current_preview_scene) = catalog_state
-        .read()
-        .map(|guard| {
-            (
-                guard.current_scene.clone(),
-                guard.current_preview_scene.clone(),
-            )
-        })
-        .unwrap_or_default();
+    let started_at = read_lock(catalog_state).revision;
 
     let scenes: Vec<String> =
         tolerate_rejection(session.request("GetSceneList", obs.scenes().list()).await)?
@@ -1203,7 +1202,7 @@ async fn reconcile_catalog_topology(
     .unwrap_or_default();
 
     let mut fetched_topology: HashMap<String, Vec<(String, Option<String>)>> = HashMap::new();
-    let mut fresh_item_cache: HashMap<(String, String), i64> = HashMap::new();
+    let mut fresh_item_cache = SceneItemIds::default();
     for scene in &scenes {
         let Some(items) = tolerate_rejection(
             session
@@ -1218,30 +1217,28 @@ async fn reconcile_catalog_topology(
         };
         let mut entries = Vec::with_capacity(items.len());
         for item in items {
-            fresh_item_cache.insert((scene.clone(), item.source_name.clone()), item.id);
+            fresh_item_cache.insert(scene, item.id, &item.source_name);
             entries.push((item.source_name, item.input_kind));
         }
         fetched_topology.insert(scene.clone(), entries);
     }
 
-    if let Ok(mut catalog) = catalog_state.write() {
-        merge_reconciled_topology(
-            &mut catalog,
-            FetchedTopology {
-                scenes,
-                audio_inputs,
-                sources: fetched_topology,
-                current_scene: fetched_current_scene,
-                current_preview_scene: fetched_current_preview_scene,
-            },
-            pre_fetch_current_scene,
-            pre_fetch_current_preview_scene,
-        );
+    let mut catalog = write_lock(catalog_state);
+    if catalog.revision != started_at {
+        return Ok(false);
     }
-    if let Ok(mut cache) = item_cache.lock() {
-        *cache = fresh_item_cache;
-    }
-    Ok(())
+    merge_reconciled_topology(
+        &mut catalog,
+        FetchedTopology {
+            scenes,
+            audio_inputs,
+            sources: fetched_topology,
+            current_scene: fetched_current_scene,
+            current_preview_scene: fetched_current_preview_scene,
+        },
+    );
+    *item_cache.lock().unwrap_or_else(PoisonError::into_inner) = fresh_item_cache;
+    Ok(true)
 }
 
 pub(crate) struct FetchedTopology {
@@ -1252,12 +1249,7 @@ pub(crate) struct FetchedTopology {
     pub(crate) current_preview_scene: Option<String>,
 }
 
-pub(crate) fn merge_reconciled_topology(
-    catalog: &mut ObsCatalog,
-    fetched: FetchedTopology,
-    pre_fetch_current_scene: Option<String>,
-    pre_fetch_current_preview_scene: Option<String>,
-) {
+pub(crate) fn merge_reconciled_topology(catalog: &mut ObsCatalog, fetched: FetchedTopology) {
     let mut sources_by_scene: HashMap<String, Vec<SourceInfo>> =
         HashMap::with_capacity(fetched.sources.len());
     for (scene, entries) in fetched.sources {
@@ -1279,19 +1271,14 @@ pub(crate) fn merge_reconciled_topology(
     catalog.scenes = fetched.scenes;
     catalog.audio_inputs = fetched.audio_inputs;
     catalog.sources = sources_by_scene;
-
-    if catalog.current_scene == pre_fetch_current_scene {
-        catalog.current_scene = fetched.current_scene;
-    }
-    if catalog.current_preview_scene == pre_fetch_current_preview_scene {
-        catalog.current_preview_scene = fetched.current_preview_scene;
-    }
+    catalog.current_scene = fetched.current_scene;
+    catalog.current_preview_scene = fetched.current_preview_scene;
 }
 
 const STATS_POLL_INTERVAL: Duration = Duration::from_secs(2);
 const STATS_POLL_REQUEST_TIMEOUT: Duration = STATS_POLL_INTERVAL;
 const UNANSWERED_STATS_POLLS_BEFORE_SUSPECT: u32 = 3;
-const CATALOG_RECONCILE_EVERY_NTH_TICK: u32 = 3;
+const TOPOLOGY_FETCH_ATTEMPTS: u32 = 5;
 
 fn spawn_stats_poll(
     inner: SessionSlot,
@@ -1309,7 +1296,6 @@ fn spawn_stats_poll(
     tokio::spawn(async move {
         let mut ticker = tokio::time::interval(STATS_POLL_INTERVAL);
         ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
-        let mut tick: u32 = 0;
         let mut unanswered_polls: u32 = 0;
         loop {
             let nudged = tokio::select! {
@@ -1326,7 +1312,6 @@ fn spawn_stats_poll(
             };
 
             if !nudged {
-                tick = tick.wrapping_add(1);
                 let general = session.obs().general();
                 let streaming = session.obs().streaming();
                 let recording = session.obs().recording();
@@ -1389,7 +1374,7 @@ fn spawn_stats_poll(
                 stream_output.refresh();
             }
 
-            if nudged || tick.is_multiple_of(CATALOG_RECONCILE_EVERY_NTH_TICK) {
+            if nudged {
                 let before = option_fingerprint(&catalog_state);
                 if let Err(e) =
                     reconcile_catalog_topology(&session, &catalog_state, &item_cache).await
@@ -1404,21 +1389,47 @@ fn spawn_stats_poll(
     })
 }
 
-pub fn parse_endpoint(endpoint: &str) -> Result<(String, u16), ObsError> {
-    let without_scheme = endpoint
-        .strip_prefix("ws://")
-        .or_else(|| endpoint.strip_prefix("wss://"))
-        .unwrap_or(endpoint);
+const DEFAULT_OBS_PORT: u16 = 4455;
 
-    match without_scheme.rsplit_once(':') {
-        Some((host, port_str)) => {
-            let port = port_str
-                .parse::<u16>()
-                .map_err(|_| ObsError::Connect(format!("invalid port in endpoint '{endpoint}'")))?;
-            Ok((host.to_owned(), port))
-        }
-        None => Ok((without_scheme.to_owned(), 4455)),
+pub fn parse_endpoint(endpoint: &str) -> Result<(String, u16), ObsError> {
+    let invalid = || ObsError::Connect(format!("invalid endpoint '{endpoint}'"));
+    let trimmed = endpoint.trim();
+    if trimmed.starts_with("wss://") {
+        return Err(ObsError::Connect(
+            "TLS endpoints (wss://) are not supported".to_owned(),
+        ));
     }
+    let without_scheme = trimmed.strip_prefix("ws://").unwrap_or(trimmed);
+    let authority = without_scheme
+        .split(['/', '?', '#'])
+        .next()
+        .unwrap_or_default();
+
+    let (host, port_text) = if authority.starts_with('[') {
+        let close = authority.find(']').ok_or_else(invalid)?;
+        let (host, rest) = authority.split_at(close + 1);
+        let port_text = match rest {
+            "" => None,
+            rest => Some(rest.strip_prefix(':').ok_or_else(invalid)?),
+        };
+        (host, port_text)
+    } else {
+        match authority.rsplit_once(':') {
+            Some((host, port_text)) => (host, Some(port_text)),
+            None => (authority, None),
+        }
+    };
+
+    if host.is_empty() || (!host.starts_with('[') && host.contains(':')) {
+        return Err(invalid());
+    }
+    let port = match port_text {
+        Some(text) => text
+            .parse::<u16>()
+            .map_err(|_| ObsError::Connect(format!("invalid port in endpoint '{endpoint}'")))?,
+        None => DEFAULT_OBS_PORT,
+    };
+    Ok((host.to_owned(), port))
 }
 
 fn required_event_subscriptions() -> obws::requests::EventSubscription {
@@ -1525,14 +1536,56 @@ mod tests {
     fn parse_endpoint_drops_the_scheme_and_falls_back_to_the_obs_websocket_port() {
         for (endpoint, expected_host, expected_port) in [
             ("ws://localhost:4455", "localhost", 4455),
-            ("wss://obs.example.com:4456", "obs.example.com", 4456),
             ("192.168.1.10:4455", "192.168.1.10", 4455),
             ("localhost", "localhost", 4455),
             ("ws://localhost", "localhost", 4455),
             ("localhost:65535", "localhost", 65535),
+            ("localhost:0", "localhost", 0),
+            ("  ws://localhost:4456  ", "localhost", 4456),
+            ("ws://localhost:4456/", "localhost", 4456),
+            ("ws://localhost/", "localhost", 4455),
+            ("localhost:4456/obs?token=x#frag", "localhost", 4456),
+            ("[::1]", "[::1]", 4455),
+            ("[::1]:4456", "[::1]", 4456),
+            ("ws://[fe80::1]:4456/", "[fe80::1]", 4456),
         ] {
             let (host, port) = parse_endpoint(endpoint).unwrap();
-            assert_eq!((host.as_str(), port), (expected_host, expected_port));
+            assert_eq!(
+                (host.as_str(), port),
+                (expected_host, expected_port),
+                "{endpoint}"
+            );
+        }
+    }
+
+    #[test]
+    fn parse_endpoint_refuses_tls_because_the_session_only_speaks_plain_websocket() {
+        for endpoint in ["wss://obs.example.com:4456", "  wss://localhost"] {
+            let Err(ObsError::Connect(reason)) = parse_endpoint(endpoint) else {
+                panic!("{endpoint} was accepted");
+            };
+            assert!(reason.contains("TLS"), "{endpoint}: {reason}");
+        }
+    }
+
+    #[test]
+    fn parse_endpoint_rejects_an_authority_without_a_usable_host() {
+        for endpoint in [
+            "",
+            "ws://",
+            ":4455",
+            "/",
+            "::1",
+            "::1:4455",
+            "[::1",
+            "[::1]4455",
+            "[::1]:",
+            "[::1]:notaport",
+        ] {
+            assert!(
+                parse_endpoint(endpoint).is_err(),
+                "expected {endpoint:?} to be rejected"
+            );
         }
     }
 
@@ -1594,7 +1647,7 @@ mod tests {
         catalog: RwLock<ObsCatalog>,
         health: RwLock<HealthSnapshot>,
         health_tx: broadcast::Sender<HealthDelta>,
-        item_cache: Mutex<HashMap<(String, String), i64>>,
+        item_cache: Mutex<SceneItemIds>,
         publisher: CapturingPublisher,
     }
 
@@ -1605,7 +1658,7 @@ mod tests {
                 catalog: RwLock::new(ObsCatalog::default()),
                 health: RwLock::new(HealthSnapshot::default()),
                 health_tx,
-                item_cache: Mutex::new(HashMap::new()),
+                item_cache: Mutex::new(SceneItemIds::default()),
                 publisher: CapturingPublisher::default(),
             }
         }
@@ -1625,7 +1678,7 @@ mod tests {
                     });
             }
             if let Ok(mut cache) = self.item_cache.lock() {
-                cache.insert((scene.to_owned(), source.to_owned()), item_id);
+                cache.insert(scene, item_id, source);
             }
             self
         }
@@ -1787,8 +1840,13 @@ mod tests {
 
             h.feed(&switch);
 
-            assert!(
-                h.item_cache.lock().is_ok_and(|cache| cache.is_empty()),
+            let cache = h.item_cache.lock().unwrap();
+            assert_eq!(
+                (
+                    cache.item_id("Gameplay", "Webcam"),
+                    cache.item_id("BRB", "Logo")
+                ),
+                (None, None),
                 "{switch:?} left item ids of the previous collection cached"
             );
         }
@@ -1963,8 +2021,6 @@ mod tests {
                     )]),
                     ..empty_fetch()
                 },
-                None,
-                None,
             );
 
             let merged = &catalog.sources["Gameplay"][0];
@@ -2010,8 +2066,6 @@ mod tests {
                 sources: HashMap::from([("Gameplay".to_owned(), vec![("Mic".to_owned(), None)])]),
                 ..empty_fetch()
             },
-            None,
-            None,
         );
 
         assert_eq!(catalog.scenes, vec!["Gameplay", "Starting"]);
@@ -2026,92 +2080,131 @@ mod tests {
         );
     }
 
-    fn merged_scene_field(
-        preview: bool,
-        pre_fetch: Option<&str>,
-        live_at_merge: Option<&str>,
-        fetched: Option<&str>,
-    ) -> Option<String> {
-        let owned = |v: Option<&str>| v.map(str::to_owned);
-        let mut catalog = ObsCatalog::default();
-        let mut fetch = empty_fetch();
-        if preview {
-            catalog.current_preview_scene = owned(live_at_merge);
-            fetch.current_preview_scene = owned(fetched);
-        } else {
-            catalog.current_scene = owned(live_at_merge);
-            fetch.current_scene = owned(fetched);
-        }
-        let (pre_scene, pre_preview) = if preview {
-            (None, owned(pre_fetch))
-        } else {
-            (owned(pre_fetch), None)
-        };
+    #[test]
+    fn a_reconciled_catalog_takes_both_scene_pointers_from_the_fetch() {
+        for (live, fetched) in [
+            (Some("Gameplay"), Some("BRB")),
+            (None, Some("BRB")),
+            (Some("Gameplay"), None),
+        ] {
+            let owned = |v: Option<&str>| v.map(str::to_owned);
+            let mut catalog = ObsCatalog {
+                current_scene: owned(live),
+                current_preview_scene: owned(live),
+                ..ObsCatalog::default()
+            };
 
-        merge_reconciled_topology(&mut catalog, fetch, pre_scene, pre_preview);
+            merge_reconciled_topology(
+                &mut catalog,
+                FetchedTopology {
+                    current_scene: owned(fetched),
+                    current_preview_scene: owned(fetched),
+                    ..empty_fetch()
+                },
+            );
 
-        if preview {
-            catalog.current_preview_scene
-        } else {
-            catalog.current_scene
+            assert_eq!(catalog.current_scene.as_deref(), fetched);
+            assert_eq!(catalog.current_preview_scene.as_deref(), fetched);
         }
     }
 
+    fn scene_pointers(h: &EventHarness) -> (Option<String>, Option<String>) {
+        let catalog = h.catalog.read().unwrap();
+        (
+            catalog.current_scene.clone(),
+            catalog.current_preview_scene.clone(),
+        )
+    }
+
+    fn visibility_changes(h: &EventHarness) -> usize {
+        h.publisher
+            .kinds()
+            .iter()
+            .filter(|kind| kind.as_str() == "obs.source.visibility_changed")
+            .count()
+    }
+
+    fn point_both_scene_pointers_at(h: &EventHarness, scene: &str) {
+        let mut catalog = h.catalog.write().unwrap();
+        catalog.current_scene = Some(scene.to_owned());
+        catalog.current_preview_scene = Some(scene.to_owned());
+    }
+
     #[test]
-    fn a_reconciled_scene_field_heals_from_the_fetch_only_when_no_live_event_moved_it() {
-        for (label, pre_fetch, live_at_merge, fetched, expected) in [
-            (
-                "a missed switch heals from the fetch",
-                Some("Gameplay"),
-                Some("Gameplay"),
-                Some("BRB"),
-                Some("BRB"),
-            ),
-            (
-                "a live switch during the window outranks the stale fetch",
-                Some("Gameplay"),
-                Some("BRB"),
-                Some("Gameplay"),
-                Some("BRB"),
-            ),
-            (
-                "a live switch during the window outranks an unavailable fetch",
-                None,
-                Some("BRB"),
-                None,
-                Some("BRB"),
-            ),
-            (
-                "an untouched empty field takes the fetched value",
-                None,
-                None,
-                Some("Gameplay"),
-                Some("Gameplay"),
-            ),
-            (
-                "an unavailable fetch clears an untouched field",
-                Some("Gameplay"),
-                Some("Gameplay"),
-                None,
-                None,
-            ),
-            (
-                "a live switch the fetch also saw keeps that value",
-                Some("Gameplay"),
-                Some("BRB"),
-                Some("BRB"),
-                Some("BRB"),
-            ),
-        ] {
-            for preview in [false, true] {
-                let field = if preview { "preview" } else { "program" };
-                assert_eq!(
-                    merged_scene_field(preview, pre_fetch, live_at_merge, fetched).as_deref(),
-                    expected,
-                    "{field}: {label}",
-                );
-            }
-        }
+    fn a_renamed_scene_moves_its_item_ids_and_both_scene_pointers_to_the_new_name() {
+        let h = EventHarness::new().with_source("Gameplay", "Webcam", 42);
+        point_both_scene_pointers_at(&h, "Gameplay");
+
+        h.feed(&obws::events::Event::SceneNameChanged {
+            uuid: Default::default(),
+            old_name: "Gameplay".to_owned(),
+            new_name: "Live".to_owned(),
+        });
+        h.feed(&enable_state_changed("Gameplay", 42, false));
+        assert_eq!(
+            visibility_changes(&h),
+            0,
+            "the item id still resolved under the old scene name"
+        );
+        h.feed(&enable_state_changed("Live", 42, false));
+
+        assert_eq!(
+            h.publisher.last_payload("scene_name"),
+            Some(serde_json::json!("Live")),
+        );
+        assert_eq!(h.source_flags("Live", "Webcam"), Some((false, false)));
+        assert_eq!(
+            scene_pointers(&h),
+            (Some("Live".to_owned()), Some("Live".to_owned()))
+        );
+    }
+
+    #[test]
+    fn a_rename_of_another_scene_leaves_the_scene_pointers_alone() {
+        let h = EventHarness::new().with_source("Gameplay", "Webcam", 42);
+        point_both_scene_pointers_at(&h, "Gameplay");
+
+        h.feed(&obws::events::Event::SceneNameChanged {
+            uuid: Default::default(),
+            old_name: "BRB".to_owned(),
+            new_name: "Break".to_owned(),
+        });
+
+        assert_eq!(
+            scene_pointers(&h),
+            (Some("Gameplay".to_owned()), Some("Gameplay".to_owned()))
+        );
+    }
+
+    #[test]
+    fn a_removed_scene_forgets_its_item_ids_and_clears_only_the_pointers_at_it() {
+        let h = EventHarness::new()
+            .with_source("Gameplay", "Webcam", 42)
+            .with_source("BRB", "Logo", 43);
+        point_both_scene_pointers_at(&h, "Gameplay");
+
+        h.feed(&obws::events::Event::SceneRemoved {
+            id: scene_id("BRB"),
+            is_group: false,
+        });
+        assert_eq!(
+            scene_pointers(&h),
+            (Some("Gameplay".to_owned()), Some("Gameplay".to_owned())),
+            "removing another scene moved a pointer"
+        );
+
+        h.feed(&obws::events::Event::SceneRemoved {
+            id: scene_id("Gameplay"),
+            is_group: false,
+        });
+        h.feed(&enable_state_changed("Gameplay", 42, false));
+
+        assert_eq!(
+            visibility_changes(&h),
+            0,
+            "a removed scene still resolved a cached item id"
+        );
+        assert_eq!(scene_pointers(&h), (None, None));
     }
 
     #[test]

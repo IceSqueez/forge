@@ -3,12 +3,12 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use forge_registry::runner::SubActionConfig;
 use forge_registry::{
-    ConfigSpec, PickedTextField, RunContext, StepTimer, SubActionCategory, SubActionRunner,
-    TextPicker, TypedField,
+    ConfigProblem, ConfigSpec, Interpolation, PickedTextField, RunContext, StepTimer,
+    SubActionCategory, SubActionRunner, TextPicker,
 };
 use forge_types::{ArgStack, SubActionTelemetry};
 
-use super::step_failure;
+use super::{path_field, step_failure};
 use crate::ObsSink;
 use crate::vocabulary::{config_keys, sub_action_ids};
 
@@ -64,13 +64,21 @@ impl SubActionRunner for RecordSetDirectoryRunner {
         Some(CONFIG)
     }
 
+    fn check_config(
+        &self,
+        config: &SubActionConfig,
+        _interpolation: Interpolation<'_>,
+    ) -> Result<(), ConfigProblem> {
+        path_field::check_template(&PATH, config)
+    }
+
     async fn execute(
         &self,
         config: &SubActionConfig,
         ctx: &RunContext<'_>,
     ) -> (SubActionTelemetry, Option<ArgStack>) {
         let timer = StepTimer::start(ctx, KIND_ID);
-        let path = match PATH.read(config, ctx.arg_stack) {
+        let path = match path_field::read_path(&PATH, config, ctx.arg_stack) {
             Ok(path) => path,
             Err(problem) => return (timer.invalid_config(&problem), None),
         };

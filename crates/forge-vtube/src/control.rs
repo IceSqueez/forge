@@ -13,6 +13,7 @@ use crate::supervisor::SupervisorContext;
 #[async_trait]
 impl BuiltinControl for VTubeClient {
     async fn reconnect(&self) -> ControlOutcome {
+        let _lifecycle = self.lifecycle.lock().await;
         let new_notify = Arc::new(Notify::new());
         {
             let mut slot = self.shutdown.lock().await;
@@ -30,7 +31,6 @@ impl BuiltinControl for VTubeClient {
 
         crate::supervisor::set_connection_state(
             &self.state,
-            &self.health_state,
             &*self.reconnect_publisher,
             ConnectionState::Connecting,
             ConnectionTransition::Expected,
@@ -72,6 +72,7 @@ impl BuiltinControl for VTubeClient {
     }
 
     async fn disconnect(&self) -> ControlOutcome {
+        let _lifecycle = self.lifecycle.lock().await;
         let slot = self.shutdown.lock().await;
         let notify = slot.clone();
         drop(slot);
@@ -86,7 +87,6 @@ impl BuiltinControl for VTubeClient {
         crate::supervisor::record_failure(&self.last_failure, None);
         crate::supervisor::set_connection_state(
             &self.state,
-            &self.health_state,
             &*self.reconnect_publisher,
             ConnectionState::Disconnected,
             ConnectionTransition::Expected,

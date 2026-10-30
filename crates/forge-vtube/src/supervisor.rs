@@ -23,7 +23,7 @@ use crate::health::{
 };
 use crate::vocabulary::fields::expression as expression_fields;
 use crate::vocabulary::{VTubeConnectionChanged, VTubeDisconnectReason, event_kinds, messages};
-use crate::vts::endpoint::split_endpoint;
+use crate::vts::endpoint::{is_secure_endpoint, split_endpoint};
 use crate::vts::event::{VtsEvent, subscribe_all};
 use crate::vts::message_type::{
     AUTHENTICATION_REQUEST, AUTHENTICATION_RESPONSE, AUTHENTICATION_TOKEN_REQUEST,
@@ -256,7 +256,9 @@ async fn run_auth(
     authenticate_with_token(ws, creds, &token, endpoint).await?;
 
     let (host, port) = split_endpoint(endpoint);
-    if let Err(e) = crate::credentials::store(creds, &token, API_VERSION, &host, port).await {
+    let secure = is_secure_endpoint(endpoint);
+    if let Err(e) = crate::credentials::store(creds, &token, API_VERSION, &host, port, secure).await
+    {
         tracing::warn!(endpoint, error = %e, "failed to persist VTube Studio credential");
     }
     Ok(())
@@ -272,20 +274,12 @@ fn connection_state_transition(
 
 pub(crate) fn set_connection_state(
     state: &AtomicConnectionState,
-    health_state: &RwLock<HealthSnapshot>,
     publisher: &dyn EventPublisher,
     new_state: ConnectionState,
     transition: ConnectionTransition,
 ) {
     let previous = state.load();
     state.store(new_state);
-    let dialing = matches!(
-        new_state,
-        ConnectionState::Connecting | ConnectionState::Reconnecting
-    );
-    if let Ok(mut g) = health_state.write() {
-        g.dialing = dialing;
-    }
     if let Some(event) = connection_state_transition(previous, new_state, transition) {
         publisher.publish(event);
     }
@@ -350,7 +344,6 @@ fn record_reason(slot: &RwLock<Option<MessageRef>>, reason: VTubeDisconnectReaso
 fn settle_unless_retrying(
     retry: bool,
     state: &AtomicConnectionState,
-    health_state: &RwLock<HealthSnapshot>,
     publisher: &dyn EventPublisher,
 ) {
     if retry {
@@ -358,7 +351,6 @@ fn settle_unless_retrying(
     }
     set_connection_state(
         state,
-        health_state,
         publisher,
         ConnectionState::Disconnected,
         ConnectionTransition::Unexpected,
@@ -405,7 +397,6 @@ pub(crate) async fn run_supervisor(ctx: SupervisorContext) {
                 RetryWait::Shutdown => {
                     set_connection_state(
                         &state,
-                        &health_state,
                         &*publisher,
                         ConnectionState::Disconnected,
                         ConnectionTransition::Expected,
@@ -421,7 +412,6 @@ pub(crate) async fn run_supervisor(ctx: SupervisorContext) {
                     if state.load() != ConnectionState::Disconnected {
                         set_connection_state(
                             &state,
-                            &health_state,
                             &*publisher,
                             ConnectionState::Disconnected,
                             ConnectionTransition::Expected,
@@ -438,7 +428,6 @@ pub(crate) async fn run_supervisor(ctx: SupervisorContext) {
 
         set_connection_state(
             &state,
-            &health_state,
             &*publisher,
             if reconnecting {
                 ConnectionState::Reconnecting
@@ -452,7 +441,7 @@ pub(crate) async fn run_supervisor(ctx: SupervisorContext) {
         let connect_attempt = tokio::select! {
             outcome = dial(&endpoint) => outcome,
             () = shutdown.notified() => {
-                set_connection_state(&state, &health_state, &*publisher, ConnectionState::Disconnected, ConnectionTransition::Expected);
+                set_connection_state(&state, &*publisher, ConnectionState::Disconnected, ConnectionTransition::Expected);
                 emit_connection_changed(&*publisher, &endpoint, false, None, None);
                 return;
             }
@@ -467,12 +456,7 @@ pub(crate) async fn run_supervisor(ctx: SupervisorContext) {
                     "VTube Studio connection attempt failed"
                 );
                 record_failure(&last_failure, Some(failed.message));
-                settle_unless_retrying(
-                    *auto_reconnect.borrow_and_update(),
-                    &state,
-                    &health_state,
-                    &*publisher,
-                );
+                settle_unless_retrying(*auto_reconnect.borrow_and_update(), &state, &*publisher);
                 emit_connection_changed(
                     &*publisher,
                     &endpoint,
@@ -488,7 +472,7 @@ pub(crate) async fn run_supervisor(ctx: SupervisorContext) {
         let auth_outcome = tokio::select! {
             outcome = run_auth(&mut ws, &*creds, &endpoint, &auth_state, &*publisher) => outcome,
             () = shutdown.notified() => {
-                announce_stopped(&state, &health_state, &*publisher, &auth_state, &endpoint);
+                announce_stopped(&state, &*publisher, &auth_state, &endpoint);
                 return;
             }
         };
@@ -501,7 +485,6 @@ pub(crate) async fn run_supervisor(ctx: SupervisorContext) {
                 record_reason(&last_failure, VTubeDisconnectReason::AuthRequired);
                 set_connection_state(
                     &state,
-                    &health_state,
                     &*publisher,
                     ConnectionState::Disconnected,
                     ConnectionTransition::Unexpected,
@@ -522,7 +505,6 @@ pub(crate) async fn run_supervisor(ctx: SupervisorContext) {
                 record_reason(&last_failure, VTubeDisconnectReason::AuthDenied);
                 set_connection_state(
                     &state,
-                    &health_state,
                     &*publisher,
                     ConnectionState::Disconnected,
                     ConnectionTransition::Unexpected,
@@ -543,7 +525,6 @@ pub(crate) async fn run_supervisor(ctx: SupervisorContext) {
                 record_reason(&last_failure, VTubeDisconnectReason::AuthTimeout);
                 set_connection_state(
                     &state,
-                    &health_state,
                     &*publisher,
                     ConnectionState::Disconnected,
                     ConnectionTransition::Unexpected,
@@ -565,12 +546,7 @@ pub(crate) async fn run_supervisor(ctx: SupervisorContext) {
                 );
                 let detail = e.to_string();
                 record_reason(&last_failure, VTubeDisconnectReason::AuthFailed);
-                settle_unless_retrying(
-                    *auto_reconnect.borrow_and_update(),
-                    &state,
-                    &health_state,
-                    &*publisher,
-                );
+                settle_unless_retrying(*auto_reconnect.borrow_and_update(), &state, &*publisher);
                 emit_connection_changed(
                     &*publisher,
                     &endpoint,
@@ -588,30 +564,28 @@ pub(crate) async fn run_supervisor(ctx: SupervisorContext) {
                 outcome.unwrap_or(Err(VTubeError::Timeout))
             }
             () = shutdown.notified() => {
-                announce_stopped(&state, &health_state, &*publisher, &auth_state, &endpoint);
+                announce_stopped(&state, &*publisher, &auth_state, &endpoint);
                 return;
             }
         };
-        if let Err(e) = subscribe_outcome {
-            tracing::debug!(endpoint = %endpoint, error = %e, "event subscription failed, will retry");
-            let detail = e.to_string();
-            record_reason(&last_failure, VTubeDisconnectReason::SubscribeFailed);
-            settle_unless_retrying(
-                *auto_reconnect.borrow_and_update(),
-                &state,
-                &health_state,
-                &*publisher,
-            );
-            emit_connection_changed(
-                &*publisher,
-                &endpoint,
-                false,
-                Some(VTubeDisconnectReason::SubscribeFailed),
-                Some(detail),
-            );
-            reconnecting = true;
-            continue;
-        }
+        let mut subscriptions = match subscribe_outcome {
+            Ok(requested) => requested,
+            Err(e) => {
+                tracing::debug!(endpoint = %endpoint, error = %e, "event subscription failed, will retry");
+                let detail = e.to_string();
+                record_reason(&last_failure, VTubeDisconnectReason::SubscribeFailed);
+                settle_unless_retrying(*auto_reconnect.borrow_and_update(), &state, &*publisher);
+                emit_connection_changed(
+                    &*publisher,
+                    &endpoint,
+                    false,
+                    Some(VTubeDisconnectReason::SubscribeFailed),
+                    Some(detail),
+                );
+                reconnecting = true;
+                continue;
+            }
+        };
 
         if let Ok(mut g) = connected_at.write() {
             *g = Some(OffsetDateTime::now_utc());
@@ -622,7 +596,6 @@ pub(crate) async fn run_supervisor(ctx: SupervisorContext) {
         record_failure(&last_failure, None);
         set_connection_state(
             &state,
-            &health_state,
             &*publisher,
             ConnectionState::Connected,
             ConnectionTransition::Unexpected,
@@ -656,25 +629,28 @@ pub(crate) async fn run_supervisor(ctx: SupervisorContext) {
             }
         }
         content_notifier.notify_model_changed();
+        content_notifier.notify_items_changed();
 
         loop {
             tokio::select! {
                 () = shutdown.notified() => {
                     clear_session_state(&health_state, &health_tx);
                     catalog_signal.bump_options();
-                    announce_stopped(&state, &health_state, &*publisher, &auth_state, &endpoint);
+                    announce_stopped(&state, &*publisher, &auth_state, &endpoint);
                     return;
                 }
                 Some(req) = req_rx.recv() => {
-                    if send_text(&mut ws, req.payload).await.is_ok() {
-                        pending.insert(
-                            req.request_id,
-                            InFlight {
-                                respond_to: req.respond_to,
-                                sent_at: Instant::now(),
-                            },
-                        );
+                    if let Err(error) = send_text(&mut ws, req.payload).await {
+                        tracing::info!(endpoint = %endpoint, %error, "VTube Studio write failed; dropping the session");
+                        break;
                     }
+                    pending.insert(
+                        req.request_id,
+                        InFlight {
+                            respond_to: req.respond_to,
+                            sent_at: Instant::now(),
+                        },
+                    );
                 }
                 inbound = next_inbound(&mut ws) => {
                     let val = match inbound {
@@ -702,6 +678,15 @@ pub(crate) async fn run_supervisor(ctx: SupervisorContext) {
                                 &health_state,
                                 &health_tx,
                             );
+                        } else if let Some(event_name) = subscriptions.remove(req_id) {
+                            if msg_type == API_ERROR_MESSAGE_TYPE {
+                                tracing::warn!(
+                                    endpoint = %endpoint,
+                                    event_name,
+                                    error_id = ?api_error_id(&val),
+                                    "VTube Studio rejected an event subscription; its triggers will not fire"
+                                );
+                            }
                         } else if msg_type == API_ERROR_MESSAGE_TYPE {
                             tracing::debug!(
                                 endpoint = %endpoint,
@@ -716,6 +701,7 @@ pub(crate) async fn run_supervisor(ctx: SupervisorContext) {
                         }
                         if event.changes_scene_items() {
                             catalog_signal.bump_options();
+                            content_notifier.notify_items_changed();
                         }
                         if !is_repeated_face_state(&event, &mut last_face_found) {
                             crate::events::dispatch_vts_event(&event, &*publisher);
@@ -785,11 +771,10 @@ pub(crate) async fn run_supervisor(ctx: SupervisorContext) {
         }
         record_reason(&last_failure, close_reason);
         let retry = *auto_reconnect.borrow_and_update();
-        settle_unless_retrying(retry, &state, &health_state, &*publisher);
+        settle_unless_retrying(retry, &state, &*publisher);
         if retry {
             set_connection_state(
                 &state,
-                &health_state,
                 &*publisher,
                 ConnectionState::Reconnecting,
                 ConnectionTransition::Unexpected,
@@ -803,14 +788,12 @@ pub(crate) async fn run_supervisor(ctx: SupervisorContext) {
 
 fn announce_stopped(
     state: &AtomicConnectionState,
-    health_state: &RwLock<HealthSnapshot>,
     publisher: &dyn EventPublisher,
     auth_state: &RwLock<AuthState>,
     endpoint: &str,
 ) {
     set_connection_state(
         state,
-        health_state,
         publisher,
         ConnectionState::Disconnected,
         ConnectionTransition::Expected,
@@ -860,7 +843,7 @@ fn apply_seed(
 #[cfg(test)]
 mod tests {
     use std::collections::HashMap;
-    use std::sync::{Arc, Mutex, RwLock};
+    use std::sync::{Arc, Mutex};
 
     use serde_json::json;
 
@@ -874,7 +857,6 @@ mod tests {
     };
     use crate::client::VTUBE_PLATFORM_ID;
     use crate::client::tests::MockPublisher;
-    use crate::health::HealthSnapshot;
     use crate::vocabulary::VTubeDisconnectReason;
 
     const EVERY_CONNECTION_STATE: [ConnectionState; 4] = [
@@ -941,7 +923,6 @@ mod tests {
     #[test]
     fn the_shared_announcement_finds_the_new_state_already_stored() {
         let state = Arc::new(AtomicConnectionState::new(ConnectionState::Disconnected));
-        let health_state = RwLock::new(HealthSnapshot::default());
         let publisher = Arc::new(StateAtAnnouncement {
             state: Arc::clone(&state),
             observed: Mutex::new(Vec::new()),
@@ -954,43 +935,10 @@ mod tests {
         ];
 
         for next in walk {
-            set_connection_state(
-                &state,
-                &health_state,
-                &*publisher,
-                next,
-                ConnectionTransition::Unexpected,
-            );
+            set_connection_state(&state, &*publisher, next, ConnectionTransition::Unexpected);
         }
 
         assert_eq!(publisher.observed.lock().unwrap().as_slice(), walk);
-    }
-
-    #[test]
-    fn the_dialing_flag_tracks_exactly_the_states_that_are_still_reaching_for_a_socket() {
-        for (next, expected) in [
-            (ConnectionState::Connecting, true),
-            (ConnectionState::Reconnecting, true),
-            (ConnectionState::Connected, false),
-            (ConnectionState::Disconnected, false),
-        ] {
-            let state = Arc::new(AtomicConnectionState::new(ConnectionState::Connected));
-            let health_state = RwLock::new(HealthSnapshot::default());
-
-            set_connection_state(
-                &state,
-                &health_state,
-                &*MockPublisher::new().publisher(),
-                next,
-                ConnectionTransition::Unexpected,
-            );
-
-            assert_eq!(
-                health_state.read().unwrap().dialing,
-                expected,
-                "dialing after moving to {next:?}"
-            );
-        }
     }
 
     #[test]
@@ -1162,8 +1110,9 @@ mod tests {
     }
 
     mod session {
-        use std::sync::Arc;
+        use std::collections::HashMap;
         use std::sync::atomic::Ordering;
+        use std::sync::{Arc, Mutex};
         use std::time::Duration;
 
         use forge_platform_core::{BuiltinControl, BuiltinHealth, HealthMetricId, HealthValue};
@@ -1186,6 +1135,80 @@ mod tests {
         const EARLY_WINDOW: Duration = Duration::from_millis(50);
         const ANSWERED_POLLS: usize = 10;
         const TIMER_RESOLUTION: Duration = Duration::from_millis(1);
+        const OVERSIZED_REQUEST_BYTES: usize = 32 * 1024 * 1024;
+
+        struct CapturedLog {
+            level: tracing::Level,
+            fields: HashMap<String, String>,
+        }
+
+        impl tracing::field::Visit for CapturedLog {
+            fn record_debug(&mut self, field: &tracing::field::Field, value: &dyn std::fmt::Debug) {
+                self.fields
+                    .insert(field.name().to_owned(), format!("{value:?}"));
+            }
+
+            fn record_str(&mut self, field: &tracing::field::Field, value: &str) {
+                self.fields
+                    .insert(field.name().to_owned(), value.to_owned());
+            }
+        }
+
+        #[derive(Clone, Default)]
+        struct LogCapture(Arc<Mutex<Vec<CapturedLog>>>);
+
+        impl tracing::Subscriber for LogCapture {
+            fn enabled(&self, _: &tracing::Metadata<'_>) -> bool {
+                true
+            }
+
+            fn new_span(&self, _: &tracing::span::Attributes<'_>) -> tracing::span::Id {
+                tracing::span::Id::from_u64(1)
+            }
+
+            fn record(&self, _: &tracing::span::Id, _: &tracing::span::Record<'_>) {}
+
+            fn record_follows_from(&self, _: &tracing::span::Id, _: &tracing::span::Id) {}
+
+            fn event(&self, event: &tracing::Event<'_>) {
+                let mut log = CapturedLog {
+                    level: *event.metadata().level(),
+                    fields: HashMap::new(),
+                };
+                event.record(&mut log);
+                self.0.lock().unwrap().push(log);
+            }
+
+            fn enter(&self, _: &tracing::span::Id) {}
+
+            fn exit(&self, _: &tracing::span::Id) {}
+        }
+
+        impl LogCapture {
+            fn install() -> (Self, tracing::subscriber::DefaultGuard) {
+                let capture = Self::default();
+                let guard = tracing::subscriber::set_default(capture.clone());
+                (capture, guard)
+            }
+
+            fn event_names_warned(&self) -> Vec<String> {
+                self.0
+                    .lock()
+                    .unwrap()
+                    .iter()
+                    .filter(|log| log.level == tracing::Level::WARN)
+                    .filter_map(|log| log.fields.get("event_name").cloned())
+                    .collect()
+            }
+
+            fn dropped_the_session_on_a_failed_write(&self) -> bool {
+                self.0.lock().unwrap().iter().any(|log| {
+                    log.fields
+                        .get("message")
+                        .is_some_and(|message| message.contains("write failed"))
+                })
+            }
+        }
 
         async fn connected_session(
             vts: &mut FakeVts,
@@ -1246,6 +1269,93 @@ mod tests {
             );
             let face = conn.expect("FaceFoundRequest", SETTLE).await;
             conn.tx.reply(&face, json!({ "found": true }));
+        }
+
+        async fn serve_every_frame(mut conn: PeerConn) {
+            while let Some(frame) = conn.next_frame().await {
+                let answer = if frame["messageType"] == "AuthenticationRequest" {
+                    json!({ "authenticated": true, "reason": "" })
+                } else {
+                    json!({})
+                };
+                conn.tx.reply(&frame, answer);
+            }
+        }
+
+        #[tokio::test]
+        async fn two_overlapping_reconnects_leave_one_session_that_serves_requests() {
+            let mut vts = FakeVts::bind().await;
+            let publisher = MockPublisher::new();
+            let (client, _retired) = connected_session(&mut vts, &publisher).await;
+
+            let (first, second) = tokio::join!(client.reconnect(), client.reconnect());
+            assert!(first.is_ok() && second.is_ok());
+
+            let accept_every_dial = async {
+                while let Some(conn) = vts.next_conn(SETTLE).await {
+                    tokio::spawn(serve_every_frame(conn));
+                }
+            };
+            let served = async {
+                assert!(
+                    wait_until(SETTLE, || client.connection_state().is_connected()).await,
+                    "no session came back after the overlapping reconnects"
+                );
+                client.trigger_hotkey("hk-1").await
+            };
+            let outcome = tokio::select! {
+                outcome = served => outcome,
+                () = accept_every_dial => panic!("forge stopped dialing"),
+            };
+
+            assert!(
+                outcome.is_ok(),
+                "requests went to a retired session: {outcome:?}"
+            );
+        }
+
+        #[tokio::test]
+        async fn a_write_that_fails_mid_frame_ends_the_session_and_redials() {
+            let (log, _subscriber) = LogCapture::install();
+            let mut vts = FakeVts::bind().await;
+            let publisher = MockPublisher::new();
+            let (client, conn) = connected_session(&mut vts, &publisher).await;
+            conn.tx.abandon_at_large_frame().await;
+
+            let outcome = client
+                .trigger_hotkey(&"x".repeat(OVERSIZED_REQUEST_BYTES))
+                .await;
+
+            assert!(outcome.is_err(), "the failed write was reported as sent");
+            assert!(
+                log.dropped_the_session_on_a_failed_write(),
+                "the session outlived its failed write"
+            );
+            assert!(
+                vts.next_redial(SETTLE).await.is_some(),
+                "a session lost to a failed write must be redialed"
+            );
+        }
+
+        #[tokio::test]
+        async fn a_rejected_event_subscription_is_logged_by_name_and_keeps_the_session() {
+            let (log, _subscriber) = LogCapture::install();
+            let mut vts = FakeVts::bind().await;
+            let publisher = MockPublisher::new();
+            let (client, mut conn) = connected_session(&mut vts, &publisher).await;
+            let accepted = conn.expect("EventSubscriptionRequest", SETTLE).await;
+            let rejected = conn.expect("EventSubscriptionRequest", SETTLE).await;
+            let rejected_name = rejected["data"]["eventName"].as_str().unwrap().to_owned();
+
+            conn.tx.reply(&accepted, json!({}));
+            conn.tx.api_error(&rejected, 50, "unknown event");
+
+            assert!(
+                wait_until(SETTLE, || !log.event_names_warned().is_empty()).await,
+                "the rejected subscription was never logged"
+            );
+            assert_eq!(log.event_names_warned(), vec![rejected_name]);
+            assert!(client.connection_state().is_connected());
         }
 
         #[tokio::test]

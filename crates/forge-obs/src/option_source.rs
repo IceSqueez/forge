@@ -253,6 +253,7 @@ mod tests {
                 ),
             ]),
             audio_inputs: vec!["Mic/Aux".to_owned(), "Desktop Audio".to_owned()],
+            revision: 0,
         }
     }
 

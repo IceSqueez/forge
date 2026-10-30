@@ -12,21 +12,21 @@ use crate::runners::step_failure;
 use crate::sink::VTubeSink;
 use crate::vocabulary::sub_action_ids;
 
-pub struct ParamsResetRunner {
+pub struct ResetToIdleRunner {
     sink: Arc<dyn VTubeSink>,
     holds: Arc<HoldRegistry>,
 }
 
-impl ParamsResetRunner {
+impl ResetToIdleRunner {
     pub(crate) fn new(sink: Arc<dyn VTubeSink>, holds: Arc<HoldRegistry>) -> Self {
         Self { sink, holds }
     }
 }
 
 #[async_trait]
-impl SubActionRunner for ParamsResetRunner {
+impl SubActionRunner for ResetToIdleRunner {
     fn id(&self) -> &str {
-        sub_action_ids::PARAMS_RESET
+        sub_action_ids::RESET_TO_IDLE
     }
 
     fn category(&self) -> SubActionCategory {
@@ -58,13 +58,13 @@ impl SubActionRunner for ParamsResetRunner {
         let start = Instant::now();
 
         self.holds.abort_all();
-        let outcome = step_failure::outcome(&self.sink.reset_params().await);
+        let outcome = step_failure::outcome(&self.sink.deactivate_all_expressions().await);
 
         (
             SubActionTelemetry {
                 args_in: ::std::collections::BTreeMap::new(),
                 produced: ::std::collections::BTreeMap::new(),
-                kind: sub_action_ids::PARAMS_RESET.to_owned(),
+                kind: sub_action_ids::RESET_TO_IDLE.to_owned(),
                 started_at,
                 duration_ms: start.elapsed().as_millis() as u64,
                 outcome,
@@ -85,7 +85,7 @@ mod tests {
     #[tokio::test]
     async fn execute_reports_success_when_the_reset_succeeds() {
         let runner =
-            ParamsResetRunner::new(Arc::new(MockSink::new()), Arc::new(HoldRegistry::new()));
+            ResetToIdleRunner::new(Arc::new(MockSink::new()), Arc::new(HoldRegistry::new()));
         let stack = ArgStack::new();
         let (tel, extra) = runner.execute(&BTreeMap::new(), &make_ctx(&stack)).await;
         assert_eq!(tel.outcome, SubActionOutcome::Success);
@@ -95,7 +95,7 @@ mod tests {
     #[tokio::test]
     async fn execute_reports_failure_when_the_reset_fails() {
         let runner =
-            ParamsResetRunner::new(Arc::new(MockSink::failing()), Arc::new(HoldRegistry::new()));
+            ResetToIdleRunner::new(Arc::new(MockSink::failing()), Arc::new(HoldRegistry::new()));
         let stack = ArgStack::new();
         let (tel, _) = runner.execute(&BTreeMap::new(), &make_ctx(&stack)).await;
         assert!(

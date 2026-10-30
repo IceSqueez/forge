@@ -262,7 +262,7 @@ mod tests {
         async fn load_model(&self, _: &str) -> Result<(), VTubeError> {
             Ok(())
         }
-        async fn reset_params(&self) -> Result<(), VTubeError> {
+        async fn deactivate_all_expressions(&self) -> Result<(), VTubeError> {
             Ok(())
         }
         async fn move_model(

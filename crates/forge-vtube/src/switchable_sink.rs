@@ -65,9 +65,9 @@ impl VTubeSink for SwitchableVTubeSink {
         client.load_model(model_id).await
     }
 
-    async fn reset_params(&self) -> Result<(), VTubeError> {
+    async fn deactivate_all_expressions(&self) -> Result<(), VTubeError> {
         let client = self.get()?;
-        client.reset_params().await
+        client.deactivate_all_expressions().await
     }
 
     async fn move_model(
@@ -244,7 +244,7 @@ mod tests {
             Err(VTubeError::NotConnected)
         ));
         assert!(matches!(
-            sink.reset_params().await,
+            sink.deactivate_all_expressions().await,
             Err(VTubeError::NotConnected)
         ));
         assert!(matches!(

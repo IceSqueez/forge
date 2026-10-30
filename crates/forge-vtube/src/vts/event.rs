@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use serde_json::{Value, json};
 
 use crate::error::VTubeError;
@@ -102,15 +104,19 @@ fn flag(data: &Value, key: &str) -> bool {
     data[key].as_bool().unwrap_or(false)
 }
 
-pub(crate) async fn subscribe_all(ws: &mut VtsWs) -> Result<(), VTubeError> {
+pub(crate) async fn subscribe_all(
+    ws: &mut VtsWs,
+) -> Result<HashMap<String, &'static str>, VTubeError> {
+    let mut requested = HashMap::with_capacity(SUBSCRIBED_EVENTS.len());
     for event_name in SUBSCRIBED_EVENTS {
         let req = new_request(
             EVENT_SUBSCRIPTION_REQUEST,
             json!({ "eventName": event_name, "subscribe": true }),
         );
         send_ws_msg(ws, &req).await?;
+        requested.insert(req.request_id, event_name);
     }
-    Ok(())
+    Ok(requested)
 }
 
 #[cfg(test)]

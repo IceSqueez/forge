@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
+use std::sync::{PoisonError, RwLock, RwLockReadGuard, RwLockWriteGuard};
 
 use forge_platform_core::{
     BuiltinContent, ContentList, ContentListItem, DetailSection, SectionIcon, TokenColor,
@@ -16,6 +17,14 @@ const PANEL_VISIBLE_ROWS: u16 = 8;
 const SCENE_ROW_PADDING_Y_PX: u8 = 8;
 const SOURCE_ROW_PADDING_Y_PX: u8 = 7;
 
+pub(crate) fn read_lock<T>(lock: &RwLock<T>) -> RwLockReadGuard<'_, T> {
+    lock.read().unwrap_or_else(PoisonError::into_inner)
+}
+
+pub(crate) fn write_lock<T>(lock: &RwLock<T>) -> RwLockWriteGuard<'_, T> {
+    lock.write().unwrap_or_else(PoisonError::into_inner)
+}
+
 #[derive(Default)]
 pub(crate) struct ObsCatalog {
     pub scenes: Vec<String>,
@@ -23,6 +32,7 @@ pub(crate) struct ObsCatalog {
     pub current_preview_scene: Option<String>,
     pub sources: HashMap<String, Vec<SourceInfo>>,
     pub audio_inputs: Vec<String>,
+    pub revision: u64,
 }
 
 impl ObsCatalog {
@@ -216,9 +226,7 @@ fn source_to_item(scene: &str, info: &SourceInfo, actionable: bool) -> ContentLi
 
 impl BuiltinContent for ObsClient {
     fn sections(&self) -> Vec<DetailSection> {
-        let Ok(catalog) = self.catalog_state.try_read() else {
-            return vec![];
-        };
+        let catalog = read_lock(&self.catalog_state);
         let actionable = self.connection_state().is_connected();
 
         let scene_items: Vec<ContentListItem> = catalog
@@ -596,6 +604,7 @@ mod tests {
                 ("BRB".to_owned(), vec![item("Logo", false, "image_source")]),
             ]),
             audio_inputs: vec!["Mic".to_owned(), "Desktop Audio".to_owned()],
+            revision: 0,
         }
     }
 

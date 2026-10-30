@@ -3,7 +3,9 @@ use std::time::Duration;
 
 use tokio::sync::{broadcast, mpsc};
 
-use forge_platform_core::{BuiltinContent, DetailSection, HealthDelta, SectionIcon};
+use forge_platform_core::{
+    AtomicConnectionState, BuiltinContent, DetailSection, HealthDelta, SectionIcon,
+};
 
 use crate::client::VTubeClient;
 use crate::error::VTubeError;
@@ -53,25 +55,43 @@ pub(crate) struct ExpressionItem {
 #[derive(Clone)]
 pub(crate) struct ContentNotifier {
     model_changed_tx: mpsc::UnboundedSender<()>,
+    items_changed_tx: mpsc::UnboundedSender<()>,
 }
 
 impl ContentNotifier {
-    pub(crate) fn new() -> (Self, mpsc::UnboundedReceiver<()>) {
-        let (tx, rx) = mpsc::unbounded_channel();
+    pub(crate) fn new() -> (
+        Self,
+        mpsc::UnboundedReceiver<()>,
+        mpsc::UnboundedReceiver<()>,
+    ) {
+        let (model_changed_tx, model_changed_rx) = mpsc::unbounded_channel();
+        let (items_changed_tx, items_changed_rx) = mpsc::unbounded_channel();
         (
             Self {
-                model_changed_tx: tx,
+                model_changed_tx,
+                items_changed_tx,
             },
-            rx,
+            model_changed_rx,
+            items_changed_rx,
         )
     }
 
     #[cfg(test)]
     pub(crate) fn noop() -> Self {
-        let (tx, _) = mpsc::unbounded_channel();
+        let (model_changed_tx, _) = mpsc::unbounded_channel();
+        let (items_changed_tx, _) = mpsc::unbounded_channel();
         Self {
-            model_changed_tx: tx,
+            model_changed_tx,
+            items_changed_tx,
         }
+    }
+
+    pub(crate) fn notify_items_changed(&self) {
+        #[expect(
+            clippy::let_underscore_must_use,
+            reason = "the catalog task may already have stopped"
+        )]
+        let _ = self.items_changed_tx.send(());
     }
 
     pub(crate) fn notify_model_changed(&self) {
@@ -106,22 +126,28 @@ async fn run_content_task(
 pub(crate) fn spawn_catalog_metrics_task(
     content_state: Arc<RwLock<ContentSnapshot>>,
     health_state: Arc<RwLock<HealthSnapshot>>,
+    connection: Arc<AtomicConnectionState>,
     req_tx: impl Into<ReqTxHandle>,
     health_tx: broadcast::Sender<HealthDelta>,
+    items_changed_rx: mpsc::UnboundedReceiver<()>,
 ) -> tokio::task::JoinHandle<()> {
     tokio::spawn(run_catalog_metrics_task(
         content_state,
         health_state,
+        connection,
         req_tx.into(),
         health_tx,
+        items_changed_rx,
     ))
 }
 
 async fn run_catalog_metrics_task(
     content_state: Arc<RwLock<ContentSnapshot>>,
     health_state: Arc<RwLock<HealthSnapshot>>,
+    connection: Arc<AtomicConnectionState>,
     req_tx: ReqTxHandle,
     health_tx: broadcast::Sender<HealthDelta>,
+    mut items_changed_rx: mpsc::UnboundedReceiver<()>,
 ) {
     use tokio::time::{MissedTickBehavior, interval};
 
@@ -131,13 +157,20 @@ async fn run_catalog_metrics_task(
     let mut last_model_id: Option<Option<String>> = None;
 
     loop {
-        tick.tick().await;
+        let items_changed = tokio::select! {
+            _ = tick.tick() => false,
+            Some(()) = items_changed_rx.recv() => {
+                while items_changed_rx.try_recv().is_ok() {}
+                true
+            }
+        };
 
-        let dialing = health_state.read().map(|s| s.dialing).unwrap_or(false);
-        if !dialing {
+        if connection.load().is_connected() {
             let tx = req_tx.current().await;
             report_expressions(&content_state, &tx, &health_tx).await;
-            report_items(&content_state, &tx, &health_tx).await;
+            if items_changed {
+                report_items(&content_state, &tx, &health_tx).await;
+            }
         }
 
         let current_model_id = content_state
@@ -430,7 +463,7 @@ mod tests {
     use tokio::sync::mpsc;
 
     use forge_platform_core::{
-        BuiltinContent, BuiltinHealth, DetailSection, HealthMetricId, HealthText, HealthValue,
+        BuiltinContent, BuiltinHealth, ConnectionState, DetailSection, HealthMetricId, HealthValue,
     };
 
     use super::*;
@@ -543,7 +576,7 @@ mod tests {
     async fn model_loaded_notification_triggers_catalog_refresh() {
         let snap = Arc::new(RwLock::new(ContentSnapshot::default()));
         let (req_tx, req_rx) = mpsc::unbounded_channel::<PendingRequest>();
-        let (notifier, model_changed_rx) = ContentNotifier::new();
+        let (notifier, model_changed_rx, _items_changed_rx) = ContentNotifier::new();
 
         let done = serve(
             req_rx,
@@ -664,64 +697,88 @@ mod tests {
         assert_eq!(items, ["Blush".to_owned(), "wink.exp3.json".to_owned()]);
     }
 
-    #[tokio::test(start_paused = true)]
-    async fn the_catalog_sweep_publishes_both_counts_as_soon_as_it_starts() {
-        const BEFORE_THE_SECOND_SWEEP: tokio::time::Duration = tokio::time::Duration::from_secs(1);
-        let c = VTubeClient::new_for_test("ws://127.0.0.1:8001/");
-        let mut health_rx = c.health_tx.subscribe();
-        let (req_tx, req_rx) = mpsc::unbounded_channel::<PendingRequest>();
-        let done = serve(
-            req_rx,
-            vec![
-                serde_json::json!({
-                    "expressions": [
-                        { "file": "a.exp3.json", "name": "A", "active": false },
-                        { "file": "b.exp3.json", "name": "B", "active": false }
-                    ]
-                }),
-                serde_json::json!({ "itemsInSceneCount": 3 }),
-            ],
-        );
-
+    fn spawn_sweep(
+        c: &VTubeClient,
+        req_tx: impl Into<ReqTxHandle>,
+    ) -> (tokio::task::JoinHandle<()>, mpsc::UnboundedSender<()>) {
+        let (items_changed_tx, items_changed_rx) = mpsc::unbounded_channel();
         let handle = spawn_catalog_metrics_task(
             Arc::clone(&c.content_state),
             Arc::clone(&c.health_state),
+            Arc::clone(&c.state),
             req_tx,
             c.health_tx.clone(),
+            items_changed_rx,
         );
-        tokio::time::timeout(BEFORE_THE_SECOND_SWEEP, done)
-            .await
-            .expect("the first catalog sweep must run at startup, not one interval later")
-            .expect("mock VTS handler must not be dropped");
+        (handle, items_changed_tx)
+    }
 
-        let mut reported = Vec::new();
-        for _ in 0..2 {
-            let delta = tokio::time::timeout(BEFORE_THE_SECOND_SWEEP, health_rx.recv())
-                .await
-                .expect("the first catalog sweep must run at startup, not one interval later")
-                .expect("the health channel must stay open");
-            assert!(
-                c.metrics().iter().any(|metric| metric.id == delta.metric),
-                "the delta must target a declared metric"
-            );
-            let HealthValue::Text {
-                primary: HealthText::Count(count),
-                ..
-            } = delta.new_value
-            else {
-                panic!("{} must be published as a count", delta.metric);
-            };
-            reported.push((delta.metric.to_string(), count));
-        }
+    fn connected_client() -> VTubeClient {
+        let c = VTubeClient::new_for_test("ws://127.0.0.1:8001/");
+        c.state.store(ConnectionState::Connected);
+        c
+    }
+
+    fn answer(request: PendingRequest, data: serde_json::Value) {
+        #[expect(
+            clippy::let_underscore_must_use,
+            reason = "the receiver may already be gone"
+        )]
+        let _ = request.respond_to.send(data);
+    }
+
+    fn expressions(count: usize) -> serde_json::Value {
+        let listed: Vec<_> = (0..count)
+            .map(|n| serde_json::json!({ "file": format!("{n}.exp3.json"), "name": "E", "active": false }))
+            .collect();
+        serde_json::json!({ "expressions": listed })
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn the_first_sweep_publishes_the_expression_count_without_asking_for_the_items() {
+        let c = connected_client();
+        let mut health_rx = c.health_tx.subscribe();
+        let (req_tx, mut req_rx) = mpsc::unbounded_channel::<PendingRequest>();
+        let (handle, _items_changed_tx) = spawn_sweep(&c, req_tx);
+
+        answer(next_request(&mut req_rx).await, expressions(2));
+
+        let (metric, value) = next_text_delta(&mut health_rx, &c).await;
+        let unasked = req_rx.try_recv();
         handle.abort();
+        assert_eq!(metric, EXPRESSIONS_METRIC);
+        assert_eq!(value, expressions_value(2));
+        assert!(
+            matches!(unasked, Err(mpsc::error::TryRecvError::Empty)),
+            "the sweep asked for the item list with no change announced"
+        );
+    }
 
-        reported.sort();
-        assert_eq!(
-            reported,
-            vec![
-                (EXPRESSIONS_METRIC.to_string(), 2),
-                (ITEMS_METRIC.to_string(), 3),
-            ]
+    #[tokio::test(start_paused = true)]
+    async fn a_burst_of_item_changes_refreshes_the_item_count_once() {
+        let c = connected_client();
+        let mut health_rx = c.health_tx.subscribe();
+        let (req_tx, mut req_rx) = mpsc::unbounded_channel::<PendingRequest>();
+        let (handle, items_changed_tx) = spawn_sweep(&c, req_tx);
+        answer(next_request(&mut req_rx).await, expressions(0));
+
+        for _ in 0..3 {
+            items_changed_tx.send(()).unwrap();
+        }
+        answer(next_request(&mut req_rx).await, expressions(0));
+        answer(
+            next_request(&mut req_rx).await,
+            serde_json::json!({ "itemsInSceneCount": 3 }),
+        );
+
+        let (metric, value) = next_text_delta(&mut health_rx, &c).await;
+        let repeated = req_rx.try_recv();
+        handle.abort();
+        assert_eq!(metric, ITEMS_METRIC);
+        assert_eq!(value, items_value(3));
+        assert!(
+            matches!(repeated, Err(mpsc::error::TryRecvError::Empty)),
+            "one burst of changes must collapse into one refresh"
         );
     }
 
@@ -872,7 +929,6 @@ mod tests {
     async fn a_model_switch_between_equal_parameter_counts_still_republishes_the_count() {
         let c = VTubeClient::new_for_test("ws://127.0.0.1:8001/");
         if let Ok(mut s) = c.health_state.write() {
-            s.dialing = true;
             s.model_loaded = true;
             s.model_name = "Avatar A".to_owned();
         }
@@ -883,12 +939,7 @@ mod tests {
         let mut health_rx = c.health_tx.subscribe();
         let (req_tx, _req_rx) = mpsc::unbounded_channel::<PendingRequest>();
 
-        let handle = spawn_catalog_metrics_task(
-            Arc::clone(&c.content_state),
-            Arc::clone(&c.health_state),
-            req_tx,
-            c.health_tx.clone(),
-        );
+        let (handle, _items_changed_tx) = spawn_sweep(&c, req_tx);
 
         assert_eq!(
             next_text_delta(&mut health_rx, &c).await,
@@ -909,34 +960,36 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn the_catalog_sweep_enqueues_nothing_while_the_supervisor_is_dialing() {
-        let c = VTubeClient::new_for_test("ws://127.0.0.1:8001/");
-        if let Ok(mut s) = c.health_state.write() {
-            s.dialing = true;
-            s.model_loaded = true;
-            s.model_name = "Avatar A".to_owned();
+    async fn the_catalog_sweep_enqueues_nothing_until_the_session_is_connected() {
+        for state in [
+            ConnectionState::Disconnected,
+            ConnectionState::Connecting,
+            ConnectionState::Reconnecting,
+        ] {
+            let c = VTubeClient::new_for_test("ws://127.0.0.1:8001/");
+            c.state.store(state);
+            if let Ok(mut s) = c.health_state.write() {
+                s.model_loaded = true;
+                s.model_name = "Avatar A".to_owned();
+            }
+            if let Ok(mut s) = c.content_state.write() {
+                s.current_model_param_count = Some(42);
+            }
+            let mut health_rx = c.health_tx.subscribe();
+            let (req_tx, mut req_rx) = mpsc::unbounded_channel::<PendingRequest>();
+
+            let (handle, items_changed_tx) = spawn_sweep(&c, req_tx);
+            items_changed_tx.send(()).unwrap();
+
+            assert_eq!(next_text_delta(&mut health_rx, &c).await.0, MODEL_METRIC);
+            let queued = req_rx.try_recv();
+            handle.abort();
+
+            assert!(
+                matches!(queued, Err(mpsc::error::TryRecvError::Empty)),
+                "{state:?}: a sweep queued a request no session will drain"
+            );
         }
-        if let Ok(mut s) = c.content_state.write() {
-            s.current_model_param_count = Some(42);
-        }
-        let mut health_rx = c.health_tx.subscribe();
-        let (req_tx, mut req_rx) = mpsc::unbounded_channel::<PendingRequest>();
-
-        let handle = spawn_catalog_metrics_task(
-            Arc::clone(&c.content_state),
-            Arc::clone(&c.health_state),
-            req_tx,
-            c.health_tx.clone(),
-        );
-
-        assert_eq!(next_text_delta(&mut health_rx, &c).await.0, MODEL_METRIC);
-        let queued = req_rx.try_recv();
-        handle.abort();
-
-        assert!(
-            matches!(queued, Err(mpsc::error::TryRecvError::Empty)),
-            "a sweep that runs while dialing queues requests the supervisor will not drain"
-        );
     }
 
     async fn next_request(rx: &mut mpsc::UnboundedReceiver<PendingRequest>) -> PendingRequest {
@@ -948,21 +1001,14 @@ mod tests {
 
     #[tokio::test(start_paused = true)]
     async fn a_catalog_sweep_reaches_the_request_channel_a_reconnect_swapped_in() {
-        let c = VTubeClient::new_for_test("ws://127.0.0.1:8001/");
+        let c = connected_client();
         let (retired_tx, mut retired_rx) = mpsc::unbounded_channel::<PendingRequest>();
         let (fresh_tx, mut fresh_rx) = mpsc::unbounded_channel::<PendingRequest>();
         let slot: ReqTxSlot = Arc::new(tokio::sync::Mutex::new(retired_tx));
 
-        let handle = spawn_catalog_metrics_task(
-            Arc::clone(&c.content_state),
-            Arc::clone(&c.health_state),
-            Arc::clone(&slot),
-            c.health_tx.clone(),
-        );
+        let (handle, _items_changed_tx) = spawn_sweep(&c, Arc::clone(&slot));
 
-        for _ in 0..2 {
-            drop(next_request(&mut retired_rx).await);
-        }
+        drop(next_request(&mut retired_rx).await);
 
         *slot.lock().await = fresh_tx;
         tokio::time::advance(tokio::time::Duration::from_secs(6)).await;

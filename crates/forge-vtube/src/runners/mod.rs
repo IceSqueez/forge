@@ -18,7 +18,7 @@ mod model_move;
 mod model_set_physics;
 mod model_tint;
 mod param_set;
-mod params_reset;
+mod reset_to_idle;
 mod step_failure;
 #[cfg(test)]
 pub(crate) mod test_support;
@@ -46,7 +46,7 @@ pub use model_move::ModelMoveRunner;
 pub use model_set_physics::ModelSetPhysicsRunner;
 pub use model_tint::ModelTintRunner;
 pub use param_set::ParamSetRunner;
-pub use params_reset::ParamsResetRunner;
+pub use reset_to_idle::ResetToIdleRunner;
 
 use crate::sink::VTubeSink;
 
@@ -63,7 +63,7 @@ pub fn register_vtube_sub_actions(
         Arc::clone(&holds),
     )))?;
     reg.register(Box::new(ModelLoadRunner::new(Arc::clone(&sink))))?;
-    reg.register(Box::new(ParamsResetRunner::new(Arc::clone(&sink), holds)))?;
+    reg.register(Box::new(ResetToIdleRunner::new(Arc::clone(&sink), holds)))?;
     reg.register(Box::new(ModelMoveRunner::new(Arc::clone(&sink))))?;
     reg.register(Box::new(ItemMoveRunner::new(Arc::clone(&sink))))?;
     reg.register(Box::new(LookupCurrentModelRunner::new(Arc::clone(&sink))))?;
@@ -376,7 +376,7 @@ mod tests {
         let calls = sink.methods_called();
         assert_eq!(
             calls,
-            [vec!["set_param"; 3], vec!["reset_params"]].concat(),
+            [vec!["set_param"; 3], vec!["deactivate_all_expressions"]].concat(),
             "the hold kept injecting after the reset"
         );
     }

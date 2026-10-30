@@ -1,7 +1,7 @@
 pub const HOTKEY_TRIGGER: &str = "vtube.hotkey.trigger";
 pub const EXPRESSION_SET: &str = "vtube.expression.set";
 pub const PARAM_SET: &str = "vtube.param.set";
-pub const PARAMS_RESET: &str = "vtube.params.reset";
+pub const RESET_TO_IDLE: &str = "vtube.params.reset";
 pub const MODEL_LOAD: &str = "vtube.model.load";
 pub const MODEL_MOVE: &str = "vtube.model.move";
 pub const MODEL_TINT: &str = "vtube.model.tint";

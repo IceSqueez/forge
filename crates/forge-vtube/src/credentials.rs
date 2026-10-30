@@ -5,7 +5,7 @@ use forge_storage::{CredentialId, CredentialsRepo, StorageError};
 use forge_types::Secret;
 use serde::{Deserialize, Serialize};
 
-use crate::vts::endpoint::{DEFAULT_VTS_HOST, DEFAULT_VTS_PORT, endpoint_url};
+use crate::vts::endpoint::{DEFAULT_VTS_HOST, DEFAULT_VTS_PORT, endpoint_url_with};
 use crate::{VTubeClient, VTubeConfig};
 
 pub const VTUBE_CREDENTIAL_ID: &str = "vtube:default";
@@ -27,6 +27,8 @@ pub struct VTubeCredentials {
     pub host: String,
     #[serde(default = "default_port")]
     pub port: u16,
+    #[serde(default)]
+    pub secure: bool,
 }
 
 pub async fn store(
@@ -35,12 +37,14 @@ pub async fn store(
     api_version: &str,
     host: &str,
     port: u16,
+    secure: bool,
 ) -> Result<(), StorageError> {
     let bundle = serde_json::json!({
         "token": token,
         "api_version": api_version,
         "host": host,
         "port": port,
+        "secure": secure,
     });
     creds
         .store(&CredentialId::new(VTUBE_CREDENTIAL_ID), &bundle.to_string())
@@ -70,7 +74,7 @@ pub async fn load_and_connect(
 ) -> Result<Arc<VTubeClient>, VTubeConnectError> {
     let stored = load(creds).await?.ok_or(VTubeConnectError::NotStored)?;
     let cfg = VTubeConfig {
-        endpoint: endpoint_url(&stored.host, stored.port),
+        endpoint: endpoint_url_with(&stored.host, stored.port, stored.secure),
     };
     Ok(Arc::new(VTubeClient::connect(cfg, publisher, creds_arc)))
 }
@@ -96,10 +100,26 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn a_bundle_saved_before_the_secure_flag_existed_dials_plain_websocket() {
+        let repo = MockCreds::new();
+        repo.insert(
+            VTUBE_CREDENTIAL_ID,
+            r#"{"token":"tok","api_version":"1.0","host":"203.0.113.7","port":9123}"#,
+        );
+        let publisher = MockPublisher::new();
+
+        let client = load_and_connect(&*repo, publisher.publisher(), repo.creds())
+            .await
+            .unwrap();
+
+        assert_eq!(client.config.endpoint, "ws://203.0.113.7:9123/");
+    }
+
+    #[tokio::test]
     async fn a_custom_endpoint_survives_a_store_then_load_cycle() {
         let repo = MockCreds::new();
 
-        store(&*repo, "tok-xyz", "1.0", "192.168.1.50", 9123)
+        store(&*repo, "tok-xyz", "1.0", "192.168.1.50", 9123, false)
             .await
             .unwrap();
         let back = load(&*repo).await.unwrap().unwrap();
@@ -109,6 +129,34 @@ mod tests {
         assert_eq!(back.port, 9123);
     }
 
+    #[tokio::test]
+    async fn the_secure_flag_survives_a_store_then_load_cycle_in_both_states() {
+        for secure in [true, false] {
+            let repo = MockCreds::new();
+
+            store(&*repo, "tok", "1.0", "192.0.2.50", 9123, secure)
+                .await
+                .unwrap();
+
+            assert_eq!(load(&*repo).await.unwrap().unwrap().secure, secure);
+        }
+    }
+
+    #[tokio::test]
+    async fn a_stored_secure_endpoint_is_redialed_over_tls() {
+        let repo = MockCreds::new();
+        store(&*repo, "tok", "1.0", "203.0.113.7", 9123, true)
+            .await
+            .unwrap();
+        let publisher = MockPublisher::new();
+
+        let client = load_and_connect(&*repo, publisher.publisher(), repo.creds())
+            .await
+            .unwrap();
+
+        assert_eq!(client.config.endpoint, "wss://203.0.113.7:9123/");
+    }
+
     #[test]
     fn debug_redacts_token() {
         let creds = VTubeCredentials {
@@ -116,6 +164,7 @@ mod tests {
             api_version: "1.0".into(),
             host: "127.0.0.1".into(),
             port: 8001,
+            secure: false,
         };
 
         let s = format!("{creds:?}");
@@ -126,7 +175,7 @@ mod tests {
     #[tokio::test]
     async fn load_and_connect_dials_the_stored_endpoint_not_the_compiled_in_default() {
         let repo = MockCreds::new();
-        store(&*repo, "tok", "1.0", "203.0.113.7", 9123)
+        store(&*repo, "tok", "1.0", "203.0.113.7", 9123, false)
             .await
             .unwrap();
         let publisher = MockPublisher::new();
@@ -138,8 +187,7 @@ mod tests {
         assert_eq!(client.config.endpoint, "ws://203.0.113.7:9123/");
     }
 
-    const SAVED_BUNDLE: &str =
-        r#"{"token":"tok-abc123","api_version":"1.0","host":"192.0.2.50","port":9123}"#;
+    const SAVED_BUNDLE: &str = r#"{"token":"tok-abc123","api_version":"1.0","host":"192.0.2.50","port":9123,"secure":false}"#;
 
     #[test]
     fn a_saved_bundle_saves_back_byte_identical() {
@@ -152,7 +200,7 @@ mod tests {
     async fn store_writes_the_document_earlier_builds_saved() {
         let repo = MockCreds::new();
 
-        store(&*repo, "tok-abc123", "1.0", "192.0.2.50", 9123)
+        store(&*repo, "tok-abc123", "1.0", "192.0.2.50", 9123, false)
             .await
             .unwrap();
 

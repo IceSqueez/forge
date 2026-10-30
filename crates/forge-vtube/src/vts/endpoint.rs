@@ -1,14 +1,26 @@
 pub(crate) const DEFAULT_VTS_HOST: &str = "127.0.0.1";
 pub(crate) const DEFAULT_VTS_PORT: u16 = 8001;
 
+const PLAIN_SCHEME: &str = "ws://";
+const SECURE_SCHEME: &str = "wss://";
+
 pub(crate) fn endpoint_url(host: &str, port: u16) -> String {
-    format!("ws://{host}:{port}/")
+    endpoint_url_with(host, port, false)
+}
+
+pub(crate) fn endpoint_url_with(host: &str, port: u16, secure: bool) -> String {
+    let scheme = if secure { SECURE_SCHEME } else { PLAIN_SCHEME };
+    format!("{scheme}{host}:{port}/")
+}
+
+pub(crate) fn is_secure_endpoint(endpoint: &str) -> bool {
+    endpoint.starts_with(SECURE_SCHEME)
 }
 
 pub(crate) fn split_endpoint(endpoint: &str) -> (String, u16) {
     let without_scheme = endpoint
-        .strip_prefix("ws://")
-        .or_else(|| endpoint.strip_prefix("wss://"))
+        .strip_prefix(PLAIN_SCHEME)
+        .or_else(|| endpoint.strip_prefix(SECURE_SCHEME))
         .unwrap_or(endpoint);
 
     let authority = without_scheme

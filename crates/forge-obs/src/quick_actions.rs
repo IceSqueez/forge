@@ -309,7 +309,7 @@ impl QuickActions for ObsClient {
                         config_keys::PATH,
                         "Save To",
                         "",
-                        "~/Pictures/screenshot.png",
+                        "D:/Pictures/screenshot.png",
                     )
                     .required(),
                 ],
@@ -322,7 +322,10 @@ impl QuickActions for ObsClient {
                 "Replay & capture",
                 false,
                 sub_action_ids::RECORDING_SET_DIRECTORY,
-                vec![text_field(config_keys::PATH, "Folder", "~/Recordings").required()],
+                vec![
+                    text_field_placeholder(config_keys::PATH, "Folder", "", "D:/Recordings")
+                        .required(),
+                ],
             ),
             quick_action(
                 "Switch profile",

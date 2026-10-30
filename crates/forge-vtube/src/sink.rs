@@ -14,7 +14,7 @@ pub trait VTubeSink: Send + Sync {
 
     async fn load_model(&self, model_id: &str) -> Result<(), VTubeError>;
 
-    async fn reset_params(&self) -> Result<(), VTubeError>;
+    async fn deactivate_all_expressions(&self) -> Result<(), VTubeError>;
 
     async fn move_model(
         &self,

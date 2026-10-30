@@ -4,12 +4,12 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use forge_registry::runner::SubActionConfig;
 use forge_registry::{
-    ConfigProblem, ConfigSpec, PickedTextField, RunContext, StepTimer, SubActionCategory,
-    SubActionRunner, TextPicker, TypedField,
+    ConfigProblem, ConfigSpec, Interpolation, PickedTextField, RunContext, StepTimer,
+    SubActionCategory, SubActionRunner, TextPicker, TypedField,
 };
 use forge_types::{ArgStack, SubActionTelemetry};
 
-use super::step_failure;
+use super::{path_field, step_failure};
 use crate::ObsSink;
 use crate::runners::fields::SOURCE;
 use crate::vocabulary::{config_keys, sub_action_ids};
@@ -30,7 +30,10 @@ fn read_config(
     config: &SubActionConfig,
     args: &ArgStack,
 ) -> Result<(String, String), ConfigProblem> {
-    Ok((SOURCE.read(config, args)?, PATH.read(config, args)?))
+    Ok((
+        SOURCE.read(config, args)?,
+        path_field::read_path(&PATH, config, args)?,
+    ))
 }
 
 pub struct CaptureScreenshotRunner {
@@ -71,6 +74,14 @@ impl SubActionRunner for CaptureScreenshotRunner {
 
     fn config_spec(&self) -> Option<ConfigSpec> {
         Some(CONFIG)
+    }
+
+    fn check_config(
+        &self,
+        config: &SubActionConfig,
+        _interpolation: Interpolation<'_>,
+    ) -> Result<(), ConfigProblem> {
+        path_field::check_template(&PATH, config)
     }
 
     async fn execute(

@@ -1,5 +1,3 @@
-use std::collections::HashMap;
-
 use forge_events::{Event, EventSource};
 use forge_platform_core::HealthDelta;
 use serde_json::json;
@@ -9,6 +7,7 @@ use crate::health::{
     CPU_FPS_METRIC, DROPPED_METRIC, FrameCounterSample, HealthSnapshot, RECORDING_METRIC,
     STREAM_METRIC,
 };
+use crate::item_ids::SceneItemIds;
 use crate::source::SourceInfo;
 use crate::vocabulary::event_kinds;
 use crate::vocabulary::fields::{
@@ -398,19 +397,38 @@ pub(crate) fn map_scene_item_lock(scene: &str, source: &str, locked: bool) -> Ev
     )
 }
 
-pub(crate) fn resolve_source_name(
-    cache: &HashMap<(String, String), i64>,
-    scene: &str,
-    item_id: u64,
-) -> Option<String> {
-    let target = item_id as i64;
-    cache
-        .iter()
-        .find(|((s, _), id)| s.as_str() == scene && **id == target)
-        .map(|((_, source), _)| source.clone())
+pub(crate) fn apply_item_id_update(ev: &obws::events::Event, ids: &mut SceneItemIds) {
+    match ev {
+        obws::events::Event::SceneItemCreated {
+            scene,
+            source,
+            item_id,
+            ..
+        } => {
+            if let Ok(item_id) = i64::try_from(*item_id) {
+                ids.insert(&scene.name, item_id, &source.name);
+            }
+        }
+        obws::events::Event::SceneItemRemoved { scene, item_id, .. } => {
+            if let Ok(item_id) = i64::try_from(*item_id) {
+                ids.remove_item(&scene.name, item_id);
+            }
+        }
+        obws::events::Event::SceneRemoved { id, .. } => ids.remove_scene(&id.name),
+        obws::events::Event::SceneNameChanged {
+            old_name, new_name, ..
+        } => ids.rename_scene(old_name, new_name),
+        obws::events::Event::InputRemoved { id } => ids.remove_source(&id.name),
+        obws::events::Event::InputNameChanged {
+            old_name, new_name, ..
+        } => ids.rename_source(old_name, new_name),
+        obws::events::Event::CurrentSceneCollectionChanging { .. }
+        | obws::events::Event::CurrentSceneCollectionChanged { .. } => ids.clear(),
+        _ => {}
+    }
 }
 
-pub(crate) fn apply_catalog_update(ev: &obws::events::Event, catalog: &mut ObsCatalog) {
+pub(crate) fn apply_catalog_update(ev: &obws::events::Event, catalog: &mut ObsCatalog) -> bool {
     match ev {
         obws::events::Event::CurrentProgramSceneChanged { id } => {
             catalog.current_scene = Some(id.name.clone());
@@ -421,23 +439,34 @@ pub(crate) fn apply_catalog_update(ev: &obws::events::Event, catalog: &mut ObsCa
         obws::events::Event::SceneListChanged { scenes } => {
             catalog.scenes = scenes.iter().map(|s| s.name.clone()).collect();
         }
-        obws::events::Event::SceneCreated { id, .. } if !catalog.scenes.contains(&id.name) => {
-            catalog.scenes.push(id.name.clone());
+        obws::events::Event::SceneCreated { id, .. } => {
+            if !catalog.scenes.contains(&id.name) {
+                catalog.scenes.push(id.name.clone());
+            }
         }
         obws::events::Event::SceneRemoved { id, .. } => {
             catalog.scenes.retain(|s| s != &id.name);
             catalog.sources.remove(id.name.as_str());
+            if catalog.current_scene.as_deref() == Some(id.name.as_str()) {
+                catalog.current_scene = None;
+            }
+            if catalog.current_preview_scene.as_deref() == Some(id.name.as_str()) {
+                catalog.current_preview_scene = None;
+            }
         }
         obws::events::Event::SceneNameChanged {
             old_name, new_name, ..
         } => {
             for scene in &mut catalog.scenes {
                 if scene == old_name {
-                    *scene = new_name.clone();
+                    scene.clone_from(new_name);
                 }
             }
             if catalog.current_scene.as_deref() == Some(old_name.as_str()) {
                 catalog.current_scene = Some(new_name.clone());
+            }
+            if catalog.current_preview_scene.as_deref() == Some(old_name.as_str()) {
+                catalog.current_preview_scene = Some(new_name.clone());
             }
             if let Some(sources) = catalog.sources.remove(old_name.as_str()) {
                 catalog.sources.insert(new_name.clone(), sources);
@@ -482,13 +511,13 @@ pub(crate) fn apply_catalog_update(ev: &obws::events::Event, catalog: &mut ObsCa
         } => {
             for name in &mut catalog.audio_inputs {
                 if name == old_name {
-                    *name = new_name.clone();
+                    name.clone_from(new_name);
                 }
             }
             for items in catalog.sources.values_mut() {
                 for item in items.iter_mut() {
                     if &item.name == old_name {
-                        item.name = new_name.clone();
+                        item.name.clone_from(new_name);
                     }
                 }
             }
@@ -505,8 +534,12 @@ pub(crate) fn apply_catalog_update(ev: &obws::events::Event, catalog: &mut ObsCa
         obws::events::Event::StudioModeStateChanged { enabled: false } => {
             catalog.current_preview_scene = None;
         }
-        _ => {}
+        obws::events::Event::CurrentSceneCollectionChanging { .. }
+        | obws::events::Event::CurrentSceneCollectionChanged { .. } => {}
+        _ => return false,
     }
+    catalog.revision = catalog.revision.wrapping_add(1);
+    true
 }
 
 pub(crate) fn apply_health_update(
@@ -756,27 +789,6 @@ mod tests {
             assert_eq!(ev.payload["source_name"], "Game Capture");
             assert_eq!(ev.payload["is_locked"], locked);
         }
-    }
-
-    #[test]
-    fn resolve_source_name_finds_match_by_scene_and_id() {
-        let mut cache = HashMap::new();
-        cache.insert(("Gameplay".to_owned(), "Game Capture".to_owned()), 42i64);
-        let result = resolve_source_name(&cache, "Gameplay", 42u64);
-        assert_eq!(result.as_deref(), Some("Game Capture"));
-    }
-
-    #[test]
-    fn resolve_source_name_requires_both_the_scene_and_the_item_id_to_match() {
-        let mut cache = HashMap::new();
-        cache.insert(("Gameplay".to_owned(), "Game Capture".to_owned()), 42i64);
-        for (scene, item_id) in [("BRB", 42u64), ("Gameplay", 99u64), ("BRB", 99u64)] {
-            assert!(
-                resolve_source_name(&cache, scene, item_id).is_none(),
-                "resolved {scene}/{item_id} against a cache that holds Gameplay/42",
-            );
-        }
-        assert!(resolve_source_name(&HashMap::new(), "Gameplay", 42u64).is_none());
     }
 
     #[test]
@@ -1305,6 +1317,72 @@ mod tests {
         apply_catalog_update(&scene_item_created("Gameplay", "Webcam"), &mut catalog);
 
         assert_eq!(source_names(&catalog, "Gameplay"), vec!["Webcam"]);
+    }
+
+    #[test]
+    fn an_applied_event_moves_the_catalog_revision_and_an_unrelated_one_does_not() {
+        use obws::events::Event;
+        let collection = || "Collab".to_owned();
+        for (event, applied) in [
+            (
+                Event::SceneCreated {
+                    id: scene_id("Intro"),
+                    is_group: false,
+                },
+                true,
+            ),
+            (
+                Event::SceneRemoved {
+                    id: scene_id("Absent"),
+                    is_group: false,
+                },
+                true,
+            ),
+            (
+                Event::CurrentSceneCollectionChanging { name: collection() },
+                true,
+            ),
+            (
+                Event::CurrentSceneCollectionChanged { name: collection() },
+                true,
+            ),
+            (Event::StudioModeStateChanged { enabled: false }, true),
+            (Event::StudioModeStateChanged { enabled: true }, false),
+            (
+                Event::SceneItemLockStateChanged {
+                    scene: scene_id("Gameplay"),
+                    item_id: 1,
+                    locked: true,
+                },
+                false,
+            ),
+            (Event::CurrentProfileChanged { name: collection() }, false),
+        ] {
+            let mut catalog = ObsCatalog::default();
+
+            let reported = apply_catalog_update(&event, &mut catalog);
+
+            assert_eq!(reported, applied, "{event:?}");
+            assert_eq!(catalog.revision, u64::from(applied), "{event:?}");
+        }
+    }
+
+    #[test]
+    fn the_catalog_revision_wraps_instead_of_overflowing() {
+        let mut catalog = ObsCatalog {
+            revision: u64::MAX,
+            ..ObsCatalog::default()
+        };
+
+        apply_catalog_update(
+            &obws::events::Event::SceneCreated {
+                id: scene_id("Intro"),
+                is_group: false,
+            },
+            &mut catalog,
+        );
+
+        assert_eq!(catalog.revision, 0);
     }
 
     #[test]

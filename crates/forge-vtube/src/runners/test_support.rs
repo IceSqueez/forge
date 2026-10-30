@@ -77,7 +77,7 @@ impl VTubeSink for MockSink {
     async fn load_model(&self, _: &str) -> Result<(), VTubeError> {
         self.record()
     }
-    async fn reset_params(&self) -> Result<(), VTubeError> {
+    async fn deactivate_all_expressions(&self) -> Result<(), VTubeError> {
         self.record()
     }
     async fn move_model(
@@ -313,8 +313,8 @@ impl VTubeSink for RecordingSink {
         self.record("load_model", Vec::new());
         Ok(())
     }
-    async fn reset_params(&self) -> Result<(), VTubeError> {
-        self.record("reset_params", Vec::new());
+    async fn deactivate_all_expressions(&self) -> Result<(), VTubeError> {
+        self.record("deactivate_all_expressions", Vec::new());
         Ok(())
     }
     async fn move_model(

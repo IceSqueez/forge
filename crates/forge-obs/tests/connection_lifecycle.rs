@@ -11,7 +11,7 @@ use forge_platform_core::{BuiltinControl, BuiltinStatus, ConnectionState};
 use futures_util::{SinkExt, StreamExt};
 use serde_json::{Value, json};
 use tokio::net::{TcpListener, TcpStream};
-use tokio::sync::{mpsc, oneshot};
+use tokio::sync::{Notify, mpsc, oneshot};
 use tokio::task::JoinSet;
 use tokio_tungstenite::WebSocketStream;
 use tokio_tungstenite::tungstenite::Message;
@@ -329,6 +329,7 @@ enum Reply {
     DropSocket,
     AnswerThenClose(Value),
     EventsFirst(Vec<Value>, Box<Reply>),
+    HeldUntil(Arc<Notify>, Box<Reply>),
 }
 
 #[derive(Clone, Copy)]
@@ -604,6 +605,10 @@ async fn serve_fake_connection(
                             return;
                         }
                     }
+                    reply = *then;
+                }
+                Reply::HeldUntil(gate, then) => {
+                    gate.notified().await;
                     reply = *then;
                 }
                 Reply::Answer(data) => {
@@ -918,6 +923,70 @@ async fn a_scene_item_toggled_during_the_catalog_load_lands_in_the_catalog_and_o
         rows.iter().any(|row| row.name == SOURCE && !row.visible),
         "the catalog kept the snapshot's stale visibility: {rows:?}"
     );
+}
+
+fn scene_list(names: &[&str]) -> Reply {
+    let scenes: Vec<Value> = names
+        .iter()
+        .enumerate()
+        .map(|(index, name)| {
+            json!({ "sceneName": name, "sceneUuid": SCENE_UUID, "sceneIndex": index })
+        })
+        .collect();
+    Reply::Answer(json!({ "scenes": scenes }))
+}
+
+async fn wait_for_scene(client: &ObsClient, scene: &str) {
+    let started = Instant::now();
+    while !client.scenes().await.unwrap().iter().any(|s| s == scene) {
+        assert!(started.elapsed() < WALL_BUDGET, "{scene} never appeared");
+        tokio::task::yield_now().await;
+    }
+}
+
+#[tokio::test]
+async fn a_scene_created_during_a_held_topology_fetch_survives_the_resync() {
+    const INTRO: &str = "Intro";
+    const LOADED: usize = 1;
+    let release = Arc::new(Notify::new());
+    let held = Arc::clone(&release);
+    let fake = spawn_fake_obs(
+        completes_every_handshake,
+        Arc::new(move |seen: Seen<'_>| match seen.request_type {
+            "GetSceneList" if seen.nth <= LOADED => scene_list(&[SCENE]),
+            "GetSceneList" => scene_list(&[SCENE, INTRO]),
+            "GetSceneItemList" if seen.nth == LOADED => Reply::EventsFirst(
+                vec![event_frame(
+                    "SceneCreated",
+                    json!({ "sceneName": INTRO, "sceneUuid": SCENE_UUID, "isGroup": false }),
+                )],
+                Box::new(Reply::HeldUntil(
+                    Arc::clone(&held),
+                    Box::new(standard_reply("GetSceneItemList")),
+                )),
+            ),
+            other => standard_reply(other),
+        }),
+    )
+    .await;
+    let recorder = Recorder::default();
+    let client = connect_to(&fake, &recorder).await;
+    connected(&client).await;
+
+    client.request_catalog_resync();
+    wait_for_scene(&client, INTRO).await;
+    release.notify_one();
+
+    let started = Instant::now();
+    while client.sources(INTRO).await.unwrap().is_empty() {
+        assert!(
+            started.elapsed() < WALL_BUDGET,
+            "the stale fetch landed instead of a refetch: scenes {:?}",
+            client.scenes().await.unwrap()
+        );
+        tokio::task::yield_now().await;
+    }
+    assert_eq!(client.scenes().await.unwrap(), vec![SCENE, INTRO]);
 }
 
 #[tokio::test]

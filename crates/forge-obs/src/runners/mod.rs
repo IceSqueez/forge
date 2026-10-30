@@ -3,6 +3,7 @@ mod capture_screenshot;
 mod fields;
 mod filter_set_enabled;
 mod media_restart;
+mod path_field;
 mod profile_switch;
 mod query_input_list;
 mod query_input_settings;

@@ -17,6 +17,10 @@ const PROTOCOL_ERROR: MessageCode = MessageCode::from_static(INTEGRATION_ID, "pr
 const PAYLOAD_INVALID: MessageCode = MessageCode::from_static(INTEGRATION_ID, "payload_invalid");
 const STUDIO_MODE_INACTIVE: MessageCode =
     MessageCode::from_static(INTEGRATION_ID, "studio_mode_inactive");
+const PATH_HOME_RELATIVE: MessageCode =
+    MessageCode::from_static(INTEGRATION_ID, "path_home_relative");
+const PATH_ESCAPES_TEMPLATE: MessageCode =
+    MessageCode::from_static(INTEGRATION_ID, "path_escapes_template");
 
 const HEALTH_LIVE: MessageCode = MessageCode::from_static(INTEGRATION_ID, "health_live");
 const HEALTH_OFF: MessageCode = MessageCode::from_static(INTEGRATION_ID, "health_off");
@@ -169,6 +173,8 @@ pub const OBS_MESSAGES: MessageCatalog = MessageCatalog {
         PROTOCOL_ERROR,
         PAYLOAD_INVALID,
         STUDIO_MODE_INACTIVE,
+        PATH_HOME_RELATIVE,
+        PATH_ESCAPES_TEMPLATE,
         CONDITION_ANY_COLLECTION_LIST_CHANGE,
         CONDITION_AUTHENTICATION_FAILED,
         CONDITION_CONNECTED,
@@ -302,6 +308,14 @@ pub(crate) fn payload_invalid(detail: &str) -> MessageRef {
     MessageRef::new(PAYLOAD_INVALID).with_detail(UpstreamDetail::from_redacted(detail))
 }
 
+pub(crate) fn path_home_relative() -> MessageRef {
+    MessageRef::new(PATH_HOME_RELATIVE)
+}
+
+pub(crate) fn path_escapes_template() -> MessageRef {
+    MessageRef::new(PATH_ESCAPES_TEMPLATE)
+}
+
 pub(crate) fn studio_mode_inactive() -> MessageRef {
     MessageRef::new(STUDIO_MODE_INACTIVE)
 }
@@ -369,6 +383,8 @@ mod tests {
             protocol_error("c"),
             payload_invalid("c"),
             studio_mode_inactive(),
+            path_home_relative(),
+            path_escapes_template(),
             health_live(),
             health_off(),
             health_paused(),

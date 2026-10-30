@@ -612,7 +612,7 @@ pub(crate) mod tests {
         use forge_platform_core::{
             BuiltinContent, BuiltinHealth, BuiltinStatus, CapabilityFlags, ConnectionState,
             DetailSection, HeaderAction, HealthDelta, HealthMetric, HealthMetricId, HealthStream,
-            HealthText, HealthValue, QuickAction, QuickActions, SectionIcon,
+            HealthValue, QuickAction, QuickActions, SectionIcon,
         };
         use forge_runtime::{
             ActionCancelRegistry, spawn_action_engine, spawn_live_viewer_aggregator,
@@ -653,7 +653,7 @@ pub(crate) mod tests {
             fn uptime(&self) -> Option<Duration> {
                 None
             }
-            fn endpoint(&self) -> Option<&str> {
+            fn endpoint(&self) -> Option<forge_types::UserText> {
                 None
             }
             fn capability_flags(&self) -> CapabilityFlags {
@@ -679,7 +679,7 @@ pub(crate) mod tests {
                 std::array::from_fn(|i| HealthMetric {
                     id: STUB_METRIC_IDS[i].clone(),
                     value: HealthValue::Text {
-                        primary: HealthText::unlocalized(""),
+                        primary: forge_types::VerbatimText::new("").into(),
                         secondary: None,
                     },
                 })

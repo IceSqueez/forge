@@ -3,6 +3,10 @@ use forge_types::{MessageCatalog, MessageCode, MessageRef, UpstreamDetail, Verba
 use crate::vocabulary::INTEGRATION_ID;
 use crate::vocabulary::labels;
 
+pub(crate) const NO_SCENE_TO_LIST: MessageCode =
+    MessageCode::from_static(INTEGRATION_ID, "no_scene_to_list");
+pub(crate) const SCENE_NOT_IN_OBS: MessageCode =
+    MessageCode::from_static(INTEGRATION_ID, "scene_not_in_obs");
 const CONNECT_REFUSED: MessageCode = MessageCode::from_static(INTEGRATION_ID, "connect_refused");
 const UNREACHABLE: MessageCode = MessageCode::from_static(INTEGRATION_ID, "unreachable");
 const PASSWORD_REJECTED: MessageCode =
@@ -149,6 +153,8 @@ const SCENE_CONDITION_ARG: &str = "scene";
 pub const OBS_MESSAGES: MessageCatalog = MessageCatalog {
     namespace: INTEGRATION_ID,
     codes: &[
+        NO_SCENE_TO_LIST,
+        SCENE_NOT_IN_OBS,
         HEALTH_STREAM,
         HEALTH_RECORDING,
         HEALTH_CPU_FPS,
@@ -420,6 +426,8 @@ mod tests {
 
     fn every_constructor() -> Vec<MessageRef> {
         vec![
+            MessageRef::new(NO_SCENE_TO_LIST),
+            MessageRef::new(SCENE_NOT_IN_OBS),
             connect_refused(),
             unreachable(),
             password_rejected(),

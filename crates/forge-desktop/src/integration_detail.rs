@@ -109,7 +109,6 @@ pub struct IntegrationDetail {
     icon: SectionIcon,
     display_name: String,
     version: Option<String>,
-    endpoint: Option<String>,
     connection: ConnectionState,
     capability_flags: CapabilityFlags,
     header_actions: Vec<HeaderAction>,
@@ -213,7 +212,6 @@ impl IntegrationDetail {
         let connect_platform = connect_platform_for(status.id().as_str(), control.is_some());
         let display_name = status.display_name().to_owned();
         let version = status.version().map(ToOwned::to_owned);
-        let endpoint = status.endpoint().map(ToOwned::to_owned);
         let connection = status.connection();
         let capability_flags = status.capability_flags();
         let header_actions = status.header_actions();
@@ -276,7 +274,6 @@ impl IntegrationDetail {
             icon,
             display_name,
             version,
-            endpoint,
             connection,
             capability_flags,
             header_actions,
@@ -409,7 +406,6 @@ impl IntegrationDetail {
     fn reload(&mut self, cx: &mut Context<Self>) {
         self.display_name = self.status.display_name().to_owned();
         self.version = self.status.version().map(ToOwned::to_owned);
-        self.endpoint = self.status.endpoint().map(ToOwned::to_owned);
         self.connection = self.status.connection();
         self.capability_flags = self.status.capability_flags();
         self.header_actions = self.status.header_actions();
@@ -1151,7 +1147,7 @@ impl IntegrationDetail {
         if let DetailSection::SubscriptionList { items, .. } = section {
             for row in items.iter_mut() {
                 if row.error_label.is_none() {
-                    row.event_count = Some(tally.get(&row.name).copied().unwrap_or(0));
+                    row.event_count = Some(tally.get(&row.kind).copied().unwrap_or(0));
                 }
             }
         }
@@ -1264,12 +1260,10 @@ impl IntegrationDetail {
     }
 
     fn hero_subtitle(&self) -> String {
-        if self.is_oauth_platform()
-            && let Some(prefix) = self.status.endpoint()
-        {
-            return prefix.to_owned();
-        }
-        self.endpoint.clone().unwrap_or_default()
+        self.status
+            .endpoint()
+            .map(|endpoint| user_text_string(&endpoint))
+            .unwrap_or_default()
     }
 
     fn header_card(
@@ -1796,6 +1790,46 @@ fn connect_platform_for(id: &str, has_control: bool) -> Option<PlatformId> {
 mod tests {
     use super::*;
 
+    #[test]
+    fn subscription_counts_are_tallied_by_topic_kind_never_by_the_shown_label() {
+        fn row(kind: &str, error_label: Option<UserText>) -> forge_platform_core::SubscriptionRow {
+            forge_platform_core::SubscriptionRow {
+                kind: kind.to_owned(),
+                name: forge_types::VerbatimText::new(format!("{kind} (shown label)")).into(),
+                status: forge_platform_core::SubscriptionStatus::Active,
+                version: None,
+                event_count: None,
+                error_label,
+            }
+        }
+        let mut section = DetailSection::SubscriptionList {
+            title: forge_types::VerbatimText::new("EventSub").into(),
+            icon: SectionIcon::new("rss"),
+            items: vec![
+                row("channel.raid", None),
+                row("channel.follow", None),
+                row(
+                    "channel.ban",
+                    Some(forge_types::VerbatimText::new("failed").into()),
+                ),
+            ],
+            footer: None,
+            banner: None,
+        };
+        let tally = HashMap::from([
+            ("channel.raid".to_owned(), 3),
+            ("channel.ban".to_owned(), 5),
+        ]);
+
+        IntegrationDetail::fill_subscription_counts(&mut section, &tally);
+
+        let DetailSection::SubscriptionList { items, .. } = section else {
+            panic!("the section kind changed");
+        };
+        let counts: Vec<Option<u64>> = items.iter().map(|row| row.event_count).collect();
+        assert_eq!(counts, vec![Some(3), Some(0), None]);
+    }
+
     struct DeclaredActions(Vec<QuickAction>);
 
     impl QuickActions for DeclaredActions {
@@ -1813,7 +1847,7 @@ mod tests {
                 .iter()
                 .map(|id| forge_platform_core::CollectionMetadata {
                     id: CollectionId::new(*id),
-                    label: UserText::unlocalized(*id),
+                    label: VerbatimText::new(*id).into(),
                     icon: SectionIcon::new("diamond"),
                     capacity: None,
                     fields: Vec::new(),
@@ -1872,7 +1906,7 @@ mod tests {
 
     fn action(label: &str, collection: Option<&str>) -> QuickAction {
         QuickAction {
-            label: UserText::unlocalized(label),
+            label: VerbatimText::new(label).into(),
             icon: SectionIcon::new("play"),
             enabled: true,
             locked_reason: None,
@@ -2014,7 +2048,7 @@ mod tests {
             fn uptime(&self) -> Option<Duration> {
                 None
             }
-            fn endpoint(&self) -> Option<&str> {
+            fn endpoint(&self) -> Option<forge_types::UserText> {
                 None
             }
             fn capability_flags(&self) -> CapabilityFlags {
@@ -2040,7 +2074,7 @@ mod tests {
                 std::array::from_fn(|i| HealthMetric {
                     id: STUB_METRIC_IDS[i].clone(),
                     value: HealthValue::Text {
-                        primary: HealthText::unlocalized(""),
+                        primary: VerbatimText::new("").into(),
                         secondary: None,
                     },
                 })
@@ -2171,7 +2205,7 @@ mod tests {
 
         fn live_value() -> HealthValue {
             HealthValue::Text {
-                primary: HealthText::unlocalized("42"),
+                primary: VerbatimText::new("42").into(),
                 secondary: None,
             }
         }

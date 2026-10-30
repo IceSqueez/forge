@@ -1,7 +1,73 @@
-use forge_types::{MessageCatalog, MessageCode, MessageRef, UpstreamDetail, VerbatimText};
+use forge_types::{
+    MessageCatalog, MessageCode, MessageRef, UpstreamDetail, UserText, VerbatimText,
+};
 
+use crate::subscriptions::SubscriptionFailure;
 use crate::vocabulary::PLATFORM_ID;
+use crate::vocabulary::RaidDirection;
 use crate::vocabulary::labels;
+
+pub const ENDPOINT_SUMMARY: MessageCode = MessageCode::from_static(PLATFORM_ID, "endpoint_summary");
+const USER_ID_BADGE: MessageCode = MessageCode::from_static(PLATFORM_ID, "user_id_badge");
+const SUBSCRIPTION_INCOMING: MessageCode =
+    MessageCode::from_static(PLATFORM_ID, "subscription_incoming");
+const SUBSCRIPTION_OUTGOING: MessageCode =
+    MessageCode::from_static(PLATFORM_ID, "subscription_outgoing");
+const SUBSCRIPTION_UNAUTHORIZED: MessageCode =
+    MessageCode::from_static(PLATFORM_ID, "subscription_unauthorized");
+const SUBSCRIPTION_MISSING_SCOPE: MessageCode =
+    MessageCode::from_static(PLATFORM_ID, "subscription_missing_scope");
+const SUBSCRIPTION_ALREADY_EXISTS: MessageCode =
+    MessageCode::from_static(PLATFORM_ID, "subscription_already_exists");
+const SUBSCRIPTION_REFUSED: MessageCode =
+    MessageCode::from_static(PLATFORM_ID, "subscription_refused");
+const SUBSCRIPTION_UNREADABLE: MessageCode =
+    MessageCode::from_static(PLATFORM_ID, "subscription_unreadable");
+const SUBSCRIPTION_RATE_LIMITED: MessageCode =
+    MessageCode::from_static(PLATFORM_ID, "subscription_rate_limited");
+const SUBSCRIPTION_TRANSPORT: MessageCode =
+    MessageCode::from_static(PLATFORM_ID, "subscription_transport");
+const SUBSCRIPTION_CREDENTIALS: MessageCode =
+    MessageCode::from_static(PLATFORM_ID, "subscription_credentials");
+const SUBSCRIPTION_REVOKED: MessageCode =
+    MessageCode::from_static(PLATFORM_ID, "subscription_revoked");
+
+pub(crate) const REWARD_TITLE_REQUIRED: MessageCode =
+    MessageCode::from_static(PLATFORM_ID, "reward_title_required");
+pub(crate) const REWARD_COLOR_FORMAT: MessageCode =
+    MessageCode::from_static(PLATFORM_ID, "reward_color_format");
+pub(crate) const REWARD_ZERO_OR_MORE: MessageCode =
+    MessageCode::from_static(PLATFORM_ID, "reward_zero_or_more");
+pub(crate) const REWARD_DUPLICATE_TITLE: MessageCode =
+    MessageCode::from_static(PLATFORM_ID, "reward_duplicate_title");
+pub(crate) const REWARD_AUTOMOD_REJECTED: MessageCode =
+    MessageCode::from_static(PLATFORM_ID, "reward_automod_rejected");
+pub(crate) const REWARD_SETTINGS_REJECTED: MessageCode =
+    MessageCode::from_static(PLATFORM_ID, "reward_settings_rejected");
+pub(crate) const REWARD_GONE: MessageCode = MessageCode::from_static(PLATFORM_ID, "reward_gone");
+pub(crate) const REWARD_REJECTED_PER_VIEWER: MessageCode =
+    MessageCode::from_static(PLATFORM_ID, "reward_rejected_per_viewer");
+pub(crate) const REWARD_REJECTED_PER_STREAM: MessageCode =
+    MessageCode::from_static(PLATFORM_ID, "reward_rejected_per_stream");
+pub(crate) const REWARD_REJECTED_COOLDOWN: MessageCode =
+    MessageCode::from_static(PLATFORM_ID, "reward_rejected_cooldown");
+pub(crate) const REWARD_REJECTED_COLOR: MessageCode =
+    MessageCode::from_static(PLATFORM_ID, "reward_rejected_color");
+pub(crate) const REWARD_REJECTED_PROMPT: MessageCode =
+    MessageCode::from_static(PLATFORM_ID, "reward_rejected_prompt");
+pub(crate) const REWARD_REJECTED_COST: MessageCode =
+    MessageCode::from_static(PLATFORM_ID, "reward_rejected_cost");
+pub(crate) const REWARD_REJECTED_TITLE: MessageCode =
+    MessageCode::from_static(PLATFORM_ID, "reward_rejected_title");
+pub(crate) const REWARD_UNKNOWN_COLLECTION: MessageCode =
+    MessageCode::from_static(PLATFORM_ID, "reward_unknown_collection");
+pub(crate) const REWARD_UNKNOWN_TOGGLE: MessageCode =
+    MessageCode::from_static(PLATFORM_ID, "reward_unknown_toggle");
+const REWARD_TITLE_MAX: MessageCode = MessageCode::from_static(PLATFORM_ID, "reward_title_max");
+const REWARD_PROMPT_MAX: MessageCode = MessageCode::from_static(PLATFORM_ID, "reward_prompt_max");
+const REWARD_COST_MIN: MessageCode = MessageCode::from_static(PLATFORM_ID, "reward_cost_min");
+const UNKNOWN_OPTION_LIST: MessageCode =
+    MessageCode::from_static(PLATFORM_ID, "unknown_option_list");
 
 pub const STORED_SIGN_IN_UNREADABLE: MessageCode =
     MessageCode::from_static(PLATFORM_ID, "stored_sign_in_unreadable");
@@ -102,6 +168,39 @@ const MAX_CONDITION_ARG: &str = "max";
 pub const TWITCH_MESSAGES: MessageCatalog = MessageCatalog {
     namespace: PLATFORM_ID,
     codes: &[
+        ENDPOINT_SUMMARY,
+        USER_ID_BADGE,
+        SUBSCRIPTION_INCOMING,
+        SUBSCRIPTION_OUTGOING,
+        SUBSCRIPTION_UNAUTHORIZED,
+        SUBSCRIPTION_MISSING_SCOPE,
+        SUBSCRIPTION_ALREADY_EXISTS,
+        SUBSCRIPTION_REFUSED,
+        SUBSCRIPTION_UNREADABLE,
+        SUBSCRIPTION_RATE_LIMITED,
+        SUBSCRIPTION_TRANSPORT,
+        SUBSCRIPTION_CREDENTIALS,
+        SUBSCRIPTION_REVOKED,
+        REWARD_TITLE_REQUIRED,
+        REWARD_COLOR_FORMAT,
+        REWARD_ZERO_OR_MORE,
+        REWARD_DUPLICATE_TITLE,
+        REWARD_AUTOMOD_REJECTED,
+        REWARD_SETTINGS_REJECTED,
+        REWARD_GONE,
+        REWARD_REJECTED_PER_VIEWER,
+        REWARD_REJECTED_PER_STREAM,
+        REWARD_REJECTED_COOLDOWN,
+        REWARD_REJECTED_COLOR,
+        REWARD_REJECTED_PROMPT,
+        REWARD_REJECTED_COST,
+        REWARD_REJECTED_TITLE,
+        REWARD_UNKNOWN_COLLECTION,
+        REWARD_UNKNOWN_TOGGLE,
+        REWARD_TITLE_MAX,
+        REWARD_PROMPT_MAX,
+        REWARD_COST_MIN,
+        UNKNOWN_OPTION_LIST,
         STORED_SIGN_IN_UNREADABLE,
         HEALTH_CHAT,
         HEALTH_EVENTSUB,
@@ -285,6 +384,54 @@ const SECONDS_ARG: &str = "seconds";
 
 fn detailed(code: MessageCode, detail: &str) -> MessageRef {
     MessageRef::new(code).with_detail(UpstreamDetail::from_redacted(detail))
+}
+
+pub(crate) fn user_id_badge(user_id: &str) -> MessageRef {
+    MessageRef::new(USER_ID_BADGE).with_arg("id", VerbatimText::new(user_id))
+}
+
+pub(crate) fn subscription_label(kind: &str, direction: Option<RaidDirection>) -> UserText {
+    let code = match direction {
+        Some(RaidDirection::Received) => SUBSCRIPTION_INCOMING,
+        Some(RaidDirection::Sent) => SUBSCRIPTION_OUTGOING,
+        None => return VerbatimText::new(kind).into(),
+    };
+    MessageRef::new(code)
+        .with_arg("kind", VerbatimText::new(kind))
+        .into()
+}
+
+pub(crate) fn subscription_failure(failure: &SubscriptionFailure) -> MessageRef {
+    match failure {
+        SubscriptionFailure::Unauthorized => SUBSCRIPTION_UNAUTHORIZED.into(),
+        SubscriptionFailure::MissingScope => SUBSCRIPTION_MISSING_SCOPE.into(),
+        SubscriptionFailure::AlreadyExists => SUBSCRIPTION_ALREADY_EXISTS.into(),
+        SubscriptionFailure::Refused(status) => {
+            MessageRef::new(SUBSCRIPTION_REFUSED).with_arg(STATUS_ARG, u32::from(*status))
+        }
+        SubscriptionFailure::UnreadableResponse => SUBSCRIPTION_UNREADABLE.into(),
+        SubscriptionFailure::RateLimited => SUBSCRIPTION_RATE_LIMITED.into(),
+        SubscriptionFailure::Transport => SUBSCRIPTION_TRANSPORT.into(),
+        SubscriptionFailure::Credentials => SUBSCRIPTION_CREDENTIALS.into(),
+        SubscriptionFailure::Revoked(status) => MessageRef::new(SUBSCRIPTION_REVOKED)
+            .with_arg(STATUS_ARG, VerbatimText::new(status.as_str())),
+    }
+}
+
+pub(crate) fn reward_title_max(max: usize) -> MessageRef {
+    MessageRef::new(REWARD_TITLE_MAX).with_arg("max", max)
+}
+
+pub(crate) fn reward_prompt_max(max: usize) -> MessageRef {
+    MessageRef::new(REWARD_PROMPT_MAX).with_arg("max", max)
+}
+
+pub(crate) fn reward_cost_min(min: i64) -> MessageRef {
+    MessageRef::new(REWARD_COST_MIN).with_arg("min", min)
+}
+
+pub(crate) fn unknown_option_list(list: &str) -> MessageRef {
+    MessageRef::new(UNKNOWN_OPTION_LIST).with_arg("list", VerbatimText::new(list))
 }
 
 fn field(code: MessageCode, name: &str) -> MessageRef {
@@ -476,6 +623,8 @@ pub(crate) fn condition_level_at_least(level: i64) -> MessageRef {
 mod tests {
     use std::collections::{BTreeMap, BTreeSet};
 
+    use forge_types::MessageArg;
+
     use super::*;
 
     fn entries(source: &str) -> BTreeMap<String, BTreeSet<String>> {
@@ -500,7 +649,127 @@ mod tests {
         found
     }
 
+    fn coded(text: UserText) -> MessageRef {
+        match text {
+            UserText::Message(message) => message,
+            UserText::Verbatim(text) => panic!("expected a coded message, got {text:?}"),
+        }
+    }
+
+    fn every_subscription_failure() -> Vec<(SubscriptionFailure, MessageCode, Option<MessageArg>)> {
+        vec![
+            (
+                SubscriptionFailure::Unauthorized,
+                SUBSCRIPTION_UNAUTHORIZED,
+                None,
+            ),
+            (
+                SubscriptionFailure::MissingScope,
+                SUBSCRIPTION_MISSING_SCOPE,
+                None,
+            ),
+            (
+                SubscriptionFailure::AlreadyExists,
+                SUBSCRIPTION_ALREADY_EXISTS,
+                None,
+            ),
+            (
+                SubscriptionFailure::Refused(503),
+                SUBSCRIPTION_REFUSED,
+                Some(MessageArg::from(503_u32)),
+            ),
+            (
+                SubscriptionFailure::UnreadableResponse,
+                SUBSCRIPTION_UNREADABLE,
+                None,
+            ),
+            (
+                SubscriptionFailure::RateLimited,
+                SUBSCRIPTION_RATE_LIMITED,
+                None,
+            ),
+            (SubscriptionFailure::Transport, SUBSCRIPTION_TRANSPORT, None),
+            (
+                SubscriptionFailure::Credentials,
+                SUBSCRIPTION_CREDENTIALS,
+                None,
+            ),
+            (
+                SubscriptionFailure::Revoked("user_removed".to_owned()),
+                SUBSCRIPTION_REVOKED,
+                Some(MessageArg::Verbatim(VerbatimText::new("user_removed"))),
+            ),
+        ]
+    }
+
+    #[test]
+    fn each_subscription_failure_maps_to_its_own_code_and_carries_only_its_status() {
+        for (failure, code, status) in every_subscription_failure() {
+            let message = subscription_failure(&failure);
+
+            assert_eq!(message.code(), &code, "{failure:?}");
+            assert_eq!(message.arg(STATUS_ARG), status.as_ref(), "{failure:?}");
+        }
+    }
+
+    #[test]
+    fn a_subscription_label_only_codes_a_raid_direction() {
+        assert_eq!(
+            subscription_label("channel.follow", None),
+            UserText::from(VerbatimText::new("channel.follow"))
+        );
+        for (direction, code) in [
+            (RaidDirection::Received, SUBSCRIPTION_INCOMING),
+            (RaidDirection::Sent, SUBSCRIPTION_OUTGOING),
+        ] {
+            let label = coded(subscription_label("channel.raid", Some(direction)));
+
+            assert_eq!(label.code(), &code, "{direction:?}");
+            assert_eq!(
+                label.arg("kind"),
+                Some(&MessageArg::Verbatim(VerbatimText::new("channel.raid"))),
+                "{direction:?}"
+            );
+        }
+    }
+
     fn every_constructor() -> Vec<MessageRef> {
+        let mut all = vec![
+            MessageRef::new(ENDPOINT_SUMMARY),
+            user_id_badge("1"),
+            coded(subscription_label("k", Some(RaidDirection::Received))),
+            coded(subscription_label("k", Some(RaidDirection::Sent))),
+            MessageRef::new(REWARD_TITLE_REQUIRED),
+            MessageRef::new(REWARD_COLOR_FORMAT),
+            MessageRef::new(REWARD_ZERO_OR_MORE),
+            MessageRef::new(REWARD_DUPLICATE_TITLE),
+            MessageRef::new(REWARD_AUTOMOD_REJECTED),
+            MessageRef::new(REWARD_SETTINGS_REJECTED),
+            MessageRef::new(REWARD_GONE),
+            MessageRef::new(REWARD_REJECTED_PER_VIEWER),
+            MessageRef::new(REWARD_REJECTED_PER_STREAM),
+            MessageRef::new(REWARD_REJECTED_COOLDOWN),
+            MessageRef::new(REWARD_REJECTED_COLOR),
+            MessageRef::new(REWARD_REJECTED_PROMPT),
+            MessageRef::new(REWARD_REJECTED_COST),
+            MessageRef::new(REWARD_REJECTED_TITLE),
+            MessageRef::new(REWARD_UNKNOWN_COLLECTION),
+            MessageRef::new(REWARD_UNKNOWN_TOGGLE),
+            reward_title_max(45),
+            reward_prompt_max(200),
+            reward_cost_min(1),
+            unknown_option_list("l"),
+        ];
+        all.extend(
+            every_subscription_failure()
+                .iter()
+                .map(|(failure, ..)| subscription_failure(failure)),
+        );
+        all.extend(constructors_before_the_typed_failures());
+        all
+    }
+
+    fn constructors_before_the_typed_failures() -> Vec<MessageRef> {
         vec![
             rate_limited(),
             reauth_required(),

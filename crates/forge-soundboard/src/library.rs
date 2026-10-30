@@ -176,14 +176,14 @@ pub fn refusal_is_final(error: &StorageError) -> bool {
 }
 
 fn storage_failed(error: StorageError) -> SoundboardError {
-    SoundboardError::Storage(error.to_string())
+    SoundboardError::Storage(error)
 }
 
 fn import_failed(error: StorageError) -> SoundboardError {
     if refusal_is_final(&error) {
         SoundboardError::ImportRefused(error)
     } else {
-        SoundboardError::Storage(error.to_string())
+        SoundboardError::Storage(error)
     }
 }
 

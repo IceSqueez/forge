@@ -5272,7 +5272,11 @@ mod tests {
     async fn a_revocation_fails_the_tracker_row_it_names_by_id_before_falling_back_to_its_type() {
         use crate::subscriptions::SubStatus;
         const FOLLOW: &str = "channel.follow";
-        let revoked = || SubStatus::Failed("revoked: user_removed".to_owned());
+        let revoked = || {
+            SubStatus::Failed(crate::subscriptions::SubscriptionFailure::Revoked(
+                "user_removed".to_owned(),
+            ))
+        };
         let cases = [
             (
                 vec![active(FOLLOW, Some("sub-a")), active(FOLLOW, Some("sub-b"))],
@@ -5781,7 +5785,9 @@ mod tests {
         assert_eq!(next_chat_text(&mut events).await, "while the topic retries");
         assert_eq!(
             tracked_status(&tracker, RETRIED_TOPIC),
-            crate::subscriptions::SubStatus::Retrying("HTTP 500".to_owned())
+            crate::subscriptions::SubStatus::Retrying(
+                crate::subscriptions::SubscriptionFailure::Refused(500)
+            )
         );
 
         peer.close();
@@ -5789,7 +5795,9 @@ mod tests {
 
         assert_eq!(
             tracked_status(&tracker, RETRIED_TOPIC),
-            crate::subscriptions::SubStatus::Failed("HTTP 500".to_owned()),
+            crate::subscriptions::SubStatus::Failed(
+                crate::subscriptions::SubscriptionFailure::Refused(500)
+            ),
             "the retry ends with the socket session that owns it, so its row must not keep \
              promising a retry"
         );
@@ -5837,7 +5845,9 @@ mod tests {
                 (verdict, tracked_status(&tracker, RETRIED_TOPIC)),
                 (
                     expected,
-                    crate::subscriptions::SubStatus::Failed("HTTP 500".to_owned())
+                    crate::subscriptions::SubStatus::Failed(
+                        crate::subscriptions::SubscriptionFailure::Refused(500)
+                    )
                 )
             );
         }
@@ -5968,7 +5978,9 @@ mod tests {
             (
                 true,
                 0,
-                crate::subscriptions::SubStatus::Failed("unauthorized".to_owned())
+                crate::subscriptions::SubStatus::Failed(
+                    crate::subscriptions::SubscriptionFailure::Unauthorized
+                )
             ),
             "a retry keeps the pass's token: a 401 closes the topic and never spends a refresh"
         );
@@ -5981,7 +5993,11 @@ mod tests {
             direction: Some(direction),
             ..active("channel.raid", None)
         };
-        let revoked = || SubStatus::Failed("revoked: user_removed".to_owned());
+        let revoked = || {
+            SubStatus::Failed(crate::subscriptions::SubscriptionFailure::Revoked(
+                "user_removed".to_owned(),
+            ))
+        };
         let cases = [
             ("to_broadcaster_user_id", vec![revoked(), SubStatus::Active]),
             (

@@ -103,7 +103,7 @@ mod tests {
             total_ms: 12,
             manual_test: true,
             reason: Some("boom".to_owned()),
-            reason_text: Some(forge_types::UserText::unlocalized("boom")),
+            reason_text: Some(forge_types::VerbatimText::new("boom").into()),
         });
         decodes_back(ActionSkipped {
             action_id: ActionId::new(),

@@ -182,7 +182,7 @@ impl HotkeysScreenView {
                     .map_err(RepoFailure::from)?;
                 let rows = load_bindings(backend, registered)
                     .await
-                    .map_err(RepoFailure::operation)?;
+                    .map_err(|error| RepoFailure::hotkey(&error))?;
                 Ok((rows, clip_keys(&clips)))
             },
             |this, result, cx| this.apply_bindings(result, cx),

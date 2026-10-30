@@ -375,7 +375,7 @@ mod tests {
         let m = moderated_view(
             cx,
             &rt,
-            SubActionOutcome::Failed(forge_types::UserText::unlocalized("denied")),
+            SubActionOutcome::Failed(forge_types::VerbatimText::new("denied").into()),
         );
         show(cx, &m.view, ChatTab::Banned);
         settle(cx, &rt);

@@ -426,7 +426,11 @@ mod tests {
             Ok(AdoptionVerdict::Refused(unsupported("notes.txt"))),
             Ok(AdoptionVerdict::SourceMissing),
             Ok(AdoptionVerdict::InFlight),
-            Err(SoundboardError::Storage("disk is busy".to_owned())),
+            Err(SoundboardError::Storage(
+                forge_storage::StorageError::Connection {
+                    reason: "disk is busy".to_owned(),
+                },
+            )),
         ];
 
         assert_eq!(

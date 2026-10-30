@@ -418,7 +418,9 @@ mod tests {
 
     #[test]
     fn failure_message_falls_back_to_the_error_text_when_no_key_covers_the_reason() {
-        let error = SoundboardError::Storage("disk is busy".to_owned());
+        let error = SoundboardError::Storage(forge_storage::StorageError::Connection {
+            reason: "disk is busy".to_owned(),
+        });
         assert_eq!(failure_message(&error), error.to_string());
     }
 

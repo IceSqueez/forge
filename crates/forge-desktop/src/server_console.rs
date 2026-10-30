@@ -383,11 +383,15 @@ impl ServerConsoleView {
                 ServerSettings::load(settings.as_ref())
                     .await
                     .map(|loaded| loaded.enabled)
-                    .unwrap_or(true)
             },
-            |this, enabled: bool, cx| {
-                this.enabled = enabled;
-                cx.notify();
+            |this, loaded, cx| match loaded {
+                Ok(enabled) => {
+                    this.enabled = enabled;
+                    cx.notify();
+                }
+                Err(error) => {
+                    tracing::warn!(error = %error, "server enabled setting unreadable");
+                }
             },
             cx,
         );
@@ -2722,6 +2726,46 @@ mod tests {
             (resolve, address, entries),
             (None, Some(WILDCARD_BIND.to_owned()), 1)
         );
+    }
+
+    #[gpui::test]
+    fn an_unreadable_enabled_setting_keeps_the_state_already_shown(cx: &mut TestAppContext) {
+        install_language(Language::En);
+        install_presentation(cx);
+        let rt = runtime();
+        let (backend, _writes) = test_backend();
+        let settings = forge_storage::test_support::MemorySettings::new();
+        settings.fail_reads(true);
+        let view = cx.new(|cx| {
+            ServerConsoleView::new(
+                None,
+                rt.handle().clone(),
+                backend as Arc<dyn CredentialsRepo>,
+                Arc::new(settings) as Arc<dyn SettingsRepo>,
+                cx,
+            )
+        });
+
+        let settled = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let landed = Arc::clone(&settled);
+        view.update(cx, |view, cx| {
+            view.enabled = false;
+            view.fetch_enabled(cx);
+            async_bridge::run_async(
+                &rt.handle().clone(),
+                async {},
+                move |_: &mut ServerConsoleView, (), _| {
+                    landed.store(true, std::sync::atomic::Ordering::SeqCst);
+                },
+                cx,
+            );
+        });
+        pump_until(&rt, || {
+            cx.run_until_parked();
+            settled.load(std::sync::atomic::Ordering::SeqCst)
+        });
+
+        assert!(!view.read_with(cx, |view, _| view.enabled));
     }
 
     #[gpui::test]

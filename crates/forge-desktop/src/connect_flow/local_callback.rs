@@ -11,6 +11,7 @@ use std::time::Duration;
 const AUTHORIZATION_TIMEOUT: Duration = Duration::from_secs(300);
 
 use crate::async_bridge;
+use crate::error::DesktopError;
 use forge_components::{
     BORDER_THIN, Density, FONT_XS, FONT_XXS, ForgePalette, Icon, Radius, Spacing, body_family,
     icon, mono_family, pulse_dot, radius, scaled, spacing, spinner, tr, with_alpha,
@@ -51,8 +52,6 @@ enum StepState {
 struct LocalCallbackData {
     auth_url: String,
 }
-
-const AUTH_CANCELLED: &str = "authorization cancelled";
 
 impl ConnectFlow {
     fn start_connect(&mut self, cx: &mut Context<Self>) {
@@ -95,7 +94,7 @@ impl ConnectFlow {
     fn spawn_start(
         &self,
         cancel: CancellationToken,
-        fut: impl std::future::Future<Output = Result<LocalCallbackData, String>> + Send + 'static,
+        fut: impl std::future::Future<Output = Result<LocalCallbackData, DesktopError>> + Send + 'static,
         cx: &mut Context<Self>,
     ) {
         async_bridge::run_async(
@@ -113,15 +112,16 @@ impl ConnectFlow {
 
     fn apply_start_result(
         &mut self,
-        result: Result<LocalCallbackData, String>,
+        result: Result<LocalCallbackData, DesktopError>,
         cancel: CancellationToken,
         cx: &mut Context<Self>,
     ) {
         let data = match result {
             Ok(data) => data,
             Err(e) => {
+                tracing::warn!(error = %e, "oauth sign-in failed");
                 self.phase = LocalCallbackFlowPhase::Failed;
-                self.error = Some(e);
+                self.error = Some(e.user_message());
                 cx.notify();
                 return;
             }
@@ -137,7 +137,7 @@ impl ConnectFlow {
                     (self.youtube_flow.clone(), self.youtube_sign_in.clone())
                 else {
                     self.phase = LocalCallbackFlowPhase::Failed;
-                    self.error = Some("no active YouTube flow handle".to_owned());
+                    self.error = Some(DesktopError::SignInFlowConsumed.user_message());
                     cx.notify();
                     return;
                 };
@@ -153,7 +153,7 @@ impl ConnectFlow {
                     (self.kick_flow.clone(), self.kick_sign_in.clone())
                 else {
                     self.phase = LocalCallbackFlowPhase::Failed;
-                    self.error = Some("no active Kick flow handle".to_owned());
+                    self.error = Some(DesktopError::SignInFlowConsumed.user_message());
                     cx.notify();
                     return;
                 };
@@ -172,7 +172,7 @@ impl ConnectFlow {
     fn spawn_wait(
         &self,
         cancel: CancellationToken,
-        fut: impl std::future::Future<Output = Result<(), String>> + Send + 'static,
+        fut: impl std::future::Future<Output = Result<(), DesktopError>> + Send + 'static,
         cx: &mut Context<Self>,
     ) {
         async_bridge::run_async(
@@ -188,7 +188,7 @@ impl ConnectFlow {
         );
     }
 
-    fn apply_wait_result(&mut self, result: Result<(), String>, cx: &mut Context<Self>) {
+    fn apply_wait_result(&mut self, result: Result<(), DesktopError>, cx: &mut Context<Self>) {
         match result {
             Ok(()) => {
                 self.phase = LocalCallbackFlowPhase::Authorized;
@@ -199,8 +199,9 @@ impl ConnectFlow {
                 }
             }
             Err(e) => {
+                tracing::warn!(error = %e, "oauth sign-in failed");
                 self.phase = LocalCallbackFlowPhase::Failed;
-                self.error = Some(e);
+                self.error = Some(e.user_message());
             }
         }
         cx.notify();
@@ -1010,23 +1011,21 @@ fn scopes_display(url: &str) -> Option<String> {
     }
 }
 
-async fn start_youtube_oauth(flow_handle: YoutubeFlowHandle) -> Result<LocalCallbackData, String> {
+async fn start_youtube_oauth(
+    flow_handle: YoutubeFlowHandle,
+) -> Result<LocalCallbackData, DesktopError> {
     let mut guard = flow_handle.lock().await;
-    let flow = guard
-        .as_mut()
-        .ok_or_else(|| "OAuth flow already consumed".to_owned())?;
-    let code = flow.start().await.map_err(|e| e.to_string())?;
+    let flow = guard.as_mut().ok_or(DesktopError::SignInFlowConsumed)?;
+    let code = flow.start().await?;
     Ok(LocalCallbackData {
         auth_url: code.auth_url,
     })
 }
 
-async fn start_kick_oauth(flow_handle: KickFlowHandle) -> Result<LocalCallbackData, String> {
+async fn start_kick_oauth(flow_handle: KickFlowHandle) -> Result<LocalCallbackData, DesktopError> {
     let mut guard = flow_handle.lock().await;
-    let flow = guard
-        .as_mut()
-        .ok_or_else(|| "OAuth flow already consumed".to_owned())?;
-    let code = flow.start().await.map_err(|e| e.to_string())?;
+    let flow = guard.as_mut().ok_or(DesktopError::SignInFlowConsumed)?;
+    let code = flow.start().await?;
     Ok(LocalCallbackData {
         auth_url: code.auth_url,
     })
@@ -1036,40 +1035,36 @@ async fn wait_for_youtube_authorization(
     flow_handle: YoutubeFlowHandle,
     sign_in: forge_platform_youtube::YoutubeSignIn,
     cancel: CancellationToken,
-) -> Result<(), String> {
+) -> Result<(), DesktopError> {
     let mut flow = {
         let mut guard = flow_handle.lock().await;
-        guard
-            .take()
-            .ok_or_else(|| "OAuth flow already consumed".to_owned())?
+        guard.take().ok_or(DesktopError::SignInFlowConsumed)?
     };
     let bundle = tokio::select! {
         biased;
-        () = cancel.cancelled() => return Err(AUTH_CANCELLED.to_owned()),
+        () = cancel.cancelled() => return Err(DesktopError::SignInCancelled),
         outcome = flow.wait_for_authorization(AUTHORIZATION_TIMEOUT) => {
-            outcome.map_err(|e| e.to_string())?
+            outcome?
         }
     };
-    sign_in.save(bundle).await.map_err(|e| e.to_string())
+    sign_in.save(bundle).await.map_err(DesktopError::from)
 }
 
 async fn wait_for_kick_authorization(
     flow_handle: KickFlowHandle,
     sign_in: forge_platform_kick::KickSignIn,
     cancel: CancellationToken,
-) -> Result<(), String> {
+) -> Result<(), DesktopError> {
     let mut flow = {
         let mut guard = flow_handle.lock().await;
-        guard
-            .take()
-            .ok_or_else(|| "OAuth flow already consumed".to_owned())?
+        guard.take().ok_or(DesktopError::SignInFlowConsumed)?
     };
     let bundle = tokio::select! {
         biased;
-        () = cancel.cancelled() => return Err(AUTH_CANCELLED.to_owned()),
+        () = cancel.cancelled() => return Err(DesktopError::SignInCancelled),
         outcome = flow.wait_for_authorization(AUTHORIZATION_TIMEOUT) => {
-            outcome.map_err(|e| e.to_string())?
+            outcome?
         }
     };
-    sign_in.save(bundle).await.map_err(|e| e.to_string())
+    sign_in.save(bundle).await.map_err(DesktopError::from)
 }

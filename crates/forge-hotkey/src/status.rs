@@ -2,7 +2,7 @@ use std::sync::atomic::Ordering;
 use std::time::Duration;
 
 use forge_platform_core::{BuiltinStatus, CapabilityFlags, ConnectionState, HeaderAction};
-use forge_types::IntegrationId;
+use forge_types::{IntegrationId, UserText, VerbatimText};
 
 use crate::client::HotkeyClient;
 
@@ -35,8 +35,8 @@ impl BuiltinStatus for HotkeyClient {
         None
     }
 
-    fn endpoint(&self) -> Option<&str> {
-        Some(self.config.app_name.as_str())
+    fn endpoint(&self) -> Option<UserText> {
+        Some(VerbatimText::new(self.config.app_name.as_str()).into())
     }
 
     fn capability_flags(&self) -> CapabilityFlags {

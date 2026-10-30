@@ -102,6 +102,8 @@ pub enum OverlayWiringRefusal {
     OverlayKindNotEligible { overlay_kind_id: String },
     #[error("'{trigger_kind_id}' declares no variables an overlay could show")]
     TriggerDeclaresNoVariables { trigger_kind_id: String },
+    #[error("the overlay or the trigger '{trigger_kind_id}' no longer exists")]
+    TargetMissing { trigger_kind_id: String },
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]

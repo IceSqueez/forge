@@ -3,6 +3,9 @@ use forge_types::{MessageCatalog, MessageCode, MessageRef, UpstreamDetail, Verba
 use crate::vocabulary::INTEGRATION_ID;
 use crate::vocabulary::labels;
 
+pub const ENDPOINT_SUMMARY: MessageCode =
+    MessageCode::from_static(INTEGRATION_ID, "endpoint_summary");
+const CHANNEL_ID_BADGE: MessageCode = MessageCode::from_static(INTEGRATION_ID, "channel_id_badge");
 pub const STORED_SIGN_IN_UNREADABLE: MessageCode =
     MessageCode::from_static(INTEGRATION_ID, "stored_sign_in_unreadable");
 
@@ -44,6 +47,8 @@ pub(crate) const CONDITION_ANY_BAN_TYPE: MessageCode =
 pub const YOUTUBE_MESSAGES: MessageCatalog = MessageCatalog {
     namespace: INTEGRATION_ID,
     codes: &[
+        ENDPOINT_SUMMARY,
+        CHANNEL_ID_BADGE,
         HEALTH_LIVE_CHAT,
         HEALTH_EVENTS,
         HEALTH_API_CALLS,
@@ -168,6 +173,10 @@ pub(crate) fn unresolved_reference(name: &str) -> MessageRef {
     MessageRef::new(UNRESOLVED_REFERENCE).with_arg(FIELD_ARG, VerbatimText::new(name))
 }
 
+pub(crate) fn channel_id_badge(channel_id: &str) -> MessageRef {
+    MessageRef::new(CHANNEL_ID_BADGE).with_arg("id", VerbatimText::new(channel_id))
+}
+
 #[cfg(test)]
 mod tests {
     use std::collections::{BTreeMap, BTreeSet};
@@ -198,6 +207,8 @@ mod tests {
 
     fn every_constructor() -> Vec<MessageRef> {
         vec![
+            MessageRef::new(ENDPOINT_SUMMARY),
+            channel_id_badge("UC"),
             MessageRef::new(HEALTH_LIVE_CHAT),
             MessageRef::new(HEALTH_EVENTS),
             MessageRef::new(HEALTH_API_CALLS),

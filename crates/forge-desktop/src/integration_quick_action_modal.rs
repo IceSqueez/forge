@@ -1016,7 +1016,6 @@ mod tests {
     use super::*;
     use crate::i18n::{install_language, message_in};
     use crate::test_support::{pump, runtime};
-    use forge_types::UserText;
 
     const SETTLE_ROUNDS: usize = 4;
 
@@ -1234,7 +1233,7 @@ mod tests {
     fn text_field(key: &str) -> QuickActionField {
         QuickActionField {
             key: key.to_owned(),
-            label: UserText::unlocalized(key),
+            label: forge_types::VerbatimText::new(key).into(),
             kind: QuickActionFieldKind::Text,
             default: None,
             placeholder: None,
@@ -1262,7 +1261,7 @@ mod tests {
 
     fn option_action(fields: Vec<QuickActionField>) -> QuickAction {
         QuickAction {
-            label: UserText::unlocalized("Switch scene"),
+            label: forge_types::VerbatimText::new("Switch scene").into(),
             icon: SectionIcon::new("arrows-shuffle"),
             enabled: true,
             locked_reason: None,
@@ -1286,7 +1285,7 @@ mod tests {
     fn option_field(key: &str, list: &str, default: Option<&str>) -> QuickActionField {
         QuickActionField {
             key: key.to_owned(),
-            label: UserText::unlocalized(key),
+            label: forge_types::VerbatimText::new(key).into(),
             kind: QuickActionFieldKind::Choice(QuickActionChoiceSource::OptionList(
                 OptionListId::new(list),
             )),

@@ -173,12 +173,20 @@ pub(crate) fn backend_health_value(
 
 #[cfg(not(target_os = "linux"))]
 pub(crate) fn backend_health_value(
-    _portal_available: Option<bool>,
+    backend_available: Option<bool>,
     _session_lost: Option<&str>,
 ) -> HealthValue {
-    HealthValue::Text {
-        primary: messages::health_backend_not_applicable().into(),
-        secondary: None,
+    match backend_available {
+        Some(true) => HealthValue::Status {
+            label: messages::health_backend_active().into(),
+            active: true,
+            detail: None,
+        },
+        _ => HealthValue::Status {
+            label: messages::health_backend_unavailable().into(),
+            active: false,
+            detail: None,
+        },
     }
 }
 
@@ -403,6 +411,26 @@ mod tests {
                     detail,
                 },
                 "{available:?} {session_lost:?}"
+            );
+        }
+    }
+
+    #[cfg(not(target_os = "linux"))]
+    #[test]
+    fn the_backend_metric_is_active_only_for_a_started_backend() {
+        for (available, label, active) in [
+            (Some(true), messages::health_backend_active(), true),
+            (Some(false), messages::health_backend_unavailable(), false),
+            (None, messages::health_backend_unavailable(), false),
+        ] {
+            assert_eq!(
+                backend_health_value(available, None),
+                HealthValue::Status {
+                    label: label.into(),
+                    active,
+                    detail: None,
+                },
+                "{available:?}"
             );
         }
     }

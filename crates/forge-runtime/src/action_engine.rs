@@ -870,7 +870,7 @@ mod tests {
         .unwrap();
         reg.register(Box::new(FixedOutcomeRunner {
             id: "map.failure".to_owned(),
-            outcome: SubActionOutcome::Failed(forge_types::UserText::unlocalized("kaboom")),
+            outcome: SubActionOutcome::Failed(VerbatimText::new("kaboom").into()),
         }))
         .unwrap();
         let engine = spawn_action_engine(
@@ -890,7 +890,7 @@ mod tests {
             ("map.success", ExecutionOutcome::Success),
             (
                 "map.failure",
-                ExecutionOutcome::Failed(forge_types::UserText::unlocalized("kaboom")),
+                ExecutionOutcome::Failed(VerbatimText::new("kaboom").into()),
             ),
         ];
 
@@ -1138,12 +1138,12 @@ mod tests {
         .unwrap();
         reg.register(Box::new(FixedOutcomeRunner {
             id: "quick.fail".to_owned(),
-            outcome: SubActionOutcome::Failed(forge_types::UserText::unlocalized("boom")),
+            outcome: SubActionOutcome::Failed(VerbatimText::new("boom").into()),
         }))
         .unwrap();
         reg.register(Box::new(FixedOutcomeRunner {
             id: "quick.skip".to_owned(),
-            outcome: SubActionOutcome::Skipped(forge_types::UserText::unlocalized("nope")),
+            outcome: SubActionOutcome::Skipped(VerbatimText::new("nope").into()),
         }))
         .unwrap();
 
@@ -1164,7 +1164,7 @@ mod tests {
             ("quick.ok", ExecutionOutcome::Success),
             (
                 "quick.fail",
-                ExecutionOutcome::Failed(forge_types::UserText::unlocalized("boom")),
+                ExecutionOutcome::Failed(VerbatimText::new("boom").into()),
             ),
             ("quick.skip", ExecutionOutcome::Success),
         ];

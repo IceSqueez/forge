@@ -1,5 +1,7 @@
 use std::fmt;
 
+use forge_hotkey::HotkeyError;
+use forge_hotkey::vocabulary::messages::failure;
 use forge_storage::StorageError;
 use forge_types::{MessageCatalog, MessageCode, MessageRef, VerbatimText};
 
@@ -72,6 +74,13 @@ impl RepoFailure {
         }
     }
 
+    pub fn hotkey(error: &HotkeyError) -> Self {
+        Self {
+            message: failure(error),
+            diagnostic: error.to_string(),
+        }
+    }
+
     pub fn text(&self) -> String {
         resolve_message(&self.message).primary
     }
@@ -85,7 +94,13 @@ impl fmt::Display for RepoFailure {
 
 impl From<StorageError> for RepoFailure {
     fn from(error: StorageError) -> Self {
-        let message = match &error {
+        Self::from_storage_ref(&error)
+    }
+}
+
+impl RepoFailure {
+    pub fn from_storage_ref(error: &StorageError) -> Self {
+        let message = match error {
             StorageError::NotFound { .. } => MessageRef::new(ITEM_GONE),
             StorageError::NameCollision { name } => {
                 MessageRef::new(NAME_TAKEN).with_arg(NAME_ARG, VerbatimText::new(name.as_str()))
@@ -116,6 +131,22 @@ mod tests {
         "forge could not read or write its data. Details are in the log.";
     const STORAGE_FAILED_UK: &str =
         "forge не зміг прочитати або записати свої дані. Подробиці в журналі.";
+
+    #[test]
+    fn a_hotkey_failure_shows_the_localized_message_and_keeps_the_cause_for_the_log() {
+        install_language(Language::En);
+        let error = forge_hotkey::HotkeyError::Storage(StorageError::Connection {
+            reason: "disk full".to_owned(),
+        });
+
+        let failure = RepoFailure::hotkey(&error);
+
+        assert_eq!(failure.to_string(), error.to_string());
+        assert_eq!(
+            failure.text(),
+            "The hotkey binding could not be read or saved"
+        );
+    }
 
     fn text_of(error: StorageError) -> String {
         RepoFailure::from(error)

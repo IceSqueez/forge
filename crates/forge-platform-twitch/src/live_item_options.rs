@@ -13,11 +13,11 @@ use crate::custom_rewards::{
 };
 use crate::helix_envelope::rows;
 use crate::lifecycle::{STATUS_ACTIVE, STATUS_LOCKED, polls_request, predictions_request};
-use crate::vocabulary::config_keys;
 use crate::vocabulary::option_lists::{
     ACTIVE_POLL_LIST, LOCKABLE_PREDICTION_LIST, OPEN_PREDICTION_LIST, PREDICTION_OUTCOME_LIST,
     QUEUED_REWARD_LIST, UNFULFILLED_REDEMPTION_LIST,
 };
+use crate::vocabulary::{config_keys, messages};
 
 const ID_FIELD: &str = "id";
 const TITLE_FIELD: &str = "title";
@@ -217,7 +217,7 @@ impl BuiltinOptionSource for TwitchIntegrationBundle {
             }
             unknown => Err(CollectionFailure::InvalidInput {
                 field: None,
-                message: unknown.to_owned(),
+                message: messages::unknown_option_list(unknown),
             }),
         }
     }
@@ -700,7 +700,9 @@ mod tests {
             (
                 Err(CollectionFailure::InvalidInput {
                     field: None,
-                    message: "twitch.no_such_list".to_owned(),
+                    message: crate::vocabulary::messages::unknown_option_list(
+                        "twitch.no_such_list"
+                    ),
                 }),
                 0
             )

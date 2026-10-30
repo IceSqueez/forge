@@ -217,11 +217,11 @@ impl ClipEditor {
             name: tr!("soundboard_file_filter_audio"),
             extensions: audio_dialog_extensions(),
         };
-        async_bridge::spawn_dialog(
+        async_bridge::run_async(
             &self.rt_handle,
             async_bridge::pick_file(Some(filter)),
-            |this, result, cx| {
-                if let Ok(path) = result {
+            |this, picked, cx| {
+                if let Some(path) = picked {
                     this.apply_picked_file(path, cx);
                 }
             },

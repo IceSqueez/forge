@@ -1,12 +1,21 @@
-use forge_types::{MessageArg, MessageCatalog, MessageCode, MessageRef};
+use forge_types::{
+    MessageArg, MessageCatalog, MessageCode, MessageRef, UpstreamDetail, VerbatimText,
+};
 use time::OffsetDateTime;
 
+use crate::error::HotkeyError;
 use crate::vocabulary::INTEGRATION_ID;
 use crate::vocabulary::labels;
 
 pub const COMBO_ARG: &str = "combo";
 const TIME_ARG: &str = "time";
 
+const BACKEND_UNAVAILABLE: MessageCode =
+    MessageCode::from_static(INTEGRATION_ID, "backend_unavailable");
+const BINDING_NOT_FOUND: MessageCode =
+    MessageCode::from_static(INTEGRATION_ID, "binding_not_found");
+const EDGE_TAKEN: MessageCode = MessageCode::from_static(INTEGRATION_ID, "edge_taken");
+const STORAGE_FAILED: MessageCode = MessageCode::from_static(INTEGRATION_ID, "storage_failed");
 pub const PORTAL_UNAVAILABLE: MessageCode =
     MessageCode::from_static(INTEGRATION_ID, "portal_unavailable");
 pub const PERMISSION_DENIED: MessageCode =
@@ -39,8 +48,10 @@ const HEALTH_PORTAL_EVDEV_FALLBACK: MessageCode =
     MessageCode::from_static(INTEGRATION_ID, "health_portal_evdev_fallback");
 const HEALTH_PORTAL_PERMISSION_DENIED: MessageCode =
     MessageCode::from_static(INTEGRATION_ID, "health_portal_permission_denied");
-const HEALTH_BACKEND_NOT_APPLICABLE: MessageCode =
-    MessageCode::from_static(INTEGRATION_ID, "health_backend_not_applicable");
+const HEALTH_BACKEND_ACTIVE: MessageCode =
+    MessageCode::from_static(INTEGRATION_ID, "health_backend_active");
+const HEALTH_BACKEND_UNAVAILABLE: MessageCode =
+    MessageCode::from_static(INTEGRATION_ID, "health_backend_unavailable");
 
 pub(crate) const CONDITION_ANY_HOTKEY: MessageCode =
     MessageCode::from_static(INTEGRATION_ID, "condition_any_hotkey");
@@ -61,7 +72,12 @@ pub const HOTKEY_MESSAGES: MessageCatalog = MessageCatalog {
         HEALTH_PORTAL_ACTIVE,
         HEALTH_PORTAL_EVDEV_FALLBACK,
         HEALTH_PORTAL_PERMISSION_DENIED,
-        HEALTH_BACKEND_NOT_APPLICABLE,
+        HEALTH_BACKEND_ACTIVE,
+        HEALTH_BACKEND_UNAVAILABLE,
+        BACKEND_UNAVAILABLE,
+        BINDING_NOT_FOUND,
+        EDGE_TAKEN,
+        STORAGE_FAILED,
         PORTAL_UNAVAILABLE,
         PERMISSION_DENIED,
         COMBO_REJECTED,
@@ -115,8 +131,44 @@ pub(crate) fn health_portal_permission_denied() -> MessageRef {
 }
 
 #[cfg(not(target_os = "linux"))]
-pub(crate) fn health_backend_not_applicable() -> MessageRef {
-    MessageRef::new(HEALTH_BACKEND_NOT_APPLICABLE)
+pub(crate) fn health_backend_active() -> MessageRef {
+    MessageRef::new(HEALTH_BACKEND_ACTIVE)
+}
+
+#[cfg(not(target_os = "linux"))]
+pub(crate) fn health_backend_unavailable() -> MessageRef {
+    MessageRef::new(HEALTH_BACKEND_UNAVAILABLE)
+}
+
+fn combo_rejected(combo: &str) -> MessageRef {
+    MessageRef::new(COMBO_REJECTED).with_arg(COMBO_ARG, VerbatimText::new(combo))
+}
+
+fn with_detail(code: MessageCode, detail: &str) -> MessageRef {
+    MessageRef::new(code).with_detail(UpstreamDetail::from_redacted(detail))
+}
+
+pub fn failure(error: &HotkeyError) -> MessageRef {
+    match error {
+        HotkeyError::PortalUnavailable { reason } => with_detail(PORTAL_UNAVAILABLE, reason),
+        HotkeyError::PermissionDenied => MessageRef::new(PERMISSION_DENIED),
+        HotkeyError::AlreadyRegistered { combo } | HotkeyError::InvalidCombo(combo) => {
+            combo_rejected(combo)
+        }
+        HotkeyError::BindRejected { combo, reason } => {
+            combo_rejected(combo).with_detail(UpstreamDetail::from_redacted(reason))
+        }
+        HotkeyError::SupervisorUnavailable | HotkeyError::MainThreadUnavailable => {
+            MessageRef::new(ENGINE_STOPPED)
+        }
+        HotkeyError::Backend(cause) => with_detail(BACKEND_FAILED, cause),
+        HotkeyError::BackendUnavailable => MessageRef::new(BACKEND_UNAVAILABLE),
+        HotkeyError::Storage(source) => with_detail(STORAGE_FAILED, &source.to_string()),
+        HotkeyError::BindingNotFound => MessageRef::new(BINDING_NOT_FOUND),
+        HotkeyError::EdgeTaken { combo } => {
+            MessageRef::new(EDGE_TAKEN).with_arg(COMBO_ARG, VerbatimText::new(combo.as_str()))
+        }
+    }
 }
 
 #[cfg(test)]
@@ -147,6 +199,110 @@ mod tests {
         found
     }
 
+    fn every_failure() -> Vec<(
+        HotkeyError,
+        MessageCode,
+        Option<&'static str>,
+        Option<&'static str>,
+    )> {
+        vec![
+            (
+                HotkeyError::PortalUnavailable {
+                    reason: "no d-bus".to_owned(),
+                },
+                PORTAL_UNAVAILABLE,
+                None,
+                Some("no d-bus"),
+            ),
+            (HotkeyError::PermissionDenied, PERMISSION_DENIED, None, None),
+            (
+                HotkeyError::AlreadyRegistered {
+                    combo: "Ctrl+A".to_owned(),
+                },
+                COMBO_REJECTED,
+                Some("Ctrl+A"),
+                None,
+            ),
+            (
+                HotkeyError::InvalidCombo("bad+".to_owned()),
+                COMBO_REJECTED,
+                Some("bad+"),
+                None,
+            ),
+            (
+                HotkeyError::BindRejected {
+                    combo: "Ctrl+B".to_owned(),
+                    reason: "cancelled".to_owned(),
+                },
+                COMBO_REJECTED,
+                Some("Ctrl+B"),
+                Some("cancelled"),
+            ),
+            (
+                HotkeyError::SupervisorUnavailable,
+                ENGINE_STOPPED,
+                None,
+                None,
+            ),
+            (
+                HotkeyError::MainThreadUnavailable,
+                ENGINE_STOPPED,
+                None,
+                None,
+            ),
+            (
+                HotkeyError::Backend("channel closed".to_owned()),
+                BACKEND_FAILED,
+                None,
+                Some("channel closed"),
+            ),
+            (
+                HotkeyError::BackendUnavailable,
+                BACKEND_UNAVAILABLE,
+                None,
+                None,
+            ),
+            (
+                HotkeyError::Storage(forge_storage::StorageError::Connection {
+                    reason: "disk full".to_owned(),
+                }),
+                STORAGE_FAILED,
+                None,
+                Some("connection failed: disk full"),
+            ),
+            (HotkeyError::BindingNotFound, BINDING_NOT_FOUND, None, None),
+            (
+                HotkeyError::EdgeTaken {
+                    combo: "Ctrl+E".to_owned(),
+                },
+                EDGE_TAKEN,
+                Some("Ctrl+E"),
+                None,
+            ),
+        ]
+    }
+
+    #[test]
+    fn each_hotkey_error_maps_to_its_code_with_the_combo_and_detail_it_carries() {
+        for (error, code, combo, detail) in every_failure() {
+            let message = failure(&error);
+
+            assert_eq!(message.code(), &code, "{error:?}");
+            assert_eq!(
+                message.arg(COMBO_ARG),
+                combo
+                    .map(|combo| MessageArg::Verbatim(VerbatimText::new(combo)))
+                    .as_ref(),
+                "{error:?}"
+            );
+            assert_eq!(
+                message.detail().map(UpstreamDetail::as_str),
+                detail,
+                "{error:?}"
+            );
+        }
+    }
+
     fn every_constructor() -> Vec<MessageRef> {
         let mut all = vec![
             MessageRef::new(CONDITION_ANY_HOTKEY),
@@ -163,7 +319,8 @@ mod tests {
             health_portal_permission_denied(),
         ]);
         #[cfg(not(target_os = "linux"))]
-        all.push(health_backend_not_applicable());
+        all.extend([health_backend_active(), health_backend_unavailable()]);
+        all.extend(every_failure().iter().map(|(error, ..)| failure(error)));
         all
     }
 

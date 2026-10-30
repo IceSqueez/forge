@@ -240,13 +240,13 @@ mod tests {
             total_ms: 0,
             manual_test: false,
             reason: Some("OBS is offline".to_owned()),
-            reason_text: Some(forge_types::UserText::unlocalized("OBS is offline")),
+            reason_text: Some(forge_types::VerbatimText::new("OBS is offline").into()),
         }
         .into_event(EventSource::Core, None);
         let intent = NotificationIntent::ActionFailed(ActionFailureNotice {
             action_id,
             action_name: name.to_owned(),
-            reason: Some(forge_types::UserText::unlocalized("OBS is offline")),
+            reason: Some(forge_types::VerbatimText::new("OBS is offline").into()),
         });
         (event, intent)
     }
@@ -348,7 +348,7 @@ mod tests {
         NotificationIntent::ActionFailed(ActionFailureNotice {
             action_id: ActionId::new(),
             action_name: action.to_owned(),
-            reason: reason.map(forge_types::UserText::unlocalized),
+            reason: reason.map(|text| forge_types::VerbatimText::new(text).into()),
         })
     }
 

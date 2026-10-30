@@ -197,7 +197,6 @@ mod tests {
     use super::connection_loss::{CONNECTION_LOSS_GRACE, MIN_CUE_SPACING};
     use super::*;
     use crate::NullEventLogRepo;
-    use forge_types::UserText;
 
     const TWITCH: &str = "twitch";
     const SECOND: Duration = Duration::from_secs(1);
@@ -242,7 +241,7 @@ mod tests {
             total_ms: 0,
             manual_test,
             reason: Some("step 2 failed".to_owned()),
-            reason_text: Some(UserText::unlocalized("step 2 failed")),
+            reason_text: Some(forge_types::VerbatimText::new("step 2 failed").into()),
         }
         .into_event(EventSource::Core, None)
     }
@@ -295,7 +294,7 @@ mod tests {
             vec![NotificationIntent::ActionFailed(ActionFailureNotice {
                 action_id,
                 action_name: "Shoutout".to_owned(),
-                reason: Some(UserText::unlocalized("step 2 failed")),
+                reason: Some(forge_types::VerbatimText::new("step 2 failed").into()),
             })]
         );
     }

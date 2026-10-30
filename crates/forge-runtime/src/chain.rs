@@ -705,7 +705,7 @@ mod tests {
         let downstream_runs = Arc::new(AtomicUsize::new(0));
         let first = scripted(
             "seq.fail",
-            SubActionOutcome::Failed(forge_types::UserText::unlocalized("boom")),
+            SubActionOutcome::Failed(forge_types::VerbatimText::new("boom").into()),
         );
         let mut second = scripted("seq.after", SubActionOutcome::Success);
         second.runs = Arc::clone(&downstream_runs);
@@ -722,7 +722,7 @@ mod tests {
 
         assert_eq!(
             run.signal,
-            ChainSignal::Error(forge_types::UserText::unlocalized("boom"))
+            ChainSignal::Error(forge_types::VerbatimText::new("boom").into())
         );
         assert_eq!(run.telemetry.len(), 1);
         assert!(
@@ -827,7 +827,7 @@ mod tests {
         let downstream_runs = Arc::new(AtomicUsize::new(0));
         let first = scripted(
             "seq.flagfail",
-            SubActionOutcome::Failed(forge_types::UserText::unlocalized("boom")),
+            SubActionOutcome::Failed(forge_types::VerbatimText::new("boom").into()),
         );
         let mut second = scripted("seq.after", SubActionOutcome::Success);
         second.runs = Arc::clone(&downstream_runs);
@@ -1014,11 +1014,11 @@ mod tests {
             registry(vec![
                 Box::new(scripted(
                     "seq.flagfail",
-                    SubActionOutcome::Failed(forge_types::UserText::unlocalized("tolerated")),
+                    SubActionOutcome::Failed(forge_types::VerbatimText::new("tolerated").into()),
                 )),
                 Box::new(scripted(
                     "seq.hardfail",
-                    SubActionOutcome::Failed(forge_types::UserText::unlocalized("halt")),
+                    SubActionOutcome::Failed(forge_types::VerbatimText::new("halt").into()),
                 )),
                 Box::new(third),
             ]),
@@ -1039,7 +1039,7 @@ mod tests {
 
         assert_eq!(
             run.signal,
-            ChainSignal::Error(forge_types::UserText::unlocalized("halt"))
+            ChainSignal::Error(forge_types::VerbatimText::new("halt").into())
         );
         assert_eq!(run.telemetry.len(), 2);
         assert_eq!(third_runs.load(Ordering::Relaxed), 0);
@@ -1051,7 +1051,7 @@ mod tests {
             Box::new(scripted("d.ok", SubActionOutcome::Success)),
             Box::new(scripted(
                 "d.fail",
-                SubActionOutcome::Failed(forge_types::UserText::unlocalized("nope")),
+                SubActionOutcome::Failed(forge_types::VerbatimText::new("nope").into()),
             )),
             Box::new(scripted("d.off", SubActionOutcome::Success)),
         ]);

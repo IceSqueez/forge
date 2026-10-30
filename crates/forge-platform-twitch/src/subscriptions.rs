@@ -1,12 +1,26 @@
-use crate::vocabulary::RaidDirection;
+use crate::vocabulary::{RaidDirection, messages};
+use forge_types::UserText;
 use std::sync::{Arc, RwLock, RwLockReadGuard, RwLockWriteGuard};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SubStatus {
     Pending,
     Active,
-    Retrying(String),
-    Failed(String),
+    Retrying(SubscriptionFailure),
+    Failed(SubscriptionFailure),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum SubscriptionFailure {
+    Unauthorized,
+    MissingScope,
+    AlreadyExists,
+    Refused(u16),
+    UnreadableResponse,
+    RateLimited,
+    Transport,
+    Credentials,
+    Revoked(String),
 }
 
 #[derive(Debug, Clone)]
@@ -19,12 +33,8 @@ pub struct SubscriptionRecord {
 }
 
 impl SubscriptionRecord {
-    pub fn label(&self) -> String {
-        match self.direction {
-            Some(RaidDirection::Received) => format!("{} (incoming)", self.kind),
-            Some(RaidDirection::Sent) => format!("{} (outgoing)", self.kind),
-            None => self.kind.clone(),
-        }
+    pub fn label(&self) -> UserText {
+        messages::subscription_label(&self.kind, self.direction)
     }
 
     fn matches_wire(&self, kind: &str, direction: Option<RaidDirection>) -> bool {
@@ -64,7 +74,7 @@ impl SubscriptionTracker {
         }
     }
 
-    pub(crate) fn retrying_reason(&self, index: usize) -> Option<String> {
+    pub(crate) fn retrying_reason(&self, index: usize) -> Option<SubscriptionFailure> {
         match self.read().get(index).map(|record| &record.status) {
             Some(SubStatus::Retrying(reason)) => Some(reason.clone()),
             _ => None,
@@ -73,9 +83,9 @@ impl SubscriptionTracker {
 
     pub(crate) fn settle_retrying(&self, index: usize) {
         if let Some(record) = self.write().get_mut(index)
-            && let SubStatus::Retrying(reason) = &mut record.status
+            && let SubStatus::Retrying(reason) = &record.status
         {
-            record.status = SubStatus::Failed(std::mem::take(reason));
+            record.status = SubStatus::Failed(reason.clone());
         }
     }
 
@@ -96,7 +106,7 @@ impl SubscriptionTracker {
                 .position(|record| record.matches_wire(kind, direction))
         });
         if let Some(record) = index.and_then(|index| records.get_mut(index)) {
-            record.status = SubStatus::Failed(format!("revoked: {status}"));
+            record.status = SubStatus::Failed(SubscriptionFailure::Revoked(status.to_owned()));
         }
     }
 
@@ -115,7 +125,7 @@ impl SubscriptionTracker {
 
 #[cfg(test)]
 mod tests {
-    use super::{SubStatus, SubscriptionRecord, SubscriptionTracker};
+    use super::{SubStatus, SubscriptionFailure, SubscriptionRecord, SubscriptionTracker};
     use crate::vocabulary::RaidDirection;
 
     const RAID: &str = "channel.raid";
@@ -131,7 +141,7 @@ mod tests {
     }
 
     fn revoked() -> SubStatus {
-        SubStatus::Failed("revoked: user_removed".to_owned())
+        SubStatus::Failed(SubscriptionFailure::Revoked("user_removed".to_owned()))
     }
 
     fn statuses_after_revoking(
@@ -152,11 +162,14 @@ mod tests {
     #[test]
     fn label_names_the_raid_direction_and_leaves_other_topics_bare() {
         for (direction, expected) in [
-            (Some(RaidDirection::Received), "channel.raid (incoming)"),
-            (Some(RaidDirection::Sent), "channel.raid (outgoing)"),
-            (None, "channel.raid"),
+            (
+                Some(RaidDirection::Received),
+                "twitch.subscription_incoming",
+            ),
+            (Some(RaidDirection::Sent), "twitch.subscription_outgoing"),
+            (None, RAID),
         ] {
-            assert_eq!(active(RAID, direction).label(), expected);
+            assert_eq!(active(RAID, direction).label().code_or_text(), expected);
         }
     }
 

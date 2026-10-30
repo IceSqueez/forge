@@ -544,7 +544,6 @@ mod tests {
 
     use super::*;
     use forge_components::Presentation;
-    use forge_types::UserText;
 
     const TITLE: &str = "title";
     const COST: &str = "cost";
@@ -554,7 +553,7 @@ mod tests {
     fn field(key: &str, kind: QuickActionFieldKind, required: bool) -> QuickActionField {
         QuickActionField {
             key: key.to_owned(),
-            label: UserText::unlocalized(key),
+            label: forge_types::VerbatimText::new(key).into(),
             kind,
             default: None,
             placeholder: None,

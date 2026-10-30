@@ -33,7 +33,7 @@ pub struct ScriptRegistryParts {
 #[derive(Debug, thiserror::Error)]
 pub enum ScriptRegistryError {
     #[error("storage: {0}")]
-    Storage(String),
+    Storage(#[from] StorageError),
     #[error("compile: {0}")]
     Compile(String),
 }
@@ -92,7 +92,7 @@ impl ScriptRegistry {
         let records = repo
             .list_enabled()
             .await
-            .map_err(|e| ScriptRegistryError::Storage(e.to_string()))?;
+            .map_err(ScriptRegistryError::Storage)?;
 
         let mut new_map = HashMap::new();
         for record in records {

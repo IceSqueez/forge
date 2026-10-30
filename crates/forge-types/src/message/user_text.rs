@@ -12,10 +12,6 @@ pub enum UserText {
 }
 
 impl UserText {
-    pub fn unlocalized(text: impl Into<String>) -> Self {
-        Self::Verbatim(VerbatimText::new(text))
-    }
-
     pub fn code_or_text(&self) -> String {
         match self {
             Self::Message(message) => message.code().to_string(),
@@ -39,5 +35,26 @@ impl From<MessageRef> for UserText {
 impl From<VerbatimText> for UserText {
     fn from(text: VerbatimText) -> Self {
         Self::Verbatim(text)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::message::arg::MessageArg;
+
+    #[test]
+    fn a_user_text_argument_keeps_its_coded_or_verbatim_form() {
+        let code = MessageCode::from_static("test", "greeting");
+        let coded = MessageRef::new(code).with_arg("name", VerbatimText::new("Ada"));
+
+        assert_eq!(
+            MessageArg::from(UserText::from(coded.clone())),
+            MessageArg::Message(Box::new(coded))
+        );
+        assert_eq!(
+            MessageArg::from(UserText::from(VerbatimText::new("raw"))),
+            MessageArg::Verbatim(VerbatimText::new("raw"))
+        );
     }
 }

@@ -18,7 +18,7 @@ use forge_platform_core::{
     ControlOutcome, HeaderAction, HealthDelta, HeroBadge, HeroBadgeTone,
     connection_state_changed_event,
 };
-use forge_types::{IntegrationId, MessageRef};
+use forge_types::{IntegrationId, MessageRef, UserText};
 
 use crate::catalog::{ObsCatalog, read_lock, write_lock};
 use crate::connect_failure::connect_failure_message;
@@ -291,8 +291,8 @@ impl BuiltinStatus for ObsClient {
         }
     }
 
-    fn endpoint(&self) -> Option<&str> {
-        Some(&self.endpoint)
+    fn endpoint(&self) -> Option<UserText> {
+        Some(VerbatimText::new(self.endpoint.as_str()).into())
     }
 
     fn capability_flags(&self) -> CapabilityFlags {

@@ -5,6 +5,13 @@ use crate::endpoints::EndpointRefusal;
 
 pub const HTTP_UNAUTHORIZED: u16 = forge_net::status::UNAUTHORIZED;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DeviceAuthEnd {
+    Cancelled,
+    Denied,
+    Expired,
+}
+
 #[derive(Debug, Error)]
 pub enum PlatformError {
     #[error("network failure: {reason}")]
@@ -18,6 +25,9 @@ pub enum PlatformError {
 
     #[error("authentication failure: {reason}")]
     Auth { reason: String },
+
+    #[error("device authorization ended: {0:?}")]
+    DeviceAuthEnded(DeviceAuthEnd),
 
     #[error("loopback port {port} is already in use; another forge instance may be running")]
     LoopbackPortInUse { port: u16 },

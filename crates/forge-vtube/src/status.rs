@@ -3,7 +3,7 @@ use std::time::Duration;
 use time::OffsetDateTime;
 
 use forge_platform_core::{BuiltinStatus, CapabilityFlags, ConnectionState, HeaderAction};
-use forge_types::{IntegrationId, MessageRef};
+use forge_types::{IntegrationId, MessageRef, UserText, VerbatimText};
 
 use crate::client::VTubeClient;
 
@@ -38,8 +38,8 @@ impl BuiltinStatus for VTubeClient {
         }
     }
 
-    fn endpoint(&self) -> Option<&str> {
-        Some(&self.config.endpoint)
+    fn endpoint(&self) -> Option<UserText> {
+        Some(VerbatimText::new(self.config.endpoint.as_str()).into())
     }
 
     fn capability_flags(&self) -> CapabilityFlags {

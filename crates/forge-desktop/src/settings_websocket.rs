@@ -390,9 +390,7 @@ impl SettingsWebSocketView {
             |this, result: Result<(), String>, cx| {
                 if let Err(message) = result {
                     tracing::warn!(error = %message, "saved server state could not be applied");
-                    if let Some(message) = ErrorSink::Banner.report(message, cx) {
-                        this.save_state = SaveState::Error(message.into());
-                    }
+                    this.save_state = SaveState::Error(message.into());
                     cx.notify();
                 }
             },
@@ -880,11 +878,11 @@ impl SettingsWebSocketView {
     }
 
     fn browse_overlay_folder(&mut self, cx: &mut Context<Self>) {
-        async_bridge::spawn_dialog(
+        async_bridge::run_async(
             &self.rt_handle,
             async_bridge::pick_folder(),
-            |this, result, cx| {
-                if let Ok(path) = result {
+            |this, picked, cx| {
+                if let Some(path) = picked {
                     this.apply_overlay_root(path, cx);
                 }
             },

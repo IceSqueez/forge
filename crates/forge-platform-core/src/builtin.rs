@@ -39,12 +39,6 @@ pub enum HealthText {
 }
 
 impl HealthText {
-    pub fn unlocalized(text: impl Into<String>) -> Self {
-        Self::Text(UserText::unlocalized(text))
-    }
-}
-
-impl HealthText {
     pub fn placeholder() -> Self {
         Self::Text(UserText::Verbatim(VerbatimText::new("-")))
     }
@@ -227,7 +221,8 @@ pub enum SubscriptionStatus {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SubscriptionRow {
-    pub name: String,
+    pub kind: String,
+    pub name: UserText,
     pub status: SubscriptionStatus,
     pub version: Option<String>,
     pub event_count: Option<u64>,
@@ -505,7 +500,7 @@ pub trait BuiltinStatus: Send + Sync {
     fn version(&self) -> Option<&str>;
     fn connection(&self) -> ConnectionState;
     fn uptime(&self) -> Option<Duration>;
-    fn endpoint(&self) -> Option<&str>;
+    fn endpoint(&self) -> Option<UserText>;
     fn capability_flags(&self) -> CapabilityFlags;
     fn header_actions(&self) -> Vec<HeaderAction>;
     fn token_expiry(&self) -> Option<SystemTime> {
@@ -644,7 +639,7 @@ mod tests {
         let metric = HealthMetric {
             id: HealthMetricId::VIEWERS,
             value: HealthValue::Status {
-                label: HealthText::unlocalized("Connected"),
+                label: VerbatimText::new("Connected").into(),
                 active: true,
                 detail: None,
             },
@@ -658,26 +653,26 @@ mod tests {
     fn health_value_serde_roundtrip_each_variant() {
         for v in [
             HealthValue::Status {
-                label: HealthText::unlocalized("Connected"),
+                label: VerbatimText::new("Connected").into(),
                 active: true,
                 detail: None,
             },
             HealthValue::Text {
-                primary: HealthText::unlocalized("42 msg/s"),
-                secondary: Some(HealthText::unlocalized("peak: 150")),
+                primary: VerbatimText::new("42 msg/s").into(),
+                secondary: Some(VerbatimText::new("peak: 150").into()),
             },
             HealthValue::Text {
-                primary: HealthText::unlocalized("idle"),
+                primary: VerbatimText::new("idle").into(),
                 secondary: None,
             },
             HealthValue::Pair {
-                left: HealthText::unlocalized("60 fps"),
-                right: HealthText::unlocalized("2.4%"),
+                left: VerbatimText::new("60 fps").into(),
+                right: VerbatimText::new("2.4%").into(),
             },
             HealthValue::Ratio {
                 used: 800,
                 total: 1000,
-                reset_hint: Some(HealthText::unlocalized("resets hourly")),
+                reset_hint: Some(VerbatimText::new("resets hourly").into()),
             },
             HealthValue::Ratio {
                 used: 0,
@@ -713,7 +708,7 @@ mod tests {
         for flags in [
             CapabilityFlags {
                 limited: true,
-                label: Some(UserText::unlocalized("read-only")),
+                label: Some(VerbatimText::new("read-only").into()),
             },
             CapabilityFlags {
                 limited: false,
@@ -746,9 +741,9 @@ mod tests {
     fn detail_section_warning_banner_roundtrip() {
         let section = DetailSection::WarningBanner {
             level: BannerLevel::Warning,
-            title: UserText::unlocalized("Limited API"),
-            body: UserText::unlocalized("Kick has no public OAuth API."),
-            cta: Some(UserText::unlocalized("Learn more")),
+            title: VerbatimText::new("Limited API").into(),
+            body: VerbatimText::new("Kick has no public OAuth API.").into(),
+            cta: Some(VerbatimText::new("Learn more").into()),
         };
         let json = serde_json::to_string(&section).unwrap();
         let back: DetailSection = serde_json::from_str(&json).unwrap();
@@ -757,10 +752,10 @@ mod tests {
 
     fn content_list_fixture(title: &str) -> ContentList {
         ContentList {
-            title: UserText::unlocalized(title),
+            title: VerbatimText::new(title).into(),
             icon: SectionIcon::new("list"),
             inline_label: None,
-            count_label: Some(UserText::unlocalized("3")),
+            count_label: Some(VerbatimText::new("3").into()),
             visible_rows: Some(8),
             row_padding_y_px: 7,
             refreshable: false,
@@ -770,11 +765,11 @@ mod tests {
                 name: "Main Scene".to_owned(),
                 monospace_name: false,
                 active: true,
-                active_label: Some(UserText::unlocalized("LIVE")),
+                active_label: Some(VerbatimText::new("LIVE").into()),
                 trailing: vec![
-                    TrailingToken::Badge(UserText::unlocalized("HD"), TokenColor::Green),
+                    TrailingToken::Badge(VerbatimText::new("HD").into(), TokenColor::Green),
                     TrailingToken::TintedLabel(
-                        UserText::unlocalized("-12.3 dB"),
+                        VerbatimText::new("-12.3 dB").into(),
                         TokenColor::Subtle,
                     ),
                 ],
@@ -789,7 +784,7 @@ mod tests {
     fn detail_section_two_column_lists_roundtrip_preserves_per_side_header_options() {
         let section = DetailSection::TwoColumnLists {
             left: Box::new(ContentList {
-                inline_label: Some(UserText::unlocalized("in Gameplay")),
+                inline_label: Some(VerbatimText::new("in Gameplay").into()),
                 row_padding_y_px: 8,
                 refreshable: true,
                 ..content_list_fixture("Sources")
@@ -826,16 +821,16 @@ mod tests {
     #[test]
     fn detail_section_info_card_roundtrip() {
         let section = DetailSection::InfoCard {
-            title: UserText::unlocalized("Live Broadcast"),
+            title: VerbatimText::new("Live Broadcast").into(),
             live: true,
             fields: vec![InfoField {
-                label: UserText::unlocalized("Viewers"),
-                value: UserText::unlocalized("1 234"),
+                label: VerbatimText::new("Viewers").into(),
+                value: VerbatimText::new("1 234").into(),
                 monospace_value: false,
             }],
             health_bar: Some(HealthBar {
                 fraction: 0.72,
-                label: UserText::unlocalized("72%"),
+                label: VerbatimText::new("72%").into(),
                 level: HealthLevel::Good,
             }),
         };
@@ -847,15 +842,13 @@ mod tests {
     #[test]
     fn quick_action_serde_roundtrip() {
         let action = QuickAction {
-            label: UserText::unlocalized("Switch to Main"),
+            label: VerbatimText::new("Switch to Main").into(),
             icon: SectionIcon::new("play"),
             enabled: false,
-            locked_reason: Some(UserText::unlocalized(
-                "Requires Twitch Affiliate or Partner",
-            )),
+            locked_reason: Some(VerbatimText::new("Requires Twitch Affiliate or Partner").into()),
             liveness: QuickActionLiveness::Unknown,
             group: Some(QuickActionGroup {
-                label: UserText::unlocalized("Raids & ads"),
+                label: VerbatimText::new("Raids & ads").into(),
                 icon: SectionIcon::new("businessplan"),
                 accent: QuickActionAccent::Bits,
             }),
@@ -874,7 +867,7 @@ mod tests {
             },
             fields: vec![QuickActionField {
                 key: "scene".to_owned(),
-                label: UserText::unlocalized("Scene"),
+                label: VerbatimText::new("Scene").into(),
                 kind: QuickActionFieldKind::Choice(QuickActionChoiceSource::OptionList(
                     crate::OptionListId::new("obs.scenes"),
                 )),
@@ -932,7 +925,7 @@ mod tests {
     ) -> QuickActionField {
         QuickActionField {
             key: key.to_owned(),
-            label: UserText::unlocalized(key),
+            label: VerbatimText::new(key).into(),
             kind,
             default,
             placeholder: None,
@@ -943,7 +936,7 @@ mod tests {
 
     fn qa_with(template: SubActionStep, fields: Vec<QuickActionField>) -> QuickAction {
         QuickAction {
-            label: UserText::unlocalized("A"),
+            label: VerbatimText::new("A").into(),
             icon: SectionIcon::new("x"),
             enabled: true,
             locked_reason: None,
@@ -1058,7 +1051,7 @@ mod tests {
         let choice = QuickActionFieldKind::Choice(QuickActionChoiceSource::Static(vec![
             QuickActionChoiceOption {
                 value: "primary".to_owned(),
-                label: UserText::unlocalized("Primary"),
+                label: VerbatimText::new("Primary").into(),
             },
         ]));
         let cases = [
@@ -1158,7 +1151,7 @@ mod tests {
             UserText::from(KNOWN),
             UserText::from(UNTRANSLATED),
             UserText::from(STRANGER),
-            UserText::unlocalized("demo.verbatim"),
+            VerbatimText::new("demo.verbatim").into(),
         ]));
 
         assert_eq!(

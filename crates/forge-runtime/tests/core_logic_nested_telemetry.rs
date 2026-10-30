@@ -65,7 +65,7 @@ impl SubActionRunner for TripRunner {
         let tripped = ctx.arg_stack.get("loop.index") == Some(&Variant::Int(TRIP_ITERATION));
         let outcome = match config.get("on_trip") {
             Some(Variant::String(mode)) if tripped && mode == "fail" => {
-                SubActionOutcome::Failed(forge_types::UserText::unlocalized("boom"))
+                SubActionOutcome::Failed(forge_types::VerbatimText::new("boom").into())
             }
             Some(Variant::String(mode)) if tripped && mode == "cancel" => {
                 ctx.cancel.cancel();
@@ -449,7 +449,7 @@ async fn a_failure_past_the_recorded_iterations_ends_the_summary_at_the_failing_
         (summary_rows(&run.telemetry), run.signal),
         (
             vec![(format!("0.body#100-{TRIP_ITERATION}"), true)],
-            ChainSignal::Error(forge_types::UserText::unlocalized("boom"))
+            ChainSignal::Error(forge_types::VerbatimText::new("boom").into())
         )
     );
 }

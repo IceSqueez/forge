@@ -3,7 +3,7 @@ use forge_platform_core::{
     test_donation_quick_action,
 };
 
-use forge_types::{MessageCode, UserText};
+use forge_types::{MessageCode, UserText, VerbatimText};
 
 use crate::messages;
 use crate::provider::MonobankProvider;
@@ -31,7 +31,7 @@ fn jar_card(status: &PollStatus) -> DetailSection {
     let jar = status.jar.as_ref();
     let field = |label: MessageCode, value: Option<UserText>| InfoField {
         label: label.into(),
-        value: value.unwrap_or_else(|| UserText::unlocalized(NOT_SET)),
+        value: value.unwrap_or_else(|| VerbatimText::new(NOT_SET).into()),
         monospace_value: false,
     };
     DetailSection::InfoCard {
@@ -41,17 +41,17 @@ fn jar_card(status: &PollStatus) -> DetailSection {
             field(
                 messages::LABEL_JAR,
                 jar.and_then(|jar| jar.title.clone())
-                    .map(UserText::unlocalized),
+                    .map(|title| VerbatimText::new(title).into()),
             ),
             field(
                 messages::LABEL_CURRENCY,
                 jar.and_then(|jar| jar.currency.as_ref())
-                    .map(|currency| UserText::unlocalized(currency.to_string())),
+                    .map(|currency| VerbatimText::new(currency.to_string()).into()),
             ),
             field(
                 messages::LABEL_GOAL,
                 jar.and_then(|jar| jar.goal.as_ref())
-                    .map(|goal| UserText::unlocalized(goal.to_string())),
+                    .map(|goal| VerbatimText::new(goal.to_string()).into()),
             ),
             field(messages::LABEL_STATUS, Some(status.phase.message().into())),
         ],

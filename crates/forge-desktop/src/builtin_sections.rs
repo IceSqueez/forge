@@ -905,7 +905,7 @@ fn subscription_row_elem(
         .font_family(mono_family())
         .text_size(FONT_XS)
         .text_color(palette.text_primary)
-        .child(item.name.clone());
+        .child(user_text_string(&item.name));
 
     let mut row = div()
         .w_full()
@@ -1461,7 +1461,6 @@ mod tests {
     use gpui::{Modifiers, TestAppContext, VisualTestContext, point, size};
 
     use super::*;
-    use forge_types::UserText;
 
     type Fired = Rc<RefCell<Vec<Vec<(String, String)>>>>;
 
@@ -1505,7 +1504,7 @@ mod tests {
 
     fn list(title: &str, items: Vec<ContentListItem>) -> ContentList {
         ContentList {
-            title: UserText::unlocalized(title),
+            title: forge_types::VerbatimText::new(title).into(),
             icon: SectionIcon::new("film"),
             inline_label: None,
             count_label: None,

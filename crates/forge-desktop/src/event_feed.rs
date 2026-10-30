@@ -1,3 +1,4 @@
+use crate::error::DesktopError;
 use crate::platform_visuals::platform_color;
 use forge_components::FONT_BADGE;
 use forge_components::FONT_META;
@@ -320,35 +321,38 @@ impl EventFeedView {
             .iter()
             .map(|item| EventItem::clone(item))
             .collect();
-        async_bridge::spawn_dialog(
+        async_bridge::run_async(
             &self.rt_handle,
             async move {
                 let filter = async_bridge::DialogFilter {
                     name: "JSON".to_owned(),
                     extensions: vec!["json"],
                 };
-                let path =
+                let Some(path) =
                     async_bridge::save_file(Some(filter), Some("forge-events.json".to_owned()))
-                        .await?;
-                let json = serde_json::to_string_pretty(&events).map_err(|e| e.to_string())?;
-                tokio::fs::write(&path, json)
-                    .await
-                    .map_err(|e| e.to_string())?;
-                Ok(path)
+                        .await
+                else {
+                    return Ok(None);
+                };
+                let json = serde_json::to_string_pretty(&events)?;
+                tokio::fs::write(&path, json).await?;
+                Ok::<_, DesktopError>(Some(path))
             },
             |_this, result, cx| match result {
-                Ok(path) => {
+                Ok(None) => {}
+                Ok(Some(path)) => {
                     let path_str = path.display().to_string();
                     cx.push_toast(
                         ToastKind::Success,
                         tr!("event_feed_export_success", path = path_str.as_str()),
                     );
                 }
-                Err(e) if e == async_bridge::DIALOG_CANCELLED => {}
-                Err(e) => {
+                Err(error) => {
+                    tracing::warn!(error = %error, "event export failed");
+                    let shown = error.user_message();
                     cx.push_toast(
                         ToastKind::Error,
-                        tr!("event_feed_export_failed", error = e.as_str()),
+                        tr!("event_feed_export_failed", error = shown.as_str()),
                     );
                 }
             },

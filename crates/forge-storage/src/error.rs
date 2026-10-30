@@ -5,6 +5,9 @@ pub enum StorageError {
     #[error("connection failed: {reason}")]
     Connection { reason: String },
 
+    #[error("stored data violates a constraint: {reason}")]
+    ConstraintViolated { reason: String },
+
     #[error("migration '{migration}' failed: {reason}")]
     Migration { migration: String, reason: String },
 
@@ -123,6 +126,7 @@ mod tests {
         let cases = [
             (StorageError::Decryption, true),
             (StorageError::Connection { reason: text() }, false),
+            (StorageError::ConstraintViolated { reason: text() }, false),
             (
                 StorageError::Migration {
                     migration: text(),

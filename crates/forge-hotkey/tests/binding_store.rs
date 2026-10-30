@@ -6,7 +6,7 @@ use std::sync::Arc;
 use forge_hotkey::testing::{RecordedCall, RecordingBackend};
 use forge_hotkey::vocabulary::event_kinds;
 use forge_hotkey::{
-    BindingUpdate, HotkeyClient, HotkeyCombo, HotkeyEdge, HotkeyId, HotkeyReconciler,
+    BindingUpdate, HotkeyClient, HotkeyCombo, HotkeyEdge, HotkeyError, HotkeyId, HotkeyReconciler,
     cleanup_stale_combo_instances, delete_binding, delete_binding_half, do_bind, load_bindings,
     persisted_hotkey_combos, rebind_combo, set_binding_enabled, update_binding,
 };
@@ -779,7 +779,7 @@ async fn apply_update(
     backend: &Arc<dyn DataProvider>,
     rig: &Reconciled,
     update: BindingUpdate,
-) -> Result<(), String> {
+) -> Result<(), HotkeyError> {
     update_binding(Arc::clone(&rig.reconciler), Arc::clone(backend), update).await
 }
 

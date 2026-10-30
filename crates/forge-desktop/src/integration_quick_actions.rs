@@ -331,13 +331,13 @@ pub(crate) fn accent_color(accent: QuickActionAccent, palette: &ForgePalette) ->
 #[cfg(test)]
 mod tests {
     use forge_platform_core::{QuickActionGroup, QuickActionLiveness, SectionIcon};
-    use forge_types::{SubActionStep, UserText};
+    use forge_types::SubActionStep;
 
     use super::*;
 
     fn group(name: &str) -> QuickActionGroup {
         QuickActionGroup {
-            label: UserText::unlocalized(name),
+            label: forge_types::VerbatimText::new(name).into(),
             icon: SectionIcon::new("dot"),
             accent: QuickActionAccent::Brand,
         }
@@ -345,7 +345,7 @@ mod tests {
 
     fn action(group: Option<QuickActionGroup>) -> QuickAction {
         QuickAction {
-            label: UserText::unlocalized("action"),
+            label: forge_types::VerbatimText::new("action").into(),
             icon: SectionIcon::new("dot"),
             enabled: true,
             locked_reason: None,

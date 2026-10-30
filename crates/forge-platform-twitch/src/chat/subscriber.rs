@@ -1,6 +1,8 @@
 use super::topic_catalog::{TOPICS, TopicSpec};
 use crate::helix::{CONFLICT, HelixError, HelixMethod, HelixRequest, HelixTransport};
-use crate::subscriptions::{SubStatus, SubscriptionRecord, SubscriptionTracker};
+use crate::subscriptions::{
+    SubStatus, SubscriptionFailure, SubscriptionRecord, SubscriptionTracker,
+};
 use crate::vocabulary::EventSubSubscriptionCreated;
 use forge_events::{EventPublisher, EventSource, TypedEvent};
 use forge_net::status::FORBIDDEN;
@@ -17,7 +19,6 @@ pub(crate) use retry::{TopicRetries, TopicRetryRun};
 
 const EVENTSUB_PATH: &str = "/helix/eventsub/subscriptions";
 const SUBSCRIBE_CONCURRENCY: usize = 10;
-const UNREADABLE_RESPONSE: &str = "unreadable response";
 
 #[derive(Debug, Error)]
 pub(crate) enum SubscribeError {
@@ -235,27 +236,34 @@ async fn subscribe_one(
     outcome
 }
 
-fn classify_failure(error: &HelixError) -> (String, TopicOutcome) {
+fn classify_failure(error: &HelixError) -> (SubscriptionFailure, TopicOutcome) {
     match error {
-        HelixError::ReauthRequired => ("unauthorized".to_owned(), TopicOutcome::Unauthorized),
-        HelixError::Http { status, .. } if *status == FORBIDDEN => {
-            ("missing scope".to_owned(), TopicOutcome::ScopeRejected)
-        }
+        HelixError::ReauthRequired => (
+            SubscriptionFailure::Unauthorized,
+            TopicOutcome::Unauthorized,
+        ),
+        HelixError::Http { status, .. } if *status == FORBIDDEN => (
+            SubscriptionFailure::MissingScope,
+            TopicOutcome::ScopeRejected,
+        ),
         already if already.is_already_exists() => (
-            "already exists on another session".to_owned(),
+            SubscriptionFailure::AlreadyExists,
             TopicOutcome::AlreadyExists,
         ),
-        HelixError::Http { status, .. } if error.is_server_error() => {
-            (format!("HTTP {status}"), TopicOutcome::Retryable)
+        HelixError::Http { status, .. } if error.is_server_error() => (
+            SubscriptionFailure::Refused(*status),
+            TopicOutcome::Retryable,
+        ),
+        HelixError::Http { status, .. } => {
+            (SubscriptionFailure::Refused(*status), TopicOutcome::Failed)
         }
-        HelixError::Http { status, .. } => (format!("HTTP {status}"), TopicOutcome::Failed),
-        HelixError::UndecodableResponse(_) => {
-            (UNREADABLE_RESPONSE.to_owned(), TopicOutcome::Retryable)
-        }
-        HelixError::RateLimited | HelixError::Transport(_) => {
-            (error.to_string(), TopicOutcome::Retryable)
-        }
-        HelixError::Credentials(_) => (error.to_string(), TopicOutcome::Failed),
+        HelixError::UndecodableResponse(_) => (
+            SubscriptionFailure::UnreadableResponse,
+            TopicOutcome::Retryable,
+        ),
+        HelixError::RateLimited => (SubscriptionFailure::RateLimited, TopicOutcome::Retryable),
+        HelixError::Transport(_) => (SubscriptionFailure::Transport, TopicOutcome::Retryable),
+        HelixError::Credentials(_) => (SubscriptionFailure::Credentials, TopicOutcome::Failed),
     }
 }
 
@@ -274,7 +282,10 @@ fn record_created(
             kind = topic.kind,
             "eventsub subscription response unreadable; will retry"
         );
-        tracker.set_status(index, SubStatus::Retrying(UNREADABLE_RESPONSE.to_owned()));
+        tracker.set_status(
+            index,
+            SubStatus::Retrying(SubscriptionFailure::UnreadableResponse),
+        );
         return TopicOutcome::Retryable;
     };
     mark_active(
@@ -402,7 +413,8 @@ mod tests {
     }
 
     use super::{
-        EVENTSUB_PATH, SubStatus, SubscribeError, SubscribePass, SubscriptionTracker, subscribe_all,
+        EVENTSUB_PATH, SubStatus, SubscribeError, SubscribePass, SubscriptionFailure,
+        SubscriptionTracker, subscribe_all,
     };
     use crate::bot_account::test_support::RecordingBus;
     use crate::helix::{FixedTokenSource, HelixHttpTransport, HelixTransport};
@@ -561,12 +573,12 @@ mod tests {
         (rec.status.clone(), rec.subscription_id.clone())
     }
 
-    fn failed(reason: &str) -> SubStatus {
-        SubStatus::Failed(reason.to_owned())
+    fn failed(reason: SubscriptionFailure) -> SubStatus {
+        SubStatus::Failed(reason)
     }
 
-    fn retrying(reason: &str) -> SubStatus {
-        SubStatus::Retrying(reason.to_owned())
+    fn retrying(reason: SubscriptionFailure) -> SubStatus {
+        SubStatus::Retrying(reason)
     }
 
     #[tokio::test]
@@ -611,9 +623,18 @@ mod tests {
             );
         }
 
-        assert_eq!(run.status_of("channel.ban"), failed("unauthorized"));
-        assert_eq!(run.status_of("channel.subscribe"), failed("missing scope"));
-        assert_eq!(run.status_of("stream.online"), failed("HTTP 500"));
+        assert_eq!(
+            run.status_of("channel.ban"),
+            failed(SubscriptionFailure::Unauthorized)
+        );
+        assert_eq!(
+            run.status_of("channel.subscribe"),
+            failed(SubscriptionFailure::MissingScope)
+        );
+        assert_eq!(
+            run.status_of("stream.online"),
+            failed(SubscriptionFailure::Refused(500))
+        );
     }
 
     #[tokio::test]
@@ -622,38 +643,38 @@ mod tests {
         let cases = [
             (
                 ResponseTemplate::new(StatusCode::INTERNAL_SERVER_ERROR.as_u16()),
-                retrying("HTTP 500"),
+                retrying(SubscriptionFailure::Refused(500)),
             ),
             (
                 ResponseTemplate::new(StatusCode::TOO_MANY_REQUESTS.as_u16())
                     .insert_header("Retry-After", "7"),
-                retrying("rate limited"),
+                retrying(SubscriptionFailure::RateLimited),
             ),
             (
                 ResponseTemplate::new(StatusCode::SERVICE_UNAVAILABLE.as_u16())
                     .insert_header("Retry-After", "4"),
-                retrying("HTTP 503"),
+                retrying(SubscriptionFailure::Refused(503)),
             ),
             (
                 ResponseTemplate::new(StatusCode::SERVICE_UNAVAILABLE.as_u16()),
-                retrying("HTTP 503"),
+                retrying(SubscriptionFailure::Refused(503)),
             ),
             (
                 ResponseTemplate::new(StatusCode::CONFLICT.as_u16()),
-                failed("already exists on another session"),
+                failed(SubscriptionFailure::AlreadyExists),
             ),
             (
                 ResponseTemplate::new(StatusCode::ACCEPTED.as_u16()),
-                retrying("unreadable response"),
+                retrying(SubscriptionFailure::UnreadableResponse),
             ),
             (
                 ResponseTemplate::new(StatusCode::ACCEPTED.as_u16())
                     .set_body_json(serde_json::json!({ "data": [] })),
-                retrying("unreadable response"),
+                retrying(SubscriptionFailure::UnreadableResponse),
             ),
             (
                 ResponseTemplate::new(StatusCode::ACCEPTED.as_u16()).set_body_string("not-json"),
-                retrying("unreadable response"),
+                retrying(SubscriptionFailure::UnreadableResponse),
             ),
         ];
 
@@ -725,13 +746,13 @@ mod tests {
                         "message": "subscription already exists",
                     }),
                 ),
-                failed("already exists on another session"),
+                failed(SubscriptionFailure::AlreadyExists),
                 0,
             ),
             (
                 ResponseTemplate::new(StatusCode::BAD_REQUEST.as_u16())
                     .set_body_string("subscription already exists"),
-                failed("HTTP 400"),
+                failed(SubscriptionFailure::Refused(400)),
                 1,
             ),
         ];
@@ -757,7 +778,7 @@ mod tests {
         assert!(
             records
                 .iter()
-                .all(|record| record.status == retrying("rate limited")),
+                .all(|record| record.status == retrying(SubscriptionFailure::RateLimited)),
             "got {records:?}"
         );
         assert!(run.request_fails().is_empty());
@@ -767,8 +788,8 @@ mod tests {
     #[tokio::test]
     async fn an_auth_rejection_publishes_request_fail_with_the_masked_upstream_excerpt() {
         for (status, verdict) in [
-            (StatusCode::UNAUTHORIZED, "unauthorized"),
-            (StatusCode::FORBIDDEN, "missing scope"),
+            (StatusCode::UNAUTHORIZED, SubscriptionFailure::Unauthorized),
+            (StatusCode::FORBIDDEN, SubscriptionFailure::MissingScope),
         ] {
             let body = format!(r#"{{"message":"Missing scope for {TOKEN_SENTINEL}"}}"#);
             let run = pass_with_probed_topic_replying(
@@ -853,17 +874,14 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn a_transport_failure_marks_retrying_with_a_reason_free_of_the_url_and_the_token() {
+    async fn a_transport_failure_marks_every_topic_retrying_as_a_transport_failure() {
         let run = pass_against("http://127.0.0.1:1", RecordingRateLimiter::granting()).await;
 
         let records = run.tracker.snapshot();
         for record in records {
-            assert!(
-                matches!(&record.status, SubStatus::Retrying(reason)
-                    if !reason.is_empty()
-                        && !reason.contains("127.0.0.1")
-                        && !reason.contains(EVENTSUB_PATH)
-                        && !reason.contains(TOKEN_SENTINEL)),
+            assert_eq!(
+                record.status,
+                retrying(SubscriptionFailure::Transport),
                 "{record:?}"
             );
         }
@@ -883,7 +901,7 @@ mod tests {
         );
         assert_eq!(
             run.status_of("channel.chat.message"),
-            failed("already exists on another session")
+            failed(SubscriptionFailure::AlreadyExists)
         );
     }
 

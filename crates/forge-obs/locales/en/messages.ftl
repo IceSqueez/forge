@@ -125,3 +125,5 @@ msg-obs-label_transition = Transition
 msg-obs-label_trigger_transition = Trigger transition
 msg-obs-label_visible = Visible
 msg-obs-label_volume_example = e.g. -6.0
+msg-obs-no_scene_to_list = There is no scene to list sources from
+msg-obs-scene_not_in_obs = The selected scene is not in OBS

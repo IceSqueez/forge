@@ -398,7 +398,7 @@ async fn saving_a_duplicate_credential_is_rejected_without_leaking_the_token() {
         .expect_err("the unique index must reject a shared credential");
 
     assert!(
-        matches!(err, StorageError::Connection { .. }),
+        matches!(err, StorageError::ConstraintViolated { .. }),
         "unexpected error variant: {err:?}"
     );
     assert!(

@@ -44,6 +44,8 @@ pub(crate) const NEW_COST_OPTIONAL: MessageCode =
     MessageCode::from_static(INTEGRATION_ID, "label_new_cost_optional");
 pub(crate) const NEW_TITLE_OPTIONAL: MessageCode =
     MessageCode::from_static(INTEGRATION_ID, "label_new_title_optional");
+pub(crate) const REDEMPTION_IDS_HINT: MessageCode =
+    MessageCode::from_static(INTEGRATION_ID, "label_redemption_ids_hint");
 pub(crate) const REDEMPTION_ID_S: MessageCode =
     MessageCode::from_static(INTEGRATION_ID, "label_redemption_id_s");
 pub(crate) const REJECT_REDEMPTION: MessageCode =

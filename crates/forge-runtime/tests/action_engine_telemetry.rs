@@ -188,7 +188,7 @@ impl SubActionRunner for FailRunner {
                 kind: "test.fail".to_owned(),
                 started_at: OffsetDateTime::now_utc(),
                 duration_ms: 42,
-                outcome: SubActionOutcome::Failed(forge_types::UserText::unlocalized("boom")),
+                outcome: SubActionOutcome::Failed(forge_types::VerbatimText::new("boom").into()),
             },
             None,
         )

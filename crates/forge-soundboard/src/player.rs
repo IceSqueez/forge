@@ -394,7 +394,7 @@ impl SoundboardPlayer {
         let probed =
             tokio::task::spawn_blocking(move || crate::duration::probe_clip_duration_secs(&path))
                 .await
-                .map_err(|e| SoundboardError::JoinError(e.to_string()))??;
+                .map_err(|_| SoundboardError::TaskFailed)??;
 
         self.library
             .record_probed_duration(clip_id, &clip.file_path, probed)
@@ -536,7 +536,7 @@ impl SoundboardPlayer {
 
         let mut buffer = tokio::task::spawn_blocking(move || forge_audio::decode_file(&path))
             .await
-            .map_err(|e| SoundboardError::JoinError(e.to_string()))??;
+            .map_err(|_| SoundboardError::TaskFailed)??;
         buffer.apply_gain(
             clip.volume.clamp(0.0, MAX_VOLUME) * settings.master_volume.clamp(0.0, MAX_VOLUME),
         );

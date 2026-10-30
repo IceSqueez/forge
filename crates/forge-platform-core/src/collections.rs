@@ -5,7 +5,7 @@ use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use tokio::sync::watch;
 
-use forge_types::UserText;
+use forge_types::{MessageRef, UserText};
 
 use crate::builtin::{QuickActionField, QuickActionFieldValue, SectionIcon};
 
@@ -95,7 +95,7 @@ pub enum CollectionFailure {
     NotEligible,
     InvalidInput {
         field: Option<String>,
-        message: String,
+        message: MessageRef,
     },
     RateLimited,
     Transport,
@@ -103,13 +103,16 @@ pub enum CollectionFailure {
 
 impl fmt::Display for CollectionFailure {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        if let Self::InvalidInput { message, .. } = self {
+            return write!(f, "{}", message.code());
+        }
         let reason = match self {
             Self::NotConnected => "not connected",
             Self::Unauthorized => "authorization expired or revoked",
             Self::NotOwned => "item was created elsewhere and cannot be changed here",
             Self::CapacityReached => "collection is full",
             Self::NotEligible => "channel is not eligible for this feature",
-            Self::InvalidInput { message, .. } => message,
+            Self::InvalidInput { .. } => "invalid input",
             Self::RateLimited => "rate limited, try again shortly",
             Self::Transport => "connection transport error",
         };

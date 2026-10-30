@@ -5,7 +5,7 @@ pub(crate) mod pack_flow;
 mod pack_transfer;
 mod setup_transfer;
 
-use forge_types::{OverlayCredential, UserText};
+use forge_types::OverlayCredential;
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
@@ -71,6 +71,7 @@ pub(crate) struct TestBackend {
     write_faults: Mutex<std::collections::HashSet<String>>,
     overlays: Option<Arc<dyn OverlayRepo>>,
     scripts: Option<Arc<dyn ScriptRepo>>,
+    actions: Option<Arc<dyn ActionRepo>>,
     media: Arc<dyn MediaRepo>,
     export_gate: Option<Arc<tokio::sync::Notify>>,
     on_shutdown: Option<Box<dyn Fn() + Send + Sync>>,
@@ -82,6 +83,16 @@ pub(crate) fn test_backend() -> (Arc<TestBackend>, UnboundedReceiver<SettingWrit
 
 pub(crate) fn test_backend_with_scripts(scripts: Arc<dyn ScriptRepo>) -> Arc<TestBackend> {
     backend_over(None, Some(scripts), Arc::new(EmptyMediaLibrary)).0
+}
+
+pub(crate) fn test_backend_with_scripts_and_actions(
+    scripts: Arc<dyn ScriptRepo>,
+    actions: Arc<dyn ActionRepo>,
+) -> Arc<TestBackend> {
+    let backend = test_backend_with_scripts(scripts);
+    let mut backend = Arc::into_inner(backend).unwrap();
+    backend.actions = Some(actions);
+    Arc::new(backend)
 }
 
 pub(crate) fn test_backend_with_overlays(
@@ -127,6 +138,7 @@ fn backend_over(
             write_faults: Mutex::default(),
             overlays,
             scripts,
+            actions: None,
             media,
             export_gate: None,
             on_shutdown: None,
@@ -194,6 +206,7 @@ fn enabled_schedule_over_test_backend(
         write_faults: Mutex::default(),
         overlays: None,
         scripts: None,
+        actions: None,
         media: Arc::new(EmptyMediaLibrary),
         export_gate: Some(Arc::clone(&export_gate)),
         on_shutdown: None,
@@ -483,6 +496,9 @@ impl ScriptRepo for TestBackend {
 #[async_trait::async_trait]
 impl DataProvider for TestBackend {
     fn action_repo(&self) -> Arc<dyn ActionRepo> {
+        if let Some(actions) = &self.actions {
+            return Arc::clone(actions);
+        }
         if self.scripts.is_some() {
             return Arc::new(StubActions);
         }
@@ -1342,7 +1358,7 @@ impl FakeCollections {
     pub(crate) fn metadata() -> forge_platform_core::CollectionMetadata {
         forge_platform_core::CollectionMetadata {
             id: forge_platform_core::CollectionId::new(REWARDS),
-            label: UserText::unlocalized("Channel point rewards"),
+            label: forge_types::VerbatimText::new("Channel point rewards").into(),
             icon: forge_platform_core::SectionIcon::new("diamond"),
             capacity: None,
             fields: Vec::new(),
@@ -1392,7 +1408,7 @@ pub(crate) fn foreign_reward(id: &str, title: &str) -> forge_platform_core::Coll
         id,
         title,
         forge_platform_core::CollectionItemAccess::ReadOnly {
-            reason: UserText::unlocalized("created elsewhere"),
+            reason: forge_types::VerbatimText::new("created elsewhere").into(),
         },
     )
 }

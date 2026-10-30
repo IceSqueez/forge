@@ -8,7 +8,9 @@ use super::HotkeysScreenView;
 use crate::async_bridge::{self, ErrorSink};
 use crate::hotkey_action_modal::BindingDraft;
 use crate::repo_failure::RepoFailure;
-use forge_hotkey::{BindingUpdate, do_bind, rebind_combo, set_binding_enabled, update_binding};
+use forge_hotkey::{
+    BindingUpdate, HotkeyError, do_bind, rebind_combo, set_binding_enabled, update_binding,
+};
 
 impl HotkeysScreenView {
     pub(super) fn persist_draft(&mut self, draft: BindingDraft, cx: &mut Context<Self>) {
@@ -51,15 +53,15 @@ impl HotkeysScreenView {
 
     pub(super) fn run_reload(
         &mut self,
-        work: impl Future<Output = Result<(), String>> + Send + 'static,
+        work: impl Future<Output = Result<(), HotkeyError>> + Send + 'static,
         cx: &mut Context<Self>,
     ) {
         async_bridge::run_async(
             &self.rt_handle,
             work,
-            |this, result: Result<(), String>, cx| match result {
+            |this, result: Result<(), HotkeyError>, cx| match result {
                 Ok(()) => this.load(cx),
-                Err(reason) => this.on_repo_error(&RepoFailure::operation(reason), cx),
+                Err(error) => this.on_repo_error(&RepoFailure::hotkey(&error), cx),
             },
             cx,
         );

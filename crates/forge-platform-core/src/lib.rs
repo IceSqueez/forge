@@ -56,7 +56,7 @@ pub use donation_test::{
     test_donation_step,
 };
 pub use endpoints::{EndpointRefusal, EndpointSurface, PlatformEndpoints};
-pub use error::{HTTP_UNAUTHORIZED, PlatformError};
+pub use error::{DeviceAuthEnd, HTTP_UNAUTHORIZED, PlatformError};
 pub use follow_lookup::{FollowLookup, FollowStatus};
 pub use integration::{ConnectionAffordance, IntegrationCategory, IntegrationDeclaration};
 pub use live_viewers::{LiveViewerSource, ViewerReport, ViewerReportStream};

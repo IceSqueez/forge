@@ -3,7 +3,9 @@ use std::time::{Duration, SystemTime};
 use tokio::time::Instant;
 
 use forge_net::{Gateway, GatewayRequest};
-use forge_platform_core::{AuthFlow, EndpointSurface, PlatformEndpoints, PlatformError};
+use forge_platform_core::{
+    AuthFlow, DeviceAuthEnd, EndpointSurface, PlatformEndpoints, PlatformError,
+};
 use forge_types::OAuthToken;
 use forge_types::Secret;
 use serde::Deserialize;
@@ -73,11 +75,7 @@ pub const TWITCH_BOT_SCOPES: &[&str] = &[
     "moderator:manage:shoutouts",
 ];
 
-pub(crate) const DEVICE_CANCELLED_REASON: &str = "device authorization cancelled";
-pub(crate) const DEVICE_DENIED_REASON: &str = "authorization denied by user";
-pub(crate) const DEVICE_EXPIRED_REASON: &str = "device code expired";
 const DEVICE_LIFETIME_OUT_OF_RANGE_REASON: &str = "device code lifetime out of range";
-pub(crate) const DEVICE_CODE_USED_REASON: &str = "device code expired or already used";
 
 pub(crate) fn twitch_device_endpoint(endpoints: &PlatformEndpoints) -> String {
     format!(
@@ -259,9 +257,7 @@ impl TwitchAuthFlow {
             tokio::select! {
                 biased;
                 () = cancel.cancelled() => {
-                    return Err(PlatformError::Auth {
-                        reason: DEVICE_CANCELLED_REASON.into(),
-                    });
+                    return Err(PlatformError::DeviceAuthEnded(DeviceAuthEnd::Cancelled));
                 }
                 () = tokio::time::sleep(next_wait.min(remaining)) => {}
             }
@@ -366,9 +362,7 @@ fn time_left(deadline: Instant) -> Result<Duration, PlatformError> {
     deadline
         .checked_duration_since(Instant::now())
         .filter(|remaining| !remaining.is_zero())
-        .ok_or_else(|| PlatformError::Auth {
-            reason: DEVICE_EXPIRED_REASON.into(),
-        })
+        .ok_or(PlatformError::DeviceAuthEnded(DeviceAuthEnd::Expired))
 }
 
 fn lifetime_out_of_range() -> PlatformError {
@@ -379,7 +373,7 @@ fn lifetime_out_of_range() -> PlatformError {
 
 fn step_failed(step: &str, error: PlatformError) -> PlatformError {
     match error {
-        PlatformError::Auth { .. } => error,
+        PlatformError::Auth { .. } | PlatformError::DeviceAuthEnded(_) => error,
         other => PlatformError::Auth {
             reason: format!("{step} failed: {other}"),
         },
@@ -570,10 +564,13 @@ mod tests {
         cancel.cancel();
         let err = flow.wait_for_authorization(cancel).await.unwrap_err();
 
-        let PlatformError::Auth { reason } = err else {
-            panic!("expected Auth error");
-        };
-        assert_eq!(reason, DEVICE_CANCELLED_REASON);
+        assert!(
+            matches!(
+                err,
+                PlatformError::DeviceAuthEnded(DeviceAuthEnd::Cancelled)
+            ),
+            "{err:?}"
+        );
         let polled = server
             .received_requests()
             .await
@@ -609,7 +606,10 @@ mod tests {
             .await
             .unwrap_err();
 
-        assert!(matches!(err, PlatformError::Auth { .. }));
+        assert!(
+            matches!(err, PlatformError::DeviceAuthEnded(DeviceAuthEnd::Denied)),
+            "{err:?}"
+        );
         assert_eq!(
             server.received_requests().await.unwrap().len(),
             2,
@@ -801,10 +801,14 @@ mod tests {
                 cancel.cancel();
             });
 
-            let Err(PlatformError::Auth { reason }) = outcome else {
-                panic!("{stage:?}: a cancelled sign-in must end with an Auth error");
-            };
-            assert_eq!(reason, DEVICE_CANCELLED_REASON, "{stage:?}");
+            assert!(
+                matches!(
+                    outcome,
+                    Err(PlatformError::DeviceAuthEnded(DeviceAuthEnd::Cancelled))
+                ),
+                "{stage:?}: a cancelled sign-in must stay a typed cancellation: {:?}",
+                outcome.as_ref().err()
+            );
             assert!(
                 bus.of_kind("request.fail").is_empty(),
                 "{stage:?}: a cancelled call must not publish a failure"
@@ -964,27 +968,27 @@ mod tests {
                 .is_err()
         }
 
-        async fn ended_reason(&mut self) -> String {
+        async fn ended(&mut self) -> DeviceAuthEnd {
             let ended = tokio::time::timeout(HANG_GUARD, &mut self.waiting)
                 .await
                 .expect("the wait must end on its own")
                 .unwrap();
-            let Err(PlatformError::Auth { reason }) = ended else {
-                panic!("the wait must end with an Auth error");
+            let Err(PlatformError::DeviceAuthEnded(end)) = ended else {
+                panic!("the wait must end as a device auth end");
             };
-            reason
+            end
         }
 
-        async fn cancelled_reason(self) -> String {
+        async fn cancelled(self) -> DeviceAuthEnd {
             self.cancel.cancel();
             let ended = tokio::time::timeout(HANG_GUARD, self.waiting)
                 .await
                 .expect("a cancelled wait must end promptly")
                 .unwrap();
-            let Err(PlatformError::Auth { reason }) = ended else {
-                panic!("a cancelled wait must end with an Auth error");
+            let Err(PlatformError::DeviceAuthEnded(end)) = ended else {
+                panic!("a cancelled wait must end as a device auth end");
             };
-            reason
+            end
         }
     }
 
@@ -1011,7 +1015,7 @@ mod tests {
             ),
             (true, true, true)
         );
-        assert_eq!(rig.cancelled_reason().await, DEVICE_CANCELLED_REASON);
+        assert_eq!(rig.cancelled().await, DeviceAuthEnd::Cancelled);
     }
 
     #[tokio::test]
@@ -1035,7 +1039,7 @@ mod tests {
             rig.no_poll_arrives_for(NEVER_WITHIN).await,
             "a slow_down answer must lengthen the pause before the next poll"
         );
-        assert_eq!(rig.cancelled_reason().await, DEVICE_CANCELLED_REASON);
+        assert_eq!(rig.cancelled().await, DeviceAuthEnd::Cancelled);
     }
 
     #[tokio::test]
@@ -1059,7 +1063,7 @@ mod tests {
             reached_twitch.duration_since(rig.started) >= POLL_INTERVAL * 3,
             "a poll without budget left must not reach Twitch"
         );
-        assert_eq!(rig.cancelled_reason().await, DEVICE_CANCELLED_REASON);
+        assert_eq!(rig.cancelled().await, DeviceAuthEnd::Cancelled);
     }
 
     #[tokio::test]
@@ -1082,7 +1086,7 @@ mod tests {
             at_deadline.duration_since(started) >= SHORT_LIFETIME,
             "the pause must be cut at the code's expiry"
         );
-        assert_eq!(rig.ended_reason().await, DEVICE_EXPIRED_REASON);
+        assert_eq!(rig.ended().await, DeviceAuthEnd::Expired);
         assert_eq!(
             limiter.acquire_count(),
             3,
@@ -1102,7 +1106,7 @@ mod tests {
         .await;
         let started = rig.started;
 
-        let reason = rig.ended_reason().await;
+        let end = rig.ended().await;
 
         let mut last = None;
         while let Ok(arrival) = rig.arrivals.try_recv() {
@@ -1112,7 +1116,7 @@ mod tests {
             last.is_some_and(|at| at.duration_since(started) >= SHORT_LIFETIME),
             "the last poll must land at the lifetime, not before it"
         );
-        assert_eq!(reason, DEVICE_EXPIRED_REASON);
+        assert_eq!(end, DeviceAuthEnd::Expired);
     }
 
     #[tokio::test]
@@ -1142,9 +1146,9 @@ mod tests {
         rig.answered.notified().await;
         let limiter = Arc::clone(&rig.limiter);
 
-        let reason = rig.cancelled_reason().await;
+        let end = rig.cancelled().await;
 
-        assert_eq!(reason, DEVICE_CANCELLED_REASON);
+        assert_eq!(end, DeviceAuthEnd::Cancelled);
         assert_eq!(
             limiter.acquire_count(),
             2,
@@ -1159,13 +1163,16 @@ mod tests {
         let mut flow = armed(flow_at(&server));
         flow.deadline = Some(tokio::time::Instant::now());
 
-        let Err(PlatformError::Auth { reason }) =
-            flow.wait_for_authorization(CancellationToken::new()).await
-        else {
-            panic!("an expired device code must end with an Auth error");
-        };
+        let outcome = flow.wait_for_authorization(CancellationToken::new()).await;
 
-        assert_eq!(reason, DEVICE_EXPIRED_REASON);
+        assert!(
+            matches!(
+                outcome,
+                Err(PlatformError::DeviceAuthEnded(DeviceAuthEnd::Expired))
+            ),
+            "{:?}",
+            outcome.as_ref().err()
+        );
         assert!(server.received_requests().await.unwrap().is_empty());
     }
 

@@ -22,6 +22,7 @@ use crate::async_bridge;
 use crate::boot_warnings::BootWarnings;
 use crate::bundle_preview::{export_statement, statement_row};
 use crate::diagnostic_bundle::{self, BUNDLE_FILE_NAME, Bundle};
+use crate::error::DesktopError;
 use crate::integrations::BuiltinRegistry;
 use crate::log_archive;
 use crate::log_tail::{LogLine, LogTail};
@@ -250,33 +251,36 @@ impl SettingsDiagnosticsView {
             return;
         };
         let text = bundle.text;
-        async_bridge::spawn_dialog(
+        async_bridge::run_async(
             &self.rt_handle,
             async move {
                 let filter = async_bridge::DialogFilter {
                     name: "Text".to_owned(),
                     extensions: vec!["txt"],
                 };
-                let path = async_bridge::save_file(Some(filter), Some(BUNDLE_FILE_NAME.to_owned()))
-                    .await?;
-                tokio::fs::write(&path, text)
-                    .await
-                    .map_err(|e| e.to_string())?;
-                Ok(path)
+                let Some(path) =
+                    async_bridge::save_file(Some(filter), Some(BUNDLE_FILE_NAME.to_owned())).await
+                else {
+                    return Ok(None);
+                };
+                tokio::fs::write(&path, text).await?;
+                Ok::<_, DesktopError>(Some(path))
             },
             |_this, result, cx| match result {
-                Ok(path) => {
+                Ok(None) => {}
+                Ok(Some(path)) => {
                     let path = path.display().to_string();
                     cx.push_toast(
                         ToastKind::Success,
                         tr!("settings_diagnostics_exported", path = path.as_str()),
                     );
                 }
-                Err(e) if e == async_bridge::DIALOG_CANCELLED => {}
-                Err(e) => {
+                Err(error) => {
+                    tracing::warn!(error = %error, "diagnostic export failed");
+                    let shown = error.user_message();
                     cx.push_toast(
                         ToastKind::Error,
-                        tr!("settings_diagnostics_export_failed", error = e.as_str()),
+                        tr!("settings_diagnostics_export_failed", error = shown.as_str()),
                     );
                 }
             },

@@ -6,10 +6,10 @@ use crate::client::HotkeyClient;
 #[async_trait]
 impl BuiltinControl for HotkeyClient {
     async fn reconnect(&self) -> ControlOutcome {
-        match self.enable().await {
-            Ok(failures) if failures.is_empty() => Ok(()),
-            _ => Err(ControlFailure::Transport),
-        }
+        self.enable()
+            .await
+            .map(|_refused_combos| ())
+            .map_err(|_| ControlFailure::Transport)
     }
 
     async fn disconnect(&self) -> ControlOutcome {
@@ -48,7 +48,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn reconnect_reports_transport_when_a_combo_cannot_be_re_registered() {
+    async fn reconnect_succeeds_and_re_enables_the_engine_when_one_combo_is_refused() {
         let (backend, _tx) = MockPortalBackend::new();
         let refuse = Arc::clone(&backend.fail_on);
         let client = start_supervised(backend, noop_publisher());
@@ -65,7 +65,10 @@ mod tests {
         control.disconnect().await.unwrap();
         refuse.lock().unwrap().insert("Alt+X".to_owned());
 
-        assert_eq!(control.reconnect().await, Err(ControlFailure::Transport));
+        assert_eq!(
+            (control.reconnect().await, client.is_enabled()),
+            (Ok(()), true)
+        );
     }
 
     #[tokio::test]

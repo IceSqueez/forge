@@ -57,3 +57,5 @@ msg-youtube-label_user = Користувач
 msg-youtube-label_username = Ім'я користувача
 msg-youtube-label_viewer_identifier_example = @псевдонім або UC...
 msg-youtube-label_visibility = Видимість
+msg-youtube-endpoint_summary = Підключено через OAuth (PKCE)
+msg-youtube-channel_id_badge = channel_id { $id }

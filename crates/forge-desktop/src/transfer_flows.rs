@@ -9,7 +9,7 @@ use forge_transfer::{
 use forge_types::ActionId;
 use gpui::{AnyView, App, AppContext, Context, Entity, EventEmitter, Global, Subscription};
 
-use crate::async_bridge::{self, DIALOG_CANCELLED, DialogFilter};
+use crate::async_bridge::{self, DialogFilter};
 use crate::backup_flow::{BackupFlow, BackupTarget};
 use crate::home_stats::HomeStats;
 use crate::pack_export::PackExportFlow;
@@ -188,7 +188,7 @@ impl TransferFlows {
                 LEGACY_ARCHIVE_DIALOG_EXTENSION,
             ],
         };
-        async_bridge::spawn_dialog(
+        async_bridge::run_async(
             &self.rt_handle,
             async_bridge::pick_file(Some(filter)),
             |this, result, cx| this.import_picked(result, cx),
@@ -197,9 +197,9 @@ impl TransferFlows {
         cx.notify();
     }
 
-    fn import_picked(&mut self, result: Result<PathBuf, String>, cx: &mut Context<Self>) {
-        match result {
-            Ok(path) => {
+    fn import_picked(&mut self, picked: Option<PathBuf>, cx: &mut Context<Self>) {
+        match picked {
+            Some(path) => {
                 let bundle = path.clone();
                 async_bridge::run_async(
                     &self.rt_handle,
@@ -208,16 +208,7 @@ impl TransferFlows {
                     cx,
                 );
             }
-            Err(message) => {
-                self.routing = false;
-                if message != DIALOG_CANCELLED {
-                    tracing::warn!(error = %message, "import file picker failed");
-                    cx.push_toast(
-                        ToastKind::Error,
-                        tr!("home_import_failed", error = message.as_str()),
-                    );
-                }
-            }
+            None => self.routing = false,
         }
         self.settle_guard(cx);
     }

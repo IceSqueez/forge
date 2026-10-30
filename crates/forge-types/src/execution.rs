@@ -554,7 +554,7 @@ mod tests {
     fn execution_outcome_variants_serde_roundtrip() {
         let outcomes = [
             ExecutionOutcome::Success,
-            ExecutionOutcome::Failed(UserText::unlocalized("rhai panic")),
+            ExecutionOutcome::Failed(VerbatimText::new("rhai panic").into()),
             ExecutionOutcome::Cancelled,
         ];
         for o in outcomes {
@@ -570,11 +570,11 @@ mod tests {
         let cases = [
             (SubActionOutcome::Success, None),
             (
-                SubActionOutcome::Failed(UserText::unlocalized("timeout")),
-                Some(UserText::unlocalized("timeout")),
+                SubActionOutcome::Failed(VerbatimText::new("timeout").into()),
+                Some(VerbatimText::new("timeout").into()),
             ),
             (
-                SubActionOutcome::Skipped(UserText::unlocalized("disabled")),
+                SubActionOutcome::Skipped(VerbatimText::new("disabled").into()),
                 None,
             ),
             (
@@ -596,7 +596,7 @@ mod tests {
     fn sub_action_outcome_variants_serde_roundtrip() {
         let outcomes = [
             SubActionOutcome::Success,
-            SubActionOutcome::Failed(UserText::unlocalized("timeout")),
+            SubActionOutcome::Failed(VerbatimText::new("timeout").into()),
             SubActionOutcome::Skipped(MessageRef::new(WHISPERS_UNSUPPORTED).into()),
             SubActionOutcome::IntegrationDisabled(IntegrationId::from_static("twitch")),
         ];

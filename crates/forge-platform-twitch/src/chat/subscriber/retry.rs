@@ -156,12 +156,12 @@ async fn retry_topic(
             | TopicOutcome::Unauthorized => return,
         }
     }
-    let reason = tracker.retrying_reason(index).unwrap_or_default();
+    let reason = tracker.retrying_reason(index);
     tracker.settle_retrying(index);
     warn!(
         kind = topic.kind,
         attempts = backoff.attempt(),
-        error = %reason,
+        error = ?reason,
         "eventsub subscription retries exhausted; giving up for this session"
     );
 }
@@ -194,7 +194,7 @@ mod tests {
     use super::TopicRetryRun;
     use crate::bot_account::test_support::RecordingBus;
     use crate::helix::{HelixError, HelixRequest, HelixTransport};
-    use crate::subscriptions::{SubStatus, SubscriptionTracker};
+    use crate::subscriptions::{SubStatus, SubscriptionFailure, SubscriptionTracker};
     use crate::vocabulary::event_kinds::EVENTSUB_SUBSCRIPTION_CREATED;
     use async_trait::async_trait;
     use forge_events::EventPublisher;
@@ -455,12 +455,12 @@ mod tests {
         }
     }
 
-    fn retrying(reason: &str) -> SubStatus {
-        SubStatus::Retrying(reason.to_owned())
+    fn retrying(reason: SubscriptionFailure) -> SubStatus {
+        SubStatus::Retrying(reason)
     }
 
-    fn failed(reason: &str) -> SubStatus {
-        SubStatus::Failed(reason.to_owned())
+    fn failed(reason: SubscriptionFailure) -> SubStatus {
+        SubStatus::Failed(reason)
     }
 
     fn then(answer: Answer) -> Box<Answer> {
@@ -472,19 +472,22 @@ mod tests {
         let cases = [
             (
                 Answer::Status(StatusCode::INTERNAL_SERVER_ERROR),
-                "HTTP 500",
+                SubscriptionFailure::Refused(500),
             ),
-            (Answer::Status(StatusCode::SERVICE_UNAVAILABLE), "HTTP 503"),
-            (Answer::RateLimited, "rate limited"),
-            (Answer::Transport, "connection refused"),
-            (Answer::Undecodable, "unreadable response"),
-            (Answer::NoData, "unreadable response"),
+            (
+                Answer::Status(StatusCode::SERVICE_UNAVAILABLE),
+                SubscriptionFailure::Refused(503),
+            ),
+            (Answer::RateLimited, SubscriptionFailure::RateLimited),
+            (Answer::Transport, SubscriptionFailure::Transport),
+            (Answer::Undecodable, SubscriptionFailure::UnreadableResponse),
+            (Answer::NoData, SubscriptionFailure::UnreadableResponse),
         ];
 
         for (first, reason) in cases {
             let stub = ScriptedHelix::new([(PROBED, vec![first, Answer::Created(RECOVERED_ID)])]);
             let mut retry = Retrying::after_pass(&stub).await;
-            assert_eq!(retry.status_of(PROBED), retrying(reason));
+            assert_eq!(retry.status_of(PROBED), retrying(reason.clone()));
 
             retry.finish().await;
 
@@ -500,7 +503,7 @@ mod tests {
                     1,
                     serde_json::json!(RECOVERED_ID)
                 ),
-                "{reason}: a retried topic must become Active with the id Twitch returned and \
+                "{reason:?}: a retried topic must become Active with the id Twitch returned and \
                  announce itself exactly once"
             );
         }
@@ -518,7 +521,10 @@ mod tests {
 
         assert_eq!(
             (stub.sessions_posted(PROBED).len(), retry.status_of(PROBED)),
-            (1 + ATTEMPT_CEILINGS.len(), failed("HTTP 503"))
+            (
+                1 + ATTEMPT_CEILINGS.len(),
+                failed(SubscriptionFailure::Refused(503))
+            )
         );
     }
 
@@ -604,9 +610,15 @@ mod tests {
     #[tokio::test(start_paused = true)]
     async fn a_permanent_rejection_on_a_retry_ends_the_topic_without_another_attempt() {
         let cases = [
-            (Answer::Reauth, "unauthorized"),
-            (Answer::Status(StatusCode::FORBIDDEN), "missing scope"),
-            (Answer::Status(StatusCode::BAD_REQUEST), "HTTP 400"),
+            (Answer::Reauth, SubscriptionFailure::Unauthorized),
+            (
+                Answer::Status(StatusCode::FORBIDDEN),
+                SubscriptionFailure::MissingScope,
+            ),
+            (
+                Answer::Status(StatusCode::BAD_REQUEST),
+                SubscriptionFailure::Refused(400),
+            ),
         ];
 
         for (rejection, reason) in cases {
@@ -699,7 +711,7 @@ mod tests {
 
         assert_eq!(
             (stub.sessions_posted(PROBED).len(), retry.status_of(PROBED)),
-            (2, failed("unauthorized"))
+            (2, failed(SubscriptionFailure::Unauthorized))
         );
     }
 
@@ -725,7 +737,7 @@ mod tests {
                 retry.created_events_for(PROBED).len(),
                 stub.sessions_posted(PROBED).len()
             ),
-            (failed("HTTP 500"), 0, 2)
+            (failed(SubscriptionFailure::Refused(500)), 0, 2)
         );
     }
 
@@ -825,7 +837,7 @@ mod tests {
 
         assert_eq!(
             (retry.run.is_none(), retry.status_of(PROBED)),
-            (true, failed("already exists on another session"))
+            (true, failed(SubscriptionFailure::AlreadyExists))
         );
     }
 
@@ -845,7 +857,10 @@ mod tests {
             .tracker
             .mark_revoked("sub-unlisted", PROBED, None, "user_removed");
 
-        assert_eq!(retry.status_of(PROBED), failed("revoked: user_removed"));
+        assert_eq!(
+            retry.status_of(PROBED),
+            failed(SubscriptionFailure::Revoked("user_removed".to_owned()))
+        );
     }
 
     #[tokio::test(start_paused = true)]
@@ -888,13 +903,16 @@ mod tests {
                 .map(|rec| rec.status.clone())
                 .unwrap()
         };
-        assert_eq!(status(&tracker), retrying("HTTP 500"));
+        assert_eq!(
+            status(&tracker),
+            retrying(SubscriptionFailure::Refused(500))
+        );
 
         drop(pass);
 
         assert_eq!(
             status(&tracker),
-            failed("HTTP 500"),
+            failed(SubscriptionFailure::Refused(500)),
             "a pass torn down before it finished (session end, keepalive timeout, shutdown) \
              leaves no retry behind its Retrying rows"
         );

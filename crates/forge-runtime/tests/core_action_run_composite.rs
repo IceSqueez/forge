@@ -324,7 +324,7 @@ async fn child_signal_maps_to_the_sub_action_outcome() {
         (ChainSignal::Break, Expect::Success),
         (ChainSignal::Continue, Expect::Success),
         (
-            ChainSignal::Error(forge_types::UserText::unlocalized("boom")),
+            ChainSignal::Error(forge_types::VerbatimText::new("boom").into()),
             Expect::FailedExact("boom"),
         ),
         (

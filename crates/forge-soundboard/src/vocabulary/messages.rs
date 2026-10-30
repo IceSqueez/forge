@@ -105,10 +105,10 @@ pub(crate) fn failure(error: &SoundboardError) -> MessageRef {
             MessageRef::new(MASTER_VOLUME_NOT_SAVED),
             &source.to_string(),
         ),
-        SoundboardError::Storage(detail) => with_detail(MessageRef::new(STORAGE_FAILED), detail),
-        SoundboardError::JoinError(detail) => {
-            with_detail(MessageRef::new(PLAYBACK_TASK_FAILED), detail)
+        SoundboardError::Storage(source) => {
+            with_detail(MessageRef::new(STORAGE_FAILED), &source.to_string())
         }
+        SoundboardError::TaskFailed => MessageRef::new(PLAYBACK_TASK_FAILED),
     }
 }
 #[cfg(test)]
@@ -214,11 +214,11 @@ mod tests {
                 "soundboard.master_volume_not_saved",
             ),
             (
-                SoundboardError::Storage("s".into()),
+                SoundboardError::Storage(storage_error()),
                 "soundboard.storage_failed",
             ),
             (
-                SoundboardError::JoinError("j".into()),
+                SoundboardError::TaskFailed,
                 "soundboard.playback_task_failed",
             ),
         ]
@@ -294,10 +294,10 @@ mod tests {
             assert_eq!(mapped.args().count(), 0);
         }
         assert_eq!(
-            failure(&SoundboardError::Storage("db-text".into()))
+            failure(&SoundboardError::Storage(storage_error()))
                 .detail()
                 .map(|d| d.as_str()),
-            Some("db-text")
+            Some(storage_error().to_string().as_str())
         );
     }
 

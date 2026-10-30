@@ -6,6 +6,7 @@ use time::OffsetDateTime;
 
 use crate::integration::IntegrationId;
 use crate::message::reference::MessageRef;
+use crate::message::user_text::UserText;
 use crate::message::verbatim::VerbatimText;
 use crate::platform::PlatformId;
 use crate::variant::VariantKind;
@@ -52,6 +53,15 @@ pub enum MessageArg {
         keys: Vec<String>,
     },
     Message(Box<MessageRef>),
+}
+
+impl From<UserText> for MessageArg {
+    fn from(value: UserText) -> Self {
+        match value {
+            UserText::Message(message) => Self::Message(Box::new(message)),
+            UserText::Verbatim(text) => Self::Verbatim(text),
+        }
+    }
 }
 
 impl From<i64> for MessageArg {

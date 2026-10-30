@@ -15,6 +15,7 @@ use forge_types::{SubActionOutcome, SubActionStep, UserText, integration_disable
 use gpui::{App, AsyncApp, Context, Entity, SharedString};
 use tokio::runtime::Handle;
 
+use crate::error::DesktopError;
 use crate::user_text::resolve_user_text;
 
 use forge_components::PushToast;
@@ -99,19 +100,13 @@ where
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum ErrorSink {
     Toast,
-    Banner,
     Silent,
 }
 
 impl ErrorSink {
-    pub fn report(self, message: String, cx: &mut App) -> Option<String> {
-        match self {
-            ErrorSink::Toast => {
-                cx.push_toast(ToastKind::Error, message);
-                None
-            }
-            ErrorSink::Banner => Some(message),
-            ErrorSink::Silent => None,
+    pub fn report(self, message: String, cx: &mut App) {
+        if self == ErrorSink::Toast {
+            cx.push_toast(ToastKind::Error, message);
         }
     }
 }
@@ -161,11 +156,13 @@ where
     });
 }
 
-pub async fn open_path(target: impl AsRef<std::ffi::OsStr> + Send + 'static) -> Result<(), String> {
+pub async fn open_path(
+    target: impl AsRef<std::ffi::OsStr> + Send + 'static,
+) -> Result<(), DesktopError> {
     tokio::task::spawn_blocking(move || open::that(target))
         .await
-        .map_err(|e| e.to_string())?
-        .map_err(|e| e.to_string())
+        .map_err(|_| DesktopError::TaskStopped)?
+        .map_err(DesktopError::from)
 }
 
 pub fn open_external<V>(
@@ -181,8 +178,6 @@ pub fn open_external<V>(
     report_failure(handle, open_path(target), sink, context, cx);
 }
 
-pub const DIALOG_CANCELLED: &str = "dialog cancelled";
-
 pub struct DialogFilter {
     pub name: String,
     pub extensions: Vec<&'static str>,
@@ -196,41 +191,33 @@ fn file_dialog(filter: Option<DialogFilter>) -> rfd::AsyncFileDialog {
     }
 }
 
-async fn pick_with(dialog: rfd::AsyncFileDialog) -> Result<PathBuf, String> {
+async fn pick_with(dialog: rfd::AsyncFileDialog) -> Option<PathBuf> {
     dialog
         .pick_file()
         .await
         .map(|handle| handle.path().to_path_buf())
-        .ok_or_else(|| DIALOG_CANCELLED.to_owned())
 }
 
-pub async fn pick_file(filter: Option<DialogFilter>) -> Result<PathBuf, String> {
+pub async fn pick_file(filter: Option<DialogFilter>) -> Option<PathBuf> {
     pick_with(file_dialog(filter)).await
 }
 
-pub async fn pick_file_in(
-    filter: Option<DialogFilter>,
-    directory: PathBuf,
-) -> Result<PathBuf, String> {
+pub async fn pick_file_in(filter: Option<DialogFilter>, directory: PathBuf) -> Option<PathBuf> {
     pick_with(file_dialog(filter).set_directory(directory)).await
 }
 
-pub async fn pick_folder() -> Result<PathBuf, String> {
+pub async fn pick_folder() -> Option<PathBuf> {
     rfd::AsyncFileDialog::new()
         .pick_folder()
         .await
         .map(|handle| handle.path().to_path_buf())
-        .ok_or_else(|| DIALOG_CANCELLED.to_owned())
 }
 
 pub async fn save_file(
     filter: Option<DialogFilter>,
     default_name: Option<String>,
-) -> Result<PathBuf, String> {
-    let mut dialog = rfd::AsyncFileDialog::new();
-    if let Some(filter) = filter {
-        dialog = dialog.add_filter(filter.name, &filter.extensions);
-    }
+) -> Option<PathBuf> {
+    let mut dialog = file_dialog(filter);
     if let Some(name) = default_name {
         dialog = dialog.set_file_name(name);
     }
@@ -238,20 +225,6 @@ pub async fn save_file(
         .save_file()
         .await
         .map(|handle| handle.path().to_path_buf())
-        .ok_or_else(|| DIALOG_CANCELLED.to_owned())
-}
-
-pub fn spawn_dialog<V, Fut, T>(
-    handle: &Handle,
-    dialog: Fut,
-    on_result: impl FnOnce(&mut V, Result<T, String>, &mut Context<V>) + Send + 'static,
-    cx: &mut Context<V>,
-) where
-    V: 'static,
-    T: Send + 'static,
-    Fut: Future<Output = Result<T, String>> + Send + 'static,
-{
-    run_async(handle, dialog, on_result, cx);
 }
 
 pub fn run_async<V, Fut, T>(
@@ -747,11 +720,11 @@ mod tests {
             (SUCCEEDS, SubActionOutcome::Success),
             (
                 FAILS,
-                SubActionOutcome::Failed(forge_types::UserText::unlocalized(FAILURE_REASON)),
+                SubActionOutcome::Failed(forge_types::VerbatimText::new(FAILURE_REASON).into()),
             ),
             (
                 SKIPS,
-                SubActionOutcome::Skipped(forge_types::UserText::unlocalized(SKIP_REASON)),
+                SubActionOutcome::Skipped(forge_types::VerbatimText::new(SKIP_REASON).into()),
             ),
         ] {
             registry

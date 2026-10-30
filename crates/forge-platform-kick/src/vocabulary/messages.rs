@@ -3,6 +3,9 @@ use forge_types::{MessageCatalog, MessageCode, MessageRef, UpstreamDetail, Verba
 use crate::vocabulary::INTEGRATION_ID;
 use crate::vocabulary::labels;
 
+pub const ENDPOINT_SUMMARY: MessageCode =
+    MessageCode::from_static(INTEGRATION_ID, "endpoint_summary");
+const USER_ID_BADGE: MessageCode = MessageCode::from_static(INTEGRATION_ID, "user_id_badge");
 pub const KICK_COMMUNITY_NOTE: MessageCode =
     MessageCode::from_static(INTEGRATION_ID, "community_note");
 pub const STORED_SIGN_IN_UNREADABLE: MessageCode =
@@ -50,6 +53,9 @@ const NOTHING_TO_UPDATE: MessageCode =
 pub const KICK_MESSAGES: MessageCatalog = MessageCatalog {
     namespace: INTEGRATION_ID,
     codes: &[
+        ENDPOINT_SUMMARY,
+        USER_ID_BADGE,
+        labels::REDEMPTION_IDS_HINT,
         HEALTH_LIVE_CHAT,
         HEALTH_EVENTS,
         HEALTH_API_CALLS,
@@ -210,6 +216,11 @@ pub(crate) fn unresolved_reference(name: &str) -> MessageRef {
 pub(crate) fn nothing_to_update() -> MessageRef {
     MessageRef::new(NOTHING_TO_UPDATE)
 }
+
+pub(crate) fn user_id_badge(user_id: &str) -> MessageRef {
+    MessageRef::new(USER_ID_BADGE).with_arg("id", VerbatimText::new(user_id))
+}
+
 #[cfg(test)]
 mod tests {
     use std::collections::{BTreeMap, BTreeSet};
@@ -240,6 +251,8 @@ mod tests {
 
     fn every_constructor() -> Vec<MessageRef> {
         vec![
+            MessageRef::new(ENDPOINT_SUMMARY),
+            user_id_badge("1"),
             MessageRef::new(STORED_SIGN_IN_UNREADABLE),
             MessageRef::new(HEALTH_LIVE_CHAT),
             MessageRef::new(HEALTH_EVENTS),

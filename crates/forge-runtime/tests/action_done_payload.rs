@@ -109,11 +109,11 @@ async fn rig() -> Rig {
         (SUCCESS_KIND_ID, SubActionOutcome::Success),
         (
             SKIPPED_KIND_ID,
-            SubActionOutcome::Skipped(forge_types::UserText::unlocalized("condition false")),
+            SubActionOutcome::Skipped(forge_types::VerbatimText::new("condition false").into()),
         ),
         (
             FAILING_KIND_ID,
-            SubActionOutcome::Failed(forge_types::UserText::unlocalized(FAILURE_REASON)),
+            SubActionOutcome::Failed(forge_types::VerbatimText::new(FAILURE_REASON).into()),
         ),
     ] {
         registry

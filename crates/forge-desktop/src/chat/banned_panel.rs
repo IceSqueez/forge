@@ -1761,7 +1761,7 @@ pub(super) mod tests {
                 entry("1001", UnbanAbility::Allowed),
                 entry("1002", UnbanAbility::Allowed),
             ],
-            SubActionOutcome::Failed(forge_types::UserText::unlocalized("missing scope")),
+            SubActionOutcome::Failed(forge_types::VerbatimText::new("missing scope").into()),
         );
 
         unban(cx, &panel, "1001");
@@ -1782,7 +1782,7 @@ pub(super) mod tests {
             cx,
             &rt,
             vec![entry("1001", UnbanAbility::Allowed)],
-            SubActionOutcome::Failed(forge_types::UserText::unlocalized("busy")),
+            SubActionOutcome::Failed(forge_types::VerbatimText::new("busy").into()),
         );
 
         unban(cx, &panel, "1001");

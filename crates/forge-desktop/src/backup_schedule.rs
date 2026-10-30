@@ -40,8 +40,7 @@ use gpui::{
 use time::OffsetDateTime;
 
 use crate::async_bridge::{
-    self, DIALOG_CANCELLED, ErrorSink, Generation, Loadable, SLIDER_PERSIST_DEBOUNCE,
-    SnapshotWriter, WriteOutcome,
+    self, ErrorSink, Generation, Loadable, SLIDER_PERSIST_DEBOUNCE, SnapshotWriter, WriteOutcome,
 };
 use crate::backup_passphrase_modal::{
     BackupPassphraseEvent, BackupPassphraseModal, PassphrasePurpose,
@@ -756,7 +755,7 @@ impl BackupScheduleView {
         if !self.settings.is_loaded() {
             return;
         }
-        async_bridge::spawn_dialog(
+        async_bridge::run_async(
             &self.rt_handle,
             async_bridge::pick_folder(),
             |this, result, cx| this.folder_chosen(result, cx),
@@ -764,36 +763,21 @@ impl BackupScheduleView {
         );
     }
 
-    pub(crate) fn folder_chosen(
-        &mut self,
-        result: Result<PathBuf, String>,
-        cx: &mut Context<Self>,
-    ) {
-        match result {
-            Ok(path) => {
-                let Some(settings) = self.settings.loaded_mut() else {
-                    return;
-                };
-                let shown = path.to_string_lossy().into_owned();
-                settings.destination = Some(shown.clone());
-                let repo = self.settings_repo();
-                self.persist(
-                    BACKUP_SCHEDULE_DESTINATION.name(),
-                    async move {
-                        write_setting(repo.as_ref(), &BACKUP_SCHEDULE_DESTINATION, &Some(shown))
-                            .await
-                    },
-                    cx,
-                );
-            }
-            Err(message) if message == DIALOG_CANCELLED => {}
-            Err(message) => {
-                tracing::warn!(error = %message, "backup folder picker failed");
-                cx.push_toast(
-                    ToastKind::Error,
-                    tr!("backup_schedule_folder_failed", error = message.as_str()),
-                );
-            }
+    pub(crate) fn folder_chosen(&mut self, chosen: Option<PathBuf>, cx: &mut Context<Self>) {
+        if let Some(path) = chosen {
+            let Some(settings) = self.settings.loaded_mut() else {
+                return;
+            };
+            let shown = path.to_string_lossy().into_owned();
+            settings.destination = Some(shown.clone());
+            let repo = self.settings_repo();
+            self.persist(
+                BACKUP_SCHEDULE_DESTINATION.name(),
+                async move {
+                    write_setting(repo.as_ref(), &BACKUP_SCHEDULE_DESTINATION, &Some(shown)).await
+                },
+                cx,
+            );
         }
         cx.notify();
     }
@@ -2493,7 +2477,7 @@ pub(crate) mod tests {
                 v.toggle_category(BackupCategory::Assets, cx)
             }),
             ("choose a folder", |v, cx| {
-                v.folder_chosen(Ok(std::path::PathBuf::from(CHOSEN_DESTINATION)), cx)
+                v.folder_chosen(Some(std::path::PathBuf::from(CHOSEN_DESTINATION)), cx)
             }),
             ("reset the folder", |v, cx| v.reset_folder(cx)),
             ("change the passphrase", |v, cx| v.change_passphrase(cx)),
@@ -2682,7 +2666,7 @@ pub(crate) mod tests {
             (
                 "choose a folder",
                 BACKUP_SCHEDULE_DESTINATION.name(),
-                |v, cx| v.folder_chosen(Ok(std::path::PathBuf::from(CHOSEN_DESTINATION)), cx),
+                |v, cx| v.folder_chosen(Some(std::path::PathBuf::from(CHOSEN_DESTINATION)), cx),
             ),
         ];
         for (case, failing_key, edit) in cases {

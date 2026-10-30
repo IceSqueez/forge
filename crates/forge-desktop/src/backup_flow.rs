@@ -12,7 +12,7 @@ use gpui::{Context, Entity, Subscription, Window, div, prelude::*};
 use time::OffsetDateTime;
 use tokio::runtime::Handle;
 
-use crate::async_bridge::{self, DIALOG_CANCELLED, DialogFilter};
+use crate::async_bridge::{self, DialogFilter};
 use crate::backup_passphrase_modal::{BackupPassphraseEvent, BackupPassphraseModal};
 use crate::restore_problem::RestoreProblem;
 
@@ -106,7 +106,7 @@ impl BackupFlow {
             extensions: vec![BUNDLE_EXTENSION],
         };
         let default_name = default_bundle_name(OffsetDateTime::now_utc(), &unique_suffix());
-        async_bridge::spawn_dialog(
+        async_bridge::run_async(
             &self.rt_handle,
             async_bridge::save_file(Some(filter), Some(default_name)),
             move |this, result, cx| this.file_chosen(result, passphrase, cx),
@@ -117,18 +117,13 @@ impl BackupFlow {
 
     fn file_chosen(
         &mut self,
-        result: Result<PathBuf, String>,
+        chosen: Option<PathBuf>,
         passphrase: Passphrase,
         cx: &mut Context<Self>,
     ) {
-        match result {
-            Ok(path) => self.write(BackupDestination::File(path), passphrase, cx),
-            Err(message) => {
-                self.step = BackupStep::Idle;
-                if message != DIALOG_CANCELLED {
-                    self.report(Err(message), cx);
-                }
-            }
+        match chosen {
+            Some(path) => self.write(BackupDestination::File(path), passphrase, cx),
+            None => self.step = BackupStep::Idle,
         }
         cx.notify();
     }

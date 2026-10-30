@@ -248,7 +248,7 @@ impl BuiltinContent for ObsClient {
                 )
             })
             .collect();
-        let scene_count = UserText::unlocalized(catalog.scenes.len().to_string());
+        let scene_count: UserText = VerbatimText::new(catalog.scenes.len().to_string()).into();
 
         let source_items: Vec<ContentListItem> = catalog
             .current_scene

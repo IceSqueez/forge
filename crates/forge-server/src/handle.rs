@@ -144,7 +144,7 @@ impl ServerHandle {
 
         let settings = ServerSettings::load(state.settings.as_ref())
             .await
-            .map_err(|e| ServerError::Storage(e.to_string()))?;
+            .map_err(ServerError::Storage)?;
 
         if !settings.enabled {
             self.stop_serving().await?;
@@ -643,7 +643,7 @@ mod tests {
             .await;
 
         assert!(
-            matches!(&result, Err(ServerError::Storage(reason)) if reason.contains("database is locked")),
+            matches!(&result, Err(ServerError::Storage(reason)) if reason.to_string().contains("database is locked")),
             "a restored rotation must report the reissue failure itself: {result:?}"
         );
         assert!(
@@ -857,7 +857,7 @@ mod tests {
         let result = handle.regenerate_bearer_token().await;
 
         assert!(
-            matches!(&result, Err(ServerError::Storage(reason)) if reason.contains("disk is full")),
+            matches!(&result, Err(ServerError::Storage(reason)) if reason.to_string().contains("disk is full")),
             "{result:?}"
         );
         assert_eq!(handle.bearer_token().await, old);
@@ -902,7 +902,7 @@ mod tests {
         let result = handle.set_reads_require_auth(!before).await;
 
         assert!(
-            matches!(&result, Err(ServerError::Storage(reason)) if reason.contains(INJECTED_FAILURE_REASON)),
+            matches!(&result, Err(ServerError::Storage(reason)) if reason.to_string().contains(INJECTED_FAILURE_REASON)),
             "{result:?}"
         );
         assert_eq!(handle.reads_require_auth().await, before);

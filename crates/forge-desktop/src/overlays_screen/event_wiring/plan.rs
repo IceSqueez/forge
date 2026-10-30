@@ -157,6 +157,7 @@ pub(super) fn refusal_message(refusal: &OverlayWiringRefusal) -> String {
         OverlayWiringRefusal::TriggerDeclaresNoVariables { .. } => {
             tr!("overlays_wire_refused_trigger")
         }
+        OverlayWiringRefusal::TargetMissing { .. } => tr!("overlays_wire_refused_missing"),
     }
 }
 
@@ -175,7 +176,7 @@ mod tests {
     };
 
     use super::*;
-    use crate::i18n::install_language;
+    use crate::i18n::{install_language, message_in};
     use crate::test_support::{Declares, StubTrigger, overlay_definition, trigger_registry};
 
     const SUBSCRIBER: &str = "twitch.support.subscriber";
@@ -388,6 +389,37 @@ mod tests {
             wordless,
             OverlayWiringRefusal::TriggerDeclaresNoVariables { .. }
         ));
+    }
+
+    #[test]
+    fn each_refusal_explains_itself_in_its_own_words() {
+        install_language(Language::En);
+        for (refusal, key) in [
+            (
+                OverlayWiringRefusal::OverlayKindNotEligible {
+                    overlay_kind_id: "blank".to_owned(),
+                },
+                "overlays_wire_refused_overlay",
+            ),
+            (
+                OverlayWiringRefusal::TriggerDeclaresNoVariables {
+                    trigger_kind_id: SILENT.to_owned(),
+                },
+                "overlays_wire_refused_trigger",
+            ),
+            (
+                OverlayWiringRefusal::TargetMissing {
+                    trigger_kind_id: SILENT.to_owned(),
+                },
+                "overlays_wire_refused_missing",
+            ),
+        ] {
+            assert_eq!(
+                refusal_message(&refusal),
+                message_in(Language::En, key),
+                "{refusal:?}"
+            );
+        }
     }
 
     #[test]

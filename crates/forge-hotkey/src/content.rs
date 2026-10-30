@@ -2,7 +2,7 @@ use forge_platform_core::{
     BuiltinContent, ContentList, ContentListItem, DetailSection, SectionIcon, TrailingToken,
 };
 
-use forge_types::UserText;
+use forge_types::{UserText, VerbatimText};
 
 use crate::client::HotkeyClient;
 use crate::vocabulary::labels;
@@ -36,7 +36,7 @@ impl BuiltinContent for HotkeyClient {
             })
             .collect();
 
-        let hotkey_count = UserText::unlocalized(hotkey_items.len().to_string());
+        let hotkey_count: UserText = VerbatimText::new(hotkey_items.len().to_string()).into();
 
         let trigger_items: Vec<ContentListItem> = recent_triggers
             .iter()
@@ -55,14 +55,14 @@ impl BuiltinContent for HotkeyClient {
                     monospace_name: true,
                     active: true,
                     active_label: None,
-                    trailing: vec![TrailingToken::Label(UserText::unlocalized(time_str))],
+                    trailing: vec![TrailingToken::Label(VerbatimText::new(time_str).into())],
                     enabled: true,
                     on_click: None,
                 }
             })
             .collect();
 
-        let trigger_count = UserText::unlocalized(trigger_items.len().to_string());
+        let trigger_count: UserText = VerbatimText::new(trigger_items.len().to_string()).into();
 
         vec![DetailSection::TwoColumnLists {
             left: Box::new(ContentList {

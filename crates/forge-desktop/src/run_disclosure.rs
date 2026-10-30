@@ -323,7 +323,7 @@ mod tests {
             (ExecutionOutcome::Success, DisclosedOutcome::Success),
             (ExecutionOutcome::Cancelled, DisclosedOutcome::Cancelled),
             (
-                ExecutionOutcome::Failed(forge_types::UserText::unlocalized("Привіт")),
+                ExecutionOutcome::Failed(forge_types::VerbatimText::new("Привіт").into()),
                 DisclosedOutcome::Failed { reason_chars: 6 },
             ),
         ] {
@@ -336,11 +336,11 @@ mod tests {
         for (outcome, expected) in [
             (SubActionOutcome::Success, DisclosedStepOutcome::Success),
             (
-                SubActionOutcome::Failed(forge_types::UserText::unlocalized("Привіт")),
+                SubActionOutcome::Failed(forge_types::VerbatimText::new("Привіт").into()),
                 DisclosedStepOutcome::Failed { reason_chars: 6 },
             ),
             (
-                SubActionOutcome::Skipped(forge_types::UserText::unlocalized("ab")),
+                SubActionOutcome::Skipped(forge_types::VerbatimText::new("ab").into()),
                 DisclosedStepOutcome::Skipped { reason_chars: 2 },
             ),
         ] {
@@ -410,10 +410,10 @@ mod tests {
                 step(
                     SubActionTelemetry::NESTED,
                     "core.branch/0/core.log",
-                    SubActionOutcome::Failed(forge_types::UserText::unlocalized(SENTINEL)),
+                    SubActionOutcome::Failed(forge_types::VerbatimText::new(SENTINEL).into()),
                 ),
             ],
-            outcome: ExecutionOutcome::Failed(forge_types::UserText::unlocalized(SENTINEL)),
+            outcome: ExecutionOutcome::Failed(forge_types::VerbatimText::new(SENTINEL).into()),
         }
     }
 

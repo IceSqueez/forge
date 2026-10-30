@@ -56,7 +56,10 @@ mod tests {
             (
                 CollectionFailure::InvalidInput {
                     field: Some("scene".to_owned()),
-                    message: INTEGRATION_TEXT.to_owned(),
+                    message: forge_types::MessageRef::new(forge_types::MessageCode::from_static(
+                        "obs",
+                        "scene_not_in_obs",
+                    )),
                 },
                 "integration_qa_options_rejected",
             ),

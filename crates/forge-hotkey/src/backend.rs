@@ -29,12 +29,6 @@ pub(crate) enum BackendSessionEvent {
 
 pub(crate) struct NullBackend;
 
-const NO_BACKEND: &str = "no global hotkey backend is available on this system";
-
-fn no_backend() -> HotkeyError {
-    HotkeyError::Backend(NO_BACKEND.to_owned())
-}
-
 impl NullBackend {
     pub(crate) fn new() -> Self {
         Self
@@ -45,11 +39,11 @@ impl NullBackend {
 impl HotkeyBackend for NullBackend {
     async fn register(&self, _id: HotkeyId, combo: &HotkeyCombo) -> Result<(), HotkeyError> {
         let _ = combo;
-        Err(no_backend())
+        Err(HotkeyError::BackendUnavailable)
     }
 
     async fn unregister(&self, _id: HotkeyId) -> Result<(), HotkeyError> {
-        Err(no_backend())
+        Err(HotkeyError::BackendUnavailable)
     }
 
     fn fired_rx(&self) -> Option<mpsc::Receiver<HotkeyFiredEvent>> {

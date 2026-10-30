@@ -347,7 +347,7 @@ async fn select_and_start(
 
         match GlobalHotkeyBackend::new(main_thread).await {
             Ok(backend) => {
-                return HotkeyClient::start(config, publisher, Arc::new(backend), None);
+                return HotkeyClient::start(config, publisher, Arc::new(backend), Some(true));
             }
             Err(e) => {
                 tracing::error!(error = %e, "GlobalHotkeyBackend unavailable");
@@ -592,7 +592,7 @@ pub(crate) mod tests {
     }
 
     #[tokio::test]
-    async fn the_no_backend_fallback_reports_a_backend_failure_not_denied_permission() {
+    async fn the_no_backend_fallback_reports_an_unavailable_backend_not_denied_permission() {
         let client = HotkeyClient::start(
             HotkeyConfig::default(),
             noop_publisher(),
@@ -602,7 +602,7 @@ pub(crate) mod tests {
 
         let err = client.register(combo("Ctrl+D")).await.unwrap_err();
 
-        assert!(matches!(err, HotkeyError::Backend(_)), "{err:?}");
+        assert!(matches!(err, HotkeyError::BackendUnavailable), "{err:?}");
     }
 
     #[tokio::test]

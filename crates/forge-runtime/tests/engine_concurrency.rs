@@ -211,7 +211,7 @@ impl SubActionRunner for ScriptedRunner {
                 running.notify_one();
                 ctx.cancel.cancelled().await;
                 return (
-                    timer.failed(forge_types::UserText::unlocalized(CANCELLED_REASON)),
+                    timer.failed(forge_types::VerbatimText::new(CANCELLED_REASON).into()),
                     None,
                 );
             }
@@ -219,7 +219,7 @@ impl SubActionRunner for ScriptedRunner {
             Behavior::Panic => panic!("scripted runner panic"),
             Behavior::Fail => {
                 return (
-                    timer.failed(forge_types::UserText::unlocalized(FAILURE_REASON)),
+                    timer.failed(forge_types::VerbatimText::new(FAILURE_REASON).into()),
                     None,
                 );
             }

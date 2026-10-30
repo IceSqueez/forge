@@ -6,7 +6,7 @@ use forge_platform_core::{
     TrailingToken,
 };
 
-use forge_types::UserText;
+use forge_types::{UserText, VerbatimText};
 
 use crate::client::MidiClient;
 use crate::events::{MidiPortInfo, PortDirection};
@@ -50,9 +50,9 @@ impl BuiltinContent for MidiClient {
                     monospace_name: true,
                     active: subscribed,
                     active_label: Some(status_label.into()),
-                    trailing: vec![TrailingToken::Label(UserText::unlocalized(
-                        count.to_string(),
-                    ))],
+                    trailing: vec![TrailingToken::Label(
+                        VerbatimText::new(count.to_string()).into(),
+                    )],
                     enabled: true,
                     on_click: None,
                 }
@@ -75,8 +75,8 @@ impl BuiltinContent for MidiClient {
             })
             .collect();
 
-        let input_count = UserText::unlocalized(input_items.len().to_string());
-        let output_count = UserText::unlocalized(output_items.len().to_string());
+        let input_count: UserText = VerbatimText::new(input_items.len().to_string()).into();
+        let output_count: UserText = VerbatimText::new(output_items.len().to_string()).into();
 
         vec![
             DetailSection::TwoColumnLists {
@@ -110,7 +110,7 @@ impl BuiltinContent for MidiClient {
                     KeyValueRow {
                         icon: SectionIcon::new("tag"),
                         name: labels::CLIENT_NAME.into(),
-                        tag: Some(UserText::unlocalized(client_name)),
+                        tag: Some(VerbatimText::new(client_name).into()),
                         action: None,
                     },
                     KeyValueRow {
@@ -122,7 +122,7 @@ impl BuiltinContent for MidiClient {
                     KeyValueRow {
                         icon: SectionIcon::new("bolt"),
                         name: labels::EVENTS_RECEIVED.into(),
-                        tag: Some(UserText::unlocalized(total.to_string())),
+                        tag: Some(VerbatimText::new(total.to_string()).into()),
                         action: None,
                     },
                 ],

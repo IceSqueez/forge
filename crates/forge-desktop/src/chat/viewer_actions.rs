@@ -1,5 +1,6 @@
 use std::collections::BTreeMap;
 
+use forge_components::tr;
 use forge_platform_kick::vocabulary::config_keys as kick_keys;
 use forge_platform_kick::vocabulary::sub_action_ids as kick_steps;
 use forge_platform_twitch::vocabulary::config_keys as twitch_keys;
@@ -80,13 +81,13 @@ impl ViewerTarget {
     }
 
     pub fn label(&self, action: &ViewerAction) -> String {
-        let name = &self.name;
+        let name = self.name.as_str();
         match action {
-            ViewerAction::Shoutout => format!("Shoutout {name}"),
-            ViewerAction::Whisper(_) => format!("Whisper {name}"),
-            ViewerAction::Timeout { .. } => format!("Timeout {name}"),
-            ViewerAction::Ban => format!("Ban {name}"),
-            ViewerAction::Unban => format!("Unban {name}"),
+            ViewerAction::Shoutout => tr!("viewer_step_shoutout", name = name),
+            ViewerAction::Whisper(_) => tr!("viewer_step_whisper", name = name),
+            ViewerAction::Timeout { .. } => tr!("viewer_step_timeout", name = name),
+            ViewerAction::Ban => tr!("viewer_step_ban", name = name),
+            ViewerAction::Unban => tr!("viewer_step_unban", name = name),
         }
     }
 

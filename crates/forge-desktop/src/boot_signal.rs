@@ -220,7 +220,9 @@ mod tests {
                 "lan_bind_disabled",
             ),
             (
-                ServerError::Storage("database is locked".to_owned()),
+                ServerError::Storage(forge_storage::StorageError::Connection {
+                    reason: "database is locked".to_owned(),
+                }),
                 "other",
             ),
         ] {

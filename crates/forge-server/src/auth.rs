@@ -6,7 +6,7 @@ use rand::Rng as _;
 use subtle::ConstantTimeEq as _;
 use tokio::sync::{RwLock, watch};
 
-use forge_storage::{CredentialId, CredentialsRepo, StorageError};
+use forge_storage::{CredentialId, CredentialsRepo};
 use forge_types::Secret;
 
 use crate::ServerError;
@@ -146,12 +146,6 @@ impl AuthState {
             OverlayTokenState::with_token(crate::overlay_token::generate_overlay_token(), false),
             auth_required_for_reads,
         ))
-    }
-}
-
-impl From<StorageError> for ServerError {
-    fn from(e: StorageError) -> Self {
-        ServerError::Storage(e.to_string())
     }
 }
 

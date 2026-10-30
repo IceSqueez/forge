@@ -7,7 +7,7 @@ use forge_types::ClipId;
 
 use crate::combo_conflict::{Claimant, ComboHolder, ComboHolders, clip_keys};
 use forge_hotkey::HotkeyReconciler;
-use forge_hotkey::{BindingRow, load_bindings, registered_combos};
+use forge_hotkey::{BindingRow, HotkeyError, load_bindings, registered_combos};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum PadKey {
@@ -113,7 +113,7 @@ impl ClipKeyState {
 
     pub fn load_rows(
         &self,
-    ) -> Option<impl Future<Output = Result<Vec<BindingRow>, String>> + Send + 'static> {
+    ) -> Option<impl Future<Output = Result<Vec<BindingRow>, HotkeyError>> + Send + 'static> {
         let reconciler = self.reconciler.as_ref()?;
         let registered = registered_combos(reconciler.client());
         Some(load_bindings(Arc::clone(&self.backend), registered))

@@ -377,8 +377,8 @@ impl BuiltinStatus for YoutubeIntegrationBundle {
         None
     }
 
-    fn endpoint(&self) -> Option<&str> {
-        Some("Connected via OAuth (PKCE)")
+    fn endpoint(&self) -> Option<UserText> {
+        Some(messages::ENDPOINT_SUMMARY.into())
     }
 
     fn capability_flags(&self) -> CapabilityFlags {
@@ -408,7 +408,7 @@ impl BuiltinStatus for YoutubeIntegrationBundle {
 
     fn name_badges(&self) -> Vec<HeroBadge> {
         vec![HeroBadge {
-            label: UserText::unlocalized(format!("channel_id {}", self.channel_id)),
+            label: messages::channel_id_badge(&self.channel_id.to_string()).into(),
             tone: HeroBadgeTone::Neutral,
             monospace: true,
         }]
@@ -981,7 +981,7 @@ mod tests {
         assert_eq!(
             BuiltinStatus::name_badges(bundle.as_ref()),
             vec![HeroBadge {
-                label: UserText::unlocalized("channel_id UCabc123"),
+                label: messages::channel_id_badge("UCabc123").into(),
                 tone: HeroBadgeTone::Neutral,
                 monospace: true,
             }]

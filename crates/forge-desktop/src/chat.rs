@@ -107,7 +107,7 @@ fn build_reply_step(username: &str, message: &str, parent_message_id: &str) -> S
         enabled: true,
         continue_on_error: false,
         condition: None,
-        label: Some(format!("Reply to {username}")),
+        label: Some(tr!("viewer_step_reply", name = username)),
     }
 }
 
@@ -907,7 +907,7 @@ impl ChatView {
             platform_gate::platform_integration(PlatformId::Twitch)
                 .id_str()
                 .to_owned(),
-            format!("Reply to {username}"),
+            tr!("viewer_step_reply", name = username),
             |outcome| match outcome {
                 Ok(()) => (ToastKind::Success, tr!("chat_reply_sent")),
                 Err(e) => (ToastKind::Error, tr!("chat_reply_failed", error = e)),

@@ -13,6 +13,7 @@ pub(crate) fn platform_message(error: &PlatformError) -> MessageRef {
         }
         PlatformError::ReauthRequired { .. } => messages::reauth_required(),
         PlatformError::Auth { reason } => messages::auth_refused(reason),
+        PlatformError::DeviceAuthEnded(_) => messages::auth_refused(&error.to_string()),
         PlatformError::Http { status, .. } => messages::request_refused(*status),
         PlatformError::Refused { reason } => messages::request_failed(reason),
         PlatformError::MalformedResponse { reason } => messages::response_unreadable(reason),
@@ -107,6 +108,11 @@ mod tests {
                 PlatformError::Auth {
                     reason: UPSTREAM.into(),
                 },
+                "kick.auth_refused",
+            ),
+            (
+                "device sign-in ended",
+                PlatformError::DeviceAuthEnded(forge_platform_core::DeviceAuthEnd::Expired),
                 "kick.auth_refused",
             ),
             (

@@ -331,10 +331,10 @@ impl EventWiringView {
     }
 
     fn build_draft(&self, kind_id: &str) -> Result<WiringDraft, OverlayWiringRefusal> {
-        let no_variables = || OverlayWiringRefusal::TriggerDeclaresNoVariables {
+        let target_missing = || OverlayWiringRefusal::TargetMissing {
             trigger_kind_id: kind_id.to_owned(),
         };
-        let overlay = self.overlay.as_ref().ok_or_else(no_variables)?;
+        let overlay = self.overlay.as_ref().ok_or_else(target_missing)?;
         let kind = self.handles.kinds.get(&overlay.kind_id).ok_or_else(|| {
             OverlayWiringRefusal::OverlayKindNotEligible {
                 overlay_kind_id: overlay.kind_id.clone(),
@@ -344,7 +344,7 @@ impl EventWiringView {
             .handles
             .triggers
             .get(kind_id)
-            .ok_or_else(no_variables)?;
+            .ok_or_else(target_missing)?;
         plan::draft_wiring(overlay, kind, trigger)
     }
 
@@ -679,6 +679,35 @@ mod tests {
             stage.state,
             ConfirmState::AlreadyWired { action_id, .. } if action_id == already
         )));
+    }
+
+    #[gpui::test]
+    fn a_draft_with_no_overlay_or_an_unknown_event_names_the_target_as_missing(
+        cx: &mut TestAppContext,
+    ) {
+        let (view, _rt) = mount(cx);
+        const UNKNOWN_EVENT: &str = "twitch.no_such_event";
+
+        let without_overlay = view.read_with(cx, |this, _| this.build_draft(SUBSCRIBER));
+        view.update(cx, |this, _| {
+            this.overlay = Some(overlay_definition(alert::KIND_ID, OverlayConfig::new()));
+        });
+        let without_trigger = view.read_with(cx, |this, _| this.build_draft(UNKNOWN_EVENT));
+
+        for (outcome, kind) in [
+            (without_overlay, SUBSCRIBER),
+            (without_trigger, UNKNOWN_EVENT),
+        ] {
+            assert!(
+                matches!(
+                    &outcome,
+                    Err(OverlayWiringRefusal::TargetMissing { trigger_kind_id })
+                        if trigger_kind_id == kind
+                ),
+                "{kind}: {:?}",
+                outcome.as_ref().err()
+            );
+        }
     }
 
     #[gpui::test]

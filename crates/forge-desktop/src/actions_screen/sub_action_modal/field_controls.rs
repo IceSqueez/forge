@@ -20,11 +20,11 @@ impl EditSubActionForm {
     }
 
     fn browse_sub_field(&mut self, input: Entity<TextInput>, cx: &mut Context<Self>) {
-        async_bridge::spawn_dialog(
+        async_bridge::run_async(
             &self.rt_handle,
             async_bridge::pick_file(None),
-            move |_this, result, cx| {
-                if let Ok(path) = result {
+            move |_this, picked, cx| {
+                if let Some(path) = picked {
                     input.update(cx, |input, cx| {
                         input.set_content(path.to_string_lossy().into_owned(), cx);
                         cx.notify();

@@ -11,7 +11,7 @@ use forge_components::{
 use forge_transfer::{BUNDLE_EXTENSION, SetupExportRequest, write_setup};
 use gpui::{AnyElement, App, ClickEvent, Context, Window, div, prelude::*};
 
-use crate::async_bridge::{self, DIALOG_CANCELLED, DialogFilter};
+use crate::async_bridge::{self, DialogFilter};
 use crate::pack_services::PackServices;
 use crate::restore_confirm::statement;
 
@@ -71,7 +71,7 @@ impl SetupExportFlow {
             name: tr!("setup_export_dialog_filter"),
             extensions: vec![BUNDLE_EXTENSION],
         };
-        async_bridge::spawn_dialog(
+        async_bridge::run_async(
             &self.services.rt_handle,
             async_bridge::save_file(Some(filter), Some(setup_file_name())),
             |this, result, cx| this.file_chosen(result, cx),
@@ -80,15 +80,10 @@ impl SetupExportFlow {
         cx.notify();
     }
 
-    fn file_chosen(&mut self, result: Result<PathBuf, String>, cx: &mut Context<Self>) {
-        match result {
-            Ok(destination) => self.write(destination, cx),
-            Err(message) => {
-                self.step = SetupExportStep::Idle;
-                if message != DIALOG_CANCELLED {
-                    report(Err(message), cx);
-                }
-            }
+    fn file_chosen(&mut self, chosen: Option<PathBuf>, cx: &mut Context<Self>) {
+        match chosen {
+            Some(destination) => self.write(destination, cx),
+            None => self.step = SetupExportStep::Idle,
         }
         cx.notify();
     }
@@ -254,7 +249,6 @@ mod tests {
     use gpui::{AppContext, Entity, TestAppContext};
 
     use super::{SetupExportFlow, SetupExportStep, setup_file_name};
-    use crate::async_bridge::DIALOG_CANCELLED;
     use crate::i18n::install_language;
     use crate::test_support::pack_flow::{PackWorld, pack_world};
     use crate::test_support::{install_presentation, runtime};
@@ -293,27 +287,17 @@ mod tests {
     }
 
     #[gpui::test]
-    fn a_closed_save_dialog_ends_quietly_and_a_broken_one_reports_an_error(
-        cx: &mut TestAppContext,
-    ) {
+    fn a_closed_save_dialog_returns_to_idle_without_a_toast(cx: &mut TestAppContext) {
         let rig = rig(cx);
-        let mut ended = Vec::new();
 
-        for message in [DIALOG_CANCELLED, "portal unavailable"] {
-            cx.update(|cx| cx.set_global(Toasts::new()));
-            rig.flow.update(cx, |flow, cx| {
-                flow.step = SetupExportStep::ChoosingFile;
-                flow.file_chosen(Err(message.to_owned()), cx);
-            });
-            ended.push((step(cx, &rig), toasts(cx)));
-        }
+        rig.flow.update(cx, |flow, cx| {
+            flow.step = SetupExportStep::ChoosingFile;
+            flow.file_chosen(None, cx);
+        });
 
         assert_eq!(
-            ended,
-            vec![
-                (SetupExportStep::Idle, vec![]),
-                (SetupExportStep::Idle, vec![(ToastKind::Error, false)]),
-            ]
+            (step(cx, &rig), toasts(cx)),
+            (SetupExportStep::Idle, vec![])
         );
     }
 
@@ -326,7 +310,7 @@ mod tests {
 
         rig.flow.update(cx, |flow, cx| {
             flow.step = SetupExportStep::ChoosingFile;
-            flow.file_chosen(Ok(destination.clone()), cx);
+            flow.file_chosen(Some(destination.clone()), cx);
         });
         let deadline = std::time::Instant::now() + SETTLE_DEADLINE;
         while step(cx, &rig) != SetupExportStep::Idle && std::time::Instant::now() < deadline {

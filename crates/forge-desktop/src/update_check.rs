@@ -123,6 +123,7 @@ pub enum CheckResult {
 
 struct Probe {
     rolled_back: Option<String>,
+    rollback_unknown: bool,
     outcome: CheckOutcome,
     install: InstallKind,
     checked_at: OffsetDateTime,
@@ -176,7 +177,7 @@ pub async fn run_update_check(
     let Some(plan) = plan_update(
         CURRENT_VERSION,
         &version,
-        candidate.install.is_some(),
+        candidate.install.is_some() && !probe.rollback_unknown,
         probe.rolled_back.as_deref(),
         reported_this_launch.as_deref(),
     ) else {
@@ -199,16 +200,19 @@ pub async fn run_update_check(
 
 async fn probe(backend: Arc<dyn DataProvider>) -> Probe {
     let repo = backend as Arc<dyn SettingsRepo>;
-    let rolled_back = read_setting(repo.as_ref(), &ROLLED_BACK_VERSION)
-        .await
-        .ok()
-        .flatten();
+    let stored_rollback = read_setting(repo.as_ref(), &ROLLED_BACK_VERSION).await;
+    let rollback_unknown = stored_rollback.is_err();
+    if let Err(error) = &stored_rollback {
+        tracing::warn!(error = %error, "rolled back version unreadable; offering the update");
+    }
+    let rolled_back = stored_rollback.ok().flatten();
     let outcome = find_update().await;
     let install = tokio::task::spawn_blocking(detect_install)
         .await
         .unwrap_or(InstallKind::ManualOnly(ManualReason::UnknownExecutable));
     Probe {
         rolled_back,
+        rollback_unknown,
         outcome,
         install,
         checked_at: OffsetDateTime::now_utc(),

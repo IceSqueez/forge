@@ -1,3 +1,4 @@
+use forge_types::MessageCode;
 use std::collections::BTreeMap;
 
 use async_trait::async_trait;
@@ -9,6 +10,7 @@ use forge_platform_core::{
 use crate::catalog::{ObsCatalog, icon_for_kind};
 use crate::client::ObsClient;
 use crate::error::ObsError;
+use crate::vocabulary::messages;
 use crate::vocabulary::option_lists::{
     INPUT_LIST, PROFILE_LIST, SCENE_COLLECTION_LIST, SCENE_LIST, SOURCE_LIST, TRANSITION_LIST,
 };
@@ -84,15 +86,15 @@ pub(crate) fn source_entries(
     catalog: &ObsCatalog,
     requested: Option<&str>,
 ) -> CollectionOutcome<Vec<OptionEntry>> {
-    let unknown_scene = |message: &str| CollectionFailure::InvalidInput {
+    let unknown_scene = |message: MessageCode| CollectionFailure::InvalidInput {
         field: Some(SCENE_FIELD.to_owned()),
-        message: message.to_owned(),
+        message: message.into(),
     };
     let scene = requested
         .or(catalog.current_scene.as_deref())
-        .ok_or_else(|| unknown_scene("no scene to list sources from"))?;
+        .ok_or_else(|| unknown_scene(messages::NO_SCENE_TO_LIST))?;
     if !catalog.scenes.iter().any(|known| known == scene) {
-        return Err(unknown_scene("the selected scene is not in OBS"));
+        return Err(unknown_scene(messages::SCENE_NOT_IN_OBS));
     }
     Ok(catalog
         .sources
@@ -377,21 +379,20 @@ mod tests {
             ..fixture()
         };
         let cases = [
-            (fixture(), Some("Deleted Scene")),
-            (fixture(), Some("gameplay")),
-            (no_program_scene, None),
+            (fixture(), Some("Deleted Scene"), messages::SCENE_NOT_IN_OBS),
+            (fixture(), Some("gameplay"), messages::SCENE_NOT_IN_OBS),
+            (no_program_scene, None, messages::NO_SCENE_TO_LIST),
         ];
-        for (catalog, requested) in cases {
+        for (catalog, requested, code) in cases {
             match source_entries(&catalog, requested) {
                 Err(CollectionFailure::InvalidInput { field, message }) => {
                     assert_eq!(field.as_deref(), Some(SCENE_FIELD), "{requested:?}");
-                    assert!(!message.is_empty(), "{requested:?}: empty message");
-                    if let Some(name) = requested {
-                        assert!(
-                            !message.contains(name),
-                            "{requested:?}: message echoes the scene name"
-                        );
-                    }
+                    assert_eq!(message.code(), &code, "{requested:?}");
+                    assert_eq!(
+                        message.args().count(),
+                        0,
+                        "{requested:?}: message echoes the scene name"
+                    );
                 }
                 other => panic!("{requested:?}: expected InvalidInput, got {other:?}"),
             }

@@ -1,3 +1,4 @@
+use forge_storage::StorageError;
 use thiserror::Error;
 
 #[derive(Debug, Error)]
@@ -25,6 +26,18 @@ pub enum HotkeyError {
 
     #[error("the main-thread hotkey host is not running")]
     MainThreadUnavailable,
+
+    #[error("no global shortcut backend is available")]
+    BackendUnavailable,
+
+    #[error("hotkey storage failed: {0}")]
+    Storage(#[from] StorageError),
+
+    #[error("the hotkey binding no longer exists")]
+    BindingNotFound,
+
+    #[error("{combo} already has a binding on that edge")]
+    EdgeTaken { combo: String },
 }
 
 #[cfg(test)]
@@ -58,6 +71,18 @@ mod tests {
             (
                 HotkeyError::Backend("channel closed".to_owned()),
                 vec!["channel closed"],
+            ),
+            (
+                HotkeyError::Storage(StorageError::Connection {
+                    reason: "disk full".to_owned(),
+                }),
+                vec!["disk full"],
+            ),
+            (
+                HotkeyError::EdgeTaken {
+                    combo: "Ctrl+F2".to_owned(),
+                },
+                vec!["Ctrl+F2"],
             ),
         ] {
             let shown = error.to_string();

@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use forge_components::ForgePalette;
+use forge_hotkey::HotkeyError;
 use gpui::{AnyElement, Context};
 
 use super::HotkeysScreenView;
@@ -53,14 +54,14 @@ impl HotkeysScreenView {
         async_bridge::run_async(
             &self.rt_handle,
             release_holder(holder, doomed, reconciler, backend),
-            move |this, result: Result<(), String>, cx| match result {
+            move |this, result: Result<(), HotkeyError>, cx| match result {
                 Ok(()) => {
                     if capture.target().is_none() {
                         this.load(cx);
                     }
                     this.apply_capture(capture, combo, cx);
                 }
-                Err(reason) => this.on_repo_error(&RepoFailure::operation(reason), cx),
+                Err(error) => this.on_repo_error(&RepoFailure::hotkey(&error), cx),
             },
             cx,
         );

@@ -690,7 +690,10 @@ pub(crate) fn login_failure(error: &BotLoginError) -> BotLogin {
         BotLoginError::SameAsBroadcaster => BotLogin::Failed(tr!("twitch_bot_error_same_account")),
         BotLoginError::Denied => BotLogin::Failed(tr!("twitch_bot_error_denied")),
         BotLoginError::Expired => BotLogin::Failed(tr!("twitch_bot_error_expired")),
-        BotLoginError::NotStarted | BotLoginError::Platform(_) | BotLoginError::Storage(_) => {
+        BotLoginError::NotStarted
+        | BotLoginError::Platform(_)
+        | BotLoginError::Storage(_)
+        | BotLoginError::CredentialsNotCleared(_) => {
             BotLogin::Failed(tr!("twitch_bot_error_failed", error = error.to_string()))
         }
     }
@@ -1017,7 +1020,14 @@ mod tests {
 
         let after_disconnect = m.section.update(cx, |section, cx| {
             section.disconnect(cx);
-            section.apply_disconnect(Err(BotLoginError::Storage("disk full".to_owned())), cx);
+            section.apply_disconnect(
+                Err(BotLoginError::Storage(
+                    forge_storage::StorageError::Connection {
+                        reason: "disk full".to_owned(),
+                    },
+                )),
+                cx,
+            );
             (section.busy, section.problem.clone())
         });
         let after_promote = m.section.update(cx, |section, cx| {
@@ -1115,7 +1125,9 @@ mod tests {
             BotLoginError::SameAsBroadcaster,
             BotLoginError::Denied,
             BotLoginError::Expired,
-            BotLoginError::Storage("disk full".to_owned()),
+            BotLoginError::Storage(forge_storage::StorageError::Connection {
+                reason: "disk full".to_owned(),
+            }),
         ]
         .iter()
         .filter_map(|error| match login_failure(error) {

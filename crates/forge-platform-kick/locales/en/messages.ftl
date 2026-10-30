@@ -66,3 +66,6 @@ msg-kick-label_timeout_user = Timeout user
 msg-kick-label_unban_user = Unban user
 msg-kick-label_update_reward = Update reward
 msg-kick-label_update_title = Update title
+msg-kick-endpoint_summary = Pusher WS (read) + OAuth API (write)
+msg-kick-user_id_badge = user_id { $id }
+msg-kick-label_redemption_ids_hint = %redemption_id% or id1,id2,id3 (max 25)

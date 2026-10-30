@@ -2,7 +2,7 @@ use std::sync::atomic::Ordering;
 use std::time::Duration;
 
 use forge_platform_core::{BuiltinStatus, CapabilityFlags, ConnectionState, HeaderAction};
-use forge_types::IntegrationId;
+use forge_types::{IntegrationId, UserText};
 
 use crate::client::MidiClient;
 
@@ -35,7 +35,7 @@ impl BuiltinStatus for MidiClient {
         None
     }
 
-    fn endpoint(&self) -> Option<&str> {
+    fn endpoint(&self) -> Option<UserText> {
         None
     }
 

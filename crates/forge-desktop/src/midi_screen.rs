@@ -734,8 +734,7 @@ impl MidiScreenView {
             &self.rt_handle,
             previous,
             async move {
-                let integration =
-                    integration.ok_or_else(|| "MIDI integration unavailable".to_owned())?;
+                let integration = integration.ok_or_else(|| tr!("midi_toggle_failed"))?;
                 match integration
                     .set_enabled(enabled)
                     .await

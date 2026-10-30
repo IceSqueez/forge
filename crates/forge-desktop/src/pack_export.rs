@@ -7,7 +7,7 @@ use forge_transfer::{BUNDLE_EXTENSION, PackExportRequest, write_pack};
 use forge_types::ActionId;
 use gpui::{Context, Entity, Subscription, Window, div, prelude::*};
 
-use crate::async_bridge::{self, DIALOG_CANCELLED, DialogFilter};
+use crate::async_bridge::{self, DialogFilter};
 use crate::pack_export_modal::{PackDraft, PackExportModal, PackExportModalEvent};
 use crate::pack_services::PackServices;
 use crate::restore_problem::RestoreProblem;
@@ -93,7 +93,7 @@ impl PackExportFlow {
             extensions: vec![BUNDLE_EXTENSION],
         };
         let default_name = pack_file_name(&draft.metadata.name);
-        async_bridge::spawn_dialog(
+        async_bridge::run_async(
             &self.services.rt_handle,
             async_bridge::save_file(Some(filter), Some(default_name)),
             move |this, result, cx| this.file_chosen(result, draft, cx),
@@ -102,20 +102,10 @@ impl PackExportFlow {
         cx.notify();
     }
 
-    fn file_chosen(
-        &mut self,
-        result: Result<PathBuf, String>,
-        draft: PackDraft,
-        cx: &mut Context<Self>,
-    ) {
-        match result {
-            Ok(destination) => self.write(destination, draft, cx),
-            Err(message) => {
-                self.step = PackExportStep::Idle;
-                if message != DIALOG_CANCELLED {
-                    report(Err(message), cx);
-                }
-            }
+    fn file_chosen(&mut self, chosen: Option<PathBuf>, draft: PackDraft, cx: &mut Context<Self>) {
+        match chosen {
+            Some(destination) => self.write(destination, draft, cx),
+            None => self.step = PackExportStep::Idle,
         }
         cx.notify();
     }
@@ -205,7 +195,6 @@ mod tests {
     use gpui::{AppContext, Entity, TestAppContext};
 
     use super::{PackExportFlow, PackExportStep, pack_file_name};
-    use crate::async_bridge::DIALOG_CANCELLED;
     use crate::i18n::install_language;
     use crate::pack_export_modal::{PackDraft, PackExportModalEvent};
     use crate::test_support::pack_flow::pack_world;
@@ -290,30 +279,22 @@ mod tests {
     }
 
     #[gpui::test]
-    fn a_dismissed_save_dialog_is_silent_but_a_failing_one_is_reported(cx: &mut TestAppContext) {
+    fn a_dismissed_save_dialog_returns_to_idle_without_a_toast(cx: &mut TestAppContext) {
         let rig = rig(cx);
-        let mut outcomes = Vec::new();
+        let draft = draft(&rig);
 
-        for dialog_error in [DIALOG_CANCELLED, "portal unavailable"] {
-            cx.update(|cx| cx.set_global(Toasts::new()));
-            let draft = draft(&rig);
-            rig.flow.update(cx, |flow, cx| {
-                flow.step = PackExportStep::ChoosingFile;
-                flow.file_chosen(Err(dialog_error.to_owned()), draft, cx);
-            });
-            let toasts: Vec<ToastKind> = cx.update(|cx| {
-                cx.global::<Toasts>()
-                    .items()
-                    .iter()
-                    .map(|toast| toast.kind)
-                    .collect()
-            });
-            outcomes.push((step(cx, &rig), toasts));
-        }
+        rig.flow.update(cx, |flow, cx| {
+            flow.step = PackExportStep::ChoosingFile;
+            flow.file_chosen(None, draft, cx);
+        });
+        let toasts: Vec<ToastKind> = cx.update(|cx| {
+            cx.global::<Toasts>()
+                .items()
+                .iter()
+                .map(|toast| toast.kind)
+                .collect()
+        });
 
-        assert_eq!(
-            outcomes,
-            vec![("idle", Vec::new()), ("idle", vec![ToastKind::Error])]
-        );
+        assert_eq!((step(cx, &rig), toasts), ("idle", Vec::new()));
     }
 }

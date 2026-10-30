@@ -19,8 +19,8 @@ pub enum SoundboardError {
     MasterVolumeNotSaved(StorageError),
 
     #[error("storage error: {0}")]
-    Storage(String),
+    Storage(#[from] StorageError),
 
-    #[error("blocking task panicked: {0}")]
-    JoinError(String),
+    #[error("blocking task panicked")]
+    TaskFailed,
 }

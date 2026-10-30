@@ -13,6 +13,7 @@ name = "forge"
 path = "src/main.rs"
 
 [dependencies]
+thiserror.workspace = true
 forge-speech-types = { path = "../forge-speech-types" }
 async-trait = { workspace = true }
 forge-audio = { path = "../forge-audio" }

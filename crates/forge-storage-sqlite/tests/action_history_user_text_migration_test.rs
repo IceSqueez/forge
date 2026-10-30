@@ -49,7 +49,7 @@ fn run(outcome: ExecutionOutcome, telemetry: Vec<SubActionTelemetry>) -> Executi
 }
 
 fn verbatim(text: &str) -> UserText {
-    UserText::unlocalized(text)
+    forge_types::VerbatimText::new(text).into()
 }
 
 fn failed_run_with_mixed_steps() -> ExecutionContext {

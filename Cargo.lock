@@ -2719,6 +2719,7 @@ dependencies = [
  "sysinfo 0.39.6",
  "tar",
  "tempfile",
+ "thiserror 2.0.21",
  "time",
  "tokio",
  "tokio-util",

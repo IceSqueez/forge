@@ -9,9 +9,8 @@ use forge_types::{
 use crate::backend::HotkeyId;
 use crate::binding::{BindingHalf, BindingRow, COMBO_FIELD, HotkeyEdge};
 use crate::combo::HotkeyCombo;
+use crate::error::HotkeyError;
 use crate::reconciler::HotkeyReconciler;
-
-const INSTANCE_NOT_FOUND: &str = "trigger instance not found";
 
 fn combo_of(instance: &TriggerInstance) -> Option<&String> {
     match instance.overrides.get(COMBO_FIELD) {
@@ -31,10 +30,10 @@ fn canonical_combo_of(instance: &TriggerInstance) -> Option<String> {
 pub async fn load_bindings(
     backend: Arc<dyn DataProvider>,
     registered: Vec<(HotkeyId, String)>,
-) -> Result<Vec<BindingRow>, String> {
+) -> Result<Vec<BindingRow>, HotkeyError> {
     let triggers = backend.trigger_instance_repo();
     let actions = backend.action_repo();
-    let instances = triggers.list_all().await.map_err(|e| e.to_string())?;
+    let instances = triggers.list_all().await?;
 
     let mut grouped: BTreeMap<String, (Option<BindingHalf>, Option<BindingHalf>)> = BTreeMap::new();
     for instance in instances {
@@ -44,13 +43,10 @@ pub async fn load_bindings(
         let Some(combo) = canonical_combo_of(&instance) else {
             continue;
         };
-        let linked = triggers
-            .actions_using(instance.id)
-            .await
-            .map_err(|e| e.to_string())?;
+        let linked = triggers.actions_using(instance.id).await?;
         let mut action = None;
         if let Some(first) = linked.first()
-            && let Some(found) = actions.get(*first).await.map_err(|e| e.to_string())?
+            && let Some(found) = actions.get(*first).await?
         {
             action = Some((found.id, found.name));
         }
@@ -88,12 +84,8 @@ pub async fn load_bindings(
 async fn hotkey_instances_for_combo(
     backend: &Arc<dyn DataProvider>,
     combo_str: &str,
-) -> Result<Vec<TriggerInstance>, String> {
-    let instances = backend
-        .trigger_instance_repo()
-        .list_all()
-        .await
-        .map_err(|e| e.to_string())?;
+) -> Result<Vec<TriggerInstance>, HotkeyError> {
+    let instances = backend.trigger_instance_repo().list_all().await?;
     Ok(instances
         .into_iter()
         .filter(|instance| HotkeyEdge::from_kind(&instance.kind_id).is_some())
@@ -106,7 +98,7 @@ async fn hotkey_instances_for_combo(
 async fn drop_instances(
     backend: &Arc<dyn DataProvider>,
     removed: Vec<TriggerInstanceId>,
-) -> Result<(), String> {
+) -> Result<(), HotkeyError> {
     backend
         .trigger_instance_repo()
         .apply_changes(&TriggerChanges {
@@ -114,13 +106,13 @@ async fn drop_instances(
             ..TriggerChanges::default()
         })
         .await
-        .map_err(|e| e.to_string())
+        .map_err(HotkeyError::from)
 }
 
 pub async fn cleanup_stale_combo_instances(
     backend: &Arc<dyn DataProvider>,
     combo_str: &str,
-) -> Result<(), String> {
+) -> Result<(), HotkeyError> {
     let stale = hotkey_instances_for_combo(backend, combo_str).await?;
     drop_instances(backend, stale.iter().map(|instance| instance.id).collect()).await
 }
@@ -129,7 +121,7 @@ async fn combo_edge_ids(
     backend: &Arc<dyn DataProvider>,
     combo_str: &str,
     edge: HotkeyEdge,
-) -> Result<Vec<TriggerInstanceId>, String> {
+) -> Result<Vec<TriggerInstanceId>, HotkeyError> {
     Ok(hotkey_instances_for_combo(backend, combo_str)
         .await?
         .iter()
@@ -143,7 +135,7 @@ async fn remove_combo_edge(
     backend: &Arc<dyn DataProvider>,
     combo_str: &str,
     edge: HotkeyEdge,
-) -> Result<(), String> {
+) -> Result<(), HotkeyError> {
     drop_instances(backend, combo_edge_ids(backend, combo_str, edge).await?).await
 }
 
@@ -186,9 +178,9 @@ pub async fn do_bind(
     combo_str: String,
     edge: HotkeyEdge,
     action_id: ActionId,
-) -> Result<(), String> {
-    let combo = HotkeyCombo::parse(&combo_str).map_err(|e| e.to_string())?;
-    reconciler.claim(combo).await.map_err(|e| e.to_string())?;
+) -> Result<(), HotkeyError> {
+    let combo = HotkeyCombo::parse(&combo_str)?;
+    reconciler.claim(combo).await?;
     let stored = store_binding(&backend, combo_str, edge, action_id).await;
     reconciler.reconcile().await;
     stored
@@ -199,7 +191,7 @@ async fn store_binding(
     combo_str: String,
     edge: HotkeyEdge,
     action_id: ActionId,
-) -> Result<(), String> {
+) -> Result<(), HotkeyError> {
     let removed = combo_edge_ids(backend, &combo_str, edge).await?;
     let instance = binding_instance(combo_str, edge);
     let linked = vec![(action_id, instance.id)];
@@ -212,14 +204,14 @@ async fn store_binding(
             ..TriggerChanges::default()
         })
         .await
-        .map_err(|e| e.to_string())
+        .map_err(HotkeyError::from)
 }
 
 pub async fn delete_binding(
     reconciler: Arc<HotkeyReconciler>,
     backend: Arc<dyn DataProvider>,
     combo_str: String,
-) -> Result<(), String> {
+) -> Result<(), HotkeyError> {
     let cleaned = cleanup_stale_combo_instances(&backend, &combo_str).await;
     reconciler.reconcile().await;
     cleaned
@@ -228,7 +220,7 @@ pub async fn delete_binding(
 pub async fn delete_binding_half(
     backend: Arc<dyn DataProvider>,
     instance_id: TriggerInstanceId,
-) -> Result<(), String> {
+) -> Result<(), HotkeyError> {
     drop_instances(&backend, vec![instance_id]).await
 }
 
@@ -236,12 +228,12 @@ pub async fn set_binding_enabled(
     backend: Arc<dyn DataProvider>,
     instance_ids: Vec<TriggerInstanceId>,
     enabled: bool,
-) -> Result<(), String> {
+) -> Result<(), HotkeyError> {
     backend
         .trigger_instance_repo()
         .set_all_enabled(&instance_ids, enabled)
         .await
-        .map_err(|e| e.to_string())
+        .map_err(HotkeyError::from)
 }
 
 pub async fn rebind_combo(
@@ -249,18 +241,15 @@ pub async fn rebind_combo(
     backend: Arc<dyn DataProvider>,
     previous_combo: String,
     combo_str: String,
-) -> Result<(), String> {
-    let target_combo = HotkeyCombo::parse(&combo_str).map_err(|e| e.to_string())?;
+) -> Result<(), HotkeyError> {
+    let target_combo = HotkeyCombo::parse(&combo_str)?;
     let previous_combo = HotkeyCombo::parse(&previous_combo)
         .map(|parsed| parsed.as_str().to_owned())
         .unwrap_or(previous_combo);
     if previous_combo == target_combo.as_str() {
         return Ok(());
     }
-    reconciler
-        .claim(target_combo.clone())
-        .await
-        .map_err(|e| e.to_string())?;
+    reconciler.claim(target_combo.clone()).await?;
     let moved = move_combo_instances(&backend, &previous_combo, target_combo.as_str()).await;
     reconciler.reconcile().await;
     moved
@@ -270,7 +259,7 @@ async fn move_combo_instances(
     backend: &Arc<dyn DataProvider>,
     previous_combo: &str,
     target_combo: &str,
-) -> Result<(), String> {
+) -> Result<(), HotkeyError> {
     let siblings = hotkey_instances_for_combo(backend, previous_combo).await?;
     let changes = TriggerChanges {
         removed: displaced_ids(backend, target_combo, &siblings).await?,
@@ -284,14 +273,14 @@ async fn move_combo_instances(
         .trigger_instance_repo()
         .apply_changes(&changes)
         .await
-        .map_err(|e| e.to_string())
+        .map_err(HotkeyError::from)
 }
 
 async fn displaced_ids(
     backend: &Arc<dyn DataProvider>,
     target_combo: &str,
     moving: &[TriggerInstance],
-) -> Result<Vec<TriggerInstanceId>, String> {
+) -> Result<Vec<TriggerInstanceId>, HotkeyError> {
     Ok(hotkey_instances_for_combo(backend, target_combo)
         .await?
         .iter()
@@ -321,20 +310,16 @@ pub async fn update_binding(
     reconciler: Arc<HotkeyReconciler>,
     backend: Arc<dyn DataProvider>,
     update: BindingUpdate,
-) -> Result<(), String> {
-    let combo = HotkeyCombo::parse(&update.combo).map_err(|e| e.to_string())?;
+) -> Result<(), HotkeyError> {
+    let combo = HotkeyCombo::parse(&update.combo)?;
     let source = backend
         .trigger_instance_repo()
         .get(update.instance_id)
-        .await
-        .map_err(|e| e.to_string())?
-        .ok_or_else(|| INSTANCE_NOT_FOUND.to_owned())?;
+        .await?
+        .ok_or(HotkeyError::BindingNotFound)?;
     let previous_combo = canonical_combo_of(&source);
     if previous_combo.as_deref() != Some(combo.as_str()) {
-        reconciler
-            .claim(combo.clone())
-            .await
-            .map_err(|e| e.to_string())?;
+        reconciler.claim(combo.clone()).await?;
     }
     let changes = binding_changes(&backend, source, previous_combo, &combo, &update).await;
     let applied = match changes {
@@ -342,7 +327,7 @@ pub async fn update_binding(
             .trigger_instance_repo()
             .apply_changes(&changes)
             .await
-            .map_err(|e| e.to_string()),
+            .map_err(HotkeyError::from),
         Err(refusal) => Err(refusal),
     };
     reconciler.reconcile().await;
@@ -355,7 +340,7 @@ async fn binding_changes(
     previous_combo: Option<String>,
     combo: &HotkeyCombo,
     update: &BindingUpdate,
-) -> Result<TriggerChanges, String> {
+) -> Result<TriggerChanges, HotkeyError> {
     let target_combo = combo.as_str();
     let moved = previous_combo.as_deref() != Some(target_combo);
     let edge_kind = update.edge.kind_id();
@@ -385,8 +370,7 @@ async fn binding_changes(
     let linked = backend
         .trigger_instance_repo()
         .actions_using(update.instance_id)
-        .await
-        .map_err(|e| e.to_string())?;
+        .await?;
     if !linked.contains(&update.action_id) {
         changes.unlinked = linked
             .into_iter()
@@ -397,8 +381,10 @@ async fn binding_changes(
     Ok(changes)
 }
 
-fn edge_taken(combo: &str) -> String {
-    format!("{combo} already has a binding on that edge")
+fn edge_taken(combo: &str) -> HotkeyError {
+    HotkeyError::EdgeTaken {
+        combo: combo.to_owned(),
+    }
 }
 
 #[cfg(test)]

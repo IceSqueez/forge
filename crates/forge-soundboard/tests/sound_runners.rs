@@ -56,7 +56,11 @@ impl RecordingControl {
     fn record(&self, call: ControlCall) -> Result<(), SoundboardError> {
         self.calls.lock().unwrap().push(call);
         if self.fail {
-            Err(SoundboardError::Storage(CONTROL_FAILURE.to_owned()))
+            Err(SoundboardError::Storage(
+                forge_storage::StorageError::Connection {
+                    reason: CONTROL_FAILURE.to_owned(),
+                },
+            ))
         } else {
             Ok(())
         }
@@ -416,7 +420,12 @@ async fn every_sound_runner_fails_with_the_control_error_text() {
     ];
     let expected = SubActionOutcome::Failed(
         MessageRef::new(MessageCode::from_static("soundboard", "storage_failed"))
-            .with_detail(UpstreamDetail::from_redacted(CONTROL_FAILURE))
+            .with_detail(UpstreamDetail::from_redacted(
+                forge_storage::StorageError::Connection {
+                    reason: CONTROL_FAILURE.to_owned(),
+                }
+                .to_string(),
+            ))
             .into(),
     );
 

@@ -459,10 +459,10 @@ mod tests {
 
     use forge_platform_core::{
         BuiltinContent, BuiltinHealth, BuiltinStatus, CapabilityFlags, ConnectionState,
-        DetailSection, HeaderAction, HealthMetric, HealthMetricId, HealthStream, HealthText,
-        QuickAction, QuickActions,
+        DetailSection, HeaderAction, HealthMetric, HealthMetricId, HealthStream, QuickAction,
+        QuickActions,
     };
-    use forge_types::{IntegrationId, MessageCode, UserText};
+    use forge_types::{IntegrationId, MessageCode};
 
     use super::*;
     use crate::integrations::BuiltinObject;
@@ -558,23 +558,23 @@ mod tests {
         for (value, expected) in [
             (
                 HealthValue::Status {
-                    label: HealthText::unlocalized(SECRET),
+                    label: forge_types::VerbatimText::new(SECRET).into(),
                     active: true,
-                    detail: Some(HealthText::unlocalized(SECRET)),
+                    detail: Some(forge_types::VerbatimText::new(SECRET).into()),
                 },
                 "status(active=true)",
             ),
             (
                 HealthValue::Text {
-                    primary: HealthText::unlocalized(SECRET),
-                    secondary: Some(HealthText::unlocalized(SECRET)),
+                    primary: forge_types::VerbatimText::new(SECRET).into(),
+                    secondary: Some(forge_types::VerbatimText::new(SECRET).into()),
                 },
                 "text",
             ),
             (
                 HealthValue::Pair {
-                    left: HealthText::unlocalized(SECRET),
-                    right: HealthText::unlocalized(SECRET),
+                    left: forge_types::VerbatimText::new(SECRET).into(),
+                    right: forge_types::VerbatimText::new(SECRET).into(),
                 },
                 "pair",
             ),
@@ -582,7 +582,7 @@ mod tests {
                 HealthValue::Ratio {
                     used: 3,
                     total: 800,
-                    reset_hint: Some(HealthText::unlocalized(SECRET)),
+                    reset_hint: Some(forge_types::VerbatimText::new(SECRET).into()),
                 },
                 "ratio(3/800)",
             ),
@@ -633,13 +633,13 @@ mod tests {
         fn uptime(&self) -> Option<Duration> {
             Some(Duration::from_secs(90))
         }
-        fn endpoint(&self) -> Option<&str> {
-            Some(SECRET)
+        fn endpoint(&self) -> Option<forge_types::UserText> {
+            Some(forge_types::VerbatimText::new(SECRET).into())
         }
         fn capability_flags(&self) -> CapabilityFlags {
             CapabilityFlags {
                 limited: false,
-                label: Some(UserText::unlocalized(SECRET)),
+                label: Some(forge_types::VerbatimText::new(SECRET).into()),
             }
         }
         fn header_actions(&self) -> Vec<HeaderAction> {
@@ -662,7 +662,7 @@ mod tests {
             std::array::from_fn(|i| HealthMetric {
                 id: STUB_METRIC_IDS[i].clone(),
                 value: HealthValue::Text {
-                    primary: HealthText::unlocalized(SECRET),
+                    primary: forge_types::VerbatimText::new(SECRET).into(),
                     secondary: None,
                 },
             })

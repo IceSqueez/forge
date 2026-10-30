@@ -17,7 +17,8 @@ use tokio::runtime::Handle;
 use crate::async_bridge;
 use crate::collection_form::{CollectionForm, CollectionFormEvent};
 use crate::collection_list::{CollectionList, CollectionListEvent, ListLoad};
-use crate::collection_text::{collection_failure_message, localized_collection_text};
+use crate::collection_text::collection_failure_message;
+use crate::user_text::resolve_message;
 use crate::user_text::user_text_string;
 use forge_components::ActivePresentation;
 use forge_components::PushToast;
@@ -316,7 +317,7 @@ impl CollectionManager {
                         field: Some(key),
                         message,
                     } if still_open => form.update(cx, |form, cx| {
-                        form.show_field_error(key, localized_collection_text(message), cx)
+                        form.show_field_error(key, resolve_message(message).inline(), cx)
                     }),
                     _ => false,
                 };

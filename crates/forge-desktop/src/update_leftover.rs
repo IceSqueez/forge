@@ -13,6 +13,7 @@ use gpui::{App, AsyncApp};
 use tokio::runtime::Handle;
 
 use crate::async_bridge::{detached, open_path};
+use crate::error::DesktopError;
 use forge_components::PushToast;
 
 pub const INSTALLED_APPS_SETTINGS: &str = "ms-settings:appsfeatures";
@@ -79,7 +80,7 @@ async fn remember_leftover_noticed(repo: &dyn SettingsRepo) {
     }
 }
 
-async fn open_installed_apps(repo: Arc<dyn SettingsRepo>) -> Result<(), String> {
+async fn open_installed_apps(repo: Arc<dyn SettingsRepo>) -> Result<(), DesktopError> {
     remember_leftover_noticed(repo.as_ref()).await;
     open_path(INSTALLED_APPS_SETTINGS).await
 }

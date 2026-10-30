@@ -57,3 +57,5 @@ msg-youtube-label_user = User
 msg-youtube-label_username = Username
 msg-youtube-label_viewer_identifier_example = @handle or UC...
 msg-youtube-label_visibility = Visibility
+msg-youtube-endpoint_summary = Connected via OAuth (PKCE)
+msg-youtube-channel_id_badge = channel_id { $id }

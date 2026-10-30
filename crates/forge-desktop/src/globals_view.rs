@@ -31,6 +31,7 @@ use gpui::{
 };
 
 use crate::async_bridge;
+use crate::error::DesktopError;
 use crate::globals::{Global, Globals, GlobalsFilter, variant_kind_color};
 use crate::repo_failure::RepoFailure;
 use forge_components::ActivePresentation;
@@ -611,22 +612,24 @@ impl GlobalsView {
 
     fn export(&mut self, cx: &mut Context<Self>) {
         let repo = Arc::clone(&self.backend);
-        async_bridge::spawn_dialog(
+        async_bridge::run_async(
             &self.rt_handle,
             export_globals_to_chosen_file(repo),
             |_this, result, cx| match result {
-                Ok(path) => {
+                Ok(None) => {}
+                Ok(Some(path)) => {
                     let shown = path.display().to_string();
                     cx.push_toast(
                         ToastKind::Success,
                         tr!("globals_export_done", path = shown.as_str()),
                     );
                 }
-                Err(reason) if reason == async_bridge::DIALOG_CANCELLED => {}
-                Err(reason) => {
+                Err(error) => {
+                    tracing::warn!(error = %error, "globals export failed");
+                    let shown = error.user_message();
                     cx.push_toast(
                         ToastKind::Error,
-                        tr!("globals_export_failed", error = reason.as_str()),
+                        tr!("globals_export_failed", error = shown.as_str()),
                     );
                 }
             },
@@ -1760,10 +1763,12 @@ fn inspect_count(value: &Variant) -> (&'static str, usize) {
     }
 }
 
-async fn export_globals_to_chosen_file(repo: Arc<dyn GlobalsRepo>) -> Result<PathBuf, String> {
-    let entries = repo.export_all().await.map_err(|e| e.to_string())?;
+async fn export_globals_to_chosen_file(
+    repo: Arc<dyn GlobalsRepo>,
+) -> Result<Option<PathBuf>, DesktopError> {
+    let entries = repo.export_all().await?;
     let envelope = GlobalsExport::new(entries);
-    let json = serde_json::to_string_pretty(&envelope).map_err(|e| e.to_string())?;
+    let json = serde_json::to_string_pretty(&envelope)?;
     let default_name = format!(
         "forge-globals-{}.json",
         time::OffsetDateTime::now_utc().unix_timestamp()
@@ -1772,11 +1777,11 @@ async fn export_globals_to_chosen_file(repo: Arc<dyn GlobalsRepo>) -> Result<Pat
         name: "JSON".to_owned(),
         extensions: vec!["json"],
     };
-    let path = async_bridge::save_file(Some(filter), Some(default_name)).await?;
-    tokio::fs::write(&path, json)
-        .await
-        .map_err(|e| e.to_string())?;
-    Ok(path)
+    let Some(path) = async_bridge::save_file(Some(filter), Some(default_name)).await else {
+        return Ok(None);
+    };
+    tokio::fs::write(&path, json).await?;
+    Ok(Some(path))
 }
 
 fn global_from_entry(entry: &GlobalEntry) -> Global {

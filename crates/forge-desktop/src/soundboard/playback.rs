@@ -191,7 +191,7 @@ fn play_settled_without_outcome(result: &Result<PlayOutcome, SoundboardError>) -
         Err(
             SoundboardError::SourceMissing(_)
             | SoundboardError::Audio(_)
-            | SoundboardError::JoinError(_),
+            | SoundboardError::TaskFailed,
         ) => false,
         Err(
             SoundboardError::ClipNotFound(_)
@@ -360,8 +360,13 @@ mod tests {
                 }),
                 None,
             ),
-            (SoundboardError::Storage("disk is busy".to_owned()), None),
-            (SoundboardError::JoinError("panicked".to_owned()), None),
+            (
+                SoundboardError::Storage(forge_storage::StorageError::Connection {
+                    reason: "disk is busy".to_owned(),
+                }),
+                None,
+            ),
+            (SoundboardError::TaskFailed, None),
             (
                 SoundboardError::Audio(forge_audio::AudioError::NoDefaultDevice),
                 None,
@@ -380,7 +385,11 @@ mod tests {
             (Ok(PlayOutcome::Started), false),
             (Err(SoundboardError::ClipNotFound("01J0".to_owned())), true),
             (
-                Err(SoundboardError::Storage("disk is busy".to_owned())),
+                Err(SoundboardError::Storage(
+                    forge_storage::StorageError::Connection {
+                        reason: "disk is busy".to_owned(),
+                    },
+                )),
                 true,
             ),
             (
@@ -396,10 +405,7 @@ mod tests {
                 false,
             ),
             (Err(audio()), false),
-            (
-                Err(SoundboardError::JoinError("panicked".to_owned())),
-                false,
-            ),
+            (Err(SoundboardError::TaskFailed), false),
         ] {
             assert_eq!(
                 play_settled_without_outcome(&result),

@@ -139,8 +139,7 @@ mod tests {
     use forge_events::{Event, EventPublisher};
     use forge_platform_core::{
         CapabilityFlags, ConnectionState, ControlOutcome, DetailSection, DonationStream,
-        HeaderAction, HealthMetric, HealthMetricId, HealthStream, HealthText, HealthValue,
-        QuickAction,
+        HeaderAction, HealthMetric, HealthMetricId, HealthStream, HealthValue, QuickAction,
     };
     use forge_storage::{MockDonationRepo, SettingsRepo};
     use forge_types::{Donation, MessageCode, Shared};
@@ -206,7 +205,7 @@ mod tests {
         fn uptime(&self) -> Option<Duration> {
             None
         }
-        fn endpoint(&self) -> Option<&str> {
+        fn endpoint(&self) -> Option<forge_types::UserText> {
             None
         }
         fn capability_flags(&self) -> CapabilityFlags {
@@ -232,7 +231,7 @@ mod tests {
             std::array::from_fn(|i| HealthMetric {
                 id: STUB_METRIC_IDS[i].clone(),
                 value: HealthValue::Text {
-                    primary: HealthText::unlocalized(""),
+                    primary: forge_types::VerbatimText::new("").into(),
                     secondary: None,
                 },
             })

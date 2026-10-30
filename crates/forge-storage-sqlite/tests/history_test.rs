@@ -415,7 +415,7 @@ async fn save_failed_outcome_roundtrips() {
     let backend = setup().await;
     let action_id = ActionId::new();
     let mut ctx = make_ctx(action_id, EventId::new());
-    ctx.outcome = ExecutionOutcome::Failed(forge_types::UserText::unlocalized("rhai error"));
+    ctx.outcome = ExecutionOutcome::Failed(forge_types::VerbatimText::new("rhai error").into());
 
     backend.history_repo().save(&ctx).await.expect("save");
 

@@ -126,3 +126,5 @@ msg-obs-label_transition = Перехід
 msg-obs-label_trigger_transition = Запустити перехід
 msg-obs-label_visible = Видиме
 msg-obs-label_volume_example = напр. -6.0
+msg-obs-no_scene_to_list = Немає сцени, з якої можна показати джерела
+msg-obs-scene_not_in_obs = Вибраної сцени немає в OBS

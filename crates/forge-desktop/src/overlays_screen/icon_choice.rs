@@ -474,12 +474,12 @@ impl OverlaysView {
             name: tr!("overlays_icon_file_filter"),
             extensions: image_dialog_extensions(),
         };
-        async_bridge::spawn_dialog(
+        async_bridge::run_async(
             &self.handles.rt_handle,
             async_bridge::pick_file(Some(filter)),
-            move |this, result: Result<PathBuf, String>, cx| match result {
-                Ok(path) => this.import_icon_image(key, path, cx),
-                Err(_) => this.cancel_icon_import(key, cx),
+            move |this, picked: Option<PathBuf>, cx| match picked {
+                Some(path) => this.import_icon_image(key, path, cx),
+                None => this.cancel_icon_import(key, cx),
             },
             cx,
         );

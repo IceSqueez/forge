@@ -11,6 +11,7 @@ use forge_components::{
     BORDER_THIN, Density, FONT_XS, FONT_XXS, ForgePalette, Icon, Radius, Spacing, body_family,
     icon, mono_family, pulse_dot, radius, scaled, spacing, spinner, tr, with_alpha,
 };
+use forge_platform_core::{DeviceAuthEnd, PlatformError};
 use forge_platform_twitch::{DeviceCodeInfo, TWITCH_BROADCASTER_SCOPES, TwitchAuthFlow, UserInfo};
 use forge_storage::CredentialsRepo;
 use forge_types::PlatformId;
@@ -22,6 +23,7 @@ use tokio_util::sync::CancellationToken;
 
 use super::{ConnectFlow, status_dot};
 use crate::async_bridge;
+use crate::error::DesktopError;
 use crate::integrations::BuiltinObject;
 use crate::start_failure::start_failure_text;
 use forge_runtime::IntegrationStartError;
@@ -94,15 +96,22 @@ enum TwitchWaitError {
     Cancelled,
     Denied,
     Expired,
-    Other(String),
+    Other(DesktopError),
 }
 
-async fn request_code(flow: TwitchFlowHandle) -> Result<DeviceCodeInfo, String> {
+async fn request_code(flow: TwitchFlowHandle) -> Result<DeviceCodeInfo, DesktopError> {
     let mut guard = flow.lock().await;
-    let inner = guard
-        .as_mut()
-        .ok_or_else(|| "OAuth flow already consumed".to_owned())?;
-    inner.start().await.map_err(|e| e.to_string())
+    let inner = guard.as_mut().ok_or(DesktopError::SignInFlowConsumed)?;
+    inner.start().await.map_err(DesktopError::from)
+}
+
+fn wait_failure(error: PlatformError) -> TwitchWaitError {
+    match error {
+        PlatformError::DeviceAuthEnded(DeviceAuthEnd::Cancelled) => TwitchWaitError::Cancelled,
+        PlatformError::DeviceAuthEnded(DeviceAuthEnd::Denied) => TwitchWaitError::Denied,
+        PlatformError::DeviceAuthEnded(DeviceAuthEnd::Expired) => TwitchWaitError::Expired,
+        other => TwitchWaitError::Other(other.into()),
+    }
 }
 
 async fn wait_for_auth(
@@ -114,26 +123,15 @@ async fn wait_for_auth(
         let mut guard = flow.lock().await;
         guard
             .take()
-            .ok_or_else(|| TwitchWaitError::Other("OAuth flow already consumed".to_owned()))?
+            .ok_or(TwitchWaitError::Other(DesktopError::SignInFlowConsumed))?
     };
-    let bundle = match inner.wait_for_authorization(cancel).await {
-        Ok(bundle) => bundle,
-        Err(err) => {
-            let message = err.to_string();
-            return Err(if message.contains("cancelled") {
-                TwitchWaitError::Cancelled
-            } else if message.contains("denied") {
-                TwitchWaitError::Denied
-            } else if message.contains("expired") {
-                TwitchWaitError::Expired
-            } else {
-                TwitchWaitError::Other(message)
-            });
-        }
-    };
+    let bundle = inner
+        .wait_for_authorization(cancel)
+        .await
+        .map_err(wait_failure)?;
     forge_platform_twitch::credentials::store(&*credentials, &bundle)
         .await
-        .map_err(|e| TwitchWaitError::Other(e.to_string()))?;
+        .map_err(|e| TwitchWaitError::Other(e.into()))?;
     Ok(TwitchAuthOutcome {
         user_info: bundle.user_info,
     })
@@ -193,7 +191,7 @@ impl ConnectFlow {
         &mut self,
         handle: TwitchFlowHandle,
         cancel: CancellationToken,
-        result: Result<DeviceCodeInfo, String>,
+        result: Result<DeviceCodeInfo, DesktopError>,
         cx: &mut Context<Self>,
     ) {
         if !cancel.is_cancelled() {
@@ -205,14 +203,17 @@ impl ConnectFlow {
         &mut self,
         handle: TwitchFlowHandle,
         cancel: CancellationToken,
-        result: Result<DeviceCodeInfo, String>,
+        result: Result<DeviceCodeInfo, DesktopError>,
         cx: &mut Context<Self>,
     ) {
         let info = match result {
             Ok(info) => info,
             Err(e) => {
                 tracing::warn!(error = %e, "twitch device code request failed");
-                self.twitch_device = Some(TwitchDeviceState::failed(TwitchDevicePhase::Failed, e));
+                self.twitch_device = Some(TwitchDeviceState::failed(
+                    TwitchDevicePhase::Failed,
+                    e.user_message(),
+                ));
                 cx.notify();
                 return;
             }
@@ -279,7 +280,7 @@ impl ConnectFlow {
                 tracing::warn!(error = %msg, "twitch authorization failed");
                 if let Some(dev) = &mut self.twitch_device {
                     dev.phase = TwitchDevicePhase::Failed;
-                    dev.error = Some(msg);
+                    dev.error = Some(msg.user_message());
                 }
                 cx.notify();
             }
@@ -1024,6 +1025,29 @@ fn step_card(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn each_ended_device_flow_maps_to_its_own_wait_failure() {
+        assert!(matches!(
+            wait_failure(PlatformError::DeviceAuthEnded(DeviceAuthEnd::Cancelled)),
+            TwitchWaitError::Cancelled
+        ));
+        assert!(matches!(
+            wait_failure(PlatformError::DeviceAuthEnded(DeviceAuthEnd::Denied)),
+            TwitchWaitError::Denied
+        ));
+        assert!(matches!(
+            wait_failure(PlatformError::DeviceAuthEnded(DeviceAuthEnd::Expired)),
+            TwitchWaitError::Expired
+        ));
+        assert!(matches!(
+            wait_failure(PlatformError::Auth {
+                reason: "refused".into(),
+            }),
+            TwitchWaitError::Other(_)
+        ));
+    }
+
     use crate::connect_flow::ConnectFlowLaunch;
     use forge_storage::{CredentialId, StorageError};
     use forge_types::PlatformId;
@@ -1131,7 +1155,7 @@ mod tests {
     fn a_device_code_arriving_for_a_cancelled_attempt_leaves_the_newer_one_alone(
         cx: &mut gpui::TestAppContext,
     ) {
-        for late in [Ok(device_code()), Err("too late".to_owned())] {
+        for late in [Ok(device_code()), Err(DesktopError::TaskStopped)] {
             let mounted = mounted_flow(cx);
             let stale = newer_attempt_after_cancelling_one(&mounted.flow, cx);
 
@@ -1154,14 +1178,14 @@ mod tests {
         let live = CancellationToken::new();
         mounted.flow.update(cx, |this, cx| {
             this.twitch_device = Some(TwitchDeviceState::starting());
-            this.on_twitch_device_start(no_flow(), live, Err("rejected".to_owned()), cx);
+            this.on_twitch_device_start(no_flow(), live, Err(DesktopError::TaskStopped), cx);
         });
 
         assert_eq!(
             device_state(&mounted.flow, cx),
             (
                 TwitchDevicePhase::Failed,
-                Some("rejected".to_owned()),
+                Some(DesktopError::TaskStopped.user_message()),
                 false
             )
         );

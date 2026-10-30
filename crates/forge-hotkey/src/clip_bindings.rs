@@ -5,6 +5,7 @@ use forge_storage::{SoundboardClipsRepo, StorageError, StoredClip};
 use forge_types::ClipId;
 
 use crate::combo::HotkeyCombo;
+use crate::error::HotkeyError;
 
 pub const CLIP_COMBO_FIELD: &str = "hotkey";
 
@@ -35,12 +36,12 @@ pub fn stored_combo(clip: &StoredClip) -> Option<String> {
 pub async fn clear_clip_combo(
     repo: Arc<dyn SoundboardClipsRepo>,
     id: ClipId,
-) -> Result<(), String> {
-    let Some(mut clip) = repo.get(id).await.map_err(|e| e.to_string())? else {
+) -> Result<(), HotkeyError> {
+    let Some(mut clip) = repo.get(id).await? else {
         return Ok(());
     };
     clip.hotkey = None;
-    repo.save(&clip).await.map_err(|e| e.to_string())
+    repo.save(&clip).await.map_err(HotkeyError::from)
 }
 
 pub fn canonical_clip(clip: &StoredClip) -> Result<StoredClip, StorageError> {

@@ -69,7 +69,7 @@ impl SubActionRunner for AlwaysFailRunner {
                 kind: "test.always_fail".to_owned(),
                 started_at: OffsetDateTime::now_utc(),
                 duration_ms: 0,
-                outcome: SubActionOutcome::Failed(forge_types::UserText::unlocalized("boom")),
+                outcome: SubActionOutcome::Failed(forge_types::VerbatimText::new("boom").into()),
             },
             None,
         )
@@ -645,7 +645,7 @@ async fn child_chain_error_propagates_through_the_loop_to_the_action_root() {
 
     assert_eq!(
         run.signal,
-        ChainSignal::Error(forge_types::UserText::unlocalized("boom"))
+        ChainSignal::Error(forge_types::VerbatimText::new("boom").into())
     );
 }
 

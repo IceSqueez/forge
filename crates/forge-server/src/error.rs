@@ -6,7 +6,7 @@ pub enum ServerError {
     Bind { addr: String, reason: String },
 
     #[error("storage error: {0}")]
-    Storage(String),
+    Storage(#[from] forge_storage::StorageError),
 
     #[error("io error: {0}")]
     Io(#[from] std::io::Error),

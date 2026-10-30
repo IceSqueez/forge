@@ -4,7 +4,7 @@ use forge_midi::MidiError;
 use forge_platform_core::PlatformError;
 use forge_runtime::{IntegrationStartError, StartFailureCategory};
 use forge_storage::StorageError;
-use forge_types::{MessageCode, MessageRef, UpstreamDetail, VerbatimText};
+use forge_types::{MessageCode, MessageRef, UpstreamDetail};
 
 pub(crate) fn youtube_start_error(error: &PlatformError) -> IntegrationStartError {
     stored_sign_in_unreadable(
@@ -47,39 +47,22 @@ pub(crate) fn midi_start_error(error: &MidiError) -> IntegrationStartError {
 
 pub(crate) fn hotkey_start_error(error: &HotkeyError) -> IntegrationStartError {
     tracing::warn!(error = %error, "hotkey engine could not start");
-    let (category, message) = match error {
-        HotkeyError::PortalUnavailable { reason } => (
-            StartFailureCategory::Unreachable,
-            MessageRef::new(hotkey_messages::PORTAL_UNAVAILABLE)
-                .with_detail(UpstreamDetail::from_redacted(reason)),
-        ),
-        HotkeyError::PermissionDenied => (
-            StartFailureCategory::Refused,
-            MessageRef::new(hotkey_messages::PERMISSION_DENIED),
-        ),
-        HotkeyError::AlreadyRegistered { combo } | HotkeyError::InvalidCombo(combo) => {
-            (StartFailureCategory::Refused, combo_rejected(combo))
+    let category = match error {
+        HotkeyError::PortalUnavailable { .. } | HotkeyError::BackendUnavailable => {
+            StartFailureCategory::Unreachable
         }
-        HotkeyError::BindRejected { combo, reason } => (
-            StartFailureCategory::Refused,
-            combo_rejected(combo).with_detail(UpstreamDetail::from_redacted(reason)),
-        ),
-        HotkeyError::SupervisorUnavailable | HotkeyError::MainThreadUnavailable => (
-            StartFailureCategory::Internal,
-            MessageRef::new(hotkey_messages::ENGINE_STOPPED),
-        ),
-        HotkeyError::Backend(cause) => (
-            StartFailureCategory::Internal,
-            MessageRef::new(hotkey_messages::BACKEND_FAILED)
-                .with_detail(UpstreamDetail::from_redacted(cause)),
-        ),
+        HotkeyError::PermissionDenied
+        | HotkeyError::AlreadyRegistered { .. }
+        | HotkeyError::InvalidCombo(_)
+        | HotkeyError::BindRejected { .. }
+        | HotkeyError::EdgeTaken { .. }
+        | HotkeyError::BindingNotFound => StartFailureCategory::Refused,
+        HotkeyError::SupervisorUnavailable
+        | HotkeyError::MainThreadUnavailable
+        | HotkeyError::Storage(_)
+        | HotkeyError::Backend(_) => StartFailureCategory::Internal,
     };
-    IntegrationStartError::new(category, message)
-}
-
-fn combo_rejected(combo: &str) -> MessageRef {
-    MessageRef::new(hotkey_messages::COMBO_REJECTED)
-        .with_arg(hotkey_messages::COMBO_ARG, VerbatimText::new(combo))
+    IntegrationStartError::new(category, hotkey_messages::failure(error))
 }
 
 #[cfg(test)]
@@ -108,7 +91,7 @@ mod tests {
     }
 
     fn combo(text: &str) -> MessageArg {
-        MessageArg::Verbatim(VerbatimText::new(text))
+        MessageArg::Verbatim(forge_types::VerbatimText::new(text))
     }
 
     #[test]
@@ -252,6 +235,31 @@ mod tests {
                 (category, &code, combo.as_ref(), detail),
                 "{error:?}"
             );
+        }
+    }
+
+    #[test]
+    fn the_new_hotkey_failures_keep_their_start_category() {
+        for (error, category) in [
+            (
+                HotkeyError::BackendUnavailable,
+                StartFailureCategory::Unreachable,
+            ),
+            (HotkeyError::BindingNotFound, StartFailureCategory::Refused),
+            (
+                HotkeyError::EdgeTaken {
+                    combo: "Ctrl+E".to_owned(),
+                },
+                StartFailureCategory::Refused,
+            ),
+            (
+                HotkeyError::Storage(forge_storage::StorageError::Connection {
+                    reason: "disk full".to_owned(),
+                }),
+                StartFailureCategory::Internal,
+            ),
+        ] {
+            assert_eq!(hotkey_start_error(&error).category(), category, "{error:?}");
         }
     }
 }

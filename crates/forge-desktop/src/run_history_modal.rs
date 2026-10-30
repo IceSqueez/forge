@@ -836,12 +836,12 @@ mod tests {
             (
                 vec![
                     SubActionOutcome::Success,
-                    SubActionOutcome::Failed(forge_types::UserText::unlocalized(
-                        "integration disabled: obs",
-                    )),
-                    SubActionOutcome::Skipped(forge_types::UserText::unlocalized(
-                        "condition false",
-                    )),
+                    SubActionOutcome::Failed(
+                        forge_types::VerbatimText::new("integration disabled: obs").into(),
+                    ),
+                    SubActionOutcome::Skipped(
+                        forge_types::VerbatimText::new("condition false").into(),
+                    ),
                 ],
                 "failed, skipped and successful steps",
             ),

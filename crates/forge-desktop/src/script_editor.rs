@@ -883,23 +883,18 @@ impl ScriptEditorView {
         async_bridge::run_async(
             &self.rt_handle,
             async move {
-                match repo.list().await {
-                    Ok(records) => {
-                        let actions = action_repo.list().await.unwrap_or_default();
-                        let entries = records
-                            .into_iter()
-                            .map(|r| ScriptEntry {
-                                status_ok: validate_syntax(&r.body).is_ok(),
-                                enabled: r.enabled,
-                                linked: find_linked_action(&actions, &r.name),
-                                id: r.id,
-                                name: r.name,
-                            })
-                            .collect::<Vec<_>>();
-                        Ok(entries)
-                    }
-                    Err(e) => Err(e.to_string()),
-                }
+                let records = repo.list().await.map_err(|e| e.to_string())?;
+                let actions = action_repo.list().await.map_err(|e| e.to_string())?;
+                Ok(records
+                    .into_iter()
+                    .map(|r| ScriptEntry {
+                        status_ok: validate_syntax(&r.body).is_ok(),
+                        enabled: r.enabled,
+                        linked: find_linked_action(&actions, &r.name),
+                        id: r.id,
+                        name: r.name,
+                    })
+                    .collect::<Vec<_>>())
             },
             |this, result, cx| this.apply_scripts_loaded(result, cx),
             cx,
@@ -4118,6 +4113,7 @@ mod tests {
         use crate::screen_shortcuts::ScreenShortcuts;
         use crate::test_support::{
             StubEventLog, pump, pump_until, runtime, test_backend_with_scripts,
+            test_backend_with_scripts_and_actions,
         };
         use crate::unsaved_work::UnsavedWorkHandle;
         use forge_components::Presentation;
@@ -4192,6 +4188,55 @@ mod tests {
                 created_at: now,
                 last_modified: now,
             }
+        }
+
+        #[gpui::test]
+        fn a_failed_action_list_reports_a_load_failure_instead_of_unlinked_scripts(
+            cx: &mut TestAppContext,
+        ) {
+            install_language(Language::En);
+            cx.update(|cx| {
+                cx.set_global(Presentation::new(ThemeId::ForgeDefault, Density::Cozy));
+            });
+            let rt = runtime();
+            let bus = {
+                let _entered = rt.enter();
+                EventBus::new(Arc::new(StubEventLog))
+            };
+            let mut actions = forge_storage::action::MockActionRepo::new();
+            actions.expect_list().returning(|| {
+                Err(StorageError::Connection {
+                    reason: "disk full".to_owned(),
+                })
+            });
+            let backend = test_backend_with_scripts_and_actions(
+                Arc::new(repo(Store::NeverCalled)),
+                Arc::new(actions),
+            );
+            let handle = rt.handle().clone();
+            let view = cx.new(|cx| {
+                ScriptEditorView::new(
+                    backend,
+                    Arc::new(ScriptRegistry::new()),
+                    bus,
+                    Arc::new(NothingDisabled),
+                    handle,
+                    cx,
+                )
+            });
+
+            pump_until(&rt, || {
+                cx.run_until_parked();
+                !view.read_with(cx, |view, _| view.loading)
+            });
+
+            let failures = view.read_with(cx, |view, _| {
+                view.console
+                    .iter()
+                    .filter(|line| matches!(line.tag, LogTag::Err))
+                    .count()
+            });
+            assert_eq!(failures, 1);
         }
 
         struct Rig {

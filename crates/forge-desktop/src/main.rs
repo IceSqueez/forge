@@ -54,6 +54,7 @@ mod donation_factories;
 mod donation_services;
 mod donation_settings;
 mod engine_voice_choices;
+mod error;
 mod event_categories;
 mod event_feed;
 mod event_log;

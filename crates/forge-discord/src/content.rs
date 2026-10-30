@@ -8,7 +8,7 @@ use forge_platform_core::{
     TrailingToken,
 };
 
-use forge_types::UserText;
+use forge_types::{UserText, VerbatimText};
 
 use crate::client::DiscordClient;
 use crate::vocabulary::labels;
@@ -141,15 +141,15 @@ impl BuiltinContent for DiscordClient {
                     } else {
                         None
                     },
-                    trailing: vec![TrailingToken::Label(UserText::unlocalized(ts))],
+                    trailing: vec![TrailingToken::Label(VerbatimText::new(ts).into())],
                     enabled: true,
                     on_click: None,
                 }
             })
             .collect();
 
-        let webhook_count = UserText::unlocalized(webhook_items.len().to_string());
-        let post_count = UserText::unlocalized(post_items.len().to_string());
+        let webhook_count: UserText = VerbatimText::new(webhook_items.len().to_string()).into();
+        let post_count: UserText = VerbatimText::new(post_items.len().to_string()).into();
 
         vec![DetailSection::TwoColumnLists {
             left: Box::new(ContentList {

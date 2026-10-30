@@ -66,3 +66,6 @@ msg-kick-label_timeout_user = Дати тайм-аут користувачу
 msg-kick-label_unban_user = Розбанити користувача
 msg-kick-label_update_reward = Оновити нагороду
 msg-kick-label_update_title = Оновити назву
+msg-kick-endpoint_summary = Pusher WS (читання) + OAuth API (запис)
+msg-kick-user_id_badge = user_id { $id }
+msg-kick-label_redemption_ids_hint = %redemption_id% або id1,id2,id3 (до 25)

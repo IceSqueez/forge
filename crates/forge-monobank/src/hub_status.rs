@@ -1,7 +1,7 @@
 use std::time::Duration;
 
 use forge_platform_core::{BuiltinStatus, CapabilityFlags, ConnectionState, HeaderAction};
-use forge_types::IntegrationId;
+use forge_types::{IntegrationId, UserText, VerbatimText};
 
 use crate::integration::MONOBANK_INTEGRATION;
 use crate::provider::MonobankProvider;
@@ -27,8 +27,8 @@ impl BuiltinStatus for MonobankProvider {
         self.poll_status().uptime()
     }
 
-    fn endpoint(&self) -> Option<&str> {
-        Some(&self.config.base_url)
+    fn endpoint(&self) -> Option<UserText> {
+        Some(VerbatimText::new(self.config.base_url.as_str()).into())
     }
 
     fn capability_flags(&self) -> CapabilityFlags {

@@ -6,7 +6,7 @@ use forge_types::{ClipId, TriggerInstanceId};
 use gpui::{AnyElement, ClickEvent, Context, SharedString, prelude::*};
 
 use forge_hotkey::HotkeyReconciler;
-use forge_hotkey::{BindingRow, delete_binding};
+use forge_hotkey::{BindingRow, HotkeyError, delete_binding};
 use forge_hotkey::{HotkeySyncedClipsRepo, clear_clip_combo, stored_combo};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -111,7 +111,7 @@ pub async fn release_holder(
     combo: String,
     reconciler: Arc<HotkeyReconciler>,
     backend: Arc<dyn DataProvider>,
-) -> Result<(), String> {
+) -> Result<(), HotkeyError> {
     match holder {
         ComboHolder::Action(_) => delete_binding(reconciler, backend, combo).await,
         ComboHolder::Clip { id, .. } => {

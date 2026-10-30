@@ -1,14 +1,12 @@
-use forge_platform_core::PlatformError;
+use forge_platform_core::{DeviceAuthEnd, PlatformError};
+use forge_storage::StorageError;
 use forge_types::OAuthToken;
 use thiserror::Error;
 use tokio_util::sync::CancellationToken;
 use tracing::debug;
 
 use super::{BotStatus, TwitchBotAccount};
-use crate::auth::{
-    DEVICE_CANCELLED_REASON, DEVICE_CODE_USED_REASON, DEVICE_DENIED_REASON, DEVICE_EXPIRED_REASON,
-    DeviceCodeInfo, TwitchAuthBundle, TwitchAuthFlow,
-};
+use crate::auth::{DeviceCodeInfo, TwitchAuthBundle, TwitchAuthFlow};
 use crate::credentials::{TWITCH_BOT_CREDENTIAL_ID, load, store_at};
 
 #[derive(Debug, Error)]
@@ -26,19 +24,18 @@ pub enum BotLoginError {
     #[error(transparent)]
     Platform(PlatformError),
     #[error("credential storage failed: {0}")]
-    Storage(String),
+    Storage(StorageError),
+    #[error("the bot credentials could not be cleared: {0}")]
+    CredentialsNotCleared(PlatformError),
 }
 
 impl From<PlatformError> for BotLoginError {
     fn from(error: PlatformError) -> Self {
-        let PlatformError::Auth { reason } = &error else {
-            return Self::Platform(error);
-        };
-        match reason.as_str() {
-            DEVICE_CANCELLED_REASON => Self::Cancelled,
-            DEVICE_DENIED_REASON => Self::Denied,
-            DEVICE_EXPIRED_REASON | DEVICE_CODE_USED_REASON => Self::Expired,
-            _ => Self::Platform(error),
+        match error {
+            PlatformError::DeviceAuthEnded(DeviceAuthEnd::Cancelled) => Self::Cancelled,
+            PlatformError::DeviceAuthEnded(DeviceAuthEnd::Denied) => Self::Denied,
+            PlatformError::DeviceAuthEnded(DeviceAuthEnd::Expired) => Self::Expired,
+            other => Self::Platform(other),
         }
     }
 }
@@ -77,7 +74,7 @@ impl TwitchBotAccount {
             Err(e) => {
                 self.revoke_pair(&bundle.access_token, bundle.refresh_token.as_ref())
                     .await;
-                return Err(BotLoginError::Storage(e.to_string()));
+                return Err(BotLoginError::Storage(e));
             }
         };
         if broadcaster.is_some_and(|stored| stored.user_id == bundle.user_info.id) {
@@ -89,7 +86,7 @@ impl TwitchBotAccount {
         if let Err(e) = store_at(self.repo.as_ref(), TWITCH_BOT_CREDENTIAL_ID, &bundle).await {
             self.revoke_pair(&bundle.access_token, bundle.refresh_token.as_ref())
                 .await;
-            return Err(BotLoginError::Storage(e.to_string()));
+            return Err(BotLoginError::Storage(e));
         }
         let status = BotStatus::Connected {
             login: bundle.user_info.login,
@@ -114,7 +111,7 @@ impl TwitchBotAccount {
                     .await;
             })
             .await
-            .map_err(|e| BotLoginError::Storage(e.to_string()))?;
+            .map_err(BotLoginError::CredentialsNotCleared)?;
         self.set_state(BotStatus::NotConnected, None);
         Ok(())
     }
@@ -180,6 +177,46 @@ mod tests {
             revoked.iter().all(|body| !body.contains(TOKEN_SENTINEL)),
             "the streamer token must never be revoked by a bot logout"
         );
+    }
+
+    #[tokio::test]
+    async fn a_logout_that_cannot_read_the_bot_credentials_reports_them_not_cleared() {
+        let harness = BotHarness::connected().await;
+        harness.repo.fail_loads_with(offline_store);
+
+        let result = harness.bot.logout().await;
+
+        assert!(
+            matches!(result, Err(BotLoginError::CredentialsNotCleared(_))),
+            "{result:?}"
+        );
+        assert!(harness.repo.raw(TWITCH_BOT_CREDENTIAL_ID).is_some());
+    }
+
+    #[test]
+    fn each_device_auth_end_becomes_its_own_login_outcome() {
+        for (end, expected) in [
+            (DeviceAuthEnd::Cancelled, BotLoginError::Cancelled),
+            (DeviceAuthEnd::Denied, BotLoginError::Denied),
+            (DeviceAuthEnd::Expired, BotLoginError::Expired),
+        ] {
+            let mapped = BotLoginError::from(PlatformError::DeviceAuthEnded(end));
+
+            assert_eq!(
+                std::mem::discriminant(&mapped),
+                std::mem::discriminant(&expected),
+                "{end:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn any_other_platform_failure_stays_a_platform_login_error() {
+        let mapped = BotLoginError::from(PlatformError::Auth {
+            reason: "refused".to_owned(),
+        });
+
+        assert!(matches!(mapped, BotLoginError::Platform(_)), "{mapped:?}");
     }
 
     #[tokio::test]

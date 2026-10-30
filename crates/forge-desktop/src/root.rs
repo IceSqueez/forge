@@ -185,7 +185,7 @@ pub fn run_boot(
         let outcome = match result_rx.await {
             Ok(outcome) => outcome,
             Err(_) => Err(BootFailure::Retry {
-                reason: "runtime construction task ended before reporting a result".to_owned(),
+                reason: tr!("boot_task_ended"),
             }),
         };
         match outcome {

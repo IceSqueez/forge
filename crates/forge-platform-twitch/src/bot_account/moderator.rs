@@ -10,6 +10,7 @@ use forge_net::status::BAD_REQUEST;
 
 const MODERATORS_PATH: &str = "/helix/moderation/moderators";
 const ALREADY_MODERATOR_MARKER: &str = "already";
+const BOT_BANNED_MARKER: &str = "banned";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -98,7 +99,7 @@ impl TwitchBotAccount {
                 self.set_moderator(BotModerator::Moderator);
                 return Ok(());
             }
-            if lowered.contains("ban") {
+            if lowered.contains(BOT_BANNED_MARKER) {
                 return Err(BotModeratorError::BotBanned);
             }
         }
@@ -272,7 +273,7 @@ mod tests {
             Result<serde_json::Value, HelixError>,
             Expectation,
             BotModerator,
-        ); 8] = [
+        ); 9] = [
             (
                 Ok(serde_json::Value::Null),
                 |r| r.is_ok(),
@@ -286,6 +287,11 @@ mod tests {
             (
                 http(400, "The user is banned from this channel"),
                 |r| matches!(r, Err(BotModeratorError::BotBanned)),
+                BotModerator::Unknown,
+            ),
+            (
+                http(400, "Invalid urban_bot target"),
+                |r| matches!(r, Err(BotModeratorError::Refused(_))),
                 BotModerator::Unknown,
             ),
             (

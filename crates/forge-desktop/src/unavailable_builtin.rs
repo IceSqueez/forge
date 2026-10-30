@@ -47,7 +47,7 @@ impl BuiltinStatus for UnavailableStatus {
     fn uptime(&self) -> Option<Duration> {
         None
     }
-    fn endpoint(&self) -> Option<&str> {
+    fn endpoint(&self) -> Option<UserText> {
         None
     }
     fn capability_flags(&self) -> CapabilityFlags {

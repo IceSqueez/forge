@@ -378,7 +378,6 @@ mod tests {
     use gpui::{Entity, Subscription, TestAppContext};
 
     use super::*;
-    use forge_types::UserText;
 
     const ENABLED: &str = "enabled";
 
@@ -414,7 +413,7 @@ mod tests {
             id,
             true,
             CollectionItemAccess::ReadOnly {
-                reason: UserText::unlocalized("elsewhere"),
+                reason: forge_types::VerbatimText::new("elsewhere").into(),
             },
         )
     }

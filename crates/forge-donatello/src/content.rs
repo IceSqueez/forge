@@ -3,7 +3,7 @@ use forge_platform_core::{
     test_donation_quick_action,
 };
 
-use forge_types::{MessageCode, MessageRef, UserText};
+use forge_types::{MessageCode, MessageRef, UserText, VerbatimText};
 
 use crate::messages;
 use crate::provider::DonatelloProvider;
@@ -30,10 +30,10 @@ fn account_card(status: &PollStatus) -> DetailSection {
     let account = status.account.as_ref();
     let field = |label: MessageCode, value: Option<UserText>| InfoField {
         label: label.into(),
-        value: value.unwrap_or_else(|| UserText::unlocalized(NOT_SET)),
+        value: value.unwrap_or_else(|| VerbatimText::new(NOT_SET).into()),
         monospace_value: false,
     };
-    let known = |value: Option<&String>| value.map(UserText::unlocalized);
+    let known = |value: Option<&String>| value.map(|text| VerbatimText::new(text.as_str()).into());
     DetailSection::InfoCard {
         title: messages::LABEL_ACCOUNT_TITLE.into(),
         live: status.phase == PollPhase::Polling,

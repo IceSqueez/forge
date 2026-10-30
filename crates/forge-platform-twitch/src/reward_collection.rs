@@ -20,9 +20,9 @@ use crate::custom_rewards::{
 use crate::helix::{HelixError, HelixRequest};
 use crate::helix_envelope::{first_row, rows};
 use crate::quick_action_fields::{int_field, text_field, toggle_field};
-use crate::vocabulary::labels;
+use crate::vocabulary::{labels, messages};
 use forge_net::status::NOT_FOUND;
-use forge_types::VerbatimText;
+use forge_types::{MessageCode, MessageRef, VerbatimText};
 
 const ENABLED_TOGGLE: &str = "enabled";
 const PAUSED_TOGGLE: &str = "paused";
@@ -40,30 +40,30 @@ const CAPACITY_NEEDLES: &[&str] = &["too many", "maximum number", "max number", 
 const AUTOMOD_NEEDLE: &str = "automod";
 const DUPLICATE_NEEDLE: &str = "duplicate";
 
-const FIELD_NEEDLES: &[(&str, &str, &str)] = &[
+const FIELD_NEEDLES: &[(&str, &str, MessageCode)] = &[
     (
         "max per user",
         MAX_PER_USER_PER_STREAM_KEY,
-        "Twitch rejected the per-viewer limit",
+        messages::REWARD_REJECTED_PER_VIEWER,
     ),
     (
         "max per stream",
         MAX_PER_STREAM_KEY,
-        "Twitch rejected the per-stream limit",
+        messages::REWARD_REJECTED_PER_STREAM,
     ),
     (
         "cooldown",
         GLOBAL_COOLDOWN_SECONDS_KEY,
-        "Twitch rejected the cooldown",
+        messages::REWARD_REJECTED_COOLDOWN,
     ),
     (
         "color",
         BACKGROUND_COLOR_KEY,
-        "Twitch rejected the background color",
+        messages::REWARD_REJECTED_COLOR,
     ),
-    ("prompt", PROMPT_KEY, "Twitch rejected the prompt"),
-    ("cost", COST_KEY, "Twitch rejected the cost"),
-    ("title", TITLE_KEY, "Twitch rejected the title"),
+    ("prompt", PROMPT_KEY, messages::REWARD_REJECTED_PROMPT),
+    ("cost", COST_KEY, messages::REWARD_REJECTED_COST),
+    ("title", TITLE_KEY, messages::REWARD_REJECTED_TITLE),
 ];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -88,37 +88,31 @@ impl RewardDraft {
     fn from_values(values: &BTreeMap<String, QuickActionFieldValue>) -> CollectionOutcome<Self> {
         let title = text_value(values, TITLE_KEY).trim().to_owned();
         if title.is_empty() {
-            return Err(invalid(TITLE_KEY, "Title is required".to_owned()));
+            return Err(invalid(TITLE_KEY, messages::REWARD_TITLE_REQUIRED));
         }
         if title.chars().count() > MAX_TITLE_CHARS {
             return Err(invalid(
                 TITLE_KEY,
-                format!("Title must be at most {MAX_TITLE_CHARS} characters"),
+                messages::reward_title_max(MAX_TITLE_CHARS),
             ));
         }
 
         let cost = int_value(values, COST_KEY).unwrap_or(DEFAULT_REWARD_COST);
         if cost < MIN_COST {
-            return Err(invalid(
-                COST_KEY,
-                format!("Cost must be at least {MIN_COST}"),
-            ));
+            return Err(invalid(COST_KEY, messages::reward_cost_min(MIN_COST)));
         }
 
         let prompt = text_value(values, PROMPT_KEY);
         if prompt.chars().count() > MAX_PROMPT_CHARS {
             return Err(invalid(
                 PROMPT_KEY,
-                format!("Prompt must be at most {MAX_PROMPT_CHARS} characters"),
+                messages::reward_prompt_max(MAX_PROMPT_CHARS),
             ));
         }
 
         let background_color = text_value(values, BACKGROUND_COLOR_KEY).trim().to_owned();
         if !background_color.is_empty() && !is_valid_hex_color(&background_color) {
-            return Err(invalid(
-                BACKGROUND_COLOR_KEY,
-                "Background color must be empty or #RRGGBB".to_owned(),
-            ));
+            return Err(invalid(BACKGROUND_COLOR_KEY, messages::REWARD_COLOR_FORMAT));
         }
 
         Ok(Self {
@@ -151,10 +145,10 @@ impl RewardDraft {
     }
 }
 
-fn invalid(field: &str, message: String) -> CollectionFailure {
+fn invalid(field: &str, message: impl Into<MessageRef>) -> CollectionFailure {
     CollectionFailure::InvalidInput {
         field: Some(field.to_owned()),
-        message,
+        message: message.into(),
     }
 }
 
@@ -182,7 +176,7 @@ fn limit_value(
 ) -> CollectionOutcome<i64> {
     let value = int_value(values, key).unwrap_or(UNLIMITED);
     if value < UNLIMITED {
-        return Err(invalid(key, "Must be 0 or more".to_owned()));
+        return Err(invalid(key, messages::REWARD_ZERO_OR_MORE));
     }
     Ok(value)
 }
@@ -289,24 +283,21 @@ fn bad_request_failure(body: &str) -> CollectionFailure {
         return CollectionFailure::CapacityReached;
     }
     if message.contains(DUPLICATE_NEEDLE) {
-        return invalid(
-            TITLE_KEY,
-            "A reward with this title already exists".to_owned(),
-        );
+        return invalid(TITLE_KEY, messages::REWARD_DUPLICATE_TITLE);
     }
     if message.contains(AUTOMOD_NEEDLE) {
         return CollectionFailure::InvalidInput {
             field: None,
-            message: "Twitch AutoMod rejected the reward text".to_owned(),
+            message: messages::REWARD_AUTOMOD_REJECTED.into(),
         };
     }
     FIELD_NEEDLES
         .iter()
         .find(|(needle, _, _)| message.contains(needle))
-        .map(|(_, field, safe_message)| invalid(field, (*safe_message).to_owned()))
+        .map(|(_, field, message)| invalid(field, message.clone()))
         .unwrap_or_else(|| CollectionFailure::InvalidInput {
             field: None,
-            message: "Twitch rejected the reward settings".to_owned(),
+            message: messages::REWARD_SETTINGS_REJECTED.into(),
         })
 }
 
@@ -325,21 +316,21 @@ fn forbidden_failure(body: &str, call: RewardCall, tier: BroadcasterTier) -> Col
 fn unknown_collection() -> CollectionFailure {
     CollectionFailure::InvalidInput {
         field: None,
-        message: "Unknown collection".to_owned(),
+        message: messages::REWARD_UNKNOWN_COLLECTION.into(),
     }
 }
 
 fn unknown_toggle(toggle: &str) -> CollectionFailure {
     CollectionFailure::InvalidInput {
         field: Some(toggle.to_owned()),
-        message: "Unknown reward toggle".to_owned(),
+        message: messages::REWARD_UNKNOWN_TOGGLE.into(),
     }
 }
 
 fn reward_gone() -> CollectionFailure {
     CollectionFailure::InvalidInput {
         field: None,
-        message: "This reward no longer exists".to_owned(),
+        message: messages::REWARD_GONE.into(),
     }
 }
 
@@ -1092,16 +1083,13 @@ mod tests {
         let cases: [(&str, CollectionFailure); 7] = [
             (
                 "CREATE_CUSTOM_REWARD_DUPLICATE_REWARD",
-                invalid(
-                    TITLE_KEY,
-                    "A reward with this title already exists".to_owned(),
-                ),
+                invalid(TITLE_KEY, messages::REWARD_DUPLICATE_TITLE),
             ),
             (
                 "The title failed AutoMod checks",
                 CollectionFailure::InvalidInput {
                     field: None,
-                    message: "Twitch AutoMod rejected the reward text".to_owned(),
+                    message: messages::REWARD_AUTOMOD_REJECTED.into(),
                 },
             ),
             (
@@ -1112,28 +1100,25 @@ mod tests {
                 "The parameter max_per_user_per_stream is invalid",
                 invalid(
                     MAX_PER_USER_PER_STREAM_KEY,
-                    "Twitch rejected the per-viewer limit".to_owned(),
+                    messages::REWARD_REJECTED_PER_VIEWER,
                 ),
             ),
             (
                 "background_color is malformed",
-                invalid(
-                    BACKGROUND_COLOR_KEY,
-                    "Twitch rejected the background color".to_owned(),
-                ),
+                invalid(BACKGROUND_COLOR_KEY, messages::REWARD_REJECTED_COLOR),
             ),
             (
                 "Something unexpected",
                 CollectionFailure::InvalidInput {
                     field: None,
-                    message: "Twitch rejected the reward settings".to_owned(),
+                    message: messages::REWARD_SETTINGS_REJECTED.into(),
                 },
             ),
             (
                 "",
                 CollectionFailure::InvalidInput {
                     field: None,
-                    message: "Twitch rejected the reward settings".to_owned(),
+                    message: messages::REWARD_SETTINGS_REJECTED.into(),
                 },
             ),
         ];

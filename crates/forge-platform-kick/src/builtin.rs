@@ -352,8 +352,8 @@ impl BuiltinStatus for KickIntegrationBundle {
         None
     }
 
-    fn endpoint(&self) -> Option<&str> {
-        Some("Pusher WS (read) + OAuth API (write)")
+    fn endpoint(&self) -> Option<UserText> {
+        Some(messages::ENDPOINT_SUMMARY.into())
     }
 
     fn capability_flags(&self) -> CapabilityFlags {
@@ -380,7 +380,7 @@ impl BuiltinStatus for KickIntegrationBundle {
 
     fn name_badges(&self) -> Vec<HeroBadge> {
         vec![HeroBadge {
-            label: UserText::unlocalized(format!("user_id {}", self.user_id)),
+            label: messages::user_id_badge(&self.user_id.to_string()).into(),
             tone: HeroBadgeTone::Neutral,
             monospace: true,
         }]

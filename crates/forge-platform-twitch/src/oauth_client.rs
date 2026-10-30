@@ -5,14 +5,15 @@ use forge_net::{
     CallClass, FormBody, Gateway, GatewayBuildError, GatewayFailure, GatewayProfile,
     GatewayRequest, GatewayResponse, RateLimiter, ThrottleHintFamily,
 };
-use forge_platform_core::{EndpointSurface, PlatformEndpoints, PlatformError, reauth_required};
+use forge_platform_core::{
+    DeviceAuthEnd, EndpointSurface, PlatformEndpoints, PlatformError, reauth_required,
+};
 use forge_types::OAuthToken;
 use forge_types::Secret;
 use serde::Deserialize;
 use serde::de::DeserializeOwned;
 use tokio_util::sync::CancellationToken;
 
-use crate::auth::{DEVICE_CANCELLED_REASON, DEVICE_CODE_USED_REASON, DEVICE_DENIED_REASON};
 use crate::vocabulary::PLATFORM_ID;
 use forge_net::status::BAD_REQUEST;
 
@@ -149,12 +150,10 @@ impl TwitchOAuthClient {
         match error_message(&failure).as_deref() {
             Some(POLL_PENDING) => Ok(DevicePoll::Pending),
             Some(POLL_SLOW_DOWN) => Ok(DevicePoll::SlowDown),
-            Some(POLL_EXPIRED_TOKEN | POLL_INVALID_DEVICE_CODE) => Err(PlatformError::Auth {
-                reason: DEVICE_CODE_USED_REASON.into(),
-            }),
-            Some(POLL_ACCESS_DENIED) => Err(PlatformError::Auth {
-                reason: DEVICE_DENIED_REASON.into(),
-            }),
+            Some(POLL_EXPIRED_TOKEN | POLL_INVALID_DEVICE_CODE) => {
+                Err(PlatformError::DeviceAuthEnded(DeviceAuthEnd::Expired))
+            }
+            Some(POLL_ACCESS_DENIED) => Err(PlatformError::DeviceAuthEnded(DeviceAuthEnd::Denied)),
             _ => Err(oauth_error(failure)),
         }
     }
@@ -210,9 +209,7 @@ impl TwitchOAuthClient {
 
 pub(crate) fn oauth_error(failure: GatewayFailure) -> PlatformError {
     match failure {
-        GatewayFailure::Cancelled => PlatformError::Auth {
-            reason: DEVICE_CANCELLED_REASON.into(),
-        },
+        GatewayFailure::Cancelled => PlatformError::DeviceAuthEnded(DeviceAuthEnd::Cancelled),
         GatewayFailure::BudgetExhausted { .. } => PlatformError::RateLimitExhausted,
         GatewayFailure::RateLimited { retry_after, .. } => PlatformError::RateLimited {
             retry_after_secs: u32::try_from(retry_after.as_secs()).unwrap_or(u32::MAX),

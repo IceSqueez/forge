@@ -4,7 +4,7 @@ use forge_platform_core::{
     BuiltinStatus, QuickAction, QuickActionAccent, QuickActionField, QuickActionFieldKind,
     QuickActionFieldValue, QuickActionGroup, QuickActionLiveness, QuickActions, SectionIcon,
 };
-use forge_types::{MessageCode, SubActionStep, UserText};
+use forge_types::{MessageCode, SubActionStep, UserText, VerbatimText};
 
 use crate::builtin::KickIntegrationBundle;
 use crate::vocabulary::variables::references;
@@ -190,7 +190,7 @@ fn catalog() -> Vec<QuickAction> {
                 text_field(
                     config_keys::MESSAGE_ID,
                     labels::MESSAGE_ID_FIELD,
-                    UserText::unlocalized(references::MESSAGE_ID),
+                    VerbatimText::new(references::MESSAGE_ID),
                 )
                 .required(),
             ],
@@ -205,7 +205,7 @@ fn catalog() -> Vec<QuickAction> {
                 text_field(
                     config_keys::USER_ID,
                     labels::TARGET_USER_ID,
-                    UserText::unlocalized(references::USER_ID),
+                    VerbatimText::new(references::USER_ID),
                 )
                 .required(),
             ],
@@ -220,7 +220,7 @@ fn catalog() -> Vec<QuickAction> {
                 text_field(
                     config_keys::USER_ID,
                     labels::TARGET_USER_ID,
-                    UserText::unlocalized(references::USER_ID),
+                    VerbatimText::new(references::USER_ID),
                 )
                 .required(),
             ],
@@ -235,7 +235,7 @@ fn catalog() -> Vec<QuickAction> {
                 text_field(
                     config_keys::USER_ID,
                     labels::TARGET_USER_ID,
-                    UserText::unlocalized(references::USER_ID),
+                    VerbatimText::new(references::USER_ID),
                 )
                 .required(),
             ],
@@ -271,7 +271,7 @@ fn catalog() -> Vec<QuickAction> {
                 text_field(
                     config_keys::REWARD_ID,
                     labels::REWARD_ID,
-                    UserText::unlocalized(references::REWARD_ID),
+                    VerbatimText::new(references::REWARD_ID),
                 )
                 .required(),
                 text_field(
@@ -296,7 +296,7 @@ fn catalog() -> Vec<QuickAction> {
                 text_field(
                     config_keys::REWARD_ID,
                     labels::REWARD_ID,
-                    UserText::unlocalized(references::REWARD_ID),
+                    VerbatimText::new(references::REWARD_ID),
                 )
                 .required(),
             ],
@@ -311,7 +311,7 @@ fn catalog() -> Vec<QuickAction> {
                 text_field(
                     config_keys::REDEMPTION_IDS,
                     labels::REDEMPTION_ID_S,
-                    UserText::unlocalized(references::REDEMPTION_IDS_HINT),
+                    labels::REDEMPTION_IDS_HINT,
                 )
                 .required(),
             ],
@@ -326,7 +326,7 @@ fn catalog() -> Vec<QuickAction> {
                 text_field(
                     config_keys::REDEMPTION_IDS,
                     labels::REDEMPTION_ID_S,
-                    UserText::unlocalized(references::REDEMPTION_IDS_HINT),
+                    labels::REDEMPTION_IDS_HINT,
                 )
                 .required(),
             ],

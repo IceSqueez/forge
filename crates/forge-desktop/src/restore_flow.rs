@@ -10,7 +10,7 @@ use forge_transfer::{
 use gpui::{ClickEvent, Context, Entity, Subscription, Window, div, prelude::*};
 use tokio::runtime::Handle;
 
-use crate::async_bridge::{self, DIALOG_CANCELLED, DialogFilter};
+use crate::async_bridge::{self, DialogFilter};
 use crate::import_busy::{busy_overlay, refuse_while_busy};
 use crate::restore_close::RestoreClose;
 use crate::restore_confirm::{ConfirmCard, ConfirmFacts};
@@ -76,7 +76,7 @@ impl RestoreFlow {
             name: tr!("restore_dialog_filter"),
             extensions: vec![BUNDLE_EXTENSION, LEGACY_ARCHIVE_DIALOG_EXTENSION],
         };
-        async_bridge::spawn_dialog(
+        async_bridge::run_async(
             &self.rt_handle,
             async_bridge::pick_file_in(Some(filter), backups_dir(&self.data_dir)),
             |this, result, cx| this.picked(result, cx),
@@ -85,16 +85,10 @@ impl RestoreFlow {
         cx.notify();
     }
 
-    fn picked(&mut self, result: Result<PathBuf, String>, cx: &mut Context<Self>) {
-        match result {
-            Ok(bundle) => self.read(bundle, cx),
-            Err(message) => {
-                self.step = RestoreStep::Idle;
-                if message != DIALOG_CANCELLED {
-                    tracing::warn!(error = %message, "restore file picker failed");
-                    cx.push_toast(ToastKind::Error, RestoreProblem::Failed(message).message());
-                }
-            }
+    fn picked(&mut self, picked: Option<PathBuf>, cx: &mut Context<Self>) {
+        match picked {
+            Some(bundle) => self.read(bundle, cx),
+            None => self.step = RestoreStep::Idle,
         }
         cx.notify();
     }
@@ -356,7 +350,6 @@ mod tests {
     use tempfile::TempDir;
 
     use super::{RestoreFlow, RestoreStep};
-    use crate::async_bridge::DIALOG_CANCELLED;
     use crate::i18n::install_language;
     use crate::restore_close::RestoreClose;
     use crate::restore_passphrase_modal::tests::type_passphrase;
@@ -446,20 +439,18 @@ mod tests {
     }
 
     #[gpui::test]
-    fn a_closed_picker_is_silent_but_a_failed_picker_is_reported(cx: &mut TestAppContext) {
-        for (result, expected_errors) in [(DIALOG_CANCELLED, 0), ("portal is unavailable", 1)] {
-            let h = harness(cx);
-            h.flow.update(cx, |flow, cx| {
-                flow.step = RestoreStep::Picking;
-                flow.picked(Err(result.to_owned()), cx);
-            });
+    fn a_closed_picker_returns_to_idle_without_an_error(cx: &mut TestAppContext) {
+        let h = harness(cx);
 
-            assert_eq!(
-                (step(cx, &h), cx.update(|cx| error_toasts(cx))),
-                ("idle", expected_errors),
-                "{result}"
-            );
-        }
+        h.flow.update(cx, |flow, cx| {
+            flow.step = RestoreStep::Picking;
+            flow.picked(None, cx);
+        });
+
+        assert_eq!(
+            (step(cx, &h), cx.update(|cx| error_toasts(cx))),
+            ("idle", 0)
+        );
     }
 
     #[gpui::test]

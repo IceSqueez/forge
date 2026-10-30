@@ -587,8 +587,8 @@ impl BuiltinStatus for TwitchIntegrationBundle {
         }
     }
 
-    fn endpoint(&self) -> Option<&str> {
-        Some("Connected via device code")
+    fn endpoint(&self) -> Option<UserText> {
+        Some(messages::ENDPOINT_SUMMARY.into())
     }
 
     fn capability_flags(&self) -> CapabilityFlags {
@@ -611,7 +611,7 @@ impl BuiltinStatus for TwitchIntegrationBundle {
 
     fn name_badges(&self) -> Vec<HeroBadge> {
         let mut badges = vec![HeroBadge {
-            label: UserText::unlocalized(format!("user_id {}", self.config.user_id)),
+            label: messages::user_id_badge(&self.config.user_id).into(),
             tone: HeroBadgeTone::Neutral,
             monospace: true,
         }];
@@ -685,12 +685,13 @@ impl BuiltinContent for TwitchIntegrationBundle {
                         SubscriptionStatus::Error,
                         Some(labels::RETRY_PENDING.into()),
                     ),
-                    SubStatus::Failed(reason) => (
+                    SubStatus::Failed(failure) => (
                         SubscriptionStatus::Error,
-                        Some(UserText::unlocalized(reason.clone())),
+                        Some(messages::subscription_failure(failure).into()),
                     ),
                 };
                 SubscriptionRow {
+                    kind: r.kind.clone(),
                     name: r.label(),
                     status,
                     version: Some(format!("v{}", r.version)),
@@ -707,7 +708,7 @@ impl BuiltinContent for TwitchIntegrationBundle {
             footer: None,
             banner: dropped_kind.map(|kind| {
                 MessageRef::new(labels::SUBSCRIPTION_DROPPED)
-                    .with_arg("kind", VerbatimText::new(kind))
+                    .with_arg("kind", kind)
                     .into()
             }),
         };
@@ -1120,7 +1121,7 @@ mod tests {
             let b = make_bundle_with_tier(ChatConnectionState::Connected, tier);
             let status: &dyn BuiltinStatus = b.as_ref();
             let badges = status.name_badges();
-            assert_eq!(badges[0].label, UserText::unlocalized("user_id 1"));
+            assert_eq!(badges[0].label, messages::user_id_badge("1").into());
             assert!(badges[0].monospace);
             let tier_badge = badges
                 .iter()
@@ -1167,9 +1168,9 @@ mod tests {
         assert_eq!(*title, UserText::from(labels::EVENTSUB_SUBSCRIPTIONS));
     }
 
-    fn dropped_banner(kind: &str) -> UserText {
+    fn dropped_banner(kind: impl Into<UserText>) -> UserText {
         MessageRef::new(labels::SUBSCRIPTION_DROPPED)
-            .with_arg("kind", VerbatimText::new(kind))
+            .with_arg("kind", kind.into())
             .into()
     }
 
@@ -1209,14 +1210,16 @@ mod tests {
                 kind: "channel.cheer".to_owned(),
                 direction: None,
                 version: "1".to_owned(),
-                status: SubStatus::Retrying("HTTP 503".to_owned()),
+                status: SubStatus::Retrying(crate::subscriptions::SubscriptionFailure::Refused(
+                    503,
+                )),
                 subscription_id: None,
             },
             SubscriptionRecord {
                 kind: "channel.follow".to_owned(),
                 direction: None,
                 version: "2".to_owned(),
-                status: SubStatus::Failed("missing scope".to_owned()),
+                status: SubStatus::Failed(crate::subscriptions::SubscriptionFailure::MissingScope),
                 subscription_id: None,
             },
         ]);
@@ -1246,14 +1249,19 @@ mod tests {
                 &items[3],
                 "channel.follow",
                 SubscriptionStatus::Error,
-                Some(UserText::unlocalized("missing scope")),
+                Some(UserText::from(messages::subscription_failure(
+                    &crate::subscriptions::SubscriptionFailure::MissingScope,
+                ))),
             ),
         ] {
-            assert_eq!(row.name, name);
+            assert_eq!(row.name, UserText::from(VerbatimText::new(name)));
             assert_eq!(row.status, expected_status);
             assert_eq!(row.error_label, expected_error);
         }
-        assert_eq!(banner, Some(dropped_banner("channel.cheer")));
+        assert_eq!(
+            banner,
+            Some(dropped_banner(VerbatimText::new("channel.cheer")))
+        );
     }
 
     #[test]
@@ -1271,7 +1279,9 @@ mod tests {
                 kind: "channel.ban".to_owned(),
                 direction: None,
                 version: "1".to_owned(),
-                status: SubStatus::Failed("revoked: user_removed".to_owned()),
+                status: SubStatus::Failed(crate::subscriptions::SubscriptionFailure::Revoked(
+                    "user_removed".to_owned(),
+                )),
                 subscription_id: None,
             },
         ]);
@@ -1279,7 +1289,10 @@ mod tests {
 
         let (_, banner) = subscription_list(&b);
 
-        assert_eq!(banner, Some(dropped_banner("channel.ban")));
+        assert_eq!(
+            banner,
+            Some(dropped_banner(VerbatimText::new("channel.ban")))
+        );
     }
 
     #[test]
@@ -1289,19 +1302,22 @@ mod tests {
             kind: "channel.raid".to_owned(),
             direction: Some(crate::vocabulary::RaidDirection::Sent),
             version: "1".to_owned(),
-            status: SubStatus::Failed("revoked: user_removed".to_owned()),
+            status: SubStatus::Failed(crate::subscriptions::SubscriptionFailure::Revoked(
+                "user_removed".to_owned(),
+            )),
             subscription_id: None,
         }]);
         let b = make_bundle_with_tracker(ChatConnectionState::Connected, tracker);
 
         let (items, banner) = subscription_list(&b);
 
+        let outgoing = messages::subscription_label(
+            "channel.raid",
+            Some(crate::vocabulary::RaidDirection::Sent),
+        );
         assert_eq!(
-            (items[0].name.as_str(), banner),
-            (
-                "channel.raid (outgoing)",
-                Some(dropped_banner("channel.raid (outgoing)"))
-            )
+            (items[0].name.clone(), banner),
+            (outgoing.clone(), Some(dropped_banner(outgoing)))
         );
     }
 
@@ -1935,14 +1951,18 @@ mod tests {
                 kind: "channel.cheer".to_owned(),
                 direction: None,
                 version: "1".to_owned(),
-                status: SubStatus::Retrying("HTTP 503".to_owned()),
+                status: SubStatus::Retrying(crate::subscriptions::SubscriptionFailure::Refused(
+                    503,
+                )),
                 subscription_id: None,
             },
             SubscriptionRecord {
                 kind: "channel.ban".to_owned(),
                 direction: None,
                 version: "1".to_owned(),
-                status: SubStatus::Failed("revoked".to_owned()),
+                status: SubStatus::Failed(crate::subscriptions::SubscriptionFailure::Revoked(
+                    "user_removed".to_owned(),
+                )),
                 subscription_id: None,
             },
         ]);

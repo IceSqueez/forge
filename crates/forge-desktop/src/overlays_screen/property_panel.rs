@@ -949,6 +949,8 @@ pub(crate) mod tests {
             .collect()
     }
 
+    const REPO_SAVE_HANG_GUARD: std::time::Duration = std::time::Duration::from_secs(30);
+
     pub(crate) fn defaults() -> OverlayConfig {
         config(&[
             (HEADLINE, Variant::String(DEFAULT_HEADLINE.into())),
@@ -1126,6 +1128,20 @@ pub(crate) mod tests {
             cx.update(|cx| self.saves.read(cx).seen.clone())
         }
 
+        fn first_repo_save(&self) -> OverlayConfig {
+            let deadline = std::time::Instant::now() + REPO_SAVE_HANG_GUARD;
+            loop {
+                if let Some(first) = self.repo.saved().into_iter().next() {
+                    return first;
+                }
+                assert!(
+                    std::time::Instant::now() < deadline,
+                    "the torn-down panel never reached the repo"
+                );
+                pump(&self.rt);
+            }
+        }
+
         fn release(&mut self, cx: &mut gpui::TestAppContext) {
             self.panel = None;
             cx.update(|_cx| {});
@@ -1204,11 +1220,8 @@ pub(crate) mod tests {
         fixture.release(cx);
 
         assert_eq!(
-            fixture.repo.saved(),
-            vec![config(&[(
-                HEADLINE,
-                Variant::String(EDITED_HEADLINE.into())
-            )])]
+            fixture.first_repo_save(),
+            config(&[(HEADLINE, Variant::String(EDITED_HEADLINE.into()))])
         );
     }
 

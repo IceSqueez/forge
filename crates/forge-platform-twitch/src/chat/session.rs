@@ -1,8 +1,8 @@
 use crate::bot_account::TwitchBotAccount;
 use crate::chat::subscriber::{
-    SubscribeError, SubscribePass, TopicRetries, TopicRetryRun, mark_revoked, subscribe_all,
-    subscription_display_kind,
+    SubscribeError, SubscribePass, TopicRetries, TopicRetryRun, subscribe_all,
 };
+use crate::chat::topic_catalog::raid_direction;
 use crate::config::{ChatSessionConfig, ChatTiming};
 use crate::credentials_manager::TwitchCredentialsManager;
 use crate::helix::{FixedTokenSource, HelixHttpTransport, HelixTransport};
@@ -513,7 +513,7 @@ impl ChatSession {
                     broadcaster_id: self.config.broadcaster_id.clone(),
                     user_id: self.config.user_id.clone(),
                     bus: Arc::clone(&self.config.bus),
-                    tracker: Arc::clone(&self.config.tracker),
+                    tracker: self.config.tracker.clone(),
                     retries_tx,
                 };
                 return FrameAction::Subscribe(Box::pin(pass.run(token)));
@@ -576,10 +576,10 @@ impl ChatSession {
                     status = %revoked.status,
                     "eventsub subscription revoked by twitch"
                 );
-                mark_revoked(
-                    &self.config.tracker,
+                self.config.tracker.mark_revoked(
                     &revoked.id,
-                    &subscription_display_kind(&revoked.kind, &revoked.condition),
+                    &revoked.kind,
+                    raid_direction(&revoked.condition),
                     &revoked.status,
                 );
                 if revoked.status == AUTHORIZATION_REVOKED_STATUS {
@@ -2310,6 +2310,15 @@ impl SubscriptionPassContext {
         };
         match result {
             Ok(pass) if pass.any_live() => {
+                if pass.has_scope_gap() {
+                    warn!(
+                        "some eventsub topics were rejected for a missing scope; chat stays live"
+                    );
+                    PlatformReauthRequired {
+                        platform_id: vocabulary::PLATFORM,
+                    }
+                    .publish(self.bus.as_ref(), EventSource::Twitch, None);
+                }
                 #[expect(
                     clippy::let_underscore_must_use,
                     reason = "the session may stop waiting for the retry pass"
@@ -5209,6 +5218,7 @@ mod tests {
     ) -> crate::subscriptions::SubscriptionRecord {
         crate::subscriptions::SubscriptionRecord {
             kind: kind.to_owned(),
+            direction: None,
             version: "1".to_owned(),
             status: crate::subscriptions::SubStatus::Active,
             subscription_id: subscription_id.map(str::to_owned),
@@ -5219,12 +5229,13 @@ mod tests {
         bus: Arc<RecordingBus>,
         records: Vec<crate::subscriptions::SubscriptionRecord>,
     ) -> (ChatSession, SubscriptionTracker) {
-        let tracker: SubscriptionTracker = Arc::new(std::sync::RwLock::new(records));
+        let tracker = SubscriptionTracker::default();
+        tracker.reset(records);
         let (session, _state, _shutdown) = session_over(
             bus,
             Arc::new(MockCreds::with_identity()),
             None,
-            Arc::clone(&tracker),
+            tracker.clone(),
             crate::sub_actions::test_support::unreachable_twitch_endpoints(),
         );
         (session, tracker)
@@ -5262,8 +5273,7 @@ mod tests {
                 .await;
 
             let statuses: Vec<SubStatus> = tracker
-                .read()
-                .unwrap()
+                .snapshot()
                 .iter()
                 .map(|record| record.status.clone())
                 .collect();
@@ -5523,7 +5533,7 @@ mod tests {
                 TopicReply::ForbidsOneTopicAndRejectsTheRest,
                 TokenEndpoint::Rotates,
                 Verdict::ReauthRequired,
-                0,
+                1,
             ),
         ];
 
@@ -5534,8 +5544,8 @@ mod tests {
                 outcome,
                 (expected, expected_refreshes),
                 "{reply:?} with a token endpoint that {endpoint:?}: a 401 earns exactly one \
-                 refresh and retry, a missing scope (403) needs sign-in without refreshing, and \
-                 only a rejected refresh asks for sign-in"
+                 refresh and retry even beside a 403, and only a token still rejected after \
+                 it asks for sign-in"
             );
         }
     }
@@ -5648,7 +5658,7 @@ mod tests {
             publisher,
             Arc::new(MockCreds::with_identity()),
             None,
-            Arc::clone(&tracker),
+            tracker.clone(),
             socket_and_api(socket_url, api_url),
         );
         let running = RunningSession {
@@ -5665,8 +5675,7 @@ mod tests {
         kind: &str,
     ) -> crate::subscriptions::SubStatus {
         tracker
-            .read()
-            .unwrap()
+            .snapshot()
             .iter()
             .find(|record| record.kind == kind)
             .map(|record| record.status.clone())
@@ -5761,9 +5770,12 @@ mod tests {
 
     #[tokio::test]
     async fn a_pass_that_does_not_go_live_leaves_no_topic_retrying() {
-        for (forbidden, expected) in [
-            (None, Verdict::NothingLive),
-            (Some("channel.follow"), Verdict::ReauthRequired),
+        for (rest_of_topics, expected) in [
+            (
+                reqwest::StatusCode::SERVICE_UNAVAILABLE,
+                Verdict::NothingLive,
+            ),
+            (reqwest::StatusCode::FORBIDDEN, Verdict::ReauthRequired),
         ] {
             let api = wiremock::MockServer::start().await;
             topic_post(RETRIED_TOPIC)
@@ -5771,28 +5783,16 @@ mod tests {
                 .with_priority(1)
                 .mount(&api)
                 .await;
-            match forbidden {
-                Some(kind) => {
-                    topic_post(kind)
-                        .respond_with(status_reply(reqwest::StatusCode::FORBIDDEN))
-                        .with_priority(1)
-                        .mount(&api)
-                        .await;
-                    mount_accept_every_other_topic(&api).await;
-                }
-                None => {
-                    wiremock::Mock::given(wiremock::matchers::method("POST"))
-                        .respond_with(status_reply(reqwest::StatusCode::SERVICE_UNAVAILABLE))
-                        .mount(&api)
-                        .await;
-                }
-            }
+            wiremock::Mock::given(wiremock::matchers::method("POST"))
+                .respond_with(status_reply(rest_of_topics))
+                .mount(&api)
+                .await;
             let tracker = SubscriptionTracker::default();
             let (mut session, _state, _shutdown) = session_over(
                 Arc::new(RecordingBus::default()),
                 Arc::new(MockCreds::with_identity()),
                 None,
-                Arc::clone(&tracker),
+                tracker.clone(),
                 socket_and_api("ws://127.0.0.1:1", &api.uri()),
             );
             let pass = match session
@@ -5813,6 +5813,59 @@ mod tests {
                     crate::subscriptions::SubStatus::Failed("HTTP 500".to_owned())
                 )
             );
+        }
+    }
+
+    #[tokio::test]
+    async fn a_scope_rejection_prompts_sign_in_from_the_pass_only_while_other_topics_stay_live() {
+        let cases = [
+            (
+                true,
+                Verdict::Live,
+                vec!["platform.reauth_required".to_owned()],
+            ),
+            (false, Verdict::ReauthRequired, Vec::new()),
+        ];
+        for (others_accepted, expected, published) in cases {
+            let api = wiremock::MockServer::start().await;
+            if others_accepted {
+                topic_post("channel.follow")
+                    .respond_with(status_reply(reqwest::StatusCode::FORBIDDEN))
+                    .with_priority(1)
+                    .mount(&api)
+                    .await;
+                mount_accept_every_other_topic(&api).await;
+            } else {
+                wiremock::Mock::given(wiremock::matchers::method("POST"))
+                    .respond_with(status_reply(reqwest::StatusCode::FORBIDDEN))
+                    .mount(&api)
+                    .await;
+            }
+            let bus = Arc::new(RecordingBus::default());
+            let (mut session, _state, _shutdown) = session_over(
+                bus.clone(),
+                Arc::new(MockCreds::with_identity()),
+                None,
+                SubscriptionTracker::default(),
+                socket_and_api("ws://127.0.0.1:1", &api.uri()),
+            );
+            let pass = match session
+                .handle_frame(&welcome_frame("sess-1"), &mut None)
+                .await
+            {
+                FrameAction::Subscribe(pass) => Some(pass),
+                _ => None,
+            }
+            .expect("a welcome with a usable token must start a subscription pass");
+
+            let verdict = Verdict::from(pass.await);
+
+            let reauth_prompts: Vec<String> = bus
+                .kinds_published()
+                .into_iter()
+                .filter(|kind| kind == "platform.reauth_required")
+                .collect();
+            assert_eq!((verdict, reauth_prompts), (expected, published));
         }
     }
 
@@ -5851,7 +5904,7 @@ mod tests {
             Arc::new(RecordingBus::default()),
             crate::credentials_manager::tests::InMemRepo::seeded(&stored),
             Some(server.uri()),
-            Arc::clone(&tracker),
+            tracker.clone(),
             socket_and_api("ws://127.0.0.1:1", &server.uri()),
         );
         let pass = match session
@@ -5896,41 +5949,47 @@ mod tests {
 
     #[tokio::test]
     async fn a_revocation_of_a_raid_topic_recovered_without_an_id_fails_its_direction_row() {
-        use crate::subscriptions::SubStatus;
-        let (mut session, tracker) = session_tracking(
-            Arc::default(),
-            vec![
-                active("channel.raid (incoming)", None),
-                active("channel.raid (outgoing)", None),
-            ],
-        );
-        let mut frame: serde_json::Value = serde_json::from_str(&revocation_frame(
-            "sub-unlisted",
-            "channel.raid",
-            "user_removed",
-        ))
-        .unwrap();
-        frame["payload"]["subscription"]["condition"] =
-            serde_json::json!({ "to_broadcaster_user_id": "bcast" });
+        use crate::subscriptions::{SubStatus, SubscriptionRecord};
+        let raid_row = |direction| SubscriptionRecord {
+            direction: Some(direction),
+            ..active("channel.raid", None)
+        };
+        let revoked = || SubStatus::Failed("revoked: user_removed".to_owned());
+        let cases = [
+            ("to_broadcaster_user_id", vec![revoked(), SubStatus::Active]),
+            (
+                "from_broadcaster_user_id",
+                vec![SubStatus::Active, revoked()],
+            ),
+        ];
 
-        session
-            .handle_frame(&frame.to_string(), &mut Some("sess-1".to_owned()))
-            .await;
+        for (condition_field, expected) in cases {
+            let (mut session, tracker) = session_tracking(
+                Arc::default(),
+                vec![
+                    raid_row(RaidDirection::Received),
+                    raid_row(RaidDirection::Sent),
+                ],
+            );
+            let mut frame: serde_json::Value = serde_json::from_str(&revocation_frame(
+                "sub-unlisted",
+                "channel.raid",
+                "user_removed",
+            ))
+            .unwrap();
+            frame["payload"]["subscription"]["condition"] =
+                serde_json::json!({ condition_field: "bcast" });
 
-        let statuses: Vec<SubStatus> = tracker
-            .read()
-            .unwrap()
-            .iter()
-            .map(|record| record.status.clone())
-            .collect();
-        assert_eq!(
-            statuses,
-            vec![
-                SubStatus::Failed("revoked: user_removed".to_owned()),
-                SubStatus::Active
-            ],
-            "a conflict-recovered raid row carries no subscription id, so its revocation must \
-             still find it by type and direction"
-        );
+            session
+                .handle_frame(&frame.to_string(), &mut Some("sess-1".to_owned()))
+                .await;
+
+            let statuses: Vec<SubStatus> = tracker
+                .snapshot()
+                .iter()
+                .map(|record| record.status.clone())
+                .collect();
+            assert_eq!(statuses, expected, "revocation carrying {condition_field}");
+        }
     }
 }

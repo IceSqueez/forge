@@ -1,4 +1,4 @@
-use super::topic_catalog::{RAID_SOURCE_FIELD, RAID_TARGET_FIELD, TOPICS, TopicSpec};
+use super::topic_catalog::{TOPICS, TopicSpec};
 use crate::helix::{CONFLICT, HelixError, HelixMethod, HelixRequest, HelixTransport};
 use crate::subscriptions::{SubStatus, SubscriptionRecord, SubscriptionTracker};
 use crate::vocabulary::EventSubSubscriptionCreated;
@@ -38,12 +38,17 @@ enum TopicOutcome {
 
 pub(crate) struct SubscribePass {
     active: usize,
+    scope_rejected: usize,
     retries: TopicRetries,
 }
 
 impl SubscribePass {
     pub(crate) fn any_live(&self) -> bool {
         self.active > 0
+    }
+
+    pub(crate) fn has_scope_gap(&self) -> bool {
+        self.scope_rejected > 0
     }
 
     pub(crate) fn into_retries(self) -> TopicRetries {
@@ -62,20 +67,6 @@ struct SubscriptionData {
     #[serde(rename = "type")]
     subscription_type: String,
     condition: serde_json::Value,
-}
-
-fn display_kind(topic: &TopicSpec) -> String {
-    subscription_display_kind(topic.kind, &(topic.condition_fn)("", ""))
-}
-
-pub(crate) fn subscription_display_kind(kind: &str, condition: &serde_json::Value) -> String {
-    if condition.get(RAID_TARGET_FIELD).is_some() {
-        format!("{kind} (incoming)")
-    } else if condition.get(RAID_SOURCE_FIELD).is_some() {
-        format!("{kind} (outgoing)")
-    } else {
-        kind.to_owned()
-    }
 }
 
 #[derive(Clone)]
@@ -124,18 +115,18 @@ pub(crate) async fn subscribe_all(
     bus: &Arc<dyn EventPublisher>,
     tracker: &SubscriptionTracker,
 ) -> Result<SubscribePass, SubscribeError> {
-    {
-        let mut records = tracker.write().unwrap_or_else(|p| p.into_inner());
-        records.clear();
-        for topic in TOPICS {
-            records.push(SubscriptionRecord {
-                kind: display_kind(topic),
+    tracker.reset(
+        TOPICS
+            .iter()
+            .map(|topic| SubscriptionRecord {
+                kind: topic.kind.to_owned(),
+                direction: topic.direction(),
                 version: topic.version.to_owned(),
                 status: SubStatus::Pending,
                 subscription_id: None,
-            });
-        }
-    }
+            })
+            .collect(),
+    );
 
     let ctx = SubscribeCtx {
         helix: Arc::clone(helix),
@@ -145,13 +136,13 @@ pub(crate) async fn subscribe_all(
         bus: Arc::clone(bus),
     };
 
-    let settle = RetryingSettle::new(Arc::clone(tracker));
+    let settle = RetryingSettle::new(tracker.clone());
     let pending: Vec<_> = TOPICS
         .iter()
         .enumerate()
         .map(|(index, topic)| {
             let ctx = ctx.clone();
-            let tracker = Arc::clone(tracker);
+            let tracker = tracker.clone();
             let settle = &settle;
             async move { subscribe_one(ctx, tracker, settle, index, topic).await }
         })
@@ -196,14 +187,18 @@ pub(crate) async fn subscribe_all(
     drop(outcomes);
     let retries = TopicRetries::new(ctx, settle);
 
-    if scope_rejected > 0 {
-        return Err(SubscribeError::ScopeMissing);
-    }
     if unauthorized > 0 {
         return Err(SubscribeError::Unauthorized);
     }
+    if scope_rejected > 0 && active == 0 {
+        return Err(SubscribeError::ScopeMissing);
+    }
 
-    Ok(SubscribePass { active, retries })
+    Ok(SubscribePass {
+        active,
+        scope_rejected,
+        retries,
+    })
 }
 
 async fn subscribe_one(
@@ -230,7 +225,7 @@ async fn subscribe_one(
                     SubStatus::Failed(reason)
                 }
             };
-            set_tracker_status(&tracker, index, status);
+            tracker.set_status(index, status);
             outcome
         }
     };
@@ -279,11 +274,7 @@ fn record_created(
             kind = topic.kind,
             "eventsub subscription response unreadable; will retry"
         );
-        set_tracker_status(
-            tracker,
-            index,
-            SubStatus::Retrying(UNREADABLE_RESPONSE.to_owned()),
-        );
+        tracker.set_status(index, SubStatus::Retrying(UNREADABLE_RESPONSE.to_owned()));
         return TopicOutcome::Retryable;
     };
     mark_active(
@@ -310,69 +301,13 @@ fn mark_active(
         condition,
     }
     .publish(ctx.bus.as_ref(), EventSource::Twitch, None);
-    let mut records = tracker.write().unwrap_or_else(|p| p.into_inner());
-    if let Some(rec) = records.get_mut(index) {
-        rec.status = SubStatus::Active;
-        rec.subscription_id = subscription_id;
-    }
+    tracker.mark_active(index, subscription_id);
     TopicOutcome::Active
-}
-
-fn set_tracker_status(tracker: &SubscriptionTracker, index: usize, status: SubStatus) {
-    let mut records = tracker.write().unwrap_or_else(|p| p.into_inner());
-    if let Some(rec) = records.get_mut(index) {
-        rec.status = status;
-    }
-}
-
-pub(crate) fn mark_revoked(
-    tracker: &SubscriptionTracker,
-    subscription_id: &str,
-    kind: &str,
-    status: &str,
-) {
-    let mut records = tracker.write().unwrap_or_else(|p| p.into_inner());
-    let by_id = records
-        .iter()
-        .position(|rec| rec.subscription_id.as_deref() == Some(subscription_id));
-    let index = by_id.or_else(|| records.iter().position(|rec| rec.kind == kind));
-    if let Some(rec) = index.and_then(|i| records.get_mut(i)) {
-        rec.status = SubStatus::Failed(format!("revoked: {status}"));
-    }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{TOPICS, display_kind};
-
-    #[test]
-    fn display_kind_labels_raid_direction_and_passes_other_topics_through() {
-        let mut incoming = 0;
-        let mut outgoing = 0;
-        for topic in TOPICS {
-            let label = display_kind(topic);
-            let condition = (topic.condition_fn)("B", "U");
-            let is_raid = topic.kind == "channel.raid";
-            if is_raid && condition.get("to_broadcaster_user_id").is_some() {
-                assert_eq!(label, "channel.raid (incoming)");
-                incoming += 1;
-            } else if is_raid && condition.get("from_broadcaster_user_id").is_some() {
-                assert_eq!(label, "channel.raid (outgoing)");
-                outgoing += 1;
-            } else {
-                assert_eq!(
-                    label, topic.kind,
-                    "{} must pass through unchanged",
-                    topic.kind
-                );
-            }
-        }
-        assert_eq!(
-            (incoming, outgoing),
-            (1, 1),
-            "expected exactly one incoming and one outgoing raid topic"
-        );
-    }
+    use super::TOPICS;
 
     #[test]
     fn automod_subscription_types_omit_the_channel_prefix() {
@@ -471,6 +406,7 @@ mod tests {
     };
     use crate::bot_account::test_support::RecordingBus;
     use crate::helix::{FixedTokenSource, HelixHttpTransport, HelixTransport};
+    use crate::vocabulary::RaidDirection;
     use forge_events::EventPublisher;
     use forge_net::RateLimiter;
     use forge_net::test_support::RecordingRateLimiter;
@@ -588,6 +524,14 @@ mod tests {
             .await;
     }
 
+    async fn mount_catch_all_status(server: &MockServer, status: StatusCode) {
+        Mock::given(method("POST"))
+            .and(path(EVENTSUB_PATH))
+            .respond_with(ResponseTemplate::new(status.as_u16()).set_body_string("rejected"))
+            .mount(server)
+            .await;
+    }
+
     async fn mount_catch_all_conflict(server: &MockServer) {
         Mock::given(method("POST"))
             .and(path(EVENTSUB_PATH))
@@ -612,7 +556,7 @@ mod tests {
     }
 
     fn record_status(tracker: &SubscriptionTracker, kind: &str) -> (SubStatus, Option<String>) {
-        let records = tracker.read().unwrap_or_else(|p| p.into_inner());
+        let records = tracker.snapshot();
         let rec = records.iter().find(|r| r.kind == kind).unwrap();
         (rec.status.clone(), rec.subscription_id.clone())
     }
@@ -636,7 +580,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn mixed_outcomes_surface_scope_missing_yet_map_each_result_to_its_own_record() {
+    async fn mixed_outcomes_put_a_401_first_yet_map_each_result_to_its_own_record() {
         let server = MockServer::start().await;
         mount_success(&server, "channel.chat.message", "sub-chat").await;
         mount_success(&server, "channel.follow", "sub-follow").await;
@@ -649,8 +593,8 @@ mod tests {
         let run = run_subscribe(&server).await;
 
         assert!(
-            matches!(run.result, Err(SubscribeError::ScopeMissing)),
-            "a scope rejection among the topics must surface as ScopeMissing after all futures finish"
+            matches!(run.result, Err(SubscribeError::Unauthorized)),
+            "a rejected token outranks a partial scope gap: the refresh may cure both"
         );
 
         for (kind, expected_id) in [
@@ -718,8 +662,8 @@ mod tests {
 
             assert_eq!(run.status_of(PROBED_TOPIC), expected);
             assert!(
-                matches!(&run.result, Ok(pass) if pass.any_live()),
-                "{expected:?}: only a 401 or 403 may stop the pass"
+                matches!(&run.result, Ok(pass) if pass.any_live() && !pass.has_scope_gap()),
+                "{expected:?}: only an auth rejection may stop the pass or report a scope gap"
             );
             assert_eq!(
                 run.status_of("channel.chat.message"),
@@ -809,7 +753,7 @@ mod tests {
 
         let run = pass_against(&server.uri(), RecordingRateLimiter::exhausted()).await;
 
-        let records = run.tracker.read().unwrap().clone();
+        let records = run.tracker.snapshot();
         assert!(
             records
                 .iter()
@@ -843,24 +787,76 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn an_auth_rejection_stops_the_pass_with_its_own_error() {
-        for status in [StatusCode::UNAUTHORIZED, StatusCode::FORBIDDEN] {
-            let run = pass_with_probed_topic_replying(ResponseTemplate::new(status.as_u16())).await;
+    async fn a_single_401_stops_the_pass_for_a_token_refresh() {
+        let run = pass_with_probed_topic_replying(ResponseTemplate::new(
+            StatusCode::UNAUTHORIZED.as_u16(),
+        ))
+        .await;
 
-            let stopped = match run.result {
-                Err(SubscribeError::Unauthorized) => Some(StatusCode::UNAUTHORIZED),
-                Err(SubscribeError::ScopeMissing) => Some(StatusCode::FORBIDDEN),
-                Ok(_) => None,
-            };
-            assert_eq!(stopped, Some(status));
+        assert!(matches!(run.result, Err(SubscribeError::Unauthorized)));
+    }
+
+    #[tokio::test]
+    async fn a_403_beside_at_least_one_live_topic_keeps_the_pass_live_with_a_scope_gap() {
+        let one_rejected =
+            pass_with_probed_topic_replying(ResponseTemplate::new(StatusCode::FORBIDDEN.as_u16()))
+                .await;
+        let server = MockServer::start().await;
+        mount_success(&server, "channel.chat.message", "sub-chat").await;
+        mount_catch_all_status(&server, StatusCode::FORBIDDEN).await;
+        let one_live = run_subscribe(&server).await;
+
+        for run in [one_rejected, one_live] {
+            assert!(
+                matches!(&run.result, Ok(pass) if pass.any_live() && pass.has_scope_gap()),
+                "a topic the token cannot reach must not cost the topics it can"
+            );
         }
+    }
+
+    #[tokio::test]
+    async fn a_403_with_no_live_topic_stops_the_pass_as_scope_missing() {
+        for rest_of_topics in [StatusCode::FORBIDDEN, StatusCode::CONFLICT] {
+            let server = MockServer::start().await;
+            mount_status(&server, PROBED_TOPIC, StatusCode::FORBIDDEN).await;
+            mount_catch_all_status(&server, rest_of_topics).await;
+
+            let run = run_subscribe(&server).await;
+
+            assert!(
+                matches!(run.result, Err(SubscribeError::ScopeMissing)),
+                "rest of the topics answering {rest_of_topics}"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn the_pass_tracks_only_the_raid_topics_with_a_direction_under_their_bare_wire_type() {
+        let server = MockServer::start().await;
+        mount_catch_all_success(&server).await;
+
+        let run = run_subscribe(&server).await;
+
+        let directed: Vec<_> = run
+            .tracker
+            .snapshot()
+            .into_iter()
+            .filter_map(|record| record.direction.map(|direction| (record.kind, direction)))
+            .collect();
+        assert_eq!(
+            directed,
+            vec![
+                ("channel.raid".to_owned(), RaidDirection::Received),
+                ("channel.raid".to_owned(), RaidDirection::Sent),
+            ]
+        );
     }
 
     #[tokio::test]
     async fn a_transport_failure_marks_retrying_with_a_reason_free_of_the_url_and_the_token() {
         let run = pass_against("http://127.0.0.1:1", RecordingRateLimiter::granting()).await;
 
-        let records = run.tracker.read().unwrap().clone();
+        let records = run.tracker.snapshot();
         for record in records {
             assert!(
                 matches!(&record.status, SubStatus::Retrying(reason)

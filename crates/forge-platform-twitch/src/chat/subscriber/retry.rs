@@ -1,6 +1,5 @@
 use super::{
     SubscribeCtx, TOPICS, TopicOutcome, TopicSpec, classify_failure, mark_active, record_created,
-    set_tracker_status,
 };
 use crate::helix::HelixError;
 use crate::subscriptions::{SubStatus, SubscriptionTracker};
@@ -8,7 +7,7 @@ use forge_net::Backoff;
 use futures_util::stream::{self, StreamExt};
 use std::future::Future;
 use std::pin::Pin;
-use std::sync::{Arc, Mutex};
+use std::sync::Mutex;
 use std::time::Duration;
 use tokio::sync::watch;
 use tracing::{debug, info, warn};
@@ -62,10 +61,10 @@ impl TopicRetries {
 
     async fn run(self, session: watch::Receiver<String>) {
         let Self { ctx, settle } = self;
-        let tracker = Arc::clone(&settle.tracker);
+        let tracker = settle.tracker.clone();
         stream::iter(settle.registered())
             .for_each_concurrent(RETRY_CONCURRENCY, |index| {
-                retry_topic(ctx.clone(), Arc::clone(&tracker), index, session.clone())
+                retry_topic(ctx.clone(), tracker.clone(), index, session.clone())
             })
             .await;
         drop(settle);
@@ -104,7 +103,7 @@ impl Drop for RetryingSettle {
     fn drop(&mut self) {
         let indexes = self.indexes.get_mut().unwrap_or_else(|p| p.into_inner());
         for index in indexes.iter() {
-            settle_retrying(&self.tracker, *index);
+            self.tracker.settle_retrying(*index);
         }
     }
 }
@@ -121,7 +120,7 @@ async fn retry_topic(
     let mut backoff = Backoff::new(RETRY_BASE_DELAY, RETRY_MAX_DELAY);
     while backoff.attempt() < RETRY_ATTEMPT_LIMIT {
         tokio::time::sleep(backoff.next_delay()).await;
-        if retrying_reason(&tracker, index).is_none() {
+        if tracker.retrying_reason(index).is_none() {
             return;
         }
         let session_id = session.borrow().clone();
@@ -157,8 +156,8 @@ async fn retry_topic(
             | TopicOutcome::Unauthorized => return,
         }
     }
-    let reason = retrying_reason(&tracker, index).unwrap_or_default();
-    settle_retrying(&tracker, index);
+    let reason = tracker.retrying_reason(index).unwrap_or_default();
+    tracker.settle_retrying(index);
     warn!(
         kind = topic.kind,
         attempts = backoff.attempt(),
@@ -181,34 +180,17 @@ fn record_retry_failure(
     };
     if matches!(outcome, TopicOutcome::Retryable) {
         debug!(kind = topic.kind, error = %error, "eventsub subscription retry failed; will retry");
-        set_tracker_status(tracker, index, SubStatus::Retrying(reason));
+        tracker.set_status(index, SubStatus::Retrying(reason));
     } else {
         warn!(kind = topic.kind, error = %error, "eventsub subscription retry rejected; giving up for this session");
-        set_tracker_status(tracker, index, SubStatus::Failed(reason));
+        tracker.set_status(index, SubStatus::Failed(reason));
     }
     outcome
 }
 
-fn retrying_reason(tracker: &SubscriptionTracker, index: usize) -> Option<String> {
-    let records = tracker.read().unwrap_or_else(|p| p.into_inner());
-    match records.get(index).map(|rec| &rec.status) {
-        Some(SubStatus::Retrying(reason)) => Some(reason.clone()),
-        _ => None,
-    }
-}
-
-fn settle_retrying(tracker: &SubscriptionTracker, index: usize) {
-    let mut records = tracker.write().unwrap_or_else(|p| p.into_inner());
-    if let Some(rec) = records.get_mut(index)
-        && let SubStatus::Retrying(reason) = &mut rec.status
-    {
-        rec.status = SubStatus::Failed(std::mem::take(reason));
-    }
-}
-
 #[cfg(test)]
 mod tests {
-    use super::super::{TOPICS, mark_revoked, subscribe_all};
+    use super::super::{TOPICS, subscribe_all};
     use super::TopicRetryRun;
     use crate::bot_account::test_support::RecordingBus;
     use crate::helix::{HelixError, HelixRequest, HelixTransport};
@@ -454,7 +436,7 @@ mod tests {
         }
 
         fn record(&self, kind: &str) -> (SubStatus, Option<String>) {
-            let records = self.tracker.read().unwrap();
+            let records = self.tracker.snapshot();
             let rec = records.iter().find(|rec| rec.kind == kind).unwrap();
             (rec.status.clone(), rec.subscription_id.clone())
         }
@@ -757,7 +739,7 @@ mod tests {
             ],
         )]);
         let mut retry = Retrying::after_pass(&stub).await;
-        let newer = Retrying::after_pass_on(&stub, Arc::clone(&retry.tracker)).await;
+        let newer = Retrying::after_pass_on(&stub, retry.tracker.clone()).await;
         assert!(newer.run.is_none());
 
         retry.finish().await;
@@ -859,7 +841,9 @@ mod tests {
         let mut retry = Retrying::after_pass(&stub).await;
         retry.finish().await;
 
-        mark_revoked(&retry.tracker, "sub-unlisted", PROBED, "user_removed");
+        retry
+            .tracker
+            .mark_revoked("sub-unlisted", PROBED, None, "user_removed");
 
         assert_eq!(retry.status_of(PROBED), failed("revoked: user_removed"));
     }
@@ -898,8 +882,7 @@ mod tests {
         );
         let status = |tracker: &SubscriptionTracker| {
             tracker
-                .read()
-                .unwrap()
+                .snapshot()
                 .iter()
                 .find(|rec| rec.kind == PROBED)
                 .map(|rec| rec.status.clone())

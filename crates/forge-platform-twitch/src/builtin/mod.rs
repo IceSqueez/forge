@@ -34,7 +34,7 @@ use crate::helix::{
     HelixTransport,
 };
 use crate::lifecycle::TwitchLifecycle;
-use crate::subscriptions::{SubStatus, SubscriptionTracker};
+use crate::subscriptions::{SubStatus, SubscriptionRecord, SubscriptionTracker};
 use crate::vocabulary::messages;
 
 mod quick_actions;
@@ -479,11 +479,7 @@ impl TwitchIntegrationBundle {
     }
 
     fn active_sub_count(&self) -> usize {
-        let records = self.tracker.read().unwrap_or_else(|p| p.into_inner());
-        records
-            .iter()
-            .filter(|r| matches!(r.status, SubStatus::Active))
-            .count()
+        self.tracker.active_count()
     }
 
     fn chat_health_value(&self) -> HealthValue {
@@ -671,11 +667,11 @@ impl BuiltinContent for TwitchIntegrationBundle {
             footer: None,
         };
 
-        let records = self.tracker.read().unwrap_or_else(|p| p.into_inner());
+        let records = self.tracker.snapshot();
         let dropped_kind = records
             .iter()
             .find(|r| matches!(r.status, SubStatus::Failed(_) | SubStatus::Retrying(_)))
-            .map(|r| r.kind.clone());
+            .map(SubscriptionRecord::label);
 
         let sub_items: Vec<SubscriptionRow> = records
             .iter()
@@ -689,7 +685,7 @@ impl BuiltinContent for TwitchIntegrationBundle {
                     SubStatus::Failed(reason) => (SubscriptionStatus::Error, Some(reason.clone())),
                 };
                 SubscriptionRow {
-                    name: r.kind.clone(),
+                    name: r.label(),
                     status,
                     version: Some(format!("v{}", r.version)),
                     event_count: None,
@@ -888,21 +884,22 @@ mod tests {
     #[test]
     fn eventsub_metric_shows_active_count_from_tracker() {
         let tracker = SubscriptionTracker::default();
-        {
-            let mut records = tracker.write().unwrap();
-            records.push(SubscriptionRecord {
+        tracker.reset(vec![
+            SubscriptionRecord {
                 kind: "channel.chat.message".to_owned(),
+                direction: None,
                 version: "1".to_owned(),
                 status: SubStatus::Active,
                 subscription_id: Some("sub-1".to_owned()),
-            });
-            records.push(SubscriptionRecord {
+            },
+            SubscriptionRecord {
                 kind: "channel.subscribe".to_owned(),
+                direction: None,
                 version: "1".to_owned(),
                 status: SubStatus::Pending,
                 subscription_id: None,
-            });
-        }
+            },
+        ]);
         let b = make_bundle_with_tracker(ChatConnectionState::Connected, tracker);
         let health: &dyn BuiltinHealth = b.as_ref();
         let metrics = health.metrics();
@@ -927,15 +924,13 @@ mod tests {
     #[test]
     fn eventsub_metric_inactive_when_no_subscriptions_are_active() {
         let tracker = SubscriptionTracker::default();
-        {
-            let mut records = tracker.write().unwrap();
-            records.push(SubscriptionRecord {
-                kind: "channel.subscribe".to_owned(),
-                version: "1".to_owned(),
-                status: SubStatus::Pending,
-                subscription_id: None,
-            });
-        }
+        tracker.reset(vec![SubscriptionRecord {
+            kind: "channel.subscribe".to_owned(),
+            direction: None,
+            version: "1".to_owned(),
+            status: SubStatus::Pending,
+            subscription_id: None,
+        }]);
         let b = make_bundle_with_tracker(ChatConnectionState::Connected, tracker);
         let health: &dyn BuiltinHealth = b.as_ref();
         let metrics = health.metrics();
@@ -1179,33 +1174,36 @@ mod tests {
     #[test]
     fn subscription_rows_map_tracker_status_and_banner_flags_dropped() {
         let tracker = SubscriptionTracker::default();
-        {
-            let mut records = tracker.write().unwrap();
-            records.push(SubscriptionRecord {
+        tracker.reset(vec![
+            SubscriptionRecord {
                 kind: "channel.chat.message".to_owned(),
+                direction: None,
                 version: "1".to_owned(),
                 status: SubStatus::Active,
                 subscription_id: Some("sub-abc".to_owned()),
-            });
-            records.push(SubscriptionRecord {
+            },
+            SubscriptionRecord {
                 kind: "channel.subscribe".to_owned(),
+                direction: None,
                 version: "1".to_owned(),
                 status: SubStatus::Pending,
                 subscription_id: None,
-            });
-            records.push(SubscriptionRecord {
+            },
+            SubscriptionRecord {
                 kind: "channel.cheer".to_owned(),
+                direction: None,
                 version: "1".to_owned(),
                 status: SubStatus::Retrying("HTTP 503".to_owned()),
                 subscription_id: None,
-            });
-            records.push(SubscriptionRecord {
+            },
+            SubscriptionRecord {
                 kind: "channel.follow".to_owned(),
+                direction: None,
                 version: "2".to_owned(),
                 status: SubStatus::Failed("missing scope".to_owned()),
                 subscription_id: None,
-            });
-        }
+            },
+        ]);
         let b = make_bundle_with_tracker(ChatConnectionState::Connected, tracker);
         let (items, banner) = subscription_list(&b);
 
@@ -1248,15 +1246,17 @@ mod tests {
     #[test]
     fn a_given_up_row_raises_the_dropped_banner_without_a_retrying_one() {
         let tracker = SubscriptionTracker::default();
-        tracker.write().unwrap().extend([
+        tracker.reset(vec![
             SubscriptionRecord {
                 kind: "channel.chat.message".to_owned(),
+                direction: None,
                 version: "1".to_owned(),
                 status: SubStatus::Active,
                 subscription_id: Some("sub-abc".to_owned()),
             },
             SubscriptionRecord {
                 kind: "channel.ban".to_owned(),
+                direction: None,
                 version: "1".to_owned(),
                 status: SubStatus::Failed("revoked: user_removed".to_owned()),
                 subscription_id: None,
@@ -1267,6 +1267,29 @@ mod tests {
         let (_, banner) = subscription_list(&b);
 
         assert_eq!(banner.as_deref(), Some("channel.ban subscription dropped"));
+    }
+
+    #[test]
+    fn a_dropped_raid_row_names_its_direction_in_the_row_and_the_banner() {
+        let tracker = SubscriptionTracker::default();
+        tracker.reset(vec![SubscriptionRecord {
+            kind: "channel.raid".to_owned(),
+            direction: Some(crate::vocabulary::RaidDirection::Sent),
+            version: "1".to_owned(),
+            status: SubStatus::Failed("revoked: user_removed".to_owned()),
+            subscription_id: None,
+        }]);
+        let b = make_bundle_with_tracker(ChatConnectionState::Connected, tracker);
+
+        let (items, banner) = subscription_list(&b);
+
+        assert_eq!(
+            (items[0].name.as_str(), banner.as_deref()),
+            (
+                "channel.raid (outgoing)",
+                Some("channel.raid (outgoing) subscription dropped")
+            )
+        );
     }
 
     #[test]

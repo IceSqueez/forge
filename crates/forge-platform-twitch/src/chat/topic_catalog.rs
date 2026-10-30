@@ -1,6 +1,6 @@
 use super::dispatch::NotificationRoute;
 use super::session::ChatSession;
-use crate::vocabulary::topics;
+use crate::vocabulary::{RaidDirection, topics};
 
 pub(super) struct TopicSpec {
     pub(super) kind: &'static str,
@@ -27,8 +27,24 @@ fn condition_moderator(broadcaster_id: &str, user_id: &str) -> serde_json::Value
     })
 }
 
-pub(super) const RAID_TARGET_FIELD: &str = "to_broadcaster_user_id";
-pub(super) const RAID_SOURCE_FIELD: &str = "from_broadcaster_user_id";
+impl TopicSpec {
+    pub(super) fn direction(&self) -> Option<RaidDirection> {
+        raid_direction(&(self.condition_fn)("", ""))
+    }
+}
+
+pub(super) fn raid_direction(condition: &serde_json::Value) -> Option<RaidDirection> {
+    if condition.get(RAID_TARGET_FIELD).is_some() {
+        Some(RaidDirection::Received)
+    } else if condition.get(RAID_SOURCE_FIELD).is_some() {
+        Some(RaidDirection::Sent)
+    } else {
+        None
+    }
+}
+
+const RAID_TARGET_FIELD: &str = "to_broadcaster_user_id";
+const RAID_SOURCE_FIELD: &str = "from_broadcaster_user_id";
 
 fn condition_raid(broadcaster_id: &str, _user_id: &str) -> serde_json::Value {
     serde_json::json!({ RAID_TARGET_FIELD: broadcaster_id })
@@ -445,7 +461,44 @@ pub(super) const TOPICS: &[TopicSpec] = &[
 
 #[cfg(test)]
 mod tests {
+    use super::super::dispatch::route_for;
     use super::TOPICS;
+    use crate::vocabulary::topics;
+
+    mod wire_topics {
+        include!("../vocabulary/eventsub_topics.rs");
+    }
+
+    macro_rules! topic_constants {
+        ($($name:ident => $topic:literal,)*) => {
+            [$(topics::$name),*]
+        };
+    }
+
+    #[test]
+    fn every_topic_constant_is_subscribed() {
+        let constants = wire_topics::eventsub_topics!(topic_constants);
+
+        let unsubscribed: Vec<&str> = constants
+            .into_iter()
+            .filter(|constant| !TOPICS.iter().any(|topic| topic.kind == *constant))
+            .collect();
+
+        assert_eq!(unsubscribed, Vec::<&str>::new());
+    }
+
+    #[test]
+    fn every_subscribed_topic_is_a_named_constant_with_a_route() {
+        let constants = wire_topics::eventsub_topics!(topic_constants);
+
+        let orphaned: Vec<&str> = TOPICS
+            .iter()
+            .map(|topic| topic.kind)
+            .filter(|kind| !constants.contains(kind) || route_for(kind).is_none())
+            .collect();
+
+        assert_eq!(orphaned, Vec::<&str>::new());
+    }
 
     #[test]
     fn subscribed_topics_match_the_pinned_wire_catalog_in_order() {

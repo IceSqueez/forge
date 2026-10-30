@@ -7,7 +7,7 @@ use forge_registry::{
     ConfigProblem, ConfigSpec, RunContext, StepTimer, SubActionCategory, SubActionIo,
     SubActionRunner, TextEditor, TextField, TypedField, ValueBounds,
 };
-use forge_types::{ArgStack, SubActionTelemetry, Variant};
+use forge_types::{ArgStack, SubActionTelemetry, UserText, Variant};
 use futures::future::BoxFuture;
 
 use super::field_kinds::{WholeNumberField, non_empty};
@@ -132,12 +132,20 @@ impl SubActionRunner for CreateRewardRunner {
             Err(problem) => return (timer.invalid_config(&problem), None),
         };
         if params.title.is_empty() {
-            return (timer.failed("title is empty after interpolation"), None);
+            return (
+                timer.failed(UserText::unlocalized("title is empty after interpolation")),
+                None,
+            );
         }
 
         let token = match (self.token_source)().await {
             Ok(token) => token,
-            Err(e) => return (timer.failed(format!("token error: {e}")), None),
+            Err(e) => {
+                return (
+                    timer.failed(UserText::unlocalized(format!("token error: {e}"))),
+                    None,
+                );
+            }
         };
         match self.client.create(params, &token).await {
             Ok(Some(reward_id)) => {
@@ -148,7 +156,7 @@ impl SubActionRunner for CreateRewardRunner {
                 (timer.success(), Some(stack))
             }
             Ok(None) => (timer.success(), None),
-            Err(e) => (timer.failed(e.to_string()), None),
+            Err(e) => (timer.failed(UserText::unlocalized(e.to_string())), None),
         }
     }
 }

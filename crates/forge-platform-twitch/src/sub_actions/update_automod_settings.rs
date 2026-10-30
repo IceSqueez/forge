@@ -6,7 +6,7 @@ use forge_registry::{
     ChoiceField, ConfigChoice, ConfigProblem, ConfigSpec, RunContext, StepTimer, SubActionCategory,
     SubActionRunner, TypedField,
 };
-use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry};
+use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, UserText};
 
 use crate::account::identity::SelfIdentity;
 use crate::helix::{HelixError, HelixMethod, HelixRequest, HelixTransport};
@@ -142,7 +142,7 @@ impl UpdateAutomodSettingsRunner {
     async fn apply(&self, update: &LevelUpdate) -> SubActionOutcome {
         let user_id = match self.identity.user_id().await {
             Ok(id) => id,
-            Err(e) => return SubActionOutcome::Failed(e.to_string()),
+            Err(e) => return SubActionOutcome::Failed(UserText::unlocalized(e.to_string())),
         };
         if update.is_empty() {
             return SubActionOutcome::Success;
@@ -152,7 +152,7 @@ impl UpdateAutomodSettingsRunner {
         } else {
             let current = match self.fetch_current(&user_id).await {
                 Ok(c) => c,
-                Err(e) => return SubActionOutcome::Failed(e.to_string()),
+                Err(e) => return SubActionOutcome::Failed(UserText::unlocalized(e.to_string())),
             };
             let mut map = serde_json::Map::new();
             for (key, override_level) in &update.categories {

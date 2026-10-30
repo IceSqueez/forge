@@ -3,7 +3,7 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use forge_registry::runner::SubActionConfig;
 use forge_registry::{RunContext, StepTimer, SubActionCategory, SubActionRunner};
-use forge_types::{ArgStack, SubActionTelemetry, Variant};
+use forge_types::{ArgStack, SubActionTelemetry, UserText, Variant};
 
 use crate::stream_stats::YoutubeStreamStats;
 use crate::timestamp;
@@ -73,10 +73,10 @@ impl SubActionRunner for LookupStreamStatsRunner {
                 (timer.success(), Some(stack))
             }
             Err(e) => (
-                timer.failed(format!(
+                timer.failed(UserText::unlocalized(format!(
                     "stream stats lookup failed: {}",
                     crate::error_shape::redact_platform_error(&e)
-                )),
+                ))),
                 None,
             ),
         }

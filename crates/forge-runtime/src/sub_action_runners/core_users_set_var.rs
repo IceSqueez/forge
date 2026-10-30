@@ -6,7 +6,7 @@ use forge_registry::{
     TextEditor, TextField, TypedField,
 };
 use forge_storage::{GlobalsRepo, UserGlobalsRepo};
-use forge_types::{ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetry};
+use forge_types::{ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetry, UserText};
 
 use super::core_users_shared::{USER_LOGIN, VAR_NAME, resolve_broadcaster_id, resolve_user_login};
 
@@ -87,7 +87,7 @@ impl SubActionRunner for CoreUsersSetVarRunner {
         };
         let user_login = match resolve_user_login(&user_login_template, ctx.arg_stack) {
             Ok(login) => login,
-            Err(reason) => return (timer.failed(reason), None),
+            Err(reason) => return (timer.failed(UserText::unlocalized(reason)), None),
         };
         let value = super::variant_text::parse_variant(&raw_value);
 
@@ -99,7 +99,7 @@ impl SubActionRunner for CoreUsersSetVarRunner {
             .await
         {
             Ok(()) => SubActionOutcome::Success,
-            Err(e) => SubActionOutcome::Failed(e.to_string()),
+            Err(e) => SubActionOutcome::Failed(UserText::unlocalized(e.to_string())),
         };
 
         (timer.finish(outcome), None)

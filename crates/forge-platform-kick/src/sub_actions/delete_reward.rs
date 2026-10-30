@@ -6,7 +6,7 @@ use forge_registry::runner::SubActionConfig;
 use forge_registry::{
     ConfigSpec, RunContext, StepTimer, SubActionCategory, SubActionRunner, TypedField,
 };
-use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry};
+use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, UserText};
 use futures::future::BoxFuture;
 
 use super::fields::REWARD_ID;
@@ -77,11 +77,16 @@ impl SubActionRunner for DeleteRewardRunner {
             Err(problem) => return (timer.invalid_config(&problem), None),
         };
         if reward_id.is_empty() {
-            return (timer.failed("reward_id is empty after interpolation"), None);
+            return (
+                timer.failed(UserText::unlocalized(
+                    "reward_id is empty after interpolation",
+                )),
+                None,
+            );
         }
 
         let outcome = match (self.token_source)().await {
-            Err(e) => SubActionOutcome::Failed(format!("token error: {e}")),
+            Err(e) => SubActionOutcome::Failed(UserText::unlocalized(format!("token error: {e}"))),
             Ok(token) => {
                 SubActionOutcome::from_result(&self.client.delete(&reward_id, &token).await)
             }

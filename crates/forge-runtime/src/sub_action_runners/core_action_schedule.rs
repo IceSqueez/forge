@@ -8,7 +8,7 @@ use forge_registry::{
     UnitAmountField, VariableField,
 };
 use forge_storage::MissedRunPolicy;
-use forge_types::{ArgStack, SubActionConfig, SubActionTelemetry, Variant, VariantKind};
+use forge_types::{ArgStack, SubActionConfig, SubActionTelemetry, UserText, Variant, VariantKind};
 
 use super::core_action_shared::ACTION;
 use crate::scheduled_runs::{
@@ -250,13 +250,15 @@ impl SubActionRunner for CoreActionScheduleRunner {
         };
         let Some(scheduled_runs) = self.scheduled_runs.get() else {
             return (
-                timer.failed(ScheduleError::SchedulerStopped.to_string()),
+                timer.failed(UserText::unlocalized(
+                    ScheduleError::SchedulerStopped.to_string(),
+                )),
                 None,
             );
         };
         let placement = match scheduled_runs.schedule(request).await {
             Ok(placement) => placement,
-            Err(e) => return (timer.failed(e.to_string()), None),
+            Err(e) => return (timer.failed(UserText::unlocalized(e.to_string())), None),
         };
         let stack = ctx
             .arg_stack

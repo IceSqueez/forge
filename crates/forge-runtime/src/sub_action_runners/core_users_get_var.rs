@@ -7,7 +7,7 @@ use forge_registry::{
 };
 use forge_storage::{GlobalsRepo, UserGlobalsRepo};
 use forge_types::{
-    ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetry, VariantKind,
+    ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetry, UserText, VariantKind,
     strip_var_decoration,
 };
 
@@ -123,7 +123,7 @@ impl SubActionRunner for CoreUsersGetVarRunner {
         };
         let user_login = match resolve_user_login(&user_login_template, ctx.arg_stack) {
             Ok(login) => login,
-            Err(reason) => return (timer.failed(reason), None),
+            Err(reason) => return (timer.failed(UserText::unlocalized(reason)), None),
         };
 
         let broadcaster_id = resolve_broadcaster_id(ctx.arg_stack, self.globals.as_ref()).await;
@@ -142,7 +142,10 @@ impl SubActionRunner for CoreUsersGetVarRunner {
                 let new_stack = ctx.arg_stack.clone().set(into_var, fallback);
                 (SubActionOutcome::Success, Some(new_stack))
             }
-            Err(e) => (SubActionOutcome::Failed(e.to_string()), None),
+            Err(e) => (
+                SubActionOutcome::Failed(UserText::unlocalized(e.to_string())),
+                None,
+            ),
         };
 
         (timer.finish(outcome), updated_stack)

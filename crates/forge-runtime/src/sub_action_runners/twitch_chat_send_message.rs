@@ -6,8 +6,8 @@ use forge_registry::{
     SubActionRunner, TextEditor, TextField, TypedField,
 };
 use forge_types::{
-    ArgStack, IntegrationId, NO_CHAT_PLATFORM_ENABLED_REASON, SubActionConfig, SubActionTelemetry,
-    resolve_chat_target,
+    ArgStack, IntegrationId, MessageRef, NO_CHAT_PLATFORM_ENABLED, SubActionConfig,
+    SubActionTelemetry, resolve_chat_target,
 };
 
 pub const CHAT_SEND_KIND_ID: &str = "twitch.chat.send_message";
@@ -130,7 +130,7 @@ impl SubActionRunner for TwitchChatSendMessageRunner {
             Err(problem) => return (timer.invalid_config(&problem), None),
         };
         let target = match resolve_chat_target(&target) {
-            Err(reason) => return (timer.failed(reason), None),
+            Err(reason) => return (timer.failed(reason.into()), None),
             Ok(Some(platform)) => Some(platform.as_str().to_owned()),
             Ok(None) => {
                 let none_enabled = ctx
@@ -138,7 +138,10 @@ impl SubActionRunner for TwitchChatSendMessageRunner {
                     .integration_availability()
                     .is_some_and(|integrations| !integrations.any_chat_platform_enabled());
                 if none_enabled {
-                    return (timer.failed(NO_CHAT_PLATFORM_ENABLED_REASON), None);
+                    return (
+                        timer.failed(MessageRef::new(NO_CHAT_PLATFORM_ENABLED).into()),
+                        None,
+                    );
                 }
                 None
             }

@@ -6,7 +6,7 @@ use forge_registry::{
     ConfigProblem, ConfigSpec, RunContext, StepTimer, SubActionCategory, SubActionRunner,
     TextEditor, TextField, TypedField,
 };
-use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry};
+use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, UserText};
 
 use crate::account::identity::SelfIdentity;
 use crate::helix::{HelixMethod, HelixRequest, HelixTransport};
@@ -74,18 +74,20 @@ impl PredictionUpdate<'_> {
         resolved: ResolvedUpdate,
     ) -> SubActionOutcome {
         if resolved.prediction_id.is_empty() {
-            return SubActionOutcome::Failed("prediction_id is required".to_owned());
+            return SubActionOutcome::Failed(UserText::unlocalized("prediction_id is required"));
         }
         if resolved
             .winning_outcome_id
             .as_ref()
             .is_some_and(String::is_empty)
         {
-            return SubActionOutcome::Failed("winning_outcome_id is required".to_owned());
+            return SubActionOutcome::Failed(UserText::unlocalized(
+                "winning_outcome_id is required",
+            ));
         }
         let user_id = match identity.user_id().await {
             Ok(id) => id,
-            Err(e) => return SubActionOutcome::Failed(e.to_string()),
+            Err(e) => return SubActionOutcome::Failed(UserText::unlocalized(e.to_string())),
         };
         let mut body = serde_json::Map::new();
         body.insert("id".to_owned(), resolved.prediction_id.into());
@@ -98,7 +100,9 @@ impl PredictionUpdate<'_> {
             .body(serde_json::Value::Object(body));
         match transport.execute(request).await {
             Ok(_) => SubActionOutcome::Success,
-            Err(e) => SubActionOutcome::Failed(format!("{}: {e}", self.kind_id)),
+            Err(e) => {
+                SubActionOutcome::Failed(UserText::unlocalized(format!("{}: {e}", self.kind_id)))
+            }
         }
     }
 

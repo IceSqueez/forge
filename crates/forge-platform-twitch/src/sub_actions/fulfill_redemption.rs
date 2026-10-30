@@ -6,7 +6,7 @@ use forge_registry::{
     ConfigProblem, ConfigSpec, PickedTextField, RunContext, StepTimer, SubActionCategory,
     SubActionRunner, TextEditor, TextField, TextPicker, TypedField,
 };
-use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry};
+use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, UserText};
 
 use crate::account::identity::SelfIdentity;
 use crate::collection_keys::REWARD_OPTIONS_KEY;
@@ -71,14 +71,14 @@ async fn patch_redemption_status(
     status: &str,
 ) -> SubActionOutcome {
     if redemption_id.is_empty() {
-        return SubActionOutcome::Failed("redemption_id is required".to_owned());
+        return SubActionOutcome::Failed(UserText::unlocalized("redemption_id is required"));
     }
     if reward_id.is_empty() {
-        return SubActionOutcome::Failed("reward_id is required".to_owned());
+        return SubActionOutcome::Failed(UserText::unlocalized("reward_id is required"));
     }
     let user_id = match identity.user_id().await {
         Ok(id) => id,
-        Err(e) => return SubActionOutcome::Failed(e.to_string()),
+        Err(e) => return SubActionOutcome::Failed(UserText::unlocalized(e.to_string())),
     };
     let mut body = serde_json::Map::new();
     body.insert("status".to_owned(), status.into());
@@ -92,7 +92,7 @@ async fn patch_redemption_status(
     .body(serde_json::Value::Object(body));
     match transport.execute(request).await {
         Ok(_) => SubActionOutcome::Success,
-        Err(e) => SubActionOutcome::Failed(format!("{kind_id}: {e}")),
+        Err(e) => SubActionOutcome::Failed(UserText::unlocalized(format!("{kind_id}: {e}"))),
     }
 }
 

@@ -5,7 +5,7 @@ use forge_registry::{
     ToggleField, TypedField, VariableField,
 };
 use forge_types::{
-    ArgStack, SubActionConfig, SubActionTelemetry, Variant, VariantKind, datetime_to_text,
+    ArgStack, SubActionConfig, SubActionTelemetry, UserText, Variant, VariantKind, datetime_to_text,
 };
 use time::OffsetDateTime;
 
@@ -206,7 +206,7 @@ impl SubActionRunner for CoreTimeNowRunner {
         };
         let formatted = match formatted(now, &text) {
             Ok(formatted) => formatted,
-            Err(e) => return (timer.failed(e), None),
+            Err(e) => return (timer.failed(UserText::unlocalized(e)), None),
         };
 
         let new_stack = ctx

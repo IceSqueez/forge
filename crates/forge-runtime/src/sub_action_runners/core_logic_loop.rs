@@ -9,7 +9,7 @@ use forge_registry::{
 };
 use forge_types::{
     ArgStack, EventId, SubActionConfig, SubActionOutcome, SubActionStep, SubActionTelemetry,
-    Variant, strip_var_decoration,
+    UserText, Variant, strip_var_decoration,
 };
 
 use super::core_logic_shared::{chain_at, retag};
@@ -141,7 +141,7 @@ enum IterOutcome {
     Continue(ArgStack),
     Break(ArgStack),
     Stop(ArgStack, StopMark),
-    Fail(String),
+    Fail(UserText),
     Abort(ArgStack),
 }
 
@@ -168,7 +168,7 @@ async fn run_body(
             (outcome, child.telemetry)
         }
         Err(e) => (
-            IterOutcome::Fail(format!("core.logic.loop: {e}")),
+            IterOutcome::Fail(UserText::unlocalized(format!("core.logic.loop: {e}"))),
             Vec::new(),
         ),
     }
@@ -242,7 +242,7 @@ impl SubActionRunner for CoreLogicLoopRunner {
         let mut current = ctx.arg_stack.clone();
         let mut iterations: i64 = 0;
         let mut exit_reason = "completed";
-        let mut failure: Option<String> = None;
+        let mut failure: Option<UserText> = None;
         let mut unrecorded: Option<(StepTimer, i64)> = None;
 
         loop {
@@ -260,10 +260,10 @@ impl SubActionRunner for CoreLogicLoopRunner {
                     };
                     if iterations >= MAX_FOREACH_ITERATIONS {
                         exit_reason = "foreach_limit";
-                        failure = Some(format!(
+                        failure = Some(UserText::unlocalized(format!(
                             "core.logic.loop: foreach stopped after {MAX_FOREACH_ITERATIONS} iterations; the array has {} items",
                             items.len()
-                        ));
+                        )));
                         break;
                     }
                     current
@@ -284,7 +284,7 @@ impl SubActionRunner for CoreLogicLoopRunner {
                         Ok(true) => {}
                         Ok(false) => break,
                         Err(e) => {
-                            failure = Some(format!("core.logic.loop: {e}"));
+                            failure = Some(UserText::unlocalized(format!("core.logic.loop: {e}")));
                             break;
                         }
                     }
@@ -344,9 +344,9 @@ impl SubActionRunner for CoreLogicLoopRunner {
         }
 
         if let Some((timer, last_iteration)) = unrecorded {
-            let mut summary = timer.skipped(format!(
+            let mut summary = timer.skipped(UserText::unlocalized(format!(
                 "core.logic.loop: steps of iterations {MAX_RECORDED_ITERATIONS}-{last_iteration} are not recorded"
-            ));
+            )));
             summary.kind = format!(
                 "{}.body#{MAX_RECORDED_ITERATIONS}-{last_iteration}",
                 ctx.index

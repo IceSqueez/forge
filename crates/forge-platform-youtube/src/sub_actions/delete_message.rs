@@ -6,7 +6,7 @@ use forge_registry::{
     ConfigSpec, RunContext, StepTimer, SubActionCategory, SubActionRunner, TextEditor, TextField,
     TypedField,
 };
-use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry};
+use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, UserText};
 
 use crate::send_chat::YoutubeSendChat;
 use crate::vocabulary::{config_keys, sub_action_ids};
@@ -79,13 +79,17 @@ impl SubActionRunner for DeleteMessageRunner {
         };
         if message_id.is_empty() {
             return (
-                timer.failed("message_id is empty after interpolation"),
+                timer.failed(UserText::unlocalized(
+                    "message_id is empty after interpolation",
+                )),
                 None,
             );
         }
         if message_id.contains(UNRESOLVED_REFERENCE_MARKER) {
             return (
-                timer.failed("message_id has an unresolved variable reference"),
+                timer.failed(UserText::unlocalized(
+                    "message_id has an unresolved variable reference",
+                )),
                 None,
             );
         }

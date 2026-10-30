@@ -7,7 +7,7 @@ use forge_registry::{
     IntegerField, RunContext, SeparatedListField, StepTimer, SubActionCategory, SubActionRunner,
     TextEditor, ToggleField, TypedField, ValueBounds,
 };
-use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, Variant};
+use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, UserText, Variant};
 
 use crate::account::identity::SelfIdentity;
 use crate::helix::{HelixMethod, HelixRequest, HelixTransport};
@@ -119,11 +119,17 @@ impl StartPollRunner {
 
     async fn start(&self, cfg: &ResolvedConfig) -> Result<String, SubActionOutcome> {
         if cfg.title.is_empty() {
-            return Err(SubActionOutcome::Failed("title is required".to_owned()));
+            return Err(SubActionOutcome::Failed(UserText::unlocalized(
+                "title is required",
+            )));
         }
         let user_id = match self.identity.user_id().await {
             Ok(id) => id,
-            Err(e) => return Err(SubActionOutcome::Failed(e.to_string())),
+            Err(e) => {
+                return Err(SubActionOutcome::Failed(UserText::unlocalized(
+                    e.to_string(),
+                )));
+            }
         };
         let choices: Vec<serde_json::Value> = cfg
             .choices
@@ -150,13 +156,15 @@ impl StartPollRunner {
             .transport
             .execute(request)
             .await
-            .map_err(|e| SubActionOutcome::Failed(e.to_string()))?;
+            .map_err(|e| SubActionOutcome::Failed(UserText::unlocalized(e.to_string())))?;
         resp["data"]
             .as_array()
             .and_then(|arr| arr.first())
             .and_then(|r| r["id"].as_str())
             .map(|s| s.to_owned())
-            .ok_or_else(|| SubActionOutcome::Failed("empty response from start_poll".to_owned()))
+            .ok_or_else(|| {
+                SubActionOutcome::Failed(UserText::unlocalized("empty response from start_poll"))
+            })
     }
 }
 

@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
 
-use forge_types::{SubActionOutcome, SubActionTelemetry};
+use forge_types::{SubActionOutcome, SubActionTelemetry, UserText};
 use time::OffsetDateTime;
 
 use crate::config_problem::ConfigProblem;
@@ -44,16 +44,18 @@ impl StepTimer {
         self.finish(SubActionOutcome::Success)
     }
 
-    pub fn failed(self, message: impl Into<String>) -> SubActionTelemetry {
-        self.finish(SubActionOutcome::Failed(message.into()))
+    pub fn failed(self, message: UserText) -> SubActionTelemetry {
+        self.finish(SubActionOutcome::Failed(message))
     }
 
-    pub fn skipped(self, message: impl Into<String>) -> SubActionTelemetry {
-        self.finish(SubActionOutcome::Skipped(message.into()))
+    pub fn skipped(self, message: UserText) -> SubActionTelemetry {
+        self.finish(SubActionOutcome::Skipped(message))
     }
 
     pub fn invalid_config(self, problem: &ConfigProblem) -> SubActionTelemetry {
-        self.failed(format!("invalid step config: {problem}"))
+        self.failed(UserText::unlocalized(format!(
+            "invalid step config: {problem}"
+        )))
     }
 }
 

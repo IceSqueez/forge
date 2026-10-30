@@ -5,7 +5,9 @@ use forge_registry::{
     ConfigSpec, RunContext, StepTimer, SubActionCategory, SubActionRunner, TypedField,
 };
 use forge_storage::ActionRepo;
-use forge_types::{ActionId, ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetry};
+use forge_types::{
+    ActionId, ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetry, UserText,
+};
 
 use super::core_action_shared::{ACTION, ACTION_SPEC};
 
@@ -21,10 +23,12 @@ impl CoreActionToggleRunner {
     async fn run(&self, action_id: ActionId) -> SubActionOutcome {
         match self.actions.toggle_enabled(action_id).await {
             Ok(Some(_)) => SubActionOutcome::Success,
-            Ok(None) => SubActionOutcome::Failed(format!(
+            Ok(None) => SubActionOutcome::Failed(UserText::unlocalized(format!(
                 "core.action.toggle: unknown action '{action_id}'"
-            )),
-            Err(e) => SubActionOutcome::Failed(format!("core.action.toggle: {e}")),
+            ))),
+            Err(e) => {
+                SubActionOutcome::Failed(UserText::unlocalized(format!("core.action.toggle: {e}")))
+            }
         }
     }
 }

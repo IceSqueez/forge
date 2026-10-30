@@ -5,7 +5,9 @@ use forge_registry::{
     ConfigSpec, RunContext, StepTimer, SubActionCategory, SubActionRunner, TypedField,
 };
 use forge_storage::ActionRepo;
-use forge_types::{ActionId, ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetry};
+use forge_types::{
+    ActionId, ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetry, UserText,
+};
 
 use super::core_action_shared::{ACTION, ACTION_SPEC};
 
@@ -21,10 +23,12 @@ impl CoreActionDisableRunner {
     async fn run(&self, action_id: ActionId) -> SubActionOutcome {
         match self.actions.set_enabled(action_id, false).await {
             Ok(true) => SubActionOutcome::Success,
-            Ok(false) => SubActionOutcome::Failed(format!(
+            Ok(false) => SubActionOutcome::Failed(UserText::unlocalized(format!(
                 "core.action.disable: unknown action '{action_id}'"
-            )),
-            Err(e) => SubActionOutcome::Failed(format!("core.action.disable: {e}")),
+            ))),
+            Err(e) => {
+                SubActionOutcome::Failed(UserText::unlocalized(format!("core.action.disable: {e}")))
+            }
         }
     }
 }

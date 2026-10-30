@@ -158,7 +158,7 @@ fn classify_action_done(done: ActionDone) -> Option<PolicySignal> {
             Some(PolicySignal::ActionFailed(ActionFailureNotice {
                 action_id: done.action_id,
                 action_name: done.action_name,
-                reason: done.reason,
+                reason: done.reason_text,
             }))
         }
         RunOutcome::Failed | RunOutcome::Skipped => None,

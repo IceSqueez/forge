@@ -1,6 +1,7 @@
 use super::*;
 use crate::async_bridge::{BridgeFlow, drain_subscription};
 use crate::runtime_event::{self, RuntimeEvent};
+use crate::user_text::resolve_user_text;
 use forge_components::ROW_OFF_OPACITY;
 use forge_components::{
     BORDER_THIN, Density, FONT_SM, FONT_XS, FONT_XXS, MenuItem, Radius, Spacing, body_family,
@@ -868,9 +869,9 @@ fn row_status_from_done(done: &SubActionDone) -> RowStatus {
     match done.outcome {
         RunOutcome::Failed => RowStatus::Failed {
             message: done
-                .message
-                .clone()
-                .map(SharedString::from)
+                .message_text
+                .as_ref()
+                .map(|text| SharedString::from(resolve_user_text(text).inline()))
                 .unwrap_or_else(|| tr!("action_editor_test_run_default_error").into()),
         },
         RunOutcome::Skipped => RowStatus::Skipped,

@@ -6,7 +6,7 @@ use forge_registry::{
     ConfigSpec, RunContext, StepTimer, SubActionCategory, SubActionRunner, TextEditor, TextField,
     TypedField,
 };
-use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry};
+use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, UserText};
 
 use crate::account::identity::SelfIdentity;
 use crate::helix::{HelixMethod, HelixRequest, HelixTransport};
@@ -82,7 +82,10 @@ impl SubActionRunner for RemoveBlockedTermRunner {
             Err(problem) => return (timer.invalid_config(&problem), None),
         };
         if term_id.is_empty() {
-            return (timer.failed("term_id is required"), None);
+            return (
+                timer.failed(UserText::unlocalized("term_id is required")),
+                None,
+            );
         }
         let outcome = delete_blocked_term(&self.transport, &self.identity, KIND_ID, &term_id).await;
         (timer.finish(outcome), None)
@@ -97,7 +100,7 @@ async fn delete_blocked_term(
 ) -> SubActionOutcome {
     let user_id = match identity.user_id().await {
         Ok(id) => id,
-        Err(e) => return SubActionOutcome::Failed(e.to_string()),
+        Err(e) => return SubActionOutcome::Failed(UserText::unlocalized(e.to_string())),
     };
     let request = HelixRequest::new(HelixMethod::Delete, "/helix/moderation/blocked_terms")
         .query("broadcaster_id", user_id.clone())
@@ -105,7 +108,7 @@ async fn delete_blocked_term(
         .query("id", term_id.to_owned());
     match transport.execute(request).await {
         Ok(_) => SubActionOutcome::Success,
-        Err(e) => SubActionOutcome::Failed(format!("{kind_id}: {e}")),
+        Err(e) => SubActionOutcome::Failed(UserText::unlocalized(format!("{kind_id}: {e}"))),
     }
 }
 

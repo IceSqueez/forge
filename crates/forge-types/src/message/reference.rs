@@ -8,7 +8,7 @@ use crate::message::code::MessageCode;
 use crate::message::common::UPSTREAM_FAILURE;
 use crate::message::detail::UpstreamDetail;
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct MessageRef {
     code: MessageCode,
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]

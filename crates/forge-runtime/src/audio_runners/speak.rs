@@ -5,7 +5,9 @@ use forge_registry::{
     BlankableSelectField, ConfigProblem, ConfigSpec, ENGINE_VOICE_OPTIONS_KEY, OptionalField,
     OptionalSwitch, RunContext, StepTimer, SubActionCategory, SubActionRunner, TypedField,
 };
-use forge_types::{ArgStack, PlatformId, SubActionConfig, SubActionOutcome, SubActionTelemetry};
+use forge_types::{
+    ArgStack, PlatformId, SubActionConfig, SubActionOutcome, SubActionTelemetry, UserText,
+};
 
 use super::{SPEECH_TEXT, WAIT_FOR_COMPLETION};
 use crate::engine_voice_ref::EngineVoiceRef;
@@ -126,7 +128,12 @@ impl SubActionRunner for SpeakRunner {
 
         let voice = match self.installed_voice(voice).await {
             Ok(voice) => voice,
-            Err(reason) => return (timer.finish(SubActionOutcome::Failed(reason)), None),
+            Err(reason) => {
+                return (
+                    timer.finish(SubActionOutcome::Failed(UserText::unlocalized(reason))),
+                    None,
+                );
+            }
         };
 
         let is_reward = ctx.arg_stack.get(REWARD_ID_VARIABLE).is_some();

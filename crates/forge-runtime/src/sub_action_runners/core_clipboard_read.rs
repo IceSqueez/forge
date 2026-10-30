@@ -6,7 +6,7 @@ use forge_registry::{
     SubActionRunner, TypedField, VariableField,
 };
 use forge_types::{
-    ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetry, Variant, VariantKind,
+    ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetry, UserText, Variant, VariantKind,
 };
 
 use super::os_ports::ClipboardPort;
@@ -92,8 +92,14 @@ impl SubActionRunner for CoreClipboardReadRunner {
                     let new_stack = ctx.arg_stack.clone().set(into_var, Variant::String(text));
                     (SubActionOutcome::Success, Some(new_stack))
                 }
-                Ok(Err(e)) => (SubActionOutcome::Failed(e.to_string()), None),
-                Err(e) => (SubActionOutcome::Failed(e.to_string()), None),
+                Ok(Err(e)) => (
+                    SubActionOutcome::Failed(UserText::unlocalized(e.to_string())),
+                    None,
+                ),
+                Err(e) => (
+                    SubActionOutcome::Failed(UserText::unlocalized(e.to_string())),
+                    None,
+                ),
             };
 
         (timer.finish(outcome), updated_stack)

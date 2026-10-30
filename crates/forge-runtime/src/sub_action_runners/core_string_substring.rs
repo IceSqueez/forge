@@ -4,7 +4,7 @@ use forge_registry::{
     StepTimer, SubActionCategory, SubActionIo, SubActionRunner, TextField, TypedField, ValueBounds,
 };
 use forge_types::{
-    ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetry, Variant, VariantKind,
+    ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetry, UserText, Variant, VariantKind,
 };
 
 use super::core_string_shared::{INTO_RESULT, INTO_VAR_KEY, source_field};
@@ -120,17 +120,17 @@ impl SubActionRunner for CoreStringSubstringRunner {
         let end = end.unwrap_or(char_count);
 
         let outcome = if start > char_count {
-            SubActionOutcome::Failed(format!(
+            SubActionOutcome::Failed(UserText::unlocalized(format!(
                 "start_index {start} exceeds string length {char_count}"
-            ))
+            )))
         } else if end > char_count {
-            SubActionOutcome::Failed(format!(
+            SubActionOutcome::Failed(UserText::unlocalized(format!(
                 "end_index {end} exceeds string length {char_count}"
-            ))
+            )))
         } else if start > end {
-            SubActionOutcome::Failed(format!(
+            SubActionOutcome::Failed(UserText::unlocalized(format!(
                 "start_index {start} is greater than end_index {end}"
-            ))
+            )))
         } else {
             let slice: String = chars[start..end].iter().collect();
             let new_stack = ctx.arg_stack.clone().set(into_var, Variant::String(slice));

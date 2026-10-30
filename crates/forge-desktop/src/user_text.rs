@@ -10,10 +10,15 @@ pub struct ResolvedText {
     pub secondary: Option<String>,
 }
 
-#[cfg_attr(
-    not(test),
-    expect(dead_code, reason = "step outcomes are its first consumer")
-)]
+impl ResolvedText {
+    pub fn inline(self) -> String {
+        match self.secondary {
+            Some(secondary) => format!("{} ({secondary})", self.primary),
+            None => self.primary,
+        }
+    }
+}
+
 pub fn resolve_user_text(text: &UserText) -> ResolvedText {
     match text {
         UserText::Message(message) => resolve_message(message),

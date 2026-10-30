@@ -6,7 +6,7 @@ use forge_registry::{
     ConfigProblem, ConfigSpec, DurationBounds, DurationField, Interpolation, RunContext, StepTimer,
     SubActionCategory, SubActionRunner, TypedField,
 };
-use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry};
+use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, UserText};
 
 use super::fields::{MODERATION_TARGET, OPTIONAL_REASON};
 use crate::account::identity::SelfIdentity;
@@ -66,15 +66,17 @@ impl TimeoutUserRunner {
         duration: u64,
     ) -> SubActionOutcome {
         let Some(target) = target else {
-            return SubActionOutcome::Failed(MODERATION_TARGET.empty_after_interpolation());
+            return SubActionOutcome::Failed(UserText::unlocalized(
+                MODERATION_TARGET.empty_after_interpolation(),
+            ));
         };
         let user_id = match self.identity.user_id().await {
             Ok(id) => id,
-            Err(e) => return SubActionOutcome::Failed(e.to_string()),
+            Err(e) => return SubActionOutcome::Failed(UserText::unlocalized(e.to_string())),
         };
         let target_user_id = match target.user_id(self.transport.as_ref()).await {
             Ok(id) => id,
-            Err(e) => return SubActionOutcome::Failed(e.to_string()),
+            Err(e) => return SubActionOutcome::Failed(UserText::unlocalized(e.to_string())),
         };
         let mut data = serde_json::json!({ "user_id": target_user_id, "duration": duration });
         if !reason.is_empty() {

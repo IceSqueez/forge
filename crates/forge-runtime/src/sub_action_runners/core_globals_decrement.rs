@@ -7,7 +7,9 @@ use forge_registry::{
     TypedField,
 };
 use forge_storage::GlobalsRepo;
-use forge_types::{ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetry, Variant};
+use forge_types::{
+    ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetry, UserText, Variant,
+};
 
 use super::core_globals_shared::{AMOUNT, GLOBAL_BY_KEY, global_name};
 
@@ -73,9 +75,9 @@ impl SubActionRunner for CoreGlobalsDecrementRunner {
 
         let Some(delta) = amount.checked_neg() else {
             return (
-                timer.failed(format!(
+                timer.failed(UserText::unlocalized(format!(
                     "core.globals.decrement: amount {amount} cannot be negated"
-                )),
+                ))),
                 None,
             );
         };
@@ -98,7 +100,7 @@ impl SubActionRunner for CoreGlobalsDecrementRunner {
                 );
                 SubActionOutcome::Success
             }
-            Err(e) => SubActionOutcome::Failed(e.to_string()),
+            Err(e) => SubActionOutcome::Failed(UserText::unlocalized(e.to_string())),
         };
 
         (timer.finish(outcome), None)

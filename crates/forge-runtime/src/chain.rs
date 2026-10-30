@@ -11,7 +11,7 @@ use forge_registry::{
 };
 use forge_types::{
     ArgStack, EventId, IntegrationAvailability, SubActionOutcome, SubActionStep,
-    SubActionTelemetry, Variant, variant_preview,
+    SubActionTelemetry, UserText, Variant, variant_preview,
 };
 use std::collections::BTreeMap;
 use tracing::warn;
@@ -93,7 +93,8 @@ pub(crate) fn publish_subaction_done(
         kind: telemetry.kind.clone(),
         outcome: RunOutcome::from(&telemetry.outcome),
         duration_ms: telemetry.duration_ms,
-        message,
+        message: message.as_ref().map(UserText::code_or_text),
+        message_text: message,
         integration,
     }
     .publish(publisher, EventSource::Core, Some(caused_by));
@@ -285,7 +286,7 @@ impl ChainEngine {
                     telemetry.push(tel);
                     if !step.continue_on_error {
                         return ChainRun {
-                            signal: ChainSignal::Error(msg),
+                            signal: ChainSignal::Error(UserText::unlocalized(msg)),
                             arg_stack: current,
                             telemetry,
                         };

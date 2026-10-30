@@ -7,7 +7,7 @@ use forge_registry::{
     ConfigProblem, ConfigReason, ConfigSpec, Interpolation, RunContext, StepTimer,
     SubActionCategory, SubActionRunner, TextEditor, TextField, TypedField, ValueBounds,
 };
-use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry};
+use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, UserText};
 use futures::future::BoxFuture;
 
 use super::field_kinds::{Blankable, CommaListField, WholeNumberField, non_empty, stores_blank};
@@ -145,13 +145,15 @@ impl SubActionRunner for UpdateInfoRunner {
         };
         if update.is_empty() {
             return (
-                timer.failed("all fields are empty after interpolation; nothing to update"),
+                timer.failed(UserText::unlocalized(
+                    "all fields are empty after interpolation; nothing to update",
+                )),
                 None,
             );
         }
 
         let outcome = match (self.token_source)().await {
-            Err(e) => SubActionOutcome::Failed(format!("token error: {e}")),
+            Err(e) => SubActionOutcome::Failed(UserText::unlocalized(format!("token error: {e}"))),
             Ok(token) => SubActionOutcome::from_result(
                 &self
                     .client

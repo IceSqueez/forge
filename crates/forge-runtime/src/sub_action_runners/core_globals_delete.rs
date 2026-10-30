@@ -4,7 +4,7 @@ use async_trait::async_trait;
 use forge_events::EventSource;
 use forge_registry::{ConfigSpec, RunContext, StepTimer, SubActionCategory, SubActionRunner};
 use forge_storage::GlobalsRepo;
-use forge_types::{ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetry};
+use forge_types::{ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetry, UserText};
 
 use super::core_globals_shared::{GLOBAL_BY_NAME, global_name};
 use crate::global_mutation::GlobalMutation;
@@ -70,7 +70,7 @@ impl SubActionRunner for CoreGlobalsDeleteRunner {
         };
         let outcome = match mutation.delete(&name).await {
             Ok(_deletion) => SubActionOutcome::Success,
-            Err(e) => SubActionOutcome::Failed(e.to_string()),
+            Err(e) => SubActionOutcome::Failed(UserText::unlocalized(e.to_string())),
         };
 
         (timer.finish(outcome), None)

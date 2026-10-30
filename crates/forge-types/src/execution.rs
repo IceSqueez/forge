@@ -1,6 +1,9 @@
 use crate::date_pattern::render_inline_pattern;
 use crate::ids::{ActionId, EventId};
 use crate::integration::IntegrationId;
+use crate::message::{
+    INTEGRATION_DISABLED, MessageRef, UserText, VerbatimText, WHISPERS_UNSUPPORTED,
+};
 use crate::redaction::RedactedText;
 use crate::template::{TemplatePiece, TemplatePieces};
 use crate::variant::Variant;
@@ -12,45 +15,39 @@ use time::OffsetDateTime;
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ExecutionOutcome {
     Success,
-    Failed(String),
+    Failed(UserText),
     Cancelled,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum SubActionOutcome {
     Success,
-    Failed(String),
-    Skipped(String),
+    Failed(UserText),
+    Skipped(UserText),
     IntegrationDisabled(IntegrationId),
 }
 
-const INTEGRATION_DISABLED_REASON: &str = "integration disabled";
-
-pub const NO_CHAT_PLATFORM_ENABLED_REASON: &str = "no chat platform enabled";
-
-pub const NO_WHISPER_PLATFORM_ENABLED_REASON: &str = "no enabled chat platform supports whispers";
-
-pub fn whispers_unsupported_reason(target: &str) -> String {
-    format!("whispers are not supported on {target}")
+pub fn whispers_unsupported_message(target: &str) -> MessageRef {
+    MessageRef::new(WHISPERS_UNSUPPORTED).with_arg("target", VerbatimText::new(target))
 }
 
-pub fn integration_disabled_reason(integration: &IntegrationId) -> String {
-    format!("{INTEGRATION_DISABLED_REASON}: {integration}")
+pub fn integration_disabled_message(integration: &IntegrationId) -> MessageRef {
+    MessageRef::new(INTEGRATION_DISABLED).with_arg("integration", integration.clone())
 }
 
 impl SubActionOutcome {
     pub fn from_result<T, E: core::fmt::Display>(result: &Result<T, E>) -> Self {
         match result {
             Ok(_) => Self::Success,
-            Err(e) => Self::Failed(e.to_string()),
+            Err(e) => Self::Failed(UserText::unlocalized(e.to_string())),
         }
     }
 
-    pub fn failure_reason(&self) -> Option<String> {
+    pub fn failure_reason(&self) -> Option<UserText> {
         match self {
             Self::Failed(reason) => Some(reason.clone()),
             Self::IntegrationDisabled(integration) => {
-                Some(integration_disabled_reason(integration))
+                Some(integration_disabled_message(integration).into())
             }
             Self::Success | Self::Skipped(_) => None,
         }

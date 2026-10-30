@@ -5,7 +5,7 @@ use forge_registry::{
     ConfigSpec, RunContext, StepTimer, SubActionCategory, SubActionRunner, TextEditor, TextField,
     TypedField,
 };
-use forge_types::{ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetry};
+use forge_types::{ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetry, UserText};
 
 use super::os_ports::ClipboardPort;
 
@@ -73,8 +73,8 @@ impl SubActionRunner for CoreClipboardCopyRunner {
         let clipboard = Arc::clone(&self.clipboard);
         let outcome = match tokio::task::spawn_blocking(move || clipboard.copy(text)).await {
             Ok(Ok(())) => SubActionOutcome::Success,
-            Ok(Err(e)) => SubActionOutcome::Failed(e.to_string()),
-            Err(e) => SubActionOutcome::Failed(e.to_string()),
+            Ok(Err(e)) => SubActionOutcome::Failed(UserText::unlocalized(e.to_string())),
+            Err(e) => SubActionOutcome::Failed(UserText::unlocalized(e.to_string())),
         };
 
         (timer.finish(outcome), None)

@@ -7,7 +7,7 @@ use forge_registry::{
     ConfigProblem, ConfigReason, ConfigSpec, Interpolation, RunContext, StepTimer,
     SubActionCategory, SubActionRunner, TextEditor, TextField, TypedField, ValueBounds,
 };
-use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry};
+use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, UserText};
 use futures::future::BoxFuture;
 
 use super::field_kinds::{Blankable, WholeNumberField, non_empty, stores_blank};
@@ -150,19 +150,24 @@ impl SubActionRunner for UpdateRewardRunner {
             Err(problem) => return (timer.invalid_config(&problem), None),
         };
         if update.reward_id.is_empty() {
-            return (timer.failed("reward_id is empty after interpolation"), None);
+            return (
+                timer.failed(UserText::unlocalized(
+                    "reward_id is empty after interpolation",
+                )),
+                None,
+            );
         }
         if update.changes_nothing() {
             return (
-                timer.failed(
+                timer.failed(UserText::unlocalized(
                     "all updatable fields are empty after interpolation; nothing to update",
-                ),
+                )),
                 None,
             );
         }
 
         let outcome = match (self.token_source)().await {
-            Err(e) => SubActionOutcome::Failed(format!("token error: {e}")),
+            Err(e) => SubActionOutcome::Failed(UserText::unlocalized(format!("token error: {e}"))),
             Ok(token) => SubActionOutcome::from_result(
                 &self
                     .client

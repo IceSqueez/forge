@@ -8,7 +8,7 @@ use forge_registry::{CancelSignal, ChainSignal, RunContext, RunningAction, SubAc
 use forge_storage::{ActionExecution, ActionRepo, ExecutionStatus, HistoryRepo};
 use forge_types::{
     Action, ActionId, ArgStack, EventId, ExecutionContext, ExecutionMetadata, ExecutionOutcome,
-    SubActionOutcome, SubActionStep, SubActionTelemetry,
+    SubActionOutcome, SubActionStep, SubActionTelemetry, UserText, VerbatimText,
 };
 use time::OffsetDateTime;
 use tokio::sync::{mpsc, oneshot, watch};
@@ -288,9 +288,9 @@ impl ActionEngine {
             started_at,
             completed_at: Some(started_at),
             telemetry: Vec::new(),
-            outcome: ExecutionOutcome::Failed(format!(
+            outcome: ExecutionOutcome::Failed(UserText::unlocalized(format!(
                 "not started: the triggering event is more than {MAX_CAUSATION_DEPTH} action runs deep (event loop between actions?)"
-            )),
+            ))),
         };
         self.history.record(ctx, None);
     }
@@ -383,9 +383,10 @@ impl ActionEngine {
             ChainSignal::Completed | ChainSignal::Break | ChainSignal::Continue => {
                 ExecutionOutcome::Success
             }
-            ChainSignal::Stop(mark) if mark.failed => {
-                ExecutionOutcome::Failed(mark.reason.unwrap_or_else(|| "stopped".to_owned()))
-            }
+            ChainSignal::Stop(mark) if mark.failed => ExecutionOutcome::Failed(match mark.reason {
+                Some(reason) => VerbatimText::new(reason).into(),
+                None => UserText::unlocalized("stopped"),
+            }),
             ChainSignal::Stop(_) => ExecutionOutcome::Success,
             ChainSignal::Error(msg) => ExecutionOutcome::Failed(msg),
             ChainSignal::Aborted => ExecutionOutcome::Cancelled,
@@ -426,7 +427,8 @@ impl ActionEngine {
             outcome,
             total_ms,
             manual_test,
-            reason,
+            reason: reason.as_ref().map(UserText::code_or_text),
+            reason_text: reason,
         });
         self.history.record(ctx, execution);
 
@@ -574,7 +576,9 @@ pub(crate) fn skipped_telemetry(index: usize, kind_id: &str) -> SubActionTelemet
         kind: kind_id.to_owned(),
         started_at: OffsetDateTime::now_utc(),
         duration_ms: 0,
-        outcome: SubActionOutcome::Skipped(format!("unknown kind_id: {kind_id}")),
+        outcome: SubActionOutcome::Skipped(UserText::unlocalized(format!(
+            "unknown kind_id: {kind_id}"
+        ))),
     }
 }
 
@@ -586,7 +590,7 @@ pub(crate) fn disabled_telemetry(index: usize, kind_id: &str) -> SubActionTeleme
         kind: kind_id.to_owned(),
         started_at: OffsetDateTime::now_utc(),
         duration_ms: 0,
-        outcome: SubActionOutcome::Skipped("disabled".to_owned()),
+        outcome: SubActionOutcome::Skipped(UserText::unlocalized("disabled")),
     }
 }
 
@@ -598,7 +602,7 @@ pub(crate) fn condition_skipped_telemetry(index: usize, kind_id: &str) -> SubAct
         kind: kind_id.to_owned(),
         started_at: OffsetDateTime::now_utc(),
         duration_ms: 0,
-        outcome: SubActionOutcome::Skipped("condition".to_owned()),
+        outcome: SubActionOutcome::Skipped(UserText::unlocalized("condition")),
     }
 }
 
@@ -614,7 +618,7 @@ pub(crate) fn condition_failed_telemetry(
         kind: kind_id.to_owned(),
         started_at: OffsetDateTime::now_utc(),
         duration_ms: 0,
-        outcome: SubActionOutcome::Failed(message),
+        outcome: SubActionOutcome::Failed(UserText::unlocalized(message)),
     }
 }
 

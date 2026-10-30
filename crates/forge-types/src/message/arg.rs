@@ -22,6 +22,8 @@ impl FiniteFloat {
     }
 }
 
+impl Eq for FiniteFloat {}
+
 impl<'de> Deserialize<'de> for FiniteFloat {
     fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
         let value = f64::deserialize(deserializer)?;
@@ -29,7 +31,7 @@ impl<'de> Deserialize<'de> for FiniteFloat {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum MessageArg {
     Int(i64),

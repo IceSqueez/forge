@@ -6,7 +6,7 @@ use forge_registry::{
     ConfigProblem, ConfigReason, ConfigSpec, FieldLiteral, FormField, RunContext, StepTimer,
     SubActionCategory, SubActionRunner, TextEditor, TextField, TypedField, ValueBounds,
 };
-use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, Variant};
+use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, UserText, Variant};
 
 use crate::send_chat::YoutubeSendChat;
 use crate::vocabulary::{config_keys, sub_action_ids};
@@ -145,7 +145,12 @@ impl SubActionRunner for CreatePollRunner {
             Err(problem) => return (timer.invalid_config(&problem), None),
         };
         if question.is_empty() {
-            return (timer.failed("question is empty after interpolation"), None);
+            return (
+                timer.failed(UserText::unlocalized(
+                    "question is empty after interpolation",
+                )),
+                None,
+            );
         }
 
         let outcome =

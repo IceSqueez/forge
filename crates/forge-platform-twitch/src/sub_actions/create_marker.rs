@@ -6,7 +6,7 @@ use forge_registry::{
     BoundedTextField, ConfigSpec, RunContext, StepTimer, SubActionCategory, SubActionRunner,
     TextEditor, TypedField, ValueBounds,
 };
-use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, Variant};
+use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, UserText, Variant};
 
 use crate::account::identity::SelfIdentity;
 use crate::helix::{HelixMethod, HelixRequest, HelixTransport};
@@ -51,7 +51,11 @@ impl CreateMarkerRunner {
     async fn create(&self, description: &str) -> Result<Marker, SubActionOutcome> {
         let user_id = match self.identity.user_id().await {
             Ok(id) => id,
-            Err(e) => return Err(SubActionOutcome::Failed(e.to_string())),
+            Err(e) => {
+                return Err(SubActionOutcome::Failed(UserText::unlocalized(
+                    e.to_string(),
+                )));
+            }
         };
         let mut body = serde_json::Map::new();
         if !description.is_empty() {
@@ -64,19 +68,25 @@ impl CreateMarkerRunner {
             .transport
             .execute(request)
             .await
-            .map_err(|e| SubActionOutcome::Failed(e.to_string()))?;
+            .map_err(|e| SubActionOutcome::Failed(UserText::unlocalized(e.to_string())))?;
         let marker = resp["data"]
             .as_array()
             .and_then(|arr| arr.first())
             .ok_or_else(|| {
-                SubActionOutcome::Failed("empty response from stream markers".to_owned())
+                SubActionOutcome::Failed(UserText::unlocalized(
+                    "empty response from stream markers",
+                ))
             })?;
         let id = marker["id"]
             .as_str()
-            .ok_or_else(|| SubActionOutcome::Failed("marker id missing in response".to_owned()))?
+            .ok_or_else(|| {
+                SubActionOutcome::Failed(UserText::unlocalized("marker id missing in response"))
+            })?
             .to_owned();
         let position_seconds = marker["position_seconds"].as_i64().ok_or_else(|| {
-            SubActionOutcome::Failed("marker position_seconds missing in response".to_owned())
+            SubActionOutcome::Failed(UserText::unlocalized(
+                "marker position_seconds missing in response",
+            ))
         })?;
         let created_at = marker["created_at"]
             .as_str()

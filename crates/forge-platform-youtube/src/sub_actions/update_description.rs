@@ -6,7 +6,7 @@ use forge_registry::{
     ConfigSpec, RunContext, StepTimer, SubActionCategory, SubActionRunner, TextEditor, TextField,
     TypedField,
 };
-use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry};
+use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, UserText};
 
 use crate::stream_metadata::YoutubeStreamMetadata;
 use crate::vocabulary::{config_keys, sub_action_ids};
@@ -75,7 +75,9 @@ impl SubActionRunner for UpdateDescriptionRunner {
         };
         if description.is_empty() {
             return (
-                timer.failed("description is empty after interpolation"),
+                timer.failed(UserText::unlocalized(
+                    "description is empty after interpolation",
+                )),
                 None,
             );
         }

@@ -2,7 +2,9 @@ use async_trait::async_trait;
 use forge_registry::{
     ConfigSpec, RunContext, StepTimer, SubActionCategory, SubActionRunner, TypedField,
 };
-use forge_types::{ArgStack, QueueId, SubActionConfig, SubActionOutcome, SubActionTelemetry};
+use forge_types::{
+    ArgStack, QueueId, SubActionConfig, SubActionOutcome, SubActionTelemetry, UserText,
+};
 
 use super::core_queue_shared::{QUEUE, QUEUE_SPEC};
 use crate::{QueueMode, SchedulerCell};
@@ -18,11 +20,13 @@ impl CoreQueueResumeRunner {
 
     async fn run(&self, queue_id: QueueId) -> SubActionOutcome {
         let Some(scheduler) = self.scheduler.get() else {
-            return SubActionOutcome::Failed("queue scheduler not ready".to_owned());
+            return SubActionOutcome::Failed(UserText::unlocalized("queue scheduler not ready"));
         };
         match scheduler.set_mode(queue_id, QueueMode::RUNNING).await {
             Ok(()) => SubActionOutcome::Success,
-            Err(e) => SubActionOutcome::Failed(format!("core.queue.resume: {e}")),
+            Err(e) => {
+                SubActionOutcome::Failed(UserText::unlocalized(format!("core.queue.resume: {e}")))
+            }
         }
     }
 }

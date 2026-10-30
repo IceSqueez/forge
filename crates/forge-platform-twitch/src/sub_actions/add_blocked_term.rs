@@ -6,7 +6,7 @@ use forge_registry::{
     BoundedTextField, ConfigSpec, RunContext, StepTimer, SubActionCategory, SubActionRunner,
     TextEditor, TypedField, ValueBounds,
 };
-use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, Variant};
+use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, UserText, Variant};
 
 use crate::account::identity::SelfIdentity;
 use crate::helix::{HelixMethod, HelixRequest, HelixTransport};
@@ -108,7 +108,7 @@ async fn post_blocked_term(
     let user_id = identity
         .user_id()
         .await
-        .map_err(|e| SubActionOutcome::Failed(e.to_string()))?;
+        .map_err(|e| SubActionOutcome::Failed(UserText::unlocalized(e.to_string())))?;
     let request = HelixRequest::new(HelixMethod::Post, "/helix/moderation/blocked_terms")
         .query("broadcaster_id", user_id.clone())
         .query("moderator_id", user_id)
@@ -116,16 +116,16 @@ async fn post_blocked_term(
     let resp = transport
         .execute(request)
         .await
-        .map_err(|e| SubActionOutcome::Failed(format!("{kind_id}: {e}")))?;
+        .map_err(|e| SubActionOutcome::Failed(UserText::unlocalized(format!("{kind_id}: {e}"))))?;
     resp["data"]
         .as_array()
         .and_then(|arr| arr.first())
         .and_then(|r| r["id"].as_str())
         .map(|s| s.to_owned())
         .ok_or_else(|| {
-            SubActionOutcome::Failed(format!(
+            SubActionOutcome::Failed(UserText::unlocalized(format!(
                 "{kind_id}: unexpected empty response from add_blocked_term"
-            ))
+            )))
         })
 }
 

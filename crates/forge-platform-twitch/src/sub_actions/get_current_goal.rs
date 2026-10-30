@@ -5,7 +5,7 @@ use std::time::Instant;
 use async_trait::async_trait;
 use forge_registry::runner::SubActionConfig;
 use forge_registry::{RunContext, SubActionCategory, SubActionRunner};
-use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, Variant};
+use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, UserText, Variant};
 use time::OffsetDateTime;
 
 use crate::account::identity::SelfIdentity;
@@ -29,7 +29,11 @@ impl GetCurrentGoalRunner {
     async fn fetch(&self) -> Result<Option<GoalData>, SubActionOutcome> {
         let user_id = match self.identity.user_id().await {
             Ok(id) => id,
-            Err(e) => return Err(SubActionOutcome::Failed(e.to_string())),
+            Err(e) => {
+                return Err(SubActionOutcome::Failed(UserText::unlocalized(
+                    e.to_string(),
+                )));
+            }
         };
 
         let request =
@@ -39,7 +43,7 @@ impl GetCurrentGoalRunner {
             .transport
             .execute(request)
             .await
-            .map_err(|e| SubActionOutcome::Failed(e.to_string()))?;
+            .map_err(|e| SubActionOutcome::Failed(UserText::unlocalized(e.to_string())))?;
 
         let Some(first) = resp["data"].as_array().and_then(|arr| arr.first()) else {
             return Ok(None);
@@ -47,20 +51,28 @@ impl GetCurrentGoalRunner {
 
         let id = first["id"]
             .as_str()
-            .ok_or_else(|| SubActionOutcome::Failed("goal id missing in response".to_owned()))?
+            .ok_or_else(|| {
+                SubActionOutcome::Failed(UserText::unlocalized("goal id missing in response"))
+            })?
             .to_owned();
 
         let goal_type = first["type"]
             .as_str()
-            .ok_or_else(|| SubActionOutcome::Failed("goal type missing in response".to_owned()))?
+            .ok_or_else(|| {
+                SubActionOutcome::Failed(UserText::unlocalized("goal type missing in response"))
+            })?
             .to_owned();
 
         let current_amount = first["current_amount"].as_i64().ok_or_else(|| {
-            SubActionOutcome::Failed("goal current_amount missing in response".to_owned())
+            SubActionOutcome::Failed(UserText::unlocalized(
+                "goal current_amount missing in response",
+            ))
         })?;
 
         let target_amount = first["target_amount"].as_i64().ok_or_else(|| {
-            SubActionOutcome::Failed("goal target_amount missing in response".to_owned())
+            SubActionOutcome::Failed(UserText::unlocalized(
+                "goal target_amount missing in response",
+            ))
         })?;
 
         let is_achieved = current_amount >= target_amount;

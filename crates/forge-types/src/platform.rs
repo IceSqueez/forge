@@ -1,5 +1,7 @@
 use serde::{Deserialize, Serialize};
 
+use crate::message::{MessageRef, UNKNOWN_CHAT_TARGET, VerbatimText};
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum PlatformId {
@@ -47,18 +49,20 @@ pub fn requested_chat_target(raw: &str) -> Option<&str> {
     (!target.is_empty()).then_some(target)
 }
 
-pub fn resolve_chat_target(raw: &str) -> Result<Option<PlatformId>, String> {
+pub fn resolve_chat_target(raw: &str) -> Result<Option<PlatformId>, MessageRef> {
     let Some(target) = requested_chat_target(raw) else {
         return Ok(None);
     };
     PlatformId::from_wire(target)
         .map(Some)
-        .ok_or_else(|| unknown_chat_target_reason(target))
+        .ok_or_else(|| unknown_chat_target_message(target))
 }
 
-pub fn unknown_chat_target_reason(target: &str) -> String {
+pub fn unknown_chat_target_message(target: &str) -> MessageRef {
     let valid = PlatformId::ALL.map(PlatformId::as_str).join(", ");
-    format!("unknown chat target \"{target}\"; valid targets: {valid}")
+    MessageRef::new(UNKNOWN_CHAT_TARGET)
+        .with_arg("target", VerbatimText::new(target))
+        .with_arg("valid", VerbatimText::new(valid))
 }
 
 #[cfg(test)]

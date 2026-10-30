@@ -6,7 +6,7 @@ use forge_registry::{
     ConfigSpec, PickedTextField, RunContext, StepTimer, SubActionCategory, SubActionRunner,
     TextPicker, TypedField,
 };
-use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry};
+use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, UserText};
 
 use crate::account::identity::SelfIdentity;
 use crate::collection_keys::MANAGEABLE_REWARD_OPTIONS_KEY;
@@ -50,7 +50,7 @@ async fn patch_reward_bool(
 ) -> SubActionOutcome {
     let user_id = match identity.user_id().await {
         Ok(id) => id,
-        Err(e) => return SubActionOutcome::Failed(e.to_string()),
+        Err(e) => return SubActionOutcome::Failed(UserText::unlocalized(e.to_string())),
     };
     let request = update_request(user_id, reward_id, body);
     SubActionOutcome::from_result(&transport.execute(request).await)
@@ -70,7 +70,7 @@ pub(crate) async fn execute_bool_runner(
         Err(problem) => return (timer.invalid_config(&problem), None),
     };
     let outcome = if reward_id.is_empty() {
-        SubActionOutcome::Failed("reward_id is required".to_owned())
+        SubActionOutcome::Failed(UserText::unlocalized("reward_id is required"))
     } else {
         patch_reward_bool(transport, identity, &reward_id, body).await
     };

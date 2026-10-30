@@ -7,7 +7,7 @@ use forge_registry::{
     ConfigProblem, ConfigSpec, RunContext, StepTimer, SubActionCategory, SubActionIo,
     SubActionRunner, TextEditor, TextField, TypedField,
 };
-use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry};
+use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, UserText};
 
 use super::fields::{WEBHOOK, filled_text, optional_text};
 use super::mention_fields::{ALLOW_EVERYONE_PINGS, ALLOW_ROLE_PINGS, read_mention_policy};
@@ -113,14 +113,22 @@ impl SubActionRunner for SendFileRunner {
             .map(str::to_owned)
         else {
             return (
-                timer.failed(format!("cannot derive file name from {}", upload.file_path)),
+                timer.failed(UserText::unlocalized(format!(
+                    "cannot derive file name from {}",
+                    upload.file_path
+                ))),
                 None,
             );
         };
 
         let file_bytes = match tokio::fs::read(&upload.file_path).await {
             Ok(bytes) => bytes,
-            Err(e) => return (timer.failed(format!("cannot read file: {e}")), None),
+            Err(e) => {
+                return (
+                    timer.failed(UserText::unlocalized(format!("cannot read file: {e}"))),
+                    None,
+                );
+            }
         };
 
         let posted = self

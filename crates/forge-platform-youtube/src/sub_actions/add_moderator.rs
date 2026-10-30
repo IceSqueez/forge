@@ -5,7 +5,7 @@ use forge_registry::runner::SubActionConfig;
 use forge_registry::{
     ConfigSpec, RunContext, StepTimer, SubActionCategory, SubActionRunner, TypedField,
 };
-use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry};
+use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, UserText};
 
 use super::fields::CHANNEL_ID;
 use crate::moderation::YoutubeModeration;
@@ -67,7 +67,9 @@ impl SubActionRunner for AddModeratorRunner {
         };
         if channel_id.is_empty() {
             return (
-                timer.failed("channel_id is empty after interpolation"),
+                timer.failed(UserText::unlocalized(
+                    "channel_id is empty after interpolation",
+                )),
                 None,
             );
         }

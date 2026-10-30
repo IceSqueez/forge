@@ -1,4 +1,4 @@
-use forge_types::{ActionId, QueueId, SubActionOutcome};
+use forge_types::{ActionId, QueueId, SubActionOutcome, UserText};
 use serde::{Deserialize, Serialize};
 
 use crate::TypedEvent;
@@ -51,6 +51,8 @@ pub struct ActionDone {
     pub manual_test: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub reason: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reason_text: Option<UserText>,
 }
 
 impl TypedEvent for ActionDone {
@@ -98,6 +100,8 @@ pub struct SubActionDone {
     pub duration_ms: u64,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub message: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub message_text: Option<UserText>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub integration: Option<String>,
 }

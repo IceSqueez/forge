@@ -7,7 +7,7 @@ use forge_registry::{
     IntegerField, RunContext, StepTimer, SubActionCategory, SubActionRunner, TextEditor,
     ToggleField, TypedField, ValueBounds,
 };
-use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, Variant};
+use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, UserText, Variant};
 
 use super::fields::HexColorField;
 use crate::account::identity::SelfIdentity;
@@ -184,22 +184,30 @@ impl CreateRewardRunner {
 
     async fn create(&self, cfg: &ResolvedConfig) -> Result<String, SubActionOutcome> {
         if cfg.title.is_empty() {
-            return Err(SubActionOutcome::Failed("title is required".to_owned()));
+            return Err(SubActionOutcome::Failed(UserText::unlocalized(
+                "title is required",
+            )));
         }
         let user_id = match self.identity.user_id().await {
             Ok(id) => id,
-            Err(e) => return Err(SubActionOutcome::Failed(e.to_string())),
+            Err(e) => {
+                return Err(SubActionOutcome::Failed(UserText::unlocalized(
+                    e.to_string(),
+                )));
+            }
         };
         let request = create_request(user_id, cfg.body());
         let resp = self
             .transport
             .execute(request)
             .await
-            .map_err(|e| SubActionOutcome::Failed(e.to_string()))?;
+            .map_err(|e| SubActionOutcome::Failed(UserText::unlocalized(e.to_string())))?;
         first_row(&resp)
             .and_then(|r| r["id"].as_str())
             .map(|s| s.to_owned())
-            .ok_or_else(|| SubActionOutcome::Failed("empty response from create_reward".to_owned()))
+            .ok_or_else(|| {
+                SubActionOutcome::Failed(UserText::unlocalized("empty response from create_reward"))
+            })
     }
 }
 

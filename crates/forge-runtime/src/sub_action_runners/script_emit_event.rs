@@ -6,7 +6,7 @@ use forge_registry::{
     ConfigProblem, ConfigSpec, RunContext, StepTimer, SubActionCategory, SubActionRunner,
     TextEditor, TextField, TypedField,
 };
-use forge_types::{ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetry};
+use forge_types::{ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetry, UserText};
 
 use super::event_payload::{EVENT_NAME_KEY, PAYLOAD};
 
@@ -87,9 +87,9 @@ impl SubActionRunner for ScriptEmitEventRunner {
         };
         if event_name.is_empty() {
             return (
-                timer.finish(SubActionOutcome::Failed(format!(
+                timer.finish(SubActionOutcome::Failed(UserText::unlocalized(format!(
                     "{EVENT_NAME_KEY} is required"
-                ))),
+                )))),
                 None,
             );
         }

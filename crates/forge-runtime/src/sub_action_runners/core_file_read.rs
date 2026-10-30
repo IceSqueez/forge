@@ -7,7 +7,7 @@ use forge_registry::{
     VariableField,
 };
 use forge_types::{
-    ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetry, Variant, VariantKind,
+    ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetry, UserText, Variant, VariantKind,
 };
 use tokio::io::AsyncReadExt;
 
@@ -128,7 +128,9 @@ impl SubActionRunner for CoreFileReadRunner {
 
         let (outcome, produced) = match super::file_sandbox::resolve_sandboxed(&path).await {
             Err(reason) => (
-                SubActionOutcome::Failed(format!("sandbox rejected path: {reason}")),
+                SubActionOutcome::Failed(UserText::unlocalized(format!(
+                    "sandbox rejected path: {reason}"
+                ))),
                 None,
             ),
             Ok(abs_path) => read_into(&abs_path, read_as, target_var, ctx).await,
@@ -163,14 +165,14 @@ async fn read_into(
 ) -> (SubActionOutcome, Option<ArgStack>) {
     match tokio::fs::metadata(abs_path).await {
         Ok(meta) if meta.len() > MAX_FILE_BYTES => (
-            SubActionOutcome::Failed(format!(
+            SubActionOutcome::Failed(UserText::unlocalized(format!(
                 "file exceeds {MAX_FILE_BYTES} byte cap: {} bytes",
                 meta.len()
-            )),
+            ))),
             None,
         ),
         Ok(meta) if !meta.is_file() => (
-            SubActionOutcome::Failed("path is not a file".to_owned()),
+            SubActionOutcome::Failed(UserText::unlocalized("path is not a file")),
             None,
         ),
         Ok(_) => match read_capped(abs_path)
@@ -181,13 +183,16 @@ async fn read_into(
                 let stack = ctx.arg_stack.clone().set(target_var, value);
                 (SubActionOutcome::Success, Some(stack))
             }
-            Err(e) => (SubActionOutcome::Failed(e), None),
+            Err(e) => (SubActionOutcome::Failed(UserText::unlocalized(e)), None),
         },
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => (
-            SubActionOutcome::Failed("file not found in the files folder".to_owned()),
+            SubActionOutcome::Failed(UserText::unlocalized("file not found in the files folder")),
             None,
         ),
-        Err(e) => (SubActionOutcome::Failed(format!("stat failed: {e}")), None),
+        Err(e) => (
+            SubActionOutcome::Failed(UserText::unlocalized(format!("stat failed: {e}"))),
+            None,
+        ),
     }
 }
 

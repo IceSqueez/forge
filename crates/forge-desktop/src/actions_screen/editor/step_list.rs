@@ -3,6 +3,7 @@ use super::step_presentation::variable_text;
 use super::*;
 use crate::actions_screen::config_problem_text::config_problem_text;
 use crate::integration_switch::integration_name;
+use crate::user_text::resolve_user_text;
 use forge_components::ROW_OFF_OPACITY;
 use forge_components::{
     BORDER_THIN, FONT_XS, FONT_XXS, ForgePalette, Icon, Radius, Spacing, body_family, health_tile,
@@ -36,7 +37,7 @@ fn analyzer_finding_message(
         Finding::LastRunFailed(message) => {
             tr!(
                 "action_editor_health_last_run_failed",
-                message = message.clone()
+                message = resolve_user_text(message).inline()
             )
         }
         Finding::IntegrationDisabled(owner) => {

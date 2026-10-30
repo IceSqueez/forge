@@ -5,7 +5,7 @@ use forge_registry::{
     ConfigSpec, RunContext, StepTimer, SubActionCategory, SubActionRunner, TextEditor, TextField,
     TypedField,
 };
-use forge_types::{ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetry};
+use forge_types::{ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetry, UserText};
 
 use super::os_ports::UrlOpenPort;
 
@@ -76,11 +76,13 @@ impl SubActionRunner for CoreUrlOpenRunner {
             let opener = Arc::clone(&self.opener);
             match tokio::task::spawn_blocking(move || opener.open(url)).await {
                 Ok(Ok(())) => SubActionOutcome::Success,
-                Ok(Err(e)) => SubActionOutcome::Failed(e.to_string()),
-                Err(e) => SubActionOutcome::Failed(e.to_string()),
+                Ok(Err(e)) => SubActionOutcome::Failed(UserText::unlocalized(e.to_string())),
+                Err(e) => SubActionOutcome::Failed(UserText::unlocalized(e.to_string())),
             }
         } else {
-            SubActionOutcome::Failed("core.url.open: rejected a non-http(s) URL".to_owned())
+            SubActionOutcome::Failed(UserText::unlocalized(
+                "core.url.open: rejected a non-http(s) URL",
+            ))
         };
 
         (timer.finish(outcome), None)

@@ -8,7 +8,7 @@ use forge_registry::{
     ConfigProblem, ConfigSpec, RunContext, StepTimer, SubActionCategory, SubActionRunner,
     TextEditor, TextField, ToggleField, TypedField,
 };
-use forge_types::{ArgStack, PlatformId, SubActionOutcome, SubActionTelemetry};
+use forge_types::{ArgStack, PlatformId, SubActionOutcome, SubActionTelemetry, UserText};
 use futures::future::BoxFuture;
 
 use crate::api::chat_messages::KickSendChat;
@@ -64,14 +64,22 @@ impl SendMessageRunner {
     async fn send(&self, message: &str, as_bot: bool) -> SubActionOutcome {
         let token = match (self.token_source)().await {
             Ok(token) => token,
-            Err(e) => return SubActionOutcome::Failed(format!("token error: {e}")),
+            Err(e) => {
+                return SubActionOutcome::Failed(UserText::unlocalized(format!(
+                    "token error: {e}"
+                )));
+            }
         };
         let broadcaster_user_id = if as_bot {
             BROADCASTER_IGNORED_FOR_BOT
         } else {
             match (self.broadcaster_id_source)().await {
                 Ok(id) => id,
-                Err(e) => return SubActionOutcome::Failed(format!("broadcaster id error: {e}")),
+                Err(e) => {
+                    return SubActionOutcome::Failed(UserText::unlocalized(format!(
+                        "broadcaster id error: {e}"
+                    )));
+                }
             }
         };
         SubActionOutcome::from_result(
@@ -124,7 +132,12 @@ impl SubActionRunner for SendMessageRunner {
             Err(problem) => return (timer.invalid_config(&problem), None),
         };
         if message.is_empty() {
-            return (timer.failed("message is empty after interpolation"), None);
+            return (
+                timer.failed(UserText::unlocalized(
+                    "message is empty after interpolation",
+                )),
+                None,
+            );
         }
 
         let outcome = self.send(&message, as_bot).await;

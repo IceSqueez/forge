@@ -7,7 +7,7 @@ use forge_registry::{
     ConfigSpec, RunContext, StepTimer, SubActionCategory, SubActionRunner, TextEditor, TextField,
     TypedField,
 };
-use forge_types::{ArgStack, SubActionTelemetry, Variant};
+use forge_types::{ArgStack, SubActionTelemetry, UserText, Variant};
 use futures::future::BoxFuture;
 
 use crate::api::channel::KickChannel;
@@ -88,12 +88,20 @@ impl SubActionRunner for LookupUserRunner {
             Err(problem) => return (timer.invalid_config(&problem), None),
         };
         if slug.is_empty() {
-            return (timer.failed("slug is empty after interpolation"), None);
+            return (
+                timer.failed(UserText::unlocalized("slug is empty after interpolation")),
+                None,
+            );
         }
 
         let token = match (self.token_source)().await {
             Ok(token) => token,
-            Err(e) => return (timer.failed(format!("token error: {e}")), None),
+            Err(e) => {
+                return (
+                    timer.failed(UserText::unlocalized(format!("token error: {e}"))),
+                    None,
+                );
+            }
         };
         match self.client.get_channel_by_slug(&token, &slug).await {
             Ok(snapshot) => {
@@ -126,7 +134,7 @@ impl SubActionRunner for LookupUserRunner {
                     );
                 (timer.success(), Some(stack))
             }
-            Err(e) => (timer.failed(e.to_string()), None),
+            Err(e) => (timer.failed(UserText::unlocalized(e.to_string())), None),
         }
     }
 }

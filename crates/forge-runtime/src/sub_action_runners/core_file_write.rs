@@ -4,7 +4,9 @@ use forge_registry::{
     ChoiceField, ConfigChoice, ConfigProblem, ConfigSpec, RunContext, StepTimer, SubActionCategory,
     SubActionIo, SubActionRunner, TextEditor, TextField, ToggleField, TypedField,
 };
-use forge_types::{ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetry, Variant};
+use forge_types::{
+    ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetry, UserText, Variant,
+};
 use tokio::io::AsyncWriteExt as _;
 
 const FILE_BYTES_WRITTEN_VAR: &str = "file.bytes_written";
@@ -158,11 +160,16 @@ impl SubActionRunner for CoreFileWriteRunner {
 
         let (outcome, updated) = match super::file_sandbox::resolve_sandboxed(&request.path).await {
             Err(reason) => (
-                SubActionOutcome::Failed(format!("sandbox rejected path: {reason}")),
+                SubActionOutcome::Failed(UserText::unlocalized(format!(
+                    "sandbox rejected path: {reason}"
+                ))),
                 None,
             ),
             Ok(abs_path) => match do_write(&abs_path, &request).await {
-                Err(reason) => (SubActionOutcome::Failed(reason), None),
+                Err(reason) => (
+                    SubActionOutcome::Failed(UserText::unlocalized(reason)),
+                    None,
+                ),
                 Ok(bytes_written) => {
                     let stack = ctx.arg_stack.clone().set(
                         FILE_BYTES_WRITTEN_VAR.to_owned(),

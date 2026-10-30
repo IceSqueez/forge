@@ -5,7 +5,7 @@ use forge_registry::runner::SubActionConfig;
 use forge_registry::{
     ConfigSpec, RunContext, StepTimer, SubActionCategory, SubActionRunner, TypedField,
 };
-use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry};
+use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, UserText};
 
 use super::fields::TARGET_LOGIN;
 use crate::account::identity::{SelfIdentity, resolve_user_id};
@@ -31,17 +31,17 @@ impl AddModeratorRunner {
 
     async fn apply(&self, target_login: &str) -> SubActionOutcome {
         if target_login.is_empty() {
-            return SubActionOutcome::Failed(
-                "target_user_login is empty after interpolation".to_owned(),
-            );
+            return SubActionOutcome::Failed(UserText::unlocalized(
+                "target_user_login is empty after interpolation",
+            ));
         }
         let broadcaster_id = match self.identity.user_id().await {
             Ok(id) => id,
-            Err(e) => return SubActionOutcome::Failed(e.to_string()),
+            Err(e) => return SubActionOutcome::Failed(UserText::unlocalized(e.to_string())),
         };
         let user_id = match resolve_user_id(self.transport.as_ref(), target_login).await {
             Ok(id) => id,
-            Err(e) => return SubActionOutcome::Failed(e.to_string()),
+            Err(e) => return SubActionOutcome::Failed(UserText::unlocalized(e.to_string())),
         };
         let request = HelixRequest::new(HelixMethod::Post, "/helix/moderation/moderators")
             .query("broadcaster_id", broadcaster_id)

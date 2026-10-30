@@ -7,7 +7,7 @@ use forge_registry::{
     TypedField, ValueBounds,
 };
 use forge_storage::{OverlayConfig, OverlayId};
-use forge_types::{ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetry};
+use forge_types::{ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetry, UserText};
 
 use super::overlay_targets::{OVERLAY_SEND_KIND_ID, OVERLAY_TARGET_KEY};
 use crate::overlay_service::{OverlayDelivery, OverlayDispatch, OverlayServiceCell};
@@ -76,9 +76,9 @@ impl OverlaySendRunner {
     ) -> SubActionOutcome {
         let identity = send.target.as_str();
         let Some(overlays) = self.overlays.get() else {
-            return SubActionOutcome::Failed(
-                "overlay.send: the overlay service is not running".to_owned(),
-            );
+            return SubActionOutcome::Failed(UserText::unlocalized(
+                "overlay.send: the overlay service is not running",
+            ));
         };
 
         match overlays
@@ -96,7 +96,9 @@ impl OverlaySendRunner {
                 show_outcome(identity, ticket.finished().await)
             }
             Ok(OverlayDispatch::Queued(_)) => SubActionOutcome::Success,
-            Err(error) => SubActionOutcome::Failed(format!("overlay.send: {error}")),
+            Err(error) => {
+                SubActionOutcome::Failed(UserText::unlocalized(format!("overlay.send: {error}")))
+            }
         }
     }
 }
@@ -111,12 +113,12 @@ fn delivered(identity: &str, delivery: OverlayDelivery) -> SubActionOutcome {
 fn show_outcome(identity: &str, end: ShowEnd) -> SubActionOutcome {
     match end {
         ShowEnd::Shown(delivery) => delivered(identity, delivery),
-        ShowEnd::Cleared => SubActionOutcome::Failed(
-            "overlay.send: the overlay's show queue was cleared before this show ran".to_owned(),
-        ),
-        ShowEnd::Withdrawn => SubActionOutcome::Failed(
-            "overlay.send: the overlay was disabled or deleted before the show ran".to_owned(),
-        ),
+        ShowEnd::Cleared => SubActionOutcome::Failed(UserText::unlocalized(
+            "overlay.send: the overlay's show queue was cleared before this show ran",
+        )),
+        ShowEnd::Withdrawn => SubActionOutcome::Failed(UserText::unlocalized(
+            "overlay.send: the overlay was disabled or deleted before the show ran",
+        )),
     }
 }
 

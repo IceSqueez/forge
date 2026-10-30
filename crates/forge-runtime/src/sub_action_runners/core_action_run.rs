@@ -8,7 +8,7 @@ use forge_registry::{
 use forge_storage::ActionRepo;
 use forge_types::{
     Action, ActionId, ArgStack, ExecutionMode, SubActionConfig, SubActionOutcome, SubActionStep,
-    SubActionTelemetry,
+    SubActionTelemetry, UserText,
 };
 use rand::RngExt;
 
@@ -40,11 +40,15 @@ impl CoreActionRunRunner {
         let target = match self.actions.get(action_id).await {
             Ok(Some(a)) => a,
             Ok(None) => {
-                return SubActionOutcome::Failed(format!(
+                return SubActionOutcome::Failed(UserText::unlocalized(format!(
                     "core.action.run: unknown action '{action_id}'"
-                ));
+                )));
             }
-            Err(e) => return SubActionOutcome::Failed(format!("core.action.run: {e}")),
+            Err(e) => {
+                return SubActionOutcome::Failed(UserText::unlocalized(format!(
+                    "core.action.run: {e}"
+                )));
+            }
         };
 
         let child_stack = if inherit_args {
@@ -60,10 +64,12 @@ impl CoreActionRunRunner {
             .await;
 
         match outcome {
-            Err(RegistryError::DepthExceeded(_)) => {
-                SubActionOutcome::Failed("core.action.run: max nesting depth exceeded".to_owned())
+            Err(RegistryError::DepthExceeded(_)) => SubActionOutcome::Failed(
+                UserText::unlocalized("core.action.run: max nesting depth exceeded"),
+            ),
+            Err(e) => {
+                SubActionOutcome::Failed(UserText::unlocalized(format!("core.action.run: {e}")))
             }
-            Err(e) => SubActionOutcome::Failed(format!("core.action.run: {e}")),
             Ok(child) => match child.signal {
                 ChainSignal::Completed
                 | ChainSignal::Stop(_)
@@ -71,7 +77,7 @@ impl CoreActionRunRunner {
                 | ChainSignal::Continue => SubActionOutcome::Success,
                 ChainSignal::Error(msg) => SubActionOutcome::Failed(msg),
                 ChainSignal::Aborted => {
-                    SubActionOutcome::Failed("core.action.run: cancelled".to_owned())
+                    SubActionOutcome::Failed(UserText::unlocalized("core.action.run: cancelled"))
                 }
             },
         }

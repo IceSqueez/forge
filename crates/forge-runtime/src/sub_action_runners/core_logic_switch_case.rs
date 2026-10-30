@@ -3,7 +3,9 @@ use forge_registry::{
     CASE_CHAIN_KEY, CASE_MATCH_KEY, ChainLayout, ConfigSpec, RunContext, StepChainField, StepTimer,
     SubActionCategory, SubActionRunner, TextEditor, TextField, TypedField,
 };
-use forge_types::{ArgStack, SubActionConfig, SubActionStep, SubActionTelemetry, Variant};
+use forge_types::{
+    ArgStack, SubActionConfig, SubActionStep, SubActionTelemetry, UserText, Variant,
+};
 
 use super::core_logic_shared::{chain_at, propagate, retag, runnable_steps};
 
@@ -106,7 +108,12 @@ impl SubActionRunner for CoreLogicSwitchCaseRunner {
                 );
                 (timer.finish(outcome), Some(stack))
             }
-            Err(e) => (timer.failed(format!("core.logic.switch_case: {e}")), None),
+            Err(e) => (
+                timer.failed(UserText::unlocalized(format!(
+                    "core.logic.switch_case: {e}"
+                ))),
+                None,
+            ),
         }
     }
 }

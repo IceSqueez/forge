@@ -6,7 +6,7 @@ use forge_registry::{
     ConfigProblem, ConfigReason, ConfigSpec, DurationBounds, DurationField, RunContext, StepTimer,
     SubActionCategory, SubActionRunner, TypedField, ValueBounds,
 };
-use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry};
+use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, UserText};
 
 use super::display_name;
 use super::fields::CHANNEL_ID;
@@ -92,7 +92,9 @@ impl SubActionRunner for TimeoutUserRunner {
         };
         if channel_id.is_empty() {
             return (
-                timer.failed("channel_id is empty after interpolation"),
+                timer.failed(UserText::unlocalized(
+                    "channel_id is empty after interpolation",
+                )),
                 None,
             );
         }

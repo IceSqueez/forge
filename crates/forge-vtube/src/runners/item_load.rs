@@ -6,7 +6,7 @@ use forge_registry::{
     ConfigProblem, ConfigSpec, IntegerField, NumberField, OptionalField, RunContext, StepTimer,
     SubActionCategory, SubActionRunner, ToggleField, TypedField, ValueBounds,
 };
-use forge_types::{ArgStack, SubActionTelemetry, Variant};
+use forge_types::{ArgStack, SubActionTelemetry, UserText, Variant};
 
 use crate::runners::fields::{
     ITEM_FILE_NAME, ITEM_SIZE, ROTATION, X, Y, optional_number, optional_whole_number,
@@ -145,7 +145,7 @@ impl SubActionRunner for ItemLoadRunner {
                 }
                 (timer.success(), Some(stack))
             }
-            Err(e) => (timer.failed(e.to_string()), None),
+            Err(e) => (timer.failed(UserText::unlocalized(e.to_string())), None),
         }
     }
 }

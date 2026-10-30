@@ -6,7 +6,7 @@ use forge_registry::{
     ConfigProblem, ConfigSpec, NumberField, OptionalField, RunContext, StepTimer,
     SubActionCategory, SubActionRunner, TypedField,
 };
-use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, Variant};
+use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, UserText, Variant};
 
 use crate::runners::fields::{ITEM_FILE_NAME, ITEM_SIZE, optional_number, read_non_empty};
 use crate::sink::{VTubeSink, result_keys};
@@ -130,10 +130,20 @@ impl SubActionRunner for ItemThrowRunner {
         let instance_id = match loaded {
             Ok(Variant::Object(ref map)) => match map.get(result_keys::INSTANCE_ID) {
                 Some(Variant::String(id)) if !id.is_empty() => id.clone(),
-                _ => return (timer.failed(MISSING_INSTANCE_ID), None),
+                _ => {
+                    return (
+                        timer.failed(UserText::unlocalized(MISSING_INSTANCE_ID)),
+                        None,
+                    );
+                }
             },
-            Ok(_) => return (timer.failed(MISSING_INSTANCE_ID), None),
-            Err(e) => return (timer.failed(e.to_string()), None),
+            Ok(_) => {
+                return (
+                    timer.failed(UserText::unlocalized(MISSING_INSTANCE_ID)),
+                    None,
+                );
+            }
+            Err(e) => return (timer.failed(UserText::unlocalized(e.to_string())), None),
         };
 
         let moved = self

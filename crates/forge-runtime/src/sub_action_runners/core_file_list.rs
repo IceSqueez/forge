@@ -6,7 +6,7 @@ use forge_registry::{
     SubActionIo, SubActionRunner, TextEditor, TextField, ToggleField, TypedField, VariableField,
 };
 use forge_types::{
-    ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetry, Variant, VariantKind,
+    ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetry, UserText, Variant, VariantKind,
 };
 
 const INTO_VAR_KEY: &str = "into_var";
@@ -127,20 +127,29 @@ impl SubActionRunner for CoreFileListRunner {
         let (outcome, produced) = match super::file_sandbox::resolve_sandboxed(&request.path).await
         {
             Err(reason) => (
-                SubActionOutcome::Failed(format!("sandbox rejected path: {reason}")),
+                SubActionOutcome::Failed(UserText::unlocalized(format!(
+                    "sandbox rejected path: {reason}"
+                ))),
                 None,
             ),
             Ok(abs_path) => match tokio::fs::metadata(&abs_path).await {
                 Err(_) => (
-                    SubActionOutcome::Failed("core.file.list: directory not found".to_owned()),
+                    SubActionOutcome::Failed(UserText::unlocalized(
+                        "core.file.list: directory not found",
+                    )),
                     None,
                 ),
                 Ok(meta) if !meta.is_dir() => (
-                    SubActionOutcome::Failed("core.file.list: path is not a directory".to_owned()),
+                    SubActionOutcome::Failed(UserText::unlocalized(
+                        "core.file.list: path is not a directory",
+                    )),
                     None,
                 ),
                 Ok(_) => match collect_entries(&abs_path, &request).await {
-                    Err(reason) => (SubActionOutcome::Failed(reason), None),
+                    Err(reason) => (
+                        SubActionOutcome::Failed(UserText::unlocalized(reason)),
+                        None,
+                    ),
                     Ok(entries) => {
                         let array =
                             Variant::Array(entries.into_iter().map(Variant::String).collect());

@@ -3,7 +3,7 @@ use std::sync::Arc;
 
 use forge_events::{EventPublisher, EventSource, TypedEvent};
 use forge_platform_core::{ActingSender, SENT_AS_FIELD, SenderPreference, SenderRole};
-use forge_types::SubActionOutcome;
+use forge_types::{SubActionOutcome, UserText};
 use thiserror::Error;
 use tracing::warn;
 
@@ -367,14 +367,17 @@ pub(crate) fn step_result(result: Result<ActingSender, SendFailure>) -> StepResu
             (SubActionOutcome::Success, produced)
         }
         Err(failure) => (
-            SubActionOutcome::Failed(failure.to_string()),
+            SubActionOutcome::Failed(UserText::unlocalized(failure.to_string())),
             BTreeMap::new(),
         ),
     }
 }
 
 pub(crate) fn failed_step(reason: &str) -> StepResult {
-    (SubActionOutcome::Failed(reason.to_owned()), BTreeMap::new())
+    (
+        SubActionOutcome::Failed(UserText::unlocalized(reason.to_owned())),
+        BTreeMap::new(),
+    )
 }
 
 #[cfg(test)]

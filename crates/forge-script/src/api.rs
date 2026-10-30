@@ -8,9 +8,9 @@ use forge_events::{
 };
 use forge_platform_core::{SenderPreference, unknown_sender_reason};
 use forge_types::{
-    EventId, IntegrationAvailability, IntegrationId, LatestScope, LatestValueReader,
-    NO_CHAT_PLATFORM_ENABLED_REASON, NO_WHISPER_PLATFORM_ENABLED_REASON, SCRIPT_LOG_TARGET,
-    ScriptId, integration_disabled_reason, resolve_chat_target, whispers_unsupported_reason,
+    EventId, IntegrationAvailability, IntegrationId, LatestScope, LatestValueReader, MessageArg,
+    MessageRef, NO_CHAT_PLATFORM_ENABLED, NO_WHISPER_PLATFORM_ENABLED, SCRIPT_LOG_TARGET, ScriptId,
+    integration_disabled_message, resolve_chat_target, whispers_unsupported_message,
 };
 use rhai::{EvalAltResult, ImmutableString, Module, Position};
 use tokio::runtime::Handle;
@@ -505,12 +505,36 @@ fn build_tts_module(requester: Option<Arc<dyn SpeakRequester>>) -> ApiModule {
     m
 }
 
+fn coded_error(message: &MessageRef) -> Box<EvalAltResult> {
+    let args: Vec<String> = message
+        .args()
+        .map(|(name, value)| format!("{name}={}", script_arg_text(value)))
+        .collect();
+    if args.is_empty() {
+        message.code().to_string().into()
+    } else {
+        format!("{} ({})", message.code(), args.join(", ")).into()
+    }
+}
+
+fn script_arg_text(value: &MessageArg) -> String {
+    match value {
+        MessageArg::Int(number) => number.to_string(),
+        MessageArg::Float(number) => number.get().to_string(),
+        MessageArg::Datetime(at) => at.to_string(),
+        MessageArg::Duration(span) => format!("{}s", span.as_secs()),
+        MessageArg::Verbatim(text) => text.as_str().to_owned(),
+        MessageArg::Integration(integration) => integration.to_string(),
+        MessageArg::Platform(platform) => platform.as_str().to_owned(),
+    }
+}
+
 fn admit_broadcast(
     integrations: Option<&dyn IntegrationAvailability>,
 ) -> Result<(), Box<EvalAltResult>> {
     match integrations {
         Some(integrations) if !integrations.any_chat_platform_enabled() => {
-            Err(NO_CHAT_PLATFORM_ENABLED_REASON.into())
+            Err(coded_error(&MessageRef::new(NO_CHAT_PLATFORM_ENABLED)))
         }
         _ => Ok(()),
     }
@@ -520,13 +544,13 @@ fn admit_chat_target(
     integrations: Option<&dyn IntegrationAvailability>,
     raw: &str,
 ) -> Result<Option<&'static str>, Box<EvalAltResult>> {
-    let Some(platform) = resolve_chat_target(raw)? else {
+    let Some(platform) = resolve_chat_target(raw).map_err(|message| coded_error(&message))? else {
         admit_broadcast(integrations)?;
         return Ok(None);
     };
     let integration = IntegrationId::from_static(platform.as_str());
     if integrations.is_some_and(|integrations| integrations.is_disabled(&integration)) {
-        return Err(integration_disabled_reason(&integration).into());
+        return Err(coded_error(&integration_disabled_message(&integration)));
     }
     Ok(Some(platform.as_str()))
 }
@@ -537,7 +561,7 @@ fn admit_whisper_broadcast(
     admit_broadcast(integrations)?;
     match integrations {
         Some(integrations) if !integrations.any_whisper_platform_enabled() => {
-            Err(NO_WHISPER_PLATFORM_ENABLED_REASON.into())
+            Err(coded_error(&MessageRef::new(NO_WHISPER_PLATFORM_ENABLED)))
         }
         _ => Ok(()),
     }
@@ -547,12 +571,14 @@ fn admit_whisper_target(
     integrations: Option<&dyn IntegrationAvailability>,
     raw: &str,
 ) -> Result<Option<&'static str>, Box<EvalAltResult>> {
-    let Some(platform) = resolve_chat_target(raw)? else {
+    let Some(platform) = resolve_chat_target(raw).map_err(|message| coded_error(&message))? else {
         admit_whisper_broadcast(integrations)?;
         return Ok(None);
     };
     if !platform.supports_whispers() {
-        return Err(whispers_unsupported_reason(platform.as_str()).into());
+        return Err(coded_error(&whispers_unsupported_message(
+            platform.as_str(),
+        )));
     }
     admit_chat_target(integrations, platform.as_str())
 }

@@ -6,7 +6,7 @@ use forge_registry::{
     ConfigSpec, RunContext, StepTimer, SubActionCategory, SubActionRunner, TextEditor, TextField,
     TypedField,
 };
-use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry};
+use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, UserText};
 
 use crate::thumbnail::YoutubeThumbnail;
 use crate::vocabulary::{config_keys, sub_action_ids};
@@ -77,7 +77,9 @@ impl SubActionRunner for SetThumbnailRunner {
         };
         if image_path.is_empty() {
             return (
-                timer.failed("image_path is empty after interpolation"),
+                timer.failed(UserText::unlocalized(
+                    "image_path is empty after interpolation",
+                )),
                 None,
             );
         }

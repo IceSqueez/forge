@@ -1,11 +1,11 @@
-use forge_types::ActionId;
+use forge_types::{ActionId, UserText};
 use tokio::sync::mpsc;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ActionFailureNotice {
     pub action_id: ActionId,
     pub action_name: String,
-    pub reason: Option<String>,
+    pub reason: Option<UserText>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

@@ -14,7 +14,7 @@ use forge_registry::{
 };
 use forge_types::{
     ArgStack, CurrencyCode, Donation, DonationOrigin, Donor, IntegrationId, MoneyAmount,
-    SubActionConfig, SubActionOutcome, SubActionTelemetry,
+    SubActionConfig, SubActionOutcome, SubActionTelemetry, UserText,
 };
 use time::OffsetDateTime;
 
@@ -120,7 +120,9 @@ impl TestDonationRunner {
         {
             SubActionOutcome::Success
         } else {
-            SubActionOutcome::Failed("test donation could not be announced".to_owned())
+            SubActionOutcome::Failed(UserText::unlocalized(
+                "test donation could not be announced",
+            ))
         }
     }
 }

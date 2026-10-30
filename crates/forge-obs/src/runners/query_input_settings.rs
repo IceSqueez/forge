@@ -6,7 +6,7 @@ use forge_registry::{
     ConfigSpec, RunContext, StepTimer, SubActionCategory, SubActionIo, SubActionRunner, TextEditor,
     TextField, TypedField,
 };
-use forge_types::{ArgStack, SubActionTelemetry, Variant};
+use forge_types::{ArgStack, SubActionTelemetry, UserText, Variant};
 
 use crate::ObsSink;
 use crate::vocabulary::fields::query;
@@ -100,7 +100,7 @@ impl SubActionRunner for QueryInputSettingsRunner {
                 }
                 (timer.success(), Some(stack))
             }
-            Err(e) => (timer.failed(e.to_string()), None),
+            Err(e) => (timer.failed(UserText::unlocalized(e.to_string())), None),
         }
     }
 }

@@ -6,7 +6,7 @@ use forge_registry::{
 };
 use forge_script::{BoundExpression, EngineConfig, MathEvaluator};
 use forge_types::{
-    ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetry, Variant, VariantKind,
+    ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetry, UserText, Variant, VariantKind,
 };
 
 const INTO_VAR_KEY: &str = "into_var";
@@ -183,7 +183,10 @@ impl SubActionRunner for CoreMathEvaluateRunner {
                     .set(into_var, result_type.coerce(variant));
                 (SubActionOutcome::Success, Some(new_stack))
             }
-            Err(reason) => (SubActionOutcome::Failed(reason), None),
+            Err(reason) => (
+                SubActionOutcome::Failed(UserText::unlocalized(reason)),
+                None,
+            ),
         };
 
         (timer.finish(outcome), updated_stack)

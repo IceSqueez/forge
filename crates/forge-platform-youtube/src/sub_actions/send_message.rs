@@ -7,7 +7,7 @@ use forge_registry::{
     ConfigSpec, RunContext, StepTimer, SubActionCategory, SubActionRunner, TextEditor, TextField,
     TypedField,
 };
-use forge_types::{ArgStack, PlatformId, SubActionOutcome, SubActionTelemetry};
+use forge_types::{ArgStack, PlatformId, SubActionOutcome, SubActionTelemetry, UserText};
 
 use crate::send_chat::YoutubeSendChat;
 use crate::vocabulary::{config_keys, sub_action_ids};
@@ -75,7 +75,12 @@ impl SubActionRunner for SendMessageRunner {
             Err(problem) => return (timer.invalid_config(&problem), None),
         };
         if message.is_empty() {
-            return (timer.failed("message is empty after interpolation"), None);
+            return (
+                timer.failed(UserText::unlocalized(
+                    "message is empty after interpolation",
+                )),
+                None,
+            );
         }
 
         let outcome = SubActionOutcome::from_result(&self.sender.send(&message).await);

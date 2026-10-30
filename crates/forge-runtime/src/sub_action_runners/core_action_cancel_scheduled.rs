@@ -3,7 +3,7 @@ use forge_registry::{
     ConfigProblem, ConfigSpec, ProducedVariable, RunContext, StepTimer, SubActionCategory,
     SubActionIo, SubActionRunner, TextEditor, TextField, TypedField, VariableField,
 };
-use forge_types::{ArgStack, SubActionConfig, SubActionTelemetry, Variant, VariantKind};
+use forge_types::{ArgStack, SubActionConfig, SubActionTelemetry, UserText, Variant, VariantKind};
 
 use crate::scheduled_runs::{ScheduleError, ScheduledRunsCell};
 
@@ -105,13 +105,15 @@ impl SubActionRunner for CoreActionCancelScheduledRunner {
         };
         let Some(scheduled_runs) = self.scheduled_runs.get() else {
             return (
-                timer.failed(ScheduleError::SchedulerStopped.to_string()),
+                timer.failed(UserText::unlocalized(
+                    ScheduleError::SchedulerStopped.to_string(),
+                )),
                 None,
             );
         };
         let cancelled = match scheduled_runs.cancel_by_key(&key).await {
             Ok(cancelled) => cancelled,
-            Err(e) => return (timer.failed(e.to_string()), None),
+            Err(e) => return (timer.failed(UserText::unlocalized(e.to_string())), None),
         };
         let stack = ctx
             .arg_stack

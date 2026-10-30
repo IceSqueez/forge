@@ -1,5 +1,6 @@
 use crate::actions_screen::parse_variable_segments;
 use crate::integration_switch::integration_name;
+use crate::user_text::{ResolvedText, resolve_user_text};
 use forge_components::ActivePresentation;
 use forge_components::BORDER_THIN;
 use forge_components::highlight::Language;
@@ -343,7 +344,7 @@ impl RunHistoryModal {
             ExecutionOutcome::Failed(message) => (
                 palette.danger,
                 tr!("action_editor_run_history_outcome_failed"),
-                Some(message.clone()),
+                Some(resolve_user_text(message)),
             ),
             ExecutionOutcome::Cancelled => (
                 palette.text_muted,
@@ -408,12 +409,8 @@ impl RunHistoryModal {
             && !step_failed
         {
             col = col.child(
-                div()
-                    .pl(ROW_DOT + spacing(Spacing::Xs, density))
-                    .font_family(mono_family())
-                    .text_size(FONT_XXS)
-                    .text_color(palette.danger)
-                    .child(message),
+                resolved_message_block(message, palette.danger, palette)
+                    .pl(ROW_DOT + spacing(Spacing::Xs, density)),
             );
         }
         if !ctx.telemetry.is_empty() {
@@ -525,7 +522,9 @@ impl RunHistoryModal {
             SubActionOutcome::Failed(_) => (
                 palette.danger,
                 tr!("action_editor_run_history_step_failed"),
-                step.outcome.failure_reason(),
+                step.outcome
+                    .failure_reason()
+                    .map(|reason| resolve_user_text(&reason)),
             ),
             SubActionOutcome::IntegrationDisabled(_) => (
                 palette.danger,
@@ -535,7 +534,7 @@ impl RunHistoryModal {
             SubActionOutcome::Skipped(message) => (
                 palette.text_muted,
                 tr!("action_editor_run_history_step_skipped"),
-                Some(message.clone()),
+                Some(resolve_user_text(message)),
             ),
         };
 
@@ -624,12 +623,13 @@ impl RunHistoryModal {
 
         if let Some(text) = message {
             row = row.child(
-                div()
-                    .pl(spacing(Spacing::Lg, density) + spacing(Spacing::Xs, density))
-                    .font_family(mono_family())
-                    .text_size(FONT_XXS)
-                    .text_color(status_color)
-                    .child(text),
+                resolved_message_block(text, status_color, palette).pl(spacing(
+                    Spacing::Lg,
+                    density,
+                ) + spacing(
+                    Spacing::Xs,
+                    density,
+                )),
             );
         }
         row.into_any_element()
@@ -761,6 +761,20 @@ impl Render for RunHistoryModal {
                     view.update(cx, |this, cx| this.dismiss(cx));
                 }),
         )
+    }
+}
+
+fn resolved_message_block(text: ResolvedText, color: Rgba, palette: &ForgePalette) -> gpui::Div {
+    let block = div()
+        .flex()
+        .flex_col()
+        .font_family(mono_family())
+        .text_size(FONT_XXS)
+        .text_color(color)
+        .child(text.primary);
+    match text.secondary {
+        Some(detail) => block.child(div().text_color(palette.text_faint).child(detail)),
+        None => block,
     }
 }
 

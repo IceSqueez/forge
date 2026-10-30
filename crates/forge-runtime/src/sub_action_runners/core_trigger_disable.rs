@@ -6,7 +6,7 @@ use forge_registry::{
 };
 use forge_storage::TriggerInstanceRepo;
 use forge_types::{
-    ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetry, TriggerInstanceId,
+    ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetry, TriggerInstanceId, UserText,
 };
 
 use super::core_trigger_shared::{TRIGGER, TRIGGER_SPEC};
@@ -23,7 +23,9 @@ impl CoreTriggerDisableRunner {
     async fn run(&self, instance_id: TriggerInstanceId) -> SubActionOutcome {
         match self.trigger_instances.set_enabled(instance_id, false).await {
             Ok(()) => SubActionOutcome::Success,
-            Err(e) => SubActionOutcome::Failed(format!("core.trigger.disable: {e}")),
+            Err(e) => SubActionOutcome::Failed(UserText::unlocalized(format!(
+                "core.trigger.disable: {e}"
+            ))),
         }
     }
 }

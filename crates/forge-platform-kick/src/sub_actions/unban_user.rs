@@ -6,7 +6,7 @@ use forge_registry::runner::SubActionConfig;
 use forge_registry::{
     ConfigSpec, RunContext, StepTimer, SubActionCategory, SubActionRunner, TypedField,
 };
-use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry};
+use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, UserText};
 use futures::future::BoxFuture;
 
 use super::fields::USER_ID;
@@ -84,9 +84,11 @@ impl SubActionRunner for UnbanUserRunner {
         };
 
         let outcome = match (self.token_source)().await {
-            Err(e) => SubActionOutcome::Failed(format!("token error: {e}")),
+            Err(e) => SubActionOutcome::Failed(UserText::unlocalized(format!("token error: {e}"))),
             Ok(token) => match (self.broadcaster_id_source)().await {
-                Err(e) => SubActionOutcome::Failed(format!("broadcaster id error: {e}")),
+                Err(e) => SubActionOutcome::Failed(UserText::unlocalized(format!(
+                    "broadcaster id error: {e}"
+                ))),
                 Ok(broadcaster_user_id) => SubActionOutcome::from_result(
                     &self
                         .client

@@ -6,7 +6,9 @@ use forge_registry::{
     DurationField, Interpolation, RunContext, StepTimer, SubActionCategory, SubActionRunner,
     TextEditor, TextField, TypedField, ValueBounds,
 };
-use forge_types::{ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetry, Variant};
+use forge_types::{
+    ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetry, UserText, Variant,
+};
 
 use super::os_ports::{DesktopNotice, NotifyPort, NotifyUrgency};
 
@@ -160,8 +162,8 @@ impl SubActionRunner for CoreNotifyShowRunner {
         let notify = Arc::clone(&self.notify);
         let outcome = match tokio::task::spawn_blocking(move || notify.show(notice)).await {
             Ok(Ok(())) => SubActionOutcome::Success,
-            Ok(Err(e)) => SubActionOutcome::Failed(e.to_string()),
-            Err(e) => SubActionOutcome::Failed(e.to_string()),
+            Ok(Err(e)) => SubActionOutcome::Failed(UserText::unlocalized(e.to_string())),
+            Err(e) => SubActionOutcome::Failed(UserText::unlocalized(e.to_string())),
         };
 
         (timer.finish(outcome), None)

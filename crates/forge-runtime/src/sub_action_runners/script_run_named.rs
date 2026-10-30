@@ -16,7 +16,7 @@ use forge_storage::{
     ExecutionStatus, GlobalsRepo, SCRIPT_NAME_KEY, SCRIPT_RUN_NAMED_KIND, ScriptRepo, SettingsRepo,
 };
 use forge_types::{
-    ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetry, VariantKind,
+    ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetry, UserText, VariantKind,
     strip_var_decoration,
 };
 use time::OffsetDateTime;
@@ -145,9 +145,9 @@ impl SubActionRunner for ScriptRunNamedRunner {
                     kind: SCRIPT_RUN_NAMED_KIND.to_owned(),
                     started_at,
                     duration_ms,
-                    outcome: SubActionOutcome::Failed(format!(
+                    outcome: SubActionOutcome::Failed(UserText::unlocalized(format!(
                         "script '{name}' not found in registry"
-                    )),
+                    ))),
                     index: ctx.index,
                 },
                 None,
@@ -235,7 +235,10 @@ impl SubActionRunner for ScriptRunNamedRunner {
                     EventSource::Rhai,
                     Some(script_event_id),
                 );
-                (SubActionOutcome::Failed(message), None)
+                (
+                    SubActionOutcome::Failed(UserText::unlocalized(message)),
+                    None,
+                )
             }
             Err(join_err) => {
                 ScriptFailed {
@@ -251,7 +254,9 @@ impl SubActionRunner for ScriptRunNamedRunner {
                     Some(script_event_id),
                 );
                 (
-                    SubActionOutcome::Failed(format!("script task panicked: {join_err}")),
+                    SubActionOutcome::Failed(UserText::unlocalized(format!(
+                        "script task panicked: {join_err}"
+                    ))),
                     None,
                 )
             }

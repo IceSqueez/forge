@@ -2,7 +2,8 @@ use std::collections::{BTreeSet, HashMap, HashSet};
 
 use forge_types::{
     Action, ExecutionMode, IntegrationId, SubActionOutcome, SubActionStep, TemplatePiece,
-    TemplatePieces, TriggerInstance, Variant, VariantKind, normalize_var_name, shared_date_pattern,
+    TemplatePieces, TriggerInstance, UserText, Variant, VariantKind, normalize_var_name,
+    shared_date_pattern,
 };
 
 use crate::config_problem::ConfigProblem;
@@ -25,7 +26,7 @@ pub enum Finding {
     ProducedLater(String),
     IsolatedSibling(String),
     SomeTriggersOnly(String),
-    LastRunFailed(String),
+    LastRunFailed(UserText),
     IntegrationDisabled(IntegrationId),
     IntegrationFailed(IntegrationId),
     DateFormatOnNonDatetime(String),

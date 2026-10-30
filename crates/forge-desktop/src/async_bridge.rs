@@ -9,9 +9,11 @@ use std::time::Duration;
 use forge_components::ToastKind;
 use forge_events::{Event, EventSubscription, EventsError};
 use forge_runtime::{ActionEngineHandle, EventBus};
-use forge_types::{SubActionOutcome, SubActionStep, integration_disabled_reason};
+use forge_types::{SubActionOutcome, SubActionStep, UserText, integration_disabled_message};
 use gpui::{App, AsyncApp, Context, Entity, SharedString};
 use tokio::runtime::Handle;
+
+use crate::user_text::resolve_user_text;
 
 use forge_components::PushToast;
 
@@ -58,10 +60,13 @@ pub async fn run_quick_step(
         .map_err(|err| err.to_string())?;
     match pending.outcome().await.map_err(|err| err.to_string())? {
         SubActionOutcome::Success => Ok(()),
-        SubActionOutcome::Failed(reason) | SubActionOutcome::Skipped(reason) => Err(reason),
-        SubActionOutcome::IntegrationDisabled(integration) => {
-            Err(integration_disabled_reason(&integration))
+        SubActionOutcome::Failed(reason) | SubActionOutcome::Skipped(reason) => {
+            Err(resolve_user_text(&reason).inline())
         }
+        SubActionOutcome::IntegrationDisabled(integration) => Err(resolve_user_text(
+            &UserText::from(integration_disabled_message(&integration)),
+        )
+        .inline()),
     }
 }
 

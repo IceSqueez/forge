@@ -6,7 +6,7 @@ use forge_registry::{
     ChoiceField, ConfigChoice, ConfigProblem, ConfigSpec, RunContext, StepTimer, SubActionCategory,
     SubActionRunner, TextEditor, TextField, TypedField,
 };
-use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry};
+use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, UserText};
 
 use crate::account::identity::SelfIdentity;
 use crate::helix::{HelixMethod, HelixRequest, HelixTransport};
@@ -82,11 +82,11 @@ impl EndPollRunner {
 
     async fn end(&self, poll_id: &str, status: PollEndStatus) -> SubActionOutcome {
         if poll_id.is_empty() {
-            return SubActionOutcome::Failed("poll_id is required".to_owned());
+            return SubActionOutcome::Failed(UserText::unlocalized("poll_id is required"));
         }
         let user_id = match self.identity.user_id().await {
             Ok(id) => id,
-            Err(e) => return SubActionOutcome::Failed(e.to_string()),
+            Err(e) => return SubActionOutcome::Failed(UserText::unlocalized(e.to_string())),
         };
         let request = HelixRequest::new(HelixMethod::Patch, "/helix/polls")
             .query("broadcaster_id", user_id)

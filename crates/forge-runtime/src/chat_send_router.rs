@@ -5,7 +5,7 @@ use forge_events::{
     TypedEvent, WhisperSent,
 };
 use forge_platform_core::{ChatPlatform, SenderPreference, unknown_sender_reason};
-use forge_types::{EventId, PlatformId, requested_chat_target, whispers_unsupported_reason};
+use forge_types::{EventId, PlatformId, requested_chat_target};
 use tokio::sync::mpsc;
 use tokio::task::JoinHandle;
 
@@ -98,6 +98,10 @@ impl RouteTarget {
     fn addressed_by(&self, requested: Option<&str>) -> bool {
         requested.is_none_or(|requested| PlatformId::from_wire(requested) == Some(self.platform))
     }
+}
+
+fn whispers_unsupported_reason(channel: &str) -> String {
+    format!("whispers are not supported on {channel}")
 }
 
 fn sender_of(request: &ChatSendRequest) -> Result<SenderPreference, String> {

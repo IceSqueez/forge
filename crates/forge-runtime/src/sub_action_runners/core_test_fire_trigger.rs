@@ -8,7 +8,8 @@ use forge_registry::{
 };
 use forge_storage::{ActionRepo, TriggerInstanceRepo};
 use forge_types::{
-    ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetry, TriggerInstanceId, Variant,
+    ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetry, TriggerInstanceId, UserText,
+    Variant,
 };
 
 use super::core_trigger_shared::TRIGGER_INSTANCE_ID_KEY;
@@ -84,27 +85,27 @@ impl CoreTestFireTriggerRunner {
         let trigger_kind = match self.trigger_instances.get(instance_id).await {
             Ok(Some(instance)) => instance.kind_id,
             Ok(None) => {
-                return SubActionOutcome::Failed(format!(
+                return SubActionOutcome::Failed(UserText::unlocalized(format!(
                     "core.test.fire_trigger: unknown trigger instance '{instance_id}'"
-                ));
+                )));
             }
             Err(e) => {
-                return SubActionOutcome::Failed(format!(
+                return SubActionOutcome::Failed(UserText::unlocalized(format!(
                     "core.test.fire_trigger: instance lookup failed: {e}"
-                ));
+                )));
             }
         };
 
         let Some(scheduler) = self.scheduler.get() else {
-            return SubActionOutcome::Failed("queue scheduler not ready".to_owned());
+            return SubActionOutcome::Failed(UserText::unlocalized("queue scheduler not ready"));
         };
 
         let action_ids = match self.trigger_instances.actions_using(instance_id).await {
             Ok(ids) => ids,
             Err(e) => {
-                return SubActionOutcome::Failed(format!(
+                return SubActionOutcome::Failed(UserText::unlocalized(format!(
                     "core.test.fire_trigger: bound-action lookup failed: {e}"
-                ));
+                )));
             }
         };
 
@@ -113,9 +114,9 @@ impl CoreTestFireTriggerRunner {
                 Ok(Some(a)) => a,
                 Ok(None) => continue,
                 Err(e) => {
-                    return SubActionOutcome::Failed(format!(
+                    return SubActionOutcome::Failed(UserText::unlocalized(format!(
                         "core.test.fire_trigger: action lookup failed: {e}"
-                    ));
+                    )));
                 }
             };
             let req = SchedulerRequest {
@@ -128,9 +129,9 @@ impl CoreTestFireTriggerRunner {
                 admission: QueueAdmission::from(&action),
             };
             if let Err(e) = scheduler.dispatch(req).await {
-                return SubActionOutcome::Failed(format!(
+                return SubActionOutcome::Failed(UserText::unlocalized(format!(
                     "core.test.fire_trigger: dispatch failed: {e}"
-                ));
+                )));
             }
         }
 

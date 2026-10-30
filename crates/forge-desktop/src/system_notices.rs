@@ -9,6 +9,8 @@ use forge_runtime::{
 use gpui::AsyncApp;
 use tokio::runtime::Handle;
 
+use crate::user_text::resolve_user_text;
+
 pub const NOTICE_REASON_MAX_CHARS: usize = 160;
 pub const NOTICE_DISPLAY_MS: u32 = 8000;
 const FLUENT_ISOLATE_START: char = '\u{2068}';
@@ -59,12 +61,11 @@ pub fn plan_for(intent: &NotificationIntent) -> NoticePlan {
 
 fn action_failed_text(notice: &ActionFailureNotice) -> NoticeText {
     let action = notice.action_name.clone();
-    let body = match notice
+    let reason = notice
         .reason
-        .as_deref()
-        .map(str::trim)
-        .filter(|r| !r.is_empty())
-    {
+        .as_ref()
+        .map(|reason| resolve_user_text(reason).inline());
+    let body = match reason.as_deref().map(str::trim).filter(|r| !r.is_empty()) {
         Some(reason) => tr!(
             "system_notice_action_failed_body_reason",
             action = action,

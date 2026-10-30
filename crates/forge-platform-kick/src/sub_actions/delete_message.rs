@@ -7,7 +7,7 @@ use forge_registry::{
     ConfigSpec, RunContext, StepTimer, SubActionCategory, SubActionRunner, TextEditor, TextField,
     TypedField,
 };
-use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry};
+use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, UserText};
 use futures::future::BoxFuture;
 
 use crate::api::chat_messages::KickSendChat;
@@ -90,19 +90,23 @@ impl SubActionRunner for DeleteMessageRunner {
         };
         if message_id.is_empty() {
             return (
-                timer.failed("message_id is empty after interpolation"),
+                timer.failed(UserText::unlocalized(
+                    "message_id is empty after interpolation",
+                )),
                 None,
             );
         }
         if message_id.contains(UNRESOLVED_REFERENCE_MARKER) {
             return (
-                timer.failed("message_id has an unresolved variable reference"),
+                timer.failed(UserText::unlocalized(
+                    "message_id has an unresolved variable reference",
+                )),
                 None,
             );
         }
 
         let outcome = match (self.token_source)().await {
-            Err(e) => SubActionOutcome::Failed(format!("token error: {e}")),
+            Err(e) => SubActionOutcome::Failed(UserText::unlocalized(format!("token error: {e}"))),
             Ok(token) => {
                 SubActionOutcome::from_result(&self.client.delete(&message_id, &token).await)
             }

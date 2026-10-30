@@ -6,7 +6,7 @@ use forge_registry::{
     ChoiceField, ConfigProblem, ConfigSpec, DurationBounds, DurationField, RunContext, StepTimer,
     SubActionCategory, SubActionRunner, TypedField,
 };
-use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry};
+use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, UserText};
 
 use super::fields::{ModeToggle, mode_toggle};
 use crate::account::identity::SelfIdentity;
@@ -125,7 +125,7 @@ impl SetModeRunner {
     async fn apply(&self, modes: &ChatModes) -> SubActionOutcome {
         let user_id = match self.identity.user_id().await {
             Ok(id) => id,
-            Err(e) => return SubActionOutcome::Failed(e.to_string()),
+            Err(e) => return SubActionOutcome::Failed(UserText::unlocalized(e.to_string())),
         };
         let body = modes.body();
         if body.is_empty() {

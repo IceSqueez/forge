@@ -5,7 +5,7 @@ use forge_registry::runner::SubActionConfig;
 use forge_registry::{
     ConfigSpec, RunContext, StepTimer, SubActionCategory, SubActionRunner, TypedField,
 };
-use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry};
+use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, UserText};
 
 use super::guest_star::{SESSION_ID, first_missing};
 use crate::account::identity::SelfIdentity;
@@ -31,18 +31,20 @@ impl GuestStarEndSessionRunner {
 
     async fn end(&self, session_id: &str) -> SubActionOutcome {
         if let Some(missing) = first_missing(&[(&SESSION_ID, session_id)]) {
-            return SubActionOutcome::Failed(missing);
+            return SubActionOutcome::Failed(UserText::unlocalized(missing));
         }
         let user_id = match self.identity.user_id().await {
             Ok(id) => id,
-            Err(e) => return SubActionOutcome::Failed(format!("{KIND_ID}: {e}")),
+            Err(e) => {
+                return SubActionOutcome::Failed(UserText::unlocalized(format!("{KIND_ID}: {e}")));
+            }
         };
         let request = HelixRequest::new(HelixMethod::Delete, "/helix/guest_star/session")
             .query("broadcaster_id", user_id)
             .query("session_id", session_id.to_owned());
         match self.transport.execute(request).await {
             Ok(_) => SubActionOutcome::Success,
-            Err(e) => SubActionOutcome::Failed(format!("{KIND_ID}: {e}")),
+            Err(e) => SubActionOutcome::Failed(UserText::unlocalized(format!("{KIND_ID}: {e}"))),
         }
     }
 }

@@ -7,7 +7,7 @@ use forge_registry::{
     ConfigProblem, ConfigReason, ConfigSpec, DurationBounds, DurationField, RunContext, StepTimer,
     SubActionCategory, SubActionRunner, TypedField, ValueBounds,
 };
-use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry};
+use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, UserText};
 use futures::future::BoxFuture;
 
 use super::ban_reason::REASON;
@@ -124,9 +124,11 @@ impl SubActionRunner for TimeoutUserRunner {
         let display_name = display_name::resolve(config, ctx);
 
         let outcome = match (self.token_source)().await {
-            Err(e) => SubActionOutcome::Failed(format!("token error: {e}")),
+            Err(e) => SubActionOutcome::Failed(UserText::unlocalized(format!("token error: {e}"))),
             Ok(token) => match (self.broadcaster_id_source)().await {
-                Err(e) => SubActionOutcome::Failed(format!("broadcaster id error: {e}")),
+                Err(e) => SubActionOutcome::Failed(UserText::unlocalized(format!(
+                    "broadcaster id error: {e}"
+                ))),
                 Ok(broadcaster_user_id) => SubActionOutcome::from_result(
                     &self
                         .client

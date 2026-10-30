@@ -6,7 +6,7 @@ use forge_registry::{
     ConfigProblem, ConfigSpec, RunContext, StepTimer, SubActionCategory, SubActionRunner,
     TypedField,
 };
-use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry};
+use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, UserText};
 
 use super::guest_star::{GUEST_LOGIN, GuestStarContext, SESSION_ID, first_missing};
 use crate::account::identity::SelfIdentity;
@@ -44,14 +44,18 @@ impl GuestStarInviteRunner {
         if let Some(missing) =
             first_missing(&[(&SESSION_ID, session_id), (&GUEST_LOGIN, target_login)])
         {
-            return SubActionOutcome::Failed(missing);
+            return SubActionOutcome::Failed(UserText::unlocalized(missing));
         }
         let ctx =
             match GuestStarContext::resolve(self.transport.as_ref(), &self.identity, target_login)
                 .await
             {
                 Ok(c) => c,
-                Err(e) => return SubActionOutcome::Failed(format!("{KIND_ID}: {e}")),
+                Err(e) => {
+                    return SubActionOutcome::Failed(UserText::unlocalized(format!(
+                        "{KIND_ID}: {e}"
+                    )));
+                }
             };
         let request = HelixRequest::new(HelixMethod::Post, "/helix/guest_star/invites")
             .query("broadcaster_id", ctx.self_id.clone())
@@ -60,7 +64,7 @@ impl GuestStarInviteRunner {
             .query("guest_id", ctx.guest_id);
         match self.transport.execute(request).await {
             Ok(_) => SubActionOutcome::Success,
-            Err(e) => SubActionOutcome::Failed(format!("{KIND_ID}: {e}")),
+            Err(e) => SubActionOutcome::Failed(UserText::unlocalized(format!("{KIND_ID}: {e}"))),
         }
     }
 }

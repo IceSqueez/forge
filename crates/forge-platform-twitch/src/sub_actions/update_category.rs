@@ -6,7 +6,7 @@ use forge_registry::{
     ConfigProblem, ConfigReason, ConfigSpec, Interpolation, RunContext, StepTimer,
     SubActionCategory, SubActionConfigExt, SubActionRunner, TextEditor, TextField, TypedField,
 };
-use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry};
+use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, UserText};
 
 use crate::account::identity::SelfIdentity;
 use crate::helix::{HelixError, HelixMethod, HelixRequest, HelixTransport};
@@ -78,18 +78,18 @@ impl UpdateCategoryRunner {
         let category_id = category_id.trim();
         let category_name = category_name.trim();
         if category_id.is_empty() && category_name.is_empty() {
-            return SubActionOutcome::Failed(
-                "category_id and category_name are empty after interpolation".to_owned(),
-            );
+            return SubActionOutcome::Failed(UserText::unlocalized(
+                "category_id and category_name are empty after interpolation",
+            ));
         }
         let user_id = match self.identity.user_id().await {
             Ok(id) => id,
-            Err(e) => return SubActionOutcome::Failed(e.to_string()),
+            Err(e) => return SubActionOutcome::Failed(UserText::unlocalized(e.to_string())),
         };
         let category_id = if category_id.is_empty() {
             match self.resolve_category_id(category_name).await {
                 Ok(id) => id,
-                Err(e) => return SubActionOutcome::Failed(e.to_string()),
+                Err(e) => return SubActionOutcome::Failed(UserText::unlocalized(e.to_string())),
             }
         } else {
             category_id.to_owned()

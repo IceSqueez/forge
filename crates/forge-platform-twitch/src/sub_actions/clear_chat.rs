@@ -5,7 +5,7 @@ use std::time::Instant;
 use async_trait::async_trait;
 use forge_registry::runner::SubActionConfig;
 use forge_registry::{RunContext, SubActionCategory, SubActionRunner};
-use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry};
+use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, UserText};
 use time::OffsetDateTime;
 
 use crate::account::identity::SelfIdentity;
@@ -29,7 +29,7 @@ impl ClearChatRunner {
     async fn clear(&self) -> SubActionOutcome {
         let user_id = match self.identity.user_id().await {
             Ok(id) => id,
-            Err(e) => return SubActionOutcome::Failed(e.to_string()),
+            Err(e) => return SubActionOutcome::Failed(UserText::unlocalized(e.to_string())),
         };
         let request = HelixRequest::new(HelixMethod::Delete, "/helix/moderation/chat")
             .query("broadcaster_id", user_id.clone())

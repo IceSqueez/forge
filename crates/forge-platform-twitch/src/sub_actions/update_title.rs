@@ -6,7 +6,7 @@ use forge_registry::{
     BoundedTextField, ConfigSpec, RunContext, StepTimer, SubActionCategory, SubActionRunner,
     TextEditor, TypedField, ValueBounds,
 };
-use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry};
+use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, UserText};
 
 use crate::account::identity::SelfIdentity;
 use crate::helix::{HelixMethod, HelixRequest, HelixTransport};
@@ -44,11 +44,13 @@ impl UpdateTitleRunner {
 
     async fn apply(&self, title: &str) -> SubActionOutcome {
         if title.is_empty() {
-            return SubActionOutcome::Failed("title is empty after interpolation".to_owned());
+            return SubActionOutcome::Failed(UserText::unlocalized(
+                "title is empty after interpolation",
+            ));
         }
         let user_id = match self.identity.user_id().await {
             Ok(id) => id,
-            Err(e) => return SubActionOutcome::Failed(e.to_string()),
+            Err(e) => return SubActionOutcome::Failed(UserText::unlocalized(e.to_string())),
         };
         let request = HelixRequest::new(HelixMethod::Patch, "/helix/channels")
             .query("broadcaster_id", user_id)

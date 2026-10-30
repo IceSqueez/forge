@@ -6,7 +6,7 @@ use forge_registry::{
     ConfigSpec, RunContext, StepTimer, SubActionCategory, SubActionRunner, TextEditor, TextField,
     TypedField,
 };
-use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry};
+use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, UserText};
 
 use crate::account::identity::SelfIdentity;
 use crate::helix::{HelixMethod, HelixRequest, HelixTransport};
@@ -49,11 +49,11 @@ async fn manage_automod_message(
     action: &str,
 ) -> SubActionOutcome {
     if message_id.is_empty() {
-        return SubActionOutcome::Failed("message_id is required".to_owned());
+        return SubActionOutcome::Failed(UserText::unlocalized("message_id is required"));
     }
     let user_id = match identity.user_id().await {
         Ok(id) => id,
-        Err(e) => return SubActionOutcome::Failed(e.to_string()),
+        Err(e) => return SubActionOutcome::Failed(UserText::unlocalized(e.to_string())),
     };
     let body = serde_json::json!({
         "user_id": user_id,
@@ -64,7 +64,7 @@ async fn manage_automod_message(
         HelixRequest::new(HelixMethod::Post, "/helix/moderation/automod/message").body(body);
     match transport.execute(request).await {
         Ok(_) => SubActionOutcome::Success,
-        Err(e) => SubActionOutcome::Failed(format!("{kind_id}: {e}")),
+        Err(e) => SubActionOutcome::Failed(UserText::unlocalized(format!("{kind_id}: {e}"))),
     }
 }
 

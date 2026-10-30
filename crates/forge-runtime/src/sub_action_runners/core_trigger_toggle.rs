@@ -6,7 +6,7 @@ use forge_registry::{
 };
 use forge_storage::TriggerInstanceRepo;
 use forge_types::{
-    ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetry, TriggerInstanceId,
+    ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetry, TriggerInstanceId, UserText,
 };
 
 use super::core_trigger_shared::{TRIGGER, TRIGGER_SPEC};
@@ -24,11 +24,15 @@ impl CoreTriggerToggleRunner {
         let current_enabled = match self.trigger_instances.get(instance_id).await {
             Ok(Some(instance)) => instance.enabled,
             Ok(None) => {
-                return SubActionOutcome::Failed(format!(
+                return SubActionOutcome::Failed(UserText::unlocalized(format!(
                     "core.trigger.toggle: unknown trigger instance '{instance_id}'"
-                ));
+                )));
             }
-            Err(e) => return SubActionOutcome::Failed(format!("core.trigger.toggle: {e}")),
+            Err(e) => {
+                return SubActionOutcome::Failed(UserText::unlocalized(format!(
+                    "core.trigger.toggle: {e}"
+                )));
+            }
         };
         match self
             .trigger_instances
@@ -36,7 +40,9 @@ impl CoreTriggerToggleRunner {
             .await
         {
             Ok(()) => SubActionOutcome::Success,
-            Err(e) => SubActionOutcome::Failed(format!("core.trigger.toggle: {e}")),
+            Err(e) => {
+                SubActionOutcome::Failed(UserText::unlocalized(format!("core.trigger.toggle: {e}")))
+            }
         }
     }
 }

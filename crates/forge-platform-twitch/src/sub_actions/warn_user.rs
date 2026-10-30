@@ -6,7 +6,7 @@ use forge_registry::{
     BoundedTextField, ConfigProblem, ConfigSpec, RunContext, StepTimer, SubActionCategory,
     SubActionRunner, TextEditor, TypedField, ValueBounds,
 };
-use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry};
+use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, UserText};
 
 use super::fields::{MAX_REASON_CHARS, TARGET_LOGIN};
 use crate::account::identity::{SelfIdentity, resolve_user_id};
@@ -51,20 +51,22 @@ impl WarnUserRunner {
 
     async fn warn(&self, target_login: &str, reason: &str) -> SubActionOutcome {
         if target_login.is_empty() {
-            return SubActionOutcome::Failed(
-                "target_user_login is empty after interpolation".to_owned(),
-            );
+            return SubActionOutcome::Failed(UserText::unlocalized(
+                "target_user_login is empty after interpolation",
+            ));
         }
         if reason.is_empty() {
-            return SubActionOutcome::Failed("reason is required and must not be empty".to_owned());
+            return SubActionOutcome::Failed(UserText::unlocalized(
+                "reason is required and must not be empty",
+            ));
         }
         let user_id = match self.identity.user_id().await {
             Ok(id) => id,
-            Err(e) => return SubActionOutcome::Failed(e.to_string()),
+            Err(e) => return SubActionOutcome::Failed(UserText::unlocalized(e.to_string())),
         };
         let target_user_id = match resolve_user_id(self.transport.as_ref(), target_login).await {
             Ok(id) => id,
-            Err(e) => return SubActionOutcome::Failed(e.to_string()),
+            Err(e) => return SubActionOutcome::Failed(UserText::unlocalized(e.to_string())),
         };
         let request = HelixRequest::new(HelixMethod::Post, "/helix/moderation/warnings")
             .query("broadcaster_id", user_id.clone())

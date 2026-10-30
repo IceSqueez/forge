@@ -6,7 +6,7 @@ use forge_registry::{
     ConfigSpec, RunContext, StepTimer, SubActionCategory, SubActionRunner, TextEditor, TextField,
     TypedField,
 };
-use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry};
+use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, UserText};
 
 use crate::stream_metadata::YoutubeStreamMetadata;
 use crate::vocabulary::{config_keys, sub_action_ids};
@@ -76,7 +76,10 @@ impl SubActionRunner for UpdateTitleRunner {
             Err(problem) => return (timer.invalid_config(&problem), None),
         };
         if title.is_empty() {
-            return (timer.failed("title is empty after interpolation"), None);
+            return (
+                timer.failed(UserText::unlocalized("title is empty after interpolation")),
+                None,
+            );
         }
 
         let outcome = SubActionOutcome::from_result(&self.metadata.set_title(&title).await);

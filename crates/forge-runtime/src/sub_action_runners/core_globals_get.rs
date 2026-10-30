@@ -7,8 +7,8 @@ use forge_registry::{
 };
 use forge_storage::GlobalsRepo;
 use forge_types::{
-    ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetry, Variant, VariantKind,
-    strip_var_decoration,
+    ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetry, UserText, Variant,
+    VariantKind, strip_var_decoration,
 };
 
 use super::core_globals_shared::{GLOBAL_BY_NAME, global_name};
@@ -105,7 +105,10 @@ impl SubActionRunner for CoreGlobalsGetRunner {
                 let new_stack = ctx.arg_stack.clone().set(into, variant);
                 (SubActionOutcome::Success, Some(new_stack))
             }
-            Err(e) => (SubActionOutcome::Failed(e.to_string()), None),
+            Err(e) => (
+                SubActionOutcome::Failed(UserText::unlocalized(e.to_string())),
+                None,
+            ),
         };
 
         (timer.finish(outcome), updated_stack)

@@ -6,7 +6,7 @@ use forge_registry::{
     ChoiceField, ConfigProblem, ConfigSpec, IntegerEditor, IntegerField, OptionalField, RunContext,
     StepTimer, SubActionCategory, SubActionRunner, TypedField, ValueBounds,
 };
-use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry};
+use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, UserText};
 
 use super::fields::{ModeToggle, mode_toggle};
 use super::guest_star::{SESSION_ID, SLOT_ID, first_missing};
@@ -93,11 +93,13 @@ impl GuestStarUpdateSlotRunner {
             (&SESSION_ID, &settings.session_id),
             (&SLOT_ID, &settings.slot_id),
         ]) {
-            return SubActionOutcome::Failed(missing);
+            return SubActionOutcome::Failed(UserText::unlocalized(missing));
         }
         let user_id = match self.identity.user_id().await {
             Ok(id) => id,
-            Err(e) => return SubActionOutcome::Failed(format!("{KIND_ID}: {e}")),
+            Err(e) => {
+                return SubActionOutcome::Failed(UserText::unlocalized(format!("{KIND_ID}: {e}")));
+            }
         };
         let body = settings.body();
         if body.is_empty() {
@@ -111,7 +113,7 @@ impl GuestStarUpdateSlotRunner {
             .body(serde_json::Value::Object(body));
         match self.transport.execute(request).await {
             Ok(_) => SubActionOutcome::Success,
-            Err(e) => SubActionOutcome::Failed(format!("{KIND_ID}: {e}")),
+            Err(e) => SubActionOutcome::Failed(UserText::unlocalized(format!("{KIND_ID}: {e}"))),
         }
     }
 }

@@ -3,7 +3,9 @@ use forge_registry::{
     ConfigProblem, ConfigSpec, RunContext, StepTimer, SubActionCategory, SubActionRunner,
     ToggleField, TypedField,
 };
-use forge_types::{ArgStack, QueueId, SubActionConfig, SubActionOutcome, SubActionTelemetry};
+use forge_types::{
+    ArgStack, QueueId, SubActionConfig, SubActionOutcome, SubActionTelemetry, UserText,
+};
 
 use super::core_queue_shared::QUEUE;
 use crate::SchedulerCell;
@@ -34,11 +36,13 @@ impl CoreQueueClearRunner {
 
     async fn run(&self, queue_id: QueueId, keep_current: bool) -> SubActionOutcome {
         let Some(scheduler) = self.scheduler.get() else {
-            return SubActionOutcome::Failed("queue scheduler not ready".to_owned());
+            return SubActionOutcome::Failed(UserText::unlocalized("queue scheduler not ready"));
         };
         match scheduler.clear(queue_id, keep_current).await {
             Ok(()) => SubActionOutcome::Success,
-            Err(e) => SubActionOutcome::Failed(format!("core.queue.clear: {e}")),
+            Err(e) => {
+                SubActionOutcome::Failed(UserText::unlocalized(format!("core.queue.clear: {e}")))
+            }
         }
     }
 }

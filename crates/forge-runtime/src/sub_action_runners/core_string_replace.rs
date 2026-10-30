@@ -5,7 +5,7 @@ use forge_registry::{
     TypedField,
 };
 use forge_types::{
-    ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetry, Variant, VariantKind,
+    ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetry, UserText, Variant, VariantKind,
 };
 
 use super::core_string_shared::{INTO_RESULT, INTO_VAR_KEY, source_field};
@@ -169,7 +169,7 @@ impl SubActionRunner for CoreStringReplaceRunner {
                 let new_stack = ctx.arg_stack.clone().set(into_var, Variant::String(result));
                 return (timer.success(), Some(new_stack));
             }
-            Err(msg) => SubActionOutcome::Failed(msg),
+            Err(msg) => SubActionOutcome::Failed(UserText::unlocalized(msg)),
         };
 
         (timer.finish(outcome), None)

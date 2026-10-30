@@ -6,7 +6,7 @@ use forge_registry::{
     ConfigSpec, RunContext, StepTimer, SubActionCategory, SubActionRunner, TextEditor, TextField,
     TypedField,
 };
-use forge_types::{ArgStack, SubActionTelemetry, Variant};
+use forge_types::{ArgStack, SubActionTelemetry, UserText, Variant};
 
 use crate::channel_lookup::YoutubeChannelLookup;
 use crate::vocabulary::variables::viewer as variables;
@@ -78,7 +78,9 @@ impl SubActionRunner for LookupViewerRunner {
         };
         if identifier.is_empty() {
             return (
-                timer.failed("identifier is empty after interpolation"),
+                timer.failed(UserText::unlocalized(
+                    "identifier is empty after interpolation",
+                )),
                 None,
             );
         }
@@ -104,10 +106,10 @@ impl SubActionRunner for LookupViewerRunner {
                 (timer.success(), Some(stack))
             }
             Err(e) => (
-                timer.failed(format!(
+                timer.failed(UserText::unlocalized(format!(
                     "channel lookup failed: {}",
                     crate::error_shape::redact_platform_error(&e)
-                )),
+                ))),
                 None,
             ),
         }

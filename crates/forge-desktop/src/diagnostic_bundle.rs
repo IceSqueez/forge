@@ -11,7 +11,7 @@ use forge_platform_core::HealthValue;
 use forge_runtime::COMMAND_LINE_TARGET;
 use forge_storage::{DataProvider, SettingsRepo, disclose_rows, load_setting_rows};
 use forge_types::redaction::STAMP;
-use forge_types::{LogLevel, SCRIPT_LOG_TARGET, integration_disabled_reason};
+use forge_types::{INTEGRATION_DISABLED, LogLevel, SCRIPT_LOG_TARGET};
 use time::OffsetDateTime;
 
 use crate::integrations::BuiltinRegistry;
@@ -388,7 +388,7 @@ fn step_outcome_shape(outcome: &DisclosedStepOutcome) -> String {
             format!("skipped(reason {STAMP} len={reason_chars}>)")
         }
         DisclosedStepOutcome::IntegrationDisabled(integration) => {
-            format!("failed({})", integration_disabled_reason(integration))
+            format!("failed({INTEGRATION_DISABLED}: {integration})")
         }
     }
 }

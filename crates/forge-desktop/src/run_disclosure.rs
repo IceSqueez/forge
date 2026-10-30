@@ -110,7 +110,7 @@ impl From<&ExecutionOutcome> for DisclosedOutcome {
         match outcome {
             ExecutionOutcome::Success => Self::Success,
             ExecutionOutcome::Failed(reason) => Self::Failed {
-                reason_chars: reason.chars().count(),
+                reason_chars: reason.code_or_text().chars().count(),
             },
             ExecutionOutcome::Cancelled => Self::Cancelled,
         }
@@ -130,10 +130,10 @@ impl From<&SubActionOutcome> for DisclosedStepOutcome {
         match outcome {
             SubActionOutcome::Success => Self::Success,
             SubActionOutcome::Failed(reason) => Self::Failed {
-                reason_chars: reason.chars().count(),
+                reason_chars: reason.code_or_text().chars().count(),
             },
             SubActionOutcome::Skipped(reason) => Self::Skipped {
-                reason_chars: reason.chars().count(),
+                reason_chars: reason.code_or_text().chars().count(),
             },
             SubActionOutcome::IntegrationDisabled(integration) => {
                 Self::IntegrationDisabled(integration.clone())

@@ -36,10 +36,9 @@ pub use date_pattern::{
 pub use datetime_text::{datetime_from_text, datetime_to_text};
 pub use donation::{Donation, DonationOrigin, Donor, DonorVisibility};
 pub use execution::{
-    ArgStack, ExecutionContext, ExecutionMetadata, ExecutionOutcome,
-    NO_CHAT_PLATFORM_ENABLED_REASON, NO_WHISPER_PLATFORM_ENABLED_REASON, SubActionOutcome,
-    SubActionTelemetry, integration_disabled_reason, normalize_var_name, strip_var_decoration,
-    variant_preview, whispers_unsupported_reason,
+    ArgStack, ExecutionContext, ExecutionMetadata, ExecutionOutcome, SubActionOutcome,
+    SubActionTelemetry, integration_disabled_message, normalize_var_name, strip_var_decoration,
+    variant_preview, whispers_unsupported_message,
 };
 pub use ids::{ActionId, ClipId, DEFAULT_QUEUE_ID, EventId, QueueId, ScriptId, TriggerInstanceId};
 pub use integration::{IntegrationAvailability, IntegrationId};
@@ -49,15 +48,17 @@ pub use latest::{
 };
 pub use log_target::SCRIPT_LOG_TARGET;
 pub use message::{
-    COMMON_MESSAGES, COMMON_NAMESPACE, FiniteFloat, MAX_UPSTREAM_DETAIL_CHARS, MESSAGE_KEY_PREFIX,
-    MessageArg, MessageCatalog, MessageCatalogError, MessageCode, MessageCodeError, MessageRef,
-    UPSTREAM_FAILURE, UpstreamDetail, UserText, VerbatimText,
+    COMMON_MESSAGES, COMMON_NAMESPACE, FiniteFloat, INTEGRATION_DISABLED,
+    MAX_UPSTREAM_DETAIL_CHARS, MESSAGE_KEY_PREFIX, MessageArg, MessageCatalog, MessageCatalogError,
+    MessageCode, MessageCodeError, MessageRef, NO_CHAT_PLATFORM_ENABLED,
+    NO_WHISPER_PLATFORM_ENABLED, UNKNOWN_CHAT_TARGET, UPSTREAM_FAILURE, UpstreamDetail, UserText,
+    VerbatimText, WHISPERS_UNSUPPORTED,
 };
 pub use money::{CurrencyCode, MICROS_PER_MAJOR_UNIT, MoneyAmount, MoneyError};
 pub use permission_rung::{PermissionRung, PermissionRungError};
 pub use platform::{
     PlatformId, REPLY_PARENT_FIELD, WHISPER_RECIPIENT_FIELD, requested_chat_target,
-    resolve_chat_target, unknown_chat_target_reason,
+    resolve_chat_target, unknown_chat_target_message,
 };
 pub use platform_scope::PlatformScope;
 pub use queue::Queue;

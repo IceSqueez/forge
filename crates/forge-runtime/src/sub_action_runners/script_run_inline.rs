@@ -12,7 +12,7 @@ use forge_script::{
     build_scope_for_contract,
 };
 use forge_storage::{GlobalsRepo, SettingsRepo};
-use forge_types::{ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetry};
+use forge_types::{ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetry, UserText};
 use time::OffsetDateTime;
 
 use crate::global_mutation::RuntimeScriptGlobals;
@@ -175,7 +175,7 @@ impl SubActionRunner for ScriptRunInlineRunner {
                     EventSource::Rhai,
                     Some(script_event_id),
                 );
-                SubActionOutcome::Failed(message)
+                SubActionOutcome::Failed(UserText::unlocalized(message))
             }
             Err(join_err) => {
                 ScriptFailed {
@@ -190,7 +190,9 @@ impl SubActionRunner for ScriptRunInlineRunner {
                     EventSource::Rhai,
                     Some(script_event_id),
                 );
-                SubActionOutcome::Failed(format!("script task panicked: {join_err}"))
+                SubActionOutcome::Failed(UserText::unlocalized(format!(
+                    "script task panicked: {join_err}"
+                )))
             }
         };
 

@@ -8,7 +8,7 @@ use forge_registry::{
     ConfigSpec, RunContext, StepTimer, SubActionCategory, SubActionRunner, TextEditor, TextField,
     TypedField,
 };
-use forge_types::{ArgStack, SubActionTelemetry, Variant};
+use forge_types::{ArgStack, SubActionTelemetry, UserText, Variant};
 use futures::future::BoxFuture;
 
 use crate::api::categories::KickCategories;
@@ -89,12 +89,20 @@ impl SubActionRunner for LookupCategoryRunner {
             Err(problem) => return (timer.invalid_config(&problem), None),
         };
         if query.is_empty() {
-            return (timer.failed("query is empty after interpolation"), None);
+            return (
+                timer.failed(UserText::unlocalized("query is empty after interpolation")),
+                None,
+            );
         }
 
         let token = match (self.token_source)().await {
             Ok(token) => token,
-            Err(e) => return (timer.failed(format!("token error: {e}")), None),
+            Err(e) => {
+                return (
+                    timer.failed(UserText::unlocalized(format!("token error: {e}"))),
+                    None,
+                );
+            }
         };
         match self.client.search(&token, &query).await {
             Ok(matches) => {
@@ -119,7 +127,7 @@ impl SubActionRunner for LookupCategoryRunner {
                 );
                 (timer.success(), Some(stack))
             }
-            Err(e) => (timer.failed(e.to_string()), None),
+            Err(e) => (timer.failed(UserText::unlocalized(e.to_string())), None),
         }
     }
 }

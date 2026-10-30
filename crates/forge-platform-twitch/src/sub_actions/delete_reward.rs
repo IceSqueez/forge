@@ -5,7 +5,7 @@ use forge_registry::runner::SubActionConfig;
 use forge_registry::{
     ConfigSpec, RunContext, StepTimer, SubActionCategory, SubActionRunner, TypedField,
 };
-use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry};
+use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, UserText};
 
 use super::enable_reward::{REWARD_CONFIG, REWARD_ID};
 use crate::account::identity::SelfIdentity;
@@ -30,11 +30,11 @@ impl DeleteRewardRunner {
 
     async fn apply(&self, reward_id: &str) -> SubActionOutcome {
         if reward_id.is_empty() {
-            return SubActionOutcome::Failed("reward_id is required".to_owned());
+            return SubActionOutcome::Failed(UserText::unlocalized("reward_id is required"));
         }
         let user_id = match self.identity.user_id().await {
             Ok(id) => id,
-            Err(e) => return SubActionOutcome::Failed(e.to_string()),
+            Err(e) => return SubActionOutcome::Failed(UserText::unlocalized(e.to_string())),
         };
         let request = delete_request(user_id, reward_id);
         SubActionOutcome::from_result(&self.transport.execute(request).await)

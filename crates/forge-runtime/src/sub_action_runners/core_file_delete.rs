@@ -3,7 +3,7 @@ use forge_registry::{
     ConfigProblem, ConfigSpec, RunContext, StepTimer, SubActionCategory, SubActionRunner,
     TextEditor, TextField, ToggleField, TypedField,
 };
-use forge_types::{ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetry};
+use forge_types::{ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetry, UserText};
 
 const PATH: TextField = TextField {
     key: "path",
@@ -71,17 +71,23 @@ impl SubActionRunner for CoreFileDeleteRunner {
         };
 
         let outcome = match super::file_sandbox::resolve_sandboxed(&path).await {
-            Err(reason) => SubActionOutcome::Failed(format!("sandbox rejected path: {reason}")),
+            Err(reason) => SubActionOutcome::Failed(UserText::unlocalized(format!(
+                "sandbox rejected path: {reason}"
+            ))),
             Ok(abs_path) => match tokio::fs::remove_file(&abs_path).await {
                 Ok(()) => SubActionOutcome::Success,
                 Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
                     if ignore_missing {
                         SubActionOutcome::Success
                     } else {
-                        SubActionOutcome::Failed("core.file.delete: file not found".to_owned())
+                        SubActionOutcome::Failed(UserText::unlocalized(
+                            "core.file.delete: file not found",
+                        ))
                     }
                 }
-                Err(e) => SubActionOutcome::Failed(format!("delete failed: {e}")),
+                Err(e) => {
+                    SubActionOutcome::Failed(UserText::unlocalized(format!("delete failed: {e}")))
+                }
             },
         };
 

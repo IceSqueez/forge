@@ -4,6 +4,7 @@ use std::sync::{Arc, Mutex, MutexGuard};
 use async_trait::async_trait;
 use forge_types::{
     ActionId, ArgStack, EventId, IntegrationAvailability, SubActionStep, SubActionTelemetry,
+    UserText,
 };
 
 use crate::error::RegistryError;
@@ -14,7 +15,7 @@ pub enum ChainSignal {
     Stop(StopMark),
     Break,
     Continue,
-    Error(String),
+    Error(UserText),
     Aborted,
 }
 

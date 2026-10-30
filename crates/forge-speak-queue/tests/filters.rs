@@ -1108,7 +1108,7 @@ mod filters {
                     Some("koval_dev says: ?ask thing"),
                     Some("koval_dev says: repeat me"),
                     Some("koval_dev says: this message is definitely long"),
-                    Some("koval_dev says: "),
+                    None,
                     Some("koval_dev says: wow!!! ok??"),
                 ],
             ),

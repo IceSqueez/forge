@@ -232,6 +232,75 @@ fn is_emoji_char(c: char) -> bool {
         || CIRCLED_IDEOGRAPHS.contains(&cp)
 }
 
+const SOFT_HYPHEN: RangeInclusive<u32> = 0x00AD..=0x00AD;
+const COMBINING_GRAPHEME_JOINER: RangeInclusive<u32> = 0x034F..=0x034F;
+const ARABIC_LETTER_MARK: RangeInclusive<u32> = 0x061C..=0x061C;
+const HANGUL_JAMO_FILLERS: RangeInclusive<u32> = 0x115F..=0x1160;
+const KHMER_INHERENT_VOWELS: RangeInclusive<u32> = 0x17B4..=0x17B5;
+const MONGOLIAN_FORMAT_CONTROLS: RangeInclusive<u32> = 0x180B..=0x180F;
+const ZERO_WIDTH_AND_DIRECTION_MARKS: RangeInclusive<u32> = 0x200B..=0x200F;
+const BIDI_EMBEDDINGS: RangeInclusive<u32> = 0x202A..=0x202E;
+const WORD_JOINER_AND_INVISIBLE_OPERATORS: RangeInclusive<u32> = 0x2060..=0x206F;
+const BRAILLE_BLANK: RangeInclusive<u32> = 0x2800..=0x2800;
+const HANGUL_FILLER: RangeInclusive<u32> = 0x3164..=0x3164;
+const BYTE_ORDER_MARK: RangeInclusive<u32> = 0xFEFF..=0xFEFF;
+const HALFWIDTH_HANGUL_FILLER: RangeInclusive<u32> = 0xFFA0..=0xFFA0;
+const SPECIALS_RESERVED_AND_ANNOTATIONS: RangeInclusive<u32> = 0xFFF0..=0xFFFB;
+const SHORTHAND_FORMAT_CONTROLS: RangeInclusive<u32> = 0x1BCA0..=0x1BCA3;
+const MUSICAL_FORMAT_CONTROLS: RangeInclusive<u32> = 0x1D173..=0x1D17A;
+const TAGS_AND_VARIATION_SELECTORS_SUPPLEMENT: RangeInclusive<u32> = 0xE0000..=0xE0FFF;
+
+const INVISIBLE_CHARS: [RangeInclusive<u32>; 18] = [
+    SOFT_HYPHEN,
+    COMBINING_GRAPHEME_JOINER,
+    ARABIC_LETTER_MARK,
+    HANGUL_JAMO_FILLERS,
+    KHMER_INHERENT_VOWELS,
+    MONGOLIAN_FORMAT_CONTROLS,
+    ZERO_WIDTH_AND_DIRECTION_MARKS,
+    BIDI_EMBEDDINGS,
+    WORD_JOINER_AND_INVISIBLE_OPERATORS,
+    BRAILLE_BLANK,
+    HANGUL_FILLER,
+    VARIATION_SELECTORS,
+    BYTE_ORDER_MARK,
+    HALFWIDTH_HANGUL_FILLER,
+    SPECIALS_RESERVED_AND_ANNOTATIONS,
+    SHORTHAND_FORMAT_CONTROLS,
+    MUSICAL_FORMAT_CONTROLS,
+    TAGS_AND_VARIATION_SELECTORS_SUPPLEMENT,
+];
+
+fn is_invisible_char(c: char) -> bool {
+    let cp = c as u32;
+    (c.is_control() && !c.is_whitespace())
+        || INVISIBLE_CHARS.iter().any(|range| range.contains(&cp))
+}
+
+#[derive(Debug, Clone, Copy)]
+struct Unspoken {
+    emoji: bool,
+}
+
+impl Unspoken {
+    const INVISIBLE_ONLY: Unspoken = Unspoken { emoji: false };
+
+    fn in_output(output: &OutputConfig) -> Unspoken {
+        Unspoken {
+            emoji: output.strip_emoji,
+        }
+    }
+
+    fn contains(self, c: char) -> bool {
+        is_invisible_char(c) || (self.emoji && is_emoji_char(c))
+    }
+}
+
+fn spoken_text(text: &str, unspoken: Unspoken) -> String {
+    let kept: String = text.chars().filter(|&c| !unspoken.contains(c)).collect();
+    kept.split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
 pub fn strip_emote_tokens(text: &str, tokens: &EmoteTokenSet) -> String {
     strip_emote_tokens_logged(text, tokens, &mut Unlogged)
 }
@@ -312,9 +381,14 @@ fn colon_tokens_to_words_logged(text: &str, log: &mut impl EditLog) -> String {
     result
 }
 
-fn is_repeat_of_recent(text: &str, recent: &[String]) -> bool {
-    let trimmed = text.trim();
-    recent.iter().any(|r| r.trim() == trimmed)
+fn is_repeat_of_recent(text: &str, recent: &[String], config: &PipelineConfig) -> bool {
+    let forms = spoken_forms(text, config);
+    recent.iter().any(|message| {
+        let seen = spoken_forms(message, config);
+        forms
+            .iter()
+            .any(|form| !form.is_empty() && seen.contains(form))
+    })
 }
 
 fn is_colon_emote_token(token: &str) -> bool {
@@ -363,12 +437,14 @@ fn stage_skip_rules(
     context: &PipelineContext,
 ) -> Option<SkipReason> {
     let skip_rules = &config.skip_rules;
-    if skip_rules.contains_url && URL_RE.is_match(text) {
+    let [spoken, transformed] = spoken_forms(text, config);
+    let forms = [text, spoken.as_str(), transformed.as_str()];
+    if skip_rules.contains_url && forms.iter().any(|form| URL_RE.is_match(form)) {
         return Some(SkipReason::MatchedSkipRule(SkipRule::ContainsUrl));
     }
     if let Some(prefix) = skip_rules.skip_prefix.as_deref()
         && !prefix.is_empty()
-        && text.starts_with(prefix)
+        && forms.iter().any(|form| form.starts_with(prefix))
     {
         return Some(SkipReason::MatchedSkipRule(SkipRule::StartsWithPrefix));
     }
@@ -377,20 +453,30 @@ fn stage_skip_rules(
         return Some(SkipReason::MatchedSkipRule(SkipRule::FromBotAccount));
     }
     if let Some(max_chars) = skip_rules.max_chars
-        && text.chars().count() > max_chars
+        && spoken.chars().count() > max_chars
     {
         return Some(SkipReason::MatchedSkipRule(SkipRule::ExceedsMaxLength));
     }
-    if skip_rules.repeat_of_recent && is_repeat_of_recent(text, context.recent_messages) {
+    if skip_rules.repeat_of_recent && is_repeat_of_recent(text, context.recent_messages, config) {
         return Some(SkipReason::MatchedSkipRule(SkipRule::RepeatsRecentMessage));
     }
-    if skip_rules.emote_only && is_emote_only(text, &config.emote_tokens) {
+    if skip_rules.emote_only
+        && forms
+            .iter()
+            .any(|form| is_emote_only(form, &config.emote_tokens))
+    {
         return Some(SkipReason::MatchedSkipRule(SkipRule::EmoteOnly));
     }
-    if skip_rules.mostly_non_latin && is_mostly_non_latin(text) {
+    if skip_rules.mostly_non_latin
+        && (is_mostly_non_latin(&spoken) || is_mostly_non_latin(&transformed))
+    {
         return Some(SkipReason::MatchedSkipRule(SkipRule::MostlyNonLatin));
     }
-    if skip_rules.custom_regexes.iter().any(|re| re.is_match(text)) {
+    if skip_rules
+        .custom_regexes
+        .iter()
+        .any(|re| forms.iter().any(|form| re.is_match(form)))
+    {
         return Some(SkipReason::MatchedSkipRule(SkipRule::CustomRegex));
     }
     None
@@ -520,48 +606,81 @@ fn chars_equal_ignoring_case(a: char, b: char) -> bool {
     a == b || a.to_lowercase().eq(b.to_lowercase())
 }
 
-fn stage_word_blocklist(
-    text: &str,
-    blocklist: &[String],
-    mode: &BlocklistMode,
-) -> Result<String, SkipReason> {
-    stage_word_blocklist_logged(text, blocklist, mode, &mut Unlogged)
+fn spoken_match_len(haystack: &str, pattern: &[char], unspoken: Unspoken) -> Option<usize> {
+    let mut remaining = pattern.iter().copied();
+    let mut expected = remaining.next();
+    let mut previous: Option<char> = None;
+    let mut matched_len = 0usize;
+    for (at, actual) in haystack.char_indices() {
+        let Some(wanted) = expected else {
+            break;
+        };
+        if chars_equal_ignoring_case(actual, wanted)
+            || (actual.is_whitespace() && wanted.is_whitespace())
+        {
+            previous = Some(wanted);
+            matched_len = at + actual.len_utf8();
+            expected = remaining.next();
+            continue;
+        }
+        let extends_whitespace =
+            actual.is_whitespace() && previous.is_some_and(char::is_whitespace);
+        if previous.is_none() || !(unspoken.contains(actual) || extends_whitespace) {
+            return None;
+        }
+    }
+    expected.is_none().then_some(matched_len)
 }
 
-fn stage_word_blocklist_logged(
+fn blocked_pattern(entry: &str) -> Vec<char> {
+    spoken_text(entry, Unspoken::INVISIBLE_ONLY)
+        .chars()
+        .collect()
+}
+
+fn blocked_patterns(blocklist: &[String]) -> Vec<Vec<char>> {
+    blocklist
+        .iter()
+        .map(|entry| blocked_pattern(entry))
+        .filter(|entry| !entry.is_empty())
+        .collect()
+}
+
+fn censor_blocked_words(
     text: &str,
-    blocklist: &[String],
-    mode: &BlocklistMode,
+    config: &PipelineConfig,
+    own_tokens: &[Range<usize>],
     log: &mut impl EditLog,
 ) -> Result<String, SkipReason> {
-    if blocklist.is_empty() {
-        return Ok(text.to_owned());
-    }
-    let blocked: Vec<Vec<char>> = blocklist
-        .iter()
-        .map(|entry| entry.chars().collect::<Vec<char>>())
-        .filter(|entry| !entry.is_empty())
-        .collect();
-    let mut result = String::with_capacity(text.len());
-    censor_blocked_text(text, &blocked, mode, &mut result, log)?;
-    Ok(result)
+    censor_blocked_text(
+        text,
+        &blocked_patterns(&config.word_blocklist),
+        &config.blocklist_mode,
+        Unspoken::in_output(&config.output),
+        own_tokens,
+        log,
+    )
 }
 
 fn censor_blocked_text(
     word: &str,
     blocked: &[Vec<char>],
     mode: &BlocklistMode,
-    result: &mut String,
+    unspoken: Unspoken,
+    own_tokens: &[Range<usize>],
     log: &mut impl EditLog,
-) -> Result<(), SkipReason> {
+) -> Result<String, SkipReason> {
+    let mut result = String::with_capacity(word.len());
     let mut copied_until = 0usize;
     let mut cursor = 0usize;
     while let Some(current) = word[cursor..].chars().next() {
-        let blocked_len = if follows_word_boundary(&word[..cursor]) {
-            longest_blocked_match(&word[cursor..], blocked)
-        } else {
-            None
-        };
+        if let Some(own_token) = own_tokens.iter().find(|token| token.start == cursor) {
+            cursor = own_token.end;
+            continue;
+        }
+        let blocked_len =
+            longest_blocked_match(&word[..cursor], &word[cursor..], blocked, unspoken)
+                .filter(|&match_len| match_len > 0);
         match blocked_len {
             Some(match_len) => {
                 if let BlocklistMode::SkipMessage = mode {
@@ -582,14 +701,24 @@ fn censor_blocked_text(
         }
     }
     result.push_str(&word[copied_until..]);
-    Ok(())
+    Ok(result)
 }
 
-fn longest_blocked_match(rest: &str, blocked: &[Vec<char>]) -> Option<usize> {
+fn longest_blocked_match(
+    before: &str,
+    rest: &str,
+    blocked: &[Vec<char>],
+    unspoken: Unspoken,
+) -> Option<usize> {
+    let has_word_edge = |edge: Option<&char>| edge.is_some_and(|&c| is_word_char(c));
     blocked
         .iter()
-        .filter_map(|entry| match_len_ignoring_case(rest, entry))
-        .filter(|&match_len| precedes_word_boundary(&rest[match_len..]))
+        .filter(|entry| !has_word_edge(entry.first()) || follows_spoken_boundary(before, unspoken))
+        .filter_map(|entry| {
+            let match_len = spoken_match_len(rest, entry, unspoken)?;
+            (!has_word_edge(entry.last()) || precedes_spoken_boundary(&rest[match_len..], unspoken))
+                .then_some(match_len)
+        })
         .max()
 }
 
@@ -605,9 +734,23 @@ fn precedes_word_boundary(after: &str) -> bool {
     after.chars().next().is_none_or(|c| !is_word_char(c))
 }
 
-fn equals_ignoring_case(text: &str, pattern: &str) -> bool {
-    let pattern_chars: Vec<char> = pattern.chars().collect();
-    match_len_ignoring_case(text, &pattern_chars) == Some(text.len())
+fn follows_spoken_boundary(before: &str, unspoken: Unspoken) -> bool {
+    before
+        .chars()
+        .rev()
+        .find(|&c| !unspoken.contains(c))
+        .is_none_or(|c| !is_word_char(c))
+}
+
+fn precedes_spoken_boundary(after: &str, unspoken: Unspoken) -> bool {
+    after
+        .chars()
+        .find(|&c| !unspoken.contains(c))
+        .is_none_or(|c| !is_word_char(c))
+}
+
+fn is_spoken_as_entry(text: &str, entry: &str, unspoken: Unspoken) -> bool {
+    spoken_match_len(text, &blocked_pattern(entry), unspoken) == Some(text.len())
 }
 
 fn transform_emotes_logged(text: &str, config: &PipelineConfig, log: &mut impl EditLog) -> String {
@@ -632,16 +775,51 @@ fn strip_emoji_logged(text: &str, log: &mut impl EditLog) -> String {
 
 fn sanitize_punctuation_logged(text: &str, log: &mut impl EditLog) -> String {
     let mut result = String::with_capacity(text.len());
-    let mut last: Option<char> = None;
-    for (at, c) in text.char_indices() {
-        if c.is_ascii_punctuation() && last == Some(c) {
-            record_removal(&text[at..at + c.len_utf8()], &result, log);
-            continue;
+    let mut rest = text;
+    while let Some(c) = rest.chars().next() {
+        let (run, after_run) = rest.split_at(rest.len() - rest.trim_start_matches(c).len());
+        if c.is_ascii_punctuation() && run.len() > c.len_utf8() {
+            let collapsed_to = result.len();
+            result.push(c);
+            log.record(collapsed_to..result.len(), run, &run[..c.len_utf8()]);
+        } else {
+            result.push_str(run);
         }
-        result.push(c);
-        last = Some(c);
+        rest = after_run;
     }
     result
+}
+
+fn output_transforms_logged(text: &str, config: &PipelineConfig, log: &mut impl EditLog) -> String {
+    let emote_pass = transform_emotes_logged(text, config, log);
+    log.end_pass();
+    let emoji_pass = if config.output.strip_emoji {
+        strip_emoji_logged(&emote_pass, log)
+    } else {
+        emote_pass
+    };
+    log.end_pass();
+    let sanitized = if config.output.sanitize_punctuation {
+        sanitize_punctuation_logged(&emoji_pass, log)
+    } else {
+        emoji_pass
+    };
+    log.end_pass();
+    sanitized
+}
+
+fn spoken_forms(text: &str, config: &PipelineConfig) -> [String; 2] {
+    let unspoken = Unspoken::in_output(&config.output);
+    let transformed = output_transforms_logged(text, config, &mut Unlogged);
+    [
+        spoken_text(text, unspoken),
+        spoken_text(&transformed, unspoken),
+    ]
+}
+
+fn has_nothing_to_speak(text_before_output: &str, config: &PipelineConfig) -> bool {
+    let [_, transformed] = spoken_forms(text_before_output, config);
+    transformed.is_empty()
 }
 
 fn spoken_name_prefix(viewer_name: &str, says: &str) -> String {
@@ -710,12 +888,7 @@ fn run_stage(
             Some(reason) => StageOut::Skip(reason),
             None => StageOut::Ok(text.to_owned()),
         },
-        StageName::WordBlocklist => {
-            match stage_word_blocklist(text, &config.word_blocklist, &config.blocklist_mode) {
-                Ok(s) => StageOut::Ok(s),
-                Err(r) => StageOut::Skip(r),
-            }
-        }
+        StageName::WordBlocklist => trace::blocklist_traced(text, config).0,
         StageName::TextReplacements => StageOut::Ok(stage_text_replacements(
             text,
             &config.replacement_rules,
@@ -757,15 +930,15 @@ fn run_stages(
 ) -> PipelineResult {
     let mut current = text.to_owned();
     for stage in STAGES {
+        if stage == StageName::Output && has_nothing_to_speak(&current, config) {
+            return PipelineResult::Skip {
+                reason: SkipReason::EmptyAfterProcessing,
+            };
+        }
         match run_stage(stage, &current, config, context, prepend_display_name) {
             StageOut::Ok(s) => current = s,
             StageOut::Skip(r) => return PipelineResult::Skip { reason: r },
         }
-    }
-    if current.trim().is_empty() {
-        return PipelineResult::Skip {
-            reason: SkipReason::EmptyAfterProcessing,
-        };
     }
     PipelineResult::Speak(current)
 }
@@ -826,7 +999,10 @@ pub fn preview(
 
     let final_result = if let Some(reason) = early_skip {
         PipelineResult::Skip { reason }
-    } else if current.trim().is_empty() {
+    } else if outcomes
+        .last()
+        .is_some_and(|output_stage| has_nothing_to_speak(&output_stage.input, config))
+    {
         PipelineResult::Skip {
             reason: SkipReason::EmptyAfterProcessing,
         }
@@ -1518,6 +1694,33 @@ mod tests {
         }
     }
 
+    struct RefusesEdits;
+
+    impl EditLog for RefusesEdits {
+        fn record(&mut self, _output: Range<usize>, _original: &str, _replacement: &str) {
+            unreachable!("an empty pattern must not censor");
+        }
+    }
+
+    #[test]
+    fn an_empty_pattern_reaching_the_censor_loop_matches_nothing_in_either_mode() {
+        for mode in [BlocklistMode::Censor, BlocklistMode::SkipMessage] {
+            for text in ["hello", "\u{200B}", ""] {
+                assert_eq!(
+                    censor_blocked_text(
+                        text,
+                        &[Vec::new()],
+                        &mode,
+                        Unspoken::INVISIBLE_ONLY,
+                        &[],
+                        &mut RefusesEdits,
+                    ),
+                    Ok(text.to_owned())
+                );
+            }
+        }
+    }
+
     #[test]
     fn censor_replaces_whole_blocked_words_keeping_surrounding_punctuation() {
         let config = blocklist(&["gtfo", "дурень", "ass", "a$$!"], BlocklistMode::Censor);
@@ -1564,7 +1767,7 @@ mod tests {
             ("BAD WORD!", "[beep]!"),
             ("say go away now", "say [beep] now"),
             ("bad word bad word", "[beep] [beep]"),
-            ("bad  word", "bad  word"),
+            ("bad  word", "[beep]"),
             ("bad words", "bad words"),
             ("a bad", "a bad"),
             ("word bad", "word bad"),
@@ -1584,6 +1787,8 @@ mod tests {
         for (input, skipped) in [
             ("this is a bad word indeed", true),
             ("Bad Word", true),
+            ("bad  word", true),
+            ("bad words", false),
             ("bad", false),
             ("word", false),
             ("bad then word", false),

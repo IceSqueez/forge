@@ -3,9 +3,9 @@ use std::ops::Range;
 use forge_speech_types::LanguageCode;
 
 use crate::{
-    LiteralScope, PipelineConfig, PipelineContext, ReplacementRule, StageName, StageOut,
-    equals_ignoring_case, literal_replace_logged, run_stage, spoken_words, stage_output_logged,
-    stage_word_blocklist_logged,
+    LiteralScope, PipelineConfig, PipelineContext, ReplacementRule, StageName, StageOut, Unspoken,
+    censor_blocked_words, is_spoken_as_entry, literal_replace_logged, output_transforms_logged,
+    run_stage, spoken_words, stage_output_logged,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -108,38 +108,51 @@ pub(crate) fn run_stage_traced(
     }
 }
 
-fn blocklist_traced(text: &str, config: &PipelineConfig) -> (StageOut, Vec<AppliedReplacement>) {
-    let mut edits = PassEdits::default();
-    match stage_word_blocklist_logged(
-        text,
-        &config.word_blocklist,
-        &config.blocklist_mode,
-        &mut edits,
-    ) {
-        Ok(output) => {
-            let marks = edits
-                .0
-                .into_iter()
-                .filter_map(|edit| {
-                    let index = blocked_word_index(&config.word_blocklist, &edit.original)?;
-                    Some(AppliedReplacement {
-                        output_range: edit.output,
-                        original: edit.original,
-                        replacement: edit.replacement,
-                        origin: ReplacementOrigin::BlockedWordIndex(index),
-                    })
-                })
-                .collect();
-            (StageOut::Ok(output), marks)
-        }
+pub(crate) fn blocklist_traced(
+    text: &str,
+    config: &PipelineConfig,
+) -> (StageOut, Vec<AppliedReplacement>) {
+    if config.word_blocklist.is_empty() {
+        return (StageOut::Ok(text.to_owned()), Vec::new());
+    }
+    let unspoken = Unspoken::in_output(&config.output);
+    let origin_of = |edit: &PassEdit| {
+        blocked_word_index(&config.word_blocklist, &edit.original, unspoken)
+            .map(ReplacementOrigin::BlockedWordIndex)
+    };
+    let mut early_edits = PassEdits::default();
+    let censored = match censor_blocked_words(text, config, &[], &mut early_edits) {
+        Ok(censored) => censored,
+        Err(reason) => return (StageOut::Skip(reason), Vec::new()),
+    };
+    let marks = carry_through_pass(Vec::new(), early_edits.0, origin_of);
+    let mut transform_passes = SubPassEdits::default();
+    let transformed = output_transforms_logged(&censored, config, &mut transform_passes);
+    let carried = transform_passes
+        .finished
+        .iter()
+        .fold(marks.clone(), |carried, edits| {
+            shrink_through_pass(carried, edits)
+        });
+    let own_tokens: Vec<Range<usize>> = carried
+        .iter()
+        .map(|mark| mark.output_range.clone())
+        .collect();
+    let mut late_edits = PassEdits::default();
+    match censor_blocked_words(&transformed, config, &own_tokens, &mut late_edits) {
         Err(reason) => (StageOut::Skip(reason), Vec::new()),
+        Ok(_) if late_edits.0.is_empty() => (StageOut::Ok(censored), marks),
+        Ok(rechecked) => (
+            StageOut::Ok(rechecked),
+            carry_through_pass(carried, late_edits.0, origin_of),
+        ),
     }
 }
 
-fn blocked_word_index(blocklist: &[String], word: &str) -> Option<usize> {
+fn blocked_word_index(blocklist: &[String], word: &str, unspoken: Unspoken) -> Option<usize> {
     blocklist
         .iter()
-        .position(|blocked| equals_ignoring_case(word, blocked))
+        .position(|blocked| is_spoken_as_entry(word, blocked, unspoken))
 }
 
 fn replacements_traced(
@@ -181,11 +194,9 @@ fn replacements_traced(
                 regex_replace_logged(&current, compiled, spoken_words(language).link, &mut edits)
             }
         };
-        carried = carry_through_pass(
-            carried,
-            edits.0,
-            ReplacementOrigin::ReplacementRuleIndex(index),
-        );
+        carried = carry_through_pass(carried, edits.0, |_| {
+            Some(ReplacementOrigin::ReplacementRuleIndex(index))
+        });
     }
     (current, carried)
 }
@@ -219,6 +230,15 @@ fn regex_replace_logged(
 struct Splice {
     input: Range<usize>,
     output: Range<usize>,
+    collapses_run: bool,
+}
+
+fn collapses_run(edit: &PassEdit) -> bool {
+    edit.original.len() > edit.replacement.len()
+        && edit
+            .original
+            .trim_start_matches(edit.replacement.as_str())
+            .is_empty()
 }
 
 fn splices(edits: &[PassEdit]) -> Vec<Splice> {
@@ -233,6 +253,7 @@ fn splices(edits: &[PassEdit]) -> Vec<Splice> {
             Splice {
                 input: input_start..input_start + edit.original.len(),
                 output: edit.output.clone(),
+                collapses_run: collapses_run(edit),
             }
         })
         .collect()
@@ -241,18 +262,21 @@ fn splices(edits: &[PassEdit]) -> Vec<Splice> {
 fn carry_through_pass(
     marks: Vec<AppliedReplacement>,
     edits: Vec<PassEdit>,
-    origin: ReplacementOrigin,
+    origin_of: impl Fn(&PassEdit) -> Option<ReplacementOrigin>,
 ) -> Vec<AppliedReplacement> {
     let spans = splices(&edits);
     let mut carried: Vec<AppliedReplacement> = marks
         .into_iter()
         .filter_map(|mark| shift_unless_rewritten(mark, &spans))
         .collect();
-    carried.extend(edits.into_iter().map(|edit| AppliedReplacement {
-        output_range: edit.output,
-        original: edit.original,
-        replacement: edit.replacement,
-        origin,
+    carried.extend(edits.into_iter().filter_map(|edit| {
+        let origin = origin_of(&edit)?;
+        Some(AppliedReplacement {
+            output_range: edit.output,
+            original: edit.original,
+            replacement: edit.replacement,
+            origin,
+        })
     }));
     carried.sort_by_key(|mark| (mark.output_range.start, mark.output_range.end));
     carried
@@ -307,7 +331,11 @@ fn surviving_start(at: usize, spans: &[Splice]) -> usize {
     let mut inserted_before = 0usize;
     for span in spans {
         if span.input.contains(&at) {
-            return span.output.end;
+            return if span.collapses_run {
+                span.output.start
+            } else {
+                span.output.end
+            };
         }
         if span.input.end <= at {
             removed_before += span.input.len();
@@ -322,7 +350,11 @@ fn surviving_end(at: usize, spans: &[Splice]) -> usize {
     let mut inserted_before = 0usize;
     for span in spans {
         if span.input.start < at && at < span.input.end {
-            return span.output.start;
+            return if span.collapses_run {
+                span.output.end
+            } else {
+                span.output.start
+            };
         }
         if span.input.start < at && span.input.end <= at {
             removed_before += span.input.len();

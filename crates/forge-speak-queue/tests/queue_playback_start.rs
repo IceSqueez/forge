@@ -22,7 +22,6 @@ use tokio::sync::{Notify, mpsc, oneshot};
 use common::{make_deps, request, standard_registry, wait_for};
 
 const DESTINATION: &str = "stage-audio";
-const EVENT_WAIT_MS: u64 = 30_000;
 const COMMAND_WAIT: Duration = Duration::from_secs(30);
 const PAST_THE_START_BOUND: Duration = Duration::from_secs(6);
 const PAST_ONE_CONTROL_POLL: Duration = Duration::from_millis(200);
@@ -137,16 +136,10 @@ async fn commands_are_answered_while_the_sink_hangs_on_starting_a_clip() {
     wait_for(
         &mut stream,
         |event| matches!(event, SpeakEvent::Enqueued { request_id, .. } if *request_id == waiting_id),
-        EVENT_WAIT_MS,
     )
-    .await;
+.await;
     handle.send(SpeakCommand::Pause).await.unwrap();
-    wait_for(
-        &mut stream,
-        |event| matches!(event, SpeakEvent::Paused),
-        EVENT_WAIT_MS,
-    )
-    .await;
+    wait_for(&mut stream, |event| matches!(event, SpeakEvent::Paused)).await;
 
     assert_eq!(
         hang_began.elapsed(),
@@ -175,13 +168,11 @@ async fn a_skip_during_a_hung_start_lands_at_once_and_the_abandoned_start_report
     wait_for(
         &mut stream,
         |event| matches!(event, SpeakEvent::Skipped { request_id, .. } if *request_id == hung_id),
-        EVENT_WAIT_MS,
     )
     .await;
     wait_for(
         &mut stream,
         |event| matches!(event, SpeakEvent::Finished { request_id } if *request_id == next_id),
-        EVENT_WAIT_MS,
     )
     .await;
     assert_eq!(skipped_at.elapsed(), Duration::ZERO);
@@ -214,13 +205,11 @@ async fn a_start_that_panics_fails_only_its_own_utterance() {
     wait_for(
         &mut stream,
         |event| matches!(event, SpeakEvent::Failed { request_id, .. } if *request_id == doomed_id),
-        EVENT_WAIT_MS,
     )
     .await;
     wait_for(
         &mut stream,
         |event| matches!(event, SpeakEvent::Finished { request_id } if *request_id == next_id),
-        EVENT_WAIT_MS,
     )
     .await;
 }
@@ -257,7 +246,6 @@ async fn utterances_never_overlap_and_keep_priority_order_across_a_slow_start() 
     wait_for(
         &mut stream,
         |event| matches!(event, SpeakEvent::Progress { request_id, .. } if *request_id == first_id),
-        EVENT_WAIT_MS,
     )
     .await;
     assert!(
@@ -398,9 +386,8 @@ async fn every_way_of_stopping_a_clip_mid_start_stops_it_on_the_page_exactly_onc
         wait_for(
             &mut stream,
             |event| matches!(event, SpeakEvent::Skipped { request_id, .. } if *request_id == active_id),
-            EVENT_WAIT_MS,
         )
-        .await;
+.await;
         open_gate.send(()).unwrap();
 
         assert_eq!(
@@ -427,12 +414,7 @@ async fn a_pause_during_the_start_holds_the_clip_as_soon_as_it_lands() {
         .unwrap();
     page.arrivals.recv().await.unwrap();
     handle.send(SpeakCommand::Pause).await.unwrap();
-    wait_for(
-        &mut stream,
-        |event| matches!(event, SpeakEvent::Paused),
-        EVENT_WAIT_MS,
-    )
-    .await;
+    wait_for(&mut stream, |event| matches!(event, SpeakEvent::Paused)).await;
     open_gate.send(()).unwrap();
 
     assert_eq!(
@@ -462,18 +444,11 @@ async fn a_pause_undone_during_the_start_leaves_the_clip_playing() {
     page.arrivals.recv().await.unwrap();
     handle.send(SpeakCommand::Pause).await.unwrap();
     handle.send(SpeakCommand::Resume).await.unwrap();
-    wait_for(
-        &mut stream,
-        |event| matches!(event, SpeakEvent::Resumed),
-        EVENT_WAIT_MS,
-    )
-    .await;
+    wait_for(&mut stream, |event| matches!(event, SpeakEvent::Resumed)).await;
     open_gate.send(()).unwrap();
-    wait_for(
-        &mut stream,
-        |event| matches!(event, SpeakEvent::Progress { .. }),
-        EVENT_WAIT_MS,
-    )
+    wait_for(&mut stream, |event| {
+        matches!(event, SpeakEvent::Progress { .. })
+    })
     .await;
     handle.send(SpeakCommand::Skip).await.unwrap();
 
@@ -503,7 +478,6 @@ async fn a_skipped_start_landing_during_the_next_clip_stops_only_the_skipped_cli
     wait_for(
         &mut stream,
         |event| matches!(event, SpeakEvent::Progress { request_id, .. } if *request_id == next_id),
-        EVENT_WAIT_MS,
     )
     .await;
 
@@ -517,7 +491,6 @@ async fn a_skipped_start_landing_during_the_next_clip_stops_only_the_skipped_cli
     wait_for(
         &mut stream,
         |event| matches!(event, SpeakEvent::Finished { request_id } if *request_id == next_id),
-        EVENT_WAIT_MS,
     )
     .await;
     let stray = page.commands.try_recv();

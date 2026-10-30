@@ -4,7 +4,7 @@ use std::sync::{Arc, OnceLock};
 use forge_storage::{SoundboardClipsRepo, TriggerInstanceRepo};
 use tokio::sync::{Mutex, watch};
 
-use crate::binding_store::persisted_hotkey_combos;
+use crate::binding_store::{bound_hotkey_combos, persisted_hotkey_combos};
 use crate::client::HotkeyClient;
 use crate::clip_bindings::{ClipBindings, clip_bindings_of};
 use crate::combo::HotkeyCombo;
@@ -46,12 +46,12 @@ impl HotkeyReconciler {
         let _ = self.enable_engine.set(Arc::new(enable));
     }
 
-    fn note_wanted(&self, wanted: &BTreeSet<String>) -> bool {
+    fn note_bound(&self, bound: BTreeSet<String>, wanted: &BTreeSet<String>) -> bool {
         let mut known = self.known_combos.lock().unwrap_or_else(|p| p.into_inner());
         let grew = known
             .as_ref()
             .is_some_and(|previous| wanted.iter().any(|combo| !previous.contains(combo)));
-        *known = Some(wanted.clone());
+        *known = Some(bound);
         grew
     }
 
@@ -82,8 +82,10 @@ impl HotkeyReconciler {
         let bindings = clip_bindings_of(&clips);
         let mut wanted = persisted_hotkey_combos(&instances);
         wanted.extend(bindings.keys().cloned());
+        let mut bound = bound_hotkey_combos(&instances);
+        bound.extend(bindings.keys().cloned());
         self.clip_bindings.send_replace(Arc::new(bindings));
-        if self.note_wanted(&wanted)
+        if self.note_bound(bound, &wanted)
             && let Some(enable) = self.enable_engine.get()
         {
             enable();

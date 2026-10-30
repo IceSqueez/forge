@@ -45,8 +45,9 @@ pub use binding::{
     BindingHalf, BindingRow, COMBO_FIELD, HotkeyEdge, combo_keys, conflict_count, registered_combos,
 };
 pub use binding_store::{
-    cleanup_stale_combo_instances, delete_binding, delete_binding_half, do_bind, load_bindings,
-    persisted_hotkey_combos, rebind_combo, relink_action, set_binding_edge, set_binding_enabled,
+    BindingUpdate, bound_hotkey_combos, cleanup_stale_combo_instances, delete_binding,
+    delete_binding_half, do_bind, load_bindings, persisted_hotkey_combos, rebind_combo,
+    set_binding_enabled, update_binding,
 };
 pub use client::{EnableFailure, HotkeyClient};
 pub use clip_bindings::{

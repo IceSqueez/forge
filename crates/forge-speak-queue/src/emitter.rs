@@ -29,6 +29,7 @@ pub(crate) struct EnqueuePreview {
     pub(crate) estimated_secs: u32,
 }
 
+#[derive(Debug)]
 pub(crate) enum Outcome {
     Finished,
     Skipped {

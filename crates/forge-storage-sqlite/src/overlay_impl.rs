@@ -364,6 +364,37 @@ impl OverlayRepo for SqliteOverlayRepo {
         Ok(())
     }
 
+    async fn update_config(
+        &self,
+        id: &OverlayId,
+        config: &OverlayConfig,
+    ) -> Result<bool, StorageError> {
+        let config_json = serde_json::to_string(config).map_err(StorageError::Serialization)?;
+        let result = sqlx::query("UPDATE overlays SET config = ?, updated_at = ? WHERE id = ?")
+            .bind(&config_json)
+            .bind(epoch_ms_now())
+            .bind(id.as_str())
+            .execute(self.db.writer())
+            .await
+            .map_err(SqliteStorageError::Sqlx)?;
+
+        Ok(result.rows_affected() > 0)
+    }
+
+    async fn rename(&self, id: &OverlayId, display_name: &str) -> Result<bool, StorageError> {
+        refuse_token_shaped("display_name", display_name)?;
+        let result =
+            sqlx::query("UPDATE overlays SET display_name = ?, updated_at = ? WHERE id = ?")
+                .bind(display_name)
+                .bind(epoch_ms_now())
+                .bind(id.as_str())
+                .execute(self.db.writer())
+                .await
+                .map_err(SqliteStorageError::Sqlx)?;
+
+        Ok(result.rows_affected() > 0)
+    }
+
     async fn set_enabled(&self, id: &OverlayId, enabled: bool) -> Result<bool, StorageError> {
         let enabled_val: i64 = if enabled { 1 } else { 0 };
         let now_ms = epoch_ms_now();

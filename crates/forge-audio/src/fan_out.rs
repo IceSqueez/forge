@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 use async_trait::async_trait;
 
@@ -68,18 +68,27 @@ impl AudioSink for FanOutSink {
     }
 
     async fn play_controlled(&self, buffer: PcmBuffer) -> Result<ControlledPlayback, AudioError> {
+        let start_guard = StopStartedIfAbandoned::default();
         let futures: Vec<_> = self
             .sinks
             .iter()
             .map(|sink| {
                 let sink = Arc::clone(sink);
                 let buf = buffer.clone();
-                async move { sink.play_controlled(buf).await }
+                let started = Arc::clone(&start_guard.started);
+                async move {
+                    let playback = sink.play_controlled(buf).await;
+                    if let Ok(playback) = &playback {
+                        lock_started(&started).push(playback.handle());
+                    }
+                    playback
+                }
             })
             .collect();
 
-        let routes: Vec<RouteStart> = futures::future::join_all(futures)
-            .await
+        let starts = futures::future::join_all(futures).await;
+        start_guard.disarm();
+        let routes: Vec<RouteStart> = starts
             .into_iter()
             .map(|result| match result {
                 Ok(playback) => RouteStart::Started(playback),
@@ -120,6 +129,37 @@ impl AudioSink for FanOutSink {
         };
         Ok(ControlledPlayback::merged(handle, Box::pin(completion)))
     }
+}
+
+#[derive(Default)]
+struct StopStartedIfAbandoned {
+    started: Arc<Mutex<Vec<PlaybackHandle>>>,
+    disarmed: bool,
+}
+
+impl StopStartedIfAbandoned {
+    fn disarm(mut self) {
+        self.disarmed = true;
+    }
+}
+
+impl Drop for StopStartedIfAbandoned {
+    fn drop(&mut self) {
+        if self.disarmed {
+            return;
+        }
+        for handle in lock_started(&self.started).iter() {
+            handle.stop();
+        }
+    }
+}
+
+fn lock_started(
+    started: &Mutex<Vec<PlaybackHandle>>,
+) -> std::sync::MutexGuard<'_, Vec<PlaybackHandle>> {
+    started
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
 }
 
 enum RouteStart {
@@ -653,5 +693,40 @@ mod tests {
                 "a route saw a different clip"
             );
         }
+    }
+
+    struct NeverStarts;
+
+    #[async_trait]
+    impl AudioSink for NeverStarts {
+        async fn play(&self, _buffer: PcmBuffer) -> Result<(), AudioError> {
+            std::future::pending().await
+        }
+
+        async fn play_controlled(
+            &self,
+            _buffer: PcmBuffer,
+        ) -> Result<ControlledPlayback, AudioError> {
+            std::future::pending().await
+        }
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn an_abandoned_start_stops_the_routes_that_already_started() {
+        let probe = route(None);
+        let started: Arc<dyn AudioSink> = probe.sink();
+        let fan_out = FanOutSink::new(vec![started, Arc::new(NeverStarts)]);
+
+        let abandoned = tokio::time::timeout(
+            std::time::Duration::from_secs(5),
+            fan_out.play_controlled(clip()),
+        )
+        .await;
+
+        assert!(
+            abandoned.is_err(),
+            "the hung route must hold the start open"
+        );
+        assert!(probe.stopped());
     }
 }

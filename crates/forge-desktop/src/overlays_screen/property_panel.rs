@@ -13,7 +13,7 @@ use forge_overlay::config::{ACCENT, RETIRED_KEYS, SOUND_OPTIONS_KEY, SPEECH_VOIC
 use forge_overlay::{ConfigSection, MediaIssue, MediaSlot, SectionedField, media_slot};
 use forge_registry::{ENGINE_VOICE_OPTIONS_KEY, FormField};
 use forge_runtime::{OverlaySampleSource, OverlayServiceHandle};
-use forge_storage::{OverlayConfig, OverlayId, OverlayRepo};
+use forge_storage::{OverlayConfig, OverlayId};
 use forge_types::ClipId;
 use gpui::{
     AnyElement, App, Context, Entity, EventEmitter, Pixels, Rgba, SharedString, Subscription,
@@ -29,7 +29,6 @@ use super::motion_notices::MotionNotices;
 use super::motion_timing::{motion_hint, motion_label};
 use super::sound_choice::{PickOutcome, field_notes, notes_block, picked_clip, sound_choices};
 use super::voice_choice::speech_voice_choices;
-use super::writes::store_config;
 use crate::async_bridge;
 use crate::config_form::{
     ChoiceDropdown, ChoiceSupport, ConfigField, ConfigFieldHandlers, FoldContext, choice_entries,
@@ -87,7 +86,6 @@ pub(super) struct PanelLaunch {
     pub(super) choices: HashMap<String, Vec<(String, String)>>,
     pub(super) icon_images: Vec<IconImage>,
     pub(super) overridden_files: Vec<String>,
-    pub(super) repo: Arc<dyn OverlayRepo>,
     pub(super) service: OverlayServiceHandle,
     pub(super) samples: Arc<dyn OverlaySampleSource>,
     pub(super) rt_handle: tokio::runtime::Handle,
@@ -115,7 +113,6 @@ pub(super) struct OverlayPropertyPanel {
     pending_pick: Option<PendingPick>,
     pick_refusal: Option<(String, String)>,
     settle_epoch: u64,
-    repo: Arc<dyn OverlayRepo>,
     pub(super) service: OverlayServiceHandle,
     pub(super) samples: Arc<dyn OverlaySampleSource>,
     pub(super) rt_handle: tokio::runtime::Handle,
@@ -166,7 +163,6 @@ impl OverlayPropertyPanel {
             pending_pick: None,
             pick_refusal: None,
             settle_epoch: 0,
-            repo: launch.repo,
             service: launch.service,
             samples: launch.samples,
             rt_handle: launch.rt_handle,
@@ -342,12 +338,15 @@ impl OverlayPropertyPanel {
         let Some(sparse) = self.take_unsaved_config(cx) else {
             return;
         };
-        let repo = Arc::clone(&self.repo);
         let service = self.service.clone();
         let samples = Arc::clone(&self.samples);
         let id = self.overlay_id.clone();
         async_bridge::detached(&self.rt_handle, RELEASE_PERSIST_CONTEXT, async move {
-            if store_config(repo.as_ref(), &service, &id, sparse).await? {
+            let stored = service
+                .update_config(&id, &sparse)
+                .await
+                .map_err(|e| e.to_string())?;
+            if stored {
                 service
                     .materialize(&id, samples.as_ref())
                     .await
@@ -834,6 +833,7 @@ pub(crate) mod tests {
     use forge_overlay::{OverlayKindDescriptor, OverlayKindRegistry, image_reference};
     use forge_registry::FormField;
     use forge_runtime::EventBus;
+    use forge_storage::OverlayRepo;
     use forge_storage::{OverlayDefinition, StorageError};
     use forge_types::OverlayCredential;
     use forge_types::Variant;
@@ -1038,7 +1038,6 @@ pub(crate) mod tests {
             choices,
             icon_images: Vec::new(),
             overridden_files: Vec::new(),
-            repo: Arc::clone(&repo) as Arc<dyn OverlayRepo>,
             service,
             samples: Arc::new(crate::test_support::NeutralOverlaySamples),
             rt_handle: rt.handle().clone(),

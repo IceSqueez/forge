@@ -1,6 +1,8 @@
 use forge_registry::{ChainSignal, ControlSignal, RunContext, decode_chain};
 use forge_types::{SubActionConfig, SubActionOutcome, SubActionStep, SubActionTelemetry, Variant};
 
+use crate::core_messages;
+
 pub(super) fn chain_at(
     config: &SubActionConfig,
     key: &str,
@@ -28,9 +30,14 @@ pub(super) fn runnable_steps(
     decoded.into_steps()
 }
 
+pub(super) fn cancelled_child() -> SubActionOutcome {
+    SubActionOutcome::Failed(core_messages::action_run_cancelled().into())
+}
+
 pub(super) fn propagate(signal: ChainSignal, ctx: &RunContext<'_>) -> SubActionOutcome {
     match signal {
-        ChainSignal::Completed | ChainSignal::Aborted => SubActionOutcome::Success,
+        ChainSignal::Completed => SubActionOutcome::Success,
+        ChainSignal::Aborted => cancelled_child(),
         ChainSignal::Break => {
             ctx.control.set(ControlSignal::Break);
             SubActionOutcome::Success

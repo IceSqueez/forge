@@ -101,6 +101,11 @@ pub(super) fn build_charity_lifecycle_arg_stack(event: &Event) -> ArgStack {
         .unwrap_or_default()
         .to_owned();
 
+    let decimal_places = charity
+        .and_then(|c| c.get(charity_fields::DECIMAL_PLACES))
+        .and_then(|v| v.as_i64())
+        .unwrap_or(0);
+
     ArgStack::new()
         .set("charity.id".to_owned(), Variant::String(charity_id))
         .set("charity.name".to_owned(), Variant::String(charity_name))
@@ -115,6 +120,10 @@ pub(super) fn build_charity_lifecycle_arg_stack(event: &Event) -> ArgStack {
         .set(
             "charity.currency_code".to_owned(),
             Variant::String(currency_code),
+        )
+        .set(
+            "charity.decimal_places".to_owned(),
+            Variant::Int(decimal_places),
         )
 }
 pub(super) fn build_charity_lifecycle_schema() -> VariableSchema {
@@ -156,6 +165,12 @@ pub(super) fn build_charity_lifecycle_schema() -> VariableSchema {
                 label: "Currency code".to_owned(),
                 synthesis: None,
             },
+            DeclaredVariable {
+                name: "charity.decimal_places".to_owned(),
+                kind: VariantKind::Int,
+                label: "Amount decimal places".to_owned(),
+                synthesis: Some(SynthesisHint::BoundedInt { min: 0, max: 3 }),
+            },
         ],
     }
 }
@@ -178,16 +193,6 @@ mod tests {
                 },
             }),
         )
-    }
-
-    #[test]
-    fn event_filter_targets_start_topic_on_twitch_source() {
-        let filter = CharityStartedDescriptor.event_filter();
-        assert_eq!(filter.source, Some(EventSource::Twitch));
-        assert_eq!(
-            filter.kind_prefix.as_deref(),
-            Some("twitch.channel.charity_campaign.start")
-        );
     }
 
     #[test]
@@ -231,5 +236,33 @@ mod tests {
             stack.get("charity.target_amount_cents"),
             Some(&Variant::Int(0))
         );
+    }
+
+    #[test]
+    fn lifecycle_arg_stack_carries_the_amount_precision_the_currency_uses() {
+        for (decimal_places, currency) in [(0, "JPY"), (2, "EUR"), (3, "KWD")] {
+            let event = Event::new(
+                EventSource::Twitch,
+                "channel.charity_campaign.start",
+                serde_json::json!({
+                    "charity": { "currency_code": currency, "decimal_places": decimal_places },
+                }),
+            );
+
+            let stack = build_charity_lifecycle_arg_stack(&event);
+
+            assert_eq!(
+                stack.get("charity.decimal_places"),
+                Some(&Variant::Int(decimal_places)),
+                "{currency}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_stored_lifecycle_event_without_a_precision_reads_as_zero_places() {
+        let stack = build_charity_lifecycle_arg_stack(&lifecycle_event());
+
+        assert_eq!(stack.get("charity.decimal_places"), Some(&Variant::Int(0)));
     }
 }

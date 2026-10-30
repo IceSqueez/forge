@@ -12,7 +12,7 @@ use forge_types::{
     UserText, Variant, strip_var_decoration,
 };
 
-use super::core_logic_shared::{chain_at, retag};
+use super::core_logic_shared::{cancelled_child, chain_at, retag};
 use crate::ConditionGate;
 use crate::core_messages;
 
@@ -26,6 +26,7 @@ const LOOP_INDEX_VAR: &str = "loop.index";
 const LOOP_ITEM_VAR: &str = "loop.item";
 const LOOP_ITERATIONS_COMPLETED_VAR: &str = "loop.iterations_completed";
 const LOOP_EXIT_REASON_VAR: &str = "loop.exit_reason";
+const LOOP_EXIT_CANCELLED: &str = "cancelled";
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum LoopMode {
@@ -244,11 +245,13 @@ impl SubActionRunner for CoreLogicLoopRunner {
         let mut iterations: i64 = 0;
         let mut exit_reason = "completed";
         let mut failure: Option<UserText> = None;
+        let mut cancelled = false;
         let mut unrecorded: Option<(StepTimer, i64)> = None;
 
         loop {
             if ctx.cancel.is_cancelled() {
-                exit_reason = "cancelled";
+                exit_reason = LOOP_EXIT_CANCELLED;
+                cancelled = true;
                 break;
             }
 
@@ -346,7 +349,8 @@ impl SubActionRunner for CoreLogicLoopRunner {
                 }
                 IterOutcome::Abort(stack) => {
                     current = stack;
-                    exit_reason = "cancelled";
+                    exit_reason = LOOP_EXIT_CANCELLED;
+                    cancelled = true;
                     break;
                 }
             }
@@ -377,6 +381,7 @@ impl SubActionRunner for CoreLogicLoopRunner {
 
         let outcome = match failure {
             Some(msg) => SubActionOutcome::Failed(msg),
+            None if cancelled => cancelled_child(),
             None => SubActionOutcome::Success,
         };
 

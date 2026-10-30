@@ -2,6 +2,7 @@ msg-core-unknown_action = Action { $action } does not exist
 msg-core-unknown_trigger_instance = Trigger { $instance } does not exist
 msg-core-action_nesting_too_deep = Actions are nested too deeply
 msg-core-action_run_cancelled = The nested action was cancelled
+msg-core-action_run_disabled = Action { $action } is disabled
 msg-core-action_run_failed = The nested action could not be started
 msg-core-scheduler_not_ready = The queue scheduler is not running yet
 msg-core-scheduler_stopped = The scheduler for delayed runs is stopped

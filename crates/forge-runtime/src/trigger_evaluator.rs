@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -16,11 +16,13 @@ use serde_json::json;
 use tracing::{Level, debug, enabled, trace, warn};
 
 use crate::catalog::{Catalog, CatalogSnapshot};
-use crate::cooldown::CooldownMap;
+use crate::cooldown::{CooldownKey, CooldownMap};
 use crate::delivery::{CriticalSubscription, TRIGGER_EVALUATOR};
 use crate::event_log_bridge::identity_digest;
 use crate::task_stop::{StopListener, TaskStop, task_stop};
-use crate::{Config, EventBus, QueueAdmission, QueueSchedulerHandle, SchedulerRequest};
+use crate::{
+    Config, EventBus, QueueAdmission, QueueSchedulerHandle, SchedulerError, SchedulerRequest,
+};
 
 const DECISION_TARGET: &str = "forge::trigger";
 
@@ -109,6 +111,7 @@ impl TriggerEvaluator {
         }
 
         let mut decided: HashMap<TriggerInstanceId, Option<ArgStack>> = HashMap::new();
+        let mut admitted: HashSet<TriggerInstanceId> = HashSet::new();
 
         for &index in bindings.iter() {
             let Some(binding) = catalog.binding(index) else {
@@ -139,8 +142,36 @@ impl TriggerEvaluator {
                 initial_args: args,
                 admission: QueueAdmission::from(action.as_ref()),
             };
-            if let Err(e) = self.scheduler.dispatch(req).await {
-                warn!("trigger_evaluator: scheduler dispatch failed: {e}");
+            match self.scheduler.offer(req).await {
+                Ok(()) => {
+                    admitted.insert(instance.id);
+                }
+                Err(SchedulerError::Refused(reason)) => {
+                    debug!(
+                        target: DECISION_TARGET,
+                        event = %event.id,
+                        instance = %instance.id,
+                        reason,
+                        "queue refused the triggered run"
+                    );
+                }
+                Err(e) => warn!("trigger_evaluator: scheduler dispatch failed: {e}"),
+            }
+        }
+
+        for &index in bindings.iter() {
+            let Some(binding) = catalog.binding(index) else {
+                continue;
+            };
+            let instance = &binding.instance;
+            if admitted.contains(&instance.id) {
+                continue;
+            }
+            let Some(Some(args)) = decided.remove(&instance.id) else {
+                continue;
+            };
+            if let Some(key) = cooldown_key(instance, &args) {
+                self.cooldowns.release(&key, event.id);
             }
         }
     }
@@ -285,15 +316,19 @@ impl TriggerEvaluator {
             return None;
         }
 
-        let key = if instance.cooldown_global {
-            (instance.id, None)
-        } else {
-            (instance.id, Some(arg_stack_user(args)?))
-        };
-
+        let key = cooldown_key(instance, args)?;
         let window = Duration::from_secs(instance.cooldown_secs as u64);
         self.cooldowns.remaining_or_stamp(key, window, event_id)
     }
+}
+
+fn cooldown_key(instance: &TriggerInstance, args: &ArgStack) -> Option<CooldownKey> {
+    let user = if instance.cooldown_global {
+        None
+    } else {
+        Some(arg_stack_user(args)?)
+    };
+    Some((instance.id, user))
 }
 
 enum Rejection {
@@ -510,7 +545,7 @@ mod tests {
 
     use super::*;
     use crate::{
-        EventBus, NullEventLogRepo, QueueScheduler, ScriptRegistry,
+        EventBus, NullEventLogRepo, QueueMode, QueueScheduler, ScriptRegistry,
         sub_action_runners::register_core_sub_actions, triggers::register_core_triggers,
     };
     use forge_events::EventSubscription;
@@ -1828,5 +1863,211 @@ mod tests {
         );
 
         assert!(evaluator.decide(&chat, &event).is_some());
+    }
+
+    struct CooldownRig {
+        fixture: EvaluatorFixture,
+        evaluator: TriggerEvaluator,
+        instance: TriggerInstance,
+    }
+
+    impl CooldownRig {
+        async fn new(cooldown_global: bool) -> Self {
+            let (fixture, evaluator) = decide_harness(CommandDescriptor::command()).await;
+            let instance = TriggerInstance {
+                cooldown_global,
+                ..command_instance(PlatformScope::Any, PermissionRung::Everyone, 60)
+            };
+            fixture
+                ._backend
+                .trigger_instance_repo()
+                .save(&instance)
+                .await
+                .unwrap();
+            Self {
+                fixture,
+                evaluator,
+                instance,
+            }
+        }
+
+        async fn bound_queue(&self) -> QueueId {
+            let queue = Queue {
+                id: QueueId::new(),
+                name: format!("queue {}", QueueId::new()),
+                description: String::new(),
+                concurrency: 8,
+            };
+            let action = log_action(ActionId::new(), queue.id);
+            let backend = &self.fixture._backend;
+            backend.queue_repo().save(&queue).await.unwrap();
+            backend.action_repo().save(&action).await.unwrap();
+            backend
+                .trigger_instance_repo()
+                .link_action(action.id, self.instance.id)
+                .await
+                .unwrap();
+            self.fixture
+                .scheduler
+                .register(queue.clone())
+                .await
+                .unwrap();
+            queue.id
+        }
+
+        async fn fill_to_the_cap(&self, queue: QueueId) {
+            self.fixture
+                .scheduler
+                .set_mode(queue, QueueMode::HOLDING)
+                .await
+                .unwrap();
+            for _ in 0..crate::queue_scheduler::MAX_PENDING_PER_QUEUE {
+                self.fixture
+                    .scheduler
+                    .dispatch(SchedulerRequest {
+                        queue_id: queue,
+                        action_id: ActionId::new(),
+                        trigger_event_id: forge_types::EventId::new(),
+                        trigger_kind: None,
+                        manual_test: false,
+                        initial_args: ArgStack::new(),
+                        admission: QueueAdmission::default(),
+                    })
+                    .await
+                    .unwrap();
+            }
+        }
+
+        async fn fire(&mut self) {
+            let event = command_event(LINE, "alice", vec![]);
+            self.evaluator.handle(&event).await;
+        }
+
+        fn window_is_open(&mut self) -> bool {
+            let instance = self.instance.clone();
+            let later = command_event(LINE, "alice", vec![]);
+            self.evaluator.decide(&instance, &later).is_some()
+        }
+    }
+
+    #[derive(Clone, Copy, Debug)]
+    enum Refusal {
+        Paused,
+        Overflow,
+        Deleted,
+    }
+
+    async fn refuse(rig: &CooldownRig, queue: QueueId, refusal: Refusal) {
+        match refusal {
+            Refusal::Paused => {
+                rig.fixture
+                    .scheduler
+                    .set_mode(queue, QueueMode::PAUSED)
+                    .await
+                    .unwrap();
+            }
+            Refusal::Overflow => rig.fill_to_the_cap(queue).await,
+            Refusal::Deleted => {
+                rig.fixture.scheduler.deregister(queue).await.unwrap();
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn a_run_every_queue_refuses_leaves_the_cooldown_window_unspent() {
+        for global in [true, false] {
+            for refusal in [Refusal::Paused, Refusal::Overflow, Refusal::Deleted] {
+                let mut rig = CooldownRig::new(global).await;
+                let queue = rig.bound_queue().await;
+                refuse(&rig, queue, refusal).await;
+
+                rig.fire().await;
+
+                assert!(
+                    rig.window_is_open(),
+                    "global {global}, {refusal:?}: the refused run spent the window"
+                );
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn a_run_a_queue_accepts_spends_the_cooldown_window() {
+        for global in [true, false] {
+            let mut rig = CooldownRig::new(global).await;
+            rig.bound_queue().await;
+
+            rig.fire().await;
+
+            assert!(!rig.window_is_open(), "global {global}");
+        }
+    }
+
+    #[tokio::test]
+    async fn a_run_held_in_a_buffering_queue_counts_as_accepted_and_spends_the_window() {
+        let mut rig = CooldownRig::new(true).await;
+        let queue = rig.bound_queue().await;
+        rig.fixture
+            .scheduler
+            .set_mode(queue, QueueMode::HOLDING)
+            .await
+            .unwrap();
+
+        rig.fire().await;
+
+        assert!(!rig.window_is_open());
+    }
+
+    #[tokio::test]
+    async fn a_fan_out_with_one_accepting_queue_spends_the_window_whichever_queue_refuses() {
+        for refused_index in [0, 1] {
+            let mut rig = CooldownRig::new(true).await;
+            let queues = [rig.bound_queue().await, rig.bound_queue().await];
+            refuse(&rig, queues[refused_index], Refusal::Paused).await;
+
+            rig.fire().await;
+
+            assert!(!rig.window_is_open(), "queue {refused_index} refused");
+        }
+    }
+
+    #[tokio::test]
+    async fn a_refused_event_releasing_its_stamp_leaves_an_earlier_viewers_window_spent() {
+        let mut rig = CooldownRig::new(false).await;
+        let queue = rig.bound_queue().await;
+        rig.fire().await;
+        rig.fixture
+            .scheduler
+            .set_mode(queue, QueueMode::PAUSED)
+            .await
+            .unwrap();
+
+        rig.fire().await;
+
+        assert!(
+            !rig.window_is_open(),
+            "the throttled second event must not release the first event's stamp"
+        );
+    }
+
+    #[tokio::test]
+    async fn a_window_left_unspent_by_a_refusal_is_spent_by_the_next_accepted_run() {
+        let mut rig = CooldownRig::new(true).await;
+        let queue = rig.bound_queue().await;
+        rig.fixture
+            .scheduler
+            .set_mode(queue, QueueMode::PAUSED)
+            .await
+            .unwrap();
+        rig.fire().await;
+        rig.fixture
+            .scheduler
+            .set_mode(queue, QueueMode::RUNNING)
+            .await
+            .unwrap();
+
+        rig.fire().await;
+
+        assert!(!rig.window_is_open());
     }
 }

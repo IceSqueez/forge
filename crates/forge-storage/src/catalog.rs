@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::sync::Arc;
 
 use async_trait::async_trait;
@@ -7,7 +8,8 @@ use tokio::sync::watch;
 
 use crate::{
     ActionExecution, ActionRepo, ActionTelemetry, ExecutionStatus, QueueRepo, ScriptRecord,
-    ScriptReferences, ScriptRepo, ScriptTelemetry, StorageError, TriggerInstanceRepo,
+    ScriptReferences, ScriptRepo, ScriptTelemetry, StorageError, TriggerChanges,
+    TriggerInstanceRepo,
 };
 
 #[derive(Debug, Clone)]
@@ -284,6 +286,20 @@ impl TriggerInstanceRepo for RevisingTriggerInstanceRepo {
         instance_id: TriggerInstanceId,
     ) -> Result<Vec<ActionId>, StorageError> {
         self.inner.actions_using(instance_id).await
+    }
+
+    async fn actions_by_instance(
+        &self,
+    ) -> Result<HashMap<TriggerInstanceId, Vec<ActionId>>, StorageError> {
+        self.inner.actions_by_instance().await
+    }
+
+    async fn apply_changes(&self, changes: &TriggerChanges) -> Result<(), StorageError> {
+        let inner = Arc::clone(&self.inner);
+        let changes = changes.clone();
+        self.revision
+            .after(async move { inner.apply_changes(&changes).await })
+            .await
     }
 
     async fn link_action(

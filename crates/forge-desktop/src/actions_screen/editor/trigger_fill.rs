@@ -198,9 +198,8 @@ impl ScreenActionsView {
         collect_field_values(&form.fields, &mut buffer, cx);
         let overrides = sparse_overrides(&default, &buffer);
 
-        let new_id = TriggerInstanceId::new();
         let instance = TriggerInstance {
-            id: new_id,
+            id: TriggerInstanceId::new(),
             kind_id,
             name,
             overrides,
@@ -217,14 +216,12 @@ impl ScreenActionsView {
         }
         cx.notify();
 
-        let repo = Arc::clone(&self.trigger_instance_repo);
         let service = Arc::clone(&self.actions_service);
         async_bridge::run_async(
             &self.rt_handle,
             async move {
-                repo.save(&instance).await.map_err(RepoFailure::from)?;
                 service
-                    .link_trigger_instance(action_id, new_id)
+                    .create_linked_trigger(action_id, instance)
                     .await
                     .map_err(RepoFailure::from)
             },

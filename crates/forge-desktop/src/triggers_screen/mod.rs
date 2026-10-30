@@ -553,13 +553,13 @@ impl Render for TriggersRegistryView {
 
 async fn load_rows(repo: &dyn TriggerInstanceRepo) -> Result<Vec<TriggerInstanceRow>, RepoFailure> {
     let instances = repo.list_user_defined().await.map_err(RepoFailure::from)?;
+    let links = repo
+        .actions_by_instance()
+        .await
+        .map_err(RepoFailure::from)?;
     let mut rows = Vec::with_capacity(instances.len());
     for instance in instances {
-        let used_in_count = repo
-            .actions_using(instance.id)
-            .await
-            .map(|links| links.len())
-            .unwrap_or(0);
+        let used_in_count = links.get(&instance.id).map_or(0, Vec::len);
         rows.push(TriggerInstanceRow {
             id: instance.id,
             name: instance.name,
@@ -793,7 +793,8 @@ mod tests {
         repo.expect_list_user_defined()
             .returning(move || Ok(listed.lock().unwrap().clone()));
         repo.expect_list_all().returning(|| Ok(Vec::new()));
-        repo.expect_actions_using().returning(|_| Ok(Vec::new()));
+        repo.expect_actions_by_instance()
+            .returning(|| Ok(Default::default()));
         repo.expect_set_enabled().returning(|_, _| {
             Err(forge_storage::StorageError::Connection {
                 reason: "database is locked".to_owned(),
@@ -956,5 +957,56 @@ mod tests {
         });
 
         assert_eq!(optimistic, Some(!stored));
+    }
+
+    fn listed_instance() -> TriggerInstance {
+        TriggerInstance {
+            id: TriggerInstanceId::new(),
+            kind_id: TWITCH_CHAT.to_owned(),
+            name: "listed".to_owned(),
+            overrides: TriggerConfig::new(),
+            enabled: true,
+            user_defined: true,
+            platform_scope: Default::default(),
+            cooldown_secs: 0,
+            cooldown_global: true,
+            permission_rung: PermissionRung::Everyone,
+        }
+    }
+
+    #[test]
+    fn a_link_read_failure_reaches_the_screen_instead_of_showing_zero_uses() {
+        let instance = listed_instance();
+        let mut repo = MockTriggerInstanceRepo::new();
+        repo.expect_list_user_defined()
+            .returning(move || Ok(vec![instance.clone()]));
+        repo.expect_actions_by_instance().returning(|| {
+            Err(forge_storage::StorageError::Connection {
+                reason: "store is gone".to_owned(),
+            })
+        });
+
+        let loaded = runtime().block_on(load_rows(&repo));
+
+        assert!(loaded.is_err());
+    }
+
+    #[test]
+    fn rows_count_the_links_of_their_own_instance_only() {
+        let (linked, unlinked) = (listed_instance(), listed_instance());
+        let actions = vec![forge_types::ActionId::new(), forge_types::ActionId::new()];
+        let links = std::collections::HashMap::from([(linked.id, actions)]);
+        let listed = vec![linked.clone(), unlinked.clone()];
+        let mut repo = MockTriggerInstanceRepo::new();
+        repo.expect_list_user_defined()
+            .returning(move || Ok(listed.clone()));
+        repo.expect_actions_by_instance()
+            .returning(move || Ok(links.clone()));
+
+        let rows = runtime().block_on(load_rows(&repo)).unwrap();
+
+        let counts: Vec<(TriggerInstanceId, usize)> =
+            rows.iter().map(|row| (row.id, row.used_in_count)).collect();
+        assert_eq!(counts, [(linked.id, 2), (unlinked.id, 0)]);
     }
 }

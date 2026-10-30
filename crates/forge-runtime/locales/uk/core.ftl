@@ -2,6 +2,7 @@ msg-core-unknown_action = Дії { $action } не існує
 msg-core-unknown_trigger_instance = Тригера { $instance } не існує
 msg-core-action_nesting_too_deep = Дії вкладені одна в одну занадто глибоко
 msg-core-action_run_cancelled = Вкладену дію скасовано
+msg-core-action_run_disabled = Дію { $action } вимкнено
 msg-core-action_run_failed = Не вдалося запустити вкладену дію
 msg-core-scheduler_not_ready = Планувальник черг ще не запущено
 msg-core-scheduler_stopped = Планувальник відкладених запусків зупинено

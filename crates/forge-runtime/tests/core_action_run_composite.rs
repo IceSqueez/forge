@@ -395,6 +395,24 @@ async fn unknown_action_id_fails_without_running_a_child_chain() {
 }
 
 #[tokio::test]
+async fn a_disabled_target_fails_naming_it_without_running_a_child_chain() {
+    let repo = std::sync::Arc::new(MockActionRepo::new());
+    let mut target = target_with_steps(&["core.log.write"]);
+    target.enabled = false;
+    let id = target.id;
+    repo.seed(target);
+    let runner = CoreActionRunRunner::new(repo);
+    let executor = MockChainExecutor::completing();
+
+    let outcome = run(&runner, &cfg(&id.to_string()), &ArgStack::new(), &executor).await;
+
+    let refusal = failure_message(&outcome);
+    assert_eq!(code_of(refusal), "core.action_run_disabled");
+    assert_eq!(verbatim_arg(refusal, "action"), Some("target"));
+    assert_eq!(executor.call_count(), 0);
+}
+
+#[tokio::test]
 async fn unparseable_action_id_fails_without_running_a_child_chain() {
     const SENTINEL: &str = "not-a-ulid-a-viewer-typed-this";
     let repo = std::sync::Arc::new(MockActionRepo::new());

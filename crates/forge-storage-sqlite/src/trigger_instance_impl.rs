@@ -1,7 +1,8 @@
+use std::collections::HashMap;
 use std::str::FromStr;
 
 use async_trait::async_trait;
-use forge_storage::{StorageError, TriggerInstanceRepo};
+use forge_storage::{StorageError, TriggerChanges, TriggerInstanceRepo};
 use forge_types::{ActionId, PermissionRung, PlatformScope, TriggerInstance, TriggerInstanceId};
 use time::OffsetDateTime;
 
@@ -160,26 +161,78 @@ impl TriggerInstanceRepo for SqliteTriggerInstanceRepo {
             .collect()
     }
 
+    async fn actions_by_instance(
+        &self,
+    ) -> Result<HashMap<TriggerInstanceId, Vec<ActionId>>, StorageError> {
+        let rows: Vec<(String, String)> = sqlx::query_as(
+            "SELECT ati.trigger_instance_id, ati.action_id
+             FROM action_trigger_instances ati
+             JOIN actions a ON a.id = ati.action_id
+             WHERE a.archived_at IS NULL",
+        )
+        .fetch_all(self.db.reader())
+        .await
+        .map_err(SqliteStorageError::Sqlx)?;
+
+        let mut links: HashMap<TriggerInstanceId, Vec<ActionId>> = HashMap::new();
+        for (instance, action) in rows {
+            links
+                .entry(parse_id(&instance, "trigger_instance")?)
+                .or_default()
+                .push(parse_id(&action, "action")?);
+        }
+        Ok(links)
+    }
+
+    async fn apply_changes(&self, changes: &TriggerChanges) -> Result<(), StorageError> {
+        let mut tx = self
+            .db
+            .writer()
+            .begin_with("BEGIN IMMEDIATE")
+            .await
+            .map_err(SqliteStorageError::Sqlx)?;
+
+        for instance_id in &changes.removed {
+            let id_str = instance_id.to_string();
+            sqlx::query("DELETE FROM action_trigger_instances WHERE trigger_instance_id = ?")
+                .bind(&id_str)
+                .execute(&mut *tx)
+                .await
+                .map_err(SqliteStorageError::Sqlx)?;
+            sqlx::query("DELETE FROM trigger_instances WHERE id = ?")
+                .bind(&id_str)
+                .execute(&mut *tx)
+                .await
+                .map_err(SqliteStorageError::Sqlx)?;
+        }
+        for (action_id, instance_id) in &changes.unlinked {
+            sqlx::query(
+                "DELETE FROM action_trigger_instances
+                 WHERE action_id = ? AND trigger_instance_id = ?",
+            )
+            .bind(action_id.to_string())
+            .bind(instance_id.to_string())
+            .execute(&mut *tx)
+            .await
+            .map_err(SqliteStorageError::Sqlx)?;
+        }
+        for instance in &changes.saved {
+            upsert_instance(&mut *tx, instance).await?;
+        }
+        for (action_id, instance_id) in &changes.linked {
+            ignore_unique_violation(append_link(&mut *tx, *action_id, *instance_id).await)?;
+        }
+
+        tx.commit().await.map_err(SqliteStorageError::Sqlx)?;
+        Ok(())
+    }
+
     async fn link_action(
         &self,
         action_id: ActionId,
         instance_id: TriggerInstanceId,
     ) -> Result<(), StorageError> {
-        let action_id_str = action_id.to_string();
-        let instance_id_str = instance_id.to_string();
-
-        let result = sqlx::query(
-            "INSERT INTO action_trigger_instances (action_id, trigger_instance_id, position)
-             SELECT ?, ?, COALESCE(MAX(position), -1) + 1
-             FROM action_trigger_instances WHERE action_id = ?",
-        )
-        .bind(&action_id_str)
-        .bind(&instance_id_str)
-        .bind(&action_id_str)
-        .execute(self.db.writer())
-        .await;
-
-        ignore_unique_violation(result)
+        ignore_unique_violation(append_link(self.db.writer(), action_id, instance_id).await)
     }
 
     async fn link_action_at(
@@ -239,49 +292,7 @@ impl TriggerInstanceRepo for SqliteTriggerInstanceRepo {
     }
 
     async fn save(&self, instance: &TriggerInstance) -> Result<(), StorageError> {
-        let id_str = instance.id.to_string();
-        let overrides_json =
-            serde_json::to_string(&instance.overrides).map_err(StorageError::Serialization)?;
-        let platform_scope_json =
-            serde_json::to_string(&instance.platform_scope).map_err(StorageError::Serialization)?;
-        let enabled: i64 = if instance.enabled { 1 } else { 0 };
-        let user_defined: i64 = if instance.user_defined { 1 } else { 0 };
-
-        let cooldown_secs: i64 = instance.cooldown_secs.into();
-        let cooldown_global: i64 = if instance.cooldown_global { 1 } else { 0 };
-        let permission_rung = instance.permission_rung.as_str();
-
-        sqlx::query(
-            "INSERT INTO trigger_instances
-                 (id, kind_id, name, overrides, enabled, user_defined, platform_scope,
-                  cooldown_secs, cooldown_global, permission_rung)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-             ON CONFLICT(id) DO UPDATE SET
-                 kind_id         = excluded.kind_id,
-                 name            = excluded.name,
-                 overrides       = excluded.overrides,
-                 enabled         = excluded.enabled,
-                 user_defined    = excluded.user_defined,
-                 platform_scope  = excluded.platform_scope,
-                 cooldown_secs   = excluded.cooldown_secs,
-                 cooldown_global = excluded.cooldown_global,
-                 permission_rung = excluded.permission_rung",
-        )
-        .bind(&id_str)
-        .bind(&instance.kind_id)
-        .bind(&instance.name)
-        .bind(&overrides_json)
-        .bind(enabled)
-        .bind(user_defined)
-        .bind(&platform_scope_json)
-        .bind(cooldown_secs)
-        .bind(cooldown_global)
-        .bind(permission_rung)
-        .execute(self.db.writer())
-        .await
-        .map_err(SqliteStorageError::Sqlx)?;
-
-        Ok(())
+        upsert_instance(self.db.writer(), instance).await
     }
 
     async fn delete(&self, id: TriggerInstanceId) -> Result<bool, StorageError> {
@@ -424,6 +435,73 @@ impl TriggerInstanceRepo for SqliteTriggerInstanceRepo {
 
         Ok(result.rows_affected() > 0)
     }
+}
+
+async fn upsert_instance<'e>(
+    executor: impl sqlx::SqliteExecutor<'e>,
+    instance: &TriggerInstance,
+) -> Result<(), StorageError> {
+    let id_str = instance.id.to_string();
+    let overrides_json =
+        serde_json::to_string(&instance.overrides).map_err(StorageError::Serialization)?;
+    let platform_scope_json =
+        serde_json::to_string(&instance.platform_scope).map_err(StorageError::Serialization)?;
+    let enabled: i64 = if instance.enabled { 1 } else { 0 };
+    let user_defined: i64 = if instance.user_defined { 1 } else { 0 };
+
+    let cooldown_secs: i64 = instance.cooldown_secs.into();
+    let cooldown_global: i64 = if instance.cooldown_global { 1 } else { 0 };
+    let permission_rung = instance.permission_rung.as_str();
+
+    sqlx::query(
+        "INSERT INTO trigger_instances
+             (id, kind_id, name, overrides, enabled, user_defined, platform_scope,
+              cooldown_secs, cooldown_global, permission_rung)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+         ON CONFLICT(id) DO UPDATE SET
+             kind_id         = excluded.kind_id,
+             name            = excluded.name,
+             overrides       = excluded.overrides,
+             enabled         = excluded.enabled,
+             user_defined    = excluded.user_defined,
+             platform_scope  = excluded.platform_scope,
+             cooldown_secs   = excluded.cooldown_secs,
+             cooldown_global = excluded.cooldown_global,
+             permission_rung = excluded.permission_rung",
+    )
+    .bind(&id_str)
+    .bind(&instance.kind_id)
+    .bind(&instance.name)
+    .bind(&overrides_json)
+    .bind(enabled)
+    .bind(user_defined)
+    .bind(&platform_scope_json)
+    .bind(cooldown_secs)
+    .bind(cooldown_global)
+    .bind(permission_rung)
+    .execute(executor)
+    .await
+    .map_err(SqliteStorageError::Sqlx)?;
+
+    Ok(())
+}
+
+async fn append_link<'e>(
+    executor: impl sqlx::SqliteExecutor<'e>,
+    action_id: ActionId,
+    instance_id: TriggerInstanceId,
+) -> Result<sqlx::sqlite::SqliteQueryResult, sqlx::Error> {
+    let action_id_str = action_id.to_string();
+    sqlx::query(
+        "INSERT INTO action_trigger_instances (action_id, trigger_instance_id, position)
+         SELECT ?, ?, COALESCE(MAX(position), -1) + 1
+         FROM action_trigger_instances WHERE action_id = ?",
+    )
+    .bind(&action_id_str)
+    .bind(instance_id.to_string())
+    .bind(&action_id_str)
+    .execute(executor)
+    .await
 }
 
 fn ignore_unique_violation(

@@ -1,7 +1,8 @@
+use std::collections::HashMap;
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use forge_storage::{StorageError, TriggerInstanceRepo};
+use forge_storage::{StorageError, TriggerChanges, TriggerInstanceRepo};
 use forge_types::{ActionId, TriggerInstance, TriggerInstanceId, Variant};
 
 use crate::binding::{COMBO_FIELD, HotkeyEdge};
@@ -34,9 +35,7 @@ fn canonicalized(instance: &TriggerInstance) -> Result<TriggerInstance, StorageE
     if HotkeyEdge::from_kind(&instance.kind_id).is_none() {
         return Ok(canonical);
     }
-    if let Some(Variant::String(raw)) = instance.overrides.get(COMBO_FIELD)
-        && !raw.trim().is_empty()
-    {
+    if let Some(Variant::String(raw)) = instance.overrides.get(COMBO_FIELD) {
         let combo = HotkeyCombo::parse(raw).map_err(|e| StorageError::ValidationFailed {
             field: COMBO_FIELD.to_owned(),
             reason: e.to_string(),
@@ -71,6 +70,27 @@ impl TriggerInstanceRepo for HotkeySyncedTriggerRepo {
         instance_id: TriggerInstanceId,
     ) -> Result<Vec<ActionId>, StorageError> {
         self.inner.actions_using(instance_id).await
+    }
+
+    async fn actions_by_instance(
+        &self,
+    ) -> Result<HashMap<TriggerInstanceId, Vec<ActionId>>, StorageError> {
+        self.inner.actions_by_instance().await
+    }
+
+    async fn apply_changes(&self, changes: &TriggerChanges) -> Result<(), StorageError> {
+        let saved = changes
+            .saved
+            .iter()
+            .map(canonicalized)
+            .collect::<Result<Vec<_>, _>>()?;
+        let canonical = TriggerChanges {
+            saved,
+            ..changes.clone()
+        };
+        self.inner.apply_changes(&canonical).await?;
+        self.sync().await;
+        Ok(())
     }
 
     async fn link_action(
@@ -126,7 +146,9 @@ impl TriggerInstanceRepo for HotkeySyncedTriggerRepo {
     }
 
     async fn set_enabled(&self, id: TriggerInstanceId, enabled: bool) -> Result<(), StorageError> {
-        self.inner.set_enabled(id, enabled).await
+        self.inner.set_enabled(id, enabled).await?;
+        self.sync().await;
+        Ok(())
     }
 
     async fn archive(&self, id: TriggerInstanceId) -> Result<bool, StorageError> {
@@ -204,12 +226,22 @@ mod tests {
     }
 
     #[test]
+    fn a_blank_hotkey_combo_is_refused_on_the_combo_field() {
+        for blank in ["", "   "] {
+            let refused = canonicalized(&instance(event_kinds::GLOBAL_PRESSED, Some(blank)));
+
+            assert!(
+                matches!(refused, Err(StorageError::ValidationFailed { ref field, .. }) if field == COMBO_FIELD),
+                "combo {blank:?}: got {refused:?}"
+            );
+        }
+    }
+
+    #[test]
     fn a_combo_is_left_untouched_when_the_trigger_is_not_a_hotkey_or_has_no_combo_yet() {
         for (kind, combo) in [
             (OTHER_KIND, Some("f5")),
             (OTHER_KIND, Some("Ctrl+XYZ")),
-            (event_kinds::GLOBAL_PRESSED, Some("")),
-            (event_kinds::GLOBAL_PRESSED, Some("   ")),
             (event_kinds::GLOBAL_PRESSED, None),
         ] {
             let original = instance(kind, combo);

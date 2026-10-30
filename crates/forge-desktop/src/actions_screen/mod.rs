@@ -755,13 +755,14 @@ async fn actions_by_trigger_filter(
     repo: &dyn TriggerInstanceRepo,
     filter_by_kind: &HashMap<String, ActionsFilter>,
 ) -> Result<HashMap<ActionsFilter, HashSet<ActionId>>, StorageError> {
+    let mut links = repo.actions_by_instance().await?;
     let mut members: HashMap<ActionsFilter, HashSet<ActionId>> = HashMap::new();
     for instance in repo.list_all().await? {
-        if let Some(filter) = filter_by_kind.get(&instance.kind_id) {
-            members
-                .entry(*filter)
-                .or_default()
-                .extend(repo.actions_using(instance.id).await?);
+        if let (Some(filter), Some(actions)) = (
+            filter_by_kind.get(&instance.kind_id),
+            links.remove(&instance.id),
+        ) {
+            members.entry(*filter).or_default().extend(actions);
         }
     }
     Ok(members)

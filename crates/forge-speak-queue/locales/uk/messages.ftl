@@ -28,6 +28,7 @@ msg-speak-no_audio_route = Для озвучення не налаштовано
 msg-speak-audio_route_unknown = Звукового маршруту { $route } не існує.
 msg-speak-audio_routes_failed = Усі звукові маршрути для озвучення не спрацювали.
 msg-speak-audio_remote_failed = Віддалене місце призначення звуку не спрацювало.
+msg-speak-audio_start_timed_out = Відтворення звуку не почалося за { $seconds } с.
 msg-speak-no_overlay_listener = Жодна відкрита сторінка не слухає звуковий оверлей { $destination }.
 msg-speak-skipped_rule_matched = Пропущено: { $rule ->
     [contains_url] повідомлення містить посилання.

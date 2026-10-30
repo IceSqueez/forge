@@ -144,6 +144,7 @@ fn charity_campaign_payload() -> Value {
         "current_amount_cents": 1200,
         "target_amount_cents": 50000,
         "currency_code": "EUR",
+        "decimal_places": 2,
     }})
 }
 
@@ -421,6 +422,7 @@ fn payload_cases() -> Vec<PayloadCase> {
                     "website": "https://example.org",
                     "amount_cents": 2500,
                     "currency_code": "USD",
+                    "decimal_places": 2,
                 },
                 "user": VIEWER.nested(),
             }),
@@ -1093,6 +1095,80 @@ fn route_through_session(topic: &str, wire: &Value) -> Event {
         "{topic} published more than one event"
     );
     event
+}
+
+fn amount(value: i64, decimal_places: i64, currency: &str) -> Value {
+    json!({"value": value, "decimal_places": decimal_places, "currency": currency})
+}
+
+#[test]
+fn a_charity_amount_keeps_the_precision_of_its_currency() {
+    for (decimal_places, currency) in [(0, "JPY"), (2, "USD"), (3, "KWD")] {
+        let donation = route_through_session(
+            "channel.charity_campaign.donate",
+            &wire(&[
+                VIEWER.wire("user"),
+                json!({"amount": amount(2500, decimal_places, currency)}),
+            ]),
+        );
+        let campaign = route_through_session(
+            "channel.charity_campaign.progress",
+            &json!({
+                "current_amount": amount(1200, decimal_places, currency),
+                "target_amount": amount(50000, decimal_places, currency),
+            }),
+        );
+
+        for (label, event) in [("donation", donation), ("campaign", campaign)] {
+            assert_eq!(
+                event.payload["charity"]["decimal_places"],
+                json!(decimal_places),
+                "{label} in {currency}"
+            );
+        }
+    }
+}
+
+#[test]
+fn charity_payloads_stored_before_the_precision_field_decode_as_zero_places() {
+    let stored_donation = json!({
+        "charity": {
+            "id": "camp-1",
+            "name": "Helping Hands",
+            "description": "helps",
+            "website": "https://example.org",
+            "amount_cents": 2500,
+            "currency_code": "USD",
+        },
+        "user": VIEWER.nested(),
+    });
+    let mut stored_campaign = charity_campaign_payload();
+    stored_campaign["charity"]
+        .as_object_mut()
+        .unwrap()
+        .remove("decimal_places");
+
+    let donation = CharityDonated::from_event(&Event::new(
+        EventSource::Twitch,
+        CharityDonated::KIND,
+        stored_donation,
+    ))
+    .unwrap();
+    let campaign = CharityCampaignProgressed::from_event(&Event::new(
+        EventSource::Twitch,
+        CharityCampaignProgressed::KIND,
+        stored_campaign,
+    ))
+    .unwrap();
+
+    assert_eq!(
+        serde_json::to_value(donation).unwrap()["charity"]["decimal_places"],
+        json!(0)
+    );
+    assert_eq!(
+        serde_json::to_value(campaign).unwrap()["charity"]["decimal_places"],
+        json!(0)
+    );
 }
 
 fn without_chat_envelopes(payload: &Value) -> Value {

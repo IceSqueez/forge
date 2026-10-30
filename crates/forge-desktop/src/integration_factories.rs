@@ -28,8 +28,8 @@ use crate::obs_credentials_form::{OBS_AUTO_RECONNECT, OBS_CONNECT_ON_LAUNCH};
 use crate::platform_identities::OAuthClientIdentity;
 use crate::vtube_connect_form::{VTUBE_AUTO_RECONNECT, VTUBE_CONNECT_ON_LAUNCH};
 use forge_hotkey::HotkeyReconciler;
+use forge_hotkey::bound_hotkey_combos;
 use forge_hotkey::clip_bindings_of;
-use forge_hotkey::persisted_hotkey_combos;
 
 const CONNECT_GUARD: Duration = Duration::from_secs(5);
 const KICK_POLLER_QUEUE_CAPACITY: usize = 256;
@@ -778,7 +778,7 @@ impl IntegrationFactory<BuiltinObject> for HotkeyFactory {
 
     async fn is_configured(&self) -> Result<bool, StorageError> {
         let instances = self.triggers.list_all().await?;
-        if !persisted_hotkey_combos(&instances).is_empty() {
+        if !bound_hotkey_combos(&instances).is_empty() {
             return Ok(true);
         }
         Ok(!clip_bindings_of(&self.clips.list().await?).is_empty())
@@ -819,5 +819,73 @@ impl IntegrationFactory<BuiltinObject> for HotkeyFactory {
         Ok(RunningIntegration::idle()
             .with_object(object)
             .with_teardown(teardown))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::collections::BTreeMap;
+
+    use forge_events::EventPublisher;
+    use forge_hotkey::HotkeyConfig;
+    use forge_hotkey::testing::test_client;
+    use forge_hotkey::vocabulary::event_kinds;
+    use forge_storage::soundboard::MockSoundboardClipsRepo;
+    use forge_storage::trigger_instance::MockTriggerInstanceRepo;
+    use forge_types::{PermissionRung, PlatformScope, TriggerInstance, TriggerInstanceId, Variant};
+
+    use super::*;
+
+    struct SilentPublisher;
+
+    impl EventPublisher for SilentPublisher {
+        fn publish(&self, _: Event) {}
+    }
+
+    fn hotkey_factory(instances: Vec<TriggerInstance>) -> HotkeyFactory {
+        let mut triggers = MockTriggerInstanceRepo::new();
+        triggers
+            .expect_list_all()
+            .returning(move || Ok(instances.clone()));
+        let mut clips = MockSoundboardClipsRepo::new();
+        clips.expect_list().returning(|| Ok(Vec::new()));
+        let (client, _) = test_client(HotkeyConfig::default(), Arc::new(SilentPublisher));
+        HotkeyFactory {
+            client,
+            triggers: Arc::new(triggers),
+            clips: Arc::new(clips),
+        }
+    }
+
+    fn disabled_binding() -> TriggerInstance {
+        TriggerInstance {
+            id: TriggerInstanceId::new(),
+            kind_id: event_kinds::GLOBAL_PRESSED.to_owned(),
+            name: "F1".to_owned(),
+            overrides: BTreeMap::from([(
+                forge_hotkey::COMBO_FIELD.to_owned(),
+                Variant::String("F1".to_owned()),
+            )]),
+            enabled: false,
+            user_defined: true,
+            platform_scope: PlatformScope::default(),
+            cooldown_secs: 0,
+            cooldown_global: true,
+            permission_rung: PermissionRung::Everyone,
+        }
+    }
+
+    #[tokio::test]
+    async fn hotkeys_stay_configured_when_every_binding_is_disabled() {
+        let factory = hotkey_factory(vec![disabled_binding()]);
+
+        assert!(factory.is_configured().await.unwrap());
+    }
+
+    #[tokio::test]
+    async fn hotkeys_are_not_configured_without_any_binding() {
+        let factory = hotkey_factory(Vec::new());
+
+        assert!(!factory.is_configured().await.unwrap());
     }
 }

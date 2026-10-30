@@ -4,8 +4,8 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use forge_runtime::{
-    ActionEngineHandle, EventBus, QueueSchedulerHandle, ScheduledRunsHandle, TimerSchedulerHandle,
-    TriggerEvaluatorHandle,
+    ActionEngineHandle, EventBus, IntegrationSupervisor, QueueSchedulerHandle, ScheduledRunsHandle,
+    TimerSchedulerHandle, TriggerEvaluatorHandle,
 };
 use forge_server::ServerHandle;
 use forge_speak_queue::{SpeakCommand, SpeakQueueHandle};
@@ -14,14 +14,16 @@ use forge_transfer::{ScheduleState, ScheduledBackupHandle};
 use gpui::{App, Global};
 use tokio::runtime::Runtime;
 
+use crate::integrations::BuiltinObject;
 use crate::runtime_handles::RuntimeHandles;
 
 const SETTLE: Duration = Duration::from_millis(10);
 const TIMER_STOP_BUDGET: Duration = Duration::from_millis(10);
 const SCHEDULED_RUNS_STOP_BUDGET: Duration = Duration::from_millis(10);
 const TRIGGER_EVALUATOR_STOP_BUDGET: Duration = Duration::from_millis(10);
-const SERVER_STOP_BUDGET: Duration = Duration::from_millis(40);
-const SPEAK_STOP_BUDGET: Duration = Duration::from_millis(20);
+const SERVER_STOP_BUDGET: Duration = Duration::from_millis(30);
+const INTEGRATIONS_STOP_BUDGET: Duration = Duration::from_millis(25);
+const SPEAK_STOP_BUDGET: Duration = Duration::from_millis(10);
 const FLUSH_BUDGET: Duration = Duration::from_millis(60);
 const ABANDON_BUDGET: Duration = Duration::from_millis(10);
 const STORAGE_CLOSE_BUDGET: Duration = Duration::from_millis(20);
@@ -30,6 +32,7 @@ const GRACEFUL_BUDGET: Duration = TIMER_STOP_BUDGET
     .saturating_add(TRIGGER_EVALUATOR_STOP_BUDGET)
     .saturating_add(SETTLE)
     .saturating_add(SERVER_STOP_BUDGET)
+    .saturating_add(INTEGRATIONS_STOP_BUDGET)
     .saturating_add(SPEAK_STOP_BUDGET)
     .saturating_add(FLUSH_BUDGET)
     .saturating_add(ABANDON_BUDGET)
@@ -108,6 +111,7 @@ pub struct ShutdownHandles {
     server: Option<ServerHandle>,
     speak: Option<SpeakQueueHandle>,
     hotkey: Option<Arc<forge_hotkey::HotkeyClient>>,
+    integrations: Option<IntegrationSupervisor<BuiltinObject>>,
     storage: Arc<dyn DataProvider>,
 }
 
@@ -123,6 +127,7 @@ impl ShutdownHandles {
             server: handles.server.clone(),
             speak: handles.speak.clone(),
             hotkey: handles.hotkey_client.clone(),
+            integrations: Some(handles.integrations.clone()),
             storage: Arc::clone(&handles.backend),
         }
     }
@@ -175,6 +180,10 @@ impl ShutdownHandles {
 
         self.scheduler.shutdown();
         self.action_engine.shutdown();
+
+        if let Some(integrations) = &self.integrations {
+            integrations.shutdown(INTEGRATIONS_STOP_BUDGET).await;
+        }
 
         if let Some(speak) = self.speak {
             match tokio::time::timeout(SPEAK_STOP_BUDGET, speak.send(SpeakCommand::Clear)).await {
@@ -602,6 +611,7 @@ mod tests {
             server: None,
             speak: None,
             hotkey: None,
+            integrations: None,
             storage: test_backend().0,
         }
     }
@@ -905,5 +915,151 @@ mod tests {
             "{state:?} after {:?}",
             started.elapsed()
         );
+    }
+
+    struct RetiringIntegration {
+        id: forge_types::IntegrationId,
+        teardown_hangs: bool,
+        on_teardown: Arc<dyn Fn() + Send + Sync>,
+    }
+
+    #[async_trait::async_trait]
+    impl forge_runtime::IntegrationFactory<crate::integrations::BuiltinObject> for RetiringIntegration {
+        fn id(&self) -> forge_types::IntegrationId {
+            self.id.clone()
+        }
+
+        fn teardown_grace(&self) -> Duration {
+            forge_runtime::DEFAULT_TEARDOWN_GRACE
+        }
+
+        async fn is_configured(&self) -> Result<bool, StorageError> {
+            Ok(true)
+        }
+
+        async fn start(
+            &self,
+        ) -> Result<
+            forge_runtime::RunningIntegration<crate::integrations::BuiltinObject>,
+            forge_runtime::IntegrationStartError,
+        > {
+            let hangs = self.teardown_hangs;
+            let on_teardown = Arc::clone(&self.on_teardown);
+            Ok(
+                forge_runtime::RunningIntegration::idle().with_teardown(Box::pin(async move {
+                    on_teardown();
+                    if hangs {
+                        std::future::pending::<()>().await;
+                    }
+                })),
+            )
+        }
+    }
+
+    async fn running_integration(
+        settings: Arc<dyn forge_storage::SettingsRepo>,
+        teardown_hangs: bool,
+        on_teardown: impl Fn() + Send + Sync + 'static,
+    ) -> IntegrationSupervisor<crate::integrations::BuiltinObject> {
+        let id = forge_types::IntegrationId::from_static("twitch");
+        let supervisor = IntegrationSupervisor::launch(
+            vec![Arc::new(RetiringIntegration {
+                id: id.clone(),
+                teardown_hangs,
+                on_teardown: Arc::new(on_teardown),
+            })
+                as Arc<
+                    dyn forge_runtime::IntegrationFactory<crate::integrations::BuiltinObject>,
+                >],
+            settings,
+            forge_runtime::IntegrationGate::new(),
+            Arc::new(crate::integrations::BuiltinRegistry::default()),
+            spawn_live_viewer_aggregator(),
+        );
+        supervisor
+            .slot(&id)
+            .unwrap()
+            .set_enabled(true)
+            .await
+            .unwrap();
+        supervisor
+    }
+
+    type Milestones = Arc<Mutex<Vec<&'static str>>>;
+
+    fn milestone(log: &Milestones, name: &'static str) -> impl Fn() + Send + Sync + 'static {
+        let log = Arc::clone(log);
+        move || log.lock().unwrap().push(name)
+    }
+
+    fn settings_store() -> Arc<dyn forge_storage::SettingsRepo> {
+        Arc::new(forge_storage::test_support::MemorySettings::new())
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn integrations_retire_before_storage_closes() {
+        let milestones = Milestones::default();
+        let bus = EventBus::new(Arc::new(RecordedEventLog::default()));
+        EventBus::spawn_flush_task(Arc::clone(&bus));
+        let integrations =
+            running_integration(settings_store(), false, milestone(&milestones, "teardown")).await;
+        let handles = ShutdownHandles {
+            integrations: Some(integrations),
+            storage: crate::test_support::test_backend_observing_shutdown(milestone(
+                &milestones,
+                "storage closed",
+            )),
+            ..handles_over(Arc::clone(&bus), Intake::idle())
+        };
+
+        handles.run_graceful().await;
+
+        assert_eq!(*milestones.lock().unwrap(), ["teardown", "storage closed"]);
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_hung_integration_costs_its_budget_and_storage_still_closes() {
+        let milestones = Milestones::default();
+        let bus = EventBus::new(Arc::new(RecordedEventLog::default()));
+        EventBus::spawn_flush_task(Arc::clone(&bus));
+        let integrations =
+            running_integration(settings_store(), true, milestone(&milestones, "teardown")).await;
+        let handles = ShutdownHandles {
+            integrations: Some(integrations),
+            storage: crate::test_support::test_backend_observing_shutdown(milestone(
+                &milestones,
+                "storage closed",
+            )),
+            ..handles_over(Arc::clone(&bus), Intake::idle())
+        };
+
+        handles.run_graceful().await;
+
+        assert_eq!(*milestones.lock().unwrap(), ["teardown", "storage closed"]);
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn an_event_published_by_a_retiring_integration_is_flushed() {
+        const FAREWELL: &str = "integration.farewell";
+        let log = Arc::new(RecordedEventLog::default());
+        let bus = EventBus::new(Arc::clone(&log) as Arc<dyn EventLogRepo>);
+        EventBus::spawn_flush_task(Arc::clone(&bus));
+        let publisher = Arc::clone(&bus);
+        let integrations = running_integration(settings_store(), false, move || {
+            publisher.publish(Event::new(
+                EventSource::Core,
+                FAREWELL,
+                serde_json::Value::Null,
+            ));
+        })
+        .await;
+        let handles = ShutdownHandles {
+            integrations: Some(integrations),
+            ..handles_over(Arc::clone(&bus), Intake::idle())
+        };
+
+        handles.run_graceful().await;
+
+        assert!(log.kinds().iter().any(|kind| kind == FAREWELL));
     }
 }

@@ -715,6 +715,97 @@ async fn renaming_to_a_token_shaped_display_name_is_refused_and_keeps_the_stored
 }
 
 #[tokio::test]
+async fn the_rename_write_refuses_a_token_shaped_name_and_keeps_the_stored_one() {
+    let (repo, _pool) = fresh().await;
+    let created = repo
+        .create("Alert Box", "forge.chat", 1)
+        .await
+        .expect("create overlay");
+
+    let err = repo
+        .rename(&created.id, "fgo_b8f1c07a4e2d")
+        .await
+        .expect_err("a token-shaped rename must be refused");
+
+    assert_eq!(refused_field(&err), Some("display_name"), "{err:?}");
+    let reloaded = repo.get(&created.id).await.expect("get").expect("stored");
+    assert_eq!(reloaded.display_name, "Alert Box");
+}
+
+#[tokio::test]
+async fn a_targeted_write_on_an_unknown_id_reports_a_miss() {
+    let (repo, _pool) = fresh().await;
+    let unknown = OverlayId::new("never-minted");
+
+    let config_written = repo
+        .update_config(&unknown, &OverlayConfig::new())
+        .await
+        .expect("update_config");
+    let renamed = repo.rename(&unknown, "Name").await.expect("rename");
+
+    assert!(!config_written);
+    assert!(!renamed);
+}
+
+#[tokio::test]
+async fn a_config_write_changes_only_the_config() {
+    let (repo, _pool) = fresh().await;
+    let created = repo
+        .create("Alert Box", "forge.chat", 1)
+        .await
+        .expect("create overlay");
+    repo.set_enabled(&created.id, false).await.expect("disable");
+    repo.reissue_all_credentials().await.expect("reissue");
+    repo.rename(&created.id, "Renamed").await.expect("rename");
+    let before = repo.get(&created.id).await.expect("get").expect("stored");
+    let config = OverlayConfig::from([("accent".to_owned(), Variant::String("red".to_owned()))]);
+
+    let written = repo
+        .update_config(&created.id, &config)
+        .await
+        .expect("update_config");
+
+    let after = repo.get(&created.id).await.expect("get").expect("stored");
+    assert!(written);
+    assert_eq!(after.config, config);
+    assert_eq!(
+        (
+            after.enabled,
+            after.credential.expose(),
+            after.display_name.as_str()
+        ),
+        (false, before.credential.expose(), "Renamed")
+    );
+}
+
+#[tokio::test]
+async fn a_rename_changes_only_the_display_name() {
+    let (repo, _pool) = fresh().await;
+    let created = repo
+        .create("Alert Box", "forge.chat", 1)
+        .await
+        .expect("create overlay");
+    let config = OverlayConfig::from([("accent".to_owned(), Variant::String("red".to_owned()))]);
+    repo.update_config(&created.id, &config)
+        .await
+        .expect("update_config");
+    repo.set_enabled(&created.id, false).await.expect("disable");
+    repo.reissue_all_credentials().await.expect("reissue");
+    let before = repo.get(&created.id).await.expect("get").expect("stored");
+
+    let renamed = repo.rename(&created.id, "Renamed").await.expect("rename");
+
+    let after = repo.get(&created.id).await.expect("get").expect("stored");
+    assert!(renamed);
+    assert_eq!(after.display_name, "Renamed");
+    assert_eq!(
+        (after.enabled, after.credential.expose(), &after.config),
+        (false, before.credential.expose(), &config)
+    );
+    assert_eq!(after.id, created.id, "a rename keeps the minted identity");
+}
+
+#[tokio::test]
 async fn saving_a_token_shaped_identity_is_refused_by_field() {
     let (repo, _pool) = fresh().await;
     let mut definition = repo

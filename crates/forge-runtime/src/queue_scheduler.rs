@@ -225,6 +225,10 @@ pub struct QueueSchedulerHandle {
 
 enum SchedulerCommand {
     Enqueue(SchedulerRequest),
+    Offer(
+        SchedulerRequest,
+        oneshot::Sender<Result<(), SchedulerError>>,
+    ),
     Admit(
         SchedulerRequest,
         ScheduledOrigin,
@@ -506,6 +510,14 @@ impl QueueSchedulerHandle {
         self.sender
             .send(SchedulerCommand::Enqueue(req))
             .map_err(|_| SchedulerError::ChannelClosed)
+    }
+
+    pub(crate) async fn offer(&self, req: SchedulerRequest) -> Result<(), SchedulerError> {
+        let (tx, rx) = oneshot::channel();
+        self.sender
+            .send(SchedulerCommand::Offer(req, tx))
+            .map_err(|_| SchedulerError::ChannelClosed)?;
+        rx.await.map_err(|_| SchedulerError::ChannelClosed)?
     }
 
     pub(crate) async fn admit(
@@ -836,6 +848,15 @@ impl QueueScheduler {
                         reason = "refusals are published as skip events inside enqueue"
                     )]
                     let _ = Self::enqueue(req, Arrival::Triggered, &mut slots, &bus);
+                }
+                SchedulerCommand::Offer(req, reply) => {
+                    let admitted = Self::enqueue(req, Arrival::Triggered, &mut slots, &bus)
+                        .map_err(SchedulerError::Refused);
+                    #[expect(
+                        clippy::let_underscore_must_use,
+                        reason = "the requester may stop waiting for the reply"
+                    )]
+                    let _ = reply.send(admitted);
                 }
                 SchedulerCommand::Admit(req, origin, reply) => {
                     let admitted = Self::enqueue(req, Arrival::Scheduled(origin), &mut slots, &bus)
@@ -3046,5 +3067,63 @@ mod tests {
                 "{rejected}"
             );
         }
+    }
+
+    #[tokio::test]
+    async fn an_offer_reports_the_reason_a_queue_refuses_the_run() {
+        for mode in [QueueMode::PAUSED, QueueMode::HOLDING] {
+            let (q_id, _bus, sched) = frozen_queue_filled_to_the_cap().await;
+            let expected = if mode == QueueMode::PAUSED {
+                QUEUE_PAUSED_REASON
+            } else {
+                QUEUE_OVERFLOW_REASON
+            };
+            sched.set_mode(q_id, mode).await.unwrap();
+
+            let offered = sched.offer(req(q_id, ActionId::new())).await;
+
+            assert!(
+                matches!(offered, Err(SchedulerError::Refused(reason)) if reason == expected),
+                "mode {mode:?}: got {offered:?}"
+            );
+            sched.shutdown();
+        }
+    }
+
+    #[tokio::test]
+    async fn an_offer_to_a_queue_the_scheduler_does_not_hold_is_refused_as_not_found() {
+        let (_q_id, _bus, sched) = frozen_queue_filled_to_the_cap().await;
+
+        let offered = sched.offer(req(QueueId::new(), ActionId::new())).await;
+
+        assert!(
+            matches!(
+                offered,
+                Err(SchedulerError::Refused(QUEUE_NOT_FOUND_REASON))
+            ),
+            "got {offered:?}"
+        );
+        sched.shutdown();
+    }
+
+    #[tokio::test]
+    async fn an_offer_a_holding_queue_buffers_is_accepted_up_to_the_cap() {
+        let dp = make_dp().await;
+        let q_id = QueueId::new();
+        let bus = EventBus::new(Arc::new(NullEventLogRepo));
+        let sched = spawn_sched(
+            &dp,
+            &bus,
+            Arc::new(SubActionRegistry::new()),
+            vec![nonblocking(q_id)],
+        );
+        sched.set_mode(q_id, QueueMode::HOLDING).await.unwrap();
+
+        let offered = sched.offer(req(q_id, ActionId::new())).await;
+
+        assert!(offered.is_ok(), "got {offered:?}");
+        let state = sched.queue_states().await.unwrap().remove(&q_id).unwrap();
+        assert_eq!(state.pending, 1);
+        sched.shutdown();
     }
 }

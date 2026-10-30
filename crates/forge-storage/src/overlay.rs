@@ -78,6 +78,28 @@ pub trait OverlayRepo: Send + Sync {
 
     async fn save(&self, definition: &OverlayDefinition) -> Result<(), StorageError>;
 
+    async fn update_config(
+        &self,
+        id: &OverlayId,
+        config: &OverlayConfig,
+    ) -> Result<bool, StorageError> {
+        let Some(mut definition) = self.get(id).await? else {
+            return Ok(false);
+        };
+        definition.config = config.clone();
+        self.save(&definition).await?;
+        Ok(true)
+    }
+
+    async fn rename(&self, id: &OverlayId, display_name: &str) -> Result<bool, StorageError> {
+        let Some(mut definition) = self.get(id).await? else {
+            return Ok(false);
+        };
+        display_name.clone_into(&mut definition.display_name);
+        self.save(&definition).await?;
+        Ok(true)
+    }
+
     async fn restore(&self, definition: &OverlayDefinition) -> Result<(), StorageError>;
 
     async fn set_enabled(&self, id: &OverlayId, enabled: bool) -> Result<bool, StorageError>;

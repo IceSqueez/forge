@@ -5,7 +5,7 @@ use forge_overlay::OverlayKindDescriptor;
 use forge_registry::{SubActionRegistry, TriggerKindDescriptor};
 use forge_storage::{
     ActionRepo, ActionTelemetry, HistoryRepo, OverlayDefinition, OverlayId, QueueRepo,
-    StorageError, TriggerInstanceRepo,
+    StorageError, TriggerChanges, TriggerInstanceRepo,
 };
 use forge_types::{ActionId, ExecutionContext, TriggerInstance, TriggerInstanceId};
 use time::OffsetDateTime;
@@ -138,6 +138,21 @@ impl ActionsService {
     ) -> Result<(), StorageError> {
         self.trigger_instances
             .link_action(action_id, instance_id)
+            .await
+    }
+
+    pub async fn create_linked_trigger(
+        &self,
+        action_id: ActionId,
+        instance: TriggerInstance,
+    ) -> Result<(), StorageError> {
+        let instance_id = instance.id;
+        self.trigger_instances
+            .apply_changes(&TriggerChanges {
+                saved: vec![instance],
+                linked: vec![(action_id, instance_id)],
+                ..TriggerChanges::default()
+            })
             .await
     }
 
@@ -362,5 +377,85 @@ mod tests {
                 .collect::<Vec<_>>(),
             vec!["Main"]
         );
+    }
+
+    fn follow_trigger() -> TriggerInstance {
+        TriggerInstance {
+            id: forge_types::TriggerInstanceId::new(),
+            kind_id: "twitch.follow".to_owned(),
+            name: "follow".to_owned(),
+            overrides: Default::default(),
+            enabled: true,
+            user_defined: true,
+            platform_scope: Default::default(),
+            cooldown_secs: 0,
+            cooldown_global: true,
+            permission_rung: forge_types::PermissionRung::Everyone,
+        }
+    }
+
+    async fn service_over_store() -> (
+        crate::test_support::Sandboxed<Arc<dyn forge_storage::DataProvider>>,
+        ActionsService,
+    ) {
+        let provider = crate::test_support::sandboxed_backend([0x5c; 32])
+            .await
+            .map(|backend| Arc::new(backend) as Arc<dyn forge_storage::DataProvider>);
+        let service = ActionsService::new(
+            provider.action_repo(),
+            provider.queue_repo(),
+            provider.history_repo(),
+            provider.trigger_instance_repo(),
+        );
+        (provider, service)
+    }
+
+    #[tokio::test]
+    async fn a_trigger_created_for_an_action_lands_linked_in_one_write() {
+        let (provider, service) = service_over_store().await;
+        let action = Action {
+            id: ActionId::new(),
+            name: "Greeter".to_owned(),
+            group: None,
+            queue_id: DEFAULT_QUEUE_ID,
+            enabled: true,
+            concurrent: false,
+            bypass_pause: false,
+            execution_mode: ExecutionMode::Sequential,
+            description: None,
+            sub_actions: Vec::new(),
+        };
+        provider.action_repo().save(&action).await.unwrap();
+        let instance = follow_trigger();
+
+        service
+            .create_linked_trigger(action.id, instance.clone())
+            .await
+            .unwrap();
+
+        let linked = provider
+            .trigger_instance_repo()
+            .actions_using(instance.id)
+            .await
+            .unwrap();
+        assert_eq!(linked, [action.id]);
+    }
+
+    #[tokio::test]
+    async fn a_trigger_whose_link_cannot_land_leaves_no_orphan_row() {
+        let (provider, service) = service_over_store().await;
+        let instance = follow_trigger();
+
+        let created = service
+            .create_linked_trigger(ActionId::new(), instance.clone())
+            .await;
+
+        assert!(created.is_err(), "got {created:?}");
+        let stored = provider
+            .trigger_instance_repo()
+            .get(instance.id)
+            .await
+            .unwrap();
+        assert!(stored.is_none());
     }
 }

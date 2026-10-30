@@ -196,6 +196,7 @@ pub(crate) mod charity {
     pub(crate) const CURRENT_AMOUNT_CENTS: &str = "current_amount_cents";
     pub(crate) const TARGET_AMOUNT_CENTS: &str = "target_amount_cents";
     pub(crate) const CURRENCY_CODE: &str = "currency_code";
+    pub(crate) const DECIMAL_PLACES: &str = "decimal_places";
     pub(crate) const USER: &str = "user";
     pub(crate) const USER_ID: &str = "id";
     pub(crate) const USER_LOGIN: &str = "login";

@@ -120,7 +120,7 @@ pub use settings::{
 };
 pub use soundboard::{CLIP_SOURCE_SLOT, SoundboardClipsRepo, StoredClip, clip_source_referrer};
 pub use transit::{CURRENT_FORMAT_VERSION, GlobalTransit, GlobalsExport};
-pub use trigger_instance::TriggerInstanceRepo;
+pub use trigger_instance::{TriggerChanges, TriggerInstanceRepo};
 pub use tts_filters::{
     BlocklistMode, FilterRule, FilterRuleKind, TtsFiltersRepo, TtsPipelineSettings, UrlMode,
 };

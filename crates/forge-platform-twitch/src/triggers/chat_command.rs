@@ -3,7 +3,7 @@ use crate::vocabulary::trigger_ids;
 use forge_events::{Event, EventSource};
 use forge_registry::{
     ActorDeclaration, ChatTriggerFamily, EventFilter, FormField, KindPlatformContract,
-    TriggerCategory, TriggerKindDescriptor, TriggerVariables,
+    TriggerCategory, TriggerKindDescriptor, TriggerVariables, command_phrase_matches,
 };
 use forge_types::{PlatformId, TriggerConfig, UserText, Variant};
 
@@ -106,11 +106,7 @@ impl TriggerKindDescriptor for ChatCommandDescriptor {
             .and_then(|v| v.as_str())
             .unwrap_or("");
 
-        if case_sensitive {
-            message.starts_with(phrase)
-        } else {
-            message.to_lowercase().starts_with(&phrase.to_lowercase())
-        }
+        command_phrase_matches(message, phrase, case_sensitive)
     }
 
     fn variables(&self) -> Option<TriggerVariables> {
@@ -179,6 +175,12 @@ mod tests {
     fn does_not_match_non_prefix() {
         let cfg = make_config("!quote", false);
         assert!(!ChatCommandDescriptor.matches_trigger(&cfg, &chat_event("hello !quote")));
+    }
+
+    #[test]
+    fn a_phrase_does_not_match_a_longer_command_sharing_its_prefix() {
+        let cfg = make_config("!so", false);
+        assert!(!ChatCommandDescriptor.matches_trigger(&cfg, &chat_event("!sound on")));
     }
 
     #[test]

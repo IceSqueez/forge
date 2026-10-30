@@ -609,7 +609,7 @@ async fn a_loop_entered_after_the_run_was_cancelled_exits_as_cancelled_without_i
     let ctx = RunContext::leaf(&stack, 0, EventId::new(), &NullPublisher);
     ctx.cancel.cancel();
 
-    let (_, produced) = runner.execute(&loop_cfg(5, inline(vec![])), &ctx).await;
+    let (telemetry, produced) = runner.execute(&loop_cfg(5, inline(vec![])), &ctx).await;
 
     let produced = produced.unwrap();
     assert_eq!(produced.get("loop.exit_reason"), Some(&s("cancelled")));
@@ -617,6 +617,7 @@ async fn a_loop_entered_after_the_run_was_cancelled_exits_as_cancelled_without_i
         produced.get("loop.iterations_completed"),
         Some(&Variant::Int(0))
     );
+    assert!(matches!(telemetry.outcome, SubActionOutcome::Failed(_)));
 }
 
 #[tokio::test]
@@ -914,4 +915,149 @@ async fn logic_steps_skip_unreadable_nested_entries_and_run_the_rest_of_the_chai
         assert_eq!(run.arg_stack.get("after"), Some(&s("ran")), "{arm}");
         assert!(run.arg_stack.get("skipped").is_none(), "{arm}");
     }
+}
+
+const CANCELLED_CODE: &str = "core.action_run_cancelled";
+
+fn cancels() -> Variant {
+    chain_step("test.cancels_its_run", SubActionConfig::new())
+}
+
+fn marker(name: &str) -> Variant {
+    chain_step("core.args.set", args_set(name, "yes"))
+}
+
+fn cancelled_child_cases(after_cancel: Vec<Variant>) -> [(&'static str, SubActionStep); 3] {
+    let mut body = vec![cancels()];
+    body.extend(after_cancel);
+    [
+        (
+            "if",
+            step(
+                "core.logic.if_then_else",
+                if_cfg("1 == 1", inline(body.clone()), inline(vec![])),
+            ),
+        ),
+        (
+            "switch",
+            step(
+                "core.logic.switch_case",
+                switch_cfg("zzz", vec![], inline(body.clone())),
+            ),
+        ),
+        ("loop", step("core.logic.loop", loop_cfg(3, inline(body)))),
+    ]
+}
+
+async fn run_cancellable(
+    engine: &Arc<ChainEngine>,
+    steps: Vec<SubActionStep>,
+) -> (ChainRun, CancelSignal) {
+    let cancel = CancelSignal::new();
+    let run = engine
+        .run_sequential(&steps, &ArgStack::new(), EventId::new(), &cancel)
+        .await;
+    (run, cancel)
+}
+
+fn top_level_outcome(run: &ChainRun) -> &SubActionOutcome {
+    &run.telemetry
+        .iter()
+        .find(|telemetry| !telemetry.is_nested())
+        .unwrap()
+        .outcome
+}
+
+#[tokio::test]
+async fn a_composite_whose_child_was_interrupted_reports_cancelled_not_success() {
+    let eng = engine();
+    for (label, composite) in cancelled_child_cases(vec![marker("inner")]) {
+        let after = step("core.args.set", args_set("after", "yes"));
+
+        let (run, cancel) = run_cancellable(&eng, vec![composite, after]).await;
+
+        assert!(cancel.is_cancelled(), "{label}");
+        assert!(
+            matches!(top_level_outcome(&run), SubActionOutcome::Failed(m) if m.code_or_text() == CANCELLED_CODE),
+            "{label}: got {:?}",
+            top_level_outcome(&run)
+        );
+        assert_eq!(run.arg_stack.get("inner"), None, "{label}");
+        assert_eq!(run.arg_stack.get("after"), None, "{label}");
+    }
+}
+
+#[tokio::test]
+async fn a_continue_on_error_composite_cannot_carry_a_cancelled_run_into_the_next_step() {
+    let eng = engine();
+    for (label, composite) in cancelled_child_cases(vec![marker("inner")]) {
+        let lenient = SubActionStep {
+            continue_on_error: true,
+            ..composite
+        };
+        let after = step("core.args.set", args_set("after", "yes"));
+
+        let (run, _cancel) = run_cancellable(&eng, vec![lenient, after]).await;
+
+        assert!(
+            matches!(run.signal, ChainSignal::Aborted),
+            "{label}: got {:?}",
+            run.signal
+        );
+        assert_eq!(run.arg_stack.get("after"), None, "{label}");
+    }
+}
+
+#[tokio::test]
+async fn a_cancel_as_a_branchs_last_step_still_stops_the_steps_after_the_branch() {
+    let eng = engine();
+    for (label, composite) in cancelled_child_cases(Vec::new())
+        .into_iter()
+        .filter(|(label, _)| *label != "loop")
+    {
+        let after = step("core.args.set", args_set("after", "yes"));
+
+        let (run, _cancel) = run_cancellable(&eng, vec![composite, after]).await;
+
+        assert!(
+            matches!(run.signal, ChainSignal::Aborted),
+            "{label}: got {:?}",
+            run.signal
+        );
+        assert_eq!(run.arg_stack.get("after"), None, "{label}");
+    }
+}
+
+#[tokio::test]
+async fn a_loop_cancelled_between_iterations_counts_the_finished_one_and_reports_cancelled() {
+    let eng = engine();
+    let looped = step("core.logic.loop", loop_cfg(5, inline(vec![cancels()])));
+
+    let (run, _cancel) = run_cancellable(&eng, vec![looped]).await;
+
+    assert_eq!(run.arg_stack.get("loop.exit_reason"), Some(&s("cancelled")));
+    assert_eq!(
+        run.arg_stack.get("loop.iterations_completed"),
+        Some(&Variant::Int(1))
+    );
+    assert!(
+        matches!(top_level_outcome(&run), SubActionOutcome::Failed(m) if m.code_or_text() == CANCELLED_CODE),
+        "got {:?}",
+        top_level_outcome(&run)
+    );
+}
+
+#[tokio::test]
+async fn a_loop_body_interrupted_mid_way_does_not_count_as_a_finished_iteration() {
+    let eng = engine();
+    let body = inline(vec![cancels(), marker("inner")]);
+    let looped = step("core.logic.loop", loop_cfg(5, body));
+
+    let (run, _cancel) = run_cancellable(&eng, vec![looped]).await;
+
+    assert_eq!(run.arg_stack.get("loop.exit_reason"), Some(&s("cancelled")));
+    assert_eq!(
+        run.arg_stack.get("loop.iterations_completed"),
+        Some(&Variant::Int(0))
+    );
 }

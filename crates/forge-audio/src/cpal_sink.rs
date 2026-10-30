@@ -97,9 +97,28 @@ impl AudioSink for CpalSink {
         let stop = Arc::new(AtomicBool::new(false));
         let paused = Arc::new(AtomicBool::new(false));
         let handle = PlaybackHandle::from_flags(Arc::clone(&stop), Arc::clone(&paused));
-        match self.start_playback(buffer, stop, paused).await? {
+        let start_guard = StopIfAbandoned(Some(Arc::clone(&stop)));
+        let started = self.start_playback(buffer, stop, paused).await?;
+        start_guard.disarm();
+        match started {
             Some(task) => Ok(ControlledPlayback::from_handle(handle, task)),
             None => Ok(ControlledPlayback::resolved(Ok(()))),
+        }
+    }
+}
+
+struct StopIfAbandoned(Option<Arc<AtomicBool>>);
+
+impl StopIfAbandoned {
+    fn disarm(mut self) {
+        self.0 = None;
+    }
+}
+
+impl Drop for StopIfAbandoned {
+    fn drop(&mut self) {
+        if let Some(stop) = self.0.take() {
+            stop.store(true, Ordering::SeqCst);
         }
     }
 }
@@ -636,5 +655,25 @@ mod tests {
 
         assert!(started.elapsed() < EARLY_EXIT_BUDGET);
         assert_eq!(drained.len(), 1);
+    }
+
+    #[test]
+    fn a_start_abandoned_before_it_returned_raises_the_stop_flag_and_a_finished_one_does_not() {
+        for (finished_starting, stop_raised) in [(false, true), (true, false)] {
+            let stop = Arc::new(AtomicBool::new(false));
+            let guard = StopIfAbandoned(Some(Arc::clone(&stop)));
+
+            if finished_starting {
+                guard.disarm();
+            } else {
+                drop(guard);
+            }
+
+            assert_eq!(
+                stop.load(Ordering::SeqCst),
+                stop_raised,
+                "finished starting: {finished_starting}"
+            );
+        }
     }
 }

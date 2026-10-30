@@ -5,11 +5,16 @@ use std::time::Duration;
 use async_trait::async_trait;
 use forge_events::{Event, EventPublisher};
 use forge_registry::{
-    FormField, RegistryError, RunContext, SubActionCategory, SubActionRegistry, SubActionRunner,
+    FormField, RegistryError, RunContext, StepTimer, SubActionCategory, SubActionRegistry,
+    SubActionRunner,
 };
-use forge_runtime::sub_action_runners::CoreActionCancelRunner;
+use forge_runtime::sub_action_runners::{
+    CoreActionCancelRunner, CoreActionRunRunner, CoreArgsSetRunner, CoreLogicIfThenElseRunner,
+    CoreLogicLoopRunner, CoreLogicSwitchCaseRunner,
+};
 use forge_runtime::{
-    ActionCancelRegistry, EventBus, ExecutionRequest, NullEventLogRepo, spawn_action_engine,
+    ActionCancelRegistry, ConditionGate, Config, EventBus, ExecutionRequest, NullEventLogRepo,
+    spawn_action_engine,
 };
 use forge_storage::DataProvider;
 use forge_storage_sqlite::SqliteBackend;
@@ -255,4 +260,188 @@ async fn cancel_guard_deregisters_after_a_run_completes() {
         deregistered.is_ok(),
         "the guard must have deregistered the finished run"
     );
+}
+
+struct CancelsItsRunRunner;
+
+#[async_trait]
+impl SubActionRunner for CancelsItsRunRunner {
+    fn id(&self) -> &str {
+        "test.cancels_its_run"
+    }
+    fn category(&self) -> SubActionCategory {
+        SubActionCategory::Util
+    }
+    fn label(&self) -> &str {
+        ""
+    }
+    fn summary(&self) -> &str {
+        ""
+    }
+    fn search_text(&self) -> &str {
+        ""
+    }
+    fn icon_name(&self) -> &str {
+        ""
+    }
+    fn default_config(&self) -> SubActionConfig {
+        SubActionConfig::new()
+    }
+    fn config_fields(&self) -> Vec<FormField> {
+        Vec::new()
+    }
+    fn validate_config(&self, _config: &SubActionConfig) -> Result<(), RegistryError> {
+        Ok(())
+    }
+    async fn execute(
+        &self,
+        _config: &SubActionConfig,
+        ctx: &RunContext<'_>,
+    ) -> (SubActionTelemetry, Option<ArgStack>) {
+        ctx.cancel.cancel();
+        (
+            StepTimer::start(ctx, "test.cancels_its_run").success(),
+            None,
+        )
+    }
+}
+
+fn plain_step(kind: &str, config: SubActionConfig) -> SubActionStep {
+    SubActionStep {
+        kind_id: kind.to_owned(),
+        config,
+        enabled: true,
+        continue_on_error: false,
+        condition: None,
+        label: None,
+    }
+}
+
+fn chain_entry(kind: &str) -> Variant {
+    let mut entry = SubActionConfig::new();
+    entry.insert("kind_id".to_owned(), Variant::String(kind.to_owned()));
+    entry.insert("config".to_owned(), Variant::Object(SubActionConfig::new()));
+    Variant::Object(entry)
+}
+
+fn interrupted_chain() -> Variant {
+    Variant::Array(vec![
+        chain_entry("test.cancels_its_run"),
+        chain_entry("core.args.set"),
+    ])
+}
+
+fn composite_config(entries: &[(&str, Variant)]) -> SubActionConfig {
+    entries
+        .iter()
+        .map(|(key, value)| ((*key).to_owned(), value.clone()))
+        .collect()
+}
+
+fn interrupted_composites() -> [(&'static str, SubActionStep); 3] {
+    [
+        (
+            "if",
+            plain_step(
+                "core.logic.if_then_else",
+                composite_config(&[
+                    ("condition", Variant::String("1 == 1".to_owned())),
+                    ("then_chain", interrupted_chain()),
+                    ("else_chain", Variant::Array(Vec::new())),
+                ]),
+            ),
+        ),
+        (
+            "switch",
+            plain_step(
+                "core.logic.switch_case",
+                composite_config(&[
+                    ("expression", Variant::String("zzz".to_owned())),
+                    ("cases", Variant::Array(Vec::new())),
+                    ("default_chain", interrupted_chain()),
+                ]),
+            ),
+        ),
+        (
+            "loop",
+            plain_step(
+                "core.logic.loop",
+                composite_config(&[
+                    ("mode", Variant::String("count".to_owned())),
+                    ("count", Variant::Int(3)),
+                    ("body", interrupted_chain()),
+                ]),
+            ),
+        ),
+    ]
+}
+
+#[tokio::test]
+async fn a_run_cancelled_inside_a_composite_step_is_recorded_as_cancelled() {
+    let (dp, _media) = make_dp().await;
+    let config = Config::default();
+    let gate = Arc::new(ConditionGate::new(&config));
+    let mut reg = SubActionRegistry::new();
+    reg.register(Box::new(CancelsItsRunRunner)).unwrap();
+    reg.register(Box::new(CoreArgsSetRunner)).unwrap();
+    reg.register(Box::new(CoreLogicSwitchCaseRunner)).unwrap();
+    reg.register(Box::new(CoreLogicIfThenElseRunner::new(Arc::clone(&gate))))
+        .unwrap();
+    reg.register(Box::new(CoreLogicLoopRunner::new(gate)))
+        .unwrap();
+    reg.register(Box::new(CoreActionRunRunner::new(dp.action_repo())))
+        .unwrap();
+    let bus = EventBus::new(Arc::new(NullEventLogRepo));
+    let engine = spawn_action_engine(
+        Arc::clone(&bus),
+        forge_runtime::Catalog::new(
+            dp.action_repo(),
+            dp.trigger_instance_repo(),
+            dp.catalog_revision(),
+        ),
+        dp.action_repo(),
+        dp.history_repo(),
+        Arc::new(reg),
+        Arc::new(ActionCancelRegistry::new()),
+    );
+    let child = ActionId::new();
+    dp.action_repo()
+        .save(&action(
+            child,
+            vec![
+                plain_step("test.cancels_its_run", SubActionConfig::new()),
+                plain_step("core.args.set", SubActionConfig::new()),
+            ],
+        ))
+        .await
+        .unwrap();
+    let nested_run = (
+        "run action",
+        plain_step("core.action.run", cancel_cfg(&child.to_string())),
+    );
+
+    for (label, composite) in interrupted_composites().into_iter().chain([nested_run]) {
+        let target = ActionId::new();
+        dp.action_repo()
+            .save(&action(target, vec![composite]))
+            .await
+            .unwrap();
+
+        engine
+            .dispatch(ExecutionRequest {
+                action_id: target,
+                trigger_event_id: EventId::new(),
+                trigger_kind: None,
+                manual_test: false,
+                initial_args: ArgStack::new(),
+            })
+            .await
+            .unwrap();
+
+        assert_eq!(
+            await_history(&dp, target).await,
+            ExecutionOutcome::Cancelled,
+            "{label}"
+        );
+    }
 }

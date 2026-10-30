@@ -1,7 +1,7 @@
 #![allow(clippy::expect_used)]
 use std::collections::{BTreeMap, BTreeSet};
 
-use forge_storage::{DataProvider, StorageError};
+use forge_storage::{DataProvider, StorageError, TriggerChanges};
 use forge_storage_sqlite::SqliteBackend;
 use forge_types::{
     Action, ActionId, ExecutionMode, PermissionRung, PlatformId, PlatformScope, QueueId,
@@ -775,4 +775,200 @@ async fn migration_applies_any_default_to_legacy_rows() {
         PlatformScope::Any,
         "DEFAULT '\"any\"' must decode as PlatformScope::Any"
     );
+}
+
+async fn instance_on(
+    backend: &SqliteBackend,
+    action_id: ActionId,
+    name: &str,
+) -> TriggerInstanceId {
+    let instance = make_instance("twitch.chat.command", name, true);
+    let repo = backend.trigger_instance_repo();
+    repo.save(&instance).await.expect("save instance");
+    repo.link_action(action_id, instance.id)
+        .await
+        .expect("link instance");
+    instance.id
+}
+
+#[tokio::test]
+async fn a_change_set_failing_on_its_last_write_leaves_every_earlier_write_undone() {
+    let backend = setup().await;
+    let repo = backend.trigger_instance_repo();
+    let action_id = insert_action(&backend, "Alert").await;
+    let removed = instance_on(&backend, action_id, "Removed").await;
+    let unlinked = instance_on(&backend, action_id, "Unlinked").await;
+    let fresh = make_instance("twitch.chat.command", "Fresh", true);
+
+    let outcome = repo
+        .apply_changes(&TriggerChanges {
+            removed: vec![removed],
+            unlinked: vec![(action_id, unlinked)],
+            saved: vec![fresh.clone()],
+            linked: vec![(ActionId::new(), fresh.id)],
+        })
+        .await;
+
+    assert!(outcome.is_err(), "got {outcome:?}");
+    assert!(repo.get(removed).await.expect("get").is_some());
+    assert!(repo.get(fresh.id).await.expect("get").is_none());
+    assert_eq!(linked_ids(&backend, action_id).await, [removed, unlinked]);
+}
+
+#[tokio::test]
+async fn a_change_set_can_link_an_instance_it_saves_in_the_same_write() {
+    let backend = setup().await;
+    let repo = backend.trigger_instance_repo();
+    let action_id = insert_action(&backend, "Alert").await;
+    let existing = instance_on(&backend, action_id, "Existing").await;
+    let fresh = make_instance("twitch.chat.command", "Fresh", true);
+
+    repo.apply_changes(&TriggerChanges {
+        saved: vec![fresh.clone()],
+        linked: vec![(action_id, fresh.id)],
+        ..TriggerChanges::default()
+    })
+    .await
+    .expect("apply");
+
+    assert_eq!(linked_ids(&backend, action_id).await, [existing, fresh.id]);
+}
+
+#[tokio::test]
+async fn a_change_set_removes_before_it_saves_so_one_id_can_be_replaced() {
+    let backend = setup().await;
+    let repo = backend.trigger_instance_repo();
+    let action_id = insert_action(&backend, "Alert").await;
+    let instance = make_instance("twitch.chat.command", "Before", true);
+    repo.save(&instance).await.expect("save");
+    repo.link_action(action_id, instance.id)
+        .await
+        .expect("link");
+    let replacement = TriggerInstance {
+        name: "After".to_owned(),
+        ..instance.clone()
+    };
+
+    repo.apply_changes(&TriggerChanges {
+        removed: vec![instance.id],
+        saved: vec![replacement],
+        ..TriggerChanges::default()
+    })
+    .await
+    .expect("apply");
+
+    let stored = repo.get(instance.id).await.expect("get").expect("stored");
+    assert_eq!(stored.name, "After");
+    assert!(linked_ids(&backend, action_id).await.is_empty());
+}
+
+#[tokio::test]
+async fn a_change_set_unlinks_before_it_links_so_a_pair_moves_to_the_end() {
+    let backend = setup().await;
+    let repo = backend.trigger_instance_repo();
+    let action_id = insert_action(&backend, "Alert").await;
+    let first = instance_on(&backend, action_id, "First").await;
+    let second = instance_on(&backend, action_id, "Second").await;
+
+    repo.apply_changes(&TriggerChanges {
+        unlinked: vec![(action_id, first)],
+        linked: vec![(action_id, first)],
+        ..TriggerChanges::default()
+    })
+    .await
+    .expect("apply");
+
+    assert_eq!(linked_ids(&backend, action_id).await, [second, first]);
+}
+
+#[tokio::test]
+async fn repeating_a_create_change_set_keeps_one_row_and_one_link() {
+    let backend = setup().await;
+    let repo = backend.trigger_instance_repo();
+    let action_id = insert_action(&backend, "Alert").await;
+    let fresh = make_instance("twitch.chat.command", "Fresh", true);
+    let create = TriggerChanges {
+        saved: vec![fresh.clone()],
+        linked: vec![(action_id, fresh.id)],
+        ..TriggerChanges::default()
+    };
+
+    repo.apply_changes(&create).await.expect("first apply");
+    repo.apply_changes(&create).await.expect("second apply");
+
+    assert_eq!(linked_ids(&backend, action_id).await, [fresh.id]);
+    assert_eq!(repo.list_all().await.expect("list").len(), 1);
+}
+
+#[tokio::test]
+async fn a_change_set_removes_an_instance_a_live_and_an_archived_action_still_link() {
+    let backend = setup().await;
+    let repo = backend.trigger_instance_repo();
+    let live = insert_action(&backend, "Live").await;
+    let archived = insert_action(&backend, "Archived").await;
+    let instance = instance_on(&backend, live, "Shared").await;
+    repo.link_action(archived, instance).await.expect("link");
+    backend
+        .action_repo()
+        .archive(archived)
+        .await
+        .expect("archive");
+
+    repo.apply_changes(&TriggerChanges {
+        removed: vec![instance],
+        ..TriggerChanges::default()
+    })
+    .await
+    .expect("apply");
+
+    assert!(repo.get(instance).await.expect("get").is_none());
+    assert!(linked_ids(&backend, live).await.is_empty());
+}
+
+#[tokio::test]
+async fn the_link_map_groups_actions_by_instance_and_leaves_unlinked_instances_out() {
+    let backend = setup().await;
+    let repo = backend.trigger_instance_repo();
+    let first = insert_action(&backend, "First").await;
+    let second = insert_action(&backend, "Second").await;
+    let shared = instance_on(&backend, first, "Shared").await;
+    repo.link_action(second, shared).await.expect("link");
+    let single = instance_on(&backend, second, "Single").await;
+    let unlinked = make_instance("twitch.chat.command", "Unlinked", true);
+    repo.save(&unlinked).await.expect("save");
+
+    let links = repo.actions_by_instance().await.expect("links");
+
+    let sets: BTreeMap<TriggerInstanceId, BTreeSet<ActionId>> = links
+        .into_iter()
+        .map(|(instance, actions)| (instance, actions.into_iter().collect()))
+        .collect();
+    assert_eq!(
+        sets,
+        BTreeMap::from([
+            (shared, BTreeSet::from([first, second])),
+            (single, BTreeSet::from([second])),
+        ])
+    );
+}
+
+#[tokio::test]
+async fn the_link_map_ignores_archived_actions_like_the_per_instance_read() {
+    let backend = setup().await;
+    let repo = backend.trigger_instance_repo();
+    let live = insert_action(&backend, "Live").await;
+    let archived = insert_action(&backend, "Archived").await;
+    let shared = instance_on(&backend, live, "Shared").await;
+    repo.link_action(archived, shared).await.expect("link");
+    let orphaned = instance_on(&backend, archived, "Orphaned").await;
+    backend
+        .action_repo()
+        .archive(archived)
+        .await
+        .expect("archive");
+
+    let links = repo.actions_by_instance().await.expect("links");
+
+    assert_eq!(links.get(&shared).map(Vec::as_slice), Some(&[live][..]));
+    assert!(!links.contains_key(&orphaned));
 }

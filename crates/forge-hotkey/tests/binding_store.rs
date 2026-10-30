@@ -6,12 +6,12 @@ use std::sync::Arc;
 use forge_hotkey::testing::{RecordedCall, RecordingBackend};
 use forge_hotkey::vocabulary::event_kinds;
 use forge_hotkey::{
-    HotkeyClient, HotkeyCombo, HotkeyEdge, HotkeyId, HotkeyReconciler,
+    BindingUpdate, HotkeyClient, HotkeyCombo, HotkeyEdge, HotkeyId, HotkeyReconciler,
     cleanup_stale_combo_instances, delete_binding, delete_binding_half, do_bind, load_bindings,
-    persisted_hotkey_combos, rebind_combo, relink_action, set_binding_edge, set_binding_enabled,
+    persisted_hotkey_combos, rebind_combo, set_binding_enabled, update_binding,
 };
 use forge_storage::DataProvider;
-use forge_types::TriggerInstanceId;
+use forge_types::{ActionId, TriggerInstanceId};
 use support::{
     OTHER_KIND, clip, instance, recording_client, seed_action, seed_disabled_instance,
     seed_instance, store, stored_combo, stored_combos,
@@ -138,84 +138,6 @@ async fn cleanup_stale_combo_instances_spares_other_combos_and_other_trigger_kin
 }
 
 #[tokio::test]
-async fn relink_action_moves_the_binding_from_the_previous_action_to_the_new_one() {
-    let store = store().await;
-    let backend = Arc::clone(&store.provider);
-    let old_action = seed_action(&backend, "Old").await;
-    let new_action = seed_action(&backend, "New").await;
-    let instance = seed_instance(&backend, event_kinds::GLOBAL_PRESSED, Some("Ctrl+F1")).await;
-    let repo = backend.trigger_instance_repo();
-    repo.link_action(old_action, instance).await.unwrap();
-
-    relink_action(Arc::clone(&backend), instance, new_action)
-        .await
-        .unwrap();
-
-    assert_eq!(repo.actions_using(instance).await.unwrap(), [new_action]);
-}
-
-#[tokio::test]
-async fn relink_action_leaves_the_existing_link_in_place_when_the_action_is_unchanged() {
-    let store = store().await;
-    let backend = Arc::clone(&store.provider);
-    let action = seed_action(&backend, "Play sound").await;
-    let instance = seed_instance(&backend, event_kinds::GLOBAL_PRESSED, Some("Ctrl+F1")).await;
-    let repo = backend.trigger_instance_repo();
-    repo.link_action(action, instance).await.unwrap();
-    let mut expected = vec![instance];
-    for (offset, combo) in ["Ctrl+F2", "Ctrl+F3"].into_iter().enumerate() {
-        let sibling = seed_instance(&backend, event_kinds::GLOBAL_PRESSED, Some(combo)).await;
-        repo.link_action_at(action, sibling, offset as i64 + 1)
-            .await
-            .unwrap();
-        expected.push(sibling);
-    }
-
-    relink_action(Arc::clone(&backend), instance, action)
-        .await
-        .unwrap();
-
-    let order: Vec<TriggerInstanceId> = repo
-        .list_for_action(action)
-        .await
-        .unwrap()
-        .into_iter()
-        .map(|i| i.id)
-        .collect();
-    assert_eq!(
-        order, expected,
-        "a no-op relink must not unlink and re-append the binding"
-    );
-}
-
-#[tokio::test]
-async fn relink_action_appends_the_binding_after_the_actions_existing_triggers() {
-    let store = store().await;
-    let backend = Arc::clone(&store.provider);
-    let action = seed_action(&backend, "Play sound").await;
-    let repo = backend.trigger_instance_repo();
-    for (position, combo) in ["Ctrl+F2", "Ctrl+F3"].into_iter().enumerate() {
-        let existing = seed_instance(&backend, event_kinds::GLOBAL_PRESSED, Some(combo)).await;
-        repo.link_action_at(action, existing, position as i64)
-            .await
-            .unwrap();
-    }
-    let instance = seed_instance(&backend, event_kinds::GLOBAL_PRESSED, Some("Ctrl+F1")).await;
-
-    relink_action(Arc::clone(&backend), instance, action)
-        .await
-        .unwrap();
-
-    let last = repo
-        .list_for_action(action)
-        .await
-        .unwrap()
-        .pop()
-        .map(|i| i.id);
-    assert_eq!(last, Some(instance));
-}
-
-#[tokio::test]
 async fn load_bindings_yields_one_row_per_combo_keyed_by_the_press_half_when_there_is_one() {
     let store = store().await;
     let backend = Arc::clone(&store.provider);
@@ -322,74 +244,15 @@ async fn set_binding_enabled_applies_to_every_instance_it_is_given() {
     assert_eq!(states, [false, false]);
 }
 
-#[tokio::test]
-async fn set_binding_edge_rewrites_the_kind_and_keeps_the_combo_override() {
-    let store = store().await;
-    let backend = Arc::clone(&store.provider);
-    let instance = seed_instance(&backend, event_kinds::GLOBAL_PRESSED, Some("Ctrl+F1")).await;
+#[test]
+fn persisted_hotkey_combos_skips_disabled_instances() {
+    let mut disabled = instance(event_kinds::GLOBAL_PRESSED, Some("Ctrl+F1"));
+    disabled.enabled = false;
+    let enabled = instance(event_kinds::GLOBAL_RELEASED, Some("Ctrl+F2"));
 
-    set_binding_edge(Arc::clone(&backend), instance, HotkeyEdge::Release)
-        .await
-        .unwrap();
+    let combos = persisted_hotkey_combos(&[disabled, enabled]);
 
-    let stored = backend
-        .trigger_instance_repo()
-        .get(instance)
-        .await
-        .unwrap()
-        .unwrap();
-    assert_eq!(stored.kind_id, event_kinds::GLOBAL_RELEASED);
-    assert_eq!(
-        stored_combo(&stored),
-        Some("Ctrl+F1"),
-        "moving an edge must not lose the combo the instance matches on"
-    );
-}
-
-#[tokio::test]
-async fn set_binding_edge_refuses_an_edge_the_same_combo_already_binds() {
-    let store = store().await;
-    let backend = Arc::clone(&store.provider);
-    let press = seed_instance(&backend, event_kinds::GLOBAL_PRESSED, Some("Ctrl+F1")).await;
-    seed_instance(&backend, event_kinds::GLOBAL_RELEASED, Some("Ctrl+F1")).await;
-
-    let result = set_binding_edge(Arc::clone(&backend), press, HotkeyEdge::Release).await;
-
-    assert!(result.is_err());
-    let stored = backend
-        .trigger_instance_repo()
-        .get(press)
-        .await
-        .unwrap()
-        .unwrap();
-    assert_eq!(stored.kind_id, event_kinds::GLOBAL_PRESSED);
-}
-
-#[tokio::test]
-async fn set_binding_edge_moves_onto_an_edge_only_another_combo_binds() {
-    let store = store().await;
-    let backend = Arc::clone(&store.provider);
-    let press = seed_instance(&backend, event_kinds::GLOBAL_PRESSED, Some("Ctrl+F1")).await;
-    seed_instance(&backend, event_kinds::GLOBAL_RELEASED, Some("Ctrl+F2")).await;
-
-    let result = set_binding_edge(Arc::clone(&backend), press, HotkeyEdge::Release).await;
-
-    assert!(result.is_ok(), "got {result:?}");
-}
-
-#[tokio::test]
-async fn set_binding_edge_reports_an_instance_that_no_longer_exists() {
-    let store = store().await;
-    let backend = Arc::clone(&store.provider);
-
-    let result = set_binding_edge(
-        Arc::clone(&backend),
-        TriggerInstanceId::new(),
-        HotkeyEdge::Release,
-    )
-    .await;
-
-    assert!(result.is_err());
+    assert_eq!(combos.into_iter().collect::<Vec<_>>(), ["Ctrl+F2"]);
 }
 
 #[test]
@@ -615,6 +478,110 @@ async fn rebind_combo_moves_both_halves_of_a_hold_and_keeps_their_action_links()
 }
 
 #[tokio::test]
+async fn rebind_combo_failing_midway_leaves_every_binding_and_link_as_it_was() {
+    let scratch = tempfile::tempdir().unwrap();
+    let url = format!(
+        "sqlite://{}?mode=rwc",
+        scratch.path().join("qcg_atomic.db").display()
+    );
+    let backend: Arc<dyn DataProvider> = Arc::new(
+        forge_storage_sqlite::SqliteBackend::open_for_test(
+            &url,
+            [0x11; 32],
+            scratch.path().to_owned(),
+            None,
+        )
+        .await
+        .unwrap(),
+    );
+    let held = seed_action(&backend, "Push to talk").await;
+    let displaced_action = seed_action(&backend, "Scene swap").await;
+    let press = seed_instance(&backend, event_kinds::GLOBAL_PRESSED, Some("F1")).await;
+    seed_instance(&backend, event_kinds::GLOBAL_RELEASED, Some("F1")).await;
+    let displaced = seed_instance(&backend, event_kinds::GLOBAL_PRESSED, Some("F2")).await;
+    let repo = backend.trigger_instance_repo();
+    repo.link_action(held, press).await.unwrap();
+    repo.link_action(displaced_action, displaced).await.unwrap();
+    let rig = reconciled(&backend).await;
+    let before = stored_combos(&repo.list_all().await.unwrap());
+    let raw = sqlx::SqlitePool::connect(&url).await.unwrap();
+    sqlx::query(sqlx::AssertSqlSafe(format!(
+        "CREATE TRIGGER qcg_refuse_released_move BEFORE UPDATE ON trigger_instances
+         WHEN NEW.kind_id = '{}' AND NEW.name = 'F2'
+         BEGIN SELECT RAISE(ABORT, 'refused'); END",
+        event_kinds::GLOBAL_RELEASED
+    )))
+    .execute(&raw)
+    .await
+    .unwrap();
+    raw.close().await;
+
+    let outcome = rebind_combo(
+        rig.reconciler,
+        Arc::clone(&backend),
+        "F1".to_owned(),
+        "F2".to_owned(),
+    )
+    .await;
+
+    assert!(outcome.is_err());
+    assert_eq!(stored_combos(&repo.list_all().await.unwrap()), before);
+    assert_eq!(repo.actions_using(press).await.unwrap(), [held]);
+    assert_eq!(
+        repo.actions_using(displaced).await.unwrap(),
+        [displaced_action]
+    );
+}
+
+#[tokio::test]
+async fn rebind_combo_from_another_spelling_of_the_target_keeps_the_binding_and_its_link() {
+    let store = store().await;
+    let backend = Arc::clone(&store.provider);
+    let action = seed_action(&backend, "Push to talk").await;
+    let press = seed_instance(&backend, event_kinds::GLOBAL_PRESSED, Some("Ctrl+F1")).await;
+    let repo = backend.trigger_instance_repo();
+    repo.link_action(action, press).await.unwrap();
+    let rig = reconciled(&backend).await;
+
+    rebind_combo(
+        rig.reconciler,
+        Arc::clone(&backend),
+        "ctrl+f1".to_owned(),
+        "Ctrl+F1".to_owned(),
+    )
+    .await
+    .unwrap();
+
+    let kept = repo.get(press).await.unwrap();
+    assert_eq!(kept.as_ref().and_then(stored_combo), Some("Ctrl+F1"));
+    assert_eq!(repo.actions_using(press).await.unwrap(), [action]);
+}
+
+#[tokio::test]
+async fn rebind_combo_from_another_spelling_moves_the_binding_and_its_link() {
+    let store = store().await;
+    let backend = Arc::clone(&store.provider);
+    let action = seed_action(&backend, "Push to talk").await;
+    let press = seed_instance(&backend, event_kinds::GLOBAL_PRESSED, Some("Ctrl+F1")).await;
+    let repo = backend.trigger_instance_repo();
+    repo.link_action(action, press).await.unwrap();
+    let rig = reconciled(&backend).await;
+
+    rebind_combo(
+        rig.reconciler,
+        Arc::clone(&backend),
+        "ctrl+f1".to_owned(),
+        "F2".to_owned(),
+    )
+    .await
+    .unwrap();
+
+    let moved = repo.get(press).await.unwrap();
+    assert_eq!(moved.as_ref().and_then(stored_combo), Some("F2"));
+    assert_eq!(repo.actions_using(press).await.unwrap(), [action]);
+}
+
+#[tokio::test]
 async fn rebind_combo_to_the_same_combo_leaves_the_client_and_storage_alone() {
     let store = store().await;
     let backend = Arc::clone(&store.provider);
@@ -742,4 +709,541 @@ async fn rebind_combo_off_a_combo_a_clip_uses_keeps_that_combo_registered() {
     .unwrap();
 
     assert_eq!(rig.registered(), ["F1", "F2"]);
+}
+
+fn update_to(
+    instance_id: TriggerInstanceId,
+    combo: &str,
+    edge: HotkeyEdge,
+    action_id: ActionId,
+) -> BindingUpdate {
+    BindingUpdate {
+        instance_id,
+        combo: combo.to_owned(),
+        edge,
+        action_id,
+    }
+}
+
+async fn apply_update(
+    backend: &Arc<dyn DataProvider>,
+    rig: &Reconciled,
+    update: BindingUpdate,
+) -> Result<(), String> {
+    update_binding(Arc::clone(&rig.reconciler), Arc::clone(backend), update).await
+}
+
+async fn stored_kind_and_combo(
+    backend: &Arc<dyn DataProvider>,
+    instance: TriggerInstanceId,
+) -> Option<(String, Option<String>)> {
+    backend
+        .trigger_instance_repo()
+        .get(instance)
+        .await
+        .unwrap()
+        .map(|stored| {
+            (
+                stored.kind_id.clone(),
+                stored_combo(&stored).map(str::to_owned),
+            )
+        })
+}
+
+fn pressed_on(combo: &str) -> Option<(String, Option<String>)> {
+    Some((
+        event_kinds::GLOBAL_PRESSED.to_owned(),
+        Some(combo.to_owned()),
+    ))
+}
+
+#[tokio::test]
+async fn update_binding_changes_combo_edge_and_action_as_one_write() {
+    let store = store().await;
+    let backend = Arc::clone(&store.provider);
+    let old_action = seed_action(&backend, "Old").await;
+    let new_action = seed_action(&backend, "New").await;
+    let instance = seed_instance(&backend, event_kinds::GLOBAL_PRESSED, Some("F1")).await;
+    let repo = backend.trigger_instance_repo();
+    repo.link_action(old_action, instance).await.unwrap();
+    let rig = reconciled(&backend).await;
+
+    apply_update(
+        &backend,
+        &rig,
+        update_to(instance, "F2", HotkeyEdge::Release, new_action),
+    )
+    .await
+    .unwrap();
+
+    let stored = repo.get(instance).await.unwrap().unwrap();
+    assert_eq!(
+        (
+            stored.kind_id.as_str(),
+            stored_combo(&stored),
+            stored.name.as_str()
+        ),
+        (event_kinds::GLOBAL_RELEASED, Some("F2"), "F2")
+    );
+    assert_eq!(repo.actions_using(instance).await.unwrap(), [new_action]);
+    assert_eq!(rig.registered(), ["F2"]);
+}
+
+#[tokio::test]
+async fn update_binding_registers_the_new_combo_before_releasing_the_old_one() {
+    let store = store().await;
+    let backend = Arc::clone(&store.provider);
+    let action = seed_action(&backend, "Play sound").await;
+    let instance = seed_instance(&backend, event_kinds::GLOBAL_PRESSED, Some("F1")).await;
+    let rig = reconciled(&backend).await;
+    let old_id = rig.id_of("F1");
+    let before = rig.recorder.calls().len();
+
+    apply_update(
+        &backend,
+        &rig,
+        update_to(instance, "F2", HotkeyEdge::Press, action),
+    )
+    .await
+    .unwrap();
+
+    let calls = rig.recorder.calls().split_off(before);
+    assert!(
+        matches!(
+            calls.as_slice(),
+            [
+                RecordedCall::Register(_, new),
+                RecordedCall::Unregister(old),
+            ] if new.as_str() == "F2" && *old == old_id
+        ),
+        "got {calls:?}"
+    );
+}
+
+#[tokio::test]
+async fn update_binding_stores_the_canonical_spelling_of_a_hand_typed_combo() {
+    let store = store().await;
+    let backend = Arc::clone(&store.provider);
+    let action = seed_action(&backend, "Play sound").await;
+    let instance = seed_instance(&backend, event_kinds::GLOBAL_PRESSED, Some("F1")).await;
+    let rig = reconciled(&backend).await;
+
+    apply_update(
+        &backend,
+        &rig,
+        update_to(instance, "shift+ctrl+f5", HotkeyEdge::Press, action),
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(
+        stored_kind_and_combo(&backend, instance).await,
+        pressed_on("Ctrl+Shift+F5")
+    );
+}
+
+#[tokio::test]
+async fn update_binding_gives_a_combo_to_a_binding_that_had_none() {
+    let store = store().await;
+    let backend = Arc::clone(&store.provider);
+    let action = seed_action(&backend, "Play sound").await;
+    let instance = seed_instance(&backend, event_kinds::GLOBAL_PRESSED, None).await;
+    let rig = reconciled(&backend).await;
+
+    apply_update(
+        &backend,
+        &rig,
+        update_to(instance, "F2", HotkeyEdge::Press, action),
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(
+        stored_kind_and_combo(&backend, instance).await,
+        pressed_on("F2")
+    );
+    assert_eq!(rig.registered(), ["F2"]);
+}
+
+#[tokio::test]
+async fn update_binding_leaves_the_link_order_alone_when_the_action_is_unchanged() {
+    let store = store().await;
+    let backend = Arc::clone(&store.provider);
+    let action = seed_action(&backend, "Play sound").await;
+    let instance = seed_instance(&backend, event_kinds::GLOBAL_PRESSED, Some("F1")).await;
+    let repo = backend.trigger_instance_repo();
+    repo.link_action(action, instance).await.unwrap();
+    let sibling = seed_instance(&backend, event_kinds::GLOBAL_PRESSED, Some("F2")).await;
+    repo.link_action(action, sibling).await.unwrap();
+    let rig = reconciled(&backend).await;
+
+    apply_update(
+        &backend,
+        &rig,
+        update_to(instance, "F3", HotkeyEdge::Press, action),
+    )
+    .await
+    .unwrap();
+
+    let order: Vec<TriggerInstanceId> = repo
+        .list_for_action(action)
+        .await
+        .unwrap()
+        .into_iter()
+        .map(|i| i.id)
+        .collect();
+    assert_eq!(order, [instance, sibling]);
+}
+
+#[tokio::test]
+async fn update_binding_to_a_new_action_appends_after_that_actions_triggers() {
+    let store = store().await;
+    let backend = Arc::clone(&store.provider);
+    let action = seed_action(&backend, "Play sound").await;
+    let repo = backend.trigger_instance_repo();
+    let existing = seed_instance(&backend, event_kinds::GLOBAL_PRESSED, Some("F2")).await;
+    repo.link_action(action, existing).await.unwrap();
+    let instance = seed_instance(&backend, event_kinds::GLOBAL_PRESSED, Some("F1")).await;
+    let rig = reconciled(&backend).await;
+
+    apply_update(
+        &backend,
+        &rig,
+        update_to(instance, "F1", HotkeyEdge::Press, action),
+    )
+    .await
+    .unwrap();
+
+    let last = repo
+        .list_for_action(action)
+        .await
+        .unwrap()
+        .pop()
+        .map(|i| i.id);
+    assert_eq!(last, Some(instance));
+}
+
+#[tokio::test]
+async fn update_binding_moves_both_halves_of_a_hold_and_keeps_the_partner_link() {
+    let store = store().await;
+    let backend = Arc::clone(&store.provider);
+    let press_action = seed_action(&backend, "Down").await;
+    let release_action = seed_action(&backend, "Up").await;
+    let press = seed_instance(&backend, event_kinds::GLOBAL_PRESSED, Some("F1")).await;
+    let release = seed_instance(&backend, event_kinds::GLOBAL_RELEASED, Some("F1")).await;
+    let repo = backend.trigger_instance_repo();
+    repo.link_action(press_action, press).await.unwrap();
+    repo.link_action(release_action, release).await.unwrap();
+    let rig = reconciled(&backend).await;
+
+    apply_update(
+        &backend,
+        &rig,
+        update_to(press, "F2", HotkeyEdge::Press, press_action),
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(
+        stored_kind_and_combo(&backend, release).await,
+        Some((
+            event_kinds::GLOBAL_RELEASED.to_owned(),
+            Some("F2".to_owned())
+        ))
+    );
+    assert_eq!(repo.actions_using(release).await.unwrap(), [release_action]);
+    assert_eq!(rig.registered(), ["F2"]);
+}
+
+#[tokio::test]
+async fn update_binding_refuses_an_edge_the_combo_already_binds_and_writes_nothing() {
+    for target in ["F1", "F2"] {
+        let store = store().await;
+        let backend = Arc::clone(&store.provider);
+        let action = seed_action(&backend, "Play sound").await;
+        let press = seed_instance(&backend, event_kinds::GLOBAL_PRESSED, Some("F1")).await;
+        seed_instance(&backend, event_kinds::GLOBAL_RELEASED, Some("F1")).await;
+        let rig = reconciled(&backend).await;
+
+        let refused = apply_update(
+            &backend,
+            &rig,
+            update_to(press, target, HotkeyEdge::Release, action),
+        )
+        .await;
+
+        assert!(refused.is_err(), "target {target}");
+        assert_eq!(
+            stored_kind_and_combo(&backend, press).await,
+            pressed_on("F1"),
+            "target {target}"
+        );
+        assert_eq!(rig.registered(), ["F1"], "target {target}");
+    }
+}
+
+#[tokio::test]
+async fn update_binding_moves_onto_an_edge_only_another_combo_binds() {
+    let store = store().await;
+    let backend = Arc::clone(&store.provider);
+    let action = seed_action(&backend, "Play sound").await;
+    let press = seed_instance(&backend, event_kinds::GLOBAL_PRESSED, Some("F1")).await;
+    let other = seed_instance(&backend, event_kinds::GLOBAL_RELEASED, Some("F2")).await;
+    let rig = reconciled(&backend).await;
+
+    apply_update(
+        &backend,
+        &rig,
+        update_to(press, "F1", HotkeyEdge::Release, action),
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(
+        stored_kind_and_combo(&backend, press).await,
+        Some((
+            event_kinds::GLOBAL_RELEASED.to_owned(),
+            Some("F1".to_owned())
+        ))
+    );
+    assert_eq!(
+        stored_kind_and_combo(&backend, other).await,
+        Some((
+            event_kinds::GLOBAL_RELEASED.to_owned(),
+            Some("F2".to_owned())
+        ))
+    );
+}
+
+#[tokio::test]
+async fn update_binding_on_an_instance_that_no_longer_exists_touches_nothing() {
+    let store = store().await;
+    let backend = Arc::clone(&store.provider);
+    let action = seed_action(&backend, "Play sound").await;
+    let rig = reconciled(&backend).await;
+
+    let result = apply_update(
+        &backend,
+        &rig,
+        update_to(TriggerInstanceId::new(), "F2", HotkeyEdge::Press, action),
+    )
+    .await;
+
+    assert!(result.is_err());
+    assert!(rig.recorder.calls().is_empty());
+}
+
+#[tokio::test]
+async fn update_binding_with_an_unparseable_combo_touches_nothing() {
+    let store = store().await;
+    let backend = Arc::clone(&store.provider);
+    let action = seed_action(&backend, "Play sound").await;
+    let instance = seed_instance(&backend, event_kinds::GLOBAL_PRESSED, Some("F1")).await;
+    let rig = reconciled(&backend).await;
+
+    let result = apply_update(
+        &backend,
+        &rig,
+        update_to(instance, "Ctrl+XYZ", HotkeyEdge::Press, action),
+    )
+    .await;
+
+    assert!(result.is_err());
+    assert_eq!(
+        stored_kind_and_combo(&backend, instance).await,
+        pressed_on("F1")
+    );
+    assert_eq!(rig.registered(), ["F1"]);
+}
+
+#[tokio::test]
+async fn update_binding_keeps_the_old_binding_when_the_os_refuses_the_new_combo() {
+    let store = store().await;
+    let backend = Arc::clone(&store.provider);
+    let old_action = seed_action(&backend, "Old").await;
+    let new_action = seed_action(&backend, "New").await;
+    let instance = seed_instance(&backend, event_kinds::GLOBAL_PRESSED, Some("F1")).await;
+    let repo = backend.trigger_instance_repo();
+    repo.link_action(old_action, instance).await.unwrap();
+    let rig = reconciled(&backend).await;
+    rig.recorder
+        .fail_next_register(&HotkeyCombo::parse("F2").unwrap());
+
+    let result = apply_update(
+        &backend,
+        &rig,
+        update_to(instance, "F2", HotkeyEdge::Release, new_action),
+    )
+    .await;
+
+    assert!(result.is_err());
+    assert_eq!(
+        stored_kind_and_combo(&backend, instance).await,
+        pressed_on("F1")
+    );
+    assert_eq!(repo.actions_using(instance).await.unwrap(), [old_action]);
+    assert_eq!(rig.registered(), ["F1"]);
+}
+
+#[tokio::test]
+async fn a_failed_update_binding_write_rolls_back_every_part_and_releases_the_claim() {
+    let store = store().await;
+    let backend = Arc::clone(&store.provider);
+    let old_action = seed_action(&backend, "Old").await;
+    let instance = seed_instance(&backend, event_kinds::GLOBAL_PRESSED, Some("F1")).await;
+    let displaced = seed_instance(&backend, event_kinds::GLOBAL_PRESSED, Some("F2")).await;
+    let repo = backend.trigger_instance_repo();
+    repo.link_action(old_action, instance).await.unwrap();
+    let rig = reconciled(&backend).await;
+    let action_without_a_row = ActionId::new();
+
+    let result = apply_update(
+        &backend,
+        &rig,
+        update_to(instance, "F2", HotkeyEdge::Press, action_without_a_row),
+    )
+    .await;
+
+    assert!(result.is_err());
+    assert_eq!(
+        stored_kind_and_combo(&backend, instance).await,
+        pressed_on("F1")
+    );
+    assert_eq!(
+        stored_kind_and_combo(&backend, displaced).await,
+        pressed_on("F2")
+    );
+    assert_eq!(repo.actions_using(instance).await.unwrap(), [old_action]);
+    assert_eq!(rig.registered(), ["F1", "F2"]);
+}
+
+#[tokio::test]
+async fn a_failed_update_binding_write_releases_a_claim_nothing_else_uses() {
+    let store = store().await;
+    let backend = Arc::clone(&store.provider);
+    let instance = seed_instance(&backend, event_kinds::GLOBAL_PRESSED, Some("F1")).await;
+    let rig = reconciled(&backend).await;
+
+    let result = apply_update(
+        &backend,
+        &rig,
+        update_to(instance, "F2", HotkeyEdge::Press, ActionId::new()),
+    )
+    .await;
+
+    assert!(result.is_err());
+    assert_eq!(rig.registered(), ["F1"]);
+}
+
+#[tokio::test]
+async fn update_binding_onto_a_used_combo_displaces_the_stale_rows_and_their_links() {
+    let store = store().await;
+    let backend = Arc::clone(&store.provider);
+    let action = seed_action(&backend, "Play sound").await;
+    let stale_action = seed_action(&backend, "Stale").await;
+    let instance = seed_instance(&backend, event_kinds::GLOBAL_PRESSED, Some("F1")).await;
+    let stale_press = seed_instance(&backend, event_kinds::GLOBAL_PRESSED, Some("F2")).await;
+    let stale_release = seed_disabled_instance(&backend, event_kinds::GLOBAL_RELEASED, "F2").await;
+    let repo = backend.trigger_instance_repo();
+    repo.link_action(stale_action, stale_press).await.unwrap();
+    let rig = reconciled(&backend).await;
+
+    apply_update(
+        &backend,
+        &rig,
+        update_to(instance, "F2", HotkeyEdge::Press, action),
+    )
+    .await
+    .unwrap();
+
+    assert!(repo.get(stale_press).await.unwrap().is_none());
+    assert!(repo.get(stale_release).await.unwrap().is_none());
+    assert!(repo.list_for_action(stale_action).await.unwrap().is_empty());
+    assert_eq!(
+        stored_kind_and_combo(&backend, instance).await,
+        pressed_on("F2")
+    );
+    assert_eq!(rig.registered(), ["F2"]);
+}
+
+#[tokio::test]
+async fn update_binding_on_the_same_combo_spares_the_partner_half_and_the_client() {
+    let store = store().await;
+    let backend = Arc::clone(&store.provider);
+    let action = seed_action(&backend, "Play sound").await;
+    let press = seed_instance(&backend, event_kinds::GLOBAL_PRESSED, Some("F1")).await;
+    let release = seed_instance(&backend, event_kinds::GLOBAL_RELEASED, Some("F1")).await;
+    let rig = reconciled(&backend).await;
+    let before = rig.recorder.calls().len();
+
+    apply_update(
+        &backend,
+        &rig,
+        update_to(press, "F1", HotkeyEdge::Press, action),
+    )
+    .await
+    .unwrap();
+
+    assert!(
+        backend
+            .trigger_instance_repo()
+            .get(release)
+            .await
+            .unwrap()
+            .is_some()
+    );
+    assert_eq!(rig.recorder.calls().len(), before);
+}
+
+#[tokio::test]
+async fn disabling_both_halves_through_the_store_releases_the_combo_on_the_next_reconcile() {
+    let store = store().await;
+    let backend = Arc::clone(&store.provider);
+    let press = seed_instance(&backend, event_kinds::GLOBAL_PRESSED, Some("F1")).await;
+    let release = seed_instance(&backend, event_kinds::GLOBAL_RELEASED, Some("F1")).await;
+    let rig = reconciled(&backend).await;
+    let id = rig.id_of("F1");
+
+    set_binding_enabled(Arc::clone(&backend), vec![press, release], false)
+        .await
+        .unwrap();
+    rig.reconciler.reconcile().await;
+
+    assert_eq!(
+        rig.recorder.calls().last(),
+        Some(&RecordedCall::Unregister(id))
+    );
+    assert!(rig.registered().is_empty());
+}
+
+#[tokio::test]
+async fn disabling_one_half_keeps_the_grab_the_other_half_needs() {
+    let store = store().await;
+    let backend = Arc::clone(&store.provider);
+    let press = seed_instance(&backend, event_kinds::GLOBAL_PRESSED, Some("F1")).await;
+    seed_instance(&backend, event_kinds::GLOBAL_RELEASED, Some("F1")).await;
+    let rig = reconciled(&backend).await;
+
+    set_binding_enabled(Arc::clone(&backend), vec![press], false)
+        .await
+        .unwrap();
+    rig.reconciler.reconcile().await;
+
+    assert_eq!(rig.registered(), ["F1"]);
+}
+
+#[tokio::test]
+async fn disabling_a_binding_keeps_the_combo_a_clip_is_bound_to() {
+    let store = store().await;
+    let backend = Arc::clone(&store.provider);
+    let press = seed_instance(&backend, event_kinds::GLOBAL_PRESSED, Some("F1")).await;
+    seed_clip_on(&backend, "F1").await;
+    let rig = reconciled(&backend).await;
+
+    set_binding_enabled(Arc::clone(&backend), vec![press], false)
+        .await
+        .unwrap();
+    rig.reconciler.reconcile().await;
+
+    assert_eq!(rig.registered(), ["F1"]);
 }

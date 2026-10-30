@@ -172,6 +172,21 @@ impl TriggerKindDescriptor for CharityDonationDescriptor {
                         ))
                     },
                 )
+                .event_specific(
+                    DeclaredVariable {
+                        name: "charity.decimal_places".to_owned(),
+                        kind: VariantKind::Int,
+                        label: "Amount decimal places".to_owned(),
+                        synthesis: Some(SynthesisHint::BoundedInt { min: 0, max: 3 }),
+                    },
+                    |event| {
+                        Variant::Int(payload_read::nested_number(
+                            event,
+                            charity_fields::CHARITY,
+                            charity_fields::DECIMAL_PLACES,
+                        ))
+                    },
+                )
                 .legacy(
                     "charity.user.login",
                     "Donor login",
@@ -229,16 +244,6 @@ mod tests {
     }
 
     #[test]
-    fn event_filter_targets_donate_topic_on_twitch_source() {
-        let filter = CharityDonationDescriptor.event_filter();
-        assert_eq!(filter.source, Some(EventSource::Twitch));
-        assert_eq!(
-            filter.kind_prefix.as_deref(),
-            Some("twitch.channel.charity_campaign.donate")
-        );
-    }
-
-    #[test]
     fn min_amount_cents_filter_compares_at_and_around_boundary() {
         for (min, expected) in [
             (config_min(0), true),        // floor accepts any amount
@@ -277,5 +282,34 @@ mod tests {
             stack.get("charity.user.display_name"),
             Some(&Variant::String("Giver".to_owned()))
         );
+    }
+
+    #[test]
+    fn the_donation_stack_carries_the_amount_precision_the_currency_uses() {
+        for (decimal_places, currency) in [(0, "JPY"), (2, "USD"), (3, "KWD")] {
+            let event = Event::new(
+                EventSource::Twitch,
+                "channel.charity_campaign.donate",
+                serde_json::json!({
+                    "charity": { "currency_code": currency, "decimal_places": decimal_places },
+                    "user": { "login": "giver", "display_name": "Giver" },
+                }),
+            );
+
+            let stack = CharityDonationDescriptor.build_arg_stack(&event);
+
+            assert_eq!(
+                stack.get("charity.decimal_places"),
+                Some(&Variant::Int(decimal_places)),
+                "{currency}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_stored_donation_event_without_a_precision_reads_as_zero_places() {
+        let stack = CharityDonationDescriptor.build_arg_stack(&donation_event(2500));
+
+        assert_eq!(stack.get("charity.decimal_places"), Some(&Variant::Int(0)));
     }
 }

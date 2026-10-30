@@ -13,6 +13,7 @@ use forge_types::{
 use rand::RngExt;
 
 use super::core_action_shared::ACTION;
+use super::core_logic_shared::cancelled_child;
 use crate::core_messages;
 
 const INHERIT_ARGS: ToggleField = ToggleField {
@@ -39,7 +40,12 @@ impl CoreActionRunRunner {
         ctx: &RunContext<'_>,
     ) -> SubActionOutcome {
         let target = match self.actions.get(action_id).await {
-            Ok(Some(a)) => a,
+            Ok(Some(a)) if a.enabled => a,
+            Ok(Some(a)) => {
+                return SubActionOutcome::Failed(
+                    core_messages::action_run_disabled(&a.name).into(),
+                );
+            }
             Ok(None) => {
                 return SubActionOutcome::Failed(core_messages::unknown_action(action_id).into());
             }
@@ -71,9 +77,7 @@ impl CoreActionRunRunner {
                 | ChainSignal::Break
                 | ChainSignal::Continue => SubActionOutcome::Success,
                 ChainSignal::Error(msg) => SubActionOutcome::Failed(msg),
-                ChainSignal::Aborted => {
-                    SubActionOutcome::Failed(core_messages::action_run_cancelled().into())
-                }
+                ChainSignal::Aborted => cancelled_child(),
             },
         }
     }

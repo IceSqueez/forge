@@ -21,6 +21,7 @@ use forge_storage::settings::core_settings;
 use forge_storage::test_support::MemorySettings;
 use forge_storage::{
     MockOverlayRepo, OverlayConfig, OverlayDefinition, OverlayId, OverlayRepo, SettingsRepo,
+    StorageError,
 };
 use forge_types::OverlayCredential;
 use forge_types::{ArgStack, Variant};
@@ -1414,4 +1415,186 @@ async fn saving_an_overlay_with_settings_its_look_accepts_writes_the_definition_
     h.service.save(&valid).await.unwrap();
 
     assert_eq!(h.saved(), vec![valid]);
+}
+
+struct ChangesAfterRead {
+    inner: Arc<dyn OverlayRepo>,
+}
+
+#[async_trait]
+impl OverlayRepo for ChangesAfterRead {
+    async fn list(&self) -> Result<Vec<OverlayDefinition>, StorageError> {
+        self.inner.list().await
+    }
+
+    async fn get(&self, id: &OverlayId) -> Result<Option<OverlayDefinition>, StorageError> {
+        let read = self.inner.get(id).await?;
+        self.inner.set_enabled(id, false).await?;
+        self.inner.reissue_all_credentials().await?;
+        Ok(read)
+    }
+
+    async fn get_by_credential(
+        &self,
+        credential: &OverlayCredential,
+    ) -> Result<Option<OverlayDefinition>, StorageError> {
+        self.inner.get_by_credential(credential).await
+    }
+
+    async fn create(
+        &self,
+        display_name: &str,
+        kind_id: &str,
+        config_schema_version: u32,
+    ) -> Result<OverlayDefinition, StorageError> {
+        self.inner
+            .create(display_name, kind_id, config_schema_version)
+            .await
+    }
+
+    async fn reissue_all_credentials(&self) -> Result<Vec<OverlayId>, StorageError> {
+        self.inner.reissue_all_credentials().await
+    }
+
+    async fn save(&self, definition: &OverlayDefinition) -> Result<(), StorageError> {
+        self.inner.save(definition).await
+    }
+
+    async fn update_config(
+        &self,
+        id: &OverlayId,
+        config: &OverlayConfig,
+    ) -> Result<bool, StorageError> {
+        self.inner.update_config(id, config).await
+    }
+
+    async fn rename(&self, id: &OverlayId, display_name: &str) -> Result<bool, StorageError> {
+        self.inner.rename(id, display_name).await
+    }
+
+    async fn restore(&self, definition: &OverlayDefinition) -> Result<(), StorageError> {
+        self.inner.restore(definition).await
+    }
+
+    async fn set_enabled(&self, id: &OverlayId, enabled: bool) -> Result<bool, StorageError> {
+        self.inner.set_enabled(id, enabled).await
+    }
+
+    async fn delete(&self, id: &OverlayId) -> Result<bool, StorageError> {
+        self.inner.delete(id).await
+    }
+
+    async fn get_retained_content(
+        &self,
+        id: &OverlayId,
+    ) -> Result<Option<OverlayConfig>, StorageError> {
+        self.inner.get_retained_content(id).await
+    }
+
+    async fn set_retained_content(
+        &self,
+        id: &OverlayId,
+        content: &OverlayConfig,
+    ) -> Result<(), StorageError> {
+        self.inner.set_retained_content(id, content).await
+    }
+}
+
+struct RacedOverlay {
+    service: OverlayServiceHandle,
+    stored: Arc<dyn OverlayRepo>,
+    id: OverlayId,
+    credential_at_read: String,
+}
+
+async fn raced_overlay() -> RacedOverlay {
+    let pool = forge_storage_sqlite::connect("sqlite::memory:")
+        .await
+        .unwrap();
+    forge_storage_sqlite::apply_migrations(&pool).await.unwrap();
+    let stored: Arc<dyn OverlayRepo> = Arc::new(forge_storage_sqlite::SqliteOverlayRepo::new(pool));
+    let created = stored
+        .create("Sub alert", ALERT_KIND, current_schema(ALERT_KIND))
+        .await
+        .unwrap();
+    let service = OverlayServiceHandle::new(OverlayServiceParts {
+        repo: Arc::new(ChangesAfterRead {
+            inner: Arc::clone(&stored),
+        }),
+        settings: Arc::new(MemorySettings::new()) as Arc<dyn SettingsRepo>,
+        kinds: registry(),
+        bus: EventBus::new(Arc::new(NullEventLogRepo)),
+        frames: common::no_pages(),
+        media: None,
+        speaker: None,
+        latest: None,
+    });
+    RacedOverlay {
+        service,
+        stored,
+        id: created.id,
+        credential_at_read: created.credential.expose().to_owned(),
+    }
+}
+
+#[tokio::test]
+async fn a_toggle_and_a_reissue_landing_after_the_read_survive_a_config_write() {
+    let raced = raced_overlay().await;
+    let config = OverlayConfig::from([(
+        forge_overlay::config::MARGIN_TOP.to_owned(),
+        Variant::Int(forge_overlay::config::MARGIN_MAX_PERCENT),
+    )]);
+
+    let written = raced.service.update_config(&raced.id, &config).await;
+
+    assert!(matches!(written, Ok(true)), "got {written:?}");
+    let stored = raced.stored.get(&raced.id).await.unwrap().unwrap();
+    assert_eq!(stored.config, config);
+    assert!(!stored.enabled, "the write brought a disabled overlay back");
+    assert_ne!(
+        stored.credential.expose(),
+        raced.credential_at_read,
+        "the write restored a retired credential"
+    );
+}
+
+#[tokio::test]
+async fn a_config_write_on_an_unknown_overlay_reports_a_miss() {
+    let harness = harness(Vec::new(), false);
+
+    let written = harness
+        .service
+        .update_config(&OverlayId::new("gone"), &OverlayConfig::new())
+        .await;
+
+    assert!(matches!(written, Ok(false)), "got {written:?}");
+}
+
+#[tokio::test]
+async fn a_config_write_the_look_refuses_stores_nothing() {
+    let mut repo = MockOverlayRepo::new();
+    let overlay = definition_of_kind("alert", ALERT_KIND);
+    repo.expect_get()
+        .returning(move |_| Ok(Some(overlay.clone())));
+    repo.expect_update_config().never();
+    let service = OverlayServiceHandle::new(OverlayServiceParts {
+        repo: Arc::new(repo) as Arc<dyn OverlayRepo>,
+        settings: Arc::new(MemorySettings::new()) as Arc<dyn SettingsRepo>,
+        kinds: registry(),
+        bus: EventBus::new(Arc::new(NullEventLogRepo)),
+        frames: common::no_pages(),
+        media: None,
+        speaker: None,
+        latest: None,
+    });
+    let invalid = OverlayConfig::from([(
+        forge_overlay::config::MARGIN_TOP.to_owned(),
+        Variant::Int(forge_overlay::config::MARGIN_MAX_PERCENT + 1),
+    )]);
+
+    let written = service
+        .update_config(&OverlayId::new("alert"), &invalid)
+        .await;
+
+    assert!(written.is_err(), "got {written:?}");
 }

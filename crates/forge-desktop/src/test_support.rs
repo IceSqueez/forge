@@ -73,6 +73,7 @@ pub(crate) struct TestBackend {
     scripts: Option<Arc<dyn ScriptRepo>>,
     media: Arc<dyn MediaRepo>,
     export_gate: Option<Arc<tokio::sync::Notify>>,
+    on_shutdown: Option<Box<dyn Fn() + Send + Sync>>,
 }
 
 pub(crate) fn test_backend() -> (Arc<TestBackend>, UnboundedReceiver<SettingWrite>) {
@@ -93,6 +94,15 @@ pub(crate) fn test_backend_with_media(
     media: Arc<dyn MediaRepo>,
 ) -> (Arc<TestBackend>, UnboundedReceiver<SettingWrite>) {
     backend_over(None, None, media)
+}
+
+pub(crate) fn test_backend_observing_shutdown(
+    on_shutdown: impl Fn() + Send + Sync + 'static,
+) -> Arc<TestBackend> {
+    let (backend, _) = backend_over(None, None, Arc::new(EmptyMediaLibrary));
+    let mut backend = Arc::into_inner(backend).unwrap();
+    backend.on_shutdown = Some(Box::new(on_shutdown));
+    Arc::new(backend)
 }
 
 pub(crate) fn test_backend_with_gated_export() -> (Arc<TestBackend>, Arc<tokio::sync::Notify>) {
@@ -119,6 +129,7 @@ fn backend_over(
             scripts,
             media,
             export_gate: None,
+            on_shutdown: None,
         }),
         rx,
     )
@@ -185,6 +196,7 @@ fn enabled_schedule_over_test_backend(
         scripts: None,
         media: Arc::new(EmptyMediaLibrary),
         export_gate: Some(Arc::clone(&export_gate)),
+        on_shutdown: None,
     });
     let data_dir = tempfile::tempdir().unwrap();
     let parts = forge_transfer::ScheduledBackupParts {
@@ -564,7 +576,11 @@ impl DataProvider for TestBackend {
         Ok(0)
     }
 
-    async fn shutdown(&self) {}
+    async fn shutdown(&self) {
+        if let Some(on_shutdown) = &self.on_shutdown {
+            on_shutdown();
+        }
+    }
 }
 
 pub(crate) struct EmptyMediaLibrary;

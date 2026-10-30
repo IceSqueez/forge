@@ -2,7 +2,7 @@ use forge_events::{Event, EventSource};
 use forge_registry::{
     ActorDeclaration, ActorIdentity, ActorRole, ActorSlot, CanonicalVariable, ChatTriggerFamily,
     EventFilter, FormField, KindPlatformContract, TriggerCategory, TriggerKindDescriptor,
-    TriggerVariables,
+    TriggerVariables, command_phrase_matches,
 };
 use forge_types::{DeclaredVariable, PlatformId, TriggerConfig, UserText, Variant, VariantKind};
 
@@ -106,11 +106,7 @@ impl TriggerKindDescriptor for ChatCommandDescriptor {
             .and_then(|v| v.as_str())
             .unwrap_or("");
 
-        if case_sensitive {
-            message.starts_with(phrase)
-        } else {
-            message.to_lowercase().starts_with(&phrase.to_lowercase())
-        }
+        command_phrase_matches(message, phrase, case_sensitive)
     }
 
     fn variables(&self) -> Option<TriggerVariables> {
@@ -246,6 +242,7 @@ mod tests {
             ("!roll", true, "!Roll 1d6", false),
             ("!roll", false, "please !roll", false),
             ("!roll", false, "!", false),
+            ("!roll", false, "!rollover", false),
             ("!roll", false, "", false),
             ("", false, "!anything", false),
         ] {

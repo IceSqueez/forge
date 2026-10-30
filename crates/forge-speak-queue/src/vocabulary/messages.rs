@@ -45,6 +45,8 @@ const NO_AUDIO_ROUTE: MessageCode = MessageCode::from_static(NAMESPACE, "no_audi
 const AUDIO_ROUTE_UNKNOWN: MessageCode = MessageCode::from_static(NAMESPACE, "audio_route_unknown");
 const AUDIO_ROUTES_FAILED: MessageCode = MessageCode::from_static(NAMESPACE, "audio_routes_failed");
 const AUDIO_REMOTE_FAILED: MessageCode = MessageCode::from_static(NAMESPACE, "audio_remote_failed");
+const AUDIO_START_TIMED_OUT: MessageCode =
+    MessageCode::from_static(NAMESPACE, "audio_start_timed_out");
 const NO_OVERLAY_LISTENER: MessageCode = MessageCode::from_static(NAMESPACE, "no_overlay_listener");
 
 const SKIPPED_RULE_MATCHED: MessageCode =
@@ -99,6 +101,7 @@ pub const SPEAK_MESSAGES: MessageCatalog = MessageCatalog {
         AUDIO_ROUTE_UNKNOWN,
         AUDIO_ROUTES_FAILED,
         AUDIO_REMOTE_FAILED,
+        AUDIO_START_TIMED_OUT,
         NO_OVERLAY_LISTENER,
         SKIPPED_RULE_MATCHED,
         SKIPPED_WORD_FILTER,
@@ -167,6 +170,10 @@ pub(crate) fn tts_failure(error: &TtsError) -> MessageRef {
             with_detail(engine_arg(MessageRef::new(SYNTHESIS_FAILED), id), detail)
         }
     }
+}
+
+pub(crate) fn audio_start_timed_out(seconds: u64) -> MessageRef {
+    MessageRef::new(AUDIO_START_TIMED_OUT).with_arg(SECONDS_ARG, seconds)
 }
 
 pub(crate) fn audio_failure(error: &AudioError) -> MessageRef {
@@ -380,6 +387,7 @@ mod tests {
         );
         all.extend([
             engine_not_registered(&engine()),
+            audio_start_timed_out(5),
             reject_message(RejectReason::QueueFull, 5),
             reject_message(RejectReason::PerUserLimit, 5),
             queue_failure(&SpeakError::ActorGone),

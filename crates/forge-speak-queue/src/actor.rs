@@ -4,6 +4,7 @@ use std::sync::atomic::{AtomicU32, AtomicUsize, Ordering};
 use std::time::Duration;
 
 const PLAYBACK_PROGRESS_TICK: Duration = Duration::from_secs(1);
+const PLAYBACK_START_BOUND: Duration = Duration::from_secs(5);
 
 use forge_audio::{AudioError, AudioSink};
 use forge_speech_types::{EngineId, TtsVoice, VoiceId};
@@ -751,8 +752,16 @@ async fn start_clip(
     let engine_gain = engine_gains.get(&engine_id).copied().unwrap_or(1.0);
     pcm.apply_gain(config.master_volume * engine_gain);
     let started = match sink_for(&request, deps, targeted_legs) {
-        Ok(sink) => sink.play_controlled(pcm).await,
-        Err(e) => Err(e),
+        Ok(sink) => {
+            match tokio::time::timeout(PLAYBACK_START_BOUND, sink.play_controlled(pcm)).await {
+                Ok(started) => started.map_err(|e| device_failure(&e)),
+                Err(_) => Err(Outcome::Failed {
+                    reason: FailureReason::DeviceError,
+                    message: messages::audio_start_timed_out(PLAYBACK_START_BOUND.as_secs()),
+                }),
+            }
+        }
+        Err(e) => Err(device_failure(&e)),
     };
     match started {
         Ok(playback) => {
@@ -766,10 +775,10 @@ async fn start_clip(
                 elapsed_secs: 0,
             }));
         }
-        Err(e) => {
+        Err(failure) => {
             *active_request_id = None;
-            tracing::warn!(request_id = %request_id.0, error = %e, "audio playback failed to start");
-            emit.outcome(&request, device_failure(&e));
+            tracing::warn!(request_id = %request_id.0, ?failure, "audio playback failed to start");
+            emit.outcome(&request, failure);
         }
     }
 }

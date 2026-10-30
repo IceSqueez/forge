@@ -63,6 +63,16 @@ impl CooldownMap {
         None
     }
 
+    pub fn release(&mut self, key: &CooldownKey, event_id: EventId) {
+        if self
+            .entries
+            .get(key)
+            .is_some_and(|entry| entry.event_id == event_id)
+        {
+            self.entries.remove(key);
+        }
+    }
+
     fn evict_oldest(&mut self) {
         let oldest = self
             .entries
@@ -176,6 +186,52 @@ mod tests {
             map.entries.len(),
             1,
             "the dead entry must be dropped on the next cooldown-path touch, not held to the cap"
+        );
+    }
+
+    #[test]
+    fn releasing_with_the_stamping_event_reopens_the_window() {
+        let mut map = CooldownMap::new(16);
+        let key = user_key(TriggerInstanceId::new(), "alice");
+        let stamping = EventId::new();
+        map.remaining_or_stamp(key.clone(), WINDOW, stamping);
+
+        map.release(&key, stamping);
+
+        assert!(
+            map.remaining_or_stamp(key, WINDOW, EventId::new())
+                .is_none()
+        );
+    }
+
+    #[test]
+    fn releasing_with_a_foreign_event_keeps_the_window_spent() {
+        let mut map = CooldownMap::new(16);
+        let key = user_key(TriggerInstanceId::new(), "alice");
+        map.remaining_or_stamp(key.clone(), WINDOW, EventId::new());
+
+        map.release(&key, EventId::new());
+
+        assert!(
+            map.remaining_or_stamp(key, WINDOW, EventId::new())
+                .is_some()
+        );
+    }
+
+    #[test]
+    fn releasing_one_user_leaves_another_users_window_spent() {
+        let mut map = CooldownMap::new(16);
+        let instance = TriggerInstanceId::new();
+        let event = EventId::new();
+        let (alice, bob) = (user_key(instance, "alice"), user_key(instance, "bob"));
+        map.remaining_or_stamp(alice.clone(), WINDOW, event);
+        map.remaining_or_stamp(bob.clone(), WINDOW, event);
+
+        map.release(&alice, event);
+
+        assert!(
+            map.remaining_or_stamp(bob, WINDOW, EventId::new())
+                .is_some()
         );
     }
 }

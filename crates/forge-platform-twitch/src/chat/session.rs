@@ -950,6 +950,7 @@ impl ChatSession {
             website: wire_text(event_data, "charity_website"),
             amount_cents: wire_count(amount, "value"),
             currency_code: wire_text(amount, "currency"),
+            decimal_places: wire_count(amount, "decimal_places"),
         };
         let user = wire_user(event_data, &USER_KEYS);
 
@@ -2003,6 +2004,7 @@ fn wire_charity_campaign(event_data: &serde_json::Value) -> CharityCampaignState
             current_amount_cents: wire_count(current, "value"),
             target_amount_cents: wire_count(wire_child(event_data, "target_amount"), "value"),
             currency_code: wire_text(current, "currency"),
+            decimal_places: wire_count(current, "decimal_places"),
         },
     }
 }

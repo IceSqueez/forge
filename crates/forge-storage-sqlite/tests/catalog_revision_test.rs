@@ -1,4 +1,6 @@
-use forge_storage::{CatalogRevision, DataProvider, ExecutionStatus, ScriptRecord, ScriptRepo};
+use forge_storage::{
+    CatalogRevision, DataProvider, ExecutionStatus, ScriptRecord, ScriptRepo, TriggerChanges,
+};
 use forge_storage_sqlite::SqliteBackend;
 use forge_types::{
     Action, ActionId, PermissionRung, Queue, QueueId, ScriptContract, ScriptId, TriggerConfig,
@@ -136,6 +138,11 @@ async fn every_catalog_write_through_the_provider_advances_its_revision() {
         revision,
         "instance toggle_enabled",
         instances.toggle_enabled(i.id)
+    );
+    advances!(
+        revision,
+        "instance change set",
+        instances.apply_changes(&TriggerChanges::default())
     );
     advances!(
         revision,

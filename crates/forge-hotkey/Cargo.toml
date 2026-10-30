@@ -41,5 +41,6 @@ global-hotkey = { workspace = true }
 forge-hotkey = { path = ".", features = ["testing"] }
 forge-storage = { path = "../forge-storage", features = ["test-mocks", "settings-test-support"] }
 forge-storage-sqlite = { path = "../forge-storage-sqlite" }
+sqlx = { workspace = true }
 tempfile = { workspace = true }
 tokio = { workspace = true, features = ["test-util"] }

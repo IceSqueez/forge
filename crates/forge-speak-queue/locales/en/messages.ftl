@@ -26,6 +26,7 @@ msg-speak-no_audio_route = No audio route is set up for speech.
 msg-speak-audio_route_unknown = The audio route { $route } does not exist.
 msg-speak-audio_routes_failed = Every audio route for speech failed.
 msg-speak-audio_remote_failed = The remote audio destination failed.
+msg-speak-audio_start_timed_out = Audio playback did not start within { $seconds } s.
 msg-speak-no_overlay_listener = No open page is listening on the audio overlay { $destination }.
 msg-speak-skipped_rule_matched = Skipped: { $rule ->
     [contains_url] the message contains a link.

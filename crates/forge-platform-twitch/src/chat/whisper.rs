@@ -8,7 +8,8 @@ use forge_net::status::BAD_REQUEST;
 
 const WHISPERS_PATH: &str = "/helix/whispers";
 pub(crate) const MAX_WHISPER_CHARS: usize = 500;
-const WHISPER_BLOCK_MARKERS: [&str; 3] = ["stranger", "block", "doesn't allow"];
+const WHISPER_REFUSAL_MARKERS: [&str; 3] =
+    ["stranger", "doesn't allow whisper", "prevent this sender"];
 
 #[derive(Debug, Error)]
 pub(crate) enum WhisperError {
@@ -29,7 +30,7 @@ fn classify_rejection(error: HelixError) -> WhisperError {
         return WhisperError::Helix(error);
     };
     let lowered = refusal_text(body).to_lowercase();
-    let blocks_strangers = WHISPER_BLOCK_MARKERS
+    let blocks_strangers = WHISPER_REFUSAL_MARKERS
         .iter()
         .any(|marker| lowered.contains(marker));
     if *status == BAD_REQUEST && blocks_strangers {
@@ -68,7 +69,7 @@ pub(crate) async fn send_whisper_to(
         .query("from_user_id", from_user_id)
         .query("to_user_id", to_user_id)
         .body(serde_json::json!({ "message": message }));
-    let request = WHISPER_BLOCK_MARKERS
+    let request = WHISPER_REFUSAL_MARKERS
         .iter()
         .fold(request, |request, marker| {
             request.expect_status_with_excerpt(BAD_REQUEST, marker)
@@ -197,7 +198,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn only_a_400_naming_a_stranger_or_block_rule_means_the_recipient_refuses_whispers() {
+    async fn only_a_400_naming_a_whisper_refusal_rule_means_the_recipient_refuses_whispers() {
         let refusal = |status: u16, message: &str| {
             Err(HelixError::Http {
                 status,
@@ -212,7 +213,7 @@ mod tests {
                 ),
                 true,
             ),
-            (refusal(400, "Recipient has BLOCKED you"), true),
+            (refusal(400, "Recipient has BLOCKED you"), false),
             (refusal(400, "This user doesn't allow whispers"), true),
             (refusal(400, "The message field may not be empty"), false),
             (refusal(403, "Blocked by policy"), false),
@@ -236,7 +237,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn only_a_400_naming_a_whisper_block_rule_is_kept_out_of_request_fail() {
+    async fn only_a_400_naming_a_whisper_refusal_rule_is_kept_out_of_request_fail() {
         let refusal = |status: StatusCode, message: &str| {
             ResponseTemplate::new(status.as_u16()).set_body_json(
                 serde_json::json!({"error": "x", "status": status.as_u16(), "message": message}),
@@ -253,11 +254,19 @@ mod tests {
             ),
             (
                 refusal(StatusCode::BAD_REQUEST, "Recipient has BLOCKED you"),
+                false,
+                1,
+            ),
+            (
+                refusal(StatusCode::BAD_REQUEST, "This user DOESN'T ALLOW whispers"),
                 true,
                 0,
             ),
             (
-                refusal(StatusCode::BAD_REQUEST, "This user DOESN'T ALLOW whispers"),
+                refusal(
+                    StatusCode::BAD_REQUEST,
+                    "Settings PREVENT THIS SENDER from whispering them",
+                ),
                 true,
                 0,
             ),

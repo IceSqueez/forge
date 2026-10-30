@@ -14,7 +14,8 @@ use forge_hotkey::{
 };
 use forge_storage::soundboard::MockSoundboardClipsRepo;
 use forge_storage::{
-    MockTriggerInstanceRepo, SoundboardClipsRepo, StorageError, StoredClip, TriggerInstanceRepo,
+    MockTriggerInstanceRepo, SoundboardClipsRepo, StorageError, StoredClip, TriggerChanges,
+    TriggerInstanceRepo,
 };
 use forge_types::ClipId;
 use support::{
@@ -208,8 +209,50 @@ async fn removing_one_half_of_a_hold_keeps_the_registration_the_other_half_uses(
 }
 
 #[tokio::test]
-async fn disabling_a_hotkey_trigger_keeps_its_registration() {
+async fn disabling_a_hotkey_trigger_releases_its_registration_until_it_is_enabled_again() {
     let synced = synced().await;
+    let trigger = instance(event_kinds::GLOBAL_PRESSED, Some("F5"));
+    synced.repo.save(&trigger).await.unwrap();
+
+    synced.repo.set_enabled(trigger.id, false).await.unwrap();
+    let while_disabled = registered(&synced.client);
+    synced.repo.set_enabled(trigger.id, true).await.unwrap();
+
+    assert!(while_disabled.is_empty(), "got {while_disabled:?}");
+    assert_eq!(registered(&synced.client), ["F5"]);
+}
+
+#[tokio::test]
+async fn disabling_both_halves_of_a_hold_unregisters_the_combo_once() {
+    let synced = synced().await;
+    let press = instance(event_kinds::GLOBAL_PRESSED, Some("F5"));
+    let release = instance(event_kinds::GLOBAL_RELEASED, Some("F5"));
+    synced.repo.save(&press).await.unwrap();
+    synced.repo.save(&release).await.unwrap();
+
+    synced.repo.set_enabled(press.id, false).await.unwrap();
+    let after_one_half = registered(&synced.client);
+    synced.repo.set_enabled(release.id, false).await.unwrap();
+
+    let unregisters = synced
+        .backend
+        .calls()
+        .into_iter()
+        .filter(|call| matches!(call, RecordedCall::Unregister(_)))
+        .count();
+    assert_eq!(
+        after_one_half,
+        ["F5"],
+        "the other half still needs the grab"
+    );
+    assert_eq!(unregisters, 1);
+    assert!(registered(&synced.client).is_empty());
+}
+
+#[tokio::test]
+async fn disabling_a_trigger_keeps_the_combo_a_clip_is_bound_to() {
+    let synced = synced().await;
+    synced.clips.save(&clip(Some("F5"))).await.unwrap();
     let trigger = instance(event_kinds::GLOBAL_PRESSED, Some("F5"));
     synced.repo.save(&trigger).await.unwrap();
 
@@ -219,13 +262,41 @@ async fn disabling_a_hotkey_trigger_keeps_its_registration() {
 }
 
 #[tokio::test]
+async fn applying_changes_stores_combos_canonically_and_registers_them() {
+    let synced = synced().await;
+    let trigger = instance(event_kinds::GLOBAL_PRESSED, Some("shift+ctrl+f5"));
+
+    synced
+        .repo
+        .apply_changes(&TriggerChanges {
+            saved: vec![trigger.clone()],
+            ..TriggerChanges::default()
+        })
+        .await
+        .unwrap();
+
+    let stored = synced.stored.get(trigger.id).await.unwrap().unwrap();
+    assert_eq!(stored_combo(&stored), Some("Ctrl+Shift+F5"));
+    assert_eq!(registered(&synced.client), ["Ctrl+Shift+F5"]);
+}
+
+#[tokio::test]
 async fn a_refused_write_leaves_the_client_registrations_untouched() {
     let unparseable = instance(event_kinds::GLOBAL_PRESSED, Some("Ctrl+XYZ"));
     let valid = instance(event_kinds::GLOBAL_PRESSED, Some("F9"));
     let failure = || StorageError::Connection {
         reason: "disk gone".to_owned(),
     };
-    for write in ["invalid combo", "save", "delete", "archive", "restore"] {
+    for write in [
+        "invalid combo",
+        "invalid combo in a batch",
+        "save",
+        "batch",
+        "delete",
+        "archive",
+        "restore",
+        "set enabled",
+    ] {
         let mut inner = MockTriggerInstanceRepo::new();
         let listed = valid.clone();
         inner
@@ -235,6 +306,12 @@ async fn a_refused_write_leaves_the_client_registrations_untouched() {
         inner.expect_delete().returning(move |_| Err(failure()));
         inner.expect_archive().returning(move |_| Err(failure()));
         inner.expect_restore().returning(move |_| Err(failure()));
+        inner
+            .expect_apply_changes()
+            .returning(move |_| Err(failure()));
+        inner
+            .expect_set_enabled()
+            .returning(move |_, _| Err(failure()));
         let (client, backend) = recording_client();
         let inner: Arc<dyn TriggerInstanceRepo> = Arc::new(inner);
         let reconciler = HotkeyReconciler::new(
@@ -244,9 +321,16 @@ async fn a_refused_write_leaves_the_client_registrations_untouched() {
         );
         let repo = HotkeySyncedTriggerRepo::wrap(inner, Some(reconciler));
 
+        let batch_of = |instance: &forge_types::TriggerInstance| TriggerChanges {
+            saved: vec![instance.clone()],
+            ..TriggerChanges::default()
+        };
         let outcome = match write {
             "invalid combo" => repo.save(&unparseable).await.map(|_| ()),
+            "invalid combo in a batch" => repo.apply_changes(&batch_of(&unparseable)).await,
             "save" => repo.save(&valid).await.map(|_| ()),
+            "batch" => repo.apply_changes(&batch_of(&valid)).await,
+            "set enabled" => repo.set_enabled(valid.id, false).await,
             "delete" => repo.delete(valid.id).await.map(|_| ()),
             "archive" => repo.archive(valid.id).await.map(|_| ()),
             _ => repo.restore(valid.id).await.map(|_| ()),
@@ -578,4 +662,24 @@ async fn only_a_binding_added_after_boot_switches_the_disabled_engine_on() {
         started_on_new_binding, 1,
         "a new binding must switch the engine on"
     );
+}
+
+#[tokio::test]
+async fn re_enabling_a_binding_leaves_a_stored_engine_off_choice_alone() {
+    let synced = synced().await;
+    let starts = Arc::new(AtomicUsize::new(0));
+    synced.reconciler.enable_engine_on_new_bindings({
+        let starts = Arc::clone(&starts);
+        move || {
+            starts.fetch_add(1, Ordering::SeqCst);
+        }
+    });
+    let binding = instance(event_kinds::GLOBAL_PRESSED, Some("F5"));
+    synced.stored.save(&binding).await.unwrap();
+    synced.reconciler.reconcile().await;
+
+    synced.repo.set_enabled(binding.id, false).await.unwrap();
+    synced.repo.set_enabled(binding.id, true).await.unwrap();
+
+    assert_eq!(starts.load(Ordering::SeqCst), 0);
 }

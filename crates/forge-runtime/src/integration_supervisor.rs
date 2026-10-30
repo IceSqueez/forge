@@ -36,6 +36,10 @@ impl LifecycleState {
     pub fn is_settled(&self) -> bool {
         !matches!(self, Self::Starting | Self::Stopping)
     }
+
+    fn is_retired(&self) -> bool {
+        matches!(self, Self::Disabled | Self::Failed(_))
+    }
 }
 
 pub type LifecycleStates = BTreeMap<IntegrationId, LifecycleState>;
@@ -361,6 +365,26 @@ impl<O> IntegrationSupervisor<O> {
 
     pub fn watch(&self) -> LifecycleWatch {
         LifecycleWatch(self.inner.states.clone())
+    }
+
+    pub async fn shutdown(&self, budget: Duration) {
+        let retired = self
+            .inner
+            .slots
+            .keys()
+            .map(|id| self.desire(id, Some(false), false));
+        if tokio::time::timeout(budget, join_all(retired))
+            .await
+            .is_err()
+        {
+            let unfinished: Vec<&IntegrationId> = self
+                .inner
+                .slots
+                .keys()
+                .filter(|id| !self.state_of(id).is_retired())
+                .collect();
+            tracing::warn!(?budget, ?unfinished, "integrations did not retire in time");
+        }
     }
 
     async fn desire(
@@ -1285,5 +1309,214 @@ mod tests {
         let result = harness.slot(&factory).activate().await;
 
         assert_eq!(result, Err(token_rejected()));
+    }
+
+    fn launch_all(factories: &[&Arc<FakeFactory>]) -> Harness {
+        let settings = Arc::new(MemorySettings::new());
+        let gate = IntegrationGate::new();
+        let objects = Arc::new(FakeObjects::default());
+        let supervisor = IntegrationSupervisor::launch(
+            factories
+                .iter()
+                .map(|factory| Arc::clone(factory) as Arc<dyn IntegrationFactory<FakeObject>>)
+                .collect(),
+            Arc::clone(&settings) as Arc<dyn SettingsRepo>,
+            gate.clone(),
+            Arc::clone(&objects) as Arc<dyn IntegrationObjects<FakeObject>>,
+            spawn_live_viewer_aggregator(),
+        );
+        Harness {
+            supervisor,
+            settings,
+            gate,
+            objects,
+        }
+    }
+
+    const SHUTDOWN_BUDGET: Duration = Duration::from_millis(25);
+    const AMPLE_SHUTDOWN_BUDGET: Duration = Duration::from_secs(3600);
+
+    fn installing(id: &'static str) -> Arc<FakeFactory> {
+        FakeFactory::new(
+            id,
+            Behaviour {
+                installs_object: true,
+                ..Behaviour::default()
+            },
+        )
+    }
+
+    #[tokio::test]
+    async fn shutdown_retires_every_running_slot_through_its_teardown() {
+        let (first, second, idle) = (installing("twitch"), installing("kick"), installing("obs"));
+        let harness = launch_all(&[&first, &second, &idle]);
+        for factory in [&first, &second] {
+            harness.slot(factory).set_enabled(true).await.unwrap();
+        }
+
+        harness.supervisor.shutdown(AMPLE_SHUTDOWN_BUDGET).await;
+
+        for factory in [&first, &second] {
+            assert_eq!(
+                harness.supervisor.state_of(&factory.id),
+                LifecycleState::Disabled
+            );
+            assert_eq!(factory.finished_teardowns(), 1);
+            assert!(harness.gate.is_disabled(&factory.id));
+            assert!(harness.objects.get(&factory.id).is_none());
+        }
+        assert_eq!(idle.teardowns(), 0);
+    }
+
+    #[tokio::test]
+    async fn shutdown_leaves_the_stored_enabled_choice_for_the_next_launch() {
+        let factory = FakeFactory::new("twitch", Behaviour::default());
+        let harness = Harness::launch(&factory);
+        harness.slot(&factory).set_enabled(true).await.unwrap();
+
+        harness.supervisor.shutdown(AMPLE_SHUTDOWN_BUDGET).await;
+
+        assert_eq!(
+            stored_value(&harness.settings, &factory.id).as_deref(),
+            Some("true")
+        );
+    }
+
+    #[tokio::test]
+    async fn a_second_shutdown_runs_no_second_teardown() {
+        let factory = FakeFactory::new("twitch", Behaviour::default());
+        let harness = Harness::launch(&factory);
+        harness.slot(&factory).set_enabled(true).await.unwrap();
+
+        harness.supervisor.shutdown(AMPLE_SHUTDOWN_BUDGET).await;
+        harness.supervisor.shutdown(AMPLE_SHUTDOWN_BUDGET).await;
+
+        assert_eq!(factory.teardowns(), 1);
+    }
+
+    fn paused_runtime() -> tokio::runtime::Runtime {
+        tokio::runtime::Builder::new_current_thread()
+            .enable_time()
+            .start_paused(true)
+            .build()
+            .unwrap()
+    }
+
+    fn overrun_lines(lines: &[crate::test_support::log_capture::CapturedLine]) -> Vec<String> {
+        lines
+            .iter()
+            .filter(|line| line.mentions("integrations did not retire in time"))
+            .map(|line| line.field("unfinished").to_owned())
+            .collect()
+    }
+
+    #[test]
+    fn a_shutdown_outrun_by_a_teardown_returns_at_its_budget_naming_the_slot_still_stopping() {
+        let hung = FakeFactory::new(
+            "twitch",
+            Behaviour {
+                teardown_hangs: true,
+                ..Behaviour::default()
+            },
+        );
+        let clean = FakeFactory::new("kick", Behaviour::default());
+        let runtime = paused_runtime();
+
+        let lines = crate::test_support::log_capture::capture(tracing::Level::WARN, || {
+            runtime.block_on(async {
+                let harness = launch_all(&[&hung, &clean]);
+                harness.slot(&hung).set_enabled(true).await.unwrap();
+                harness.slot(&clean).set_enabled(true).await.unwrap();
+                let began = tokio::time::Instant::now();
+
+                harness.supervisor.shutdown(SHUTDOWN_BUDGET).await;
+
+                assert_eq!(began.elapsed(), SHUTDOWN_BUDGET);
+                assert_eq!(
+                    harness.supervisor.state_of(&hung.id),
+                    LifecycleState::Stopping
+                );
+            });
+        });
+
+        let overruns = overrun_lines(&lines);
+        assert!(
+            matches!(
+                overruns.as_slice(),
+                [unfinished] if unfinished.contains("twitch") && !unfinished.contains("kick")
+            ),
+            "got {overruns:?}"
+        );
+    }
+
+    #[test]
+    fn a_shutdown_finishing_inside_its_budget_logs_no_overrun() {
+        let factory = FakeFactory::new("twitch", Behaviour::default());
+        let runtime = paused_runtime();
+
+        let lines = crate::test_support::log_capture::capture(tracing::Level::WARN, || {
+            runtime.block_on(async {
+                let harness = Harness::launch(&factory);
+                harness.slot(&factory).set_enabled(true).await.unwrap();
+
+                harness.supervisor.shutdown(SHUTDOWN_BUDGET).await;
+            });
+        });
+
+        assert!(overrun_lines(&lines).is_empty());
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_teardown_outliving_the_shutdown_budget_still_settles_at_its_own_bound() {
+        let factory = FakeFactory::new(
+            "twitch",
+            Behaviour {
+                teardown_hangs: true,
+                ..Behaviour::default()
+            },
+        );
+        let harness = Harness::launch(&factory);
+        harness.slot(&factory).set_enabled(true).await.unwrap();
+        let mut states = harness.supervisor.watch();
+        harness.supervisor.shutdown(SHUTDOWN_BUDGET).await;
+
+        tokio::time::timeout(FAKE_GRACE * 4, async {
+            while states.current().get(&factory.id) != Some(&LifecycleState::Disabled) {
+                states.changed().await;
+            }
+        })
+        .await
+        .expect("the teardown bound must settle the slot after shutdown gave up waiting");
+
+        assert_eq!(factory.live_teardowns(), 0);
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_start_in_flight_at_shutdown_is_torn_down_once_it_comes_up() {
+        let (release, hold) = oneshot::channel();
+        let factory = FakeFactory::new(
+            "twitch",
+            Behaviour {
+                hold_start: Some(hold),
+                ..Behaviour::default()
+            },
+        );
+        let harness = Harness::launch(&factory);
+        let slot = harness.slot(&factory);
+        let enabling = tokio::spawn(async move { slot.set_enabled(true).await });
+        assert!(
+            settle_tasks(|| factory.starts() == 1).await,
+            "start never began"
+        );
+        let mut states = harness.supervisor.watch();
+
+        harness.supervisor.shutdown(SHUTDOWN_BUDGET).await;
+        release.send(()).unwrap();
+        enabling.await.unwrap().unwrap();
+
+        while states.current().get(&factory.id) != Some(&LifecycleState::Disabled) {
+            states.changed().await;
+        }
+        assert_eq!(factory.teardowns(), 1);
     }
 }

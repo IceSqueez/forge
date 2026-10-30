@@ -8,7 +8,7 @@ use super::HotkeysScreenView;
 use crate::async_bridge::{self, ErrorSink};
 use crate::hotkey_action_modal::BindingDraft;
 use crate::repo_failure::RepoFailure;
-use forge_hotkey::{do_bind, rebind_combo, relink_action, set_binding_edge, set_binding_enabled};
+use forge_hotkey::{BindingUpdate, do_bind, rebind_combo, set_binding_enabled, update_binding};
 
 impl HotkeysScreenView {
     pub(super) fn persist_draft(&mut self, draft: BindingDraft, cx: &mut Context<Self>) {
@@ -24,16 +24,17 @@ impl HotkeysScreenView {
             self.run_reload(do_bind(reconciler, backend, combo, edge, action_id), cx);
             return;
         };
-        let previous = self
-            .row_of_instance(instance_id)
-            .map(|row| row.combo.clone())
-            .unwrap_or_else(|| combo.clone());
         self.run_reload(
-            async move {
-                rebind_combo(reconciler, Arc::clone(&backend), previous, combo).await?;
-                set_binding_edge(Arc::clone(&backend), instance_id, edge).await?;
-                relink_action(backend, instance_id, action_id).await
-            },
+            update_binding(
+                reconciler,
+                backend,
+                BindingUpdate {
+                    instance_id,
+                    combo,
+                    edge,
+                    action_id,
+                },
+            ),
             cx,
         );
     }
@@ -82,10 +83,15 @@ impl HotkeysScreenView {
             half.enabled = enabled;
         }
         let backend = Arc::clone(&self.backend);
+        let reconciler = Arc::clone(&self.reconciler);
         async_bridge::optimistic(
             &self.rt_handle,
             previous,
-            set_binding_enabled(backend, ids, enabled),
+            async move {
+                let written = set_binding_enabled(backend, ids, enabled).await;
+                reconciler.reconcile().await;
+                written
+            },
             move |this, previous, _message, cx| {
                 if let Some(row) = this.bindings.iter_mut().find(|row| row.key == key) {
                     for half in [row.press.as_mut(), row.release.as_mut()]

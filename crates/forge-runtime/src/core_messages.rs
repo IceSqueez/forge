@@ -41,6 +41,8 @@ pub const ACTION_NESTING_TOO_DEEP: MessageCode =
     MessageCode::from_static(CORE_NAMESPACE, "action_nesting_too_deep");
 pub const ACTION_RUN_CANCELLED: MessageCode =
     MessageCode::from_static(CORE_NAMESPACE, "action_run_cancelled");
+pub const ACTION_RUN_DISABLED: MessageCode =
+    MessageCode::from_static(CORE_NAMESPACE, "action_run_disabled");
 pub const ACTION_RUN_FAILED: MessageCode =
     MessageCode::from_static(CORE_NAMESPACE, "action_run_failed");
 pub const SCHEDULER_NOT_READY: MessageCode =
@@ -197,6 +199,7 @@ pub const CORE_MESSAGES: MessageCatalog = MessageCatalog {
         UNKNOWN_TRIGGER_INSTANCE,
         ACTION_NESTING_TOO_DEEP,
         ACTION_RUN_CANCELLED,
+        ACTION_RUN_DISABLED,
         ACTION_RUN_FAILED,
         SCHEDULER_NOT_READY,
         SCHEDULER_STOPPED,
@@ -375,6 +378,10 @@ pub(crate) fn action_nesting_too_deep() -> MessageRef {
 
 pub(crate) fn action_run_cancelled() -> MessageRef {
     MessageRef::new(ACTION_RUN_CANCELLED)
+}
+
+pub(crate) fn action_run_disabled(name: &str) -> MessageRef {
+    MessageRef::new(ACTION_RUN_DISABLED).with_arg(ACTION_ARG, verbatim(name))
 }
 
 pub(crate) fn action_run_failed(cause: impl Display) -> MessageRef {
@@ -672,6 +679,7 @@ mod tests {
             unknown_trigger_instance(TriggerInstanceId::new()),
             action_nesting_too_deep(),
             action_run_cancelled(),
+            action_run_disabled("a"),
             action_run_failed("c"),
             scheduler_not_ready(),
             scheduler_stopped(),

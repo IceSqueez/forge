@@ -3,7 +3,7 @@ use std::sync::Arc;
 use forge_components::{ToastKind, tr};
 use forge_overlay::MediaIssue;
 use forge_runtime::{OverlaySampleSource, OverlayServiceHandle};
-use forge_storage::{OverlayConfig, OverlayDefinition, OverlayId, OverlayRepo};
+use forge_storage::{OverlayConfig, OverlayDefinition, OverlayId};
 use gpui::Context;
 
 use super::OverlaysView;
@@ -15,20 +15,6 @@ pub(super) struct Regenerated {
     failure: Option<String>,
     missing: Vec<String>,
     media_issues: Vec<MediaIssue>,
-}
-
-pub(super) async fn store_config(
-    repo: &dyn OverlayRepo,
-    service: &OverlayServiceHandle,
-    id: &OverlayId,
-    config: OverlayConfig,
-) -> Result<bool, String> {
-    let Some(mut definition) = repo.get(id).await.map_err(|e| e.to_string())? else {
-        return Ok(false);
-    };
-    definition.config = config;
-    service.save(&definition).await.map_err(|e| e.to_string())?;
-    Ok(true)
 }
 
 pub(super) async fn regenerate(
@@ -71,14 +57,17 @@ impl OverlaysView {
         config: OverlayConfig,
         cx: &mut Context<Self>,
     ) {
-        let repo = Arc::clone(&self.handles.repo);
         let service = self.handles.service.clone();
         let samples = Arc::clone(&self.handles.samples);
         let target = id.clone();
         async_bridge::run_async(
             &self.handles.rt_handle,
             async move {
-                if !store_config(repo.as_ref(), &service, &id, config).await? {
+                let stored = service
+                    .update_config(&id, &config)
+                    .await
+                    .map_err(|e| e.to_string())?;
+                if !stored {
                     return Ok((false, Regenerated::default()));
                 }
                 Ok((true, regenerate(&service, samples.as_ref(), &id).await))
@@ -144,18 +133,19 @@ impl OverlaysView {
             return;
         }
         self.close_form(cx);
-        let repo = Arc::clone(&self.handles.repo);
         let service = self.handles.service.clone();
         let samples = Arc::clone(&self.handles.samples);
         let target = id.clone();
         async_bridge::run_async(
             &self.handles.rt_handle,
             async move {
-                let Some(mut definition) = repo.get(&id).await.map_err(|e| e.to_string())? else {
+                let renamed = service
+                    .rename(&id, &display_name)
+                    .await
+                    .map_err(|e| e.to_string())?;
+                if !renamed {
                     return Ok((false, Regenerated::default()));
-                };
-                definition.display_name = display_name;
-                repo.save(&definition).await.map_err(|e| e.to_string())?;
+                }
                 Ok((true, regenerate(&service, samples.as_ref(), &id).await))
             },
             move |this, result: Result<(bool, Regenerated), String>, cx| match result {

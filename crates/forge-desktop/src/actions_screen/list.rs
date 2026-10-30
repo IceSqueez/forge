@@ -1260,8 +1260,8 @@ mod tests {
                 .expect_list_all()
                 .returning(move || Ok(instances.clone()));
             trigger_repo
-                .expect_actions_using()
-                .returning(move |id| Ok(users.get(&id).cloned().unwrap_or_default()));
+                .expect_actions_by_instance()
+                .returning(move || Ok(users.clone()));
 
             let action_repo: Arc<dyn ActionRepo> = Arc::new(action_repo);
             let queue_repo: Arc<dyn QueueRepo> = Arc::new(MockQueueRepo::new());
@@ -1550,8 +1550,8 @@ mod tests {
         let mut repo = MockTriggerInstanceRepo::new();
         repo.expect_list_all()
             .returning(move || Ok(instances.clone()));
-        repo.expect_actions_using()
-            .returning(move |id| Ok(users.get(&id).cloned().unwrap_or_default()));
+        repo.expect_actions_by_instance()
+            .returning(move || Ok(users.clone()));
         let filter_by_kind = HashMap::from([
             (TIMER_TICK_KIND.to_owned(), ActionsFilter::Timers),
             (REWARD_KIND.to_owned(), ActionsFilter::Points),

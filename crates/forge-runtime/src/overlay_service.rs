@@ -386,6 +386,30 @@ impl OverlayServiceHandle {
         Ok(self.inner.repo.save(definition).await?)
     }
 
+    pub async fn update_config(
+        &self,
+        id: &OverlayId,
+        config: &OverlayConfig,
+    ) -> Result<bool, OverlayServiceError> {
+        let Some(definition) = self.inner.repo.get(id).await? else {
+            return Ok(false);
+        };
+        self.inner.kinds.validate_stored(
+            &definition.kind_id,
+            definition.config_schema_version,
+            config,
+        )?;
+        Ok(self.inner.repo.update_config(id, config).await?)
+    }
+
+    pub async fn rename(
+        &self,
+        id: &OverlayId,
+        display_name: &str,
+    ) -> Result<bool, OverlayServiceError> {
+        Ok(self.inner.repo.rename(id, display_name).await?)
+    }
+
     pub async fn set_enabled(
         &self,
         id: &OverlayId,

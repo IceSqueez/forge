@@ -94,6 +94,8 @@ pub struct CharityDonation {
     pub website: String,
     pub amount_cents: i64,
     pub currency_code: String,
+    #[serde(default)]
+    pub decimal_places: i64,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -108,6 +110,8 @@ pub struct CharityCampaignTotals {
     pub current_amount_cents: i64,
     pub target_amount_cents: i64,
     pub currency_code: String,
+    #[serde(default)]
+    pub decimal_places: i64,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

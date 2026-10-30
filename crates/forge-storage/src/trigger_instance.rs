@@ -1,7 +1,17 @@
+use std::collections::HashMap;
+
 use async_trait::async_trait;
 use forge_types::{ActionId, TriggerInstance, TriggerInstanceId};
 
 use crate::StorageError;
+
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct TriggerChanges {
+    pub removed: Vec<TriggerInstanceId>,
+    pub unlinked: Vec<(ActionId, TriggerInstanceId)>,
+    pub saved: Vec<TriggerInstance>,
+    pub linked: Vec<(ActionId, TriggerInstanceId)>,
+}
 
 #[cfg_attr(feature = "test-mocks", mockall::automock)]
 #[async_trait]
@@ -16,6 +26,38 @@ pub trait TriggerInstanceRepo: Send + Sync {
         &self,
         instance_id: TriggerInstanceId,
     ) -> Result<Vec<ActionId>, StorageError>;
+    async fn actions_by_instance(
+        &self,
+    ) -> Result<HashMap<TriggerInstanceId, Vec<ActionId>>, StorageError> {
+        let mut links = HashMap::new();
+        for instance in self.list_all().await? {
+            let actions = self.actions_using(instance.id).await?;
+            if !actions.is_empty() {
+                links.insert(instance.id, actions);
+            }
+        }
+        Ok(links)
+    }
+
+    async fn apply_changes(&self, changes: &TriggerChanges) -> Result<(), StorageError> {
+        for instance_id in &changes.removed {
+            for action_id in self.actions_using(*instance_id).await? {
+                self.unlink_action(action_id, *instance_id).await?;
+            }
+            self.delete(*instance_id).await?;
+        }
+        for (action_id, instance_id) in &changes.unlinked {
+            self.unlink_action(*action_id, *instance_id).await?;
+        }
+        for instance in &changes.saved {
+            self.save(instance).await?;
+        }
+        for (action_id, instance_id) in &changes.linked {
+            self.link_action(*action_id, *instance_id).await?;
+        }
+        Ok(())
+    }
+
     async fn link_action(
         &self,
         action_id: ActionId,

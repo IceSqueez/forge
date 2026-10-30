@@ -4,7 +4,7 @@ use forge_storage::SettingDisclosure::{Presence, Verbatim};
 use forge_storage::SettingPortability::{MachineLocal, Portable};
 use forge_storage::settings::{FULL_LEVEL, SILENT_LEVEL};
 use forge_storage::{
-    Flag, Level, Setting, SettingEncoding, SettingSpec, SettingsRepo, StorageError,
+    Flag, Level, OptionalText, Setting, SettingSpec, SettingsRepo, StorageError,
     read_setting_or_default, write_setting,
 };
 use forge_types::OutputDevice;
@@ -16,9 +16,9 @@ pub const ENABLED: Setting<Flag> = Setting::new(
     Verbatim,
 );
 
-pub const OUTPUT_DEVICE: SettingSpec = SettingSpec::exact(
+pub const OUTPUT_DEVICE: Setting<OptionalText> = Setting::new(
     "soundboard.output_device",
-    SettingEncoding::Text,
+    OptionalText,
     MachineLocal,
     Presence,
 );
@@ -43,7 +43,7 @@ pub const ALSO_HEADPHONES: Setting<Flag> = Setting::new(
 
 pub const SETTING_SPECS: &[SettingSpec] = &[
     ENABLED.spec(),
-    OUTPUT_DEVICE,
+    OUTPUT_DEVICE.spec(),
     MASTER_VOLUME.spec(),
     ALSO_HEADPHONES.spec(),
 ];
@@ -109,20 +109,9 @@ impl Default for SoundboardSettingsHandle {
 }
 
 pub async fn load_soundboard_settings(repo: &dyn SettingsRepo) -> SoundboardSettings {
-    let output_device_id = match repo.get_string(OUTPUT_DEVICE.key.name()).await {
-        Ok(device) => device,
-        Err(error) => {
-            tracing::warn!(
-                key = OUTPUT_DEVICE.key.name(),
-                error = %error,
-                "stored setting cannot be read; using its default"
-            );
-            None
-        }
-    };
     SoundboardSettings {
         enabled: read_setting_or_default(repo, &ENABLED).await,
-        output_device_id,
+        output_device_id: read_setting_or_default(repo, &OUTPUT_DEVICE).await,
         master_volume: read_setting_or_default(repo, &MASTER_VOLUME).await,
         also_headphones: read_setting_or_default(repo, &ALSO_HEADPHONES).await,
     }
@@ -147,10 +136,7 @@ pub async fn save_output_device(
     repo: &dyn SettingsRepo,
     device_id: Option<String>,
 ) -> Result<(), StorageError> {
-    match device_id {
-        Some(id) => repo.set_string(OUTPUT_DEVICE.key.name(), &id).await,
-        None => repo.delete(OUTPUT_DEVICE.key.name()).await.map(|_| ()),
-    }
+    write_setting(repo, &OUTPUT_DEVICE, &device_id).await
 }
 
 #[cfg(test)]

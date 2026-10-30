@@ -6,11 +6,11 @@ use std::sync::Arc;
 use forge_runtime::{ActionEngineHandle, EventHistory};
 use forge_storage::{
     ActionRepo, CredentialsRepo, GlobalsRepo, OverlayRepo, SettingsRepo, StorageError,
-    UserGlobalsRepo, read_setting, set_json_setting, stored_json_setting, write_setting,
+    UserGlobalsRepo, read_setting, write_setting,
 };
 use forge_types::PlatformId;
 
-use crate::settings;
+use crate::settings::{self, StoredOrigins};
 use forge_storage::settings::core_settings;
 
 pub const LOCALHOST_BIND_ADDRESS: &str = "127.0.0.1";
@@ -103,35 +103,12 @@ impl Default for ServerSettings {
     }
 }
 
-async fn load_additional_origins(
-    repo: &dyn SettingsRepo,
-) -> Result<(Vec<String>, bool), StorageError> {
-    match stored_json_setting::<Vec<String>>(repo, settings::ADDITIONAL_ORIGINS.key.name()).await {
-        Ok(origins) => Ok((origins.unwrap_or_default(), false)),
-        Err(StorageError::UndecodableSetting { key }) => {
-            tracing::warn!(
-                key = %key,
-                "stored additional origins cannot be decoded; serving the default origins only"
-            );
-            Ok((Vec::new(), true))
-        }
-        Err(e) => Err(e),
-    }
-}
-
 impl ServerSettings {
     pub async fn load(repo: &dyn SettingsRepo) -> Result<Self, StorageError> {
         let enabled = read_setting(repo, &settings::ENABLED).await?;
-        let bind_address = repo
-            .get_string(settings::BIND_ADDRESS.key.name())
-            .await?
-            .unwrap_or_else(|| LOCALHOST_BIND_ADDRESS.to_owned());
-        let port = repo
-            .get_string(settings::PORT.key.name())
-            .await?
-            .as_deref()
-            .and_then(|s| s.parse().ok())
-            .unwrap_or(DEFAULT_PORT);
+        let bind_address = read_setting(repo, &settings::BIND_ADDRESS).await?;
+        let port =
+            u16::try_from(read_setting(repo, &settings::PORT).await?).unwrap_or(DEFAULT_PORT);
         let lan_bind_enabled = read_setting(repo, &settings::LAN_BIND_ENABLED).await?;
         let auth_required_for_reads =
             read_setting(repo, &settings::AUTH_REQUIRED_FOR_READS).await?;
@@ -139,11 +116,11 @@ impl ServerSettings {
             read_setting(repo, &settings::HTTP_OVERLAY_REQUIRE_TOKEN).await?;
         let overlay_cors_any_origin =
             read_setting(repo, &settings::OVERLAY_CORS_ANY_ORIGIN).await?;
-        let overlay_root = repo
-            .get_string(core_settings::SERVER_OVERLAY_ROOT.name())
-            .await?;
-        let (additional_origins, additional_origins_unreadable) =
-            load_additional_origins(repo).await?;
+        let overlay_root = read_setting(repo, &core_settings::SERVER_OVERLAY_ROOT).await?;
+        let StoredOrigins {
+            origins: additional_origins,
+            unreadable: additional_origins_unreadable,
+        } = read_setting(repo, &settings::ADDITIONAL_ORIGINS).await?;
         Ok(Self {
             enabled,
             bind_address,
@@ -168,17 +145,15 @@ impl ServerSettings {
     ) -> Result<(), StorageError> {
         if !VALID_BIND_ADDRESSES.contains(&addr) {
             return Err(StorageError::ValidationFailed {
-                field: settings::BIND_ADDRESS.key.name().to_owned(),
+                field: settings::BIND_ADDRESS.name().to_owned(),
                 reason: format!("must be one of: {}", VALID_BIND_ADDRESSES.join(", ")),
             });
         }
-        repo.set_string(settings::BIND_ADDRESS.key.name(), addr)
-            .await
+        write_setting(repo, &settings::BIND_ADDRESS, &addr.to_owned()).await
     }
 
     pub async fn save_port(repo: &dyn SettingsRepo, port: u16) -> Result<(), StorageError> {
-        repo.set_string(settings::PORT.key.name(), &port.to_string())
-            .await
+        write_setting(repo, &settings::PORT, &u32::from(port)).await
     }
 
     pub async fn save_lan_bind_enabled(
@@ -213,15 +188,23 @@ impl ServerSettings {
         repo: &dyn SettingsRepo,
         path: &str,
     ) -> Result<(), StorageError> {
-        repo.set_string(core_settings::SERVER_OVERLAY_ROOT.name(), path)
-            .await
+        write_setting(
+            repo,
+            &core_settings::SERVER_OVERLAY_ROOT,
+            &Some(path.to_owned()),
+        )
+        .await
     }
 
     pub async fn save_additional_origins(
         repo: &dyn SettingsRepo,
         origins: &[String],
     ) -> Result<(), StorageError> {
-        set_json_setting(repo, settings::ADDITIONAL_ORIGINS.key.name(), &origins).await
+        let stored = StoredOrigins {
+            origins: origins.to_vec(),
+            unreadable: false,
+        };
+        write_setting(repo, &settings::ADDITIONAL_ORIGINS, &stored).await
     }
 }
 

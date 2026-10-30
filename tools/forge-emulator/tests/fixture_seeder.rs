@@ -15,9 +15,7 @@ use forge_events::{Event, EventSource};
 use forge_platform_twitch::TwitchCredentialsManager;
 use forge_registry::TriggerRegistry;
 use forge_server::{ServerSettings, settings as server_settings};
-use forge_storage::{
-    CredentialId, CredentialsRepo, DataProvider, SERVER_BEARER_CREDENTIAL_ID,
-};
+use forge_storage::{CredentialId, CredentialsRepo, DataProvider, SERVER_BEARER_CREDENTIAL_ID};
 use forge_storage_sqlite::SqliteBackend;
 use forge_types::{SubActionStep, Variant};
 use tempfile::TempDir;

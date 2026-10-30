@@ -1,6 +1,6 @@
 use tokio::sync::{mpsc, watch};
 
-use crate::backend::open_platform_backend;
+use crate::backend::LazyBackend;
 use crate::supervisor::{Command, Supervisor};
 use crate::{AwakeError, AwakeStatus};
 
@@ -23,7 +23,7 @@ impl StayAwake {
         let enabled = config.enabled;
         tokio::spawn(async move {
             let (disruption_tx, disruption_rx) = mpsc::unbounded_channel();
-            let backend = open_platform_backend(reason, disruption_tx).await;
+            let backend = Box::new(LazyBackend::platform(reason, disruption_tx));
             Supervisor {
                 backend,
                 enabled,

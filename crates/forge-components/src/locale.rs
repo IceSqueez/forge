@@ -1,8 +1,12 @@
-use std::cell::RefCell;
-use std::collections::HashSet;
+use std::cell::{Cell, RefCell};
+use std::collections::{BTreeSet, HashSet};
 use std::rc::Rc;
+use std::sync::{Arc, Mutex, PoisonError, RwLock};
 
+use fluent::memoizer::MemoizerKind;
 use fluent::{FluentArgs, FluentBundle, FluentResource, FluentValue};
+use forge_types::NamesLanguage;
+use unic_langid::LanguageIdentifier;
 
 const EN_CATALOG: &str = include_str!("../locales/en/main.ftl");
 const UK_CATALOG: &str = include_str!("../locales/uk/main.ftl");
@@ -13,6 +17,34 @@ pub enum CatalogLanguage {
     Uk,
 }
 
+impl CatalogLanguage {
+    pub fn from_code(code: &str) -> Option<Self> {
+        match code {
+            "en" => Some(Self::En),
+            "uk" => Some(Self::Uk),
+            _ => None,
+        }
+    }
+
+    pub fn names_language(self) -> NamesLanguage {
+        match self {
+            Self::En => NamesLanguage::En,
+            Self::Uk => NamesLanguage::Uk,
+        }
+    }
+
+    fn bundle_tag(self) -> &'static str {
+        match self {
+            Self::En => "en-US",
+            Self::Uk => "uk-UA",
+        }
+    }
+
+    fn language_identifier(self) -> LanguageIdentifier {
+        self.bundle_tag().parse().unwrap_or_default()
+    }
+}
+
 pub fn catalog_source(language: CatalogLanguage) -> &'static str {
     match language {
         CatalogLanguage::En => EN_CATALOG,
@@ -20,15 +52,119 @@ pub fn catalog_source(language: CatalogLanguage) -> &'static str {
     }
 }
 
+type ThreadBundle = FluentBundle<FluentResource>;
+type ProcessBundle = fluent::concurrent::FluentBundle<FluentResource>;
+
+struct ProcessCatalog {
+    bundle: ProcessBundle,
+    language: CatalogLanguage,
+}
+
+static PROCESS_CATALOG: RwLock<Option<Arc<ProcessCatalog>>> = RwLock::new(None);
+
+static PROCESS_WARNED_KEYS: Mutex<BTreeSet<String>> = Mutex::new(BTreeSet::new());
+
 thread_local! {
-    static BUNDLE: RefCell<Option<Rc<FluentBundle<FluentResource>>>> = const { RefCell::new(None) };
+    static BUNDLE: RefCell<Option<Rc<ThreadBundle>>> = const { RefCell::new(None) };
 
     static WARNED_KEYS: RefCell<HashSet<String>> = RefCell::new(HashSet::new());
 
-    static LOCALE_ID: RefCell<&'static str> = const { RefCell::new("en") };
+    static THREAD_LANGUAGE: Cell<Option<CatalogLanguage>> = const { Cell::new(None) };
 }
 
-pub fn install_bundle(bundle: Rc<FluentBundle<FluentResource>>) {
+enum ActiveBundle {
+    Thread(Rc<ThreadBundle>),
+    Process(Arc<ProcessCatalog>),
+}
+
+impl ActiveBundle {
+    fn format(&self, key: &str, args: Option<&FluentArgs<'_>>) -> Option<String> {
+        match self {
+            Self::Thread(bundle) => format_message(bundle, key, args),
+            Self::Process(catalog) => format_message(&catalog.bundle, key, args),
+        }
+    }
+
+    fn warn_missing_once(&self, key: &str) {
+        match self {
+            Self::Thread(_) => warn_missing_once_on_thread(key),
+            Self::Process(_) => warn_missing_once_in_process(key),
+        }
+    }
+}
+
+fn process_catalog() -> Option<Arc<ProcessCatalog>> {
+    PROCESS_CATALOG
+        .read()
+        .unwrap_or_else(PoisonError::into_inner)
+        .clone()
+}
+
+fn active_bundle() -> Option<ActiveBundle> {
+    BUNDLE
+        .with(|cell| cell.borrow().clone())
+        .map(ActiveBundle::Thread)
+        .or_else(|| process_catalog().map(ActiveBundle::Process))
+}
+
+fn assemble_bundle<M: MemoizerKind>(
+    mut bundle: fluent::bundle::FluentBundle<FluentResource, M>,
+    language: CatalogLanguage,
+    app_sources: &[&str],
+) -> fluent::bundle::FluentBundle<FluentResource, M> {
+    for source in app_sources
+        .iter()
+        .copied()
+        .chain([catalog_source(language)])
+    {
+        let resource =
+            FluentResource::try_new(source.to_owned()).unwrap_or_else(|(resource, errors)| {
+                tracing::warn!(?errors, ?language, "FTL parse errors in catalog");
+                resource
+            });
+        if let Err(errors) = bundle.add_resource(resource) {
+            tracing::warn!(?errors, ?language, "FTL resource add errors");
+        }
+    }
+    bundle
+}
+
+pub fn install_process_language(language: CatalogLanguage, app_sources: &[&str]) {
+    let bundle = assemble_bundle(
+        ProcessBundle::new_concurrent(vec![language.language_identifier()]),
+        language,
+        app_sources,
+    );
+    let catalog = Arc::new(ProcessCatalog { bundle, language });
+    *PROCESS_CATALOG
+        .write()
+        .unwrap_or_else(PoisonError::into_inner) = Some(catalog);
+    PROCESS_WARNED_KEYS
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner)
+        .clear();
+}
+
+pub fn install_thread_language(language: CatalogLanguage, app_sources: &[&str]) {
+    let bundle = assemble_bundle(
+        ThreadBundle::new(vec![language.language_identifier()]),
+        language,
+        app_sources,
+    );
+    install_bundle(Rc::new(bundle));
+    THREAD_LANGUAGE.set(Some(language));
+}
+
+pub fn resolve_in_language(language: CatalogLanguage, app_sources: &[&str], key: &str) -> String {
+    let bundle = assemble_bundle(
+        ThreadBundle::new(vec![language.language_identifier()]),
+        language,
+        app_sources,
+    );
+    format_message(&bundle, key, None).unwrap_or_else(|| key.to_owned())
+}
+
+pub fn install_bundle(bundle: Rc<ThreadBundle>) {
     BUNDLE.with(|cell| {
         *cell.borrow_mut() = Some(bundle);
     });
@@ -37,21 +173,23 @@ pub fn install_bundle(bundle: Rc<FluentBundle<FluentResource>>) {
     });
 }
 
-pub fn set_locale_id(id: &'static str) {
-    LOCALE_ID.with(|cell| {
-        *cell.borrow_mut() = id;
-    });
+pub fn set_locale_id(code: &str) {
+    THREAD_LANGUAGE.set(Some(
+        CatalogLanguage::from_code(code).unwrap_or(CatalogLanguage::En),
+    ));
 }
 
-pub(crate) fn active_locale() -> &'static str {
-    LOCALE_ID.with(|cell| *cell.borrow())
+pub(crate) fn active_language() -> CatalogLanguage {
+    THREAD_LANGUAGE
+        .get()
+        .or_else(|| process_catalog().map(|catalog| catalog.language))
+        .unwrap_or(CatalogLanguage::En)
 }
 
 pub fn fmt_number(value: f64, decimal_places: usize) -> String {
-    let locale = active_locale();
-    let (group_sep, decimal_sep) = match locale {
-        "uk" => (" ", ","),
-        _ => (",", "."),
+    let (group_sep, decimal_sep) = match active_language() {
+        CatalogLanguage::Uk => (" ", ","),
+        CatalogLanguage::En => (",", "."),
     };
     let scaled =
         (value * 10f64.powi(decimal_places as i32)).round() / 10f64.powi(decimal_places as i32);
@@ -171,18 +309,14 @@ fn group_integer(n: u64, sep: &str) -> String {
 }
 
 pub fn tr_lookup(key: &str, args: Option<&FluentArgs<'_>>) -> String {
-    tr_find(key, args).unwrap_or_else(|| {
-        if bundle_installed() {
-            warn_missing_once(key);
-        } else {
-            warn_unlocalized_once(key);
-        }
+    let Some(active) = active_bundle() else {
+        warn_unlocalized_once(key);
+        return key.to_owned();
+    };
+    active.format(key, args).unwrap_or_else(|| {
+        active.warn_missing_once(key);
         key.to_owned()
     })
-}
-
-fn bundle_installed() -> bool {
-    BUNDLE.with(|cell| cell.borrow().is_some())
 }
 
 fn warn_unlocalized_once(key: &str) {
@@ -192,45 +326,61 @@ fn warn_unlocalized_once(key: &str) {
             tracing::warn!(
                 key,
                 thread = thread.name().unwrap_or("unnamed"),
-                "tr!: no locale bundle on this thread; resolve the text on the UI thread"
+                "tr!: no locale bundle installed for this process or thread"
             );
         }
     });
 }
 
 pub fn tr_find(key: &str, args: Option<&FluentArgs<'_>>) -> Option<String> {
+    active_bundle()?.format(key, args)
+}
+
+fn format_message<M: MemoizerKind>(
+    bundle: &fluent::bundle::FluentBundle<FluentResource, M>,
+    key: &str,
+    args: Option<&FluentArgs<'_>>,
+) -> Option<String> {
     let fluent_id: std::borrow::Cow<'_, str> = if key.contains('.') {
         std::borrow::Cow::Owned(key.replace('.', "_"))
     } else {
         std::borrow::Cow::Borrowed(key)
     };
-
-    BUNDLE.with(|cell| {
-        let borrow = cell.borrow();
-        let bundle = borrow.as_ref()?;
-        let pattern = bundle.get_message(fluent_id.as_ref())?.value()?;
-        let mut errors = vec![];
-        let formatted = bundle.format_pattern(pattern, args, &mut errors);
-        if !errors.is_empty() {
-            #[cfg(debug_assertions)]
-            tracing::warn!(key, "fluent format errors: {:?}", errors);
-        }
-        Some(formatted.into_owned())
-    })
+    let pattern = bundle.get_message(fluent_id.as_ref())?.value()?;
+    let mut errors = vec![];
+    let formatted = bundle.format_pattern(pattern, args, &mut errors);
+    if !errors.is_empty() {
+        #[cfg(debug_assertions)]
+        tracing::warn!(key, "fluent format errors: {:?}", errors);
+    }
+    Some(formatted.into_owned())
 }
 
-fn warn_missing_once(key: &str) {
+fn warn_missing_once_on_thread(key: &str) {
     #[cfg(not(debug_assertions))]
     let _ = key;
     #[cfg(debug_assertions)]
     {
         WARNED_KEYS.with(|cell| {
-            let mut warned = cell.borrow_mut();
-            if !warned.contains(key) {
-                warned.insert(key.to_owned());
+            if cell.borrow_mut().insert(key.to_owned()) {
                 tracing::warn!(key, "tr!: key not found in active bundle");
             }
         });
+    }
+}
+
+fn warn_missing_once_in_process(key: &str) {
+    #[cfg(not(debug_assertions))]
+    let _ = key;
+    #[cfg(debug_assertions)]
+    {
+        let first_miss = PROCESS_WARNED_KEYS
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .insert(key.to_owned());
+        if first_miss {
+            tracing::warn!(key, "tr!: key not found in active bundle");
+        }
     }
 }
 

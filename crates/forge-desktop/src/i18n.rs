@@ -1,7 +1,5 @@
-use std::rc::Rc;
 use std::sync::Arc;
 
-use fluent::{FluentBundle, FluentResource};
 use fluent_langneg::{NegotiationStrategy, negotiate_languages};
 use forge_components::{CatalogLanguage, DisplayFormatChoices, Region};
 use forge_storage::{Language, SettingsRepo, reserved_keys, stored_display_formats};
@@ -11,37 +9,11 @@ use unic_langid::LanguageIdentifier;
 const EN_MAIN_FTL: &str = include_str!("../locales/en/main.ftl");
 const UK_MAIN_FTL: &str = include_str!("../locales/uk/main.ftl");
 
-fn build_bundle(lang: Language) -> Rc<FluentBundle<FluentResource>> {
-    let tag = match lang {
-        Language::En => "en-US",
-        Language::Uk => "uk-UA",
-    };
-    let lang_id: LanguageIdentifier = tag.parse().unwrap_or_else(|_| {
-        tracing::warn!("BCP-47 parse failed for {tag}; falling back to base tag");
-        let base = &tag[..2];
-        base.parse().unwrap_or_default()
-    });
-    let ftl_source = match lang {
-        Language::En => EN_MAIN_FTL,
-        Language::Uk => UK_MAIN_FTL,
-    };
-
-    let kit_source = forge_components::catalog_source(catalog_language(lang));
-
-    let mut bundle = FluentBundle::new(vec![lang_id]);
-    for source in [ftl_source, kit_source] {
-        let resource = match FluentResource::try_new(source.to_owned()) {
-            Ok(r) => r,
-            Err((r, errors)) => {
-                tracing::warn!(?errors, "FTL parse errors in {:?} bundle", lang);
-                r
-            }
-        };
-        if let Err(errors) = bundle.add_resource(resource) {
-            tracing::warn!(?errors, "FTL resource add errors for {:?}", lang);
-        }
+fn app_catalogs(lang: Language) -> [&'static str; 1] {
+    match lang {
+        Language::En => [EN_MAIN_FTL],
+        Language::Uk => [UK_MAIN_FTL],
     }
-    Rc::new(bundle)
 }
 
 fn negotiate_os_locale() -> Option<Language> {
@@ -140,35 +112,24 @@ pub async fn resolve_startup_display_formats(
 pub const ANONYMOUS_DONOR_KEY: &str = "donation_anonymous_donor";
 
 pub fn date_names_language(lang: Language) -> NamesLanguage {
-    match lang {
-        Language::En => NamesLanguage::En,
-        Language::Uk => NamesLanguage::Uk,
-    }
+    catalog_language(lang).names_language()
 }
 
 pub fn message_in(lang: Language, key: &str) -> String {
-    let bundle = build_bundle(lang);
-    let Some(pattern) = bundle.get_message(key).and_then(|message| message.value()) else {
-        return key.to_owned();
-    };
-    let mut errors = Vec::new();
-    bundle
-        .format_pattern(pattern, None, &mut errors)
-        .into_owned()
+    forge_components::resolve_in_language(catalog_language(lang), &app_catalogs(lang), key)
 }
 
 pub fn install_os_default() {
-    install_language(negotiate_os_locale().unwrap_or(Language::En));
+    install_process_language(negotiate_os_locale().unwrap_or(Language::En));
 }
 
+pub fn install_process_language(lang: Language) {
+    forge_components::install_process_language(catalog_language(lang), &app_catalogs(lang));
+}
+
+#[cfg(test)]
 pub fn install_language(lang: Language) {
-    let bundle = build_bundle(lang);
-    forge_components::install_bundle(bundle);
-    let locale_id: &'static str = match lang {
-        Language::En => "en",
-        Language::Uk => "uk",
-    };
-    forge_components::set_locale_id(locale_id);
+    forge_components::install_thread_language(catalog_language(lang), &app_catalogs(lang));
 }
 
 #[cfg(test)]

@@ -56,7 +56,6 @@ forge-tts-sapi = { path = "../forge-tts-sapi" }
 forge-types = { path = "../forge-types" }
 forge-update = { path = "../forge-update" }
 forge-vtube = { path = "../forge-vtube" }
-fluent = { workspace = true }
 fluent-langneg = { workspace = true }
 futures-util = { workspace = true }
 gpui = { workspace = true }
@@ -81,6 +80,7 @@ unic-langid = { workspace = true }
 
 [dev-dependencies]
 flate2 = { workspace = true }
+fluent = { workspace = true }
 forge-hotkey = { path = "../forge-hotkey", features = ["testing"] }
 forge-storage = { path = "../forge-storage", features = ["test-mocks"] }
 gpui = { workspace = true, features = ["test-support"] }

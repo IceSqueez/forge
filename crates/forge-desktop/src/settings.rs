@@ -560,7 +560,7 @@ impl SettingsView {
             return;
         }
         self.language = lang;
-        crate::i18n::install_language(lang);
+        crate::i18n::install_process_language(lang);
         self.handles
             .anonymous_donor
             .store(tr!(crate::i18n::ANONYMOUS_DONOR_KEY));

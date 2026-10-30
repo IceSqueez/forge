@@ -116,7 +116,8 @@ pub use integration_gating::{
 };
 pub use locale::{
     ArgsBuilder, CatalogLanguage, catalog_source, fmt_bytes, fmt_clock, fmt_number, fmt_uptime,
-    fmt_uptime_short, install_bundle, set_locale_id, tr_find, tr_lookup,
+    fmt_uptime_short, install_bundle, install_process_language, install_thread_language,
+    resolve_in_language, set_locale_id, tr_find, tr_lookup,
 };
 pub use menu::{
     ContextMenu, MenuButton, MenuEntry, MenuItem, MenuPlacement, context_menu, menu_button,

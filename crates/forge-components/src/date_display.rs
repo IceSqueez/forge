@@ -4,7 +4,7 @@ use forge_types::{NamesLanguage, PatternZone, datetime_to_text, shared_date_patt
 use time::{OffsetDateTime, Time};
 
 use crate::display_formats::{ClockStyle, DisplayFormatChoices, DisplayFormats};
-use crate::locale::{CatalogLanguage, active_locale, relative_within_week, tr_lookup};
+use crate::locale::{CatalogLanguage, active_language, relative_within_week, tr_lookup};
 use crate::region::Region;
 
 const DATE_TIME_SEPARATOR: &str = ", ";
@@ -93,7 +93,7 @@ pub fn active_display_formats() -> DisplayFormats {
 }
 
 pub fn ui_names_language() -> NamesLanguage {
-    NamesLanguage::from_code(active_locale()).unwrap_or_default()
+    active_language().names_language()
 }
 
 pub fn date_display() -> DateDisplay {

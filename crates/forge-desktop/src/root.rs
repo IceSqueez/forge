@@ -220,7 +220,7 @@ pub fn run_boot(
                 let mut navigator_for_notices = None;
                 let credentials_key_loss = handles.credentials_key_loss;
                 let applied = window.update(cx, |root, window, cx| {
-                    crate::i18n::install_language(handles.startup_language);
+                    crate::i18n::install_process_language(handles.startup_language);
                     cx.set_global(crate::presentation::ActiveLanguage(
                         handles.startup_language,
                     ));
